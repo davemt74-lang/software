@@ -13,50 +13,50 @@ function vp3_profile_webmcp_tool_catalog_v100(): array
     if ($catalog !== null) return $catalog;
     $catalog = [
         'vp3.profile.capabilities.get' => [
-            'title' => 'Get profile capabilities',
-            'description' => 'Return the currently available VP3 capabilities for this public profile and visitor.',
-            'capability' => 'profile',
-            'input_schema' => ['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
-            'annotations' => ['readOnlyHint'=>true,'untrustedContentHint'=>false,'consequentialHint'=>false,'debugging'=>false],
+            'title'=>'Get profile capabilities',
+            'description'=>'Return the currently available VP3 capabilities for this public profile and visitor.',
+            'capability'=>'profile',
+            'input_schema'=>['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>false,'consequentialHint'=>false,'debugging'=>false],
         ],
         'vp3.profile.get' => [
-            'title' => 'Get public profile',
-            'description' => 'Return the public VP3 profile projection approved for agent use.',
-            'capability' => 'profile',
-            'input_schema' => ['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
-            'annotations' => ['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+            'title'=>'Get public profile',
+            'description'=>'Return the public VP3 profile projection approved for agent use.',
+            'capability'=>'profile',
+            'input_schema'=>['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
         'vp3.agent.get' => [
-            'title' => 'Get Profile Agent',
-            'description' => 'Return the public Profile Agent identity and greeting available to this visitor.',
-            'capability' => 'profile_agent',
-            'input_schema' => ['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
-            'annotations' => ['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+            'title'=>'Get Profile Agent',
+            'description'=>'Return the public Profile Agent identity and greeting available to this visitor.',
+            'capability'=>'profile_agent',
+            'input_schema'=>['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
         'vp3.agent.chat.start' => [
-            'title' => 'Start Profile Agent chat',
-            'description' => 'Start or resume a visitor conversation with this Profile Agent.',
-            'capability' => 'profile_agent',
-            'input_schema' => ['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
-            'annotations' => ['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+            'title'=>'Start Profile Agent chat',
+            'description'=>'Start or resume a visitor conversation with this Profile Agent.',
+            'capability'=>'profile_agent',
+            'input_schema'=>['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
+            'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
         'vp3.agent.conversation.get' => [
-            'title' => 'Get Profile Agent conversation',
-            'description' => 'Return one conversation bound to this exact profile, Profile Agent, and visitor session.',
-            'capability' => 'profile_agent',
-            'input_schema' => [
+            'title'=>'Get Profile Agent conversation',
+            'description'=>'Return one conversation bound to this exact profile, Profile Agent, and visitor session.',
+            'capability'=>'profile_agent',
+            'input_schema'=>[
                 'type'=>'object',
                 'properties'=>['conversation_id'=>['type'=>'integer','minimum'=>1]],
                 'required'=>['conversation_id'],
                 'additionalProperties'=>false,
             ],
-            'annotations' => ['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
         'vp3.agent.message.send' => [
-            'title' => 'Send message to Profile Agent',
-            'description' => 'Send a visitor message to this Profile Agent using the canonical conversation and privacy boundary.',
-            'capability' => 'profile_agent',
-            'input_schema' => [
+            'title'=>'Send message to Profile Agent',
+            'description'=>'Send a visitor message to this Profile Agent using the canonical conversation and privacy boundary.',
+            'capability'=>'profile_agent',
+            'input_schema'=>[
                 'type'=>'object',
                 'properties'=>[
                     'conversation_id'=>['type'=>'integer','minimum'=>1],
@@ -65,13 +65,13 @@ function vp3_profile_webmcp_tool_catalog_v100(): array
                 'required'=>['message'],
                 'additionalProperties'=>false,
             ],
-            'annotations' => ['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+            'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
         'vp3.agent.owner_handoff.request' => [
-            'title' => 'Request profile owner assistance',
-            'description' => 'Ask the profile owner for assistance with this exact visitor conversation.',
-            'capability' => 'profile_agent',
-            'input_schema' => [
+            'title'=>'Request profile owner assistance',
+            'description'=>'Ask the profile owner for assistance with this exact visitor conversation.',
+            'capability'=>'profile_agent',
+            'input_schema'=>[
                 'type'=>'object',
                 'properties'=>[
                     'conversation_id'=>['type'=>'integer','minimum'=>1],
@@ -80,38 +80,143 @@ function vp3_profile_webmcp_tool_catalog_v100(): array
                 'required'=>['conversation_id'],
                 'additionalProperties'=>false,
             ],
-            'annotations' => ['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+            'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
         'vp3.booking.options.list' => [
-            'title' => 'List public appointment types',
-            'description' => 'List only appointment types currently open for public booking on this profile.',
-            'capability' => 'booking',
-            'input_schema' => ['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
-            'annotations' => ['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+            'title'=>'List public appointment types',
+            'description'=>'List only appointment types currently open for public booking on this profile.',
+            'capability'=>'booking',
+            'input_schema'=>['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
         'vp3.booking.availability.list' => [
-            'title' => 'List public booking availability',
-            'description' => 'Return public bookable slots for one appointment type and date without exposing private calendar details.',
-            'capability' => 'booking',
-            'input_schema' => [
+            'title'=>'List public booking availability',
+            'description'=>'Return public bookable slots for one appointment type and date without exposing private calendar details.',
+            'capability'=>'booking',
+            'input_schema'=>[
                 'type'=>'object',
                 'properties'=>[
                     'event_type_id'=>['type'=>'integer','minimum'=>1],
                     'event_slug'=>['type'=>'string','maxLength'=>80],
-                    'date'=>['type'=>'string','pattern'=>'^\\d{4}-\\d{2}-\\d{2}
-            'title' => 'Resolve profile intent',
-            'description' => 'Identify which currently available VP3 profile capabilities can help with a user goal without executing an action.',
-            'capability' => 'profile',
-            'input_schema' => [
+                    'date'=>['type'=>'string','pattern'=>'^\\d{4}-\\d{2}-\\d{2}$'],
+                    'timezone'=>['type'=>'string','maxLength'=>80],
+                ],
+                'required'=>['date'],
+                'additionalProperties'=>false,
+            ],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+        ],
+        'vp3.booking.prepare' => [
+            'title'=>'Prepare public booking',
+            'description'=>'Validate and preview a public appointment booking without creating it.',
+            'capability'=>'booking',
+            'input_schema'=>[
+                'type'=>'object',
+                'properties'=>[
+                    'event_type_id'=>['type'=>'integer','minimum'=>1],
+                    'event_slug'=>['type'=>'string','maxLength'=>80],
+                    'start_at_utc'=>['type'=>'string','maxLength'=>40],
+                    'guest_timezone'=>['type'=>'string','maxLength'=>80],
+                    'guest_name'=>['type'=>'string','minLength'=>1,'maxLength'=>190],
+                    'guest_email'=>['type'=>'string','minLength'=>3,'maxLength'=>190],
+                    'guest_phone'=>['type'=>'string','maxLength'=>80],
+                    'guest_notes'=>['type'=>'string','maxLength'=>2000],
+                    'intake'=>['type'=>'object','additionalProperties'=>true],
+                ],
+                'required'=>['start_at_utc','guest_name','guest_email'],
+                'additionalProperties'=>false,
+            ],
+            'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+        ],
+        'vp3.booking.confirm' => [
+            'title'=>'Confirm public booking',
+            'description'=>'Create the exact prepared booking after explicit confirmation and idempotency validation.',
+            'capability'=>'booking',
+            'input_schema'=>vp3_profile_webmcp_confirmation_schema_v150(),
+            'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>true,'debugging'=>false],
+        ],
+        'vp3.booking.get' => [
+            'title'=>'Get public booking',
+            'description'=>'Return one booking using its opaque public booking token without exposing its management token.',
+            'capability'=>'booking',
+            'input_schema'=>[
+                'type'=>'object',
+                'properties'=>['public_token'=>['type'=>'string','pattern'=>'^[a-f0-9]{64}$']],
+                'required'=>['public_token'],
+                'additionalProperties'=>false,
+            ],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+        ],
+        'vp3.booking.reschedule.prepare' => [
+            'title'=>'Prepare booking reschedule',
+            'description'=>'Validate and preview a new time for a booking using its opaque manage token.',
+            'capability'=>'booking',
+            'input_schema'=>[
+                'type'=>'object',
+                'properties'=>[
+                    'manage_token'=>['type'=>'string','pattern'=>'^[a-f0-9]{64}$'],
+                    'start_at_utc'=>['type'=>'string','maxLength'=>40],
+                    'guest_timezone'=>['type'=>'string','maxLength'=>80],
+                ],
+                'required'=>['manage_token','start_at_utc'],
+                'additionalProperties'=>false,
+            ],
+            'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+        ],
+        'vp3.booking.reschedule.confirm' => [
+            'title'=>'Confirm booking reschedule',
+            'description'=>'Apply the exact prepared reschedule after explicit confirmation and idempotency validation.',
+            'capability'=>'booking',
+            'input_schema'=>vp3_profile_webmcp_confirmation_schema_v150(),
+            'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>true,'debugging'=>false],
+        ],
+        'vp3.booking.cancel.prepare' => [
+            'title'=>'Prepare booking cancellation',
+            'description'=>'Validate and preview cancellation of a booking using its opaque manage token.',
+            'capability'=>'booking',
+            'input_schema'=>[
+                'type'=>'object',
+                'properties'=>['manage_token'=>['type'=>'string','pattern'=>'^[a-f0-9]{64}$']],
+                'required'=>['manage_token'],
+                'additionalProperties'=>false,
+            ],
+            'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+        ],
+        'vp3.booking.cancel.confirm' => [
+            'title'=>'Confirm booking cancellation',
+            'description'=>'Cancel the exact prepared booking after explicit confirmation and idempotency validation.',
+            'capability'=>'booking',
+            'input_schema'=>vp3_profile_webmcp_confirmation_schema_v150(),
+            'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>true,'debugging'=>false],
+        ],
+        'vp3.intent.resolve' => [
+            'title'=>'Resolve profile intent',
+            'description'=>'Identify which currently available VP3 profile capabilities can help with a user goal without executing an action.',
+            'capability'=>'profile',
+            'input_schema'=>[
                 'type'=>'object',
                 'properties'=>['goal'=>['type'=>'string','minLength'=>1,'maxLength'=>1000]],
                 'required'=>['goal'],
                 'additionalProperties'=>false,
             ],
-            'annotations' => ['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
     ];
     return $catalog;
+}
+
+function vp3_profile_webmcp_confirmation_schema_v150(): array
+{
+    return [
+        'type'=>'object',
+        'properties'=>[
+            'confirmation_token'=>['type'=>'string','minLength'=>20,'maxLength'=>2048],
+            'idempotency_key'=>['type'=>'string','minLength'=>8,'maxLength'=>96],
+            'intent'=>['type'=>'object','additionalProperties'=>true],
+        ],
+        'required'=>['confirmation_token','idempotency_key','intent'],
+        'additionalProperties'=>false,
+    ];
 }
 
 function vp3_profile_webmcp_session_proof_v100(int $ownerUserId): string
