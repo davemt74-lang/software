@@ -60,7 +60,52 @@ const CATALOG=deepFreeze({
     inputSchema:{type:'object',properties:{conversation_id:{type:'integer',minimum:1},reason:{type:'string',maxLength:1000}},required:['conversation_id'],additionalProperties:false},
     annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
   }
-});
+,
+  'vp3.booking.options.list':{
+    title:'List public appointment types',description:'List appointment types currently open for public booking.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.availability.list':{
+    title:'List public booking availability',description:'Return public bookable slots without private calendar details.',
+    inputSchema:{type:'object',properties:{event_type_id:{type:'integer',minimum:1},event_slug:{type:'string',maxLength:80},date:{type:'string',pattern:'^\\d{4}-\\d{2}-\\d{2}$'},timezone:{type:'string',maxLength:80}},required:['date'],additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.prepare':{
+    title:'Prepare public booking',description:'Validate and preview a public booking without creating it.',
+    inputSchema:{type:'object',properties:{event_type_id:{type:'integer',minimum:1},event_slug:{type:'string',maxLength:80},start_at_utc:{type:'string',maxLength:40},guest_timezone:{type:'string',maxLength:80},guest_name:{type:'string',minLength:1,maxLength:190},guest_email:{type:'string',minLength:3,maxLength:190},guest_phone:{type:'string',maxLength:80},guest_notes:{type:'string',maxLength:2000},intake:{type:'object',additionalProperties:true}},required:['start_at_utc','guest_name','guest_email'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.confirm':{
+    title:'Confirm public booking',description:'Create the exact prepared booking after confirmation and idempotency validation.',
+    inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
+  },
+  'vp3.booking.get':{
+    title:'Get public booking',description:'Return one booking using its opaque public token.',
+    inputSchema:{type:'object',properties:{public_token:{type:'string',pattern:'^[a-f0-9]{64}$'}},required:['public_token'],additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.reschedule.prepare':{
+    title:'Prepare booking reschedule',description:'Validate and preview a new booking time.',
+    inputSchema:{type:'object',properties:{manage_token:{type:'string',pattern:'^[a-f0-9]{64}$'},start_at_utc:{type:'string',maxLength:40},guest_timezone:{type:'string',maxLength:80}},required:['manage_token','start_at_utc'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.reschedule.confirm':{
+    title:'Confirm booking reschedule',description:'Apply the exact prepared reschedule after confirmation and idempotency validation.',
+    inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
+  },
+  'vp3.booking.cancel.prepare':{
+    title:'Prepare booking cancellation',description:'Validate and preview booking cancellation.',
+    inputSchema:{type:'object',properties:{manage_token:{type:'string',pattern:'^[a-f0-9]{64}$'}},required:['manage_token'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.cancel.confirm':{
+    title:'Confirm booking cancellation',description:'Cancel the exact prepared booking after confirmation and idempotency validation.',
+    inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
+  }});
 
 function safeError(code,message,retryable=false){
   return {ok:false,error:{code,message,retryable}};
@@ -93,6 +138,9 @@ function isChatToolV140(name){
     'vp3.agent.chat.start','vp3.agent.conversation.get',
     'vp3.agent.message.send','vp3.agent.owner_handoff.request'
   ].includes(String(name||''));
+}
+function isSchedulingToolV150(name){
+  return String(name||'').startsWith('vp3.booking.');
 }
 
 class ExternalRuntime{
@@ -128,10 +176,11 @@ class ExternalRuntime{
 
   effectiveToolNames(manifest=this.manifest){
     if(!manifest||manifest.manifest_version!==MANIFEST||manifest.surface!=='external_site')return [];
-    if(!manifest.external||manifest.external.transactional_actions!==false)return [];
+    if(!manifest.external)return [];
     const allowed=new Set(Array.isArray(manifest.allowed_tools)?manifest.allowed_tools:[]);
     const chatEnabled=manifest.external.stateful_profile_agent===true&&Boolean(this.chatGrant);
-    return Object.keys(CATALOG).filter(name=>allowed.has(name)&&(!isChatToolV140(name)||chatEnabled)).sort();
+    const schedulingEnabled=manifest.external.scheduling_enabled===true;
+    return Object.keys(CATALOG).filter(name=>allowed.has(name)&&(!isChatToolV140(name)||chatEnabled)&&(!isSchedulingToolV150(name)||schedulingEnabled)).sort();
   }
 
   async loadManifest(){
@@ -218,6 +267,9 @@ class ExternalRuntime{
       }catch{
         return safeError('CHAT_GRANT_REQUIRED','Connected-site Profile Agent chat is unavailable.',true);
       }
+      if(!this.effectiveToolNames().includes(name))return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
+    }else if(isSchedulingToolV150(name)){
+      if(this.manifest?.external?.scheduling_enabled!==true)return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
       if(!this.effectiveToolNames().includes(name))return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
     }else if(!this.effectiveToolNames().includes(name)){
       return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');

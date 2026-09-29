@@ -7,6 +7,7 @@ require_once dirname(__DIR__) . '/includes/profile-webmcp-analytics-v130.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-transcription-context.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-public-service-v110.php';
 require_once dirname(__DIR__) . '/includes/profile-webmcp-chat-v140.php';
+require_once dirname(__DIR__) . '/includes/profile-webmcp-scheduling-v150.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -107,6 +108,49 @@ try {
     if ($tool === 'vp3.intent.resolve') {
         $goal = trim((string)($args['goal'] ?? ''));
         vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['resolution'=>vp3_profile_webmcp_resolve_intent_v100($goal, $manifest)]);
+    }
+    if (str_starts_with($tool, 'vp3.booking.')) {
+        $schedulingContext=vp3_profile_webmcp_scheduling_context_v150($profile,'native_profile',$telemetry,$proof,null,'');
+        if ($tool === 'vp3.booking.options.list') {
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['appointment_types'=>vp3_profile_webmcp_scheduling_options_v150($pdo,$profile)]);
+        }
+        if ($tool === 'vp3.booking.availability.list') {
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_scheduling_availability_v150($pdo,$profile,$args));
+        }
+        if ($tool === 'vp3.booking.get') {
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_scheduling_get_v150($pdo,$profile,$args));
+        }
+        if (in_array($tool,['vp3.booking.prepare','vp3.booking.reschedule.prepare','vp3.booking.cancel.prepare'],true)) {
+            if(!vp3_profile_webmcp_actions_schema_ready_v150($pdo)){
+                vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'SCHEDULING_UNAVAILABLE','message'=>'Booking confirmation ledger is unavailable.']],503,'SCHEDULING_UNAVAILABLE');
+            }
+            $operation=match($tool){
+                'vp3.booking.prepare'=>'booking.create',
+                'vp3.booking.reschedule.prepare'=>'booking.reschedule',
+                default=>'booking.cancel',
+            };
+            $result=vp3_profile_webmcp_scheduling_prepare_v150($pdo,$profile,$schedulingContext,$operation,$args);
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_booking_prepared',$tool,'prepared',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_confirmation_required',$tool,'confirmation_required',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
+        if (in_array($tool,['vp3.booking.confirm','vp3.booking.reschedule.confirm','vp3.booking.cancel.confirm'],true)) {
+            if(!vp3_profile_webmcp_actions_schema_ready_v150($pdo)){
+                vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'SCHEDULING_UNAVAILABLE','message'=>'Booking confirmation ledger is unavailable.']],503,'SCHEDULING_UNAVAILABLE');
+            }
+            $operation=match($tool){
+                'vp3.booking.confirm'=>'booking.create',
+                'vp3.booking.reschedule.confirm'=>'booking.reschedule',
+                default=>'booking.cancel',
+            };
+            $intent=is_array($args['intent']??null)?$args['intent']:[];
+            $result=vp3_profile_webmcp_scheduling_confirm_v150(
+                $pdo,$profile,$schedulingContext,$operation,$intent,
+                trim((string)($args['confirmation_token']??'')),trim((string)($args['idempotency_key']??''))
+            );
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_booking_completed',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['booking_id'=>(int)($result['booking']['booking_id']??0)]);
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
     }
     if (str_starts_with($tool, 'vp3.agent.')) {
         $agentCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$viewer);

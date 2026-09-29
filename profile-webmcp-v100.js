@@ -9,59 +9,91 @@ function deepFreeze(value) {
 
 export const VP3_PROFILE_WEBMCP_TOOL_CATALOG_V100 = deepFreeze({
   'vp3.profile.capabilities.get': {
-    title: 'Get profile capabilities',
-    description: 'Return the currently available VP3 capabilities for this public profile and visitor.',
-    inputSchema: {type:'object',properties:{},additionalProperties:false},
-    annotations: {readOnlyHint:true,untrustedContentHint:false,consequentialHint:false,debugging:false}
+    title:'Get profile capabilities',description:'Return the currently available VP3 capabilities for this public profile and visitor.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:false,consequentialHint:false,debugging:false}
   },
   'vp3.profile.get': {
-    title: 'Get public profile',
-    description: 'Return the public VP3 profile projection approved for agent use.',
-    inputSchema: {type:'object',properties:{},additionalProperties:false},
-    annotations: {readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+    title:'Get public profile',description:'Return the public VP3 profile projection approved for agent use.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
   },
   'vp3.agent.get': {
-    title: 'Get Profile Agent',
-    description: 'Return the public Profile Agent identity and greeting available to this visitor.',
-    inputSchema: {type:'object',properties:{},additionalProperties:false},
-    annotations: {readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+    title:'Get Profile Agent',description:'Return the public Profile Agent identity and greeting available to this visitor.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
   },
   'vp3.agent.chat.start': {
-    title: 'Start Profile Agent chat',
-    description: 'Start or resume a visitor conversation with this Profile Agent.',
-    inputSchema: {type:'object',properties:{},additionalProperties:false},
-    annotations: {readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+    title:'Start Profile Agent chat',description:'Start or resume a visitor conversation with this Profile Agent.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
   },
   'vp3.agent.conversation.get': {
-    title: 'Get Profile Agent conversation',
-    description: 'Return one conversation bound to this exact profile, Profile Agent, and visitor session.',
-    inputSchema: {type:'object',properties:{conversation_id:{type:'integer',minimum:1}},required:['conversation_id'],additionalProperties:false},
-    annotations: {readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+    title:'Get Profile Agent conversation',description:'Return one conversation bound to this exact profile, Profile Agent, and visitor session.',
+    inputSchema:{type:'object',properties:{conversation_id:{type:'integer',minimum:1}},required:['conversation_id'],additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
   },
   'vp3.agent.message.send': {
-    title: 'Send message to Profile Agent',
-    description: 'Send a visitor message to this Profile Agent using the canonical conversation and privacy boundary.',
-    inputSchema: {type:'object',properties:{conversation_id:{type:'integer',minimum:1},message:{type:'string',minLength:1,maxLength:2000}},required:['message'],additionalProperties:false},
-    annotations: {readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+    title:'Send message to Profile Agent',description:'Send a visitor message using the canonical Profile Agent conversation boundary.',
+    inputSchema:{type:'object',properties:{conversation_id:{type:'integer',minimum:1},message:{type:'string',minLength:1,maxLength:2000}},required:['message'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
   },
   'vp3.agent.owner_handoff.request': {
-    title: 'Request profile owner assistance',
-    description: 'Ask the profile owner for assistance with this exact visitor conversation.',
-    inputSchema: {type:'object',properties:{conversation_id:{type:'integer',minimum:1},reason:{type:'string',maxLength:1000}},required:['conversation_id'],additionalProperties:false},
-    annotations: {readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+    title:'Request profile owner assistance',description:'Ask the profile owner for assistance with this exact visitor conversation.',
+    inputSchema:{type:'object',properties:{conversation_id:{type:'integer',minimum:1},reason:{type:'string',maxLength:1000}},required:['conversation_id'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.options.list': {
+    title:'List public appointment types',description:'List appointment types currently open for public booking.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.availability.list': {
+    title:'List public booking availability',description:'Return public bookable slots without private calendar details.',
+    inputSchema:{type:'object',properties:{event_type_id:{type:'integer',minimum:1},event_slug:{type:'string',maxLength:80},date:{type:'string',pattern:'^\\d{4}-\\d{2}-\\d{2}$'},timezone:{type:'string',maxLength:80}},required:['date'],additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.prepare': {
+    title:'Prepare public booking',description:'Validate and preview a public booking without creating it.',
+    inputSchema:{type:'object',properties:{event_type_id:{type:'integer',minimum:1},event_slug:{type:'string',maxLength:80},start_at_utc:{type:'string',maxLength:40},guest_timezone:{type:'string',maxLength:80},guest_name:{type:'string',minLength:1,maxLength:190},guest_email:{type:'string',minLength:3,maxLength:190},guest_phone:{type:'string',maxLength:80},guest_notes:{type:'string',maxLength:2000},intake:{type:'object',additionalProperties:true}},required:['start_at_utc','guest_name','guest_email'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.confirm': {
+    title:'Confirm public booking',description:'Create the exact prepared booking after explicit confirmation and idempotency validation.',
+    inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
+  },
+  'vp3.booking.get': {
+    title:'Get public booking',description:'Return one booking using its opaque public token.',
+    inputSchema:{type:'object',properties:{public_token:{type:'string',pattern:'^[a-f0-9]{64}$'}},required:['public_token'],additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.reschedule.prepare': {
+    title:'Prepare booking reschedule',description:'Validate and preview a new time using the opaque booking manage token.',
+    inputSchema:{type:'object',properties:{manage_token:{type:'string',pattern:'^[a-f0-9]{64}$'},start_at_utc:{type:'string',maxLength:40},guest_timezone:{type:'string',maxLength:80}},required:['manage_token','start_at_utc'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.reschedule.confirm': {
+    title:'Confirm booking reschedule',description:'Apply the exact prepared reschedule after explicit confirmation and idempotency validation.',
+    inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
+  },
+  'vp3.booking.cancel.prepare': {
+    title:'Prepare booking cancellation',description:'Validate and preview cancellation using the opaque booking manage token.',
+    inputSchema:{type:'object',properties:{manage_token:{type:'string',pattern:'^[a-f0-9]{64}$'}},required:['manage_token'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.booking.cancel.confirm': {
+    title:'Confirm booking cancellation',description:'Cancel the exact prepared booking after explicit confirmation and idempotency validation.',
+    inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
+    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
   },
   'vp3.intent.resolve': {
-    title: 'Resolve profile intent',
-    description: 'Identify which currently available VP3 profile capabilities can help with a user goal without executing an action.',
-    inputSchema: {
-      type:'object',
-      properties:{goal:{type:'string',minLength:1,maxLength:1000}},
-      required:['goal'],
-      additionalProperties:false
-    },
-    annotations: {readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+    title:'Resolve profile intent',description:'Identify which currently available VP3 profile capabilities can help with a user goal without executing an action.',
+    inputSchema:{type:'object',properties:{goal:{type:'string',minLength:1,maxLength:1000}},required:['goal'],additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
   }
-});
+})
 
 function stable(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);

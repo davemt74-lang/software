@@ -34,12 +34,13 @@ assert.match(nativeRuntime,/vp3\.agent\.chat\.start/);
 assert.match(nativeApi,/vp3_profile_webmcp_chat_start_v140/,'native and external surfaces must share chat start semantics');
 
 assert.match(externalLayer,/stateful_profile_agent'\s*=>\s*\$chatEnabled/);
-assert.match(externalLayer,/transactional_actions'\s*=>\s*false/);
+assert.match(externalLayer,/transactional_actions'\s*=>\s*\$schedulingEnabled/,'only the scheduling adapter may enable connected-site transactional actions in Section 6');
 for(const name of ['vp3.agent.chat.start','vp3.agent.conversation.get','vp3.agent.message.send','vp3.agent.owner_handoff.request']){
   assert.match(externalLayer,new RegExp(name.replaceAll('.','\\.')),'external manifest tool '+name);
   assert.match(externalRuntime,new RegExp(name.replaceAll('.','\\.')),'external trusted runtime '+name);
 }
-assert.doesNotMatch(externalLayer,/vp3\.booking\.prepare|vp3\.commerce\.checkout|vp3\.rewards\.claim/,'Section 5 must not expose future transactional domains');
+assert.match(externalLayer,/vp3\.booking\.prepare/,'Section 6 may expose public scheduling');
+assert.doesNotMatch(externalLayer,/vp3\.commerce\.checkout|vp3\.rewards\.claim/,'commerce and rewards remain outside the chat/scheduling surface');
 
 assert.match(externalApi,/vp3_profile_webmcp_chat_grant_create_v140/,'GET manifest must mint a scoped chat grant');
 assert.match(externalApi,/vp3_profile_webmcp_chat_grant_verify_v140/,'stateful calls must verify the grant');
@@ -62,7 +63,8 @@ assert.doesNotMatch(externalRuntime,/localStorage|sessionStorage|document\.cooki
 assert.doesNotMatch(externalRuntime,/Authorization|X-VP3-WebMCP-Session/,'external chat must not inherit native/browser credentials');
 
 assert.match(sitesUi,/Agent Chat <b>/,'owner diagnostics must show external chat state');
-assert.match(sitesUi,/Booking, commerce, rewards, and other transactional actions remain unavailable/);
+assert.match(sitesUi,/Public scheduling is available through explicit prepare\/confirm tools/);
+assert.match(sitesUi,/Commerce, rewards, and other transactional domains remain unavailable/);
 
 assert.match(workflow,/profile-webmcp-chat-v140\.php/);
 assert.match(workflow,/profile-webmcp-chat-v140-contract\.mjs/);

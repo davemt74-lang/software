@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 const VP3_PROFILE_WEBMCP_EXTERNAL_V120='profile-webmcp-external-v120-20260928';
 
-function vp3_profile_webmcp_external_tool_names_v120(bool $statefulChat=false): array
+function vp3_profile_webmcp_external_tool_names_v120(bool $statefulChat=false,bool $scheduling=false): array
 {
     $tools=[
         'vp3.profile.capabilities.get',
@@ -16,6 +16,13 @@ function vp3_profile_webmcp_external_tool_names_v120(bool $statefulChat=false): 
         $tools[]='vp3.agent.conversation.get';
         $tools[]='vp3.agent.message.send';
         $tools[]='vp3.agent.owner_handoff.request';
+    }
+    if($scheduling){
+        foreach([
+            'vp3.booking.options.list','vp3.booking.availability.list','vp3.booking.prepare','vp3.booking.confirm',
+            'vp3.booking.get','vp3.booking.reschedule.prepare','vp3.booking.reschedule.confirm',
+            'vp3.booking.cancel.prepare','vp3.booking.cancel.confirm'
+        ] as $tool)$tools[]=$tool;
     }
     return $tools;
 }
@@ -70,17 +77,18 @@ function vp3_profile_webmcp_external_agent_v120(PDO $pdo,array $profile): ?array
     ];
 }
 
-function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,array $profile,bool $statefulChat=false): array
+function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,array $profile,bool $statefulChat=false,bool $scheduling=false): array
 {
     $capabilities=vp3_profile_webmcp_capabilities_v100($pdo,$profile,null);
     $chatEnabled=$statefulChat&&!empty($capabilities['profile_agent']);
+    $schedulingEnabled=$scheduling&&!empty($capabilities['booking']);
     $catalog=vp3_profile_webmcp_tool_catalog_v100();
-    $external=array_flip(vp3_profile_webmcp_external_tool_names_v120($chatEnabled));
+    $external=array_flip(vp3_profile_webmcp_external_tool_names_v120($chatEnabled,$schedulingEnabled));
     $allowed=[];
     foreach($catalog as $name=>$tool){
         if(!isset($external[$name]))continue;
         $capability=(string)($tool['capability']??'');
-        if(($capabilities[$capability]??false)===true)$allowed[]=$name;
+        if(($capabilities[$capability]??false)===true&&vp3_profile_webmcp_tool_runtime_ready_v150($pdo,$name))$allowed[]=$name;
     }
     sort($allowed);
     return [
@@ -96,9 +104,10 @@ function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,arra
             'visitor_profile_known'=>false,
         ],
         'external'=>[
-            'read_only'=>!$chatEnabled,
+            'read_only'=>!$chatEnabled&&!$schedulingEnabled,
             'stateful_profile_agent'=>$chatEnabled,
-            'transactional_actions'=>false,
+            'transactional_actions'=>$schedulingEnabled,
+            'scheduling_enabled'=>$schedulingEnabled,
             'chat_grant_required'=>$chatEnabled,
         ],
     ];
@@ -112,16 +121,18 @@ function vp3_profile_webmcp_external_enrich_site_state_v120(PDO $pdo,array $user
         $site['webmcp_manifest_version']=VP3_PROFILE_WEBMCP_MANIFEST_V100;
         $site['webmcp_read_only']=true;
         $site['webmcp_chat_enabled']=false;
+        $site['webmcp_scheduling_enabled']=false;
         $site['webmcp_tool_count']=0;
         $site['webmcp_runtime_url']=url('/profile-webmcp-external-v120.js?v=profile-webmcp-external-v120-20260928');
         $site['webmcp_gateway_url']=url('/api/profile-webmcp-external-v120.php?key='.rawurlencode((string)($site['public_key']??'')));
         if(empty($site['is_active']))continue;
         try{
             $profile=vp3_profile_webmcp_external_profile_v120($pdo,$site+['owner_user_id'=>(int)$user['id']]);
-            $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$site+['owner_user_id'=>(int)$user['id']],$profile,true);
+            $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$site+['owner_user_id'=>(int)$user['id']],$profile,true,true);
             $site['webmcp_tool_count']=count($manifest['allowed_tools']);
             $site['webmcp_read_only']=!empty($manifest['external']['read_only']);
             $site['webmcp_chat_enabled']=!empty($manifest['external']['stateful_profile_agent']);
+            $site['webmcp_scheduling_enabled']=!empty($manifest['external']['scheduling_enabled']);
         }catch(Throwable $e){
             $site['webmcp_enabled']=false;
         }

@@ -18,6 +18,8 @@ function profile_user_row(PDO $pdo,int $owner): ?array { return ['id'=>$owner,'d
 function personal_capability_has_v242(string $cap,array $user): bool { return $GLOBALS['vp3_ext_agent_enabled']; }
 function profile_active_agent(PDO $pdo,array $profile): ?array { return $GLOBALS['vp3_ext_agent_enabled']?['id'=>77,'display_name'=>'Profile Agent','instructions'=>'private']:null; }
 function system_agent_name(): string { return 'Stonefellow'; }
+function vp3_profile_webmcp_actions_schema_ready_v150(?PDO $pdo=null): bool { return true; }
+function vp3_profile_webmcp_tool_runtime_ready_v150(PDO $pdo,string $tool): bool { return !str_contains($tool,'.booking.') || vp3_profile_webmcp_actions_schema_ready_v150($pdo); }
 function vp3_profile_webmcp_capabilities_v100(PDO $pdo,array $profile,?array $viewer): array {
     return ['profile'=>true,'profile_agent'=>$GLOBALS['vp3_ext_agent_enabled'],'booking'=>true,'commerce'=>true,'campaigns'=>true,'rewards'=>false,'social'=>false,'messaging'=>false];
 }
@@ -32,6 +34,14 @@ function vp3_profile_webmcp_tool_catalog_v100(): array {
       'vp3.agent.message.send'=>['capability'=>'profile_agent'],
       'vp3.agent.owner_handoff.request'=>['capability'=>'profile_agent'],
       'vp3.booking.options.list'=>['capability'=>'booking'],
+      'vp3.booking.availability.list'=>['capability'=>'booking'],
+      'vp3.booking.prepare'=>['capability'=>'booking'],
+      'vp3.booking.confirm'=>['capability'=>'booking'],
+      'vp3.booking.get'=>['capability'=>'booking'],
+      'vp3.booking.reschedule.prepare'=>['capability'=>'booking'],
+      'vp3.booking.reschedule.confirm'=>['capability'=>'booking'],
+      'vp3.booking.cancel.prepare'=>['capability'=>'booking'],
+      'vp3.booking.cancel.confirm'=>['capability'=>'booking'],
     ];
 }
 function url(string $path): string { return 'https://vp3.example'.$path; }
@@ -76,8 +86,9 @@ $state=['sites'=>[
 ]];
 $enriched=vp3_profile_webmcp_external_enrich_site_state_v120($pdo,['id'=>123],$state);
 t($enriched['sites'][0]['webmcp_enabled']===true,'active site WebMCP enabled');
-t($enriched['sites'][0]['webmcp_tool_count']===8,'active site tool count including public Agent chat');
+t($enriched['sites'][0]['webmcp_tool_count']===17,'active site tool count including Agent chat and Scheduling');
 t($enriched['sites'][0]['webmcp_chat_enabled']===true,'active site reports Agent chat enabled');
+t($enriched['sites'][0]['webmcp_scheduling_enabled']===true,'active site reports Scheduling enabled');
 t($enriched['sites'][1]['webmcp_enabled']===false,'paused site WebMCP disabled');
 t($enriched['sites'][1]['webmcp_tool_count']===0,'paused site has no tools');
 

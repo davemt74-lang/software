@@ -12,11 +12,12 @@ const recovery=read('tools/run_recovery_baseline.py');
 
 assert.match(layer,/vp3_radar_external_origin_allowed/,'external origin must reuse Agent Radar registered-domain authority');
 assert.match(layer,/surface'\s*=>\s*'external_site'/);
-assert.match(layer,/read_only'\s*=>\s*!\$chatEnabled/);
+assert.match(layer,/read_only'\s*=>\s*!\$chatEnabled&&!\$schedulingEnabled/);
 assert.match(layer,/stateful_profile_agent'\s*=>\s*\$chatEnabled/);
 assert.match(layer,/vp3\.agent\.get/);
 assert.match(layer,/vp3\.agent\.message\.send/,'external tool allowlist may expose governed public Agent chat');
-assert.doesNotMatch(layer,/vp3\.booking\.prepare|vp3\.commerce\.checkout\.prepare/,'Section 3 must not expose future transactional tools');
+assert.match(layer,/vp3\.booking\.prepare/,'connected-site manifest may expose governed public scheduling');
+assert.doesNotMatch(layer,/vp3\.commerce\.checkout\.prepare/,'connected-site manifest must still exclude future commerce checkout');
 
 assert.match(endpoint,/vp3_radar_external_property_by_key/,'gateway must bind public property key to active Agent Radar property');
 assert.match(endpoint,/vp3_profile_webmcp_external_origin_v120/,'gateway must verify browser Origin');
@@ -29,13 +30,15 @@ assert.match(endpoint,/REQUEST_METHOD.*OPTIONS/s,'CORS preflight must be support
 assert.match(endpoint,/PROPERTY_MISMATCH/);
 assert.match(endpoint,/PROFILE_MISMATCH/);
 assert.match(endpoint,/vp3_profile_agent_public_message_service_v110/,'external Agent chat must reuse canonical public service');
-assert.doesNotMatch(endpoint,/mark_paid|claim_from_tray|vp3\.booking\.prepare|vp3\.commerce\.checkout/,'external gateway must still exclude transactional domain actions');
+assert.match(endpoint,/vp3_profile_webmcp_scheduling_confirm_v150/,'external gateway may execute scheduling only through governed adapter');
+assert.doesNotMatch(endpoint,/mark_paid|claim_from_tray|vp3\.commerce\.checkout/,'external gateway must still exclude direct payment, reward, and commerce authority');
 
 for(const name of ['vp3.profile.capabilities.get','vp3.profile.get','vp3.intent.resolve','vp3.agent.get']){
   assert.match(runtime,new RegExp(name.replaceAll('.','\\.')),'external trusted runtime '+name);
 }
 assert.match(runtime,/vp3\.agent\.message\.send/,'external trusted catalog may include governed Agent chat');
-assert.doesNotMatch(runtime,/vp3\.booking\.prepare|vp3\.commerce\.checkout/,'external runtime must still exclude transactional tools');
+assert.match(runtime,/vp3\.booking\.prepare/,'trusted external runtime may expose governed scheduling tools');
+assert.doesNotMatch(runtime,/vp3\.commerce\.checkout/,'external runtime must still exclude commerce checkout');
 assert.match(runtime,/credentials:'omit'/,'external runtime must omit ambient cookies');
 assert.match(runtime,/stateful_profile_agent===true&&Boolean\(this\.chatGrant\)/,'stateful chat tools must require both manifest authority and a grant');
 assert.doesNotMatch(runtime,/Authorization|X-VP3-WebMCP-Session/,'external runtime must not send private bearer/session proof');

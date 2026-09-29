@@ -63,6 +63,7 @@ function vp3_upgrade_complete(): bool
         && column_exists('ai_execution_ledger','fallback_reason')
         && vp3_radar_schema_ready()
         && vp3_agent_referral_schema_ready()
+        && vp3_profile_webmcp_actions_schema_ready_v150()
         && subscription_self_service_schema_ready()
         && billing_schema_ready()
         && token_pack_schema_ready()
@@ -206,6 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ai_usage_accounting_v032_ensure_schema();
             vp3_radar_ensure_schema();
             vp3_agent_referral_ensure_schema();
+            vp3_profile_webmcp_actions_ensure_schema_v150($pdo);
             subscription_self_service_ensure_schema();
             billing_ensure_schema();
             token_pack_ensure_schema();
