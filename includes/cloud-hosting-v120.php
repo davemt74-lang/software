@@ -250,11 +250,15 @@ function vp3_cloud_hosting_v120_reconcile_entitlements(
         $result=vp3_cloud_hosting_v120_remote($userId,'hosting.entitlements.reconcile',$payload,$remote);
         $remoteRevision=(int)($result['revision']??$payload['revision']);
         if((string)($result['reconcile_result']??'')==='stale_ignored'&&$remoteRevision>=(int)$payload['revision']){
-            $nextRevision=$remoteRevision+1;
-            $pdo->prepare("UPDATE cloud_hosting_entitlement_sync SET revision=? WHERE user_id=?")->execute([$nextRevision,$userId]);
-            $payload['revision']=$nextRevision;
+            $minimum=$remoteRevision+1;
+            $pdo->prepare("UPDATE cloud_hosting_entitlement_sync SET revision=GREATEST(revision,?) WHERE user_id=?")
+                ->execute([$minimum,$userId]);
+            $payload=vp3_cloud_hosting_v120_entitlement_payload($user,$pdo);
+            if((int)$payload['revision']<=$remoteRevision){
+                throw new RuntimeException('Could not advance Cloud Hosting entitlement revision above HomeServer state.');
+            }
             $result=vp3_cloud_hosting_v120_remote($userId,'hosting.entitlements.reconcile',$payload,$remote);
-            $remoteRevision=(int)($result['revision']??$nextRevision);
+            $remoteRevision=(int)($result['revision']??$payload['revision']);
         }
         $stmt=$pdo->prepare("UPDATE cloud_hosting_entitlement_sync SET last_remote_revision=?,last_synced_at=NOW(),last_error_code='',last_error_message='' WHERE user_id=?");
         $stmt->execute([$remoteRevision,$userId]);
@@ -460,12 +464,15 @@ function vp3_cloud_hosting_v120_reconcile_site(
         $result=vp3_cloud_hosting_v120_remote($userId,'hosting.site.reconcile',$desired,$remote);
         $remoteRevision=(int)($result['revision']??$fresh['desired_revision']);
         if((string)($result['reconcile_result']??'')==='stale_ignored'&&$remoteRevision>=(int)$fresh['desired_revision']){
-            $nextRevision=$remoteRevision+1;
-            $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=? WHERE id=?')->execute([$nextRevision,$siteId]);
+            $minimum=$remoteRevision+1;
+            $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=GREATEST(desired_revision,?) WHERE id=?')
+                ->execute([$minimum,$siteId]);
+            $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo)??$fresh;
+            $nextRevision=(int)$fresh['desired_revision'];
+            if($nextRevision<=$remoteRevision)throw new RuntimeException('Could not advance Cloud Hosting site revision above HomeServer state.');
             vp3_cloud_hosting_event_v100($pdo,$siteId,'homeserver.revision_rebased','reconciling',$nextRevision,null,[
                 'remote_revision'=>$remoteRevision,'reason'=>'stale_remote_revision',
             ]);
-            $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo)??$fresh;
             $desired=vp3_cloud_hosting_desired_projection_v100($fresh);
             $result=vp3_cloud_hosting_v120_remote($userId,'hosting.site.reconcile',$desired,$remote);
             $remoteRevision=(int)($result['revision']??$nextRevision);
@@ -824,6 +831,7 @@ function vp3_cloud_hosting_v120_public_capability(): array
         'homeserver_authoritative_execution'=>true,
         'entitlement_reconciliation'=>true,
         'monotonic_entitlement_revisions'=>true,
+        'stale_remote_revision_rebase'=>true,
         'site_reconciliation'=>true,
         'observed_state_preserved_on_sync_failure'=>true,
         'certificate_state_atomic'=>true,
