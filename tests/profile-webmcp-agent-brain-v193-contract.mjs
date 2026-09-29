@@ -22,7 +22,8 @@ assert.match(bridge,/vp3_profile_webmcp_resolve_intent_v100/,'planner must reuse
 assert.match(bridge,/vp3_profile_webmcp_tool_catalog_v100/,'recommended tools must derive from trusted catalog');
 assert.match(bridge,/'execution_allowed'=>false/,'Agent Brain must remain planning-only');
 assert.match(bridge,/'requires_signed_profile_surface'=>true/,'transaction execution must hand off to signed Profile surface');
-assert.match(bridge,/\$profilePath='\/'\.rawurlencode/,'Agent handoff action must use same-origin relative Profile path');
+assert.match(bridge,/vp3_profile_webmcp_resume_issue_v194/,'Agent handoff must issue a session-bound resume token');
+assert.match(bridge,/\$profilePath=\(string\)\$resume\['path'\]/,'Agent handoff action must use the validated same-origin resume path');
 assert.doesNotMatch(bridge,/vp3_profile_webmcp_dispatch_v191|_confirm_v1(?:50|60|70|82|83)\s*\(/,'Agent Brain bridge must not execute transactional WebMCP tools');
 
 assert.match(bridge,/function vp3_agent_profile_webmcp_authorize_plan_v193/);
