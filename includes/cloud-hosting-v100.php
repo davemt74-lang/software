@@ -19,6 +19,28 @@ function vp3_cloud_hosting_schema_ready_v100(?PDO $pdo=null): bool
         && table_exists('cloud_hosting_site_events');
 }
 
+
+function vp3_cloud_hosting_seed_package_entitlements_v100(PDO $pdo): void
+{
+    if(!table_exists('subscription_packages')||!table_exists('package_entitlements'))return;
+    $stmt=$pdo->query("SELECT id,slug FROM subscription_packages WHERE slug IN ('basic','basic-user')");
+    $rows=$stmt?$stmt->fetchAll():[];
+    if(!$rows)return;
+    $upsert=$pdo->prepare("INSERT INTO package_entitlements (package_id,capability_key,is_enabled,limit_value)
+      VALUES (?,?,?,?)
+      ON DUPLICATE KEY UPDATE is_enabled=VALUES(is_enabled),limit_value=CASE
+        WHEN package_entitlements.limit_value IS NULL THEN VALUES(limit_value)
+        ELSE package_entitlements.limit_value
+      END");
+    foreach($rows as $row){
+        $id=(int)($row['id']??0);if($id<1)continue;
+        $upsert->execute([$id,'hosting.access',1,null]);
+        $upsert->execute([$id,'hosting.sites',1,1]);
+        $upsert->execute([$id,'hosting.subdomains',1,1]);
+    }
+}
+
+
 function vp3_cloud_hosting_ensure_schema_v100(?PDO $pdo=null): void
 {
     $pdo??=db();
@@ -74,6 +96,8 @@ function vp3_cloud_hosting_ensure_schema_v100(?PDO $pdo=null): void
       CONSTRAINT fk_cloud_hosting_event_site FOREIGN KEY (site_id) REFERENCES cloud_hosting_sites(id) ON DELETE CASCADE,
       CONSTRAINT fk_cloud_hosting_event_actor FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    vp3_cloud_hosting_seed_package_entitlements_v100($pdo);
 }
 
 function vp3_cloud_hosting_site_key_v100(): string
