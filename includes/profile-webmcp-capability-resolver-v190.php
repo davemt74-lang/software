@@ -148,6 +148,7 @@ function vp3_profile_webmcp_resolve_capabilities_v190(
         $capability=(string)($tool['capability']??'');
         if(empty($capabilities[$capability]))continue;
         if(function_exists('vp3_profile_webmcp_tool_runtime_ready_v150')&&!vp3_profile_webmcp_tool_runtime_ready_v150($pdo,$name))continue;
+        if(function_exists('vp3_profile_webmcp_tool_available_v203')&&!vp3_profile_webmcp_tool_available_v203($name,$catalog))continue;
         $allowed[]=$name;
     }
     sort($allowed);
