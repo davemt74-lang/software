@@ -89,9 +89,9 @@
   }
   function confirmationCard(action){
     if(!thread||action?.contract!=='vp3.webmcp.action.v1'||action?.phase!=='prepared'||!action?.requires_confirmation)return null;
-    const intentId=String(action.intent_id||'');
-    if(!intentId)return null;
-    const existing=thread.querySelector(`[data-webmcp-confirmation="${CSS.escape(intentId)}"]`);
+    const intentId=String(action.intent_id||'').toLowerCase();
+    if(!/^[a-f0-9]{32}$/.test(intentId))return null;
+    const existing=thread.querySelector(`[data-webmcp-confirmation="${intentId}"]`);
     if(existing)existing.remove();
 
     const card=document.createElement('section');
@@ -151,9 +151,9 @@
     return card;
   }
   function confirmationResult(detail){
-    const intentId=String(detail?.intent_id||'');
-    if(!intentId||!thread)return;
-    const card=thread.querySelector(`[data-webmcp-confirmation="${CSS.escape(intentId)}"]`);
+    const intentId=String(detail?.intent_id||'').toLowerCase();
+    if(!/^[a-f0-9]{32}$/.test(intentId)||!thread)return;
+    const card=thread.querySelector(`[data-webmcp-confirmation="${intentId}"]`);
     if(!card)return;
     const feedback=card.querySelector('.profile-agent-confirmation-feedback');
     const controls=card.querySelectorAll('button,input');
