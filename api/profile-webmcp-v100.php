@@ -76,6 +76,11 @@ if (!vp3_profile_webmcp_rate_limit_v100($ownerUserId)) {
 if ((string)($input['manifest_version'] ?? '') !== VP3_PROFILE_WEBMCP_MANIFEST_V100) {
     vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'MANIFEST_VERSION_UNSUPPORTED','message'=>'Unsupported profile WebMCP manifest.']], 400);
 }
+$clientVersions=vp3_profile_webmcp_client_versions_v200($input);
+$negotiation=vp3_profile_webmcp_negotiate_v200('native_profile',$clientVersions);
+if(empty($negotiation['compatible'])){
+    vp3_profile_webmcp_json_v100(false,vp3_profile_webmcp_negotiation_error_v200($negotiation),409);
+}
 if ((string)($input['surface'] ?? '') !== 'native_profile') {
     vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'SURFACE_MISMATCH','message'=>'This endpoint accepts only native-profile WebMCP requests.']], 403);
 }
@@ -83,6 +88,7 @@ if ((string)($input['surface'] ?? '') !== 'native_profile') {
 $viewer = current_user();
 try {
     $manifest = vp3_profile_webmcp_manifest_v100($pdo, $profile, $viewer, ['surface'=>'native_profile']);
+    $manifest['negotiation']=$negotiation;
 } catch (Throwable $e) {
     error_log('VP3 Profile WebMCP manifest failed @'.$username.': '.$e->getMessage());
     vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'PROFILE_UNAVAILABLE','message'=>'Profile capabilities are temporarily unavailable.']], 503);
