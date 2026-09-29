@@ -128,6 +128,9 @@ $pending=vp3_cloud_hosting_v110_verify_dns($site,1,fn(string $host)=>[]);
 if(($pending['dns_state']??'')!=='pending')throw new RuntimeException('Unresolved DNS should remain pending.');
 $afterPending=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
 if((int)($afterPending['desired_revision']??0)!==3)throw new RuntimeException('DNS propagation state did not advance desired revision.');
+$pendingAgain=vp3_cloud_hosting_v110_verify_dns($site,1,fn(string $host)=>[]);
+$afterPendingAgain=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
+if((int)($afterPendingAgain['desired_revision']??0)!==3)throw new RuntimeException('Repeated DNS polling should not churn desired revision.');
 $verified=vp3_cloud_hosting_v110_verify_dns($site,1,fn(string $host)=>[['type'=>'CNAME','target'=>'HOSTING-EDGE.EXAMPLE.NET.']]);
 if(($verified['dns_state']??'')!=='verified')throw new RuntimeException('Matching DNS CNAME was not verified.');
 $afterVerified=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
@@ -142,6 +145,10 @@ $projection=vp3_cloud_hosting_v110_desired_projection($site,$testPdo);
 if((int)($projection['revision']??0)!==5)throw new RuntimeException('HomeServer route projection did not use current revision.');
 if(empty($projection['public_route']['ready']))throw new RuntimeException('HomeServer route projection should be ready after DNS+TLS activation.');
 if(($projection['public_route']['tls_authority']??'')!=='cloud_edge')throw new RuntimeException('HomeServer projection lost Cloud-edge TLS authority.');
+
+$tlsAgain=vp3_cloud_hosting_v110_mark_tls_state($site,'active',1);
+$afterTlsAgain=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
+if((int)($afterTlsAgain['desired_revision']??0)!==5)throw new RuntimeException('Repeated TLS state should not churn desired revision.');
 
 $site2=vp3_cloud_hosting_create_site_v100($owner,[
     'display_name'=>'Outside Zone',
