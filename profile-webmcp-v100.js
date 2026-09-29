@@ -180,6 +180,8 @@ export class VP3ProfileWebMCPRuntimeV100 {
     this.confirmationHandler=event=>this.#handleConfirmationRequest(event);
     this.resumeContinueListenerAttached=false;
     this.resumeContinueHandler=event=>this.#handleResumeContinue(event);
+    this.cancelListenerAttached=false;
+    this.cancelHandler=event=>this.#handleCancelledAction(event);
     this.resumeContext=null;
   }
 
@@ -206,6 +208,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
     if(!this.resumeContinueListenerAttached&&this.documentObject?.addEventListener){
       this.documentObject.addEventListener('vp3:webmcp-resume-continue',this.resumeContinueHandler);
       this.resumeContinueListenerAttached=true;
+    }
+    if(!this.cancelListenerAttached&&this.documentObject?.addEventListener){
+      this.documentObject.addEventListener('vp3:webmcp-cancel',this.cancelHandler);
+      this.cancelListenerAttached=true;
     }
     return {supported:true,registered};
   }
@@ -280,6 +286,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
       this.documentObject.removeEventListener('vp3:webmcp-resume-continue',this.resumeContinueHandler);
       this.resumeContinueListenerAttached=false;
     }
+    if(this.cancelListenerAttached&&this.documentObject?.removeEventListener){
+      this.documentObject.removeEventListener('vp3:webmcp-cancel',this.cancelHandler);
+      this.cancelListenerAttached=false;
+    }
     this.onEvent({event:'runtime_stopped'});
   }
 
@@ -312,6 +322,12 @@ export class VP3ProfileWebMCPRuntimeV100 {
     }
     const result=await this.#execute(String(selected.name),{},{});
     this.#dispatchConfirmationEvent('vp3:webmcp-resume-result',{ok:result?.ok===true,tool:String(selected.name),result,detail});
+  }
+
+  async #handleCancelledAction(event) {
+    const action=event?.detail?.action||{};
+    if(action?.contract!=='vp3.webmcp.action.v1')return;
+    await this.noteContinuity(String(action.prepare_tool||action.confirm_tool||''),'cancelled','',false);
   }
 
   async noteContinuity(tool,phase,resultCode='',idempotentReplay=false) {
