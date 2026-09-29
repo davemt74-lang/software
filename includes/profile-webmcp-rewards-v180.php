@@ -346,6 +346,7 @@ function vp3_profile_webmcp_reward_transfer_contact_hash_v183(array $row): strin
         'name'=>(string)($row['name']??''),
         'email_normalized'=>(string)($row['email_normalized']??strtolower(trim((string)($row['email']??'')))),
         'company'=>(string)($row['company']??''),
+        'phone'=>(string)($row['phone']??''),
         'vp3_user_id'=>(int)($row['vp3_user_id']??0),
         'status'=>(string)($row['status']??''),
         'updated_at'=>(string)($row['updated_at']??''),
