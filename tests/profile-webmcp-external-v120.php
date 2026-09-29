@@ -27,7 +27,10 @@ function vp3_profile_webmcp_tool_catalog_v100(): array {
       'vp3.profile.get'=>['capability'=>'profile'],
       'vp3.intent.resolve'=>['capability'=>'profile'],
       'vp3.agent.get'=>['capability'=>'profile_agent'],
+      'vp3.agent.chat.start'=>['capability'=>'profile_agent'],
+      'vp3.agent.conversation.get'=>['capability'=>'profile_agent'],
       'vp3.agent.message.send'=>['capability'=>'profile_agent'],
+      'vp3.agent.owner_handoff.request'=>['capability'=>'profile_agent'],
       'vp3.booking.options.list'=>['capability'=>'booking'],
     ];
 }
@@ -73,7 +76,8 @@ $state=['sites'=>[
 ]];
 $enriched=vp3_profile_webmcp_external_enrich_site_state_v120($pdo,['id'=>123],$state);
 t($enriched['sites'][0]['webmcp_enabled']===true,'active site WebMCP enabled');
-t($enriched['sites'][0]['webmcp_tool_count']===4,'active site tool count');
+t($enriched['sites'][0]['webmcp_tool_count']===8,'active site tool count including public Agent chat');
+t($enriched['sites'][0]['webmcp_chat_enabled']===true,'active site reports Agent chat enabled');
 t($enriched['sites'][1]['webmcp_enabled']===false,'paused site WebMCP disabled');
 t($enriched['sites'][1]['webmcp_tool_count']===0,'paused site has no tools');
 
