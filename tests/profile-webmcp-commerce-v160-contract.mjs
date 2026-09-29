@@ -52,7 +52,9 @@ assert.match(commerce,/private_delivery_available/);
 const deliveryStart=commerce.indexOf('function vp3_profile_webmcp_commerce_delivery_get_v160');
 const deliveryEnd=commerce.indexOf('\nfunction ',deliveryStart+20);
 const delivery=commerce.slice(deliveryStart,deliveryEnd);
-assert.doesNotMatch(delivery,/\['message'\]|\['resource_url'\]|original_name|storage_path/,'delivery tool must not embed private delivery contents/files');
+const deliveryReturn=delivery.slice(delivery.indexOf('return ['));
+assert.doesNotMatch(deliveryReturn,/'message'\s*=>|'resource_url'\s*=>|'resource_label'\s*=>|original_name\s*=>|storage_path\s*=>/,'delivery tool must not return private delivery contents/files');
+assert.match(delivery,/delivery_resource_available/,'delivery tool may derive a safe resource-available boolean from canonical delivery metadata');
 
 assert.match(commerce,/profile_commerce_receipt_token_v1100/,'checkout prepare must mint canonical receipt authority');
 assert.match(commerce,/receipt_token_sha256/,'canonical order must store only receipt token hash');
