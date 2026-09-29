@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-profile-webmcp-v193.php';
+
 /**
  * VP3 v4.00 canonical Agent tool authorization and execution boundary.
  *
@@ -14,7 +16,7 @@ const VP3_AGENT_TOOL_AUTHORIZATION_V400='vp3-agent-tool-authorization-v400-20260
 
 function vp3_agent_tool_empty_v400(): array
 {
-    return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+    return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'profile_webmcp_plan'=>null];
 }
 
 function vp3_agent_tool_track_manage_v400(PDO $pdo,array $track,array $user): bool
@@ -281,6 +283,13 @@ function vp3_agent_tool_authorize_result_v400(array $result,array $user,string $
         if($clean)$actions[]=$clean;
     }
     $result['actions']=$actions;
+    if(isset($result['profile_webmcp_plan'])&&is_array($result['profile_webmcp_plan'])&&function_exists('vp3_agent_profile_webmcp_authorize_plan_v193')){
+        $result['profile_webmcp_plan']=$pdo
+            ?vp3_agent_profile_webmcp_authorize_plan_v193($pdo,$result['profile_webmcp_plan'],$user)
+            :null;
+    }else{
+        $result['profile_webmcp_plan']=null;
+    }
     $result['authorization']=['version'=>'v4.00','principal_user_id'=>(int)($user['id']??0),'server_derived'=>true];
     return $result;
 }
@@ -302,6 +311,24 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
     if(function_exists('homeserver_agent_read_v230_query')){
         $homeRead=homeserver_agent_read_v230_query($query,$user,$conversationId);
         if(!empty($homeRead['handled']))return vp3_agent_tool_authorize_result_v400($homeRead,$user,$query);
+    }
+
+    // Explicit Profile/WebMCP requests use the existing agent_brain capability
+    // surface. Planning is allowed here; execution remains on the signed Profile
+    // surface so Chat never becomes a parallel transactional authority.
+    if(function_exists('vp3_agent_profile_webmcp_plan_v193')){
+        $profileWebmcp=vp3_agent_profile_webmcp_plan_v193($pdo,$query,$user);
+        if(is_array($profileWebmcp)&&!empty($profileWebmcp['handled'])){
+            if(function_exists('agent_tool_log')){
+                agent_tool_log(
+                    $user,'profile_webmcp.plan',$query,'success',
+                    ['profile_username'=>(string)($profileWebmcp['profile_webmcp_plan']['profile_username']??''),
+                     'execution_allowed'=>false],
+                    $conversationId
+                );
+            }
+            return vp3_agent_tool_authorize_result_v400($profileWebmcp,$user,$query);
+        }
     }
 
     // Team scheduling is more specific than personal scheduling and must route
