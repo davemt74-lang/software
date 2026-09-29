@@ -80,6 +80,7 @@ function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,arra
 {
     $resolution=vp3_profile_webmcp_resolve_capabilities_v190($pdo,$profile,null,[
         'surface'=>'external_site',
+        'capabilities'=>vp3_profile_webmcp_capabilities_v100($pdo,$profile,null),
         'features'=>[
             'stateful_chat'=>$statefulChat,
             'scheduling'=>$scheduling,
