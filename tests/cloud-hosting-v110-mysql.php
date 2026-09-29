@@ -104,6 +104,7 @@ if(($route['record_value']??'')!=='hosting-edge.example.net')throw new RuntimeEx
 if(count($requests)!==1)throw new RuntimeException('Expected exactly one provider call.');
 if(!str_contains($requests[0]['url'],'ZoneEdit')||!str_contains($requests[0]['url'],'add_zone_record'))throw new RuntimeException('Expected cPanel ZoneEdit add_zone_record call.');
 if(!str_contains($requests[0]['url'],'type=CNAME'))throw new RuntimeException('Expected CNAME provider request.');
+if(!str_contains($requests[0]['url'],'name=demo'))throw new RuntimeException('Expected zone-relative cPanel record name.');
 if(!in_array('Authorization: cpanel vp3user:CPANEL_SECRET_TOKEN',$requests[0]['headers'],true))throw new RuntimeException('cPanel token auth header missing.');
 
 $replay=vp3_cloud_hosting_v110_provision_dns($site,'dns-request-1',1,$transport);
@@ -123,7 +124,6 @@ try{
 
 $pending=vp3_cloud_hosting_v110_verify_dns($site,1,fn(string $host)=>[]);
 if(($pending['dns_state']??'')!=='pending')throw new RuntimeException('Unresolved DNS should remain pending.');
-$testPdo->prepare("UPDATE cloud_hosting_routes SET dns_state='provisioned' WHERE site_id=?")->execute([(int)$site['id']]);
 $verified=vp3_cloud_hosting_v110_verify_dns($site,1,fn(string $host)=>[['type'=>'CNAME','target'=>'HOSTING-EDGE.EXAMPLE.NET.']]);
 if(($verified['dns_state']??'')!=='verified')throw new RuntimeException('Matching DNS CNAME was not verified.');
 
