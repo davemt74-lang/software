@@ -69,6 +69,18 @@ function vp3_profile_webmcp_site_record_origin_denied_v204(PDO $pdo,array $prope
     }
 }
 
+function vp3_profile_webmcp_site_status_v204(
+    bool $active,bool $verified,string $runtimeState,bool $stale,bool $manifestFailed,int $originDenied
+): string {
+    if(!$active)return 'paused';
+    if(!$verified)return 'unverified';
+    if($runtimeState==='upgrade_required')return 'upgrade_required';
+    if($stale)return 'stale';
+    if($manifestFailed)return 'degraded';
+    if($originDenied>0)return 'origin_attention';
+    return 'healthy';
+}
+
 function vp3_profile_webmcp_site_state_v204(PDO $pdo,array $property): array
 {
     $id=(int)($property['id']??0);$owner=(int)($property['owner_user_id']??0);
@@ -81,12 +93,14 @@ function vp3_profile_webmcp_site_state_v204(PDO $pdo,array $property): array
     $runtimeState=$observed===''?'unseen':(hash_equals($expected,$observed)?'current':'upgrade_required');
 
     $features=['chat'=>false,'scheduling'=>false,'commerce'=>false,'campaigns'=>false,'read_only'=>true];
-    $toolCount=0;$manifestError='';
+    $tools=[];$toolCount=0;$manifestError='';
     if($active&&$owner>0&&function_exists('vp3_profile_webmcp_external_profile_v120')&&function_exists('vp3_profile_webmcp_external_manifest_v120')){
         try{
             $profile=vp3_profile_webmcp_external_profile_v120($pdo,$property);
             $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$property,$profile,true,true,true,true);
-            $toolCount=count((array)($manifest['allowed_tools']??[]));
+            $tools=array_values(array_map('strval',(array)($manifest['allowed_tools']??[])));
+            sort($tools);
+            $toolCount=count($tools);
             $external=(array)($manifest['external']??[]);
             $features=[
                 'chat'=>!empty($external['stateful_profile_agent']),
@@ -98,15 +112,10 @@ function vp3_profile_webmcp_site_state_v204(PDO $pdo,array $property): array
         }catch(Throwable $e){$manifestError='manifest_unavailable';}
     }
 
-    $status='healthy';
-    if(!$active)$status='paused';
-    elseif(!$verified)$status='unverified';
-    elseif($runtimeState==='upgrade_required')$status='upgrade_required';
-    elseif($stale)$status='stale';
-    elseif($manifestError!=='')$status='degraded';
-
     $originDenied=vp3_profile_webmcp_site_origin_denied_count_v204($pdo,$id);
-    if($originDenied>0&&$status==='healthy')$status='origin_attention';
+    $status=vp3_profile_webmcp_site_status_v204(
+        $active,$verified,$runtimeState,$stale,$manifestError!=='',$originDenied
+    );
 
     return [
         'contract'=>VP3_PROFILE_WEBMCP_SITES_CONTRACT_V204,
@@ -131,6 +140,7 @@ function vp3_profile_webmcp_site_state_v204(PDO $pdo,array $property): array
         'negotiation_mode'=>(string)($latest['negotiation_mode']??''),
         'origin_denied_30d'=>$originDenied,
         'tool_count'=>$toolCount,
+        'allowed_tools'=>$tools,
         'features'=>$features,
         'upgrade_required'=>$runtimeState==='upgrade_required',
         'reverify_required'=>$active&&!$verified,
