@@ -19,7 +19,7 @@ function personal_capability_has_v242(string $cap,array $user): bool { return $G
 function profile_active_agent(PDO $pdo,array $profile): ?array { return $GLOBALS['vp3_ext_agent_enabled']?['id'=>77,'display_name'=>'Profile Agent','instructions'=>'private']:null; }
 function system_agent_name(): string { return 'Stonefellow'; }
 function vp3_profile_webmcp_actions_schema_ready_v150(?PDO $pdo=null): bool { return true; }
-function vp3_profile_webmcp_tool_runtime_ready_v150(PDO $pdo,string $tool): bool { return !str_contains($tool,'.booking.') || vp3_profile_webmcp_actions_schema_ready_v150($pdo); }
+function vp3_profile_webmcp_tool_runtime_ready_v150(PDO $pdo,string $tool): bool { return (!str_contains($tool,'.booking.')&&!str_contains($tool,'.commerce.')) || vp3_profile_webmcp_actions_schema_ready_v150($pdo); }
 function vp3_profile_webmcp_capabilities_v100(PDO $pdo,array $profile,?array $viewer): array {
     return ['profile'=>true,'profile_agent'=>$GLOBALS['vp3_ext_agent_enabled'],'booking'=>true,'commerce'=>true,'campaigns'=>true,'rewards'=>false,'social'=>false,'messaging'=>false];
 }
@@ -42,6 +42,16 @@ function vp3_profile_webmcp_tool_catalog_v100(): array {
       'vp3.booking.reschedule.confirm'=>['capability'=>'booking'],
       'vp3.booking.cancel.prepare'=>['capability'=>'booking'],
       'vp3.booking.cancel.confirm'=>['capability'=>'booking'],
+      'vp3.commerce.products.list'=>['capability'=>'commerce'],
+      'vp3.commerce.product.get'=>['capability'=>'commerce'],
+      'vp3.commerce.checkout.prepare'=>['capability'=>'commerce'],
+      'vp3.commerce.checkout.confirm'=>['capability'=>'commerce'],
+      'vp3.commerce.order.get'=>['capability'=>'commerce'],
+      'vp3.commerce.receipt.get'=>['capability'=>'commerce'],
+      'vp3.commerce.delivery.get'=>['capability'=>'commerce'],
+      'vp3.commerce.refund.status'=>['capability'=>'commerce'],
+      'vp3.commerce.refund.prepare'=>['capability'=>'commerce'],
+      'vp3.commerce.refund.confirm'=>['capability'=>'commerce'],
     ];
 }
 function url(string $path): string { return 'https://vp3.example'.$path; }
@@ -86,9 +96,10 @@ $state=['sites'=>[
 ]];
 $enriched=vp3_profile_webmcp_external_enrich_site_state_v120($pdo,['id'=>123],$state);
 t($enriched['sites'][0]['webmcp_enabled']===true,'active site WebMCP enabled');
-t($enriched['sites'][0]['webmcp_tool_count']===17,'active site tool count including Agent chat and Scheduling');
+t($enriched['sites'][0]['webmcp_tool_count']===27,'active site tool count including Agent chat, Scheduling, and Commerce');
 t($enriched['sites'][0]['webmcp_chat_enabled']===true,'active site reports Agent chat enabled');
 t($enriched['sites'][0]['webmcp_scheduling_enabled']===true,'active site reports Scheduling enabled');
+t($enriched['sites'][0]['webmcp_commerce_enabled']===true,'active site reports Commerce enabled');
 t($enriched['sites'][1]['webmcp_enabled']===false,'paused site WebMCP disabled');
 t($enriched['sites'][1]['webmcp_tool_count']===0,'paused site has no tools');
 
