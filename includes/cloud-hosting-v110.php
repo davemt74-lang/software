@@ -414,7 +414,11 @@ function vp3_cloud_hosting_v110_verify_dns(array $site,?int $actorUserId=null,?c
     }
     if(!$matched){
         $pdo->prepare("UPDATE cloud_hosting_routes SET dns_state='pending',last_provider_status='waiting_dns',last_error_code='',last_error_message='' WHERE site_id=?")->execute([$siteId]);
-        vp3_cloud_hosting_v110_bump_site_route_state($pdo,$siteId,null,'pending',null);
+        $stmt=$pdo->prepare('SELECT route_state FROM cloud_hosting_sites WHERE id=? LIMIT 1');
+        $stmt->execute([$siteId]);
+        if((string)$stmt->fetchColumn()!=='pending'){
+            vp3_cloud_hosting_v110_bump_site_route_state($pdo,$siteId,null,'pending',null);
+        }
         return vp3_cloud_hosting_v110_route_for_site($siteId,$pdo)??[];
     }
     $pdo->prepare("UPDATE cloud_hosting_routes SET dns_state='verified',last_provider_status='verified',verified_at=NOW() WHERE site_id=?")->execute([$siteId]);
@@ -434,6 +438,7 @@ function vp3_cloud_hosting_v110_mark_tls_state(array $site,string $state,?int $a
     $route=vp3_cloud_hosting_v110_route_for_site($siteId,$pdo);
     if($route===null)throw new RuntimeException('DNS route is not provisioned.');
     if($state==='active'&&(string)$route['dns_state']!=='verified')throw new RuntimeException('DNS must be verified before Cloud-edge TLS can become active.');
+    if((string)$route['tls_state']===$state)return $route;
     $pdo->prepare('UPDATE cloud_hosting_routes SET tls_state=? WHERE site_id=?')->execute([$state,$siteId]);
     $revision=vp3_cloud_hosting_v110_bump_site_route_state($pdo,$siteId,null,null,$state);
     vp3_cloud_hosting_event_v100($pdo,$siteId,'tls.'.$state,$state,$revision,$actorUserId,[
