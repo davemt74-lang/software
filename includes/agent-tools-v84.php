@@ -398,6 +398,11 @@ function agent_tool_execute_query(string $query, array $user, int $conversationI
     $q = mb_strtolower(trim($query));
     $empty = ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
 
+    if(function_exists('vp3_cloud_hosting_agent_v130_query')){
+        $hosting=vp3_cloud_hosting_agent_v130_query($query,$user,$conversationId);
+        if(!empty($hosting['handled']))return $hosting;
+    }
+
     if(function_exists('tracky_agent_tools_query_v271')){
         $tracky=tracky_agent_tools_query_v271($query,$user,$conversationId);
         if(!empty($tracky['handled']))return $tracky;
