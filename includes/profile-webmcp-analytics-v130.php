@@ -225,7 +225,7 @@ function vp3_profile_webmcp_owner_activity_v130(PDO $pdo,int $ownerUserId,int $p
             'property_label'=>(string)$row['property_label'],'property_domain'=>(string)$row['domain'],
             'agent_contact_id'=>$row['agent_contact_id']!==null?(int)$row['agent_contact_id']:null,
             'display_name'=>(string)($row['display_name']??''),'operator_name'=>(string)($row['operator_name']??''),
-            'surface'=>(string)($details['surface']??''),'tool'=>(string)($details['tool']??''),'status'=>(string)($details['status']??''),
+            'surface'=>(string)($details['surface']??''),'tool'=>(string)($details['tool']??''),'status'=>(string)($details['status']??''),'result_code'=>(string)($details['result_code']??''),
             'client_manifest_version'=>(string)($details['client_manifest_version']??''),'client_release_version'=>(string)($details['client_release_version']??''),'client_runtime_build'=>(string)($details['client_runtime_build']??''),'negotiation_mode'=>(string)($details['negotiation_mode']??''),
             'interaction_id'=>(string)($details['interaction_id']??''),'attribution_origin'=>(string)($details['attribution_origin']??''),
             'referral_id'=>(int)($details['referral_id']??0)?:null,'duration_ms'=>(int)($details['duration_ms']??0),
