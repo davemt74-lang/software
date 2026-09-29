@@ -49,6 +49,7 @@ try {
     vp3_human_messaging_v370_migrate_legacy($pdo);
     music_workspace_release_schema_v330_ensure($pdo);
     music_workspace_resources_v330_ensure_schema($pdo);
+    music_artist_v100_ensure_schema($pdo);
     password_reset_ensure_schema();
     user_agent_system_ensure_schema_v236($pdo);
     vp3_user_agent_lifecycle_ensure_schema_v390($pdo);
