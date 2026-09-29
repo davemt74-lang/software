@@ -285,14 +285,22 @@ function vp3_profile_webmcp_resolve_intent_v100(string $goal, array $manifest): 
         }
     }
     if (!$matches) $matches[] = !empty($manifest['capabilities']['profile_agent']) ? 'profile_agent' : 'profile';
+    $registeredTools=array_values($manifest['allowed_tools']??[]);
+    $catalog=vp3_profile_webmcp_tool_catalog_v100();
+    $registeredCapabilities=[];
+    foreach($registeredTools as $toolName){
+        $capability=(string)($catalog[$toolName]['capability']??'');
+        if($capability!=='')$registeredCapabilities[$capability]=true;
+    }
+    $uniqueMatches=array_values(array_unique($matches));
     return [
-        'goal' => $goal,
-        'recommended_capabilities' => array_values(array_unique($matches)),
-        'registered_tools' => array_values($manifest['allowed_tools'] ?? []),
-        'execution_performed' => false,
-        'requires_domain_adapter' => array_values(array_filter(
-            array_unique($matches),
-            static fn(string $capability): bool => !in_array($capability, ['profile','profile_agent','booking','commerce'], true)
+        'goal'=>$goal,
+        'recommended_capabilities'=>$uniqueMatches,
+        'registered_tools'=>$registeredTools,
+        'execution_performed'=>false,
+        'requires_domain_adapter'=>array_values(array_filter(
+            $uniqueMatches,
+            static fn(string $capability):bool=>empty($registeredCapabilities[$capability])
         )),
     ];
 }
