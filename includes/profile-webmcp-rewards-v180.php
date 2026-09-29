@@ -15,6 +15,18 @@ function vp3_profile_webmcp_rewards_tool_catalog_v180(): array
             'input_schema'=>['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
             'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>false,'consequentialHint'=>false,'debugging'=>false],
         ],
+        'vp3.reward.get'=>[
+            'title'=>'Get my Reward',
+            'description'=>'Return one safe Reward Wallet item by opaque Reward public ID, including claim readiness without revealing the Reward credential.',
+            'capability'=>'rewards',
+            'input_schema'=>[
+                'type'=>'object',
+                'properties'=>['reward_public_id'=>['type'=>'string','minLength'=>1,'maxLength'=>100]],
+                'required'=>['reward_public_id'],
+                'additionalProperties'=>false,
+            ],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>false,'consequentialHint'=>false,'debugging'=>false],
+        ],
     ];
 }
 
@@ -63,4 +75,24 @@ function vp3_profile_webmcp_rewards_wallet_v180(PDO $pdo,?array $viewer): array
         $out['counts'][$bucket]=count($out[$bucket]);
     }
     return ['wallet'=>$out,'authenticated_viewer'=>true];
+}
+
+
+function vp3_profile_webmcp_reward_get_v181(PDO $pdo,?array $viewer,array $input): array
+{
+    $publicId=trim((string)($input['reward_public_id']??''));
+    if($publicId==='')throw new RuntimeException('Choose a Reward from your Wallet.');
+    $wallet=vp3_profile_webmcp_rewards_wallet_v180($pdo,$viewer)['wallet'];
+    foreach(['inbox','sent','claimed'] as $bucket){
+        foreach((array)($wallet[$bucket]??[]) as $reward){
+            if(!is_array($reward)||!hash_equals((string)($reward['public_id']??''),$publicId))continue;
+            return [
+                'reward'=>$reward,
+                'claim_handoff_required'=>!empty($reward['claimable']),
+                'claim_handoff_url'=>!empty($reward['claimable'])?url('/reward-inbox.php'):'',
+                'credential_exposed'=>false,
+            ];
+        }
+    }
+    throw new RuntimeException('Reward not found in your Wallet.');
 }

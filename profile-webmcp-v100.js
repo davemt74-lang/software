@@ -8,7 +8,8 @@ function deepFreeze(value) {
 }
 
 const REWARDS_CATALOG_V180=deepFreeze({
-  'vp3.rewards.wallet.get':{title:'Get my Reward Wallet',description:'Return the signed-in viewer\'s safe Reward Inbox, Sent, and Claimed projections.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:false,consequentialHint:false,debugging:false}}
+  'vp3.rewards.wallet.get':{title:'Get my Reward Wallet',description:'Return the signed-in viewer\'s safe Reward Inbox, Sent, and Claimed projections.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:false,consequentialHint:false,debugging:false}},
+  'vp3.reward.get':{title:'Get my Reward',description:'Return one safe Reward Wallet item by opaque public ID, including claim readiness without revealing credentials.',inputSchema:{type:'object',properties:{reward_public_id:{type:'string',minLength:1,maxLength:100}},required:['reward_public_id'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:false,consequentialHint:false,debugging:false}}
 });
 
 const CAMPAIGNS_CATALOG_V170=deepFreeze({
