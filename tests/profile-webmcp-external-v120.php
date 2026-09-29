@@ -18,6 +18,7 @@ function profile_user_row(PDO $pdo,int $owner): ?array { return ['id'=>$owner,'d
 function personal_capability_has_v242(string $cap,array $user): bool { return $GLOBALS['vp3_ext_agent_enabled']; }
 function profile_active_agent(PDO $pdo,array $profile): ?array { return $GLOBALS['vp3_ext_agent_enabled']?['id'=>77,'display_name'=>'Profile Agent','instructions'=>'private']:null; }
 function system_agent_name(): string { return 'Stonefellow'; }
+function vp3_profile_webmcp_actions_schema_ready_v150(?PDO $pdo=null): bool { return true; }
 function vp3_profile_webmcp_capabilities_v100(PDO $pdo,array $profile,?array $viewer): array {
     return ['profile'=>true,'profile_agent'=>$GLOBALS['vp3_ext_agent_enabled'],'booking'=>true,'commerce'=>true,'campaigns'=>true,'rewards'=>false,'social'=>false,'messaging'=>false];
 }
