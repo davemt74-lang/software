@@ -343,6 +343,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_human_messaging_v370_migrate_legacy($pdo);
             music_workspace_release_schema_v330_ensure($pdo);
             music_workspace_resources_v330_ensure_schema($pdo);
+            music_artist_v100_ensure_schema($pdo);
             artist_media_v182_ensure_schema();
             artist_posts_v183_ensure_schema();
             artist_shows_v184_ensure_schema();
