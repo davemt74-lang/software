@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-v100.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-external-v120.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -14,7 +16,8 @@ function vp3_radar_sites_json(bool $ok,array $payload=[],int $status=200): never
 function vp3_radar_sites_state(PDO $pdo,array $user,array $state): array
 {
     $state=vp3_radar_server_enrich_site_state($pdo,$user,$state);
-    return vp3_analytics_enrich_site_state($pdo,$user,$state);
+    $state=vp3_analytics_enrich_site_state($pdo,$user,$state);
+    return vp3_profile_webmcp_external_enrich_site_state_v120($pdo,$user,$state);
 }
 
 $pdo=db();$user=current_user();
