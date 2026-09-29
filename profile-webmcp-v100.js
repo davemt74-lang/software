@@ -176,6 +176,8 @@ export class VP3ProfileWebMCPRuntimeV100 {
     this.registrations=new Map();
     this.confirmationListenerAttached=false;
     this.confirmationHandler=event=>this.#handleConfirmationRequest(event);
+    this.resumeContinueListenerAttached=false;
+    this.resumeContinueHandler=event=>this.#handleResumeContinue(event);
   }
 
   get supported() {
@@ -197,6 +199,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
     if(!this.confirmationListenerAttached&&this.documentObject?.addEventListener){
       this.documentObject.addEventListener('vp3:webmcp-confirm',this.confirmationHandler);
       this.confirmationListenerAttached=true;
+    }
+    if(!this.resumeContinueListenerAttached&&this.documentObject?.addEventListener){
+      this.documentObject.addEventListener('vp3:webmcp-resume-continue',this.resumeContinueHandler);
+      this.resumeContinueListenerAttached=true;
     }
     return {supported:true,registered};
   }
@@ -262,6 +268,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
       this.documentObject.removeEventListener('vp3:webmcp-confirm',this.confirmationHandler);
       this.confirmationListenerAttached=false;
     }
+    if(this.resumeContinueListenerAttached&&this.documentObject?.removeEventListener){
+      this.documentObject.removeEventListener('vp3:webmcp-resume-continue',this.resumeContinueHandler);
+      this.resumeContinueListenerAttached=false;
+    }
     this.onEvent({event:'runtime_stopped'});
   }
 
@@ -270,6 +280,30 @@ export class VP3ProfileWebMCPRuntimeV100 {
     if(typeof EventCtor==='function'&&this.documentObject?.dispatchEvent){
       this.documentObject.dispatchEvent(new EventCtor(name,{detail}));
     }
+  }
+
+  async #handleResumeContinue(event) {
+    const detail=event?.detail||{};
+    if(detail?.contract!=='vp3.webmcp.resume.v1')return;
+    const safeZeroInput=new Set([
+      'vp3.profile.get',
+      'vp3.booking.options.list',
+      'vp3.commerce.products.list',
+      'vp3.campaigns.list',
+      'vp3.rewards.wallet.get',
+      'vp3.loyalty.status.get'
+    ]);
+    const rows=Array.isArray(detail.recommended_tools)?detail.recommended_tools:[];
+    const selected=rows.find(row=>{
+      const name=String(row?.name||'');
+      return safeZeroInput.has(name)&&row?.read_only===true&&row?.consequential!==true&&this.effectiveToolNames().includes(name);
+    });
+    if(!selected){
+      this.#dispatchConfirmationEvent('vp3:webmcp-resume-result',{ok:true,tool:'',result:null,detail});
+      return;
+    }
+    const result=await this.#execute(String(selected.name),{},{});
+    this.#dispatchConfirmationEvent('vp3:webmcp-resume-result',{ok:result?.ok===true,tool:String(selected.name),result,detail});
   }
 
   async #handleConfirmationRequest(event) {
