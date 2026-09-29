@@ -412,9 +412,12 @@ function vp3_cloud_hosting_v120_reconcile_route(
 function vp3_cloud_hosting_v120_store_site_sync(PDO $pdo,int $siteId,int $revision,array $result,?string $error=null): void
 {
     if($error!==null&&$result===[]){
-        $stmt=$pdo->prepare("UPDATE cloud_hosting_site_sync SET last_error_code='remote_error',last_error_message=? WHERE site_id=?");
-        $stmt->execute([mb_substr($error,0,500),$siteId]);
-        if($stmt->rowCount()>0)return;
+        $stmt=$pdo->prepare("INSERT INTO cloud_hosting_site_sync
+          (site_id,last_sent_revision,last_error_code,last_error_message)
+          VALUES (?,?,'remote_error',?)
+          ON DUPLICATE KEY UPDATE last_error_code='remote_error',last_error_message=VALUES(last_error_message)");
+        $stmt->execute([$siteId,$revision,mb_substr($error,0,500)]);
+        return;
     }
     $public=vp3_cloud_hosting_v120_public_remote($result);
     $remoteRevision=(int)($result['revision']??0);
@@ -822,6 +825,8 @@ function vp3_cloud_hosting_v120_public_capability(): array
         'entitlement_reconciliation'=>true,
         'monotonic_entitlement_revisions'=>true,
         'site_reconciliation'=>true,
+        'observed_state_preserved_on_sync_failure'=>true,
+        'certificate_state_atomic'=>true,
         'route_reconciliation'=>true,
         'encrypted_route_token_storage'=>true,
         'chunked_deployment'=>true,
