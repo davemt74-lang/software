@@ -51,8 +51,10 @@ for(const name of [
   'vp3.rewards.wallet.get',
   'vp3.loyalty.status.get'
 ]) assert.match(runtime,new RegExp(name.replaceAll('.','\\.')));
-assert.doesNotMatch(runtime,/safeZeroInput[\s\S]*vp3\.(?:booking|commerce|campaign|rewards)\.[^'"]*confirm/,'resume Continue must not allow confirm tools');
-assert.doesNotMatch(runtime,/safeZeroInput[\s\S]*vp3\.(?:booking|commerce|campaign|rewards)\.[^'"]*prepare/,'resume Continue must not allow prepare tools');
+const safeBlock=runtime.match(/const safeZeroInput=new Set\(\[[\s\S]*?\]\);/)?.[0]||'';
+assert.ok(safeBlock,'safe zero-input resume allowlist must be inspectable');
+assert.doesNotMatch(safeBlock,/\.confirm['"]/,'resume Continue must not allow confirm tools');
+assert.doesNotMatch(safeBlock,/\.prepare['"]/,'resume Continue must not allow prepare tools');
 assert.match(runtime,/searchParams\.delete\('webmcp_resume'\)/,'opaque token must be removed from browser URL');
 
 assert.match(css,/Profile WebMCP v1\.94 cross-surface continuity/);
