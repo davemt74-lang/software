@@ -531,7 +531,7 @@ function vp3_cloud_hosting_agent_v130_query(
         }
     }
 
-    if(!$site){
+    if(!$site&&$customDomainHost===''){
         return ['handled'=>true,'answer'=>'I need a specific hosted site name or hostname before I can prepare that Hosting action.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
     }
 
@@ -583,7 +583,6 @@ function vp3_cloud_hosting_agent_v130_query(
         $preview=['site'=>(string)$site['display_name'],'revision'=>(int)$site['desired_revision']];
         $intro='I prepared Cloud ↔ HomeServer reconciliation for “'.(string)$site['display_name'].'”.';
     }}
-    }
 
     if($actionType!==''){
         try{
