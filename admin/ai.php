@@ -75,6 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             save_setting('hosting_cpanel_username', $cpanelUsername);
 
             $cpanelToken = trim((string)($_POST['cpanel_api_token'] ?? ''));
+            if ($cpanelToken !== '' && ($cpanelServer === '' || $cpanelUsername === '')) {
+                throw new RuntimeException('Enter the cPanel API server and username before saving a cPanel API token.');
+            }
             if (!empty($_POST['remove_cpanel_token'])) {
                 save_setting('hosting_cpanel_api_token', '');
             } elseif ($cpanelToken !== '') {
@@ -123,7 +126,7 @@ $anthropicCredentialState = ai_encrypted_secret_state((string)setting('ai_anthro
 $cpanelCredentialState = ai_encrypted_secret_state((string)setting('hosting_cpanel_api_token', ''));
 $cpanelPublicState = vp3_cloud_hosting_cpanel_public_state_v100();
 $credentialRecoveryMessage = $encryptedCredentialsExist && $credentialKeyState !== 'ready'
-    ? ai_credential_state_message($credentialKeyState, 'AI')
+    ? ai_credential_state_message($credentialKeyState, 'API')
     : '';
 
 $adminTitle = 'AI / API Settings';
@@ -133,7 +136,7 @@ require __DIR__ . '/_header.php';
 <div class="ai-admin-page">
 <?php if ($credentialRecoveryMessage !== ''): ?>
 <div class="vp3-alert error" role="alert">
-  <strong>AI credential recovery required.</strong>
+  <strong>API credential recovery required.</strong>
   <?= e($credentialRecoveryMessage) ?>
   The deploy process must preserve <code>/private/ai-key.php</code>; do not create a replacement key unless the original cannot be recovered.
 </div>
