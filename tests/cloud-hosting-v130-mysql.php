@@ -124,6 +124,18 @@ $row=$testPdo->query("SELECT * FROM cloud_hosting_agent_actions WHERE action_typ
 if(!$row||str_contains((string)$row['confirmation_token_hash'],$code))throw new RuntimeException('Confirmation code was stored in plaintext.');
 if(!hash_equals((string)$row['confirmation_token_hash'],hash('sha256',$code)))throw new RuntimeException('Confirmation code hash mismatch.');
 
+$testPdo->prepare("UPDATE cloud_hosting_agent_actions SET status='executing',execution_token='0123456789abcdef0123456789abcdef',execution_expires_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 5 MINUTE) WHERE id=?")->execute([(int)$row['id']]);
+try{
+    vp3_cloud_hosting_agent_v130_confirm($owner,$code,77,$remote,$provider,$testPdo);
+    throw new RuntimeException('Concurrent confirmation execution lease was bypassed.');
+}catch(RuntimeException $e){
+    if($e->getMessage()==='Concurrent confirmation execution lease was bypassed.')throw $e;
+    if(!str_contains($e->getMessage(),'already in progress'))throw $e;
+}
+$testPdo->prepare("UPDATE cloud_hosting_agent_actions SET execution_expires_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 SECOND) WHERE id=?")->execute([(int)$row['id']]);
+$reclaimed=vp3_cloud_hosting_agent_v130_confirm($owner,$code,77,$remote,$provider,$testPdo);
+if(empty($reclaimed['completed']))throw new RuntimeException('Expired Hosting action execution lease was not reclaimable.');
+
 try{
     vp3_cloud_hosting_agent_v130_confirm($other,$code,77,$remote,$provider,$testPdo);
     throw new RuntimeException('Another user confirmed the Hosting action.');
@@ -133,8 +145,6 @@ try{
 $before=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
 if(($before['desired_state']??'')!=='configured')throw new RuntimeException('Prepared action changed state before confirmation.');
 
-$confirmed=vp3_cloud_hosting_agent_v130_query('confirm hosting '.$code,$owner,77,$remote,$provider,$testPdo);
-if(empty($confirmed['hosting_plan']['completed']))throw new RuntimeException('Confirmed Hosting action did not complete.');
 $after=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
 if(($after['desired_state']??'')!=='active')throw new RuntimeException('Confirmed activation did not change desired state.');
 $completed=$testPdo->query("SELECT status,result_json FROM cloud_hosting_agent_actions WHERE public_id=".$testPdo->quote((string)$plan['action_id']))->fetch();
