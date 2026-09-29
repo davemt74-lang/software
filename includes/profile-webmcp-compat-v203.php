@@ -5,11 +5,10 @@ const VP3_PROFILE_WEBMCP_COMPAT_V203='profile-webmcp-compat-v203-20260929';
 const VP3_PROFILE_WEBMCP_COMPAT_CONTRACT_V203='vp3.profile.webmcp.compatibility.v1';
 const VP3_PROFILE_WEBMCP_TOOL_STATES_V203=['active','deprecated','sunset_pending','disabled'];
 
-function vp3_profile_webmcp_tool_registry_v203(array $catalog): array
+function vp3_profile_webmcp_tool_registry_v203(array $catalog,array $overrides=[]): array
 {
-    $overrides=[
-        // Explicit lifecycle overrides live here. Unlisted tools remain active.
-    ];
+    // Production callers use the canonical static registry (empty until a lifecycle change is declared).
+    // Tests/release tooling may inject an override map to prove fail-closed behavior.
     $out=[];
     foreach($catalog as $name=>$tool){
         $row=is_array($overrides[$name]??null)?$overrides[$name]:[];
@@ -27,17 +26,17 @@ function vp3_profile_webmcp_tool_registry_v203(array $catalog): array
     return $out;
 }
 
-function vp3_profile_webmcp_tool_lifecycle_v203(string $tool,array $catalog): array
+function vp3_profile_webmcp_tool_lifecycle_v203(string $tool,array $catalog,array $overrides=[]): array
 {
-    $registry=vp3_profile_webmcp_tool_registry_v203($catalog);
+    $registry=vp3_profile_webmcp_tool_registry_v203($catalog,$overrides);
     return $registry[$tool]??[
         'tool'=>$tool,'state'=>'disabled','introduced_release'=>'','replacement_tool'=>'','sunset_at'=>'','minimum_runtime_build'=>''
     ];
 }
 
-function vp3_profile_webmcp_tool_available_v203(string $tool,array $catalog,?int $now=null): bool
+function vp3_profile_webmcp_tool_available_v203(string $tool,array $catalog,?int $now=null,array $overrides=[]): bool
 {
-    $row=vp3_profile_webmcp_tool_lifecycle_v203($tool,$catalog);
+    $row=vp3_profile_webmcp_tool_lifecycle_v203($tool,$catalog,$overrides);
     if(($row['state']??'disabled')==='disabled')return false;
     $sunset=trim((string)($row['sunset_at']??''));
     if($sunset!==''){
