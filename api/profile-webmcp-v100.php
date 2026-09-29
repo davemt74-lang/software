@@ -86,7 +86,7 @@ $catalog = vp3_profile_webmcp_tool_catalog_v100();
 $telemetryContext=vp3_profile_webmcp_context_v130($pdo,$profile,'native_profile',$telemetry,null,$viewer);
 if (!isset($catalog[$tool]) || !in_array($tool, $manifest['allowed_tools'], true)) {
     vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_tool_denied',$tool,'denied',0,['result_code'=>'CAPABILITY_UNAVAILABLE']);
-    vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']],404,'CAPABILITY_UNAVAILABLE');
+    vp3_profile_webmcp_json_v100(false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']],404);
 }
 $args = is_array($input['input'] ?? null) ? $input['input'] : [];
 $startedAt=microtime(true);
@@ -132,7 +132,7 @@ try {
             vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
         }
     }
-    vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']], 404);
+    vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']],404,'CAPABILITY_UNAVAILABLE');
 } catch (VP3ProfileAgentPublicException $e) {
     vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>$e->publicCode,'message'=>$e->getMessage()]],$e->httpStatus,$e->publicCode);
 } catch (Throwable $e) {
