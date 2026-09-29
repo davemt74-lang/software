@@ -240,6 +240,27 @@ try {
     if ($tool === 'vp3.reward.get') {
         vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_reward_get_v181($pdo,$viewer,$args));
     }
+    if ($tool === 'vp3.rewards.transfer.contacts.list') {
+        vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_rewards_transfer_contacts_v182($pdo,$viewer,$args));
+    }
+    if ($tool === 'vp3.reward.transfer.prepare') {
+        $rewardContext=vp3_profile_webmcp_rewards_context_v182($profile,$viewer,$telemetry);
+        $result=vp3_profile_webmcp_reward_transfer_prepare_v182($pdo,$profile,$viewer,$rewardContext,$args);
+        vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_reward_transfer_prepared',$tool,'prepared',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+        vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_confirmation_required',$tool,'confirmation_required',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+        vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+    }
+    if ($tool === 'vp3.reward.transfer.confirm') {
+        $rewardContext=vp3_profile_webmcp_rewards_context_v182($profile,$viewer,$telemetry);
+        $intent=is_array($args['intent']??null)?$args['intent']:[];
+        $result=vp3_profile_webmcp_reward_transfer_confirm_v182(
+            $pdo,$profile,$viewer,$rewardContext,$intent,
+            trim((string)($args['confirmation_token']??'')),
+            trim((string)($args['idempotency_key']??''))
+        );
+        if(empty($result['idempotent_replay']))vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_reward_transfer_completed',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['reward_public_id'=>(string)($result['transfer']['reward_public_id']??'')]);
+        vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+    }
     if (str_starts_with($tool, 'vp3.agent.')) {
         $agentCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$viewer);
         if ($tool === 'vp3.agent.get') {
