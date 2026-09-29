@@ -253,7 +253,12 @@ try{
             $campaignContext=vp3_profile_webmcp_campaign_context_v170($profile,'external_site',$telemetry,'',$property,$origin);
             $intent=is_array($args['intent']??null)?$args['intent']:[];
             $result=vp3_profile_webmcp_campaign_confirm_v170($pdo,$profile,$campaignContext,$intent,trim((string)($args['confirmation_token']??'')),trim((string)($args['idempotency_key']??'')));
-            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_campaign_participation_completed',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+            if(empty($result['idempotent_replay']))vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_campaign_participation_completed',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['campaign_public_id'=>(string)($result['campaign']['public_id']??''),'participation_status'=>(string)($result['participation']['status']??'')]);
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
+        if($tool==='vp3.campaign.participation.get'){
+            $result=vp3_profile_webmcp_campaign_participation_get_v172($pdo,$profile,$args);
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_campaign_status_viewed',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['campaign_public_id'=>(string)($result['campaign']['public_id']??''),'participation_status'=>(string)($result['participation']['status']??'')]);
             vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
         }
     }
