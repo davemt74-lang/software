@@ -42,6 +42,13 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             'dns.verify'=>'DNS verification completed.',
             'deployment.deploy'=>'Deployment ZIP transferred and activated on HomeServer.',
             'deployment.rollback'=>'Hosted site rolled back to the previous release.',
+            'domain.attach'=>'Custom domain attached. Add the ownership and routing DNS records shown below.',
+            'domain.verify_ownership'=>'Custom-domain ownership verification checked.',
+            'domain.verify_routing'=>'Custom-domain routing verification checked.',
+            'domain.canonical'=>'Canonical custom domain updated.',
+            'domain.redirect'=>'Custom-domain redirect policy updated.',
+            'domain.detach'=>'Custom domain detached.',
+            'domain.migrate'=>'Custom domain moved to the selected hosted site.',
         ];
         flash('hosting_notice',$messages[$action]??'Hosting action completed.');
     }catch(Throwable $e){
@@ -133,7 +140,7 @@ $bytesText=static function(int $bytes):string{
       <div class="hosting-shell">
         <section class="hosting-hero">
           <div>
-            <span class="hosting-kicker">Cloud Hosting V1</span>
+            <span class="hosting-kicker">Cloud Hosting V2</span>
             <h1>Sites on your HomeServer.</h1>
             <p>Create and deploy sites from VP3 Cloud while HomeServer remains authoritative for runtime execution, release activation, SQLite migrations and recovery.</p>
           </div>
@@ -146,6 +153,7 @@ $bytesText=static function(int $bytes):string{
         <section class="hosting-metrics" aria-label="Hosting package limits">
           <article><span>Hosted Sites</span><strong><?= number_format((int)$dashboard['site_count']) ?> / <?= e($limitText($entitlements['sites'])) ?></strong></article>
           <article><span>Subdomains</span><strong><?= e($limitText($entitlements['subdomains'])) ?></strong></article>
+          <article><span>Custom Domains</span><strong><?= e($limitText($entitlements['custom_domains']??0)) ?></strong></article>
           <article><span>Storage / Site</span><strong><?= $entitlements['storage_mb_per_site']===null?'Unlimited':number_format((int)$entitlements['storage_mb_per_site']).' MB' ?></strong></article>
           <article><span>SQLite / Site</span><strong><?= $entitlements['sqlite_mb_per_site']===null?'Unlimited':number_format((int)$entitlements['sqlite_mb_per_site']).' MB' ?></strong></article>
           <article><span>PHP Runtime</span><strong><?= !empty($entitlements['php'])?'Included':'Not included' ?></strong></article>
@@ -187,6 +195,7 @@ $bytesText=static function(int $bytes):string{
                 $route=(array)($site['route']??[]);
                 $deployment=(array)($site['deployment']??[]);
                 $sync=(array)($site['sync']??[]);
+                $customDomains=(array)($site['custom_domains']??[]);
                 $isActive=(string)$site['desired_state']==='active';
                 $routeReady=!empty($sync['public_route_ready']);
               ?>
@@ -231,6 +240,80 @@ $bytesText=static function(int $bytes):string{
                     <form method="post" data-hosting-confirm="Roll this site back to its previous HomeServer release?"><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="deployment.rollback"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('rollback')) ?>"><button type="submit">Rollback</button></form>
                   <?php endif; ?>
                 </div>
+
+                <section class="hosting-domains">
+                  <div class="hosting-domains-head">
+                    <div><strong>Custom Domains</strong><span>Cloud-edge aliases with DNS ownership verification. HomeServer keeps the canonical upstream route.</span></div>
+                    <span class="hosting-domain-count"><?= count($customDomains) ?> / <?= e($limitText($entitlements['custom_domains']??0)) ?></span>
+                  </div>
+
+                  <?php if(($entitlements['custom_domains']??0)!==0): ?>
+                    <form method="post" class="hosting-domain-attach">
+                      <?= csrf_field() ?>
+                      <input type="hidden" name="action" value="domain.attach">
+                      <input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>">
+                      <label><span>Attach Domain</span><input name="hostname" maxlength="253" required placeholder="www.example.com"></label>
+                      <button type="submit">Attach</button>
+                    </form>
+                  <?php else: ?>
+                    <small class="hosting-domain-note">This package does not currently include custom domains. An admin can set the <code>hosting.custom_domains</code> package quantity.</small>
+                  <?php endif; ?>
+
+                  <?php foreach($customDomains as $customDomain): ?>
+                    <?php
+                      $rawCustomDomain=vp3_cloud_hosting_domains_v200_find((int)$customDomain['id'],(int)$user['id'],$pdo);
+                      $domainInstructions=$rawCustomDomain?vp3_cloud_hosting_domains_v200_instructions($rawCustomDomain):[];
+                      $ownership=(array)($domainInstructions['ownership']??[]);
+                      $routing=(array)($domainInstructions['routing']??[]);
+                    ?>
+                    <article class="hosting-domain-card">
+                      <header>
+                        <div>
+                          <strong><?= e((string)$customDomain['hostname']) ?></strong>
+                          <?php if(!empty($customDomain['is_canonical'])): ?><span class="hosting-domain-badge">Canonical</span><?php endif; ?>
+                          <?php if(!empty($customDomain['ready'])): ?><span class="hosting-domain-badge ready">Ready</span><?php endif; ?>
+                        </div>
+                        <span>Ownership <?= e((string)$customDomain['verification_state']) ?> · Route <?= e((string)$customDomain['routing_state']) ?> · TLS <?= e((string)$customDomain['tls_state']) ?></span>
+                      </header>
+
+                      <?php if((string)$customDomain['verification_state']!=='verified'): ?>
+                        <div class="hosting-dns-instructions">
+                          <span>Ownership TXT</span>
+                          <code><?= e((string)($ownership['name']??'')) ?></code>
+                          <code><?= e((string)($ownership['value']??'')) ?></code>
+                        </div>
+                      <?php endif; ?>
+
+                      <?php if((string)$customDomain['routing_state']!=='verified'): ?>
+                        <div class="hosting-dns-instructions">
+                          <span>Routing <?= e((string)($routing['type']??'CNAME')) ?></span>
+                          <code><?= e((string)($routing['name']??'')) ?></code>
+                          <code><?= e((string)($routing['value']??'')) ?></code>
+                          <?php if(!empty($routing['apex_note'])): ?><small><?= e((string)$routing['apex_note']) ?></small><?php endif; ?>
+                        </div>
+                      <?php endif; ?>
+
+                      <div class="hosting-domain-actions">
+                        <?php if((string)$customDomain['verification_state']!=='verified'): ?>
+                          <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="domain.verify_ownership"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="domain_id" value="<?= (int)$customDomain['id'] ?>"><button type="submit">Verify Ownership</button></form>
+                        <?php endif; ?>
+                        <?php if((string)$customDomain['verification_state']==='verified'&&(string)$customDomain['routing_state']!=='verified'): ?>
+                          <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="domain.verify_routing"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="domain_id" value="<?= (int)$customDomain['id'] ?>"><button type="submit">Verify Routing</button></form>
+                        <?php endif; ?>
+                        <?php if(!empty($customDomain['ready'])&&empty($customDomain['is_canonical'])): ?>
+                          <form method="post" data-hosting-confirm="Make this the canonical public domain for the site?"><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="domain.canonical"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="domain_id" value="<?= (int)$customDomain['id'] ?>"><input type="hidden" name="redirect_others" value="1"><button type="submit">Make Canonical</button></form>
+                        <?php endif; ?>
+                        <?php if(empty($customDomain['is_canonical'])): ?>
+                          <form method="post" data-hosting-confirm="Change redirect behavior for this custom domain?"><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="domain.redirect"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="domain_id" value="<?= (int)$customDomain['id'] ?>"><input type="hidden" name="enabled" value="<?= !empty($customDomain['redirect_to_canonical'])?'0':'1' ?>"><button type="submit"><?= !empty($customDomain['redirect_to_canonical'])?'Serve Directly':'Redirect to Canonical' ?></button></form>
+                        <?php endif; ?>
+                        <?php if(count($sites)>1): ?>
+                          <form method="post" class="hosting-domain-migrate" data-hosting-confirm="Move this custom domain to another hosted site?"><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="domain.migrate"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="domain_id" value="<?= (int)$customDomain['id'] ?>"><select name="target_site_id" required><option value="">Move to…</option><?php foreach($sites as $targetSite): ?><?php if((int)$targetSite['id']!==(int)$site['id']): ?><option value="<?= (int)$targetSite['id'] ?>"><?= e((string)$targetSite['display_name']) ?></option><?php endif; ?><?php endforeach; ?></select><button type="submit">Move</button></form>
+                        <?php endif; ?>
+                        <form method="post" data-hosting-confirm="Detach this custom domain? Existing DNS records will not be deleted automatically."><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="domain.detach"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="domain_id" value="<?= (int)$customDomain['id'] ?>"><button type="submit">Detach</button></form>
+                      </div>
+                    </article>
+                  <?php endforeach; ?>
+                </section>
 
                 <section class="hosting-deploy">
                   <div>
