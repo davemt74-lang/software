@@ -71,6 +71,7 @@ function member_navigation_active_key(?string $scriptName = null): string
         'meeting.php'=>'meetings',
         'account.php'=>'account',
         'settings-homeserver.php'=>'homeserver',
+        'hosting.php'=>'hosting',
         'client-updates.php'=>'client_updates',
         'plugins.php'=>'plugins',
         'subscription.php'=>'subscription',
@@ -105,7 +106,7 @@ function member_navigation_section_label(string $key): string
         'meetings','scheduling','appointment_lifecycle','commerce','campaigns','rewards','claim_terminal','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
         'team','team_scheduling','team_workspaces'=>'Team',
         'music_workspace'=>'Creator',
-        'account','homeserver','client_updates','plugins','subscription','token_packs','ai_usage'=>'Account',
+        'account','homeserver','hosting','client_updates','plugins','subscription','token_packs','ai_usage'=>'Account',
         'admin'=>'Administration',
         default=>'Workspace',
     };
@@ -148,6 +149,12 @@ function member_navigation_menu_links(?array $user = null): array
         $add($links,'account','My Account',url('/account.php'),'identity');
         $add($links,'client_updates','Client Updates',url('/client-updates.php'),'identity');
         $add($links,'homeserver','HomeServer',url('/settings-homeserver.php'),'identity');
+        if(function_exists('vp3_cloud_hosting_entitlement_snapshot_v100')){
+            try{
+                $hostingEntitlements=vp3_cloud_hosting_entitlement_snapshot_v100($user);
+                if(!empty($hostingEntitlements['entitlements']['hosting.access']['enabled']))$add($links,'hosting','Cloud Hosting',url('/hosting.php'),'identity');
+            }catch(Throwable $e){}
+        }
         $add($links,'plugins','Plugins',url('/plugins.php'),'identity');
         $add($links,'messages','Messages',url('/messages.php'),'identity');
         $add($links,'subscription','Plan & Usage',url('/subscription.php'),'identity');

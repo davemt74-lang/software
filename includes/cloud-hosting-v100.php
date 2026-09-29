@@ -306,6 +306,52 @@ function vp3_cloud_hosting_sites_v100(int $userId,?PDO $pdo=null): array
     return $stmt->fetchAll()?:[];
 }
 
+
+function vp3_cloud_hosting_set_desired_state_v100(
+    array $site,
+    string $desiredState,
+    ?int $actorUserId=null,
+    string $source='cloud',
+    ?PDO $pdo=null
+): array {
+    $pdo??=db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $siteId=(int)($site['id']??0);
+    $userId=(int)($site['user_id']??0);
+    if($siteId<1||$userId<1)throw new RuntimeException('A valid hosted site is required.');
+    $desiredState=strtolower(trim($desiredState));
+    if(!vp3_cloud_hosting_valid_state_v100($desiredState))throw new RuntimeException('Unsupported desired hosting state.');
+
+    $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
+    if($fresh===null)throw new RuntimeException('Hosted site could not be loaded.');
+    if((string)$fresh['desired_state']===$desiredState)return $fresh;
+
+    if($desiredState==='active'){
+        $ownerStmt=$pdo->prepare('SELECT * FROM users WHERE id=? LIMIT 1');
+        $ownerStmt->execute([$userId]);
+        $owner=$ownerStmt->fetch();
+        if(!is_array($owner))throw new RuntimeException('Hosting owner could not be loaded.');
+        $snapshot=vp3_cloud_hosting_entitlement_snapshot_v100($owner);
+        if(empty($snapshot['entitlements']['hosting.access']['enabled'])){
+            throw new RuntimeException('This account package does not currently include Cloud Hosting activation.');
+        }
+    }
+
+    $stmt=$pdo->prepare("UPDATE cloud_hosting_sites
+      SET desired_state=?,desired_revision=desired_revision+1,last_error_code='',last_error_message=''
+      WHERE id=? AND user_id=?");
+    $stmt->execute([$desiredState,$siteId,$userId]);
+    if($stmt->rowCount()!==1)throw new RuntimeException('Hosted site desired state could not be updated.');
+
+    $updated=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
+    if($updated===null)throw new RuntimeException('Hosted site could not be reloaded.');
+    vp3_cloud_hosting_event_v100(
+        $pdo,$siteId,'site.desired_state_changed',$desiredState,(int)$updated['desired_revision'],$actorUserId,
+        ['source'=>mb_substr($source,0,80)]
+    );
+    return $updated;
+}
+
 function vp3_cloud_hosting_desired_projection_v100(array $site): array
 {
     return [
