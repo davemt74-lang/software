@@ -182,7 +182,11 @@ function vp3_cloud_hosting_domains_v200_event(
 ): void {
     $siteId=(int)$domain['site_id'];
     $revision=vp3_cloud_hosting_v110_site_revision($pdo,$siteId);
-    $safe=['custom_domain'=>(string)$domain['hostname'],'domain_id'=>(int)$domain['id']];
+    $safe=[
+        'custom_domain'=>(string)$domain['hostname'],
+        'domain_id'=>(int)$domain['id'],
+        'domain_revision'=>(int)($domain['revision']??0),
+    ];
     foreach($details as $key=>$value){
         if(preg_match('/token|secret|credential|authorization/i',(string)$key))continue;
         if(is_scalar($value)||$value===null)$safe[(string)$key]=$value;
@@ -253,7 +257,6 @@ function vp3_cloud_hosting_domains_v200_attach(
             ]);
             $id=(int)$pdo->lastInsertId();
         }
-        $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id=?')->execute([$siteId]);
         $fresh=vp3_cloud_hosting_domains_v200_find($id,$userId,$pdo);
         if(!$fresh)throw new RuntimeException('Custom domain could not be loaded after attach.');
         vp3_cloud_hosting_domains_v200_event($pdo,$fresh,'attached','pending',$actorUserId,['provider'=>'manual']);
@@ -308,7 +311,6 @@ function vp3_cloud_hosting_domains_v200_verify_ownership(
     }
     if((string)$fresh['verification_state']!=='verified'){
         $pdo->prepare("UPDATE cloud_hosting_custom_domains SET verification_state='verified',revision=revision+1,ownership_verified_at=UTC_TIMESTAMP(),last_error_code='',last_error_message='' WHERE id=?")->execute([$domainId]);
-        $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id=?')->execute([(int)$fresh['site_id']]);
     }
     $updated=vp3_cloud_hosting_domains_v200_find($domainId,$userId,$pdo)??$fresh;
     vp3_cloud_hosting_domains_v200_event($pdo,$updated,'ownership_verified','verified',$actorUserId);
@@ -364,7 +366,6 @@ function vp3_cloud_hosting_domains_v200_verify_routing(
     }
     if((string)$fresh['routing_state']!=='verified'){
         $pdo->prepare("UPDATE cloud_hosting_custom_domains SET routing_state='verified',revision=revision+1,routing_verified_at=UTC_TIMESTAMP(),last_error_code='',last_error_message='' WHERE id=?")->execute([$domainId]);
-        $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id=?')->execute([(int)$fresh['site_id']]);
     }
     $updated=vp3_cloud_hosting_domains_v200_find($domainId,$userId,$pdo)??$fresh;
     vp3_cloud_hosting_domains_v200_event($pdo,$updated,'routing_verified','verified',$actorUserId);
@@ -402,7 +403,6 @@ function vp3_cloud_hosting_domains_v200_record_tls(
     if($changed){
         $pdo->prepare("UPDATE cloud_hosting_custom_domains SET tls_state=?,certificate_not_after=?,certificate_fingerprint=?,revision=revision+1,last_error_code='',last_error_message='' WHERE id=?")
             ->execute([$state,$normalized,$fingerprint,(int)$fresh['id']]);
-        $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id=?')->execute([(int)$fresh['site_id']]);
     }
     $updated=vp3_cloud_hosting_domains_v200_find((int)$fresh['id'],(int)$fresh['owner_user_id'],$pdo)??$fresh;
     vp3_cloud_hosting_domains_v200_event($pdo,$updated,'tls_'.$state,$state,$actorUserId,['certificate_not_after'=>$normalized]);
@@ -429,7 +429,6 @@ function vp3_cloud_hosting_domains_v200_set_canonical(
             ->execute([$redirectOthers?1:0,(int)$fresh['site_id']]);
         $pdo->prepare('UPDATE cloud_hosting_custom_domains SET is_canonical=1,redirect_to_canonical=0,revision=revision+1 WHERE id=?')
             ->execute([(int)$fresh['id']]);
-        $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id=?')->execute([(int)$fresh['site_id']]);
         $updated=vp3_cloud_hosting_domains_v200_find((int)$fresh['id'],(int)$fresh['owner_user_id'],$pdo);
         if(!$updated)throw new RuntimeException('Canonical custom domain could not be reloaded.');
         vp3_cloud_hosting_domains_v200_event($pdo,$updated,'canonical_changed','active',$actorUserId,['redirect_others'=>$redirectOthers]);
@@ -454,7 +453,6 @@ function vp3_cloud_hosting_domains_v200_set_redirect(
     if(!empty($fresh['is_canonical'])&&$enabled)throw new RuntimeException('The canonical custom domain cannot redirect to itself.');
     if((bool)$fresh['redirect_to_canonical']!==$enabled){
         $pdo->prepare('UPDATE cloud_hosting_custom_domains SET redirect_to_canonical=?,revision=revision+1 WHERE id=?')->execute([$enabled?1:0,(int)$fresh['id']]);
-        $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id=?')->execute([(int)$fresh['site_id']]);
     }
     $updated=vp3_cloud_hosting_domains_v200_find((int)$fresh['id'],(int)$fresh['owner_user_id'],$pdo)??$fresh;
     vp3_cloud_hosting_domains_v200_event($pdo,$updated,'redirect_changed',$enabled?'redirect':'serve',$actorUserId,['enabled'=>$enabled]);
@@ -475,7 +473,6 @@ function vp3_cloud_hosting_domains_v200_detach(
     try{
         $pdo->prepare("UPDATE cloud_hosting_custom_domains SET is_canonical=0,redirect_to_canonical=0,routing_state='detached',tls_state='pending',revision=revision+1,detached_at=UTC_TIMESTAMP() WHERE id=?")
             ->execute([(int)$fresh['id']]);
-        $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id=?')->execute([(int)$fresh['site_id']]);
         $updated=vp3_cloud_hosting_domains_v200_find((int)$fresh['id'],(int)$fresh['owner_user_id'],$pdo);
         if(!$updated)throw new RuntimeException('Detached custom domain could not be reloaded.');
         vp3_cloud_hosting_domains_v200_event($pdo,$updated,'detached','detached',$actorUserId);
@@ -512,8 +509,6 @@ function vp3_cloud_hosting_domains_v200_migrate(
         }
         $pdo->prepare('UPDATE cloud_hosting_custom_domains SET site_id=?,is_canonical=0,redirect_to_canonical=1,revision=revision+1 WHERE id=?')
             ->execute([$targetSiteId,(int)$fresh['id']]);
-        $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id IN (?,?)')
-            ->execute([$oldSiteId,$targetSiteId]);
         $updated=vp3_cloud_hosting_domains_v200_find((int)$fresh['id'],(int)$fresh['owner_user_id'],$pdo);
         if(!$updated)throw new RuntimeException('Migrated custom domain could not be reloaded.');
         vp3_cloud_hosting_domains_v200_event($pdo,$updated,'migrated','active',$actorUserId,['from_site_id'=>$oldSiteId,'to_site_id'=>$targetSiteId]);
@@ -582,6 +577,7 @@ function vp3_cloud_hosting_domains_v200_capability(): array
         'same_account_domain_migration'=>true,
         'home_server_alias_engine'=>false,
         'cloud_edge_rewrites_upstream_host'=>true,
+        'home_server_revision_unchanged_by_aliases'=>true,
         'verification_token_encrypted_at_rest'=>true,
         'verification_token_publicly_exposed'=>false,
     ];
