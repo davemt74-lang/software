@@ -126,6 +126,9 @@ function vp3_profile_webmcp_confirmation_schema_v150(): array
 
 function vp3_profile_webmcp_tool_runtime_ready_v150(PDO $pdo,string $tool): bool
 {
+    if($tool==='vp3.loyalty.status.get'){
+        return function_exists('vp3_profile_webmcp_loyalty_schema_ready_v184')&&vp3_profile_webmcp_loyalty_schema_ready_v184($pdo);
+    }
     $ledgerTools=[
         'vp3.booking.prepare','vp3.booking.confirm','vp3.booking.reschedule.prepare','vp3.booking.reschedule.confirm','vp3.booking.cancel.prepare','vp3.booking.cancel.confirm',
         'vp3.commerce.checkout.prepare','vp3.commerce.checkout.confirm','vp3.commerce.refund.prepare','vp3.commerce.refund.confirm',
