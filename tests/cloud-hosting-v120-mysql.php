@@ -82,6 +82,13 @@ $site=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo)??$site;
 $future=(new DateTimeImmutable('+30 days'))->format(DateTimeInterface::ATOM);
 vp3_cloud_hosting_v120_record_edge_certificate($site,'active',$future,str_repeat('a',64),1,$testPdo);
 
+$afterFirstCert=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
+if((int)($afterFirstCert['desired_revision']??0)!==4)throw new RuntimeException('Initial certificate observation did not advance route revision.');
+$renewed=(new DateTimeImmutable('+60 days'))->format(DateTimeInterface::ATOM);
+vp3_cloud_hosting_v120_record_edge_certificate($afterFirstCert,'active',$renewed,str_repeat('b',64),1,$testPdo);
+$afterRenewal=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
+if((int)($afterRenewal['desired_revision']??0)!==5)throw new RuntimeException('Same-state certificate renewal did not advance route revision.');
+
 $payload1=vp3_cloud_hosting_v120_entitlement_payload($owner,$testPdo);
 if((int)$payload1['revision']!==1)throw new RuntimeException('Initial entitlement revision must be 1.');
 if(($payload1['package_key']??'')!=='basic-user')throw new RuntimeException('Package slug was not projected.');
@@ -228,10 +235,12 @@ $remote=function(int $userId,string $operation,array $payload) use (&$remoteStat
 };
 
 $site=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo)??$site;
-$testPdo->prepare("UPDATE cloud_hosting_sites SET desired_state='active',desired_revision=desired_revision+1 WHERE id=?")->execute([(int)$site['id']]);
+$testPdo->prepare("UPDATE cloud_hosting_sites SET desired_state='active',desired_revision=desired_revision+1,homeserver_user_id=NULL WHERE id=?")->execute([(int)$site['id']]);
 $site=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo)??$site;
 
 $pre=vp3_cloud_hosting_v120_reconcile_site($site,$remote,$testPdo);
+$boundAfterSync=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
+if((int)($boundAfterSync['homeserver_user_id']??0)!==1)throw new RuntimeException('Reconciliation did not repair the canonical HomeServer binding.');
 if(($pre['site']['blocked_reason']??'')!=='deployment_required')throw new RuntimeException('Active site should be blocked until deployment.');
 if(($pre['route']['desired_state']??'')!=='inactive')throw new RuntimeException('Public route must stay inactive until HomeServer runtime is active.');
 if(vp3_cloud_hosting_v120_route_token((int)$site['id'],$testPdo)!=='ROUTE_TOKEN_SUPER_SECRET')throw new RuntimeException('Route token was not recoverable from encrypted storage.');
