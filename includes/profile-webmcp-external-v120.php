@@ -32,7 +32,7 @@ function vp3_profile_webmcp_external_tool_names_v120(bool $statefulChat=false,bo
         ] as $tool)$tools[]=$tool;
     }
     if($campaigns){
-        foreach(['vp3.campaigns.list','vp3.campaign.get','vp3.campaign.eligibility.get'] as $tool)$tools[]=$tool;
+        foreach(['vp3.campaigns.list','vp3.campaign.get','vp3.campaign.eligibility.get','vp3.campaign.participation.prepare','vp3.campaign.participation.confirm'] as $tool)$tools[]=$tool;
     }
     return $tools;
 }
@@ -116,9 +116,9 @@ function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,arra
             'visitor_profile_known'=>false,
         ],
         'external'=>[
-            'read_only'=>!$chatEnabled&&!$schedulingEnabled&&!$commerceEnabled,
+            'read_only'=>!$chatEnabled&&!$schedulingEnabled&&!$commerceEnabled&&!$campaignsEnabled,
             'stateful_profile_agent'=>$chatEnabled,
-            'transactional_actions'=>$schedulingEnabled||$commerceEnabled,
+            'transactional_actions'=>$schedulingEnabled||$commerceEnabled||$campaignsEnabled,
             'scheduling_enabled'=>$schedulingEnabled,
             'commerce_enabled'=>$commerceEnabled,
             'campaigns_enabled'=>$campaignsEnabled,
