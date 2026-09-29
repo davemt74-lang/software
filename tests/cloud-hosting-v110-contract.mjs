@@ -14,6 +14,8 @@ for(const table of ['cloud_hosting_routes','cloud_hosting_provider_operations'])
 }
 assert.match(route,/ZoneEdit.*add_zone_record/s);
 assert.match(route,/type'\s*=>\s*'CNAME'/);
+assert.match(route,/\$recordName=substr\(\$hostname,0,-strlen\('\.'\.\$zone\)\)/);
+assert.match(route,/\['provisioned','pending'\]/);
 assert.match(route,/Authorization: cpanel /);
 assert.match(route,/api2/);
 assert.match(route,/dns_get_record\(\$hostname,DNS_CNAME\)/);
