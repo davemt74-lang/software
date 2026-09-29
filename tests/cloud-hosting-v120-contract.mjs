@@ -32,7 +32,7 @@ assert.match(sync,/transient_failure_resume_with_same_key'\s*=>\s*true/);
 assert.match(sync,/single_inflight_operation_per_site'\s*=>\s*true/);
 assert.match(sync,/deployment_status_refresh'\s*=>\s*true/);
 assert.match(sync,/deployment_entitlement_revalidation'\s*=>\s*true/);
-assert.match(sync,/state\]??''\)==='applied'/);
+assert.match(sync,/\['state'\]\?\?''\)==='applied'/);
 assert.match(sync,/Hosting deployment package must be a ZIP archive/);
 assert.match(sync,/vp3_cloud_hosting_v120_assert_deployment_entitled/);
 assert.match(sync,/Rollback idempotency key/);
