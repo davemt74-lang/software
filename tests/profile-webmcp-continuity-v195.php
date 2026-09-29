@@ -13,6 +13,7 @@ t(!empty($noted['idempotent_replay']),'idempotent replay retained');
 t(empty($noted['contains_sensitive_payload']),'safe projection');
 $returned=vp3_profile_webmcp_return_consume_v195($profile,$user,$issued['return_token']);
 t(($returned['contract']??'')==='vp3.webmcp.return.v1','return contract');
+t(vp3_profile_webmcp_return_consume_v195($profile,$user,$issued['return_token'])===null,'return token single-use');
 $follow=vp3_profile_webmcp_return_followthrough_v195($user,'What happened with the profile action?',42);
 t(!empty($follow['handled']),'agent followthrough');
 t(($follow['profile_webmcp_return']['phase']??'')==='completed','followthrough phase');
