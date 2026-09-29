@@ -115,6 +115,27 @@ $agentInitialConversationId = 0;
 $agentOnboarding = false;
 $canonicalProfileUrl = '';
 $pdoForAgent = db();
+$profileWebmcpReturn=null;
+$profileWebmcpReturnToken=trim((string)($_GET['profile_webmcp_return']??''));
+if($profileWebmcpReturnToken!==''){
+    require_once __DIR__.'/includes/profile-webmcp-continuity-v195.php';
+    if(!headers_sent()){
+        header('Referrer-Policy: no-referrer');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    }
+    try{
+        $returnProfile=$pdoForAgent&&function_exists('profile_for_user')?profile_for_user($pdoForAgent,(int)$user['id'],false):null;
+        if(is_array($returnProfile)){
+            $profileWebmcpReturn=vp3_profile_webmcp_return_consume_v195($returnProfile,$user,$profileWebmcpReturnToken);
+            if(is_array($profileWebmcpReturn)&&(int)($profileWebmcpReturn['conversation_id']??0)>0){
+                $_GET['conversation_id']=(int)$profileWebmcpReturn['conversation_id'];
+            }
+        }
+    }catch(Throwable $e){
+        error_log('Profile WebMCP return consume failed: '.$e->getMessage());
+        $profileWebmcpReturn=null;
+    }
+}
 
 try {
     $systemAgentName = system_agent_name();
@@ -179,6 +200,14 @@ try {
     $requestedAgentId = 0;
     $agentDisplayName = $systemAgentName;
     $agentInitialConversationId = (int)$chatInitialConversationId;
+}
+
+if(is_array($profileWebmcpReturn)){
+    $returnStatus=e((string)($profileWebmcpReturn['status_text']??'Profile action status updated.'));
+    $returnPhase=e((string)($profileWebmcpReturn['phase']??'viewed'));
+    $profileWebmcpReturnMarkup='<section class="chat-profile-webmcp-return" data-profile-webmcp-return-card role="status"><small>PROFILE ACTION · '.strtoupper($returnPhase).'</small><strong>'.$returnStatus.'</strong><span>Continue this conversation with your Agent for the next step.</span></section>'
+        .'<script data-profile-webmcp-return-cleanup>(function(){try{var u=new URL(location.href);if(u.searchParams.has("profile_webmcp_return")){u.searchParams.delete("profile_webmcp_return");history.replaceState(null,"",u.pathname+u.search+u.hash);}}catch(e){}})();</script>';
+    $html=str_replace('<form class="chat-composer" id="chatForm">',$profileWebmcpReturnMarkup.'<form class="chat-composer" id="chatForm">',$html);
 }
 
 // Canonical account dropdown. Replace the legacy menu as one unit so Chat does
