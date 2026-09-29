@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
+const layer=read('includes/profile-webmcp-sites-v204.php');
+const gateway=read('api/profile-webmcp-external-v120.php');
+const admin=read('admin/webmcp.php');
+const external=read('includes/profile-webmcp-external-v120.php');
+const workflow=read('.github/workflows/public-funnel-onboarding-continuity.yml');
+const recovery=read('tools/run_recovery_baseline.py');
+
+assert.match(layer,/vp3\.profile\.webmcp\.connected-sites\.v1/);
+for(const s of ['healthy','paused','unverified','upgrade_required','stale','degraded','origin_attention'])assert.match(layer,new RegExp("'"+s+"'"));
+assert.match(layer,/last_contact_at/);
+assert.match(layer,/runtime_build/);
+assert.match(layer,/origin_denied_30d/);
+assert.match(layer,/upgrade_guidance/);
+assert.match(layer,/reverify_guidance/);
+assert.match(layer,/contains_sensitive_payload'=>false/);
+assert.doesNotMatch(layer,/public_key|server_token|confirmation_token|manage_token/);
+assert.match(gateway,/vp3_profile_webmcp_site_record_origin_denied_v204/);
+assert.match(gateway,/client_versions/);
+assert.match(admin,/Connected site runtime management/);
+assert.match(admin,/Upgrade required/);
+assert.match(external,/webmcp_runtime_url/);
+assert.match(workflow,/profile-webmcp-sites-v204/);
+assert.match(recovery,/profile-webmcp-sites-v204/);
+console.log('PROFILE_WEBMCP_SITES_V204_CONTRACT=PASS');
