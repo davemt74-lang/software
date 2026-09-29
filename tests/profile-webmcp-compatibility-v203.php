@@ -13,9 +13,11 @@ $catalog=[
 $overrides=[
  'vp3.booking.confirm'=>['status'=>'deprecated','replacement_tool'=>'vp3.profile.get','sunset_at'=>'2027-01-31'],
  'vp3.booking.legacy'=>['status'=>'disabled'],
+ 'vp3.profile.get'=>['status'=>'active','minimum_runtime_build'=>'runtime-new'],
 ];
 $r=vp3_profile_webmcp_compatibility_registry_v203($catalog,$overrides);
 t($r['vp3.profile.get']['status']==='active','active default');
+t($r['vp3.profile.get']['minimum_runtime_build']==='runtime-new','minimum runtime metadata');
 t($r['vp3.booking.confirm']['status']==='deprecated','deprecated state');
 t($r['vp3.booking.confirm']['execution_path']==='canonical_router','deprecated canonical router');
 t($r['vp3.booking.confirm']['confirmation_policy']==='explicit_confirmation_and_idempotency','confirmation retained');
@@ -23,4 +25,5 @@ t($r['vp3.booking.legacy']['status']==='disabled','disabled state');
 $filtered=vp3_profile_webmcp_apply_compatibility_v203(array_keys($catalog),$r);
 t(in_array('vp3.booking.confirm',$filtered,true),'deprecated stays discoverable');
 t(!in_array('vp3.booking.legacy',$filtered,true),'disabled removed');
+// Production availability uses the canonical registry; explicit runtime-floor behavior is also covered statically at the router boundary.
 echo "PROFILE_WEBMCP_COMPATIBILITY_V203_PHP=PASS\n";
