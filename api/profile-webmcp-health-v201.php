@@ -5,6 +5,7 @@ require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-v100.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-tool-router-v191.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-actions-v150.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-external-v120.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-continuity-v194.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-health-v201.php';
 
