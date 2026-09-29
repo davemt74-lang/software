@@ -4,6 +4,7 @@ const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const adapter=read('includes/profile-webmcp-rewards-v180.php');
 const layer=read('includes/profile-webmcp-v100.php');
 const api=read('api/profile-webmcp-v100.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const runtime=read('profile-webmcp-v100.js');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
 const externalApi=read('api/profile-webmcp-external-v120.php');
@@ -25,7 +26,7 @@ assert.doesNotMatch(adapter,/points_to_next|next_tier|threshold_remaining|target
 
 assert.match(layer,/tool==='vp3\.loyalty\.status\.get'/);
 assert.match(layer,/vp3_profile_webmcp_loyalty_schema_ready_v184/);
-assert.match(api,/vp3_profile_webmcp_loyalty_status_v184\(\$pdo,\$viewer\)/);
+assert.match(router,/vp3_profile_webmcp_loyalty_status_v184\(\$pdo,\$viewer\)/);
 assert.match(runtime,/vp3\.loyalty\.status\.get/);
 
 assert.doesNotMatch(externalLayer,/vp3\.loyalty\.status\.get/);
