@@ -100,6 +100,25 @@ function vp3_profile_webmcp_session_v130(PDO $pdo,array $property,?array $contac
     return $get->fetch()?:null;
 }
 
+function vp3_profile_webmcp_referral_lineage_v130(PDO $pdo,array $referral,array $property,array $session): void
+{
+    try{
+        if(!function_exists('vp3_agent_referral_schema_ready')||!vp3_agent_referral_schema_ready($pdo))return;
+        $referralId=(int)($referral['id']??0);$owner=(int)($referral['owner_user_id']??0);$contact=(int)($referral['agent_contact_id']??0);
+        $propertyId=(int)($property['id']??0);$sessionKey=(string)($session['session_key']??'');
+        if($referralId<1||$owner<1||$contact<1||$propertyId<1||!preg_match('/^[a-f0-9]{64}$/',$sessionKey))return;
+        $sessionHash=function_exists('vp3_agent_referral_session_hash')
+            ? vp3_agent_referral_session_hash($owner,'webmcp|'.$propertyId.'|'.$sessionKey)
+            : hash('sha256','vp3-agent-referral|'.$owner.'|webmcp|'.$propertyId.'|'.$sessionKey);
+        $stmt=$pdo->prepare("INSERT IGNORE INTO vp3_agent_referral_events
+          (referral_id,owner_user_id,agent_contact_id,property_id,session_hash,event_type,value_amount,occurred_at)
+          VALUES (?,?,?,?,?,'webmcp',NULL,NOW())");
+        $stmt->execute([$referralId,$owner,$contact,$propertyId,$sessionHash]);
+    }catch(Throwable $e){
+        error_log('VP3 WebMCP referral lineage failed: '.$e->getMessage());
+    }
+}
+
 function vp3_profile_webmcp_context_v130(PDO $pdo,array $profile,string $surface,array $telemetry,?array $property=null,?array $viewer=null): ?array
 {
     try{
@@ -113,6 +132,7 @@ function vp3_profile_webmcp_context_v130(PDO $pdo,array $profile,string $surface
         if($refToken!==''&&function_exists('vp3_agent_referral_lookup'))$referral=vp3_agent_referral_lookup($pdo,$owner,$refToken);
         $session=vp3_profile_webmcp_session_v130($pdo,$property,$contact,(string)($telemetry['webmcp_session_id']??''),$surface);
         if(!$session)return null;
+        if($referral)vp3_profile_webmcp_referral_lineage_v130($pdo,$referral,$property,$session);
         $referralId=(int)($referral['id']??0);$referralContact=(int)($referral['agent_contact_id']??0);
         return [
             'owner_user_id'=>$owner,
