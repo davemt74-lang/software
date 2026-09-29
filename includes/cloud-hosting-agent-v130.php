@@ -333,7 +333,11 @@ function vp3_cloud_hosting_agent_v130_execute(array $row,array $user,?callable $
         return vp3_cloud_hosting_v120_rollback($site,$key,$uid,$remote,$pdo);
     }
     if($type==='domain.attach'){
-        return vp3_cloud_hosting_domains_v200_attach($site,$user,(string)($payload['hostname']??''),$uid,$pdo);
+        $attached=vp3_cloud_hosting_domains_v200_attach($site,$user,(string)($payload['hostname']??''),$uid,$pdo);
+        return [
+            'domain'=>$attached['domain']??null,
+            'dns_instructions_available_in_hosting_ui'=>true,
+        ];
     }
     if($type==='domain.canonical'||$type==='domain.detach'){
         $domainId=(int)($payload['domain_id']??0);
