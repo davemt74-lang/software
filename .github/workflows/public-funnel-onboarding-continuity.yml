@@ -59,6 +59,7 @@ jobs:
           php -l includes/profile-webmcp-capability-resolver-v190.php
           php -l includes/profile-webmcp-tool-router-v191.php
           php -l includes/profile-webmcp-confirmation-v192.php
+          php -l includes/agent-profile-webmcp-v193.php
           php -l includes/profile-agent-public-service-v110.php
           php -l includes/profile-webmcp-external-v120.php
           php -l includes/profile-webmcp-analytics-v130.php
@@ -76,6 +77,7 @@ jobs:
           php -l tests/profile-webmcp-capability-resolver-v190.php
           php -l tests/profile-webmcp-tool-router-v191.php
           php -l tests/profile-webmcp-confirmation-v192.php
+          php -l tests/profile-webmcp-agent-brain-v193.php
           php -l tests/profile-webmcp-agent-v110.php
           php -l tests/profile-webmcp-external-v120.php
           php -l tests/profile-webmcp-analytics-v130.php
@@ -96,6 +98,7 @@ jobs:
           php tests/profile-webmcp-capability-resolver-v190.php
           php tests/profile-webmcp-tool-router-v191.php
           php tests/profile-webmcp-confirmation-v192.php
+          php tests/profile-webmcp-agent-brain-v193.php
           php tests/profile-webmcp-agent-v110.php
           php tests/profile-webmcp-external-v120.php
           php tests/profile-webmcp-analytics-v130.php
@@ -116,6 +119,7 @@ jobs:
           node tests/profile-webmcp-capability-resolver-v190-contract.mjs
           node tests/profile-webmcp-tool-router-v191-contract.mjs
           node tests/profile-webmcp-confirmation-v192-contract.mjs
+          node tests/profile-webmcp-agent-brain-v193-contract.mjs
           node tests/profile-webmcp-agent-v110-contract.mjs
           node tests/profile-webmcp-external-v120-contract.mjs
           node tests/profile-webmcp-analytics-v130-contract.mjs
@@ -160,6 +164,7 @@ jobs:
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-capability-resolver-v190.php
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-tool-router-v191.php
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-confirmation-v192.php
+          test -f /tmp/vp3-webmcp-package/includes/agent-profile-webmcp-v193.php
           test -f /tmp/vp3-webmcp-package/includes/profile-agent-public-service-v110.php
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-external-v120.php
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-analytics-v130.php
