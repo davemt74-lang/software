@@ -92,6 +92,13 @@ function vp3_profile_webmcp_rewards_tool_catalog_v180(): array
             ],
             'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>false,'consequentialHint'=>true,'debugging'=>false],
         ],
+        'vp3.loyalty.status.get'=>[
+            'title'=>'Get my loyalty status',
+            'description'=>'Return the signed-in viewer\'s canonical current loyalty tier and ledger points by Merchant. No tier thresholds are calculated by WebMCP.',
+            'capability'=>'rewards',
+            'input_schema'=>['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>false,'consequentialHint'=>false,'debugging'=>false],
+        ],
     ];
 }
 
@@ -444,4 +451,58 @@ function vp3_profile_webmcp_reward_transfer_confirm_v183(PDO $pdo,array $profile
     }finally{
         try{$r=$pdo->prepare('SELECT RELEASE_LOCK(?)');$r->execute([$lock]);}catch(Throwable $ignored){}
     }
+}
+
+
+function vp3_profile_webmcp_loyalty_schema_ready_v184(PDO $pdo): bool
+{
+    return function_exists('table_exists')
+        && table_exists('loyalty_accounts')
+        && table_exists('loyalty_programs')
+        && table_exists('loyalty_tiers')
+        && table_exists('loyalty_ledger');
+}
+
+function vp3_profile_webmcp_loyalty_status_v184(PDO $pdo,?array $viewer): array
+{
+    $viewerId=(int)($viewer['id']??0);
+    if($viewerId<1)throw new RuntimeException('Sign in to view your loyalty status.');
+    if(!vp3_profile_webmcp_loyalty_schema_ready_v184($pdo))throw new RuntimeException('Loyalty status is unavailable.');
+
+    $stmt=$pdo->prepare("SELECT la.id account_id,la.status account_status,lp.merchant_id,
+      lt.tier_key,m.public_id merchant_public_id,m.name merchant_name
+      FROM loyalty_accounts la
+      INNER JOIN loyalty_programs lp ON lp.id=la.program_id
+      INNER JOIN crm_contacts cc ON cc.id=la.contact_id
+      INNER JOIN merchant_accounts m ON m.id=lp.merchant_id
+      LEFT JOIN loyalty_tiers lt ON lt.id=la.current_tier_id
+      WHERE cc.vp3_user_id=? AND la.status='active' AND m.status='active'
+      ORDER BY lp.merchant_id,la.id");
+    $stmt->execute([$viewerId]);
+
+    $seen=[];$programs=[];
+    foreach($stmt->fetchAll()?:[] as $row){
+        $merchantId=(int)($row['merchant_id']??0);
+        $accountId=(int)($row['account_id']??0);
+        if($merchantId<1||$accountId<1||isset($seen[$merchantId]))continue;
+        $seen[$merchantId]=true;
+        $pointsStmt=$pdo->prepare("SELECT COALESCE(SUM(points_delta),0) FROM loyalty_ledger WHERE loyalty_account_id=?");
+        $pointsStmt->execute([$accountId]);
+        $programs[]=[
+            'merchant'=>[
+                'public_id'=>(string)($row['merchant_public_id']??''),
+                'name'=>(string)($row['merchant_name']??''),
+            ],
+            'tier_key'=>(string)($row['tier_key']??''),
+            'points'=>(int)$pointsStmt->fetchColumn(),
+            'account_status'=>'active',
+        ];
+    }
+    return [
+        'programs'=>$programs,
+        'count'=>count($programs),
+        'balance_authority'=>'loyalty_ledger',
+        'tier_authority'=>'loyalty_accounts.current_tier_id',
+        'thresholds_calculated'=>false,
+    ];
 }

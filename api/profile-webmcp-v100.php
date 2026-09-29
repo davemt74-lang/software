@@ -264,6 +264,9 @@ try {
         vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_confirmation_required',$tool,'confirmation_required',(int)max(0,round((microtime(true)-$startedAt)*1000)));
         vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
     }
+    if ($tool === 'vp3.loyalty.status.get') {
+        vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_loyalty_status_v184($pdo,$viewer));
+    }
     if ($tool === 'vp3.rewards.transfer.confirm') {
         $rewardContext=vp3_profile_webmcp_reward_claim_context_v182($profile,$viewer,$telemetry,$proof);
         $intent=is_array($args['intent']??null)?$args['intent']:[];
