@@ -219,6 +219,18 @@ function vp3_profile_webmcp_confirmation_schema_v150(): array
     ];
 }
 
+function vp3_profile_webmcp_tool_runtime_ready_v150(PDO $pdo,string $tool): bool
+{
+    $ledgerTools=[
+        'vp3.booking.prepare','vp3.booking.confirm',
+        'vp3.booking.reschedule.prepare','vp3.booking.reschedule.confirm',
+        'vp3.booking.cancel.prepare','vp3.booking.cancel.confirm',
+    ];
+    if(!in_array($tool,$ledgerTools,true))return true;
+    return function_exists('vp3_profile_webmcp_actions_schema_ready_v150')
+        && vp3_profile_webmcp_actions_schema_ready_v150($pdo);
+}
+
 function vp3_profile_webmcp_session_proof_v100(int $ownerUserId): string
 {
     if ($ownerUserId < 1) throw new RuntimeException('Profile owner is invalid.');
@@ -394,7 +406,7 @@ function vp3_profile_webmcp_manifest_v100(PDO $pdo, array $profile, ?array $view
     $allowed = [];
     foreach ($catalog as $name => $tool) {
         $capability = (string)($tool['capability'] ?? '');
-        if (($capabilities[$capability] ?? false) === true) $allowed[] = $name;
+        if (($capabilities[$capability] ?? false) === true && vp3_profile_webmcp_tool_runtime_ready_v150($pdo,$name)) $allowed[] = $name;
     }
     sort($allowed);
     $authenticated = (int)($viewer['id'] ?? 0) > 0;
