@@ -24,7 +24,7 @@ const manifest={
     'vp3.agent.message.send','vp3.booking.prepare'
   ],
   session:{authenticated:false,visitor_profile_known:false},
-  external:{read_only:true,stateful_profile_agent:false}
+  external:{read_only:true,stateful_profile_agent:false,transactional_actions:false}
 };
 const calls=[];
 const mc=new ModelContext();
