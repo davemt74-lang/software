@@ -223,6 +223,34 @@ function vp3_cloud_hosting_v110_finish_operation(PDO $pdo,int $id,string $status
     ]);
 }
 
+function vp3_cloud_hosting_v110_site_revision(PDO $pdo,int $siteId): int
+{
+    $stmt=$pdo->prepare('SELECT desired_revision FROM cloud_hosting_sites WHERE id=? LIMIT 1');
+    $stmt->execute([$siteId]);
+    return max(0,(int)$stmt->fetchColumn());
+}
+
+function vp3_cloud_hosting_v110_bump_site_route_state(
+    PDO $pdo,
+    int $siteId,
+    ?string $canonicalHostname,
+    ?string $routeState,
+    ?string $tlsState,
+    string $errorCode='',
+    string $errorMessage=''
+): int {
+    $sets=['desired_revision=desired_revision+1','last_error_code=?','last_error_message=?'];
+    $params=[$errorCode,mb_substr($errorMessage,0,500)];
+    if($canonicalHostname!==null){$sets[]='canonical_hostname=?';$params[]=$canonicalHostname;}
+    if($routeState!==null){$sets[]='route_state=?';$params[]=$routeState;}
+    if($tlsState!==null){$sets[]='tls_state=?';$params[]=$tlsState;}
+    $params[]=$siteId;
+    $stmt=$pdo->prepare('UPDATE cloud_hosting_sites SET '.implode(',',$sets).' WHERE id=?');
+    $stmt->execute($params);
+    if($stmt->rowCount()!==1)throw new RuntimeException('Hosted site route state could not be updated.');
+    return vp3_cloud_hosting_v110_site_revision($pdo,$siteId);
+}
+
 function vp3_cloud_hosting_v110_route_for_site(int $siteId,?PDO $pdo=null): ?array
 {
     $pdo??=db();if(!$pdo)return null;
@@ -351,9 +379,8 @@ function vp3_cloud_hosting_v110_provision_dns(
         $stmt->execute([$siteId]);
         if($stmt->rowCount()!==1)throw new RuntimeException('Hosting DNS route lost its provisioning claim.');
 
-        $pdo->prepare("UPDATE cloud_hosting_sites SET canonical_hostname=?,route_state='provisioned',tls_state='pending',last_error_code='',last_error_message='' WHERE id=?")
-            ->execute([$hostname,$siteId]);
-        vp3_cloud_hosting_event_v100($pdo,$siteId,'dns.provisioned','provisioned',(int)($site['desired_revision']??0),$actorUserId,[
+        $revision=vp3_cloud_hosting_v110_bump_site_route_state($pdo,$siteId,$hostname,'provisioned','pending');
+        vp3_cloud_hosting_event_v100($pdo,$siteId,'dns.provisioned','provisioned',$revision,$actorUserId,[
             'hostname'=>$hostname,'record_type'=>'CNAME','record_value'=>$target,'provider'=>'cpanel_dns',
         ]);
         vp3_cloud_hosting_v110_finish_operation($pdo,$operationId,'succeeded',(int)$result['status'],vp3_cloud_hosting_v110_provider_response_public($result));
@@ -387,12 +414,12 @@ function vp3_cloud_hosting_v110_verify_dns(array $site,?int $actorUserId=null,?c
     }
     if(!$matched){
         $pdo->prepare("UPDATE cloud_hosting_routes SET dns_state='pending',last_provider_status='waiting_dns',last_error_code='',last_error_message='' WHERE site_id=?")->execute([$siteId]);
-        $pdo->prepare("UPDATE cloud_hosting_sites SET route_state='pending' WHERE id=?")->execute([$siteId]);
+        vp3_cloud_hosting_v110_bump_site_route_state($pdo,$siteId,null,'pending',null);
         return vp3_cloud_hosting_v110_route_for_site($siteId,$pdo)??[];
     }
     $pdo->prepare("UPDATE cloud_hosting_routes SET dns_state='verified',last_provider_status='verified',verified_at=NOW() WHERE site_id=?")->execute([$siteId]);
-    $pdo->prepare("UPDATE cloud_hosting_sites SET route_state='verified' WHERE id=?")->execute([$siteId]);
-    vp3_cloud_hosting_event_v100($pdo,$siteId,'dns.verified','verified',(int)($site['desired_revision']??0),$actorUserId,[
+    $revision=vp3_cloud_hosting_v110_bump_site_route_state($pdo,$siteId,null,'verified',null);
+    vp3_cloud_hosting_event_v100($pdo,$siteId,'dns.verified','verified',$revision,$actorUserId,[
         'hostname'=>$hostname,'provider'=>'cpanel_dns',
     ]);
     return vp3_cloud_hosting_v110_route_for_site($siteId,$pdo)??[];
@@ -408,12 +435,36 @@ function vp3_cloud_hosting_v110_mark_tls_state(array $site,string $state,?int $a
     if($route===null)throw new RuntimeException('DNS route is not provisioned.');
     if($state==='active'&&(string)$route['dns_state']!=='verified')throw new RuntimeException('DNS must be verified before Cloud-edge TLS can become active.');
     $pdo->prepare('UPDATE cloud_hosting_routes SET tls_state=? WHERE site_id=?')->execute([$state,$siteId]);
-    $pdo->prepare('UPDATE cloud_hosting_sites SET tls_state=? WHERE id=?')->execute([$state,$siteId]);
-    vp3_cloud_hosting_event_v100($pdo,$siteId,'tls.'.$state,$state,(int)($site['desired_revision']??0),$actorUserId,[
+    $revision=vp3_cloud_hosting_v110_bump_site_route_state($pdo,$siteId,null,null,$state);
+    vp3_cloud_hosting_event_v100($pdo,$siteId,'tls.'.$state,$state,$revision,$actorUserId,[
         'hostname'=>(string)$route['hostname'],'authority'=>'cloud_edge',
     ]);
     return vp3_cloud_hosting_v110_route_for_site($siteId,$pdo)??[];
 }
+
+function vp3_cloud_hosting_v110_desired_projection(array $site,?PDO $pdo=null): array
+{
+    $pdo??=db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $siteId=(int)($site['id']??0);
+    if($siteId<1)throw new RuntimeException('A valid hosted site is required.');
+    $fresh=vp3_cloud_hosting_site_v100($siteId,(int)($site['user_id']??0),$pdo);
+    if($fresh===null)throw new RuntimeException('Hosted site could not be loaded.');
+    $base=vp3_cloud_hosting_desired_projection_v100($fresh);
+    $route=vp3_cloud_hosting_v110_route_for_site($siteId,$pdo);
+    $base['public_route']=$route===null?null:[
+        'hostname'=>(string)$route['hostname'],
+        'dns_state'=>(string)$route['dns_state'],
+        'tls_state'=>(string)$route['tls_state'],
+        'ready'=>(string)$route['dns_state']==='verified'&&(string)$route['tls_state']==='active',
+        'provider'=>'cpanel_dns',
+        'record_type'=>(string)$route['record_type'],
+        'record_value'=>(string)$route['record_value'],
+        'tls_authority'=>'cloud_edge',
+    ];
+    return $base;
+}
+
 
 function vp3_cloud_hosting_v110_public_state(): array
 {
