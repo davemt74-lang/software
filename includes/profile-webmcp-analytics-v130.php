@@ -33,10 +33,19 @@ function vp3_profile_webmcp_referral_token_v130(string $value): string
 function vp3_profile_webmcp_telemetry_v130(array $input): array
 {
     $row=is_array($input['telemetry']??null)?$input['telemetry']:[];
+    $versions=is_array($input['client_versions']??null)?$input['client_versions']:[];
+    $pick=static function(mixed $value): string {
+        if(is_array($value))$value=$value[0]??'';
+        return mb_strimwidth(preg_replace('/[^A-Za-z0-9._:-]+/','_',trim((string)$value))??'',0,160,'');
+    };
     return [
         'webmcp_session_id'=>vp3_profile_webmcp_transport_id_v130((string)($row['webmcp_session_id']??'')),
         'interaction_id'=>vp3_profile_webmcp_transport_id_v130((string)($row['interaction_id']??'')),
         'agent_referral'=>vp3_profile_webmcp_referral_token_v130((string)($row['agent_referral']??'')),
+        'client_manifest_version'=>$pick($versions['manifest_versions']??''),
+        'client_release_version'=>$pick($versions['release_versions']??''),
+        'client_runtime_build'=>$pick($versions['runtime_build']??''),
+        'negotiation_contract'=>$pick($versions['negotiation_contract']??''),
     ];
 }
 
@@ -62,6 +71,11 @@ function vp3_profile_webmcp_event_envelope_v130(array $context,string $eventName
         'duration_ms'=>max(0,min(3600000,$durationMs)),
         'profile_username'=>mb_strimwidth(trim((string)($context['profile_username']??'')),0,64,''),
         'attribution_origin'=>mb_strimwidth(trim((string)($context['attribution_origin']??'webmcp_agent')),0,40,''),
+        'client_manifest_version'=>mb_strimwidth((string)($context['client_manifest_version']??''),0,160,''),
+        'client_release_version'=>mb_strimwidth((string)($context['client_release_version']??''),0,160,''),
+        'client_runtime_build'=>mb_strimwidth((string)($context['client_runtime_build']??''),0,160,''),
+        'negotiation_contract'=>mb_strimwidth((string)($context['negotiation_contract']??''),0,160,''),
+        'negotiation_mode'=>mb_strimwidth((string)($context['negotiation_mode']??''),0,40,''),
     ];
     foreach([
         'visitor_user_id','profile_session_id','conversation_id','referral_id','referral_agent_contact_id',
@@ -152,6 +166,11 @@ function vp3_profile_webmcp_context_v130(PDO $pdo,array $profile,string $surface
             'referral_id'=>$referralId,
             'referral_agent_contact_id'=>$referralContact,
             'attribution_origin'=>$referralId>0?'agent_referral':((int)($contact['id']??0)>0?'webmcp_agent':'webmcp_unclassified'),
+            'client_manifest_version'=>(string)($telemetry['client_manifest_version']??''),
+            'client_release_version'=>(string)($telemetry['client_release_version']??''),
+            'client_runtime_build'=>(string)($telemetry['client_runtime_build']??''),
+            'negotiation_contract'=>(string)($telemetry['negotiation_contract']??''),
+            'negotiation_mode'=>(string)($telemetry['negotiation_mode']??''),
             'risk_score'=>(int)($contact['risk_score']??0),
         ];
     }catch(Throwable $e){
@@ -206,7 +225,8 @@ function vp3_profile_webmcp_owner_activity_v130(PDO $pdo,int $ownerUserId,int $p
             'property_label'=>(string)$row['property_label'],'property_domain'=>(string)$row['domain'],
             'agent_contact_id'=>$row['agent_contact_id']!==null?(int)$row['agent_contact_id']:null,
             'display_name'=>(string)($row['display_name']??''),'operator_name'=>(string)($row['operator_name']??''),
-            'surface'=>(string)($details['surface']??''),'tool'=>(string)($details['tool']??''),'status'=>(string)($details['status']??''),
+            'surface'=>(string)($details['surface']??''),'tool'=>(string)($details['tool']??''),'status'=>(string)($details['status']??''),'result_code'=>(string)($details['result_code']??''),
+            'client_manifest_version'=>(string)($details['client_manifest_version']??''),'client_release_version'=>(string)($details['client_release_version']??''),'client_runtime_build'=>(string)($details['client_runtime_build']??''),'negotiation_mode'=>(string)($details['negotiation_mode']??''),
             'interaction_id'=>(string)($details['interaction_id']??''),'attribution_origin'=>(string)($details['attribution_origin']??''),
             'referral_id'=>(int)($details['referral_id']??0)?:null,'duration_ms'=>(int)($details['duration_ms']??0),
             'risk_score'=>(int)$row['risk_score'],'occurred_at'=>(string)$row['occurred_at'],

@@ -122,6 +122,7 @@ if(!is_array($input)){
 $telemetry=vp3_profile_webmcp_telemetry_v130($input);
 $clientVersions=vp3_profile_webmcp_client_versions_v200($input);
 $negotiation=vp3_profile_webmcp_negotiate_v200('external_site',$clientVersions);
+$telemetry['negotiation_mode']=(string)($negotiation['mode']??'');
 if(empty($negotiation['compatible'])){
     vp3_profile_webmcp_external_json_v120(false,vp3_profile_webmcp_negotiation_error_v200($negotiation),409);
 }
