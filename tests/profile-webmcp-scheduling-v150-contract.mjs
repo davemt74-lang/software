@@ -59,6 +59,10 @@ assert.match(scheduling,/agent_appointment_lifecycle_reschedule_v700/,'reschedul
 assert.match(scheduling,/agent_appointment_lifecycle_transition_v700/,'cancel must preserve canonical lifecycle');
 assert.match(scheduling,/agent_paid_appointments_create_personal_v800/,'paid appointments must use canonical paid hold');
 assert.match(scheduling,/agent_paid_appointments_payment_url_v800/,'paid booking must return existing secure payment flow');
+assert.match(scheduling,/if\(\$paid\)\{[\s\S]*vp3_profile_webmcp_booking_by_id_v150/,'paid booking response must reload canonical pending status after payment hold');
+assert.match(scheduling,/vp3_profile_webmcp_booking_public_projection_v150/,'public-token lookup must use PII-minimized projection');
+const publicProjection=scheduling.slice(scheduling.indexOf('function vp3_profile_webmcp_booking_public_projection_v150'),scheduling.indexOf('function vp3_profile_webmcp_booking_response_v150'));
+assert.doesNotMatch(publicProjection,/guest_name|guest_email|guest_phone|guest_notes|cancel_token|manage_token/,'public booking projection must not expose guest PII or management credentials');
 assert.doesNotMatch(scheduling,/agent_paid_appointments_mark_paid_v800/,'WebMCP must never mark appointment payment paid');
 assert.doesNotMatch(scheduling,/SELECT[\s\S]{0,240}(calendar_events|user_calendar_events)/i,'Scheduling WebMCP must not query private calendar rows directly');
 
