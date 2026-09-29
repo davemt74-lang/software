@@ -96,10 +96,11 @@ $state=['sites'=>[
 ]];
 $enriched=vp3_profile_webmcp_external_enrich_site_state_v120($pdo,['id'=>123],$state);
 t($enriched['sites'][0]['webmcp_enabled']===true,'active site WebMCP enabled');
-t($enriched['sites'][0]['webmcp_tool_count']===27,'active site tool count including Agent chat, Scheduling, and Commerce');
+t($enriched['sites'][0]['webmcp_tool_count']===30,'active site tool count including Agent chat, Scheduling, Commerce, and Campaign discovery');
 t($enriched['sites'][0]['webmcp_chat_enabled']===true,'active site reports Agent chat enabled');
 t($enriched['sites'][0]['webmcp_scheduling_enabled']===true,'active site reports Scheduling enabled');
 t($enriched['sites'][0]['webmcp_commerce_enabled']===true,'active site reports Commerce enabled');
+t($enriched['sites'][0]['webmcp_campaigns_enabled']===true,'active site reports Campaign discovery enabled');
 t($enriched['sites'][1]['webmcp_enabled']===false,'paused site WebMCP disabled');
 t($enriched['sites'][1]['webmcp_tool_count']===0,'paused site has no tools');
 
