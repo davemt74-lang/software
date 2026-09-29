@@ -180,7 +180,8 @@ function vp3_profile_webmcp_booking_projection_v150(array $booking): array
 
 function vp3_profile_webmcp_booking_response_v150(PDO $pdo,array $profile,array $booking,bool $includeManage=true,?array $snapshot=null): array
 {
-    $projection=$snapshot?:vp3_profile_webmcp_booking_projection_v150($booking);
+    $current=vp3_profile_webmcp_booking_projection_v150($booking);
+    $projection=$snapshot?array_merge($current,$snapshot):$current;
     $paid=null;$paymentUrl='';
     if(function_exists('agent_paid_appointments_schema_ready_v800')&&agent_paid_appointments_schema_ready_v800($pdo)){
         $paid=agent_paid_appointments_paid_booking_for_booking_v800($pdo,(int)$booking['id']);
