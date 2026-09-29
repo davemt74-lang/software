@@ -128,7 +128,8 @@ const COMMERCE_CATALOG_V160=deepFreeze({
     title:'Confirm booking cancellation',description:'Cancel the exact prepared booking after confirmation and idempotency validation.',
     inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
     annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
-  }});
+  }  ,...COMMERCE_CATALOG_V160
+});
 
 function safeError(code,message,retryable=false){
   return {ok:false,error:{code,message,retryable}};
