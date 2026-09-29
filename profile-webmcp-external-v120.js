@@ -130,7 +130,8 @@ class ExternalRuntime{
     if(!manifest||manifest.manifest_version!==MANIFEST||manifest.surface!=='external_site')return [];
     if(!manifest.external||manifest.external.transactional_actions!==false)return [];
     const allowed=new Set(Array.isArray(manifest.allowed_tools)?manifest.allowed_tools:[]);
-    return Object.keys(CATALOG).filter(name=>allowed.has(name)).sort();
+    const chatEnabled=manifest.external.stateful_profile_agent===true&&Boolean(this.chatGrant);
+    return Object.keys(CATALOG).filter(name=>allowed.has(name)&&(!isChatToolV140(name)||chatEnabled)).sort();
   }
 
   async loadManifest(){
