@@ -12,7 +12,7 @@ for(const name of ['vp3.agent.get','vp3.agent.conversation.get','vp3.agent.messa
   assert.match(runtime,new RegExp(name.replaceAll('.','\\.')),'browser catalog '+name);
 }
 assert.match(webmcp,/\$viewerId<1 \|\| \$viewerId!==\$ownerUserId/,'owner must not receive visitor Profile Agent capability');
-assert.match(webmcp,/\['profile','profile_agent'\]/,'intent resolver must recognize implemented Profile Agent adapter');
+assert.match(webmcp,/!in_array\(\$capability,\s*\['profile','profile_agent'(?:,'booking')?\],\s*true\)/,'intent resolver must recognize implemented Profile Agent adapter while allowing additional implemented adapters');
 
 assert.match(service,/vp3_profile_agent_public_conversation_v390/,'conversation authority must use v3.90 boundary');
 assert.match(service,/profile_agent_rate_check\(\$pdo,\$cid\)/,'canonical per-conversation rate limit retained');
