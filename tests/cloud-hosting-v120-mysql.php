@@ -322,6 +322,13 @@ $replay=vp3_cloud_hosting_v120_deploy_package($afterDeploy,$package,'deploy-1',1
 if(empty($replay['replayed']))throw new RuntimeException('Deployment replay was not served locally.');
 if(count($remoteState['ops'])!==$opCount)throw new RuntimeException('Deployment replay made duplicate remote calls.');
 
+$testPdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id=?')->execute([(int)$site['id']]);
+$afterRevisionChange=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
+$opsBeforeChangedReplay=count($remoteState['ops']);
+$changedReplay=vp3_cloud_hosting_v120_deploy_package($afterRevisionChange,$package,'deploy-1',1,$remote,$testPdo);
+if(empty($changedReplay['replayed']))throw new RuntimeException('Completed deployment replay broke after a later desired-state revision.');
+if(count($remoteState['ops'])!==$opsBeforeChangedReplay)throw new RuntimeException('Completed deployment replay reached HomeServer after a later revision.');
+
 $rollback=vp3_cloud_hosting_v120_rollback($afterDeploy,'rollback-1',1,$remote,$testPdo);
 if(($rollback['deployment']['state']??'')!=='rolled_back')throw new RuntimeException('Rollback did not complete.');
 $afterRollback=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
@@ -329,6 +336,13 @@ if(($afterRollback['active_release_id']??'')!=='release_0'||($afterRollback['pre
 $rollbackOps=count($remoteState['ops']);
 $rollbackReplay=vp3_cloud_hosting_v120_rollback($afterRollback,'rollback-1',1,$remote,$testPdo);
 if(empty($rollbackReplay['replayed'])||count($remoteState['ops'])!==$rollbackOps)throw new RuntimeException('Rollback replay was not idempotent.');
+
+$testPdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=desired_revision+1 WHERE id=?')->execute([(int)$site['id']]);
+$afterRollbackRevisionChange=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
+$opsBeforeRollbackChangedReplay=count($remoteState['ops']);
+$rollbackChangedReplay=vp3_cloud_hosting_v120_rollback($afterRollbackRevisionChange,'rollback-1',1,$remote,$testPdo);
+if(empty($rollbackChangedReplay['replayed']))throw new RuntimeException('Completed rollback replay broke after a later desired-state revision.');
+if(count($remoteState['ops'])!==$opsBeforeRollbackChangedReplay)throw new RuntimeException('Completed rollback replay reached HomeServer after a later revision.');
 
 $stored=$testPdo->query("SELECT remote_json FROM cloud_hosting_site_sync WHERE site_id=".(int)$site['id'])->fetchColumn();
 if(str_contains((string)$stored,'ROUTE_TOKEN_SUPER_SECRET'))throw new RuntimeException('Route token leaked into site sync projection.');
