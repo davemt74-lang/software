@@ -16,6 +16,7 @@ $runtime=is_array($summary['runtime_distribution']??null)?$summary['runtime_dist
 $surfaces=is_array($summary['surface_distribution']??null)?$summary['surface_distribution']:[];
 $modes=is_array($summary['negotiation_distribution']??null)?$summary['negotiation_distribution']:[];
 $failureRate=(float)($summary['failure_rate_percent']??0);
+$toolLifecycle=function_exists('vp3_profile_webmcp_tool_registry_summary_v203')?vp3_profile_webmcp_tool_registry_summary_v203(vp3_profile_webmcp_tool_catalog_v100()):['counts'=>[],'tools'=>[]];
 
 $adminTitle='WebMCP Operations';
 $adminActive='webmcp';
@@ -79,6 +80,21 @@ require __DIR__.'/_header.php';
     </div>
   </section>
 </div>
+
+<section class="admin-dashboard-card">
+  <div class="admin-dashboard-card-head">
+    <div><h3>Tool lifecycle</h3><p>Canonical compatibility and deprecation state for every WebMCP tool.</p></div>
+    <span><?= number_format(count((array)($toolLifecycle['tools']??[]))) ?> tools</span>
+  </div>
+  <div class="admin-kpi-grid" style="margin-bottom:14px!important">
+    <?php foreach(['active'=>'Active','deprecated'=>'Deprecated','sunset_pending'=>'Sunset pending','disabled'=>'Disabled'] as $state=>$label): ?>
+      <article class="admin-kpi"><div class="admin-kpi-head"><span><?= e($label) ?></span><span>Lifecycle</span></div><strong><?= number_format((int)($toolLifecycle['counts'][$state]??0)) ?></strong><small>Canonical tool registry</small></article>
+    <?php endforeach; ?>
+  </div>
+  <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Tool</th><th>State</th><th>Introduced</th><th>Replacement</th><th>Sunset</th><th>Minimum runtime</th></tr></thead><tbody>
+    <?php foreach((array)($toolLifecycle['tools']??[]) as $tool): ?><tr><td><?= e((string)$tool['tool']) ?></td><td><?= e((string)$tool['state']) ?></td><td><?= e((string)$tool['introduced_release']) ?></td><td><?= e((string)$tool['replacement_tool']) ?></td><td><?= e((string)$tool['sunset_at']) ?></td><td><?= e((string)$tool['minimum_runtime_build']) ?></td></tr><?php endforeach; ?>
+  </tbody></table></div>
+</section>
 
 <section class="admin-dashboard-card">
   <div class="admin-dashboard-card-head">
