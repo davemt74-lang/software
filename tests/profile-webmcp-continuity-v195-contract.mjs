@@ -9,6 +9,7 @@ const boundary=read('includes/agent-tool-authorization-v400.php');
 const profile=read('profile.php');
 const chat=read('chat.php');
 const runtime=read('profile-webmcp-v100.js');
+const profileAgent=read('profile-agent.js');
 const workflow=read('.github/workflows/public-funnel-onboarding-continuity.yml');
 const recovery=read('tools/run_recovery_baseline.py');
 
@@ -36,6 +37,8 @@ assert.match(chat,/vp3_profile_webmcp_return_consume_v195/);
 assert.match(runtime,/continuityEndpoint/);
 assert.match(runtime,/noteContinuity/);
 assert.match(runtime,/vp3:webmcp-return-ready/);
+assert.match(runtime,/vp3:webmcp-cancel/);
+assert.match(profileAgent,/vp3:webmcp-cancel/);
 assert.match(workflow,/profile-webmcp-continuity-v195/);
 assert.match(recovery,/profile-webmcp-continuity-v195/);
 console.log('PROFILE_WEBMCP_CONTINUITY_V195_CONTRACT=PASS');
