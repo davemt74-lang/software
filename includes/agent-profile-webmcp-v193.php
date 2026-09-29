@@ -84,6 +84,7 @@ function vp3_agent_profile_webmcp_plan_v193(PDO $pdo,string $query,array $user):
     )));
     $domainText=$domains?implode(', ',$domains):'profile';
     $profileUrl=profile_public_url((string)$profile['username']);
+    $profilePath='/'.rawurlencode((string)$profile['username']);
 
     return [
         'handled'=>true,
@@ -92,7 +93,7 @@ function vp3_agent_profile_webmcp_plan_v193(PDO $pdo,string $query,array $user):
         'actions'=>[[
             'type'=>'open_url',
             'label'=>'Open my public Profile',
-            'url'=>$profileUrl,
+            'url'=>$profilePath,
         ]],
         'sources'=>[[
             'source'=>'profile:webmcp-capabilities',
