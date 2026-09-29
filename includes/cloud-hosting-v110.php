@@ -261,6 +261,44 @@ function vp3_cloud_hosting_v110_assert_provision_entitled(array $site,?PDO $pdo=
 }
 
 
+function vp3_cloud_hosting_v110_claim_route(PDO $pdo,int $siteId,string $zone,string $hostname,string $target): array
+{
+    $pdo->beginTransaction();
+    try{
+        $stmt=$pdo->prepare('SELECT id FROM cloud_hosting_sites WHERE id=? FOR UPDATE');
+        $stmt->execute([$siteId]);
+        if(!(int)$stmt->fetchColumn())throw new RuntimeException('Hosted site no longer exists.');
+        $route=vp3_cloud_hosting_v110_route_for_site($siteId,$pdo);
+        if($route!==null){
+            $same=(string)$route['zone_domain']===$zone
+                && (string)$route['hostname']===$hostname
+                && (string)$route['record_type']==='CNAME'
+                && rtrim(strtolower((string)$route['record_value']),'.')===rtrim(strtolower($target),'.');
+            if(!$same)throw new RuntimeException('This hosted site already has a different DNS route.');
+            if(in_array((string)$route['dns_state'],['provisioned','verified'],true)){
+                $pdo->commit();
+                return ['claimed'=>false,'reusable'=>true,'route'=>$route];
+            }
+            if((string)$route['dns_state']==='provisioning'){
+                throw new RuntimeException('DNS provisioning is already in progress for this hosted site.');
+            }
+            $stmt=$pdo->prepare("UPDATE cloud_hosting_routes SET dns_state='provisioning',last_provider_status='requesting',last_error_code='',last_error_message='',deactivated_at=NULL WHERE site_id=?");
+            $stmt->execute([$siteId]);
+        }else{
+            $stmt=$pdo->prepare("INSERT INTO cloud_hosting_routes
+              (site_id,provider,zone_domain,hostname,record_type,record_value,dns_state,tls_state,last_provider_status)
+              VALUES (?,'cpanel_dns',?,?, 'CNAME',?,'provisioning','pending','requesting')");
+            $stmt->execute([$siteId,$zone,$hostname,$target]);
+        }
+        $pdo->commit();
+        return ['claimed'=>true,'reusable'=>false,'route'=>vp3_cloud_hosting_v110_route_for_site($siteId,$pdo)];
+    }catch(Throwable $e){
+        if($pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
+}
+
+
 function vp3_cloud_hosting_v110_provision_dns(
     array $site,
     string $requestKey,
@@ -290,6 +328,11 @@ function vp3_cloud_hosting_v110_provision_dns(
 
     $operationId=(int)$op['id'];
     try{
+        $claim=vp3_cloud_hosting_v110_claim_route($pdo,$siteId,$zone,$hostname,$target);
+        if(!empty($claim['reusable'])){
+            vp3_cloud_hosting_v110_finish_operation($pdo,$operationId,'succeeded',200,['reused_existing_route'=>true]);
+            return ['replayed'=>false,'reused'=>true,'route'=>$claim['route']];
+        }
         $result=vp3_cloud_hosting_v110_cpanel_call('api2','ZoneEdit','add_zone_record',[
             'domain'=>$zone,
             'name'=>$hostname,
@@ -299,15 +342,12 @@ function vp3_cloud_hosting_v110_provision_dns(
             'class'=>'IN',
         ],$transport);
 
-        $stmt=$pdo->prepare("INSERT INTO cloud_hosting_routes
-          (site_id,provider,zone_domain,hostname,record_type,record_value,dns_state,tls_state,last_provider_status,provisioned_at)
-          VALUES (?,'cpanel_dns',?,?, 'CNAME',?,'provisioned','pending','success',NOW())
-          ON DUPLICATE KEY UPDATE
-            zone_domain=VALUES(zone_domain),hostname=VALUES(hostname),record_type='CNAME',
-            record_value=VALUES(record_value),dns_state='provisioned',tls_state='pending',
-            last_provider_status='success',last_error_code='',last_error_message='',
-            provisioned_at=NOW(),deactivated_at=NULL");
-        $stmt->execute([$siteId,$zone,$hostname,$target]);
+        $stmt=$pdo->prepare("UPDATE cloud_hosting_routes SET
+          dns_state='provisioned',tls_state='pending',last_provider_status='success',
+          last_error_code='',last_error_message='',provisioned_at=NOW(),deactivated_at=NULL
+          WHERE site_id=? AND dns_state='provisioning'");
+        $stmt->execute([$siteId]);
+        if($stmt->rowCount()!==1)throw new RuntimeException('Hosting DNS route lost its provisioning claim.');
 
         $pdo->prepare("UPDATE cloud_hosting_sites SET canonical_hostname=?,route_state='provisioned',tls_state='pending',last_error_code='',last_error_message='' WHERE id=?")
             ->execute([$hostname,$siteId]);
@@ -317,6 +357,8 @@ function vp3_cloud_hosting_v110_provision_dns(
         vp3_cloud_hosting_v110_finish_operation($pdo,$operationId,'succeeded',(int)$result['status'],vp3_cloud_hosting_v110_provider_response_public($result));
     }catch(Throwable $e){
         vp3_cloud_hosting_v110_finish_operation($pdo,$operationId,'failed',0,[],$e->getMessage());
+        $pdo->prepare("UPDATE cloud_hosting_routes SET dns_state='failed',last_provider_status='failed',last_error_code='dns_provision_failed',last_error_message=? WHERE site_id=? AND dns_state='provisioning'")
+            ->execute([mb_substr($e->getMessage(),0,500),$siteId]);
         $pdo->prepare("UPDATE cloud_hosting_sites SET route_state='failed',last_error_code='dns_provision_failed',last_error_message=? WHERE id=?")
             ->execute([mb_substr($e->getMessage(),0,500),$siteId]);
         throw $e;
