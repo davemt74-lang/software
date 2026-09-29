@@ -137,22 +137,22 @@ function vp3_cloud_hosting_agent_v130_site_status(array $site,?callable $remote=
     $sync=vp3_cloud_hosting_agent_v130_sync_row($siteId,$pdo);
     $deployment=vp3_cloud_hosting_agent_v130_latest_deployment($siteId,$pdo);
     $connection=function_exists('homeserver_vp3_connection')?homeserver_vp3_connection($userId):null;
-    $dashboard=null;
+
+    $diagnostics=[];
+    $health=[];
     try{
-        $dashboard=vp3_cloud_hosting_v120_remote($userId,'hosting.dashboard',[],$remote);
+        if(function_exists('vp3_cloud_hosting_diagnostics_v230_summary')){
+            $diagnostics=vp3_cloud_hosting_diagnostics_v230_summary($site,60,12,$remote,$pdo);
+        }
     }catch(Throwable $e){
-        $dashboard=null;
+        $diagnostics=['error'=>mb_substr($e->getMessage(),0,240)];
     }
-    $remoteSite=null;
-    foreach((array)($dashboard['sites']??[]) as $row){
-        if(!is_array($row))continue;
-        $binding=(array)($row['cloud_binding']??[]);
-        if((string)($binding['cloud_site_id']??'')===(string)$site['site_key']){
-            $remoteSite=$row;break;
+    try{
+        if(function_exists('vp3_cloud_hosting_health_v240_summary')){
+            $health=vp3_cloud_hosting_health_v240_summary($site,$remote,$pdo);
         }
-        if((string)($row['cloud_site_id']??'')===(string)$site['site_key']){
-            $remoteSite=$row;break;
-        }
+    }catch(Throwable $e){
+        $health=['error'=>mb_substr($e->getMessage(),0,240)];
     }
 
     $issues=[];
@@ -168,8 +168,14 @@ function vp3_cloud_hosting_agent_v130_site_status(array $site,?callable $remote=
         $issues[]='The latest deployment is '.(string)$deployment['state'].'.';
     }
     if(is_array($sync)&&($sync['last_error_message']??'')!=='')$issues[]=mb_substr((string)$sync['last_error_message'],0,240);
+    foreach((array)($diagnostics['issues']??[]) as $diagnosticIssue)$issues[]=(string)$diagnosticIssue;
+    $healthState=(string)($health['health_state']??'unknown');
+    if(in_array($healthState,['degraded','failing','recovering','escalated'],true)){
+        $issues[]='Automated Hosting health is '.$healthState.'.';
+    }
+    if((string)($diagnostics['error']??'')!=='')$issues[]='Runtime diagnostics are unavailable: '.(string)$diagnostics['error'];
+    if((string)($health['error']??'')!=='')$issues[]='Automated health status is unavailable: '.(string)$health['error'];
 
-    $traffic=is_array($remoteSite)?(array)($remoteSite['observability']??[]):[];
     $customDomains=function_exists('vp3_cloud_hosting_domains_v200_for_site')
         ?array_map('vp3_cloud_hosting_domains_v200_public',vp3_cloud_hosting_domains_v200_for_site($siteId,$userId,$pdo))
         :[];
@@ -190,11 +196,18 @@ function vp3_cloud_hosting_agent_v130_site_status(array $site,?callable $remote=
         'latest_deployment'=>$deployment,
         'custom_domains'=>$customDomains,
         'traffic'=>[
-            'requests_total'=>(int)($traffic['requests_total']??0),
-            'client_error_total'=>(int)($traffic['client_error_total']??0),
-            'server_error_total'=>(int)($traffic['server_error_total']??0),
-            'average_duration_ms'=>(float)($traffic['average_duration_ms']??0),
+            'requests_total'=>(int)($diagnostics['requests_total']??0),
+            'client_error_total'=>(int)($diagnostics['client_error_total']??0),
+            'server_error_total'=>(int)($diagnostics['server_error_total']??0),
+            'php_failure_total'=>(int)($diagnostics['php_failure_total']??0),
+            'slow_request_total'=>(int)($diagnostics['slow_request_total']??0),
+            'average_duration_ms'=>(float)($diagnostics['average_duration_ms']??0),
+            'p95_duration_ms'=>(float)($diagnostics['p95_duration_ms']??0),
+            'storage_bytes'=>(int)($diagnostics['storage_bytes']??0),
+            'sqlite_bytes'=>(int)($diagnostics['sqlite_bytes']??0),
         ],
+        'diagnostics'=>$diagnostics,
+        'health_recovery'=>$health,
         'issues'=>array_values(array_unique(array_filter($issues))),
     ];
 }
@@ -524,12 +537,33 @@ function vp3_cloud_hosting_agent_v130_query(
         }
         $status=vp3_cloud_hosting_agent_v130_site_status($site,$remote,$pdo);
         $issues=(array)$status['issues'];
-        $answer=(string)$status['display_name'].' is desired '.(string)$status['desired_state'].' and HomeServer currently reports '.(string)$status['observed_state'].'.';
+        $health=(array)($status['health_recovery']??[]);
+        $healthState=(string)($health['health_state']??'unknown');
+        $answer=(string)$status['display_name'].' is desired '.(string)$status['desired_state'].' and HomeServer currently reports '.(string)$status['observed_state'].'. Automated health: '.$healthState.'.';
         if($issues)$answer.="\n".implode("\n",array_map(static fn($x)=>'• '.$x,$issues));
         else $answer.="\nI do not see a current Hosting fault.";
-        if(str_contains($q,'traffic')||str_contains($q,'request')||str_contains($q,'error')||str_contains($q,'slow')){
+        if(str_contains($q,'why')||str_contains($q,'down')||str_contains($q,'offline')||str_contains($q,'health')){
+            $diagnostics=(array)($status['diagnostics']??[]);
+            if($diagnostics&&function_exists('vp3_cloud_hosting_diagnostics_v230_explanation')){
+                $answer.="\n".vp3_cloud_hosting_diagnostics_v230_explanation($diagnostics);
+            }
+            $incident=(array)($health['incident']??[]);
+            if($incident){
+                $answer.="\nLatest incident state: ".(string)($incident['state']??'unknown').".";
+            }
+            $history=(array)($health['history']??[]);
+            foreach($history as $event){
+                if((string)($event['event_type']??'')==='hosting.health.recovery.action'){
+                    $action=(string)($event['action']??'');
+                    $actionStatus=(string)($event['status']??'');
+                    if($action!=='')$answer.="\nLast automatic recovery action: ".$action." (".$actionStatus.").";
+                    break;
+                }
+            }
+        }
+        if(str_contains($q,'traffic')||str_contains($q,'request')||str_contains($q,'error')||str_contains($q,'slow')||str_contains($q,'latency')){
             $t=(array)$status['traffic'];
-            $answer.="\nTraffic: ".(int)$t['requests_total']." requests, ".(int)$t['client_error_total']." client errors, ".(int)$t['server_error_total']." server errors, ".number_format((float)$t['average_duration_ms'],1)." ms average.";
+            $answer.="\nTraffic: ".(int)$t['requests_total']." requests, ".(int)$t['client_error_total']." client errors, ".(int)$t['server_error_total']." server errors, ".(int)$t['php_failure_total']." PHP failures, ".(int)$t['slow_request_total']." slow requests, ".number_format((float)$t['average_duration_ms'],1)." ms average, ".number_format((float)$t['p95_duration_ms'],1)." ms p95.";
         }
         return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>['read_only'=>true,'status'=>$status]];
     }
