@@ -414,6 +414,10 @@ function vp3_profile_webmcp_scheduling_confirm_v150(
     $owner=(int)$profile['user_id'];
     $intentId=(string)$verified['intent_id'];
     $idem=vp3_profile_webmcp_idempotency_hash_v150($owner,$operation,$idempotencyKey);
+    $idempotencyLock='vp3_webmcp_idem_'.substr($idem,0,32);
+    $lockStmt=$pdo->prepare('SELECT GET_LOCK(?,5)');
+    $lockStmt->execute([$idempotencyLock]);
+    if((int)$lockStmt->fetchColumn()!==1)throw new RuntimeException('That scheduling confirmation is already in progress. Retry with the same idempotency key.');
 
     $started=!$pdo->inTransaction();
     try{
@@ -459,6 +463,8 @@ function vp3_profile_webmcp_scheduling_confirm_v150(
     }catch(Throwable $e){
         if($started&&$pdo->inTransaction())$pdo->rollBack();
         throw $e;
+    }finally{
+        try{$release=$pdo->prepare('SELECT RELEASE_LOCK(?)');$release->execute([$idempotencyLock]);}catch(Throwable $ignored){}
     }
 }
 
