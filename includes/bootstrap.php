@@ -57,6 +57,7 @@ require_once __DIR__.'/agent-radar-chat.php';
 require_once __DIR__.'/agent-radar-portal.php';
 require_once __DIR__.'/vp3-analytics.php';
 require_once __DIR__.'/agent-referral-attribution.php';
+require_once __DIR__.'/profile-webmcp-analytics-v130.php';
 require_once __DIR__.'/vp3-analytics-dashboard.php';
 require_once __DIR__.'/vp3-analytics-intelligence.php';
 require_once __DIR__.'/vp3-analytics-chat.php';
