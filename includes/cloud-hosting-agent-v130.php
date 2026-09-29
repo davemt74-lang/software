@@ -64,7 +64,7 @@ function vp3_cloud_hosting_agent_v130_intent(string $query): bool
 {
     $q=mb_strtolower(trim($query));
     if($q==='')return false;
-    return (bool)preg_match('/\b(?:hosting|hosted\s+sites?|subdomains?|custom\s+domains?|domains?|dns|deployment|deploy|rollback|home\s*server\s+sites?|homeserver\s+sites?|website\s+offline|site\s+offline)\b/u',$q);
+    return (bool)preg_match('/\b(?:hosting|hosted\s+sites?|subdomains?|custom\s+domains?|domains?|dns|deployment|deploy|releases?|promote|promotion|prune|retention|rollback|home\s*server\s+sites?|homeserver\s+sites?|website\s+offline|site\s+offline)\b/u',$q);
 }
 
 function vp3_cloud_hosting_agent_v130_user_site(int $userId,string $needle,?PDO $pdo=null): ?array
@@ -232,6 +232,7 @@ function vp3_cloud_hosting_agent_v130_prepare(
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in user is required.');
     $allowed=[
         'site.create','site.state','route.provision','site.reconcile','deployment.rollback',
+        'deployment.promote','deployment.prune',
         'domain.attach','domain.canonical','domain.detach'
     ];
     if(!in_array($actionType,$allowed,true))throw new RuntimeException('Unsupported Hosting Agent action.');
@@ -331,6 +332,12 @@ function vp3_cloud_hosting_agent_v130_execute(array $row,array $user,?callable $
     }
     if($type==='deployment.rollback'){
         return vp3_cloud_hosting_v120_rollback($site,$key,$uid,$remote,$pdo);
+    }
+    if($type==='deployment.promote'){
+        return vp3_cloud_hosting_releases_v220_promote($site,(string)($payload['release_id']??''),$key,$uid,$remote,$pdo);
+    }
+    if($type==='deployment.prune'){
+        return vp3_cloud_hosting_releases_v220_prune($site,(int)($payload['keep']??5),$key,$uid,$remote,$pdo);
     }
     if($type==='domain.attach'){
         $attached=vp3_cloud_hosting_domains_v200_attach($site,$user,(string)($payload['hostname']??''),$uid,$pdo);
@@ -465,6 +472,8 @@ function vp3_cloud_hosting_agent_v130_query(
     }
 
     $q=mb_strtolower($query);
+    $releaseId='';
+    if(preg_match('/\b(release_[0-9a-f]{24})\b/i',$query,$releaseMatch))$releaseId=strtolower((string)$releaseMatch[1]);
     $customDomainHost='';
     if(preg_match('/\b(?:custom\s+domain|domain)\s+([a-z0-9][a-z0-9.-]+\.[a-z]{2,})\b/i',$query,$m)){
         $customDomainHost=strtolower((string)$m[1]);
@@ -475,10 +484,38 @@ function vp3_cloud_hosting_agent_v130_query(
     $hint=vp3_cloud_hosting_agent_v130_extract_site_hint($siteQuery);
     $site=vp3_cloud_hosting_agent_v130_user_site($uid,$hint,$pdo);
 
-    if(preg_match('/\b(?:list|show|what|which)\b.*\b(?:hosting|hosted\s+sites?|sites?)\b|\bmy\s+hosted\s+sites?\b/i',$query)){
+    if(!preg_match('/\b(?:releases?|release\s+history|deployment\s+history)\b/i',$query)
+        &&preg_match('/\b(?:list|show|what|which)\b.*\b(?:hosting|hosted\s+sites?|sites?)\b|\bmy\s+hosted\s+sites?\b/i',$query)){
         $sites=vp3_cloud_hosting_agent_v130_list($user,$remote,$pdo);
         $answer=$sites?'Your hosted sites:'."\n".implode("\n",vp3_cloud_hosting_agent_v130_site_lines($sites)):'You do not have any Cloud Hosting sites yet.';
         return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+    }
+
+    if(preg_match('/\b(?:releases?|release\s+history|deployment\s+history)\b/i',$query)
+        &&preg_match('/\b(?:list|show|what|which|history)\b/i',$query)){
+        if(!$site){
+            return ['handled'=>true,'answer'=>'I need a specific hosted site name or hostname for that release-history check.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+        }
+        try{
+            $catalog=vp3_cloud_hosting_releases_v220_catalog($site,$remote,$pdo);
+            $rows=(array)($catalog['releases']??[]);
+            if(!$rows)$answer='There are no retained HomeServer releases for “'.(string)$site['display_name'].'” yet.';
+            else{
+                $lines=[];
+                foreach(array_slice($rows,0,10) as $release){
+                    $label=(string)($release['app_version']??'');
+                    if($label==='')$label=(string)$release['release_id'];
+                    $flags=[];
+                    if(!empty($release['active']))$flags[]='active';
+                    if(!empty($release['previous']))$flags[]='previous';
+                    $lines[]='• '.$label.' — '.(string)$release['release_id'].($flags?' — '.implode(', ',$flags):'');
+                }
+                $answer='Retained releases for “'.(string)$site['display_name'].'”:'."\n".implode("\n",$lines);
+            }
+            return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>['read_only'=>true,'release_catalog'=>$catalog]];
+        }catch(Throwable $e){
+            return ['handled'=>true,'answer'=>'I could not load that release history: '.$e->getMessage(),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+        }
     }
 
     if(preg_match('/\b(?:status|health|offline|down|error|errors|traffic|requests|slow|latency|why)\b/i',$query)){
@@ -566,6 +603,17 @@ function vp3_cloud_hosting_agent_v130_query(
         $preview=['site'=>(string)$site['display_name'],'custom_domain'=>$customDomainHost];
         $intro='I prepared detaching custom domain “'.$customDomainHost.'”. Existing DNS records at the user’s DNS provider will not be deleted automatically.';
     }
+    if($actionType===''&&$releaseId!==''&&preg_match('/\b(?:promote|activate|use|restore)\b/i',$query)){
+        $actionType='deployment.promote';$payload=['release_id'=>$releaseId];
+        $preview=['site'=>(string)$site['display_name'],'release_id'=>$releaseId];
+        $intro='I prepared promotion of retained release “'.$releaseId.'” for “'.(string)$site['display_name'].'”. HomeServer will create a recovery point before activation.';
+    }elseif($actionType===''&&preg_match('/\b(?:prune|trim|clean\s+up)\b.*\breleases?\b/i',$query)){
+        $keep=5;
+        if(preg_match('/\bkeep\s+(\d{1,2})\b/i',$query,$keepMatch))$keep=max(2,min(50,(int)$keepMatch[1]));
+        $actionType='deployment.prune';$payload=['keep'=>$keep];
+        $preview=['site'=>(string)$site['display_name'],'keep'=>$keep,'active_previous_protected'=>true];
+        $intro='I prepared HomeServer release retention for “'.(string)$site['display_name'].'”, keeping at least '.$keep.' retained releases while always protecting active and previous releases.';
+    }
     if($actionType===''){ if(preg_match('/\b(?:activate|enable|publish|bring\s+online)\b/i',$query)){
         $actionType='site.state';$payload=['desired_state'=>'active'];
         $preview=['site'=>(string)$site['display_name'],'desired_state'=>'active'];
@@ -613,5 +661,5 @@ function vp3_cloud_hosting_agent_v130_prompt(array $user): string
 {
     $uid=(int)($user['id']??0);
     if($uid<1)return '';
-    return 'Cloud Hosting tools: list and diagnose the user’s hosted sites; inspect route, deployment, HomeServer and traffic health; prepare site creation, activation/suspension, cPanel DNS provisioning, custom-domain attach/canonical/detach, reconciliation and rollback; verify custom-domain ownership/routing read-only. Consequential Hosting changes always require the explicit 8-character confirmation code returned by the prepare step and execute through a bounded server-side lease with idempotent retry protection. Never request or reveal cPanel API tokens, HomeServer credentials, route tokens, private keys, raw SQL or filesystem paths.';
+    return 'Cloud Hosting tools: list and diagnose the user’s hosted sites; inspect route, deployment, HomeServer and traffic health; prepare site creation, activation/suspension, cPanel DNS provisioning, custom-domain attach/canonical/detach, release promotion/retention, reconciliation and rollback; inspect release history and verify custom-domain ownership/routing read-only. Consequential Hosting changes always require the explicit 8-character confirmation code returned by the prepare step and execute through a bounded server-side lease with idempotent retry protection. Never request or reveal cPanel API tokens, HomeServer credentials, route tokens, private keys, raw SQL or filesystem paths.';
 }

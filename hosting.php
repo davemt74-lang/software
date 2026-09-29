@@ -42,6 +42,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             'dns.verify'=>'DNS verification completed.',
             'deployment.deploy'=>'Deployment ZIP transferred and activated on HomeServer.',
             'deployment.rollback'=>'Hosted site rolled back to the previous release.',
+            'deployment.promote'=>'Historical release promoted on HomeServer.',
+            'deployment.prune'=>'Release retention applied on HomeServer.',
             'domain.attach'=>'Custom domain attached. Add the ownership and routing DNS records shown below.',
             'domain.verify_ownership'=>'Custom-domain ownership verification checked.',
             'domain.verify_routing'=>'Custom-domain routing verification checked.',
@@ -61,6 +63,18 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 $dashboard=vp3_cloud_hosting_ui_v140_dashboard($user,$pdo);
 $entitlements=(array)$dashboard['entitlements'];
 $sites=(array)$dashboard['sites'];
+foreach($sites as $siteIndex=>$siteRow){
+    $sites[$siteIndex]['release_catalog']=['releases'=>[],'active_release_id'=>$siteRow['active_release_id']??null,'previous_release_id'=>$siteRow['previous_release_id']??null];
+    $sites[$siteIndex]['release_catalog_error']='';
+    try{
+        $owned=vp3_cloud_hosting_site_v100((int)$siteRow['id'],(int)$user['id'],$pdo);
+        if($owned&&function_exists('vp3_cloud_hosting_releases_v220_catalog')){
+            $sites[$siteIndex]['release_catalog']=vp3_cloud_hosting_releases_v220_catalog($owned,null,$pdo);
+        }
+    }catch(Throwable $releaseCatalogError){
+        $sites[$siteIndex]['release_catalog_error']=mb_substr($releaseCatalogError->getMessage(),0,240);
+    }
+}
 $notice=flash('hosting_notice');
 $error=flash('hosting_error');
 $hostingUserMenuLinks=member_navigation_menu_links($user);
@@ -196,6 +210,9 @@ $bytesText=static function(int $bytes):string{
                 $deployment=(array)($site['deployment']??[]);
                 $sync=(array)($site['sync']??[]);
                 $customDomains=(array)($site['custom_domains']??[]);
+                $releaseCatalog=(array)($site['release_catalog']??[]);
+                $releaseRows=(array)($releaseCatalog['releases']??[]);
+                $releaseCatalogError=(string)($site['release_catalog_error']??'');
                 $isActive=(string)$site['desired_state']==='active';
                 $routeReady=!empty($sync['public_route_ready']);
               ?>
@@ -240,6 +257,53 @@ $bytesText=static function(int $bytes):string{
                     <form method="post" data-hosting-confirm="Roll this site back to its previous HomeServer release?"><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="deployment.rollback"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('rollback')) ?>"><button type="submit">Rollback</button></form>
                   <?php endif; ?>
                 </div>
+
+                <section class="hosting-releases">
+                  <div class="hosting-releases-head">
+                    <div><strong>Release History</strong><span>Retained releases live on HomeServer. Promoting an older release creates a recovery point before activation.</span></div>
+                    <form method="post" class="hosting-retention" data-hosting-confirm="Prune old retained releases? Active and previous releases are always protected.">
+                      <?= csrf_field() ?>
+                      <input type="hidden" name="confirmed" value="0" data-hosting-confirmed>
+                      <input type="hidden" name="action" value="deployment.prune">
+                      <input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>">
+                      <input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('prune')) ?>">
+                      <label><span>Keep</span><select name="keep"><?php foreach([2,3,5,10,20] as $keep): ?><option value="<?= $keep ?>"<?= $keep===5?' selected':'' ?>><?= $keep ?></option><?php endforeach; ?></select></label>
+                      <button type="submit">Apply Retention</button>
+                    </form>
+                  </div>
+                  <?php if($releaseCatalogError!==''): ?>
+                    <small class="hosting-release-error">Release history unavailable: <?= e($releaseCatalogError) ?></small>
+                  <?php elseif(!$releaseRows): ?>
+                    <small class="hosting-release-empty">No retained HomeServer releases yet.</small>
+                  <?php else: ?>
+                    <div class="hosting-release-list">
+                      <?php foreach($releaseRows as $release): ?>
+                        <article class="hosting-release-row<?= !empty($release['active'])?' active':'' ?>">
+                          <div>
+                            <strong><?= e((string)($release['app_version']!==''?$release['app_version']:$release['release_id'])) ?></strong>
+                            <span><?= e((string)$release['release_id']) ?></span>
+                            <small><?= e(strtoupper((string)$release['runtime'])) ?><?= !empty($release['created_at'])?' · '.e((string)$release['created_at']):'' ?><?= !empty($release['package_sha256'])?' · '.e(substr((string)$release['package_sha256'],0,12)).'…':'' ?></small>
+                          </div>
+                          <div class="hosting-release-row-actions">
+                            <?php if(!empty($release['active'])): ?><span class="hosting-release-badge active">Active</span><?php endif; ?>
+                            <?php if(!empty($release['previous'])): ?><span class="hosting-release-badge">Previous</span><?php endif; ?>
+                            <?php if(empty($release['active'])): ?>
+                              <form method="post" data-hosting-confirm="Promote this retained HomeServer release? A recovery point will be created first.">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="confirmed" value="0" data-hosting-confirmed>
+                                <input type="hidden" name="action" value="deployment.promote">
+                                <input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>">
+                                <input type="hidden" name="release_id" value="<?= e((string)$release['release_id']) ?>">
+                                <input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('promote')) ?>">
+                                <button type="submit">Promote</button>
+                              </form>
+                            <?php endif; ?>
+                          </div>
+                        </article>
+                      <?php endforeach; ?>
+                    </div>
+                  <?php endif; ?>
+                </section>
 
                 <section class="hosting-domains">
                   <div class="hosting-domains-head">
