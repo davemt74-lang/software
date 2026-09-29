@@ -7,6 +7,7 @@ const catalog=read('includes/profile-webmcp-v100.php');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
 const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const nativeApi=read('api/profile-webmcp-v100.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const externalApi=read('api/profile-webmcp-external-v120.php');
 const nativeRuntime=read('profile-webmcp-v100.js');
 const externalRuntime=read('profile-webmcp-external-v120.js');
@@ -32,7 +33,7 @@ assert.match(chat,/status IN \('open','owner_joined','resolved'\)/,'chat start m
 
 assert.match(catalog,/vp3\.agent\.chat\.start/);
 assert.match(nativeRuntime,/vp3\.agent\.chat\.start/);
-assert.match(nativeApi,/vp3_profile_webmcp_chat_start_v140/,'native and external surfaces must share chat start semantics');
+assert.match(router,/vp3_profile_webmcp_chat_start_v140/,'native and external surfaces must share chat start semantics');
 
 assert.match(externalLayer,/stateful_profile_agent'\s*=>\s*\$chatEnabled/);
 assert.match(externalLayer,/transactional_actions'\s*=>\s*\$schedulingEnabled\|\|\$commerceEnabled/,'scheduling or commerce may enable governed connected-site transactional actions');
@@ -47,9 +48,9 @@ assert.doesNotMatch(resolver,/vp3\.rewards\.claim/,'rewards remain outside the c
 assert.match(externalApi,/vp3_profile_webmcp_chat_grant_create_v140/,'GET manifest must mint a scoped chat grant');
 assert.match(externalApi,/vp3_profile_webmcp_chat_grant_verify_v140/,'stateful calls must verify the grant');
 assert.match(externalApi,/vp3_profile_webmcp_external_chat_context_v140/,'external chat must create canonical profile-session context');
-assert.match(externalApi,/vp3_profile_agent_public_message_service_v110/,'external chat must reuse canonical message service');
+assert.match(router,/vp3_profile_agent_public_message_service_v110/,'external chat must reuse canonical message service');
 assert.match(externalApi,/vp3_profile_agent_public_state_service_v110/,'external conversation reads must reuse canonical state service');
-assert.match(externalApi,/vp3_profile_agent_public_request_owner_v110/,'external owner handoff must reuse canonical escalation');
+assert.match(router,/vp3_profile_agent_public_request_owner_v110/,'external owner handoff must reuse canonical escalation');
 assert.match(externalApi,/webmcp_message_sent/,'external chat must keep WebMCP telemetry lineage');
 assert.match(externalApi,/webmcp_handoff_requested/,'external handoff must keep WebMCP telemetry lineage');
 assert.doesNotMatch(externalApi,/Access-Control-Allow-Credentials/i,'external chat must remain credential-free CORS');
