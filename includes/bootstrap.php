@@ -280,6 +280,7 @@ require_once __DIR__.'/ai-settings.php';
 require_once __DIR__.'/cloud-hosting-v100.php';
 require_once __DIR__.'/cloud-hosting-v110.php';
 require_once __DIR__.'/cloud-hosting-v120.php';
+require_once __DIR__.'/cloud-hosting-agent-v130.php';
 require_once __DIR__.'/ai-runtime-v100.php';
 require_once __DIR__.'/agent-tools-v90.php';
 require_once __DIR__.'/agent-tools-v91.php';
