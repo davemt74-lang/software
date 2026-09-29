@@ -14,6 +14,9 @@ $deprecated=['vp3.a'=>['state'=>'deprecated','replacement_tool'=>'vp3.b','sunset
 t(vp3_profile_webmcp_tool_available_v203('vp3.a',$catalog,1,$deprecated),'deprecated remains routable before sunset');
 $past=['vp3.a'=>['state'=>'sunset_pending','sunset_at'=>'2000-01-01T00:00:00Z']];
 t(!vp3_profile_webmcp_tool_available_v203('vp3.a',$catalog,time(),$past),'past sunset unavailable');
+$minimum=['vp3.a'=>['state'=>'active','minimum_runtime_build'=>'runtime-new']];
+t(!vp3_profile_webmcp_tool_available_v203('vp3.a',$catalog,0,$minimum,'runtime-old'),'older runtime denied');
+t(vp3_profile_webmcp_tool_available_v203('vp3.a',$catalog,0,$minimum,'runtime-new'),'minimum runtime allowed');
 $s=vp3_profile_webmcp_tool_registry_summary_v203($catalog);
 t(($s['counts']['active']??0)===2,'active count');
 t(($s['contract']??'')===VP3_PROFILE_WEBMCP_COMPAT_CONTRACT_V203,'contract');
