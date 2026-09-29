@@ -26,12 +26,8 @@ function vp3_cloud_hosting_seed_package_entitlements_v100(PDO $pdo): void
     $stmt=$pdo->query("SELECT id,slug FROM subscription_packages WHERE slug IN ('basic','basic-user')");
     $rows=$stmt?$stmt->fetchAll():[];
     if(!$rows)return;
-    $upsert=$pdo->prepare("INSERT INTO package_entitlements (package_id,capability_key,is_enabled,limit_value)
-      VALUES (?,?,?,?)
-      ON DUPLICATE KEY UPDATE is_enabled=VALUES(is_enabled),limit_value=CASE
-        WHEN package_entitlements.limit_value IS NULL THEN VALUES(limit_value)
-        ELSE package_entitlements.limit_value
-      END");
+    $upsert=$pdo->prepare("INSERT IGNORE INTO package_entitlements (package_id,capability_key,is_enabled,limit_value)
+      VALUES (?,?,?,?)");
     foreach($rows as $row){
         $id=(int)($row['id']??0);if($id<1)continue;
         $upsert->execute([$id,'hosting.access',1,null]);
