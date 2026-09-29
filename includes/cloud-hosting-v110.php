@@ -174,7 +174,9 @@ function vp3_cloud_hosting_v110_cpanel_call(
         $cpanel=(array)($decoded['cpanelresult']??[]);
         $data=(array)($cpanel['data']??[]);
         $first=is_array($data[0]??null)?$data[0]:[];
-        $success=(int)($first['result']??$first['status']??1);
+        $successRaw=$first['result']??$first['status']??null;
+        if($successRaw===null)throw new RuntimeException('cPanel API2 response did not include an explicit result status.');
+        $success=(int)$successRaw;
         if($success!==1){
             $message=trim((string)($first['reason']??$first['error']??$cpanel['error']??''));
             throw new RuntimeException($message!==''?'cPanel API2: '.$message:'cPanel API2 request failed.');
@@ -293,16 +295,31 @@ function vp3_cloud_hosting_v110_provision_dns(
     return ['replayed'=>false,'route'=>vp3_cloud_hosting_v110_route_for_site($siteId,$pdo)];
 }
 
-function vp3_cloud_hosting_v110_mark_dns_verified(array $site,?int $actorUserId=null): array
+function vp3_cloud_hosting_v110_verify_dns(array $site,?int $actorUserId=null,?callable $resolver=null): array
 {
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     $siteId=(int)($site['id']??0);if($siteId<1)throw new RuntimeException('A valid hosted site is required.');
     $route=vp3_cloud_hosting_v110_route_for_site($siteId,$pdo);
     if($route===null||(string)$route['dns_state']!=='provisioned')throw new RuntimeException('DNS must be provisioned before it can be verified.');
-    $pdo->prepare("UPDATE cloud_hosting_routes SET dns_state='verified',verified_at=NOW() WHERE site_id=?")->execute([$siteId]);
+    $hostname=(string)$route['hostname'];
+    $target=rtrim(strtolower((string)$route['record_value']),'.');
+    $records=$resolver!==null?$resolver($hostname):dns_get_record($hostname,DNS_CNAME);
+    if(!is_array($records))$records=[];
+    $matched=false;
+    foreach($records as $record){
+        if(!is_array($record))continue;
+        $candidate=rtrim(strtolower((string)($record['target']??'')),'.');
+        if($candidate!==''&&hash_equals($target,$candidate)){$matched=true;break;}
+    }
+    if(!$matched){
+        $pdo->prepare("UPDATE cloud_hosting_routes SET dns_state='pending',last_provider_status='waiting_dns',last_error_code='',last_error_message='' WHERE site_id=?")->execute([$siteId]);
+        $pdo->prepare("UPDATE cloud_hosting_sites SET route_state='pending' WHERE id=?")->execute([$siteId]);
+        return vp3_cloud_hosting_v110_route_for_site($siteId,$pdo)??[];
+    }
+    $pdo->prepare("UPDATE cloud_hosting_routes SET dns_state='verified',last_provider_status='verified',verified_at=NOW() WHERE site_id=?")->execute([$siteId]);
     $pdo->prepare("UPDATE cloud_hosting_sites SET route_state='verified' WHERE id=?")->execute([$siteId]);
     vp3_cloud_hosting_event_v100($pdo,$siteId,'dns.verified','verified',(int)($site['desired_revision']??0),$actorUserId,[
-        'hostname'=>(string)$route['hostname'],'provider'=>'cpanel_dns',
+        'hostname'=>$hostname,'provider'=>'cpanel_dns',
     ]);
     return vp3_cloud_hosting_v110_route_for_site($siteId,$pdo)??[];
 }
