@@ -69,7 +69,7 @@ if(!in_array($method,['GET','POST'],true)){
 try{
     $profile=vp3_profile_webmcp_external_profile_v120($pdo,$property);
     $chatAvailable=$manifestSession!==''&&vp3_profile_webmcp_external_agent_v120($pdo,$profile)!==null;
-    $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$property,$profile,$chatAvailable,true,true);
+    $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$property,$profile,$chatAvailable,true,true,true);
 }catch(Throwable $e){
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'PROFILE_UNAVAILABLE','message'=>'The connected VP3 profile is unavailable.']],404);
 }
@@ -94,6 +94,7 @@ if($method==='GET'){
             'chat_enabled'=>!empty($manifest['external']['stateful_profile_agent']),
             'scheduling_enabled'=>!empty($manifest['external']['scheduling_enabled']),
             'commerce_enabled'=>!empty($manifest['external']['commerce_enabled']),
+            'campaigns_enabled'=>!empty($manifest['external']['campaigns_enabled']),
         ],
     ]);
 }
