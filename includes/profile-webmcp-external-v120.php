@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/profile-webmcp-capability-resolver-v190.php';
+require_once __DIR__.'/profile-webmcp-release-v196.php';
+require_once __DIR__.'/profile-webmcp-negotiation-v200.php';
 
 const VP3_PROFILE_WEBMCP_EXTERNAL_V120='profile-webmcp-external-v120-20260928';
 
