@@ -74,7 +74,8 @@ assert.match(commerce,/webmcp_purchase_telemetry_recorded_at/,'purchase completi
 assert.match(catalog,/vp3_profile_webmcp_commerce_tool_catalog_v160/,'main catalog must merge Commerce adapter catalog');
 assert.match(catalog,/['"]vp3\.commerce\.checkout\.prepare['"]/);
 assert.match(catalog,/['"]vp3\.commerce\.refund\.confirm['"]/);
-assert.match(catalog,/\['profile','profile_agent','booking','commerce'\]/,'intent resolver must recognize Commerce adapter');
+assert.match(catalog,/registeredCapabilities/,'intent resolver must derive Commerce adapter readiness from registered tools');
+assert.match(catalog,/requires_domain_adapter/,'intent resolver must report only genuinely missing domain adapters');
 assert.match(nativeApi,/vp3_profile_webmcp_commerce_checkout_confirm_v160/);
 assert.match(externalApi,/vp3_profile_webmcp_commerce_checkout_confirm_v160/);
 assert.match(nativeApi,/webmcp_checkout_prepared/);
