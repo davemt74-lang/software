@@ -10,6 +10,7 @@ const VP3_PROFILE_WEBMCP_EVENTS_V130=[
     'webmcp_booking_prepared','webmcp_booking_completed','webmcp_checkout_prepared','webmcp_checkout_started',
     'webmcp_purchase_completed','webmcp_campaign_joined','webmcp_offer_selected','webmcp_reward_applied',
     'webmcp_reward_claim_prepared','webmcp_reward_claimed','webmcp_message_sent',
+    'webmcp_agent_planned','webmcp_resume_loaded','webmcp_returned',
 ];
 
 function vp3_profile_webmcp_transport_id_v130(string $value): string
@@ -42,6 +43,7 @@ function vp3_profile_webmcp_telemetry_v130(array $input): array
         'webmcp_session_id'=>vp3_profile_webmcp_transport_id_v130((string)($row['webmcp_session_id']??'')),
         'interaction_id'=>vp3_profile_webmcp_transport_id_v130((string)($row['interaction_id']??'')),
         'agent_referral'=>vp3_profile_webmcp_referral_token_v130((string)($row['agent_referral']??'')),
+        'correlation_id'=>vp3_profile_webmcp_transport_id_v130((string)($row['correlation_id']??'')),
         'client_manifest_version'=>$pick($versions['manifest_versions']??''),
         'client_release_version'=>$pick($versions['release_versions']??''),
         'client_runtime_build'=>$pick($versions['runtime_build']??''),
@@ -52,7 +54,7 @@ function vp3_profile_webmcp_telemetry_v130(array $input): array
 function vp3_profile_webmcp_event_envelope_v130(array $context,string $eventName,string $tool='',string $status='',int $durationMs=0,array $links=[]): array
 {
     if(!in_array($eventName,VP3_PROFILE_WEBMCP_EVENTS_V130,true))throw new InvalidArgumentException('Unsupported WebMCP telemetry event.');
-    $surface=in_array((string)($context['surface']??''),['native_profile','external_site'],true)?(string)$context['surface']:'';
+    $surface=in_array((string)($context['surface']??''),['native_profile','external_site','agent_brain'],true)?(string)$context['surface']:'';
     $tool=vp3_profile_webmcp_tool_name_v130($tool);
     $status=mb_strimwidth(preg_replace('/[^a-z0-9_.:-]+/i','_',strtolower(trim($status)))??'',0,40,'');
     $out=[
@@ -66,6 +68,7 @@ function vp3_profile_webmcp_event_envelope_v130(array $context,string $eventName
         'surface'=>$surface,
         'webmcp_session_id'=>vp3_profile_webmcp_transport_id_v130((string)($context['webmcp_session_id']??'')),
         'interaction_id'=>vp3_profile_webmcp_transport_id_v130((string)($context['interaction_id']??'')),
+        'correlation_id'=>vp3_profile_webmcp_transport_id_v130((string)($context['correlation_id']??'')),
         'tool'=>$tool,
         'status'=>$status,
         'duration_ms'=>max(0,min(3600000,$durationMs)),
@@ -95,7 +98,7 @@ function vp3_profile_webmcp_property_v130(PDO $pdo,array $profile,string $surfac
         if(!$property||empty($property['is_active'])||(string)($property['property_type']??'')!=='external')return null;
         return $property;
     }
-    if($surface!=='native_profile'||!function_exists('vp3_radar_native_property'))return null;
+    if(!in_array($surface,['native_profile','agent_brain'],true)||!function_exists('vp3_radar_native_property'))return null;
     return vp3_radar_native_property($pdo,(int)($profile['user_id']??0));
 }
 
@@ -106,7 +109,7 @@ function vp3_profile_webmcp_session_v130(PDO $pdo,array $property,?array $contac
     if($webmcpSessionId==='')$webmcpSessionId=bin2hex(random_bytes(16));
     $sessionKey=hash('sha256','webmcp|'.$owner.'|'.$propertyId.'|'.$surface.'|'.$webmcpSessionId);
     $visitorType=$contactId>0?mb_strimwidth((string)($contact['visitor_class']??'webmcp_agent'),0,40,''):'webmcp_unclassified';
-    $path=$surface==='native_profile'?'/profile':'/';
+    $path=$surface==='native_profile'?'/profile':($surface==='agent_brain'?'/chat':'/');
     $stmt=$pdo->prepare("INSERT INTO vp3_radar_sessions
       (property_id,owner_user_id,agent_contact_id,session_key,visitor_type,entry_path,exit_path,referrer_host,request_count,page_view_count,event_count,started_at,last_seen_at)
       VALUES (?,?,?,?,?,?,?,'',1,0,0,NOW(),NOW())
@@ -162,6 +165,7 @@ function vp3_profile_webmcp_context_v130(PDO $pdo,array $profile,string $surface
             'profile_username'=>(string)($profile['username']??''),
             'webmcp_session_id'=>(string)($telemetry['webmcp_session_id']??''),
             'interaction_id'=>(string)($telemetry['interaction_id']??''),
+            'correlation_id'=>(string)($telemetry['correlation_id']??''),
             'visitor_user_id'=>(int)($viewer['id']??0),
             'referral_id'=>$referralId,
             'referral_agent_contact_id'=>$referralContact,
@@ -226,6 +230,7 @@ function vp3_profile_webmcp_owner_activity_v130(PDO $pdo,int $ownerUserId,int $p
             'agent_contact_id'=>$row['agent_contact_id']!==null?(int)$row['agent_contact_id']:null,
             'display_name'=>(string)($row['display_name']??''),'operator_name'=>(string)($row['operator_name']??''),
             'surface'=>(string)($details['surface']??''),'tool'=>(string)($details['tool']??''),'status'=>(string)($details['status']??''),'result_code'=>(string)($details['result_code']??''),
+            'correlation_id'=>(string)($details['correlation_id']??''),
             'client_manifest_version'=>(string)($details['client_manifest_version']??''),'client_release_version'=>(string)($details['client_release_version']??''),'client_runtime_build'=>(string)($details['client_runtime_build']??''),'negotiation_mode'=>(string)($details['negotiation_mode']??''),
             'interaction_id'=>(string)($details['interaction_id']??''),'attribution_origin'=>(string)($details['attribution_origin']??''),
             'referral_id'=>(int)($details['referral_id']??0)?:null,'duration_ms'=>(int)($details['duration_ms']??0),
