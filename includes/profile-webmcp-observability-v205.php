@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/profile-webmcp-analytics-v130.php';
+
 const VP3_PROFILE_WEBMCP_OBSERVABILITY_V205='profile-webmcp-observability-v205-20260929';
 const VP3_PROFILE_WEBMCP_OBSERVABILITY_CONTRACT_V205='vp3.profile.webmcp.observability.v1';
 
@@ -14,11 +16,12 @@ function vp3_profile_webmcp_stage_v205(string $eventName,string $tool=''): strin
 {
     if(in_array($eventName,['webmcp_discovered','webmcp_manifest_loaded','webmcp_tool_registered'],true))return 'discovery';
     if(in_array($eventName,['webmcp_agent_planned','webmcp_resume_loaded'],true))return 'intent';
-    if(str_ends_with($tool,'.prepare')||str_contains($eventName,'_prepared'))return 'prepare';
-    if($eventName==='webmcp_confirmation_required'||str_ends_with($tool,'.confirm'))return 'confirmation';
-    if(in_array($eventName,['webmcp_tool_completed','webmcp_booking_completed','webmcp_purchase_completed','webmcp_campaign_joined','webmcp_reward_claimed'],true))return 'completion';
     if($eventName==='webmcp_returned')return 'return';
     if(in_array($eventName,['webmcp_tool_failed','webmcp_tool_denied','webmcp_tool_cancelled'],true))return 'failure';
+    if($eventName==='webmcp_confirmation_required')return 'confirmation';
+    if(str_ends_with($tool,'.prepare')||str_contains($eventName,'_prepared'))return 'prepare';
+    if(in_array($eventName,['webmcp_tool_completed','webmcp_booking_completed','webmcp_purchase_completed','webmcp_campaign_joined','webmcp_reward_claimed'],true))return 'completion';
+    if(str_ends_with($tool,'.confirm'))return 'confirmation';
     return 'execution';
 }
 
