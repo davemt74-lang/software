@@ -13,6 +13,8 @@ $routes=[
     'claimed'=>url('/reward-claimed.php'),
 ];
 $schemaReady=(bool)$pdo&&function_exists('campaigns_rewards_v110_schema_ready')&&campaigns_rewards_v110_schema_ready($pdo);
+$autoClaimPublicId=$bucket==='inbox'?trim((string)($_GET['claim']??'')):'';
+if($autoClaimPublicId!==''&&!preg_match('/^[A-Za-z0-9._:-]{1,100}$/',$autoClaimPublicId))$autoClaimPublicId='';
 
 $memberHeaderUser=$user;
 $memberHeaderTitle='';
@@ -67,6 +69,7 @@ require __DIR__.'/workspace-sidebar-v82.php';
     'pageBucket'=>$bucket,
     'routes'=>$routes,
     'schemaReady'=>$schemaReady,
+    'autoClaimPublicId'=>$autoClaimPublicId,
 ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;</script>
 <script data-reward-qr-v113 src="<?= e(url('/reward-qr-v110.js?v=113')) ?>"></script>
 <script data-reward-tray-v113 src="<?= e(url('/reward-tray-v110.js?v=113')) ?>"></script>
