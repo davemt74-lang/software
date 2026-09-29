@@ -17,7 +17,7 @@ assert.match(layer,/stateful_profile_agent'\s*=>\s*\$chatEnabled/);
 assert.match(layer,/vp3\.agent\.get/);
 assert.match(layer,/vp3\.agent\.message\.send/,'external tool allowlist may expose governed public Agent chat');
 assert.match(layer,/vp3\.booking\.prepare/,'connected-site manifest may expose governed public scheduling');
-assert.doesNotMatch(layer,/vp3\.commerce\.checkout\.prepare/,'connected-site manifest must still exclude future commerce checkout');
+assert.match(layer,/vp3\.commerce\.checkout\.prepare/,'connected-site manifest may expose governed Profile Commerce');
 
 assert.match(endpoint,/vp3_radar_external_property_by_key/,'gateway must bind public property key to active Agent Radar property');
 assert.match(endpoint,/vp3_profile_webmcp_external_origin_v120/,'gateway must verify browser Origin');
@@ -31,14 +31,15 @@ assert.match(endpoint,/PROPERTY_MISMATCH/);
 assert.match(endpoint,/PROFILE_MISMATCH/);
 assert.match(endpoint,/vp3_profile_agent_public_message_service_v110/,'external Agent chat must reuse canonical public service');
 assert.match(endpoint,/vp3_profile_webmcp_scheduling_confirm_v150/,'external gateway may execute scheduling only through governed adapter');
-assert.doesNotMatch(endpoint,/mark_paid|claim_from_tray|vp3\.commerce\.checkout/,'external gateway must still exclude direct payment, reward, and commerce authority');
+assert.match(endpoint,/vp3_profile_webmcp_commerce_checkout_confirm_v160/,'external gateway may execute commerce only through governed adapter');
+assert.doesNotMatch(endpoint,/agent_commerce_mark_paid_v800|agent_commerce_refund_v800|claim_from_tray/,'external gateway must still exclude direct payment, provider refund, and reward authority');
 
 for(const name of ['vp3.profile.capabilities.get','vp3.profile.get','vp3.intent.resolve','vp3.agent.get']){
   assert.match(runtime,new RegExp(name.replaceAll('.','\\.')),'external trusted runtime '+name);
 }
 assert.match(runtime,/vp3\.agent\.message\.send/,'external trusted catalog may include governed Agent chat');
 assert.match(runtime,/vp3\.booking\.prepare/,'trusted external runtime may expose governed scheduling tools');
-assert.doesNotMatch(runtime,/vp3\.commerce\.checkout/,'external runtime must still exclude commerce checkout');
+assert.match(runtime,/vp3\.commerce\.checkout\.confirm/,'trusted external runtime may expose governed commerce checkout');
 assert.match(runtime,/credentials:'omit'/,'external runtime must omit ambient cookies');
 assert.match(runtime,/stateful_profile_agent===true&&Boolean\(this\.chatGrant\)/,'stateful chat tools must require both manifest authority and a grant');
 assert.doesNotMatch(runtime,/Authorization|X-VP3-WebMCP-Session/,'external runtime must not send private bearer/session proof');
