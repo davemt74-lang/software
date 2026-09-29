@@ -13,18 +13,26 @@ $transport=vp3_profile_webmcp_telemetry_v130(['telemetry'=>[
     'interaction_id'=>$validInteraction,
     'agent_referral'=>strtoupper($ref),
     'extra_secret'=>'do-not-copy',
+    'registered_tool_count'=>41,
+    'expected_tool_count'=>41,
+    'runtime_build'=>'profile-webmcp-runtime-v100-20260928',
+    'release_version'=>'profile-webmcp-release-v196-20260929',
 ]]);
 t($transport['webmcp_session_id']===$validSession,'session id');
 t($transport['interaction_id']===$validInteraction,'interaction id');
 t($transport['agent_referral']===$ref,'referral normalization');
 t(!array_key_exists('extra_secret',$transport),'transport allowlist');
+t($transport['registered_tool_count']===41,'registered tool count');
+t($transport['expected_tool_count']===41,'expected tool count');
+t($transport['runtime_build']==='profile-webmcp-runtime-v100-20260928','runtime build');
+t($transport['release_version']==='profile-webmcp-release-v196-20260929','release version');
 
 $bad=vp3_profile_webmcp_telemetry_v130(['telemetry'=>[
     'webmcp_session_id'=>'bad id',
     'interaction_id'=>'x',
     'agent_referral'=>'not-a-token',
 ]]);
-t($bad===['webmcp_session_id'=>'','interaction_id'=>'','agent_referral'=>''],'invalid transport rejection');
+t($bad===['webmcp_session_id'=>'','interaction_id'=>'','agent_referral'=>'','registered_tool_count'=>0,'expected_tool_count'=>0,'runtime_build'=>'','release_version'=>''],'invalid transport rejection');
 
 $context=[
     'owner_user_id'=>123,
@@ -38,6 +46,10 @@ $context=[
     'referral_id'=>91,
     'referral_agent_contact_id'=>7,
     'attribution_origin'=>'agent_referral',
+    'registered_tool_count'=>41,
+    'expected_tool_count'=>41,
+    'runtime_build'=>'profile-webmcp-runtime-v100-20260928',
+    'release_version'=>'profile-webmcp-release-v196-20260929',
 ];
 $envelope=vp3_profile_webmcp_event_envelope_v130(
     $context,'webmcp_tool_completed','vp3.profile.get','completed',123,
@@ -54,6 +66,10 @@ t($envelope['surface']==='external_site','surface');
 t($envelope['tool']==='vp3.profile.get','tool');
 t($envelope['status']==='completed','status');
 t($envelope['duration_ms']===123,'duration');
+t($envelope['registered_tool_count']===41,'envelope registered tools');
+t($envelope['expected_tool_count']===41,'envelope expected tools');
+t($envelope['runtime_build']==='profile-webmcp-runtime-v100-20260928','envelope runtime build');
+t($envelope['release_version']==='profile-webmcp-release-v196-20260929','envelope release version');
 t($envelope['referral_id']===91,'referral id');
 t($envelope['referral_agent_contact_id']===7,'referral contact');
 t($envelope['order_id']===55,'future link support');

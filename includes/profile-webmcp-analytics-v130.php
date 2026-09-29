@@ -37,6 +37,10 @@ function vp3_profile_webmcp_telemetry_v130(array $input): array
         'webmcp_session_id'=>vp3_profile_webmcp_transport_id_v130((string)($row['webmcp_session_id']??'')),
         'interaction_id'=>vp3_profile_webmcp_transport_id_v130((string)($row['interaction_id']??'')),
         'agent_referral'=>vp3_profile_webmcp_referral_token_v130((string)($row['agent_referral']??'')),
+        'registered_tool_count'=>max(0,min(500,(int)($row['registered_tool_count']??0))),
+        'expected_tool_count'=>max(0,min(500,(int)($row['expected_tool_count']??0))),
+        'runtime_build'=>mb_strimwidth(preg_replace('/[^A-Za-z0-9_.:-]+/','_',trim((string)($row['runtime_build']??'')))??'',0,160,''),
+        'release_version'=>mb_strimwidth(preg_replace('/[^A-Za-z0-9_.:-]+/','_',trim((string)($row['release_version']??'')))??'',0,160,''),
     ];
 }
 
@@ -62,6 +66,10 @@ function vp3_profile_webmcp_event_envelope_v130(array $context,string $eventName
         'duration_ms'=>max(0,min(3600000,$durationMs)),
         'profile_username'=>mb_strimwidth(trim((string)($context['profile_username']??'')),0,64,''),
         'attribution_origin'=>mb_strimwidth(trim((string)($context['attribution_origin']??'webmcp_agent')),0,40,''),
+        'registered_tool_count'=>max(0,min(500,(int)($context['registered_tool_count']??0))),
+        'expected_tool_count'=>max(0,min(500,(int)($context['expected_tool_count']??0))),
+        'runtime_build'=>mb_strimwidth((string)($context['runtime_build']??''),0,160,''),
+        'release_version'=>mb_strimwidth((string)($context['release_version']??''),0,160,''),
     ];
     foreach([
         'visitor_user_id','profile_session_id','conversation_id','referral_id','referral_agent_contact_id',
@@ -153,6 +161,10 @@ function vp3_profile_webmcp_context_v130(PDO $pdo,array $profile,string $surface
             'referral_agent_contact_id'=>$referralContact,
             'attribution_origin'=>$referralId>0?'agent_referral':((int)($contact['id']??0)>0?'webmcp_agent':'webmcp_unclassified'),
             'risk_score'=>(int)($contact['risk_score']??0),
+            'registered_tool_count'=>(int)($telemetry['registered_tool_count']??0),
+            'expected_tool_count'=>(int)($telemetry['expected_tool_count']??0),
+            'runtime_build'=>(string)($telemetry['runtime_build']??''),
+            'release_version'=>(string)($telemetry['release_version']??''),
         ];
     }catch(Throwable $e){
         error_log('VP3 WebMCP telemetry context failed: '.$e->getMessage());
