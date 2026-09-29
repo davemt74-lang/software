@@ -19,7 +19,7 @@ for(const name of ['vp3.rewards.transfer.contacts.list','vp3.rewards.transfer.pr
 }
 assert.match(adapter,/campaigns_rewards_send_contacts_v110/,'recipient list must derive from canonical sender contact authority');
 assert.match(adapter,/public_id/,'recipient selection must use opaque contact public IDs');
-assert.doesNotMatch(adapter,/recipient_contact_id.*input|contact_id.*input/s,'WebMCP must not accept raw CRM contact IDs');
+assert.doesNotMatch(adapter,/['"](?:contact_id|recipient_contact_id|recipient_email)['"]\s*=>\s*\[/,'WebMCP tool schemas must not accept raw CRM IDs or free-form recipient email');
 assert.match(adapter,/crm_contacts WHERE public_id=\? AND owner_user_id=\?/,'recipient resolution must bind public ID to signed-in viewer');
 assert.match(adapter,/campaigns_rewards_transfer_reward_v110/,'confirm must delegate ownership change to canonical Reward transfer authority');
 assert.doesNotMatch(adapter,/UPDATE reward_issuances SET recipient_contact_id/,'WebMCP must not directly mutate Reward holder');
