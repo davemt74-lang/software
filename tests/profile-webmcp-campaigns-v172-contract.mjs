@@ -5,6 +5,7 @@ const adapter=read('includes/profile-webmcp-campaigns-v170.php');
 const nativeApi=read('api/profile-webmcp-v100.php');
 const externalApi=read('api/profile-webmcp-external-v120.php');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
+const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const nativeRuntime=read('profile-webmcp-v100.js');
 const externalRuntime=read('profile-webmcp-external-v120.js');
 const workflow=read('.github/workflows/public-funnel-onboarding-continuity.yml');
@@ -22,7 +23,7 @@ assert.match(nativeApi,/empty\(\$result\['idempotent_replay'\]\).*webmcp_campaig
 assert.match(externalApi,/webmcp_campaign_status_viewed/);
 assert.match(nativeApi,/campaign_public_id/);
 assert.match(externalApi,/participation_status/);
-assert.match(externalLayer,/vp3\.campaign\.participation\.get/);
+assert.match(resolver,/vp3\.campaign\.participation\.get/);
 assert.match(externalRuntime,/credentials:'omit'/);
 assert.doesNotMatch(externalRuntime,/Authorization|document\.cookie|localStorage|sessionStorage/);
 assert.match(workflow,/profile-webmcp-campaigns-v172-contract\.mjs/);
