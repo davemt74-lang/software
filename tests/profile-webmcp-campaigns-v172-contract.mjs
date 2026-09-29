@@ -20,10 +20,10 @@ assert.match(adapter,/result_type'\]!=='campaign_enrollment'/,'ledger result typ
 assert.match(adapter,/awaiting_verification/);
 assert.match(adapter,/awaiting_trigger/);
 assert.doesNotMatch(adapter,/contact_email|contact_phone|credential_plain|credential_hash|reward_inventory/,'safe lifecycle projection must not expose CRM/Reward internals');
-assert.match(nativeApi,/empty\(\$result\['idempotent_replay'\]\).*webmcp_campaign_participation_completed/s,'completion telemetry must not double count idempotent replay');
+assert.match(router,/empty\(\$result\['idempotent_replay'\]\).*webmcp_campaign_participation_completed/s,'completion telemetry must not double count idempotent replay');
 assert.match(router,/webmcp_campaign_status_viewed/);
-assert.match(nativeApi,/campaign_public_id/);
-assert.match(externalApi,/participation_status/);
+assert.match(router,/campaign_public_id/);
+assert.match(router,/participation_status/);
 assert.match(resolver,/vp3\.campaign\.participation\.get/);
 assert.match(externalRuntime,/credentials:'omit'/);
 assert.doesNotMatch(externalRuntime,/Authorization|document\.cookie|localStorage|sessionStorage/);
