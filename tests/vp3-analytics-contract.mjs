@@ -67,7 +67,7 @@ assert.ok(portal.includes('/profile-agent-analytics.js'), 'full Analytics dashbo
 assert.ok(bridge.includes("legacy.id='profileAgentAnalyticsLegacy'"), 'legacy renderer must keep its captured node without owning the full dashboard host');
 assert.ok(bridge.includes('legacy.hidden=true'), 'legacy analytics snapshot must be hidden once the full dashboard mounts');
 
-for(const label of ['All properties','7 days','30 days','90 days','Sessions','Page views','Conversions','Custom events','High-risk events','Top pages','Referrers','Device mix','Browser mix','Human + Agent activity'])assert.ok(ui.includes(label),`Analytics UI must include ${label}`);
+for(const label of ['All properties','7 days','30 days','90 days','Sessions','Page views','Conversions','WebMCP calls','Custom events','High-risk events','Top pages','Referrers','Device mix','Browser mix','Human + Agent + WebMCP activity'])assert.ok(ui.includes(label),`Analytics UI must include ${label}`);
 assert.ok(ui.includes('property_id'), 'Analytics UI must support per-property filtering');
 assert.ok(ui.includes('human_sessions') && ui.includes('agent_sessions'), 'Analytics UI must expose human vs agent session totals');
 assert.ok(ui.includes('Strict privacy mode'), 'Analytics UI must explain its privacy posture');

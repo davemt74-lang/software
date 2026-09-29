@@ -67,6 +67,23 @@ function safeError(code, message, retryable=false) {
   return {ok:false,error:{code,message,retryable}};
 }
 
+function transportIdV130() {
+  try { if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID().replaceAll('-',''); } catch {}
+  try {
+    const bytes=new Uint8Array(16);globalThis.crypto?.getRandomValues?.(bytes);
+    const value=[...bytes].map(v=>v.toString(16).padStart(2,'0')).join('');
+    if (value.length===32) return value;
+  } catch {}
+  return (Date.now().toString(36)+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2)).slice(0,64);
+}
+
+function referralTokenV130() {
+  try {
+    const token=String(new URL(globalThis.location?.href||'https://vp3.invalid/').searchParams.get('vp3_ref')||'').toLowerCase().trim();
+    return /^[a-f0-9]{48}$/.test(token)?token:'';
+  } catch { return ''; }
+}
+
 export class VP3ProfileWebMCPRuntimeV100 {
   constructor({
     documentObject=globalThis.document,
@@ -80,6 +97,7 @@ export class VP3ProfileWebMCPRuntimeV100 {
     this.endpoint=endpoint;
     this.sessionProof=String(sessionProof||'');
     this.onEvent=onEvent;
+    this.webmcpSessionId=transportIdV130();
     this.manifest=null;
     this.registrations=new Map();
   }
@@ -167,7 +185,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
     if (!this.effectiveToolNames().includes(name)) {
       return safeError('CAPABILITY_UNAVAILABLE','That profile capability is unavailable.');
     }
+    const interactionId=transportIdV130();
+    const startedAt=Date.now();
     try {
+      this.onEvent({event:'tool_called',tool:name,interaction_id:interactionId});
       const response=await this.fetchImpl(this.endpoint,{
         method:'POST',
         credentials:'same-origin',
@@ -180,7 +201,12 @@ export class VP3ProfileWebMCPRuntimeV100 {
           surface:'native_profile',
           profile_username:this.manifest.profile_username,
           tool:name,
-          input:args
+          input:args,
+          telemetry:{
+            webmcp_session_id:this.webmcpSessionId,
+            interaction_id:interactionId,
+            agent_referral:referralTokenV130()
+          }
         }),
         signal:options?.signal
       });
@@ -188,17 +214,22 @@ export class VP3ProfileWebMCPRuntimeV100 {
       try { data=await response.json(); }
       catch { return safeError('INVALID_GATEWAY_RESPONSE','VP3 returned an invalid profile response.'); }
       if (!response.ok || data?.ok!==true) {
-        return safeError(
+        const error=safeError(
           data?.error?.code || ('HTTP_'+response.status),
           data?.error?.message || 'The profile capability could not be completed.',
           Boolean(data?.error?.retryable)
         );
+        this.onEvent({event:'tool_failed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt,code:error.error.code});
+        return error;
       }
+      this.onEvent({event:'tool_completed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt});
       return data;
     } catch (error) {
       if (options?.signal?.aborted || error?.name==='AbortError') {
+        this.onEvent({event:'tool_cancelled',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt});
         return safeError('CANCELLED','The profile capability request was cancelled.');
       }
+      this.onEvent({event:'tool_failed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt,code:'NETWORK_ERROR'});
       return safeError('NETWORK_ERROR','VP3 could not be reached.',true);
     }
   }

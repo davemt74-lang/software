@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-v100.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-analytics-v130.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-external-v120.php';
 
 header('Content-Type: application/json; charset=UTF-8');
@@ -14,6 +15,16 @@ function vp3_profile_webmcp_external_json_v120(bool $ok,array $payload=[],int $s
     http_response_code($status);
     echo json_encode(array_merge(['ok'=>$ok],$payload),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+function vp3_profile_webmcp_external_tool_json_v130(PDO $pdo,?array $telemetryContext,string $tool,float $startedAt,bool $ok,array $payload=[],int $status=200,string $resultCode=''): never
+{
+    $duration=(int)max(0,round((microtime(true)-$startedAt)*1000));
+    vp3_profile_webmcp_record_v130(
+        $pdo,$telemetryContext,$ok?'webmcp_tool_completed':'webmcp_tool_failed',
+        $tool,$ok?'completed':'failed',$duration,['result_code'=>$resultCode]
+    );
+    vp3_profile_webmcp_external_json_v120($ok,$payload,$status);
 }
 
 $pdo=db();
@@ -56,6 +67,8 @@ try{
 }
 
 if($method==='GET'){
+    $manifestTelemetryContext=vp3_profile_webmcp_context_v130($pdo,$profile,'external_site',[],$property,null);
+    vp3_profile_webmcp_record_v130($pdo,$manifestTelemetryContext,'webmcp_manifest_loaded','','loaded');
     vp3_profile_webmcp_external_json_v120(true,[
         'manifest'=>$manifest,
         'runtime'=>[
@@ -73,6 +86,7 @@ $input=json_decode($raw,true);
 if(!is_array($input)){
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'INVALID_JSON','message'=>'Invalid JSON request.']],400);
 }
+$telemetry=vp3_profile_webmcp_telemetry_v130($input);
 if((string)($input['manifest_version']??'')!==VP3_PROFILE_WEBMCP_MANIFEST_V100){
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'MANIFEST_VERSION_UNSUPPORTED','message'=>'Unsupported profile WebMCP manifest.']],400);
 }
@@ -87,33 +101,37 @@ if(!hash_equals((string)$profile['username'],(string)($input['profile_username']
 }
 
 $tool=trim((string)($input['tool']??''));
+$telemetryContext=vp3_profile_webmcp_context_v130($pdo,$profile,'external_site',$telemetry,$property,null);
 if(!in_array($tool,$manifest['allowed_tools'],true)){
+    vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_tool_denied',$tool,'denied',0,['result_code'=>'CAPABILITY_UNAVAILABLE']);
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That connected-site capability is unavailable.']],404);
 }
 $args=is_array($input['input']??null)?$input['input']:[];
+$startedAt=microtime(true);
+vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_tool_called',$tool,'called');
 
 try{
     if($tool==='vp3.profile.capabilities.get'){
-        vp3_profile_webmcp_external_json_v120(true,[
+        vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,[
             'manifest_version'=>VP3_PROFILE_WEBMCP_MANIFEST_V100,
             'capabilities'=>$manifest['capabilities'],
             'allowed_tools'=>$manifest['allowed_tools'],
         ]);
     }
     if($tool==='vp3.profile.get'){
-        vp3_profile_webmcp_external_json_v120(true,['profile'=>vp3_profile_webmcp_public_profile_v100($profile)]);
+        vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['profile'=>vp3_profile_webmcp_public_profile_v100($profile)]);
     }
     if($tool==='vp3.intent.resolve'){
         $goal=trim((string)($args['goal']??''));
-        vp3_profile_webmcp_external_json_v120(true,['resolution'=>vp3_profile_webmcp_resolve_intent_v100($goal,$manifest)]);
+        vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['resolution'=>vp3_profile_webmcp_resolve_intent_v100($goal,$manifest)]);
     }
     if($tool==='vp3.agent.get'){
         $agent=vp3_profile_webmcp_external_agent_v120($pdo,$profile);
-        if(!$agent)vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'PROFILE_AGENT_UNAVAILABLE','message'=>'This Profile Agent is unavailable.']],404);
-        vp3_profile_webmcp_external_json_v120(true,['agent'=>$agent]);
+        if(!$agent)vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'PROFILE_AGENT_UNAVAILABLE','message'=>'This Profile Agent is unavailable.']],404,'PROFILE_AGENT_UNAVAILABLE');
+        vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['agent'=>$agent]);
     }
-    vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That connected-site capability is unavailable.']],404);
+    vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That connected-site capability is unavailable.']],404,'CAPABILITY_UNAVAILABLE');
 }catch(Throwable $e){
     $message=$e instanceof RuntimeException?$e->getMessage():'The connected-site capability could not be completed.';
-    vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'VALIDATION_FAILED','message'=>$message]],422);
+    vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'VALIDATION_FAILED','message'=>$message]],422,'VALIDATION_FAILED');
 }

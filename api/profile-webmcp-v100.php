@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/profile-webmcp-v100.php';
+require_once dirname(__DIR__) . '/includes/profile-webmcp-analytics-v130.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-transcription-context.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-public-service-v110.php';
 
@@ -15,6 +16,16 @@ function vp3_profile_webmcp_json_v100(bool $ok, array $payload = [], int $status
     http_response_code($status);
     echo json_encode(array_merge(['ok'=>$ok], $payload), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+function vp3_profile_webmcp_tool_json_v130(PDO $pdo,?array $telemetryContext,string $tool,float $startedAt,bool $ok,array $payload=[],int $status=200,string $resultCode=''): never
+{
+    $duration=(int)max(0,round((microtime(true)-$startedAt)*1000));
+    vp3_profile_webmcp_record_v130(
+        $pdo,$telemetryContext,$ok?'webmcp_tool_completed':'webmcp_tool_failed',
+        $tool,$ok?'completed':'failed',$duration,['result_code'=>$resultCode]
+    );
+    vp3_profile_webmcp_json_v100($ok,$payload,$status);
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
@@ -42,6 +53,7 @@ if (!$profile || empty($profile['is_active']) || empty($profile['is_public'])) {
 }
 
 $ownerUserId = (int)$profile['user_id'];
+$telemetry=vp3_profile_webmcp_telemetry_v130($input);
 $proof = trim((string)($_SERVER['HTTP_X_VP3_WEBMCP_SESSION'] ?? ''));
 if (!vp3_profile_webmcp_session_proof_valid_v100($ownerUserId, $proof)) {
     vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'SESSION_PROOF_REQUIRED','message'=>'The profile agent session is not authorized.']], 403);
@@ -71,51 +83,59 @@ try {
 }
 $tool = trim((string)($input['tool'] ?? ''));
 $catalog = vp3_profile_webmcp_tool_catalog_v100();
+$telemetryContext=vp3_profile_webmcp_context_v130($pdo,$profile,'native_profile',$telemetry,null,$viewer);
 if (!isset($catalog[$tool]) || !in_array($tool, $manifest['allowed_tools'], true)) {
-    vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']], 404);
+    vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_tool_denied',$tool,'denied',0,['result_code'=>'CAPABILITY_UNAVAILABLE']);
+    vp3_profile_webmcp_json_v100(false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']],404);
 }
 $args = is_array($input['input'] ?? null) ? $input['input'] : [];
+$startedAt=microtime(true);
+vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_tool_called',$tool,'called');
 
 try {
     if ($tool === 'vp3.profile.capabilities.get') {
-        vp3_profile_webmcp_json_v100(true, [
+        vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,[
             'manifest_version'=>VP3_PROFILE_WEBMCP_MANIFEST_V100,
             'capabilities'=>$manifest['capabilities'],
             'allowed_tools'=>$manifest['allowed_tools'],
         ]);
     }
     if ($tool === 'vp3.profile.get') {
-        vp3_profile_webmcp_json_v100(true, ['profile'=>vp3_profile_webmcp_public_profile_v100($profile)]);
+        vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['profile'=>vp3_profile_webmcp_public_profile_v100($profile)]);
     }
     if ($tool === 'vp3.intent.resolve') {
         $goal = trim((string)($args['goal'] ?? ''));
-        vp3_profile_webmcp_json_v100(true, ['resolution'=>vp3_profile_webmcp_resolve_intent_v100($goal, $manifest)]);
+        vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['resolution'=>vp3_profile_webmcp_resolve_intent_v100($goal, $manifest)]);
     }
     if (str_starts_with($tool, 'vp3.agent.')) {
         $agentCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$viewer);
         if ($tool === 'vp3.agent.get') {
             $state=vp3_profile_agent_public_state_service_v110($pdo,$agentCtx,0);
-            vp3_profile_webmcp_json_v100(true,['agent'=>$state['agent']]);
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['agent'=>$state['agent']]);
         }
         if ($tool === 'vp3.agent.conversation.get') {
             $cid=max(0,(int)($args['conversation_id']??0));
-            vp3_profile_webmcp_json_v100(true,vp3_profile_agent_public_state_service_v110($pdo,$agentCtx,$cid));
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_agent_public_state_service_v110($pdo,$agentCtx,$cid));
         }
         if ($tool === 'vp3.agent.message.send') {
             $cid=max(0,(int)($args['conversation_id']??0));
             $message=trim((string)($args['message']??''));
-            vp3_profile_webmcp_json_v100(true,vp3_profile_agent_public_message_service_v110($pdo,$agentCtx,$message,$cid));
+            $result=vp3_profile_agent_public_message_service_v110($pdo,$agentCtx,$message,$cid);
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_message_sent',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['conversation_id'=>(int)($result['conversation_id']??0)]);
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
         }
         if ($tool === 'vp3.agent.owner_handoff.request') {
             $cid=max(0,(int)($args['conversation_id']??0));
             $reason=trim((string)($args['reason']??''));
-            vp3_profile_webmcp_json_v100(true,vp3_profile_agent_public_request_owner_v110($pdo,$agentCtx,$cid,$reason));
+            $result=vp3_profile_agent_public_request_owner_v110($pdo,$agentCtx,$cid,$reason);
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_handoff_requested',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['conversation_id'=>$cid]);
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
         }
     }
-    vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']], 404);
+    vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']],404,'CAPABILITY_UNAVAILABLE');
 } catch (VP3ProfileAgentPublicException $e) {
-    vp3_profile_webmcp_json_v100(false,['error'=>['code'=>$e->publicCode,'message'=>$e->getMessage()]],$e->httpStatus);
+    vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>$e->publicCode,'message'=>$e->getMessage()]],$e->httpStatus,$e->publicCode);
 } catch (Throwable $e) {
     $message = $e instanceof RuntimeException ? $e->getMessage() : 'The profile capability could not be completed.';
-    vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'VALIDATION_FAILED','message'=>$message]], 422);
+    vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'VALIDATION_FAILED','message'=>$message]],422,'VALIDATION_FAILED');
 }
