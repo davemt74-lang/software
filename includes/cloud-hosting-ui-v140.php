@@ -167,7 +167,7 @@ function vp3_cloud_hosting_ui_v140_execute(
     $action=trim($action);
     $consequential=[
         'site.activate','site.suspend','dns.provision','deployment.deploy','deployment.rollback',
-        'deployment.promote','deployment.prune',
+        'deployment.promote','deployment.prune','health.policy',
         'domain.canonical','domain.redirect','domain.detach','domain.migrate'
     ];
     if(in_array($action,$consequential,true)&&((string)($input['confirmed']??''))!=='1'){
@@ -235,6 +235,28 @@ function vp3_cloud_hosting_ui_v140_execute(
         return ['action'=>$action,'result'=>$result,'site'=>vp3_cloud_hosting_ui_v140_site_card(vp3_cloud_hosting_site_v100($siteId,$uid,$pdo)??$site,$pdo)];
     }
 
+    if($action==='health.check'){
+        if(!function_exists('vp3_cloud_hosting_health_v240_check'))throw new RuntimeException('Hosting health recovery runtime is unavailable.');
+        $result=vp3_cloud_hosting_health_v240_check($site,false,$remote,$pdo);
+        return ['action'=>$action,'result'=>$result,'site'=>vp3_cloud_hosting_ui_v140_site_card($site,$pdo)];
+    }
+
+    if($action==='health.policy'){
+        if(!function_exists('vp3_cloud_hosting_health_v240_update_policy'))throw new RuntimeException('Hosting health recovery runtime is unavailable.');
+        $policy=[
+            'enabled'=>((string)($input['enabled']??'0'))==='1',
+            'interval_seconds'=>(int)($input['interval_seconds']??60),
+            'failure_threshold'=>(int)($input['failure_threshold']??3),
+            'max_recovery_attempts'=>(int)($input['max_recovery_attempts']??2),
+            'cooldown_seconds'=>(int)($input['cooldown_seconds']??300),
+            'auto_reactivate'=>((string)($input['auto_reactivate']??'0'))==='1',
+            'auto_rollback'=>((string)($input['auto_rollback']??'0'))==='1',
+            'auto_restore'=>((string)($input['auto_restore']??'0'))==='1',
+        ];
+        $result=vp3_cloud_hosting_health_v240_update_policy($site,$policy,$remote,$pdo);
+        return ['action'=>$action,'result'=>$result,'site'=>vp3_cloud_hosting_ui_v140_site_card($site,$pdo)];
+    }
+
     if(str_starts_with($action,'domain.')){
         if(!function_exists('vp3_cloud_hosting_domains_v200_find'))throw new RuntimeException('Custom-domain runtime is unavailable.');
         if($action==='domain.attach'){
@@ -285,6 +307,12 @@ function vp3_cloud_hosting_ui_v140_capability(): array
         'release_history'=>true,
         'historical_release_promotion'=>true,
         'release_retention'=>true,
+        'runtime_diagnostics'=>true,
+        'traffic_metrics'=>true,
+        'agent_diagnostic_explanations'=>true,
+        'automated_health_recovery'=>true,
+        'health_policy_controls'=>true,
+        'incident_history'=>true,
         'agent_chat_handoff'=>true,
         'custom_domain_management'=>true,
         'custom_domain_canonical_policy'=>true,

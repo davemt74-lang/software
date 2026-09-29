@@ -44,6 +44,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             'deployment.rollback'=>'Hosted site rolled back to the previous release.',
             'deployment.promote'=>'Historical release promoted on HomeServer.',
             'deployment.prune'=>'Release retention applied on HomeServer.',
+            'health.check'=>'Hosting health check completed.',
+            'health.policy'=>'Hosting health recovery policy updated.',
             'domain.attach'=>'Custom domain attached. Add the ownership and routing DNS records shown below.',
             'domain.verify_ownership'=>'Custom-domain ownership verification checked.',
             'domain.verify_routing'=>'Custom-domain routing verification checked.',
@@ -66,6 +68,10 @@ $sites=(array)$dashboard['sites'];
 foreach($sites as $siteIndex=>$siteRow){
     $sites[$siteIndex]['release_catalog']=['releases'=>[],'active_release_id'=>$siteRow['active_release_id']??null,'previous_release_id'=>$siteRow['previous_release_id']??null];
     $sites[$siteIndex]['release_catalog_error']='';
+    $sites[$siteIndex]['diagnostics']=null;
+    $sites[$siteIndex]['diagnostics_error']='';
+    $sites[$siteIndex]['health_recovery']=null;
+    $sites[$siteIndex]['health_recovery_error']='';
     try{
         $owned=vp3_cloud_hosting_site_v100((int)$siteRow['id'],(int)$user['id'],$pdo);
         if($owned&&function_exists('vp3_cloud_hosting_releases_v220_catalog')){
@@ -73,6 +79,22 @@ foreach($sites as $siteIndex=>$siteRow){
         }
     }catch(Throwable $releaseCatalogError){
         $sites[$siteIndex]['release_catalog_error']=mb_substr($releaseCatalogError->getMessage(),0,240);
+    }
+    try{
+        $owned=$owned??vp3_cloud_hosting_site_v100((int)$siteRow['id'],(int)$user['id'],$pdo);
+        if($owned&&function_exists('vp3_cloud_hosting_diagnostics_v230_summary')){
+            $sites[$siteIndex]['diagnostics']=vp3_cloud_hosting_diagnostics_v230_summary($owned,60,12,null,$pdo);
+        }
+    }catch(Throwable $diagnosticsError){
+        $sites[$siteIndex]['diagnostics_error']=mb_substr($diagnosticsError->getMessage(),0,240);
+    }
+    try{
+        $owned=$owned??vp3_cloud_hosting_site_v100((int)$siteRow['id'],(int)$user['id'],$pdo);
+        if($owned&&function_exists('vp3_cloud_hosting_health_v240_summary')){
+            $sites[$siteIndex]['health_recovery']=vp3_cloud_hosting_health_v240_summary($owned,null,$pdo);
+        }
+    }catch(Throwable $healthRecoveryError){
+        $sites[$siteIndex]['health_recovery_error']=mb_substr($healthRecoveryError->getMessage(),0,240);
     }
 }
 $notice=flash('hosting_notice');
@@ -96,7 +118,7 @@ $bytesText=static function(int $bytes):string{
 <meta name="theme-color" content="#f4f5f7">
 <title><?= e(system_agent_name()) ?> | Cloud Hosting</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" href="<?= e(url('/cloud-hosting-v140.css?v=1')) ?>">
+<link rel="stylesheet" href="<?= e(url('/cloud-hosting-v140.css?v=3')) ?>">
 </head>
 <body>
 <div class="chat-app">
@@ -213,6 +235,14 @@ $bytesText=static function(int $bytes):string{
                 $releaseCatalog=(array)($site['release_catalog']??[]);
                 $releaseRows=(array)($releaseCatalog['releases']??[]);
                 $releaseCatalogError=(string)($site['release_catalog_error']??'');
+                $diagnostics=(array)($site['diagnostics']??[]);
+                $diagnosticsError=(string)($site['diagnostics_error']??'');
+                $diagnosticRows=(array)($diagnostics['recent']??[]);
+                $healthRecovery=(array)($site['health_recovery']??[]);
+                $healthRecoveryError=(string)($site['health_recovery_error']??'');
+                $healthPolicy=(array)($healthRecovery['policy']??[]);
+                $healthIncident=(array)($healthRecovery['incident']??[]);
+                $healthHistory=(array)($healthRecovery['history']??[]);
                 $isActive=(string)$site['desired_state']==='active';
                 $routeReady=!empty($sync['public_route_ready']);
               ?>
@@ -240,6 +270,90 @@ $bytesText=static function(int $bytes):string{
                   <div><span>Active Release</span><strong><?= e((string)($site['active_release_id']??'none')) ?></strong><small><?= !empty($site['previous_release_id'])?'Previous: '.e((string)$site['previous_release_id']):'No previous release' ?></small></div>
                   <div><span>Limits</span><strong><?= e($bytesText((int)$site['storage_limit_bytes'])) ?></strong><small>SQLite <?= e($bytesText((int)$site['sqlite_limit_bytes'])) ?></small></div>
                 </div>
+
+                <section class="hosting-diagnostics">
+                  <div class="hosting-diagnostics-head">
+                    <div><strong>Traffic & Runtime</strong><span>Last 60 minutes from HomeServer runtime telemetry.</span></div>
+                    <a href="<?= e(url('/chat.php')) ?>?prompt=<?= e(rawurlencode('Why is my hosted site '.(string)$site['display_name'].' down or unhealthy?')) ?>">Ask Agent Why</a>
+                  </div>
+                  <?php if($diagnosticsError!==''): ?>
+                    <small class="hosting-diagnostics-error">Diagnostics unavailable: <?= e($diagnosticsError) ?></small>
+                  <?php elseif(!$diagnostics): ?>
+                    <small class="hosting-diagnostics-empty">No HomeServer diagnostics are available yet.</small>
+                  <?php else: ?>
+                    <div class="hosting-diagnostics-grid">
+                      <div><span>Requests</span><strong><?= number_format((int)$diagnostics['requests_total']) ?></strong><small><?= number_format((int)$diagnostics['client_error_total']) ?> 4xx · <?= number_format((int)$diagnostics['server_error_total']) ?> 5xx</small></div>
+                      <div><span>Latency</span><strong><?= number_format((float)$diagnostics['average_duration_ms'],1) ?> ms</strong><small>p95 <?= number_format((float)$diagnostics['p95_duration_ms'],1) ?> ms</small></div>
+                      <div><span>Runtime</span><strong><?= !empty($diagnostics['serving_ready'])?'Ready':'Not ready' ?></strong><small><?= number_format((int)$diagnostics['php_failure_total']) ?> PHP failures · <?= number_format((int)$diagnostics['slow_request_total']) ?> slow</small></div>
+                      <div><span>Storage</span><strong><?= e($bytesText((int)$diagnostics['storage_bytes'])) ?></strong><small>SQLite <?= e($bytesText((int)$diagnostics['sqlite_bytes'])) ?> · <?= !empty($diagnostics['sqlite_healthy'])?'healthy':'unhealthy' ?></small></div>
+                      <div><span>Route</span><strong><?= e((string)$diagnostics['cloud_dns_state']) ?></strong><small>TLS <?= e((string)$diagnostics['cloud_tls_state']) ?> · <?= !empty($diagnostics['homeserver_route_ready'])?'HomeServer ready':'HomeServer pending' ?></small></div>
+                      <div><span>Last Deploy</span><strong><?= !empty($diagnostics['last_deploy']['app_version'])?e((string)$diagnostics['last_deploy']['app_version']):(!empty($diagnostics['last_deploy']['release_id'])?e((string)$diagnostics['last_deploy']['release_id']):'None') ?></strong><small><?= !empty($diagnostics['last_deploy']['created_at'])?e((string)$diagnostics['last_deploy']['created_at']):'No active release metadata' ?></small></div>
+                    </div>
+                    <?php if(!empty($diagnostics['issues'])): ?>
+                      <div class="hosting-diagnostic-issues"><?php foreach((array)$diagnostics['issues'] as $issue): ?><span><?= e((string)$issue) ?></span><?php endforeach; ?></div>
+                    <?php endif; ?>
+                    <?php if($diagnosticRows): ?>
+                      <div class="hosting-request-log" aria-label="Recent hosting requests">
+                        <?php foreach($diagnosticRows as $requestRow): ?>
+                          <div><code><?= e((string)$requestRow['method']) ?></code><span><?= e((string)$requestRow['path']) ?></span><strong class="<?= (int)$requestRow['status']>=500?'error':((int)$requestRow['status']>=400?'warn':'') ?>"><?= (int)$requestRow['status'] ?></strong><small><?= number_format((float)$requestRow['duration_ms'],1) ?> ms</small></div>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php endif; ?>
+                  <?php endif; ?>
+                </section>
+
+                <section class="hosting-health-recovery">
+                  <div class="hosting-health-head">
+                    <div><strong>Health & Recovery</strong><span>HomeServer automated monitoring, incident response and bounded recovery.</span></div>
+                    <span class="hosting-health-state <?= e((string)($healthRecovery['health_state']??'unknown')) ?>"><?= e((string)($healthRecovery['health_state']??'unknown')) ?></span>
+                  </div>
+                  <?php if($healthRecoveryError!==''): ?>
+                    <small class="hosting-diagnostics-error">Health recovery unavailable: <?= e($healthRecoveryError) ?></small>
+                  <?php elseif(!$healthRecovery): ?>
+                    <small class="hosting-diagnostics-empty">No HomeServer health recovery state is available yet.</small>
+                  <?php else: ?>
+                    <div class="hosting-health-grid">
+                      <div><span>Monitor</span><strong><?= !empty($healthPolicy['enabled'])?'Enabled':'Disabled' ?></strong><small>Every <?= (int)($healthPolicy['interval_seconds']??60) ?> sec</small></div>
+                      <div><span>Failure Threshold</span><strong><?= (int)($healthPolicy['failure_threshold']??3) ?> checks</strong><small>Before incident recovery</small></div>
+                      <div><span>Recovery Attempts</span><strong><?= (int)($healthPolicy['max_recovery_attempts']??2) ?></strong><small>Bounded automatic actions</small></div>
+                      <div><span>Rollback</span><strong><?= !empty($healthPolicy['auto_rollback'])?'Automatic':'Manual' ?></strong><small>Previous known-good release</small></div>
+                      <div><span>Restore</span><strong><?= !empty($healthPolicy['auto_restore'])?'Automatic':'Manual only' ?></strong><small>Verified recovery point</small></div>
+                      <div><span>Latest Incident</span><strong><?= $healthIncident?e((string)($healthIncident['state']??'unknown')):'None' ?></strong><small><?= $healthIncident?e((string)($healthIncident['created_at']??'')):'No active incident' ?></small></div>
+                    </div>
+
+                    <div class="hosting-health-actions">
+                      <form method="post">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="health.check">
+                        <input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>">
+                        <button type="submit">Run Health Check</button>
+                      </form>
+                      <form method="post" data-hosting-confirm="Update this site's automatic recovery policy?">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="health.policy">
+                        <input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>">
+                        <input type="hidden" name="confirmed" value="0" data-hosting-confirmed>
+                        <input type="hidden" name="enabled" value="<?= !empty($healthPolicy['enabled'])?'1':'0' ?>">
+                        <input type="hidden" name="auto_reactivate" value="<?= !empty($healthPolicy['auto_reactivate'])?'1':'0' ?>">
+                        <input type="hidden" name="auto_restore" value="<?= !empty($healthPolicy['auto_restore'])?'1':'0' ?>">
+                        <label><span>Check</span><select name="interval_seconds"><?php foreach([30,60,120,300,600] as $seconds): ?><option value="<?= $seconds ?>"<?= (int)($healthPolicy['interval_seconds']??60)===$seconds?' selected':'' ?>><?= $seconds ?>s</option><?php endforeach; ?></select></label>
+                        <label><span>Failures</span><select name="failure_threshold"><?php foreach([1,2,3,4,5] as $threshold): ?><option value="<?= $threshold ?>"<?= (int)($healthPolicy['failure_threshold']??3)===$threshold?' selected':'' ?>><?= $threshold ?></option><?php endforeach; ?></select></label>
+                        <label><span>Attempts</span><select name="max_recovery_attempts"><?php foreach([1,2,3,4,5] as $attempts): ?><option value="<?= $attempts ?>"<?= (int)($healthPolicy['max_recovery_attempts']??2)===$attempts?' selected':'' ?>><?= $attempts ?></option><?php endforeach; ?></select></label>
+                        <label><span>Cooldown</span><select name="cooldown_seconds"><?php foreach([30,60,120,300,600] as $seconds): ?><option value="<?= $seconds ?>"<?= (int)($healthPolicy['cooldown_seconds']??300)===$seconds?' selected':'' ?>><?= $seconds ?>s</option><?php endforeach; ?></select></label>
+                        <label class="hosting-health-toggle"><input type="checkbox" name="auto_rollback" value="1"<?= !empty($healthPolicy['auto_rollback'])?' checked':'' ?>><span>Auto rollback</span></label>
+                        <button type="submit">Save Recovery Policy</button>
+                      </form>
+                    </div>
+
+                    <?php if($healthHistory): ?>
+                      <div class="hosting-health-history">
+                        <?php foreach(array_slice($healthHistory,0,8) as $healthEvent): ?>
+                          <div><strong><?= e((string)($healthEvent['state']??'')) ?></strong><span><?= e((string)($healthEvent['action']??$healthEvent['event_type']??'')) ?></span><small><?= e((string)($healthEvent['created_at']??'')) ?></small></div>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php endif; ?>
+                  <?php endif; ?>
+                </section>
 
                 <div class="hosting-actions">
                   <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="site.reconcile"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('reconcile')) ?>"><button type="submit">Reconcile</button></form>
