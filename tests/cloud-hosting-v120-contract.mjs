@@ -25,6 +25,16 @@ assert.match(sync,/next_chunk/);
 assert.match(sync,/package_sha256/);
 assert.match(sync,/Deployment idempotency key/);
 assert.match(sync,/Failed deployment requires a new idempotency key/);
+assert.match(sync,/Another Hosting deployment operation is already in progress for this site/);
+assert.match(sync,/state IN \('pending','transferring','committing','interrupted'\)/);
+assert.match(sync,/hosting\.deployment\.status/);
+assert.match(sync,/transient_failure_resume_with_same_key'\s*=>\s*true/);
+assert.match(sync,/single_inflight_operation_per_site'\s*=>\s*true/);
+assert.match(sync,/deployment_status_refresh'\s*=>\s*true/);
+assert.match(sync,/deployment_entitlement_revalidation'\s*=>\s*true/);
+assert.match(sync,/state\]??''\)==='applied'/);
+assert.match(sync,/Hosting deployment package must be a ZIP archive/);
+assert.match(sync,/vp3_cloud_hosting_v120_assert_deployment_entitled/);
 assert.match(sync,/Rollback idempotency key/);
 assert.match(sync,/previous_release_id=active_release_id,active_release_id=/);
 
@@ -54,5 +64,6 @@ assert.match(upgrade,/vp3_cloud_hosting_v120_ensure_schema\(\$pdo\)/);
 assert.match(workflow,/cloud-hosting-v120\.php/);
 assert.match(workflow,/cloud-hosting-v120-mysql\.php/);
 assert.match(workflow,/cloud-hosting-v120-contract\.mjs/);
+assert.match(workflow,/extensions: pdo_mysql,sodium,openssl,curl,zip/);
 
 console.log('Cloud Hosting V1 Section 3 architecture contract: PASS');
