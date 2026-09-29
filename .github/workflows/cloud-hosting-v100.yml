@@ -11,6 +11,8 @@ on:
       - "includes/cloud-hosting-release-v150.php"
       - "includes/cloud-hosting-domains-v200.php"
       - "includes/cloud-hosting-releases-v220.php"
+      - "includes/cloud-hosting-diagnostics-v230.php"
+      - "includes/cloud-hosting-health-v240.php"
       - "hosting.php"
       - "cloud-hosting-v140.css"
       - "cloud-hosting-v140.js"
@@ -29,6 +31,8 @@ on:
       - "tests/cloud-hosting-v150-*"
       - "tests/cloud-hosting-v200-*"
       - "tests/cloud-hosting-v220-*"
+      - "tests/cloud-hosting-v230-*"
+      - "tests/cloud-hosting-v240-*"
       - ".github/workflows/cloud-hosting-v100.yml"
   push:
     branches:
@@ -42,6 +46,8 @@ on:
       - "includes/cloud-hosting-release-v150.php"
       - "includes/cloud-hosting-domains-v200.php"
       - "includes/cloud-hosting-releases-v220.php"
+      - "includes/cloud-hosting-diagnostics-v230.php"
+      - "includes/cloud-hosting-health-v240.php"
       - "hosting.php"
       - "cloud-hosting-v140.css"
       - "cloud-hosting-v140.js"
@@ -60,6 +66,8 @@ on:
       - "tests/cloud-hosting-v150-*"
       - "tests/cloud-hosting-v200-*"
       - "tests/cloud-hosting-v220-*"
+      - "tests/cloud-hosting-v230-*"
+      - "tests/cloud-hosting-v240-*"
       - ".github/workflows/cloud-hosting-v100.yml"
 
 concurrency:
@@ -111,8 +119,12 @@ jobs:
           php -l includes/cloud-hosting-release-v150.php
           php -l includes/cloud-hosting-domains-v200.php
           php -l includes/cloud-hosting-releases-v220.php
+          php -l includes/cloud-hosting-diagnostics-v230.php
+          php -l includes/cloud-hosting-health-v240.php
           php -l tests/cloud-hosting-v200-mysql.php
           php -l tests/cloud-hosting-v220-mysql.php
+          php -l tests/cloud-hosting-v230-mysql.php
+          php -l tests/cloud-hosting-v240-mysql.php
           php -l tests/cloud-hosting-v150-acceptance.php
           php -l hosting.php
           php -l tests/cloud-hosting-v140-mysql.php
@@ -142,6 +154,10 @@ jobs:
         run: node tests/cloud-hosting-v200-contract.mjs
       - name: Cloud Hosting V2 Section 2 release-history contract
         run: node tests/cloud-hosting-v220-contract.mjs
+      - name: Cloud Hosting V2 Section 3 diagnostics contract
+        run: node tests/cloud-hosting-v230-contract.mjs
+      - name: Cloud Hosting V2 Section 4 health recovery contract
+        run: node tests/cloud-hosting-v240-contract.mjs
       - name: Credential key preservation regression
         run: node tests/ai-credential-key-preservation-v2453.mjs
       - name: Existing package entitlement composition regression
@@ -164,3 +180,5 @@ jobs:
           php tests/cloud-hosting-v150-acceptance.php
           php tests/cloud-hosting-v200-mysql.php
           php tests/cloud-hosting-v220-mysql.php
+          php tests/cloud-hosting-v230-mysql.php
+          php tests/cloud-hosting-v240-mysql.php
