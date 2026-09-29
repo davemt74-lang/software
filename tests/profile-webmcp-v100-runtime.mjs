@@ -51,9 +51,15 @@ assert.equal(result.ok,true);
 assert.equal(requests.length,1);
 assert.equal(requests[0].options.headers['X-VP3-WebMCP-Session'],'proof-123');
 assert.equal(requests[0].options.credentials,'same-origin');
-assert.deepEqual(Object.keys(requests[0].body).sort(),['input','manifest_version','profile_username','surface','tool']);
+assert.deepEqual(Object.keys(requests[0].body).sort(),['input','manifest_version','profile_username','surface','telemetry','tool']);
+assert.match(requests[0].body.telemetry.webmcp_session_id,/^[A-Za-z0-9_-]{8,96}$/);
+assert.match(requests[0].body.telemetry.interaction_id,/^[A-Za-z0-9_-]{8,96}$/);
+assert.equal(requests[0].body.telemetry.agent_referral,'');
 assert.equal('owner_user_id' in requests[0].body,false,'client must not assert owner authority');
 assert.deepEqual(requests[0].body.input,{},'session proof must stay outside tool input');
+assert.equal('telemetry' in requests[0].body.input,false,'transport telemetry must stay outside tool input');
+assert.ok(events.some(e=>e.event==='tool_called'));
+assert.ok(events.some(e=>e.event==='tool_completed'));
 
 const initialCalls=documentObject.modelContext.calls;
 await r.syncManifest({...manifest,capabilities:{profile:true,booking:false}});
