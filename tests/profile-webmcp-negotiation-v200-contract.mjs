@@ -32,7 +32,7 @@ assert.match(externalRuntime,/negotiation_contract/);
 
 assert.match(nativeManifest,/protocol/);
 assert.match(externalManifest,/protocol/);
-assert.match(release,/negotiation_contract/);
+assert.match(release,/negotiation'[\s\S]*'contract'=>'vp3\.profile\.webmcp\.negotiation\.v1'/);
 assert.match(workflow,/profile-webmcp-negotiation-v200/);
 assert.match(recovery,/profile-webmcp-negotiation-v200/);
 
