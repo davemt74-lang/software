@@ -6,6 +6,7 @@ require_once __DIR__.'/profile-webmcp-release-v196.php';
 require_once __DIR__.'/profile-webmcp-negotiation-v200.php';
 require_once __DIR__.'/profile-webmcp-health-v201.php';
 require_once __DIR__.'/profile-webmcp-observability-v205.php';
+require_once __DIR__.'/profile-webmcp-acceptance-v206.php';
 require_once __DIR__.'/profile-webmcp-compatibility-v203.php';
 
 const VP3_PROFILE_WEBMCP_V100 = 'profile-webmcp-v100-20260928';
