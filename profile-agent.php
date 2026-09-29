@@ -162,6 +162,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
   'analyticsEndpoint'=>url('/api/vp3-analytics.php'),
   'radarScriptUrl'=>url('/vp3-radar.js?v=agent-radar-external-sites-20260906'),
   'analyticsScriptUrl'=>url('/vp3-analytics.js?v=vp3-analytics-20260906'),
+  'webmcpExternalScriptUrl'=>url('/profile-webmcp-external-v120.js?v=profile-webmcp-external-v120-20260928'),
   'csrf'=>csrf_token(),
   'profileUrl'=>$profileUrl,
   'profileChatAllowed'=>$profileChatAllowed,
