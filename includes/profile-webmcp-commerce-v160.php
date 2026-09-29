@@ -393,6 +393,13 @@ function vp3_profile_webmcp_commerce_checkout_confirm_v160(
         $existing=vp3_profile_webmcp_action_by_idempotency_v150($pdo,$owner,'commerce.checkout',$idem,true);
         if($existing&&(int)$existing['id']!==(int)$action['id']){
             if(!hash_equals((string)$existing['payload_hash'],(string)$action['payload_hash']))throw new RuntimeException('Idempotency key was already used for a different checkout.');
+            if(!hash_equals((string)$existing['profile_username'],(string)$context['profile_username'])
+                ||!hash_equals((string)$existing['session_hash'],(string)$context['session_hash'])
+                ||(string)$existing['surface']!==(string)$context['surface']
+                ||(int)($existing['property_id']??0)!==(int)($context['property_id']??0)){
+                throw new RuntimeException('Idempotency key belongs to a different WebMCP commerce session.');
+            }
+            if(!in_array((string)$existing['state'],['executing','committed'],true))throw new RuntimeException('That idempotent checkout is still being prepared.');
             $pdo->commit();$out=vp3_profile_webmcp_commerce_checkout_resume_v160($pdo,$profile,$intent,$existing);$out['idempotent_replay']=true;return $out;
         }
 
@@ -575,11 +582,12 @@ function vp3_profile_webmcp_commerce_record_purchase_v160(PDO $pdo,array $order)
 
     if(!vp3_radar_schema_ready($pdo)||$propertyId<1)return;
     $stmt=$pdo->prepare('SELECT metadata_json FROM agent_commerce_orders_v800 WHERE id=? AND owner_user_id=? LIMIT 1 FOR UPDATE');
-    $pdo->beginTransaction();
+    $owns=!$pdo->inTransaction();
+    if($owns)$pdo->beginTransaction();
     try{
         $stmt->execute([(int)$order['id'],$owner]);$row=$stmt->fetch();$current=is_array($row)?json_decode((string)$row['metadata_json'],true):null;
         if(!is_array($current))$current=[];
-        if(!empty($current['webmcp_purchase_telemetry_recorded_at'])){$pdo->commit();return;}
+        if(!empty($current['webmcp_purchase_telemetry_recorded_at'])){if($owns)$pdo->commit();return;}
         $details=[
             'envelope_version'=>VP3_PROFILE_WEBMCP_EVENT_ENVELOPE_V130,'event_name'=>'webmcp_purchase_completed',
             'surface'=>(string)($current['webmcp_surface']??''),'tool'=>'vp3.commerce.checkout.confirm','status'=>'paid',
@@ -590,9 +598,9 @@ function vp3_profile_webmcp_commerce_record_purchase_v160(PDO $pdo,array $order)
         $event->execute([$owner,$propertyId,(int)($current['webmcp_agent_contact_id']??0)?:null,'WebMCP · commerce purchase · completed',json_encode($details,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
         $current['webmcp_purchase_telemetry_recorded_at']=gmdate('c');
         $pdo->prepare('UPDATE agent_commerce_orders_v800 SET metadata_json=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([json_encode($current,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),(int)$order['id'],$owner]);
-        $pdo->commit();
+        if($owns)$pdo->commit();
     }catch(Throwable $e){
-        if($pdo->inTransaction())$pdo->rollBack();
+        if($owns&&$pdo->inTransaction())$pdo->rollBack();
         error_log('WebMCP purchase attribution failed: '.$e->getMessage());
     }
 }
