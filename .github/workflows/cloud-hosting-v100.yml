@@ -77,6 +77,8 @@ jobs:
           php -l tests/cloud-hosting-v100-mysql.php
       - name: Cloud Hosting architecture contract
         run: node tests/cloud-hosting-v100-contract.mjs
+      - name: Credential key preservation regression
+        run: node tests/ai-credential-key-preservation-v2453.mjs
       - name: Existing package entitlement composition regression
         run: node tests/package-entitlement-composition-v340.mjs
       - name: Existing cloud schema upgrade completeness regression
