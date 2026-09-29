@@ -213,6 +213,20 @@ try {
         if ($tool === 'vp3.campaign.eligibility.get') {
             vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_campaign_eligibility_v170($pdo,$profile,(string)($args['campaign_slug']??'')));
         }
+        if ($tool === 'vp3.campaign.participation.prepare') {
+            $campaignContext=vp3_profile_webmcp_campaign_context_v170($profile,'native_profile',$telemetry,$proof,null,'');
+            $result=vp3_profile_webmcp_campaign_prepare_v170($pdo,$profile,$campaignContext,$args);
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_campaign_prepared',$tool,'prepared',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_confirmation_required',$tool,'confirmation_required',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
+        if ($tool === 'vp3.campaign.participation.confirm') {
+            $campaignContext=vp3_profile_webmcp_campaign_context_v170($profile,'native_profile',$telemetry,$proof,null,'');
+            $intent=is_array($args['intent']??null)?$args['intent']:[];
+            $result=vp3_profile_webmcp_campaign_confirm_v170($pdo,$profile,$campaignContext,$intent,trim((string)($args['confirmation_token']??'')),trim((string)($args['idempotency_key']??'')));
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_campaign_participation_completed',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
     }
     if (str_starts_with($tool, 'vp3.agent.')) {
         $agentCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$viewer);
