@@ -3,7 +3,9 @@
   document.querySelectorAll('[data-hosting-confirm]').forEach(form=>{
     form.addEventListener('submit',event=>{
       const message=form.getAttribute('data-hosting-confirm')||'Continue with this Hosting action?';
-      if(!window.confirm(message))event.preventDefault();
+      if(!window.confirm(message)){event.preventDefault();return;}
+      const confirmed=form.querySelector('[data-hosting-confirmed]');
+      if(confirmed)confirmed.value='1';
     });
   });
   document.querySelectorAll('[data-hosting-deploy-form]').forEach(form=>{
@@ -24,7 +26,9 @@
         window.alert('Deployment ZIP must be 64 MiB or smaller.');
         return;
       }
-      if(!window.confirm('Deploy this ZIP to HomeServer and activate the new release after validation?'))event.preventDefault();
+      if(!window.confirm('Deploy this ZIP to HomeServer and activate the new release after validation?')){event.preventDefault();return;}
+      const confirmed=form.querySelector('[data-hosting-confirmed]');
+      if(confirmed)confirmed.value='1';
     });
   });
 })();
