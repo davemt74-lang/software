@@ -131,6 +131,24 @@ function vp3_cloud_hosting_v120_user(int $userId,?PDO $pdo=null): array
     return $row;
 }
 
+function vp3_cloud_hosting_v120_ensure_homeserver_binding(array $site,?PDO $pdo=null): array
+{
+    $pdo??=db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $siteId=(int)($site['id']??0);
+    $userId=(int)($site['user_id']??0);
+    if($siteId<1||$userId<1)throw new RuntimeException('A valid hosted site is required.');
+    $bound=(int)($site['homeserver_user_id']??0);
+    if($bound>0&&$bound!==$userId)throw new RuntimeException('Hosted site is bound to a different HomeServer owner.');
+    if($bound===$userId)return $site;
+    $stmt=$pdo->prepare("SELECT user_id FROM homeserver_connections WHERE user_id=? AND status IN ('connected','paired','online') LIMIT 1");
+    $stmt->execute([$userId]);
+    if((int)$stmt->fetchColumn()!==$userId)throw new RuntimeException('Connect this account to HomeServer before syncing hosted sites.');
+    $pdo->prepare('UPDATE cloud_hosting_sites SET homeserver_user_id=? WHERE id=? AND user_id=?')->execute([$userId,$siteId,$userId]);
+    return vp3_cloud_hosting_site_v100($siteId,$userId,$pdo)??$site;
+}
+
+
 function vp3_cloud_hosting_v120_count_limit(array $snapshot,string $key): int
 {
     $state=(array)($snapshot['entitlements'][$key]??[]);
@@ -423,6 +441,7 @@ function vp3_cloud_hosting_v120_reconcile_site(
     $siteId=(int)($site['id']??0);
     $userId=(int)($site['user_id']??0);
     if($siteId<1||$userId<1)throw new RuntimeException('A valid hosted site is required.');
+    $site=vp3_cloud_hosting_v120_ensure_homeserver_binding($site,$pdo);
     $user=vp3_cloud_hosting_v120_user($userId,$pdo);
     vp3_cloud_hosting_v120_reconcile_entitlements($user,$remote,$pdo);
     $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
@@ -434,6 +453,9 @@ function vp3_cloud_hosting_v120_reconcile_site(
         if((string)($result['reconcile_result']??'')==='stale_ignored'&&$remoteRevision>=(int)$fresh['desired_revision']){
             $nextRevision=$remoteRevision+1;
             $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=? WHERE id=?')->execute([$nextRevision,$siteId]);
+            vp3_cloud_hosting_event_v100($pdo,$siteId,'homeserver.revision_rebased','reconciling',$nextRevision,null,[
+                'remote_revision'=>$remoteRevision,'reason'=>'stale_remote_revision',
+            ]);
             $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo)??$fresh;
             $desired=vp3_cloud_hosting_desired_projection_v100($fresh);
             $result=vp3_cloud_hosting_v120_remote($userId,'hosting.site.reconcile',$desired,$remote);
@@ -529,7 +551,7 @@ function vp3_cloud_hosting_v120_update_deployment(
     $transferId=mb_substr((string)($response['transfer_id']??''),0,100);
     $releaseId=trim((string)($response['release_id']??''));
     $terminal=in_array($state,['deployed','rolled_back','failed'],true);
-    $stmt=$pdo->prepare('UPDATE cloud_hosting_deployments SET state=?,transfer_id=IF(?<>"",?,transfer_id),release_id=?,response_json=?,error_code=?,error_message=?,completed_at=IF(?,NOW(),completed_at) WHERE id=?');
+    $stmt=$pdo->prepare('UPDATE cloud_hosting_deployments SET state=?,transfer_id=IF(? <> '', ?, transfer_id),release_id=?,response_json=?,error_code=?,error_message=?,completed_at=IF(?,NOW(),completed_at) WHERE id=?');
     $stmt->execute([
         $state,$transferId,$transferId,$releaseId!==''?$releaseId:null,
         json_encode($public,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
@@ -753,6 +775,7 @@ function vp3_cloud_hosting_v120_rollback(
     if($requestKey===''||strlen($requestKey)>160)throw new RuntimeException('A valid rollback idempotency key is required.');
     $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
     if($fresh===null)throw new RuntimeException('Hosted site could not be loaded.');
+    $fresh=vp3_cloud_hosting_v120_ensure_homeserver_binding($fresh,$pdo);
     $claim=vp3_cloud_hosting_v120_claim_deployment(
         $pdo,$siteId,$requestKey,'rollback',(int)$fresh['desired_revision'],'',0,$actorUserId
     );
