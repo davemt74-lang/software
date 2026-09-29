@@ -512,6 +512,29 @@ function vp3_cloud_hosting_v120_update_deployment(
     ]);
 }
 
+function vp3_cloud_hosting_v120_assert_deployment_entitled(array $site,?PDO $pdo=null): void
+{
+    $pdo??=db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $user=vp3_cloud_hosting_v120_user((int)($site['user_id']??0),$pdo);
+    $snapshot=vp3_cloud_hosting_entitlement_snapshot_v100($user);
+    if(empty($snapshot['entitlements']['hosting.access']['enabled'])){
+        throw new RuntimeException('This account package does not currently include Cloud Hosting deployments.');
+    }
+    $runtime=strtolower(trim((string)($site['runtime_kind']??'static')));
+    if($runtime==='php'&&empty($snapshot['entitlements']['hosting.php_access']['enabled'])){
+        throw new RuntimeException('This account package does not currently include PHP hosting.');
+    }
+    $storage=vp3_cloud_hosting_v120_byte_limit($snapshot,'hosting.storage_mb_per_site');
+    $sqlite=vp3_cloud_hosting_v120_byte_limit($snapshot,'hosting.sqlite_mb_per_site');
+    if((int)($site['storage_limit_bytes']??0)>$storage){
+        throw new RuntimeException('Hosted-site storage exceeds the current package entitlement.');
+    }
+    if((int)($site['sqlite_limit_bytes']??0)>$sqlite){
+        throw new RuntimeException('Hosted-site SQLite storage exceeds the current package entitlement.');
+    }
+}
+
 function vp3_cloud_hosting_v120_deploy_package(
     array $site,
     string $package,
@@ -534,6 +557,7 @@ function vp3_cloud_hosting_v120_deploy_package(
     $sha=hash('sha256',$package);
     $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
     if($fresh===null)throw new RuntimeException('Hosted site could not be loaded.');
+    vp3_cloud_hosting_v120_assert_deployment_entitled($fresh,$pdo);
     $revision=(int)$fresh['desired_revision'];
 
     $claim=vp3_cloud_hosting_v120_claim_deployment(
@@ -634,6 +658,49 @@ function vp3_cloud_hosting_v120_deploy_package(
     }
 }
 
+function vp3_cloud_hosting_v120_refresh_deployment(
+    array $site,
+    string $requestKey,
+    ?callable $remote=null,
+    ?PDO $pdo=null
+): array {
+    $pdo??=db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $siteId=(int)($site['id']??0);
+    $userId=(int)($site['user_id']??0);
+    if($siteId<1||$userId<1)throw new RuntimeException('A valid hosted site is required.');
+    $row=vp3_cloud_hosting_v120_deployment_row($siteId,trim($requestKey),$pdo);
+    if($row===null)throw new RuntimeException('Hosting deployment was not found.');
+    if((string)$row['operation']!=='deploy')return ['deployment'=>$row];
+
+    $transferId=trim((string)($row['transfer_id']??''));
+    $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
+    if($fresh===null)throw new RuntimeException('Hosted site could not be loaded.');
+    $remoteState=vp3_cloud_hosting_v120_remote($userId,'hosting.deployment.status',[
+        'cloud_site_id'=>(string)$fresh['site_key'],
+        'transfer_id'=>$transferId!==''?$transferId:null,
+    ],$remote);
+    if($transferId!==''&&isset($remoteState['state'])){
+        $state=(string)$remoteState['state'];
+        if($state==='applied'){
+            vp3_cloud_hosting_v120_update_deployment($pdo,(int)$row['id'],'deployed',$remoteState);
+            $releaseId=trim((string)($remoteState['release_id']??''));
+            $pdo->prepare("UPDATE cloud_hosting_sites SET previous_release_id=IF(active_release_id<>?,active_release_id,previous_release_id),active_release_id=?,last_error_code='',last_error_message='' WHERE id=?")
+                ->execute([$releaseId,$releaseId!==''?$releaseId:null,$siteId]);
+        }elseif($state==='failed'){
+            vp3_cloud_hosting_v120_update_deployment($pdo,(int)$row['id'],'failed',$remoteState,(string)($remoteState['error']??'HomeServer deployment failed.'));
+        }elseif($state==='receiving'){
+            vp3_cloud_hosting_v120_update_deployment($pdo,(int)$row['id'],'transferring',$remoteState);
+        }
+    }
+    $sync=vp3_cloud_hosting_v120_reconcile_site(vp3_cloud_hosting_site_v100($siteId,$userId,$pdo)??$fresh,$remote,$pdo);
+    return [
+        'deployment'=>vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo),
+        'remote'=>vp3_cloud_hosting_v120_public_remote($remoteState),
+        'reconcile'=>$sync,
+    ];
+}
+
 function vp3_cloud_hosting_v120_rollback(
     array $site,
     string $requestKey,
@@ -699,6 +766,8 @@ function vp3_cloud_hosting_v120_public_capability(): array
         'transient_failure_resume_with_same_key'=>true,
         'single_inflight_operation_per_site'=>true,
         'deployment_idempotency'=>true,
+        'deployment_status_refresh'=>true,
+        'deployment_entitlement_revalidation'=>true,
         'rollback_idempotency'=>true,
         'raw_package_persisted'=>false,
         'cloud_edge_private_key_persisted'=>false,
