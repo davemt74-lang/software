@@ -46,7 +46,9 @@ assert.match(scheduling,/agent_scheduling_validate_start_v430/,'confirm must rev
 assert.match(scheduling,/event_state_hash/,'booking prepare must bind event state');
 assert.match(scheduling,/booking_state_hash/,'manage actions must bind booking state');
 assert.match(scheduling,/vp3_profile_webmcp_action_by_idempotency_v150/,'confirm must enforce durable idempotency');
-assert.match(scheduling,/FOR UPDATE/,'idempotency/action row must be transaction locked');
+assert.match(actions,/FOR UPDATE/,'idempotency/action ledger rows must be transaction locked');
+assert.match(scheduling,/SELECT GET_LOCK\(\?,5\)/,'same-key confirmations must serialize before the booking transaction');
+assert.match(scheduling,/SELECT RELEASE_LOCK\(\?\)/,'idempotency named lock must always release');
 assert.match(scheduling,/agent_scheduling_create_booking_v430/,'create must use canonical scheduling store');
 assert.match(scheduling,/agent_appointment_lifecycle_reschedule_v700/,'reschedule must preserve canonical lifecycle');
 assert.match(scheduling,/agent_appointment_lifecycle_transition_v700/,'cancel must preserve canonical lifecycle');
