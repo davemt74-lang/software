@@ -51,8 +51,8 @@ assert.match(externalApi,/vp3_profile_webmcp_external_chat_context_v140/,'extern
 assert.match(router,/vp3_profile_agent_public_message_service_v110/,'external chat must reuse canonical message service');
 assert.match(router,/vp3_profile_agent_public_state_service_v110/,'external conversation reads must reuse canonical state service');
 assert.match(router,/vp3_profile_agent_public_request_owner_v110/,'external owner handoff must reuse canonical escalation');
-assert.match(externalApi,/webmcp_message_sent/,'external chat must keep WebMCP telemetry lineage');
-assert.match(externalApi,/webmcp_handoff_requested/,'external handoff must keep WebMCP telemetry lineage');
+assert.match(router,/webmcp_message_sent/,'external chat must keep WebMCP telemetry lineage');
+assert.match(router,/webmcp_handoff_requested/,'external handoff must keep WebMCP telemetry lineage');
 assert.doesNotMatch(externalApi,/Access-Control-Allow-Credentials/i,'external chat must remain credential-free CORS');
 assert.doesNotMatch(externalApi,/HTTP_AUTHORIZATION|Bearer\s|connected_site_auth/i,'external chat must not use private Connected Sites OAuth credentials');
 
