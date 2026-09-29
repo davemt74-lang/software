@@ -30,7 +30,7 @@ assert.match(service,/profile:identity','profile:rules/,'internal identity/rule 
 assert.match(service,/OWNER_VISITOR_PREVIEW_REQUIRED/,'owner-as-visitor must fail closed');
 assert.match(service,/CONVERSATION_NOT_FOUND/,'conversation mismatch must fail closed');
 
-assert.match(webapi,/vp3_profile_agent_public_context_v110/);
+assert.match(router,/vp3_profile_agent_public_context_v110/);
 assert.match(router,/vp3_profile_agent_public_message_service_v110/);
 assert.match(router,/vp3_profile_agent_public_request_owner_v110/);
 assert.match(webapi,/vp3_profile_webmcp_dispatch_v191/);
