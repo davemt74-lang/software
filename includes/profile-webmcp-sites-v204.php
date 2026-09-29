@@ -11,20 +11,33 @@ function vp3_profile_webmcp_site_latest_event_v204(PDO $pdo,int $propertyId): ?a
     try{
         $stmt=$pdo->prepare("SELECT id,event_type,details_json,occurred_at FROM vp3_radar_events
             WHERE property_id=? AND event_type LIKE 'webmcp\\_%'
-            ORDER BY occurred_at DESC,id DESC LIMIT 1");
-        $stmt->execute([$propertyId]);$row=$stmt->fetch();
-        if(!$row)return null;
-        $details=json_decode((string)($row['details_json']??''),true);if(!is_array($details))$details=[];
-        return [
-            'id'=>(int)$row['id'],
-            'event_name'=>(string)$row['event_type'],
-            'runtime_build'=>(string)($details['client_runtime_build']??''),
-            'manifest_version'=>(string)($details['client_manifest_version']??''),
-            'release_version'=>(string)($details['client_release_version']??''),
-            'negotiation_mode'=>(string)($details['negotiation_mode']??''),
-            'result_code'=>(string)($details['result_code']??''),
-            'occurred_at'=>(string)$row['occurred_at'],
-        ];
+            ORDER BY occurred_at DESC,id DESC LIMIT 80");
+        $stmt->execute([$propertyId]);$rows=$stmt->fetchAll()?:[];
+        $latest=null;$runtime=null;
+        foreach($rows as $row){
+            $details=json_decode((string)($row['details_json']??''),true);if(!is_array($details))$details=[];
+            if(($details['result_code']??'')==='ORIGIN_DENIED')continue;
+            $public=[
+                'id'=>(int)$row['id'],
+                'event_name'=>(string)$row['event_type'],
+                'runtime_build'=>(string)($details['client_runtime_build']??''),
+                'manifest_version'=>(string)($details['client_manifest_version']??''),
+                'release_version'=>(string)($details['client_release_version']??''),
+                'negotiation_mode'=>(string)($details['negotiation_mode']??''),
+                'result_code'=>(string)($details['result_code']??''),
+                'occurred_at'=>(string)$row['occurred_at'],
+            ];
+            if($latest===null)$latest=$public;
+            if($runtime===null&&$public['runtime_build']!=='')$runtime=$public;
+            if($latest!==null&&$runtime!==null)break;
+        }
+        if($latest===null)return null;
+        if($runtime!==null){
+            foreach(['runtime_build','manifest_version','release_version','negotiation_mode'] as $key){
+                if(($latest[$key]??'')==='')$latest[$key]=$runtime[$key];
+            }
+        }
+        return $latest;
     }catch(Throwable $e){return null;}
 }
 
@@ -146,6 +159,7 @@ function vp3_profile_webmcp_site_state_v204(PDO $pdo,array $property): array
         'reverify_required'=>$active&&!$verified,
         'reconnect_required'=>$active&&$stale,
         'management_path'=>'/profile-agent.php',
+        'runtime_url'=>function_exists('url')?url('/profile-webmcp-external-v120.js?v='.rawurlencode($expected)):'/profile-webmcp-external-v120.js',
         'upgrade_guidance'=>'Open Profile Agent → Connected Sites and copy the current VP3 Tracking + WebMCP install snippet to this site.',
         'reverify_guidance'=>'Confirm the registered domain is correct, reinstall the current snippet, and load the site from its registered Origin.',
         'contains_sensitive_payload'=>false,
