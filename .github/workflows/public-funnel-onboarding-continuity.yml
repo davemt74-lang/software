@@ -97,4 +97,4 @@ jobs:
           grep -Fq "includes/profile-webmcp-v100.php" /tmp/vp3-webmcp-package/profile.php
           grep -Fq "profile-webmcp-v100.js" /tmp/vp3-webmcp-package/profile.php
           grep -Fq "webmcpExternalScriptUrl" /tmp/vp3-webmcp-package/profile-agent.php
-          grep -Fq "profile-webmcp-external-v120.js" /tmp/vp3-webmcp-package/profile-agent-radar-sites.js
+          grep -Fq "webmcpExternalScriptUrl" /tmp/vp3-webmcp-package/profile-agent-radar-sites.js
