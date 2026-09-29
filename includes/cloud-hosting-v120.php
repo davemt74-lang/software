@@ -517,7 +517,7 @@ function vp3_cloud_hosting_v120_deploy_package(
         $state=(string)($begin['state']??'receiving');
         if($state==='deployed'){
             vp3_cloud_hosting_v120_update_deployment($pdo,$deploymentId,'deployed',$begin);
-            $pdo->prepare('UPDATE cloud_hosting_sites SET active_release_id=? WHERE id=?')
+            $pdo->prepare('UPDATE cloud_hosting_sites SET previous_release_id=active_release_id,active_release_id=? WHERE id=?')
                 ->execute([trim((string)($begin['release_id']??''))?:null,$siteId]);
             vp3_cloud_hosting_v120_reconcile_site($fresh,$remote,$pdo);
             return ['replayed'=>true,'deployment'=>vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo)];
@@ -549,7 +549,7 @@ function vp3_cloud_hosting_v120_deploy_package(
         if((string)($commit['state']??'')!=='deployed')throw new RuntimeException('HomeServer did not activate the uploaded deployment.');
         vp3_cloud_hosting_v120_update_deployment($pdo,$deploymentId,'deployed',$commit);
         $releaseId=trim((string)($commit['release_id']??''));
-        $pdo->prepare("UPDATE cloud_hosting_sites SET active_release_id=?,last_error_code='',last_error_message='' WHERE id=?")
+        $pdo->prepare("UPDATE cloud_hosting_sites SET previous_release_id=active_release_id,active_release_id=?,last_error_code='',last_error_message='' WHERE id=?")
             ->execute([$releaseId!==''?$releaseId:null,$siteId]);
         vp3_cloud_hosting_event_v100($pdo,$siteId,'deployment.completed','deployed',$revision,$actorUserId,[
             'release_id'=>$releaseId,'package_sha256'=>$sha,'package_bytes'=>$size,
@@ -600,7 +600,7 @@ function vp3_cloud_hosting_v120_rollback(
         ],$remote);
         $releaseId=trim((string)($result['release_id']??$result['active_release_id']??''));
         vp3_cloud_hosting_v120_update_deployment($pdo,$id,'rolled_back',$result);
-        $pdo->prepare('UPDATE cloud_hosting_sites SET active_release_id=?,last_error_code=?,last_error_message=? WHERE id=?')
+        $pdo->prepare('UPDATE cloud_hosting_sites SET previous_release_id=active_release_id,active_release_id=?,last_error_code=?,last_error_message=? WHERE id=?')
             ->execute([$releaseId!==''?$releaseId:null,'','',$siteId]);
         vp3_cloud_hosting_event_v100($pdo,$siteId,'deployment.rolled_back','rolled_back',(int)$fresh['desired_revision'],$actorUserId,[
             'release_id'=>$releaseId,
