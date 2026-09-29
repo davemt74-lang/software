@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
+const health=read('includes/profile-webmcp-health-v201.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
+const native=read('profile-webmcp-v100.js');
+const external=read('profile-webmcp-external-v120.js');
+const workflow=read('.github/workflows/public-funnel-onboarding-continuity.yml');
+const recovery=read('tools/run_recovery_baseline.py');
+
+assert.match(health,/vp3\.profile\.webmcp\.health\.v1/);
+for(const name of ['resolver','router','confirmation','continuity','telemetry','property'])assert.match(health,new RegExp("'"+name+"'"));
+assert.match(health,/vp3_profile_webmcp_owner_activity_v130/);
+assert.match(health,/contains_sensitive_payload'=>false/);
+assert.doesNotMatch(health,/confirmation_token|manage_token|receipt_token|reward_public_id|payer_email|guest_email/);
+assert.match(router,/'health'=>vp3_profile_webmcp_health_v201/);
+assert.match(native,/diagnostics\(\)/);
+assert.match(external,/diagnostics\(\)/);
+assert.match(native,/last_failure/);
+assert.match(external,/last_failure/);
+assert.match(workflow,/profile-webmcp-health-v201/);
+assert.match(recovery,/profile-webmcp-health-v201/);
+console.log('PROFILE_WEBMCP_HEALTH_V201_CONTRACT=PASS');
