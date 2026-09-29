@@ -33,6 +33,11 @@ assert.match(sync,/state IN \('pending','transferring','committing','interrupted
 assert.match(sync,/hosting\.deployment\.status/);
 assert.match(sync,/transient_failure_resume_with_same_key'\s*=>\s*true/);
 assert.match(sync,/single_inflight_operation_per_site'\s*=>\s*true/);
+assert.match(sync,/deployment_execution_lease'\s*=>\s*true/);
+assert.match(sync,/run_token CHAR\(32\)/);
+assert.match(sync,/run_expires_at DATETIME/);
+assert.match(sync,/DATE_ADD\(UTC_TIMESTAMP\(\),INTERVAL 30 MINUTE\)/);
+assert.match(sync,/This Hosting deployment operation is already running/);
 assert.match(sync,/deployment_status_refresh'\s*=>\s*true/);
 assert.match(sync,/deployment_entitlement_revalidation'\s*=>\s*true/);
 assert.match(sync,/\['state'\]\?\?''\)==='applied'/);
