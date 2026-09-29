@@ -17,6 +17,9 @@ const manifest={manifest_version:'vp3.profile.webmcp.v1',surface:'native_profile
 const runtime=new VP3ProfileWebMCPRuntimeV100({documentObject:doc,fetchImpl,sessionProof:'proof',continuityEndpoint:'/api/profile-webmcp-continuity-v195.php'});
 await runtime.start(manifest);
 await runtime.resume({contract:'vp3.webmcp.resume.v1',profile_username:'demo',goal:'buy',recommended_capabilities:['commerce'],recommended_tools:[],resolved_capabilities:['commerce'],action_context_id:'a'.repeat(32),return_token:'b'.repeat(32),return_path:'/chat.php?profile_webmcp_return='+'b'.repeat(32)});
+doc.dispatchEvent(new CustomEvent('vp3:webmcp-cancel',{detail:{action:{contract:'vp3.webmcp.action.v1',prepare_tool:'vp3.commerce.checkout.prepare'}}}));
+await new Promise(r=>setTimeout(r,0));
+assert.ok(calls.find(c=>String(c.url).includes('continuity')&&c.body.phase==='cancelled'),'cancel must update continuity');
 await doc.modelContext.tools.get('vp3.commerce.checkout.confirm').execute({});
 await new Promise(r=>setTimeout(r,0));
 const note=calls.find(c=>String(c.url).includes('continuity')&&c.body.phase==='completed');
