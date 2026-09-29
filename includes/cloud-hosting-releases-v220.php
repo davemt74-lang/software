@@ -105,6 +105,9 @@ function vp3_cloud_hosting_releases_v220_promote(
     }
     if((string)$existing['state']==='promoted')return ['replayed'=>true,'deployment'=>$existing];
     if((string)$existing['state']==='failed')throw new RuntimeException('Failed promotion requires a new idempotency key.');
+    if((int)$existing['desired_revision']!==(int)$fresh['desired_revision']){
+        throw new RuntimeException('Promotion idempotency key belongs to an older Cloud desired-state revision.');
+    }
 
     $id=(int)$existing['id'];
     try{
@@ -165,6 +168,9 @@ function vp3_cloud_hosting_releases_v220_prune(
     }
     if((string)$existing['state']==='pruned')return ['replayed'=>true,'deployment'=>$existing];
     if((string)$existing['state']==='failed')throw new RuntimeException('Failed release retention requires a new idempotency key.');
+    if((int)$existing['desired_revision']!==(int)$fresh['desired_revision']){
+        throw new RuntimeException('Retention idempotency key belongs to an older Cloud desired-state revision.');
+    }
 
     $id=(int)$existing['id'];
     try{
