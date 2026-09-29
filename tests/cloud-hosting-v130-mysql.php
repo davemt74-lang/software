@@ -174,6 +174,30 @@ $createDone=vp3_cloud_hosting_agent_v130_query('confirm hosting '.$createCode,$o
 if(empty($createDone['hosting_plan']['completed']))throw new RuntimeException('Confirmed site creation did not complete.');
 if(vp3_cloud_hosting_count_sites_v100(1,$testPdo)!==2)throw new RuntimeException('Agent site creation count mismatch.');
 
+$entitlements['hosting.sites']['limit']=2;
+$createActionId=(string)($createPrepared['hosting_plan']['action_id']??'');
+$createAction=vp3_cloud_hosting_agent_v130_action($createActionId,1,$testPdo);
+if(!$createAction)throw new RuntimeException('Created-site Agent action could not be reloaded.');
+$replayedSite=vp3_cloud_hosting_create_site_v100($owner,[
+    'display_name'=>'Second Agent Site',
+    'runtime_kind'=>'static',
+    '_creation_key'=>'agent:'.$createActionId,
+],1);
+$createdSiteId=(int)($createAction['site_id']??0);
+if((int)($replayedSite['id']??0)!==$createdSiteId)throw new RuntimeException('Same-key site creation replay failed at the package site limit.');
+try{
+    vp3_cloud_hosting_create_site_v100($owner,[
+        'display_name'=>'Over Limit Site',
+        'runtime_kind'=>'static',
+        '_creation_key'=>'agent:over-limit-test',
+    ],1);
+    throw new RuntimeException('Concurrent-safe hosted-site quota gate did not enforce the package limit.');
+}catch(RuntimeException $e){
+    if($e->getMessage()==='Concurrent-safe hosted-site quota gate did not enforce the package limit.')throw $e;
+    if(!str_contains($e->getMessage(),'hosted-site limit'))throw $e;
+}
+$entitlements['hosting.sites']['limit']=4;
+
 $expired=vp3_cloud_hosting_agent_v130_prepare($owner,'site.reconcile',[],['site'=>'Agent Site'],(int)$site['id'],99,$testPdo);
 $testPdo->prepare("UPDATE cloud_hosting_agent_actions SET expires_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 SECOND) WHERE public_id=?")->execute([(string)$expired['action_id']]);
 try{
