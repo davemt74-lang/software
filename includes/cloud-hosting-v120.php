@@ -518,7 +518,7 @@ function vp3_cloud_hosting_v120_claim_deployment(
         $stmt->execute([$siteId,$requestKey]);
         $existing=$stmt->fetch();
         if(is_array($existing)){
-            $terminal=in_array((string)$existing['state'],['deployed','rolled_back','failed'],true);
+            $terminal=in_array((string)$existing['state'],['deployed','rolled_back','promoted','pruned','failed'],true);
             if(!$terminal){
                 $lease=trim((string)($existing['run_token']??''));
                 $expires=!empty($existing['run_expires_at'])?strtotime((string)$existing['run_expires_at'].' UTC'):false;
@@ -874,6 +874,9 @@ function vp3_cloud_hosting_v120_public_capability(): array
         'deployment_status_refresh'=>true,
         'deployment_entitlement_revalidation'=>true,
         'rollback_idempotency'=>true,
+        'release_history'=>true,
+        'historical_release_promotion'=>true,
+        'release_retention'=>true,
         'raw_package_persisted'=>false,
         'cloud_edge_private_key_persisted'=>false,
     ];
