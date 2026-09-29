@@ -83,7 +83,7 @@ function vp3_profile_webmcp_scheduling_token_verify_v150(string $token,array $co
     [$encoded,$sigEncoded]=$parts;
     $sig=vp3_profile_webmcp_b64url_decode_v140($sigEncoded);
     $expected=hash_hmac('sha256',$encoded,(string)$context['secret'],true);
-    if($sig===''||!hash_equals($expected,$sig))throw new RuntimeException('Scheduling confirmation token is invalid.');
+    if($sig===''||!hash_equals(vp3_profile_webmcp_b64url_encode_v140($sig),$sigEncoded)||!hash_equals($expected,$sig))throw new RuntimeException('Scheduling confirmation token is invalid.');
     $json=vp3_profile_webmcp_b64url_decode_v140($encoded);
     $payload=$json!==''?json_decode($json,true):null;
     if(!is_array($payload)||($payload['v']??null)!==1)throw new RuntimeException('Scheduling confirmation token is invalid.');
