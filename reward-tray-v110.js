@@ -30,6 +30,13 @@ const getState=async()=>{
   state={tray:data.tray||state.tray,contacts:Array.isArray(data.contacts)?data.contacts:[]};
   renderCounts();
   if(pageBucket)render(pageBucket);
+  if(pageBucket==='inbox'&&cfg.autoClaimPublicId){
+    const target=(state.tray?.inbox||[]).find(row=>String(row.public_id||'')===String(cfg.autoClaimPublicId));
+    if(target){
+      const clean=new URL(window.location.href);clean.searchParams.delete('claim');history.replaceState(null,'',clean.pathname+clean.search+clean.hash);
+      await prepareClaim(Number(target.id));
+    }
+  }
 };
 
 function renderCounts(){
