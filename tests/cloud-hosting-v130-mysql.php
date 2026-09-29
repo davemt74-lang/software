@@ -72,7 +72,9 @@ $site=vp3_cloud_hosting_create_site_v100($owner,[
 ],1);
 
 $remoteOps=[];
-$remote=function(int $userId,string $operation,array $payload) use (&$remoteOps): array {
+$remoteRelease='release_current';
+$remotePreviousRelease='release_previous';
+$remote=function(int $userId,string $operation,array $payload) use (&$remoteOps,&$remoteRelease,&$remotePreviousRelease): array {
     $remoteOps[]=['user_id'=>$userId,'operation'=>$operation,'payload'=>$payload];
     if($operation==='hosting.dashboard'){
         return ['sites'=>[[
@@ -86,7 +88,7 @@ $remote=function(int $userId,string $operation,array $payload) use (&$remoteOps)
             'site_id'=>'local_agent_site','revision'=>(int)$payload['revision'],
             'desired_state'=>(string)$payload['desired_state'],
             'observed_state'=>(string)$payload['desired_state'],
-            'active_release_id'=>'release_current',
+            'active_release_id'=>$remoteRelease,
             'public_routing'=>false,'reconcile_result'=>'applied',
         ];
     }
@@ -98,7 +100,10 @@ $remote=function(int $userId,string $operation,array $payload) use (&$remoteOps)
         ];
     }
     if($operation==='hosting.deployment.rollback'){
-        return ['state'=>'applied','release_id'=>'release_previous','previous_release_id'=>'release_current'];
+        $old=$remoteRelease;
+        $remoteRelease=$remotePreviousRelease;
+        $remotePreviousRelease=$old;
+        return ['state'=>'applied','release_id'=>$remoteRelease,'previous_release_id'=>$old];
     }
     throw new RuntimeException('Unexpected remote operation '.$operation);
 };
