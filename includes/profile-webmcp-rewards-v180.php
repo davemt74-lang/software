@@ -411,6 +411,13 @@ function vp3_profile_webmcp_reward_transfer_confirm_v183(PDO $pdo,array $profile
             $result['idempotent_replay']=true;if($started)$pdo->commit();return $result;
         }
         if((string)$action['state']!=='prepared')throw new RuntimeException('Prepared Reward transfer is no longer executable.');
+        $existing=vp3_profile_webmcp_action_by_idempotency_v150($pdo,$owner,$operation,$idem,true);
+        if($existing&&(int)$existing['id']!==(int)$action['id']){
+            if(!hash_equals((string)$existing['payload_hash'],(string)$action['payload_hash']))throw new RuntimeException('Idempotency key was already used for a different Reward transfer.');
+            if((string)$existing['state']!=='committed')throw new RuntimeException('That Reward transfer is still in progress.');
+            $result=json_decode((string)($existing['result_json']??''),true);if(!is_array($result))throw new RuntimeException('Committed Reward transfer result is unavailable.');
+            $result['idempotent_replay']=true;if($started)$pdo->commit();return $result;
+        }
         $expires=(new DateTimeImmutable((string)$action['expires_at'],new DateTimeZone('UTC')))->getTimestamp();
         if($expires<time())throw new RuntimeException('Reward transfer confirmation expired. Prepare the transfer again.');
         $reward=vp3_profile_webmcp_reward_holder_by_public_id_v182($pdo,$viewerId,(string)$intent['reward_public_id']);
