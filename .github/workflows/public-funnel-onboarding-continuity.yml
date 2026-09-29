@@ -66,6 +66,7 @@ jobs:
           php -l includes/profile-webmcp-negotiation-v200.php
           php -l includes/profile-webmcp-health-v201.php
           php -l includes/profile-webmcp-admin-v202.php
+          php -l includes/profile-webmcp-compatibility-v203.php
           php -l admin/webmcp.php
           php -l api/profile-webmcp-continuity-v195.php
           php -l includes/profile-agent-public-service-v110.php
@@ -92,6 +93,7 @@ jobs:
           php -l tests/profile-webmcp-negotiation-v200.php
           php -l tests/profile-webmcp-health-v201.php
           php -l tests/profile-webmcp-admin-v202.php
+          php -l tests/profile-webmcp-compatibility-v203.php
           php -l tests/profile-webmcp-agent-v110.php
           php -l tests/profile-webmcp-external-v120.php
           php -l tests/profile-webmcp-analytics-v130.php
@@ -119,6 +121,7 @@ jobs:
           php tests/profile-webmcp-negotiation-v200.php
           php tests/profile-webmcp-health-v201.php
           php tests/profile-webmcp-admin-v202.php
+          php tests/profile-webmcp-compatibility-v203.php
           php tests/profile-webmcp-agent-v110.php
           php tests/profile-webmcp-external-v120.php
           php tests/profile-webmcp-analytics-v130.php
@@ -149,6 +152,7 @@ jobs:
           node tests/profile-webmcp-health-v201-contract.mjs
           node tests/profile-webmcp-health-v201-runtime.mjs
           node tests/profile-webmcp-admin-v202-contract.mjs
+          node tests/profile-webmcp-compatibility-v203-contract.mjs
           node tests/profile-webmcp-agent-v110-contract.mjs
           node tests/profile-webmcp-external-v120-contract.mjs
           node tests/profile-webmcp-analytics-v130-contract.mjs
@@ -202,6 +206,7 @@ jobs:
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-negotiation-v200.php
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-health-v201.php
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-admin-v202.php
+          test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-compatibility-v203.php
           test -f /tmp/vp3-webmcp-package/admin/webmcp.php
           test -f /tmp/vp3-webmcp-package/api/profile-webmcp-continuity-v195.php
           test -f /tmp/vp3-webmcp-package/includes/profile-agent-public-service-v110.php
