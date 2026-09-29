@@ -178,7 +178,7 @@ function vp3_agent_profile_webmcp_authorize_plan_v193(PDO $pdo,array $plan,array
             'surface'=>'native_profile',
             'url'=>$url,
             'resume_token'=>(string)($resume['token']??''),
-            'resume_path'=>(string)($resume['path']??('/'.rawurlencode((string)$profile['username'])),
+            'resume_path'=>(string)($resume['path']??('/'.rawurlencode((string)$profile['username']))),
             'resume_expires_at'=>(int)($resume['expires_at']??0),
             'requires_signed_profile_surface'=>true,
         ],
