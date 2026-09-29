@@ -44,7 +44,8 @@ assert.match(api,/vp3_profile_agent_public_message_service_v110/,'WebMCP gateway
 assert.match(api,/is_public/,'gateway must refuse non-public profiles');
 assert.match(api,/Profile WebMCP manifest failed/,'manifest failures must be caught and fail closed');
 assert.match(api,/Profile capabilities are temporarily unavailable/,'manifest failures must not expose internals');
-assert.doesNotMatch(api,/mark_paid|create_checkout|refund|claim_from_tray|reschedule/,'Section 1 gateway must not execute domain transactions');
+assert.match(api,/vp3_profile_webmcp_scheduling_confirm_v150/,'native gateway may execute scheduling only through governed prepare-confirm adapter');
+assert.doesNotMatch(api,/mark_paid|create_checkout|refund|claim_from_tray/,'native gateway must not bypass canonical payment, commerce, refund, or reward authority');
 
 assert.match(runtime,/documentObject\?\.modelContext\?\.registerTool/);
 assert.match(runtime,/VP3_PROFILE_WEBMCP_TOOL_CATALOG_V100/);
