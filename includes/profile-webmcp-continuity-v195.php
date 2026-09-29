@@ -122,6 +122,7 @@ function vp3_profile_webmcp_action_context_public_v195(array $row): array
         'contract'=>'vp3.webmcp.return.v1',
         'continuity_version'=>VP3_PROFILE_WEBMCP_CONTINUITY_V195,
         'context_id'=>(string)($row['context_id']??''),
+        'correlation_id'=>(string)($row['context_id']??''),
         'profile_username'=>(string)($row['profile_username']??''),
         'conversation_id'=>(int)($row['conversation_id']??0),
         'goal'=>(string)($row['goal']??''),
@@ -136,7 +137,7 @@ function vp3_profile_webmcp_action_context_public_v195(array $row): array
     ];
 }
 
-function vp3_profile_webmcp_return_consume_v195(array $profile,array $user,string $returnToken): ?array
+function vp3_profile_webmcp_return_consume_v195(array $profile,array $user,string $returnToken,?PDO $pdo=null): ?array
 {
     $returnToken=strtolower(trim($returnToken));
     if(!preg_match('/^[a-f0-9]{32}$/',$returnToken))return null;
@@ -155,6 +156,11 @@ function vp3_profile_webmcp_return_consume_v195(array $profile,array $user,strin
         $rows[$id]['updated_at']=max((int)($row['updated_at']??0),$now);
         $_SESSION['vp3_profile_webmcp_action_context_v195']=$rows;
         $public=vp3_profile_webmcp_action_context_public_v195($rows[$id]);
+        if($pdo&&function_exists('vp3_profile_webmcp_record_agent_event_v205')){
+            vp3_profile_webmcp_record_agent_event_v205(
+                $pdo,$profile,$user,'webmcp_returned',(string)$id,(int)($row['conversation_id']??0),(string)($row['phase']??'returned')
+            );
+        }
         $_SESSION['vp3_profile_webmcp_last_return_v195']=[
             'user_id'=>$userId,
             'conversation_id'=>(int)($row['conversation_id']??0),
