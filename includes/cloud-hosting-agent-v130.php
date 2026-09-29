@@ -312,15 +312,7 @@ function vp3_cloud_hosting_agent_v130_execute(array $row,array $user,?callable $
 
     if($type==='site.state'){
         $state=(string)($payload['desired_state']??'');
-        if(!in_array($state,['active','suspended','configured'],true))throw new RuntimeException('Unsupported desired hosting state.');
-        if((string)$site['desired_state']!==$state){
-            $stmt=$pdo->prepare("UPDATE cloud_hosting_sites SET desired_state=?,desired_revision=desired_revision+1,last_error_code='',last_error_message='' WHERE id=? AND user_id=?");
-            $stmt->execute([$state,$siteId,$uid]);
-            $fresh=vp3_cloud_hosting_site_v100($siteId,$uid,$pdo)??$site;
-            vp3_cloud_hosting_event_v100($pdo,$siteId,'agent.desired_state_changed',$state,(int)$fresh['desired_revision'],$uid,['source'=>'agent_chat']);
-        }else{
-            $fresh=$site;
-        }
+        $fresh=vp3_cloud_hosting_set_desired_state_v100($site,$state,$uid,'agent_chat',$pdo);
         return vp3_cloud_hosting_v120_reconcile_site($fresh,$remote,$pdo);
     }
     if($type==='route.provision'){
