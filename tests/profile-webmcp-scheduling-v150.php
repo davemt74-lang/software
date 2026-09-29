@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+if(session_status()!==PHP_SESSION_ACTIVE)session_start();
+
 function vp3_profile_webmcp_transport_id_v130(string $value): string {
     $value=trim($value);return preg_match('/^[A-Za-z0-9_-]{8,96}$/',$value)?$value:'';
 }
@@ -28,6 +30,9 @@ $profile=['user_id'=>12,'username'=>'demo'];
 $telemetry=['webmcp_session_id'=>'Session_12345678','interaction_id'=>'Interaction_12345678','agent_referral'=>''];
 $native=vp3_profile_webmcp_scheduling_context_v150($profile,'native_profile',$telemetry,$nativeProof,null,'');
 $external=vp3_profile_webmcp_scheduling_context_v150($profile,'external_site',$telemetry,'',$externalProperty,'https://shop.example.com');
+$nativeSecret1=$native['secret'];
+$nativeWithDifferentProof=vp3_profile_webmcp_scheduling_context_v150($profile,'native_profile',$telemetry,str_repeat('f',64),null,'');
+t(hash_equals($nativeSecret1,$nativeWithDifferentProof['secret']),'browser-visible proof must not derive signing secret');
 t($native['surface']==='native_profile'&&$native['property_id']===0,'native context');
 t($external['surface']==='external_site'&&$external['property_id']===44,'external context');
 t($external['origin_hash']===hash('sha256','https://shop.example.com'),'origin binding');
