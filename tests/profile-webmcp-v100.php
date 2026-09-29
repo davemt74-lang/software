@@ -8,10 +8,11 @@ require dirname(__DIR__) . '/includes/profile-webmcp-v100.php';
 function t(bool $value,string $message): void { if(!$value){fwrite(STDERR,"FAIL: {$message}\n");exit(1);} }
 
 $catalog=vp3_profile_webmcp_tool_catalog_v100();
-t(count($catalog)===7,'Section 2 catalog must expose seven trusted tools');
+t(count($catalog)===8,'Section 5 catalog must expose eight trusted tools including chat start');
 foreach(['vp3.profile.capabilities.get','vp3.profile.get','vp3.intent.resolve','vp3.agent.get','vp3.agent.conversation.get'] as $name){
     t(($catalog[$name]['annotations']['readOnlyHint']??false)===true,$name.' must be read-only');
 }
+t(($catalog['vp3.agent.chat.start']['annotations']['readOnlyHint']??true)===false,'Profile Agent chat start must be state-changing');
 t(($catalog['vp3.agent.message.send']['annotations']['readOnlyHint']??true)===false,'Profile Agent message must be state-changing');
 t(($catalog['vp3.agent.owner_handoff.request']['annotations']['readOnlyHint']??true)===false,'Owner handoff request must be state-changing');
 foreach($catalog as $name=>$tool)t(($tool['annotations']['consequentialHint']??true)===false,$name.' must remain non-consequential in Section 2');
