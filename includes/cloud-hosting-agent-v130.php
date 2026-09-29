@@ -280,7 +280,7 @@ function vp3_cloud_hosting_agent_v130_latest_prepared(int $userId,int $conversat
     return is_array($row)?$row:null;
 }
 
-function vp3_cloud_hosting_agent_v130_execute(array $row,array $user,?callable $remote=null,?PDO $pdo=null): array
+function vp3_cloud_hosting_agent_v130_execute(array $row,array $user,?callable $remote=null,?callable $providerTransport=null,?PDO $pdo=null): array
 {
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     $uid=(int)($user['id']??0);
@@ -307,7 +307,7 @@ function vp3_cloud_hosting_agent_v130_execute(array $row,array $user,?callable $
         return vp3_cloud_hosting_v120_reconcile_site($fresh,$remote,$pdo);
     }
     if($type==='route.provision'){
-        $result=vp3_cloud_hosting_v110_provision_dns($site,$key,$uid,null);
+        $result=vp3_cloud_hosting_v110_provision_dns($site,$key,$uid,$providerTransport);
         return ['route'=>$result['route']??null,'replayed'=>!empty($result['replayed']),'reused'=>!empty($result['reused'])];
     }
     if($type==='site.reconcile'){
@@ -324,6 +324,7 @@ function vp3_cloud_hosting_agent_v130_confirm(
     string $code,
     int $conversationId=0,
     ?callable $remote=null,
+    ?callable $providerTransport=null,
     ?PDO $pdo=null
 ): array {
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
@@ -357,7 +358,7 @@ function vp3_cloud_hosting_agent_v130_confirm(
     }
 
     try{
-        $result=vp3_cloud_hosting_agent_v130_execute($row,$user,$remote,$pdo);
+        $result=vp3_cloud_hosting_agent_v130_execute($row,$user,$remote,$providerTransport,$pdo);
         $safe=vp3_cloud_hosting_v120_public_remote($result);
         $pdo->prepare("UPDATE cloud_hosting_agent_actions SET status='completed',result_json=?,error_message='',completed_at=UTC_TIMESTAMP() WHERE id=?")
             ->execute([json_encode($safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),(int)$row['id']]);
@@ -399,6 +400,7 @@ function vp3_cloud_hosting_agent_v130_query(
     array $user,
     int $conversationId=0,
     ?callable $remote=null,
+    ?callable $providerTransport=null,
     ?PDO $pdo=null
 ): array {
     $empty=vp3_cloud_hosting_agent_v130_empty();
@@ -409,7 +411,7 @@ function vp3_cloud_hosting_agent_v130_query(
 
     if(preg_match('/\bconfirm\s+hosting\s+([A-Z2-9]{8})\b/i',$query,$m)){
         try{
-            $done=vp3_cloud_hosting_agent_v130_confirm($user,(string)$m[1],$conversationId,$remote,$pdo);
+            $done=vp3_cloud_hosting_agent_v130_confirm($user,(string)$m[1],$conversationId,$remote,$providerTransport,$pdo);
             if(function_exists('agent_tool_log'))agent_tool_log($user,'hosting.confirm',$query,'success',['action_type'=>$done['action_type']??''],$conversationId);
             return [
                 'handled'=>true,'answer'=>'The Hosting action completed successfully.',
