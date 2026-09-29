@@ -83,6 +83,8 @@ jobs:
         run: node tests/package-entitlement-composition-v340.mjs
       - name: Existing cloud schema upgrade completeness regression
         run: node tests/cloud-schema-upgrade-contract.mjs
+      - name: CI workflow governance regression
+        run: node tests/ci-workflow-consolidation.mjs
       - name: MySQL 8 Cloud Hosting integration
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=vp3_hosting_test;charset=utf8mb4
