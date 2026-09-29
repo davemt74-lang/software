@@ -61,6 +61,11 @@ assert.match(sync,/desired_revision/);
 assert.doesNotMatch(sync,/BEGIN PRIVATE KEY|private_key\s+(?:LONGTEXT|TEXT|VARCHAR)|certificate_key\s+(?:LONGTEXT|TEXT|VARCHAR)/);
 
 assert.match(sync,/vp3_cloud_hosting_v120_public_remote/);
+assert.match(sync,/runtimeReady/);
+assert.match(sync,/observed_state_preserved_on_sync_failure'\s*=>\s*true/);
+assert.match(sync,/certificate_state_atomic'\s*=>\s*true/);
+assert.match(sync,/INSERT INTO cloud_hosting_site_sync[\s\S]*ON DUPLICATE KEY UPDATE last_error_code='remote_error'/);
+assert.match(sync,/\$pdo->beginTransaction\(\);[\s\S]*vp3_cloud_hosting_v110_mark_tls_state/);
 assert.match(sync,/raw_package_persisted'\s*=>\s*false/);
 assert.match(sync,/cloud_edge_private_key_persisted'\s*=>\s*false/);
 
