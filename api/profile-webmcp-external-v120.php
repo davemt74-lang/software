@@ -76,6 +76,17 @@ try{
 }
 
 if($method==='GET'){
+    $getClientVersions=[
+        'manifest_versions'=>vp3_profile_webmcp_version_list_v200($_GET['manifest_versions']??[]),
+        'release_versions'=>vp3_profile_webmcp_version_list_v200($_GET['release_versions']??[]),
+        'runtime_build'=>trim((string)($_GET['runtime_build']??'')),
+        'negotiation_contract'=>trim((string)($_GET['negotiation_contract']??'')),
+    ];
+    $negotiation=vp3_profile_webmcp_negotiate_v200('external_site',$getClientVersions);
+    if(empty($negotiation['compatible'])){
+        vp3_profile_webmcp_external_json_v120(false,vp3_profile_webmcp_negotiation_error_v200($negotiation),409);
+    }
+    $manifest['negotiation']=$negotiation;
     $chatGrantData=null;
     if($chatAvailable){
         try{$chatGrantData=vp3_profile_webmcp_chat_grant_create_v140($property,$profile,$origin,$manifestSession);}
@@ -109,6 +120,12 @@ if(!is_array($input)){
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'INVALID_JSON','message'=>'Invalid JSON request.']],400);
 }
 $telemetry=vp3_profile_webmcp_telemetry_v130($input);
+$clientVersions=vp3_profile_webmcp_client_versions_v200($input);
+$negotiation=vp3_profile_webmcp_negotiate_v200('external_site',$clientVersions);
+if(empty($negotiation['compatible'])){
+    vp3_profile_webmcp_external_json_v120(false,vp3_profile_webmcp_negotiation_error_v200($negotiation),409);
+}
+$manifest['negotiation']=$negotiation;
 if((string)($input['manifest_version']??'')!==VP3_PROFILE_WEBMCP_MANIFEST_V100){
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'MANIFEST_VERSION_UNSUPPORTED','message'=>'Unsupported profile WebMCP manifest.']],400);
 }
