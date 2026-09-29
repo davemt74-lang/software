@@ -126,7 +126,7 @@ function vp3_profile_webmcp_chat_start_v140(PDO $pdo,array $ctx): array
     $owner=(int)$ctx['owner_user_id'];$agentId=(int)$ctx['agent_id'];$sessionId=(int)$ctx['session_id'];
     $stmt=$pdo->prepare("SELECT * FROM profile_agent_conversations
       WHERE owner_user_id=? AND profile_agent_id=? AND profile_session_id=?
-        AND status IN ('open','owner_joined')
+        AND status IN ('open','owner_joined','resolved')
       ORDER BY id DESC LIMIT 1");
     $stmt->execute([$owner,$agentId,$sessionId]);
     $conversation=$stmt->fetch();
