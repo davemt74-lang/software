@@ -148,8 +148,10 @@ function vp3_profile_webmcp_return_consume_v195(array $profile,array $user,strin
     foreach($rows as $id=>$row){
         if((int)($row['profile_user_id']??0)!==$userId)continue;
         if(!hash_equals((string)($profile['username']??''),(string)($row['profile_username']??'')))continue;
+        if((int)($row['returned_at']??0)>0)continue;
         if(!hash_equals((string)($row['return_token_hash']??''),$hash))continue;
         $rows[$id]['returned_at']=$now;
+        $rows[$id]['return_token_hash']='';
         $rows[$id]['updated_at']=max((int)($row['updated_at']??0),$now);
         $_SESSION['vp3_profile_webmcp_action_context_v195']=$rows;
         $public=vp3_profile_webmcp_action_context_public_v195($rows[$id]);
