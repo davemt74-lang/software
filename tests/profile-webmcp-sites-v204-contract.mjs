@@ -11,6 +11,7 @@ const recovery=read('tools/run_recovery_baseline.py');
 assert.match(layer,/vp3\.profile\.webmcp\.connected-sites\.v1/);
 for(const s of ['healthy','paused','unverified','upgrade_required','stale','degraded','origin_attention'])assert.match(layer,new RegExp("'"+s+"'"));
 assert.match(layer,/last_contact_at/);
+assert.match(layer,/vp3_profile_webmcp_site_status_v204/);
 assert.match(layer,/runtime_build/);
 assert.match(layer,/origin_denied_30d/);
 assert.match(layer,/upgrade_guidance/);
