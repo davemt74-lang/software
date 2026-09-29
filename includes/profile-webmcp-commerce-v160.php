@@ -9,7 +9,7 @@ require_once __DIR__.'/profile-commerce-delivery-file-v1130.php';
 require_once __DIR__.'/profile-webmcp-scheduling-v150.php';
 
 const VP3_PROFILE_WEBMCP_COMMERCE_V160='profile-webmcp-commerce-v160-20260928';
-const VP3_PROFILE_WEBMCP_COMMERCE_INTENT_TTL_V160=600;
+const VP3_PROFILE_WEBMCP_COMMERCE_INTENT_TTL_V160=1800;
 
 function vp3_profile_webmcp_commerce_tool_catalog_v160(): array
 {
@@ -539,6 +539,13 @@ function vp3_profile_webmcp_commerce_refund_confirm_v160(
             $existing=vp3_profile_webmcp_action_by_idempotency_v150($pdo,$owner,'commerce.refund_request',$idem,true);
             if($existing&&(int)$existing['id']!==(int)$action['id']){
                 if(!hash_equals((string)$existing['payload_hash'],(string)$action['payload_hash']))throw new RuntimeException('Idempotency key was already used for a different refund request.');
+                if(!hash_equals((string)$existing['profile_username'],(string)$context['profile_username'])
+                    ||!hash_equals((string)$existing['session_hash'],(string)$context['session_hash'])
+                    ||(string)$existing['surface']!==(string)$context['surface']
+                    ||(int)($existing['property_id']??0)!==(int)($context['property_id']??0)){
+                    throw new RuntimeException('Idempotency key belongs to a different WebMCP commerce session.');
+                }
+                if(!in_array((string)$existing['state'],['executing','committed'],true))throw new RuntimeException('That idempotent refund request is still being prepared.');
                 $pdo->commit();return vp3_profile_webmcp_commerce_refund_status_v160($pdo,$profile,['order_number'=>$intent['order_number'],'receipt_token'=>$intent['receipt_token']])+['idempotent_replay'=>true];
             }
             $pdo->prepare("UPDATE profile_webmcp_actions SET idempotency_hash=?,state='executing',result_type='order',result_id=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND state='prepared'")
