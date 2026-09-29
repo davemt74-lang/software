@@ -8,6 +8,7 @@ on:
       - "includes/cloud-hosting-v120.php"
       - "includes/cloud-hosting-agent-v130.php"
       - "includes/cloud-hosting-ui-v140.php"
+      - "includes/cloud-hosting-release-v150.php"
       - "hosting.php"
       - "cloud-hosting-v140.css"
       - "cloud-hosting-v140.js"
@@ -23,6 +24,7 @@ on:
       - "tests/cloud-hosting-v120-*"
       - "tests/cloud-hosting-v130-*"
       - "tests/cloud-hosting-v140-*"
+      - "tests/cloud-hosting-v150-*"
       - ".github/workflows/cloud-hosting-v100.yml"
   push:
     branches:
@@ -33,6 +35,7 @@ on:
       - "includes/cloud-hosting-v120.php"
       - "includes/cloud-hosting-agent-v130.php"
       - "includes/cloud-hosting-ui-v140.php"
+      - "includes/cloud-hosting-release-v150.php"
       - "hosting.php"
       - "cloud-hosting-v140.css"
       - "cloud-hosting-v140.js"
@@ -48,6 +51,7 @@ on:
       - "tests/cloud-hosting-v120-*"
       - "tests/cloud-hosting-v130-*"
       - "tests/cloud-hosting-v140-*"
+      - "tests/cloud-hosting-v150-*"
       - ".github/workflows/cloud-hosting-v100.yml"
 
 concurrency:
@@ -96,6 +100,8 @@ jobs:
           php -l includes/cloud-hosting-v120.php
           php -l includes/cloud-hosting-agent-v130.php
           php -l includes/cloud-hosting-ui-v140.php
+          php -l includes/cloud-hosting-release-v150.php
+          php -l tests/cloud-hosting-v150-acceptance.php
           php -l hosting.php
           php -l tests/cloud-hosting-v140-mysql.php
           php -l includes/subscription-schema.php
@@ -118,6 +124,8 @@ jobs:
         run: node tests/cloud-hosting-v130-contract.mjs
       - name: Cloud Hosting Section 5 UI contract
         run: node tests/cloud-hosting-v140-contract.mjs
+      - name: Cloud Hosting Section 6 release contract
+        run: node tests/cloud-hosting-v150-contract.mjs
       - name: Credential key preservation regression
         run: node tests/ai-credential-key-preservation-v2453.mjs
       - name: Existing package entitlement composition regression
@@ -137,3 +145,4 @@ jobs:
           php tests/cloud-hosting-v120-mysql.php
           php tests/cloud-hosting-v130-mysql.php
           php tests/cloud-hosting-v140-mysql.php
+          php tests/cloud-hosting-v150-acceptance.php
