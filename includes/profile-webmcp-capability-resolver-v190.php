@@ -150,6 +150,7 @@ function vp3_profile_webmcp_resolve_capabilities_v190(
         if(function_exists('vp3_profile_webmcp_tool_runtime_ready_v150')&&!vp3_profile_webmcp_tool_runtime_ready_v150($pdo,$name))continue;
         $allowed[]=$name;
     }
+    if(function_exists('vp3_profile_webmcp_apply_compatibility_v203'))$allowed=vp3_profile_webmcp_apply_compatibility_v203($allowed);
     sort($allowed);
 
     $authenticated=(int)($viewer['id']??0)>0;

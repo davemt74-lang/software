@@ -51,6 +51,7 @@ function vp3_profile_webmcp_dispatch_v191(
             'release_audit'=>vp3_profile_webmcp_release_audit_v196(),
             'negotiation'=>is_array($manifest['negotiation']??null)?$manifest['negotiation']:vp3_profile_webmcp_negotiate_v200($surface,[]),
             'health'=>vp3_profile_webmcp_health_v201($pdo,$profile,$viewer,$surface,$manifest,$property),
+            'compatibility'=>vp3_profile_webmcp_compatibility_public_v203((array)$manifest['allowed_tools']),
         ]);
     }
     if($tool==='vp3.profile.get'){
