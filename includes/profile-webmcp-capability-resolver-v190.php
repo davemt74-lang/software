@@ -133,7 +133,8 @@ function vp3_profile_webmcp_resolve_capabilities_v190(
 ): array {
     $surface=(string)($context['surface']??'native_profile');
     $registry=vp3_profile_webmcp_capability_registry_v190();
-    $capabilities=vp3_profile_webmcp_detect_capabilities_v190($pdo,$profile,$viewer);
+    $provided=is_array($context['capabilities']??null)?$context['capabilities']:null;
+    $capabilities=$provided??vp3_profile_webmcp_detect_capabilities_v190($pdo,$profile,$viewer);
     foreach($capabilities as $key=>$enabled){
         if(!isset($registry[$key])||!in_array($surface,$registry[$key]['surfaces']??[],true))$capabilities[$key]=false;
     }
