@@ -26,6 +26,11 @@ function vp3_profile_webmcp_release_descriptor_v196(): array
                 'confirmation_authority'=>'none',
             ],
         ],
+        'negotiation'=>[
+            'contract'=>'vp3.profile.webmcp.negotiation.v1',
+            'required_for_future_major_versions'=>true,
+            'consequential_downgrade_allowed'=>false,
+        ],
         'continuity'=>[
             'resume_contract'=>'vp3.webmcp.resume.v1',
             'return_contract'=>'vp3.webmcp.return.v1',
