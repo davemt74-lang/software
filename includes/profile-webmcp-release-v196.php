@@ -70,6 +70,16 @@ function vp3_profile_webmcp_release_catalog_audit_v196(array $catalog,array $reg
         if(($schema['type']??'')!=='object')$errors[]='invalid_input_schema:'.$name;
     }
 
+    if(function_exists('vp3_profile_webmcp_compatibility_registry_v203')){
+        foreach(vp3_profile_webmcp_compatibility_registry_v203($catalog) as $name=>$life){
+            $status=(string)($life['status']??'');
+            if(!in_array($status,VP3_PROFILE_WEBMCP_TOOL_STATES_V203,true))$errors[]='invalid_lifecycle_state:'.$name;
+            $replacement=(string)($life['replacement_tool']??'');
+            if($replacement!==''&&!isset($catalog[$replacement]))$errors[]='unknown_replacement_tool:'.$name;
+            if($replacement!==''&&$replacement===$name)$errors[]='self_replacement_tool:'.$name;
+        }
+    }
+
     $external=[];
     foreach($externalPolicy as $group=>$names){
         if(!is_array($names)){$errors[]='invalid_external_policy_group:'.$group;continue;}
