@@ -6,6 +6,7 @@ const adapter=read('includes/profile-webmcp-rewards-v180.php');
 const layer=read('includes/profile-webmcp-v100.php');
 const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const nativeApi=read('api/profile-webmcp-v100.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const nativeRuntime=read('profile-webmcp-v100.js');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
 const externalApi=read('api/profile-webmcp-external-v120.php');
@@ -25,7 +26,7 @@ assert.match(adapter,/counts/);
 assert.match(resolver,/\$rewards=\$viewerId>0&&function_exists\('campaigns_rewards_reward_tray_v110'\)/,'Rewards capability must be authenticated-viewer gated');
 assert.match(layer,/vp3_profile_webmcp_rewards_tool_catalog_v180/);
 assert.match(nativeApi,/profile-webmcp-rewards-v180\.php/);
-assert.match(nativeApi,/vp3_profile_webmcp_rewards_wallet_v180\(\$pdo,\$viewer\)/);
+assert.match(router,/vp3_profile_webmcp_rewards_wallet_v180\(\$pdo,\$viewer\)/);
 assert.match(nativeRuntime,/vp3\.rewards\.wallet\.get/);
 assert.match(nativeRuntime,/credentials:'same-origin'/);
 
