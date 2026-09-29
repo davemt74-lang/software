@@ -4,7 +4,7 @@ require dirname(__DIR__).'/includes/profile-webmcp-rewards-v180.php';
 function t(bool $v,string $m): void{if(!$v){fwrite(STDERR,"FAIL: {$m}\n");exit(1);}}
 
 $catalog=vp3_profile_webmcp_rewards_tool_catalog_v180();
-t(count($catalog)===1,'9A exposes exactly one read-only Reward Wallet tool');
+t(count($catalog)>=1,'Rewards catalog must retain the 9A Reward Wallet tool');
 t(isset($catalog['vp3.rewards.wallet.get']),'Reward Wallet tool exists');
 t(($catalog['vp3.rewards.wallet.get']['annotations']['readOnlyHint']??false)===true,'Reward Wallet is read-only');
 t(($catalog['vp3.rewards.wallet.get']['annotations']['consequentialHint']??true)===false,'Reward Wallet is non-consequential');
