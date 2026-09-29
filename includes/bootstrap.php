@@ -277,6 +277,7 @@ require_once __DIR__.'/agent-surface-context-v131.php';
 require_once __DIR__.'/media-studio-v86.php';
 require_once __DIR__.'/agent-tools-v84.php';
 require_once __DIR__.'/ai-settings.php';
+require_once __DIR__.'/cloud-hosting-v100.php';
 require_once __DIR__.'/ai-runtime-v100.php';
 require_once __DIR__.'/agent-tools-v90.php';
 require_once __DIR__.'/agent-tools-v91.php';
