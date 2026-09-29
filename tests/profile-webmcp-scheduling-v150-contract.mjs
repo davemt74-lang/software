@@ -35,7 +35,12 @@ assert.match(upgrade,/vp3_profile_webmcp_actions_schema_ready_v150/);
 assert.match(upgrade,/vp3_profile_webmcp_actions_ensure_schema_v150/);
 
 assert.match(scheduling,/hash_hmac\('sha256'/,'prepare confirmation token must be signed');
+assert.match(scheduling,/vp3_profile_webmcp_native_signing_secret_v150/,'native confirmation signing must use a server-only session secret');
+assert.match(scheduling,/vp3_profile_webmcp_action_secrets/,'server-only signing secret must stay in PHP session state');
+assert.doesNotMatch(scheduling,/return hash\('sha256','vp3-webmcp-scheduling-v150\|native\|'\.\$nativeProof/,'browser-visible native proof must not be the signing key');
 assert.match(scheduling,/payload_hash/);
+assert.match(scheduling,/\$action\['operation'\]!==\$operation/,'confirm must re-bind stored operation');
+assert.match(scheduling,/\$action\['profile_username'\]/,'confirm must re-bind stored profile');
 assert.match(scheduling,/session_hash/);
 assert.match(scheduling,/origin_hash/);
 assert.match(scheduling,/VP3_PROFILE_WEBMCP_SCHEDULING_INTENT_TTL_V150=600/);
