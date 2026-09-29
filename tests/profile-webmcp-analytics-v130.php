@@ -27,6 +27,9 @@ $bad=vp3_profile_webmcp_telemetry_v130(['telemetry'=>[
 t($bad===['webmcp_session_id'=>'','interaction_id'=>'','agent_referral'=>''],'invalid transport rejection');
 
 $context=[
+    'owner_user_id'=>123,
+    'property_id'=>44,
+    'agent_contact_id'=>7,
     'surface'=>'external_site',
     'profile_username'=>'demo',
     'webmcp_session_id'=>$validSession,
@@ -42,6 +45,11 @@ $envelope=vp3_profile_webmcp_event_envelope_v130(
 );
 t($envelope['envelope_version']===VP3_PROFILE_WEBMCP_EVENT_ENVELOPE_V130,'envelope version');
 t($envelope['event_name']==='webmcp_tool_completed','event name');
+t(preg_match('/^[a-f0-9]{32}$/',$envelope['event_id'])===1,'server event id');
+t(str_contains($envelope['occurred_at_utc'],'T'),'UTC event time');
+t($envelope['owner_user_id']===123,'owner id');
+t($envelope['property_id']===44,'property id');
+t($envelope['agent_contact_id']===7,'agent contact id');
 t($envelope['surface']==='external_site','surface');
 t($envelope['tool']==='vp3.profile.get','tool');
 t($envelope['status']==='completed','status');
