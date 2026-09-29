@@ -654,15 +654,12 @@ function vp3_cloud_hosting_v120_deploy_package(
     if((string)$existing['operation']!=='deploy'||(string)$existing['package_sha256']!==$sha||(int)$existing['package_bytes']!==$size){
         throw new RuntimeException('Deployment idempotency key was already used for a different operation or package.');
     }
+    if((string)$existing['state']==='deployed')return ['replayed'=>true,'deployment'=>$existing];
+    if((string)$existing['state']==='failed')throw new RuntimeException('Failed deployment requires a new idempotency key.');
     if((int)$existing['desired_revision']!==$revision){
         throw new RuntimeException('Deployment idempotency key belongs to an older Cloud desired-state revision.');
     }
-    if((string)$existing['state']==='deployed')return ['replayed'=>true,'deployment'=>$existing];
     $deploymentId=(int)$existing['id'];
-    if((string)$existing['state']==='failed'){
-        $pdo->prepare("UPDATE cloud_hosting_deployments SET state='pending',error_code='',error_message='',completed_at=NULL WHERE id=?")->execute([$deploymentId]);
-        $existing=vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo)??$existing;
-    }
     $knownTransferId=trim((string)($existing['transfer_id']??''));
 
     try{
@@ -825,14 +822,12 @@ function vp3_cloud_hosting_v120_rollback(
     );
     $existing=(array)$claim['row'];
     if((string)$existing['operation']!=='rollback')throw new RuntimeException('Rollback idempotency key was already used for a different operation.');
+    if((string)$existing['state']==='rolled_back')return ['replayed'=>true,'deployment'=>$existing];
+    if((string)$existing['state']==='failed')throw new RuntimeException('Failed rollback requires a new idempotency key.');
     if((int)$existing['desired_revision']!==(int)$fresh['desired_revision']){
         throw new RuntimeException('Rollback idempotency key belongs to an older Cloud desired-state revision.');
     }
-    if((string)$existing['state']==='rolled_back')return ['replayed'=>true,'deployment'=>$existing];
     $id=(int)$existing['id'];
-    if((string)$existing['state']==='failed'){
-        $pdo->prepare("UPDATE cloud_hosting_deployments SET state='pending',error_code='',error_message='',completed_at=NULL WHERE id=?")->execute([$id]);
-    }
     try{
         $result=vp3_cloud_hosting_v120_remote($userId,'hosting.deployment.rollback',[
             'cloud_site_id'=>(string)$fresh['site_key'],
@@ -875,6 +870,7 @@ function vp3_cloud_hosting_v120_public_capability(): array
         'single_inflight_operation_per_site'=>true,
         'deployment_execution_lease'=>true,
         'deployment_idempotency'=>true,
+        'terminal_replay_survives_revision_change'=>true,
         'deployment_status_refresh'=>true,
         'deployment_entitlement_revalidation'=>true,
         'rollback_idempotency'=>true,
