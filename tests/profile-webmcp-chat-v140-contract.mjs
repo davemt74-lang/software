@@ -27,7 +27,7 @@ assert.doesNotMatch(chat,/CREATE TABLE|ALTER TABLE/,'Section 5 must not add a pa
 assert.match(chat,/profile_visit_sessions/,'external chat must reuse canonical Profile Agent visit sessions');
 assert.match(chat,/profile_agent_conversations/,'chat start must reuse canonical conversations');
 assert.match(chat,/profile_agent_conversation_create/,'chat start must use canonical conversation creator');
-assert.match(chat,/status IN \('open','owner_joined'\)/,'chat start must resume an existing live conversation before creating another');
+assert.match(chat,/status IN \('open','owner_joined','resolved'\)/,'chat start must resume the latest exact-session conversation, including resolved threads that reopen on the next visitor message');
 
 assert.match(catalog,/vp3\.agent\.chat\.start/);
 assert.match(nativeRuntime,/vp3\.agent\.chat\.start/);
