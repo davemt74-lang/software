@@ -61,6 +61,7 @@ try {
     homeserver_vp3_ensure_schema($pdo);
     vp3_cloud_hosting_ensure_schema_v100($pdo);
     vp3_cloud_hosting_v110_ensure_schema($pdo);
+    vp3_cloud_hosting_v120_ensure_schema($pdo);
     homeserver_account_v1210_ensure_schema($pdo);
     homeserver_scheduling_v620_ensure_schema($pdo);
     homeserver_commerce_agent_v1000_ensure_schema($pdo);
