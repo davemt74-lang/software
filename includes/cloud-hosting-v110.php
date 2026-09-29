@@ -174,7 +174,7 @@ function vp3_cloud_hosting_v110_cpanel_call(
         $cpanel=(array)($decoded['cpanelresult']??[]);
         $data=(array)($cpanel['data']??[]);
         $first=is_array($data[0]??null)?$data[0]:[];
-        $successRaw=$first['result']??$first['status']??null;
+        $successRaw=$first['result']??$first['status']??($cpanel['event']['result']??null);
         if($successRaw===null)throw new RuntimeException('cPanel API2 response did not include an explicit result status.');
         $success=(int)$successRaw;
         if($success!==1){
@@ -316,6 +316,8 @@ function vp3_cloud_hosting_v110_provision_dns(
     $zone=vp3_cloud_hosting_v110_zone_domain();
     if(!vp3_cloud_hosting_v110_hostname_in_zone($hostname,$zone))throw new RuntimeException('The requested hosting hostname is outside the configured cPanel DNS zone.');
     $target=vp3_cloud_hosting_v110_ingress_hostname();
+    $recordName=substr($hostname,0,-strlen('.'.$zone));
+    if($recordName===''||$recordName===$hostname)throw new RuntimeException('Could not derive a safe cPanel DNS record name.');
 
     $op=vp3_cloud_hosting_v110_begin_operation($pdo,$siteId,$requestKey,'dns.provision');
     if(!empty($op['replay'])){
@@ -335,7 +337,7 @@ function vp3_cloud_hosting_v110_provision_dns(
         }
         $result=vp3_cloud_hosting_v110_cpanel_call('api2','ZoneEdit','add_zone_record',[
             'domain'=>$zone,
-            'name'=>$hostname,
+            'name'=>$recordName,
             'type'=>'CNAME',
             'cname'=>$target.'.',
             'ttl'=>300,
@@ -372,7 +374,7 @@ function vp3_cloud_hosting_v110_verify_dns(array $site,?int $actorUserId=null,?c
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     $siteId=(int)($site['id']??0);if($siteId<1)throw new RuntimeException('A valid hosted site is required.');
     $route=vp3_cloud_hosting_v110_route_for_site($siteId,$pdo);
-    if($route===null||(string)$route['dns_state']!=='provisioned')throw new RuntimeException('DNS must be provisioned before it can be verified.');
+    if($route===null||!in_array((string)$route['dns_state'],['provisioned','pending'],true))throw new RuntimeException('DNS must be provisioned before it can be verified.');
     $hostname=(string)$route['hostname'];
     $target=rtrim(strtolower((string)$route['record_value']),'.');
     $records=$resolver!==null?$resolver($hostname):dns_get_record($hostname,DNS_CNAME);
