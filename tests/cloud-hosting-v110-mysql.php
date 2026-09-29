@@ -55,6 +55,25 @@ require dirname(__DIR__).'/includes/cloud-hosting-v110.php';
 vp3_cloud_hosting_v110_ensure_schema($testPdo);
 if(!vp3_cloud_hosting_v110_schema_ready($testPdo))throw new RuntimeException('Section 2 schema is not ready.');
 
+$uapiRequests=[];
+$uapiTransport=function(string $url,array $headers,int $timeout) use (&$uapiRequests): array {
+    $uapiRequests[]=['url'=>$url,'headers'=>$headers];
+    return ['status'=>200,'body'=>json_encode(['result'=>['status'=>1,'data'=>['main_domain'=>'sites.example.com']]])];
+};
+$uapi=vp3_cloud_hosting_v110_cpanel_call('uapi','DomainInfo','list_domains',[],$uapiTransport);
+if(($uapi['status']??0)!==200||count($uapiRequests)!==1)throw new RuntimeException('cPanel UAPI health call failed.');
+if(!str_contains($uapiRequests[0]['url'],'/execute/DomainInfo/list_domains'))throw new RuntimeException('cPanel UAPI path mismatch.');
+if(!in_array('Authorization: cpanel vp3user:CPANEL_SECRET_TOKEN',$uapiRequests[0]['headers'],true))throw new RuntimeException('cPanel UAPI auth header missing.');
+
+try{
+    vp3_cloud_hosting_v110_cpanel_call('api2','ZoneEdit','add_zone_record',[],fn()=>[
+        'status'=>200,'body'=>json_encode(['cpanelresult'=>['data'=>[[]]]])
+    ]);
+    throw new RuntimeException('API2 response without explicit success was accepted.');
+}catch(RuntimeException $e){
+    if($e->getMessage()==='API2 response without explicit success was accepted.')throw $e;
+}
+
 $owner=['id'=>1,'email'=>'owner@example.com'];
 $site=vp3_cloud_hosting_create_site_v100($owner,[
     'display_name'=>'DNS Site',
