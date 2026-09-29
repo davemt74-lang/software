@@ -58,6 +58,26 @@ function vp3_profile_webmcp_resume_issue_v194(PDO $pdo,array $profile,array $use
     ];
 }
 
+function vp3_profile_webmcp_resume_validate_v194(array $profile,array $user,string $token): ?array
+{
+    $token=strtolower(trim($token));
+    if(!preg_match('/^[a-f0-9]{32}$/',$token))return null;
+    $userId=(int)($user['id']??0);
+    if($userId<1||(int)($profile['user_id']??0)!==$userId)return null;
+    $now=time();
+    $rows=vp3_profile_webmcp_resume_prune_v194(vp3_profile_webmcp_resume_store_v194(),$now);
+    $_SESSION['vp3_profile_webmcp_resume_v194']=$rows;
+    $row=$rows[$token]??null;
+    if(!is_array($row))return null;
+    if((int)($row['profile_user_id']??0)!==$userId)return null;
+    if(!hash_equals((string)($profile['username']??''),(string)($row['profile_username']??'')))return null;
+    return [
+        'token'=>$token,
+        'path'=>'/'.rawurlencode((string)$profile['username']).'?webmcp_resume='.$token,
+        'expires_at'=>(int)($row['expires_at']??0),
+    ];
+}
+
 function vp3_profile_webmcp_resume_consume_v194(PDO $pdo,array $profile,?array $viewer,string $token): ?array
 {
     $token=strtolower(trim($token));
