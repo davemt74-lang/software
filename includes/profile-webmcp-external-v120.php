@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/profile-webmcp-capability-resolver-v190.php';
+
 const VP3_PROFILE_WEBMCP_EXTERNAL_V120='profile-webmcp-external-v120-20260928';
 
 function vp3_profile_webmcp_external_tool_names_v120(bool $statefulChat=false,bool $scheduling=false,bool $commerce=false,bool $campaigns=false): array
