@@ -306,28 +306,34 @@ function vp3_cloud_hosting_v120_record_edge_certificate(
     if($before===null)throw new RuntimeException('Hosted site could not be loaded.');
     $beforeRevision=(int)$before['desired_revision'];
 
-    vp3_cloud_hosting_v110_mark_tls_state($before,$tlsState,$actorUserId);
-    $stmt=$pdo->prepare("INSERT INTO cloud_hosting_edge_certificates (site_id,tls_state,certificate_not_after,certificate_fingerprint,observed_at)
-      VALUES (?,?,?,?,NOW())
-      ON DUPLICATE KEY UPDATE tls_state=VALUES(tls_state),certificate_not_after=VALUES(certificate_not_after),
-        certificate_fingerprint=VALUES(certificate_fingerprint),observed_at=NOW()");
-    $stmt->execute([$siteId,$tlsState,$normalizedNotAfter,$fingerprint]);
+    $pdo->beginTransaction();
+    try{
+        vp3_cloud_hosting_v110_mark_tls_state($before,$tlsState,$actorUserId);
+        $stmt=$pdo->prepare("INSERT INTO cloud_hosting_edge_certificates (site_id,tls_state,certificate_not_after,certificate_fingerprint,observed_at)
+          VALUES (?,?,?,?,NOW())
+          ON DUPLICATE KEY UPDATE tls_state=VALUES(tls_state),certificate_not_after=VALUES(certificate_not_after),
+            certificate_fingerprint=VALUES(certificate_fingerprint),observed_at=NOW()");
+        $stmt->execute([$siteId,$tlsState,$normalizedNotAfter,$fingerprint]);
 
-    $changedCertificate=!is_array($existing)
-        || (string)($existing['certificate_not_after']??'')!==(string)$normalizedNotAfter
-        || (string)($existing['certificate_fingerprint']??'')!==$fingerprint;
-    $after=vp3_cloud_hosting_site_v100($siteId,(int)$site['user_id'],$pdo);
-    if($after===null)throw new RuntimeException('Hosted site could not be reloaded.');
-    if($changedCertificate&&(int)$after['desired_revision']===$beforeRevision){
-        vp3_cloud_hosting_v110_bump_site_route_state($pdo,$siteId,null,null,null);
+        $changedCertificate=!is_array($existing)
+            || (string)($existing['certificate_not_after']??'')!==(string)$normalizedNotAfter
+            || (string)($existing['certificate_fingerprint']??'')!==$fingerprint;
+        $after=vp3_cloud_hosting_site_v100($siteId,(int)$site['user_id'],$pdo);
+        if($after===null)throw new RuntimeException('Hosted site could not be reloaded.');
+        if($changedCertificate&&(int)$after['desired_revision']===$beforeRevision){
+            vp3_cloud_hosting_v110_bump_site_route_state($pdo,$siteId,null,null,null);
+        }
+        vp3_cloud_hosting_event_v100($pdo,$siteId,'tls.certificate_observed',$tlsState,vp3_cloud_hosting_v110_site_revision($pdo,$siteId),$actorUserId,[
+            'certificate_not_after'=>$normalizedNotAfter,
+            'certificate_fingerprint'=>$fingerprint,
+            'authority'=>'cloud_edge',
+        ]);
+        $pdo->commit();
+    }catch(Throwable $e){
+        if($pdo->inTransaction())$pdo->rollBack();
+        throw $e;
     }
-    $fresh=vp3_cloud_hosting_v120_edge_certificate($siteId,$pdo);
-    vp3_cloud_hosting_event_v100($pdo,$siteId,'tls.certificate_observed',$tlsState,vp3_cloud_hosting_v110_site_revision($pdo,$siteId),$actorUserId,[
-        'certificate_not_after'=>$normalizedNotAfter,
-        'certificate_fingerprint'=>$fingerprint,
-        'authority'=>'cloud_edge',
-    ]);
-    return $fresh??[];
+    return vp3_cloud_hosting_v120_edge_certificate($siteId,$pdo)??[];
 }
 
 function vp3_cloud_hosting_v120_certificate_valid(?array $certificate): bool
