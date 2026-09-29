@@ -129,9 +129,9 @@ function vp3_analytics_dashboard_state(PDO $pdo,array $user,int $propertyId=0,in
     [$eventScope,$eventParams]=vp3_analytics_scope_sql($propertyId,'e');
     $since="DATE_SUB(NOW(),INTERVAL {$days} DAY)";
 
-    $human=$pdo->prepare("SELECT COUNT(*) sessions,COALESCE(SUM(page_view_count),0) page_views FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND s.agent_contact_id IS NULL AND s.last_seen_at>={$since}{$sessionScope}");
+    $human=$pdo->prepare("SELECT COUNT(*) sessions,COALESCE(SUM(page_view_count),0) page_views FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND s.agent_contact_id IS NULL AND s.visitor_type='human' AND s.last_seen_at>={$since}{$sessionScope}");
     $human->execute(array_merge([$uid],$sessionParams));$humanRow=$human->fetch()?:[];
-    $agents=$pdo->prepare("SELECT COUNT(*) sessions,COALESCE(SUM(page_view_count),0) page_views FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND s.agent_contact_id IS NOT NULL AND s.last_seen_at>={$since}{$sessionScope}");
+    $agents=$pdo->prepare("SELECT COUNT(*) sessions,COALESCE(SUM(page_view_count),0) page_views FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND (s.agent_contact_id IS NOT NULL OR s.visitor_type LIKE 'webmcp\\_%') AND s.last_seen_at>={$since}{$sessionScope}");
     $agents->execute(array_merge([$uid],$sessionParams));$agentRow=$agents->fetch()?:[];
     $nativeId=vp3_analytics_native_property_id($pdo,$uid);$includeNative=$propertyId===0||($nativeId>0&&$propertyId===$nativeId);
     $nativeHumanSessions=0;$nativeHumanViews=0;
@@ -180,7 +180,7 @@ function vp3_analytics_dashboard_state(PDO $pdo,array $user,int $propertyId=0,in
     }
     arsort($devices);arsort($browsers);
 
-    $timeline=$pdo->prepare("SELECT DATE(s.last_seen_at) day,COUNT(*) sessions,COALESCE(SUM(s.page_view_count),0) page_views,COALESCE(SUM(s.agent_contact_id IS NOT NULL),0) agent_sessions FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND s.last_seen_at>={$since}{$sessionScope} GROUP BY DATE(s.last_seen_at) ORDER BY day");
+    $timeline=$pdo->prepare("SELECT DATE(s.last_seen_at) day,COUNT(*) sessions,COALESCE(SUM(s.page_view_count),0) page_views,COALESCE(SUM(s.agent_contact_id IS NOT NULL OR s.visitor_type LIKE 'webmcp\\_%'),0) agent_sessions FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND s.last_seen_at>={$since}{$sessionScope} GROUP BY DATE(s.last_seen_at) ORDER BY day");
     $timeline->execute(array_merge([$uid],$sessionParams));$timelineRows=$timeline->fetchAll()?:[];
     $timelineMap=[];foreach($timelineRows as $row)$timelineMap[(string)$row['day']]=['day'=>(string)$row['day'],'sessions'=>(int)$row['sessions'],'page_views'=>(int)$row['page_views'],'agent_sessions'=>(int)$row['agent_sessions'],'native_sessions'=>0,'native_views'=>0];
     if($includeNative&&table_exists('profile_visit_sessions')){
@@ -189,7 +189,7 @@ function vp3_analytics_dashboard_state(PDO $pdo,array $user,int $propertyId=0,in
     }
     ksort($timelineMap);
 
-    $pages=$pdo->prepare("SELECT e.path,COUNT(*) events,COALESCE(SUM(e.agent_contact_id IS NULL),0) human_events,COALESCE(SUM(e.agent_contact_id IS NOT NULL),0) agent_events FROM vp3_radar_events e WHERE e.owner_user_id=? AND e.occurred_at>={$since}{$eventScope} GROUP BY e.path ORDER BY events DESC,e.path LIMIT 20");
+    $pages=$pdo->prepare("SELECT e.path,COUNT(*) events,COALESCE(SUM(e.agent_contact_id IS NULL),0) human_events,COALESCE(SUM(e.agent_contact_id IS NOT NULL),0) agent_events FROM vp3_radar_events e WHERE e.owner_user_id=? AND e.occurred_at>={$since} AND e.event_type NOT LIKE 'webmcp\\_%'{$eventScope} GROUP BY e.path ORDER BY events DESC,e.path LIMIT 20");
     $pages->execute(array_merge([$uid],$eventParams));$topPages=$pages->fetchAll()?:[];
     $refs=$pdo->prepare("SELECT s.referrer_host,COUNT(*) sessions FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND s.last_seen_at>={$since} AND s.referrer_host<>''{$sessionScope} GROUP BY s.referrer_host ORDER BY sessions DESC,s.referrer_host LIMIT 20");
     $refs->execute(array_merge([$uid],$sessionParams));$referrers=$refs->fetchAll()?:[];
