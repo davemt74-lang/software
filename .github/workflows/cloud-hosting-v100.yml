@@ -1,9 +1,10 @@
-name: Cloud Hosting V1 Section 1
+name: Cloud Hosting V1
 
 on:
   pull_request:
     paths:
       - "includes/cloud-hosting-v100.php"
+      - "includes/cloud-hosting-v110.php"
       - "includes/subscription-schema.php"
       - "includes/ai-settings.php"
       - "includes/bootstrap.php"
@@ -11,12 +12,14 @@ on:
       - "setup.php"
       - "upgrade.php"
       - "tests/cloud-hosting-v100-*"
+      - "tests/cloud-hosting-v110-*"
       - ".github/workflows/cloud-hosting-v100.yml"
   push:
     branches:
       - main
     paths:
       - "includes/cloud-hosting-v100.php"
+      - "includes/cloud-hosting-v110.php"
       - "includes/subscription-schema.php"
       - "includes/ai-settings.php"
       - "includes/bootstrap.php"
@@ -24,6 +27,7 @@ on:
       - "setup.php"
       - "upgrade.php"
       - "tests/cloud-hosting-v100-*"
+      - "tests/cloud-hosting-v110-*"
       - ".github/workflows/cloud-hosting-v100.yml"
 
 concurrency:
@@ -34,8 +38,8 @@ permissions:
   contents: read
 
 jobs:
-  section1:
-    name: Cloud Hosting Section 1 · PHP ${{ matrix.php }}
+  hosting:
+    name: Cloud Hosting · PHP ${{ matrix.php }}
     strategy:
       fail-fast: false
       matrix:
@@ -60,7 +64,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: pdo_mysql,sodium,openssl
+          extensions: pdo_mysql,sodium,openssl,curl
           coverage: none
       - uses: actions/setup-node@v4
         with:
@@ -68,6 +72,7 @@ jobs:
       - name: PHP lint Cloud Hosting surfaces
         run: |
           php -l includes/cloud-hosting-v100.php
+          php -l includes/cloud-hosting-v110.php
           php -l includes/subscription-schema.php
           php -l includes/ai-settings.php
           php -l includes/bootstrap.php
@@ -75,8 +80,11 @@ jobs:
           php -l setup.php
           php -l upgrade.php
           php -l tests/cloud-hosting-v100-mysql.php
-      - name: Cloud Hosting architecture contract
+          php -l tests/cloud-hosting-v110-mysql.php
+      - name: Cloud Hosting Section 1 architecture contract
         run: node tests/cloud-hosting-v100-contract.mjs
+      - name: Cloud Hosting Section 2 architecture contract
+        run: node tests/cloud-hosting-v110-contract.mjs
       - name: Credential key preservation regression
         run: node tests/ai-credential-key-preservation-v2453.mjs
       - name: Existing package entitlement composition regression
@@ -90,4 +98,6 @@ jobs:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=vp3_hosting_test;charset=utf8mb4
           VP3_TEST_MYSQL_USER: root
           VP3_TEST_MYSQL_PASS: root
-        run: php tests/cloud-hosting-v100-mysql.php
+        run: |
+          php tests/cloud-hosting-v100-mysql.php
+          php tests/cloud-hosting-v110-mysql.php
