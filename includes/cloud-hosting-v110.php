@@ -232,6 +232,35 @@ function vp3_cloud_hosting_v110_route_for_site(int $siteId,?PDO $pdo=null): ?arr
     return is_array($row)?$row:null;
 }
 
+function vp3_cloud_hosting_v110_assert_provision_entitled(array $site,?PDO $pdo=null): void
+{
+    $pdo??=db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $userId=(int)($site['user_id']??0);
+    if($userId<1)throw new RuntimeException('A valid hosting owner is required.');
+    $stmt=$pdo->prepare('SELECT * FROM users WHERE id=? LIMIT 1');
+    $stmt->execute([$userId]);
+    $user=$stmt->fetch();
+    if(!is_array($user))throw new RuntimeException('Hosting owner could not be loaded.');
+    $snapshot=vp3_cloud_hosting_entitlement_snapshot_v100($user);
+    if(empty($snapshot['entitlements']['hosting.access']['enabled'])){
+        throw new RuntimeException('This account package does not currently include Cloud Hosting.');
+    }
+    $limit=vp3_cloud_hosting_limit_v100($snapshot,'hosting.subdomains');
+    if($limit===0)throw new RuntimeException('This account package does not currently include hosting subdomains.');
+    $siteId=(int)($site['id']??0);
+    $existing=vp3_cloud_hosting_v110_route_for_site($siteId,$pdo);
+    if($existing!==null)return;
+    if($limit!==null){
+        $stmt=$pdo->prepare("SELECT COUNT(*) FROM cloud_hosting_routes r JOIN cloud_hosting_sites s ON s.id=r.site_id WHERE s.user_id=? AND r.deactivated_at IS NULL");
+        $stmt->execute([$userId]);
+        if((int)$stmt->fetchColumn()>=$limit){
+            throw new RuntimeException('This account has reached its hosting subdomain limit.');
+        }
+    }
+}
+
+
 function vp3_cloud_hosting_v110_provision_dns(
     array $site,
     string $requestKey,
@@ -243,6 +272,7 @@ function vp3_cloud_hosting_v110_provision_dns(
     $siteId=(int)($site['id']??0);
     $userId=(int)($site['user_id']??0);
     if($siteId<1||$userId<1)throw new RuntimeException('A valid hosted site is required.');
+    vp3_cloud_hosting_v110_assert_provision_entitled($site,$pdo);
     $hostname=vp3_cloud_hosting_normalize_hostname_v100($site['requested_hostname']??null);
     if($hostname===null)throw new RuntimeException('Assign a hosting subdomain before provisioning DNS.');
     $zone=vp3_cloud_hosting_v110_zone_domain();
