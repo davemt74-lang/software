@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
+const compat=read('includes/profile-webmcp-compat-v203.php');
+const base=read('includes/profile-webmcp-v100.php');
+const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
+const release=read('includes/profile-webmcp-release-v196.php');
+const admin=read('admin/webmcp.php');
+const workflow=read('.github/workflows/public-funnel-onboarding-continuity.yml');
+const recovery=read('tools/run_recovery_baseline.py');
+
+assert.match(compat,/vp3\.profile\.webmcp\.compatibility\.v1/);
+for(const state of ['active','deprecated','sunset_pending','disabled'])assert.match(compat,new RegExp("'"+state+"'"));
+assert.match(compat,/replacement_tool/);
+assert.match(compat,/sunset_at/);
+assert.match(compat,/minimum_runtime_build/);
+assert.match(base,/profile-webmcp-compat-v203\.php/);
+assert.match(resolver,/vp3_profile_webmcp_tool_available_v203/);
+assert.match(router,/WEBMCP_TOOL_UNAVAILABLE/);
+assert.match(router,/vp3_profile_webmcp_tool_lifecycle_v203/);
+assert.match(release,/compatibility/);
+assert.match(admin,/Tool lifecycle/);
+assert.match(workflow,/profile-webmcp-compat-v203/);
+assert.match(recovery,/profile-webmcp-compat-v203/);
+console.log('PROFILE_WEBMCP_COMPAT_V203_CONTRACT=PASS');
