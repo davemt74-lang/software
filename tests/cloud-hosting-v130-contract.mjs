@@ -36,7 +36,7 @@ assert.match(agent,/agent:/);
 assert.match(agent,/vp3_cloud_hosting_v110_provision_dns/);
 assert.match(agent,/vp3_cloud_hosting_v120_rollback/);
 assert.match(agent,/vp3_cloud_hosting_v120_reconcile_site/);
-assert.match(agent,/hosting\.dashboard/);
+assert.match(agent,/vp3_cloud_hosting_diagnostics_v230_summary/);
 assert.match(agent,/CPANEL|cPanel/);
 assert.match(agent,/Never request or reveal|Never request/i);
 assert.doesNotMatch(agent,/hosting_cpanel_api_token/);
