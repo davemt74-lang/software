@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/profile-webmcp-continuity-v195.php';
+
 const VP3_PROFILE_WEBMCP_CONTINUITY_V194='profile-webmcp-continuity-v194-20260929';
 const VP3_PROFILE_WEBMCP_RESUME_TTL_V194=600;
 const VP3_PROFILE_WEBMCP_RESUME_MAX_V194=12;
@@ -26,7 +28,7 @@ function vp3_profile_webmcp_resume_prune_v194(array $rows,int $now): array
     return $clean;
 }
 
-function vp3_profile_webmcp_resume_issue_v194(PDO $pdo,array $profile,array $user,string $goal,array $plan): array
+function vp3_profile_webmcp_resume_issue_v194(PDO $pdo,array $profile,array $user,string $goal,array $plan,int $conversationId=0): array
 {
     $userId=(int)($user['id']??0);
     if($userId<1||(int)($profile['user_id']??0)!==$userId)throw new RuntimeException('Profile resume owner mismatch.');
@@ -36,11 +38,15 @@ function vp3_profile_webmcp_resume_issue_v194(PDO $pdo,array $profile,array $use
     $rows=vp3_profile_webmcp_resume_prune_v194(vp3_profile_webmcp_resume_store_v194(),$now);
     $token=bin2hex(random_bytes(16));
     $safeGoal=mb_strimwidth(trim($goal),0,1000,'');
+    $actionContext=vp3_profile_webmcp_action_context_issue_v195($profile,$user,$safeGoal,$conversationId);
     $rows[$token]=[
         'version'=>VP3_PROFILE_WEBMCP_CONTINUITY_V194,
         'profile_user_id'=>$userId,
         'profile_username'=>(string)$profile['username'],
         'goal'=>$safeGoal,
+        'action_context_id'=>(string)$actionContext['context_id'],
+        'return_token'=>(string)$actionContext['return_token'],
+        'return_path'=>(string)$actionContext['return_path'],
         'recommended_capabilities'=>array_values(array_filter(array_map('strval',(array)($plan['recommended_capabilities']??[])))),
         'recommended_tools'=>array_values(array_filter(array_map(
             static fn($row):string=>is_array($row)?(string)($row['name']??''):'',
@@ -55,6 +61,9 @@ function vp3_profile_webmcp_resume_issue_v194(PDO $pdo,array $profile,array $use
         'token'=>$token,
         'path'=>'/'.rawurlencode((string)$profile['username']).'?webmcp_resume='.$token,
         'expires_at'=>$now+VP3_PROFILE_WEBMCP_RESUME_TTL_V194,
+        'action_context_id'=>(string)$actionContext['context_id'],
+        'return_token'=>(string)$actionContext['return_token'],
+        'return_path'=>(string)$actionContext['return_path'],
     ];
 }
 
@@ -75,6 +84,9 @@ function vp3_profile_webmcp_resume_validate_v194(array $profile,array $user,stri
         'token'=>$token,
         'path'=>'/'.rawurlencode((string)$profile['username']).'?webmcp_resume='.$token,
         'expires_at'=>(int)($row['expires_at']??0),
+        'action_context_id'=>(string)($row['action_context_id']??''),
+        'return_token'=>(string)($row['return_token']??''),
+        'return_path'=>(string)($row['return_path']??''),
     ];
 }
 
@@ -133,6 +145,9 @@ function vp3_profile_webmcp_resume_consume_v194(PDO $pdo,array $profile,?array $
         'recommended_capabilities'=>array_values(array_keys($caps)),
         'recommended_tools'=>$tools,
         'resolved_capabilities'=>array_values($intent['recommended_capabilities']??[]),
+        'action_context_id'=>(string)($row['action_context_id']??''),
+        'return_token'=>(string)($row['return_token']??''),
+        'return_path'=>(string)($row['return_path']??''),
         'execution_allowed'=>true,
         'auto_execute_consequential'=>false,
         'consumed'=>true,
