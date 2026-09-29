@@ -44,7 +44,7 @@ if($summary['requests_total']!==120||$summary['server_error_total']!==2||$summar
 if(abs((float)$summary['p95_duration_ms']-190.2)>0.01)throw new RuntimeException('Diagnostics p95 mismatch.');
 if(($summary['recent'][0]['path']??'')!=='/checkout.php')throw new RuntimeException('Diagnostics query string was not removed.');
 if(str_contains(json_encode($summary),'SHOULD_NOT_LEAK'))throw new RuntimeException('Diagnostics leaked a query-string secret.');
-if(empty($summary['homeserver_authoritative']))throw new RuntimeException('Diagnostics authority marker missing.');
+if(($summary['authoritative_runtime']??'')!=='homeserver'||($summary['authoritative_desired_state']??'')!=='cloud')throw new RuntimeException('Diagnostics authority marker missing.');
 
 $explanation=vp3_cloud_hosting_diagnostics_v230_explanation($summary);
 if(!str_contains($explanation,'5xx')||!str_contains($explanation,'PHP'))throw new RuntimeException('Diagnostics explanation is incomplete.');
