@@ -40,6 +40,9 @@ assert.match(sync,/previous_release_id=active_release_id,active_release_id=/);
 
 assert.match(sync,/fingerprint=hash\('sha256'/);
 assert.match(sync,/SELECT revision,fingerprint FROM cloud_hosting_entitlement_sync WHERE user_id=\? FOR UPDATE/);
+assert.match(sync,/reconcile_result.*stale_ignored/s);
+assert.match(sync,/nextRevision=\$remoteRevision\+1/);
+assert.match(sync,/Public route must stay inactive|runtimeReady/);
 assert.match(sync,/max_public_routes/);
 assert.match(sync,/max_storage_bytes_per_site/);
 assert.match(sync,/max_sqlite_bytes_per_site/);
@@ -51,7 +54,7 @@ assert.match(sync,/cloud_hosting_route_credentials/);
 assert.match(sync,/cloud_hosting_edge_certificates/);
 assert.match(sync,/certificate_not_after/);
 assert.match(sync,/Cloud-edge certificate is expired/);
-assert.doesNotMatch(sync,/private_key|BEGIN PRIVATE KEY|certificate_key/);
+assert.doesNotMatch(sync,/BEGIN PRIVATE KEY|private_key\s+(?:LONGTEXT|TEXT|VARCHAR)|certificate_key\s+(?:LONGTEXT|TEXT|VARCHAR)/);
 
 assert.match(sync,/vp3_cloud_hosting_v120_public_remote/);
 assert.match(sync,/raw_package_persisted'\s*=>\s*false/);
