@@ -254,30 +254,18 @@ function vp3_profile_webmcp_campaign_reward_v170(PDO $pdo,array $campaign,string
 
 function vp3_profile_webmcp_campaign_state_hash_v170(PDO $pdo,array $campaign,?array $reward=null): string
 {
-    $behavior=campaigns_rewards_campaign_type_behavior_v118($pdo,(int)$campaign['merchant_id'],(string)$campaign['campaign_type_key']);
-    return hash('sha256',json_encode([
-        'campaign'=>[
-            'id'=>(int)$campaign['id'],'public_id'=>(string)$campaign['public_id'],'slug'=>(string)$campaign['slug'],
-            'status'=>(string)$campaign['status'],'environment'=>(string)$campaign['environment'],
-            'starts_at'=>$campaign['starts_at']??null,'ends_at'=>$campaign['ends_at']??null,
-            'current_version_no'=>(int)($campaign['current_version_no']??0),'updated_at'=>(string)($campaign['updated_at']??''),
-            'is_published'=>(int)($campaign['is_published']??0),'visibility'=>(string)($campaign['visibility']??''),
-            'published_at'=>(string)($campaign['published_at']??''),
-        ],
-        'behavior'=>[
-            'public'=>!empty($behavior['public']),'public_action'=>(string)($behavior['public_action']??'none'),
-            'required_fields'=>array_values((array)($behavior['required_fields']??[])),
-            'marketing'=>(string)($behavior['marketing']??'optional'),'reward_timing'=>(string)($behavior['reward_timing']??'manual'),
-            'requires_reward'=>!empty($behavior['requires_reward']),
-        ],
-        'reward'=>$reward?[
-            'id'=>(int)($reward['id']??0),'public_id'=>(string)($reward['public_id']??''),
-            'status'=>(string)($reward['status']??''),'starts_at'=>$reward['starts_at']??null,'ends_at'=>$reward['ends_at']??null,
-            'per_customer_limit'=>(int)($reward['per_customer_limit']??$reward['claim_limit']??1),
+    $public=vp3_profile_webmcp_campaign_projection_v170($pdo,$campaign,true);
+    $state=[
+        'campaign'=>$public,
+        'current_version_no'=>(int)($campaign['current_version_no']??0),
+        'campaign_updated_at'=>(string)($campaign['updated_at']??''),
+        'selected_reward'=>$reward?[
+            'id'=>(int)($reward['id']??0),
+            'public'=>vp3_profile_webmcp_campaign_reward_projection_v170($reward),
         ]:null,
-    ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
+    ];
+    return vp3_profile_webmcp_payload_hash_v150($state);
 }
-
 function vp3_profile_webmcp_campaign_normalize_participation_v170(PDO $pdo,array $profile,array $input): array
 {
     $campaign=vp3_profile_webmcp_campaign_public_v170($pdo,$profile,(string)($input['campaign_slug']??''));
