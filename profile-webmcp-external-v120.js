@@ -344,7 +344,11 @@ class ExternalRuntime{
         telemetry:{
           webmcp_session_id:this.webmcpSessionId,
           interaction_id:interactionId,
-          agent_referral:referralTokenV130()
+          agent_referral:referralTokenV130(),
+          registered_tool_count:this.registrations.size,
+          expected_tool_count:this.effectiveToolNames().length,
+          runtime_build:BUILD,
+          release_version:RELEASE
         }
       };
       if(isChatToolV140(name))payload.chat_grant=this.chatGrant;
