@@ -208,13 +208,19 @@ class ExternalRuntime{
   async execute(name,args={},options={}){
     if(options?.signal?.aborted)return safeError('CANCELLED','The connected-site capability request was cancelled.');
     if(!this.fetchImpl||!this.manifest||!this.publicKey)return safeError('RUNTIME_UNAVAILABLE','Connected-site WebMCP is unavailable.');
-    if(!this.effectiveToolNames().includes(name))return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
+    const trusted=Object.prototype.hasOwnProperty.call(CATALOG,name);
+    const allowed=Array.isArray(this.manifest.allowed_tools)&&this.manifest.allowed_tools.includes(name);
+    if(!trusted||!allowed)return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
     if(isChatToolV140(name)){
+      if(this.manifest?.external?.stateful_profile_agent!==true)return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
       try{
         if(!await this.ensureChatGrantV140())return safeError('CHAT_GRANT_REQUIRED','Connected-site Profile Agent chat is unavailable.');
       }catch{
         return safeError('CHAT_GRANT_REQUIRED','Connected-site Profile Agent chat is unavailable.',true);
       }
+      if(!this.effectiveToolNames().includes(name))return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
+    }else if(!this.effectiveToolNames().includes(name)){
+      return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
     }
 
     const interactionId=transportIdV130();
