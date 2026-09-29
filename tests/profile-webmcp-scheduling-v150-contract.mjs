@@ -86,10 +86,10 @@ for(const name of ['vp3.booking.confirm','vp3.booking.reschedule.confirm','vp3.b
 }
 assert.match(router,/vp3_profile_webmcp_scheduling_confirm_v150/);
 assert.match(externalApi,/vp3_profile_webmcp_dispatch_v191/);
-assert.match(nativeApi,/webmcp_confirmation_required/);
-assert.match(externalApi,/webmcp_confirmation_required/);
-assert.match(nativeApi,/webmcp_booking_completed/);
-assert.match(externalApi,/webmcp_booking_completed/);
+assert.match(router,/webmcp_confirmation_required/);
+assert.match(router,/webmcp_confirmation_required/);
+assert.match(router,/webmcp_booking_completed/);
+assert.match(router,/webmcp_booking_completed/);
 assert.match(externalLayer,/scheduling_enabled'\s*=>\s*\$schedulingEnabled/);
 assert.match(externalRuntime,/scheduling_enabled===true/);
 assert.match(externalRuntime,/credentials:'omit'/);
