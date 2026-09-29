@@ -88,7 +88,7 @@ function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,arra
     foreach($catalog as $name=>$tool){
         if(!isset($external[$name]))continue;
         $capability=(string)($tool['capability']??'');
-        if(($capabilities[$capability]??false)===true)$allowed[]=$name;
+        if(($capabilities[$capability]??false)===true&&vp3_profile_webmcp_tool_runtime_ready_v150($pdo,$name))$allowed[]=$name;
     }
     sort($allowed);
     return [
