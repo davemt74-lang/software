@@ -129,7 +129,8 @@ function vp3_profile_webmcp_tool_runtime_ready_v150(PDO $pdo,string $tool): bool
     $ledgerTools=[
         'vp3.booking.prepare','vp3.booking.confirm','vp3.booking.reschedule.prepare','vp3.booking.reschedule.confirm','vp3.booking.cancel.prepare','vp3.booking.cancel.confirm',
         'vp3.commerce.checkout.prepare','vp3.commerce.checkout.confirm','vp3.commerce.refund.prepare','vp3.commerce.refund.confirm',
-        'vp3.campaign.participation.prepare','vp3.campaign.participation.confirm'
+        'vp3.campaign.participation.prepare','vp3.campaign.participation.confirm',
+        'vp3.reward.transfer.prepare','vp3.reward.transfer.confirm'
     ];
     if(!in_array($tool,$ledgerTools,true))return true;
     if(!function_exists('vp3_profile_webmcp_actions_schema_ready_v150')||!vp3_profile_webmcp_actions_schema_ready_v150($pdo))return false;
