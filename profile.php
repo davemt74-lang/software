@@ -127,13 +127,14 @@ if($photos)$profileTabs['photos']='Photos';
 if($posts)$profileTabs['posts']='Posts';
 if($merch)$profileTabs['merch']='Merch';
 $activeTab=(string)(array_key_first($profileTabs)??'');
-$webmcpManifest=[];$webmcpSessionProof='';$webmcpResume=null;
+$webmcpManifest=[];$webmcpSessionProof='';$webmcpResume=null;$webmcpResumeRequested=false;
 if(!$preview){
     try {
         $webmcpManifest=vp3_profile_webmcp_manifest_v100($pdo,$profile,$viewer,['surface'=>'native_profile']);
         $webmcpSessionProof=vp3_profile_webmcp_session_proof_v100((int)$profile['user_id']);
         $resumeToken=trim((string)($_GET['webmcp_resume']??''));
-        if($resumeToken!=='')$webmcpResume=vp3_profile_webmcp_resume_consume_v194($pdo,$profile,$viewer,$resumeToken);
+        $webmcpResumeRequested=$resumeToken!=='';
+        if($webmcpResumeRequested)$webmcpResume=vp3_profile_webmcp_resume_consume_v194($pdo,$profile,$viewer,$resumeToken);
     } catch (Throwable $e) {
         vp3_profile_optional_failure('webmcp-foundation',$e,$username);
         $webmcpManifest=[];$webmcpSessionProof='';
@@ -142,6 +143,10 @@ if(!$preview){
 if($webmcpManifest&&$webmcpSessionProof){
     header('Cache-Control: private, no-store');
     header('Vary: Cookie');
+}
+if($webmcpResumeRequested){
+    header('Referrer-Policy: no-referrer');
+    header('Cache-Control: private, no-store');
 }
 ?>
 <!doctype html>
