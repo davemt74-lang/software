@@ -142,7 +142,7 @@
     actions.append(confirm,dismiss);card.appendChild(actions);
 
     terms?.addEventListener('change',()=>{confirm.disabled=!terms.checked;});
-    dismiss.addEventListener('click',()=>card.remove());
+    dismiss.addEventListener('click',()=>{document.dispatchEvent(new CustomEvent('vp3:webmcp-cancel',{detail:{action}}));card.remove();});
     confirm.addEventListener('click',()=>{
       confirm.disabled=true;dismiss.disabled=true;feedback.textContent='Confirming…';
       document.dispatchEvent(new CustomEvent('vp3:webmcp-confirm',{detail:{action,terms_accepted:Boolean(terms?.checked)}}));
