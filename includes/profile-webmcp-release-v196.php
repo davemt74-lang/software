@@ -26,6 +26,11 @@ function vp3_profile_webmcp_release_descriptor_v196(): array
                 'confirmation_authority'=>'none',
             ],
         ],
+        'compatibility'=>[
+            'contract'=>'vp3.profile.webmcp.compatibility.v1',
+            'deprecated_execution_path'=>'canonical_router',
+            'disabled_execution_allowed'=>false,
+        ],
         'negotiation'=>[
             'contract'=>'vp3.profile.webmcp.negotiation.v1',
             'required_for_future_major_versions'=>true,
