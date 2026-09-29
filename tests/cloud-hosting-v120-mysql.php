@@ -105,6 +105,7 @@ $remoteState=[
     'previous_release'=>'',
     'transfers'=>[],
     'ops'=>[],
+    'interrupt_once'=>true,
 ];
 $remote=function(int $userId,string $operation,array $payload) use (&$remoteState): array {
     if($userId!==1)throw new RuntimeException('Wrong HomeServer owner.');
@@ -164,6 +165,10 @@ $remote=function(int $userId,string $operation,array $payload) use (&$remoteStat
         foreach($remoteState['transfers'] as $key=>&$transfer){
             if($transfer['transfer_id']!==$payload['transfer_id'])continue;
             if((int)$payload['chunk_index']!==$transfer['next'])throw new RuntimeException('Chunk index mismatch.');
+            if((int)$payload['chunk_index']===1&&!empty($remoteState['interrupt_once'])){
+                $remoteState['interrupt_once']=false;
+                throw new RuntimeException('Simulated transient HomeServer disconnect.');
+            }
             $decoded=base64_decode((string)$payload['data_b64'],true);
             if(!is_string($decoded))throw new RuntimeException('Invalid base64 chunk.');
             $transfer['data'].=$decoded;$transfer['next']++;
@@ -182,7 +187,7 @@ $remote=function(int $userId,string $operation,array $payload) use (&$remoteStat
             $remoteState['release']='release_1';
             $remoteState['deployed']=true;
             $transfer['status']=[
-                'transfer_id'=>$transfer['transfer_id'],'state'=>'deployed','next_chunk'=>$transfer['next'],
+                'transfer_id'=>$transfer['transfer_id'],'state'=>'applied','next_chunk'=>$transfer['next'],
                 'received_bytes'=>strlen($transfer['data']),'package_bytes'=>$transfer['expected_bytes'],
                 'release_id'=>'release_1',
             ];
@@ -190,6 +195,13 @@ $remote=function(int $userId,string $operation,array $payload) use (&$remoteStat
         }
         unset($transfer);
         throw new RuntimeException('Unknown transfer.');
+    }
+    if($operation==='hosting.deployment.status'){
+        $wanted=(string)($payload['transfer_id']??'');
+        foreach($remoteState['transfers'] as $transfer){
+            if($wanted===''||$transfer['transfer_id']===$wanted)return $transfer['status'];
+        }
+        return ['state'=>'receiving','next_chunk'=>0,'received_bytes'=>0,'package_bytes'=>0];
     }
     if($operation==='hosting.deployment.rollback'){
         $old=$remoteState['release'];
@@ -212,10 +224,31 @@ if(vp3_cloud_hosting_v120_route_token((int)$site['id'],$testPdo)!=='ROUTE_TOKEN_
 $cred=$testPdo->query('SELECT route_token_enc,route_token_sha256 FROM cloud_hosting_route_credentials')->fetch();
 if(str_contains((string)$cred['route_token_enc'],'ROUTE_TOKEN_SUPER_SECRET'))throw new RuntimeException('Route token was stored in plaintext.');
 
-$package=str_repeat('VP3-PACKAGE-',20000);
+$tmp=tempnam(sys_get_temp_dir(),'vp3-hosting-test-');
+if($tmp===false)throw new RuntimeException('Could not create temporary ZIP path.');
+$zipPath=$tmp.'.zip';@unlink($tmp);
+$zip=new ZipArchive();
+if($zip->open($zipPath,ZipArchive::CREATE|ZipArchive::OVERWRITE)!==true)throw new RuntimeException('Could not create test deployment ZIP.');
+$zip->addFromString('vp3-hosting.json',json_encode([
+    'contract'=>'vp3.hosting.package.v1','version'=>'1.0.0','runtime'=>'static','entrypoint'=>'public/index.html'
+],JSON_UNESCAPED_SLASHES));
+$zip->addFromString('public/index.html',str_repeat('VP3-PACKAGE-',20000));
+$zip->close();
+$package=file_get_contents($zipPath);@unlink($zipPath);
+if(!is_string($package))throw new RuntimeException('Could not read test deployment ZIP.');
+
+try{
+    vp3_cloud_hosting_v120_deploy_package($site,$package,'deploy-1',1,$remote,$testPdo);
+    throw new RuntimeException('Transient deployment interruption was not surfaced.');
+}catch(RuntimeException $e){
+    if($e->getMessage()==='Transient deployment interruption was not surfaced.')throw $e;
+}
+$interrupted=vp3_cloud_hosting_v120_deployment_row((int)$site['id'],'deploy-1',$testPdo);
+if(($interrupted['state']??'')!=='interrupted')throw new RuntimeException('Transient deployment was not left resumable.');
+
 $result=vp3_cloud_hosting_v120_deploy_package($site,$package,'deploy-1',1,$remote,$testPdo);
 $deployment=(array)$result['deployment'];
-if(($deployment['state']??'')!=='deployed'||($deployment['release_id']??'')!=='release_1')throw new RuntimeException('Deployment did not complete.');
+if(($deployment['state']??'')!=='deployed'||($deployment['release_id']??'')!=='release_1')throw new RuntimeException('Resumed deployment did not complete.');
 $chunks=array_values(array_filter($remoteState['ops'],fn(array $op)=>$op['operation']==='hosting.deployment.chunk'));
 if(count($chunks)<2)throw new RuntimeException('Deployment did not use bounded chunk transfer.');
 foreach($chunks as $op){
@@ -225,6 +258,9 @@ foreach($chunks as $op){
 $afterDeploy=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
 if(($afterDeploy['active_release_id']??'')!=='release_1')throw new RuntimeException('Cloud active release was not updated.');
 if(($afterDeploy['observed_state']??'')!=='active')throw new RuntimeException('Post-deploy reconcile did not activate observed state.');
+
+$refreshed=vp3_cloud_hosting_v120_refresh_deployment($afterDeploy,'deploy-1',$remote,$testPdo);
+if(($refreshed['deployment']['state']??'')!=='deployed')throw new RuntimeException('Deployment status refresh lost deployed state.');
 
 $opCount=count($remoteState['ops']);
 $replay=vp3_cloud_hosting_v120_deploy_package($afterDeploy,$package,'deploy-1',1,$remote,$testPdo);
@@ -244,8 +280,19 @@ if(str_contains((string)$stored,'ROUTE_TOKEN_SUPER_SECRET'))throw new RuntimeExc
 $deployJson=$testPdo->query("SELECT response_json FROM cloud_hosting_deployments WHERE request_key='deploy-1'")->fetchColumn();
 if(str_contains((string)$deployJson,$package))throw new RuntimeException('Raw deployment package leaked into deployment ledger.');
 
+$entitlements['hosting.access']['enabled']=false;
+$opsBeforeDowngrade=count($remoteState['ops']);
+try{
+    vp3_cloud_hosting_v120_deploy_package($afterRollback,$package,'deploy-blocked',1,$remote,$testPdo);
+    throw new RuntimeException('Deployment bypassed current Hosting entitlement.');
+}catch(RuntimeException $e){
+    if($e->getMessage()==='Deployment bypassed current Hosting entitlement.')throw $e;
+}
+if(count($remoteState['ops'])!==$opsBeforeDowngrade)throw new RuntimeException('Entitlement-rejected deployment reached HomeServer.');
+$entitlements['hosting.access']['enabled']=true;
+
 $cap=vp3_cloud_hosting_v120_public_capability();
-if(empty($cap['chunked_deployment'])||empty($cap['deployment_resume'])||empty($cap['encrypted_route_token_storage']))throw new RuntimeException('Section 3 capability projection incomplete.');
+if(empty($cap['chunked_deployment'])||empty($cap['deployment_resume'])||empty($cap['transient_failure_resume_with_same_key'])||empty($cap['single_inflight_operation_per_site'])||empty($cap['deployment_status_refresh'])||empty($cap['deployment_entitlement_revalidation'])||empty($cap['encrypted_route_token_storage']))throw new RuntimeException('Section 3 capability projection incomplete.');
 if(!empty($cap['raw_package_persisted'])||!empty($cap['cloud_edge_private_key_persisted']))throw new RuntimeException('Section 3 capability violates secret/package boundaries.');
 
 echo "Cloud Hosting V1 Section 3 MySQL integration: PASS\n";
