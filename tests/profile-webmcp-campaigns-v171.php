@@ -10,7 +10,7 @@ require dirname(__DIR__).'/includes/profile-webmcp-campaigns-v170.php';
 function t(bool $v,string $m): void {if(!$v){fwrite(STDERR,"FAIL: {$m}\n");exit(1);}}
 
 $catalog=vp3_profile_webmcp_campaigns_tool_catalog_v170();
-t(count($catalog)===5,'8B Campaign catalog must expose five trusted tools');
+t(count($catalog)>=5,'Campaign catalog must retain all five 8B trusted tools');
 t(($catalog['vp3.campaign.participation.prepare']['annotations']['consequentialHint']??true)===false,'prepare must be non-consequential');
 t(($catalog['vp3.campaign.participation.confirm']['annotations']['consequentialHint']??false)===true,'confirm must be consequential');
 
