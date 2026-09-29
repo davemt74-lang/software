@@ -78,10 +78,12 @@ function vp3_cloud_hosting_ui_v140_site_card(array $site,?PDO $pdo=null): array
     $cert=vp3_cloud_hosting_v120_edge_certificate($siteId,$pdo);
     $sync=vp3_cloud_hosting_ui_v140_sync($siteId,$pdo);
     $deployment=vp3_cloud_hosting_ui_v140_latest_deployment($siteId,$pdo);
-    $customDomains=function_exists('vp3_cloud_hosting_domains_v200_for_site')
-        ?vp3_cloud_hosting_domains_v200_for_site($siteId,(int)$site['user_id'],$pdo)
-        :[];
-    $customPublic=array_map('vp3_cloud_hosting_domains_v200_public',$customDomains);
+    $customDomains=[];
+    $customPublic=[];
+    if(function_exists('vp3_cloud_hosting_domains_v200_for_site')&&function_exists('vp3_cloud_hosting_domains_v200_public')){
+        $customDomains=vp3_cloud_hosting_domains_v200_for_site($siteId,(int)$site['user_id'],$pdo);
+        $customPublic=array_map('vp3_cloud_hosting_domains_v200_public',$customDomains);
+    }
     $canonicalCustom=null;
     foreach($customPublic as $customDomain){
         if(!empty($customDomain['is_canonical'])&&!empty($customDomain['ready'])){$canonicalCustom=$customDomain;break;}
