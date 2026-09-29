@@ -31,6 +31,12 @@ function vp3_profile_webmcp_release_descriptor_v196(): array
             'required_for_future_major_versions'=>true,
             'consequential_downgrade_allowed'=>false,
         ],
+        'compatibility'=>[
+            'contract'=>'vp3.profile.webmcp.compatibility.v1',
+            'canonical_router_enforced'=>true,
+            'disabled_tools_fail_closed'=>true,
+            'deprecated_tools_keep_canonical_authority'=>true,
+        ],
         'continuity'=>[
             'resume_contract'=>'vp3.webmcp.resume.v1',
             'return_contract'=>'vp3.webmcp.return.v1',
