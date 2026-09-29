@@ -7,6 +7,10 @@ function deepFreeze(value) {
   return value;
 }
 
+const REWARDS_CATALOG_V180=deepFreeze({
+  'vp3.rewards.wallet.get':{title:'Get my Reward Wallet',description:'Return the signed-in viewer\'s safe Reward Inbox, Sent, and Claimed projections.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:false,consequentialHint:false,debugging:false}}
+});
+
 const CAMPAIGNS_CATALOG_V170=deepFreeze({
   'vp3.campaigns.list':{title:'List public campaigns',description:'List active published Campaigns shown on this public VP3 Profile.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
   'vp3.campaign.get':{title:'Get public campaign',description:'Return one public Campaign with public terms, location, participation requirements, and public Rewards.',inputSchema:{type:'object',properties:{campaign_slug:{type:'string',minLength:1,maxLength:120}},required:['campaign_slug'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
@@ -112,6 +116,7 @@ export const VP3_PROFILE_WEBMCP_TOOL_CATALOG_V100 = deepFreeze({
   },
   ...COMMERCE_CATALOG_V160,
   ...CAMPAIGNS_CATALOG_V170,
+  ...REWARDS_CATALOG_V180,
   'vp3.intent.resolve': {
     title:'Resolve profile intent',description:'Identify which currently available VP3 profile capabilities can help with a user goal without executing an action.',
     inputSchema:{type:'object',properties:{goal:{type:'string',minLength:1,maxLength:1000}},required:['goal'],additionalProperties:false},
