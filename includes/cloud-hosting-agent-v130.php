@@ -64,7 +64,7 @@ function vp3_cloud_hosting_agent_v130_intent(string $query): bool
 {
     $q=mb_strtolower(trim($query));
     if($q==='')return false;
-    return (bool)preg_match('/\b(?:hosting|hosted\s+sites?|subdomains?|dns|deployment|deploy|rollback|home\s*server\s+sites?|homeserver\s+sites?|website\s+offline|site\s+offline)\b/u',$q);
+    return (bool)preg_match('/\b(?:hosting|hosted\s+sites?|subdomains?|custom\s+domains?|domains?|dns|deployment|deploy|rollback|home\s*server\s+sites?|homeserver\s+sites?|website\s+offline|site\s+offline)\b/u',$q);
 }
 
 function vp3_cloud_hosting_agent_v130_user_site(int $userId,string $needle,?PDO $pdo=null): ?array
@@ -170,6 +170,9 @@ function vp3_cloud_hosting_agent_v130_site_status(array $site,?callable $remote=
     if(is_array($sync)&&($sync['last_error_message']??'')!=='')$issues[]=mb_substr((string)$sync['last_error_message'],0,240);
 
     $traffic=is_array($remoteSite)?(array)($remoteSite['observability']??[]):[];
+    $customDomains=function_exists('vp3_cloud_hosting_domains_v200_for_site')
+        ?array_map('vp3_cloud_hosting_domains_v200_public',vp3_cloud_hosting_domains_v200_for_site($siteId,$userId,$pdo))
+        :[];
     return [
         'site_id'=>$siteId,
         'site_key'=>(string)$site['site_key'],
@@ -185,6 +188,7 @@ function vp3_cloud_hosting_agent_v130_site_status(array $site,?callable $remote=
         'previous_release_id'=>$site['previous_release_id']??null,
         'homeserver_status'=>$connectionStatus,
         'latest_deployment'=>$deployment,
+        'custom_domains'=>$customDomains,
         'traffic'=>[
             'requests_total'=>(int)($traffic['requests_total']??0),
             'client_error_total'=>(int)($traffic['client_error_total']??0),
@@ -226,7 +230,10 @@ function vp3_cloud_hosting_agent_v130_prepare(
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     vp3_cloud_hosting_agent_v130_ensure_schema($pdo);
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in user is required.');
-    $allowed=['site.create','site.state','route.provision','site.reconcile','deployment.rollback'];
+    $allowed=[
+        'site.create','site.state','route.provision','site.reconcile','deployment.rollback',
+        'domain.attach','domain.canonical','domain.detach'
+    ];
     if(!in_array($actionType,$allowed,true))throw new RuntimeException('Unsupported Hosting Agent action.');
     if($siteId!==null){
         $site=vp3_cloud_hosting_site_v100($siteId,$uid,$pdo);
@@ -324,6 +331,20 @@ function vp3_cloud_hosting_agent_v130_execute(array $row,array $user,?callable $
     }
     if($type==='deployment.rollback'){
         return vp3_cloud_hosting_v120_rollback($site,$key,$uid,$remote,$pdo);
+    }
+    if($type==='domain.attach'){
+        $attached=vp3_cloud_hosting_domains_v200_attach($site,$user,(string)($payload['hostname']??''),$uid,$pdo);
+        return [
+            'domain'=>$attached['domain']??null,
+            'dns_instructions_available_in_hosting_ui'=>true,
+        ];
+    }
+    if($type==='domain.canonical'||$type==='domain.detach'){
+        $domainId=(int)($payload['domain_id']??0);
+        $domain=vp3_cloud_hosting_domains_v200_find($domainId,$uid,$pdo);
+        if($domain===null||(int)$domain['site_id']!==$siteId)throw new RuntimeException('Custom domain is unavailable to this hosted site.');
+        if($type==='domain.canonical')return vp3_cloud_hosting_domains_v200_set_canonical($domain,true,$uid,$pdo);
+        return vp3_cloud_hosting_domains_v200_detach($domain,$uid,$pdo);
     }
     throw new RuntimeException('Unsupported Hosting Agent action.');
 }
@@ -444,7 +465,14 @@ function vp3_cloud_hosting_agent_v130_query(
     }
 
     $q=mb_strtolower($query);
-    $hint=vp3_cloud_hosting_agent_v130_extract_site_hint($query);
+    $customDomainHost='';
+    if(preg_match('/\b(?:custom\s+domain|domain)\s+([a-z0-9][a-z0-9.-]+\.[a-z]{2,})\b/i',$query,$m)){
+        $customDomainHost=strtolower((string)$m[1]);
+    }elseif(preg_match('/\b([a-z0-9][a-z0-9.-]+\.[a-z]{2,})\b/i',$query,$m)&&str_contains($q,'custom domain')){
+        $customDomainHost=strtolower((string)$m[1]);
+    }
+    $siteQuery=$customDomainHost!==''?str_ireplace($customDomainHost,'',$query):$query;
+    $hint=vp3_cloud_hosting_agent_v130_extract_site_hint($siteQuery);
     $site=vp3_cloud_hosting_agent_v130_user_site($uid,$hint,$pdo);
 
     if(preg_match('/\b(?:list|show|what|which)\b.*\b(?:hosting|hosted\s+sites?|sites?)\b|\bmy\s+hosted\s+sites?\b/i',$query)){
@@ -469,6 +497,28 @@ function vp3_cloud_hosting_agent_v130_query(
         return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>['read_only'=>true,'status'=>$status]];
     }
 
+    if($customDomainHost!==''&&preg_match('/\bverify\b/i',$query)&&function_exists('vp3_cloud_hosting_domains_v200_find')){
+        $stmt=$pdo->prepare('SELECT * FROM cloud_hosting_custom_domains WHERE owner_user_id=? AND hostname=? AND detached_at IS NULL LIMIT 1');
+        $stmt->execute([$uid,$customDomainHost]);
+        $domain=$stmt->fetch();
+        if(!is_array($domain)){
+            return ['handled'=>true,'answer'=>'That custom domain is not attached to your Hosting account.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+        }
+        try{
+            $ownership=vp3_cloud_hosting_domains_v200_verify_ownership($domain,$uid,null,$pdo);
+            $routing=null;
+            if((string)$ownership['verification_state']==='verified'){
+                $fresh=vp3_cloud_hosting_domains_v200_find((int)$domain['id'],$uid,$pdo)??$domain;
+                $routing=vp3_cloud_hosting_domains_v200_verify_routing($fresh,$uid,null,$pdo);
+            }
+            $state=$routing??$ownership;
+            $answer='Custom domain '.$customDomainHost.': ownership '.(string)$state['verification_state'].', routing '.(string)$state['routing_state'].', TLS '.(string)$state['tls_state'].'.';
+            return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>['read_only'=>true,'custom_domain'=>$state]];
+        }catch(Throwable $e){
+            return ['handled'=>true,'answer'=>'I could not verify that custom domain: '.$e->getMessage(),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+        }
+    }
+
     if(preg_match('/\bcreate\b.*\b(?:hosted\s+site|hosting\s+site|website)\b/i',$query)){
         $name='';
         if(preg_match('/\b(?:named|called)\s+["\']?([^"\']+?)["\']?(?:\s+(?:at|on|with|using)\b|$)/i',$query,$m))$name=trim((string)$m[1]);
@@ -485,12 +535,38 @@ function vp3_cloud_hosting_agent_v130_query(
         }
     }
 
-    if(!$site){
+    if(!$site&&$customDomainHost===''){
         return ['handled'=>true,'answer'=>'I need a specific hosted site name or hostname before I can prepare that Hosting action.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
     }
 
     $actionType='';$payload=[];$preview=[];$intro='';
-    if(preg_match('/\b(?:activate|enable|publish|bring\s+online)\b/i',$query)){
+    if($customDomainHost!==''&&preg_match('/\b(?:attach|add|connect)\b/i',$query)){
+        if(!$site){
+            return ['handled'=>true,'answer'=>'Tell me which hosted site should receive custom domain '.$customDomainHost.'.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+        }
+        $actionType='domain.attach';$payload=['hostname'=>$customDomainHost];
+        $preview=['site'=>(string)$site['display_name'],'custom_domain'=>$customDomainHost];
+        $intro='I prepared attachment of custom domain “'.$customDomainHost.'” to “'.(string)$site['display_name'].'”. This will create an ownership challenge and DNS instructions.';
+    }elseif($customDomainHost!==''&&preg_match('/\b(?:canonical|primary)\b/i',$query)){
+        $stmt=$pdo->prepare('SELECT * FROM cloud_hosting_custom_domains WHERE owner_user_id=? AND hostname=? AND detached_at IS NULL LIMIT 1');
+        $stmt->execute([$uid,$customDomainHost]);$domain=$stmt->fetch();
+        if(!is_array($domain))return ['handled'=>true,'answer'=>'That custom domain is not attached to your Hosting account.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+        $site=vp3_cloud_hosting_site_v100((int)$domain['site_id'],$uid,$pdo);
+        if(!$site)return ['handled'=>true,'answer'=>'The hosted site for that custom domain could not be loaded.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+        $actionType='domain.canonical';$payload=['domain_id'=>(int)$domain['id']];
+        $preview=['site'=>(string)$site['display_name'],'custom_domain'=>$customDomainHost,'canonical'=>true];
+        $intro='I prepared making “'.$customDomainHost.'” the canonical public domain for “'.(string)$site['display_name'].'”.';
+    }elseif($customDomainHost!==''&&preg_match('/\b(?:detach|remove|disconnect)\b/i',$query)){
+        $stmt=$pdo->prepare('SELECT * FROM cloud_hosting_custom_domains WHERE owner_user_id=? AND hostname=? AND detached_at IS NULL LIMIT 1');
+        $stmt->execute([$uid,$customDomainHost]);$domain=$stmt->fetch();
+        if(!is_array($domain))return ['handled'=>true,'answer'=>'That custom domain is not attached to your Hosting account.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+        $site=vp3_cloud_hosting_site_v100((int)$domain['site_id'],$uid,$pdo);
+        if(!$site)return ['handled'=>true,'answer'=>'The hosted site for that custom domain could not be loaded.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
+        $actionType='domain.detach';$payload=['domain_id'=>(int)$domain['id']];
+        $preview=['site'=>(string)$site['display_name'],'custom_domain'=>$customDomainHost];
+        $intro='I prepared detaching custom domain “'.$customDomainHost.'”. Existing DNS records at the user’s DNS provider will not be deleted automatically.';
+    }
+    if($actionType===''){ if(preg_match('/\b(?:activate|enable|publish|bring\s+online)\b/i',$query)){
         $actionType='site.state';$payload=['desired_state'=>'active'];
         $preview=['site'=>(string)$site['display_name'],'desired_state'=>'active'];
         $intro='I prepared activation of “'.(string)$site['display_name'].'”. This can change the public serving state.';
@@ -510,7 +586,7 @@ function vp3_cloud_hosting_agent_v130_query(
         $actionType='site.reconcile';$payload=[];
         $preview=['site'=>(string)$site['display_name'],'revision'=>(int)$site['desired_revision']];
         $intro='I prepared Cloud ↔ HomeServer reconciliation for “'.(string)$site['display_name'].'”.';
-    }
+    }}
 
     if($actionType!==''){
         try{
@@ -537,5 +613,5 @@ function vp3_cloud_hosting_agent_v130_prompt(array $user): string
 {
     $uid=(int)($user['id']??0);
     if($uid<1)return '';
-    return 'Cloud Hosting tools: list and diagnose the user’s hosted sites; inspect route, deployment, HomeServer and traffic health; prepare site creation, activation/suspension, cPanel DNS provisioning, reconciliation and rollback. Consequential Hosting changes always require the explicit 8-character confirmation code returned by the prepare step and execute through a bounded server-side lease with idempotent retry protection. Never request or reveal cPanel API tokens, HomeServer credentials, route tokens, private keys, raw SQL or filesystem paths.';
+    return 'Cloud Hosting tools: list and diagnose the user’s hosted sites; inspect route, deployment, HomeServer and traffic health; prepare site creation, activation/suspension, cPanel DNS provisioning, custom-domain attach/canonical/detach, reconciliation and rollback; verify custom-domain ownership/routing read-only. Consequential Hosting changes always require the explicit 8-character confirmation code returned by the prepare step and execute through a bounded server-side lease with idempotent retry protection. Never request or reveal cPanel API tokens, HomeServer credentials, route tokens, private keys, raw SQL or filesystem paths.';
 }

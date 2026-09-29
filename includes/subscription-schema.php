@@ -50,6 +50,7 @@ function subscription_capability_catalog(): array
         'hosting.access' => ['label'=>'Cloud Hosting','type'=>'boolean','category'=>'Hosting'],
         'hosting.sites' => ['label'=>'Hosted Sites','type'=>'limit','category'=>'Hosting'],
         'hosting.subdomains' => ['label'=>'Hosted Subdomains','type'=>'limit','category'=>'Hosting'],
+        'hosting.custom_domains' => ['label'=>'Custom Hosting Domains','type'=>'limit','category'=>'Hosting'],
         'hosting.storage_mb_per_site' => ['label'=>'Hosting Storage per Site (MB)','type'=>'limit','category'=>'Hosting'],
         'hosting.sqlite_mb_per_site' => ['label'=>'Hosting SQLite per Site (MB)','type'=>'limit','category'=>'Hosting'],
         'hosting.php_access' => ['label'=>'PHP Hosting','type'=>'boolean','category'=>'Hosting'],

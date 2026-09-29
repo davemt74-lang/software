@@ -145,6 +145,7 @@ function vp3_cloud_hosting_entitlement_snapshot_v100(array $user): array
         'hosting.access',
         'hosting.sites',
         'hosting.subdomains',
+        'hosting.custom_domains',
         'hosting.storage_mb_per_site',
         'hosting.sqlite_mb_per_site',
         'hosting.php_access',
