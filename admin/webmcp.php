@@ -25,6 +25,7 @@ $failureRate=(float)($summary['failure_rate_percent']??0);
 $connectedSiteRuntime=$pdo?vp3_profile_webmcp_sites_admin_v204($pdo):[];
 $auditTimeline=$pdo&&function_exists('vp3_profile_webmcp_observability_rows_v205')?vp3_profile_webmcp_observability_rows_v205($pdo,$ownerFilter,$propertyFilter,$correlationFilter,400):[];
 $latencySummary=function_exists('vp3_profile_webmcp_latency_summary_v205')?vp3_profile_webmcp_latency_summary_v205($auditTimeline):[];
+$releaseAcceptance=function_exists('vp3_profile_webmcp_acceptance_v206')?vp3_profile_webmcp_acceptance_v206():['ready'=>false,'score_passed'=>0,'score_total'=>8,'failed_checks'=>['acceptance_unavailable']];
 
 $adminTitle='WebMCP Operations';
 $adminActive='webmcp';
@@ -43,7 +44,7 @@ require __DIR__.'/_header.php';
 </section>
 
 <section class="admin-kpi-grid" aria-label="WebMCP operating metrics">
-  <article class="admin-kpi"><div class="admin-kpi-head"><span>Release health</span><span>Current</span></div><strong><?= !empty($overview['release_audit']['ok'])?'Healthy':'Degraded' ?></strong><small><?= e((string)($overview['release']['version']??'Unknown release')) ?></small></article>
+  <article class="admin-kpi"><div class="admin-kpi-head"><span>V2 acceptance</span><span><?= number_format((int)($releaseAcceptance['score_passed']??0)) ?>/<?= number_format((int)($releaseAcceptance['score_total']??0)) ?></span></div><strong><?= !empty($releaseAcceptance['ready'])?'Ready':'Blocked' ?></strong><small><?= !empty($releaseAcceptance['ready'])?'All WebMCP V2 release gates pass':e(implode(', ',(array)($releaseAcceptance['failed_checks']??[]))) ?></small></article>
   <article class="admin-kpi"><div class="admin-kpi-head"><span>Active Profiles</span><span>Public</span></div><strong><?= number_format((int)($overview['active_profiles']??0)) ?></strong><small>Public and active Profile surfaces</small></article>
   <article class="admin-kpi"><div class="admin-kpi-head"><span>Connected sites</span><span>Active</span></div><strong><?= number_format((int)($overview['connected_sites']??0)) ?></strong><small>Verified runtime properties available to WebMCP</small></article>
   <article class="admin-kpi"><div class="admin-kpi-head"><span>Failure rate</span><span>30-day sample</span></div><strong><?= e(number_format($failureRate,1)) ?>%</strong><small><?= number_format((int)($summary['failures']??0)+(int)($summary['denied']??0)) ?> failed or denied terminal attempts</small></article>

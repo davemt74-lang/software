@@ -36,6 +36,11 @@ function vp3_profile_webmcp_release_descriptor_v196(): array
             'required_for_future_major_versions'=>true,
             'consequential_downgrade_allowed'=>false,
         ],
+        'acceptance'=>[
+            'contract'=>'vp3.profile.webmcp.acceptance.v1',
+            'release_gate_required'=>true,
+            'expected_checks'=>8,
+        ],
         'observability'=>[
             'contract'=>'vp3.profile.webmcp.observability.v1',
             'store'=>'canonical_radar_events',
