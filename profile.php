@@ -181,6 +181,11 @@ if($webmcpManifest&&$webmcpSessionProof){
     <div class="profile-name"><small><?= e($roleLabel) ?></small><h1><?= e($displayName) ?></h1><span>@<?= e($username) ?></span></div>
   </section>
 
+  <section class="profile-webmcp-resume" data-profile-webmcp-resume hidden aria-live="polite">
+    <div><strong>Continuing from Agent Brain</strong><span data-profile-webmcp-resume-text></span></div>
+    <button type="button" data-profile-webmcp-resume-continue>Continue</button>
+  </section>
+
   <?php if($commerceNotice): $noticeKind=(string)($commerceNotice['kind']??'pending'); ?>
     <div class="profile-commerce-return-v900<?= in_array($noticeKind,['verified'],true)?'':' '.e($noticeKind==='cancelled'?'cancelled':'pending') ?>" role="status"><strong><?= e((string)($commerceNotice['headline']??'Payment return received.')) ?></strong><span><?= e((string)($commerceNotice['message']??'VP3 is verifying the provider result.')) ?></span></div>
   <?php endif; ?>
@@ -290,6 +295,31 @@ function setProfileAgentOpen(open){if(!profileAgentShell||!profileAgentLauncher)
 profileAgentLauncher?.addEventListener('click',()=>setProfileAgentOpen(profileAgentShell?.hidden!==false));
 profileAgentClose?.addEventListener('click',()=>setProfileAgentOpen(false));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgentShell&&!profileAgentShell.hidden)setProfileAgentOpen(false);});
+const webmcpResumeBox=document.querySelector('[data-profile-webmcp-resume]');
+const webmcpResumeText=document.querySelector('[data-profile-webmcp-resume-text]');
+const webmcpResumeContinue=document.querySelector('[data-profile-webmcp-resume-continue]');
+let webmcpResumeDetail=null;
+document.addEventListener('vp3:webmcp-resume',event=>{
+  const detail=event.detail||{};if(detail.contract!=='vp3.webmcp.resume.v1')return;
+  webmcpResumeDetail=detail;
+  const caps=Array.isArray(detail.recommended_capabilities)?detail.recommended_capabilities:[];
+  const cap=caps[0]||'profile';
+  const tabMap={booking:'booking',commerce:'products',campaigns:'campaigns'};
+  const tab=tabMap[cap]?document.querySelector('[data-profile-tab="'+tabMap[cap]+'"]'):null;
+  tab?.click();
+  if(webmcpResumeText)webmcpResumeText.textContent=detail.goal?(' '+detail.goal):(' Resume '+cap+'.');
+  if(webmcpResumeBox)webmcpResumeBox.hidden=false;
+});
+webmcpResumeContinue?.addEventListener('click',()=>{
+  if(!webmcpResumeDetail)return;
+  webmcpResumeContinue.disabled=true;
+  document.dispatchEvent(new CustomEvent('vp3:webmcp-resume-continue',{detail:webmcpResumeDetail}));
+});
+document.addEventListener('vp3:webmcp-resume-result',event=>{
+  const result=event.detail||{};
+  if(webmcpResumeText)webmcpResumeText.textContent=result.ok?' Ready to continue on this Profile.':' The resumed capability could not be loaded.';
+  if(webmcpResumeContinue)webmcpResumeContinue.hidden=true;
+});
 </script>
 <?php if($webmcpManifest&&$webmcpSessionProof): ?>
 <script>
