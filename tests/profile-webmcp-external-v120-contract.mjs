@@ -4,6 +4,7 @@ const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const layer=read('includes/profile-webmcp-external-v120.php');
 const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const endpoint=read('api/profile-webmcp-external-v120.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const runtime=read('profile-webmcp-external-v120.js');
 const sitesApi=read('api/agent-radar-sites.php');
 const sitesUi=read('profile-agent-radar-sites.js');
@@ -30,10 +31,11 @@ assert.doesNotMatch(endpoint,/HTTP_AUTHORIZATION|Bearer\s|connected_site_auth/i,
 assert.match(endpoint,/REQUEST_METHOD.*OPTIONS/s,'CORS preflight must be supported');
 assert.match(endpoint,/PROPERTY_MISMATCH/);
 assert.match(endpoint,/PROFILE_MISMATCH/);
-assert.match(endpoint,/vp3_profile_agent_public_message_service_v110/,'external Agent chat must reuse canonical public service');
-assert.match(endpoint,/vp3_profile_webmcp_scheduling_confirm_v150/,'external gateway may execute scheduling only through governed adapter');
-assert.match(endpoint,/vp3_profile_webmcp_commerce_checkout_confirm_v160/,'external gateway may execute commerce only through governed adapter');
-assert.doesNotMatch(endpoint,/agent_commerce_mark_paid_v800|agent_commerce_refund_v800|claim_from_tray/,'external gateway must still exclude direct payment, provider refund, and reward authority');
+assert.match(router,/vp3_profile_agent_public_message_service_v110/,'external Agent chat must reuse canonical public service');
+assert.match(router,/vp3_profile_webmcp_scheduling_confirm_v150/,'external gateway may execute scheduling only through governed adapter');
+assert.match(router,/vp3_profile_webmcp_commerce_checkout_confirm_v160/,'external gateway may execute commerce only through governed adapter');
+assert.match(endpoint,/vp3_profile_webmcp_dispatch_v191/,'external gateway must use the unified tool router');
+assert.doesNotMatch(router,/agent_commerce_mark_paid_v800|agent_commerce_refund_v800|claim_from_tray/,'unified router must still exclude direct payment, provider refund, and reward authority');
 
 for(const name of ['vp3.profile.capabilities.get','vp3.profile.get','vp3.intent.resolve','vp3.agent.get']){
   assert.match(runtime,new RegExp(name.replaceAll('.','\\.')),'external trusted runtime '+name);
