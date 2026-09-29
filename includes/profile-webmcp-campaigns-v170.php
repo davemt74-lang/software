@@ -43,7 +43,16 @@ function vp3_profile_webmcp_campaigns_tool_catalog_v170(): array
             'title'=>'Confirm Campaign participation',
             'description'=>'Complete the exact prepared Campaign participation through the canonical Campaigns & Rewards runtime.',
             'capability'=>'campaigns',
-            'input_schema'=>vp3_profile_webmcp_confirmation_schema_v150(),
+            'input_schema'=>[
+                'type'=>'object',
+                'properties'=>[
+                    'confirmation_token'=>['type'=>'string','minLength'=>20,'maxLength'=>2048],
+                    'idempotency_key'=>['type'=>'string','minLength'=>8,'maxLength'=>96],
+                    'intent'=>['type'=>'object','additionalProperties'=>true],
+                ],
+                'required'=>['confirmation_token','idempotency_key','intent'],
+                'additionalProperties'=>false,
+            ],
             'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>true,'debugging'=>false],
         ],
     ];
