@@ -143,11 +143,27 @@ function vp3_analytics_dashboard_state(PDO $pdo,array $user,int $propertyId=0,in
       FROM vp3_radar_events e INNER JOIN vp3_radar_properties p ON p.id=e.property_id LEFT JOIN vp3_agent_contacts c ON c.id=e.agent_contact_id
       WHERE e.owner_user_id=? AND e.occurred_at>={$since}{$eventScope} ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1200");
     $eventStmt->execute(array_merge([$uid],$eventParams));$eventRows=$eventStmt->fetchAll()?:[];
-    $conversions=0;$customEvents=0;$devices=[];$browsers=[];$recent=[];
+    $conversions=0;$customEvents=0;$webmcpCalls=0;$webmcpCompleted=0;$webmcpFailed=0;$webmcpDenied=0;$devices=[];$browsers=[];$recent=[];$webmcpActivity=[];
     foreach($eventRows as $row){
         $details=json_decode((string)($row['details_json']??''),true);if(!is_array($details))$details=[];
-        if((string)$row['event_type']==='analytics_event'){
+        $eventType=(string)$row['event_type'];
+        if($eventType==='analytics_event'){
             $customEvents++;$eventName=(string)($details['event_name']??'');if(in_array($eventName,VP3_ANALYTICS_CONVERSION_EVENTS,true)||str_starts_with($eventName,'conversion.'))$conversions++;
+        }
+        if(str_starts_with($eventType,'webmcp_')){
+            if($eventType==='webmcp_tool_called')$webmcpCalls++;
+            elseif($eventType==='webmcp_tool_completed')$webmcpCompleted++;
+            elseif($eventType==='webmcp_tool_failed')$webmcpFailed++;
+            elseif($eventType==='webmcp_tool_denied')$webmcpDenied++;
+            if(count($webmcpActivity)<80)$webmcpActivity[]=[
+                'id'=>(int)$row['id'],'event_name'=>$eventType,'property_label'=>(string)$row['property_label'],
+                'property_type'=>(string)$row['property_type'],'agent_contact_id'=>$row['agent_contact_id']!==null?(int)$row['agent_contact_id']:null,
+                'display_name'=>(string)($row['display_name']??''),'operator_name'=>(string)($row['operator_name']??''),
+                'surface'=>(string)($details['surface']??''),'tool'=>(string)($details['tool']??''),'status'=>(string)($details['status']??''),
+                'interaction_id'=>(string)($details['interaction_id']??''),'attribution_origin'=>(string)($details['attribution_origin']??''),
+                'referral_id'=>(int)($details['referral_id']??0)?:null,'duration_ms'=>(int)($details['duration_ms']??0),
+                'risk_score'=>(int)$row['risk_score'],'occurred_at'=>(string)$row['occurred_at'],
+            ];
         }
         if((string)($details['collector']??'')==='browser_analytics'){
             $device=(string)($details['device_type']??'Other');$browser=(string)($details['browser_family']??'Other');$devices[$device]=($devices[$device]??0)+1;$browsers[$browser]=($browsers[$browser]??0)+1;
@@ -157,6 +173,9 @@ function vp3_analytics_dashboard_state(PDO $pdo,array $user,int $propertyId=0,in
             'property_label'=>(string)$row['property_label'],'property_type'=>(string)$row['property_type'],'agent_contact_id'=>$row['agent_contact_id']!==null?(int)$row['agent_contact_id']:null,
             'display_name'=>(string)($row['display_name']??''),'operator_name'=>(string)($row['operator_name']??''),'visitor_class'=>(string)($row['visitor_class']??''),
             'risk_score'=>(int)$row['risk_score'],'severity'=>(string)$row['severity'],'event_name'=>(string)($details['event_name']??''),'value'=>$details['value']??null,
+            'surface'=>(string)($details['surface']??''),'tool'=>(string)($details['tool']??''),'webmcp_status'=>(string)($details['status']??''),
+            'interaction_id'=>(string)($details['interaction_id']??''),'attribution_origin'=>(string)($details['attribution_origin']??''),
+            'referral_id'=>(int)($details['referral_id']??0)?:null,'duration_ms'=>(int)($details['duration_ms']??0),
         ];
     }
     arsort($devices);arsort($browsers);
@@ -184,10 +203,11 @@ function vp3_analytics_dashboard_state(PDO $pdo,array $user,int $propertyId=0,in
             'human_sessions'=>$humanSessions,'agent_sessions'=>$agentSessions,'sessions'=>$humanSessions+$agentSessions,
             'human_page_views'=>$humanViews,'agent_page_views'=>$agentViews,'page_views'=>$humanViews+$agentViews,
             'conversions'=>$conversions,'custom_events'=>$customEvents,'high_risk_events'=>count(array_filter($eventRows,static fn(array $r):bool=>(int)$r['risk_score']>=70)),
+            'webmcp_tool_calls'=>$webmcpCalls,'webmcp_completed'=>$webmcpCompleted,'webmcp_failed'=>$webmcpFailed,'webmcp_denied'=>$webmcpDenied,
         ],
         'timeline'=>array_values($timelineMap),'top_pages'=>$topPages,'referrers'=>$referrers,
         'devices'=>array_map(static fn(string $k,int $v):array=>['label'=>$k,'count'=>$v],array_keys($devices),array_values($devices)),
         'browsers'=>array_map(static fn(string $k,int $v):array=>['label'=>$k,'count'=>$v],array_keys($browsers),array_values($browsers)),
-        'events'=>$recent,'property_stats'=>$propertyRows,
+        'events'=>$recent,'webmcp_activity'=>$webmcpActivity,'property_stats'=>$propertyRows,
     ];
 }
