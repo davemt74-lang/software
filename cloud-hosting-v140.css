@@ -11,7 +11,7 @@
 .hosting-primary:hover,.hosting-agent-link:hover,.hosting-open-site:hover{background:#eef1f4}
 .hosting-alert{padding:12px 14px;border-radius:6px;border:1px solid var(--hosting-border);background:#fff;font-size:.78rem}
 .hosting-alert.success{border-color:#b9d5c4;color:var(--hosting-success);background:#f6fbf7}.hosting-alert.error{border-color:#e2bcbc;color:var(--hosting-danger);background:#fff8f8}
-.hosting-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.hosting-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
 .hosting-metrics article{background:#fff;border:1px solid var(--hosting-border);border-radius:7px;padding:14px;display:grid;gap:4px}.hosting-metrics span{font-size:.66rem;color:var(--hosting-muted);font-weight:700}.hosting-metrics strong{font-size:.9rem;color:var(--hosting-text)}
 .hosting-create{padding:20px}.hosting-section-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:15px}.hosting-section-head h2{margin:3px 0 6px;font-size:1.18rem;color:var(--hosting-text)}
 .hosting-create-form{display:grid;grid-template-columns:1.1fr 1.2fr .7fr auto;gap:10px;align-items:end}.hosting-create-form label{display:grid;gap:5px}.hosting-create-form label span{font-size:.66rem;font-weight:800;color:#59616a}.hosting-create-form input,.hosting-create-form select{border:1px solid #cfd4da;background:#fff;border-radius:5px;padding:10px;font:inherit;color:var(--hosting-text)}
