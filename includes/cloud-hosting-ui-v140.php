@@ -167,6 +167,7 @@ function vp3_cloud_hosting_ui_v140_execute(
     $action=trim($action);
     $consequential=[
         'site.activate','site.suspend','dns.provision','deployment.deploy','deployment.rollback',
+        'deployment.promote','deployment.prune',
         'domain.canonical','domain.redirect','domain.detach','domain.migrate'
     ];
     if(in_array($action,$consequential,true)&&((string)($input['confirmed']??''))!=='1'){
@@ -222,6 +223,18 @@ function vp3_cloud_hosting_ui_v140_execute(
         return ['action'=>$action,'result'=>$result,'site'=>vp3_cloud_hosting_ui_v140_site_card(vp3_cloud_hosting_site_v100($siteId,$uid,$pdo)??$site,$pdo)];
     }
 
+    if($action==='deployment.promote'){
+        if(!function_exists('vp3_cloud_hosting_releases_v220_promote'))throw new RuntimeException('Release history runtime is unavailable.');
+        $result=vp3_cloud_hosting_releases_v220_promote($site,(string)($input['release_id']??''),$requestKey,$uid,$remote,$pdo);
+        return ['action'=>$action,'result'=>$result,'site'=>vp3_cloud_hosting_ui_v140_site_card(vp3_cloud_hosting_site_v100($siteId,$uid,$pdo)??$site,$pdo)];
+    }
+
+    if($action==='deployment.prune'){
+        if(!function_exists('vp3_cloud_hosting_releases_v220_prune'))throw new RuntimeException('Release history runtime is unavailable.');
+        $result=vp3_cloud_hosting_releases_v220_prune($site,(int)($input['keep']??5),$requestKey,$uid,$remote,$pdo);
+        return ['action'=>$action,'result'=>$result,'site'=>vp3_cloud_hosting_ui_v140_site_card(vp3_cloud_hosting_site_v100($siteId,$uid,$pdo)??$site,$pdo)];
+    }
+
     if(str_starts_with($action,'domain.')){
         if(!function_exists('vp3_cloud_hosting_domains_v200_find'))throw new RuntimeException('Custom-domain runtime is unavailable.');
         if($action==='domain.attach'){
@@ -269,6 +282,9 @@ function vp3_cloud_hosting_ui_v140_capability(): array
         'server_enforced_consequential_confirmation'=>true,
         'reconciliation'=>true,
         'rollback'=>true,
+        'release_history'=>true,
+        'historical_release_promotion'=>true,
+        'release_retention'=>true,
         'agent_chat_handoff'=>true,
         'custom_domain_management'=>true,
         'custom_domain_canonical_policy'=>true,
