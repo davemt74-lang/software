@@ -551,7 +551,7 @@ function vp3_cloud_hosting_v120_update_deployment(
     $transferId=mb_substr((string)($response['transfer_id']??''),0,100);
     $releaseId=trim((string)($response['release_id']??''));
     $terminal=in_array($state,['deployed','rolled_back','failed'],true);
-    $stmt=$pdo->prepare('UPDATE cloud_hosting_deployments SET state=?,transfer_id=IF(? <> '', ?, transfer_id),release_id=?,response_json=?,error_code=?,error_message=?,completed_at=IF(?,NOW(),completed_at) WHERE id=?');
+    $stmt=$pdo->prepare("UPDATE cloud_hosting_deployments SET state=?,transfer_id=IF(? <> '', ?, transfer_id),release_id=?,response_json=?,error_code=?,error_message=?,completed_at=IF(?,NOW(),completed_at) WHERE id=?");
     $stmt->execute([
         $state,$transferId,$transferId,$releaseId!==''?$releaseId:null,
         json_encode($public,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
