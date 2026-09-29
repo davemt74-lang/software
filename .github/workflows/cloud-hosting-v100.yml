@@ -9,6 +9,7 @@ on:
       - "includes/cloud-hosting-agent-v130.php"
       - "includes/cloud-hosting-ui-v140.php"
       - "includes/cloud-hosting-release-v150.php"
+      - "includes/cloud-hosting-domains-v200.php"
       - "hosting.php"
       - "cloud-hosting-v140.css"
       - "cloud-hosting-v140.js"
@@ -25,6 +26,7 @@ on:
       - "tests/cloud-hosting-v130-*"
       - "tests/cloud-hosting-v140-*"
       - "tests/cloud-hosting-v150-*"
+      - "tests/cloud-hosting-v200-*"
       - ".github/workflows/cloud-hosting-v100.yml"
   push:
     branches:
@@ -36,6 +38,7 @@ on:
       - "includes/cloud-hosting-agent-v130.php"
       - "includes/cloud-hosting-ui-v140.php"
       - "includes/cloud-hosting-release-v150.php"
+      - "includes/cloud-hosting-domains-v200.php"
       - "hosting.php"
       - "cloud-hosting-v140.css"
       - "cloud-hosting-v140.js"
@@ -52,6 +55,7 @@ on:
       - "tests/cloud-hosting-v130-*"
       - "tests/cloud-hosting-v140-*"
       - "tests/cloud-hosting-v150-*"
+      - "tests/cloud-hosting-v200-*"
       - ".github/workflows/cloud-hosting-v100.yml"
 
 concurrency:
@@ -101,6 +105,8 @@ jobs:
           php -l includes/cloud-hosting-agent-v130.php
           php -l includes/cloud-hosting-ui-v140.php
           php -l includes/cloud-hosting-release-v150.php
+          php -l includes/cloud-hosting-domains-v200.php
+          php -l tests/cloud-hosting-v200-mysql.php
           php -l tests/cloud-hosting-v150-acceptance.php
           php -l hosting.php
           php -l tests/cloud-hosting-v140-mysql.php
@@ -126,6 +132,8 @@ jobs:
         run: node tests/cloud-hosting-v140-contract.mjs
       - name: Cloud Hosting Section 6 release contract
         run: node tests/cloud-hosting-v150-contract.mjs
+      - name: Cloud Hosting V2 Section 1 custom-domain contract
+        run: node tests/cloud-hosting-v200-contract.mjs
       - name: Credential key preservation regression
         run: node tests/ai-credential-key-preservation-v2453.mjs
       - name: Existing package entitlement composition regression
@@ -146,3 +154,4 @@ jobs:
           php tests/cloud-hosting-v130-mysql.php
           php tests/cloud-hosting-v140-mysql.php
           php tests/cloud-hosting-v150-acceptance.php
+          php tests/cloud-hosting-v200-mysql.php
