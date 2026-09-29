@@ -8,7 +8,9 @@ function deepFreeze(value) {
 }
 
 const REWARDS_CATALOG_V180=deepFreeze({
-  'vp3.rewards.wallet.get':{title:'Get my Reward Wallet',description:'Return the signed-in viewer\'s safe Reward Inbox, Sent, and Claimed projections.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:false,consequentialHint:false,debugging:false}}
+  'vp3.rewards.wallet.get':{title:'Get my Reward Wallet',description:'Return the signed-in viewer\'s safe Reward Inbox, Sent, and Claimed projections.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:false,consequentialHint:false,debugging:false}},
+  'vp3.rewards.claim.prepare':{title:'Prepare Reward claim handoff',description:'Validate an Inbox Reward and prepare an authenticated redemption handoff without revealing credentials.',inputSchema:{type:'object',properties:{reward_public_id:{type:'string',minLength:1,maxLength:100}},required:['reward_public_id'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false,consequentialHint:false,debugging:false}},
+  'vp3.rewards.claim.confirm':{title:'Confirm Reward claim handoff',description:'Commit the prepared handoff to the existing authenticated Reward Inbox flow. This does not redeem the Reward.',inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false,consequentialHint:true,debugging:false}}
 });
 
 const CAMPAIGNS_CATALOG_V170=deepFreeze({
