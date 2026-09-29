@@ -221,25 +221,26 @@ class ExternalRuntime{
     const startedAt=Date.now();
     try{
       this.onEvent({event:'tool_called',tool:name,interaction_id:interactionId});
+      const payload={
+        manifest_version:this.manifest.manifest_version,
+        surface:'external_site',
+        property_id:this.manifest.property_id,
+        profile_username:this.manifest.profile_username,
+        tool:name,
+        input:args,
+        telemetry:{
+          webmcp_session_id:this.webmcpSessionId,
+          interaction_id:interactionId,
+          agent_referral:referralTokenV130()
+        }
+      };
+      if(isChatToolV140(name))payload.chat_grant=this.chatGrant;
       const response=await this.fetchImpl(this.gatewayUrl(),{
         method:'POST',
         credentials:'omit',
         cache:'no-store',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          manifest_version:this.manifest.manifest_version,
-          surface:'external_site',
-          property_id:this.manifest.property_id,
-          profile_username:this.manifest.profile_username,
-          tool:name,
-          input:args,
-          chat_grant:isChatToolV140(name)?this.chatGrant:'',
-          telemetry:{
-            webmcp_session_id:this.webmcpSessionId,
-            interaction_id:interactionId,
-            agent_referral:referralTokenV130()
-          }
-        }),
+        body:JSON.stringify(payload),
         signal:options?.signal
       });
       const data=await response.json().catch(()=>null);
