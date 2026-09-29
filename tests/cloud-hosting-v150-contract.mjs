@@ -30,7 +30,7 @@ assert.match(release,/raw_cpanel_secret_exposed'=>false/);
 assert.match(release,/route_token_exposed'=>false/);
 assert.match(release,/cloud_edge_private_key_exposed'=>false/);
 assert.doesNotMatch(release,/CREATE TABLE|INSERT INTO|UPDATE cloud_hosting|DELETE FROM/);
-assert.doesNotMatch(release,/hosting_cpanel_api_token|route_token_enc|private_key/);
+assert.doesNotMatch(release,/hosting_cpanel_api_token|route_token_enc|BEGIN PRIVATE KEY|private_key\s+(?:LONGTEXT|TEXT|VARCHAR)|certificate_key\s+(?:LONGTEXT|TEXT|VARCHAR)/);
 
 assert.match(acceptance,/cloud-hosting-v140-mysql\.php/);
 assert.match(acceptance,/cloud-hosting-agent-v130\.php/);
