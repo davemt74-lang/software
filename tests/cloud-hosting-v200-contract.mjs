@@ -36,6 +36,9 @@ assert.match(domains,/vp3_cloud_hosting_domains_v200_edge_projection/);
 assert.match(domains,/upstream_hostname/);
 assert.match(domains,/redirect_to/);
 assert.match(domains,/cloud_edge_rewrites_upstream_host'=>true/);
+assert.match(domains,/home_server_revision_unchanged_by_aliases'=>true/);
+assert.match(domains,/active_tls_requires_future_expiry'=>true/);
+assert.match(domains,/certificate is expired/);
 assert.match(domains,/home_server_alias_engine'=>false/);
 assert.match(domains,/home_server_revision_unchanged_by_aliases'=>true/);
 assert.doesNotMatch(domains,/UPDATE cloud_hosting_sites SET desired_revision=desired_revision\+1/);
@@ -58,6 +61,7 @@ assert.match(agent,/'domain\.canonical'/);
 assert.match(agent,/'domain\.detach'/);
 assert.match(agent,/verify custom-domain ownership\/routing read-only/);
 assert.match(agent,/vp3_cloud_hosting_domains_v200_attach/);
+assert.match(agent,/dns_instructions_available_in_hosting_ui/);
 assert.match(agent,/vp3_cloud_hosting_domains_v200_set_canonical/);
 assert.match(agent,/vp3_cloud_hosting_domains_v200_detach/);
 
