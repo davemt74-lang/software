@@ -5,6 +5,7 @@ const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const adapter=read('includes/profile-webmcp-campaigns-v170.php');
 const catalog=read('includes/profile-webmcp-v100.php');
 const nativeApi=read('api/profile-webmcp-v100.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
 const externalApi=read('api/profile-webmcp-external-v120.php');
 const nativeRuntime=read('profile-webmcp-v100.js');
@@ -32,8 +33,8 @@ assert.doesNotMatch(adapter,/inventory_limit|remaining_quantity|internal_cost_mi
 assert.match(catalog,/vp3_profile_webmcp_campaigns_tool_catalog_v170/,'main catalog must merge Campaigns adapter');
 assert.match(nativeApi,/profile-webmcp-campaigns-v170\.php/);
 assert.match(externalApi,/profile-webmcp-campaigns-v170\.php/);
-assert.match(nativeApi,/vp3_profile_webmcp_campaigns_list_v170/);
-assert.match(externalApi,/vp3_profile_webmcp_campaign_eligibility_v170/);
+assert.match(router,/vp3_profile_webmcp_campaigns_list_v170/);
+assert.match(router,/vp3_profile_webmcp_campaign_eligibility_v170/);
 assert.match(externalLayer,/campaigns_enabled'\s*=>\s*\$campaignsEnabled/);
 assert.match(externalRuntime,/campaigns_enabled===true/);
 assert.match(externalRuntime,/credentials:'omit'/);
