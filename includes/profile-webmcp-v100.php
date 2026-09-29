@@ -192,7 +192,10 @@ function vp3_profile_webmcp_capabilities_v100(PDO $pdo, array $profile, ?array $
         $agent = function_exists('profile_active_agent') ? profile_active_agent($pdo, $profile) : null;
         $entitled = !$ownerUser || !function_exists('personal_capability_has_v242')
             ? true
-            : personal_capability_has_v242('profile_chat.access', $ownerUser);
+            : (
+                personal_capability_has_v242('profile_agent.access', $ownerUser)
+                && personal_capability_has_v242('profile_chat.access', $ownerUser)
+            );
         $profileAgent = (bool)$agent && $entitled && ($viewerId<1 || $viewerId!==$ownerUserId);
     } catch (Throwable $e) {
         $profileAgent = false;
