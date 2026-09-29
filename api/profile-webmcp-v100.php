@@ -237,6 +237,9 @@ try {
     if ($tool === 'vp3.rewards.wallet.get') {
         vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_rewards_wallet_v180($pdo,$viewer));
     }
+    if ($tool === 'vp3.reward.get') {
+        vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_reward_get_v181($pdo,$viewer,$args));
+    }
     if (str_starts_with($tool, 'vp3.agent.')) {
         $agentCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$viewer);
         if ($tool === 'vp3.agent.get') {
