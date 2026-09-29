@@ -280,6 +280,9 @@ function vp3_cloud_hosting_normalize_cpanel_server_v100(string $value): string
     if(!is_array($parts)||strtolower((string)($parts['scheme']??''))!=='https')throw new RuntimeException('cPanel API server must use HTTPS.');
     $host=strtolower(trim((string)($parts['host']??'')));
     if($host===''||!preg_match('/^[a-z0-9.-]+$/',$host))throw new RuntimeException('Enter a valid cPanel server hostname.');
+    if(isset($parts['user'])||isset($parts['pass'])||isset($parts['query'])||isset($parts['fragment'])||(!empty($parts['path'])&&$parts['path']!=='/')){
+        throw new RuntimeException('Enter only the cPanel HTTPS server address, without credentials, paths, query strings, or fragments.');
+    }
     $port=(int)($parts['port']??2083);
     if($port!==2083)throw new RuntimeException('cPanel UAPI must use the secure account port 2083.');
     return 'https://'.$host.':2083';
