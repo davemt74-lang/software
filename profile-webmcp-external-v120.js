@@ -3,6 +3,22 @@
 
 const BUILD='profile-webmcp-external-v120-20260928';
 const MANIFEST='vp3.profile.webmcp.v1';
+const RELEASE='profile-webmcp-release-v196-20260929';
+const NEGOTIATION='vp3.profile.webmcp.negotiation.v1';
+
+function clientVersionsV200(){
+  return {negotiation_contract:NEGOTIATION,manifest_versions:[MANIFEST],release_versions:[RELEASE],runtime_build:BUILD};
+}
+function protocolCompatibleV200(manifest){
+  const protocol=manifest?.protocol;
+  if(!protocol)return true;
+  return String(protocol.contract||'')===NEGOTIATION
+    &&String(protocol.surface||'')==='external_site'
+    &&Array.isArray(protocol.supported_manifest_versions)&&protocol.supported_manifest_versions.includes(MANIFEST)
+    &&Array.isArray(protocol.supported_release_versions)&&protocol.supported_release_versions.includes(RELEASE)
+    &&String(protocol.current_runtime_build||'')===BUILD
+    &&protocol.downgrade_consequential_protection===false;
+}
 
 function deepFreeze(value){
   if(!value||typeof value!=='object'||Object.isFrozen(value))return value;
@@ -200,6 +216,10 @@ class ExternalRuntime{
     const u=new URL(this.endpoint,global.location?.href||'https://vp3.invalid/');
     u.searchParams.set('key',this.publicKey);
     u.searchParams.set('session',this.webmcpSessionId);
+    u.searchParams.set('manifest_versions',MANIFEST);
+    u.searchParams.set('release_versions',RELEASE);
+    u.searchParams.set('runtime_build',BUILD);
+    u.searchParams.set('negotiation_contract',NEGOTIATION);
     return u.href;
   }
 
@@ -224,7 +244,7 @@ class ExternalRuntime{
     });
     const data=await response.json().catch(()=>null);
     if(!response.ok||data?.ok!==true||!data?.manifest)throw new Error(data?.error?.message||'Connected-site WebMCP manifest could not be loaded.');
-    if(data.manifest.manifest_version!==MANIFEST||data.manifest.surface!=='external_site')throw new Error('Connected-site WebMCP manifest is invalid.');
+    if(data.manifest.manifest_version!==MANIFEST||data.manifest.surface!=='external_site'||!protocolCompatibleV200(data.manifest))throw new Error('Connected-site WebMCP manifest is invalid or incompatible.');
     this.manifest=data.manifest;
     this.chatGrant=String(data.chat_grant||'');
     const expires=Date.parse(String(data.chat_grant_expires_at||''));
@@ -315,6 +335,7 @@ class ExternalRuntime{
       this.onEvent({event:'tool_called',tool:name,interaction_id:interactionId});
       const payload={
         manifest_version:this.manifest.manifest_version,
+        client_versions:clientVersionsV200(),
         surface:'external_site',
         property_id:this.manifest.property_id,
         profile_username:this.manifest.profile_username,
@@ -400,6 +421,8 @@ async function bootFromScript(script){
 global.VP3ProfileWebMCPExternalV120=deepFreeze({
   BUILD,
   MANIFEST,
+  RELEASE,
+  NEGOTIATION,
   CATALOG,
   ExternalRuntime,
   bootFromScript,

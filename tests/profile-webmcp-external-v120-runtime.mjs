@@ -49,6 +49,10 @@ assert.equal(mc.tools.has('vp3.booking.prepare'),false,'future transaction tool 
 assert.equal(calls[0].options.credentials,'omit');
 assert.equal(calls[0].options.cache,'no-store');
 assert.match(calls[0].url,new RegExp('key='+key));
+assert.match(calls[0].url,/manifest_versions=vp3.profile.webmcp.v1/);
+assert.match(calls[0].url,/release_versions=profile-webmcp-release-v196-20260929/);
+assert.match(calls[0].url,/runtime_build=profile-webmcp-external-v120-20260928/);
+assert.match(calls[0].url,/negotiation_contract=vp3.profile.webmcp.negotiation.v1/);
 
 const result=await mc.tools.get('vp3.profile.get').execute({},{});
 assert.equal(result.ok,true);
@@ -57,7 +61,11 @@ assert.equal(calls[1].options.cache,'no-store');
 assert.deepEqual(calls[1].options.headers,{'Content-Type':'application/json'});
 assert.equal('Authorization' in calls[1].options.headers,false);
 const body=JSON.parse(calls[1].options.body);
-assert.deepEqual(Object.keys(body).sort(),['input','manifest_version','profile_username','property_id','surface','telemetry','tool']);
+assert.deepEqual(Object.keys(body).sort(),['client_versions','input','manifest_version','profile_username','property_id','surface','telemetry','tool']);
+assert.equal(body.client_versions.negotiation_contract,'vp3.profile.webmcp.negotiation.v1');
+assert.deepEqual(body.client_versions.manifest_versions,['vp3.profile.webmcp.v1']);
+assert.deepEqual(body.client_versions.release_versions,['profile-webmcp-release-v196-20260929']);
+assert.equal(body.client_versions.runtime_build,'profile-webmcp-external-v120-20260928');
 assert.match(body.telemetry.webmcp_session_id,/^[A-Za-z0-9_-]{8,96}$/);
 assert.match(body.telemetry.interaction_id,/^[A-Za-z0-9_-]{8,96}$/);
 assert.equal(body.telemetry.agent_referral,'');

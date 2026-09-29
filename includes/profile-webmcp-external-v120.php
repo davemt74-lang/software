@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/profile-webmcp-capability-resolver-v190.php';
+require_once __DIR__.'/profile-webmcp-release-v196.php';
+require_once __DIR__.'/profile-webmcp-negotiation-v200.php';
 
 const VP3_PROFILE_WEBMCP_EXTERNAL_V120='profile-webmcp-external-v120-20260928';
 
@@ -106,6 +108,7 @@ function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,arra
             'version'=>$resolution['resolver_version'],
             'execution_allowed'=>$resolution['execution_allowed'],
         ],
+        'protocol'=>vp3_profile_webmcp_protocol_descriptor_v200('external_site'),
         'external'=>[
             'read_only'=>!$chatEnabled&&!$schedulingEnabled&&!$commerceEnabled&&!$campaignsEnabled,
             'stateful_profile_agent'=>$chatEnabled,
