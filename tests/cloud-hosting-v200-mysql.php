@@ -16,6 +16,8 @@ vp3_cloud_hosting_domains_v200_ensure_schema($testPdo);
 $site=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
 if(!$site)throw new RuntimeException('V1 fixture site missing.');
 
+$homeRevisionBeforeDomains=(int)$site['desired_revision'];
+
 $attached=vp3_cloud_hosting_domains_v200_attach($site,$owner,'www.customer-example.com',1,$testPdo);
 $domain=(array)$attached['domain'];
 $instructions=(array)$attached['instructions'];
@@ -73,6 +75,21 @@ $routed=vp3_cloud_hosting_domains_v200_verify_routing(
     $testPdo
 );
 if(($routed['routing_state']??'')!=='verified')throw new RuntimeException('Matching CNAME did not verify routing.');
+
+try{
+    vp3_cloud_hosting_domains_v200_record_tls(
+        vp3_cloud_hosting_domains_v200_find((int)$domain['id'],1,$testPdo),
+        'active',
+        (new DateTimeImmutable('-1 day'))->format(DateTimeInterface::ATOM),
+        str_repeat('f',64),
+        1,
+        $testPdo
+    );
+    throw new RuntimeException('Expired custom-domain certificate became active.');
+}catch(RuntimeException $e){
+    if($e->getMessage()==='Expired custom-domain certificate became active.')throw $e;
+    if(!str_contains($e->getMessage(),'expired'))throw $e;
+}
 
 $tls=vp3_cloud_hosting_domains_v200_record_tls(
     vp3_cloud_hosting_domains_v200_find((int)$domain['id'],1,$testPdo),
@@ -165,6 +182,8 @@ $agentCode=(string)($agentPrepared['hosting_plan']['confirmation_code']??'');
 if(!preg_match('/^[A-Z2-9]{8}$/',$agentCode))throw new RuntimeException('Agent custom-domain attach did not require confirmation.');
 $agentDone=vp3_cloud_hosting_agent_v130_query('confirm hosting '.$agentCode,$owner,701,$remote,null,$testPdo);
 if(empty($agentDone['hosting_plan']['completed']))throw new RuntimeException('Agent custom-domain attach did not complete.');
+$agentActionRow=$testPdo->query("SELECT result_json FROM cloud_hosting_agent_actions WHERE conversation_id=701 ORDER BY id DESC LIMIT 1")->fetch();
+if(str_contains((string)($agentActionRow['result_json']??''),'vp3-verification='))throw new RuntimeException('Agent action ledger stored the plaintext custom-domain challenge.');
 $stmt=$testPdo->prepare("SELECT COUNT(*) FROM cloud_hosting_custom_domains WHERE owner_user_id=1 AND hostname='blog.customer-example.com' AND detached_at IS NULL");
 $stmt->execute();
 if((int)$stmt->fetchColumn()!==1)throw new RuntimeException('Agent custom-domain attach did not persist.');
@@ -197,11 +216,15 @@ if(($reclaimedInstructions['ownership']['value']??'')===$verificationValue)throw
 $otherProjection=vp3_cloud_hosting_domains_v200_edge_projection(2,$testPdo);
 if(count((array)$otherProjection['domains'])!==0)throw new RuntimeException('Unverified reclaimed domain entered the edge projection.');
 
+$siteAfterDomains=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
+if((int)$siteAfterDomains['desired_revision']!==$homeRevisionBeforeDomains)throw new RuntimeException('Cloud-edge alias changes incorrectly advanced HomeServer desired revision.');
+
 $cap=vp3_cloud_hosting_domains_v200_capability();
 foreach([
     'multiple_domains_per_site','dns_txt_ownership_verification','cname_or_flattening_route_verification',
     'cloud_edge_tls','canonical_domain','noncanonical_redirect_policy','domain_detach',
-    'same_account_domain_migration','cloud_edge_rewrites_upstream_host','verification_token_encrypted_at_rest'
+    'same_account_domain_migration','cloud_edge_rewrites_upstream_host','verification_token_encrypted_at_rest',
+    'active_tls_requires_future_expiry','home_server_revision_unchanged_by_aliases'
 ] as $key){
     if(empty($cap[$key]))throw new RuntimeException('Custom-domain capability missing '.$key);
 }
