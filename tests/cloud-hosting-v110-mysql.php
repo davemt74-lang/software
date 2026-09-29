@@ -110,6 +110,10 @@ $replay=vp3_cloud_hosting_v110_provision_dns($site,'dns-request-1',1,$transport)
 if(empty($replay['replayed']))throw new RuntimeException('Idempotent replay was not detected.');
 if(count($requests)!==1)throw new RuntimeException('Replay made a duplicate provider mutation.');
 
+$reuse=vp3_cloud_hosting_v110_provision_dns($site,'dns-request-2',1,$transport);
+if(empty($reuse['reused']))throw new RuntimeException('Existing DNS route was not safely reused for a new request key.');
+if(count($requests)!==1)throw new RuntimeException('Existing route reuse made a duplicate provider mutation.');
+
 try{
     vp3_cloud_hosting_v110_begin_operation($testPdo,(int)$site['id'],'dns-request-1','dns.other');
     throw new RuntimeException('Cross-operation idempotency reuse was accepted.');
