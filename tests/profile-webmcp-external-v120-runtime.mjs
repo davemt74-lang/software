@@ -57,10 +57,16 @@ assert.equal(calls[1].options.cache,'no-store');
 assert.deepEqual(calls[1].options.headers,{'Content-Type':'application/json'});
 assert.equal('Authorization' in calls[1].options.headers,false);
 const body=JSON.parse(calls[1].options.body);
-assert.deepEqual(Object.keys(body).sort(),['input','manifest_version','profile_username','property_id','surface','tool']);
+assert.deepEqual(Object.keys(body).sort(),['input','manifest_version','profile_username','property_id','surface','telemetry','tool']);
+assert.match(body.telemetry.webmcp_session_id,/^[A-Za-z0-9_-]{8,96}$/);
+assert.match(body.telemetry.interaction_id,/^[A-Za-z0-9_-]{8,96}$/);
+assert.equal(body.telemetry.agent_referral,'');
 assert.equal(body.surface,'external_site');
 assert.equal(body.property_id,44);
 assert.equal('key' in body,false,'public property key remains URL-scoped, not tool input');
+assert.equal('telemetry' in body.input,false,'transport telemetry must stay outside tool input');
+assert.ok(events.some(e=>e.event==='tool_called'));
+assert.ok(events.some(e=>e.event==='tool_completed'));
 
 const controller=new AbortController(); controller.abort();
 const cancelled=await mc.tools.get('vp3.profile.get').execute({}, {signal:controller.signal});
