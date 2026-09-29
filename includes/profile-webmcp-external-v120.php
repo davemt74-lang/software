@@ -5,38 +5,25 @@ const VP3_PROFILE_WEBMCP_EXTERNAL_V120='profile-webmcp-external-v120-20260928';
 
 function vp3_profile_webmcp_external_tool_names_v120(bool $statefulChat=false,bool $scheduling=false,bool $commerce=false,bool $campaigns=false): array
 {
-    $tools=[
-        'vp3.profile.capabilities.get',
-        'vp3.profile.get',
-        'vp3.intent.resolve',
-        'vp3.agent.get',
+    $capabilities=[
+        'profile'=>true,
+        'profile_agent'=>$statefulChat,
+        'booking'=>$scheduling,
+        'commerce'=>$commerce,
+        'campaigns'=>$campaigns,
+        'rewards'=>false,
+        'social'=>false,
+        'messaging'=>false,
     ];
-    if($statefulChat){
-        $tools[]='vp3.agent.chat.start';
-        $tools[]='vp3.agent.conversation.get';
-        $tools[]='vp3.agent.message.send';
-        $tools[]='vp3.agent.owner_handoff.request';
-    }
-    if($scheduling){
-        foreach([
-            'vp3.booking.options.list','vp3.booking.availability.list','vp3.booking.prepare','vp3.booking.confirm',
-            'vp3.booking.get','vp3.booking.reschedule.prepare','vp3.booking.reschedule.confirm',
-            'vp3.booking.cancel.prepare','vp3.booking.cancel.confirm'
-        ] as $tool)$tools[]=$tool;
-    }
-    if($commerce){
-        foreach([
-            'vp3.commerce.products.list','vp3.commerce.product.get','vp3.commerce.checkout.prepare','vp3.commerce.checkout.confirm',
-            'vp3.commerce.order.get','vp3.commerce.receipt.get','vp3.commerce.delivery.get','vp3.commerce.refund.status',
-            'vp3.commerce.refund.prepare','vp3.commerce.refund.confirm'
-        ] as $tool)$tools[]=$tool;
-    }
-    if($campaigns){
-        foreach(['vp3.campaigns.list','vp3.campaign.get','vp3.campaign.eligibility.get','vp3.campaign.participation.prepare','vp3.campaign.participation.confirm','vp3.campaign.participation.get'] as $tool)$tools[]=$tool;
-    }
-    return $tools;
+    return vp3_profile_webmcp_surface_candidate_tools_v190('external_site',$capabilities,[
+        'features'=>[
+            'stateful_chat'=>$statefulChat,
+            'scheduling'=>$scheduling,
+            'commerce'=>$commerce,
+            'campaigns'=>$campaigns,
+        ],
+    ])??[];
 }
-
 function vp3_profile_webmcp_external_origin_v120(array $property,string $origin): string
 {
     $origin=trim($origin);
@@ -89,20 +76,20 @@ function vp3_profile_webmcp_external_agent_v120(PDO $pdo,array $profile): ?array
 
 function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,array $profile,bool $statefulChat=false,bool $scheduling=false,bool $commerce=false,bool $campaigns=false): array
 {
-    $capabilities=vp3_profile_webmcp_capabilities_v100($pdo,$profile,null);
+    $resolution=vp3_profile_webmcp_resolve_capabilities_v190($pdo,$profile,null,[
+        'surface'=>'external_site',
+        'features'=>[
+            'stateful_chat'=>$statefulChat,
+            'scheduling'=>$scheduling,
+            'commerce'=>$commerce,
+            'campaigns'=>$campaigns,
+        ],
+    ]);
+    $capabilities=$resolution['capabilities'];
     $chatEnabled=$statefulChat&&!empty($capabilities['profile_agent']);
     $schedulingEnabled=$scheduling&&!empty($capabilities['booking']);
     $commerceEnabled=$commerce&&!empty($capabilities['commerce']);
     $campaignsEnabled=$campaigns&&!empty($capabilities['campaigns']);
-    $catalog=vp3_profile_webmcp_tool_catalog_v100();
-    $external=array_flip(vp3_profile_webmcp_external_tool_names_v120($chatEnabled,$schedulingEnabled,$commerceEnabled,$campaignsEnabled));
-    $allowed=[];
-    foreach($catalog as $name=>$tool){
-        if(!isset($external[$name]))continue;
-        $capability=(string)($tool['capability']??'');
-        if(($capabilities[$capability]??false)===true&&vp3_profile_webmcp_tool_runtime_ready_v150($pdo,$name))$allowed[]=$name;
-    }
-    sort($allowed);
     return [
         'manifest_version'=>VP3_PROFILE_WEBMCP_MANIFEST_V100,
         'surface'=>'external_site',
@@ -110,10 +97,11 @@ function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,arra
         'property_domain'=>(string)$property['domain'],
         'profile_username'=>(string)$profile['username'],
         'capabilities'=>$capabilities,
-        'allowed_tools'=>$allowed,
-        'session'=>[
-            'authenticated'=>false,
-            'visitor_profile_known'=>false,
+        'allowed_tools'=>$resolution['allowed_tools'],
+        'session'=>$resolution['session'],
+        'resolver'=>[
+            'version'=>$resolution['resolver_version'],
+            'execution_allowed'=>$resolution['execution_allowed'],
         ],
         'external'=>[
             'read_only'=>!$chatEnabled&&!$schedulingEnabled&&!$commerceEnabled&&!$campaignsEnabled,
@@ -126,7 +114,6 @@ function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,arra
         ],
     ];
 }
-
 function vp3_profile_webmcp_external_enrich_site_state_v120(PDO $pdo,array $user,array $state): array
 {
     if(empty($state['sites'])||!is_array($state['sites']))return $state;
