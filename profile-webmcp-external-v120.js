@@ -11,6 +11,12 @@ function deepFreeze(value){
   return value;
 }
 
+const CAMPAIGNS_CATALOG_V170=deepFreeze({
+  'vp3.campaigns.list':{title:'List public campaigns',description:'List active published Campaigns shown on this public VP3 Profile.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.campaign.get':{title:'Get public campaign',description:'Return one public Campaign with public terms, location, participation requirements, and public Rewards.',inputSchema:{type:'object',properties:{campaign_slug:{type:'string',minLength:1,maxLength:120}},required:['campaign_slug'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.campaign.eligibility.get':{title:'Get campaign participation requirements',description:'Describe public participation requirements without evaluating private CRM targeting.',inputSchema:{type:'object',properties:{campaign_slug:{type:'string',minLength:1,maxLength:120}},required:['campaign_slug'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}}
+});
+
 const COMMERCE_CATALOG_V160=deepFreeze({
   'vp3.commerce.products.list':{title:'List public products',description:'List canonical public Profile Commerce products.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
   'vp3.commerce.product.get':{title:'Get public product',description:'Return one public product, seller terms, and safe payment-provider choices.',inputSchema:{type:'object',properties:{product_slug:{type:'string',minLength:1,maxLength:80}},required:['product_slug'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
@@ -118,7 +124,7 @@ const CATALOG=deepFreeze({
     title:'Confirm booking cancellation',description:'Cancel the exact prepared booking after confirmation and idempotency validation.',
     inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
     annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
-  }  ,...COMMERCE_CATALOG_V160
+  },...COMMERCE_CATALOG_V160,...CAMPAIGNS_CATALOG_V170
 });
 
 function safeError(code,message,retryable=false){
@@ -159,6 +165,9 @@ function isSchedulingToolV150(name){
 function isCommerceToolV160(name){
   return String(name||'').startsWith('vp3.commerce.');
 }
+function isCampaignToolV170(name){
+  return String(name||'').startsWith('vp3.campaign');
+}
 
 class ExternalRuntime{
   constructor({
@@ -198,7 +207,8 @@ class ExternalRuntime{
     const chatEnabled=manifest.external.stateful_profile_agent===true&&Boolean(this.chatGrant);
     const schedulingEnabled=manifest.external.scheduling_enabled===true;
     const commerceEnabled=manifest.external.commerce_enabled===true;
-    return Object.keys(CATALOG).filter(name=>allowed.has(name)&&(!isChatToolV140(name)||chatEnabled)&&(!isSchedulingToolV150(name)||schedulingEnabled)&&(!isCommerceToolV160(name)||commerceEnabled)).sort();
+    const campaignsEnabled=manifest.external.campaigns_enabled===true;
+    return Object.keys(CATALOG).filter(name=>allowed.has(name)&&(!isChatToolV140(name)||chatEnabled)&&(!isSchedulingToolV150(name)||schedulingEnabled)&&(!isCommerceToolV160(name)||commerceEnabled)&&(!isCampaignToolV170(name)||campaignsEnabled)).sort();
   }
 
   async loadManifest(){
@@ -365,6 +375,7 @@ async function bootFromScript(script){
     chat_enabled:Boolean(runtime.manifest?.external?.stateful_profile_agent),
     scheduling_enabled:Boolean(runtime.manifest?.external?.scheduling_enabled),
     commerce_enabled:Boolean(runtime.manifest?.external?.commerce_enabled),
+    campaigns_enabled:Boolean(runtime.manifest?.external?.campaigns_enabled),
     runtime
   };
   try{
@@ -393,6 +404,7 @@ if(autoScript?.dataset?.vp3Key&&autoScript?.dataset?.vp3WebmcpAuto!=='off'){
       chat_enabled:false,
       scheduling_enabled:false,
       commerce_enabled:false,
+      campaigns_enabled:false,
       error:String(error?.message||'Connected-site WebMCP failed to start.')
     };
   });

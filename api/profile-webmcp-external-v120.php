@@ -10,6 +10,7 @@ require_once dirname(__DIR__).'/includes/profile-agent-transcription-context.php
 require_once dirname(__DIR__).'/includes/profile-webmcp-chat-v140.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-scheduling-v150.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-commerce-v160.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-campaigns-v170.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -68,7 +69,7 @@ if(!in_array($method,['GET','POST'],true)){
 try{
     $profile=vp3_profile_webmcp_external_profile_v120($pdo,$property);
     $chatAvailable=$manifestSession!==''&&vp3_profile_webmcp_external_agent_v120($pdo,$profile)!==null;
-    $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$property,$profile,$chatAvailable,true,true);
+    $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$property,$profile,$chatAvailable,true,true,true);
 }catch(Throwable $e){
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'PROFILE_UNAVAILABLE','message'=>'The connected VP3 profile is unavailable.']],404);
 }
@@ -93,6 +94,7 @@ if($method==='GET'){
             'chat_enabled'=>!empty($manifest['external']['stateful_profile_agent']),
             'scheduling_enabled'=>!empty($manifest['external']['scheduling_enabled']),
             'commerce_enabled'=>!empty($manifest['external']['commerce_enabled']),
+            'campaigns_enabled'=>!empty($manifest['external']['campaigns_enabled']),
         ],
     ]);
 }
@@ -228,6 +230,17 @@ try{
             );
             vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_booking_completed',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['booking_id'=>(int)($result['booking']['booking_id']??0)]);
             vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
+    }
+    if(str_starts_with($tool,'vp3.campaign')){
+        if($tool==='vp3.campaigns.list'){
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['campaigns'=>vp3_profile_webmcp_campaigns_list_v170($pdo,$profile)]);
+        }
+        if($tool==='vp3.campaign.get'){
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_campaign_get_v170($pdo,$profile,(string)($args['campaign_slug']??'')));
+        }
+        if($tool==='vp3.campaign.eligibility.get'){
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_campaign_eligibility_v170($pdo,$profile,(string)($args['campaign_slug']??'')));
         }
     }
     if(str_starts_with($tool,'vp3.commerce.')){
