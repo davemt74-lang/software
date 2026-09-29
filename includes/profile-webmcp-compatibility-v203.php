@@ -47,6 +47,7 @@ function vp3_profile_webmcp_compatibility_registry_v203(?array $catalog=null,?ar
             'minimum_manifest_version'=>(string)($override['minimum_manifest_version']??(defined('VP3_PROFILE_WEBMCP_MANIFEST_V100')?VP3_PROFILE_WEBMCP_MANIFEST_V100:'vp3.profile.webmcp.v1')),
             'minimum_release_version'=>(string)($override['minimum_release_version']??(defined('VP3_PROFILE_WEBMCP_RELEASE_V196')?VP3_PROFILE_WEBMCP_RELEASE_V196:'profile-webmcp-release-v196-20260929')),
             'minimum_negotiation_contract'=>(string)($override['minimum_negotiation_contract']??(defined('VP3_PROFILE_WEBMCP_NEGOTIATION_CONTRACT_V200')?VP3_PROFILE_WEBMCP_NEGOTIATION_CONTRACT_V200:'vp3.profile.webmcp.negotiation.v1')),
+            'minimum_runtime_build'=>(string)($override['minimum_runtime_build']??''),
             'replacement_tool'=>$replacement,
             'sunset_at'=>$sunset,
             'execution_path'=>'canonical_router',
@@ -70,10 +71,13 @@ function vp3_profile_webmcp_apply_compatibility_v203(array $tools,?array $regist
     return array_values(array_unique($out));
 }
 
-function vp3_profile_webmcp_tool_available_v203(string $tool): bool
+function vp3_profile_webmcp_tool_available_v203(string $tool,string $runtimeBuild=''): bool
 {
     $row=vp3_profile_webmcp_compatibility_registry_v203()[$tool]??null;
-    return is_array($row)&&($row['status']??'disabled')!=='disabled';
+    if(!is_array($row)||($row['status']??'disabled')==='disabled')return false;
+    $minimum=trim((string)($row['minimum_runtime_build']??''));
+    if($minimum!==''&&!hash_equals($minimum,trim($runtimeBuild)))return false;
+    return true;
 }
 
 function vp3_profile_webmcp_compatibility_public_v203(array $allowedTools=[]): array
