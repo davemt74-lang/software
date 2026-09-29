@@ -127,6 +127,10 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
     if(function_exists('profile_agent_transcript_brain_context_v255')){
         foreach(profile_agent_transcript_brain_context_v255($pdo,$ownerUser,$agent,$visitor,$query,$cid) as $item)$context[]=$item;
     }
+    if(function_exists('vp3_profile_webmcp_agent_capability_context_v190')){
+        $capabilityContext=vp3_profile_webmcp_agent_capability_context_v190($pdo,$profile,$visitor);
+        if(!empty($capabilityContext['capabilities']))$context[]=$capabilityContext;
+    }
     if(count($context)>24)$context=array_slice($context,0,24);
 
     $substantive=array_values(array_filter(
