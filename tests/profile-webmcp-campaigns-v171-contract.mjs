@@ -42,7 +42,7 @@ assert.match(adapter,/\['http','https'\]/,'proof URLs must be limited to HTTP(S)
 assert.match(catalog,/vp3\.campaign\.participation\.prepare/);
 assert.match(catalog,/vp3\.campaign\.participation\.confirm/);
 assert.match(catalog,/vp3_profile_webmcp_actions_schema_ready_v150/,'mutation tools must disappear when durable ledger is unavailable');
-assert.match(nativeApi,/vp3_profile_webmcp_campaign_prepare_v170/);
+assert.match(router,/vp3_profile_webmcp_campaign_prepare_v170/);
 assert.match(router,/vp3_profile_webmcp_campaign_confirm_v170/);
 assert.match(nativeApi,/webmcp_campaign_prepared/);
 assert.match(nativeApi,/webmcp_campaign_participation_completed/);
