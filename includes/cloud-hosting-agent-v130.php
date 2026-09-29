@@ -35,6 +35,8 @@ function vp3_cloud_hosting_agent_v130_ensure_schema(?PDO $pdo=null): void
       confirmation_token_hash CHAR(64) NOT NULL,
       idempotency_key VARCHAR(160) NOT NULL,
       status VARCHAR(30) NOT NULL DEFAULT 'prepared',
+      execution_token CHAR(32) NOT NULL DEFAULT '',
+      execution_expires_at DATETIME NULL,
       result_json LONGTEXT NULL,
       error_message VARCHAR(500) NOT NULL DEFAULT '',
       expires_at DATETIME NOT NULL,
@@ -293,17 +295,42 @@ function vp3_cloud_hosting_agent_v130_execute(array $row,array $user,?callable $
     $key=(string)$row['idempotency_key'];
 
     if($type==='site.create'){
-        return ['site'=>vp3_cloud_hosting_create_site_v100($user,$payload,$uid)];
+        $actionId=(int)($row['id']??0);
+        $pdo->beginTransaction();
+        try{
+            $stmt=$pdo->prepare('SELECT site_id FROM cloud_hosting_agent_actions WHERE id=? AND user_id=? FOR UPDATE');
+            $stmt->execute([$actionId,$uid]);
+            $existingSiteId=(int)$stmt->fetchColumn();
+            if($existingSiteId>0){
+                $existingSite=vp3_cloud_hosting_site_v100($existingSiteId,$uid,$pdo);
+                if($existingSite===null)throw new RuntimeException('Previously created hosted site is no longer available.');
+                $pdo->commit();
+                return ['site'=>$existingSite,'idempotent_replay'=>true];
+            }
+            $created=vp3_cloud_hosting_create_site_v100($user,$payload,$uid);
+            $createdId=(int)($created['id']??0);
+            if($createdId<1)throw new RuntimeException('Hosted site creation did not return an identifier.');
+            $pdo->prepare('UPDATE cloud_hosting_agent_actions SET site_id=? WHERE id=? AND user_id=?')->execute([$createdId,$actionId,$uid]);
+            $pdo->commit();
+            return ['site'=>$created,'idempotent_replay'=>false];
+        }catch(Throwable $e){
+            if($pdo->inTransaction())$pdo->rollBack();
+            throw $e;
+        }
     }
     if($site===null)throw new RuntimeException('Hosted site no longer exists.');
 
     if($type==='site.state'){
         $state=(string)($payload['desired_state']??'');
         if(!in_array($state,['active','suspended','configured'],true))throw new RuntimeException('Unsupported desired hosting state.');
-        $stmt=$pdo->prepare("UPDATE cloud_hosting_sites SET desired_state=?,desired_revision=desired_revision+1,last_error_code='',last_error_message='' WHERE id=? AND user_id=?");
-        $stmt->execute([$state,$siteId,$uid]);
-        $fresh=vp3_cloud_hosting_site_v100($siteId,$uid,$pdo)??$site;
-        vp3_cloud_hosting_event_v100($pdo,$siteId,'agent.desired_state_changed',$state,(int)$fresh['desired_revision'],$uid,['source'=>'agent_chat']);
+        if((string)$site['desired_state']!==$state){
+            $stmt=$pdo->prepare("UPDATE cloud_hosting_sites SET desired_state=?,desired_revision=desired_revision+1,last_error_code='',last_error_message='' WHERE id=? AND user_id=?");
+            $stmt->execute([$state,$siteId,$uid]);
+            $fresh=vp3_cloud_hosting_site_v100($siteId,$uid,$pdo)??$site;
+            vp3_cloud_hosting_event_v100($pdo,$siteId,'agent.desired_state_changed',$state,(int)$fresh['desired_revision'],$uid,['source'=>'agent_chat']);
+        }else{
+            $fresh=$site;
+        }
         return vp3_cloud_hosting_v120_reconcile_site($fresh,$remote,$pdo);
     }
     if($type==='route.provision'){
@@ -332,25 +359,29 @@ function vp3_cloud_hosting_agent_v130_confirm(
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in user is required.');
     $code=strtoupper(trim($code));
     if(!preg_match('/^[A-Z2-9]{8}$/',$code))throw new RuntimeException('Enter the 8-character Hosting confirmation code.');
+    $hash=hash('sha256',$code);
+    $executionToken=bin2hex(random_bytes(16));
 
     $pdo->beginTransaction();
     try{
         $sql="SELECT * FROM cloud_hosting_agent_actions
-          WHERE user_id=? AND status='prepared' AND expires_at>UTC_TIMESTAMP()";
-        $params=[$uid];
+          WHERE user_id=? AND status IN ('prepared','executing') AND expires_at>UTC_TIMESTAMP()
+          AND confirmation_token_hash=?";
+        $params=[$uid,$hash];
         if($conversationId>0){$sql.=' AND conversation_id=?';$params[]=$conversationId;}
-        $sql.=' ORDER BY id DESC LIMIT 8 FOR UPDATE';
+        $sql.=' ORDER BY id DESC LIMIT 1 FOR UPDATE';
         $stmt=$pdo->prepare($sql);$stmt->execute($params);
-        $rows=$stmt->fetchAll()?:[];
-        $row=null;
-        foreach($rows as $candidate){
-            if(hash_equals((string)$candidate['confirmation_token_hash'],hash('sha256',$code))){
-                $row=$candidate;break;
-            }
-        }
+        $row=$stmt->fetch();
         if(!is_array($row))throw new RuntimeException('Hosting confirmation code is invalid or expired.');
-        $pdo->prepare("UPDATE cloud_hosting_agent_actions SET status='confirmed',confirmed_at=UTC_TIMESTAMP() WHERE id=? AND status='prepared'")
-            ->execute([(int)$row['id']]);
+        if((string)$row['status']==='executing'){
+            $lease=!empty($row['execution_expires_at'])?strtotime((string)$row['execution_expires_at'].' UTC'):false;
+            if($lease!==false&&$lease>time())throw new RuntimeException('This Hosting action is already in progress.');
+        }
+        $stmt=$pdo->prepare("UPDATE cloud_hosting_agent_actions
+          SET status='executing',execution_token=?,execution_expires_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 5 MINUTE),
+              confirmed_at=COALESCE(confirmed_at,UTC_TIMESTAMP()),error_message=''
+          WHERE id=?");
+        $stmt->execute([$executionToken,(int)$row['id']]);
         $pdo->commit();
     }catch(Throwable $e){
         if($pdo->inTransaction())$pdo->rollBack();
@@ -360,12 +391,17 @@ function vp3_cloud_hosting_agent_v130_confirm(
     try{
         $result=vp3_cloud_hosting_agent_v130_execute($row,$user,$remote,$providerTransport,$pdo);
         $safe=vp3_cloud_hosting_v120_public_remote($result);
-        $pdo->prepare("UPDATE cloud_hosting_agent_actions SET status='completed',result_json=?,error_message='',completed_at=UTC_TIMESTAMP() WHERE id=?")
-            ->execute([json_encode($safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),(int)$row['id']]);
+        $stmt=$pdo->prepare("UPDATE cloud_hosting_agent_actions
+          SET status='completed',result_json=?,error_message='',execution_token='',execution_expires_at=NULL,completed_at=UTC_TIMESTAMP()
+          WHERE id=? AND execution_token=?");
+        $stmt->execute([json_encode($safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),(int)$row['id'],$executionToken]);
+        if($stmt->rowCount()!==1)throw new RuntimeException('Hosting action execution lease was lost before completion.');
         return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'completed'=>true,'result'=>$safe];
     }catch(Throwable $e){
-        $pdo->prepare("UPDATE cloud_hosting_agent_actions SET status='failed',error_message=?,completed_at=UTC_TIMESTAMP() WHERE id=?")
-            ->execute([mb_substr($e->getMessage(),0,500),(int)$row['id']]);
+        $pdo->prepare("UPDATE cloud_hosting_agent_actions
+          SET status='prepared',error_message=?,execution_token='',execution_expires_at=NULL
+          WHERE id=? AND execution_token=?")
+            ->execute([mb_substr($e->getMessage(),0,500),(int)$row['id'],$executionToken]);
         throw $e;
     }
 }
@@ -519,5 +555,5 @@ function vp3_cloud_hosting_agent_v130_prompt(array $user): string
 {
     $uid=(int)($user['id']??0);
     if($uid<1)return '';
-    return 'Cloud Hosting tools: list and diagnose the user’s hosted sites; inspect route, deployment, HomeServer and traffic health; prepare site creation, activation/suspension, cPanel DNS provisioning, reconciliation and rollback. Consequential Hosting changes always require the explicit 8-character confirmation code returned by the prepare step. Never request or reveal cPanel API tokens, HomeServer credentials, route tokens, private keys, raw SQL or filesystem paths.';
+    return 'Cloud Hosting tools: list and diagnose the user’s hosted sites; inspect route, deployment, HomeServer and traffic health; prepare site creation, activation/suspension, cPanel DNS provisioning, reconciliation and rollback. Consequential Hosting changes always require the explicit 8-character confirmation code returned by the prepare step and execute through a bounded server-side lease with idempotent retry protection. Never request or reveal cPanel API tokens, HomeServer credentials, route tokens, private keys, raw SQL or filesystem paths.';
 }
