@@ -5,6 +5,7 @@ const service=read('includes/profile-agent-public-service-v110.php');
 const webmcp=read('includes/profile-webmcp-v100.php');
 const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const webapi=read('api/profile-webmcp-v100.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const profileApi=read('api/profile-agent.php');
 const runtime=read('profile-webmcp-v100.js');
 
@@ -30,8 +31,9 @@ assert.match(service,/OWNER_VISITOR_PREVIEW_REQUIRED/,'owner-as-visitor must fai
 assert.match(service,/CONVERSATION_NOT_FOUND/,'conversation mismatch must fail closed');
 
 assert.match(webapi,/vp3_profile_agent_public_context_v110/);
-assert.match(webapi,/vp3_profile_agent_public_message_service_v110/);
-assert.match(webapi,/vp3_profile_agent_public_request_owner_v110/);
+assert.match(router,/vp3_profile_agent_public_message_service_v110/);
+assert.match(router,/vp3_profile_agent_public_request_owner_v110/);
+assert.match(webapi,/vp3_profile_webmcp_dispatch_v191/);
 assert.match(webapi,/VP3ProfileAgentPublicException/);
 
 assert.match(profileApi,/profile-agent-public-service-v110\.php/,'legacy public chat API must load shared service');
