@@ -231,6 +231,13 @@ function vp3_cloud_hosting_v120_reconcile_entitlements(
     try{
         $result=vp3_cloud_hosting_v120_remote($userId,'hosting.entitlements.reconcile',$payload,$remote);
         $remoteRevision=(int)($result['revision']??$payload['revision']);
+        if((string)($result['reconcile_result']??'')==='stale_ignored'&&$remoteRevision>=(int)$payload['revision']){
+            $nextRevision=$remoteRevision+1;
+            $pdo->prepare("UPDATE cloud_hosting_entitlement_sync SET revision=? WHERE user_id=?")->execute([$nextRevision,$userId]);
+            $payload['revision']=$nextRevision;
+            $result=vp3_cloud_hosting_v120_remote($userId,'hosting.entitlements.reconcile',$payload,$remote);
+            $remoteRevision=(int)($result['revision']??$nextRevision);
+        }
         $stmt=$pdo->prepare("UPDATE cloud_hosting_entitlement_sync SET last_remote_revision=?,last_synced_at=NOW(),last_error_code='',last_error_message='' WHERE user_id=?");
         $stmt->execute([$remoteRevision,$userId]);
         return $result;
@@ -315,7 +322,7 @@ function vp3_cloud_hosting_v120_certificate_valid(?array $certificate): bool
     return $date->getTimestamp()>time();
 }
 
-function vp3_cloud_hosting_v120_route_payload(array $site,?PDO $pdo=null): ?array
+function vp3_cloud_hosting_v120_route_payload(array $site,bool $runtimeReady=false,?PDO $pdo=null): ?array
 {
     $pdo??=db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
@@ -327,7 +334,7 @@ function vp3_cloud_hosting_v120_route_payload(array $site,?PDO $pdo=null): ?arra
     $certificate=vp3_cloud_hosting_v120_edge_certificate($siteId,$pdo);
     $verified=(string)$route['dns_state']==='verified';
     $tlsValid=vp3_cloud_hosting_v120_certificate_valid($certificate);
-    $active=(string)$fresh['desired_state']==='active'&&$verified&&$tlsValid;
+    $active=(string)$fresh['desired_state']==='active'&&$runtimeReady&&$verified&&$tlsValid;
     return [
         'cloud_site_id'=>(string)$fresh['site_key'],
         'revision'=>(int)$fresh['desired_revision'],
@@ -363,12 +370,13 @@ function vp3_cloud_hosting_v120_route_token(int $siteId,?PDO $pdo=null): string
 
 function vp3_cloud_hosting_v120_reconcile_route(
     array $site,
+    bool $runtimeReady=false,
     ?callable $remote=null,
     ?PDO $pdo=null
 ): ?array {
     $pdo??=db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    $payload=vp3_cloud_hosting_v120_route_payload($site,$pdo);
+    $payload=vp3_cloud_hosting_v120_route_payload($site,$runtimeReady,$pdo);
     if($payload===null)return null;
     $userId=(int)($site['user_id']??0);
     $result=vp3_cloud_hosting_v120_remote($userId,'hosting.route.reconcile',$payload,$remote);
@@ -379,6 +387,11 @@ function vp3_cloud_hosting_v120_reconcile_route(
 
 function vp3_cloud_hosting_v120_store_site_sync(PDO $pdo,int $siteId,int $revision,array $result,?string $error=null): void
 {
+    if($error!==null&&$result===[]){
+        $stmt=$pdo->prepare("UPDATE cloud_hosting_site_sync SET last_error_code='remote_error',last_error_message=? WHERE site_id=?");
+        $stmt->execute([mb_substr($error,0,500),$siteId]);
+        if($stmt->rowCount()>0)return;
+    }
     $public=vp3_cloud_hosting_v120_public_remote($result);
     $remoteRevision=(int)($result['revision']??0);
     $remoteSiteId=mb_substr((string)($result['site_id']??''),0,100);
@@ -417,13 +430,25 @@ function vp3_cloud_hosting_v120_reconcile_site(
     $desired=vp3_cloud_hosting_desired_projection_v100($fresh);
     try{
         $result=vp3_cloud_hosting_v120_remote($userId,'hosting.site.reconcile',$desired,$remote);
-        $observed=trim((string)($result['observed_state']??'pending'));
         $remoteRevision=(int)($result['revision']??$fresh['desired_revision']);
+        if((string)($result['reconcile_result']??'')==='stale_ignored'&&$remoteRevision>=(int)$fresh['desired_revision']){
+            $nextRevision=$remoteRevision+1;
+            $pdo->prepare('UPDATE cloud_hosting_sites SET desired_revision=? WHERE id=?')->execute([$nextRevision,$siteId]);
+            $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo)??$fresh;
+            $desired=vp3_cloud_hosting_desired_projection_v100($fresh);
+            $result=vp3_cloud_hosting_v120_remote($userId,'hosting.site.reconcile',$desired,$remote);
+            $remoteRevision=(int)($result['revision']??$nextRevision);
+        }
+        $observed=trim((string)($result['observed_state']??'pending'));
         $activeRelease=trim((string)($result['active_release_id']??''));
         $stmt=$pdo->prepare("UPDATE cloud_hosting_sites SET observed_state=?,observed_revision=?,active_release_id=?,last_reconciled_at=NOW(),last_error_code='',last_error_message='' WHERE id=?");
         $stmt->execute([$observed,$remoteRevision,$activeRelease!==''?$activeRelease:null,$siteId]);
         vp3_cloud_hosting_v120_store_site_sync($pdo,$siteId,(int)$fresh['desired_revision'],$result);
-        $routeResult=vp3_cloud_hosting_v120_reconcile_route($fresh,$remote,$pdo);
+        $routeResult=vp3_cloud_hosting_v120_reconcile_route($fresh,$observed==='active',$remote,$pdo);
+        if($routeResult!==null){
+            $pdo->prepare('UPDATE cloud_hosting_site_sync SET public_route_ready=? WHERE site_id=?')
+                ->execute([!empty($routeResult['route_ready'])?1:0,$siteId]);
+        }
         return ['site'=>$result,'route'=>$routeResult];
     }catch(Throwable $e){
         $pdo->prepare("UPDATE cloud_hosting_sites SET last_error_code='homeserver_reconcile_failed',last_error_message=? WHERE id=?")
@@ -577,6 +602,17 @@ function vp3_cloud_hosting_v120_deploy_package(
 
     try{
         vp3_cloud_hosting_v120_reconcile_site($fresh,$remote,$pdo);
+        $synced=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
+        if($synced===null)throw new RuntimeException('Hosted site disappeared during reconciliation.');
+        $syncedRevision=(int)$synced['desired_revision'];
+        if($existing!==null&&$syncedRevision!==$revision){
+            throw new RuntimeException('Deployment idempotency key belongs to a pre-reconciliation Cloud revision.');
+        }
+        if($existing===null&&$syncedRevision!==$revision){
+            $revision=$syncedRevision;
+            $pdo->prepare('UPDATE cloud_hosting_deployments SET desired_revision=? WHERE id=?')->execute([$revision,$deploymentId]);
+        }
+        $fresh=$synced;
         $begin=vp3_cloud_hosting_v120_remote($userId,'hosting.deployment.begin',[
             'cloud_site_id'=>(string)$fresh['site_key'],
             'revision'=>$revision,
