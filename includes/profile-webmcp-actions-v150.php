@@ -119,8 +119,13 @@ function vp3_profile_webmcp_action_by_idempotency_v150(PDO $pdo,int $ownerUserId
 
 function vp3_profile_webmcp_action_commit_v150(PDO $pdo,int $actionId,string $idempotencyHash,string $resultType,int $resultId,array $result): void
 {
+    $booking=is_array($result['booking']??null)?$result['booking']:[];
+    $safeBooking=[];
+    foreach(['booking_id','event_type_id','event_title','start_at_utc','end_at_utc','organizer_timezone','guest_timezone','status','location_type'] as $key){
+        if(array_key_exists($key,$booking))$safeBooking[$key]=$booking[$key];
+    }
     $safe=[
-        'booking'=>is_array($result['booking']??null)?$result['booking']:null,
+        'booking'=>$safeBooking?:null,
         'payment_required'=>!empty($result['payment_required']),
         'payment_status'=>mb_strimwidth((string)($result['payment_status']??''),0,40,''),
     ];
