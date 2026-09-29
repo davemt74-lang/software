@@ -108,7 +108,7 @@ require __DIR__.'/_header.php';
         <td><?= e((string)$site['status']) ?><br><small><?= !empty($site['verified'])?'Verified':'Not verified' ?></small></td>
         <td><?= e((string)($site['runtime_build']?:'Unseen')) ?><br><small><?= e((string)$site['runtime_state']) ?></small></td>
         <td><?= e((string)($site['last_contact_at']?:'Never')) ?></td>
-        <td><?= number_format((int)$site['tool_count']) ?></td>
+        <td><?= number_format((int)$site['tool_count']) ?><br><small><?= e(implode(', ',array_slice((array)$site['allowed_tools'],0,8))) ?><?= count((array)$site['allowed_tools'])>8?' …':'' ?></small></td>
         <td><?= e($features?implode(', ',$features):'Read only') ?></td>
         <td><?= (int)$site['origin_denied_30d'] ?> denied / 30d</td>
         <td><strong><?= e(implode(' · ',$recovery)) ?></strong><br><small><?= e((string)($site['upgrade_required']?$site['upgrade_guidance']:$site['reverify_guidance'])) ?></small><br><a href="<?= e(url((string)$site['management_path'])) ?>">Manage site →</a></td>
