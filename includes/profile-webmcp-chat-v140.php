@@ -121,7 +121,7 @@ function vp3_profile_webmcp_external_chat_context_v140(PDO $pdo,array $property,
     ];
 }
 
-function vp3_profile_webmcp_external_chat_start_v140(PDO $pdo,array $ctx): array
+function vp3_profile_webmcp_chat_start_v140(PDO $pdo,array $ctx): array
 {
     $owner=(int)$ctx['owner_user_id'];$agentId=(int)$ctx['agent_id'];$sessionId=(int)$ctx['session_id'];
     $stmt=$pdo->prepare("SELECT * FROM profile_agent_conversations
