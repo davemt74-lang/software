@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/profile-public-media-v174.php';
 require_once __DIR__ . '/includes/profile-commerce-v900.php';
 require_once __DIR__ . '/includes/agent-scheduling-public-v450.php';
 require_once __DIR__ . '/includes/profile-webmcp-v100.php';
+require_once __DIR__ . '/includes/profile-webmcp-continuity-v194.php';
 
 if (!function_exists('vp3_profile_optional_failure')) {
     function vp3_profile_optional_failure(string $stage, Throwable $e, string $username = ''): void
@@ -126,11 +127,13 @@ if($photos)$profileTabs['photos']='Photos';
 if($posts)$profileTabs['posts']='Posts';
 if($merch)$profileTabs['merch']='Merch';
 $activeTab=(string)(array_key_first($profileTabs)??'');
-$webmcpManifest=[];$webmcpSessionProof='';
+$webmcpManifest=[];$webmcpSessionProof='';$webmcpResume=null;
 if(!$preview){
     try {
         $webmcpManifest=vp3_profile_webmcp_manifest_v100($pdo,$profile,$viewer,['surface'=>'native_profile']);
         $webmcpSessionProof=vp3_profile_webmcp_session_proof_v100((int)$profile['user_id']);
+        $resumeToken=trim((string)($_GET['webmcp_resume']??''));
+        if($resumeToken!=='')$webmcpResume=vp3_profile_webmcp_resume_consume_v194($pdo,$profile,$viewer,$resumeToken);
     } catch (Throwable $e) {
         vp3_profile_optional_failure('webmcp-foundation',$e,$username);
         $webmcpManifest=[];$webmcpSessionProof='';
@@ -293,7 +296,8 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgen
 window.VP3_PROFILE_WEBMCP={
   manifest:<?= json_encode($webmcpManifest,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,
   endpoint:<?= json_encode(url('/api/profile-webmcp-v100.php'),JSON_UNESCAPED_SLASHES) ?>,
-  sessionProof:<?= json_encode($webmcpSessionProof,JSON_UNESCAPED_SLASHES) ?>
+  sessionProof:<?= json_encode($webmcpSessionProof,JSON_UNESCAPED_SLASHES) ?>,
+  resume:<?= json_encode($webmcpResume,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>
 };
 </script>
 <script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-webmcp-v100-20260928')) ?>"></script>
