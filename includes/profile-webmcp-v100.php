@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/profile-webmcp-capability-resolver-v190.php';
 require_once __DIR__.'/profile-webmcp-release-v196.php';
+require_once __DIR__.'/profile-webmcp-negotiation-v200.php';
 
 const VP3_PROFILE_WEBMCP_V100 = 'profile-webmcp-v100-20260928';
 const VP3_PROFILE_WEBMCP_MANIFEST_V100 = 'vp3.profile.webmcp.v1';
@@ -257,6 +258,7 @@ function vp3_profile_webmcp_manifest_v100(PDO $pdo,array $profile,?array $viewer
             'version'=>$resolution['resolver_version'],
             'execution_allowed'=>$resolution['execution_allowed'],
         ],
+        'protocol'=>vp3_profile_webmcp_protocol_descriptor_v200('native_profile'),
     ];
 }
 function vp3_profile_webmcp_resolve_intent_v100(string $goal, array $manifest): array
