@@ -188,7 +188,7 @@ if($webmcpResumeRequested){
 
   <section class="profile-webmcp-resume" data-profile-webmcp-resume hidden aria-live="polite">
     <div><strong>Continuing from Agent Brain</strong><span data-profile-webmcp-resume-text></span></div>
-    <button type="button" data-profile-webmcp-resume-continue>Continue</button>
+    <div class="profile-webmcp-resume-actions"><button type="button" data-profile-webmcp-resume-continue>Continue</button><a href="/chat.php" data-profile-webmcp-return hidden>Return to Agent</a></div>
   </section>
 
   <?php if($commerceNotice): $noticeKind=(string)($commerceNotice['kind']??'pending'); ?>
@@ -303,6 +303,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgen
 const webmcpResumeBox=document.querySelector('[data-profile-webmcp-resume]');
 const webmcpResumeText=document.querySelector('[data-profile-webmcp-resume-text]');
 const webmcpResumeContinue=document.querySelector('[data-profile-webmcp-resume-continue]');
+const webmcpReturn=document.querySelector('[data-profile-webmcp-return]');
 let webmcpResumeDetail=null;
 document.addEventListener('vp3:webmcp-resume',event=>{
   const detail=event.detail||{};if(detail.contract!=='vp3.webmcp.resume.v1')return;
@@ -325,12 +326,18 @@ document.addEventListener('vp3:webmcp-resume-result',event=>{
   if(webmcpResumeText)webmcpResumeText.textContent=result.ok?' Ready to continue on this Profile.':' The resumed capability could not be loaded.';
   if(webmcpResumeContinue)webmcpResumeContinue.hidden=true;
 });
+document.addEventListener('vp3:webmcp-return-ready',event=>{
+  const detail=event.detail||{};if(detail.contract!=='vp3.webmcp.return.v1')return;
+  if(webmcpResumeText)webmcpResumeText.textContent=' '+String(detail.status_text||'Profile action status updated.');
+  if(webmcpReturn&&detail.return_path){webmcpReturn.href=String(detail.return_path);webmcpReturn.hidden=false;}
+});
 </script>
 <?php if($webmcpManifest&&$webmcpSessionProof): ?>
 <script>
 window.VP3_PROFILE_WEBMCP={
   manifest:<?= json_encode($webmcpManifest,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,
   endpoint:<?= json_encode(url('/api/profile-webmcp-v100.php'),JSON_UNESCAPED_SLASHES) ?>,
+  continuityEndpoint:<?= json_encode(url('/api/profile-webmcp-continuity-v195.php'),JSON_UNESCAPED_SLASHES) ?>,
   sessionProof:<?= json_encode($webmcpSessionProof,JSON_UNESCAPED_SLASHES) ?>,
   resume:<?= json_encode($webmcpResume,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>
 };
