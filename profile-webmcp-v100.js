@@ -452,7 +452,11 @@ export class VP3ProfileWebMCPRuntimeV100 {
           telemetry:{
             webmcp_session_id:this.webmcpSessionId,
             interaction_id:interactionId,
-            agent_referral:referralTokenV130()
+            agent_referral:referralTokenV130(),
+            registered_tool_count:this.registrations.size,
+            expected_tool_count:this.effectiveToolNames().length,
+            runtime_build:VP3_PROFILE_WEBMCP_RUNTIME_V100,
+            release_version:VP3_PROFILE_WEBMCP_RELEASE_V196
           }
         }),
         signal:options?.signal
