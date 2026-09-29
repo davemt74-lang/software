@@ -106,6 +106,7 @@ function vp3_profile_webmcp_external_manifest_v120(PDO $pdo,array $property,arra
             'version'=>$resolution['resolver_version'],
             'execution_allowed'=>$resolution['execution_allowed'],
         ],
+        'protocol'=>vp3_profile_webmcp_protocol_descriptor_v200('external_site'),
         'external'=>[
             'read_only'=>!$chatEnabled&&!$schedulingEnabled&&!$commerceEnabled&&!$campaignsEnabled,
             'stateful_profile_agent'=>$chatEnabled,
