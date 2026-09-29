@@ -251,6 +251,19 @@ if((int)$entSync['revision']!==6||(int)$entSync['last_remote_revision']!==6)thro
 $cred=$testPdo->query('SELECT route_token_enc,route_token_sha256 FROM cloud_hosting_route_credentials')->fetch();
 if(str_contains((string)$cred['route_token_enc'],'ROUTE_TOKEN_SUPER_SECRET'))throw new RuntimeException('Route token was stored in plaintext.');
 
+$leaseClaim=vp3_cloud_hosting_v120_claim_deployment(
+    $testPdo,(int)$site['id'],'lease-test','deploy',(int)$rebasedSite['desired_revision'],str_repeat('c',64),123,1
+);
+try{
+    vp3_cloud_hosting_v120_claim_deployment(
+        $testPdo,(int)$site['id'],'lease-test','deploy',(int)$rebasedSite['desired_revision'],str_repeat('c',64),123,1
+    );
+    throw new RuntimeException('Concurrent same-key deployment lease was not enforced.');
+}catch(RuntimeException $e){
+    if($e->getMessage()==='Concurrent same-key deployment lease was not enforced.')throw $e;
+}
+vp3_cloud_hosting_v120_update_deployment($testPdo,(int)$leaseClaim['row']['id'],'failed',[],'lease test complete');
+
 $tmp=tempnam(sys_get_temp_dir(),'vp3-hosting-test-');
 if($tmp===false)throw new RuntimeException('Could not create temporary ZIP path.');
 $zipPath=$tmp.'.zip';@unlink($tmp);
@@ -334,7 +347,7 @@ if(count($remoteState['ops'])!==$opsBeforeDowngrade)throw new RuntimeException('
 $entitlements['hosting.access']['enabled']=true;
 
 $cap=vp3_cloud_hosting_v120_public_capability();
-if(empty($cap['chunked_deployment'])||empty($cap['deployment_resume'])||empty($cap['transient_failure_resume_with_same_key'])||empty($cap['single_inflight_operation_per_site'])||empty($cap['deployment_status_refresh'])||empty($cap['deployment_entitlement_revalidation'])||empty($cap['encrypted_route_token_storage']))throw new RuntimeException('Section 3 capability projection incomplete.');
+if(empty($cap['chunked_deployment'])||empty($cap['deployment_resume'])||empty($cap['transient_failure_resume_with_same_key'])||empty($cap['single_inflight_operation_per_site'])||empty($cap['deployment_execution_lease'])||empty($cap['deployment_status_refresh'])||empty($cap['deployment_entitlement_revalidation'])||empty($cap['encrypted_route_token_storage']))throw new RuntimeException('Section 3 capability projection incomplete.');
 if(!empty($cap['raw_package_persisted'])||!empty($cap['cloud_edge_private_key_persisted']))throw new RuntimeException('Section 3 capability violates secret/package boundaries.');
 
 echo "Cloud Hosting V1 Section 3 MySQL integration: PASS\n";
