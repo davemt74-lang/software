@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
-const phpCatalog=read('includes/profile-webmcp-v100.php');
+const phpCatalog=[read('includes/profile-webmcp-v100.php'),read('includes/profile-webmcp-commerce-v160.php'),read('includes/profile-webmcp-campaigns-v170.php'),read('includes/profile-webmcp-rewards-v180.php')].join('\n');
 const jsRuntime=read('profile-webmcp-v100.js');
 const externalRuntime=read('profile-webmcp-external-v120.js');
 const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
