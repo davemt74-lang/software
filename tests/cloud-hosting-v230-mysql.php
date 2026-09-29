@@ -56,6 +56,6 @@ if(!str_contains((string)$agentStatus['answer'],'5xx'))throw new RuntimeExceptio
 if(str_contains(json_encode($agentStatus),'SHOULD_NOT_LEAK'))throw new RuntimeException('Agent diagnostics leaked a secret.');
 
 $cap=vp3_cloud_hosting_diagnostics_v230_capability();
-if(empty($cap['homeserver_runtime_authoritative'])||!empty($cap['raw_sensitive_request_content']))throw new RuntimeException('Diagnostics capability boundary is invalid.');
+if(empty($cap['homeserver_authoritative_runtime'])||!empty($cap['request_query_strings_retained'])||!empty($cap['request_bodies_retained'])||!empty($cap['authorization_headers_retained']))throw new RuntimeException('Diagnostics capability boundary is invalid.');
 
 echo "Cloud Hosting V2 Section 3 diagnostics MySQL integration: PASS\n";
