@@ -33,6 +33,13 @@ function vp3_profile_webmcp_tool_catalog_v100(): array
             'input_schema' => ['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
             'annotations' => ['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
+        'vp3.agent.chat.start' => [
+            'title' => 'Start Profile Agent chat',
+            'description' => 'Start or resume a visitor conversation with this Profile Agent.',
+            'capability' => 'profile_agent',
+            'input_schema' => ['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],
+            'annotations' => ['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
+        ],
         'vp3.agent.conversation.get' => [
             'title' => 'Get Profile Agent conversation',
             'description' => 'Return one conversation bound to this exact profile, Profile Agent, and visitor session.',
