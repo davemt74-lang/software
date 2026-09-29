@@ -1,4 +1,26 @@
 export const VP3_PROFILE_WEBMCP_RUNTIME_V100 = 'profile-webmcp-runtime-v100-20260928';
+export const VP3_PROFILE_WEBMCP_NEGOTIATION_CONTRACT_V200 = 'vp3.profile.webmcp.negotiation.v1';
+export const VP3_PROFILE_WEBMCP_RELEASE_V196 = 'profile-webmcp-release-v196-20260929';
+
+function clientVersionsV200(){
+  return {
+    negotiation_contract:VP3_PROFILE_WEBMCP_NEGOTIATION_CONTRACT_V200,
+    manifest_versions:['vp3.profile.webmcp.v1'],
+    release_versions:[VP3_PROFILE_WEBMCP_RELEASE_V196],
+    runtime_build:VP3_PROFILE_WEBMCP_RUNTIME_V100
+  };
+}
+
+function protocolCompatibleV200(manifest,surface='native_profile'){
+  const protocol=manifest?.protocol;
+  if(!protocol)return true;
+  if(String(protocol.contract||'')!==VP3_PROFILE_WEBMCP_NEGOTIATION_CONTRACT_V200)return false;
+  if(String(protocol.surface||'')!==surface)return false;
+  if(!Array.isArray(protocol.supported_manifest_versions)||!protocol.supported_manifest_versions.includes('vp3.profile.webmcp.v1'))return false;
+  if(!Array.isArray(protocol.supported_release_versions)||!protocol.supported_release_versions.includes(VP3_PROFILE_WEBMCP_RELEASE_V196))return false;
+  if(String(protocol.current_runtime_build||'')!==VP3_PROFILE_WEBMCP_RUNTIME_V100)return false;
+  return protocol.downgrade_consequential_protection===false;
+}
 
 function deepFreeze(value) {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -247,8 +269,8 @@ export class VP3ProfileWebMCPRuntimeV100 {
   }
 
   async syncManifest(manifest) {
-    if (!manifest || manifest.manifest_version !== 'vp3.profile.webmcp.v1' || manifest.surface !== 'native_profile') {
-      throw new Error('Invalid VP3 Profile WebMCP manifest.');
+    if (!manifest || manifest.manifest_version !== 'vp3.profile.webmcp.v1' || manifest.surface !== 'native_profile' || !protocolCompatibleV200(manifest,'native_profile')) {
+      throw new Error('Invalid or incompatible VP3 Profile WebMCP manifest.');
     }
     this.manifest=structuredClone(manifest);
     const desired=new Set(this.effectiveToolNames(manifest));
@@ -422,6 +444,7 @@ export class VP3ProfileWebMCPRuntimeV100 {
         },
         body:JSON.stringify({
           manifest_version:this.manifest.manifest_version,
+          client_versions:clientVersionsV200(),
           surface:'native_profile',
           profile_username:this.manifest.profile_username,
           tool:name,
