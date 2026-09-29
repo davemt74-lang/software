@@ -92,6 +92,9 @@ function vp3_agent_profile_webmcp_plan_v193(PDO $pdo,string $query,array $user,i
         'recommended_tools'=>$recommended,
     ],$conversationId);
     $profilePath=(string)$resume['path'];
+    if(function_exists('vp3_profile_webmcp_record_agent_event_v205')){
+        vp3_profile_webmcp_record_agent_event_v205($pdo,$profile,$user,'webmcp_agent_planned',(string)$resume['action_context_id'],$conversationId,'planned');
+    }
 
     return [
         'handled'=>true,
