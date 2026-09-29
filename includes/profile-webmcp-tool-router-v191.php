@@ -37,6 +37,20 @@ function vp3_profile_webmcp_dispatch_v191(
         throw new RuntimeException('Unsupported Profile WebMCP execution surface.');
     }
 
+    $catalog=vp3_profile_webmcp_tool_catalog_v100();
+    if(function_exists('vp3_profile_webmcp_tool_available_v203')&&!vp3_profile_webmcp_tool_available_v203($tool,$catalog)){
+        $lifecycle=vp3_profile_webmcp_tool_lifecycle_v203($tool,$catalog);
+        vp3_profile_webmcp_router_record_v191($pdo,$telemetryContext,'webmcp_tool_denied',$tool,'unavailable',$startedAt,['result_code'=>'WEBMCP_TOOL_UNAVAILABLE']);
+        vp3_profile_webmcp_action_respond_v192($respond,$tool,false,[
+            'error'=>[
+                'code'=>'WEBMCP_TOOL_UNAVAILABLE',
+                'message'=>'This WebMCP tool is no longer available.',
+                'retryable'=>false,
+            ],
+            'lifecycle'=>vp3_profile_webmcp_tool_lifecycle_public_v203($lifecycle),
+        ],410,'WEBMCP_TOOL_UNAVAILABLE');
+    }
+
     $proof=(string)($transport['proof']??'');
     $property=is_array($transport['property']??null)?$transport['property']:null;
     $origin=(string)($transport['origin']??'');
@@ -51,6 +65,7 @@ function vp3_profile_webmcp_dispatch_v191(
             'release_audit'=>vp3_profile_webmcp_release_audit_v196(),
             'negotiation'=>is_array($manifest['negotiation']??null)?$manifest['negotiation']:vp3_profile_webmcp_negotiate_v200($surface,[]),
             'health'=>vp3_profile_webmcp_health_v201($pdo,$profile,$viewer,$surface,$manifest,$property),
+            'compatibility'=>vp3_profile_webmcp_tool_registry_summary_v203($catalog),
         ]);
     }
     if($tool==='vp3.profile.get'){
