@@ -48,7 +48,12 @@ function vp3_profile_webmcp_event_envelope_v130(array $context,string $eventName
     $status=mb_strimwidth(preg_replace('/[^a-z0-9_.:-]+/i','_',strtolower(trim($status)))??'',0,40,'');
     $out=[
         'envelope_version'=>VP3_PROFILE_WEBMCP_EVENT_ENVELOPE_V130,
+        'event_id'=>bin2hex(random_bytes(16)),
+        'occurred_at_utc'=>gmdate('c'),
         'event_name'=>$eventName,
+        'owner_user_id'=>(int)($context['owner_user_id']??0),
+        'property_id'=>(int)($context['property_id']??0),
+        'agent_contact_id'=>(int)($context['agent_contact_id']??0)?:null,
         'surface'=>$surface,
         'webmcp_session_id'=>vp3_profile_webmcp_transport_id_v130((string)($context['webmcp_session_id']??'')),
         'interaction_id'=>vp3_profile_webmcp_transport_id_v130((string)($context['interaction_id']??'')),
