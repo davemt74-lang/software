@@ -20,6 +20,19 @@ permissions:
 jobs:
   contract:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: vp3_music_platform_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -38,6 +51,16 @@ jobs:
 
       - name: Team lifecycle contract
         run: node tests/team-workspace-lifecycle-v350.mjs
+
+      - name: Music Platform V1 artist authority contract
+        run: node tests/music-platform-v100-contract.mjs
+
+      - name: Music Platform V1 artist authority MySQL integration
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=vp3_music_platform_test;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: root
+        run: php tests/music-platform-v100-mysql.php
 
       - name: Campaigns & Rewards V1 contract
         run: |
@@ -101,6 +124,7 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check tests/team-workspace-lifecycle-v350.mjs
+          node --check tests/music-platform-v100-contract.mjs
           node --check tests/campaigns-rewards-v100.mjs
           node --check tests/campaigns-rewards-v110.mjs
           node --check tests/campaigns-rewards-v118.mjs
@@ -120,6 +144,8 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/team-workspace-lifecycle-v350.php
+          php -l includes/music-artist-v100.php
+          php -l tests/music-platform-v100-mysql.php
           php -l includes/artist-workspaces-v104.php
           php -l includes/team-subscription.php
           php -l includes/bootstrap.php
