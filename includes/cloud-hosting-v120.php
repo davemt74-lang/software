@@ -433,6 +433,57 @@ function vp3_cloud_hosting_v120_reconcile_site(
     }
 }
 
+function vp3_cloud_hosting_v120_claim_deployment(
+    PDO $pdo,
+    int $siteId,
+    string $requestKey,
+    string $operation,
+    int $revision,
+    string $sha,
+    int $size,
+    ?int $actorUserId
+): array {
+    $pdo->beginTransaction();
+    try{
+        $lock=$pdo->prepare('SELECT id FROM cloud_hosting_sites WHERE id=? FOR UPDATE');
+        $lock->execute([$siteId]);
+        if(!(int)$lock->fetchColumn())throw new RuntimeException('Hosted site no longer exists.');
+
+        $stmt=$pdo->prepare('SELECT * FROM cloud_hosting_deployments WHERE site_id=? AND request_key=? LIMIT 1');
+        $stmt->execute([$siteId,$requestKey]);
+        $existing=$stmt->fetch();
+        if(is_array($existing)){
+            $pdo->commit();
+            return ['created'=>false,'row'=>$existing];
+        }
+
+        $busy=$pdo->prepare("SELECT id,request_key,operation,state FROM cloud_hosting_deployments
+          WHERE site_id=? AND state IN ('pending','transferring','committing','interrupted')
+          ORDER BY id DESC LIMIT 1");
+        $busy->execute([$siteId]);
+        $active=$busy->fetch();
+        if(is_array($active)){
+            throw new RuntimeException('Another Hosting deployment operation is already in progress for this site.');
+        }
+
+        $stmt=$pdo->prepare("INSERT INTO cloud_hosting_deployments
+          (site_id,request_key,operation,desired_revision,package_sha256,package_bytes,state,created_by)
+          VALUES (?,?,?,?,?,?,'pending',?)");
+        $stmt->execute([
+            $siteId,$requestKey,$operation,max(0,$revision),$sha,max(0,$size),
+            $actorUserId&&$actorUserId>0?$actorUserId:null,
+        ]);
+        $id=(int)$pdo->lastInsertId();
+        $pdo->commit();
+        $row=vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo);
+        if($row===null)throw new RuntimeException('Hosting deployment ledger could not be loaded.');
+        return ['created'=>true,'row'=>$row,'id'=>$id];
+    }catch(Throwable $e){
+        if($pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
+}
+
 function vp3_cloud_hosting_v120_deployment_row(int $siteId,string $requestKey,?PDO $pdo=null): ?array
 {
     $pdo??=db();if(!$pdo)return null;
@@ -479,29 +530,26 @@ function vp3_cloud_hosting_v120_deploy_package(
     if($requestKey===''||strlen($requestKey)>160)throw new RuntimeException('A valid deployment idempotency key is required.');
     $size=strlen($package);
     if($size<1||$size>VP3_CLOUD_HOSTING_MAX_PACKAGE_BYTES)throw new RuntimeException('Hosting deployment package must be between 1 byte and 64 MiB.');
+    if($size<4||substr($package,0,4)!=="PK\x03\x04")throw new RuntimeException('Hosting deployment package must be a ZIP archive.');
     $sha=hash('sha256',$package);
     $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
     if($fresh===null)throw new RuntimeException('Hosted site could not be loaded.');
     $revision=(int)$fresh['desired_revision'];
 
-    $existing=vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo);
-    if($existing!==null){
-        if((string)$existing['operation']!=='deploy'||(string)$existing['package_sha256']!==$sha||(int)$existing['package_bytes']!==$size){
-            throw new RuntimeException('Deployment idempotency key was already used for a different operation or package.');
-        }
-        if((int)$existing['desired_revision']!==$revision){
-            throw new RuntimeException('Deployment idempotency key belongs to an older Cloud desired-state revision.');
-        }
-        if((string)$existing['state']==='deployed')return ['replayed'=>true,'deployment'=>$existing];
-        if((string)$existing['state']==='failed')throw new RuntimeException('Failed deployment requires a new idempotency key.');
-        $deploymentId=(int)$existing['id'];
-    }else{
-        $stmt=$pdo->prepare("INSERT INTO cloud_hosting_deployments
-          (site_id,request_key,operation,desired_revision,package_sha256,package_bytes,state,created_by)
-          VALUES (?,?,'deploy',?,?,?,'pending',?)");
-        $stmt->execute([$siteId,$requestKey,$revision,$sha,$size,$actorUserId&&$actorUserId>0?$actorUserId:null]);
-        $deploymentId=(int)$pdo->lastInsertId();
+    $claim=vp3_cloud_hosting_v120_claim_deployment(
+        $pdo,$siteId,$requestKey,'deploy',$revision,$sha,$size,$actorUserId
+    );
+    $existing=(array)$claim['row'];
+    if((string)$existing['operation']!=='deploy'||(string)$existing['package_sha256']!==$sha||(int)$existing['package_bytes']!==$size){
+        throw new RuntimeException('Deployment idempotency key was already used for a different operation or package.');
     }
+    if((int)$existing['desired_revision']!==$revision){
+        throw new RuntimeException('Deployment idempotency key belongs to an older Cloud desired-state revision.');
+    }
+    if((string)$existing['state']==='deployed')return ['replayed'=>true,'deployment'=>$existing];
+    if((string)$existing['state']==='failed')throw new RuntimeException('Failed deployment requires a new idempotency key.');
+    $deploymentId=(int)$existing['id'];
+    $knownTransferId=trim((string)($existing['transfer_id']??''));
 
     try{
         vp3_cloud_hosting_v120_reconcile_site($fresh,$remote,$pdo);
@@ -514,8 +562,9 @@ function vp3_cloud_hosting_v120_deploy_package(
         ],$remote);
         $transferId=trim((string)($begin['transfer_id']??''));
         if($transferId==='')throw new RuntimeException('HomeServer did not return a deployment transfer ID.');
+        $knownTransferId=$transferId;
         $state=(string)($begin['state']??'receiving');
-        if($state==='deployed'){
+        if($state==='applied'){
             vp3_cloud_hosting_v120_update_deployment($pdo,$deploymentId,'deployed',$begin);
             $pdo->prepare('UPDATE cloud_hosting_sites SET previous_release_id=active_release_id,active_release_id=? WHERE id=?')
                 ->execute([trim((string)($begin['release_id']??''))?:null,$siteId]);
@@ -542,11 +591,12 @@ function vp3_cloud_hosting_v120_deploy_package(
             }
         }
 
+        vp3_cloud_hosting_v120_update_deployment($pdo,$deploymentId,'committing',['transfer_id'=>$transferId]);
         $commit=vp3_cloud_hosting_v120_remote($userId,'hosting.deployment.commit',[
             'cloud_site_id'=>(string)$fresh['site_key'],
             'transfer_id'=>$transferId,
         ],$remote);
-        if((string)($commit['state']??'')!=='deployed')throw new RuntimeException('HomeServer did not activate the uploaded deployment.');
+        if((string)($commit['state']??'')!=='applied')throw new RuntimeException('HomeServer did not activate the uploaded deployment.');
         vp3_cloud_hosting_v120_update_deployment($pdo,$deploymentId,'deployed',$commit);
         $releaseId=trim((string)($commit['release_id']??''));
         $pdo->prepare("UPDATE cloud_hosting_sites SET previous_release_id=active_release_id,active_release_id=?,last_error_code='',last_error_message='' WHERE id=?")
@@ -557,7 +607,27 @@ function vp3_cloud_hosting_v120_deploy_package(
         $post=vp3_cloud_hosting_v120_reconcile_site(vp3_cloud_hosting_site_v100($siteId,$userId,$pdo)??$fresh,$remote,$pdo);
         return ['replayed'=>false,'deployment'=>vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo),'reconcile'=>$post];
     }catch(Throwable $e){
-        vp3_cloud_hosting_v120_update_deployment($pdo,$deploymentId,'failed',[],$e->getMessage());
+        $remoteState=null;
+        if($knownTransferId!==''){
+            try{
+                $remoteState=vp3_cloud_hosting_v120_remote($userId,'hosting.deployment.status',[
+                    'cloud_site_id'=>(string)$fresh['site_key'],
+                    'transfer_id'=>$knownTransferId,
+                ],$remote);
+            }catch(Throwable $ignored){
+                $remoteState=null;
+            }
+        }
+        if(is_array($remoteState)&&(string)($remoteState['state']??'')==='applied'){
+            vp3_cloud_hosting_v120_update_deployment($pdo,$deploymentId,'deployed',$remoteState);
+            $releaseId=trim((string)($remoteState['release_id']??''));
+            $pdo->prepare("UPDATE cloud_hosting_sites SET active_release_id=?,last_error_code='',last_error_message='' WHERE id=?")
+                ->execute([$releaseId!==''?$releaseId:null,$siteId]);
+            $post=vp3_cloud_hosting_v120_reconcile_site(vp3_cloud_hosting_site_v100($siteId,$userId,$pdo)??$fresh,$remote,$pdo);
+            return ['replayed'=>false,'recovered'=>true,'deployment'=>vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo),'reconcile'=>$post];
+        }
+        $localState=is_array($remoteState)&&(string)($remoteState['state']??'')==='failed'?'failed':'interrupted';
+        vp3_cloud_hosting_v120_update_deployment($pdo,$deploymentId,$localState,$remoteState??[],$e->getMessage());
         $pdo->prepare("UPDATE cloud_hosting_sites SET last_error_code='deployment_failed',last_error_message=? WHERE id=?")
             ->execute([mb_substr($e->getMessage(),0,500),$siteId]);
         throw $e;
@@ -580,19 +650,17 @@ function vp3_cloud_hosting_v120_rollback(
     if($requestKey===''||strlen($requestKey)>160)throw new RuntimeException('A valid rollback idempotency key is required.');
     $fresh=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
     if($fresh===null)throw new RuntimeException('Hosted site could not be loaded.');
-    $existing=vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo);
-    if($existing!==null){
-        if((string)$existing['operation']!=='rollback')throw new RuntimeException('Rollback idempotency key was already used for a different operation.');
-        if((string)$existing['state']==='rolled_back')return ['replayed'=>true,'deployment'=>$existing];
-        if((string)$existing['state']==='failed')throw new RuntimeException('Failed rollback requires a new idempotency key.');
-        $id=(int)$existing['id'];
-    }else{
-        $stmt=$pdo->prepare("INSERT INTO cloud_hosting_deployments
-          (site_id,request_key,operation,desired_revision,state,created_by)
-          VALUES (?,?,'rollback',?,'pending',?)");
-        $stmt->execute([$siteId,$requestKey,(int)$fresh['desired_revision'],$actorUserId&&$actorUserId>0?$actorUserId:null]);
-        $id=(int)$pdo->lastInsertId();
+    $claim=vp3_cloud_hosting_v120_claim_deployment(
+        $pdo,$siteId,$requestKey,'rollback',(int)$fresh['desired_revision'],'',0,$actorUserId
+    );
+    $existing=(array)$claim['row'];
+    if((string)$existing['operation']!=='rollback')throw new RuntimeException('Rollback idempotency key was already used for a different operation.');
+    if((int)$existing['desired_revision']!==(int)$fresh['desired_revision']){
+        throw new RuntimeException('Rollback idempotency key belongs to an older Cloud desired-state revision.');
     }
+    if((string)$existing['state']==='rolled_back')return ['replayed'=>true,'deployment'=>$existing];
+    if((string)$existing['state']==='failed')throw new RuntimeException('Failed rollback requires a new idempotency key.');
+    $id=(int)$existing['id'];
     try{
         $result=vp3_cloud_hosting_v120_remote($userId,'hosting.deployment.rollback',[
             'cloud_site_id'=>(string)$fresh['site_key'],
@@ -608,7 +676,7 @@ function vp3_cloud_hosting_v120_rollback(
         $post=vp3_cloud_hosting_v120_reconcile_site(vp3_cloud_hosting_site_v100($siteId,$userId,$pdo)??$fresh,$remote,$pdo);
         return ['replayed'=>false,'deployment'=>vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo),'reconcile'=>$post];
     }catch(Throwable $e){
-        vp3_cloud_hosting_v120_update_deployment($pdo,$id,'failed',[],$e->getMessage());
+        vp3_cloud_hosting_v120_update_deployment($pdo,$id,'interrupted',[],$e->getMessage());
         throw $e;
     }
 }
@@ -628,6 +696,8 @@ function vp3_cloud_hosting_v120_public_capability(): array
         'deployment_chunk_bytes'=>VP3_CLOUD_HOSTING_DEPLOY_CHUNK_BYTES,
         'max_package_bytes'=>VP3_CLOUD_HOSTING_MAX_PACKAGE_BYTES,
         'deployment_resume'=>true,
+        'transient_failure_resume_with_same_key'=>true,
+        'single_inflight_operation_per_site'=>true,
         'deployment_idempotency'=>true,
         'rollback_idempotency'=>true,
         'raw_package_persisted'=>false,
