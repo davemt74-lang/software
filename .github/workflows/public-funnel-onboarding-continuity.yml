@@ -80,6 +80,7 @@ jobs:
           php -l tests/profile-webmcp-campaigns-v171.php
           php -l tests/profile-webmcp-campaigns-v172.php
           php -l tests/profile-webmcp-rewards-v180.php
+          php -l tests/profile-webmcp-rewards-v181.php
       - name: Profile WebMCP PHP security contract
         run: |
           php tests/profile-webmcp-v100.php
@@ -93,6 +94,7 @@ jobs:
           php tests/profile-webmcp-campaigns-v171.php
           php tests/profile-webmcp-campaigns-v172.php
           php tests/profile-webmcp-rewards-v180.php
+          php tests/profile-webmcp-rewards-v181.php
       - name: Profile WebMCP static integration contract
         run: |
           node tests/profile-webmcp-v100-contract.mjs
@@ -106,6 +108,7 @@ jobs:
           node tests/profile-webmcp-campaigns-v171-contract.mjs
           node tests/profile-webmcp-campaigns-v172-contract.mjs
           node tests/profile-webmcp-rewards-v180-contract.mjs
+          node tests/profile-webmcp-rewards-v181-contract.mjs
       - name: Profile WebMCP browser runtime contract
         run: |
           node tests/profile-webmcp-v100-runtime.mjs
@@ -119,6 +122,7 @@ jobs:
           node tests/profile-webmcp-campaigns-v171-runtime.mjs
           node tests/profile-webmcp-campaigns-v172-runtime.mjs
           node tests/profile-webmcp-rewards-v180-runtime.mjs
+          node tests/profile-webmcp-rewards-v181-runtime.mjs
       - name: Profile WebMCP production package smoke
         run: |
           set -euo pipefail
