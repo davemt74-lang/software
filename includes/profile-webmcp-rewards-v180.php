@@ -180,6 +180,12 @@ function vp3_profile_webmcp_reward_claim_confirm_v181(
         if($started)$pdo->beginTransaction();
         $action=vp3_profile_webmcp_action_row_v150($pdo,$owner,$intentId,true);
         if(!$action||(string)$action['operation']!==$operation||(string)$action['state']==='failed')throw new RuntimeException('Prepared Reward action is unavailable.');
+        if((string)$action['profile_username']!==(string)$context['profile_username']
+           ||(string)$action['surface']!==(string)$context['surface']
+           ||(int)($action['property_id']??0)!==(int)($context['property_id']??0)
+           ||!hash_equals((string)$action['session_hash'],(string)$context['session_hash'])){
+            throw new RuntimeException('Prepared Reward action belongs to a different WebMCP session.');
+        }
         if(!hash_equals((string)$action['payload_hash'],vp3_profile_webmcp_payload_hash_v150($intent)))throw new RuntimeException('Prepared Reward payload changed.');
         if((string)$action['state']==='committed'){
             if(!hash_equals((string)$action['idempotency_hash'],$idem))throw new RuntimeException('This Reward intent was already confirmed with a different idempotency key.');
@@ -192,7 +198,8 @@ function vp3_profile_webmcp_reward_claim_confirm_v181(
         $existing=vp3_profile_webmcp_action_by_idempotency_v150($pdo,$owner,$operation,$idem,true);
         if($existing&&(int)$existing['id']!==(int)$action['id']){
             if(!hash_equals((string)$existing['payload_hash'],(string)$action['payload_hash']))throw new RuntimeException('Idempotency key was already used for a different Reward handoff.');
-            $result=json_decode((string)($existing['result_json']??''),true);if(!is_array($result))$result=[];
+            if((string)$existing['state']!=='committed')throw new RuntimeException('That Reward handoff is still in progress.');
+            $result=json_decode((string)($existing['result_json']??''),true);if(!is_array($result))throw new RuntimeException('Committed Reward handoff result is unavailable.');
             $result['idempotent_replay']=true;if($started)$pdo->commit();return $result;
         }
         $reward=vp3_profile_webmcp_reward_holder_by_public_id_v181($pdo,$viewerId,(string)$intent['reward_public_id']);
