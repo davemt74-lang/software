@@ -200,7 +200,16 @@ class ExternalRuntime{
     this.fetchImpl=fetchImpl;
     this.endpoint=String(endpoint||'');
     this.publicKey=propertyKey(publicKey);
-    this.onEvent=onEvent;
+    this.healthState={last_event:'',last_success:'',last_failure:'',last_tool:'',last_code:'',updated_at:0};
+    const sink=onEvent;
+    this.onEvent=event=>{
+      const e=event&&typeof event==='object'?event:{};
+      const name=String(e.event||'');const tool=String(e.tool||'');const code=String(e.code||'');
+      this.healthState.last_event=name;this.healthState.last_tool=tool;this.healthState.last_code=code;this.healthState.updated_at=Date.now();
+      if(name==='tool_completed')this.healthState.last_success=tool;
+      if(name==='tool_failed'||name==='tool_registration_failed')this.healthState.last_failure=tool||code||name;
+      sink(e);
+    };
     this.webmcpSessionId=transportIdV130();
     this.chatGrant='';
     this.chatGrantExpiresAt=0;
@@ -210,6 +219,26 @@ class ExternalRuntime{
 
   get supported(){
     return Boolean(this.documentObject?.modelContext?.registerTool);
+  }
+
+  diagnostics(){
+    const expected=this.effectiveToolNames();
+    const registered=[...this.registrations.keys()].sort();
+    return {
+      contract:'vp3.profile.webmcp.runtime-health.v1',
+      build:BUILD,
+      supported:this.supported,
+      protocol_compatible:this.manifest?protocolCompatibleV200(this.manifest):false,
+      expected_registration_count:expected.length,
+      registration_count:registered.length,
+      registration_match:expected.length===registered.length&&expected.every((v,i)=>v===registered[i]),
+      last_event:this.healthState.last_event,
+      last_success:this.healthState.last_success,
+      last_failure:this.healthState.last_failure,
+      last_tool:this.healthState.last_tool,
+      last_code:this.healthState.last_code,
+      updated_at:this.healthState.updated_at
+    };
   }
 
   gatewayUrl(){
