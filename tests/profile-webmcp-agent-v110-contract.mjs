@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const service=read('includes/profile-agent-public-service-v110.php');
 const webmcp=read('includes/profile-webmcp-v100.php');
+const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const webapi=read('api/profile-webmcp-v100.php');
 const profileApi=read('api/profile-agent.php');
 const runtime=read('profile-webmcp-v100.js');
@@ -11,8 +12,9 @@ for(const name of ['vp3.agent.get','vp3.agent.conversation.get','vp3.agent.messa
   assert.match(webmcp,new RegExp(name.replaceAll('.','\\.')),'server catalog '+name);
   assert.match(runtime,new RegExp(name.replaceAll('.','\\.')),'browser catalog '+name);
 }
-assert.match(webmcp,/\$viewerId<1 \|\| \$viewerId!==\$ownerUserId/,'owner must not receive visitor Profile Agent capability');
-assert.match(webmcp,/!in_array\(\$capability,\s*\['profile','profile_agent'(?:,'booking')?(?:,'commerce')?\],\s*true\)/,'intent resolver must recognize implemented Profile Agent adapter while allowing additional implemented adapters');
+assert.match(resolver,/\$viewerId<1\|\|\$viewerId!==\$ownerUserId/,'owner must not receive visitor Profile Agent capability');
+assert.match(webmcp,/registeredCapabilities/,'intent resolver must derive adapter readiness from registered tools');
+assert.match(webmcp,/requires_domain_adapter/,'intent resolver must report only genuinely missing adapters');
 
 assert.match(service,/vp3_profile_agent_public_conversation_v390/,'conversation authority must use v3.90 boundary');
 assert.match(service,/profile_agent_rate_check\(\$pdo,\$cid\)/,'canonical per-conversation rate limit retained');
