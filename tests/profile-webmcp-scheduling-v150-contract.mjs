@@ -6,6 +6,7 @@ const actions=read('includes/profile-webmcp-actions-v150.php');
 const scheduling=read('includes/profile-webmcp-scheduling-v150.php');
 const catalog=read('includes/profile-webmcp-v100.php');
 const nativeApi=read('api/profile-webmcp-v100.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
 const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const externalApi=read('api/profile-webmcp-external-v120.php');
@@ -83,8 +84,8 @@ for(const name of ['vp3.booking.confirm','vp3.booking.reschedule.confirm','vp3.b
  const block=catalog.slice(idx,idx+1800);
  assert.match(block,/consequentialHint'\s*=>\s*true/,'confirm must be consequential '+name);
 }
-assert.match(nativeApi,/vp3_profile_webmcp_scheduling_confirm_v150/);
-assert.match(externalApi,/vp3_profile_webmcp_scheduling_confirm_v150/);
+assert.match(router,/vp3_profile_webmcp_scheduling_confirm_v150/);
+assert.match(externalApi,/vp3_profile_webmcp_dispatch_v191/);
 assert.match(nativeApi,/webmcp_confirmation_required/);
 assert.match(externalApi,/webmcp_confirmation_required/);
 assert.match(nativeApi,/webmcp_booking_completed/);
