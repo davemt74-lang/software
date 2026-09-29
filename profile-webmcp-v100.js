@@ -234,6 +234,7 @@ export class VP3ProfileWebMCPRuntimeV100 {
       auto_execute_consequential:false
     };
     this.resumeContext=/^[a-f0-9]{32}$/.test(detail.action_context_id)&&/^[a-f0-9]{32}$/.test(detail.return_token)?detail:null;
+    if(this.resumeContext)await this.noteContinuity('','viewed','',false);
     this.#dispatchConfirmationEvent('vp3:webmcp-resume',detail);
     this.onEvent({event:'resume_ready',capabilities:detail.recommended_capabilities});
     return detail;
