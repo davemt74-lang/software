@@ -26,7 +26,7 @@ assert.match(continuity,/'auto_execute_consequential'=>false/);
 assert.match(agent,/profile-webmcp-continuity-v194\.php/);
 assert.match(agent,/vp3_profile_webmcp_resume_issue_v194/);
 assert.match(agent,/vp3_profile_webmcp_resume_validate_v194/);
-assert.match(agent,/webmcp_resume=/);
+assert.match(continuity,/webmcp_resume=/,'resume URL must be minted only by the continuity helper');
 assert.match(agent,/'resume_expires_at'/);
 
 assert.match(profile,/profile-webmcp-continuity-v194\.php/);
