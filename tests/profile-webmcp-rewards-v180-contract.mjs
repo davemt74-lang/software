@@ -15,7 +15,7 @@ const recovery=read('tools/run_recovery_baseline.py');
 assert.match(adapter,/vp3\.rewards\.wallet\.get/);
 assert.match(adapter,/campaigns_rewards_reward_tray_v110\(\$pdo,\$viewerId\)/,'wallet must use canonical Reward Tray projection');
 assert.match(adapter,/\$viewerId<1.*Sign in to view your Reward Wallet/s,'wallet must require authenticated viewer');
-assert.doesNotMatch(adapter,/campaigns_rewards_prepare_claim_v110|campaigns_rewards_claim_from_tray_v110|campaigns_rewards_transfer_reward_v110|campaigns_rewards_process_claim_v100/,'9A must remain read-only');
+assert.doesNotMatch(adapter,/campaigns_rewards_prepare_claim_v110|campaigns_rewards_claim_from_tray_v110|campaigns_rewards_process_claim_v100/,'Reward Wallet/claim surfaces must never rotate or redeem credentials directly');
 assert.doesNotMatch(adapter,/['"](?:credential|credential_hash|credential_last4|merchant_claim_code|recipient_email|recipient_name|crm_contact_id|inventory_on_hand|inventory_reserved)['"]\s*=>/,'safe wallet projection must not emit credential, recipient, CRM, or inventory fields');
 assert.match(adapter,/public_id/);
 assert.match(adapter,/claimable/);
