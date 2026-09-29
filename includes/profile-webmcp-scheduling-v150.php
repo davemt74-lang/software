@@ -192,6 +192,22 @@ function vp3_profile_webmcp_booking_projection_v150(array $booking): array
     ];
 }
 
+function vp3_profile_webmcp_booking_public_projection_v150(array $booking): array
+{
+    return [
+        'booking_id'=>(int)$booking['id'],
+        'event_type_id'=>(int)($booking['event_type_id']??0),
+        'event_title'=>(string)$booking['event_title'],
+        'start_at_utc'=>(string)$booking['start_at_utc'],
+        'end_at_utc'=>(string)$booking['end_at_utc'],
+        'organizer_timezone'=>(string)$booking['organizer_timezone'],
+        'guest_timezone'=>(string)$booking['guest_timezone'],
+        'status'=>(string)$booking['status'],
+        'location_type'=>(string)($booking['location_type']??'virtual'),
+        'calendar_url'=>agent_scheduling_public_calendar_url_v450((string)$booking['public_token']),
+    ];
+}
+
 function vp3_profile_webmcp_booking_response_v150(PDO $pdo,array $profile,array $booking,bool $includeManage=true,?array $snapshot=null): array
 {
     $current=vp3_profile_webmcp_booking_projection_v150($booking);
@@ -373,6 +389,9 @@ function vp3_profile_webmcp_scheduling_create_commit_v150(PDO $pdo,array $profil
         try{
             if(!empty($intent['intake'])&&function_exists('agent_appointment_lifecycle_capture_intake_v700'))agent_appointment_lifecycle_capture_intake_v700($pdo,$booking,(array)$intent['intake']);
             $paid=$paidReady?agent_paid_appointments_create_personal_v800($pdo,$booking):null;
+            if($paid){
+                $booking=vp3_profile_webmcp_booking_by_id_v150($pdo,(int)$profile['user_id'],(int)$booking['id'])?:$booking;
+            }
         }catch(Throwable $e){
             throw $e;
         }
@@ -491,5 +510,7 @@ function vp3_profile_webmcp_scheduling_get_v150(PDO $pdo,array $profile,array $i
     if(!preg_match('/^[a-f0-9]{64}$/',$token))throw new RuntimeException('A valid booking public token is required.');
     $booking=agent_scheduling_booking_by_public_token_v450($pdo,$token);
     if(!$booking||(int)$booking['owner_user_id']!==(int)$profile['user_id'])throw new RuntimeException('Booking not found for this profile.');
-    return vp3_profile_webmcp_booking_response_v150($pdo,$profile,$booking,false);
+    $response=vp3_profile_webmcp_booking_response_v150($pdo,$profile,$booking,false);
+    $response['booking']=vp3_profile_webmcp_booking_public_projection_v150($booking);
+    return $response;
 }
