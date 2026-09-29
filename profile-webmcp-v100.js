@@ -342,9 +342,9 @@ export class VP3ProfileWebMCPRuntimeV100 {
         if(action.phase==='prepared'&&action.requires_confirmation===true){
           this.#dispatchConfirmationEvent('vp3:webmcp-confirmation',structuredClone(action));
           this.onEvent({event:'confirmation_required',tool:name,intent_id:String(action.intent_id||'')});
-        }else if(action.phase==='completed'){
+        }else if(action.phase==='completed'&&action.intent_id){
           this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
-            intent_id:String(action.intent_id||''),
+            intent_id:String(action.intent_id),
             confirm_tool:String(action.confirm_tool||name),
             result:data
           });
