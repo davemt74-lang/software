@@ -13,6 +13,8 @@ for(const table of ['cloud_hosting_entitlement_sync','cloud_hosting_site_sync','
 }
 assert.match(sync,/hosting\.entitlements\.reconcile/);
 assert.match(sync,/hosting\.site\.reconcile/);
+assert.match(sync,/vp3_cloud_hosting_v120_ensure_homeserver_binding/);
+assert.match(sync,/homeserver\.revision_rebased/);
 assert.match(sync,/hosting\.route\.reconcile/);
 assert.match(sync,/hosting\.deployment\.begin/);
 assert.match(sync,/hosting\.deployment\.chunk/);
@@ -54,6 +56,8 @@ assert.match(sync,/cloud_hosting_route_credentials/);
 assert.match(sync,/cloud_hosting_edge_certificates/);
 assert.match(sync,/certificate_not_after/);
 assert.match(sync,/Cloud-edge certificate is expired/);
+assert.match(sync,/changedCertificate/);
+assert.match(sync,/desired_revision/);
 assert.doesNotMatch(sync,/BEGIN PRIVATE KEY|private_key\s+(?:LONGTEXT|TEXT|VARCHAR)|certificate_key\s+(?:LONGTEXT|TEXT|VARCHAR)/);
 
 assert.match(sync,/vp3_cloud_hosting_v120_public_remote/);
