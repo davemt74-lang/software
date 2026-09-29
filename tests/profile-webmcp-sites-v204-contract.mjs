@@ -13,6 +13,9 @@ for(const s of ['healthy','paused','unverified','upgrade_required','stale','degr
 assert.match(layer,/last_contact_at/);
 assert.match(layer,/vp3_profile_webmcp_site_status_v204/);
 assert.match(layer,/runtime_build/);
+assert.match(layer,/allowed_tools/);
+assert.match(layer,/runtime_url/);
+assert.match(layer,/ORIGIN_DENIED/);
 assert.match(layer,/origin_denied_30d/);
 assert.match(layer,/upgrade_guidance/);
 assert.match(layer,/reverify_guidance/);
@@ -22,6 +25,7 @@ assert.match(gateway,/vp3_profile_webmcp_site_record_origin_denied_v204/);
 assert.match(gateway,/client_versions/);
 assert.match(admin,/Connected site runtime management/);
 assert.match(admin,/Upgrade required/);
+assert.match(admin,/allowed_tools/);
 assert.match(external,/webmcp_runtime_url/);
 assert.match(workflow,/profile-webmcp-sites-v204/);
 assert.match(recovery,/profile-webmcp-sites-v204/);
