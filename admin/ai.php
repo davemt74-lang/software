@@ -288,7 +288,7 @@ require __DIR__ . '/_header.php';
           <span class="ai-provider-mark">H</span>
           <div>
             <h3>Hosting / cPanel API</h3>
-            <p>Cloud Hosting provisioning · cPanel UAPI over HTTPS</p>
+            <p>Cloud Hosting provisioning · cPanel API token over HTTPS</p>
           </div>
         </div>
         <span class="ai-ready-state <?= !empty($cpanelPublicState['configured']) ? 'ready' : '' ?>">
@@ -333,7 +333,7 @@ require __DIR__ . '/_header.php';
       <?php endif; ?>
 
       <div class="ai-provider-actions">
-        <small>Cloud Hosting will use the account-level cPanel API token for UAPI provisioning. The token is encrypted with the same private credential key as the AI provider keys.</small>
+        <small>Cloud Hosting uses the account-level cPanel API token for UAPI health checks and cPanel DNS provisioning. The token is encrypted with the same private credential key as the AI provider keys.</small>
       </div>
     </section>
 
