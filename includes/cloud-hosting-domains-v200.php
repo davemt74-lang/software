@@ -221,26 +221,28 @@ function vp3_cloud_hosting_domains_v200_attach(
         $existing=$pdo->prepare('SELECT * FROM cloud_hosting_custom_domains WHERE hostname=? LIMIT 1');
         $existing->execute([$hostname]);
         $row=$existing->fetch();
-        if(is_array($row)){
+        if(is_array($row)&&empty($row['detached_at'])){
             if((int)$row['owner_user_id']!==$userId)throw new RuntimeException('This custom domain is already attached to another account.');
-            if(empty($row['detached_at']))throw new RuntimeException('This custom domain is already attached.');
+            throw new RuntimeException('This custom domain is already attached.');
+        }
+        if($limit!==null&&vp3_cloud_hosting_domains_v200_count($userId,$pdo)>=$limit){
+            throw new RuntimeException('This account has reached its custom-domain limit.');
+        }
+        if(is_array($row)){
             $token=vp3_cloud_hosting_domains_v200_token();
             $stmt=$pdo->prepare("UPDATE cloud_hosting_custom_domains SET
-              site_id=?,verification_dns_name=?,verification_token_hash=?,verification_token_enc=?,
+              site_id=?,owner_user_id=?,verification_dns_name=?,verification_token_hash=?,verification_token_enc=?,
               verification_state='pending',routing_state='pending',tls_state='pending',provider='manual',
               record_type='CNAME',record_value=?,is_canonical=0,redirect_to_canonical=1,revision=revision+1,
               certificate_not_after=NULL,certificate_fingerprint='',last_error_code='',last_error_message='',
               attached_at=UTC_TIMESTAMP(),ownership_verified_at=NULL,routing_verified_at=NULL,detached_at=NULL
               WHERE id=?");
             $stmt->execute([
-                $siteId,vp3_cloud_hosting_domains_v200_verification_name($hostname),hash('sha256',$token),
+                $siteId,$userId,vp3_cloud_hosting_domains_v200_verification_name($hostname),hash('sha256',$token),
                 ai_encrypt_secret($token),vp3_cloud_hosting_v110_ingress_hostname(),(int)$row['id']
             ]);
             $id=(int)$row['id'];
         }else{
-            if($limit!==null&&vp3_cloud_hosting_domains_v200_count($userId,$pdo)>=$limit){
-                throw new RuntimeException('This account has reached its custom-domain limit.');
-            }
             $token=vp3_cloud_hosting_domains_v200_token();
             $stmt=$pdo->prepare("INSERT INTO cloud_hosting_custom_domains
               (site_id,owner_user_id,hostname,verification_dns_name,verification_token_hash,verification_token_enc,provider,record_type,record_value)
