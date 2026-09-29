@@ -31,6 +31,7 @@ assert.match(commerce,/profile_commerce_public_product_v900/,'product discovery 
 assert.match(commerce,/profile_commerce_visibility_v900\(\$row\)!=='public'/,'checkout must revalidate public visibility');
 assert.match(commerce,/profile_commerce_terms_digest_v900/,'seller terms must be canonical and digest-bound');
 assert.match(commerce,/product_state_hash/,'prepared checkout must bind product state');
+assert.match(commerce,/vp3_profile_webmcp_b64url_encode_v140\(\$sig\).*\$sigEncoded/s,'non-canonical signature encoding must fail closed');
 assert.match(commerce,/agent_commerce_create_order_v800/,'checkout confirm must create canonical Commerce order');
 assert.match(commerce,/agent_commerce_create_checkout_v800/,'checkout confirm must use canonical hosted provider checkout');
 assert.match(commerce,/state='executing'/,'provider checkout must have a durable resumable execution barrier');
