@@ -74,6 +74,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             save_setting('hosting_cpanel_server', $cpanelServer);
             save_setting('hosting_cpanel_username', $cpanelUsername);
 
+            $cpanelZone = trim((string)($_POST['cpanel_zone_domain'] ?? ''));
+            $hostingIngress = trim((string)($_POST['hosting_public_ingress_hostname'] ?? ''));
+            if ($cpanelZone !== '') {
+                $cpanelZone = vp3_cloud_hosting_v110_normalize_domain($cpanelZone, 'cPanel DNS zone domain');
+            }
+            if ($hostingIngress !== '') {
+                $hostingIngress = vp3_cloud_hosting_v110_normalize_domain($hostingIngress, 'Cloud Hosting ingress hostname');
+            }
+            save_setting('hosting_cpanel_zone_domain', $cpanelZone);
+            save_setting('hosting_public_ingress_hostname', $hostingIngress);
+
             $cpanelToken = trim((string)($_POST['cpanel_api_token'] ?? ''));
             if ($cpanelToken !== '' && ($cpanelServer === '' || $cpanelUsername === '')) {
                 throw new RuntimeException('Enter the cPanel API server and username before saving a cPanel API token.');
@@ -85,6 +96,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             flash('notice', 'AI, API, and system agent settings saved.');
+            redirect(url('/admin/ai.php'));
+        }
+
+        if ($action === 'test_cpanel') {
+            $result = vp3_cloud_hosting_v110_cpanel_call('uapi', 'DomainInfo', 'list_domains');
+            flash('notice', 'cPanel connected successfully over secure UAPI.');
             redirect(url('/admin/ai.php'));
         }
 
@@ -297,6 +314,18 @@ require __DIR__ . '/_header.php';
           <input id="cpanel_api_token" name="cpanel_api_token" type="password" autocomplete="new-password" placeholder="<?= trim((string)setting('hosting_cpanel_api_token', '')) !== '' ? 'Saved encrypted token' . ($cpanelCredentialState === 'ready' ? ' ••••••' . e((string)($cpanelPublicState['token_suffix'] ?? '')) : '') : 'Paste cPanel API token' ?>">
           <small><?= trim((string)setting('hosting_cpanel_api_token', '')) !== '' ? e($cpanelCredentialState === 'ready' ? 'An encrypted cPanel API token is saved. Leave blank to keep it.' : ai_credential_state_message($cpanelCredentialState, 'cPanel')) : 'No cPanel API token is saved.' ?></small>
         </div>
+
+        <div class="field">
+          <label for="cpanel_zone_domain">Managed DNS Zone</label>
+          <input id="cpanel_zone_domain" name="cpanel_zone_domain" autocomplete="off" value="<?= e((string)setting('hosting_cpanel_zone_domain', '')) ?>" placeholder="vp3.example.com">
+          <small>Hosted customer subdomains must be children of this cPanel-managed DNS zone.</small>
+        </div>
+
+        <div class="field">
+          <label for="hosting_public_ingress_hostname">Cloud Hosting Ingress</label>
+          <input id="hosting_public_ingress_hostname" name="hosting_public_ingress_hostname" autocomplete="off" value="<?= e((string)setting('hosting_public_ingress_hostname', '')) ?>" placeholder="hosting-edge.example.net">
+          <small>cPanel creates CNAME records to this Cloud edge. TLS remains Cloud-edge authority.</small>
+        </div>
       </div>
 
       <?php if (trim((string)setting('hosting_cpanel_api_token', '')) !== ''): ?>
@@ -331,6 +360,12 @@ require __DIR__ . '/_header.php';
       <input type="hidden" name="action" value="test">
       <input type="hidden" name="provider" value="anthropic">
       <button class="btn" type="submit" <?= !ai_provider_ready('anthropic') ? 'disabled' : '' ?>>Test Claude</button>
+    </form>
+
+    <form method="post" class="inline-form">
+      <?= csrf_field() ?>
+      <input type="hidden" name="action" value="test_cpanel">
+      <button class="btn" type="submit" <?= empty($cpanelPublicState['configured']) ? 'disabled' : '' ?>>Test cPanel</button>
     </form>
   </div>
 </div>
