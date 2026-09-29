@@ -100,6 +100,7 @@ require_once __DIR__.'/agent-team-scheduling-tools-v610.php';
 require_once __DIR__.'/agent-appointment-lifecycle-v700.php';
 require_once __DIR__.'/agent-commerce-v800.php';
 require_once __DIR__.'/agent-paid-appointments-v800.php';
+require_once __DIR__.'/profile-webmcp-commerce-v160.php';
 require_once __DIR__.'/team-subscription.php';
 require_once __DIR__.'/social-network-v320.php';
 require_once __DIR__.'/social-network-v321.php';

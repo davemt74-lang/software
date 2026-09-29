@@ -11,6 +11,19 @@ function deepFreeze(value){
   return value;
 }
 
+const COMMERCE_CATALOG_V160=deepFreeze({
+  'vp3.commerce.products.list':{title:'List public products',description:'List canonical public Profile Commerce products.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.product.get':{title:'Get public product',description:'Return one public product, seller terms, and safe payment-provider choices.',inputSchema:{type:'object',properties:{product_slug:{type:'string',minLength:1,maxLength:80}},required:['product_slug'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.checkout.prepare':{title:'Prepare commerce checkout',description:'Validate canonical product price, terms, payer email, and provider without creating an order.',inputSchema:{type:'object',properties:{product_slug:{type:'string',minLength:1,maxLength:80},payer_email:{type:'string',minLength:3,maxLength:190},connection_id:{type:'integer',minimum:1}},required:['product_slug','payer_email'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.checkout.confirm':{title:'Confirm commerce checkout',description:'Create the prepared canonical order and hosted provider checkout. This does not mark payment paid.',inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:4096},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true},terms_accepted:{type:'boolean'}},required:['confirmation_token','idempotency_key','intent','terms_accepted'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}},
+  'vp3.commerce.order.get':{title:'Get commerce order',description:'Return the customer-safe canonical order projection using receipt authority.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}$'}},required:['order_number','receipt_token'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.receipt.get':{title:'Get commerce receipt',description:'Return the customer-safe receipt projection and receipt URL.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}$'}},required:['order_number','receipt_token'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.delivery.get':{title:'Get fulfillment status',description:'Return fulfillment state and whether private delivery is available without embedding private delivery content.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}$'}},required:['order_number','receipt_token'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.refund.status':{title:'Get refund request status',description:'Return refundable balance and seller-review refund-request status.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}$'}},required:['order_number','receipt_token'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.refund.prepare':{title:'Prepare refund request',description:'Validate and preview a seller-reviewed refund request. No money moves.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}$'},reason:{type:'string',minLength:3,maxLength:500}},required:['order_number','receipt_token','reason'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.refund.confirm':{title:'Confirm refund request',description:'Submit the prepared request for seller review. This never executes a provider refund.',inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:4096},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}}
+});
+
 const CATALOG=deepFreeze({
   'vp3.profile.capabilities.get':{
     title:'Get profile capabilities',
@@ -105,7 +118,8 @@ const CATALOG=deepFreeze({
     title:'Confirm booking cancellation',description:'Cancel the exact prepared booking after confirmation and idempotency validation.',
     inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:2048},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
     annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
-  }});
+  }  ,...COMMERCE_CATALOG_V160
+});
 
 function safeError(code,message,retryable=false){
   return {ok:false,error:{code,message,retryable}};
@@ -141,6 +155,9 @@ function isChatToolV140(name){
 }
 function isSchedulingToolV150(name){
   return String(name||'').startsWith('vp3.booking.');
+}
+function isCommerceToolV160(name){
+  return String(name||'').startsWith('vp3.commerce.');
 }
 
 class ExternalRuntime{
@@ -180,7 +197,8 @@ class ExternalRuntime{
     const allowed=new Set(Array.isArray(manifest.allowed_tools)?manifest.allowed_tools:[]);
     const chatEnabled=manifest.external.stateful_profile_agent===true&&Boolean(this.chatGrant);
     const schedulingEnabled=manifest.external.scheduling_enabled===true;
-    return Object.keys(CATALOG).filter(name=>allowed.has(name)&&(!isChatToolV140(name)||chatEnabled)&&(!isSchedulingToolV150(name)||schedulingEnabled)).sort();
+    const commerceEnabled=manifest.external.commerce_enabled===true;
+    return Object.keys(CATALOG).filter(name=>allowed.has(name)&&(!isChatToolV140(name)||chatEnabled)&&(!isSchedulingToolV150(name)||schedulingEnabled)&&(!isCommerceToolV160(name)||commerceEnabled)).sort();
   }
 
   async loadManifest(){
@@ -271,6 +289,9 @@ class ExternalRuntime{
     }else if(isSchedulingToolV150(name)){
       if(this.manifest?.external?.scheduling_enabled!==true)return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
       if(!this.effectiveToolNames().includes(name))return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
+    }else if(isCommerceToolV160(name)){
+      if(this.manifest?.external?.commerce_enabled!==true)return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
+      if(!this.effectiveToolNames().includes(name))return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
     }else if(!this.effectiveToolNames().includes(name)){
       return safeError('CAPABILITY_UNAVAILABLE','That connected-site capability is unavailable.');
     }
@@ -342,6 +363,8 @@ async function bootFromScript(script){
     registered:result.registered||[],
     read_only:Boolean(runtime.manifest?.external?.read_only),
     chat_enabled:Boolean(runtime.manifest?.external?.stateful_profile_agent),
+    scheduling_enabled:Boolean(runtime.manifest?.external?.scheduling_enabled),
+    commerce_enabled:Boolean(runtime.manifest?.external?.commerce_enabled),
     runtime
   };
   try{
@@ -368,6 +391,8 @@ if(autoScript?.dataset?.vp3Key&&autoScript?.dataset?.vp3WebmcpAuto!=='off'){
       registered:[],
       read_only:true,
       chat_enabled:false,
+      scheduling_enabled:false,
+      commerce_enabled:false,
       error:String(error?.message||'Connected-site WebMCP failed to start.')
     };
   });

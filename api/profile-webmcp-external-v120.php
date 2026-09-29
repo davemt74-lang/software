@@ -9,6 +9,7 @@ require_once dirname(__DIR__).'/includes/profile-agent-public-service-v110.php';
 require_once dirname(__DIR__).'/includes/profile-agent-transcription-context.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-chat-v140.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-scheduling-v150.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-commerce-v160.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -67,7 +68,7 @@ if(!in_array($method,['GET','POST'],true)){
 try{
     $profile=vp3_profile_webmcp_external_profile_v120($pdo,$property);
     $chatAvailable=$manifestSession!==''&&vp3_profile_webmcp_external_agent_v120($pdo,$profile)!==null;
-    $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$property,$profile,$chatAvailable,true);
+    $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$property,$profile,$chatAvailable,true,true);
 }catch(Throwable $e){
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'PROFILE_UNAVAILABLE','message'=>'The connected VP3 profile is unavailable.']],404);
 }
@@ -91,6 +92,7 @@ if($method==='GET'){
             'read_only'=>!empty($manifest['external']['read_only']),
             'chat_enabled'=>!empty($manifest['external']['stateful_profile_agent']),
             'scheduling_enabled'=>!empty($manifest['external']['scheduling_enabled']),
+            'commerce_enabled'=>!empty($manifest['external']['commerce_enabled']),
         ],
     ]);
 }
@@ -225,6 +227,55 @@ try{
                 trim((string)($args['confirmation_token']??'')),trim((string)($args['idempotency_key']??''))
             );
             vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_booking_completed',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['booking_id'=>(int)($result['booking']['booking_id']??0)]);
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
+    }
+    if(str_starts_with($tool,'vp3.commerce.')){
+        $commerceContext=vp3_profile_webmcp_commerce_context_v160($profile,'external_site',$telemetry,'',$property,$origin);
+        if($tool==='vp3.commerce.products.list'){
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['products'=>vp3_profile_webmcp_commerce_products_v160($pdo,$profile)]);
+        }
+        if($tool==='vp3.commerce.product.get'){
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_commerce_product_detail_v160($pdo,$profile,(string)($args['product_slug']??'')));
+        }
+        if($tool==='vp3.commerce.checkout.prepare'){
+            $result=vp3_profile_webmcp_commerce_checkout_prepare_v160($pdo,$profile,$commerceContext,$args);
+            if(!empty($result['confirmation_required'])){
+                vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_checkout_prepared',$tool,'prepared',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+                vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_confirmation_required',$tool,'confirmation_required',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+            }
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
+        if($tool==='vp3.commerce.checkout.confirm'){
+            $intent=is_array($args['intent']??null)?$args['intent']:[];
+            $result=vp3_profile_webmcp_commerce_checkout_confirm_v160(
+                $pdo,$profile,$commerceContext,$telemetryContext,$intent,
+                trim((string)($args['confirmation_token']??'')),trim((string)($args['idempotency_key']??'')),!empty($args['terms_accepted'])
+            );
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_checkout_started',$tool,'checkout_started',(int)max(0,round((microtime(true)-$startedAt)*1000)),['order_id'=>(int)($result['order']['order_id']??0)]);
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
+        if($tool==='vp3.commerce.order.get'||$tool==='vp3.commerce.receipt.get'){
+            $result=vp3_profile_webmcp_commerce_order_get_v160($pdo,$profile,$args);
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$tool==='vp3.commerce.receipt.get'?['receipt'=>$result]:$result);
+        }
+        if($tool==='vp3.commerce.delivery.get'){
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_commerce_delivery_get_v160($pdo,$profile,$args));
+        }
+        if($tool==='vp3.commerce.refund.status'){
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_commerce_refund_status_v160($pdo,$profile,$args));
+        }
+        if($tool==='vp3.commerce.refund.prepare'){
+            $result=vp3_profile_webmcp_commerce_refund_prepare_v160($pdo,$profile,$commerceContext,$args);
+            vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_confirmation_required',$tool,'confirmation_required',(int)max(0,round((microtime(true)-$startedAt)*1000)));
+            vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
+        if($tool==='vp3.commerce.refund.confirm'){
+            $intent=is_array($args['intent']??null)?$args['intent']:[];
+            $result=vp3_profile_webmcp_commerce_refund_confirm_v160(
+                $pdo,$profile,$commerceContext,$intent,
+                trim((string)($args['confirmation_token']??'')),trim((string)($args['idempotency_key']??''))
+            );
             vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
         }
     }

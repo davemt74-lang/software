@@ -37,6 +37,7 @@ assert.match(upgrade,/vp3_profile_webmcp_actions_schema_ready_v150/);
 assert.match(upgrade,/vp3_profile_webmcp_actions_ensure_schema_v150/);
 
 assert.match(scheduling,/hash_hmac\('sha256'/,'prepare confirmation token must be signed');
+assert.match(scheduling,/vp3_profile_webmcp_b64url_encode_v140\(\$sig\).*\$sigEncoded/s,'non-canonical signature encoding must fail closed');
 assert.match(scheduling,/vp3_profile_webmcp_native_signing_secret_v150/,'native confirmation signing must use a server-only session secret');
 assert.match(scheduling,/vp3_profile_webmcp_action_secrets/,'server-only signing secret must stay in PHP session state');
 assert.doesNotMatch(scheduling,/return hash\('sha256','vp3-webmcp-scheduling-v150\|native\|'\.\$nativeProof/,'browser-visible native proof must not be the signing key');
@@ -93,7 +94,7 @@ assert.match(externalRuntime,/credentials:'omit'/);
 assert.doesNotMatch(externalRuntime,/Authorization|X-VP3-WebMCP-Session/,'connected-site scheduling must remain credential-free browser transport');
 assert.doesNotMatch(externalRuntime,/localStorage|sessionStorage|document\.cookie/,'connected-site scheduling must remain in-memory only');
 assert.match(sitesUi,/Scheduling <b>/);
-assert.match(sitesUi,/Public scheduling is available through explicit prepare\/confirm tools/);
+assert.match(sitesUi,/Public scheduling and Profile Commerce use explicit prepare\/confirm tools/);
 
 assert.match(workflow,/profile-webmcp-actions-v150\.php/);
 assert.match(workflow,/profile-webmcp-scheduling-v150\.php/);
