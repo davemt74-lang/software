@@ -26,7 +26,7 @@ assert.match(bridge,/\$profilePath='\/'\.rawurlencode/,'Agent handoff action mus
 assert.doesNotMatch(bridge,/vp3_profile_webmcp_dispatch_v191|_confirm_v1(?:50|60|70|82|83)\s*\(/,'Agent Brain bridge must not execute transactional WebMCP tools');
 
 assert.match(bridge,/function vp3_agent_profile_webmcp_authorize_plan_v193/);
-assert.match(bridge,/\(int\)\(\$plan\['profile_user_id'\].*===\$userId/s,'sanitizer must bind plan to authenticated principal');
+assert.match(bridge,/\(int\)\(\$plan\['profile_user_id'\].*!==\$userId/s,'sanitizer must reject plans not bound to the authenticated principal');
 assert.match(bridge,/hash_equals\(\(string\)\$profile\['username'\],\(string\)\(\$plan\['profile_username'\]/,'sanitizer must bind plan to exact Profile username');
 assert.match(bridge,/array_fill_keys\(\$resolution\['allowed_tools'\],true\)/,'sanitizer must recompute allowed tools');
 assert.match(bridge,/isset\(\$allowed\[\$name\]\)/,'unresolved tools must be removed');
