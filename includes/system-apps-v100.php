@@ -216,7 +216,7 @@ function vp3_system_apps_acquire_v100(int $userId,string $appKey,string $sourceK
     throw new RuntimeException('System app ownership could not be loaded.');
 }
 
-function vp3_system_apps_revoke_v100(int $userId,string $appKey,string $reason='admin',?PDO $pdo=null): bool
+function vp3_system_apps_revoke_v100(int $userId,string $appKey,string $reason='admin',?PDO $pdo=null,?callable $remote=null): bool
 {
     $pdo??=db();
     if(!$pdo||$userId<1)return false;
@@ -226,7 +226,7 @@ function vp3_system_apps_revoke_v100(int $userId,string $appKey,string $reason='
     $cleanup=[];
     if(function_exists('vp3_system_apps_before_ownership_revoke_v130')){
         try{
-            $cleanup=vp3_system_apps_before_ownership_revoke_v130($userId,strtolower(trim($appKey)),$pdo);
+            $cleanup=vp3_system_apps_before_ownership_revoke_v130($userId,strtolower(trim($appKey)),$pdo,$remote);
         }catch(Throwable $ignored){
             $cleanup=['cleanup'=>'pending','error'=>'revocation_cleanup_failed'];
         }
