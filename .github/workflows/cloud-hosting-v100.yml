@@ -7,6 +7,7 @@ on:
       - "includes/system-apps-v110.php"
       - "includes/system-apps-v120.php"
       - "includes/system-apps-v130.php"
+      - "includes/system-apps-v140.php"
       - "api/system-apps-v100.php"
       - "apps.php"
       - "system-apps-v100.css"
@@ -14,6 +15,7 @@ on:
       - "tests/system-apps-v110-*"
       - "tests/system-apps-v120-*"
       - "tests/system-apps-v130-*"
+      - "tests/system-apps-v140-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -53,6 +55,7 @@ on:
       - "includes/system-apps-v110.php"
       - "includes/system-apps-v120.php"
       - "includes/system-apps-v130.php"
+      - "includes/system-apps-v140.php"
       - "api/system-apps-v100.php"
       - "apps.php"
       - "system-apps-v100.css"
@@ -60,6 +63,7 @@ on:
       - "tests/system-apps-v110-*"
       - "tests/system-apps-v120-*"
       - "tests/system-apps-v130-*"
+      - "tests/system-apps-v140-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -137,6 +141,7 @@ jobs:
           php -l includes/system-apps-v110.php
           php -l includes/system-apps-v120.php
           php -l includes/system-apps-v130.php
+          php -l includes/system-apps-v140.php
           php -l api/system-apps-v100.php
           php -l apps.php
           php -l tests/system-apps-v100-mysql.php
@@ -178,6 +183,8 @@ jobs:
         run: node tests/system-apps-v120-contract.mjs
       - name: System Apps audit revocation lifecycle contract
         run: node tests/system-apps-v130-contract.mjs
+      - name: System Apps Section 13 unified product UX contract
+        run: node tests/system-apps-v140-contract.mjs
       - name: Cloud Hosting Section 1 architecture contract
         run: node tests/cloud-hosting-v100-contract.mjs
       - name: Cloud Hosting Section 2 architecture contract
