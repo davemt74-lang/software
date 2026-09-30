@@ -14,6 +14,7 @@ on:
       - "includes/system-apps-v180.php"
       - "includes/system-apps-v190.php"
       - "includes/system-apps-v200.php"
+      - "includes/system-apps-v210.php"
       - "api/system-apps-v100.php"
       - "apps.php"
       - "system-apps-v100.css"
@@ -27,6 +28,7 @@ on:
       - "tests/system-apps-v170-*"
       - "tests/system-apps-v190-*"
       - "tests/system-apps-v200-*"
+      - "tests/system-apps-v210-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -170,6 +172,7 @@ jobs:
           php -l includes/system-apps-v180.php
           php -l includes/system-apps-v190.php
           php -l includes/system-apps-v200.php
+          php -l includes/system-apps-v210.php
           php -l api/system-apps-v100.php
           php -l apps.php
           php -l tests/system-apps-v100-mysql.php
@@ -224,6 +227,8 @@ jobs:
         run: node tests/system-apps-v170-contract.mjs
       - name: System Apps integrated release lifecycle contract
         run: node tests/system-apps-v200-contract.mjs
+      - name: System Apps Section 8 permission governance contract
+        run: node tests/system-apps-v210-contract.mjs
       - name: Cloud Hosting Section 1 architecture contract
         run: node tests/cloud-hosting-v100-contract.mjs
       - name: Cloud Hosting Section 2 architecture contract
