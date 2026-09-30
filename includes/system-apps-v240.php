@@ -121,7 +121,7 @@ function vp3_user_app_share_create_v240(
       'contract'=>'vp3.user-app-private-share.v1',
       'public_id'=>$publicId,
       'grant_code'=>$code,
-      'install_url'=>url('/private-app-share.php?id='.$publicId.'&code='.$code),
+      'install_url'=>url('/private-app-share.php?id='.$publicId).'#code='.$code,
       'recipient'=>['id'=>(int)$recipient['id'],'email'=>(string)$recipient['email'],'display_name'=>(string)$recipient['display_name']],
       'descriptor'=>$descriptor,
       'expires_in_days'=>VP3_USER_APP_SHARE_TTL_DAYS_V240,
