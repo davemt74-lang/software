@@ -17,6 +17,8 @@ on:
       - "includes/system-apps-v210.php"
       - "includes/system-apps-v220.php"
       - "includes/system-apps-v230.php"
+      - "includes/system-apps-v240.php"
+      - "private-app-share.php"
       - "api/system-apps-v100.php"
       - "apps.php"
       - "system-apps-v100.css"
@@ -33,6 +35,7 @@ on:
       - "tests/system-apps-v210-*"
       - "tests/system-apps-v220-*"
       - "tests/system-apps-v230-*"
+      - "tests/system-apps-v240-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -179,6 +182,8 @@ jobs:
           php -l includes/system-apps-v210.php
           php -l includes/system-apps-v220.php
           php -l includes/system-apps-v230.php
+          php -l includes/system-apps-v240.php
+          php -l private-app-share.php
           php -l api/system-apps-v100.php
           php -l apps.php
           php -l tests/system-apps-v100-mysql.php
@@ -239,6 +244,8 @@ jobs:
         run: node tests/system-apps-v220-contract.mjs
       - name: System Apps Section 10 Development Workspace contract
         run: node tests/system-apps-v230-contract.mjs
+      - name: System Apps Section 11 private distribution contract
+        run: node tests/system-apps-v240-contract.mjs
       - name: System Apps Section 9 user app SDK integration contract
         run: node tests/system-apps-v220-contract.mjs
       - name: Cloud Hosting Section 1 architecture contract
