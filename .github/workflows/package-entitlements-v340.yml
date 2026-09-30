@@ -55,6 +55,7 @@ jobs:
           php -l includes/system-apps-v100.php
           php -l includes/system-apps-v110.php
           php -l includes/system-apps-v120.php
+          php -l includes/system-apps-v130.php
           php -l api/system-apps-v100.php
           php -l apps.php
 
@@ -72,3 +73,6 @@ jobs:
 
       - name: System Apps Hosting binding contract
         run: node tests/system-apps-v120-contract.mjs
+
+      - name: System Apps revocation hardening contract
+        run: node tests/system-apps-v130-contract.mjs
