@@ -14,6 +14,7 @@ assert.match(svc,/UNIQUE KEY uq_vp3_system_app_host_app \(user_id,app_id\)/);
 assert.match(svc,/UNIQUE KEY uq_vp3_system_app_host_site \(site_id\)/);
 assert.match(svc,/Install this VP3 system app on HomeServer before assigning hosting/);
 assert.match(svc,/This hosted site is already assigned to another app/);
+assert.match(svc,/Remove the current Hosting assignment before assigning this app to another site/);
 assert.match(svc,/app\.hosting\.bound/);
 assert.match(svc,/app\.hosting\.unbound/);
 assert.match(svc,/vp3_cloud_hosting_v120_reconcile_site/);
