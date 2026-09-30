@@ -10,6 +10,7 @@ for(const fn of [
   'vp3_music_server_status_v300',
   'vp3_music_server_search_v300',
   'vp3_music_server_agent_query_v300',
+  'vp3_music_server_search_terms_v300',
   'vp3_system_apps_capability_v300',
 ]){
   assert.match(layer,new RegExp('function '+fn+'\\b'));
@@ -20,6 +21,7 @@ assert.match(layer,/mapped_media_sources'\s*=>\s*true/);
 assert.match(layer,/homeserver_execution_authority'\s*=>\s*true/);
 assert.match(layer,/cloud_execution_authority'\s*=>\s*false/);
 assert.match(layer,/music\.search/);
+assert.match(layer,/listen to\|music server\|music/);
 assert.match(bootstrap,/system-apps-v300\.php/);
 assert.match(router,/vp3_music_server_agent_query_v300/);
 
