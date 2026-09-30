@@ -3,6 +3,13 @@ name: Cloud Hosting V1
 on:
   pull_request:
     paths:
+      - "includes/system-apps-v100.php"
+      - "includes/system-apps-v110.php"
+      - "api/system-apps-v100.php"
+      - "apps.php"
+      - "system-apps-v100.css"
+      - "tests/system-apps-v100-*"
+      - "tests/system-apps-v110-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -38,6 +45,13 @@ on:
     branches:
       - main
     paths:
+      - "includes/system-apps-v100.php"
+      - "includes/system-apps-v110.php"
+      - "api/system-apps-v100.php"
+      - "apps.php"
+      - "system-apps-v100.css"
+      - "tests/system-apps-v100-*"
+      - "tests/system-apps-v110-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -111,6 +125,12 @@ jobs:
           node-version: '22'
       - name: PHP lint Cloud Hosting surfaces
         run: |
+          php -l includes/system-apps-v100.php
+          php -l includes/system-apps-v110.php
+          php -l api/system-apps-v100.php
+          php -l apps.php
+          php -l tests/system-apps-v100-mysql.php
+          php -l tests/system-apps-v110-mysql.php
           php -l includes/cloud-hosting-v100.php
           php -l includes/cloud-hosting-v110.php
           php -l includes/cloud-hosting-v120.php
@@ -138,6 +158,10 @@ jobs:
           php -l tests/cloud-hosting-v110-mysql.php
           php -l tests/cloud-hosting-v120-mysql.php
           php -l tests/cloud-hosting-v130-mysql.php
+      - name: System Apps Section 10 architecture contract
+        run: node tests/system-apps-v100-contract.mjs
+      - name: System Apps Section 11 HomeServer install contract
+        run: node tests/system-apps-v110-contract.mjs
       - name: Cloud Hosting Section 1 architecture contract
         run: node tests/cloud-hosting-v100-contract.mjs
       - name: Cloud Hosting Section 2 architecture contract
@@ -172,6 +196,8 @@ jobs:
           VP3_TEST_MYSQL_USER: root
           VP3_TEST_MYSQL_PASS: root
         run: |
+          php tests/system-apps-v100-mysql.php
+          php tests/system-apps-v110-mysql.php
           php tests/cloud-hosting-v100-mysql.php
           php tests/cloud-hosting-v110-mysql.php
           php tests/cloud-hosting-v120-mysql.php
