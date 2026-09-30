@@ -10,7 +10,7 @@ $pdo=db();$user=current_user();
 if(!$pdo||!$user)throw new RuntimeException('Private app shares are unavailable.');
 
 $publicId=strtolower(trim((string)($_GET['id']??$_POST['id']??'')));
-$grantCode=strtolower(trim((string)($_GET['code']??$_POST['code']??'')));
+$grantCode=strtolower(trim((string)($_POST['code']??'')));
 $notice='';$error='';$redemption=null;$share=null;
 
 try{
@@ -52,8 +52,8 @@ try{
 <p>Publisher fingerprint:</p><code><?=e((string)$share['publisher_fingerprint'])?></code>
 <?php if(!empty($share['permissions'])):?><p>Declared permissions:</p><ul><?php foreach((array)$share['permissions'] as $permission):?><li><?=e((string)$permission)?></li><?php endforeach;?></ul><?php endif;?>
 </details>
-<?php if((string)$share['status']==='pending'&&$grantCode!==''):?>
-<form method="post"><?=csrf_field()?><input type="hidden" name="action" value="redeem"><input type="hidden" name="id" value="<?=e($publicId)?>"><input type="hidden" name="code" value="<?=e($grantCode)?>"><button class="button primary" type="submit">Accept Private App Share</button></form>
+<?php if((string)$share['status']==='pending'):?>
+<form method="post" id="privateShareAcceptForm"><?=csrf_field()?><input type="hidden" name="action" value="redeem"><input type="hidden" name="id" value="<?=e($publicId)?>"><input type="hidden" name="code" id="privateShareGrantCode" value=""><button class="button primary" id="privateShareAcceptButton" type="submit" disabled>Accept Private App Share</button><p class="muted" id="privateShareCodeStatus">Open the complete private install link from the sender.</p></form>
 <?php elseif((string)$share['status']==='accepted'):?>
 <div class="system-apps-alert success"><strong>Grant accepted.</strong> On HomeServer open Apps → Import App → Private VP3 share. Select the sender’s exported bundle and paste this exact SHA-256:<br><code style="overflow-wrap:anywhere"><?=e((string)$share['package_sha256'])?></code></div>
 <?php endif;?>
@@ -63,4 +63,7 @@ try{
 <?php endif;?>
 </div></section>
 </main></div>
+<script>
+(()=>{const raw=location.hash.startsWith('#code=')?location.hash.slice(6):'';const code=/^[a-f0-9]{48}$/i.test(raw)?raw.toLowerCase():'';const input=document.getElementById('privateShareGrantCode');const button=document.getElementById('privateShareAcceptButton');const status=document.getElementById('privateShareCodeStatus');if(input&&code){input.value=code;if(button)button.disabled=false;if(status)status.textContent='Private install grant loaded. Review the package provenance, then accept.';history.replaceState(null,'',location.pathname+location.search);}})();
+</script>
 </body></html>
