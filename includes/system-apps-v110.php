@@ -44,7 +44,7 @@ function vp3_system_apps_ensure_schema_v110(?PDO $pdo=null): void
 function vp3_system_apps_remote_v110(int $userId,string $operation,array $payload=[],?callable $remote=null): array
 {
     if($userId<1)throw new RuntimeException('Account is required.');
-    if(!in_array($operation,['apps.system.catalog','apps.system.status','apps.system.install','apps.system.reconcile'],true)){
+    if(!in_array($operation,['apps.system.catalog','apps.system.status','apps.system.install','apps.system.deactivate','apps.system.reconcile'],true)){
         throw new RuntimeException('Unsupported HomeServer System Apps operation.');
     }
     $result=$remote!==null?$remote($userId,$operation,$payload):homeserver_vp3_remote_operation_for_user($userId,$operation,$payload);
@@ -170,6 +170,25 @@ function vp3_system_apps_install_v110(int $userId,string $appKey,?callable $remo
     }catch(Throwable $e){
         vp3_system_apps_store_error_v110($userId,$app,$e->getMessage(),'install_failed',$pdo);
         vp3_system_apps_event_v110($userId,(int)$app['id'],'app.install.failed',['app_key'=>$app['app_key'],'error'=>mb_substr($e->getMessage(),0,300)],$pdo);
+        throw $e;
+    }
+}
+
+function vp3_system_apps_deactivate_v110(int $userId,string $appKey,?callable $remote=null,?PDO $pdo=null): array
+{
+    $pdo??=db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    if(!vp3_system_apps_schema_ready_v110($pdo))vp3_system_apps_ensure_schema_v110($pdo);
+    $app=vp3_system_apps_owned_row_v110($userId,$appKey,$pdo);
+    try{
+        $response=vp3_system_apps_remote_v110($userId,'apps.system.deactivate',['app_key'=>(string)$app['homeserver_catalog_key']],$remote);
+        $projection=vp3_system_apps_store_remote_v110($userId,$app,$response,false,$pdo);
+        vp3_system_apps_event_v110($userId,(int)$app['id'],'app.runtime.deactivated',[
+          'app_key'=>$app['app_key'],'state'=>$projection['state'],'reason'=>(string)($response['reason']??''),
+        ],$pdo);
+        return ['app_key'=>(string)$app['app_key'],'changed'=>!empty($response['changed']),'reason'=>(string)($response['reason']??''),'homeserver'=>$projection];
+    }catch(Throwable $e){
+        vp3_system_apps_store_error_v110($userId,$app,$e->getMessage(),'deactivation_failed',$pdo);
         throw $e;
     }
 }
