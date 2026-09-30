@@ -1354,7 +1354,7 @@
     const error=card.error
       ? '<div class="chat-system-app-action-error">'+escapeHtml(card.error)+'</div>'
       : '';
-    return '<section class="chat-system-app-action-card '+escapeHtml(status)+'" data-system-app-action-card>'
+    return '<section class="chat-system-app-action-card '+escapeHtml(status)+'" data-system-app-action-card data-system-app-action-id="'+escapeHtml(card.action_id||'')+'">'
       +'<header><div><small>System App action</small><strong>'+escapeHtml(card.title||'System App action')+'</strong></div><span>'+escapeHtml(statusLabel)+'</span></header>'
       +'<p>'+escapeHtml(card.summary||'')+'</p>'
       +detailsHtml+codeHtml+pending+error+actionHtml
@@ -1422,6 +1422,19 @@
     if (welcome) welcome.hidden = true;
     const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards, systemAppActionCard);
     thread.appendChild(el);
+    if(systemAppActionCard && systemAppActionCard.action_id){
+      const actionId=String(systemAppActionCard.action_id);
+      if(String(systemAppActionCard.status||'')==='completed'){
+        thread.querySelectorAll('[data-system-app-action-id]').forEach(card=>{
+          if(card===el.querySelector('[data-system-app-action-id]'))return;
+          if(String(card.dataset.systemAppActionId||'')!==actionId)return;
+          card.classList.add('superseded');
+          card.querySelectorAll('button').forEach(button=>{button.disabled=true;});
+          const state=card.querySelector('header span');
+          if(state)state.textContent='Completed';
+        });
+      }
+    }
     thread.scrollTop = thread.scrollHeight;
     return el;
   }
@@ -3058,7 +3071,24 @@
     event.preventDefault();
     const prompt = String(promptAction.dataset.chatPromptAction || '').trim();
     if (!prompt || busy) return;
-    sendMessage(prompt);
+    const actionCard=promptAction.closest('[data-system-app-action-card]');
+    if(actionCard){
+      actionCard.classList.add('executing');
+      promptAction.disabled=true;
+      promptAction.dataset.originalLabel=promptAction.textContent||'Confirm';
+      promptAction.textContent='Executing…';
+      const state=actionCard.querySelector('header span');
+      if(state)state.textContent='Executing';
+    }
+    sendMessage(prompt).finally?.(()=>{
+      if(actionCard && document.body.contains(actionCard) && !actionCard.classList.contains('superseded')){
+        actionCard.classList.remove('executing');
+        if(promptAction.dataset.originalLabel)promptAction.textContent=promptAction.dataset.originalLabel;
+        promptAction.disabled=false;
+        const state=actionCard.querySelector('header span');
+        if(state)state.textContent='Confirmation required';
+      }
+    });
   });
 
   form.addEventListener('submit', event => {
