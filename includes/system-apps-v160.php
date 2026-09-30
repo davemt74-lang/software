@@ -110,12 +110,16 @@ function vp3_system_apps_agent_prepare_v160(
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in user is required.');
     $allowed=['ownership.acquire','install','update.verify','hosting.bind','hosting.unbind','reconcile'];
     if(!in_array($actionType,$allowed,true))throw new RuntimeException('Unsupported System App Agent action.');
-    $app=vp3_system_apps_agent_catalog_row_v160($uid,$appKey,$pdo);
-    $owned=(string)($app['ownership_status']??'')==='active';
-    if($actionType!=='ownership.acquire'&&!$owned)throw new RuntimeException('This System App must be owned before that action can be prepared.');
-    if($actionType==='ownership.acquire'&&$owned)throw new RuntimeException('This System App is already owned.');
-    if($actionType==='ownership.acquire'&&!vp3_system_apps_eligible_v100($app,$user)){
-        throw new RuntimeException('This System App is not available for this account.');
+    $app=null;$appId=null;
+    if($actionType!=='reconcile'){
+        $app=vp3_system_apps_agent_catalog_row_v160($uid,$appKey,$pdo);
+        $appId=(int)$app['id'];
+        $owned=(string)($app['ownership_status']??'')==='active';
+        if($actionType!=='ownership.acquire'&&!$owned)throw new RuntimeException('This System App must be owned before that action can be prepared.');
+        if($actionType==='ownership.acquire'&&$owned)throw new RuntimeException('This System App is already owned.');
+        if($actionType==='ownership.acquire'&&!vp3_system_apps_eligible_v100($app,$user)){
+            throw new RuntimeException('This System App is not available for this account.');
+        }
     }
 
     $code=vp3_system_apps_agent_code_v160();
@@ -125,14 +129,14 @@ function vp3_system_apps_agent_prepare_v160(
       (public_id,user_id,conversation_id,app_id,site_id,action_type,payload_json,preview_json,confirmation_token_hash,idempotency_key,status,expires_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,'prepared',DATE_ADD(UTC_TIMESTAMP(),INTERVAL 10 MINUTE))");
     $stmt->execute([
-      $publicId,$uid,$conversationId>0?$conversationId:null,(int)$app['id'],$siteId,
+      $publicId,$uid,$conversationId>0?$conversationId:null,$appId,$siteId,
       $actionType,json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
       json_encode($preview,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
       hash('sha256',$code),$idem
     ]);
     return [
       'contract'=>'vp3.system-app-agent-action.v1','action_id'=>$publicId,'action_type'=>$actionType,
-      'app_key'=>(string)$app['app_key'],'preview'=>$preview,'requires_confirmation'=>true,
+      'app_key'=>$app?(string)$app['app_key']:'','preview'=>$preview,'requires_confirmation'=>true,
       'confirmation_code'=>$code,'expires_in_seconds'=>VP3_SYSTEM_APPS_AGENT_ACTION_TTL_SECONDS,
     ];
 }
@@ -142,10 +146,13 @@ function vp3_system_apps_agent_execute_v160(
 ): array {
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     $uid=(int)($user['id']??0);if($uid<1||(int)$row['user_id']!==$uid)throw new RuntimeException('System App action does not belong to this account.');
+    $type=(string)$row['action_type'];$payload=json_decode((string)($row['payload_json']??''),true);if(!is_array($payload))$payload=[];
+    if($type==='reconcile'){
+        return ['reconciliation'=>vp3_system_apps_reconcile_all_v130($uid,$remote,$pdo)];
+    }
     $appId=(int)($row['app_id']??0);
     $stmt=$pdo->prepare('SELECT app_key FROM vp3_system_app_catalog WHERE id=? LIMIT 1');$stmt->execute([$appId]);
     $appKey=(string)$stmt->fetchColumn();if($appKey==='')throw new RuntimeException('System App no longer exists.');
-    $type=(string)$row['action_type'];$payload=json_decode((string)($row['payload_json']??''),true);if(!is_array($payload))$payload=[];
 
     if($type==='ownership.acquire'){
         return ['ownership'=>vp3_system_apps_acquire_v100($uid,$appKey,'agent_chat',(string)$row['public_id'],$pdo)];
@@ -178,9 +185,6 @@ function vp3_system_apps_agent_execute_v160(
             }
             throw $e;
         }
-    }
-    if($type==='reconcile'){
-        return ['reconciliation'=>vp3_system_apps_reconcile_all_v130($uid,$remote,$pdo)];
     }
     throw new RuntimeException('Unsupported System App Agent action.');
 }
@@ -284,6 +288,16 @@ function vp3_system_apps_agent_action_query_v160(
               'sources'=>[['source'=>'system-apps:canonical','title'=>'VP3 System Apps']],'system_app_plan'=>$done];
         }catch(Throwable $e){
             return ['handled'=>true,'answer'=>'I could not complete that System App action: '.$e->getMessage(),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'system_app_plan'=>null];
+        }
+    }
+
+    if(preg_match('/\b(?:refresh|reconcile|resync|sync)\b/i',$query)&&preg_match('/\b(?:apps|applications)\b/i',$query)){
+        try{
+            $plan=vp3_system_apps_agent_prepare_v160($user,'reconcile','',[],['scope'=>'all_owned_apps','operation'=>'cloud_homeserver_reconcile'],$conversationId,null,$pdo);
+            if(function_exists('agent_tool_log'))agent_tool_log($user,'system_apps.prepare',$query,'success',['action_type'=>'reconcile','scope'=>'all_owned_apps'],$conversationId);
+            return vp3_system_apps_agent_prepare_result_v160($plan,'I prepared Cloud ↔ HomeServer reconciliation for your System Apps.');
+        }catch(Throwable $e){
+            return ['handled'=>true,'answer'=>'I could not prepare System Apps reconciliation: '.$e->getMessage(),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'system_app_plan'=>null];
         }
     }
 
