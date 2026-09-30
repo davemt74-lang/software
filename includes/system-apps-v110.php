@@ -151,11 +151,11 @@ function vp3_system_apps_store_remote_v110(int $userId,array $app,array $remote,
               'from'=>$beforeState,'to'=>$afterState,'installed_version'=>$after['installed_version']??null,
             ],$pdo);
         }
-        if((string)($before['error']??'')!==''&&(string)($after['error']??'')===''){
-            vp3_system_apps_event_v110($userId,(int)$app['id'],'app.health.recovered',[
-              'state'=>$after['state']??'unknown','installed_version'=>$after['installed_version']??null,
-            ],$pdo);
-        }
+    }
+    if((string)($before['error']??'')!==''&&(string)($after['error']??'')===''){
+        vp3_system_apps_event_v110($userId,(int)$app['id'],'app.health.recovered',[
+          'state'=>$after['state']??'unknown','installed_version'=>$after['installed_version']??null,
+        ],$pdo);
     }
     return $after;
 }
