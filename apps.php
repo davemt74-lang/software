@@ -1,12 +1,12 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
-require_once __DIR__.'/includes/system-apps-v110.php';
+require_once __DIR__.'/includes/system-apps-v120.php';
 require_login();
 require_permission('account.access');
 $pdo=db();$user=current_user();
 if(!$pdo||!$user)throw new RuntimeException('Apps are unavailable.');
-if(!vp3_system_apps_schema_ready_v110($pdo))vp3_system_apps_ensure_schema_v110($pdo);
+if(!vp3_system_apps_schema_ready_v120($pdo))vp3_system_apps_ensure_schema_v120($pdo);
 if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!verify_csrf()){flash('system_apps_error','Session expired. Refresh and try again.');redirect(url('/apps.php'));}
     try{
@@ -20,11 +20,17 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         }elseif($action==='reconcile'){
             $result=vp3_system_apps_reconcile_v110((int)$user['id'],null,$pdo);
             flash('system_apps_notice','HomeServer app status refreshed for '.number_format((int)$result['count']).' owned app'.((int)$result['count']===1?'':'s').'.');
+        }elseif($action==='hosting.bind'){
+            vp3_system_apps_hosting_bind_v120((int)$user['id'],(string)($_POST['app_key']??''),(int)($_POST['site_id']??0),null,$pdo);
+            flash('system_apps_notice','App assigned to Hosting.');
+        }elseif($action==='hosting.unbind'){
+            vp3_system_apps_hosting_unbind_v120((int)$user['id'],(string)($_POST['app_key']??''),null,$pdo);
+            flash('system_apps_notice','App removed from Hosting.');
         }else throw new RuntimeException('Unsupported Apps action.');
     }catch(Throwable $e){flash('system_apps_error',$e->getMessage());}
     redirect(url('/apps.php'));
 }
-$catalog=vp3_system_apps_catalog_v110($user,$pdo);
+$catalog=vp3_system_apps_catalog_v120($user,$pdo);
 $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -37,18 +43,22 @@ $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 <?php $memberHeaderUser=$user;$memberHeaderTitle='Apps';$memberHeaderSubtitle='VP3 system apps for your HomeServer';$memberHeaderActiveKey='apps';require __DIR__.'/includes/member-header.php';?>
 <section class="system-apps-canvas"><div class="system-apps-shell">
 <header class="system-apps-hero"><div><span>VP3 SYSTEM APPS</span><h1>Your apps.</h1><p>Choose VP3 system apps for your account, then install them on your HomeServer. Cloud owns entitlement; HomeServer owns installation and runtime state.</p></div>
-<div class="system-apps-counts"><strong><?=number_format((int)$catalog['counts']['owned'])?></strong><span>Owned</span><strong><?=number_format((int)$catalog['counts']['installed'])?></strong><span>Installed</span><strong><?=number_format((int)$catalog['counts']['updates'])?></strong><span>Updates</span></div></header>
+<div class="system-apps-counts"><strong><?=number_format((int)$catalog['counts']['owned'])?></strong><span>Owned</span><strong><?=number_format((int)$catalog['counts']['installed'])?></strong><span>Installed</span><strong><?=number_format((int)$catalog['counts']['hosted'])?></strong><span>Hosted</span></div></header>
 <?php if($notice):?><div class="system-apps-alert success"><?=e($notice)?></div><?php endif;?><?php if($error):?><div class="system-apps-alert error"><?=e($error)?></div><?php endif;?>
 <div class="system-apps-toolbar"><div class="system-apps-tabs"><button class="active" type="button" data-app-filter="all">All</button><button type="button" data-app-filter="owned">Owned</button><button type="button" data-app-filter="installed">Installed</button><button type="button" data-app-filter="available">Available</button></div>
 <?php if((int)$catalog['counts']['owned']>0):?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="reconcile"><button class="button secondary" type="submit">Refresh HomeServer</button></form><?php endif;?></div>
 <section class="system-apps-grid">
-<?php foreach($catalog['apps'] as $app):$hs=(array)($app['homeserver']??[]);$state=$app['owned']?(!empty($hs['installed'])?'installed':'owned'):($app['eligible']?'available':'unavailable');?>
+<?php foreach($catalog['apps'] as $app):$hs=(array)($app['homeserver']??[]);$hosting=(array)($app['hosting']??[]);$state=$app['owned']?(!empty($hs['installed'])?'installed':'owned'):($app['eligible']?'available':'unavailable');?>
 <article class="system-app-card" data-app-state="<?=e($state)?>">
 <div class="system-app-card-top"><div class="system-app-icon">VP3</div><div><span class="system-app-category"><?=e((string)$app['category'])?></span><h2><?=e((string)$app['name'])?></h2></div>
 <span class="system-app-badge <?=!empty($hs['installed'])?'installed':($app['owned']?'owned':'available')?>"><?=!empty($hs['installed'])?'Installed':($app['owned']?'Owned':($app['eligible']?'Available':'Unavailable'))?></span></div>
 <p><?=e((string)$app['description'])?></p>
-<div class="system-app-meta"><span>Catalog <strong><?=e((string)$app['current_version'])?></strong></span><span>HomeServer <strong><?=e(!empty($hs['installed'])?(string)($hs['installed_version']??$hs['state']):ucfirst((string)($hs['state']??'not synced')))?></strong></span></div>
+<div class="system-app-meta"><span>Catalog <strong><?=e((string)$app['current_version'])?></strong></span><span>HomeServer <strong><?=e(!empty($hs['installed'])?(string)($hs['installed_version']??$hs['state']):ucfirst((string)($hs['state']??'not synced')))?></strong></span><?php if(!empty($hosting['bound'])):?><span>Hosting <strong><?=e((string)($hosting['hostname']??$hosting['display_name']))?></strong></span><?php endif;?></div>
 <?php if(!empty($hs['error'])):?><div class="system-app-error"><?=e((string)$hs['error'])?></div><?php endif;?>
+<?php if(!empty($hs['installed'])):?><div class="system-app-hosting">
+<?php if(!empty($hosting['bound'])):?><div class="system-app-hosting-bound"><span>Hosted at <?=e((string)($hosting['hostname']??$hosting['display_name']))?></span><?php if(!empty($hosting['public_url'])):?><a href="<?=e((string)$hosting['public_url'])?>" target="_blank" rel="noopener">Open</a><?php endif;?><a href="<?=e(url('/hosting.php'))?>">Manage Hosting</a><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="hosting.unbind"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><button class="button secondary" type="submit">Remove Hosting</button></form></div>
+<?php else:?><form method="post" class="system-app-hosting-form"><?=csrf_field()?><input type="hidden" name="action" value="hosting.bind"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><select name="site_id" required><option value="">Assign hosting site…</option><?php foreach($catalog['hosting_sites'] as $site):?><?php if(empty($site['bound_app_id'])):?><option value="<?= (int)$site['id'] ?>"><?=e((string)$site['display_name'])?><?=!empty($site['hostname'])?' · '.e((string)$site['hostname']):''?></option><?php endif;?><?php endforeach;?></select><button class="button secondary" type="submit">Assign Hosting</button><a href="<?=e(url('/hosting.php'))?>">Manage Hosting</a></form><?php endif;?>
+</div><?php endif;?>
 <div class="system-app-actions">
 <?php if($app['owned']):?>
 <form method="post"><?=csrf_field()?><input type="hidden" name="action" value="install"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><button class="button primary" type="submit"><?=!empty($hs['update_available'])?'Update':(!empty($hs['installed'])?'Reinstall / Verify':'Install on HomeServer')?></button></form>
