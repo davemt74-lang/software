@@ -14,7 +14,7 @@ $mainSidebarIsChat = $mainSidebarActive === 'chat' || $mainSidebarScript === 'ch
 $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSidebarUser);
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
 
-$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','hosting','campaigns','rewards','team'];
+$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team','hosting'];
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
 $mainSidebarPrimaryLabels = [
     'home'=>'Home',
