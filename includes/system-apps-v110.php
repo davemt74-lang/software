@@ -94,7 +94,7 @@ function vp3_system_apps_remote_item_v110(array $remote): array
 {
     $package=is_array($remote['package']??null)?$remote['package']:[];
     $key=strtolower(trim((string)($package['key']??$remote['app_key']??'')));
-    $sha=strtolower(trim((string)($package['package_sha256']??'')));
+    $sha=strtolower(trim((string)($package['installed_package_sha256']??$package['package_sha256']??'')));
     if($sha!==''&&!preg_match('/^[a-f0-9]{64}$/',$sha))$sha='';
     return [
       'app_key'=>$key,
