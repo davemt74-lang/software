@@ -237,6 +237,8 @@ on:
       - 'tests/agent-chat-operational-activity-contract.mjs'
       - 'tests/system-apps-v190-contract.mjs'
       - 'includes/system-apps-v190.php'
+      - 'includes/system-apps-v200.php'
+      - 'tests/system-apps-v200-contract.mjs'
       - '.github/workflows/production-deploy-package.yml'
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
@@ -374,6 +376,7 @@ jobs:
           php -l includes/release-chat-v105.php
           php -l includes/agent-chat-runtime-v2160.php
           php -l includes/system-apps-v190.php
+          php -l includes/system-apps-v200.php
           php -l includes/member-header.php
           php -l includes/member-user-menu.php
           php -l includes/bootstrap.php
@@ -625,3 +628,4 @@ jobs:
           node tests/conversation-consolidation-v131.mjs
           node tests/agent-chat-operational-activity-contract.mjs
           node tests/system-apps-v190-contract.mjs
+          node tests/system-apps-v200-contract.mjs

@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -62,6 +64,7 @@ jobs:
           php -l includes/system-apps-v170.php
           php -l includes/system-apps-v180.php
           php -l includes/system-apps-v190.php
+          php -l includes/system-apps-v200.php
           php -l tests/system-apps-v190-runtime.php
           php -l api/system-apps-v100.php
           php -l apps.php
@@ -100,3 +103,6 @@ jobs:
         run: |
           node tests/system-apps-v190-contract.mjs
           php tests/system-apps-v190-runtime.php
+
+      - name: System Apps integrated release lifecycle contract
+        run: node tests/system-apps-v200-contract.mjs

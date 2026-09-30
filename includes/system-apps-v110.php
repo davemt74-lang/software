@@ -44,7 +44,7 @@ function vp3_system_apps_ensure_schema_v110(?PDO $pdo=null): void
 function vp3_system_apps_remote_v110(int $userId,string $operation,array $payload=[],?callable $remote=null): array
 {
     if($userId<1)throw new RuntimeException('Account is required.');
-    if(!in_array($operation,['apps.system.catalog','apps.system.status','apps.system.install','apps.system.deactivate','apps.system.reconcile'],true)){
+    if(!in_array($operation,['apps.system.catalog','apps.system.status','apps.system.install','apps.system.deactivate','apps.system.reconcile','apps.system.release.status','apps.system.rollback'],true)){
         throw new RuntimeException('Unsupported HomeServer System Apps operation.');
     }
     $result=$remote!==null?$remote($userId,$operation,$payload):homeserver_vp3_remote_operation_for_user($userId,$operation,$payload);
@@ -94,7 +94,7 @@ function vp3_system_apps_remote_item_v110(array $remote): array
 {
     $package=is_array($remote['package']??null)?$remote['package']:[];
     $key=strtolower(trim((string)($package['key']??$remote['app_key']??'')));
-    $sha=strtolower(trim((string)($package['package_sha256']??'')));
+    $sha=strtolower(trim((string)($package['installed_package_sha256']??$package['package_sha256']??'')));
     if($sha!==''&&!preg_match('/^[a-f0-9]{64}$/',$sha))$sha='';
     return [
       'app_key'=>$key,

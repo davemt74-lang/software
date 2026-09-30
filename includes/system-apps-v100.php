@@ -76,9 +76,9 @@ function vp3_system_apps_ensure_schema_v100(?PDO $pdo=null): void
 function vp3_system_apps_seed_v100(PDO $pdo): void
 {
     $rows=[
-      ['vp3.notes','VP3 Notes','Productivity','Private lightweight notes stored in isolated HomeServer app data.','1.0.0','included',null,'vp3.notes',10],
-      ['vp3.inventory','VP3 Inventory','Operations','Track local inventory counts and supplies on your HomeServer.','1.0.0','included',null,'vp3.inventory',20],
-      ['vp3.checklists','VP3 Checklists','Productivity','Create local operational and personal checklists.','1.0.0','included',null,'vp3.checklists',30],
+      ['vp3.notes','VP3 Notes','Productivity','Private lightweight notes stored in isolated HomeServer app data.','1.1.0','included',null,'vp3.notes',10],
+      ['vp3.inventory','VP3 Inventory','Operations','Track local inventory counts and supplies on your HomeServer.','1.1.0','included',null,'vp3.inventory',20],
+      ['vp3.checklists','VP3 Checklists','Productivity','Create local operational and personal checklists.','1.1.0','included',null,'vp3.checklists',30],
     ];
     $sql="INSERT INTO vp3_system_app_catalog
       (app_key,name,category,description,current_version,acquisition_mode,required_entitlement,homeserver_catalog_key,is_active,sort_order,metadata_json)
@@ -95,6 +95,14 @@ function vp3_system_apps_seed_v100(PDO $pdo): void
           'distribution'=>'homeserver_prebuilt',
           'system_app'=>true,
           'protected_system_app'=>true,
+          'release_channel'=>'stable',
+          'release_notes'=>[
+            'Adds Cloud ↔ HomeServer release lifecycle metadata.',
+            'Adds verified protected updates and rollback support.',
+            'Revalidates bound Hosting and subdomain routing after release changes.',
+          ],
+          'min_homeserver_version'=>'2.4',
+          'max_homeserver_version'=>null,
         ],JSON_UNESCAPED_SLASHES);
         $stmt->execute([...$row,$meta]);
     }
