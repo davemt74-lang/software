@@ -1281,11 +1281,11 @@
 
   function normalizeContext(raw) {
     if (!raw) {
-      return {sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
+      return {sources:[],media:[],stem_media:[],actions:[],cards:[],system_app_action_card:null,playlist_title:''};
     }
 
     if (Array.isArray(raw)) {
-      return {sources:raw,media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
+      return {sources:raw,media:[],stem_media:[],actions:[],cards:[],system_app_action_card:null,playlist_title:''};
     }
 
     return {
@@ -1294,6 +1294,7 @@
       stem_media:Array.isArray(raw.stem_media) ? raw.stem_media : [],
       actions:Array.isArray(raw.actions) ? raw.actions : [],
       cards:Array.isArray(raw.cards) ? raw.cards : (Array.isArray(raw.cognitive_cards) ? raw.cognitive_cards : []),
+      system_app_action_card:raw.system_app_action_card && typeof raw.system_app_action_card === 'object' ? raw.system_app_action_card : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1323,6 +1324,43 @@
     </article>`;
   }
 
+  function systemAppActionCardHtml(card) {
+    if (!card || typeof card !== 'object') return '';
+    const status=String(card.status||'prepared');
+    const details=Array.isArray(card.details)?card.details:[];
+    const actions=Array.isArray(card.actions)?card.actions:[];
+    const statusLabel=status==='completed'?'Completed':status==='failed'?'Needs attention':'Confirmation required';
+    const detailsHtml=details.length
+      ? '<dl class="chat-system-app-action-details">'+details.map(item=>'<div><dt>'+escapeHtml(item.label||'')+'</dt><dd>'+escapeHtml(item.value||'')+'</dd></div>').join('')+'</dl>'
+      : '';
+    const code=String(card.confirmation_code||'');
+    const codeHtml=status==='prepared'&&code
+      ? '<div class="chat-system-app-action-code"><span>Confirmation code</span><strong>'+escapeHtml(code)+'</strong></div>'
+      : '';
+    const actionHtml=actions.length
+      ? '<div class="chat-system-app-action-buttons">'+actions.map(action=>{
+          if(action.type==='prompt'&&action.prompt){
+            return '<button type="button" class="chat-system-app-action-button '+escapeHtml(action.kind||'secondary')+'" data-chat-prompt-action="'+escapeHtml(action.prompt)+'">'+escapeHtml(action.label||'Continue')+'</button>';
+          }
+          if(action.type==='open_url'&&action.url){
+            return '<a class="chat-system-app-action-button '+escapeHtml(action.kind||'secondary')+'" href="'+escapeHtml(withStudioReturn(action.url))+'">'+escapeHtml(action.label||'Open')+'</a>';
+          }
+          return '';
+        }).join('')+'</div>'
+      : '';
+    const pending=card.reconcile_pending
+      ? '<div class="chat-system-app-action-note">HomeServer reconciliation is still pending. The Cloud action is saved and will converge on refresh.</div>'
+      : '';
+    const error=card.error
+      ? '<div class="chat-system-app-action-error">'+escapeHtml(card.error)+'</div>'
+      : '';
+    return '<section class="chat-system-app-action-card '+escapeHtml(status)+'" data-system-app-action-card>'
+      +'<header><div><small>System App action</small><strong>'+escapeHtml(card.title||'System App action')+'</strong></div><span>'+escapeHtml(statusLabel)+'</span></header>'
+      +'<p>'+escapeHtml(card.summary||'')+'</p>'
+      +detailsHtml+codeHtml+pending+error+actionHtml
+      +'</section>';
+  }
+
   function agentActionHtml(action) {
     if (!action) return '';
     if (action.type === 'media_capture') {
@@ -1335,7 +1373,7 @@
     return `<a class="chat-agent-action" href="${escapeHtml(withStudioReturn(action.url))}">${escapeHtml(action.label||'Open')}</a>`;
   }
 
-  function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = []) {
+  function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null) {
     const wrapper = document.createElement('article');
     wrapper.className = `message ${role}`;
 
@@ -1363,6 +1401,7 @@
             </div>
           </section>` : ''}
         ${stemMedia.length ? `<section class="chat-stem-results"><div class="chat-listening-head"><div><small>Production search</small><strong>Matching stems</strong></div><span>${stemMedia.length} result${stemMedia.length===1?'':'s'}</span></div>${stemMedia.map(stemMediaHtml).join('')}</section>` : ''}
+        ${systemAppActionCard ? systemAppActionCardHtml(systemAppActionCard) : ''}
         ${actions.length ? `<div class="chat-agent-actions">${actions.map(agentActionHtml).join('')}</div>` : ''}
         ${cards.length ? '<div class="vp3-cognitive-card-host" data-cognitive-card-host></div>' : ''}
       </div>`;
@@ -1379,9 +1418,9 @@
     return wrapper;
   }
 
-  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = []) {
+  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null) {
     if (welcome) welcome.hidden = true;
-    const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards);
+    const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards, systemAppActionCard);
     thread.appendChild(el);
     thread.scrollTop = thread.scrollHeight;
     return el;
@@ -2851,7 +2890,8 @@
         context.playlist_title,
         context.stem_media || [],
         context.actions || [],
-        context.cards || []
+        context.cards || [],
+        context.system_app_action_card || null
       );
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
@@ -2873,7 +2913,7 @@
     data.messages.forEach(message=>{
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
-      addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[]);
+      addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory();
@@ -2984,7 +3024,8 @@
         data.playlist_title || '',
         data.stem_media || [],
         data.actions || [],
-        data.cards || data.cognitive_cards || []
+        data.cards || data.cognitive_cards || [],
+        data.system_app_action_card || null
       );
       const autoAction=(data.actions||[]).find(action=>action && action.auto && action.url);
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}
