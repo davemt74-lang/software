@@ -132,6 +132,29 @@ function vp3_user_app_share_reissue_update_v250(
     ];
 }
 
+
+function vp3_user_app_share_update_meta_v250(
+    int $recipientUserId,string $sharePublicId,?PDO $pdo=null
+): ?array {
+    $pdo??=db();if(!$pdo||$recipientUserId<1)return null;
+    vp3_user_app_share_lifecycle_ensure_schema_v250($pdo);
+    $stmt=$pdo->prepare("SELECT * FROM vp3_user_app_share_updates_v250
+      WHERE update_share_public_id=? AND recipient_user_id=? LIMIT 1");
+    $stmt->execute([$sharePublicId,$recipientUserId]);$row=$stmt->fetch();
+    if(!$row)return null;
+    return [
+      'prior_share_public_id'=>(string)$row['prior_share_public_id'],
+      'from_package_sha256'=>(string)$row['from_package_sha256'],
+      'to_package_sha256'=>(string)$row['to_package_sha256'],
+      'permission_delta'=>json_decode((string)$row['permission_delta_json'],true)?:[],
+      'schema_change'=>[
+        'from'=>(string)$row['schema_from'],
+        'to'=>(string)$row['schema_to'],
+        'changed'=>(string)$row['schema_from']!==(string)$row['schema_to'],
+      ],
+    ];
+}
+
 function vp3_user_app_share_lifecycle_v250(int $userId,?callable $remote=null,?PDO $pdo=null): array
 {
     $pdo??=db();if(!$pdo||$userId<1)throw new RuntimeException('Database connection is unavailable.');
