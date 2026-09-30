@@ -23,7 +23,7 @@ try{
             echo json_encode(['ok'=>true,'installation'=>$result,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
         }
         if($action==='reconcile'){
-            $result=vp3_system_apps_reconcile_v110((int)$user['id'],null,$pdo);
+            $result=vp3_system_apps_reconcile_all_v130((int)$user['id'],null,$pdo);
             echo json_encode(['ok'=>true,'reconciliation'=>$result,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
         }
         if($action==='hosting.bind'){
@@ -36,7 +36,7 @@ try{
         }
         http_response_code(400);echo json_encode(['ok'=>false,'error'=>'Unsupported Apps action.']);exit;
     }
-    echo json_encode(['ok'=>true,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo),'capabilities'=>vp3_system_apps_capability_v120()],JSON_UNESCAPED_SLASHES);
+    echo json_encode(['ok'=>true,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo),'capabilities'=>vp3_system_apps_capability_v130()],JSON_UNESCAPED_SLASHES);
 }catch(Throwable $e){
     http_response_code(400);
     echo json_encode(['ok'=>false,'error'=>mb_substr($e->getMessage(),0,500)],JSON_UNESCAPED_SLASHES);
