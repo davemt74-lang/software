@@ -149,8 +149,8 @@ function vp3_system_apps_event_v110(int $userId,int $appId,string $eventType,arr
 {
     $pdo??=db();if(!$pdo)return;
     $stmt=$pdo->prepare("INSERT INTO vp3_system_app_events(user_id,app_id,event_type,actor_type,actor_key,metadata_json)
-      VALUES (?,?,'".str_replace("'","''",$eventType)."','user',?,?)");
-    $stmt->execute([$userId,$appId,(string)$userId,json_encode($metadata,JSON_UNESCAPED_SLASHES)]);
+      VALUES (?,?,?,'user',?,?)");
+    $stmt->execute([$userId,$appId,mb_substr($eventType,0,80),(string)$userId,json_encode($metadata,JSON_UNESCAPED_SLASHES)]);
 }
 
 function vp3_system_apps_install_v110(int $userId,string $appKey,?callable $remote=null,?PDO $pdo=null): array
@@ -231,7 +231,7 @@ function vp3_system_apps_catalog_v110(?array $user=null,?PDO $pdo=null): array
 
 function vp3_system_apps_capability_v110(): array
 {
-    return vp3_system_apps_capability_v100()+[
+    return array_replace(vp3_system_apps_capability_v100(),[
       'installation_contract'=>'vp3.system-app-installation.v1',
       'homeserver_installation'=>true,
       'explicit_user_install'=>true,
@@ -239,5 +239,5 @@ function vp3_system_apps_capability_v110(): array
       'bounded_reconciliation'=>true,
       'cloud_package_execution'=>false,
       'cloud_filesystem_access'=>false,
-    ];
+    ]);
 }
