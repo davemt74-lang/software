@@ -299,6 +299,11 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
     $empty=vp3_agent_tool_empty_v400();$pdo=db();
     if(!$pdo)return $empty;
 
+    if(function_exists('vp3_system_apps_agent_action_query_v160')){
+        $systemAppsAction=vp3_system_apps_agent_action_query_v160($query,$user,$conversationId,null,$pdo);
+        if(!empty($systemAppsAction['handled']))return vp3_agent_tool_authorize_result_v400($systemAppsAction,$user,$query);
+    }
+
     if(function_exists('vp3_system_apps_agent_query_v150')){
         $systemApps=vp3_system_apps_agent_query_v150($query,$user,$conversationId,$pdo);
         if(!empty($systemApps['handled']))return vp3_agent_tool_authorize_result_v400($systemApps,$user,$query);
