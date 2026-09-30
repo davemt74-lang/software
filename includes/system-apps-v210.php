@@ -92,7 +92,8 @@ function vp3_system_apps_permission_query_v210(
     string $query,array $user,int $conversationId=0,?callable $remote=null,?PDO $pdo=null
 ): array {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    if(!preg_match('/\b(?:permission|permissions|capability|capabilities|camera|microphone|network access|notifications)\b/i',$query))return $empty;
+    if(!preg_match('/\\b(?:permission|permissions|capability|capabilities|camera|microphone|network access|notifications)\\b/i',$query))return $empty;
+    if(preg_match('/\\b(?:allow|grant|enable|approve|revoke|deny|disable|remove)\\b/i',$query))return $empty;
     if(!function_exists('vp3_system_apps_agent_find_app_v160'))return $empty;
     $pdo??=db();if(!$pdo)return $empty;
     $app=vp3_system_apps_agent_find_app_v160($query,$user,$pdo);
