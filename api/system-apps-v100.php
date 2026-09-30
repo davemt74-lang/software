@@ -36,7 +36,7 @@ try{
         }
         http_response_code(400);echo json_encode(['ok'=>false,'error'=>'Unsupported Apps action.']);exit;
     }
-    echo json_encode(['ok'=>true,'catalog'=>vp3_system_apps_catalog_v140($user,$pdo),'capabilities'=>vp3_system_apps_capability_v160()],JSON_UNESCAPED_SLASHES);
+    echo json_encode(['ok'=>true,'catalog'=>vp3_system_apps_catalog_v140($user,$pdo),'capabilities'=>vp3_system_apps_capability_v170()],JSON_UNESCAPED_SLASHES);
 }catch(Throwable $e){
     http_response_code(400);
     echo json_encode(['ok'=>false,'error'=>mb_substr($e->getMessage(),0,500)],JSON_UNESCAPED_SLASHES);
