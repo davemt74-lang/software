@@ -4,6 +4,7 @@ require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/system-apps-v200.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, private');
+// legacy compatibility: vp3_system_apps_catalog_v140
 require_login();
 $user=current_user();$pdo=db();
 if(!$pdo||!$user){http_response_code(503);echo json_encode(['ok'=>false,'error'=>'Apps are unavailable.']);exit;}
