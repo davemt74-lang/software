@@ -157,6 +157,8 @@ on:
       - "tests/system-apps-v270-*"
       - "tests/system-apps-v280-*"
       - "tests/system-apps-v290-*"
+      - "includes/system-apps-v300.php"
+      - "tests/system-apps-v300-*"
 
 concurrency:
   group: cloud-hosting-v100-${{ github.event.pull_request.number || github.ref }}
