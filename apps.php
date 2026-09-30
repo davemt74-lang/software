@@ -50,7 +50,8 @@ $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 <?php if((int)$catalog['counts']['owned']>0):?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="reconcile"><button class="button secondary" type="submit">Refresh HomeServer</button></form><?php endif;?></div>
 <section class="system-apps-grid">
 <?php foreach($catalog['apps'] as $app):$hs=(array)($app['homeserver']??[]);$hosting=(array)($app['hosting']??[]);$ui=(array)($app['ui']??[]);$state=(string)($ui['primary_state']??'available');?>
-<article class="system-app-card" data-app-state="<?=e($state)?>">
+<?php $filterTags=['all'];if($app['owned'])$filterTags[]='owned';if(!empty($hs['installed']))$filterTags[]='installed';if(!empty($hosting['bound']))$filterTags[]='hosted';if(!$app['owned']&&!empty($app['eligible']))$filterTags[]='available';?>
+<article class="system-app-card" data-app-state="<?=e($state)?>" data-app-filter-tags="<?=e(implode(' ',$filterTags))?>">
 <div class="system-app-card-top"><div class="system-app-icon">VP3</div><div><span class="system-app-category"><?=e((string)$app['category'])?></span><h2><?=e((string)$app['name'])?></h2></div>
 <span class="system-app-badge <?=e((string)($ui['tone']??'neutral'))?>"><?=e((string)($ui['badge']??'Available'))?></span></div>
 <p><?=e((string)$app['description'])?></p>
@@ -70,5 +71,5 @@ $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 <?php endforeach;?>
 </section>
 </div></section></main></div>
-<script>document.addEventListener('click',e=>{const b=e.target.closest('[data-app-filter]');if(!b)return;document.querySelectorAll('[data-app-filter]').forEach(x=>x.classList.toggle('active',x===b));const f=b.dataset.appFilter;document.querySelectorAll('[data-app-state]').forEach(x=>x.hidden=f!=='all'&&x.dataset.appState!==f);});</script>
+<script>document.addEventListener('click',e=>{const b=e.target.closest('[data-app-filter]');if(!b)return;document.querySelectorAll('[data-app-filter]').forEach(x=>x.classList.toggle('active',x===b));const f=b.dataset.appFilter;document.querySelectorAll('[data-app-filter-tags]').forEach(x=>x.hidden=f!=='all'&&!String(x.dataset.appFilterTags||'').split(/\s+/).includes(f));});</script>
 </body></html>
