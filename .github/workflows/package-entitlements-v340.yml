@@ -53,6 +53,7 @@ jobs:
           php -l includes/member-navigation.php
           php -l tracky.php
           php -l includes/system-apps-v100.php
+          php -l includes/system-apps-v110.php
           php -l api/system-apps-v100.php
           php -l apps.php
 
@@ -64,3 +65,6 @@ jobs:
 
       - name: System Apps catalog and ownership contract
         run: node tests/system-apps-v100-contract.mjs
+
+      - name: System Apps HomeServer install contract
+        run: node tests/system-apps-v110-contract.mjs

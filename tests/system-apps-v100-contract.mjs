@@ -28,7 +28,7 @@ assert.match(api,/vp3_system_apps_acquire_v100/);
 assert.match(api,/verify_csrf/);
 assert.match(page,/VP3 SYSTEM APPS/);
 assert.match(page,/Add to My Apps/);
-assert.match(page,/Install controls are added in the next section/);
+assert.match(page,/Cloud owns entitlement; HomeServer owns installation and runtime state/);
 assert.match(page,/data-app-filter="owned"/);
 assert.match(page,/data-app-filter="available"/);
 assert.match(css,/system-apps-grid/);
