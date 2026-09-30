@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
-require_once __DIR__.'/includes/system-apps-v200.php';
+require_once __DIR__.'/includes/system-apps-v210.php';
 require_login();
 require_permission('account.access');
 $pdo=db();$user=current_user();
@@ -26,6 +26,12 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $message='System App rolled back to the previous HomeServer release.';
             if(!empty($result['reconcile_pending']))$message.=' Hosting/subdomain reconciliation is pending.';
             flash('system_apps_notice',$message);
+        }elseif($action==='permission.set'){
+            $result=vp3_system_apps_permission_set_v210(
+              (int)$user['id'],(string)($_POST['app_key']??''),(string)($_POST['permission']??''),
+              (string)($_POST['allowed']??'0')==='1','owner_ui',null,$pdo
+            );
+            flash('system_apps_notice',!empty($result['allowed'])?'App permission granted.':'App permission revoked.');
         }elseif($action==='reconcile'){
             $result=vp3_system_apps_reconcile_all_v130((int)$user['id'],null,$pdo);
             flash('system_apps_notice','HomeServer app status refreshed for '.number_format((int)$result['count']).' app lifecycle item'.((int)$result['count']===1?'':'s').'.');
@@ -39,7 +45,13 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     }catch(Throwable $e){flash('system_apps_error',$e->getMessage());}
     redirect(url('/apps.php'));
 }
-$catalog=vp3_system_apps_catalog_v200($user,$pdo);
+$catalog=vp3_system_apps_catalog_v210($user,$pdo);
+$permissionStates=[];
+if(!empty($catalog['connection']['connected']))foreach($catalog['apps'] as $permissionApp){
+    if(empty($permissionApp['owned'])||empty($permissionApp['homeserver']['installed']))continue;
+    try{$permissionStates[(string)$permissionApp['app_key']]=vp3_system_apps_permission_status_v210((int)$user['id'],(string)$permissionApp['app_key'],null,$pdo);}
+    catch(Throwable $ignored){}
+}
 $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -66,6 +78,7 @@ $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 <p><?=e((string)$app['description'])?></p>
 <div class="system-app-meta"><span>Catalog <strong><?=e((string)$app['current_version'])?></strong></span><span>Channel <strong><?=e((string)($release['release_channel']??'stable'))?></strong></span><span>HomeServer <strong><?=e(!empty($hs['installed'])?(string)($hs['installed_version']??$hs['state']):ucfirst((string)($hs['state']??'not synced')))?></strong></span><?php if(!empty($hosting['bound'])):?><span>Hosting <strong><?=e((string)($hosting['hostname']??$hosting['display_name']))?></strong></span><?php endif;?></div>
 <?php if(!empty($release['release_notes'])):?><details class="system-app-release-notes"><summary>Release notes</summary><ul><?php foreach((array)$release['release_notes'] as $note):?><li><?=e((string)$note)?></li><?php endforeach;?></ul><?php if(!empty($release['compatibility']['min_homeserver_version'])):?><p>Requires HomeServer <?=e((string)$release['compatibility']['min_homeserver_version'])?>+</p><?php endif;?></details><?php endif;?>
+<?php $permissions=(array)($permissionStates[(string)$app['app_key']]??[]);if(!empty($permissions['permissions'])):?><details class="system-app-release-notes system-app-permissions"><summary>Permissions · <?=number_format((int)$permissions['allowed_count'])?> of <?=number_format((int)$permissions['declared_count'])?> allowed</summary><div class="system-app-permission-list"><?php foreach((array)$permissions['permissions'] as $permission):?><div class="system-app-permission-row"><div><strong><?=e((string)$permission['permission'])?></strong><span><?=e(ucfirst((string)($permission['risk']??'unknown')))?> risk · <?=e((string)($permission['description']??''))?></span></div><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="permission.set"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><input type="hidden" name="permission" value="<?=e((string)$permission['permission'])?>"><input type="hidden" name="allowed" value="<?=!empty($permission['allowed'])?'0':'1'?>"><button class="button secondary" type="submit"><?=!empty($permission['allowed'])?'Revoke':'Allow'?></button></form></div><?php endforeach;?></div><p>New permissions introduced by an update default to denied and require review.</p></details><?php endif;?>
 <?php if(!empty($hs['error'])):?><div class="system-app-error"><?=e((string)$hs['error'])?></div><?php endif;?>
 <?php if(!empty($hs['installed'])):?><div class="system-app-hosting">
 <?php if(!empty($hosting['bound'])):?><div class="system-app-hosting-bound"><span>Hosted at <?=e((string)($hosting['hostname']??$hosting['display_name']))?></span><?php if(!empty($hosting['public_url'])):?><a href="<?=e((string)$hosting['public_url'])?>" target="_blank" rel="noopener">Open</a><?php endif;?><a href="<?=e(url('/hosting.php'))?>">Manage Hosting</a><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="hosting.unbind"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><button class="button secondary" type="submit">Remove Hosting</button></form></div>

@@ -108,7 +108,7 @@ function vp3_system_apps_agent_prepare_v160(
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     vp3_system_apps_agent_actions_ensure_schema_v160($pdo);
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in user is required.');
-    $allowed=['ownership.acquire','install','update.verify','release.rollback','hosting.bind','hosting.unbind','reconcile'];
+    $allowed=['ownership.acquire','install','update.verify','release.rollback','hosting.bind','hosting.unbind','reconcile','permission.set'];
     if(!in_array($actionType,$allowed,true))throw new RuntimeException('Unsupported System App Agent action.');
     $app=null;$appId=null;
     if($actionType!=='reconcile'){
@@ -168,6 +168,13 @@ function vp3_system_apps_agent_execute_v160(
     }
     if($type==='release.rollback'){
         return ['release'=>vp3_system_apps_release_rollback_v200($uid,$appKey,'agent_confirmed',$remote,$pdo)];
+    }
+    if($type==='permission.set'){
+        $permission=(string)($payload['permission']??'');
+        if($permission==='')throw new RuntimeException('System App permission is required.');
+        return ['permission'=>vp3_system_apps_permission_set_v210(
+            $uid,$appKey,$permission,!empty($payload['allowed']),'agent_confirmed',$remote,$pdo
+        )];
     }
     if($type==='hosting.bind'){
         $siteId=(int)($row['site_id']??$payload['site_id']??0);
@@ -272,7 +279,7 @@ function vp3_system_apps_agent_action_intent_v160(string $query): bool
     if(!preg_match('/\b(?:app|apps|vp3 notes|vp3 inventory|vp3 checklists|notes|inventory|checklists)\b/i',$query))return false;
     if(preg_match('/^\s*(?:what|which|show|list|tell\s+me|do\s+i|are\s+there|is\s+there|status|how\s+many)\b/i',$query)
         && !preg_match('/\b(?:please|go\s+ahead|can\s+you|could\s+you|would\s+you)\b/i',$query))return false;
-    return (bool)preg_match('/\b(?:install|update|upgrade|verify|rollback|roll back|revert|add|acquire|host|hosting|unhost|remove hosting|detach hosting|refresh|reconcile|resync|sync|open|launch)\b/i',$query);
+    return (bool)preg_match('/\\b(?:install|update|upgrade|verify|rollback|roll back|revert|add|acquire|host|hosting|unhost|remove hosting|detach hosting|refresh|reconcile|resync|sync|open|launch|allow|grant|enable|approve|revoke|deny|disable|remove)\\b/i',$query);
 }
 
 function vp3_system_apps_agent_prepare_result_v160(array $plan,string $intro): array
@@ -330,7 +337,33 @@ function vp3_system_apps_agent_action_query_v160(
     }
 
     $actionType='';$payload=[];$preview=[];$siteId=null;$intro='';
-    if(preg_match('/\b(?:add|acquire)\b/i',$query)){
+    if(preg_match('/\b(?:allow|grant|enable|approve|revoke|deny|disable|remove)\b/i',$query)
+        && preg_match('/\b(?:permission|permissions|capability|capabilities|camera|microphone|network|notifications|agent context)\b/i',$query)){
+        $permission='';
+        foreach([
+          'hardware.camera'=>'camera',
+          'hardware.microphone'=>'microphone',
+          'network.external'=>'network',
+          'notifications.write'=>'notification',
+          'agent.context'=>'agent context',
+        ] as $candidate=>$needle){
+            if(str_contains($q,$candidate)||str_contains($q,$needle)){$permission=$candidate;break;}
+        }
+        if($permission==='')return ['handled'=>true,'answer'=>'Name the System App permission you want to change.','stem_media'=>[],'media'=>[],'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],'sources'=>[]];
+        $grant=(bool)preg_match('/\b(?:allow|grant|enable|approve)\b/i',$query);
+        $status=vp3_system_apps_permission_status_v210($uid,$appKey,$remote,$pdo);
+        $permissionRow=null;foreach($status['permissions'] as $row)if((string)($row['permission']??'')===$permission){$permissionRow=$row;break;}
+        if(!$permissionRow)return ['handled'=>true,'answer'=>$name.' does not declare the '.$permission.' permission, so there is nothing to change.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'system-apps:permissions','title'=>'VP3 System App permission governance']]];
+        $actionType='permission.set';
+        $payload=['permission'=>$permission,'allowed'=>$grant];
+        $preview=[
+          'app'=>$name,'operation'=>$grant?'grant_permission':'revoke_permission',
+          'permission'=>$permission,'risk'=>(string)($permissionRow['risk']??'unknown'),
+          'current_state'=>!empty($permissionRow['allowed'])?'allowed':'denied',
+          'new_state'=>$grant?'allowed':'denied',
+        ];
+        $intro='I prepared '.($grant?'granting ':'revoking ').$permission.' for '.$name.'.';
+    }elseif(preg_match('/\b(?:add|acquire)\b/i',$query)){
         $actionType='ownership.acquire';$preview=['app'=>$name,'ownership'=>'active'];$intro='I prepared adding '.$name.' to your account.';
     }elseif(preg_match('/\b(?:install)\b/i',$query)){
         $actionType='install';$preview=['app'=>$name,'target'=>'HomeServer'];$intro='I prepared installation of '.$name.' on HomeServer.';
@@ -378,6 +411,7 @@ function vp3_system_apps_capability_v160(): array
       'idempotent_confirmation_replay'=>true,
       'agent_install_update'=>true,
       'agent_release_rollback'=>true,
+      'agent_permission_grant_revoke'=>true,
       'agent_hosting_bind_unbind'=>true,
       'agent_reconcile'=>true,
       'agent_open_navigation'=>true,

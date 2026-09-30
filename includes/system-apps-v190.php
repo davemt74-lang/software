@@ -24,6 +24,7 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
       'install'=>'Install app',
       'update.verify'=>'Verified update',
       'release.rollback'=>'Rollback release',
+      'permission.set'=>'Change permission',
       'hosting.bind'=>'Assign Hosting',
       'hosting.unbind'=>'Remove Hosting',
       'reconcile'=>'Refresh apps',
@@ -52,6 +53,9 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
       'Operation'=>$preview['operation']??null,
       'Version'=>$preview['to_version']??null,
       'Channel'=>$preview['release_channel']??null,
+      'Permission'=>$preview['permission']??null,
+      'Risk'=>$preview['risk']??null,
+      'New state'=>$preview['new_state']??null,
       'Scope'=>$preview['scope']??null,
     ] as $label=>$value){
         if($value!==null&&trim((string)$value)!=='')$details[]=['label'=>$label,'value'=>(string)$value];
