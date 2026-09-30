@@ -17,5 +17,6 @@ assert.match(page,/Ask Agent/);
 assert.match(page,/workspaceSidebarActive='tracky'/);
 assert.match(page,/perception and physical authority on HomeServer/i);
 assert.match(page,/governed semantic mirror/i);
+assert.match(page,/\.tracky-main\{[^}]*min-height:0[^}]*overflow-y:auto[^}]*overflow-x:hidden/);
 
 console.log('Tracky navigation and overview contract: PASS');
