@@ -1,0 +1,40 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const root=new URL('../',import.meta.url);
+const svc=fs.readFileSync(new URL('includes/system-apps-v100.php',root),'utf8');
+const api=fs.readFileSync(new URL('api/system-apps-v100.php',root),'utf8');
+const page=fs.readFileSync(new URL('apps.php',root),'utf8');
+const css=fs.readFileSync(new URL('system-apps-v100.css',root),'utf8');
+const nav=fs.readFileSync(new URL('includes/member-navigation.php',root),'utf8');
+const sidebar=fs.readFileSync(new URL('includes/main-sidebar.php',root),'utf8');
+
+for(const table of ['vp3_system_app_catalog','vp3_system_app_ownership','vp3_system_app_events']){
+  assert.ok(svc.includes('CREATE TABLE IF NOT EXISTS '+table),'missing '+table);
+}
+for(const key of ['vp3.notes','vp3.inventory','vp3.checklists'])assert.ok(svc.includes("'"+key+"'"),'missing initial system app '+key);
+assert.match(svc,/catalog_authority'\s*=>\s*'vp3_cloud'/);
+assert.match(svc,/runtime_authority'\s*=>\s*'homeserver'/);
+assert.match(svc,/package_eligibility_separate_from_ownership'\s*=>\s*true/);
+assert.match(svc,/homeserver_installation'\s*=>\s*false/);
+assert.match(svc,/hosting_binding'\s*=>\s*false/);
+assert.match(svc,/open_marketplace'\s*=>\s*false/);
+assert.match(svc,/UNIQUE KEY uq_vp3_system_app_owner \(user_id,app_id\)/);
+assert.match(svc,/app\.ownership\.acquired/);
+assert.match(svc,/app\.ownership\.revoked/);
+assert.match(svc,/acquisition_mode/);
+assert.match(svc,/required_entitlement/);
+assert.match(svc,/subscription_has_entitlement/);
+assert.match(api,/vp3_system_apps_acquire_v100/);
+assert.match(api,/verify_csrf/);
+assert.match(page,/VP3 SYSTEM APPS/);
+assert.match(page,/Add to My Apps/);
+assert.match(page,/Install controls are added in the next section/);
+assert.match(page,/data-app-filter="owned"/);
+assert.match(page,/data-app-filter="available"/);
+assert.match(css,/system-apps-grid/);
+assert.match(css,/@media\(max-width:620px\)/);
+assert.match(nav,/'apps\.php'=>'apps'/);
+assert.match(nav,/\$add\(\$links,'apps','Apps',url\('\/apps\.php'\),'identity'\)/);
+assert.match(sidebar,/['"]apps['"]=>['"]Build & Host['"]/);
+assert.match(sidebar,/\$mainSidebarPrimaryKeys\['apps'\]=true/);
+console.log('System Apps V1 Section 10 catalog and ownership contract: PASS');

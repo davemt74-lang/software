@@ -52,9 +52,15 @@ jobs:
           php -l upgrade.php
           php -l includes/member-navigation.php
           php -l tracky.php
+          php -l includes/system-apps-v100.php
+          php -l api/system-apps-v100.php
+          php -l apps.php
 
       - name: Package entitlement composition contract
         run: node tests/package-entitlement-composition-v340.mjs
 
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
+
+      - name: System Apps catalog and ownership contract
+        run: node tests/system-apps-v100-contract.mjs
