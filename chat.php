@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
-$controlBuild = 'chat-footer-runtime-v2451-20260922';
+$controlBuild = 'chat-system-app-action-ux-v190-20260930';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-stop-control1';
@@ -75,6 +75,7 @@ $html = preg_replace(
 ) ?? $html;
 
 $html = str_replace('chat.js?v=101', 'chat.js?v=' . $controlBuild, $html);
+$html = str_replace('chat.css?v=206-source-light-20260905', 'chat.css?v=' . $controlBuild, $html);
 $html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);
 
 // One sidebar authority: render the shared member sidebar once and replace the
