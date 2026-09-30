@@ -200,8 +200,8 @@ function vp3_system_apps_acquire_v100(int $userId,string $appKey,string $sourceK
         $stmt=$pdo->prepare("INSERT INTO vp3_system_app_ownership
           (user_id,app_id,status,source_kind,source_ref,acquired_at,revoked_at,metadata_json)
           VALUES (?,?,'active',?,?,CURRENT_TIMESTAMP,NULL,?)
-          ON DUPLICATE KEY UPDATE status='active',source_kind=VALUES(source_kind),source_ref=VALUES(source_ref),
-            acquired_at=IF(status='active',acquired_at,CURRENT_TIMESTAMP),revoked_at=NULL,updated_at=CURRENT_TIMESTAMP");
+          ON DUPLICATE KEY UPDATE acquired_at=IF(revoked_at IS NULL,acquired_at,CURRENT_TIMESTAMP),status='active',source_kind=VALUES(source_kind),source_ref=VALUES(source_ref),
+            revoked_at=NULL,updated_at=CURRENT_TIMESTAMP");
         $stmt->execute([$userId,(int)$app['id'],mb_substr($sourceKind,0,40),$sourceRef?mb_substr($sourceRef,0,190):null,json_encode(['catalog_version'=>(string)$app['current_version']],JSON_UNESCAPED_SLASHES)]);
         $event=$pdo->prepare("INSERT INTO vp3_system_app_events(user_id,app_id,event_type,actor_type,actor_key,metadata_json)
           VALUES (?,?,'app.ownership.acquired','user',?,?)");
