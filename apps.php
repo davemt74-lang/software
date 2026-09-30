@@ -18,8 +18,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $result=vp3_system_apps_install_v110((int)$user['id'],(string)($_POST['app_key']??''),null,$pdo);
             flash('system_apps_notice',!empty($result['changed'])?'App installed on HomeServer.':'HomeServer app is already current.');
         }elseif($action==='reconcile'){
-            $result=vp3_system_apps_reconcile_v110((int)$user['id'],null,$pdo);
-            flash('system_apps_notice','HomeServer app status refreshed for '.number_format((int)$result['count']).' owned app'.((int)$result['count']===1?'':'s').'.');
+            $result=vp3_system_apps_reconcile_all_v130((int)$user['id'],null,$pdo);
+            flash('system_apps_notice','HomeServer app status refreshed for '.number_format((int)$result['count']).' app lifecycle item'.((int)$result['count']===1?'':'s').'.');
         }elseif($action==='hosting.bind'){
             vp3_system_apps_hosting_bind_v120((int)$user['id'],(string)($_POST['app_key']??''),(int)($_POST['site_id']??0),null,$pdo);
             flash('system_apps_notice','App assigned to Hosting.');

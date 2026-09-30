@@ -216,20 +216,28 @@ function vp3_system_apps_acquire_v100(int $userId,string $appKey,string $sourceK
     throw new RuntimeException('System app ownership could not be loaded.');
 }
 
-function vp3_system_apps_revoke_v100(int $userId,string $appKey,string $reason='admin',?PDO $pdo=null): bool
+function vp3_system_apps_revoke_v100(int $userId,string $appKey,string $reason='admin',?PDO $pdo=null,?callable $remote=null): bool
 {
     $pdo??=db();
     if(!$pdo||$userId<1)return false;
     $stmt=$pdo->prepare("SELECT c.id FROM vp3_system_app_catalog c WHERE c.app_key=? LIMIT 1");
     $stmt->execute([strtolower(trim($appKey))]);$appId=(int)$stmt->fetchColumn();
     if($appId<1)return false;
+    $cleanup=[];
+    if(function_exists('vp3_system_apps_before_ownership_revoke_v130')){
+        try{
+            $cleanup=vp3_system_apps_before_ownership_revoke_v130($userId,strtolower(trim($appKey)),$pdo,$remote);
+        }catch(Throwable $ignored){
+            $cleanup=['cleanup'=>'pending','error'=>'revocation_cleanup_failed'];
+        }
+    }
     $pdo->beginTransaction();
     try{
         $update=$pdo->prepare("UPDATE vp3_system_app_ownership SET status='revoked',revoked_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND app_id=? AND status='active'");
         $update->execute([$userId,$appId]);
         if($update->rowCount()>0){
             $event=$pdo->prepare("INSERT INTO vp3_system_app_events(user_id,app_id,event_type,actor_type,actor_key,metadata_json) VALUES (?,?,'app.ownership.revoked','system','admin',?)");
-            $event->execute([$userId,$appId,json_encode(['reason'=>mb_substr($reason,0,500)],JSON_UNESCAPED_SLASHES)]);
+            $event->execute([$userId,$appId,json_encode(['reason'=>mb_substr($reason,0,500),'cleanup'=>$cleanup],JSON_UNESCAPED_SLASHES)]);
         }
         $pdo->commit();
         return $update->rowCount()>0;
