@@ -24,6 +24,8 @@ assert.match(bootstrap,/system-apps-v240\.php/);
 assert.match(apps,/user\.share\.create/);
 assert.match(apps,/user\.share\.revoke/);
 assert.match(redeem,/Accept Private App Share/);
+assert.match(layer,/#code=/);
+assert.match(redeem,/location\.hash/);
 assert.match(redeem,/Expected package SHA-256/);
 
 console.log('System Apps Section 11 Cloud private distribution contract: PASS');
