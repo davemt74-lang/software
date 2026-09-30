@@ -16,27 +16,27 @@ try{
         $action=(string)($input['action']??'');
         if($action==='acquire'){
             $app=vp3_system_apps_acquire_v100((int)$user['id'],(string)($input['app_key']??''),'self_service',null,$pdo);
-            echo json_encode(['ok'=>true,'app'=>$app,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
+            echo json_encode(['ok'=>true,'app'=>$app,'catalog'=>vp3_system_apps_catalog_v140($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
         }
         if($action==='install'){
             $result=vp3_system_apps_install_v110((int)$user['id'],(string)($input['app_key']??''),null,$pdo);
-            echo json_encode(['ok'=>true,'installation'=>$result,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
+            echo json_encode(['ok'=>true,'installation'=>$result,'catalog'=>vp3_system_apps_catalog_v140($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
         }
         if($action==='reconcile'){
             $result=vp3_system_apps_reconcile_all_v130((int)$user['id'],null,$pdo);
-            echo json_encode(['ok'=>true,'reconciliation'=>$result,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
+            echo json_encode(['ok'=>true,'reconciliation'=>$result,'catalog'=>vp3_system_apps_catalog_v140($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
         }
         if($action==='hosting.bind'){
             $result=vp3_system_apps_hosting_bind_v120((int)$user['id'],(string)($input['app_key']??''),(int)($input['site_id']??0),null,$pdo);
-            echo json_encode(['ok'=>true,'binding'=>$result,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
+            echo json_encode(['ok'=>true,'binding'=>$result,'catalog'=>vp3_system_apps_catalog_v140($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
         }
         if($action==='hosting.unbind'){
             $result=vp3_system_apps_hosting_unbind_v120((int)$user['id'],(string)($input['app_key']??''),null,$pdo);
-            echo json_encode(['ok'=>true,'binding'=>$result,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
+            echo json_encode(['ok'=>true,'binding'=>$result,'catalog'=>vp3_system_apps_catalog_v140($user,$pdo)],JSON_UNESCAPED_SLASHES);exit;
         }
         http_response_code(400);echo json_encode(['ok'=>false,'error'=>'Unsupported Apps action.']);exit;
     }
-    echo json_encode(['ok'=>true,'catalog'=>vp3_system_apps_catalog_v120($user,$pdo),'capabilities'=>vp3_system_apps_capability_v130()],JSON_UNESCAPED_SLASHES);
+    echo json_encode(['ok'=>true,'catalog'=>vp3_system_apps_catalog_v140($user,$pdo),'capabilities'=>vp3_system_apps_capability_v140()],JSON_UNESCAPED_SLASHES);
 }catch(Throwable $e){
     http_response_code(400);
     echo json_encode(['ok'=>false,'error'=>mb_substr($e->getMessage(),0,500)],JSON_UNESCAPED_SLASHES);
