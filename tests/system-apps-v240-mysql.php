@@ -82,6 +82,12 @@ try{
 $redeemed=vp3_user_app_share_redeem_v240(2,$created['public_id'],$created['grant_code'],$testPdo);
 if(empty($redeemed['install_authorized']))throw new RuntimeException('Recipient redemption was not authorized.');
 if(($redeemed['expected_package_sha256']??'')!==str_repeat('a',64))throw new RuntimeException('Redemption lost exact package hash.');
+try{
+    vp3_user_app_share_redeem_v240(2,$created['public_id'],$created['grant_code'],$testPdo);
+    throw new RuntimeException('Already-used grant redeemed twice.');
+}catch(RuntimeException $e){
+    if(str_contains($e->getMessage(),'Already-used grant redeemed twice'))throw $e;
+}
 
 $second=vp3_user_app_share_create_v240(1,'shared.notes','other@example.com',$remote,$testPdo);
 $revoked=vp3_user_app_share_revoke_v240(1,$second['public_id'],$testPdo);
