@@ -63,5 +63,4 @@ const memberNav=fs.readFileSync(new URL('includes/member-navigation.php',root),'
 assert.match(mainSidebar,/['"]hosting['"]=>['"]Hosting & Subdomains['"]/);
 assert.match(mainSidebar,/['"]hosting['"]=>['"]Build & Host['"]/);
 assert.match(mainSidebar,/mainSidebarPrimaryOrder[^\n]*'hosting'/);
-assert.match(memberNav,/\$add\(\$links,'hosting',\$hostingLabel,\$hostingHref,'identity'\)/);
-assert.match(memberNav,/Cloud Hosting — Upgrade/);
+assert.match(memberNav,/\$add\(\$links,'hosting','Cloud Hosting',url\('\/hosting\.php'\),'identity'\)/);
