@@ -22,7 +22,8 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
     $labels=[
       'ownership.acquire'=>'Add app',
       'install'=>'Install app',
-      'update.verify'=>'Update / verify',
+      'update.verify'=>'Verified update',
+      'release.rollback'=>'Rollback release',
       'hosting.bind'=>'Assign Hosting',
       'hosting.unbind'=>'Remove Hosting',
       'reconcile'=>'Refresh apps',
@@ -49,6 +50,8 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
       'Hosting site'=>$preview['hosting_site']??null,
       'Hostname'=>$preview['hostname']??null,
       'Operation'=>$preview['operation']??null,
+      'Version'=>$preview['to_version']??null,
+      'Channel'=>$preview['release_channel']??null,
       'Scope'=>$preview['scope']??null,
     ] as $label=>$value){
         if($value!==null&&trim((string)$value)!=='')$details[]=['label'=>$label,'value'=>(string)$value];
