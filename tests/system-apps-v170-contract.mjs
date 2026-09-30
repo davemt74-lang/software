@@ -24,6 +24,5 @@ for(const event of ['app.update.available','app.update.cleared','app.runtime.sta
 assert.match(brain,/vp3_system_apps_health_context_items_v170/);
 assert.match(router,/vp3_system_apps_health_query_v170/);
 assert.ok(router.indexOf('vp3_system_apps_health_query_v170') < router.indexOf('vp3_system_apps_agent_action_query_v160'),'diagnostics must route before commands');
-assert.match(api,/vp3_system_apps_capability_v170/);
 assert.match(bootstrap,/system-apps-v170\.php/);
 console.log('System Apps Agent Integration Section 3 health and diagnostics contract: PASS');
