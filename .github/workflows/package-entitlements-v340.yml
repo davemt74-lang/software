@@ -50,6 +50,11 @@ jobs:
           php -l admin/permissions.php
           php -l setup.php
           php -l upgrade.php
+          php -l includes/member-navigation.php
+          php -l tracky.php
 
       - name: Package entitlement composition contract
         run: node tests/package-entitlement-composition-v340.mjs
+
+      - name: Tracky navigation and overview contract
+        run: node tests/tracky-navigation-overview-v282.mjs
