@@ -221,10 +221,11 @@ function vp3_system_apps_agent_confirm_v160(
             $appStmt=$pdo->prepare('SELECT app_key FROM vp3_system_app_catalog WHERE id=? LIMIT 1');
             $appStmt->execute([(int)$row['app_id']]);$confirmedAppKey=(string)$appStmt->fetchColumn();
         }
+        $confirmedPreview=json_decode((string)($row['preview_json']??''),true);if(!is_array($confirmedPreview))$confirmedPreview=[];
         if((string)$row['status']==='completed'){
             $result=json_decode((string)($row['result_json']??''),true);if(!is_array($result))$result=[];
             $pdo->commit();
-            return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'app_key'=>$confirmedAppKey,'completed'=>true,'idempotent_replay'=>true,'result'=>$result];
+            return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'app_key'=>$confirmedAppKey,'preview'=>$confirmedPreview,'completed'=>true,'idempotent_replay'=>true,'result'=>$result];
         }
         $expires=strtotime((string)$row['expires_at'].' UTC');
         if($expires!==false&&$expires<=time())throw new RuntimeException('System App confirmation code expired. Prepare the action again.');
@@ -247,7 +248,7 @@ function vp3_system_apps_agent_confirm_v160(
           WHERE id=? AND execution_token=?");
         $stmt->execute([json_encode($safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),(int)$row['id'],$lease]);
         if($stmt->rowCount()!==1)throw new RuntimeException('System App action execution lease was lost before completion.');
-        return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'app_key'=>$confirmedAppKey,'completed'=>true,'idempotent_replay'=>false,'result'=>$safe];
+        return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'app_key'=>$confirmedAppKey,'preview'=>$confirmedPreview,'completed'=>true,'idempotent_replay'=>false,'result'=>$safe];
     }catch(Throwable $e){
         $pdo->prepare("UPDATE vp3_system_app_agent_actions
           SET status='prepared',error_message=?,execution_token='',execution_expires_at=NULL
