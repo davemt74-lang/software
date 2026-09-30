@@ -8,7 +8,9 @@ const VP3_SYSTEM_APPS_V200='system-app-release-lifecycle-v200-20260930';
 
 function vp3_system_apps_release_metadata_v200(array $app): array
 {
-    $meta=vp3_system_apps_json_v100((string)($app['metadata_json']??''));
+    $meta=is_array($app['metadata']??null)
+      ?$app['metadata']
+      :vp3_system_apps_json_v100((string)($app['metadata_json']??''));
     return [
       'release_channel'=>(string)($meta['release_channel']??'stable'),
       'release_notes'=>is_array($meta['release_notes']??null)?array_values(array_map('strval',$meta['release_notes'])):[],
