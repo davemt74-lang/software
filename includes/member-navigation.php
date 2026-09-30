@@ -149,12 +149,18 @@ function member_navigation_menu_links(?array $user = null): array
         $add($links,'account','My Account',url('/account.php'),'identity');
         $add($links,'client_updates','Client Updates',url('/client-updates.php'),'identity');
         $add($links,'homeserver','HomeServer',url('/settings-homeserver.php'),'identity');
+        $hostingHref=url('/hosting.php');
+        $hostingLabel='Cloud Hosting';
         if(function_exists('vp3_cloud_hosting_entitlement_snapshot_v100')){
             try{
                 $hostingEntitlements=vp3_cloud_hosting_entitlement_snapshot_v100($user);
-                if(!empty($hostingEntitlements['entitlements']['hosting.access']['enabled']))$add($links,'hosting','Cloud Hosting',url('/hosting.php'),'identity');
+                if(empty($hostingEntitlements['entitlements']['hosting.access']['enabled'])){
+                    $hostingHref=url('/subscription.php');
+                    $hostingLabel='Cloud Hosting — Upgrade';
+                }
             }catch(Throwable $e){}
         }
+        $add($links,'hosting',$hostingLabel,$hostingHref,'identity');
         $add($links,'plugins','Plugins',url('/plugins.php'),'identity');
         $add($links,'messages','Messages',url('/messages.php'),'identity');
         $add($links,'subscription','Plan & Usage',url('/subscription.php'),'identity');
