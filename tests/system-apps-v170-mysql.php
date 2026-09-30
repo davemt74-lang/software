@@ -36,7 +36,7 @@ $testPdo->exec("INSERT INTO homeserver_connections(user_id,status,last_seen_at) 
 require dirname(__DIR__).'/includes/cloud-hosting-v100.php';
 require dirname(__DIR__).'/includes/cloud-hosting-v110.php';
 require dirname(__DIR__).'/includes/cloud-hosting-v120.php';
-require dirname(__DIR__).'/includes/system-apps-v170.php';
+require dirname(__DIR__).'/includes/system-apps-v180.php';
 
 vp3_cloud_hosting_v120_ensure_schema($testPdo);
 vp3_system_apps_ensure_schema_v120($testPdo);
@@ -86,9 +86,17 @@ if(!$notes||$notes['health_state']!=='healthy'||$notes['health_issues'])throw ne
 $diagnosis=vp3_system_apps_health_query_v170('why is Notes app not working?',$owner,17,null,$testPdo);
 if(empty($diagnosis['handled'])||!isset($diagnosis['system_app_health']['app']))throw new RuntimeException('Agent diagnostic query was not handled from canonical health state.');
 
-$cap=vp3_system_apps_capability_v170();
+$cap=vp3_system_apps_capability_v180();
 foreach(['transition_health_events','proactive_update_events','proactive_error_recovery_events','agent_health_context','agent_diagnostics','hosting_diagnostics_integration'] as $key){
  if(empty($cap[$key]))throw new RuntimeException('Missing System App health capability '.$key);
 }
 
-echo "System Apps Agent Integration Section 3 health and diagnostics MySQL: PASS\n";
+vp3_system_apps_store_remote_v110(1,$app,remote_item('running',true),false,$testPdo);
+$proactive=vp3_system_apps_proactive_candidates_v180($testPdo,$owner);
+$updateSuggestion=array_values(array_filter($proactive,static fn(array $item):bool=>(string)($item['source']??'')==='system_apps_update'));
+if(count($updateSuggestion)!==1)throw new RuntimeException('Update state did not create one proactive recommendation.');
+vp3_system_apps_store_error_v110(1,$app,'HomeServer reconcile failed','reconcile_failed',$testPdo);
+$proactive=vp3_system_apps_proactive_candidates_v180($testPdo,$owner);
+$healthSuggestion=array_values(array_filter($proactive,static fn(array $item):bool=>(string)($item['source']??'')==='system_apps_health'));
+if(count($healthSuggestion)!==1)throw new RuntimeException('Health state did not create one proactive recommendation.');
+echo "System Apps Agent Integration Sections 3-4 health/proactive MySQL: PASS\n";

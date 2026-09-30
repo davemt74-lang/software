@@ -200,6 +200,16 @@ function agent_proactive_operations_v036_candidates(PDO $pdo, array $user, int $
         $out[] = $calendarCandidate;
     }
 
+    if (function_exists('vp3_system_apps_proactive_candidates_v180')) {
+        try {
+            foreach (vp3_system_apps_proactive_candidates_v180($pdo, $user) as $appCandidate) {
+                if (is_array($appCandidate)) $out[] = $appCandidate;
+            }
+        } catch (Throwable $e) {
+            // System Apps suggestions are additive; never block the proactive loop.
+        }
+    }
+
     $homeServer = agent_proactive_operations_v036_homeserver_state($pdo, $userId);
     if (!is_array($homeServer)) {
         return $out;

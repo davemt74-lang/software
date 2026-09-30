@@ -146,6 +146,11 @@ function vp3_system_apps_agent_query_v150(string $query,array $user,int $convers
 
 function vp3_system_apps_agent_event_title_v150(array $row): array
 {
+    $meta=json_decode((string)($row['metadata_json']??''),true);if(!is_array($meta))$meta=[];
+    if(function_exists('vp3_system_apps_activity_presentation_v180')){
+        $presentation=vp3_system_apps_activity_presentation_v180($row,$meta);
+        return [(string)$presentation['title'],(string)$presentation['body']];
+    }
     $type=(string)($row['event_type']??'app.updated');
     $name=(string)($row['app_name']??'System App');
     $map=[
@@ -184,11 +189,17 @@ function vp3_system_apps_agent_reconcile_activity_v150(PDO $pdo,array $user): vo
         foreach(array_reverse($stmt->fetchAll()?:[]) as $row){
             [$title,$body]=vp3_system_apps_agent_event_title_v150($row);
             $meta=json_decode((string)($row['metadata_json']??''),true);if(!is_array($meta))$meta=[];
-            if((string)$row['event_type']==='app.install.failed'&&!empty($meta['error']))$body.=' '.mb_substr((string)$meta['error'],0,220);
+            $target=url('/apps.php');
+            if(function_exists('vp3_system_apps_activity_presentation_v180')){
+                $presentation=vp3_system_apps_activity_presentation_v180($row,$meta);
+                $target=(string)($presentation['target_url']??$target);
+            }elseif((string)$row['event_type']==='app.install.failed'&&!empty($meta['error'])){
+                $body.=' '.mb_substr((string)$meta['error'],0,220);
+            }
             agent_chat_activity_notify(
               $user,
               str_replace('.','_',(string)$row['event_type']),
-              $title,$body,url('/apps.php'),'system_app_event',(int)$row['id'],(string)$row['created_at']
+              $title,$body,$target,'system_app_event',(int)$row['id'],(string)$row['created_at']
             );
         }
     }catch(Throwable $e){

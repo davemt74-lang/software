@@ -8,6 +8,8 @@ const brain=fs.readFileSync(new URL('includes/agent-brain-context-v142.php',root
 const router=fs.readFileSync(new URL('includes/agent-tool-authorization-v400.php',root),'utf8');
 const api=fs.readFileSync(new URL('api/system-apps-v100.php',root),'utf8');
 const bootstrap=fs.readFileSync(new URL('includes/bootstrap.php',root),'utf8');
+const proactive=fs.readFileSync(new URL('includes/system-apps-v180.php',root),'utf8');
+const proactiveProvider=fs.readFileSync(new URL('includes/agent-proactive-operations-v036.php',root),'utf8');
 
 assert.match(health,/vp3\.system-app-health\.v1/);
 assert.match(health,/function vp3_system_apps_health_snapshot_v170/);
@@ -24,6 +26,12 @@ for(const event of ['app.update.available','app.update.cleared','app.runtime.sta
 assert.match(brain,/vp3_system_apps_health_context_items_v170/);
 assert.match(router,/vp3_system_apps_health_query_v170/);
 assert.ok(router.indexOf('vp3_system_apps_health_query_v170') < router.indexOf('vp3_system_apps_agent_action_query_v160'),'diagnostics must route before commands');
-assert.match(api,/vp3_system_apps_capability_v170/);
 assert.match(bootstrap,/system-apps-v170\.php/);
-console.log('System Apps Agent Integration Section 3 health and diagnostics contract: PASS');
+assert.match(proactive,/vp3\.system-app-proactive\.v1/);
+assert.match(proactive,/function vp3_system_apps_proactive_candidates_v180/);
+assert.match(proactive,/function vp3_system_apps_activity_presentation_v180/);
+assert.match(proactiveProvider,/vp3_system_apps_proactive_candidates_v180/);
+assert.match(activity,/vp3_system_apps_activity_presentation_v180/);
+assert.match(api,/vp3_system_apps_capability_v180/);
+assert.match(bootstrap,/system-apps-v180\.php/);
+console.log('System Apps Agent Integration Sections 3-4 contract: PASS');

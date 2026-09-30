@@ -11,6 +11,7 @@ on:
       - "includes/system-apps-v150.php"
       - "includes/system-apps-v160.php"
       - "includes/system-apps-v170.php"
+      - "includes/system-apps-v180.php"
       - "api/system-apps-v100.php"
       - "apps.php"
       - "system-apps-v100.css"
@@ -65,6 +66,7 @@ on:
       - "includes/system-apps-v150.php"
       - "includes/system-apps-v160.php"
       - "includes/system-apps-v170.php"
+      - "includes/system-apps-v180.php"
       - "api/system-apps-v100.php"
       - "apps.php"
       - "system-apps-v100.css"
@@ -157,6 +159,7 @@ jobs:
           php -l includes/system-apps-v150.php
           php -l includes/system-apps-v160.php
           php -l includes/system-apps-v170.php
+          php -l includes/system-apps-v180.php
           php -l api/system-apps-v100.php
           php -l apps.php
           php -l tests/system-apps-v100-mysql.php
