@@ -346,6 +346,11 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
         if(!empty($appManager['handled']))return vp3_agent_tool_authorize_result_v400($appManager,$user,$query);
     }
 
+    if(function_exists('vp3_photo_library_agent_query_v310')){
+        $photos=vp3_photo_library_agent_query_v310($query,$user,$conversationId,null);
+        if(!empty($photos['handled']))return vp3_agent_tool_authorize_result_v400($photos,$user,$query);
+    }
+
     if(function_exists('vp3_music_server_agent_query_v300')){
         $music=vp3_music_server_agent_query_v300($query,$user,$conversationId,null);
         if(!empty($music['handled']))return vp3_agent_tool_authorize_result_v400($music,$user,$query);
