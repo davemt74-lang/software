@@ -57,6 +57,10 @@ if(empty($bound['hosting']['bound'])||(int)$bound['hosting']['site_id']!==(int)$
 $siteOps=array_values(array_filter($ops,fn($o)=>$o['operation']==='hosting.site.reconcile'));
 if(($siteOps[count($siteOps)-1]['payload']['target_app_key']??null)!=='vp3.notes')throw new RuntimeException('Hosting reconcile did not project app target.');
 
+$secondSite=vp3_cloud_hosting_create_site_v100($owner,['display_name'=>'Second App Host','runtime_kind'=>'static'],1);
+try{vp3_system_apps_hosting_bind_v120(1,'vp3.notes',(int)$secondSite['id'],$remote,$testPdo);throw new RuntimeException('Cross-site reassignment was allowed without unbind.');}
+catch(RuntimeException $e){if($e->getMessage()==='Cross-site reassignment was allowed without unbind.')throw $e;}
+
 $fresh=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
 vp3_cloud_hosting_v120_reconcile_site($fresh,$remote,$testPdo);
 $siteOps=array_values(array_filter($ops,fn($o)=>$o['operation']==='hosting.site.reconcile'));
