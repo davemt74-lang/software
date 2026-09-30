@@ -20,6 +20,7 @@ on:
       - "includes/system-apps-v240.php"
       - "includes/system-apps-v250.php"
       - "includes/system-apps-v260.php"
+      - "includes/system-apps-v270.php"
       - "private-app-share.php"
       - "api/system-apps-v100.php"
       - "apps.php"
@@ -40,6 +41,7 @@ on:
       - "tests/system-apps-v240-*"
       - "tests/system-apps-v250-*"
       - "tests/system-apps-v260-*"
+      - "tests/system-apps-v270-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -198,6 +200,7 @@ jobs:
           php -l includes/system-apps-v240.php
           php -l includes/system-apps-v250.php
           php -l includes/system-apps-v260.php
+          php -l includes/system-apps-v270.php
           php -l private-app-share.php
           php -l api/system-apps-v100.php
           php -l apps.php
@@ -267,6 +270,8 @@ jobs:
         run: node tests/system-apps-v250-contract.mjs
       - name: System Apps Section 13 Unified App Manager contract
         run: node tests/system-apps-v260-contract.mjs
+      - name: System Apps Section 14 VP3 Media Server contract
+        run: node tests/system-apps-v270-contract.mjs
       - name: System Apps Section 9 user app SDK integration contract
         run: node tests/system-apps-v220-contract.mjs
       - name: Cloud Hosting Section 1 architecture contract
