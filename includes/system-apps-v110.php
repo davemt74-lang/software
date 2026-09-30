@@ -44,7 +44,7 @@ function vp3_system_apps_ensure_schema_v110(?PDO $pdo=null): void
 function vp3_system_apps_remote_v110(int $userId,string $operation,array $payload=[],?callable $remote=null): array
 {
     if($userId<1)throw new RuntimeException('Account is required.');
-    if(!in_array($operation,['apps.system.catalog','apps.system.status','apps.system.install','apps.system.deactivate','apps.system.reconcile'],true)){
+    if(!in_array($operation,['apps.system.catalog','apps.system.status','apps.system.install','apps.system.deactivate','apps.system.reconcile','apps.system.release.status','apps.system.rollback'],true)){
         throw new RuntimeException('Unsupported HomeServer System Apps operation.');
     }
     $result=$remote!==null?$remote($userId,$operation,$payload):homeserver_vp3_remote_operation_for_user($userId,$operation,$payload);
