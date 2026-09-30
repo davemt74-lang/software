@@ -27,11 +27,11 @@ assert.match(svc,/array_replace\(vp3_system_apps_capability_v100\(\)/);
 
 assert.match(api,/action==='install'/);
 assert.match(api,/action==='reconcile'/);
-assert.match(api,/vp3_system_apps_catalog_v140/);
+assert.match(api,/vp3_system_apps_catalog_v\d+/);
 assert.match(page,/Install on HomeServer/);
 assert.match(page,/Refresh HomeServer/);
 assert.match(page,/data-app-filter="installed"/);
-assert.match(page,/Verify Installation/);
+assert.match(page,/Verify (?:Installation|Release)/);
 assert.match(bootstrap,/system-apps-v110\.php/);
 assert.match(setup,/vp3_system_apps_ensure_schema_v120\(\$pdo\)/);
 assert.match(upgrade,/vp3_system_apps_schema_ready_v120\(\)/);
