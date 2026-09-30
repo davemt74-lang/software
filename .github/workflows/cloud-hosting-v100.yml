@@ -144,6 +144,7 @@ on:
       - "includes/system-apps-v260.php"
       - "includes/system-apps-v270.php"
       - "includes/system-apps-v280.php"
+      - "includes/system-apps-v290.php"
       - "private-app-share.php"
       - "tests/system-apps-v210-*"
       - "tests/system-apps-v220-*"
@@ -153,6 +154,7 @@ on:
       - "tests/system-apps-v260-*"
       - "tests/system-apps-v270-*"
       - "tests/system-apps-v280-*"
+      - "tests/system-apps-v290-*"
 
 concurrency:
   group: cloud-hosting-v100-${{ github.event.pull_request.number || github.ref }}
