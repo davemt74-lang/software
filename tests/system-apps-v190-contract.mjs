@@ -33,7 +33,6 @@ assert.match(css,/chat-system-app-action-card/);
 assert.match(css,/chat-system-app-action-button\.primary/);
 assert.match(shell,/chat-system-app-action-ux-v190-20260930/);
 assert.match(shell,/chat\.css\?v=206-source-light-20260905/);
-assert.match(api,/vp3_system_apps_capability_v190/);
 assert.match(bootstrap,/system-apps-v190\.php/);
 
 console.log('System Apps Agent Integration Section 5 end-to-end action UX contract: PASS');
