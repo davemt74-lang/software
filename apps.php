@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
-require_once __DIR__.'/includes/system-apps-v210.php';
+require_once __DIR__.'/includes/system-apps-v240.php';
 require_login();
 require_permission('account.access');
 $pdo=db();$user=current_user();
@@ -32,6 +32,14 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
               (string)($_POST['allowed']??'0')==='1','owner_ui',null,$pdo
             );
             flash('system_apps_notice',!empty($result['allowed'])?'App permission granted.':'App permission revoked.');
+        }elseif($action==='user.share.create'){
+            $share=vp3_user_app_share_create_v240(
+              (int)$user['id'],(string)($_POST['app_key']??''),(string)($_POST['recipient_email']??''),null,$pdo
+            );
+            flash('system_apps_notice','Private app share created. Install link: '.(string)$share['install_url']);
+        }elseif($action==='user.share.revoke'){
+            vp3_user_app_share_revoke_v240((int)$user['id'],(string)($_POST['share_id']??''),$pdo);
+            flash('system_apps_notice','Private app share revoked.');
         }elseif($action==='reconcile'){
             $result=vp3_system_apps_reconcile_all_v130((int)$user['id'],null,$pdo);
             flash('system_apps_notice','HomeServer app status refreshed for '.number_format((int)$result['count']).' app lifecycle item'.((int)$result['count']===1?'':'s').'.');
@@ -52,6 +60,9 @@ if(!empty($catalog['connection']['connected']))foreach($catalog['apps'] as $perm
     try{$permissionStates[(string)$permissionApp['app_key']]=vp3_system_apps_permission_status_v210((int)$user['id'],(string)$permissionApp['app_key'],null,$pdo);}
     catch(Throwable $ignored){}
 }
+$userApps=['items'=>[],'count'=>0];
+try{if(!empty($catalog['connection']['connected']))$userApps=vp3_user_apps_snapshot_v220((int)$user['id']);}catch(Throwable $ignored){}
+$privateShares=vp3_user_app_share_rows_v240((int)$user['id'],$pdo);
 $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -69,6 +80,8 @@ $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 <?php if($notice):?><div class="system-apps-alert success"><?=e($notice)?></div><?php endif;?><?php if($error):?><div class="system-apps-alert error"><?=e($error)?></div><?php endif;?>
 <div class="system-apps-toolbar"><div class="system-apps-tabs"><button class="active" type="button" data-app-filter="all">All</button><button type="button" data-app-filter="owned">Owned</button><button type="button" data-app-filter="installed">Installed</button><button type="button" data-app-filter="hosted">Hosted</button><button type="button" data-app-filter="available">Available</button></div>
 <?php if((int)$catalog['counts']['owned']>0):?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="reconcile"><button class="button secondary" type="submit">Refresh HomeServer</button></form><?php endif;?></div>
+<?php if(!empty($userApps['items'])):?><section class="system-apps-user-apps"><div class="panel-head"><div><span>USER APPS</span><h2>Private distribution.</h2><p>Export from HomeServer, then authorize a specific VP3 account to install that exact package hash. Cloud stores grants only—not app source, package contents, data, or secrets.</p></div></div><div class="system-apps-grid"><?php foreach((array)$userApps['items'] as $ua):?><article class="system-app-card"><div class="system-app-card-top"><div class="system-app-icon">APP</div><div><span class="system-app-category">USER APP</span><h2><?=e((string)$ua['name'])?></h2></div><span class="system-app-badge neutral"><?=e((string)($ua['lifecycle_state']??'draft'))?></span></div><p><?=e((string)$ua['app_key'])?><?php if(!empty($ua['installed_version'])):?> · v<?=e((string)$ua['installed_version'])?><?php endif;?></p><form method="post" class="system-app-hosting-form"><?=csrf_field()?><input type="hidden" name="action" value="user.share.create"><input type="hidden" name="app_key" value="<?=e((string)$ua['app_key'])?>"><input type="email" name="recipient_email" placeholder="Recipient VP3 email" required><button class="button secondary" type="submit">Create Private Share</button></form></article><?php endforeach;?></div></section><?php endif;?>
+<?php if(!empty($privateShares['sent'])||!empty($privateShares['received'])):?><section class="system-apps-user-apps"><div class="panel-head"><div><span>PRIVATE SHARES</span><h2>Shared apps.</h2></div></div><?php if(!empty($privateShares['sent'])):?><h3>Sent</h3><div class="system-apps-grid"><?php foreach((array)$privateShares['sent'] as $share):?><article class="system-app-card"><h2><?=e((string)$share['app_name'])?></h2><p>To <?=e((string)$share['recipient_email'])?> · <?=e((string)$share['status'])?></p><code><?=e(substr((string)$share['package_sha256'],0,20))?>…</code><?php if((string)$share['status']!=='revoked'):?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="user.share.revoke"><input type="hidden" name="share_id" value="<?=e((string)$share['public_id'])?>"><button class="text-button danger" type="submit">Revoke</button></form><?php endif;?></article><?php endforeach;?></div><?php endif;?><?php if(!empty($privateShares['received'])):?><h3>Received</h3><div class="system-apps-grid"><?php foreach((array)$privateShares['received'] as $share):?><article class="system-app-card"><h2><?=e((string)$share['app_name'])?></h2><p>From <?=e((string)$share['sender_name'])?> · <?=e((string)$share['status'])?></p><code><?=e(substr((string)$share['package_sha256'],0,20))?>…</code></article><?php endforeach;?></div><?php endif;?></section><?php endif;?>
 <section class="system-apps-grid">
 <?php foreach($catalog['apps'] as $app):$hs=(array)($app['homeserver']??[]);$hosting=(array)($app['hosting']??[]);$ui=(array)($app['ui']??[]);$release=(array)($app['release']??[]);$state=(string)($ui['primary_state']??'available');?>
 <?php $filterTags=['all'];if($app['owned'])$filterTags[]='owned';if(!empty($hs['installed']))$filterTags[]='installed';if(!empty($hosting['bound']))$filterTags[]='hosted';if(!$app['owned']&&!empty($app['eligible']))$filterTags[]='available';?>
