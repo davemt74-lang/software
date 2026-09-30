@@ -21,6 +21,7 @@ function notification_is_agent_brain_activity(array $notification): bool
         'personal_knowledge_item',
         'transcript_analysis',
         'agent_proactive_event',
+        'system_app_event',
     ], true);
 }
 
@@ -31,7 +32,7 @@ function notification_agent_brain_sql_predicate(string $alias = ''): string
 
     return "(\n"
         . "  {$prefix}type LIKE 'agent_activity_%'\n"
-        . "  OR {$prefix}source_type IN ('agent_tool_history','agent_edit_event','agent_memory_item','personal_knowledge_item','transcript_analysis','agent_proactive_event')\n"
+        . "  OR {$prefix}source_type IN ('agent_tool_history','agent_edit_event','agent_memory_item','personal_knowledge_item','transcript_analysis','agent_proactive_event','system_app_event')\n"
         . ')';
 }
 

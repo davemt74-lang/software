@@ -57,6 +57,7 @@ jobs:
           php -l includes/system-apps-v120.php
           php -l includes/system-apps-v130.php
           php -l includes/system-apps-v140.php
+          php -l includes/system-apps-v150.php
           php -l api/system-apps-v100.php
           php -l apps.php
 
@@ -80,3 +81,6 @@ jobs:
 
       - name: System Apps unified product UX contract
         run: node tests/system-apps-v140-contract.mjs
+
+      - name: System Apps Agent integration contract
+        run: node tests/system-apps-v150-contract.mjs

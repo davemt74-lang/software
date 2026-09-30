@@ -350,4 +350,5 @@ function agent_chat_activity_reconcile(?array $user = null): void
     agent_chat_activity_reconcile_transcriptions($pdo, $user);
     agent_chat_activity_reconcile_tools($pdo, $user);
     agent_chat_activity_reconcile_proactive($pdo, $user);
+    if(function_exists('vp3_system_apps_agent_reconcile_activity_v150'))vp3_system_apps_agent_reconcile_activity_v150($pdo,$user);
 }

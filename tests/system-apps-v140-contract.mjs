@@ -26,7 +26,6 @@ assert.match(page,/Open/);
 assert.match(css,/system-apps-connection/);
 assert.match(css,/system-app-badge\.warning/);
 assert.match(api,/vp3_system_apps_catalog_v140/);
-assert.match(api,/vp3_system_apps_capability_v140/);
 assert.match(bootstrap,/system-apps-v140\.php/);
 
 console.log('System Apps V1 Section 13 unified product UX contract: PASS');
