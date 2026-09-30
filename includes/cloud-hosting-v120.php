@@ -18,12 +18,25 @@ const VP3_CLOUD_HOSTING_UNLIMITED_COUNT=2147483647;
 function vp3_cloud_hosting_v120_schema_ready(?PDO $pdo=null): bool
 {
     $pdo??=db();
-    return $pdo
-        && table_exists('cloud_hosting_entitlement_sync')
-        && table_exists('cloud_hosting_site_sync')
-        && table_exists('cloud_hosting_deployments')
-        && table_exists('cloud_hosting_edge_certificates')
-        && table_exists('cloud_hosting_route_credentials');
+    if(!$pdo)return false;
+    static $readyCache=[];
+    $cacheKey=spl_object_id($pdo);
+    if(array_key_exists($cacheKey,$readyCache))return $readyCache[$cacheKey];
+    $required=[
+        'cloud_hosting_sites',
+        'cloud_hosting_site_events',
+        'cloud_hosting_routes',
+        'cloud_hosting_provider_operations',
+        'cloud_hosting_entitlement_sync',
+        'cloud_hosting_site_sync',
+        'cloud_hosting_deployments',
+        'cloud_hosting_edge_certificates',
+        'cloud_hosting_route_credentials',
+    ];
+    $placeholders=implode(',',array_fill(0,count($required),'?'));
+    $stmt=$pdo->prepare("SELECT COUNT(DISTINCT table_name) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ($placeholders)");
+    $stmt->execute($required);
+    return $readyCache[$cacheKey]=((int)$stmt->fetchColumn()===count($required));
 }
 
 function vp3_cloud_hosting_v120_ensure_schema(?PDO $pdo=null): void

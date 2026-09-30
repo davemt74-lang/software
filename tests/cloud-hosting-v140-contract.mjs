@@ -29,6 +29,7 @@ assert.doesNotMatch(ui,/route_token_enc/);
 
 assert.match(page,/require_permission\('account\.access'\)/);
 assert.match(page,/vp3_cloud_hosting_ui_v140_execute/);
+assert.match(page,/if\(!vp3_cloud_hosting_v120_schema_ready\(\$pdo\)\)vp3_cloud_hosting_v120_ensure_schema\(\$pdo\)/,'Hosting GET must skip the full schema installer once ready');
 assert.match(page,/is_uploaded_file\(\$tmp\)/);
 assert.match(page,/VP3_CLOUD_HOSTING_MAX_PACKAGE_BYTES/);
 assert.match(page,/name="deployment_zip"/);
@@ -57,6 +58,10 @@ assert.match(memberScroll,/\.hosting-canvas,/);
 assert.match(memberScroll,/overflow-y:auto/);
 
 assert.match(bootstrap,/cloud-hosting-ui-v140\.php/);
+const v120=read('includes/cloud-hosting-v120.php');
+assert.match(v120,/COUNT\(DISTINCT table_name\)/);
+assert.match(v120,/static \$readyCache=\[\]/);
+assert.match(v120,/cloud_hosting_route_credentials/);
 assert.match(nav,/'hosting\.php'=>'hosting'/);
 assert.match(nav,/'hosting','Cloud Hosting'/);
 assert.match(agent,/vp3_cloud_hosting_set_desired_state_v100/);
