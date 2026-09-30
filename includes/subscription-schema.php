@@ -250,6 +250,13 @@ function subscription_seed_defaults(PDO $pdo): void
         'campaigns_rewards.access'=>[1,null],
         'tracky.access'=>[1,null],
         'team_seats'=>[1,2],
+        'hosting.access'=>[1,null],
+        'hosting.sites'=>[1,null],
+        'hosting.subdomains'=>[1,null],
+        'hosting.custom_domains'=>[1,null],
+        'hosting.storage_mb_per_site'=>[1,null],
+        'hosting.sqlite_mb_per_site'=>[1,null],
+        'hosting.php_access'=>[1,null],
         'ai.unlimited'=>[1,null],
     ];
     foreach ($legacyEntitlements as $key => [$enabled,$limit]) {

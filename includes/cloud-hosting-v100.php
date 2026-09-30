@@ -23,16 +23,24 @@ function vp3_cloud_hosting_schema_ready_v100(?PDO $pdo=null): bool
 function vp3_cloud_hosting_seed_package_entitlements_v100(PDO $pdo): void
 {
     if(!table_exists('subscription_packages')||!table_exists('package_entitlements'))return;
-    $stmt=$pdo->query("SELECT id,slug FROM subscription_packages WHERE slug IN ('basic','basic-user')");
+    $stmt=$pdo->query("SELECT id,slug FROM subscription_packages WHERE slug IN ('basic','basic-user','legacy-access')");
     $rows=$stmt?$stmt->fetchAll():[];
     if(!$rows)return;
     $upsert=$pdo->prepare("INSERT IGNORE INTO package_entitlements (package_id,capability_key,is_enabled,limit_value)
       VALUES (?,?,?,?)");
     foreach($rows as $row){
         $id=(int)($row['id']??0);if($id<1)continue;
+        $slug=(string)($row['slug']??'');
+        $legacy=$slug==='legacy-access';
         $upsert->execute([$id,'hosting.access',1,null]);
-        $upsert->execute([$id,'hosting.sites',1,1]);
-        $upsert->execute([$id,'hosting.subdomains',1,1]);
+        $upsert->execute([$id,'hosting.sites',1,$legacy?null:1]);
+        $upsert->execute([$id,'hosting.subdomains',1,$legacy?null:1]);
+        if($legacy){
+            $upsert->execute([$id,'hosting.custom_domains',1,null]);
+            $upsert->execute([$id,'hosting.storage_mb_per_site',1,null]);
+            $upsert->execute([$id,'hosting.sqlite_mb_per_site',1,null]);
+            $upsert->execute([$id,'hosting.php_access',1,null]);
+        }
     }
 }
 
