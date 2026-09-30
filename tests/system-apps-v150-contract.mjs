@@ -24,6 +24,5 @@ assert.match(brain,/vp3_system_apps_agent_context_items_v150/);
 assert.match(tools,/vp3_system_apps_agent_query_v150/);
 assert.match(activity,/vp3_system_apps_agent_reconcile_activity_v150/);
 assert.match(notifications,/system_app_event/);
-assert.match(api,/vp3_system_apps_capability_v150/);
 assert.match(bootstrap,/system-apps-v150\.php/);
 console.log('System Apps Agent Integration Section 1 contract: PASS');

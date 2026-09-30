@@ -283,6 +283,7 @@ require_once __DIR__.'/system-apps-v120.php';
 require_once __DIR__.'/system-apps-v130.php';
 require_once __DIR__.'/system-apps-v140.php';
 require_once __DIR__.'/system-apps-v150.php';
+require_once __DIR__.'/system-apps-v160.php';
 require_once __DIR__.'/cloud-hosting-v100.php';
 require_once __DIR__.'/cloud-hosting-v110.php';
 require_once __DIR__.'/cloud-hosting-v120.php';
