@@ -103,6 +103,12 @@ function vp3_system_apps_hosting_bind_v120(int $userId,string $appKey,int $siteI
     if(empty($install['installed']))throw new RuntimeException('Install this VP3 system app on HomeServer before assigning hosting.');
     $site=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
     if(!$site)throw new RuntimeException('Hosted site was not found for this account.');
+    $current=$pdo->prepare("SELECT site_id FROM vp3_system_app_hosting_bindings WHERE user_id=? AND app_id=? AND status='active' LIMIT 1");
+    $current->execute([$userId,(int)$app['id']]);
+    $currentSiteId=(int)$current->fetchColumn();
+    if($currentSiteId>0&&$currentSiteId!==$siteId){
+        throw new RuntimeException('Remove the current Hosting assignment before assigning this app to another site.');
+    }
 
     $pdo->beginTransaction();
     try{
