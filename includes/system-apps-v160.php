@@ -216,10 +216,15 @@ function vp3_system_apps_agent_confirm_v160(
         $sql.=' ORDER BY id DESC LIMIT 1 FOR UPDATE';
         $stmt=$pdo->prepare($sql);$stmt->execute($params);$row=$stmt->fetch();
         if(!is_array($row))throw new RuntimeException('System App confirmation code is invalid.');
+        $confirmedAppKey='';
+        if((int)($row['app_id']??0)>0){
+            $appStmt=$pdo->prepare('SELECT app_key FROM vp3_system_app_catalog WHERE id=? LIMIT 1');
+            $appStmt->execute([(int)$row['app_id']]);$confirmedAppKey=(string)$appStmt->fetchColumn();
+        }
         if((string)$row['status']==='completed'){
             $result=json_decode((string)($row['result_json']??''),true);if(!is_array($result))$result=[];
             $pdo->commit();
-            return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'completed'=>true,'idempotent_replay'=>true,'result'=>$result];
+            return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'app_key'=>$confirmedAppKey,'completed'=>true,'idempotent_replay'=>true,'result'=>$result];
         }
         $expires=strtotime((string)$row['expires_at'].' UTC');
         if($expires!==false&&$expires<=time())throw new RuntimeException('System App confirmation code expired. Prepare the action again.');
@@ -242,7 +247,7 @@ function vp3_system_apps_agent_confirm_v160(
           WHERE id=? AND execution_token=?");
         $stmt->execute([json_encode($safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),(int)$row['id'],$lease]);
         if($stmt->rowCount()!==1)throw new RuntimeException('System App action execution lease was lost before completion.');
-        return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'completed'=>true,'idempotent_replay'=>false,'result'=>$safe];
+        return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'app_key'=>$confirmedAppKey,'completed'=>true,'idempotent_replay'=>false,'result'=>$safe];
     }catch(Throwable $e){
         $pdo->prepare("UPDATE vp3_system_app_agent_actions
           SET status='prepared',error_message=?,execution_token='',execution_expires_at=NULL
@@ -287,7 +292,8 @@ function vp3_system_apps_agent_action_query_v160(
               'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],
               'sources'=>[['source'=>'system-apps:canonical','title'=>'VP3 System Apps']],'system_app_plan'=>$done];
         }catch(Throwable $e){
-            return ['handled'=>true,'answer'=>'I could not complete that System App action: '.$e->getMessage(),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'system_app_plan'=>null];
+            return ['handled'=>true,'answer'=>'I could not complete that System App action: '.$e->getMessage(),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],
+              'system_app_plan'=>['status'=>'failed','error'=>mb_substr($e->getMessage(),0,500),'confirmation_code'=>(string)$m[1]]];
         }
     }
 
