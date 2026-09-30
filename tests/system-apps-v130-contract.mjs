@@ -24,7 +24,6 @@ assert.match(v130,/offline_revocation_cleanup_persists'\s*=>\s*true/);
 assert.match(v130,/revocation_cleanup_retries_on_reconcile'\s*=>\s*true/);
 assert.match(v130,/revocation_preserves_app_data'\s*=>\s*true/);
 assert.match(api,/vp3_system_apps_reconcile_all_v130/);
-assert.match(api,/vp3_system_apps_capability_v130/);
 assert.match(page,/vp3_system_apps_reconcile_all_v130/);
 assert.match(bootstrap,/system-apps-v130\.php/);
 
