@@ -51,6 +51,20 @@ function vp3_music_server_search_v300(
     ];
 }
 
+function vp3_music_server_search_terms_v300(string $query): string
+{
+    $query=trim($query);
+    if(preg_match('/["“”]([^"“”]{1,160})["“”]/u',$query,$m))return trim((string)$m[1]);
+    $clean=preg_replace(
+      '/\b(?:please|can you|could you|show me|find|search|play|queue|listen to|music server|music|songs?|tracks?|artists?|albums?|playlists?|by|from|for|the)\b/i',
+      ' ',
+      $query
+    );
+    $clean=preg_replace('/\s+/',' ',trim((string)$clean));
+    return mb_substr($clean!==''?$clean:$query,0,200);
+}
+
+
 function vp3_music_server_agent_query_v300(
     string $query,array $user,int $conversationId=0,?callable $remote=null
 ): array {
@@ -59,7 +73,7 @@ function vp3_music_server_agent_query_v300(
     $uid=(int)($user['id']??0);if($uid<1)return $empty;
     try{
         $status=vp3_music_server_status_v300($uid,$remote);
-        $search=vp3_music_server_search_v300($uid,$query,12,$remote);
+        $search=vp3_music_server_search_v300($uid,vp3_music_server_search_terms_v300($query),12,$remote);
     }catch(Throwable $e){return $empty;}
     $answer='Music Server has '.$status['tracks'].' track'.($status['tracks']===1?'':'s')
       .', '.$status['artists'].' artist'.($status['artists']===1?'':'s')
