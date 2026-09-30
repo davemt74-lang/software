@@ -138,6 +138,10 @@ function agent_brain_v99_context(array $user,string $query,int $limit=12): array
         foreach(vp3_system_apps_agent_context_items_v150($user,$query,$pdo) as $item)$context[]=$item;
     }
 
+    if(function_exists('vp3_system_apps_health_context_items_v170')){
+        foreach(vp3_system_apps_health_context_items_v170($user,$query,$pdo) as $item)$context[]=$item;
+    }
+
     $archiveRows=agent_brain_v99_rows('SELECT a.conversation_id,a.role,a.input_mode,a.message_text,a.created_at FROM agent_chat_archive a WHERE a.user_id=? AND '.$archiveScope.' ORDER BY a.created_at DESC,a.id DESC LIMIT 160',array_merge([$uid],$archiveParams));
     $archiveRows=agent_brain_v99_pick($archiveRows,$terms,$deep?24:8,$deep,static fn(array $r):string=>(string)($r['message_text']??''),$activity);if($archiveRows){$lines=[];foreach(array_reverse($archiveRows) as $r)$lines[]='['.$r['created_at'].' · conversation '.(int)$r['conversation_id'].'] '.strtoupper((string)$r['role']).': '.agent_brain_v99_text($r['message_text'],440);$context[]=['source'=>'agent-brain:conversation-history','title'=>'Retrieved conversation history','text'=>implode("\n",$lines)];}
 

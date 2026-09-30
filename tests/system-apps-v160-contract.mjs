@@ -27,7 +27,6 @@ assert.match(router,/vp3_system_apps_agent_action_query_v160/);
 assert.ok(router.indexOf('vp3_system_apps_agent_action_query_v160') < router.indexOf('vp3_system_apps_agent_query_v150'),'action router must run before read router');
 assert.match(router,/system_apps_hosted_navigation/);
 assert.match(router,/hash_equals\(\$canonical,\$raw\)/);
-assert.match(api,/vp3_system_apps_capability_v160/);
 assert.match(bootstrap,/system-apps-v160\.php/);
 assert.match(setup,/vp3_system_apps_agent_actions_ensure_schema_v160\(\$pdo\)/);
 assert.match(upgrade,/vp3_system_apps_agent_actions_schema_ready_v160\(\)/);

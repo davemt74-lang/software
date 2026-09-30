@@ -157,6 +157,11 @@ function vp3_system_apps_agent_event_title_v150(array $row): array
       'app.runtime.deactivated'=>['App deactivated',$name.' runtime was stopped on HomeServer.'],
       'app.hosting.bound'=>['App hosting assigned',$name.' was assigned to a Hosting site.'],
       'app.hosting.unbound'=>['App hosting removed',$name.' was removed from its Hosting site.'],
+      'app.update.available'=>['App update available',$name.' has an update available.'],
+      'app.update.cleared'=>['App update completed',$name.' is current again.'],
+      'app.runtime.state_changed'=>['App runtime changed',$name.' changed runtime state.'],
+      'app.health.problem'=>['App needs attention',$name.' reported a runtime or reconciliation problem.'],
+      'app.health.recovered'=>['App recovered',$name.' recovered from its previous problem.'],
     ];
     return $map[$type]??['System App updated',$name.' changed state.'];
 }

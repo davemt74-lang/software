@@ -10,6 +10,7 @@ on:
       - "includes/system-apps-v140.php"
       - "includes/system-apps-v150.php"
       - "includes/system-apps-v160.php"
+      - "includes/system-apps-v170.php"
       - "api/system-apps-v100.php"
       - "apps.php"
       - "system-apps-v100.css"
@@ -20,6 +21,7 @@ on:
       - "tests/system-apps-v140-*"
       - "tests/system-apps-v150-*"
       - "tests/system-apps-v160-*"
+      - "tests/system-apps-v170-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -62,6 +64,7 @@ on:
       - "includes/system-apps-v140.php"
       - "includes/system-apps-v150.php"
       - "includes/system-apps-v160.php"
+      - "includes/system-apps-v170.php"
       - "api/system-apps-v100.php"
       - "apps.php"
       - "system-apps-v100.css"
@@ -72,6 +75,7 @@ on:
       - "tests/system-apps-v140-*"
       - "tests/system-apps-v150-*"
       - "tests/system-apps-v160-*"
+      - "tests/system-apps-v170-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -152,6 +156,7 @@ jobs:
           php -l includes/system-apps-v140.php
           php -l includes/system-apps-v150.php
           php -l includes/system-apps-v160.php
+          php -l includes/system-apps-v170.php
           php -l api/system-apps-v100.php
           php -l apps.php
           php -l tests/system-apps-v100-mysql.php
@@ -159,6 +164,7 @@ jobs:
           php -l tests/system-apps-v120-mysql.php
           php -l tests/system-apps-v130-mysql.php
           php -l tests/system-apps-v160-mysql.php
+          php -l tests/system-apps-v170-mysql.php
           php -l includes/cloud-hosting-v100.php
           php -l includes/cloud-hosting-v110.php
           php -l includes/cloud-hosting-v120.php
@@ -200,6 +206,8 @@ jobs:
         run: node tests/system-apps-v150-contract.mjs
       - name: System Apps Agent Integration Section 2 governed actions contract
         run: node tests/system-apps-v160-contract.mjs
+      - name: System Apps Agent Integration Section 3 health diagnostics contract
+        run: node tests/system-apps-v170-contract.mjs
       - name: Cloud Hosting Section 1 architecture contract
         run: node tests/cloud-hosting-v100-contract.mjs
       - name: Cloud Hosting Section 2 architecture contract
@@ -239,6 +247,7 @@ jobs:
           php tests/system-apps-v120-mysql.php
           php tests/system-apps-v130-mysql.php
           php tests/system-apps-v160-mysql.php
+          php tests/system-apps-v170-mysql.php
           php tests/cloud-hosting-v100-mysql.php
           php tests/cloud-hosting-v110-mysql.php
           php tests/cloud-hosting-v120-mysql.php
