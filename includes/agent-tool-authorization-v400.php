@@ -231,6 +231,23 @@ function vp3_agent_tool_internal_action_v400(array $action,array $user,string $q
     }
     if($type!=='open_url')return null;
     $raw=trim((string)($action['url']??''));
+    $systemAppKey=strtolower(trim((string)($action['system_app_key']??'')));
+    if($systemAppKey!==''&&preg_match('#^https?://#i',$raw)&&function_exists('vp3_system_apps_agent_snapshot_v150')){
+        $snapshot=vp3_system_apps_agent_snapshot_v150($user,$pdo);
+        foreach((array)($snapshot['apps']??[]) as $app){
+            if((string)($app['app_key']??'')!==$systemAppKey)continue;
+            $canonical=trim((string)($app['public_url']??''));
+            if($canonical!==''&&hash_equals($canonical,$raw)){
+                $explicit=(bool)preg_match('/\b(?:open|show|start|launch|go to)\b/i',$query);
+                return [
+                    'type'=>'open_url','label'=>mb_substr(trim((string)($action['label']??'Open')),0,120),'url'=>$raw,
+                    'auto'=>$explicit,
+                    'policy'=>['version'=>'v4.00','domain'=>'system_apps_hosted_navigation','risk'=>'low','requires_approval'=>false,'authorized'=>true],
+                ];
+            }
+        }
+        return null;
+    }
     if($raw===''||str_starts_with($raw,'//')||preg_match('#^[a-z][a-z0-9+.-]*:#i',$raw))return null;
     $parts=parse_url($raw);if($parts===false)return null;
     $path=(string)($parts['path']??'');
