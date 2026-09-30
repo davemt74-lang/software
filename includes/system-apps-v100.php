@@ -76,7 +76,7 @@ function vp3_system_apps_ensure_schema_v100(?PDO $pdo=null): void
 function vp3_system_apps_seed_v100(PDO $pdo): void
 {
     $rows=[
-      ['vp3.notes','VP3 Notes','Productivity','Private lightweight notes stored in isolated HomeServer app data.','1.1.0','included',null,'vp3.notes',10],
+      ['vp3.notes','VP3 Notes','Productivity','Private lightweight notes stored in isolated HomeServer app data.','1.2.0','included',null,'vp3.notes',10],
       ['vp3.inventory','VP3 Inventory','Operations','Track local inventory counts and supplies on your HomeServer.','1.1.0','included',null,'vp3.inventory',20],
       ['vp3.checklists','VP3 Checklists','Productivity','Create local operational and personal checklists.','1.1.0','included',null,'vp3.checklists',30],
     ];
@@ -96,11 +96,17 @@ function vp3_system_apps_seed_v100(PDO $pdo): void
           'system_app'=>true,
           'protected_system_app'=>true,
           'release_channel'=>'stable',
-          'release_notes'=>[
+          'release_notes'=> $row[0]==='vp3.notes' ? [
+            'Adds governed app-data migration and recovery.',
+            'Creates a verified pre-migration recovery snapshot.',
+            'Blocks unsafe rollback after irreversible data migrations.',
+          ] : [
             'Adds Cloud ↔ HomeServer release lifecycle metadata.',
             'Adds verified protected updates and rollback support.',
             'Revalidates bound Hosting and subdomain routing after release changes.',
           ],
+          'data_schema_version'=>$row[0]==='vp3.notes'?'2':'1',
+          'data_migration_reversible'=>true,
           'min_homeserver_version'=>'2.4',
           'max_homeserver_version'=>null,
         ],JSON_UNESCAPED_SLASHES);
