@@ -14,8 +14,9 @@ $mainSidebarIsChat = $mainSidebarActive === 'chat' || $mainSidebarScript === 'ch
 $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSidebarUser);
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
 
-$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team','hosting'];
+$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
+$mainSidebarPrimaryKeys['hosting']=true;
 $mainSidebarPrimaryLabels = [
     'home'=>'Home',
     'chat'=>'Agent Chat',
@@ -73,6 +74,7 @@ $mainSidebarPrimaryLinks = [];
 foreach ($mainSidebarPrimaryOrder as $key) {
     if (isset($mainSidebarLinkIndex[$key])) $mainSidebarPrimaryLinks[] = $mainSidebarLinkIndex[$key];
 }
+if (isset($mainSidebarLinkIndex['hosting'])) $mainSidebarPrimaryLinks[] = $mainSidebarLinkIndex['hosting'];
 $mainSidebarFooterLinks = array_values(array_filter(
     $mainSidebarMenuLinks,
     static fn(array $link): bool => !isset($mainSidebarPrimaryKeys[(string)($link['key'] ?? '')])
