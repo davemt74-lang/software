@@ -53,7 +53,7 @@ function vp3_upgrade_complete(): bool
     return access_schema_ready()
         && subscription_schema_ready()
         && subscription_entitlements_v340_schema_ready()
-        && vp3_system_apps_schema_ready_v110()
+        && vp3_system_apps_schema_ready_v120()
         && vp3_cloud_hosting_schema_ready_v100()
         && vp3_cloud_hosting_v110_schema_ready()
         && vp3_cloud_hosting_v120_schema_ready()
@@ -291,7 +291,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_cognitive_memory_promotion_ensure_schema_v2400($pdo);
             vp3_cognitive_attention_ensure_schema_v2410($pdo);
             homeserver_vp3_ensure_schema($pdo);
-            vp3_system_apps_ensure_schema_v110($pdo);
+            vp3_system_apps_ensure_schema_v120($pdo);
             vp3_cloud_hosting_ensure_schema_v100($pdo);
             vp3_cloud_hosting_v110_ensure_schema($pdo);
             vp3_cloud_hosting_v120_ensure_schema($pdo);
