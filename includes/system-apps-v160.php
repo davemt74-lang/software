@@ -114,6 +114,9 @@ function vp3_system_apps_agent_prepare_v160(
     $owned=(string)($app['ownership_status']??'')==='active';
     if($actionType!=='ownership.acquire'&&!$owned)throw new RuntimeException('This System App must be owned before that action can be prepared.');
     if($actionType==='ownership.acquire'&&$owned)throw new RuntimeException('This System App is already owned.');
+    if($actionType==='ownership.acquire'&&!vp3_system_apps_eligible_v100($app,$user)){
+        throw new RuntimeException('This System App is not available for this account.');
+    }
 
     $code=vp3_system_apps_agent_code_v160();
     $publicId='appact_'.bin2hex(random_bytes(12));
@@ -153,15 +156,43 @@ function vp3_system_apps_agent_execute_v160(
     if($type==='hosting.bind'){
         $siteId=(int)($row['site_id']??$payload['site_id']??0);
         if($siteId<1)throw new RuntimeException('Hosting site is required.');
-        return ['hosting'=>vp3_system_apps_hosting_bind_v120($uid,$appKey,$siteId,$remote,$pdo)];
+        try{
+            return ['hosting'=>vp3_system_apps_hosting_bind_v120($uid,$appKey,$siteId,$remote,$pdo)];
+        }catch(Throwable $e){
+            $app=vp3_system_apps_owned_row_v110($uid,$appKey,$pdo);
+            $projection=vp3_system_apps_hosting_projection_v120($uid,(int)$app['id'],$pdo);
+            if(!empty($projection['bound'])&&(int)($projection['site_id']??0)===$siteId){
+                return ['hosting'=>['hosting'=>$projection,'reconcile_pending'=>true,'warning'=>mb_substr($e->getMessage(),0,300)]];
+            }
+            throw $e;
+        }
     }
     if($type==='hosting.unbind'){
-        return ['hosting'=>vp3_system_apps_hosting_unbind_v120($uid,$appKey,$remote,$pdo)];
+        try{
+            return ['hosting'=>vp3_system_apps_hosting_unbind_v120($uid,$appKey,$remote,$pdo)];
+        }catch(Throwable $e){
+            $app=vp3_system_apps_owned_row_v110($uid,$appKey,$pdo);
+            $projection=vp3_system_apps_hosting_projection_v120($uid,(int)$app['id'],$pdo);
+            if(empty($projection['bound'])){
+                return ['hosting'=>['hosting'=>$projection,'reconcile_pending'=>true,'warning'=>mb_substr($e->getMessage(),0,300)]];
+            }
+            throw $e;
+        }
     }
     if($type==='reconcile'){
         return ['reconciliation'=>vp3_system_apps_reconcile_all_v130($uid,$remote,$pdo)];
     }
     throw new RuntimeException('Unsupported System App Agent action.');
+}
+
+function vp3_system_apps_agent_safe_result_v160(array $result,array $user,?PDO $pdo=null): array
+{
+    $snapshot=vp3_system_apps_agent_snapshot_v150($user,$pdo);
+    return [
+      'ok'=>true,
+      'system_apps'=>$snapshot,
+      'reconcile_pending'=>str_contains(json_encode($result,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?:'','reconcile_pending'),
+    ];
 }
 
 function vp3_system_apps_agent_confirm_v160(
@@ -201,7 +232,7 @@ function vp3_system_apps_agent_confirm_v160(
 
     try{
         $result=vp3_system_apps_agent_execute_v160($row,$user,$remote,$pdo);
-        $safe=json_decode(json_encode($result,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),true);if(!is_array($safe))$safe=[];
+        $safe=vp3_system_apps_agent_safe_result_v160($result,$user,$pdo);
         $stmt=$pdo->prepare("UPDATE vp3_system_app_agent_actions
           SET status='completed',result_json=?,error_message='',execution_token='',execution_expires_at=NULL,completed_at=UTC_TIMESTAMP()
           WHERE id=? AND execution_token=?");
@@ -220,6 +251,8 @@ function vp3_system_apps_agent_action_intent_v160(string $query): bool
 {
     if(preg_match('/\bconfirm\s+app\s+[A-Z2-9]{8}\b/i',$query))return true;
     if(!preg_match('/\b(?:app|apps|vp3 notes|vp3 inventory|vp3 checklists|notes|inventory|checklists)\b/i',$query))return false;
+    if(preg_match('/^\s*(?:what|which|show|list|tell\s+me|do\s+i|are\s+there|is\s+there|status|how\s+many)\b/i',$query)
+        && !preg_match('/\b(?:please|go\s+ahead|can\s+you|could\s+you|would\s+you)\b/i',$query))return false;
     return (bool)preg_match('/\b(?:install|update|upgrade|verify|add|acquire|host|hosting|unhost|remove hosting|detach hosting|refresh|reconcile|resync|sync|open|launch)\b/i',$query);
 }
 
