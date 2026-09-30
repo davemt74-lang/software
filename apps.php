@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
-require_once __DIR__.'/includes/system-apps-v140.php';
+require_once __DIR__.'/includes/system-apps-v200.php';
 require_login();
 require_permission('account.access');
 $pdo=db();$user=current_user();
@@ -15,8 +15,17 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             vp3_system_apps_acquire_v100((int)$user['id'],(string)($_POST['app_key']??''),'self_service',null,$pdo);
             flash('system_apps_notice','App added to your account.');
         }elseif($action==='install'){
-            $result=vp3_system_apps_install_v110((int)$user['id'],(string)($_POST['app_key']??''),null,$pdo);
-            flash('system_apps_notice',!empty($result['changed'])?'App installed on HomeServer.':'HomeServer app is already current.');
+            $result=vp3_system_apps_install_or_update_v200((int)$user['id'],(string)($_POST['app_key']??''),null,$pdo);
+            $message=($result['operation']??'')==='install'
+              ?(!empty($result['changed'])?'App installed on HomeServer.':'HomeServer app is already current.')
+              :(!empty($result['rolled_back'])?'Update verification failed and HomeServer rolled back to the previous release.':'System App release verified on HomeServer.');
+            if(!empty($result['reconcile_pending']))$message.=' Hosting/subdomain reconciliation is pending.';
+            flash('system_apps_notice',$message);
+        }elseif($action==='release.rollback'){
+            $result=vp3_system_apps_release_rollback_v200((int)$user['id'],(string)($_POST['app_key']??''),'owner_requested',null,$pdo);
+            $message='System App rolled back to the previous HomeServer release.';
+            if(!empty($result['reconcile_pending']))$message.=' Hosting/subdomain reconciliation is pending.';
+            flash('system_apps_notice',$message);
         }elseif($action==='reconcile'){
             $result=vp3_system_apps_reconcile_all_v130((int)$user['id'],null,$pdo);
             flash('system_apps_notice','HomeServer app status refreshed for '.number_format((int)$result['count']).' app lifecycle item'.((int)$result['count']===1?'':'s').'.');
@@ -30,7 +39,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     }catch(Throwable $e){flash('system_apps_error',$e->getMessage());}
     redirect(url('/apps.php'));
 }
-$catalog=vp3_system_apps_catalog_v140($user,$pdo);
+$catalog=vp3_system_apps_catalog_v200($user,$pdo);
 $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -49,13 +58,14 @@ $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 <div class="system-apps-toolbar"><div class="system-apps-tabs"><button class="active" type="button" data-app-filter="all">All</button><button type="button" data-app-filter="owned">Owned</button><button type="button" data-app-filter="installed">Installed</button><button type="button" data-app-filter="hosted">Hosted</button><button type="button" data-app-filter="available">Available</button></div>
 <?php if((int)$catalog['counts']['owned']>0):?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="reconcile"><button class="button secondary" type="submit">Refresh HomeServer</button></form><?php endif;?></div>
 <section class="system-apps-grid">
-<?php foreach($catalog['apps'] as $app):$hs=(array)($app['homeserver']??[]);$hosting=(array)($app['hosting']??[]);$ui=(array)($app['ui']??[]);$state=(string)($ui['primary_state']??'available');?>
+<?php foreach($catalog['apps'] as $app):$hs=(array)($app['homeserver']??[]);$hosting=(array)($app['hosting']??[]);$ui=(array)($app['ui']??[]);$release=(array)($app['release']??[]);$state=(string)($ui['primary_state']??'available');?>
 <?php $filterTags=['all'];if($app['owned'])$filterTags[]='owned';if(!empty($hs['installed']))$filterTags[]='installed';if(!empty($hosting['bound']))$filterTags[]='hosted';if(!$app['owned']&&!empty($app['eligible']))$filterTags[]='available';?>
 <article class="system-app-card" data-app-state="<?=e($state)?>" data-app-filter-tags="<?=e(implode(' ',$filterTags))?>">
 <div class="system-app-card-top"><div class="system-app-icon">VP3</div><div><span class="system-app-category"><?=e((string)$app['category'])?></span><h2><?=e((string)$app['name'])?></h2></div>
 <span class="system-app-badge <?=e((string)($ui['tone']??'neutral'))?>"><?=e((string)($ui['badge']??'Available'))?></span></div>
 <p><?=e((string)$app['description'])?></p>
-<div class="system-app-meta"><span>Catalog <strong><?=e((string)$app['current_version'])?></strong></span><span>HomeServer <strong><?=e(!empty($hs['installed'])?(string)($hs['installed_version']??$hs['state']):ucfirst((string)($hs['state']??'not synced')))?></strong></span><?php if(!empty($hosting['bound'])):?><span>Hosting <strong><?=e((string)($hosting['hostname']??$hosting['display_name']))?></strong></span><?php endif;?></div>
+<div class="system-app-meta"><span>Catalog <strong><?=e((string)$app['current_version'])?></strong></span><span>Channel <strong><?=e((string)($release['release_channel']??'stable'))?></strong></span><span>HomeServer <strong><?=e(!empty($hs['installed'])?(string)($hs['installed_version']??$hs['state']):ucfirst((string)($hs['state']??'not synced')))?></strong></span><?php if(!empty($hosting['bound'])):?><span>Hosting <strong><?=e((string)($hosting['hostname']??$hosting['display_name']))?></strong></span><?php endif;?></div>
+<?php if(!empty($release['release_notes'])):?><details class="system-app-release-notes"><summary>Release notes</summary><ul><?php foreach((array)$release['release_notes'] as $note):?><li><?=e((string)$note)?></li><?php endforeach;?></ul><?php if(!empty($release['compatibility']['min_homeserver_version'])):?><p>Requires HomeServer <?=e((string)$release['compatibility']['min_homeserver_version'])?>+</p><?php endif;?></details><?php endif;?>
 <?php if(!empty($hs['error'])):?><div class="system-app-error"><?=e((string)$hs['error'])?></div><?php endif;?>
 <?php if(!empty($hs['installed'])):?><div class="system-app-hosting">
 <?php if(!empty($hosting['bound'])):?><div class="system-app-hosting-bound"><span>Hosted at <?=e((string)($hosting['hostname']??$hosting['display_name']))?></span><?php if(!empty($hosting['public_url'])):?><a href="<?=e((string)$hosting['public_url'])?>" target="_blank" rel="noopener">Open</a><?php endif;?><a href="<?=e(url('/hosting.php'))?>">Manage Hosting</a><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="hosting.unbind"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><button class="button secondary" type="submit">Remove Hosting</button></form></div>
@@ -63,7 +73,7 @@ $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 </div><?php endif;?>
 <div class="system-app-actions">
 <?php if($app['owned']):?>
-<form method="post"><?=csrf_field()?><input type="hidden" name="action" value="install"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><button class="button primary" type="submit" <?=empty($ui['can_install'])?'disabled':''?>><?=!empty($hs['update_available'])?'Update':(!empty($hs['installed'])?'Verify Installation':'Install on HomeServer')?></button></form>
+<form method="post"><?=csrf_field()?><input type="hidden" name="action" value="install"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><button class="button primary" type="submit" <?=empty($ui['can_install'])?'disabled':''?>><?=!empty($hs['update_available'])?'Verified Update':(!empty($hs['installed'])?'Verify Release':'Install on HomeServer')?></button></form>
 <span><?=!empty($ui['cleanup_pending'])?'Cleanup will retry when HomeServer reconnects':(!empty($hs['current'])?'Current · '.e((string)$hs['state']):(!empty($hs['installed'])?'HomeServer update or verification available':(!empty($catalog['connection']['connected'])?'Owned · ready to install':'Owned · HomeServer offline')))?></span>
 <?php elseif($app['eligible']):?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="acquire"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><button class="button primary" type="submit">Add to My Apps</button></form><span>Included for this account</span>
 <?php else:?><button class="button secondary" type="button" disabled>Not available</button><?php endif;?>
