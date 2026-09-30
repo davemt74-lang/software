@@ -5663,3 +5663,93 @@ body.chat-create-modal-open{
     width:30px;
   }
 }
+
+/* System Apps Agent action UX v1.90 */
+.chat-system-app-action-card{
+  margin-top:14px;
+  padding:13px;
+  border:1px solid #d7dde3;
+  border-radius:12px;
+  background:#fff;
+  box-shadow:0 8px 24px rgba(15,23,42,.06);
+}
+.chat-system-app-action-card header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+.chat-system-app-action-card header>div{display:grid;gap:3px}
+.chat-system-app-action-card header small{
+  color:#6b7280;
+  font-size:.56rem;
+  font-weight:900;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+}
+.chat-system-app-action-card header strong{font-size:.78rem;color:#111827}
+.chat-system-app-action-card header>span{
+  flex:0 0 auto;
+  padding:4px 7px;
+  border-radius:999px;
+  background:#f3f4f6;
+  color:#4b5563;
+  font-size:.53rem;
+  font-weight:800;
+}
+.chat-system-app-action-card.completed{border-color:#cfe3d7;background:#fbfefc}
+.chat-system-app-action-card.completed header>span{background:#e9f6ee;color:#23734a}
+.chat-system-app-action-card.failed{border-color:#ecd0d0;background:#fffafa}
+.chat-system-app-action-card.failed header>span{background:#fff0f0;color:#a23a3a}
+.chat-system-app-action-card.executing{opacity:.86}
+.chat-system-app-action-card.superseded .chat-system-app-action-buttons{display:none}
+.chat-system-app-action-card>p{margin:10px 0 0;color:#5f6670;font-size:.68rem;line-height:1.5}
+.chat-system-app-action-details{display:grid;gap:6px;margin:11px 0 0}
+.chat-system-app-action-details>div{display:grid;grid-template-columns:95px minmax(0,1fr);gap:8px}
+.chat-system-app-action-details dt{color:#8a9199;font-size:.56rem}
+.chat-system-app-action-details dd{margin:0;color:#2f3740;font-size:.62rem;font-weight:700;overflow-wrap:anywhere}
+.chat-system-app-action-code{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:11px;
+  padding:8px 10px;
+  border-radius:8px;
+  background:#f6f7f8;
+}
+.chat-system-app-action-code span{color:#747b84;font-size:.56rem}
+.chat-system-app-action-code strong{font-size:.72rem;letter-spacing:.12em}
+.chat-system-app-action-note,
+.chat-system-app-action-error{
+  margin-top:10px;
+  padding:8px 10px;
+  border-radius:8px;
+  font-size:.61rem;
+  line-height:1.45;
+}
+.chat-system-app-action-note{background:#fff7e7;color:#7d5a12}
+.chat-system-app-action-error{background:#fff0f0;color:#983b3b}
+.chat-system-app-action-buttons{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+.chat-system-app-action-button{
+  min-height:32px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:6px 10px;
+  border:1px solid #d7dde3;
+  border-radius:8px;
+  background:#fff;
+  color:#303842;
+  font-size:.6rem;
+  font-weight:800;
+  text-decoration:none;
+  cursor:pointer;
+}
+.chat-system-app-action-button.primary{background:#111827;border-color:#111827;color:#fff}
+.chat-system-app-action-button:disabled{opacity:.48;cursor:wait}
+@media(max-width:520px){
+  .chat-system-app-action-details>div{grid-template-columns:1fr;gap:2px}
+  .chat-system-app-action-buttons{display:grid}
+  .chat-system-app-action-button{width:100%}
+}
