@@ -22,6 +22,7 @@ on:
       - "includes/system-apps-v260.php"
       - "includes/system-apps-v270.php"
       - "includes/system-apps-v280.php"
+      - "includes/system-apps-v290.php"
       - "private-app-share.php"
       - "api/system-apps-v100.php"
       - "apps.php"
@@ -44,6 +45,7 @@ on:
       - "tests/system-apps-v260-*"
       - "tests/system-apps-v270-*"
       - "tests/system-apps-v280-*"
+      - "tests/system-apps-v290-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -142,6 +144,7 @@ on:
       - "includes/system-apps-v260.php"
       - "includes/system-apps-v270.php"
       - "includes/system-apps-v280.php"
+      - "includes/system-apps-v290.php"
       - "private-app-share.php"
       - "tests/system-apps-v210-*"
       - "tests/system-apps-v220-*"
@@ -151,6 +154,7 @@ on:
       - "tests/system-apps-v260-*"
       - "tests/system-apps-v270-*"
       - "tests/system-apps-v280-*"
+      - "tests/system-apps-v290-*"
 
 concurrency:
   group: cloud-hosting-v100-${{ github.event.pull_request.number || github.ref }}
@@ -212,6 +216,7 @@ jobs:
           php -l includes/system-apps-v260.php
           php -l includes/system-apps-v270.php
           php -l includes/system-apps-v280.php
+          php -l includes/system-apps-v290.php
           php -l private-app-share.php
           php -l api/system-apps-v100.php
           php -l apps.php
@@ -285,6 +290,8 @@ jobs:
         run: node tests/system-apps-v270-contract.mjs
       - name: System Apps Section 15 VP3 Video Editor + complete App Agent control contract
         run: node tests/system-apps-v280-contract.mjs
+      - name: System Apps Section 16 Universal App Control contract
+        run: node tests/system-apps-v290-contract.mjs
       - name: System Apps Section 9 user app SDK integration contract
         run: node tests/system-apps-v220-contract.mjs
       - name: Cloud Hosting Section 1 architecture contract

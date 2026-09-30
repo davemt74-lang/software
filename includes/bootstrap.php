@@ -296,6 +296,7 @@ require_once __DIR__.'/system-apps-v250.php';
 require_once __DIR__.'/system-apps-v260.php';
 require_once __DIR__.'/system-apps-v270.php';
 require_once __DIR__.'/system-apps-v280.php';
+require_once __DIR__.'/system-apps-v290.php';
 require_once __DIR__.'/cloud-hosting-v100.php';
 require_once __DIR__.'/cloud-hosting-v110.php';
 require_once __DIR__.'/cloud-hosting-v120.php';

@@ -44,7 +44,7 @@ function vp3_system_apps_ensure_schema_v110(?PDO $pdo=null): void
 function vp3_system_apps_remote_v110(int $userId,string $operation,array $payload=[],?callable $remote=null): array
 {
     if($userId<1)throw new RuntimeException('Account is required.');
-    if(!in_array($operation,['apps.system.catalog','apps.system.status','apps.system.install','apps.system.deactivate','apps.system.reconcile','apps.system.release.status','apps.system.rollback','apps.system.permissions.status','apps.system.permissions.set','apps.user.list','apps.user.status','apps.user.workspace.status','apps.user.distribution.describe','apps.manager.status','apps.media.status','apps.media.search','apps.video.status','apps.video.projects','apps.video.project','apps.video.agent.actions','apps.video.agent.invoke'],true)){
+    if(!in_array($operation,['apps.system.catalog','apps.system.status','apps.system.install','apps.system.deactivate','apps.system.reconcile','apps.system.release.status','apps.system.rollback','apps.system.permissions.status','apps.system.permissions.set','apps.user.list','apps.user.status','apps.user.workspace.status','apps.user.distribution.describe','apps.manager.status','apps.media.status','apps.media.search','apps.video.status','apps.video.projects','apps.video.project','apps.video.agent.actions','apps.video.agent.invoke','apps.control.status','apps.control.actions','apps.control.settings','apps.control.hosting','apps.control.invoke','apps.control.settings.set'],true)){
         throw new RuntimeException('Unsupported HomeServer System Apps operation.');
     }
     $result=$remote!==null?$remote($userId,$operation,$payload):homeserver_vp3_remote_operation_for_user($userId,$operation,$payload);
