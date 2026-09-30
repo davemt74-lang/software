@@ -24,6 +24,7 @@ function vp3_user_apps_snapshot_v220(int $userId,?callable $remote=null): array
           'permissions'=>is_array($row['permissions']??null)?$row['permissions']:null,
           'release'=>is_array($row['release']??null)?$row['release']:null,
           'data'=>is_array($row['data']??null)?$row['data']:null,
+          'distribution'=>is_array($row['distribution']??null)?$row['distribution']:null,
         ];
     }
     return [
@@ -33,6 +34,7 @@ function vp3_user_apps_snapshot_v220(int $userId,?callable $remote=null): array
         'runtime'=>'homeserver',
         'data'=>'homeserver',
         'permissions'=>'homeserver',
+        'distribution_provenance'=>'homeserver',
         'cloud_registry'=>false,
       ],
       'items'=>$safe,

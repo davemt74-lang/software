@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__.'/includes/bootstrap.php';
-require_once __DIR__.'/includes/system-apps-v240.php';
+require_once __DIR__.'/includes/system-apps-v250.php';
 require_login();
 require_permission('account.access');
 
@@ -11,10 +11,10 @@ if(!$pdo||!$user)throw new RuntimeException('Private app shares are unavailable.
 
 $publicId=strtolower(trim((string)($_GET['id']??$_POST['id']??'')));
 $grantCode=strtolower(trim((string)($_POST['code']??'')));
-$notice='';$error='';$redemption=null;$share=null;
+$notice='';$error='';$redemption=null;$share=null;$updateMeta=null;
 
 try{
-    if($publicId!=='')$share=vp3_user_app_share_lookup_v240((int)$user['id'],$publicId,$pdo);
+    if($publicId!==''){$share=vp3_user_app_share_lookup_v240((int)$user['id'],$publicId,$pdo);$updateMeta=vp3_user_app_share_update_meta_v250((int)$user['id'],$publicId,$pdo);}
     if($_SERVER['REQUEST_METHOD']==='POST'){
         if(!verify_csrf())throw new RuntimeException('Session expired. Refresh and try again.');
         if((string)($_POST['action']??'')!=='redeem')throw new RuntimeException('Unsupported private share action.');
@@ -48,9 +48,9 @@ try{
 <p>Shared by <?=e((string)$share['sender_name'])?> · <?=e((string)$share['app_key'])?><?php if($share['app_version']!==''):?> · v<?=e((string)$share['app_version'])?><?php endif;?></p>
 <div class="system-app-meta"><span>Expires <strong><?=e((string)$share['expires_at'])?></strong></span><span>Schema <strong><?=e((string)$share['data_schema_version'])?></strong></span></div>
 <details class="system-app-release-notes" open><summary>Verified package provenance</summary>
-<p>Expected package SHA-256:</p><code style="overflow-wrap:anywhere"><?=e((string)$share['package_sha256'])?></code>
+<p>Share ID: <code><?=e($publicId)?></code></p><p>Expected package SHA-256:</p><code style="overflow-wrap:anywhere"><?=e((string)$share['package_sha256'])?></code>
 <p>Publisher fingerprint:</p><code><?=e((string)$share['publisher_fingerprint'])?></code>
-<?php if(!empty($share['permissions'])):?><p>Declared permissions:</p><ul><?php foreach((array)$share['permissions'] as $permission):?><li><?=e((string)$permission)?></li><?php endforeach;?></ul><?php endif;?>
+<?php if($updateMeta):$pd=(array)($updateMeta['permission_delta']??[]);$sc=(array)($updateMeta['schema_change']??[]);?><div class="system-apps-alert"><strong>Update review.</strong> New permissions: <?=number_format(count((array)($pd['added']??[])))?> · Schema <?=e((string)($sc['from']??'1'))?> → <?=e((string)($sc['to']??'1'))?>. This update will not install automatically.</div><?php endif;?><?php if(!empty($share['permissions'])):?><p>Declared permissions:</p><ul><?php foreach((array)$share['permissions'] as $permission):?><li><?=e((string)$permission)?></li><?php endforeach;?></ul><?php endif;?>
 </details>
 <?php if((string)$share['status']==='pending'):?>
 <form method="post" id="privateShareAcceptForm"><?=csrf_field()?><input type="hidden" name="action" value="redeem"><input type="hidden" name="id" value="<?=e($publicId)?>"><input type="hidden" name="code" id="privateShareGrantCode" value=""><button class="button primary" id="privateShareAcceptButton" type="submit" disabled>Accept Private App Share</button><p class="muted" id="privateShareCodeStatus">Open the complete private install link from the sender.</p></form>
