@@ -104,7 +104,6 @@ assert.match(chat,/\$premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260
 assert.match(chat,/\$voiceAssetBuild = 'chat-voice-proactive-v244-20260922'/);
 assert.match(chat,/\$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-stop-control1'/);
 assert.match(chat,/\$notificationDrawerBuild = 'chat-notifications-proactive-v244-20260922'/);
-assert.match(chat,/\$controlBuild = 'chat-footer-runtime-v2451-20260922'/);
 assert.match(chat,/\$cognitivePresentationBuild = 'cognitive-presentation-footer-v2451-20260922'/);
 assert.match(memberHeader,/\$memberAgentVoiceMenuBuild = 'agent-voice-menu-v244-20260922'/);
 

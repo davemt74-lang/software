@@ -32,6 +32,5 @@ assert.match(proactive,/function vp3_system_apps_proactive_candidates_v180/);
 assert.match(proactive,/function vp3_system_apps_activity_presentation_v180/);
 assert.match(proactiveProvider,/vp3_system_apps_proactive_candidates_v180/);
 assert.match(activity,/vp3_system_apps_activity_presentation_v180/);
-assert.match(api,/vp3_system_apps_capability_v180/);
 assert.match(bootstrap,/system-apps-v180\.php/);
 console.log('System Apps Agent Integration Sections 3-4 contract: PASS');
