@@ -46,11 +46,17 @@ function vp3_system_apps_proactive_candidates_v180(PDO $pdo,array $user): array
         }
 
         if(!empty($app['update_available'])){
+            $release=is_array($app['release']??null)?$app['release']:[];
+            $version=(string)($app['catalog_version']??'');
+            $channel=(string)($release['release_channel']??'stable');
+            $notes=is_array($release['release_notes']??null)?$release['release_notes']:[];
+            $reason=$name.' has '.($version!==''?'v'.$version.' ':'').'available on the '.$channel.' channel.';
+            if($notes)$reason.=' '.implode(' ',array_slice(array_map('strval',$notes),0,2));
             $out[]=vp3_system_apps_proactive_candidate_v180(
               $key,
               'Update '.$name,
-              $name.' has a newer System App version available for its HomeServer installation.',
-              'Review the available update for '.$name.' and, if it is appropriate, prepare the governed System App update/verification action for my confirmation.',
+              $reason,
+              'Review the release notes and HomeServer compatibility for '.$name.', then prepare the governed verified update. After activation, reconcile its Hosting/subdomain binding before considering the release complete.',
               'system_apps_update',$appsUrl,0.94,0.96
             );
         }
