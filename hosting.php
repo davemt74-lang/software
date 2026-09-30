@@ -9,7 +9,7 @@ if(!$pdo||!$user){
     flash('hosting_error','Your account could not be loaded.');
     redirect(url('/login.php'));
 }
-vp3_cloud_hosting_v120_ensure_schema($pdo);
+if(!vp3_cloud_hosting_v120_schema_ready($pdo))vp3_cloud_hosting_v120_ensure_schema($pdo);
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!verify_csrf()){
