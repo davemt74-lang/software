@@ -44,4 +44,4 @@ assert.match(api,/vp3_system_apps_release_rollback_v200/);
 assert.match(api,/vp3_system_apps_capability_v200/);
 assert.match(bootstrap,/system-apps-v200\.php/);
 
-console.log('System Apps Section 6 integrated Cloud HomeServer Hosting release contract: PASS');
+console.log('System Apps Section 7 Cloud data migration and recovery contract: PASS');
