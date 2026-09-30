@@ -232,6 +232,51 @@ function vp3_system_apps_install_or_update_v200(
     return vp3_system_apps_release_update_v200($userId,$appKey,$remote,$pdo);
 }
 
+function vp3_system_apps_release_query_v200(
+    string $query,array $user,int $conversationId=0,?callable $remote=null,?PDO $pdo=null
+): array {
+    $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+    if(!preg_match('/\b(?:release|release notes|version|compatib|rollback|roll back|what changed|update details)\b/i',$query))return $empty;
+    if(!function_exists('vp3_system_apps_agent_find_app_v160'))return $empty;
+    $pdo??=db();if(!$pdo)return $empty;
+    $app=vp3_system_apps_agent_find_app_v160($query,$user,$pdo);
+    if(!$app)return [
+      'handled'=>true,
+      'answer'=>'I need the System App name to show release details.',
+      'stem_media'=>[],'media'=>[],
+      'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],
+      'sources'=>[],
+    ];
+    $row=vp3_system_apps_agent_catalog_row_v160((int)$user['id'],(string)$app['app_key'],$pdo);
+    $meta=vp3_system_apps_release_metadata_v200($row);
+    $install=vp3_system_apps_install_projection_v110((int)$user['id'],(int)$row['id'],$pdo);
+    $live=null;
+    $connection=vp3_system_apps_connection_snapshot_v140((int)$user['id'],$pdo);
+    if(!empty($connection['connected'])&&(string)($row['ownership_status']??'')==='active'){
+        try{$live=vp3_system_apps_release_status_v200((int)$user['id'],(string)$row['app_key'],$remote,$pdo);}
+        catch(Throwable $e){$live=null;}
+    }
+    $notes=(array)($meta['release_notes']??[]);
+    $answer=(string)$row['name'].' catalog release is v'.(string)$row['current_version'].' on the '.(string)$meta['release_channel'].' channel.';
+    if(!empty($install['installed_version']))$answer.=' HomeServer has v'.(string)$install['installed_version'].'.';
+    if($notes)$answer.="\nRelease notes:\n".implode("\n",array_map(static fn($note)=>'• '.(string)$note,$notes));
+    $min=(string)($meta['compatibility']['min_homeserver_version']??'');
+    $max=(string)($meta['compatibility']['max_homeserver_version']??'');
+    if($min!=='')$answer.="\nCompatibility: HomeServer ".$min.'+'.($max!==''?' through '.$max:'').'.';
+    if($live!==null)$answer.="\nRollback available: ".(!empty($live['rollback_available'])?'yes':'no').'.';
+    $hosting=vp3_system_apps_hosting_projection_v120((int)$user['id'],(int)$row['id'],$pdo);
+    if(!empty($hosting['bound']))$answer.="\nHosted at ".(string)($hosting['hostname']??$hosting['display_name']??'the assigned Hosting site').'; release changes reconcile this route automatically.';
+    if(function_exists('agent_tool_log'))agent_tool_log($user,'system_apps.release',$query,'success',[
+      'app_key'=>$row['app_key'],'catalog_version'=>$row['current_version'],'live_release'=>$live!==null,
+    ],$conversationId);
+    return [
+      'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],
+      'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],
+      'sources'=>[['source'=>'system-apps:release','title'=>'VP3 System App release lifecycle']],
+      'system_app_release'=>['metadata'=>$meta,'installation'=>$install,'live'=>$live,'hosting'=>$hosting],
+    ];
+}
+
 function vp3_system_apps_catalog_v200(?array $user=null,?PDO $pdo=null): array
 {
     $pdo??=db();
