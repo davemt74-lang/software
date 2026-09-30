@@ -179,6 +179,13 @@ function member_navigation_menu_links(?array $user = null): array
         $add($links,'profile_commerce_refunds','Refund Requests',url('/profile-commerce-refund-requests.php'),'agent');
     }
     $pdo=db();
+    if($accountAllowed&&$pdo&&function_exists('vp3_plugin_effective_state_v360')){
+        try{
+            $trackyState=vp3_plugin_effective_state_v360($pdo,$user,'tracky');
+            $trackyEnabled=!empty($trackyState['enabled']);
+            $add($links,'tracky',$trackyEnabled?'Tracky':'Tracky — Enable',$trackyEnabled?url('/tracky.php'):url('/plugins.php'),'identity');
+        }catch(Throwable $e){}
+    }
     if($pdo&&function_exists('campaigns_rewards_plugin_state_v100')){
         try{
             $campaignState=campaigns_rewards_plugin_state_v100($user,$pdo);
