@@ -58,8 +58,8 @@ assert.match(hosting,/token_suffix/);
 console.log('Cloud Hosting V1 Section 1 architecture contract: PASS');
 
 
-const mainSidebar=read('includes/main-sidebar.php');
-const memberNav=read('includes/member-navigation.php');
+const mainSidebar=fs.readFileSync(new URL('includes/main-sidebar.php',root),'utf8');
+const memberNav=fs.readFileSync(new URL('includes/member-navigation.php',root),'utf8');
 assert.match(mainSidebar,/['"]hosting['"]=>['"]Hosting & Subdomains['"]/);
 assert.match(mainSidebar,/['"]hosting['"]=>['"]Build & Host['"]/);
 assert.match(mainSidebar,/mainSidebarPrimaryOrder[^\n]*'hosting'/);
