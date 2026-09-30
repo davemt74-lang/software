@@ -108,7 +108,7 @@ function vp3_system_apps_agent_prepare_v160(
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     vp3_system_apps_agent_actions_ensure_schema_v160($pdo);
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in user is required.');
-    $allowed=['ownership.acquire','install','update.verify','hosting.bind','hosting.unbind','reconcile'];
+    $allowed=['ownership.acquire','install','update.verify','release.rollback','hosting.bind','hosting.unbind','reconcile'];
     if(!in_array($actionType,$allowed,true))throw new RuntimeException('Unsupported System App Agent action.');
     $app=null;$appId=null;
     if($actionType!=='reconcile'){
@@ -157,8 +157,14 @@ function vp3_system_apps_agent_execute_v160(
     if($type==='ownership.acquire'){
         return ['ownership'=>vp3_system_apps_acquire_v100($uid,$appKey,'agent_chat',(string)$row['public_id'],$pdo)];
     }
-    if($type==='install'||$type==='update.verify'){
+    if($type==='install'){
         return ['installation'=>vp3_system_apps_install_v110($uid,$appKey,$remote,$pdo)];
+    }
+    if($type==='update.verify'){
+        return ['release'=>vp3_system_apps_release_update_v200($uid,$appKey,$remote,$pdo)];
+    }
+    if($type==='release.rollback'){
+        return ['release'=>vp3_system_apps_release_rollback_v200($uid,$appKey,'agent_confirmed',$remote,$pdo)];
     }
     if($type==='hosting.bind'){
         $siteId=(int)($row['site_id']??$payload['site_id']??0);
@@ -263,7 +269,7 @@ function vp3_system_apps_agent_action_intent_v160(string $query): bool
     if(!preg_match('/\b(?:app|apps|vp3 notes|vp3 inventory|vp3 checklists|notes|inventory|checklists)\b/i',$query))return false;
     if(preg_match('/^\s*(?:what|which|show|list|tell\s+me|do\s+i|are\s+there|is\s+there|status|how\s+many)\b/i',$query)
         && !preg_match('/\b(?:please|go\s+ahead|can\s+you|could\s+you|would\s+you)\b/i',$query))return false;
-    return (bool)preg_match('/\b(?:install|update|upgrade|verify|add|acquire|host|hosting|unhost|remove hosting|detach hosting|refresh|reconcile|resync|sync|open|launch)\b/i',$query);
+    return (bool)preg_match('/\b(?:install|update|upgrade|verify|rollback|roll back|revert|add|acquire|host|hosting|unhost|remove hosting|detach hosting|refresh|reconcile|resync|sync|open|launch)\b/i',$query);
 }
 
 function vp3_system_apps_agent_prepare_result_v160(array $plan,string $intro): array
@@ -325,8 +331,17 @@ function vp3_system_apps_agent_action_query_v160(
         $actionType='ownership.acquire';$preview=['app'=>$name,'ownership'=>'active'];$intro='I prepared adding '.$name.' to your account.';
     }elseif(preg_match('/\b(?:install)\b/i',$query)){
         $actionType='install';$preview=['app'=>$name,'target'=>'HomeServer'];$intro='I prepared installation of '.$name.' on HomeServer.';
+    }elseif(preg_match('/\b(?:rollback|roll back|revert)\b/i',$query)){
+        $actionType='release.rollback';
+        $meta=vp3_system_apps_release_metadata_v200(vp3_system_apps_agent_catalog_row_v160($uid,$appKey,$pdo));
+        $preview=['app'=>$name,'target'=>'HomeServer','operation'=>'rollback_previous_release','release_channel'=>$meta['release_channel']];
+        $intro='I prepared a rollback of '.$name.' to its previous verified HomeServer release. Any bound Hosting/subdomain route will be reconciled afterward.';
     }elseif(preg_match('/\b(?:update|upgrade|verify)\b/i',$query)){
-        $actionType='update.verify';$preview=['app'=>$name,'target'=>'HomeServer','operation'=>'update_or_verify'];$intro='I prepared an update/verification of '.$name.' on HomeServer.';
+        $appRow=vp3_system_apps_agent_catalog_row_v160($uid,$appKey,$pdo);
+        $meta=vp3_system_apps_release_metadata_v200($appRow);
+        $actionType='update.verify';
+        $preview=['app'=>$name,'target'=>'HomeServer','operation'=>'verified_update','to_version'=>(string)$appRow['current_version'],'release_channel'=>$meta['release_channel'],'release_notes'=>$meta['release_notes']];
+        $intro='I prepared a verified update of '.$name.' on HomeServer. Its Hosting/subdomain binding will be reconciled after activation.';
     }elseif(preg_match('/\b(?:unhost|remove\s+hosting|detach\s+hosting)\b/i',$query)){
         $actionType='hosting.unbind';$preview=['app'=>$name,'hosting'=>'remove'];$intro='I prepared removal of Hosting from '.$name.'.';
     }elseif(preg_match('/\b(?:host|hosting)\b/i',$query)){
@@ -358,6 +373,7 @@ function vp3_system_apps_capability_v160(): array
       'action_execution_lease'=>true,
       'idempotent_confirmation_replay'=>true,
       'agent_install_update'=>true,
+      'agent_release_rollback'=>true,
       'agent_hosting_bind_unbind'=>true,
       'agent_reconcile'=>true,
       'agent_open_navigation'=>true,
