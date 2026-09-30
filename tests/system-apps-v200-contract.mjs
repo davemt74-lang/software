@@ -1,0 +1,47 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const root=new URL('../',import.meta.url);
+const release=fs.readFileSync(new URL('includes/system-apps-v200.php',root),'utf8');
+const catalog=fs.readFileSync(new URL('includes/system-apps-v100.php',root),'utf8');
+const bridge=fs.readFileSync(new URL('includes/system-apps-v110.php',root),'utf8');
+const actions=fs.readFileSync(new URL('includes/system-apps-v160.php',root),'utf8');
+const cards=fs.readFileSync(new URL('includes/system-apps-v190.php',root),'utf8');
+const router=fs.readFileSync(new URL('includes/agent-tool-authorization-v400.php',root),'utf8');
+const proactive=fs.readFileSync(new URL('includes/system-apps-v180.php',root),'utf8');
+const page=fs.readFileSync(new URL('apps.php',root),'utf8');
+const api=fs.readFileSync(new URL('api/system-apps-v100.php',root),'utf8');
+const bootstrap=fs.readFileSync(new URL('includes/bootstrap.php',root),'utf8');
+
+assert.match(release,/vp3\.system-app-release\.v1/);
+assert.match(release,/function vp3_system_apps_release_status_v200/);
+assert.match(release,/function vp3_system_apps_release_update_v200/);
+assert.match(release,/function vp3_system_apps_release_rollback_v200/);
+assert.match(release,/function vp3_system_apps_release_reconcile_hosting_v200/);
+assert.match(release,/function vp3_system_apps_install_or_update_v200/);
+assert.match(release,/expected_version/);
+assert.match(release,/expected_sha256/);
+assert.match(release,/release_channel/);
+assert.match(release,/vp3_cloud_hosting_v120_reconcile_site/);
+assert.match(release,/desired_revision=desired_revision\+1/);
+assert.match(release,/hosting_subdomain_post_release_reconcile'\s*=>\s*true/);
+assert.match(release,/release_auto_update'\s*=>\s*false/);
+assert.match(catalog,/'1\.1\.0'/);
+assert.match(catalog,/'release_channel'=>'stable'/);
+assert.match(catalog,/'min_homeserver_version'=>'2\.4'/);
+assert.match(bridge,/apps\.system\.release\.status/);
+assert.match(bridge,/apps\.system\.rollback/);
+assert.match(actions,/release\.rollback/);
+assert.match(actions,/vp3_system_apps_release_update_v200/);
+assert.match(actions,/vp3_system_apps_release_rollback_v200/);
+assert.match(cards,/release\.rollback'=>'Rollback release'/);
+assert.match(router,/vp3_system_apps_release_query_v200/);
+assert.match(proactive,/Hosting\/subdomain binding/);
+assert.match(page,/vp3_system_apps_install_or_update_v200/);
+assert.match(page,/Release notes/);
+assert.match(page,/Verified Update/);
+assert.match(api,/vp3_system_apps_release_rollback_v200/);
+assert.match(api,/vp3_system_apps_capability_v200/);
+assert.match(bootstrap,/system-apps-v200\.php/);
+
+console.log('System Apps Section 6 integrated Cloud HomeServer Hosting release contract: PASS');
