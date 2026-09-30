@@ -26,11 +26,11 @@ assert.match(hosting,/hosting\.subdomains/);
 assert.match(hosting,/hosting\.storage_mb_per_site/);
 assert.match(hosting,/hosting\.sqlite_mb_per_site/);
 assert.match(hosting,/hosting\.php_access/);
-assert.match(hosting,/slug IN \('basic','basic-user'\)/);
+assert.match(hosting,/slug IN \('basic','basic-user','legacy-access'\)/);
 assert.ok(hosting.includes("$legacy=$slug==='legacy-access';"));
 assert.ok(hosting.includes("$upsert->execute([$id,'hosting.sites',1,$legacy?null:1]);"));
 assert.ok(hosting.includes("$upsert->execute([$id,'hosting.subdomains',1,$legacy?null:1]);"));
-assert.ok(subs.includes("'hosting.access'=>[1,null]"),'Legacy Access must retain Cloud Hosting compatibility');
+assert.match(subs,/\$legacyEntitlements\s*=\s*\[[\s\S]*'hosting\.access'=>\[1,null\][\s\S]*'hosting\.subdomains'=>\[1,null\][\s\S]*'hosting\.php_access'=>\[1,null\]/,'Legacy Access must retain Cloud Hosting compatibility');
 
 for(const key of [
   'hosting.access','hosting.sites','hosting.subdomains',
