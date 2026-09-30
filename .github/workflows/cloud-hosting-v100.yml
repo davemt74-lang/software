@@ -232,6 +232,8 @@ jobs:
         run: node tests/system-apps-v200-contract.mjs
       - name: System Apps Section 8 permission governance contract
         run: node tests/system-apps-v210-contract.mjs
+      - name: System Apps Section 9 SDK integration contract
+        run: node tests/system-apps-v220-contract.mjs
       - name: System Apps Section 9 user app SDK integration contract
         run: node tests/system-apps-v220-contract.mjs
       - name: Cloud Hosting Section 1 architecture contract
