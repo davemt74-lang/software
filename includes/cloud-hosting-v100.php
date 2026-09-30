@@ -363,6 +363,13 @@ function vp3_cloud_hosting_set_desired_state_v100(
 
 function vp3_cloud_hosting_desired_projection_v100(array $site): array
 {
+    $targetAppKey=null;
+    if(function_exists('vp3_system_apps_hosting_binding_for_site_v120')){
+        try{
+            $binding=vp3_system_apps_hosting_binding_for_site_v120((int)($site['id']??0),db());
+            if(is_array($binding))$targetAppKey=trim((string)($binding['homeserver_catalog_key']??''))?:null;
+        }catch(Throwable $ignored){}
+    }
     return [
         'contract'=>'vp3.cloud-hosting-site.v1',
         'cloud_site_id'=>(string)($site['site_key']??''),
@@ -373,6 +380,7 @@ function vp3_cloud_hosting_desired_projection_v100(array $site): array
         'desired_state'=>(string)($site['desired_state']??'configured'),
         'storage_limit_bytes'=>(int)($site['storage_limit_bytes']??0),
         'sqlite_limit_bytes'=>(int)($site['sqlite_limit_bytes']??0),
+        'target_app_key'=>$targetAppKey,
     ];
 }
 
