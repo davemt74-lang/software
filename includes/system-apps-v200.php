@@ -210,6 +210,28 @@ function vp3_system_apps_release_rollback_v200(
     ];
 }
 
+function vp3_system_apps_install_or_update_v200(
+    int $userId,string $appKey,?callable $remote=null,?PDO $pdo=null
+): array {
+    $pdo??=db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $app=vp3_system_apps_owned_row_v110($userId,$appKey,$pdo);
+    $install=vp3_system_apps_install_projection_v110($userId,(int)$app['id'],$pdo);
+    if(empty($install['installed'])){
+        $result=vp3_system_apps_install_v110($userId,$appKey,$remote,$pdo);
+        return [
+          'contract'=>'vp3.system-app-release-operation.v1',
+          'operation'=>'install',
+          'app_key'=>$appKey,
+          'changed'=>!empty($result['changed']),
+          'homeserver'=>$result['homeserver']??[],
+          'hosting'=>['bound'=>false,'pending'=>false],
+          'reconcile_pending'=>false,
+        ];
+    }
+    return vp3_system_apps_release_update_v200($userId,$appKey,$remote,$pdo);
+}
+
 function vp3_system_apps_catalog_v200(?array $user=null,?PDO $pdo=null): array
 {
     $pdo??=db();
