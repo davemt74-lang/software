@@ -114,6 +114,7 @@ function vp3_system_apps_store_remote_v110(int $userId,array $app,array $remote,
 {
     $pdo??=db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $before=vp3_system_apps_install_projection_v110($userId,(int)$app['id'],$pdo);
     $projection=vp3_system_apps_remote_item_v110($remote);
     if($projection['app_key']!==''&&$projection['app_key']!==(string)$app['homeserver_catalog_key']){
         throw new RuntimeException('HomeServer returned a mismatched System App identity.');
@@ -132,17 +133,49 @@ function vp3_system_apps_store_remote_v110(int $userId,array $app,array $remote,
       $installAction?gmdate('Y-m-d H:i:s'):null,
       json_encode($remote,JSON_UNESCAPED_SLASHES),
     ]);
-    return vp3_system_apps_install_projection_v110($userId,(int)$app['id'],$pdo);
+    $after=vp3_system_apps_install_projection_v110($userId,(int)$app['id'],$pdo);
+    if(!empty($before['last_synced_at'])){
+        if(empty($before['update_available'])&&!empty($after['update_available'])){
+            vp3_system_apps_event_v110($userId,(int)$app['id'],'app.update.available',[
+              'from_version'=>$before['installed_version']??null,'installed_version'=>$after['installed_version']??null,
+              'catalog_version'=>$after['catalog_version']??null,
+            ],$pdo);
+        }elseif(!empty($before['update_available'])&&empty($after['update_available'])){
+            vp3_system_apps_event_v110($userId,(int)$app['id'],'app.update.cleared',[
+              'installed_version'=>$after['installed_version']??null,'catalog_version'=>$after['catalog_version']??null,
+            ],$pdo);
+        }
+        $beforeState=(string)($before['state']??'');$afterState=(string)($after['state']??'');
+        if($beforeState!==''&&$afterState!==''&&$beforeState!==$afterState){
+            vp3_system_apps_event_v110($userId,(int)$app['id'],'app.runtime.state_changed',[
+              'from'=>$beforeState,'to'=>$afterState,'installed_version'=>$after['installed_version']??null,
+            ],$pdo);
+        }
+        if((string)($before['error']??'')!==''&&(string)($after['error']??'')===''){
+            vp3_system_apps_event_v110($userId,(int)$app['id'],'app.health.recovered',[
+              'state'=>$after['state']??'unknown','installed_version'=>$after['installed_version']??null,
+            ],$pdo);
+        }
+    }
+    return $after;
 }
 
 function vp3_system_apps_store_error_v110(int $userId,array $app,string $message,string $code='remote_error',?PDO $pdo=null): void
 {
     $pdo??=db();if(!$pdo)return;
+    $before=vp3_system_apps_install_projection_v110($userId,(int)$app['id'],$pdo);
     $stmt=$pdo->prepare("INSERT INTO vp3_system_app_installations
       (user_id,app_id,observed_state,last_error_code,last_error_message)
       VALUES (?,?,'unknown',?,?)
       ON DUPLICATE KEY UPDATE last_error_code=VALUES(last_error_code),last_error_message=VALUES(last_error_message),updated_at=CURRENT_TIMESTAMP");
-    $stmt->execute([$userId,(int)$app['id'],mb_substr($code,0,80),mb_substr($message,0,500)]);
+    $boundedCode=mb_substr($code,0,80);$boundedMessage=mb_substr($message,0,500);
+    $stmt->execute([$userId,(int)$app['id'],$boundedCode,$boundedMessage]);
+    $beforeError=(string)($before['error']??'');
+    if($boundedMessage!==''&&$beforeError!==$boundedMessage){
+        vp3_system_apps_event_v110($userId,(int)$app['id'],'app.health.problem',[
+          'error_code'=>$boundedCode,'error'=>$boundedMessage,'previous_error'=>$beforeError,
+        ],$pdo);
+    }
 }
 
 function vp3_system_apps_event_v110(int $userId,int $appId,string $eventType,array $metadata=[],?PDO $pdo=null): void
