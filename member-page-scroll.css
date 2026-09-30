@@ -3,6 +3,7 @@
    must give their content row an explicit scroll owner instead of overflowing
    behind the fixed shell. */
 .plugins-main,
+.hosting-main,
 .team-main,
 .music-main,
 .ml-main,
@@ -14,6 +15,7 @@
 }
 
 .plugins-wrap,
+.hosting-canvas,
 .team-canvas,
 .music-wrap,
 .ml-wrap,

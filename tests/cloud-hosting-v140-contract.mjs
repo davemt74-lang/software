@@ -10,6 +10,7 @@ const bootstrap=read('includes/bootstrap.php');
 const nav=read('includes/member-navigation.php');
 const agent=read('includes/cloud-hosting-agent-v130.php');
 const workflow=read('.github/workflows/cloud-hosting-v100.yml');
+const memberScroll=read('member-page-scroll.css');
 
 assert.match(ui,/vp3_cloud_hosting_ui_v140_dashboard/);
 assert.match(ui,/vp3_cloud_hosting_ui_v140_execute/);
@@ -39,6 +40,11 @@ assert.match(page,/Provision DNS/);
 assert.match(page,/Verify DNS/);
 assert.match(page,/Rollback/);
 assert.match(page,/Ask Agent/);
+assert.match(page,/require __DIR__\.['"]\/includes\/member-header\.php['"]/);
+assert.match(page,/\$memberHeaderTitle='Cloud Hosting'/);
+assert.match(page,/\$memberHeaderActiveKey='hosting'/);
+assert.match(page,/member-shell-v77\.js\?v=universal-member-header-20260905/);
+assert.doesNotMatch(page,/id="chatProfileButton"/,'Hosting must use the canonical member profile/avatar menu instead of a page-local duplicate');
 assert.doesNotMatch(page,/hosting_cpanel_api_token|route_token_enc|certificate_private/);
 
 assert.match(js,/window\.confirm/);
@@ -46,6 +52,9 @@ assert.match(js,/confirmed\.value='1'/);
 assert.match(js,/64\*1024\*1024/);
 assert.match(css,/hosting-status-grid/);
 assert.match(css,/@media\(max-width:720px\)/);
+assert.match(memberScroll,/\.hosting-main,/);
+assert.match(memberScroll,/\.hosting-canvas,/);
+assert.match(memberScroll,/overflow-y:auto/);
 
 assert.match(bootstrap,/cloud-hosting-ui-v140\.php/);
 assert.match(nav,/'hosting\.php'=>'hosting'/);

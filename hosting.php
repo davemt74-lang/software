@@ -99,10 +99,6 @@ foreach($sites as $siteIndex=>$siteRow){
 }
 $notice=flash('hosting_notice');
 $error=flash('hosting_error');
-$hostingUserMenuLinks=member_navigation_menu_links($user);
-$notificationCount=notification_unread_count($user);
-$notifications=notification_recent($user,6);
-
 $limitText=static fn($value): string=>$value===null?'Unlimited':number_format((int)$value);
 $bytesText=static function(int $bytes):string{
     if($bytes<=0)return 'Package default';
@@ -130,47 +126,14 @@ $bytesText=static function(int $bytes):string{
   <div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 
   <main class="chat-main hosting-main">
-    <header class="chat-topbar">
-      <button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open workspace menu">☰</button>
-      <div class="chat-topbar-title">
-        <strong>Cloud Hosting</strong>
-        <span>VP3 Cloud ↔ HomeServer sites</span>
-      </div>
-      <div class="chat-topbar-actions">
-        <a class="hosting-agent-link" href="<?= e(url('/chat.php')) ?>?prompt=<?= e(rawurlencode('Show me the status of my hosted sites')) ?>">Ask Agent</a>
-        <div class="chat-top-menu" id="chatNotificationMenu">
-          <button class="chat-notification-link" id="chatNotificationButton" type="button" aria-label="Notifications" aria-expanded="false" aria-controls="chatNotificationDropdown">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
-            <?php if($notificationCount>0): ?><span><?= $notificationCount>99?'99+':(int)$notificationCount ?></span><?php endif; ?>
-          </button>
-          <div class="chat-top-dropdown chat-notification-dropdown" id="chatNotificationDropdown" hidden>
-            <header><strong>Notifications</strong><span><?= (int)$notificationCount ?> unread</span></header>
-            <div class="chat-notification-dropdown-list">
-              <?php foreach($notifications as $notification): ?>
-                <a class="<?= !(int)$notification['is_read']?'unread':'' ?>" href="<?= e(url('/notifications.php?open='.(int)$notification['id'])) ?>">
-                  <span class="chat-dropdown-dot"></span><span><strong><?= e((string)$notification['title']) ?></strong><small><?= e((string)$notification['body']) ?></small></span>
-                </a>
-              <?php endforeach; ?>
-              <?php if(!$notifications): ?><div class="chat-dropdown-empty">No notifications yet.</div><?php endif; ?>
-            </div>
-            <a class="chat-dropdown-all" href="<?= e(url('/notifications.php')) ?>">View all notifications →</a>
-          </div>
-        </div>
-        <div class="chat-top-menu" id="chatProfileMenu">
-          <button type="button" class="chat-top-avatar" id="chatProfileButton" aria-label="User menu" aria-expanded="false" aria-controls="chatProfileDropdown">
-            <?php if(user_avatar_url($user)!==''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><?= e(user_initials($user)) ?><?php endif; ?>
-          </button>
-          <div class="chat-top-dropdown chat-profile-dropdown" id="chatProfileDropdown" hidden>
-            <div class="chat-profile-summary"><span class="chat-avatar"><?= e(user_initials($user)) ?></span><div><strong><?= e((string)$user['display_name']) ?></strong><small><?= e(role_label((string)$user['role'])) ?></small></div></div>
-            <nav class="chat-profile-links">
-              <?php foreach($hostingUserMenuLinks as $menuLink): ?>
-                <a<?= !empty($menuLink['danger'])?' class="logout"':'' ?> href="<?= e((string)$menuLink['url']) ?>"><span><?= e((string)$menuLink['label']) ?></span><span>↗</span></a>
-              <?php endforeach; ?>
-            </nav>
-          </div>
-        </div>
-      </div>
-    </header>
+    <?php
+      $memberHeaderUser=$user;
+      $memberHeaderTitle='Cloud Hosting';
+      $memberHeaderSubtitle='Hosting & Subdomains · VP3 Cloud ↔ HomeServer';
+      $memberHeaderActiveKey='hosting';
+      $memberHeaderActions='<a class="hosting-agent-link" href="'.e(url('/chat.php?prompt='.rawurlencode('Show me the status of my hosted sites'))).'">Ask Agent</a>';
+      require __DIR__.'/includes/member-header.php';
+    ?>
 
     <section class="hosting-canvas">
       <div class="hosting-shell">
@@ -520,7 +483,7 @@ $bytesText=static function(int $bytes):string{
     </section>
   </main>
 </div>
-<script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
+<script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script>
 <script src="<?= e(url('/cloud-hosting-v140.js?v=1')) ?>"></script>
 </body>
 </html>
