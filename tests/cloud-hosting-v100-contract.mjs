@@ -62,5 +62,6 @@ const mainSidebar=fs.readFileSync(new URL('includes/main-sidebar.php',root),'utf
 const memberNav=fs.readFileSync(new URL('includes/member-navigation.php',root),'utf8');
 assert.match(mainSidebar,/['"]hosting['"]=>['"]Hosting & Subdomains['"]/);
 assert.match(mainSidebar,/['"]hosting['"]=>['"]Build & Host['"]/);
-assert.match(mainSidebar,/mainSidebarPrimaryOrder[^\n]*'hosting'/);
+assert.match(mainSidebar,/\$mainSidebarPrimaryKeys\['hosting'\]=true/);
+assert.match(mainSidebar,/if \(isset\(\$mainSidebarLinkIndex\['hosting'\]\)\) \$mainSidebarPrimaryLinks\[\] = \$mainSidebarLinkIndex\['hosting'\]/);
 assert.match(memberNav,/\$add\(\$links,'hosting','Cloud Hosting',url\('\/hosting\.php'\),'identity'\)/);
