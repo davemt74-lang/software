@@ -11,10 +11,11 @@ assert.match(layer,/vp3\.unified-app-manager\.v1/);
 assert.match(layer,/function vp3_app_manager_status_v260/);
 assert.match(layer,/function vp3_app_manager_query_v260/);
 assert.match(layer,/app_manager_cloud_registry'\s*=>\s*false/);
-assert.match(layer,/vp3_system_app_library'\s*=>\s*true/);
+assert.match(layer,/vp3_optional_app_library'\s*=>\s*true/);
+assert.match(layer,/core_homeserver_features_are_apps'\s*=>\s*false/);
 assert.match(layer,/app_store'\s*=>\s*false/);
 assert.match(bridge,/apps\.manager\.status/);
 assert.match(bootstrap,/system-apps-v260\.php/);
 assert.match(router,/vp3_app_manager_query_v260/);
 
-console.log('System Apps Section 13 Unified App Manager Cloud contract: PASS');
+console.log('Section 13 Unified VP3 App Manager Cloud contract: PASS');
