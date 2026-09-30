@@ -299,6 +299,11 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
     $empty=vp3_agent_tool_empty_v400();$pdo=db();
     if(!$pdo)return $empty;
 
+    if(function_exists('vp3_system_apps_agent_query_v150')){
+        $systemApps=vp3_system_apps_agent_query_v150($query,$user,$conversationId,$pdo);
+        if(!empty($systemApps['handled']))return vp3_agent_tool_authorize_result_v400($systemApps,$user,$query);
+    }
+
     // Tracky V2.71 physical-context reads are Cloud-governed, deterministic,
     // side-effect free, and route before generic HomeServer local reads.
     if(function_exists('tracky_agent_tools_query_v271')){
