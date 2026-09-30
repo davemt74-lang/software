@@ -296,7 +296,7 @@ function vp3_system_apps_agent_action_query_v160(
     if(preg_match('/\b(?:open|launch)\b/i',$query)){
         $target=!empty($app['public_url'])?(string)$app['public_url']:url('/apps.php');
         return ['handled'=>true,'answer'=>!empty($app['public_url'])?'Opening the hosted '.$name.'.':'Opening Apps so you can manage '.$name.'.',
-          'stem_media'=>[],'media'=>[],'actions'=>[['type'=>'open_url','label'=>'Open '.$name,'url'=>$target]],'sources'=>[['source'=>'system-apps:canonical','title'=>'VP3 System Apps']]];
+          'stem_media'=>[],'media'=>[],'actions'=>[['type'=>'open_url','label'=>'Open '.$name,'url'=>$target,'system_app_key'=>$appKey]],'sources'=>[['source'=>'system-apps:canonical','title'=>'VP3 System Apps']]];
     }
 
     $actionType='';$payload=[];$preview=[];$siteId=null;$intro='';
