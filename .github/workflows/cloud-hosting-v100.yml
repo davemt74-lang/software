@@ -138,11 +138,19 @@ on:
       - "includes/system-apps-v220.php"
       - "includes/system-apps-v230.php"
       - "includes/system-apps-v240.php"
+      - "includes/system-apps-v250.php"
+      - "includes/system-apps-v260.php"
+      - "includes/system-apps-v270.php"
+      - "includes/system-apps-v280.php"
       - "private-app-share.php"
       - "tests/system-apps-v210-*"
       - "tests/system-apps-v220-*"
       - "tests/system-apps-v230-*"
       - "tests/system-apps-v240-*"
+      - "tests/system-apps-v250-*"
+      - "tests/system-apps-v260-*"
+      - "tests/system-apps-v270-*"
+      - "tests/system-apps-v280-*"
 
 concurrency:
   group: cloud-hosting-v100-${{ github.event.pull_request.number || github.ref }}
