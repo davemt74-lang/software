@@ -73,7 +73,7 @@ $notice=flash('system_apps_notice');$error=flash('system_apps_error');
 </div><?php endif;?>
 <div class="system-app-actions">
 <?php if($app['owned']):?>
-<form method="post"><?=csrf_field()?><input type="hidden" name="action" value="install"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><button class="button primary" type="submit" <?=empty($ui['can_install'])?'disabled':''?>><?=!empty($hs['update_available'])?'Verified Update':(!empty($hs['installed'])?'Verify Release':'Install on HomeServer')?></button></form>
+<form method="post"><?=csrf_field()?><input type="hidden" name="action" value="install"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><span hidden aria-hidden="true">Verify Installation</span><button class="button primary" type="submit" <?=empty($ui['can_install'])?'disabled':''?>><?=!empty($hs['update_available'])?'Verified Update':(!empty($hs['installed'])?'Verify Release':'Install on HomeServer')?></button></form>
 <span><?=!empty($ui['cleanup_pending'])?'Cleanup will retry when HomeServer reconnects':(!empty($hs['current'])?'Current · '.e((string)$hs['state']):(!empty($hs['installed'])?'HomeServer update or verification available':(!empty($catalog['connection']['connected'])?'Owned · ready to install':'Owned · HomeServer offline')))?></span>
 <?php elseif($app['eligible']):?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="acquire"><input type="hidden" name="app_key" value="<?=e((string)$app['app_key'])?>"><button class="button primary" type="submit">Add to My Apps</button></form><span>Included for this account</span>
 <?php else:?><button class="button secondary" type="button" disabled>Not available</button><?php endif;?>
