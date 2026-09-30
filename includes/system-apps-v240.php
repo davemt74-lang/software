@@ -180,11 +180,10 @@ function vp3_user_app_share_redeem_v240(
         if(!$row)throw new RuntimeException('Private app share was not found for this account.');
         if((string)$row['status']==='revoked'||$row['revoked_at']!==null)throw new RuntimeException('This private app share was revoked.');
         if(strtotime((string)$row['expires_at'])<=time())throw new RuntimeException('This private app share expired.');
+        if((string)$row['status']!=='pending')throw new RuntimeException('This private app install grant was already used.');
         if(!hash_equals((string)$row['grant_code_hash'],hash('sha256',$grantCode)))throw new RuntimeException('Private app install grant is invalid.');
-        if((string)$row['status']==='pending'){
-            $pdo->prepare("UPDATE vp3_user_app_private_shares_v240
-              SET status='accepted',redeemed_at=NOW(),updated_at=NOW() WHERE id=?")->execute([(int)$row['id']]);
-        }
+        $pdo->prepare("UPDATE vp3_user_app_private_shares_v240
+          SET status='accepted',redeemed_at=NOW(),updated_at=NOW() WHERE id=?")->execute([(int)$row['id']]);
         $pdo->commit();
         return [
           'contract'=>'vp3.user-app-private-share-redemption.v1',
