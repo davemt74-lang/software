@@ -72,7 +72,8 @@ catch(RuntimeException $e){if($e->getMessage()==='One-site-per-app invariant fai
 $unbound=vp3_system_apps_hosting_unbind_v120(1,'vp3.notes',$remote,$testPdo);
 if(!empty($unbound['hosting']['bound']))throw new RuntimeException('App hosting binding was not removed.');
 $siteOps=array_values(array_filter($ops,fn($o)=>$o['operation']==='hosting.site.reconcile'));
-if(($siteOps[count($siteOps)-1]['payload']['target_app_key']??'sentinel')!==null)throw new RuntimeException('Unbind did not clear HomeServer app target.');
+$lastPayload=$siteOps[count($siteOps)-1]['payload'];
+if(!array_key_exists('target_app_key',$lastPayload)||$lastPayload['target_app_key']!==null)throw new RuntimeException('Unbind did not clear HomeServer app target.');
 $after=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
 if(($after['desired_state']??'')!=='configured')throw new RuntimeException('Unbound hosting site was not returned to configured state.');
 
