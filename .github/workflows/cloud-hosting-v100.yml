@@ -206,6 +206,7 @@ jobs:
           php -l tests/system-apps-v170-mysql.php
           php -l tests/system-apps-v200-mysql.php
           php -l tests/system-apps-v240-mysql.php
+          php -l tests/system-apps-v250-mysql.php
           php -l includes/cloud-hosting-v100.php
           php -l includes/cloud-hosting-v110.php
           php -l includes/cloud-hosting-v120.php
@@ -305,6 +306,7 @@ jobs:
           php tests/system-apps-v170-mysql.php
           php tests/system-apps-v200-mysql.php
           php tests/system-apps-v240-mysql.php
+          php tests/system-apps-v250-mysql.php
           php tests/cloud-hosting-v100-mysql.php
           php tests/cloud-hosting-v110-mysql.php
           php tests/cloud-hosting-v120-mysql.php
