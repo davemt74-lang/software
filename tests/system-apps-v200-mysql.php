@@ -44,7 +44,7 @@ vp3_system_apps_ensure_schema_v120($testPdo);
 $owner=['id'=>1,'email'=>'owner@example.com','display_name'=>'Owner','role'=>'user'];
 vp3_system_apps_acquire_v100(1,'vp3.notes','self_service',null,$testPdo);
 $app=vp3_system_apps_owned_row_v110(1,'vp3.notes',$testPdo);
-if((string)$app['current_version']!=='1.1.0')throw new RuntimeException('Cloud catalog did not advance to System App 1.1.0.');
+if((string)$app['current_version']!=='1.2.0')throw new RuntimeException('Cloud catalog did not advance to System App 1.2.0.');
 
 $testPdo->prepare("INSERT INTO vp3_system_app_installations
   (user_id,app_id,observed_state,installed_version,homeserver_catalog_version,package_sha256,is_installed,is_current,update_available,last_remote_sync_at)
@@ -63,10 +63,10 @@ $remote=function(int $userId,string $operation,array $payload) use (&$ops,&$acti
     if($operation==='apps.system.release.status'){
         return [
           'contract'=>'vp3.system-app-release-status.v1',
-          'catalog_version'=>'2026.09.30.2',
+          'catalog_version'=>'2026.09.30.3',
           'app_key'=>'vp3.notes',
           'release_channel'=>'stable',
-          'available_version'=>'1.1.0',
+          'available_version'=>'1.2.0',
           'release_notes'=>['Adds release lifecycle metadata.','Supports verified updates and rollback.'],
           'compatibility'=>['min_homeserver_version'=>'2.4','max_homeserver_version'=>null],
           'package_sha256'=>str_repeat('b',64),
@@ -75,23 +75,26 @@ $remote=function(int $userId,string $operation,array $payload) use (&$ops,&$acti
             'active_release_id'=>$activeRelease,'previous_release_id'=>$previousRelease,'installed_version'=>$installedVersion,
           ],
           'rollback_available'=>$previousRelease!==null,
+          'rollback_safe'=>true,
+          'data'=>['contract'=>'vp3.app.data-lifecycle.v1','schema_version'=>$installedVersion==='1.2.0'?'2':'1','last_snapshot_id'=>$installedVersion==='1.2.0'?'appsnap_test':''],
         ];
     }
     if($operation==='apps.system.install'){
-        if(($payload['expected_version']??'')!=='1.1.0')throw new RuntimeException('Cloud did not bind expected release version.');
+        if(($payload['expected_version']??'')!=='1.2.0')throw new RuntimeException('Cloud did not bind expected release version.');
         if(($payload['expected_sha256']??'')!==str_repeat('b',64))throw new RuntimeException('Cloud did not bind expected package hash.');
         if(($payload['release_channel']??'')!=='stable')throw new RuntimeException('Cloud did not bind expected release channel.');
-        $previousRelease=$activeRelease;$activeRelease='apprel_new';$installedVersion='1.1.0';
+        $previousRelease=$activeRelease;$activeRelease='apprel_new';$installedVersion='1.2.0';
         return [
-          'contract'=>'vp3.system-app-installation.v1','catalog_version'=>'2026.09.30.2',
+          'contract'=>'vp3.system-app-installation.v1','catalog_version'=>'2026.09.30.3',
           'package'=>[
-            'key'=>'vp3.notes','version'=>'1.1.0','installed_version'=>'1.1.0','package_sha256'=>str_repeat('b',64),
+            'key'=>'vp3.notes','version'=>'1.2.0','installed_version'=>'1.2.0','package_sha256'=>str_repeat('b',64),
             'installed'=>true,'current'=>true,'update_available'=>false,'state'=>'running',
           ],
           'installed'=>true,'current'=>true,'update_available'=>false,'state'=>'running','changed'=>true,'reason'=>'',
-          'release'=>['release_id'=>'apprel_new','previous_release_id'=>'apprel_old','version'=>'1.1.0','package_sha256'=>str_repeat('b',64)],
-          'verification'=>['contract'=>'vp3.app.release-health.v1','healthy'=>true,'release_id'=>'apprel_new','version'=>'1.1.0','package_sha256'=>str_repeat('b',64)],
+          'release'=>['release_id'=>'apprel_new','previous_release_id'=>'apprel_old','version'=>'1.2.0','package_sha256'=>str_repeat('b',64)],
+          'verification'=>['contract'=>'vp3.app.release-health.v1','healthy'=>true,'release_id'=>'apprel_new','version'=>'1.2.0','package_sha256'=>str_repeat('b',64)],
           'rolled_back'=>false,
+          'data'=>['schema_version'=>'2','last_snapshot_id'=>'appsnap_test'],
         ];
     }
     if($operation==='apps.system.rollback'){
@@ -101,17 +104,18 @@ $remote=function(int $userId,string $operation,array $payload) use (&$ops,&$acti
         return [
           'changed'=>true,
           'rollback'=>['changed'=>true,'release'=>['release_id'=>$activeRelease,'version'=>'1.0.0','package_sha256'=>str_repeat('a',64)]],
-          'status'=>['rollback_available'=>true],
+          'data_restore'=>['restored'=>true,'snapshot_id'=>'appsnap_test','schema_version'=>'1'],
+          'status'=>['rollback_available'=>true,'rollback_safe'=>true],
         ];
     }
     if($operation==='apps.system.status'){
         return [
-          'contract'=>'vp3.system-app-installation.v1','catalog_version'=>'2026.09.30.2',
+          'contract'=>'vp3.system-app-installation.v1','catalog_version'=>'2026.09.30.3',
           'package'=>[
-            'key'=>'vp3.notes','version'=>'1.1.0','installed_version'=>$installedVersion,'package_sha256'=>str_repeat('a',64),
-            'installed'=>true,'current'=>$installedVersion==='1.1.0','update_available'=>$installedVersion!=='1.1.0','state'=>'running',
+            'key'=>'vp3.notes','version'=>'1.2.0','installed_version'=>$installedVersion,'package_sha256'=>str_repeat('a',64),
+            'installed'=>true,'current'=>$installedVersion==='1.2.0','update_available'=>$installedVersion!=='1.2.0','state'=>'running',
           ],
-          'installed'=>true,'current'=>$installedVersion==='1.1.0','update_available'=>$installedVersion!=='1.1.0','state'=>'running',
+          'installed'=>true,'current'=>$installedVersion==='1.2.0','update_available'=>$installedVersion!=='1.2.0','state'=>'running',
         ];
     }
     if($operation==='hosting.entitlements.reconcile')return ['revision'=>(int)$payload['revision'],'reconcile_result'=>'applied','configured'=>true];
@@ -130,11 +134,13 @@ if(($bound['hosting']['hostname']??'')!=='notes.release.example.com')throw new R
 $revisionBefore=(int)(vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo)['desired_revision']??0);
 
 $status=vp3_system_apps_release_status_v200(1,'vp3.notes',$remote,$testPdo);
-if($status['cloud_version']!=='1.1.0'||$status['release_channel']!=='stable')throw new RuntimeException('Release status did not join Cloud and HomeServer metadata.');
+if($status['cloud_version']!=='1.2.0'||$status['release_channel']!=='stable')throw new RuntimeException('Release status did not join Cloud and HomeServer metadata.');
 if(($status['compatibility']['min_homeserver_version']??'')!=='2.4')throw new RuntimeException('Release compatibility metadata missing.');
+if(($status['data']['schema_version']??'')!=='1')throw new RuntimeException('Cloud release status did not project current HomeServer data schema.');
+if(empty($status['rollback_safe']))throw new RuntimeException('Cloud release status did not project rollback safety.');
 
 $updated=vp3_system_apps_release_update_v200(1,'vp3.notes',$remote,$testPdo);
-if(($updated['homeserver']['installed_version']??'')!=='1.1.0')throw new RuntimeException('Verified System App update did not persist.');
+if(($updated['homeserver']['installed_version']??'')!=='1.2.0')throw new RuntimeException('Verified System App update did not persist.');
 if(empty($updated['verification']['healthy']))throw new RuntimeException('Post-update verification was not retained.');
 if(empty($updated['hosting']['bound'])||!empty($updated['hosting']['pending']))throw new RuntimeException('Hosting/subdomain did not reconcile after update.');
 if(($updated['hosting']['hostname']??'')!=='notes.release.example.com')throw new RuntimeException('Update lost the app subdomain binding.');
@@ -146,6 +152,7 @@ if(($lastSiteOp['payload']['target_app_key']??null)!=='vp3.notes')throw new Runt
 
 $rollback=vp3_system_apps_release_rollback_v200(1,'vp3.notes','test_rollback',$remote,$testPdo);
 if(($rollback['homeserver']['installed_version']??'')!=='1.0.0')throw new RuntimeException('Cloud rollback did not persist previous HomeServer version.');
+if(empty($rollback['data_restore']['restored']))throw new RuntimeException('Cloud rollback did not retain HomeServer app data restore result.');
 if(empty($rollback['hosting']['bound'])||!empty($rollback['hosting']['pending']))throw new RuntimeException('Hosting/subdomain did not reconcile after rollback.');
 if(($rollback['hosting']['hostname']??'')!=='notes.release.example.com')throw new RuntimeException('Rollback lost the app subdomain binding.');
 $revisionAfterRollback=(int)(vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo)['desired_revision']??0);
@@ -165,9 +172,9 @@ if(!$notes||($notes['release']['release_channel']??'')!=='stable'||empty($notes[
 if(($notes['hosting']['hostname']??'')!=='notes.release.example.com')throw new RuntimeException('Release-enriched catalog lost Hosting/subdomain state.');
 
 $cap=vp3_system_apps_capability_v200();
-foreach(['cloud_release_authority','homeserver_activation_authority','compatibility_gates','sha256_release_integrity','post_update_verification','protected_release_rollback','hosting_subdomain_post_release_reconcile'] as $key){
+foreach(['cloud_release_authority','homeserver_activation_authority','compatibility_gates','sha256_release_integrity','post_update_verification','protected_release_rollback','hosting_subdomain_post_release_reconcile','data_schema_projection','pre_migration_recovery_snapshot','rollback_data_restore','irreversible_migration_rollback_block'] as $key){
     if(empty($cap[$key]))throw new RuntimeException('Missing integrated release capability '.$key);
 }
 if(!empty($cap['release_auto_update']))throw new RuntimeException('System App releases must not auto-update.');
 
-echo "System Apps Section 6 integrated Cloud HomeServer Hosting release MySQL: PASS\n";
+echo "System Apps Section 7 Cloud HomeServer data migration and recovery MySQL: PASS\n";
