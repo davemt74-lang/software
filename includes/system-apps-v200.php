@@ -18,6 +18,10 @@ function vp3_system_apps_release_metadata_v200(array $app): array
         'min_homeserver_version'=>$meta['min_homeserver_version']??null,
         'max_homeserver_version'=>$meta['max_homeserver_version']??null,
       ],
+      'data_migration'=>[
+        'target_schema_version'=>(string)($meta['data_schema_version']??'1'),
+        'reversible'=>array_key_exists('data_migration_reversible',$meta)?(bool)$meta['data_migration_reversible']:true,
+      ],
     ];
 }
 
@@ -57,6 +61,8 @@ function vp3_system_apps_release_status_v200(
       'integrity'=>$response['integrity']??['algorithm'=>'sha256','package_sha256'=>$sha],
       'runtime'=>is_array($response['runtime']??null)?$response['runtime']:[],
       'rollback_available'=>!empty($response['rollback_available']),
+      'rollback_safe'=>array_key_exists('rollback_safe',$response)?(bool)$response['rollback_safe']:true,
+      'data'=>is_array($response['data']??null)?$response['data']:[],
       'homeserver'=>$response,
     ];
 }
@@ -173,6 +179,7 @@ function vp3_system_apps_release_rollback_v200(
     $app=vp3_system_apps_owned_row_v110($userId,$appKey,$pdo);
     $release=vp3_system_apps_release_status_v200($userId,$appKey,$remote,$pdo);
     if(empty($release['rollback_available']))throw new RuntimeException('No previous System App release is available for rollback.');
+    if(array_key_exists('rollback_safe',$release)&&empty($release['rollback_safe']))throw new RuntimeException('Rollback is blocked because this release has an irreversible app data migration.');
     $active=(string)($release['runtime']['active_release_id']??'');
     if($active==='')throw new RuntimeException('HomeServer did not return an active System App release.');
 
@@ -206,6 +213,7 @@ function vp3_system_apps_release_rollback_v200(
       'app_key'=>(string)$app['app_key'],
       'changed'=>!empty($response['changed']),
       'rollback'=>$response['rollback']??null,
+      'data_restore'=>$response['data_restore']??null,
       'homeserver'=>$projection,
       'hosting'=>$hosting,
       'reconcile_pending'=>!empty($hosting['pending']),
@@ -265,7 +273,11 @@ function vp3_system_apps_release_query_v200(
     $min=(string)($meta['compatibility']['min_homeserver_version']??'');
     $max=(string)($meta['compatibility']['max_homeserver_version']??'');
     if($min!=='')$answer.="\nCompatibility: HomeServer ".$min.'+'.($max!==''?' through '.$max:'').'.';
-    if($live!==null)$answer.="\nRollback available: ".(!empty($live['rollback_available'])?'yes':'no').'.';
+    if($live!==null){
+        $answer.="\nData schema: ".(string)($live['data']['schema_version']??$meta['data_migration']['target_schema_version']??'1').'.';
+        $answer.="\nRollback available: ".(!empty($live['rollback_available'])?'yes':'no').'.';
+        if(!empty($live['rollback_available'])&&empty($live['rollback_safe']))$answer.=' Rollback is blocked by an irreversible data migration.';
+    }
     $hosting=vp3_system_apps_hosting_projection_v120((int)$user['id'],(int)$row['id'],$pdo);
     if(!empty($hosting['bound']))$answer.="\nHosted at ".(string)($hosting['hostname']??$hosting['display_name']??'the assigned Hosting site').'; release changes reconcile this route automatically.';
     if(function_exists('agent_tool_log'))agent_tool_log($user,'system_apps.release',$query,'success',[
@@ -304,6 +316,10 @@ function vp3_system_apps_capability_v200(): array
       'post_update_verification'=>true,
       'protected_release_rollback'=>true,
       'hosting_subdomain_post_release_reconcile'=>true,
+      'data_schema_projection'=>true,
+      'pre_migration_recovery_snapshot'=>true,
+      'rollback_data_restore'=>true,
+      'irreversible_migration_rollback_block'=>true,
       'release_auto_update'=>false,
     ]);
 }
