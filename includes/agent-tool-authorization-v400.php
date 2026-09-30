@@ -326,6 +326,11 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
         if(!empty($systemAppsHealth['handled']))return vp3_agent_tool_authorize_result_v400($systemAppsHealth,$user,$query);
     }
 
+    if(function_exists('vp3_user_apps_agent_query_v220')){
+        $userApps=vp3_user_apps_agent_query_v220($query,$user,$conversationId,null);
+        if(!empty($userApps['handled']))return vp3_agent_tool_authorize_result_v400($userApps,$user,$query);
+    }
+
     if(function_exists('vp3_system_apps_permission_query_v210')){
         $systemAppsPermissions=vp3_system_apps_permission_query_v210($query,$user,$conversationId,null,$pdo);
         if(!empty($systemAppsPermissions['handled']))return vp3_agent_tool_authorize_result_v400($systemAppsPermissions,$user,$query);
