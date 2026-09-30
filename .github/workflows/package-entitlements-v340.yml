@@ -61,6 +61,7 @@ jobs:
           php -l includes/system-apps-v160.php
           php -l includes/system-apps-v170.php
           php -l includes/system-apps-v180.php
+          php -l includes/system-apps-v190.php
           php -l api/system-apps-v100.php
           php -l apps.php
 
@@ -93,3 +94,6 @@ jobs:
 
       - name: System Apps health diagnostics contract
         run: node tests/system-apps-v170-contract.mjs
+
+      - name: System Apps end-to-end Agent action UX contract
+        run: node tests/system-apps-v190-contract.mjs
