@@ -161,7 +161,10 @@ function vp3_system_apps_agent_execute_v160(
         return ['installation'=>vp3_system_apps_install_v110($uid,$appKey,$remote,$pdo)];
     }
     if($type==='update.verify'){
-        return ['release'=>vp3_system_apps_release_update_v200($uid,$appKey,$remote,$pdo)];
+        if(function_exists('vp3_system_apps_release_update_v200')){
+            return ['release'=>vp3_system_apps_release_update_v200($uid,$appKey,$remote,$pdo)];
+        }
+        return ['installation'=>vp3_system_apps_install_v110($uid,$appKey,$remote,$pdo)];
     }
     if($type==='release.rollback'){
         return ['release'=>vp3_system_apps_release_rollback_v200($uid,$appKey,'agent_confirmed',$remote,$pdo)];
@@ -333,12 +336,13 @@ function vp3_system_apps_agent_action_query_v160(
         $actionType='install';$preview=['app'=>$name,'target'=>'HomeServer'];$intro='I prepared installation of '.$name.' on HomeServer.';
     }elseif(preg_match('/\b(?:rollback|roll back|revert)\b/i',$query)){
         $actionType='release.rollback';
+        if(!function_exists('vp3_system_apps_release_metadata_v200'))throw new RuntimeException('System App release lifecycle is unavailable.');
         $meta=vp3_system_apps_release_metadata_v200(vp3_system_apps_agent_catalog_row_v160($uid,$appKey,$pdo));
         $preview=['app'=>$name,'target'=>'HomeServer','operation'=>'rollback_previous_release','release_channel'=>$meta['release_channel']];
         $intro='I prepared a rollback of '.$name.' to its previous verified HomeServer release. Any bound Hosting/subdomain route will be reconciled afterward.';
     }elseif(preg_match('/\b(?:update|upgrade|verify)\b/i',$query)){
         $appRow=vp3_system_apps_agent_catalog_row_v160($uid,$appKey,$pdo);
-        $meta=vp3_system_apps_release_metadata_v200($appRow);
+        $meta=function_exists('vp3_system_apps_release_metadata_v200')?vp3_system_apps_release_metadata_v200($appRow):['release_channel'=>'stable','release_notes'=>[]];
         $actionType='update.verify';
         $preview=['app'=>$name,'target'=>'HomeServer','operation'=>'verified_update','to_version'=>(string)$appRow['current_version'],'release_channel'=>$meta['release_channel'],'release_notes'=>$meta['release_notes']];
         $intro='I prepared a verified update of '.$name.' on HomeServer. Its Hosting/subdomain binding will be reconciled after activation.';
