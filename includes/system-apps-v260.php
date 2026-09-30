@@ -51,7 +51,7 @@ function vp3_app_manager_query_v260(
     string $query,array $user,int $conversationId=0,?callable $remote=null
 ): array {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    if(!preg_match('/\b(?:app manager|my apps|installed apps|available apps|system apps|app updates|hosted apps|shared apps|what apps)\b/i',$query))return $empty;
+    if(!preg_match('/\b(?:app manager|my apps|installed apps|available apps|vp3 apps|system apps|app updates|hosted apps|shared apps|what apps)\b/i',$query))return $empty;
     $uid=(int)($user['id']??0);if($uid<1)return $empty;
     try{$state=vp3_app_manager_status_v260($uid,$remote);}
     catch(Throwable $e){return $empty;}
@@ -77,7 +77,8 @@ function vp3_system_apps_capability_v260(): array
       'unified_app_manager_contract'=>'vp3.unified-app-manager.v1',
       'app_manager_agent_reads'=>true,
       'app_manager_cloud_registry'=>false,
-      'vp3_system_app_library'=>true,
+      'vp3_optional_app_library'=>true,
+      'core_homeserver_features_are_apps'=>false,
       'app_store'=>false,
     ]);
 }
