@@ -56,3 +56,12 @@ assert.match(hosting,/2083/);
 assert.match(hosting,/token_suffix/);
 
 console.log('Cloud Hosting V1 Section 1 architecture contract: PASS');
+
+
+const mainSidebar=fs.readFileSync(new URL('includes/main-sidebar.php',root),'utf8');
+const memberNav=fs.readFileSync(new URL('includes/member-navigation.php',root),'utf8');
+assert.match(mainSidebar,/['"]hosting['"]=>['"]Hosting & Subdomains['"]/);
+assert.match(mainSidebar,/['"]hosting['"]=>['"]Build & Host['"]/);
+assert.match(mainSidebar,/\$mainSidebarPrimaryKeys\['hosting'\]=true/);
+assert.match(mainSidebar,/if \(isset\(\$mainSidebarLinkIndex\['hosting'\]\)\) \$mainSidebarPrimaryLinks\[\] = \$mainSidebarLinkIndex\['hosting'\]/);
+assert.match(memberNav,/\$add\(\$links,'hosting','Cloud Hosting',url\('\/hosting\.php'\),'identity'\)/);

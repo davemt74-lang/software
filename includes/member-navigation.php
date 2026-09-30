@@ -149,12 +149,7 @@ function member_navigation_menu_links(?array $user = null): array
         $add($links,'account','My Account',url('/account.php'),'identity');
         $add($links,'client_updates','Client Updates',url('/client-updates.php'),'identity');
         $add($links,'homeserver','HomeServer',url('/settings-homeserver.php'),'identity');
-        if(function_exists('vp3_cloud_hosting_entitlement_snapshot_v100')){
-            try{
-                $hostingEntitlements=vp3_cloud_hosting_entitlement_snapshot_v100($user);
-                if(!empty($hostingEntitlements['entitlements']['hosting.access']['enabled']))$add($links,'hosting','Cloud Hosting',url('/hosting.php'),'identity');
-            }catch(Throwable $e){}
-        }
+        $add($links,'hosting','Cloud Hosting',url('/hosting.php'),'identity');
         $add($links,'plugins','Plugins',url('/plugins.php'),'identity');
         $add($links,'messages','Messages',url('/messages.php'),'identity');
         $add($links,'subscription','Plan & Usage',url('/subscription.php'),'identity');
