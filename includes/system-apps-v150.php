@@ -13,7 +13,7 @@ function vp3_system_apps_agent_snapshot_v150(array $user,?PDO $pdo=null): array
       'counts'=>['available'=>0,'owned'=>0,'installed'=>0,'running'=>0,'hosted'=>0,'updates'=>0,'cleanup_pending'=>0],
       'apps'=>[],
     ];
-    $catalog=vp3_system_apps_catalog_v140($user,$pdo);
+    $catalog=function_exists('vp3_system_apps_catalog_v200')?vp3_system_apps_catalog_v200($user,$pdo):vp3_system_apps_catalog_v140($user,$pdo);
     $apps=[];
     foreach($catalog['apps'] as $app){
         $ui=(array)($app['ui']??[]);
@@ -24,6 +24,7 @@ function vp3_system_apps_agent_snapshot_v150(array $user,?PDO $pdo=null): array
           'name'=>(string)$app['name'],
           'category'=>(string)$app['category'],
           'catalog_version'=>(string)$app['current_version'],
+          'release'=>is_array($app['release']??null)?$app['release']:[],
           'availability'=>(string)$app['availability'],
           'owned'=>!empty($app['owned']),
           'state'=>(string)($ui['primary_state']??'available'),
@@ -76,6 +77,7 @@ function vp3_system_apps_agent_context_items_v150(array $user,string $query='',?
           (string)$app['name'],
           'state '.(string)$app['state'],
           !empty($app['installed_version'])?'version '.(string)$app['installed_version']:'',
+          !empty($app['release']['release_channel'])?'channel '.(string)$app['release']['release_channel']:'',
           !empty($app['update_available'])?'update available':'',
           !empty($app['hostname'])?'hosted at '.(string)$app['hostname']:'',
           !empty($app['error'])?'issue '.(string)$app['error']:'',
