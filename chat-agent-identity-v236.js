@@ -119,14 +119,15 @@
   let onboardingCard = null;
   let currentStep = 0;
   let voiceGuideEnabled = false;
+  let voiceChoiceMade = false;
   let premiumVoice = null;
   let busy = false;
   let draft = null;
 
   const steps = [
-    {key:'voice',title:'Choose your onboarding experience',prompt:'Welcome. Would you like voice integration turned on while I guide you through setting up your agent?'},
-    {key:'agent',title:'Name your agent',prompt:'What would you like to name your agent? You can keep Stonefellow or choose a personal name.'},
-    {key:'profile',title:'Set up your profile',prompt:'Next, choose your profile address and whether your profile is visible to other people.'},
+    {key:'agent',title:'Meet your Agent',prompt:'Welcome to VP3 Cloud. Choose a name for me, or accept the default. This is our first essential step.'},
+    {key:'profile',title:'Choose your profile address',prompt:'Choose a unique profile address. Your Cloud identity is then ready; everything else is optional.'},
+    {key:'voice',title:'Optional Agent Voice',prompt:'Would you like voice integration as I guide you through optional services?'},
     {key:'profile_agent',title:'Turn on your Profile Agent',prompt:'Your Profile Agent can answer visitors on your profile using only the information you allow it to use.'},
     {key:'chat',title:'Choose your chat availability',prompt:'Choose whether you appear online and whether other Stonefellow users can message you.'},
     {key:'voice_clone',title:'Set up your voice clone',prompt:'You can also create a private voice clone from your Voice Profile. This is optional.'},
@@ -195,7 +196,7 @@
       agent_name:agentName,
       username:String(stored.username || profile.username || state.suggested_username || ''),
       profile_public:stored.profile_public !== undefined ? Boolean(stored.profile_public) : (profile.is_public !== undefined ? Boolean(Number(profile.is_public)) : true),
-      profile_agent_enabled:stored.profile_agent_enabled !== undefined ? Boolean(stored.profile_agent_enabled) : (state.public_agent_status?.enabled !== undefined ? Boolean(state.public_agent_status.enabled) : true),
+      profile_agent_enabled:stored.profile_agent_enabled !== undefined ? Boolean(stored.profile_agent_enabled) : (state.public_agent_status?.enabled !== undefined ? Boolean(state.public_agent_status.enabled) : false),
       profile_agent_greeting:String(stored.profile_agent_greeting || profile.profile_agent_greeting || defaultGreeting(agentName)),
       presence_mode:String(stored.presence_mode || chat.presence_mode || 'online'),
       social_chat_enabled:stored.social_chat_enabled !== undefined ? Boolean(stored.social_chat_enabled) : chat.social_chat_enabled !== false,
@@ -209,7 +210,7 @@
     const status = onboardingCard?.querySelector('.chat-agent-name-status-v236'); if (!status) return;
     status.textContent = message; status.className = `chat-agent-name-status-v236${kind ? ` ${kind}` : ''}`;
   }
-  function voiceControlMarkup() { if (currentStep === 0) return ''; return `<button class="chat-agent-voice-control-v241" type="button" data-toggle-guide-voice>${voiceGuideEnabled ? '🔊 Voice on' : '🔇 Voice off'}</button>`; }
+  function voiceControlMarkup() { if (currentStep <= steps.findIndex(item=>item.key==='voice')) return ''; return `<button class="chat-agent-voice-control-v241" type="button" data-toggle-guide-voice>${voiceGuideEnabled ? '🔊 Voice on' : '🔇 Voice off'}</button>`; }
   function headerMarkup() {
     const progress = Math.round(((currentStep + 1) / steps.length) * 100);
     return `<header class="chat-agent-onboarding-head-v241"><div><small>Agent setup</small><h2>Set up your Stonefellow</h2></div><div class="chat-agent-onboarding-progress-v241"><strong>Step ${currentStep + 1} of ${steps.length}</strong><div class="chat-agent-onboarding-track-v241"><i style="width:${progress}%"></i></div></div></header>`;
@@ -256,7 +257,7 @@
       return `${copy}<div class="chat-agent-choice-grid-v241"><button class="chat-agent-choice-v241" type="button" data-voice-choice="on"><span class="chat-agent-choice-icon-v241">🔊</span><span><strong>Turn on Agent Voice</strong><span>Allow spoken Agent responses and notification announcements. I’ll also speak the onboarding prompts.</span></span></button><button class="chat-agent-choice-v241" type="button" data-voice-choice="off"><span class="chat-agent-choice-icon-v241">⌨</span><span><strong>Keep Agent Voice off</strong><span>Continue with text. Voice Conversation and spoken notifications stay off until you enable Agent Voice later.</span></span></button></div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>`;
     }
     if(step.key==='agent') return `${copy}<div class="chat-agent-form-v241"><label class="chat-agent-field-v241"><span>Agent name</span><div class="chat-agent-inline-v241"><input name="agent_name" maxlength="190" autocomplete="off" value="${esc(draft.agent_name)}" placeholder="Name your agent"><button class="chat-agent-button-v241" type="button" data-keep-system>Keep ${esc(cfg.systemName||'STONEFELLOW')}</button></div><small class="chat-agent-hint-v241">This becomes your personal agent identity across the workspace.</small></label></div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>${actionsMarkup()}`;
-    if(step.key==='profile') return `${copy}<div class="chat-agent-form-v241"><label class="chat-agent-field-v241"><span>Profile address</span><input name="username" maxlength="60" autocomplete="off" value="${esc(draft.username)}" placeholder="your-name"><small class="chat-agent-hint-v241">Letters, numbers, dots, dashes and underscores.</small>${profilePathMarkup()}</label><div><label class="chat-agent-toggle-v241"><span><strong>Show my profile</strong><small>Publish your profile so people can open your profile view.</small></span><input type="checkbox" name="profile_public"${draft.profile_public?' checked':''}></label></div></div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>${actionsMarkup()}`;
+    if(step.key==='profile') return `${copy}<div class="chat-agent-form-v241"><label class="chat-agent-field-v241"><span>Profile address</span><input name="username" maxlength="60" autocomplete="off" value="${esc(draft.username)}" placeholder="your-name"><small class="chat-agent-hint-v241">Letters, numbers, dots, dashes and underscores.</small>${profilePathMarkup()}</label><div><label class="chat-agent-toggle-v241"><span><strong>Show my profile</strong><small>Publish your profile so people can open your profile view.</small></span><input type="checkbox" name="profile_public"${draft.profile_public?' checked':''}></label></div></div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>${actionsMarkup()}<div class="chat-agent-onboarding-actions-v241"><span>Everything else is optional.</span><button class="chat-agent-button-v241" type="button" data-skip-optional-setup>Finish Cloud essentials →</button></div>`;
     if(step.key==='profile_agent') return `${copy}<div class="chat-agent-form-v241"><div><label class="chat-agent-toggle-v241"><span><strong>Enable Profile Agent</strong><small>Let visitors chat with your agent from your profile. It only uses information you permit.</small></span><input type="checkbox" name="profile_agent_enabled"${draft.profile_agent_enabled?' checked':''}></label></div><label class="chat-agent-field-v241"><span>Profile Agent greeting</span><textarea name="profile_agent_greeting" maxlength="500">${esc(draft.profile_agent_greeting)}</textarea></label><div class="chat-agent-panel-v241"><strong>Same agent, separate permissions</strong><p>Your Profile Agent uses your agent identity, but public data access remains controlled by Profile Agent permissions.</p></div></div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>${actionsMarkup()}`;
     if(step.key==='chat') return `${copy}<div class="chat-agent-form-v241"><label class="chat-agent-field-v241"><span>My availability</span><select name="presence_mode"><option value="online"${draft.presence_mode==='online'?' selected':''}>Online</option><option value="offline"${draft.presence_mode==='offline'?' selected':''}>Offline</option></select></label><div><label class="chat-agent-toggle-v241"><span><strong>Online user-to-user chat</strong><small>Allow eligible users to find you and send direct messages.</small></span><input type="checkbox" name="social_chat_enabled"${draft.social_chat_enabled?' checked':''}></label><label class="chat-agent-toggle-v241"><span><strong>Incoming chat sound</strong><small>Play one notification sound when a new direct message arrives.</small></span><input type="checkbox" name="sound_enabled"${draft.sound_enabled?' checked':''}></label></div></div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>${actionsMarkup()}`;
     if(step.key==='workspace') return workspaceMarkup(copy);
@@ -283,18 +284,24 @@
     if(!onboardingCard)return;
     onboardingCard.querySelectorAll('[data-voice-choice]').forEach(button=>button.addEventListener('click',async()=>{
       const choice=button.dataset.voiceChoice==='on'; voiceGuideEnabled=choice; writeVoicePreference(choice?'on':'off'); button.disabled=true; setStatus('Saving preference…');
-      try { const next=steps[1].key; await persistProgress(next,choice?'on':'off',choice?{'voice.access':true}:{}); if(choice){try{await premiumGuideVoice();}catch(_error){}}else stopGuideVoice(); currentStep=1;renderStep(false);if(choice)void speakGuide(steps[currentStep].prompt); }
+      try { const next=steps[currentStep+1].key; await persistProgress(next,choice?'on':'off',choice?{'voice.access':true}:{}); voiceChoiceMade=true; if(choice){try{await premiumGuideVoice();}catch(_error){}}else stopGuideVoice(); currentStep+=1;renderStep(false);if(choice)void speakGuide(steps[currentStep].prompt); }
       catch(error){button.disabled=false;setStatus(error instanceof Error?error.message:'Voice preference could not be saved.','error');}
     }));
     onboardingCard.querySelector('[data-toggle-guide-voice]')?.addEventListener('click',async()=>{
       const next=!voiceGuideEnabled; voiceGuideEnabled=next; writeVoicePreference(next?'on':'off');
-      try { await persistProgress(steps[currentStep].key,next?'on':'off',next?{'voice.access':true}:{}); } catch(error){setStatus(error instanceof Error?error.message:'Voice preference could not be saved.','error');}
+      try { await persistProgress(steps[currentStep].key,next?'on':'off',next?{'voice.access':true}:{}); voiceChoiceMade=true; } catch(error){setStatus(error instanceof Error?error.message:'Voice preference could not be saved.','error');}
       if(!next)stopGuideVoice();else{try{await premiumGuideVoice();}catch(_error){}}renderStep(false);if(next)void speakGuide(steps[currentStep].prompt);
     });
     onboardingCard.querySelector('[data-keep-system]')?.addEventListener('click',()=>{const input=onboardingCard.querySelector('[name="agent_name"]');if(input){input.value=cfg.systemName||'STONEFELLOW';input.focus();}});
     onboardingCard.querySelector('[data-onboarding-back]')?.addEventListener('click',async()=>{const leaving=steps[currentStep]?.key;captureCurrentStep();currentStep=Math.max(0,currentStep-1);try{await persistProgress(steps[currentStep].key,null,leaving==='workspace'?(draft.workflow_interests||{}):{});}catch(_error){}renderStep(true);});
     onboardingCard.querySelector('[data-onboarding-next]')?.addEventListener('click',async()=>{const leaving=steps[currentStep]?.key;if(!captureCurrentStep())return;const button=onboardingCard.querySelector('[data-onboarding-next]');if(button)button.disabled=true;const nextIndex=Math.min(steps.length-1,currentStep+1);try{await persistProgress(steps[nextIndex].key,null,leaving==='workspace'?(draft.workflow_interests||{}):{});currentStep=nextIndex;renderStep(true);}catch(error){if(button)button.disabled=false;setStatus(error instanceof Error?error.message:'Progress could not be saved.','error');}});
     onboardingCard.querySelector('[data-refresh-voice]')?.addEventListener('click',async event=>{const target=event.currentTarget;target.disabled=true;setStatus('Checking Voice Profile…');try{const data=await onboardingRequest('state');exposeOnboardingState(data.state);setStatus('Voice status refreshed.','success');renderStep(false);}catch(error){setStatus(error instanceof Error?error.message:'Voice status could not be refreshed.','error');}finally{target.disabled=false;}});
+    onboardingCard.querySelector('[data-skip-optional-setup]')?.addEventListener('click',async()=>{
+      if(!captureCurrentStep())return;
+      const control=onboardingCard.querySelector('[data-skip-optional-setup]');control.disabled=true;
+      try { await persistProgress('review');currentStep=steps.findIndex(step=>step.key==='review');renderStep(true); }
+      catch(error){control.disabled=false;setStatus(error.message||'Could not save essential setup.','error');}
+    });
     onboardingCard.querySelector('[data-onboarding-finish]')?.addEventListener('click',finishOnboarding);
   }
 
@@ -302,7 +309,7 @@
 
   async function finishOnboarding(){
     if(busy||!captureCurrentStep())return;busy=true;const button=onboardingCard?.querySelector('[data-onboarding-finish]');if(button){button.disabled=true;button.textContent='Saving…';}setStatus('Saving your setup…');
-    try{await persistProgress('review',null,draft.workflow_interests||{});const data=await onboardingRequest('finish',{...draft,voice_preference:voiceGuideEnabled?'on':'off'});exposeOnboardingState(data.state);try{window.sessionStorage.removeItem(stateStorageKey('draft'));}catch(_error){}setStatus('Setup complete. Opening your agent…','success');if(voiceGuideEnabled)void speakGuide(`Setup complete. ${draft.agent_name} is ready.`);window.setTimeout(()=>window.location.assign(data.chat_url||agentUrl(data.agent_id)),350);}catch(error){setStatus(error instanceof Error?error.message:'Onboarding could not be completed.','error');if(button){button.disabled=false;button.textContent='Finish setup';}}finally{busy=false;}
+    try{await persistProgress('review',null,draft.workflow_interests||{});const payload={...draft};if(voiceChoiceMade)payload.voice_preference=voiceGuideEnabled?'on':'off';const data=await onboardingRequest('finish',payload);exposeOnboardingState(data.state);try{window.sessionStorage.removeItem(stateStorageKey('draft'));}catch(_error){}setStatus('Setup complete. Opening your agent…','success');if(voiceGuideEnabled)void speakGuide(`Setup complete. ${draft.agent_name} is ready.`);window.setTimeout(()=>window.location.assign(data.chat_url||agentUrl(data.agent_id)),350);}catch(error){setStatus(error instanceof Error?error.message:'Onboarding could not be completed.','error');if(button){button.disabled=false;button.textContent='Finish setup';}}finally{busy=false;}
   }
 
   function renderTrialNotice(state){
@@ -319,15 +326,22 @@
 
   void loadOnboardingState().then(state=>{
     if(!state||!thread)return;
-    const voicePreference=readVoicePreference();voiceGuideEnabled=voicePreference==='on';renderTrialNotice(state);
-    if((Number(cfg.agentId)>0&&!cfg.forceOnboarding)||!cfg.showOnboarding)return;
+    const voicePreference=readVoicePreference();voiceGuideEnabled=voicePreference==='on';voiceChoiceMade=['on','off'].includes(String(state?.intelligence?.voice_preference||''));renderTrialNotice(state);
+    if(!cfg.showOnboarding)return;
     initializeDraft();
     const serverStep=String(state?.intelligence?.current_step||'');const serverIndex=steps.findIndex(step=>step.key===serverStep);
     if(cfg.forceOnboarding&&state?.onboarding_dismissed){
       if((state?.missing||[]).includes('agent_named'))currentStep=steps.findIndex(step=>step.key==='agent');
       else if((state?.missing||[]).includes('profile_username'))currentStep=steps.findIndex(step=>step.key==='profile');
       else currentStep=steps.findIndex(step=>step.key==='workspace');
-    }else currentStep=serverIndex>=0?serverIndex:(voicePreference==='on'||voicePreference==='off'?1:0);
+    }else{
+      const saved=state?.intelligence?.draft||{};
+      const agentAcknowledged=String(saved.agent_name||'').trim()!=='' && serverIndex>0;
+      const profileAcknowledged=String(saved.username||'').trim()!=='' && serverIndex>1;
+      if((state?.missing||[]).includes('agent_named')&&!agentAcknowledged)currentStep=0;
+      else if((state?.missing||[]).includes('profile_username')&&!profileAcknowledged)currentStep=1;
+      else currentStep=serverIndex>=0?serverIndex:0;
+    }
     onboardingCard=document.createElement('section');onboardingCard.className='chat-agent-name-card-v236';onboardingCard.id='chatAgentNameCardV236';onboardingCard.dataset.deterministicOnboarding='v241';
     const firstMessage=thread.querySelector('.message');if(firstMessage)firstMessage.insertAdjacentElement('beforebegin',onboardingCard);else thread.prepend(onboardingCard);
     renderStep(false);if(voiceGuideEnabled&&currentStep>0)void speakGuide(steps[currentStep].prompt);

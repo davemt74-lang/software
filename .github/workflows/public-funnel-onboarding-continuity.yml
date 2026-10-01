@@ -38,6 +38,16 @@ jobs:
           php -l book-demo.php
           php -l api/public-funnel-event.php
           php -l tests/public-funnel-runtime.php
+      - name: Agent onboarding skill, cognitive bridge and retained voice contracts
+        run: |
+          php -l includes/agent-onboarding-skill-v100.php
+          php -l includes/chat-onboarding-v241.php
+          php -l includes/agent-cognitive-loop-v310.php
+          php -l includes/onboarding-intelligence.php
+          node --check chat-agent-identity-v236.js
+          php tests/agent-onboarding-skill-v100.php
+          node tests/chat-onboarding-v241.mjs
+          node tests/agent-onboarding-current-systems-v242.mjs
       - name: Runtime redirect and source contract
         run: php tests/public-funnel-runtime.php
       - name: Static contract syntax

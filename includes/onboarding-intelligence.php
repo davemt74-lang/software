@@ -41,7 +41,7 @@ function onboarding_intelligence_ensure_schema(?PDO $pdo=null): void
 function onboarding_intelligence_default_preferences(int $userId): array
 {
     return [
-        'user_id'=>$userId,'onboarding_dismissed'=>0,'voice_preference'=>null,'onboarding_step'=>'voice',
+        'user_id'=>$userId,'onboarding_dismissed'=>0,'voice_preference'=>null,'onboarding_step'=>'agent',
         'onboarding_draft_json'=>null,'feature_interest_json'=>null,'last_trial_notice_threshold'=>null,'last_trial_notice_at'=>null,
         'draft'=>[],'feature_interests'=>[],
     ];
@@ -69,13 +69,13 @@ function onboarding_intelligence_preferences(PDO $pdo,int $userId,bool $forUpdat
 function onboarding_intelligence_ensure_preference_row(PDO $pdo,int $userId): void
 {
     onboarding_intelligence_ensure_schema($pdo);
-    $pdo->prepare("INSERT IGNORE INTO user_agent_preferences (user_id,onboarding_dismissed,onboarding_step) VALUES (?,0,'voice')")->execute([$userId]);
+    $pdo->prepare("INSERT IGNORE INTO user_agent_preferences (user_id,onboarding_dismissed,onboarding_step) VALUES (?,0,'agent')")->execute([$userId]);
 }
 
 function onboarding_intelligence_valid_step(string $step): string
 {
     $allowed=['voice','agent','profile','profile_agent','chat','voice_clone','workspace','review','complete'];
-    return in_array($step,$allowed,true)?$step:'voice';
+    return in_array($step,$allowed,true)?$step:'agent';
 }
 
 function onboarding_intelligence_save_progress(PDO $pdo,array $user,string $step,array $draft=[],?string $voicePreference=null,array $featureInterests=[]): array
@@ -249,14 +249,15 @@ function onboarding_intelligence_ack_trial_notice(PDO $pdo,int $userId,int $thre
 function onboarding_intelligence_state(PDO $pdo,array $user): array
 {
     if(!onboarding_intelligence_schema_ready($pdo)){
-        return ['build'=>VP3_ONBOARDING_INTELLIGENCE_BUILD,'voice_preference'=>null,'current_step'=>'voice','draft'=>[],'feature_interests'=>[],'trial_notice'=>null,'package_recommendation'=>null,'schema_ready'=>false];
+        return ['build'=>VP3_ONBOARDING_INTELLIGENCE_BUILD,'voice_preference'=>null,'current_step'=>'agent','draft'=>[],'feature_interests'=>[],'trial_notice'=>null,'package_recommendation'=>null,'schema_ready'=>false];
     }
     $prefs=onboarding_intelligence_preferences($pdo,(int)$user['id']);
     $dismissed=!empty($prefs['onboarding_dismissed']);$agents=user_agents_list_v236($pdo,(int)$user['id'],true);$draft=(array)($prefs['draft']??[]);
     $step=$dismissed?'complete':onboarding_intelligence_valid_step((string)($prefs['onboarding_step']??'voice'));
     if(!$dismissed){
-        if(empty($prefs['voice_preference']))$step='voice';
-        elseif(!$agents&&trim((string)($draft['agent_name']??''))==='')$step='agent';
+        // First-run defaults remain compatible with older voice-first rows,
+        // but core identity must precede optional Voice on new/reopened setup.
+        if(!$agents&&trim((string)($draft['agent_name']??''))==='')$step='agent';
     }
     return [
         'build'=>VP3_ONBOARDING_INTELLIGENCE_BUILD,'voice_preference'=>$prefs['voice_preference']??null,'current_step'=>$step,
