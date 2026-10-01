@@ -24,7 +24,9 @@ assert.equal((stream.match(/\$isOwn\?\(string\)\$own\['api_key'\]:null/g)||[]).l
 assert.match(stream,/if\(!\$isOwn&&function_exists\('subscription_ai_commit_usage'\)\)/);
 assert.match(plan,/user_key_unavailable/);
 assert.match(plan,/user_key_ready/);
-assert.match(chat,/\$execution\['cloud_tokens_charged'\]=0/);
+assert.match(chat,/chat_execution_v019_base\(/);
+assert.match(chat,/'user_provider','Cloud user provider'/);
+assert.match(chat,/\$usage,0,0/);
 assert.match(ui,/type="password"/);
 assert.match(ui,/Provider settings saved/);
 assert.match(ui,/api\/user-llm-v1.php/);
