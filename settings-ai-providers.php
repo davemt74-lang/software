@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
-require __DIR__.'/includes/ai-settings.php';
+require_once __DIR__.'/includes/ai-settings.php';
 require_permission('account.access');
 $user=current_user();
 if(!$user)redirect(url('/login.php'));
@@ -65,7 +65,7 @@ async function request(payload){
 function render(next){
  state=next;byId('llmRoute').value=next.route==='own_key'?next.provider:'system';
  for(const form of document.querySelectorAll('[data-provider]')){
-  const provider=form.dataset.llmProvider;const info=next.providers?.[provider];form.querySelector('[data-key-status]').textContent=info?.configured?'Saved key ending '+info.suffix:'No Cloud key saved';
+  const provider=form.dataset.provider;const info=next.providers?.[provider];form.querySelector('[data-key-status]').textContent=info?.configured?'Saved key ending '+info.suffix:'No Cloud key saved';
   if(info?.model)form.querySelector('[name=model]').value=info.model;
  }
 }
