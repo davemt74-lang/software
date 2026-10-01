@@ -27,6 +27,10 @@ assert.match(plan,/user_key_ready/);
 assert.match(chat,/chat_execution_v019_base\(/);
 assert.match(chat,/'user_provider','Cloud user provider'/);
 assert.match(chat,/\$usage,0,0/);
+assert.match(chat,/\$homeState,\$homeAttempted/);
+assert.doesNotMatch(chat,/\$execution\['source_label'\]/);
+assert.match(file('includes/chat-execution-v019.php'),/cloud_tokens_debited/);
+
 assert.match(ui,/type="password"/);
 assert.match(ui,/Provider settings saved/);
 assert.match(ui,/api\/user-llm-v1.php/);
