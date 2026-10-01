@@ -46,7 +46,10 @@ $models=ai_model_catalog();
 <button type="submit">Save encrypted key</button> <button type="button" class="secondary" data-remove="<?=e($provider)?>">Remove key</button>
 </form></article>
 <?php endforeach; ?>
-<article class="llm-card"><h2>HomeServer provider keys</h2><p>Manage Ollama, OpenAI, Anthropic and OpenRouter in your local HomeServer's Agent Brain settings. For security, Cloud shows only its own provider configuration and does not copy local keys.</p><a href="<?=e(url('/settings-homeserver.php'))?>">View Cloud–HomeServer connection</a></article>
+<article class="llm-card"><h2>HomeServer provider keys</h2>
+<p>Manage Ollama, OpenAI, Anthropic and OpenRouter in your local HomeServer's Agent Brain settings. Cloud uses paired capability status but never transfers local keys or sends Cloud personal keys to HomeServer.</p>
+<p id="llmHomeStatus" role="status" aria-live="polite">Reading paired HomeServer status…</p>
+<a href="<?=e(url('/settings-homeserver.php'))?>">View Cloud–HomeServer connection</a></article>
 </section></main></div>
 <script src="<?=e(url('/member-shell-v77.js'))?>"></script>
 <script>
@@ -87,5 +90,15 @@ byId('llmSaveRoute').addEventListener('click',()=>run(()=>{
  return request({action:'select',route:value==='system'?'system':'own_key',provider:value==='system'?'':value});
 }));
 request().then(render).catch(e=>status(e.message,true));
+fetch(<?=json_encode(url('/api/homeserver-connection-v1200.php'))?>,{credentials:'same-origin',cache:'no-store'})
+ .then(response=>response.ok?response.json():Promise.reject())
+ .then(data=>{
+    const state=data.status||{},node=byId('llmHomeStatus');
+    if(!node)return;
+    const raw=state.compute||state.capabilities?.inference||state.inference||{};
+    const source=String(raw.source_label||raw.compute_source||raw.source||'');
+    node.textContent=source?'Paired HomeServer: '+source:
+      'HomeServer inference status is not reported here. Open connection settings for details.';
+ }).catch(()=>{const node=byId('llmHomeStatus');if(node)node.textContent='HomeServer not connected or status unavailable.';});
 })();
 </script></body></html>

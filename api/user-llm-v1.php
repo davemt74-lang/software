@@ -13,8 +13,7 @@ if(!$user||(int)($user['id']??0)<1)vp3_llm_json(['ok'=>false,'error'=>'login_req
 if(!has_permission('account.access',$user))vp3_llm_json(['ok'=>false,'error'=>'forbidden'],403);
 try {
     $pdo=db();if(!$pdo)throw new RuntimeException('Database unavailable.');
-    // A missing table must not be silently treated as successful credential storage.
-    vp3_user_llm_v1_schema($pdo);
+    // Schema is created by setup/upgrade, not by an ordinary user GET.
     if($_SERVER['REQUEST_METHOD']==='GET'){
         $state=vp3_user_llm_v1_read($pdo,(int)$user['id']);
         vp3_llm_json(['ok'=>true,'state'=>$state,
