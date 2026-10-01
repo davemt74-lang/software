@@ -601,7 +601,10 @@ function agent_cognitive_loop_v310_run(array $user): array
     $candidates=array_merge(
         agent_cognitive_loop_v310_base_candidates($user,$context),
         agent_cognitive_loop_v310_notification_signals($pdo,$user,$since),
-        agent_cognitive_loop_v310_analytics_candidates($analytics)
+        agent_cognitive_loop_v310_analytics_candidates($analytics),
+        // One bounded, owner-controlled onboarding proposal from canonical state.
+        ($skillCandidate=function_exists('vp3_agent_onboarding_skill_candidate_v100')
+            ?vp3_agent_onboarding_skill_candidate_v100($user):null)?[$skillCandidate]:[]
     );
 
     // PRIORITIZE + PLAN: reuse existing scoring feedback, suppression and risk

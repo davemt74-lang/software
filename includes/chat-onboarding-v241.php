@@ -114,6 +114,21 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
         try{$stmt=$pdo->prepare('SELECT status FROM homeserver_connections WHERE user_id=? LIMIT 1');$stmt->execute([$uid]);$homeState=(string)($stmt->fetchColumn()?:'unpaired');}catch(Throwable $e){}
     }
     $homeConnected=in_array($homeState,['connected','paired'],true);
+    // Optional subdomain creation uses the existing hosting entitlement and
+    // cloud_hosting_sites owner records; it is never a core setup requirement.
+    $hostingReady=function_exists('vp3_cloud_hosting_schema_ready_v100')
+        &&vp3_cloud_hosting_schema_ready_v100($pdo);
+    $hostingAllowed=false;$hostingCreated=false;$hostname='';
+    if($hostingReady){
+        try{
+            $entitlement=vp3_cloud_hosting_entitlement_v100($user,'hosting.access');
+            $hostingAllowed=!empty($entitlement['enabled']);
+            $host=$pdo->prepare('SELECT requested_hostname FROM cloud_hosting_sites WHERE user_id=? AND requested_hostname IS NOT NULL ORDER BY id ASC LIMIT 1');
+            $host->execute([$uid]);$hostname=(string)($host->fetchColumn()?:'');
+            $hostingCreated=$hostname!=='';
+        }catch(Throwable $e){$hostingReady=false;}
+    }
+
 
     $transcriptionAllowed=!empty($permissions['transcriptions']);
 
@@ -162,6 +177,15 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
             'status'=>$teamCount>0?$teamCount.' active Team relationship'.($teamCount===1?'':'s'):($teamPermitted?'Ready to invite your Team':'Team access is not included'),
             'setup_url'=>url('/team.php'),'action_label'=>'Manage Team','usage_count'=>$teamCount,'milestone_label'=>'First Team relationship created',
         ],
+        'hosting'=>[
+            'label'=>'Your first subdomain',
+            'description'=>'Reserve your first VP3 hosted address; HomeServer integration and deployment can follow later.',
+            'interest_key'=>'workflow.hosting',
+            'permitted'=>$hostingAllowed,'configured'=>$hostingCreated,'available'=>$hostingReady&&$hostingAllowed,
+            'status'=>$hostingCreated?'Subdomain created: '.$hostname:($hostingAllowed?'No subdomain created yet':'Hosting is not included in this package'),
+            'setup_url'=>url('/hosting.php#new-site'),'action_label'=>'Create Subdomain',
+            'usage_count'=>$hostingCreated?1:0,'milestone_label'=>'First subdomain created',
+        ],
         'homeserver'=>[
             'label'=>'HomeServer','description'=>'Pair private local knowledge, tools, models and compute with the same VP3 Agent.',
             'interest_key'=>'workflow.homeserver','permitted'=>!empty($permissions['personal_knowledge']),'configured'=>$homeConnected,'available'=>$homeReady&&!empty($permissions['personal_knowledge']),
@@ -174,7 +198,7 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
 function chat_onboarding_v241_activation_state(array $workspace,array $intelligence,bool $requiredSetupComplete): array
 {
     $interests=(array)($intelligence['feature_interests']??[]);
-    $priority=['browser'=>95,'booking'=>92,'commerce'=>90,'teams'=>86,'homeserver'=>84,'transcription'=>76,'meetings'=>74,'calendar'=>72,'analytics'=>70];
+    $priority=['hosting'=>90,'browser'=>95,'booking'=>92,'commerce'=>90,'teams'=>86,'homeserver'=>84,'transcription'=>76,'meetings'=>74,'calendar'=>72,'analytics'=>70];
     $items=[];$pending=[];$selectedCount=0;$configuredCount=0;$deferredCount=0;$blockedCount=0;
     foreach($workspace as $key=>$item){
         $interest=(string)($item['interest_key']??'');if($interest==='')continue;
@@ -245,7 +269,7 @@ function chat_onboarding_v241_state(PDO $pdo,array $user): array
     $package=chat_onboarding_v241_package_state($user);$intelligence=onboarding_intelligence_state($pdo,$user);$workspace=chat_onboarding_v241_workspace_state($pdo,$user,$permissions);
     $interests=(array)($intelligence['feature_interests']??[]);foreach($workspace as $key=>&$item){$interest=(string)($item['interest_key']??'');$item['selected']=$interest!==''&&!empty($interests[$interest]);}unset($item);
     $activation=chat_onboarding_v241_activation_state($workspace,$intelligence,!$missingRequired);
-    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'workspace'=>$workspace,'activation'=>$activation,'setup'=>$requiredSetup,'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
+    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'workspace'=>$workspace,'activation'=>$activation,'setup'=>$requiredSetup,'onboarding_skill'=>vp3_agent_onboarding_skill_state_v100(['user'=>['id'=>(int)$user['id']],'setup'=>$requiredSetup,'intelligence'=>$intelligence,'activation'=>$activation]),'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
 }
 
 function chat_onboarding_v241_empty_tool_result(): array{return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];}

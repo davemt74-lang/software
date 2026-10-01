@@ -40,6 +40,7 @@ for(const route of ['/connected-browsers.php','/artist-listening.php','/meetings
 }
 assert.match(domain,/optional systems|optional tools|required setup/i,'optional systems must stay outside required completion');
 assert.match(ui,/Connect the parts of VP3 you want to use/);
+assert.ok(ui.indexOf("key:'agent'")<ui.indexOf("key:'profile'")&&ui.indexOf("key:'profile'")<ui.indexOf("key:'voice'"),'Required Cloud identity precedes optional onboarding');
 assert.match(ui,/workflow_interests/);
 assert.match(ui,/Optional by design/);
 assert.match(ui,/cfg\.forceOnboarding/);

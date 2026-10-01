@@ -11,7 +11,7 @@ $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
-$agentIdentityBuild = 'chat-onboarding-current-systems-v242-20260921';
+$agentIdentityBuild = 'cloud-agent-onboarding-skill-v100-20261001';
 $profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
@@ -188,10 +188,10 @@ try {
             if($validatedConversationId>0)$agentInitialConversationId=$validatedConversationId;
         }
 
+        // Onboarding is a persistent Agent skill: an existing Agent identity
+        // must not hide unfinished required setup or selected optional tasks.
         $agentOnboarding = $setupRequested || (
-            !$activeUserAgent
-            && !$explicitSystemAgent
-            && !user_agents_list_v236($pdoForAgent, (int)$user['id'])
+            !$explicitSystemAgent
             && !user_agent_onboarding_dismissed_v236($pdoForAgent, (int)$user['id'])
         );
     }
