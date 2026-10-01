@@ -16,4 +16,7 @@ assert.match(api,/has_permission/);
 assert.match(api,/CONTENT_LENGTH/);
 assert.match(settings,/data-hs-device-claim/);
 assert.match(js,/action:'claim'/);
+assert.match(js,/URLSearchParams\(window.location.hash.slice\(1\)\)\.get\('hs_code'\)/);
+assert.match(js,/history\.replaceState/);
+assert.match(js,/Approve this connection/);
 console.log('Cloud chat device pairing contract PASS');
