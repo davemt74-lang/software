@@ -119,6 +119,7 @@
   let onboardingCard = null;
   let currentStep = 0;
   let voiceGuideEnabled = false;
+  let voiceChoiceMade = false;
   let premiumVoice = null;
   let busy = false;
   let draft = null;
@@ -195,7 +196,7 @@
       agent_name:agentName,
       username:String(stored.username || profile.username || state.suggested_username || ''),
       profile_public:stored.profile_public !== undefined ? Boolean(stored.profile_public) : (profile.is_public !== undefined ? Boolean(Number(profile.is_public)) : true),
-      profile_agent_enabled:stored.profile_agent_enabled !== undefined ? Boolean(stored.profile_agent_enabled) : (state.public_agent_status?.enabled !== undefined ? Boolean(state.public_agent_status.enabled) : true),
+      profile_agent_enabled:stored.profile_agent_enabled !== undefined ? Boolean(stored.profile_agent_enabled) : (state.public_agent_status?.enabled !== undefined ? Boolean(state.public_agent_status.enabled) : false),
       profile_agent_greeting:String(stored.profile_agent_greeting || profile.profile_agent_greeting || defaultGreeting(agentName)),
       presence_mode:String(stored.presence_mode || chat.presence_mode || 'online'),
       social_chat_enabled:stored.social_chat_enabled !== undefined ? Boolean(stored.social_chat_enabled) : chat.social_chat_enabled !== false,
@@ -283,12 +284,12 @@
     if(!onboardingCard)return;
     onboardingCard.querySelectorAll('[data-voice-choice]').forEach(button=>button.addEventListener('click',async()=>{
       const choice=button.dataset.voiceChoice==='on'; voiceGuideEnabled=choice; writeVoicePreference(choice?'on':'off'); button.disabled=true; setStatus('Saving preference…');
-      try { const next=steps[currentStep+1].key; await persistProgress(next,choice?'on':'off',choice?{'voice.access':true}:{}); if(choice){try{await premiumGuideVoice();}catch(_error){}}else stopGuideVoice(); currentStep+=1;renderStep(false);if(choice)void speakGuide(steps[currentStep].prompt); }
+      try { const next=steps[currentStep+1].key; await persistProgress(next,choice?'on':'off',choice?{'voice.access':true}:{}); voiceChoiceMade=true; if(choice){try{await premiumGuideVoice();}catch(_error){}}else stopGuideVoice(); currentStep+=1;renderStep(false);if(choice)void speakGuide(steps[currentStep].prompt); }
       catch(error){button.disabled=false;setStatus(error instanceof Error?error.message:'Voice preference could not be saved.','error');}
     }));
     onboardingCard.querySelector('[data-toggle-guide-voice]')?.addEventListener('click',async()=>{
       const next=!voiceGuideEnabled; voiceGuideEnabled=next; writeVoicePreference(next?'on':'off');
-      try { await persistProgress(steps[currentStep].key,next?'on':'off',next?{'voice.access':true}:{}); } catch(error){setStatus(error instanceof Error?error.message:'Voice preference could not be saved.','error');}
+      try { await persistProgress(steps[currentStep].key,next?'on':'off',next?{'voice.access':true}:{}); voiceChoiceMade=true; } catch(error){setStatus(error instanceof Error?error.message:'Voice preference could not be saved.','error');}
       if(!next)stopGuideVoice();else{try{await premiumGuideVoice();}catch(_error){}}renderStep(false);if(next)void speakGuide(steps[currentStep].prompt);
     });
     onboardingCard.querySelector('[data-keep-system]')?.addEventListener('click',()=>{const input=onboardingCard.querySelector('[name="agent_name"]');if(input){input.value=cfg.systemName||'STONEFELLOW';input.focus();}});
@@ -308,7 +309,7 @@
 
   async function finishOnboarding(){
     if(busy||!captureCurrentStep())return;busy=true;const button=onboardingCard?.querySelector('[data-onboarding-finish]');if(button){button.disabled=true;button.textContent='Saving…';}setStatus('Saving your setup…');
-    try{await persistProgress('review',null,draft.workflow_interests||{});const data=await onboardingRequest('finish',{...draft,voice_preference:voiceGuideEnabled?'on':'off'});exposeOnboardingState(data.state);try{window.sessionStorage.removeItem(stateStorageKey('draft'));}catch(_error){}setStatus('Setup complete. Opening your agent…','success');if(voiceGuideEnabled)void speakGuide(`Setup complete. ${draft.agent_name} is ready.`);window.setTimeout(()=>window.location.assign(data.chat_url||agentUrl(data.agent_id)),350);}catch(error){setStatus(error instanceof Error?error.message:'Onboarding could not be completed.','error');if(button){button.disabled=false;button.textContent='Finish setup';}}finally{busy=false;}
+    try{await persistProgress('review',null,draft.workflow_interests||{});const payload={...draft};if(voiceChoiceMade)payload.voice_preference=voiceGuideEnabled?'on':'off';const data=await onboardingRequest('finish',payload);exposeOnboardingState(data.state);try{window.sessionStorage.removeItem(stateStorageKey('draft'));}catch(_error){}setStatus('Setup complete. Opening your agent…','success');if(voiceGuideEnabled)void speakGuide(`Setup complete. ${draft.agent_name} is ready.`);window.setTimeout(()=>window.location.assign(data.chat_url||agentUrl(data.agent_id)),350);}catch(error){setStatus(error instanceof Error?error.message:'Onboarding could not be completed.','error');if(button){button.disabled=false;button.textContent='Finish setup';}}finally{busy=false;}
   }
 
   function renderTrialNotice(state){
@@ -325,7 +326,7 @@
 
   void loadOnboardingState().then(state=>{
     if(!state||!thread)return;
-    const voicePreference=readVoicePreference();voiceGuideEnabled=voicePreference==='on';renderTrialNotice(state);
+    const voicePreference=readVoicePreference();voiceGuideEnabled=voicePreference==='on';voiceChoiceMade=['on','off'].includes(String(state?.intelligence?.voice_preference||''));renderTrialNotice(state);
     if(!cfg.showOnboarding)return;
     initializeDraft();
     const serverStep=String(state?.intelligence?.current_step||'');const serverIndex=steps.findIndex(step=>step.key===serverStep);

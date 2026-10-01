@@ -39,6 +39,8 @@ assert.match(ui, /Incoming chat sound/);
 assert.match(ui, /Make a Voice Clone/);
 assert.match(ui, /key:'workspace'/, 'current VP3 systems must extend the existing guided flow');
 assert.match(ui, /data-skip-optional-setup/, 'Optional integrations can be deferred after essential identity');
+assert.match(ui,/if\(voiceChoiceMade\)payload\.voice_preference/,'Skipping optional Voice must preserve the existing Agent Voice master');
+assert.match(ui,/state\.public_agent_status\.enabled\) : false/,'Optional Profile Agent defaults to off without prior choice');
 assert.match(domain, /vp3_agent_onboarding_skill_state_v100/, 'Cloud exposes canonical onboarding skill state');
 assert.match(domain, /\$onboardingTask/, 'Agent Chat setup answers use the same task as Agent Brain');
 assert.match(domain, /'hosting'=>\[/, 'Cloud-first activation inventory includes first subdomain');
