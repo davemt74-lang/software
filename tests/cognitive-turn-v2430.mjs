@@ -54,8 +54,8 @@ const checks=[
     /vp3_cognitive_turn_system_prompt_v2430\(\$turnControl\)/.test(ai)
     &&/ai_system_prompt\(\$context,\$user,\$turnControl\)/.test(ai)],
   ['both hosted providers receive turn control',
-    /ai_openai_response\(\$query, \$history, \$context, \$user, \$turnControl\)/.test(ai)
-    &&/ai_anthropic_response\(\$query, \$history, \$context, \$user, \$turnControl\)/.test(ai)],
+    /ai_openai_response\(\$query, \$history, \$context, \$user, \$turnControl, \$isOwn\?\$own:null\)/.test(ai)
+    &&/ai_anthropic_response\(\$query, \$history, \$context, \$user, \$turnControl, \$isOwn\?\$own:null\)/.test(ai)],
   ['AI token estimation accounts for turn control',
     /ai_subscription_estimated_input_tokens\(\$query,\$history,\$context,\$user,\$turnControl\)/.test(ai)],
   ['generic Chat uses v24.30',
