@@ -70,6 +70,8 @@ on:
       - "includes/member-navigation.php"
       - "includes/subscription-schema.php"
       - "includes/ai-settings.php"
+      - "api/chat-stream-v121.php"
+      - "tests/cloud-user-llm-v1-contract.cjs"
       - "includes/bootstrap.php"
       - "admin/ai.php"
       - "setup.php"
