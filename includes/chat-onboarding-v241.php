@@ -147,8 +147,26 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
     $voiceProfileAllowed=!empty($permissions['voice_profile']);
     $voiceProfileAvailable=$voiceProfileAllowed&&!empty($voice['available']);
     $voiceSamples=max(0,(int)($voice['sample_count']??0));
+    $visual=vp3_visual_onboarding_owner_state_v120($pdo,$user);
 
     return [
+        'visual_profile'=>[
+            'label'=>'Advanced Visual Identity',
+            'description'=>'Optional self-enrollment: after explicit consent, local Tracky automatically collects three suitable face samples. Tracking other people and creating contacts require separate approval.',
+            'interest_key'=>'workflow.visual_profile','permitted'=>true,
+            // Offering onboarding is available; local recognition readiness
+            // remains independently reported by the canonical Tracky site.
+            'available'=>true,'configured'=>false,
+            'status'=>!empty($visual['consented'])
+                ?(!empty($visual['site_ready'])
+                    ?'Consent saved · compatible local Tracky online · enrollment pending'
+                    :'Consent saved · connect a local Tracky device to enroll')
+                :'Not selected · explicit local biometric consent required',
+            'live'=>!empty($visual['site_ready']),'observed_state'=>(string)$visual['stage'],
+            'setup_url'=>url('/chat.php?setup=1'),
+            'action_label'=>'Continue Visual Setup','usage_count'=>0,
+            'milestone_label'=>'Verified local visual enrollment (pending secure receipt)',
+        ],
         'voice_profile'=>[
             'label'=>'Voice Profile','description'=>'Optionally enroll your voice for a better Agent experience. Voice cloning requires separate permission.',
             'interest_key'=>'workflow.voice_profile','permitted'=>$voiceProfileAllowed,
@@ -224,7 +242,7 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
 function chat_onboarding_v241_activation_state(array $workspace,array $intelligence,bool $requiredSetupComplete): array
 {
     $interests=(array)($intelligence['feature_interests']??[]);
-    $priority=['voice_profile'=>77,'hosting'=>90,'browser'=>95,'booking'=>92,'commerce'=>90,'teams'=>86,'homeserver'=>84,'transcription'=>76,'meetings'=>74,'calendar'=>72,'analytics'=>70];
+    $priority=['visual_profile'=>82,'voice_profile'=>77,'hosting'=>90,'browser'=>95,'booking'=>92,'commerce'=>90,'teams'=>86,'homeserver'=>84,'transcription'=>76,'meetings'=>74,'calendar'=>72,'analytics'=>70];
     $items=[];$pending=[];$selectedCount=0;$configuredCount=0;$deferredCount=0;$blockedCount=0;
     foreach($workspace as $key=>$item){
         $interest=(string)($item['interest_key']??'');if($interest==='')continue;
@@ -295,7 +313,13 @@ function chat_onboarding_v241_state(PDO $pdo,array $user): array
     $package=chat_onboarding_v241_package_state($user);$intelligence=onboarding_intelligence_state($pdo,$user);$workspace=chat_onboarding_v241_workspace_state($pdo,$user,$permissions,$voice);
     $interests=(array)($intelligence['feature_interests']??[]);foreach($workspace as $key=>&$item){$interest=(string)($item['interest_key']??'');$item['selected']=$interest!==''&&!empty($interests[$interest]);}unset($item);
     $activation=chat_onboarding_v241_activation_state($workspace,$intelligence,!$missingRequired);
-    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'workspace'=>$workspace,'activation'=>$activation,'setup'=>$requiredSetup,'onboarding_skill'=>vp3_agent_onboarding_skill_state_v100(['user'=>['id'=>(int)$user['id']],'setup'=>$requiredSetup,'intelligence'=>$intelligence,'activation'=>$activation,'workspace'=>$workspace,'voice'=>$voice]),'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
+    $visual=vp3_visual_onboarding_owner_state_v120($pdo,$user);
+    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'workspace'=>$workspace,'activation'=>$activation,'setup'=>$requiredSetup,'visual_profile'=>$visual,
+        'onboarding_skill'=>vp3_agent_onboarding_skill_state_v100([
+            'user'=>['id'=>(int)$user['id']],'setup'=>$requiredSetup,
+            'intelligence'=>$intelligence,'activation'=>$activation,'workspace'=>$workspace,
+            'voice'=>$voice,'visual_profile'=>$visual
+        ]),'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
 }
 
 function chat_onboarding_v241_empty_tool_result(): array{return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];}
@@ -359,9 +383,14 @@ function chat_onboarding_v241_tool(string $query,array $user): array
         $result['actions'][]=['type'=>'open_url','label'=>'Open VP3 Setup','url'=>url('/chat.php?setup=1')];
         return $result;
     }
-    if(str_contains($q,'visual profile')){
-        $result['answer']='Advanced visual identity enrollment is not yet connected to Cloud onboarding. A normal profile picture is not a verified visual profile; no camera or face enrollment has been activated.';
-        $result['actions'][]=['type'=>'open_url','label'=>'Manage Profile Photo','url'=>url('/account.php#profile')];
+    if(str_contains($q,'visual profile')||str_contains($q,'visual identity')){
+        $visual=(array)($state['visual_profile']??[]);
+        $result['answer']=empty($visual['selected'])
+            ?'Visual identity is optional. I can help you start local self-enrollment after you explicitly opt in.'
+            :((!empty($visual['consented'])?'You opted in. ':'I still need your explicit consent. ')
+                .(!empty($visual['site_ready'])?'Compatible local Tracky has reported live camera and recognition capabilities.':'No compatible local Tracky device is currently reporting live readiness.')
+                .' Cloud will not claim biometric enrollment or create contacts without separate verified authorization.');
+        $result['actions'][]=['type'=>'open_url','label'=>'Open Visual Setup in Agent Chat','url'=>url('/chat.php?setup=1')];
         return $result;
     }
     if(str_contains($q,'voice clone')){$item=$cap['voice_clone']??[];$result['answer']=empty($item['permitted'])?'Voice Clone is not included in your current package.':(!empty($item['available'])?'Your voice clone is ready.':'Voice Clone is included but has not been created yet.');$result['actions'][]=['type'=>'open_url','label'=>empty($item['permitted'])?'View Packages':'Open Voice Profile','url'=>empty($item['permitted'])?url('/subscription.php'):(string)$item['setup_url']];return $result;}

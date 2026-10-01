@@ -79,6 +79,17 @@ try {
         chat_onboarding_v241_json(['ok'=>true,'state'=>chat_onboarding_v241_full_state($pdo,$user)]);
     }
 
+    if($action==='visual_consent'){
+        // Explicit user gesture + existing session and CSRF are required.
+        // This is an enrollment preference, never a camera or recognition grant.
+        $enabled=$input['enabled']??null;
+        if(!is_bool($enabled))throw new InvalidArgumentException('Specify whether visual self-enrollment is enabled.');
+        $visual=vp3_visual_onboarding_record_consent_v120(
+            $pdo,$user,$enabled,(string)($input['scope']??'')
+        );
+        chat_onboarding_v241_json(['ok'=>true,'visual'=>$visual,
+            'state'=>chat_onboarding_v241_full_state($pdo,$user)]);
+    }
     if($action==='ack_trial_notice'){
         onboarding_intelligence_ack_trial_notice($pdo,(int)$user['id'],(int)($input['threshold']??-1));
         chat_onboarding_v241_json(['ok'=>true,'state'=>chat_onboarding_v241_full_state($pdo,$user)]);
