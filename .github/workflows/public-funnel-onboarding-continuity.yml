@@ -41,11 +41,14 @@ jobs:
       - name: Agent onboarding skill, cognitive bridge and retained voice contracts
         run: |
           php -l includes/agent-onboarding-skill-v100.php
+          php -l includes/agent-visual-onboarding-v120.php
           php -l includes/chat-onboarding-v241.php
           php -l includes/agent-cognitive-loop-v310.php
           php -l includes/onboarding-intelligence.php
           node --check chat-agent-identity-v236.js
           php tests/agent-onboarding-skill-v100.php
+          php tests/agent-visual-onboarding-v120.php
+          node tests/agent-visual-onboarding-v120.mjs
           node tests/chat-onboarding-v241.mjs
           node tests/agent-onboarding-current-systems-v242.mjs
       - name: Runtime redirect and source contract

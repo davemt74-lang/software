@@ -67,9 +67,14 @@ function vp3_agent_onboarding_skill_state_v100(array $snapshot): array {
         'verified'=>!empty($voice['clone_verified']),
         'status'=>!empty($voice['clone_verified'])?'verified':(!empty($voice['clone_created'])?'created_not_verified':'not_enrolled')
     ];
+    $visual=(array)($snapshot['visual_profile']??[]);
     $readiness['visual_profile']=[
-        'source'=>'not_integrated','available'=>false,'configured'=>false,'status'=>'not_integrated',
-        'reason'=>'Profile photos do not constitute verified visual identity.'
+        'source'=>'canonical-cloud-consent-and-tracky-site-inventory',
+        'selected'=>!empty($visual['selected']),'consented'=>!empty($visual['consented']),
+        'available'=>!empty($visual['site_ready']),
+        'configured'=>false,'verified'=>false,
+        'status'=>(string)($visual['stage']??'not_integrated'),
+        'reason'=>'Cloud cannot certify local biometric enrollment from a photo, device heartbeat, or unsigned client report.'
     ];
     $reason=match($phase){
         'essential'=>$next['label'].' is required to complete Cloud setup.',

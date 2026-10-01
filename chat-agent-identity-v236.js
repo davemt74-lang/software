@@ -231,6 +231,27 @@
     const selected=workflowItems().filter(([,item])=>Boolean(draft?.workflow_interests?.[item.interest_key])).map(([,item])=>item.label);
     return selected.length?selected.join(', '):'No optional systems selected';
   }
+  function visualConsentMarkup() {
+    const state=onboardingState?.visual_profile||{};
+    const selected=Boolean(state.selected);
+    const consented=Boolean(state.consented);
+    const stage=String(state.stage||'not_selected').replaceAll('_',' ');
+    const readiness=state.site_ready
+      ? 'A compatible local Tracky device is online. Once you start local enrollment, Tracky can automatically collect three quality-checked angles.'
+      : 'Connect a compatible Tracky device to perform local face enrollment. Your Cloud account stays usable without it.';
+    return '<section class="chat-agent-panel-v241" data-owner-visual-onboarding>'
+      +'<strong>Optional · advanced visual identity</strong>'
+      +'<p>The Agent can guide self-enrollment. Your face samples stay in local Tracky; no Cloud biometric upload, background recognition or automatic contact creation is authorized here.</p>'
+      +'<p><strong>Current state:</strong> '+esc(stage)+(selected?' · selected':' · not selected')+'</p>'
+      +'<p>'+esc(readiness)+'</p>'
+      +'<div class="chat-agent-action-group-v241">'
+      +'<button class="chat-agent-button-v241" type="button" data-visual-consent="'+(consented?'off':'on')+'">'
+      +(consented?'Withdraw Cloud enrollment opt-in':'I consent to local self-enrollment →')+'</button>'
+      +(consented?'<a class="chat-agent-button-v241" href="./tracky.php" target="_blank" rel="noopener">Check local Tracky readiness ↗</a>':'')
+      +'</div>'
+      +(consented?'<small>Local camera permission is requested separately by Tracky on your device. Withdrawing here does not delete existing local face data; delete that participant in Tracky.</small>':'')
+      +'</section>';
+  }
   function workspaceMarkup(copy) {
     const cards=workflowItems().map(([key,item])=>{
       const interest=String(item.interest_key||'');
@@ -249,7 +270,7 @@
       const action=href&&allowed?'<a class="chat-agent-workflow-link-v242" href="'+esc(href)+'" target="_blank" rel="noopener">'+esc(item.action_label||'Open')+' ↗</a>':'';
       return '<article class="chat-agent-workflow-card-v242 '+stateClass+'" data-workflow="'+esc(key)+'"><label><input type="checkbox" data-workflow-interest="'+esc(interest)+'"'+(checked?' checked':'')+'><span><strong>'+esc(item.label||key)+'</strong><small>'+esc(item.description||'')+'</small></span></label><div class="chat-agent-workflow-status-v242"><i></i><span>'+esc(status)+'</span>'+action+'</div></article>';
     }).join('');
-    return copy+'<div class="chat-agent-panel-v241"><strong>Optional by design</strong><p>Selecting a system tells your Agent what you want help with. It does not enable permissions, purchase a plan, connect an external account, or count against core onboarding completion. Keeping a deferred system selected and continuing reactivates it now.</p></div><div class="chat-agent-workflow-grid-v242">'+cards+'</div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>'+actionsMarkup({nextLabel:'Continue'});
+    return copy+visualConsentMarkup()+'<div class="chat-agent-panel-v241"><strong>Optional by design</strong><p>Selecting a system tells your Agent what you want help with. It does not enable permissions, purchase a plan, connect an external account, or count against core onboarding completion. Keeping a deferred system selected and continuing reactivates it now.</p></div><div class="chat-agent-workflow-grid-v242">'+cards+'</div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>'+actionsMarkup({nextLabel:'Continue'});
   }
   function stepBodyMarkup() {
     const step=steps[currentStep]; const copy=copyMarkup(step);
@@ -297,6 +318,25 @@
     onboardingCard.querySelector('[data-keep-system]')?.addEventListener('click',()=>{const input=onboardingCard.querySelector('[name="agent_name"]');if(input){input.value=cfg.systemName||'STONEFELLOW';input.focus();}});
     onboardingCard.querySelector('[data-onboarding-back]')?.addEventListener('click',async()=>{const leaving=steps[currentStep]?.key;captureCurrentStep();currentStep=Math.max(0,currentStep-1);try{await persistProgress(steps[currentStep].key,null,leaving==='workspace'?(draft.workflow_interests||{}):{});}catch(_error){}renderStep(true);});
     onboardingCard.querySelector('[data-onboarding-next]')?.addEventListener('click',async()=>{const leaving=steps[currentStep]?.key;if(!captureCurrentStep())return;const button=onboardingCard.querySelector('[data-onboarding-next]');if(button)button.disabled=true;const nextIndex=Math.min(steps.length-1,currentStep+1);try{await persistProgress(steps[nextIndex].key,null,leaving==='workspace'?(draft.workflow_interests||{}):{});currentStep=nextIndex;renderStep(true);}catch(error){if(button)button.disabled=false;setStatus(error instanceof Error?error.message:'Progress could not be saved.','error');}});
+    onboardingCard.querySelector('[data-visual-consent]')?.addEventListener('click',async event=>{
+      const control=event.currentTarget;
+      const enabled=control.dataset.visualConsent==='on';
+      if(enabled&&!window.confirm('Enroll only yourself. Face descriptors and your portrait will remain local in Tracky. You must grant camera permission separately. This does not allow tracking other people or automatically creating contacts. Continue?'))return;
+      if(!captureCurrentStep())return;
+      control.disabled=true;setStatus(enabled?'Saving your local visual enrollment preference…':'Withdrawing Cloud enrollment opt-in…');
+      try{
+        // Preserve any other unsaved optional selections in canonical prefs.
+        await persistProgress('workspace',null,draft.workflow_interests||{});
+        const result=await onboardingRequest('visual_consent',{
+          enabled,scope:'owner-self-local-recognition-v1'
+        });
+        exposeOnboardingState(result.state);
+        draft.workflow_interests=draft.workflow_interests||{};
+        draft.workflow_interests['workflow.visual_profile']=enabled;
+        saveDraft();renderStep(false);
+        setStatus(enabled?'Opt-in saved. Your Agent can now guide local Tracky enrollment; camera access is still your choice.':'Cloud opt-in withdrawn. Delete any local Tracky profile separately.','success');
+      }catch(error){control.disabled=false;setStatus(error.message||'Could not update visual consent.','error');}
+    });
     onboardingCard.querySelector('[data-refresh-voice]')?.addEventListener('click',async event=>{const target=event.currentTarget;target.disabled=true;setStatus('Checking Voice Profile…');try{const data=await onboardingRequest('state');exposeOnboardingState(data.state);setStatus('Voice status refreshed.','success');renderStep(false);}catch(error){setStatus(error instanceof Error?error.message:'Voice status could not be refreshed.','error');}finally{target.disabled=false;}});
     onboardingCard.querySelector('[data-skip-optional-setup]')?.addEventListener('click',async()=>{
       if(!captureCurrentStep())return;
