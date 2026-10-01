@@ -46,6 +46,7 @@ assert.match(domain, /\$onboardingTask/, 'Agent Chat setup answers use the same 
 assert.match(domain, /'hosting'=>\[/, 'Cloud-first activation inventory includes first subdomain');
 assert.match(domain, /'voice_profile'=>\[/, 'Optional Voice Profile uses its canonical enrollment state');
 assert.match(domain, /'live'=>\$homeLive/, 'HomeServer pairing must be distinguished from live connectivity');
+assert.match(domain,/homeserver_vp3_status\(\$uid,false\)/,'Live HomeServer status must use the existing bounded canonical heartbeat service');
 assert.match(ui,/refreshLiveOnboarding/, 'Chat canvas observes connected services when visible');
 assert.match(ui,/readinessRefreshPending/, 'Live refresh is bounded and deduplicated');
 assert.match(bootstrap, /agent-onboarding-skill-v100\.php/, 'Cloud runtime loads Agent skill');

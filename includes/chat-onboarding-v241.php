@@ -109,12 +109,22 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
     $teamCount=$teamReady?$count("SELECT COUNT(*) FROM workspace_memberships_v350 WHERE (workspace_owner_user_id=? OR member_user_id=?) AND membership_status='active'",[$uid,$uid]):0;
 
     $homeReady=table_exists('homeserver_connections');
-    $homeState='unpaired';
+    $homeState='unpaired';$homeConnected=false;$homeLive=false;$homeTransport='';
     if($homeReady&&$uid>0){
-        try{$stmt=$pdo->prepare('SELECT status FROM homeserver_connections WHERE user_id=? LIMIT 1');$stmt->execute([$uid]);$homeState=(string)($stmt->fetchColumn()?:'unpaired');}catch(Throwable $e){}
+        try{
+            $stmt=$pdo->prepare('SELECT status FROM homeserver_connections WHERE user_id=? LIMIT 1');
+            $stmt->execute([$uid]);$storedState=$stmt->fetchColumn();
+            // The connection row is a pairing record, not proof that the device
+            // is currently online. Reuse the canonical bounded heartbeat check.
+            if($storedState!==false&&function_exists('homeserver_vp3_status')){
+                $verified=homeserver_vp3_status($uid,false);
+                $homeState=(string)($verified['state']??'unknown');
+                $homeConnected=!empty($verified['paired']);
+                $homeLive=!empty($verified['connected'])&&$homeConnected;
+                $homeTransport=(string)($verified['transport']??'');
+            }
+        }catch(Throwable $e){$homeState='status_unavailable';}
     }
-    $homeConnected=in_array($homeState,['connected','paired','online'],true);
-    $homeLive=in_array($homeState,['connected','online'],true);
     // Optional subdomain creation uses the existing hosting entitlement and
     // cloud_hosting_sites owner records; it is never a core setup requirement.
     $hostingReady=function_exists('vp3_cloud_hosting_schema_ready_v100')
@@ -205,7 +215,7 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
             'label'=>'HomeServer','description'=>'Pair private local knowledge, tools, models and compute with the same VP3 Agent.',
             'interest_key'=>'workflow.homeserver','permitted'=>!empty($permissions['personal_knowledge']),'configured'=>$homeConnected,'available'=>$homeReady&&!empty($permissions['personal_knowledge']),
             'status'=>$homeLive?'HomeServer connection active':($homeConnected?'Paired · awaiting live connection':($homeReady?'Not paired yet':'System upgrade required')),
-            'live'=>$homeLive,'observed_state'=>$homeState,
+            'live'=>$homeLive,'observed_state'=>$homeState,'transport'=>$homeTransport,
             'setup_url'=>url('/settings-homeserver.php'),'action_label'=>'HomeServer Settings','usage_count'=>$homeConnected?1:0,'milestone_label'=>'HomeServer paired',
         ],
     ];
