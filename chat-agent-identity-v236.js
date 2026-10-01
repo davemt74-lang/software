@@ -117,6 +117,8 @@
 
   let onboardingState = null;
   let onboardingCard = null;
+  let readinessRefreshPending = false;
+  let readinessSignature = '';
   let currentStep = 0;
   let voiceGuideEnabled = false;
   let voiceChoiceMade = false;
@@ -323,6 +325,30 @@
   }
 
   async function loadOnboardingState(){try{const data=await onboardingRequest('state');exposeOnboardingState(data.state);return data.state;}catch(_error){return null;}}
+  function liveReadinessFingerprint(state) {
+    return JSON.stringify({
+      workspace:Object.entries(state?.workspace||{}).map(([key,value])=>[key,value.status,value.configured,value.available,value.live,value.observed_state]),
+      activation:Object.entries(state?.activation?.items||{}).map(([key,value])=>[key,value.activation_status]),
+      task:state?.onboarding_skill?.task?.phase||''
+    });
+  }
+  async function refreshLiveOnboarding() {
+    if(!onboardingCard||steps[currentStep]?.key!=='workspace'||busy||readinessRefreshPending||document.visibilityState==='hidden')return;
+    readinessRefreshPending=true;
+    try {
+      const response=await onboardingRequest('state');
+      if(!response?.state)return;
+      const updated=liveReadinessFingerprint(response.state);
+      if(updated!==readinessSignature){
+        captureCurrentStep(); // Keep unsaved checkbox choices while service status changes.
+        readinessSignature=updated;
+        exposeOnboardingState(response.state);
+        renderStep(false);
+      }
+    }catch(_error){
+      // Preserve last verified state and retry on the next visible refresh.
+    }finally{readinessRefreshPending=false;}
+  }
 
   void loadOnboardingState().then(state=>{
     if(!state||!thread)return;
@@ -344,6 +370,10 @@
     }
     onboardingCard=document.createElement('section');onboardingCard.className='chat-agent-name-card-v236';onboardingCard.id='chatAgentNameCardV236';onboardingCard.dataset.deterministicOnboarding='v241';
     const firstMessage=thread.querySelector('.message');if(firstMessage)firstMessage.insertAdjacentElement('beforebegin',onboardingCard);else thread.prepend(onboardingCard);
-    renderStep(false);if(voiceGuideEnabled&&currentStep>0)void speakGuide(steps[currentStep].prompt);
+    renderStep(false);readinessSignature=liveReadinessFingerprint(state);
+    window.setInterval(()=>{void refreshLiveOnboarding();},20000);
+    window.addEventListener('focus',()=>{void refreshLiveOnboarding();});
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refreshLiveOnboarding();});
+    if(voiceGuideEnabled&&currentStep>0)void speakGuide(steps[currentStep].prompt);
   });
 })();

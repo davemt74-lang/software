@@ -44,6 +44,10 @@ assert.match(ui,/state\.public_agent_status\.enabled\) : false/,'Optional Profil
 assert.match(domain, /vp3_agent_onboarding_skill_state_v100/, 'Cloud exposes canonical onboarding skill state');
 assert.match(domain, /\$onboardingTask/, 'Agent Chat setup answers use the same task as Agent Brain');
 assert.match(domain, /'hosting'=>\[/, 'Cloud-first activation inventory includes first subdomain');
+assert.match(domain, /'voice_profile'=>\[/, 'Optional Voice Profile uses its canonical enrollment state');
+assert.match(domain, /'live'=>\$homeLive/, 'HomeServer pairing must be distinguished from live connectivity');
+assert.match(ui,/refreshLiveOnboarding/, 'Chat canvas observes connected services when visible');
+assert.match(ui,/readinessRefreshPending/, 'Live refresh is bounded and deduplicated');
 assert.match(bootstrap, /agent-onboarding-skill-v100\.php/, 'Cloud runtime loads Agent skill');
 assert.match(ui, /Connect the parts of VP3 you want to use/);
 assert.match(ui, /chat-agent-workflow-grid-v242/);
