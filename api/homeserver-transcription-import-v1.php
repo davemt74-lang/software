@@ -78,7 +78,7 @@ try{
         if(!preg_match('/^[a-f0-9]{32}$/',$key))throw new RuntimeException('Invalid transcript segment key.');
         $validated[]=[
             'text'=>$content,'type'=>'transcript','speaker'=>'Speaker 1',
-            'client_segment_key'=>substr(hash('sha256','hsseg:'.$id.':'.$key),0,32),
+            'key'=>substr(hash('sha256','hsseg:'.$id.':'.$key),0,32),
             'index'=>$i++,
             'started_ms'=>max(0,min(86400000,(int)($segment['started_ms']??0))),
         ];
