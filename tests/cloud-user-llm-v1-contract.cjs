@@ -6,6 +6,8 @@ const stream=file('includes/ai-stream-v121.php'),plan=file('includes/agent-runti
 const chat=file('api/chat-stream-v121.php'),ui=file('settings-ai-providers.php');
 assert.match(boot,/require_once __DIR__\.'\/user-llm-v1.php'/);
 assert.match(helper,/ai_encrypt_secret\(\$key\)/);
+assert.match(nonstream,/SELECT 1 FROM user_llm_credentials LIMIT 1/);
+assert.match(ui,/if\(saved\)key.value=''/);
 assert.match(helper,/ai_decrypt_secret/);
 assert.match(helper,/return \['route'=>'unavailable'\]/);
 assert.match(helper,/WHERE user_id=\?/);

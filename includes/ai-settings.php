@@ -68,6 +68,19 @@ function ai_saved_encrypted_credentials_exist(): bool
             return true;
         }
     }
+    // Account BYOK ciphertext uses this SAME installation master key. If it
+    // disappears, do not quietly mint a new key and strand other users' keys.
+    if(function_exists('db')){
+        try{
+            $pdo=db();
+            if(!$pdo)return true; // Cannot establish the absence of encrypted credentials.
+            $stmt=$pdo->query("SHOW TABLES LIKE 'user_llm_credentials'");
+            if($stmt&&$stmt->fetchColumn()){
+                $encrypted=$pdo->query('SELECT 1 FROM user_llm_credentials LIMIT 1');
+                if($encrypted&&$encrypted->fetchColumn())return true;
+            }
+        }catch(Throwable $e){return true;}
+    }
     return false;
 }
 

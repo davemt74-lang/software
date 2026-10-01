@@ -73,13 +73,13 @@ function render(next){
  }
 }
 async function run(fn){
- try{status('Saving…');render(await fn());status('Provider settings saved.');}
- catch(error){status(error.message,true);}
+ try{status('Saving…');render(await fn());status('Provider settings saved.');return true;}
+ catch(error){status(error.message,true);return false;}
 }
 document.querySelectorAll('form[data-provider]').forEach(form=>form.addEventListener('submit',event=>{
  event.preventDefault();const provider=form.dataset.provider||form.dataset.llmProvider;
  const key=form.querySelector('[name=api_key]');const model=form.querySelector('[name=model]');
- run(()=>request({action:'save',provider,api_key:key.value,model:model.value})).then(()=>{key.value='';});
+ run(()=>request({action:'save',provider,api_key:key.value,model:model.value})).then(saved=>{if(saved)key.value='';});
 }));
 document.querySelectorAll('[data-remove]').forEach(button=>button.addEventListener('click',()=>{
  if(!confirm('Remove this Cloud API key?'))return;
