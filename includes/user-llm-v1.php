@@ -58,13 +58,13 @@ function vp3_user_llm_v1_effective(PDO $pdo,array $user): array
     if($uid<1)return ['route'=>'system'];
     $state=vp3_user_llm_v1_read($pdo,$uid);
     $name=(string)($state['provider']??'');
-    if(($state['route']??'system')!=='own_key'||empty($state['providers'][$name]['configured']))
-        return ['route'=>'system'];
+    if(($state['route']??'system')!=='own_key')return ['route'=>'system'];
+    if(empty($state['providers'][$name]['configured']))return ['route'=>'unavailable'];
     $stmt=$pdo->prepare('SELECT encrypted_key,model FROM user_llm_credentials WHERE user_id=? AND provider=? LIMIT 1');
     $stmt->execute([$uid,$name]);$row=$stmt->fetch(PDO::FETCH_ASSOC);
-    if(!is_array($row))return ['route'=>'system'];
+    if(!is_array($row))return ['route'=>'unavailable'];
     $key=ai_decrypt_secret((string)$row['encrypted_key']);
-    if($key===''||!ai_valid_model($name,(string)$row['model']))return ['route'=>'system'];
+    if($key===''||!ai_valid_model($name,(string)$row['model']))return ['route'=>'unavailable'];
     return ['route'=>'own_key','provider'=>$name,'model'=>(string)$row['model'],'api_key'=>$key];
 }
 

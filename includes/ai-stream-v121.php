@@ -8,11 +8,12 @@ function ai_v121_stream_provider(
     string $model,
     array $payload,
     callable $onDelta,
-    int $timeout = 75
+    int $timeout = 75,
+    ?string $credentialOverride = null
 ): array {
     if (!function_exists('curl_init')) return ['ok'=>false,'answer'=>'','error'=>'AI transport is unavailable.'];
 
-    $apiKey=ai_provider_api_key($provider);
+    $apiKey=$credentialOverride!==null?$credentialOverride:ai_provider_api_key($provider);
     if ($apiKey==='') return ['ok'=>false,'answer'=>'','error'=>'AI provider credentials are unavailable.'];
 
     if ($provider==='openai') {
@@ -119,13 +120,20 @@ function ai_v121_stream_chat_response(
     array $user,
     callable $onDelta
 ): array {
-    $provider=ai_active_provider();
+    $own=(function_exists('vp3_user_llm_v1_effective')&&function_exists('db')&&db())
+        ?vp3_user_llm_v1_effective(db(),$user):['route'=>'system'];
+    if(($own['route']??'system')==='unavailable')
+        return ['ok'=>false,'provider'=>'own_key','answer'=>'','error'=>'Saved personal provider credentials are unavailable.'];
+    $isOwn=($own['route']??'system')==='own_key';
+    if($isOwn&&function_exists('subscription_has_entitlement')&&!subscription_has_entitlement($user,'main_ai.access'))
+        return ['ok'=>false,'provider'=>'own_key','answer'=>'','error'=>'AI access is not included for this account.'];
+    $provider=$isOwn?(string)$own['provider']:ai_active_provider();
     try{ai_v100_rate_limit('chat',$user);}catch(Throwable $e){return ['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>ai_v100_safe_exception($e)];}
     if($provider==='local')return ['ok'=>false,'provider'=>'local','answer'=>'','error'=>'Local retrieval mode is active.'];
-    if(!ai_provider_enabled($provider)||!ai_provider_ready($provider))return ['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>'The AI provider is not fully configured.'];
+    if(!$isOwn&&(!ai_provider_enabled($provider)||!ai_provider_ready($provider)))return ['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>'The AI provider is not fully configured.'];
 
     $complexity=ai_v100_complexity($query,$context);$budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);
-    $current=ai_v100_current_message($query,$context);$models=ai_v100_model_candidates($provider,$complexity);
+    $current=ai_v100_current_message($query,$context);$models=$isOwn?[(string)$own['model']]:ai_v100_model_candidates($provider,$complexity);
     $last=['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>'The AI provider did not return a usable response.'];
 
     foreach($models as $model){
@@ -138,7 +146,7 @@ function ai_v121_stream_chat_response(
         }
 
         $quota=['reservation_id'=>0,'max_output_tokens'=>$budget,'unlimited'=>true];
-        if(function_exists('subscription_ai_preflight')){
+        if(!$isOwn&&function_exists('subscription_ai_preflight')){
             $encodedForEstimate=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
             $estimatedInput=function_exists('subscription_estimate_tokens_from_chars')
                 ? subscription_estimate_tokens_from_chars(is_string($encodedForEstimate)?mb_strlen($encodedForEstimate):mb_strlen($current))
@@ -157,8 +165,8 @@ function ai_v121_stream_chat_response(
             if(function_exists('agent_runtime_v125_resilient_call')){
                 $result=agent_runtime_v125_resilient_call(
                     $service,
-                    static function(int $attempt) use($provider,$model,$payload,$onDelta,$complexity): array {
-                        $row=ai_v121_stream_provider($provider,$model,$payload,$onDelta,$complexity==='deep'?95:70);$row['attempts']=$attempt;return $row;
+                    static function(int $attempt) use($provider,$model,$payload,$onDelta,$complexity,$isOwn,$own): array {
+                        $row=ai_v121_stream_provider($provider,$model,$payload,$onDelta,$complexity==='deep'?95:70,$isOwn?(string)$own['api_key']:null);$row['attempts']=$attempt;return $row;
                     },
                     'ai_v125_retryable_stream_result',
                     2,
@@ -180,7 +188,7 @@ function ai_v121_stream_chat_response(
             'attempts'=>(int)($result['attempts']??1),'error_class'=>(string)($result['error_class']??'')
         ]+$usage);
 
-        if(function_exists('subscription_ai_commit_usage')){
+        if(!$isOwn&&function_exists('subscription_ai_commit_usage')){
             $total=max(0,(int)($usage['total_tokens']??((int)($usage['input_tokens']??0)+(int)($usage['output_tokens']??0))));
             if($total>0){
                 $requestKey='stream:'.(function_exists('agent_runtime_v125_trace_id')?(string)agent_runtime_v125_trace_id():bin2hex(random_bytes(8))).':'.$model.':'.(int)($result['attempts']??1);
@@ -190,6 +198,7 @@ function ai_v121_stream_chat_response(
             }
         }
 
+        if($isOwn){$result['compute_source']='user_provider';$result['system_tokens_charged']=false;}
         $result['provider']=$provider;$result['model']=$model;$result['complexity']=$complexity;$result['trace_id']=function_exists('agent_runtime_v125_trace_id')?agent_runtime_v125_trace_id():'';
         if(!empty($result['ok'])||!empty($result['partial']))return $result;
         $last=$result;
