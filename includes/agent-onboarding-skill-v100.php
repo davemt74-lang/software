@@ -13,7 +13,7 @@ function vp3_agent_onboarding_skill_manifest_v100(): array {
         'owner'=>'vp3-cloud','surface'=>'agent-chat-canvas',
         'loop'=>['observe','check_dependencies','propose','obtain_approval','act_via_existing_service','verify','remember','replan'],
         'required'=>['agent','profile'],
-        'optional'=>['voice','profile_agent','chat','voice_clone','browser','homeserver','hosting','visual_profile'],
+        'optional'=>['voice','voice_profile','profile_agent','chat','voice_clone','browser','homeserver','hosting','visual_profile'],
         'uses_canonical_authorities'=>true,
     ];
 }
@@ -22,6 +22,8 @@ function vp3_agent_onboarding_skill_state_v100(array $snapshot): array {
     $intel=(array)($snapshot['intelligence']??[]);
     $draft=(array)($intel['draft']??[]);
     $activation=(array)($snapshot['activation']??[]);
+    $workspace=(array)($snapshot['workspace']??[]);
+    $voice=(array)($snapshot['voice']??[]);
     $required=[
         ['key'=>'agent','label'=>'Choose your Agent name','verified'=>!empty($setup['agent_named']),'draft_saved'=>trim((string)($draft['agent_name']??''))!=='','requires_user_input'=>true,'url'=>'/chat.php?setup=1'],
         ['key'=>'profile','label'=>'Choose your profile address','verified'=>!empty($setup['profile_username']),'draft_saved'=>trim((string)($draft['username']??''))!=='','requires_user_input'=>true,'url'=>'/chat.php?setup=1'],
@@ -35,7 +37,8 @@ function vp3_agent_onboarding_skill_state_v100(array $snapshot): array {
         $row=[
             'key'=>(string)$key,'label'=>(string)($item['label']??$key),
             'status'=>$status,'verified'=>$status==='complete'&&!empty($item['configured']),
-            'requires_owner_approval'=>true,'url'=>(string)($item['setup_url']??'/chat.php?setup=1')
+            'requires_owner_approval'=>true,'url'=>(string)($item['setup_url']??'/chat.php?setup=1'),
+            'current_status'=>(string)($item['current_status']??'')
         ];
         $selected[]=$row;
         if($status==='pending'){
@@ -47,9 +50,30 @@ function vp3_agent_onboarding_skill_state_v100(array $snapshot): array {
     if(!$coreReady){$phase='essential';$next=!$required[0]['verified']?$required[0]:$required[1];}
     elseif($next!==null)$phase='optional';
     elseif($waiting)$phase='waiting';
+    $readiness=[];
+    foreach(['voice_profile','browser','hosting','homeserver'] as $key){
+        $item=(array)($workspace[$key]??[]);
+        $readiness[$key]=[
+            'source'=>'canonical-service','selected'=>!empty($activation['items'][$key]['selected']),
+            'permitted'=>!empty($item['permitted']),'available'=>!empty($item['available']),
+            'configured'=>!empty($item['configured']),
+            'live'=>!empty($item['live']),
+            'status'=>(string)($item['status']??'Status unavailable'),
+            'observed_state'=>(string)($item['observed_state']??'')
+        ];
+    }
+    $readiness['voice_clone']=[
+        'source'=>'canonical-voice-profile','configured'=>!empty($voice['clone_created']),
+        'verified'=>!empty($voice['clone_verified']),
+        'status'=>!empty($voice['clone_verified'])?'verified':(!empty($voice['clone_created'])?'created_not_verified':'not_enrolled')
+    ];
+    $readiness['visual_profile']=[
+        'source'=>'not_integrated','available'=>false,'configured'=>false,'status'=>'not_integrated',
+        'reason'=>'Profile photos do not constitute verified visual identity.'
+    ];
     $reason=match($phase){
         'essential'=>$next['label'].' is required to complete Cloud setup.',
-        'optional'=>'Your Cloud identity is ready. '.$next['label'].' is selected but not verified.',
+        'optional'=>'Your Cloud identity is ready. '.$next['label'].' is selected but not verified. '.(string)($next['current_status']??''),
         'waiting'=>'Cloud identity is ready; selected optional services need attention or are deferred.',
         default=>'Your Cloud identity is ready. You can add optional services any time.'
     };
@@ -64,7 +88,7 @@ function vp3_agent_onboarding_skill_state_v100(array $snapshot): array {
             'reason'=>$reason,'source'=>'canonical-account-and-device-state',
             'review_url'=>'/chat.php?setup=1'
         ],
-        'required'=>$required,'selected_optional'=>$selected,
+        'required'=>$required,'selected_optional'=>$selected,'readiness'=>$readiness,
         'execution'=>['auto_provision'=>false,'requires_explicit_approval'=>true,'resume_existing_preferences'=>true]
     ];
 }

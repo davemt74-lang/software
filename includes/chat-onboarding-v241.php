@@ -68,7 +68,7 @@ function chat_onboarding_v241_capabilities(array $profile,array $publicAgent,arr
     ];
 }
 
-function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permissions=[]): array
+function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permissions=[],array $voice=[]): array
 {
     $uid=(int)($user['id']??0);
     $count=static function(string $sql,array $args=[]) use($pdo): int {
@@ -109,30 +109,54 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
     $teamCount=$teamReady?$count("SELECT COUNT(*) FROM workspace_memberships_v350 WHERE (workspace_owner_user_id=? OR member_user_id=?) AND membership_status='active'",[$uid,$uid]):0;
 
     $homeReady=table_exists('homeserver_connections');
-    $homeState='unpaired';
+    $homeState='unpaired';$homeConnected=false;$homeLive=false;$homeTransport='';
     if($homeReady&&$uid>0){
-        try{$stmt=$pdo->prepare('SELECT status FROM homeserver_connections WHERE user_id=? LIMIT 1');$stmt->execute([$uid]);$homeState=(string)($stmt->fetchColumn()?:'unpaired');}catch(Throwable $e){}
+        try{
+            $stmt=$pdo->prepare('SELECT status FROM homeserver_connections WHERE user_id=? LIMIT 1');
+            $stmt->execute([$uid]);$storedState=$stmt->fetchColumn();
+            // The connection row is a pairing record, not proof that the device
+            // is currently online. Reuse the canonical bounded heartbeat check.
+            if($storedState!==false&&function_exists('homeserver_vp3_status')){
+                $verified=homeserver_vp3_status($uid,false);
+                $homeState=(string)($verified['state']??'unknown');
+                $homeConnected=!empty($verified['paired']);
+                $homeLive=!empty($verified['connected'])&&$homeConnected;
+                $homeTransport=(string)($verified['transport']??'');
+            }
+        }catch(Throwable $e){$homeState='status_unavailable';}
     }
-    $homeConnected=in_array($homeState,['connected','paired'],true);
     // Optional subdomain creation uses the existing hosting entitlement and
     // cloud_hosting_sites owner records; it is never a core setup requirement.
     $hostingReady=function_exists('vp3_cloud_hosting_schema_ready_v100')
         &&vp3_cloud_hosting_schema_ready_v100($pdo);
-    $hostingAllowed=false;$hostingCreated=false;$hostname='';
+    $hostingAllowed=false;$hostingCreated=false;$hostname='';$hostingObserved='pending';
     if($hostingReady){
         try{
             $entitlement=vp3_cloud_hosting_entitlement_v100($user,'hosting.access');
             $hostingAllowed=!empty($entitlement['enabled']);
-            $host=$pdo->prepare('SELECT requested_hostname FROM cloud_hosting_sites WHERE user_id=? AND requested_hostname IS NOT NULL ORDER BY id ASC LIMIT 1');
-            $host->execute([$uid]);$hostname=(string)($host->fetchColumn()?:'');
+            $host=$pdo->prepare('SELECT requested_hostname,observed_state FROM cloud_hosting_sites WHERE user_id=? AND requested_hostname IS NOT NULL ORDER BY id ASC LIMIT 1');
+            $host->execute([$uid]);$hostRow=$host->fetch(PDO::FETCH_ASSOC)?:[];
+            $hostname=(string)($hostRow['requested_hostname']??'');
+            $hostingObserved=(string)($hostRow['observed_state']??'pending');
             $hostingCreated=$hostname!=='';
         }catch(Throwable $e){$hostingReady=false;}
     }
 
 
     $transcriptionAllowed=!empty($permissions['transcriptions']);
+    $voiceProfileAllowed=!empty($permissions['voice_profile']);
+    $voiceProfileAvailable=$voiceProfileAllowed&&!empty($voice['available']);
+    $voiceSamples=max(0,(int)($voice['sample_count']??0));
 
     return [
+        'voice_profile'=>[
+            'label'=>'Voice Profile','description'=>'Optionally enroll your voice for a better Agent experience. Voice cloning requires separate permission.',
+            'interest_key'=>'workflow.voice_profile','permitted'=>$voiceProfileAllowed,
+            'configured'=>$voiceProfileAvailable&&$voiceSamples>0,'available'=>$voiceProfileAvailable,
+            'status'=>$voiceSamples>0?$voiceSamples.' voice sample'.($voiceSamples===1?'':'s').' saved':($voiceProfileAvailable?'Voice enrollment is optional':'Voice Profile unavailable for this account'),
+            'setup_url'=>url('/voice-profile.php'),'action_label'=>'Open Voice Profile',
+            'usage_count'=>$voiceSamples,'milestone_label'=>'First voice sample saved',
+        ],
         'browser'=>[
             'label'=>'Browser Companion + Annotations','description'=>'Bring page-aware Agent help, source-linked annotations and approved browser actions into Chrome.',
             'interest_key'=>'workflow.browser','permitted'=>!empty($permissions['main_ai']),'configured'=>$browserConnections>0,'available'=>$browserReady&&!empty($permissions['main_ai']),
@@ -182,14 +206,16 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
             'description'=>'Reserve your first VP3 hosted address; HomeServer integration and deployment can follow later.',
             'interest_key'=>'workflow.hosting',
             'permitted'=>$hostingAllowed,'configured'=>$hostingCreated,'available'=>$hostingReady&&$hostingAllowed,
-            'status'=>$hostingCreated?'Subdomain created: '.$hostname:($hostingAllowed?'No subdomain created yet':'Hosting is not included in this package'),
+            'status'=>$hostingCreated?('Subdomain reserved: '.$hostname.' · '.($hostingObserved==='active'?'hosting active': 'hosting '.$hostingObserved)):($hostingAllowed?'No subdomain created yet':'Hosting is not included in this package'),
+            'live'=>$hostingCreated&&$hostingObserved==='active','observed_state'=>$hostingObserved,
             'setup_url'=>url('/hosting.php#new-site'),'action_label'=>'Create Subdomain',
             'usage_count'=>$hostingCreated?1:0,'milestone_label'=>'First subdomain created',
         ],
         'homeserver'=>[
             'label'=>'HomeServer','description'=>'Pair private local knowledge, tools, models and compute with the same VP3 Agent.',
             'interest_key'=>'workflow.homeserver','permitted'=>!empty($permissions['personal_knowledge']),'configured'=>$homeConnected,'available'=>$homeReady&&!empty($permissions['personal_knowledge']),
-            'status'=>$homeConnected?'Paired with HomeServer':($homeReady?'Not paired yet':'System upgrade required'),
+            'status'=>$homeLive?'HomeServer connection active':($homeConnected?'Paired · awaiting live connection':($homeReady?'Not paired yet':'System upgrade required')),
+            'live'=>$homeLive,'observed_state'=>$homeState,'transport'=>$homeTransport,
             'setup_url'=>url('/settings-homeserver.php'),'action_label'=>'HomeServer Settings','usage_count'=>$homeConnected?1:0,'milestone_label'=>'HomeServer paired',
         ],
     ];
@@ -198,7 +224,7 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
 function chat_onboarding_v241_activation_state(array $workspace,array $intelligence,bool $requiredSetupComplete): array
 {
     $interests=(array)($intelligence['feature_interests']??[]);
-    $priority=['hosting'=>90,'browser'=>95,'booking'=>92,'commerce'=>90,'teams'=>86,'homeserver'=>84,'transcription'=>76,'meetings'=>74,'calendar'=>72,'analytics'=>70];
+    $priority=['voice_profile'=>77,'hosting'=>90,'browser'=>95,'booking'=>92,'commerce'=>90,'teams'=>86,'homeserver'=>84,'transcription'=>76,'meetings'=>74,'calendar'=>72,'analytics'=>70];
     $items=[];$pending=[];$selectedCount=0;$configuredCount=0;$deferredCount=0;$blockedCount=0;
     foreach($workspace as $key=>$item){
         $interest=(string)($item['interest_key']??'');if($interest==='')continue;
@@ -266,10 +292,10 @@ function chat_onboarding_v241_state(PDO $pdo,array $user): array
     $capabilities=chat_onboarding_v241_capabilities($profile,$publicAgent,$chat,$voice,$onboardingComplete,$permissions);$unavailable=[];$locked=[];$setupCandidates=[];$setupReady=0;
     foreach($capabilities as $key=>$capability){if(empty($capability['permitted'])){$locked[]=$key;continue;}if(empty($capability['available']))$unavailable[]=$key;if(in_array($key,['profile_view','profile_agent','voice_profile'],true)){$setupCandidates[]=$key;if(!empty($capability['configured']))$setupReady++;}}
     $requiredCount=count($requiredSetup);$requiredReady=$requiredCount-count($missingRequired);$denominator=max(1,$requiredCount+count($setupCandidates));$completion=(int)round((($requiredReady+$setupReady)/$denominator)*100);
-    $package=chat_onboarding_v241_package_state($user);$intelligence=onboarding_intelligence_state($pdo,$user);$workspace=chat_onboarding_v241_workspace_state($pdo,$user,$permissions);
+    $package=chat_onboarding_v241_package_state($user);$intelligence=onboarding_intelligence_state($pdo,$user);$workspace=chat_onboarding_v241_workspace_state($pdo,$user,$permissions,$voice);
     $interests=(array)($intelligence['feature_interests']??[]);foreach($workspace as $key=>&$item){$interest=(string)($item['interest_key']??'');$item['selected']=$interest!==''&&!empty($interests[$interest]);}unset($item);
     $activation=chat_onboarding_v241_activation_state($workspace,$intelligence,!$missingRequired);
-    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'workspace'=>$workspace,'activation'=>$activation,'setup'=>$requiredSetup,'onboarding_skill'=>vp3_agent_onboarding_skill_state_v100(['user'=>['id'=>(int)$user['id']],'setup'=>$requiredSetup,'intelligence'=>$intelligence,'activation'=>$activation]),'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
+    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'workspace'=>$workspace,'activation'=>$activation,'setup'=>$requiredSetup,'onboarding_skill'=>vp3_agent_onboarding_skill_state_v100(['user'=>['id'=>(int)$user['id']],'setup'=>$requiredSetup,'intelligence'=>$intelligence,'activation'=>$activation,'workspace'=>$workspace,'voice'=>$voice]),'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
 }
 
 function chat_onboarding_v241_empty_tool_result(): array{return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];}
@@ -277,7 +303,7 @@ function chat_onboarding_v241_empty_tool_result(): array{return ['handled'=>fals
 function chat_onboarding_v241_tool(string $query,array $user): array
 {
     $empty=chat_onboarding_v241_empty_tool_result();$q=mb_strtolower(trim($query));if($q==='')return $empty;
-    $intent=(bool)preg_match('/\b(onboarding|setup|set up|package|plan|subscription|trial|tokens?|quota|usage|upgrade|recommend|best plan|stem editor|video editor|profile agent|agent voice|voice clone|browser companion|annotations?|meetings?|calendar|booking|ecommerce|commerce|agent analytics|analytics|homeserver|hosting|subdomain|teams?|team seats?|what.*missing|finish.*setup|set up next|setup next|getting started|activation|what.*left.*setup)\b/u',$q);if(!$intent)return $empty;
+    $intent=(bool)preg_match('/\b(onboarding|setup|set up|package|plan|subscription|trial|tokens?|quota|usage|upgrade|recommend|best plan|stem editor|video editor|profile agent|agent voice|voice clone|browser companion|annotations?|meetings?|calendar|booking|ecommerce|commerce|agent analytics|analytics|homeserver|hosting|subdomain|voice profile|visual profile|teams?|team seats?|what.*missing|finish.*setup|set up next|setup next|getting started|activation|what.*left.*setup)\b/u',$q);if(!$intent)return $empty;
     $pdo=db();if(!$pdo)return $empty;
     try{if(!user_agent_system_schema_ready_v236($pdo)||!profile_agent_schema_ready($pdo)||!chat_settings_schema_ready_v237($pdo))return $empty;$state=chat_onboarding_v241_state($pdo,$user);}catch(Throwable $e){return $empty;}
     $result=$empty;$result['handled']=true;$result['sources'][]=['source'=>'account:onboarding-state','title'=>'Package and account setup state'];$pkg=$state['package']??[];$balance=$pkg['ai']??[];$cap=$state['capabilities']??[];$intel=$state['intelligence']??[];$recommendation=$intel['package_recommendation']??null;
@@ -333,11 +359,17 @@ function chat_onboarding_v241_tool(string $query,array $user): array
         $result['actions'][]=['type'=>'open_url','label'=>'Open VP3 Setup','url'=>url('/chat.php?setup=1')];
         return $result;
     }
+    if(str_contains($q,'visual profile')){
+        $result['answer']='Advanced visual identity enrollment is not yet connected to Cloud onboarding. A normal profile picture is not a verified visual profile; no camera or face enrollment has been activated.';
+        $result['actions'][]=['type'=>'open_url','label'=>'Manage Profile Photo','url'=>url('/account.php#profile')];
+        return $result;
+    }
     if(str_contains($q,'voice clone')){$item=$cap['voice_clone']??[];$result['answer']=empty($item['permitted'])?'Voice Clone is not included in your current package.':(!empty($item['available'])?'Your voice clone is ready.':'Voice Clone is included but has not been created yet.');$result['actions'][]=['type'=>'open_url','label'=>empty($item['permitted'])?'View Packages':'Open Voice Profile','url'=>empty($item['permitted'])?url('/subscription.php'):(string)$item['setup_url']];return $result;}
 
     $workspace=(array)($state['workspace']??[]);
     $workspaceAliases=[
         'browser'=>['browser companion','annotation','annotations'],
+        'voice_profile'=>['voice profile','voice enrollment'],
         'meetings'=>['meeting','meetings'],
         'calendar'=>['calendar'],
         'booking'=>['booking','schedule','scheduling'],
