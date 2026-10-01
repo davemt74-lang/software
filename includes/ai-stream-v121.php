@@ -173,7 +173,7 @@ function ai_v121_stream_chat_response(
                     160
                 );
             }else{
-                $result=ai_v121_stream_provider($provider,$model,$payload,$onDelta,$complexity==='deep'?95:70);$result['attempts']=1;
+                $result=ai_v121_stream_provider($provider,$model,$payload,$onDelta,$complexity==='deep'?95:70,$isOwn?(string)$own['api_key']:null);$result['attempts']=1;
             }
         }catch(Throwable $e){
             $result=['ok'=>false,'answer'=>'','error'=>ai_v100_safe_exception($e),'status'=>0,'duration_ms'=>0,'usage'=>[],'attempts'=>1,'error_class'=>get_class($e)];

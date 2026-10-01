@@ -57,7 +57,18 @@ if(!empty($toolResult['handled'])){
         throw new RuntimeException(vp3_agent_runtime_block_message_v420($runtimePlan));
     }else{
         $baseContext=agent_runtime_v125_span('chat.context',static fn():array=>chat_v121_context($query,$user,$principal,$agentContext,$conversationId),['conversation_id'=>$conversationId,'user_id'=>$userId,'agent_id'=>$agentScopeId]);$knowledgeBundle=knowledge_retrieval_v162_for_chat($pdo,$user,$principal,$query,$input['knowledge_scope']??null,$baseContext,$conversationId);$context=$knowledgeBundle['context'];$knowledgeContext=['scope'=>$knowledgeBundle['scope'],'citations'=>$knowledgeBundle['citations'],'provenance'=>$knowledgeBundle['provenance'],'homeserver_local_knowledge'=>$knowledgeBundle['homeserver_local_knowledge']];
-        $streamResult=agent_runtime_v125_span('chat.ai_stream',static function()use($query,$history,$context,$user):array{return ai_v121_stream_chat_response($query,$history,$context,$user,static function(string $delta):void{if(connection_aborted())return;chat_v121_emit(['type'=>'delta','delta'=>$delta]);});},['conversation_id'=>$conversationId,'user_id'=>$userId,'agent_id'=>$agentScopeId]);$answer=trim((string)($streamResult['answer']??''));$streamPartial=!empty($streamResult['partial'])||connection_aborted();if($answer===''&&!connection_aborted()){$answer=chat_local_answer($query,$context);if($answer!=='')chat_v121_emit(['type'=>'delta','delta'=>$answer]);}if($answer===''&&connection_aborted())$answer='Interrupted.';$execution=$homeAttempted?chat_execution_v019_fallback($user,!empty($runtimePlan['home']['paired']),true):chat_execution_v019_vp3_direct($user);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,$homeAttempted?'homeserver->vp3_cloud':'vp3_cloud',$homeAttempted?'homeserver_unavailable':'none');
+        $streamResult=agent_runtime_v125_span('chat.ai_stream',static function()use($query,$history,$context,$user):array{return ai_v121_stream_chat_response($query,$history,$context,$user,static function(string $delta):void{if(connection_aborted())return;chat_v121_emit(['type'=>'delta','delta'=>$delta]);});},['conversation_id'=>$conversationId,'user_id'=>$userId,'agent_id'=>$agentScopeId]);$answer=trim((string)($streamResult['answer']??''));$streamPartial=!empty($streamResult['partial'])||connection_aborted();if($answer===''&&!connection_aborted()){$answer=chat_local_answer($query,$context);if($answer!=='')chat_v121_emit(['type'=>'delta','delta'=>$answer]);}if($answer===''&&connection_aborted())$answer='Interrupted.';$execution=$homeAttempted?chat_execution_v019_fallback($user,!empty($runtimePlan['home']['paired']),true):chat_execution_v019_vp3_direct($user);if(($streamResult['compute_source']??'')==='user_provider'){
+            // Distinguish customer-funded Cloud inference from VP3 subscription usage.
+            // Never claim a VP3 credit deduction or a HomeServer-local execution.
+            $execution['source']='user_provider';$execution['source_label']='Cloud user provider';
+            $usage=is_array($streamResult['usage']??null)?$streamResult['usage']:[];
+            $execution['provider']=(string)($streamResult['provider']??'');
+            $execution['model']=(string)($streamResult['model']??'');
+            $execution['input_tokens']=max(0,(int)($usage['input_tokens']??0));
+            $execution['output_tokens']=max(0,(int)($usage['output_tokens']??0));
+            $execution['total_tokens']=max(0,(int)($usage['total_tokens']??0));
+            $execution['cloud_tokens_charged']=0;
+        }$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,$homeAttempted?'homeserver->vp3_cloud':'vp3_cloud',$homeAttempted?'homeserver_unavailable':'none');
     }
     $capabilityRoute=vp3_agent_runtime_capability_route_v420($runtimePlan,$execution,$homeAttempted);
 }

@@ -210,7 +210,7 @@ function vp3_agent_runtime_actual_route_v420(array $execution): string
     $source=(string)($execution['source']??'');
     if($source==='vp3_tool')return 'vp3_tool';
     if($source==='vp3_retrieval')return 'vp3_retrieval';
-    if($source==='user_provider')return 'homeserver_user_provider';
+    if($source==='user_provider')return (string)($execution['homeserver']??'not_used')==='connected'?'homeserver_user_provider':'cloud_user_provider';
     if($source==='homeserver_local')return 'homeserver_local';
     if($source==='vp3_cloud')return (string)($execution['homeserver']??'not_used')==='connected'?'homeserver_vp3_cloud':'vp3_cloud';
     return $source!==''?$source:'unknown';
