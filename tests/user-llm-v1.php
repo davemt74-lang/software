@@ -5,7 +5,7 @@ function setting(string $name,string $fallback=''): string {return $fallback;}
 require dirname(__DIR__).'/includes/ai-settings.php';
 require dirname(__DIR__).'/includes/user-llm-v1.php';
 
-$pdo=new PDO('mysql:host=127.0.0.1;port=3306;dbname=llm_test;charset=utf8mb4','llm','llm',
+$pdo=new PDO((string)(getenv('LLM_TEST_DSN')?:'mysql:host=127.0.0.1;port=3306;dbname=llm_test;charset=utf8mb4'),(string)(getenv('LLM_TEST_USER')?:'llm'),(string)(getenv('LLM_TEST_PASS')?:'llm'),
     [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
 $pdo->exec('CREATE TABLE IF NOT EXISTS users(id INT UNSIGNED NOT NULL PRIMARY KEY)');
 $pdo->exec('INSERT INTO users(id) VALUES (1001),(1002)');
