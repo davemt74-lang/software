@@ -27,6 +27,7 @@ try {
     subscription_ensure_schema($pdo);
     subscription_entitlements_v340_ensure_schema($pdo);
     ai_usage_accounting_v032_ensure_schema($pdo);
+    vp3_user_llm_v1_schema($pdo);
     // schema.sql is the historical install baseline. Normalize it immediately to
     // the current architecture so fresh installs never retain retired constraints
     // or mixed workspace ownership/lifecycle state.

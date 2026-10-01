@@ -29,6 +29,19 @@ function vp3_agent_runtime_cloud_state_v420(array $user): array
             ?subscription_has_entitlement($user,'main_ai.access')
             :true;
         if(!$state['entitled']){$state['reason']='cloud_not_entitled';return $state;}
+        // Personal Cloud keys use the owner's provider bill, not VP3's tokens.
+        // The same account entitlement and request-rate limits still apply.
+        if(function_exists('vp3_user_llm_v1_effective')&&function_exists('db')&&db()){
+            $own=vp3_user_llm_v1_effective(db(),$user);
+            if(($own['route']??'system')==='own_key'){
+                $state['ready']=true;$state['reason']='user_key_ready';
+                $state['billing_source']='user_provider';$state['remaining']=null;
+                return $state;
+            }
+            if(($own['route']??'system')==='unavailable'){
+                $state['reason']='user_key_unavailable';return $state;
+            }
+        }
         if(!function_exists('subscription_ai_balance')){
             $state['ready']=true;$state['reason']='compatibility';return $state;
         }
@@ -197,7 +210,7 @@ function vp3_agent_runtime_actual_route_v420(array $execution): string
     $source=(string)($execution['source']??'');
     if($source==='vp3_tool')return 'vp3_tool';
     if($source==='vp3_retrieval')return 'vp3_retrieval';
-    if($source==='user_provider')return 'homeserver_user_provider';
+    if($source==='user_provider')return (string)($execution['homeserver']??'not_used')==='connected'?'homeserver_user_provider':'cloud_user_provider';
     if($source==='homeserver_local')return 'homeserver_local';
     if($source==='vp3_cloud')return (string)($execution['homeserver']??'not_used')==='connected'?'homeserver_vp3_cloud':'vp3_cloud';
     return $source!==''?$source:'unknown';

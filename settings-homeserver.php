@@ -27,6 +27,7 @@ if (!$user) redirect(url('/login.php'));
       <div class="chat-topbar-actions"><a class="account-shell-button" href="<?= e(url('/client-updates.php#homeserver')) ?>">Client Updates</a><a class="account-shell-button" href="<?= e(url('/account.php')) ?>">My Account</a></div>
     </header>
 
+    <p style="margin:12px 24px"><a href="<?= e(url('/settings-ai-providers.php')) ?>">Manage Cloud AI provider keys and compute source ↗</a></p>
     <section class="hs-settings" data-homeserver-settings data-api="<?= e(url('/api/homeserver-connection-v1200.php')) ?>" data-acceptance-api="<?= e(url('/api/homeserver-acceptance-v247.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">
       <div class="hs-settings-inner">
         <nav class="hs-breadcrumb" aria-label="Settings breadcrumb"><a href="<?= e(url('/account.php')) ?>">Settings</a><span>›</span><strong>HomeServer</strong></nav>

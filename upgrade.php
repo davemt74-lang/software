@@ -319,6 +319,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!homeserver_agent_v018_ensure_schema($pdo)) throw new RuntimeException('HomeServer Agent chat schema could not be installed.');
             agent_compute_v020_ensure_schema($pdo);
             agent_compute_v023_ensure_schema($pdo);
+            vp3_user_llm_v1_schema($pdo);
 
             onboarding_intelligence_ensure_schema();
             user_data_usage_ensure_schema_v236();
