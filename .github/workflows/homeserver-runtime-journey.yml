@@ -39,6 +39,13 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Chat device pairing contract
+        run: |
+          php -l includes/homeserver-device-code-v1.php
+          php -l api/homeserver-device-code-v1.php
+          php -l settings-homeserver.php
+          node --check homeserver-device-code-v1.js
+          node tests/homeserver-chat-device-code-v1.mjs
       - name: Lint canonical runtime files
         run: |
           php -l includes/chat-execution-v019.php
