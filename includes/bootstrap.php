@@ -301,6 +301,7 @@ require_once __DIR__.'/system-apps-v300.php';
 require_once __DIR__.'/system-apps-v310.php';
 require_once __DIR__.'/system-apps-v320.php';
 require_once __DIR__.'/system-apps-v330.php';
+require_once __DIR__.'/system-apps-v340.php';
 require_once __DIR__.'/cloud-hosting-v100.php';
 require_once __DIR__.'/cloud-hosting-v110.php';
 require_once __DIR__.'/cloud-hosting-v120.php';
