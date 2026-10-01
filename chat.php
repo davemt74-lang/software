@@ -382,6 +382,11 @@ $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
         . '<script data-chat-recordings-v242 data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" src="' . e(url('/chat-recordings-v242.js?v=' . $recordingPersistenceBuild)) . '"></script>'
         . '<script data-artist-recordings-v198 data-recording-ui-build="' . e($recordingUiBuild) . '" src="' . e(url('/artist-listening-recordings.js?v=' . $recordingUiBuild)) . '"></script>'
         . '<script data-chat-transcription-canvas data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" src="' . e(url('/chat-transcription-canvas.js?v=' . $transcriptionCanvasBuild)) . '"></script>'
+        . '<link rel="stylesheet" href="' . e(url('/chat-homeserver-transcription-import.css?v=1')) . '">'
+        . '<script>window.STONEFELLOW_HS_TRANSCRIPTION_IMPORT={endpoint:' .
+          json_encode(url('/api/homeserver-transcription-import-v1.php'),JSON_UNESCAPED_SLASHES) .
+          ',csrf:' . json_encode(csrf_token(),JSON_UNESCAPED_SLASHES) . '};</script>'
+        . '<script src="' . e(url('/chat-homeserver-transcription-import.js?v=1')) . '"></script>'
     : '';
 
 $voiceConfig = '<script data-chat-voice-config>window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)$user['id'] . ',surface:"chat",trackId:0,projectId:0,conversationId:' . (int)$agentInitialConversationId . ',taskTitle:"Agent Chat",taskKey:"chat",csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';
