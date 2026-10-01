@@ -346,6 +346,11 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
         if(!empty($appManager['handled']))return vp3_agent_tool_authorize_result_v400($appManager,$user,$query);
     }
 
+    if(function_exists('vp3_media_processor_agent_query_v330')){
+        $processor=vp3_media_processor_agent_query_v330($query,$user,$conversationId,null);
+        if(!empty($processor['handled']))return vp3_agent_tool_authorize_result_v400($processor,$user,$query);
+    }
+
     if(function_exists('vp3_download_manager_agent_query_v320')){
         $downloads=vp3_download_manager_agent_query_v320($query,$user,$conversationId,null);
         if(!empty($downloads['handled']))return vp3_agent_tool_authorize_result_v400($downloads,$user,$query);

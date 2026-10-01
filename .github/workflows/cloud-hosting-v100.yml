@@ -26,6 +26,7 @@ on:
       - "includes/system-apps-v300.php"
       - "includes/system-apps-v310.php"
       - "includes/system-apps-v320.php"
+      - "includes/system-apps-v330.php"
       - "private-app-share.php"
       - "api/system-apps-v100.php"
       - "apps.php"
@@ -52,6 +53,7 @@ on:
       - "tests/system-apps-v300-*"
       - "tests/system-apps-v310-*"
       - "tests/system-apps-v320-*"
+      - "tests/system-apps-v330-*"
       - "includes/cloud-hosting-v100.php"
       - "includes/cloud-hosting-v110.php"
       - "includes/cloud-hosting-v120.php"
@@ -168,6 +170,8 @@ on:
 
       - "includes/system-apps-v320.php"
       - "tests/system-apps-v320-*"
+      - "includes/system-apps-v330.php"
+      - "tests/system-apps-v330-*"
 concurrency:
   group: cloud-hosting-v100-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -232,6 +236,7 @@ jobs:
           php -l includes/system-apps-v300.php
           php -l includes/system-apps-v310.php
           php -l includes/system-apps-v320.php
+          php -l includes/system-apps-v330.php
           php -l private-app-share.php
           php -l api/system-apps-v100.php
           php -l apps.php
@@ -313,6 +318,8 @@ jobs:
         run: node tests/system-apps-v310-contract.mjs
       - name: System Apps Section 19 Download Manager contract
         run: node tests/system-apps-v320-contract.mjs
+      - name: System Apps Section 20 Media Processor contract
+        run: node tests/system-apps-v330-contract.mjs
       - name: System Apps Section 9 user app SDK integration contract
         run: node tests/system-apps-v220-contract.mjs
       - name: Cloud Hosting Section 1 architecture contract
