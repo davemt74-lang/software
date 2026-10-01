@@ -82,7 +82,9 @@ assert.match(chatVoice,/AGENT_VOICE_SYNC_KEY/,'Chat voice must observe cross-tab
 assert.match(chatVoice,/sync\?\.enabled===false[\s\S]*disableVoice/,'cross-tab signal may revoke listening immediately');
 assert.match(chatVoice,/if\(!agentVoiceMaster\)/,'Voice Conversation must fail closed when master is off');
 
-assert.match(notificationVoice,/if \(wasVoice\) \{[\s\S]*setVoiceMode\(true\)/,'notification speech may only restore an already-active mic session');
+assert.match(notificationVoice,/async function speakWithExistingVoice\(/,'notification announcements must use existing speaker pipeline');
+assert.match(notificationVoice,/if \(!agentVoiceEnabled\(\) \|\| generation !== speechGeneration\) return false/,'notification speech must obey the Agent Voice master');
+assert.doesNotMatch(notificationVoice,/setVoiceMode\(true\)/,'notification speech must not activate the microphone');
 assert.doesNotMatch(notificationVoice,/responseTemporaryVoice/,'notification speech must not mint temporary mic authority');
 assert.doesNotMatch(notificationVoice,/setVoiceMode\(true\)[\s\S]{0,240}responseWindowActive = true/,'notification speech must not open a fresh listening window');
 

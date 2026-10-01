@@ -31,8 +31,8 @@ assert.match(domain,/function user_agents_list_v236/,'user agents are explicit s
 assert.match(domain,/Enter a name for your agent/,'named user agents require the user to supply a name');
 assert.doesNotMatch(domain,/\$first\."'s Agent"|Dave's Agent|My Agent/,'canonical agent domain never invents a user-agent name');
 assert.match(domain,/onboarding_dismissed/,'user-agent preferences retain canonical onboarding completion state');
-assert.match(chatIdentity,/Choose your onboarding experience/,'main Chat begins the complete deterministic onboarding flow');
-assert.match(chatIdentity,/Name your agent/,'Chat onboarding includes explicit agent naming');
+assert.match(chatIdentity,/Meet your Agent/,'Cloud Chat begins with required Agent identity');
+assert.match(chatIdentity,/Choose a name for me/,'Chat onboarding includes explicit Agent naming or default acceptance');
 assert.match(chatIdentity,/data-keep-system/,'Chat onboarding offers the system name as an explicit naming choice');
 assert.match(chatIdentity,/chat-onboarding-v241\.php/,'Chat onboarding saves through its deterministic state owner');
 assert.match(onboardingApi,/user_agent_create_v236/,'final onboarding save creates the user agent through the canonical domain');
