@@ -1,0 +1,20 @@
+name: HomeServer Chat Device Pairing
+on:
+  pull_request:
+    paths:
+      - 'includes/homeserver-device-code-v1.php'
+      - 'api/homeserver-device-code-v1.php'
+      - 'settings-homeserver.php'
+      - 'homeserver-device-code-v1.*'
+      - 'tests/homeserver-chat-device-code-v1.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l includes/homeserver-device-code-v1.php && php -l api/homeserver-device-code-v1.php && php -l settings-homeserver.php
+      - run: node --check homeserver-device-code-v1.js && node tests/homeserver-chat-device-code-v1.mjs

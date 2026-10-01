@@ -15,6 +15,7 @@ if (!$user) redirect(url('/login.php'));
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/account.css?v=account-light-20260904')) ?>">
 <link rel="stylesheet" href="<?= e(url('/homeserver-settings-v1200.css?v=20260924')) ?>">
+<link rel="stylesheet" href="<?= e(url('/homeserver-device-code-v1.css?v=1')) ?>">
 </head>
 <body>
 <div class="chat-app">
@@ -39,6 +40,14 @@ if (!$user) redirect(url('/login.php'));
 
         <div class="hs-alert" id="hsAlert" hidden role="status" aria-live="polite"></div>
 
+        <section class="hs-device-claim" data-hs-device-claim data-api="<?= e(url('/api/homeserver-device-code-v1.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">
+  <small class="hs-eyebrow">PAIR DIRECTLY FROM YOUR AGENT</small><h2>Enter the code shown by HomeServer</h2>
+  <p>In HomeServer Agent Chat, select Connect VP3 Cloud. Enter the temporary 12-character device code below. HomeServer completes the secure connection automatically.</p>
+  <form class="hs-device-code-row"><label for="hsDeviceCode">Device code</label>
+  <input id="hsDeviceCode" type="text" autocomplete="off" spellcheck="false" maxlength="14" placeholder="XXXX-XXXX-XXXX" required>
+  <button type="submit">Connect HomeServer</button></form>
+  <p role="status" aria-live="polite">Codes expire after 15 minutes. You can also use the existing Cloud-generated token below.</p>
+</section>
         <section class="hs-card hs-connect-card" id="hsConnectCard">
           <div class="hs-card-head"><div><small>Connection</small><h2 id="hsConnectionTitle">Checking HomeServer</h2><p id="hsConnectionDetail">Loading connection state.</p></div></div>
 
@@ -115,5 +124,6 @@ if (!$user) redirect(url('/login.php'));
 </div>
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
 <script src="<?= e(url('/homeserver-settings-v1210.js?v=homeserver-v24-release-acceptance-20260926')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-device-code-v1.js?v=1')) ?>" defer></script>
 </body>
 </html>
