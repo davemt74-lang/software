@@ -355,7 +355,7 @@ jobs:
           php -l settings-ai-providers.php
           php -l includes/ai-stream-v121.php
           node tests/cloud-user-llm-v1-contract.cjs
-          php -r 'new PDO("mysql:host=127.0.0.1;port=3306;charset=utf8mb4","root","root",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION])->exec("CREATE DATABASE IF NOT EXISTS llm_test");'
+          php -r '(new PDO("mysql:host=127.0.0.1;port=3306;charset=utf8mb4","root","root",[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]))->exec("CREATE DATABASE IF NOT EXISTS llm_test");'
           LLM_TEST_DSN='mysql:host=127.0.0.1;port=3306;dbname=llm_test;charset=utf8mb4' LLM_TEST_USER=root LLM_TEST_PASS=root php -d zend.assertions=1 -d assert.exception=1 tests/user-llm-v1.php
       - name: CI workflow governance regression
         run: node tests/ci-workflow-consolidation.mjs
