@@ -1,0 +1,5 @@
+.hs-transcript-cloud-import{font-size:11px;padding:6px 9px;border-radius:8px;border:1px solid #d9e0e8;background:#fff;color:#20314a;cursor:pointer;margin-left:auto}
+.hs-cloud-import-dialog{position:fixed;z-index:2500;right:min(400px,5vw);top:13vh;width:min(440px,90vw);max-height:75vh;overflow:auto;border:1px solid #d9e0e8;background:#fff;color:#253247;border-radius:14px;box-shadow:0 12px 50px #0003;padding:18px;box-sizing:border-box}
+.hs-cloud-import-dialog[hidden]{display:none}.hs-cloud-import-head{display:flex;justify-content:space-between;align-items:center}.hs-cloud-import-head button{background:transparent;border:0;font-size:24px;cursor:pointer}
+.hs-cloud-import-row{display:flex;gap:12px;align-items:center;justify-content:space-between;border-top:1px solid #eee;padding:10px 0}
+.hs-cloud-import-row button{cursor:pointer;border-radius:7px;padding:7px 12px}.hs-cloud-import-dialog>p{font-size:12px;line-height:1.6}
