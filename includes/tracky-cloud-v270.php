@@ -18,6 +18,7 @@ const VP3_TRACKY_FRESH_EVENT_SECONDS_V270=300;
 const VP3_TRACKY_MAX_FUTURE_SKEW_SECONDS_V270=300;
 
 require_once __DIR__.'/tracky-agent-v271.php';
+require_once __DIR__.'/tracky-visual-status-order-v1f6.php';
 require_once __DIR__.'/tracky-topology-v278.php';
 require_once __DIR__.'/tracky-federated-world-v278.php';
 require_once __DIR__.'/tracky-federation-sync-v278.php';
@@ -42,7 +43,7 @@ function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
 {
     $pdo??=db();
     if(!$pdo)return false;
-    foreach(['tracky_cloud_sites','tracky_cloud_events','tracky_cloud_world_state','tracky_cloud_context'] as $table){
+    foreach(['tracky_cloud_sites','tracky_cloud_events','tracky_cloud_world_state','tracky_cloud_context','tracky_cloud_visual_status_order'] as $table){
         if(!table_exists($table))return false;
     }
     if(function_exists('tracky_v276_schema_ready')&&!tracky_v276_schema_ready($pdo))return false;
@@ -140,6 +141,7 @@ function tracky_cloud_v270_ensure_schema(?PDO $pdo=null): void
       INDEX idx_tracky_context_updated (user_id,updated_at),
       CONSTRAINT fk_tracky_context_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    tracky_v1f6_ensure_schema($pdo);
     if(function_exists('tracky_v276_ensure_schema'))tracky_v276_ensure_schema($pdo);
     if(function_exists('tracky_v277_ensure_schema'))tracky_v277_ensure_schema($pdo);
     if(function_exists('tracky_v278_ensure_schema'))tracky_v278_ensure_schema($pdo);
@@ -393,7 +395,12 @@ function tracky_cloud_v270_relation(array $input): array
 function tracky_cloud_v270_site_status(PDO $pdo,int $userId,string $siteId): ?array
 {
     if($userId<1||!tracky_cloud_v270_schema_ready($pdo))return null;
-    $q=$pdo->prepare('SELECT * FROM tracky_cloud_sites WHERE user_id=? AND site_id=? LIMIT 1');
+    $q=$pdo->prepare('SELECT sites.*, visual.accepted_at AS visual_owner_reported_at,
+        visual.accepted_revision AS visual_owner_revision
+        FROM tracky_cloud_sites sites
+        LEFT JOIN tracky_cloud_visual_status_order visual
+          ON visual.user_id=sites.user_id AND visual.site_id=sites.site_id
+        WHERE sites.user_id=? AND sites.site_id=? LIMIT 1');
     $q->execute([$userId,$siteId]);$row=$q->fetch();
     if(!$row)return null;
     foreach(['capabilities_json'=>'capabilities','health_json'=>'health'] as $jsonKey=>$outKey){
@@ -405,7 +412,15 @@ function tracky_cloud_v270_site_status(PDO $pdo,int $userId,string $siteId): ?ar
 function tracky_cloud_v270_sites(PDO $pdo,int $userId): array
 {
     if($userId<1||!tracky_cloud_v270_schema_ready($pdo))return [];
-    $q=$pdo->prepare('SELECT user_id,site_id,device_id,label,protocol_version,status,last_sequence,sync_cursor,last_event_at,last_seen_at,capabilities_json,health_json FROM tracky_cloud_sites WHERE user_id=? ORDER BY label,site_id');
+    $q=$pdo->prepare('SELECT sites.user_id,sites.site_id,sites.device_id,sites.label,
+        sites.protocol_version,sites.status,sites.last_sequence,sites.sync_cursor,
+        sites.last_event_at,sites.last_seen_at,sites.capabilities_json,sites.health_json,
+        visual.accepted_at AS visual_owner_reported_at,
+        visual.accepted_revision AS visual_owner_revision
+        FROM tracky_cloud_sites sites
+        LEFT JOIN tracky_cloud_visual_status_order visual
+          ON visual.user_id=sites.user_id AND visual.site_id=sites.site_id
+        WHERE sites.user_id=? ORDER BY sites.label,sites.site_id');
     $q->execute([$userId]);$rows=$q->fetchAll()?:[];
     foreach($rows as &$row){
         $caps=json_decode((string)($row['capabilities_json']??''),true);$row['capabilities']=is_array($caps)?$caps:[];
@@ -481,8 +496,15 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     if(!in_array($status,['healthy','degraded','offline','disabled','recovering','failed','unknown'],true))$status='unknown';
     $capabilities=tracky_cloud_v270_capabilities(is_array($payload['capabilities']??null)?$payload['capabilities']:[]);
     $health=tracky_cloud_v270_health(is_array($payload['health']??null)?$payload['health']:[]);
+    // Visual consent is an independently ordered state; general site health,
+    // context sequence and heartbeat freshness must never overwrite it.
+    $visualIncoming=$health['visual_owner_association']??null;
+    unset($health['visual_owner_association']);
+    $visualRevision=$payload['visual_owner_status_revision']??null;
+    if(array_key_exists('visual_owner_status_revision',$payload)
+        &&$visualRevision===null)
+        throw new RuntimeException('Visual status revision cannot be null.');
     $capsJson=tracky_cloud_v270_json($capabilities);
-    $healthJson=tracky_cloud_v270_json($health);
     $cursor=mb_strimwidth(trim((string)($payload['cursor']??'')),0,190,'');
 
     $events=is_array($payload['events']??null)?array_values($payload['events']):[];
@@ -609,6 +631,11 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
 
     $pdo->beginTransaction();
     try{
+        $visualDecision=tracky_v1f6_apply($pdo,$userId,$siteId,$visualIncoming,$visualRevision);
+        if($visualDecision['state']!==''){
+            $health['visual_owner_association']=$visualDecision['state'];
+        }
+        $healthJson=tracky_cloud_v270_json($health);
         $siteStmt=$pdo->prepare("INSERT INTO tracky_cloud_sites
           (user_id,site_id,device_id,label,protocol_version,status,capabilities_json,health_json,last_sequence,sync_cursor,last_seen_at)
           VALUES (?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())
@@ -807,6 +834,16 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
         'fresh_events'=>$fresh,
         'last_sequence'=>$maxSequence,
         'cursor'=>$cursor,
+        // Only a matching accepted visual status/revision may acknowledge a
+        // HomeServer's current consent generation. Never echo local IDs.
+        'visual_owner_status'=>[
+            'accepted'=>$visualIncoming!==null&&$visualDecision['accepted']===true
+                &&is_int($visualRevision)&&$visualDecision['revision']===$visualRevision,
+            'revision'=>$visualIncoming!==null&&$visualDecision['accepted']===true
+                &&is_int($visualRevision)?$visualDecision['revision']:0,
+            'state'=>$visualIncoming!==null&&$visualDecision['accepted']===true
+                &&is_int($visualRevision)?$visualDecision['state']:'',
+        ],
         'forecast_calibration'=>[
             'accepted'=>$calibration!==null,
             'changed'=>!empty($calibrationResult['changed']),
