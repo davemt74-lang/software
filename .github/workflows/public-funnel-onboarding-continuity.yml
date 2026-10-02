@@ -52,6 +52,10 @@ jobs:
           php -l tests/agent-visual-attribution-v1f2.php
           php tests/agent-visual-attribution-v1f2.php
           node tests/agent-visual-attribution-v1f2.mjs
+          php -l includes/tracky-visual-status-order-v1f6.php
+          php -l includes/tracky-cloud-v270.php
+          php tests/tracky-visual-ordered-status-v1f6.php
+          node tests/tracky-visual-ordered-status-v1f6.mjs
           node tests/chat-onboarding-v241.mjs
           node tests/agent-onboarding-current-systems-v242.mjs
       - name: Runtime redirect and source contract
