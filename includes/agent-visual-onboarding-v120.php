@@ -40,13 +40,22 @@ function vp3_visual_onboarding_association_v1f2(array $sites,int $now): array {
         if($siteId===''||$deviceId===''||!hash_equals($siteId,$deviceId))continue;
         $seen=strtotime((string)($site['last_seen_at']??''));
         if($seen===false||$seen>$now+60||$now-$seen>=300)continue;
+        // Real Cloud DB site rows always carry a separately accepted visual
+        // timestamp. Non-visual heartbeats and rejected stale requests must
+        // never refresh or reactivate an old consent status. Compatibility
+        // fallback applies only to caller-supplied legacy test site arrays.
+        $visualDate=array_key_exists('visual_owner_reported_at',$site)
+            ?(string)($site['visual_owner_reported_at']??'')
+            :(string)($site['last_seen_at']??'');
+        $visualSeen=$visualDate!==''?strtotime($visualDate):false;
+        if($visualSeen===false||$visualSeen>$now+60||$now-$visualSeen>=300)continue;
         $health=(array)($site['health']??[]);
         $state=$health['visual_owner_association']??null;
         if(!in_array($state,['owner_attributed_unverified','revoked'],true))continue;
-        $entry=['state'=>$state,'reported_at'=>(string)$site['last_seen_at'],
+        $entry=['state'=>$state,'reported_at'=>$visualDate,
                 'site_id'=>$siteId,'transport'=>'authenticated_tracky_site_report',
                 'independently_verified'=>false,'biometric_data_received'=>false,
-                '_seen'=>$seen];
+                '_seen'=>$visualSeen];
         if($state==='owner_attributed_unverified'){
             if($active===null||$seen>$active['_seen'])$active=$entry;
         }elseif($revoked===null||$seen>$revoked['_seen'])$revoked=$entry;
