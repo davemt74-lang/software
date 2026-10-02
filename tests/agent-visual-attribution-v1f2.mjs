@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const cloud=fs.readFileSync('includes/tracky-cloud-v270.php','utf8');
+const visual=fs.readFileSync('includes/agent-visual-onboarding-v120.php','utf8');
+assert.match(cloud,/visual_owner_association/);
+assert.match(cloud,/owner_attributed_unverified/);
+assert.match(cloud,/Tracky visual owner association status is unsupported/);
+assert.match(visual,/hash_equals\(\$siteId,\$deviceId\)/);
+assert.match(visual,/suppressed_without_cloud_consent/);
+assert.match(visual,/local_owner_attribution_reported_unverified/);
+assert.match(visual,/'enrollment_verified'=>false/);
+assert.match(visual,/'cloud_biometric_storage'=>false/);
+assert.match(visual,/'contact_creation_enabled'=>false/);
+assert.doesNotMatch(visual,/(getUserMedia|face_embedding|base64_decode|camera_capture\()/);
+console.log('TRACKY_CLOUD_VISUAL_ATTRIBUTION_UI_V1F2: no biometric escalation, consent and site authenticity PASS');
