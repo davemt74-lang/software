@@ -267,6 +267,15 @@ function tracky_cloud_v270_health(array $input): array
     foreach($allowed as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],160);
     }
+    // Section 1F2: authenticated site-reported, non-biometric status only.
+    // No profile IDs, face embeddings, contact details or verification claims.
+    if(array_key_exists('visual_owner_association',$input)){
+        $state=$input['visual_owner_association'];
+        if(!is_string($state)||!in_array($state,['owner_attributed_unverified','revoked'],true)){
+            throw new RuntimeException('Tracky visual owner association status is unsupported.');
+        }
+        $out['visual_owner_association']=$state;
+    }
     return $out;
 }
 
