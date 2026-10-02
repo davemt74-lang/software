@@ -27,6 +27,37 @@ function vp3_visual_onboarding_site_readiness_v120(array $sites,int $now): array
     return ['ready'=>false,'site_id'=>'','last_seen_at'=>''];
 }
 
+/** Tracky v1F2 authenticated site status. It is NOT biometric proof.
+ * Only a fresh paired HomeServer's own site row may report this signal.
+ * Cloud never receives a participant ID, local contact, template or portrait.
+ */
+function vp3_visual_onboarding_association_v1f2(array $sites,int $now): array {
+    $active=null;$revoked=null;
+    foreach($sites as $site){
+        if(!is_array($site))continue;
+        $siteId=(string)($site['site_id']??'');
+        $deviceId=(string)($site['device_id']??'');
+        if($siteId===''||$deviceId===''||!hash_equals($siteId,$deviceId))continue;
+        $seen=strtotime((string)($site['last_seen_at']??''));
+        if($seen===false||$seen>$now+60||$now-$seen>=300)continue;
+        $health=(array)($site['health']??[]);
+        $state=$health['visual_owner_association']??null;
+        if(!in_array($state,['owner_attributed_unverified','revoked'],true))continue;
+        $entry=['state'=>$state,'reported_at'=>(string)$site['last_seen_at'],
+                'site_id'=>$siteId,'transport'=>'authenticated_tracky_site_report',
+                'independently_verified'=>false,'biometric_data_received'=>false,
+                '_seen'=>$seen];
+        if($state==='owner_attributed_unverified'){
+            if($active===null||$seen>$active['_seen'])$active=$entry;
+        }elseif($revoked===null||$seen>$revoked['_seen'])$revoked=$entry;
+    }
+    $selected=$active??$revoked;
+    if($selected!==null){unset($selected['_seen']);return $selected;}
+    return ['state'=>'unreported','reported_at'=>'','site_id'=>'',
+            'transport'=>'none','independently_verified'=>false,
+            'biometric_data_received'=>false];
+}
+
 function vp3_visual_onboarding_status_v120(array $prefs,array $sites=[],?int $now=null): array {
     $interests=(array)($prefs['feature_interests']??[]);
     $selected=!empty($interests['workflow.visual_profile']);
@@ -34,14 +65,23 @@ function vp3_visual_onboarding_status_v120(array $prefs,array $sites=[],?int $no
         &&($interests['visual.owner_self.consent_scope']??'')===VP3_VISUAL_CONSENT_SCOPE_V120
         &&is_string($interests['visual.owner_self.consented_at']??null)
         &&trim((string)$interests['visual.owner_self.consented_at'])!=='';
-    $site=vp3_visual_onboarding_site_readiness_v120($sites,$now??time());
+    $clock=$now??time();
+    $site=vp3_visual_onboarding_site_readiness_v120($sites,$clock);
+    $association=$selected&&$consented
+        ?vp3_visual_onboarding_association_v1f2($sites,$clock)
+        :['state'=>'suppressed_without_cloud_consent','reported_at'=>'','site_id'=>'',
+          'transport'=>'none','independently_verified'=>false,'biometric_data_received'=>false];
     $stage=!$selected?'not_selected':(!$consented?'needs_explicit_consent':
-        ($site['ready']?'ready_for_local_enrollment':'awaiting_local_tracky'));
+        ($association['state']==='owner_attributed_unverified'
+            ?'local_owner_attribution_reported_unverified'
+            :($site['ready']?'ready_for_local_enrollment':'awaiting_local_tracky')));
     return [
         'build'=>VP3_VISUAL_ONBOARDING_V120,'selected'=>$selected,'consented'=>$consented,
         'consent_scope'=>$consented?VP3_VISUAL_CONSENT_SCOPE_V120:'',
         'consented_at'=>$consented?(string)$interests['visual.owner_self.consented_at']:'',
         'stage'=>$stage,'site_ready'=>$site['ready'],'site_id'=>$site['site_id'],
+        'owner_contact_association'=>$association,
+        'owner_contact_attribution_reported'=>$association['state']==='owner_attributed_unverified',
         'enrollment_verified'=>false,'cloud_biometric_storage'=>false,
         'local_participant_enrollment'=>'requires_local_tracky_receipt',
         'tracking_enabled'=>false,'contact_creation_enabled'=>false,
