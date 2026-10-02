@@ -49,6 +49,9 @@ jobs:
           php tests/agent-onboarding-skill-v100.php
           php tests/agent-visual-onboarding-v120.php
           node tests/agent-visual-onboarding-v120.mjs
+          php -l tests/agent-visual-attribution-v1f2.php
+          php tests/agent-visual-attribution-v1f2.php
+          node tests/agent-visual-attribution-v1f2.mjs
           node tests/chat-onboarding-v241.mjs
           node tests/agent-onboarding-current-systems-v242.mjs
       - name: Runtime redirect and source contract
