@@ -19,6 +19,7 @@ const VP3_TRACKY_MAX_FUTURE_SKEW_SECONDS_V270=300;
 
 require_once __DIR__.'/tracky-agent-v271.php';
 require_once __DIR__.'/tracky-agent-scene-v1g3d.php';
+require_once __DIR__.'/tracky-agent-eyes-experience-v1g4.php';
 require_once __DIR__.'/tracky-visual-status-order-v1f6.php';
 require_once __DIR__.'/tracky-topology-v278.php';
 require_once __DIR__.'/tracky-federated-world-v278.php';
@@ -447,9 +448,15 @@ function tracky_cloud_v270_current_context(PDO $pdo,int $userId,?string $siteId=
     $row=$q->fetch();
     $sceneSite=$siteId??($row['site_id']??'');
     $scene=$sceneSite!==''?tracky_scene_read_v1g3d($pdo,$userId,(string)$sceneSite):[];
-    if(!$row)return $scene?['site_id'=>$sceneSite,'agent_scene'=>$scene]:[];
+    $eyes=null;
+    if($sceneSite!==''){
+        $s=$pdo->prepare('SELECT site_id,device_id,label,status,last_seen_at FROM tracky_cloud_sites WHERE user_id=? AND site_id=? LIMIT 1');
+        $s->execute([$userId,$sceneSite]);$owned=$s->fetch(PDO::FETCH_ASSOC);
+        $eyes=tracky_eyes_experience_v1g4($owned?:null,$scene);
+    }
+    if(!$row)return $eyes?['site_id'=>$sceneSite,'agent_scene'=>$scene,'agent_eyes_status'=>$eyes]:[];
     $context=json_decode((string)$row['context_json'],true);if(!is_array($context))$context=[];
-    return ['site_id'=>(string)$row['site_id'],'sequence'=>(int)$row['sequence_no'],'observed_at'=>$row['observed_at'],'updated_at'=>$row['updated_at'],'context'=>$context]+($scene?['agent_scene'=>$scene]:[]);
+    return ['site_id'=>(string)$row['site_id'],'sequence'=>(int)$row['sequence_no'],'observed_at'=>$row['observed_at'],'updated_at'=>$row['updated_at'],'context'=>$context]+($scene?['agent_scene'=>$scene]:[])+($eyes?['agent_eyes_status'=>$eyes]:[]);
 }
 
 function tracky_cloud_v270_recent_events(PDO $pdo,int $userId,?string $siteId=null,int $limit=30): array

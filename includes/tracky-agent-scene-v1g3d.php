@@ -89,7 +89,7 @@ function tracky_scene_project_v1g3d(array $summary,?float $now=null): array {
     $out=['protocol'=>TRACKY_SCENE_V1G3D,'state'=>$summary['state']??'unavailable','confidence'=>'uncalibrated','capture_authority'=>false,'identity_recognition'=>false,'source'=>'owner_supervised_local_vision','sources_separate'=>true];
     if($out['state']!=='available')return $out+['reason'=>$summary['reason']??'scene_unavailable'];
     try{$age=($now??microtime(true))-(float)(new DateTimeImmutable($summary['observed_at']))->format('U.u');}catch(Throwable){return array_replace($out,['state'=>'unavailable','reason'=>'timestamp_invalid']);}
-    if(!is_finite($age)||$age<0||$age>60)return array_replace($out,['state'=>'unavailable','reason'=>$age<0?'timestamp_invalid':'observation_expired']);
+    if(!is_finite($age)||$age<0||$age>60)return array_replace($out,['state'=>'unavailable','reason'=>$age<0?'timestamp_invalid':'observation_expired']+(is_finite($age)&&$age>60?['last_observed_at'=>$summary['observed_at']]:[]));
     $reports=[];foreach($summary['owner_corrections'] as $report)$reports[]=$report+['source'=>'owner_report','conflicts_with_camera'=>$report['present']!==in_array($report['object'],$summary['objects'],true)];
     return $out+['observed_at'=>$summary['observed_at'],'age_seconds'=>round($age,1),'freshness_limit_seconds'=>60,'room_id'=>$summary['room_id'],'objects'=>$summary['objects'],'setting'=>$summary['setting'],'lighting'=>$summary['lighting'],'owner_corrections'=>$reports];
 }

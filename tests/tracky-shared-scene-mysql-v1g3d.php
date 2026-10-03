@@ -40,6 +40,10 @@ $pdo->beginTransaction();$fresh=array_replace($active,['revision'=>3]);tracky_sc
 $payload=['protocol'=>'physical_context.v1','site'=>['id'=>'integrated-site','label'=>'HomeServer'],'status'=>'healthy','capabilities'=>[],'health'=>[],'events'=>[],'world_state'=>[],'context'=>[],'agent_scene_share'=>$fresh];
 $result=tracky_cloud_v270_ingest($pdo,993,'device-a',$payload);checkSceneMysql($result['agent_scene_share']['accepted'],'Canonical sync omitted scene receipt');
 $projection=tracky_cloud_v270_current_context($pdo,993,'integrated-site');checkSceneMysql(($projection['agent_scene']['state']??'')==='available','Cognitive current-context lost shared scene');
+$statuses=tracky_eyes_reports_v1g4($pdo,993,'integrated-site');checkSceneMysql($statuses[0]['state']==='available'&&$statuses[0]['device_id']==='device-a','Unified status missed canonical site binding');
+checkSceneMysql(tracky_eyes_reports_v1g4($pdo,994,'integrated-site')[0]['site_id']==='','Other account saw unified status');
+checkSceneMysql(tracky_eyes_reports_v1g4($pdo,993,'foreign-site')[0]['site_id']==='','Unknown site fell back to another scene');
+checkSceneMysql($projection['agent_eyes_status']['state']==='available','Cognitive context omitted unified status');
 $rows=tracky_cloud_v270_world_state($pdo,993,'integrated-site');checkSceneMysql(count($rows)===5,'Read-time inferred graph absent');
 try{tracky_cloud_v270_ingest($pdo,993,'device-b',$payload);throw new LogicException('Device binding replaced');}catch(RuntimeException $e){checkSceneMysql(str_contains($e->getMessage(),'another HomeServer device'),'Wrong device denial');}
 $payload['agent_scene_share']=array_replace($revoked,['revision'=>4]);tracky_cloud_v270_ingest($pdo,993,'device-a',$payload);checkSceneMysql(tracky_cloud_v270_world_state($pdo,993,'integrated-site')===[],'Revoked graph still present');
