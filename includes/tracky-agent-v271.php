@@ -407,7 +407,7 @@ function tracky_agent_answer_v271(array $data,string $intent): string
         $scene=(array)($data['agent_scene']??[]);
         $sceneText=$scene&&function_exists('tracky_scene_text_v1g3d')?tracky_scene_text_v1g3d($scene):'';
         $eyes=(array)($data['agent_eyes_status']??[]);
-        $statusText=$eyes?' Agent Eyes: '.$eyes['title'].'. '.$eyes['connection_label'].'. '.$eyes['guidance'].' '.$eyes['consent_note']:'';
+        $statusText=$eyes?' Agent Eyes: '.$eyes['title'].'. '.$eyes['connection_label'].'. '.$eyes['guidance'].' '.$eyes['consent_note'].' '.($eyes['installed_acceptance']??''):'';
         if(!$ctx)return ($sceneText?:'Tracky has not synchronized a current physical-context snapshot for this site yet.').$statusText;
         $room=(string)($ctx['current_room']??'Unknown');$people=(array)($ctx['people_present']??[]);
         $fresh=(string)($data['freshness']['state']??'stale');

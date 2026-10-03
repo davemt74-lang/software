@@ -20,6 +20,7 @@ const VP3_TRACKY_MAX_FUTURE_SKEW_SECONDS_V270=300;
 require_once __DIR__.'/tracky-agent-v271.php';
 require_once __DIR__.'/tracky-agent-scene-v1g3d.php';
 require_once __DIR__.'/tracky-agent-eyes-experience-v1g4.php';
+require_once __DIR__.'/tracky-agent-eyes-acceptance-v1g5.php';
 require_once __DIR__.'/tracky-visual-status-order-v1f6.php';
 require_once __DIR__.'/tracky-topology-v278.php';
 require_once __DIR__.'/tracky-federated-world-v278.php';
