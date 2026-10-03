@@ -5,7 +5,6 @@
   const CONTROL_BUILD='voice-three-of-three-v157-20260829';
   const SESSION_TTL_MS=30*60*1000;
   const HEALTH_INTERVAL_MS=30000;
-  const DUPLICATE_WINDOW_MS=2600;
   const ECHO_COOLDOWN_MS=360;
   const POST_SPEECH_ECHO_MS=4000;
   const TURN_END_PAUSE_MS=1800;
@@ -33,13 +32,8 @@
     }catch(error){return null;}
   }
   function cleanTranscript(value){return String(value||'').replace(/\s+/g,' ').trim();}
-  function normalized(value){return cleanTranscript(value).toLowerCase().replace(/[^\p{L}\p{N}'-]+/gu,' ').trim();}
-  function transcriptWords(value){return normalized(value).split(/\s+/).filter(word=>word.length>1);}
-  function fingerprint(value){
-    const text=normalized(value);let hash=2166136261;
-    for(let i=0;i<text.length;i+=1){hash^=text.charCodeAt(i);hash=Math.imul(hash,16777619);}
-    return (hash>>>0).toString(36);
-  }
+  function normalized(value){return cleanTranscript(value).normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}'-]+/gu,' ').trim();}
+  function transcriptWords(value){return normalized(value).split(/\s+/).filter(Boolean);}
   function resemblesOutput(candidate,spoken){
     const words=transcriptWords(candidate);if(words.length<2)return false;
     const spokenWords=transcriptWords(spoken);if(!spokenWords.length)return false;
@@ -106,7 +100,6 @@
     let bargeCandidateNormalized='';
     let bargeCandidateHits=0;
     let bargeCaptureTimer=0;
-    let recentAccepted=[];
     let lastHealthSent=0;
     let pendingFinalTranscript='';
     let pendingFinalConfidence=0;
@@ -217,9 +210,6 @@
       try{return Promise.resolve(premiumVoice.unlock()).then(unlocked=>{if(unlocked)proof.premiumUnlocks+=1;emit('stonefellow:voice-audio-unlock',{reason,unlocked:!!unlocked});return !!unlocked;}).catch(()=>false);}
       catch(error){return Promise.resolve(false);}
     }
-    function pruneAccepted(){const cutoff=now()-DUPLICATE_WINDOW_MS;recentAccepted=recentAccepted.filter(item=>item.at>=cutoff);}
-    function duplicate(text){pruneAccepted();const fp=fingerprint(text);return recentAccepted.some(item=>item.fp===fp);}
-    function rememberAccepted(text){pruneAccepted();recentAccepted.push({fp:fingerprint(text),at:now()});}
     function isEchoCooldown(text){return outputEndedAt>0&&now()-outputEndedAt<POST_SPEECH_ECHO_MS&&resemblesOutput(text,spokenOutput)&&!immediateBargeCommand(text);}
 
     function stopMicMonitor(reason='released'){
@@ -432,8 +422,9 @@
       const accepted=acceptTranscript(transcript,confidence,'normal');
       if(!accepted.ok){proof.lowConfidenceRejected+=1;scheduleRecognition(120);return false;}
       if(isEchoCooldown(transcript)){proof.cooldownEchoRejected+=1;scheduleRecognition(ECHO_COOLDOWN_MS);return false;}
-      if(duplicate(transcript)){proof.duplicatesRejected+=1;scheduleRecognition(120);return false;}
-      rememberAccepted(transcript);proof.acceptedTranscripts+=1;setState('processing','Thinking…');emitHealth('accepted');
+      // The recognizer is retired when its final is queued. A later recognizer
+      // may legitimately hear the same words in a new turn.
+      proof.acceptedTranscripts+=1;setState('processing','Thinking…');emitHealth('accepted');
       try{
         const result=options.onTranscript?.(transcript);
         Promise.resolve(result).catch(error=>{try{options.onError?.(error);}catch(callbackError){}}).finally(()=>{if(enabled&&!destroyed&&!recognition)scheduleRecognition(180);});
@@ -445,13 +436,13 @@
       const candidate=cleanTranscript(bargeCandidate);if(!candidate||performance.now()-bargeCandidateAt>2200)return '';
       if(resemblesOutput(candidate,spokenOutput)&&!immediateBargeCommand(candidate)){proof.echoCandidatesRejected+=1;return '';}
       const accepted=acceptTranscript(candidate,bargeCandidateConfidence,'barge');
-      if(!accepted.ok){proof.lowConfidenceRejected+=1;return '';}if(duplicate(candidate)){proof.duplicatesRejected+=1;return '';}return candidate;
+      if(!accepted.ok){proof.lowConfidenceRejected+=1;return '';}return candidate;
     }
     function finishInterruptCapture(force=false){
       if(!bargeCapture)return false;const candidate=usableBargeCandidate();if(!candidate&&!force)return false;
       bargeCapture=false;clearBargeTimer();
       if(candidate){
-        proof.preservedInterruptions+=1;rememberAccepted(candidate);proof.acceptedTranscripts+=1;
+        proof.preservedInterruptions+=1;proof.acceptedTranscripts+=1;
         stopRecognition(false);clearBargeCandidate();
         setState('processing','Thinking…');emitHealth('interruption-preserved',true);
         try{Promise.resolve(options.onTranscript?.(candidate)).catch(error=>{try{options.onError?.(error);}catch(callbackError){}});}catch(error){}return true;

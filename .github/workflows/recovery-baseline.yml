@@ -54,6 +54,15 @@ jobs:
           php -l video-editor.php
           php -l admin/stems.php
 
+      - name: Listening and conversation correctness
+        run: |
+          node tests/listening-section2.mjs
+          node --check chat-voice.js
+          node --check conversation-voice-v122.js
+          node --check artist-listening.js
+          node --check artist-listening-recognition.js
+          node --check artist-listening-realtime.js
+
       - name: Run recovered baseline suite
         run: python3 tools/run_recovery_baseline.py
 

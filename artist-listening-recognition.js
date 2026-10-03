@@ -102,7 +102,8 @@
 
         native.onresult = event => {
           if (generation !== this._generation || this._native !== native || !this._running) return;
-          emit(this.onresult, this, event);
+          // Native resultIndex starts at zero again after each internal restart.
+          emit(this.onresult, this, {type:event.type,results:event.results,resultIndex:event.resultIndex,stonefellowRecognitionRunId:generation});
         };
 
         native.onerror = event => {
@@ -115,13 +116,13 @@
           emit(this.onerror, this, event);
         };
 
-        native.onnomatch = event => emit(this.onnomatch, this, event);
-        native.onaudiostart = event => emit(this.onaudiostart, this, event);
-        native.onaudioend = event => emit(this.onaudioend, this, event);
-        native.onsoundstart = event => emit(this.onsoundstart, this, event);
-        native.onsoundend = event => emit(this.onsoundend, this, event);
-        native.onspeechstart = event => emit(this.onspeechstart, this, event);
-        native.onspeechend = event => emit(this.onspeechend, this, event);
+        native.onnomatch = event => {if(generation === this._generation && this._native === native && this._running)emit(this.onnomatch, this, event);};
+        native.onaudiostart = event => {if(generation === this._generation && this._native === native && this._running)emit(this.onaudiostart, this, event);};
+        native.onaudioend = event => {if(generation === this._generation && this._native === native && this._running)emit(this.onaudioend, this, event);};
+        native.onsoundstart = event => {if(generation === this._generation && this._native === native && this._running)emit(this.onsoundstart, this, event);};
+        native.onsoundend = event => {if(generation === this._generation && this._native === native && this._running)emit(this.onsoundend, this, event);};
+        native.onspeechstart = event => {if(generation === this._generation && this._native === native && this._running)emit(this.onspeechstart, this, event);};
+        native.onspeechend = event => {if(generation === this._generation && this._native === native && this._running)emit(this.onspeechend, this, event);};
 
         native.onend = event => {
           if (generation !== this._generation) return;

@@ -224,12 +224,6 @@
     if(!state.active)return;
     state.restartTimer=setTimeout(()=>startRecognition(),Math.max(80,delay));
   }
-  function duplicateFinal(text){
-    const clean=normalize(text);const now=Date.now();
-    const duplicate=clean!==''&&clean===state.lastFinalText&&now-state.lastFinalAt<6000;
-    if(!duplicate){state.lastFinalText=clean;state.lastFinalAt=now;}
-    return duplicate;
-  }
   function nextSegment(type,text,confidence=null,meta={}){
     const now=elapsedMs();
     const started=Math.max(0,Number(meta.startedMs??now));
@@ -265,18 +259,18 @@
     if(command.name==='start'){return true;}
     return false;
   }
-  function handleFinal(text,confidence){
+  function handleFinal(text,confidence,identity={}){
     let heard=String(text||'').trim();if(!heard)return;
     const ended=elapsedMs();
     const started=state.utteranceStartedMs||Math.max(0,ended-1800);
     state.utteranceStartedMs=0;
     if(state.continuity){
-      const reconciled=state.continuity.finalize(heard,ended);
+      const reconciled=state.continuity.finalize(heard,ended,identity);
       state.interim='';
       proof.overlapWordsReconciled+=Number(reconciled.overlapWords||0);
       if(reconciled.duplicate){proof.duplicatePhrasesSuppressed+=1;state.interim='';emitLive('interim');return;}
       heard=reconciled.delta;
-    }else if(duplicateFinal(heard)){proof.duplicatePhrasesSuppressed+=1;return;}
+    }
     const command=commandFor(heard);
     if(runPassiveCommand(command))return;
     if(state.noteArmed){state.noteArmed=false;nextSegment('note',heard,confidence,{startedMs:started,endedMs:ended});notify('Note added.','success');return;}
@@ -286,6 +280,7 @@
   function startRecognition(){
     if(!state.active||state.recognition||state.recognitionStarting||typeof SpeechRecognitionCtor!=='function')return false;
     const current=new SpeechRecognitionCtor();state.recognition=current;state.recognitionStarting=true;
+    const runId=uuid();const acceptedResults=new Set();
     current.continuous=true;current.interimResults=true;current.lang=String(state.session?.language||document.documentElement.lang||'en-US');
     current.onspeechstart=()=>{if(state.recognition===current)state.utteranceStartedMs=elapsedMs();};
     current.onspeechend=()=>{};
@@ -295,7 +290,13 @@
       let interim='';
       for(let index=Math.max(0,Number(event.resultIndex||0));index<event.results.length;index+=1){
         const result=event.results[index];const text=String(result?.[0]?.transcript||'');
-        if(result?.isFinal)handleFinal(text,Number(result?.[0]?.confidence));else interim+=text;
+        if(result?.isFinal){
+          const nativeRun=`${runId}:${event.stonefellowRecognitionRunId??0}`;
+          const key=`${nativeRun}:${index}`;
+          if(acceptedResults.has(key)){proof.duplicatePhrasesSuppressed+=1;continue;}
+          acceptedResults.add(key);if(acceptedResults.size>2048)acceptedResults.delete(acceptedResults.values().next().value);
+          handleFinal(text,Number(result?.[0]?.confidence),{runId:nativeRun,resultIndex:index});
+        }else interim+=text;
       }
       state.interim=state.continuity?state.continuity.setInterim(interim):interim.trim();emitLive('interim');
     };
