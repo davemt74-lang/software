@@ -385,6 +385,7 @@
         if(enabled)scheduleRecognition(120);
       };
       current.onerror=event=>{
+        if(recognition!==current||destroyed||!enabled)return;
         clearStartWatchdog();if(recognition===current){recognition=null;recognitionMode='';}listening=false;proof.recognitionErrors+=1;
         const kind=String(event?.error||'unknown');const message=recognitionErrorMessage(kind);
         recognizerEvent('error',{mode,error:kind,message:String(event?.message||'')});persist();
@@ -398,6 +399,7 @@
         if(message)setState('ready',pendingFinalTranscript?`Listening · ${pendingFinalTranscript}`:message);if(enabled)scheduleRecognition(kind==='no-speech'?120:300);
       };
       current.onend=()=>{
+        if(recognition!==current||destroyed||!enabled)return;
         clearStartWatchdog();if(recognition===current){recognition=null;recognitionMode='';}listening=false;recognizerEvent('end',{mode});persist();
         if(mode==='barge'){
           if(bargeCapture&&finishInterruptCapture(true))return;
@@ -534,6 +536,7 @@
       if(recognitionMode==='barge')stopRecognition(false);bargeCapture=false;clearBargeCandidate();clearBargeTimer();preparing=false;speaking=false;outputEndedAt=now();
     }
     function setEnabled(next,opts={}){
+      if(destroyed)return false;
       if(next&&!claimCapture()){setState('error','Another surface is using voice capture. Stop it there first.');return false;}
       const wasEnabled=enabled;enabled=!!next;proof.enabled=enabled;if(opts.persist!==false)writeShared(userId,enabled,source);
       try{options.onVoiceChange?.(enabled);}catch(error){}
