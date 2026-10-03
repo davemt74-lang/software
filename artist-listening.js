@@ -10,6 +10,9 @@
   const realtime=window.STONEFELLOW_ARTIST_LISTENING_REALTIME||null;
   if(!button||!form||!input||!cfg.endpoint)return;
 
+  const MAX_PENDING_SEGMENTS=500;
+  const MAX_RECORDING_BYTES=32*1024*1024;
+  const REQUEST_TIMEOUT_MS=30000;
   const userId=Math.max(0,Number(cfg.userId||0));
   const STORAGE_KEY=`stonefellow:artist-listening:v172:${userId}`;
   const state={
@@ -22,6 +25,7 @@
     restartTimer:0,
     timer:0,
     retryTimer:0,
+    retryAttempts:0,
     flushTimer:0,
     meterFrame:0,
     meterStream:null,
@@ -37,6 +41,7 @@
     mediaRecorder:null,
     recordingStream:null,
     recordingChunks:[],
+    recordingBytes:0,
     recordingKey:'',
     recordingMime:'',
     recordingStartedMs:0,
@@ -148,7 +153,7 @@
       savedAt:Date.now(),
     };
     try{localStorage.setItem(STORAGE_KEY,JSON.stringify(snapshot));}
-    catch(error){state.lastError='Browser transcript backup storage is full.';proof.lastError=state.lastError;}
+    catch(error){state.lastError='Browser transcript backup storage is full. Keep this page open until sync finishes.';proof.lastError=state.lastError;if(state.active)void stopCapture('storage-full');notify(state.lastError,'error');}
   }
   function readPersisted(){
     try{const data=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');return data&&typeof data==='object'?data:{};}catch(error){return {};}
@@ -164,10 +169,15 @@
       options.headers['Content-Type']='application/json';
       options.body=JSON.stringify({action,csrf_token:String(cfg.csrf||''),...payload});
     }
-    const response=await fetch(endpoint,options);
-    const data=await response.json().catch(()=>({ok:false,error:'Artist Listening returned an invalid response.'}));
-    if(!response.ok||!data.ok)throw new Error(String(data.error||`Artist Listening failed (${response.status}).`));
-    return data;
+    const controller=new AbortController();options.signal=controller.signal;
+    let timer;
+    try{return await Promise.race([(async()=>{
+      const response=await fetch(endpoint,options);
+      const data=await response.json().catch(()=>({ok:false,error:'Artist Listening returned an invalid response.'}));
+      if(!response.ok||!data.ok)throw new Error(String(data.error||`Artist Listening failed (${response.status}).`));
+      return data;
+    })(),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('Transcript request timed out.'));},REQUEST_TIMEOUT_MS);})]);}
+    finally{clearTimeout(timer);}
   }
 
   function combinedSegments(){
@@ -225,6 +235,7 @@
     state.restartTimer=setTimeout(()=>startRecognition(),Math.max(80,delay));
   }
   function nextSegment(type,text,confidence=null,meta={}){
+    if(state.pending.length>=MAX_PENDING_SEGMENTS){notify('Transcript save queue is full. Keep this page open while it reconnects.','error');if(state.active)void stopCapture('queue-full');return null;}
     const now=elapsedMs();
     const started=Math.max(0,Number(meta.startedMs??now));
     const ended=Math.max(started,Number(meta.endedMs??now));
@@ -244,9 +255,9 @@
     };
     if(!segment.text)return null;
     state.pending.push(segment);proof.segments+=1;if(type==='marker')proof.markers+=1;if(type==='note')proof.notes+=1;
-    persist();render();queueFlush();return segment;
+    persist();render();queueFlush();if(state.pending.length>=MAX_PENDING_SEGMENTS&&state.active){notify('Listening stopped at the unsaved transcript limit. Keep this page open until sync finishes.','error');void stopCapture('queue-full');}return segment;
   }
-  function queueFlush(delay=420){if(state.flushTimer)clearTimeout(state.flushTimer);state.flushTimer=setTimeout(()=>{state.flushTimer=0;void flushPending();},Math.max(80,delay));}
+  function queueFlush(delay=420){if(state.flushTimer)return;state.flushTimer=setTimeout(()=>{state.flushTimer=0;void flushPending();},Math.max(80,delay));}
   function runPassiveCommand(command){
     if(!command)return false;
     if(command.name==='stop'){proof.commandStops+=1;void stopCapture('voice-command');return true;}
@@ -366,10 +377,13 @@
     formData.append('ended_ms',String(Math.max(0,Number(meta.endedMs||0))));
     formData.append('duration_ms',String(Math.max(0,Number(meta.durationMs||0))));
     formData.append('audio',blob,`transcription-${meta.key}.${ext}`);
-    const response=await fetch(String(cfg.endpoint),{method:'POST',credentials:'same-origin',headers:{Accept:'application/json'},body:formData});
-    const data=await response.json().catch(()=>({ok:false,error:'Recording upload returned an invalid response.'}));
-    if(!response.ok||!data.ok)throw new Error(String(data.error||`Recording upload failed (${response.status}).`));
-    return data;
+    const controller=new AbortController();let deadline;
+    try{return await Promise.race([(async()=>{
+      const response=await fetch(String(cfg.endpoint),{method:'POST',signal:controller.signal,credentials:'same-origin',headers:{Accept:'application/json'},body:formData});
+      const data=await response.json().catch(()=>({ok:false,error:'Recording upload returned an invalid response.'}));
+      if(!response.ok||!data.ok)throw new Error(String(data.error||`Recording upload failed (${response.status}).`));return data;
+    })(),new Promise((_,reject)=>{deadline=setTimeout(()=>{controller.abort();reject(new Error('Recording upload timed out. The clip could not be saved.'));},120000);})]);}
+    finally{clearTimeout(deadline);}
   }
   async function startAudioRecording(source='button'){
     if(state.recordingActive||state.recordingStarting||state.recordingUploading)return;
@@ -391,8 +405,19 @@
       if(ticket&&!ticket.ownStream(stream))return;
       const mime=preferredRecordingMime();
       const recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);
-      state.recordingStream=stream;state.mediaRecorder=recorder;state.recordingChunks=[];state.recordingKey=uuid();state.recordingMime=String(recorder.mimeType||mime||'audio/webm');state.recordingStartedMs=elapsedMs();
-      recorder.addEventListener('dataavailable',event=>{if(event.data&&event.data.size>0)state.recordingChunks.push(event.data);});
+      state.recordingStream=stream;state.mediaRecorder=recorder;state.recordingChunks=[];state.recordingBytes=0;state.recordingKey=uuid();state.recordingMime=String(recorder.mimeType||mime||'audio/webm');state.recordingStartedMs=elapsedMs();
+      recorder.addEventListener('dataavailable',event=>{
+        if(state.mediaRecorder!==recorder||!event.data?.size)return;
+        if(state.recordingBytes+event.data.size>MAX_RECORDING_BYTES){
+          notify('Retained audio clip reached its size limit. Transcription continues; start another clip when this one is saved.','error');
+          if(state.recordingActive)void stopAudioRecording('size-limit').catch(()=>{});return;
+        }
+        state.recordingChunks.push(event.data);state.recordingBytes+=event.data.size;
+        if(state.recordingActive&&state.recordingBytes>=MAX_RECORDING_BYTES-1024*1024){
+          notify('Saving the retained audio clip at its size limit. Transcription continues.','success');
+          void stopAudioRecording('size-limit').catch(()=>{});
+        }
+      });
       recorder.addEventListener('error',event=>{state.lastError=String(event?.error?.message||'Audio recorder error.');proof.lastError=state.lastError;proof.recordingErrors+=1;notify(state.lastError,'error');});
       recorder.start(1000);state.recordingActive=true;proof.recordingStarts+=1;notify('Audio recording started. Transcription is still listening.','success');render();emitLive('recording-started',{recordingKey:state.recordingKey,source});
     }catch(error){for(const track of stream?.getTracks?.()||[]){try{track.stop();}catch(ignore){}}if(!current())return;stopRecordingStream();state.mediaRecorder=null;state.recordingChunks=[];state.recordingKey='';state.recordingActive=false;proof.recordingErrors+=1;state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(`Could not start audio recording: ${state.lastError}`,'error');}
@@ -406,8 +431,11 @@
     const key=String(state.recordingKey||uuid());const startedMs=Math.max(0,Number(state.recordingStartedMs||0));const endedMs=Math.max(startedMs,Number(endedOverride===null?elapsedMs():endedOverride));const mime=String(recorder.mimeType||state.recordingMime||'audio/webm');
     state.recordingActive=false;state.recordingUploading=true;render();
     state.recordingStopPromise=new Promise((resolve,reject)=>{
-      const finish=async()=>{
+      let finished=false;let stopDeadline;
+      const finish=async(stopError=null)=>{
+        if(finished)return;finished=true;clearTimeout(stopDeadline);
         try{
+          if(stopError)throw stopError;
           const blob=new Blob(state.recordingChunks,{type:mime});
           if(blob.size<1)throw new Error('The retained recording was empty.');
           const data=await uploadRecordingBlob(blob,{key,startedMs,endedMs,durationMs:endedMs-startedMs});
@@ -415,6 +443,7 @@
         }catch(error){proof.recordingErrors+=1;state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(`Recording could not be saved: ${state.lastError}`,'error');reject(error);}
         finally{stopRecordingStream();state.mediaRecorder=null;state.recordingChunks=[];state.recordingKey='';state.recordingMime='';state.recordingStartedMs=0;state.recordingUploading=false;state.recordingStopPromise=null;render();}
       };
+      stopDeadline=setTimeout(()=>void finish(new Error('Audio recorder did not finish. The clip could not be saved.')),5000);
       recorder.addEventListener('stop',()=>void finish(),{once:true});
       try{recorder.requestData();}catch(error){}
       try{recorder.stop();}catch(error){void finish();}
@@ -477,12 +506,12 @@
   }
 
   async function flushPending(){
-    if(state.syncing||!state.pending.length)return;
+    if(state.syncing||state.retryTimer||!state.pending.length)return;
     if(state.startPromise){try{await state.startPromise;}catch(error){return;}}
-    const id=sessionId();if(id<1)return;
-    state.syncing=true;const batch=state.pending.slice(0,50);const keys=new Set(batch.map(segment=>segment.key));
+    const id=sessionId();if(id<1||state.syncing||state.retryTimer||!state.pending.length)return;
+    state.syncing=true;let succeeded=false;const batch=state.pending.slice(0,50);const keys=new Set(batch.map(segment=>segment.key));
     try{
-      const data=await request('append',{session_id:id,segments:batch});proof.syncs+=1;
+      const data=await request('append',{session_id:id,segments:batch});proof.syncs+=1;succeeded=true;state.retryAttempts=0;
       state.pending=state.pending.filter(segment=>!keys.has(segment.key));state.session=data.session;
       persist();render();emitLive('synced',{accepted:Number(data.accepted||0)});
     }catch(error){
@@ -490,21 +519,21 @@
       notify(`Transcript kept locally. Sync will retry: ${state.lastError}`,'error');persist();scheduleRetry();
     }finally{
       state.syncing=false;
-      if(state.pending.length)setTimeout(()=>void flushPending(),0);
-      else if(state.pendingStop)setTimeout(()=>void finalizeStop(),0);
+      if(succeeded&&state.pending.length)setTimeout(()=>void flushPending(),0);
+      else if(succeeded&&state.pendingStop)setTimeout(()=>void finalizeStop(),0);
     }
   }
   function scheduleRetry(){
-    if(state.retryTimer)clearTimeout(state.retryTimer);
-    if(!state.pending.length&&!state.pendingStop)return;
-    state.retryTimer=setTimeout(()=>{state.retryTimer=0;if(state.pending.length)void flushPending();else if(state.pendingStop)void finalizeStop();},4000);
+    if(state.retryTimer||(!state.pending.length&&!state.pendingStop))return;
+    const delay=Math.min(30000,4000*2**Math.min(state.retryAttempts++,3));
+    state.retryTimer=setTimeout(()=>{state.retryTimer=0;if(state.pending.length)void flushPending();else if(state.pendingStop)void finalizeStop();},delay);
   }
   async function finalizeStop(){
     if(!state.pendingStop||state.syncing||state.pending.length)return;
     if(state.startPromise){try{await state.startPromise;}catch(error){scheduleRetry();return;}}
     const id=sessionId();if(id<1){scheduleRetry();return;}
     try{
-      const data=await request('stop',{session_id:id,duration_ms:elapsedMs()});state.session=data.session;state.pendingStop=false;state.elapsedBeforeResume=Number(state.session.duration_ms||elapsedMs());proof.stops+=1;
+      const data=await request('stop',{session_id:id,duration_ms:elapsedMs()});state.session=data.session;state.pendingStop=false;state.retryAttempts=0;state.elapsedBeforeResume=Number(state.session.duration_ms||elapsedMs());proof.stops+=1;
       notify('Private transcript draft saved. Nothing was added to Agent Brain or the Knowledge Base.','success');persist();await refreshSessions();render();emitLive('stopped',{sessionId:Number(state.session?.id||0)});
     }catch(error){state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(`Stop is pending sync: ${state.lastError}`,'error');persist();scheduleRetry();}
   }
