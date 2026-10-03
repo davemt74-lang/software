@@ -552,6 +552,17 @@ function artist_listening_v172_start(array $user, string $clientKey, int $conver
         if (!$userLock->fetchColumn()) {
             throw new RuntimeException('User account not found.');
         }
+        // A lost start acknowledgement must resolve the same client document,
+        // including a document already stopped by another tab.
+        $sameKey = $pdo->prepare('SELECT id FROM artist_transcript_sessions_v172 WHERE created_by_user_id=? AND client_session_key=? LIMIT 1 FOR UPDATE');
+        $sameKey->execute([$userId,$clientKey]);
+        $sameId = (int)$sameKey->fetchColumn();
+        if ($sameId > 0) {
+            $pdo->commit();
+            $payload = artist_listening_v172_payload($pdo,$user,$sameId);
+            $payload['recovered'] = true;
+            return $payload;
+        }
         $existing = $pdo->prepare(
             "SELECT id FROM artist_transcript_sessions_v172
              WHERE created_by_user_id=? AND status='active'
@@ -607,9 +618,6 @@ function artist_listening_v172_append(array $user, int $sessionId, array $segmen
     $pdo->beginTransaction();
     try {
         $session = artist_listening_v172_session($pdo, $user, $sessionId, true);
-        if ((string)$session['status'] !== 'active') {
-            throw new RuntimeException('This transcript is no longer actively listening.');
-        }
         $insert = $pdo->prepare(
             'INSERT IGNORE INTO artist_transcript_segments_v172
              (session_id,client_segment_key,segment_index,segment_type,speaker_label,transcript_text,started_ms,ended_ms,confidence)
@@ -620,6 +628,7 @@ function artist_listening_v172_append(array $user, int $sessionId, array $segmen
         );
         $nextIndexStmt->execute([$sessionId]);
         $nextIndex = max(0, (int)$nextIndexStmt->fetchColumn() + 1);
+        $existingSegment = $pdo->prepare('SELECT transcript_text,segment_type FROM artist_transcript_segments_v172 WHERE session_id=? AND client_segment_key=? LIMIT 1');
         $accepted = 0;
         foreach ($segments as $segment) {
             if (!is_array($segment)) {
@@ -637,20 +646,33 @@ function artist_listening_v172_append(array $user, int $sessionId, array $segmen
             $speaker = trim((string)($segment['speaker'] ?? 'Speaker 1'));
             $speaker = $speaker !== '' ? mb_strimwidth($speaker, 0, 80, '') : 'Speaker 1';
             $index = max($nextIndex, (int)($segment['index'] ?? 0));
-            $nextIndex = $index + 1;
             $startMs = max(0, (int)($segment['started_ms'] ?? 0));
             $endMs = max($startMs, (int)($segment['ended_ms'] ?? $startMs));
             $key = trim((string)($segment['key'] ?? ''));
             if (!preg_match('/^[a-z0-9-]{16,64}$/i', $key)) {
                 $key = sha1($sessionId . '|' . $index . '|' . $startMs . '|' . $type . '|' . $text);
             }
+            $existingSegment->execute([$sessionId,strtolower($key)]);
+            $duplicate = $existingSegment->fetch(PDO::FETCH_ASSOC);
+            if ($duplicate) {
+                if ((string)$duplicate['transcript_text'] !== $text || (string)$duplicate['segment_type'] !== $type) {
+                    throw new RuntimeException('This segment key already belongs to different transcript content.');
+                }
+                continue;
+            }
+            if ((string)$session['status'] !== 'active') {
+                throw new RuntimeException('This transcript is no longer actively listening.');
+            }
+            $nextIndex = $index + 1;
             $confidence = isset($segment['confidence']) && is_numeric($segment['confidence'])
                 ? max(0.0, min(1.0, (float)$segment['confidence']))
                 : null;
             $insert->execute([$sessionId, strtolower($key), $index, $type, $speaker, $text, $startMs, $endMs, $confidence]);
             $accepted += $insert->rowCount();
         }
-        $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET last_activity_at=NOW() WHERE id=?')->execute([$sessionId]);
+        if ($accepted > 0) {
+            $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET last_activity_at=NOW() WHERE id=?')->execute([$sessionId]);
+        }
         $pdo->commit();
         return ['accepted'=>$accepted,'session'=>artist_listening_v172_payload($pdo, $user, $sessionId)];
     } catch (Throwable $e) {
