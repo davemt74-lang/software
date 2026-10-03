@@ -32,6 +32,7 @@ function tracky_eyes_experience_v1g4(?array $site,array $scene,?float $now=null)
       'meaning'=>$state==='available'?tracky_scene_text_v1g3d($scene):'No current scene meaning is available.',
       'consent'=>$consent,'local_consent_known'=>false,'pending_revocation_known'=>false,
       'consent_note'=>'Cloud shows the last received state. A newer local change may be waiting for acknowledgment; check HomeServer.',
+      'installed_acceptance'=>'Complete the installed acceptance checklist in HomeServer Tracky; Cloud cannot verify local hardware exercises.',
       'capture_authority'=>false,'automatic_recovery'=>false,'hardware_certified'=>false];
 }
 function tracky_eyes_reports_v1g4(PDO $pdo,int $userId,string $siteId=''): array {
