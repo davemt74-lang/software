@@ -92,6 +92,8 @@ function tracky_agent_intent_v271(string $query): string
     $explicit=(bool)preg_match('/\b(?:tracky|physical context|physical awareness|room|rooms|presence|present|camera health|environment|last seen|last saw|what moved|who is here|who\'s here|where am i)\b/u',$q);
     if(!$explicit&&tracky_agent_nonphysical_subject_v271($q))return '';
 
+    if(preg_match('/\bagent eyes\b|(?:what|show).*tracky.*(?:see|scene)|(?:what|show).*(?:see|scene).*tracky/u',$q))return 'current';
+
     if(preg_match('/\b(?:tracky|physical awareness|camera|physical context)\b.*\b(?:health|status|online|offline|working|connected)\b|\b(?:health|status)\b.*\btracky\b/u',$q))return 'health';
     if(preg_match('/\b(?:last seen|last saw|when did (?:you|tracky)(?: last)? (?:see|spot|notice)|when (?:did )?(?:you|tracky) last (?:see|spot|notice)|when was .{1,80} seen)\b/u',$q))return 'last_seen';
     if(preg_match('/\b(?:what changed|what has changed|recent changes|what moved|what happened in (?:the )?room|physical changes)\b/u',$q))return 'changes';
@@ -354,6 +356,7 @@ function tracky_agent_current_v271(PDO $pdo,array $user,array $site): array
         'site_label'=>(string)($site['label']?:$site['site_id']),
         'status'=>(string)$site['status'],
         'context'=>$context,
+        'agent_scene'=>$context['agent_scene']??[],
         'freshness'=>tracky_agent_freshness_v271($observed,$site),
     ];
 }
@@ -400,7 +403,9 @@ function tracky_agent_answer_v271(array $data,string $intent): string
     }
     if($intent==='current'){
         $ctx=(array)($data['context']['context']??[]);
-        if(!$ctx)return 'Tracky has not synchronized a current physical-context snapshot for this site yet.';
+        $scene=(array)($data['agent_scene']??[]);
+        $sceneText=$scene&&function_exists('tracky_scene_text_v1g3d')?tracky_scene_text_v1g3d($scene):'';
+        if(!$ctx)return $sceneText?:'Tracky has not synchronized a current physical-context snapshot for this site yet.';
         $room=(string)($ctx['current_room']??'Unknown');$people=(array)($ctx['people_present']??[]);
         $fresh=(string)($data['freshness']['state']??'stale');
         $answer=($fresh==='current'?'Tracky’s current physical context':'Tracky’s last synchronized physical context').' ('.$fresh.'): room '.$room;
@@ -408,7 +413,7 @@ function tracky_agent_answer_v271(array $data,string $intent): string
         $env=trim((string)($ctx['environment_status']??''));if($env!=='')$answer.=' · environment: '.$env;
         $answer.=' · confidence '.number_format((float)($ctx['confidence']??0)*100,1).'%';
         $observed=(string)($data['context']['observed_at']??$data['context']['updated_at']??'');if($observed!=='')$answer.=' · observed '.tracky_agent_time_label_v271($observed);
-        return $answer.'.';
+        return $answer.'.'.($sceneText!==''?' '.$sceneText:'');
     }
     if($intent==='where'){
         if(($data['kind']??'')==='current_room'){

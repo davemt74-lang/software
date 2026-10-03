@@ -18,6 +18,7 @@ const VP3_TRACKY_FRESH_EVENT_SECONDS_V270=300;
 const VP3_TRACKY_MAX_FUTURE_SKEW_SECONDS_V270=300;
 
 require_once __DIR__.'/tracky-agent-v271.php';
+require_once __DIR__.'/tracky-agent-scene-v1g3d.php';
 require_once __DIR__.'/tracky-visual-status-order-v1f6.php';
 require_once __DIR__.'/tracky-topology-v278.php';
 require_once __DIR__.'/tracky-federated-world-v278.php';
@@ -43,7 +44,7 @@ function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
 {
     $pdo??=db();
     if(!$pdo)return false;
-    foreach(['tracky_cloud_sites','tracky_cloud_events','tracky_cloud_world_state','tracky_cloud_context','tracky_cloud_visual_status_order'] as $table){
+    foreach(['tracky_cloud_sites','tracky_cloud_events','tracky_cloud_world_state','tracky_cloud_context','tracky_cloud_visual_status_order','tracky_cloud_scene_share_order'] as $table){
         if(!table_exists($table))return false;
     }
     if(function_exists('tracky_v276_schema_ready')&&!tracky_v276_schema_ready($pdo))return false;
@@ -142,6 +143,7 @@ function tracky_cloud_v270_ensure_schema(?PDO $pdo=null): void
       CONSTRAINT fk_tracky_context_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     tracky_v1f6_ensure_schema($pdo);
+    tracky_scene_ensure_schema_v1g3d($pdo);
     if(function_exists('tracky_v276_ensure_schema'))tracky_v276_ensure_schema($pdo);
     if(function_exists('tracky_v277_ensure_schema'))tracky_v277_ensure_schema($pdo);
     if(function_exists('tracky_v278_ensure_schema'))tracky_v278_ensure_schema($pdo);
@@ -442,9 +444,12 @@ function tracky_cloud_v270_current_context(PDO $pdo,int $userId,?string $siteId=
         $q=$pdo->prepare('SELECT site_id,sequence_no,context_json,observed_at,updated_at FROM tracky_cloud_context WHERE user_id=? ORDER BY updated_at DESC LIMIT 1');
         $q->execute([$userId]);
     }
-    $row=$q->fetch();if(!$row)return [];
+    $row=$q->fetch();
+    $sceneSite=$siteId??($row['site_id']??'');
+    $scene=$sceneSite!==''?tracky_scene_read_v1g3d($pdo,$userId,(string)$sceneSite):[];
+    if(!$row)return $scene?['site_id'=>$sceneSite,'agent_scene'=>$scene]:[];
     $context=json_decode((string)$row['context_json'],true);if(!is_array($context))$context=[];
-    return ['site_id'=>(string)$row['site_id'],'sequence'=>(int)$row['sequence_no'],'observed_at'=>$row['observed_at'],'updated_at'=>$row['updated_at'],'context'=>$context];
+    return ['site_id'=>(string)$row['site_id'],'sequence'=>(int)$row['sequence_no'],'observed_at'=>$row['observed_at'],'updated_at'=>$row['updated_at'],'context'=>$context]+($scene?['agent_scene'=>$scene]:[]);
 }
 
 function tracky_cloud_v270_recent_events(PDO $pdo,int $userId,?string $siteId=null,int $limit=30): array
@@ -478,12 +483,16 @@ function tracky_cloud_v270_world_state(PDO $pdo,int $userId,?string $siteId=null
     }
     $rows=$q->fetchAll()?:[];
     foreach($rows as &$row){$value=json_decode((string)($row['value_json']??''),true);$row['value']=is_array($value)?$value:[];unset($row['value_json']);}
-    unset($row);return $rows;
+    unset($row);
+    $rows=array_values(array_filter($rows,static fn($r)=>!tracky_scene_reserved_v1g3d($r)));
+    if($siteId!==null&&$siteId!=='')$rows=array_merge($rows,tracky_scene_rows_v1g3d(tracky_scene_read_v1g3d($pdo,$userId,$siteId)));
+    return array_slice($rows,0,$limit);
 }
 
 function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $payload): array
 {
     if($userId<1)throw new RuntimeException('Tracky cloud synchronization requires an authenticated account.');
+    $sceneIncoming=array_key_exists('agent_scene_share',$payload)?tracky_scene_normalize_v1g3d($payload['agent_scene_share']):null;
     $encoded=tracky_cloud_v270_json($payload);
     if(strlen($encoded)>VP3_TRACKY_MAX_PAYLOAD_BYTES_V270)throw new RuntimeException('Tracky cloud payload is too large.');
     $protocol=trim((string)($payload['protocol']??''));
@@ -632,6 +641,12 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     $pdo->beginTransaction();
     try{
         $visualDecision=tracky_v1f6_apply($pdo,$userId,$siteId,$visualIncoming,$visualRevision);
+        // The order ledger serializes first uploads too. Recheck site binding
+        // under that lock so simultaneous arrivals cannot replace another device.
+        $bound=$pdo->prepare('SELECT device_id FROM tracky_cloud_sites WHERE user_id=? AND site_id=? FOR UPDATE');
+        $bound->execute([$userId,$siteId]);$boundDevice=$bound->fetchColumn();
+        if($boundDevice!==false&&$boundDevice!==''&&!hash_equals((string)$boundDevice,mb_strimwidth(trim($deviceId),0,100,'')))throw new RuntimeException('Tracky site is already bound to another HomeServer device.');
+        $sceneReceipt=tracky_scene_apply_v1g3d($pdo,$userId,$siteId,$sceneIncoming);
         if($visualDecision['state']!==''){
             $health['visual_owner_association']=$visualDecision['state'];
         }
@@ -688,6 +703,7 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
 
         foreach($relations as $rawRelation){
             if(!is_array($rawRelation))throw new RuntimeException('Tracky world-state batch contains an invalid relation.');
+            if(tracky_scene_reserved_v1g3d($rawRelation))throw new RuntimeException('Agent Eyes meaning requires separate ordered scene sharing.');
             $rel=tracky_cloud_v270_relation($rawRelation);
             if($rel['sequence']<$lastSequence)continue;
             $key=tracky_cloud_v270_relation_key($rel);
@@ -920,6 +936,7 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
         'mobile_transitions'=>$mobileTransitionRelay,
         'identity_continuity'=>$identityContinuityRelay,
         'federation_policy'=>$federationPolicyRelay,
+        'agent_scene_share'=>$sceneReceipt,
         'cloud_time'=>gmdate(DATE_ATOM),
     ];
 }
