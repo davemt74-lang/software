@@ -40,6 +40,12 @@
     options: [],
     chatOptions: [],
     current: null,
+    selectionEpoch: 0,
+    libraryEpoch: 0,
+    editEpoch: 0,
+    pendingTitle: null,
+    pendingText: null,
+    mutationChains: new Map(),
     folder: 'all',
     query: '',
     workspace: null,
@@ -120,6 +126,39 @@
     return !!document.getElementById('artistListeningButton')?.classList.contains('active');
   }
 
+  function captureBusy(id = 0) {
+    const owner = window.STONEFELLOW_ARTIST_LISTENING_V172?.api?.getState?.();
+    return !!owner && (owner.active || owner.pendingStop || owner.pendingSegments || owner.syncing || owner.finalizingStop || owner.recordingUploading || owner.recoveryLoading || owner.recoveryBlocked) && (!id || Number(owner.sessionId || 0) !== Number(id));
+  }
+  function documentContext() { return {id:Number(state.current?.id || 0),epoch:state.selectionEpoch,edit:state.editEpoch}; }
+  function sameDocument(context) { return context.id === Number(state.current?.id || 0) && context.epoch === state.selectionEpoch && context.edit === state.editEpoch; }
+  function editSnapshot(kind) {
+    const context=documentContext();
+    if(!context.id)return null;
+    const value=String(state.workspace?.querySelector(kind==='title'?'[data-listening-workspace-title]':'[data-listening-workspace-editor]')?.value||'');
+    return {...context,value,kind};
+  }
+  function editKey(snapshot) { return `stonefellow:transcription-edit:${accordionUserId}:${snapshot.id}:${snapshot.kind}`; }
+  function backupEdit(snapshot) {
+    if(!snapshot)return;
+    try{localStorage.setItem(editKey(snapshot),JSON.stringify({value:snapshot.value}));}
+    catch(error){setFooter('Browser text recovery is full. Keep this page open until the save succeeds.',true);}
+  }
+  function acknowledgeEdit(snapshot) {
+    try{const key=editKey(snapshot);const stored=JSON.parse(localStorage.getItem(key)||'{}');if(stored.value===snapshot.value)localStorage.removeItem(key);}catch(error){}
+  }
+  function flushScheduledEdits() {
+    if(state.titleTimer)clearTimeout(state.titleTimer);state.titleTimer=0;
+    if(state.saveTimer)clearTimeout(state.saveTimer);state.saveTimer=0;
+    if(state.pendingTitle)void saveTitle(state.pendingTitle);
+    if(state.pendingText)void saveTranscript(state.pendingText);
+    state.pendingTitle=null;state.pendingText=null;
+  }
+  function queueTitleSave() {
+    state.editEpoch+=1;if(state.titleTimer)clearTimeout(state.titleTimer);
+    const snapshot=editSnapshot('title');state.pendingTitle=snapshot;backupEdit(snapshot);setEditorState('Unsaved title','saving');
+    state.titleTimer=setTimeout(()=>{state.titleTimer=0;void saveTitle(snapshot);},700);
+  }
   function setEditorState(label, kind = 'saved') {
     const node = state.workspace?.querySelector('[data-listening-workspace-editor-state]');
     if (!node) return;
@@ -202,6 +241,7 @@
       tracked = /artist-listening-v17[24]\.php$/i.test(url.pathname);
       source172 = /artist-listening-v172\.php$/i.test(url.pathname);
     } catch (error) {}
+    const context=documentContext();
     const method = String(init.method || (typeof input !== 'string' ? input?.method : '') || 'GET').toUpperCase();
     if (tracked && method !== 'GET') {
       state.activeFetches += 1;
@@ -211,27 +251,27 @@
       const response = await nativeFetch(...args);
       if (tracked && method !== 'GET') {
         state.activeFetches = Math.max(0, state.activeFetches - 1);
-        if (response.ok && state.activeFetches === 0) setEditorState('Saved', 'saved');
-        if (!response.ok) setEditorState('Save needs attention', 'error');
+        if (sameDocument(context)&&state.activeFetches===0&&!response.ok) setEditorState('Save needs attention','error');
+
       }
       if (source172 && method !== 'GET' && response.ok) {
         try {
           const data = await response.clone().json();
           const sessionId = Number(data?.session?.id || 0);
-          if (sessionId > 0) proof.currentSessionId = sessionId;
+          if (data.ok && sameDocument(context) && sessionId === context.id) proof.currentSessionId = sessionId;
         } catch (error) {}
       }
       return response;
     } catch (error) {
       if (tracked && method !== 'GET') {
         state.activeFetches = Math.max(0, state.activeFetches - 1);
-        setEditorState(navigator.onLine ? 'Sync retry pending' : 'Offline', 'error');
+        if(sameDocument(context))setEditorState(navigator.onLine ? 'Sync retry pending' : 'Offline', 'error');
       }
       throw error;
     }
   }
 
-  async function request(endpoint, action, payload = {}, method = 'GET') {
+  async function performRequest(endpoint, action, payload = {}, method = 'GET') {
     let url = endpoint;
     const options = {method, credentials:'same-origin', headers:{Accept:'application/json'}};
     if (method === 'GET') {
@@ -245,10 +285,24 @@
       options.headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify({action, csrf_token:String(cfg.csrf || ''), ...payload});
     }
-    const response = await trackedFetch(url, options);
-    const data = await response.json().catch(() => ({ok:false,error:'Artist Listening returned an invalid response.'}));
-    if (!response.ok || !data.ok) throw new Error(String(data.error || `Request failed (${response.status}).`));
-    return data;
+    const controller=new AbortController();options.signal=controller.signal;let deadline;
+    try{return await Promise.race([(async()=>{
+      const response=await trackedFetch(url,options);
+      const data=await response.json().catch(()=>({ok:false,error:'Artist Listening returned an invalid response.'}));
+      if(!response.ok||!data.ok)throw Error(String(data.error||`Request failed (${response.status}).`));
+      return data;
+    })(),new Promise((_,reject)=>{deadline=setTimeout(()=>{controller.abort();reject(Error('Transcript request timed out. Unsaved edits remain in browser recovery.'));},30000);})]);}
+    finally{clearTimeout(deadline);}
+
+  }
+  function request(endpoint,action,payload={},method='GET') {
+    const id=Number(payload.session_id||0);
+    if(method==='GET'||!id)return performRequest(endpoint,action,payload,method);
+    const previous=state.mutationChains.get(id)||Promise.resolve();
+    const operation=previous.catch(()=>{}).then(()=>performRequest(endpoint,action,payload,method));
+    state.mutationChains.set(id,operation);
+    void operation.finally(()=>{if(state.mutationChains.get(id)===operation)state.mutationChains.delete(id);}).catch(()=>{});
+    return operation;
   }
   const api172 = (action, payload = {}, method = 'GET') => request(endpoint172, action, payload, method);
   const api174 = (action, payload = {}, method = 'GET') => {
@@ -315,6 +369,10 @@
       <div class="sf-listening-workspace-search"><input data-listening-workspace-search placeholder="Search transcripts" aria-label="Search transcripts"></div>
       <nav class="sf-listening-workspace-folders" data-listening-workspace-folders></nav>
       <div class="sf-listening-workspace-files" data-listening-workspace-files></div>
+      <div class="sf-listening-workspace-recovery">
+          <button type="button" class="sf-listening-workspace-btn" data-listening-recovery-export>Export unsaved text</button>
+          <button type="button" class="sf-listening-workspace-btn" data-listening-recovery-clear>Clear browser recovery</button>
+      </div>
     </aside>
     <section class="sf-listening-workspace-editor-shell">
       <div class="sf-listening-workspace-splash" data-listening-workspace-splash>
@@ -596,7 +654,7 @@
     renderTrackOptions(type.value, currentTrackId());
     renderChatOptions(currentConversationId());
     editor.value = String(session.continuous_text || '');
-    editor.readOnly = String(session.status || '') === 'active';
+    editor.readOnly = String(session.status || '') === 'active' || !!session.transcript_paged;
     chooseDocumentView(session);
     state.workspace.querySelector('[data-listening-workspace-save]').disabled = editor.readOnly || state.turnView;
     state.workspace.querySelector('[data-listening-workspace-meta-status]').textContent = session.association?.label || 'Original private transcript · Unassigned';
@@ -608,11 +666,22 @@
     setEditorState('Saved', 'saved');
     setFooter(editor.readOnly ? 'Listening is active. Stop Listening before editing transcript text.' : '');
     updateKnowledgeButtons();
+    for(const kind of ['title','text']){
+      if(kind==='text'&&editor.readOnly)continue;
+      try{
+        const stored=JSON.parse(localStorage.getItem(editKey({id:Number(session.id),kind}))||'{}');
+        if(typeof stored.value!=='string')continue;
+        const node=kind==='title'?title:editor;node.value=stored.value;
+        if(kind==='title')queueTitleSave();else queueTranscriptSave();
+      }catch(error){}
+    }
   }
 
   async function openSession(id) {
     id = Math.max(0, Number(id || 0));
     if (!id) return;
+    if(captureBusy(id)){setFooter('Finish syncing or export recovered text before opening another transcript.',true);return;}
+    flushScheduledEdits();const epoch=++state.selectionEpoch;
 
     const listeningActive = browserListeningActive();
     if (!listeningActive && state.liveSessionId) {
@@ -631,7 +700,10 @@
     }
 
     try {
+      if(state.mutationChains.has(id))await state.mutationChains.get(id).catch(()=>{});
+      if(epoch!==state.selectionEpoch)return;
       const data = await api174('session', {session_id:id});
+      if(epoch!==state.selectionEpoch)return;
       fillEditor(data.session);
       proof.sidebarOpens += 1;
       window.dispatchEvent(new CustomEvent('stonefellow:artist-listening-document-selected', {detail:{session:data.session}}));
@@ -650,7 +722,8 @@
     proof.workspaceMode = true;
   }
   function showSplash() {
-    if (!state.workspace) return;
+    if (!state.workspace || captureBusy()) return;
+    flushScheduledEdits();state.selectionEpoch+=1;
     state.current = null;
     state.viewSessionId = 0;
     state.turnNodes.clear();
@@ -667,8 +740,10 @@
   }
 
   async function loadLibrary(options = {}) {
+    const epoch=++state.libraryEpoch,selection=state.selectionEpoch,edit=state.editEpoch;
     try {
       const data = await api174('library');
+      if(epoch!==state.libraryEpoch)return;
       state.sessions = Array.isArray(data.sessions) ? data.sessions : [];
       state.folders = Array.isArray(data.folders) ? data.folders : [];
       state.options = Array.isArray(data.association_options) ? data.association_options : [];
@@ -680,6 +755,7 @@
       enterWorkspace();
       renderFolders();
       renderFiles();
+      if(selection!==state.selectionEpoch||edit!==state.editEpoch)return;
       if (!state.sessions.length) {
         showSplash();
         return;
@@ -698,17 +774,18 @@
     }
   }
 
-  async function saveTitle() {
-    if (!state.current) return;
-    const input = state.workspace.querySelector('[data-listening-workspace-title]');
-    const title = cleanSpaces(input.value);
-    if (!title || title === String(state.current.title || '')) return;
+  async function saveTitle(snapshot=state.pendingTitle||editSnapshot('title')) {
+    if(!snapshot)return;const context=snapshot;const title=cleanSpaces(snapshot.value);
+    if(!title)return;
+    if(state.pendingTitle===snapshot)state.pendingTitle=null;
     try {
-      const data = await api172('rename', {session_id:Number(state.current.id),title}, 'POST');
+      const data = await api172('rename', {session_id:context.id,title}, 'POST');
+      acknowledgeEdit(snapshot);if(!sameDocument(context))return;
       state.current.title = data.session?.title || title;
       proof.saves += 1;
       await loadLibrary({openId:state.current.id});
     } catch (error) {
+      if(!sameDocument(context))return;
       proof.lastError = String(error?.message || error);
       setEditorState('Title save failed', 'error');
     }
@@ -721,35 +798,41 @@
     const trackId = Number(state.workspace.querySelector('[data-listening-workspace-track]').value || 0);
     const folderId = Number(state.workspace.querySelector('[data-listening-workspace-folder-select]').value || 0);
     const conversationId = Number(state.workspace.querySelector('[data-listening-workspace-chat]').value || 0);
+    state.editEpoch+=1;const context=documentContext();
     try {
       const data = await api174('update_metadata', {session_id:Number(state.current.id),tags,association_type:type,track_id:trackId,folder_id:folderId,conversation_id:conversationId}, 'POST');
+      if(!sameDocument(context))return;
       state.current = data.session;
       proof.saves += 1;
       window.dispatchEvent(new CustomEvent('stonefellow:artist-listening-metadata-saved', {detail:{session:state.current}}));
       await loadLibrary({openId:state.current.id});
     } catch (error) {
+      if(!sameDocument(context))return;
       proof.lastError = String(error?.message || error);
       setEditorState('Organization save failed', 'error');
       setFooter(proof.lastError, true);
     }
   }
 
-  async function saveTranscript() {
-    if (!state.current) return;
+  async function saveTranscript(snapshot=state.pendingText||editSnapshot('text')) {
+    if (!snapshot) return;const context=snapshot;
     const editor = state.workspace.querySelector('[data-listening-workspace-editor]');
-    if (editor.readOnly) return;
-    const text = cleanSpaces(editor.value);
+    if (sameDocument(context)&&editor.readOnly) return;
+    const text = cleanSpaces(snapshot.value);
+    if(state.pendingText===snapshot)state.pendingText=null;
     if (!text) {
       setFooter('Transcript text cannot be empty.', true);
       return;
     }
     try {
-      const data = await api174('replace_transcript', {session_id:Number(state.current.id),text}, 'POST');
+      const data = await api174('replace_transcript', {session_id:context.id,text}, 'POST');
+      acknowledgeEdit(snapshot);if(!sameDocument(context))return;
       proof.saves += 1;
       state.current = data.session;
       fillEditor(data.session);
       await loadLibrary({openId:data.session.id});
     } catch (error) {
+      if(!sameDocument(context))return;
       proof.lastError = String(error?.message || error);
       setEditorState('Save failed', 'error');
       setFooter(proof.lastError, true);
@@ -763,13 +846,16 @@
     const speaker = String(row.querySelector('[data-listening-workspace-turn-speaker]')?.value || 'Speaker 1');
     const text = cleanSpaces(row.querySelector('[data-listening-workspace-turn-text]')?.value || '');
     if (!text) { setFooter('Speaker turn text cannot be empty.', true); return; }
+    state.editEpoch+=1;const context=documentContext();
     try {
       const data = await api174('update_turn', {session_id:Number(state.current.id),segment_id:segmentId,speaker_label:speaker,text}, 'POST');
+      if(!sameDocument(context))return;
       state.current = data.session;
       proof.saves += 1;
       setEditorState('Saved','saved');
       renderTurnDocument(data.session);
     } catch (error) {
+      if(!sameDocument(context))return;
       proof.lastError = String(error?.message || error);
       setEditorState('Turn save failed','error');
       setFooter(proof.lastError,true);
@@ -777,12 +863,10 @@
   }
 
   function queueTranscriptSave() {
-    if (state.saveTimer) clearTimeout(state.saveTimer);
-    setEditorState('Unsaved changes', 'saving');
-    state.saveTimer = setTimeout(() => {
-      state.saveTimer = 0;
-      void saveTranscript();
-    }, 1400);
+    state.editEpoch+=1;if(state.saveTimer)clearTimeout(state.saveTimer);
+    const snapshot=editSnapshot('text');state.pendingText=snapshot;backupEdit(snapshot);
+    setEditorState('Unsaved changes','saving');
+    state.saveTimer=setTimeout(()=>{state.saveTimer=0;void saveTranscript(snapshot);},1400);
   }
 
   function findInDocument() {
@@ -814,12 +898,15 @@
   }
 
   async function createDocument() {
+    if(captureBusy()){setFooter('Finish syncing or export recovered text before creating another transcript.',true);return;}
     if (browserListeningActive()) {
       setFooter('Stop the active transcription before creating another transcript.', true);
       return;
     }
     try {
+      flushScheduledEdits();const epoch=++state.selectionEpoch;
       const data = await api174('create_draft', {folder_id:selectedFolderForNewDocument()}, 'POST');
+      if(epoch!==state.selectionEpoch)return;
       enterWorkspace();
       await loadLibrary({openId:Number(data.session?.id || 0)});
       state.workspace.querySelector('[data-listening-workspace-title]')?.focus();
@@ -1013,6 +1100,24 @@
 
   function bindWorkspace() {
     const w = state.workspace;
+    w.querySelector('[data-listening-recovery-export]').addEventListener('click',()=>{
+      const backup=window.STONEFELLOW_ARTIST_LISTENING_V172?.api?.exportRecovery?.();
+      const parts=[];
+      if(backup?.segments?.length)parts.push(backup.title+'\nDocument '+backup.sessionId+'\n\n'+backup.segments.map(s=>'Document '+s.sessionId+'\n'+s.text).join('\n\n'));
+      const prefix=`stonefellow:transcription-edit:${accordionUserId}:`;
+      for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;try{const value=JSON.parse(localStorage.getItem(key)||'{}').value;if(typeof value==='string')parts.push(key.slice(prefix.length)+'\n'+value);}catch(error){}}
+      if(!parts.length){setFooter('There is no unsaved text to export.');return;}
+      const blob=new Blob([parts.join('\n\n')],{type:'text/plain'});
+      const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='unsaved-transcription.txt';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    });
+    w.querySelector('[data-listening-recovery-clear]').addEventListener('click',()=>{
+      if(state.activeFetches||state.mutationChains.size){setFooter('Wait for the current document save before clearing recovery.',true);return;}
+      if(!window.confirm('Discard unsaved transcript text from this browser? Export it first if you need a copy.'))return;
+      try{window.STONEFELLOW_ARTIST_LISTENING_V172?.api?.clearRecovery?.();
+        if(state.titleTimer)clearTimeout(state.titleTimer);if(state.saveTimer)clearTimeout(state.saveTimer);state.titleTimer=0;state.saveTimer=0;state.pendingTitle=null;state.pendingText=null;
+        const prefix=`stonefellow:transcription-edit:${accordionUserId}:`;for(let i=localStorage.length-1;i>=0;i--){const key=localStorage.key(i);if(key?.startsWith(prefix))localStorage.removeItem(key);}
+        setFooter('Browser recovery cleared. Saved transcripts remain available.');}catch(error){setFooter(String(error.message||error),true);}
+    });
     w.querySelector('[data-listening-workspace-new]').addEventListener('click', () => void createDocument());
     w.querySelector('[data-listening-workspace-create]').addEventListener('click', () => void createDocument());
     w.querySelector('[data-listening-workspace-search]').addEventListener('input', event => { state.query = event.target.value; renderFiles(); });
@@ -1043,7 +1148,7 @@
       if (audio) void audio.play();
       play.closest('details')?.removeAttribute('open');
     });
-    w.querySelector('[data-listening-workspace-title]').addEventListener('input', () => { if (state.titleTimer) clearTimeout(state.titleTimer); setEditorState('Unsaved title','saving'); state.titleTimer = setTimeout(() => { state.titleTimer = 0; void saveTitle(); }, 700); });
+    w.querySelector('[data-listening-workspace-title]').addEventListener('input', queueTitleSave);
     w.querySelector('[data-listening-workspace-tags]').addEventListener('change', () => void saveMetadata());
     w.querySelector('[data-listening-workspace-folder-select]').addEventListener('change', () => void saveMetadata());
     w.querySelector('[data-listening-workspace-type]').addEventListener('change', event => { renderTrackOptions(event.target.value,0); if (event.target.value === 'none') void saveMetadata(); });
@@ -1180,11 +1285,13 @@
   }
 
   async function transcriptionCreateDocument(options = {}) {
-    if (browserListeningActive()) throw new Error('Stop the active transcription before creating another transcript.');
+    if (browserListeningActive()||captureBusy()) throw new Error('Stop listening and finish syncing before creating another transcript.');
     const folderId = options.folderId === undefined
       ? selectedFolderForNewDocument()
       : Math.max(0, Number(options.folderId || 0));
+    flushScheduledEdits();const epoch=++state.selectionEpoch;
     const data = await api174('create_draft', {folder_id:folderId}, 'POST');
+    if(epoch!==state.selectionEpoch)return transcriptionSessionSummary(data.session);
     enterWorkspace();
     await loadLibrary({openId:Number(data.session?.id || 0)});
     return transcriptionSessionSummary(state.current || data.session);
@@ -1197,7 +1304,12 @@
     if (browserListeningActive() && activeId && activeId !== sessionId) {
       throw new Error('Stop the active transcription before opening another transcript.');
     }
+    if(captureBusy(sessionId))throw Error('Finish syncing or export recovered text before opening another transcript.');
+    flushScheduledEdits();const epoch=++state.selectionEpoch;
+    if(state.mutationChains.has(sessionId))await state.mutationChains.get(sessionId).catch(()=>{});
+    if(epoch!==state.selectionEpoch)return null;
     const data = await api174('session', {session_id:sessionId});
+    if(epoch!==state.selectionEpoch)return transcriptionSessionSummary(data.session);
     fillEditor(data.session);
     proof.sidebarOpens += 1;
     window.dispatchEvent(new CustomEvent('stonefellow:artist-listening-document-selected', {detail:{session:data.session}}));
@@ -1221,7 +1333,9 @@
     if (!state.current) throw new Error('Open a transcription before renaming it.');
     title = cleanSpaces(title);
     if (!title) throw new Error('A transcript title is required.');
+    state.editEpoch+=1;const context=documentContext();
     const data = await api172('rename', {session_id:Number(state.current.id), title}, 'POST');
+    if(!sameDocument(context))return transcriptionSessionSummary(data.session);
     state.current.title = data.session?.title || title;
     proof.saves += 1;
     await loadLibrary({openId:state.current.id});
@@ -1233,7 +1347,9 @@
     if (String(state.current.status || '') === 'active') throw new Error('Stop listening before replacing transcript text.');
     text = cleanSpaces(text);
     if (!text) throw new Error('Transcript text cannot be empty.');
+    state.editEpoch+=1;const context=documentContext();
     const data = await api174('replace_transcript', {session_id:Number(state.current.id), text}, 'POST');
+    if(!sameDocument(context))return transcriptionSessionSummary(data.session);
     state.current = data.session;
     proof.saves += 1;
     fillEditor(data.session);
@@ -1249,9 +1365,11 @@
     const trackId = patch.trackId === undefined ? currentTrackId() : Math.max(0, Number(patch.trackId || 0));
     const folderId = patch.folderId === undefined ? Math.max(0, Number(current.folder?.id || 0)) : Math.max(0, Number(patch.folderId || 0));
     const conversationId = patch.conversationId === undefined ? currentConversationId() : Math.max(0, Number(patch.conversationId || 0));
+    state.editEpoch+=1;const context=documentContext();
     const data = await api174('update_metadata', {
       session_id:Number(current.id), tags, association_type:associationType, track_id:trackId, folder_id:folderId, conversation_id:conversationId,
     }, 'POST');
+    if(!sameDocument(context))return transcriptionSessionSummary(data.session);
     state.current = data.session;
     proof.saves += 1;
     window.dispatchEvent(new CustomEvent('stonefellow:artist-listening-metadata-saved', {detail:{session:state.current}}));
@@ -1269,7 +1387,9 @@
     const speaker = cleanSpaces(args.speaker === undefined ? existing.speaker_label : args.speaker) || 'Speaker 1';
     const text = cleanSpaces(args.text === undefined ? existing.transcript_text : args.text);
     if (!text) throw new Error('Speaker turn text cannot be empty.');
+    state.editEpoch+=1;const context=documentContext();
     const data = await api174('update_turn', {session_id:Number(state.current.id), segment_id:segmentId, speaker_label:speaker, text}, 'POST');
+    if(!sameDocument(context))return transcriptionSessionSummary(data.session);
     state.current = data.session;
     state.selectedTurnId = segmentId;
     proof.saves += 1;
@@ -1441,7 +1561,7 @@
     window.addEventListener('stonefellow:artist-listening-live', handleLiveDocument);
     void loadLibrary({openId:Math.max(0, Number(cfg.initialSessionId || 0))});
     setInterval(updatePauseButton, 500);
-    window.addEventListener('online', () => setEditorState('Saved','saved'));
+    window.addEventListener('online', () => {if(state.activeFetches||state.pendingText||state.pendingTitle||captureBusy())setEditorState('Sync pending','saving');else setEditorState('Connected','saved');});
     window.addEventListener('offline', () => setEditorState('Offline','error'));
   }
 

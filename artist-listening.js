@@ -15,6 +15,10 @@
   const REQUEST_TIMEOUT_MS=30000;
   const userId=Math.max(0,Number(cfg.userId||0));
   const STORAGE_KEY=`stonefellow:artist-listening:v172:${userId}`;
+  const OUTBOX_PREFIX=STORAGE_KEY+':outbox:';
+  const OUTBOX_KEY=OUTBOX_PREFIX+crypto.randomUUID();
+  let recoverySource=null;
+  const hasWork=snapshot=>!!snapshot?.pendingStop||Array.isArray(snapshot?.pending)&&snapshot.pending.length>0;
   const state={
     session:null,
     sessions:[],
@@ -54,6 +58,10 @@
     pending:[],
     pendingStop:false,
     syncing:false,
+    finalizingStop:false,
+    recoveryLoading:false,
+    recoveryBlocked:false,
+    documentGeneration:0,
     startPromise:null,
     lastFinalText:'',
     lastFinalAt:0,
@@ -113,7 +121,9 @@
     const seconds=Math.max(0,Math.floor(Number(milliseconds||0)/1000));
     return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
   }
-  function elapsedMs(){return Math.max(0,state.elapsedBeforeResume+(state.active?Date.now()-state.captureStartedAt:0));}
+  function sessionTimeline(session){return (Array.isArray(session?.segments)?session.segments:[]).reduce((time,segment)=>Math.max(time,Number(segment.ended_ms||segment.started_ms||0)),Math.max(0,Number(session?.duration_ms||0)));}
+  function sameBackup(backup,session){const id=Number(backup.sessionId||0),target=Number(session?.id||0),key=String(backup.clientSessionKey||''),targetKey=String(session?.client_session_key||session?.clientSessionKey||'');return id>0&&target>0?id===target&&(!key||!targetKey||key===targetKey):!!key&&key===targetKey;}
+  function elapsedMs(){return Math.max(0,state.elapsedBeforeResume+(state.active?performance.now()-state.captureStartedAt:0));}
   function sessionId(){return Math.max(0,Number(state.session?.id||0));}
   function sessionIsDraft(){return !!state.session&&String(state.session.status||'')==='draft';}
   function activeConversationId(){
@@ -152,11 +162,34 @@
       wasListening:state.active,
       savedAt:Date.now(),
     };
-    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(snapshot));}
+    try{
+      const encoded=JSON.stringify(snapshot);
+      // Each tab writes its own slot; another stopped/offline tab cannot clobber it.
+      if(hasWork(snapshot))localStorage.setItem(OUTBOX_KEY,encoded);else localStorage.removeItem(OUTBOX_KEY);
+      const legacy=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');
+      if(!hasWork(legacy)||sameBackup(legacy,state.session))localStorage.setItem(STORAGE_KEY,encoded);
+      if(recoverySource&&recoverySource.key!==STORAGE_KEY&&recoverySource.key!==OUTBOX_KEY&&localStorage.getItem(recoverySource.key)===recoverySource.raw)localStorage.removeItem(recoverySource.key);
+      recoverySource=null;
+      const saved=new Set((state.session?.segments||[]).map(segment=>String(segment.client_segment_key||segment.key||'')));
+      for(const row of recoverySnapshots()){
+        if(row.key===OUTBOX_KEY||row.key===STORAGE_KEY||!sameBackup(row.data,state.session)||!Array.isArray(row.data.pending))continue;
+        if(row.data.pending.every(segment=>saved.has(String(segment.key)))&&(!row.data.pendingStop||String(state.session?.status)!=='active')&&localStorage.getItem(row.key)===row.raw)localStorage.removeItem(row.key);
+      }
+    }
     catch(error){state.lastError='Browser transcript backup storage is full. Keep this page open until sync finishes.';proof.lastError=state.lastError;if(state.active)void stopCapture('storage-full');notify(state.lastError,'error');}
   }
+  function recoverySnapshots(){
+    const rows=[];
+    try{
+      const keys=[STORAGE_KEY];for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key?.startsWith(OUTBOX_PREFIX))keys.push(key);}
+      for(const key of keys){const raw=localStorage.getItem(key);if(!raw)continue;try{const data=JSON.parse(raw);if(data&&typeof data==='object')rows.push({key,raw,data});}catch(error){}}
+    }catch(error){}
+    return rows;
+  }
   function readPersisted(){
-    try{const data=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');return data&&typeof data==='object'?data:{};}catch(error){return {};}
+    const rows=recoverySnapshots();const source=rows.find(row=>hasWork(row.data))||rows.find(row=>row.key===STORAGE_KEY);
+    if(!source)return {};
+    return {...source.data,__source:{key:source.key,raw:source.raw}};
   }
   async function request(action,payload={},method='POST'){
     let endpoint=String(cfg.endpoint);
@@ -458,6 +491,13 @@
     if(!sessionIsDraft()&&String(state.session?.status||'')!=='active'&&String(state.session?.status||'')!=='starting'){
       notify('Create a new transcription document before starting a recording.','error');return;
     }
+    const waiting=readPersisted();
+    if(!state.pending.length&&!state.pendingStop&&hasWork(waiting)){
+      restoreBackup(waiting);render();await recoverDocument();
+      if(!state.recoveryBlocked){if(state.pending.length)await flushPending();else if(state.pendingStop)await finalizeStop();}
+      notify('Recovered unsaved text. Press Start Listening again after recovery finishes.');return;
+    }
+    if(state.recoveryLoading||state.recoveryBlocked){notify('Recover or export unsaved text before starting listening.','error');return;}
     if(typeof SpeechRecognitionCtor!=='function'){notify('Live speech recognition is not supported by this browser.','error');return;}
     if(!cfg.schemaReady){notify('Run the Stonefellow v172 database upgrade before using Artist Listening.','error');return;}
     disableAgentConversation();
@@ -476,15 +516,16 @@
       state.pending=[];state.segmentIndex=0;state.elapsedBeforeResume=0;
     }else if(!selectedDraft){
       state.recovered=true;proof.resumes+=1;
-      state.elapsedBeforeResume=Math.max(Number(state.session.duration_ms||0),Number(persisted.elapsedMs||0));
+      state.elapsedBeforeResume=Math.max(sessionTimeline(state.session),sameBackup(persisted,state.session)?Number(persisted.elapsedMs||0):0);
     }else{
       state.recovered=false;
-      state.elapsedBeforeResume=Math.max(0,Number(state.session.duration_ms||0));
+      state.elapsedBeforeResume=sessionTimeline(state.session);
     }
-    state.active=true;state.pendingStop=false;state.captureStartedAt=Date.now();state.interim='';state.noteArmed=false;state.utteranceStartedMs=0;state.acousticFrames=[];
+    state.active=true;state.pendingStop=false;state.captureStartedAt=performance.now();state.interim='';state.noteArmed=false;state.utteranceStartedMs=0;state.acousticFrames=[];
     if(realtime){state.continuity=new realtime.TranscriptContinuity();state.speakerModel=new realtime.SpeakerTurnModel({maxSpeakers:4,expectedSpeakers:state.expectedSpeakers});}
     proof.starts+=1;if(source==='voice-command')proof.commandStarts+=1;
     void startMeter();startRecognition();render();
+    const originalId=sessionId();const originalGeneration=state.documentGeneration;
     const clientKey=String(state.session.client_session_key||state.session.clientSessionKey||persisted.clientSessionKey||uuid());
     const beginRequest=selectedDraft
       ? request('activate',{session_id:sessionId(),conversation_id:activeConversationId()})
@@ -493,25 +534,27 @@
         speaker_mode:String(el.speakerMode.value||'auto'),
       });
     state.startPromise=beginRequest.then(data=>{
+      if(originalGeneration!==state.documentGeneration||originalId>0&&Number(data.session?.id)!==originalId||!selectedDraft&&state.pending.length&&String(data.session?.client_session_key||'')!==clientKey)throw Error('Recovered text belongs to another document. Export it before starting another transcription.');
+      if(String(data.session?.status||'')!=='active')throw Error('The original document is already completed. Unsaved text is retained for recovery.');
       state.session=data.session;state.recovered=!!data.session?.recovered||state.recovered;
       const saved=Array.isArray(state.session?.segments)?state.session.segments:[];
       state.segmentIndex=saved.reduce((max,row)=>Math.max(max,Number(row.segment_index||0)+1),state.segmentIndex);
       if(state.continuity){const captured=[...saved,...state.pending].filter(row=>String(row.segment_type||row.type||'')==='transcript').map(row=>String(row.transcript_text||row.text||''));state.continuity.seed(captured.join(' '));}
       persist();render();emitLive('session-started',{sessionId:Number(state.session?.id||0)});void flushPending();return state.session;
     }).catch(error=>{
-      state.active=false;state.captureGeneration+=1;state.meterStarting=false;stopRecognition();stopMeter();stopRecordingStream();state.captureTicket?.release();state.captureTicket=null;state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(state.lastError,'error');render();throw error;
+      state.active=false;state.captureGeneration+=1;state.meterStarting=false;stopRecognition();stopMeter();stopRecordingStream();state.captureTicket?.release();state.captureTicket=null;state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(state.lastError,'error');persist();render();throw error;
     }).finally(()=>{state.startPromise=null;render();});
     state.startPromise.catch(()=>{});
     return state.startPromise;
   }
 
   async function flushPending(){
-    if(state.syncing||state.retryTimer||!state.pending.length)return;
+    if(state.syncing||state.retryTimer||state.recoveryLoading||state.recoveryBlocked||!state.pending.length)return;
     if(state.startPromise){try{await state.startPromise;}catch(error){return;}}
     const id=sessionId();if(id<1||state.syncing||state.retryTimer||!state.pending.length)return;
-    state.syncing=true;let succeeded=false;const batch=state.pending.slice(0,50);const keys=new Set(batch.map(segment=>segment.key));
+    state.syncing=true;const generation=state.documentGeneration;let succeeded=false;const batch=state.pending.slice(0,50);const keys=new Set(batch.map(segment=>segment.key));
     try{
-      const data=await request('append',{session_id:id,segments:batch});proof.syncs+=1;succeeded=true;state.retryAttempts=0;
+      const data=await request('append',{session_id:id,segments:batch});if(generation!==state.documentGeneration||sessionId()!==id)return;proof.syncs+=1;succeeded=true;state.retryAttempts=0;
       state.pending=state.pending.filter(segment=>!keys.has(segment.key));state.session=data.session;
       persist();render();emitLive('synced',{accepted:Number(data.accepted||0)});
     }catch(error){
@@ -529,13 +572,14 @@
     state.retryTimer=setTimeout(()=>{state.retryTimer=0;if(state.pending.length)void flushPending();else if(state.pendingStop)void finalizeStop();},delay);
   }
   async function finalizeStop(){
-    if(!state.pendingStop||state.syncing||state.pending.length)return;
+    if(!state.pendingStop||state.syncing||state.pending.length||state.finalizingStop||state.recoveryLoading||state.recoveryBlocked||state.recordingUploading)return;
     if(state.startPromise){try{await state.startPromise;}catch(error){scheduleRetry();return;}}
     const id=sessionId();if(id<1){scheduleRetry();return;}
+    state.finalizingStop=true;const generation=state.documentGeneration;
     try{
-      const data=await request('stop',{session_id:id,duration_ms:elapsedMs()});state.session=data.session;state.pendingStop=false;state.retryAttempts=0;state.elapsedBeforeResume=Number(state.session.duration_ms||elapsedMs());proof.stops+=1;
+      const data=await request('stop',{session_id:id,duration_ms:elapsedMs()});if(generation!==state.documentGeneration||sessionId()!==id)return;state.session=data.session;state.pendingStop=false;state.retryAttempts=0;state.elapsedBeforeResume=Number(state.session.duration_ms||elapsedMs());proof.stops+=1;
       notify('Private transcript draft saved. Nothing was added to Agent Brain or the Knowledge Base.','success');persist();await refreshSessions();render();emitLive('stopped',{sessionId:Number(state.session?.id||0)});
-    }catch(error){state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(`Stop is pending sync: ${state.lastError}`,'error');persist();scheduleRetry();}
+    }catch(error){state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(`Stop is pending sync: ${state.lastError}`,'error');persist();scheduleRetry();}finally{state.finalizingStop=false;}
   }
   async function stopCapture(source='button'){
     if(!state.active&&String(state.session?.status||'')!=='active')return;
@@ -557,7 +601,7 @@
   async function refreshSessions(){
     try{
       const data=await request('bootstrap',{},'GET');state.sessions=Array.isArray(data.sessions)?data.sessions:[];
-      if(data.active&&!state.session){state.session=data.active;state.recovered=true;proof.recoveredDrafts+=1;const saved=Array.isArray(state.session.segments)?state.session.segments:[];state.segmentIndex=saved.reduce((max,row)=>Math.max(max,Number(row.segment_index||0)+1),0);}
+      if(data.active&&!state.session&&!state.pending.length&&!state.pendingStop){state.session=data.active;state.recovered=true;proof.recoveredDrafts+=1;const saved=Array.isArray(state.session.segments)?state.session.segments:[];state.segmentIndex=saved.reduce((max,row)=>Math.max(max,Number(row.segment_index||0)+1),0);}
       render();
     }catch(error){notify(String(error?.message||error),'error');}
   }
@@ -573,6 +617,10 @@
       recordingInput:String(document.querySelector('[data-listening-workspace-mic]')?.value||'browser-default'),
       recovered:!!state.recovered,
       pendingStop:!!state.pendingStop,
+      pendingSegments:state.pending.length,
+      finalizingStop:!!state.finalizingStop,
+      recoveryLoading:!!state.recoveryLoading,
+      recoveryBlocked:!!state.recoveryBlocked,
       syncing:!!state.syncing,
       recordingActive:!!state.recordingActive,
       recordingStarting:!!state.recordingStarting,
@@ -600,6 +648,20 @@
   }
   proof.api={
     getState:transcriptionCaptureState,
+    exportRecovery:()=>{
+      const seen=new Set(),segments=[];
+      for(const backup of [{sessionId:sessionId(),pending:state.pending},...recoverySnapshots().map(row=>row.data)]){
+        for(const segment of Array.isArray(backup.pending)?backup.pending:[]){if(!segment||typeof segment.text!=='string')continue;const key=String(backup.sessionId)+':'+segment.key+':'+segment.text;if(seen.has(key))continue;seen.add(key);segments.push({...segment,sessionId:Number(backup.sessionId||0)});}
+      }
+      return {sessionId:sessionId(),title:String(state.session?.title||''),segments};
+    },
+    clearRecovery:()=>{
+      if(state.active||state.syncing||state.startPromise||state.finalizingStop||state.recordingUploading||state.recoveryLoading)throw Error('Stop listening and wait for the current save before clearing recovery.');
+      state.pending=[];state.pendingStop=false;state.recoveryBlocked=false;state.lastError='';
+      localStorage.removeItem(STORAGE_KEY);for(let i=localStorage.length-1;i>=0;i--){const key=localStorage.key(i);if(key?.startsWith(OUTBOX_PREFIX))localStorage.removeItem(key);}
+      if(state.retryTimer)clearTimeout(state.retryTimer);state.retryTimer=0;
+      persist();render();return transcriptionCaptureState();
+    },
     start:async()=>{await startCapture('transcription-api');return transcriptionCaptureState();},
     stop:async()=>{await stopCapture('transcription-api');return transcriptionCaptureState();},
     finish:async()=>{await stopCapture('finish');return transcriptionCaptureState();},
@@ -622,14 +684,15 @@
   });
   window.addEventListener('stonefellow:artist-listening-before-pause',()=>{if(state.active&&state.interim)handleFinal(state.interim,null);});
   window.addEventListener('stonefellow:artist-listening-document-selected',event=>{
-    if(state.active||state.startPromise||state.pendingStop)return;
+    if(state.active||state.startPromise||state.pendingStop||state.pending.length||state.syncing||state.finalizingStop||state.recordingUploading||state.recoveryLoading)return;
+    state.documentGeneration+=1;
     const session=event?.detail?.session;
     if(!session){state.session=null;state.pending=[];state.interim='';state.elapsedBeforeResume=0;state.segmentIndex=0;render();return;}
     if(Number(session.id||0)<1)return;
     const backup=readPersisted();
-    const sameBackup=Number(backup.sessionId||0)===Number(session.id||0)||String(backup.clientSessionKey||'')===String(session.client_session_key||'');
-    state.session=session;if(!sameBackup)state.pending=[];state.interim='';state.noteArmed=false;state.recovered=String(session.status||'')==='active';
-    state.elapsedBeforeResume=Math.max(0,Number(session.duration_ms||0));
+    const matchesBackup=sameBackup(backup,session);
+    state.session=session;if(!matchesBackup)state.pending=[];state.interim='';state.noteArmed=false;state.recovered=String(session.status||'')==='active';
+    state.elapsedBeforeResume=Math.max(sessionTimeline(session),matchesBackup?Number(backup.elapsedMs||0):0);
     const saved=Array.isArray(session.segments)?session.segments:[];
     state.segmentIndex=saved.reduce((max,row)=>Math.max(max,Number(row.segment_index||0)+1),0);
     if(realtime){
@@ -654,14 +717,36 @@
   },true);
   window.addEventListener('online',()=>{if(state.pending.length)void flushPending();else if(state.pendingStop)void finalizeStop();});
   window.addEventListener('stonefellow:voice-lease-lost',()=>{if(state.active)void stopCapture('ownership-lost');});
-  window.addEventListener('pagehide',()=>{state.active=false;state.captureGeneration+=1;state.recordingGeneration+=1;state.recordingStarting=false;state.meterStarting=false;persist();stopRecognition();stopMeter();if(state.mediaRecorder&&state.mediaRecorder.state!=='inactive'){try{state.mediaRecorder.stop();}catch(error){}}stopRecordingStream();state.captureTicket?.release();state.captureTicket=null;if(state.timer)clearInterval(state.timer);if(state.flushTimer)clearTimeout(state.flushTimer);},{once:true});
+  window.addEventListener('pagehide',()=>{state.elapsedBeforeResume=elapsedMs();state.active=false;state.captureGeneration+=1;state.recordingGeneration+=1;state.recordingStarting=false;state.meterStarting=false;persist();stopRecognition();stopMeter();if(state.mediaRecorder&&state.mediaRecorder.state!=='inactive'){try{state.mediaRecorder.stop();}catch(error){}}stopRecordingStream();state.captureTicket?.release();state.captureTicket=null;if(state.timer)clearInterval(state.timer);if(state.flushTimer)clearTimeout(state.flushTimer);},{once:true});
 
+  function restoreBackup(persisted){
+    recoverySource=persisted.__source||null;
+    state.pending=Array.isArray(persisted.pending)?persisted.pending.filter(segment=>segment&&typeof segment==='object'&&typeof segment.text==='string'):[];
+    state.recoveryBlocked=state.pending.length>MAX_PENDING_SEGMENTS||state.pending.some(segment=>typeof segment.key!=='string'||!/^[a-z0-9-]{16,64}$/i.test(segment.key)||segment.text.length>8000);
+    state.pendingStop=!!persisted.pendingStop;state.elapsedBeforeResume=Math.max(0,Number(persisted.elapsedMs||0));
+    state.session={id:Math.max(0,Number(persisted.sessionId||0)),client_session_key:String(persisted.clientSessionKey||''),title:String(persisted.title||'Recovered transcription'),status:'starting',segments:[]};
+    state.recoveryLoading=true;
+  }
   const persisted=readPersisted();
-  if(Array.isArray(persisted.pending))state.pending=persisted.pending.filter(segment=>segment&&typeof segment==='object');
-  state.pendingStop=!!persisted.pendingStop;state.elapsedBeforeResume=Math.max(0,Number(persisted.elapsedMs||0));
+  if(hasWork(persisted))restoreBackup(persisted);
+  async function recoverDocument(){
+    if(!state.recoveryLoading)return;
+    const id=sessionId(),key=String(state.session.client_session_key||'');
+    try{
+      if(state.recoveryBlocked)throw Error('Browser recovery contains text that cannot be replayed safely. Export it before clearing recovery.');
+      if(!id&&!/^[a-z0-9-]{16,64}$/i.test(key))throw Error('Recovery document identity is unavailable. Export the unsaved text before clearing recovery.');
+      const data=id?await request('session',{session_id:id},'GET'):await request('start',{client_session_key:key,language:'en-US',speaker_mode:'auto'});
+      if(id&&Number(data.session?.id)!==id||key&&String(data.session?.client_session_key||'')!==key)throw Error('Recovery belongs to another document. Unsaved text has been retained.');
+      state.session=data.session;state.elapsedBeforeResume=Math.max(state.elapsedBeforeResume,sessionTimeline(data.session));state.recovered=true;state.segmentIndex=Math.max(...state.pending.map(x=>Number(x.index||0)+1),0);
+      persist();notify('Recovered text will sync to its original document. Listening remains stopped.');
+    }catch(error){state.lastError=String(error?.message||error);proof.lastError=state.lastError;state.recoveryBlocked=true;notify(state.lastError,'error');return false;}
+    finally{state.recoveryLoading=false;render();}
+    return true;
+  }
   try{const mode=localStorage.getItem(`${STORAGE_KEY}:speaker-mode`)||'auto';if([...el.speakerMode.options].some(option=>option.value===mode))el.speakerMode.value=mode;}catch(error){}
   state.expectedSpeakers=el.speakerMode.value==='auto'?0:Math.max(1,Math.min(4,Number(el.speakerMode.value||1)));state.speakerModel?.setExpected(state.expectedSpeakers);
   state.timer=setInterval(()=>{el.timer.textContent=formatTime(elapsedMs());},250);
-  render();void refreshSessions().then(()=>{if(state.pending.length)void flushPending();else if(state.pendingStop)void finalizeStop();});
+  render();const resumeSync=()=>refreshSessions().then(()=>{if(state.pending.length)void flushPending();else if(state.pendingStop)void finalizeStop();});
+  if(state.recoveryLoading)void recoverDocument().then(ok=>{if(ok!==false)return resumeSync();});else void resumeSync();
   window.dispatchEvent(new CustomEvent('stonefellow:artist-listening-ready',{detail:{build:BUILD,audioRetained:true,mediaRecorder:typeof window.MediaRecorder==='function'}}));
 })();

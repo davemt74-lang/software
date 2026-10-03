@@ -10,7 +10,7 @@
   const state={
     sessionId:0,page:1,manifest:null,view:'page',meta:new Map(),requested:new Map(),
     continuousLoaded:0,continuousBusy:false,continuousObserver:null,
-    lastError:'',manifestTimer:0,
+    lastError:'',manifestTimer:0,documentEpoch:0,viewEpoch:0,manifestRequest:0,
     uiObserver:null,uiObserverTimer:0,schemaReady:false,
   };
   const proof=window.STONEFELLOW_ARTIST_LISTENING_TRANSCRIPT={
@@ -180,14 +180,16 @@
 
   async function loadManifest(sessionId,preferredPage=null){
     sessionId=Math.max(0,Number(sessionId||0));if(!sessionId)return;
+    const epoch=state.documentEpoch,view=state.viewEpoch,request=++state.manifestRequest;
     try{
       const data=await api('manifest',{session_id:sessionId});
-      if(state.sessionId&&state.sessionId!==sessionId)return;
+      if(epoch!==state.documentEpoch||view!==state.viewEpoch||request!==state.manifestRequest||state.sessionId!==sessionId)return;
       state.sessionId=sessionId;state.manifest=data.manifest||null;state.schemaReady=!!state.manifest?.schema_ready;
       if(preferredPage!==null)state.page=Math.max(1,Number(preferredPage||1));
       else if(state.manifest)state.page=Math.max(1,Math.min(Number(state.manifest.page_count||1),state.page));
       state.lastError='';renderManifest();
     }catch(error){
+      if(epoch!==state.documentEpoch||view!==state.viewEpoch||request!==state.manifestRequest)return;
       state.lastError=String(error?.message||error);proof.lastError=state.lastError;
     }
   }
@@ -221,19 +223,21 @@
     return `<article class="sf-listening-transcript-continuous-page" data-listening-transcript-cont-page="${page.page_number}"><header><b>Page ${page.page_number}</b><span>${Number(page.word_count||0).toLocaleString()} words · ${formatTime(page.start_ms)}–${formatTime(page.end_ms)}</span></header>${turns.map(row=>`<div class="sf-listening-transcript-turn"><div><strong>${esc(participantName(String(row.speaker_label||'Speaker 1')))}</strong><time>${formatTime(row.started_ms)}</time></div><p>${esc(row.transcript_text||'')}</p></div>`).join('')||'<p class="sf-listening-transcript-empty">No transcript text on this page.</p>'}</article>`;
   }
   async function loadContinuousPage(pageNumber){
-    if(state.continuousBusy||!state.sessionId||!state.manifest||pageNumber>Number(state.manifest.page_count||1))return;
-    state.continuousBusy=true;
+    if(state.view!=='continuous'||pageNumber!==state.continuousLoaded+1||state.continuousBusy||!state.sessionId||!state.manifest||pageNumber>Number(state.manifest.page_count||1))return;
+    state.continuousBusy=true;const id=state.sessionId,epoch=state.documentEpoch,view=state.viewEpoch;
+    const current=()=>id===state.sessionId&&epoch===state.documentEpoch&&view===state.viewEpoch&&state.view==='continuous';
     try{
-      const data=await api('page',{session_id:state.sessionId,page:pageNumber});
+      const data=await api('page',{session_id:id,page:pageNumber});
+      if(!current())return;
       const target=document.querySelector('[data-listening-transcript-continuous-pages]');if(target)target.insertAdjacentHTML('beforeend',continuousPageHtml(data.page||{}));
       state.continuousLoaded=pageNumber;proof.continuousPages+=1;
       const progress=document.querySelector('[data-listening-transcript-continuous-progress]');if(progress)progress.textContent=`Loaded ${state.continuousLoaded} of ${state.manifest.page_count}`;
       const sentinel=document.querySelector('[data-listening-transcript-sentinel]');if(sentinel)sentinel.hidden=state.continuousLoaded>=Number(state.manifest.page_count||1);
-    }catch(error){state.lastError=String(error?.message||error);}finally{state.continuousBusy=false;}
+    }catch(error){if(current())state.lastError=String(error?.message||error);}finally{if(current())state.continuousBusy=false;}
   }
   function enterContinuous(){
     if(!state.manifest||!ensureUi())return;
-    state.view='continuous';state.continuousLoaded=0;
+    state.viewEpoch+=1;state.continuousBusy=false;state.view='continuous';state.continuousLoaded=0;
     const container=document.getElementById('sfListeningTranscriptContinuous');
     const documentArea=document.querySelector('.sf-listening-workspace-document-area');if(documentArea)documentArea.hidden=true;
     const pages=document.querySelector('[data-listening-transcript-continuous-pages]');if(pages)pages.replaceChildren();if(container)container.hidden=false;
@@ -252,7 +256,7 @@
     emitViewChanged();
   }
   function exitContinuous(){
-    state.view='page';state.continuousObserver?.disconnect();state.continuousObserver=null;
+    state.viewEpoch+=1;state.continuousBusy=false;state.view='page';state.continuousObserver?.disconnect();state.continuousObserver=null;
     const container=document.getElementById('sfListeningTranscriptContinuous');if(container)container.hidden=true;
     const documentArea=document.querySelector('.sf-listening-workspace-document-area');if(documentArea)documentArea.hidden=false;
     document.querySelector('[data-listening-workspace-editor]')?.removeAttribute('hidden');
@@ -282,11 +286,20 @@
     getState:transcriptionTranscriptState,
     goPage:page=>{goPage(page);return transcriptionTranscriptState();},
     setView:view=>{view=String(view||'page');if(view==='continuous')enterContinuous();else if(view==='page')exitContinuous();else throw new Error('Transcript page view must be page or continuous.');return transcriptionTranscriptState();},
-    loadManifest:async(sessionId,page=null)=>{await loadManifest(sessionId,page);if(state.lastError)throw new Error(state.lastError);return transcriptionTranscriptState();},
+    loadManifest:async(sessionId,page=null)=>{sessionId=Math.max(0,Number(sessionId||0));if(state.sessionId!==sessionId){state.documentEpoch+=1;state.sessionId=sessionId;}await loadManifest(sessionId,page);if(state.lastError)throw new Error(state.lastError);return transcriptionTranscriptState();},
   };
 
   window.addEventListener('stonefellow:artist-listening-document-selected',event=>{
     const session=event?.detail?.session;const id=Math.max(0,Number(session?.id||0));
+    state.documentEpoch+=1;state.viewEpoch+=1;state.manifestRequest+=1;
+    if(state.manifestTimer)clearTimeout(state.manifestTimer);state.manifestTimer=0;
+    state.continuousObserver?.disconnect();state.continuousObserver=null;state.continuousBusy=false;state.continuousLoaded=0;state.view='page';state.manifest=null;
+    const container=document.getElementById('sfListeningTranscriptContinuous');if(container)container.hidden=true;
+    const documentArea=document.querySelector('.sf-listening-workspace-document-area');if(documentArea)documentArea.hidden=false;
+    document.querySelector('[data-listening-workspace-editor]')?.removeAttribute('hidden');
+    document.querySelector('[data-listening-workspace-turns]')?.removeAttribute('hidden');
+    const toggle=document.querySelector('[data-listening-transcript-continuous]');if(toggle){toggle.textContent='Continuous View';toggle.setAttribute('aria-pressed','false');}
+
     if(!id){state.sessionId=0;state.manifest=null;return;}
     state.sessionId=id;state.page=Math.max(1,Number(session?.transcript_page||state.requested.get(id)||1));state.requested.set(id,state.page);
     if(session?.transcript_paged){

@@ -20,7 +20,7 @@ const expected = [
   'transcription.library.filter','transcription.folder.create','transcription.folder.delete','transcription.turn.update',
   'transcription.selection.text.set','transcription.selection.turn.set','transcription.selection.clear',
   'transcription.view.prose','transcription.view.turns','transcription.page.go','transcription.page.continuous','transcription.page.paged',
-  'transcription.listening.start','transcription.listening.stop','transcription.listening.pause','transcription.listening.resume',
+  'transcription.listening.start','transcription.listening.stop','transcription.listening.finish','transcription.listening.pause','transcription.listening.resume',
   'transcription.recording.start','transcription.recording.stop','transcription.marker.add','transcription.note.add','transcription.speaker_mode.set','transcription.microphone.select','transcription.microphone.test','transcription.audio.seek',
   'transcription.knowledge.promote_memory','transcription.knowledge.promote_knowledge','transcription.knowledge.promote_project_note',
   'transcription.ai.open','transcription.ai.close','transcription.ai.research.set','transcription.ai.apps.set','transcription.ai.app.activate','transcription.ai.analyze','transcription.ai.save_brain','transcription.ai.save_knowledge',
@@ -38,7 +38,7 @@ for (const contract of ['start:async()=>','stop:async()=>','startRecording:async
 assert(transcript.includes('proof.api={'), 'long transcript exposes direct capability bridge');
 assert(transcript.includes('window.STONEFELLOW_ARTIST_LISTENING_WORKSPACE?.api'), 'long transcript page navigation uses workspace API');
 assert(!transcript.includes('if(open)open.click()'), 'long transcript no longer clicks workspace DOM buttons for API navigation');
-assert(ai.includes('proof.api={'), 'AI Summary exposes direct capability bridge');
+assert.match(ai,/proof\.api\s*=\s*\{/,'AI Summary exposes direct capability bridge');
 for (const contract of ['analyze:async(','saveBrain:async()=>','saveKnowledge:async()=>','setApps:transcriptionSetApps']) assert(ai.includes(contract), `AI bridge includes ${contract}`);
 assert(recordings.includes('proof.api={'), 'recording library exposes direct capability bridge');
 assert(recordings.includes('async function deleteItem(item, confirmUser = true)'), 'recording API can delete without UI confirmation while UI keeps confirmation');
