@@ -23,7 +23,8 @@
     {id:'transcription.page.continuous',category:'view',mutates:false,description:'Use long-transcript continuous view.'},
     {id:'transcription.page.paged',category:'view',mutates:false,description:'Return to long-transcript page view.'},
     {id:'transcription.listening.start',category:'capture',mutates:true,description:'Start or resume live transcription.'},
-    {id:'transcription.listening.stop',category:'capture',mutates:true,description:'Stop and finalize live transcription.'},
+    {id:'transcription.listening.stop',category:'capture',mutates:true,description:'Stop capture immediately, discard the unfinished preview and save accepted speech.'},
+    {id:'transcription.listening.finish',category:'capture',mutates:true,description:'Include the current speech preview, then stop capture and save the draft.'},
     {id:'transcription.listening.pause',category:'capture',mutates:true,description:'Pause live speech transcription without ending the session.'},
     {id:'transcription.listening.resume',category:'capture',mutates:true,description:'Resume a paused transcription session.'},
     {id:'transcription.recording.start',category:'capture',mutates:true,description:'Start retained audio recording while transcribing.'},
@@ -205,6 +206,7 @@
       case 'transcription.page.paged': return t().setView('page');
       case 'transcription.listening.start': return c().start();
       case 'transcription.listening.stop': return c().stop();
+      case 'transcription.listening.finish': return c().finish();
       case 'transcription.listening.pause': return w().pause();
       case 'transcription.listening.resume': return w().resume();
       case 'transcription.recording.start': return c().startRecording();
@@ -282,7 +284,8 @@
       case 'transcription.page.continuous': ok = after.transcript?.view === 'continuous'; evidence = after.transcript; method='state'; break;
       case 'transcription.page.paged': ok = after.transcript?.view === 'page'; evidence = after.transcript; method='state'; break;
       case 'transcription.listening.start': ok = after.capture?.active === true; evidence = after.capture; method='state'; break;
-      case 'transcription.listening.stop': ok = after.capture?.active === false && after.capture?.pendingStop===false; evidence = after.capture; method='state'; break;
+      case 'transcription.listening.stop':
+      case 'transcription.listening.finish': ok = after.capture?.active === false && after.capture?.pendingStop===false; evidence = after.capture; method='state'; break;
       case 'transcription.listening.pause': ok = after.workspace?.paused === true; evidence = after.workspace?.paused; method='state'; break;
       case 'transcription.listening.resume': ok = after.workspace?.paused === false; evidence = after.workspace?.paused; method='state'; break;
       case 'transcription.recording.start': ok = after.capture?.recordingActive === true; evidence = after.capture; method='state'; break;

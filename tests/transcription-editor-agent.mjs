@@ -9,6 +9,7 @@ let title='Original transcript';
 let sessionId=7;
 let sessions=[{id:7,title}];
 let confirmResult=false;
+let finishes=0;
 const events=[];
 
 const workspaceState=()=>({
@@ -37,7 +38,7 @@ const window={
     renameDocument:async next=>{title=String(next);sessions=sessions.map(row=>row.id===sessionId?{...row,title}:row);return{id:sessionId,title};},
     deleteDocument:async requested=>{const id=Number(requested||sessionId);sessions=sessions.filter(row=>row.id!==id);if(sessionId===id)sessionId=0;return{deleted:true,sessionId:id};},
   }},
-  STONEFELLOW_ARTIST_LISTENING_V172:{api:{getState:()=>({active:false,pendingStop:false,recordingActive:false,recordingUploading:false,markerCount:0,noteCount:0,speakerMode:'auto'})}},
+  STONEFELLOW_ARTIST_LISTENING_V172:{api:{finish:async()=>{finishes++;},getState:()=>({active:false,pendingStop:false,recordingActive:false,recordingUploading:false,markerCount:0,noteCount:0,speakerMode:'auto'})}},
   STONEFELLOW_ARTIST_LISTENING_TRANSCRIPT:{api:{getState:()=>({view:'page',page:1})}},
   STONEFELLOW_ARTIST_LISTENING_AI:{api:{getState:()=>({sessionId,open:false,settingsOpen:false,researchEnabled:false,selectedApps:[],activeApp:'',busy:false,report:null,liveWords:0,lastError:''})}},
   STONEFELLOW_ARTIST_RECORDINGS_V198:{api:{getState:()=>({current:null,library:[],loading:false,lastError:''}),getSelection:()=>null}},
@@ -57,7 +58,7 @@ assert(registry,'universal Editor Agent loaded');
 assert.equal(registry.hasSurface('transcription'),true,'Transcription Editor registers with universal Editor Agent');
 
 const inspection=await registry.inspect('transcription');
-assert.equal(inspection.commands.length,50,'Transcription registry exposes all 50 reviewed commands');
+assert.equal(inspection.commands.length,51,'Transcription registry includes the distinct Finish command');
 assert.equal(inspection.selection.document.sessionId,7,'registry exposes current transcription document selection');
 assert.equal(inspection.selection.text.value,'hello','registry exposes current text selection');
 assert.equal(inspection.state.workspace.current.title,'Original transcript','registry exposes current transcription state');
@@ -73,6 +74,11 @@ assert.equal(renamed.raw.verification.method,'state','registry preserves canonic
 assert.equal(renamed.before.workspace.documentText,undefined,'execution before-state remains bounded');
 assert.equal(renamed.after.workspace.sessions,undefined,'execution after-state remains bounded');
 
+const finished=await registry.execute({surface:'transcription',command:{id:'transcription.listening.finish'}});
+assert.equal(finishes,1,'Finish delegates to the canonical capture owner');
+assert.equal(finished.status,'success','Finish requires a finalized capture state');
+assert.equal(finished.verified,true,'Finish reports verified capture state');
+
 const cancelled=await registry.execute({surface:'transcription',command:{id:'transcription.document.delete',sessionId:7}});
 assert.equal(cancelled.status,'cancelled','destructive transcription command requires confirmation');
 assert.equal(sessionId,7,'cancelled destructive action does not mutate transcript state');
@@ -85,7 +91,7 @@ assert.equal(sessionId,0,'confirmed deletion reaches canonical Transcription Edi
 const unsupported=await registry.execute({surface:'transcription',command:{id:'transcription.not-real'}});
 assert.equal(unsupported.status,'unsupported','unknown transcription command never executes');
 assert.equal(window.STONEFELLOW_TRANSCRIPTION_EDITOR_AGENT.registered,true,'Transcription registration publishes canonical proof');
-assert.equal(window.STONEFELLOW_TRANSCRIPTION_EDITOR_AGENT.capabilityCount,50,'registration proof reports exact capability count');
+assert.equal(window.STONEFELLOW_TRANSCRIPTION_EDITOR_AGENT.capabilityCount,51,'registration proof reports exact capability count');
 assert(events.some(event=>event.type==='stonefellow:transcription-editor-agent-ready'),'registration emits ready event');
 
 console.log('TRANSCRIPTION_EDITOR_AGENT=PASS');

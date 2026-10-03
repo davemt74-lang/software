@@ -259,17 +259,18 @@ $config = [
   window.STONEFELLOW_ARTIST_LISTENING_CONFIG=<?= json_encode($config, JSON_UNESCAPED_SLASHES|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
   window.STONEFELLOW_ARTIST_LISTENING_V172=window.STONEFELLOW_ARTIST_LISTENING_CONFIG;
 </script>
+  <script src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-section1-20261003')) ?>"></script>
   <script src="<?= e(url('/artist-listening-realtime.js?v=e07b7c39')) ?>"></script>
   <script src="<?= e(url('/artist-listening-recognition.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script src="<?= e(url('/artist-listening-transcript.js?v=artist-listening-normalized-20260903')) ?>"></script>
-  <script src="<?= e(url('/artist-listening-workspace.js?v=artist-listening-normalized-20260903')) ?>"></script>
-  <script src="<?= e(url('/artist-listening.js?v=9ac023be')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-workspace.js?v=artist-listening-normalized-20260903&capture=interactive-capture-section1-20261003')) ?>"></script>
+  <script src="<?= e(url('/artist-listening.js?v=9ac023be&capture=interactive-capture-section1-20261003')) ?>"></script>
   <script src="<?= e(url('/artist-listening-recordings.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script src="<?= e(url('/artist-listening-naming.js?v=transcription-folder-hotfix-20260913')) ?>"></script>
   <script>window.STONEFELLOW_ARTIST_LISTENING_V172=Object.assign(window.STONEFELLOW_ARTIST_LISTENING_V172||{},window.STONEFELLOW_ARTIST_LISTENING_CONFIG||{});</script>
   <script src="<?= e(url('/artist-listening-ai.js?v=transcription-deeper-v307-20260907')) ?>"></script>
   <script src="<?= e(url('/artist-listening-ui.js?v=artist-listening-normalized-20260903')) ?>"></script>
-  <script src="<?= e(url('/transcription-editor.js?v=transcription-editor-api-20260903')) ?>"></script>
+  <script src="<?= e(url('/transcription-editor.js?v=transcription-editor-api-20260903&capture=interactive-capture-section1-20261003')) ?>"></script>
   <script>
   (() => {
     'use strict';

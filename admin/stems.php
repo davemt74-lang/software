@@ -126,7 +126,7 @@ window.addEventListener('stonefellow:stem-command-bus',function(){window.STONEFE
 window.addEventListener('stonefellow:agent-context',function(){window.STONEFELLOW_STUDIO_RUNTIME_PROBE.agentContext=true;});
 </script>
 HTML;
-$voicePrereqs = '<script src="' . e(url('/voice-lease-v122.js?v=' . $voiceToken)) . '"></script>'
+$voicePrereqs = '<script src="' . e(url('/voice-lease-v122.js?v=' . $voiceToken . '&capture=interactive-capture-section1-20261003')) . '"></script>'
               . '<script src="' . e(url('/premium-voice-v117.js?v=' . $voiceToken)) . '"></script>';
 $html = str_replace('</head>', $probe . $voicePrereqs . '</head>', $html);
 
@@ -288,8 +288,8 @@ $html = preg_replace('~<script[^>]+src="[^"]*editor-voice-barge-v117\.js[^"]*"[^
 
 $contextConfig = '<script>window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)($studioUser['id'] ?? 0) . ',surface:"stem",trackId:' . (int)$trackId . ',projectId:0,conversationId:' . $studioConversationId . ',taskTitle:' . json_encode($studioTaskTitle) . ',taskKey:' . json_encode('stem:' . (int)$trackId) . ',csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';
 $sharedConversation = $contextConfig
-    . '<script src="' . e(url('/conversation-voice-v122.js?v=' . $voiceToken)) . '" onload="window.STONEFELLOW_STUDIO_RUNTIME_PROBE.conversationEngine=!!window.StonefellowConversationVoiceV122"></script>'
-    . '<script src="' . e(url('/editor-voice-barge-v117.js?v=' . $voiceToken)) . '"></script>'
+    . '<script src="' . e(url('/conversation-voice-v122.js?v=' . $voiceToken . '&capture=interactive-capture-section1-20261003')) . '" onload="window.STONEFELLOW_STUDIO_RUNTIME_PROBE.conversationEngine=!!window.StonefellowConversationVoiceV122"></script>'
+    . '<script src="' . e(url('/editor-voice-barge-v117.js?v=' . $voiceToken . '&capture=interactive-capture-section1-20261003')) . '"></script>'
     . '<script src="' . e(url('/agent-context-v131.js?v=' . $token)) . '"></script>';
 $toolBridge = '<script src="' . e(url('/admin/stem-tool-bridge-v127.js?v=' . $phase1Token)) . '"></script>';
 $advancedBridge = '<script src="' . e(url('/admin/stem-advanced-tools-v128.js?v=' . $phase2Token)) . '"></script>';

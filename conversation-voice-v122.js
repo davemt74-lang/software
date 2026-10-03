@@ -76,6 +76,8 @@
 
   function create(options={}){
     const userId=Number(options.userId||0);
+    let captureTicket=null;
+    const claimCapture=()=>{const lease=window.StonefellowVoiceLeaseV122;if(!lease||captureTicket?.isCurrent())return true;captureTicket?.release();captureTicket=lease.acquireCapture('editor');return !!captureTicket;};
     const source=String(options.source||'conversation');
     const SpeechRecognitionCtor=window.SpeechRecognition||window.webkitSpeechRecognition||null;
     const premiumVoice=window.StonefellowPremiumVoiceV122?.({agentEndpoint:options.agentEndpoint,csrf:options.csrf})||null;
@@ -240,7 +242,8 @@
       micOpenPromise=(async()=>{
         try{
           const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
-          if(localMicGeneration!==micGeneration||destroyed||!enabled||speaking||preparing){for(const track of stream.getTracks?.()||[]){try{track.stop();}catch(error){}}return false;}
+          if(localMicGeneration!==micGeneration||destroyed||!enabled||speaking||preparing||(captureTicket&&!captureTicket.isCurrent())){for(const track of stream.getTracks?.()||[]){try{track.stop();}catch(error){}}return false;}
+          captureTicket?.ownStream(stream);
           const track=stream.getAudioTracks?.()[0]||stream.getTracks?.()[0]||null;
           if(!track||track.readyState!=='live'||track.enabled===false)throw new Error('Microphone track is not live.');
           micStream=stream;
@@ -315,6 +318,7 @@
     function startRecognition(mode='normal'){
       clearRestart();proof.recognitionEntries+=1;recognizerEvent('enter',{mode,ctorType:typeof SpeechRecognitionCtor,hasRecognition:!!recognition});persist();
       if(!enabled){recognizerEvent('blocked',{mode,reason:'disabled'});return false;}
+      if(!claimCapture()){setEnabled(false,{persist:false});setState('error','Another surface is using voice capture. Stop it there first.');return false;}
       if(destroyed){recognizerEvent('blocked',{mode,reason:'destroyed'});return false;}
       if(recognition){recognizerEvent('blocked',{mode,reason:'recognition-active'});return false;}
       if(typeof SpeechRecognitionCtor!=='function'){
@@ -381,6 +385,7 @@
         if(enabled)scheduleRecognition(120);
       };
       current.onerror=event=>{
+        if(recognition!==current||destroyed||!enabled)return;
         clearStartWatchdog();if(recognition===current){recognition=null;recognitionMode='';}listening=false;proof.recognitionErrors+=1;
         const kind=String(event?.error||'unknown');const message=recognitionErrorMessage(kind);
         recognizerEvent('error',{mode,error:kind,message:String(event?.message||'')});persist();
@@ -394,6 +399,7 @@
         if(message)setState('ready',pendingFinalTranscript?`Listening · ${pendingFinalTranscript}`:message);if(enabled)scheduleRecognition(kind==='no-speech'?120:300);
       };
       current.onend=()=>{
+        if(recognition!==current||destroyed||!enabled)return;
         clearStartWatchdog();if(recognition===current){recognition=null;recognitionMode='';}listening=false;recognizerEvent('end',{mode});persist();
         if(mode==='barge'){
           if(bargeCapture&&finishInterruptCapture(true))return;
@@ -530,25 +536,30 @@
       if(recognitionMode==='barge')stopRecognition(false);bargeCapture=false;clearBargeCandidate();clearBargeTimer();preparing=false;speaking=false;outputEndedAt=now();
     }
     function setEnabled(next,opts={}){
+      if(destroyed)return false;
+      if(next&&!claimCapture()){setState('error','Another surface is using voice capture. Stop it there first.');return false;}
       const wasEnabled=enabled;enabled=!!next;proof.enabled=enabled;if(opts.persist!==false)writeShared(userId,enabled,source);
       try{options.onVoiceChange?.(enabled);}catch(error){}
-      if(!enabled){resetPendingFinal();stopRecognition(false);stopMicMonitor('released');stopOutput();setState('idle','Voice conversation off');emitHealth('disabled',true);return;}
+      if(!enabled){resetPendingFinal();stopRecognition(false);stopMicMonitor('released');stopOutput();captureTicket?.release();captureTicket=null;setState('idle','Voice conversation off');emitHealth('disabled',true);return;}
       void unlockPremiumAudio('enable');try{void premiumVoice?.warm?.();}catch(error){}startHealth();setState('ready','Voice ready');emitHealth('enabled',true);
       if(opts.immediate===true&&!wasEnabled&&!busy()&&!speaking&&!preparing)startRecognition('normal');else scheduleRecognition(0);
     }
     function resume(delay=120){if(enabled&&!destroyed)scheduleRecognition(delay);}
     function destroy(){
-      destroyed=true;resetPendingFinal();clearRestart();clearStartWatchdog();clearBargeTimer();if(healthTimer)clearInterval(healthTimer);healthTimer=0;
-      emitHealth('pagehide',true);stopRecognition(false);stopMicMonitor('released');stopOutput();persist({closedAt:now()});
+      if(destroyed)return;destroyed=true;enabled=false;resetPendingFinal();clearRestart();clearStartWatchdog();clearBargeTimer();if(healthTimer)clearInterval(healthTimer);healthTimer=0;
+      window.removeEventListener('stonefellow:voice-lease-lost',ownershipListener);window.removeEventListener('storage',storageListener);document.removeEventListener('visibilitychange',visibilityListener);window.removeEventListener('online',onlineListener);document.removeEventListener('pointerdown',gestureUnlock,true);document.removeEventListener('keydown',gestureUnlock,true);window.removeEventListener('pagehide',destroy);
+      emitHealth('pagehide',true);stopRecognition(false);stopMicMonitor('released');stopOutput();captureTicket?.release();captureTicket=null;persist({closedAt:now()});
     }
 
-    const storageListener=event=>{if(event.key!==voiceKey(userId)||destroyed)return;const next=event.newValue==='1';if(next!==enabled)setEnabled(next,{persist:false});};
+    const storageListener=event=>{if(event.key!==voiceKey(userId)||destroyed)return;const next=event.newValue==='1';if(!next&&enabled)setEnabled(false,{persist:false});};
+    const ownershipListener=()=>{if(enabled)setEnabled(false,{persist:false});};
+    window.addEventListener('stonefellow:voice-lease-lost',ownershipListener);
     const visibilityListener=()=>{if(!destroyed&&enabled&&document.visibilityState==='visible')resume(80);};
     const onlineListener=()=>{if(!destroyed&&enabled)resume(80);};
     const gestureUnlock=event=>{if(event?.type==='keydown'&&event.repeat)return;void unlockPremiumAudio(event?.type||'gesture');};
     window.addEventListener('storage',storageListener);document.addEventListener('visibilitychange',visibilityListener);window.addEventListener('online',onlineListener);
     document.addEventListener('pointerdown',gestureUnlock,{capture:true,once:true,passive:true});document.addEventListener('keydown',gestureUnlock,{capture:true,once:true});
-    window.addEventListener('pagehide',()=>{window.removeEventListener('storage',storageListener);document.removeEventListener('visibilitychange',visibilityListener);window.removeEventListener('online',onlineListener);document.removeEventListener('pointerdown',gestureUnlock,true);document.removeEventListener('keydown',gestureUnlock,true);destroy();},{once:true});
+    window.addEventListener('pagehide',destroy,{once:true});
 
     persist({resumed:!!previousSession});if(enabled)startHealth();
     return {build:BUILD,controlBuild:CONTROL_BUILD,sessionId,proof,start:()=>setEnabled(enabled,{persist:false}),setEnabled,toggle:()=>{if(!enabled)void unlockPremiumAudio('toggle');return setEnabled(!enabled,{immediate:!enabled});},unlockAudio:unlockPremiumAudio,speak,createSpeechStream,resume,stopListening:stopRecognition,stopOutput,destroy,emitHealth,isEnabled:()=>enabled,isListening:()=>listening,isSpeaking:()=>speaking,isPreparing:()=>preparing,state:()=>state,snapshot};
