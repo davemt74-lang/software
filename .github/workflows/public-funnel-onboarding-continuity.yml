@@ -35,7 +35,7 @@ jobs:
           else
             changed="$(git diff --name-only HEAD^ HEAD)"
           fi
-          if printf '%s\n' "$changed" | grep -Eq '^(includes/(tracky-cloud-v270|tracky-visual-status-order-v1f6|agent-visual-onboarding-v120)\.php|tests/tracky-visual-.*v1f6\.(php|mjs))$'; then
+          if printf '%s\n' "$changed" | grep -Eq '^(includes/(tracky-cloud-v270|tracky-visual-status-order-v1f6|tracky-agent-scene-v1g3d|agent-visual-onboarding-v120)\.php|tests/tracky-(visual-.*v1f6|shared-scene.*v1g3d)\.(php|mjs))$'; then
             echo 'needed=true' >> "$GITHUB_OUTPUT"
           else
             echo 'needed=false' >> "$GITHUB_OUTPUT"
@@ -77,7 +77,9 @@ jobs:
           TRACKY_ORDER_TEST_DSN: mysql:host=127.0.0.1;port=3306;dbname=tracky_visual_order_ci;charset=utf8mb4
           TRACKY_ORDER_TEST_USER: root
           TRACKY_ORDER_TEST_PASS: trackyci
-        run: php tests/tracky-visual-order-mysql-v1f6.php
+        run: |
+          php tests/tracky-visual-order-mysql-v1f6.php
+          php tests/tracky-shared-scene-mysql-v1g3d.php
   contract:
     runs-on: ubuntu-latest
     strategy:
