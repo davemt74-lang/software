@@ -57,6 +57,7 @@ jobs:
       - name: Listening and conversation correctness
         run: |
           node tests/listening-section2.mjs
+          node tests/transcription-section3.mjs
           node --check chat-voice.js
           node --check conversation-voice-v122.js
           node --check artist-listening.js
