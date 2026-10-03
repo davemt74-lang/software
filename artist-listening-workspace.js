@@ -353,7 +353,7 @@
           <section class="sf-listening-workspace-inspector-section"><h3>Markers & Notes</h3><div data-listening-workspace-events></div></section>
           <section class="sf-listening-workspace-inspector-section"><h3>Audio Clips</h3><div class="sf-listening-workspace-recording-list" data-listening-workspace-recordings><div class="sf-listening-workspace-no-events">No retained audio clips in this transcription.</div></div></section>
           <section class="sf-listening-workspace-inspector-section"><h3>Knowledge</h3><div class="sf-listening-workspace-inspector-actions"><button type="button" class="sf-listening-workspace-btn" data-listening-workspace-memory>Send selection to Agent Brain</button><button type="button" class="sf-listening-workspace-btn" data-listening-workspace-knowledge>Send selection to Knowledge Base</button><button type="button" class="sf-listening-workspace-btn" data-listening-workspace-project-note>Send selection to Project Notes</button></div></section>
-          <section class="sf-listening-workspace-inspector-section"><h3>Capture Input</h3><div class="sf-listening-workspace-capture-strip"><select data-listening-workspace-mic><option value="">System / browser default</option></select><button type="button" data-listening-workspace-test-mic>Test</button></div><div class="sf-listening-workspace-capture-strip"><div class="sf-listening-workspace-level"><span data-listening-workspace-level></span><span data-listening-live-level></span></div><span class="sf-listening-workspace-quality" data-listening-workspace-quality>Not tested</span></div><div class="sf-listening-workspace-capture-strip"><select data-listening-speaker-mode aria-label="Speaker mode"><option value="auto">Multi-person · Auto</option><option value="1">Single speaker</option><option value="2">Expect 2 speakers</option><option value="3">Expect 3 speakers</option><option value="4">Expect 4 speakers</option></select></div></section>
+          <section class="sf-listening-workspace-inspector-section"><h3>Recording and Input Test Microphone</h3><div class="sf-listening-workspace-capture-strip"><select data-listening-workspace-mic><option value="">System / browser default</option></select><button type="button" data-listening-workspace-test-mic>Test</button></div><div class="sf-listening-workspace-capture-strip"><div class="sf-listening-workspace-level"><span data-listening-workspace-level></span><span data-listening-live-level></span></div><span class="sf-listening-workspace-quality" data-listening-workspace-quality>Not tested</span></div><div class="sf-listening-workspace-capture-strip"><span>Live browser transcription and its level meter use the browser default microphone. The selection above controls retained recording and input tests.</span><select data-listening-speaker-mode aria-label="Speaker mode"><option value="auto">Multi-person · Auto</option><option value="1">Single speaker</option><option value="2">Expect 2 speakers</option><option value="3">Expect 3 speakers</option><option value="4">Expect 4 speakers</option></select></div></section>
         </aside>
       </div>
       <div class="sf-listening-workspace-listening-player" aria-label="Listening controls">
@@ -361,7 +361,8 @@
         <div class="sf-listening-workspace-capture-actions">
           <button type="button" class="sf-listening-workspace-btn primary" id="artistListeningButton" data-listening-start title="Start/stop transcription · Ctrl/Cmd+Shift+L">Start Listening</button>
           <button type="button" class="sf-listening-workspace-btn" data-listening-workspace-pause disabled>Pause</button>
-          <button type="button" class="sf-listening-workspace-btn" data-listening-stop disabled>Stop Listening</button>
+          <button type="button" class="sf-listening-workspace-btn" data-listening-stop disabled title="Stop capture immediately; keep saved speech and discard the unfinished preview">Stop Listening</button>
+          <button type="button" class="sf-listening-workspace-btn" data-listening-finish disabled title="Include the current speech preview, then stop capture and save the draft">Finish</button>
           <button type="button" class="sf-listening-workspace-btn sf-listening-workspace-record-btn" data-listening-record aria-pressed="false" disabled title="Start/stop retained audio · Ctrl/Cmd+Shift+R">Start Recording</button>
           <button type="button" class="sf-listening-workspace-btn" data-listening-marker disabled>Mark That</button>
           <button type="button" class="sf-listening-workspace-btn" data-listening-note disabled>Add Note</button>
@@ -942,12 +943,16 @@
     label.textContent = 'Testing…';
     let stream = null;
     let context = null;
+    const ticket=window.StonefellowVoiceLeaseV122?.acquireCapture('input-test');
     let outcome = {ok:false,label:'Input test failed',kind:'error'};
     try {
+      if(window.StonefellowVoiceLeaseV122&&!ticket)throw new Error('Another surface is using voice capture. Stop it there first.');
       const deviceId = String(select.value || '');
       localStorage.setItem('stonefellow:artist-listening:v175:mic', deviceId);
       stream = await navigator.mediaDevices.getUserMedia({audio:deviceId ? {deviceId:{exact:deviceId},echoCancellation:true,noiseSuppression:true,autoGainControl:true} : {echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+      if(ticket&&!ticket.ownStream(stream))throw new Error('Microphone test cancelled.');
       await enumerateMics();
+      if(ticket&&!ticket.isCurrent())throw new Error('Microphone test cancelled.');
       if (deviceId && [...select.options].some(option => option.value === deviceId)) select.value = deviceId;
       const Context = window.AudioContext || window.webkitAudioContext;
       if (!Context) throw new Error('Audio level analysis is unavailable.');
@@ -959,6 +964,7 @@
       let totalRms = 0, frames = 0, maxPeak = 0;
       await new Promise(resolve => {
         const tick = () => {
+          if(ticket&&!ticket.isCurrent()){resolve();return;}
           analyser.getByteTimeDomainData(values);
           let sum = 0, peak = 0;
           values.forEach(value => { const sample = Math.abs((value - 128) / 128); peak = Math.max(peak,sample); sum += sample * sample; });
@@ -968,6 +974,7 @@
         };
         requestAnimationFrame(tick);
       });
+      if(ticket&&!ticket.isCurrent())throw new Error('Microphone test cancelled.');
       const [finalLabel,kind] = quality(frames ? totalRms / frames : 0,maxPeak); label.textContent = finalLabel; label.className = `sf-listening-workspace-quality ${kind}`;
       outcome = {ok:true,label:finalLabel,kind};
     } catch (error) {
@@ -977,6 +984,7 @@
     } finally {
       for (const track of stream?.getTracks?.() || []) { try { track.stop(); } catch (error) {} }
       if (context) { try { await context.close(); } catch (error) {} }
+      ticket?.release();
       state.micTesting = false;
     }
     return outcome;

@@ -29,6 +29,10 @@
     meterAnalyser:null,
     recordingActive:false,
     recordingStarting:false,
+    captureGeneration:0,
+    recordingGeneration:0,
+    meterStarting:false,
+    captureTicket:null,
     recordingUploading:false,
     mediaRecorder:null,
     recordingStream:null,
@@ -73,6 +77,7 @@
     liveLevel:document.querySelector('[data-listening-live-level]'),
     start:document.querySelector('[data-listening-start]'),
     stop:document.querySelector('[data-listening-stop]'),
+    finish:document.querySelector('[data-listening-finish]'),
     record:document.querySelector('[data-listening-record]'),
     marker:document.querySelector('[data-listening-marker]'),
     note:document.querySelector('[data-listening-note]'),
@@ -186,6 +191,7 @@
     el.start.textContent=hasServerActive&&!active?'Resume Listening':'Start Listening';
     el.stop.disabled=!active&&!hasServerActive;
     el.stop.textContent='Stop Listening';
+    if(el.finish)el.finish.disabled=!active;
     el.record.disabled=!active||state.recordingStarting||state.recordingUploading;
     el.record.textContent=state.recordingUploading?'Saving Recording…':(state.recordingActive?'Stop Recording':'Start Recording');
     el.record.classList.toggle('active',state.recordingActive);
@@ -303,25 +309,33 @@
       if(code!=='aborted'&&code!=='no-speech')notify(`Speech recognition paused: ${code}. Retrying…`,'error');
     };
     current.onend=()=>{
-      if(state.recognition===current)state.recognition=null;state.recognitionStarting=false;emitLive('recognition-end');
+      if(state.recognition!==current)return;
+      state.recognition=null;state.recognitionStarting=false;emitLive('recognition-end');
       if(state.active)scheduleRecognition(220);
     };
     try{current.start();return true;}catch(error){state.recognition=null;state.recognitionStarting=false;state.lastError=String(error?.message||error||'Speech recognition failed.');proof.lastError=state.lastError;notify('Speech recognition is still releasing. Retrying…','error');scheduleRecognition(320);return false;}
   }
 
   async function startMeter(){
-    if(state.meterStream||!navigator.mediaDevices?.getUserMedia)return;
+    if(!state.active||state.meterStream||state.meterStarting||!navigator.mediaDevices?.getUserMedia)return;
+    const generation=state.captureGeneration;const ticket=state.captureTicket;let stream=null;
+    const current=()=>state.active&&generation===state.captureGeneration&&(!ticket||ticket.isCurrent());
+    state.meterStarting=true;
     try{
       const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
       const audio={echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1};
       if(supported.voiceIsolation)audio.voiceIsolation=true;
-      const stream=await navigator.mediaDevices.getUserMedia({audio,video:false});state.meterStream=stream;
-      const Context=window.AudioContext||window.webkitAudioContext;if(!Context)return;
+      stream=await navigator.mediaDevices.getUserMedia({audio,video:false});
+      if(!current()){for(const track of stream.getTracks?.()||[])track.stop();return;}
+      if(ticket&&!ticket.ownStream(stream))return;
+      state.meterStream=stream;
+      const Context=window.AudioContext||window.webkitAudioContext;if(!Context){stopMeter();return;}
       const context=new Context();const source=context.createMediaStreamSource(stream);const analyser=context.createAnalyser();analyser.fftSize=512;source.connect(analyser);state.meterContext=context;state.meterAnalyser=analyser;
       const samples=new Uint8Array(analyser.fftSize);const frequencies=new Uint8Array(analyser.frequencyBinCount);let lastFeatureAt=0;
       const tick=()=>{if(!state.meterAnalyser||!state.meterStream){state.meterFrame=0;return;}analyser.getByteTimeDomainData(samples);let sum=0,crossings=0,previous=(samples[0]-128)/128;for(const value of samples){const sample=(value-128)/128;sum+=sample*sample;if((sample>=0)!==(previous>=0))crossings+=1;previous=sample;}const rms=Math.sqrt(sum/samples.length);const level=Math.min(100,Math.round(rms*340));button.style.setProperty('--artist-listening-level',`${Math.max(8,level)}%`);if(el.liveLevel)el.liveLevel.style.width=`${Math.max(2,level)}%`;const now=performance.now();if(now-lastFeatureAt>=80){lastFeatureAt=now;analyser.getByteFrequencyData(frequencies);let weighted=0,total=0;for(let index=0;index<frequencies.length;index+=1){const magnitude=frequencies[index];weighted+=index*magnitude;total+=magnitude;}state.acousticFrames.push({timeMs:elapsedMs(),rms,zcr:crossings/samples.length,centroid:total?weighted/total/frequencies.length:0});const cutoff=elapsedMs()-12000;while(state.acousticFrames.length&&state.acousticFrames[0].timeMs<cutoff)state.acousticFrames.shift();}state.meterFrame=requestAnimationFrame(tick);};
       state.meterFrame=requestAnimationFrame(tick);
-    }catch(error){notify('Transcription is active, but the microphone level meter is unavailable.','error');}
+    }catch(error){for(const track of stream?.getTracks?.()||[]){try{track.stop();}catch(ignore){}}if(current()){stopMeter();notify('Transcription is active, but the microphone level meter is unavailable.','error');}}
+    finally{if(generation===state.captureGeneration)state.meterStarting=false;}
   }
   function stopMeter(){
     if(state.meterFrame)cancelAnimationFrame(state.meterFrame);state.meterFrame=0;state.meterAnalyser=null;
@@ -360,6 +374,8 @@
     if(state.recordingActive||state.recordingStarting||state.recordingUploading)return;
     if(!state.active){notify('Start Listening before starting retained audio.','error');return;}
     if(typeof window.MediaRecorder!=='function'||!navigator.mediaDevices?.getUserMedia){notify('Audio recording is not supported by this browser.','error');return;}
+    const generation=++state.recordingGeneration;const captureGeneration=state.captureGeneration;const ticket=state.captureTicket;let stream=null;
+    const current=()=>state.active&&generation===state.recordingGeneration&&captureGeneration===state.captureGeneration&&(!ticket||ticket.isCurrent());
     state.recordingStarting=true;render();
     try{
       const selectedMic=String(document.querySelector('[data-listening-workspace-mic]')?.value||'');
@@ -369,17 +385,20 @@
       if(supported.echoCancellation)audio.echoCancellation=false;
       if(supported.noiseSuppression)audio.noiseSuppression=false;
       if(supported.autoGainControl)audio.autoGainControl=false;
-      const stream=await navigator.mediaDevices.getUserMedia({audio,video:false});
+      stream=await navigator.mediaDevices.getUserMedia({audio,video:false});
+      if(!current()){for(const track of stream.getTracks?.()||[])track.stop();return;}
+      if(ticket&&!ticket.ownStream(stream))return;
       const mime=preferredRecordingMime();
       const recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);
       state.recordingStream=stream;state.mediaRecorder=recorder;state.recordingChunks=[];state.recordingKey=uuid();state.recordingMime=String(recorder.mimeType||mime||'audio/webm');state.recordingStartedMs=elapsedMs();
       recorder.addEventListener('dataavailable',event=>{if(event.data&&event.data.size>0)state.recordingChunks.push(event.data);});
       recorder.addEventListener('error',event=>{state.lastError=String(event?.error?.message||'Audio recorder error.');proof.lastError=state.lastError;proof.recordingErrors+=1;notify(state.lastError,'error');});
       recorder.start(1000);state.recordingActive=true;proof.recordingStarts+=1;notify('Audio recording started. Transcription is still listening.','success');render();emitLive('recording-started',{recordingKey:state.recordingKey,source});
-    }catch(error){stopRecordingStream();state.mediaRecorder=null;state.recordingChunks=[];state.recordingKey='';state.recordingActive=false;proof.recordingErrors+=1;state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(`Could not start audio recording: ${state.lastError}`,'error');}
-    finally{state.recordingStarting=false;render();}
+    }catch(error){for(const track of stream?.getTracks?.()||[]){try{track.stop();}catch(ignore){}}if(!current())return;stopRecordingStream();state.mediaRecorder=null;state.recordingChunks=[];state.recordingKey='';state.recordingActive=false;proof.recordingErrors+=1;state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(`Could not start audio recording: ${state.lastError}`,'error');}
+    finally{if(generation===state.recordingGeneration){state.recordingStarting=false;render();}}
   }
   async function stopAudioRecording(source='button',endedOverride=null){
+    state.recordingGeneration+=1;state.recordingStarting=false;
     if(state.recordingStopPromise)return state.recordingStopPromise;
     const recorder=state.mediaRecorder;
     if(!recorder||recorder.state==='inactive'){state.recordingActive=false;stopRecordingStream();render();return null;}
@@ -398,19 +417,27 @@
       recorder.addEventListener('stop',()=>void finish(),{once:true});
       try{recorder.requestData();}catch(error){}
       try{recorder.stop();}catch(error){void finish();}
+      stopRecordingStream();
     });
     state.recordingStopPromise.catch(()=>{});return state.recordingStopPromise;
   }
 
 
   async function startCapture(source='button'){
-    if(state.active||state.startPromise)return;
+    if(state.active||state.startPromise||state.pendingStop||state.recordingUploading)return;
     if(!sessionIsDraft()&&String(state.session?.status||'')!=='active'&&String(state.session?.status||'')!=='starting'){
       notify('Create a new transcription document before starting a recording.','error');return;
     }
     if(typeof SpeechRecognitionCtor!=='function'){notify('Live speech recognition is not supported by this browser.','error');return;}
     if(!cfg.schemaReady){notify('Run the Stonefellow v172 database upgrade before using Artist Listening.','error');return;}
     disableAgentConversation();
+    const lease=window.StonefellowVoiceLeaseV122;
+    if(lease){
+      state.captureTicket=lease.acquireCapture('transcription');
+      if(!state.captureTicket&&source==='button'&&window.confirm('Another tab is using voice capture. Switch capture to this transcription?'))state.captureTicket=lease.acquireCapture('transcription',{takeover:true});
+      if(!state.captureTicket){notify('Another surface is using voice capture. Stop it there before listening here.','error');return;}
+    }
+    state.captureGeneration+=1;state.meterStarting=false;
     const persisted=readPersisted();
     const selectedDraft=sessionIsDraft()&&sessionId()>0;
     const localStartPending=String(state.session?.status||'')==='starting'&&!!state.session?.clientSessionKey&&state.pending.length>0;
@@ -442,7 +469,7 @@
       if(state.continuity){const captured=[...saved,...state.pending].filter(row=>String(row.segment_type||row.type||'')==='transcript').map(row=>String(row.transcript_text||row.text||''));state.continuity.seed(captured.join(' '));}
       persist();render();emitLive('session-started',{sessionId:Number(state.session?.id||0)});void flushPending();return state.session;
     }).catch(error=>{
-      state.active=false;stopRecognition();stopMeter();state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(state.lastError,'error');render();throw error;
+      state.active=false;state.captureGeneration+=1;state.meterStarting=false;stopRecognition();stopMeter();stopRecordingStream();state.captureTicket?.release();state.captureTicket=null;state.lastError=String(error?.message||error);proof.lastError=state.lastError;notify(state.lastError,'error');render();throw error;
     }).finally(()=>{state.startPromise=null;render();});
     state.startPromise.catch(()=>{});
     return state.startPromise;
@@ -482,10 +509,13 @@
   }
   async function stopCapture(source='button'){
     if(!state.active&&String(state.session?.status||'')!=='active')return;
-    if(state.active&&state.interim)handleFinal(state.interim,null);
+    if(source==='finish'&&state.active&&state.interim)handleFinal(state.interim,null);
+    state.captureGeneration+=1;state.recordingGeneration+=1;state.recordingStarting=false;state.meterStarting=false;
     if(state.flushTimer)clearTimeout(state.flushTimer);state.flushTimer=0;
     const stoppedAt=elapsedMs();state.active=false;state.interim='';state.continuity?.setInterim('');state.noteArmed=false;state.elapsedBeforeResume=stoppedAt;state.captureStartedAt=0;state.pendingStop=true;stopRecognition();stopMeter();notify(state.recordingActive?'Stopping retained audio and finalizing transcript…':'Finalizing transcript draft…');render();emitLive('stopping');
-    if(state.recordingActive||state.mediaRecorder){try{await stopAudioRecording('listening-stop',stoppedAt);}catch(error){}}
+    const recordingStop=(state.recordingActive||state.mediaRecorder)?stopAudioRecording('listening-stop',stoppedAt):null;
+    state.captureTicket?.release();state.captureTicket=null;
+    if(recordingStop){try{await recordingStop;}catch(error){}}
     if(state.pending.length)await flushPending();else await finalizeStop();
   }
   function addMarker(){if(!state.active)return null;const segment=nextSegment('marker','Marked moment');notify('Moment marked.','success');return segment;}
@@ -508,6 +538,9 @@
       sessionId:sessionId(),
       status:String(state.session?.status||''),
       active:!!state.active,
+      captureOwner:String(state.captureTicket?.owner||''),
+      recognitionInput:'browser-default',
+      recordingInput:String(document.querySelector('[data-listening-workspace-mic]')?.value||'browser-default'),
       recovered:!!state.recovered,
       pendingStop:!!state.pendingStop,
       syncing:!!state.syncing,
@@ -539,6 +572,7 @@
     getState:transcriptionCaptureState,
     start:async()=>{await startCapture('transcription-api');return transcriptionCaptureState();},
     stop:async()=>{await stopCapture('transcription-api');return transcriptionCaptureState();},
+    finish:async()=>{await stopCapture('finish');return transcriptionCaptureState();},
     startRecording:async()=>{await startAudioRecording('transcription-api');return transcriptionCaptureState();},
     stopRecording:async()=>{const result=await stopAudioRecording('transcription-api');return {recording:result,state:transcriptionCaptureState()};},
     addMarker:()=>{if(!state.active)throw new Error('Start listening before adding a marker.');return addMarker();},
@@ -548,6 +582,7 @@
 
   el.start.addEventListener('click',()=>void startCapture('button'));
   el.stop.addEventListener('click',()=>void stopCapture('button'));
+  el.finish?.addEventListener('click',()=>void stopCapture('finish'));
   el.record.addEventListener('click',()=>{if(state.recordingActive||state.mediaRecorder)void stopAudioRecording('button');else void startAudioRecording('button');});
   el.marker.addEventListener('click',addMarker);
   el.note.addEventListener('click',addManualNote);
@@ -588,7 +623,8 @@
     if(String(event.key).toLowerCase()==='m'&&state.active){event.preventDefault();addMarker();}
   },true);
   window.addEventListener('online',()=>{if(state.pending.length)void flushPending();else if(state.pendingStop)void finalizeStop();});
-  window.addEventListener('pagehide',()=>{persist();stopRecognition();stopMeter();if(state.mediaRecorder&&state.mediaRecorder.state!=='inactive'){try{state.mediaRecorder.stop();}catch(error){}}stopRecordingStream();if(state.timer)clearInterval(state.timer);if(state.flushTimer)clearTimeout(state.flushTimer);},{once:true});
+  window.addEventListener('stonefellow:voice-lease-lost',()=>{if(state.active)void stopCapture('ownership-lost');});
+  window.addEventListener('pagehide',()=>{state.active=false;state.captureGeneration+=1;state.recordingGeneration+=1;state.recordingStarting=false;state.meterStarting=false;persist();stopRecognition();stopMeter();if(state.mediaRecorder&&state.mediaRecorder.state!=='inactive'){try{state.mediaRecorder.stop();}catch(error){}}stopRecordingStream();state.captureTicket?.release();state.captureTicket=null;if(state.timer)clearInterval(state.timer);if(state.flushTimer)clearTimeout(state.flushTimer);},{once:true});
 
   const persisted=readPersisted();
   if(Array.isArray(persisted.pending))state.pending=persisted.pending.filter(segment=>segment&&typeof segment==='object');

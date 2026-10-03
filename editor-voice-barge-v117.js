@@ -7,7 +7,7 @@
   const profileKey=device=>`stonefellow:acoustic-profile:${userId()}:${hash(device)}`;
 
   window.StonefellowEditorVoiceBarge=function(options={}){
-    let stream=null,context=null,source=null,analyser=null,timer=null,hits=0,mediaLease=false;
+    let stream=null,context=null,source=null,analyser=null,timer=null,hits=0,mediaLease=false,captureTicket=null,generation=0,pending=null;
     let liveFloor=.018,startedAt=0,deviceIdentity='default',profile=null,profileSamples=0,sessionFloorSum=0,sessionFloorCount=0;
     const proof={build:BUILD,starts:0,interruptions:0,lastRms:0,lastThreshold:0,device:'',profileLoaded:false,profileSaves:0,calibrationFrames:0,leaseDenials:0};
     const speaking=()=>Boolean(options.isSpeaking?.());
@@ -26,15 +26,22 @@
     }
     async function ensure(){
       if(stream||!navigator.mediaDevices?.getUserMedia)return;
-      const gate=lease();if(gate&&!gate.acquireMedia()){proof.leaseDenials+=1;return;}
-      mediaLease=!!gate;
-      try{
-        stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
-        const track=stream.getAudioTracks?.()[0]||stream.getTracks?.()[0]||null;const settings=track?.getSettings?.()||{};
-        deviceIdentity=String(settings.deviceId||settings.groupId||track?.label||'default');proof.device=hash(deviceIdentity);loadProfile();
-        const Ctx=window.AudioContext||window.webkitAudioContext;if(!Ctx)return;
-        context=new Ctx();analyser=context.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=.5;source=context.createMediaStreamSource(stream);source.connect(analyser);
-      }catch(error){if(mediaLease){lease()?.releaseMedia();mediaLease=false;}}
+      if(pending)return pending;
+      const gate=lease();const ticket=gate?.acquireCapture('editor');
+      if(gate&&!ticket){proof.leaseDenials+=1;return;}
+      captureTicket=ticket;mediaLease=!!ticket;const runGeneration=++generation;
+      const acquisition=(async()=>{
+        let acquired=null;
+        try{
+          acquired=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+          if(runGeneration!==generation||(ticket&&!ticket.isCurrent())){for(const track of acquired.getTracks?.()||[])track.stop();ticket?.release();return;}
+          ticket?.ownStream(acquired);stream=acquired;
+          const track=stream.getAudioTracks?.()[0]||stream.getTracks?.()[0]||null;const settings=track?.getSettings?.()||{};
+          deviceIdentity=String(settings.deviceId||settings.groupId||track?.label||'default');proof.device=hash(deviceIdentity);loadProfile();
+          const Ctx=window.AudioContext||window.webkitAudioContext;if(!Ctx)return;
+          context=new Ctx();analyser=context.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=.5;source=context.createMediaStreamSource(stream);source.connect(analyser);
+        }catch(error){for(const track of acquired?.getTracks?.()||[]){try{track.stop();}catch(ignore){}}ticket?.release();if(runGeneration===generation){stream=null;mediaLease=false;captureTicket=null;}}
+      })();pending=acquisition;acquisition.finally(()=>{if(pending===acquisition)pending=null;});return acquisition;
     }
     function thresholdFor(floor){
       const historical=Math.max(.008,Number(profile?.echoFloor||.018));const calibrated=Math.max(historical*.72,floor);
@@ -56,10 +63,12 @@
       },50);
     }
     function release(){
+      generation+=1;pending=null;
       stop(true);try{source?.disconnect();}catch(error){}source=null;analyser=null;if(context){try{context.close();}catch(error){}}context=null;
       if(stream)stream.getTracks().forEach(track=>{try{track.stop();}catch(error){}});stream=null;
-      if(mediaLease){lease()?.releaseMedia();mediaLease=false;}
+      captureTicket?.release();captureTicket=null;mediaLease=false;
     }
+    window.addEventListener('stonefellow:voice-lease-lost',release);
     return {ensure,start,stop,release,proof,profile:()=>({...profile,device:proof.device})};
   };
 

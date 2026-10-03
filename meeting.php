@@ -18,7 +18,7 @@ $reviewMode=$closed&&$isOrganizer&&$user&&(string)$meeting['status']!=='cancelle
 $intelligenceReady=function_exists('video_meeting_intelligence_schema_ready_v1820')&&video_meeting_intelligence_schema_ready_v1820($pdo);
 $csrf=$user?csrf_token():'';
 $boot=[
-    'meeting'=>(string)$meeting['public_id'],'invite'=>$invite,'csrf'=>$csrf,'participantName'=>$participantName,'isOrganizer'=>$isOrganizer,
+    'userId'=>(int)($user['id']??0),'meeting'=>(string)$meeting['public_id'],'invite'=>$invite,'csrf'=>$csrf,'participantName'=>$participantName,'isOrganizer'=>$isOrganizer,
     'transcriptionEnabled'=>!empty($meeting['transcription_enabled']),'privateProcessingRequired'=>$privateProcessingRequired,'processingPolicyPending'=>$processingPending,
     'tokenEndpoint'=>url('/api/video-meeting-token.php'),'presenceEndpoint'=>url('/api/video-meeting-presence.php'),'transcriptEndpoint'=>url('/api/video-meeting-transcript.php'),
     'intelligenceEndpoint'=>url('/api/video-meeting-intelligence.php'),'memoryEndpoint'=>url('/api/video-meeting-memory.php'),'transcriptionIntelligenceEndpoint'=>url('/api/artist-listening-intelligence-v300.php'),
@@ -52,5 +52,6 @@ header('X-Robots-Tag: noindex, nofollow, noarchive');
 <div class="meeting-device-row" id="meetingDevicePicker" hidden style="padding:10px"><select id="meetingMicDevice" aria-label="Microphone"></select><select id="meetingCameraDevice" aria-label="Camera"></select><select id="meetingSpeakerDevice" aria-label="Speaker"></select></div></aside></div>
 <footer class="video-meeting-controls"><button class="meeting-control" id="meetingMic" type="button">Mic on</button><button class="meeting-control" id="meetingCamera" type="button">Camera on</button><button class="meeting-control" id="meetingShare" type="button">Share</button><button class="meeting-control secondary" id="meetingDevices" type="button">Devices</button><button class="meeting-control secondary" id="meetingAgentToggle" type="button">Agent</button><button class="meeting-control end" id="<?= $isOrganizer?'meetingEnd':'meetingLeave' ?>" type="button"><?= $isOrganizer?'End':'Leave' ?></button></footer></div>
 <script>window.VP3Meeting=<?= json_encode($boot,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;</script>
-<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js" crossorigin="anonymous"></script><script src="<?= e(url('/video-meetings-v1800.js?v=1820')) ?>"></script><?php if($intelligenceReady): ?><script src="<?= e(url('/video-meetings-intelligence-v1820.js?v=18120')) ?>"></script><?php endif; ?>
+<script src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-section1-20261003')) ?>"></script>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js" crossorigin="anonymous"></script><script src="<?= e(url('/video-meetings-v1800.js?v=interactive-capture-section1-20261003')) ?>"></script><?php if($intelligenceReady): ?><script src="<?= e(url('/video-meetings-intelligence-v1820.js?v=18120')) ?>"></script><?php endif; ?>
 <?php endif; ?></body></html>

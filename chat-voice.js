@@ -53,6 +53,15 @@
   let inputStream=null;
   let inputTrack=null;
   let inputTrackPromise=null;
+  let micGeneration=0,captureTicket=null;
+  function claimCapture(takeover=false){
+    const lease=window.StonefellowVoiceLeaseV122;
+    if(!lease)return true;
+    if(captureTicket?.isCurrent())return true;
+    captureTicket?.release();captureTicket=lease.acquireCapture('chat',{takeover});
+    return !!captureTicket;
+  }
+  function releaseCapture(){captureTicket?.release();captureTicket=null;}
   let inputTrackMode='default';
   let inputContext=null;
   let inputAnalyser=null;
@@ -398,6 +407,7 @@
   }
 
   function releaseProcessedMic(reason='release'){
+    micGeneration+=1;
     const stream=inputStream;inputStream=null;inputTrack=null;inputTrackPromise=null;inputTrackMode='default';proof.processedMicReady=false;proof.micMonitorReady=false;lastNearFieldAt=0;
     if(inputMonitorFrame)cancelAnimationFrame(inputMonitorFrame);inputMonitorFrame=0;inputAnalyser=null;
     if(inputContext){try{inputContext.close();}catch(error){}}inputContext=null;
@@ -405,20 +415,24 @@
   }
 
   async function ensureProcessedMic(){
+    if(!voiceOn||!claimCapture())return null;
     if(inputTrack&&inputTrack.readyState==='live')return inputTrack;if(inputTrackPromise)return inputTrackPromise;if(!navigator.mediaDevices?.getUserMedia)return null;
-    inputTrackPromise=(async()=>{
+    const generation=micGeneration;const ticket=captureTicket;
+    const current=()=>voiceOn&&generation===micGeneration&&(!ticket||ticket.isCurrent());
+    const acquisition=(async()=>{
+      let stream=null;
       try{
         const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};const audio={echoCancellation:'all',noiseSuppression:true,autoGainControl:true,channelCount:1};if(supported.voiceIsolation)audio.voiceIsolation=true;
-        let stream=null;
         try{stream=await navigator.mediaDevices.getUserMedia({audio,video:false});proof.echoCancellationMode='all';log('MIC_ECHO_MODE',{mode:'all'});}
-        catch(error){const name=String(error?.name||'');const compatibleFallback=name==='TypeError'||name==='OverconstrainedError'||name==='NotSupportedError';if(!compatibleFallback)throw error;audio.echoCancellation=true;proof.echoCancellationFallbacks+=1;proof.echoCancellationMode='default';log('MIC_ECHO_MODE_FALLBACK',{from:'all',to:'default',name,count:proof.echoCancellationFallbacks});stream=await navigator.mediaDevices.getUserMedia({audio,video:false});}
+        catch(error){if(!current())return null;const name=String(error?.name||'');const compatibleFallback=name==='TypeError'||name==='OverconstrainedError'||name==='NotSupportedError';if(!compatibleFallback)throw error;audio.echoCancellation=true;proof.echoCancellationFallbacks+=1;proof.echoCancellationMode='default';log('MIC_ECHO_MODE_FALLBACK',{from:'all',to:'default',name,count:proof.echoCancellationFallbacks});stream=await navigator.mediaDevices.getUserMedia({audio,video:false});}
+        if(!current()){for(const track of stream.getTracks?.()||[])track.stop();return null;}
+        if(ticket&&!ticket.ownStream(stream))return null;
         const track=stream.getAudioTracks?.()[0]||null;if(!track||track.readyState!=='live')throw new Error('Processed microphone track is not live.');
         try{track.contentHint='speech-recognition';}catch(error){try{track.contentHint='speech';}catch(ignore){}}
         inputStream=stream;inputTrack=track;inputTrackMode='monitor';proof.processedMicReady=true;startInputMonitor(stream);log('MIC_TRACK_READY',{label:String(track.label||''),settings:track.getSettings?.()||{},constraints:track.getConstraints?.()||{}});
         track.addEventListener?.('ended',()=>{if(inputTrack===track)releaseProcessedMic('ended');},{once:true});return track;
-      }catch(error){proof.micErrors+=1;proof.processedMicReady=false;inputTrackMode='default';log('MIC_TRACK_ERROR',{message:String(error?.message||error||'Microphone processing failed'),count:proof.micErrors});return null;}
-      finally{inputTrackPromise=null;}
-    })();return inputTrackPromise;
+      }catch(error){for(const track of stream?.getTracks?.()||[]){try{track.stop();}catch(ignore){}}if(!current())return null;proof.micErrors+=1;proof.processedMicReady=false;inputTrackMode='default';log('MIC_TRACK_ERROR',{message:String(error?.message||error||'Microphone processing failed'),count:proof.micErrors});return null;}
+    })();inputTrackPromise=acquisition;acquisition.finally(()=>{if(inputTrackPromise===acquisition)inputTrackPromise=null;});return acquisition;
   }
 
   function startRecognizer(current,purpose='listen'){
@@ -453,7 +467,7 @@
     };
     current.onerror=event=>{
       if(recognition!==current)return;clearStartWatchdog();recognitionStarting=false;recognitionListening=false;proof.errors+=1;const kind=String(event?.error||'unknown');proof.lastError=kind;log('SR_ERROR',{error:kind,message:String(event?.message||'')});
-      if(kind==='not-allowed'||kind==='service-not-allowed'){resetPendingFinal();voiceOn=false;writeMode();setAgentState('error','Microphone permission is blocked.');return;}
+      if(kind==='not-allowed'||kind==='service-not-allowed'){disableVoice({persist:true});setAgentState('error','Microphone permission is blocked.');return;}
       if(kind==='audio-capture'){resetPendingFinal();setAgentState('error','No usable microphone input is available.');return;}
       recognition=null;
       if(speaking&&bargeArmPending){bargeArmPending=false;clearBargeArmTimer();setTimeout(()=>startBarge(),0);return;}
@@ -470,7 +484,8 @@
 
   function startListening(reason='manual'){
     clearRestart();if(!voiceOn||processing||speaking||textBusy||voiceSubmitPending||bargeCapturing||recognitionStarting||recognitionListening)return false;
-    if(typeof SpeechRecognitionCtor!=='function'){setAgentState('error','Browser speech recognition is unavailable.');return false;}
+    if(typeof SpeechRecognitionCtor!=='function'){disableVoice({persist:false});setAgentState('error','Browser speech recognition is unavailable.');return false;}
+    if(!claimCapture()){disableVoice({persist:false});setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}
     if(!recognition)recognition=createRecognition();const current=recognition;proof.startCalls+=1;recognitionStopReason='';recognitionStarting=true;setAgentState('listening',pendingFinalTranscript?`Listening · ${pendingFinalTranscript}`:'Listening…');log('SR_START_CALL',{reason,call:proof.startCalls,userActivation:!!navigator.userActivation?.isActive});
     const launch=()=>{try{startRecognizer(current,'listen');clearStartWatchdog();recognitionStartTimer=setTimeout(()=>{if(recognition!==current||!recognitionStarting)return;proof.recognitionStartTimeouts+=1;recognitionStarting=false;recognitionListening=false;proof.lastError='Speech recognition start timed out';log('SR_START_TIMEOUT',{count:proof.recognitionStartTimeouts,timeoutMs:START_WATCHDOG_MS});try{current.abort();}catch(error){}recognition=null;if(voiceOn&&!processing&&!speaking)scheduleListening(260,'start-watchdog');},START_WATCHDOG_MS);return true;}catch(error){clearStartWatchdog();recognitionStarting=false;proof.errors+=1;proof.lastError=String(error?.message||error||'start failed');log('SR_START_THROW',{name:String(error?.name||'Error'),message:proof.lastError});recognition=null;if(voiceOn)scheduleListening(260,'start-throw');return false;}};
     void ensureProcessedMic();return launch();
@@ -582,9 +597,9 @@
 
   function submitVoiceTranscript(text){const transcript=String(text||'').trim();if(!transcript)return;if(applyStopControl(transcript,'transcript'))return;resetPendingFinal();if(isLowValueTranscript(transcript)&&!isImmediateBargeCommand(transcript)){proof.fillerRejects+=1;processing=false;voiceSubmitPending=false;updateComposer('');log('TRANSCRIPT_FILLER_REJECTED',{text:transcript,count:proof.fillerRejects});if(voiceOn)scheduleListening(40,'filler');return;}if(processing||speaking||textBusy||activeRequest){queuedTranscript=transcript;log('TRANSCRIPT_QUEUED',{text:transcript});return;}proof.submits+=1;voiceSubmitPending=true;processing=true;updateComposer(transcript);setAgentState('processing','Thinking…');log('TRANSCRIPT_SUBMIT',{text:transcript,count:proof.submits});try{form.requestSubmit();}catch(error){processing=false;voiceSubmitPending=false;proof.lastError=String(error?.message||error||'Submit failed');setAgentState('error',proof.lastError);}}
 
-  function enableVoice({persist=true,start=true}={}){if(!agentVoiceMaster){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Turn on Agent Voice before starting a voice conversation.');return false;}if(typeof SpeechRecognitionCtor!=='function'){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Browser speech recognition is unavailable.');return false;}voiceOn=true;if(persist)writeMode();else syncButton();recognition=null;setAgentState('listening','Listening…');if(start)startListening('enable');else void ensureProcessedMic();return true;}
-  function disableVoice({persist=true}={}){voiceOn=false;if(persist)writeMode();else syncButton();resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();stopRecognition('off',true);releaseProcessedMic('voice-off');recognition=null;recognitionStarting=false;recognitionListening=false;stopBarge('off');bargeCapturing=false;bargeLastText='';activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}if(activeRequest&&!activeRequest.controller.signal.aborted)activeRequest.controller.abort();activeRequest=null;processing=false;speaking=false;queuedTranscript='';setAgentState('idle');}
-  async function toggleVoice(){if(voiceOn){disableVoice({persist:true});return;}if(!(await ensureAgentVoiceMaster()))return;if(!introPresented&&boot.intro?.greeting){enableVoice({persist:true,start:false});presentIntro();}else enableVoice({persist:true,start:true});}
+  function enableVoice({persist=true,start=true,takeover=false}={}){if(!agentVoiceMaster){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Turn on Agent Voice before starting a voice conversation.');return false;}if(typeof SpeechRecognitionCtor!=='function'){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Browser speech recognition is unavailable.');return false;}if(!claimCapture(takeover)){setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}voiceOn=true;if(persist)writeMode();else syncButton();recognition=null;setAgentState('listening','Listening…');if(start)startListening('enable');else void ensureProcessedMic();return true;}
+  function disableVoice({persist=true}={}){voiceOn=false;if(persist)writeMode();else syncButton();resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();stopRecognition('off',true);releaseProcessedMic('voice-off');releaseCapture();recognition=null;recognitionStarting=false;recognitionListening=false;stopBarge('off');bargeCapturing=false;bargeLastText='';activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}if(activeRequest&&!activeRequest.controller.signal.aborted)activeRequest.controller.abort();activeRequest=null;processing=false;speaking=false;queuedTranscript='';setAgentState('idle');}
+  async function toggleVoice(){if(voiceOn){disableVoice({persist:true});return;}if(!(await ensureAgentVoiceMaster()))return;let takeover=false;if(!claimCapture()){if(!window.confirm('Another tab is using voice capture. Switch capture to this tab?'))return;takeover=true;}if(!introPresented&&boot.intro?.greeting){enableVoice({persist:true,start:false,takeover});presentIntro();}else enableVoice({persist:true,start:true,takeover});}
 
   function introTexts(intro){const greeting=String(intro?.greeting||'').trim();const updates=Array.isArray(intro?.updates)?intro.updates:[];const display=updates.length?`${greeting}\n\nHere’s what changed:\n${updates.map(update=>`• ${String(update?.title||'Update')}${update?.body?` — ${String(update.body)}`:''}`).join('\n')}`:greeting;const spoken=updates.length?`${greeting} Here are the priorities I found. ${updates.map(update=>`${String(update?.title||'Update')}. ${String(update?.body||'')}`).join(' ')}`:greeting;return {display,spoken,updates};}
   function presentIntro(){
@@ -607,7 +622,8 @@
   const continuity={isVoice:()=>voiceOn,conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
 
   syncConversation(lastConversationId);if(!agentVoiceMaster&&voiceOn){voiceOn=false;try{localStorage.setItem(MODE_KEY,'0');}catch(error){}}syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{if(voiceOn){setAgentState('listening','Listening…');scheduleListening(0,'boot-persisted');}else setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
-  window.addEventListener('storage',event=>{if(event.key===AGENT_VOICE_SYNC_KEY&&event.newValue){try{const sync=JSON.parse(event.newValue);if(sync?.enabled===false){agentVoiceMaster=false;if(voiceOn)disableVoice({persist:true});}}catch(error){}return;}if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(next)enableVoice({persist:false,start:true});else disableVoice({persist:false});});
+  window.addEventListener('storage',event=>{if(event.key===AGENT_VOICE_SYNC_KEY&&event.newValue){try{const sync=JSON.parse(event.newValue);if(sync?.enabled===false){agentVoiceMaster=false;if(voiceOn)disableVoice({persist:true});}}catch(error){}return;}if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(!next)disableVoice({persist:false});});
+  window.addEventListener('stonefellow:voice-lease-lost',()=>{if(voiceOn)disableVoice({persist:false});});
   window.addEventListener('stonefellow:agent-voice',event=>{const enabled=event.detail?.enabled!==false;agentVoiceMaster=enabled;if(!enabled&&voiceOn)disableVoice({persist:true});});
   window.addEventListener('stonefellow:agent-proactive-speech',event=>{
     const state=String(event.detail?.state||'');
@@ -630,5 +646,5 @@
   });
   window.dispatchEvent(new CustomEvent('stonefellow:conversation-engine-ready',{detail:{build:BUILD,source:'agent-chat'}}));log('READY',{voiceOn,ctor:typeof SpeechRecognitionCtor,barge:'speech-recognition',echoGuard:'canonical',fastVoice:'streaming',premiumUnlock:true,pauseWindowMs:TURN_END_PAUSE_MS,lifecycle:'canonical'});
 
-  window.addEventListener('pagehide',()=>{externalSpeechEpoch=0;resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();clearBargeCaptureTimer();stopBarge('pagehide');bargeCapturing=false;stopRecognition('pagehide',true);releaseProcessedMic('pagehide');recognition=null;recognitionStarting=false;recognitionListening=false;activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}if(activeRequest&&!activeRequest.controller.signal.aborted)activeRequest.controller.abort();activeRequest=null;if(window.fetch===routedFetch)window.fetch=previousFetch;delete document.body.dataset.stonefellowAgentState;},{once:true});
+  window.addEventListener('pagehide',()=>{externalSpeechEpoch=0;resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();clearBargeCaptureTimer();stopBarge('pagehide');bargeCapturing=false;stopRecognition('pagehide',true);releaseProcessedMic('pagehide');releaseCapture();recognition=null;recognitionStarting=false;recognitionListening=false;activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}if(activeRequest&&!activeRequest.controller.signal.aborted)activeRequest.controller.abort();activeRequest=null;if(window.fetch===routedFetch)window.fetch=previousFetch;delete document.body.dataset.stonefellowAgentState;},{once:true});
 })();
