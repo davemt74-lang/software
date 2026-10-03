@@ -3,37 +3,9 @@
 
   const root = typeof window !== 'undefined' ? window : globalThis;
   const BUILD = 'artist-listening-realtime';
-  const FINAL_DUPLICATE_WINDOW_MS = 1500;
-  const FINAL_LOGICAL_TOLERANCE_MS = 750;
-  const FINAL_REGISTRY_TTL_MS = 12000;
-  const recentFinals = root.STONEFELLOW_ARTIST_LISTENING_RECENT_FINALS instanceof Map
-    ? root.STONEFELLOW_ARTIST_LISTENING_RECENT_FINALS
-    : new Map();
-  root.STONEFELLOW_ARTIST_LISTENING_RECENT_FINALS = recentFinals;
-
   const cleanText = value => String(value || '').replace(/\s+/g, ' ').trim();
-  const token = value => String(value || '').toLowerCase().replace(/[^a-z0-9']/g, '');
+  const token = value => String(value || '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}']/gu, '');
   const words = value => cleanText(value).split(' ').filter(Boolean);
-  const finalSignature = value => words(value).map(token).filter(Boolean).join(' ');
-
-  function recentFinalDuplicate(text, atMs = 0) {
-    const signature = finalSignature(text);
-    if (!signature) return false;
-    const wallMs = Date.now();
-    const logicalMs = Math.max(0, Number(atMs || 0));
-    const previous = recentFinals.get(signature);
-    const duplicate = !!previous && (
-      wallMs - Number(previous.wallMs || 0) <= FINAL_DUPLICATE_WINDOW_MS
-      || (logicalMs > 0 && Number(previous.logicalMs || 0) > 0
-        && Math.abs(logicalMs - Number(previous.logicalMs || 0)) <= FINAL_LOGICAL_TOLERANCE_MS)
-    );
-    recentFinals.set(signature, {wallMs, logicalMs});
-    for (const [key, value] of recentFinals.entries()) {
-      if (wallMs - Number(value?.wallMs || 0) > FINAL_REGISTRY_TTL_MS) recentFinals.delete(key);
-    }
-    return duplicate;
-  }
-
   function reconcileFinal(history, incoming, maxOverlap = 32) {
     const left = words(history);
     const right = words(incoming);
@@ -42,29 +14,37 @@
     const rightTokens = right.map(token);
     const recent = leftTokens.slice(-Math.max(48, maxOverlap));
     const candidate = rightTokens.join(' ');
-    if (recent.join(' ').endsWith(candidate)) return {delta:'', merged:cleanText(history), duplicate:true, overlapWords:right.length};
+    if (candidate && rightTokens.length <= recent.length && recent.slice(-rightTokens.length).join(' ') === candidate) return {delta:'', merged:cleanText(history), duplicate:true, overlapWords:right.length};
     let overlap = 0;
     for (let count = Math.min(maxOverlap, left.length, right.length); count >= 2; count -= 1) {
-      if (leftTokens.slice(-count).join(' ') === rightTokens.slice(0, count).join(' ')) { overlap = count; break; }
+      if (rightTokens.slice(0,count).some(Boolean) && leftTokens.slice(-count).join(' ') === rightTokens.slice(0, count).join(' ')) { overlap = count; break; }
     }
-    if (!overlap && leftTokens.length && rightTokens.length === 1 && leftTokens.at(-1) === rightTokens[0]) overlap = 1;
+    if (!overlap && leftTokens.length && rightTokens.length === 1 && rightTokens[0] && leftTokens.at(-1) === rightTokens[0]) overlap = 1;
     const delta = cleanText(right.slice(overlap).join(' '));
     return {delta,merged:cleanText(`${cleanText(history)} ${delta}`),duplicate:delta === '',overlapWords:overlap};
   }
 
   class TranscriptContinuity {
-    constructor(initialText = '') { this.committed=cleanText(initialText);this.interim='';this.lastFinalAt=0;this.accepted=0;this.duplicates=0; }
+    constructor(initialText = '') { this.committed=cleanText(initialText);this.interim='';this.lastFinalAt=0;this.accepted=0;this.duplicates=0;this.seenResults=new Map(); }
     seed(text) { this.committed=cleanText(text);return this.committed; }
     setInterim(text) { this.interim=cleanText(text);return this.interim; }
-    finalize(text, atMs = Date.now()) {
+    finalize(text, atMs = Date.now(), identity = {}) {
       const logicalAt = Number(atMs || Date.now());
-      if (recentFinalDuplicate(text, logicalAt)) {
+      const incoming=cleanText(text);
+      if(!incoming)return {delta:'',merged:this.committed,duplicate:true,overlapWords:0};
+      const key=identity.runId != null && Number.isInteger(identity.resultIndex)
+        ? JSON.stringify([String(identity.runId),identity.resultIndex]) : null;
+      if (key && this.seenResults.has(key)) {
         this.interim='';
         this.lastFinalAt=logicalAt;
         this.duplicates+=1;
-        return {delta:'',merged:this.committed,duplicate:true,overlapWords:words(text).length,sharedDuplicate:true};
+        return {delta:'',merged:this.committed,duplicate:true,overlapWords:words(text).length,resultDuplicate:true};
       }
-      const result=reconcileFinal(this.committed,text);
+      if(key){this.seenResults.set(key,true);if(this.seenResults.size>2048)this.seenResults.delete(this.seenResults.keys().next().value);}
+      // Native final results are separate utterances. Only a provider that
+      // explicitly sends cumulative text may reconcile against prior words.
+      const result=identity.cumulative === true ? reconcileFinal(this.committed,incoming)
+        : {delta:incoming,merged:cleanText(`${this.committed} ${incoming}`),duplicate:false,overlapWords:0};
       this.interim='';
       this.lastFinalAt=logicalAt;
       if(result.duplicate)this.duplicates+=1;
@@ -126,7 +106,7 @@
 
   function autoTitle(date = new Date()) { const day=date.toLocaleDateString([],{month:'short',day:'numeric'});const time=date.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});return `Transcription · ${day} · ${time}`; }
 
-  const api={BUILD,FINAL_DUPLICATE_WINDOW_MS,FINAL_LOGICAL_TOLERANCE_MS,cleanText,reconcileFinal,recentFinalDuplicate,TranscriptContinuity,featureDistance,aggregateFeatures,SpeakerTurnModel,autoTitle};
+  const api={BUILD,cleanText,reconcileFinal,TranscriptContinuity,featureDistance,aggregateFeatures,SpeakerTurnModel,autoTitle};
   root.STONEFELLOW_ARTIST_LISTENING_REALTIME=api;
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
 

@@ -522,7 +522,7 @@ $runtime = $headerUiRuntime
          . '<script src="' . e(url('/voice-lease-v122.js?v=interactive-capture-section1-20261003')) . '"></script>'
          . '<script data-premium-voice-v142 data-premium-audio-unlock="v147" src="' . e(url('/premium-voice-v117.js?v=' . $premiumVoiceBuild)) . '"></script>'
          . '<script data-agent-context-v142 src="' . e(url('/agent-context-v131.js?v=' . $controlBuild)) . '"></script>'
-         . '<script data-chat-voice data-chat-echo-guard="canonical" data-chat-streaming="enabled" data-chat-processed-input="enabled" data-chat-barge="speech-recognition" data-chat-turn-pause="1800" data-chat-lifecycle="canonical" src="' . e(url('/chat-voice.js?v=' . $voiceCacheBuild . '&capture=interactive-capture-section1-20261003')) . '"></script>'
+         . '<script data-chat-voice data-chat-echo-guard="canonical" data-chat-streaming="enabled" data-chat-processed-input="enabled" data-chat-barge="speech-recognition" data-chat-turn-pause="1800" data-chat-lifecycle="canonical" src="' . e(url('/chat-voice.js?v=' . $voiceCacheBuild . '&capture=interactive-listening-section2-20261003')) . '"></script>'
          . $agentIdentityRuntime
          . $profileActivityRuntime
          . $browserContextRuntime
