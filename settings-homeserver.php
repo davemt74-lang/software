@@ -83,6 +83,9 @@ if (!$user) redirect(url('/login.php'));
           </div>
         </section>
 
+        <?php $eyesCardClass="hs-card";$eyesCardSite="";require __DIR__."/includes/tracky-agent-eyes-card-v1g4.php"; ?>
+        <script src="<?= e(url("/tracky-agent-eyes-v1g4.js")) ?>" defer></script>
+
         <section class="hs-card" id="hsConnectionInfo" hidden>
           <div class="hs-card-head"><div><small>Connection details</small><h2>Your HomeServer</h2><p>Only connection and capability information needed by VP3 is shown here.</p></div><button class="hs-button quiet" id="hsRefresh" type="button">Refresh</button></div>
           <dl class="hs-info-grid">

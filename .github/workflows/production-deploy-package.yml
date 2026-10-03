@@ -54,7 +54,7 @@ jobs:
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
-            "tracky_agent_eyes_section": "1G3D",
+            "tracky_agent_eyes_section": "1G4",
             "tracky_agent_eyes_scene_protocol": "tracky.agent-eyes.shared-scene.v1g3d",
             "tracky_feature_track": "V2.81",
             "tracky_release_section": 3,
@@ -73,6 +73,9 @@ jobs:
           grep -Fq '"commit": "'"${VP3_RELEASE_SHA}"'"' _deploy/VP3_RELEASE.json
           test -f _deploy/includes/tracky-agent-scene-v1g3d.php
           test -f _deploy/tracky-agent-scene-v1g3d.js
+          test -f _deploy/includes/tracky-agent-eyes-experience-v1g4.php
+          test -f _deploy/api/tracky-agent-eyes-v1g4.php
+          test -f _deploy/tracky-agent-eyes-v1g4.js
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
 

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 NODE_TESTS = [
     'tests/tracky-shared-scene-ui-v1g3d.mjs',
+    'tests/tracky-agent-eyes-experience-v1g4.mjs',
     'tests/annotated-connector-v100.mjs',
     'tests/runtime-root-cause.mjs',
     'tests/artist-listening-ai.mjs',
@@ -244,6 +245,7 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 
 PHP_TESTS = [
     'tests/tracky-shared-scene-v1g3d.php',
+    'tests/tracky-agent-eyes-experience-v1g4.php',
     'tests/annotated-connector-v100.php',
     'tests/agent-brain-vector-crc-v142.php',
     'tests/agent-outcome-factor-v313.php',
