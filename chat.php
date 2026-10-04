@@ -386,7 +386,7 @@ $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
         . '<script>window.STONEFELLOW_HS_TRANSCRIPTION_IMPORT={endpoint:' .
           json_encode(url('/api/homeserver-transcription-import-v1.php'),JSON_UNESCAPED_SLASHES) .
           ',csrf:' . json_encode(csrf_token(),JSON_UNESCAPED_SLASHES) . '};</script>'
-        . '<script src="' . e(url('/chat-homeserver-transcription-import.js?v=1')) . '"></script>'
+        . '<script src="' . e(url('/chat-homeserver-transcription-import.js?v=interactive-transfer-section7-20261004')) . '"></script>'
     : '';
 
 $voiceConfig = '<script data-chat-voice-config>window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)$user['id'] . ',surface:"chat",trackId:0,projectId:0,conversationId:' . (int)$agentInitialConversationId . ',taskTitle:"Agent Chat",taskKey:"chat",csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';

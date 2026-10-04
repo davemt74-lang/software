@@ -356,6 +356,8 @@ function artist_listening_v197_store_recording(
             throw new RuntimeException('Restore this transcription before saving audio.');
         }
         $metadata = artist_listening_v197_metadata($session);
+        $deleted = is_array($metadata['recording_deleted_v197'] ?? null) ? $metadata['recording_deleted_v197'] : [];
+        if (isset($deleted[$clientKey])) throw new RuntimeException('This retained recording was deleted and cannot be uploaded again.');
         $recordings = is_array($metadata['recordings_v197'] ?? null) ? $metadata['recordings_v197'] : [];
         foreach ($recordings as $existing) {
             if (is_array($existing) && strtolower((string)($existing['key'] ?? '')) === $clientKey) {
@@ -368,6 +370,7 @@ function artist_listening_v197_store_recording(
                 }
             }
         }
+        if (count($deleted) >= 1000) throw new RuntimeException('This document has reached its recording history limit. Create a new transcription to retain more audio.');
         if (count($recordings) >= 100) {
             throw new RuntimeException('This transcription already has the maximum 100 retained clips.');
         }
@@ -419,6 +422,38 @@ function artist_listening_v197_store_recording(
         }
     }
     throw new RuntimeException('The recording metadata could not be reloaded.');
+}
+
+function artist_listening_v197_delete_recording(PDO $pdo,array $user,int $sessionId,string $clientKey): array
+{
+    $key=artist_listening_v197_recording_key($clientKey);
+    $pdo->beginTransaction();
+    try{
+        $session=artist_listening_v172_session($pdo,$user,$sessionId,true);
+        if((string)$session['status']==='active')throw new RuntimeException('Stop listening before deleting retained audio.');
+        $metadata=artist_listening_v197_metadata($session);
+        $deleted=is_array($metadata['recording_deleted_v197']??null)?$metadata['recording_deleted_v197']:[];
+        $filename=(string)($deleted[$key]['file_name']??'');$remaining=[];
+        foreach(($metadata['recordings_v197']??[]) as $recording){
+            if(!is_array($recording))continue;
+            if(strtolower((string)($recording['key']??''))===$key)$filename=(string)($recording['file_name']??'');
+            else $remaining[]=$recording;
+        }
+        if(!preg_match('/^'.preg_quote($key,'/').'\.(?:webm|ogg|m4a|mp3|wav)$/',$filename))throw new RuntimeException('Retained recording unavailable.');
+        $dir=artist_listening_v197_private_dir($user,$sessionId);
+        for($check=$dir;$check!==STONEFELLOW_ROOT&&strlen($check)>strlen(STONEFELLOW_ROOT);$check=dirname($check))
+            if(is_link($check))throw new RuntimeException('Private recording storage unavailable.');
+        $deleted[$key]=['file_name'=>$filename,'deleted_at'=>$deleted[$key]['deleted_at']??gmdate('c')];
+        $metadata['recordings_v197']=$remaining;$metadata['recording_deleted_v197']=$deleted;$metadata['audio_retained']=(bool)$remaining;
+        $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET metadata_json=?,last_activity_at=NOW() WHERE id=? AND created_by_user_id=?')
+            ->execute([json_encode($metadata,JSON_THROW_ON_ERROR),$sessionId,(int)$user['id']]);
+        $pdo->commit();
+    }catch(Throwable $error){if($pdo->inTransaction())$pdo->rollBack();throw $error;}
+    // The durable marker denies playback/re-upload before physical removal. If
+    // unlink fails, the same action retries removal without resurrecting metadata.
+    $path=$dir.'/'.$filename;
+    if((is_file($path)||is_link($path))&&!unlink($path))throw new RuntimeException('Recording removal is pending. Retry Delete clip.');
+    return ['deleted'=>true,'recording_key'=>$key,'session'=>artist_listening_v172_payload($pdo,$user,$sessionId),'backup_copies_managed_separately'=>true];
 }
 
 function artist_listening_v197_stream_recording(PDO $pdo, array $user, int $sessionId, string $clientKey): never

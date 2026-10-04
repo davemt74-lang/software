@@ -533,8 +533,19 @@
       const ended = Math.max(started,Number(recording.ended_ms || started));
       const duration = Math.max(0,Number(recording.duration_ms || ended - started));
       const url = escapeHtml(recording.url || '');
-      return `<article class="sf-listening-workspace-recording"><div><strong>Recording ${index + 1}</strong><span>${escapeHtml(formatTime(started))}–${escapeHtml(formatTime(ended))} · ${escapeHtml(formatTime(duration))}</span><details class="sf-listening-workspace-clip-menu"><summary aria-label="Recording ${index + 1} options">⌄</summary><div><button type="button" data-listening-workspace-play-recording>Play clip</button><a href="${url}" download>Download clip</a></div></details></div><audio controls preload="metadata" data-listening-workspace-recording-audio data-start-ms="${started}" data-end-ms="${ended}" src="${url}"></audio></article>`;
+      return `<article class="sf-listening-workspace-recording"><div><strong>Recording ${index + 1}</strong><span>${escapeHtml(formatTime(started))}–${escapeHtml(formatTime(ended))} · ${escapeHtml(formatTime(duration))}</span><details class="sf-listening-workspace-clip-menu"><summary aria-label="Recording ${index + 1} options">⌄</summary><div><button type="button" data-listening-workspace-play-recording>Play clip</button><a href="${url}" download>Download clip</a><button type="button" data-listening-workspace-delete-recording="${escapeHtml(String(recording.key || ''))}" ${session.status === 'active' ? 'disabled' : ''}>Delete clip</button></div></details></div><audio controls preload="metadata" data-listening-workspace-recording-audio data-start-ms="${started}" data-end-ms="${ended}" src="${url}"></audio></article>`;
     }).join('');
+  }
+
+  async function deleteRetainedRecording(key) {
+    const context=documentContext();
+    if(!context.id||!key||!window.confirm('Permanently delete this retained audio clip? The transcript stays available. HomeServer backup copies are managed separately.'))return;
+    try{
+      const data=await api172('delete_recording',{session_id:context.id,recording_key:key},'POST');
+      if(!sameDocument(context))return;
+      state.current.recordings=data.session?.recordings||[];state.current.recording_count=state.current.recordings.length;
+      renderRecordings(state.current);setFooter('Retained audio clip deleted. Backup copies are managed separately.');
+    }catch(error){if(sameDocument(context))setFooter(error.message||'Audio removal failed. Retry Delete clip.');}
   }
 
   function seekRecordingTo(milliseconds) {
@@ -1141,6 +1152,8 @@
       if (file) void openSession(Number(file.dataset.listeningWorkspaceFileOpen || 0));
     });
     w.querySelector('[data-listening-workspace-recordings]').addEventListener('click', event => {
+      const remove=event.target.closest('[data-listening-workspace-delete-recording]');
+      if(remove){void deleteRetainedRecording(remove.dataset.listeningWorkspaceDeleteRecording);return;}
       const play = event.target.closest('[data-listening-workspace-play-recording]');
       if (!play) return;
       const recording = play.closest('.sf-listening-workspace-recording');

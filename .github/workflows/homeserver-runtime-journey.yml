@@ -16,6 +16,69 @@ permissions:
   contents: read
 
 jobs:
+  transfer-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      changed: ${{ steps.scope.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: scope
+        run: |
+          python3 - <<'PY_SCOPE'
+          import os, re, subprocess
+          diff = subprocess.run(['git', 'diff', '--name-only', 'HEAD^', 'HEAD'], text=True, capture_output=True)
+          pattern = r'^(chat-homeserver-transcription-import\.js|artist-listening(-workspace\.js|\.php)|includes/artist-listening\.php|api/artist-listening-v172\.php|includes/homeserver-(transcription-import|knowledge-backup).*\.php|api/homeserver-transcription-import.*\.php|tests/transfer.*section7.*|\.github/workflows/homeserver-runtime-journey\.yml)$'
+          changed = diff.returncode != 0 or any(re.match(pattern, p) for p in diff.stdout.splitlines())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('changed=' + str(changed).lower() + '\n')
+          PY_SCOPE
+  transfer-browser:
+    needs: transfer-scope
+    if: needs.transfer-scope.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          npm install --no-save --ignore-scripts playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - run: node tests/transfer-section7.mjs
+  transfer-mysql:
+    needs: transfer-scope
+    if: needs.transfer-scope.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: section7-fixture
+          MYSQL_DATABASE: section7
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -psection7-fixture"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pdo_sqlite, mbstring
+          coverage: none
+      - name: SQLite atomic import and verified backup acknowledgements
+        run: php tests/transfer_backup_section7.php
+      - name: MySQL transitions and six parallel imports
+        env:
+          VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
+          VP3_SECTION7_MYSQL_PASSWORD: section7-fixture
+        run: php tests/transfer_integrity_section7.php
   runtime-journey:
     name: Runtime journey · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest

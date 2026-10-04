@@ -3,6 +3,7 @@ declare(strict_types=1);
 /** User-triggered import of explicitly shared HomeServer transcript text. */
 require_once dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/artist-listening.php';
+require_once dirname(__DIR__).'/includes/homeserver-transcription-import-v1.php';
 require_once dirname(__DIR__).'/includes/homeserver-execution-routing-v220.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: private, no-store, max-age=0');
@@ -60,62 +61,8 @@ try{
     // HomeServer rechecks paired VP3 identity, knowledge.read and owner consent
     // for every fetch. Never transfer raw audio, recordings or provider keys.
     $remote=homeserver_execution_v220_execute($userId,'transcription.shared.fetch',['session_id'=>$id]);
-    $session=is_array($remote['session']??null)?$remote['session']:[];
-    if(($session['id']??'')!==$id || empty($session['cloud_shared']) ||
-       ($session['status']??'')!=='completed' || !empty($remote['raw_audio_included']))
-        throw new RuntimeException('HomeServer sharing permission is unavailable.');
-    $segments=$session['segments']??[];
-    if(!is_array($segments)||count($segments)>300)
-        throw new RuntimeException('HomeServer transcript exceeds the import segment limit.');
-    $validated=[];$bytes=0;$i=0;
-    foreach($segments as $segment){
-        if(!is_array($segment))throw new RuntimeException('Invalid transcript segment.');
-        $content=trim((string)($segment['text']??''));
-        if($content===''||mb_strlen($content)>8000)continue;
-        $bytes+=strlen($content);
-        if($bytes>120000)throw new RuntimeException('Transcript document size limit reached.');
-        $key=(string)($segment['client_key']??'');
-        if(!preg_match('/^[a-f0-9]{32}$/',$key))throw new RuntimeException('Invalid transcript segment key.');
-        $validated[]=[
-            'text'=>$content,'type'=>'transcript','speaker'=>'Speaker 1',
-            'key'=>substr(hash('sha256','hsseg:'.$id.':'.$key),0,32),
-            'index'=>$i++,
-            'started_ms'=>max(0,min(86400000,(int)($segment['started_ms']??0))),
-        ];
-    }
-    $clientKey='hs'.substr(hash('sha256',(string)$userId.':'.$id),0,32);
-    $existing=$pdo->prepare(
-        "SELECT id,status FROM artist_transcript_sessions_v172 WHERE created_by_user_id=? AND client_session_key=? LIMIT 1"
-    );
-    $existing->execute([$userId,$clientKey]);
-    $original=$existing->fetch(PDO::FETCH_ASSOC);
-    if($original&&($original['status']??'')!=='active'){
-        hs_transcription_json(['ok'=>true,'imported'=>false,'already_imported'=>true,
-            'cloud_session_id'=>(int)$original['id']]);
-    }
-    if(!$original){
-        $running=$pdo->prepare(
-            "SELECT id FROM artist_transcript_sessions_v172 WHERE created_by_user_id=? AND status='active' LIMIT 1"
-        );
-        $running->execute([$userId]);
-        if($running->fetchColumn())hs_transcription_json([
-            'ok'=>false,'error'=>'stop_current_cloud_transcription_before_import',
-        ],409);
-        $started=artist_listening_v172_start($user,$clientKey,0,'en-US','1');
-        $cloudId=(int)($started['id']??$started['session']['id']??0);
-        if($cloudId<1)throw new RuntimeException('Cloud transcription could not be created.');
-        artist_listening_v172_rename($user,$cloudId,(string)($session['title']??'HomeServer transcription'));
-    }else $cloudId=(int)$original['id'];
-    foreach(array_chunk($validated,50) as $batch)
-        artist_listening_v172_append($user,$cloudId,$batch);
-    artist_listening_v172_stop($user,$cloudId,
-        $validated?max(array_column($validated,'started_ms')):0);
-    hs_transcription_json([
-        'ok'=>true,'imported'=>true,'cloud_session_id'=>$cloudId,
-        'segment_count'=>count($validated),
-        'raw_audio_imported'=>false,'cloud_copy_is_independent'=>true,
-    ]);
+    hs_transcription_json(homeserver_transcription_import_v1($user,$id,$remote));
 }catch(Throwable $e){
     error_log('HS transcription import: '.get_class($e));
-    hs_transcription_json(['ok'=>false,'error'=>'transcription_import_failed_or_consent_revoked'],409);
+    hs_transcription_json(['ok'=>false,'error'=>$e->getMessage()==='stop_current_cloud_transcription_before_import'?'stop_current_cloud_transcription_before_import':'transcription_import_failed_or_consent_revoked'],409);
 }

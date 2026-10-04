@@ -63,6 +63,9 @@ jobs:
           node tests/participants-section5.mjs
           php tests/participants_integrity_section5.php
           php tests/meetings_integrity_section6.php
+          php tests/transfer_backup_section7.php
+          node tests/cloud-homeserver-transcription-import-v1.mjs
+          node tests/homeserver-transcription-backup-v029-contract.mjs
           node tests/transcription-editor-api.mjs
           php -l includes/artist-listening.php
           php tests/transcription_integrity_section4.php
