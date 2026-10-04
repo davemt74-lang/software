@@ -77,7 +77,7 @@ assert.ok(!api.includes('$_GET'));
 
 // Existing Meeting workspace owns the UI; no new dashboard/page and safe DOM rendering only.
 assert.ok(meeting.includes("'memoryEndpoint'=>url('/api/video-meeting-memory.php')"));
-assert.equal((meeting.match(/video-meetings-intelligence-v1820\.js\?v=18120/g)||[]).length,2);
+assert.equal((meeting.match(/video-meetings-intelligence-v1820\.js\?v=interactive-meetings-section6-20261004/g)||[]).length,2);
 assert.ok(bridge.includes('video-meetings-memory-v18120.js?v=18120'));
 assert.ok(bridge.includes("dataset.vp3MeetingMemory='18120'"));
 assert.ok(ui.includes("pane.id='meetingPane-memory'"));
