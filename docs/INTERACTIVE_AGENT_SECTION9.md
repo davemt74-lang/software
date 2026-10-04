@@ -41,10 +41,42 @@ same unidentified single-channel transcript.
 - Cloud rejects identity escalation, raw speaker references and label mismatch;
 - old Section 7 imports remain retry-compatible.
 
+## 9C — camera/voice fusion boundary
+
+9C extends the shared attribution contract so an opaque participant reference
+may be carried by visual corroboration for comparison with trusted voice
+evidence, while visual evidence remains incapable of establishing identity by
+itself. Strong camera/voice disagreement now fails closed: participant identity
+is cleared and identity confidence becomes zero rather than allowing a
+conflicted speaker assertion to survive.
+
+Diarization provenance is derived from the complete evidence set, so a
+verified local voice match can remain the winning identity evidence while the
+turn still records that its speaker separation came from provider diarization
+or a separate LiveKit track.
+
+HomeServer performs the actual local participant matching. Its Tracky voice
+profiles and visual descriptors remain local. When the owner explicitly shares
+a completed HomeServer transcript, the paired relay strips local Tracky
+participant references, verified-identity flags and camera corroboration before
+Cloud import. Cloud receives only generic speaker separation/timing/overlap and
+continues to reject raw speaker references or identity escalation.
+
+Cloud does not treat HomeServer browser-local voice/camera matching as account
+authentication or Cloud participant verification. Any future Cloud identity
+binding still requires the existing Cloud participant/consent rules.
+
+## 9C acceptance
+
+Canonical PHP and Python tests require visual-only non-identity, opaque
+voice/visual corroboration, strong visual-conflict fail-closed behavior and
+retention of diarization provenance through identity fusion. HomeServer focused
+tests additionally prove local-only enrollment/matching and paired-relay
+identity stripping. Installed device accuracy remains Section 10 certification.
+
 ## Remaining Section 9 work
 
-9C adds continuous camera/voice corroboration and trusted local participant
-mapping without allowing visual-only speaker identity. 9D completes recording
-and meeting integration, including overlap-aware meeting intelligence and final
-cross-system correction/review. Installed microphone/camera accuracy remains
-Section 10 acceptance rather than a software-only claim.
+9D completes recording and meeting integration, including overlap-aware meeting
+intelligence and final cross-system correction/review. Installed
+microphone/camera accuracy remains Section 10 acceptance rather than a
+software-only claim.
