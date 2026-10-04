@@ -86,6 +86,14 @@ check(($meta['homeserver_import_v1']['speaker_attribution']??'')==='provider_dia
 check(empty($meta['homeserver_import_v1']['speaker_identity_verified'])&&empty($meta['homeserver_import_v1']['authentication_authority']),'identity authority imported');
 check(count($meta['homeserver_import_v1']['segment_attribution']??[])===2,'per-segment attribution missing');
 passed('diarized HomeServer turns preserve labels and overlap without identity authority');
+$bad=diarized_document(str_repeat('8',32));$bad['session']['segments'][0]['attribution']['source']='verified_voice';
+rejects(fn()=>save($bad));passed('reject imported verified voice identity');
+$bad=diarized_document(str_repeat('9',32));$bad['session']['segments'][0]['attribution']['speaker_identity_verified']=true;
+rejects(fn()=>save($bad));passed('reject imported identity verification flag');
+$bad=diarized_document(str_repeat('a',32));$bad['session']['segments'][0]['attribution']['speaker_label']='Speaker 9';
+rejects(fn()=>save($bad));passed('reject speaker label and attribution mismatch');
+$bad=diarized_document(str_repeat('b',32));$bad['session']['segments'][0]['attribution']['provider_speaker_id']='raw-ref';
+rejects(fn()=>save($bad));passed('reject raw provider speaker reference');
 
 $active=artist_listening_v172_start($user,str_repeat('d',32),0,'en-US','1');
 rejects(fn()=>save(document(str_repeat('e',32))));check(count(artist_listening_v172_payload($connection,$user,(int)$active['id'])['segments'])===0,'capture contaminated');passed('an active capture cannot receive imported words');
