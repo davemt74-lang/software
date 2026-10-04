@@ -44,7 +44,9 @@ function vp3_speaker_evidence_v1(array $raw): array
     if(!$identityCapable&&$source!=='visual_corroboration'){
         $participant=0;$participantIdentity='';
     }
-    if($source==='visual_corroboration')$participantIdentity='';
+    // Visual evidence may carry the same opaque participant reference as a
+    // trusted voice/manual source for corroboration/conflict, but is never
+    // identity-capable on its own.
     $identityVerified=$identityCapable&&($participant>0||$participantIdentity!=='');
     return [
         'source'=>$source,
@@ -121,22 +123,24 @@ function vp3_speaker_fuse_v1(array $rawEvidence): array
     // never creates a speaker identity and never authenticates a person.
     $identityConfidence=$primary['identity_verified']?$primary['confidence']:0.0;
     if($visualCorroborated)$identityConfidence=min(1.0,$identityConfidence+0.05);
-    if($visualConflict)$identityConfidence=max(0.0,$identityConfidence-0.15);
+    if($visualConflict)$identityConfidence=0.0;
 
     $overlap=$primary['overlap'];
     $overlapGroup=$primary['overlap_group'];
     foreach($evidence as $item){
         if($item['overlap']){$overlap=true;if($overlapGroup===''&&$item['overlap_group']!=='')$overlapGroup=$item['overlap_group'];}
     }
+    $voiceOverlap=$primary['source']==='verified_voice'&&$overlap;
+    if($voiceOverlap){$identityConfidence=0.0;$visualCorroborated=false;}
 
     return [
         'contract'=>VP3_SPEAKER_ATTRIBUTION_V1,
         'speaker_label'=>$primary['speaker_label']!==''?$primary['speaker_label']:'Speaker',
         'source'=>$primary['source'],
         'confidence'=>$primary['confidence'],
-        'participant_id'=>$identityConflict?0:$primary['participant_id'],
-        'participant_identity'=>$identityConflict?'':$primary['participant_identity'],
-        'speaker_identity_verified'=>!$identityConflict&&$primary['identity_verified'],
+        'participant_id'=>($identityConflict||$visualConflict||$voiceOverlap)?0:$primary['participant_id'],
+        'participant_identity'=>($identityConflict||$visualConflict||$voiceOverlap)?'':$primary['participant_identity'],
+        'speaker_identity_verified'=>!$identityConflict&&!$visualConflict&&!$voiceOverlap&&$primary['identity_verified'],
         'identity_confidence'=>round($identityConfidence,4),
         'authentication_authority'=>false,
         'visual_corroborated'=>$visualCorroborated,
@@ -144,8 +148,12 @@ function vp3_speaker_fuse_v1(array $rawEvidence): array
         'identity_conflict'=>$identityConflict,
         'overlap'=>$overlap,
         'overlap_group'=>$overlapGroup,
-        'diarization_source'=>in_array($primary['source'],['provider_diarization','livekit_track'],true)?$primary['source']:
-            ($primary['source']==='heuristic_acoustic'?'heuristic_acoustic':'none'),
+        'diarization_source'=>array_reduce($evidence,static function(string $current,array $item): string {
+            if($item['source']==='livekit_track')return 'livekit_track';
+            if($current!=='livekit_track'&&$item['source']==='provider_diarization')return 'provider_diarization';
+            if($current==='none'&&$item['source']==='heuristic_acoustic')return 'heuristic_acoustic';
+            return $current;
+        },'none'),
         'evidence'=>array_values(array_merge($evidence,$visual)),
     ];
 }

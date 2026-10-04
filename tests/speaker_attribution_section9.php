@@ -27,6 +27,22 @@ check9($f['participant_id']===0&&!$f['speaker_identity_verified']&&$f['source']=
 pass9('camera evidence alone cannot name the speaker');
 
 $f=vp3_speaker_fuse_v1([
+ ['source'=>'provider_diarization','speaker_label'=>'Speaker 1','confidence'=>0],
+ ['source'=>'verified_voice','speaker_label'=>'Speaker 1','participant_identity'=>'tracky:owner-1','confidence'=>.94],
+ ['source'=>'visual_corroboration','participant_identity'=>'tracky:owner-1','confidence'=>.91],
+]);
+check9($f['participant_identity']==='tracky:owner-1'&&$f['visual_corroborated']&&$f['speaker_identity_verified'],'opaque local voice/visual fusion failed');
+check9($f['diarization_source']==='provider_diarization','identity fusion lost separation provenance');
+pass9('opaque local participant references can be corroborated without visual-only identity');
+
+$f=vp3_speaker_fuse_v1([
+ ['source'=>'verified_voice','speaker_label'=>'Speaker 1','participant_identity'=>'tracky:owner-1','confidence'=>.96],
+ ['source'=>'visual_corroboration','participant_identity'=>'tracky:guest-2','confidence'=>.92],
+]);
+check9($f['visual_conflict']&&!$f['speaker_identity_verified']&&$f['participant_identity']===''&&$f['identity_confidence']===0.0,'visual conflict did not fail closed');
+pass9('strong voice/camera identity conflict clears the resolved speaker');
+
+$f=vp3_speaker_fuse_v1([
  ['source'=>'verified_voice','speaker_label'=>'Dave','participant_id'=>7,'confidence'=>.94],
  ['source'=>'account_identity','speaker_label'=>'Alex','participant_id'=>8,'confidence'=>.99],
 ]);
@@ -52,4 +68,15 @@ $f=vp3_speaker_fuse_v1([
 check9(!$f['identity_conflict']&&$f['source']==='manual_correction'&&$f['participant_id']===4,'manual correction conflicted with lower evidence');
 pass9('explicit correction overrides a conflicting inferred identity');
 
-echo "SPEAKER_ATTRIBUTION_SECTION9A=PASS (8 canonical Cloud cases)\n";
+foreach(['verified_voice','provider_diarization'] as $overlapSource){
+ $f=vp3_speaker_fuse_v1([
+  ['source'=>'verified_voice','participant_identity'=>'tracky:owner','confidence'=>.95,'overlap'=>$overlapSource==='verified_voice'],
+  ['source'=>'provider_diarization','overlap'=>$overlapSource==='provider_diarization'],
+  ['source'=>'visual_corroboration','participant_identity'=>'tracky:owner','confidence'=>.95],
+ ]);
+ check9($f['overlap']&&!$f['speaker_identity_verified']&&$f['participant_identity']===''&&$f['identity_confidence']===0.0&&!$f['visual_corroborated'],'overlapping evidence retained voice identity');
+ check9($f['diarization_source']==='provider_diarization','overlap rejection lost diarization provenance');
+ pass9('voice identity rejects overlap reported by '.$overlapSource);
+}
+
+echo "SPEAKER_ATTRIBUTION_SECTION9=PASS (12 canonical Cloud fusion cases)\n";
