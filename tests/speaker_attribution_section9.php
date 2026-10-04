@@ -27,6 +27,20 @@ check9($f['participant_id']===0&&!$f['speaker_identity_verified']&&$f['source']=
 pass9('camera evidence alone cannot name the speaker');
 
 $f=vp3_speaker_fuse_v1([
+ ['source'=>'verified_voice','speaker_label'=>'Speaker 1','participant_identity'=>'tracky:owner-1','confidence'=>.94],
+ ['source'=>'visual_corroboration','participant_identity'=>'tracky:owner-1','confidence'=>.91],
+]);
+check9($f['participant_identity']==='tracky:owner-1'&&$f['visual_corroborated']&&$f['speaker_identity_verified'],'opaque local voice/visual fusion failed');
+pass9('opaque local participant references can be corroborated without visual-only identity');
+
+$f=vp3_speaker_fuse_v1([
+ ['source'=>'verified_voice','speaker_label'=>'Speaker 1','participant_identity'=>'tracky:owner-1','confidence'=>.96],
+ ['source'=>'visual_corroboration','participant_identity'=>'tracky:guest-2','confidence'=>.92],
+]);
+check9($f['visual_conflict']&&!$f['speaker_identity_verified']&&$f['participant_identity']===''&&$f['identity_confidence']===0.0,'visual conflict did not fail closed');
+pass9('strong voice/camera identity conflict clears the resolved speaker');
+
+$f=vp3_speaker_fuse_v1([
  ['source'=>'verified_voice','speaker_label'=>'Dave','participant_id'=>7,'confidence'=>.94],
  ['source'=>'account_identity','speaker_label'=>'Alex','participant_id'=>8,'confidence'=>.99],
 ]);
