@@ -39,7 +39,7 @@ check($first['accepted']===1&&!$pdo->inTransaction(),'capture and mirror commit 
 check($first['speaker_attribution']['speaker_identity_verified']&&$first['speaker_attribution']['speaker_label']==='Owner','server roster label wins and isolated track identity survives');
 check(!str_contains((string)$pdo->query('SELECT attribution_json FROM video_meeting_speaker_evidence')->fetchColumn(),'TR_secret'),'raw track references are not persisted');
 $retry=video_meeting_transcription_append_v1800($pdo,$meeting,array_merge($input,['participant_identity'=>'unknown','speaker_name'=>'Mutated','text'=>'Mutated']));
-check($retry['duplicate']&&$retry['speaker_attribution']===$first['speaker_attribution'],'retry returns first committed evidence rather than caller mutation');
+check($retry['duplicate']&&json_encode($retry['speaker_attribution'])===json_encode($first['speaker_attribution']),'retry returns first committed evidence rather than caller mutation');
 $other=array_merge($input,['participant_identity'=>video_meeting_participant_identity_v1800($meeting,$participants[1]),'source_key'=>str_repeat('2',64),'text'=>'Who owns it?','start_ms'=>1000,'end_ms'=>3000]);
 video_meeting_transcription_append_v1800($pdo,$meeting,$other);
 $segments=artist_listening_v172_segments($pdo,10);
