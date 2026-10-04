@@ -24,8 +24,8 @@ $pdo->exec("CREATE TABLE video_meetings(id INTEGER PRIMARY KEY,owner_user_id INT
  INSERT INTO video_meeting_participants VALUES(1,1,'organizer','Owner',7,'a','accepted'),(2,1,'attendee','Guest',8,'b','accepted');
  CREATE TABLE video_meeting_transcript_segments(id INTEGER PRIMARY KEY AUTOINCREMENT,meeting_id INTEGER,participant_id INTEGER,speaker_key TEXT,speaker_name TEXT,start_ms INTEGER,end_ms INTEGER,transcript_text TEXT,confidence REAL,source TEXT,source_key TEXT,is_final INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(meeting_id,source_key));
  CREATE TABLE video_meeting_speaker_evidence(segment_id INTEGER PRIMARY KEY REFERENCES video_meeting_transcript_segments(id) ON DELETE CASCADE,attribution_json TEXT NOT NULL,correction_json TEXT,revision INTEGER DEFAULT 0);
- CREATE TABLE artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,duration_ms INTEGER DEFAULT 0,last_activity_at TEXT);
- INSERT INTO artist_transcript_sessions_v172(id) VALUES(10);
+ CREATE TABLE artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,duration_ms INTEGER DEFAULT 0,last_activity_at TEXT,metadata_json TEXT);
+ INSERT INTO artist_transcript_sessions_v172(id,metadata_json) VALUES(10,'{\"capture_mode\":\"vp3_video_meeting\"}');
  CREATE TABLE video_meeting_transcription_links(meeting_id INTEGER PRIMARY KEY,transcript_session_id INTEGER);
  INSERT INTO video_meeting_transcription_links VALUES(1,10);
  CREATE TABLE artist_transcript_segments_v172(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id INTEGER,client_segment_key TEXT,segment_index INTEGER,segment_type TEXT,speaker_label TEXT,transcript_text TEXT,started_ms INTEGER,ended_ms INTEGER,confidence REAL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(session_id,client_segment_key));

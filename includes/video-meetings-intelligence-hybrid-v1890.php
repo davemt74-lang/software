@@ -65,7 +65,10 @@ function video_meeting_intelligence_hybrid_sanitize_snapshot_v1890(mixed $raw): 
 function video_meeting_intelligence_hybrid_segments_v1890(PDO $pdo,array $meeting): array
 {
     $session=video_meeting_transcription_session_v1800($pdo,$meeting);
-    $rows=$session?array_values(array_filter(artist_listening_v172_segments($pdo,(int)$session['id']),static fn(array $row): bool => $row['segment_type']==='transcript')):[];
+    if(!$session)return [];
+    $stmt=$pdo->prepare("SELECT * FROM artist_transcript_segments_v172 WHERE session_id=? AND segment_type='transcript' ORDER BY segment_index,id LIMIT 501");
+    $stmt->execute([(int)$session['id']]);
+    $rows=meeting_speaker_segments_section9($pdo,(int)$session['id'],$stmt->fetchAll()?:[]);
     if(count($rows)>500)throw new RuntimeException('This meeting transcript is too large for one private intelligence request.');
     $segments=[];$chars=0;
     foreach($rows as $row){

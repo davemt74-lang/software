@@ -21,6 +21,9 @@ function meeting_speaker_projection_section9(array $segment,array $capture): arr
 
 function meeting_speaker_segments_section9(PDO $pdo,int $sessionId,array $segments): array
 {
+    $session=$pdo->prepare('SELECT * FROM artist_transcript_sessions_v172 WHERE id=?');$session->execute([$sessionId]);
+    $metadata=json_decode((string)(($session->fetch()?:[])['metadata_json']??''),true);
+    if(($metadata['capture_mode']??'')!=='vp3_video_meeting')return $segments;
     if(!table_exists('video_meeting_speaker_evidence')||!table_exists('video_meeting_transcription_links'))return $segments;
     $stmt=$pdo->prepare("SELECT s.source_key,e.attribution_json,e.correction_json,e.revision,
         EXISTS(SELECT 1 FROM video_meeting_transcript_segments other
