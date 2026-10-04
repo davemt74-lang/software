@@ -5,6 +5,7 @@ const VP3_VIDEO_MEETING_TRANSCRIPTION_V1800='video-meeting-transcription-v1800-2
 const VP3_VIDEO_MEETING_TRANSCRIPTION_HARDENING_V1801='video-meeting-transcription-hardening-v1801-20260915';
 
 require_once __DIR__.'/video-meetings-calendar-v1801.php';
+require_once __DIR__.'/speaker-attribution-v1.php';
 
 function video_meeting_transcription_load_stack_v1800(): void
 {
@@ -186,12 +187,21 @@ function video_meeting_transcription_append_v1800(PDO $pdo,array $meeting,array 
     $start=max(0,(int)($input['start_ms']??0));$end=max($start,(int)($input['end_ms']??$start));
     $confidence=isset($input['confidence'])&&is_numeric($input['confidence'])?max(0.0,min(1.0,(float)$input['confidence'])):null;
     $source=trim((string)($input['source']??'livekit-agent'))?:'livekit-agent';$sourceKey=video_meeting_transcription_source_key_v1800($meeting,$input);
+    $speakerAttribution=vp3_speaker_fuse_v1([[
+        'source'=>$participant?'livekit_track':'unknown',
+        'speaker_label'=>$speaker,
+        'participant_identity'=>$participant?$identity:'',
+        'confidence'=>$participant?1.0:0.0,
+        'track_id'=>$participant?(string)($input['track_id']??''):'',
+        'overlap'=>!empty($input['overlap']),
+        'overlap_group'=>(string)($input['overlap_group']??''),
+    ]]);
 
     $existing=$pdo->prepare('SELECT id FROM video_meeting_transcript_segments WHERE meeting_id=? AND source_key=? LIMIT 1');$existing->execute([(int)$meeting['id'],$sourceKey]);
     $existingId=(int)$existing->fetchColumn();
     if($existingId>0){
         $mirror=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$existingId);
-        return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0)];
+        return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0),'speaker_attribution'=>$speakerAttribution];
     }
     try{
         $stmt=$pdo->prepare('INSERT INTO video_meeting_transcript_segments (meeting_id,participant_id,speaker_key,speaker_name,start_ms,end_ms,transcript_text,confidence,source,source_key,is_final) VALUES (?,?,?,?,?,?,?,?,?,?,1)');
@@ -203,7 +213,7 @@ function video_meeting_transcription_append_v1800(PDO $pdo,array $meeting,array 
         return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0)];
     }
     $mirror=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$segmentId);
-    return ['accepted'=>1,'segment_id'=>$segmentId,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0)];
+    return ['accepted'=>1,'segment_id'=>$segmentId,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0),'speaker_attribution'=>$speakerAttribution];
 }
 
 function video_meeting_transcription_segments_v1800(PDO $pdo,array $meeting,int $afterId=0,int $limit=100): array

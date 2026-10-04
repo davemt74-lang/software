@@ -65,6 +65,7 @@ jobs:
           php tests/meetings_integrity_section6.php
           php tests/transfer_backup_section7.php
           php tests/agent_context_section8.php
+          php tests/speaker_attribution_section9.php
           node tests/cloud-homeserver-transcription-import-v1.mjs
           node tests/homeserver-transcription-backup-v029-contract.mjs
           node tests/transcription-editor-api.mjs
