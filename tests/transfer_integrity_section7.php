@@ -18,6 +18,22 @@ function document(string $id='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',int $count=2): a
     $segments=[];for($i=0;$i<$count;$i++)$segments[]=['client_key'=>str_pad(dechex($i+1),32,'0',STR_PAD_LEFT),'text'=>'words '.$i,'started_ms'=>$i*100];
     return ['contract'=>'vp3.homeserver.transcription-session.v1','raw_audio_included'=>false,'session'=>['id'=>$id,'title'=>'Shared text','status'=>'completed','cloud_shared'=>true,'segment_count'=>$count,'segments'=>$segments]];
 }
+function diarized_document(string $id): array {
+    $doc=document($id,2);
+    foreach([[0,900,'Speaker 1'],[600,1200,'Speaker 2']] as $i=>$spec){
+        $doc['session']['segments'][$i]=[
+            'client_key'=>str_repeat((string)($i+1),32),'text'=>'speaker words '.$i,
+            'started_ms'=>$spec[0],'ended_ms'=>$spec[1],'speaker'=>$spec[2],
+            'attribution'=>[
+                'contract'=>'speaker-attribution-v1-20261004','source'=>'provider_diarization',
+                'speaker_label'=>$spec[2],'confidence'=>0.0,'participant_id'=>0,
+                'participant_identity'=>'','speaker_identity_verified'=>false,
+                'authentication_authority'=>false,'overlap'=>true,'overlap_group'=>'overlap-1'
+            ]
+        ];
+    }
+    return $doc;
+}
 $user=['id'=>1];$source=document();
 if(in_array('--race-import',$argv,true)||in_array('--race-start',$argv,true)){
     $barrier=getenv('VP3_SECTION7_BARRIER');file_put_contents($barrier.'.'.getmypid().'.ready','ready');
