@@ -45,4 +45,11 @@ $f=vp3_speaker_fuse_v1([
 check9($f['source']==='manual_correction'&&$f['participant_id']===4&&$f['speaker_label']==='Jamie','manual correction priority failed');
 pass9('explicit human correction overrides inference');
 
-echo "SPEAKER_ATTRIBUTION_SECTION9A=PASS (7 canonical Cloud cases)\n";
+$f=vp3_speaker_fuse_v1([
+ ['source'=>'verified_voice','speaker_label'=>'Wrong','participant_id'=>7,'confidence'=>.97],
+ ['source'=>'manual_correction','speaker_label'=>'Jamie','participant_id'=>4,'confidence'=>1],
+]);
+check9(!$f['identity_conflict']&&$f['source']==='manual_correction'&&$f['participant_id']===4,'manual correction conflicted with lower evidence');
+pass9('explicit correction overrides a conflicting inferred identity');
+
+echo "SPEAKER_ATTRIBUTION_SECTION9A=PASS (8 canonical Cloud cases)\n";
