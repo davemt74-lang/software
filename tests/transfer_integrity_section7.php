@@ -76,6 +76,17 @@ foreach([
 ] as $name=>$modify){$bad=$modify(document(str_repeat('b',32)));rejects(fn()=>save($bad));passed('reject '.$name.' without a partial document');}
 $wide=document(str_repeat('c',32),1);$wide['session']['segments'][0]['text']=str_repeat('你',8000);
 $wideId=save($wide)['cloud_session_id'];$stmt=$connection->prepare('SELECT transcript_text FROM artist_transcript_segments_v172 WHERE session_id=?');$stmt->execute([$wideId]);check($stmt->fetchColumn()===$wide['session']['segments'][0]['text'],'Unicode truncated');passed('valid Unicode transfers without width truncation');
+$diarized=diarized_document(str_repeat('7',32));$diarizedId=save($diarized)['cloud_session_id'];
+$stmt=$connection->prepare('SELECT speaker_label,started_ms,ended_ms FROM artist_transcript_segments_v172 WHERE session_id=? ORDER BY segment_index');
+$stmt->execute([$diarizedId]);$speakerRows=$stmt->fetchAll(PDO::FETCH_ASSOC);
+check(array_column($speakerRows,'speaker_label')===['Speaker 1','Speaker 2'],'speaker labels lost');
+check((int)$speakerRows[1]['started_ms']<(int)$speakerRows[0]['ended_ms'],'overlap timing flattened');
+$meta=artist_listening_v197_metadata(artist_listening_v172_payload($connection,$user,$diarizedId));
+check(($meta['homeserver_import_v1']['speaker_attribution']??'')==='provider_diarization','session attribution missing');
+check(empty($meta['homeserver_import_v1']['speaker_identity_verified'])&&empty($meta['homeserver_import_v1']['authentication_authority']),'identity authority imported');
+check(count($meta['homeserver_import_v1']['segment_attribution']??[])===2,'per-segment attribution missing');
+passed('diarized HomeServer turns preserve labels and overlap without identity authority');
+
 $active=artist_listening_v172_start($user,str_repeat('d',32),0,'en-US','1');
 rejects(fn()=>save(document(str_repeat('e',32))));check(count(artist_listening_v172_payload($connection,$user,(int)$active['id'])['segments'])===0,'capture contaminated');passed('an active capture cannot receive imported words');
 artist_listening_v172_stop($user,(int)$active['id'],0);
