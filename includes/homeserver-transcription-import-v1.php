@@ -44,7 +44,7 @@ function homeserver_transcription_import_v1(array $user,string $id,array $remote
     if(!is_array($segments)||!array_is_list($segments)||count($segments)>300||
        !is_int($session['segment_count']??null)||$session['segment_count']!==count($segments))
         throw new RuntimeException('Invalid HomeServer segment manifest.');
-    $validated=[];$keys=[];$bytes=0;$previous=0;$duration=0;
+    $validated=[];$legacyValidated=[];$legacyCompatible=true;$keys=[];$bytes=0;$previous=0;$duration=0;
     foreach($segments as $index=>$segment){
         if(!is_array($segment)||!is_string($segment['text']??null)||preg_match('//u',$segment['text'])!==1)
             throw new RuntimeException('Invalid transcript text.');
@@ -56,14 +56,18 @@ function homeserver_transcription_import_v1(array $user,string $id,array $remote
         $attribution=homeserver_transcription_import_attribution_v1($segment);
         $bytes+=strlen($text);if($bytes>120000)throw new RuntimeException('Transcript document size limit reached.');
         $keys[$key]=true;$previous=$time;$duration=max($duration,$ended);
+        $mappedKey=substr(hash('sha256','hsseg:'.$id.':'.$key),0,32);
         $validated[]=[
-            'key'=>substr(hash('sha256','hsseg:'.$id.':'.$key),0,32),'text'=>$text,
-            'time'=>$time,'ended'=>$ended,'index'=>$index,
+            'key'=>$mappedKey,'text'=>$text,'time'=>$time,'ended'=>$ended,'index'=>$index,
             'speaker'=>(string)$attribution['speaker_label'],'attribution'=>$attribution,
         ];
+        $legacyValidated[]=['key'=>$mappedKey,'text'=>$text,'time'=>$time,'index'=>$index];
+        if($ended!==$time||$attribution['speaker_label']!=='Speaker 1'||$attribution['source']!=='unknown'||!empty($attribution['overlap']))
+            $legacyCompatible=false;
     }
     $title=artist_listening_v172_clean_title(is_string($session['title']??null)?$session['title']:'HomeServer transcription');
     $hash=hash('sha256',json_encode([$id,$title,$validated],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
+    $legacyHash=hash('sha256',json_encode([$id,$title,$legacyValidated],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
     $pdo=db();$userId=(int)($user['id']??0);$ownerId=artist_listening_v172_owner_id($user);
     if(!$pdo||$userId<1||$ownerId<1||!artist_listening_v172_schema_ready())throw new RuntimeException('Cloud transcription unavailable.');
     $clientKey='hs'.substr(hash('sha256',(string)$userId.':'.$id),0,32);
@@ -77,7 +81,9 @@ function homeserver_transcription_import_v1(array $user,string $id,array $remote
         if($original&&(string)$original['status']!=='active'){
             $metadata=artist_listening_v197_metadata($original);
             $originalHash=$metadata['homeserver_import_v1']['source_hash']??'';
-            if($originalHash!==''&&!hash_equals((string)$originalHash,$hash))throw new RuntimeException('HomeServer source changed; existing Cloud copy was preserved.');
+            if($originalHash!==''&&!hash_equals((string)$originalHash,$hash)&&
+               !($legacyCompatible&&hash_equals((string)$originalHash,$legacyHash)))
+                throw new RuntimeException('HomeServer source changed; existing Cloud copy was preserved.');
             $pdo->commit();
             return ['ok'=>true,'imported'=>false,'already_imported'=>true,'cloud_session_id'=>(int)$original['id'],
                 'cloud_status'=>(string)$original['status'],'raw_audio_imported'=>false,'cloud_copy_is_independent'=>true];
