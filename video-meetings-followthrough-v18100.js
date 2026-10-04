@@ -68,7 +68,7 @@ async function queueRequest(action,extra={}){
 }
 function loadLiveAgentController(){
   if(!ctx||ctx.boot.reviewOnly||window.VP3MeetingLiveAgent18110)return;
-  const script=document.createElement('script');script.src='video-meetings-live-agent-v18110.js?v=18110';script.async=true;
+  const script=document.createElement('script');script.src='video-meetings-live-agent-v18110.js?v=interactive-meetings-section6-20261004';script.async=true;
   script.onload=()=>window.VP3MeetingLiveAgent18110?.init?.();script.onerror=()=>ctx.setStatus('Live Meeting Agent UI could not load.','error');document.head.appendChild(script);
 }
 

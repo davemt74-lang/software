@@ -62,6 +62,7 @@ jobs:
           node tests/transcription-section4.mjs
           node tests/participants-section5.mjs
           php tests/participants_integrity_section5.php
+          php tests/meetings_integrity_section6.php
           node tests/transcription-editor-api.mjs
           php -l includes/artist-listening.php
           php tests/transcription_integrity_section4.php
@@ -76,4 +77,3 @@ jobs:
 
       - name: CI workflow governance
         run: node tests/ci-workflow-consolidation.mjs
-

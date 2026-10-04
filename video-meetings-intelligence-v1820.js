@@ -1,7 +1,7 @@
 (()=>{'use strict';
 const boot=window.VP3Meeting;if(!boot||!boot.intelligenceEndpoint)return;
 const $=(s,r=document)=>r.querySelector(s);const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
-let state=null,loading=false,analyzing=false,noteTimer=null,autoTimer=null,finalizing=false;
+let state=null,loading=false,analyzing=false,noteTimer=null,autoTimer=null,finalizing=false,surfaceClosed=false,statePoll=null;
 const privateMessage='Meeting Intelligence is private to the organizer.';
 const VP3_MIN_LIVE_WORDS=80,VP3_MIN_FINAL_WORDS=20;
 
@@ -60,7 +60,7 @@ function activatePane(name){
 function renderQueue(queue){window.VP3MeetingFollowthrough18100?.render?.(queue);}
 function loadFollowthroughController(){
   if(window.VP3MeetingFollowthrough18100)return Promise.resolve();
-  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-followthrough-v18100.js?v=18100';script.async=true;script.onload=resolve;script.onerror=()=>reject(new Error('Post-meeting follow-through UI could not load.'));document.head.appendChild(script);});
+  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-followthrough-v18100.js?v=interactive-meetings-section6-20261004';script.async=true;script.onload=resolve;script.onerror=()=>reject(new Error('Post-meeting follow-through UI could not load.'));document.head.appendChild(script);});
 }
 function loadMemoryController(){
   if(!boot.reviewOnly||!boot.isOrganizer)return Promise.resolve();
@@ -124,7 +124,7 @@ function scheduleNoteSave(){clearTimeout(noteTimer);noteTimer=setTimeout(saveNot
 async function addObjective(){const input=$('#meetingObjectiveInput');if(!input)return;const text=input.value.trim();if(!text)return;try{const data=await intelligence('add_objective',{objective_text:text});input.value='';if(state){state.objectives=data.objectives||[];renderObjectives(state.objectives);}setStatus('Meeting objective added.','ready');}catch(err){setStatus(err.message,'error');}}
 async function setObjective(id,status){try{const data=await intelligence('objective_status',{objective_id:String(id||0),status});if(state){state.objectives=data.objectives||[];renderObjectives(state.objectives);}}catch(err){setStatus(err.message,'error');}}
 async function handoff(){if(!boot.isOrganizer)return;try{setStatus('Publishing reviewed meeting intelligence to Agent Chat…','working');const data=await intelligence('handoff');if(data.state)renderState(data.state);setStatus(data.handoff?.already_published?'This version is already in Agent Chat.':'Reviewed meeting intelligence sent to Agent Chat.','ready');}catch(err){setStatus(err.message,'error');}}
-function scheduleAutoLive(){clearTimeout(autoTimer);autoTimer=setTimeout(async()=>{const s=await loadState();if(s?.live_analysis_due)await runAnalysis('live',true);},1800);}
+function scheduleAutoLive(){clearTimeout(autoTimer);if(surfaceClosed)return;autoTimer=setTimeout(async()=>{if(surfaceClosed)return;const s=await loadState();if(!surfaceClosed&&s?.live_analysis_due)await runAnalysis('live',true);},1800);}
 async function finalizeAfterEnd(){if(finalizing||!boot.isOrganizer)return;finalizing=true;try{await new Promise(r=>setTimeout(r,1800));await runAnalysis('final',true);}finally{finalizing=false;}}
 function setupReviewTabs(){if(!boot.reviewOnly)return;$$('.meeting-agent-tab').forEach(btn=>btn.addEventListener('click',()=>activatePane(String(btn.dataset.pane||''))));}
 function wire(){
@@ -135,6 +135,8 @@ function wire(){
   $('#meetingIntelligenceHandoff')?.addEventListener('click',handoff);
   window.addEventListener('vp3:meeting-transcript-updated',scheduleAutoLive);
   window.addEventListener('vp3:meeting-ended',finalizeAfterEnd);
+  window.addEventListener('vp3:meeting-left',()=>{surfaceClosed=true;clearTimeout(autoTimer);clearInterval(statePoll);});
+  window.addEventListener('pagehide',()=>{surfaceClosed=true;clearTimeout(autoTimer);clearTimeout(noteTimer);clearInterval(statePoll);});
   setupReviewTabs();
 }
 wire();
@@ -143,5 +145,5 @@ loadMemoryController().catch(err=>setStatus(err.message,'error'));
 loadAutomationController().catch(err=>setStatus(err.message,'error'));
 if(!boot.isOrganizer){setStatus(privateMessage,'private');$$('[data-meeting-private]').forEach(el=>el.hidden=true);return;}
 loadState().then(s=>{if(boot.reviewOnly&&s?.final_analysis_due)runAnalysis('final',true);});
-if(!boot.reviewOnly)setInterval(()=>{if(document.visibilityState==='visible')loadState();},15000);
+if(!boot.reviewOnly)statePoll=setInterval(()=>{if(!surfaceClosed&&document.visibilityState==='visible')loadState();},15000);
 })();

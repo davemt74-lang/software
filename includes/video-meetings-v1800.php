@@ -482,20 +482,47 @@ function video_meeting_participant_identity_v1800(array $meeting,array $particip
     return 'vp3p-'.substr(hash('sha256',(string)$meeting['public_id'].'|'.$seed),0,28);
 }
 
+final class VideoMeetingPresenceErrorV1800 extends RuntimeException {}
+
 function video_meeting_mark_presence_v1800(PDO $pdo,array $access,string $action): array
 {
-    $meeting=$access['meeting'];$participant=$access['participant'];$meetingId=(int)$meeting['id'];$participantId=(int)$participant['id'];$isOrganizer=!empty($access['is_organizer']);
-    if($action==='join'){
-        $pdo->prepare("UPDATE video_meeting_participants SET attendance_status='joined',invitation_status=CASE WHEN invitation_status='invited' THEN 'accepted' ELSE invitation_status END,accepted_at=COALESCE(accepted_at,UTC_TIMESTAMP()),joined_at=COALESCE(joined_at,UTC_TIMESTAMP()),left_at=NULL WHERE id=? AND meeting_id=?")->execute([$participantId,$meetingId]);
-        $pdo->prepare("UPDATE video_meetings SET status='live',started_at=COALESCE(started_at,UTC_TIMESTAMP()) WHERE id=? AND status IN ('scheduled','ready')")->execute([$meetingId]);
-        if(!$isOrganizer&&function_exists('create_notification'))create_notification((int)$meeting['owner_user_id'],'video_meeting_participant_joined','Participant joined '.(string)$meeting['title'],(string)$participant['display_name'].' joined the meeting.',url('/meeting.php?meeting='.(string)$meeting['public_id']),'video_meeting_participant',$participantId);
-    }elseif($action==='leave'){
-        $pdo->prepare("UPDATE video_meeting_participants SET attendance_status='left',left_at=UTC_TIMESTAMP() WHERE id=? AND meeting_id=?")->execute([$participantId,$meetingId]);
-    }elseif($action==='end'&&$isOrganizer){
-        $pdo->prepare("UPDATE video_meetings SET status='ended',ended_at=COALESCE(ended_at,UTC_TIMESTAMP()) WHERE id=? AND owner_user_id=? AND status<>'cancelled'")->execute([$meetingId,(int)$meeting['owner_user_id']]);
-        video_meeting_livekit_delete_room_v1800($meeting);
-    }
-    return video_meeting_row_v1800($pdo,$meetingId)?:$meeting;
+    if(!in_array($action,['join','leave','end','status'],true))throw new VideoMeetingPresenceErrorV1800('Unknown meeting action.',422);
+    $meetingId=(int)($access['meeting']['id']??0);$participantId=(int)($access['participant']['id']??0);
+    if($meetingId<1||$participantId<1)throw new VideoMeetingPresenceErrorV1800('Meeting access is unavailable.',403);
+    // Serialize join/end on the canonical meeting row. Token-time access is only
+    // a snapshot: neither a delayed join nor a revoked invitation may reopen it.
+    if($pdo->inTransaction())throw new LogicException('Meeting presence requires its own transaction.');
+    $pdo->beginTransaction();
+    $changed=false;
+    try{
+        $stmt=$pdo->prepare('SELECT * FROM video_meetings WHERE id=? FOR UPDATE');$stmt->execute([$meetingId]);$meeting=$stmt->fetch();
+        $stmt=$pdo->prepare('SELECT * FROM video_meeting_participants WHERE id=? AND meeting_id=? FOR UPDATE');$stmt->execute([$participantId,$meetingId]);$participant=$stmt->fetch();
+        if(!$meeting||!$participant)throw new VideoMeetingPresenceErrorV1800('Meeting access is unavailable.',403);
+        $isOrganizer=!empty($access['is_organizer'])&&(string)$participant['role']==='organizer';
+        if($action==='end'&&!$isOrganizer)throw new VideoMeetingPresenceErrorV1800('Only the organizer can end this meeting.',403);
+        if(in_array((string)$participant['invitation_status'],['cancelled','revoked','declined'],true))throw new VideoMeetingPresenceErrorV1800('Meeting invitation is no longer available.',403);
+        if($action==='join'){
+            if(!in_array((string)$meeting['status'],['scheduled','ready','live'],true))throw new VideoMeetingPresenceErrorV1800('This meeting is closed.',409);
+            $changed=(string)$participant['attendance_status']!=='joined';
+            if($changed)$pdo->prepare("UPDATE video_meeting_participants SET attendance_status='joined',invitation_status=CASE WHEN invitation_status='invited' THEN 'accepted' ELSE invitation_status END,accepted_at=COALESCE(accepted_at,UTC_TIMESTAMP()),joined_at=COALESCE(joined_at,UTC_TIMESTAMP()),left_at=NULL WHERE id=? AND meeting_id=?")->execute([$participantId,$meetingId]);
+            $pdo->prepare("UPDATE video_meetings SET status='live',started_at=COALESCE(started_at,UTC_TIMESTAMP()) WHERE id=? AND status IN ('scheduled','ready')")->execute([$meetingId]);
+        }elseif($action==='leave'){
+            $changed=(string)$participant['attendance_status']==='joined';
+            if($changed)$pdo->prepare("UPDATE video_meeting_participants SET attendance_status='left',left_at=COALESCE(left_at,UTC_TIMESTAMP()) WHERE id=? AND meeting_id=? AND attendance_status='joined'")->execute([$participantId,$meetingId]);
+        }elseif($action==='end'&&!in_array((string)$meeting['status'],['ended','processed','cancelled'],true)){
+            $changed=true;
+            $pdo->prepare("UPDATE video_meetings SET status='ended',ended_at=COALESCE(ended_at,UTC_TIMESTAMP()) WHERE id=? AND owner_user_id=?")->execute([$meetingId,(int)$meeting['owner_user_id']]);
+            $pdo->prepare("UPDATE video_meeting_participants SET attendance_status='left',left_at=COALESCE(left_at,UTC_TIMESTAMP()) WHERE meeting_id=? AND attendance_status='joined'")->execute([$meetingId]);
+        }
+        $meeting=video_meeting_row_v1800($pdo,$meetingId)?:$meeting;
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    // Network side effects never hold the meeting lock. Repeat end requests may
+    // retry room deletion when a previous provider request failed after commit.
+    if($action==='end'&&(string)$meeting['status']==='ended')video_meeting_livekit_delete_room_v1800($meeting);
+    if($action==='join'&&$changed&&!$isOrganizer&&function_exists('create_notification'))create_notification((int)$meeting['owner_user_id'],'video_meeting_participant_joined','Participant joined '.(string)$meeting['title'],(string)$participant['display_name'].' joined the meeting.',url('/meeting.php?meeting='.(string)$meeting['public_id']),'video_meeting_participant',$participantId);
+    $meeting['_presence_changed']=$changed;
+    return $meeting;
 }
 
 function video_meeting_recent_for_user_v1800(PDO $pdo,int $userId,int $limit=50): array

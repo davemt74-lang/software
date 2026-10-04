@@ -102,3 +102,71 @@ jobs:
           node tests/video-meetings-closure-recurring-continuity-v18220-contract.mjs
       - name: Phase 18.23 Meeting Commitment Command contract
         run: node tests/video-meetings-commitment-command-v18230-contract.mjs
+
+  meeting-reliability-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      changed: ${{ steps.scope.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: scope
+        name: Select focused meeting lifecycle acceptance
+        shell: bash
+        run: |
+          python3 - <<'PY_SCOPE'
+          import os, re, subprocess
+          diff = subprocess.run(['git', 'diff', '--name-only', 'HEAD^', 'HEAD'], text=True, capture_output=True)
+          pattern = r'^(video-meetings.*\.js|meeting\.php|api/video-meeting.*\.php|includes/video-meetings.*\.php|tests/meetings.*section6.*|\.github/workflows/video-meetings-v18230\.yml)$'
+          changed = diff.returncode != 0 or any(re.match(pattern, p) for p in diff.stdout.splitlines())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('changed=' + str(changed).lower() + '\n')
+          PY_SCOPE
+  meeting-browser:
+    needs: meeting-reliability-scope
+    if: needs.meeting-reliability-scope.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned browser acceptance runtime
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Real Chromium meeting controller races
+        run: node tests/meetings-section6.mjs
+  meeting-presence:
+    needs: meeting-reliability-scope
+    if: needs.meeting-reliability-scope.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: section6-fixture
+          MYSQL_DATABASE: section6
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -psection6-fixture"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pdo_sqlite, mbstring
+          coverage: none
+      - name: Canonical SQLite presence transitions
+        run: php tests/meetings_integrity_section6.php
+      - name: Canonical InnoDB presence transitions and join/end races
+        env:
+          VP3_SECTION6_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section6;charset=utf8mb4
+          VP3_SECTION6_MYSQL_PASSWORD: section6-fixture
+        run: php tests/meetings_integrity_section6.php
