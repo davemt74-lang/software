@@ -130,15 +130,17 @@ function vp3_speaker_fuse_v1(array $rawEvidence): array
     foreach($evidence as $item){
         if($item['overlap']){$overlap=true;if($overlapGroup===''&&$item['overlap_group']!=='')$overlapGroup=$item['overlap_group'];}
     }
+    $voiceOverlap=$primary['source']==='verified_voice'&&$overlap;
+    if($voiceOverlap){$identityConfidence=0.0;$visualCorroborated=false;}
 
     return [
         'contract'=>VP3_SPEAKER_ATTRIBUTION_V1,
         'speaker_label'=>$primary['speaker_label']!==''?$primary['speaker_label']:'Speaker',
         'source'=>$primary['source'],
         'confidence'=>$primary['confidence'],
-        'participant_id'=>($identityConflict||$visualConflict)?0:$primary['participant_id'],
-        'participant_identity'=>($identityConflict||$visualConflict)?'':$primary['participant_identity'],
-        'speaker_identity_verified'=>!$identityConflict&&!$visualConflict&&$primary['identity_verified'],
+        'participant_id'=>($identityConflict||$visualConflict||$voiceOverlap)?0:$primary['participant_id'],
+        'participant_identity'=>($identityConflict||$visualConflict||$voiceOverlap)?'':$primary['participant_identity'],
+        'speaker_identity_verified'=>!$identityConflict&&!$visualConflict&&!$voiceOverlap&&$primary['identity_verified'],
         'identity_confidence'=>round($identityConfidence,4),
         'authentication_authority'=>false,
         'visual_corroborated'=>$visualCorroborated,

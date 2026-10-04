@@ -76,6 +76,16 @@ identity stripping. Installed device accuracy remains Section 10 certification.
 
 ## Remaining Section 9 work
 
+### 9C review repairs
+
+Canonical fusion clears a verified-voice identity when any evidence row marks
+overlap, including mixed provider/voice evidence. It preserves diarization
+provenance and leaves independently isolated LiveKit track attribution intact.
+PHP and Python parity tests cover both overlap sources. HomeServer additionally
+repairs camera startup cleanup, enrollment cancellation/clear transactions,
+ambiguous visual evidence and participant picker interaction with behavioral
+and real Chromium IndexedDB tests.
+
 9D completes recording and meeting integration, including overlap-aware meeting
 intelligence and final cross-system correction/review. Installed
 microphone/camera accuracy remains Section 10 acceptance rather than a
