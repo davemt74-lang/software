@@ -124,7 +124,7 @@ assert.ok(live.includes('Stopping live participation therefore stops Agent turns
 for(const label of ['Live Agent','Start Agent','Stop Agent','Ask Agent','spoken output unavailable'])assert.ok(ui.includes(label),`missing UI ${label}`);
 assert.ok(ui.includes("pane.id='meetingPane-liveagent'"));
 assert.ok(ui.includes("button.dataset.pane='liveagent'"));
-assert.ok(bridge.includes('video-meetings-live-agent-v18110.js?v=18110'));
+assert.ok(bridge.includes('video-meetings-live-agent-v18110.js?v=interactive-meetings-section6-20261004'));
 assert.ok(bridge.includes('VP3MeetingLiveAgent18110'));
 assert.ok(!ui.includes('api.openai.com'));
 assert.ok(!ui.includes('api.anthropic.com'));
