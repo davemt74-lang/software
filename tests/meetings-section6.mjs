@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import {chromium} from 'playwright';
 
 const source=await fs.readFile(new URL('../video-meetings-v1800.js',import.meta.url),'utf8');
-const hook='window.MeetingTest={join,leave,endMeeting,attachTrack,detachTrack,cardId,changeLocalMedia,startTranscriptPolling,stopTranscriptPolling,state:()=>({room,connected,joining,reconnecting,lastTranscriptId,pollGeneration}),seed:target=>{room=target;connected=true;joining=false;ending=false;},};';
+const hook='window.MeetingTest={renderTranscriptSegment,pollTranscript,join,leave,endMeeting,attachTrack,detachTrack,cardId,changeLocalMedia,startTranscriptPolling,stopTranscriptPolling,state:()=>({room,connected,joining,reconnecting,lastTranscriptId,pollGeneration}),seed:target=>{room=target;connected=true;joining=false;ending=false;},};';
 const code=source.replace(/\}\)\(\);\s*$/,hook+'\n})();');
 const agentSource=(await fs.readFile(new URL('../video-meetings-live-agent-v18110.js',import.meta.url),'utf8')).replace(/\}\)\(\);\s*$/,"window.AgentTest={render,state:()=>state};ensurePane=()=>{};renderMessages=()=>{};\n})();");
 assert.notEqual(code,source);
@@ -110,6 +110,22 @@ try{
   await MeetingTest.join();let endedEvents=0;window.addEventListener('vp3:meeting-ended',()=>endedEvents++);const pending=defer();window.fetch=async(_url,init)=>new URLSearchParams(init.body).get('action')==='end'?pending.promise:responses({status:'live'});
   LivekitClient.DisconnectReason={ROOM_DELETED:5};const ending=MeetingTest.endMeeting();rooms[0].emit('Disconnected',5);await ending;await tick();
   check(!MeetingTest.state().connected&&endedEvents===1&&!document.getElementById('meetingRejoin'),'provider end misreported as reconnect');pending.resolve(responses({status:'ended'}));await tick();check(endedEvents===1,'duplicate final review');
+ });
+ await test('review annotations render safely and organizer correction sends current revision',async()=>{
+  window.prompt=()=>'<img src=x onerror=alert(1)>';const sent=[];window.fetch=async(_url,init)=>{sent.push(Object.fromEntries(new URLSearchParams(init.body)));return responses({correction_revision:3});};
+  MeetingTest.renderTranscriptSegment({id:1,speaker_name:'<script>bad</script>',transcript_text:'<b>speech</b>',overlap:true,correction_revision:2,speaker_attribution:{source:'manual_correction',speaker_identity_verified:false}});
+  const row=document.querySelector('.meeting-transcript-row');check(!row.querySelector('script,img,b'),'unsafe transcript HTML');check(row.textContent.includes('Overlapping speech')&&row.textContent.includes('Owner annotation'),'evidence badge');
+  row.querySelector('button').click();await tick();check(sent[0].action==='correct_speaker'&&sent[0].segment_id==='1'&&sent[0].revision==='2','correction revision binding');check(sent[0].speaker_label.startsWith('<img'),'annotation changed before canonical validation');
+ });
+ await test('long meeting pagination preserves prefix hashes and replaces corrected rows',async()=>{
+  VP3Meeting.transcriptionEnabled=true;MeetingTest.seed(new LivekitClient.Room());let turn=0;const requests=[];
+  const range=(start,end,label='Original')=>Array.from({length:end-start+1},(_,i)=>({id:start+i,speaker_name:label,transcript_text:'segment '+(start+i)}));
+  const replies=[{segments:range(1,100),state:{review_hash:'prefix100'}},{segments:range(101,150),state:{review_hash:'prefix150'}},{replace_segments:true,segments:range(1,100,'Corrected'),state:{review_hash:'corrected100'}},{segments:[...range(101,150),{id:151,deleted:true}],state:{review_hash:'corrected151'}}];
+  window.fetch=async(_url,init)=>{requests.push(Object.fromEntries(new URLSearchParams(init.body)));return responses(replies[turn++]);};
+  await MeetingTest.pollTranscript();await MeetingTest.pollTranscript();check(MeetingTest.state().lastTranscriptId===150&&document.querySelectorAll('.meeting-transcript-row').length===150,'new speech restarted pagination');
+  check(requests[1].after==='100'&&requests[1].review_hash==='prefix100','prefix hash not sent with cursor');
+  await MeetingTest.pollTranscript();check(document.querySelectorAll('.meeting-transcript-row').length===100&&document.querySelector('.meeting-transcript-row').textContent.includes('Corrected'),'corrected rows were not replaced');
+  await MeetingTest.pollTranscript();check(requests[3].after==='100'&&requests[3].review_hash==='corrected100','replacement prefix was lost');check(MeetingTest.state().lastTranscriptId===151&&document.querySelectorAll('.meeting-transcript-row').length===150,'deleted row failed cursor advancement');MeetingTest.stopTranscriptPolling();
  });
  console.log(`MEETINGS_SECTION6=PASS (${passed} real Chromium controller cases)`);
 }finally{await browser.close();}
