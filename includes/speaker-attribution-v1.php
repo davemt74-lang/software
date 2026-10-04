@@ -44,7 +44,9 @@ function vp3_speaker_evidence_v1(array $raw): array
     if(!$identityCapable&&$source!=='visual_corroboration'){
         $participant=0;$participantIdentity='';
     }
-    if($source==='visual_corroboration')$participantIdentity='';
+    // Visual evidence may carry the same opaque participant reference as a
+    // trusted voice/manual source for corroboration/conflict, but is never
+    // identity-capable on its own.
     $identityVerified=$identityCapable&&($participant>0||$participantIdentity!=='');
     return [
         'source'=>$source,
@@ -121,7 +123,7 @@ function vp3_speaker_fuse_v1(array $rawEvidence): array
     // never creates a speaker identity and never authenticates a person.
     $identityConfidence=$primary['identity_verified']?$primary['confidence']:0.0;
     if($visualCorroborated)$identityConfidence=min(1.0,$identityConfidence+0.05);
-    if($visualConflict)$identityConfidence=max(0.0,$identityConfidence-0.15);
+    if($visualConflict)$identityConfidence=0.0;
 
     $overlap=$primary['overlap'];
     $overlapGroup=$primary['overlap_group'];
@@ -134,9 +136,9 @@ function vp3_speaker_fuse_v1(array $rawEvidence): array
         'speaker_label'=>$primary['speaker_label']!==''?$primary['speaker_label']:'Speaker',
         'source'=>$primary['source'],
         'confidence'=>$primary['confidence'],
-        'participant_id'=>$identityConflict?0:$primary['participant_id'],
-        'participant_identity'=>$identityConflict?'':$primary['participant_identity'],
-        'speaker_identity_verified'=>!$identityConflict&&$primary['identity_verified'],
+        'participant_id'=>($identityConflict||$visualConflict)?0:$primary['participant_id'],
+        'participant_identity'=>($identityConflict||$visualConflict)?'':$primary['participant_identity'],
+        'speaker_identity_verified'=>!$identityConflict&&!$visualConflict&&$primary['identity_verified'],
         'identity_confidence'=>round($identityConfidence,4),
         'authentication_authority'=>false,
         'visual_corroborated'=>$visualCorroborated,
