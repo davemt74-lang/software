@@ -73,7 +73,9 @@ jobs:
           extensions: pdo_mysql, pdo_sqlite, mbstring
           coverage: none
       - name: SQLite atomic import and verified backup acknowledgements
-        run: php tests/transfer_backup_section7.php
+        run: |
+          php tests/transfer_backup_section7.php
+          php tests/agent_context_section8.php
       - name: MySQL transitions and six parallel imports
         env:
           VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
