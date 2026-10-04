@@ -132,6 +132,7 @@ function agent_surface_v131_sanitize(array $raw): array
                 'speaker_label'=>agent_surface_v131_text($row['speaker_label']??'',80),
                 'relationship'=>$recognized?$relationship:'unknown',
                 'recognized'=>$recognized,
+                'attribution_source'=>in_array($row['attribution_source']??'', ['owner_reported_voice_binding','owner_reported','unidentified'],true)?$row['attribution_source']:'unidentified',
                 'method'=>$method,
                 'confidence'=>max(0.0,min(1.0,(float)($row['confidence']??0))),
                 'linked_user_id'=>$recognized?max(0,(int)($row['linked_user_id']??0)):0,
@@ -239,6 +240,19 @@ function agent_surface_v131_enrich(array $user,string $surface,array $raw): arra
     $context=agent_surface_v131_bound_browser_share(agent_surface_v131_sanitize($raw));
 
     $pdo=db();
+    // Resolve current participant evidence on the server, before Brain/proactive use.
+    // Browser names and cached recognition flags are not identity evidence.
+    $context['participants']=['authentication_authority'=>false,'count'=>0,'participants'=>[]];
+    if($pdo){
+        try{
+            require_once __DIR__.'/studio-participants.php';
+            if(studio_participants_schema_ready()){
+                $cid=max(0,(int)($context['conversation_id']??0));
+                $sid=max(0,(int)($raw['participants']['transcript_session_id']??0));
+                $context['participants']=studio_participants_context($pdo,$user,$cid,$sid);
+            }
+        }catch(Throwable $error){}
+    }
     if($pdo&&function_exists('vp3_plugin_agent_capabilities_v360')){
         try{$context['plugin_capabilities']=vp3_plugin_agent_capabilities_v360($pdo,$user);}catch(Throwable $e){$context['plugin_capabilities']=[];}
     }
@@ -315,3 +329,4 @@ function agent_surface_v131_planner_state(array $raw,string $surface): array
     $context['surface']=$surface;
     return agent_surface_v131_sanitize($context);
 }
+

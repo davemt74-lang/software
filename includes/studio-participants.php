@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
 
-const STONEFELLOW_STUDIO_PARTICIPANTS = 'studio-participants-20260903';
+const STONEFELLOW_STUDIO_PARTICIPANTS = 'studio-participants-section5-20261004';
+const STUDIO_PARTICIPANT_PRESENCE_SECONDS = 300;
 const STONEFELLOW_PARTICIPANT_RECOGNITION_THRESHOLD = 0.82;
 
 function studio_participants_schema_ready(): bool
@@ -290,6 +291,7 @@ function studio_participants_bind_voice(PDO $pdo, array $user, int $participantI
     $recognitionVerified = array_key_exists('recognition_verified', $binding)
         ? !empty($binding['recognition_verified'])
         : !empty($existing['recognition_verified']);
+    if ($recognitionId !== trim((string)($existing['recognition_provider_speaker_id'] ?? '')) && !array_key_exists('recognition_verified', $binding)) $recognitionVerified = false;
     $cloneVerified = array_key_exists('clone_verified', $binding)
         ? !empty($binding['clone_verified'])
         : !empty($existing['clone_verified']);
@@ -350,14 +352,35 @@ function studio_participants_recognition_match(PDO $pdo, array $user, string $pr
     if ($providerSpeakerId === '') return null;
     $stmt = $pdo->prepare(
         "SELECT p.* FROM studio_participant_voices v
-         JOIN studio_participants p ON p.id=v.participant_id
+         JOIN studio_participants p ON p.id=v.participant_id AND p.owner_user_id=v.owner_user_id
          WHERE v.owner_user_id=? AND v.provider='elevenlabs' AND v.recognition_enabled=1 AND v.recognition_verified=1
            AND v.recognition_provider_speaker_id=? AND p.recognition_consent=1 AND p.is_active=1
-         LIMIT 1"
+         LIMIT 2"
     );
     $stmt->execute([(int)$user['id'], $providerSpeakerId]);
-    $row = $stmt->fetch();
-    return $row ?: null;
+    $rows = $stmt->fetchAll();
+    return count($rows) === 1 ? $rows[0] : null;
+}
+
+// Lock the existing session row for presence writes; never invent a parallel ledger.
+function studio_participants_scope(PDO $pdo, array $user, int $conversationId, int $transcriptSessionId, bool $lock = false, bool $active = false): void
+{
+    $suffix = $lock ? ' FOR UPDATE' : '';
+    if ($conversationId > 0) {
+        $stmt = $pdo->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? LIMIT 1'.$suffix);
+        $stmt->execute([$conversationId, (int)$user['id']]);
+        if (!$stmt->fetchColumn()) throw new RuntimeException('Participant conversation unavailable.');
+    }
+    if ($transcriptSessionId > 0) {
+        $stmt = $pdo->prepare('SELECT id,conversation_id,status FROM artist_transcript_sessions_v172 WHERE id=? AND created_by_user_id=? LIMIT 1'.$suffix);
+        $stmt->execute([$transcriptSessionId, (int)$user['id']]);
+        $session = $stmt->fetch();
+        if (!$session || (string)$session['status'] === 'discarded') throw new RuntimeException('Participant transcription unavailable.');
+        if ($active && $session['status'] !== 'active') throw new RuntimeException('Participant transcription must be active.');
+        if ($conversationId > 0 && (int)$session['conversation_id'] > 0 && (int)$session['conversation_id'] !== $conversationId) {
+            throw new RuntimeException('Participant conversation and transcription do not match.');
+        }
+    }
 }
 
 function studio_participants_record_presence(PDO $pdo, array $user, array $input): array
@@ -368,6 +391,12 @@ function studio_participants_record_presence(PDO $pdo, array $user, array $input
         throw new RuntimeException('Participant presence requires an active conversation or transcription session.');
     }
 
+    $state = (string)($input['presence_state'] ?? 'present');
+    if (!in_array($state, ['present','left'], true)) throw new RuntimeException('Invalid participant presence state.');
+    $ownTransaction = !$pdo->inTransaction();
+    if ($ownTransaction) $pdo->beginTransaction();
+    try {
+    studio_participants_scope($pdo, $user, $conversationId, $transcriptSessionId, true, $state === 'present');
     $method = strtolower(trim((string)($input['recognition_method'] ?? 'manual')));
     if (!in_array($method, ['manual','voice','account','unknown'], true)) $method = 'unknown';
     $confidence = max(0.0, min(1.0, (float)($input['confidence'] ?? 0)));
@@ -382,8 +411,14 @@ function studio_participants_record_presence(PDO $pdo, array $user, array $input
         } else {
             $participantId = (int)$match['id'];
         }
+    } elseif ($method === 'unknown') {
+        $participantId = 0;
     } elseif ($participantId > 0) {
-        studio_participants_profile($pdo, $user, $participantId);
+        $profile = studio_participants_profile($pdo, $user, $participantId);
+        if (empty($profile['is_active'])) throw new RuntimeException('Participant is inactive.');
+        if ($method === 'account' && ((int)$profile['linked_user_id'] !== (int)$user['id'] || $profile['relationship_scope'] !== 'self')) {
+            throw new RuntimeException('Account attribution requires the signed-in self profile.');
+        }
     }
 
     $speakerLabel = mb_strimwidth(trim((string)($input['speaker_label'] ?? '')), 0, 80, '');
@@ -399,18 +434,23 @@ function studio_participants_record_presence(PDO $pdo, array $user, array $input
 
     if ($existing > 0) {
         $stmt = $pdo->prepare(
-            "UPDATE studio_session_participants SET participant_id=?,recognition_method=?,recognition_confidence=?,provider=?,provider_speaker_id=?,presence_state='present',last_seen_at=NOW() WHERE id=? AND owner_user_id=?"
+            "UPDATE studio_session_participants SET participant_id=?,recognition_method=?,recognition_confidence=?,provider=?,provider_speaker_id=?,presence_state=?,last_seen_at=NOW() WHERE id=? AND owner_user_id=?"
         );
-        $stmt->execute([$participantId ?: null,$method,$confidence ?: null,$method==='voice'?'elevenlabs':'',$providerSpeakerId,$existing,(int)$user['id']]);
+        $stmt->execute([$participantId ?: null,$method,$confidence ?: null,$method==='voice'?'elevenlabs':'',$providerSpeakerId,$state,$existing,(int)$user['id']]);
         $id = $existing;
-    } else {
+    } elseif ($state === 'present') {
         $stmt = $pdo->prepare(
             'INSERT INTO studio_session_participants (owner_user_id,conversation_id,transcript_session_id,participant_id,speaker_label,recognition_method,recognition_confidence,provider,provider_speaker_id) VALUES (?,?,?,?,?,?,?,?,?)'
         );
         $stmt->execute([(int)$user['id'],$conversationId ?: null,$transcriptSessionId ?: null,$participantId ?: null,$speakerLabel,$method,$confidence ?: null,$method==='voice'?'elevenlabs':'',$providerSpeakerId]);
         $id = (int)$pdo->lastInsertId();
+    } else { $id = 0; }
+    if ($ownTransaction) $pdo->commit();
+    return ['presence_state'=>$state,'attribution_source'=>$method === 'voice' ? 'owner_reported_voice_binding' : ($participantId > 0 ? 'owner_reported' : 'unidentified'),'authentication_authority'=>false,'id'=>$id,'participant_id'=>$participantId,'recognized'=>$participantId>0,'method'=>$method,'confidence'=>$confidence,'speaker_label'=>$speakerLabel];
+    } catch (Throwable $error) {
+        if ($ownTransaction && $pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
     }
-    return ['id'=>$id,'participant_id'=>$participantId,'recognized'=>$participantId>0,'method'=>$method,'confidence'=>$confidence,'speaker_label'=>$speakerLabel];
 }
 
 function studio_participants_context(PDO $pdo, array $user, int $conversationId = 0, int $transcriptSessionId = 0): array
@@ -418,39 +458,55 @@ function studio_participants_context(PDO $pdo, array $user, int $conversationId 
     if ($conversationId < 1 && $transcriptSessionId < 1) {
         return ['build'=>STONEFELLOW_STUDIO_PARTICIPANTS,'count'=>0,'participants'=>[]];
     }
-    $where = ['sp.owner_user_id=?', "sp.presence_state='present'", 'sp.last_seen_at>=DATE_SUB(NOW(), INTERVAL 8 HOUR)'];
+    studio_participants_scope($pdo, $user, $conversationId, $transcriptSessionId);
+    $where = ['sp.owner_user_id=?', "sp.presence_state='present'", 'sp.last_seen_at>=DATE_SUB(NOW(), INTERVAL 300 SECOND)'];
     $params = [(int)$user['id']];
     if ($conversationId > 0) { $where[] = 'sp.conversation_id=?'; $params[] = $conversationId; }
     if ($transcriptSessionId > 0) { $where[] = 'sp.transcript_session_id=?'; $params[] = $transcriptSessionId; }
     $stmt = $pdo->prepare(
         "SELECT sp.id,sp.speaker_label,sp.recognition_method,sp.recognition_confidence,sp.last_seen_at,
-                p.id participant_id,p.display_name,p.relationship_scope,p.linked_user_id,p.recognition_consent
+                p.id participant_id,p.display_name,p.relationship_scope,p.linked_user_id,p.recognition_consent,p.is_active,
+                sp.provider,sp.provider_speaker_id,
+                (SELECT COUNT(*) FROM studio_participant_voices v JOIN studio_participants vp ON vp.id=v.participant_id AND vp.owner_user_id=v.owner_user_id
+                 WHERE v.owner_user_id=sp.owner_user_id AND v.provider='elevenlabs'
+                 AND v.recognition_provider_speaker_id=sp.provider_speaker_id
+                 AND v.recognition_enabled=1 AND v.recognition_verified=1 AND vp.recognition_consent=1 AND vp.is_active=1) binding_count,
+                EXISTS(SELECT 1 FROM studio_participant_voices cv WHERE cv.participant_id=p.id AND cv.owner_user_id=sp.owner_user_id
+                 AND cv.provider=sp.provider AND cv.recognition_provider_speaker_id=sp.provider_speaker_id
+                 AND cv.recognition_enabled=1 AND cv.recognition_verified=1) binding_current
          FROM studio_session_participants sp
          LEFT JOIN studio_participants p ON p.id=sp.participant_id AND p.owner_user_id=sp.owner_user_id
          WHERE ".implode(' AND ', $where)."
-         ORDER BY sp.last_seen_at DESC,sp.id DESC LIMIT 12"
+         ORDER BY sp.last_seen_at DESC,sp.id DESC LIMIT 48"
     );
     $stmt->execute($params);
     $rows = [];
     $seen = [];
     foreach ($stmt->fetchAll() ?: [] as $row) {
-        $key = (string)($row['participant_id'] ?: ('speaker:'.$row['speaker_label']));
+        $method = (string)($row['recognition_method'] ?? 'unknown');
+        $identified = (int)($row['participant_id'] ?? 0) > 0 && !empty($row['is_active']);
+        $voiceIdentified = $method === 'voice';
+        $recognized = $identified && $method !== 'unknown' && (!$voiceIdentified ||
+            (!empty($row['recognition_consent']) && (int)$row['binding_count'] === 1 && !empty($row['binding_current']) &&
+             (float)$row['recognition_confidence'] >= STONEFELLOW_PARTICIPANT_RECOGNITION_THRESHOLD));
+        if ($method === 'account') $recognized = $recognized && (int)$row['linked_user_id'] === (int)$user['id'] && $row['relationship_scope'] === 'self';
+        $key = $recognized ? 'participant:'.$row['participant_id'] : 'speaker:'.$row['speaker_label'];
         if (isset($seen[$key])) continue;
         $seen[$key] = true;
-        $identified = (int)($row['participant_id'] ?? 0) > 0;
-        $voiceIdentified = (string)($row['recognition_method'] ?? '') === 'voice';
-        $recognized = $identified && (!$voiceIdentified || !empty($row['recognition_consent']));
         $rows[] = [
             'participant_id'=>$recognized ? max(0,(int)($row['participant_id'] ?? 0)) : 0,
             'name'=>$recognized ? (string)$row['display_name'] : '',
             'speaker_label'=>(string)$row['speaker_label'],
             'relationship'=>$recognized ? (string)$row['relationship_scope'] : 'unknown',
             'recognized'=>$recognized,
-            'method'=>(string)$row['recognition_method'],
+            'method'=>$recognized ? $method : 'unknown',
+            'attribution_source'=>$recognized ? ($voiceIdentified ? 'owner_reported_voice_binding' : 'owner_reported') : 'unidentified',
             'confidence'=>round(max(0,min(1,(float)($row['recognition_confidence'] ?? 0))),4),
             'linked_user_id'=>$recognized ? max(0,(int)($row['linked_user_id'] ?? 0)) : 0,
             'last_seen_at'=>(string)$row['last_seen_at'],
         ];
+        if (count($rows) >= 12) break;
     }
-    return ['build'=>STONEFELLOW_STUDIO_PARTICIPANTS,'count'=>count($rows),'participants'=>$rows];
+    return ['build'=>STONEFELLOW_STUDIO_PARTICIPANTS,'presence_ttl_seconds'=>STUDIO_PARTICIPANT_PRESENCE_SECONDS,'authentication_authority'=>false,'count'=>count($rows),'participants'=>$rows];
 }
+

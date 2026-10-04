@@ -180,7 +180,8 @@ try {
             'clone_provider_voice_id'=>$existing['clone_provider_voice_id'],
             'source_session_id'=>$existing['source_session_id'],
             'source_recording_key'=>$existing['source_recording_key'],
-            'recognition_verified'=>true,
+            // A caller-entered ID is an unverified binding, never provider evidence.
+            'recognition_verified'=>false,
             'clone_verified'=>$existing['clone_verified'],
         ]);
         studio_participants_json(true, ['voice'=>$voice]);
@@ -201,3 +202,4 @@ try {
     $message = $e instanceof RuntimeException ? $e->getMessage() : 'Studio participant request failed.';
     studio_participants_json(false, ['error'=>$message], $e instanceof RuntimeException ? 422 : 500);
 }
+
