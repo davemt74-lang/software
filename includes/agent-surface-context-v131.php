@@ -147,25 +147,8 @@ function agent_surface_v131_sanitize(array $raw): array
             'participants'=>$safeParticipants,
         ];
     }
-    if(is_array($raw['transcription']??null)){
-        $transcription=$raw['transcription'];
-        $status=(string)($transcription['status']??'');
-        if(in_array($status,['active','draft'],true)&&max(0,(int)($transcription['session_id']??0))>0){
-            $out['transcription']=[
-                'build'=>agent_surface_v131_text($transcription['build']??'interactive-agent-context-section8',120),
-                'session_id'=>max(0,(int)$transcription['session_id']),
-                'title'=>agent_surface_v131_text($transcription['title']??'',190),
-                'status'=>$status,
-                'duration_ms'=>max(0,(int)($transcription['duration_ms']??0)),
-                'segment_count'=>max(0,(int)($transcription['segment_count']??0)),
-                'knowledge_promoted'=>!empty($transcription['knowledge_promoted']),
-                'source'=>in_array((string)($transcription['source']??''),['cloud_transcription','homeserver_import'],true)?(string)$transcription['source']:'cloud_transcription',
-                'cloud_copy_is_independent'=>!empty($transcription['cloud_copy_is_independent']),
-                'speaker_identity_authority'=>false,
-                'last_activity_at'=>agent_surface_v131_text($transcription['last_activity_at']??'',40),
-            ];
-        }
-    }
+    // Transcription state is server-resolved only. Never accept a browser-provided
+    // session/status object here; enrich/context_item repopulate it from the database.
     if(is_array($raw['editor_capabilities']??null)){
         $catalog=$raw['editor_capabilities'];
         $safeCatalog=[
@@ -355,6 +338,12 @@ function agent_surface_v131_enrich(array $user,string $surface,array $raw): arra
 function agent_surface_v131_context_item(array $context): array
 {
     $safe=agent_surface_v131_sanitize($context);
+    try{
+        $pdo=db();$user=current_user();
+        if($pdo&&is_array($user)){
+            $safe['transcription']=agent_surface_v131_transcription($pdo,$user,max(0,(int)($safe['conversation_id']??0)));
+        }
+    }catch(Throwable $e){$safe['transcription']=null;}
     $browserShareText='';
     $browserShareId=agent_surface_v131_browser_share_id($safe);
     if($browserShareId!==''&&function_exists('vp3_browser_share_agent_context_v2020')){
