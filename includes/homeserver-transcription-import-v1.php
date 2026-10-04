@@ -121,7 +121,7 @@ function homeserver_transcription_import_v1(array $user,string $id,array $remote
                 $existing[$key]=true;
             }
         }
-        $insert=$pdo->prepare("INSERT INTO artist_transcript_segments_v172 (session_id,client_segment_key,segment_index,segment_type,speaker_label,transcript_text,started_ms,ended_ms,confidence) VALUES (?,?,?,'transcript',?,?,?,?,?,NULL)");
+        $insert=$pdo->prepare("INSERT INTO artist_transcript_segments_v172 (session_id,client_segment_key,segment_index,segment_type,speaker_label,transcript_text,started_ms,ended_ms,confidence) VALUES (?,?,?,'transcript',?,?,?,?,NULL)");
         foreach($validated as $row)if(!isset($existing[$row['key']]))$insert->execute([
             $cloudId,$row['key'],$row['index'],$row['speaker'],$row['text'],$row['time'],$row['ended']
         ]);
