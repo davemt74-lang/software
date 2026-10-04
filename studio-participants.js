@@ -3,7 +3,7 @@
 
   if (window.StonefellowStudioParticipants) return;
 
-  const BUILD = 'studio-participants-20260903';
+  const BUILD = 'studio-participants-section5-20261004';
   const cfg = window.STONEFELLOW_AGENT_CONTEXT || {};
   const endpoint = String(cfg.participantEndpoint || '/api/studio-participants.php');
   const csrf = String(cfg.csrf || '');
@@ -16,7 +16,7 @@
       {name:'participant_id',type:'number',required:true},{name:'recognition_consent',type:'boolean',required:true},{name:'cloning_consent',type:'boolean',required:true},{name:'recognition_scope',type:'string',required:false}
     ]},
     {id:'participants.presence.record',category:'participants',description:'Record a manually assigned, account-linked, unknown, or provider-recognized speaker in the current studio session. Voice identity is conversational context only.',mutates:true,verifiable:true,args:[
-      {name:'participant_id',type:'number',required:false},{name:'speaker_label',type:'string',required:false},{name:'recognition_method',type:'string',required:false},{name:'confidence',type:'number',required:false},{name:'provider_speaker_id',type:'string',required:false}
+      {name:'participant_id',type:'number',required:false},{name:'speaker_label',type:'string',required:false},{name:'recognition_method',type:'string',required:false},{name:'confidence',type:'number',required:false},{name:'provider_speaker_id',type:'string',required:false},{name:'presence_state',type:'string',required:false}
     ]},
     {id:'participants.voice.clone_from_recording',category:'voice_identity',description:'Create the signed-in user’s consented ElevenLabs voice clone from a retained recording. A direct user confirmation is required at execution time.',mutates:true,verifiable:true,destructive:true,args:[
       {name:'participant_id',type:'number',required:true},{name:'session_id',type:'number',required:true},{name:'recording_key',type:'string',required:true}
@@ -28,11 +28,28 @@
   let lastError = '';
   let lastRefresh = 0;
   let refreshPromise = null;
+  let refreshScope = '';
+  let contextScope = '';
+  let contextReceivedAt = 0;
+  let epoch = 0;
+  let mutationQueue = Promise.resolve();
+  let mutationActive = false;
   let editorAgentRegistered = false;
 
   const cleanText = (value, limit = 160) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, limit);
   const conversationId = () => Math.max(0, Number(window.StonefellowAgentContext?.conversationId?.() || cfg.conversationId || 0));
   const transcriptSessionId = () => Math.max(0, Number(window.STONEFELLOW_ARTIST_LISTENING_WORKSPACE?.api?.getState?.()?.sessionId || 0));
+
+  const currentScope = () => {
+    const sid = transcriptSessionId();
+    return {cid: sid > 0 ? 0 : conversationId(), sid};
+  };
+  const scopeKey = scope => `${scope.cid}:${scope.sid}`;
+  const emptyContext = () => ({build:BUILD,count:0,participants:[]});
+  function currentParticipants() {
+    if (Date.now() < contextReceivedAt || mutationActive || contextScope !== scopeKey(currentScope()) || Date.now() - contextReceivedAt >= 300000) return [];
+    return (Array.isArray(context?.participants) ? context.participants : []).map(safeParticipant).slice(0,12);
+  }
 
   function safeProfile(row) {
     return {
@@ -58,15 +75,17 @@
   }
 
   function safeParticipant(row) {
+    const recognized = row?.recognized === true && Number(row?.participant_id) > 0 && row?.method !== 'unknown';
     return {
-      participant_id: Math.max(0, Number(row?.participant_id || 0)),
-      name: cleanText(row?.name, 120),
+      participant_id: recognized ? Math.max(0, Number(row?.participant_id || 0)) : 0,
+      name: recognized ? cleanText(row?.name, 120) : '',
       speaker_label: cleanText(row?.speaker_label, 80),
-      relationship: cleanText(row?.relationship || 'unknown', 30),
-      recognized: Boolean(row?.recognized),
+      relationship: recognized ? cleanText(row?.relationship || 'unknown', 30) : 'unknown',
+      recognized,
+      attribution_source: recognized ? cleanText(row?.attribution_source || 'owner_reported',40) : 'unidentified',
       method: cleanText(row?.method || 'unknown', 40),
       confidence: Math.max(0, Math.min(1, Number(row?.confidence || 0))),
-      linked_user_id: Math.max(0, Number(row?.linked_user_id || 0)),
+      linked_user_id: recognized ? Math.max(0, Number(row?.linked_user_id || 0)) : 0,
       last_seen_at: cleanText(row?.last_seen_at, 40),
     };
   }
@@ -81,9 +100,9 @@
       profiles: profiles.map(safeProfile),
       context: {
         build: cleanText(context?.build || BUILD, 80),
-        count: Math.max(0, Number(context?.count || 0)),
+        count: currentParticipants().length,
         authentication_authority: false,
-        participants: (Array.isArray(context?.participants) ? context.participants : []).map(safeParticipant).slice(0, 12),
+        participants: currentParticipants(),
       },
     };
   }
@@ -95,62 +114,75 @@
   }
 
   async function request(url, options = {}) {
-    const response = await fetch(url, { credentials: 'same-origin', ...options });
-    const data = await response.json().catch(() => null);
-    if (!response.ok || !data?.ok) throw new Error(data?.error || `Participant request failed (${response.status}).`);
-    return data;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(),30000);
+    try {
+      const response = await fetch(url, { credentials:'same-origin',cache:'no-store',...options,signal:controller.signal });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error(data?.error || `Participant request failed (${response.status}).`);
+      return data;
+    } finally { window.clearTimeout(timer); }
   }
 
   async function refresh(force = false) {
-    const now = Date.now();
-    if (!force && now - lastRefresh < 8000) return snapshot();
-    if (refreshPromise) return refreshPromise;
+    const target = currentScope();
+    const key = scopeKey(target);
+    if (!force && key === contextScope && Date.now() >= lastRefresh && Date.now() - lastRefresh < 8000) return snapshot();
+    if (refreshPromise && refreshScope === key) return refreshPromise;
+    const token = ++epoch;
+    refreshScope = key;
+    context = emptyContext();
+    contextScope = '';
     loading = true;
     lastError = '';
     publish('loading');
-    refreshPromise = (async () => {
+    const operation = (async () => {
       try {
-        const params = new URLSearchParams({ action: 'context' });
-        const cid = conversationId();
-        const sid = transcriptSessionId();
-        if (cid > 0) params.set('conversation_id', String(cid));
-        if (sid > 0) params.set('transcript_session_id', String(sid));
-        const [profileData, contextData] = await Promise.all([
-          request(`${endpoint}?action=profiles`),
-          request(`${endpoint}?${params.toString()}`),
+        const params = new URLSearchParams({ action:'context' });
+        if (target.cid > 0) params.set('conversation_id',String(target.cid));
+        if (target.sid > 0) params.set('transcript_session_id',String(target.sid));
+        const [profileData,contextData] = await Promise.all([
+          request(`${endpoint}?action=profiles`),request(`${endpoint}?${params}`)
         ]);
+        if (token !== epoch || key !== scopeKey(currentScope())) return snapshot();
         profiles = (Array.isArray(profileData.profiles) ? profileData.profiles : []).map(safeProfile);
-        context = contextData.context && typeof contextData.context === 'object'
-          ? { ...contextData.context, participants: (contextData.context.participants || []).map(safeParticipant) }
-          : { build: BUILD, count: 0, participants: [] };
-        lastRefresh = Date.now();
+        context = contextData.context && typeof contextData.context === 'object' ? contextData.context : emptyContext();
+        contextScope = key;
+        contextReceivedAt = lastRefresh = Date.now();
       } catch (error) {
-        lastError = cleanText(error?.message || error || 'Participant context unavailable.', 240);
+        if (token === epoch) {context = emptyContext();contextScope='';lastError=cleanText(error?.message || error,240);}
       } finally {
-        loading = false;
-        refreshPromise = null;
-        publish(lastError ? 'error' : 'refresh');
+        if (token === epoch) {loading=false;refreshPromise=null;publish(lastError?'error':'refresh');}
       }
       return snapshot();
     })();
-    return refreshPromise;
+    refreshPromise = operation;
+    return operation;
   }
 
-  async function mutate(action, payload = {}) {
-    if (!csrf) throw new Error('Participant session token is unavailable.');
-    const data = await request(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ csrf_token: csrf, action, ...payload }),
+  function mutate(action, payload = {}) {
+    const operation = mutationQueue.catch(() => {}).then(async () => {
+      if (!csrf) throw new Error('Participant session token is unavailable.');
+      ++epoch;
+      refreshPromise = null;
+      context = emptyContext();contextScope='';loading=false;
+      mutationActive = true;
+      publish('mutation');
+      try {
+      const data = await request(endpoint,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({csrf_token:csrf,action,...payload})
+      });
+      // A mutation receipt belongs to its original session; refresh current state.
+      await refresh(true);
+      return data;
+      } catch (error) {
+        context=emptyContext();contextScope='';lastError=cleanText(error?.message || error,240);
+        throw error;
+      } finally {mutationActive=false;publish(action);}
     });
-    if (Array.isArray(data.profiles)) profiles = data.profiles.map(safeProfile);
-    if (data.context && typeof data.context === 'object') {
-      context = { ...data.context, participants: (data.context.participants || []).map(safeParticipant) };
-    }
-    lastError = '';
-    lastRefresh = Date.now();
-    publish(action);
-    return data;
+    mutationQueue = operation;
+    return operation;
   }
 
   async function saveProfile(input = {}) {
@@ -182,8 +214,9 @@
 
   async function recordPresence(input = {}) {
     return mutate(input.recognition_method === 'voice' ? 'record_recognition' : 'record_presence', {
-      conversation_id: Math.max(0, Number(input.conversation_id || conversationId() || 0)),
-      transcript_session_id: Math.max(0, Number(input.transcript_session_id || transcriptSessionId() || 0)),
+      conversation_id: Math.max(0, Number(input.conversation_id ?? currentScope().cid)),
+      transcript_session_id: Math.max(0, Number(input.transcript_session_id ?? currentScope().sid)),
+      presence_state: input.presence_state === 'left' ? 'left' : 'present',
       participant_id: Math.max(0, Number(input.participant_id || 0)),
       speaker_label: cleanText(input.speaker_label, 80),
       recognition_method: cleanText(input.recognition_method || 'manual', 40),
@@ -196,7 +229,9 @@
     return {
       build: BUILD,
       authentication_authority: false,
-      participants: (Array.isArray(context?.participants) ? context.participants : []).map(safeParticipant).slice(0, 12),
+      conversation_id: currentScope().cid,
+      transcript_session_id: currentScope().sid,
+      participants: currentParticipants(),
     };
   }
 
@@ -340,3 +375,4 @@
   publish('load');
   window.setTimeout(() => void refresh(true), 250);
 })();
+
