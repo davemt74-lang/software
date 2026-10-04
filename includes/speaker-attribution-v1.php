@@ -90,8 +90,12 @@ function vp3_speaker_fuse_v1(array $rawEvidence): array
         return $rank!==0?$rank:($b['confidence']<=>$a['confidence']);
     });
 
+    $manual=array_values(array_filter($evidence,static fn(array $item): bool =>
+        $item['source']==='manual_correction'&&$item['identity_verified']&&$item['confidence']>=0.72
+    ));
+    $conflictPool=$manual?:$evidence;
     $strongIdentities=[];
-    foreach($evidence as $item){
+    foreach($conflictPool as $item){
         $key=vp3_speaker_identity_key_v1($item);
         if($key!==''&&$item['identity_verified']&&$item['confidence']>=0.72)$strongIdentities[$key]=true;
     }
