@@ -62,6 +62,15 @@ function save(array $remote,array $user=['id'=>1]): array {return homeserver_tra
 $first=save($source);$cloudId=$first['cloud_session_id'];
 check($first['imported']&&artist_listening_v172_payload($connection,$user,$cloudId)['status']==='draft','atomic draft');passed('whole source imports into a closed canonical document');
 $again=save($source);check($again['already_imported']&&$again['cloud_session_id']===$cloudId,'retry duplicated');passed('lost acknowledgement resolves the same independent copy');
+$legacyValidated=[];foreach($source['session']['segments'] as $index=>$segment)$legacyValidated[]=[
+    'key'=>substr(hash('sha256','hsseg:'.$source['session']['id'].':'.$segment['client_key']),0,32),
+    'text'=>$segment['text'],'time'=>$segment['started_ms'],'index'=>$index
+];
+$legacyHash=hash('sha256',json_encode([$source['session']['id'],$source['session']['title'],$legacyValidated],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
+$stmt=$connection->prepare('SELECT metadata_json FROM artist_transcript_sessions_v172 WHERE id=?');$stmt->execute([$cloudId]);
+$legacyMeta=json_decode((string)$stmt->fetchColumn(),true);$legacyMeta['homeserver_import_v1']['source_hash']=$legacyHash;
+$connection->prepare('UPDATE artist_transcript_sessions_v172 SET metadata_json=? WHERE id=?')->execute([json_encode($legacyMeta,JSON_THROW_ON_ERROR),$cloudId]);
+check(save($source)['already_imported']===true,'legacy source hash retry failed');passed('pre-9B single-channel source hash remains retry compatible');
 $other=save($source,['id'=>2]);check($other['cloud_session_id']!==$cloudId,'owner collision');passed('same source keys remain isolated by Cloud owner');
 $changed=$source;$changed['session']['segments'][0]['text']='changed';rejects(fn()=>save($changed));passed('changed source cannot overwrite an existing copy');
 $connection->prepare("UPDATE artist_transcript_sessions_v172 SET status='discarded' WHERE id=?")->execute([$cloudId]);check(save($source)['cloud_status']==='discarded','discard resurrection');passed('retry preserves discarded copies');
