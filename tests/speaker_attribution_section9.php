@@ -27,10 +27,12 @@ check9($f['participant_id']===0&&!$f['speaker_identity_verified']&&$f['source']=
 pass9('camera evidence alone cannot name the speaker');
 
 $f=vp3_speaker_fuse_v1([
+ ['source'=>'provider_diarization','speaker_label'=>'Speaker 1','confidence'=>0],
  ['source'=>'verified_voice','speaker_label'=>'Speaker 1','participant_identity'=>'tracky:owner-1','confidence'=>.94],
  ['source'=>'visual_corroboration','participant_identity'=>'tracky:owner-1','confidence'=>.91],
 ]);
 check9($f['participant_identity']==='tracky:owner-1'&&$f['visual_corroborated']&&$f['speaker_identity_verified'],'opaque local voice/visual fusion failed');
+check9($f['diarization_source']==='provider_diarization','identity fusion lost separation provenance');
 pass9('opaque local participant references can be corroborated without visual-only identity');
 
 $f=vp3_speaker_fuse_v1([
@@ -66,4 +68,4 @@ $f=vp3_speaker_fuse_v1([
 check9(!$f['identity_conflict']&&$f['source']==='manual_correction'&&$f['participant_id']===4,'manual correction conflicted with lower evidence');
 pass9('explicit correction overrides a conflicting inferred identity');
 
-echo "SPEAKER_ATTRIBUTION_SECTION9A=PASS (8 canonical Cloud cases)\n";
+echo "SPEAKER_ATTRIBUTION_SECTION9=PASS (10 canonical Cloud fusion cases)\n";
