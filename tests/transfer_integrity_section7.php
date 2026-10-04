@@ -25,9 +25,15 @@ if(in_array('--race-import',$argv,true)||in_array('--race-start',$argv,true)){
     if(in_array('--race-start',$argv,true))echo json_encode(['capture'=>artist_listening_v172_start($user,str_repeat('9',32),0,'en-US','1')['id']]);
     else{try{echo json_encode(homeserver_transcription_import_v1($user,$source['session']['id'],$source));}catch(RuntimeException $error){if($error->getMessage()!=='stop_current_cloud_transcription_before_import')throw $error;echo json_encode(['blocked'=>true]);}}exit;
 }
-foreach(['artist_transcript_segments_v172','artist_transcript_sessions_v172','artist_transcript_folders_v177','users'] as $table)$connection->exec('DROP TABLE IF EXISTS '.$table);
+foreach(['artist_transcript_segments_v172','artist_transcript_sessions_v172','artist_transcript_folders_v177','chat_conversations','knowledge_items','tracks','users'] as $table)$connection->exec('DROP TABLE IF EXISTS '.$table);
 $connection->exec($mysql?'CREATE TABLE users(id INT UNSIGNED PRIMARY KEY) ENGINE=InnoDB':'CREATE TABLE users(id INTEGER PRIMARY KEY)');$connection->exec('INSERT INTO users VALUES(1),(2)');
-if($mysql){artist_listening_v172_ensure_schema();}
+if($mysql){
+    // Minimal canonical FK parents; use the production transcript schema itself.
+    $connection->exec('CREATE TABLE chat_conversations(id BIGINT UNSIGNED PRIMARY KEY) ENGINE=InnoDB');
+    $connection->exec('CREATE TABLE knowledge_items(id INT UNSIGNED PRIMARY KEY) ENGINE=InnoDB');
+    $connection->exec('CREATE TABLE tracks(id INT UNSIGNED PRIMARY KEY) ENGINE=InnoDB');
+    artist_listening_v172_ensure_schema();
+}
 else{
     $connection->exec("CREATE TABLE artist_transcript_sessions_v172(id INTEGER PRIMARY KEY AUTOINCREMENT,owner_user_id INTEGER,created_by_user_id INTEGER,conversation_id INTEGER,client_session_key TEXT,title TEXT,status TEXT,language TEXT,duration_ms INTEGER DEFAULT 0,metadata_json TEXT,stopped_at TEXT,discarded_at TEXT,last_activity_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(created_by_user_id,client_session_key))");
     $connection->exec("CREATE TABLE artist_transcript_segments_v172(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id INTEGER,client_segment_key TEXT,segment_index INTEGER,segment_type TEXT,speaker_label TEXT,transcript_text TEXT,started_ms INTEGER,ended_ms INTEGER,confidence REAL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(session_id,client_segment_key),UNIQUE(session_id,segment_index))");
