@@ -16,6 +16,7 @@ function homeserver_transcription_import_attribution_v1(array $segment): array
         throw new RuntimeException('HomeServer speaker attribution cannot assert Cloud identity.');
     if(!empty($raw['participant_id'])||trim((string)($raw['participant_identity']??''))!==''||
        !empty($raw['speaker_identity_verified'])||!empty($raw['authentication_authority'])||
+       isset($raw['provider_speaker_id'])||isset($raw['track_id'])||
        (!empty($raw['evidence'])&&is_array($raw['evidence'])))
         throw new RuntimeException('HomeServer transcript identity evidence requires Cloud re-verification.');
     $label=preg_replace('/\s+/u',' ',trim((string)($raw['speaker_label']??$speaker)))??'';
