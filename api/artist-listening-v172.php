@@ -253,6 +253,9 @@ try {
         artist_listening_v172_json(false, ['error'=>'Session expired. Refresh and try again.'], 419);
     }
 
+    if ($action === 'delete_recording') {
+        artist_listening_v172_json(true,artist_listening_v197_delete_recording($pdo,$user,max(0,(int)($input['session_id']??0)),(string)($input['recording_key']??'')));
+    }
     if ($action === 'upload_recording') {
         $sessionId = max(0, (int)($input['session_id'] ?? 0));
         $recording = artist_listening_v197_store_recording(

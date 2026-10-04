@@ -262,9 +262,9 @@ $config = [
   <script src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-section1-20261003')) ?>"></script>
   <script src="<?= e(url('/artist-listening-realtime.js?v=e07b7c39&listening=section2-20261003')) ?>"></script>
   <script src="<?= e(url('/artist-listening-recognition.js?v=artist-listening-normalized-20260903&listening=section2-20261003')) ?>"></script>
-  <script src="<?= e(url('/artist-listening-transcript.js?v=artist-listening-normalized-20260903&integrity=section4-20261003')) ?>"></script>
-  <script src="<?= e(url('/artist-listening-workspace.js?v=artist-listening-normalized-20260903&capture=interactive-transcription-section3-20261003&integrity=section4-20261003')) ?>"></script>
-  <script src="<?= e(url('/artist-listening.js?v=9ac023be&capture=interactive-transcription-section3-20261003&integrity=section4-20261003')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-transcript.js?v=artist-listening-normalized-20260903&integrity=section4-20261003&transfer=section7-20261004')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-workspace.js?v=artist-listening-normalized-20260903&capture=interactive-transcription-section3-20261003&integrity=section4-20261003&transfer=section7-20261004')) ?>"></script>
+  <script src="<?= e(url('/artist-listening.js?v=9ac023be&capture=interactive-transcription-section3-20261003&integrity=section4-20261003&transfer=section7-20261004')) ?>"></script>
   <script src="<?= e(url('/artist-listening-recordings.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script src="<?= e(url('/artist-listening-naming.js?v=transcription-folder-hotfix-20260913')) ?>"></script>
   <script>window.STONEFELLOW_ARTIST_LISTENING_V172=Object.assign(window.STONEFELLOW_ARTIST_LISTENING_V172||{},window.STONEFELLOW_ARTIST_LISTENING_CONFIG||{});</script>

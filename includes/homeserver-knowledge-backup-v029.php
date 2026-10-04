@@ -106,9 +106,9 @@ function homeserver_knowledge_v029_recordings(array $user, array $session): arra
     foreach (artist_listening_v197_recordings($session) as $recording) {
         $fileName = basename((string)($recording['file_name'] ?? ''));
         $path = $dir . '/' . $fileName;
-        if ($fileName === '' || !is_file($path) || !is_readable($path)) continue;
+        if ($fileName === '' || is_link($path) || !is_file($path) || !is_readable($path)) throw new RuntimeException('Retained recording is unavailable for backup.');
         $size = max(0, (int)filesize($path));
-        if ($size < 1) continue;
+        if ($size < 1 || $size > 250 * 1024 * 1024) throw new RuntimeException('Retained recording size is unavailable for backup.');
         $recording['bytes'] = $size;
         $recording['_path'] = $path;
         $out[] = $recording;
@@ -178,7 +178,7 @@ function homeserver_knowledge_v029_prepare(array $user, int $sessionId, string $
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
     $session = artist_listening_v172_session($pdo, $user, $sessionId);
-    if ((string)($session['status'] ?? '') === 'active') {
+    if (in_array((string)($session['status'] ?? ''), ['active','discarded'], true)) {
         throw new RuntimeException('Stop listening before saving a transcription to HomeServer Knowledge.');
     }
     $state = homeserver_knowledge_v029_session_state($session);
@@ -223,7 +223,8 @@ function homeserver_knowledge_v029_prepare(array $user, int $sessionId, string $
                 'source'=>(string)$content['source'],
             ],
         ], $credentials['home']);
-        $state['item_id'] = max(0, (int)($result['id'] ?? 0));
+        if (!is_int($result['id'] ?? null) || $result['id'] < 1 || !preg_match('/^[a-f0-9]{64}$/', (string)($result['content_hash'] ?? ''))) throw new RuntimeException('HomeServer did not acknowledge the transcript backup.');
+        $state['item_id'] = $result['id'];
         $state['text_synced'] = true;
         $state['content_hash'] = (string)($result['content_hash'] ?? hash('sha256', (string)$content['content']));
         $state['last_error'] = '';
@@ -241,6 +242,7 @@ function homeserver_knowledge_v029_sync_step(array $user, int $sessionId): array
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
     $session = artist_listening_v172_session($pdo, $user, $sessionId);
+    if (in_array((string)($session['status'] ?? ''), ['active','discarded'], true)) throw new RuntimeException('Stop listening or restore this transcript before backing it up.');
     $state = homeserver_knowledge_v029_session_state($session);
     if (empty($state['text_synced'])) {
         return homeserver_knowledge_v029_prepare($user, $sessionId, (string)($state['mode'] ?? 'direct'));
@@ -285,6 +287,7 @@ function homeserver_knowledge_v029_sync_step(array $user, int $sessionId): array
                     'sha256'=>$hash,
                 ], $credentials['home']);
                 if (!empty($begin['already_present'])) {
+                    if (($begin['asset']['sha256'] ?? '') !== $hash || ($begin['asset']['size_bytes'] ?? null) !== $size) throw new RuntimeException('HomeServer returned a different recording backup.');
                     $asset['state'] = 'synced';
                     $asset['offset'] = $size;
                     $asset['upload_id'] = '';
@@ -293,8 +296,8 @@ function homeserver_knowledge_v029_sync_step(array $user, int $sessionId): array
                     continue;
                 }
                 $asset['upload_id'] = (string)($begin['upload_id'] ?? '');
-                $asset['offset'] = max(0, (int)($begin['received_bytes'] ?? 0));
-                if ($asset['upload_id'] === '') throw new RuntimeException('HomeServer did not create a recording upload.');
+                $asset['offset'] = $begin['received_bytes'] ?? null;
+                if (!preg_match('/^[A-Za-z0-9_-]{24,96}$/', $asset['upload_id']) || !is_int($asset['offset']) || $asset['offset'] < 0 || $asset['offset'] > $size) throw new RuntimeException('HomeServer did not create a valid recording upload.');
             }
             $offset = max(0, (int)($asset['offset'] ?? 0));
             if ($offset < $size) {
@@ -312,12 +315,15 @@ function homeserver_knowledge_v029_sync_step(array $user, int $sessionId): array
                     'offset'=>$offset,
                     'data_base64'=>base64_encode($chunk),
                 ], $credentials['home']);
-                $asset['offset'] = max(0, (int)($sent['received_bytes'] ?? $offset));
+                $ack = $sent['received_bytes'] ?? null;
+                if (!is_int($ack) || $ack < 0 || $ack > $size || (empty($sent['resync']) && $ack !== $offset + strlen($chunk))) throw new RuntimeException('HomeServer returned an invalid recording acknowledgement.');
+                $asset['offset'] = $ack;
             }
             if ((int)$asset['offset'] >= $size) {
-                homeserver_vp3_remote_operation($credentials['relay'], 'knowledge.asset.commit', [
+                $committed = homeserver_vp3_remote_operation($credentials['relay'], 'knowledge.asset.commit', [
                     'upload_id'=>$asset['upload_id'],
                 ], $credentials['home']);
+                if (($committed['committed'] ?? null) !== true || ($committed['asset']['sha256'] ?? '') !== $hash || ($committed['asset']['size_bytes'] ?? null) !== $size) throw new RuntimeException('HomeServer did not verify the recording commit.');
                 $asset['state'] = 'synced';
                 $asset['offset'] = $size;
                 $asset['upload_id'] = '';
