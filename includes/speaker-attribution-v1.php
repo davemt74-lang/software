@@ -146,8 +146,12 @@ function vp3_speaker_fuse_v1(array $rawEvidence): array
         'identity_conflict'=>$identityConflict,
         'overlap'=>$overlap,
         'overlap_group'=>$overlapGroup,
-        'diarization_source'=>in_array($primary['source'],['provider_diarization','livekit_track'],true)?$primary['source']:
-            ($primary['source']==='heuristic_acoustic'?'heuristic_acoustic':'none'),
+        'diarization_source'=>array_reduce($evidence,static function(string $current,array $item): string {
+            if($item['source']==='livekit_track')return 'livekit_track';
+            if($current!=='livekit_track'&&$item['source']==='provider_diarization')return 'provider_diarization';
+            if($current==='none'&&$item['source']==='heuristic_acoustic')return 'heuristic_acoustic';
+            return $current;
+        },'none'),
         'evidence'=>array_values(array_merge($evidence,$visual)),
     ];
 }
