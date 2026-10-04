@@ -25,6 +25,7 @@ function video_meeting_transcription_schema_ready_v1800(?PDO $pdo=null): bool
         && artist_listening_v172_schema_ready()
         && artist_listening_v237_schema_ready()
         && table_exists('video_meeting_transcription_links')
+        && table_exists('video_meeting_speaker_evidence')
         && column_exists('video_meeting_transcript_segments','source_key')
         && video_meeting_external_calendar_schema_ready_v1801($pdo);
 }
@@ -46,6 +47,14 @@ function video_meeting_transcription_ensure_schema_v1800(?PDO $pdo=null): void
       UNIQUE KEY uq_video_meeting_transcript_session (transcript_session_id),
       CONSTRAINT fk_video_meeting_transcription_meeting FOREIGN KEY (meeting_id) REFERENCES video_meetings(id) ON DELETE CASCADE,
       CONSTRAINT fk_video_meeting_transcription_session FOREIGN KEY (transcript_session_id) REFERENCES artist_transcript_sessions_v172(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS video_meeting_speaker_evidence (
+      segment_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+      attribution_json MEDIUMTEXT NOT NULL,
+      correction_json MEDIUMTEXT NULL,
+      revision INT UNSIGNED NOT NULL DEFAULT 0,
+      CONSTRAINT fk_meeting_speaker_segment FOREIGN KEY (segment_id) REFERENCES video_meeting_transcript_segments(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     if(!column_exists('video_meeting_transcript_segments','source_key')){
@@ -128,6 +137,7 @@ function video_meeting_transcription_participant_v1800(PDO $pdo,array $meeting,s
 {
     $identity=trim($identity);if($identity==='')return null;
     foreach(video_meeting_participants_v1800($pdo,(int)$meeting['id']) as $participant){
+        if(in_array((string)($participant['invitation_status']??''),['revoked','declined'],true))continue;
         if(hash_equals(video_meeting_participant_identity_v1800($meeting,$participant),$identity))return $participant;
     }
     return null;
@@ -178,12 +188,25 @@ function video_meeting_transcription_mirror_v1800(PDO $pdo,array $meeting): ?arr
 
 function video_meeting_transcription_append_v1800(PDO $pdo,array $meeting,array $input): array
 {
+    $own=!$pdo->inTransaction();if($own)$pdo->beginTransaction();
+    try{
+        $lock=$pdo->prepare('SELECT * FROM video_meetings WHERE id=? FOR UPDATE');$lock->execute([(int)$meeting['id']]);$current=$lock->fetch();
+        if(!$current)throw new RuntimeException('Meeting not found.');
+        $status=(string)$current['status'];
+        if(in_array($status,['cancelled','processed','no_show'],true)||($status==='ended'&&(time()-(strtotime((string)$current['ended_at'].' UTC')?:0)>300)))throw new RuntimeException('Meeting is closed.');
+        $result=video_meeting_transcription_append_locked_section9($pdo,$current,$input);
+        if($own)$pdo->commit();return $result;
+    }catch(Throwable $error){if($own&&$pdo->inTransaction())$pdo->rollBack();throw $error;}
+}
+
+function video_meeting_transcription_append_locked_section9(PDO $pdo,array $meeting,array $input): array
+{
     if(!video_meeting_schema_ready_v1800($pdo))throw new RuntimeException('Video Meetings are not ready.');
     if(empty($meeting['transcription_enabled']))return ['accepted'=>0,'ignored'=>'transcription_disabled'];
     $text=trim(preg_replace('/\s+/u',' ',(string)($input['text']??''))??'');if($text==='')return ['accepted'=>0,'ignored'=>'empty'];
     $text=mb_strimwidth($text,0,8000,'');$identity=trim((string)($input['participant_identity']??''));
     $participant=video_meeting_transcription_participant_v1800($pdo,$meeting,$identity);
-    $speaker=trim(preg_replace('/\s+/u',' ',(string)($input['speaker_name']??$participant['display_name']??''))??'')?:'Participant';
+    $speaker=trim(preg_replace('/\s+/u',' ',(string)($participant['display_name']??$input['speaker_name']??''))??'')?:'Participant';
     $start=max(0,(int)($input['start_ms']??0));$end=max($start,(int)($input['end_ms']??$start));
     $confidence=isset($input['confidence'])&&is_numeric($input['confidence'])?max(0.0,min(1.0,(float)$input['confidence'])):null;
     $source=trim((string)($input['source']??'livekit-agent'))?:'livekit-agent';$sourceKey=video_meeting_transcription_source_key_v1800($meeting,$input);
@@ -201,7 +224,7 @@ function video_meeting_transcription_append_v1800(PDO $pdo,array $meeting,array 
     $existingId=(int)$existing->fetchColumn();
     if($existingId>0){
         $mirror=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$existingId);
-        return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0),'speaker_attribution'=>$speakerAttribution];
+        return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0),'speaker_attribution'=>video_meeting_speaker_saved_section9($pdo,$existingId)];
     }
     try{
         $stmt=$pdo->prepare('INSERT INTO video_meeting_transcript_segments (meeting_id,participant_id,speaker_key,speaker_name,start_ms,end_ms,transcript_text,confidence,source,source_key,is_final) VALUES (?,?,?,?,?,?,?,?,?,?,1)');
@@ -212,14 +235,31 @@ function video_meeting_transcription_append_v1800(PDO $pdo,array $meeting,array 
         $mirror=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$existingId);
         return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0)];
     }
+    $pdo->prepare('INSERT INTO video_meeting_speaker_evidence (segment_id,attribution_json) VALUES (?,?)')->execute([$segmentId,json_encode($speakerAttribution,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)]);
     $mirror=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$segmentId);
     return ['accepted'=>1,'segment_id'=>$segmentId,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0),'speaker_attribution'=>$speakerAttribution];
 }
 
+function video_meeting_speaker_saved_section9(PDO $pdo,int $segmentId): array
+{
+    $stmt=$pdo->prepare('SELECT attribution_json FROM video_meeting_speaker_evidence WHERE segment_id=?');$stmt->execute([$segmentId]);
+    $raw=json_decode((string)$stmt->fetchColumn(),true);return is_array($raw)?$raw:vp3_speaker_fuse_v1([['source'=>'unknown']]);
+}
+
 function video_meeting_transcription_segments_v1800(PDO $pdo,array $meeting,int $afterId=0,int $limit=100): array
 {
-    $limit=max(1,min(200,$limit));$stmt=$pdo->prepare("SELECT id,participant_id,speaker_key,speaker_name,start_ms,end_ms,transcript_text,confidence,source,is_final,created_at FROM video_meeting_transcript_segments WHERE meeting_id=? AND id>? AND is_final=1 ORDER BY id ASC LIMIT {$limit}");
-    $stmt->execute([(int)$meeting['id'],max(0,$afterId)]);return $stmt->fetchAll()?:[];
+    $session=video_meeting_transcription_session_v1800($pdo,$meeting);if(!$session)return [];
+    $canonical=artist_listening_v172_segments($pdo,(int)$session['id']);$byKey=[];
+    foreach($canonical as $row)$byKey[(string)$row['client_segment_key']]=$row;
+    $limit=max(1,min(200,$limit));$stmt=$pdo->prepare("SELECT * FROM video_meeting_transcript_segments WHERE meeting_id=? AND id>? AND is_final=1 ORDER BY id ASC LIMIT {$limit}");
+    $stmt->execute([(int)$meeting['id'],max(0,$afterId)]);$result=[];
+    foreach($stmt->fetchAll()?:[] as $row){
+        $review=$byKey[(string)$row['source_key']]??null;
+        if($review&&$review['segment_type']==='deleted'){$row['deleted']=true;$row['transcript_text']='';}
+        if($review){$row['speaker_name']=$review['speaker_label'];$row['transcript_text']=$review['transcript_text'];$row['speaker_attribution']=$review['speaker_attribution']??null;$row['correction_revision']=$review['correction_revision']??0;$row['overlap']=$review['overlap']??false;}
+        $result[]=$row;
+    }
+    return $result;
 }
 
 function video_meeting_transcription_finalize_v1800(PDO $pdo,array $meeting): void

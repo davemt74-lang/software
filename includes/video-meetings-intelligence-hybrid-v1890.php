@@ -64,9 +64,11 @@ function video_meeting_intelligence_hybrid_sanitize_snapshot_v1890(mixed $raw): 
 
 function video_meeting_intelligence_hybrid_segments_v1890(PDO $pdo,array $meeting): array
 {
-    $stmt=$pdo->prepare("SELECT speaker_name,start_ms,end_ms,transcript_text FROM video_meeting_transcript_segments WHERE meeting_id=? AND is_final=1 AND TRIM(transcript_text)<>'' ORDER BY id ASC LIMIT 501");
-    $stmt->execute([(int)$meeting['id']]);
-    $rows=$stmt->fetchAll()?:[];
+    $session=video_meeting_transcription_session_v1800($pdo,$meeting);
+    if(!$session)return [];
+    $stmt=$pdo->prepare("SELECT * FROM artist_transcript_segments_v172 WHERE session_id=? AND segment_type='transcript' ORDER BY segment_index,id LIMIT 501");
+    $stmt->execute([(int)$session['id']]);
+    $rows=meeting_speaker_segments_section9($pdo,(int)$session['id'],$stmt->fetchAll()?:[]);
     if(count($rows)>500)throw new RuntimeException('This meeting transcript is too large for one private intelligence request.');
     $segments=[];$chars=0;
     foreach($rows as $row){
@@ -75,9 +77,9 @@ function video_meeting_intelligence_hybrid_segments_v1890(PDO $pdo,array $meetin
         if($text==='')continue;
         $chars+=mb_strlen($text);
         if($chars>120000)throw new RuntimeException('This meeting transcript is too large for one private intelligence request.');
-        $start=max(0,(int)($row['start_ms']??0));$end=max($start,(int)($row['end_ms']??$start));
-        $speaker=video_meeting_intelligence_hybrid_clean_text_v1890($row['speaker_name']??'',120)?:'Participant';
-        $segments[]=['speaker_name'=>$speaker,'start_ms'=>$start,'end_ms'=>$end,'text'=>$text];
+        $start=max(0,(int)($row['started_ms']??0));$end=max($start,(int)($row['ended_ms']??$start));
+        $speaker=video_meeting_intelligence_hybrid_clean_text_v1890($row['speaker_label']??'',120)?:'Participant';
+        $segments[]=['speaker_name'=>$speaker,'start_ms'=>$start,'end_ms'=>$end,'text'=>$text,'speaker_attribution'=>$row['speaker_attribution']??null,'overlap'=>!empty($row['overlap'])];
     }
     return $segments;
 }

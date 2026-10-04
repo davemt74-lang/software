@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/meeting-speakers-section9.php';
+
 const STONEFELLOW_ARTIST_LISTENING_V172 = 'artist-listening-transcription-v172-20260830';
 
 function artist_listening_v172_schema_ready(): bool
@@ -202,7 +204,7 @@ function artist_listening_v172_segments(PDO $pdo, int $sessionId): array
          FROM artist_transcript_segments_v172 WHERE session_id=? ORDER BY segment_index ASC,id ASC'
     );
     $stmt->execute([$sessionId]);
-    return $stmt->fetchAll() ?: [];
+    return meeting_speaker_segments_section9($pdo,$sessionId,$stmt->fetchAll() ?: []);
 }
 
 function artist_listening_v197_metadata(array $session): array

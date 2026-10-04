@@ -66,6 +66,9 @@ jobs:
           php tests/transfer_backup_section7.php
           php tests/agent_context_section8.php
           php tests/speaker_attribution_section9.php
+          php tests/meeting_recording_section9.php
+          php -l includes/meeting-speakers-section9.php
+          php -l api/video-meeting-transcript.php
           node tests/cloud-homeserver-transcription-import-v1.mjs
           node tests/homeserver-transcription-backup-v029-contract.mjs
           node tests/transcription-editor-api.mjs
@@ -82,3 +85,4 @@ jobs:
 
       - name: CI workflow governance
         run: node tests/ci-workflow-consolidation.mjs
+

@@ -108,6 +108,7 @@ function artist_listening_transcript_page_map(array $segments, int $targetWords 
                 (string)($segment['transcript_text'] ?? ''),
                 (string)($segment['updated_at'] ?? ''),
             ]);
+            if(isset($segment['speaker_attribution']))$hashParts[count($hashParts)-1].='|'.json_encode([$segment['speaker_attribution'],(int)($segment['started_ms']??0),(int)($segment['ended_ms']??0)],JSON_UNESCAPED_SLASHES);
         }
         $current['source_hash'] = hash('sha256', implode("\n", $hashParts));
         $current['segment_count'] = count($current['segments']);
@@ -462,9 +463,9 @@ function artist_listening_transcript_page_prompt(array $page, array $participant
         $speaker = trim((string)($segment['speaker_label'] ?? 'Speaker 1')) ?: 'Speaker 1';
         $name = (string)($participants[$speaker] ?? $speaker);
         $text = artist_listening_v237_clean_text((string)($segment['transcript_text'] ?? ''));
-        if ($text !== '') $lines[] = $name . ': ' . $text;
+        if ($text !== '') $lines[] = $name . (!empty($segment['overlap'])?' [overlapping speech]':'') . (isset($segment['speaker_attribution'])&&empty($segment['speaker_attribution']['speaker_identity_verified'])?' [identity unverified]':'') . ': ' . $text;
     }
-    return "Analyze one page of a long private transcript. Use only what was actually said. Do not invent identities, facts, decisions, commitments, or research results. Preserve participant labels. Return ONLY JSON with keys summary, key_points, decisions, action_items, open_questions, participant_notes, research_queries. research_queries should contain at most 4 topics that materially need current verification.\n\nPARTICIPANTS:\n" . json_encode($participants, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) . "\n\nPAGE " . (int)$page['page_number'] . " TRANSCRIPT:\n" . implode("\n", $lines);
+    return "Analyze one page of a long private transcript. Use only what was actually said. Do not invent identities, facts, decisions, commitments, or research results. Preserve participant labels. Overlapping or unverified speech cannot establish an action owner or commitment unless the words explicitly name one; leave uncertain ownership unassigned. Return ONLY JSON with keys summary, key_points, decisions, action_items, open_questions, participant_notes, research_queries. research_queries should contain at most 4 topics that materially need current verification.\n\nPARTICIPANTS:\n" . json_encode($participants, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) . "\n\nPAGE " . (int)$page['page_number'] . " TRANSCRIPT:\n" . implode("\n", $lines);
 }
 
 function artist_listening_v237_analyze_page(PDO $pdo, array $user, int $sessionId, int $pageNumber, bool $force = false): array
