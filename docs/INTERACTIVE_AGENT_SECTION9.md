@@ -1,64 +1,50 @@
-# Interactive Agent Section 9 — Speaker Attribution, Diarization and Cross-Modal Fusion
+# Interactive Agent — Section 9: missing conversation, transcription and meeting capabilities
 
-## Objective
+## 9A — canonical speaker attribution evidence
 
-Section 9 closes the deferred speaker-understanding gaps from Sections 5 and 6 without allowing probabilistic audio or camera evidence to become authentication authority.
+9A is merged. Speaker attribution is now typed evidence rather than a display
+label. Canonical sources distinguish unknown/acoustic heuristics, provider
+diarization, verified voice, LiveKit tracks, manual corrections, visual
+corroboration and account identity. Conflicting strong identity evidence fails
+closed. Visual evidence may corroborate but never establish speaker identity or
+authentication.
 
-The work is divided into four independently validated gates:
+## 9B — shared-microphone diarization
 
-- **9A — Canonical speaker attribution evidence**
-- **9B — Shared-microphone diarization and voice recognition**
-- **9C — Camera + voice identity fusion**
-- **9D — Meeting overlap, recording and session integration**
+HomeServer may optionally send a completed VAD audio chunk to ElevenLabs Scribe
+v2 for batch diarization. The owner must explicitly enable Enhanced speaker
+separation. HomeServer requests provider history/logging off, does not retain
+the chunk in the transcription workspace, and falls back to local Whisper for
+text if diarization fails.
 
-Each gate must be green before the next gate is merged.
+Cloud receives only an explicitly shared completed HomeServer transcript. Import
+preserves bounded speaker labels, timing and overlap metadata. It does not import
+raw audio, provider speaker IDs, verified voice identity, account identity or
+authentication authority. Any identity-capable evidence must be independently
+re-verified on Cloud under the participant/consent rules.
 
-## 9A — Canonical speaker attribution evidence
+The 9B source hash includes canonical speaker metadata. A narrow compatibility
+path recognizes pre-9B Section 7 hashes only when the source is semantically the
+same unidentified single-channel transcript.
 
-A speaker label is no longer treated as equivalent to an identity. The common attribution contract distinguishes:
+## Acceptance
 
-- `unknown` — no trustworthy speaker separation or identity evidence;
-- `heuristic_acoustic` — low-authority acoustic clustering used only as a fallback label;
-- `provider_diarization` — a provider separated the audio into speakers, but no person is implied;
-- `verified_voice` — a current, consented voice binding resolved to a participant;
-- `livekit_track` — a separated meeting audio track bound to a canonical meeting participant identity;
-- `manual_correction` — explicit human correction;
-- `account_identity` — a canonical account/meeting identity;
-- `visual_corroboration` — recent visual evidence that may corroborate another identity source but can never create speaker identity by itself.
+- provider word timelines become bounded speaker turns;
+- overlapping turns retain independent start/end timing;
+- provider speaker references never cross the canonical attribution boundary;
+- speaker-library matches remain diarization labels, not person identity;
+- Strict Local disables the cloud-assisted speaker-separation path;
+- provider/network failure degrades to local Whisper rather than losing text;
+- retries cannot mutate text or attribution for an existing segment key;
+- deletion cascades speaker metadata;
+- Cloud share/revoke remains text-only and owner controlled;
+- Cloud rejects identity escalation, raw speaker references and label mismatch;
+- old Section 7 imports remain retry-compatible.
 
-Every attribution carries bounded confidence, overlap metadata, sanitized evidence provenance and `authentication_authority=false`.
+## Remaining Section 9 work
 
-### Fail-closed rules
-
-1. Acoustic heuristics may assign `Speaker 1..N` but cannot assign a person.
-2. Provider diarization separates speakers but cannot assign a person unless a separate verified voice/account binding resolves that speaker.
-3. Camera/visual evidence cannot identify the speaker by itself.
-4. Conflicting strong identity evidence downgrades identity to unknown.
-5. Visual evidence may only corroborate an already resolved identity.
-6. Raw provider speaker IDs and raw LiveKit track IDs are hashed before entering attribution provenance.
-7. Manual correction overrides inference but remains explicit human evidence, not hidden biometric authentication.
-8. LiveKit remote participant tracks are already separated channels and therefore use track identity rather than re-diarizing mixed audio.
-9. HomeServer shared-microphone transcription remains explicitly unidentified until 9B provides actual diarization evidence.
-
-## 9B — Shared-microphone diarization and voice recognition
-
-Build a bounded shared-room audio pipeline that can replace heuristic labels with real diarization output. Reconciliation must be source-hash/timestamp bound and idempotent. Known-speaker recognition may resolve a diarized speaker only through current consented voice bindings. Heuristic labels remain a fallback and must be visibly lower authority.
-
-## 9C — Camera + voice fusion
-
-Fuse short-lived visual-presence evidence with voice/account attribution. Voice/account identity remains primary. Visual evidence may increase confidence only when it agrees with the same participant. Ambiguity, stale evidence, revoked consent or conflicting candidates fail closed. Camera evidence never authenticates a user and never names a speaker alone.
-
-## 9D — Meeting overlap, recording and session integration
-
-Preserve simultaneous LiveKit participant tracks as overlapping transcript turns, attach attribution provenance to durable meeting/transcript segments, close recording-state gaps, and make Agent Chat/Brain consume the same canonical attribution contract. Deletion, consent revocation and participant corrections must invalidate future attribution immediately.
-
-## 9A acceptance
-
-- canonical Cloud and HomeServer implementations use the same source hierarchy;
-- acoustic-only and visual-only evidence cannot identify a person;
-- conflicting strong identities fail closed;
-- LiveKit meeting callbacks carry typed track attribution;
-- Cloud independently re-resolves the meeting participant rather than trusting the HomeServer name;
-- shared-mic local transcription truthfully reports unknown/single-channel attribution;
-- provider/track identifiers are not exposed raw in evidence;
-- focused tests are in retained CI gates.
+9C adds continuous camera/voice corroboration and trusted local participant
+mapping without allowing visual-only speaker identity. 9D completes recording
+and meeting integration, including overlap-aware meeting intelligence and final
+cross-system correction/review. Installed microphone/camera accuracy remains
+Section 10 acceptance rather than a software-only claim.

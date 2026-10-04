@@ -18,6 +18,22 @@ function document(string $id='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',int $count=2): a
     $segments=[];for($i=0;$i<$count;$i++)$segments[]=['client_key'=>str_pad(dechex($i+1),32,'0',STR_PAD_LEFT),'text'=>'words '.$i,'started_ms'=>$i*100];
     return ['contract'=>'vp3.homeserver.transcription-session.v1','raw_audio_included'=>false,'session'=>['id'=>$id,'title'=>'Shared text','status'=>'completed','cloud_shared'=>true,'segment_count'=>$count,'segments'=>$segments]];
 }
+function diarized_document(string $id): array {
+    $doc=document($id,2);
+    foreach([[0,900,'Speaker 1'],[600,1200,'Speaker 2']] as $i=>$spec){
+        $doc['session']['segments'][$i]=[
+            'client_key'=>str_repeat((string)($i+1),32),'text'=>'speaker words '.$i,
+            'started_ms'=>$spec[0],'ended_ms'=>$spec[1],'speaker'=>$spec[2],
+            'attribution'=>[
+                'contract'=>'speaker-attribution-v1-20261004','source'=>'provider_diarization',
+                'speaker_label'=>$spec[2],'confidence'=>0.0,'participant_id'=>0,
+                'participant_identity'=>'','speaker_identity_verified'=>false,
+                'authentication_authority'=>false,'overlap'=>true,'overlap_group'=>'overlap-1'
+            ]
+        ];
+    }
+    return $doc;
+}
 $user=['id'=>1];$source=document();
 if(in_array('--race-import',$argv,true)||in_array('--race-start',$argv,true)){
     $barrier=getenv('VP3_SECTION7_BARRIER');file_put_contents($barrier.'.'.getmypid().'.ready','ready');
@@ -46,6 +62,15 @@ function save(array $remote,array $user=['id'=>1]): array {return homeserver_tra
 $first=save($source);$cloudId=$first['cloud_session_id'];
 check($first['imported']&&artist_listening_v172_payload($connection,$user,$cloudId)['status']==='draft','atomic draft');passed('whole source imports into a closed canonical document');
 $again=save($source);check($again['already_imported']&&$again['cloud_session_id']===$cloudId,'retry duplicated');passed('lost acknowledgement resolves the same independent copy');
+$legacyValidated=[];foreach($source['session']['segments'] as $index=>$segment)$legacyValidated[]=[
+    'key'=>substr(hash('sha256','hsseg:'.$source['session']['id'].':'.$segment['client_key']),0,32),
+    'text'=>$segment['text'],'time'=>$segment['started_ms'],'index'=>$index
+];
+$legacyHash=hash('sha256',json_encode([$source['session']['id'],$source['session']['title'],$legacyValidated],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
+$stmt=$connection->prepare('SELECT metadata_json FROM artist_transcript_sessions_v172 WHERE id=?');$stmt->execute([$cloudId]);
+$legacyMeta=json_decode((string)$stmt->fetchColumn(),true);$legacyMeta['homeserver_import_v1']['source_hash']=$legacyHash;
+$connection->prepare('UPDATE artist_transcript_sessions_v172 SET metadata_json=? WHERE id=?')->execute([json_encode($legacyMeta,JSON_THROW_ON_ERROR),$cloudId]);
+check(save($source)['already_imported']===true,'legacy source hash retry failed');passed('pre-9B single-channel source hash remains retry compatible');
 $other=save($source,['id'=>2]);check($other['cloud_session_id']!==$cloudId,'owner collision');passed('same source keys remain isolated by Cloud owner');
 $changed=$source;$changed['session']['segments'][0]['text']='changed';rejects(fn()=>save($changed));passed('changed source cannot overwrite an existing copy');
 $connection->prepare("UPDATE artist_transcript_sessions_v172 SET status='discarded' WHERE id=?")->execute([$cloudId]);check(save($source)['cloud_status']==='discarded','discard resurrection');passed('retry preserves discarded copies');
@@ -60,6 +85,25 @@ foreach([
 ] as $name=>$modify){$bad=$modify(document(str_repeat('b',32)));rejects(fn()=>save($bad));passed('reject '.$name.' without a partial document');}
 $wide=document(str_repeat('c',32),1);$wide['session']['segments'][0]['text']=str_repeat('你',8000);
 $wideId=save($wide)['cloud_session_id'];$stmt=$connection->prepare('SELECT transcript_text FROM artist_transcript_segments_v172 WHERE session_id=?');$stmt->execute([$wideId]);check($stmt->fetchColumn()===$wide['session']['segments'][0]['text'],'Unicode truncated');passed('valid Unicode transfers without width truncation');
+$diarized=diarized_document(str_repeat('7',32));$diarizedId=save($diarized)['cloud_session_id'];
+$stmt=$connection->prepare('SELECT speaker_label,started_ms,ended_ms FROM artist_transcript_segments_v172 WHERE session_id=? ORDER BY segment_index');
+$stmt->execute([$diarizedId]);$speakerRows=$stmt->fetchAll(PDO::FETCH_ASSOC);
+check(array_column($speakerRows,'speaker_label')===['Speaker 1','Speaker 2'],'speaker labels lost');
+check((int)$speakerRows[1]['started_ms']<(int)$speakerRows[0]['ended_ms'],'overlap timing flattened');
+$meta=artist_listening_v197_metadata(artist_listening_v172_payload($connection,$user,$diarizedId));
+check(($meta['homeserver_import_v1']['speaker_attribution']??'')==='provider_diarization','session attribution missing');
+check(empty($meta['homeserver_import_v1']['speaker_identity_verified'])&&empty($meta['homeserver_import_v1']['authentication_authority']),'identity authority imported');
+check(count($meta['homeserver_import_v1']['segment_attribution']??[])===2,'per-segment attribution missing');
+passed('diarized HomeServer turns preserve labels and overlap without identity authority');
+$bad=diarized_document(str_repeat('8',32));$bad['session']['segments'][0]['attribution']['source']='verified_voice';
+rejects(fn()=>save($bad));passed('reject imported verified voice identity');
+$bad=diarized_document(str_repeat('9',32));$bad['session']['segments'][0]['attribution']['speaker_identity_verified']=true;
+rejects(fn()=>save($bad));passed('reject imported identity verification flag');
+$bad=diarized_document(str_repeat('a',32));$bad['session']['segments'][0]['attribution']['speaker_label']='Speaker 9';
+rejects(fn()=>save($bad));passed('reject speaker label and attribution mismatch');
+$bad=diarized_document(str_repeat('b',32));$bad['session']['segments'][0]['attribution']['provider_speaker_id']='raw-ref';
+rejects(fn()=>save($bad));passed('reject raw provider speaker reference');
+
 $active=artist_listening_v172_start($user,str_repeat('d',32),0,'en-US','1');
 rejects(fn()=>save(document(str_repeat('e',32))));check(count(artist_listening_v172_payload($connection,$user,(int)$active['id'])['segments'])===0,'capture contaminated');passed('an active capture cannot receive imported words');
 artist_listening_v172_stop($user,(int)$active['id'],0);
