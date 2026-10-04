@@ -43,7 +43,7 @@ function homeserver_transcription_import_v1(array $user,string $id,array $remote
     if(!is_array($segments)||!array_is_list($segments)||count($segments)>300||
        !is_int($session['segment_count']??null)||$session['segment_count']!==count($segments))
         throw new RuntimeException('Invalid HomeServer segment manifest.');
-    $validated=[];$keys=[];$bytes=0;$previous=0;
+    $validated=[];$keys=[];$bytes=0;$previous=0;$duration=0;
     foreach($segments as $index=>$segment){
         if(!is_array($segment)||!is_string($segment['text']??null)||preg_match('//u',$segment['text'])!==1)
             throw new RuntimeException('Invalid transcript text.');
@@ -54,7 +54,7 @@ function homeserver_transcription_import_v1(array $user,string $id,array $remote
             throw new RuntimeException('Invalid transcript segment identity or timing.');
         $attribution=homeserver_transcription_import_attribution_v1($segment);
         $bytes+=strlen($text);if($bytes>120000)throw new RuntimeException('Transcript document size limit reached.');
-        $keys[$key]=true;$previous=max($time,$ended);
+        $keys[$key]=true;$previous=$time;$duration=max($duration,$ended);
         $validated[]=[
             'key'=>substr(hash('sha256','hsseg:'.$id.':'.$key),0,32),'text'=>$text,
             'time'=>$time,'ended'=>$ended,'index'=>$index,
@@ -105,7 +105,7 @@ function homeserver_transcription_import_v1(array $user,string $id,array $remote
             'segment_attribution'=>$attributionMap,'cloud_copy_is_independent'=>true];
         if(!$original){
             $stmt=$pdo->prepare("INSERT INTO artist_transcript_sessions_v172 (owner_user_id,created_by_user_id,client_session_key,title,status,language,metadata_json,duration_ms,stopped_at) VALUES (?,?,?,?,'draft','en-US',?,?,NOW())");
-            $stmt->execute([$ownerId,$userId,$clientKey,$title,json_encode($metadata,JSON_THROW_ON_ERROR),$previous]);
+            $stmt->execute([$ownerId,$userId,$clientKey,$title,json_encode($metadata,JSON_THROW_ON_ERROR),$duration]);
             $cloudId=(int)$pdo->lastInsertId();$existing=[];
         }else{
             // Recover legacy partial imports only when every saved row matches this source.
@@ -126,7 +126,7 @@ function homeserver_transcription_import_v1(array $user,string $id,array $remote
             $cloudId,$row['key'],$row['index'],$row['speaker'],$row['text'],$row['time'],$row['ended']
         ]);
         if($original)$pdo->prepare("UPDATE artist_transcript_sessions_v172 SET status='draft',title=?,metadata_json=?,duration_ms=?,stopped_at=COALESCE(stopped_at,NOW()),last_activity_at=NOW() WHERE id=? AND created_by_user_id=?")
-            ->execute([$title,json_encode($metadata,JSON_THROW_ON_ERROR),$previous,$cloudId,$userId]);
+            ->execute([$title,json_encode($metadata,JSON_THROW_ON_ERROR),$duration,$cloudId,$userId]);
         $pdo->commit();
         return ['ok'=>true,'imported'=>true,'cloud_session_id'=>$cloudId,'segment_count'=>count($validated),
             'raw_audio_imported'=>false,'cloud_copy_is_independent'=>true];
