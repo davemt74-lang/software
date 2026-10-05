@@ -1,0 +1,54 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const read=p=>fs.readFileSync(p,'utf8');
+const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
+const flush=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
+const sandbox={console,Promise};sandbox.globalThis=sandbox;vm.runInNewContext(read('admin/stem-buffer-scheduler-v202.js'),sandbox);
+const factory=sandbox.StonefellowStemBufferSchedulerV202;
+let inFlight=0,maxInFlight=0,fetches=0,decodes=0;const gates=[];
+const context={currentTime:10,decodeAudioData:async()=>{decodes++;return {duration:1,length:48000,numberOfChannels:2};}};
+const scheduler=factory.createScheduler(context,{fetcher:async()=>{fetches++;inFlight++;maxInFlight=Math.max(maxInFlight,inFlight);const gate=deferred();gates.push(gate);await gate.promise;inFlight--;return {ok:true,arrayBuffer:async()=>new ArrayBuffer(8)};}});
+const prepared=scheduler.prepare(['/a','/b','/c','/d','/a']);await flush();
+assert.equal(fetches,2,'two bounded requests start together');gates[0].resolve();gates[1].resolve();await flush();
+assert.equal(fetches,4);gates[2].resolve();gates[3].resolve();await prepared;
+assert.equal(maxInFlight,2);assert.equal(decodes,4);await scheduler.getBuffer('/a');assert.equal(fetches,4,'waveform/playback reuse decoded cache');
+const budgetGates=[deferred(),deferred()];let decodeIndex=0;
+const budget=factory.createScheduler({...context,decodeAudioData:()=>budgetGates[decodeIndex++].promise},{maxDecodedBytes:16*1024*1024,fetcher:async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)})});
+const budgetResult=budget.prepare(['/oversize','/late']).catch(e=>e);await flush();budgetGates[0].resolve({duration:80,length:3000000,numberOfChannels:2});await flush();budgetGates[1].resolve({duration:1,length:48000,numberOfChannels:2});assert.equal((await budgetResult).code,'STEM_DECODED_AUDIO_BUDGET');await flush();assert.equal(budget.bufferCount(),0);assert.equal(budget.decodedBytes(),0);
+const sources=[];let sourceIndex=0;
+class Param {cancelScheduledValues(){}setValueAtTime(){}linearRampToValueAtTime(){}}
+const failing=factory.createScheduler({...context,createBufferSource:()=>{const id=sourceIndex++;const node={playbackRate:{value:1},connect(){},disconnect(){this.disconnected=true;},stop(){this.stopped=true;},start(){if(id===1)throw new Error('decoder start failed');}};sources.push(node);return node;},createGain:()=>({gain:new Param(),connect(){},disconnect(){}})},{fetcher:async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)})});
+const item={url:'/a',destination:{},position:0,projectEnd:1,clip:{timelineStart:0,timelineLength:1,sourceStart:0,sourceEnd:1}};
+await assert.rejects(failing.schedule([item,item]),/decoder start failed/);assert.equal(failing.activeCount(),0);assert.ok(sources.every(x=>x.stopped&&x.disconnected),'partial schedule cannot leave sound under fallback');
+const gains=[];
+class LoggedParam extends Param {constructor(){super();this.events=[];}setValueAtTime(value,time){this.events.push({value,time});}}
+const fades=factory.createScheduler({...context,decodeAudioData:async()=>({duration:10,length:480000,numberOfChannels:2}),createBufferSource:()=>({playbackRate:{value:1},connect(){},disconnect(){},start(){},stop(){}}),createGain:()=>{const gain=new LoggedParam();gains.push(gain);return {gain,connect(){},disconnect(){}};}},{fetcher:async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)})});
+await fades.schedule([{...item,position:9,projectEnd:10,clip:{timelineStart:0,timelineLength:10,sourceStart:0,sourceEnd:10,fadeOut:2}}]);
+assert.ok(gains[0].events.every(x=>x.value<=0.5),'seeking into a fade-out cannot jump back to full gain');
+fades.stop();
+const core=read('admin/stem-editor.js');
+const play=core.slice(core.indexOf('  async function playAll() {'),core.indexOf('\n  function pauseAll()',core.indexOf('  async function playAll() {')));
+const pause=core.slice(core.indexOf('  function pauseAll() {'),core.indexOf('\n  function selectStem(',core.indexOf('  function pauseAll() {')));
+function transport(){
+ const gate=deferred();const button={textContent:'',setAttribute(k,v){this[k]=v;}};
+ const host={console,alert(){},requestAnimationFrame(){},cancelAnimationFrame(){},gate,button};host.globalThis=host;
+ const setup="let playing=false,playbackStarting=false,playRequestSerial=0,transportGeneration=0,seekInProgress=false,position=0,duration=5,loopActive=false,loopEnd=0,loopStart=0,recordingActive=false,metronomeLastBeat=-1,bufferTransportPrepared=false,timeStretchActive=false,bufferTransportActive=false,frame=0;const stems=[],playButton=button,context={state:'running'},masterClock={pause(){}},bufferScheduler={stop(){}},timeStretchEngine={stop(){}};function ensureAudioGraph(){}function pauseLibraryClips(){}function restoreStaticAutomationTargets(){}function updateEqDisplays(){}function updateGroupMeters(){}function updateMasterMeter(){}function updatePlayhead(){}function globalPosition(){return position;}async function prepareBufferTransport(){globalThis.preparations=(globalThis.preparations||0)+1;await gate.promise;bufferTransportPrepared=true;}async function prepareTimeStretchTransport(){}async function seekAllSafely(){transportGeneration++;playing=true;globalThis.starts=(globalThis.starts||0)+1;return true;}";
+ vm.runInNewContext(setup+play+pause+";globalThis.play=playAll;globalThis.pause=pauseAll;globalThis.seek=()=>transportGeneration++;globalThis.state=()=>({playing,playbackStarting});",host);
+ return host;
+}
+let t=transport();const first=t.play();await flush();assert.equal(t.state().playbackStarting,true);assert.equal(await t.play(),false);t.pause();t.gate.resolve();assert.equal(await first,false);assert.equal(t.starts||0,0,'Stop during decode cannot start later');assert.equal(t.state().playbackStarting,false);
+t=transport();const seekCancelled=t.play();await flush();t.seek();t.gate.resolve();assert.equal(await seekCancelled,false);assert.equal(t.starts||0,0);
+t=transport();const normal=t.play();await flush();t.gate.resolve();assert.equal(await normal,true);assert.equal(t.starts,1);assert.equal(t.state().playbackStarting,false);assert.equal(t.state().playing,true);
+t=transport();const broken=t.play();await flush();t.gate.reject(new Error('prepare failed'));await assert.rejects(broken,/prepare failed/);assert.equal(t.state().playbackStarting,false);
+assert.match(read('admin/stems-legacy-v108.php'),/\$fanPrivateMix = .*can_view_track\(\$track,\$currentStudioUser\)/);
+assert.match(read('api/stem-render-v214.php'),/\$fanPrivateMix = .*can_view_track\(\$track,\$user\)/);
+assert.match(read('api/stem-agent-v105.php'),/!can_view_track\(\$track,\$user\)/);
+for(const p of ['api/stem-direct-v79.php','api/stem-upload-v24.php'])assert.match(read(p),/!can_manage_track_production\(\$track,\$user\)/);
+assert.match(read('admin/stem-project-loader.js'),/row\.mediaVersion/);
+assert.match(core,/await window\.StonefellowStemProjectLoaderV232\?\.whenMediaReady/);
+assert.match(core,/bufferScheduler\.getBuffer\(stem\.url\)/);
+for(const p of ['api/stem-midi-v217.php','api/stem-audio-engine-v215.php','api/stem-session-v216.php','api/stem-mix.php'])assert.match(read(p),/stem_mix_update_scoped/);
+const direct=read('api/stem-direct-v79.php');assert.match(direct,/\$before!==\$current/);assert.match(direct,/count\(\$newIds\)!==\$total/);assert.doesNotMatch(direct,/WHERE track_id=\? AND is_active=0/);assert.match(direct,/different project or account/);
+assert.match(read('api/studio-project-v77.php'),/Recording target changed/);
+console.log('STEM_FEATURE_AUDIT=PASS');

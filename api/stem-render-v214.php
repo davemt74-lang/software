@@ -39,7 +39,7 @@ function stem_v214_track(int $trackId): array
 
     $user = current_user();
     $canProduce = can_manage_track_production($track,$user);
-    $fanPrivateMix = user_has_role('fan',$user) && !$canProduce;
+    $fanPrivateMix = user_has_role('fan',$user) && !$canProduce && can_view_track($track,$user);
     if (!$canProduce && !$fanPrivateMix) {
         stem_v214_error('This track has not been shared with your account.',403);
     }
@@ -150,6 +150,7 @@ $trackId = max(0,(int)($_POST['track_id'] ?? 0));
 
 try {
     $track = stem_v214_track($trackId);
+    if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
     if ($action === 'capabilities') {
         $ffmpeg = stem_v214_ffmpeg();

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/stem-mix-storage.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -850,23 +851,14 @@ try {
         $mixId = (int)($input['mix_id'] ?? 0);
 
         if ($mixId > 0) {
-            $stmt = $pdo->prepare(
-                'UPDATE stem_mix_saves
-                 SET mix_name=?,mix_json=?,updated_at=NOW()
-                 WHERE id=? AND user_id=? AND track_id=?'
-            );
-            $stmt->execute([$name,$json,$mixId,$userId,$trackId]);
-
-            if ($stmt->rowCount() < 1) {
-                $check = $pdo->prepare(
-                    'SELECT id FROM stem_mix_saves
-                     WHERE id=? AND user_id=? AND track_id=? LIMIT 1'
-                );
-                $check->execute([$mixId,$userId,$trackId]);
-                if (!$check->fetchColumn()) {
-                    throw new RuntimeException('Saved mix not found.');
+            stem_mix_update_scoped($pdo,$userId,$trackId,$mixId,static function(array $previous) use ($clean): array {
+                // Core saves preserve independently attached current engine/MIDI/session state.
+                $next=$clean;
+                foreach (['sessionV216','engineV215','midiV217'] as $key) {
+                    if (array_key_exists($key,$previous)) $next[$key]=$previous[$key];
                 }
-            }
+                return $next;
+            },$name);
         } else {
             $stmt = $pdo->prepare(
                 'INSERT INTO stem_mix_saves

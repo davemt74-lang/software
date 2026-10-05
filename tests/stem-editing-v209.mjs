@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 const source=fs.readFileSync('admin/stem-editing-v209.js','utf8');
 const wrapper=fs.readFileSync('admin/stems.php','utf8');
-const studioSource=fs.readFileSync('admin/stems-v108.js','utf8');
+const studioSource=fs.readFileSync('admin/stem-editor.js','utf8');
 const sandbox={console};
 sandbox.globalThis=sandbox;
 vm.createContext(sandbox);

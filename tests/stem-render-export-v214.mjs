@@ -8,7 +8,7 @@ const css=fs.readFileSync('admin/stem-render-export-v214.css','utf8');
 const endpoint=fs.readFileSync('api/stem-render-v214.php','utf8');
 const wrapper=fs.readFileSync('admin/stems.php','utf8');
 const live=fs.readFileSync('admin/stem-live-recording-v107.js','utf8');
-const core=fs.readFileSync('admin/stems-v108.js','utf8');
+const core=fs.readFileSync('admin/stem-editor.js','utf8');
 const v210=fs.readFileSync('admin/stem-professional-editing-v210.js','utf8');
 
 const sandbox={console};sandbox.globalThis=sandbox;vm.createContext(sandbox);vm.runInContext(source,sandbox,{filename:'stem-render-export-v214.js'});

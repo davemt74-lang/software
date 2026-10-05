@@ -16,9 +16,9 @@ require __DIR__ . '/stems-legacy-v108.php';
 $html = (string)ob_get_clean();
 
 $token = 'conversation-integration-v131-20260826';
-$transportToken = 'c4d304cb';
-$projectLoaderToken = 'd2a53ac3';
-$coreToken = '005a182d';
+$transportToken = 'c9d55f75';
+$projectLoaderToken = 'cace5655';
+$coreToken = 'f07e7f70';
 $editingToken = 'stem-editing-foundation-v209-20260901';
 $professionalEditingToken = 'stem-professional-editing-v210-20260901';
 $automationMixerToken = 'stem-automation-mixer-v211-20260901';

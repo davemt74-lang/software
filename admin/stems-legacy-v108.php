@@ -90,7 +90,7 @@ $canProduceTrack = can_manage_track_production(
     $track,
     $currentStudioUser
 );
-$fanPrivateMix = user_has_role('fan', $currentStudioUser) && !$canProduceTrack;
+$fanPrivateMix = user_has_role('fan', $currentStudioUser) && !$canProduceTrack && can_view_track($track,$currentStudioUser);
 
 if (!$canProduceTrack && !$fanPrivateMix) {
     http_response_code(403);
@@ -532,6 +532,9 @@ foreach ($stems as $stem) {
         'volume'=>(float)$stem['rpp_volume'],
         'pan'=>(float)$stem['rpp_pan'],
         'pluginChain'=>(static function($json): array { $decoded=json_decode((string)$json,true); return is_array($decoded)?$decoded:[]; })($stem['plugin_chain_json'] ?? ''),
+        'channels'=>max(1,(int)($stem['channels'] ?? 2)),
+        'sampleRate'=>max(8000,(int)($stem['sample_rate'] ?? 48000)),
+        'mediaVersion'=>hash('sha256',(string)$stem['file_path'] . ':' . (string)($stem['updated_at'] ?? '')),
         'url'=>url('/stem-media-v34.php?id=' . (int)$stem['id']),
     ];
 }

@@ -27,6 +27,8 @@ function waveform_error(string $message, int $status = 400): never
 
 function waveform_read_wav_layout(string $path): array
 {
+    $fileSize=@filesize($path);
+    if ($fileSize===false || $fileSize<44) throw new RuntimeException('WAV source is incomplete.');
     $handle = @fopen($path, 'rb');
 
     if (!$handle) {
@@ -64,8 +66,9 @@ function waveform_read_wav_layout(string $path): array
             $sizeData = unpack('Vsize',substr($chunkHeader,4,4));
             $chunkSize = (int)($sizeData['size'] ?? 0);
 
-            if ($chunkSize < 0) {
-                break;
+            $position=ftell($handle);
+            if ($chunkSize < 0 || $position===false || $position+$chunkSize>$fileSize) {
+                throw new RuntimeException('WAV chunk extends beyond its source file.');
             }
 
             if ($chunkId === 'fmt ') {
@@ -124,6 +127,13 @@ function waveform_read_wav_layout(string $path): array
             $dataBytes < 1
         ) {
             throw new RuntimeException('WAV layout is incomplete.');
+        }
+
+        $bytesPerSample=(int)ceil($bits/8);
+        if ($channels>64 || $sampleRate<8000 || $sampleRate>768000
+            || !($format===1 && in_array($bits,[8,16,24,32],true) || $format===3 && in_array($bits,[32,64],true))
+            || $blockAlign!==$channels*$bytesPerSample || $dataBytes%$blockAlign!==0) {
+            throw new RuntimeException('Unsupported or invalid WAV encoding.');
         }
 
         return [
@@ -234,6 +244,13 @@ function waveform_wav_peaks(string $path, int $points): array
             $step = max(1.0,$frameCount / $samplesPerBucket);
             $minValue = 0.0;
             $maxValue = 0.0;
+            $bucketBytes = $frameCount * $blockAlign;
+            $bucketData = null;
+            if ($bucketBytes <= 262144) {
+                fseek($handle,$dataOffset + $frameStart * $blockAlign,SEEK_SET);
+                $bucketData = fread($handle,$bucketBytes);
+                if (!is_string($bucketData)) $bucketData = null;
+            }
 
             for ($sampleIndex = 0; $sampleIndex < $samplesPerBucket; $sampleIndex++) {
                 $frame = min(
@@ -242,8 +259,12 @@ function waveform_wav_peaks(string $path, int $points): array
                 );
 
                 $offset = $dataOffset + ($frame * $blockAlign);
-                fseek($handle,$offset,SEEK_SET);
-                $frameBytes = fread($handle,$blockAlign);
+                if ($bucketData !== null) {
+                    $frameBytes = substr($bucketData,($frame-$frameStart)*$blockAlign,$blockAlign);
+                } else {
+                    fseek($handle,$offset,SEEK_SET);
+                    $frameBytes = fread($handle,$blockAlign);
+                }
 
                 if (!is_string($frameBytes) || strlen($frameBytes) < $bytesPerSample) {
                     continue;
@@ -331,6 +352,8 @@ if (!$track || (!can_manage_track_production($track) && !(user_has_role('fan') &
         403
     );
 }
+
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
 $relative = trim((string)$stem['file_path']);
 

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/stem-mix-storage.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -258,15 +259,12 @@ try {
         $mixId = max(0,(int)($_POST['mix_id'] ?? 0));
         $decoded = json_decode((string)($_POST['state_json'] ?? ''),true);
         if (!is_array($decoded)) throw new RuntimeException('Invalid MIDI snapshot.');
-        $row = midi_v217_mix_row($trackId,$mixId);
-        $mix = json_decode((string)$row['mix_json'],true);
-        if (!is_array($mix)) throw new RuntimeException('Saved mix data is damaged.');
-        $mix['midiV217'] = midi_v217_clean_state($decoded);
-        $json = json_encode($mix,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-        if (!is_string($json) || strlen($json) > 16777216) throw new RuntimeException('Saved session is too large to include MIDI.');
-        $stmt = $pdo->prepare('UPDATE stem_mix_saves SET mix_json=?,updated_at=NOW() WHERE id=? AND user_id=? AND track_id=?');
-        $stmt->execute([$json,$mixId,(int)(current_user()['id'] ?? 0),$trackId]);
-        midi_v217_json(['ok'=>true,'build'=>STONEFELLOW_MIDI_V217,'mix_id'=>$mixId,'state'=>$mix['midiV217']]);
+        $state=midi_v217_clean_state($decoded);
+        stem_mix_update_scoped($pdo,(int)(current_user()['id'] ?? 0),$trackId,$mixId,static function(array $mix) use ($state): array {
+            $mix['midiV217']=$state;
+            return $mix;
+        });
+        midi_v217_json(['ok'=>true,'build'=>STONEFELLOW_MIDI_V217,'mix_id'=>$mixId,'state'=>$state]);
     }
 
     if ($action === 'snapshot_load') {

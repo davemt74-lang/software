@@ -2221,14 +2221,15 @@ try {
                         file_path=?,channels=?,sample_rate=?,bit_depth=?,
                         duration_seconds=?,start_offset_seconds=?,rpp_volume=1,
                         rpp_pan=0,rpp_fx_summary=?,updated_at=NOW()
-                     WHERE id=? AND track_id=?'
+                     WHERE id=? AND track_id=? AND is_active=1 AND file_path=?'
                 );
                 $updateStem->execute([
                     $trackName,$captureRole,$trackName,$fileName,$relativePath,
                     $channels,$sampleRate,16,$durationSeconds,
                     (float)$state['start_offset'],$summary,
-                    (int)$replaceTarget['id'],$trackId,
+                    (int)$replaceTarget['id'],$trackId,$replaceOldPath,
                 ]);
+                if ($updateStem->rowCount()!==1) throw new RuntimeException('Recording target changed. Retry without replacing the newer audio.');
                 $stemId = (int)$replaceTarget['id'];
             }
 

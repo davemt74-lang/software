@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 
 const footer=fs.readFileSync('admin/_footer.php','utf8');
-const core=fs.readFileSync('admin/stems-v108.js','utf8');
+const core=fs.readFileSync('admin/stem-editor.js','utf8');
 const midi=fs.readFileSync('admin/stem-midi-v217.js','utf8');
 const composition=fs.readFileSync('admin/stem-midi-composition-v218.js','utf8');
 const hardening=fs.readFileSync('admin/stem-midi-composition-v218-hardening.js','utf8');
 
-for(const file of ['admin/stems-v108.js','admin/stem-midi-v217.js','admin/stem-midi-composition-v218.js','admin/stem-midi-composition-v218-hardening.js','admin/stem-virtual-midi-keyboard-v219.js']) {
+for(const file of ['admin/stem-editor.js','admin/stem-midi-v217.js','admin/stem-midi-composition-v218.js','admin/stem-midi-composition-v218-hardening.js','admin/stem-virtual-midi-keyboard-v219.js']) {
   execFileSync(process.execPath,['--check',file],{stdio:'pipe'});
 }
 

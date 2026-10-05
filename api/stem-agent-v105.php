@@ -9,7 +9,7 @@ if(!$user||!$pdo){http_response_code(403);echo json_encode(['ok'=>false,'error'=
 $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$input=$_POST;
 if(!hash_equals(csrf_token(),(string)($input['csrf_token']??''))){http_response_code(419);echo json_encode(['ok'=>false,'error'=>'Session expired.']);exit;}
 $trackId=(int)($input['track_id']??0);$track=get_track_by_id($trackId);
-if(!$track||!agent_tool_can_studio($track,$user)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'This Stem Studio project is not available to your account.']);exit;}
+if(!$track||!can_view_track($track,$user)||!agent_tool_can_studio($track,$user)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'This Stem Studio project is not available to your account.']);exit;}
 if(!table_exists('agent_studio_sessions')||!table_exists('agent_studio_history')){http_response_code(503);echo json_encode(['ok'=>false,'error'=>'Run the v84 database upgrade first.']);exit;}
 
 function stem_agent_v105_json(bool $ok,array $extra=[],int $status=200): never{http_response_code($status);echo json_encode(['ok'=>$ok]+$extra,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}

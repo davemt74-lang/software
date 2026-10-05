@@ -796,6 +796,10 @@ if (!$track) {
     stem_upload_json(['ok'=>false,'error'=>'Track not found.'], 404);
 }
 
+if (!can_manage_track_production($track,$user)) {
+    stem_upload_json(['ok'=>false,'error'=>'This project is not available for production changes.'],403);
+}
+
 try {
     stem_cleanup_stale_uploads();
     $dir = stem_upload_root($userId, $uploadId);

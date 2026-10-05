@@ -95,7 +95,7 @@ for(let index=1;index<analysis.length;index++)if(analysis[index-1]<=0&&analysis[
 const measuredHz=crossings/(analysis.length/48000);
 assert.ok(measuredHz>350&&measuredHz<550,`Expected preserved pitch near 440 Hz, received ${measuredHz}`);
 
-const studio=fs.readFileSync('admin/stems-v108.js','utf8');
+const studio=fs.readFileSync('admin/stem-editor.js','utf8');
 const page=fs.readFileSync('admin/stems-legacy-v108.php','utf8');
 assert.match(studio,/StonefellowStemTimeStretchV203/);
 assert.match(studio,/prepareTimeStretchTransport/);

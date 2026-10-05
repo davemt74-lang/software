@@ -136,8 +136,8 @@ function stem_v213_reconcile(PDO $pdo, int $trackId, int $hours = 168): array
         }
 
         if ((string)($row['created_at'] ?? '') >= $threshold) continue;
-        $delete = $pdo->prepare('DELETE FROM track_stems WHERE id=? AND track_id=? AND rpp_fx_summary LIKE ?');
-        $delete->execute([(int)$row['id'],$trackId,'%V213 take archive:%']);
+        $delete = $pdo->prepare('DELETE FROM track_stems WHERE id=? AND track_id=? AND rpp_fx_summary=?');
+        $delete->execute([(int)$row['id'],$trackId,$summary]);
         if ($delete->rowCount() > 0) {
             stem_v213_remove_take_file($row);
             $cleaned++;
@@ -283,15 +283,16 @@ try {
         if (stripos((string)$take['rpp_fx_summary'],$marker) === false) throw new RuntimeException('Committed takes cannot be removed by recording cleanup.');
         $pdo->beginTransaction();
         try {
-            $delete = $pdo->prepare('DELETE FROM track_stems WHERE id=? AND track_id=?');
-            $delete->execute([$takeStemId,$trackId]);
+            $delete = $pdo->prepare('DELETE FROM track_stems WHERE id=? AND track_id=? AND rpp_fx_summary=?');
+            $delete->execute([$takeStemId,$trackId,(string)$take['rpp_fx_summary']]);
+            $removed = $delete->rowCount() > 0;
             $pdo->commit();
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             throw $e;
         }
-        stem_v213_remove_take_file($take);
-        stem_v213_json(['ok'=>true,'cleaned'=>true,'take_stem_id'=>$takeStemId,'recording_id'=>$recordingId]);
+        if ($removed) stem_v213_remove_take_file($take);
+        stem_v213_json(['ok'=>true,'cleaned'=>$removed,'take_stem_id'=>$takeStemId,'recording_id'=>$recordingId]);
     }
 
     stem_v213_error('Unknown recording take action.',404);

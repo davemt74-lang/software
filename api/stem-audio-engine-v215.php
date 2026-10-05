@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/stem-mix-storage.php';
 require_permission('chat.access');
 
 header('Content-Type: application/json; charset=utf-8');
@@ -164,16 +165,14 @@ try {
 
     if ($action === 'save_mix_engine') {
         $mixId = max(0,(int)($_POST['mix_id'] ?? 0));
-        $row = stem_v215_mix_row($trackId,$mixId);
-        $mix = json_decode((string)$row['mix_json'],true);
-        if (!is_array($mix)) throw new RuntimeException('Saved mix data is damaged.');
         $incoming = json_decode((string)($_POST['engine_json'] ?? ''),true);
-        $mix['engineV215'] = stem_v215_engine_state($incoming);
-        $json = json_encode($mix,JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        if (!is_string($json) || strlen($json) > 16777216) throw new RuntimeException('Saved mix state is too large.');
-        $stmt = $pdo->prepare('UPDATE stem_mix_saves SET mix_json=?,updated_at=NOW() WHERE id=? AND user_id=? AND track_id=?');
-        $stmt->execute([$json,$mixId,(int)(current_user()['id'] ?? 0),$trackId]);
-        stem_v215_json(['ok'=>true,'mix_id'=>$mixId,'has_engine'=>true,'engine'=>$mix['engineV215']]);
+        if (!is_array($incoming)) throw new RuntimeException('Invalid audio engine snapshot.');
+        $engine=stem_v215_engine_state($incoming);
+        stem_mix_update_scoped($pdo,(int)(current_user()['id'] ?? 0),$trackId,$mixId,static function(array $mix) use ($engine): array {
+            $mix['engineV215']=$engine;
+            return $mix;
+        });
+        stem_v215_json(['ok'=>true,'mix_id'=>$mixId,'has_engine'=>true,'engine'=>$engine]);
     }
 
     if ($action === 'load_mix_engine') {

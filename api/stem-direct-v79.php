@@ -130,7 +130,22 @@ function direct_stem_load_state(string $dir): array
         throw new RuntimeException('Direct stem upload state is damaged.');
     }
 
+    global $trackId,$userId;
+    if ((int)($state['track_id'] ?? 0) !== (int)$trackId || (int)($state['user_id'] ?? 0) !== (int)$userId) {
+        throw new RuntimeException('Upload session belongs to a different project or account.');
+    }
     return $state;
+}
+
+function direct_stem_active_revision(array $rows): string
+{
+    $version=array_map(static fn(array $row): array => [
+        'id'=>(int)$row['id'],
+        'path'=>(string)($row['file_path'] ?? ''),
+        'updated'=>(string)($row['updated_at'] ?? ''),
+    ],$rows);
+    usort($version,static fn(array $a,array $b): int => $a['id'] <=> $b['id']);
+    return hash('sha256',json_encode($version,JSON_THROW_ON_ERROR));
 }
 
 function direct_stem_save_state(string $dir, array $state): void
@@ -554,6 +569,10 @@ $track = $stmt ? $stmt->fetch() : false;
 
 if (!$track) {
     direct_stem_json(['ok'=>false,'error'=>'Track not found.'], 404);
+}
+
+if (!can_manage_track_production($track,$user)) {
+    direct_stem_json(['ok'=>false,'error'=>'This project is not available for production changes.'],403);
 }
 
 try {
@@ -1280,13 +1299,7 @@ try {
             throw new RuntimeException('Save session is not open.');
         }
 
-        // The only DB setup request. It is intentionally isolated so a host
-        // failure here cannot be confused with parsing or file movement.
-        $pdo->prepare(
-            'DELETE FROM track_stems
-             WHERE track_id=? AND is_active=0'
-        )->execute([$trackId]);
-
+        // Each upload owns only its own inactive rows.
         $existingProject = stem_project_for_track($trackId);
         $rppInfo = $state['rpp_info'] ?? [];
 
@@ -1341,6 +1354,9 @@ try {
         }
 
         $oldStems = stems_for_track($trackId);
+        $save['active_stem_ids'] = array_map(static fn(array $row): int => (int)$row['id'],$oldStems);
+        $save['active_stem_revision'] = direct_stem_active_revision($oldStems);
+        $save['new_stem_ids'] = [];
         foreach ($oldStems as $oldStem) {
             if (!empty($oldStem['file_path'])) {
                 $save['old_paths'][] =
@@ -1644,6 +1660,7 @@ try {
         }
 
         $save['new_paths'][] = (string)$pending['relative'];
+        $save['new_stem_ids'][] = (int)$pending['id'];
         $save['max_end'] = max(
             (float)($save['max_end'] ?? 0),
             (float)$pending['offset'] + (float)$pending['duration']
@@ -1693,6 +1710,18 @@ try {
         $pdo->beginTransaction();
 
         try {
+            $lock=$pdo->prepare('SELECT id FROM tracks WHERE id=? FOR UPDATE');
+            $lock->execute([$trackId]);
+            if (!$lock->fetchColumn()) throw new RuntimeException('Track no longer exists.');
+            $active=$pdo->prepare('SELECT id,file_path,updated_at FROM track_stems WHERE track_id=? AND is_active=1 ORDER BY id FOR UPDATE');
+            $active->execute([$trackId]);
+            $before=array_map('intval',$save['active_stem_ids'] ?? []);sort($before);
+            $activeRows=$active->fetchAll();
+            $current=array_map(static fn(array $row): int => (int)$row['id'],$activeRows);sort($current);
+            if ((string)($save['active_stem_revision'] ?? '')!==direct_stem_active_revision($activeRows)) throw new RuntimeException('Project media was edited during import. Reload and retry.');
+            if ($before!==$current) throw new RuntimeException('Project media changed during import. Reload and retry to preserve the newer audio.');
+            $newIds=array_values(array_unique(array_map('intval',$save['new_stem_ids'] ?? [])));
+            if (count($newIds)!==$total) throw new RuntimeException('Staged import rows are incomplete.');
             if (!empty($save['had_existing_project'])) {
                 $stmt = $pdo->prepare(
                     'UPDATE track_projects
@@ -1726,14 +1755,11 @@ try {
                      WHERE track_id=? AND is_active=1'
                 )->execute([$trackId]);
 
-                $pdo->prepare(
-                    'UPDATE track_stems
-                     SET is_active=1
-                     WHERE track_id=? AND project_id=? AND is_active=0'
-                )->execute([
-                    $trackId,
-                    $projectId,
-                ]);
+                $activate=$pdo->prepare('UPDATE track_stems SET is_active=1 WHERE id=? AND track_id=? AND project_id=? AND is_active=0');
+                foreach ($newIds as $newId) {
+                    $activate->execute([$newId,$trackId,$projectId]);
+                    if ($activate->rowCount()!==1) throw new RuntimeException('Staged stem disappeared. Retry the import.');
+                }
             }
 
             $reviewTrack = is_array($state['review']['track'] ?? null)
@@ -1837,18 +1863,13 @@ try {
                     ]);
                 }
 
-                $pdo->prepare(
-                    'DELETE FROM track_stems
-                     WHERE track_id=? AND project_id=? AND is_active=0'
-                )->execute([
-                    $trackId,
-                    (int)($save['project_id'] ?? 0),
-                ]);
+                $remove=$pdo->prepare('DELETE FROM track_stems WHERE id=? AND track_id=? AND is_active=0');
+                foreach (($save['new_stem_ids'] ?? []) as $newId) $remove->execute([(int)$newId,$trackId]);
 
                 if (!empty($save['created_project'])) {
                     $countStmt = $pdo->prepare(
                         'SELECT COUNT(*) FROM track_stems
-                         WHERE project_id=? AND is_active=1'
+                         WHERE project_id=?'
                     );
                     $countStmt->execute([
                         (int)($save['project_id'] ?? 0),

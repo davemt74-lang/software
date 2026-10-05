@@ -6,8 +6,9 @@ import {execFileSync} from 'node:child_process';
 const source=fs.readFileSync('admin/stem-session-safety-v216.js','utf8');
 const css=fs.readFileSync('admin/stem-session-safety-v216.css','utf8');
 const endpoint=fs.readFileSync('api/stem-session-v216.php','utf8');
+const storage=fs.readFileSync('includes/stem-mix-storage.php','utf8');
 const wrapper=fs.readFileSync('admin/stems.php','utf8');
-const core=fs.readFileSync('admin/stems-v108.js','utf8');
+const core=fs.readFileSync('admin/stem-editor.js','utf8');
 const v211=fs.readFileSync('admin/stem-automation-mixer-v211.js','utf8');
 const v215Hardening=fs.readFileSync('admin/stem-audio-engine-v215-hardening.js','utf8');
 
@@ -83,7 +84,8 @@ assert.match(endpoint,/pluginAutomation/);
 assert.match(endpoint,/array_slice\(\$ids,20\)/,'checkpoint retention must be capped at twenty');
 assert.match(endpoint,/LEFT\(mix_name,20\)=\?/,'checkpoint lookup must not use SQL wildcard semantics for the reserved prefix');
 assert.match(endpoint,/LEFT\(mix_name,7\)=\?/,'reserved-session index must not use SQL wildcard semantics for underscores');
-assert.match(endpoint,/16777216/,'session JSON must remain capped');
+assert.match(endpoint,/stem_mix_update_scoped/,'session writes must use canonical owned storage');
+assert.match(storage,/strlen\(\$json\)>16777216/,'session JSON must remain capped by canonical storage');
 assert.match(endpoint,/delete_checkpoint/);
 assert.doesNotMatch(endpoint,/ALTER TABLE|CREATE TABLE/,'v216 must require no schema migration');
 

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/stem-mix-storage.php';
 require_permission('chat.access');
 
 header('Content-Type: application/json; charset=utf-8');
@@ -164,15 +165,12 @@ function stem_v216_write_session(int $trackId, int $mixId, array $payload): arra
 {
     $pdo = db();
     $userId = (int)(current_user()['id'] ?? 0);
-    $row = stem_v216_mix_row($trackId,$mixId);
-    $mix = json_decode((string)$row['mix_json'],true);
-    if (!is_array($mix)) throw new RuntimeException('Saved mix data is damaged.');
-    $mix['sessionV216'] = stem_v216_session_payload($payload);
-    $json = json_encode($mix,JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    if (!is_string($json) || strlen($json) > 16777216) throw new RuntimeException('Session state is too large.');
-    $stmt = $pdo->prepare('UPDATE stem_mix_saves SET mix_json=?,updated_at=NOW() WHERE id=? AND user_id=? AND track_id=?');
-    $stmt->execute([$json,$mixId,$userId,$trackId]);
-    return ['row'=>$row,'session'=>$mix['sessionV216']];
+    $session=stem_v216_session_payload($payload);
+    $written=stem_mix_update_scoped($pdo,$userId,$trackId,$mixId,static function(array $mix) use ($session): array {
+        $mix['sessionV216']=$session;
+        return $mix;
+    });
+    return ['row'=>$written['row'],'session'=>$session];
 }
 
 function stem_v216_read_session(array $row): ?array
