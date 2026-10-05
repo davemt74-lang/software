@@ -11,7 +11,7 @@ const approvals=read('includes/homeserver-approvals-v028.php');
 const legacy=read('includes/homeserver-vp3.php');
 const bootstrap=read('includes/bootstrap.php');
 const api=read('api/homeserver-contacts-v241.php');
-const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
+const workflow=read('.github/workflows/recovery-baseline.yml');
 const setup=read('setup.php');
 const upgrade=read('upgrade.php');
 
@@ -34,7 +34,7 @@ const checks=[
  ['shared snapshot uses typed v2.4 contact records instead of legacy generic loops',/homeserver_contacts_v241_snapshot_records/.test(shared)&&!/profile_visitor_contact_list_v243\(\$pdo,\$userId,80\)/.test(shared)],
  ['contact mutation API requires account/chat access and CSRF',/account\.access/.test(api)&&/chat\.access/.test(api)&&/hash_equals\(csrf_token\(\)/.test(api)],
  ['contact mutation API accepts only create update delete through the authority router',/homeserver_contacts_v241_mutate/.test(api)&&/\['update','delete'\]/.test(api)&&/mutation_id/.test(api)&&/expected_revision/.test(api)],
- ['runtime journey lints and executes Section 2 contract/unit tests',/homeserver-v241-contacts-continuity-contract\.mjs/.test(workflow)&&/homeserver-v241-contacts-continuity-unit\.php/.test(workflow)],
+ ['recovery baseline lints and executes Section 2 contract/unit tests',/homeserver-v241-contacts-continuity-contract\.mjs/.test(workflow)&&/homeserver-v241-contacts-continuity-unit\.php/.test(workflow)],
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}

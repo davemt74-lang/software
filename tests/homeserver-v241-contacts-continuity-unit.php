@@ -28,6 +28,7 @@ function db(): PDO
       status TEXT NOT NULL DEFAULT 'active',lifecycle_stage TEXT NOT NULL DEFAULT '',
       marketing_status TEXT NOT NULL DEFAULT 'unknown',created_at TEXT,updated_at TEXT
     )");
+    $pdo->exec("CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER NOT NULL);INSERT INTO users VALUES(7,1),(8,1)");
     return $pdo;
 }
 

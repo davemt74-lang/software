@@ -11,22 +11,26 @@ $attendeeRaw=(string)($_POST['video_attendees']??'');$videoRequested=$linkedMeet
 if($_SERVER['REQUEST_METHOD']==='POST'){
  if(!verify_csrf())$error='Session expired. Please try again.';else try{
   $action=trim((string)($_POST['action']??'save'));
+  $mutationId=trim((string)($_POST['mutation_id']??''));
+  if($mutationId!==''&&!preg_match('/^[A-Za-z0-9_.:-]{8,128}$/',$mutationId))throw new RuntimeException('Invalid event retry identifier. Reload the editor.');
   if($action==='cancel'){
    if(!$event)throw new RuntimeException('Calendar event could not be removed.');
    $cancelledMeeting=null;$pdo->beginTransaction();
    try{
+    section12_lock_owner($pdo,$userId);
     if($linkedMeeting&&$manualMeetingReady)$cancelledMeeting=video_meeting_manual_cancel_event_v1830($pdo,$user,$event);
-    if(!user_calendar_cancel_event_v1300($pdo,$user,$eventId))throw new RuntimeException('Calendar event could not be removed.');
+    if(!user_calendar_cancel_event_v1300($pdo,$user,$eventId,isset($_POST['expected_revision'])?(string)$_POST['expected_revision']:null))throw new RuntimeException('Calendar event could not be removed.');
     $pdo->commit();
    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
    if($cancelledMeeting)video_meeting_manual_after_cancel_v1830($pdo,$cancelledMeeting);
    agent_tool_log($user,'calendar.event.cancel','Calendar event editor','success',['event_id'=>$eventId,'video_meeting_id'=>(int)($cancelledMeeting['id']??0)]);redirect(url('/calendar.php?month='.rawurlencode(substr((string)$parts['date'],0,7)).'&saved='.rawurlencode('Event removed.')));
   }
-  $input=['title'=>(string)($_POST['title']??''),'description'=>(string)($_POST['description']??''),'location'=>(string)($_POST['location']??''),'date'=>(string)($_POST['date']??''),'start_time'=>(string)($_POST['start_time']??''),'end_date'=>(string)($_POST['end_date']??''),'end_time'=>(string)($_POST['end_time']??''),'timezone'=>(string)($_POST['timezone']??$defaultTimezone),'all_day'=>!empty($_POST['all_day'])];
+  $input=['expected_revision'=>(string)($_POST['expected_revision']??''),'title'=>(string)($_POST['title']??''),'description'=>(string)($_POST['description']??''),'location'=>(string)($_POST['location']??''),'date'=>(string)($_POST['date']??''),'start_time'=>(string)($_POST['start_time']??''),'end_date'=>(string)($_POST['end_date']??''),'end_time'=>(string)($_POST['end_time']??''),'timezone'=>(string)($_POST['timezone']??$defaultTimezone),'all_day'=>!empty($_POST['all_day'])];
   $videoRequested=$linkedMeeting||!empty($_POST['add_video_meeting']);$manualResult=null;$pdo->beginTransaction();
   try{
+   section12_lock_owner($pdo,$userId);
    if($event){$saved=user_calendar_update_event_v1300($pdo,$user,$eventId,$input);$message='Event updated.';}
-   else{$saved=user_calendar_create_local_event_v1300($pdo,$user,$input,'user');$message='Event added to your calendar.';}
+   else{$saved=user_calendar_create_local_event_v1300($pdo,$user,$input,'user',null,$mutationId!==''?'form:'.$mutationId:'');$message='Event added to your calendar.';}
    if($videoRequested){
     if(!$manualMeetingReady)throw new RuntimeException('Manual Video Meetings need the current VP3 database upgrade before this event can be saved as a video meeting.');
     $attendees=video_meeting_manual_parse_attendees_v1830($attendeeRaw);
@@ -64,7 +68,7 @@ foreach($meetingParticipants as $participant){
 <?php $memberHeaderUser=$user;$memberHeaderTitle=$event?'Edit calendar event':'New calendar event';$memberHeaderSubtitle='Personal events, meetings, reminders + Agent-managed time';$memberHeaderActions='<a class="calendar-button" href="'.e(url('/calendar.php')).'">← Calendar</a>';require __DIR__.'/includes/member-header.php'; ?>
 <section class="calendar-canvas"><div class="calendar-form-shell"><?php if($notice!==''): ?><div class="calendar-notice success"><?= e($notice) ?></div><?php endif; ?><?php if($error!==''): ?><div class="calendar-notice error" role="alert"><?= e($error) ?></div><?php endif; ?><div class="calendar-help"><strong>Calendar event</strong> — create private time or turn this event into a VP3 video meeting. For a public appointment people can book themselves, use <a href="<?= e(url('/scheduling-type.php')) ?>">Scheduling → New appointment type</a>.</div>
 <div class="calendar-form-card"><h1><?= $event?'Edit event':'Create event' ?></h1><p><?= $event?'Update the event and its linked VP3 meeting in one place.':'Add personal time or create a VP3 video meeting and invite members or guests.' ?></p>
-<form method="post" class="calendar-form" id="calendarEventForm"><?= csrf_field() ?><input type="hidden" name="action" value="save"><input type="hidden" name="event_id" value="<?= $eventId ?>">
+<form method="post" class="calendar-form" id="calendarEventForm"><?= csrf_field() ?><input type="hidden" name="expected_revision" value="<?= e($event?section12_revision($event):'') ?>"><input type="hidden" name="mutation_id" value="<?= e((string)($_POST['mutation_id']??bin2hex(random_bytes(16)))) ?>"><input type="hidden" name="action" value="save"><input type="hidden" name="event_id" value="<?= $eventId ?>">
 <label class="span-2"><span>Event title</span><input name="title" maxlength="190" required value="<?= e($titleValue) ?>" placeholder="Project review"></label>
 <label><span>Date</span><input type="date" name="date" required value="<?= e((string)$parts['date']) ?>"></label><label class="checkline"><input type="checkbox" name="all_day" value="1" <?= !empty($parts['all_day'])?'checked':'' ?>><span>All-day event</span></label>
 <label><span>Start time</span><input type="time" name="start_time" value="<?= e((string)$parts['start_time']) ?>"></label><label><span>End time</span><input type="time" name="end_time" value="<?= e((string)$parts['end_time']) ?>"></label>
@@ -77,5 +81,5 @@ foreach($meetingParticipants as $participant){
 <?php if($guestAccessMode==='email_gate'&&$publicGuestUrl!==''): ?><label style="display:block;margin-top:12px"><span>Public guest meeting link</span><div style="display:flex;gap:8px"><input readonly value="<?= e($publicGuestUrl) ?>"><button class="calendar-button" type="button" data-copy-value="<?= e($publicGuestUrl) ?>">Copy</button></div></label><?php endif; ?>
 <?php if($participantViews): ?><div style="display:grid;gap:8px;margin-top:12px"><?php foreach($participantViews as $view): ?><div class="calendar-help" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><strong><?= e($view['name']!==''?$view['name']:$view['email']) ?></strong><?php if($view['name']!==''&&$view['email']!==''): ?><br><span><?= e($view['email']) ?></span><?php endif; ?><br><small><?= $view['member']?'VP3 member · native notification/calendar':'Guest'.($guestAccessMode==='email_gate'?' · public link + invited email':' · private invite') ?></small></div><?php if(!$view['member']&&$view['invite_url']!==''): ?><button class="calendar-button" type="button" data-copy-value="<?= e($view['invite_url']) ?>">Copy private invite</button><?php endif; ?></div><?php endforeach; ?></div><?php endif; ?>
 <?php if($shareError!==''): ?><div class="calendar-notice error" style="margin-top:12px"><?= e($shareError) ?></div><?php endif; ?><?php endif; ?>
-<?php if($event): ?><form method="post" style="margin-top:18px" onsubmit="return confirm('Remove this event from your calendar<?= $linkedMeeting?' and cancel its VP3 meeting':'' ?>?')"><?= csrf_field() ?><input type="hidden" name="action" value="cancel"><input type="hidden" name="event_id" value="<?= $eventId ?>"><button class="calendar-danger" type="submit">Remove event<?= $linkedMeeting?' + cancel meeting':'' ?></button></form><?php endif; ?>
+<?php if($event): ?><form method="post" style="margin-top:18px" onsubmit="return confirm('Remove this event from your calendar<?= $linkedMeeting?' and cancel its VP3 meeting':'' ?>?')"><?= csrf_field() ?><input type="hidden" name="expected_revision" value="<?= e($event?section12_revision($event):'') ?>"><input type="hidden" name="mutation_id" value="<?= e((string)($_POST['mutation_id']??bin2hex(random_bytes(16)))) ?>"><input type="hidden" name="action" value="cancel"><input type="hidden" name="event_id" value="<?= $eventId ?>"><button class="calendar-danger" type="submit">Remove event<?= $linkedMeeting?' + cancel meeting':'' ?></button></form><?php endif; ?>
 </div></div></section></main></div><script src="<?= e(url('/member-shell-v77.js?v=20260911')) ?>"></script><script>(function(){const box=document.getElementById('addVideoMeeting'),opts=document.getElementById('videoMeetingOptions');if(box&&opts&&!box.disabled)box.addEventListener('change',()=>{opts.hidden=!box.checked});document.querySelectorAll('[data-copy-value]').forEach(button=>button.addEventListener('click',async()=>{const value=button.getAttribute('data-copy-value')||'';try{await navigator.clipboard.writeText(value);const old=button.textContent;button.textContent='Copied';setTimeout(()=>button.textContent=old,1500)}catch(e){window.prompt('Copy this meeting link:',value)}}))})();</script></body></html>

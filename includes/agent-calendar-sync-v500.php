@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/section12-data.php';
 
 /**
  * VP3 Agent Calendar Sync v5.00
@@ -212,6 +213,9 @@ function agent_calendar_sync_disconnect_v500(PDO $pdo,array $user,int $connectio
 
 function agent_calendar_sync_refresh_v500(PDO $pdo,array $connection): array
 {
+    $current=agent_calendar_sync_connection_v500($pdo,(int)$connection['owner_user_id'],(int)$connection['id']);
+    if(!$current||(string)$current['status']==='disconnected'||!hash_equals((string)$current['access_token_ciphertext'],(string)$connection['access_token_ciphertext']))throw new RuntimeException('Calendar connection changed. Refresh before syncing.');
+    $connection=$current;
     $expires=strtotime((string)($connection['token_expires_at']??''))?:0;if($expires>time()+120)return $connection;
     $refresh=agent_calendar_sync_decrypt_v500((string)($connection['refresh_token_ciphertext']??''));if($refresh==='')throw new RuntimeException('Calendar access expired and no refresh token is available. Reconnect the calendar.');
     $provider=(string)$connection['provider'];$cfg=agent_calendar_sync_config_v500();
@@ -219,19 +223,24 @@ function agent_calendar_sync_refresh_v500(PDO $pdo,array $connection): array
     else{$tenant=preg_replace('/[^A-Za-z0-9._-]/','',(string)$cfg['microsoft']['tenant'])?:'common';$token=agent_calendar_sync_http_v500('POST','https://login.microsoftonline.com/'.$tenant.'/oauth2/v2.0/token',[],['client_id'=>$cfg['microsoft']['client_id'],'client_secret'=>$cfg['microsoft']['client_secret'],'refresh_token'=>$refresh,'grant_type'=>'refresh_token','scope'=>'openid profile email offline_access User.Read Calendars.ReadWrite'],true)['json'];}
     $access=trim((string)($token['access_token']??''));if($access==='')throw new RuntimeException('Calendar provider did not return a refreshed access token.');$nextRefresh=trim((string)($token['refresh_token']??''))?:$refresh;$expiresAt=date('Y-m-d H:i:s',time()+max(300,(int)($token['expires_in']??3600)));
     $accessCipher=agent_calendar_sync_encrypt_v500($access);$refreshCipher=agent_calendar_sync_encrypt_v500($nextRefresh);
-    $pdo->prepare("UPDATE agent_calendar_connections SET access_token_ciphertext=?,refresh_token_ciphertext=?,token_expires_at=?,status='connected',last_error='' WHERE id=? AND owner_user_id=?")->execute([$accessCipher,$refreshCipher,$expiresAt,(int)$connection['id'],(int)$connection['owner_user_id']]);
+    $saved=$pdo->prepare("UPDATE agent_calendar_connections SET access_token_ciphertext=?,refresh_token_ciphertext=?,token_expires_at=?,status='connected',last_error='' WHERE id=? AND owner_user_id=? AND status<>'disconnected' AND access_token_ciphertext=? AND COALESCE(refresh_token_ciphertext,'')=?");
+    $saved->execute([$accessCipher,$refreshCipher,$expiresAt,(int)$connection['id'],(int)$connection['owner_user_id'],(string)$connection['access_token_ciphertext'],(string)($connection['refresh_token_ciphertext']??'')]);
+    if($saved->rowCount()!==1)throw new RuntimeException('Calendar connection changed during refresh.');
     $connection['access_token_ciphertext']=$accessCipher;$connection['refresh_token_ciphertext']=$refreshCipher;$connection['token_expires_at']=$expiresAt;$connection['status']='connected';return $connection;
 }
 function agent_calendar_sync_api_v500(PDO $pdo,array $connection,string $method,string $url,mixed $body=null,array $headers=[]): array
 {
-    $connection=agent_calendar_sync_refresh_v500($pdo,$connection);$token=agent_calendar_sync_decrypt_v500((string)$connection['access_token_ciphertext']);if($token==='')throw new RuntimeException('Calendar access token is unavailable.');
+    $connection=agent_calendar_sync_refresh_v500($pdo,$connection);
+    $writing=strtoupper($method)!=='GET'&&!str_ends_with(parse_url($url,PHP_URL_PATH)?:'', '/freeBusy');
+    if($writing&&empty($connection['write_enabled']))throw new RuntimeException('Calendar event write access is disabled.');
+    $token=agent_calendar_sync_decrypt_v500((string)$connection['access_token_ciphertext']);if($token==='')throw new RuntimeException('Calendar access token is unavailable.');
     return agent_calendar_sync_http_v500($method,$url,array_merge(['Authorization: Bearer '.$token,'Accept: application/json'],$headers),$body,false);
 }
 
 function agent_calendar_sync_replace_busy_v500(PDO $pdo,int $connectionId,array $blocks): void
 {
     $started=!$pdo->inTransaction();if($started)$pdo->beginTransaction();
-    try{$pdo->prepare('DELETE FROM agent_calendar_busy_blocks WHERE connection_id=?')->execute([$connectionId]);$insert=$pdo->prepare('INSERT IGNORE INTO agent_calendar_busy_blocks (connection_id,external_event_key,start_at_utc,end_at_utc) VALUES (?,?,?,?)');foreach($blocks as $block){$start=(string)($block['start_at_utc']??'');$end=(string)($block['end_at_utc']??'');if($start===''||$end===''||$end<=$start)continue;$insert->execute([$connectionId,hash('sha256',(string)($block['key']??$connectionId.'|'.$start.'|'.$end)),$start,$end]);}if($started)$pdo->commit();}
+    try{$lock=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':'';$check=$pdo->prepare('SELECT status,sync_enabled FROM agent_calendar_connections WHERE id=?'.$lock);$check->execute([$connectionId]);$current=$check->fetch();if(!$current||(string)$current['status']==='disconnected'||empty($current['sync_enabled']))throw new RuntimeException('Calendar sync is disconnected.');$pdo->prepare('DELETE FROM agent_calendar_busy_blocks WHERE connection_id=?')->execute([$connectionId]);$insert=$pdo->prepare('INSERT IGNORE INTO agent_calendar_busy_blocks (connection_id,external_event_key,start_at_utc,end_at_utc) VALUES (?,?,?,?)');foreach($blocks as $block){$start=(string)($block['start_at_utc']??'');$end=(string)($block['end_at_utc']??'');if($start===''||$end===''||$end<=$start)continue;$insert->execute([$connectionId,hash('sha256',(string)($block['key']??$connectionId.'|'.$start.'|'.$end)),$start,$end]);}if($started)$pdo->commit();}
     catch(Throwable $e){if($started&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 function agent_calendar_sync_busy_google_v500(PDO $pdo,array $connection,string $timeMin,string $timeMax): array
@@ -248,7 +257,7 @@ function agent_calendar_sync_busy_v500(PDO $pdo,array $connection): array
 {
     if((string)($connection['status']??'')==='disconnected'||empty($connection['sync_enabled']))return [];$timeMin=(new DateTimeImmutable('-1 day',new DateTimeZone('UTC')))->format(DATE_ATOM);$timeMax=(new DateTimeImmutable('+400 days',new DateTimeZone('UTC')))->format(DATE_ATOM);
     $blocks=(string)$connection['provider']==='google'?agent_calendar_sync_busy_google_v500($pdo,$connection,$timeMin,$timeMax):agent_calendar_sync_busy_microsoft_v500($pdo,$connection,$timeMin,$timeMax);agent_calendar_sync_replace_busy_v500($pdo,(int)$connection['id'],$blocks);
-    $pdo->prepare("UPDATE agent_calendar_connections SET last_synced_at=NOW(),status='connected',last_error='' WHERE id=? AND owner_user_id=?")->execute([(int)$connection['id'],(int)$connection['owner_user_id']]);return $blocks;
+    $pdo->prepare("UPDATE agent_calendar_connections SET last_synced_at=NOW(),status='connected',last_error='' WHERE id=? AND owner_user_id=? AND status<>'disconnected' AND sync_enabled=1")->execute([(int)$connection['id'],(int)$connection['owner_user_id']]);return $blocks;
 }
 function agent_calendar_sync_error_v500(PDO $pdo,array $connection,Throwable $e): void{$pdo->prepare("UPDATE agent_calendar_connections SET status=CASE WHEN status='disconnected' THEN status ELSE 'error' END,last_error=? WHERE id=? AND owner_user_id=?")->execute([mb_strimwidth($e->getMessage(),0,1000,'…'),(int)$connection['id'],(int)$connection['owner_user_id']]);}
 

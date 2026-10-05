@@ -22,8 +22,8 @@ assert.match(migration, /CREATE TABLE IF NOT EXISTS user_calendar_events/);
 assert.match(service, /FROM agent_scheduling_bookings b/);
 assert.doesNotMatch(service, /INSERT INTO agent_scheduling_bookings/);
 assert.match(service, /'user','agent','automation'/);
-assert.match(service, /source === 'automation'.*sourceReference/s);
-assert.match(service, /SELECT \* FROM user_calendar_events WHERE owner_user_id=\? AND source='automation' AND source_reference=\?/);
+assert.match(service, /if \(\$sourceReference !== ''\)/);
+assert.match(service, /SELECT \* FROM user_calendar_events WHERE owner_user_id=\? AND source=\? AND source_reference=\?/);
 assert.match(service, /owner_user_id=\?/);
 assert.match(service, /created_by_agent_id/);
 assert.match(service, /built-in VP3 system Agent has no user_agents row/);
@@ -31,7 +31,7 @@ assert.match(service, /built-in VP3 system Agent has no user_agents row/);
 assert.match(api, /current_user\(\)/);
 assert.match(api, /has_permission\('account\.access'/);
 assert.match(api, /hash_equals\(csrf_token\(\),\$csrf\)/);
-assert.match(api, /user_calendar_create_local_event_v1300\(\$pdo,\$user,\$input,'user'\)/);
+assert.match(api, /user_calendar_create_local_event_v1300\(\$pdo,\$user,\$input,'user',null,/);
 assert.doesNotMatch(api, /\$input\['source'\]/);
 
 assert.match(agent, /expires_at.*time\(\)\+900/s);
@@ -76,7 +76,7 @@ assert.doesNotMatch(calendar, /VP3 bookings appear here automatically\./);
 assert.match(calendarCss, /\.calendar-main\{[^}]*grid-template-rows:58px minmax\(0,1fr\);[^}]*overflow:hidden/s, 'Calendar shell must constrain the viewport rows');
 assert.match(calendarCss, /\.calendar-main>\.calendar-canvas\{[^}]*min-height:0;[^}]*overflow-x:hidden;[^}]*overflow-y:auto/s, 'Calendar canvas must own vertical scrolling');
 assert.match(calendarCss, /-webkit-overflow-scrolling:touch/, 'Calendar scrolling must retain touch momentum behavior');
-assert.match(editor, /user_calendar_create_local_event_v1300\(\$pdo,\$user,\$input,'user'\)/);
+assert.match(editor, /user_calendar_create_local_event_v1300\(\$pdo,\$user,\$input,'user',null,/);
 assert.match(editor, /user_calendar_update_event_v1300/);
 assert.match(editor, /user_calendar_cancel_event_v1300/);
 

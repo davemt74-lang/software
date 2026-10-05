@@ -34,10 +34,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $action = trim((string)($_POST['action'] ?? ''));
     try {
+        $pdo->beginTransaction();
         if ($action === 'complete_task') {
             $taskId = (int)($_POST['task_id'] ?? 0);
             $stmt = $pdo->prepare(
-                "SELECT lead_id,title FROM crm_tasks WHERE id=? AND status<>'completed' LIMIT 1"
+                "SELECT lead_id,title FROM crm_tasks WHERE id=? AND status<>'completed' LIMIT 1 FOR UPDATE"
             );
             $stmt->execute([$taskId]);
             $task = $stmt->fetch();
@@ -57,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('notice', 'CRM task completed.');
         } elseif ($action === 'assign_self') {
             $leadId = (int)($_POST['lead_id'] ?? 0);
-            $stmt = $pdo->prepare('SELECT id,assigned_user_id FROM crm_leads WHERE id=? LIMIT 1');
+            $stmt = $pdo->prepare('SELECT id,assigned_user_id FROM crm_leads WHERE id=? LIMIT 1 FOR UPDATE');
             $stmt->execute([$leadId]);
             $lead = $stmt->fetch();
             if (!$lead) throw new RuntimeException('Lead not found.');
@@ -74,7 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             flash('notice', 'Lead assigned to you.');
         }
+        $pdo->commit();
     } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
         flash('error', $e->getMessage());
     }
     redirect(url('/admin/crm.php?view=' . rawurlencode($view)));

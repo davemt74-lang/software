@@ -125,10 +125,19 @@ jobs:
           node tests/release-workspace-compat-v332.mjs
           node --check chat.js
 
+      - name: Contacts CRM tasks and calendar Section 12 integrity
+        run: |
+          php tests/productivity_section12.php
+          node tests/user-calendar-v1300-contract.mjs
+          node tests/agent-calendar-sync-v500-contract.mjs
+          node tests/homeserver-v241-contacts-continuity-contract.mjs
+          php tests/homeserver-v241-contacts-continuity-unit.php
+          node tests/homeserver-v243-task-calendar-continuity-contract.mjs
+          php tests/homeserver-v243-task-calendar-continuity-unit.php
+          php tests/calendar-schedule-awareness-v1330-test.php
+          node tests/crm-v180.mjs
       - name: Run recovered baseline suite
         run: python3 tools/run_recovery_baseline.py
 
       - name: CI workflow governance
         run: node tests/ci-workflow-consolidation.mjs
-
-
