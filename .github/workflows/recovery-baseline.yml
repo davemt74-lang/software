@@ -111,9 +111,24 @@ jobs:
           node tests/stem-agent-v131-integration.mjs
           node tests/fan-private-stem-mixes.mjs
 
+      - name: Music module full-feature audit
+        run: |
+          node tests/music-module-runtime.mjs
+          php tests/music-module-integrity.php
+          node tests/player-catalog-v190.mjs
+          php tests/player-catalog-v190.php
+          node tests/artist-music-v185.mjs
+          node tests/artist-media-v182.mjs
+          node tests/artist-profile-v181.mjs
+          node tests/artist-cms-v186.mjs
+          node tests/music-workspace-resource-ownership-v330.mjs
+          node tests/release-workspace-compat-v332.mjs
+          node --check chat.js
+
       - name: Run recovered baseline suite
         run: python3 tools/run_recovery_baseline.py
 
       - name: CI workflow governance
         run: node tests/ci-workflow-consolidation.mjs
+
 

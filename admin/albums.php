@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_permission('albums.manage');
 artist_workspace_v181_guard_legacy_admin('albums');
+if(!user_has_role('admin',current_user()))redirect(url('/music-library.php?tab=albums'));
 
 if (!access_schema_ready()) {
     redirect(url('/upgrade.php'));

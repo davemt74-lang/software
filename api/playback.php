@@ -4,6 +4,7 @@ require dirname(__DIR__) . '/includes/bootstrap.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
+if(($_SERVER['REQUEST_METHOD']??'GET')!=='POST'){header('Allow: POST');http_response_code(405);echo json_encode(['ok'=>false,'error'=>'POST is required.']);exit;}
 
 $pdo = db();
 if (!$pdo || !table_exists('track_play_sessions')) {
@@ -39,6 +40,7 @@ function sf_listener_hash(): string
     $cookie = (string)($_COOKIE['sf_listener'] ?? '');
     if (!preg_match('/^[a-f0-9]{64}$/', $cookie)) {
         $cookie = bin2hex(random_bytes(32));
+        $_COOKIE['sf_listener']=$cookie;
         setcookie('sf_listener', $cookie, [
             'expires' => time() + 31536000,
             'path' => '/',
@@ -58,11 +60,11 @@ function sf_referrer_host(): string
     return is_string($host) ? substr($host, 0, 190) : '';
 }
 
-function sf_play_session(PDO $pdo, string $token, int $trackId): ?array
+function sf_play_session(PDO $pdo, string $token, int $trackId,int $userId,string $listenerHash): ?array
 {
     if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
-    $stmt = $pdo->prepare('SELECT * FROM track_play_sessions WHERE session_token=? AND track_id=? LIMIT 1');
-    $stmt->execute([$token, $trackId]);
+    $stmt = $pdo->prepare('SELECT * FROM track_play_sessions WHERE session_token=? AND track_id=? AND COALESCE(user_id,0)=? AND listener_hash=? LIMIT 1 FOR UPDATE');
+    $stmt->execute([$token, $trackId,$userId,$listenerHash]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
@@ -89,6 +91,9 @@ try {
         throw new RuntimeException('Track is not available.');
     }
 
+    $user=current_user();$listenerHash=sf_listener_hash();
+    $trackId=music_catalog_playback_track_id($pdo,$track);
+    $pdo->beginTransaction();
     if ($action === 'start') {
         $token = bin2hex(random_bytes(32));
         $user = current_user();
@@ -101,7 +106,7 @@ try {
             $token,
             $trackId,
             (int)($user['id'] ?? 0) ?: null,
-            sf_listener_hash(),
+            $listenerHash,
             sf_device_type((string)($_SERVER['HTTP_USER_AGENT'] ?? '')),
             sf_referrer_host(),
             $sourceContext,
@@ -174,12 +179,13 @@ try {
             }
         }
 
+        $pdo->commit();
         echo json_encode(['ok'=>true,'session_token'=>$token,'session_id'=>$sessionId]);
         exit;
     }
 
     $token = trim((string)($input['session_token'] ?? ''));
-    $session = sf_play_session($pdo, $token, $trackId);
+    $session = sf_play_session($pdo, $token, $trackId,(int)($user['id']??0),$listenerHash);
     if (!$session) {
         throw new RuntimeException('Listening session not found.');
     }
@@ -189,6 +195,9 @@ try {
         throw new RuntimeException('Invalid listening event.');
     }
 
+    if(!empty($session['ended_at'])){$pdo->commit();echo json_encode(['ok'=>true,'closed'=>true]);exit;}
+    $elapsed=max(0,time()-(int)strtotime((string)$session['last_event_at']));
+    $delta=min($delta,(float)$elapsed);
     $newListened = (float)$session['listened_seconds'] + $delta;
     $newMaxPosition = max((float)$session['max_position_seconds'], $position);
     $effectiveDuration = $duration > 0 ? $duration : (float)$session['duration_seconds'];
@@ -198,7 +207,6 @@ try {
 
     $qualified = $newListened >= 10.0 ? 1 : (int)$session['qualified_play'];
     $completed = (
-        $action === 'ended' ||
         ($effectiveDuration > 0 && $newListened >= ($effectiveDuration * 0.80))
     ) ? 1 : (int)$session['completed'];
 
@@ -240,8 +248,10 @@ try {
         round($delta,2),
     ]);
 
+    $pdo->commit();
     echo json_encode(['ok'=>true]);
 } catch (Throwable $e) {
+    if($pdo->inTransaction())$pdo->rollBack();
     http_response_code(400);
     echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
 }

@@ -1147,25 +1147,24 @@
     const body = JSON.stringify({...payload, csrf_token: cfg.csrf});
 
     if (beacon && navigator.sendBeacon) {
-      navigator.sendBeacon(
-        cfg.playbackEndpoint,
-        new Blob([body], {type:'application/json'})
-      );
-      return null;
+      if(navigator.sendBeacon(cfg.playbackEndpoint,new Blob([body],{type:'application/json'})))return null;
     }
 
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),15000);
     try {
       const response = await fetch(cfg.playbackEndpoint, {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         credentials:'same-origin',
         keepalive:true,
+        signal:controller.signal,
         body
       });
       return await response.json().catch(() => null);
     } catch (error) {
       return null;
-    }
+    }finally{clearTimeout(timeout);}
   }
 
   function escapeHtml(value) {
@@ -2018,7 +2017,7 @@
     if (!state) return 0;
 
     const now = performance.now();
-    const delta = audio.paused
+    const delta = !state.wasPlaying
       ? 0
       : Math.max(
           0,
@@ -2037,46 +2036,22 @@
   }
 
   async function audioStartSession(audio) {
-    const state =
-      audioState.get(audio);
-
-    if (
-      !state ||
-      state.sessionToken
-    ) {
-      return;
-    }
-
-    const data =
-      await playbackApi({
-        action:'start',
-        track_id:state.trackId,
-        position:Number(
-          audio.currentTime ||
-          0
-        ),
-        duration:Number(
-          audio.duration ||
-          0
-        ),
-        source:
-          audio.closest(
-            '[data-chat-view="player"]'
-          )
-            ? 'agent_player'
-            : 'agent_chat'
-      });
-
-    if (
-      data &&
-      data.ok &&
-      data.session_token
-    ) {
-      state.sessionToken =
-        data.session_token;
-      state.lastTick =
-        performance.now();
-    }
+    const state=audioState.get(audio);
+    if(!state||state.sessionToken)return;
+    if(state.startPromise){await state.startPromise;if(state.sessionToken||audio.paused)return;return audioStartSession(audio);}
+    const generation=state.sessionGeneration;
+    const request=(async()=>{
+      const data=await playbackApi({action:'start',track_id:state.trackId,position:Number(audio.currentTime||0),duration:Number(audio.duration||0),source:audio.closest('[data-chat-view="player"]')?'agent_player':'agent_chat'});
+      if(!data?.ok||!data.session_token)return;
+      if(generation!==state.sessionGeneration){
+        await playbackApi({action:'stop',track_id:state.trackId,session_token:data.session_token,position:Number(audio.currentTime||0),duration:Number(audio.duration||0),delta:0},true);
+        return;
+      }
+      state.sessionToken=data.session_token;
+      if(audio.paused)await audioTrackEvent(audio,'pause',0);
+    })();
+    state.startPromise=request;
+    try{await request;}finally{if(state.startPromise===request)state.startPromise=null;}
   }
 
   async function audioTrackEvent(
@@ -2091,6 +2066,7 @@
     if (!state) {
       return;
     }
+    const eventGeneration=state.sessionGeneration;
 
     if (
       !state.sessionToken &&
@@ -2104,7 +2080,7 @@
       );
     }
 
-    if (!state.sessionToken) {
+    if (!state.sessionToken||eventGeneration!==state.sessionGeneration) {
       return;
     }
 
@@ -2156,6 +2132,11 @@
           0
         ),
         sessionToken:'',
+        startPromise:null,
+        sessionGeneration:0,
+        wasPlaying:false,
+        heartbeatBusy:false,
+        pendingEndDelta:0,
         lastTick:
           performance.now(),
         heartbeat:null,
@@ -2207,9 +2188,16 @@
         }
       );
 
+      audio.addEventListener('playing',()=>{state.lastTick=performance.now();state.wasPlaying=true;});
+      ['waiting','stalled'].forEach(event=>audio.addEventListener(event,()=>{
+        const delta=audioListenedDelta(audio);state.wasPlaying=false;
+        if(state.sessionToken&&delta>0)audioTrackEvent(audio,'heartbeat',delta);
+      }));
+
       audio.addEventListener(
         'play',
         async () => {
+          const playGeneration=state.sessionGeneration;
           pauseOtherAudio(
             audio
           );
@@ -2240,6 +2228,7 @@
             );
           }
 
+          if(playGeneration!==state.sessionGeneration)return;
           if (!state.heartbeat) {
             state.heartbeat =
               setInterval(
@@ -2247,18 +2236,15 @@
                   if (
                     !audio.paused &&
                     !audio.ended &&
-                    state.sessionToken
+                    !state.heartbeatBusy
                   ) {
                     const delta =
                       audioListenedDelta(
                         audio
                       );
 
-                    audioTrackEvent(
-                      audio,
-                      'heartbeat',
-                      delta
-                    );
+                    state.heartbeatBusy=true;
+                    audioTrackEvent(audio,'heartbeat',delta).finally(()=>{state.heartbeatBusy=false;});
                   }
                 },
                 10000
@@ -2274,14 +2260,12 @@
             audio
           );
 
+          const finalDelta=audioListenedDelta(audio);state.wasPlaying=false;if(audio.ended)state.pendingEndDelta+=finalDelta;
           if (
             !audio.ended &&
             state.sessionToken
           ) {
-            const delta =
-              audioListenedDelta(
-                audio
-              );
+            const delta=finalDelta;
 
             audioTrackEvent(
               audio,
@@ -2339,9 +2323,8 @@
         'ended',
         () => {
           const delta =
-            audioListenedDelta(
-              audio
-            );
+            audioListenedDelta(audio)+state.pendingEndDelta;
+          state.pendingEndDelta=0;
 
           audioTrackEvent(
             audio,
@@ -2349,6 +2332,7 @@
             delta
           );
 
+          state.wasPlaying=false;state.sessionGeneration++;
           state.sessionToken = '';
 
           if (state.heartbeat) {
@@ -2394,9 +2378,12 @@
 
     players.forEach(audio => {
       const state = audioState.get(audio);
-      if (!state || !state.sessionToken) return;
+      if(!state)return;
+      state.sessionGeneration++;
+      if(!state.sessionToken){state.wasPlaying=false;return;}
 
       const delta = audioListenedDelta(audio);
+      state.wasPlaying=false;
       audioTrackEvent(audio, 'stop', delta, beacon);
       state.sessionToken = '';
 

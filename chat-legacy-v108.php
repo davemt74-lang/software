@@ -252,7 +252,7 @@ if ($pdo) {
         if (table_exists('artist_workspace_track_favorites_v181')) {
             $favoriteStmt=$pdo->prepare('SELECT artist_track_id FROM artist_workspace_track_favorites_v181 WHERE user_id=? ORDER BY created_at DESC');
             $favoriteStmt->execute([(int)$user['id']]);
-            foreach($favoriteStmt->fetchAll(PDO::FETCH_COLUMN) as $artistTrackId){$trackId=1000000000+(int)$artistTrackId;if(isset($chatTrackMap[$trackId])){$chatFavoriteTrackIds[$trackId]=true;$chatFavoriteTracks[]=$chatTrackMap[$trackId];}}
+            foreach($favoriteStmt->fetchAll(PDO::FETCH_COLUMN) as $artistTrackId){$trackId=music_catalog_player_id($chatTrackMap,(int)$artistTrackId);if(isset($chatTrackMap[$trackId])){$chatFavoriteTrackIds[$trackId]=true;$chatFavoriteTracks[]=$chatTrackMap[$trackId];}}
         }
     } catch (Throwable $e) {}
 
@@ -302,71 +302,7 @@ if ($pdo) {
     } catch (Throwable $e) {}
 
     try {
-        if (artist_workspace_v181_schema_ready($pdo)) {
-            foreach (artist_workspace_v181_public_records('albums',$user,80) as $albumItem) {
-                $albumTracks=[]; foreach($chatTracks as $track){if(trim((string)($track['album']??''))===trim((string)$albumItem['title']))$albumTracks[]=$track;}
-                $albumItem['id']=1000000000+(int)$albumItem['id'];$albumItem['tracks']=$albumTracks;$albumItem['favorite']=false;$chatAlbums[]=$albumItem;
-            }
-        } elseif (table_exists('albums')) {
-            $albumSql =
-                'SELECT
-                    id,
-                    title,
-                    release_date,
-                    description,
-                    cover_path,
-                    visibility,
-                    is_published
-                 FROM albums'
-                . (
-                    has_permission('albums.manage', $user)
-                        ? ''
-                        : ' WHERE is_published=1'
-                )
-                . ' ORDER BY sort_order,title,id';
-
-            $albumStmt = $pdo->query(
-                $albumSql
-            );
-
-            foreach ($albumStmt->fetchAll() as $albumItem) {
-                if (
-                    !can_view_visibility(
-                        (string)$albumItem['visibility'],
-                        $user
-                    )
-                ) {
-                    continue;
-                }
-
-                $albumTrackStmt = $pdo->prepare(
-                    'SELECT *
-                     FROM tracks
-                     WHERE album_id=?
-                     ORDER BY sort_order,id'
-                );
-                $albumTrackStmt->execute([
-                    (int)$albumItem['id']
-                ]);
-
-                $albumTracks = [];
-
-                foreach ($albumTrackStmt->fetchAll() as $albumTrack) {
-                    if (can_view_track($albumTrack, $user)) {
-                        $albumTracks[] = $albumTrack;
-                    }
-                }
-
-                $albumItem['tracks'] = $albumTracks;
-                $albumItem['favorite'] =
-                    isset(
-                        $chatFavoriteAlbumIds[
-                            (int)$albumItem['id']
-                        ]
-                    );
-                $chatAlbums[] = $albumItem;
-            }
-        }
+        $chatAlbums=music_catalog_albums($pdo,$user,$chatTrackMap,$chatFavoriteAlbumIds);
     } catch (Throwable $e) {}
 
     try {
@@ -398,31 +334,7 @@ if ($pdo) {
             ]);
 
             foreach ($playlistStmt->fetchAll() as $playlist) {
-                $trackStmt = $pdo->prepare(
-                    'SELECT t.*
-                     FROM playlist_tracks pt
-                     INNER JOIN tracks t
-                       ON t.id=pt.track_id
-                     WHERE pt.playlist_id=?
-                     ORDER BY pt.sort_order,pt.added_at,t.id'
-                );
-                $trackStmt->execute([
-                    (int)$playlist['id']
-                ]);
-
-                $playlistTracks = [];
-
-                foreach ($trackStmt->fetchAll() as $playlistTrack) {
-                    if (can_view_track($playlistTrack, $user)) {
-                        $playlistTracks[] = $playlistTrack;
-                    }
-                }
-
-                if (table_exists('artist_workspace_playlist_tracks_v181')) {
-                    $artistTrackStmt=$pdo->prepare('SELECT t.* FROM artist_workspace_playlist_tracks_v181 pt INNER JOIN artist_catalog_tracks_v181 t ON t.id=pt.artist_track_id WHERE pt.playlist_id=? ORDER BY pt.sort_order,pt.added_at,t.id');
-                    $artistTrackStmt->execute([(int)$playlist['id']]);
-                    foreach($artistTrackStmt->fetchAll() as $artistTrack){$artistTrack['id']=1000000000+(int)$artistTrack['id'];if(can_view_visibility((string)$artistTrack['visibility'],$user))$playlistTracks[]=$artistTrack;}
-                }
+                $playlistTracks=music_catalog_playlist_tracks($pdo,(int)$playlist['id'],$user);
 
                 $playlist['tracks'] = $playlistTracks;
                 $playlist['owned'] =

@@ -7,6 +7,7 @@ $pdo = db();
 $type = trim((string)($_GET['type'] ?? 'photo'));
 $id = (int)($_GET['id'] ?? 0);
 $user = current_user();
+if($type==='album'&&$id>=1000000000){$type='artist_album';$id-=1000000000;}
 
 if (!$pdo || $id < 1) {
     http_response_code(404);
@@ -73,9 +74,15 @@ if (!$item) {
     exit('Image not found.');
 }
 
-$canManage = has_permission($managePermission, $user);
-if ($isArtistWorkspaceAsset && $canManage && $user && user_has_role('artist', $user)) {
-    $canManage = artist_workspace_v181_scope_id($user) === (int)($item['workspace_id'] ?? 0);
+$canManage=has_permission($managePermission,$user);
+if($isArtistWorkspaceAsset){
+    $capability=match($type){'artist_photo'=>'media','artist_album'=>'albums',default=>'tracks'};
+    $canManage=music_workspace_resources_v330_can_manage($pdo,(int)($item['workspace_id']??0),$capability,$user);
+}
+if(in_array($type,['album','artist_album'],true)){
+    $catalogId=$type==='artist_album'?$id:0;
+    if($type==='album'){$lookup=$pdo->prepare('SELECT id FROM artist_catalog_albums_v181 WHERE source_album_id=? LIMIT 1');$lookup->execute([$id]);$catalogId=(int)$lookup->fetchColumn();}
+    if($catalogId>0){$cover=artist_music_v185_public_cover($pdo,'album',$catalogId,$user);if($cover){require_once __DIR__.'/includes/music-media.php';$mime=music_media_mime($cover['path'],'cover');if($mime)music_media_send($cover['path'],$mime);}}
 }
 $canView =
     $canManage ||
@@ -140,6 +147,8 @@ if ($size === false || $size < 1) {
 header('Content-Type: ' . $mime);
 header('Content-Length: ' . $size);
 header('X-Content-Type-Options: nosniff');
-header('Cache-Control: private, max-age=300');
+header('Cache-Control: private, no-cache');
+if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+if(($_SERVER['REQUEST_METHOD']??'GET')==='HEAD')exit;
 readfile($absolute);
 exit;

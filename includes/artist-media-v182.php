@@ -41,7 +41,9 @@ function artist_media_v182_store_photo(array $file,int $workspaceId): string
     if($size<1 || $size>$max) throw new RuntimeException('Photo is larger than the configured image upload limit.');
     $tmp=(string)($file['tmp_name']??'');
     if($tmp==='' || !is_uploaded_file($tmp)) throw new RuntimeException('Invalid photo upload.');
+    $actualSize=filesize($tmp);if($actualSize===false||$actualSize<1||$actualSize>$max)throw new RuntimeException('Image exceeds the upload limit.');
     $info=@getimagesize($tmp);
+    if(!is_array($info)||$info[0]<1||$info[1]<1||$info[0]>16384||$info[1]>16384||$info[0]*$info[1]>40000000)throw new RuntimeException('Image dimensions are too large.');
     $mime=is_array($info)?strtolower((string)($info['mime']??'')):'';
     $extensions=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp'];
     if(!isset($extensions[$mime])) throw new RuntimeException('Use a JPG, PNG, or WebP image.');

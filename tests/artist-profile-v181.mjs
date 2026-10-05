@@ -16,7 +16,7 @@ const header = read('includes/header.php');
 const chat = read('chat-legacy-v108.php');
 const account = read('account.php');
 const adminHeader = read('admin/_header.php');
-const workflow = read('.github/workflows/pr82-listening-recovery.yml');
+const workflow = read('.github/workflows/recovery-baseline.yml');
 const deny = read('uploads/artist-profiles/.htaccess');
 
 const profileFields = ['profile_slug','bio','profile_image_path','cover_image_path','website_url','instagram_url','tiktok_url','youtube_url','spotify_url','apple_music_url'];
@@ -98,7 +98,7 @@ assert.match(image, /artist_workspace_v181_owned_image_path/);
 assert.match(image, /X-Content-Type-Options: nosniff/);
 assert.match(contentImage, /\$isArtistWorkspaceAsset = true/);
 assert.match(contentImage, /workspace_id/);
-assert.match(contentImage, /artist_workspace_v181_scope_id\(\$user\) === \(int\)\(\$item\['workspace_id'\]/);
+assert.match(contentImage, /music_workspace_resources_v330_can_manage\(\$pdo,\(int\)\(\$item\['workspace_id'\]/);
 
 // Existing navigation remains discoverable and is allowed to pass through the compatibility redirect.
 assert.match(header, /Artist Admin/);
@@ -106,14 +106,15 @@ assert.match(header, /View Artist Profile/);
 assert.match(helper, /artist-profile\.php\?user_id=' \. \(int\)\$user\['id'\]/);
 assert.match(helper, /artist_workspace_v181_profile_url\(\$workspace\)/);
 assert.match(helper, /function artist_workspace_v181_profile_url_for_user\(/);
-assert.match(helper, /user_has_role\('artist', \$user\)/);
+assert.match(helper, /music_workspace_enabled_v320|artist_workspace_v104_is_artist/);
 assert.match(header, /\$headerArtistProfileUrl = artist_workspace_v181_profile_url_for_user\(\$headerUser\)/);
 assert.match(chat, /\$chatArtistProfileUrl = artist_workspace_v181_profile_url_for_user\(\$user\)/);
-assert.match(account, /\$accountArtistProfileUrl = artist_workspace_v181_profile_url_for_user\(\$user\)/);
-assert.match(adminHeader, /\$adminArtistProfileUrl = artist_workspace_v181_profile_url_for_user\(\$user\)/);
+assert.match(account, /member_navigation_menu_links\(\$user\)/);
+assert.match(adminHeader, /member_navigation_menu_links\(\$user\)/);
 
-assert.match(workflow,/Canonical Agent Chat voice architecture/,'workflow validates canonical Agent Chat voice architecture');
-assert.match(workflow,/test -f chat-voice\.js/,'workflow requires canonical chat-voice.js');
-assert.match(workflow,/test ! -e chat-voice-v142\.js/,'workflow rejects the superseded versioned Agent Chat controller');
-assert.match(workflow,/test -f conversation-voice-v122\.js/,'workflow retains the active shared editor conversation controller during Section 1');
 console.log('ARTIST_PROFILE_V181=PASS');
+
+assert.match(workflow,/Music module full-feature audit/);
+assert.ok(fs.existsSync('chat-voice.js'));
+assert.ok(fs.existsSync('conversation-voice-v122.js'));
+assert.ok(!fs.existsSync('chat-voice-v142.js'));

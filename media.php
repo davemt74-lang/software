@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__.'/includes/music-media.php';
 
 $trackId = (int)($_GET['track'] ?? 0);
 $type = (string)($_GET['type'] ?? 'audio');
@@ -22,9 +23,21 @@ if (!can_view_track($track)) {
     exit('You do not have access to this media.');
 }
 
-$relative = $type === 'cover'
-    ? (string)($track['cover_path'] ?? '')
-    : (string)($track['audio_path'] ?? '');
+// Resolve catalog artwork through its owned photo reference, including album inheritance.
+$catalogId=(int)($track['artist_track_id']??0);
+if($type==='cover'&&$catalogId>0&&($pdo=db())){
+    $cover=artist_music_v185_public_cover($pdo,'track',$catalogId,current_user());
+    if($cover){$mime=music_media_mime($cover['path'],'cover');if($mime)music_media_send($cover['path'],$mime);}
+}
+if($type==='audio'&&$catalogId>0&&($pdo=db())){
+    $catalog=artist_music_v185_public_track($pdo,$catalogId,current_user());
+    $path=$catalog?artist_music_v185_resolve_audio($pdo,$catalog):null;
+    if(!$path){http_response_code(404);exit('Audio is unavailable.');}
+    $mime=music_media_mime($path,'audio');if(!$mime){http_response_code(415);exit('Unsupported audio.');}
+    music_media_send($path,$mime);
+}
+$relative=$type==='cover'?(string)($track['cover_path']??''):(string)($track['audio_path']??'');
+if($type==='cover'&&$relative==='')$relative='/images/stonefellow-studio.png';
 
 if ($relative === '' || preg_match('#^https?://#i', $relative)) {
     http_response_code(404);
@@ -51,88 +64,6 @@ if ($size === false || $size < 1) {
     exit('Media file is empty.');
 }
 
-$mime = 'application/octet-stream';
-if (function_exists('finfo_open')) {
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    if ($finfo) {
-        $detected = finfo_file($finfo, $absolute);
-        if (is_string($detected) && $detected !== '') {
-            $mime = $detected;
-        }
-        finfo_close($finfo);
-    }
-}
-
-$allowedPrefix = $type === 'cover' ? 'image/' : 'audio/';
-if (!str_starts_with($mime, $allowedPrefix)) {
-    $extension = strtolower(pathinfo($absolute, PATHINFO_EXTENSION));
-    $fallbackMimes = [
-        'mp3' => 'audio/mpeg',
-        'm4a' => 'audio/mp4',
-        'wav' => 'audio/wav',
-        'ogg' => 'audio/ogg',
-        'jpg' => 'image/jpeg',
-        'jpeg' => 'image/jpeg',
-        'png' => 'image/png',
-        'webp' => 'image/webp',
-    ];
-    $mime = $fallbackMimes[$extension] ?? $mime;
-}
-
-header('Content-Type: ' . $mime);
-header('Accept-Ranges: bytes');
-header('X-Content-Type-Options: nosniff');
-header('Cache-Control: private, max-age=0, must-revalidate');
-
-$start = 0;
-$end = $size - 1;
-$status = 200;
-
-$range = (string)($_SERVER['HTTP_RANGE'] ?? '');
-if ($range !== '' && preg_match('/bytes=(\d*)-(\d*)/', $range, $matches)) {
-    if ($matches[1] === '' && $matches[2] !== '') {
-        $suffixLength = (int)$matches[2];
-        $start = max(0, $size - $suffixLength);
-    } else {
-        $start = $matches[1] !== '' ? (int)$matches[1] : 0;
-        $end = $matches[2] !== '' ? (int)$matches[2] : $end;
-    }
-
-    if ($start > $end || $start >= $size) {
-        header('Content-Range: bytes */' . $size);
-        http_response_code(416);
-        exit;
-    }
-
-    $end = min($end, $size - 1);
-    $status = 206;
-}
-
-$length = $end - $start + 1;
-http_response_code($status);
-header('Content-Length: ' . $length);
-if ($status === 206) {
-    header("Content-Range: bytes {$start}-{$end}/{$size}");
-}
-
-$handle = fopen($absolute, 'rb');
-if (!$handle) {
-    http_response_code(500);
-    exit;
-}
-
-fseek($handle, $start);
-$remaining = $length;
-while ($remaining > 0 && !feof($handle)) {
-    $chunk = fread($handle, min(8192, $remaining));
-    if ($chunk === false || $chunk === '') {
-        break;
-    }
-    echo $chunk;
-    $remaining -= strlen($chunk);
-    if (connection_status() !== CONNECTION_NORMAL) {
-        break;
-    }
-}
-fclose($handle);
-exit;
+$mime=music_media_mime($absolute,$type);
+if(!$mime){http_response_code(415);exit('Unsupported media.');}
+music_media_send($absolute,$mime);

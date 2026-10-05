@@ -96,12 +96,13 @@ if (
 }
 
 $userId = (int)$user['id'];
-$artistTrackId = $trackId >= 1000000000 ? $trackId - 1000000000 : 0;
+$artistTrackId = $trackId >= 1000000000 ? $trackId - 1000000000 : (int)($track['artist_track_id']??0);
 if ($artistTrackId > 0) {
     if (!table_exists('artist_workspace_track_favorites_v181')) favorite_json(false,['error'=>'Favorites are not ready. Run the database upgrade.'],503);
     $stmt=$pdo->prepare('SELECT 1 FROM artist_workspace_track_favorites_v181 WHERE user_id=? AND artist_track_id=? LIMIT 1');$stmt->execute([$userId,$artistTrackId]);$isFavorite=(bool)$stmt->fetchColumn();
+    if($trackId<1000000000){$legacy=$pdo->prepare('SELECT 1 FROM track_favorites WHERE user_id=? AND track_id=?');$legacy->execute([$userId,$trackId]);$isFavorite=$isFavorite||(bool)$legacy->fetchColumn();}
     if ($action==='add' || ($action==='toggle'&&!$isFavorite)) {$pdo->prepare('INSERT IGNORE INTO artist_workspace_track_favorites_v181 (user_id,artist_track_id) VALUES (?,?)')->execute([$userId,$artistTrackId]);$isFavorite=true;}
-    elseif ($action==='remove' || ($action==='toggle'&&$isFavorite)) {$pdo->prepare('DELETE FROM artist_workspace_track_favorites_v181 WHERE user_id=? AND artist_track_id=?')->execute([$userId,$artistTrackId]);$isFavorite=false;}
+    elseif ($action==='remove' || ($action==='toggle'&&$isFavorite)) {$pdo->prepare('DELETE FROM artist_workspace_track_favorites_v181 WHERE user_id=? AND artist_track_id=?')->execute([$userId,$artistTrackId]);$isFavorite=false;if($trackId<1000000000)$pdo->prepare('DELETE FROM track_favorites WHERE user_id=? AND track_id=?')->execute([$userId,$trackId]);}
     else favorite_json(false,['error'=>'Invalid favorite action.'],422);
     $count=$pdo->prepare('SELECT COUNT(*) FROM artist_workspace_track_favorites_v181 WHERE artist_track_id=?');$count->execute([$artistTrackId]);
     favorite_json(true,['track_id'=>$trackId,'favorite'=>$isFavorite,'favorite_count'=>(int)$count->fetchColumn()]);
