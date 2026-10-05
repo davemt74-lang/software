@@ -19,7 +19,8 @@ try{
         (string)($body['device_id']??''),
         (string)($body['homeserver_token']??''),
         (string)($body['version']??''),
-        is_array($body['capabilities']??null)?$body['capabilities']:[]
+        is_array($body['capabilities']??null)?$body['capabilities']:[],
+        (string)($body['recovery_session_token']??'')
     );
     echo json_encode([
       'ok'=>true,'device_id'=>$result['device_id'],'transport'=>$result['transport'],'protocol'=>$result['protocol'],'cloud_version'=>$result['cloud_version']??VP3_HOMESERVER_RELEASE_VERSION,

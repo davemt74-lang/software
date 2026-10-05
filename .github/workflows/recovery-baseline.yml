@@ -80,6 +80,17 @@ jobs:
           node --check artist-listening-recognition.js
           node --check artist-listening-realtime.js
 
+      - name: Onboarding account authority and pairing recovery
+        run: |
+          php tests/onboarding_accounts_section11.php
+          php -l api/chat-onboarding-v241.php
+          php -l api/homeserver-https-pair-v1300.php
+          node tests/homeserver-https-relay-v1300-contract.mjs
+          node tests/homeserver-chat-device-code-v1.mjs
+          node tests/homeserver-account-pairing-v1210-contract.mjs
+          node tests/chat-onboarding-v241.mjs
+          php tests/agent-onboarding-skill-v100.php
+
       - name: Run recovered baseline suite
         run: python3 tools/run_recovery_baseline.py
 

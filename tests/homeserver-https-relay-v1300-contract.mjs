@@ -27,7 +27,9 @@ const checks=[
  ['HTTPS relay adds session and request queue authorities',
   relay.includes('CREATE TABLE IF NOT EXISTS homeserver_https_sessions')&&relay.includes('CREATE TABLE IF NOT EXISTS homeserver_https_requests')],
  ['normal pairing consumes the existing VP3 account token without a WebSocket relay claim',
-  relay.includes('homeserver_account_v1210_begin_redeem($pairingToken)')&&
+  relay.includes('homeserver_account_v1210_hash($pairingToken)')&&
+  relay.includes('SELECT id FROM users WHERE id=? FOR UPDATE')&&
+  relay.includes("WHERE id=? AND status='pending'")&&
   pair.includes('homeserver_https_v1300_pair')&&!pair.includes('relay_claim')],
  ['pairing stores only the session hash in Cloud and encrypts the HomeServer local bearer token',
   relay.includes("hash('sha256',$sessionToken)")&&relay.includes('homeserver_vp3_encrypt($homeServerToken)')&&

@@ -85,55 +85,76 @@ function homeserver_https_v1300_has_session(int $userId): bool
     return $row&&in_array((string)$row['status'],['active','revoked'],true);
 }
 
-function homeserver_https_v1300_pair(string $pairingToken,string $deviceId,string $homeServerToken,string $version='',array $capabilities=[]): array
+function homeserver_https_v1300_pair(string $pairingToken,string $deviceId,string $homeServerToken,string $version='',array $capabilities=[],string $recoverySessionToken=''): array
 {
     $deviceId=strtolower(trim($deviceId));
-    if(!preg_match('/^hs-[a-f0-9]{24}$/',$deviceId))throw new RuntimeException('HomeServer device identity is invalid.');
+    if(!preg_match('/^hs-[a-f0-9]{24}$/D',$deviceId))throw new RuntimeException('HomeServer device identity is invalid.');
     $homeServerToken=trim($homeServerToken);
     if(strlen($homeServerToken)<32||strlen($homeServerToken)>512)throw new RuntimeException('HomeServer local authorization is invalid.');
-
-    $tokenRow=homeserver_account_v1210_begin_redeem($pairingToken);
-    $tokenId=(int)$tokenRow['id'];$userId=(int)$tokenRow['user_id'];
+    // An optional device-generated secret makes lost acknowledgements replayable.
+    // Cloud keeps only its hash. Replay requires every original binding and TTL.
+    if($recoverySessionToken!==''&&!preg_match('/^[A-Za-z0-9_-]{64}$/D',$recoverySessionToken))
+        throw new RuntimeException('HomeServer pairing token recovery proof is invalid.');
+    $tokenHash=homeserver_account_v1210_hash($pairingToken);
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    homeserver_account_v1210_ensure_schema($pdo);
     homeserver_https_v1300_ensure_schema($pdo);
-    $sessionToken=homeserver_https_v1300_token();
+    $q=$pdo->prepare('SELECT user_id FROM homeserver_pairing_tokens WHERE token_hash=? LIMIT 1');
+    $q->execute([$tokenHash]);$userId=(int)$q->fetchColumn();
+    if($userId<1)throw new RuntimeException('The VP3 pairing token is invalid or expired.');
+    $sessionToken=$recoverySessionToken!==''?$recoverySessionToken:homeserver_https_v1300_token();
     $hash=hash('sha256',$sessionToken);
     $capsJson=json_encode($capabilities,JSON_UNESCAPED_SLASHES);
-    if(!is_string($capsJson))$capsJson='{}';
-
+    if(!is_string($capsJson))throw new RuntimeException('HomeServer capabilities are invalid.');
+    $replayed=false;
     $pdo->beginTransaction();
     try{
-        $pdo->prepare("INSERT INTO homeserver_https_sessions
-          (user_id,device_id,session_token_hash,status,installed_version,capabilities_json,last_seen_at)
-          VALUES (?,?,?,'active',?,?,UTC_TIMESTAMP())
-          ON DUPLICATE KEY UPDATE device_id=VALUES(device_id),session_token_hash=VALUES(session_token_hash),
-            status='active',installed_version=VALUES(installed_version),capabilities_json=VALUES(capabilities_json),
-            last_seen_at=UTC_TIMESTAMP()")
-          ->execute([$userId,$deviceId,$hash,mb_strimwidth($version,0,64,''),$capsJson]);
-
-        $pdo->prepare("INSERT INTO homeserver_connections
-          (user_id,device_id,relay_token_enc,homeserver_token_enc,pending_request_id,pending_claim_token_enc,pending_code,status,installed_version,last_seen_at,last_checked_at,last_error,capabilities_json)
-          VALUES (?,?,NULL,?,'',NULL,'','paired',?,UTC_TIMESTAMP(),UTC_TIMESTAMP(),'',?)
-          ON DUPLICATE KEY UPDATE device_id=VALUES(device_id),relay_token_enc=NULL,homeserver_token_enc=VALUES(homeserver_token_enc),
-            pending_request_id='',pending_claim_token_enc=NULL,pending_code='',status='paired',
-            installed_version=VALUES(installed_version),last_seen_at=UTC_TIMESTAMP(),last_checked_at=UTC_TIMESTAMP(),
-            last_error='',capabilities_json=VALUES(capabilities_json)")
-          ->execute([$userId,$deviceId,homeserver_vp3_encrypt($homeServerToken),mb_strimwidth($version,0,64,''),$capsJson]);
-
-        $pdo->prepare("UPDATE homeserver_pairing_tokens SET status='paired',device_id=?,redeemed_at=COALESCE(redeemed_at,UTC_TIMESTAMP()) WHERE id=? AND status='redeeming'")
-          ->execute([$deviceId,$tokenId]);
+        // Account lock serializes token generation, redemption and first pairing.
+        $q=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$q->execute([$userId]);
+        if(!$q->fetchColumn())throw new RuntimeException('The VP3 pairing token account is unavailable.');
+        $q=$pdo->prepare('SELECT * FROM homeserver_pairing_tokens WHERE token_hash=? LIMIT 1 FOR UPDATE');
+        $q->execute([$tokenHash]);$tokenRow=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$tokenRow||(int)$tokenRow['user_id']!==$userId||strtotime((string)$tokenRow['expires_at'].' UTC')<=time())
+            throw new RuntimeException('The VP3 pairing token is invalid or expired.');
+        $q=$pdo->prepare('SELECT * FROM homeserver_connections WHERE user_id=? LIMIT 1 FOR UPDATE');
+        $q->execute([$userId]);$connection=$q->fetch(PDO::FETCH_ASSOC);
+        $q=$pdo->prepare('SELECT * FROM homeserver_https_sessions WHERE user_id=? LIMIT 1 FOR UPDATE');
+        $q->execute([$userId]);$session=$q->fetch(PDO::FETCH_ASSOC);
+        if((string)$tokenRow['status']==='paired'){
+            $replayed=$recoverySessionToken!==''&&$connection&&$session
+                &&(string)$connection['status']==='paired'&&(string)$session['status']==='active'
+                &&hash_equals((string)$tokenRow['device_id'],$deviceId)
+                &&hash_equals((string)$connection['device_id'],$deviceId)
+                &&hash_equals((string)$session['device_id'],$deviceId)
+                &&hash_equals((string)$session['session_token_hash'],$hash)
+                &&hash_equals(homeserver_vp3_decrypt((string)$connection['homeserver_token_enc']),$homeServerToken);
+            if(!$replayed)throw new RuntimeException('The VP3 pairing token has already been used or revoked.');
+        }else{
+            if((string)$tokenRow['status']!=='pending')throw new RuntimeException('The VP3 pairing token has already been used or revoked.');
+            if($connection||$session)throw new RuntimeException('This VP3 account already has a HomeServer connection.');
+            // Plain INSERT also prevents a device collision from overwriting another account.
+            $pdo->prepare("INSERT INTO homeserver_https_sessions
+              (user_id,device_id,session_token_hash,status,installed_version,capabilities_json,last_seen_at)
+              VALUES (?,?,?,'active',?,?,UTC_TIMESTAMP())")
+              ->execute([$userId,$deviceId,$hash,mb_strimwidth($version,0,64,''),$capsJson]);
+            $pdo->prepare("INSERT INTO homeserver_connections
+              (user_id,device_id,relay_token_enc,homeserver_token_enc,pending_request_id,pending_claim_token_enc,pending_code,status,installed_version,last_seen_at,last_checked_at,last_error,capabilities_json)
+              VALUES (?,?,NULL,?,'',NULL,'','paired',?,UTC_TIMESTAMP(),UTC_TIMESTAMP(),'',?)")
+              ->execute([$userId,$deviceId,homeserver_vp3_encrypt($homeServerToken),mb_strimwidth($version,0,64,''),$capsJson]);
+            $q=$pdo->prepare("UPDATE homeserver_pairing_tokens SET status='paired',device_id=?,redeemed_at=COALESCE(redeemed_at,UTC_TIMESTAMP()) WHERE id=? AND status='pending'");
+            $q->execute([$deviceId,(int)$tokenRow['id']]);
+            if($q->rowCount()!==1)throw new RuntimeException('The VP3 pairing token could not be finalized.');
+        }
         $pdo->commit();
-    }catch(Throwable $e){
-        if($pdo->inTransaction())$pdo->rollBack();
-        homeserver_account_v1210_reset_redeem($tokenId);
-        throw $e;
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    // A projection failure after commit must never turn successful pairing into an error.
+    if(!$replayed&&function_exists('vp3_cognitive_homeserver_event_v2390')){
+        try{vp3_cognitive_homeserver_event_v2390($pdo,$userId,'homeserver.connected','paired');}
+        catch(Throwable $e){error_log('HomeServer pairing projection failed: '.get_class($e));}
     }
-
-    if(function_exists('vp3_cognitive_homeserver_event_v2390'))vp3_cognitive_homeserver_event_v2390($pdo,$userId,'homeserver.connected','paired');
     return [
       'user_id'=>$userId,'device_id'=>$deviceId,'session_token'=>$sessionToken,
-      'poll_url'=>VP3_HOMESERVER_HTTPS_POLL_URL,
-      'cloud_version'=>VP3_HOMESERVER_RELEASE_VERSION,
+      'poll_url'=>VP3_HOMESERVER_HTTPS_POLL_URL,'cloud_version'=>VP3_HOMESERVER_RELEASE_VERSION,
       'transport'=>'vp3_https','protocol'=>'https-relay-v1','poll_after_ms'=>900,
     ];
 }
