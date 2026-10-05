@@ -474,6 +474,8 @@
   let transportDriftLastCheck = 0;
   let transportDriftLastRecovery = 0;
   let transportDriftRecoveryPending = false;
+  let playRequestSerial = 0;
+  let playbackStarting = false;
   let bufferScheduler = null;
   let bufferTransportPrepared = false;
   let bufferTransportActive = false;
@@ -5768,7 +5770,7 @@
             )
           );
         stem.crossfadeAudio.preload =
-          'auto';
+          'metadata';
         stem.crossfadeAudio.muted = false;
         stem.crossfadeAudio.volume = 1;
 
@@ -6755,6 +6757,16 @@
       return null;
     }
 
+    await window.StonefellowStemProjectLoaderV232?.whenMediaReady?.();
+    const seconds = Math.max(0,Number(stem.audio?.duration || stem.duration || 0));
+    if (!Number.isFinite(seconds) || seconds * 48000 * 2 * 4 > 128 * 1024 * 1024) {
+      throw new Error('This waveform exceeds the safe browser decode budget. Continue without this waveform or use a shorter source.');
+    }
+    if (bufferSchedulerFactory) {
+      ensureAudioGraph();
+      bufferScheduler ||= bufferSchedulerFactory.createScheduler(context);
+      return waveformFromAudioBuffer(await bufferScheduler.getBuffer(stem.url),2400);
+    }
     waveformDecodeContext ||= new AudioContextClass();
 
     const response = await fetch(
@@ -6793,7 +6805,7 @@
     const buffer =
       await waveformDecodeContext
         .decodeAudioData(
-          bytes.slice(0)
+          bytes
         );
 
     return waveformFromAudioBuffer(
@@ -6811,6 +6823,8 @@
       return;
     }
 
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(),90000);
     stem.waveformLoading = true;
     stem.waveformError = false;
 
@@ -6830,6 +6844,7 @@
         const response = await fetch(
           query,
           {
+            signal:controller.signal,
             credentials:'same-origin',
             cache:stem.waveformVersion
               ? 'no-store'
@@ -6887,6 +6902,7 @@
         error
       );
     } finally {
+      window.clearTimeout(timeout);
       stem.waveformLoading = false;
       drawStemClipWaveforms(stem);
     }
@@ -10858,6 +10874,15 @@
   }
 
   async function playAll() {
+    if (playing || playbackStarting) return false;
+    const requestSerial = ++playRequestSerial;
+    const requestGeneration = transportGeneration;
+    playbackStarting = true;
+    if (playButton) {
+      playButton.textContent = '■';
+      playButton.setAttribute('aria-label','Cancel playback start');
+    }
+    try {
     ensureAudioGraph();
 
     if (!context) {
@@ -10871,11 +10896,14 @@
       await context.resume();
     }
 
+    if (requestGeneration !== transportGeneration) return false;
     await prepareBufferTransport();
+    if (requestGeneration !== transportGeneration) return false;
     if (!bufferTransportPrepared) {
       await prepareTimeStretchTransport();
     }
 
+    if (requestGeneration !== transportGeneration) return false;
     metronomeLastBeat = -1;
 
     if (
@@ -10902,13 +10930,22 @@
     // animation frame to correct currentTime.
     playing = false;
 
-    await seekAllSafely(
-      position,
-      true
-    );
+    return await seekAllSafely(position,true);
+    } finally {
+      // A cancelled request must not clear a newer Play request's state.
+      if (requestSerial === playRequestSerial) {
+        playbackStarting = false;
+        if (!playing && playButton) {
+          playButton.textContent = '▶';
+          playButton.setAttribute('aria-label','Play');
+        }
+      }
+    }
   }
 
   function pauseAll() {
+    ++playRequestSerial;
+    playbackStarting = false;
     if (playing) {
       position = globalPosition();
     }
@@ -21529,7 +21566,7 @@
   // Main controls.
   // ---------------------------------------------------------
   playButton?.addEventListener('click', () => {
-    if (playing) {
+    if (playing || playbackStarting) {
       pauseAll();
     } else {
       playAll().catch(error => {
@@ -22529,7 +22566,7 @@
         return;
       }
 
-      if (playing) {
+      if (playing || playbackStarting) {
         pauseAll();
       } else {
         playAll().catch(() => {});

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source=fs.readFileSync('admin/stem-command-bus-v159.js','utf8');
-const runtime=fs.readFileSync('admin/stems-v108.js','utf8');
+const runtime=fs.readFileSync('admin/stem-editor.js','utf8');
 const api=fs.readFileSync('api/stem-agent-v105.php','utf8');
 const mixApi=fs.readFileSync('api/stem-mix.php','utf8');
 const projectApi=fs.readFileSync('api/studio-project-v77.php','utf8');

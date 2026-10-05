@@ -7,7 +7,7 @@ const source=fs.readFileSync('admin/stem-session-safety-v216.js','utf8');
 const css=fs.readFileSync('admin/stem-session-safety-v216.css','utf8');
 const endpoint=fs.readFileSync('api/stem-session-v216.php','utf8');
 const wrapper=fs.readFileSync('admin/stems.php','utf8');
-const core=fs.readFileSync('admin/stems-v108.js','utf8');
+const core=fs.readFileSync('admin/stem-editor.js','utf8');
 const v211=fs.readFileSync('admin/stem-automation-mixer-v211.js','utf8');
 const v215Hardening=fs.readFileSync('admin/stem-audio-engine-v215-hardening.js','utf8');
 

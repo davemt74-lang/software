@@ -83,6 +83,13 @@
     const maxDecodedBytes=Math.max(16*1024*1024,Number(options.maxDecodedBytes)||DEFAULT_MAX_DECODED_BYTES);
     const buffers=new Map();
     const active=new Set();
+    const maxConcurrentLoads=Math.max(1,Math.min(4,Math.floor(Number(options.maxConcurrentLoads)||2)));
+    let loading=0;
+    const waiters=[];
+    const acquire=()=>new Promise(resolve=>{
+      if(loading<maxConcurrentLoads){loading+=1;resolve();}else waiters.push(resolve);
+    });
+    const release=()=>{if(waiters.length)waiters.shift()();else loading-=1;};
     let decodedBytes=0,estimatedDecodedBytes=0,memoryBudgetExceeded=false,memoryBudgetError=null;
 
     function estimateKnownProject(urls){
@@ -118,15 +125,26 @@
       if(memoryBudgetExceeded)throw memoryBudgetError||makeBudgetError();
       if(buffers.has(key))return buffers.get(key);
       const pending=(async()=>{
-        if(!fetcher)throw new Error('Fetch is unavailable.');
-        const response=await fetcher(key,{credentials:'same-origin'});
-        if(!response?.ok)throw new Error(`Audio fetch failed (${response?.status||0}).`);
-        const bytes=await response.arrayBuffer();
+        await acquire();
+        try{
         if(memoryBudgetExceeded)throw memoryBudgetError||makeBudgetError();
-        const buffer=await context.decodeAudioData(bytes.slice(0));
+        if(!fetcher)throw new Error('Fetch is unavailable.');
+        const controller=typeof root?.AbortController==='function'?new root.AbortController():null;
+        const timeout=controller&&root?.setTimeout?root.setTimeout(()=>controller.abort(),90000):null;
+        let bytes;
+        try{
+        const response=await fetcher(key,{credentials:'same-origin',...(controller?{signal:controller.signal}:{})});
+        if(!response?.ok)throw new Error(`Audio fetch failed (${response?.status||0}).`);
+        bytes=await response.arrayBuffer();
+        }finally{if(timeout!==null)root.clearTimeout(timeout);}
+        if(memoryBudgetExceeded)throw memoryBudgetError||makeBudgetError();
+        const buffer=await context.decodeAudioData(bytes);
         const estimated=Math.max(0,Number(buffer.length)||0)*Math.max(1,Number(buffer.numberOfChannels)||1)*4;
+        if(memoryBudgetExceeded)throw memoryBudgetError||makeBudgetError();
         if(decodedBytes+estimated>maxDecodedBytes)throw tripBudget(decodedBytes+estimated);
+        if(memoryBudgetExceeded)throw memoryBudgetError||makeBudgetError();
         decodedBytes+=estimated;return buffer;
+        }finally{release();}
       })();
       buffers.set(key,pending);
       try{return await pending;}catch(error){buffers.delete(key);throw error;}
@@ -136,7 +154,7 @@
       const unique=[...new Set((urls||[]).map(String).filter(Boolean))];
       const preflight=estimateKnownProject(unique);estimatedDecodedBytes=preflight.bytes;
       if(preflight.matched>0&&preflight.bytes>maxDecodedBytes)throw tripBudget(preflight.bytes);
-      for(const url of unique)await load(url);
+      await Promise.all(unique.map(url=>load(url)));
       return unique.length;
     }
     function stop(when=context.currentTime){
@@ -156,6 +174,8 @@
       if(!isCurrent())throw new Error('Stale AudioBuffer transport generation.');
       const effectiveStart=Math.max(Number(startAt)||0,context.currentTime+.025);
       const scheduled=[];
+      const created=[];
+      try{
       for(let index=0;index<rows.length;index++){
         if(!isCurrent()){stop();throw new Error('Stale AudioBuffer transport generation.');}
         const item=rows[index],buffer=decoded[index];
@@ -173,12 +193,21 @@
           const fadeStart=Math.max(when,Math.min(end,when+plan.fadeOutDelay));
           gain.gain.setValueAtTime(plan.gain,fadeStart);gain.gain.linearRampToValueAtTime(0,end);
         }
-        const record={source,gain};active.add(record);
+        const record={source,gain};active.add(record);created.push(record);
         source.onended=()=>{active.delete(record);try{source.disconnect();}catch(error){}try{gain.disconnect();}catch(error){}};
         source.start(when,plan.offset,plan.sourceDuration);
         scheduled.push({...plan,when,end,url:item.url});
       }
       return {startAt:effectiveStart,events:scheduled};
+      }catch(error){
+        created.forEach(record=>{
+          active.delete(record);
+          try{record.source.stop();}catch(ignore){}
+          try{record.source.disconnect();}catch(ignore){}
+          try{record.gain.disconnect();}catch(ignore){}
+        });
+        throw error;
+      }
     }
     return Object.freeze({
       load,prepare,schedule,stop,getBuffer:url=>load(url),

@@ -95,6 +95,22 @@ jobs:
           node tests/chat-onboarding-v241.mjs
           php tests/agent-onboarding-skill-v100.php
 
+      - name: Stem editor full-feature audit
+        run: |
+          node tests/stem-feature-audit.mjs
+          php tests/stem_feature_integrity.php
+          node tests/stem-project-loader.mjs
+          node tests/stem-first-paint-loader-v233.mjs
+          node tests/stem-media-failure-v228.mjs
+          node tests/stem-midi-runtime-repair-v220.mjs
+          node tests/stem-v210-reintroduction-v225.mjs
+          node tests/stem-v211-reintroduction-v226.mjs
+          node tests/stem-v211-quarantine-v227.mjs
+          node tests/stem-command-bus-v159.mjs
+          node tests/stem-project-create-library-v158.mjs
+          node tests/stem-agent-v131-integration.mjs
+          node tests/fan-private-stem-mixes.mjs
+
       - name: Run recovered baseline suite
         run: python3 tools/run_recovery_baseline.py
 

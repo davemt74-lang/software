@@ -28,7 +28,7 @@ assert.throws(
   /repeat budget/
 );
 
-const studio=fs.readFileSync('admin/stems-v108.js','utf8');
+const studio=fs.readFileSync('admin/stem-editor.js','utf8');
 const page=fs.readFileSync('admin/stems-legacy-v108.php','utf8');
 assert.match(studio,/StonefellowStemLoopPlannerV204/);
 assert.match(studio,/loopPlanner\.expandLoopClip/);

@@ -433,6 +433,25 @@ function stem_media_v229_harden_output(): void
     }
 }
 
+function stem_media_cache_validator(array $stem,array $stat): string
+{
+    return 'W/"' . hash('sha256',implode(':',[
+        (string)($stem['id'] ?? ''),(string)($stem['file_path'] ?? ''),
+        (string)($stem['updated_at'] ?? ''),(string)($stat['mtime'] ?? ''),
+        (string)($stat['ctime'] ?? ''),(string)($stat['size'] ?? ''),
+    ])) . '"';
+}
+
+function stem_media_cache_matches(string $header,string $validator): bool
+{
+    $target=preg_replace('/^W\\//','',trim($validator));
+    foreach (explode(',',$header) as $item) {
+        $item=trim($item);
+        if ($item==='*' || preg_replace('/^W\\//','',$item)===$target) return true;
+    }
+    return false;
+}
+
 function stem_media_v229_error(int $status, string $message, string $reason): never
 {
     stem_media_v229_clear_output();
@@ -488,6 +507,8 @@ if (!$track || (!can_manage_track_production($track) && !(user_has_role('fan') &
     stem_media_v229_error(403, 'This stem has not been shared with your account.', 'forbidden');
 }
 
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+
 $resolved = stem_media_v229_resolve_path(STONEFELLOW_ROOT, (string)$stem['file_path']);
 if (!$resolved['ok']) {
     stem_media_v229_error(404, 'Stem file is not available.', (string)$resolved['reason']);
@@ -505,6 +526,18 @@ if (!$inspection['ok']) {
 }
 
 $size = (int)$inspection['size'];
+$validator=stem_media_cache_validator($stem,@stat($absolute) ?: []);
+if (in_array($_SERVER['REQUEST_METHOD'] ?? 'GET',['GET','HEAD'],true)
+    && trim((string)($_SERVER['HTTP_RANGE'] ?? ''))===''
+    && stem_media_cache_matches((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? ''),$validator)) {
+    stem_media_v229_clear_output();
+    stem_media_v229_harden_output();
+    http_response_code(304);
+    header('ETag: ' . $validator);
+    header('Cache-Control: private, no-cache, no-transform, max-age=0');
+    header('X-Stonefellow-Stem-Media: ' . STONEFELLOW_STEM_MEDIA_BUILD);
+    exit;
+}
 $range = stem_media_v229_range((string)($_SERVER['HTTP_RANGE'] ?? ''), $size);
 if (!$range['ok']) {
     stem_media_v229_clear_output();
@@ -526,6 +559,7 @@ if (session_status() === PHP_SESSION_ACTIVE) {
 }
 
 http_response_code((int)$range['status']);
+header('ETag: ' . $validator);
 header('Content-Type: ' . (string)$inspection['mime']);
 header('Accept-Ranges: bytes');
 header('X-Content-Type-Options: nosniff');

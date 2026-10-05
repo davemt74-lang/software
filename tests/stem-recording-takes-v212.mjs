@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const source=fs.readFileSync('admin/stem-recording-takes-v212.js','utf8');
 const css=fs.readFileSync('admin/stem-recording-takes-v212.css','utf8');
 const wrapper=fs.readFileSync('admin/stems.php','utf8');
-const core=fs.readFileSync('admin/stems-v108.js','utf8');
+const core=fs.readFileSync('admin/stem-editor.js','utf8');
 const legacy=fs.readFileSync('admin/stems-legacy-v108.php','utf8');
 const v210=fs.readFileSync('admin/stem-professional-editing-v210.js','utf8');
 

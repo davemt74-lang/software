@@ -40,7 +40,7 @@
 
     const cacheKey=stemId=>{
       const row=metaById.get(Number(stemId))||{};
-      return `${cachePrefix}${Number(cfg.userId||0)}:${Number(cfg.trackId||0)}:${Number(stemId||0)}:${Number(row.duration||0).toFixed(3)}:${String(cfg.pluginImportVersion||'base')}`;
+      return `${cachePrefix}${Number(cfg.userId||0)}:${Number(cfg.trackId||0)}:${Number(stemId||0)}:${Number(row.duration||0).toFixed(3)}:${String(cfg.pluginImportVersion||'base')}:${String(row.mediaVersion||'legacy')}`;
     };
     const cacheRead=stemId=>{
       try{
@@ -297,6 +297,7 @@
       build:BUILD,
       isPlaybackReady:()=>playbackReady,
       isMediaReady:()=>mediaPhaseReady,
+      whenMediaReady:()=>mediaReadyPromise,
       wasForced:()=>false,
       continuedWithFailures:()=>continuedWithFailures,
       failures:()=>lastFailures.map(item=>({...item})),
