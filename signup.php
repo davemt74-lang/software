@@ -55,7 +55,7 @@ if ($isPost) {
                     $pdo->beginTransaction();
                     // users.role remains a compatibility identity column. Product
                     // entitlements and workspace relationships are separate domains.
-                    $passwordHash=password_hash($password,PASSWORD_DEFAULT);
+                    $passwordHash=password_hash($password, PASSWORD_DEFAULT);
                     $insert = $pdo->prepare("INSERT INTO users (email,password_hash,display_name,role,is_active,created_at,updated_at) VALUES (?,?,?,?,1,NOW(),NOW())");
                     $insert->execute([$email, $passwordHash, $displayName, 'fan']);
                     $userId = (int)$pdo->lastInsertId();

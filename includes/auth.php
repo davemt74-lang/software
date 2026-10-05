@@ -320,7 +320,7 @@ function password_reset_complete(string $token, string $password): bool
     $pdo = db();
     if (!$pdo) return false;
 
-    $passwordHash=password_hash($password,PASSWORD_DEFAULT);
+    $passwordHash=password_hash($password, PASSWORD_DEFAULT);
     try {
         $pdo->beginTransaction();
         $lock=$pdo->prepare('SELECT is_active FROM users WHERE id=? FOR UPDATE');
