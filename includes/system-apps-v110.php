@@ -49,6 +49,33 @@ function vp3_system_apps_remote_v110(int $userId,string $operation,array $payloa
     }
     $result=$remote!==null?$remote($userId,$operation,$payload):homeserver_vp3_remote_operation_for_user($userId,$operation,$payload);
     if(!is_array($result))throw new RuntimeException('HomeServer returned an invalid System Apps response.');
+    if($result===[]||array_key_exists('ok',$result)&&$result['ok']!==true){
+        throw new RuntimeException('HomeServer did not acknowledge the System Apps operation.');
+    }
+    if(str_starts_with($operation,'apps.control.')){
+        $expected=strtolower(trim((string)($payload['app_key']??'')));
+        $observed=strtolower(trim((string)($result['app_key']??'')));
+        if($expected===''||$observed!==$expected){
+            throw new RuntimeException('HomeServer returned a mismatched app control identity.');
+        }
+        if($operation==='apps.control.invoke'&&(
+            ($result['contract']??'')!=='vp3.app.agent-action-result.v1'||
+            ($result['action']??'')!==($payload['action']??'')||!array_key_exists('result',$result)
+        ))throw new RuntimeException('HomeServer returned an invalid app action receipt.');
+        $settings=$operation==='apps.control.status'?($result['settings']??[]):$result;
+        if(in_array($operation,['apps.control.status','apps.control.settings','apps.control.settings.set'],true)){
+            if(!is_array($settings)||($settings['secret_values_exposed']??null)!==false){
+                throw new RuntimeException('HomeServer returned an invalid app settings projection.');
+            }
+            foreach((array)($settings['schema']['fields']??[]) as $field){
+                if(!is_array($field)||empty($field['secret']))continue;
+                $value=$settings['values'][$field['key']??'']??null;
+                if(!is_array($value)||($value['secret']??null)!==true||!is_bool($value['configured']??null)||count($value)!==2){
+                    throw new RuntimeException('HomeServer returned an unredacted secret setting.');
+                }
+            }
+        }
+    }
     return $result;
 }
 
