@@ -31,7 +31,10 @@ assert.match(chat,/context\.system_app_action_card/);
 assert.match(chat,/data\.system_app_action_card/);
 assert.match(css,/chat-system-app-action-card/);
 assert.match(css,/chat-system-app-action-button\.primary/);
-assert.match(shell,/chat-system-app-action-ux-v190-20260930/);
+const controlsBuild=shell.match(/\$controlBuild\s*=\s*'([^']+)'/);
+assert.ok(controlsBuild&&controlsBuild[1].length>0,'Canonical Chat assets require a nonempty build version');
+assert.match(shell,/str_replace\('chat\.js\?v=101', 'chat\.js\?v=' \. \$controlBuild/);
+assert.match(shell,/str_replace\('chat\.css\?v=206-source-light-20260905', 'chat\.css\?v=' \. \$controlBuild/);
 assert.match(shell,/chat\.css\?v=206-source-light-20260905/);
 assert.match(bootstrap,/system-apps-v190\.php/);
 
