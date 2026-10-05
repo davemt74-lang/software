@@ -70,7 +70,9 @@ assert.match(signup, /password_hash\(\$password, PASSWORD_DEFAULT\)/, 'Signup mu
 assert.match(signup, /accept_terms/, 'Signup must retain explicit legal acceptance');
 assert.match(signup, /subscription_assign_default_trial\(\$userId\)/, 'signup must automatically assign the configured default trial');
 assert.match(signup, /\$_SESSION\['subscription_onboarding'\]\s*=\s*1/, 'signup must hand the new account into package-aware onboarding');
-assert.match(signup, /\$insert->execute\(\[\$email, password_hash\(\$password, PASSWORD_DEFAULT\), \$displayName, 'fan'\]\)/, 'signup must create one neutral compatibility identity before package assignment');
+assert.match(signup, /\$passwordHash=password_hash\(\$password, PASSWORD_DEFAULT\)/, 'signup must hash the chosen password once');
+assert.match(signup, /\$insert->execute\(\[\$email, \$passwordHash, \$displayName, 'fan'\]\)/, 'signup must create one neutral compatibility identity before package assignment');
+assert.match(signup, /\$_SESSION\['auth_password_fingerprint'\]=auth_password_fingerprint\(\$userId,\$passwordHash\)/, 'signup session must bind to the same persisted account credential');
 assert.doesNotMatch(signup, /signup_role_interest|How will you use VP3\?|\['artist','producer','supervisor','manager'\]/, 'public signup must not self-assign Artist or contextual Team roles');
 
 assert.match(auth, /CREATE TABLE IF NOT EXISTS password_reset_tokens/, 'password recovery must have a canonical schema helper');
