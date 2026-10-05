@@ -134,6 +134,9 @@ try {
 
     $pdo->beginTransaction();
     try {
+        $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');
+        $lock->execute([(int)$user['id']]);
+        if(!$lock->fetchColumn())throw new RuntimeException('Account is unavailable.');
         $agents = user_agents_list_v236($pdo, (int)$user['id'], true);
         $agent = $agents[0] ?? null;
         if (!$agent) {

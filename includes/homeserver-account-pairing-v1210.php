@@ -54,9 +54,6 @@ function homeserver_account_v1210_hash(string $raw): string
 function homeserver_account_v1210_generate_token(int $userId): array
 {
     if ($userId < 1) throw new RuntimeException('Authentication required.');
-    if (homeserver_vp3_connection($userId)) {
-        throw new RuntimeException('A HomeServer connection already exists. Disconnect and remove it before generating a first-time pairing token.');
-    }
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
     homeserver_account_v1210_ensure_schema($pdo);
@@ -69,6 +66,15 @@ function homeserver_account_v1210_generate_token(int $userId): array
 
     $pdo->beginTransaction();
     try {
+        $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$lock->execute([$userId]);
+        if(!$lock->fetchColumn())throw new RuntimeException('Authentication required.');
+        $existing=$pdo->prepare('SELECT user_id FROM homeserver_connections WHERE user_id=? LIMIT 1');
+        $existing->execute([$userId]);
+        if($existing->fetchColumn())throw new RuntimeException('A HomeServer connection already exists. Disconnect and remove it before generating a first-time pairing token.');
+
+        $inFlight=$pdo->prepare("SELECT id FROM homeserver_pairing_tokens WHERE user_id=? AND status='redeeming' AND expires_at>UTC_TIMESTAMP() LIMIT 1 FOR UPDATE");
+        $inFlight->execute([$userId]);
+        if($inFlight->fetchColumn())throw new RuntimeException('A HomeServer pairing is already in progress. Wait for it to finish before generating another token.');
         $pdo->prepare(
             "UPDATE homeserver_pairing_tokens
              SET status='revoked'
@@ -129,8 +135,14 @@ function homeserver_account_v1210_begin_redeem(string $rawToken): array
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
     homeserver_account_v1210_ensure_schema($pdo);
+    $owner=$pdo->prepare('SELECT user_id FROM homeserver_pairing_tokens WHERE token_hash=? LIMIT 1');
+    $owner->execute([$hash]);$ownerId=(int)$owner->fetchColumn();
+    if($ownerId<1)throw new RuntimeException('The VP3 pairing token is invalid or expired.');
     $pdo->beginTransaction();
     try {
+        $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$lock->execute([$ownerId]);
+        if(!$lock->fetchColumn())throw new RuntimeException('The VP3 pairing token account is unavailable.');
+
         $stmt = $pdo->prepare(
             "SELECT * FROM homeserver_pairing_tokens WHERE token_hash=? LIMIT 1 FOR UPDATE"
         );

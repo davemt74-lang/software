@@ -255,7 +255,8 @@ function chat_onboarding_v241_activation_state(array $workspace,array $intellige
         $permitted=!empty($item['permitted']);
         $available=!empty($item['available']);
         $deferred=$selected&&!$configured&&!$dismissed&&$deferTs!==false&&$deferTs>time();
-        if($configured)$status='complete';
+        if($selected&&!$permitted)$status='locked';
+        elseif($configured&&$permitted)$status='complete';
         elseif($dismissed||!$selected)$status='not_interested';
         elseif(!$permitted)$status='locked';
         elseif(!$available)$status='unavailable';
@@ -263,7 +264,7 @@ function chat_onboarding_v241_activation_state(array $workspace,array $intellige
         else$status='pending';
         if($selected){
             $selectedCount++;
-            if($configured)$configuredCount++;
+            if($status==='complete')$configuredCount++;
             elseif($status==='deferred')$deferredCount++;
             elseif(in_array($status,['locked','unavailable'],true))$blockedCount++;
         }
@@ -279,12 +280,12 @@ function chat_onboarding_v241_activation_state(array $workspace,array $intellige
     $milestones=[['key'=>'core','label'=>'Agent + profile ready','complete'=>$requiredSetupComplete,'kind'=>'setup']];
     $usageMilestones=[];
     foreach($items as $key=>$item)if(!empty($item['selected'])){
-        $milestones[]=['key'=>$key,'label'=>(string)$item['label'],'complete'=>!empty($item['configured']),'kind'=>'setup'];
+        $milestones[]=['key'=>$key,'label'=>(string)$item['label'],'complete'=>$item['activation_status']==='complete','kind'=>'setup'];
         $milestoneLabel=trim((string)($item['milestone_label']??''));
         if($milestoneLabel!=='')$usageMilestones[]=['key'=>$key,'label'=>$milestoneLabel,'achieved'=>(int)($item['usage_count']??0)>0,'count'=>(int)($item['usage_count']??0)];
     }
     $draft=(array)($intelligence['draft']??[]);$publicFunnel=is_array($draft['public_funnel']??null)?$draft['public_funnel']:[];
-    $attribution=['origin'=>(string)($interests['activation.origin']??$draft['origin']??$publicFunnel['origin']??''),'source'=>(string)($interests['activation.source']??$draft['source']??$publicFunnel['source']??''),'selected_workflows'=>array_values(array_map(static fn(array $row): string=>(string)$row['interest_key'],array_filter($items,static fn(array $row): bool=>!empty($row['selected'])))),'configured_workflows'=>array_values(array_map(static fn(array $row): string=>(string)$row['interest_key'],array_filter($items,static fn(array $row): bool=>!empty($row['selected'])&&!empty($row['configured']))))];
+    $attribution=['origin'=>(string)($interests['activation.origin']??$draft['origin']??$publicFunnel['origin']??''),'source'=>(string)($interests['activation.source']??$draft['source']??$publicFunnel['source']??''),'selected_workflows'=>array_values(array_map(static fn(array $row): string=>(string)$row['interest_key'],array_filter($items,static fn(array $row): bool=>!empty($row['selected'])))),'configured_workflows'=>array_values(array_map(static fn(array $row): string=>(string)$row['interest_key'],array_filter($items,static fn(array $row): bool=>$row['activation_status']==='complete')))];
     $percent=$selectedCount>0?(int)round(($configuredCount/$selectedCount)*100):100;
     return [
         'build'=>'onboarding-activation-v243-20260921','items'=>$items,'next_action'=>$pending[0]??null,
