@@ -27,6 +27,18 @@ function role_label(string $role): string
 function user_account_types_for_user_id(int $userId, string $fallbackRole = ''): array
 {
     $roles = [];
+    $pdo = db();
+    if ($userId > 0) {
+        // A copied principal cannot retain a demoted role or disabled account.
+        if (!$pdo) return [];
+        try {
+            $identity = $pdo->prepare('SELECT role,is_active FROM users WHERE id=? LIMIT 1');
+            $identity->execute([$userId]);
+            $live = $identity->fetch();
+            if (!$live || (int)($live['is_active'] ?? 0) !== 1) return [];
+            $fallbackRole = (string)($live['role'] ?? '');
+        } catch (Throwable $e) { return []; }
+    }
 
     if ($fallbackRole !== '' && valid_role($fallbackRole)) {
         $roles[] = $fallbackRole;
@@ -1392,7 +1404,8 @@ function role_has_permission(string $role, string $permission): bool
     }
 
     $pdo = db();
-    if ($pdo && permissions_schema_ready()) {
+    if ($pdo) {
+        if (!permissions_schema_ready()) return false;
         try {
             $stmt = $pdo->prepare(
                 'SELECT 1 FROM role_permissions WHERE role = ? AND permission_key = ? LIMIT 1'
@@ -1400,7 +1413,8 @@ function role_has_permission(string $role, string $permission): bool
             $stmt->execute([$role, $permission]);
             return (bool)$stmt->fetchColumn();
         } catch (Throwable $e) {
-            // Fall through to safe defaults while upgrading an older install.
+            // Existing storage is authoritative; read errors cannot restore grants.
+            return false;
         }
     }
 

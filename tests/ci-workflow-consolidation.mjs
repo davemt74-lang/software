@@ -8,6 +8,7 @@ const archiveDir=path.join(root,'.github','workflow-archive');
 
 const activeExpected=[
   "agent-event-infrastructure-v1920.yml",
+  "authority-section14.yml",
   "browser-companion-transaction-control-v2280.yml",
   "client-release-intelligence-v100.yml",
   "cloud-hosting-v100.yml",
@@ -27,7 +28,7 @@ const active=yamlFiles(workflowDir);
 const archived=yamlFiles(archiveDir);
 
 assert.deepEqual(active,[...activeExpected].sort(),'active GitHub workflow set drifted from the consolidated CI policy');
-assert.equal(active.length,13,'normal CI should expose exactly 13 active workflow definitions');
+assert.equal(active.length,14,'normal CI should expose exactly 14 active workflow definitions');
 assert.ok(archived.length>=138,'historical workflow archive unexpectedly lost phase definitions');
 
 const deploy=fs.readFileSync(path.join(workflowDir,'production-deploy-package.yml'),'utf8');

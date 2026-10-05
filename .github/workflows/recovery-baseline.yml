@@ -136,6 +136,8 @@ jobs:
           php tests/homeserver-v243-task-calendar-continuity-unit.php
           php tests/calendar-schedule-awareness-v1330-test.php
           node tests/crm-v180.mjs
+      - name: Section 14 current permissions and authority
+        run: php tests/authority_section14.php
       - name: Section 13 events, notifications and automation
         run: |
           php -l includes/notifications.php

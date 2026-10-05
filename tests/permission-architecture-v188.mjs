@@ -98,7 +98,7 @@ assert.match(chatLegacy, /\$chatCanCreatePlaylist = permission_v105_has\('playli
 assert.doesNotMatch(chatLegacy, /\$chatCanCreatePlaylist = has_permission\('chat\.access'/);
 assert.match(header, /has_permission\('admin\.access'/);
 assert.match(adminHeader, /has_permission\('tracks\.manage'/);
-assert.match(adminHeader, /has_permission\('permissions\.manage'/);
+assert.match(read('admin/permissions.php'), /require_permission\('permissions\.manage'/);
 assert.match(uiPermissions, /'playlist'=>permission_v105_has\('playlists\.manage',\$user\)/);
 assert.match(uiPermissions, /'artist_listening_access'=>has_permission\('artist_listening\.access',\$user\)/);
 assert.match(agentBrain, /if \(has_permission\('account\.access', \$user\)\)[\s\S]*'key'=>'agent_brain'/);
