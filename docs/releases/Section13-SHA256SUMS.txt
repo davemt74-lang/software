@@ -1,0 +1,2 @@
+2cd7f223d6b7f40432bad24984f333fd50aea94e6b9ffcd35fcb6cbc9fa02850  software-production-deploy.zip
+7b7a3ec68336b6ec8b45a844b489776b939471b389b3bb0de5b8146001d6de9a  HomeServer-Windows.zip

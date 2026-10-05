@@ -1,0 +1,341 @@
+{
+  "ci": {
+    "cloud": {
+      "pr": 533,
+      "head": "1c6281318ff3621b634833c7bb54681d28a92c83",
+      "merged": "d0a75a21e6afb1809e8f891d2e7b90d09f8eda08",
+      "checks": [
+        {
+          "name": "transfer-browser",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "transfer-mysql",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "meeting-presence",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "meeting-browser",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "ordered-status-mysql",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "transfer-scope",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Runtime journey · PHP 8.1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Runtime journey · PHP 8.3",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Client Release Operations · PHP 8.1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "contract",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Cognitive Runtime v26.10 · PHP 8.3",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Client Release Operations · PHP 8.3",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Event infrastructure · PHP 8.1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "contract (8.1)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "contract (8.3)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "contract",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "entitlement-architecture",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Cognitive Runtime v26.10 · PHP 8.1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "meeting commitment command (8.1)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "meeting commitment command (8.3)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "visual_scope",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "baseline",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Event infrastructure · PHP 8.3",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Transaction Trust, Control & Production Hardening · PHP 8.1",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "meeting-reliability-scope",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Transaction Trust, Control & Production Hardening · PHP 8.3",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "mainRuns": [
+        {
+          "id": 37336548644,
+          "name": "Production Deploy Package",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548644"
+        },
+        {
+          "id": 37336548607,
+          "name": "HomeServer Runtime Journey",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548607"
+        },
+        {
+          "id": 37336548684,
+          "name": "Webhook + Event Infrastructure v19.2",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548684"
+        },
+        {
+          "id": 37336548737,
+          "name": "Profile Commerce Secure File v11.30",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548737"
+        },
+        {
+          "id": 37336548606,
+          "name": "Browser Companion Transaction Trust, Control & Production Hardening v22.80",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548606"
+        },
+        {
+          "id": 37336548699,
+          "name": "Team Workspaces v3.50",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548699"
+        },
+        {
+          "id": 37336548604,
+          "name": "Video Meetings v18.23 Meeting Commitment Command",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548604"
+        },
+        {
+          "id": 37336548738,
+          "name": "Public Funnel + Onboarding Continuity",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548738"
+        },
+        {
+          "id": 37336548665,
+          "name": "Package Entitlements v3.40",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548665"
+        },
+        {
+          "id": 37336548610,
+          "name": "Cloud Hosting V1",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548610"
+        },
+        {
+          "id": 37336548627,
+          "name": "Recovery Baseline",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/software/actions/runs/37336548627"
+        }
+      ]
+    },
+    "homeserver": {
+      "pr": 273,
+      "head": "0b948b61da8a4532983973b72ade380b84901397",
+      "merged": "b4740bdff6fb7c827a48296d43708d2c05ae11b6",
+      "checks": [
+        {
+          "name": "Hardware experience · ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Hardware experience · windows-latest",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Local automation · ubuntu-latest",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Local automation · windows-latest",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "core",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "managed-ffmpeg-windows",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "mainRuns": [
+        {
+          "id": 37337024546,
+          "name": "HomeServer v2.4 Release Acceptance",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/otro/actions/runs/37337024546"
+        },
+        {
+          "id": 37337024534,
+          "name": "HomeServer CI",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/otro/actions/runs/37337024534"
+        },
+        {
+          "id": 37337024448,
+          "name": "HomeServer 2.3 Release Gate",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/otro/actions/runs/37337024448"
+        },
+        {
+          "id": 37337024286,
+          "name": "HomeServer Managed FFmpeg",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/otro/actions/runs/37337024286"
+        },
+        {
+          "id": 37337024290,
+          "name": "HomeServer v2.4 Data Continuity",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/otro/actions/runs/37337024290"
+        },
+        {
+          "id": 37337024194,
+          "name": "VP3 OS Hardware Experience v1.3",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/davemt74-lang/otro/actions/runs/37337024194"
+        }
+      ]
+    }
+  },
+  "artifacts": {
+    "cloud": {
+      "id": 11355723748,
+      "name": "software-production-deploy",
+      "size_in_bytes": 11739916,
+      "url": "https://api.github.com/repos/davemt74-lang/software/actions/artifacts/11355723748",
+      "archive_download_url": "https://api.github.com/repos/davemt74-lang/software/actions/artifacts/11355723748/zip",
+      "expired": false,
+      "created_at": "2026-10-05T15:54:17Z",
+      "expires_at": "2026-11-04T15:54:15Z",
+      "updated_at": "2026-10-05T15:54:17Z",
+      "digest": "sha256:2cd7f223d6b7f40432bad24984f333fd50aea94e6b9ffcd35fcb6cbc9fa02850",
+      "workflow_run": {
+        "id": 37336548644,
+        "repository_id": 1357596172,
+        "head_repository_id": 1357596172,
+        "head_branch": "main",
+        "head_sha": "d0a75a21e6afb1809e8f891d2e7b90d09f8eda08"
+      }
+    },
+    "home": {
+      "id": 11357922269,
+      "name": "HomeServer-Windows",
+      "size_in_bytes": 241533971,
+      "url": "https://api.github.com/repos/davemt74-lang/otro/actions/artifacts/11357922269",
+      "archive_download_url": "https://api.github.com/repos/davemt74-lang/otro/actions/artifacts/11357922269/zip",
+      "expired": false,
+      "created_at": "2026-10-05T16:15:16Z",
+      "expires_at": "2026-10-19T16:15:07Z",
+      "updated_at": "2026-10-05T16:15:16Z",
+      "digest": "sha256:7b7a3ec68336b6ec8b45a844b489776b939471b389b3bb0de5b8146001d6de9a",
+      "workflow_run": {
+        "id": 37337024534,
+        "repository_id": 1359578734,
+        "head_repository_id": 1359578734,
+        "head_branch": "main",
+        "head_sha": "b4740bdff6fb7c827a48296d43708d2c05ae11b6"
+      }
+    }
+  }
+}
