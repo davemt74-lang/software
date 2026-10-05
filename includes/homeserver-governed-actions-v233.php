@@ -76,6 +76,16 @@ function homeserver_governed_v233_request(int $userId,string $toolKey,array $arg
       || !empty($inner['owner_approval_required']);
     $requestId=trim((string)($inner['request_id']??$result['request_id']??''));
     if($approvalRequired&&$requestId==='')throw new RuntimeException('HomeServer did not return a durable approval request.');
+    if($tool['key']==='devices.command'){
+        $state=(string)($inner['status']??$result['status']??'');
+        $action=(string)($inner['action']??$inner['action_key']??$result['action']??'');
+        if(!$approvalRequired||$state!=='pending'||$action!=='devices.command'
+          ||!preg_match('/^[A-Za-z0-9._:-]{8,160}$/',$requestId)
+          ||isset($run['ok'])&&$run['ok']!==true
+          ||isset($result['ok'])&&$result['ok']!==true){
+            throw new RuntimeException('HomeServer did not confirm a pending local-owner device approval.');
+        }
+    }
 
     return [
       'ok'=>true,
