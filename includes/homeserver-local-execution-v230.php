@@ -98,8 +98,8 @@ function homeserver_execution_v230_policy(string $operation,array $payload=[]): 
 function homeserver_execution_v230_failure_class(Throwable $e): string
 {
     $message=mb_strtolower($e->getMessage());
+    if(str_contains($message,'401')||str_contains($message,'403')||str_contains($message,'authorization')||str_contains($message,'bearer')||str_contains($message,'permission')||str_contains($message,'unauthorized')||str_contains($message,'forbidden')||str_contains($message,'revoked'))return 'authorization';
     if(str_contains($message,'timeout')||str_contains($message,'timed out'))return 'timeout';
-    if(str_contains($message,'401')||str_contains($message,'403')||str_contains($message,'authorization')||str_contains($message,'bearer')||str_contains($message,'permission'))return 'authorization';
     if(str_contains($message,'offline')||str_contains($message,'not connected'))return 'homeserver_offline';
     if(str_contains($message,'relay')||str_contains($message,'connect')||str_contains($message,'unreachable'))return 'relay_unreachable';
     if(str_contains($message,'provider')||str_contains($message,'model')||str_contains($message,'inference'))return 'provider_unavailable';
@@ -212,7 +212,7 @@ function homeserver_execution_v230_execute(
     }catch(Throwable $e){
         $duration=max(0,(int)round((microtime(true)-$started)*1000));
         $failure=homeserver_execution_v230_failure_class($e);
-        if($fallback&&$policy['fallback_allowed']){
+        if($fallback&&$policy['fallback_allowed']&&$failure!=='authorization'){
             $fallbackStarted=microtime(true);
             $result=$fallback($e,$policy);
             if(!is_array($result))$result=['value'=>$result];

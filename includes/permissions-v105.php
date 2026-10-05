@@ -58,18 +58,20 @@ function permission_v105_has(string $permission, ?array $user = null): bool
     $roles=user_roles_for_user($user);
     if(!$roles)return false;
     $pdo=db();
-    if($pdo&&permissions_schema_ready()){
+    if($pdo){
+        if(!permissions_schema_ready())return false;
         try{
             $placeholders=implode(',',array_fill(0,count($roles),'?'));
             $stmt=$pdo->prepare("SELECT 1 FROM role_permissions WHERE permission_key=? AND role IN ($placeholders) LIMIT 1");
             $stmt->execute([$permission,...$roles]);
             return (bool)$stmt->fetchColumn();
         }catch(Throwable $e){
-            // Fall through to compatibility defaults only if storage cannot be read.
+            // Existing storage is authoritative; a read error grants nothing.
+            return false;
         }
     }
 
-    // Pre-permission-schema/read-failure fallback only.
+    // Pre-permission-schema fallback only.
     foreach($roles as $role){
         if(in_array($role,permission_v105_default_roles()[$permission]??[],true))return true;
     }
