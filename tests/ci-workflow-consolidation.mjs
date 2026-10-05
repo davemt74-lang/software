@@ -19,6 +19,7 @@ const activeExpected=[
   "public-funnel-onboarding-continuity.yml",
   "recovery-baseline.yml",
   "section15-hardware-automation.yml",
+  "section16-app-control.yml",
   "team-workspaces-v350.yml",
   "video-meetings-v18230.yml",
   "production-deploy-package.yml"
