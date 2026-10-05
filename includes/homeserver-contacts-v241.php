@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/section12-data.php';
 
 /**
  * HomeServer v2.4 Section 2 — federated Contacts continuity.
@@ -434,6 +435,14 @@ function homeserver_contacts_v241_core_crm_id(int $userId,string $canonicalId): 
 
 function homeserver_contacts_v241_cloud_crm_create(int $userId,array $payload): array
 {
+    $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    // Schema preparation must precede the transaction: MySQL DDL commits implicitly.
+    if(!homeserver_contacts_v241_schema_ready())homeserver_contacts_v241_ensure_schema($pdo);
+    return section12_owner_transaction($pdo,$userId,static fn()=>homeserver_contacts_v241_cloud_crm_create_locked($userId,$payload));
+}
+
+function homeserver_contacts_v241_cloud_crm_create_locked(int $userId,array $payload): array
+{
     $mutationId=homeserver_contacts_v241_mutation_id($payload['mutation_id']??'');
     $email=strtolower(trim((string)($payload['email']??'')));
     if(!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('A valid CRM contact email is required.');
@@ -457,6 +466,14 @@ function homeserver_contacts_v241_cloud_crm_create(int $userId,array $payload): 
 }
 
 function homeserver_contacts_v241_cloud_crm_update(int $userId,string $canonicalId,array $payload): array
+{
+    $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    // Schema preparation must precede the transaction: MySQL DDL commits implicitly.
+    if(!homeserver_contacts_v241_schema_ready())homeserver_contacts_v241_ensure_schema($pdo);
+    return section12_owner_transaction($pdo,$userId,static fn()=>homeserver_contacts_v241_cloud_crm_update_locked($userId,$canonicalId,$payload));
+}
+
+function homeserver_contacts_v241_cloud_crm_update_locked(int $userId,string $canonicalId,array $payload): array
 {
     $mutationId=homeserver_contacts_v241_mutation_id($payload['mutation_id']??'');
     $expected=homeserver_contacts_v241_expected_revision($payload['expected_revision']??'');
@@ -486,6 +503,7 @@ function homeserver_contacts_v241_cloud_crm_update(int $userId,string $canonical
     $pdo->prepare("UPDATE crm_contacts SET name=?,company=?,phone=?,email=?,email_normalized=?,
       lifecycle_stage=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status<>'archived'")
       ->execute([$name,$company,$phone,$email,$email,$relationship,$id,$userId]);
+    if(function_exists('crm_v180_sync_primary_channels'))crm_v180_sync_primary_channels($pdo,$id,$email,$phone);
     $row=homeserver_contacts_v241_core_crm_row($userId,$id);
     if(!$row)throw new RuntimeException('VP3 CRM contact could not be loaded after update.');
     $item=homeserver_contacts_v241_core_crm_projection($userId,$row);
@@ -495,6 +513,14 @@ function homeserver_contacts_v241_cloud_crm_update(int $userId,string $canonical
 }
 
 function homeserver_contacts_v241_cloud_crm_delete(int $userId,string $canonicalId,array $payload): array
+{
+    $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    // Schema preparation must precede the transaction: MySQL DDL commits implicitly.
+    if(!homeserver_contacts_v241_schema_ready())homeserver_contacts_v241_ensure_schema($pdo);
+    return section12_owner_transaction($pdo,$userId,static fn()=>homeserver_contacts_v241_cloud_crm_delete_locked($userId,$canonicalId,$payload));
+}
+
+function homeserver_contacts_v241_cloud_crm_delete_locked(int $userId,string $canonicalId,array $payload): array
 {
     $mutationId=homeserver_contacts_v241_mutation_id($payload['mutation_id']??'');
     $expected=homeserver_contacts_v241_expected_revision($payload['expected_revision']??'');

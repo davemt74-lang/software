@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/section12-data.php';
 
 /**
  * Stonefellow CRM v180
@@ -227,7 +228,25 @@ function crm_v180_activity(
     return (int)$pdo->lastInsertId();
 }
 
+function crm_v180_sync_primary_channels(PDO $pdo,int $id,string $email,string $phone): void
+{
+    // Keep alternate channels, but only the current native value is primary.
+    foreach([['crm_contact_emails','email','email_normalized',strtolower(trim($email)),strtolower(trim($email))],['crm_contact_phones','phone','phone_normalized',$phone,preg_replace('/[^0-9]+/','',$phone)??'']] as [$table,$valueColumn,$keyColumn,$value,$key]){
+        if(!table_exists($table))continue;
+        $pdo->prepare("UPDATE $table SET is_primary=0 WHERE contact_id=?")->execute([$id]);
+        if($key==='')continue;
+        $find=$pdo->prepare("SELECT id FROM $table WHERE contact_id=? AND $keyColumn=? LIMIT 1");$find->execute([$id,$key]);$channelId=(int)$find->fetchColumn();
+        if($channelId>0)$pdo->prepare("UPDATE $table SET $valueColumn=?,is_primary=1,updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$value,$channelId]);
+        else $pdo->prepare("INSERT INTO $table (contact_id,$valueColumn,$keyColumn,label,is_primary) VALUES (?,?,?,'primary',1)")->execute([$id,$value,$key]);
+    }
+}
+
 function crm_v180_upsert_contact(PDO $pdo, array $data): int
+{
+    return section12_owner_transaction($pdo,max(0,(int)($data['owner_user_id']??0)),static fn()=>crm_v180_upsert_contact_locked($pdo,$data));
+}
+
+function crm_v180_upsert_contact_locked(PDO $pdo, array $data): int
 {
     $email = strtolower(trim((string)($data['email'] ?? '')));
     if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -246,8 +265,8 @@ function crm_v180_upsert_contact(PDO $pdo, array $data): int
     // callers may know the same email independently without duplicating it
     // across Merchant Accounts owned by that same VP3 account.
     if(function_exists('column_exists')&&column_exists('crm_contacts','owner_user_id')){
-        $find=$pdo->prepare("SELECT id FROM crm_contacts WHERE owner_user_id=? AND email_normalized=? ORDER BY id LIMIT 1");
-        $find->execute([$ownerUserId,$email]);
+        $find=$pdo->prepare("SELECT id FROM crm_contacts WHERE ".($ownerUserId>0?"owner_user_id=?":"owner_user_id IS NULL")." AND email_normalized=? ORDER BY id LIMIT 1");
+        $find->execute($ownerUserId>0?[$ownerUserId,$email]:[$email]);
         $id=(int)$find->fetchColumn();
         if($id>0){
             $stmt=$pdo->prepare("UPDATE crm_contacts SET name=?,email=?,phone=CASE WHEN ?<>'' THEN ? ELSE phone END,
@@ -258,20 +277,10 @@ function crm_v180_upsert_contact(PDO $pdo, array $data): int
             $stmt=$pdo->prepare("INSERT INTO crm_contacts
               (public_id,owner_user_id,vp3_user_id,name,email,email_normalized,phone,company,source,status,lifecycle_stage,marketing_status,created_at,updated_at)
               VALUES (?,?,?,?,?,?,?,?,?,'active','','unknown',UTC_TIMESTAMP(),UTC_TIMESTAMP())");
-            $stmt->execute([function_exists('campaigns_rewards_uuid_v100')?campaigns_rewards_uuid_v100():bin2hex(random_bytes(16)),$ownerUserId,$vp3UserId?:null,$name,$email,$email,$phone,$company,$source]);
+            $stmt->execute([function_exists('campaigns_rewards_uuid_v100')?campaigns_rewards_uuid_v100():bin2hex(random_bytes(16)),$ownerUserId?:null,$vp3UserId?:null,$name,$email,$email,$phone,$company,$source]);
             $id=(int)$pdo->lastInsertId();
         }
-        if(table_exists('crm_contact_emails')){
-            $pdo->prepare("INSERT INTO crm_contact_emails (contact_id,email,email_normalized,label,is_primary)
-              VALUES (?,?,?,'primary',1) ON DUPLICATE KEY UPDATE email=VALUES(email),is_primary=1,updated_at=UTC_TIMESTAMP()")
-              ->execute([$id,$email,$email]);
-        }
-        if($phone!==''&&table_exists('crm_contact_phones')){
-            $normalized=preg_replace('/[^0-9]+/','',$phone)??'';
-            if($normalized!=='')$pdo->prepare("INSERT INTO crm_contact_phones (contact_id,phone,phone_normalized,label,is_primary)
-              VALUES (?,?,?,'primary',1) ON DUPLICATE KEY UPDATE phone=VALUES(phone),is_primary=1,updated_at=UTC_TIMESTAMP()")
-              ->execute([$id,$phone,$normalized]);
-        }
+        crm_v180_sync_primary_channels($pdo,$id,$email,$phone);
         return $id;
     }
 
@@ -373,7 +382,7 @@ function crm_v180_create_demo_lead(
 ): int {
     $pdo ??= db();
     if (!$pdo) return 0;
-    crm_v180_ensure_schema($pdo);
+    if(!crm_v180_schema_ready($pdo))crm_v180_ensure_schema($pdo);
 
     if ($sourceMessageId > 0) {
         $existing = $pdo->prepare('SELECT id FROM crm_leads WHERE source_contact_message_id=? LIMIT 1');
@@ -381,15 +390,6 @@ function crm_v180_create_demo_lead(
         $existingId = (int)$existing->fetchColumn();
         if ($existingId > 0) return $existingId;
     }
-
-    $contactId = crm_v180_upsert_contact($pdo, [
-        'name' => (string)($data['name'] ?? ''),
-        'email' => (string)($data['email'] ?? ''),
-        'phone' => (string)($data['phone'] ?? ''),
-        'company' => (string)($data['company'] ?? ''),
-        'source' => 'book_demo',
-    ]);
-    if ($contactId < 1) return 0;
 
     $role = trim((string)($data['role'] ?? $data['role_interest'] ?? ''));
     $team = trim((string)($data['team_size'] ?? ''));
@@ -400,6 +400,20 @@ function crm_v180_create_demo_lead(
 
     $pdo->beginTransaction();
     try {
+        section12_lock_owner($pdo,0);
+        if($sourceMessageId>0){
+            $existing=$pdo->prepare('SELECT id FROM crm_leads WHERE source_contact_message_id=? LIMIT 1');$existing->execute([$sourceMessageId]);$existingId=(int)$existing->fetchColumn();
+            if($existingId>0){$pdo->commit();return $existingId;}
+        }
+        $contactId = crm_v180_upsert_contact($pdo, [
+            'name' => (string)($data['name'] ?? ''),
+            'email' => (string)($data['email'] ?? ''),
+            'phone' => (string)($data['phone'] ?? ''),
+            'company' => (string)($data['company'] ?? ''),
+            'source' => 'book_demo',
+        ]);
+        if ($contactId < 1) throw new RuntimeException('CRM contact could not be created.');
+    
         $stmt = $pdo->prepare(
             "INSERT INTO crm_leads
              (contact_id,source_contact_message_id,source,stage,priority,role_interest,team_size,workflows_json,demo_focus,stage_changed_at,created_at,updated_at)

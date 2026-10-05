@@ -31,7 +31,8 @@ try{
     $csrf=(string)($input['csrf_token']??'');if($csrf===''||!hash_equals(csrf_token(),$csrf)){http_response_code(419);echo json_encode(['ok'=>false,'error'=>'Session expired. Refresh the page and try again.']);exit;}
     $action=trim((string)($input['action']??''));
     if($action==='create'){
-        $event=user_calendar_create_local_event_v1300($pdo,$user,$input,'user');
+        $mutation=trim((string)($input['mutation_id']??''));if($mutation!==''&&!preg_match('/^[A-Za-z0-9._:-]{8,128}$/',$mutation))throw new RuntimeException('Calendar mutation ID is invalid.');
+        $event=user_calendar_create_local_event_v1300($pdo,$user,$input,'user',null,$mutation!==''?'api:'.$mutation:'');
         agent_tool_log($user,'calendar.event.create','Calendar page event','success',['event_id'=>(int)$event['id'],'source'=>'user']);
         echo json_encode(['ok'=>true,'event'=>$event],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
     }
@@ -41,7 +42,7 @@ try{
         echo json_encode(['ok'=>true,'event'=>$event],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
     }
     if($action==='cancel'){
-        $eventId=(int)($input['event_id']??0);if(!user_calendar_cancel_event_v1300($pdo,$user,$eventId))throw new RuntimeException('Calendar event could not be removed.');
+        $eventId=(int)($input['event_id']??0);if(!user_calendar_cancel_event_v1300($pdo,$user,$eventId,isset($input['expected_revision'])?(string)$input['expected_revision']:null))throw new RuntimeException('Calendar event could not be removed.');
         agent_tool_log($user,'calendar.event.cancel','Calendar page event','success',['event_id'=>$eventId]);
         echo json_encode(['ok'=>true,'event_id'=>$eventId]);exit;
     }

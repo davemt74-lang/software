@@ -12,7 +12,7 @@ const governed=read('includes/homeserver-governed-actions-v233.php');
 const execution=read('includes/homeserver-local-execution-v230.php');
 const policies=read('includes/user-agent-system-v236.php');
 const profile=read('includes/profile-agent.php');
-const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
+const workflow=read('.github/workflows/recovery-baseline.yml');
 
 const checks=[
  ['Section 4 helper is loaded by the canonical bootstrap',bootstrap.includes('homeserver-tasks-calendar-v243.php')],
@@ -29,7 +29,7 @@ const checks=[
  ['Profile Agent calendar access remains behind central data policy',/homeserver_calendar/.test(policies)&&/'calendar'=>'homeserver_calendar'/.test(profile)],
  ['API requires account access and CSRF for mutations',/account\.access/.test(api)&&/hash_equals\(csrf_token\(\)/.test(api)],
  ['API exposes unified task and calendar reads',/unified_tasks/.test(api)&&/unified_calendar/.test(api)],
- ['runtime journey executes both Section 4 gates',/homeserver-v243-task-calendar-continuity-contract\.mjs/.test(workflow)&&/homeserver-v243-task-calendar-continuity-unit\.php/.test(workflow)],
+ ['recovery baseline executes both Section 4 gates',/homeserver-v243-task-calendar-continuity-contract\.mjs/.test(workflow)&&/homeserver-v243-task-calendar-continuity-unit\.php/.test(workflow)],
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}

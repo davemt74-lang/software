@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/section12-data.php';
 
 /**
  * VP3 User Calendar v13.00
@@ -115,7 +116,7 @@ function user_calendar_local_range_v1300(array $input, string $fallbackTimezone 
         $startTime = trim((string)($input['start_time'] ?? ''));
         if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $startTime)) throw new RuntimeException('Choose a valid start time.');
         $start = DateTimeImmutable::createFromFormat('!Y-m-d H:i', $date . ' ' . $startTime, $tz);
-        if (!$start) throw new RuntimeException('Choose a valid event start.');
+        if (!$start || $start->format('Y-m-d H:i') !== $date.' '.$startTime) throw new RuntimeException('Choose a valid event start; that local time may not exist.');
         $endDate = trim((string)($input['end_date'] ?? '')) ?: $date;
         $endTime = trim((string)($input['end_time'] ?? ''));
         if ($endTime === '') {
@@ -124,7 +125,7 @@ function user_calendar_local_range_v1300(array $input, string $fallbackTimezone 
         } else {
             if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $endTime)) throw new RuntimeException('Choose a valid end time.');
             $end = DateTimeImmutable::createFromFormat('!Y-m-d H:i', $endDate . ' ' . $endTime, $tz);
-            if (!$end) throw new RuntimeException('Choose a valid event end.');
+            if (!$end || $end->format('Y-m-d H:i') !== $endDate.' '.$endTime) throw new RuntimeException('Choose a valid event end; that local time may not exist.');
         }
         if ($end <= $start) throw new RuntimeException('Event end must be after its start.');
     }
@@ -138,6 +139,11 @@ function user_calendar_local_range_v1300(array $input, string $fallbackTimezone 
 }
 
 function user_calendar_create_event_v1300(PDO $pdo, array $user, array $input, string $source = 'user', ?int $agentId = null, string $sourceReference = ''): array
+{
+    return section12_owner_transaction($pdo,(int)($user['id']??0),static fn()=>user_calendar_create_event_locked_v1300($pdo,$user,$input,$source,$agentId,$sourceReference));
+}
+
+function user_calendar_create_event_locked_v1300(PDO $pdo, array $user, array $input, string $source = 'user', ?int $agentId = null, string $sourceReference = ''): array
 {
     if (!user_calendar_schema_ready_v1300($pdo)) throw new RuntimeException('User Calendar is not ready. An administrator needs to run the database upgrade.');
     $ownerUserId = (int)($user['id'] ?? 0);
@@ -155,7 +161,8 @@ function user_calendar_create_event_v1300(PDO $pdo, array $user, array $input, s
     $end = user_calendar_validate_utc_v1300((string)($input['end_at_utc'] ?? ''));
     if ($end <= $start) throw new RuntimeException('Event end must be after its start.');
     $allDay = !empty($input['all_day']);
-    $sourceReference = mb_substr(trim($sourceReference), 0, 190);
+    $sourceReference = trim($sourceReference);
+    if(mb_strlen($sourceReference)>190)throw new RuntimeException('Calendar source reference is too long.');
 
     if ($source === 'agent') {
         $agentId = max(0, (int)$agentId);
@@ -171,9 +178,9 @@ function user_calendar_create_event_v1300(PDO $pdo, array $user, array $input, s
         $agentId = null;
     }
 
-    if ($source === 'automation' && $sourceReference !== '') {
-        $existing = $pdo->prepare("SELECT * FROM user_calendar_events WHERE owner_user_id=? AND source='automation' AND source_reference=? AND status='active' ORDER BY id DESC LIMIT 1");
-        $existing->execute([$ownerUserId, $sourceReference]);
+    if ($sourceReference !== '') {
+        $existing = $pdo->prepare("SELECT * FROM user_calendar_events WHERE owner_user_id=? AND source=? AND source_reference=? ORDER BY id DESC LIMIT 1");
+        $existing->execute([$ownerUserId, $source, $sourceReference]);
         if ($row = $existing->fetch()) return $row;
     }
 
@@ -200,27 +207,39 @@ function user_calendar_create_local_event_v1300(PDO $pdo, array $user, array $in
 
 function user_calendar_update_event_v1300(PDO $pdo, array $user, int $eventId, array $input): array
 {
+    return section12_owner_transaction($pdo,(int)($user['id']??0),static fn()=>user_calendar_update_event_locked_v1300($pdo,$user,$eventId,$input));
+}
+
+function user_calendar_update_event_locked_v1300(PDO $pdo, array $user, int $eventId, array $input): array
+{
     $ownerUserId = (int)($user['id'] ?? 0);
     $existing = user_calendar_event_v1300($pdo, $ownerUserId, $eventId);
     if (!$existing || (string)$existing['status'] !== 'active') throw new RuntimeException('Calendar event not found.');
+    section12_assert_revision($existing,isset($input['expected_revision'])?(string)$input['expected_revision']:null);
     $range = user_calendar_local_range_v1300($input, (string)$existing['timezone']);
     $title = trim((string)($input['title'] ?? ''));
     if ($title === '' || mb_strlen($title) > 190) throw new RuntimeException('Enter an event title up to 190 characters.');
     $description = trim((string)($input['description'] ?? ''));
     $location = trim((string)($input['location'] ?? ''));
     if (mb_strlen($description) > 10000 || mb_strlen($location) > 500) throw new RuntimeException('Event details are too long.');
-    $stmt = $pdo->prepare('UPDATE user_calendar_events SET title=?,description=?,location=?,start_at_utc=?,end_at_utc=?,timezone=?,all_day=? WHERE id=? AND owner_user_id=?');
+    $stmt = $pdo->prepare("UPDATE user_calendar_events SET title=?,description=?,location=?,start_at_utc=?,end_at_utc=?,timezone=?,all_day=? WHERE id=? AND owner_user_id=? AND status='active'");
     $stmt->execute([$title,$description,$location,$range['start_at_utc'],$range['end_at_utc'],$range['timezone'],$range['all_day']?1:0,$eventId,$ownerUserId]);
     $saved=user_calendar_event_v1300($pdo, $ownerUserId, $eventId) ?: $existing;
     if(function_exists('vp3_cognitive_calendar_event_v2380'))vp3_cognitive_calendar_event_v2380($pdo,$ownerUserId,'calendar.event_updated',$saved);
     return $saved;
 }
 
-function user_calendar_cancel_event_v1300(PDO $pdo, array $user, int $eventId): bool
+function user_calendar_cancel_event_v1300(PDO $pdo, array $user, int $eventId, ?string $expectedRevision = null): bool
+{
+    return section12_owner_transaction($pdo,(int)($user['id']??0),static fn()=>user_calendar_cancel_event_locked_v1300($pdo,$user,$eventId,$expectedRevision));
+}
+
+function user_calendar_cancel_event_locked_v1300(PDO $pdo, array $user, int $eventId, ?string $expectedRevision = null): bool
 {
     $ownerUserId = (int)($user['id'] ?? 0);
     if ($ownerUserId < 1 || $eventId < 1) return false;
     $existing=user_calendar_event_v1300($pdo,$ownerUserId,$eventId);
+    if(!$existing)return false;section12_assert_revision($existing,$expectedRevision);
     $stmt = $pdo->prepare("UPDATE user_calendar_events SET status='cancelled',cancelled_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status='active'");
     $stmt->execute([$eventId,$ownerUserId]);$changed=$stmt->rowCount()>0;
     if($changed&&$existing&&function_exists('vp3_cognitive_calendar_event_v2380')){
