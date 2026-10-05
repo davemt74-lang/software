@@ -55,8 +55,9 @@ if ($isPost) {
                     $pdo->beginTransaction();
                     // users.role remains a compatibility identity column. Product
                     // entitlements and workspace relationships are separate domains.
+                    $passwordHash=password_hash($password, PASSWORD_DEFAULT);
                     $insert = $pdo->prepare("INSERT INTO users (email,password_hash,display_name,role,is_active,created_at,updated_at) VALUES (?,?,?,?,1,NOW(),NOW())");
-                    $insert->execute([$email, password_hash($password, PASSWORD_DEFAULT), $displayName, 'fan']);
+                    $insert->execute([$email, $passwordHash, $displayName, 'fan']);
                     $userId = (int)$pdo->lastInsertId();
                     if (table_exists('user_account_types')) {
                         $type = $pdo->prepare('INSERT IGNORE INTO user_account_types (user_id,role) VALUES (?,?)');
@@ -67,6 +68,7 @@ if ($isPost) {
                     $pdo->commit();
                     session_regenerate_id(true);
                     $_SESSION['user_id'] = $userId;
+                    $_SESSION['auth_password_fingerprint']=auth_password_fingerprint($userId,$passwordHash);
                     $_SESSION['subscription_onboarding'] = 1;
                     reset_current_user_cache();
                     $trial = subscription_current_for_user_id($userId);
