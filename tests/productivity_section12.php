@@ -44,6 +44,15 @@ rejects(fn()=>homeserver_contacts_v241_cloud_crm_create(1,['mutation_id'=>'s12-c
 check((int)$pdo->query('SELECT COUNT(*) FROM crm_contacts')->fetchColumn()===1,'Orphan CRM contact survived');$pdo->exec('DROP TRIGGER fail_receipt');
 rejects(fn()=>homeserver_contacts_v241_cloud_crm_create(3,['mutation_id'=>'s12-disabled','email'=>'disabled@example.invalid']),'Disabled owner can write CRM');
 check(!$pdo->inTransaction(),'Failed writer leaked a transaction');
+$pdo->exec("CREATE TABLE crm_leads(id INTEGER PRIMARY KEY AUTOINCREMENT,contact_id INTEGER,source_contact_message_id INTEGER UNIQUE,source TEXT,stage TEXT,priority TEXT,role_interest TEXT,team_size TEXT,workflows_json TEXT,demo_focus TEXT,stage_changed_at TEXT,created_at TEXT,updated_at TEXT);CREATE TABLE crm_activities(id INTEGER PRIMARY KEY AUTOINCREMENT,lead_id INTEGER,user_id INTEGER,activity_type TEXT,summary TEXT,details_json TEXT,created_at TEXT);CREATE TABLE crm_tasks(id INTEGER PRIMARY KEY);");
+$demo=['name'=>'Demo','email'=>'demo@example.invalid'];$leadId=crm_v180_create_demo_lead($demo,42,$pdo,false);
+check(crm_v180_create_demo_lead($demo,42,$pdo,false)===$leadId,'Demo retry duplicated lead');
+check((int)$pdo->query('SELECT COUNT(*) FROM crm_leads')->fetchColumn()===1,'Demo retry duplicated lead record');
+check($pdo->query("SELECT owner_user_id FROM crm_contacts WHERE email='demo@example.invalid'")->fetchColumn()===null,'Legacy CRM identity has a zero owner');
+$pdo->exec("CREATE TRIGGER fail_lead_activity BEFORE INSERT ON crm_activities BEGIN SELECT RAISE(ABORT,'activity failed'); END;");
+rejects(fn()=>crm_v180_create_demo_lead(['name'=>'Orphan','email'=>'demo-fail@example.invalid'],43,$pdo,false),'Demo activity failure hidden');
+check((int)$pdo->query("SELECT COUNT(*) FROM crm_contacts WHERE email='demo-fail@example.invalid'")->fetchColumn()===0,'Demo failure left an orphan contact');
+check((int)$pdo->query('SELECT COUNT(*) FROM crm_leads')->fetchColumn()===1,'Demo failure left a lead');$pdo->exec('DROP TRIGGER fail_lead_activity');
 // Execute the production token refresh against controlled provider responses.
 $sync=file_get_contents(dirname(__DIR__).'/includes/agent-calendar-sync-v500.php');$start=strpos($sync,'function agent_calendar_sync_refresh_v500');$end=strpos($sync,'function agent_calendar_sync_api_v500',$start);eval(substr($sync,$start,$end-$start));
 function agent_calendar_sync_connection_v500(PDO $pdo,int $ownerId,int $id):?array{$s=$pdo->prepare('SELECT * FROM agent_calendar_connections WHERE id=? AND owner_user_id=?');$s->execute([$id,$ownerId]);return $s->fetch()?:null;}

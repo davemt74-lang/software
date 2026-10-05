@@ -382,7 +382,7 @@ function crm_v180_create_demo_lead(
 ): int {
     $pdo ??= db();
     if (!$pdo) return 0;
-    crm_v180_ensure_schema($pdo);
+    if(!crm_v180_schema_ready($pdo))crm_v180_ensure_schema($pdo);
 
     if ($sourceMessageId > 0) {
         $existing = $pdo->prepare('SELECT id FROM crm_leads WHERE source_contact_message_id=? LIMIT 1');
@@ -390,15 +390,6 @@ function crm_v180_create_demo_lead(
         $existingId = (int)$existing->fetchColumn();
         if ($existingId > 0) return $existingId;
     }
-
-    $contactId = crm_v180_upsert_contact($pdo, [
-        'name' => (string)($data['name'] ?? ''),
-        'email' => (string)($data['email'] ?? ''),
-        'phone' => (string)($data['phone'] ?? ''),
-        'company' => (string)($data['company'] ?? ''),
-        'source' => 'book_demo',
-    ]);
-    if ($contactId < 1) return 0;
 
     $role = trim((string)($data['role'] ?? $data['role_interest'] ?? ''));
     $team = trim((string)($data['team_size'] ?? ''));
@@ -409,6 +400,20 @@ function crm_v180_create_demo_lead(
 
     $pdo->beginTransaction();
     try {
+        section12_lock_owner($pdo,0);
+        if($sourceMessageId>0){
+            $existing=$pdo->prepare('SELECT id FROM crm_leads WHERE source_contact_message_id=? LIMIT 1');$existing->execute([$sourceMessageId]);$existingId=(int)$existing->fetchColumn();
+            if($existingId>0){$pdo->commit();return $existingId;}
+        }
+        $contactId = crm_v180_upsert_contact($pdo, [
+            'name' => (string)($data['name'] ?? ''),
+            'email' => (string)($data['email'] ?? ''),
+            'phone' => (string)($data['phone'] ?? ''),
+            'company' => (string)($data['company'] ?? ''),
+            'source' => 'book_demo',
+        ]);
+        if ($contactId < 1) throw new RuntimeException('CRM contact could not be created.');
+    
         $stmt = $pdo->prepare(
             "INSERT INTO crm_leads
              (contact_id,source_contact_message_id,source,stage,priority,role_interest,team_size,workflows_json,demo_focus,stage_changed_at,created_at,updated_at)
