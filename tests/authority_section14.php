@@ -3,6 +3,7 @@ declare(strict_types=1);
 final class Section14PDO extends PDO {
     public function prepare(string $query,array $options=[]): PDOStatement|false {
         if(str_contains($query,'information_schema.COLUMNS'))$query='SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?';
+        if(str_contains($query,'information_schema.TABLES'))$query="SELECT COUNT(*) FROM sqlite_master WHERE name=?";
         return parent::prepare($query,$options);
     }
 }
@@ -11,10 +12,6 @@ $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 function db(): ?PDO { return $GLOBALS['pdo']; }
 function current_user(): ?array { return null; }
-function table_exists(string $name): bool {
-    $s=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");
-    $s->execute([$name]);return (bool)$s->fetchColumn();
-}
 function check14(bool $ok,string $message): void { if(!$ok)throw new RuntimeException($message); }
 $pdo->exec("CREATE TABLE users(id INTEGER PRIMARY KEY,role TEXT,is_active INTEGER);
     INSERT INTO users VALUES(1,'admin',1),(2,'artist',1);
