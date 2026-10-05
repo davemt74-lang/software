@@ -87,22 +87,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $newPassword = (string)($_POST['new_password'] ?? '');
             $confirmPassword = (string)($_POST['confirm_password'] ?? '');
 
-            $stmt = $pdo->prepare('SELECT password_hash FROM users WHERE id=? LIMIT 1');
-            $stmt->execute([(int)$user['id']]);
-            $hash = (string)$stmt->fetchColumn();
-
-            if (!password_verify($currentPassword, $hash)) {
-                throw new RuntimeException('Your current password is incorrect.');
-            }
-            if (strlen($newPassword) < 12) {
-                throw new RuntimeException('The new password must contain at least 12 characters.');
+            if (strlen($newPassword) < 12 || strlen($newPassword)>4096) {
+                throw new RuntimeException('The new password must contain between 12 and 4096 characters.');
             }
             if ($newPassword !== $confirmPassword) {
                 throw new RuntimeException('The new passwords do not match.');
             }
-
-            $stmt = $pdo->prepare('UPDATE users SET password_hash=? WHERE id=?');
-            $stmt->execute([password_hash($newPassword, PASSWORD_DEFAULT), (int)$user['id']]);
+            if(!auth_change_password($pdo,(int)$user['id'],$currentPassword,$newPassword)){
+                throw new RuntimeException('Your current password is incorrect or the account changed. Sign in again and retry.');
+            }
             flash('account_notice', 'Password updated.');
         }
     } catch (Throwable $e) {

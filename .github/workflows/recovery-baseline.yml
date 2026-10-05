@@ -1,5 +1,4 @@
 name: Recovery Baseline
-
 # Recovery is the final merge gate: once an exact-head run starts, let it finish
 # so GitHub records a definitive pass/fail instead of a late cancellation.
 concurrency:
@@ -83,7 +82,11 @@ jobs:
       - name: Onboarding account authority and pairing recovery
         run: |
           php tests/onboarding_accounts_section11.php
-          php -l api/chat-onboarding-v241.php
+           php tests/auth_accounts_section11.php
+          php -l includes/auth.php
+          php -l signup.php
+          php -l account.php
+         php -l api/chat-onboarding-v241.php
           php -l api/homeserver-https-pair-v1300.php
           node tests/homeserver-https-relay-v1300-contract.mjs
           node tests/homeserver-chat-device-code-v1.mjs

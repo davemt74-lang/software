@@ -6,6 +6,11 @@ function reset_current_user_cache(): void
     unset($GLOBALS['__stonefellow_current_user']);
 }
 
+function auth_password_fingerprint(int $userId,string $passwordHash): string
+{
+    return hash('sha256',$userId.':'.$passwordHash);
+}
+
 function current_user(): ?array
 {
     if (array_key_exists('__stonefellow_current_user', $GLOBALS)) {
@@ -31,17 +36,23 @@ function current_user(): ?array
         $user = $stmt->fetch();
 
         if (!$user) {
-            unset($_SESSION['user_id']);
+            unset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']);
             $GLOBALS['__stonefellow_current_user'] = null;
             return null;
         }
 
         if (array_key_exists('is_active', $user) && (int)$user['is_active'] !== 1) {
-            unset($_SESSION['user_id']);
+            unset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']);
             $GLOBALS['__stonefellow_current_user'] = null;
             return null;
         }
 
+        $revision=(string)($_SESSION['auth_password_fingerprint']??'');
+        if($revision===''||!hash_equals(auth_password_fingerprint((int)$user['id'],(string)$user['password_hash']),$revision)){
+            unset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']);
+            $GLOBALS['__stonefellow_current_user']=null;
+            return null;
+        }
         $primaryRole = (string)$user['role'];
         $current = [
             'id' => (int)$user['id'],
@@ -103,6 +114,7 @@ function login_attempt(string $email, string $password): bool
 
     session_regenerate_id(true);
     $_SESSION['user_id'] = (int)$user['id'];
+    $_SESSION['auth_password_fingerprint']=auth_password_fingerprint((int)$user['id'],(string)$user['password_hash']);
     $_SESSION['login_attempts'] = [];
     reset_current_user_cache();
 
@@ -136,9 +148,28 @@ function logout_user(): void
 {
     $user = current_user();
     if ($user && function_exists('agent_activity_v101_logout')) agent_activity_v101_logout($user);
-    unset($_SESSION['user_id']);
+    unset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']);
     reset_current_user_cache();
     session_regenerate_id(true);
+}
+
+function auth_change_password(PDO $pdo,int $userId,string $currentPassword,string $newPassword): bool
+{
+    if($userId<1||strlen($newPassword)<12||strlen($newPassword)>4096)return false;
+    $q=$pdo->prepare('SELECT password_hash FROM users WHERE id=? AND is_active=1 LIMIT 1');
+    $q->execute([$userId]);$before=$q->fetchColumn();
+    if(!is_string($before)||!password_verify($currentPassword,$before))return false;
+    $after=password_hash($newPassword,PASSWORD_DEFAULT);
+    // Reject a reset/disable that happened while verifying or hashing.
+    $q=$pdo->prepare('UPDATE users SET password_hash=?,updated_at=NOW() WHERE id=? AND password_hash=? AND is_active=1');
+    $q->execute([$after,$userId,$before]);
+    if($q->rowCount()!==1)return false;
+    if((int)($_SESSION['user_id']??0)===$userId){
+        session_regenerate_id(true);
+        $_SESSION['auth_password_fingerprint']=auth_password_fingerprint($userId,$after);
+        reset_current_user_cache();
+    }
+    return true;
 }
 
 function password_reset_schema_ready(): bool
@@ -213,6 +244,10 @@ function password_reset_request(string $email): void
     if (!$user || (array_key_exists('is_active', $user) && (int)$user['is_active'] !== 1)) return;
 
     try {
+        $pdo->beginTransaction();
+        $lock=$pdo->prepare('SELECT is_active FROM users WHERE id=? FOR UPDATE');
+        $lock->execute([(int)$user['id']]);
+        if((int)$lock->fetchColumn()!==1){$pdo->commit();return;}
         // A database-backed per-account cooldown complements the anonymous
         // session throttle. Repeated requests cannot invalidate a reset email
         // that may already be in flight or flood the same account with links.
@@ -223,7 +258,7 @@ function password_reset_request(string $email): void
              ORDER BY id DESC LIMIT 1'
         );
         $cooldown->execute([(int)$user['id']]);
-        if ($cooldown->fetchColumn()) return;
+        if ($cooldown->fetchColumn()) {$pdo->commit();return;}
 
         $token = bin2hex(random_bytes(32));
         $hash = hash('sha256', $token);
@@ -232,7 +267,9 @@ function password_reset_request(string $email): void
             'INSERT INTO password_reset_tokens (user_id,token_hash,expires_at,request_ip) VALUES (?,?,DATE_ADD(NOW(),INTERVAL 60 MINUTE),?)'
         );
         $insert->execute([(int)$user['id'], $hash, substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45)]);
+        $pdo->commit();
     } catch (Throwable $e) {
+        if($pdo->inTransaction())$pdo->rollBack();
         error_log('VP3 password reset token creation failed: ' . $e->getMessage());
         return;
     }
@@ -283,8 +320,12 @@ function password_reset_complete(string $token, string $password): bool
     $pdo = db();
     if (!$pdo) return false;
 
+    $passwordHash=password_hash($password,PASSWORD_DEFAULT);
     try {
         $pdo->beginTransaction();
+        $lock=$pdo->prepare('SELECT is_active FROM users WHERE id=? FOR UPDATE');
+        $lock->execute([(int)$record['user_id']]);
+        if((int)$lock->fetchColumn()!==1){$pdo->rollBack();return false;}
         $consume = $pdo->prepare(
             'UPDATE password_reset_tokens
              SET used_at=NOW()
@@ -297,7 +338,7 @@ function password_reset_complete(string $token, string $password): bool
         }
 
         $pdo->prepare('UPDATE users SET password_hash=?,updated_at=NOW() WHERE id=?')->execute([
-            password_hash($password, PASSWORD_DEFAULT),
+            $passwordHash,
             (int)$record['user_id'],
         ]);
         $pdo->prepare('UPDATE password_reset_tokens SET used_at=NOW() WHERE user_id=? AND used_at IS NULL')->execute([(int)$record['user_id']]);
