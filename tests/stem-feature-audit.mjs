@@ -21,6 +21,12 @@ class Param {cancelScheduledValues(){}setValueAtTime(){}linearRampToValueAtTime(
 const failing=factory.createScheduler({...context,createBufferSource:()=>{const id=sourceIndex++;const node={playbackRate:{value:1},connect(){},disconnect(){this.disconnected=true;},stop(){this.stopped=true;},start(){if(id===1)throw new Error('decoder start failed');}};sources.push(node);return node;},createGain:()=>({gain:new Param(),connect(){},disconnect(){}})},{fetcher:async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)})});
 const item={url:'/a',destination:{},position:0,projectEnd:1,clip:{timelineStart:0,timelineLength:1,sourceStart:0,sourceEnd:1}};
 await assert.rejects(failing.schedule([item,item]),/decoder start failed/);assert.equal(failing.activeCount(),0);assert.ok(sources.every(x=>x.stopped&&x.disconnected),'partial schedule cannot leave sound under fallback');
+const gains=[];
+class LoggedParam extends Param {constructor(){super();this.events=[];}setValueAtTime(value,time){this.events.push({value,time});}}
+const fades=factory.createScheduler({...context,decodeAudioData:async()=>({duration:10,length:480000,numberOfChannels:2}),createBufferSource:()=>({playbackRate:{value:1},connect(){},disconnect(){},start(){},stop(){}}),createGain:()=>{const gain=new LoggedParam();gains.push(gain);return {gain,connect(){},disconnect(){}};}},{fetcher:async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)})});
+await fades.schedule([{...item,position:9,projectEnd:10,clip:{timelineStart:0,timelineLength:10,sourceStart:0,sourceEnd:10,fadeOut:2}}]);
+assert.ok(gains[0].events.every(x=>x.value<=0.5),'seeking into a fade-out cannot jump back to full gain');
+fades.stop();
 const core=read('admin/stem-editor.js');
 const play=core.slice(core.indexOf('  async function playAll() {'),core.indexOf('\n  function pauseAll()',core.indexOf('  async function playAll() {')));
 const pause=core.slice(core.indexOf('  function pauseAll() {'),core.indexOf('\n  function selectStem(',core.indexOf('  function pauseAll() {')));

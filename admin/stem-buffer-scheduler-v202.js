@@ -191,7 +191,7 @@
         if(plan.fadeInRemaining>0)gain.gain.linearRampToValueAtTime(plan.gain,Math.min(end,when+plan.fadeInRemaining));
         if(plan.fadeOut>0){
           const fadeStart=Math.max(when,Math.min(end,when+plan.fadeOutDelay));
-          gain.gain.setValueAtTime(plan.gain,fadeStart);gain.gain.linearRampToValueAtTime(0,end);
+          gain.gain.setValueAtTime(fadeStart>when?plan.gain:plan.gainAtStart,fadeStart);gain.gain.linearRampToValueAtTime(0,end);
         }
         const record={source,gain};active.add(record);created.push(record);
         source.onended=()=>{active.delete(record);try{source.disconnect();}catch(error){}try{gain.disconnect();}catch(error){}};
