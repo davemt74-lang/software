@@ -18,6 +18,7 @@ const activeExpected=[
   "profile-commerce-secure-file-v1130.yml",
   "public-funnel-onboarding-continuity.yml",
   "recovery-baseline.yml",
+  "section15-hardware-automation.yml",
   "team-workspaces-v350.yml",
   "video-meetings-v18230.yml",
   "production-deploy-package.yml"
@@ -28,7 +29,7 @@ const active=yamlFiles(workflowDir);
 const archived=yamlFiles(archiveDir);
 
 assert.deepEqual(active,[...activeExpected].sort(),'active GitHub workflow set drifted from the consolidated CI policy');
-assert.equal(active.length,14,'normal CI should expose exactly 14 active workflow definitions');
+assert.equal(active.length,activeExpected.length,'normal CI should expose the reviewed active workflow definitions');
 assert.ok(archived.length>=138,'historical workflow archive unexpectedly lost phase definitions');
 
 const deploy=fs.readFileSync(path.join(workflowDir,'production-deploy-package.yml'),'utf8');
