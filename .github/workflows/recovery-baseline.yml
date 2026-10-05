@@ -136,6 +136,13 @@ jobs:
           php tests/homeserver-v243-task-calendar-continuity-unit.php
           php tests/calendar-schedule-awareness-v1330-test.php
           node tests/crm-v180.mjs
+      - name: Section 13 events, notifications and automation
+        run: |
+          php -l includes/notifications.php
+          php -l tests/events_automation_section13.php
+          php tests/events_automation_section13.php
+          node tests/notifications_state_section13.mjs
+          node tests/chat-notifications-brain-v240.mjs
       - name: Run recovered baseline suite
         run: python3 tools/run_recovery_baseline.py
 

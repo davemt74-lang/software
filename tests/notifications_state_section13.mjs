@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const ui=fs.readFileSync(new URL('../chat-notifications-drawer-v240.js',import.meta.url),'utf8');
+const native=ui.slice(ui.indexOf('  let state = null;'),ui.indexOf('  let drawer = null;'));
+const issued=[];const context=vm.createContext({request:(action,payload)=>new Promise((resolve,reject)=>issued.push({action,payload,resolve,reject}))});
+vm.runInContext(native+'\nglobalThis.api={requestState,get state(){return state},get pending(){return pendingStateWrites}};',context);const {api}=context;
+let older=api.requestState('state'),newer=api.requestState('state');issued[1].resolve({value:'new'});assert.equal(await newer,true);issued[0].resolve({value:'old'});assert.equal(await older,false);assert.equal(api.state.value,'new');
+older=api.requestState('state');newer=api.requestState('state');issued[3].resolve({value:'fresh'});await newer;issued[2].reject(new Error('stale failed GET'));assert.equal(await older,false);assert.equal(api.state.value,'fresh');
+older=api.requestState('state');let first=api.requestState('mark_read',{notification_id:1}),second=api.requestState('mark_all_read',{});assert.equal(api.pending,2);await new Promise(setImmediate);assert.equal(issued.length,6);assert.equal(issued[5].action,'mark_read');issued[4].resolve({value:'prewrite'});assert.equal(await older,false);issued[5].resolve({value:'first'});assert.equal(await first,false);await new Promise(setImmediate);assert.equal(issued[6].action,'mark_all_read');issued[6].resolve({value:'second'});assert.equal(await second,true);assert.equal(api.state.value,'second');assert.equal(api.pending,0);
+first=api.requestState('mark_read',{});second=api.requestState('mark_all_read',{});await new Promise(setImmediate);issued[7].reject(new Error('first mutation failed'));assert.equal(await first,false);await new Promise(setImmediate);issued[8].resolve({value:'recovered'});assert.equal(await second,true);assert.equal(api.state.value,'recovered');
+assert.match(ui,/async function refresh\([^]*?pendingStateWrites/,'Refresh must wait while state writes are pending');
+console.log('SECTION13_NOTIFICATION_STATE_ORDERING=PASS');

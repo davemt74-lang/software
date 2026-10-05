@@ -32,6 +32,7 @@ function notification_agent_brain_sql_predicate(string $alias = ''): string
 
     return "(\n"
         . "  {$prefix}type LIKE 'agent_activity_%'\n"
+        . "  OR {$prefix}type IN ('homeserver_connection_update','homeserver_needs_attention')\n"
         . "  OR {$prefix}source_type IN ('agent_tool_history','agent_edit_event','agent_memory_item','personal_knowledge_item','transcript_analysis','agent_proactive_event','system_app_event')\n"
         . ')';
 }
@@ -288,7 +289,25 @@ function notification_latest_id(?array $user = null): int
     }
 }
 
-function create_notification(
+function create_notification(int $userId,string $type,string $title,string $body='',string $targetUrl='',string $sourceType='',?int $sourceId=null,?string $createdAt=null): void
+{
+    $pdo=db();if(!$pdo||$userId<1||!table_exists('notifications'))return;
+    $owned=!$pdo->inTransaction();$savepoint='notification_'.bin2hex(random_bytes(6));
+    try{
+        if($owned)$pdo->beginTransaction();else $pdo->exec('SAVEPOINT '.$savepoint);
+        $lock=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':'';
+        $owner=$pdo->prepare('SELECT id FROM users WHERE id=?'.$lock);$owner->execute([$userId]);
+        if(!$owner->fetchColumn())throw new RuntimeException('Notification owner is unavailable.');
+        notification_create_locked($userId,$type,$title,$body,$targetUrl,$sourceType,$sourceId,$createdAt);
+        if($owned)$pdo->commit();else $pdo->exec('RELEASE SAVEPOINT '.$savepoint);
+    }catch(Throwable $e){
+        if($owned&&$pdo->inTransaction())$pdo->rollBack();
+        elseif(!$owned&&$pdo->inTransaction()){$pdo->exec('ROLLBACK TO SAVEPOINT '.$savepoint);$pdo->exec('RELEASE SAVEPOINT '.$savepoint);}
+        error_log('Notification create failed.');
+    }
+}
+
+function notification_create_locked(
     int $userId,
     string $type,
     string $title,
@@ -309,12 +328,12 @@ function create_notification(
     // path above remains backward-compatible with existing rows.
     if ($type === 'profile_profile_view') $type = 'profile_view';
 
-    try {
-        if ($sourceType !== '' && $sourceId !== null) {
+    $type=mb_substr($type,0,50);$sourceType=mb_substr($sourceType,0,80);
+    if ($sourceType !== '' && $sourceId !== null) {
             $check = $pdo->prepare(
                 'SELECT id FROM notifications
                  WHERE user_id=? AND source_type=? AND source_id=? AND type=?
-                 LIMIT 1'
+                 LIMIT 1'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':'')
             );
             $check->execute([$userId, $sourceType, $sourceId, $type]);
             if ($check->fetch()) {
@@ -361,12 +380,9 @@ function create_notification(
             ]);
         }
         $notificationId=(int)$pdo->lastInsertId();
-        if($notificationId>0&&function_exists('vp3_cognitive_notification_event_v2380'))vp3_cognitive_notification_event_v2380($pdo,$userId,'notification.created',$notificationId,[
+        try{if($notificationId>0&&function_exists('vp3_cognitive_notification_event_v2380'))vp3_cognitive_notification_event_v2380($pdo,$userId,'notification.created',$notificationId,[
             'type'=>mb_substr($type,0,50),'source_type'=>mb_substr($sourceType,0,80),'source_id'=>$sourceId,
-        ]);
-    } catch (Throwable $e) {
-        error_log('Notification create failed: ' . $e->getMessage());
-    }
+        ]);}catch(Throwable $e){error_log('Notification projection failed.');}
 }
 
 function create_notification_for_permission(

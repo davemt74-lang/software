@@ -68,7 +68,7 @@ assert.ok(ui.includes("text.startsWith('Agent Brain priority update')"), 'Main F
 assert.ok(ui.includes("titles.some(title => text.includes(title))"), 'a surfaced turn must still contain a current priority before controls are attached');
 assert.ok(ui.includes("[...document.querySelectorAll('#chatThread .message.assistant')].reverse()"), 'only the latest matching Brain priority turn should receive current controls');
 assert.ok(ui.includes("const hash = String(priority?.outcome_hash || '')"), 'Main Feed must use the server-returned closure hash rather than parse one from message text');
-assert.ok(ui.includes("state = await request('brain_outcome', {hash, outcome});"), 'Main Feed must post to the exact same canonical closure action');
+assert.ok(ui.includes("await requestState('brain_outcome', {hash, outcome})"), 'Main Feed must post to the exact same canonical closure action');
 assert.ok(ui.includes('chat-main-feed-brain-outcomes'), 'Main Feed must render an inline outcome section under the surfaced priority turn');
 assert.ok(ui.includes('Teach Agent Brain what actually happened.'), 'Main Feed must explain why outcome feedback matters');
 assert.ok(ui.includes('observeMainFeedBrainPriorities()'), 'Main Feed controls must survive dynamically loaded/synchronized chat messages');
@@ -83,3 +83,4 @@ assert.ok(css.includes('.chat-brain-priority-outcome.recorded'), 'recorded closu
 assert.ok(css.includes('.chat-brain-priority-actions{grid-template-columns:1fr 1fr}'), 'small screens must collapse outcome controls to two columns');
 
 console.log('AGENT_BRAIN_OUTCOME_CONTROLS_CONTRACT=PASS');
+
