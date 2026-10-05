@@ -239,7 +239,7 @@ function player_for_you(array $user, array $trackMap, int $limit = 8): array
         }
         if (table_exists('artist_workspace_track_favorites_v181')) {
             $stmt=$pdo->prepare('SELECT artist_track_id FROM artist_workspace_track_favorites_v181 WHERE user_id=?');$stmt->execute([(int)$user['id']]);
-            foreach($stmt->fetchAll(PDO::FETCH_COLUMN) as $artistTrackId){$trackId=1000000000+(int)$artistTrackId;if(isset($trackMap[$trackId])){$score[$trackId]+=12;$genre=trim((string)($trackMap[$trackId]['genre']??''));$mood=trim((string)($trackMap[$trackId]['mood']??''));if($genre!=='')$genreAffinity[$genre]=($genreAffinity[$genre]??0)+3;if($mood!=='')$moodAffinity[$mood]=($moodAffinity[$mood]??0)+2;}}
+            foreach($stmt->fetchAll(PDO::FETCH_COLUMN) as $artistTrackId){$trackId=music_catalog_player_id($trackMap,(int)$artistTrackId);if(isset($trackMap[$trackId])){$score[$trackId]+=12;$genre=trim((string)($trackMap[$trackId]['genre']??''));$mood=trim((string)($trackMap[$trackId]['mood']??''));if($genre!=='')$genreAffinity[$genre]=($genreAffinity[$genre]??0)+3;if($mood!=='')$moodAffinity[$mood]=($moodAffinity[$mood]??0)+2;}}
         }
 
         if (table_exists('track_play_sessions')) {

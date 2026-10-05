@@ -126,13 +126,19 @@ function player_library_visible_track_ids(
 try {
     if ($action === 'favorite_album') {
         $albumId = (int)($input['album_id'] ?? 0);
+        $responseAlbumId=$albumId;
+        if($albumId>=1000000000){
+            $catalog=$pdo->prepare('SELECT * FROM artist_catalog_albums_v181 WHERE id=? LIMIT 1');$catalog->execute([$albumId-1000000000]);$albumRow=$catalog->fetch();
+            if(!$albumRow||!artist_music_v185_can_view($albumRow,$user))throw new RuntimeException('Album is unavailable.');
+            $albumId=music_workspace_resources_v330_ensure_source_album($pdo,(int)$albumRow['workspace_id'],(int)$albumRow['id']);
+        }
 
         if ($albumId < 1 || !table_exists('album_favorites')) {
             throw new RuntimeException('Album favorites are unavailable.');
         }
 
         $stmt = $pdo->prepare(
-            'SELECT visibility,is_published
+            'SELECT visibility,is_published,workspace_id
              FROM albums
              WHERE id=?
              LIMIT 1'
@@ -144,7 +150,7 @@ try {
             !$album ||
             (
                 (int)$album['is_published'] !== 1 &&
-                !has_permission('albums.manage', $user)
+                !music_workspace_resources_v330_can_manage($pdo,(int)($album['workspace_id']??0),'albums',$user)
             ) ||
             !can_view_visibility((string)$album['visibility'], $user)
         ) {
@@ -177,7 +183,7 @@ try {
         player_library_json(
             true,
             [
-                'album_id'=>$albumId,
+                'album_id'=>$responseAlbumId,
                 'favorite'=>$favorite,
             ]
         );
@@ -198,7 +204,7 @@ try {
                 (int)$playlist['owner_user_id'] !== $userId &&
                 !in_array(
                     (string)$playlist['visibility'],
-                    ['public','members'],
+                    ['public'],
                     true
                 )
             )
@@ -291,6 +297,8 @@ try {
 
     if ($action === 'playlist_update') {
         $playlistId = (int)($input['playlist_id'] ?? 0);
+        $pdo->beginTransaction();
+        $lock=$pdo->prepare('SELECT id FROM playlists WHERE id=? AND owner_user_id=? FOR UPDATE');$lock->execute([$playlistId,$userId]);if(!$lock->fetchColumn())throw new RuntimeException('Playlist is unavailable.');
         $playlist = player_library_playlist($pdo, $playlistId);
 
         if (!$playlist || (int)$playlist['owner_user_id'] !== $userId) {
@@ -305,15 +313,15 @@ try {
             $user
         );
 
-        if ($title === '') {
-            throw new RuntimeException('Playlist title is required.');
+        if ($title === '' || mb_strlen($title)>190 || strlen($description)>65535 || count($trackIds)>500) {
+            throw new RuntimeException('Choose a playlist title of 1 to 190 characters, a shorter description and at most 500 tracks.');
         }
 
         if (!in_array($visibility, ['public','members'], true)) {
             throw new RuntimeException('Choose a valid playlist visibility.');
         }
 
-        $pdo->beginTransaction();
+
 
         $pdo->prepare(
             'UPDATE playlists
@@ -363,6 +371,8 @@ try {
     if ($action === 'playlist_add_track') {
         $playlistId = (int)($input['playlist_id'] ?? 0);
         $trackId = (int)($input['track_id'] ?? 0);
+        $pdo->beginTransaction();
+        $lock=$pdo->prepare('SELECT id FROM playlists WHERE id=? AND owner_user_id=? FOR UPDATE');$lock->execute([$playlistId,$userId]);if(!$lock->fetchColumn())throw new RuntimeException('Playlist is unavailable.');
         $playlist = player_library_playlist($pdo, $playlistId);
         $track = get_track_by_id($trackId);
 
@@ -376,13 +386,9 @@ try {
         }
 
         $artistTrackId = $trackId >= 1000000000 ? $trackId - 1000000000 : 0;
-        $sortStmt = $pdo->prepare(
-            'SELECT COALESCE(MAX(sort_order),-1)+1
-             FROM playlist_tracks
-             WHERE playlist_id=?'
-        );
-        $sortStmt->execute([$playlistId]);
-        $sortOrder = (int)$sortStmt->fetchColumn();
+        $sortStmt=$pdo->prepare('SELECT COALESCE(MAX(sort_order),-1) FROM playlist_tracks WHERE playlist_id=?');$sortStmt->execute([$playlistId]);$sortOrder=(int)$sortStmt->fetchColumn();
+        if(table_exists('artist_workspace_playlist_tracks_v181')){$sortStmt=$pdo->prepare('SELECT COALESCE(MAX(sort_order),-1) FROM artist_workspace_playlist_tracks_v181 WHERE playlist_id=?');$sortStmt->execute([$playlistId]);$sortOrder=max($sortOrder,(int)$sortStmt->fetchColumn());}
+        $sortOrder++;
 
         if ($artistTrackId > 0) {
             if (!table_exists('artist_workspace_playlist_tracks_v181')) throw new RuntimeException('Playlist storage is not ready. Run the database upgrade.');
@@ -394,6 +400,8 @@ try {
         $pdo->prepare(
             'UPDATE playlists SET updated_at=NOW() WHERE id=?'
         )->execute([$playlistId]);
+
+        $pdo->commit();
 
         player_library_json(
             true,
@@ -433,7 +441,7 @@ try {
                 (int)$playlist['owner_user_id'] !== $userId &&
                 !in_array(
                     (string)$playlist['visibility'],
-                    ['public','members'],
+                    ['public'],
                     true
                 )
             )
@@ -456,33 +464,10 @@ try {
         ]);
         $newId = (int)$pdo->lastInsertId();
 
-        $trackStmt = $pdo->prepare(
-            'SELECT track_id,sort_order
-             FROM playlist_tracks
-             WHERE playlist_id=?
-             ORDER BY sort_order,added_at'
-        );
-        $trackStmt->execute([$playlistId]);
-
-        $insert = $pdo->prepare(
-            'INSERT INTO playlist_tracks
-             (playlist_id,track_id,sort_order)
-             VALUES (?,?,?)'
-        );
-
-        foreach ($trackStmt->fetchAll() as $row) {
-            $track = get_track_by_id((int)$row['track_id']);
-
-            if (!$track || !can_view_track($track, $user)) {
-                continue;
-            }
-
-            $insert->execute([
-                $newId,
-                (int)$row['track_id'],
-                (int)$row['sort_order'],
-            ]);
-        }
+        $rows=music_catalog_playlist_tracks($pdo,$playlistId,$user);
+        $insert=$pdo->prepare('INSERT INTO playlist_tracks (playlist_id,track_id,sort_order) VALUES (?,?,?)');
+        $artistInsert=table_exists('artist_workspace_playlist_tracks_v181')?$pdo->prepare('INSERT INTO artist_workspace_playlist_tracks_v181 (playlist_id,artist_track_id,sort_order) VALUES (?,?,?)'):null;
+        foreach($rows as $index=>$track){$trackId=(int)$track['id'];if($trackId>=1000000000){if(!$artistInsert)throw new RuntimeException('Artist playlist storage is unavailable.');$artistInsert->execute([$newId,$trackId-1000000000,$index]);}else $insert->execute([$newId,$trackId,$index]);}
 
         $pdo->commit();
 

@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/music-catalog.php';
 
 function e(mixed $value): string
 {
@@ -247,12 +248,14 @@ function merge_player_track_catalogs(array $platformTracks, array $artistTracks)
         $sourceTrackId = (int)($track['source_track_id'] ?? 0);
 
         if ($sourceTrackId > 0 && isset($platformIds[$sourceTrackId])) {
+            foreach($merged as &$source){if((int)$source['id']===$sourceTrackId){$source['artist_track_id']=$artistTrackId;$source['catalog_workspace_id']=(int)($track['workspace_id']??0);break;}}unset($source);
             continue;
         }
         if ($sourceTrackId < 1 && $artistTrackId < 1) {
             continue;
         }
 
+        $track=music_catalog_player_track($track);
         $track['id'] = $sourceTrackId > 0
             ? $sourceTrackId
             : 1000000000 + $artistTrackId;
@@ -276,7 +279,7 @@ function get_tracks(): array
     try {
         $visibilitySelect = column_exists('tracks', 'visibility') ? ', visibility' : ", 'public' AS visibility";
         $platformTracks = $pdo->query(
-            "SELECT id, title, album, duration, lyrics, description, genre, mood, energy, tempo_bpm, keywords, audio_path, cover_path{$visibilitySelect}
+            "SELECT *
              FROM tracks
              WHERE is_published = 1
              ORDER BY sort_order ASC, id ASC"
@@ -284,6 +287,11 @@ function get_tracks(): array
         $artistTracks = artist_workspace_v181_schema_ready($pdo)
             ? artist_workspace_v181_public_records('tracks', current_user())
             : [];
+
+        if($artistTracks){
+            $states=$pdo->query('SELECT id,is_published FROM tracks')->fetchAll(PDO::FETCH_KEY_PAIR);
+            $artistTracks=array_values(array_filter($artistTracks,static fn(array $row):bool=>empty($row['source_track_id'])||!array_key_exists((int)$row['source_track_id'],$states)||(int)$states[(int)$row['source_track_id']]===1));
+        }
 
         // Merge before filtering so a hidden platform row cannot reappear via
         // an older Artist Workspace migration shadow with the same source id.
@@ -313,19 +321,31 @@ function get_track_by_id(int $id): ?array
     }
 
     try {
-        if (artist_workspace_v181_schema_ready($pdo)) {
-            $stmt=$pdo->prepare('SELECT * FROM artist_catalog_tracks_v181 WHERE is_published=1 AND (source_track_id=? OR id=?) LIMIT 1');
-            $stmt->execute([$id,$id>=1000000000?$id-1000000000:0]); $track=$stmt->fetch();
-            if ($track && can_view_visibility((string)$track['visibility'],current_user())) {$track['id']=(int)($track['source_track_id'] ?: (1000000000+(int)$track['id']));return $track;}
+        if($id>=1000000000&&artist_workspace_v181_schema_ready($pdo)){
+            $stmt=$pdo->prepare('SELECT * FROM artist_catalog_tracks_v181 WHERE id=? AND is_published=1 LIMIT 1');
+            $stmt->execute([$id-1000000000]);$track=$stmt->fetch();
+            if(!$track||!can_view_visibility((string)$track['visibility'],current_user()))return null;
+            if(!empty($track['source_track_id'])){
+                $check=$pdo->prepare('SELECT is_published FROM tracks WHERE id=? LIMIT 1');$check->execute([(int)$track['source_track_id']]);$state=$check->fetchColumn();
+                if($state!==false&&(int)$state!==1)return null;
+            }
+            return music_catalog_player_track($track,$id);
         }
-        $visibilitySelect = column_exists('tracks', 'visibility') ? ', visibility' : ", 'public' AS visibility";
-        $stmt = $pdo->prepare(
-            "SELECT id, title, album, duration, lyrics, description, genre, mood, energy, tempo_bpm, keywords, audio_path, cover_path{$visibilitySelect}
-             FROM tracks WHERE id = ? AND is_published = 1 LIMIT 1"
-        );
-        $stmt->execute([$id]);
-        $track = $stmt->fetch();
-        return $track ?: null;
+        // The same platform source wins for lists, detail pages and media.
+        $stmt=$pdo->prepare('SELECT * FROM tracks WHERE id=? LIMIT 1');$stmt->execute([$id]);$track=$stmt->fetch();
+        if($track){
+            if((int)($track['is_published']??0)!==1)return null;
+            if(artist_workspace_v181_schema_ready($pdo)){
+                $catalog=$pdo->prepare('SELECT id,workspace_id,is_published FROM artist_catalog_tracks_v181 WHERE source_track_id=? LIMIT 1');$catalog->execute([$id]);$shadow=$catalog->fetch();
+                if($shadow){$track['artist_track_id']=(int)$shadow['id'];$track['catalog_workspace_id']=(int)$shadow['workspace_id'];}
+            }
+            return $track;
+        }
+        if(artist_workspace_v181_schema_ready($pdo)){
+            $stmt=$pdo->prepare('SELECT * FROM artist_catalog_tracks_v181 WHERE source_track_id=? AND is_published=1 LIMIT 1');$stmt->execute([$id]);$track=$stmt->fetch();
+            if($track&&can_view_visibility((string)$track['visibility'],current_user()))return music_catalog_player_track($track,$id);
+        }
+        return null;
     } catch (Throwable $e) {
         return null;
     }

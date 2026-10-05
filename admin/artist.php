@@ -59,6 +59,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $check=$pdo->prepare('SELECT 1 FROM artist_workspaces_v181 WHERE profile_slug=? AND id<>? LIMIT 1');
             $check->execute([$slug,$workspaceId]);
             if($check->fetchColumn())throw new RuntimeException('That profile slug is already in use.');
+            $bio=trim((string)($_POST['bio']??''));if(mb_strlen($bio)>5000)throw new RuntimeException('Bio is too long.');
             $links=[];
             foreach(['website_url','instagram_url','tiktok_url','youtube_url','spotify_url','apple_music_url'] as $field)$links[$field]=artist_workspace_v181_validate_external_url((string)($_POST[$field]??''));
             $profilePath=(string)($workspace['profile_image_path']??'');$coverPath=(string)($workspace['cover_image_path']??'');
@@ -68,7 +69,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             if($newCover==='' && (int)($_POST['cover_photo_id']??0)>0)$newCover=artist_v181_copy_library_photo($pdo,$workspaceId,(int)$_POST['cover_photo_id'],'cover');
             if($newProfile!=='')$profilePath=$newProfile;if($newCover!=='')$coverPath=$newCover;
             $stmt=$pdo->prepare('UPDATE artist_workspaces_v181 SET profile_slug=?,bio=?,profile_image_path=?,cover_image_path=?,website_url=?,instagram_url=?,tiktok_url=?,youtube_url=?,spotify_url=?,apple_music_url=? WHERE id=? AND artist_user_id=?');
-            $stmt->execute([$slug,trim((string)($_POST['bio']??'')),$profilePath,$coverPath,$links['website_url'],$links['instagram_url'],$links['tiktok_url'],$links['youtube_url'],$links['spotify_url'],$links['apple_music_url'],$workspaceId,(int)$user['id']]);
+            $stmt->execute([$slug,$bio,$profilePath,$coverPath,$links['website_url'],$links['instagram_url'],$links['tiktok_url'],$links['youtube_url'],$links['spotify_url'],$links['apple_music_url'],$workspaceId,(int)$user['id']]);
             if($newProfile!=='' && !empty($workspace['profile_image_path']))artist_v181_remove_owned_image($workspaceId,(string)$workspace['profile_image_path']);
             if($newCover!=='' && !empty($workspace['cover_image_path']))artist_v181_remove_owned_image($workspaceId,(string)$workspace['cover_image_path']);
             flash('notice','Artist profile settings saved.');
@@ -77,6 +78,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     }
 
     $collection=(string)($_POST['collection']??$active);
+    if(in_array($collection,['tracks','albums'],true)){flash('error','Use the Music Library to manage music; no changes were applied.');redirect(url('/admin/artist-music.php?tab='.$collection));}
     if($collection==='photos'){flash('error','Use the Artist Media Library to manage photos.');redirect(url('/admin/artist-media.php'));}
     if(!isset($collections[$collection])){flash('error','Unknown collection.');redirect(url('/admin/artist.php'));}
     $table=$collections[$collection]['table'];$id=(int)($_POST['id']??0);

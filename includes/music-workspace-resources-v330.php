@@ -263,6 +263,7 @@ function music_workspace_resources_v330_resolve_active(PDO $pdo,array $user,int 
 {
     $uid=(int)($user['id']??0);
     if($uid<1)return null;
+    if($requestedWorkspaceId>0&&!music_workspace_resources_v330_can_access($pdo,$requestedWorkspaceId,$user))return null;
     if($requestedWorkspaceId>0&&music_workspace_resources_v330_can_access($pdo,$requestedWorkspaceId,$user)){
         $_SESSION['music_workspace_id']=$requestedWorkspaceId;
         return music_workspace_resources_v330_workspace($pdo,$requestedWorkspaceId);
@@ -312,6 +313,11 @@ function music_workspace_resources_v330_catalog_track(PDO $pdo,int $workspaceId,
 
 function music_workspace_resources_v330_ensure_source_album(PDO $pdo,int $workspaceId,int $catalogAlbumId): int
 {
+    return music_catalog_transaction($pdo,$workspaceId,static fn()=>music_workspace_resources_v330_ensure_source_album_locked($pdo,$workspaceId,$catalogAlbumId));
+}
+
+function music_workspace_resources_v330_ensure_source_album_locked(PDO $pdo,int $workspaceId,int $catalogAlbumId): int
+{
     if($workspaceId<1||$catalogAlbumId<1||!table_exists('albums'))return 0;
     $stmt=$pdo->prepare('SELECT * FROM artist_catalog_albums_v181 WHERE id=? AND workspace_id=? LIMIT 1');
     $stmt->execute([$catalogAlbumId,$workspaceId]);
@@ -322,7 +328,7 @@ function music_workspace_resources_v330_ensure_source_album(PDO $pdo,int $worksp
         $check=$pdo->prepare('SELECT id FROM albums WHERE id=? AND (workspace_id=? OR workspace_id IS NULL) LIMIT 1');
         $check->execute([$sourceId,$workspaceId]);
         if($check->fetchColumn()){
-            $pdo->prepare('UPDATE albums SET workspace_id=?,title=?,release_date=?,description=?,visibility=?,is_published=? WHERE id=?')->execute([$workspaceId,(string)$album['title'],$album['release_date']?:null,(string)$album['description'],(string)$album['visibility'],(int)$album['is_published'],$sourceId]);
+            $pdo->prepare('UPDATE albums SET workspace_id=?,title=?,release_date=?,description=?,cover_path=?,sort_order=?,visibility=?,is_published=? WHERE id=? AND (workspace_id=? OR workspace_id IS NULL)')->execute([$workspaceId,(string)$album['title'],$album['release_date']?:null,(string)$album['description'],(string)($album['cover_path']??''),(int)($album['sort_order']??0),(string)$album['visibility'],(int)$album['is_published'],$sourceId,$workspaceId]);
             return $sourceId;
         }
     }
@@ -334,6 +340,11 @@ function music_workspace_resources_v330_ensure_source_album(PDO $pdo,int $worksp
 }
 
 function music_workspace_resources_v330_ensure_production_track(PDO $pdo,int $workspaceId,int $catalogTrackId,array $user): array
+{
+    return music_catalog_transaction($pdo,$workspaceId,static fn()=>music_workspace_resources_v330_ensure_production_track_locked($pdo,$workspaceId,$catalogTrackId,$user));
+}
+
+function music_workspace_resources_v330_ensure_production_track_locked(PDO $pdo,int $workspaceId,int $catalogTrackId,array $user): array
 {
     if(!music_workspace_resources_v330_can_manage($pdo,$workspaceId,'tracks',$user)&&!music_workspace_resources_v330_can_manage($pdo,$workspaceId,'production',$user))throw new RuntimeException('You do not have production access to this Music Workspace.');
     $catalog=music_workspace_resources_v330_catalog_track($pdo,$workspaceId,$catalogTrackId);
@@ -362,8 +373,8 @@ function music_workspace_resources_v330_ensure_production_track(PDO $pdo,int $wo
         }
     }
 
-    $stmt=$pdo->prepare('INSERT INTO tracks (workspace_id,owner_user_id,producer_user_id,album_id,title,album,duration,description,genre,audio_path,cover_path,visibility,is_published) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
-    $stmt->execute([$workspaceId,$ownerId,$producerId,$sourceAlbumId?:null,(string)$catalog['title'],(string)($catalog['album']??''),$duration,(string)($catalog['description']??''),(string)($catalog['genre']??''),(string)$catalog['audio_path'],(string)($catalog['cover_path']??''),(string)$catalog['visibility'],(int)$catalog['is_published']]);
+    $stmt=$pdo->prepare('INSERT INTO tracks (workspace_id,owner_user_id,producer_user_id,album_id,title,album,duration,lyrics,description,genre,audio_path,cover_path,visibility,is_published) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    $stmt->execute([$workspaceId,$ownerId,$producerId,$sourceAlbumId?:null,(string)$catalog['title'],(string)($catalog['album']??''),$duration,'',(string)($catalog['description']??''),(string)($catalog['genre']??''),(string)$catalog['audio_path'],(string)($catalog['cover_path']??''),(string)$catalog['visibility'],(int)$catalog['is_published']]);
     $sourceId=(int)$pdo->lastInsertId();
     $pdo->prepare('UPDATE artist_catalog_tracks_v181 SET source_track_id=? WHERE id=? AND workspace_id=?')->execute([$sourceId,$catalogTrackId,$workspaceId]);
     $stmt=$pdo->prepare('SELECT * FROM tracks WHERE id=? LIMIT 1');$stmt->execute([$sourceId]);

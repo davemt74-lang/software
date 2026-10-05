@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_permission('tracks.manage');
 artist_workspace_v181_guard_legacy_admin('tracks');
+if(!user_has_role('admin',current_user()))redirect(url('/music-library.php?tab=tracks'));
 
 if (!access_schema_ready()) {
     redirect(url('/upgrade.php'));

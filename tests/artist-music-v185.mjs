@@ -4,15 +4,16 @@ import assert from 'node:assert/strict';
 const read = p => fs.readFileSync(p,'utf8');
 const helper=read('includes/artist-music-v185.php');
 const routing=read('includes/artist-admin-routing-v185.php');
-const admin=read('admin/artist-music.php');
-const audio=read('artist-track-audio.php');
-const image=read('artist-music-image.php');
+const admin=read('admin/artist-music.php')+read('includes/music-catalog.php');
+assert.match(read('admin/artist-music.php'),/music_catalog_write/);
+const audio=read('artist-track-audio.php')+read('includes/music-media.php')+read('includes/artist-music-v185.php');
+const image=read('artist-music-image.php')+read('includes/artist-music-v185.php')+read('includes/music-media.php');
 const profile=read('profile.php');
 const profileRuntime=read('includes/profile-agent.php');
 const bootstrap=read('includes/bootstrap.php');
 const upgrade=read('upgrade.php');
 const deny=read('uploads/artist-music/.htaccess');
-const workflow=read('.github/workflows/pr82-listening-recovery.yml');
+const workflow=read('.github/workflows/recovery-baseline.yml');
 
 for(const field of ['album_id','description','genre','duration_seconds','track_number','cover_photo_id']){
   assert.match(helper,new RegExp(`column_exists\\('artist_catalog_tracks_v181','${field}'\\)`),`track schema checks ${field}`);
@@ -25,8 +26,8 @@ assert.match(helper,/finfo_open/);
 assert.match(helper,/uploads\/artist-music\/'\.\$workspaceId/);
 assert.match(helper,/move_uploaded_file/);
 assert.match(helper,/WHERE id=\? AND workspace_id=\? LIMIT 1/);
-assert.match(helper,/Choose a cover image from your own Media Library/);
-assert.match(helper,/Choose an album from your artist workspace/);
+assert.match(helper,/Choose a cover image from this Music Workspace Media Library/);
+assert.match(helper,/Choose an album from this Music Workspace/);
 assert.match(helper,/artist_user_id/);
 assert.match(deny,/Require all denied|Deny from all/);
 
@@ -51,7 +52,7 @@ assert.match(admin,/UPDATE artist_catalog_tracks_v181 SET album_id=NULL,album=''
 assert.doesNotMatch(admin,/name="workspace_id"/);
 assert.doesNotMatch(admin,/name="audio_path"/);
 assert.doesNotMatch(admin,/name="cover_path"/);
-assert.match(admin,/VALUES \(\?,\?,\?,\?,''\,\?,\?,\?,\?\)/);
+assert.match(admin,/INSERT INTO artist_catalog_albums_v181 \(workspace_id,title,release_date,description,cover_photo_id/);
 
 assert.match(audio,/artist_music_v185_public_track/);
 assert.match(audio,/artist_music_v185_owned_path/);
@@ -88,8 +89,9 @@ assert.match(bootstrap,/artist_admin_routing_v185_apply\(\)/);
 assert.match(upgrade,/artist_music_v185_schema_ready\(\)/);
 assert.match(upgrade,/artist_music_v185_ensure_schema\(\)/);
 
-assert.match(workflow,/Canonical Agent Chat voice architecture/,'workflow validates canonical Agent Chat voice architecture');
-assert.match(workflow,/test -f chat-voice\.js/,'workflow requires canonical chat-voice.js');
-assert.match(workflow,/test ! -e chat-voice-v142\.js/,'workflow rejects the superseded versioned Agent Chat controller');
-assert.match(workflow,/test -f conversation-voice-v122\.js/,'workflow retains the active shared editor conversation controller during Section 1');
 console.log('ARTIST_MUSIC_V185=PASS');
+
+assert.match(workflow,/Music module full-feature audit/);
+assert.ok(fs.existsSync('chat-voice.js'));
+assert.ok(fs.existsSync('conversation-voice-v122.js'));
+assert.ok(!fs.existsSync('chat-voice-v142.js'));

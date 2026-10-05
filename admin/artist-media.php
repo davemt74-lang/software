@@ -2,15 +2,14 @@
 declare(strict_types=1);
 require_once dirname(__DIR__).'/includes/bootstrap.php';
 
-$user=current_user();
-if(!$user || !user_has_role('artist',$user) || !has_permission('photos.manage',$user)){
-    http_response_code(403);exit('Artist media access is required.');
-}
+$user=current_user();if(!$user){http_response_code(403);exit('Sign in to manage artwork.');}
 $pdo=db();if(!$pdo){http_response_code(503);exit('Database unavailable.');}
-artist_workspace_v181_ensure_schema($pdo);
-artist_media_v182_ensure_schema($pdo);
-$workspace=artist_workspace_v181_for_user($pdo,$user);
+artist_workspace_v181_ensure_schema($pdo);artist_media_v182_ensure_schema($pdo);
+$requested=max(0,(int)($_GET['workspace']??$_POST['workspace_id']??0));
+$workspace=$requested===0&&user_has_role('artist',$user)?artist_workspace_v181_for_user($pdo,$user):music_workspace_resources_v330_resolve_active($pdo,$user,$requested);
+if(!$workspace||!music_workspace_resources_v330_can_manage($pdo,(int)$workspace['id'],'media',$user)){http_response_code(403);exit('Artwork management is unavailable to your workspace role.');}
 $workspaceId=(int)$workspace['id'];
+$mediaRoute='/admin/artist-media.php?workspace='.$workspaceId;
 
 function artist_media_admin_remove_profile_image(int $workspaceId,string $storedPath): void
 {
@@ -19,32 +18,34 @@ function artist_media_admin_remove_profile_image(int $workspaceId,string $stored
 }
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
-    if(!verify_csrf()){flash('error','Session expired. Try again.');redirect(url('/admin/artist-media.php'));}
+    if(!verify_csrf()){flash('error','Session expired. Try again.');redirect(url($mediaRoute));}
     $action=(string)($_POST['action']??'save');
     $id=(int)($_POST['id']??0);
     $existing=$id>0?artist_media_v182_photo($pdo,$workspaceId,$id):null;
-    if($id>0 && !$existing){flash('error','Photo not found in your artist workspace.');redirect(url('/admin/artist-media.php'));}
+    if($id>0 && !$existing){flash('error','Photo not found in your artist workspace.');redirect(url($mediaRoute));}
 
     try{
         if($action==='delete'){
-            $pdo->prepare('DELETE FROM artist_catalog_photos_v181 WHERE id=? AND workspace_id=?')->execute([$id,$workspaceId]);
-            artist_media_v182_delete_owned_photo($workspaceId,(string)($existing['image_path']??''));
+            $removedPath=music_catalog_delete_photo($pdo,$workspaceId,$id);
+            artist_media_v182_delete_owned_photo($workspaceId,$removedPath);
             flash('notice','Photo deleted.');
-            redirect(url('/admin/artist-media.php'));
+            redirect(url($mediaRoute));
         }
 
         if(in_array($action,['use_profile','use_cover'],true)){
+            if(!music_workspace_resources_v330_can_manage($pdo,$workspaceId,'profile',$user))throw new RuntimeException('Profile management is unavailable.');
             $kind=$action==='use_profile'?'profile':'cover';
             $column=$kind==='profile'?'profile_image_path':'cover_image_path';
             $newPath=artist_media_v182_copy_photo_to_profile($pdo,$workspaceId,$id,$kind);
             $oldPath=(string)($workspace[$column]??'');
             try{
-                $stmt=$pdo->prepare("UPDATE artist_workspaces_v181 SET {$column}=? WHERE id=? AND artist_user_id=?");
-                $stmt->execute([$newPath,$workspaceId,(int)$user['id']]);
+                $stmt=$pdo->prepare("UPDATE artist_workspaces_v181 SET {$column}=? WHERE id=? AND artist_user_id=? AND {$column}=?");
+                $stmt->execute([$newPath,$workspaceId,(int)$workspace['artist_user_id'],$oldPath]);
+                if($stmt->rowCount()!==1)throw new RuntimeException('Profile image changed. Reload before replacing it.');
             }catch(Throwable $e){artist_media_admin_remove_profile_image($workspaceId,$newPath);throw $e;}
             if($oldPath!=='')artist_media_admin_remove_profile_image($workspaceId,$oldPath);
             flash('notice',$kind==='profile'?'Profile image updated.':'Cover image updated.');
-            redirect(url('/admin/artist-media.php'));
+            redirect(url($mediaRoute));
         }
 
         if($action!=='save') throw new RuntimeException('Unknown media action.');
@@ -66,8 +67,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
         try{
             if($id>0){
-                $stmt=$pdo->prepare('UPDATE artist_catalog_photos_v181 SET title=?,caption=?,alt_text=?,image_path=?,visibility=?,sort_order=?,is_published=? WHERE id=? AND workspace_id=?');
-                $stmt->execute([$title,$caption,$alt,$imagePath,$visibility,$sortOrder,$published,$id,$workspaceId]);
+                $stmt=$pdo->prepare('UPDATE artist_catalog_photos_v181 SET title=?,caption=?,alt_text=?,image_path=?,visibility=?,sort_order=?,is_published=? WHERE id=? AND workspace_id=? AND image_path=?');
+                $stmt->execute([$title,$caption,$alt,$imagePath,$visibility,$sortOrder,$published,$id,$workspaceId,$oldPath]);
+                if($stmt->rowCount()<1){$current=artist_media_v182_photo($pdo,$workspaceId,$id);if(!$current||(string)$current['image_path']!==$imagePath)throw new RuntimeException('Photo changed. Reload before replacing it.');}
             }else{
                 $stmt=$pdo->prepare('INSERT INTO artist_catalog_photos_v181 (workspace_id,title,caption,alt_text,image_path,visibility,sort_order,is_published) VALUES (?,?,?,?,?,?,?,?)');
                 $stmt->execute([$workspaceId,$title,$caption,$alt,$imagePath,$visibility,$sortOrder,$published]);
@@ -76,7 +78,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         if($newPath!=='' && $oldPath!=='')artist_media_v182_delete_owned_photo($workspaceId,$oldPath);
         flash('notice',$id>0?'Photo updated.':'Photo uploaded.');
     }catch(Throwable $e){flash('error',$e->getMessage());}
-    redirect(url('/admin/artist-media.php'));
+    redirect(url($mediaRoute));
 }
 
 $editId=(int)($_GET['edit']??0);
@@ -91,7 +93,7 @@ $adminTitle='Media Library';$adminActive='photos';require __DIR__.'/_header.php'
 <div class="panel">
   <div class="artist-media-toolbar">
     <div><p class="muted">Private artist workspace</p><h2>Media Library</h2><p class="muted">Upload once, then reuse your photos across your artist profile and publishing tools.</p></div>
-    <div class="actions"><a class="btn" href="<?= e(url('/admin/artist.php')) ?>">Artist Workspace</a><a class="btn primary" href="<?= e(url('/admin/artist-media.php?new=1#media-form')) ?>">+ Upload Photo</a></div>
+    <div class="actions"><a class="btn" href="<?= e(url('/admin/artist.php')) ?>">Artist Workspace</a><a class="btn primary" href="<?= e(url($mediaRoute.'&new=1#media-form')) ?>">+ Upload Photo</a></div>
   </div>
   <div class="artist-media-grid">
   <?php foreach($photos as $photo): $src=url('/content-image.php?type=artist_photo&id='.(int)$photo['id']); ?>
@@ -102,7 +104,7 @@ $adminTitle='Media Library';$adminActive='photos';require __DIR__.'/_header.php'
         <strong><?= e((string)$photo['title']) ?></strong>
         <p class="muted"><?= e((string)($photo['caption']??'')) ?></p>
         <div class="artist-media-actions">
-          <a class="btn" href="<?= e(url('/admin/artist-media.php?edit='.(int)$photo['id'].'#media-form')) ?>">Edit</a>
+          <a class="btn" href="<?= e(url($mediaRoute.'&edit='.(int)$photo['id'].'#media-form')) ?>">Edit</a>
           <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="use_profile"><input type="hidden" name="id" value="<?= (int)$photo['id'] ?>"><button class="btn" type="submit">Use as Profile</button></form>
           <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="use_cover"><input type="hidden" name="id" value="<?= (int)$photo['id'] ?>"><button class="btn" type="submit">Use as Cover</button></form>
           <form method="post" onsubmit="return confirm('Delete this photo?')"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int)$photo['id'] ?>"><button class="btn danger" type="submit">Delete</button></form>
@@ -116,7 +118,7 @@ $adminTitle='Media Library';$adminActive='photos';require __DIR__.'/_header.php'
 
 <?php if($showForm): ?>
 <div class="panel" id="media-form">
-  <div class="content-library-heading"><div><p class="muted"><?= $editing?'Edit photo':'New photo' ?></p><h2><?= $editing?'Photo Details':'Upload Photo' ?></h2></div><a class="btn" href="<?= e(url('/admin/artist-media.php')) ?>">Close</a></div>
+  <div class="content-library-heading"><div><p class="muted"><?= $editing?'Edit photo':'New photo' ?></p><h2><?= $editing?'Photo Details':'Upload Photo' ?></h2></div><a class="btn" href="<?= e(url($mediaRoute)) ?>">Close</a></div>
   <form method="post" enctype="multipart/form-data" class="form-grid">
     <?= csrf_field() ?><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?= (int)($editing['id']??0) ?>">
     <label><span>Title</span><input name="title" maxlength="190" required value="<?= e((string)($editing['title']??'')) ?>"></label>
@@ -127,7 +129,7 @@ $adminTitle='Media Library';$adminActive='photos';require __DIR__.'/_header.php'
     <label><span>Sort order</span><input name="sort_order" type="number" value="<?= (int)($editing['sort_order']??0) ?>"></label>
     <label><span>Visibility</span><select name="visibility"><?php foreach(visibility_options() as $value=>$label): ?><option value="<?= e($value) ?>" <?= (string)($editing['visibility']??'members')===$value?'selected':'' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
     <label class="wide"><span><input type="checkbox" name="is_published" value="1" <?= !empty($editing['is_published'])?'checked':'' ?>> Published</span></label>
-    <div class="wide actions"><button class="btn primary" type="submit"><?= $editing?'Save Photo':'Upload Photo' ?></button><a class="btn" href="<?= e(url('/admin/artist-media.php')) ?>">Cancel</a></div>
+    <div class="wide actions"><button class="btn primary" type="submit"><?= $editing?'Save Photo':'Upload Photo' ?></button><a class="btn" href="<?= e(url($mediaRoute)) ?>">Cancel</a></div>
   </form>
 </div>
 <?php endif; ?>

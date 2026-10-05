@@ -10,7 +10,8 @@ const permissions = read('includes/permissions.php');
 const artistMusic = read('includes/artist-music-v185.php');
 const memberNav = read('includes/member-navigation.php');
 const workspacePage = read('music-workspace.php');
-const libraryPage = read('music-library.php');
+const libraryPage = read('music-library.php')+read('includes/music-catalog.php');
+assert.match(read('music-library.php'), /music_catalog_write/);
 const studioPage = read('music-studio.php');
 const releasesPage = read('music-releases.php');
 const setup = read('setup.php');
@@ -127,3 +128,4 @@ for (const file of [setup, upgrade]) {
 }
 
 console.log('MUSIC_WORKSPACE_RESOURCE_OWNERSHIP_V330=PASS');
+

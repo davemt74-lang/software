@@ -2,13 +2,13 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 const read=p=>fs.readFileSync(p,'utf8');
 const helper=read('includes/artist-media-v182.php');
-const admin=read('admin/artist-media.php');
+const admin=read('admin/artist-media.php')+read('includes/music-catalog.php');
 const artist=read('admin/artist.php');
 const bootstrap=read('includes/bootstrap.php');
 const image=read('content-image.php');
 const upgrade=read('upgrade.php');
 const deny=read('uploads/artist-media/.htaccess');
-const workflow=read('.github/workflows/pr82-listening-recovery.yml');
+const workflow=read('.github/workflows/recovery-baseline.yml');
 
 for(const column of ['caption','alt_text','sort_order']){
   assert.match(helper,new RegExp(`column_exists\\('artist_catalog_photos_v181','${column}'\\)`),`checks ${column}`);
@@ -26,7 +26,7 @@ assert.match(helper,/uploads\/artist-profiles/);
 assert.match(deny,/denied|Deny from all/i);
 
 assert.match(admin,/user_has_role\('artist'/);
-assert.match(admin,/has_permission\('photos.manage'/);
+assert.match(admin,/music_workspace_resources_v330_can_manage/);
 assert.match(admin,/name="photo_file"/);
 assert.match(admin,/multipart\/form-data/);
 assert.match(admin,/Drop a photo here/);
@@ -49,11 +49,17 @@ assert.match(artist,/artist_media_v182_copy_photo_to_profile/);
 assert.match(artist,/artist-media\.php/);
 assert.match(artist,/Use the Artist Media Library/);
 assert.match(image,/artist_media_v182_resolve_stored_photo/);
-assert.match(image,/artist_workspace_v181_scope_id\(\$user\) === \(int\)\(\$item\['workspace_id'\]/);
+assert.match(image,/music_workspace_resources_v330_can_manage\(\$pdo,\(int\)\(\$item\['workspace_id'\]/);
 assert.match(image,/X-Content-Type-Options: nosniff/);
 assert.match(bootstrap,/artist-media-v182\.php/);
 assert.match(upgrade,/artist_media_v182_ensure_schema/);
 assert.match(upgrade,/artist_media_v182_schema_ready/);
-assert.match(workflow,/find tests -maxdepth 1 -type f/,'recovery workflow must execute the complete Node contract suite');
-assert.match(workflow,/node "\$test"/,'recovery workflow must execute each discovered Node contract test, including artist media');
+assert.match(workflow,/Run recovered baseline suite/);
+assert.match(workflow,/node tests\/artist-media-v182\.mjs/);
 console.log('ARTIST_MEDIA_V182=PASS');
+
+
+assert.match(workflow,/Music module full-feature audit/);
+assert.ok(fs.existsSync('chat-voice.js'));
+assert.ok(fs.existsSync('conversation-voice-v122.js'));
+assert.ok(!fs.existsSync('chat-voice-v142.js'));

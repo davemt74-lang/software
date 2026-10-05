@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/music-catalog.php';
 
 function artist_music_v185_schema_ready(): bool
 {
@@ -45,10 +46,11 @@ function artist_music_v185_owned_path(int $workspaceId,string $storedPath): ?str
 
 function artist_music_v185_store_audio(array $upload,int $workspaceId): string
 {
+    if($workspaceId<1)throw new RuntimeException('Music Workspace is required.');
     if(!$upload||(int)($upload['error']??UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE)return '';
     if((int)($upload['error']??UPLOAD_ERR_OK)!==UPLOAD_ERR_OK||!is_uploaded_file((string)($upload['tmp_name']??'')))throw new RuntimeException('Audio upload failed.');
     global $config;
-    $max=max(1,(int)($config['uploads']['max_artist_audio_bytes']??(256*1024*1024)));$size=(int)($upload['size']??0);
+    $max=max(1,(int)($config['uploads']['max_artist_audio_bytes']??(256*1024*1024)));$size=(int)filesize((string)$upload['tmp_name']);
     if($size<1||$size>$max)throw new RuntimeException('Audio file exceeds the configured music upload limit.');
     $name=(string)($upload['name']??'');$ext=strtolower(pathinfo($name,PATHINFO_EXTENSION));$allowedExt=['mp3','m4a','wav','ogg'];
     if(!in_array($ext,$allowedExt,true))throw new RuntimeException('Choose an MP3, M4A, WAV, or OGG file.');
@@ -68,7 +70,7 @@ function artist_music_v185_store_audio(array $upload,int $workspaceId): string
 function artist_music_v185_audio_is_referenced(int $workspaceId,string $storedPath): bool
 {
     $pdo=db();if(!$pdo||$workspaceId<1||$storedPath===''||!table_exists('tracks')||!column_exists('tracks','workspace_id'))return false;
-    try{$stmt=$pdo->prepare('SELECT 1 FROM tracks WHERE workspace_id=? AND audio_path=? LIMIT 1');$stmt->execute([$workspaceId,$storedPath]);return (bool)$stmt->fetchColumn();}catch(Throwable $e){return true;}
+    try{$catalog=$pdo->prepare('SELECT 1 FROM artist_catalog_tracks_v181 WHERE workspace_id=? AND audio_path=? LIMIT 1');$catalog->execute([$workspaceId,$storedPath]);if($catalog->fetchColumn())return true;$stmt=$pdo->prepare('SELECT 1 FROM tracks WHERE workspace_id=? AND audio_path=? LIMIT 1');$stmt->execute([$workspaceId,$storedPath]);return (bool)$stmt->fetchColumn();}catch(Throwable $e){return true;}
 }
 
 function artist_music_v185_delete_owned_audio(int $workspaceId,string $storedPath): void
@@ -117,17 +119,42 @@ function artist_music_v185_can_view(array $row,?array $viewer): bool
 function artist_music_v185_workspace_viewer_can_access(PDO $pdo,array $row,?array $viewer): bool
 {
     if(!$viewer)return false;$workspaceId=(int)($row['workspace_id']??0);if($workspaceId<1)return false;
-    if(function_exists('music_workspace_resources_v330_can_access'))return music_workspace_resources_v330_can_access($pdo,$workspaceId,$viewer);
+    if(function_exists('music_workspace_resources_v330_can_access')){
+        if(!music_workspace_resources_v330_can_access($pdo,$workspaceId,$viewer))return false;
+        if(music_workspace_resources_v330_member_role($pdo,$workspaceId,(int)$viewer['id'])==='producer'){
+            $sourceId=(int)($row['source_track_id']??0);if($sourceId<1)return false;
+            $stmt=$pdo->prepare('SELECT * FROM tracks WHERE id=? AND workspace_id=? LIMIT 1');$stmt->execute([$sourceId,$workspaceId]);$source=$stmt->fetch();return $source&&music_workspace_resources_v330_can_manage_track($pdo,$source,$viewer);
+        }
+        return true;
+    }
     return (int)($viewer['id']??0)===(int)($row['artist_user_id']??0)&&user_has_role('artist',$viewer);
+}
+function artist_music_v185_source_is_public(PDO $pdo,array $row,string $kind,?array $viewer): bool
+{
+    $sourceId=(int)($row[$kind==='album'?'source_album_id':'source_track_id']??0);if($sourceId<1)return true;
+    $table=$kind==='album'?'albums':'tracks';$stmt=$pdo->prepare("SELECT workspace_id,is_published,visibility FROM {$table} WHERE id=? LIMIT 1");$stmt->execute([$sourceId]);$source=$stmt->fetch();
+    if(!$source)return true;
+    return (empty($source['workspace_id'])||(int)$source['workspace_id']===(int)$row['workspace_id'])&&(int)$source['is_published']===1&&can_view_visibility((string)$source['visibility'],$viewer);
 }
 function artist_music_v185_public_track(PDO $pdo,int $trackId,?array $viewer): ?array
 {
-    $stmt=$pdo->prepare('SELECT t.*,w.artist_user_id FROM artist_catalog_tracks_v181 t INNER JOIN artist_workspaces_v181 w ON w.id=t.workspace_id WHERE t.id=? LIMIT 1');$stmt->execute([$trackId]);$row=$stmt->fetch();if(!$row)return null;$workspaceAccess=artist_music_v185_workspace_viewer_can_access($pdo,$row,$viewer);if(!$workspaceAccess&&!artist_music_v185_can_view($row,$viewer))return null;return $row;
+    $stmt=$pdo->prepare('SELECT t.*,w.artist_user_id FROM artist_catalog_tracks_v181 t INNER JOIN artist_workspaces_v181 w ON w.id=t.workspace_id WHERE t.id=? LIMIT 1');$stmt->execute([$trackId]);$row=$stmt->fetch();if(!$row)return null;$workspaceAccess=artist_music_v185_workspace_viewer_can_access($pdo,$row,$viewer);if(!$workspaceAccess&&(!artist_music_v185_can_view($row,$viewer)||!artist_music_v185_source_is_public($pdo,$row,'track',$viewer)))return null;return $row;
 }
 function artist_music_v185_public_cover(PDO $pdo,string $kind,int $id,?array $viewer): ?array
 {
     $stmt=$pdo->prepare($kind==='album'?'SELECT a.*,w.artist_user_id FROM artist_catalog_albums_v181 a INNER JOIN artist_workspaces_v181 w ON w.id=a.workspace_id WHERE a.id=? LIMIT 1':'SELECT t.*,w.artist_user_id FROM artist_catalog_tracks_v181 t INNER JOIN artist_workspaces_v181 w ON w.id=t.workspace_id WHERE t.id=? LIMIT 1');$stmt->execute([$id]);$row=$stmt->fetch();if(!$row)return null;
-    $workspaceAccess=artist_music_v185_workspace_viewer_can_access($pdo,$row,$viewer);if(!$workspaceAccess&&!artist_music_v185_can_view($row,$viewer))return null;
+    $workspaceAccess=artist_music_v185_workspace_viewer_can_access($pdo,$row,$viewer);if(!$workspaceAccess&&(!artist_music_v185_can_view($row,$viewer)||!artist_music_v185_source_is_public($pdo,$row,$kind,$viewer)))return null;
     $photoId=(int)($row['cover_photo_id']??0);if($photoId<1&&$kind==='track'&&(int)($row['album_id']??0)>0){$a=$pdo->prepare('SELECT cover_photo_id FROM artist_catalog_albums_v181 WHERE id=? AND workspace_id=? LIMIT 1');$a->execute([(int)$row['album_id'],(int)$row['workspace_id']]);$photoId=(int)($a->fetchColumn()?:0);}if($photoId<1)return null;
     $path=artist_media_v182_resolve_photo_file($pdo,(int)$row['workspace_id'],$photoId);return $path?['path'=>$path,'workspace_id'=>(int)$row['workspace_id']]:null;
+}
+
+function artist_music_v185_resolve_audio(PDO $pdo,array $track): ?string
+{
+    $workspaceId=(int)$track['workspace_id'];$stored=(string)($track['audio_path']??'');
+    $native=artist_music_v185_owned_path($workspaceId,$stored);if($native)return $native;
+    $sourceId=(int)($track['source_track_id']??0);if($sourceId<1)return null;
+    $stmt=$pdo->prepare('SELECT audio_path FROM tracks WHERE id=? AND workspace_id=? LIMIT 1');$stmt->execute([$sourceId,$workspaceId]);
+    if((string)$stmt->fetchColumn()!==$stored)return null;
+    foreach(['/uploads/audio/','/audio/'] as $prefix){if(!str_starts_with($stored,$prefix))continue;$base=realpath(STONEFELLOW_ROOT.$prefix);$file=realpath(STONEFELLOW_ROOT.$stored);if($base&&$file&&is_file($file)&&str_starts_with($file,rtrim($base,DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR))return $file;}
+    return null;
 }
