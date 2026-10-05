@@ -38,6 +38,27 @@
   }[String(value || '')] || '');
 
   let state = null;
+  let stateGeneration = 0;
+  let stateWrites = Promise.resolve();
+  let pendingStateWrites = 0;
+  async function requestState(action, payload) {
+    const generation = ++stateGeneration;
+    const writing = action !== 'state';
+    if (writing) pendingStateWrites++;
+    try {
+      const next = writing
+        ? await (stateWrites = stateWrites.catch(() => {}).then(() => request(action, payload)))
+        : await request(action, payload);
+      if (generation !== stateGeneration) return false;
+      state = next;
+      return true;
+    } catch (error) {
+      if (generation !== stateGeneration) return false;
+      throw error;
+    } finally {
+      if (writing) pendingStateWrites--;
+    }
+  }
   let drawer = null;
   let backdrop = null;
   let button = null;
@@ -290,7 +311,7 @@
     controls.forEach(control => { control.disabled = true; });
     container?.querySelector('.chat-activity-inline-error')?.remove();
     try {
-      state = await request('brain_outcome', {hash, outcome});
+      if (!await requestState('brain_outcome', {hash, outcome})) return;
       render();
       syncMainFeedBrainOutcomeControls();
     } catch (error) {
@@ -915,8 +936,9 @@
   }
 
   async function refresh(showError = false) {
+    if (busy || mainFeedOutcomeBusy || attentionBusy || pendingStateWrites) return;
     try {
-      state = await request('state');
+      if (!await requestState('state')) return;
       if (Object.prototype.hasOwnProperty.call(state, 'agent_voice_enabled')) {
         agentVoicePreference = state.agent_voice_enabled !== false;
       }
@@ -962,7 +984,7 @@
     if (busy) return;
     busy = true;
     try {
-      state = await request(action, payload);
+      if (!await requestState(action, payload)) return;
       render();
       syncMainFeedBrainOutcomeControls();
     } catch (error) {
@@ -1249,7 +1271,7 @@
     }
 
     if (speak) queueSpeech(String(data.message || ''));
-    state = await request('mark_read', {notification_id:notificationId});
+    if (!await requestState('mark_read', {notification_id:notificationId})) return true;
     render();
     syncMainFeedBrainOutcomeControls();
     return true;

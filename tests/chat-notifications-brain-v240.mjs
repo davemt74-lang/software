@@ -18,7 +18,7 @@ const identity = read('chat-agent-identity-v236.js');
 
 assert.doesNotThrow(() => new Function(ui), 'Activity Center runtime must be valid JavaScript');
 assert.doesNotThrow(() => new Function(identity), 'Agent identity runtime must be valid JavaScript');
-assert.match(chat, /\$notificationDrawerBuild = 'chat-notifications-proactive-v244-20260922'/, 'Activity Center cache key must identify the v2.44 proactive interaction runtime');
+assert.match(chat, /\$notificationDrawerBuild = 'chat-notifications-section13-20261005'/, 'Activity Center cache key must identify the v2.44 proactive interaction runtime');
 assert.match(chat, /\$agentIdentityBuild = 'cloud-agent-onboarding-readiness-v110-20261001'/);
 assert.match(chat, /window\.STONEFELLOW_NOTIFICATION_DRAWER=/);
 assert.match(chat, /chat-notifications-drawer-v240\.css\?v=/);
@@ -76,7 +76,7 @@ assert.match(ui, /showAttentionConversation/, 'new attention is surfaced inside 
 assert.doesNotMatch(ui, /if \(!data\.handled \|\| data\.duplicate\) return/, 'persisted duplicate attention must not be discarded before canvas presentation');
 assert.match(ui, /const surfaced = await showAttentionConversation/, 'canvas visibility is explicitly verified before notification delivery completes');
 assert.match(ui, /if \(!surfaced\)[\s\S]*throw new Error\('Actionable notification could not be surfaced in Agent Chat\.'\)/, 'failed canvas presentation remains retryable instead of being silently consumed');
-assert.match(ui, /state = await request\('mark_read', \{notification_id:notificationId\}\)/, 'actionable notification is marked read only after it is visible in Agent Chat');
+assert.match(ui, /await requestState\('mark_read', \{notification_id:notificationId\}\)/, 'actionable notification is marked read only after it is visible in Agent Chat');
 assert.match(ui, /for \(let index = 0; index < items\.length; index \+= 1\)/, 'bootstrap must persist every returned unsurfaced operational item');
 assert.match(ui, /const speak = !bootstrap \|\| index === items\.length - 1/, 'historical bootstrap backlog must only verbalize the newest item');
 assert.doesNotMatch(ui, /const selected = bootstrap && items\.length \? \[items\[items\.length - 1\]\] : items/, 'old newest-only bootstrap must stay removed');

@@ -28,10 +28,18 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
+          extensions: mbstring, pdo_sqlite
           ini-file: production
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Section 13 events, notifications and automation
+        run: |
+          php -l includes/notifications.php
+          php -l tests/events_automation_section13.php
+          php tests/events_automation_section13.php
+          node tests/notifications_state_section13.mjs
+          node tests/chat-notifications-brain-v240.mjs
       - name: PHP syntax
         run: |
           php -l includes/agent-event-infrastructure-v1920.php
