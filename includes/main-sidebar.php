@@ -139,6 +139,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
         ?>
           <?php if ($section !== $lastPrimarySection): ?><div class="agent-nav-group-label"><?= e($section) ?></div><?php endif; ?>
           <a class="chat-sidebar-nav-link<?= $isActive ? ' active' : '' ?>" href="<?= e((string)$link['url']) ?>" data-vp3-nav-key="<?= e($key) ?>"<?= $isActive ? ' aria-current="page"' : '' ?>><span><?= e((string)($mainSidebarPrimaryIcons[$key]??'•')) ?></span><strong><?= e((string)($mainSidebarPrimaryLabels[$key]??$link['label']??$key)) ?></strong></a>
+          <?php if ($mainSidebarIsChat && $key === 'chat'): ?><button class="chat-sidebar-nav-link agent-brain-nav-toggle" type="button" data-open-agent-brain aria-expanded="false" aria-controls="chatNotificationDrawer"><span>◈</span><strong>Agent Brain</strong></button><?php endif; ?>
         <?php $lastPrimarySection=$section; endforeach; ?>
       </nav>
     </section>
