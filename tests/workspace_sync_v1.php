@@ -44,15 +44,23 @@ $pdo->exec('CREATE TABLE personal_workspace_note_parts(id INTEGER PRIMARY KEY,no
 $pdo->exec("INSERT INTO personal_workspace_note_parts VALUES(1,1,'My child'),(2,2,'OTHER CHILD')");
 $pdo->exec('CREATE TABLE provider_credentials(id INTEGER PRIMARY KEY,owner_user_id INTEGER,content TEXT)'.$tail);
 $pdo->exec("INSERT INTO provider_credentials VALUES(1,1,'NEVER_EXPORT')");
+$pdo->exec('CREATE TABLE track_favorites(user_id INTEGER,track_id INTEGER,PRIMARY KEY(user_id,track_id))'.$tail);
+$pdo->exec('INSERT INTO track_favorites VALUES(1,7),(2,9)');
+$pdo->exec('CREATE TABLE search_saved_queries_v2090(id INTEGER PRIMARY KEY,user_id INTEGER,title VARCHAR(100))'.$tail);
+$pdo->exec("INSERT INTO search_saved_queries_v2090 VALUES(1,1,'My saved search'),(2,2,'OTHER SEARCH')");
+$pdo->exec('CREATE TABLE user_entitlement_grants(id INTEGER PRIMARY KEY,user_id INTEGER,content TEXT)'.$tail);
+$pdo->exec("INSERT INTO user_entitlement_grants VALUES(1,1,'NEVER_EXPORT')");
 $catalog=workspace_sync_exchange_v1($session,['action'=>'catalog']);
 check($catalog['account_id']==='1'&&count($catalog['datasets'])===16,'Complete owned-workspace catalog');
-foreach(['profile','contacts','crm','products','workspace_other'] as $dataset){
+foreach(['profile','contacts','crm','products','music','workspace_other'] as $dataset){
  $manifest=workspace_sync_exchange_v1($session,['action'=>'prepare','dataset'=>$dataset]);
  $pulled=workspace_sync_exchange_v1($session,['action'=>'pull','dataset'=>$dataset,'revision'=>$manifest['revision'],'offset'=>0]);
  $raw=base64_decode($pulled['chunk'],true);
  check(!str_contains($raw,'OTHER ')&&!str_contains($raw,'two@example')&&!str_contains($raw,'NEVER_EXPORT'),'Account/secret isolation '.$dataset);
  if($dataset==='crm')check(str_contains($raw,'My task')&&str_contains($raw,'My lead'),'Nested ownership chain');
  if($dataset==='workspace_other')check(str_contains($raw,'My full note')&&str_contains($raw,'My child'),'Auto-discovered own data and FK children');
+ if($dataset==='workspace_other')check(str_contains($raw,'My saved search'),'Personal saved search preserved');
+ if($dataset==='music'){ $rows=json_decode($raw,true,512,JSON_THROW_ON_ERROR)['records'];check(count($rows)===1&&$rows[0]['data']['track_id']==7,'Own composite-key favorite preserved');}
  if($dataset==='products')check(str_contains($raw,'MY-SKU')&&str_contains($raw,'blue'),'Product fields preserved');
 }
 // Original uploads are scoped through their owned record, never a client path.

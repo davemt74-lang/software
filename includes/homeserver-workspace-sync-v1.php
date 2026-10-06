@@ -12,7 +12,7 @@ function workspace_sync_registry_v1(): array
     // [table, own column] or [table, child key, parent table, parent key, parent owner column].
     // Every predicate is compiled from this registry, never a client-supplied table/column.
     $registry=[
-      'profile'=>[['users','id'],['user_account_types','user_id'],['user_agent_preferences','user_id']],
+      'profile'=>[['users','id'],['user_account_types','user_id'],['user_agent_preferences','user_id'],['agent_compute_preferences','user_id'],['agent_compute_overrides','user_id'],['browser_notification_preferences_v2080','user_id']],
       'contacts'=>[['crm_contacts','owner_user_id'],['vp3_agent_contacts','owner_user_id'],['user_relationships','owner_user_id']],
       'crm'=>[
         ['crm_leads','contact_id','crm_contacts','id','owner_user_id'],
@@ -41,12 +41,12 @@ function workspace_sync_registry_v1(): array
         ['agent_commerce_payments_v800','order_id','agent_commerce_orders_v800','id','owner_user_id'],
         ['agent_commerce_refunds_v800','order_id','agent_commerce_orders_v800','id','owner_user_id']],
       'agents'=>[['user_agents','owner_user_id'],['agent_memory_items','user_id']],
-      'chats'=>[['chat_conversations','user_id'],['chat_messages','conversation_id','chat_conversations','id','user_id']],
-      'notifications'=>[['notifications','user_id']],
-      'music'=>[['tracks','owner_user_id'],['albums','owner_user_id'],['playlists','owner_user_id'],
+      'chats'=>[['agent_chat_archive','user_id'],['agent_studio_history','user_id'],['agent_studio_sessions','user_id'],['chat_conversations','user_id'],['chat_messages','conversation_id','chat_conversations','id','user_id']],
+      'notifications'=>[['notifications','user_id'],['browser_notifications_v2080','user_id']],
+      'music'=>[['track_favorites','user_id'],['album_favorites','user_id'],['playlist_favorites','user_id'],['track_notes','user_id'],['track_play_sessions','user_id'],['stem_mix_saves','user_id'],['show_reminders','user_id'],['tracks','owner_user_id'],['albums','owner_user_id'],['playlists','owner_user_id'],
         ['playlist_tracks','playlist_id','playlists','id','owner_user_id']],
-      'workspace_other'=>[],
-      'artist_workspace'=>[['artist_workspaces_v181','artist_user_id'],
+      'workspace_other'=>[['search_saved_queries_v2090','user_id'],['search_recent_queries_v2090','user_id'],['browser_source_follows_v2050','user_id'],['browser_share_reads_v2050','user_id'],['browser_share_comments_v2050','user_id']],
+      'artist_workspace'=>[['artist_workspace_track_favorites_v181','user_id'],['artist_workspace_saved_photos_v181','user_id'],['artist_workspace_saved_shows_v181','user_id'],['artist_workspaces_v181','artist_user_id'],
         ['artist_catalog_tracks_v181','workspace_id','artist_workspaces_v181','id','artist_user_id'],
         ['artist_catalog_albums_v181','workspace_id','artist_workspaces_v181','id','artist_user_id'],
         ['artist_catalog_photos_v181','workspace_id','artist_workspaces_v181','id','artist_user_id'],
@@ -84,7 +84,7 @@ function workspace_sync_extend_registry_v1(array $registry): array
         $registered[$descriptor[0]]=true;
         if(workspace_sync_descriptor_ready_v1($descriptor)){$known[$descriptor[0]]=$descriptor;$group[$descriptor[0]]=$dataset;}
     }
-    $blocked=static fn(string $table):bool => (bool)preg_match('/^(?:sqlite_|homeserver_|settings$|permissions$|role_permissions$|user_account_types$)|(?:auth|oauth|session_tokens|session_keys|credentials|secrets|api_keys|password|login|provider_connections|calendar_connections|device_connections|webhook|outbox|leases|locks|approvals|audit|usage|billing|claim_codes)/i',$table);
+    $blocked=static fn(string $table):bool => (bool)preg_match('/^(?:sqlite_|homeserver_|settings$|permissions$|role_permissions$|user_account_types$)|(?:auth|oauth|session_tokens|session_keys|credentials|secrets|api_keys|password|login|provider_connections|calendar_connections|device_connections|webhook|outbox|leases|locks|approvals|audit|usage|billing|entitlement|subscription|user_roles|permission_grants|capability_grants|claim_codes)/i',$table);
     $classify=static function(string $table):string{
         foreach(['crm'=>'crm','contacts'=>'contacts','calendar'=>'calendar','scheduling'=>'schedules','meeting'=>'meetings','transcript'=>'transcriptions','knowledge'=>'knowledge','commerce_product'=>'products','commerce_order'=>'orders','commerce_payment'=>'orders','commerce_refund'=>'orders','chat'=>'chats','notification'=>'notifications','artist_'=>'artist_workspace','memory'=>'agents','user_agents'=>'agents'] as $pattern=>$dataset)
             if(str_contains($table,$pattern))return $dataset;
