@@ -5753,3 +5753,45 @@ body.chat-create-modal-open{
   .chat-system-app-action-buttons{display:grid}
   .chat-system-app-action-button{width:100%}
 }
+
+/* ============================================================
+   Unified Agent Experience — canonical wide Chat canvas
+   ============================================================ */
+:root{--agent-chat-lane:1120px;--agent-chat-gutter:clamp(16px,3vw,42px)}
+html,body{overflow:hidden}
+.chat-app,.chat-main{min-height:0;max-height:100dvh}
+.chat-main{overflow:hidden}
+.chat-thread{
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior-y:contain;
+  scrollbar-gutter:stable;
+  padding-left:var(--agent-chat-gutter);
+  padding-right:var(--agent-chat-gutter);
+}
+.message,
+.chat-welcome,
+.chat-composer,
+.chat-disclaimer{
+  width:min(var(--agent-chat-lane),100%);
+  max-width:var(--agent-chat-lane);
+}
+.chat-welcome p{max-width:760px}
+.chat-starters{max-width:860px}
+.chat-composer-shell{
+  display:grid;
+  justify-items:center;
+  padding-left:var(--agent-chat-gutter);
+  padding-right:var(--agent-chat-gutter);
+}
+.chat-composer-shell .chat-composer,
+.chat-composer-shell .chat-now-playing,
+.chat-composer-shell .chat-disclaimer{
+  width:min(var(--agent-chat-lane),100%);
+}
+@media(max-width:820px){
+  :root{--agent-chat-gutter:12px}
+  .chat-thread{scrollbar-gutter:auto}
+  .chat-composer-shell{padding-left:var(--agent-chat-gutter);padding-right:var(--agent-chat-gutter)}
+}
