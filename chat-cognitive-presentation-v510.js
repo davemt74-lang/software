@@ -12,7 +12,7 @@
   const thread = document.getElementById('chatThread');
   const form = document.getElementById('chatForm');
   const input = document.getElementById('chatInput');
-  if (!button || !popup || !content || !thread || !form) return;
+  if (!button || !thread || !form) return;
 
   let state = null;
   let timer = 0;
@@ -71,14 +71,11 @@
   }
 
   function closePopup() {
-    popup.hidden = true;
     button.setAttribute('aria-expanded','false');
   }
 
   function openPopup() {
-    popup.hidden = false;
-    button.setAttribute('aria-expanded','true');
-    void refresh(true);
+    openBrain();
   }
 
   function openBrain() {
@@ -473,8 +470,6 @@
 
   function renderBrief(brief) {
     renderStatus(brief || {});
-    content.setAttribute('aria-busy','false');
-    content.innerHTML = briefMarkup(brief || {});
   }
 
   function briefErrorMessage(error) {
@@ -497,14 +492,9 @@
   function renderBriefError(error) {
     if (statusDot) statusDot.classList.remove('active');
     button.dataset.active='0';
-    button.setAttribute('aria-label','Agent · status unavailable');
-    content.setAttribute('aria-busy','false');
-    const message = briefErrorMessage(error);
-    content.innerHTML =
-      '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Unavailable</small></div>' +
-      '<article class="chat-agent-brief-card" role="status"><small>Status</small><strong>Agent Brief could not load.</strong>' +
-      '<p>' + esc(message) + '</p><div class="chat-agent-brief-actions">' +
-      '<button type="button" class="primary" data-agent-brief-retry>Retry</button></div></article>';
+    button.dataset.runtimeState=runtimeState();
+    button.setAttribute('aria-label','Agent Brain · status unavailable');
+    button.title=briefErrorMessage(error);
   }
 
   function digestMarkup(digest) {
@@ -637,7 +627,7 @@
   async function refresh(force = false) {
     if (busy || (document.hidden && !force)) return;
     busy = true;
-    content.setAttribute('aria-busy','true');
+    if (content) content.setAttribute('aria-busy','true');
     try {
       state = await getState();
       renderBrief(state.brief || {});
@@ -647,7 +637,7 @@
     } catch (error) {
       renderBriefError(error);
     } finally {
-      content.setAttribute('aria-busy','false');
+      if (content) content.setAttribute('aria-busy','false');
       busy = false;
     }
   }
@@ -657,38 +647,6 @@
     const seconds = Math.max(15, Number((state && state.poll_seconds) || cfg.pollSeconds || 30));
     timer = window.setInterval(refresh, seconds * 1000);
   }
-
-  button.addEventListener('click', event => {
-    event.preventDefault();
-    if (popup.hidden) openPopup(); else closePopup();
-  });
-  const close = popup.querySelector('[data-agent-brief-close]');
-  if (close) close.addEventListener('click',closePopup);
-  const brain = popup.querySelector('[data-agent-brief-brain]');
-  if (brain) brain.addEventListener('click',openBrain);
-  const history = popup.querySelector('[data-agent-brief-history]');
-  if (history) history.addEventListener('click',openHistory);
-  const notifications = popup.querySelector('[data-agent-brief-notifications]');
-  if (notifications) notifications.addEventListener('click',openNotifications);
-
-  popup.addEventListener('click', event => {
-    const retry = event.target.closest('[data-agent-brief-retry]');
-    if (retry) {
-      retry.disabled = true;
-      void refresh(true).finally(() => { retry.disabled = false; });
-      return;
-    }
-    const prompt = event.target.closest('[data-agent-brief-prompt]');
-    if (prompt) runPrompt(prompt.dataset.agentBriefPrompt || '');
-  });
-
-  document.addEventListener('click', event => {
-    if (popup.hidden || popup.contains(event.target) || button.contains(event.target)) return;
-    closePopup();
-  });
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') closePopup();
-  });
 
   thread.addEventListener('click', async event => {
     const action = event.target.closest('[data-digest-action]');
@@ -741,6 +699,6 @@
     observer.disconnect();
   }, {once:true});
 
-  window.VP3_COGNITIVE_PRESENTATION = {refresh:refresh,openBrief:openPopup,closeBrief:closePopup};
+  window.VP3_COGNITIVE_PRESENTATION = {refresh:refresh,openBrief:openBrain,openBrain:openBrain,closeBrief:closePopup};
   void refresh().finally(schedule);
 })();

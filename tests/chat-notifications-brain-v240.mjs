@@ -38,6 +38,7 @@ assert.match(ui, /const replacement = oldButton\.cloneNode\(true\)/, 'Activity C
 assert.match(ui, /actions\.insertBefore\(menu, profile\)/, 'Notification bell must be immediately left of the profile menu');
 assert.match(ui, /new MutationObserver\(keepBellNextToProfile\)/, 'Bell placement must survive later header insertions');
 assert.match(sidebar, /data-open-agent-brain/, 'Agent Brain must be available directly beside Agent Chat in the canonical left navigation');
+assert.match(chat, /chatAgentBriefButton[\s\S]*data-open-agent-brain/, 'composer Agent status must share the canonical Brain drawer control');
 assert.match(sidebar, /aria-controls="chatNotificationDrawer"/, 'left navigation must control the canonical right drawer');
 assert.match(ui, /brainButtons = \[\.\.\.document\.querySelectorAll\('\[data-open-agent-brain\]'\)\]/, 'canonical Brain nav controls must bind to the drawer runtime');
 assert.match(ui, /drawer\.dataset\.activeTab = activeTab/, 'drawer must expose the active Agent workspace surface');
