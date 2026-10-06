@@ -21,7 +21,7 @@ jobs:
           node-version: '22'
       - run: npm install --no-save --ignore-scripts playwright@1.51.1
       - run: npx playwright install --with-deps chromium
-      - name: Full sidepanel and native Chrome capture acceptance
+      - name: Dropdown, entire-page capture and native Chrome acceptance
         env:
           SCREENSHOT_EXTENSION_INTEGRATION: '1'
         run: node tests/browser-companion-local-screenshots.mjs

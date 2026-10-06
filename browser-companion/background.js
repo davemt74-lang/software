@@ -1,7 +1,8 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.9.1';
+const VP3_EXTENSION_VERSION = '22.9.2';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
+importScripts('screenshots-store.js', 'screenshots-worker.js');
 
 const storage = {
   async get(keys = null) { return chrome.storage.local.get(keys); },
@@ -1650,6 +1651,7 @@ async function selectScreenshotRegion() {
   });
   const rect = injected?.[0]?.result;
   if (!rect) return { cancelled: true };
+  await vp3ScreenshotThrottle();
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
   const source = await fetch(dataUrl);
   const bitmap = await createImageBitmap(await source.blob());
@@ -2496,7 +2498,7 @@ async function publicState() {
 
 chrome.runtime.onInstalled.addListener(() => {
   void registerQuickActionMenusV2150();
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
   void ensureProactiveNotificationAlarm();
 });
 
@@ -2513,6 +2515,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
   void registerQuickActionMenusV2150();
   void ensureProactiveNotificationAlarm();
   void pollProactiveNotifications();
@@ -2546,6 +2549,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'capture': return activeCapture();
       case 'tab_identity': return activeTabIdentity();
       case 'capture_region': return selectScreenshotRegion();
+      case 'local_screenshot_start': return vp3LocalScreenshotStart(message.mode, sender);
+      case 'local_screenshot_status': return vp3LocalScreenshotStatus(message.job_id);
+      case 'local_screenshot_cancel': return vp3LocalScreenshotCancel(message.job_id);
       case 'clear_pending_capture': await storage.remove('pending_capture'); return { ok: true };
       case 'connect': return beginConnect(message.device_name);
       case 'poll_connect': return pollConnect();
