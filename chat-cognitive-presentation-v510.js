@@ -648,11 +648,6 @@
     timer = window.setInterval(refresh, seconds * 1000);
   }
 
-  button.addEventListener('click', event => {
-    event.preventDefault();
-    openBrain();
-  });
-
   thread.addEventListener('click', async event => {
     const action = event.target.closest('[data-digest-action]');
     if (!action || !currentDigestId) return;
