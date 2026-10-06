@@ -297,30 +297,13 @@ $html = preg_replace(
     1
 ) ?? $html;
 
-// Phase 11B.2: Agent Brief moved out of the Chat timeline and into the footer control.
-// The canonical model is reused by Cognitive Presentation v5.10 on demand.
-
-$cognitiveBriefMarkup = <<<'HTML'
-<section class="chat-agent-brief-popover" id="chatAgentBriefPopover" hidden aria-label="Agent Brief">
-  <header class="chat-agent-brief-head">
-    <div><small>Agent Brief</small><strong>Your Agent status and priorities</strong></div>
-    <button class="chat-agent-brief-close" type="button" data-agent-brief-close aria-label="Close Agent Brief">×</button>
-  </header>
-  <div class="chat-agent-brief-body" data-agent-brief-content aria-live="polite" aria-busy="true">
-    <div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Loading…</small></div>
-  </div>
-  <footer class="chat-agent-brief-footer">
-    <button type="button" data-agent-brief-brain>Agent Brain</button>
-    <button type="button" data-agent-brief-history>History</button>
-    <button type="button" data-agent-brief-notifications>Notifications</button>
-  </footer>
-</section>
-HTML;
-$cognitiveBriefButton = '<button class="chat-agent-brief-button" id="chatAgentBriefButton" type="button" aria-label="Agent status" aria-expanded="false" aria-controls="chatAgentBriefPopover">'
+// Unified Agent experience: the compact status control opens the canonical Agent Brain drawer.
+// Cognitive Presentation still owns status, proactive digests, attention arbitration and voice.
+$cognitiveBriefButton = '<button class="chat-agent-brief-button" id="chatAgentBriefButton" type="button" aria-label="Open Agent Brain" aria-expanded="false" aria-controls="chatNotificationDrawer">'
     . '<span aria-hidden="true">✦</span><i class="chat-agent-status-dot" data-agent-status-dot></i><em class="chat-agent-attention-badge" data-agent-attention-badge hidden>0</em></button>';
 $html = str_replace(
     '<form class="chat-composer" id="chatForm">',
-    $cognitiveBriefMarkup . '<form class="chat-composer" id="chatForm">' . $cognitiveBriefButton,
+    '<form class="chat-composer" id="chatForm">' . $cognitiveBriefButton,
     $html
 );
 
