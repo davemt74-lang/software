@@ -1,24 +1,24 @@
-name: Agent Experience Deploy Package
+name: Cloud Deploy Package
 on:
+  workflow_dispatch:
   push:
     branches:
-      - build/agent-experience-deploy-20261006
+      - main
+    paths:
+      - .github/workflows/agent-experience-deploy-package.yml
 permissions:
   contents: read
 jobs:
   package:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout merged release
+      - name: Checkout release
         uses: actions/checkout@v4
-        with:
-          ref: ef1c4f6cc6d60b8302f94d8f8557a624ee23b6e7
-          fetch-depth: 1
       - name: Build deploy ZIP
         shell: bash
         run: |
           set -euo pipefail
-          zip -qr VP3-Cloud-Agent-Experience-Deploy.zip . -x ".git/*"
+          zip -qr VP3-Cloud-Agent-Experience-Deploy.zip . -x ".git/*" ".github/*"
           sha256sum VP3-Cloud-Agent-Experience-Deploy.zip > VP3-Cloud-Agent-Experience-SHA256.txt
       - name: Upload deploy package
         uses: actions/upload-artifact@v4
@@ -28,4 +28,4 @@ jobs:
             VP3-Cloud-Agent-Experience-Deploy.zip
             VP3-Cloud-Agent-Experience-SHA256.txt
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
