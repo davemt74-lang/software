@@ -134,6 +134,10 @@ try {
     await panel.locator('#localScreenshotImage').waitFor({state:'visible'});
     const nativePng = await panel.evaluate(async () => Array.from(new Uint8Array(await (await fetch(document.querySelector('#localScreenshotImage').src)).arrayBuffer())));
     assert.deepEqual(nativePng.slice(0,8), [137,80,78,71,13,10,26,10]);
+    const pngBuffer = Buffer.from(nativePng);
+    const viewport = await home.evaluate(() => ({width:innerWidth,height:innerHeight}));
+    const expectedCrop = `${Math.round(100*pngBuffer.readUInt32BE(16)/viewport.width)} × ${Math.round(80*pngBuffer.readUInt32BE(20)/viewport.height)}`;
+    console.log('Native capture dimensions',pngBuffer.readUInt32BE(16),pngBuffer.readUInt32BE(20),'CSS viewport',viewport,'expected crop',expectedCrop);
     await panel.evaluate(() => {
       const download=chrome.downloads.download.bind(chrome.downloads);
       chrome.downloads.download=async options=>{const id=await download({...options,saveAs:false});window.nativeDownloadId=id;return id;};
@@ -152,7 +156,12 @@ try {
     await panel.evaluate(() => document.querySelector('#localCaptureRegion').click());
     await home.locator('#vp3-region-capture-overlay').waitFor();
     await home.mouse.move(30,40);await home.mouse.down();await home.mouse.move(130,120);await home.mouse.up();
-    await panel.locator('#localScreenshotSize').filter({hasText:'100 × 80'}).waitFor({state:'visible'});
+    try {
+      await panel.locator('#localScreenshotSize').filter({hasText:expectedCrop}).waitFor({state:'visible'});
+    } catch (error) {
+      console.log('Region failure context',await panel.evaluate(() => ({status:document.querySelector('#localScreenshotStatus').textContent,size:document.querySelector('#localScreenshotSize').textContent})));
+      throw error;
+    }
     console.log('PASS: shipping MV3 extension loaded; real Chrome visible capture, exact PNG download and canonical region crop (temporary test-only capture grant).');
   }
 } finally {
