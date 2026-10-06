@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "22.9.0",
+  "version": "22.9.1",
   "description": "VP3 Browser Companion with Client Release Intelligence, Transaction Trust, Control & Production Hardening, Transaction Intelligence & Exception Management, Transaction Continuity & Follow-Through, Transaction Outcome Verification & Recovery, Transaction & Submission Safety, Browser Research Agent, Multi-Site Workflow Automation, Controlled Web Interaction Runtime, server-authoritative Browser Agent Runtime, bounded delegation, Cognitive Memory, Agent Workspace, proactive Agent Voice, capture, Research, Live Rooms, alerts, and search.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -14,7 +14,8 @@
     "notifications",
     "alarms",
     "offscreen",
-    "downloads"
+    "downloads",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "https://vp3.me/*"

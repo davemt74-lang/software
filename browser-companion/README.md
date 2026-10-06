@@ -1,6 +1,21 @@
-# VP3 Browser Companion v22.30
+# VP3 Browser Companion
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## Local screenshots — extension v22.9.1
+
+The Screenshots panel can capture the visible page or a selected region, preview it, save a PNG, and copy the image to paste into chat. It works on HomeServer HTTP/HTTPS pages without a VP3 sign-in. Captures remain in the extension until cleared or closed; they are not published as annotations or uploaded to VP3.
+
+### Install or update in Chrome
+
+1. Extract the extension ZIP into a permanent folder. Do not run it inside the ZIP.
+2. To update an existing unpacked VP3 Browser Companion, replace the files in its existing extension folder and click **Reload** at `chrome://extensions`. Keeping the same folder preserves its extension identity and saved settings.
+3. For a new installation, enable **Developer mode** at `chrome://extensions`, click **Load unpacked**, and select the folder containing `manifest.json`.
+4. Open HomeServer in a Chrome tab. Click the VP3 toolbar icon on that tab to grant the existing `activeTab` capture permission and open the side panel.
+5. In **Screenshots**, click **Capture visible page** or **Select region**. Drag a region on the page; press Escape to cancel.
+6. Click **Save PNG**, or **Copy image** and paste into chat with Ctrl+V. If Chrome blocks copying, save and attach the PNG instead.
+
+This captures browser page content, not the desktop or Chrome toolbar. Visible-page capture covers the current viewport; selected regions are also limited to the viewport. Scroll and capture again for other page sections. The new `clipboardWrite` permission enables copying PNGs. Existing annotation publication still uses the existing VP3 account flow.
 
 ## v22.30 Browser Research Agent
 
