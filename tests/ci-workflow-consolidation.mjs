@@ -10,6 +10,7 @@ const activeExpected=[
   "agent-event-infrastructure-v1920.yml",
   "authority-section14.yml",
   "browser-companion-transaction-control-v2280.yml",
+  "browser-local-screenshots.yml",
   "client-release-intelligence-v100.yml",
   "cloud-hosting-v100.yml",
   "cognitive-loop-release-v2360.yml",

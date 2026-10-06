@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>VP3 Browser Companion</title>
   <link rel="stylesheet" href="sidepanel.css">
+  <link rel="stylesheet" href="local-screenshots.css">
 </head>
 <body>
   <header class="topbar">
@@ -13,6 +14,24 @@
   </header>
 
   <main>
+    <details id="localScreenshotPanel" class="card local-screenshot-panel" open>
+      <summary><strong>Screenshots</strong><span>Save locally</span></summary>
+      <p class="hint">Capture your HomeServer page or another open web page. No VP3 sign-in is needed.</p>
+      <div class="local-screenshot-actions">
+        <button id="localCaptureVisible" class="primary" type="button">Capture visible page</button>
+        <button id="localCaptureRegion" type="button">Select region</button>
+      </div>
+      <p id="localScreenshotStatus" class="hint" role="status" aria-live="polite">Open the page, then click the VP3 toolbar icon before capturing.</p>
+      <div id="localScreenshotPreview" hidden>
+        <img id="localScreenshotImage" alt="Local screenshot preview">
+        <p id="localScreenshotSize" class="hint"></p>
+        <div class="local-screenshot-actions">
+          <button id="localScreenshotSave" type="button">Save PNG</button>
+          <button id="localScreenshotCopy" type="button">Copy image</button>
+          <button id="localScreenshotClear" type="button">Clear</button>
+        </div>
+      </div>
+    </details>
     <section id="connectionCard" class="card connection-card">
       <div id="connectedAccount" hidden>
         <div class="account-row">
@@ -926,6 +945,7 @@
 
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
   </main>
+  <script src="local-screenshots.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

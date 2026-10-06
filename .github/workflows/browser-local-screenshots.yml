@@ -1,0 +1,27 @@
+name: Browser Companion Local Screenshots
+on:
+  pull_request:
+    paths: [browser-companion/**, tests/browser-companion-local-screenshots.mjs, .github/workflows/browser-local-screenshots.yml]
+  push:
+    branches: [main]
+    paths: [browser-companion/**, tests/browser-companion-local-screenshots.mjs, .github/workflows/browser-local-screenshots.yml]
+permissions:
+  contents: read
+concurrency:
+  group: browser-local-screenshots-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts playwright@1.51.1
+      - run: npx playwright install --with-deps chromium
+      - name: Full sidepanel and native Chrome capture acceptance
+        env:
+          SCREENSHOT_EXTENSION_INTEGRATION: '1'
+        run: node tests/browser-companion-local-screenshots.mjs
