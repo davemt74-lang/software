@@ -20,7 +20,7 @@ $notificationDrawerBuild = 'agent-experience-brain-v1-20261006';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 $agentIntelligenceBuild = 'agent-chat-intelligence-v171-20260914';
-$cognitivePresentationBuild = 'cognitive-presentation-footer-v2451-20260922';
+$cognitivePresentationBuild = 'agent-experience-cognition-v1-20261006';
 $cognitiveCardsBuild = 'cognitive-cards-v520-20260918';
 $cognitiveFeedBuild = 'cognitive-feed-v530-20260918';
 $cognitiveLearningBuild = 'cognitive-learning-v540-20260918';
@@ -299,7 +299,7 @@ $html = preg_replace(
 
 // Unified Agent experience: the compact status control opens the canonical Agent Brain drawer.
 // Cognitive Presentation still owns status, proactive digests, attention arbitration and voice.
-$cognitiveBriefButton = '<button class="chat-agent-brief-button" id="chatAgentBriefButton" type="button" aria-label="Open Agent Brain" aria-expanded="false" aria-controls="chatNotificationDrawer">'
+$cognitiveBriefButton = '<button class="chat-agent-brief-button" id="chatAgentBriefButton" type="button" data-open-agent-brain aria-label="Open Agent Brain" aria-expanded="false" aria-controls="chatNotificationDrawer">'
     . '<span aria-hidden="true">✦</span><i class="chat-agent-status-dot" data-agent-status-dot></i><em class="chat-agent-attention-badge" data-agent-attention-badge hidden>0</em></button>';
 $html = str_replace(
     '<form class="chat-composer" id="chatForm">',
