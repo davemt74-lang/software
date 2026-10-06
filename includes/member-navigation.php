@@ -71,6 +71,7 @@ function member_navigation_active_key(?string $scriptName = null): string
         'meeting.php'=>'meetings',
         'account.php'=>'account',
         'settings-homeserver.php'=>'homeserver',
+        'workspace-data.php'=>'workspace_data',
         'hosting.php'=>'hosting',
         'apps.php'=>'apps',
         'client-updates.php'=>'client_updates',
@@ -150,6 +151,7 @@ function member_navigation_menu_links(?array $user = null): array
         $add($links,'account','My Account',url('/account.php'),'identity');
         $add($links,'client_updates','Client Updates',url('/client-updates.php'),'identity');
         $add($links,'homeserver','HomeServer',url('/settings-homeserver.php'),'identity');
+        $add($links,'workspace_data','HomeServer data',url('/workspace-data.php'),'identity');
         $add($links,'hosting','Cloud Hosting',url('/hosting.php'),'identity');
         $add($links,'apps','Apps',url('/apps.php'),'identity');
         $add($links,'plugins','Plugins',url('/plugins.php'),'identity');

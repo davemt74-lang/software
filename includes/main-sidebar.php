@@ -20,7 +20,6 @@ $mainSidebarPrimaryKeys['hosting']=true;
 $mainSidebarPrimaryKeys['apps']=true;
 $mainSidebarPrimaryOrder[]='workspace_data';
 $mainSidebarPrimaryKeys['workspace_data']=true;
-if($mainSidebarUser&&has_permission('account.access',$mainSidebarUser))$mainSidebarMenuLinks[]=['key'=>'workspace_data','label'=>'HomeServer data','url'=>url('/workspace-data.php')];
 $mainSidebarPrimaryLabels = [
     'home'=>'Home',
     'chat'=>'Agent Chat',
