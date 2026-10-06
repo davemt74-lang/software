@@ -141,3 +141,6 @@ jobs:
           node tests/cognitive-feed-v530.mjs
           node tests/member-navigation-contract.mjs
           node tests/homeserver-vp3-integration-contract.mjs
+
+      - name: Browser connection replacement and cancellation
+        run: node tests/browser-connection-lifecycle.mjs

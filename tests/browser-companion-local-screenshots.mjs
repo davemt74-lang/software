@@ -9,7 +9,7 @@ const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const extension=path.join(process.cwd(),'browser-companion');
 const manifest=JSON.parse(await fs.readFile(path.join(extension,'manifest.json')));
-assert.equal(manifest.version,'22.9.2');assert.equal(manifest.action.default_popup,'popup.html');
+assert.equal(manifest.version,'22.9.3');assert.equal(manifest.action.default_popup,'popup.html');
 assert.ok(!manifest.host_permissions.includes('<all_urls>'));
 const stableId=[...crypto.createHash('sha256').update(Buffer.from(manifest.key,'base64')).digest('hex').slice(0,32)].map(n=>String.fromCharCode(97+parseInt(n,16))).join('');
 const downloadSource=await fs.readFile('chrome-extension-download.php','utf8');

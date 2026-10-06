@@ -60,11 +60,16 @@ function homeserver_cloud_v1200_disconnect(int $userId): array
     if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
 
     if(function_exists('homeserver_https_v1300_session')&&homeserver_https_v1300_session($userId)){
-        homeserver_https_v1300_revoke($userId,false);
-        $pdo->prepare("UPDATE homeserver_connections
-          SET relay_token_enc=NULL,homeserver_token_enc=NULL,pending_request_id='',pending_claim_token_enc=NULL,pending_code='',
-              status='revoked',last_error='',capabilities_json=NULL,last_checked_at=UTC_TIMESTAMP()
-          WHERE user_id=?")->execute([$userId]);
+        $pdo->beginTransaction();
+        try{
+            $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$lock->execute([$userId]);
+            homeserver_https_v1300_revoke($userId,false);
+            $pdo->prepare("UPDATE homeserver_connections
+              SET relay_token_enc=NULL,homeserver_token_enc=NULL,pending_request_id='',pending_claim_token_enc=NULL,pending_code='',
+                  status='revoked',last_error='',capabilities_json=NULL,last_checked_at=UTC_TIMESTAMP()
+              WHERE user_id=?")->execute([$userId]);
+            $pdo->commit();
+        }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
         return ['disconnected'=>true,'relay_revoked'=>true,'local_only'=>false,'transport'=>'vp3_https'];
     }
 
@@ -135,7 +140,18 @@ function homeserver_cloud_v1200_remove_pairing(int $userId): array
 
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
-    if(function_exists('homeserver_https_v1300_revoke'))homeserver_https_v1300_revoke($userId,true);
-    $pdo->prepare('DELETE FROM homeserver_connections WHERE user_id=?')->execute([$userId]);
+    $pdo->beginTransaction();
+    try{
+        $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$lock->execute([$userId]);
+        $live=$pdo->prepare('SELECT * FROM homeserver_connections WHERE user_id=? LIMIT 1 FOR UPDATE');
+        $live->execute([$userId]);$current=$live->fetch(PDO::FETCH_ASSOC);
+        if($current && (!in_array((string)$current['status'],['disconnected','revoked'],true)
+            || !empty($current['homeserver_token_enc']) || trim((string)($current['pending_request_id']??''))!==''
+            || (string)$current['device_id']!==(string)$row['device_id']))
+            throw new RuntimeException('Cloud pairing changed. Disconnect the current HomeServer before removing it.');
+        if(function_exists('homeserver_https_v1300_revoke'))homeserver_https_v1300_revoke($userId,true);
+        $pdo->prepare('DELETE FROM homeserver_connections WHERE user_id=?')->execute([$userId]);
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
     return ['removed'=>true,'relay_released'=>$relayReleased];
 }

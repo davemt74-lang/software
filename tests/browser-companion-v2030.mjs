@@ -71,7 +71,7 @@ must(background.includes("'/api/extension-browser-share-actions-v2030.php'"), 'B
 must(background.includes("'/api/extension-device-disconnect-v2030.php'"), 'server-side device revoke endpoint missing');
 must(background.includes('chrome.storage.local'), 'device state must use extension-local storage');
 must(!background.includes('chrome.storage.sync'), 'device credentials must not sync between browsers');
-must(background.includes('async function clearRevokedConnection()'), 'revoked credential cleanup helper missing');
+must(background.includes('async function clearRevokedConnection(expectedToken = null)'), 'revoked credential cleanup helper missing');
 must(background.includes("'last_share', 'pending_capture'"), 'revocation/disconnect must clear cached share and temporary capture state');
 must(background.includes("revoked.code = 'reconnect_required'"), 'revoked device token must return an explicit reconnect state');
 must(background.includes("await storage.get(['device_token'])"), 'VP3 site changes must inspect durable device-token connection state');
