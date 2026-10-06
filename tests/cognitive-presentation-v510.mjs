@@ -34,7 +34,7 @@ assert.match(api,/voice_suppressed/,'user stop must persist proactive voice supp
 assert.match(api,/interaction/);
 
 assert.doesNotThrow(()=>new Function(js));
-assert.match(js,/data-agent-brief-prompt/);
+assert.match(js,/openBrain/,'presentation runtime must retain a canonical Brain handoff API');
 assert.match(js,/While you were away/);
 assert.match(js,/STONEFELLOW_NOTIFICATION_CENTER/);
 assert.match(js,/voice_delivered/);
@@ -45,10 +45,12 @@ assert.match(js,/TRANSCRIPT_SUBMIT/);
 assert.match(js,/setInterval\(refresh/);
 assert.match(css,/chat-agent-status-dot\.active/);
 assert.match(css,/vp3-return-digest/);
+assert.doesNotMatch(css,/\.chat-composer\{max-width:840px!important\}/,'cognitive presentation must not narrow the canonical chat lane');
 assert.match(css,/\.chat-agent-intelligence\{display:none!important\}/);
 
 assert.match(chat,/chatAgentBriefButton/);
-assert.match(chat,/chatAgentBriefPopover/);
+assert.doesNotMatch(chat,/chatAgentBriefPopover/,'duplicate Agent Brief popover must stay retired');
+assert.match(chat,/chatAgentBriefButton[\s\S]*data-open-agent-brain/,'composer Agent status must control the canonical Brain drawer');
 assert.match(chat,/VP3_COGNITIVE_PRESENTATION_V510/);
 assert.match(chat,/chat-cognitive-presentation-v510\.js/);
 assert.doesNotMatch(chat,/\$agentIntelligenceHtml \. '<div class="message assistant" id="chatWelcome" hidden>'/);
