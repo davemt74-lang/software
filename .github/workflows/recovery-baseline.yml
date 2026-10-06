@@ -82,6 +82,7 @@ jobs:
 
       - name: Onboarding account authority and pairing recovery
         run: |
+          python3 tests/homeserver_pairing_request_size.py
           php tests/onboarding_accounts_section11.php
           php tests/auth_accounts_section11.php
           php -l includes/auth.php

@@ -9,8 +9,14 @@ header('Cache-Control: no-store, max-age=0');
 header('Pragma: no-cache');
 
 if(($_SERVER['REQUEST_METHOD']??'GET')!=='POST'){http_response_code(405);echo json_encode(['ok'=>false,'error'=>'POST required.']);exit;}
-if((int)($_SERVER['CONTENT_LENGTH']??0)>16384){http_response_code(413);echo json_encode(['ok'=>false,'error'=>'Pairing request is too large.']);exit;}
-$raw=file_get_contents('php://input');$body=is_string($raw)?json_decode($raw,true):null;
+// HomeServer sends the same capability manifest during pairing and heartbeat.
+// Keep the existing relay exchange budget, including for older HomeServers.
+const VP3_HOMESERVER_PAIRING_MAX_BYTES = 1048576;
+if((int)($_SERVER['CONTENT_LENGTH']??0)>VP3_HOMESERVER_PAIRING_MAX_BYTES){http_response_code(413);echo json_encode(['ok'=>false,'error'=>'Pairing request is too large.']);exit;}
+$raw=file_get_contents('php://input',false,null,0,VP3_HOMESERVER_PAIRING_MAX_BYTES+1);
+// Enforce actual bytes too: chunked requests may omit Content-Length.
+if(is_string($raw)&&strlen($raw)>VP3_HOMESERVER_PAIRING_MAX_BYTES){http_response_code(413);echo json_encode(['ok'=>false,'error'=>'Pairing request is too large.']);exit;}
+$body=is_string($raw)?json_decode($raw,true):null;
 if(!is_array($body)){http_response_code(400);echo json_encode(['ok'=>false,'error'=>'Invalid pairing request.']);exit;}
 
 try{
