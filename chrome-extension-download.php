@@ -75,6 +75,8 @@ $files = [
     'options.css',
     'options.html',
     'options.js',
+    'local-screenshots.css',
+    'local-screenshots.js',
     'sidepanel.css',
     'sidepanel.html',
     'sidepanel.js',

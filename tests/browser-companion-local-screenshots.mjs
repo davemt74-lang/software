@@ -12,6 +12,8 @@ const manifest = JSON.parse(await fs.readFile(path.join(extension, 'manifest.jso
 assert.equal(manifest.version, '22.9.1');
 assert.ok(manifest.permissions.includes('clipboardWrite') && manifest.permissions.includes('activeTab'));
 assert.ok(!manifest.host_permissions.includes('<all_urls>'), 'Shipping extension keeps existing host scope');
+const downloadSource = await fs.readFile(path.join(root, 'chrome-extension-download.php'), 'utf8');
+for (const asset of ['local-screenshots.css','local-screenshots.js']) assert.ok(downloadSource.includes(`'${asset}'`), `Public ZIP includes ${asset}`);
 const errors = [];
 const server = http.createServer(async (req, res) => {
   const name = path.basename(new URL(req.url, 'http://localhost').pathname);
@@ -129,7 +131,7 @@ try {
     await panel.goto(nativeWorker.url().replace(/background.js$/, 'sidepanel.html'));
     const home = await integration.newPage();await home.goto(base+'/homeserver');await home.bringToFront();
     await panel.evaluate(() => document.querySelector('#localCaptureVisible').click());
-    await panel.waitForFunction(() => !document.querySelector('#localScreenshotPreview').hidden);
+    await panel.locator('#localScreenshotImage').waitFor({state:'visible'});
     const nativePng = await panel.evaluate(async () => Array.from(new Uint8Array(await (await fetch(document.querySelector('#localScreenshotImage').src)).arrayBuffer())));
     assert.deepEqual(nativePng.slice(0,8), [137,80,78,71,13,10,26,10]);
     await panel.evaluate(() => {
@@ -137,14 +139,20 @@ try {
       chrome.downloads.download=async options=>{const id=await download({...options,saveAs:false});window.nativeDownloadId=id;return id;};
       document.querySelector('#localScreenshotSave').click();
     });
-    await panel.waitForFunction(async () => window.nativeDownloadId !== undefined && (await chrome.downloads.search({id:window.nativeDownloadId}))[0]?.state==='complete');
+    let complete = false;
+    for (let attempt=0; attempt<100; attempt++) {
+      complete = await panel.evaluate(async () => window.nativeDownloadId !== undefined && (await chrome.downloads.search({id:window.nativeDownloadId}))[0]?.state==='complete');
+      if (complete) break;
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    assert.equal(complete,true,'Native Chrome PNG download completes');
     const download = await panel.evaluate(async () => (await chrome.downloads.search({id:window.nativeDownloadId}))[0]);
     assert.deepEqual(Array.from(await fs.readFile(download.filename)), nativePng, 'Native Chrome download preserves captured PNG');
     await home.bringToFront();
     await panel.evaluate(() => document.querySelector('#localCaptureRegion').click());
     await home.locator('#vp3-region-capture-overlay').waitFor();
     await home.mouse.move(30,40);await home.mouse.down();await home.mouse.move(130,120);await home.mouse.up();
-    await panel.waitForFunction(() => document.querySelector('#localScreenshotSize').textContent.startsWith('100 × 80'));
+    await panel.locator('#localScreenshotSize').filter({hasText:'100 × 80'}).waitFor({state:'visible'});
     console.log('PASS: shipping MV3 extension loaded; real Chrome visible capture, exact PNG download and canonical region crop (temporary test-only capture grant).');
   }
 } finally {
