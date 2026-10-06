@@ -136,6 +136,7 @@ jobs:
           node tests/client-release-intelligence-v100.mjs
           node tests/client-releases-manager.mjs
           node tests/extension-device-token-v2100.mjs
+          php tests/extension-stable-callback.php
           node tests/browser-companion-proactive-notifications-v2140.mjs
           node tests/cognitive-feed-v530.mjs
           node tests/member-navigation-contract.mjs

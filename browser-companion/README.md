@@ -2,20 +2,32 @@
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
 
-## Local screenshots — extension v22.9.1
+## Toolbar screenshots — extension v22.9.2
 
-The Screenshots panel can capture the visible page or a selected region, preview it, save a PNG, and copy the image to paste into chat. It works on HomeServer HTTP/HTTPS pages without a VP3 sign-in. Captures remain in the extension until cleared or closed; they are not published as annotations or uploaded to VP3.
+Click the VP3 toolbar icon for a compact dropdown:
 
-### Install or update in Chrome
+- **Capture visible webpage**
+- **Capture entire webpage**
+- **Capture region**
 
-1. Extract the extension ZIP into a permanent folder. Do not run it inside the ZIP.
-2. To update an existing unpacked VP3 Browser Companion, replace the files in its existing extension folder and click **Reload** at `chrome://extensions`. Keeping the same folder preserves its extension identity and saved settings.
-3. For a new installation, enable **Developer mode** at `chrome://extensions`, click **Load unpacked**, and select the folder containing `manifest.json`.
-4. Open HomeServer in a Chrome tab. Click the VP3 toolbar icon on that tab to grant the existing `activeTab` capture permission and open the side panel.
-5. In **Screenshots**, click **Capture visible page** or **Select region**. Drag a region on the page; press Escape to cancel.
-6. Click **Save PNG**, or **Copy image** and paste into chat with Ctrl+V. If Chrome blocks copying, save and attach the PNG instead.
+The menu also opens the existing **Browser Companion** for annotation, research and account tools. Local screenshot controls are not in the side panel. A capture opens a separate preview tab with **Save PNG**, **Copy image** and **Clear**. No VP3 sign-in is needed for capture; screenshots are never published or uploaded automatically.
 
-This captures browser page content, not the desktop or Chrome toolbar. Visible-page capture covers the current viewport; selected regions are also limited to the viewport. Scroll and capture again for other page sections. The new `clipboardWrite` permission enables copying PNGs. Existing annotation publication still uses the existing VP3 account flow.
+### Install this release
+
+1. Deploy the matching Cloud package to update the callback and CORS validation. Preserve existing site configuration and runtime data.
+2. Extract the extension ZIP into a permanent folder.
+3. This release introduces a stable public manifest key. Remove the old unpacked VP3 extension once, then enable **Developer mode** at `chrome://extensions`, click **Load unpacked**, and choose the extracted folder containing `manifest.json`.
+4. The extension ID is `hfolffhjjhgjmomfkeefhndkgehombbk` regardless of the folder. Future updates can replace files in this same folder followed by **Reload**.
+5. Open a webpage and click the VP3 toolbar icon. Select a capture option. Region capture uses a drag on the page; Escape cancels.
+6. To connect your VP3 account, choose **Open Browser Companion**, then **Connect**. The matching Cloud build recognizes this exact bundled extension ID. Other extensions remain blocked unless explicitly configured.
+
+### Entire-page capture
+
+The extension scrolls and stitches the page locally. If the document fits the window but the main content is an internal scrolling panel (such as HomeServer Agent Chat), it captures that panel's rendered scrolling content and includes the surrounding header/footer once. It restores the original scroll position and temporary styles after completion, cancellation, or error. Keep the source tab active while capturing; switching tabs or windows cancels. Escape cancels a capture.
+
+Captures are bounded to 60 frames, 32 million pixels, 30,000 pixels per dimension and a 32 MiB PNG. Pages that grow during capture are rejected with retry guidance; this prevents endless capture on infinite-scrolling pages. Nested iframes, virtualized content that is not rendered, and multiple independent scrolling panels are not expanded. The largest visible primary scrolling panel is used when the document itself does not scroll.
+
+A single unclaimed PNG is held in local preview storage with a ten-minute expiry; the preview consumes and removes it, and the next capture clears any unclaimed image. Clearing or closing the loaded preview releases its image URL. No page HTML, account credentials or screenshot data are sent to VP3 by local capture.
 
 ## v22.30 Browser Research Agent
 

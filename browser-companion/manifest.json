@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "22.9.1",
+  "version": "22.9.2",
   "description": "VP3 Browser Companion with Client Release Intelligence, Transaction Trust, Control & Production Hardening, Transaction Intelligence & Exception Management, Transaction Continuity & Follow-Through, Transaction Outcome Verification & Recovery, Transaction & Submission Safety, Browser Research Agent, Multi-Site Workflow Automation, Controlled Web Interaction Runtime, server-authoritative Browser Agent Runtime, bounded delegation, Cognitive Memory, Agent Workspace, proactive Agent Voice, capture, Research, Live Rooms, alerts, and search.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -30,7 +30,8 @@
   },
   "action": {
     "default_title": "Open VP3 Browser Companion",
-    "default_icon": "notification-icon.png"
+    "default_icon": "notification-icon.png",
+    "default_popup": "popup.html"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
@@ -41,5 +42,6 @@
   },
   "icons": {
     "128": "notification-icon.png"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0uM87/HB6rFuTHKlkh240DueekLkKLQF22BpQm6a7k+QUeDfOb9CSxac2AcEsNdTObJ4SBwTgAyi98HLJGYiR2k0NtdHY6KyqIY65pVFeT73O2dbuklfObetTq4MmAJN10zk+sesVT4ng70v6N1B7Ov9aPrM5YyfIiDTHmKDzD6ImmpxCFFzqo+XdnhDXQzILMnVwLIVAukkcRhYYkRwZ77KMaS06bIOZ6vk8p0axNC5WJ0EtQVtgYnm5sGVxYUoSncSKeEr+YH+b6idSjuyVuNgiYjdZPSsANSvjz0FgYGCmoZKyi0lx6gM33w6M5oRTAp0aUe8lcpzSbMEP+UHLQIDAQAB"
 }

@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VP3 screenshot</title><link rel="stylesheet" href="local-screenshots.css"></head>
+<body>
+  <header><strong>Screenshot</strong><div class="actions"><button id="localScreenshotSave" type="button" disabled>Save PNG</button><button id="localScreenshotCopy" type="button" disabled>Copy image</button><button id="localScreenshotClear" type="button" disabled>Clear</button><button id="cancelCapture" type="button">Cancel capture</button></div></header>
+  <main><p id="localScreenshotStatus" role="status" aria-live="polite">Preparing screenshot…</p><p id="localScreenshotSize"></p><div id="localScreenshotPreview" hidden><img id="localScreenshotImage" alt="Captured webpage preview"></div></main>
+  <script src="screenshots-store.js"></script><script src="local-screenshots.js"></script>
+</body></html>

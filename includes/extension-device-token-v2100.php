@@ -59,11 +59,31 @@ function vp3_extension_device_token_ensure_schema_v2100(?PDO $pdo=null): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
+// The repository-distributed extension has one public manifest key. Its ID is
+// independent of the unpacked folder. Trust only that ID plus configured IDs.
+function vp3_extension_bundled_chrome_id_v2100(): string
+{
+    static $id=null;
+    if($id!==null)return $id;
+    $id='';
+    $path=__DIR__.'/../browser-companion/manifest.json';
+    if(!is_file($path))return $id;
+    $manifest=json_decode((string)file_get_contents($path),true);
+    $key=(string)($manifest['key']??'');
+    if(strlen($key)>6000)return $id;
+    $der=base64_decode($key,true);
+    if($der===false||strlen($der)<128||strlen($der)>4096)return $id;
+    $id=strtr(substr(hash('sha256',$der),0,32),'0123456789abcdef','abcdefghijklmnop');
+    return $id;
+}
+
 function vp3_extension_allowed_chrome_ids_v2100(): array
 {
     $configured=site_config('extension_allowed_origins',[]);
     if(is_string($configured))$configured=preg_split('/\s*,\s*/',trim($configured))?:[];
     $ids=[];
+    $bundled=vp3_extension_bundled_chrome_id_v2100();
+    if($bundled!=='')$ids[$bundled]=true;
     foreach(is_array($configured)?$configured:[] as $origin){
         if(preg_match('#^chrome-extension://([a-p]{32})$#',trim((string)$origin),$m))$ids[$m[1]]=true;
     }
@@ -116,7 +136,12 @@ function vp3_extension_device_context_v2100(array $input): array
     if(mb_strlen($extensionVersion)>40)throw new InvalidArgumentException('Extension version is too long.');
 
     $redirectUri=trim((string)($input['redirect_uri']??''));
-    if(!vp3_extension_redirect_uri_valid_v2100($redirectUri))throw new InvalidArgumentException('The Chrome callback URL is invalid.');
+    if(!vp3_extension_redirect_uri_valid_v2100($redirectUri)){
+        if(preg_match('#^https://([a-p]{32})\.chromiumapp\.org/vp3-connect$#',$redirectUri,$callback) && !vp3_extension_chrome_id_allowed_v2100($callback[1])){
+            throw new InvalidArgumentException('This Browser Companion release is not registered with this VP3 site. Update the site and install its current extension package.');
+        }
+        throw new InvalidArgumentException('The Chrome callback URL is invalid.');
+    }
 
     $state=trim((string)($input['state']??''));
     if(!vp3_extension_state_valid_v2100($state))throw new InvalidArgumentException('The connection state is invalid.');

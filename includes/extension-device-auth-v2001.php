@@ -66,11 +66,9 @@ function vp3_extension_live_capabilities_v2001(PDO $pdo, int $userId, mixed $req
     return array_values(array_unique($effective));
 }
 
-function vp3_extension_apply_cors_v2001(): void
+function vp3_extension_origin_allowed_v2001(string $origin): bool
 {
-    $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
-    if ($origin === '' || headers_sent()) return;
-
+    $origin=trim($origin);
     $configured = site_config('extension_allowed_origins', []);
     if (is_string($configured)) $configured = preg_split('/\s*,\s*/', trim($configured)) ?: [];
     $allowedOrigins = is_array($configured)
@@ -78,10 +76,19 @@ function vp3_extension_apply_cors_v2001(): void
         : [];
 
     $allowUnlisted = filter_var(site_config('extension_allow_unlisted_chrome_origins', false), FILTER_VALIDATE_BOOL);
-    $allowed = in_array($origin, $allowedOrigins, true)
+    $bundledId=function_exists('vp3_extension_bundled_chrome_id_v2100') ? vp3_extension_bundled_chrome_id_v2100() : '';
+    $allowed = ($bundledId!=='' && hash_equals('chrome-extension://'.$bundledId,$origin))
+        || in_array($origin, $allowedOrigins, true)
         || ($allowUnlisted && (bool)preg_match('#^chrome-extension://[a-p]{32}$#', $origin));
 
-    if ($allowed) {
+    return $allowed;
+}
+
+function vp3_extension_apply_cors_v2001(): void
+{
+    $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+    if ($origin === '' || headers_sent()) return;
+    if (vp3_extension_origin_allowed_v2001($origin)) {
         header('Access-Control-Allow-Origin: '.$origin);
         header('Vary: Origin');
     }
