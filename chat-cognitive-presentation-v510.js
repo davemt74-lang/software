@@ -470,8 +470,6 @@
 
   function renderBrief(brief) {
     renderStatus(brief || {});
-    content.setAttribute('aria-busy','false');
-    content.innerHTML = briefMarkup(brief || {});
   }
 
   function briefErrorMessage(error) {
@@ -494,14 +492,9 @@
   function renderBriefError(error) {
     if (statusDot) statusDot.classList.remove('active');
     button.dataset.active='0';
-    button.setAttribute('aria-label','Agent · status unavailable');
-    content.setAttribute('aria-busy','false');
-    const message = briefErrorMessage(error);
-    content.innerHTML =
-      '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Unavailable</small></div>' +
-      '<article class="chat-agent-brief-card" role="status"><small>Status</small><strong>Agent Brief could not load.</strong>' +
-      '<p>' + esc(message) + '</p><div class="chat-agent-brief-actions">' +
-      '<button type="button" class="primary" data-agent-brief-retry>Retry</button></div></article>';
+    button.dataset.runtimeState=runtimeState();
+    button.setAttribute('aria-label','Agent Brain · status unavailable');
+    button.title=briefErrorMessage(error);
   }
 
   function digestMarkup(digest) {
