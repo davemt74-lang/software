@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.9.2';
+const VP3_EXTENSION_VERSION = '22.9.3';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 importScripts('screenshots-store.js', 'screenshots-worker.js');
 
@@ -9,6 +9,26 @@ const storage = {
   async set(values) { return chrome.storage.local.set(values); },
   async remove(keys) { return chrome.storage.local.remove(keys); }
 };
+
+// Serialize only local credential mutations, never an interactive login/network wait.
+let connectionMutation = Promise.resolve();
+let connectionGeneration = 0;
+let connectionFlowActive = false;
+function withConnectionMutation(action) {
+  const result = connectionMutation.then(action, action);
+  connectionMutation = result.catch(() => {});
+  return result;
+}
+async function connectionContext() {
+  const state = await storage.get(['device_token', 'base_url']);
+  const token = String(state.device_token || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(token)) throw new Error('Connect this browser to VP3 first.');
+  return {token, base_url: cleanBaseUrl(state.base_url || VP3_DEFAULT_BASE)};
+}
+async function connectionStillCurrent(context) {
+  const state = await storage.get(['device_token', 'base_url']);
+  return state.device_token === context.token && cleanBaseUrl(state.base_url || VP3_DEFAULT_BASE) === context.base_url;
+}
 
 function cleanBaseUrl(value) {
   const raw = String(value || VP3_DEFAULT_BASE).trim().replace(/\/+$/, '');
@@ -82,8 +102,8 @@ async function ensureOriginPermission(baseUrl) {
   return chrome.permissions.request({ origins: [origin] });
 }
 
-async function fetchJson(path, options = {}) {
-  const { base_url } = await config();
+async function fetchJson(path, options = {}, boundBase = null) {
+  const { base_url } = boundBase ? {base_url: cleanBaseUrl(boundBase)} : await config();
   const allowed = await ensureOriginPermission(base_url);
   if (!allowed) throw new Error('Permission to connect to this VP3 installation was not granted.');
   const headers = new Headers(options.headers || {});
@@ -93,7 +113,10 @@ async function fetchJson(path, options = {}) {
     headers.set('Content-Type', 'application/json');
     options.body = JSON.stringify(options.json);
   }
-  const response = await fetch(apiUrl(base_url, path), { ...options, headers, cache: 'no-store' });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 125000);
+  try {
+  const response = await fetch(apiUrl(base_url, path), { ...options, headers, signal: controller.signal, cache: 'no-store' });
   let payload = null;
   try { payload = await response.json(); } catch { payload = null; }
   if (!response.ok || !payload?.ok) {
@@ -104,15 +127,21 @@ async function fetchJson(path, options = {}) {
     throw error;
   }
   return payload;
+  } finally { clearTimeout(timer); }
 }
 
-async function clearRevokedConnection() {
+async function clearRevokedConnection(expectedToken = null) {
+  return withConnectionMutation(async () => {
+  const current = await storage.get(['device_token']);
+  if (expectedToken !== null && String(current.device_token || '') !== expectedToken) return false;
   await storage.remove([
     'device_token',
     // Remove v20.x connection state during upgrade/disconnect.
     'device_id','device_credential','connected_user','approved_capabilities','pending_connection','session',
     'last_share', 'pending_capture'
   ]);
+  return true;
+  });
 }
 
 async function deviceToken() {
@@ -123,15 +152,18 @@ async function deviceToken() {
 }
 
 async function authorizedFetch(path, options = {}, capability = '') {
-  const token = await deviceToken();
+  const context = await connectionContext();
+  const token = context.token;
   try {
-    return await fetchJson(path, {
+    const result = await fetchJson(path, {
       ...options,
       headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` }
-    });
+    }, context.base_url);
+    if (!(await connectionStillCurrent(context))) throw new Error('Browser connection changed. Retry using the current connection.');
+    return result;
   } catch (error) {
     if (error.status !== 401) throw error;
-    await clearRevokedConnection();
+    await clearRevokedConnection(token);
     const revoked = new Error('This browser connection was revoked. Reconnect to VP3.');
     revoked.status = 401;
     revoked.code = 'reconnect_required';
@@ -140,8 +172,8 @@ async function authorizedFetch(path, options = {}, capability = '') {
 }
 
 async function authorizedMediaDataUrl(path) {
-  const token = await deviceToken();
-  const { base_url } = await config();
+  const context = await connectionContext();
+  const {token, base_url} = context;
   const response = await fetch(apiUrl(base_url, path), {
     method: 'GET',
     headers: {
@@ -153,7 +185,7 @@ async function authorizedMediaDataUrl(path) {
     credentials: 'omit'
   });
   if (response.status === 401) {
-    await clearRevokedConnection();
+    await clearRevokedConnection(token);
     const revoked = new Error('This browser connection was revoked. Reconnect to VP3.');
     revoked.status = 401;
     revoked.code = 'reconnect_required';
@@ -164,6 +196,7 @@ async function authorizedMediaDataUrl(path) {
     error.status = response.status;
     throw error;
   }
+  if (!(await connectionStillCurrent(context))) throw new Error('Browser connection changed. Retry using the current connection.');
   const blob = await response.blob();
   if (blob.size > 16 * 1024 * 1024) throw new Error('Browser Share media is too large to preview.');
   const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -1681,6 +1714,10 @@ async function selectScreenshotRegion() {
 }
 
 async function beginConnect(deviceName) {
+  if (connectionFlowActive) throw new Error('A browser connection is already in progress.');
+  connectionFlowActive = true;
+  const generation = ++connectionGeneration;
+  try {
   const installation_id = await ensureInstallation();
   const { base_url } = await config();
   if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
@@ -1701,6 +1738,9 @@ async function beginConnect(deviceName) {
   if (!callback) throw new Error('VP3 connection was cancelled.');
 
   const result = new URL(callback);
+  const expected = new URL(redirect_uri);
+  if (result.origin !== expected.origin || result.pathname !== expected.pathname || result.hash || result.username || result.password) throw new Error('VP3 connection callback did not match this browser.');
+  if (generation !== connectionGeneration) throw new Error('Browser connection was cancelled or changed.');
   if (result.searchParams.get('state') !== state) throw new Error('VP3 connection state did not match.');
   if (result.searchParams.get('error')) throw new Error('VP3 connection was cancelled.');
   const code = String(result.searchParams.get('code') || '');
@@ -1709,16 +1749,20 @@ async function beginConnect(deviceName) {
   const payload = await fetchJson('/api/extension-token.php', {
     method: 'POST',
     json: { code, installation_id }
-  });
+  }, base_url);
   if (!/^[a-f0-9]{64}$/i.test(String(payload.device_token || ''))) {
     throw new Error('VP3 did not return a valid device token.');
   }
 
-  await storage.set({ device_token: String(payload.device_token).toLowerCase() });
+  await withConnectionMutation(async () => {
+    if (generation !== connectionGeneration || (await config()).base_url !== base_url) throw new Error('Browser connection was cancelled or changed.');
+    await storage.set({ device_token: String(payload.device_token).toLowerCase() });
+  });
   await storage.remove(['device_id','device_credential','connected_user','approved_capabilities','pending_connection','session']);
   await ensureProactiveNotificationAlarm();
   void pollProactiveNotifications();
   return currentAccount();
+  } finally { connectionFlowActive = false; }
 }
 
 async function pollConnect() {
@@ -2452,15 +2496,20 @@ async function quickActionFailureV2150(error) {
 }
 
 async function disconnect() {
-  const state = await storage.get(['device_token']);
+  const state = await withConnectionMutation(async () => {
+    ++connectionGeneration;
+    return storage.get(['device_token', 'base_url']);
+  });
   if (state.device_token) {
     try {
-      await authorizedFetch('/api/extension-device-disconnect-v2030.php', { method: 'POST', json: {} });
+      await fetchJson('/api/extension-device-disconnect-v2030.php', {
+        method: 'POST', json: {}, headers: {Authorization: `Bearer ${state.device_token}`}
+      }, state.base_url || VP3_DEFAULT_BASE);
     } catch (error) {
       if (error.status !== 401) throw error;
     }
   }
-  await clearRevokedConnection();
+  await clearRevokedConnection(state.device_token || '');
   return { ok: true };
 }
 
@@ -2628,6 +2677,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       case 'set_base_url': {
         const base_url = cleanBaseUrl(message.base_url);
+        return withConnectionMutation(async () => {
         const current = await config();
         if (base_url !== current.base_url) {
           const connection = await storage.get(['device_token']);
@@ -2636,8 +2686,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }
         if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
+        ++connectionGeneration;
         await storage.set({ base_url });
         return { base_url };
+        });
       }
       default: throw new Error('Unsupported Browser Companion request.');
     }

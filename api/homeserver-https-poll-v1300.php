@@ -32,6 +32,9 @@ try{
 
 try{
     echo json_encode(homeserver_https_v1300_poll($session,$body),JSON_UNESCAPED_SLASHES);
+}catch(HomeServerHttpsSessionError $e){
+    http_response_code($e->getCode()===410?410:401);
+    echo json_encode(['ok'=>false,'error'=>$e->getMessage()],JSON_UNESCAPED_SLASHES);
 }catch(Throwable $e){
     error_log('HomeServer HTTPS poll failed: '.$e->getMessage());
     http_response_code(500);

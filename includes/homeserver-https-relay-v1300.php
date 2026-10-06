@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+class HomeServerHttpsSessionError extends RuntimeException {}
+
 const VP3_HOMESERVER_HTTPS_RELAY_V1300='homeserver-https-relay-v1300-20260924';
 const VP3_HOMESERVER_HTTPS_ONLINE_SECONDS=20;
 const VP3_HOMESERVER_HTTPS_REQUEST_TTL_SECONDS=120;
@@ -186,6 +188,16 @@ function homeserver_https_v1300_poll(array $session,array $body): array
 
     $pdo->beginTransaction();
     try{
+        // Pair, poll and revoke serialize on the same account authority. The
+        // preflight authentication snapshot cannot authorize later writes.
+        $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$lock->execute([$userId]);
+        $live=$pdo->prepare('SELECT * FROM homeserver_https_sessions WHERE user_id=? LIMIT 1 FOR UPDATE');
+        $live->execute([$userId]);$current=$live->fetch(PDO::FETCH_ASSOC);
+        if(!$current || !hash_equals((string)$current['device_id'],$deviceId)
+            || !hash_equals((string)$current['session_token_hash'],(string)($session['session_token_hash']??'')))
+            throw new HomeServerHttpsSessionError('HomeServer HTTPS session is not authorized.',401);
+        if((string)$current['status']!=='active')
+            throw new HomeServerHttpsSessionError('HomeServer HTTPS session was revoked.',410);
         foreach((array)($body['results']??[]) as $result){
             if(!is_array($result))continue;
             $requestId=trim((string)($result['request_id']??''));
@@ -198,7 +210,7 @@ function homeserver_https_v1300_poll(array $session,array $body): array
               ->execute([$ok?'completed':'failed',$http,$json,$requestId,$userId,$deviceId]);
         }
 
-        $pdo->prepare("UPDATE homeserver_https_sessions SET installed_version=?,capabilities_json=?,last_seen_at=UTC_TIMESTAMP(),status='active' WHERE user_id=?")
+        $pdo->prepare("UPDATE homeserver_https_sessions SET installed_version=?,capabilities_json=?,last_seen_at=UTC_TIMESTAMP() WHERE user_id=? AND status='active'")
           ->execute([$version,$capsJson,$userId]);
         $pdo->prepare("UPDATE homeserver_connections SET status='paired',installed_version=?,last_seen_at=UTC_TIMESTAMP(),last_checked_at=UTC_TIMESTAMP(),last_error='',capabilities_json=? WHERE user_id=?")
           ->execute([$version,$capsJson,$userId]);
@@ -293,7 +305,13 @@ function homeserver_https_v1300_revoke(int $userId,bool $delete=false): void
 {
     $pdo=db();if(!$pdo)return;
     if(function_exists('table_exists')&&!table_exists('homeserver_https_sessions'))return;
-    $pdo->prepare("UPDATE homeserver_https_requests SET status='expired' WHERE user_id=? AND status IN ('queued','delivered')")->execute([$userId]);
-    if($delete)$pdo->prepare("DELETE FROM homeserver_https_sessions WHERE user_id=?")->execute([$userId]);
-    else $pdo->prepare("UPDATE homeserver_https_sessions SET status='revoked' WHERE user_id=?")->execute([$userId]);
+    $ownsTransaction=!$pdo->inTransaction();
+    if($ownsTransaction)$pdo->beginTransaction();
+    try{
+        $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$lock->execute([$userId]);
+        $pdo->prepare("UPDATE homeserver_https_requests SET status='expired' WHERE user_id=? AND status IN ('queued','delivered')")->execute([$userId]);
+        if($delete)$pdo->prepare("DELETE FROM homeserver_https_sessions WHERE user_id=?")->execute([$userId]);
+        else $pdo->prepare("UPDATE homeserver_https_sessions SET status='revoked' WHERE user_id=?")->execute([$userId]);
+        if($ownsTransaction)$pdo->commit();
+    }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }

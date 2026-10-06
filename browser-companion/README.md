@@ -2,7 +2,7 @@
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
 
-## Toolbar screenshots — extension v22.9.2
+## Toolbar screenshots — extension v22.9.3
 
 Click the VP3 toolbar icon for a compact dropdown:
 
