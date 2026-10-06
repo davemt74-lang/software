@@ -15,10 +15,11 @@ const notifications = read('includes/notifications.php');
 const activity = read('includes/agent-activity-v94.php');
 const brain = read('includes/agent-brain-v82.php');
 const identity = read('chat-agent-identity-v236.js');
+const sidebar = read('includes/main-sidebar.php');
 
 assert.doesNotThrow(() => new Function(ui), 'Activity Center runtime must be valid JavaScript');
 assert.doesNotThrow(() => new Function(identity), 'Agent identity runtime must be valid JavaScript');
-assert.match(chat, /\$notificationDrawerBuild = 'chat-notifications-section13-20261005'/, 'Activity Center cache key must identify the v2.44 proactive interaction runtime');
+assert.match(chat, /\$notificationDrawerBuild = 'agent-experience-brain-v1-20261006'/, 'Agent Brain presentation cache key must identify the unified Agent experience runtime');
 assert.match(chat, /\$agentIdentityBuild = 'cloud-agent-onboarding-readiness-v110-20261001'/);
 assert.match(chat, /window\.STONEFELLOW_NOTIFICATION_DRAWER=/);
 assert.match(chat, /chat-notifications-drawer-v240\.css\?v=/);
@@ -35,12 +36,21 @@ assert.match(ui, /oldDropdown\.remove\(\)/, 'Activity Center must retire the leg
 assert.match(ui, /const replacement = oldButton\.cloneNode\(true\)/, 'Activity Center must strip the legacy bell listener before owning the button');
 assert.match(ui, /actions\.insertBefore\(menu, profile\)/, 'Notification bell must be immediately left of the profile menu');
 assert.match(ui, /new MutationObserver\(keepBellNextToProfile\)/, 'Bell placement must survive later header insertions');
+assert.match(sidebar, /data-open-agent-brain/, 'Agent Brain must be available directly beside Agent Chat in the canonical left navigation');
+assert.match(sidebar, /aria-controls="chatNotificationDrawer"/, 'left navigation must control the canonical right drawer');
+assert.match(ui, /brainButtons = \[\.\.\.document\.querySelectorAll\('\[data-open-agent-brain\]'\)\]/, 'canonical Brain nav controls must bind to the drawer runtime');
+assert.match(ui, /drawer\.dataset\.activeTab = activeTab/, 'drawer must expose the active Agent workspace surface');
+assert.match(ui, /Cognition · memory · goals · activity/, 'Brain drawer must present cognition, memory, goals and activity as one surface');
+assert.match(ui, /chat-agent-brain-open/, 'Brain mode must be distinct from generic notification mode');
 
 assert.match(css, /z-index:20400/);
 assert.match(css, /z-index:20410/);
 assert.match(css, /height:100dvh/);
 assert.match(css, /width:min\(600px,calc\(100vw - 36px\)\)/);
 assert.match(css, /@media\(max-width:700px\)\{\.chat-notification-drawer\{width:100vw\}/);
+assert.match(css, /chat-notification-drawer\[data-active-tab="brain"\]/, 'Agent Brain has a dedicated right-rail presentation');
+assert.match(css, /body\.chat-agent-brain-open \.chat-notification-drawer-backdrop/, 'desktop Brain keeps the Chat canvas visually present');
+assert.match(css, /@media\(max-width:700px\)[\s\S]*chat-notification-drawer\[data-active-tab="brain"\]\{width:100vw/, 'Agent Brain becomes a full mobile slide-out');
 
 assert.match(api, /notification_recent\(\$user, 25\)/);
 assert.match(api, /notification_unread_count\(\$user\)/);
