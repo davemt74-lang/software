@@ -117,6 +117,7 @@ try {
     integration=await launch(extension,'shipped');let worker=integration.serviceWorkers()[0]||await integration.waitForEvent('serviceworker');
     assert.equal(new URL(worker.url()).hostname,stableId,'Native Chrome ID matches the public key');
     let nativeMenu=await integration.newPage();await nativeMenu.goto(worker.url().replace(/background.js$/,'popup.html'));assert.equal(await nativeMenu.locator('[data-capture]').count(),3);
+    assert.equal(await nativeMenu.evaluate(()=>chrome.identity.getRedirectURL('vp3-connect')),'https://'+stableId+'.chromiumapp.org/vp3-connect','Actual Chrome callback matches server validation');
     await integration.close();
     const fixture=path.join(temp,'grant-fixture');await fs.cp(extension,fixture,{recursive:true});
     await fs.writeFile(path.join(fixture,'manifest.json'),JSON.stringify({...manifest,host_permissions:[...manifest.host_permissions,'<all_urls>']}));
@@ -144,7 +145,7 @@ try {
     assert.equal(saved?.state,'complete');assert.deepEqual(Array.from(await fs.readFile(saved.filename)),original);
     for(const name of ['homeserver','nested']) {
       const full=await nativeStart('full',name);await ready(full.preview);
-      const dimensions=await full.preview.evaluate(()=>document.querySelector('#localScreenshotSize').textContent());
+      const dimensions=await full.preview.evaluate(()=>document.querySelector('#localScreenshotSize').textContent);
       const bitmap=await full.preview.evaluate(async()=>{const blob=await(await fetch(document.querySelector('img').src)).blob(),b=await createImageBitmap(blob),c=document.createElement('canvas');c.width=b.width;c.height=b.height;const ctx=c.getContext('2d');ctx.drawImage(b,0,0);b.close();return {width:c.width,height:c.height,samples:[400,1400,2400].map(y=>Array.from(ctx.getImageData(20,y+(location.href.includes('nested')?40:0),1,1).data))};});
       assert.equal(bitmap.height,name==='nested'?2780:2700,dimensions);
       assert.deepEqual(bitmap.samples,[[238,34,34,255],[34,68,238,255],[34,204,68,255]]);
