@@ -60,7 +60,7 @@ $uploads=dirname(__DIR__).'/uploads';if(!is_dir($uploads))mkdir($uploads,0700,tr
 $file=$uploads.'/workspace-test-'.bin2hex(random_bytes(6)).'.bin';
 $assetBytes=str_repeat("%PDF fixture\n",100000);file_put_contents($file,$assetBytes);
 try{
-    $pdo->exec('CREATE TABLE knowledge_items(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,title VARCHAR(100),content_text TEXT,file_path TEXT)'.$tail);
+    $pdo->exec('CREATE TABLE knowledge_items(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,title VARCHAR(100),content_text '.($mysql?'LONGTEXT':'TEXT').',file_path TEXT)'.$tail);
     $relative='uploads/'.basename($file);
     $pdo->prepare('INSERT INTO knowledge_items VALUES(1,1,?,?,?)')->execute(['Original file',str_repeat('完整 💡 ',17000),$relative]);
     $manifest=workspace_sync_exchange_v1($session,['action'=>'prepare','dataset'=>'knowledge']);

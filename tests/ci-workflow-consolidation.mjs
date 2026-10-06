@@ -23,7 +23,8 @@ const activeExpected=[
   "section16-app-control.yml",
   "team-workspaces-v350.yml",
   "video-meetings-v18230.yml",
-  "production-deploy-package.yml"
+  "production-deploy-package.yml",
+  "workspace-sync-v1.yml"
 ];
 
 const yamlFiles=dir=>fs.readdirSync(dir).filter(name=>/\.ya?ml$/i.test(name)).sort();
