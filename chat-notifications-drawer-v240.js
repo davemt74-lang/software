@@ -62,7 +62,6 @@
   let drawer = null;
   let backdrop = null;
   let button = null;
-  let brainButtons = [];
   let activeTab = 'notifications';
   let busy = false;
   let attentionCursor = 0;
@@ -153,7 +152,7 @@
     drawer.setAttribute('aria-label', 'Notifications and Agent Brain');
     drawer.innerHTML = `
       <header class="chat-notification-drawer-head">
-        <div><small data-notification-drawer-kicker>Agent workspace</small><strong data-notification-drawer-title>Activity Center</strong></div>
+        <div><small>Stonefellow</small><strong>Activity Center</strong></div>
         <button type="button" data-notification-drawer-close aria-label="Close Activity Center">×</button>
       </header>
       <nav class="chat-notification-tabs" aria-label="Activity Center sections">
@@ -919,12 +918,6 @@
 
   function render() {
     if (!drawer) return;
-    drawer.dataset.activeTab = activeTab;
-    const title = drawer.querySelector('[data-notification-drawer-title]');
-    const kicker = drawer.querySelector('[data-notification-drawer-kicker]');
-    if (title) title.textContent = activeTab === 'brain' ? 'Agent Brain' : activeTab === 'history' ? 'Agent History' : 'Activity Center';
-    if (kicker) kicker.textContent = activeTab === 'brain' ? 'Cognition · memory · goals · activity' : activeTab === 'history' ? 'Context continuity' : 'Agent workspace';
-    brainButtons.forEach(control => control.setAttribute('aria-expanded', activeTab === 'brain' && drawer.classList.contains('open') ? 'true' : 'false'));
     drawer.querySelectorAll('[data-notification-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.notificationTab === activeTab));
     const count = drawer.querySelector('[data-notification-tab-count]');
     const unread = Number(state?.notifications?.unread || 0);
@@ -968,9 +961,7 @@
       backdrop.classList.add('open');
     });
     button?.setAttribute('aria-expanded', 'true');
-    brainButtons.forEach(control => control.setAttribute('aria-expanded', activeTab === 'brain' ? 'true' : 'false'));
     document.body.classList.add('chat-notification-drawer-open');
-    document.body.classList.toggle('chat-agent-brain-open', activeTab === 'brain');
     render();
     void refresh(true);
   }
@@ -980,9 +971,7 @@
     drawer.classList.remove('open');
     backdrop.classList.remove('open');
     button?.setAttribute('aria-expanded', 'false');
-    brainButtons.forEach(control => control.setAttribute('aria-expanded', 'false'));
     document.body.classList.remove('chat-notification-drawer-open');
-    document.body.classList.remove('chat-agent-brain-open');
     window.setTimeout(() => {
       if (!drawer?.classList.contains('open')) {
         drawer.hidden = true;
@@ -1011,7 +1000,6 @@
     const tab = event.target.closest('[data-notification-tab]');
     if (tab) {
       activeTab = tab.dataset.notificationTab || 'notifications';
-      document.body.classList.toggle('chat-agent-brain-open', activeTab === 'brain');
       render();
       return;
     }
@@ -1321,12 +1309,6 @@
 
   if (!ownNotificationButton()) return;
   ensureDrawer();
-  brainButtons = [...document.querySelectorAll('[data-open-agent-brain]')];
-  brainButtons.forEach(control => control.addEventListener('click', () => {
-    activeTab = 'brain';
-    openDrawer();
-    render();
-  }));
   keepBellNextToProfile();
   if (!window.VP3_COGNITIVE_PRESENTATION_V510?.ownsBrainPresentation) observeMainFeedBrainPriorities();
   const actions = document.querySelector('.chat-topbar-actions');

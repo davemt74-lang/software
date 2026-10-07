@@ -8,11 +8,10 @@ const presentation = fs.readFileSync('includes/cognitive-presentation-v510.php',
 const presentationJs = fs.readFileSync('chat-cognitive-presentation-v510.js', 'utf8');
 const presentationCss = fs.readFileSync('chat-cognitive-presentation-v510.css', 'utf8');
 
-assert.match(chat, /\$cognitivePresentationBuild = 'agent-experience-cognition-v1-20261006'/, 'Chat must expose the unified cognition presentation build');
+assert.match(chat, /\$cognitivePresentationBuild = 'cognitive-presentation-v510-20260918'/, 'Chat must expose the Cognitive Presentation build');
 assert.match(chat, /X-VP3-Agent-Intelligence/, 'Chat must retain the Agent intelligence runtime header');
 assert.match(chat, /chatAgentBriefButton/, 'Agent Brief must move to the composer control');
-assert.doesNotMatch(chat, /chatAgentBriefPopover/, 'duplicate Agent Brief footer popover must stay retired');
-assert.match(chat, /data-open-agent-brain/, 'Agent status control must open the canonical Agent Brain drawer');
+assert.match(chat, /chatAgentBriefPopover/, 'Agent Brief must render in the footer popover');
 assert.match(chat, /VP3_COGNITIVE_PRESENTATION_V510/, 'Chat must configure the Cognitive Presentation owner');
 assert.match(chat, /chat-cognitive-presentation-v510\.css/, 'Chat must load the new presentation layer');
 assert.match(chat, /chat-cognitive-presentation-v510\.js/, 'Chat must load the new presentation runtime');
@@ -35,12 +34,13 @@ assert.doesNotMatch(intelligence, /homeserver_vp3_status\(/, 'Brief state must n
 assert.doesNotMatch(intelligence, /native_path|folder_path|filesystem_path/i, 'Brief state must never expose HomeServer filesystem paths');
 
 assert.doesNotThrow(() => new Function(presentationJs), 'Cognitive Presentation runtime must be valid JavaScript');
-assert.match(presentationJs, /openBrain/, 'presentation API must hand cognition review to Agent Brain');
+assert.match(presentationJs, /form\.requestSubmit\(\)/, 'one-click Brief actions must use the canonical Chat composer');
+assert.match(presentationJs, /data-agent-brief-prompt/, 'Brief advisory actions must route back through Agent Chat');
 assert.match(presentationJs, /setInterval\(refresh/, 'new presentation state uses the bounded 30-second runtime poll');
 assert.match(presentationJs, /openBrain/, 'Brief must deep-link into Agent Brain');
-assert.match(presentationJs, /openHistory/, 'presentation runtime may deep-link into Agent History');
+assert.match(presentationJs, /openHistory/, 'Brief must deep-link into Agent History');
 
-assert.doesNotMatch(presentationCss, /\.chat-composer\{max-width:840px!important\}/, 'presentation CSS must not override the wide Agent Chat lane');
+assert.match(presentationCss, /chat-agent-brief-popover/, 'new Brief must have a dedicated footer presentation');
 assert.match(presentationCss, /chat-agent-status-dot\.active/, 'new Brief must expose active/inactive Agent state');
 assert.match(presentationCss, /chat-agent-attention-badge/, 'attention count must be independent from Agent active state');
 assert.match(presentationCss, /@media\(max-width:820px\)/, 'new Brief must support the member mobile breakpoint');
