@@ -42,6 +42,9 @@ jobs:
           extensions: pdo_sqlite,mbstring
           coverage: none
       - run: |
+          php -l contacts.php
+          php -l profile-commerce-products.php
+          php -l scheduling.php
           php -l tests/workspace_sync_server.php
           php -l includes/homeserver-workspace-sync-v1.php
           php -l api/homeserver-workspace-sync-v1.php

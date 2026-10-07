@@ -23,6 +23,15 @@ $federatedExtraContacts = array_values(array_filter(
     is_array($continuity['items']??null)?$continuity['items']:[],
     static fn(array $item):bool=>in_array((string)($item['contact_class']??''),['core_crm','address_book'],true)
 ));
+$workspaceEditContact=max(0,(int)($_GET['edit_cloud']??0));
+if($workspaceEditContact>0){
+    $row=homeserver_contacts_v241_core_crm_row((int)$user['id'],$workspaceEditContact);
+    if($row){
+        $focused=homeserver_contacts_v241_core_crm_projection((int)$user['id'],$row);
+        $federatedExtraContacts=array_values(array_filter($federatedExtraContacts,static fn($item)=>$item['canonical_id']!==$focused['canonical_id']));
+        array_unshift($federatedExtraContacts,$focused);
+    }
+}
 $coreCrmCount = count(array_filter($federatedExtraContacts,static fn(array $item):bool=>(string)($item['contact_class']??'')==='core_crm'));
 $homeServerContactCount = count(array_filter($federatedExtraContacts,static fn(array $item):bool=>(string)($item['contact_class']??'')==='address_book'));
 $federatedClientContacts=[];
@@ -33,6 +42,7 @@ foreach($federatedExtraContacts as $item){
       'canonical_id'=>$canonical,
       'record_revision'=>(string)($item['record_revision']??''),
       'authority_source'=>(string)($item['authority_source']??''),
+      'authority_key'=>(string)($item['authority_key']??''),
       'contact_class'=>(string)($item['contact_class']??''),
       'display_name'=>(string)($item['display_name']??''),
       'organization'=>(string)($item['organization']??''),
@@ -635,6 +645,11 @@ foreach($agentContacts as $agentContact){
   });
   document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(contactModal&&!contactModal.hidden)closeContactEditor();else if(modal&&!modal.hidden)closeAgentDetail();});
   apply();
+  const sourceContact=new URLSearchParams(location.search).get('edit_cloud');
+  if(sourceContact&&/^[1-9][0-9]*$/.test(sourceContact)){
+    const focused=Object.values(federated).find(item=>item.authority_source==='vp3_cloud'&&item.authority_key==='core_crm:'+sourceContact);
+    if(focused)openContactEditor(focused.canonical_id);
+  }
 })();
 </script>
 <script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script>
