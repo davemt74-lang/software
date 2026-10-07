@@ -63,6 +63,26 @@ foreach(['profile','contacts','crm','products','music','workspace_other'] as $da
  if($dataset==='music'){ $rows=json_decode($raw,true,512,JSON_THROW_ON_ERROR)['records'];check(count($rows)===1&&$rows[0]['data']['track_id']==7,'Own composite-key favorite preserved');}
  if($dataset==='products')check(str_contains($raw,'MY-SKU')&&str_contains($raw,'blue'),'Product fields preserved');
 }
+// Source links re-check live ownership rather than trusting a cached replica.
+$pdo->exec('CREATE TABLE agent_scheduling_schedules(id INTEGER PRIMARY KEY,owner_user_id INTEGER)'.$tail);
+$pdo->exec('INSERT INTO agent_scheduling_schedules VALUES(7,1),(8,2)');
+$pdo->exec('CREATE TABLE agent_scheduling_event_types(id INTEGER PRIMARY KEY,schedule_id INTEGER)'.$tail);
+$pdo->exec('INSERT INTO agent_scheduling_event_types VALUES(9,7),(10,8)');
+$pdo->exec('CREATE TABLE agent_scheduling_bookings(id INTEGER PRIMARY KEY,owner_user_id INTEGER,schedule_id INTEGER)'.$tail);
+$pdo->exec('INSERT INTO agent_scheduling_bookings VALUES(11,1,7),(12,2,8)');
+check(workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'schedules','key'=>'agent_scheduling_schedules:7'])['source_path']==='scheduling.php?schedule=7&tab=settings','Owned schedule settings selected');
+check(workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'schedules','key'=>'agent_scheduling_event_types:9'])['source_path']==='scheduling.php?event=9&schedule=7','Event type selects its owning schedule');
+check(workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'schedules','key'=>'agent_scheduling_bookings:11'])['source_path']==='scheduling.php?workspace_booking=11&schedule=7&tab=bookings','Booking selects native schedule and tab');
+rejected(fn()=>workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'schedules','key'=>'agent_scheduling_event_types:10']),'Another owner schedule source exposed');
+$source=workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'contacts','key'=>'crm_contacts:1']);
+check($source['source_path']==='contacts.php?edit_cloud=1','Exact native contact editor');
+check(workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'products','key'=>'agent_commerce_products_v800:1'])['source_path']==='profile-commerce-products.php?workspace_product=1','Exact owned product');
+rejected(fn()=>workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'contacts','key'=>'crm_contacts:2']),'Other account source link allowed');
+rejected(fn()=>workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'knowledge','key'=>'crm_contacts:1']),'Cross dataset source link allowed');
+rejected(fn()=>workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'contacts','key'=>'crm_contacts:1 OR 1=1']),'Unvalidated source identifier');
+$pdo->exec('UPDATE crm_contacts SET owner_user_id=2 WHERE id=1');
+rejected(fn()=>workspace_sync_exchange_v1($session,['action'=>'source','dataset'=>'contacts','key'=>'crm_contacts:1']),'Stale replica ownership trusted');
+$pdo->exec('UPDATE crm_contacts SET owner_user_id=1 WHERE id=1');
 // Original uploads are scoped through their owned record, never a client path.
 $uploads=dirname(__DIR__).'/uploads';if(!is_dir($uploads))mkdir($uploads,0700,true);
 $file=$uploads.'/workspace-test-'.bin2hex(random_bytes(6)).'.bin';

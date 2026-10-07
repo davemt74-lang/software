@@ -340,6 +340,41 @@ function workspace_sync_receive_v1(PDO $pdo,array $session,string $dataset,array
     return ['committed'=>true,'revision'=>$revision];
 }
 
+/** Resolve only known native editors after fresh account/session and row ownership checks. */
+function workspace_sync_source_v1(PDO $pdo,int $uid,string $dataset,array $body): array
+{
+    $key=$body['key']??null;
+    if(!is_string($key)||!preg_match('/^([a-zA-Z0-9_]+):([1-9][0-9]{0,18})$/D',$key,$match))throw new InvalidArgumentException('Invalid workspace record key.');
+    [$all,$table,$id]=$match;
+    $routes=[
+      'crm_contacts'=>['contacts','contacts.php','edit_cloud'],
+      'knowledge_items'=>['knowledge','knowledge.php','edit'],
+      'artist_transcript_folders_v177'=>['knowledge','knowledge.php','folder'],
+      'user_calendar_events'=>['calendar','calendar-event.php','id'],
+      'artist_transcript_sessions_v172'=>['transcriptions','artist-listening.php','session'],
+      'agent_commerce_products_v800'=>['products','profile-commerce-products.php','workspace_product'],
+      'agent_scheduling_schedules'=>['schedules','scheduling.php','schedule'],
+      'agent_scheduling_bookings'=>['schedules','scheduling.php','workspace_booking'],
+      'agent_scheduling_event_types'=>['schedules','scheduling.php','event'],
+      'video_meetings'=>['meetings','meeting.php','meeting'],
+    ];
+    $route=$routes[$table]??null;
+    if(!$route||$route[0]!==$dataset)throw new InvalidArgumentException('This record has no native Cloud editor.');
+    $descriptor=null;
+    foreach(workspace_sync_registry_v1()[$dataset] as $candidate)if($candidate[0]===$table)$descriptor=$candidate;
+    if(!$descriptor||!workspace_sync_descriptor_ready_v1($descriptor)||!column_exists($table,'id'))throw new RuntimeException('Source record unavailable.',409);
+    $q=$pdo->prepare("SELECT r.* FROM `$table` r WHERE r.id=? AND ".workspace_sync_predicate_v1($descriptor));
+    $q->execute([$id,$uid]);$row=$q->fetch(PDO::FETCH_ASSOC);
+    if(!$row)throw new RuntimeException('Source record no longer available to this account.',409);
+    $value=$table==='video_meetings'?(string)($row['public_id']??''):$id;
+    if($value==='')throw new RuntimeException('Native workspace identity unavailable.',409);
+    $params=[$route[2]=>$value];
+    if(in_array($table,['agent_scheduling_bookings','agent_scheduling_event_types'],true))$params['schedule']=(string)($row['schedule_id']??'');
+    if($table==='agent_scheduling_bookings')$params['tab']='bookings';
+    if($table==='agent_scheduling_schedules')$params['tab']='settings';
+    return ['source_path'=>$route[1].'?'.http_build_query($params),'authority_source'=>'cloud','record_key'=>$key];
+}
+
 function workspace_sync_exchange_v1(array $session,array $body): array
 {
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
@@ -360,7 +395,8 @@ function workspace_sync_exchange_v1(array $session,array $body): array
             $q=$pdo->prepare("SELECT dataset,revision,synced_at,record_count FROM homeserver_workspace_snapshots_v1 WHERE user_id=? AND source='homeserver'");$q->execute([$uid]);$out['homeserver']=$q->fetchAll(PDO::FETCH_ASSOC);
         }else{
             $dataset=workspace_sync_dataset_v1($body['dataset']??null);
-            if($action==='prepare'){
+            if($action==='source')$out+=workspace_sync_source_v1($pdo,$uid,$dataset,$body);
+            elseif($action==='prepare'){
                 $snapshot=$prepared;
                 workspace_sync_store_v1($pdo,$uid,'cloud',$dataset,$snapshot);
                 $assets=json_decode($snapshot['body'],true,512,JSON_THROW_ON_ERROR)['files'];
