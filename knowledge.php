@@ -2,6 +2,8 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/shared-folders-v161.php';
+require_once __DIR__ . '/includes/section12-data.php';
+require_once __DIR__ . '/includes/workspace-native-actions-v1.php';
 
 if (!is_logged_in()) redirect(url('/login.php'));
 $user = current_user();
@@ -96,6 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = (string)($_POST['action'] ?? 'save');
+    $stagedKnowledgePath='';
     try {
         if ($action === 'create_folder') {
             $folder = shared_folders_v161_create($pdo, $user, (string)($_POST['folder_name'] ?? ''));
@@ -176,7 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $newName = bin2hex(random_bytes(16)) . '.' . $extension;
             $absolute = $targetDir . '/' . $newName;
             if (!move_uploaded_file((string)$upload['tmp_name'], $absolute)) throw new RuntimeException('Could not save the knowledge file.');
-            if ($filePath !== '') delete_local_upload($filePath);
+            $stagedKnowledgePath=$absolute;
             $filePath = '/uploads/knowledge/' . $newName;
             $fileName = basename((string)$upload['name']);
             $fileType = $extension;
@@ -195,23 +198,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id > 0 && $content === '' && $before) $content = (string)$before['content_text'];
         if ($content === '') throw new RuntimeException('Add knowledge text or upload a file that contains extractable text.');
 
+        if(function_exists('shared_knowledge_index_schema_ready_v236')&&!shared_knowledge_index_schema_ready_v236($pdo))shared_knowledge_index_ensure_schema_v236($pdo);
         if ($id > 0) {
-            $stmt = $pdo->prepare("UPDATE knowledge_items SET folder_id=?,title=?,description=?,file_name=?,file_path=?,file_type=?,mime_type=?,file_size=?,content_text=?,visibility='private',is_published=0,knowledge_scope='personal' WHERE id=? AND created_by_user_id=? AND knowledge_scope='personal'");
-            $stmt->execute([$resolvedFolderId,$title,$description,$fileName,$filePath,$fileType,$mimeType,$fileSize,$content,$id,$uid]);
-            reindex_knowledge_item($id, $content);
-            if (function_exists('shared_knowledge_index_sync_item_v236')) shared_knowledge_index_sync_item_v236($pdo, $id);
+            section12_owner_transaction($pdo,$uid,function()use($pdo,$user,$uid,$id,$resolvedFolderId,$title,$description,$fileName,$filePath,$fileType,$mimeType,$fileSize,$content){
+                $live=personal_knowledge_item_for_owner($pdo,$id,$uid);
+                if(!$live)throw new RuntimeException('Personal knowledge item not found.');
+                section12_assert_revision($live,(string)($_POST['expected_revision']??''));
+                $pdo->prepare("UPDATE knowledge_items SET folder_id=?,file_name=?,file_path=?,file_type=?,mime_type=?,file_size=?,visibility='private',is_published=0 WHERE id=? AND created_by_user_id=? AND knowledge_scope='personal'")->execute([$resolvedFolderId,$fileName,$filePath,$fileType,$mimeType,$fileSize,$id,$uid]);
+                workspace_native_knowledge_update_v1($pdo,$user,$live,['title'=>$title,'description'=>$description,'content_text'=>$content]);
+            });
+            if($stagedKnowledgePath!==''&&!empty($before['file_path'])&&$before['file_path']!==$filePath)delete_local_upload((string)$before['file_path']);
+            $stagedKnowledgePath='';
             flash('knowledge_notice', 'Personal knowledge updated.');
         } else {
-            $stmt = $pdo->prepare("INSERT INTO knowledge_items (track_id,folder_id,title,description,file_name,file_path,file_type,mime_type,file_size,content_text,visibility,is_published,created_by_user_id,knowledge_scope) VALUES (NULL,?,?,?,?,?,?,?,?,?,'private',0,?,'personal')");
-            $stmt->execute([$resolvedFolderId,$title,$description,$fileName,$filePath,$fileType,$mimeType,$fileSize,$content,$uid]);
-            $id = (int)$pdo->lastInsertId();
-            reindex_knowledge_item($id, $content);
-            if (function_exists('shared_knowledge_index_sync_item_v236')) shared_knowledge_index_sync_item_v236($pdo, $id);
+            $id = section12_owner_transaction($pdo,$uid,function()use($pdo,$uid,$resolvedFolderId,$title,$description,$fileName,$filePath,$fileType,$mimeType,$fileSize,$content){
+                $stmt = $pdo->prepare("INSERT INTO knowledge_items (track_id,folder_id,title,description,file_name,file_path,file_type,mime_type,file_size,content_text,visibility,is_published,created_by_user_id,knowledge_scope) VALUES (NULL,?,?,?,?,?,?,?,?,?,'private',0,?,'personal')");
+                $stmt->execute([$resolvedFolderId,$title,$description,$fileName,$filePath,$fileType,$mimeType,$fileSize,$content,$uid]);
+                $createdId = (int)$pdo->lastInsertId();
+                reindex_knowledge_item($createdId, $content);
+                if (function_exists('shared_knowledge_index_sync_item_v236')) shared_knowledge_index_sync_item_v236($pdo, $createdId);
+                return $createdId;
+            });
             flash('knowledge_notice', 'Personal knowledge added.');
+            $stagedKnowledgePath='';
         }
         $nextFolder = $resolvedFolderId !== null ? (string)$resolvedFolderId : 'unfiled';
         redirect(url(personal_knowledge_redirect_target($nextFolder, $typeFilter, $id) . '#knowledge-form'));
     } catch (Throwable $e) {
+        if($stagedKnowledgePath!==''&&is_file($stagedKnowledgePath))unlink($stagedKnowledgePath);
         flash('knowledge_error', $e->getMessage());
         $target = personal_knowledge_redirect_target($folderFilter, $typeFilter, $editId);
         redirect(url($target . ($editId > 0 ? '#knowledge-form' : '')));
@@ -368,7 +382,7 @@ require __DIR__.'/includes/member-header.php';
             <?php if($canManage):?>
             <div class="personal-knowledge-panel-head"><div><h2><?= $editing?'Edit Knowledge':'Add Knowledge' ?></h2><p><?= $editing?'Update this private record or move it to another shared folder.':'Create or upload a private Cloud record and choose its shared folder.' ?></p></div><?php if($editing):?><a href="<?= e(url(personal_knowledge_redirect_target($folderFilter,$typeFilter).'#knowledge-form')) ?>">New</a><?php endif;?></div>
             <form class="personal-knowledge-form" method="post" enctype="multipart/form-data">
-                <?= csrf_field() ?><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?= (int)($editing['id']??0) ?>">
+                <?= csrf_field() ?><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?= (int)($editing['id']??0) ?>"><input type="hidden" name="expected_revision" value="<?= e($editing?section12_revision($editing):'') ?>">
                 <label class="personal-knowledge-field"><span>Title</span><input name="title" maxlength="190" required value="<?= e((string)($editing['title']??'')) ?>" placeholder="What should your Agent know?"></label>
                 <label class="personal-knowledge-field"><span>Folder</span><select name="folder_id" data-vp3-shared-folder-picker><option value="0"<?= $selectedFolderId===0?' selected':'' ?>>Unfiled</option><?php foreach($folders as $folder):$fid=(int)$folder['id'];?><option value="<?= $fid ?>"<?= $selectedFolderId===$fid?' selected':'' ?>><?= e((string)$folder['folder_name']) ?></option><?php endforeach;?></select><small>Same folder library used by My Transcriptions and music organization. Choose “+ New folder…” to create one without leaving this form.</small></label>
                 <label class="personal-knowledge-field"><span>Description</span><input name="description" maxlength="2000" value="<?= e((string)($editing['description']??'')) ?>" placeholder="Optional context"></label>

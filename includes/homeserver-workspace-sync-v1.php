@@ -6,6 +6,7 @@ const VP3_WORKSPACE_SYNC_V1='vp3.workspace-sync.v1';
 const VP3_WORKSPACE_SYNC_CHUNK=65536;
 const VP3_WORKSPACE_SYNC_MAX=67108864;
 const VP3_WORKSPACE_ASSET_CHUNK=1048576;
+require_once __DIR__.'/workspace-native-actions-v1.php';
 
 function workspace_sync_registry_v1(): array
 {
@@ -248,7 +249,7 @@ function workspace_sync_export_v1(PDO $pdo,int $userId,string $dataset): array
             $row=workspace_sync_safe_v1($row);
             ksort($row);
             $encoded=json_encode($row,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-            $records[]=['table'=>$table,'source_id'=>(string)($row['id']??hash('sha256',$encoded)),'data'=>$row];
+            $records[]=['table'=>$table,'source_id'=>(string)($row['id']??hash('sha256',$encoded)),'data'=>$row,'record_revision'=>hash('sha256',$encoded)];
         }
     }
     usort($records,static fn($a,$b)=>[$a['table'],$a['source_id']]<=>[$b['table'],$b['source_id']]);
@@ -379,6 +380,8 @@ function workspace_sync_exchange_v1(array $session,array $body): array
 {
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     workspace_sync_schema_v1($pdo); // DDL before account lock, never implicitly commits it.
+    if(in_array($body['action']??'',['edit','mutate'],true))workspace_native_schema_v1($pdo);
+    if(($body['action']??'')==='mutate'&&($body['dataset']??'')==='knowledge'&&function_exists('shared_knowledge_index_schema_ready_v236')&&!shared_knowledge_index_schema_ready_v236($pdo))shared_knowledge_index_ensure_schema_v236($pdo);
     // Full record reads and first-time large file hashing must not hold the
     // account authority lock used by HTTPS heartbeat, disconnect and pairing.
     $prepared=null;
@@ -395,7 +398,8 @@ function workspace_sync_exchange_v1(array $session,array $body): array
             $q=$pdo->prepare("SELECT dataset,revision,synced_at,record_count FROM homeserver_workspace_snapshots_v1 WHERE user_id=? AND source='homeserver'");$q->execute([$uid]);$out['homeserver']=$q->fetchAll(PDO::FETCH_ASSOC);
         }else{
             $dataset=workspace_sync_dataset_v1($body['dataset']??null);
-            if($action==='source')$out+=workspace_sync_source_v1($pdo,$uid,$dataset,$body);
+            if(in_array($action,['edit','mutate'],true))$out+=workspace_native_edit_v1($pdo,$uid,$dataset,$body);
+            elseif($action==='source')$out+=workspace_sync_source_v1($pdo,$uid,$dataset,$body);
             elseif($action==='prepare'){
                 $snapshot=$prepared;
                 workspace_sync_store_v1($pdo,$uid,'cloud',$dataset,$snapshot);
