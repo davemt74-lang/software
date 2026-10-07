@@ -37,9 +37,11 @@ for(const file of ['chat.js','chat-legacy-v108.php'])assert.doesNotMatch(fs.read
 
 // Exercise the same error presentation used by native stem and custom song controls.
 const errorUi=source.slice(source.indexOf('  function showChatMediaError('),source.indexOf('  // Media errors do not bubble.'));
+context.audioFeedbackHosts=new WeakMap();
 let node;const host={querySelector:()=>node,appendChild:value=>{node=value;}};
 context.document.createElement=()=>({dataset:{},setAttribute:()=>{}});
 vm.runInContext(errorUi+'\nglobalThis.showError=showChatMediaError;',context);
 const audio={closest:()=>host};context.showError(audio,true);assert.match(node.textContent,/Audio is unavailable/);assert.equal(node.hidden,false);
 const first=node;context.showError(audio,true);assert.equal(node,first,'Repeated errors duplicated status');context.showError(audio,false);assert.equal(node.hidden,true);
+const hiddenAudio={closest:()=>null,parentElement:null};context.audioFeedbackHosts.set(hiddenAudio,host);context.showError(hiddenAudio,true);assert.equal(node.hidden,false,'Full-song failure stayed inside a hidden player');
 console.log('CHAT_LOAD_RUNTIME=PASS missing-status timeout retry lazy-audio error-feedback');

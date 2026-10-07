@@ -9,6 +9,7 @@
   const voiceButton = document.getElementById('chatVoiceButton');
   const voiceStatus = document.getElementById('chatVoiceStatus');
   const liveStatus = document.getElementById('chatLiveStatus');
+  const audioFeedbackHosts = new WeakMap();
   const history = document.getElementById('chatHistory');
   const newButton = document.getElementById('newChatButton');
   const playerSearch = document.getElementById('chatPlayerSearch');
@@ -1101,6 +1102,8 @@
         return;
       }
 
+      const feedbackHost = button.closest('.chat-stem-copy');
+      if (feedbackHost) audioFeedbackHosts.set(audio, feedbackHost);
       document.querySelectorAll('.chat-stem-preview').forEach(preview => preview.pause());
       audio.play().catch(
         () => {}
@@ -1325,7 +1328,7 @@
   }
 
   function showChatMediaError(audio, failed) {
-    const host = audio.closest('.chat-stem-copy') || audio.parentElement;
+    const host = audioFeedbackHosts.get(audio) || audio.closest('.chat-stem-copy') || audio.parentElement;
     if (!host) return;
     let status = host.querySelector('[data-chat-media-status]');
     if (!status && failed) {

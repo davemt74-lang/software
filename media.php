@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__.'/includes/music-media.php';
+header('Cache-Control: no-store');
 
 $trackId = (int)($_GET['track'] ?? 0);
 $type = (string)($_GET['type'] ?? 'audio');

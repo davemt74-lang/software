@@ -58,7 +58,7 @@ try {
     const page=await browser.newPage();const requested=[];page.on('request',request=>{if(request.url().includes('/media.php'))requested.push(request.url());});
     const source=fs.readFileSync('chat.js','utf8');
     const errorUi=source.slice(source.indexOf('  function showChatMediaError('),source.indexOf('  function systemAppActionCardHtml('));
-    const html=`<div class="chat-stem-copy"><audio class="chat-stem-preview" controls preload="none" src="/media.php?track=1&type=audio&fixture_user=11"></audio></div><div class="chat-stem-copy"><audio id="missing" class="chat-stem-preview" controls preload="none" src="/media.php?track=3&type=audio&fixture_user=11"></audio></div><script>${errorUi}</script>`;
+    const html=`<div class="chat-stem-copy"><audio class="chat-stem-preview" controls preload="none" src="/media.php?track=1&type=audio&fixture_user=11"></audio></div><div class="chat-stem-copy"><audio id="missing" class="chat-stem-preview" controls preload="none" src="/media.php?track=3&type=audio&fixture_user=11"></audio></div><script>const audioFeedbackHosts=new WeakMap();${errorUi}</script>`;
     fs.writeFileSync(path.join(root,'browser.html'),html);
     await page.goto(base+'/browser.html');await page.waitForTimeout(350);assert.equal(requested.length,0,'Hidden players fetched media at page load');
     await page.locator('audio').first().evaluate(audio=>audio.play());await page.waitForFunction(()=>document.querySelector('audio').currentTime>0);
