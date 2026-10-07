@@ -16,11 +16,11 @@ $profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 $chatSettingsBuild = 'chat-settings-v239-canonical-20260905';
-$notificationDrawerBuild = 'agent-experience-brain-v1-20261006';
+$notificationDrawerBuild = 'chat-notifications-section13-20261005';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 $agentIntelligenceBuild = 'agent-chat-intelligence-v171-20260914';
-$cognitivePresentationBuild = 'agent-experience-cognition-v1-20261006';
+$cognitivePresentationBuild = 'cognitive-presentation-footer-v2451-20260922';
 $cognitiveCardsBuild = 'cognitive-cards-v520-20260918';
 $cognitiveFeedBuild = 'cognitive-feed-v530-20260918';
 $cognitiveLearningBuild = 'cognitive-learning-v540-20260918';
@@ -297,13 +297,30 @@ $html = preg_replace(
     1
 ) ?? $html;
 
-// Unified Agent experience: the compact status control opens the canonical Agent Brain drawer.
-// Cognitive Presentation still owns status, proactive digests, attention arbitration and voice.
-$cognitiveBriefButton = '<button class="chat-agent-brief-button" id="chatAgentBriefButton" type="button" data-open-agent-brain aria-label="Open Agent Brain" aria-expanded="false" aria-controls="chatNotificationDrawer">'
+// Phase 11B.2: Agent Brief moved out of the Chat timeline and into the footer control.
+// The canonical model is reused by Cognitive Presentation v5.10 on demand.
+
+$cognitiveBriefMarkup = <<<'HTML'
+<section class="chat-agent-brief-popover" id="chatAgentBriefPopover" hidden aria-label="Agent Brief">
+  <header class="chat-agent-brief-head">
+    <div><small>Agent Brief</small><strong>Your Agent status and priorities</strong></div>
+    <button class="chat-agent-brief-close" type="button" data-agent-brief-close aria-label="Close Agent Brief">×</button>
+  </header>
+  <div class="chat-agent-brief-body" data-agent-brief-content aria-live="polite" aria-busy="true">
+    <div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Loading…</small></div>
+  </div>
+  <footer class="chat-agent-brief-footer">
+    <button type="button" data-agent-brief-brain>Agent Brain</button>
+    <button type="button" data-agent-brief-history>History</button>
+    <button type="button" data-agent-brief-notifications>Notifications</button>
+  </footer>
+</section>
+HTML;
+$cognitiveBriefButton = '<button class="chat-agent-brief-button" id="chatAgentBriefButton" type="button" aria-label="Agent status" aria-expanded="false" aria-controls="chatAgentBriefPopover">'
     . '<span aria-hidden="true">✦</span><i class="chat-agent-status-dot" data-agent-status-dot></i><em class="chat-agent-attention-badge" data-agent-attention-badge hidden>0</em></button>';
 $html = str_replace(
     '<form class="chat-composer" id="chatForm">',
-    '<form class="chat-composer" id="chatForm">' . $cognitiveBriefButton,
+    $cognitiveBriefMarkup . '<form class="chat-composer" id="chatForm">' . $cognitiveBriefButton,
     $html
 );
 

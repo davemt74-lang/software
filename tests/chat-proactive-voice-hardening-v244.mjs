@@ -45,13 +45,13 @@ assert.match(presentation,/suppressedVoiceThrough/);
 assert.match(presentation,/voice_suppressed/,'interrupted proactive voice must persist suppression');
 assert.match(presentation,/stonefellow:agent-stop/);
 assert.match(presentation,/cancelSpeech/);
-assert.match(presentation,/function renderBriefError\(/,'Agent status failures must remain bounded and visible on the status control');
-assert.match(presentation,/button\.title=briefErrorMessage\(error\)/,'Agent status failures must expose concise guidance without a duplicate popover');
+assert.match(presentation,/function renderBriefError\(/,'Agent Brief failures must render a retryable state instead of hanging on Loading');
+assert.match(presentation,/data-agent-brief-retry/,'Agent Brief must expose a retry control after load failure');
+assert.match(presentation,/void refresh\(true\)/,'opening Agent Brief must force a fresh state request');
 assert.match(presentation,/AbortController/,'Agent Brief state fetch must have a bounded timeout');
 assert.match(presentation,/function briefErrorMessage\(/,'Agent Brief must translate backend failures into user-facing guidance');
 assert.match(presentation,/latest VP3 database upgrade/,'schema-not-ready failures must produce actionable upgrade guidance');
-assert.doesNotMatch(chat,/data-agent-brief-content/,'duplicate Agent Brief content surface must stay retired');
-assert.match(chat,/data-open-agent-brain/,'composer Agent status must open the canonical Brain drawer');
+assert.match(chat,/data-agent-brief-content aria-live="polite" aria-busy="true"/,'Agent Brief loading and recovery state must be announced accessibly');
 assert.match(presentationCore,/function vp3_cognitive_presentation_voice_suppressed_v510/);
 assert.match(presentationApi,/\$action==='voice_suppressed'/);
 
@@ -103,8 +103,8 @@ assert.match(memberMenu,/voice_source/);
 assert.match(chat,/\$premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922'/);
 assert.match(chat,/\$voiceAssetBuild = 'chat-voice-proactive-v244-20260922'/);
 assert.match(chat,/\$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-stop-control1'/);
-assert.match(chat,/\$notificationDrawerBuild = 'agent-experience-brain-v1-20261006'/,'retained proactive voice must load the unified Agent Brain presentation assets');
-assert.match(chat,/\$cognitivePresentationBuild = 'agent-experience-cognition-v1-20261006'/);
+assert.match(chat,/\$notificationDrawerBuild = 'chat-notifications-section13-20261005'/);
+assert.match(chat,/\$cognitivePresentationBuild = 'cognitive-presentation-footer-v2451-20260922'/);
 assert.match(memberHeader,/\$memberAgentVoiceMenuBuild = 'agent-voice-menu-v244-20260922'/);
 
 console.log('Agent Chat v2.44 proactive interaction + ElevenLabs hardening contract: PASS');
