@@ -17,7 +17,7 @@ try{
     echo json_encode(workspace_sync_exchange_v1($session,$body),JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);
 }catch(Throwable $e){
     $status=$e instanceof InvalidArgumentException||$e instanceof JsonException?422:(int)$e->getCode();
-    if(!in_array($status,[401,405,409,410,413,422],true))$status=503;
+    if(!in_array($status,[401,403,405,409,410,413,422],true))$status=503;
     http_response_code($status);
     if($status===503)error_log('Workspace sync unavailable: '.get_class($e));
     echo json_encode(['ok'=>false,'error'=>$status===503?'Workspace sync temporarily unavailable.':$e->getMessage()]);

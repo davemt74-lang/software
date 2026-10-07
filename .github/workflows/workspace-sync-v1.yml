@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'includes/homeserver-workspace-sync-v1.php'
+      - 'includes/workspace-native-actions-v1.php'
+      - 'includes/homeserver-contacts-v241.php'
+      - 'knowledge.php'
+      - 'tests/workspace_native_actions.php'
       - 'api/homeserver-workspace-sync-v1.php'
       - 'api/workspace-data-v1.php'
       - 'workspace-data*'
@@ -15,6 +19,10 @@ on:
     branches: [main]
     paths:
       - 'includes/homeserver-workspace-sync-v1.php'
+      - 'includes/workspace-native-actions-v1.php'
+      - 'includes/homeserver-contacts-v241.php'
+      - 'knowledge.php'
+      - 'tests/workspace_native_actions.php'
       - 'api/homeserver-workspace-sync-v1.php'
       - 'api/workspace-data-v1.php'
       - 'workspace-data*'
@@ -47,12 +55,15 @@ jobs:
           php -l scheduling.php
           php -l tests/workspace_sync_server.php
           php -l includes/homeserver-workspace-sync-v1.php
+          php -l includes/workspace-native-actions-v1.php
+          php -l knowledge.php
           php -l api/homeserver-workspace-sync-v1.php
           php -l api/workspace-data-v1.php
           php -l workspace-data.php
           php -l includes/main-sidebar.php
           node --check workspace-data-v1.js
           php tests/workspace_sync_v1.php
+          php tests/workspace_native_actions.php
   mysql:
     runs-on: ubuntu-latest
     services:
@@ -73,6 +84,10 @@ jobs:
           extensions: pdo_mysql,mbstring
           coverage: none
       - run: php tests/workspace_sync_v1.php
+        env:
+          VP3_WORKSPACE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=workspace;charset=utf8mb4
+          VP3_WORKSPACE_MYSQL_PASSWORD: workspace-fixture
+      - run: php tests/workspace_native_actions.php
         env:
           VP3_WORKSPACE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=workspace;charset=utf8mb4
           VP3_WORKSPACE_MYSQL_PASSWORD: workspace-fixture

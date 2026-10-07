@@ -475,6 +475,7 @@ function homeserver_contacts_v241_cloud_crm_update(int $userId,string $canonical
 
 function homeserver_contacts_v241_cloud_crm_update_locked(int $userId,string $canonicalId,array $payload): array
 {
+    require_once __DIR__.'/workspace-native-actions-v1.php';
     $mutationId=homeserver_contacts_v241_mutation_id($payload['mutation_id']??'');
     $expected=homeserver_contacts_v241_expected_revision($payload['expected_revision']??'');
     $allowed=['display_name','organization','email','phone','relationship'];
@@ -500,10 +501,7 @@ function homeserver_contacts_v241_cloud_crm_update_locked(int $userId,string $ca
     $relationship=homeserver_contacts_v241_text($fields['relationship']??$current['lifecycle_stage']??'',80);
 
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    $pdo->prepare("UPDATE crm_contacts SET name=?,company=?,phone=?,email=?,email_normalized=?,
-      lifecycle_stage=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status<>'archived'")
-      ->execute([$name,$company,$phone,$email,$email,$relationship,$id,$userId]);
-    if(function_exists('crm_v180_sync_primary_channels'))crm_v180_sync_primary_channels($pdo,$id,$email,$phone);
+    workspace_native_contact_update_v1($pdo,$userId,$id,['display_name'=>$name,'organization'=>$company,'phone'=>$phone,'email'=>$email,'relationship'=>$relationship]);
     $row=homeserver_contacts_v241_core_crm_row($userId,$id);
     if(!$row)throw new RuntimeException('VP3 CRM contact could not be loaded after update.');
     $item=homeserver_contacts_v241_core_crm_projection($userId,$row);
