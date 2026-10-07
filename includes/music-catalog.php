@@ -107,7 +107,7 @@ function music_catalog_player_track(array $track,?int $playerId=null): array
     return $track;
 }
 
-function music_catalog_playlist_tracks(PDO $pdo,int $playlistId,array $user): array
+function music_catalog_playlist_tracks(PDO $pdo,int $playlistId,array $user,?array $visibleTracks=null): array
 {
     $rows=[];
     $stmt=$pdo->prepare('SELECT track_id AS player_id,sort_order,added_at FROM playlist_tracks WHERE playlist_id=?');$stmt->execute([$playlistId]);
@@ -117,7 +117,12 @@ function music_catalog_playlist_tracks(PDO $pdo,int $playlistId,array $user): ar
         foreach($stmt->fetchAll() as $ref){$ref['player_id']=1000000000+(int)$ref['artist_track_id'];$refs[]=$ref;}
     }
     usort($refs,static fn(array $a,array $b):int=>[(int)$a['sort_order'],(string)$a['added_at'],(int)$a['player_id']]<=>[(int)$b['sort_order'],(string)$b['added_at'],(int)$b['player_id']]);
-    foreach($refs as $ref){$track=get_track_by_id((int)$ref['player_id']);if($track&&can_view_track($track,$user))$rows[]=$track;}
+    $known=$visibleTracks??[];
+    foreach($visibleTracks??[] as $track){
+        $artistId=(int)($track['artist_track_id']??0);
+        if($artistId>0){$alias=$track;$alias['id']=1000000000+$artistId;$known[$alias['id']]=$alias;}
+    }
+    foreach($refs as $ref){$id=(int)$ref['player_id'];$track=$known[$id]??get_track_by_id($id);if($track&&can_view_track($track,$user))$rows[]=$track;}
     return $rows;
 }
 

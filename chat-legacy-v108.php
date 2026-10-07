@@ -334,7 +334,7 @@ if ($pdo) {
             ]);
 
             foreach ($playlistStmt->fetchAll() as $playlist) {
-                $playlistTracks=music_catalog_playlist_tracks($pdo,(int)$playlist['id'],$user);
+                $playlistTracks=music_catalog_playlist_tracks($pdo,(int)$playlist['id'],$user,$chatTrackMap);
 
                 $playlist['tracks'] = $playlistTracks;
                 $playlist['owned'] =
@@ -891,7 +891,7 @@ foreach ($chatPosts as $post) {
 
                 <audio
                   class="chat-audio-player"
-                  preload="metadata"
+                  preload="none"
                   data-track-id="<?= $heroTrackId ?>"
                   data-player-title="<?= e((string)$heroTrack['title']) ?>"
                   data-player-album="<?= e((string)($heroTrack['album'] ?: 'Stonefellow')) ?>"
@@ -930,7 +930,7 @@ foreach ($chatPosts as $post) {
 
                   <audio
                     class="chat-audio-player"
-                    preload="metadata"
+                    preload="none"
                     data-track-id="<?= $newTrackId ?>"
                     data-player-title="<?= e((string)$newTrack['title']) ?>"
                     data-player-album="<?= e((string)($newTrack['album'] ?: 'Stonefellow')) ?>"
@@ -984,7 +984,7 @@ foreach ($chatPosts as $post) {
 
                 <audio
                   class="chat-audio-player"
-                  preload="metadata"
+                  preload="none"
                   data-track-id="<?= $recentTrackId ?>"
                   data-player-title="<?= e((string)$recentTrack['title']) ?>"
                   data-player-album="<?= e((string)($recentTrack['album'] ?: 'Stonefellow')) ?>"
@@ -1049,7 +1049,7 @@ foreach ($chatPosts as $post) {
 
                 <audio
                   class="chat-audio-player"
-                  preload="metadata"
+                  preload="none"
                   data-track-id="<?= $forTrackId ?>"
                   data-player-title="<?= e((string)$forTrack['title']) ?>"
                   data-player-album="<?= e((string)($forTrack['album'] ?: 'Stonefellow')) ?>"
@@ -1161,7 +1161,7 @@ foreach ($chatPosts as $post) {
 
                 <audio
                   class="chat-audio-player"
-                  preload="metadata"
+                  preload="none"
                   data-track-id="<?= $popularTrackId ?>"
                   data-player-title="<?= e((string)$popularTrack['title']) ?>"
                   data-player-album="<?= e((string)($popularTrack['album'] ?: 'Stonefellow')) ?>"
@@ -1215,7 +1215,7 @@ foreach ($chatPosts as $post) {
 
                 <audio
                   class="chat-audio-player"
-                  preload="metadata"
+                  preload="none"
                   data-track-id="<?= $favoriteTrackId ?>"
                   data-player-title="<?= e((string)$favoriteTrack['title']) ?>"
                   data-player-album="<?= e((string)($favoriteTrack['album'] ?: 'Stonefellow')) ?>"
@@ -1494,7 +1494,7 @@ foreach ($chatPosts as $post) {
 
                 <audio
                   class="chat-audio-player"
-                  preload="metadata"
+                  preload="none"
                   data-track-id="<?= $allTrackId ?>"
                   data-player-title="<?= e((string)$allTrack['title']) ?>"
                   data-player-album="<?= e((string)($allTrack['album'] ?: 'Stonefellow')) ?>"
@@ -1582,7 +1582,7 @@ foreach ($chatPosts as $post) {
 
               <audio
                 class="chat-audio-player"
-                preload="metadata"
+                preload="none"
                 data-track-id="<?= $savedTrackId ?>"
                 data-player-title="<?= e((string)$savedTrack['title']) ?>"
                 data-player-album="<?= e((string)($savedTrack['album'] ?: 'Stonefellow')) ?>"
@@ -1692,7 +1692,7 @@ foreach ($chatPosts as $post) {
 
                       <audio
                         class="chat-audio-player"
-                        preload="metadata"
+                        preload="none"
                         data-track-id="<?= $playlistTrackId ?>"
                         data-player-title="<?= e((string)$playlistTrack['title']) ?>"
                         data-player-album="<?= e((string)($playlistTrack['album'] ?: 'Stonefellow')) ?>"

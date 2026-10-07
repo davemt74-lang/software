@@ -8,6 +8,7 @@
   const send = document.getElementById('sendChatButton');
   const voiceButton = document.getElementById('chatVoiceButton');
   const voiceStatus = document.getElementById('chatVoiceStatus');
+  const liveStatus = document.getElementById('chatLiveStatus');
   const history = document.getElementById('chatHistory');
   const newButton = document.getElementById('newChatButton');
   const playerSearch = document.getElementById('chatPlayerSearch');
@@ -676,11 +677,12 @@
     }
   );
 
-  async function api(payload) {
+  async function api(payload, signal) {
     const response = await fetch(cfg.endpoint, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       credentials: 'same-origin',
+      signal,
       body: JSON.stringify({...payload, csrf_token: cfg.csrf})
     });
 
@@ -772,24 +774,22 @@
     }
 
     activityBusy = true;
-
-    if (liveStatus) {
-      liveStatus.textContent =
-        'Checking…';
-    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
 
     try {
+      if (liveStatus) liveStatus.textContent = 'Checking…';
       const hadCursor = activityCursor > 0;
       const data = await api({
         action:'activity',
         after_id:activityCursor
-      });
+      }, controller.signal);
 
       if(hadCursor&&Number(data.conversation_id||0)===conversationId&&Number(data.latest_message_id||0)>lastLoadedMessageId){
         pendingConversationSync=conversationId;
       }
       if(pendingConversationSync>0&&!busy&&pendingConversationSync===conversationId&&Number(data.latest_message_id||0)>lastLoadedMessageId){
-        await syncConversationMessagesV101(pendingConversationSync);
+        await syncConversationMessagesV101(pendingConversationSync, controller.signal);
         pendingConversationSync=0;
       }
 
@@ -822,6 +822,7 @@
           'Reconnecting…';
       }
     } finally {
+      window.clearTimeout(timeout);
       activityBusy = false;
     }
   }
@@ -1084,7 +1085,7 @@
         host.hidden = true;
         audio = document.createElement('audio');
         audio.className = 'chat-audio-player';
-        audio.preload = 'metadata';
+        audio.preload = 'none';
         audio.src = String(button.dataset.songAudio || '');
         audio.dataset.trackId = trackId;
         audio.dataset.playerTitle = String(button.dataset.songTitle || 'Stonefellow');
@@ -1265,7 +1266,7 @@
 
           <audio
             class="chat-audio-player"
-            preload="metadata"
+            preload="none"
             src="${escapeHtml(media.audio)}"
             data-track-id="${Number(media.id)}"
             data-player-title="${escapeHtml(media.title)}"
@@ -1313,15 +1314,42 @@
         <strong class="chat-stem-title">${escapeHtml(item.stem_name||'Stem')}</strong>
         <div class="chat-stem-song"><span>Song</span><b>${escapeHtml(song)}</b>${album?`<small>${escapeHtml(album)}</small>`:''}</div>
         ${meta?`<p class="chat-stem-meta">${escapeHtml(meta)}</p>`:''}
-        <audio class="chat-stem-preview" controls preload="metadata" src="${escapeHtml(item.audio||'')}"></audio>
+        <audio class="chat-stem-preview" controls preload="none" src="${escapeHtml(item.audio||'')}"></audio>
         <div class="chat-stem-result-actions">
-          <button type="button" data-play-track="${Number(item.track_id)}" data-song-audio="${escapeHtml(item.song_audio||'')}" data-song-title="${escapeHtml(song)}" data-song-album="${escapeHtml(album||'Stonefellow')}" data-song-cover="${escapeHtml(item.cover||'')}" data-song-detail="${escapeHtml(item.song_detail||'')}">Play Full Song</button>
+          ${item.song_audio?`<button type="button" data-play-track="${Number(item.track_id)}" data-song-audio="${escapeHtml(item.song_audio)}" data-song-title="${escapeHtml(song)}" data-song-album="${escapeHtml(album||'Stonefellow')}" data-song-cover="${escapeHtml(item.cover||'')}" data-song-detail="${escapeHtml(item.song_detail||'')}">Play Full Song</button>`:'<span>Full song audio is not available.</span>'}
           <a href="${escapeHtml(item.song_detail||'#')}">Song Info</a>
           ${studio?`<a href="${escapeHtml(studio)}">Stem Studio</a>`:''}
         </div>
       </div>
     </article>`;
   }
+
+  function showChatMediaError(audio, failed) {
+    const host = audio.closest('.chat-stem-copy') || audio.parentElement;
+    if (!host) return;
+    let status = host.querySelector('[data-chat-media-status]');
+    if (!status && failed) {
+      status = document.createElement('p');
+      status.dataset.chatMediaStatus = '';
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-live', 'polite');
+      host.appendChild(status);
+    }
+    if (status) {
+      status.hidden = !failed;
+      status.textContent = failed ? 'Audio is unavailable. Open Stem Studio or Song Info to check the file and your access.' : '';
+    }
+  }
+
+  // Media errors do not bubble. Capture them for native stem controls and custom players.
+  document.addEventListener('error', event => {
+    const audio = event.target;
+    if (audio.matches?.('.chat-audio-player, .chat-stem-preview')) showChatMediaError(audio, true);
+  }, true);
+  document.addEventListener('playing', event => {
+    const audio = event.target;
+    if (audio.matches?.('.chat-audio-player, .chat-stem-preview')) showChatMediaError(audio, false);
+  }, true);
 
   function systemAppActionCardHtml(card) {
     if (!card || typeof card !== 'object') return '';
@@ -2821,9 +2849,9 @@
   }
   input.addEventListener('input', autoSize);
 
-  async function refreshHistory() {
+  async function refreshHistory(signal) {
     try {
-      const data = await api({action:'list'});
+      const data = await api({action:'list'}, signal);
       history.innerHTML = '';
 
       data.conversations.forEach(c => {
@@ -2906,9 +2934,9 @@
     closeNav();
   }
 
-  async function syncConversationMessagesV101(id) {
+  async function syncConversationMessagesV101(id, signal) {
     const targetId=Number(id||0);if(targetId<1||targetId!==conversationId)return;
-    const data=await api({action:'messages_after',conversation_id:targetId,after_id:lastLoadedMessageId});
+    const data=await api({action:'messages_after',conversation_id:targetId,after_id:lastLoadedMessageId}, signal);
     if(targetId!==conversationId||!Array.isArray(data.messages))return;
     data.messages.forEach(message=>{
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
@@ -2916,7 +2944,7 @@
       addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
-    if(data.messages.length)await refreshHistory();
+    if(data.messages.length)await refreshHistory(signal);
   }
 
   history.addEventListener('click', event => {

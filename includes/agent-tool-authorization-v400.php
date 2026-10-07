@@ -128,7 +128,7 @@ function vp3_agent_tool_search_stems_v400(string $query,array $user,int $limit=8
             'duration'=>(float)$row['duration_seconds'],'fx'=>(string)$row['rpp_fx_summary'],
             'audio'=>url('/stem-media-v34.php?id='.(int)$row['stem_id']),
             'cover'=>url('/media.php?track='.$trackId.'&type=cover'),
-            'song_audio'=>url('/media.php?track='.$trackId.'&type=audio'),
+            'song_audio'=>trim((string)($row['audio_path']??''))!==''?url('/media.php?track='.$trackId.'&type=audio'):'',
             'song_detail'=>url('/track.php?id='.$trackId),
             'studio'=>url('/admin/stems.php?track='.$trackId),
         ];
