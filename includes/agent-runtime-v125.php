@@ -21,11 +21,13 @@ function agent_runtime_v125_boot(): void
 {
     static $booted=false;if($booted)return;$booted=true;
     $trace=agent_runtime_v125_trace_id();if(!headers_sent())header('X-Stonefellow-Trace: '.$trace);
-    $GLOBALS['STONEFELLOW_RUNTIME_V125_STARTED']=microtime(true);
+    $GLOBALS['STONEFELLOW_RUNTIME_V125_STARTED']=$GLOBALS['STONEFELLOW_BOOTSTRAP_STARTED']??microtime(true);
     register_shutdown_function(static function() use($trace): void {
+        require_once __DIR__.'/request-performance.php';
+        request_performance_finish_response();
         $started=(float)($GLOBALS['STONEFELLOW_RUNTIME_V125_STARTED']??microtime(true));$error=error_get_last();
         agent_runtime_v125_trace('request.end',['duration_ms'=>(int)round((microtime(true)-$started)*1000),'fatal'=>is_array($error)&&in_array((int)($error['type']??0),[E_ERROR,E_PARSE,E_CORE_ERROR,E_COMPILE_ERROR],true),'status'=>http_response_code()]);
-        agent_background_v125_drain(3,900);
+        if(!request_performance_media_read() && ($_SERVER['REQUEST_METHOD']??'')!=='HEAD')agent_background_v125_drain(3,900);
     });
     agent_runtime_v125_trace('request.start',['method'=>(string)($_SERVER['REQUEST_METHOD']??'CLI'),'path'=>(string)parse_url((string)($_SERVER['REQUEST_URI']??''),PHP_URL_PATH)]);
 }

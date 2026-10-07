@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+$GLOBALS['STONEFELLOW_BOOTSTRAP_STARTED'] = microtime(true);
+require_once __DIR__.'/request-performance.php';
 
 if (!headers_sent()) {
     header('Permissions-Policy: microphone=(self), camera=(self), midi=(self)');
@@ -334,6 +336,7 @@ subscription_request_gate();
 permission_v105_enforce_request_gates();
 artist_admin_routing_v185_apply();
 agent_runtime_v125_boot();
+if (!request_performance_media_read()) {
 agent_runtime_v126_housekeeping_maybe();
 agent_appointment_lifecycle_housekeeping_maybe_v700();
 agent_commerce_housekeeping_maybe_v800();
@@ -341,3 +344,5 @@ vp3_agent_referral_request_boot();
 agent_cognitive_loop_v310_boot();
 agent_task_outcome_v314_boot();
 agent_radar_outcome_v315_boot();
+}
+if (!headers_sent()) header('Server-Timing: bootstrap;dur='.number_format((microtime(true)-$GLOBALS['STONEFELLOW_BOOTSTRAP_STARTED'])*1000, 2, '.', ''));

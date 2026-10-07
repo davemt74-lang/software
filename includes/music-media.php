@@ -1,6 +1,29 @@
 <?php
 declare(strict_types=1);
 
+/** Draft production media is private to the owning production workspace. */
+function music_media_track(int $trackId, ?array $viewer): ?array
+{
+    $track = get_track_by_id($trackId);
+    if ($track) return can_view_track($track, $viewer) ? $track : null;
+    if (!$viewer || $trackId < 1 || $trackId >= 1000000000 || !($pdo = db())) return null;
+    try {
+        $stmt = $pdo->prepare('SELECT * FROM tracks WHERE id=? LIMIT 1');
+        $stmt->execute([$trackId]);
+        $draft = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $draft && can_manage_track_production($draft, $viewer) ? $draft : null;
+    } catch (Throwable $e) { return null; }
+}
+
+function music_media_local_path(string $relative): ?string
+{
+    if ($relative === '' || preg_match('#^[a-z][a-z0-9+.-]*:#i', $relative) || str_contains($relative, "\0")) return null;
+    $root = realpath(STONEFELLOW_ROOT);
+    $path = realpath(STONEFELLOW_ROOT.'/'.ltrim($relative, '/'));
+    return $root && $path && str_starts_with($path, rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR)
+        && is_file($path) && is_readable($path) && filesize($path) > 0 ? $path : null;
+}
+
 /** One supported byte range. Invalid or unsupported ranges fail explicitly. */
 function music_media_range(string $range,int $size): ?array
 {

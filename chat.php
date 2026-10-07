@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
-$controlBuild = 'music-player-catalog-audit-20261005';
+$controlBuild = 'cloud-load-media-recovery-20261007';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-stop-control1';

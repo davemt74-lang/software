@@ -51,7 +51,17 @@ rejects(fn()=>music_catalog_delete_photo($pdo,1,1),'Referenced cover photo was d
 check(music_catalog_delete_photo($pdo,2,2)==='/uploads/artist-media/2/photos/b.png','Unused owned photo cannot be removed');
 $pdo->exec('UPDATE tracks SET producer_user_id=13,is_published=0 WHERE id='.$source.';UPDATE artist_catalog_tracks_v181 SET is_published=0 WHERE id=1');
 check(artist_music_v185_public_track($pdo,1,$producer)!==null,'Assigned producer cannot read draft');
+check(music_media_track($source,$owner)!==null&&music_media_track($source,$manager)!==null,'Owner/manager production media rejected');
+check(music_media_track($source,$producer)!==null,'Assigned producer production media rejected');
+check(music_media_track($source,$outsider)===null&&music_media_track($source,null)===null,'Draft media leaked outside its workspace');
+$pdo->exec('DELETE FROM artist_team_members WHERE member_user_id=12');
+check(music_media_track($source,$manager)===null,'Removed manager retained draft media');
+$pdo->exec("INSERT INTO artist_team_members VALUES(11,12,'manager')");
+$pdo->exec('UPDATE users SET enabled=0 WHERE id=11');
+check(music_media_track($source,$owner)===null,'Disabled workspace retained draft media');
+$pdo->exec('UPDATE users SET enabled=1 WHERE id=11');
 $pdo->exec('UPDATE tracks SET producer_user_id=NULL WHERE id='.$source);check(artist_music_v185_public_track($pdo,1,$producer)===null,'Unassigned producer can read draft');
+check(music_media_track($source,$producer)===null,'Unassigned producer retained draft playback');
 check(get_track_by_id($source)===null&&get_track_by_id(1000000001)===null,'Unpublished source was resurrected');
 $pdo->exec('UPDATE artist_catalog_tracks_v181 SET is_published=1 WHERE id=1');check(artist_music_v185_public_track($pdo,1,$outsider)===null,'Public media resurrected unpublished backing');
 $pdo->exec('UPDATE tracks SET is_published=1 WHERE id='.$source.';UPDATE artist_catalog_tracks_v181 SET is_published=1 WHERE id=1');
@@ -62,6 +72,7 @@ check(count($merged)===2&&(int)$merged[0]['artist_track_id']===1,'Native art met
 check(music_catalog_player_id(array_column($merged,null,'id'),1)===$source,'Artist favorites lost after Studio materialization');
 $pdo->exec("CREATE TABLE playlists(id INTEGER PRIMARY KEY,owner_user_id INTEGER,visibility TEXT);CREATE TABLE playlist_tracks(playlist_id INTEGER,track_id INTEGER,sort_order INTEGER,added_at TEXT);CREATE TABLE artist_workspace_playlist_tracks_v181(playlist_id INTEGER,artist_track_id INTEGER,sort_order INTEGER,added_at TEXT);INSERT INTO playlists VALUES(1,11,'members');INSERT INTO artist_workspace_playlist_tracks_v181 VALUES(1,2,0,'2026-01-01');INSERT INTO playlist_tracks VALUES(1,".$source.",1,'2026-01-01');");
 $playlist=music_catalog_playlist_tracks($pdo,1,$owner);check(array_column($playlist,'id')===[1000000002,$source],'Mixed playlist order is wrong');
+check(music_catalog_playlist_tracks($pdo,1,$owner,array_column($merged,null,'id'))===$playlist,'Cached playlist changed order or catalog aliases');
 $pdo->exec('UPDATE artist_catalog_tracks_v181 SET is_published=0 WHERE id=2');check(count(music_catalog_playlist_tracks($pdo,1,$owner))===1,'Draft leaked into playlist');
 $pdo->exec('UPDATE artist_catalog_tracks_v181 SET is_published=1 WHERE id=2');
 $albumList=music_catalog_albums($pdo,$owner,array_column($merged,null,'id'));foreach($albumList as $album){if((int)$album['workspace_id']===2)check(count($album['tracks'])===0,'Same-title album pulled another workspace songs');}
@@ -75,3 +86,4 @@ $pdo->exec('DELETE FROM artist_team_members WHERE member_user_id=12');check(!mus
 foreach([['',100,[0,99,200]],['bytes=0-',100,[0,99,206]],['bytes=5-500',100,[5,99,206]],['bytes=-5',100,[95,99,206]],['bytes=-500',100,[0,99,206]],['bytes=100-',100,null],['bytes=-0',100,null],['bytes=-',100,null],['bytes=0-1,3-4',100,null],['other=0-1',100,null],['bytes=10-5',100,null]] as [$request,$size,$expected])check(music_media_range($request,$size)===$expected,'Byte range failure: '.$request);
 $path=tempnam(sys_get_temp_dir(),'music-mime-');file_put_contents($path,'not an image');check(music_media_mime($path,'cover')===null,'Unsupported file served as image');unlink($path);
 echo "MUSIC_MODULE_INTEGRITY=PASS\n";
+

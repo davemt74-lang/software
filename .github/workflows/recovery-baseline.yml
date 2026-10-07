@@ -114,6 +114,9 @@ jobs:
 
       - name: Music module full-feature audit
         run: |
+          node tests/chat-load-runtime.mjs
+          php tests/cloud-load-integrity.php
+          node tests/chat-media-http.mjs
           node tests/music-module-runtime.mjs
           php tests/music-module-integrity.php
           node tests/player-catalog-v190.mjs
@@ -151,3 +154,4 @@ jobs:
 
       - name: CI workflow governance
         run: node tests/ci-workflow-consolidation.mjs
+

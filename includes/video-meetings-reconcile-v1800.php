@@ -102,6 +102,7 @@ function video_meeting_boot_v1800(): void
 {
     static $registered=false;if($registered)return;$registered=true;
     if(PHP_SAPI==='cli')return;
+    if(function_exists('request_performance_media_read') && request_performance_media_read())return;
 
     // Mutation requests may have just created/rescheduled/cancelled a canonical
     // booking, so reconcile once after commit. Ordinary GET traffic is bounded

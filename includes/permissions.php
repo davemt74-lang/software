@@ -446,40 +446,24 @@ function permissions_schema_ready(): bool
 
 function column_exists(string $table, string $column): bool
 {
+    require_once __DIR__.'/schema-metadata.php';
     $pdo = db();
     if (!$pdo) {
         return false;
     }
 
-    try {
-        $stmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM information_schema.COLUMNS
-             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
-        );
-        $stmt->execute([$table, $column]);
-        return (int)$stmt->fetchColumn() > 0;
-    } catch (Throwable $e) {
-        return false;
-    }
+    return schema_metadata_column_exists($pdo, $table, $column);
 }
 
 function table_exists(string $table): bool
 {
+    require_once __DIR__.'/schema-metadata.php';
     $pdo = db();
     if (!$pdo) {
         return false;
     }
 
-    try {
-        $stmt = $pdo->prepare(
-            'SELECT COUNT(*) FROM information_schema.TABLES
-             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?'
-        );
-        $stmt->execute([$table]);
-        return (int)$stmt->fetchColumn() > 0;
-    } catch (Throwable $e) {
-        return false;
-    }
+    return schema_metadata_table_exists($pdo, $table);
 }
 
 function access_schema_ready(): bool

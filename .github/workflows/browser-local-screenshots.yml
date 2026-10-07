@@ -1,10 +1,10 @@
 name: Browser Companion Local Screenshots
 on:
   pull_request:
-    paths: [browser-companion/**, tests/browser-companion-local-screenshots.mjs, .github/workflows/browser-local-screenshots.yml]
+    paths: [browser-companion/**, tests/browser-companion-local-screenshots.mjs, tests/chat-media-http.mjs, chat.js, media.php, includes/music-media.php, .github/workflows/browser-local-screenshots.yml]
   push:
     branches: [main]
-    paths: [browser-companion/**, tests/browser-companion-local-screenshots.mjs, .github/workflows/browser-local-screenshots.yml]
+    paths: [browser-companion/**, tests/browser-companion-local-screenshots.mjs, tests/chat-media-http.mjs, chat.js, media.php, includes/music-media.php, .github/workflows/browser-local-screenshots.yml]
 permissions:
   contents: read
 concurrency:
@@ -19,9 +19,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: pdo_sqlite, fileinfo
       - run: npm install --no-save --ignore-scripts playwright@1.51.1
       - run: npx playwright install --with-deps chromium
       - name: Dropdown, entire-page capture and native Chrome acceptance
         env:
           SCREENSHOT_EXTENSION_INTEGRATION: '1'
         run: node tests/browser-companion-local-screenshots.mjs
+      - name: Chat draft audio playback and lazy media loading
+        run: node tests/chat-media-http.mjs --browser
+
