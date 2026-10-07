@@ -102,7 +102,7 @@ function workspace_native_contact_update_v1(PDO $pdo,int $uid,int $id,array $fie
     $name=trim((string)($fields['display_name']??$row['name']));$company=trim((string)($fields['organization']??$row['company']));$phone=trim((string)($fields['phone']??$row['phone']));$email=strtolower(trim((string)($fields['email']??$row['email'])));$relationship=trim((string)($fields['relationship']??$row['lifecycle_stage']));
     if($name===''||mb_strlen($name)>120||mb_strlen($company)>190||mb_strlen($phone)>80||mb_strlen($email)>190||mb_strlen($relationship)>80||($email!==''&&!filter_var($email,FILTER_VALIDATE_EMAIL)))throw new InvalidArgumentException('Contact name, email or details are invalid.');
     $pdo->prepare("UPDATE crm_contacts SET name=?,company=?,phone=?,email=?,email_normalized=?,lifecycle_stage=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND owner_user_id=? AND status<>'archived'")->execute([$name,$company,$phone,$email,$email,$relationship,$id,$uid]);
-    crm_v180_sync_primary_channels($pdo,$id,$email,$phone);
+    if(function_exists('crm_v180_sync_primary_channels'))crm_v180_sync_primary_channels($pdo,$id,$email,$phone);
     $q->execute([$id,$uid]);return $q->fetch(PDO::FETCH_ASSOC);
 }
 
