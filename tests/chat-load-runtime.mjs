@@ -5,14 +5,14 @@ import assert from 'node:assert/strict';
 const source=fs.readFileSync('chat.js','utf8');
 const poll=source.slice(source.indexOf('  async function pollAgentActivity('),source.indexOf('  function startAgentActivityPolling()'));
 const api=source.slice(source.indexOf('  async function api(payload'),source.indexOf('  function writeActivityCursor('));
-const status=source.match(/  const liveStatus = [^\n]+/)[0];
+assert.doesNotMatch(source,/\bliveStatus\b|chatLiveStatus/,'Removed activity status must not be referenced');
 let response,requestCount=0,timer,delay,cleared=0;
 const context={AbortController,document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token'},
     window:{setTimeout:(fn,ms)=>{timer=fn;delay=ms;return 1;},clearTimeout:()=>{cleared++;}},
     fetch:async(_url,options)=>{requestCount++;assert.equal(JSON.parse(options.body).csrf_token,'token');return response(options.signal);},
     writeActivityCursor:value=>{context.activityCursor=value;},updateNotificationBadge:value=>{context.unread=value;},
     syncConversationMessagesV101:async()=>{},activityBusy:false,activityCursor:0,conversationId:1,lastLoadedMessageId:0,pendingConversationSync:0,busy:false};
-vm.createContext(context);vm.runInContext(status+api+poll+'\nglobalThis.poll=pollAgentActivity;',context);
+vm.createContext(context);vm.runInContext(api+poll+'\nglobalThis.poll=pollAgentActivity;',context);
 response=async()=>({ok:true,json:async()=>({ok:true,latest_id:8,unread_count:2,updates:[]})});
 await context.poll(true);assert.equal(context.activityCursor,8);assert.equal(context.unread,2);assert.equal(context.activityBusy,false);
 assert.equal(delay,15000,'Activity polling must have a finite timeout');

@@ -8,7 +8,6 @@
   const send = document.getElementById('sendChatButton');
   const voiceButton = document.getElementById('chatVoiceButton');
   const voiceStatus = document.getElementById('chatVoiceStatus');
-  const liveStatus = document.getElementById('chatLiveStatus');
   const audioFeedbackHosts = new WeakMap();
   const history = document.getElementById('chatHistory');
   const newButton = document.getElementById('newChatButton');
@@ -779,7 +778,6 @@
     const timeout = window.setTimeout(() => controller.abort(), 15000);
 
     try {
-      if (liveStatus) liveStatus.textContent = 'Checking…';
       const hadCursor = activityCursor > 0;
       const data = await api({
         action:'activity',
@@ -813,15 +811,8 @@
         data.unread_count
       );
 
-      if (liveStatus) {
-        liveStatus.textContent =
-          'Live';
-      }
     } catch (error) {
-      if (liveStatus) {
-        liveStatus.textContent =
-          'Reconnecting…';
-      }
+      // A later poll retries after transient failures; notifications remain in their drawer.
     } finally {
       window.clearTimeout(timeout);
       activityBusy = false;
