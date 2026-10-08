@@ -23,9 +23,9 @@ const status=root.querySelector('.vp3-teams-status'), list=root.querySelector('.
  submit=create.querySelector('button');
 let busy=false,selected='',items=[],lastRefresh=0,inflight=false;
 function el(tag,cls,txt){const x=document.createElement(tag);if(cls)x.className=cls;if(txt!==undefined)x.textContent=String(txt);return x;}
-function btn(name,action,id){const x=el('button','',name);x.type='button';x.dataset.action=action;if(id)x.dataset.id=id;x.disabled=busy;return x;}
+function btn(name,action,id,taskId){const x=el('button','',name);x.type='button';x.dataset.action=action;if(id)x.dataset.id=id;if(taskId)x.dataset.taskId=taskId;x.disabled=busy;return x;}
 function fmt(value){if(!value)return '—';const raw=String(value).trim();
- const valueUtc=raw.includes('T')?raw.replace(/(\+00:00)?$/,'Z'):raw.replace(' ','T')+'Z';
+ const valueUtc=/(Z|[+-]\d\d:\d\d)$/.test(raw)?raw:raw.replace(' ','T')+'Z';
  const parsed=new Date(valueUtc);return Number.isNaN(parsed.getTime())?raw:parsed.toLocaleString();}
 function setBusy(value){busy=Boolean(value);submit.disabled=busy;root.querySelectorAll('button[data-action]').forEach(b=>b.disabled=busy);}
 function say(message){status.textContent=String(message);}
@@ -54,6 +54,7 @@ function showMission(m){
  const buttons=el('div','vp3-teams-actions');
  if(m.status==='planned')buttons.appendChild(btn('Start','start',selected));
  if(m.status==='running')buttons.appendChild(btn('Pause','pause',selected));
+ if(m.status==='waiting_review')buttons.appendChild(btn('Resume (rerun interrupted)','resume',selected));
  if(['planned','running','waiting_review'].includes(m.status))buttons.appendChild(btn('Cancel','cancel',selected));
  buttons.appendChild(btn('Refresh','get',selected));detail.appendChild(buttons);
  const workers=el('ol','vp3-teams-workers');
@@ -61,6 +62,7 @@ function showMission(m){
   const li=el('li','');li.appendChild(el('strong','',t.title||t.role||'Worker'));
   li.appendChild(el('small','',(t.role||'specialist')+' · '+(t.status||'queued')+' · '+fmt(t.completed_at||t.started_at)));
   if(t.error)li.appendChild(el('p','vp3-teams-error',t.error));
+  if(['failed','partial','waiting_review'].includes(m.status)&&['failed','interrupted'].includes(t.status)&&t.error!=='Dependency failed')li.appendChild(btn('Retry worker','retry',selected,t.id));
   if(t.result){const exp=el('details','vp3-teams-result');exp.appendChild(el('summary','','Worker result'));
    exp.appendChild(el('pre','',t.result));li.appendChild(exp);}
   workers.appendChild(li);
@@ -83,9 +85,14 @@ async function load(){
   if(selected&&items.some(x=>x.id===selected)){const current=await api('get',{mission_id:selected});if(current.mission)showMission(current.mission);}
  }finally{inflight=false;}
 }
-async function operation(action,id){
- if(busy)return;setBusy(true);
- try{const response=await api(action,{mission_id:id});if(response.mission)showMission(response.mission);
+async function operation(action,id,taskId){
+ if(busy)return;
+ if(action==='resume'&&!window.confirm('Resume and rerun interrupted model work?'))return;
+ if(action==='retry'&&!window.confirm('Retry this worker? The model request may use additional tokens.'))return;
+ setBusy(true);
+ try{const payload={mission_id:id};if(action==='resume')payload.allow_reexecution=true;
+  if(action==='retry')payload.task_id=taskId;
+  const response=await api(action,payload);if(response.mission)showMission(response.mission);
   await load();if(action==='get'&&response.mission)showMission(response.mission);
  }catch(e){say(e.message||'Mission action failed.');}finally{setBusy(false);}
 }
@@ -94,7 +101,7 @@ root.addEventListener('toggle',()=>{
 });
 root.addEventListener('click',ev=>{
  const target=ev.target.closest('button[data-action]');if(!target||!root.contains(target))return;
- operation(target.dataset.action,target.dataset.id);
+ operation(target.dataset.action,target.dataset.id,target.dataset.taskId);
 });
 create.addEventListener('submit',async ev=>{
  ev.preventDefault();if(busy)return;const objective=input.value.trim();if(!objective||objective.length>4000)return;
