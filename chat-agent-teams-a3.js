@@ -394,6 +394,9 @@ window.setInterval(()=>{
  if(!openPane)return;
  const wrapper=openPane.closest('.vp3-worker-browser'),tid=wrapper?.dataset.browserWorker;
  if(!tid||!selected||!liveByWorker.get(selected+'|'+tid)?.session_active)return;
+ // Do not invalidate a model proposal or discard an owner-entered field value
+ // while the explicit approval form is open.
+ if(liveByWorker.get(selected+'|'+tid)?.proposed_action?.id)return;
  liveLastPoll=Date.now();
  api('browser.live.refresh',{mission_id:selected,task_id:tid}).then(result=>{
   if(result.live_browser){liveByWorker.set(selected+'|'+tid,result.live_browser);
