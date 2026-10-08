@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events'],true))
+    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','cognition.configure','cognition.evaluate','cognition.decide'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
@@ -53,6 +53,20 @@ try {
             $taskId=trim((string)($input['task_id']??''));
             if(!preg_match('/^[0-9a-f-]{36}$/i',$taskId))throw new RuntimeException('Task identifier is invalid.',422);
             $payload['task_id']=$taskId;
+        }
+        if($action==='cognition.configure'){
+            if(!array_key_exists('enabled',$input)||!is_bool($input['enabled']))
+                throw new RuntimeException('Auto-review setting is invalid.',422);
+            $payload['enabled']=$input['enabled'];
+        }
+        if($action==='cognition.decide'){
+            $reviewId=trim((string)($input['review_id']??''));
+            if(!preg_match('/^[0-9a-f-]{36}$/i',$reviewId))
+                throw new RuntimeException('Review identifier is invalid.',422);
+            if(!array_key_exists('approve',$input)||!is_bool($input['approve']))
+                throw new RuntimeException('Approval decision is invalid.',422);
+            $payload['review_id']=$reviewId;
+            $payload['approve']=$input['approve'];
         }
         if($action==='events'){
             $after=$input['after']??0;
