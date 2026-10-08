@@ -35,7 +35,7 @@ jobs:
           changed = diff.returncode != 0 or any(re.match(pattern, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
-              connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200)\.php|api/homeserver-https-poll-v1300\.php|tests/connection_lifecycle\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
+              connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
               output.write('connection=' + str(connection).lower() + '\n')
           PY_SCOPE
   transfer-browser:
@@ -112,6 +112,11 @@ jobs:
           VP3_CONNECTION_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=connection;charset=utf8mb4
           VP3_CONNECTION_MYSQL_PASSWORD: connection-fixture
         run: php tests/connection_lifecycle.php
+      - name: Authorized reconciliation coverage and permission failure retries
+        env:
+          VP3_CONNECTION_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=connection;charset=utf8mb4
+          VP3_CONNECTION_MYSQL_PASSWORD: connection-fixture
+        run: php tests/homeserver-continuity-permissions.php
   runtime-journey:
     name: Runtime journey · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
@@ -137,6 +142,10 @@ jobs:
 
       - name: Connection lifecycle authority and stale relay snapshots
         run: php tests/connection_lifecycle.php
+      - name: Authorized reconciliation coverage and permission failure retries
+        run: php tests/homeserver-continuity-permissions.php
+      - name: Connected and reconciliation status presentation
+        run: node tests/homeserver-continuity-permissions.mjs
       - name: Chat device pairing contract
         run: |
           php -l includes/homeserver-device-code-v1.php
