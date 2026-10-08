@@ -4,8 +4,8 @@ const file=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const php=file('api/agent-missions-cloud-v1.php');
 const ui=file('chat-agent-teams-a3.js');
 for(const action of ['takeover','release','control','search.review','search.submit']){
- assert.match(php,new RegExp("browser\\\\.owner\\\\."+action.replace('.','\\\\.')),'PHP relay missing '+action);
- assert.match(ui,new RegExp("browser\\\\.owner\\\\."+action.replace('.','\\\\.')),'UI missing '+action);
+ assert.ok(php.includes('browser.owner.'+action),'PHP relay missing '+action);
+ assert.ok(ui.includes('browser.owner.'+action),'UI missing '+action);
 }
 assert.match(php,/hash_equals\(csrf_token\(\)/);
 assert.match(php,/require_permission\('chat\.access'\)/);
