@@ -37,3 +37,7 @@
 .vp3-agent-teams-brain-a3 .vp3-teams-brain-row{padding:8px 0;border-top:1px solid var(--border,#394252)}
 .vp3-agent-teams-brain-a3 .vp3-teams-brain-row strong{display:block;font-size:12px;overflow-wrap:anywhere}
 .vp3-agent-teams-brain-a3 .vp3-teams-brain-row small{display:block;font-size:11px;opacity:.75;margin-top:3px}
+
+.vp3-agent-teams-a3 .vp3-teams-cognition{margin-top:10px;padding:10px;border:1px solid var(--border,#394252);border-radius:9px}
+.vp3-agent-teams-a3 .vp3-teams-cognition p{font-size:12px;overflow-wrap:anywhere}
+.vp3-agent-teams-a3 .vp3-teams-cognition h4{margin:0 0 8px}
