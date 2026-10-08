@@ -50,3 +50,12 @@
 .vp3-agent-teams-a3 select[name=provider_key]{display:block;width:100%;max-width:320px;padding:7px 8px;color:inherit;background:var(--surface-secondary,#252c39);border:1px solid var(--border,#555e6c);border-radius:8px;font:inherit;font-size:12px}
 .vp3-agent-teams-a3 .vp3-teams-provider-note{margin:5px 0 3px;line-height:1.4;opacity:.7}
 .vp3-agent-teams-a3 select[name=provider_key]:focus-visible{outline:2px solid #8fb8f2;outline-offset:2px}
+
+.vp3-agent-teams-a3 .vp3-teams-browser-optin{display:flex;gap:8px;align-items:center;font-size:11px;font-weight:400;margin-top:8px;line-height:1.4;cursor:pointer}
+.vp3-agent-teams-a3 .vp3-teams-browser-optin input{width:16px;flex:0 0 16px;margin:0}
+.vp3-agent-teams-a3 .vp3-worker-browser{margin:8px 0;border:1px solid var(--border,#394252);border-radius:9px;padding:8px;font-size:11px;min-width:0}
+.vp3-agent-teams-a3 .vp3-worker-browser>summary{cursor:pointer;font-weight:600}
+.vp3-agent-teams-a3 .vp3-worker-browser-body{padding:7px 0;min-width:0}
+.vp3-agent-teams-a3 .vp3-worker-browser-url{box-sizing:border-box;width:100%;min-width:0;border-radius:6px}
+.vp3-agent-teams-a3 .vp3-worker-browser-preview{display:block;width:100%;max-width:960px;height:auto;max-height:280px;object-fit:contain;border:1px solid var(--border,#394252);border-radius:8px;margin:7px 0}
+.vp3-agent-teams-a3 .vp3-worker-browser-body .vp3-teams-meta{overflow-wrap:anywhere}
