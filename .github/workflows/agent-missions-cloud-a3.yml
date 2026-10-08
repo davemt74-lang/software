@@ -4,6 +4,7 @@ on:
     paths:
       - 'api/agent-missions-cloud-v1.php'
       - 'chat-agent-teams-a3.js'
+      - 'chat-notifications-drawer-v240.js'
       - 'chat-agent-teams-a3.css'
       - 'chat.php'
       - 'tests/agent-missions-cloud-a3.mjs'
@@ -13,6 +14,7 @@ on:
     paths:
       - 'api/agent-missions-cloud-v1.php'
       - 'chat-agent-teams-a3.js'
+      - 'chat-notifications-drawer-v240.js'
       - 'chat-agent-teams-a3.css'
       - 'chat.php'
       - 'tests/agent-missions-cloud-a3.mjs'
