@@ -211,9 +211,22 @@ async function operation(action,id,taskId){
  if(action==='retry'&&!window.confirm('Retry this worker? The model request may use additional tokens.'))return;
  if(action==='approve'&&!window.confirm('Approve these new read-only workers? Additional model usage will occur.'))return;
  if(action==='reject'&&!window.confirm('Reject this staffing proposal? No workers will be created.'))return;
+ if(action==='browser.grant'&&!window.confirm('Approve this read-only HTTPS origin for the selected worker for 15 minutes?'))return;
+ if(action==='browser.revoke'&&!window.confirm('Revoke this worker browser and erase its stored snapshot?'))return;
  setBusy(true);
  try{const payload={mission_id:id};if(action==='resume')payload.allow_reexecution=true;
   if(action==='retry')payload.task_id=taskId;
+  if(action.startsWith('browser.')){
+   payload.task_id=taskId;
+   const field=Array.from(detail.querySelectorAll('input[data-browser-task]'))
+     .find(node=>node.dataset.browserTask===taskId);
+   if(action==='browser.grant'||action==='browser.capture'){
+    const url=field?.value.trim()||'';
+    if(action==='browser.grant'&&!url)throw new Error('Enter the HTTPS page to approve.');
+    if(url)payload.url=url;
+   }
+   say(action==='browser.capture'?'Capturing approved browser page…':'Updating worker browser…');
+  }
   if(action==='evaluate'){
    const requestId=window.crypto&&window.crypto.randomUUID?window.crypto.randomUUID():'';
    if(!requestId)throw new Error('Secure staffing request IDs are not available.');
@@ -222,6 +235,11 @@ async function operation(action,id,taskId){
   }
   if(action==='approve'||action==='reject'){payload.decision_id=taskId;payload.confirmed=true;}
   const response=await api(action,payload);
+  if(response.browser!==undefined){
+   const key=id+'|'+taskId;
+   if(response.browser)browserByWorker.set(key,response.browser);
+   else browserByWorker.delete(key);
+  }
   if(response.mission)showMission(response.mission);
   if(response.supervision){
    staffingByMission.set(id,[response.supervision,...(staffingByMission.get(id)||[]).filter(p=>p.id!==response.supervision.id)]);
@@ -229,6 +247,10 @@ async function operation(action,id,taskId){
   }
   await load();
   if(action==='get'&&response.mission)showMission(response.mission);
+  if(action.startsWith('browser.')){
+   const current=await api('get',{mission_id:id});
+   if(current.mission)showMission(current.mission);
+  }
  }catch(e){say(e.message||'Mission action failed.');}finally{setBusy(false);}
 }
 root.addEventListener('toggle',()=>{
