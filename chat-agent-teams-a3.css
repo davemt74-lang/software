@@ -41,3 +41,6 @@
 .vp3-agent-teams-a3 .vp3-teams-cognition{margin-top:10px;padding:10px;border:1px solid var(--border,#394252);border-radius:9px}
 .vp3-agent-teams-a3 .vp3-teams-cognition p{font-size:12px;overflow-wrap:anywhere}
 .vp3-agent-teams-a3 .vp3-teams-cognition h4{margin:0 0 8px}
+
+.vp3-agent-teams-a3 .vp3-teams-autoreview{display:flex;align-items:center;gap:8px;line-height:1.4;font-size:11px;margin:8px 0 4px;cursor:pointer}
+.vp3-agent-teams-a3 .vp3-teams-autoreview input[type=checkbox]{flex:0 0 auto;width:16px;height:16px;padding:0;margin:0;accent-color:var(--accent,#7aaff1)}
