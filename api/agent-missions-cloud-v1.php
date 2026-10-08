@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','browser.grant','browser.get','browser.capture','browser.revoke'],true))
+    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
@@ -92,6 +92,18 @@ try {
                         throw new RuntimeException('Browser URL must be HTTPS and within the limit.',422);
                     $payload['url']=$url;
                 }
+            }
+        }
+        if(str_starts_with($action,'browser.live.')){
+            $taskId=trim((string)($input['task_id']??''));
+            if(!preg_match('/^[0-9a-f-]{36}$/i',$taskId))
+                throw new RuntimeException('Live browser task ID is invalid.',422);
+            $payload['task_id']=$taskId;
+            if($action==='browser.live.approve'){
+                $proposalId=trim((string)($input['proposal_id']??''));
+                if(!preg_match('/^[0-9a-f-]{36}$/i',$proposalId)||($input['confirmed']??null)!==true)
+                    throw new RuntimeException('Explicit navigation proposal confirmation required.',422);
+                $payload['proposal_id']=$proposalId;
             }
         }
         if($action==='events'){

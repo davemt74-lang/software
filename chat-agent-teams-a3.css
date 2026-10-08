@@ -59,3 +59,8 @@
 .vp3-agent-teams-a3 .vp3-worker-browser-url{box-sizing:border-box;width:100%;min-width:0;border-radius:6px}
 .vp3-agent-teams-a3 .vp3-worker-browser-preview{display:block;width:100%;max-width:960px;height:auto;max-height:280px;object-fit:contain;border:1px solid var(--border,#394252);border-radius:8px;margin:7px 0}
 .vp3-agent-teams-a3 .vp3-worker-browser-body .vp3-teams-meta{overflow-wrap:anywhere}
+
+.vp3-agent-teams-a3 .vp3-worker-live{border-top:1px solid var(--border,#394252);margin:10px 0 2px;padding-top:9px;min-width:0}
+.vp3-agent-teams-a3 .vp3-worker-live>strong{display:block;margin-bottom:6px}
+.vp3-agent-teams-a3 .vp3-worker-live-preview{display:block;width:100%;height:auto;max-width:960px;max-height:320px;object-fit:contain;border:1px solid var(--border,#394252);border-radius:8px}
+.vp3-agent-teams-a3 .vp3-worker-live .vp3-teams-meta{overflow-wrap:anywhere}

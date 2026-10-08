@@ -16,6 +16,7 @@ try {
     window.VP3_AGENT_TEAMS_A3={endpoint:'/api/agent-missions-cloud-v1.php',csrf:'a3-test-csrf'};
     window.__calls=[];
     window.__workerBrowser=null;
+    window.__liveBrowser=null;
     window.__mission={
       id:'11111111-1111-4111-8111-111111111111',
       objective:'<img src=x onerror="window.injected=true">',
@@ -37,6 +38,37 @@ try {
       if(body.action==='pause'){mission.status='waiting_review';}
       if(body.action==='retry'){mission.status='running';mission.tasks[0].status='running';}
       if(body.action==='cancel'){mission.status='cancelled';}
+      if(body.action.startsWith('browser.live.')){
+        if(body.action==='browser.live.start')window.__liveBrowser={
+          task_id:body.task_id,status:'live',revision:1,mode:'live_read_only',
+          session_active:true,visit_count:1,max_visits:5,
+          current_url:'https://example.com/reports',page_title:'Research report',
+          image_base64:'/9j/'+'A'.repeat(160),page_text:'First page evidence.',
+          proposed_link:{}
+        };
+        if(body.action==='browser.live.refresh'){
+          window.__liveBrowser.image_base64='/9j/'+'B'.repeat(160);
+        }
+        if(body.action==='browser.live.propose'){
+          window.__liveBrowser.proposed_link={
+            id:'55555555-5555-4555-8555-555555555555',
+            title:'Second report',url:'https://example.com/report2',
+            reason:'The agent recommends a related read-only page.',revision:1
+          };
+        }
+        if(body.action==='browser.live.approve'){
+          window.__liveBrowser.revision++;
+          window.__liveBrowser.visit_count++;
+          window.__liveBrowser.current_url=window.__liveBrowser.proposed_link.url;
+          window.__liveBrowser.page_title='Second report';
+          window.__liveBrowser.proposed_link={};
+        }
+        if(body.action==='browser.live.stop'){
+          window.__liveBrowser.status='stopped';
+          window.__liveBrowser.session_active=false;
+        }
+        return {ok:true,json:async()=>({ok:true,live_browser:structuredClone(window.__liveBrowser)})};
+      }
       if(body.action.startsWith('browser.')){
         if(body.action==='browser.grant')window.__workerBrowser={
           status:'approved',task_id:body.task_id,approved_origin:'https://example.com',
@@ -128,6 +160,24 @@ try {
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.capture'));
   assert.equal(await page.locator('.vp3-worker-browser-preview').count(),1);
   assert.match(await page.locator('.vp3-worker-browser').textContent(),/Approved public page/);
+  await page.getByRole('button',{name:'Start live browser'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.live.start'));
+  assert.equal(await page.locator('.vp3-worker-live-preview').count(),1,
+    'Live browser must be visible in existing Chat canvas');
+  await page.getByRole('button',{name:'Ask agent for next link'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.live.propose'));
+  assert.match(await page.locator('.vp3-worker-live').textContent(),/Second report/);
+  assert.equal((await page.evaluate(()=>window.__calls.filter(c=>c.action==='browser.live.approve').length)),0,
+    'Model suggestion must not auto-navigate');
+  await page.getByRole('button',{name:'Approve suggested navigation'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.live.approve'));
+  const liveDecision=await page.evaluate(()=>window.__calls.find(c=>c.action==='browser.live.approve'));
+  assert.equal(liveDecision.proposal_id,'55555555-5555-4555-8555-555555555555');
+  assert.equal(liveDecision.confirmed,true);
+  assert.match(await page.locator('.vp3-worker-live').textContent(),/https:\/\/example.com\/report2/);
+  await page.getByRole('button',{name:'Stop live browser'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.live.stop'));
+  assert.equal(await page.getByRole('button',{name:'Stop live browser'}).count(),0);
   await page.getByRole('button',{name:'Revoke'}).click();
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.revoke'));
   assert.equal(await page.locator('.vp3-worker-browser-preview').count(),0,
@@ -138,5 +188,5 @@ try {
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
   assert.equal(overflow,false,'mission UI must not force mobile page-wide scrolling');
   assert.deepEqual(errors,[],'no browser JavaScript errors');
-  console.log('AGENT_TEAMS_A5B_BROWSER PASS: live Chat controls, real DOM, Brain drawer, CSRF, retry approval, XSS and responsive layout');
+  console.log('AGENT_TEAMS_A5B2_BROWSER PASS: live Chat controls, real DOM, Brain drawer, CSRF, retry approval, XSS and responsive layout');
 } finally {await browser.close();}

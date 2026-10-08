@@ -31,6 +31,7 @@ const status=root.querySelector('.vp3-teams-status'), list=root.querySelector('.
 let busy=false,selected='',items=[],lastRefresh=0,inflight=false;
 const staffingByMission=new Map();
 const browserByWorker=new Map();
+const liveByWorker=new Map();let liveLastPoll=0;
 function el(tag,cls,txt){const x=document.createElement(tag);if(cls)x.className=cls;if(txt!==undefined)x.textContent=String(txt);return x;}
 function btn(name,action,id,taskId){const x=el('button','',name);x.type='button';x.dataset.action=action;if(id)x.dataset.id=id;if(taskId)x.dataset.taskId=taskId;x.disabled=busy;return x;}
 function fmt(value){if(!value)return '—';const raw=String(value).trim();
@@ -117,6 +118,41 @@ function showMission(m){
    actions.appendChild(btn('Revoke','browser.revoke',selected,t.id));
   }
   actions.appendChild(btn('View browser','browser.get',selected,t.id));
+  const livePanel=el('section','vp3-worker-live');
+  livePanel.setAttribute('data-live-browser','');
+  const live=liveByWorker.get(key);
+  livePanel.appendChild(el('strong','','Live browser workspace'));
+  livePanel.appendChild(el('p','vp3-teams-meta',
+    live?(live.status+' · '+(live.visit_count||0)+' / '+(live.max_visits||5)+' navigations · '+
+    (live.session_active?'Session connected':'Session stopped')):'No live session'));
+  if(live?.current_url)livePanel.appendChild(el('p','vp3-teams-meta','Page: '+live.current_url));
+  if(live?.image_base64&&/^[A-Za-z0-9+/=]{100,200000}$/.test(live.image_base64)){
+   const screen=el('img','vp3-worker-live-preview');
+   screen.src='data:image/jpeg;base64,'+live.image_base64;
+   screen.alt='Current read-only browser screenshot for '+(t.title||'worker');
+   livePanel.appendChild(screen);
+  }
+  const proposal=live?.proposed_link;
+  if(proposal&&proposal.id){
+   const pending=el('p','vp3-teams-meta','Agent suggests: '+(proposal.title||proposal.url));
+   livePanel.appendChild(pending);
+   livePanel.appendChild(el('p','',proposal.reason||''));
+  }
+  const liveActions=el('div','vp3-teams-actions');
+  if(m.status==='planned'&&t.status==='queued'&&state?.status==='approved'&&!live?.session_active)
+   liveActions.appendChild(btn('Start live browser','browser.live.start',selected,t.id));
+  if(live?.session_active){
+   liveActions.appendChild(btn('Refresh live view','browser.live.refresh',selected,t.id));
+   if(live.visit_count<live.max_visits&&m.status==='planned'){
+    liveActions.appendChild(btn('Ask agent for next link','browser.live.propose',selected,t.id));
+    if(proposal?.id)liveActions.appendChild(btn('Approve suggested navigation','browser.live.approve',selected,t.id));
+   }
+   liveActions.appendChild(btn('Stop live browser','browser.live.stop',selected,t.id));
+  }else if(state?.status==='approved'){
+   liveActions.appendChild(btn('View live status','browser.live.get',selected,t.id));
+  }
+  livePanel.appendChild(liveActions);
+  area.appendChild(livePanel);
   area.appendChild(actions);browser.appendChild(area);li.appendChild(browser);
   workers.appendChild(li);
  });detail.appendChild(workers);
@@ -217,10 +253,20 @@ async function operation(action,id,taskId){
  if(action==='reject'&&!window.confirm('Reject this staffing proposal? No workers will be created.'))return;
  if(action==='browser.grant'&&!window.confirm('Approve this read-only HTTPS origin for the selected worker for 15 minutes?'))return;
  if(action==='browser.revoke'&&!window.confirm('Revoke this worker browser and erase its stored snapshot?'))return;
+ if(action==='browser.live.start'&&!window.confirm('Open an isolated 10-minute browser session on this approved HTTPS origin?'))return;
+ if(action==='browser.live.approve'&&!window.confirm('Approve the agent-suggested link? Navigation will remain read-only on the approved origin.'))return;
  setBusy(true);
  try{const payload={mission_id:id};if(action==='resume')payload.allow_reexecution=true;
   if(action==='retry')payload.task_id=taskId;
-  if(action.startsWith('browser.')){
+  if(action.startsWith('browser.live.')){
+   payload.task_id=taskId;
+   if(action==='browser.live.approve'){
+    const proposed=liveByWorker.get(id+'|'+taskId)?.proposed_link;
+    if(!proposed?.id)throw new Error('No current agent navigation proposal.');
+    payload.proposal_id=proposed.id;payload.confirmed=true;
+   }
+   say(action==='browser.live.propose'?'Agent is reviewing the allowed page links…':'Updating live browser…');
+  }else if(action.startsWith('browser.')){
    payload.task_id=taskId;
    const field=Array.from(detail.querySelectorAll('input[data-browser-task]'))
      .find(node=>node.dataset.browserTask===taskId);
@@ -239,10 +285,16 @@ async function operation(action,id,taskId){
   }
   if(action==='approve'||action==='reject'){payload.decision_id=taskId;payload.confirmed=true;}
   const response=await api(action,payload);
+  if(response.live_browser!==undefined){
+   const key=id+'|'+taskId;
+   if(response.live_browser)liveByWorker.set(key,response.live_browser);
+   else liveByWorker.delete(key);
+  }
   if(response.browser!==undefined){
    const key=id+'|'+taskId;
    if(response.browser)browserByWorker.set(key,response.browser);
    else browserByWorker.delete(key);
+   if(action==='browser.revoke')liveByWorker.delete(key);
   }
   if(response.mission)showMission(response.mission);
   if(response.supervision){
@@ -292,6 +344,22 @@ create.addEventListener('submit',async ev=>{
  }catch(e){say(e.message||'Mission creation failed. Refresh mission history before retrying.');}
  finally{setBusy(false);}
 });
+window.setInterval(()=>{
+ if(document.hidden||!root.open||busy||Date.now()-liveLastPoll<8500)return;
+ const openPane=detail.querySelector('.vp3-worker-browser[open] [data-live-browser]');
+ if(!openPane)return;
+ const wrapper=openPane.closest('.vp3-worker-browser'),tid=wrapper?.dataset.browserWorker;
+ if(!tid||!selected||!liveByWorker.get(selected+'|'+tid)?.session_active)return;
+ liveLastPoll=Date.now();
+ api('browser.live.refresh',{mission_id:selected,task_id:tid}).then(result=>{
+  if(result.live_browser){liveByWorker.set(selected+'|'+tid,result.live_browser);
+   const selectedMission=items.find(x=>x.id===selected);
+   if(selectedMission)api('get',{mission_id:selected}).then(detailResult=>{
+    if(detailResult.mission)showMission(detailResult.mission);
+   }).catch(()=>{});
+  }
+ }).catch(()=>{});
+},9000);
 window.setInterval(()=>{
  if(document.hidden||!root.open||busy||Date.now()-lastRefresh<15000)return;
  load().catch(e=>say(e.message||'HomeServer unavailable.'));
