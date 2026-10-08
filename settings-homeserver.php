@@ -14,7 +14,7 @@ if (!$user) redirect(url('/login.php'));
 <title><?= e(system_agent_name()) ?> | HomeServer</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/account.css?v=account-light-20260904')) ?>">
-<link rel="stylesheet" href="<?= e(url('/homeserver-settings-v1200.css?v=20260924')) ?>">
+<link rel="stylesheet" href="<?= e(url('/homeserver-settings-v1200.css?v=continuity-permissions-20261007')) ?>">
 <link rel="stylesheet" href="<?= e(url('/homeserver-device-code-v1.css?v=1')) ?>">
 </head>
 <body>
@@ -126,7 +126,7 @@ if (!$user) redirect(url('/login.php'));
   </main>
 </div>
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
-<script src="<?= e(url('/homeserver-settings-v1210.js?v=homeserver-v24-release-acceptance-20260926')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-settings-v1210.js?v=continuity-permissions-20261007')) ?>" defer></script>
 <script src="<?= e(url('/homeserver-device-code-v1.js?v=1')) ?>" defer></script>
 </body>
 </html>

@@ -528,6 +528,7 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
     $previous=(string)($before['connection_state']??'not_connected');
     $reconciliation=function_exists('homeserver_reconciliation_v246_state')
       ?homeserver_reconciliation_v246_state($userId):['needs_reconciliation'=>false];
+    $attemptedReconciliation=false;
 
     if($changed){
         $reconnected=$state==='connected'&&in_array($previous,['connection_error','disconnected'],true);
@@ -599,6 +600,7 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
             }
         }
         if($state==='connected'&&!empty($reconciliation['needs_reconciliation'])){
+            $attemptedReconciliation=true;
             try{
                 homeserver_shared_v210_reconcile_full($userId);
                 if(function_exists('homeserver_reconciliation_v246_state')){
@@ -634,6 +636,7 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
     }
     if(
         $state==='connected'
+        &&!$attemptedReconciliation
         &&!empty($reconciliation['needs_reconciliation'])
         &&function_exists('homeserver_reconciliation_v246_should_retry')
         &&homeserver_reconciliation_v246_should_retry($userId,30)
@@ -641,8 +644,8 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
         try{
             homeserver_shared_v210_reconcile_full($userId);
             $reconciliation=homeserver_reconciliation_v246_state($userId);
-        }catch(Throwable $ignored){
-            $reconciliation=homeserver_reconciliation_v246_state($userId);
+        }catch(Throwable $retryError){
+            $reconciliation=homeserver_reconciliation_v246_mark_required($userId,$retryError->getMessage());
         }
     }
     $reconciling=$state==='connected'&&!empty($reconciliation['needs_reconciliation']);
@@ -650,7 +653,7 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
     $status['agent_brain_status']=[
       'known'=>true,
       'priority'=>in_array($state,['connection_error','disconnected'],true)||$reconcileFailed
-        ?'critical':($reconciling?'watch':($state==='connected'?'normal':'watch')),
+        ?'critical':($reconciling||!empty($reconciliation['last_summary']['unavailable_datasets'])?'watch':($state==='connected'?'normal':'watch')),
       'state'=>$reconciling?'reconciling':$state,
       'connection_state'=>$state,
       'reconciliation_required'=>!empty($reconciliation['needs_reconciliation']),

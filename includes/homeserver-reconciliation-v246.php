@@ -248,6 +248,11 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
               'created'=>$totals['created'],'updated'=>$totals['updated'],'restored'=>$totals['restored'],
               'unchanged'=>$totals['unchanged'],'tombstoned'=>$totals['tombstoned'],'conflicts'=>$totals['conflicts'],
               'datasets'=>$summaries,
+              // Lack of native file permission is explicit partial coverage,
+              // never evidence that the native file store was deleted.
+              'unavailable_datasets'=>!in_array('files',$coverage,true)
+                &&($snapshot['unavailable_datasets']['files']??'')==='permission_required:files.read'
+                  ?['files'=>'permission_required:files.read']:[],
             ];
             $pdo->prepare("INSERT INTO homeserver_reconciliation_state_v246
               (user_id,needs_reconciliation,last_reconciled_at,cloud_revision,homeserver_revision,last_run_id,last_error,last_summary_json)
@@ -289,9 +294,13 @@ function homeserver_reconciliation_v246_should_retry(int $userId,int $minimumSec
       FROM homeserver_reconciliation_runs_v246 WHERE user_id=?
       ORDER BY started_at DESC,id DESC LIMIT 1");
     $s->execute([$userId]);$attempt=(string)($s->fetchColumn()?:'');
-    if($attempt==='')return true;
-    $timestamp=strtotime($attempt.' UTC');
-    return $timestamp===false||$timestamp<=time()-$minimumSeconds;
+    $timestamp=$attempt!==''?strtotime($attempt.' UTC'):false;
+    // Remote authorization/transport failures happen before a run exists.
+    // mark_required persists those failures with a UTC timestamp too.
+    $failure=!empty($state['last_error'])&&!empty($state['last_disconnect_at'])
+      ?strtotime((string)$state['last_disconnect_at'].' UTC'):false;
+    $latest=max($timestamp===false?0:$timestamp,$failure===false?0:$failure);
+    return $latest===0||$latest<=time()-$minimumSeconds;
 }
 
 function homeserver_reconciliation_v246_recent_runs(int $userId,int $limit=20): array
