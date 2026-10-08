@@ -7,6 +7,7 @@ const php=read('api/agent-missions-cloud-v1.php');
 const chat=read('chat.php');
 const js=read('chat-agent-teams-a3.js');
 const css=read('chat-agent-teams-a3.css');
+const brain=read('chat-notifications-drawer-v240.js');
 
 execFileSync('node',['--check',new URL('../chat-agent-teams-a3.js',import.meta.url).pathname],{stdio:'pipe'});
 
@@ -41,6 +42,9 @@ assert.match(js,/window\.confirm/,'require explicit confirmation before replay')
 assert.match(js,/setInterval/,'support live progress refresh');
 assert.match(js,/document\.hidden/,'suspend hidden-tab polling');
 assert.match(js,/aria-live="polite"/,'announcements must be accessible');
+assert.match(brain,/VP3_AGENT_TEAMS_A3_BRAIN/,'must extend the canonical Brain drawer');
+assert.match(js,/window\.VP3_AGENT_TEAMS_A3_BRAIN=renderBrain/,'mission UI must supply Brain renderer');
+assert.match(js,/data-agent-teams-brain-a3/,'Brain mission section must have stable identity');
 assert.match(css,/max-height:/,'bound panel height inside chat');
 assert.match(css,/@media\(max-width:600px\)/,'mobile responsive layout');
 assert.doesNotMatch(js,/innerHTML\s*=\s*(?:[a-zA-Z_$][\w$]*\.)?objective/,'never interpolate user objective into innerHTML');
