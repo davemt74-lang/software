@@ -21,9 +21,12 @@ assert.match(php,/agent\.missions\./,'must use allowlisted operation namespace')
 assert.doesNotMatch(php,/file_get_contents\(['"]https?:/,'no arbitrary network fetch');
 assert.doesNotMatch(php,/api\/v1\/control/,'must not use owner endpoints');
 
-for(const action of ['list','get','create','start','pause','resume','retry','cancel','events']){
+for(const action of ['list','get','create','start','pause','resume','retry','cancel','events','cognition.configure','cognition.evaluate','cognition.decide']){
  assert.match(php,new RegExp("'"+action+"'"),action+' must be allowlisted');
 }
+assert.match(php,/review_id/,'review must be bound to an explicit proposal');
+assert.match(php,/is_bool\(\$input\['approve'\]\)/,'staffing approval must be a genuine boolean');
+assert.match(php,/is_bool\(\$input\['enabled'\]\)/,'auto-review setting must be explicit');
 assert.match(php,/allow_reexecution/,'resume must not replay silently');
 assert.match(php,/request_id/,'create must use idempotency key');
 assert.match(php,/thread_id/,'create must bind to Cloud conversation');
@@ -38,6 +41,8 @@ assert.match(js,/insertBefore\(root,form\)/,'do not replace chat canvas');
 assert.match(js,/window\.crypto\.randomUUID/,'use stable unique creation request key');
 assert.match(js,/textContent/,'render dynamic content without HTML injection');
 assert.match(js,/credentials:'same-origin'/,'never expose relay tokens in browser');
+assert.match(js,/Approve specialists/,'user must explicitly approve new specialists');
+assert.match(js,/cognition\.evaluate/,'user must be able to request a new review');
 assert.match(js,/window\.confirm/,'require explicit confirmation before replay');
 assert.match(js,/setInterval/,'support live progress refresh');
 assert.match(js,/document\.hidden/,'suspend hidden-tab polling');
