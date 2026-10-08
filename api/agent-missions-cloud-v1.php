@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject'],true))
+    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
@@ -67,6 +67,16 @@ try {
             if(($input['confirmed']??null)!==true)
                 throw new RuntimeException('Explicit staffing review confirmation required.',409);
             $payload['decision_id']=$decisionId;
+        }
+        if($action==='bind_provider'){
+            $taskId=trim((string)($input['task_id']??''));
+            if(!preg_match('/^[0-9a-f-]{36}$/i',$taskId))
+                throw new RuntimeException('Task identifier is invalid.',422);
+            $provider=trim((string)($input['provider_key']??''));
+            if(!in_array($provider,['auto','ollama','anthropic','openai','openrouter'],true))
+                throw new RuntimeException('Unrecognized worker inference provider.',422);
+            $payload['task_id']=$taskId;
+            $payload['provider_key']=$provider;
         }
         if($action==='events'){
             $after=$input['after']??0;

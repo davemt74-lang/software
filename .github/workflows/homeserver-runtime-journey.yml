@@ -165,6 +165,7 @@ jobs:
           node --check chat-notifications-drawer-v240.js
           node tests/agent-missions-cloud-a3.mjs
           node tests/agent-missions-cloud-a4.mjs
+          node tests/agent-missions-cloud-a5.mjs
       - name: Lint canonical runtime files
         run: |
           php -l includes/chat-execution-v019.php

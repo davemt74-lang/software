@@ -50,6 +50,7 @@ try {
   await page.locator('[data-agent-teams-a3]>summary').click();
   await page.waitForFunction(()=>document.querySelector('.vp3-teams-list').textContent.includes('Viewing')===false && document.querySelector('.vp3-teams-list').textContent.includes('View'));
   await page.locator('#vp3MissionObjective').fill('Compare three hosting providers');
+  await page.locator('#vp3MissionProvider').selectOption('anthropic');
   await page.locator('.vp3-teams-create button').click();
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='start'));
   await page.waitForFunction(()=>document.querySelector('.vp3-teams-detail h3')?.textContent==='Compare three hosting providers');
@@ -57,6 +58,14 @@ try {
   const createCall=await page.evaluate(()=>window.__calls.find(c=>c.action==='create'));
   assert.equal(createCall.request_id,'a3-browser-request-001');
   assert.equal(createCall.thread_id,27);
+  const a5Calls=await page.evaluate(()=>window.__calls.map(c=>c.action));
+  assert.ok(a5Calls.indexOf('create')<a5Calls.indexOf('bind_provider'));
+  assert.ok(a5Calls.indexOf('bind_provider')<a5Calls.indexOf('start'),
+    'Worker providers must be bound before any worker starts');
+  const a5Bind=await page.evaluate(()=>window.__calls.find(c=>c.action==='bind_provider'));
+  assert.equal(a5Bind.provider_key,'anthropic');
+  assert.equal(a5Bind.task_id,'22222222-2222-4222-8222-222222222222');
+
   assert.equal(await page.locator('#chatForm').count(),1);
   await page.getByRole('button',{name:'Pause'}).click();
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='pause'));
