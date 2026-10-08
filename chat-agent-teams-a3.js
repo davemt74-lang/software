@@ -76,6 +76,35 @@ function showMission(m){
   detail.appendChild(history);}
  showList();
 }
+function renderBrain(body){
+ if(!body)return;
+ const old=body.querySelector('[data-agent-teams-brain-a3]');if(old)old.remove();
+ const section=el('section','chat-activity-section vp3-agent-teams-brain-a3');
+ section.setAttribute('data-agent-teams-brain-a3','');
+ const header=el('div','chat-activity-section-head');
+ const name=el('div','');name.appendChild(el('strong','','HomeServer Agent Teams'));
+ name.appendChild(el('span','','Mission execution · '+(lastRefresh?fmt(new Date(lastRefresh).toISOString()):'not yet synchronized')));
+ header.appendChild(name);
+ const open=btn('Open in Chat','open-team-chat','');open.dataset.action='open-team-chat';open.addEventListener('click',()=>{root.open=true;root.scrollIntoView({block:'nearest'});});header.appendChild(open);
+ section.appendChild(header);
+ const recent=items.slice(0,5);
+ if(!recent.length)section.appendChild(el('p','chat-activity-empty','No HomeServer mission activity is available.'));
+ for(const m of recent){
+  const row=el('div','vp3-teams-brain-row');
+  row.appendChild(el('strong','',m.objective||'Mission'));
+  row.appendChild(el('small','',(m.status||'unknown')+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.tasks||[]).length+' workers'));
+  section.appendChild(row);
+ }
+ body.prepend(section);
+ if(!inflight&&!busy&&Date.now()-lastRefresh>20000){
+  // The canonical Brain drawer can request a fresh mission projection, but
+  // it must not block or replace the drawer's own Brain rendering.
+  lastRefresh=Date.now();
+  load().then(()=>{if(body.isConnected&&body.closest('#chatNotificationDrawer')?.querySelector('[data-notification-tab="brain"].active'))renderBrain(body);})
+    .catch(()=>{});
+ }
+}
+window.VP3_AGENT_TEAMS_A3_BRAIN=renderBrain;
 async function load(){
  if(inflight)return;
  inflight=true;
@@ -86,6 +115,7 @@ async function load(){
  }finally{inflight=false;}
 }
 async function operation(action,id,taskId){
+ if(action==='open-team-chat'){root.open=true;root.scrollIntoView({block:'nearest'});return;}
  if(busy)return;
  if(action==='resume'&&!window.confirm('Resume and rerun interrupted model work?'))return;
  if(action==='retry'&&!window.confirm('Retry this worker? The model request may use additional tokens.'))return;
