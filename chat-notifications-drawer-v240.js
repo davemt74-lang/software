@@ -932,6 +932,9 @@
       return;
     }
     body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : notificationView();
+    if (activeTab === 'brain' && typeof window.VP3_AGENT_TEAMS_A3_BRAIN === 'function') {
+      window.VP3_AGENT_TEAMS_A3_BRAIN(body);
+    }
     updateUnread();
   }
 

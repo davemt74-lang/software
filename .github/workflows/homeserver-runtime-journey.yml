@@ -31,7 +31,7 @@ jobs:
           python3 - <<'PY_SCOPE'
           import os, re, subprocess
           diff = subprocess.run(['git', 'diff', '--name-only', 'HEAD^', 'HEAD'], text=True, capture_output=True)
-          pattern = r'^(chat-homeserver-transcription-import\.js|artist-listening(-workspace\.js|\.php)|includes/artist-listening\.php|api/artist-listening-v172\.php|includes/homeserver-(transcription-import|knowledge-backup).*\.php|api/homeserver-transcription-import.*\.php|tests/transfer.*section7.*|\.github/workflows/homeserver-runtime-journey\.yml)$'
+          pattern = r'^(chat-agent-teams-a3\.(?:js|css)|chat-notifications-drawer-v240\.js|api/agent-missions-cloud-v1\.php|tests/agent-missions-cloud-a3-browser\.mjs|chat-homeserver-transcription-import\.js|artist-listening(-workspace\.js|\.php)|includes/artist-listening\.php|api/artist-listening-v172\.php|includes/homeserver-(transcription-import|knowledge-backup).*\.php|api/homeserver-transcription-import.*\.php|tests/transfer.*section7.*|\.github/workflows/homeserver-runtime-journey\.yml)$'
           changed = diff.returncode != 0 or any(re.match(pattern, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
@@ -52,6 +52,8 @@ jobs:
           npm install --no-save --ignore-scripts playwright@1.62.1
           npx playwright install --with-deps chromium
       - run: node tests/transfer-section7.mjs
+      - name: Agent Teams A3 real browser and Brain drawer acceptance
+        run: node tests/agent-missions-cloud-a3-browser.mjs
   transfer-mysql:
     needs: transfer-scope
     if: needs.transfer-scope.outputs.changed == 'true'
@@ -153,6 +155,13 @@ jobs:
           php -l settings-homeserver.php
           node --check homeserver-device-code-v1.js
           node tests/homeserver-chat-device-code-v1.mjs
+      - name: Agent Teams Cloud mission and Brain acceptance
+        run: |
+          php -l api/agent-missions-cloud-v1.php
+          php -l chat.php
+          node --check chat-agent-teams-a3.js
+          node --check chat-notifications-drawer-v240.js
+          node tests/agent-missions-cloud-a3.mjs
       - name: Lint canonical runtime files
         run: |
           php -l includes/chat-execution-v019.php
