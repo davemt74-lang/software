@@ -138,11 +138,40 @@ function showMission(m){
    livePanel.appendChild(pending);
    livePanel.appendChild(el('p','',proposal.reason||''));
   }
+  const controlProposal=live?.proposed_action;
+  if(controlProposal?.id){
+   const interaction=el('section','vp3-dom-approval');
+   interaction.appendChild(el('strong','','Agent suggests '+controlProposal.kind+': '+controlProposal.label));
+   interaction.appendChild(el('p','vp3-teams-meta',controlProposal.reason||''));
+   if(controlProposal.kind==='fill'){
+    const input=el('input','vp3-dom-approval-value');
+    input.type='text';input.maxLength=300;
+    input.placeholder='Enter text to fill (never sent to the agent)';
+    input.setAttribute('aria-label','Text to fill in '+controlProposal.label);
+    input.dataset.domApprovalTask=t.id;
+    interaction.appendChild(input);
+   }else if(controlProposal.kind==='select'){
+    const selector=el('select','vp3-dom-approval-value');
+    selector.dataset.domApprovalTask=t.id;
+    selector.setAttribute('aria-label','Choose option for '+controlProposal.label);
+    (controlProposal.options||[]).forEach(option=>{
+     const entry=el('option','',option.label);
+     entry.value=String(option.index);selector.appendChild(entry);
+    });
+    interaction.appendChild(selector);
+   }else{
+    interaction.appendChild(el('p','vp3-teams-meta','Requires explicit confirmation. No form submission is allowed.'));
+   }
+   interaction.appendChild(btn('Approve safe control','browser.action.approve',selected,t.id));
+   livePanel.appendChild(interaction);
+  }
   const liveActions=el('div','vp3-teams-actions');
   if(m.status==='planned'&&t.status==='queued'&&state?.status==='approved'&&!live?.session_active)
    liveActions.appendChild(btn('Start live browser','browser.live.start',selected,t.id));
   if(live?.session_active){
    liveActions.appendChild(btn('Refresh live view','browser.live.refresh',selected,t.id));
+   if(m.status==='planned'&&t.status==='queued'&&(live.actions_used||0)<(live.max_actions||6))
+    liveActions.appendChild(btn('Ask agent about page controls','browser.action.propose',selected,t.id));
    if(live.visit_count<live.max_visits&&m.status==='planned'){
     liveActions.appendChild(btn('Ask agent for next link','browser.live.propose',selected,t.id));
     if(proposal?.id)liveActions.appendChild(btn('Approve suggested navigation','browser.live.approve',selected,t.id));
@@ -255,10 +284,25 @@ async function operation(action,id,taskId){
  if(action==='browser.revoke'&&!window.confirm('Revoke this worker browser and erase its stored snapshot?'))return;
  if(action==='browser.live.start'&&!window.confirm('Open an isolated 10-minute browser session on this approved HTTPS origin?'))return;
  if(action==='browser.live.approve'&&!window.confirm('Approve the agent-suggested link? Navigation will remain read-only on the approved origin.'))return;
+ if(action==='browser.action.approve'&&!window.confirm('Approve this exact non-submitting browser control action? Text is supplied only by you.'))return;
  setBusy(true);
  try{const payload={mission_id:id};if(action==='resume')payload.allow_reexecution=true;
   if(action==='retry')payload.task_id=taskId;
-  if(action.startsWith('browser.live.')){
+  if(action.startsWith('browser.action.')){
+   payload.task_id=taskId;
+   if(action==='browser.action.approve'){
+    const proposal=liveByWorker.get(id+'|'+taskId)?.proposed_action;
+    if(!proposal?.id)throw new Error('Safe-control proposal expired or missing.');
+    payload.proposal_id=proposal.id;payload.confirmed=true;
+    if(proposal.kind==='fill'||proposal.kind==='select'){
+     const field=Array.from(detail.querySelectorAll('[data-dom-approval-task]'))
+       .find(node=>node.dataset.domApprovalTask===taskId);
+     if(!field)throw new Error('Choose a value before approving this action.');
+     payload.value=proposal.kind==='fill'?field.value:Number(field.value);
+    }else payload.value=true;
+   }
+   say('Applying the explicitly approved safe page control…');
+  }else if(action.startsWith('browser.live.')){
    payload.task_id=taskId;
    if(action==='browser.live.approve'){
     const proposed=liveByWorker.get(id+'|'+taskId)?.proposed_link;
@@ -350,6 +394,9 @@ window.setInterval(()=>{
  if(!openPane)return;
  const wrapper=openPane.closest('.vp3-worker-browser'),tid=wrapper?.dataset.browserWorker;
  if(!tid||!selected||!liveByWorker.get(selected+'|'+tid)?.session_active)return;
+ // Do not invalidate a model proposal or discard an owner-entered field value
+ // while the explicit approval form is open.
+ if(liveByWorker.get(selected+'|'+tid)?.proposed_action?.id)return;
  liveLastPoll=Date.now();
  api('browser.live.refresh',{mission_id:selected,task_id:tid}).then(result=>{
   if(result.live_browser){liveByWorker.set(selected+'|'+tid,result.live_browser);

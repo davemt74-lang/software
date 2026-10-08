@@ -168,6 +168,7 @@ jobs:
           node tests/agent-missions-cloud-a5.mjs
           node tests/agent-missions-cloud-a5b.mjs
           node tests/agent-missions-cloud-a5b2.mjs
+          node tests/agent-missions-cloud-a5b3.mjs
       - name: Lint canonical runtime files
         run: |
           php -l includes/chat-execution-v019.php

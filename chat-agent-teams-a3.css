@@ -64,3 +64,8 @@
 .vp3-agent-teams-a3 .vp3-worker-live>strong{display:block;margin-bottom:6px}
 .vp3-agent-teams-a3 .vp3-worker-live-preview{display:block;width:100%;height:auto;max-width:960px;max-height:320px;object-fit:contain;border:1px solid var(--border,#394252);border-radius:8px}
 .vp3-agent-teams-a3 .vp3-worker-live .vp3-teams-meta{overflow-wrap:anywhere}
+
+.vp3-agent-teams-a3 .vp3-dom-approval{border:1px solid var(--border,#394252);border-radius:8px;padding:10px;margin:9px 0;min-width:0}
+.vp3-agent-teams-a3 .vp3-dom-approval strong{display:block;font-size:12px;margin-bottom:5px}
+.vp3-agent-teams-a3 .vp3-dom-approval-value{box-sizing:border-box;display:block;width:100%;max-width:350px;border:1px solid var(--border,#394252);border-radius:6px;padding:8px;margin:6px 0;color:inherit;background:var(--surface-secondary,#252c39)}
+.vp3-agent-teams-a3 .vp3-dom-approval-value:focus-visible{outline:2px solid #8fb8f2;outline-offset:2px}
