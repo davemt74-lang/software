@@ -19,7 +19,7 @@ root.innerHTML='<summary><span aria-hidden="true">◉</span> Agent Teams <small>
  '<option value="auto">HomeServer default</option><option value="ollama">Ollama (local)</option>'+
  '<option value="anthropic">Claude / Anthropic</option><option value="openai">OpenAI</option>'+
  '<option value="openrouter">OpenRouter</option></select>'+
- '<small class="vp3-teams-provider-note">Model tools and write actions remain disabled. Browsers require separate, explicit approval.</small>'+
+ '<small class="vp3-teams-provider-note">Workers use isolated model-only contexts; read-only browser evidence requires separate approval. No model tools or write actions.</small>'+
  '<label class="vp3-teams-browser-optin"><input type="checkbox" name="prepare_only"> Prepare mission first — approve browser pages for individual workers before starting</label></form>'+
  '<div class="vp3-teams-status" role="status" aria-live="polite">Open to load missions.</div>'+
  '<div class="vp3-teams-list" aria-label="Recent missions"></div>'+
@@ -57,6 +57,8 @@ function showList(){
  }
 }
 function showMission(m){
+ const openBrowsers=new Set(Array.from(detail.querySelectorAll('.vp3-worker-browser[open]'))
+   .map(pane=>pane.dataset.browserWorker));
  selected=String(m.id||'');detail.hidden=false;detail.replaceChildren();
  detail.appendChild(el('h3','',m.objective||'Mission'));
  detail.appendChild(el('p','vp3-teams-meta',(m.status||'unknown')+' · '+fmt(m.updated_at||m.created_at)+' · Read-only workers'));
@@ -75,6 +77,8 @@ function showMission(m){
   if(t.result){const exp=el('details','vp3-teams-result');exp.appendChild(el('summary','','Worker result'));
    exp.appendChild(el('pre','',t.result));li.appendChild(exp);}
   const browser=el('details','vp3-worker-browser');
+  browser.dataset.browserWorker=t.id;
+  browser.open=openBrowsers.has(t.id);
   browser.appendChild(el('summary','','Worker browser · supervised read-only'));
   const area=el('div','vp3-worker-browser-body');
   const key=selected+'|'+t.id;
