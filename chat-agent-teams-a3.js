@@ -13,7 +13,8 @@ root.innerHTML='<summary><span aria-hidden="true">◉</span> Agent Teams <small>
  '<form class="vp3-teams-create"><label for="vp3MissionObjective">Mission objective</label>'+
  '<div class="vp3-teams-entry"><input id="vp3MissionObjective" name="objective" maxlength="4000" required '+
  'placeholder="Give the team a research objective…" autocomplete="off">'+
- '<button type="submit">Create &amp; run</button></div></form>'+
+ '<button type="submit">Create &amp; run</button></div>'+
+ '<label class="vp3-teams-autoreview"><input type="checkbox" name="auto_review"> Automatically review finished work and suggest additional specialists (approval required)</label></form>'+
  '<div class="vp3-teams-status" role="status" aria-live="polite">Open to load missions.</div>'+
  '<div class="vp3-teams-list" aria-label="Recent missions"></div>'+
  '<section class="vp3-teams-detail" aria-label="Selected mission" hidden></section></div>';
@@ -168,11 +169,17 @@ create.addEventListener('submit',async ev=>{
  if(!request_id){say('Secure request IDs are unavailable in this browser.');return;}
  const raw=Number((window.STONEFELLOW_CHAT||{}).initialConversationId||0);
  const thread_id=Number.isSafeInteger(raw)&&raw>0&&raw<2147483648?raw:0;
+ const auto_review=Boolean(create.querySelector('input[name="auto_review"]')?.checked);
  setBusy(true);say('Creating worker mission…');
  try{
   const created=await api('create',{objective,request_id,thread_id});
   const mid=created.mission&&created.mission.id;if(!mid)throw new Error('Mission ID was not returned.');
-  selected=mid;input.value='';showMission(created.mission);say('Starting workers…');
+  selected=mid;input.value='';showMission(created.mission);
+  if(auto_review){
+   say('Enabling supervised review…');
+   await api('cognition.configure',{mission_id:mid,enabled:true});
+  }
+  say('Starting workers…');
   await api('start',{mission_id:mid});await load();
  }catch(e){say(e.message||'Mission creation failed. Refresh mission history before retrying.');}
  finally{setBusy(false);}
