@@ -13,7 +13,13 @@ root.innerHTML='<summary><span aria-hidden="true">◉</span> Agent Teams <small>
  '<form class="vp3-teams-create"><label for="vp3MissionObjective">Mission objective</label>'+
  '<div class="vp3-teams-entry"><input id="vp3MissionObjective" name="objective" maxlength="4000" required '+
  'placeholder="Give the team a research objective…" autocomplete="off">'+
- '<button type="submit">Create &amp; run</button></div></form>'+
+ '<button type="submit">Create &amp; run</button></div>'+
+ '<label class="vp3-provider-label" for="vp3MissionProvider">Initial worker model</label>'+
+ '<select id="vp3MissionProvider" name="provider_key">'+
+ '<option value="auto">HomeServer default</option><option value="ollama">Ollama (local)</option>'+
+ '<option value="anthropic">Claude / Anthropic</option><option value="openai">OpenAI</option>'+
+ '<option value="openrouter">OpenRouter</option></select>'+
+ '<small class="vp3-teams-provider-note">Workers use isolated model-only contexts. No tool or browser access.</small></form>'+
  '<div class="vp3-teams-status" role="status" aria-live="polite">Open to load missions.</div>'+
  '<div class="vp3-teams-list" aria-label="Recent missions"></div>'+
  '<section class="vp3-teams-detail" aria-label="Selected mission" hidden></section></div>';
@@ -61,7 +67,7 @@ function showMission(m){
  const workers=el('ol','vp3-teams-workers');
  (m.tasks||[]).forEach(t=>{
   const li=el('li','');li.appendChild(el('strong','',t.title||t.role||'Worker'));
-  li.appendChild(el('small','',(t.role||'specialist')+' · '+(t.status||'queued')+' · '+fmt(t.completed_at||t.started_at)));
+  li.appendChild(el('small','',(t.role||'specialist')+' · '+(t.status||'queued')+(t.model?' · '+t.model:'')+' · '+fmt(t.completed_at||t.started_at)));
   if(t.error)li.appendChild(el('p','vp3-teams-error',t.error));
   if(['failed','partial','waiting_review'].includes(m.status)&&['failed','interrupted'].includes(t.status)&&t.error!=='Dependency failed')li.appendChild(btn('Retry worker','retry',selected,t.id));
   if(t.result){const exp=el('details','vp3-teams-result');exp.appendChild(el('summary','','Worker result'));
@@ -200,7 +206,15 @@ create.addEventListener('submit',async ev=>{
  try{
   const created=await api('create',{objective,request_id,thread_id});
   const mid=created.mission&&created.mission.id;if(!mid)throw new Error('Mission ID was not returned.');
-  selected=mid;input.value='';showMission(created.mission);say('Starting workers…');
+  selected=mid;input.value='';showMission(created.mission);
+  const preferred=String(create.querySelector('[name="provider_key"]')?.value||'auto');
+  if(preferred!=='auto'){
+   const workers=Array.isArray(created.mission.tasks)?created.mission.tasks:[];
+   if(!workers.length)throw new Error('Mission has no configurable workers.');
+   say('Configuring '+workers.length+' worker models…');
+   for(const task of workers){await api('bind_provider',{mission_id:mid,task_id:task.id,provider_key:preferred});}
+  }
+  say('Starting workers…');
   await api('start',{mission_id:mid});await load();
  }catch(e){say(e.message||'Mission creation failed. Refresh mission history before retrying.');}
  finally{setBusy(false);}
