@@ -473,7 +473,7 @@ window.setInterval(()=>{
  if(!tid||!selected||!liveByWorker.get(selected+'|'+tid)?.session_active)return;
  // Do not invalidate a model proposal or discard an owner-entered field value
  // while the explicit approval form is open.
- if(liveByWorker.get(selected+'|'+tid)?.proposed_action?.id)return;
+ if(liveByWorker.get(selected+'|'+tid)?.proposed_action?.id||liveByWorker.get(selected+'|'+tid)?.owner_takeover?.mode==='owner')return;
  liveLastPoll=Date.now();
  api('browser.live.refresh',{mission_id:selected,task_id:tid}).then(result=>{
   if(result.live_browser){liveByWorker.set(selected+'|'+tid,result.live_browser);
