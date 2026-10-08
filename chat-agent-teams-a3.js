@@ -123,7 +123,8 @@ function renderBrain(body){
  for(const m of recent){
   const row=el('div','vp3-teams-brain-row');
   row.appendChild(el('strong','',m.objective||'Mission'));
-  row.appendChild(el('small','',(m.status||'unknown')+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.tasks||[]).length+' workers'));
+  row.appendChild(el('small','',(m.status||'unknown')+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.tasks||[]).length+' workers'+
+   ((staffingByMission.get(m.id)||[]).some(p=>p.status==='proposed')?' · Staffing approval needed':'')));
   section.appendChild(row);
  }
  body.prepend(section);
