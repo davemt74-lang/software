@@ -32,12 +32,13 @@ let busy=false,selected='',items=[],lastRefresh=0,inflight=false;
 const staffingByMission=new Map();
 const browserByWorker=new Map();
 const liveByWorker=new Map();let liveLastPoll=0;
+const pendingOperations=new Map();let statusInflight=false,viewGeneration=0;
 function el(tag,cls,txt){const x=document.createElement(tag);if(cls)x.className=cls;if(txt!==undefined)x.textContent=String(txt);return x;}
 function btn(name,action,id,taskId){const x=el('button','',name);x.type='button';x.dataset.action=action;if(id)x.dataset.id=id;if(taskId)x.dataset.taskId=taskId;x.disabled=busy;return x;}
 function fmt(value){if(!value)return '—';const raw=String(value).trim();
  const valueUtc=/(Z|[+-]\d\d:\d\d)$/.test(raw)?raw:raw.replace(' ','T')+'Z';
  const parsed=new Date(valueUtc);return Number.isNaN(parsed.getTime())?raw:parsed.toLocaleString();}
-function setBusy(value){busy=Boolean(value);submit.disabled=busy;root.querySelectorAll('button[data-action]').forEach(b=>b.disabled=busy);}
+function setBusy(value){busy=Boolean(value);if(busy)viewGeneration++;submit.disabled=busy;root.querySelectorAll('button[data-action]').forEach(b=>b.disabled=busy);}
 function say(message){status.textContent=String(message);}
 async function api(action,extra){
  const response=await fetch(String(cfg.endpoint),{method:'POST',credentials:'same-origin',cache:'no-store',
@@ -57,7 +58,9 @@ function showList(){
   row.appendChild(main);row.appendChild(btn(selected===item.id?'Viewing':'View','get',item.id));list.appendChild(row);
  }
 }
+function draftKey(node){return ['ownerValueTask','ownerControlTask','ownerSearchTask','domApprovalTask','browserTask'].map(k=>node.dataset[k]?k+'|'+node.dataset[k]:'').join('');}
 function showMission(m){
+ const draftValues=new Map(Array.from(detail.querySelectorAll('input[data-owner-value-task],select[data-owner-control-task],select[data-owner-search-task],input[data-dom-approval-task],select[data-dom-approval-task],input[data-browser-task]')).map(node=>[draftKey(node),node.value]));
  const openBrowsers=new Set(Array.from(detail.querySelectorAll('.vp3-worker-browser[open]'))
    .map(pane=>pane.dataset.browserWorker));
  selected=String(m.id||'');detail.hidden=false;detail.replaceChildren();
@@ -200,8 +203,10 @@ function showMission(m){
      takeover.appendChild(pick);
      takeover.appendChild(btn('Review GET search','browser.owner.search.review',selected,t.id));
     }
-    if(owner.pending_form?.id){
-     takeover.appendChild(el('p','vp3-teams-meta','Search destination: '+owner.pending_form.action));
+    if(owner.pending_form?.id&&owner.review?.id===owner.pending_form.id){
+     takeover.appendChild(el('p','vp3-teams-meta','Search destination: '+owner.review.destination));
+     takeover.appendChild(el('p','vp3-teams-meta','Exact query: '+owner.review.query));
+     takeover.appendChild(el('p','vp3-teams-meta','Required fields: '+(owner.review.required_fields||[]).map(f=>f.name+' '+(f.valid?'valid':'missing')).join(', ')));
      takeover.appendChild(el('p','vp3-teams-meta','Your search query will appear in the destination URL. No POST actions.'));
      takeover.appendChild(btn('Confirm search submission','browser.owner.search.submit',selected,t.id));
     }
@@ -218,11 +223,17 @@ function showMission(m){
     liveActions.appendChild(btn('Ask agent about page controls','browser.action.propose',selected,t.id));
    if(owner.mode!=='owner'&&live.visit_count<live.max_visits&&m.status==='planned'){
     liveActions.appendChild(btn('Ask agent for next link','browser.live.propose',selected,t.id));
+    if(live.plan?.status!=='running')liveActions.appendChild(btn('Run browser plan','browser.live.plan',selected,t.id));
     if(proposal?.id)liveActions.appendChild(btn('Approve suggested navigation','browser.live.approve',selected,t.id));
    }
    liveActions.appendChild(btn('Stop live browser','browser.live.stop',selected,t.id));
   }else if(state?.status==='approved'){
    liveActions.appendChild(btn('View live status','browser.live.get',selected,t.id));
+  }
+  if(live?.plan?.status&&live.plan.status!=='idle'){
+   livePanel.appendChild(el('p','vp3-teams-meta','Browser plan: '+live.plan.status.replaceAll('_',' ')));
+   if(live.plan.status==='waiting_approval')livePanel.appendChild(el('p','','Agent prepared a search. Take control to review required fields and approve the exact submission.'));
+   (live.plan.history||[]).forEach(step=>livePanel.appendChild(el('p','vp3-teams-meta',step.kind+' · '+step.outcome)));
   }
   livePanel.appendChild(liveActions);
   area.appendChild(livePanel);
@@ -266,6 +277,7 @@ function showMission(m){
  if(events.length){detail.appendChild(el('h4','','Recent activity'));const history=el('ol','vp3-teams-events');
   events.forEach(e=>history.appendChild(el('li','',fmt(e.created_at)+' · '+(e.kind||'event'))));
   detail.appendChild(history);}
+ detail.querySelectorAll('input[data-owner-value-task],select[data-owner-control-task],select[data-owner-search-task],input[data-dom-approval-task],select[data-dom-approval-task],input[data-browser-task]').forEach(node=>{const value=draftValues.get(draftKey(node));if(value!==undefined)node.value=value;});
  showList();
 }
 function renderBrain(body){
@@ -288,6 +300,28 @@ function renderBrain(body){
   row.appendChild(el('small','',(m.status||'unknown')+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.tasks||[]).length+' workers'+
    (owned?' · Owner controlling browser':'')+
    ((staffingByMission.get(m.id)||[]).some(p=>p.status==='proposed')?' · Staffing approval needed':'')));
+  for(const task of m.tasks||[]){
+   const view=liveByWorker.get(m.id+'|'+task.id);
+   const worker=el('details','vp3-brain-worker');
+   worker.appendChild(el('summary','',task.title||task.role||'Worker'));
+   worker.appendChild(el('p','vp3-teams-meta',(task.status||'queued')+' · '+fmt(view?.updated_at||task.started_at)));
+   if(view){
+    worker.appendChild(el('p','','Viewing: '+(view.page_title||'Untitled')+' · '+(view.current_url||'')));
+    worker.appendChild(el('p','','Control: '+(view.owner_takeover?.mode||'agent')+' · Approval: '+(view.owner_takeover?.pending_form?.id?'form awaiting confirmation':view.proposed_action?.id||view.proposed_link?.id?'action awaiting approval':view.plan?.status==='running'?'approved read plan':'none pending')));
+    const proposal=view.proposed_action||{};
+    const next=view.proposed_link||{};
+    worker.appendChild(el('p','','Proposed action: '+(proposal.label||next.title||view.plan?.status||'none')));
+    worker.appendChild(el('p','vp3-teams-meta','Evidence captured: '+fmt(view.screenshot_at)));
+    if(view.image_base64&&/^[A-Za-z0-9+/=]{100,200000}$/.test(view.image_base64)){
+     const preview=el('img','vp3-worker-browser-preview');preview.alt='Evidence for '+(task.title||'worker');preview.src='data:image/jpeg;base64,'+view.image_base64;worker.appendChild(preview);
+    }
+    const evidence=el('details','vp3-teams-result');evidence.appendChild(el('summary','','Page evidence'));evidence.appendChild(el('pre','',view.page_text||'No page evidence.'));worker.appendChild(evidence);
+   }else worker.appendChild(el('p','','No active browser evidence.'));
+   (m.events||[]).filter(e=>e.task_id===task.id).slice(-10).forEach(e=>worker.appendChild(el('p','vp3-teams-meta',fmt(e.created_at)+' · '+e.kind)));
+   const openWorker=btn('Open worker in Chat','open-team-chat',m.id,task.id);
+   openWorker.addEventListener('click',()=>operation('open-team-chat',m.id,task.id));worker.appendChild(openWorker);
+   row.appendChild(worker);
+  }
   section.appendChild(row);
  }
  body.prepend(section);
@@ -300,6 +334,7 @@ function renderBrain(body){
  }
 }
 window.VP3_AGENT_TEAMS_A3_BRAIN=renderBrain;
+window.VP3_AGENT_TEAMS_A5B4_STATUS=pollBrowserStatus;
 async function loadSupervision(mid){
  const result=await api('decisions',{mission_id:mid});
  const records=Array.isArray(result.items)?result.items:[];
@@ -320,7 +355,7 @@ async function load(){
  }finally{inflight=false;}
 }
 async function operation(action,id,taskId){
- if(action==='open-team-chat'){root.open=true;root.scrollIntoView({block:'nearest'});return;}
+ if(action==='open-team-chat'){root.open=true;root.scrollIntoView({block:'nearest'});if(id)operation('get',id,taskId);return;}
  if(busy)return;
  if(action==='resume'&&!window.confirm('Resume and rerun interrupted model work?'))return;
  if(action==='retry'&&!window.confirm('Retry this worker? The model request may use additional tokens.'))return;
@@ -329,6 +364,7 @@ async function operation(action,id,taskId){
  if(action==='browser.grant'&&!window.confirm('Approve this read-only HTTPS origin for the selected worker for 15 minutes?'))return;
  if(action==='browser.revoke'&&!window.confirm('Revoke this worker browser and erase its stored snapshot?'))return;
  if(action==='browser.live.start'&&!window.confirm('Open an isolated 10-minute browser session on this approved HTTPS origin?'))return;
+ if(action==='browser.live.plan'&&!window.confirm('Allow up to three read steps on this approved origin? Forms stop for your review; purchases, messages and publishing remain blocked.'))return;
  if(action==='browser.live.approve'&&!window.confirm('Approve the agent-suggested link? Navigation will remain read-only on the approved origin.'))return;
  if(action==='browser.action.approve'&&!window.confirm('Approve this exact non-submitting browser control action? Text is supplied only by you.'))return;
  if(action==='browser.owner.takeover'&&!window.confirm('Take exclusive control for up to five minutes and pause the agent?'))return;
@@ -342,6 +378,7 @@ async function operation(action,id,taskId){
    payload.task_id=taskId;
    const current=liveByWorker.get(id+'|'+taskId)||{};
    const takeover=current.owner_takeover||{};
+   if(action!=='browser.owner.takeover'){if(!takeover.lease_id)throw new Error('Owner lease expired. Refresh browser status.');payload.lease_id=takeover.lease_id;}
    if(action==='browser.owner.control'){
     const pick=Array.from(detail.querySelectorAll('[data-owner-control-task]'))
       .find(x=>x.dataset.ownerControlTask===taskId);
@@ -352,6 +389,8 @@ async function operation(action,id,taskId){
       .find(x=>x.dataset.ownerValueTask===taskId)?.value||'';
     payload.value=item.kind==='fill'?value:item.kind==='select'?Number(value):true;
     payload.confirmed=true;
+    const key=id+'|'+taskId+'|'+JSON.stringify(payload);
+    payload.request_id=pendingOperations.get(key)||window.crypto.randomUUID();pendingOperations.set(key,payload.request_id);
    }
    if(action==='browser.owner.search.review'){
     const pick=Array.from(detail.querySelectorAll('[data-owner-search-task]'))
@@ -361,7 +400,7 @@ async function operation(action,id,taskId){
     payload.index=form.index;payload.fingerprint=form.fingerprint;
    }
    if(action==='browser.owner.search.submit'){
-    if(!takeover.pending_form?.id)throw new Error('Search review has expired.');
+    if(!takeover.pending_form?.id||takeover.review?.id!==takeover.pending_form.id)throw new Error('Search review has expired.');
     payload.proposal_id=takeover.pending_form.id;payload.confirmed=true;
    }
    say('Updating owner browser controls…');
@@ -381,6 +420,7 @@ async function operation(action,id,taskId){
    say('Applying the explicitly approved safe page control…');
   }else if(action.startsWith('browser.live.')){
    payload.task_id=taskId;
+   if(action==='browser.live.plan'){const key=id+'|'+taskId+'|plan';payload.request_id=pendingOperations.get(key)||window.crypto.randomUUID();pendingOperations.set(key,payload.request_id);payload.confirmed=true;}
    if(action==='browser.live.approve'){
     const proposed=liveByWorker.get(id+'|'+taskId)?.proposed_link;
     if(!proposed?.id)throw new Error('No current agent navigation proposal.');
@@ -406,6 +446,7 @@ async function operation(action,id,taskId){
   }
   if(action==='approve'||action==='reject'){payload.decision_id=taskId;payload.confirmed=true;}
   const response=await api(action,payload);
+  if(payload.request_id)for(const [key,value] of pendingOperations)if(value===payload.request_id)pendingOperations.delete(key);
   if(response.live_browser!==undefined){
    const key=id+'|'+taskId;
    if(response.live_browser)liveByWorker.set(key,response.live_browser);
@@ -465,25 +506,29 @@ create.addEventListener('submit',async ev=>{
  }catch(e){say(e.message||'Mission creation failed. Refresh mission history before retrying.');}
  finally{setBusy(false);}
 });
-window.setInterval(()=>{
- if(document.hidden||!root.open||busy||Date.now()-liveLastPoll<8500)return;
- const openPane=detail.querySelector('.vp3-worker-browser[open] [data-live-browser]');
- if(!openPane)return;
- const wrapper=openPane.closest('.vp3-worker-browser'),tid=wrapper?.dataset.browserWorker;
- if(!tid||!selected||!liveByWorker.get(selected+'|'+tid)?.session_active)return;
- // Do not invalidate a model proposal or discard an owner-entered field value
- // while the explicit approval form is open.
- if(liveByWorker.get(selected+'|'+tid)?.proposed_action?.id||liveByWorker.get(selected+'|'+tid)?.owner_takeover?.mode==='owner')return;
- liveLastPoll=Date.now();
- api('browser.live.refresh',{mission_id:selected,task_id:tid}).then(result=>{
-  if(result.live_browser){liveByWorker.set(selected+'|'+tid,result.live_browser);
-   const selectedMission=items.find(x=>x.id===selected);
-   if(selectedMission)api('get',{mission_id:selected}).then(detailResult=>{
-    if(detailResult.mission)showMission(detailResult.mission);
-   }).catch(()=>{});
+async function pollBrowserStatus(){
+ if(statusInflight||busy||document.hidden)return;
+ const brain=document.querySelector('#chatNotificationDrawer [data-agent-teams-brain-a3]');
+ if(!root.open&&!brain)return;
+ statusInflight=true;
+ const generation=viewGeneration;
+ try{
+  const missions=items.slice(0,5);
+  for(const m of missions){
+   if(busy)break;
+   const full=await api('get',{mission_id:m.id});
+   if(full.mission){const idx=items.findIndex(x=>x.id===m.id);if(idx>=0)items[idx]=full.mission;}
+   for(const task of (full.mission?.tasks||m.tasks||[]).slice(0,6)){
+    const response=await api('browser.live.get',{mission_id:m.id,task_id:task.id});
+    if(busy||generation!==viewGeneration)return;
+    if(response.live_browser)liveByWorker.set(m.id+'|'+task.id,response.live_browser);
+    else liveByWorker.delete(m.id+'|'+task.id);
+   }
   }
- }).catch(()=>{});
-},9000);
+  if(!busy){const current=items.find(x=>x.id===selected);if(current)showMission(current);if(brain?.parentNode)renderBrain(brain.parentNode);}
+ }catch(_){/* Preserve drafts on transient relay failures. */}finally{statusInflight=false;}
+}
+window.setInterval(pollBrowserStatus,9000);
 window.setInterval(()=>{
  if(document.hidden||!root.open||busy||Date.now()-lastRefresh<15000)return;
  load().catch(e=>say(e.message||'HomeServer unavailable.'));
