@@ -165,14 +165,58 @@ function showMission(m){
    interaction.appendChild(btn('Approve safe control','browser.action.approve',selected,t.id));
    livePanel.appendChild(interaction);
   }
+  const owner=live?.owner_takeover||{mode:'agent',actions_used:0,max_actions:8,forms:[]};
+  const takeover=el('section','vp3-owner-takeover');
+  takeover.appendChild(el('strong','',owner.mode==='owner'?'Owner controlling browser':'Owner takeover'));
+  takeover.appendChild(el('p','vp3-teams-meta',owner.mode==='owner'?
+   'Agent paused · '+owner.actions_used+'/'+owner.max_actions+' actions · until '+fmt(owner.expires_at):
+   'Take exclusive control for up to five minutes; agent proposals pause.'));
+  if(live?.session_active&&m.status==='planned'&&t.status==='queued'){
+   if(owner.mode==='owner'){
+    const safe=Array.isArray(live.controls)?live.controls:[];
+    if(safe.length){
+     const pick=el('select','vp3-owner-control-select');
+     pick.dataset.ownerControlTask=t.id;
+     pick.setAttribute('aria-label','Select safe browser control');
+     safe.forEach(item=>{
+      const opt=el('option','',item.label+' ('+item.kind+')');
+      opt.value=String(item.index);pick.appendChild(opt);
+     });
+     takeover.appendChild(pick);
+     const entered=el('input','vp3-owner-control-value');
+     entered.type='text';entered.maxLength=300;
+     entered.placeholder='Text or select option number';
+     entered.setAttribute('aria-label','Value for selected browser control');
+     entered.dataset.ownerValueTask=t.id;
+     takeover.appendChild(entered);
+     takeover.appendChild(btn('Apply owner control','browser.owner.control',selected,t.id));
+    }
+    const available=Array.isArray(owner.forms)?owner.forms:[];
+    if(available.length){
+     const pick=el('select','vp3-owner-search-select');
+     pick.dataset.ownerSearchTask=t.id;pick.setAttribute('aria-label','Safe GET search form');
+     available.forEach(f=>{const opt=el('option','',f.label+' · GET '+f.action);
+      opt.value=String(f.index);pick.appendChild(opt);});
+     takeover.appendChild(pick);
+     takeover.appendChild(btn('Review GET search','browser.owner.search.review',selected,t.id));
+    }
+    if(owner.pending_form?.id){
+     takeover.appendChild(el('p','vp3-teams-meta','Search destination: '+owner.pending_form.action));
+     takeover.appendChild(el('p','vp3-teams-meta','Your search query will appear in the destination URL. No POST actions.'));
+     takeover.appendChild(btn('Confirm search submission','browser.owner.search.submit',selected,t.id));
+    }
+    takeover.appendChild(btn('Return control to agent','browser.owner.release',selected,t.id));
+   }else takeover.appendChild(btn('Take control','browser.owner.takeover',selected,t.id));
+  }
+  livePanel.appendChild(takeover);
   const liveActions=el('div','vp3-teams-actions');
   if(m.status==='planned'&&t.status==='queued'&&state?.status==='approved'&&!live?.session_active)
    liveActions.appendChild(btn('Start live browser','browser.live.start',selected,t.id));
   if(live?.session_active){
    liveActions.appendChild(btn('Refresh live view','browser.live.refresh',selected,t.id));
-   if(m.status==='planned'&&t.status==='queued'&&(live.actions_used||0)<(live.max_actions||6))
+   if(owner.mode!=='owner'&&m.status==='planned'&&t.status==='queued'&&(live.actions_used||0)<(live.max_actions||6))
     liveActions.appendChild(btn('Ask agent about page controls','browser.action.propose',selected,t.id));
-   if(live.visit_count<live.max_visits&&m.status==='planned'){
+   if(owner.mode!=='owner'&&live.visit_count<live.max_visits&&m.status==='planned'){
     liveActions.appendChild(btn('Ask agent for next link','browser.live.propose',selected,t.id));
     if(proposal?.id)liveActions.appendChild(btn('Approve suggested navigation','browser.live.approve',selected,t.id));
    }
@@ -240,7 +284,9 @@ function renderBrain(body){
  for(const m of recent){
   const row=el('div','vp3-teams-brain-row');
   row.appendChild(el('strong','',m.objective||'Mission'));
+  const owned=[...liveByWorker.entries()].some(([k,v])=>k.startsWith(m.id+'|')&&v?.owner_takeover?.mode==='owner');
   row.appendChild(el('small','',(m.status||'unknown')+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.tasks||[]).length+' workers'+
+   (owned?' · Owner controlling browser':'')+
    ((staffingByMission.get(m.id)||[]).some(p=>p.status==='proposed')?' · Staffing approval needed':'')));
   section.appendChild(row);
  }
@@ -285,10 +331,41 @@ async function operation(action,id,taskId){
  if(action==='browser.live.start'&&!window.confirm('Open an isolated 10-minute browser session on this approved HTTPS origin?'))return;
  if(action==='browser.live.approve'&&!window.confirm('Approve the agent-suggested link? Navigation will remain read-only on the approved origin.'))return;
  if(action==='browser.action.approve'&&!window.confirm('Approve this exact non-submitting browser control action? Text is supplied only by you.'))return;
+ if(action==='browser.owner.takeover'&&!window.confirm('Take exclusive control for up to five minutes and pause the agent?'))return;
+ if(action==='browser.owner.release'&&!window.confirm('Return browser control to the agent?'))return;
+ if(action==='browser.owner.control'&&!window.confirm('Apply this selected safe browser control yourself?'))return;
+ if(action==='browser.owner.search.submit'&&!window.confirm('Submit this one approved same-origin GET search? Its query appears in the URL.'))return;
  setBusy(true);
  try{const payload={mission_id:id};if(action==='resume')payload.allow_reexecution=true;
   if(action==='retry')payload.task_id=taskId;
-  if(action.startsWith('browser.action.')){
+  if(action.startsWith('browser.owner.')){
+   payload.task_id=taskId;
+   const current=liveByWorker.get(id+'|'+taskId)||{};
+   const takeover=current.owner_takeover||{};
+   if(action==='browser.owner.control'){
+    const pick=Array.from(detail.querySelectorAll('[data-owner-control-task]'))
+      .find(x=>x.dataset.ownerControlTask===taskId);
+    const item=(current.controls||[]).find(x=>x.index===Number(pick?.value));
+    if(!item)throw new Error('Select a safe browser control.');
+    payload.index=item.index;payload.fingerprint=item.fingerprint;payload.kind=item.kind;
+    const value=Array.from(detail.querySelectorAll('[data-owner-value-task]'))
+      .find(x=>x.dataset.ownerValueTask===taskId)?.value||'';
+    payload.value=item.kind==='fill'?value:item.kind==='select'?Number(value):true;
+    payload.confirmed=true;
+   }
+   if(action==='browser.owner.search.review'){
+    const pick=Array.from(detail.querySelectorAll('[data-owner-search-task]'))
+      .find(x=>x.dataset.ownerSearchTask===taskId);
+    const form=(takeover.forms||[]).find(x=>x.index===Number(pick?.value));
+    if(!form)throw new Error('Select an approved GET search.');
+    payload.index=form.index;payload.fingerprint=form.fingerprint;
+   }
+   if(action==='browser.owner.search.submit'){
+    if(!takeover.pending_form?.id)throw new Error('Search review has expired.');
+    payload.proposal_id=takeover.pending_form.id;payload.confirmed=true;
+   }
+   say('Updating owner browser controls…');
+  }else if(action.startsWith('browser.action.')){
    payload.task_id=taskId;
    if(action==='browser.action.approve'){
     const proposal=liveByWorker.get(id+'|'+taskId)?.proposed_action;
@@ -396,7 +473,7 @@ window.setInterval(()=>{
  if(!tid||!selected||!liveByWorker.get(selected+'|'+tid)?.session_active)return;
  // Do not invalidate a model proposal or discard an owner-entered field value
  // while the explicit approval form is open.
- if(liveByWorker.get(selected+'|'+tid)?.proposed_action?.id)return;
+ if(liveByWorker.get(selected+'|'+tid)?.proposed_action?.id||liveByWorker.get(selected+'|'+tid)?.owner_takeover?.mode==='owner')return;
  liveLastPoll=Date.now();
  api('browser.live.refresh',{mission_id:selected,task_id:tid}).then(result=>{
   if(result.live_browser){liveByWorker.set(selected+'|'+tid,result.live_browser);

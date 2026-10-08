@@ -38,6 +38,29 @@ try {
       if(body.action==='pause'){mission.status='waiting_review';}
       if(body.action==='retry'){mission.status='running';mission.tasks[0].status='running';}
       if(body.action==='cancel'){mission.status='cancelled';}
+      if(body.action.startsWith('browser.owner.')){
+        if(body.action==='browser.owner.takeover')window.__liveBrowser.owner_takeover={
+          mode:'owner',actions_used:0,max_actions:8,expires_at:'2026-10-08 07:00:00',
+          forms:[{index:0,fingerprint:'bbbbbbbbbbbbbbbbbbbbbbbb',label:'Search',action:'https://example.com/search',method:'GET'}],
+          pending_form:{}};
+        if(body.action==='browser.owner.control'){
+          window.__liveBrowser.owner_takeover.actions_used++;
+          window.__liveBrowser.page_title='Owner searched safely';
+        }
+        if(body.action==='browser.owner.search.review')
+          window.__liveBrowser.owner_takeover.pending_form={
+            id:'77777777-7777-4777-8777-777777777777',
+            index:0,fingerprint:'bbbbbbbbbbbbbbbbbbbbbbbb',method:'GET',
+            action:'https://example.com/search'};
+        if(body.action==='browser.owner.search.submit'){
+          window.__liveBrowser.owner_takeover.actions_used++;
+          window.__liveBrowser.owner_takeover.pending_form={};
+          window.__liveBrowser.current_url='https://example.com/search?q=approved';
+        }
+        if(body.action==='browser.owner.release')
+          window.__liveBrowser.owner_takeover.mode='agent';
+        return {ok:true,json:async()=>({ok:true,live_browser:structuredClone(window.__liveBrowser)})};
+      }
       if(body.action.startsWith('browser.action.')){
         if(body.action==='browser.action.propose'){
           window.__liveBrowser.proposed_action={
@@ -60,7 +83,9 @@ try {
           session_active:true,visit_count:1,max_visits:5,
           current_url:'https://example.com/reports',page_title:'Research report',
           image_base64:'/9j/'+'A'.repeat(160),page_text:'First page evidence.',
-          proposed_link:{},proposed_action:{},actions_used:0,max_actions:6
+          proposed_link:{},proposed_action:{},actions_used:0,max_actions:6,
+          controls:[{index:0,fingerprint:'aaaaaaaaaaaaaaaaaaaaaaaa',label:'Search',kind:'fill'}],
+          owner_takeover:{mode:'agent',actions_used:0,max_actions:8,forms:[],pending_form:{}}
         };
         if(body.action==='browser.live.refresh'){
           window.__liveBrowser.image_base64='/9j/'+'B'.repeat(160);
@@ -204,6 +229,32 @@ try {
   assert.equal(approvedAction.value,'User-entered research topic');
   assert.equal(approvedAction.confirmed,true);
   assert.equal(await page.locator('.vp3-dom-approval').count(),0);
+  await page.getByRole('button',{name:'Take control'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.owner.takeover'));
+  assert.match(await page.locator('.vp3-owner-takeover').textContent(),/Owner controlling browser/);
+  assert.equal(await page.getByRole('button',{name:'Ask agent for next link'}).count(),0,
+    'Agent navigation must pause during takeover');
+  await page.locator('[data-owner-value-task]').fill('safe study');
+  await page.getByRole('button',{name:'Apply owner control'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.owner.control'));
+  const control=await page.evaluate(()=>window.__calls.find(c=>c.action==='browser.owner.control'));
+  assert.equal(control.value,'safe study');
+  assert.equal(control.confirmed,true);
+  await page.getByRole('button',{name:'Review GET search'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.owner.search.review'));
+  assert.match(await page.locator('.vp3-owner-takeover').textContent(),/Search destination/);
+  await page.getByRole('button',{name:'Confirm search submission'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.owner.search.submit'));
+  const search=await page.evaluate(()=>window.__calls.find(c=>c.action==='browser.owner.search.submit'));
+  assert.equal(search.proposal_id,'77777777-7777-4777-8777-777777777777');
+  assert.equal(search.confirmed,true);
+  assert.match(await page.locator('.vp3-worker-live').textContent(),/search\?q=approved/);
+  const lastBrowserText=await page.locator('.vp3-owner-takeover').textContent();
+  assert.match(lastBrowserText,/Owner controlling/);
+  await page.getByRole('button',{name:'Return control to agent'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.owner.release'));
+  assert.equal(await page.getByRole('button',{name:'Ask agent for next link'}).count(),1,
+    'Agent must regain safe controls only after owner releases');
   await page.getByRole('button',{name:'Stop live browser'}).click();
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.live.stop'));
   assert.equal(await page.getByRole('button',{name:'Stop live browser'}).count(),0);
@@ -217,5 +268,5 @@ try {
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
   assert.equal(overflow,false,'mission UI must not force mobile page-wide scrolling');
   assert.deepEqual(errors,[],'no browser JavaScript errors');
-  console.log('AGENT_TEAMS_A5B2_BROWSER PASS: live Chat controls, real DOM, Brain drawer, CSRF, retry approval, XSS and responsive layout');
+  console.log('AGENT_TEAMS_A5B4_BROWSER PASS: live Chat controls, real DOM, Brain drawer, CSRF, retry approval, XSS and responsive layout');
 } finally {await browser.close();}
