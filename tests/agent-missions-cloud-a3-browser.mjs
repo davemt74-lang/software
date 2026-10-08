@@ -122,7 +122,8 @@ try {
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.grant'));
   assert.equal((await page.evaluate(()=>window.__calls.find(c=>c.action==='browser.grant'))).url,
     'https://example.com/reports');
-  await page.getByText('Worker browser · supervised read-only').first().click();
+  assert.equal(await page.locator('.vp3-worker-browser[open]').count(),1,
+    'Approving a browser must preserve its expanded controls');
   await page.getByRole('button',{name:'Capture page'}).click();
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.capture'));
   assert.equal(await page.locator('.vp3-worker-browser-preview').count(),1);
