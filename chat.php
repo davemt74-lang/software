@@ -461,6 +461,13 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
     . ';</script>';
 $cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationAssetBuild)) . '"></script>';
 
+$agentTeamsA3Build = 'agent-teams-homecloud-a3-20261008';
+$agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(url('/chat-agent-teams-a3.css?v=' . $agentTeamsA3Build)) . '">'
+    . '<script data-agent-teams-config-a3>window.VP3_AGENT_TEAMS_A3='
+    . json_encode(['endpoint'=>url('/api/agent-missions-cloud-v1.php'), 'csrf'=>csrf_token(), 'version'=>'A3'], JSON_UNESCAPED_SLASHES)
+    . ';</script>'
+    . '<script data-agent-teams-a3 src="' . e(url('/chat-agent-teams-a3.js?v=' . $agentTeamsA3Build)) . '" defer></script>';
+
 $browserContextRuntime = '<link rel="stylesheet" data-browser-context-v2130 href="' . e(url('/chat-browser-context-v2130.css?v=' . $browserContextBuild)) . '">'
     . '<script data-browser-context-v2130 src="' . e(url('/chat-browser-context-v2130.js?v=' . $browserContextBuild)) . '"></script>';
 
@@ -526,6 +533,7 @@ $runtime = $headerUiRuntime
          . $agentIdentityRuntime
          . $profileActivityRuntime
          . $browserContextRuntime
+         . $agentTeamsA3Runtime
          . $cognitivePresentationPre
          . $notificationDrawerRuntime
          . $cognitiveCardsRuntime
