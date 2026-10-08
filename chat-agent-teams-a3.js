@@ -19,7 +19,8 @@ root.innerHTML='<summary><span aria-hidden="true">◉</span> Agent Teams <small>
  '<option value="auto">HomeServer default</option><option value="ollama">Ollama (local)</option>'+
  '<option value="anthropic">Claude / Anthropic</option><option value="openai">OpenAI</option>'+
  '<option value="openrouter">OpenRouter</option></select>'+
- '<small class="vp3-teams-provider-note">Workers use isolated model-only contexts. No tool or browser access.</small></form>'+
+ '<small class="vp3-teams-provider-note">Workers use isolated model-only contexts; read-only browser evidence requires separate approval. No model tools or write actions.</small>'+
+ '<label class="vp3-teams-browser-optin"><input type="checkbox" name="prepare_only"> Prepare mission first — approve browser pages for individual workers before starting</label></form>'+
  '<div class="vp3-teams-status" role="status" aria-live="polite">Open to load missions.</div>'+
  '<div class="vp3-teams-list" aria-label="Recent missions"></div>'+
  '<section class="vp3-teams-detail" aria-label="Selected mission" hidden></section></div>';
@@ -29,6 +30,7 @@ const status=root.querySelector('.vp3-teams-status'), list=root.querySelector('.
  submit=create.querySelector('button');
 let busy=false,selected='',items=[],lastRefresh=0,inflight=false;
 const staffingByMission=new Map();
+const browserByWorker=new Map();
 function el(tag,cls,txt){const x=document.createElement(tag);if(cls)x.className=cls;if(txt!==undefined)x.textContent=String(txt);return x;}
 function btn(name,action,id,taskId){const x=el('button','',name);x.type='button';x.dataset.action=action;if(id)x.dataset.id=id;if(taskId)x.dataset.taskId=taskId;x.disabled=busy;return x;}
 function fmt(value){if(!value)return '—';const raw=String(value).trim();
@@ -55,6 +57,8 @@ function showList(){
  }
 }
 function showMission(m){
+ const openBrowsers=new Set(Array.from(detail.querySelectorAll('.vp3-worker-browser[open]'))
+   .map(pane=>pane.dataset.browserWorker));
  selected=String(m.id||'');detail.hidden=false;detail.replaceChildren();
  detail.appendChild(el('h3','',m.objective||'Mission'));
  detail.appendChild(el('p','vp3-teams-meta',(m.status||'unknown')+' · '+fmt(m.updated_at||m.created_at)+' · Read-only workers'));
@@ -72,6 +76,48 @@ function showMission(m){
   if(['failed','partial','waiting_review'].includes(m.status)&&['failed','interrupted'].includes(t.status)&&t.error!=='Dependency failed')li.appendChild(btn('Retry worker','retry',selected,t.id));
   if(t.result){const exp=el('details','vp3-teams-result');exp.appendChild(el('summary','','Worker result'));
    exp.appendChild(el('pre','',t.result));li.appendChild(exp);}
+  const browser=el('details','vp3-worker-browser');
+  browser.dataset.browserWorker=t.id;
+  browser.open=openBrowsers.has(t.id);
+  browser.appendChild(el('summary','','Worker browser · supervised read-only'));
+  const area=el('div','vp3-worker-browser-body');
+  const key=selected+'|'+t.id;
+  const state=browserByWorker.get(key);
+  if(state){
+   area.appendChild(el('p','vp3-teams-meta','Status: '+state.status+' · '+(state.visit_count||0)+' / '+(state.max_visits||5)+' captures'));
+   if(state.approved_origin)area.appendChild(el('p','vp3-teams-meta','Approved origin: '+state.approved_origin));
+   if(state.page_title)area.appendChild(el('p','',state.page_title));
+   if(state.image_base64&&/^[A-Za-z0-9+/=]{100,200000}$/.test(state.image_base64)){
+    const preview=el('img','vp3-worker-browser-preview');
+    preview.alt='Read-only screenshot for '+(t.title||'worker');
+    preview.src='data:image/jpeg;base64,'+state.image_base64;
+    area.appendChild(preview);
+   }
+   if(state.text_snapshot){
+    const text=el('details','vp3-teams-result');
+    text.appendChild(el('summary','','Page text evidence'));
+    text.appendChild(el('pre','',state.text_snapshot));
+    area.appendChild(text);
+   }
+   if(state.last_error)area.appendChild(el('p','vp3-teams-error',state.last_error));
+  }else area.appendChild(el('p','vp3-teams-meta','No browser snapshot loaded.'));
+  const entry=el('input','vp3-worker-browser-url');
+  entry.type='url';entry.placeholder='https://public-site.example/page';
+  entry.setAttribute('aria-label','Approved HTTPS page for '+(t.title||'worker'));
+  entry.dataset.browserTask=t.id;
+  entry.maxLength=1400;
+  if(state&&state.current_url)entry.value=state.current_url;
+  area.appendChild(entry);
+  const actions=el('div','vp3-teams-actions');
+  if(t.status==='queued'&&m.status==='planned'&&(!state||state.status==='closed')){
+   actions.appendChild(btn('Approve URL','browser.grant',selected,t.id));
+  }
+  if(state&&state.status==='approved'){
+   if(['planned','running'].includes(m.status))actions.appendChild(btn('Capture page','browser.capture',selected,t.id));
+   actions.appendChild(btn('Revoke','browser.revoke',selected,t.id));
+  }
+  actions.appendChild(btn('View browser','browser.get',selected,t.id));
+  area.appendChild(actions);browser.appendChild(area);li.appendChild(browser);
   workers.appendChild(li);
  });detail.appendChild(workers);
  if(['completed','partial','failed'].includes(m.status)||staffingByMission.has(selected)){
@@ -169,9 +215,22 @@ async function operation(action,id,taskId){
  if(action==='retry'&&!window.confirm('Retry this worker? The model request may use additional tokens.'))return;
  if(action==='approve'&&!window.confirm('Approve these new read-only workers? Additional model usage will occur.'))return;
  if(action==='reject'&&!window.confirm('Reject this staffing proposal? No workers will be created.'))return;
+ if(action==='browser.grant'&&!window.confirm('Approve this read-only HTTPS origin for the selected worker for 15 minutes?'))return;
+ if(action==='browser.revoke'&&!window.confirm('Revoke this worker browser and erase its stored snapshot?'))return;
  setBusy(true);
  try{const payload={mission_id:id};if(action==='resume')payload.allow_reexecution=true;
   if(action==='retry')payload.task_id=taskId;
+  if(action.startsWith('browser.')){
+   payload.task_id=taskId;
+   const field=Array.from(detail.querySelectorAll('input[data-browser-task]'))
+     .find(node=>node.dataset.browserTask===taskId);
+   if(action==='browser.grant'||action==='browser.capture'){
+    const url=field?.value.trim()||'';
+    if(action==='browser.grant'&&!url)throw new Error('Enter the HTTPS page to approve.');
+    if(url)payload.url=url;
+   }
+   say(action==='browser.capture'?'Capturing approved browser page…':'Updating worker browser…');
+  }
   if(action==='evaluate'){
    const requestId=window.crypto&&window.crypto.randomUUID?window.crypto.randomUUID():'';
    if(!requestId)throw new Error('Secure staffing request IDs are not available.');
@@ -180,6 +239,11 @@ async function operation(action,id,taskId){
   }
   if(action==='approve'||action==='reject'){payload.decision_id=taskId;payload.confirmed=true;}
   const response=await api(action,payload);
+  if(response.browser!==undefined){
+   const key=id+'|'+taskId;
+   if(response.browser)browserByWorker.set(key,response.browser);
+   else browserByWorker.delete(key);
+  }
   if(response.mission)showMission(response.mission);
   if(response.supervision){
    staffingByMission.set(id,[response.supervision,...(staffingByMission.get(id)||[]).filter(p=>p.id!==response.supervision.id)]);
@@ -187,6 +251,10 @@ async function operation(action,id,taskId){
   }
   await load();
   if(action==='get'&&response.mission)showMission(response.mission);
+  if(action.startsWith('browser.')){
+   const current=await api('get',{mission_id:id});
+   if(current.mission)showMission(current.mission);
+  }
  }catch(e){say(e.message||'Mission action failed.');}finally{setBusy(false);}
 }
 root.addEventListener('toggle',()=>{
@@ -214,8 +282,13 @@ create.addEventListener('submit',async ev=>{
    say('Configuring '+workers.length+' worker models…');
    for(const task of workers){await api('bind_provider',{mission_id:mid,task_id:task.id,provider_key:preferred});}
   }
-  say('Starting workers…');
-  await api('start',{mission_id:mid});await load();
+  if(create.querySelector('[name="prepare_only"]')?.checked){
+   say('Mission prepared. Approve each worker browser under its task, then select Start.');
+   await load();
+  }else{
+   say('Starting workers…');
+   await api('start',{mission_id:mid});await load();
+  }
  }catch(e){say(e.message||'Mission creation failed. Refresh mission history before retrying.');}
  finally{setBusy(false);}
 });

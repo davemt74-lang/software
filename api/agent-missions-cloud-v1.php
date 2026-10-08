@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider'],true))
+    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','browser.grant','browser.get','browser.capture','browser.revoke'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
@@ -77,6 +77,22 @@ try {
                 throw new RuntimeException('Unrecognized worker inference provider.',422);
             $payload['task_id']=$taskId;
             $payload['provider_key']=$provider;
+        }
+        if(str_starts_with($action,'browser.')){
+            $worker=trim((string)($input['task_id']??''));
+            if(!preg_match('/^[0-9a-f-]{36}$/i',$worker))
+                throw new RuntimeException('Browser worker ID is invalid.',422);
+            $payload['task_id']=$worker;
+            if($action==='browser.grant'||$action==='browser.capture'){
+                $url=trim((string)($input['url']??''));
+                if($action==='browser.grant'&&$url==='')
+                    throw new RuntimeException('Explicit HTTPS browser URL required.',422);
+                if($url!==''){
+                    if(strlen($url)>1400||!str_starts_with(strtolower($url),'https://'))
+                        throw new RuntimeException('Browser URL must be HTTPS and within the limit.',422);
+                    $payload['url']=$url;
+                }
+            }
         }
         if($action==='events'){
             $after=$input['after']??0;
