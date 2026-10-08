@@ -75,3 +75,5 @@
 .vp3-agent-teams-a3 .vp3-owner-takeover select,.vp3-agent-teams-a3 .vp3-owner-takeover input{box-sizing:border-box;display:block;width:100%;margin:6px 0;padding:7px;border-radius:6px;background:var(--surface-secondary,#252c39);color:inherit;border:1px solid var(--border,#394252)}
 .vp3-agent-teams-a3 .vp3-owner-takeover button{margin:3px 4px 3px 0}
 .vp3-agent-teams-a3 .vp3-owner-takeover .vp3-teams-meta{overflow-wrap:anywhere}
+
+.vp3-brain-worker pre{white-space:pre-wrap;overflow-wrap:anywhere}.vp3-brain-worker p{overflow-wrap:anywhere}

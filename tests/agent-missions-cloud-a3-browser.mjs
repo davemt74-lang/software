@@ -11,7 +11,7 @@ try {
   await page.setContent('<div class="chat-main"><div id="chatComposerShell" style="width:680px;max-width:100%"><form id="chatForm"><textarea id="chatInput"></textarea><button type="submit">Send</button></form></div></div>');
   await page.addStyleTag({content:css});
   await page.evaluate(()=>{
-    Object.defineProperty(window,'crypto',{configurable:true,value:{randomUUID:()=> 'a3-browser-request-001'}});
+    let sequence=0;Object.defineProperty(window,'crypto',{configurable:true,value:{randomUUID:()=> '99999999-9999-4999-8999-'+String(++sequence).padStart(12,'0')}});
     window.STONEFELLOW_CHAT={initialConversationId:27};
     window.VP3_AGENT_TEAMS_A3={endpoint:'/api/agent-missions-cloud-v1.php',csrf:'a3-test-csrf'};
     window.__calls=[];
@@ -40,18 +40,20 @@ try {
       if(body.action==='cancel'){mission.status='cancelled';}
       if(body.action.startsWith('browser.owner.')){
         if(body.action==='browser.owner.takeover')window.__liveBrowser.owner_takeover={
-          mode:'owner',actions_used:0,max_actions:8,expires_at:'2026-10-08 07:00:00',
+          lease_id:'88888888-8888-4888-8888-888888888888',mode:'owner',actions_used:0,max_actions:8,expires_at:'2026-10-08 07:00:00',
           forms:[{index:0,fingerprint:'bbbbbbbbbbbbbbbbbbbbbbbb',label:'Search',action:'https://example.com/search',method:'GET'}],
           pending_form:{}};
         if(body.action==='browser.owner.control'){
           window.__liveBrowser.owner_takeover.actions_used++;
           window.__liveBrowser.page_title='Owner searched safely';
         }
-        if(body.action==='browser.owner.search.review')
+        if(body.action==='browser.owner.search.review'){
+          window.__liveBrowser.owner_takeover.review={id:'77777777-7777-4777-8777-777777777777',query:'approved',destination:'https://example.com/search?q=approved',required_fields:[{name:'q',valid:true,required:true}]};
           window.__liveBrowser.owner_takeover.pending_form={
             id:'77777777-7777-4777-8777-777777777777',
             index:0,fingerprint:'bbbbbbbbbbbbbbbbbbbbbbbb',method:'GET',
             action:'https://example.com/search'};
+        }
         if(body.action==='browser.owner.search.submit'){
           window.__liveBrowser.owner_takeover.actions_used++;
           window.__liveBrowser.owner_takeover.pending_form={};
@@ -87,6 +89,7 @@ try {
           controls:[{index:0,fingerprint:'aaaaaaaaaaaaaaaaaaaaaaaa',label:'Search',kind:'fill'}],
           owner_takeover:{mode:'agent',actions_used:0,max_actions:8,forms:[],pending_form:{}}
         };
+        if(body.action==='browser.live.plan'){window.__liveBrowser.plan={status:'waiting_approval',history:[{kind:'prepare_form',outcome:'awaiting_owner_approval'}],prepared_form:{index:0,approval_required:true}};}
         if(body.action==='browser.live.refresh'){
           window.__liveBrowser.image_base64='/9j/'+'B'.repeat(160);
         }
@@ -149,7 +152,7 @@ try {
   await page.waitForFunction(()=>document.querySelector('.vp3-teams-detail h3')?.textContent==='Compare three hosting providers');
   assert.equal(await page.locator('[data-agent-teams-a3]').count(),1,'no duplicate panel');
   const createCall=await page.evaluate(()=>window.__calls.find(c=>c.action==='create'));
-  assert.equal(createCall.request_id,'a3-browser-request-001');
+  assert.equal(createCall.request_id,'99999999-9999-4999-8999-000000000001');
   assert.equal(createCall.thread_id,27);
   const a5Calls=await page.evaluate(()=>window.__calls.map(c=>c.action));
   assert.ok(a5Calls.indexOf('create')<a5Calls.indexOf('bind_provider'));
@@ -229,6 +232,9 @@ try {
   assert.equal(approvedAction.value,'User-entered research topic');
   assert.equal(approvedAction.confirmed,true);
   assert.equal(await page.locator('.vp3-dom-approval').count(),0);
+  await page.getByRole('button',{name:'Run browser plan'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.live.plan'));
+  assert.match(await page.locator('.vp3-worker-live').textContent(),/Agent prepared a search/);
   await page.getByRole('button',{name:'Take control'}).click();
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.owner.takeover'));
   assert.match(await page.locator('.vp3-owner-takeover').textContent(),/Owner controlling browser/);
@@ -240,9 +246,18 @@ try {
   const control=await page.evaluate(()=>window.__calls.find(c=>c.action==='browser.owner.control'));
   assert.equal(control.value,'safe study');
   assert.equal(control.confirmed,true);
+  assert.equal(control.lease_id,'88888888-8888-4888-8888-888888888888');
+  assert.ok(control.request_id);
+  await page.locator('[data-owner-value-task]').fill('draft remains');
+  await page.evaluate(()=>window.VP3_AGENT_TEAMS_A5B4_STATUS());
+  assert.equal(await page.locator('[data-owner-value-task]').inputValue(),'draft remains','Status polling must preserve drafts');
   await page.getByRole('button',{name:'Review GET search'}).click();
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.owner.search.review'));
-  assert.match(await page.locator('.vp3-owner-takeover').textContent(),/Search destination/);
+  assert.match(await page.locator('.vp3-owner-takeover').textContent(),/Exact query: approved/);
+  assert.match(await page.locator('.vp3-owner-takeover').textContent(),/q valid/);
+  await page.evaluate(()=>{const body=document.querySelector('[data-notification-drawer-body]');window.VP3_AGENT_TEAMS_A3_BRAIN(body);});
+  assert.match(await page.locator('[data-agent-teams-brain-a3]').textContent(),/Viewing: Owner searched safely/);
+  assert.match(await page.locator('[data-agent-teams-brain-a3]').textContent(),/form awaiting confirmation/);
   await page.getByRole('button',{name:'Confirm search submission'}).click();
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.owner.search.submit'));
   const search=await page.evaluate(()=>window.__calls.find(c=>c.action==='browser.owner.search.submit'));

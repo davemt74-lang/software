@@ -461,7 +461,7 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
     . ';</script>';
 $cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationAssetBuild)) . '"></script>';
 
-$agentTeamsA3Build = 'agent-teams-homecloud-a3-20261008';
+$agentTeamsA3Build = 'agent-teams-homecloud-a3-20261008-a5b4-repair';
 $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(url('/chat-agent-teams-a3.css?v=' . $agentTeamsA3Build)) . '">'
     . '<script data-agent-teams-config-a3>window.VP3_AGENT_TEAMS_A3='
     . json_encode(['endpoint'=>url('/api/agent-missions-cloud-v1.php'), 'csrf'=>csrf_token(), 'version'=>'A3'], JSON_UNESCAPED_SLASHES)
