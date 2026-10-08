@@ -69,3 +69,9 @@
 .vp3-agent-teams-a3 .vp3-dom-approval strong{display:block;font-size:12px;margin-bottom:5px}
 .vp3-agent-teams-a3 .vp3-dom-approval-value{box-sizing:border-box;display:block;width:100%;max-width:350px;border:1px solid var(--border,#394252);border-radius:6px;padding:8px;margin:6px 0;color:inherit;background:var(--surface-secondary,#252c39)}
 .vp3-agent-teams-a3 .vp3-dom-approval-value:focus-visible{outline:2px solid #8fb8f2;outline-offset:2px}
+
+.vp3-agent-teams-a3 .vp3-owner-takeover{margin:10px 0;padding:10px;border:1px solid var(--border,#394252);border-radius:8px;min-width:0}
+.vp3-agent-teams-a3 .vp3-owner-takeover strong{display:block;margin-bottom:6px}
+.vp3-agent-teams-a3 .vp3-owner-takeover select,.vp3-agent-teams-a3 .vp3-owner-takeover input{box-sizing:border-box;display:block;width:100%;margin:6px 0;padding:7px;border-radius:6px;background:var(--surface-secondary,#252c39);color:inherit;border:1px solid var(--border,#394252)}
+.vp3-agent-teams-a3 .vp3-owner-takeover button{margin:3px 4px 3px 0}
+.vp3-agent-teams-a3 .vp3-owner-takeover .vp3-teams-meta{overflow-wrap:anywhere}
