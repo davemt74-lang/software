@@ -37,3 +37,11 @@
 .vp3-agent-teams-brain-a3 .vp3-teams-brain-row{padding:8px 0;border-top:1px solid var(--border,#394252)}
 .vp3-agent-teams-brain-a3 .vp3-teams-brain-row strong{display:block;font-size:12px;overflow-wrap:anywhere}
 .vp3-agent-teams-brain-a3 .vp3-teams-brain-row small{display:block;font-size:11px;opacity:.75;margin-top:3px}
+
+/* A4 uses the existing mission panel and Agent Brain drawer for supervision. */
+.vp3-agent-teams-a3 .vp3-teams-supervisor{border:1px solid var(--border,#394252);border-radius:10px;padding:9px;margin:10px 0}
+.vp3-agent-teams-a3 .vp3-teams-supervisor h4{margin-top:0}
+.vp3-agent-teams-a3 .vp3-teams-supervisor-reason{font-size:12px;overflow-wrap:anywhere}
+.vp3-agent-teams-a3 .vp3-teams-supervisor-candidates{margin:6px 0;padding-left:19px;font-size:12px}
+.vp3-agent-teams-a3 .vp3-teams-supervisor-candidates li{margin:5px 0;overflow-wrap:anywhere}
+.vp3-agent-teams-a3 .vp3-teams-supervisor button{margin:4px 6px 0 0;white-space:normal}
