@@ -1,0 +1,35 @@
+name: Agent Teams Cloud Chat A3
+on:
+  pull_request:
+    paths:
+      - 'api/agent-missions-cloud-v1.php'
+      - 'chat-agent-teams-a3.js'
+      - 'chat-agent-teams-a3.css'
+      - 'chat.php'
+      - 'tests/agent-missions-cloud-a3.mjs'
+      - '.github/workflows/agent-missions-cloud-a3.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'api/agent-missions-cloud-v1.php'
+      - 'chat-agent-teams-a3.js'
+      - 'chat-agent-teams-a3.css'
+      - 'chat.php'
+      - 'tests/agent-missions-cloud-a3.mjs'
+      - '.github/workflows/agent-missions-cloud-a3.yml'
+jobs:
+  cloud-mission-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+      - name: PHP syntax checks
+        run: |
+          php -l api/agent-missions-cloud-v1.php
+          php -l chat.php
+      - name: Browser script syntax check
+        run: node --check chat-agent-teams-a3.js
+      - name: Cloud mission relay and UX contract
+        run: node tests/agent-missions-cloud-a3.mjs
