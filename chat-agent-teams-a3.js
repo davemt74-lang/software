@@ -74,6 +74,46 @@ function showMission(m){
   if(['failed','partial','waiting_review'].includes(m.status)&&['failed','interrupted'].includes(t.status)&&t.error!=='Dependency failed')li.appendChild(btn('Retry worker','retry',selected,t.id));
   if(t.result){const exp=el('details','vp3-teams-result');exp.appendChild(el('summary','','Worker result'));
    exp.appendChild(el('pre','',t.result));li.appendChild(exp);}
+  const browser=el('details','vp3-worker-browser');
+  browser.appendChild(el('summary','','Worker browser · supervised read-only'));
+  const area=el('div','vp3-worker-browser-body');
+  const key=selected+'|'+t.id;
+  const state=browserByWorker.get(key);
+  if(state){
+   area.appendChild(el('p','vp3-teams-meta','Status: '+state.status+' · '+(state.visit_count||0)+' / '+(state.max_visits||5)+' captures'));
+   if(state.approved_origin)area.appendChild(el('p','vp3-teams-meta','Approved origin: '+state.approved_origin));
+   if(state.page_title)area.appendChild(el('p','',state.page_title));
+   if(state.image_base64&&/^[A-Za-z0-9+/=]{100,200000}$/.test(state.image_base64)){
+    const preview=el('img','vp3-worker-browser-preview');
+    preview.alt='Read-only screenshot for '+(t.title||'worker');
+    preview.src='data:image/jpeg;base64,'+state.image_base64;
+    area.appendChild(preview);
+   }
+   if(state.text_snapshot){
+    const text=el('details','vp3-teams-result');
+    text.appendChild(el('summary','','Page text evidence'));
+    text.appendChild(el('pre','',state.text_snapshot));
+    area.appendChild(text);
+   }
+   if(state.last_error)area.appendChild(el('p','vp3-teams-error',state.last_error));
+  }else area.appendChild(el('p','vp3-teams-meta','No browser snapshot loaded.'));
+  const entry=el('input','vp3-worker-browser-url');
+  entry.type='url';entry.placeholder='https://public-site.example/page';
+  entry.setAttribute('aria-label','Approved HTTPS page for '+(t.title||'worker'));
+  entry.dataset.browserTask=t.id;
+  entry.maxLength=1400;
+  if(state&&state.current_url)entry.value=state.current_url;
+  area.appendChild(entry);
+  const actions=el('div','vp3-teams-actions');
+  if(t.status==='queued'&&m.status==='planned'&&(!state||state.status==='closed')){
+   actions.appendChild(btn('Approve URL','browser.grant',selected,t.id));
+  }
+  if(state&&state.status==='approved'){
+   if(['planned','running'].includes(m.status))actions.appendChild(btn('Capture page','browser.capture',selected,t.id));
+   actions.appendChild(btn('Revoke','browser.revoke',selected,t.id));
+  }
+  actions.appendChild(btn('View browser','browser.get',selected,t.id));
+  area.appendChild(actions);browser.appendChild(area);li.appendChild(browser);
   workers.appendChild(li);
  });detail.appendChild(workers);
  if(['completed','partial','failed'].includes(m.status)||staffingByMission.has(selected)){
