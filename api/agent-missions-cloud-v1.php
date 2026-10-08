@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.action.propose','browser.action.approve'],true))
+    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
@@ -123,6 +123,41 @@ try {
                 $payload['proposal_id']=$proposalId;
                 $payload['confirmed']=true;
                 $payload['value']=$value;
+            }
+        }
+        if(str_starts_with($action,'browser.owner.')){
+            $taskId=trim((string)($input['task_id']??''));
+            if(!preg_match('/^[0-9a-f-]{36}$/i',$taskId))
+                throw new RuntimeException('Invalid owner browser worker identifier.',422);
+            $payload['task_id']=$taskId;
+            if($action==='browser.owner.control'){
+                if(($input['confirmed']??null)!==true)throw new RuntimeException('Owner control requires confirmation.',422);
+                $index=$input['index']??null;
+                if(!is_int($index)||$index<0||$index>119)throw new RuntimeException('Control index invalid.',422);
+                $fingerprint=trim((string)($input['fingerprint']??''));
+                if(!preg_match('/^[a-f0-9]{24}$/',$fingerprint))throw new RuntimeException('Control fingerprint invalid.',422);
+                $kind=trim((string)($input['kind']??''));
+                if(!in_array($kind,['fill','check','select','toggle'],true))
+                    throw new RuntimeException('Unsupported owner control.',422);
+                $value=$input['value']??null;
+                if(!is_string($value)&&!is_int($value)&&!is_bool($value))
+                    throw new RuntimeException('Invalid owner control value.',422);
+                if(is_string($value)&&strlen($value)>300)throw new RuntimeException('Owner input too long.',422);
+                $payload+=['index'=>$index,'fingerprint'=>$fingerprint,'kind'=>$kind,
+                           'value'=>$value,'confirmed'=>true];
+            }
+            if($action==='browser.owner.search.review'){
+                $index=$input['index']??null;
+                $fingerprint=trim((string)($input['fingerprint']??''));
+                if(!is_int($index)||$index<0||$index>19||!preg_match('/^[a-f0-9]{24}$/',$fingerprint))
+                    throw new RuntimeException('Search form selection invalid.',422);
+                $payload+=['index'=>$index,'fingerprint'=>$fingerprint];
+            }
+            if($action==='browser.owner.search.submit'){
+                $proposalId=trim((string)($input['proposal_id']??''));
+                if(!preg_match('/^[0-9a-f-]{36}$/i',$proposalId)||($input['confirmed']??null)!==true)
+                    throw new RuntimeException('Exact GET search approval required.',422);
+                $payload+=['proposal_id'=>$proposalId,'confirmed'=>true];
             }
         }
         if($action==='events'){
