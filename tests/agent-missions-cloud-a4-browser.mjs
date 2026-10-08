@@ -52,6 +52,7 @@ try {
  });
  await page.addScriptTag({content:js});
  await page.locator('[data-agent-teams-a3]>summary').click();
+ await page.getByRole('button',{name:'View',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-agent-teams-supervisor]')!==null);
  await page.getByRole('button',{name:'Evaluate need for specialists'}).click();
  await page.waitForFunction(()=>window.calls.some(c=>c.action==='evaluate'));
