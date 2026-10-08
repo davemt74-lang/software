@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','events'],true))
+    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
@@ -30,7 +30,7 @@ try {
     $payload=[];
     if($action==='create'){
         $objective=trim((string)($input['objective']??''));
-        if($objective===''||mb_strlen($objective)>4000)throw new RuntimeException('Mission objective must contain 1 to 4,000 characters.',422);
+        if($objective===''||strlen($objective)>4000)throw new RuntimeException('Mission objective must contain 1 to 4,000 characters.',422);
         $requestId=trim((string)($input['request_id']??''));
         if(!preg_match('/^[A-Za-z0-9._:-]{8,128}$/',$requestId))
             throw new RuntimeException('Mission request identifier is invalid.',422);
@@ -45,6 +45,15 @@ try {
         if(!preg_match('/^[0-9a-f-]{36}$/i',$id))
             throw new RuntimeException('Mission identifier is invalid.',422);
         $payload=['mission_id'=>$id];
+        if($action==='resume'){
+            if(($input['allow_reexecution']??null)!==true)throw new RuntimeException('Explicit reexecution approval required.',409);
+            $payload['allow_reexecution']=true;
+        }
+        if($action==='retry'){
+            $taskId=trim((string)($input['task_id']??''));
+            if(!preg_match('/^[0-9a-f-]{36}$/i',$taskId))throw new RuntimeException('Task identifier is invalid.',422);
+            $payload['task_id']=$taskId;
+        }
         if($action==='events'){
             $after=$input['after']??0;
             if(!is_int($after)||$after<0)throw new RuntimeException('Event cursor is invalid.',422);
@@ -53,7 +62,7 @@ try {
         }
     }
     $request=homeserver_https_v1300_queue($userId,'agent.missions.'.$action,$payload);
-    $remote=homeserver_https_v1300_wait($request,12000);
+    $remote=homeserver_https_v1300_wait($request,24000);
     if(!is_array($remote)||($remote['contract']??'')!=='vp3.agent-missions.cloud.v1')
         throw new RuntimeException('HomeServer mission protocol is unavailable. Update HomeServer.',503);
     echo json_encode($remote,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);
