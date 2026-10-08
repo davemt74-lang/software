@@ -294,6 +294,7 @@ async function operation(action,id,taskId){
    const key=id+'|'+taskId;
    if(response.browser)browserByWorker.set(key,response.browser);
    else browserByWorker.delete(key);
+   if(action==='browser.revoke')liveByWorker.delete(key);
   }
   if(response.mission)showMission(response.mission);
   if(response.supervision){
