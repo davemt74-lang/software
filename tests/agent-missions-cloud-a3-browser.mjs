@@ -36,6 +36,19 @@ try {
       if(body.action==='pause'){mission.status='waiting_review';}
       if(body.action==='retry'){mission.status='running';mission.tasks[0].status='running';}
       if(body.action==='cancel'){mission.status='cancelled';}
+      if(body.action==='cognition.configure'){mission.cognition_auto_review=body.enabled;}
+      if(body.action==='cognition.evaluate'){
+        mission.cognition_review={id:'33333333-3333-4333-8333-333333333333',
+          round:1,status:'proposed',decision:'extend',
+          rationale:'<img src=x onerror="window.injected=true"> Further independent research is warranted.',
+          tasks:[{title:'Independent review',role:'reviewer',objective:'Review the current claims'}],
+          updated_at:'2026-10-08 04:00:00'};
+      }
+      if(body.action==='cognition.decide'){
+        mission.cognition_review.status=body.approve?'applied':'declined';
+        if(body.approve){mission.status='running';mission.tasks.push({
+          id:'44444444-4444-4444-8444-444444444444',title:'Independent review',role:'reviewer',status:'queued',attempt:0});}
+      }
       const data=body.action==='list'
         ? {ok:true,items:[{id:mission.id,objective:mission.objective,status:mission.status,
            updated_at:mission.updated_at,tasks:mission.tasks}]}
@@ -71,6 +84,26 @@ try {
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='retry'));
   assert.equal((await page.evaluate(()=>window.__calls.find(c=>c.action==='retry'))).task_id,'22222222-2222-4222-8222-222222222222');
   await page.evaluate(()=>{
+    __mission.status='completed';__mission.tasks[0].status='completed';
+    __mission.tasks[0].error='';__mission.cognition_review=null;
+  });
+  await page.getByRole('button',{name:'Refresh'}).click();
+  await page.getByRole('button',{name:'Evaluate for more specialists'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='cognition.evaluate'));
+  assert.equal(await page.getByRole('button',{name:'Approve specialists'}).count(),1);
+  assert.equal(await page.locator('.vp3-teams-cognition img').count(),0,'LLM rationale must not inject HTML');
+  await page.getByRole('button',{name:'Approve specialists'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='cognition.decide'));
+  const decision=await page.evaluate(()=>window.__calls.find(c=>c.action==='cognition.decide'));
+  assert.equal(decision.approve,true);
+  assert.equal(decision.review_id,'33333333-3333-4333-8333-333333333333');
+  await page.evaluate(()=>{__mission.status='planned';__mission.cognition_auto_review=false;});
+  await page.getByRole('button',{name:'Refresh'}).click();
+  await page.getByRole('button',{name:'Enable auto review'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='cognition.configure'));
+  assert.equal((await page.evaluate(()=>window.__calls.find(c=>c.action==='cognition.configure'))).enabled,true);
+
+  await page.evaluate(()=>{
     const drawer=document.createElement('aside');drawer.id='chatNotificationDrawer';
     drawer.innerHTML='<button data-notification-tab="brain" class="active">Brain</button><div data-notification-drawer-body></div>';
     document.body.appendChild(drawer);
@@ -86,5 +119,5 @@ try {
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);
   assert.equal(overflow,false,'mission UI must not force mobile page-wide scrolling');
   assert.deepEqual(errors,[],'no browser JavaScript errors');
-  console.log('AGENT_TEAMS_A3_BROWSER PASS: live Chat controls, real DOM, Brain drawer, CSRF, retry approval, XSS and responsive layout');
+  console.log('AGENT_TEAMS_A4_BROWSER PASS: live Chat controls, real DOM, Brain drawer, CSRF, retry approval, XSS and responsive layout');
 } finally {await browser.close();}
