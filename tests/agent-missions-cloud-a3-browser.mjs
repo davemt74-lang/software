@@ -38,13 +38,29 @@ try {
       if(body.action==='pause'){mission.status='waiting_review';}
       if(body.action==='retry'){mission.status='running';mission.tasks[0].status='running';}
       if(body.action==='cancel'){mission.status='cancelled';}
+      if(body.action.startsWith('browser.action.')){
+        if(body.action==='browser.action.propose'){
+          window.__liveBrowser.proposed_action={
+            id:'66666666-6666-4666-8666-666666666666',revision:window.__liveBrowser.revision,
+            kind:'fill',index:0,fingerprint:'aabbcc112233445566778899',
+            label:'Search topic <img src=x onerror="window.injected=true">',
+            reason:'Enter a short user-provided topic.',options:[]
+          };
+        }
+        if(body.action==='browser.action.approve'){
+          window.__liveBrowser.proposed_action={};
+          window.__liveBrowser.actions_used++;
+          window.__liveBrowser.revision++;
+        }
+        return {ok:true,json:async()=>({ok:true,live_browser:structuredClone(window.__liveBrowser)})};
+      }
       if(body.action.startsWith('browser.live.')){
         if(body.action==='browser.live.start')window.__liveBrowser={
           task_id:body.task_id,status:'live',revision:1,mode:'live_read_only',
           session_active:true,visit_count:1,max_visits:5,
           current_url:'https://example.com/reports',page_title:'Research report',
           image_base64:'/9j/'+'A'.repeat(160),page_text:'First page evidence.',
-          proposed_link:{}
+          proposed_link:{},proposed_action:{},actions_used:0,max_actions:6
         };
         if(body.action==='browser.live.refresh'){
           window.__liveBrowser.image_base64='/9j/'+'B'.repeat(160);
@@ -175,6 +191,19 @@ try {
   assert.equal(liveDecision.proposal_id,'55555555-5555-4555-8555-555555555555');
   assert.equal(liveDecision.confirmed,true);
   assert.match(await page.locator('.vp3-worker-live').textContent(),/https:\/\/example.com\/report2/);
+  await page.getByRole('button',{name:'Ask agent about page controls'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.action.propose'));
+  assert.equal(await page.locator('.vp3-dom-approval img').count(),0,'Model label must not inject HTML');
+  assert.equal(await page.evaluate(()=>window.__calls.filter(c=>c.action==='browser.action.approve').length),0,
+    'Agent choice must not trigger browser action');
+  await page.locator('.vp3-dom-approval-value').fill('User-entered research topic');
+  await page.getByRole('button',{name:'Approve safe control'}).click();
+  await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.action.approve'));
+  const approvedAction=await page.evaluate(()=>window.__calls.find(c=>c.action==='browser.action.approve'));
+  assert.equal(approvedAction.proposal_id,'66666666-6666-4666-8666-666666666666');
+  assert.equal(approvedAction.value,'User-entered research topic');
+  assert.equal(approvedAction.confirmed,true);
+  assert.equal(await page.locator('.vp3-dom-approval').count(),0);
   await page.getByRole('button',{name:'Stop live browser'}).click();
   await page.waitForFunction(()=>window.__calls.some(c=>c.action==='browser.live.stop'));
   assert.equal(await page.getByRole('button',{name:'Stop live browser'}).count(),0);
