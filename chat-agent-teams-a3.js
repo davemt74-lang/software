@@ -19,7 +19,8 @@ root.innerHTML='<summary><span aria-hidden="true">◉</span> Agent Teams <small>
  '<option value="auto">HomeServer default</option><option value="ollama">Ollama (local)</option>'+
  '<option value="anthropic">Claude / Anthropic</option><option value="openai">OpenAI</option>'+
  '<option value="openrouter">OpenRouter</option></select>'+
- '<small class="vp3-teams-provider-note">Workers use isolated model-only contexts. No tool or browser access.</small></form>'+
+ '<small class="vp3-teams-provider-note">Model tools and write actions remain disabled. Browsers require separate, explicit approval.</small>'+
+ '<label class="vp3-teams-browser-optin"><input type="checkbox" name="prepare_only"> Prepare mission first — approve browser pages for individual workers before starting</label></form>'+
  '<div class="vp3-teams-status" role="status" aria-live="polite">Open to load missions.</div>'+
  '<div class="vp3-teams-list" aria-label="Recent missions"></div>'+
  '<section class="vp3-teams-detail" aria-label="Selected mission" hidden></section></div>';
@@ -29,6 +30,7 @@ const status=root.querySelector('.vp3-teams-status'), list=root.querySelector('.
  submit=create.querySelector('button');
 let busy=false,selected='',items=[],lastRefresh=0,inflight=false;
 const staffingByMission=new Map();
+const browserByWorker=new Map();
 function el(tag,cls,txt){const x=document.createElement(tag);if(cls)x.className=cls;if(txt!==undefined)x.textContent=String(txt);return x;}
 function btn(name,action,id,taskId){const x=el('button','',name);x.type='button';x.dataset.action=action;if(id)x.dataset.id=id;if(taskId)x.dataset.taskId=taskId;x.disabled=busy;return x;}
 function fmt(value){if(!value)return '—';const raw=String(value).trim();
@@ -214,8 +216,13 @@ create.addEventListener('submit',async ev=>{
    say('Configuring '+workers.length+' worker models…');
    for(const task of workers){await api('bind_provider',{mission_id:mid,task_id:task.id,provider_key:preferred});}
   }
-  say('Starting workers…');
-  await api('start',{mission_id:mid});await load();
+  if(create.querySelector('[name="prepare_only"]')?.checked){
+   say('Mission prepared. Approve each worker browser under its task, then select Start.');
+   await load();
+  }else{
+   say('Starting workers…');
+   await api('start',{mission_id:mid});await load();
+  }
  }catch(e){say(e.message||'Mission creation failed. Refresh mission history before retrying.');}
  finally{setBusy(false);}
 });
