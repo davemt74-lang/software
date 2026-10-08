@@ -22,6 +22,7 @@ const status=root.querySelector('.vp3-teams-status'), list=root.querySelector('.
  detail=root.querySelector('.vp3-teams-detail'), create=root.querySelector('form'), input=create.querySelector('input'),
  submit=create.querySelector('button');
 let busy=false,selected='',items=[],lastRefresh=0,inflight=false;
+const staffingByMission=new Map();
 function el(tag,cls,txt){const x=document.createElement(tag);if(cls)x.className=cls;if(txt!==undefined)x.textContent=String(txt);return x;}
 function btn(name,action,id,taskId){const x=el('button','',name);x.type='button';x.dataset.action=action;if(id)x.dataset.id=id;if(taskId)x.dataset.taskId=taskId;x.disabled=busy;return x;}
 function fmt(value){if(!value)return '—';const raw=String(value).trim();
@@ -67,6 +68,36 @@ function showMission(m){
    exp.appendChild(el('pre','',t.result));li.appendChild(exp);}
   workers.appendChild(li);
  });detail.appendChild(workers);
+ if(['completed','partial','failed'].includes(m.status)||staffingByMission.has(selected)){
+  const review=el('section','vp3-teams-supervisor');
+  review.setAttribute('data-agent-teams-supervisor','');
+  review.appendChild(el('h4','','Supervisor · adaptive staffing'));
+  const proposals=staffingByMission.get(selected)||[];
+  const latest=proposals[0];
+  if(latest){
+   review.appendChild(el('p','vp3-teams-meta',
+     (latest.status==='proposed'?'Awaiting your approval':latest.status.replaceAll('_',' '))+
+     ' · '+fmt(latest.created_at)+(latest.private?' · Private HomeServer review':' · Confidence '+latest.confidence+'%')));
+   if(latest.reason)review.appendChild(el('p','vp3-teams-supervisor-reason',latest.reason));
+   const roster=el('ol','vp3-teams-supervisor-candidates');
+   (latest.tasks||[]).forEach(t=>{
+    const li=el('li','');li.appendChild(el('strong','',t.title||t.role||'Specialist'));
+    li.appendChild(el('small','',(t.role||'specialist')+' · '+(t.objective||'')));
+    roster.appendChild(li);
+   });
+   review.appendChild(roster);
+   if(latest.status==='proposed'){
+    review.appendChild(btn('Approve new workers','approve',selected,latest.id));
+    review.appendChild(btn('Reject proposal','reject',selected,latest.id));
+   }
+  }else{
+   review.appendChild(el('p','vp3-teams-meta','No additional staffing review yet.'));
+  }
+  if(['completed','partial','failed'].includes(m.status)&&!(latest&&latest.status==='proposed')&&proposals.filter(p=>p.status==='approved').length<2){
+   review.appendChild(btn('Evaluate need for specialists','evaluate',selected));
+  }
+  detail.appendChild(review);
+ }
  if(m.result){const result=el('details','vp3-teams-result');
   result.appendChild(el('summary','','Combined output (not independently verified)'));
   result.appendChild(el('pre','',m.result));detail.appendChild(result);}
@@ -92,7 +123,8 @@ function renderBrain(body){
  for(const m of recent){
   const row=el('div','vp3-teams-brain-row');
   row.appendChild(el('strong','',m.objective||'Mission'));
-  row.appendChild(el('small','',(m.status||'unknown')+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.tasks||[]).length+' workers'));
+  row.appendChild(el('small','',(m.status||'unknown')+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.tasks||[]).length+' workers'+
+   ((staffingByMission.get(m.id)||[]).some(p=>p.status==='proposed')?' · Staffing approval needed':'')));
   section.appendChild(row);
  }
  body.prepend(section);
@@ -105,13 +137,23 @@ function renderBrain(body){
  }
 }
 window.VP3_AGENT_TEAMS_A3_BRAIN=renderBrain;
+async function loadSupervision(mid){
+ const result=await api('decisions',{mission_id:mid});
+ const records=Array.isArray(result.items)?result.items:[];
+ staffingByMission.set(mid,records);
+ if(mid===selected){
+  const mission=await api('get',{mission_id:mid});
+  if(mission.mission)showMission(mission.mission);
+ }
+}
 async function load(){
  if(inflight)return;
  inflight=true;
  try{
   const result=await api('list');items=Array.isArray(result.items)?result.items:[];lastRefresh=Date.now();showList();
   say('HomeServer connected · '+items.length+' recent mission'+(items.length===1?'':'s')+'.');
-  if(selected&&items.some(x=>x.id===selected)){const current=await api('get',{mission_id:selected});if(current.mission)showMission(current.mission);}
+  if(selected&&items.some(x=>x.id===selected)){const current=await api('get',{mission_id:selected});if(current.mission)showMission(current.mission);
+   try{await loadSupervision(selected);}catch(_){/* Mission status remains available if supervision is unsupported. */}}
  }finally{inflight=false;}
 }
 async function operation(action,id,taskId){
@@ -119,11 +161,26 @@ async function operation(action,id,taskId){
  if(busy)return;
  if(action==='resume'&&!window.confirm('Resume and rerun interrupted model work?'))return;
  if(action==='retry'&&!window.confirm('Retry this worker? The model request may use additional tokens.'))return;
+ if(action==='approve'&&!window.confirm('Approve these new read-only workers? Additional model usage will occur.'))return;
+ if(action==='reject'&&!window.confirm('Reject this staffing proposal? No workers will be created.'))return;
  setBusy(true);
  try{const payload={mission_id:id};if(action==='resume')payload.allow_reexecution=true;
   if(action==='retry')payload.task_id=taskId;
-  const response=await api(action,payload);if(response.mission)showMission(response.mission);
-  await load();if(action==='get'&&response.mission)showMission(response.mission);
+  if(action==='evaluate'){
+   const requestId=window.crypto&&window.crypto.randomUUID?window.crypto.randomUUID():'';
+   if(!requestId)throw new Error('Secure staffing request IDs are not available.');
+   payload.request_id=requestId;
+   say('Supervisor is evaluating mission results…');
+  }
+  if(action==='approve'||action==='reject'){payload.decision_id=taskId;payload.confirmed=true;}
+  const response=await api(action,payload);
+  if(response.mission)showMission(response.mission);
+  if(response.supervision){
+   staffingByMission.set(id,[response.supervision,...(staffingByMission.get(id)||[]).filter(p=>p.id!==response.supervision.id)]);
+   say(action==='evaluate'?'Supervisor recommendation ready for your review.':'Staffing decision recorded.');
+  }
+  await load();
+  if(action==='get'&&response.mission)showMission(response.mission);
  }catch(e){say(e.message||'Mission action failed.');}finally{setBusy(false);}
 }
 root.addEventListener('toggle',()=>{

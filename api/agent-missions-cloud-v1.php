@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events'],true))
+    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
@@ -53,6 +53,20 @@ try {
             $taskId=trim((string)($input['task_id']??''));
             if(!preg_match('/^[0-9a-f-]{36}$/i',$taskId))throw new RuntimeException('Task identifier is invalid.',422);
             $payload['task_id']=$taskId;
+        }
+        if($action==='evaluate'){
+            $requestId=trim((string)($input['request_id']??''));
+            if(!preg_match('/^[A-Za-z0-9._:-]{8,128}$/',$requestId))
+                throw new RuntimeException('Supervisor request identifier is invalid.',422);
+            $payload['request_id']=$requestId;
+        }
+        if($action==='approve'||$action==='reject'){
+            $decisionId=trim((string)($input['decision_id']??''));
+            if(!preg_match('/^[0-9a-f-]{36}$/i',$decisionId))
+                throw new RuntimeException('Supervisor decision identifier is invalid.',422);
+            if(($input['confirmed']??null)!==true)
+                throw new RuntimeException('Explicit staffing review confirmation required.',409);
+            $payload['decision_id']=$decisionId;
         }
         if($action==='events'){
             $after=$input['after']??0;
