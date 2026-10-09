@@ -23,7 +23,7 @@ assert.match(js,/api\('bind_provider'/);
 const indexBind=js.indexOf("api('bind_provider'");
 const indexStart=js.indexOf("api('start'",indexBind);
 assert.ok(indexBind>=0&&indexStart>indexBind,'Bind provider before mission start');
-assert.match(js,/isolated model-only contexts/);
+assert.match(js,/isolated contexts/);
 assert.match(css,/select\[name=provider_key\]/);
 assert.doesNotMatch(js,/eval\(/);
 assert.doesNotMatch(php,/api\/v1\/control/);
