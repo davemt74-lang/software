@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
+    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','tools.get','tools.configure','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
@@ -77,6 +77,14 @@ try {
                 throw new RuntimeException('Unrecognized worker inference provider.',422);
             $payload['task_id']=$taskId;
             $payload['provider_key']=$provider;
+        }
+        if($action==='tools.configure'){
+            $requestId=$input['request_id']??null;
+            $revision=$input['expected_revision']??null;
+            $assignments=$input['assignments']??null;
+            if(!is_string($requestId)||!preg_match('/^[0-9a-f-]{36}$/',$requestId)||!is_int($revision)||$revision<0||($input['confirmed']??null)!==true||!is_array($assignments)||array_is_list($assignments))
+                throw new RuntimeException('Reviewed specialist assignments, revision and operation ID required.',422);
+            $payload+=['assignments'=>$assignments,'request_id'=>$requestId,'expected_revision'=>$revision,'confirmed'=>true];
         }
         if(str_starts_with($action,'browser.')){
             $worker=trim((string)($input['task_id']??''));
