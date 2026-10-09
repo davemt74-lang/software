@@ -22,7 +22,7 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','tools.get','tools.configure','tools.start','tools.status','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
+    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','tools.get','tools.configure','tools.start','tools.status','actions.list','actions.review','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
@@ -77,6 +77,13 @@ try {
                 throw new RuntimeException('Unrecognized worker inference provider.',422);
             $payload['task_id']=$taskId;
             $payload['provider_key']=$provider;
+        }
+        if($action==='actions.review'){
+            $change=$input['action_id']??null;$hash=$input['expected_hash']??null;
+            $decision=$input['decision']??null;$reviewId=$input['request_id']??null;
+            if(!is_string($change)||!preg_match('/^[0-9a-f-]{36}$/',$change)||!is_string($hash)||!preg_match('/^[0-9a-f]{64}$/',$hash)||!in_array($decision,['approve','deny'],true)||!is_string($reviewId)||!preg_match('/^[0-9a-f-]{36}$/',$reviewId)||($input['confirmed']??null)!==true)
+                throw new RuntimeException('Exact specialist change and explicit review required.',422);
+            $payload+=['action_id'=>$change,'expected_hash'=>$hash,'decision'=>$decision,'request_id'=>$reviewId,'confirmed'=>true];
         }
         if($action==='tools.configure'||$action==='tools.start'){
             $requestId=$input['request_id']??null;
