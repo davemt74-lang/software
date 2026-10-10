@@ -60,6 +60,8 @@ jobs:
         run: node tests/agent-missions-cloud-a5c3-browser.mjs
       - name: A5C4 verified results and lead completion
         run: node tests/agent-missions-cloud-a5c4-browser.mjs
+      - name: Cloud ordinary composer task mode
+        run: node tests/agent-missions-cloud-a5c5-browser.mjs
       - name: A4 reviewed cognitive staffing browser acceptance
         run: node tests/agent-missions-cloud-a4-browser.mjs
   transfer-mysql:
@@ -320,5 +322,3 @@ jobs:
 
       - name: Verify complete compute provenance journey
         run: php tests/homeserver-runtime-journey-v030.php
-      - name: Cloud ordinary composer task mode
-        run: node tests/agent-missions-cloud-a5c5-browser.mjs
