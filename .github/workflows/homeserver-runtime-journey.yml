@@ -31,7 +31,7 @@ jobs:
           python3 - <<'PY_SCOPE'
           import os, re, subprocess
           diff = subprocess.run(['git', 'diff', '--name-only', 'HEAD^', 'HEAD'], text=True, capture_output=True)
-          pattern = r'^(chat-agent-teams-a3\.(?:js|css)|chat-notifications-drawer-v240\.js|api/agent-missions-cloud-v1\.php|tests/agent-missions-cloud-a3-browser\.mjs|tests/agent-missions-cloud-a4-browser\.mjs|tests/agent-missions-cloud-a5c2-browser\.mjs|tests/agent-missions-cloud-a5c3-browser\.mjs|tests/agent-missions-cloud-a5c4-browser\.mjs|chat-homeserver-transcription-import\.js|artist-listening(-workspace\.js|\.php)|includes/artist-listening\.php|api/artist-listening-v172\.php|includes/homeserver-(transcription-import|knowledge-backup).*\.php|api/homeserver-transcription-import.*\.php|tests/transfer.*section7.*|\.github/workflows/homeserver-runtime-journey\.yml)$'
+          pattern = r'^(chat-agent-teams-a3\.(?:js|css)|chat-notifications-drawer-v240\.js|api/agent-missions-cloud-v1\.php|tests/agent-missions-cloud-a3-browser\.mjs|tests/agent-missions-cloud-a4-browser\.mjs|tests/agent-missions-cloud-a5c2-browser\.mjs|tests/agent-missions-cloud-a5c3-browser\.mjs|tests/agent-missions-cloud-a5c4-browser\.mjs|tests/agent-missions-cloud-a5c5-browser\.mjs|chat-homeserver-transcription-import\.js|artist-listening(-workspace\.js|\.php)|includes/artist-listening\.php|api/artist-listening-v172\.php|includes/homeserver-(transcription-import|knowledge-backup).*\.php|api/homeserver-transcription-import.*\.php|tests/transfer.*section7.*|\.github/workflows/homeserver-runtime-journey\.yml)$'
           changed = diff.returncode != 0 or any(re.match(pattern, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
@@ -320,3 +320,5 @@ jobs:
 
       - name: Verify complete compute provenance journey
         run: php tests/homeserver-runtime-journey-v030.php
+      - name: Cloud ordinary composer task mode
+        run: node tests/agent-missions-cloud-a5c5-browser.mjs
