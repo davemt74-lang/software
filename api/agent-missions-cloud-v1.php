@@ -22,18 +22,20 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','tools.get','tools.configure','tools.start','tools.status','actions.list','actions.review','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
+    if(!in_array($action,['list','get','create','task.prepare','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','tools.get','tools.configure','tools.start','tools.status','actions.list','actions.review','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false))
         throw new RuntimeException('HomeServer is not connected. Pair it in Settings.',503);
     $payload=[];
-    if($action==='create'){
+    if($action==='create'||$action==='task.prepare'){
         $objective=trim((string)($input['objective']??''));
         if($objective===''||strlen($objective)>4000)throw new RuntimeException('Mission objective must contain 1 to 4,000 characters.',422);
         $requestId=trim((string)($input['request_id']??''));
         if(!preg_match('/^[A-Za-z0-9._:-]{8,128}$/',$requestId))
             throw new RuntimeException('Mission request identifier is invalid.',422);
+        if($action==='task.prepare'&&!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/',$requestId))
+            throw new RuntimeException('Canonical task request UUID required.',422);
         $thread=$input['thread_id']??0;
         if(!is_int($thread)||$thread<0||$thread>2147483647)
             throw new RuntimeException('Chat thread identifier is invalid.',422);
