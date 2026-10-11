@@ -37,6 +37,7 @@
     acted:'In progress'
   }[String(value || '')] || '');
 
+  let missionUnread = 0;
   let state = null;
   let stateGeneration = 0;
   let stateWrites = Promise.resolve();
@@ -100,7 +101,7 @@
   }
 
   function updateUnread() {
-    const count = Number(state?.notifications?.unread || 0);
+    const count = Number(state?.notifications?.unread || 0) + missionUnread;
     if (!button) return;
     let badge = button.querySelector(':scope > span');
     if (count > 0) {
@@ -920,7 +921,7 @@
     if (!drawer) return;
     drawer.querySelectorAll('[data-notification-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.notificationTab === activeTab));
     const count = drawer.querySelector('[data-notification-tab-count]');
-    const unread = Number(state?.notifications?.unread || 0);
+    const unread = Number(state?.notifications?.unread || 0) + missionUnread;
     if (count) {
       count.hidden = unread < 1;
       count.textContent = unread > 99 ? '99+' : String(unread);
@@ -934,6 +935,9 @@
     body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : notificationView();
     if (activeTab === 'brain' && typeof window.VP3_AGENT_TEAMS_A3_BRAIN === 'function') {
       window.VP3_AGENT_TEAMS_A3_BRAIN(body);
+    }
+    if (activeTab === 'notifications' && typeof window.VP3_AGENT_MISSION_NOTIFICATIONS === 'function') {
+      const missions=document.createElement('section');missions.className='chat-activity-section';body.prepend(missions);window.VP3_AGENT_MISSION_NOTIFICATIONS(missions);
     }
     updateUnread();
   }
@@ -1310,6 +1314,7 @@
     attentionTimer = window.setInterval(() => pollAttention(false), 5000);
   }
 
+  window.addEventListener('vp3:mission-notifications',event=>{missionUnread=Math.max(0,Number(event.detail?.unread)||0);updateUnread();if(drawer?.classList.contains('open'))render();});
   if (!ownNotificationButton()) return;
   ensureDrawer();
   keepBellNextToProfile();
