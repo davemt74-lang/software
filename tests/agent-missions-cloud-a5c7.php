@@ -24,7 +24,7 @@ fclose($pipes[0]);
 function check(bool $condition,string $message):void{if(!$condition)throw new RuntimeException($message);}
 function send(array $body,array $headers=[]):array{
     global $address;
-    $context=stream_context_create(['http'=>['method'=>'POST','header'=>implode("\r\n",array_merge(['Content-Type: application/json'],$headers)),'content'=>json_encode($body),'ignore_errors'=>true,'timeout'=>5]]);
+    $context=stream_context_create(['http'=>['method'=>'POST','header'=>implode("\r\n",array_merge(['Content-Type: application/json'],$headers)),'content'=>json_encode($body,JSON_UNESCAPED_UNICODE),'ignore_errors'=>true,'timeout'=>5]]);
     $text=file_get_contents('http://'.$address.'/api/agent-missions-cloud-v1.php',false,$context);
     preg_match('/\s(\d{3})\s/',$http_response_header[0]??'',$match);
     return [(int)($match[1]??0),json_decode((string)$text,true,24,JSON_THROW_ON_ERROR)];
@@ -36,7 +36,9 @@ try{
     $body=['action'=>'task.route','csrf_token'=>'fixture','objective'=>'Review contacts','request_id'=>'44444444-4444-4444-8444-444444444444','thread_id'=>77];
     [$status,$result]=send($body);check($status===200&&$result['route']==='chat','Disconnected routing must retain ordinary chat.');
     check(!file_exists($root.'/queue.json'),'Offline routing must not queue work.');
-    foreach([['csrf_token'=>'wrong'],['request_id'=>'invalid'],['thread_id'=>-1],['objective'=>''],['objective'=>str_repeat('x',4001)],['objective'=>[]]] as $invalid){
+    [$status,$result]=send(array_replace($body,['objective'=>str_repeat('界',2000)]));
+    check($status===200&&$result['route']==='chat','Planning limits count Unicode characters rather than bytes.');
+    foreach([['csrf_token'=>'wrong'],['request_id'=>'invalid'],['thread_id'=>-1],['objective'=>''],['objective'=>str_repeat('x',4001)],['objective'=>str_repeat('界',4001)],['objective'=>[]]] as $invalid){
         [$status,$result]=send(array_replace($body,$invalid));check(in_array($status,[419,422],true)&&!$result['ok'],'Invalid offline request was accepted.');
     }
     [$status,$result]=send($body,['X-Test-Access: no']);check($status===403,'Chat permission must precede offline fallback.');

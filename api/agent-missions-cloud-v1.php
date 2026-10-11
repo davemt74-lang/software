@@ -47,7 +47,7 @@ try {
     }elseif($action==='create'||$action==='task.prepare'||$action==='task.route'){
         if(!is_string($input['objective']??null))throw new RuntimeException('Mission objective must be text.',422);
         $objective=trim($input['objective']);
-        if($objective===''||strlen($objective)>4000)throw new RuntimeException('Mission objective must contain 1 to 4,000 characters.',422);
+        if($objective===''||preg_match_all('/./us',$objective)>4000)throw new RuntimeException('Mission objective must contain 1 to 4,000 characters.',422);
         $requestId=trim((string)($input['request_id']??''));
         if(!preg_match('/^[A-Za-z0-9._:-]{8,128}$/',$requestId))
             throw new RuntimeException('Mission request identifier is invalid.',422);
