@@ -22,10 +22,16 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['list','get','create','task.prepare','task.route','schedule.list','schedule.create','schedule.pause','schedule.resume','schedule.cancel','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','tools.get','tools.configure','tools.start','tools.status','actions.list','actions.review','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
+    if(!in_array($action,['progress.feed','notifications.list','notifications.read','list','get','create','task.prepare','task.route','schedule.list','schedule.create','schedule.pause','schedule.resume','schedule.cancel','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','tools.get','tools.configure','tools.start','tools.status','actions.list','actions.review','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $payload=[];
-    if(str_starts_with($action,'schedule.')){
+    if(in_array($action,['progress.feed','notifications.list','notifications.read'],true)){
+        if($action==='notifications.read'){
+            $notice=$input['notice_id']??null;
+            if(!is_int($notice)||$notice<1)throw new RuntimeException('Notification identifier is invalid.',422);
+            $payload=['notice_id'=>$notice];
+        }
+    }elseif(str_starts_with($action,'schedule.')){
         if($action!=='schedule.list'){
             $requestId=$input['request_id']??null;$revision=$input['expected_revision']??null;
             if(!is_string($requestId)||!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/',$requestId)||!is_int($revision)||$revision<1||($input['confirmed']??null)!==true)
