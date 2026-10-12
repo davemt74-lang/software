@@ -27,13 +27,17 @@
     <section class="card">
       <div class="eyebrow">Browser connection</div>
       <div id="connectionSummary" class="connection-state">Checking…</div>
+      <p id="connectionError" class="hint" role="status" hidden></p>
+      <button id="diagnoseBtn" type="button">Check Cloud and HomeServer integration</button>
+      <pre id="diagnosticResult" class="hint" hidden></pre>
       <p id="extensionOrigin" class="hint"></p>
       <button id="disconnectBtn" type="button" class="danger-btn" hidden>Disconnect and revoke this browser</button>
+      <button id="resetLocalBtn" type="button" class="danger-btn" hidden>Forget local pairing to recover connection</button>
     </section>
 
     <section class="card">
-      <div class="eyebrow">Development</div>
-      <p class="hint">Unpacked Chrome extensions receive an installation-specific extension origin. VP3 production should allow only the published extension origin. A development VP3 installation can temporarily enable its existing unlisted-Chrome-origin switch while testing an unpacked build.</p>
+      <div class="eyebrow">Connection identity</div>
+      <p class="hint">This package includes a stable Chrome identity. If Cloud rejects it, compare the extension origin shown above with Cloud’s approved extension origin. Update the same extension installation to preserve its pairing.</p>
     </section>
 
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>

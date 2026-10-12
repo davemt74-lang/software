@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
+
+const source=await fs.readFile(new URL('../browser-companion/background.js',import.meta.url),'utf8');
+const stored={base_url:'https://cloud.example/installed/vp3',device_token:'a'.repeat(64)};
+const requests=[];let response=()=>({ok:true,status:200,json:async()=>({ok:true,user:{display_name:'Account'},device_id:'device',capabilities:['agent.message']})});
+const chrome={runtime:{id:'a'.repeat(32)},storage:{local:{get:async keys=>Object.fromEntries(keys.filter(k=>k in stored).map(k=>[k,stored[k]])),set:async values=>Object.assign(stored,values),remove:async keys=>{for(const k of Array.isArray(keys)?keys:[keys])delete stored[k];}}},permissions:{contains:async()=>true,request:async()=>true}};
+const sandbox={chrome,importScripts:()=>{},URL,Headers,AbortController,TextEncoder,TextDecoder,crypto:webcrypto,setTimeout,clearTimeout,console,
+ fetch:async(url,options)=>{requests.push({url,options});return response(url,options);}};
+vm.createContext(sandbox);vm.runInContext(source.split('chrome.runtime.onInstalled.addListener')[0],sandbox);
+assert.equal(vm.runInContext("cleanBaseUrl('https://cloud.example/installed/vp3/')",sandbox),'https://cloud.example/installed/vp3');
+assert.equal(vm.runInContext("apiUrl('https://cloud.example/installed/vp3','/api/extension-me.php')",sandbox),'https://cloud.example/installed/vp3/api/extension-me.php');
+assert.throws(()=>vm.runInContext("cleanBaseUrl('https://user:password@cloud.example/')",sandbox));
+assert.throws(()=>vm.runInContext("cleanBaseUrl('https://cloud.example/%00')",sandbox));
+assert.throws(()=>vm.runInContext("cleanBaseUrl('http://cloud.example/')",sandbox));
+let state=await sandbox.publicState();assert.equal(state.connected,true);assert.equal(requests.at(-1).url,'https://cloud.example/installed/vp3/api/extension-me.php');
+assert.equal(requests.at(-1).options.headers.get('Authorization'),'Bearer '+'a'.repeat(64));
+assert.equal(requests.at(-1).options.redirect,'error');
+let permissionRequests=0;chrome.permissions.contains=async()=>false;chrome.permissions.request=async()=>{permissionRequests++;return true;};
+state=await sandbox.publicState();assert.equal(state.connection_error.code,'site_permission_required');assert.equal(permissionRequests,0);assert.equal(stored.device_token,'a'.repeat(64));chrome.permissions.contains=async()=>true;
+// A temporary network failure retains the pairing credential and reports a useful cause.
+response=()=>{throw new TypeError('Failed to fetch')};sandbox.TypeError=TypeError;
+state=await sandbox.publicState();assert.equal(state.connected,false);assert.equal(state.connection_error.code,'network_or_cors');assert.match(state.connection_error.message,/CORS/);assert.equal(stored.device_token,'a'.repeat(64));
+response=()=>{const error=new Error('Aborted');error.name='AbortError';throw error;};
+state=await sandbox.publicState();assert.equal(state.connection_error.code,'connection_timeout');assert.equal(stored.device_token,'a'.repeat(64));
+response=()=>({ok:true,status:200,json:async()=>{throw new Error('HTML login page')}});
+state=await sandbox.publicState();assert.equal(state.connection_error.code,'invalid_cloud_response');assert.equal(stored.device_token,'a'.repeat(64));
+response=()=>({ok:false,status:403,json:async()=>({ok:false,error:{code:'permission_required',message:'Review permission'}})});
+state=await sandbox.publicState();assert.equal(state.connection_error.code,'permission_required');assert.equal(stored.device_token,'a'.repeat(64));
+response=()=>({ok:true,status:200,json:async()=>({ok:true,diagnostics:{contract:'vp3.agent-integration.diagnostics.v1',ready:false,checks:[{key:'transport',status:'blocked'}]}})});
+const diagnostic=await sandbox.integrationDiagnostics();assert.equal(diagnostic.extension.cloud_base,stored.base_url);assert.equal(diagnostic.extension.connected,true);assert.equal(diagnostic.ready,false);assert.ok(!JSON.stringify(diagnostic).includes(stored.device_token));
+assert.equal(requests.at(-1).url,'https://cloud.example/installed/vp3/api/extension-integration-diagnostics-v1.php');
+response=()=>({ok:false,status:401,json:async()=>({ok:false,error:{code:'authentication_required'}})});
+state=await sandbox.publicState();assert.equal(state.connection_error.code,'reconnect_required');assert.equal(stored.device_token,undefined);
+stored.device_token='b'.repeat(64);stored.preference='keep';
+await assert.rejects(()=>sandbox.resetLocalConnection(false));assert.equal(stored.device_token,'b'.repeat(64));
+const beforeReset=requests.length;const reset=await sandbox.resetLocalConnection(true);assert.equal(reset.server_revocation,false);assert.equal(stored.device_token,undefined);assert.equal(stored.preference,'keep');assert.equal(requests.length,beforeReset);
+console.log('PASS: installation subfolder preserved; network/HTML/permission errors classified; token retained for temporary failures and erased for revocation; authenticated extension integration diagnostic.');

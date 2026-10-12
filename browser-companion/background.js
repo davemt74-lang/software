@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.9.3';
+const VP3_EXTENSION_VERSION = '22.10.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 importScripts('screenshots-store.js', 'screenshots-worker.js');
 
@@ -38,8 +38,11 @@ function cleanBaseUrl(value) {
   if (parsed.protocol !== 'https:' && !(local && parsed.protocol === 'http:')) {
     throw new Error('VP3 must use HTTPS. HTTP is allowed only for localhost development.');
   }
-  if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('VP3 URL must contain only the site origin.');
-  return parsed.origin;
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('VP3 URL must contain only the site origin and installation folder.');
+  const path = parsed.pathname.replace(/\/+$/, '');
+  let decoded;try{decoded=decodeURIComponent(path);}catch(_){throw new Error('VP3 site path is invalid.');}
+  if (/%2f|%5c|%00/i.test(path) || /[\\\x00-\x1f]/.test(decoded)) throw new Error('VP3 site path is invalid.');
+  return parsed.origin + path;
 }
 
 function apiUrl(base, path) { return `${cleanBaseUrl(base)}${path}`; }
@@ -94,18 +97,18 @@ async function config() {
   return { base_url: cleanBaseUrl(state.base_url || VP3_DEFAULT_BASE) };
 }
 
-async function ensureOriginPermission(baseUrl) {
+async function ensureOriginPermission(baseUrl, request = false) {
   const origin = `${new URL(cleanBaseUrl(baseUrl)).origin}/*`;
   if (origin === 'https://vp3.me/*') return true;
   const has = await chrome.permissions.contains({ origins: [origin] });
   if (has) return true;
-  return chrome.permissions.request({ origins: [origin] });
+  return request ? chrome.permissions.request({ origins: [origin] }) : false;
 }
 
 async function fetchJson(path, options = {}, boundBase = null) {
   const { base_url } = boundBase ? {base_url: cleanBaseUrl(boundBase)} : await config();
   const allowed = await ensureOriginPermission(base_url);
-  if (!allowed) throw new Error('Permission to connect to this VP3 installation was not granted.');
+  if (!allowed) {const error=new Error('Chrome site permission is missing. Open extension Settings and save the VP3 site to grant access.');error.code='site_permission_required';throw error;}
   const headers = new Headers(options.headers || {});
   headers.set('X-VP3-Extension-Version', VP3_EXTENSION_VERSION);
   headers.set('X-VP3-Contract-Version', VP3_CONTRACT_VERSION);
@@ -116,17 +119,24 @@ async function fetchJson(path, options = {}, boundBase = null) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 125000);
   try {
-  const response = await fetch(apiUrl(base_url, path), { ...options, headers, signal: controller.signal, cache: 'no-store' });
+  const response = await fetch(apiUrl(base_url, path), { ...options, headers, signal: controller.signal, cache: 'no-store', redirect: 'error' });
   let payload = null;
-  try { payload = await response.json(); } catch { payload = null; }
+  try { payload = await response.json(); } catch {
+    const error = new Error('The Cloud endpoint returned a page instead of JSON. Check the VP3 site URL, installation folder, login redirects, and deployed API files.');
+    error.status=response.status;error.code='invalid_cloud_response';throw error;
+  }
   if (!response.ok || !payload?.ok) {
-    const message = payload?.error?.message || payload?.message || `VP3 request failed (${response.status}).`;
+    const message = payload?.error?.message || (typeof payload?.error==='string'?payload.error:'') || payload?.message || `VP3 request failed (${response.status}).`;
     const error = new Error(message);
     error.status = response.status;
     error.code = payload?.error?.code || payload?.error || 'request_failed';
     throw error;
   }
   return payload;
+  } catch (error) {
+    if(error.name==='AbortError'){const failure=new Error('Cloud connection timed out. Check the site and HomeServer relay status, then retry.');failure.code='connection_timeout';throw failure;}
+    if(error instanceof TypeError){const failure=new Error('Chrome could not reach the Cloud API. Check the VP3 site URL, HTTPS certificate, Chrome site permission, server CORS, and redirects.');failure.code='network_or_cors';throw failure;}
+    throw error;
   } finally { clearTimeout(timer); }
 }
 
@@ -1720,7 +1730,7 @@ async function beginConnect(deviceName) {
   try {
   const installation_id = await ensureInstallation();
   const { base_url } = await config();
-  if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
+  if (!(await ensureOriginPermission(base_url, true))) throw new Error('VP3 site permission was not granted.');
 
   const redirect_uri = chrome.identity.getRedirectURL('vp3-connect');
   const state = uuid();
@@ -2519,6 +2529,7 @@ async function publicState() {
     base_url: cleanBaseUrl(state.base_url || VP3_DEFAULT_BASE),
     installation_id: state.installation_id || '',
     connected: false,
+    local_paired: Boolean(state.device_token),
     device_id: '',
     user: null,
     capabilities: [],
@@ -2540,9 +2551,22 @@ async function publicState() {
       release: account.release || null
     };
   } catch (error) {
-    if (error.code === 'reconnect_required' || error.status === 401) return base;
-    throw error;
+    return {...base,connection_error:{code:String(error.code||'connection_failed').slice(0,80),status:Number(error.status)||0,message:String(error.message||'Connection failed. Open Settings and run the integration diagnostic.').slice(0,500)}};
   }
+}
+
+async function integrationDiagnostics() {
+  const context=await connectionContext();
+  const report=await authorizedFetch('/api/extension-integration-diagnostics-v1.php',{method:'GET'});
+  if(!(await connectionStillCurrent(context)))throw new Error('Browser connection changed. Run the diagnostic again.');
+  return {...report.diagnostics,extension:{version:VP3_EXTENSION_VERSION,origin:'chrome-extension://'+chrome.runtime.id,cloud_base:context.base_url,connected:true}};
+}
+
+async function resetLocalConnection(confirmed) {
+  if(confirmed!==true)throw new Error('Confirm removal of this browser’s local pairing first.');
+  ++connectionGeneration;connectionFlowActive=false;
+  await clearRevokedConnection();
+  return {local_only:true,server_revocation:false};
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -2595,6 +2619,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const run = async () => {
     switch (message?.type) {
       case 'state': return publicState();
+      case 'integration_diagnostics': return integrationDiagnostics();
+      case 'reset_local_connection': return resetLocalConnection(message.confirmed);
       case 'capture': return activeCapture();
       case 'tab_identity': return activeTabIdentity();
       case 'capture_region': return selectScreenshotRegion();
@@ -2685,7 +2711,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             throw new Error('Disconnect this browser from the current VP3 site before changing the VP3 site.');
           }
         }
-        if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
+        if (!(await ensureOriginPermission(base_url, true))) throw new Error('VP3 site permission was not granted.');
         ++connectionGeneration;
         await storage.set({ base_url });
         return { base_url };

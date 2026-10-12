@@ -4,6 +4,10 @@ const connectionSummary = document.getElementById('connectionSummary');
 const extensionOrigin = document.getElementById('extensionOrigin');
 const disconnectBtn = document.getElementById('disconnectBtn');
 const notice = document.getElementById('notice');
+const connectionError = document.getElementById('connectionError');
+const diagnoseBtn = document.getElementById('diagnoseBtn');
+const diagnosticResult = document.getElementById('diagnosticResult');
+const resetLocalBtn = document.getElementById('resetLocalBtn');
 
 function message(type, data = {}) {
   return new Promise((resolve, reject) => {
@@ -30,8 +34,26 @@ async function render() {
     ? `Connected${state.user?.display_name ? ` as ${state.user.display_name}` : ''}`
     : 'Not connected';
   disconnectBtn.hidden = !state.connected;
+  resetLocalBtn.hidden=state.connected||!state.local_paired;
+  connectionError.hidden=!state.connection_error;
+  connectionError.textContent=state.connection_error?.message||'';
   extensionOrigin.textContent = `Extension origin: chrome-extension://${chrome.runtime.id}`;
 }
+
+diagnoseBtn.addEventListener('click',async()=>{
+  diagnoseBtn.disabled=true;diagnosticResult.hidden=false;diagnosticResult.textContent='Checking installed integration…';
+  try{const report=await message('integration_diagnostics');diagnosticResult.textContent=JSON.stringify(report,null,2);}
+  catch(error){diagnosticResult.textContent=error.message;await render();}
+  finally{diagnoseBtn.disabled=false;}
+});
+
+resetLocalBtn.addEventListener('click',async()=>{
+  if(!confirm('Forget this browser’s local pairing so you can correct the Cloud URL and reconnect? This does not revoke the old device authorization on Cloud.'))return;
+  resetLocalBtn.disabled=true;
+  try{await message('reset_local_connection',{confirmed:true});diagnosticResult.textContent='';diagnosticResult.hidden=true;notify('Local pairing cleared. Correct the VP3 site, then reconnect.','success');await render();}
+  catch(error){notify(error.message,'error');}
+  finally{resetLocalBtn.disabled=false;}
+});
 
 saveBaseUrl.addEventListener('click', async () => {
   saveBaseUrl.disabled = true;
