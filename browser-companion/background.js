@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.10.0';
+const VP3_EXTENSION_VERSION = '22.10.1';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 importScripts('screenshots-store.js', 'screenshots-worker.js');
 
@@ -2672,7 +2672,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'multisite_policy': return browserMultiSiteSetPolicyV2220(message.payload || {});
       case 'multisite_handoff': return browserMultiSiteHandoffV2220(message.payload || {});
       case 'multisite_fact_add': return browserMultiSiteFactAddV2220(message.payload || {});
-      case 'research_action': return browserResearchApiV2230(message.action, message.payload || {});
+      case 'research_runtime_action': return browserResearchApiV2230(message.action, message.payload || {});
       case 'research_analyze_current': return browserResearchAnalyzeCurrentV2230(message.payload || {});
       case 'transaction_review': return browserTransactionReviewV2240(message.payload || {});
       case 'transaction_execute': return browserTransactionExecuteV2240(message.payload || {});

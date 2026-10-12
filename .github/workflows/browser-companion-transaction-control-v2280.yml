@@ -67,6 +67,9 @@ jobs:
       - name: Chrome installation-folder connection and integration diagnostics
         run: node tests/browser-companion-integration-a5c11.mjs
 
+      - name: Research project and runtime message dispatch acceptance
+        run: node tests/browser-companion-research-dispatch.mjs
+
       - name: Integration PHP syntax
         run: |
           php -l api/extension-integration-diagnostics-v1.php

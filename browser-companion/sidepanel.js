@@ -706,7 +706,7 @@ async function runtimeMultiDomainChangeV2220(event){
 function researchRequestV2230(action,payload={}){
   const request=Object.assign({},payload||{});
   if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
-  return msg('research_action',{action:String(action||'list'),payload:request});
+  return msg('research_runtime_action',{action:String(action||'list'),payload:request});
 }
 function runtimeResearchResetV2230(){
   runtimeResearchMissionV2230=null;
