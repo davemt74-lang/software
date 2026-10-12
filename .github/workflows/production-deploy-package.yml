@@ -50,6 +50,8 @@ jobs:
           cat > _deploy/VP3_RELEASE.json <<EOF
           {
             "release": "VP3 Cloud Production",
+            "mission_lifecycle_section": "A5C10",
+            "minimum_mission_schema": 78,
             "build": "vp3-cloud-main-${VP3_RELEASE_SHA:0:12}",
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
