@@ -22,10 +22,23 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
-    if(!in_array($action,['progress.feed','notifications.list','notifications.read','list','get','create','task.prepare','task.route','schedule.list','schedule.create','schedule.pause','schedule.resume','schedule.cancel','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','tools.get','tools.configure','tools.start','tools.status','actions.list','actions.review','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
+    if(!in_array($action,['progress.feed','notifications.list','notifications.read','list','get','create','task.prepare','task.route','task.followup.get','task.followup.select','task.followup.decide','schedule.list','schedule.create','schedule.pause','schedule.resume','schedule.cancel','start','cancel','pause','resume','retry','events','evaluate','decisions','approve','reject','execution','bind_provider','tools.get','tools.configure','tools.start','tools.status','actions.list','actions.review','browser.grant','browser.get','browser.capture','browser.revoke','browser.live.start','browser.live.get','browser.live.refresh','browser.live.propose','browser.live.approve','browser.live.stop','browser.live.plan','browser.action.propose','browser.action.approve','browser.owner.takeover','browser.owner.release','browser.owner.control','browser.owner.search.review','browser.owner.search.submit'],true))
         throw new RuntimeException('Unsupported mission operation.',422);
     $payload=[];
-    if(in_array($action,['progress.feed','notifications.list','notifications.read'],true)){
+    if(in_array($action,['task.followup.get','task.followup.select','task.followup.decide'],true)){
+        $rid=$input['request_id']??null;
+        if(!is_string($rid)||!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/',$rid))throw new RuntimeException('Command request UUID required.',422);
+        $payload=['request_id'=>$rid];
+        if($action==='task.followup.select'){
+            $mid=$input['mission_id']??null;
+            if(!is_string($mid)||!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/',$mid))throw new RuntimeException('Choose the intended mission.',422);
+            $payload['mission_id']=$mid;
+        }elseif($action==='task.followup.decide'){
+            $hash=$input['expected_hash']??null;$decision=$input['decision']??null;$replay=$input['allow_reexecution']??false;
+            if(!is_string($hash)||!preg_match('/^[0-9a-f]{64}$/',$hash)||!in_array($decision,['apply','dismiss'],true)||($input['confirmed']??null)!==true||!is_bool($replay))throw new RuntimeException('Review and confirm the exact mission command.',422);
+            $payload+=['expected_hash'=>$hash,'decision'=>$decision,'confirmed'=>true,'allow_reexecution'=>$replay];
+        }
+    }elseif(in_array($action,['progress.feed','notifications.list','notifications.read'],true)){
         if($action==='notifications.read'){
             $notice=$input['notice_id']??null;
             if(!is_int($notice)||$notice<1)throw new RuntimeException('Notification identifier is invalid.',422);
