@@ -5,6 +5,7 @@ require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/extension-device-auth-v2001.php';
 require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php';
 require_once dirname(__DIR__).'/includes/browser-research-save-v2230.php';
+require_once dirname(__DIR__).'/includes/chat-browser-research-v1.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -147,7 +148,7 @@ try{
     $input=vp3_extension_research_input_v2230();
     $action=trim((string)($input['action']??'list'));
     $requestedAgentId=max(0,(int)($input['agent_id']??0));
-    $activeAgent=$requestedAgentId>0
+    $activeAgent=array_key_exists('agent_id',$input)
         ?vp3_agent_chat_resolve_agent_v380($pdo,$user,$requestedAgentId)
         :vp3_agent_chat_runtime_default_agent_v2160($pdo,$user);
     $principal=vp3_agent_chat_principal_v380($user,$activeAgent);
@@ -239,6 +240,7 @@ try{
         if($rawUrl===''||!preg_match('/^[a-f0-9]{64}$/',$pageFingerprint)||!hash_equals(hash('sha256',$rawUrl),$pageFingerprint)){
             throw new InvalidArgumentException('Current page fingerprint does not match the transient page URL.');
         }
+        $chatResearchLinked=table_exists('chat_browser_research_requests_v1')&&chat_research_analysis_guard_v1($pdo,$user,$missionId,(string)($session['device_id']??$session['installation_id']??$session['id']??''),(string)($input['lease_token']??''),$pageFingerprint);
         $pageText=mb_strimwidth(trim((string)($page['page_text']??'')),0,12000,'');
         if(mb_strlen($pageText)<40)throw new RuntimeException('There is not enough readable page text to analyze.');
 
@@ -298,6 +300,10 @@ try{
         if((string)$sourceRefs['source_public_id']===''||(string)$sourceRefs['source_version_public_id']===''){
             $gaps[]='Evidence from '.$domain.' is fingerprint-only because this analyzed page does not currently resolve to a canonical VP3 Source version.';
         }
+        if($chatResearchLinked){
+            $pdo->beginTransaction();
+            chat_research_analysis_guard_v1($pdo,$user,$missionId,(string)($session['device_id']??$session['installation_id']??$session['id']??''),(string)($input['lease_token']??''),$pageFingerprint,true);
+        }
         vp3_browser_research_add_page_v2230($pdo,$mission,[
             'domain'=>$domain,'page_fingerprint'=>$pageFingerprint,'content_hash'=>$contentHash,
             'source_kind'=>in_array((string)($payload['source_kind']??''),['primary','secondary','unknown'],true)?(string)$payload['source_kind']:'unknown',
@@ -320,17 +326,22 @@ try{
         vp3_browser_runtime_event_v2200($pdo,$runtime,'research_page_analyzed','Browser Research analyzed an approved page and updated its evidence ledger.','browser_research',null,'analyzed',[
             'target_type'=>'research_mission','target_id'=>$missionId
         ]);
+        if($chatResearchLinked)$pdo->commit();
         vp3_extension_research_json_v2230(200,$base+['mission'=>$fresh,'agent_answer_id'=>(int)($result['assistant_message_id']??0)]);
     }
 
     vp3_extension_research_json_v2230(422,['ok'=>false,'error'=>['code'=>'unknown_action','message'=>'Unknown Browser Research action.']]);
 }catch(VP3ExtensionSecurityExceptionV2001 $e){
+    if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();
     vp3_extension_research_json_v2230($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(InvalidArgumentException $e){
+    if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();
     vp3_extension_research_json_v2230(422,['ok'=>false,'error'=>['code'=>'invalid_request','message'=>$e->getMessage()]]);
 }catch(RuntimeException $e){
+    if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();
     vp3_extension_research_json_v2230(422,['ok'=>false,'error'=>['code'=>'research_unavailable','message'=>$e->getMessage()]]);
 }catch(Throwable $e){
+    if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();
     error_log('VP3 Browser Research v22.30 failed: '.$e->getMessage());
     vp3_extension_research_json_v2230(503,['ok'=>false,'error'=>['code'=>'service_unavailable','message'=>'Browser Research Agent is temporarily unavailable.']]);
 }

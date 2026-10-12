@@ -14,6 +14,7 @@ require_once __DIR__ . '/includes/browser-agent-runtime-v2200.php';
 require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';
 require_once __DIR__ . '/includes/browser-multisite-v2220.php';
 require_once __DIR__ . '/includes/browser-research-save-v2230.php';
+require_once __DIR__ . '/includes/chat-browser-research-v1.php';
 require_once __DIR__ . '/includes/browser-transaction-safety-v2240.php';
 require_once __DIR__ . '/includes/browser-transaction-outcome-v2250.php';
 require_once __DIR__ . '/includes/browser-transaction-continuity-v2260.php';
@@ -245,6 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_browser_source_feed_ensure_schema_v2050();
             vp3_research_ensure_schema_v2060();
             vp3_browser_research_ensure_schema_v2230();
+            chat_research_schema_v1($pdo);
             vp3_browser_transaction_ensure_schema_v2240();
             vp3_browser_outcome_ensure_schema_v2250();
             vp3_browser_continuity_ensure_schema_v2260();

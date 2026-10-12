@@ -708,6 +708,31 @@ function researchRequestV2230(action,payload={}){
   if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
   return msg('research_runtime_action',{action:String(action||'list'),payload:request});
 }
+async function loadChatResearchQueue(){
+  if(!state?.connected)return;
+  let host=document.getElementById('chatResearchQueue');
+  if(!host){host=el('section','runtime-research-panel','');host.id='chatResearchQueue';ui.agentView.append(host);}
+  const result=await msg('chat_research_action',{action:'worker.list'});
+  host.replaceChildren();host.append(el('strong','','Chat research runs'));
+  for(const request of result.requests||[]){
+    const row=el('div','runtime-research-source','');row.append(el('p','',request.question),el('small','',request.status.replace(/_/g,' ')));
+    for(const source of request.sources||[])row.append(el('small','',source.url));
+    if(['waiting_chrome','attention'].includes(request.status)){
+      const button=el('button','',request.status==='attention'?'Review and resume approved research':'Allow reviewed websites and read');button.type='button';
+      button.onclick=async()=>{
+        if(request.status==='attention'&&!window.confirm('Resume the same approved plan? Completed source receipts will be reused.'))return;
+        button.disabled=true;
+        try{
+          const origins=(request.sources||[]).map(s=>new URL(s.url).origin+'/*');
+          if(!(await chrome.permissions.request({origins})))throw new Error('Chrome site access was not granted.');
+          await msg('chat_research_run',{payload:{id:request.id,resume_confirmed:request.status==='attention'}});
+          note('Reviewed source reads finished. Open the original Chat conversation for the combined brief.','success');
+        }catch(e){await fail(e);}finally{button.disabled=false;await loadChatResearchQueue().catch(()=>{});}
+      };row.append(button);
+    }
+    host.append(row);
+  }
+}
 function runtimeResearchResetV2230(){
   runtimeResearchMissionV2230=null;
   ui.runtimeResearchStatus.textContent='Start a bounded mission inside the approved Browser Runtime.';
@@ -2296,6 +2321,7 @@ function setView(v){
   if(!now){clearInterval(cognitiveTimer);cognitiveTimer=null;}if(now)loadNow(true).catch(fail);
   if(!agent){clearInterval(agentPollTimer);agentPollTimer=null;}if(agent)refreshAgentWorkspaceV2160().catch(fail);
   if(delegation)loadDelegationsV2190().catch(fail);
+  if(agent)loadChatResearchQueue().catch(fail);
   if(execution)loadExecutionV2180().catch(fail);
   if(memory)loadMemoryV2170().catch(fail);
   if(page&&caps().has('team.chat.read'))loadThis(true).catch(fail);if(following)loadFollowing(true).catch(fail);if(live)loadLiveRooms().then(pollLiveRoom).catch(fail);if(alerts)loadAlerts().catch(fail);if(search)loadDiscovery().catch(fail);
@@ -2427,7 +2453,7 @@ ui.openVp3Btn.onclick=()=>msg('open_url',{url:absolute('/')}).catch(fail);
 ui.refreshAccountBtn.onclick=async()=>{busy(ui.refreshAccountBtn,true,'Refreshing…');try{await refreshState();note('VP3 account refreshed.','success');}catch(e){await fail(e);}finally{busy(ui.refreshAccountBtn,false);}};
 ui.refreshNowBtn.onclick=()=>loadNow(true).catch(fail);ui.openAgentChatBtn.onclick=()=>{if(contextAgentPayload)return openContextAgent('Review this page with me. Start with what is most relevant to my current VP3 work.').catch(fail);return msg('open_url',{url:absolute(cognitiveData&&cognitiveData.agent_url||'/chat.php')}).catch(fail);};ui.restoreNowBtn.onclick=async()=>{try{await cognitiveAction('restore_all',{});await loadNow(true);note('Hidden Agent items restored.','success');}catch(e){await fail(e);}};ui.toggleNowContextBtn.onclick=()=>{nowContextIgnored=!nowContextIgnored;loadNow(true).catch(fail);};ui.nowContextActions.onclick=contextSuggestionClick;ui.nowRelationshipList.onclick=contextSuggestionClick;ui.nowFeed.onclick=cognitiveClick;
 ui.nowTab.onclick=()=>setView('now');ui.agentTab.onclick=()=>setView('agent');ui.delegationTab.onclick=()=>setView('delegation');ui.executionTab.onclick=()=>setView('execution');ui.memoryTab.onclick=()=>setView('memory');ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
-ui.agentRefreshBtn.onclick=()=>refreshAgentWorkspaceV2160().catch(fail);
+ui.agentRefreshBtn.onclick=()=>{refreshAgentWorkspaceV2160().catch(fail);loadChatResearchQueue().catch(fail);};
 ui.delegationRefreshBtn.onclick=()=>loadDelegationsV2190().catch(fail);
 ui.delegationPreviewBtn.onclick=()=>previewDelegationV2190().catch(fail);
 ui.delegationStartBtn.onclick=()=>startDelegationV2190().catch(fail);

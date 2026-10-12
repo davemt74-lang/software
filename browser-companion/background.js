@@ -1,8 +1,8 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.10.1';
+const VP3_EXTENSION_VERSION = '22.11.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
-importScripts('screenshots-store.js', 'screenshots-worker.js');
+importScripts('screenshots-store.js', 'screenshots-worker.js', 'chat-research-worker.js');
 
 const storage = {
   async get(keys = null) { return chrome.storage.local.get(keys); },
@@ -524,8 +524,8 @@ async function browserResearchApiV2230(action,payload={}){
     method:'POST',json:{action:String(action||'list'),...payload}
   },'agent.message');
 }
-async function browserResearchCaptureV2230(){
-  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+async function browserResearchCaptureV2230(reviewedTabId=null){
+  const tab=reviewedTabId===null?(await chrome.tabs.query({active:true,currentWindow:true}))[0]:await chrome.tabs.get(reviewedTabId);
   if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))throw new Error('Open an approved web page before analyzing research evidence.');
   const injected=await chrome.scripting.executeScript({
     target:{tabId:tab.id},
@@ -2673,6 +2673,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'multisite_handoff': return browserMultiSiteHandoffV2220(message.payload || {});
       case 'multisite_fact_add': return browserMultiSiteFactAddV2220(message.payload || {});
       case 'research_runtime_action': return browserResearchApiV2230(message.action, message.payload || {});
+      case 'chat_research_action': return chatResearchApi(message.action,message.payload||{});
+      case 'chat_research_run': return chatResearchRun(message.payload||{});
       case 'research_analyze_current': return browserResearchAnalyzeCurrentV2230(message.payload || {});
       case 'transaction_review': return browserTransactionReviewV2240(message.payload || {});
       case 'transaction_execute': return browserTransactionExecuteV2240(message.payload || {});
@@ -2724,6 +2726,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 chrome.tabs.onUpdated.addListener((tabId,changeInfo,tab)=>{
+  chatResearchGuard(tabId,changeInfo,tab).catch(()=>{});
   browserMultiSiteGuardTabV2220(tabId,changeInfo,tab);
 });
 chrome.tabs.onRemoved.addListener(tabId=>{
@@ -2740,3 +2743,5 @@ if(chrome.downloads&&chrome.downloads.onCreated){
     browserMultiSiteRecordDownloadV2220(item).catch(()=>{});
   });
 }
+chrome.alarms.create('vp3-chat-research',{periodInMinutes:0.5});
+chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name==='vp3-chat-research')void chatResearchPoll();});

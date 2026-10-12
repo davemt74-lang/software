@@ -70,6 +70,16 @@ jobs:
       - name: Research project and runtime message dispatch acceptance
         run: node tests/browser-companion-research-dispatch.mjs
 
+      - name: Reviewed Chat research lifecycle and Chrome execution
+        run: |
+          php tests/chat-browser-research-v1.php
+          node tests/chat-browser-research-worker.mjs
+          php -l api/chat-browser-research-v1.php
+          php -l api/extension-research-agent-v2230.php
+          php -l includes/chat-browser-research-v1.php
+          node --check chat-browser-research-v1.js
+          node --check browser-companion/chat-research-worker.js
+
       - name: Integration PHP syntax
         run: |
           php -l api/extension-integration-diagnostics-v1.php
