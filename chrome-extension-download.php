@@ -69,6 +69,7 @@ $version = preg_match('/^\d+(?:\.\d+){1,3}$/', (string)($manifest['version'] ?? 
 $files = [
     'manifest.json',
     'background.js',
+    'chat-research-worker.js',
     'notification-icon.png',
     'offscreen.html',
     'offscreen.js',
