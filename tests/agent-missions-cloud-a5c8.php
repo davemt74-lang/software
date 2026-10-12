@@ -12,10 +12,26 @@ function csrf_token(){return 'fixture';}
 PHP);
 file_put_contents($root.'/includes/homeserver-https-relay-v1300.php', <<<'PHP'
 <?php
+function db(){
+    static $pdo=null;
+    if(!$pdo){$pdo=new PDO('sqlite::memory:',null,null,[PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);$pdo->exec('CREATE TABLE homeserver_https_requests(public_id TEXT,status TEXT,response_status INTEGER,response_json TEXT)');}
+    return $pdo;
+}
 function homeserver_https_v1300_status($user){return ['connected'=>(($_SERVER['HTTP_X_TEST_CONNECTED']??'no')==='yes')];}
-function homeserver_https_v1300_queue($user,$operation,$payload){file_put_contents(__DIR__.'/../queue.json',json_encode([$user,$operation,$payload]));return 'queued';}
-function homeserver_https_v1300_wait($request,$timeout){return (($_SERVER['HTTP_X_TEST_TIMEOUT']??'no')==='yes')?null:['ok'=>true,'contract'=>'vp3.agent-missions.cloud.v1','route'=>'chat','reason'=>'Direct answer'];}
+function homeserver_https_v1300_queue($user,$operation,$payload){
+    file_put_contents(__DIR__.'/../queue.json',json_encode([$user,$operation,$payload]));
+    $status=(int)($_SERVER['HTTP_X_TEST_UPSTREAM_STATUS']??200);
+    $body=$status===200?['ok'=>true,'contract'=>'vp3.agent-missions.cloud.v1','route'=>'chat','reason'=>'Direct answer']:['detail'=>'Upstream authorization or review rejected.'];
+    db()->prepare('INSERT INTO homeserver_https_requests VALUES(?,?,?,?)')->execute(['queued',($_SERVER['HTTP_X_TEST_TIMEOUT']??'no')==='yes'?'expired':($status===200?'completed':'failed'),$status,json_encode($body)]);
+    return 'queued';
+}
 PHP);
+// Exercise production receipt readback as well as the production HTTP endpoint.
+// A mocked wait hides the loss of upstream permission/error status codes.
+$relay=file_get_contents(__DIR__.'/../includes/homeserver-https-relay-v1300.php');
+$start=strpos($relay,'function homeserver_https_v1300_wait(');
+$end=strpos($relay,'function homeserver_https_v1300_remote_operation(',$start);
+file_put_contents($root.'/includes/homeserver-https-relay-v1300.php',substr($relay,$start,$end-$start),FILE_APPEND);
 $socket=stream_socket_server('tcp://127.0.0.1:0',$errno,$error);if(!$socket)throw new RuntimeException($error);
 $address=stream_socket_get_name($socket,false);fclose($socket);
 $process=proc_open([PHP_BINARY,'-S',$address,'-t',$root],[0=>['pipe','r'],1=>['file',$root.'/server.log','a'],2=>['file',$root.'/server.log','a']],$pipes);
@@ -47,7 +63,11 @@ try{
     $queue=json_decode(file_get_contents($root.'/queue.json'),true,24,JSON_THROW_ON_ERROR);check($queue===[12,'agent.missions.notifications.read',['notice_id'=>4]],'Read must preserve exact identity and current-user scope.');
     foreach([0,-1,'4',true,null] as $invalid){[$status,$result]=send($base+['action'=>'notifications.read','notice_id'=>$invalid],['X-Test-Connected: yes']);check($status===422,'Invalid notification ID accepted.');}
     [$status,$result]=send($base+['action'=>'progress.feed'],['X-Test-Connected: yes','X-Test-Timeout: yes']);check($status===503,'Uncertain feed must not report healthy.');
-    echo "A5C8 relay PASS: real HTTP source scoping, authentication/CSRF, notification read identity and disconnected feed handling\n";
+    foreach([401,403,404,409,422,503] as $upstream){
+        [$status,$result]=send($base+['action'=>'progress.feed'],['X-Test-Connected: yes','X-Test-Upstream-Status: '.$upstream]);
+        check($status===$upstream && $result['ok']===false,'Upstream status must survive receipt readback and HTTP relay.');
+    }
+    echo "A5C8 relay PASS: real HTTP source scoping, authentication/CSRF, notification read identity, production receipt readback, upstream rejection status and disconnected feed handling\n";
 }finally{
     proc_terminate($process);proc_close($process);
     foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST) as $file){$file->isDir()?rmdir($file->getPathname()):unlink($file->getPathname());}

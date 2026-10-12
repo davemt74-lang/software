@@ -237,7 +237,7 @@ try {
     echo json_encode($remote,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);
 }catch(Throwable $e){
     $status=(int)$e->getCode();
-    if(!in_array($status,[401,403,405,409,413,419,422,503],true))$status=503;
+    if(!in_array($status,[401,403,404,405,409,413,419,422,503],true))$status=503;
     http_response_code($status);
     if($status===503)error_log('HomeServer agent mission relay unavailable: '.get_class($e));
     $message=$status===503?'HomeServer mission service is temporarily unavailable.':$e->getMessage();

@@ -272,7 +272,9 @@ function homeserver_https_v1300_wait(string $requestId,int $timeoutMs=24000): ar
             $payload=json_decode((string)($row['response_json']??''),true);if(!is_array($payload))$payload=[];
             if($status==='failed'||(int)$row['response_status']<200||(int)$row['response_status']>=300){
                 $detail=trim((string)($payload['detail']??$payload['error']??''));
-                throw new RuntimeException($detail!==''?$detail:'HomeServer request failed.');
+                $remoteStatus=(int)$row['response_status'];
+                throw new RuntimeException($detail!==''?$detail:'HomeServer request failed.',
+                    $remoteStatus>=400&&$remoteStatus<=599?$remoteStatus:503);
             }
             return $payload;
         }
