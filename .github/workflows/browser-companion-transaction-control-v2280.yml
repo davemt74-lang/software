@@ -64,6 +64,14 @@ jobs:
           node tests/browser-companion-multisite-v2220.mjs
           node tests/browser-companion-research-agent-v2230.mjs
 
+      - name: Chrome installation-folder connection and integration diagnostics
+        run: node tests/browser-companion-integration-a5c11.mjs
+
+      - name: Integration PHP syntax
+        run: |
+          php -l api/extension-integration-diagnostics-v1.php
+          php -l includes/agent-integration-diagnostics-v1.php
+
       - name: JavaScript syntax
         run: |
           node --check browser-companion/background.js

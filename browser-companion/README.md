@@ -1,3 +1,7 @@
+# Integration and connection recovery — extension v22.10.0
+
+Preserves the full Cloud installation base path. Settings exposes an authenticated Cloud/HomeServer integration diagnostic. Temporary network, CORS, host-permission and non-JSON failures retain pairing; server-confirmed revocation requires reconnect. The existing Browser Research Agent, delegation and controlled transaction engines remain in place.
+
 # VP3 Browser Companion
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.

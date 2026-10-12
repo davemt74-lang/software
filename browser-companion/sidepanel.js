@@ -170,7 +170,7 @@ function renderConnection(x){
     ui.accessNotice.hidden=readable;
     renderAccountTeams();
   }else{
-    ui.connectionState.textContent='Not connected';
+    ui.connectionState.textContent=state.connection_error?.message||'Not connected';
     ui.connectControls.hidden=false;
     ui.accountTeams.textContent='';
   }

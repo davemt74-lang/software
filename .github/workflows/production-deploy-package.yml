@@ -50,8 +50,8 @@ jobs:
           cat > _deploy/VP3_RELEASE.json <<EOF
           {
             "release": "VP3 Cloud Production",
-            "mission_lifecycle_section": "A5C10",
-            "minimum_mission_schema": 78,
+            "mission_lifecycle_section": "A5C11",
+            "minimum_mission_schema": 79,
             "build": "vp3-cloud-main-${VP3_RELEASE_SHA:0:12}",
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
@@ -79,6 +79,8 @@ jobs:
           test -f _deploy/api/tracky-agent-eyes-v1g4.php
           test -f _deploy/tracky-agent-eyes-v1g4.js
           test -f _deploy/includes/tracky-agent-eyes-acceptance-v1g5.php
+          test -f _deploy/api/extension-integration-diagnostics-v1.php
+          test -f _deploy/includes/agent-integration-diagnostics-v1.php
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
 
