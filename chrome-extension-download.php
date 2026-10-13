@@ -71,6 +71,7 @@ $files = [
     'background.js',
     'chat-research-worker.js',
     'capture-routing-r4.js',
+    'project-knowledge-r5.js',
     'notification-icon.png',
     'offscreen.html',
     'offscreen.js',

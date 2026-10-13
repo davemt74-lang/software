@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.14.0';
+const VP3_EXTENSION_VERSION = '22.15.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 importScripts('screenshots-store.js', 'screenshots-worker.js', 'chat-research-worker.js');
 
@@ -2666,6 +2666,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'capture_r4': return captureRoutingR4(message.action, message.payload || {});
+      case 'project_knowledge_r5': {
+        const payload=message.payload||{};
+        if(!['list','edit'].includes(payload.action))throw new Error('Unknown Knowledge action.');
+        if(payload.action==='edit'&&payload.confirmed!==true)throw new Error('Review annotation changes before saving.');
+        return authorizedFetch('/api/project-knowledge-r5.php',{method:'POST',json:payload},payload.action==='edit'?'knowledge.write':'agent.message');
+      }
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
       case 'cognitive_now': return cognitiveNow();
       case 'cognitive_action': return cognitiveAction(message.action, message.payload || {});
