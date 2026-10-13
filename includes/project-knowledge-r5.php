@@ -74,7 +74,7 @@ function capture_r5_item(PDO $pdo,array $user,array $row,array $receipts=[]): ar
         'source_id'=>(int)($s['source_id']??0),'source_version_id'=>(int)($s['source_version_id']??0),'can_edit'=>$projectAvailable&&personal_capability_has_v242('personal_knowledge.manage',$user),
         'authority_source'=>'vp3_cloud','knowledge_revision'=>$k?capture_r5_record_hash($k):''];
     // The revision includes the canonical assignment even when its project title is no longer readable.
-    $item['knowledge_conflict']=$k&&(trim((string)$k['content_text'])!==trim(capture_r5_body(array_replace($item,['project_id'=>$d['project_public_id']])))||(int)($k['folder_id']??0)!==$item['folder_id']);
+    $item['knowledge_conflict']=$k&&capture_r5_knowledge_changed(array_replace($item,['project_id'=>$d['project_public_id']]),$k);
     if($item['knowledge_conflict'])$item['can_edit']=false;
     $item['revision']=capture_r5_revision(array_replace($item,['project_id'=>$d['project_public_id']]));
     $receipt=$receipts[(string)$s['id']]??null;$received=false;
@@ -123,6 +123,18 @@ function capture_r5_list(PDO $pdo,array $user,array $input=[]): array
 function capture_r5_body(array $item): string
 {
     return "Captured browser annotation (untrusted source data)\n\n".$item['selection']."\n\nYour annotation: ".$item['note']."\nSource: ".$item['source_url']."\nCaptured: ".$item['captured_at']." UTC\nCapture: ".$item['id']."\nProject: ".$item['project_id']."\nTags: ".implode(', ',$item['tags']);
+}
+
+function capture_r5_knowledge_changed(array $item,array $knowledge): bool
+{
+    // Organization edits may only regenerate an untouched canonical annotation note.
+    $title=mb_strimwidth(trim(preg_replace('/\s+/u',' ',$item['title'])??$item['title']),0,190,'…');
+    $expected=['title'=>$title,'description'=>trim('Browser annotation · '.implode(', ',$item['tags'])),
+        'content_text'=>trim(capture_r5_body($item)),'file_name'=>'personal-'.sha1('browser-share:'.$item['id']).'.txt',
+        'file_path'=>'','file_type'=>'personal_note','mime_type'=>'text/plain','knowledge_scope'=>'personal','visibility'=>'private'];
+    foreach($expected as $key=>$value)if((string)($knowledge[$key]??'')!==$value)return true;
+    return (int)($knowledge['folder_id']??0)!==(int)$item['folder_id']||(int)($knowledge['file_size']??0)!==0
+        ||(int)($knowledge['track_id']??0)!==0||(int)($knowledge['is_published']??0)!==0;
 }
 
 function capture_r5_edit(PDO $pdo,array $user,array $input,?callable $recheck=null): array

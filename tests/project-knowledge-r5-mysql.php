@@ -32,6 +32,14 @@ $captureR5Acceptance=static function(PDO $pdo,array $user,array $session,array $
     $pdo->prepare('UPDATE knowledge_items SET content_text=? WHERE id=?')->execute(['Separate Knowledge edit',$changed['knowledge_id']]);
     denied(fn()=>capture_r5_edit($pdo,$user,array_replace($edit,['expected_revision'=>$changed['revision'],'note'=>'Clobber separate content'])));
     $pdo->prepare('UPDATE knowledge_items SET content_text=? WHERE id=?')->execute([$originalContent,$changed['knowledge_id']]);
+    foreach(['title'=>'Owner renamed Knowledge','description'=>'Owner-written description','visibility'=>'shared'] as $column=>$value){
+        $original=$pdo->query('SELECT '.$column.' FROM knowledge_items WHERE id='.(int)$changed['knowledge_id'])->fetchColumn();
+        $pdo->prepare('UPDATE knowledge_items SET '.$column.'=? WHERE id=?')->execute([$value,$changed['knowledge_id']]);
+        $protected=capture_r5_list($pdo,$user,['id'=>$old['id']])['items'][0];check(!$protected['can_edit']&&$protected['knowledge_conflict'],'Separate Knowledge metadata was not fenced.');
+        denied(fn()=>capture_r5_edit($pdo,$user,array_replace($edit,['expected_revision'=>$protected['revision'],'note'=>'Clobber independent metadata'])));
+        check($pdo->query('SELECT '.$column.' FROM knowledge_items WHERE id='.(int)$changed['knowledge_id'])->fetchColumn()===$value,'Denied organization edit changed Knowledge metadata.');
+        $pdo->prepare('UPDATE knowledge_items SET '.$column.'=? WHERE id=?')->execute([$original,$changed['knowledge_id']]);
+    }
     $retrieved=capture_r5_retrieve($pdo,$user,'wholesale saffron',['mode'=>'folder','folder_id'=>3]);
     check(count($retrieved)===1&&$retrieved[0]['capture_id']===$old['id']&&str_contains($retrieved[0]['excerpt'],'Flour costs'),'Retrieved annotation lost quote, current note or destination.');
     $context=knowledge_retrieval_v162_context_item($retrieved);$citations=knowledge_retrieval_v162_citations($retrieved);
