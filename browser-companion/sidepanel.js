@@ -2383,6 +2383,11 @@ async function applyPendingQuickActionV2150(pending){
   if(!pending||!pending.capture||!pending.capture.source_url)return;
   const action=String(pending.action||'annotate');
   renderCapture({...pending.capture,available:true});
+  if(action==='send_chat'){
+    setView('agent');
+    window.setTimeout(()=>window.VP3_OPEN_CAPTURE_R4?.(),0);
+    return;
+  }
   setView('this_page');
   if(action==='share_team'){
     note('Choose a Team or conversation under Deliver to, then publish this annotation.','success');
