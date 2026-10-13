@@ -302,27 +302,33 @@ function booking_agent_web_search(string $query, int $limit = 8): array
 {
     if (!function_exists('curl_init')) return [];
     $url = 'https://html.duckduckgo.com/html/?q=' . rawurlencode($query);
-    $curl = curl_init($url);
+    $curl = curl_init($url);$html='';
     curl_setopt_array($curl,[
-        CURLOPT_RETURNTRANSFER=>true,
+        CURLOPT_RETURNTRANSFER=>false,
+        CURLOPT_WRITEFUNCTION=>static function($ch,string $chunk)use(&$html):int{if(strlen($html)+strlen($chunk)>2000000)return 0;$html.=$chunk;return strlen($chunk);},
         CURLOPT_CONNECTTIMEOUT=>4,
         CURLOPT_TIMEOUT=>9,
-        CURLOPT_FOLLOWLOCATION=>true,
+        CURLOPT_FOLLOWLOCATION=>false,
         CURLOPT_MAXREDIRS=>3,
         CURLOPT_USERAGENT=>'StonefellowBookingAgent/1.0 (+https://stonefellow.com)',
         CURLOPT_HTTPHEADER=>['Accept: text/html,application/xhtml+xml'],
     ]);
-    $html = curl_exec($curl);
+    $ok = curl_exec($curl);
     $status = (int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     curl_close($curl);
-    if (!is_string($html) || $status < 200 || $status >= 400) return [];
+    if ($ok===false || strlen($html)>2000000 || $status < 200 || $status >= 300) return [];
 
+    return booking_agent_parse_web_search($html,$limit);
+}
+
+function booking_agent_parse_web_search(string $html,int $limit=8): array
+{
     $results = [];
     if (class_exists('DOMDocument')) {
         $dom = new DOMDocument();
-        libxml_use_internal_errors(true);
-        @$dom->loadHTML($html);
-        libxml_clear_errors();
+        $previous=libxml_use_internal_errors(true);
+        @$dom->loadHTML($html,LIBXML_NONET);
+        libxml_clear_errors();libxml_use_internal_errors($previous);
         $xp = new DOMXPath($dom);
         foreach ($xp->query("//a[contains(@class,'result__a')]") ?: [] as $node) {
             if (count($results) >= max(1,min(12,$limit))) break;

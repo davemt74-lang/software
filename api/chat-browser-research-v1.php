@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/includes/homeserver-https-relay-v1300.php';
 require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php';
 require_once dirname(__DIR__).'/includes/browser-research-save-v2230.php';
 require_once dirname(__DIR__).'/includes/chat-browser-research-v1.php';
+require_once dirname(__DIR__).'/includes/chat-research-discovery-r2.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: private, no-store');
 header('X-Content-Type-Options: nosniff');vp3_extension_apply_cors_v2001();
 header('Access-Control-Allow-Headers: Authorization, Content-Type, X-VP3-Extension-Version, X-VP3-Contract-Version');
@@ -65,7 +66,7 @@ try{
         $result=['requests'=>$requests,'runtimes'=>$runtimes,'projects'=>array_values(array_filter(vp3_research_projects_for_user_v2060($pdo,(int)$user['id'],false),static fn(array $p):bool=>vp3_research_role_at_least_v2060((string)($p['role']??''),'researcher')))];
     }elseif($action==='prepare'){
         if($extension)throw new RuntimeException('Prepare the source plan on the Chat canvas.',403);
-        $result=['request'=>chat_research_prepare_v1($pdo,$user,$namespace,$agent,$input)];
+        $result=['request'=>chat_research_plan_r2($pdo,$user,$namespace,$agent,$input)];
     }else{
         $row=chat_research_row_v1($pdo,(int)$user['id'],(string)($input['id']??''));
         if(!$extension&&($row['context_key']!==$input['context_key']||$row['agent_namespace']!==$namespace))throw new RuntimeException('Open the original research conversation and lead.',403);

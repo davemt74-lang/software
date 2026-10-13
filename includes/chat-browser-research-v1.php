@@ -89,10 +89,10 @@ function chat_research_view_v1(PDO $pdo,array $user,array $row): array
         'mission'=>!empty($row['mission_id'])&&$row['status']!=='cancelled'?vp3_browser_research_public_v2230($pdo,$user,(string)$row['mission_id']):null];
 }
 
-function chat_research_prepare_v1(PDO $pdo,array $user,string $namespace,?array $agent,array $input): array
+function chat_research_prepare_v1(PDO $pdo,array $user,string $namespace,?array $agent,array $input,?array $plannedSources=null): array
 {
     $rid=chat_research_uuid_v1($input['request_id']??null);$question=trim((string)($input['question']??''));
-    $urls=chat_research_urls_v1($question);$runtimeId=chat_research_uuid_v1($input['runtime_id']??null);
+    $urls=$plannedSources??chat_research_urls_v1($question);$runtimeId=chat_research_uuid_v1($input['runtime_id']??null);
     $context=(string)($input['context_key']??'');
     if(!preg_match('/^(?:cloud:[0-9]{1,10}|home:[a-zA-Z0-9:._-]{1,180})$/D',$context))throw new InvalidArgumentException('Research conversation context is invalid.');
     $conversation=(int)($input['conversation_id']??0);

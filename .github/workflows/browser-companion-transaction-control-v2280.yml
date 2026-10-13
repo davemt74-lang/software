@@ -73,6 +73,7 @@ jobs:
       - name: Reviewed Chat research lifecycle and Chrome execution
         run: |
           php tests/chat-browser-research-v1.php
+          php tests/chat-research-discovery-r2.php
           node tests/chat-browser-research-worker.mjs
           php -l api/chat-browser-research-v1.php
           php -l api/extension-research-agent-v2230.php
