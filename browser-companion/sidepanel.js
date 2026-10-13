@@ -554,11 +554,13 @@ async function sendAgentMessageV2160(){
   try{
     const payload=await agentWorkspaceRequestV2160('send',{
       conversation_id:agentConversationId,
+      project_knowledge_r6:window.VP3ProjectKnowledgeR6?.value(),
       message:message,
       use_context:Boolean(ui.agentUsePageContext.checked&&capture&&capture.available),
       capture:capture&&capture.available?capture:null
     });
     optimistic.remove();
+    window.VP3ProjectKnowledgeR6?.consume(payload.project_knowledge_r6);
     agentConversationId=Number(payload&&payload.conversation_id||0);
     agentWorkspaceAgentId=Math.max(0,Number(payload&&payload.agent_id||agentWorkspaceAgentId||0));
     const now=new Date().toISOString();

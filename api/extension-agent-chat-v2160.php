@@ -145,6 +145,7 @@ try{
             'conversation_id'=>max(0,(int)($input['conversation_id']??0)),
             'input_mode'=>'text',
             'knowledge_scope'=>$input['knowledge_scope']??null,
+            'project_knowledge_r6'=>$input['project_knowledge_r6']??null,
             'agent_context'=>is_array($input['agent_context']??null)?$input['agent_context']:[],
         ];
         $brainAllowed=personal_capability_has_v242('agent_brain.access',$user);

@@ -12,7 +12,8 @@ assert.match(api, /chat-execution-v019\.php/);
 // v0.25 remains the HomeServer delegation compatibility path. Section 10 owns
 // the live route decision and supplies its cloud permission to that adapter.
 assert.match(api, /vp3_agent_runtime_plan_v420\(\$pdo,\$user,\$activeAgentId,'chat'\)/);
-assert.match(api, /homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$runtimePlan\['homeserver_cloud_allowed'\]\),knowledge_retrieval_v162_normalize_scope\(\$input\['knowledge_scope'\]\?\?null\)\['mode'\]===\'all\'\)/);
+assert.ok(api.includes("homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all'&&($r6Packet['state']['scope']['mode']??'all')!=='off'"));
+assert.ok(api.includes("'state_revision'=>$r6Packet['state']['revision'],'attachments'=>$r6Packet['attachments'],'query'=>$query,'fingerprint'=>$r6Packet['fingerprint']"));
 assert.match(delegation, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/);
 
 // v0.19 execution helpers remain the source/provider/token compatibility layer,

@@ -3027,8 +3027,10 @@
       if(knowledgeScopeRuntime&&typeof knowledgeScopeRuntime.value==='function'){
         payload.knowledge_scope=knowledgeScopeRuntime.value();
       }
+      if(window.VP3ProjectKnowledgeR6)payload.project_knowledge_r6=window.VP3ProjectKnowledgeR6.value();
       if(browserAgentContext)payload.agent_context=browserAgentContext;
       const data = await api(payload);
+      window.VP3ProjectKnowledgeR6?.consume(data.project_knowledge_r6);
 
       if(browserAgentContext&&browserContextRuntime&&typeof browserContextRuntime.consume==='function'){
         browserContextRuntime.consume();
@@ -3059,6 +3061,7 @@
         await speakAgentResponse(data.answer);
       }
     } catch (error) {
+      if(window.VP3ProjectKnowledgeR6&&!input.value){input.value=message;autoSize();}
       typing.remove();
       addMessage(
         'assistant',

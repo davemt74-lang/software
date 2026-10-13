@@ -1,4 +1,4 @@
-name: Browser Capture and Project Knowledge R5
+name: Browser Capture and Project Knowledge R6
 on:
   pull_request:
   push:
@@ -34,7 +34,11 @@ jobs:
         env:
           VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306
           VP3_SECTION7_MYSQL_PASSWORD: fixture
-        run: php tests/project-knowledge-r5-mysql.php
+        run: |
+          php tests/project-knowledge-r5-mysql.php
+          php tests/project-knowledge-r6-mysql.php
+          php tests/project-knowledge-r6-reports.php
+          php tests/project-knowledge-r6-delegation.php
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -47,8 +51,11 @@ jobs:
           node tests/browser-capture-routing-r4.mjs
           node tests/browser-capture-routing-r4-ui.mjs
           node tests/project-knowledge-r5-ui.mjs
+          node tests/project-knowledge-r6-ui.mjs
       - name: Capture integration syntax
         run: |
+          php -l api/project-knowledge-r6.php
+          php -l includes/project-knowledge-r6.php
           php -l api/project-knowledge-r5.php
           php -l includes/project-knowledge-r5.php
           php -l api/extension-capture-routing-r4.php

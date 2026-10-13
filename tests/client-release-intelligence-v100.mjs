@@ -70,11 +70,12 @@ assert.match(admin,/Update available/);
 assert.match(admin,/Unknown/);
 
 assert.match(bootstrap,/client-release-intelligence-v100\.php/);
-assert.equal(manifest.version,'22.15.0');
+assert.equal(manifest.version,'22.16.0');
 assert.match(manifest.description,/Client Release Intelligence/);
-assert.match(background,/const VP3_EXTENSION_VERSION = '22\.15\.0';/);
+assert.match(background,/const VP3_EXTENSION_VERSION = '22\.16\.0';/);
 assert.match(background,/release: account\.release \|\| null/);
 assert.match(panel,/Update available/);
 assert.match(panel,/installed_version/);
 
 console.log('Client Release Intelligence v1.00 contract: PASS');
+

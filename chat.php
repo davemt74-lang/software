@@ -471,7 +471,8 @@ $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(u
     . '<link rel="stylesheet" href="' . e(url('/chat-browser-research-v1.css?v=research-phase2')) . '">'
     . '<script src="' . e(url('/chat-browser-research-v1.js?v=research-r3')) . '" defer></script>'
     . '<script>window.VP3_PROJECT_KNOWLEDGE={endpoint:' . json_encode(url('/api/project-knowledge-r5.php')) . ',csrf:' . json_encode(csrf_token()) . '};</script>'
-    . '<script src="' . e(url('/project-knowledge-r5.js?v=r5')) . '" defer></script>';
+    . '<script src="' . e(url('/project-knowledge-r5.js?v=r5')) . '" defer></script>'
+    . '<script src="' . e(url('/project-knowledge-r6.js?v=r6')) . '" defer></script>'; 
 
 $browserContextRuntime = '<link rel="stylesheet" data-browser-context-v2130 href="' . e(url('/chat-browser-context-v2130.css?v=' . $browserContextBuild)) . '">'
     . '<script data-browser-context-v2130 src="' . e(url('/chat-browser-context-v2130.js?v=' . $browserContextBuild)) . '"></script>';

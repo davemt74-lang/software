@@ -75,12 +75,19 @@ function homeserver_agent_v025_chat(
     ?array $activeAgent,
     array $agentContext,
     bool $cloudAllowed=true,
-    bool $knowledgeAllowed=true
+    bool $knowledgeAllowed=true,
+    array $projectKnowledge=[]
 ): ?array {
     $userId=(int)($user['id']??0);
+    $scopedOff=!$knowledgeAllowed&&!$projectKnowledge;
+    if($projectKnowledge||$scopedOff){
+        $raw=function_exists('homeserver_capability_v024_raw')?homeserver_capability_v024_raw($userId):[];
+        $features=function_exists('homeserver_capability_v024_string_list')?homeserver_capability_v024_string_list($raw['features']??[]):[];
+        if(!in_array('knowledge.context.scoped.r6',$features,true))return null;
+    }
     if(!homeserver_agent_v025_supported($userId)){
         // Legacy delegation cannot enforce Cloud folder/Knowledge opt-out.
-        if(!$knowledgeAllowed)return null;
+        if(!$knowledgeAllowed||$projectKnowledge)return null;
         $legacy=homeserver_agent_v018_chat($user,$query,$conversationId,$cloudAllowed);
         if($legacy)$legacy['delegation']=['mode'=>'legacy_stateful','history_messages'=>0,'surface_context'=>false];
         return $legacy;
@@ -103,12 +110,14 @@ function homeserver_agent_v025_chat(
         'history'=>$boundedHistory,
         'surface_context'=>$surface,
         'include_memory'=>true,
-        'include_knowledge'=>$knowledgeAllowed,
+        'include_knowledge'=>$knowledgeAllowed&&!$projectKnowledge,
+        'knowledge_scope_off_r6'=>$scopedOff,
         'include_contacts'=>true,
         'cloud_allowed'=>$cloudAllowed,
         'max_context_chars'=>12000,
     ];
 
+    if($projectKnowledge)$payload['project_knowledge_r6']=$projectKnowledge;
     $started=microtime(true);
     homeserver_agent_v018_set_last_attempt(['attempted'=>true,'success'=>false,'failure_class'=>'none']);
     try{
@@ -135,6 +144,11 @@ function homeserver_agent_v025_chat(
         return null;
     }
 
+    if($projectKnowledge){
+        $receipt=$result['project_knowledge_r6']??null;
+        if(!is_array($receipt)||($receipt['contract']??'')!=='vp3.project-knowledge.r6'||!is_string($receipt['fingerprint']??null)||!hash_equals((string)$projectKnowledge['fingerprint'],$receipt['fingerprint'])){homeserver_agent_v018_set_last_attempt(['attempted'=>true,'success'=>false,'latency_ms'=>$latency,'failure_class'=>'project_knowledge_receipt_mismatch']);return null;}
+    }
+    if($scopedOff&&($result['knowledge_scope_off_r6']??false)!==true){homeserver_agent_v018_set_last_attempt(['attempted'=>true,'success'=>false,'latency_ms'=>$latency,'failure_class'=>'knowledge_optout_receipt_missing']);return null;}
     $attempt=[
         'attempted'=>true,'success'=>true,'latency_ms'=>$latency,'failure_class'=>'none',
         'provider'=>(string)($result['provider']??'homeserver'),
@@ -158,6 +172,8 @@ function homeserver_agent_v025_chat(
         'conversation_id'=>'',
         'cloud_tokens_debited'=>max(0,(int)($result['cloud_tokens_debited']??0)),
         'latency_ms'=>$latency,
+        'project_knowledge_r6'=>$result['project_knowledge_r6']??null,
+        'knowledge_scope_off_r6'=>($result['knowledge_scope_off_r6']??false)===true,
         'annotation_citations'=>array_values(array_filter((array)($result['context']['sources']??[]),static fn($r)=>is_array($r)&&($r['kind']??'')==='browser_annotation')),
         'execution_receipt'=>$executionReceipt??[],
         'delegation'=>[

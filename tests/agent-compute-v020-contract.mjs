@@ -48,7 +48,7 @@ assert.match(chat, /vp3_agent_runtime_tool_plan_v420\(\$userId,\$activeAgentId,'
 assert.doesNotMatch(chat, /agent_compute_v023_effective\(/);
 assert.doesNotMatch(chat, /agent_compute_v020_route_plan\(/);
 assert.match(chat, /\(string\)\$runtimePlan\['effective_preference'\]==='homeserver_only'/);
-assert.match(chat, /homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$runtimePlan\['homeserver_cloud_allowed'\]\),knowledge_retrieval_v162_normalize_scope\(\$input\['knowledge_scope'\]\?\?null\)\['mode'\]===\'all\'\)/);
+assert.ok(chat.includes("homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all'&&($r6Packet['state']['scope']['mode']??'all')!=='off'"));
 assert.match(delegation, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/, 'v0.20 HomeServer routing must retain legacy fallback');
 
 // Direct VP3 Cloud is now isolated by the v4.20 planner and finalizer while
@@ -80,3 +80,4 @@ assert.match(migration, /FOREIGN KEY \(user_id\) REFERENCES users\(id\)/);
 assert.match(migration, /ON DELETE CASCADE/);
 
 console.log('VP3 v0.20 Agent compute compatibility contract passed through canonical v4.20 runtime routing');
+
