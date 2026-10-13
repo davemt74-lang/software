@@ -48,7 +48,7 @@ function knowledge_r6_state(PDO $pdo,array $user,string $key,string $namespace,b
         }
     }
     $available=true;try{knowledge_r6_authorize($pdo,$user,$scope);}catch(RuntimeException $e){if($authorize)throw $e;$available=false;}
-    $title=!$available?'Context unavailable':$scope['mode']==='project'?capture_r5_project($pdo,$user,$scope['project_id'])['title']:($scope['mode']==='folder'?personal_knowledge_folder($pdo,$user,$scope['folder_id'])['folder_name']:($scope['mode']==='off'?'Knowledge off':'All authorized Knowledge'));
+    $title=!$available?'Context unavailable':($scope['mode']==='project'?capture_r5_project($pdo,$user,$scope['project_id'])['title']:($scope['mode']==='folder'?personal_knowledge_folder($pdo,$user,$scope['folder_id'])['folder_name']:($scope['mode']==='off'?'Knowledge off':'All authorized Knowledge')));
     return ['scope'=>$scope,'revision'=>$revision,'title'=>$title,'context_key'=>$key,'available'=>$available];
 }
 
