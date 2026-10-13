@@ -50,7 +50,7 @@ assert.doesNotMatch(chat,/agent_compute_v023_effective\(/);
 assert.doesNotMatch(chat,/agent_compute_v023_public_policy\(/);
 assert.match(chat,/chat_execution_v019_vp3_direct\(\$user\)/);
 assert.match(chat,/chat_execution_v019_fallback\(\$user,!empty\(\$runtimePlan\['home'\]\['paired'\]\),true\)/);
-assert.match(chat,/homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$runtimePlan\['homeserver_cloud_allowed'\]\),knowledge_retrieval_v162_normalize_scope\(\$input\['knowledge_scope'\]\?\?null\)\['mode'\]===\'all\'\)/);
+assert.ok(chat.includes("homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all'&&($r6Packet['state']['scope']['mode']??'all')!=='off'"));
 assert.match(delegation,/homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/);
 const toolIndex=chat.indexOf("release_v105_chat_tool");
 const runtimePlanIndex=chat.indexOf("vp3_agent_runtime_plan_v420");
@@ -70,3 +70,4 @@ assert.match(loader,/agent-compute-v023-20260908/);
 assert.match(shell,/agent-compute-v023-20260908/);
 
 console.log('VP3 v0.23 per-Agent compute policy compatibility contract passed through canonical v4.20 runtime routing');
+
