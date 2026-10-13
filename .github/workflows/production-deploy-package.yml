@@ -51,7 +51,7 @@ jobs:
           {
             "release": "VP3 Cloud Production",
             "mission_lifecycle_section": "A5C11",
-            "research_section": "R1",
+            "research_section": "R2",
             "minimum_mission_schema": 79,
             "build": "vp3-cloud-main-${VP3_RELEASE_SHA:0:12}",
             "commit": "${VP3_RELEASE_SHA}",
@@ -83,6 +83,7 @@ jobs:
           test -f _deploy/api/extension-integration-diagnostics-v1.php
           test -f _deploy/api/chat-browser-research-v1.php
           test -f _deploy/includes/chat-browser-research-v1.php
+          test -f _deploy/includes/chat-research-discovery-r2.php
           test -f _deploy/chat-browser-research-v1.js
           test -f _deploy/browser-companion/chat-research-worker.js
           test -f _deploy/includes/agent-integration-diagnostics-v1.php
