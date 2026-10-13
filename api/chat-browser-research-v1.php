@@ -46,7 +46,21 @@ try{
     $agent=array_key_exists('agent_id',$input)?vp3_agent_chat_resolve_agent_v380($pdo,$user,(int)$input['agent_id']):vp3_agent_chat_runtime_default_agent_v2160($pdo,$user);
     $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,(int)($agent['id']??0));
     $action=(string)($input['action']??'list');$result=[];
-    if($action==='list'||$action==='worker.list'){
+    if(in_array($action,['recall','compare'],true)){
+        if($extension)throw new RuntimeException('Open saved research on the Chat canvas.',403);
+        if((int)($input['conversation_id']??0)>0&&!vp3_agent_chat_conversation_v380($pdo,(int)$input['conversation_id'],(int)$user['id'],$agent))throw new RuntimeException('The Chat conversation is unavailable for this lead.',403);
+        if($action==='recall'){
+            if(!is_string($input['question']??''))throw new InvalidArgumentException('Use a text query for saved research.');
+            $reports=chat_research_recall_r3($pdo,$user,$namespace,mb_substr($input['question']??'',0,1000));
+            $result=['reports'=>$reports,'context_text'=>chat_research_context_r3($reports)];
+        }else{
+            $before=chat_research_row_v1($pdo,(int)$user['id'],(string)($input['before_id']??''));
+            $after=chat_research_row_v1($pdo,(int)$user['id'],(string)($input['after_id']??''));
+            if($before['id']===$after['id'])throw new InvalidArgumentException('Choose two different saved research runs.');
+            if($before['agent_namespace']!==$namespace||$after['agent_namespace']!==$namespace)throw new RuntimeException('Open saved research for the current lead.',403);
+            $result=['comparison'=>chat_research_compare_r3(chat_research_saved_r3($pdo,$user,$before),chat_research_saved_r3($pdo,$user,$after))];
+        }
+    }elseif($action==='list'||$action==='worker.list'){
         if($action==='worker.list'&&!$extension)throw new RuntimeException('Chrome worker authentication required.',403);
         $filter=$action==='worker.list'?" AND status IN ('waiting_chrome','running','attention')":(!$extension?' AND context_key=? AND agent_namespace=?':'');
         $params=[(int)$user['id']];if(!$extension)$params=array_merge($params,[$input['context_key'],$namespace]);
@@ -55,7 +69,7 @@ try{
             if($action==='worker.list'&&!in_array($row['status'],['waiting_chrome','running','attention'],true))continue;
             if($home&&$row['context_key']!==$input['context_key'])continue;
             if(!$home&&!$extension&&$row['context_key']!==$input['context_key'])continue;
-            try{$requests[]=chat_research_view_v1($pdo,$user,$row);}catch(RuntimeException $e){continue;}
+            try{$requests[]=chat_research_view_v1($pdo,$user,$row,$action!=='worker.list');}catch(RuntimeException $e){continue;}
         }
         $runtimes=[];
         foreach(vp3_browser_runtime_list_v2200($pdo,$user,$namespace,20) as $r){

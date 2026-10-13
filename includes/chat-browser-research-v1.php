@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/chat-research-continuity-r3.php';
 
 /** Durable Chat requests reference the existing Chrome research evidence ledger. */
 function chat_research_schema_v1(PDO $pdo): void
@@ -77,16 +78,18 @@ function chat_research_authority_v1(PDO $pdo,array $user,array $row,bool $histor
     return $runtime;
 }
 
-function chat_research_view_v1(PDO $pdo,array $user,array $row): array
+function chat_research_view_v1(PDO $pdo,array $user,array $row,bool $withAnswer=true): array
 {
     // A lost current grant must not expose retained source findings.
     if(!in_array($row['status'],['cancelled'],true))chat_research_authority_v1($pdo,$user,$row,($row['status']??'')==='complete');
     $urls=json_decode((string)$row['urls_json'],true,16,JSON_THROW_ON_ERROR);
+    $mission=!empty($row['mission_id'])&&$row['status']!=='cancelled'?vp3_browser_research_public_v2230($pdo,$user,(string)$row['mission_id']):null;
+    if($mission&&$withAnswer){$mission['answer']=chat_research_answer_r3($mission,$urls);$mission['answer']['partial']=$row['status']!=='complete';}
     return ['id'=>$row['id'],'request_id'=>$row['request_id'],'context_key'=>$row['context_key'],
         'question'=>$row['question'],'runtime_id'=>$row['runtime_id'],'agent_id'=>(int)$row['agent_id'],'review_hash'=>$row['review_hash'],
         'status'=>$row['status']==='running'&&strtotime((string)$row['lease_until'])<time()?'attention':$row['status'],'expires_at'=>$row['expires_at'],'next_source'=>(int)$row['next_source'],
         'last_error'=>$row['last_error'],'sources'=>$urls,'budgets'=>['sources'=>count($urls),'pages'=>count($urls),'claims'=>60,'duration_minutes'=>60],
-        'mission'=>!empty($row['mission_id'])&&$row['status']!=='cancelled'?vp3_browser_research_public_v2230($pdo,$user,(string)$row['mission_id']):null];
+        'mission'=>$mission];
 }
 
 function chat_research_prepare_v1(PDO $pdo,array $user,string $namespace,?array $agent,array $input,?array $plannedSources=null): array
@@ -161,7 +164,7 @@ function chat_research_claim_v1(PDO $pdo,array $user,string $device,array $input
         $pdo->prepare("UPDATE chat_browser_research_requests_v1 SET status='running',device_key=?,lease_token=?,lease_until=?,last_error='' WHERE id=?")
             ->execute([$device,$token,gmdate('Y-m-d H:i:s',time()+180),$row['id']]);$pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-    return ['request'=>chat_research_view_v1($pdo,$user,chat_research_row_v1($pdo,(int)$user['id'],$row['id'])),'lease_token'=>$token];
+    return ['request'=>chat_research_view_v1($pdo,$user,chat_research_row_v1($pdo,(int)$user['id'],$row['id']),false),'lease_token'=>$token];
 }
 
 function chat_research_step_v1(PDO $pdo,array $user,string $device,array $input): array
@@ -188,7 +191,7 @@ function chat_research_step_v1(PDO $pdo,array $user,string $device,array $input)
         }
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-    $fresh=chat_research_view_v1($pdo,$user,chat_research_row_v1($pdo,(int)$user['id'],$row['id']));
+    $fresh=chat_research_view_v1($pdo,$user,chat_research_row_v1($pdo,(int)$user['id'],$row['id']),false);
     return ['request'=>$fresh,'next'=>$fresh['status']==='running'?($urls[$next]??null):null];
 }
 

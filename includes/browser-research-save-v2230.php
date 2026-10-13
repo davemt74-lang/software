@@ -2,10 +2,13 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/browser-research-runtime-v2230.php';
+require_once __DIR__.'/chat-research-continuity-r3.php';
 
 function vp3_browser_research_memo_v2230(PDO $pdo,array $mission): string
 {
-    return vp3_browser_research_memo_preview_v2230($pdo,$mission);
+    $public=vp3_browser_research_public_v2230($pdo,['id'=>(int)$mission['owner_user_id']],(string)$mission['public_id']);
+    // Saved memo cites pinned receipts; exact reviewed URLs remain in the existing Chat request.
+    return chat_research_answer_r3($public)['text'];
 }
 
 function vp3_browser_research_save_v2230(PDO $pdo,array $user,string $missionPublicId,string $projectPublicId=''): array
