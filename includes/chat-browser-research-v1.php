@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/chat-research-continuity-r3.php';
+require_once __DIR__.'/knowledge-refresh-guard-r7.php';
 
 /** Durable Chat requests reference the existing Chrome research evidence ledger. */
 function chat_research_schema_v1(PDO $pdo): void
@@ -64,6 +65,7 @@ function chat_research_row_v1(PDO $pdo,int $uid,string $id,bool $lock=false): ar
 
 function chat_research_authority_v1(PDO $pdo,array $user,array $row,bool $history=false): array
 {
+    knowledge_r7_research_guard($pdo,$user,$row);
     if($history){
         $runtime=vp3_browser_runtime_row_v2200($pdo,(int)$user['id'],(string)$row['agent_namespace'],(string)$row['runtime_id']);
         if(!$runtime||in_array($runtime['status'],['cancelled'],true)||($runtime['delegation_status']??'')==='cancelled'

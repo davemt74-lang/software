@@ -53,7 +53,7 @@ jobs:
             "mission_lifecycle_section": "A5C11",
             "research_section": "R3",
             "capture_routing_section": "R4",
-            "project_knowledge_section": "R6",
+            "project_knowledge_section": "R7",
             "minimum_mission_schema": 79,
             "build": "vp3-cloud-main-${VP3_RELEASE_SHA:0:12}",
             "commit": "${VP3_RELEASE_SHA}",
@@ -84,6 +84,10 @@ jobs:
           test -f _deploy/includes/tracky-agent-eyes-acceptance-v1g5.php
           test -f _deploy/api/extension-integration-diagnostics-v1.php
           test -f _deploy/api/chat-browser-research-v1.php
+          test -f _deploy/api/project-knowledge-r7.php
+          test -f _deploy/includes/project-knowledge-r7.php
+          test -f _deploy/project-knowledge-r7.js
+          test -f _deploy/browser-companion/project-knowledge-r7.js
           test -f _deploy/includes/chat-browser-research-v1.php
           test -f _deploy/includes/chat-research-continuity-r3.php
           test -f _deploy/includes/chat-research-discovery-r2.php

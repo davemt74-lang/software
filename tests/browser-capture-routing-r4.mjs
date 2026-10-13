@@ -20,5 +20,11 @@ assert.deepEqual(Object.keys(stored).sort(),['base_url','device_token'],'A secon
 const r5payload={action:'list',q:'flour',folder_id:1};assert.equal((await dispatch({type:'project_knowledge_r5',payload:r5payload})).ok,true);assert.equal(requests.at(-1).url,'https://cloud.example/installed/vp3/api/project-knowledge-r5.php');
 const r5before=requests.length;assert.equal((await dispatch({type:'project_knowledge_r5',payload:{action:'edit',confirmed:false}})).ok,false);assert.equal(requests.length,r5before,'Unreviewed annotation edit sent');
 assert.equal((await dispatch({type:'project_knowledge_r5',payload:{action:'edit',confirmed:true,id:'capture',expected_revision:'a'.repeat(64)}})).ok,true);
+const r7before=requests.length;
+for(const action of ['start','apply','cancel'])assert.equal((await dispatch({type:'project_knowledge_r7',payload:{action,confirmed:false}})).ok,false);
+assert.equal(requests.length,r7before,'Unconfirmed reviewed refresh was sent');
+assert.equal((await dispatch({type:'project_knowledge_r7',payload:{action:'prepare',conversation_id:42,agent_id:0,owner_user_id:8,query:'Private quote',knowledge_content:'Spoofed',request_id:'request',reference:{kind:'annotation',id:'capture',revision:'a'.repeat(64)}}})).ok,true);
+const r7body=JSON.parse(requests.at(-1).options.body);assert.equal(requests.at(-1).url,'https://cloud.example/installed/vp3/api/project-knowledge-r7.php');assert.ok(!('owner_user_id' in r7body)&&!('query' in r7body)&&!('knowledge_content' in r7body));
+assert.equal((await dispatch({type:'project_knowledge_r7',payload:{action:'apply',id:'refresh',expected_hash:'b'.repeat(64),confirmed:true}})).ok,true);
 const download=await fs.readFile(new URL('../chrome-extension-download.php',import.meta.url),'utf8');assert.ok(download.includes("'capture-routing-r4.js'"));
 console.log('PASS: real Chrome message listener, installed-subfolder auth, explicit review, stable exact retries across service-worker restart, changed destinations and no parallel capture store.');
