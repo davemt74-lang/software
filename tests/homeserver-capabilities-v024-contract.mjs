@@ -56,7 +56,7 @@ assert.ok(toolIndex >= 0 && runtimePlanIndex > toolIndex, 'existing VP3 tools mu
 assert.ok(homeAttemptIndex > runtimePlanIndex, 'HomeServer execution must follow the canonical v4.20 plan');
 assert.doesNotMatch(chat, /homeserver_capability_v024_registry\(\$userId,false\)/, 'Chat must not create a second capability-routing path');
 assert.doesNotMatch(chat, /homeserver_capability_v024_resolve\(/, 'Chat must consume v4.20 capability decisions instead of resolving them again');
-assert.match(chat, /homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$runtimePlan\['homeserver_cloud_allowed'\]\)\)/, 'HomeServer execution must use the v4.20 cloud boundary');
+assert.ok(chat.includes("$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all'"), 'HomeServer execution must retain the v4.20 cloud boundary and enforce Knowledge opt-out/folder narrowing');
 assert.match(chat, /vp3_agent_runtime_capability_route_v420\(\$runtimePlan,\$execution,\$homeAttempted\)/, 'capability provenance must persist with execution metadata');
 assert.match(chat, /vp3_agent_runtime_tool_plan_v420/, 'VP3 tool execution must receive local capability/runtime provenance');
 assert.match(chat, /vp3_agent_runtime_finalize_v420/, 'all model execution must receive canonical runtime provenance');

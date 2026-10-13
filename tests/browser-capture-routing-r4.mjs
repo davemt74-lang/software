@@ -17,5 +17,8 @@ const before=requests.length;assert.equal((await dispatch({type:'capture_r4',act
 assert.equal(requests.at(-1).url,'https://cloud.example/installed/vp3/api/extension-capture-routing-r4.php');
 assert.equal(requests.at(-1).options.headers.get('Authorization'),'Bearer '+stored.device_token);
 assert.deepEqual(Object.keys(stored).sort(),['base_url','device_token'],'A second capture/Knowledge store was created');
+const r5payload={action:'list',q:'flour',folder_id:1};assert.equal((await dispatch({type:'project_knowledge_r5',payload:r5payload})).ok,true);assert.equal(requests.at(-1).url,'https://cloud.example/installed/vp3/api/project-knowledge-r5.php');
+const r5before=requests.length;assert.equal((await dispatch({type:'project_knowledge_r5',payload:{action:'edit',confirmed:false}})).ok,false);assert.equal(requests.length,r5before,'Unreviewed annotation edit sent');
+assert.equal((await dispatch({type:'project_knowledge_r5',payload:{action:'edit',confirmed:true,id:'capture',expected_revision:'a'.repeat(64)}})).ok,true);
 const download=await fs.readFile(new URL('../chrome-extension-download.php',import.meta.url),'utf8');assert.ok(download.includes("'capture-routing-r4.js'"));
 console.log('PASS: real Chrome message listener, installed-subfolder auth, explicit review, stable exact retries across service-worker restart, changed destinations and no parallel capture store.');

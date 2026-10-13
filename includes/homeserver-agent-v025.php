@@ -74,10 +74,13 @@ function homeserver_agent_v025_chat(
     array $principal,
     ?array $activeAgent,
     array $agentContext,
-    bool $cloudAllowed=true
+    bool $cloudAllowed=true,
+    bool $knowledgeAllowed=true
 ): ?array {
     $userId=(int)($user['id']??0);
     if(!homeserver_agent_v025_supported($userId)){
+        // Legacy delegation cannot enforce Cloud folder/Knowledge opt-out.
+        if(!$knowledgeAllowed)return null;
         $legacy=homeserver_agent_v018_chat($user,$query,$conversationId,$cloudAllowed);
         if($legacy)$legacy['delegation']=['mode'=>'legacy_stateful','history_messages'=>0,'surface_context'=>false];
         return $legacy;
@@ -100,7 +103,7 @@ function homeserver_agent_v025_chat(
         'history'=>$boundedHistory,
         'surface_context'=>$surface,
         'include_memory'=>true,
-        'include_knowledge'=>true,
+        'include_knowledge'=>$knowledgeAllowed,
         'include_contacts'=>true,
         'cloud_allowed'=>$cloudAllowed,
         'max_context_chars'=>12000,
@@ -155,6 +158,7 @@ function homeserver_agent_v025_chat(
         'conversation_id'=>'',
         'cloud_tokens_debited'=>max(0,(int)($result['cloud_tokens_debited']??0)),
         'latency_ms'=>$latency,
+        'annotation_citations'=>array_values(array_filter((array)($result['context']['sources']??[]),static fn($r)=>is_array($r)&&($r['kind']??'')==='browser_annotation')),
         'execution_receipt'=>$executionReceipt??[],
         'delegation'=>[
             'mode'=>'stateless_vp3_canonical',

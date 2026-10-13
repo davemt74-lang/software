@@ -29,7 +29,7 @@ $check($has($page, "['all','documents','audio','transcription','music','notes']"
 $check($has($page, "action === 'bulk_move'"), 'Knowledge bulk move handler is missing.');
 $check($has($page, "action === 'rename_folder'") && $has($page, "action === 'delete_folder'"), 'Knowledge folder rename/delete controls are incomplete.');
 $check($has($page, 'Updated 7d') && $has($page, 'MAX(updated_at)'), 'Knowledge folder/recent activity is not surfaced.');
-$check($has($page, 'source cloud') && $has($page, 'HomeServer Local Knowledge remains a separate local source'), 'Cloud vs HomeServer source boundary is not explicit in the library UI.');
+$check($has($page, 'source cloud') && $has($page, 'data-knowledge-authority="homeserver"') && $has($page, 'source homeserver'), 'Cloud vs HomeServer source boundary is not explicit in the library UI.');
 
 // Reusable folder picker across Knowledge and Artist Listening/Transcriptions/Music organization.
 $check($has($page, 'data-vp3-shared-folder-picker'), 'My Knowledge does not use the shared folder picker.');

@@ -96,6 +96,7 @@ try{
         $snapshots=[];foreach(['knowledge','chats'] as $dataset)$snapshots[$dataset]=json_decode(workspace_sync_export_v1($pdo,7,$dataset)['body'],true,512,JSON_THROW_ON_ERROR);
         file_put_contents($export,json_encode($snapshots,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
     }
+    if(isset($captureR5Acceptance))$captureR5Acceptance($pdo,$user,$session,$first);
     $pdo->exec('DELETE FROM chat_messages WHERE id='.(int)$first['message_id']);denied(fn()=>capture_r4_send($pdo,$session,$user,null,$input));
     echo "PASS: production MySQL schema, capture/source/project/Chat/Knowledge integration, indexing and folder ownership, exact sequential and parallel retries, revoked grants and namespaces, safe URLs, atomic rollback and deleted-message replay fencing.\n";
 }finally{$pdo->exec('DROP DATABASE `'.$name.'`');}
