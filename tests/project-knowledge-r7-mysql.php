@@ -2,6 +2,8 @@
 declare(strict_types=1);
 // Actual InnoDB captures, contexts, requests, refresh ledger, Knowledge and indexes.
 // Browser/model outputs are deterministic; existing R1/R3 suites cover their reader/save engines.
+function vp3_browser_delegation_domain_v2190(string $host):string{return strtolower($host);}
+function vp3_browser_runtime_list_v2200(PDO $pdo,array $user,string $namespace,int $limit):array{return [['runtime_id'=>'77777777-7777-4777-8777-777777777777','title'=>'Approved Chrome']];}
 function vp3_browser_research_runtime_v2230(PDO $pdo,array $user,string $namespace,string $id):array{
     if(!$GLOBALS['readerAllowed'])throw new RuntimeException('Chrome reader revoked.',403);
     return ['runtime_id'=>$id,'_multisite'=>['id'=>1]];
@@ -39,6 +41,8 @@ $captureR5Acceptance=static function(PDO $pdo,array $user,array $session,array $
     $state=knowledge_r6_set($pdo,$user,$key,$ns,['scope'=>['mode'=>'project','project_id'=>$item['project_id']],'expected_revision'=>$state['revision']]);
     $input=['reference'=>['kind'=>'annotation','id'=>$item['id'],'revision'=>$item['revision']],'state_revision'=>$state['revision'],'runtime_id'=>'77777777-7777-4777-8777-777777777777','request_id'=>'88888888-8888-4888-8888-888888888888','project_id'=>$item['project_id'],'folder_id'=>1,'conversation_id'=>(int)$first['conversation_id']];
     $noop=static function():void{};
+    $ages=knowledge_r7_list($pdo,$user,$key,$ns,['review_days'=>30]);
+    check(count($ages['items'])===3&&count(array_filter($ages['items'],static fn($s)=>$s['refreshable']))===1,'Age review lost sources or broadened unsafe URL policy.');
     $plan=knowledge_r7_prepare($pdo,$user,$key,$ns,null,$input,$noop);
     check($plan['status']==='prepared'&&count($plan['research']['sources'])===1,'R7 did not prepare the exact source.');
     check(!str_contains($plan['research']['question'],$item['note'])&&!str_contains($plan['research']['question'],$item['selection']),'Private notes or excerpts became external queries.');
