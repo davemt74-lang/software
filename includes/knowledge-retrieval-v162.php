@@ -156,11 +156,15 @@ function knowledge_retrieval_v162_for_chat(PDO $pdo,array $user,array $principal
     ];
 }
 
-function knowledge_retrieval_v162_generate_answer(string $query,array $history,array $user,array $principal,array $agentContext=[],$rawScope=null,int $conversationId=0): array
+function knowledge_retrieval_v162_generate_answer(string $query,array $history,array $user,array $principal,array $agentContext=[],$rawScope=null,int $conversationId=0,?array $projectKnowledge=null): array
 {
     $context=chat_policy_context_v236($query,$user,$principal,$conversationId);$pdo=db();
     $knowledge=['scope'=>knowledge_retrieval_v162_normalize_scope($rawScope),'context'=>$context,'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
-    if($pdo)$knowledge=knowledge_retrieval_v162_for_chat($pdo,$user,$principal,$query,$rawScope,$context,$conversationId);
+    if(!empty($projectKnowledge['active'])){
+        $context=$pdo?knowledge_retrieval_v162_strip_legacy_personal($pdo,(int)$user['id'],$context):$context;
+        if($projectKnowledge['context_text']!=='')$context[]=['source'=>'project-knowledge-r6','title'=>'Project Knowledge','text'=>$projectKnowledge['context_text']];
+        $knowledge=['scope'=>$projectKnowledge['state']['scope'],'context'=>$context,'citations'=>$projectKnowledge['sources'],'provenance'=>['cloud'],'homeserver_local_knowledge'=>'excluded_by_project_context'];
+    }elseif($pdo)$knowledge=knowledge_retrieval_v162_for_chat($pdo,$user,$principal,$query,$rawScope,$context,$conversationId);
     $context=$knowledge['context'];if($agentContext&&function_exists('agent_surface_v131_context_item'))array_unshift($context,agent_surface_v131_context_item($agentContext));
     $turnPrepared=null;
     if($pdo&&function_exists('vp3_cognitive_turn_prepare_v2430')){

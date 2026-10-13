@@ -11,6 +11,7 @@ require_once __DIR__.'/agent-work-control-v173.php';
 require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/user-calendar-agent-v1300.php';
 require_once __DIR__.'/knowledge-retrieval-v162.php';
+require_once __DIR__.'/project-knowledge-r6.php';
 require_once __DIR__.'/chat-browser-research-v1.php';
 require_once __DIR__.'/browser-research-save-v2230.php';
 require_once __DIR__.'/browser-context-v2130.php';
@@ -101,6 +102,15 @@ if($userId<1)throw new RuntimeException('Agent Chat user context is invalid.');
 $query=trim((string)($input['message']??''));$conversationId=(int)($input['conversation_id']??0);$inputMode=(string)($input['input_mode']??'text');$inputMode=$inputMode==='voice'?'voice':'text';if($query==='')throw new RuntimeException('Enter a message.');if(mb_strlen($query)>6000)throw new RuntimeException('That message is too long.');$ephemeralProtocol=!empty($input['ephemeral_protocol']);
 $activeAgentId=vp3_agent_chat_agent_id_v380($activeAgent);
 if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,$query,$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!vp3_agent_chat_runtime_conversation_v2160($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
+$r6Packet=null;$r6Namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,$activeAgentId);
+if(isset($input['project_knowledge_r6'])&&!is_array($input['project_knowledge_r6']))throw new RuntimeException('Invalid conversation Knowledge selection.',422);
+$r6Input=is_array($input['project_knowledge_r6']??null)?$input['project_knowledge_r6']:[];
+if(knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='off'){
+    if(!empty($r6Input['attachments']))throw new RuntimeException('Knowledge is off. Enable it before attaching sources.',403);
+}elseif(table_exists('chat_knowledge_context_r6')&&(personal_knowledge_available($user)||!empty($r6Input['attachments'])||knowledge_r6_saved_off($pdo,$user,'cloud:'.$conversationId,$r6Namespace))){
+    $r6Packet=knowledge_r6_resolve($pdo,$user,'cloud:'.$conversationId,$r6Namespace,array_replace($r6Input,['query'=>$query]));
+    if($r6Packet['active']&&!knowledge_retrieval_v162_owner_session($user,$principal))throw new RuntimeException('Project Knowledge requires the owner conversation.',403);
+}
 if(function_exists('vp3_live_session_note_action_v2370')){
     try{vp3_live_session_note_action_v2370($user,'user','chat.message_sent','Sent an Agent Chat message',[
         'surface'=>'chat','conversation_id'=>$conversationId,'agent_id'=>$activeAgentId,
@@ -137,13 +147,14 @@ $rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent
 $persistedAgentContext=$agentContext;
 unset($persistedAgentContext['browser_context']);$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$userMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,$inputMode);}
 $researchRecall=null;
-if($brainAllowed&&knowledge_retrieval_v162_owner_session($user,$principal)&&knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']!=='off'&&chat_research_recall_intent_r3($query)){
+if(empty($r6Packet['active'])&&$brainAllowed&&knowledge_retrieval_v162_owner_session($user,$principal)&&knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']!=='off'&&chat_research_recall_intent_r3($query)){
     $savedResearch=chat_research_recall_r3($pdo,$user,vp3_cognitive_agent_namespace_v500($pdo,$user,$activeAgentId),$query,3);
     $researchRecall=vp3_agent_tool_empty_v400();$researchRecall['handled']=true;
     $researchRecall['answer']=$savedResearch?chat_research_context_r3($savedResearch,15000,false):'No saved research matching this question is currently available under your lead, project and website permissions.';
     foreach($savedResearch as $saved)$researchRecall['sources'][]=['source'=>'research:'.$saved['report']['id'],'title'=>$saved['question'],'url'=>$saved['report']['url']];
 }
 $toolResult=$researchRecall??agent_work_control_chat_v173($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=user_calendar_agent_query_v1300($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();if(empty($toolResult['handled']))$toolResult=vp3_agent_tool_execute_query_v400($query,$user,$conversationId);else $toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}}
+if(!empty($r6Packet['active'])&&knowledge_r6_unscoped_read($toolResult))$toolResult=vp3_agent_tool_empty_v400();
 $homeAttempted=false;$homeResult=null;$responseActions=[];$turnPrepared=null;$turn=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
 if(!empty($toolResult['handled'])){
     $runtimePlan=vp3_agent_runtime_tool_plan_v420($userId,$activeAgentId,'chat');$answer=(string)$toolResult['answer'];$context=[];$execution=vp3_agent_runtime_finalize_v420($runtimePlan,chat_execution_v019_tool(),'vp3_tool');$capabilityRoute=['version'=>'v4.20','capability'=>'tools','planned_source'=>'vp3_tool','actual_source'=>'vp3_tool','supported'=>true,'ready'=>true,'fallback_used'=>false,'reason'=>'vp3_tool_handled'];
@@ -151,7 +162,7 @@ if(!empty($toolResult['handled'])){
     $runtimePlan=vp3_agent_runtime_plan_v420($pdo,$user,$activeAgentId,'chat');
     if(!empty($runtimePlan['try_homeserver'])&&!empty($runtimePlan['home']['supported'])){
         $homeAttempted=true;
-        $homeResult=homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all');
+        $homeResult=homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all'&&($r6Packet['state']['scope']['mode']??'all')!=='off',!empty($r6Packet['active'])&&$r6Packet['state']['scope']['mode']!=='off'?['conversation_id'=>$conversationId,'agent_id'=>$activeAgentId,'state_revision'=>$r6Packet['state']['revision'],'attachments'=>$r6Packet['attachments'],'query'=>$query,'fingerprint'=>$r6Packet['fingerprint']]:[]);
     }
     if($homeResult){
         $answer=(string)$homeResult['answer'];$context=[];$execution=vp3_agent_runtime_homeserver_execution_v420($homeResult);$execution['brain_delegation']=homeserver_agent_v025_public_state($homeResult);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,'homeserver');
@@ -162,7 +173,7 @@ if(!empty($toolResult['handled'])){
         if($homeAttempted&&function_exists('homeserver_compute_v232_failure'))homeserver_compute_v232_failure($userId);
         throw new RuntimeException(vp3_agent_runtime_block_message_v420($runtimePlan));
     }else{
-        $result=knowledge_retrieval_v162_generate_answer($query,$history,$user,$principal,$agentContext,$input['knowledge_scope']??null,$conversationId);
+        $result=knowledge_retrieval_v162_generate_answer($query,$history,$user,$principal,$agentContext,$input['knowledge_scope']??null,$conversationId,$r6Packet);
         if(!is_array($result)||!array_key_exists('answer',$result)||!isset($result['context'])||!is_array($result['context'])){
             $result=chat_generate_answer_policy_v236($query,$history,$user,$principal,$agentContext,$conversationId);
             $result['knowledge']=$knowledgeContext;
@@ -185,6 +196,7 @@ if(function_exists('chat_presentation_violation_v2370')&&chat_presentation_viola
         $responseActions=array_values(array_merge($responseActions,chat_context_fallback_actions($query,is_array($context??null)?$context:[])));
     }
 }
+if(!empty($r6Packet['active']))knowledge_r6_recheck($pdo,$user,$r6Namespace,$r6Packet,$query,$activeAgent);
 ai_usage_accounting_v032_record($pdo,$user,$activeAgentId,$conversationId,$execution);
 $publicSources=[];
 if(is_array($browserContext)){
@@ -216,7 +228,7 @@ if($turnPrepared&&function_exists('vp3_cognitive_turn_finalize_v2430')){
     );
 }
 $systemAppPlan=is_array($toolResult['system_app_plan']??null)?$toolResult['system_app_plan']:null;$systemAppCard=function_exists('vp3_system_apps_action_card_v190')?vp3_system_apps_action_card_v190($systemAppPlan):null;
-$publicSources=array_merge($publicSources,capture_r5_home_sources($pdo,$user,$homeResult??[]));$publicSources=array_merge($publicSources,capture_r5_sources($knowledgeContext['citations']??[]));$messageContext=['sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>!empty($toolResult['stem_media'])&&is_array($toolResult['stem_media'])?$toolResult['stem_media']:[],'actions'=>$allActions,'system_app_plan'=>$systemAppPlan,'system_app_action_card'=>$systemAppCard,'profile_webmcp_plan'=>is_array($toolResult['profile_webmcp_plan']??null)?$toolResult['profile_webmcp_plan']:null,'profile_webmcp_return'=>is_array($toolResult['profile_webmcp_return']??null)?$toolResult['profile_webmcp_return']:null,'cards'=>$cardRequests,'playlist_title'=>$playlistTitle,'agent_context'=>$persistedAgentContext,'agent'=>['id'=>(int)$principal['agent_id'],'name'=>(string)$principal['display_name'],'kind'=>(string)$principal['kind']],'execution'=>$execution,'cognitive_turn'=>$turn];$contextJson=json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);$assistantMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');$stmt->execute([$conversationId,'assistant',$answer,$contextJson]);$assistantMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,$inputMode);$pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);}
+$r6Used=!empty($r6Packet['active'])&&empty($toolResult['handled']);if($r6Packet)$r6Packet['used']=$r6Used;$publicSources=array_merge($publicSources,$r6Used?knowledge_r6_public_sources($r6Packet):[]);$publicSources=array_merge($publicSources,capture_r5_home_sources($pdo,$user,$homeResult??[]));$publicSources=array_merge($publicSources,capture_r5_sources($knowledgeContext['citations']??[]));$messageContext=['project_knowledge_r6'=>$r6Packet,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>!empty($toolResult['stem_media'])&&is_array($toolResult['stem_media'])?$toolResult['stem_media']:[],'actions'=>$allActions,'system_app_plan'=>$systemAppPlan,'system_app_action_card'=>$systemAppCard,'profile_webmcp_plan'=>is_array($toolResult['profile_webmcp_plan']??null)?$toolResult['profile_webmcp_plan']:null,'profile_webmcp_return'=>is_array($toolResult['profile_webmcp_return']??null)?$toolResult['profile_webmcp_return']:null,'cards'=>$cardRequests,'playlist_title'=>$playlistTitle,'agent_context'=>$persistedAgentContext,'agent'=>['id'=>(int)$principal['agent_id'],'name'=>(string)$principal['display_name'],'kind'=>(string)$principal['kind']],'execution'=>$execution,'cognitive_turn'=>$turn];$contextJson=json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);$assistantMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');$stmt->execute([$conversationId,'assistant',$answer,$contextJson]);$assistantMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,$inputMode);$pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);}
 if(function_exists('vp3_live_session_note_action_v2370')){
     try{
         if(!empty($toolResult['handled']))vp3_live_session_note_action_v2370($user,'tool','tool.completed','Completed an Agent tool action',['surface'=>'chat','conversation_id'=>$conversationId,'agent_id'=>$activeAgentId]);
@@ -229,5 +241,5 @@ if(function_exists('vp3_live_session_note_action_v2370')){
         ]);
     }catch(Throwable $e){error_log('VP3 live-session Chat response action failed: '.$e->getMessage());}
 }
-return ['ok'=>true,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'system_app_plan'=>$messageContext['system_app_plan'],'system_app_action_card'=>$messageContext['system_app_action_card'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
+return ['ok'=>true,'project_knowledge_r6'=>$r6Packet,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'system_app_plan'=>$messageContext['system_app_plan'],'system_app_action_card'=>$messageContext['system_app_action_card'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
 }
