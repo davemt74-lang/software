@@ -70,6 +70,7 @@ $files = [
     'manifest.json',
     'background.js',
     'chat-research-worker.js',
+    'capture-routing-r4.js',
     'notification-icon.png',
     'offscreen.html',
     'offscreen.js',

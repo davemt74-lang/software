@@ -52,6 +52,7 @@ jobs:
             "release": "VP3 Cloud Production",
             "mission_lifecycle_section": "A5C11",
             "research_section": "R3",
+            "capture_routing_section": "R4",
             "minimum_mission_schema": 79,
             "build": "vp3-cloud-main-${VP3_RELEASE_SHA:0:12}",
             "commit": "${VP3_RELEASE_SHA}",

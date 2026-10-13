@@ -114,6 +114,7 @@ require_once __DIR__.'/browser-share-chat-feed-v2020.php';
 require_once __DIR__.'/browser-share-media-v2040.php';
 require_once __DIR__.'/browser-source-feed-v2050.php';
 require_once __DIR__.'/research-projects-v2060.php';
+require_once __DIR__.'/browser-capture-routing-r4.php';
 require_once __DIR__.'/live-rooms-v2070.php';
 require_once __DIR__.'/browser-trust-v2080.php';
 require_once __DIR__.'/search-discovery-v2090.php';

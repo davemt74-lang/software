@@ -42,7 +42,8 @@ function workspace_sync_registry_v1(): array
         ['agent_commerce_payments_v800','order_id','agent_commerce_orders_v800','id','owner_user_id'],
         ['agent_commerce_refunds_v800','order_id','agent_commerce_orders_v800','id','owner_user_id']],
       'agents'=>[['user_agents','owner_user_id'],['agent_memory_items','user_id']],
-      'chats'=>[['agent_chat_archive','user_id'],['agent_studio_history','user_id'],['agent_studio_sessions','user_id'],['chat_conversations','user_id'],['chat_messages','conversation_id','chat_conversations','id','user_id']],
+      'chats'=>[['agent_chat_archive','user_id'],['agent_studio_history','user_id'],['agent_studio_sessions','user_id'],['chat_conversations','user_id'],['chat_messages','conversation_id','chat_conversations','id','user_id'],
+        ['browser_capture_deliveries_r4','owner_user_id'],['browser_shares_v2010','id','browser_capture_deliveries_r4','browser_share_id','owner_user_id']],
       'notifications'=>[['notifications','user_id'],['browser_notifications_v2080','user_id']],
       'music'=>[['track_favorites','user_id'],['album_favorites','user_id'],['playlist_favorites','user_id'],['track_notes','user_id'],['track_play_sessions','user_id'],['stem_mix_saves','user_id'],['show_reminders','user_id'],['tracks','owner_user_id'],['albums','owner_user_id'],['playlists','owner_user_id'],
         ['playlist_tracks','playlist_id','playlists','id','owner_user_id']],
@@ -160,7 +161,7 @@ function workspace_sync_safe_v1(mixed $value): mixed
     $out=[];
     foreach($value as $key=>$child){
         if(is_string($key)&&workspace_sync_sensitive_v1($key))continue;
-        if(is_string($child)&&preg_match('/(?:_json|metadata)$/',$key)){
+        if(is_string($key)&&is_string($child)&&preg_match('/(?:_json|metadata)$/',$key)){
             $decoded=json_decode($child,true);
             if(is_array($decoded))$child=json_encode(workspace_sync_safe_v1($decoded),JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
         }

@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.13.0';
+const VP3_EXTENSION_VERSION = '22.14.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 importScripts('screenshots-store.js', 'screenshots-worker.js', 'chat-research-worker.js');
 
@@ -2028,6 +2028,19 @@ async function browserShareAction(action, browserShareId, folderId = 0) {
   }, capability);
 }
 
+async function captureRoutingR4(action, payload = {}) {
+  if(!['options','send'].includes(action))throw new Error('Unknown annotation action.');
+  const request={...payload,action};
+  if(action==='send'){
+    if(payload.confirmed!==true)throw new Error('Review the annotation before sending.');
+    // The exact frozen capture/destination payload generates the same retry identity,
+    // including after a service-worker restart. Captured text is not cached in Chrome.
+    const hash=await sha256HexV2220(JSON.stringify(request));
+    request.idempotency_key=hash.slice(0,8)+'-'+hash.slice(8,12)+'-4'+hash.slice(13,16)+'-8'+hash.slice(17,20)+'-'+hash.slice(20,32);
+  }
+  return authorizedFetch('/api/extension-capture-routing-r4.php',{method:'POST',json:request},'agent.message');
+}
+
 async function cognitiveNow() {
   const payload = await authorizedFetch('/api/extension-cognitive-now-v2120.php', { method: 'GET' }, 'agent.message');
   return payload.feed || null;
@@ -2360,7 +2373,8 @@ const VP3_QUICK_ACTIONS_V2150 = Object.freeze({
   save_knowledge:{ suggestion:'save_knowledge', title:'Draft Knowledge entry' },
   create_task:{ suggestion:'create_task', title:'Propose Task' },
   share_team:{ flow:'share_team', title:'Share with Team' },
-  annotate:{ flow:'annotate', title:'Annotate / Capture' }
+  annotate:{ flow:'annotate', title:'Annotate / Capture' },
+  send_chat:{ flow:'send_chat', title:'Send highlighted annotation to Agent Chat' }
 });
 
 function quickActionMenuIdV2150(action) {
@@ -2651,6 +2665,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'search_action': return browserSearchAction(message.action, message.payload || {});
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
+      case 'capture_r4': return captureRoutingR4(message.action, message.payload || {});
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
       case 'cognitive_now': return cognitiveNow();
       case 'cognitive_action': return cognitiveAction(message.action, message.payload || {});

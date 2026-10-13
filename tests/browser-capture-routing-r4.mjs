@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
+const source=await fs.readFile(new URL('../browser-companion/background.js',import.meta.url),'utf8');
+const requests=[],stored={base_url:'https://cloud.example/installed/vp3',device_token:'a'.repeat(64)};let receiver;
+const chrome={runtime:{id:'a'.repeat(32),onMessage:{addListener(fn){receiver=fn;}}},storage:{local:{get:async keys=>Object.fromEntries(keys.filter(k=>k in stored).map(k=>[k,stored[k]])),set:async x=>Object.assign(stored,x),remove:async keys=>{for(const k of keys)delete stored[k];}}},permissions:{contains:async()=>true}};
+function worker(){const sandbox={chrome,importScripts:()=>{},URL,URLSearchParams,Headers,AbortController,TextEncoder,TextDecoder,crypto:webcrypto,setTimeout,clearTimeout,console,fetch:async(url,options)=>{requests.push({url,options});return {ok:true,status:200,json:async()=>({ok:true,contract:'vp3.browser-capture.r4'})};}};vm.createContext(sandbox);vm.runInContext(source.split('chrome.runtime.onInstalled.addListener')[0],sandbox);const start=source.indexOf('chrome.runtime.onMessage.addListener');vm.runInContext(source.slice(start,source.indexOf('chrome.tabs.onUpdated.addListener',start)),sandbox);return message=>new Promise(resolve=>assert.equal(receiver(message,{id:chrome.runtime.id},resolve),true));}
+let dispatch=worker();
+assert.equal((await dispatch({type:'capture_r4',action:'options',payload:{agent_id:0}})).ok,true);
+const payload={confirmed:true,owner_user_id:7,device_id:'device',agent_id:0,conversation_id:42,folder_id:1,save_knowledge:true,project_id:'project',snapshot:{selected_text:'Flour costs 24.50',captured_at:'2026-10-13T05:00:00Z'},source:{url:'https://supplier.example/prices'},message:{note:'Compare flour'},tags:'supplier,pricing',share_type:'selection'};
+for(let i=0;i<2;i++)assert.equal((await dispatch({type:'capture_r4',action:'send',payload})).ok,true);
+const a=JSON.parse(requests.at(-1).options.body),b=JSON.parse(requests.at(-2).options.body);assert.equal(a.idempotency_key,b.idempotency_key);
+dispatch=worker();await dispatch({type:'capture_r4',action:'send',payload});assert.equal(JSON.parse(requests.at(-1).options.body).idempotency_key,a.idempotency_key,'Worker restart changed exact retry identity');
+await dispatch({type:'capture_r4',action:'send',payload:{...payload,folder_id:2}});assert.notEqual(JSON.parse(requests.at(-1).options.body).idempotency_key,a.idempotency_key);
+const before=requests.length;assert.equal((await dispatch({type:'capture_r4',action:'send',payload:{...payload,confirmed:false}})).ok,false);assert.equal(requests.length,before,'Unreviewed capture sent');
+assert.equal(requests.at(-1).url,'https://cloud.example/installed/vp3/api/extension-capture-routing-r4.php');
+assert.equal(requests.at(-1).options.headers.get('Authorization'),'Bearer '+stored.device_token);
+assert.deepEqual(Object.keys(stored).sort(),['base_url','device_token'],'A second capture/Knowledge store was created');
+const download=await fs.readFile(new URL('../chrome-extension-download.php',import.meta.url),'utf8');assert.ok(download.includes("'capture-routing-r4.js'"));
+console.log('PASS: real Chrome message listener, installed-subfolder auth, explicit review, stable exact retries across service-worker restart, changed destinations and no parallel capture store.');
