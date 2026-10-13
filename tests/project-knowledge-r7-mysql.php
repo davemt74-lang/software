@@ -29,6 +29,12 @@ $captureR5Acceptance=static function(PDO $pdo,array $user,array $session,array $
     knowledge_r6_ensure_schema($pdo);knowledge_r7_ensure_schema($pdo);knowledge_r7_ensure_schema($pdo);chat_research_schema_v1($pdo);
     $pdo->exec('CREATE TABLE fixture_refresh_missions(id CHAR(36) PRIMARY KEY,owner_user_id INT,payload JSON)');
     $key='cloud:'.$first['conversation_id'];$ns='system';$state=knowledge_r6_state($pdo,$user,$key,$ns);
+    $unsafe=capture_r5_list($pdo,$user,['id'=>$first['browser_share_id']])['items'][0];
+    try{knowledge_r7_source($pdo,$user,$key,$ns,['kind'=>'annotation','id'=>$unsafe['id'],'revision'=>$unsafe['revision']],$state['revision']);throw new RuntimeException('A query-bearing source was silently broadened.');}catch(InvalidArgumentException $e){}
+    // The R4 fixture retains a legitimate unit query. R7 must reject that URL,
+    // then exercise a separately captured exact safe public URL, never strip it.
+    $sourceInput=array_replace($GLOBALS['input'],['idempotency_key'=>'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','conversation_id'=>(int)$first['conversation_id'],'source'=>['url'=>'https://supplier.example/prices','title'=>'Supplier pricing']]);
+    $first=capture_r4_send($pdo,$session,$user,null,$sourceInput);
     $item=capture_r5_list($pdo,$user,['id'=>$first['browser_share_id']])['items'][0];
     $state=knowledge_r6_set($pdo,$user,$key,$ns,['scope'=>['mode'=>'project','project_id'=>$item['project_id']],'expected_revision'=>$state['revision']]);
     $input=['reference'=>['kind'=>'annotation','id'=>$item['id'],'revision'=>$item['revision']],'state_revision'=>$state['revision'],'runtime_id'=>'77777777-7777-4777-8777-777777777777','request_id'=>'88888888-8888-4888-8888-888888888888','project_id'=>$item['project_id'],'folder_id'=>1,'conversation_id'=>(int)$first['conversation_id']];
