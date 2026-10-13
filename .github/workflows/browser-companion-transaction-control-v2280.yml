@@ -74,6 +74,8 @@ jobs:
         run: |
           php tests/chat-browser-research-v1.php
           php tests/chat-research-discovery-r2.php
+          php tests/chat-research-continuity-r3.php
+          php tests/chat-research-canonical-r3.php
           node tests/chat-browser-research-worker.mjs
           php -l api/chat-browser-research-v1.php
           php -l api/extension-research-agent-v2230.php
