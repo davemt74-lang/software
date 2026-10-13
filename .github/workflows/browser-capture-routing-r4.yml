@@ -1,4 +1,4 @@
-name: Browser Capture and Project Knowledge R6
+name: Reviewed Knowledge Refresh R7
 on:
   pull_request:
   push:
@@ -37,6 +37,7 @@ jobs:
         run: |
           php tests/project-knowledge-r5-mysql.php
           php tests/project-knowledge-r6-mysql.php
+          php tests/project-knowledge-r7-mysql.php
           php tests/project-knowledge-r6-reports.php
           php tests/project-knowledge-r6-delegation.php
       - uses: actions/setup-node@v4
@@ -52,8 +53,13 @@ jobs:
           node tests/browser-capture-routing-r4-ui.mjs
           node tests/project-knowledge-r5-ui.mjs
           node tests/project-knowledge-r6-ui.mjs
+          node tests/project-knowledge-r7-ui.mjs
       - name: Capture integration syntax
         run: |
+          php -l api/project-knowledge-r7.php
+          php -l includes/project-knowledge-r7.php
+          php -l includes/knowledge-refresh-guard-r7.php
+          node --check browser-companion/project-knowledge-r7.js
           php -l api/project-knowledge-r6.php
           php -l includes/project-knowledge-r6.php
           php -l api/project-knowledge-r5.php

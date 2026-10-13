@@ -73,6 +73,7 @@ $files = [
     'capture-routing-r4.js',
     'project-knowledge-r5.js',
     'project-knowledge-r6.js',
+    'project-knowledge-r7.js',
     'notification-icon.png',
     'offscreen.html',
     'offscreen.js',

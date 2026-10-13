@@ -248,6 +248,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             capture_r4_ensure_schema($pdo);
             require_once __DIR__.'/includes/project-knowledge-r6.php';
             knowledge_r6_ensure_schema($pdo);
+            require_once __DIR__.'/includes/project-knowledge-r7.php';
+            knowledge_r7_ensure_schema($pdo);
             vp3_browser_research_ensure_schema_v2230();
             chat_research_schema_v1($pdo);
             vp3_browser_transaction_ensure_schema_v2240();

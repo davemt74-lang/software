@@ -6,7 +6,7 @@ $pdo=new PDO('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPT
 $pdo->exec("CREATE TABLE chat_browser_research_requests_v1(id TEXT,owner_user_id INTEGER,agent_namespace TEXT,status TEXT,mission_id TEXT,question TEXT,urls_json TEXT,runtime_id TEXT,created_at TEXT);CREATE TABLE missions(public_id TEXT,owner_user_id INTEGER,status TEXT,report_public_id TEXT,project_id INTEGER,saved_at TEXT,payload TEXT);CREATE TABLE reports(public_id TEXT,id INTEGER,project_id INTEGER,deleted_at TEXT,updated_at TEXT);CREATE TABLE projects(id INTEGER,public_id TEXT,allowed INTEGER);");
 $allowed=true;$chat=true;$domains=['one.example','two.example'];$uid=7;$user=['id'=>$uid];
 function has_permission(string $p,array $u):bool{global $chat;return $chat;}
-function table_exists(string $name):bool{return true;}
+function table_exists(string $name):bool{global $pdo;$q=$pdo->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$name]);return (bool)$q->fetchColumn();}
 function vp3_browser_runtime_row_v2200(PDO $p,int $u,string $n,string $i):?array{global $allowed;return $allowed&&$u===7?['status'=>'active','allowed_actions_json'=>'["browser_research"]']:null;}
 function vp3_browser_delegation_json_array_v2190(string $j):array{return json_decode($j,true);}
 function vp3_browser_multisite_row_v2220(PDO $p,array $r):array{return ['id'=>1];}
