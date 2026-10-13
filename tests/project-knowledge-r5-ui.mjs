@@ -24,7 +24,7 @@ try{
     if(window.revoked)return {ok:false,error:'Knowledge permission revoked.'};
     if(payload.action==='edit'){if(window.conflict)return {ok:false,error:'This annotation changed. Refresh and review the current version.'};row={...row,...payload,revision:'b'.repeat(64)};return {ok:true,contract:'vp3.project-knowledge.r5',item:row};}
     if(window.defer)await new Promise(resolve=>window.release=resolve);
-    return {ok:true,contract:'vp3.project-knowledge.r5',items:[row],count:1,offset:0,folders:[{id:1,folder_name:'Suppliers'},{id:2,folder_name:'Purchasing'}],projects:[{id:'project1',title:'Suppliers',can_edit:true},{id:'project2',title:'Purchasing',can_edit:true}]};
+    return {ok:true,contract:'vp3.project-knowledge.r5',items:window.many?Array.from({length:25},()=>row):[row],count:window.many?25:1,offset:0,folders:[{id:1,folder_name:'Suppliers'},{id:2,folder_name:'Purchasing'}],projects:[{id:'project1',title:'Suppliers',can_edit:true},{id:'project2',title:'Purchasing',can_edit:true}]};
    };
    window.msg=async(type,{payload})=>{if(type!=='project_knowledge_r5')throw Error('Unexpected command');const r=await handle(payload);if(!r.ok)throw Error(r.error);return r;};
    window.fetch=async(_url,options)=>{const r=await handle(JSON.parse(options.body));return {ok:r.ok,status:r.ok?200:(window.revoked?403:409),json:async()=>r};};
@@ -42,6 +42,8 @@ try{
   await page.getByRole('button',{name:'Use in Chat',exact:true}).click();assert.match(await page.locator(mode==='chrome'?'#agentMessageInput':'#chatInput').inputValue(),/supplier\.example\/prices/);assert.equal(await page.evaluate(()=>submits),0,'Picker automatically sent a Chat/model turn');
   await page.locator('summary').getByText('Project Knowledge',{exact:true}).click();await page.evaluate(()=>window.revoked=true);await page.getByRole('button',{name:'Search',exact:true}).click();await page.getByText('Knowledge permission revoked.',{exact:false}).waitFor();assert.equal(await page.locator('.r5-results article').count(),0,'Revoked results stayed visible');
   await page.evaluate(()=>{window.revoked=false;window.defer=true;});await page.getByRole('button',{name:'Search',exact:true}).click();await page.waitForFunction(()=>typeof window.release==='function');await page.evaluate(mode=>{if(mode==='chrome')agentConversationId=43;else chatScope=43;window.release();window.defer=false;},mode);await page.getByText('Chat context changed.',{exact:false}).first().waitFor();assert.equal(await page.locator('.r5-results article').count(),0);assert.equal(await page.getByRole('button',{name:'Search',exact:true}).isEnabled(),true,'Context change left interface locked');
+  await page.evaluate(()=>window.many=true);await page.getByRole('button',{name:'Search',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.r5-results article').length===25);
+  assert.equal(await page.evaluate(()=>{const p=document.querySelector('.project-knowledge-r5');return p.getBoundingClientRect().height<=window.innerHeight*.46&&p.scrollHeight>p.clientHeight;}),true,'Long result lists displaced the Chat composer');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'Mobile horizontal overflow');assert.deepEqual(errors,[]);await page.close();
  }
  console.log('PASS: R5 actual Cloud/native/Chrome mobile canvas, search filters, exact review and conflict retry, source safety, composer-only use, revoked/stale result clearing and layout.');
