@@ -61,6 +61,7 @@ $knowledgeR8Acceptance=static function(PDO $pdo,array $user,string $key,string $
     if($path=getenv('VP3_KNOWLEDGE_R8_EXPORT'))file_put_contents($path,json_encode(['task'=>$record,'contact'=>$contactDone['result'],'document'=>$docDone['result'],'datasets'=>array_map(static fn($dataset)=>json_decode(workspace_sync_export_v1($pdo,7,$dataset)['body'],true),['agents','contacts','knowledge'])],JSON_THROW_ON_ERROR));
     $pdo->exec("UPDATE agent_memory_items SET memory_text='Independently changed' WHERE id=".(int)$task['id']);check(knowledge_r8_view($pdo,$user,$key,$ns,knowledge_r8_row($pdo,$user,$key,$ns,$base['request_id']))['status']==='superseded','Old task receipt falsely reported current result.');
     $GLOBALS['grant']=false;rejected_r7(fn()=>knowledge_r8_view($pdo,$user,$key,$ns,knowledge_r8_row($pdo,$user,$key,$ns,$base['request_id'])),403);$GLOBALS['grant']=true;
+    if(isset($GLOBALS['knowledgeR9Acceptance']))($GLOBALS['knowledgeR9Acceptance'])($pdo,$user,$key,$ns,$state,$item);
     echo "PASS: R8 actual source authority, exact immutable task/CRM/document preview, model draft only, canonical existing writers, same-title isolation, stable retries, stale/foreign destinations, evidence hashes, final-authority rollback, protected originals and received/superseded receipts.\n";
 };
 require __DIR__.'/project-knowledge-r7-mysql.php';
