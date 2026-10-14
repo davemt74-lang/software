@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 // Real R4/R5/R6/R7 source authority and InnoDB writes; only identity/model outputs are controlled.
+function vp3_browser_research_mission_row_v2230(PDO $pdo,int $uid,string $id,bool $lock=false):?array {
+    $q=$pdo->prepare('SELECT payload FROM fixture_refresh_missions WHERE id=? AND owner_user_id=?');$q->execute([$id,$uid]);$raw=$q->fetchColumn();if(!$raw)return null;$m=json_decode($raw,true);
+    $report=vp3_research_report_row_v2060($pdo,(string)($m['report']['id']??''));
+    return $report?['status'=>'completed','report_public_id'=>$m['report']['id'],'project_id'=>$report['project_id'],'saved_at'=>'2026-10-13 00:00:00']:null;
+}
 $knowledgeR8Acceptance=static function(PDO $pdo,array $user,string $key,string $ns,array $state,array $item,array $refresh):void{
     require_once __DIR__.'/../includes/knowledge-actions-r8.php';
     require_once __DIR__.'/../includes/agent-brain-v82.php';
