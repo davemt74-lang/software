@@ -3031,9 +3031,10 @@
         payload.knowledge_scope=knowledgeScopeRuntime.value();
       }
       if(window.VP3ProjectKnowledgeR6)payload.project_knowledge_r6=window.VP3ProjectKnowledgeR6.value();
+      const revision=window.VP3KnowledgeRevisionsR11?.value(message);if(revision)payload.knowledge_revision=revision;
       if(browserAgentContext)payload.agent_context=browserAgentContext;
       const data = await api(payload);
-      window.VP3ProjectKnowledgeR6?.consume(data.project_knowledge_r6);
+      window.VP3ProjectKnowledgeR6?.consume(data.project_knowledge_r6);window.VP3KnowledgeRevisionsR11?.consume();
 
       if(browserAgentContext&&browserContextRuntime&&typeof browserContextRuntime.consume==='function'){
         browserContextRuntime.consume();

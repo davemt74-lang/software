@@ -42,3 +42,6 @@ console.log('PASS: R9 existing Chrome command allowlist transports frozen draft/
 assert.equal((await dispatch({type:'knowledge_actions_r8',payload:{action:'destination',conversation_id:42,agent_id:0,operation:'knowledge.create',target_key:'new-document:-:1',owner_user_id:8,source_text:'Private'}})).ok,true);
 const r10body=JSON.parse(requests.at(-1).options.body);assert.equal(r10body.operation,'knowledge.create');assert.equal(r10body.target_key,'new-document:-:1');assert.ok(!('source_text' in r10body)&&!('owner_user_id' in r10body));
 console.log('PASS: R10 destination request uses existing authenticated Chrome transport and owner-field stripping.');
+
+assert.equal((await dispatch({type:'knowledge_actions_r8',payload:{...r9request,revision_root_id:'d'.repeat(64)}})).ok,true);assert.equal(JSON.parse(requests.at(-1).options.body).revision_root_id,'d'.repeat(64));
+console.log('PASS: R11 existing Chrome command transports stable review lineage without owner/evidence injection.');

@@ -1,0 +1,46 @@
+<?php
+declare(strict_types=1);
+$knowledgeR11Acceptance=static function(PDO $pdo,array $user,string $key,string $ns,array $state,array $item):void{
+    $noop=static function():void{};$cid=(int)substr($key,6);
+    $save=static function(array $packet)use($pdo,$cid):void{$pdo->prepare('INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json) VALUES(?,NULL,?,?,?)')->execute([$cid,'assistant','Draft only',json_encode(['knowledge_actions_r9'=>$packet],JSON_THROW_ON_ERROR)]);};
+    foreach(['Make it shorter.','Could you rewrite that brief in bullets?','Please shorten this draft.','Rename that document title.'] as $text)check(knowledge_r11_intent($text),'Refinement intent missed.');
+    foreach(['How do I make it shorter?','Do not make it shorter.','For example, make it shorter.','Make a new brief from research.','Make a shorter document from highlights.','Make my website shorter.','Change that document owner.'] as $text)check(!knowledge_r11_intent($text),'Unrelated or negated instruction became a refinement.');
+    $refs=[['kind'=>'annotation','id'=>$item['id'],'revision'=>$item['revision']]];
+    $create=static fn()=>json_encode(['answer'=>'Draft only','proposals'=>[['operation'=>'knowledge.create','source_indices'=>[0],'target_index'=>null,'fields'=>['title'=>'Supplier brief','description'=>'Historical evidence','content_text'=>'A longer captured comparison [P1].']]]]);
+    $packet=knowledge_r9_chat($pdo,$user,$key,$ns,['instruction'=>'Turn these highlights into a brief.','references'=>$refs,'request_id'=>'r11-original'],$noop,$create);$save($packet);$draft=$packet['drafts'][0];
+    $calls=0;$model=static function($prompt,$history,$context)use(&$calls):string{$calls++;check(str_contains($context[0]['text'],'[P1]'),'Current draft absent from inference.');return json_encode(['title'=>'Short supplier brief','description'=>'Historical evidence','content_text'=>'Captured quote [P1].']);};
+    $before=[(int)$pdo->query('SELECT COUNT(*) FROM knowledge_items')->fetchColumn(),(int)$pdo->query('SELECT COUNT(*) FROM chat_knowledge_actions_r8')->fetchColumn()];
+    $input=['instruction'=>'Make it shorter.','request_id'=>'r11-refine'];$result=knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,$model);$next=$result['drafts'][0];
+    check($calls===1&&$next['revision_of']===$draft['draft_id']&&$next['revision_root_id']===$draft['draft_id'],'Refinement lost lineage.');
+    check($next['references']===$draft['references']&&$next['draft_fingerprint']===$draft['draft_fingerprint']&&$next['target_key']===$draft['target_key'],'Refinement changed evidence/destination.');
+    check($before===[(int)$pdo->query('SELECT COUNT(*) FROM knowledge_items')->fetchColumn(),(int)$pdo->query('SELECT COUNT(*) FROM chat_knowledge_actions_r8')->fetchColumn()],'Refinement wrote a destination or review.');
+    check(knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,$model)['drafts'][0]['draft_id']===$next['draft_id'],'Retry lost refinement identity.');
+    $never=static function(){throw new RuntimeException('Model called for clarification');};
+    $other=$draft;$other['draft_id']=str_repeat('e',64);$other['fields']['title']='Other brief';$save(knowledge_r9_reply($key,'',[$draft,$other]));
+    check(!knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,$never)['drafts'],'Ambiguous draft was guessed.');
+    check(count(knowledge_r9_chat($pdo,$user,$key,$ns,['instruction'=>'Rewrite the brief "Supplier brief" in bullets.'],$noop,$model)['drafts'])===1,'Explicit quoted draft was not resolved.');
+    $selected=$input+['knowledge_revision'=>['draft_id'=>$draft['draft_id'],'fields'=>['title'=>'Edited before revision','description'=>'Edited detail','content_text'=>'My current edited text [P1].'],'target_key'=>$draft['target_key']]];
+    knowledge_r9_chat($pdo,$user,$key,$ns,$selected,$noop,static function($p,$h,$c){check(str_contains($c[0]['text'],'My current edited text'),'Live inline edits were discarded');return json_encode(['title'=>'Edited before revision','description'=>'Edited detail','content_text'=>'Short edited text [P1].']);});
+    rejected_r7(fn()=>knowledge_r9_chat($pdo,$user,$key,$ns,$input+['knowledge_revision'=>['draft_id'=>str_repeat('f',64)]],$noop,$never),409);
+    $save($packet);
+    foreach([['title'=>'Invalid','description'=>'','content_text'=>'Missing citation'],['title'=>'Invalid','description'=>'','content_text'=>'Foreign citation [P99]'],['title'=>'Invalid','description'=>'','content_text'=>'[P1]','tool'=>'execute']] as $bad){try{knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,static fn()=>json_encode($bad));throw new RuntimeException('Invalid model output accepted');}catch(InvalidArgumentException $e){}catch(RuntimeException $e){check($e->getCode()===422,'Wrong refinement rejection');}}
+    $raw=$pdo->prepare('SELECT snapshot_hash FROM browser_shares_v2010 WHERE public_id=?');$raw->execute([$item['id']]);$hash=$raw->fetchColumn();
+    rejected_r7(fn()=>knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,static function()use($pdo,$item){$pdo->prepare('UPDATE browser_shares_v2010 SET snapshot_hash=? WHERE public_id=?')->execute([hash('sha256','R11 changed evidence'),$item['id']]);return json_encode(['title'=>'Short','description'=>'','content_text'=>'Quote [P1].']);}),409);
+    $pdo->prepare('UPDATE browser_shares_v2010 SET snapshot_hash=? WHERE public_id=?')->execute([$hash,$item['id']]);
+    $f=$pdo->query('SELECT folder_name FROM artist_transcript_folders_v177 WHERE id=1')->fetchColumn();
+    $chosen=$input+['knowledge_revision'=>['draft_id'=>$draft['draft_id'],'fields'=>$draft['fields'],'target_key'=>knowledge_r10_key('',1)]];
+    rejected_r7(fn()=>knowledge_r9_chat($pdo,$user,$key,$ns,$chosen,$noop,static function()use($pdo){$pdo->exec("UPDATE artist_transcript_folders_v177 SET folder_name='R11 in-flight rename' WHERE id=1");return json_encode(['title'=>'Short','description'=>'','content_text'=>'Quote [P1].']);}),409);$pdo->prepare('UPDATE artist_transcript_folders_v177 SET folder_name=? WHERE id=1')->execute([$f]);
+    $GLOBALS['grant']=false;rejected_r7(fn()=>knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,$never),403);$GLOBALS['grant']=true;
+    rejected_r7(fn()=>knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,static function()use($save,$packet,$model){$save(knowledge_r9_reply('cloud:999','',[]));return $model('',[],[['text'=>'[P1]']]);}),409);$save($packet);
+    rejected_r7(fn()=>knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,static function()use($model){$GLOBALS['grant']=false;return $model('',[],[['text'=>'[P1]']]);}),403);$GLOBALS['grant']=true;
+    $save($result);$second=knowledge_r9_chat($pdo,$user,$key,$ns,['instruction'=>'Rewrite that brief in bullets.','request_id'=>'r11-next'],$noop,$model)['drafts'][0];check($second['revision_root_id']===$draft['draft_id']&&$second['revision_of']===$next['draft_id'],'Chained refinement lost stable root.');
+    $reviewId=knowledge_r11_review_id($key,$draft['draft_id']);$review=knowledge_r8_prepare($pdo,$user,$key,$ns,$second+['request_id'=>$reviewId],$noop);
+    rejected_r7(fn()=>knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,$never),409);
+    rejected_r7(fn()=>knowledge_r8_prepare($pdo,$user,$key,$ns,$draft+['request_id'=>$reviewId],$noop),409);
+    $done=knowledge_r8_decide($pdo,$user,$key,$ns,['id'=>$reviewId,'expected_hash'=>$review['review_hash'],'confirmed'=>true,'decision'=>'apply'],$noop);
+    knowledge_r8_decide($pdo,$user,$key,$ns,['id'=>$reviewId,'expected_hash'=>$review['review_hash'],'confirmed'=>true,'decision'=>'apply'],$noop);
+    check((int)$pdo->query('SELECT COUNT(*) FROM knowledge_items')->fetchColumn()===$before[0]+1&&str_contains($review['preview']['fields']['content_text'],$item['revision']),'Revision chain duplicated document or dropped source appendix.');
+    rejected_r7(fn()=>knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,$never),409);
+    echo "PASS: R11 real Chat-history resolution, explicit edited selection, ambiguity/negation, strict citation/output limits, current evidence/authority fences, stable refinement lineage, frozen exact review and one canonical document despite retries.\n";
+};
+require __DIR__.'/knowledge-documents-r10-mysql.php';
