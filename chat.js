@@ -1289,6 +1289,7 @@
       actions:Array.isArray(raw.actions) ? raw.actions : [],
       cards:Array.isArray(raw.cards) ? raw.cards : (Array.isArray(raw.cognitive_cards) ? raw.cognitive_cards : []),
       system_app_action_card:raw.system_app_action_card && typeof raw.system_app_action_card === 'object' ? raw.system_app_action_card : null,
+      knowledge_actions_r9:raw.knowledge_actions_r9 || null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1439,10 +1440,11 @@
     return wrapper;
   }
 
-  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null) {
+  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, knowledgeDraft = null) {
     if (welcome) welcome.hidden = true;
     const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards, systemAppActionCard);
     thread.appendChild(el);
+    window.VP3KnowledgeActionsR9?.show(knowledgeDraft,el.querySelector('.message-body')||el);
     if(systemAppActionCard && systemAppActionCard.action_id){
       const actionId=String(systemAppActionCard.action_id);
       if(String(systemAppActionCard.status||'')==='completed'){
@@ -2913,7 +2915,8 @@
         context.stem_media || [],
         context.actions || [],
         context.cards || [],
-        context.system_app_action_card || null
+        context.system_app_action_card || null,
+        context.knowledge_actions_r9 || null
       );
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
@@ -2935,7 +2938,7 @@
     data.messages.forEach(message=>{
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
-      addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null);
+      addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory(signal);
@@ -3049,7 +3052,8 @@
         data.stem_media || [],
         data.actions || [],
         data.cards || data.cognitive_cards || [],
-        data.system_app_action_card || null
+        data.system_app_action_card || null,
+        data.knowledge_actions_r9 || null
       );
       const autoAction=(data.actions||[]).find(action=>action && action.auto && action.url);
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}

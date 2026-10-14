@@ -493,7 +493,7 @@ function renderAgentMessagesV2160(messages,append){
   if(!append){ui.agentMessages.replaceChildren();agentLastMessageId=0;}
   for(const message of Array.isArray(messages)?messages:[]){
     const id=Number(message&&message.id||0);if(id&&ui.agentMessages.querySelector('[data-message-id="'+id+'"]'))continue;
-    ui.agentMessages.append(agentMessageNodeV2160(message));agentLastMessageId=Math.max(agentLastMessageId,id);
+    const node=agentMessageNodeV2160(message);ui.agentMessages.append(node);window.VP3KnowledgeActionsR9?.show(message.knowledge_actions_r9,node);agentLastMessageId=Math.max(agentLastMessageId,id);
   }
   ui.agentEmpty.hidden=ui.agentMessages.children.length>0;
   if(!ui.agentEmpty.parentNode)ui.agentMessages.prepend(ui.agentEmpty);
@@ -566,7 +566,7 @@ async function sendAgentMessageV2160(){
     const now=new Date().toISOString();
     renderAgentMessagesV2160([
       {id:Number(payload&&payload.user_message_id||0),role:'user',message:message,created_at:now},
-      {id:Number(payload&&payload.assistant_message_id||0),role:'assistant',message:payload&&payload.answer||'',created_at:now}
+      {id:Number(payload&&payload.assistant_message_id||0),role:'assistant',message:payload&&payload.answer||'',created_at:now,knowledge_actions_r9:payload?.knowledge_actions_r9}
     ],true);
     await loadAgentConversationsV2160();
     ui.agentConversationSelect.value=String(agentConversationId);

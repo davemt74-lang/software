@@ -12,6 +12,7 @@ require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/user-calendar-agent-v1300.php';
 require_once __DIR__.'/knowledge-retrieval-v162.php';
 require_once __DIR__.'/project-knowledge-r6.php';
+require_once __DIR__.'/knowledge-actions-r9.php';
 require_once __DIR__.'/chat-browser-research-v1.php';
 require_once __DIR__.'/browser-research-save-v2230.php';
 require_once __DIR__.'/browser-context-v2130.php';
@@ -94,7 +95,8 @@ function vp3_agent_chat_send_v2160(
     ?array $activeAgent,
     array $principal,
     array $input,
-    bool $brainAllowed
+    bool $brainAllowed,
+    ?callable $currentAuthority=null
 ): array {
 
 $userId=(int)($user['id']??0);
@@ -146,6 +148,22 @@ if($rawBrowserContext){
 $rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$activeAgentId;$calendarAwareness=calendar_schedule_awareness_snapshot_v1330($pdo,$user);$calendarContextEvents=vp3_agent_chat_runtime_calendar_events_v2160($calendarAwareness);$clientEvents=is_array($rawAgentContext['events']??null)?$rawAgentContext['events']:[];$rawAgentContext['events']=array_merge($calendarContextEvents,$clientEvents);$meetingMemory=video_meeting_memory_agent_context_v18120($pdo,$userId,$query);$meetingMemory=video_meeting_commitment_command_enrich_v18230($pdo,$userId,$query,$meetingMemory);if(!empty($meetingMemory['relevant']))$rawAgentContext['meeting_memory']=$meetingMemory;$agentContext=agent_surface_v131_enrich($user,'chat',$rawAgentContext);if(!empty($meetingMemory['relevant']))$agentContext['meeting_memory']=$meetingMemory;$agentContext['calendar_awareness']=$calendarAwareness;
 $persistedAgentContext=$agentContext;
 unset($persistedAgentContext['browser_context']);$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$userMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,$inputMode);}
+$knowledgeDraft=null;$knowledgeTool=null;
+if(knowledge_r9_intent($query)&&knowledge_retrieval_v162_owner_session($user,$principal)){
+    $knowledgeTool=vp3_agent_tool_empty_v400();$knowledgeTool['handled']=true;
+    $r9Recheck=static function()use($pdo,$user,$conversationId,$activeAgent,$r6Namespace,$currentAuthority):void{
+        if($currentAuthority)$currentAuthority();
+        $q=$pdo->prepare('SELECT * FROM users WHERE id=?');$q->execute([$user['id']]);$live=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$live||empty($live['is_active']))throw new RuntimeException('Account access changed.',403);
+        $live['roles']=user_account_types_for_user_id((int)$live['id'],(string)($live['role']??''));
+        $lead=vp3_agent_chat_agent_id_v380($activeAgent)>0?vp3_agent_chat_resolve_agent_v380($pdo,$live,vp3_agent_chat_agent_id_v380($activeAgent)):null;
+        if(!vp3_agent_chat_runtime_conversation_v2160($pdo,$conversationId,(int)$live['id'],$lead)||vp3_cognitive_agent_namespace_v500($pdo,$live,vp3_agent_chat_agent_id_v380($lead))!==$r6Namespace)throw new RuntimeException('Conversation or lead access changed.',403);
+        capture_r5_permission($live);
+    };
+    if(knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='off')$knowledgeDraft=knowledge_r9_reply('cloud:'.$conversationId,'Enable Knowledge for this conversation, then ask again.');
+    else $knowledgeDraft=knowledge_r9_chat($pdo,$user,'cloud:'.$conversationId,$r6Namespace,['instruction'=>$query,'references'=>$r6Input['attachments']??[],'request_id'=>'chat-message:'.$userMessageId],$r9Recheck);
+    $knowledgeTool['answer']=$knowledgeDraft['answer'];
+}
 $researchRecall=null;
 if(empty($r6Packet['active'])&&$brainAllowed&&knowledge_retrieval_v162_owner_session($user,$principal)&&knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']!=='off'&&chat_research_recall_intent_r3($query)){
     $savedResearch=chat_research_recall_r3($pdo,$user,vp3_cognitive_agent_namespace_v500($pdo,$user,$activeAgentId),$query,3);
@@ -153,7 +171,7 @@ if(empty($r6Packet['active'])&&$brainAllowed&&knowledge_retrieval_v162_owner_ses
     $researchRecall['answer']=$savedResearch?chat_research_context_r3($savedResearch,15000,false):'No saved research matching this question is currently available under your lead, project and website permissions.';
     foreach($savedResearch as $saved)$researchRecall['sources'][]=['source'=>'research:'.$saved['report']['id'],'title'=>$saved['question'],'url'=>$saved['report']['url']];
 }
-$toolResult=$researchRecall??agent_work_control_chat_v173($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=user_calendar_agent_query_v1300($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();if(empty($toolResult['handled']))$toolResult=vp3_agent_tool_execute_query_v400($query,$user,$conversationId);else $toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}}
+$toolResult=$knowledgeTool??$researchRecall??agent_work_control_chat_v173($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=user_calendar_agent_query_v1300($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();if(empty($toolResult['handled']))$toolResult=vp3_agent_tool_execute_query_v400($query,$user,$conversationId);else $toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}}
 if(!empty($r6Packet['active'])&&knowledge_r6_unscoped_read($toolResult))$toolResult=vp3_agent_tool_empty_v400();
 $homeAttempted=false;$homeResult=null;$responseActions=[];$turnPrepared=null;$turn=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
 if(!empty($toolResult['handled'])){
@@ -183,6 +201,7 @@ if(!empty($toolResult['handled'])){
     $capabilityRoute=vp3_agent_runtime_capability_route_v420($runtimePlan,$execution,$homeAttempted);
 }
 $execution['capability_route']=$capabilityRoute;
+if(!empty($knowledgeDraft['execution']))$execution=array_replace($execution,$knowledgeDraft['execution']);
 if(function_exists('homeserver_compute_v232_attach'))$execution=homeserver_compute_v232_attach($userId,$execution,$homeResult,$homeAttempted);
 $localRead=function_exists('homeserver_reads_v231_last')?homeserver_reads_v231_last():['attempted'=>false,'execution'=>null,'domain'=>''];
 if(!empty($localRead['attempted']))$execution['homeserver_local_read']=[
@@ -208,7 +227,7 @@ if(is_array($browserContext)){
 }
 foreach($context as $item){$source=(string)($item['source']??'');if(function_exists('chat_context_is_internal_source')&&chat_context_is_internal_source($source))continue;$entry=['source'=>$source,'title'=>(string)($item['title']??'')];if(str_starts_with($source,'knowledge:')){$kid=(int)substr($source,10);$knowledge=get_knowledge_item($kid);if($knowledge&&!empty($knowledge['file_path'])){$scope=(string)($knowledge['knowledge_scope']??'system');$owned=(int)($knowledge['created_by_user_id']??0)===$userId;if(($scope==='personal'&&$owned)||$scope==='system')$entry['url']=url('/knowledge-file.php?id='.$kid);}}$publicSources[]=$entry;}
 $mediaLimit=track_is_playlist_request($query)?7:(track_is_next_request($query)?1:4);$answerMedia=track_media_from_answer($answer,$user,$mediaLimit);$queryMedia=track_media_suggestions($query,$user,$mediaLimit);$media=vp3_agent_chat_runtime_authorized_media_v2160(array_slice(track_merge_media_suggestions($answerMedia,$queryMedia),0,$mediaLimit),$context);$playlistTitle=$media?track_playlist_title($query):'';$toolSources=!empty($toolResult['sources'])&&is_array($toolResult['sources'])?$toolResult['sources']:[];$meetingSources=array_merge(video_meeting_memory_chat_sources_v18120($meetingMemory),video_meeting_commitment_command_chat_sources_v18230($meetingMemory));$publicSources=array_merge($publicSources,$toolSources,$meetingSources,[chat_execution_v019_source($execution)]);$publicSources=array_values(array_filter($publicSources,static function($item):bool{if(!is_array($item))return false;$source=(string)($item['source']??'');return !function_exists('chat_context_is_internal_source')||!chat_context_is_internal_source($source);}));$cardNamespace=vp3_cognitive_agent_namespace_v500($pdo,$user,$activeAgentId);$cardRequests=function_exists('vp3_cognitive_cards_chat_requests_v520')?vp3_cognitive_cards_chat_requests_v520($pdo,$user,$cardNamespace,$query,8):[];$toolActions=!empty($toolResult['actions'])&&is_array($toolResult['actions'])?$toolResult['actions']:[];$allActions=array_values(array_merge($toolActions,$responseActions));
-if(!$turnPrepared&&function_exists('vp3_cognitive_turn_prepare_v2430')){
+if(!$knowledgeDraft&&!$turnPrepared&&function_exists('vp3_cognitive_turn_prepare_v2430')){
     try{
         $turnSeed=is_array($context??null)?$context:[];
         if(!$turnSeed&&function_exists('chat_policy_context_v236'))$turnSeed=chat_policy_context_v236($query,$user,$principal,$conversationId);
@@ -228,7 +247,7 @@ if($turnPrepared&&function_exists('vp3_cognitive_turn_finalize_v2430')){
     );
 }
 $systemAppPlan=is_array($toolResult['system_app_plan']??null)?$toolResult['system_app_plan']:null;$systemAppCard=function_exists('vp3_system_apps_action_card_v190')?vp3_system_apps_action_card_v190($systemAppPlan):null;
-$r6Used=!empty($r6Packet['active'])&&empty($toolResult['handled']);if($r6Packet)$r6Packet['used']=$r6Used;$publicSources=array_merge($publicSources,$r6Used?knowledge_r6_public_sources($r6Packet):[]);$publicSources=array_merge($publicSources,capture_r5_home_sources($pdo,$user,$homeResult??[]));$publicSources=array_merge($publicSources,capture_r5_sources($knowledgeContext['citations']??[]));$messageContext=['project_knowledge_r6'=>$r6Packet,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>!empty($toolResult['stem_media'])&&is_array($toolResult['stem_media'])?$toolResult['stem_media']:[],'actions'=>$allActions,'system_app_plan'=>$systemAppPlan,'system_app_action_card'=>$systemAppCard,'profile_webmcp_plan'=>is_array($toolResult['profile_webmcp_plan']??null)?$toolResult['profile_webmcp_plan']:null,'profile_webmcp_return'=>is_array($toolResult['profile_webmcp_return']??null)?$toolResult['profile_webmcp_return']:null,'cards'=>$cardRequests,'playlist_title'=>$playlistTitle,'agent_context'=>$persistedAgentContext,'agent'=>['id'=>(int)$principal['agent_id'],'name'=>(string)$principal['display_name'],'kind'=>(string)$principal['kind']],'execution'=>$execution,'cognitive_turn'=>$turn];$contextJson=json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);$assistantMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');$stmt->execute([$conversationId,'assistant',$answer,$contextJson]);$assistantMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,$inputMode);$pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);}
+$r6Used=!empty($r6Packet['active'])&&empty($toolResult['handled']);if($r6Packet)$r6Packet['used']=$r6Used;$publicSources=array_merge($publicSources,$r6Used?knowledge_r6_public_sources($r6Packet):[]);$publicSources=array_merge($publicSources,capture_r5_home_sources($pdo,$user,$homeResult??[]));$publicSources=array_merge($publicSources,capture_r5_sources($knowledgeContext['citations']??[]));$messageContext=['knowledge_actions_r9'=>$knowledgeDraft,'project_knowledge_r6'=>$r6Packet,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>!empty($toolResult['stem_media'])&&is_array($toolResult['stem_media'])?$toolResult['stem_media']:[],'actions'=>$allActions,'system_app_plan'=>$systemAppPlan,'system_app_action_card'=>$systemAppCard,'profile_webmcp_plan'=>is_array($toolResult['profile_webmcp_plan']??null)?$toolResult['profile_webmcp_plan']:null,'profile_webmcp_return'=>is_array($toolResult['profile_webmcp_return']??null)?$toolResult['profile_webmcp_return']:null,'cards'=>$cardRequests,'playlist_title'=>$playlistTitle,'agent_context'=>$persistedAgentContext,'agent'=>['id'=>(int)$principal['agent_id'],'name'=>(string)$principal['display_name'],'kind'=>(string)$principal['kind']],'execution'=>$execution,'cognitive_turn'=>$turn];if($knowledgeDraft){$r9Recheck();foreach($knowledgeDraft['drafts'] as $r9Draft)knowledge_r9_validate($pdo,$user,'cloud:'.$conversationId,$r6Namespace,$r9Draft);}$contextJson=json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);$assistantMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');$stmt->execute([$conversationId,'assistant',$answer,$contextJson]);$assistantMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,$inputMode);$pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);}
 if(function_exists('vp3_live_session_note_action_v2370')){
     try{
         if(!empty($toolResult['handled']))vp3_live_session_note_action_v2370($user,'tool','tool.completed','Completed an Agent tool action',['surface'=>'chat','conversation_id'=>$conversationId,'agent_id'=>$activeAgentId]);
@@ -241,5 +260,5 @@ if(function_exists('vp3_live_session_note_action_v2370')){
         ]);
     }catch(Throwable $e){error_log('VP3 live-session Chat response action failed: '.$e->getMessage());}
 }
-return ['ok'=>true,'project_knowledge_r6'=>$r6Packet,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'system_app_plan'=>$messageContext['system_app_plan'],'system_app_action_card'=>$messageContext['system_app_action_card'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
+return ['ok'=>true,'knowledge_actions_r9'=>$knowledgeDraft,'project_knowledge_r6'=>$r6Packet,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'system_app_plan'=>$messageContext['system_app_plan'],'system_app_action_card'=>$messageContext['system_app_action_card'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
 }

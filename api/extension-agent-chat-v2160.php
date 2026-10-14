@@ -53,6 +53,7 @@ function vp3_extension_agent_message_v2160(array $row): array
         'role'=>in_array((string)($row['role']??''),['user','assistant'],true)?(string)$row['role']:'assistant',
         'message'=>mb_strimwidth((string)($row['message']??''),0,24000,'…'),
         'created_at'=>(string)($row['created_at']??''),
+        'knowledge_actions_r9'=>json_decode((string)($row['context_json']??'{}'),true)['knowledge_actions_r9']??null,
     ];
 }
 
@@ -113,7 +114,7 @@ try{
         $conversationId=max(0,(int)($input['conversation_id']??0));
         $conversation=vp3_extension_agent_conversation_v2160($pdo,$conversationId,$userId,$activeAgent);
         if(!$conversation)vp3_extension_agent_json_v2160(404,['ok'=>false,'error'=>['code'=>'not_found','message'=>'Conversation not found for this Agent.']]);
-        $stmt=$pdo->prepare('SELECT id,role,message,created_at FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 80');
+        $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 80');
         $stmt->execute([$conversationId]);
         $messages=array_reverse(array_map('vp3_extension_agent_message_v2160',$stmt->fetchAll()?:[]));
         vp3_extension_agent_json_v2160(200,[
@@ -130,7 +131,7 @@ try{
             vp3_extension_agent_json_v2160(404,['ok'=>false,'error'=>['code'=>'not_found','message'=>'Conversation not found for this Agent.']]);
         }
         $afterId=max(0,(int)($input['after_id']??0));
-        $stmt=$pdo->prepare('SELECT id,role,message,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');
+        $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');
         $stmt->execute([$conversationId,$afterId]);
         $messages=array_map('vp3_extension_agent_message_v2160',$stmt->fetchAll()?:[]);
         vp3_extension_agent_json_v2160(200,['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$messages]);
@@ -149,7 +150,11 @@ try{
             'agent_context'=>is_array($input['agent_context']??null)?$input['agent_context']:[],
         ];
         $brainAllowed=personal_capability_has_v242('agent_brain.access',$user);
-        $result=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$runtimeInput,$brainAllowed);
+        $r9Authority=static function()use($pdo,$session):void{
+            $fresh=vp3_extension_session_authenticate_v2001($pdo);
+            if(!$fresh||(int)$fresh['user_id']!==(int)$session['user_id']||!vp3_extension_session_has_capability_v2001($fresh,'agent.message')||!vp3_extension_session_has_capability_v2001($fresh,'team.chat.read'))throw new RuntimeException('Browser Knowledge access changed.',403);
+        };
+        $result=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$runtimeInput,$brainAllowed,$r9Authority);
         // Browser workspace consumes the same canonical result, but does not
         // receive server-internal Agent context_json or credentials.
         vp3_extension_agent_json_v2160(200,$result);

@@ -33,3 +33,8 @@ const r8body=JSON.parse(requests.at(-1).options.body);assert.equal(requests.at(-
 assert.equal((await dispatch({type:'knowledge_actions_r8',payload:{action:'decide',id:'proposal',expected_hash:'b'.repeat(64),decision:'apply',confirmed:true}})).ok,true);
 const download=await fs.readFile(new URL('../chrome-extension-download.php',import.meta.url),'utf8');assert.ok(download.includes("'capture-routing-r4.js'"));
 console.log('PASS: real Chrome message listener, installed-subfolder auth, explicit review, stable exact retries across service-worker restart, changed destinations and no parallel capture store.');
+
+const r9request={action:'validate_draft',conversation_id:42,agent_id:0,operation:'task.create',target_key:'',fields:{title:'Draft',description:'Reviewed'},references:[],state_revision:'a'.repeat(64),draft_fingerprint:'b'.repeat(64),target_revision:'',request_id:'19191919-1919-4919-8919-191919191919',source_text:'Injected',owner_user_id:8};
+assert.equal((await dispatch({type:'knowledge_actions_r8',payload:r9request})).ok,true);
+const r9body=JSON.parse(requests.at(-1).options.body);assert.equal(r9body.draft_fingerprint,r9request.draft_fingerprint);assert.equal(r9body.target_revision,'');assert.ok(!('source_text' in r9body)&&!('owner_user_id' in r9body));
+console.log('PASS: R9 existing Chrome command allowlist transports frozen draft/target revisions and strips foreign owner/source payloads.');

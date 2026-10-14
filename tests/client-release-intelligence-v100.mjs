@@ -70,7 +70,7 @@ assert.match(admin,/Update available/);
 assert.match(admin,/Unknown/);
 
 assert.match(bootstrap,/client-release-intelligence-v100\.php/);
-assert.equal(manifest.version,'22.18.0');
+assert.equal(manifest.version,'22.19.0');
 assert.match(manifest.description,/Client Release Intelligence/);
 assert.match(background,/const VP3_EXTENSION_VERSION = '22\.18\.0';/);
 assert.match(background,/release: account\.release \|\| null/);

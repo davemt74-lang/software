@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/includes/homeserver-https-relay-v1300.php';
 require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php';
 require_once dirname(__DIR__).'/includes/browser-research-save-v2230.php';
 require_once dirname(__DIR__).'/includes/knowledge-actions-r8.php';
+require_once dirname(__DIR__).'/includes/knowledge-actions-r9.php';
 require_once dirname(__DIR__).'/includes/homeserver-workspace-sync-v1.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: private, no-store');header('X-Content-Type-Options: nosniff');
 vp3_extension_apply_cors_v2001();header('Access-Control-Allow-Headers: Authorization, Content-Type, X-VP3-Extension-Version, X-VP3-Contract-Version');header('Access-Control-Allow-Methods: POST, OPTIONS');
@@ -15,7 +16,7 @@ try{
     $raw=(string)file_get_contents('php://input',false,null,0,65537);if(strlen($raw)>65536)throw new RuntimeException('Refresh request is too large.',413);
     $input=json_decode($raw,true,32,JSON_THROW_ON_ERROR);if(!is_array($input)||array_is_list($input))throw new InvalidArgumentException('An Knowledge action request is required.');
     $pdo=db();if(!$pdo)throw new RuntimeException('Cloud storage is unavailable.',503);
-    $action=$input['action']??'options';if(!in_array($action,['options','suggest','prepare','get','decide'],true))throw new InvalidArgumentException('Unknown Knowledge action.');
+    $action=$input['action']??'options';if(!in_array($action,['options','suggest','prepare','get','decide','converse','validate_draft'],true))throw new InvalidArgumentException('Unknown Knowledge action.');
     $auth=(string)($_SERVER['HTTP_AUTHORIZATION']??($_SERVER['REDIRECT_HTTP_AUTHORIZATION']??''));$homeDevice=trim((string)($_SERVER['HTTP_X_HOMESERVER_DEVICE']??''));
     $authenticate=static function()use($pdo,$auth,$homeDevice,$input,$action):array{
         if($homeDevice!==''){
@@ -53,6 +54,15 @@ try{
     };
     vp3_agent_memory_scope_set_current_v410((int)$user['id'],(int)($agent['id']??0));
     if($action==='options')$result=knowledge_r8_options($pdo,$user,$key,$namespace);
+    elseif($action==='converse')$result=['conversation_draft'=>knowledge_r9_chat($pdo,$user,$key,$namespace,$input,$recheck)];
+    elseif($action==='validate_draft'){
+        $existing=null;
+        if(isset($input['request_id'])&&table_exists('chat_knowledge_actions_r8')){
+            $id=chat_research_uuid_v1($input['request_id']);$q=$pdo->prepare('SELECT id FROM chat_knowledge_actions_r8 WHERE id=?');$q->execute([$id]);
+            if($q->fetchColumn())$existing=knowledge_r8_row($pdo,$user,$key,$namespace,$id);
+        }
+        $result=$existing?['action'=>knowledge_r8_view($pdo,$user,$key,$namespace,$existing)]:['draft'=>knowledge_r9_restore($pdo,$user,$key,$namespace,$input)];
+    }
     elseif($action==='suggest')$result=['suggestion'=>knowledge_r8_suggest($pdo,$user,$key,$namespace,$input,$recheck)];
     elseif($action==='prepare')$result=['action'=>knowledge_r8_prepare($pdo,$user,$key,$namespace,$input,$recheck)];
     elseif($action==='decide')$result=['action'=>knowledge_r8_decide($pdo,$user,$key,$namespace,$input,$recheck)];

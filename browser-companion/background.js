@@ -2668,9 +2668,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'capture_r4': return captureRoutingR4(message.action, message.payload || {});
       case 'knowledge_actions_r8': {
         const input=message.payload||{};
-        if(!['options','suggest','prepare','get','decide'].includes(input.action))throw new Error('Unknown Knowledge action.');
+        if(!['options','suggest','prepare','get','decide','converse','validate_draft'].includes(input.action))throw new Error('Unknown Knowledge action.');
         if(input.action==='decide'&&input.confirmed!==true)throw new Error('Confirm the exact Knowledge action.');
-        const allowed=['action','conversation_id','agent_id','references','state_revision','operation','target_key','fields','instruction','request_id','id','expected_hash','decision','confirmed'];
+        const allowed=['action','conversation_id','agent_id','references','state_revision','operation','target_key','fields','instruction','request_id','id','expected_hash','decision','confirmed','draft_fingerprint','target_revision'];
         const payload=Object.fromEntries(allowed.filter(k=>Object.hasOwn(input,k)).map(k=>[k,input[k]]));
         return authorizedFetch('/api/knowledge-actions-r8.php',{method:'POST',json:payload},payload.action==='decide'?'task.propose':'agent.message');
       }
