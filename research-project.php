@@ -62,6 +62,8 @@ $canResearch=vp3_research_role_at_least_v2060($role,'researcher');$canAdmin=vp3_
 $sources=array_values(array_filter($bundle['items'],static fn(array $i): bool=>($i['type']??'')==='source'));
 $annotations=array_values(array_filter($bundle['items'],static fn(array $i): bool=>($i['type']??'')==='annotation'));
 $allEvidenceItems=$bundle['items'];
+require_once __DIR__.'/includes/knowledge-actions-r8.php';
+$knowledgeDocuments=knowledge_r10_project_documents($pdo,$user,$projectId);
 $findings=$bundle['findings'];$reports=$bundle['reports'];$members=$bundle['members'];
 
 function research_p_e(string $v): string{return htmlspecialchars($v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
@@ -78,6 +80,7 @@ function research_p_excerpt(string $v,int $limit=320): string{$v=trim($v);return
 <div class="stats"><div class="stat"><strong><?=count($sources)?></strong><span>Sources</span></div><div class="stat"><strong><?=count($annotations)?></strong><span>Notes</span></div><div class="stat"><strong><?=count($findings)?></strong><span>Findings</span></div><div class="stat"><strong><?=count($reports)?></strong><span>Reports</span></div></div></header>
 
 <div class="layout"><div class="main">
+<section class="section" id="documents"><div class="section-head"><h2>Your Knowledge documents</h2></div><p class="muted">Personal documents saved to this project from Agent Chat remain private to you.</p><?php foreach($knowledgeDocuments as $document): ?><article class="source"><a href="<?=research_p_e($document['url'])?>"><?=research_p_e($document['title'])?></a></article><?php endforeach; ?><?php if(!$knowledgeDocuments): ?><div class="empty">Ask Agent Chat to turn your project highlights into a brief.</div><?php endif; ?></section>
 <section class="section" id="sources"><div class="section-head"><div><div class="eyebrow">Evidence base</div><h2>Sources</h2></div><span class="muted"><?=count($sources)?> canonical sources</span></div>
 <?php if(!$sources): ?><div class="empty">Assign an annotation from the Research Inbox. Its canonical Source is added automatically.</div><?php else: ?><div class="source-grid"><?php foreach($sources as $item): ?><article class="source"><div class="source-title"><?=research_p_e((string)($item['source']['title']?:$item['source']['domain']))?></div><div class="domain"><?=research_p_e((string)$item['source']['domain'])?></div><div class="version"><?=research_p_e((string)($item['source']['version']['basis']??''))?> · <?=research_p_e(substr((string)($item['source']['version']['hash']??''),0,12))?></div><div class="actions"><?php if(!empty($item['source']['url'])): ?><a class="button" target="_blank" rel="noopener noreferrer" href="<?=research_p_e((string)$item['source']['url'])?>">Open source</a><?php endif; ?></div></article><?php endforeach; ?></div><?php endif; ?>
 </section>

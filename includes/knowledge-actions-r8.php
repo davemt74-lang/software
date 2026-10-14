@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/project-knowledge-r7.php';
 require_once __DIR__.'/homeserver-workspace-sync-v1.php';
+require_once __DIR__.'/knowledge-documents-r10.php';
 const VP3_KNOWLEDGE_ACTIONS_R8='vp3.knowledge-actions.r8';
 
 /** Immutable reviewed proposals and execution receipts; evidence stays in its original ledgers. */
@@ -19,8 +20,8 @@ function knowledge_r8_hash($v): string {return hash('sha256',json_encode($v,JSON
 function knowledge_r8_permission(array $user,string $operation): void {
     capture_r5_permission($user);
     if(!has_permission('account.access',$user))throw new RuntimeException('Account access changed.',403);
-    if($operation==='knowledge.update'&&!personal_capability_has_v242('personal_knowledge.manage',$user))throw new RuntimeException('Personal Knowledge editing is unavailable.',403);
-    if(!in_array($operation,['task.create','contacts.update','knowledge.update'],true))throw new InvalidArgumentException('Choose a supported Knowledge action.');
+    if(in_array($operation,['knowledge.update','knowledge.create'],true)&&!personal_capability_has_v242('personal_knowledge.manage',$user))throw new RuntimeException('Personal Knowledge editing is unavailable.',403);
+    if(!in_array($operation,['task.create','contacts.update','knowledge.update','knowledge.create'],true))throw new InvalidArgumentException('Choose a supported Knowledge action.');
 }
 function knowledge_r8_refs($refs): array {
     if(!is_array($refs)||!array_is_list($refs)||count($refs)<1||count($refs)>6)throw new InvalidArgumentException('Select one to six sources for this action.');
@@ -41,12 +42,12 @@ function knowledge_r8_packet(PDO $pdo,array $user,string $key,string $ns,array $
     $sources=[];
     foreach(knowledge_r8_refs($refs) as $ref){
         if($ref['kind']==='knowledge'){
-            $q=$pdo->prepare("SELECT * FROM knowledge_items WHERE id=? AND created_by_user_id=? AND knowledge_scope='personal' AND is_published=1".($pdo->inTransaction()?' FOR UPDATE':''));$q->execute([$ref['id'],$user['id']]);$k=$q->fetch(PDO::FETCH_ASSOC);
+            $q=$pdo->prepare("SELECT * FROM knowledge_items WHERE id=? AND created_by_user_id=? AND knowledge_scope='personal'".($pdo->inTransaction()?' FOR UPDATE':''));$q->execute([$ref['id'],$user['id']]);$k=$q->fetch(PDO::FETCH_ASSOC);
             if(!$k||((int)($k['folder_id']??0)>0&&!personal_knowledge_folder($pdo,$user,(int)$k['folder_id'])))throw new RuntimeException('Knowledge source is unavailable.',403);
             if($state['scope']['mode']==='folder'&&(int)$k['folder_id']!==$state['scope']['folder_id'])throw new RuntimeException('Knowledge source is outside this folder.',403);
             if($state['scope']['mode']==='project'){
                 $q=$pdo->prepare('SELECT 1 FROM chat_knowledge_refresh_r7 WHERE knowledge_id=? AND owner_user_id=? AND project_id=?');$q->execute([$k['id'],$user['id'],$state['scope']['project_id']]);
-                if(!$q->fetchColumn())throw new RuntimeException('This Knowledge note is outside the selected project.',403);
+                if(!$q->fetchColumn()&&!knowledge_r10_project_documents($pdo,$user,$state['scope']['project_id'],(int)$k['id']))throw new RuntimeException('This Knowledge note is outside the selected project.',403);
             }
             if(!hash_equals(capture_r5_record_hash($k),$ref['revision']))throw new RuntimeException('A Knowledge source changed. Review its current revision.',409);
             $source=$ref+['title'=>$k['title'],'url'=>url('/personal-knowledge.php'),'captured_at'=>'','excerpt'=>mb_substr((string)$k['content_text'],0,2000),'date_notice'=>'Knowledge edit time does not establish evidence freshness.'];
@@ -69,6 +70,7 @@ function knowledge_r8_packet(PDO $pdo,array $user,string $key,string $ns,array $
 function knowledge_r8_target(PDO $pdo,array $user,string $operation,string $key): array {
     knowledge_r8_permission($user,$operation);
     if($operation==='task.create'){if($key!=='')throw new InvalidArgumentException('A new task has no target record.');return ['key'=>'','dataset'=>'agents','revision'=>'','before'=>[]];}
+    if($operation==='knowledge.create')return knowledge_r10_target($pdo,$user,$key);
     $dataset=$operation==='contacts.update'?'contacts':'knowledge';$table=$operation==='contacts.update'?'crm_contacts':'knowledge_items';
     if(!str_starts_with($key,$table.':'))throw new InvalidArgumentException('Choose an existing destination record.');
     [$actual,$row]=workspace_native_owned_row_v1($pdo,(int)$user['id'],$dataset,$key);workspace_native_authorize_v1($pdo,(int)$user['id'],$actual,$row);
@@ -82,12 +84,17 @@ function knowledge_r8_target(PDO $pdo,array $user,string $operation,string $key)
     return ['key'=>$key,'dataset'=>$dataset,'revision'=>workspace_native_revision_v1($row),'before'=>$row];
 }
 function knowledge_r8_fields(string $operation,$fields): array {
-    $limits=$operation==='task.create'?['title'=>190,'description'=>1500]:workspace_native_fields_v1($operation==='contacts.update'?'crm_contacts':'knowledge_items');
+    $limits=$operation==='knowledge.create'?['title'=>190,'description'=>2000,'content_text'=>45000]:($operation==='task.create'?['title'=>190,'description'=>1500]:workspace_native_fields_v1($operation==='contacts.update'?'crm_contacts':'knowledge_items'));
     if(!is_array($fields)||!$fields||array_is_list($fields)||array_diff(array_keys($fields),array_keys($limits)))throw new InvalidArgumentException('Supply only supported changed fields.');
     foreach($fields as $k=>$v){if(!is_string($v)||mb_strlen($v)>$limits[$k])throw new InvalidArgumentException('A proposed field is invalid or too long.');if($k!=='content_text')$fields[$k]=trim($v);}
     if($operation==='task.create'&&(!isset($fields['title'],$fields['description'])||$fields['title']===''||$fields['description']===''))throw new InvalidArgumentException('Task title and description are required.');
     if(isset($fields['title'])&&$fields['title']==='')throw new InvalidArgumentException('A title is required.');
     if(isset($fields['content_text'])&&trim($fields['content_text'])==='')throw new InvalidArgumentException('Document text is required.');
+    if($operation==='knowledge.create'){
+        if(!isset($fields['title'],$fields['description'],$fields['content_text']))throw new InvalidArgumentException('Document title, description and text are required.');
+        $fields['title']=trim(preg_replace('/\s+/u',' ',$fields['title'])??'');$fields['content_text']=trim($fields['content_text']);
+        if(mb_strwidth($fields['title'])>190||mb_strwidth($fields['description'])>2000)throw new InvalidArgumentException('Document title is too wide.');
+    }
     if($operation==='contacts.update'){
         if(isset($fields['display_name'])&&$fields['display_name']==='')throw new InvalidArgumentException('Contact name is required.');
         if(isset($fields['email'])){$fields['email']=strtolower($fields['email']);if($fields['email']!==''&&!filter_var($fields['email'],FILTER_VALIDATE_EMAIL))throw new InvalidArgumentException('Review a valid contact email.');}
@@ -110,6 +117,9 @@ function knowledge_r8_view(PDO $pdo,array $user,string $key,string $ns,array $ro
         $currentRevision=$target['revision'];if($p['operation']==='task.create'){
             $q=$pdo->prepare('SELECT * FROM agent_memory_items WHERE id=? AND user_id=?');$q->execute([(int)substr($result['record_key'],strlen('agent_memory_items:')),$user['id']]);$task=$q->fetch(PDO::FETCH_ASSOC);$currentRevision=$task?workspace_native_revision_v1($task):'';
         }
+        if($p['operation']==='knowledge.create'){
+            try{[$table,$record]=workspace_native_owned_row_v1($pdo,(int)$user['id'],'knowledge',$result['record_key']);workspace_native_authorize_v1($pdo,(int)$user['id'],$table,$record);$currentRevision=workspace_native_revision_v1($record);}catch(RuntimeException $e){$currentRevision='';}
+        }
         $superseded=!hash_equals((string)($result['record_revision']??''),$currentRevision);
     }
     return ['id'=>$row['id'],'context_key'=>$key,'status'=>$stale?'stale':($superseded?'superseded':$row['status']),'review_hash'=>$row['review_hash'],'preview'=>$p,'result'=>$result,'sync'=>$superseded?['state'=>'superseded','confirmed_at'=>null]:($result?knowledge_r8_receipt($pdo,$user,$result):null),'created_at'=>$row['created_at'],'decided_at'=>$row['decided_at'],'notice'=>'Historical evidence supports a proposal; it does not prove current facts. Only the displayed changed fields will be applied.'];
@@ -128,7 +138,8 @@ function knowledge_r8_prepare(PDO $pdo,array $user,string $key,string $ns,array 
         if(isset($input['target_revision'])&&(!is_string($input['target_revision'])||!hash_equals($target['revision'],$input['target_revision'])))throw new RuntimeException('Destination changed since this draft. Ask for a current draft.',409);
         $mapping=['display_name'=>'name','organization'=>'company','relationship'=>'lifecycle_stage'];foreach($fields as $k=>$v)$before[$k]=$target['before'][$mapping[$k]??$k]??null;
         foreach($packet['references'] as $ref)if($ref['kind']==='knowledge'&&$targetKey==='knowledge_items:'.$ref['id'])throw new RuntimeException('Choose a destination document separate from the evidence source.',422);
-        $destinationTitle=$op==='task.create'?'New Agent task':(string)($target['before'][$op==='contacts.update'?'name':'title']??'Owned record');unset($target['before']);$preview=['destination_title'=>$destinationTitle,'operation'=>$op,'target'=>$target,'before'=>$before,'fields'=>$fields,'evidence'=>$packet,'authority_source'=>'cloud'];$hash=knowledge_r8_hash($preview);
+        if($op==='knowledge.create')$fields=knowledge_r10_cited_fields($fields,$packet);
+        $destinationTitle=$op==='knowledge.create'?'New personal document · '.$target['destination']['project_title'].' · '.$target['destination']['folder_title']:($op==='task.create'?'New Agent task':(string)($target['before'][$op==='contacts.update'?'name':'title']??'Owned record'));unset($target['before']);$preview=['destination_title'=>$destinationTitle,'operation'=>$op,'target'=>$target,'before'=>$before,'fields'=>$fields,'evidence'=>$packet,'authority_source'=>'cloud'];$hash=knowledge_r8_hash($preview);
         $pdo->prepare('INSERT INTO chat_knowledge_actions_r8(id,owner_user_id,context_key,agent_namespace,request_hash,review_hash,preview_json) VALUES(?,?,?,?,?,?,?)')->execute([$id,$user['id'],$key,$ns,$requestHash,$hash,json_encode($preview,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)]);
         $recheck();knowledge_r8_current($pdo,$user,$key,$ns,$preview);$view=knowledge_r8_view($pdo,$user,$key,$ns,knowledge_r8_row($pdo,$user,$key,$ns,$id));$pdo->commit();return $view;
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
@@ -154,6 +165,8 @@ function knowledge_r8_decide(PDO $pdo,array $user,string $key,string $ns,array $
                 if($task<1)throw new RuntimeException('Could not create the canonical Agent task.',503);
                 $q=$pdo->prepare('SELECT * FROM agent_memory_items WHERE id=? AND user_id=?');$q->execute([$task,$user['id']]);$taskRow=$q->fetch(PDO::FETCH_ASSOC);
                 $result=['record_revision'=>workspace_native_revision_v1($taskRow),'applied'=>true,'record_key'=>'agent_memory_items:'.$task,'authority_source'=>'cloud','source_url'=>url('/chat.php'),'applied_at'=>gmdate(DATE_ATOM)];
+            }elseif($p['operation']==='knowledge.create'){
+                $result=knowledge_r10_write($pdo,$user,$row,$p);
             }else {
                 $result=workspace_native_edit_v1($pdo,(int)$user['id'],$target['dataset'],['action'=>'apply','key'=>$target['key'],'mutation_id'=>'knowledge-r8:'.$row['id'],'expected_revision'=>$target['revision'],'fields'=>$p['fields']]);
                 $route=workspace_sync_source_v1($pdo,(int)$user['id'],$target['dataset'],['key'=>$target['key']]);$result['source_url']=url('/'.$route['source_path']);
@@ -169,7 +182,7 @@ function knowledge_r8_options(PDO $pdo,array $user,string $key,string $ns): arra
     if($state['scope']['mode']!=='off'){
         foreach(capture_r5_list($pdo,$user,[])['items'] as $i){if(knowledge_r6_matches($i,$state['scope'])&&!$i['knowledge_conflict'])$sources[]=knowledge_r6_annotation($i);}
         $sources=array_merge($sources,knowledge_r6_reports($pdo,$user,$ns,$state['scope']));
-        $q=$pdo->prepare("SELECT * FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal' AND is_published=1 ORDER BY id DESC LIMIT 50");$q->execute([$user['id']]);
+        $q=$pdo->prepare("SELECT * FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal' ORDER BY id DESC LIMIT 50");$q->execute([$user['id']]);
         foreach($q->fetchAll(PDO::FETCH_ASSOC) as $k){$ref=['kind'=>'knowledge','id'=>(string)$k['id'],'revision'=>capture_r5_record_hash($k)];try{$s=knowledge_r8_packet($pdo,$user,$key,$ns,[$ref],$state['revision'])['sources'][0];$sources[]=$s;}catch(RuntimeException $e){}}
     }
     foreach(['contacts.update'=>['crm_contacts','owner_user_id','name'],'knowledge.update'=>['knowledge_items','created_by_user_id','title']] as $op=>[$table,$owner,$title]){
@@ -181,7 +194,7 @@ function knowledge_r8_options(PDO $pdo,array $user,string $key,string $ns): arra
         $q=$pdo->prepare('SELECT * FROM chat_knowledge_actions_r8 WHERE owner_user_id=? AND context_key=? AND agent_namespace=? ORDER BY created_at DESC,id DESC LIMIT 30');$q->execute([$user['id'],$key,$ns]);
         foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r){try{$actions[]=knowledge_r8_view($pdo,$user,$key,$ns,$r);}catch(RuntimeException $e){$actions[]=['id'=>$r['id'],'context_key'=>$key,'status'=>'unavailable','notice'=>'Source, destination or scope changed. Prepare a current review.'];}}
     }
-    return ['state'=>$state,'sources'=>array_slice($sources,0,50),'targets'=>$targets,'actions'=>$actions];
+    return ['destinations'=>knowledge_r10_destinations($pdo,$user),'state'=>$state,'sources'=>array_slice($sources,0,50),'targets'=>$targets,'actions'=>$actions];
 }
 function knowledge_r8_suggest(PDO $pdo,array $user,string $key,string $ns,array $input,callable $recheck,?callable $model=null): array {
     $op=(string)($input['operation']??'');$target=knowledge_r8_target($pdo,$user,$op,(string)($input['target_key']??''));
