@@ -40,6 +40,7 @@ $knowledgeR9Acceptance=static function(PDO $pdo,array $user,string $key,string $
     rejected_r7(fn()=>knowledge_r9_chat($pdo,$user,$key,$ns,$input,$noop,static function()use($pdo,$item,$model){$pdo->prepare('UPDATE browser_shares_v2010 SET snapshot_hash=? WHERE public_id=?')->execute([hash('sha256','R9 model in-flight mutation'),$item['id']]);return $model();}),409);
     $pdo->prepare('UPDATE browser_shares_v2010 SET snapshot_hash=? WHERE public_id=?')->execute([$hash,$item['id']]);
     $GLOBALS['grant']=false;rejected_r7(fn()=>knowledge_r9_restore($pdo,$user,$key,$ns,$draft),403);$GLOBALS['grant']=true;
+    if(isset($GLOBALS['knowledgeR10Acceptance']))($GLOBALS['knowledgeR10Acceptance'])($pdo,$user,$key,$ns,$state,$item);
     echo "PASS: R9 direct intent vs discussion, two draft-only actions, exact source selection, named/duplicate destination clarification, strict untrusted-model validation, current historical draft restoration, source/target races, edited exact review, canonical write and duplicate-free retry.\n";
 };
 require __DIR__.'/knowledge-actions-r8-mysql.php';

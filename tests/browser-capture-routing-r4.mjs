@@ -38,3 +38,7 @@ const r9request={action:'validate_draft',conversation_id:42,agent_id:0,operation
 assert.equal((await dispatch({type:'knowledge_actions_r8',payload:r9request})).ok,true);
 const r9body=JSON.parse(requests.at(-1).options.body);assert.equal(r9body.draft_fingerprint,r9request.draft_fingerprint);assert.equal(r9body.target_revision,'');assert.ok(!('source_text' in r9body)&&!('owner_user_id' in r9body));
 console.log('PASS: R9 existing Chrome command allowlist transports frozen draft/target revisions and strips foreign owner/source payloads.');
+
+assert.equal((await dispatch({type:'knowledge_actions_r8',payload:{action:'destination',conversation_id:42,agent_id:0,operation:'knowledge.create',target_key:'new-document:-:1',owner_user_id:8,source_text:'Private'}})).ok,true);
+const r10body=JSON.parse(requests.at(-1).options.body);assert.equal(r10body.operation,'knowledge.create');assert.equal(r10body.target_key,'new-document:-:1');assert.ok(!('source_text' in r10body)&&!('owner_user_id' in r10body));
+console.log('PASS: R10 destination request uses existing authenticated Chrome transport and owner-field stripping.');
