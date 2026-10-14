@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.20.0';
+const VP3_EXTENSION_VERSION = '22.21.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 importScripts('screenshots-store.js', 'screenshots-worker.js', 'chat-research-worker.js');
 
@@ -2670,7 +2670,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const input=message.payload||{};
         if(!['options','suggest','prepare','get','decide','converse','validate_draft','destination'].includes(input.action))throw new Error('Unknown Knowledge action.');
         if(input.action==='decide'&&input.confirmed!==true)throw new Error('Confirm the exact Knowledge action.');
-        const allowed=['action','conversation_id','agent_id','references','state_revision','operation','target_key','fields','instruction','request_id','id','expected_hash','decision','confirmed','draft_fingerprint','target_revision'];
+        const allowed=['action','conversation_id','agent_id','references','state_revision','operation','target_key','fields','instruction','request_id','id','expected_hash','decision','confirmed','draft_fingerprint','target_revision','revision_root_id'];
         const payload=Object.fromEntries(allowed.filter(k=>Object.hasOwn(input,k)).map(k=>[k,input[k]]));
         return authorizedFetch('/api/knowledge-actions-r8.php',{method:'POST',json:payload},payload.action==='decide'?'task.propose':'agent.message');
       }

@@ -54,7 +54,7 @@ try{
     };
     vp3_agent_memory_scope_set_current_v410((int)$user['id'],(int)($agent['id']??0));
     if($action==='options')$result=knowledge_r8_options($pdo,$user,$key,$namespace);
-    elseif($action==='converse')$result=['conversation_draft'=>knowledge_r9_chat($pdo,$user,$key,$namespace,$input,$recheck)];
+    elseif($action==='converse'){if($homeDevice==='')unset($input['revision_packet']);$result=['conversation_draft'=>knowledge_r9_chat($pdo,$user,$key,$namespace,$input,$recheck)];}
     elseif($action==='validate_draft'){
         $existing=null;
         if(isset($input['request_id'])&&table_exists('chat_knowledge_actions_r8')){

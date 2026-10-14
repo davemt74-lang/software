@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/project-knowledge-r7.php';
 require_once __DIR__.'/homeserver-workspace-sync-v1.php';
 require_once __DIR__.'/knowledge-documents-r10.php';
+require_once __DIR__.'/knowledge-revisions-r11.php';
 const VP3_KNOWLEDGE_ACTIONS_R8='vp3.knowledge-actions.r8';
 
 /** Immutable reviewed proposals and execution receipts; evidence stays in its original ledgers. */
@@ -126,7 +127,10 @@ function knowledge_r8_view(PDO $pdo,array $user,string $key,string $ns,array $ro
 }
 function knowledge_r8_prepare(PDO $pdo,array $user,string $key,string $ns,array $input,callable $recheck): array {
     if(!table_exists('chat_knowledge_actions_r8'))throw new RuntimeException('Run the Cloud upgrade before reviewing Knowledge actions.',503);
-    $id=chat_research_uuid_v1($input['request_id']??null);$op=(string)($input['operation']??'');$fields=knowledge_r8_fields($op,$input['fields']??null);
+    $id=chat_research_uuid_v1($input['request_id']??null);
+    if(isset($input['revision_root_id'])&&!is_string($input['revision_root_id']))throw new InvalidArgumentException('Choose a valid draft review identity.');
+    if(isset($input['revision_root_id'])&&$id!==knowledge_r11_review_id($key,$input['revision_root_id']))throw new InvalidArgumentException('Use the current draft review identity.');
+    $op=(string)($input['operation']??'');$fields=knowledge_r8_fields($op,$input['fields']??null);
     $refs=knowledge_r8_refs($input['references']??null);$revision=(string)($input['state_revision']??'');$targetKey=(string)($input['target_key']??'');
     $requestHash=knowledge_r8_hash([$key,$ns,$op,$targetKey,$fields,$refs,$revision]);
     $pdo->beginTransaction();try{

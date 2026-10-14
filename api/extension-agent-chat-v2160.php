@@ -147,6 +147,7 @@ try{
             'input_mode'=>'text',
             'knowledge_scope'=>$input['knowledge_scope']??null,
             'project_knowledge_r6'=>$input['project_knowledge_r6']??null,
+            'knowledge_revision'=>$input['knowledge_revision']??null,
             'agent_context'=>is_array($input['agent_context']??null)?$input['agent_context']:[],
         ];
         $brainAllowed=personal_capability_has_v242('agent_brain.access',$user);

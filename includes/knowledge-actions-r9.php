@@ -25,6 +25,7 @@ function knowledge_r9_reply(string $key,string $answer,array $drafts=[]): array 
     return ['contract'=>VP3_KNOWLEDGE_ACTIONS_R9,'context_key'=>$key,'answer'=>$answer,'drafts'=>$drafts];
 }
 function knowledge_r9_validate(PDO $pdo,array $user,string $key,string $ns,array $draft): void {
+    if(isset($draft['revision_root_id']))knowledge_r11_unreviewed($pdo,$user,$key,$ns,$draft['revision_root_id']);
     $packet=knowledge_r8_packet($pdo,$user,$key,$ns,$draft['references'],$draft['state_revision']);
     $target=knowledge_r8_target($pdo,$user,$draft['operation'],$draft['target_key']);
     if(!hash_equals($draft['draft_fingerprint'],$packet['fingerprint'])||!hash_equals($draft['target_revision'],$target['revision']))
@@ -32,6 +33,7 @@ function knowledge_r9_validate(PDO $pdo,array $user,string $key,string $ns,array
 }
 function knowledge_r9_restore(PDO $pdo,array $user,string $key,string $ns,array $input): array {
     $draft=['operation'=>(string)($input['operation']??''),'target_key'=>(string)($input['target_key']??''),'fields'=>knowledge_r8_fields((string)($input['operation']??''),$input['fields']??null),'references'=>knowledge_r8_refs($input['references']??null),'state_revision'=>(string)($input['state_revision']??''),'draft_fingerprint'=>(string)($input['draft_fingerprint']??''),'target_revision'=>(string)($input['target_revision']??'')];
+    if(isset($input['revision_root_id']))$draft['revision_root_id']=$input['revision_root_id'];
     knowledge_r9_validate($pdo,$user,$key,$ns,$draft);
     $target=knowledge_r8_target($pdo,$user,$draft['operation'],$draft['target_key']);
     $draft['destination_title']=$draft['operation']==='knowledge.create'?'New personal document':($draft['operation']==='task.create'?'New Agent task':(string)($target['before'][$draft['operation']==='contacts.update'?'name':'title']??'Owned record'));
@@ -40,6 +42,7 @@ function knowledge_r9_restore(PDO $pdo,array $user,string $key,string $ns,array 
 }
 function knowledge_r9_chat(PDO $pdo,array $user,string $key,string $ns,array $input,callable $recheck,?callable $model=null): array {
     $text=$input['instruction']??'';
+    if(is_string($text)&&knowledge_r11_intent($text))return knowledge_r11_chat($pdo,$user,$key,$ns,$input,$recheck,$model);
     if(!is_string($text)||mb_strlen($text)>2000||!knowledge_r9_intent($text))
         return knowledge_r9_reply($key,'Describe the Knowledge sources and the task, contact or document change you want to draft.');
     $recheck();$options=knowledge_r8_options($pdo,$user,$key,$ns);$state=$options['state'];

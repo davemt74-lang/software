@@ -1,4 +1,4 @@
-name: Research Documents R10
+name: Knowledge Draft Revisions R11
 on:
   pull_request:
   push:
@@ -38,7 +38,7 @@ jobs:
           php tests/project-knowledge-r5-mysql.php
           php tests/project-knowledge-r6-mysql.php
           php tests/project-knowledge-r7-mysql.php
-          php tests/knowledge-documents-r10-mysql.php
+          php tests/knowledge-revisions-r11-mysql.php
           php tests/project-knowledge-r6-reports.php
           php tests/project-knowledge-r6-delegation.php
       - uses: actions/setup-node@v4
@@ -58,6 +58,7 @@ jobs:
           node tests/knowledge-actions-r8-ui.mjs
           node tests/knowledge-actions-r9-ui.mjs
           node tests/knowledge-documents-r10-ui.mjs
+          node tests/knowledge-revisions-r11-ui.mjs
       - name: Capture integration syntax
         run: |
           php -l api/knowledge-actions-r8.php

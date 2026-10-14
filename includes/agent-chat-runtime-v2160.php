@@ -149,7 +149,7 @@ $rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent
 $persistedAgentContext=$agentContext;
 unset($persistedAgentContext['browser_context']);$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$userMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,$inputMode);}
 $knowledgeDraft=null;$knowledgeTool=null;
-if(knowledge_r9_intent($query)&&knowledge_retrieval_v162_owner_session($user,$principal)){
+if((knowledge_r9_intent($query)||knowledge_r11_intent($query))&&knowledge_retrieval_v162_owner_session($user,$principal)){
     $knowledgeTool=vp3_agent_tool_empty_v400();$knowledgeTool['handled']=true;
     $r9Recheck=static function()use($pdo,$user,$conversationId,$activeAgent,$r6Namespace,$currentAuthority):void{
         if($currentAuthority)$currentAuthority();
@@ -161,7 +161,7 @@ if(knowledge_r9_intent($query)&&knowledge_retrieval_v162_owner_session($user,$pr
         capture_r5_permission($live);
     };
     if(knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='off')$knowledgeDraft=knowledge_r9_reply('cloud:'.$conversationId,'Enable Knowledge for this conversation, then ask again.');
-    else $knowledgeDraft=knowledge_r9_chat($pdo,$user,'cloud:'.$conversationId,$r6Namespace,['instruction'=>$query,'references'=>$r6Input['attachments']??[],'request_id'=>'chat-message:'.$userMessageId],$r9Recheck);
+    else $knowledgeDraft=knowledge_r9_chat($pdo,$user,'cloud:'.$conversationId,$r6Namespace,['instruction'=>$query,'references'=>$r6Input['attachments']??[],'request_id'=>'chat-message:'.$userMessageId,'knowledge_revision'=>$input['knowledge_revision']??null],$r9Recheck);
     $knowledgeTool['answer']=$knowledgeDraft['answer'];
 }
 $researchRecall=null;
