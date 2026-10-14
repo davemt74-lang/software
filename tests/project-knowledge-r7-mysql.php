@@ -72,6 +72,7 @@ $captureR5Acceptance=static function(PDO $pdo,array $user,array $session,array $
     check(knowledge_r7_get($pdo,$user,$key,$ns,$plan['id'])['sync']['state']==='received','Exact native revision receipt not projected.');
     if($path=getenv('VP3_KNOWLEDGE_R7_EXPORT'))file_put_contents($path,json_encode(['knowledge'=>json_decode(workspace_sync_export_v1($pdo,7,'knowledge')['body'],true),'id'=>$applied['knowledge_id'],'revision'=>$revision,'content'=>$knowledge['content_text']],JSON_THROW_ON_ERROR));
     $pdo->prepare("UPDATE knowledge_items SET content_text=CONCAT(content_text,' Independent edit') WHERE id=?")->execute([$applied['knowledge_id']]);check(knowledge_r7_get($pdo,$user,$key,$ns,$plan['id'])['status']==='superseded','Independent edit falsely confirmed old receipt.');
+    if(isset($GLOBALS['knowledgeR8Acceptance']))($GLOBALS['knowledgeR8Acceptance'])($pdo,$user,$key,$ns,$state,$item,$applied);
     $off=knowledge_r6_set($pdo,$user,$key,$ns,['scope'=>['mode'=>'off'],'expected_revision'=>$state['revision']]);
     rejected_r7(fn()=>knowledge_r7_get($pdo,$user,$key,$ns,$plan['id']),403);
     // Date thresholds are deterministic and evidence dates stay distinct from edits.

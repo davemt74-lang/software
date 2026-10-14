@@ -933,7 +933,7 @@
       return;
     }
     body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : notificationView();
-    if(activeTab==='brain'){window.VP3ProjectKnowledgeR6?.renderBrain(body);window.VP3ProjectKnowledgeR7?.renderBrain(body);}
+    if(activeTab==='brain'){window.VP3ProjectKnowledgeR6?.renderBrain(body);window.VP3ProjectKnowledgeR7?.renderBrain(body);window.VP3KnowledgeActionsR8?.renderBrain(body);}
     if (activeTab === 'brain' && typeof window.VP3_AGENT_TEAMS_A3_BRAIN === 'function') {
       window.VP3_AGENT_TEAMS_A3_BRAIN(body);
     }

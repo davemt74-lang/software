@@ -74,6 +74,7 @@ $files = [
     'project-knowledge-r5.js',
     'project-knowledge-r6.js',
     'project-knowledge-r7.js',
+    'knowledge-actions-r8.js',
     'notification-icon.png',
     'offscreen.html',
     'offscreen.js',

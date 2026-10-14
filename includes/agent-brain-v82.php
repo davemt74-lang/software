@@ -275,6 +275,10 @@ function agent_brain_store_memory(array $user, string $type, string $subject, st
     $fingerprint = in_array($type, ['preference','decision','commitment'], true)
         ? $type . '|' . agent_brain_normalize($memoryText)
         : $type . '|' . agent_brain_normalize($subject);
+    // Reviewed Knowledge tasks have immutable proposal identities, independent of their title.
+    if (($metadata['source_kind'] ?? '') === 'knowledge_action_r8' && preg_match('/^[a-f0-9-]{36}$/D', (string)($metadata['knowledge_action_r8'] ?? ''))) {
+        $fingerprint = 'knowledge-action-r8|' . $metadata['knowledge_action_r8'];
+    }
     $hash = vp3_agent_memory_scope_hash_v410($agentId, sha1($fingerprint));
     $seenAt = $seenAt ?: date('Y-m-d H:i:s');
     $metadata = vp3_agent_memory_scope_provenance_v410($metadata, $agentId, 0, $archiveId);
