@@ -26,6 +26,7 @@ $knowledgeR8Acceptance=static function(PDO $pdo,array $user,string $key,string $
     rejected_r7(fn()=>knowledge_r8_prepare($pdo,$user,$key,$ns,array_replace($base,['request_id'=>'20202020-2020-4020-8020-202020202020']),static function(){throw new RuntimeException('Revoked',403);}),403);
     $decision=['id'=>$p['id'],'expected_hash'=>$p['review_hash'],'confirmed'=>true,'decision'=>'apply'];
     rejected_r7(fn()=>knowledge_r8_decide($pdo,$user,$key,$ns,array_replace($decision,['expected_hash'=>str_repeat('0',64)]),$noop),409);
+    rejected_r7(fn()=>knowledge_r8_decide($pdo,$user,$key,$ns,array_replace($decision,['operation'=>'contacts.update']),$noop),422);
     $calls=0;rejected_r7(fn()=>knowledge_r8_decide($pdo,$user,$key,$ns,$decision,static function()use(&$calls){if(++$calls===2)throw new RuntimeException('Final authority revoked',403);}),403);
     check((int)$pdo->query('SELECT COUNT(*) FROM agent_memory_items')->fetchColumn()===0&&!$pdo->inTransaction(),'Final-authority failure left a partial task.');
     $done=knowledge_r8_decide($pdo,$user,$key,$ns,$decision,$noop);$again=knowledge_r8_decide($pdo,$user,$key,$ns,$decision,$noop);

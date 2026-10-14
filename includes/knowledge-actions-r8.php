@@ -126,7 +126,7 @@ function knowledge_r8_prepare(PDO $pdo,array $user,string $key,string $ns,array 
         $packet=knowledge_r8_packet($pdo,$user,$key,$ns,$refs,$revision);$target=knowledge_r8_target($pdo,$user,$op,$targetKey);$before=[];
         $mapping=['display_name'=>'name','organization'=>'company','relationship'=>'lifecycle_stage'];foreach($fields as $k=>$v)$before[$k]=$target['before'][$mapping[$k]??$k]??null;
         foreach($packet['references'] as $ref)if($ref['kind']==='knowledge'&&$targetKey==='knowledge_items:'.$ref['id'])throw new RuntimeException('Choose a destination document separate from the evidence source.',422);
-        unset($target['before']);$preview=['operation'=>$op,'target'=>$target,'before'=>$before,'fields'=>$fields,'evidence'=>$packet,'authority_source'=>'cloud'];$hash=knowledge_r8_hash($preview);
+        $destinationTitle=$op==='task.create'?'New Agent task':(string)($target['before'][$op==='contacts.update'?'name':'title']??'Owned record');unset($target['before']);$preview=['destination_title'=>$destinationTitle,'operation'=>$op,'target'=>$target,'before'=>$before,'fields'=>$fields,'evidence'=>$packet,'authority_source'=>'cloud'];$hash=knowledge_r8_hash($preview);
         $pdo->prepare('INSERT INTO chat_knowledge_actions_r8(id,owner_user_id,context_key,agent_namespace,request_hash,review_hash,preview_json) VALUES(?,?,?,?,?,?,?)')->execute([$id,$user['id'],$key,$ns,$requestHash,$hash,json_encode($preview,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)]);
         $recheck();knowledge_r8_current($pdo,$user,$key,$ns,$preview);$view=knowledge_r8_view($pdo,$user,$key,$ns,knowledge_r8_row($pdo,$user,$key,$ns,$id));$pdo->commit();return $view;
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
@@ -135,6 +135,7 @@ function knowledge_r8_decide(PDO $pdo,array $user,string $key,string $ns,array $
     if(($input['confirmed']??null)!==true||!in_array($input['decision']??'', ['apply','dismiss'],true)||!is_string($input['expected_hash']??null))throw new InvalidArgumentException('Confirm the displayed exact change.');
     $pdo->beginTransaction();try{
         $pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE')->execute([$user['id']]);$recheck();$row=knowledge_r8_row($pdo,$user,$key,$ns,(string)($input['id']??''),true);$p=json_decode($row['preview_json'],true,32,JSON_THROW_ON_ERROR);
+        if(isset($input['operation'])&&$input['operation']!==$p['operation'])throw new RuntimeException('The destination permission claim differs from the reviewed operation.',422);
         if(!hash_equals($row['review_hash'],$input['expected_hash']))throw new RuntimeException('The reviewed action differs from this preview.',409);
         knowledge_r8_permission($user,$p['operation']);$desired=$input['decision']==='apply'?'applied':'dismissed';
         if($row['status']!=='pending'){if($row['status']!==$desired)throw new RuntimeException('This action already has another decision.',409);$v=knowledge_r8_view($pdo,$user,$key,$ns,$row);$recheck();$pdo->commit();return $v;}
@@ -151,7 +152,10 @@ function knowledge_r8_decide(PDO $pdo,array $user,string $key,string $ns,array $
                 if($task<1)throw new RuntimeException('Could not create the canonical Agent task.',503);
                 $q=$pdo->prepare('SELECT * FROM agent_memory_items WHERE id=? AND user_id=?');$q->execute([$task,$user['id']]);$taskRow=$q->fetch(PDO::FETCH_ASSOC);
                 $result=['record_revision'=>workspace_native_revision_v1($taskRow),'applied'=>true,'record_key'=>'agent_memory_items:'.$task,'authority_source'=>'cloud','source_url'=>url('/chat.php'),'applied_at'=>gmdate(DATE_ATOM)];
-            }else $result=workspace_native_edit_v1($pdo,(int)$user['id'],$target['dataset'],['action'=>'apply','key'=>$target['key'],'mutation_id'=>'knowledge-r8:'.$row['id'],'expected_revision'=>$target['revision'],'fields'=>$p['fields']]);
+            }else {
+                $result=workspace_native_edit_v1($pdo,(int)$user['id'],$target['dataset'],['action'=>'apply','key'=>$target['key'],'mutation_id'=>'knowledge-r8:'.$row['id'],'expected_revision'=>$target['revision'],'fields'=>$p['fields']]);
+                $route=workspace_sync_source_v1($pdo,(int)$user['id'],$target['dataset'],['key'=>$target['key']]);$result['source_url']=url('/'.$route['source_path']);
+            }
         }
         $recheck();if($desired==='applied')knowledge_r8_current($pdo,$user,$key,$ns,$p);
         $pdo->prepare('UPDATE chat_knowledge_actions_r8 SET status=?,result_json=?,decided_at=UTC_TIMESTAMP() WHERE id=?')->execute([$desired,$result?json_encode($result,JSON_THROW_ON_ERROR):null,$row['id']]);
