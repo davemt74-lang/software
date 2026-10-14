@@ -54,6 +54,13 @@ function knowledge_r8_packet(PDO $pdo,array $user,string $key,string $ns,array $
             $p=knowledge_r6_resolve($pdo,$user,$key,$ns,['attachments'=>[$ref],'query'=>'','state_revision'=>$stateRevision]);
             $source=null;foreach($p['sources'] as $s)if($s['kind']===$ref['kind']&&$s['id']===$ref['id']){$source=$s;break;}
             if(!$source)throw new RuntimeException('Selected evidence is unavailable.',403);unset($source['sync'],$source['label']);
+            if($ref['kind']==='annotation'){
+                $raw=capture_r5_rows($pdo,$user,$ref['id'],$pdo->inTransaction())[0]??null;if(!$raw)throw new RuntimeException('Original source disappeared.',403);
+                $source['authority_revision']=knowledge_r8_hash(array_map(static fn($r)=>$r?capture_r5_record_hash($r):null,$raw));
+            }else{
+                $research=chat_research_row_v1($pdo,(int)$user['id'],$ref['id'],$pdo->inTransaction());$saved=chat_research_saved_r3($pdo,$user,$research);
+                $report=vp3_research_report_row_v2060($pdo,$saved['report']['id']);$source['authority_revision']=knowledge_r8_hash([$saved['hash'],capture_r5_record_hash($report)]);
+            }
         }
         $source['label']='P'.(count($sources)+1);$sources[]=$source;
     }
