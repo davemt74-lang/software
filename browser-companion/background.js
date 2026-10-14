@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.17.0';
+const VP3_EXTENSION_VERSION = '22.18.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 importScripts('screenshots-store.js', 'screenshots-worker.js', 'chat-research-worker.js');
 
@@ -2666,6 +2666,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'capture_r4': return captureRoutingR4(message.action, message.payload || {});
+      case 'knowledge_actions_r8': {
+        const input=message.payload||{};
+        if(!['options','suggest','prepare','get','decide'].includes(input.action))throw new Error('Unknown Knowledge action.');
+        if(input.action==='decide'&&input.confirmed!==true)throw new Error('Confirm the exact Knowledge action.');
+        const allowed=['action','conversation_id','agent_id','references','state_revision','operation','target_key','fields','instruction','request_id','id','expected_hash','decision','confirmed'];
+        const payload=Object.fromEntries(allowed.filter(k=>Object.hasOwn(input,k)).map(k=>[k,input[k]]));
+        return authorizedFetch('/api/knowledge-actions-r8.php',{method:'POST',json:payload},payload.action==='decide'?'task.propose':'agent.message');
+      }
       case 'project_knowledge_r7': {
         const input=message.payload||{};
         if(!['list','prepare','get','start','apply','cancel'].includes(input.action))throw new Error('Unknown reviewed refresh action.');

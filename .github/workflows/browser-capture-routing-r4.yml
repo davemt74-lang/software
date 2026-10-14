@@ -1,4 +1,4 @@
-name: Reviewed Knowledge Refresh R7
+name: Knowledge-backed Chat Actions R8
 on:
   pull_request:
   push:
@@ -38,6 +38,7 @@ jobs:
           php tests/project-knowledge-r5-mysql.php
           php tests/project-knowledge-r6-mysql.php
           php tests/project-knowledge-r7-mysql.php
+          php tests/knowledge-actions-r8-mysql.php
           php tests/project-knowledge-r6-reports.php
           php tests/project-knowledge-r6-delegation.php
       - uses: actions/setup-node@v4
@@ -54,8 +55,12 @@ jobs:
           node tests/project-knowledge-r5-ui.mjs
           node tests/project-knowledge-r6-ui.mjs
           node tests/project-knowledge-r7-ui.mjs
+          node tests/knowledge-actions-r8-ui.mjs
       - name: Capture integration syntax
         run: |
+          php -l api/knowledge-actions-r8.php
+          php -l includes/knowledge-actions-r8.php
+          node --check knowledge-actions-r8.js
           php -l api/project-knowledge-r7.php
           php -l includes/project-knowledge-r7.php
           php -l includes/knowledge-refresh-guard-r7.php

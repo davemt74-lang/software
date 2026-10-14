@@ -250,6 +250,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             knowledge_r6_ensure_schema($pdo);
             require_once __DIR__.'/includes/project-knowledge-r7.php';
             knowledge_r7_ensure_schema($pdo);
+            require_once __DIR__.'/includes/knowledge-actions-r8.php';
+            knowledge_r8_ensure_schema($pdo);
+            workspace_native_schema_v1($pdo);
             vp3_browser_research_ensure_schema_v2230();
             chat_research_schema_v1($pdo);
             vp3_browser_transaction_ensure_schema_v2240();
