@@ -57,7 +57,7 @@ must(panel.includes("if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceA
 // One canonical send runtime for web + Chrome.
 must(runtime.includes("function vp3_agent_chat_send_v2160("),'canonical shared Agent send runtime missing');
 must(webApi.includes("$payload=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed);"),'web Chat send must delegate to shared runtime');
-must(extensionApi.includes("vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$runtimeInput,$brainAllowed)"),'Browser Agent send must delegate to shared runtime');
+must(extensionApi.includes("vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$runtimeInput,$brainAllowed,$r9Authority)"),'Browser Agent send must delegate to shared runtime');
 must(runtime.includes("$userId=(int)($user['id']??0);"),'shared runtime user identity initialization missing');
 must(runtime.includes("vp3_agent_tool_execute_query_v400"),'shared runtime must retain canonical Agent tools');
 must(runtime.includes("knowledge_retrieval_v162_generate_answer"),'shared runtime must retain Knowledge retrieval');
@@ -102,3 +102,4 @@ must(panel.includes("ui.agentSendBtn.disabled=!(state&&state.connected&&c.has('a
 must(panel.includes("clearInterval(agentPollTimer);agentPollTimer=null;"),'Agent poll interval must stop off-view');
 
 console.log('VP3 Browser Companion Browser Agent Workspace v21.60 contract passed.');
+
