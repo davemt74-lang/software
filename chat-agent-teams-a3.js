@@ -135,21 +135,27 @@ async function prepareChatTask(){
  if(!request){const request_id=window.crypto?.randomUUID?.();if(!request_id){root.open=true;say('Secure request IDs are unavailable.');return;}request={intent,request_id};}
  try{sessionStorage.setItem(taskStorageKey,JSON.stringify(request));}catch(_){root.open=true;say('Task recovery storage is unavailable. Enable session storage and retry.');return;}
  const controller=new AbortController(),timer=window.setTimeout(()=>controller.abort(),120000),wasOpen=root.open;
+ const voiceTurn=Boolean(window.STONEFELLOW_CHAT_CONTINUITY?.pendingVoiceSubmit?.());
+ const routeEvent=(state,message='')=>window.dispatchEvent(new CustomEvent('vp3:chat-route',{detail:{id:request.request_id,state,voiceTurn,message}}));
+ let cancelled=false,outcome='failed';
+ const cancelRoute=event=>{if(voiceTurn&&event.detail?.id===request.request_id){cancelled=true;controller.abort();}};
+ window.addEventListener('vp3:chat-route-cancel',cancelRoute);
  let continueChat=false,turnStarted=false;
  function turn(status,extra={}){}
  function startTurn(){if(!turnStarted){turnStarted=true;turn('started',{conversationId:request.intent.conversation_id});}}
- function current(){if(context!==JSON.stringify(taskContext()))throw new Error('Conversation or lead changed. Return to the original conversation to retry.');}
+ function current(){if(controller.signal.aborted)throw new DOMException('Task routing cancelled.','AbortError');if(context!==JSON.stringify(taskContext()))throw new Error('Conversation or lead changed. Return to the original conversation to retry.');}
  setBusy(true);taskMode.disabled=true;chatInput.disabled=true;if(chatSubmit)chatSubmit.disabled=true;root.open=true;say(mode==='automatic'?'Lead agent is choosing how to help…':'Lead agent is preparing specialist assignments…');
+ routeEvent('started');
  if(mode==='specialists')startTurn();
  try{
   const response=await api(mode==='automatic'?'task.route':'task.prepare',{...request.intent,request_id:request.request_id},controller.signal);
   current();
   if(mode==='automatic'&&response.route==='chat'){
 
-   sessionStorage.removeItem(taskStorageKey);continueChat=true;root.open=wasOpen;
+   sessionStorage.removeItem(taskStorageKey);continueChat=true;outcome='chat';root.open=wasOpen;
   }else if(mode==='automatic'&&response.route==='followup'){
    if(!response.followup)throw new Error('Mission command was not confirmed. Retry the same request.');
-   renderFollowup(response.followup,JSON.stringify(taskContext()));sessionStorage.removeItem(taskStorageKey);chatInput.value='';root.open=wasOpen;
+   renderFollowup(response.followup,JSON.stringify(taskContext()));sessionStorage.removeItem(taskStorageKey);chatInput.value='';root.open=wasOpen;outcome='review';
    say('Review the command on the chat canvas. No work changes until you confirm.');startTurn();turn('completed',{reply:status.textContent});
   }else{
    if(mode==='automatic'&&response.route!=='specialists')throw new Error('Routing decision was not confirmed. Retry the same request.');
@@ -159,11 +165,11 @@ async function prepareChatTask(){
    selected=m.id;toolsByMission.set(m.id,contract.tools);if(!contract.tools.configured)toolDrafts.set(m.id,m.chat_task.draft);
    const index=items.findIndex(x=>x.id===m.id);if(index>=0)items[index]=m;else items.unshift(m);
    showList();showMission(m);sessionStorage.removeItem(taskStorageKey);chatInput.value='';
-   say('Plan prepared. Review and approve assignments, then start specialists. Each proposed edit requires separate approval.');
+   say('Plan prepared. Review and approve assignments, then start specialists. Each proposed edit requires separate approval.');outcome='review';
    startTurn();turn('completed',{reply:status.textContent});
   }
- }catch(e){root.open=true;say((e.name==='AbortError'?'Task preparation timed out.':e.message||'Task preparation interrupted.')+' Your request remains available for retry.');startTurn();turn('failed',{message:status.textContent});}
- finally{window.clearTimeout(timer);setBusy(false);taskMode.disabled=false;chatInput.disabled=false;if(chatSubmit)chatSubmit.disabled=false;}
+ }catch(e){if(cancelled){outcome='cancelled';root.open=wasOpen;say('Task routing stopped. Your request remains available for review.');}else{root.open=true;say((e.name==='AbortError'?'Task preparation timed out.':e.message||'Task preparation interrupted.')+' Your request remains available for retry.');startTurn();turn('failed',{message:status.textContent});}}
+ finally{window.clearTimeout(timer);window.removeEventListener('vp3:chat-route-cancel',cancelRoute);setBusy(false);taskMode.disabled=false;chatInput.disabled=false;if(chatSubmit)chatSubmit.disabled=false;routeEvent(outcome,status.textContent);}
  if(continueChat){directChatBypass=true;try{form.requestSubmit();}finally{directChatBypass=false;}}
 }
 form.addEventListener('submit',event=>{
