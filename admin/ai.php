@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $openaiModel = trim((string)($_POST['openai_model'] ?? 'gpt-5.6-luna'));
-            $anthropicModel = trim((string)($_POST['anthropic_model'] ?? 'claude-haiku-4-5'));
+            $anthropicModel = trim((string)($_POST['anthropic_model'] ?? 'claude-haiku-5-5'));
 
             if (!ai_valid_model('openai', $openaiModel)) {
                 throw new RuntimeException('Select a valid OpenAI model.');
