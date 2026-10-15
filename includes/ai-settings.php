@@ -19,7 +19,8 @@ function ai_model_catalog(): array
             'gpt-5.4-mini' => 'GPT-5.4 mini — Strong compact model',
         ],
         'anthropic' => [
-            'claude-haiku-4-5' => 'Claude Haiku 4.5 — Fast / cost-efficient (recommended for site chat)',
+            'claude-haiku-5-5' => 'Claude Haiku 5.5 — Main model (recommended)',
+            'claude-haiku-4-5' => 'Claude Haiku 4.5 — Previous Haiku generation',
             'claude-sonnet-5' => 'Claude Sonnet 5 — Stronger reasoning / agentic work',
             'claude-opus-5' => 'Claude Opus 5 — Highest capability',
             'claude-sonnet-4-6' => 'Claude Sonnet 4.6 — Previous Sonnet generation',
@@ -294,7 +295,7 @@ function ai_setting_bool(string $key, bool $default = false): bool
 
 function ai_active_provider(): string
 {
-    $provider = trim((string)setting('ai_active_provider', 'local'));
+    $provider = trim((string)setting('ai_active_provider', 'anthropic'));
     return ai_valid_provider($provider) ? $provider : 'local';
 }
 
@@ -311,7 +312,7 @@ function ai_provider_model(string $provider): string
 {
     $defaults = [
         'openai' => 'gpt-5.6-luna',
-        'anthropic' => 'claude-haiku-4-5',
+        'anthropic' => 'claude-haiku-5-5',
     ];
 
     $model = trim((string)setting(
@@ -324,6 +325,27 @@ function ai_provider_model(string $provider): string
     }
 
     return $defaults[$provider] ?? '';
+}
+
+/** Applied once by the authenticated upgrader; later owner selections persist. */
+function ai_haiku55_upgrade_defaults(): void
+{
+    if ((string)setting('ai_haiku55_defaults_applied', '') === '1') return;
+    save_setting('ai_anthropic_model', 'claude-haiku-5-5');
+    if (ai_provider_enabled('anthropic') && ai_provider_has_saved_key('anthropic')) {
+        save_setting('ai_active_provider', 'anthropic');
+    }
+    save_setting('ai_haiku55_defaults_applied', '1');
+}
+
+/** Keep the existing bounded chat/tool budgets; do not spend them on thinking. */
+function ai_haiku55_request(array $payload): array
+{
+    if (($payload['model'] ?? '') !== 'claude-haiku-5-5') return $payload;
+    unset($payload['temperature'], $payload['top_p'], $payload['top_k']);
+    $payload['thinking'] = ['type' => 'disabled'];
+    $payload['output_config']['effort'] = 'medium';
+    return $payload;
 }
 
 function ai_provider_api_key(string $provider): string
@@ -405,6 +427,7 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
     if(!function_exists('curl_init'))return ['ok'=>false,'error'=>'AI transport is unavailable.'];
     $parts=parse_url($endpoint);$host=strtolower((string)($parts['host']??''));
     if(($parts['scheme']??'')!=='https'||!in_array($host,['api.openai.com','api.anthropic.com'],true))return ['ok'=>false,'error'=>'AI provider endpoint is not allowed.'];
+    if ($host === 'api.anthropic.com') $payload = ai_haiku55_request($payload);
     $encoded=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);if(!is_string($encoded))return ['ok'=>false,'error'=>'Could not encode the AI request.'];
     $transient=[408,409,425,429,500,502,503,504];$last=['ok'=>false,'error'=>'The AI provider is temporarily unavailable.'];
     for($attempt=1;$attempt<=3;$attempt++){

@@ -51,7 +51,8 @@ require_permission('users.manage');
 
 function vp3_upgrade_complete(): bool
 {
-    return access_schema_ready()
+    return (string)setting('ai_haiku55_defaults_applied', '') === '1'
+        && access_schema_ready()
         && subscription_schema_ready()
         && subscription_entitlements_v340_schema_ready()
         && vp3_system_apps_schema_ready_v120()
@@ -365,6 +366,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             artist_posts_v183_ensure_schema();
             artist_shows_v184_ensure_schema();
             artist_music_v185_ensure_schema();
+            ai_haiku55_upgrade_defaults();
             $complete = vp3_upgrade_complete();
 
             if ($complete) {

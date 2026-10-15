@@ -44,7 +44,7 @@ function agent_v90_model_candidates(string $provider, string $complexity): array
     if ($provider === 'openai') {
         $preferred = $complexity === 'deep' ? 'gpt-5.6-sol' : ($complexity === 'complex' ? 'gpt-5.6-terra' : $configured);
     } elseif ($provider === 'anthropic') {
-        $preferred = $complexity === 'deep' ? 'claude-opus-5' : ($complexity === 'complex' ? 'claude-sonnet-5' : $configured);
+        $preferred = $configured;
     }
 
     $out = [];

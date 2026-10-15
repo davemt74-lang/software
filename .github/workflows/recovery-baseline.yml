@@ -46,6 +46,9 @@ jobs:
           node --version
           python3 --version
 
+      - name: Haiku 5.5 routing and request compatibility
+        run: php tests/haiku55.php
+
       - name: Interactive capture ownership and Stop acceptance
         run: |
           node tests/capture-ownership-section1.mjs

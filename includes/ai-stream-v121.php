@@ -27,6 +27,7 @@ function ai_v121_stream_provider(
     }
 
     $payload['stream']=true;
+    if ($provider === 'anthropic') $payload = ai_haiku55_request($payload);
     $encoded=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     if(!is_string($encoded))return ['ok'=>false,'answer'=>'','error'=>'Could not encode the AI request.'];
 
