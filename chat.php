@@ -2,10 +2,10 @@
 declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
-$controlBuild = 'cloud-load-media-recovery-20261007';
+$controlBuild = 'chat-canvas-voice-recovery-20261015';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922';
-$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-stop-control1';
+$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-route-handoff2';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
@@ -280,7 +280,7 @@ if ($activeUserAgent && strcasecmp($agentDisplayName, $systemAgentName) !== 0) {
     ) ?? $introText;
 }
 
-$debugMarker = '<div id="chatRuntimeDebug" style="max-width:790px;margin:0 auto 12px;color:#6b7280;font:700 11px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.04em">LIVE RUNTIME · ' . e($voiceCacheBuild) . ' · ' . e($agentIdentityBuild) . '</div>';
+$debugMarker = '<span id="chatRuntimeDebug" hidden data-chat-build="' . e($controlBuild) . '"></span>';
 $introMessage = $debugMarker
     . '<div class="message assistant" id="chatWelcome" hidden>'
     . '<div class="message-avatar" aria-hidden="true">' . e(mb_strtoupper(mb_substr($agentDisplayName, 0, 1))) . '</div>'
@@ -461,7 +461,7 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
     . ';</script>';
 $cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationAssetBuild)) . '"></script>';
 
-$agentTeamsA3Build = 'agent-teams-homecloud-a3-20261012-research-r1';
+$agentTeamsA3Build = 'agent-teams-homecloud-a3-20261015-voice-handoff';
 $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(url('/chat-agent-teams-a3.css?v=' . $agentTeamsA3Build)) . '">'
     . '<script data-agent-teams-config-a3>window.VP3_AGENT_TEAMS_A3='
     . json_encode(['endpoint'=>url('/api/agent-missions-cloud-v1.php'), 'csrf'=>csrf_token(), 'version'=>'A3'], JSON_UNESCAPED_SLASHES)
@@ -530,6 +530,8 @@ $runtime = $headerUiRuntime
          . $mediaOverlayRuntime
          . $hardening
          . $composerControls
+         . '<link rel="stylesheet" href="' . e(url('/chat-tools.css?v=' . $controlBuild)) . '">'
+         . '<script src="' . e(url('/chat-tools.js?v=' . $controlBuild)) . '"></script>'
          . $recordingLibraryRuntime
          . $chatSettingsRuntime
          . '<script data-agent-updates-autodismiss-v173 data-agent-overlay-build="' . e($agentOverlayBuild) . '" src="' . e(url('/chat-agent-updates-autodismiss-v173.js?v=' . $agentOverlayBuild)) . '"></script>'
