@@ -75,5 +75,22 @@
   window.addEventListener('vp3:chat-route', event => {
     if (['review', 'failed'].includes(event.detail?.state)) setOpen(true);
   });
+  // Keep only bounded status codes in memory; never persist message/transcript data.
+  const diagnostics=[];
+  function renderDiagnostics(body) {
+    if(!body || !diagnostics.length)return;
+    let host=body.querySelector('#chatSessionDiagnostics');
+    if(!host){host=document.createElement('details');host.id='chatSessionDiagnostics';body.appendChild(host);}
+    host.replaceChildren();const summary=document.createElement('summary');summary.textContent='Chat session diagnostics';host.appendChild(summary);
+    for(const entry of diagnostics){const row=document.createElement('p');row.textContent=`${entry.time} · ${entry.state} · ${entry.code}`;host.appendChild(row);}
+  }
+  window.VP3ChatDiagnostics=Object.freeze({renderBrain:renderDiagnostics});
+  window.addEventListener('stonefellow:chat-diagnostic',event=>{
+    const detail=event.detail || {};
+    diagnostics.unshift({time:new Date().toISOString(),state:String(detail.state||'status').slice(0,40),code:String(detail.code||'').slice(0,80)});
+    diagnostics.splice(10);
+    const body=document.querySelector('#chatNotificationDrawer [data-notification-tab="brain"].active')?.closest('#chatNotificationDrawer')?.querySelector('[data-notification-drawer-body]');
+    if(body)renderDiagnostics(body);
+  });
   window.addEventListener('pagehide', () => observer.disconnect(), {once: true});
 })();

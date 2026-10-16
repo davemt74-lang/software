@@ -75,6 +75,85 @@
   let conversationId = 0;
   let lastLoadedMessageId = 0;
   let busy = false;
+  let chatRevision = 0, pendingSend = null, restoringConversation = 0;
+  let initialRestorePending = true, contextReady = false;
+  const recoveryKey = `vp3:chat:drafts:${Number(cfg.userId || 0)}:${Number(cfg.agentId || 0)}`;
+  const selectionKey = `vp3:chat:active:${Number(cfg.userId || 0)}:${Number(cfg.agentId || 0)}`;
+  function recoveryDrafts() {
+    try {
+      const value = JSON.parse(sessionStorage.getItem(recoveryKey) || '{}');
+      return Object.fromEntries(Object.entries(value).filter(([id, draft]) =>
+        /^\d+$/.test(id) && typeof draft?.text === 'string' && draft.text.length <= 32000 &&
+        Number.isFinite(draft.at) && draft.at <= Date.now() && Date.now() - draft.at < 86400000));
+    } catch (_) { return {}; }
+  }
+  function keepDraft(text, id = conversationId) {
+    const value = recoveryDrafts();
+    if (String(text || '').trim()) value[id] = {text:String(text).slice(0,32000), at:Date.now()};
+    else delete value[id];
+    try { sessionStorage.setItem(recoveryKey, JSON.stringify(Object.fromEntries(
+      Object.entries(value).sort((a,b) => b[1].at-a[1].at).slice(0,8)))); } catch (_) {}
+  }
+  function restoreDraft() { input.value = recoveryDrafts()[conversationId]?.text || ''; autoSize(); }
+  function rememberConversation() {
+    try { localStorage.setItem(selectionKey, JSON.stringify({id:conversationId, at:Date.now()})); } catch (_) {}
+  }
+  function initialConversation() {
+    const requested=Number(new URLSearchParams(location.search).get('conversation_id')||0);
+    if(requested>0 && requested===Number(cfg.initialConversationId))return requested;
+    try {
+      const saved = JSON.parse(localStorage.getItem(selectionKey));
+      if (Number.isSafeInteger(saved?.id) && saved.id >= 0 && Number.isFinite(saved.at) &&
+          saved.at <= Date.now() && Date.now()-saved.at < 2592000000) return saved.id;
+    } catch (_) {}
+    return Number(cfg.initialConversationId || 0);
+  }
+  function showStop() {
+    let button=document.getElementById('chatStopButton');
+    if(!button){button=document.createElement('button');button.id='chatStopButton';button.type='button';button.textContent='■';button.setAttribute('aria-label','Stop response');form.appendChild(button);button.addEventListener('click',()=>{
+      const request=pendingSend;if(!request)return;
+      leaveChat(); if(!input.value)input.value=request.message;autoSize();keepDraft(input.value,request.conversationId);
+      recoveryStatus('Stopped. Your message is kept. Check history before sending again.');
+    });}
+    button.hidden=!pendingSend;
+  }
+  function recoveryStatus(message = '') {
+    let host = document.getElementById('chatRecoveryStatus');
+    if (!host) {
+      host = document.createElement('div'); host.id = 'chatRecoveryStatus'; host.setAttribute('role','status');
+      const text = document.createElement('span');
+      const check = document.createElement('button'); check.type = 'button'; check.textContent = 'Check history';
+      check.addEventListener('click', () => { if (conversationId) void loadConversation(conversationId).catch(() => recoveryStatus('History is unavailable. Your draft is kept.')); });
+      const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.textContent = 'Dismiss';
+      dismiss.addEventListener('click', () => recoveryStatus()); host.append(text, check, dismiss);
+      (document.getElementById('chatComposerShell') || form.parentElement).appendChild(host);
+    }
+    host.hidden = !message; host.firstChild.textContent = message;
+    host.children[1].hidden = !conversationId;
+  }
+  function leaveChat() {
+    if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId);
+    chatRevision++;
+    if (pendingSend) { clearTimeout(pendingSend.timer); pendingSend.controller.abort(); pendingSend.typing?.remove(); pendingSend = null; busy = false; send.disabled = false; input.disabled=false; showStop(); }
+    window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+    recoveryStatus();
+  }
+  function clearPrivateRecovery() {
+    leaveChat();
+    try { sessionStorage.removeItem(recoveryKey); localStorage.removeItem(selectionKey); } catch (_) {}
+    conversationId = 0; contextReady=false; input.value = ''; thread.querySelectorAll('.message').forEach(node => node.remove());
+    history.replaceChildren(); recoveryStatus('Sign in again to continue.');
+  }
+  input.addEventListener('input', () => { if (!busy && !initialRestorePending && !restoringConversation) keepDraft(input.value); });
+  window.addEventListener('pagehide', () => { if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId); pendingSend?.controller.abort(); });
+  // Run before planner interception so offline/restoring turns cannot dispatch tools.
+  document.addEventListener('submit', event => {
+    if (event.target !== form || (contextReady && !initialRestorePending && !restoringConversation && navigator.onLine !== false)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    if (!initialRestorePending && !restoringConversation) keepDraft(input.value);
+    window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+    recoveryStatus(!contextReady ? 'Open a conversation or start a new chat before sending.' : navigator.onLine === false ? 'You are offline. Your message is kept.' : 'Restoring your conversation. Your message is kept.');
+  }, true);
   let voiceMode = false;
   let voiceRecognition = null;
   let voiceListening = false;
@@ -469,7 +548,9 @@
   }
 
   function beginNewChat() {
-    conversationId = 0;
+    leaveChat();
+    conversationId = 0; contextReady=true;
+    rememberConversation(); restoreDraft();
     lastLoadedMessageId = 0;
 
     thread.querySelectorAll(
@@ -692,7 +773,10 @@
     }));
 
     if (!response.ok || !data.ok) {
-      throw new Error(data.error || 'Request failed.');
+      const error = new Error(data.error || 'Request failed.');
+      error.status = response.status;
+      if (response.status === 401) clearPrivateRecovery();
+      throw error;
     }
 
     return data;
@@ -2879,12 +2963,16 @@
   }
 
   async function loadConversation(id) {
+    leaveChat(); const revision = chatRevision;
+    restoringConversation++;
+    try {
     const data = await api({
       action:'load',
       conversation_id:Number(id)
     });
 
-    conversationId = Number(id);
+    if(revision!==chatRevision)return;
+    conversationId = Number(id); contextReady=true; rememberConversation(); restoreDraft();
     lastLoadedMessageId = 0;
     document.dispatchEvent(new CustomEvent('stonefellow:task-start',{detail:{title:'Agent Chat · active conversation',key:`chat:${conversationId}`}}));
     thread.querySelectorAll('.message').forEach(el => el.remove());
@@ -2929,12 +3017,14 @@
     });
 
     closeNav();
+    } finally { restoringConversation--; }
   }
 
   async function syncConversationMessagesV101(id, signal) {
-    const targetId=Number(id||0);if(targetId<1||targetId!==conversationId)return;
+    const revision=chatRevision;
+    const targetId=Number(id||0);if(targetId<1||targetId!==conversationId||busy)return;
     const data=await api({action:'messages_after',conversation_id:targetId,after_id:lastLoadedMessageId}, signal);
-    if(targetId!==conversationId||!Array.isArray(data.messages))return;
+    if(revision!==chatRevision||targetId!==conversationId||busy||!Array.isArray(data.messages))return;
     data.messages.forEach(message=>{
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
@@ -2966,6 +3056,7 @@
             beginNewChat();
           }
 
+          keepDraft('',id);
           row?.remove();
           await refreshHistory();
         })
@@ -2990,7 +3081,9 @@
   );
 
   async function sendMessage(message, inputMode = 'text') {
-    if (busy || !message.trim()) return;
+    if (busy || !contextReady || initialRestorePending || restoringConversation || !message.trim()) return;
+    if (navigator.onLine === false) { keepDraft(message); recoveryStatus('You are offline. Your message is kept.'); return; }
+    recoveryStatus();
 
     document.dispatchEvent(new CustomEvent('stonefellow:task-start',{detail:{title:`Agent Chat · ${message.trim().slice(0,80)}`,key:`chat:${Number(conversationId||0)}`}}));
 
@@ -3003,7 +3096,10 @@
     );
 
     busy = true;
-    send.disabled = true;
+    const request={controller:new AbortController(),revision:++chatRevision,conversationId,message:message.trim()};pendingSend=request;
+    request.timer=setTimeout(() => request.controller.abort(),120000);showStop();
+    keepDraft(request.message,request.conversationId);
+    send.disabled = true; input.disabled=true;
     if (inputMode === 'voice') {
       stopVoiceRecognition();
       setVoiceStatus('Thinking…', 'thinking');
@@ -3013,7 +3109,7 @@
     input.value = '';
     autoSize();
 
-    const typing = addTyping();
+    const typing = addTyping(); request.typing=typing;
 
     try {
       const browserContextRuntime=window.VP3_BROWSER_CONTEXT_V2130_RUNTIME;
@@ -3033,14 +3129,22 @@
       if(window.VP3ProjectKnowledgeR6)payload.project_knowledge_r6=window.VP3ProjectKnowledgeR6.value();
       const revision=window.VP3KnowledgeRevisionsR11?.value(message);if(revision)payload.knowledge_revision=revision;
       if(browserAgentContext)payload.agent_context=browserAgentContext;
-      const data = await api(payload);
+      const data = await new Promise((resolve, reject) => {
+        const abort = () => reject(new DOMException('Chat request stopped or timed out.', 'AbortError'));
+        request.controller.signal.addEventListener('abort', abort, {once:true});
+        api(payload, request.controller.signal).then(resolve, reject)
+          .finally(() => request.controller.signal.removeEventListener('abort', abort));
+      });
+      if(pendingSend!==request||request.revision!==chatRevision||request.controller.signal.aborted)return;
+      if (!Number(data.conversation_id) || typeof data.answer !== 'string') throw new Error('Invalid chat response.');
+      keepDraft('',request.conversationId);
       window.VP3ProjectKnowledgeR6?.consume(data.project_knowledge_r6);window.VP3KnowledgeRevisionsR11?.consume();
 
       if(browserAgentContext&&browserContextRuntime&&typeof browserContextRuntime.consume==='function'){
         browserContextRuntime.consume();
       }
 
-      conversationId = Number(data.conversation_id);
+      conversationId = Number(data.conversation_id); rememberConversation();
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(data.user_message_id||0),Number(data.assistant_message_id||0));
       typing.remove();
 
@@ -3061,20 +3165,23 @@
       const autoMediaAction=(data.actions||[]).find(action=>action && action.auto && action.type==='media_capture');
       if(autoMediaAction){window.setTimeout(()=>{window.StonefellowMediaStudio?.open(autoMediaAction.mode||'camera',Number(autoMediaAction.camera_index||0));},260);}
 
-      await refreshHistory();
+      void refreshHistory().catch(() => {});
       if (inputMode === 'voice' && voiceMode) {
         await speakAgentResponse(data.answer);
       }
     } catch (error) {
-      if(window.VP3ProjectKnowledgeR6&&!input.value){input.value=message;autoSize();}
+      if(pendingSend!==request||request.revision!==chatRevision)return;
+      if(!input.value){input.value=message;autoSize();}
+      keepDraft(input.value, request.conversationId);
       typing.remove();
-      addMessage(
-        'assistant',
-        `I couldn't complete that request: ${error.message}`
-      );
+      recoveryStatus('Your message is kept. Check history before sending again.');
+      window.dispatchEvent(new CustomEvent('stonefellow:chat-diagnostic',{detail:{state:'failed',code:String(error.status || error.name || 'transport')}}));
     } finally {
+      clearTimeout(request.timer);
+      if(pendingSend!==request)return;
+      pendingSend=null;showStop();
       busy = false;
-      send.disabled = false;
+      send.disabled = false; input.disabled=false;
       input.focus();
       if (inputMode === 'voice' && voiceMode && !voiceSpeaking) {
         window.setTimeout(startVoiceRecognition, 220);
@@ -3225,6 +3332,8 @@
   const canonicalChatContinuity = {
     isVoice:() => Boolean(voiceMode),
     conversationId:() => Number(conversationId || 0),
+    isRestoring:() => initialRestorePending || restoringConversation > 0,
+    isReady:() => contextReady,
     openConversation:async id => {
       const target = Math.max(0, Number(id || 0));
       if (target < 1) return false;
@@ -3265,27 +3374,20 @@
     window.setTimeout(() => speakIntroV101(String(intro.greeting)),450);
   }
 
-  // Restore the newest active conversation before presenting the personalized
-  // return briefing, so work always resumes in the right place.
+  // Stored IDs are hints only: the server still authorizes every history load.
   async function restoreInitialConversationV101() {
-    const id = Number(cfg.initialConversationId || 0);
-    if (String(cfg.initialView || 'chat') !== 'chat' || id < 1 || conversationId > 0) return;
+    const id = initialConversation();
     try {
-      await loadConversation(id);
+      if (String(cfg.initialView || 'chat') === 'chat' && id > 0) await loadConversation(id);
+      else { contextReady=true; restoreDraft(); }
     } catch (error) {
-      beginNewChat();
-    }
+      if (error.status === 401) return;
+      if (error.status === 404) { contextReady=true; conversationId=0; rememberConversation(); restoreDraft(); }
+      recoveryStatus('Conversation history is unavailable. Your drafts are kept.');
+    } finally { initialRestorePending = false; }
     presentIntroV101();
   }
-
-  window.setTimeout(async () => {
-    const id = Number(cfg.initialConversationId || 0);
-    if (String(cfg.initialView || 'chat') === 'chat' && id > 0 && conversationId < 1) {
-      await restoreInitialConversationV101();
-    } else {
-      presentIntroV101();
-    }
-  },80);
+  void restoreInitialConversationV101();
 
   startAgentActivityPolling();
 })();
