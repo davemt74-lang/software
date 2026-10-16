@@ -23,3 +23,11 @@
 #chatToolsContent details>summary{cursor:pointer}
 #chatToolsButton:focus-visible,#chatToolsPanel button:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
 @media(max-width:600px){.chat-main #chatForm{gap:5px;padding-left:8px}.chat-main #chatForm>button{flex-basis:30px;width:30px;height:32px}.chat-main #chatVoiceStatus{font-size:11px}#chatToolsPanel{max-height:60dvh}}
+
+#chatRecoveryStatus[hidden]{display:none!important}
+#chatRecoveryStatus{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:5px 12px;color:#6b7280;font:12px/1.4 system-ui}
+#chatRecoveryStatus span{flex:1;min-width:180px}
+#chatRecoveryStatus button{border:0;background:transparent;color:inherit;text-decoration:underline;font:inherit;cursor:pointer;padding:3px}
+
+#chatForm #chatStopButton[hidden]{display:none!important}
+#chatForm #chatStopButton{background:#f3f4f6;color:#374151}

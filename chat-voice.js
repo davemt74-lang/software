@@ -271,7 +271,10 @@
     return await setAgentVoiceMaster(true);
   }
 
+  const ChatRuntime=window.STONEFELLOW_CHAT_CONTINUITY;
   function activeConversationId(){
+    const runtime=ChatRuntime;
+    if(typeof runtime?.conversationId==='function')return Math.max(0,Number(runtime.conversationId()||0));
     const active=document.querySelector('.chat-history-item.active[data-conversation-id]');
     return Math.max(0,Number(active?.dataset.conversationId||lastConversationId||cfg.initialConversationId||0));
   }
@@ -486,6 +489,10 @@
 
   function startListening(reason='manual'){
     clearRestart();if(!voiceOn||processing||speaking||textBusy||voiceSubmitPending||bargeCapturing||recognitionStarting||recognitionListening)return false;
+    const runtime=ChatRuntime;
+    if(runtime?.isRestoring?.()){scheduleListening(120,'conversation-restore');return false;}
+    if(runtime?.isReady?.()===false){disableVoice({persist:true});setAgentState('error','Open a conversation or start a new chat before listening.');return false;}
+    if(input.value.trim()&&!pendingFinalTranscript){disableVoice({persist:true});setAgentState('error','Your draft is kept. Send or clear it before listening again.');return false;}
     if(typeof SpeechRecognitionCtor!=='function'){disableVoice({persist:false});setAgentState('error','Browser speech recognition is unavailable.');return false;}
     if(!claimCapture()){disableVoice({persist:false});setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}
     if(!recognition)recognition=createRecognition();const current=recognition;proof.startCalls+=1;recognitionStopReason='';recognitionStarting=true;setAgentState('starting',pendingFinalTranscript?`Continuing · ${pendingFinalTranscript}`:'Connecting microphone…');log('SR_START_CALL',{reason,call:proof.startCalls,userActivation:!!navigator.userActivation?.isActive});
@@ -668,6 +675,7 @@
   syncConversation(lastConversationId);if(!agentVoiceMaster&&voiceOn){voiceOn=false;try{localStorage.setItem(MODE_KEY,'0');}catch(error){}}syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{if(voiceOn){setAgentState('starting','Connecting microphone…');scheduleListening(0,'boot-persisted');}else setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
   window.addEventListener('storage',event=>{if(event.key===AGENT_VOICE_SYNC_KEY&&event.newValue){try{const sync=JSON.parse(event.newValue);if(sync?.enabled===false){agentVoiceMaster=false;if(voiceOn)disableVoice({persist:true});}}catch(error){}return;}if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(!next)disableVoice({persist:false});});
   window.addEventListener('stonefellow:voice-lease-lost',()=>{if(voiceOn)disableVoice({persist:false});});
+  window.addEventListener('stonefellow:chat-context-changing',()=>{queuedTranscript='';disableVoice({persist:true});});
   window.addEventListener('stonefellow:agent-voice',event=>{const enabled=event.detail?.enabled!==false;agentVoiceMaster=enabled;if(!enabled&&voiceOn)disableVoice({persist:true});});
   window.addEventListener('stonefellow:agent-proactive-speech',event=>{
     const state=String(event.detail?.state||'');

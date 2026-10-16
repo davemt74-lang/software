@@ -113,9 +113,10 @@ must(chat.includes('chat-browser-context-v2130.css'),'Agent Chat must load Brows
 
 // Sending to Agent is explicit. Context is consumed only after successful API response.
 must(chatJs.includes("payload.agent_context=browserAgentContext"),'Agent Chat send must attach active ephemeral context');
-const apiCallIndex=chatJs.indexOf('const data = await api(payload);');
+const apiCallIndex=chatJs.indexOf('api(payload, request.controller.signal).then(resolve, reject)');
+const ownershipIndex=chatJs.indexOf('pendingSend!==request||request.revision!==chatRevision||request.controller.signal.aborted',apiCallIndex);
 const consumeIndex=chatJs.indexOf('browserContextRuntime.consume();',apiCallIndex);
-must(apiCallIndex>=0&&consumeIndex>apiCallIndex,'ephemeral context must be consumed only after successful Agent response');
+must(apiCallIndex>=0&&ownershipIndex>apiCallIndex&&consumeIndex>ownershipIndex,'ephemeral context must be consumed only after a successful response still owned by the current conversation');
 
 // The Agent server trusts neither client relationships nor prior extension authorization.
 must(chatApi.includes("unset($rawAgentContext['browser_context']);"),'Agent server must remove untrusted raw Browser context before enrichment');

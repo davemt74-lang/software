@@ -18,7 +18,7 @@ const identity = read('chat-agent-identity-v236.js');
 
 assert.doesNotThrow(() => new Function(ui), 'Activity Center runtime must be valid JavaScript');
 assert.doesNotThrow(() => new Function(identity), 'Agent identity runtime must be valid JavaScript');
-assert.match(chat, /\$notificationDrawerBuild = 'chat-notifications-section13-20261005'/, 'Activity Center cache key must identify the v2.44 proactive interaction runtime');
+assert.match(chat, /\$notificationDrawerBuild = 'chat-notifications-recovery-20261016'/, 'Activity Center cache key must identify the v2.44 proactive interaction runtime');
 assert.match(chat, /\$agentIdentityBuild = 'cloud-agent-onboarding-readiness-v110-20261001'/);
 assert.match(chat, /window\.STONEFELLOW_NOTIFICATION_DRAWER=/);
 assert.match(chat, /chat-notifications-drawer-v240\.css\?v=/);
