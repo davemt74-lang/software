@@ -59,6 +59,8 @@ try {
     window.VP3_CHAT_RESEARCH = {endpoint:'/api/research',csrf:'fixture'};
     window.VP3_PROJECT_KNOWLEDGE = {endpoint:'/api/project-knowledge-r5.php',csrf:'fixture'};
     window.recognizers = []; window.spoken = [];
+    window.browserContextConsumptions=0;
+    window.VP3_BROWSER_CONTEXT_V2130_RUNTIME={agentContext:()=>({surface:'fixture'}),consume:()=>{window.browserContextConsumptions++;}};
     let requestCounter=0;
     Object.defineProperty(window.crypto,'randomUUID',{value:()=> '44444444-4444-4444-8444-'+String(++requestCounter).padStart(12,'0')});
     window.SpeechRecognition = class {
@@ -170,6 +172,7 @@ try {
   assert.match(await page.locator('#testBrain').innerText(),/Chat session diagnostics/);
   assert.doesNotMatch(await page.locator('#testBrain').innerText(),/Keep this provider failure|Provider unavailable/,'Brain diagnostics hold status codes rather than message/provider content');
   assert.equal(await page.locator('#chatComposerShell #chatSessionDiagnostics').count(),0);
+  assert.equal(await page.evaluate(()=>window.browserContextConsumptions),1,'Failed requests must retain one-turn Browser context');
   const failedCount=sends().length;
   await boot();
   await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===42);
@@ -198,6 +201,7 @@ try {
   assert.equal(await page.locator('#chatInput').inputValue(),'','History refresh cannot turn a success into a failure');
   assert.match(await page.locator('#chatThread').innerText(),/I heard you/);
   failHistory=false;
+  const consumedBeforeStop=await page.evaluate(()=>window.browserContextConsumptions);
   let releaseSend;sendGate=new Promise(resolve=>{releaseSend=resolve;});
   await page.locator('#chatInput').fill('Stop an in-flight provider response');
   await page.locator('#sendChatButton').click();
@@ -213,6 +217,7 @@ try {
   await page.waitForTimeout(200);
   assert.doesNotMatch(await page.locator('#chatThread').innerText(),/I heard you/,'A late response cannot enter a different conversation');
   assert.equal(await page.locator('#chatInput').inputValue(),'The other draft');
+  assert.equal(await page.evaluate(()=>window.browserContextConsumptions),consumedBeforeStop,'Stopped or stale responses cannot consume Browser context');
   const countBeforeAuth=sends().length;
   await page.route('**/api/chat-v236.php',route=>route.fulfill({status:401,json:{ok:false,error:'Sign in required'}}));
   await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42).catch(()=>{}));
