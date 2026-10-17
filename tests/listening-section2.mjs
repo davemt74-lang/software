@@ -104,9 +104,9 @@ if(cloud){
  await test('failed and timed-out Chat requests release processing for retry',async()=>{
   for(const timeout of [false,true]){const b=browser(),timer=clock(b);b.window.fetch=timeout?()=>new Promise(()=>{}):()=>Promise.reject(Error('offline'));const api=chat(b);api.seed();const turn=api.handleVoiceApiFetch('/chat',{},{});if(timeout)await timer.advance(120000);assert.equal((await turn).status,502);assert.equal(api.state().activeRequest,null);assert.equal(api.state().processing,false);api.disableVoice();}
  });
- await test('Chat submit exception resumes and browser speech watchdog settles once',async()=>{
+ await test('Chat submit exception releases waiting and stalled playback pauses exactly once',async()=>{
   const b=browser(),timer=clock(b),spoken=[];b.window.speechSynthesis.speak=u=>spoken.push(u);const api=chat(b);api.seed();b.element('chatForm').requestSubmit=()=>{throw Error('form unavailable');};api.submitVoiceTranscript('مرحبا');assert.equal(api.state().processing,false);assert(timer.pending.size>0);
-  api.speakAnswer('short answer');assert.equal(spoken.length,1);spoken[0].onstart();await timer.advance(15000);assert.equal(api.state().speaking,false);const ends=api.state().proof.speechEnds;spoken[0].onend();assert.equal(api.state().proof.speechEnds,ends);api.disableVoice();
+  api.speakAnswer('short answer');assert.equal(spoken.length,1);spoken[0].onstart();await timer.advance(15000);assert.equal(api.state().speaking,false);assert.equal(api.state().voiceOn,false);const ends=api.state().proof.speechEnds;spoken[0].onend();assert.equal(api.state().proof.speechEnds,ends);api.disableVoice();
  });
  await test('stream cancellation settles a stalled reader and ignores late deltas',async()=>{
   const b=browser();clock(b);let stream,cancelled=0;b.window.fetch=async()=>new Response(new ReadableStream({start(controller){stream=controller;},cancel(){cancelled++;}}));
@@ -114,6 +114,66 @@ if(cloud){
  });
  await test('stream completion, provider failure and stalled deadline settle the current turn',async()=>{
   for(const kind of ['success','failure','deadline']){const b=browser(),timer=clock(b);b.window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){},stop(){}});b.window.fetch=async()=>kind==='deadline'?new Response(new ReadableStream({start(){}})):new Response(JSON.stringify({type:'done',data:{ok:kind==='success',error:'provider offline',answer:'',conversation_id:42}})+'\n');const api=chat(b);api.seed();const turn=api.handleVoiceApiFetch('/chat',{},{});if(kind==='deadline')await timer.advance(120000);const response=await turn;assert.equal(response.status,kind==='success'?200:502);assert.equal(api.state().activeRequest,null);assert.equal(api.state().processing,false);api.disableVoice();}
+ });
+ await test('canonical cancellation aborts voice transport and rejects late provider completion',async()=>{
+  for(const fast of [false,true]){
+   const b=browser();clock(b);const waiting=deferred(),owner=new AbortController();let signal;
+   b.window.fetch=(_url,init)=>{signal=init.signal;return waiting.promise;};
+   if(fast)b.window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){},stop(){}});
+   const api=chat(b);api.seed();const turn=api.handleVoiceApiFetch('/chat',{signal:owner.signal},{});await flush();owner.abort();await flush();
+   assert.equal(signal.aborted,true,'voice must honor its canonical chat owner');
+   assert.equal((await turn).status,499);assert.equal(api.state().processing,false);
+   waiting.resolve(new Response(JSON.stringify({ok:true,answer:'obsolete',conversation_id:999})));await flush();assert.equal(api.state().lastConversationId,0);api.disableVoice();
+  }
+ });
+ await test('incomplete provider streams fail without accepting or speaking partial answers',async()=>{
+  for(const body of ['',JSON.stringify({type:'delta',delta:'partial answer'})+'\n',JSON.stringify({type:'done',data:{answer:'missing success flag'}})+'\n']){
+   const b=browser();clock(b);const spoken=[];b.window.speechSynthesis.speak=u=>spoken.push(u);
+   b.window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){},stop(){}});b.window.fetch=async()=>new Response(body);
+   const api=chat(b);api.seed();const response=await api.handleVoiceApiFetch('/chat',{},{});
+   assert.equal(response.status,502,'EOF alone cannot certify provider completion');assert.equal(api.state().proof.apiSuccess,0);assert.equal(spoken.length,0);api.disableVoice();
+  }
+ });
+ await test('canonical Stop cancels pending context preparation without a provider request',async()=>{
+  const b=browser();clock(b);const owner=new AbortController(),context=deferred();let calls=0;
+  b.window.fetch=async()=>{calls++;return new Response('{}');};b.window.StonefellowAgentContext={refresh:()=>context.promise};
+  const api=chat(b);api.seed();b.element('chatForm').requestSubmit=()=>{b.pending=b.window.fetch('/api/chat.php',{method:'POST',signal:owner.signal,body:JSON.stringify({action:'send',message:'hello'})}).catch(error=>error);};
+  api.submitVoiceTranscript('hello');owner.abort();await b.pending;assert.equal(api.state().voiceOn,false);assert.equal(api.state().processing,false);
+  context.resolve({});await flush();assert.equal(calls,0);api.disableVoice();
+ });
+ await test('fast voice preserves authentication and permission status for the canonical owner',async()=>{
+  for(const status of [401,403,429,503]){
+   const b=browser();clock(b);b.window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){},stop(){}});
+   b.window.fetch=async()=>new Response(JSON.stringify({type:'error',error:'Unavailable'})+'\n',{status});
+   const api=chat(b);api.seed();const response=await api.handleVoiceApiFetch('/chat',{},{});assert.equal(response.status,status);assert.equal(api.state().proof.apiSuccess,0);api.disableVoice();
+  }
+  const endpoint=fs.readFileSync(root+'api/chat-stream-v121.php','utf8');assert.match(endpoint,/if\(!\$user\)\{http_response_code\(401\)/);assert.match(endpoint,/if\(!has_permission\('chat.access',\$user\)\)\{http_response_code\(403\)/);
+ });
+ function premium(b){
+  b.window.location=b.context.location;
+  b.context.Audio||=class{constructor(){this.src='';}load(){}pause(){}removeAttribute(){this.src='';}play(){queueMicrotask(()=>this.onplaying?.());return Promise.resolve();}};
+  load('premium-voice-v117.js',b);return b.window.StonefellowPremiumVoiceV122({agentEndpoint:'/api/chat.php',csrf:'test'});
+ }
+ await test('premium warm timeout is bounded, shared, retryable and ignores late readiness',async()=>{
+  const b=browser(),timer=clock(b),waiting=deferred();let calls=0,signal;
+  b.window.fetch=(_url,init)=>{calls++;signal=init.signal;return waiting.promise;};const owner=premium(b);const ready=owner.warm();
+  await timer.advance(12000);assert.equal(await ready,false);assert.equal(calls,1);assert.equal(signal.aborted,true);
+  waiting.resolve(response({ready:true,verified:true}));await flush();assert.equal(b.window.STONEFELLOW_PREMIUM_VOICE_V122.verifiedReady,false);
+  b.window.fetch=async()=>response({ready:true,verified:true});assert.equal(await owner.warm(),true);owner.stop();
+ });
+ await test('premium ticket timeout and stalled audible playback settle exactly once',async()=>{
+  for(const stall of ['ticket','playback']){
+   const b=browser(),timer=clock(b);let errors=0,ends=0,signal;
+   b.window.fetch=async(_url,init)=>{const body=JSON.parse(init.body||'{}');if(body.action==='warm')return response({ready:true});if(body.action==='ticket'){signal=init.signal;if(stall==='ticket')return new Promise(()=>{});return response({ok:true,stream_url:'https://vp3.test/audio'});}return {ok:true,headers:{get:()=> 'audio/mpeg'},blob:async()=>new Blob(['audio'])};};
+   const owner=premium(b);await owner.warm();const session=owner.createStream({onError(){errors++;},onEnd(){ends++;}});const started=session.started.catch(()=>false);session.push('Hello. ');session.end();await flush();await flush();
+   await timer.advance(stall==='ticket'?12000:20000);assert.equal(await session.done,false);assert.equal(await started,stall==='playback');assert.equal(errors,stall==='playback'?1:0);assert.equal(ends,0);if(stall==='ticket')assert(signal.aborted);owner.stop();
+  }
+ });
+ await test('audio unlock timeout rejects late success without reviving playback',async()=>{
+  const b=browser(),timer=clock(b),waiting=deferred();b.window.fetch=async()=>response({ready:true});
+  b.context.Audio=class{load(){}pause(){}removeAttribute(){}play(){return waiting.promise;}};
+  const owner=premium(b);await owner.warm();const unlocked=owner.unlock();await timer.advance(8000);assert.equal(await unlocked,false);
+  waiting.resolve();await flush();assert.equal(owner.isUnlocked(),false);assert.equal(b.window.STONEFELLOW_PREMIUM_VOICE_V122.unlockSuccesses,0);owner.stop();
  });
  await test('silent form rejection recovers; Stop during context preparation never sends',async()=>{
   const b=browser(),timer=clock(b),context=deferred();let requests=0;b.window.fetch=async()=>{requests++;return new Response('{}');};b.window.StonefellowAgentContext={refresh:()=>context.promise,snapshot:()=>({})};const api=chat(b);api.seed();b.element('chatForm').requestSubmit=()=>{};api.submitVoiceTranscript('hello again');await timer.advance(2200);assert.equal(api.state().processing,false);

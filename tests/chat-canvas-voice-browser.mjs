@@ -11,6 +11,7 @@ page.setDefaultTimeout(10000);
 const errors = [], calls = [];
 page.on('pageerror', error => errors.push(error.message));
 let routeDelay = 0, failRoute = false, routeGate = null, sendGate = null, failSend = false, failHistory = false, failLoad = false;
+let streamState = 'success';
 const messages = new Map([[42,[]],[43,[{id:101,role:'assistant',message:'The other conversation'}]]]);
 const html = `<!doctype html><html lang="en-US"><head><meta charset="UTF-8"></head><body>
 <div class="chat-app"><aside class="chat-sidebar"><strong>VP3</strong><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside>
@@ -21,6 +22,11 @@ await page.route('http://chat.test/', route => route.fulfill({contentType:'text/
 await page.route('**/api/**', async route => {
   const payload = route.request().postDataJSON() || {};
   calls.push({...payload, path:new URL(route.request().url()).pathname});
+  if(new URL(route.request().url()).pathname==='/api/chat-stream-v121.php'){
+    if(sendGate)await sendGate;
+    const event=streamState==='success'?{type:'done',data:{ok:true,conversation_id:42,answer:'Completed streamed reply',assistant_message_id:74}}:streamState==='auth'?{type:'error',error:'Sign in required'}:{type:'delta',delta:'Unconfirmed partial reply'};
+    return route.fulfill({status:streamState==='auth'?401:200,contentType:'application/x-ndjson',body:JSON.stringify(event)+'\n'});
+  }
   if(new URL(route.request().url()).pathname==='/api/research')return route.fulfill({json:{ok:true,contract:'vp3.chat-browser-research.v1',requests:[],runtimes:[],projects:[]}});
   if (payload.action === 'task.route') {
     if (routeGate) await routeGate;
@@ -49,9 +55,9 @@ async function speak(text) {
 }
 const sends = () => calls.filter(call => call.action === 'send');
 try {
-  async function boot() {
+  async function boot(fast=false) {
   await page.goto('http://chat.test/');
-  await page.evaluate(() => {
+  await page.evaluate(fast => {
     window.STONEFELLOW_CHAT = {userId:1,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat'};
     window.STONEFELLOW_AGENT_CONTEXT = {userId:1,surface:'chat',csrf:'fixture',proactiveEndpoint:'/api/context'};
     window.STONEFELLOW_AGENT_IDENTITY_V236 = {agentVoiceEnabled:true};
@@ -74,7 +80,8 @@ try {
     const button = document.getElementById('chatVoiceButton');
     window.STONEFELLOW_CHAT_VOICE_BOOT = {button,intro:null};
     button.id = 'chatVoiceButtonLegacyDormant';
-  });
+    if(fast)window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){},stop(){}});
+  },fast);
   for (const name of ['chat.css','chat-cognitive-presentation-v510.css','chat-agent-teams-a3.css','chat-tools.css']) await page.addStyleTag({content:await source(name)});
   // Real scripts, in production order; the recognition service alone is mocked.
   for (const name of ['chat.js','chat-tools.js','voice-lease-v122.js','agent-context-v131.js','chat-voice.js','chat-agent-teams-a3.js','chat-browser-research-v1.js','project-knowledge-r5.js','project-knowledge-r6.js','project-knowledge-r7.js','knowledge-actions-r8.js']) await page.addScriptTag({content:await source(name)});
@@ -225,6 +232,35 @@ try {
   assert.equal(await page.locator('#chatInput').inputValue(),'');
   assert.equal(sends().length,countBeforeAuth);
   console.log('PASS provider failure, selected-context/draft restore, offline recovery, independent history refresh, Stop, late reply fencing and session cleanup without replay');
+  await page.unroute('**/api/chat-v236.php');
+  const streams=()=>calls.filter(call=>call.path==='/api/chat-stream-v121.php');
+  for(const kind of ['stop','truncated','auth']){
+    streamState=kind==='auth'?'auth':kind==='truncated'?'truncated':'success';
+    await boot(true);
+    await page.getByRole('button',{name:'Chat tools',exact:true}).click();
+    await page.getByLabel('Work mode').selectOption('chat');
+    await page.getByRole('button',{name:'Close chat tools'}).click();
+    await page.locator('#chatInput').fill('');
+    if(kind==='stop')sendGate=new Promise(resolve=>{releaseSend=resolve;});
+    await page.getByRole('button',{name:'Start voice conversation'}).click();
+    await page.waitForFunction(()=>window.recognizers.some(item=>item.active));
+    const before=streams().length;
+    const dispatched=page.waitForRequest('**/api/chat-stream-v121.php');
+    await speak('Audit the '+kind+' voice provider turn');
+    await dispatched;
+    if(kind==='stop'){
+      await page.getByRole('button',{name:'Stop response',exact:true}).click();
+      releaseSend();sendGate=null;
+    }
+    await page.waitForFunction(()=>!document.querySelector('#sendChatButton').disabled && document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false');
+    await page.waitForTimeout(400);
+    assert.equal(streams().length,before+1,'A failed/stopped voice turn must never replay');
+    assert.equal(await page.evaluate(()=>window.spoken.length),0,'Unconfirmed or cancelled provider output cannot speak');
+    assert.doesNotMatch(await page.locator('#chatThread').innerText(),/Completed streamed reply|Unconfirmed partial reply/);
+    if(kind==='auth')assert.equal(await page.evaluate(()=>sessionStorage.getItem('vp3:chat:drafts:1:0')),null);
+    else assert.match(await page.locator('#chatInput').inputValue(),new RegExp(kind));
+  }
+  console.log('PASS fast voice canonical Stop, truncated provider streams and expired sessions preserve owner boundaries without replay');
   assert.deepEqual(errors, []);
   if (process.env.VP3_CHAT_SCREENSHOT) await page.screenshot({path:process.env.VP3_CHAT_SCREENSHOT});
   console.log('PASS compact desktop/mobile canvas; tools preserve state; actual Chat + voice lease + automatic planner retain delayed voice input, speak once, resume listening, and reject failed/cancelled late routes.');

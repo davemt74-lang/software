@@ -87,7 +87,7 @@ assert(source.includes("new URL('chat-stream-v121.php',chatUrl)"),'voice turn de
 assert(source.includes('premium.createStream({'),'voice turn feeds incremental AI text into the premium stream');
 assert(source.includes('FAST_PREMIUM_PRESTART_ERROR')&&source.includes('FAST_PREMIUM_FULL_RETRY'),'v146 recovers pre-audio premium failure through an ElevenLabs-only retry');
 assert(source.includes("startSystemVoiceFallback(message,epoch,'elevenlabs-not-configured')"),'system voice remains reserved for ElevenLabs-not-configured state');
-assert(chat.includes("$voiceAssetBuild = 'chat-voice-proactive-v244-20260922'")&&chat.includes("$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-recovery3'"),'Chat cache-busts the v2.44 proactive voice runtime');
+assert(chat.includes("$voiceAssetBuild = 'chat-voice-proactive-v244-20260922'")&&chat.includes("$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-provider-audit1'"),'Chat cache-busts the v2.44 proactive voice runtime');
 assert(chat.includes('data-chat-streaming="enabled"')&&chat.includes('data-chat-processed-input="enabled"'),'Chat preserves fast voice streaming and processed input monitoring');
 assert(voiceApi.includes("/stream?output_format=")&&voiceApi.includes('CURLOPT_WRITEFUNCTION'),'server proxies ElevenLabs streaming bytes rather than buffering a complete MP3');
 assert(voiceApi.includes("'eleven_flash_v2_5'"),'fast ElevenLabs Flash v2.5 model remains supported/defaulted');
