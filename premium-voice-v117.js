@@ -9,6 +9,7 @@
   const CHUNK_LIMIT = 900;
   const AUDIO_FETCH_TIMEOUT_MS = 12000;
   const AUDIO_START_TIMEOUT_MS = 8000;
+  const VOICE_REQUEST_TIMEOUT_MS = 12000;
   const SILENT_WAV = 'data:audio/wav;base64,UklGRmQBAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YUABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
   const proof = window.STONEFELLOW_PREMIUM_VOICE_V122 = window.STONEFELLOW_PREMIUM_VOICE_V122 || {
     loaded:true,warmRequests:0,ticketRequests:0,streamStarts:0,streamEnds:0,
@@ -117,6 +118,7 @@
     const csrf=String(options.csrf||'');
     let active=null;
     let warmed=false;
+    let warmPromise=null;
     const primedAudio=typeof Audio==='function'?new Audio():null;
     let unlockPromise=null;
     let audioUnlocked=false;
@@ -158,7 +160,9 @@
         resetPrimedAudio();
         return Promise.resolve(false);
       }
-      unlockPromise=Promise.resolve(playResult).then(()=>{
+      let unlockTimer;
+      const deadline=new Promise((_,reject)=>{unlockTimer=setTimeout(()=>reject(new Error('Audio unlock timed out.')),AUDIO_START_TIMEOUT_MS);});
+      unlockPromise=Promise.race([Promise.resolve(playResult),deadline]).then(()=>{
         audioUnlocked=true;
         proof.audioUnlocked=true;
         proof.unlockSuccesses+=1;
@@ -169,16 +173,35 @@
         proof.lastPlaybackError=String(error?.message||error||'Audio unlock failed.');
         resetPrimedAudio();
         return false;
-      }).finally(()=>{unlockPromise=null;});
+      }).finally(()=>{clearTimeout(unlockTimer);unlockPromise=null;});
       return unlockPromise;
+    }
+
+    async function voiceRequest(payload,signal){
+      if(signal?.aborted)throw abortError();
+      const controller=new AbortController();let deadline;
+      const abort=()=>controller.abort();
+      signal?.addEventListener('abort',abort,{once:true});
+      const cancelled=new Promise((_,reject)=>{
+        controller.signal.addEventListener('abort',()=>reject(signal?.aborted?abortError():new Error('ElevenLabs voice request timed out.')),{once:true});
+        deadline=setTimeout(abort,VOICE_REQUEST_TIMEOUT_MS);
+      });
+      try{
+        return await Promise.race([cancelled,(async()=>{
+          const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({csrf_token:csrf,...payload}),signal:controller.signal});
+          const data=await response.json().catch(()=>({}));
+          return {response,data};
+        })()]);
+      }finally{clearTimeout(deadline);signal?.removeEventListener('abort',abort);}
     }
 
     async function warm(){
       if(warmed||!endpoint||!csrf)return warmed;
+      if(warmPromise)return warmPromise;
       proof.warmRequests+=1;
+      warmPromise=(async()=>{
       try{
-        const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({csrf_token:csrf,action:'warm'}),keepalive:true});
-        const data=await response.json().catch(()=>({}));
+        const {response,data}=await voiceRequest({action:'warm'});
         warmed=response.ok&&!!data?.ready;
         proof.verifiedReady=warmed&&data?.verified===true;
         proof.modelId=String(data?.model_id||proof.modelId||'');
@@ -187,6 +210,8 @@
         if(!warmed&&data?.error)proof.lastError=String(data.error);
       }catch(error){proof.lastError=String(error?.message||error||'Voice warm-up failed');}
       return warmed;
+      })().finally(()=>{warmPromise=null;});
+      return warmPromise;
     }
 
     async function fetchAudio(streamUrl,signal){
@@ -226,8 +251,7 @@
     async function ticket(text,signal){
       proof.ticketRequests+=1;
       const startedAt=performance.now();
-      const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({csrf_token:csrf,action:'ticket',text}),signal});
-      const data=await response.json().catch(()=>({}));
+      const {response,data}=await voiceRequest({action:'ticket',text},signal);
       proof.lastTicketMs=Math.max(0,Math.round(performance.now()-startedAt));
       if(!response.ok||!data?.ok||!data?.stream_url)throw new Error(data?.error||`ElevenLabs voice HTTP ${response.status}`);
       proof.modelId=String(data?.model_id||proof.modelId||'');
@@ -340,21 +364,25 @@
         const current=(!started&&primedAudio)?primedAudio:new Audio();
         audio=current;current.preload='auto';current.playsInline=true;current.muted=false;current.volume=outputVolume;
         await new Promise((resolve,reject)=>{
-          let heard=false;let settled=false;
+          let heard=false;let settled=false;let endTimer;
           const startTimer=setTimeout(()=>{
             if(settled||heard)return;
             proof.audioStartTimeouts+=1;
             proof.lastPlaybackError='ElevenLabs audio loaded but playback did not start.';
-            settled=true;clearAudio(current);reject(new Error(proof.lastPlaybackError));
+            finish(false,new Error(proof.lastPlaybackError));clearAudio(current);
           },AUDIO_START_TIMEOUT_MS);
           const finish=(ok,error=null)=>{
             if(settled)return;
-            settled=true;clearTimeout(startTimer);
+            settled=true;clearTimeout(startTimer);clearTimeout(endTimer);controller.signal.removeEventListener('abort',cancelPlayback);
             if(error)reject(error);else resolve(ok);
           };
+          const cancelPlayback=()=>finish(false,abortError());
+          controller.signal.addEventListener('abort',cancelPlayback,{once:true});
           current.onplaying=()=>{
             if(stopped||heard||settled)return;
             heard=true;proof.chunkStarts+=1;
+            clearTimeout(startTimer);
+            endTimer=setTimeout(()=>finish(false,new Error('ElevenLabs playback stopped responding.')),Math.min(180000,Math.max(15000,(Number.isFinite(current.duration)?current.duration*1000:text.length*100)+5000)));
             if(!started){
               started=true;audioUnlocked=true;proof.audioUnlocked=true;proof.streamStarts+=1;
               const firstAudioMs=Math.max(0,Math.round(performance.now()-streamStartedAt));
