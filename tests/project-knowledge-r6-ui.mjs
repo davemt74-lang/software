@@ -21,7 +21,7 @@ try{
    window.report={kind:'report',id:'44444444-4444-4444-8444-444444444444',revision:'d'.repeat(64),title:'Saved report',url:'/research-report.php?report=44444444-4444-4444-8444-444444444444',captured_at:'2026-10-12',excerpt:'Observed source value [C1]'};
    window.handle=async payload=>{
     calls.push(structuredClone(payload));if(window.revoked)throw Error('Knowledge access revoked.');
-    if(window.defer)await new Promise(resolve=>window.release=resolve);
+    if(window.defer){await new Promise(resolve=>window.release=resolve);if(window.failDeferred)throw Error('Old Knowledge request failed.');}
     if(payload.action==='set_context'){if(window.conflict)throw Error('Conversation context changed. Refresh before choosing another scope.');contextState={...contextState,scope:payload.scope,revision:'b'.repeat(64),title:'Suppliers'};}
     return {ok:true,contract:'vp3.project-knowledge.r6',state:contextState,cloud_origin:'http://r6.test',projects:[{id:'77777777-7777-4777-8777-777777777777',title:'Suppliers'}],folders:[{id:1,folder_name:'Purchasing'}],items:contextState.scope.mode==='off'?[]:[annotation],reports:contextState.scope.mode==='off'?[]:[report]};
    };
@@ -42,6 +42,21 @@ try{
   await page.evaluate(()=>VP3ProjectKnowledgeR6.consume({active:true,state:contextState,sources:[{...annotation,label:'P1'},{...report,label:'P2'}],cloud_origin:'http://r6.test'}));
   assert.equal(await page.locator('.r6-brain-sources a').count(),2);assert.equal(await page.evaluate(()=>VP3ProjectKnowledgeR6.value().attachments.length),0);
   await page.evaluate(()=>window.revoked=true);await page.getByRole('button',{name:'Find sources',exact:true}).click();await page.getByText('Knowledge access revoked.',{exact:true}).waitFor();assert.equal(await page.locator('.r6-results article').count(),0);assert.equal(await page.locator('.r6-brain-sources a').count(),0);
+  for(const fault of ['success','failure','apply']){
+   await page.evaluate(()=>{window.revoked=false;window.defer=false;window.failDeferred=false;});await page.evaluate(()=>VP3ProjectKnowledgeR6.refresh());
+   if(fault==='apply')await page.getByLabel('Conversation Knowledge scope').selectOption('folder:1');
+   await page.evaluate(()=>{window.defer=true;window.release=null;});
+   await page.getByRole('button',{name:fault==='apply'?'Apply context':'Find sources',exact:true}).click();await page.waitForFunction(()=>typeof release==='function');
+   assert.equal(await page.evaluate(()=>{try{VP3ProjectKnowledgeR6.value();return false;}catch(_){return true;}}),true,'Sending must wait for an explicit context operation');
+   await page.evaluate(mode=>{window.oldRelease=release;conversation++;if(mode==='chrome')agentConversationId=conversation;window.dispatchEvent(new Event('stonefellow:chat-conversation-changed'));window.defer=false;},mode);
+   await page.evaluate(()=>VP3ProjectKnowledgeR6.refresh());await page.getByRole('button',{name:'Attach to next message'}).first().click();
+   const current=await page.evaluate(()=>VP3ProjectKnowledgeR6.value());
+   await page.evaluate(fault=>{window.failDeferred=fault==='failure';window.oldRelease();},fault);await page.waitForTimeout(80);
+   assert.deepEqual(await page.evaluate(()=>VP3ProjectKnowledgeR6.value()),current,'An old '+fault+' response must preserve the new conversation selection');
+   assert.equal(await page.locator('.r6-selected button').count(),1);
+   assert.equal(await page.locator(mode==='chrome'?'#agentMessageInput':'#chatInput').inputValue(),'My typed question');
+  }
+  await page.evaluate(()=>{window.failDeferred=false;});
   await page.evaluate(()=>{window.revoked=false;window.defer=true;});await page.getByRole('button',{name:'Find sources',exact:true}).click();await page.waitForFunction(()=>typeof release==='function');
   await page.evaluate(mode=>{conversation=43;if(mode==='chrome')agentConversationId=43;window.release();window.defer=false;},mode);
   await page.getByText('Conversation changed. Refresh its Knowledge context.',{exact:true}).waitFor();assert.equal(await page.locator('.r6-results article').count(),0);

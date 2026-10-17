@@ -472,7 +472,7 @@ $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(u
     . '<script src="' . e(url('/chat-browser-research-v1.js?v=research-r3')) . '" defer></script>'
     . '<script>window.VP3_PROJECT_KNOWLEDGE={endpoint:' . json_encode(url('/api/project-knowledge-r5.php')) . ',csrf:' . json_encode(csrf_token()) . '};</script>'
     . '<script src="' . e(url('/project-knowledge-r5.js?v=r5')) . '" defer></script>'
-    . '<script src="' . e(url('/project-knowledge-r6.js?v=r6')) . '" defer></script>'
+    . '<script src="' . e(url('/project-knowledge-r6.js?v=r6-context-ownership-20261017')) . '" defer></script>'
     . '<script src="' . e(url('/project-knowledge-r7.js?v=r7')) . '" defer></script>'
     . '<script src="' . e(url('/knowledge-actions-r8.js?v=r9')) . '" defer></script>';
 
