@@ -55,6 +55,7 @@ jobs:
           node tests/project-knowledge-r5-ui.mjs
           node tests/project-knowledge-r6-ui.mjs
           node tests/project-knowledge-r7-ui.mjs
+          node tests/chat-action-result-ownership.mjs
           node tests/knowledge-actions-r8-ui.mjs
           node tests/knowledge-actions-r9-ui.mjs
           node tests/knowledge-documents-r10-ui.mjs
