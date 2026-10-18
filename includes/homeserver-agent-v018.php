@@ -155,6 +155,14 @@ function homeserver_agent_v018_last_attempt(): array
     ];
 }
 
+/** A dispatched Agent turn may have executed tools before losing its response. */
+function homeserver_agent_v018_require_safe_fallback(array $attempt): void
+{
+    if(!empty($attempt['attempted'])){
+        throw new RuntimeException('HomeServer result is unconfirmed. Check history before sending again.',409);
+    }
+}
+
 function homeserver_agent_v018_failure_class(string $message): string
 {
     $message=mb_strtolower($message);

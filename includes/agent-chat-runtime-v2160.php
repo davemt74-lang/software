@@ -182,6 +182,13 @@ if(!empty($toolResult['handled'])){
         $homeAttempted=true;
         $homeResult=homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all'&&($r6Packet['state']['scope']['mode']??'all')!=='off',!empty($r6Packet['active'])&&$r6Packet['state']['scope']['mode']!=='off'?['conversation_id'=>$conversationId,'agent_id'=>$activeAgentId,'state_revision'=>$r6Packet['state']['revision'],'attachments'=>$r6Packet['attachments'],'query'=>$query,'fingerprint'=>$r6Packet['fingerprint']]:[]);
     }
+    if($homeAttempted&&!$homeResult){
+        try{homeserver_agent_v018_require_safe_fallback(homeserver_agent_v018_last_attempt());}
+        catch(RuntimeException $e){
+            if(function_exists('homeserver_compute_v232_failure'))homeserver_compute_v232_failure($userId);
+            throw $e;
+        }
+    }
     if($homeResult){
         $answer=(string)$homeResult['answer'];$context=[];$execution=vp3_agent_runtime_homeserver_execution_v420($homeResult);$execution['brain_delegation']=homeserver_agent_v025_public_state($homeResult);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,'homeserver');
     }elseif((string)$runtimePlan['effective_preference']==='homeserver_only'){

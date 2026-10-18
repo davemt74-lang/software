@@ -78,6 +78,7 @@ function homeserver_agent_v025_chat(
     bool $knowledgeAllowed=true,
     array $projectKnowledge=[]
 ): ?array {
+    homeserver_agent_v018_set_last_attempt(['attempted'=>false,'success'=>false,'failure_class'=>'none']);
     $userId=(int)($user['id']??0);
     $scopedOff=!$knowledgeAllowed&&!$projectKnowledge;
     if($projectKnowledge||$scopedOff){
