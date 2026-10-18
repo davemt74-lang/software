@@ -144,7 +144,9 @@
     conversationId = 0; contextReady=false; input.value = ''; thread.querySelectorAll('.message').forEach(node => node.remove());
     history.replaceChildren(); recoveryStatus('Sign in again to continue.');
   }
-  input.addEventListener('input', () => { if (!busy && !initialRestorePending && !restoringConversation) keepDraft(input.value); });
+  // The displayed conversation owns edits until a history load commits its new
+  // selection. Persist them even while loading; Send remains gated separately.
+  input.addEventListener('input', () => { if (!busy && !initialRestorePending) keepDraft(input.value); });
   window.addEventListener('pagehide', () => { if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId); pendingSend?.controller.abort(); });
   // Run before planner interception so offline/restoring turns cannot dispatch tools.
   document.addEventListener('submit', event => {

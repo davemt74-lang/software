@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
-$controlBuild = 'chat-conversation-reliability-20261016';
+$controlBuild = 'chat-history-draft-recovery-20261018';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-provider-audit1';
