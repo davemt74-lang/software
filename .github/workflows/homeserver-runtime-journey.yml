@@ -206,6 +206,7 @@ jobs:
           node tests/agent-missions-cloud-a5b4.mjs
       - name: Lint canonical runtime files
         run: |
+          php tests/chat-handoff-continuity.php
           php -l includes/chat-execution-v019.php
           php -l includes/homeserver-agent-v018.php
           php -l includes/homeserver-agent-v025.php
