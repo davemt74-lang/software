@@ -12,6 +12,7 @@ const errors = [], calls = [];
 page.on('pageerror', error => errors.push(error.message));
 let routeDelay = 0, failRoute = false, routeGate = null, sendGate = null, failSend = false, failHistory = false, failLoad = false;
 let streamState = 'success';
+let loadGate = null;
 const messages = new Map([[42,[]],[43,[{id:101,role:'assistant',message:'The other conversation'}]]]);
 const html = `<!doctype html><html lang="en-US"><head><meta charset="UTF-8"></head><body>
 <div class="chat-app"><aside class="chat-sidebar"><strong>VP3</strong><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside>
@@ -38,7 +39,10 @@ await page.route('**/api/**', async route => {
     if(failSend)return route.fulfill({status:503,json:{ok:false,error:'Provider unavailable'}});
     return route.fulfill({json:{ok:true,conversation_id:payload.conversation_id||42,answer:'I heard you.',assistant_message_id:73}});
   }
-  if(payload.action==='load')return route.fulfill(failLoad?{status:503,json:{ok:false,error:'History unavailable'}}:{json:{ok:true,messages:messages.get(Number(payload.conversation_id))||[]}});
+  if(payload.action==='load'){
+    if(loadGate)await loadGate;
+    return route.fulfill(failLoad?{status:503,json:{ok:false,error:'History unavailable'}}:{json:{ok:true,messages:messages.get(Number(payload.conversation_id))||[]}});
+  }
   if(payload.action==='history' && failHistory)return route.abort();
   return route.fulfill({json:{ok:true,conversations:[],items:[],schedules:[],updates:[],folders:[]}});
 });
@@ -181,6 +185,31 @@ try {
   assert.equal(await page.locator('#chatComposerShell #chatSessionDiagnostics').count(),0);
   assert.equal(await page.evaluate(()=>window.browserContextConsumptions),1,'Failed requests must retain one-turn Browser context');
   const failedCount=sends().length;
+  let releaseHistory;
+  loadGate=new Promise(resolve=>{releaseHistory=resolve;});
+  await page.getByRole('button',{name:'Check history',exact:true}).click();
+  await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.isRestoring());
+  await page.locator('#chatInput').fill('Edited while checking history');
+  await page.locator('#sendChatButton').click();
+  assert.equal(sends().length,failedCount,'Checking history blocks dispatch but keeps the draft editable');
+  releaseHistory();loadGate=null;
+  await page.waitForFunction(()=>!window.STONEFELLOW_CHAT_CONTINUITY_V87.isRestoring());
+  assert.equal(await page.locator('#chatInput').inputValue(),'Edited while checking history','A delayed history response must preserve edits made while checking');
+  await boot();
+  await page.waitForFunction(()=>!window.STONEFELLOW_CHAT_CONTINUITY_V87.isRestoring());
+  assert.equal(await page.locator('#chatInput').inputValue(),'Edited while checking history','History-time edits survive reload');
+  loadGate=new Promise(resolve=>{releaseHistory=resolve;});
+  await page.evaluate(()=>{window.pendingHistorySwitch=window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43);});
+  await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.isRestoring());
+  await page.locator('#chatInput').fill('Edited before switching away');
+  releaseHistory();loadGate=null;
+  await page.evaluate(()=>window.pendingHistorySwitch);
+  assert.equal(await page.locator('#chatInput').inputValue(),'','Edits belong to the displayed source conversation, not the pending destination');
+  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  assert.equal(await page.locator('#chatInput').inputValue(),'Edited before switching away','Navigation preserves edits made while its history was loading');
+  assert.equal(sends().length,failedCount,'History recovery and navigation never replay the draft');
+  // Preserve the existing recovery scenarios' independent draft.
+  await page.locator('#chatInput').fill('Keep this provider failure');
   await boot();
   await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===42);
   assert.equal(await page.locator('#chatInput').inputValue(),'Keep this provider failure');
