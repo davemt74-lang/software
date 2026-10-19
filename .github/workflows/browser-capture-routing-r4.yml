@@ -35,6 +35,9 @@ jobs:
           VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306
           VP3_SECTION7_MYSQL_PASSWORD: fixture
         run: |
+          php tests/social-feed-v1-mysql.php
+          php -l api/social-feed-v1.php
+          php -l feed.php
           php tests/project-knowledge-r5-mysql.php
           php tests/project-knowledge-r6-mysql.php
           php tests/project-knowledge-r7-mysql.php
@@ -50,6 +53,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Actual extension dispatch and mobile composer
         run: |
+          node tests/social-feed-v1-browser.mjs
           node tests/browser-capture-routing-r4.mjs
           node tests/browser-capture-routing-r4-ui.mjs
           node tests/project-knowledge-r5-ui.mjs

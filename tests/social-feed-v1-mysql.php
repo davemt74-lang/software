@@ -12,7 +12,7 @@ require __DIR__.'/../includes/social-network-v320.php';
 require __DIR__.'/../includes/profile-agent.php';
 require __DIR__.'/../includes/social-feed-v1.php';
 try{
-    $pdo->exec("CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,display_name VARCHAR(120) NOT NULL,is_active TINYINT NOT NULL DEFAULT 1,avatar_path VARCHAR(500) NOT NULL DEFAULT '') ENGINE=InnoDB;
+    $pdo->exec("CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,display_name VARCHAR(120) NOT NULL,role VARCHAR(40) NOT NULL DEFAULT 'user',is_active TINYINT NOT NULL DEFAULT 1,avatar_path VARCHAR(500) NOT NULL DEFAULT '') ENGINE=InnoDB;
       CREATE TABLE user_agents(id BIGINT UNSIGNED PRIMARY KEY) ENGINE=InnoDB;
       INSERT INTO users(id,display_name) VALUES(7,'Owner'),(8,'Other'),(9,'Private'),(10,'Blocked'),(11,'Inactive')");
     social_feed_schema_v1($pdo);social_feed_schema_v1($pdo);
