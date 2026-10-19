@@ -74,6 +74,7 @@ function vp3_system_apps_agent_find_app_v160(string $query,array $user,?PDO $pdo
         $key=mb_strtolower((string)$app['app_key']);$name=mb_strtolower((string)$app['name']);
         $short=preg_replace('/^vp3\s+/','',$name)??$name;$score=0;
         if($key!==''&&str_contains($q,$key))$score=100;
+        elseif($key==='vp3.feed'&&preg_match('/\b(?:vrss|feed)\b/u',$q))$score=90;
         elseif($name!==''&&str_contains($q,$name))$score=90;
         elseif($short!==''&&mb_strlen($short)>=4&&preg_match('/\b'.preg_quote($short,'/').'\b/u',$q))$score=70;
         if($score>$bestScore){$best=$app;$bestScore=$score;}

@@ -51,6 +51,11 @@ $other=['id'=>2,'email'=>'other@example.com','display_name'=>'Other','role'=>'us
 if(vp3_system_apps_agent_action_intent_v160('what apps need updates?'))throw new RuntimeException('Read-only update question was classified as an action.');
 if(!vp3_system_apps_agent_action_intent_v160('install Inventory app'))throw new RuntimeException('Explicit install was not classified as an action.');
 
+foreach(['host VRSS at my subdomain','show feed hosting'] as $query){
+    $matched=vp3_system_apps_agent_find_app_v160($query,$owner,$testPdo);
+    if(($matched['app_key']??'')!=='vp3.feed')throw new RuntimeException('Agent did not resolve VRSS to Feed.');
+}
+
 $acquire=vp3_system_apps_agent_prepare_v160($owner,'ownership.acquire','vp3.inventory',[],['app'=>'VP3 Inventory'],42,null,$testPdo);
 if(empty($acquire['requires_confirmation'])||strlen((string)$acquire['confirmation_code'])!==8)throw new RuntimeException('Acquire action was not confirmation-gated.');
 $done=vp3_system_apps_agent_confirm_v160($owner,(string)$acquire['confirmation_code'],42,null,$testPdo);

@@ -112,9 +112,23 @@ function vp3_system_apps_hosting_bind_v120(int $userId,string $appKey,int $siteI
 
     $pdo->beginTransaction();
     try{
+        // Serialize assignments of this app and this site before rechecking both invariants.
+        $lock=$pdo->prepare("SELECT id FROM vp3_system_app_ownership WHERE id=? AND status='active' FOR UPDATE");
+        $lock->execute([(int)$app['ownership_id']]);
+        if(!$lock->fetchColumn())throw new RuntimeException('System App ownership changed before Hosting assignment.');
+        $lock=$pdo->prepare('SELECT id FROM cloud_hosting_sites WHERE id=? AND user_id=? FOR UPDATE');
+        $lock->execute([$siteId,$userId]);
+        if(!$lock->fetchColumn())throw new RuntimeException('Hosted site was not found for this account.');
+        $current->execute([$userId,(int)$app['id']]);
+        $currentSiteId=(int)$current->fetchColumn();
+        if($currentSiteId>0&&$currentSiteId!==$siteId)throw new RuntimeException('Remove the current Hosting assignment before assigning this app to another site.');
         $other=$pdo->prepare("SELECT app_id FROM vp3_system_app_hosting_bindings WHERE site_id=? AND status='active' AND app_id<>? LIMIT 1");
         $other->execute([$siteId,(int)$app['id']]);
         if((int)$other->fetchColumn()>0)throw new RuntimeException('This hosted site is already assigned to another app.');
+        // An inactive former occupant must not win the site's unique-key upsert.
+        // Its lifecycle events remain in the existing event ledger.
+        $pdo->prepare("DELETE FROM vp3_system_app_hosting_bindings WHERE site_id=? AND status='inactive' AND app_id<>?")
+            ->execute([$siteId,(int)$app['id']]);
         $stmt=$pdo->prepare("INSERT INTO vp3_system_app_hosting_bindings(user_id,app_id,site_id,status,bound_at,unbound_at,metadata_json)
           VALUES (?,?,?,'active',NOW(),NULL,?)
           ON DUPLICATE KEY UPDATE site_id=VALUES(site_id),status='active',bound_at=NOW(),unbound_at=NULL,metadata_json=VALUES(metadata_json),updated_at=CURRENT_TIMESTAMP");

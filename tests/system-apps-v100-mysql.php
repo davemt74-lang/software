@@ -20,7 +20,13 @@ $userRow=['id'=>1,'role'=>'user','email'=>'owner@example.com','display_name'=>'O
 $catalog=vp3_system_apps_catalog_v100($userRow,$testPdo);
 if($catalog['contract']!=='vp3.system-app-catalog.v1')throw new RuntimeException('Catalog contract mismatch.');
 if($catalog['catalog_authority']!=='vp3_cloud'||$catalog['runtime_authority']!=='homeserver')throw new RuntimeException('Authority boundary mismatch.');
-if($catalog['counts']['total']!==3||$catalog['counts']['owned']!==0||$catalog['counts']['available']!==3)throw new RuntimeException('Initial catalog projection mismatch.');
+if($catalog['counts']['total']!==4||$catalog['counts']['owned']!==0||$catalog['counts']['available']!==4)throw new RuntimeException('Initial catalog projection mismatch.');
+
+// Upgrade a pre-VRSS installation with already-existing catalog tables.
+$testPdo->exec("DELETE FROM vp3_system_app_catalog WHERE app_key='vp3.feed'");
+$upgraded=vp3_system_apps_catalog_v100($userRow,$testPdo);
+$feed=array_values(array_filter($upgraded['apps'],fn($a)=>$a['app_key']==='vp3.feed'))[0]??null;
+if(!$feed||$feed['current_version']!=='1.2.0'||!$feed['eligible'])throw new RuntimeException('VRSS did not appear in an existing installation.');
 
 $owned=vp3_system_apps_acquire_v100(1,'vp3.notes','self_service',null,$testPdo);
 if(empty($owned['owned'])||$owned['ownership_status']!=='active')throw new RuntimeException('Ownership was not created.');

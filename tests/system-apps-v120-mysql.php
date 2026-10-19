@@ -79,6 +79,20 @@ if(($after['desired_state']??'')!=='configured')throw new RuntimeException('Unbo
 
 $events=$testPdo->query("SELECT event_type FROM vp3_system_app_events WHERE user_id=1 ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
 foreach(['app.hosting.bound','app.hosting.unbound'] as $event)if(!in_array($event,$events,true))throw new RuntimeException('Missing hosting lifecycle event '.$event);
+// VRSS uses this exact existing site/binding/reconciliation path.
+vp3_system_apps_acquire_v100(1,'vp3.feed','self_service',null,$testPdo);
+$stmt->execute([1,$ids['vp3.feed']]);
+$feedBound=vp3_system_apps_hosting_bind_v120(1,'vp3.feed',(int)$site['id'],$remote,$testPdo);
+if(empty($feedBound['hosting']['bound']))throw new RuntimeException('VRSS existing Hosting binding missing.');
+$siteOps=array_values(array_filter($ops,fn($o)=>$o['operation']==='hosting.site.reconcile'));
+$feedPayload=$siteOps[count($siteOps)-1]['payload'];
+if(($feedPayload['target_app_key']??null)!=='vp3.feed')throw new RuntimeException('VRSS target did not reach HomeServer.');
+$testPdo->exec("INSERT INTO users(id,email,display_name,role) VALUES (2,'second@example.com','Second','user')");
+vp3_system_apps_acquire_v100(2,'vp3.feed','self_service',null,$testPdo);
+$stmt->execute([2,$ids['vp3.feed']]);
+try{vp3_system_apps_hosting_bind_v120(2,'vp3.feed',(int)$site['id'],$remote,$testPdo);throw new RuntimeException('VRSS hosting crossed accounts.');}
+catch(RuntimeException $e){if($e->getMessage()==='VRSS hosting crossed accounts.')throw $e;}
+vp3_system_apps_hosting_unbind_v120(1,'vp3.feed',$remote,$testPdo);
 $cap=vp3_system_apps_capability_v120();
 if(empty($cap['hosting_binding'])||empty($cap['hosting_owns_dns_tls'])||empty($cap['existing_hosting_sites_only']))throw new RuntimeException('Section 12 capability boundary mismatch.');
 echo "System Apps V1 Section 12 hosting binding MySQL: PASS\n";
