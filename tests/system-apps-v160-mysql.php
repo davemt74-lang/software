@@ -104,6 +104,15 @@ try{vp3_system_apps_agent_confirm_v160($owner,(string)$leased['confirmation_code
 catch(RuntimeException $e){if($e->getMessage()==='Active execution lease was bypassed.')throw $e;}
 
 $site=vp3_cloud_hosting_create_site_v100($owner,['display_name'=>'Inventory Host','runtime_kind'=>'static'],1);
+// Exercise the complete chat-intent gate, not only the app-name resolver.
+vp3_system_apps_acquire_v100(1,'vp3.feed','self_service',null,$testPdo);
+$vrssPlan=vp3_system_apps_agent_action_query_v160('host VRSS at Inventory Host',$owner,42,$remote,$testPdo);
+if(empty($vrssPlan['handled'])||($vrssPlan['system_app_plan']['app_key']??'')!=='vp3.feed'||($vrssPlan['system_app_plan']['action_type']??'')!=='hosting.bind'||empty($vrssPlan['system_app_plan']['requires_confirmation']))throw new RuntimeException('VRSS chat request did not prepare the governed Hosting assignment.');
+if((int)$testPdo->query('SELECT COUNT(*) FROM vp3_system_app_hosting_bindings')->fetchColumn()!==0)throw new RuntimeException('VRSS chat request executed before confirmation.');
+if(vp3_system_apps_agent_action_intent_v160('show VRSS hosting status'))throw new RuntimeException('VRSS status query was classified as a write.');
+$vrssRead=vp3_system_apps_agent_query_v150('show VRSS status',$owner,42,$testPdo);
+if(empty($vrssRead['handled'])||!str_contains($vrssRead['answer'],'VRSS Feed')||str_contains($vrssRead['answer'],'VP3 Inventory'))throw new RuntimeException('VRSS status query did not select the Feed app.');
+
 $bind=vp3_system_apps_agent_prepare_v160($owner,'hosting.bind','vp3.inventory',['site_id'=>(int)$site['id']],['app'=>'VP3 Inventory'],42,(int)$site['id'],$testPdo);
 $bound=vp3_system_apps_agent_confirm_v160($owner,(string)$bind['confirmation_code'],42,$remote,$testPdo);
 if(empty($bound['completed'])||empty($bound['result']['reconcile_pending']))throw new RuntimeException('Partial Hosting reconcile was not completed safely with pending reconciliation.');

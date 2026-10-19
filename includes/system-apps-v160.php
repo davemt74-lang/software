@@ -277,7 +277,7 @@ function vp3_system_apps_agent_confirm_v160(
 function vp3_system_apps_agent_action_intent_v160(string $query): bool
 {
     if(preg_match('/\bconfirm\s+app\s+[A-Z2-9]{8}\b/i',$query))return true;
-    if(!preg_match('/\b(?:app|apps|vp3 notes|vp3 inventory|vp3 checklists|notes|inventory|checklists)\b/i',$query))return false;
+    if(!preg_match('/\b(?:app|apps|vp3 notes|vp3 inventory|vp3 checklists|notes|inventory|checklists|vrss|feed)\b/i',$query))return false;
     if(preg_match('/^\s*(?:what|which|show|list|tell\s+me|do\s+i|are\s+there|is\s+there|status|how\s+many)\b/i',$query)
         && !preg_match('/\b(?:please|go\s+ahead|can\s+you|could\s+you|would\s+you)\b/i',$query))return false;
     return (bool)preg_match('/\\b(?:install|update|upgrade|verify|rollback|roll back|revert|add|acquire|host|hosting|unhost|remove hosting|detach hosting|refresh|reconcile|resync|sync|open|launch|allow|grant|enable|approve|revoke|deny|disable|remove)\\b/i',$query);
