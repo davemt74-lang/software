@@ -96,7 +96,7 @@ function vp3_system_apps_agent_intent_v150(string $query): bool
 {
     $q=mb_strtolower(trim($query));
     if($q==='')return false;
-    if(!preg_match('/\b(?:app|apps|application|applications|vp3 notes|vp3 inventory|vp3 checklists)\b/i',$q))return false;
+    if(!preg_match('/\b(?:app|apps|application|applications|vp3 notes|vp3 inventory|vp3 checklists|vrss|feed)\b/i',$q))return false;
     return (bool)preg_match('/\b(?:what|which|show|list|status|running|installed|owned|available|hosted|hosting|subdomain|domain|update|updates|offline|problem|issue|health|where|open)\b/i',$q);
 }
 
@@ -109,6 +109,7 @@ function vp3_system_apps_agent_query_v150(string $query,array $user,int $convers
     $snapshot=vp3_system_apps_agent_snapshot_v150($user,$pdo);
     $apps=(array)$snapshot['apps'];
     $q=mb_strtolower($query);
+    if(preg_match('/\b(?:vrss|feed)\b/i',$q))$apps=array_values(array_filter($apps,static fn($a)=>$a['app_key']==='vp3.feed'));
     $filtered=$apps;
     if(str_contains($q,'running'))$filtered=array_values(array_filter($apps,static fn($a)=>!empty($a['running'])));
     elseif(str_contains($q,'installed'))$filtered=array_values(array_filter($apps,static fn($a)=>!empty($a['installed'])));
