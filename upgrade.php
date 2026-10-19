@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__.'/includes/social-feed-v1.php';
 require_once __DIR__ . '/includes/cognitive-memory-v570.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
 require_once __DIR__ . '/includes/homeserver-scheduling-connector-v620.php';
@@ -198,7 +199,8 @@ function vp3_upgrade_complete(): bool
         && artist_media_v182_schema_ready()
         && artist_posts_v183_schema_ready()
         && artist_shows_v184_schema_ready()
-        && artist_music_v185_schema_ready();
+        && artist_music_v185_schema_ready()
+        && table_exists('social_feed_posts_v1');
 }
 
 $error = '';
@@ -210,6 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             ensure_access_schema();
+            social_feed_schema_v1(db());
             subscription_ensure_schema();
             subscription_entitlements_v340_ensure_schema();
                     artist_workspace_v104_ensure_schema();
