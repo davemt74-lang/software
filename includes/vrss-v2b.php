@@ -21,7 +21,7 @@ function vp3_vrss_agent_query_v2b(string $query,array $user,int $conversationId=
         }elseif($social&&preg_match('/\b(?:followers?|connections?|delivery)\b/i',$query)&&!preg_match('/\bfollow\s/i',$query)){
             $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.status','arguments'=>[],'confirmed'=>false],$remote);
             $result=(array)$payload['result'];$state=(array)($result['social']??[]);
-            $answer='VRSS has '.(int)($state['followers']??0).' verified followers and follows '.(int)($state['following']??0).' profiles. '.count((array)($state['deliveries']??[])).' connection updates are waiting for delivery.';
+            $answer='VRSS has '.(int)($state['followers']??0).' verified followers and follows '.(int)($state['following']??0).' profiles. '.(int)($state['pending_deliveries']??count((array)($state['deliveries']??[]))).' connection updates are waiting for delivery.';
             foreach(array_slice((array)($state['relations']??[]),0,10) as $relation){
                 if(($relation['state']??'')==='removed'||!empty($relation['blocked']))continue;
                 $name=mb_substr(str_replace(["\r","\n"],[' ',' '],(string)($relation['name']??'Profile')),0,120);
