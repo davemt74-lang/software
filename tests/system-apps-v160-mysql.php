@@ -133,6 +133,7 @@ $vrssRemote=static function(int $uid,string $operation,array $payload)use(&$vrss
     $vrssCalls[]=$payload;
     if($payload['action']==='vrss.social.comment_review')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['comment'=>['id'=>$payload['arguments']['comment_id'],'name'=>'Alice','body'=>'Exact text awaiting moderation','state'=>'pending','revision'=>3,'can_moderate'=>true]]];
     if($payload['action']==='vrss.social.comments')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['thread'=>['owner'=>true,'items'=>[['id'=>'https://alice.example/vrss/v1/comments/22222222-2222-4222-8222-222222222222','name'=>'Alice','body'=>'A comment','state'=>'pending']],'next_cursor'=>'']]];
+    if($payload['action']==='vrss.social.reposts')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['repost'=>['reposts'=>2,'reposted'=>true,'published'=>true,'pending'=>false]]];
     if($payload['action']==='vrss.social.reactions')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['reaction'=>['likes'=>2,'liked'=>true,'pending'=>false]]];
     $value=$payload['action']==='vrss.status'?['subscriptions'=>[['error'=>''],['error'=>'retry']]]:
       ($payload['action']==='vrss.social.status'?['social'=>['followers'=>2,'following'=>1,'deliveries'=>[],'relations'=>[]]]:($payload['action']==='vrss.feed'?['feed'=>['items'=>[['title'=>'A real post']]]]:['queued'=>2]));
@@ -188,6 +189,16 @@ foreach(['comment VRSS '.$postUrl.': Keep the hosting text intact'=>'vrss.social
  vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);
  if(count($vrssCalls)!==$before+1)throw new RuntimeException('Comment approval executed twice.');
 }
+foreach(['repost'=>true,'undo repost'=>false] as $command=>$enabled){
+ $before=count($vrssCalls);$reply=vp3_vrss_agent_query_v2b($command.' VRSS '.$postUrl,$owner,42,$vrssRemote,$testPdo);$plan=$reply['system_app_plan']??null;
+ if(!$plan||empty($plan['requires_confirmation'])||count($vrssCalls)!==$before)throw new RuntimeException('Repost ran before confirmation.');
+ vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);$call=end($vrssCalls);
+ if($call['action']!=='vrss.social.repost'||$call['arguments']['url']!==$postUrl||$call['arguments']['enabled']!==$enabled||!preg_match('/^[a-f0-9]{32}$/D',$call['arguments']['request_id']))throw new RuntimeException('Repost approval changed exact intent or nonce.');
+ vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);
+ if(count($vrssCalls)!==$before+1)throw new RuntimeException('Repost approval executed twice.');
+}
+$reposts=vp3_vrss_agent_query_v2b('show VRSS reposts '.$postUrl,$owner,42,$vrssRemote,$testPdo);
+if(!str_contains($reposts['answer'],'2 reposts')||end($vrssCalls)['confirmed']!==false)throw new RuntimeException('Repost count read required a write.');
 $comments=vp3_vrss_agent_query_v2b('show VRSS comments '.$postUrl,$owner,42,$vrssRemote,$testPdo);
 if(!str_contains($comments['answer'],'A comment')||end($vrssCalls)['confirmed']!==false)throw new RuntimeException('Comment read required a write.');
 $cap=vp3_system_apps_capability_v160();

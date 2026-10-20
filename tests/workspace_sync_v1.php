@@ -195,10 +195,24 @@ $commentRows=$pdo->query("SELECT * FROM notifications WHERE type='vrss_new_comme
 check(count($commentRows)===1&&(int)$commentRows[0]['user_id']===1&&!notification_requires_attention($commentRows[0])&&strlen($commentRows[0]['source_type'])<=80,'Verified comment review notice is informational, scoped and deduplicated');
 $comment['data']['dismissed_at']='2026-10-20 02:00:00';$pushNotice([$comment]);
 check((int)$pdo->query("SELECT is_read FROM notifications WHERE type='vrss_new_comment'")->fetchColumn()===1,'Moderation dismissal reaches Cloud once');
+$repost=$comment;unset($repost['data']['dismissed_at']);$repost['source_id']='11';$repost['data']['id']=11;
+$repostId='https://alice.example/vrss/v1/reposts/33333333-3333-4333-8333-333333333333';$repostDigest=hash('sha256',$repostId);
+$repost['data']['event_key']='vrss.new_repost';$repost['data']['dedupe_key']='vrss-repost:'.$repostDigest;
+$repostMeta=['type'=>'open_app','app_key'=>'vp3.feed','verified_repost'=>true,'actor'=>$likeMeta['actor'],'post'=>$likeMeta['post'],'repost'=>$repostId,'receipt'=>$repostDigest];
+$repost['data']['action_json']=json_encode($repostMeta);
+foreach([['verified_repost'=>false],['actor'=>'https://forged.example/vrss/v1/actor'],['post'=>'https://bob.example/private'],['receipt'=>str_repeat('a',64)],['repost'=>'https://alice.example/vrss/v1/reposts/44444444-4444-4444-8444-444444444444']] as $change){
+ $bad=$repost;$bad['data']['action_json']=json_encode(array_replace($repostMeta,$change));$pushNotice([$bad]);
+ check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===4,'Forged repost metadata was not projected');
+}
+$pushNotice([$repost]);$pushNotice([$repost]);
+$repostRows=$pdo->query("SELECT * FROM notifications WHERE type='vrss_new_repost'")->fetchAll();
+check(count($repostRows)===1&&(int)$repostRows[0]['user_id']===1&&!notification_requires_attention($repostRows[0]),'Verified repost notices reach informational Chat once in the correct account');
+$repost['data']['dismissed_at']='2026-10-20 03:00:00';$pushNotice([$repost]);
+check((int)$pdo->query("SELECT is_read FROM notifications WHERE type='vrss_new_repost'")->fetchColumn()===1,'Undo repost dismissal reaches Cloud');
 $pushNotice([]);
 $pdo->exec("UPDATE homeserver_https_sessions SET status='revoked' WHERE user_id=1");
 try{workspace_sync_exchange_v1($session,['action'=>'prepare','dataset'=>'profile']);throw new LogicException('Stale session allowed');}catch(HomeServerHttpsSessionError $e){check($e->getCode()===410,'Fresh authority revocation');}
 rejected(fn()=>$pushNotice([$fake]),'Revoked session imported VRSS notifications');
-check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===4,'Revocation preserved the notification boundary');
+check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===5,'Revocation preserved the notification boundary');
 check(!$pdo->inTransaction(),'Failure always rolls back');
 echo "Workspace complete records, nested ownership, products, generic account data, chunk recovery, deletes, hashes and revoked sessions PASS\n";
