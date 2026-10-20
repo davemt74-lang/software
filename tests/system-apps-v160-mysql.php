@@ -132,6 +132,8 @@ $vrssRemote=static function(int $uid,string $operation,array $payload)use(&$vrss
     if($uid!==1||$operation!=='apps.control.invoke'||$payload['app_key']!=='vp3.feed')throw new RuntimeException('Invalid VRSS remote target.');
     $vrssCalls[]=$payload;
     if($payload['action']==='vrss.social.comment_review')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['comment'=>['id'=>$payload['arguments']['comment_id'],'name'=>'Alice','body'=>'Exact text awaiting moderation','state'=>'pending','revision'=>3,'can_moderate'=>true]]];
+    if($payload['action']==='vrss.social.conversations')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['conversations'=>['items'=>[['object'=>'https://social.example/vrss/v1/posts/11111111-1111-4111-8111-111111111111','enabled'=>true,'muted'=>false,'revision'=>7]]]]];
+    if($payload['action']==='vrss.social.thread')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['thread'=>['items'=>[['name'=>'Bob','body'=>'Public conversation reply']],'next_cursor'=>'']]];
     if($payload['action']==='vrss.social.comments')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['thread'=>['owner'=>true,'items'=>[['id'=>'https://alice.example/vrss/v1/comments/22222222-2222-4222-8222-222222222222','name'=>'Alice','body'=>'A comment','state'=>'pending']],'next_cursor'=>'']]];
     if($payload['action']==='vrss.social.reposts')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['repost'=>['reposts'=>2,'reposted'=>true,'published'=>true,'pending'=>false]]];
     if($payload['action']==='vrss.social.reactions')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['reaction'=>['likes'=>2,'liked'=>true,'pending'=>false]]];
@@ -201,6 +203,16 @@ $reposts=vp3_vrss_agent_query_v2b('show VRSS reposts '.$postUrl,$owner,42,$vrssR
 if(!str_contains($reposts['answer'],'2 reposts')||end($vrssCalls)['confirmed']!==false)throw new RuntimeException('Repost count read required a write.');
 $comments=vp3_vrss_agent_query_v2b('show VRSS comments '.$postUrl,$owner,42,$vrssRemote,$testPdo);
 if(!str_contains($comments['answer'],'A comment')||end($vrssCalls)['confirmed']!==false)throw new RuntimeException('Comment read required a write.');
+foreach(['follow','unfollow','mute','unmute'] as $verb){
+ $before=count($vrssCalls);$result=vp3_vrss_agent_query_v2b($verb.' VRSS conversation '.$postUrl,$owner,42,$vrssRemote,$testPdo);$plan=$result['system_app_plan']??null;
+ if(!$plan||empty($plan['requires_confirmation']))throw new RuntimeException('Conversation change must require review.');
+ foreach(array_slice($vrssCalls,$before) as $read)if($read['action']!=='vrss.social.conversations'||$read['confirmed']!==false)throw new RuntimeException('Conversation changed before confirmation.');
+ $before=count($vrssCalls);vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);$call=end($vrssCalls);
+ if($call['action']!=='vrss.social.conversation'||$call['arguments']['url']!==$postUrl||$call['arguments']['expected_revision']!==7||!preg_match('/^[a-f0-9]{32}$/D',$call['arguments']['request_id'])||$plan['preview']['conversation_muted']!==($verb==='mute'))throw new RuntimeException('Conversation review lost exact choices/revision/nonce.');
+ vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);if(count($vrssCalls)!==$before+1)throw new RuntimeException('Conversation confirmation executed twice.');
+}
+$thread=vp3_vrss_agent_query_v2b('show VRSS conversation '.$postUrl,$owner,42,$vrssRemote,$testPdo);if(!str_contains($thread['answer'],'Public conversation reply')||end($vrssCalls)['confirmed']!==false)throw new RuntimeException('Public conversation read requires no write.');
+$hosted=vp3_vrss_agent_query_v2b('follow VRSS conversation '.str_replace('social.example','hosting.social.example',$postUrl),$owner,42,$vrssRemote,$testPdo);if(empty($hosted['system_app_plan']['requires_confirmation']))throw new RuntimeException('Explicit conversation intent was stolen by a Hosting hostname.');
 $cap=vp3_system_apps_capability_v160();
 foreach(['consequential_agent_actions','explicit_confirmation','action_execution_lease','idempotent_confirmation_replay','agent_install_update','agent_hosting_bind_unbind','agent_reconcile'] as $key){
   if(empty($cap[$key]))throw new RuntimeException('Missing Agent action capability '.$key);
