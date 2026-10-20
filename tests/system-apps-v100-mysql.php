@@ -26,7 +26,7 @@ if($catalog['counts']['total']!==4||$catalog['counts']['owned']!==0||$catalog['c
 $testPdo->exec("DELETE FROM vp3_system_app_catalog WHERE app_key='vp3.feed'");
 $upgraded=vp3_system_apps_catalog_v100($userRow,$testPdo);
 $feed=array_values(array_filter($upgraded['apps'],fn($a)=>$a['app_key']==='vp3.feed'))[0]??null;
-if(!$feed||$feed['current_version']!=='1.5.0'||!$feed['eligible'])throw new RuntimeException('VRSS did not appear in an existing installation.');
+if(!$feed||$feed['current_version']!=='1.6.0'||!$feed['eligible'])throw new RuntimeException('VRSS did not appear in an existing installation.');
 
 $owned=vp3_system_apps_acquire_v100(1,'vp3.notes','self_service',null,$testPdo);
 if(empty($owned['owned'])||$owned['ownership_status']!=='active')throw new RuntimeException('Ownership was not created.');
