@@ -15,7 +15,16 @@ function vp3_vrss_agent_query_v2b(string $query,array $user,int $conversationId=
     $answer='';$result=[];
     try{
         $action='';$args=[];
-        if($social&&preg_match('/\b(?:unfollow|unblock|block|remove follower)\b/i',$query,$command)){
+        if($social&&preg_match('~^\s*(?:please\s+)?(like|unlike)\s+(?:this\s+)?VRSS(?:\s+post)?\s+(https://[^\s<>"\x27]+)\s*$~i',$query,$m)){
+            if(!vp3_vrss_post_url_v2d($m[2]))throw new RuntimeException('Include the canonical public VRSS post URL.');
+            $action='vrss.social.like';$args=['url'=>$m[2],'enabled'=>strtolower($m[1])==='like','request_id'=>bin2hex(random_bytes(16))];
+        }elseif($social&&preg_match('~^\s*(?:show|read|refresh)\s+VRSS\s+likes\s+(https://[^\s<>"\x27]+)\s*$~i',$query,$m)){
+            if(!vp3_vrss_post_url_v2d($m[1]))throw new RuntimeException('Include the canonical public VRSS post URL.');
+            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.reactions','arguments'=>['url'=>$m[1]],'confirmed'=>false],$remote);
+            $result=(array)$payload['result'];$reaction=(array)($result['reaction']??[]);
+            $answer=isset($reaction['likes'])?(int)$reaction['likes'].' like'.((int)$reaction['likes']===1?'':'s').' reported by the post author.':'The author’s like count is not available yet.';
+            if(!empty($reaction['pending']))$answer.=' Your '.(!empty($reaction['liked'])?'like':'unlike').' is waiting for delivery.';
+        }elseif($social&&preg_match('/\b(?:unfollow|unblock|block|remove follower)\b/i',$query,$command)){
             if(!preg_match('~https?://[^\s<>"\x27]+~i',$query,$m))throw new RuntimeException('Include the canonical VRSS actor URL from your connections.');
             $action='vrss.social.'.($command[0]==='remove follower'?'remove':strtolower($command[0]));$args=['actor'=>$m[0]];
         }elseif($social&&preg_match('/\b(?:followers?|connections?|delivery)\b/i',$query)&&!preg_match('/\bfollow\s/i',$query)){
@@ -69,26 +78,28 @@ function workspace_sync_vrss_notices_v2b(PDO $pdo,int $uid,array $records): void
     if(!function_exists('notification_create_locked')||!table_exists('notifications'))return;
     foreach($records as $record){
         $n=$record['data']??null;
-        if(($record['table']??'')!=='notifications'||!is_array($n)||($n['source_key']??'')!=='vp3.feed'||!in_array($n['event_key']??'',['vrss.new_posts','vrss.new_follower'],true))continue;
+        if(($record['table']??'')!=='notifications'||!is_array($n)||($n['source_key']??'')!=='vp3.feed'||!in_array($n['event_key']??'',['vrss.new_posts','vrss.new_follower','vrss.new_like'],true))continue;
         $key=$n['dedupe_key']??'';
         $follower=($n['event_key']??'')==='vrss.new_follower';
-        $type=$follower?'vrss_new_follower':'vrss_new_posts';
-        if($follower){
+        $like=($n['event_key']??'')==='vrss.new_like';
+        $type=$like?'vrss_new_like':($follower?'vrss_new_follower':'vrss_new_posts');
+        if($follower||$like){
             $meta=json_decode((string)($n['action_json']??''),true);
-            if(!is_string($key)||!preg_match('/^vrss-follower:([0-9a-f]{64})$/D',$key,$receipt)||!is_array($meta)
-                ||($meta['verified_follow']??false)!==true||($meta['receipt']??'')!==$receipt[1]
+            if(!is_string($key)||!preg_match($like?'/^vrss-like:([0-9a-f]{64})$/D':'/^vrss-follower:([0-9a-f]{64})$/D',$key,$receipt)||!is_array($meta)
+                ||($meta[$like?'verified_interaction':'verified_follow']??false)!==true||($meta['receipt']??'')!==$receipt[1]
                 ||($meta['app_key']??'')!=='vp3.feed'||!is_string($meta['actor']??null)
                 ||!vp3_vrss_actor_url_v2c($meta['actor']))continue;
+            if($like&&(!is_string($meta['post']??null)||!vp3_vrss_post_url_v2d($meta['post'])))continue;
         }elseif(!is_string($key)||!preg_match('/^vrss:[0-9a-f-]{36}:[0-9]+$/D',$key))continue;
-        $source=($follower?'vrss_follower:':'vrss_post_event:').hash('sha256',$key);
+        $source=($like?'vrss_like:':($follower?'vrss_follower:':'vrss_post_event:')).hash('sha256',$key);
         $q=$pdo->prepare('SELECT id FROM notifications WHERE user_id=? AND source_type=? AND source_id=1 AND type=? LIMIT 1');
         $q->execute([$uid,$source,$type]);$existing=$q->fetchColumn();
         $read=!empty($n['read_at'])||!empty($n['dismissed_at'])||!empty($n['archived_at']);
         if(!$existing&&!$read){
             $body=(string)($n['body']??'');
             $count=preg_match('/^([1-9][0-9]{0,2}) new posts /D',$body,$m)?min(100,(int)$m[1]):1;
-            notification_create_locked($uid,$type,$follower?'New VRSS follower':'New posts in your VRSS feed',
-                $follower?'A verified VRSS profile is now following you. Ask Agent Chat to show your VRSS followers.':$count.' new posts from a followed feed. Ask Agent Chat to show your VRSS posts.',
+            notification_create_locked($uid,$type,$like?'New VRSS like':($follower?'New VRSS follower':'New posts in your VRSS feed'),
+                $like?'A verified VRSS follower liked your post. Ask Agent Chat: show VRSS likes '.$meta['post']:($follower?'A verified VRSS profile is now following you. Ask Agent Chat to show your VRSS followers.':$count.' new posts from a followed feed. Ask Agent Chat to show your VRSS posts.'),
                 url('/apps.php'),$source,1,preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/D',(string)($n['created_at']??''))?(string)$n['created_at'].' UTC':(string)($n['created_at']??''));
         }elseif($existing&&$read){
             $pdo->prepare('UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?')->execute([(int)$existing,$uid]);
@@ -104,4 +115,14 @@ function vp3_vrss_actor_url_v2c(string $value): bool
     return is_array($url)&&($url['scheme']??'')==='https'&&!empty($url['host'])
         &&!isset($url['user'])&&!isset($url['pass'])&&!isset($url['query'])&&!isset($url['fragment'])
         &&(!isset($url['port'])||$url['port']===443)&&str_ends_with((string)($url['path']??''),'/vrss/v1/actor');
+}
+
+function vp3_vrss_post_url_v2d(string $value): bool
+{
+    if(strlen($value)>400||preg_match('/\s/',$value)||!filter_var($value,FILTER_VALIDATE_URL))return false;
+    $url=parse_url($value);
+    return is_array($url)&&($url['scheme']??'')==='https'&&!empty($url['host'])
+        &&!isset($url['user'])&&!isset($url['pass'])&&!isset($url['query'])&&!isset($url['fragment'])
+        &&(!isset($url['port'])||$url['port']===443)
+        &&preg_match('~/vrss/v1/posts/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$~D',(string)($url['path']??''))===1;
 }
