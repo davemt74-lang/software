@@ -15,7 +15,20 @@ function vp3_vrss_agent_query_v2b(string $query,array $user,int $conversationId=
     $answer='';$result=[];
     try{
         $action='';$args=[];$commentPreview=[];
-        if($social&&preg_match('~^\s*(?:please\s+)?comment\s+VRSS\s+(https://[^\s<>"\x27]+)\s*:\s+([\s\S]+)$~i',$query,$m)){
+        if($social&&preg_match('~^\s*(follow|unfollow|mute|unmute)\s+VRSS\s+conversation\s+(https://[^\s<>"\x27]+)\s*$~i',$query,$m)){
+            if(!vp3_vrss_post_url_v2d($m[2]))throw new RuntimeException('Include the canonical VRSS post URL.');
+            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.conversations','arguments'=>[],'confirmed'=>false],$remote);
+            $watch=['enabled'=>false,'muted'=>false,'revision'=>0];foreach((array)($payload['result']['conversations']['items']??[]) as $item){if(($item['object']??'')===$m[2]){$watch=$item;break;}}
+            if(!is_int($watch['revision']??null))throw new RuntimeException('Refresh the conversation controls first.');
+            $verb=strtolower($m[1]);$action='vrss.social.conversation';$args=['url'=>$m[2],'enabled'=>in_array($verb,['follow','unfollow'],true)?$verb==='follow':(bool)$watch['enabled'],'muted'=>in_array($verb,['mute','unmute'],true)?$verb==='mute':(bool)$watch['muted'],'expected_revision'=>$watch['revision'],'request_id'=>bin2hex(random_bytes(16))];$commentPreview=['conversation_followed'=>$args['enabled'],'conversation_muted'=>$args['muted'],'revision'=>$args['expected_revision']];
+        }elseif($social&&preg_match('~^\s*(?:show|read)\s+VRSS\s+conversation\s+(https://[^\s<>"\x27]+)(?:\s+after\s+([1-9][0-9]{0,15}))?\s*$~i',$query,$m)){
+            if(!vp3_vrss_post_url_v2d($m[1]))throw new RuntimeException('Include the canonical VRSS post URL.');
+            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.thread','arguments'=>['url'=>$m[1],'cursor'=>$m[2]??'0'],'confirmed'=>false],$remote);$result=(array)$payload['result'];$answer='Current public VRSS conversation:';
+            foreach(array_slice((array)($result['thread']['items']??[]),0,5) as $item){$answer.="\n\n".(string)($item['name']??'Author')."\n> ".str_replace("\n","\n> ",str_replace('`',"'",mb_substr((string)($item['body']??''),0,2000)));}
+            if(!empty($result['thread']['next_cursor']))$answer.="\nMore: show VRSS conversation ".$m[1].' after '.$result['thread']['next_cursor'];
+        }elseif($social&&preg_match('~^\s*(?:show|read)\s+VRSS\s+conversations\s*$~i',$query)){
+            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.conversations','arguments'=>[],'confirmed'=>false],$remote);$result=(array)$payload['result'];$answer='Your VRSS conversations:';foreach((array)($result['conversations']['items']??[]) as $item)$answer.="\n".(empty($item['enabled'])?'Not followed':(!empty($item['muted'])?'Followed · muted':'Followed')).' · '.(string)$item['object'];
+        }elseif($social&&preg_match('~^\s*(?:please\s+)?comment\s+VRSS\s+(https://[^\s<>"\x27]+)\s*:\s+([\s\S]+)$~i',$query,$m)){
             if(!vp3_vrss_post_url_v2d($m[1]))throw new RuntimeException('Include the canonical VRSS post URL.');
             $body=trim($m[2]);if($body===''||strlen($body)>2000)throw new RuntimeException('Include a shorter, nonempty comment.');
             $action='vrss.social.comment';$args=['url'=>$m[1],'body'=>$body,'parent'=>'','request_id'=>bin2hex(random_bytes(16))];$commentPreview=['comment'=>$body,'publication'=>'Awaits post-owner review'];
@@ -114,17 +127,18 @@ function workspace_sync_vrss_notices_v2b(PDO $pdo,int $uid,array $records): void
     if(!function_exists('notification_create_locked')||!table_exists('notifications'))return;
     foreach($records as $record){
         $n=$record['data']??null;
-        if(($record['table']??'')!=='notifications'||!is_array($n)||($n['source_key']??'')!=='vp3.feed'||!in_array($n['event_key']??'',['vrss.new_posts','vrss.new_follower','vrss.new_like','vrss.new_comment','vrss.new_repost'],true))continue;
+        if(($record['table']??'')!=='notifications'||!is_array($n)||($n['source_key']??'')!=='vp3.feed'||!in_array($n['event_key']??'',['vrss.new_posts','vrss.new_follower','vrss.new_like','vrss.new_comment','vrss.new_repost','vrss.mention','vrss.thread_reply'],true))continue;
         $key=$n['dedupe_key']??'';$event=$n['event_key'];
-        $kind=['vrss.new_follower'=>'follower','vrss.new_like'=>'like','vrss.new_comment'=>'comment','vrss.new_repost'=>'repost'][$event]??'posts';
+        $kind=['vrss.new_follower'=>'follower','vrss.new_like'=>'like','vrss.new_comment'=>'comment','vrss.new_repost'=>'repost','vrss.mention'=>'mention','vrss.thread_reply'=>'thread'][$event]??'posts';
         $type='vrss_new_'.$kind;
         if($kind!=='posts'){
             $meta=json_decode((string)($n['action_json']??''),true);
-            $flag=['follower'=>'verified_follow','like'=>'verified_interaction','comment'=>'verified_comment','repost'=>'verified_repost'][$kind];
+            $flag=['follower'=>'verified_follow','like'=>'verified_interaction','comment'=>'verified_comment','repost'=>'verified_repost','mention'=>'verified_conversation','thread'=>'verified_conversation'][$kind];
             if(!is_string($key)||!preg_match('/^vrss-'.$kind.':([0-9a-f]{64})$/D',$key,$receipt)||!is_array($meta)
                 ||($meta[$flag]??false)!==true||($meta['receipt']??'')!==$receipt[1]
                 ||($meta['app_key']??'')!=='vp3.feed'||!is_string($meta['actor']??null)||!vp3_vrss_actor_url_v2c($meta['actor']))continue;
-            if(in_array($kind,['like','comment','repost'],true)&&(!is_string($meta['post']??null)||!vp3_vrss_post_url_v2d($meta['post'])))continue;
+            if(in_array($kind,['like','comment','repost','mention','thread'],true)&&(!is_string($meta['post']??null)||!vp3_vrss_post_url_v2d($meta['post'])))continue;
+            if(in_array($kind,['mention','thread'],true)&&(!str_starts_with($meta['post'],substr($meta['actor'],0,-strlen('/actor')).'/posts/')||!is_string($meta['comment']??null)||($meta['comment']!==''&&!vp3_vrss_comment_url_v2e($meta['comment']))||($kind==='thread'&&$meta['comment']==='')))continue;
             if($kind==='repost'&&(!is_string($meta['repost']??null)||!vp3_vrss_repost_url_v2f($meta['repost'])
                 ||!str_starts_with($meta['repost'],substr($meta['actor'],0,-strlen('/actor')).'/reposts/')
                 ||hash('sha256',$meta['repost'])!==$receipt[1]))continue;
@@ -138,8 +152,9 @@ function workspace_sync_vrss_notices_v2b(PDO $pdo,int $uid,array $records): void
         $read=!empty($n['read_at'])||!empty($n['dismissed_at'])||!empty($n['archived_at']);
         if(!$existing&&!$read){
             $body=(string)($n['body']??'');$count=preg_match('/^([1-9][0-9]{0,2}) new posts /D',$body,$m)?min(100,(int)$m[1]):1;
-            $title=['repost'=>'New VRSS repost','comment'=>'VRSS comment awaiting review','like'=>'New VRSS like','follower'=>'New VRSS follower','posts'=>'New posts in your VRSS feed'][$kind];
+            $title=['mention'=>'VRSS mention','thread'=>'New reply in a followed conversation','repost'=>'New VRSS repost','comment'=>'VRSS comment awaiting review','like'=>'New VRSS like','follower'=>'New VRSS follower','posts'=>'New posts in your VRSS feed'][$kind];
             $message=match($kind){
+                'mention','thread'=>'A verified public conversation has an update. Ask Agent Chat: show VRSS conversation '.$meta['post'],
                 'repost'=>'A verified follower reposted your public post. Ask Agent Chat: show VRSS reposts '.$meta['post'],
                 'comment'=>'A verified follower submitted a comment or reply. Ask Agent Chat: show VRSS comments '.$meta['post'],
                 'like'=>'A verified VRSS follower liked your post. Ask Agent Chat: show VRSS likes '.$meta['post'],

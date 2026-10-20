@@ -209,10 +209,18 @@ $repostRows=$pdo->query("SELECT * FROM notifications WHERE type='vrss_new_repost
 check(count($repostRows)===1&&(int)$repostRows[0]['user_id']===1&&!notification_requires_attention($repostRows[0]),'Verified repost notices reach informational Chat once in the correct account');
 $repost['data']['dismissed_at']='2026-10-20 03:00:00';$pushNotice([$repost]);
 check((int)$pdo->query("SELECT is_read FROM notifications WHERE type='vrss_new_repost'")->fetchColumn()===1,'Undo repost dismissal reaches Cloud');
+foreach(['mention'=>'vrss.mention','thread'=>'vrss.thread_reply'] as $kind=>$event){
+ $item=$repost;unset($item['data']['dismissed_at']);$item['source_id']=$kind==='mention'?'12':'13';$item['data']['id']=(int)$item['source_id'];$item['data']['event_key']=$event;$receipt=hash('sha256','verified-conversation-'.$kind);$item['data']['dedupe_key']='vrss-'.$kind.':'.$receipt;
+ $meta=['app_key'=>'vp3.feed','verified_conversation'=>true,'actor'=>'https://bob.example/vrss/v1/actor','post'=>'https://bob.example/vrss/v1/posts/11111111-1111-4111-8111-111111111111','comment'=>$kind==='mention'?'':$commentId,'receipt'=>$receipt];
+ $before=(int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn();
+ foreach([['verified_conversation'=>false],['actor'=>'https://foreign.example/vrss/v1/actor'],['post'=>'https://bob.example/private'],['receipt'=>str_repeat('0',64)]] as $change){$bad=$item;$bad['data']['action_json']=json_encode(array_replace($meta,$change));$pushNotice([$bad]);check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===$before,'Conversation metadata must match verified public source and receipt');}
+ $item['data']['action_json']=json_encode($meta);$pushNotice([$item]);$pushNotice([$item]);$rows=$pdo->query("SELECT * FROM notifications WHERE type='vrss_new_".$kind."'")->fetchAll();check(count($rows)===1&&(int)$rows[0]['user_id']===1&&!notification_requires_attention($rows[0]),'Conversation notices are informational, account-scoped and deduplicated');
+ $item['data']['dismissed_at']='2026-10-20 03:30:00';$pushNotice([$item]);check((int)$pdo->query("SELECT is_read FROM notifications WHERE type='vrss_new_".$kind."'")->fetchColumn()===1,'Conversation mute/read dismissal reaches Cloud');
+}
 $pushNotice([]);
 $pdo->exec("UPDATE homeserver_https_sessions SET status='revoked' WHERE user_id=1");
 try{workspace_sync_exchange_v1($session,['action'=>'prepare','dataset'=>'profile']);throw new LogicException('Stale session allowed');}catch(HomeServerHttpsSessionError $e){check($e->getCode()===410,'Fresh authority revocation');}
 rejected(fn()=>$pushNotice([$fake]),'Revoked session imported VRSS notifications');
-check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===5,'Revocation preserved the notification boundary');
+check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===7,'Revocation preserved the notification boundary');
 check(!$pdo->inTransaction(),'Failure always rolls back');
 echo "Workspace complete records, nested ownership, products, generic account data, chunk recovery, deletes, hashes and revoked sessions PASS\n";
