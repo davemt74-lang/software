@@ -7,6 +7,7 @@ const VP3_WORKSPACE_SYNC_CHUNK=65536;
 const VP3_WORKSPACE_SYNC_MAX=67108864;
 const VP3_WORKSPACE_ASSET_CHUNK=1048576;
 require_once __DIR__.'/workspace-native-actions-v1.php';
+require_once __DIR__.'/vrss-v2b.php';
 
 function workspace_sync_registry_v1(): array
 {
@@ -416,7 +417,14 @@ function workspace_sync_exchange_v1(array $session,array $body): array
                 if(!is_int($offset)||$offset<0||$offset%VP3_WORKSPACE_SYNC_CHUNK!==0||$offset>=$total)throw new InvalidArgumentException('Invalid workspace offset.');
                 $out+=['revision'=>$snapshot['revision'],'offset'=>$offset,'total_bytes'=>$total,'chunk'=>base64_encode(substr($snapshot['body_json'],$offset,VP3_WORKSPACE_SYNC_CHUNK))];
             }elseif($action==='asset')$out+=workspace_sync_asset_chunk_v1($pdo,$uid,$dataset,$body);
-            elseif($action==='push')$out+=workspace_sync_receive_v1($pdo,$live,$dataset,$body);
+            elseif($action==='push'){
+                $out+=workspace_sync_receive_v1($pdo,$live,$dataset,$body);
+                if($dataset==='notifications'&&!empty($out['committed'])){
+                    $noticeSnapshot=workspace_sync_read_v1($pdo,$uid,'homeserver','notifications');
+                    $noticePayload=json_decode((string)($noticeSnapshot['body_json']??'{}'),true,512,JSON_THROW_ON_ERROR);
+                    workspace_sync_vrss_notices_v2b($pdo,$uid,(array)($noticePayload['records']??[]));
+                }
+            }
             else throw new InvalidArgumentException('Unknown workspace sync action.');
         }
         $pdo->commit();return $out;

@@ -28,6 +28,7 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
       'hosting.bind'=>'Assign Hosting',
       'hosting.unbind'=>'Remove Hosting',
       'reconcile'=>'Refresh apps',
+      'vrss.invoke'=>'VRSS Feed action',
     ];
     $title=$labels[$type]??'System App action';
     $appName=trim((string)($preview['app']??''));
