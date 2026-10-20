@@ -165,6 +165,7 @@ function notification_requires_attention(array $notification): bool
 
     $informational = [
         'vrss_new_posts',
+        'vrss_new_follower',
         'conversation_started',
         'new_track_release',
         'new_album_release',
