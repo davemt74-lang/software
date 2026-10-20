@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-profile-webmcp-v193.php';
+require_once __DIR__.'/vrss-v2b.php';
 
 /**
  * VP3 v4.00 canonical Agent tool authorization and execution boundary.
@@ -380,6 +381,9 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
         $mediaServer=vp3_media_server_agent_query_v270($query,$user,$conversationId,null);
         if(!empty($mediaServer['handled']))return vp3_agent_tool_authorize_result_v400($mediaServer,$user,$query);
     }
+
+    $vrss=vp3_vrss_agent_query_v2b($query,$user,$conversationId,null,$pdo);
+    if(!empty($vrss['handled']))return vp3_agent_tool_authorize_result_v400($vrss,$user,$query);
 
     if(function_exists('vp3_system_apps_permission_query_v210')){
         $systemAppsPermissions=vp3_system_apps_permission_query_v210($query,$user,$conversationId,null,$pdo);

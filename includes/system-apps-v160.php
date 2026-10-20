@@ -109,7 +109,7 @@ function vp3_system_apps_agent_prepare_v160(
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     vp3_system_apps_agent_actions_ensure_schema_v160($pdo);
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in user is required.');
-    $allowed=['ownership.acquire','install','update.verify','release.rollback','hosting.bind','hosting.unbind','reconcile','permission.set'];
+    $allowed=['ownership.acquire','install','update.verify','release.rollback','hosting.bind','hosting.unbind','reconcile','permission.set','vrss.invoke'];
     if(!in_array($actionType,$allowed,true))throw new RuntimeException('Unsupported System App Agent action.');
     $app=null;$appId=null;
     if($actionType!=='reconcile'){
@@ -155,6 +155,13 @@ function vp3_system_apps_agent_execute_v160(
     $stmt=$pdo->prepare('SELECT app_key FROM vp3_system_app_catalog WHERE id=? LIMIT 1');$stmt->execute([$appId]);
     $appKey=(string)$stmt->fetchColumn();if($appKey==='')throw new RuntimeException('System App no longer exists.');
 
+    if($type==='vrss.invoke'){
+        if($appKey!=='vp3.feed'||!in_array($payload['action']??'', ['vrss.follow','vrss.refresh_all'],true))throw new RuntimeException('Invalid VRSS action.');
+        vp3_system_apps_owned_row_v110($uid,$appKey,$pdo);
+        return ['vrss'=>vp3_system_apps_remote_v110($uid,'apps.control.invoke',[
+            'app_key'=>$appKey,'action'=>$payload['action'],'arguments'=>(array)($payload['arguments']??[]),'confirmed'=>true,
+        ],$remote)];
+    }
     if($type==='ownership.acquire'){
         return ['ownership'=>vp3_system_apps_acquire_v100($uid,$appKey,'agent_chat',(string)$row['public_id'],$pdo)];
     }

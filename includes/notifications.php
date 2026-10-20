@@ -164,6 +164,7 @@ function notification_requires_attention(array $notification): bool
     if ($type === 'client_release_update') return true;
 
     $informational = [
+        'vrss_new_posts',
         'conversation_started',
         'new_track_release',
         'new_album_release',

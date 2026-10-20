@@ -79,7 +79,7 @@ function vp3_system_apps_seed_v100(PDO $pdo): void
       ['vp3.notes','VP3 Notes','Productivity','Private lightweight notes stored in isolated HomeServer app data.','1.2.0','included',null,'vp3.notes',10],
       ['vp3.inventory','VP3 Inventory','Operations','Track local inventory counts and supplies on your HomeServer.','1.1.0','included',null,'vp3.inventory',20],
       ['vp3.checklists','VP3 Checklists','Productivity','Create local operational and personal checklists.','1.1.0','included',null,'vp3.checklists',30],
-      ['vp3.feed','VRSS Feed','Social','HomeServer-owned posts, profile and RSS reader. Publish through an existing Hosting subdomain and HTTPS route.','1.2.0','included',null,'vp3.feed',40],
+      ['vp3.feed','VRSS Feed','Social','HomeServer-owned posts, profile and RSS reader. Publish through an existing Hosting subdomain and HTTPS route.','1.3.0','included',null,'vp3.feed',40],
     ];
     $sql="INSERT INTO vp3_system_app_catalog
       (app_key,name,category,description,current_version,acquisition_mode,required_entitlement,homeserver_catalog_key,is_active,sort_order,metadata_json)
@@ -150,7 +150,7 @@ function vp3_system_apps_catalog_v100(?array $user=null,?PDO $pdo=null): array
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     if(!vp3_system_apps_schema_ready_v100($pdo))vp3_system_apps_ensure_schema_v100($pdo);
     // Existing installations already have the tables; seed the new included app once.
-    if(!$pdo->query("SELECT id FROM vp3_system_app_catalog WHERE app_key='vp3.feed' LIMIT 1")->fetchColumn())vp3_system_apps_seed_v100($pdo);
+    if($pdo->query("SELECT current_version FROM vp3_system_app_catalog WHERE app_key='vp3.feed' LIMIT 1")->fetchColumn()!=='1.3.0')vp3_system_apps_seed_v100($pdo);
     $userId=(int)($user['id']??0);
     $stmt=$pdo->prepare("SELECT c.*,o.id ownership_id,o.status ownership_status,o.source_kind ownership_source,
       o.acquired_at,o.revoked_at

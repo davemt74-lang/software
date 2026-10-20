@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'includes/homeserver-workspace-sync-v1.php'
+      - 'includes/vrss-v2b.php'
+      - 'includes/notifications.php'
       - 'includes/workspace-native-actions-v1.php'
       - 'includes/homeserver-contacts-v241.php'
       - 'knowledge.php'
@@ -19,6 +21,8 @@ on:
     branches: [main]
     paths:
       - 'includes/homeserver-workspace-sync-v1.php'
+      - 'includes/vrss-v2b.php'
+      - 'includes/notifications.php'
       - 'includes/workspace-native-actions-v1.php'
       - 'includes/homeserver-contacts-v241.php'
       - 'knowledge.php'

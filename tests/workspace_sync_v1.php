@@ -135,7 +135,32 @@ if($mysql){
     check(proc_close($process)===0&&$output==='revoked-after-lock','Concurrent revoke blocked late workspace writes: '.$errors);
     unlink($snapshotFile);unlink($ready);
 }
+$pdo->exec("UPDATE homeserver_https_sessions SET status='active' WHERE user_id=1");
+require __DIR__.'/../includes/notifications.php';
+function url(string $value=''):string{return $value;}
+$pdo->exec('CREATE TABLE notifications (id '.($mysql?'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY':'INTEGER PRIMARY KEY AUTOINCREMENT').',user_id INTEGER,type VARCHAR(50),title VARCHAR(190),body TEXT,target_url VARCHAR(500),source_type VARCHAR(80),source_id BIGINT,is_read INTEGER DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP)'.$tail);
+$notice=['table'=>'notifications','source_id'=>'7','data'=>[
+ 'id'=>7,'source_key'=>'vp3.feed','event_key'=>'vrss.new_posts','dedupe_key'=>'vrss:12345678-1234-4234-8234-123456789abc:3',
+ 'body'=>'2 new posts from a followed feed. Open VRSS to read them.','created_at'=>'2026-10-19 12:00:00',
+]];
+$pushNotice=static function(array $records)use($session):array{
+ $raw=json_encode(['contract'=>VP3_WORKSPACE_SYNC_V1,'source'=>'homeserver','dataset'=>'notifications','records'=>$records],JSON_THROW_ON_ERROR);
+ return workspace_sync_exchange_v1($session,['action'=>'push','dataset'=>'notifications','revision'=>hash('sha256',$raw),'offset'=>0,'total_bytes'=>strlen($raw),'chunk'=>base64_encode($raw)]);
+};
+check($pushNotice([$notice])['committed'],'VRSS notice snapshot committed');
+$pushNotice([$notice]);
+$rows=$pdo->query("SELECT * FROM notifications WHERE type='vrss_new_posts'")->fetchAll();
+check(count($rows)===1&&(int)$rows[0]['user_id']===1,'VRSS Cloud notification is account-bound and replay safe');
+check(!notification_requires_attention($rows[0])&&!notification_is_agent_brain_activity($rows[0]),'Posts use existing informational Chat delivery, not a forced decision');
+check(str_contains($rows[0]['body'],'2 new posts'),'Bounded new-post summary');
+$notice['data']['read_at']='2026-10-19 12:05:00';$pushNotice([$notice]);
+check((int)$pdo->query('SELECT is_read FROM notifications LIMIT 1')->fetchColumn()===1,'HomeServer read receipt marks Cloud notification read');
+$fake=$notice;$fake['source_id']='8';$fake['data']['dedupe_key']='vrss:12345678-1234-4234-8234-123456789abc:4';$fake['data']['event_key']='vrss.new_follower';unset($fake['data']['read_at']);
+$pushNotice([$fake]);check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===1,'Unauthenticated follower events are never projected');
+$pushNotice([]);
 $pdo->exec("UPDATE homeserver_https_sessions SET status='revoked' WHERE user_id=1");
 try{workspace_sync_exchange_v1($session,['action'=>'prepare','dataset'=>'profile']);throw new LogicException('Stale session allowed');}catch(HomeServerHttpsSessionError $e){check($e->getCode()===410,'Fresh authority revocation');}
+rejected(fn()=>$pushNotice([$fake]),'Revoked session imported VRSS notifications');
+check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===1,'Revocation preserved the notification boundary');
 check(!$pdo->inTransaction(),'Failure always rolls back');
 echo "Workspace complete records, nested ownership, products, generic account data, chunk recovery, deletes, hashes and revoked sessions PASS\n";
