@@ -156,7 +156,7 @@ function vp3_system_apps_agent_execute_v160(
     $appKey=(string)$stmt->fetchColumn();if($appKey==='')throw new RuntimeException('System App no longer exists.');
 
     if($type==='vrss.invoke'){
-        if($appKey!=='vp3.feed'||!in_array($payload['action']??'', ['vrss.follow','vrss.refresh_all','vrss.social.follow','vrss.social.unfollow','vrss.social.block','vrss.social.unblock','vrss.social.remove','vrss.social.like'],true))throw new RuntimeException('Invalid VRSS action.');
+        if($appKey!=='vp3.feed'||!in_array($payload['action']??'', ['vrss.follow','vrss.refresh_all','vrss.social.follow','vrss.social.unfollow','vrss.social.block','vrss.social.unblock','vrss.social.remove','vrss.social.like','vrss.social.comment','vrss.social.comment_delete','vrss.social.moderate'],true))throw new RuntimeException('Invalid VRSS action.');
         vp3_system_apps_owned_row_v110($uid,$appKey,$pdo);
         return ['vrss'=>vp3_system_apps_remote_v110($uid,'apps.control.invoke',[
             'app_key'=>$appKey,'action'=>$payload['action'],'arguments'=>(array)($payload['arguments']??[]),'confirmed'=>true,

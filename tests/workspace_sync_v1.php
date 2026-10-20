@@ -181,10 +181,24 @@ $likeRows=$pdo->query("SELECT * FROM notifications WHERE type='vrss_new_like'")-
 check(count($likeRows)===1&&(int)$likeRows[0]['user_id']===1&&!notification_requires_attention($likeRows[0])&&strlen($likeRows[0]['source_type'])<=80,'Verified likes reach informational Chat once within schema limits');
 $like['data']['read_at']='2026-10-20 01:00:00';$pushNotice([$like]);
 check((int)$pdo->query("SELECT is_read FROM notifications WHERE type='vrss_new_like'")->fetchColumn()===1,'Like read receipt reaches Cloud');
+$comment=$like;unset($comment['data']['read_at']);$comment['source_id']='10';$comment['data']['id']=10;
+$commentId='https://alice.example/vrss/v1/comments/22222222-2222-4222-8222-222222222222';$commentDigest=hash('sha256',$commentId);
+$comment['data']['event_key']='vrss.new_comment';$comment['data']['dedupe_key']='vrss-comment:'.$commentDigest;
+$commentMeta=['type'=>'open_app','app_key'=>'vp3.feed','verified_comment'=>true,'actor'=>$likeMeta['actor'],'post'=>$likeMeta['post'],'comment'=>$commentId,'receipt'=>$commentDigest];
+$comment['data']['action_json']=json_encode($commentMeta);
+foreach([['verified_comment'=>false],['actor'=>'https://forged.example/vrss/v1/actor'],['post'=>'https://bob.example/private'],['receipt'=>str_repeat('a',64)]] as $change){
+ $bad=$comment;$bad['data']['action_json']=json_encode(array_replace($commentMeta,$change));$pushNotice([$bad]);
+ check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===3,'Forged comment metadata was not projected');
+}
+$pushNotice([$comment]);$pushNotice([$comment]);
+$commentRows=$pdo->query("SELECT * FROM notifications WHERE type='vrss_new_comment'")->fetchAll();
+check(count($commentRows)===1&&(int)$commentRows[0]['user_id']===1&&!notification_requires_attention($commentRows[0])&&strlen($commentRows[0]['source_type'])<=80,'Verified comment review notice is informational, scoped and deduplicated');
+$comment['data']['dismissed_at']='2026-10-20 02:00:00';$pushNotice([$comment]);
+check((int)$pdo->query("SELECT is_read FROM notifications WHERE type='vrss_new_comment'")->fetchColumn()===1,'Moderation dismissal reaches Cloud once');
 $pushNotice([]);
 $pdo->exec("UPDATE homeserver_https_sessions SET status='revoked' WHERE user_id=1");
 try{workspace_sync_exchange_v1($session,['action'=>'prepare','dataset'=>'profile']);throw new LogicException('Stale session allowed');}catch(HomeServerHttpsSessionError $e){check($e->getCode()===410,'Fresh authority revocation');}
 rejected(fn()=>$pushNotice([$fake]),'Revoked session imported VRSS notifications');
-check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===3,'Revocation preserved the notification boundary');
+check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===4,'Revocation preserved the notification boundary');
 check(!$pdo->inTransaction(),'Failure always rolls back');
 echo "Workspace complete records, nested ownership, products, generic account data, chunk recovery, deletes, hashes and revoked sessions PASS\n";
