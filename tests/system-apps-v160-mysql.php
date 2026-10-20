@@ -131,6 +131,7 @@ $vrssCalls=[];
 $vrssRemote=static function(int $uid,string $operation,array $payload)use(&$vrssCalls):array{
     if($uid!==1||$operation!=='apps.control.invoke'||$payload['app_key']!=='vp3.feed')throw new RuntimeException('Invalid VRSS remote target.');
     $vrssCalls[]=$payload;
+    if($payload['action']==='vrss.social.reactions')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['reaction'=>['likes'=>2,'liked'=>true,'pending'=>false]]];
     $value=$payload['action']==='vrss.status'?['subscriptions'=>[['error'=>''],['error'=>'retry']]]:
       ($payload['action']==='vrss.social.status'?['social'=>['followers'=>2,'following'=>1,'deliveries'=>[],'relations'=>[]]]:($payload['action']==='vrss.feed'?['feed'=>['items'=>[['title'=>'A real post']]]]:['queued'=>2]));
     return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>$value];
@@ -159,6 +160,18 @@ foreach(['follow VRSS profile https://social.example/'=>'vrss.social.follow','un
  vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
  if(count($vrssCalls)!==$before+1)throw new RuntimeException('Social confirmation replayed twice.');
 }
+$postUrl='https://social.example/vrss/v1/posts/11111111-1111-4111-8111-111111111111';
+foreach(['like'=>true,'unlike'=>false] as $verb=>$enabled){
+ $before=count($vrssCalls);$reply=vp3_vrss_agent_query_v2b($verb.' VRSS '.$postUrl,$owner,42,$vrssRemote,$testPdo);$p=$reply['system_app_plan']??null;
+ if(!$p||empty($p['requires_confirmation'])||count($vrssCalls)!==$before)throw new RuntimeException('Reaction ran before confirmation.');
+ vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
+ $call=end($vrssCalls);
+ if($call['action']!=='vrss.social.like'||$call['arguments']['url']!==$postUrl||$call['arguments']['enabled']!==$enabled||!preg_match('/^[0-9a-f]{32}$/D',$call['arguments']['request_id']))throw new RuntimeException('Reaction approval did not preserve exact intent/nonce.');
+ vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
+ if(count($vrssCalls)!==$before+1)throw new RuntimeException('Reaction confirmation executed twice.');
+}
+$likes=vp3_vrss_agent_query_v2b('show VRSS likes '.$postUrl,$owner,42,$vrssRemote,$testPdo);
+if(!str_contains($likes['answer'],'2 likes')||end($vrssCalls)['confirmed']!==false)throw new RuntimeException('Read-only VRSS likes failed.');
 if(!empty(vp3_vrss_agent_query_v2b('host VRSS at my subdomain',$owner,42,$vrssRemote,$testPdo)['handled']))throw new RuntimeException('VRSS reader stole existing Hosting intent.');
 
 $cap=vp3_system_apps_capability_v160();

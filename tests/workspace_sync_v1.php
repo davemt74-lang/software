@@ -165,10 +165,26 @@ $followRows=$pdo->query("SELECT * FROM notifications WHERE type='vrss_new_follow
 check(count($followRows)===1&&!notification_requires_attention($followRows[0]),'Authenticated follower notices reach the informational Chat pipeline once');
 $verified['data']['dismissed_at']='2026-10-19 12:09:00';$pushNotice([$verified]);
 check((int)$pdo->query("SELECT is_read FROM notifications WHERE type='vrss_new_follower'")->fetchColumn()===1,'Follower dismissal receipt reaches Cloud');
+$like=$verified;$like['source_id']='9';$like['data']['id']=9;unset($like['data']['dismissed_at']);
+$like['data']['event_key']='vrss.new_like';$likeDigest=hash('sha256','verified-like');
+$like['data']['dedupe_key']='vrss-like:'.$likeDigest;
+$likeMeta=['type'=>'open_app','app_key'=>'vp3.feed','verified_interaction'=>true,'actor'=>'https://alice.example/vrss/v1/actor','post'=>'https://bob.example/vrss/v1/posts/11111111-1111-4111-8111-111111111111','receipt'=>$likeDigest];
+$like['data']['action_json']=json_encode($likeMeta);
+$badLike=$like;$badLike['data']['action_json']=json_encode(array_replace($likeMeta,['verified_interaction'=>false]));
+$pushNotice([$badLike]);check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===2,'Unverified reactions are not projected');
+$badLike['data']['action_json']=json_encode(array_replace($likeMeta,['post'=>'https://bob.example/private']));
+$pushNotice([$badLike]);check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===2,'Noncanonical reaction posts are not projected');
+$badLike['data']['action_json']=json_encode(array_replace($likeMeta,['receipt'=>str_repeat('a',64)]));
+$pushNotice([$badLike]);check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===2,'Mismatched reaction receipts are not projected');
+$pushNotice([$like]);$pushNotice([$like]);
+$likeRows=$pdo->query("SELECT * FROM notifications WHERE type='vrss_new_like'")->fetchAll();
+check(count($likeRows)===1&&(int)$likeRows[0]['user_id']===1&&!notification_requires_attention($likeRows[0])&&strlen($likeRows[0]['source_type'])<=80,'Verified likes reach informational Chat once within schema limits');
+$like['data']['read_at']='2026-10-20 01:00:00';$pushNotice([$like]);
+check((int)$pdo->query("SELECT is_read FROM notifications WHERE type='vrss_new_like'")->fetchColumn()===1,'Like read receipt reaches Cloud');
 $pushNotice([]);
 $pdo->exec("UPDATE homeserver_https_sessions SET status='revoked' WHERE user_id=1");
 try{workspace_sync_exchange_v1($session,['action'=>'prepare','dataset'=>'profile']);throw new LogicException('Stale session allowed');}catch(HomeServerHttpsSessionError $e){check($e->getCode()===410,'Fresh authority revocation');}
 rejected(fn()=>$pushNotice([$fake]),'Revoked session imported VRSS notifications');
-check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===2,'Revocation preserved the notification boundary');
+check((int)$pdo->query('SELECT count(*) FROM notifications')->fetchColumn()===3,'Revocation preserved the notification boundary');
 check(!$pdo->inTransaction(),'Failure always rolls back');
 echo "Workspace complete records, nested ownership, products, generic account data, chunk recovery, deletes, hashes and revoked sessions PASS\n";
