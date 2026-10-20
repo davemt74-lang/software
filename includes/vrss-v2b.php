@@ -9,7 +9,8 @@ function vp3_vrss_agent_query_v2b(string $query,array $user,int $conversationId=
     $social=(bool)preg_match('/\b(?:vrss|authenticated)\b/i',$query);
     $follow=(bool)preg_match('/^\s*(?:please\s+)?(?:follow|subscribe to)\s+https?:\/\//i',$query);
     if(!$feed&&!$follow)return $empty;
-    if(!preg_match('/^\s*(?:please\s+)?(?:comment|reply)\s+VRSS\b/i',$query)&&preg_match('/\b(?:hosting|subdomain|install|upgrade|update app)\b/i',$query))return $empty;
+    $conversationIntent=(bool)preg_match('/^\s*(?:follow|unfollow|mute|unmute|show|read)\s+VRSS\s+conversations?\b/i',$query);
+    if(!$conversationIntent&&!preg_match('/^\s*(?:please\s+)?(?:comment|reply)\s+VRSS\b/i',$query)&&preg_match('/\b(?:hosting|subdomain|install|upgrade|update app)\b/i',$query))return $empty;
     $uid=(int)($user['id']??0);if($uid<1)return $empty;
     $pdo??=db();if(!$pdo)return $empty;
     $answer='';$result=[];

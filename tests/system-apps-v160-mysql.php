@@ -212,6 +212,7 @@ foreach(['follow','unfollow','mute','unmute'] as $verb){
  vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);if(count($vrssCalls)!==$before+1)throw new RuntimeException('Conversation confirmation executed twice.');
 }
 $thread=vp3_vrss_agent_query_v2b('show VRSS conversation '.$postUrl,$owner,42,$vrssRemote,$testPdo);if(!str_contains($thread['answer'],'Public conversation reply')||end($vrssCalls)['confirmed']!==false)throw new RuntimeException('Public conversation read requires no write.');
+$hosted=vp3_vrss_agent_query_v2b('follow VRSS conversation '.str_replace('bob.example','hosting.bob.example',$postUrl),$owner,42,$vrssRemote,$testPdo);if(empty($hosted['system_app_plan']['requires_confirmation']))throw new RuntimeException('Explicit conversation intent was stolen by a Hosting hostname.');
 $cap=vp3_system_apps_capability_v160();
 foreach(['consequential_agent_actions','explicit_confirmation','action_execution_lease','idempotent_confirmation_replay','agent_install_update','agent_hosting_bind_unbind','agent_reconcile'] as $key){
   if(empty($cap[$key]))throw new RuntimeException('Missing Agent action capability '.$key);
