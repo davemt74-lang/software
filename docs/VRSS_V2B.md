@@ -13,3 +13,5 @@ New-follower notifications remain unavailable until verified identities and auth
 Validation: existing MySQL System Apps tests cover confirmed follow preparation, execution, exact confirmation replay, read-only status/posts, refresh intent and continued Hosting routing. Existing SQLite/MySQL workspace tests cover actual committed notification snapshots, dedupe, read receipts, ignored follower payloads and revoked-session rejection. HomeServer service/API/browser and Windows executable/installer certification gate coordinated deployment.
 
 Deploy the Cloud ZIP and run existing upgrade.php, then install the matching HomeServer build. The included catalog upgrades its Feed entry to 1.3.0; HomeServer upgrades known bundled Feed versions while preserving deliberately stopped state and local app data.
+
+V2C follow support supersedes this release's authenticated-follower limitation. See [VRSS_V2C.md](VRSS_V2C.md) for Feed 1.4.0, signed follows, new-follower notice delivery and acceptance boundaries.

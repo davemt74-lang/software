@@ -132,7 +132,7 @@ $vrssRemote=static function(int $uid,string $operation,array $payload)use(&$vrss
     if($uid!==1||$operation!=='apps.control.invoke'||$payload['app_key']!=='vp3.feed')throw new RuntimeException('Invalid VRSS remote target.');
     $vrssCalls[]=$payload;
     $value=$payload['action']==='vrss.status'?['subscriptions'=>[['error'=>''],['error'=>'retry']]]:
-      ($payload['action']==='vrss.feed'?['feed'=>['items'=>[['title'=>'A real post']]]]:['queued'=>2]);
+      ($payload['action']==='vrss.social.status'?['social'=>['followers'=>2,'following'=>1,'deliveries'=>[],'relations'=>[]]]:($payload['action']==='vrss.feed'?['feed'=>['items'=>[['title'=>'A real post']]]]:['queued'=>2]));
     return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>$value];
 };
 $planResult=vp3_vrss_agent_query_v2b('follow https://news.example/',$owner,42,$vrssRemote,$testPdo);
@@ -150,7 +150,15 @@ $refresh=vp3_vrss_agent_query_v2b('refresh my feed',$owner,42,$vrssRemote,$testP
 if(($refresh['system_app_plan']['preview']['operation']??'')!=='vrss.refresh_all')throw new RuntimeException('Refresh did not prepare the Feed action.');
 $count=count($vrssCalls);
 $followers=vp3_vrss_agent_query_v2b('show VRSS new follower notifications',$owner,42,$vrssRemote,$testPdo);
-if(!str_contains($followers['answer'],'not available yet')||count($vrssCalls)!==$count)throw new RuntimeException('Unsupported follower events were claimed or invoked.');
+if(!str_contains($followers['answer'],'2 verified followers')||count($vrssCalls)!==$count+1)throw new RuntimeException('Verified follower status did not reach Chat.');
+foreach(['follow VRSS profile https://social.example/'=>'vrss.social.follow','unfollow VRSS https://social.example/vrss/v1/actor'=>'vrss.social.unfollow','block VRSS https://social.example/vrss/v1/actor'=>'vrss.social.block','unblock VRSS https://social.example/vrss/v1/actor'=>'vrss.social.unblock','remove follower VRSS https://social.example/vrss/v1/actor'=>'vrss.social.remove'] as $query=>$action){
+ $before=count($vrssCalls);$reply=vp3_vrss_agent_query_v2b($query,$owner,42,$vrssRemote,$testPdo);$p=$reply['system_app_plan']??null;
+ if(!$p||empty($p['requires_confirmation'])||count($vrssCalls)!==$before)throw new RuntimeException('Social write ran before confirmation: '.$query);
+ vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
+ if(count($vrssCalls)!==$before+1||end($vrssCalls)['action']!==$action||end($vrssCalls)['confirmed']!==true)throw new RuntimeException('Confirmed social action did not use governed control: '.$query);
+ vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
+ if(count($vrssCalls)!==$before+1)throw new RuntimeException('Social confirmation replayed twice.');
+}
 if(!empty(vp3_vrss_agent_query_v2b('host VRSS at my subdomain',$owner,42,$vrssRemote,$testPdo)['handled']))throw new RuntimeException('VRSS reader stole existing Hosting intent.');
 
 $cap=vp3_system_apps_capability_v160();
