@@ -61,6 +61,61 @@ function clock(b){
 const result=(text,index=0)=>({resultIndex:index,results:Array.from({length:index+1},(_,i)=>({0:{transcript:i===index?text:'earlier',confidence:.9},isFinal:true}))});
 
 if(cloud){
+ function captureStartup(b,{lease=false,workspace=false}={}){
+  b.window.queueMicrotask=queueMicrotask;
+  b.window.STONEFELLOW_ARTIST_LISTENING_V172={endpoint:'/api/artist-listening-v172.php',csrf:'test',userId:1,schemaReady:true};
+  if(lease)load('voice-lease-v122.js',b);
+  load('artist-listening-recognition.js',b);
+  if(workspace)load('artist-listening-workspace.js',b);
+  load('artist-listening.js',b,'window.CaptureTest={state,startRecognition,stopCapture,render,seed:()=>{state.active=true;state.session={id:41,status:"active",segments:[]};state.captureStartedAt=performance.now();}};');
+  const api=b.window.CaptureTest;api.seed();return api;
+ }
+ for(const failure of ['silent','early-end','constructor','start-throw','network'])await test('transcription bounds '+failure+' startup without claiming capture or retaining audio',async()=>{
+  const b=browser(),timer=clock(b),natives=[];let starts=0,constructors=0;
+  b.window.SpeechRecognition=class{
+   constructor(){constructors++;if(failure==='constructor')throw Error('service unavailable');natives.push(this);}
+   start(){starts++;if(failure==='start-throw')throw Error('already starting');if(failure==='early-end')queueMicrotask(()=>this.onend?.({}));if(failure==='network'){this.onstart?.({});queueMicrotask(()=>this.onerror?.({error:'network'}));}}
+   abort(){this.onend?.({});}
+  };
+  const api=captureStartup(b);api.startRecognition();api.render();
+  if(failure!=='network')assert.equal(b.element('[data-listening-state]').textContent,'CONNECTING');
+  assert.equal(api.state.recordingActive,false);await flush();await timer.advance(failure==='silent'?35000:3000);
+  assert.equal(constructors,3);assert.equal(starts,failure==='constructor'?0:3);assert.equal(api.state.active,false);assert.equal(api.state.recordingActive,false);
+  assert.equal(api.state.recognition,null);assert.notEqual(b.element('[data-listening-state]').textContent,'TRANSCRIBING');
+  assert.equal(b.window.STONEFELLOW_ARTIST_LISTENING_RECOGNITION.startFailures,3);
+  for(const native of natives){native.onstart?.({});native.onresult?.(result('late words'));native.onend?.({});}
+  await timer.advance(1000);assert.equal(api.state.active,false);assert.equal(constructors,3);
+ });
+ await test('transcription successful restart preserves repeated finals with the actual lease and workspace wrappers',async()=>{
+  const b=browser(),timer=clock(b),natives=[];
+  b.window.SpeechRecognition=class{constructor(){natives.push(this);}start(){this.onstart?.({});}stop(){this.onend?.({});}abort(){this.onend?.({});}};
+  b.window.fetch=()=>new Promise(()=>{});const api=captureStartup(b,{lease:true,workspace:true});api.startRecognition();api.render();
+  assert.equal(b.element('[data-listening-state]').textContent,'TRANSCRIBING');assert.equal(api.state.recordingActive,false);
+  natives[0].onresult(result('repeat this'));natives[0].onend({});await timer.advance(35);assert.equal(natives.length,2);
+  natives[1].onresult(result('repeat this'));assert.equal(api.state.pending.length,2);assert.equal(api.state.pending.map(x=>x.text).join(' '),'repeat this repeat this');
+  const before=natives.length;const owner=api.state.recognition;assert(owner.pauseTranscription());await timer.advance(1000);assert.equal(natives.length,before);
+  assert(owner.resumeTranscription());assert.equal(natives.length,before+1);void api.stopCapture();assert.equal(api.state.active,false);owner.abort();
+ });
+ await test('transcription Stop releases a silent startup and fences late events',async()=>{
+  const b=browser(),timer=clock(b);let native,starts=0;
+  b.window.SpeechRecognition=class{constructor(){native=this;}start(){starts++;}abort(){this.onend?.({});}};
+  const api=captureStartup(b);api.startRecognition();await api.stopCapture();native.onstart?.({});native.onresult?.(result('late'));native.onend?.({});
+  await timer.advance(35000);assert.equal(starts,1);assert.equal(api.state.active,false);assert.equal(api.state.pending.length,0);assert.equal(api.state.recognition,null);
+ });
+ await test('silent intervals remain continuous rather than exhausting transcription startup retries',async()=>{
+  const b=browser(),timer=clock(b),natives=[];
+  b.window.SpeechRecognition=class{constructor(){natives.push(this);}start(){this.onstart?.({});}abort(){this.onend?.({});}};
+  const api=captureStartup(b);api.startRecognition();
+  for(let i=0;i<8;i++){natives.at(-1).onerror({error:'no-speech'});await timer.advance(35);}
+  assert.equal(api.state.active,true);assert.equal(natives.length,9);assert.equal(b.window.STONEFELLOW_ARTIST_LISTENING_RECOGNITION.startFailures,0);await api.stopCapture();
+ });
+ await test('ordinary Chat voice speech uses the blue header and has no retained-audio recorder',async()=>{
+  const page=source('chat.php');const rule=page.match(/body\[data-stonefellow-agent-state="speaking"\][^}]+}/)?.[0];assert(rule);assert.match(rule,/#58a6ff/);assert.doesNotMatch(rule,/#ff626b/);
+  assert.doesNotMatch(source('chat-voice.js'),/new\s+(?:window\.)?MediaRecorder\s*\(/);
+  assert.match(source('artist-listening.css'),/record-btn\.active[^}]+rgba\(255,92,101/);
+  assert.match(source('artist-listening.php'),/artist-listening-recognition\.js\?[^']+startup=20261022/);
+ });
+
  await test('distinct repeated utterances, result replay and document isolation',async()=>{
   const b=browser();load('artist-listening-realtime.js',b);const C=b.window.STONEFELLOW_ARTIST_LISTENING_REALTIME.TranscriptContinuity;
   const doc=new C('Earlier words');assert.equal(doc.finalize('say it again',1,{runId:'a',resultIndex:0}).delta,'say it again');
@@ -89,8 +144,79 @@ if(cloud){
  });
  function chat(b){
   b.window.STONEFELLOW_CHAT={userId:1,endpoint:'/api/chat.php'};b.window.STONEFELLOW_CHAT_VOICE_BOOT={button:b.element('chatVoiceButton'),intro:null};
-  load('chat-voice.js',b,'window.Test={createRecognition,handleVoiceApiFetch,interruptResponse,disableVoice,submitVoiceTranscript,speakAnswer,seed:()=>{voiceOn=true;},recognize:()=>{recognition=createRecognition();return recognition;},state:()=>({voiceOn,processing,speaking,activeRequest,pendingFinalTranscript,lastConversationId,proof})};');return b.window.Test;
+  load('chat-voice.js',b,'window.Test={enableVoice,startListening,createRecognition,handleVoiceApiFetch,interruptResponse,disableVoice,submitVoiceTranscript,speakAnswer,seed:()=>{voiceOn=true;},recognize:()=>{recognition=createRecognition();return recognition;},state:()=>({voiceOn,recognitionStarting,recognitionListening,recognition,processing,speaking,activeRequest,pendingFinalTranscript,lastConversationId,proof})};');return b.window.Test;
  }
+ await test('Conversation history timeout releases restoration and rejects late history',async()=>{
+  const b=browser(),timer=clock(b),waiting=deferred();let signal,commits=0;b.document.dispatchEvent=()=>true;
+  Object.assign(b.context,{chatRevision:0,restoringConversation:0,conversationId:1,contextReady:false,lastLoadedMessageId:0,
+   leaveChat(){b.context.chatRevision++;},api:(_payload,ownedSignal)=>{signal=ownedSignal;return waiting.promise;},
+   rememberConversation(){commits++;},restoreDraft(){},thread:b.element('chatThread'),welcome:null,closeNav(){},setChatCanvasView(){}});
+  const ui=source('chat.js'),from=ui.indexOf('  async function loadConversation(id)'),to=ui.indexOf('  async function syncConversationMessagesV101',from);
+  assert(from>=0&&to>from);vm.runInNewContext(ui.slice(from,to)+'\nwindow.loadHistoryForTest=loadConversation;',b.context);
+  const turn=b.window.loadHistoryForTest(7).catch(error=>error);await timer.advance(10000);
+  assert.match((await turn).message,/timed out/i);assert.equal(signal.aborted,true);assert.equal(b.context.restoringConversation,0);assert.equal(commits,0);
+  waiting.resolve({messages:[]});await flush();assert.equal(b.context.conversationId,1);assert.equal(commits,0);
+  b.context.api=async()=>({messages:[]});await b.window.loadHistoryForTest(8);
+  assert.equal(b.context.conversationId,8);assert.equal(b.context.contextReady,true);assert.equal(b.context.restoringConversation,0);assert.equal(commits,1);assert.equal(timer.pending.size,0);
+ });
+ await test('Chat bounds recognizers ending before startup and allows an explicit retry',async()=>{
+  const b=browser(),timer=clock(b);let starts=0;
+  b.window.SpeechRecognition=class{start(){starts++;queueMicrotask(()=>this.onend?.());}abort(){this.onend?.();}};
+  const api=chat(b);api.enableVoice();await timer.advance(5000);
+  assert.equal(starts,3);assert.equal(api.state().voiceOn,false);assert.match(b.element('chatVoiceStatus').textContent,/retry/i);
+  api.enableVoice();await flush();assert.equal(starts,4);api.disableVoice();
+ });
+ await test('Chat bounds conversation restore without opening a microphone or losing a draft',async()=>{
+  const b=browser(),timer=clock(b);let starts=0;
+  b.window.STONEFELLOW_CHAT_CONTINUITY={isRestoring:()=>true,isReady:()=>false};
+  b.window.SpeechRecognition=class{start(){starts++;}};
+  const api=chat(b);b.element('chatInput').value='keep this draft';api.enableVoice();
+  assert.match(b.element('chatVoiceStatus').textContent,/restoring/i);
+  await timer.advance(15000);assert.equal(api.state().voiceOn,false);assert.equal(starts,0);
+  assert.equal(b.element('chatInput').value,'keep this draft');assert.match(b.element('chatVoiceStatus').textContent,/conversation/i);
+ });
+ await test('Chat starts once after restoration and ignores obsolete start/end callbacks',async()=>{
+  const b=browser(),timer=clock(b);let restoring=true,starts=0;
+  b.window.STONEFELLOW_CHAT_CONTINUITY={isRestoring:()=>restoring,isReady:()=>true};
+  b.window.SpeechRecognition=class{start(){starts++;this.onstart?.();}abort(){queueMicrotask(()=>this.onend?.());}};
+  const api=chat(b);api.enableVoice();assert.equal(starts,0);restoring=false;await timer.advance(240);
+  assert.equal(starts,1);assert.equal(api.state().recognitionListening,true);
+  const old=api.state().recognition;api.disableVoice();api.enableVoice();old.onstart();old.onend();
+  await timer.advance(2500);assert.equal(starts,2);assert.equal(api.state().recognitionListening,true);api.disableVoice();
+ });
+ await test('Chat allows a slow first connection and Stop invalidates pending startup',async()=>{
+  const b=browser(),timer=clock(b);let starts=0,old;
+  b.window.SpeechRecognition=class{start(){starts++;old=this;b.context.setTimeout(()=>this.onstart?.(),5000);}abort(){this.onend?.();}};
+  const api=chat(b);api.enableVoice();await timer.advance(5000);
+  assert.equal(starts,1);assert.equal(api.state().recognitionListening,true);assert.equal(api.state().proof.recognitionStartTimeouts,0);
+  api.disableVoice();api.enableVoice();const cancelled=old;api.disableVoice();await timer.advance(15000);
+  cancelled.onstart();cancelled.onend();assert.equal(starts,2);assert.equal(api.state().voiceOn,false);assert.equal(api.state().recognitionListening,false);assert.equal(timer.pending.size,0);
+ });
+ await test('Chat startup watchdog bounds silent failures and rejects late start callbacks',async()=>{
+  const b=browser(),timer=clock(b);let starts=0,old;
+  b.window.SpeechRecognition=class{start(){starts++;old=this;}abort(){this.onend?.();}};
+  const api=chat(b);api.enableVoice();await timer.advance(35000);
+  assert.equal(starts,3);assert.equal(api.state().proof.recognitionStartTimeouts,3);assert.equal(api.state().voiceOn,false);
+  old.onstart();old.onend();assert.equal(api.state().recognitionListening,false);assert.match(b.element('chatVoiceStatus').textContent,/retry/i);assert.equal(timer.pending.size,0);
+ });
+ await test('Chat bounds recognition constructor failures instead of leaving startup active',async()=>{
+  const b=browser(),timer=clock(b);b.window.SpeechRecognition=class{constructor(){throw Error('speech service unavailable');}};
+  const api=chat(b);assert.doesNotThrow(()=>api.enableVoice());await timer.advance(5000);
+  assert.equal(api.state().voiceOn,false);assert.equal(api.state().recognitionStarting,false);assert.match(b.element('chatVoiceStatus').textContent,/retry/i);
+ });
+ for(const phrase of ['stop','new question please'])await test('Chat speech interruption handles '+phrase+' once and retains listening ownership',async()=>{
+  const b=browser(),timer=clock(b),natives=[],spoken=[],sent=[];
+  b.window.SpeechRecognition=class{constructor(){natives.push(this);}start(){this.onstart?.({});}stop(){queueMicrotask(()=>this.onend?.({}));}abort(){queueMicrotask(()=>this.onend?.({}));}};
+  b.window.speechSynthesis.speak=u=>spoken.push(u);b.element('chatForm').requestSubmit=()=>sent.push(b.element('chatInput').value);
+  const api=chat(b);api.seed();api.speakAnswer('The answer continues here');spoken[0].onstart();assert.equal(natives.length,1);
+  natives[0].onresult(result(phrase));await flush();
+  assert.equal(api.state().speaking,false);assert.equal(api.state().voiceOn,true);
+  if(phrase==='stop'){
+   assert.equal(api.state().proof.stopControls,1);assert.equal(b.events.filter(e=>e.type==='stonefellow:agent-stop').length,1);assert.equal(sent.length,0);
+   assert.equal(api.state().recognition,natives[1]);assert.equal(api.state().recognitionListening,true);
+  }else{assert.deepEqual(sent,[phrase]);assert.equal(api.state().proof.interruptions,1);}
+  api.disableVoice();await timer.advance(1000);assert.equal(api.state().recognitionListening,false);
+ });
  await test('Chat accepts non-Latin speech and distinct repeated native finals',async()=>{
   const b=browser();clock(b);const api=chat(b);api.seed();const a=api.recognize();a.onresult(result('你好 世界'));a.onresult(result('你好 世界'));assert.equal(api.state().pendingFinalTranscript,'你好 世界');
   const next=api.recognize();next.onresult(result('你好 世界'));assert.equal(api.state().pendingFinalTranscript,'你好 世界 你好 世界');api.disableVoice();
