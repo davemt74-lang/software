@@ -8,6 +8,7 @@
   const BARGE_RELEASE_TIMEOUT_MS=650;
   const NEAR_FIELD_WINDOW_MS=1100;
   const START_WATCHDOG_MS=2200;
+  const RESTORE_WAIT_MS=12000;
   const SHORT_COMMANDS=new Set(['yes','no','stop','pause','play','mute','solo','cancel','continue','resume','next','back','save','undo','redo','listen']);
   const cfg=window.STONEFELLOW_CHAT||{};
   const boot=window.STONEFELLOW_CHAT_VOICE_BOOT||{};
@@ -49,6 +50,7 @@
   let recognitionFailures=0;
   let restartTimer=0;
   let recognitionStartTimer=0;
+  let recognitionRestoreTimer=0;
   let inputStream=null;
   let inputTrack=null;
   let inputTrackPromise=null;
@@ -293,6 +295,7 @@
   }
 
   function clearRestart(){if(restartTimer)clearTimeout(restartTimer);restartTimer=0;}
+  function clearRestoreWait(){if(recognitionRestoreTimer)clearTimeout(recognitionRestoreTimer);recognitionRestoreTimer=0;}
   function clearStartWatchdog(){if(recognitionStartTimer)clearTimeout(recognitionStartTimer);recognitionStartTimer=0;}
   function clearTurnEndTimer(){if(turnEndTimer)clearTimeout(turnEndTimer);turnEndTimer=0;}
   function resetPendingFinal(){clearTurnEndTimer();pendingFinalTranscript='';}
@@ -318,12 +321,12 @@
   function scheduleListening(delay=180,reason='resume'){
     clearRestart();
     if(!voiceOn||speaking||processing||textBusy||voiceSubmitPending||bargeCapturing)return;
-    if(!recognitionListening&&!recognitionStarting)setAgentState('starting',pendingFinalTranscript?`Continuing · ${pendingFinalTranscript}`:'Connecting microphone…');
+    if(!recognitionListening&&!recognitionStarting)setAgentState('starting',reason==='conversation-restore'?'Restoring your conversation before listening…':pendingFinalTranscript?`Continuing · ${pendingFinalTranscript}`:'Connecting microphone…');
     restartTimer=setTimeout(()=>startListening(reason),Math.max(0,Number(delay)||0));
   }
 
   function stopRecognition(reason='pause',abort=false){
-    clearRestart();clearStartWatchdog();recognitionStopReason=reason;const current=recognition;if(!current)return;
+    clearRestart();clearStartWatchdog();clearRestoreWait();recognitionStopReason=reason;const current=recognition;if(!current)return;
     try{abort?current.abort():current.stop();}catch(error){}
   }
 
@@ -479,10 +482,11 @@
       }
     };
     current.onend=()=>{
-      if(recognition!==current)return;clearStartWatchdog();recognitionStarting=false;recognitionListening=false;proof.ends+=1;const reason=recognitionStopReason;recognitionStopReason='';log('SR_ENDED',{reason,ends:proof.ends});
+      if(recognition!==current)return;const endedBeforeStart=recognitionStarting;clearStartWatchdog();recognitionStarting=false;recognitionListening=false;proof.ends+=1;const reason=recognitionStopReason;recognitionStopReason='';log('SR_ENDED',{reason,ends:proof.ends});
       recognition=null;
       if(speaking&&bargeArmPending){bargeArmPending=false;clearBargeArmTimer();setTimeout(()=>startBarge(),0);return;}
       if(!voiceOn||processing||speaking||voiceSubmitPending||textBusy||bargeCapturing)return;if(reason==='submit'||reason==='response'||reason==='off'||reason==='pagehide')return;
+      if(endedBeforeStart&&!reason){recoverRecognition('Speech recognition ended before the microphone connected. Check this site’s microphone permission.','end-before-start');return;}
       scheduleListening(reason==='pause-window'?100:reason==='echo-tail'?260:180,'onend');
     };return current;
   }
@@ -490,19 +494,40 @@
   function startListening(reason='manual'){
     clearRestart();if(!voiceOn||processing||speaking||textBusy||voiceSubmitPending||bargeCapturing||recognitionStarting||recognitionListening)return false;
     const runtime=ChatRuntime;
-    if(runtime?.isRestoring?.()){scheduleListening(120,'conversation-restore');return false;}
+    if(runtime?.isRestoring?.()){
+      if(!recognitionRestoreTimer)recognitionRestoreTimer=setTimeout(()=>{
+        recognitionRestoreTimer=0;
+        if(!voiceOn||!runtime.isRestoring())return;
+        disableVoice({persist:false});setAgentState('error','Your conversation could not finish loading. Open a conversation or start a new chat, then select the microphone to retry.');
+      },RESTORE_WAIT_MS);
+      scheduleListening(120,'conversation-restore');return false;
+    }
+    clearRestoreWait();
     if(runtime?.isReady?.()===false){disableVoice({persist:true});setAgentState('error','Open a conversation or start a new chat before listening.');return false;}
     if(input.value.trim()&&!pendingFinalTranscript){disableVoice({persist:true});setAgentState('error','Your draft is kept. Send or clear it before listening again.');return false;}
     if(typeof SpeechRecognitionCtor!=='function'){disableVoice({persist:false});setAgentState('error','Browser speech recognition is unavailable.');return false;}
     if(!claimCapture()){disableVoice({persist:false});setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}
-    if(!recognition)recognition=createRecognition();const current=recognition;proof.startCalls+=1;recognitionStopReason='';recognitionStarting=true;setAgentState('starting',pendingFinalTranscript?`Continuing · ${pendingFinalTranscript}`:'Connecting microphone…');log('SR_START_CALL',{reason,call:proof.startCalls,userActivation:!!navigator.userActivation?.isActive});
-    const launch=()=>{try{startRecognizer(current,'listen');clearStartWatchdog();recognitionStartTimer=setTimeout(()=>{if(recognition!==current||!recognitionStarting)return;proof.recognitionStartTimeouts+=1;recognitionStarting=false;recognitionListening=false;proof.lastError='Speech recognition start timed out';log('SR_START_TIMEOUT',{count:proof.recognitionStartTimeouts,timeoutMs:START_WATCHDOG_MS});try{current.abort();}catch(error){}recognition=null;if(voiceOn&&!processing&&!speaking)recoverRecognition('Speech recognition did not start.','start-watchdog');},START_WATCHDOG_MS);return true;}catch(error){clearStartWatchdog();recognitionStarting=false;proof.errors+=1;proof.lastError=String(error?.message||error||'start failed');log('SR_START_THROW',{name:String(error?.name||'Error'),message:proof.lastError});recognition=null;if(voiceOn)recoverRecognition(proof.lastError,'start-throw');return false;}};
+    try{if(!recognition)recognition=createRecognition();}
+    catch(error){proof.errors+=1;log('SR_CONSTRUCTOR_ERROR',{name:String(error?.name||'Error'),message:String(error?.message||error||'')});recognition=null;recognitionStarting=false;recoverRecognition('Speech recognition could not start. Check this site’s microphone permission.','constructor-failed');return false;}
+    const current=recognition;proof.startCalls+=1;recognitionStopReason='';recognitionStarting=true;setAgentState('starting',pendingFinalTranscript?`Continuing · ${pendingFinalTranscript}`:'Connecting microphone…');log('SR_START_CALL',{reason,call:proof.startCalls,userActivation:!!navigator.userActivation?.isActive});
+    // A first connection can include the browser's microphone permission prompt.
+    const startTimeoutMs=proof.starts===0?10000:START_WATCHDOG_MS;
+    const launch=()=>{try{
+      clearStartWatchdog();recognitionStartTimer=setTimeout(()=>{
+        if(recognition!==current||!recognitionStarting)return;
+        proof.recognitionStartTimeouts+=1;recognitionStarting=false;recognitionListening=false;recognition=null;
+        proof.lastError='Speech recognition start timed out';log('SR_START_TIMEOUT',{count:proof.recognitionStartTimeouts,timeoutMs:startTimeoutMs});
+        try{current.abort();}catch(error){}
+        if(voiceOn&&!processing&&!speaking)recoverRecognition('Speech recognition did not start. Check this site’s microphone permission.','start-watchdog');
+      },startTimeoutMs);
+      startRecognizer(current,'listen');return true;
+    }catch(error){clearStartWatchdog();recognitionStarting=false;proof.errors+=1;proof.lastError=String(error?.message||error||'start failed');log('SR_START_THROW',{name:String(error?.name||'Error'),message:proof.lastError});recognition=null;if(voiceOn)recoverRecognition(proof.lastError,'start-throw');return false;}};
     void ensureProcessedMic();return launch();
   }
 
   function stopBarge(reason='stop',abort=true){clearBargeRestart();clearBargeCaptureTimer();clearBargeCandidate();const current=bargeRecognition;bargeRecognition=null;bargeStarting=false;bargeListening=false;if(current&&abort){try{current.abort();}catch(error){}}log('BARGE_SR_STOP',{reason});}
   function finishBargeCapture(text,reason='final'){const transcript=String(text||bargeLastText||'').trim();clearBargeCaptureTimer();bargeCapturing=false;bargeLastText='';stopBarge(`capture-${reason}`);if(!transcript){if(voiceOn&&!processing&&!speaking)scheduleListening(80,'barge-empty');return;}if(applyStopControl(transcript,`barge-${reason}`))return;proof.bargeSubmits+=1;proof.lastBargeTranscript=transcript;log('BARGE_SUBMIT',{text:transcript,reason,count:proof.bargeSubmits});submitVoiceTranscript(transcript);}
-  function cutOffForBarge(text){if(bargeCapturing)return;const seed=String(text||'').trim();if(applyStopControl(seed,'barge'))return;clearBargeCandidate();resetPendingFinal();bargeCapturing=true;bargeLastText=seed;proof.interruptions+=1;log('INTERRUPT',{trigger:'speech-recognition-barge',count:proof.interruptions,text:seed});activeSpeechEpoch=++speechEpoch;if(currentSpokenText)lastSpokenText=currentSpokenText;lastSpeechEndedAt=Date.now();try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}cancelActiveRequest();speaking=false;processing=false;currentSpokenText='';recognition=null;recognitionStarting=false;recognitionListening=false;updateComposer(seed);setAgentState('listening',seed?`Listening · ${seed}`:'Listening…');scheduleBargeCaptureFinish();}
+  function cutOffForBarge(text){if(bargeCapturing)return;const seed=String(text||'').trim();if(applyStopControl(seed,'barge'))return true;clearBargeCandidate();resetPendingFinal();bargeCapturing=true;bargeLastText=seed;proof.interruptions+=1;log('INTERRUPT',{trigger:'speech-recognition-barge',count:proof.interruptions,text:seed});activeSpeechEpoch=++speechEpoch;if(currentSpokenText)lastSpokenText=currentSpokenText;lastSpeechEndedAt=Date.now();try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}cancelActiveRequest();speaking=false;processing=false;currentSpokenText='';recognition=null;recognitionStarting=false;recognitionListening=false;updateComposer(seed);setAgentState('listening',seed?`Listening · ${seed}`:'Listening…');scheduleBargeCaptureFinish();}
 
   function createBargeRecognition(){
     const current=new SpeechRecognitionCtor();current.continuous=true;current.interimResults=true;current.lang=document.documentElement.lang||'en-US';
@@ -515,11 +540,11 @@
       if(echo){proof.echoRejects+=1;proof.bargeEchoRejects+=1;log('BARGE_ECHO_REJECTED',{final:!!finalText,text:heard,count:proof.bargeEchoRejects});if(!bargeCapturing)clearBargeCandidate();return;}
       if(!nearField&&!bargeCapturing){proof.noiseRejects+=1;clearBargeCandidate();log('BARGE_NOISE_REJECTED',{text:heard,count:proof.noiseRejects});return;}
       if(immediate&&semanticEcho&&nearField){proof.echoCommandOverrides+=1;log('BARGE_ECHO_COMMAND_OVERRIDE',{text:heard,count:proof.echoCommandOverrides});}
-      if(!bargeCapturing){const hits=recordBargeCandidate(heard);const enoughSpeech=speechTokens(heard).filter(word=>word.length>1).length>=2;const stableInterim=!finalText.trim()&&enoughSpeech&&hits>=2;const confirmed=!!finalText.trim()||immediate||stableInterim;if(!confirmed){bargeLastText=heard;log('BARGE_CANDIDATE',{text:heard,hits,enoughSpeech,reason:'await-confirmation'});return;}bargeLastText=heard;proof.lastBargeTranscript=heard;updateComposer(heard);if(stableInterim){proof.bargeFastCuts+=1;log('BARGE_FAST_CUT',{text:heard,hits,count:proof.bargeFastCuts});}cutOffForBarge(heard);}else{bargeLastText=heard;proof.lastBargeTranscript=heard;updateComposer(heard);setAgentState('listening',`Listening · ${heard}`);scheduleBargeCaptureFinish();}
+      if(!bargeCapturing){const hits=recordBargeCandidate(heard);const enoughSpeech=speechTokens(heard).filter(word=>word.length>1).length>=2;const stableInterim=!finalText.trim()&&enoughSpeech&&hits>=2;const confirmed=!!finalText.trim()||immediate||stableInterim;if(!confirmed){bargeLastText=heard;log('BARGE_CANDIDATE',{text:heard,hits,enoughSpeech,reason:'await-confirmation'});return;}bargeLastText=heard;proof.lastBargeTranscript=heard;updateComposer(heard);if(stableInterim){proof.bargeFastCuts+=1;log('BARGE_FAST_CUT',{text:heard,hits,count:proof.bargeFastCuts});}if(cutOffForBarge(heard))return;}else{bargeLastText=heard;proof.lastBargeTranscript=heard;updateComposer(heard);setAgentState('listening',`Listening · ${heard}`);scheduleBargeCaptureFinish();}
       if(finalText.trim())finishBargeCapture(finalText.trim(),'final');
     };
     current.onerror=event=>{if(bargeRecognition!==current)return;bargeStarting=false;bargeListening=false;proof.bargeErrors+=1;const kind=String(event?.error||'unknown');log('BARGE_SR_ERROR',{error:kind,count:proof.bargeErrors});bargeRecognition=null;if(bargeCapturing&&bargeLastText){finishBargeCapture(bargeLastText,`error:${kind}`);return;}if(voiceOn&&speaking&&kind!=='not-allowed'&&kind!=='service-not-allowed'){clearBargeRestart();bargeRestartTimer=setTimeout(()=>startBarge(),180);}};
-    current.onend=()=>{if(bargeRecognition!==current)return;bargeStarting=false;bargeListening=false;bargeRecognition=null;log('BARGE_SR_ENDED',{capturing:bargeCapturing,text:bargeLastText});if(bargeCapturing&&bargeLastText){finishBargeCapture(bargeLastText,'end');return;}const candidate=bargeCandidateText;if(candidate&&speechTokens(candidate).filter(word=>word.length>1).length>=2){cutOffForBarge(candidate);finishBargeCapture(candidate,'candidate-end');return;}clearBargeCandidate();bargeLastText='';if(voiceOn&&speaking){clearBargeRestart();bargeRestartTimer=setTimeout(()=>startBarge(),120);}};
+    current.onend=()=>{if(bargeRecognition!==current)return;bargeStarting=false;bargeListening=false;bargeRecognition=null;log('BARGE_SR_ENDED',{capturing:bargeCapturing,text:bargeLastText});if(bargeCapturing&&bargeLastText){finishBargeCapture(bargeLastText,'end');return;}const candidate=bargeCandidateText;if(candidate&&speechTokens(candidate).filter(word=>word.length>1).length>=2){if(cutOffForBarge(candidate))return;finishBargeCapture(candidate,'candidate-end');return;}clearBargeCandidate();bargeLastText='';if(voiceOn&&speaking){clearBargeRestart();bargeRestartTimer=setTimeout(()=>startBarge(),120);}};
     return current;
   }
 

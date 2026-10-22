@@ -2967,11 +2967,19 @@
   async function loadConversation(id) {
     leaveChat(); const revision = chatRevision;
     restoringConversation++;
+    const controller = new AbortController();
+    let restoreTimer = 0;
     try {
-    const data = await api({
+    const deadline = new Promise((_, reject) => {
+      restoreTimer = window.setTimeout(() => {
+        reject(new Error('Conversation loading timed out. Your draft is kept.'));
+        controller.abort();
+      }, 10000);
+    });
+    const data = await Promise.race([api({
       action:'load',
       conversation_id:Number(id)
-    });
+    }, controller.signal), deadline]);
 
     if(revision!==chatRevision)return;
     conversationId = Number(id); contextReady=true; rememberConversation(); restoreDraft();
@@ -3019,7 +3027,7 @@
     });
 
     closeNav();
-    } finally { restoringConversation--; }
+    } finally { window.clearTimeout(restoreTimer); restoringConversation--; }
   }
 
   async function syncConversationMessagesV101(id, signal) {

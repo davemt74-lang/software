@@ -2,10 +2,10 @@
 declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
-$controlBuild = 'chat-history-draft-recovery-20261018';
+$controlBuild = 'chat-history-draft-recovery-20261018-startup-20261021';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922';
-$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-provider-audit1';
+$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-provider-audit1-startup-20261021';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
@@ -349,7 +349,7 @@ $composerControls = '<style data-chat-controls-v142>'
     . '.chat-topbar>*{position:relative;z-index:1;}'
     . 'body[data-stonefellow-agent-state="listening"] .chat-topbar::after{opacity:1;background:linear-gradient(90deg,rgba(88,166,255,.16),rgba(88,166,255,.045));box-shadow:inset 0 -3px 0 #58a6ff;}'
     . 'body[data-stonefellow-agent-state="processing"] .chat-topbar::after{opacity:1;background:linear-gradient(90deg,rgba(73,209,125,.16),rgba(73,209,125,.045));box-shadow:inset 0 -3px 0 #49d17d;}'
-    . 'body[data-stonefellow-agent-state="speaking"] .chat-topbar::after{opacity:1;background:linear-gradient(90deg,rgba(255,98,107,.17),rgba(255,98,107,.045));box-shadow:inset 0 -3px 0 #ff626b;}'
+    . 'body[data-stonefellow-agent-state="speaking"] .chat-topbar::after{opacity:1;background:linear-gradient(90deg,rgba(88,166,255,.16),rgba(88,166,255,.045));box-shadow:inset 0 -3px 0 #58a6ff;}'
     . '</style>';
 
 $railLayout = '<style data-team-rail-layout-v111>'

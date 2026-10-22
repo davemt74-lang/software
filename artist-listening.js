@@ -146,7 +146,7 @@
     el.state.classList.toggle('active',!!active);
     button.classList.toggle('active',!!active);
     button.setAttribute('aria-pressed',active?'true':'false');
-    if(active)document.body.dataset.stonefellowCaptureState='transcribing';
+    if(active)document.body.dataset.stonefellowCaptureState=label==='CONNECTING'?'connecting':'transcribing';
     else delete document.body.dataset.stonefellowCaptureState;
   }
   function persist(){
@@ -242,7 +242,7 @@
     el.marker.disabled=!active;
     el.note.disabled=!active;
     el.speakerCount.textContent=String(Math.max(state.expectedSpeakers===1?1:0,state.speakerModel?.clusters?.length||0));
-    if(active)setCaptureState(state.noteArmed?'NOTE READY':'TRANSCRIBING',true);
+    if(active)setCaptureState(state.recognitionStarting||!state.recognition?'CONNECTING':state.noteArmed?'NOTE READY':'TRANSCRIBING',true);
     else if(state.pendingStop)setCaptureState('SAVING',false);
     else if(hasServerActive)setCaptureState('RECOVERED',false);
     else if(sessionIsDraft())setCaptureState('DRAFT SAVED',false);
@@ -323,7 +323,9 @@
   }
   function startRecognition(){
     if(!state.active||state.recognition||state.recognitionStarting||typeof SpeechRecognitionCtor!=='function')return false;
-    const current=new SpeechRecognitionCtor();state.recognition=current;state.recognitionStarting=true;
+    let current;
+    try{current=new SpeechRecognitionCtor();}catch(error){state.lastError=String(error?.message||'Speech recognition could not start.');proof.lastError=state.lastError;notify(state.lastError,'error');void stopCapture('recognition-error');return false;}
+    state.recognition=current;state.recognitionStarting=true;
     const runId=uuid();const acceptedResults=new Set();
     current.continuous=true;current.interimResults=true;current.lang=String(state.session?.language||document.documentElement.lang||'en-US');
     current.onspeechstart=()=>{if(state.recognition===current)state.utteranceStartedMs=elapsedMs();};
@@ -348,8 +350,9 @@
       if(state.recognition!==current)return;
       const code=String(event?.error||'speech-recognition-error');
       state.lastError=code;proof.lastError=code;
-      if(code==='not-allowed'||code==='service-not-allowed'){
-        notify('Microphone speech recognition permission is unavailable. Finalizing the private draft.','error');void stopCapture('permission-error');return;
+      if(['not-allowed','service-not-allowed','audio-capture','recognition-start-failed'].includes(code)){
+        const message=code==='recognition-start-failed'?String(event?.message||'Speech recognition did not connect. Select Start Listening to retry.'):code==='audio-capture'?'No usable microphone input is available.':'Microphone speech recognition permission is unavailable.';
+        void stopCapture('recognition-error');notify(message+' Your private transcript is kept.','error');return;
       }
       if(code!=='aborted'&&code!=='no-speech')notify(`Speech recognition paused: ${code}. Retrying…`,'error');
     };
