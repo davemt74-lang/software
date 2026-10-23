@@ -40,8 +40,9 @@
   const premium=typeof PremiumVoice==='function'?PremiumVoice({agentEndpoint:String(cfg.endpoint||'/api/chat.php'),csrf:String(cfg.csrf||'')}):null;
 
   let agentVoiceMaster=identityCfg.agentVoiceEnabled!==false;
+  // A saved preference is not permission to reopen capture on a new page.
+  // Start the microphone only from this page's explicit user action.
   let voiceOn=false;
-  try{voiceOn=agentVoiceMaster&&localStorage.getItem(MODE_KEY)==='1';}catch(error){}
 
   let recognition=null;
   let recognitionStarting=false;
@@ -508,7 +509,7 @@
     if(typeof SpeechRecognitionCtor!=='function'){disableVoice({persist:false});setAgentState('error','Browser speech recognition is unavailable.');return false;}
     if(!claimCapture()){disableVoice({persist:false});setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}
     try{if(!recognition)recognition=createRecognition();}
-    catch(error){proof.errors+=1;log('SR_CONSTRUCTOR_ERROR',{name:String(error?.name||'Error'),message:String(error?.message||error||'')});recognition=null;recognitionStarting=false;recoverRecognition('Speech recognition could not start. Check this site’s microphone permission.','constructor-failed');return false;}
+    catch(error){proof.errors+=1;log('SR_CONSTRUCTOR_ERROR',{name:String(error?.name||'Error'),message:String(error?.message||error||'')});recognition=null;recognitionStarting=false;recoverRecognition('Speech recognition could not initialize: '+String(error?.message||error?.name||'browser error')+'.','constructor-failed');return false;}
     const current=recognition;proof.startCalls+=1;recognitionStopReason='';recognitionStarting=true;setAgentState('starting',pendingFinalTranscript?`Continuing · ${pendingFinalTranscript}`:'Connecting microphone…');log('SR_START_CALL',{reason,call:proof.startCalls,userActivation:!!navigator.userActivation?.isActive});
     // A first connection can include the browser's microphone permission prompt.
     const startTimeoutMs=proof.starts===0?10000:START_WATCHDOG_MS;
@@ -694,7 +695,7 @@
 
   function renderDebug(){if(!new URLSearchParams(location.search).has('voice_debug'))return;let panel=document.getElementById('stonefellowVoiceDebug');if(!panel){panel=document.createElement('aside');panel.id='stonefellowVoiceDebug';panel.style.cssText='position:fixed;right:12px;bottom:12px;width:min(460px,calc(100vw - 24px));max-height:52vh;overflow:auto;z-index:99999;background:#111;color:#ddd;border:1px solid #444;border-radius:10px;padding:10px;font:11px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;box-shadow:0 10px 35px rgba(0,0,0,.35)';document.body.appendChild(panel);}const premiumProof=window.STONEFELLOW_PREMIUM_VOICE_V122||{};const latest=events.slice(-34).map(item=>`${item.at.slice(11,19)} ${item.type} ${JSON.stringify(item.detail)}`).join('\n');panel.textContent=`Stonefellow Voice Debug ${BUILD}\n\nvoice=${voiceOn?'ON':'OFF'} listening=${recognitionListening?'yes':'no'} processing=${processing?'yes':'no'} speaking=${speaking?'yes':'no'}\npause window=${TURN_END_PAUSE_MS}ms extensions=${proof.pauseExtensions} pending=${pendingFinalTranscript||'-'}\nnormal starts=${proof.starts} finals=${proof.finals} submits=${proof.submits}\nbarge starts=${proof.bargeStarts} results=${proof.bargeResults} captures=${proof.bargeSubmits} errors=${proof.bargeErrors}\nbarge candidates=${proof.bargeCandidates} fastCuts=${proof.bargeFastCuts} timeouts=${proof.bargeCaptureTimeouts}\necho rejects=${proof.echoRejects} bargeEcho=${proof.bargeEchoRejects} postSpeechEcho=${proof.postSpeechEchoRejects} commandOverrides=${proof.echoCommandOverrides}\nelevenLabs ready=${proof.premiumReady?'yes':'no'} credential=${premiumProof.credentialState||'unknown'} unlocked=${premiumProof.audioUnlocked?'yes':'no'} unlocks=${premiumProof.unlockSuccesses||0}/${premiumProof.unlockAttempts||0} playback=${premiumProof.lastPlaybackError||'ok'}\ninterruptions=${proof.interruptions} stopControls=${proof.stopControls} api=${proof.apiSuccess}/${proof.apiTurns} apiErrors=${proof.apiErrors}\nautoplay blocks=${proof.autoplayBlocks}\nlast transcript=${proof.lastTranscript||'-'}\nlast barge=${proof.lastBargeTranscript||'-'}\nlast error=${proof.lastError||'-'}\n\n${latest}`;}
 
-  button.addEventListener('click',event=>{const unlockOnly=voiceOn&&!!pendingIntroSpeech&&!speaking&&!processing;void requestPremiumUnlock('listen-button');if(unlockOnly){event.preventDefault();event.stopImmediatePropagation();return;}if(voiceOn&&(speaking||processing)){event.preventDefault();event.stopImmediatePropagation();interruptResponse('button');return;}void toggleVoice();},true);
+  button.addEventListener('click',event=>{if(voiceOn&&(speaking||processing)){event.preventDefault();event.stopImmediatePropagation();interruptResponse('button');return;}if(!voiceOn)void requestPremiumUnlock('listen-button');void toggleVoice();},true);
   const unlockFromGesture=event=>{if(event?.type==='keydown'&&event.repeat)return;void requestPremiumUnlock(event?.type||'user-gesture');};document.addEventListener('pointerdown',unlockFromGesture,{capture:true,once:true,passive:true});document.addEventListener('keydown',unlockFromGesture,{capture:true,once:true});
   document.addEventListener('click',event=>{const link=event.target.closest?.('a[href*="/admin/stems.php"],a[href*="/video-editor.php"]');if(!link)return;try{const target=new URL(link.href,location.href);if(target.origin!==location.origin)return;if(voiceOn)target.searchParams.set('voice','1');const cid=activeConversationId();if(cid>0)target.searchParams.set('conversation_id',String(cid));link.href=target.toString();}catch(error){}},true);
 
@@ -717,7 +718,7 @@
 
   const continuity={isVoice:()=>voiceOn,pendingVoiceSubmit:()=>voiceSubmitPending,conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
 
-  syncConversation(lastConversationId);if(!agentVoiceMaster&&voiceOn){voiceOn=false;try{localStorage.setItem(MODE_KEY,'0');}catch(error){}}syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{if(voiceOn){setAgentState('starting','Connecting microphone…');scheduleListening(0,'boot-persisted');}else setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
+  syncConversation(lastConversationId);syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
   window.addEventListener('storage',event=>{if(event.key===AGENT_VOICE_SYNC_KEY&&event.newValue){try{const sync=JSON.parse(event.newValue);if(sync?.enabled===false){agentVoiceMaster=false;if(voiceOn)disableVoice({persist:true});}}catch(error){}return;}if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(!next)disableVoice({persist:false});});
   window.addEventListener('stonefellow:voice-lease-lost',()=>{if(voiceOn)disableVoice({persist:false});});
   window.addEventListener('stonefellow:chat-context-changing',()=>{queuedTranscript='';disableVoice({persist:true});});

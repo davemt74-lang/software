@@ -126,7 +126,7 @@ window.addEventListener('stonefellow:stem-command-bus',function(){window.STONEFE
 window.addEventListener('stonefellow:agent-context',function(){window.STONEFELLOW_STUDIO_RUNTIME_PROBE.agentContext=true;});
 </script>
 HTML;
-$voicePrereqs = '<script src="' . e(url('/voice-lease-v122.js?v=' . $voiceToken . '&capture=interactive-listening-section2-20261003')) . '"></script>'
+$voicePrereqs = '<script src="' . e(url('/voice-lease-v122.js?v=' . $voiceToken . '&capture=interactive-capture-native-receiver-20261023')) . '"></script>'
               . '<script src="' . e(url('/premium-voice-v117.js?v=' . $voiceToken)) . '"></script>';
 $html = str_replace('</head>', $probe . $voicePrereqs . '</head>', $html);
 
