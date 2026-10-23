@@ -252,17 +252,33 @@ if(cloud){
   const api=chat(b);assert.doesNotThrow(()=>api.enableVoice());await timer.advance(5000);
   assert.equal(api.state().voiceOn,false);assert.equal(api.state().recognitionStarting,false);assert.match(b.element('chatVoiceStatus').textContent,/retry/i);
  });
- for(const phrase of ['stop','new question please'])await test('Chat speech interruption handles '+phrase+' once and retains listening ownership',async()=>{
+ for(const phrase of ['stop listening','please stop listening','turn off the microphone','Home Server offline okay you can stop listening','State reconciliation required last reconciled not yet last continuity changes zero stop zero stop listening'])await test('local capture Stop consumes '+phrase+' without a Chat request',async()=>{
+  const b=browser(),timer=clock(b);let sent=0;
+  b.window.SpeechRecognition=class{start(){this.onstart?.();}abort(){this.onend?.();}};
+  b.element('chatForm').requestSubmit=()=>sent++;
+  const api=chat(b);api.enableVoice();const old=api.state().recognition;old.onresult(result(phrase));await timer.advance(2500);
+  assert.equal(sent,0);assert.equal(api.state().voiceOn,false);assert.equal(api.state().recognitionListening,false);assert.equal(b.storage.get('stonefellow:voice-mode:1'),'0');
+  old.onresult(result('late echo'));await timer.advance(2500);assert.equal(sent,0);
+ });
+ for(const phrase of ["don't stop listening",'how do I stop listening','explain the stop listening command'])await test('discussion of '+phrase+' does not turn the microphone off',async()=>{
+  const b=browser();clock(b);const api=chat(b);api.seed();api.submitVoiceTranscript(phrase);
+  assert.equal(api.state().voiceOn,true);assert.equal(api.state().proof.stopControls,0);api.disableVoice();
+ });
+ for(const phrase of ['stop','Home Server offline okay you can stop','stop listening','State reconciliation required last reconciled not yet stop listening','new question please'])await test('Chat speech interruption handles '+phrase+' once',async()=>{
   const b=browser(),timer=clock(b),natives=[],spoken=[],sent=[];
   b.window.SpeechRecognition=class{constructor(){natives.push(this);}start(){this.onstart?.({});}stop(){queueMicrotask(()=>this.onend?.({}));}abort(){queueMicrotask(()=>this.onend?.({}));}};
   b.window.speechSynthesis.speak=u=>spoken.push(u);b.element('chatForm').requestSubmit=()=>sent.push(b.element('chatInput').value);
   const api=chat(b);api.seed();api.speakAnswer('The answer continues here');spoken[0].onstart();assert.equal(natives.length,1);
   natives[0].onresult(result(phrase));await flush();
-  assert.equal(api.state().speaking,false);assert.equal(api.state().voiceOn,true);
-  if(phrase==='stop'){
+  assert.equal(api.state().speaking,false);
+  if(phrase.endsWith('stop listening')){
+   assert.equal(api.state().voiceOn,false);assert.equal(api.state().recognitionListening,false);assert.equal(sent.length,0);
+   assert.equal(api.state().proof.stopControls,1);assert.equal(b.events.filter(e=>e.type==='stonefellow:agent-stop').length,1);
+  }else if(phrase!=='new question please'){
+   assert.equal(api.state().voiceOn,true);
    assert.equal(api.state().proof.stopControls,1);assert.equal(b.events.filter(e=>e.type==='stonefellow:agent-stop').length,1);assert.equal(sent.length,0);
    assert.equal(api.state().recognition,natives[1]);assert.equal(api.state().recognitionListening,true);
-  }else{assert.deepEqual(sent,[phrase]);assert.equal(api.state().proof.interruptions,1);}
+  }else{assert.equal(api.state().voiceOn,true);assert.deepEqual(sent,[phrase]);assert.equal(api.state().proof.interruptions,1);}
   api.disableVoice();await timer.advance(1000);assert.equal(api.state().recognitionListening,false);
  });
  await test('Chat accepts non-Latin speech and distinct repeated native finals',async()=>{

@@ -363,7 +363,8 @@
 
   function isPostSpeechEcho(value){if(!lastSpokenText||!lastSpeechEndedAt)return false;const age=Date.now()-lastSpeechEndedAt;if(age<0||age>POST_SPEECH_ECHO_MS)return false;return isLikelyStonefellowEcho(value,lastSpokenText,{allowSingle:false});}
   function isImmediateBargeCommand(value){const heard=normalizeSpeechText(value);return /^(?:stop|wait|pause|cancel|hold on|hang on|one second|just a second)\b/.test(heard);}
-  function isStopControl(value){const heard=normalizeSpeechText(value);return /^(?:stop|stop now|please stop|cancel|cancel that|pause|pause now|never mind|nevermind|that(?:'s| is) enough)$/.test(heard);}
+  function isStopListeningControl(value){const heard=normalizeSpeechText(value);if(/\b(?:don't|do not|never)\s+(?:stop|pause|disable|turn off)\b|\b(?:how|why|if|say|explain|phrase|command)\b/.test(heard))return false;return /\b(?:stop|pause|disable|turn off)\s+(?:the\s+)?(?:listening|microphone|mic|voice conversation)(?:\s+(?:now|please))?$/.test(heard);}
+  function isStopControl(value){const heard=normalizeSpeechText(value);return isStopListeningControl(heard)||/^(?:stop|stop now|please stop|cancel|cancel that|pause|pause now|never mind|nevermind|that(?:'s| is) enough)$/.test(heard)||/\b(?:okay|ok|please|you can)\s+stop(?:\s+now)?$/.test(heard);}
   function isLowValueTranscript(value){
     const heard=normalizeSpeechText(value);if(!heard)return true;
     if(/^(?:(?:ok(?:ay)?|um+|uh+|hmm+|yeah|yep|mhm|right|alright)\s*)+$/.test(heard))return true;
@@ -465,11 +466,11 @@
       if(recognition!==current)return;if(speaking||processing){log('SR_RESULT_IGNORED_BUSY',{speaking,processing});return;}
       recognitionFailures=0;proof.results+=1;let interim='';let finalText='';let finalConfidence=0;const start=Math.max(0,Number(event.resultIndex||0));
       for(let i=start;i<event.results.length;i+=1){const result=event.results[i];const text=String(result?.[0]?.transcript||'');if(result?.isFinal){if(deliveredFinals.has(i)){proof.duplicatesRejected+=1;continue;}deliveredFinals.add(i);finalText+=[finalText?' ':'',text].join('');finalConfidence=Math.max(finalConfidence,confidenceFor(result));}else interim+=text;}
-      const heard=String(finalText||interim||'').trim();if(!heard)return;const commandOverride=isImmediateBargeCommand(heard);
+      const heard=String(finalText||interim||'').trim();if(!heard)return;const commandOverride=isStopControl(heard)||isImmediateBargeCommand(heard);
       if(isPostSpeechEcho(heard)&&!commandOverride){proof.echoRejects+=1;proof.postSpeechEchoRejects+=1;log('SR_ECHO_REJECTED',{phase:'post-speech',final:!!finalText,text:heard,ageMs:Date.now()-lastSpeechEndedAt,count:proof.postSpeechEchoRejects});if(finalText.trim()){recognitionStopReason='echo-tail';try{current.stop();}catch(error){}}return;}
       if(commandOverride&&isPostSpeechEcho(heard)){proof.echoCommandOverrides+=1;log('SR_ECHO_COMMAND_OVERRIDE',{text:heard,count:proof.echoCommandOverrides});}
       const preview=[pendingFinalTranscript,heard].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();proof.lastTranscript=preview;updateComposer(preview);setAgentState('listening',`Listening · ${preview}`);log('SR_RESULT',{final:!!finalText,text:preview});
-      if(!finalText.trim())return;const finalTranscript=finalText.trim();const acceptance=acceptTranscript(finalTranscript,finalConfidence);if(!acceptance.ok){proof.lowConfidenceRejected+=1;updateComposer(pendingFinalTranscript);log('TRANSCRIPT_LOW_CONFIDENCE_REJECTED',{text:finalTranscript,confidence:finalConfidence,reason:acceptance.reason,count:proof.lowConfidenceRejected});recognitionStopReason='rejected';try{current.stop();}catch(error){}return;}proof.finals+=1;queueFinalTranscript(finalTranscript);recognitionStopReason='pause-window';try{current.stop();}catch(error){}
+      if(!finalText.trim())return;const finalTranscript=finalText.trim();const acceptance=acceptTranscript(finalTranscript,finalConfidence);if(!acceptance.ok){proof.lowConfidenceRejected+=1;updateComposer(pendingFinalTranscript);log('TRANSCRIPT_LOW_CONFIDENCE_REJECTED',{text:finalTranscript,confidence:finalConfidence,reason:acceptance.reason,count:proof.lowConfidenceRejected});recognitionStopReason='rejected';try{current.stop();}catch(error){}return;}proof.finals+=1;if(applyStopControl(finalTranscript,'recognition'))return;queueFinalTranscript(finalTranscript);recognitionStopReason='pause-window';try{current.stop();}catch(error){}
     };
     current.onerror=event=>{
       if(recognition!==current)return;clearStartWatchdog();recognitionStarting=false;recognitionListening=false;proof.errors+=1;const kind=String(event?.error||'unknown');proof.lastError=kind;log('SR_ERROR',{error:kind,message:String(event?.message||'')});
@@ -537,7 +538,7 @@
     current.onresult=event=>{
       if(bargeRecognition!==current||(!speaking&&!bargeCapturing)||!voiceOn)return;let interim='';let finalText='';const start=Math.max(0,Number(event.resultIndex||0));
       for(let i=start;i<event.results.length;i+=1){const result=event.results[i];const text=String(result?.[0]?.transcript||'');if(result?.isFinal)finalText+=text;else interim+=text;}
-      const heard=String(finalText||interim||'').trim();if(!heard)return;proof.bargeResults+=1;const reference=currentSpokenText||lastSpokenText;const immediate=isImmediateBargeCommand(heard);const semanticEcho=isLikelyStonefellowEcho(heard,reference,{allowSingle:true});const nearField=hasRecentNearFieldSpeech(immediate?760:NEAR_FIELD_WINDOW_MS);const echo=semanticEcho&&(!immediate||!nearField);log('BARGE_SR_RESULT',{final:!!finalText,text:heard,echo,semanticEcho,nearField,immediate,capturing:bargeCapturing,count:proof.bargeResults});
+      const heard=String(finalText||interim||'').trim();if(!heard)return;proof.bargeResults+=1;const reference=currentSpokenText||lastSpokenText;const immediate=isStopControl(heard)||isImmediateBargeCommand(heard);const semanticEcho=isLikelyStonefellowEcho(heard,reference,{allowSingle:true});const nearField=hasRecentNearFieldSpeech(immediate?760:NEAR_FIELD_WINDOW_MS);const echo=semanticEcho&&(!immediate||!nearField);log('BARGE_SR_RESULT',{final:!!finalText,text:heard,echo,semanticEcho,nearField,immediate,capturing:bargeCapturing,count:proof.bargeResults});
       if(echo){proof.echoRejects+=1;proof.bargeEchoRejects+=1;log('BARGE_ECHO_REJECTED',{final:!!finalText,text:heard,count:proof.bargeEchoRejects});if(!bargeCapturing)clearBargeCandidate();return;}
       if(!nearField&&!bargeCapturing){proof.noiseRejects+=1;clearBargeCandidate();log('BARGE_NOISE_REJECTED',{text:heard,count:proof.noiseRejects});return;}
       if(immediate&&semanticEcho&&nearField){proof.echoCommandOverrides+=1;log('BARGE_ECHO_COMMAND_OVERRIDE',{text:heard,count:proof.echoCommandOverrides});}
@@ -604,6 +605,11 @@
     const transcript=String(text||'').trim();
     if(!isStopControl(transcript))return false;
     proof.stopControls+=1;queuedTranscript='';voiceSubmitPending=false;resetPendingFinal();updateComposer('');
+    if(isStopListeningControl(transcript)){
+      disableVoice({persist:true});
+      try{window.dispatchEvent(new CustomEvent('stonefellow:agent-stop',{detail:{source,transcript,conversationId:activeConversationId(),interrupted:true,captureStopped:true}}));}catch(error){}
+      log('STOP_LISTENING_CONTROL',{source,count:proof.stopControls});return true;
+    }
     const interrupted=interruptResponse('voice-stop:'+source);
     try{window.dispatchEvent(new CustomEvent('stonefellow:agent-stop',{detail:{source,transcript,conversationId:activeConversationId(),interrupted}}));}catch(error){}
     log('STOP_CONTROL',{source,text:transcript,count:proof.stopControls,interrupted});

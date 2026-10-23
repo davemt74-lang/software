@@ -445,7 +445,7 @@ function chat_context_is_internal_source(string $source): bool
 {
     $source = strtolower(trim($source));
     if ($source === '') return true;
-    foreach (['agent-brain:', 'agent-context:', 'agent:', 'system:', 'execution:', 'runtime:', 'compute-routing:', 'profile:activity', 'knowledge-v162', 'calendar_awareness'] as $prefix) {
+    foreach (['agent-brain:', 'agent-context:', 'agent:', 'system:', 'execution:', 'runtime:', 'compute-routing:', 'profile:activity', 'knowledge-v162', 'calendar_awareness', 'homeserver:reconciliation', 'homeserver:execution-routing', 'system-apps:canonical', 'system-apps:health'] as $prefix) {
         if (str_starts_with($source, $prefix)) return true;
     }
     return false;
@@ -457,6 +457,23 @@ function chat_context_public_items(array $context): array
         $context,
         static fn(array $item): bool => !chat_context_is_internal_source((string)($item['source'] ?? ''))
     ));
+}
+
+function chat_response_context(string $query, array $context): array
+{
+    $statusIntent=(bool)preg_match('/\b(?:home\s*server|reconciliation|connection|compute|app(?:s|lication)?\s+(?:status|health)|system\s+status)\b/iu',$query);
+    $historyIntent=function_exists('agent_brain_v99_history_intent')&&agent_brain_v99_history_intent($query);
+    $musicIntent=track_is_music_request($query)||chat_is_production_query($query);
+    return array_values(array_filter($context, static function(array $item) use ($statusIntent,$historyIntent,$musicIntent,$query): bool {
+        $source=(string)($item['source']??'');
+        if(!$statusIntent&&in_array($source,['homeserver:reconciliation','homeserver:execution-routing','system-apps:canonical','system-apps:health'],true))return false;
+        if(!$historyIntent&&in_array($source,['agent-brain:overview','agent-brain:conversation-history','agent-brain:activity-history','agent-brain:tool-history','agent-brain:studio-history','agent-brain:production-assets','agent-brain:patterns'],true))return false;
+        if(!$musicIntent&&(str_starts_with($source,'database:track')||str_starts_with($source,'artist:track:'))){
+            $title=trim((string)($item['title']??''));
+            if($title===''||!preg_match('/(?<![\pL\pN])'.preg_quote($title,'/').'(?![\pL\pN])/iu',$query))return false;
+        }
+        return true;
+    }));
 }
 
 function chat_context_fallback_actions(string $query, array $context): array
@@ -477,84 +494,32 @@ function chat_context_fallback_actions(string $query, array $context): array
     ];
 }
 
-function chat_local_answer(string $query, array $context): string
+/** Last provider outcome in this request; never include credentials in replies. */
+function chat_ai_response_outcome(?array $result = null): array
 {
-    if (!$context) {
-        return "I couldn't find a matching Stonefellow database or knowledge-base item for that question yet. Try asking about a song, show, artist information, or something that has been added to the knowledge base.";
+    static $last = [];
+    if ($result !== null) $last = $result;
+    return $last;
+}
+
+function chat_local_answer(string $query, array $context, ?array $failure = null): string
+{
+    // Receipt of a message is known; microphone state and live hearing are not.
+    if (preg_match('/^\s*(?:are you listening|can you hear me|are you there)[?.!]*\s*$/iu', $query)) {
+        return 'Yes, your message reached me.';
     }
-
-    if (
-        track_is_music_request($query) &&
-        !chat_is_production_query($query)
-    ) {
-        $tracks = array_values(
-            array_filter(
-                $context,
-                static fn(array $item): bool =>
-                    (string)($item['source'] ?? '') ===
-                    'database:tracks'
-            )
-        );
-
-        if ($tracks) {
-            $lines = [];
-
-            foreach (
-                array_slice($tracks, 0, 7)
-                as $item
-            ) {
-                $text = trim(
-                    preg_replace(
-                        '/\s+/',
-                        ' ',
-                        (string)$item['text']
-                    ) ?? ''
-                );
-
-                if (
-                    mb_strlen($text) >
-                    220
-                ) {
-                    $text =
-                        mb_substr(
-                            $text,
-                            0,
-                            217
-                        )
-                        . '...';
-                }
-
-                $lines[] =
-                    '• ' . $text;
-            }
-
-            return
-                "Here are the Stonefellow tracks available to your account:\n\n"
-                . implode(
-                    "\n",
-                    $lines
-                );
-        }
+    $failure ??= chat_ai_response_outcome();
+    if (($failure['provider'] ?? '') === 'local') {
+        return 'AI conversation is unavailable because search-only mode is selected. Select a conversational AI provider in Agent settings to continue.';
     }
-
-    $publicContext = chat_context_public_items($context);
-    if (!$publicContext) {
-        return "I found relevant background context for this, but I’m keeping the internal memory, retrieval, tool and cognitive records behind the scenes. Choose one of the next-step options below and I’ll turn that context into something useful.";
+    if (!empty($failure['quota_exhausted'])) {
+        return 'I could not generate an AI reply because the account’s AI allowance or access check failed. Check AI access and usage, then retry your question.';
     }
-
-    $lines = [];
-    foreach (array_slice($publicContext, 0, 5) as $item) {
-        $text = trim(preg_replace('/\s+/', ' ', (string)($item['text'] ?? '')) ?? '');
-        if ($text === '') continue;
-        if (mb_strlen($text) > 360) $text = mb_substr($text, 0, 357) . '...';
-        $lines[] = '• ' . $text;
+    $error = (string)($failure['error'] ?? '');
+    if (preg_match('/not (?:fully )?configured|credentials|saved provider key|disabled|transport is unavailable/i', $error) || in_array((int)($failure['status'] ?? 0), [401,403], true)) {
+        return 'I could not connect to the configured AI service. Check the selected provider and its access in Agent settings, then retry your question.';
     }
-
-    if (!$lines) {
-        return "I found relevant information, but there isn’t a clean user-facing summary available yet.";
-    }
-
-    return "Here’s the useful information I found:\n\n" . implode("\n", $lines);
+    return 'I could not get an AI answer to your question. Your message is kept; please retry. I do not have a verified answer to give you yet.';
 }
 
 function chat_presentation_violation_v2370(string $answer): bool
@@ -583,6 +548,7 @@ function chat_presentation_violation_v2370(string $answer): bool
 function chat_remote_answer(string $query, array $history, array $context, array $user, ?array $turnControl = null): ?string
 {
     $result = ai_generate_chat_response($query, $history, $context, $user, null, $turnControl);
+    chat_ai_response_outcome($result);
 
     if (!($result['ok'] ?? false)) {
         return null;
@@ -591,6 +557,7 @@ function chat_remote_answer(string $query, array $history, array $context, array
     $answer = trim((string)($result['answer'] ?? ''));
     if($answer!==''&&chat_presentation_violation_v2370($answer)){
         error_log('VP3 v23.70 presentation firewall discarded an internal-context echo.');
+        chat_ai_response_outcome(['ok'=>false,'error'=>'Response presentation rejected.']);
         return null;
     }
     return $answer !== '' ? $answer : null;

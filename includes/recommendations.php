@@ -47,7 +47,7 @@ function track_detect_moods(string $query): array
 
     foreach (track_mood_aliases() as $mood => $aliases) {
         foreach ($aliases as $alias) {
-            if (str_contains($query, $alias)) {
+            if (preg_match('/(?<![\pL\pN])'.preg_quote($alias,'/').'(?![\pL\pN])/u', $query)) {
                 $detected[] = $mood;
                 break;
             }
@@ -60,11 +60,11 @@ function track_detect_moods(string $query): array
 function track_is_music_request(string $query): bool
 {
     $query = mb_strtolower($query);
+    if (preg_match('/\b(?:stop|pause|disable|turn off)\s+(?:the\s+)?(?:listening|microphone|mic)\b/u',$query)) return false;
     foreach ([
-        'song','songs','track','tracks','music','listen','play','playlist',
-        'recommend','suggest','mood','next song','next track','what should i hear'
+        'song','songs','track','tracks','music','play','playlist','next song','next track','what should i hear'
     ] as $needle) {
-        if (str_contains($query, $needle)) {
+        if (preg_match('/(?<![\pL\pN])'.preg_quote($needle,'/').'(?![\pL\pN])/u', $query)) {
             return true;
         }
     }
@@ -327,6 +327,7 @@ function track_media_suggestions(
     ?array $user = null,
     int $limit = 5
 ): array {
+    if (preg_match('/\b(?:stop|pause|disable|turn off)\s+(?:the\s+)?(?:listening|microphone|mic)\b/iu',$query)) return [];
     if (!track_is_music_request($query) && !track_detect_moods($query)) {
         return [];
     }

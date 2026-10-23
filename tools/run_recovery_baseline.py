@@ -244,6 +244,7 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 ]
 
 PHP_TESTS = [
+    'tests/chat-response-relevance.php',
     'tests/tracky-shared-scene-v1g3d.php',
     'tests/tracky-agent-eyes-experience-v1g4.php',
     'tests/tracky-agent-eyes-acceptance-v1g5.php',

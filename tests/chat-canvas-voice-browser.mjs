@@ -131,6 +131,12 @@ try {
   await page.getByRole('button',{name:'Start voice conversation'}).click();
   await page.waitForFunction(() => window.STONEFELLOW_CHAT_VOICE.starts > 0);
   console.log('PASS microphone starts through real lease');
+  await speak('stop listening');
+  await page.waitForFunction(()=>document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false');
+  assert.equal(sends().length,0,'Stop listening must not send a Chat question');
+  await page.getByRole('button',{name:'Start voice conversation'}).click();
+  await page.waitForFunction(()=>document.body.dataset.stonefellowAgentState==='listening');
+  console.log('PASS spoken stop listening releases capture and permits explicit restart without a Chat request');
   await page.evaluate(() => {
     const recognition=window.recognizers.findLast(item=>item.active);
     const interim=[{transcript:'Please answer',confidence:.98}];interim.isFinal=false;
