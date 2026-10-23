@@ -5,7 +5,7 @@ $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'chat-history-draft-recovery-20261018-startup-20261021';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922';
-$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-provider-audit1-startup-20261021';
+$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-native-controls-20261023';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
@@ -536,7 +536,7 @@ $runtime = $headerUiRuntime
          . $chatSettingsRuntime
          . '<script data-agent-updates-autodismiss-v173 data-agent-overlay-build="' . e($agentOverlayBuild) . '" src="' . e(url('/chat-agent-updates-autodismiss-v173.js?v=' . $agentOverlayBuild)) . '"></script>'
          . $voiceConfig
-         . '<script src="' . e(url('/voice-lease-v122.js?v=interactive-capture-section1-20261003')) . '"></script>'
+         . '<script src="' . e(url('/voice-lease-v122.js?v=interactive-capture-native-receiver-20261023')) . '"></script>'
          . '<script data-premium-voice-v142 data-premium-audio-unlock="v147" src="' . e(url('/premium-voice-v117.js?v=' . $premiumVoiceBuild)) . '"></script>'
          . '<script data-agent-context-v142 src="' . e(url('/agent-context-v131.js?v=' . $controlBuild . '&participants=section5-20261004')) . '"></script>'
          . '<script data-chat-voice data-chat-echo-guard="canonical" data-chat-streaming="enabled" data-chat-processed-input="enabled" data-chat-barge="speech-recognition" data-chat-turn-pause="1800" data-chat-lifecycle="canonical" src="' . e(url('/chat-voice.js?v=' . $voiceCacheBuild . '&capture=interactive-listening-section2-20261003')) . '"></script>'

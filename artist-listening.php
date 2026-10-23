@@ -259,7 +259,7 @@ $config = [
   window.STONEFELLOW_ARTIST_LISTENING_CONFIG=<?= json_encode($config, JSON_UNESCAPED_SLASHES|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
   window.STONEFELLOW_ARTIST_LISTENING_V172=window.STONEFELLOW_ARTIST_LISTENING_CONFIG;
 </script>
-  <script src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-section1-20261003')) ?>"></script>
+  <script src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-native-receiver-20261023')) ?>"></script>
   <script src="<?= e(url('/artist-listening-realtime.js?v=e07b7c39&listening=section2-20261003')) ?>"></script>
   <script src="<?= e(url('/artist-listening-recognition.js?v=artist-listening-normalized-20260903&listening=section2-20261003&startup=20261022')) ?>"></script>
   <script src="<?= e(url('/artist-listening-transcript.js?v=artist-listening-normalized-20260903&integrity=section4-20261003&transfer=section7-20261004')) ?>"></script>

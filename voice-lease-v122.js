@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const BUILD='interactive-capture-section1-20261003';
+  const BUILD='interactive-capture-native-receiver-20261023';
   const TTL_MS=6500;
   const RENEW_MS=1800;
   const RETRY_MS=1100;
@@ -102,7 +102,8 @@
       running=false;activeCount=Math.max(0,activeCount-1);pendingEndMeta={leaseLost:true};try{inner.abort();}catch(error){instances.delete(wrapper);try{wrapper.onend?.({type:'end',leaseLost:true});}catch(callbackError){}}
     };
   }
-  if(NativeRecognition)LeasedRecognition.prototype=NativeRecognition.prototype;
+  // Keep the facade separate from the native WebIDL prototype. Inheriting it
+  // makes handler assignments invoke native setters with a non-native receiver.
   if(NativeRecognition&&window.SpeechRecognition===NativeRecognition)window.SpeechRecognition=LeasedRecognition;
   if(NativeRecognition&&window.webkitSpeechRecognition===NativeRecognition)window.webkitSpeechRecognition=LeasedRecognition;
 

@@ -144,8 +144,56 @@ if(cloud){
  });
  function chat(b){
   b.window.STONEFELLOW_CHAT={userId:1,endpoint:'/api/chat.php'};b.window.STONEFELLOW_CHAT_VOICE_BOOT={button:b.element('chatVoiceButton'),intro:null};
-  load('chat-voice.js',b,'window.Test={enableVoice,startListening,createRecognition,handleVoiceApiFetch,interruptResponse,disableVoice,submitVoiceTranscript,speakAnswer,seed:()=>{voiceOn=true;},recognize:()=>{recognition=createRecognition();return recognition;},state:()=>({voiceOn,recognitionStarting,recognitionListening,recognition,processing,speaking,activeRequest,pendingFinalTranscript,lastConversationId,proof})};');return b.window.Test;
+  load('chat-voice.js',b,'window.Test={enableVoice,startListening,createRecognition,handleVoiceApiFetch,interruptResponse,disableVoice,submitVoiceTranscript,speakAnswer,queueIntro:()=>{pendingIntroSpeech="Queued greeting";},seed:()=>{voiceOn=true;},recognize:()=>{recognition=createRecognition();return recognition;},state:()=>({voiceOn,recognitionStarting,recognitionListening,recognition,processing,speaking,activeRequest,pendingFinalTranscript,lastConversationId,proof})};');return b.window.Test;
  }
+ await test('Chat lease supports native receiver checks through speech Stop and restart',async()=>{
+  const b=browser(),timer=clock(b),instances=[],receivers=new WeakMap(),spoken=[];
+  class NativeRecognition {
+   constructor(){receivers.set(this,{});instances.push(this);}
+   start(){this.onstart?.({});}
+   stop(){queueMicrotask(()=>this.onend?.({}));}
+   abort(){this.stop();}
+  }
+  for(const name of ['onstart','onend','onresult','onerror','onaudiostart','onaudioend','onnomatch','onsoundstart','onsoundend','onspeechstart','onspeechend'])Object.defineProperty(NativeRecognition.prototype,name,{
+   get(){if(!receivers.has(this))throw new TypeError('Illegal invocation');return receivers.get(this)[name];},
+   set(value){if(!receivers.has(this))throw new TypeError('Illegal invocation');receivers.get(this)[name]=value;}
+  });
+  b.window.SpeechRecognition=NativeRecognition;
+  load('voice-lease-v122.js',b);
+  b.window.speechSynthesis.speak=u=>spoken.push(u);
+  const api=chat(b);api.enableVoice();await flush();
+  assert.equal(api.state().recognitionListening,true);
+  api.speakAnswer('The answer continues here');spoken[0].onstart();await flush();await timer.advance(1);
+  assert.equal(api.state().speaking,true);assert.equal(api.state().proof.bargeStarts,1);
+  instances.at(-1).onresult(result('stop'));await flush();
+  assert.equal(api.state().speaking,false);assert.equal(api.state().proof.stopControls,1);assert.equal(api.state().recognitionListening,true);
+  api.disableVoice();await flush();assert.equal(api.state().voiceOn,false);
+  api.enableVoice();await flush();assert.equal(api.state().recognitionListening,true);api.disableVoice();
+  const transcription=browser();clock(transcription);transcription.window.SpeechRecognition=NativeRecognition;
+  const capture=captureStartup(transcription,{lease:true,workspace:true});capture.startRecognition();capture.render();
+  assert.equal(transcription.element('[data-listening-state]').textContent,'TRANSCRIBING');
+  instances.at(-1).onresult(result('transcription works'));assert.equal(capture.state.pending[0].text,'transcription works');
+  await capture.stopCapture();assert.equal(capture.state.active,false);
+ });
+ await test('a saved voice preference does not activate Chat capture on page load',async()=>{
+  const b=browser({storage:new Map([['stonefellow:voice-mode:1','1']])}),timer=clock(b);let starts=0,microphones=0;
+  b.window.SpeechRecognition=class{start(){starts++;this.onstart?.();}abort(){this.onend?.();}};
+  b.context.navigator.mediaDevices.getUserMedia=async()=>{microphones++;return stream();};
+  const api=chat(b);await timer.advance(1000);
+  assert.equal(api.state().voiceOn,false);assert.equal(starts,0);assert.equal(microphones,0);assert.equal(b.document.body.dataset.stonefellowAgentState,'idle');
+  api.enableVoice();await flush();assert.equal(starts,1);assert.equal(api.state().recognitionListening,true);api.disableVoice();
+ });
+ await test('microphone click stops a pending greeting and interrupts speech before restarting',async()=>{
+  const b=browser(),timer=clock(b),spoken=[];b.window.speechSynthesis.speak=u=>spoken.push(u);
+  b.window.SpeechRecognition=class{start(){this.onstart?.();}abort(){this.onend?.();}};
+  const api=chat(b),click=()=>{for(const fn of b.element('chatVoiceButton').listeners.click||[])fn({preventDefault(){},stopImmediatePropagation(){}});};
+  api.enableVoice();api.queueIntro();click();await flush();assert.equal(api.state().voiceOn,false);
+  api.enableVoice();api.speakAnswer('A response');spoken[0].onstart();click();await flush();
+  assert.equal(api.state().speaking,false);assert.equal(api.state().voiceOn,true);assert.equal(api.state().recognitionListening,true);
+  spoken[0].onend();assert.equal(api.state().recognitionListening,true);
+  click();await timer.advance(1000);assert.equal(api.state().voiceOn,false);assert.equal(api.state().recognitionListening,false);
+  click();await flush();assert.equal(api.state().recognitionListening,true);api.disableVoice();
+ });
  await test('Conversation history timeout releases restoration and rejects late history',async()=>{
   const b=browser(),timer=clock(b),waiting=deferred();let signal,commits=0;b.document.dispatchEvent=()=>true;
   Object.assign(b.context,{chatRevision:0,restoringConversation:0,conversationId:1,contextReady:false,lastLoadedMessageId:0,

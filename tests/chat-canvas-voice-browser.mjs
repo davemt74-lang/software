@@ -59,10 +59,25 @@ async function speak(text) {
 }
 const sends = () => calls.filter(call => call.action === 'send');
 try {
+  // Exercise actual browser WebIDL handler setters before replacing the service.
+  // This needs no microphone permission or connection to the speech provider.
+  await page.goto('http://chat.test/');
+  await page.evaluate(()=>{window.STONEFELLOW_CHAT={userId:1};window.NativeRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;});
+  assert.equal(await page.evaluate(()=>typeof window.NativeRecognition),'function');
+  await page.addScriptTag({content:await source('voice-lease-v122.js')});
+  const nativeConstruction=await page.evaluate(()=>{
+    const recognizer=new (window.SpeechRecognition||window.webkitSpeechRecognition)();
+    for(const name of ['onstart','onresult','onerror','onend','onspeechstart'])recognizer[name]=()=>{};
+    recognizer.continuous=false;recognizer.interimResults=true;recognizer.lang='en-US';
+    return {continuous:recognizer.continuous,interimResults:recognizer.interimResults,lang:recognizer.lang};
+  });
+  assert.deepEqual(nativeConstruction,{continuous:false,interimResults:true,lang:'en-US'});
+  console.log('PASS lease facade accepts actual Chromium recognition handlers and options');
   async function boot(fast=false) {
   await page.goto('http://chat.test/');
   await page.evaluate(fast => {
     window.STONEFELLOW_CHAT = {userId:1,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat'};
+    localStorage.setItem('stonefellow:voice-mode:1','1');
     window.STONEFELLOW_AGENT_CONTEXT = {userId:1,surface:'chat',csrf:'fixture',proactiveEndpoint:'/api/context'};
     window.STONEFELLOW_AGENT_IDENTITY_V236 = {agentVoiceEnabled:true};
     window.VP3_AGENT_TEAMS_A3 = {endpoint:'/api/agent-missions-cloud-v1.php',csrf:'fixture'};
@@ -92,6 +107,8 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('#chatToolsContent>details').length === 5);
   }
   await boot();
+  assert.equal(await page.evaluate(()=>window.recognizers.length),0,'A saved preference cannot reopen the microphone on page load');
+  assert.equal(await page.locator('#chatVoiceButton').getAttribute('aria-pressed'),'false');
   assert.equal(await page.locator('#chatToolsPanel').isVisible(), false);
   assert.equal(await page.locator('#chatComposerShell>.project-knowledge-r6').count(), 0);
   assert.equal(await page.locator('#chatToolsContent #chatKnowledgeScopeV162').count(), 1);

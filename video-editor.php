@@ -315,7 +315,7 @@ window.STONEFELLOW_AGENT_CONTEXT={
 <script src="<?= e(url('/agent-activity-v94.js?v=' . $conversationBuild)) ?>"></script>
 <script src="<?= e(url('/editor-media-button-v91.js?v=91')) ?>"></script>
 <script src="<?= e(url('/video-header-v92.js?v=100')) ?>"></script>
-<script src="<?= e(url('/voice-lease-v122.js?v=' . $voiceBuild . '&capture=interactive-listening-section2-20261003')) ?>"></script>
+<script src="<?= e(url('/voice-lease-v122.js?v=' . $voiceBuild . '&capture=interactive-capture-native-receiver-20261023')) ?>"></script>
 <script src="<?= e(url('/premium-voice-v117.js?v=' . $voiceBuild)) ?>"></script>
 <script src="<?= e(url('/conversation-voice-v122.js?v=' . $voiceBuild . '&capture=interactive-listening-section2-20261003')) ?>"></script>
 <script src="<?= e(url('/editor-voice-barge-v117.js?v=' . $voiceBuild . '&capture=interactive-listening-section2-20261003')) ?>"></script>

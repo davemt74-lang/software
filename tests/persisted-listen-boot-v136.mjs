@@ -6,9 +6,9 @@ const voice=fs.readFileSync('chat-voice.js','utf8');
 const assert=(ok,label)=>{console.log(`${ok?'PASS':'FAIL'} ${label}`);if(!ok)throw new Error(`Failed: ${label}`);};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
-assert(chat.includes("$controlBuild = 'chat-voice-canonical-20260903'"),'Chat keeps the canonical direct voice owner');
+assert(chat.includes('data-chat-lifecycle="canonical"'),'Chat keeps the canonical direct voice owner');
 assert(voice.includes('const MODE_KEY=`stonefellow:voice-mode:${userId}`'),'direct owner uses the existing per-user voice mode key');
-assert(voice.includes("voiceOn=localStorage.getItem(MODE_KEY)==='1'"),'direct owner restores persisted voice state');
+assert(!voice.includes("voiceOn=agentVoiceMaster&&localStorage.getItem(MODE_KEY)==='1'"),'saved mode does not reopen the microphone');
 assert(!chat.includes('premium-autoplay-v148.js?v='),'Chat does not insert a separate autoplay wrapper into the voice contract');
 assert(chat.includes('data-chat-lifecycle="canonical"')&&chat.includes('chat-voice.js?v='),'lifecycle repair stays on the canonical Agent Chat voice file');
 
@@ -61,16 +61,22 @@ form.requestSubmit=()=>{};
 vm.runInNewContext(voice,sandbox,{filename:'chat-voice.js'});
 await sleep(20);
 
-assert(starts===1&&recognizers.length===1,'persisted voice starts SpeechRecognition automatically without a click');
-assert(window.STONEFELLOW_CHAT_VOICE?.starts===1,'persisted boot reaches the recognizer onstart lifecycle');
-assert(body.dataset.stonefellowAgentState==='listening','persisted voice boot is blue LISTEN, not idle Voice conversation on');
-assert(status.dataset.state==='listening'&&status.textContent==='Listening…','visible voice status reports active Listening');
-assert(button.dataset.agentState==='listening','voice button is synchronized to the listening state');
-assert(store.get('stonefellow:voice-mode:1')==='1','automatic LISTEN boot does not rewrite persisted voice mode off');
+assert(starts===0&&recognizers.length===0,'saved mode cannot open recognition without a click');
+assert(body.dataset.stonefellowAgentState==='idle','page loads with capture idle');
+assert(button.attributes['aria-pressed']==='false','voice button reports capture off');
+for(const fn of button.listeners.click||[])fn({preventDefault(){},stopImmediatePropagation(){}});
+await sleep(20);
+assert(starts===1&&recognizers.length===1,'microphone click starts recognition once');
+assert(window.STONEFELLOW_CHAT_VOICE?.starts===1,'explicit start reaches recognition onstart');
+assert(body.dataset.stonefellowAgentState==='listening','explicit listening uses the blue state');
+for(const fn of button.listeners.click||[])fn({preventDefault(){},stopImmediatePropagation(){}});
+await sleep(20);
+assert(button.attributes['aria-pressed']==='false','microphone click turns listening off');
+assert(store.get('stonefellow:voice-mode:1')==='0','Stop clears the saved mode');
 
 assert(voice.includes('function isAutoplayBlockedError')&&voice.includes("log('INTRO_AUTOPLAY_BLOCKED'"),'browser autoplay blocking remains handled inside the existing Chat controller');
 assert(voice.includes('pendingIntroSpeech&&voiceOn&&!processing&&!speaking&&!introRetryScheduled')&&voice.includes('speakAnswer(pendingIntroSpeech)'),'queued intro retries after a successful user-gesture unlock');
-assert(voice.includes("window.addEventListener('storage'")&&voice.includes("enableVoice({persist:false,start:true})"),'voice mode still synchronizes across surfaces without rewriting storage');
+assert(voice.includes("window.addEventListener('storage'")&&voice.includes("if(!next)disableVoice({persist:false})"),'foreign Stop is respected without activating local capture');
 assert(!chat.includes('conversation-voice-v122.js?v=')&&!chat.includes('voiceStreamEndpoint')&&!chat.includes('chat-voice-v140.js?v=')&&!chat.includes('chat-barge-v141.js?v='),'Agent Chat remains on one direct voice owner');
 
 console.log('PERSISTED_LISTEN_BOOT_V157=PASS');
