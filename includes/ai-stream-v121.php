@@ -121,6 +121,7 @@ function ai_v121_stream_chat_response(
     array $user,
     callable $onDelta
 ): array {
+    if(function_exists('chat_response_context'))$context=chat_response_context($query,$context);
     $own=(function_exists('vp3_user_llm_v1_effective')&&function_exists('db')&&db())
         ?vp3_user_llm_v1_effective(db(),$user):['route'=>'system'];
     if(($own['route']??'system')==='unavailable')

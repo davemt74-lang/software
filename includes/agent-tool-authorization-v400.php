@@ -317,6 +317,13 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
     $empty=vp3_agent_tool_empty_v400();$pdo=db();
     if(!$pdo)return $empty;
 
+    // Voice streaming and canonical Chat share this boundary. The legacy
+    // chat.php-only Radar hook did not make Analytics available to either.
+    if(function_exists('vp3_analytics_chat_tool')){
+        $analytics=vp3_analytics_chat_tool($query,$user,$conversationId);
+        if(!empty($analytics['handled']))return vp3_agent_tool_authorize_result_v400($analytics,$user,$query);
+    }
+
     if(function_exists('vp3_system_apps_release_query_v200')){
         $systemAppsRelease=vp3_system_apps_release_query_v200($query,$user,$conversationId,null,$pdo);
         if(!empty($systemAppsRelease['handled']))return vp3_agent_tool_authorize_result_v400($systemAppsRelease,$user,$query);
