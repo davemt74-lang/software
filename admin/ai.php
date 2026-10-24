@@ -189,7 +189,7 @@ require __DIR__ . '/_header.php';
           <option value="<?= e($value) ?>" <?= $activeProvider === $value ? 'selected' : '' ?>><?= e($label) ?></option>
         <?php endforeach; ?>
       </select>
-      <small>If the selected provider is disabled, unavailable, or returns an error, Agent Chat safely falls back to Stonefellow's local database/knowledge retrieval response.</small>
+      <small>Agent Chat uses this provider for system inference. If it fails, Chat reports the failure. Application upgrades preserve your saved provider and model selections.</small>
     </div>
 
     <section class="ai-provider-card field full">

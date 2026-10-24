@@ -16,7 +16,7 @@ foreach (['routine','complex','deep'] as $complexity) {
 }
 $settings=['ai_active_provider'=>'openai','ai_anthropic_model'=>'claude-haiku-4-5','ai_anthropic_enabled'=>'1','ai_anthropic_api_key'=>'existing-encrypted-value'];
 ai_haiku55_upgrade_defaults();
-check(ai_active_provider()==='anthropic' && ai_provider_model('anthropic')==='claude-haiku-5-5','Upgrade selects configured Claude');
+check(ai_active_provider()==='openai' && ai_provider_model('anthropic')==='claude-haiku-4-5','Upgrade preserves existing provider and model');
 check($settings['ai_anthropic_api_key']==='existing-encrypted-value','Credentials preserved');
 $settings['ai_anthropic_model']='claude-sonnet-5';
 $settings['ai_active_provider']='openai';
