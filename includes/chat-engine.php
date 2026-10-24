@@ -515,6 +515,12 @@ function chat_local_answer(string $query, array $context, ?array $failure = null
     if (!empty($failure['quota_exhausted'])) {
         return 'I could not generate an AI reply because the account’s AI allowance or access check failed. Check AI access and usage, then retry your question.';
     }
+    $code=(string)($failure['failure_code']??'');
+    if($code==='provider_disabled')return 'The selected cloud AI provider is disabled on the server. The site administrator needs to enable it in AI / API Settings.';
+    if($code==='credential_empty')return 'The selected cloud AI provider has no saved API credential on the server. The site administrator needs to check AI / API Settings.';
+    if(in_array($code,['credential_missing_key','credential_unreadable_key','credential_invalid_key','credential_crypto_unavailable','credential_unsupported_format','credential_key_mismatch'],true))return 'The server cannot read its saved AI credential. The site administrator needs to restore credential access in AI / API Settings.';
+    if($code==='transport_unavailable')return 'The server’s AI connection component is unavailable. The site administrator needs to restore PHP cURL support.';
+    if(in_array((int)($failure['status']??0),[401,403],true))return 'The AI provider rejected this request’s authentication or access. Check the provider connection in AI / API Settings.';
     $error = (string)($failure['error'] ?? '');
     if (preg_match('/not (?:fully )?configured|credentials|saved provider key|disabled|transport is unavailable/i', $error) || in_array((int)($failure['status'] ?? 0), [401,403], true)) {
         return 'I could not connect to the configured AI service. Check the selected provider and its access in Agent settings, then retry your question.';

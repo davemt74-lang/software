@@ -327,12 +327,14 @@ function ai_provider_model(string $provider): string
     return $defaults[$provider] ?? '';
 }
 
-/** Applied once by the authenticated upgrader; later owner selections persist. */
+/** Fill missing defaults only; upgrades must preserve the owner's connection. */
 function ai_haiku55_upgrade_defaults(): void
 {
     if ((string)setting('ai_haiku55_defaults_applied', '') === '1') return;
-    save_setting('ai_anthropic_model', 'claude-haiku-5-5');
-    if (ai_provider_enabled('anthropic') && ai_provider_has_saved_key('anthropic')) {
+    if (trim((string)setting('ai_anthropic_model', '')) === '') {
+        save_setting('ai_anthropic_model', 'claude-haiku-5-5');
+    }
+    if (trim((string)setting('ai_active_provider', '')) === '' && ai_provider_ready('anthropic')) {
         save_setting('ai_active_provider', 'anthropic');
     }
     save_setting('ai_haiku55_defaults_applied', '1');
@@ -376,6 +378,23 @@ function ai_provider_ready(string $provider): bool
     return ai_provider_enabled($provider)
         && ai_provider_model($provider) !== ''
         && ai_provider_api_key($provider) !== '';
+}
+
+/** Closed diagnostic codes; never include a credential or provider response. */
+function ai_provider_configuration_failure(string $provider): ?array
+{
+    if (!ai_provider_enabled($provider)) {
+        return ['ok'=>false,'provider'=>$provider,'failure_code'=>'provider_disabled','error'=>'The selected AI provider is disabled.'];
+    }
+    $state=ai_encrypted_secret_state((string)setting('ai_'.$provider.'_api_key', ''));
+    if ($state !== 'ready') {
+        return ['ok'=>false,'provider'=>$provider,'failure_code'=>'credential_'.$state,
+            'error'=>$state==='empty'?'No API credential is saved for the selected AI provider.':ai_credential_state_message($state)];
+    }
+    if (!function_exists('curl_init')) {
+        return ['ok'=>false,'provider'=>$provider,'failure_code'=>'transport_unavailable','error'=>'AI transport is unavailable.'];
+    }
+    return null;
 }
 
 function ai_key_suffix(string $provider): string
@@ -515,20 +534,9 @@ function ai_generate_chat_response(
         ];
     }
 
-    if (!$isOwn && !ai_provider_enabled($provider)) {
-        return [
-            'ok' => false,
-            'provider' => $provider,
-            'error' => ucfirst($provider) . ' is disabled.',
-        ];
-    }
-
-    if (!$isOwn && !ai_provider_ready($provider)) {
-        return [
-            'ok' => false,
-            'provider' => $provider,
-            'error' => ucfirst($provider) . ' is not fully configured.',
-        ];
+    if (!$isOwn) {
+        $configurationFailure=ai_provider_configuration_failure($provider);
+        if ($configurationFailure !== null) return $configurationFailure;
     }
 
     $scope=trim((string)$usageScope)!==''?mb_strimwidth(trim((string)$usageScope),0,60,''):ai_subscription_scope_from_request();

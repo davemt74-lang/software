@@ -65,9 +65,9 @@ verify(str_contains(chat_local_answer('Hello',$context,['provider'=>'local']),'s
 verify(str_contains(chat_local_answer('Hello',$context,['quota_exhausted'=>true]),'allowance or access check failed'),'Allowance failure is explicit without invented counts');
 verify(str_contains(chat_local_answer('Hello',$context,['error'=>'timeout']),'could not get an AI answer'),'Transport failure cannot masquerade as a generated answer');
 verify(chat_remote_answer('How many visitors?',[],$context,['id'=>7])===null,'Configured provider failure still returns no AI answer');
-verify(str_contains(chat_local_answer('How many visitors?',$context),'AI service'),'Nonstream provider outcome reaches the safe fallback');
+verify(str_contains(chat_local_answer('How many visitors?',$context),'disabled on the server'),'Nonstream provider outcome identifies the disabled server provider');
 $stream=ai_v121_stream_chat_response('How many visitors?',[],$context,['id'=>7],static function(): void {throw new RuntimeException('Disabled provider cannot stream');});
-verify(empty($stream['ok'])&&str_contains(chat_local_answer('How many visitors?',$context,$stream),'AI service'),'Streaming provider outcome reaches the same safe fallback');
+verify(empty($stream['ok'])&&str_contains(chat_local_answer('How many visitors?',$context,$stream),'disabled on the server'),'Streaming provider outcome reaches the same specific fallback');
 $history=ai_history_messages([
     ['role'=>'assistant','message'=>"Here’s the useful information I found:\n\n• HomeServer: offline"],
     ['role'=>'user','message'=>'Why did you say HomeServer: offline?'],

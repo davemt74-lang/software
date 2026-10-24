@@ -132,7 +132,10 @@ function ai_v121_stream_chat_response(
     $provider=$isOwn?(string)$own['provider']:ai_active_provider();
     try{ai_v100_rate_limit('chat',$user);}catch(Throwable $e){return ['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>ai_v100_safe_exception($e)];}
     if($provider==='local')return ['ok'=>false,'provider'=>'local','answer'=>'','error'=>'Local retrieval mode is active.'];
-    if(!$isOwn&&(!ai_provider_enabled($provider)||!ai_provider_ready($provider)))return ['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>'The AI provider is not fully configured.'];
+    if(!$isOwn){
+        $configurationFailure=ai_provider_configuration_failure($provider);
+        if($configurationFailure!==null)return $configurationFailure+['answer'=>''];
+    }
 
     $complexity=ai_v100_complexity($query,$context);$budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);
     $current=ai_v100_current_message($query,$context);$models=$isOwn?[(string)$own['model']]:ai_v100_model_candidates($provider,$complexity);
