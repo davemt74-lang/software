@@ -2,10 +2,10 @@
 declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
-$controlBuild = 'chat-history-draft-recovery-20261018-startup-20261021-media-20261026';
+$controlBuild = 'chat-history-draft-recovery-20261018-startup-20261021-media-20261026-composer';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922';
-$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023';
+$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';

@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 NODE_TESTS = [
+    'tests/chat-send-recovery.mjs',
     'tests/chat-player-volume.mjs',
     'tests/stem-first-paint-loader-v233.mjs',
     'tests/tracky-shared-scene-ui-v1g3d.mjs',
