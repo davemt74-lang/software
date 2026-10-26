@@ -4,7 +4,7 @@ declare(strict_types=1);
 // Fresh PHP processes exercise filesystem recovery and real transactional SQL.
 if (count($argv) === 1) {
     $total = 0;
-    foreach (['restore','reconnect','accounts','rollback','publish','uncommitted','crash'] as $case) {
+    foreach (['restore','reconnect','accounts','rollback','ambiguous','publish','uncommitted','crash'] as $case) {
         $root = sys_get_temp_dir().'/vp3-credential-'.bin2hex(random_bytes(6));
         mkdir($root, 0700);
         try {
@@ -51,6 +51,7 @@ class RecoveryPDO extends PDO {
     public function commit(): bool {
         $ok = parent::commit();
         if ($this->mode === 'crash') exit(73);
+        if ($this->mode === 'ambiguous') throw new PDOException('fixture lost connection after successful commit');
         if ($this->mode === 'publish') file_put_contents(ai_master_key_file(), 'unrelated concurrent file');
         return $ok;
     }
@@ -97,8 +98,19 @@ switch ($case) {
         $pdo->exec("CREATE TRIGGER fail_update BEFORE UPDATE ON settings WHEN NEW.setting_key='ai_elevenlabs_api_key' BEGIN SELECT RAISE(ABORT,'fixture transaction failure'); END");
         rejects(fn()=>ai_recovery_reconnect($pdo,$plain,true),'Database failure propagated');
         ksort($saved); check(ai_recovery_saved($pdo) === $saved,'All original credentials survive failed transaction');
-        check(!is_file(ai_master_key_file()) && !is_file(ai_private_dir().'/.ai-credential-recovery-key.php') && !is_file(ai_private_dir().'/.ai-credential-recovery.json'),'Failed transaction leaves no installation key or pending operation');
+        check(!is_file(ai_master_key_file()) && is_file(ai_private_dir().'/.ai-credential-recovery-key.php') && is_file(ai_private_dir().'/.ai-credential-recovery.json'),'Failed transaction publishes no key and retains recovery evidence');
         check((int)$pdo->query("SELECT COUNT(*) FROM settings WHERE setting_key LIKE 'ai_credential_recovery_snapshot_%'")->fetchColumn()===0,'Snapshot also rolled back');
+        $pdo->exec('DROP TRIGGER fail_update');
+        ai_recovery_reconnect($pdo,$plain,true);
+        check(ai_provider_api_key('anthropic') === $plain['ai_anthropic_api_key'],'Rolled-back operation retries successfully');
+        break;
+    case 'ambiguous':
+        $pdo->mode = 'ambiguous';
+        rejects(fn()=>ai_recovery_reconnect($pdo,$plain,true),'Uncertain commit outcome reported');
+        check(!is_file(ai_master_key_file()) && is_file(ai_private_dir().'/.ai-credential-recovery-key.php') && is_file(ai_private_dir().'/.ai-credential-recovery.json'),'Committed credential key retained after ambiguous failure');
+        $pdo->mode = '';
+        ai_recovery_reconnect($pdo,[],true);
+        foreach ($plain as $name=>$value) check(ai_decrypt_secret(setting($name)) === $value,'Uncertain commit resumed '.$name);
         break;
     case 'publish':
         $pdo->mode = 'publish';
