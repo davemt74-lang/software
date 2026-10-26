@@ -18,7 +18,8 @@ assert.match(ai,/crypto_unavailable/,'AI credential runtime must distinguish mis
 assert.match(ai,/key_mismatch/,'AI credential runtime must distinguish a mismatched key');
 assert.match(ai,/hosting_cpanel_api_token/,'cPanel API token must participate in encrypted credential key preservation');
 
-assert.match(voice,/ai_encrypted_secret_state\(\$encrypted\)/,'ElevenLabs runtime must classify encrypted credential state before decryption');
+assert.match(voice,/\[\$apiKey, \$credentialState\] = ai_elevenlabs_credential\(\)/,'ElevenLabs runtime must use the shared credential resolver and retain its health state');
+assert.match(ai,/\$state = ai_encrypted_secret_state\(\$encrypted\)/,'Shared ElevenLabs credential lookup must classify the saved ciphertext before decryption');
 assert.match(voice,/ai_credential_state_message\(\$credentialState, 'ElevenLabs'\)/,'ElevenLabs warm state must return actionable key recovery guidance');
 assert.doesNotMatch(voice,/cannot be decrypted\. Re-enter it in Admin AI settings/,'voice runtime must not misdiagnose all decrypt failures as a changed credential');
 

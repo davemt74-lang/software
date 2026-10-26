@@ -385,6 +385,22 @@ function ai_provider_has_saved_key(string $provider): bool
     return trim((string)setting('ai_' . $provider . '_api_key', '')) !== '';
 }
 
+/** Admin-saved ElevenLabs credentials are authoritative for this installation.
+ * Environment configuration supports installations with no saved credential;
+ * it must never silently replace a saved (even unreadable) database value.
+ * @return array{0:string,1:string} Server-only key and credential state.
+ */
+function ai_elevenlabs_credential(): array
+{
+    $encrypted = trim((string)setting('ai_elevenlabs_api_key', ''));
+    if ($encrypted !== '') {
+        $state = ai_encrypted_secret_state($encrypted);
+        return $state === 'ready' ? [ai_decrypt_secret($encrypted), 'saved'] : ['', $state];
+    }
+    $key = trim((string)(getenv('ELEVENLABS_API_KEY') ?: ''));
+    return [$key, $key !== '' ? 'environment' : 'missing'];
+}
+
 function ai_provider_ready(string $provider): bool
 {
     if ($provider === 'local') {

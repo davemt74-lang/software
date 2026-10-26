@@ -63,14 +63,7 @@ function stonefellow_voice_v244_agent_selection(array $user, int $agentId): arra
 
 function stonefellow_voice_v117_settings(?array $user = null, int $agentId = 0): array
 {
-    $apiKey = trim((string)(getenv('ELEVENLABS_API_KEY') ?: ''));
-    $credentialState = $apiKey !== '' ? 'environment' : 'missing';
-    if ($apiKey === '') {
-        $encrypted = trim((string)setting('ai_elevenlabs_api_key', ''));
-        $credentialState = $encrypted === '' ? 'missing' : ai_encrypted_secret_state($encrypted);
-        $apiKey = $credentialState === 'ready' ? ai_decrypt_secret($encrypted) : '';
-        if ($apiKey !== '') $credentialState = 'saved';
-    }
+    [$apiKey, $credentialState] = ai_elevenlabs_credential();
     $voiceId = trim((string)(getenv('ELEVENLABS_VOICE_ID') ?: setting('ai_elevenlabs_voice_id', 'JBFqnCBsd6RMkjVDRZzb')));
     $voiceSource = 'global';
     if ($user && $agentId > 0) {
@@ -139,16 +132,23 @@ function stonefellow_voice_v234_provider_get(int $agentId): array
     return in_array($source,['elevenlabs','homeserver_local'],true)?$row:[];
 }
 
-function stonefellow_voice_v157_upstream_error(int $status, string $detail = ''): string
+function stonefellow_voice_v157_upstream_error(int $status, string $detail = '', string $providerCode = ''): string
 {
+    // ElevenLabs also uses 401 for permission and quota failures. HTTP status
+    // alone does not establish that the supplied credential is invalid.
+    if ($status >= 400 && $status < 500) {
+        if ($providerCode === 'invalid_api_key') return 'ElevenLabs rejected the API key used for this request. Check the ElevenLabs credential in Admin AI settings.';
+        if ($providerCode === 'missing_permissions') return 'The ElevenLabs key lacks permission for this voice operation.';
+        if ($providerCode === 'quota_exceeded') return 'The ElevenLabs account or API key has reached its usage allowance.';
+        if ($providerCode === 'voice_not_found') return 'The configured ElevenLabs voice was not found.';
+        if ($providerCode === 'unusual_activity') return 'ElevenLabs has restricted this request because of its account security checks.';
+    }
     return match ($status) {
-        401 => 'ElevenLabs rejected the saved API key. Re-enter it in Admin AI settings.',
-        403 => 'The ElevenLabs account cannot use the configured voice.',
+        401 => 'ElevenLabs denied this voice request (HTTP 401). The response did not identify an invalid API key.',
+        403 => 'ElevenLabs denied access to this voice request (HTTP 403).',
         404 => 'The configured ElevenLabs voice was not found.',
         429 => 'The ElevenLabs account has reached a rate or usage limit.',
-        400, 422 => $detail !== ''
-            ? 'ElevenLabs rejected the voice request: ' . mb_strimwidth($detail, 0, 180, '…')
-            : 'ElevenLabs rejected the configured voice or model.',
+        400, 422 => 'ElevenLabs rejected the configured voice or model.',
         default => 'Premium Agent voice is temporarily unavailable.',
     };
 }
@@ -188,9 +188,17 @@ function stonefellow_voice_v244_verify(string $apiKey, string $voiceId): array
         ];
     }
     $detail = '';
+    $providerCode = '';
     if (is_array($decoded)) {
         $rawDetail = $decoded['detail'] ?? $decoded['message'] ?? '';
         $detail = is_array($rawDetail) ? trim((string)($rawDetail['message'] ?? '')) : trim((string)$rawDetail);
+        $providerCode = is_array($rawDetail) ? (string)($rawDetail['status'] ?? '') : '';
+    }
+    // A TTS-scoped key need not grant the separate voices_read permission.
+    // Allow speech to attempt its real TTS endpoint; do not claim verification.
+    if (in_array($status, [401,403], true) && $providerCode === 'missing_permissions'
+        && preg_match('/\bvoices_read\b/', $detail)) {
+        return ['ready'=>true,'verified'=>false,'status'=>$status,'voice_name'=>'','error'=>'','readiness_authority'=>'tts-stream'];
     }
     if ($detail === '' && $transportError !== '') $detail = $transportError;
     return [
@@ -198,7 +206,7 @@ function stonefellow_voice_v244_verify(string $apiKey, string $voiceId): array
         'verified'=>false,
         'status'=>$status,
         'voice_name'=>'',
-        'error'=>stonefellow_voice_v157_upstream_error($status, $detail),
+        'error'=>stonefellow_voice_v157_upstream_error($status, $detail, $providerCode),
     ];
 }
 
@@ -358,12 +366,14 @@ if ($requestMethod === 'GET') {
     if ($streamStarted) exit;
 
     $upstreamMessage = '';
+    $providerCode = '';
     $decoded = json_decode($errorBody, true);
     if (is_array($decoded)) {
         $detail = $decoded['detail'] ?? '';
         $upstreamMessage = is_array($detail)
             ? trim((string)($detail['message'] ?? ''))
             : trim((string)$detail);
+        $providerCode = is_array($detail) ? (string)($detail['status'] ?? '') : '';
     }
     error_log(
         'Stonefellow ElevenLabs stream model=' . $modelId
@@ -373,7 +383,7 @@ if ($requestMethod === 'GET') {
         . ($upstreamMessage !== '' ? ' detail=' . mb_strimwidth($upstreamMessage, 0, 160, '…') : '')
     );
     stonefellow_voice_v117_json(
-        ['ok' => false, 'error' => stonefellow_voice_v157_upstream_error($upstreamStatus, $upstreamMessage)],
+        ['ok' => false, 'error' => stonefellow_voice_v157_upstream_error($upstreamStatus, $upstreamMessage, $providerCode)],
         $upstreamStatus >= 400 && $upstreamStatus < 500 ? 502 : 503
     );
 }
@@ -399,7 +409,7 @@ if ($action === 'warm') {
     $upstreamStatus=(int)($verification['status']??0);
     $voiceName=(string)($verification['voice_name']??'');
     $error = (string)($verification['error'] ?? '');
-    $readinessAuthority='elevenlabs-get-voice';
+    $readinessAuthority=(string)($verification['readiness_authority']??'elevenlabs-get-voice');
     $selectedSource='elevenlabs';
 
     if (!$ready) {
@@ -443,6 +453,7 @@ if ($action === 'warm') {
         'readiness_authority' => 'elevenlabs-get-voice',
         'error' => $error,
     ];
+    $warmPayload['readiness_authority']=$readinessAuthority;
     if($selectedSource==='homeserver_local')$warmPayload['readiness_authority']='homeserver-speech-status';
     stonefellow_voice_v117_json($warmPayload, 200);
 }
