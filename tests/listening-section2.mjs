@@ -223,6 +223,28 @@ if(cloud){
   await timer.advance(15000);assert.equal(api.state().voiceOn,false);assert.equal(starts,0);
   assert.equal(b.element('chatInput').value,'keep this draft');assert.match(b.element('chatVoiceStatus').textContent,/conversation/i);
  });
+ await test('Chat listens with a restored draft and only submits after new speech',async()=>{
+  const b=browser(),timer=clock(b),sent=[];let native;
+  b.window.SpeechRecognition=class{constructor(){native=this;}start(){this.onstart?.();}stop(){this.onend?.();}abort(){this.onend?.();}};
+  b.element('chatInput').value='Please check';
+  b.element('chatForm').requestSubmit=()=>sent.push(b.element('chatInput').value);
+  const api=chat(b);api.enableVoice();await timer.advance(3000);
+  assert.equal(api.state().voiceOn,true);assert.equal(api.state().recognitionListening,true);
+  assert.equal(b.element('chatInput').value,'Please check');assert.equal(sent.length,0,'A saved draft is not automatically replayed');
+  native.onresult(result('my schedule'));await timer.advance(1800);
+  assert.deepEqual(sent,['Please check my schedule'],'New speech continues the visible draft without discarding it');
+  api.disableVoice();
+ });
+ await test('Typed send clears the dictation prefix before listening resumes',async()=>{
+  const b=browser(),timer=clock(b);
+  b.window.SpeechRecognition=class{start(){this.onstart?.();}abort(){this.onend?.();}};
+  b.element('chatInput').value='Existing draft';const api=chat(b);api.enableVoice();await flush();
+  assert.equal(api.state().pendingFinalTranscript,'Existing draft');
+  b.element('chatInput').value='';
+  await b.window.fetch('/api/chat.php',{method:'POST',body:JSON.stringify({action:'send',message:'Existing draft',input_mode:'text'})});
+  await timer.advance(300);assert.equal(api.state().pendingFinalTranscript,'');
+  assert.equal(api.state().recognitionListening,true);api.disableVoice();
+ });
  await test('Chat starts once after restoration and ignores obsolete start/end callbacks',async()=>{
   const b=browser(),timer=clock(b);let restoring=true,starts=0;
   b.window.STONEFELLOW_CHAT_CONTINUITY={isRestoring:()=>restoring,isReady:()=>true};

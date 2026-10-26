@@ -102,7 +102,7 @@ assert.match(memberMenu,/voice_source/);
 
 assert.match(chat,/\$premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1'/);
 assert.match(chat,/\$voiceAssetBuild = 'chat-voice-proactive-v244-20260922'/);
-assert.match(chat,/\$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023'/);
+assert.match(chat,/\$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer'/);
 assert.match(chat,/\$notificationDrawerBuild = 'chat-notifications-recovery-20261016'/);
 assert.match(chat,/\$cognitivePresentationBuild = 'cognitive-presentation-footer-v2451-20260922'/);
 assert.match(memberHeader,/\$memberAgentVoiceMenuBuild = 'agent-voice-menu-v244-20260922'/);

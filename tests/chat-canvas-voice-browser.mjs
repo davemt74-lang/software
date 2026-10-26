@@ -190,6 +190,7 @@ try {
   assert.match(await page.locator('#chatVoiceStatus').innerText(),/did not start.*retry/);
   assert.equal(await page.locator('#chatVoiceButton').getAttribute('data-agent-state'),'error');
   assert.equal(await page.evaluate(()=>window.STONEFELLOW_VOICE_LEASE_V122.owner),false);
+  await page.evaluate(()=>{window.hangRecognizer=false;});
   // Actual canonical chat recovery, including history-refresh failure and
   // a late reply after navigation. No recovery path replays a send.
   await page.getByRole('button',{name:'Chat tools',exact:true}).click();
@@ -200,6 +201,16 @@ try {
   await page.locator('#sendChatButton').click();
   await page.waitForFunction(()=>!document.querySelector('#sendChatButton').disabled && document.querySelector('#chatRecoveryStatus')?.hidden===false);
   assert.equal(await page.locator('#chatInput').inputValue(),'Keep this provider failure');
+  assert.match(await page.locator('#chatRecoveryStatus').innerText(),/Provider unavailable/,'Show the actual server failure');
+  assert.equal(await page.getByRole('button',{name:'Check history',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Dismiss',exact:true}).count(),0);
+  await page.getByRole('button',{name:'Start voice conversation'}).click();
+  await page.waitForFunction(()=>document.body.dataset.stonefellowAgentState==='listening');
+  assert.equal(await page.locator('#chatInput').inputValue(),'Keep this provider failure','Listening preserves the existing draft');
+  await page.waitForTimeout(1900);
+  assert.equal(sends().filter(call=>call.message==='Keep this provider failure').length,1,'Listening does not replay a failed request');
+  await page.locator('#chatVoiceButton').click();
+  await page.waitForFunction(()=>document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false');
   await page.evaluate(()=>{
     const body=document.createElement('aside');body.id='testBrain';document.body.appendChild(body);window.VP3ChatDiagnostics.renderBrain(body);
   });
@@ -210,7 +221,7 @@ try {
   const failedCount=sends().length;
   let releaseHistory;
   loadGate=new Promise(resolve=>{releaseHistory=resolve;});
-  await page.getByRole('button',{name:'Check history',exact:true}).click();
+  await page.evaluate(()=>{void window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42);});
   await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.isRestoring());
   await page.locator('#chatInput').fill('Edited while checking history');
   await page.locator('#sendChatButton').click();
@@ -304,7 +315,11 @@ try {
       await page.getByRole('button',{name:'Stop response',exact:true}).click();
       releaseSend();sendGate=null;
     }
-    await page.waitForFunction(()=>!document.querySelector('#sendChatButton').disabled && document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false');
+    await page.waitForFunction(()=>!document.querySelector('#sendChatButton').disabled);
+    if(kind==='truncated'){
+      await page.waitForFunction(()=>document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='true' && window.recognizers.some(item=>item.active));
+      assert.match(await page.locator('#chatRecoveryStatus').innerText(),/ended before a completed answer/,'A failed stream remains actionable without a history gate');
+    }else await page.waitForFunction(()=>document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false');
     await page.waitForTimeout(400);
     assert.equal(streams().length,before+1,'A failed/stopped voice turn must never replay');
     assert.equal(await page.evaluate(()=>window.spoken.length),0,'Unconfirmed or cancelled provider output cannot speak');

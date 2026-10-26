@@ -114,23 +114,18 @@
     if(!button){button=document.createElement('button');button.id='chatStopButton';button.type='button';button.textContent='■';button.setAttribute('aria-label','Stop response');form.appendChild(button);button.addEventListener('click',()=>{
       const request=pendingSend;if(!request)return;
       leaveChat(); if(!input.value)input.value=request.message;autoSize();keepDraft(input.value,request.conversationId);
-      recoveryStatus('Stopped. Your message is kept. Check history before sending again.');
+      recoveryStatus('Response stopped.');
     });}
     button.hidden=!pendingSend;
   }
   function recoveryStatus(message = '') {
     let host = document.getElementById('chatRecoveryStatus');
+    if (!host && !message) return;
     if (!host) {
       host = document.createElement('div'); host.id = 'chatRecoveryStatus'; host.setAttribute('role','status');
-      const text = document.createElement('span');
-      const check = document.createElement('button'); check.type = 'button'; check.textContent = 'Check history';
-      check.addEventListener('click', () => { if (conversationId) void loadConversation(conversationId).catch(() => recoveryStatus('History is unavailable. Your draft is kept.')); });
-      const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.textContent = 'Dismiss';
-      dismiss.addEventListener('click', () => recoveryStatus()); host.append(text, check, dismiss);
       (document.getElementById('chatComposerShell') || form.parentElement).appendChild(host);
     }
-    host.hidden = !message; host.firstChild.textContent = message;
-    host.children[1].hidden = !conversationId;
+    host.hidden = !message; host.textContent = message;
   }
   function leaveChat() {
     if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId);
@@ -147,7 +142,7 @@
   }
   // The displayed conversation owns edits until a history load commits its new
   // selection. Persist them even while loading; Send remains gated separately.
-  input.addEventListener('input', () => { if (!busy && !initialRestorePending) keepDraft(input.value); });
+  input.addEventListener('input', () => { if (!busy && !initialRestorePending) { keepDraft(input.value); recoveryStatus(); } });
   window.addEventListener('pagehide', () => { if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId); pendingSend?.controller.abort(); });
   // Run before planner interception so offline/restoring turns cannot dispatch tools.
   document.addEventListener('submit', event => {
@@ -3185,7 +3180,10 @@
       if(!input.value){input.value=message;autoSize();}
       keepDraft(input.value, request.conversationId);
       typing.remove();
-      recoveryStatus('Your message is kept. Check history before sending again.');
+      recoveryStatus(error.name === 'AbortError'
+        ? 'The response timed out. You can try again.'
+        : error.status ? String(error.message || 'Chat could not complete this request.').slice(0,500)
+        : 'Could not connect to Chat. Please try again.');
       window.dispatchEvent(new CustomEvent('stonefellow:chat-diagnostic',{detail:{state:'failed',code:String(error.status || error.name || 'transport')}}));
     } finally {
       clearTimeout(request.timer);

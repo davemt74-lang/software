@@ -506,7 +506,9 @@
     }
     clearRestoreWait();
     if(runtime?.isReady?.()===false){disableVoice({persist:true});setAgentState('error','Open a conversation or start a new chat before listening.');return false;}
-    if(input.value.trim()&&!pendingFinalTranscript){disableVoice({persist:true});setAgentState('error','Your draft is kept. Send or clear it before listening again.');return false;}
+    // Dictation can continue an existing draft. Selecting the microphone must
+    // not submit it; only newly recognized speech starts the turn-end timer.
+    if(input.value.trim()&&!pendingFinalTranscript)pendingFinalTranscript=input.value.trim();
     if(typeof SpeechRecognitionCtor!=='function'){disableVoice({persist:false});setAgentState('error','Browser speech recognition is unavailable.');return false;}
     if(!claimCapture()){disableVoice({persist:false});setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}
     try{if(!recognition)recognition=createRecognition();}
@@ -675,7 +677,7 @@
       if(payload){const context=attachContext(payload);payload=init.signal?await awaitTurn(context,{controller:{signal:init.signal}}):await context;init={...init,body:JSON.stringify(payload)};}
       if(voiceTurn){if(!voiceOn||dispatch!==voiceDispatchGeneration||init.signal?.aborted)return interruptedVoiceResponse();return await handleVoiceApiFetch(inputArg,init,payload||{});}
       if(init.signal?.aborted)throw new DOMException('Chat request cancelled.','AbortError');
-      textBusy=true;if(voiceOn)stopRecognition('text-send',true);
+      textBusy=true;resetPendingFinal();if(voiceOn)stopRecognition('text-send',true);
       try{return await nativeFetch(inputArg,init);}finally{textBusy=false;if(voiceOn&&!speaking&&!processing&&!bargeCapturing){recognition=null;scheduleListening(120,'text-send-end');}}
     }finally{init.signal?.removeEventListener('abort',ownerAbort);}
   };
