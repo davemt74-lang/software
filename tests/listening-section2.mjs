@@ -235,6 +235,19 @@ if(cloud){
   assert.deepEqual(sent,['Please check my schedule'],'New speech continues the visible draft without discarding it');
   api.disableVoice();
  });
+ await test('Editing or clearing a draft while listening updates its dictation prefix',async()=>{
+  for(const draft of ['The edited draft','']){
+   const b=browser(),timer=clock(b),sent=[];let native;
+   b.window.SpeechRecognition=class{constructor(){native=this;}start(){this.onstart?.();}stop(){this.onend?.();}abort(){this.onend?.();}};
+   b.element('chatInput').value='An older draft';b.element('chatForm').requestSubmit=()=>sent.push(b.element('chatInput').value);
+   const api=chat(b);api.enableVoice();await flush();
+   b.element('chatInput').value=draft;
+   for(const listener of b.element('chatInput').listeners.input||[])listener({isTrusted:true});
+   await timer.advance(2000);assert.equal(sent.length,0);
+   native.onresult(result('continues here'));await timer.advance(1800);
+   assert.deepEqual(sent,[[draft,'continues here'].filter(Boolean).join(' ')]);api.disableVoice();
+  }
+ });
  await test('Typed send clears the dictation prefix before listening resumes',async()=>{
   const b=browser(),timer=clock(b);
   b.window.SpeechRecognition=class{start(){this.onstart?.();}abort(){this.onend?.();}};

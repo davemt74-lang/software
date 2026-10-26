@@ -158,10 +158,10 @@ try {
   assert.match(await page.locator('.vp3-teams-status').innerText(), /routing unavailable/);
   assert.equal(sends().length, 1, 'An uncertain route must not dispatch or retry Chat');
   await page.getByRole('button',{name:'Close chat tools'}).click();
-  await page.waitForFunction(() => document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false');
+  await page.waitForFunction(() => document.body.dataset.stonefellowAgentState==='listening');
+  assert.equal(await page.locator('#chatVoiceButton').getAttribute('aria-pressed'),'true','A failed route must not disable listening because a draft remains');
   assert.equal(await page.locator('#chatInput').inputValue(),'Try a second question','A failed route cannot erase its transcript');
   await page.locator('#chatInput').fill('');
-  await page.getByRole('button',{name:'Start voice conversation'}).click();
   await page.waitForFunction(() => document.body.dataset.stonefellowAgentState === 'listening');
   failRoute = false;
   let release; routeGate = new Promise(resolve => {release=resolve;});

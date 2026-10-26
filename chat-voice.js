@@ -294,6 +294,10 @@
     input.value=String(text||'');
     input.dispatchEvent(new Event('input',{bubbles:true}));
   }
+  input.addEventListener('input',event=>{
+    if(!event.isTrusted||!voiceOn||processing||speaking||voiceSubmitPending||bargeCapturing)return;
+    resetPendingFinal();pendingFinalTranscript=input.value.trim();
+  });
 
   function clearRestart(){if(restartTimer)clearTimeout(restartTimer);restartTimer=0;}
   function clearRestoreWait(){if(recognitionRestoreTimer)clearTimeout(recognitionRestoreTimer);recognitionRestoreTimer=0;}
