@@ -19,6 +19,7 @@ wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.wri
 wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(16000,40);
 for(let i=0;i<8000;i++)wav.writeInt16LE(Math.round(Math.sin(i*2*Math.PI*440/8000)*1000),44+i*2);
 fs.writeFileSync(path.join(root,'song.wav'),wav);
+const stale=Buffer.from(wav);stale.fill(0,44);fs.writeFileSync(path.join(root,'stale.wav'),stale);
 const bootstrap=`<?php
 define('STONEFELLOW_ROOT',dirname(__DIR__));
 function db():PDO { static $pdo; return $pdo??=new PDO('sqlite:'.STONEFELLOW_ROOT.'/fixture.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]); }
@@ -28,11 +29,11 @@ function get_track_by_id(int $id):?array { $s=db()->prepare('SELECT * FROM track
 function can_manage_track_production(array $track,?array $user=null):bool { $s=db()->prepare('SELECT 1 FROM members WHERE workspace_id=? AND user_id=?');$s->execute([$track['workspace_id'],($user??current_user())['id']??0]);return (bool)$s->fetchColumn(); }
 function can_view_track(array $track,?array $user=null):bool { return $track['visibility']==='public'||can_manage_track_production($track,$user); }
 function artist_music_v185_public_cover(...$args):?array { return null; }
-function artist_music_v185_public_track(...$args):?array { return null; }
-function artist_music_v185_resolve_audio(...$args):?string { return null; }
+function artist_music_v185_public_track(...$args):?array { return ['id'=>99]; }
+function artist_music_v185_resolve_audio(...$args):?string { return STONEFELLOW_ROOT.'/stale.wav'; }
 `;
 fs.writeFileSync(path.join(root,'includes/bootstrap.php'),bootstrap);
-execFileSync(php,['-r',`require $argv[1];db()->exec("CREATE TABLE tracks(id INTEGER,workspace_id INTEGER,is_published INTEGER,visibility TEXT,audio_path TEXT,cover_path TEXT,artist_track_id INTEGER); CREATE TABLE members(workspace_id INTEGER,user_id INTEGER); INSERT INTO members VALUES(1,11); INSERT INTO tracks VALUES(1,1,0,'public','/song.wav','/missing.png',NULL),(2,1,1,'public','/song.wav','',99),(3,1,0,'admin','','',NULL),(4,2,0,'public','/song.wav','',NULL);");`,path.join(root,'includes/bootstrap.php')]);
+execFileSync(php,['-r',`require $argv[1];db()->exec("CREATE TABLE tracks(id INTEGER,workspace_id INTEGER,is_published INTEGER,visibility TEXT,audio_path TEXT,cover_path TEXT,artist_track_id INTEGER); CREATE TABLE members(workspace_id INTEGER,user_id INTEGER); INSERT INTO members VALUES(1,11); INSERT INTO tracks VALUES(1,1,0,'public','/song.wav','/missing.png',NULL),(2,1,1,'public','/song.wav','',99),(3,1,0,'admin','','',NULL),(4,2,0,'public','/song.wav','',NULL),(1000000099,1,1,'public','','',99);");`,path.join(root,'includes/bootstrap.php')]);
 const socket=net.createServer();await new Promise(resolve=>socket.listen(0,'127.0.0.1',resolve));const port=socket.address().port;await new Promise(resolve=>socket.close(resolve));
 const server=spawn(php,['-S',`127.0.0.1:${port}`,'-t',root],{stdio:['ignore','pipe','pipe']});
 let errors='';server.stderr.on('data',data=>{errors+=data.toString();});
@@ -50,11 +51,12 @@ try {
   assert.equal((await read('/media.php?track=4&type=audio',{headers:owner})).status,404,'Foreign workspace media leaked');
   assert.equal((await read('/media.php?track=3&type=audio',{headers:owner})).status,404,'Missing full-song audio fabricated');
   response=await read('/media.php?track=2&type=audio');assert.equal(response.status,200,'Stale catalog reference blocked valid backing audio');assert.deepEqual(Buffer.from(await response.arrayBuffer()),wav);
+  response=await read('/media.php?track=1000000099&type=audio');assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),stale,'Native catalog audio still resolves through its owned store');
   response=await read('/media.php?track=1&type=audio',{headers:{...owner,Range:'bytes=999999-'}});assert.equal(response.status,416);assert.equal(response.headers.get('content-range'),`bytes */${wav.length}`);
 
   if(process.argv.includes('--browser')) {
     const require=createRequire(import.meta.url);const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
-    browser=await chromium.launch({headless:true,args:['--no-sandbox','--autoplay-policy=no-user-gesture-required']});
+    browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE_PATH,args:['--no-sandbox','--autoplay-policy=no-user-gesture-required']});
     const page=await browser.newPage();const requested=[];page.on('request',request=>{if(request.url().includes('/media.php'))requested.push(request.url());});
     const source=fs.readFileSync('chat.js','utf8');
     const errorUi=source.slice(source.indexOf('  function showChatMediaError('),source.indexOf('  function systemAppActionCardHtml('));
@@ -65,6 +67,19 @@ try {
     assert.equal(await page.locator('audio').first().evaluate(audio=>Math.round(audio.duration)),1,'Valid draft audio failed to decode');
     await page.locator('#missing').evaluate(audio=>audio.play().catch(()=>{}));await page.locator('[data-chat-media-status]').waitFor();assert.match(await page.locator('[data-chat-media-status]').textContent(),/Audio is unavailable/);
     console.log('CHAT_MEDIA_BROWSER=PASS zero-eager-requests draft-playback failure-feedback');
+    // The actual custom-player handler must start audible audio with no
+    // volume preference, rather than just testing native audio.play().
+    const volume=source.slice(source.indexOf('  let playerVolume = 1;'),source.indexOf('  let conversationId ='));
+    const decorate=source.slice(source.indexOf('  function decorateAudioPlayer('),source.indexOf('  function audioListenedDelta('));
+    const custom=`<audio class="chat-audio-player" src="/media.php?track=1&type=audio&fixture_user=11"></audio><script>const audioState=new WeakMap(),PLAYER_VOLUME_KEY='test-no-saved-volume';function updateInlinePlayer(){}function playQueueOffset(){}${volume}${decorate}const audio=document.querySelector('audio');audioState.set(audio,{});decorateAudioPlayer(audio);</script>`;
+    fs.writeFileSync(path.join(root,'custom.html'),custom);
+    await page.goto(base+'/custom.html');
+    await page.locator('[data-player-toggle]').click();
+    await page.waitForFunction(()=>document.querySelector('audio').currentTime>0);
+    assert.equal(await page.locator('audio').evaluate(audio=>audio.muted),false);
+    assert.equal(await page.locator('audio').evaluate(audio=>audio.volume),1);
+    console.log('CHAT_CUSTOM_AUDIO_BROWSER=PASS click starts decoded audible audio');
+
   }
   execFileSync(php,['-r',`require $argv[1];db()->exec('DELETE FROM members');`,path.join(root,'includes/bootstrap.php')]);
   assert.equal((await read('/media.php?track=1&type=audio',{headers:owner})).status,404,'Revoked membership retained media');

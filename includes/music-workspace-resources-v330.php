@@ -363,8 +363,10 @@ function music_workspace_resources_v330_ensure_production_track_locked(PDO $pdo,
         $stmt->execute([$sourceId,$workspaceId]);
         $track=$stmt->fetch();
         if($track){
+            // A metadata-only catalog shadow must not erase the imported master.
+            $sourceAudio=trim((string)($catalog['audio_path']??''))!==''?(string)$catalog['audio_path']:(string)($track['audio_path']??'');
             $sql='UPDATE tracks SET owner_user_id=?,title=?,album=?,album_id=?,duration=?,description=?,genre=?,audio_path=?,cover_path=?,visibility=?,is_published=?,updated_at=NOW()';
-            $params=[$ownerId,(string)$catalog['title'],(string)($catalog['album']??''),$sourceAlbumId?:null,$duration,(string)($catalog['description']??''),(string)($catalog['genre']??''),(string)$catalog['audio_path'],(string)($catalog['cover_path']??''),(string)$catalog['visibility'],(int)$catalog['is_published']];
+            $params=[$ownerId,(string)$catalog['title'],(string)($catalog['album']??''),$sourceAlbumId?:null,$duration,(string)($catalog['description']??''),(string)($catalog['genre']??''),$sourceAudio,(string)($catalog['cover_path']??''),(string)$catalog['visibility'],(int)$catalog['is_published']];
             if($producerId){$sql.=',producer_user_id=?';$params[]=$producerId;}
             $sql.=' WHERE id=? AND workspace_id=?';$params[]=$sourceId;$params[]=$workspaceId;
             $pdo->prepare($sql)->execute($params);

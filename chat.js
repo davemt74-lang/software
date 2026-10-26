@@ -66,8 +66,9 @@
   let playerVolume = 1;
 
   try {
-    const storedVolume = Number(localStorage.getItem(PLAYER_VOLUME_KEY));
-    if (Number.isFinite(storedVolume)) {
+    const savedVolume = localStorage.getItem(PLAYER_VOLUME_KEY);
+    const storedVolume = Number(savedVolume);
+    if (savedVolume !== null && savedVolume.trim() !== '' && Number.isFinite(storedVolume)) {
       playerVolume = Math.max(0, Math.min(1, storedVolume));
     }
   } catch (error) {}

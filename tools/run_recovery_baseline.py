@@ -8,6 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 NODE_TESTS = [
+    'tests/chat-player-volume.mjs',
+    'tests/stem-first-paint-loader-v233.mjs',
     'tests/tracky-shared-scene-ui-v1g3d.mjs',
     'tests/tracky-agent-eyes-experience-v1g4.mjs',
     'tests/annotated-connector-v100.mjs',
@@ -244,6 +246,7 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 ]
 
 PHP_TESTS = [
+    'tests/media-source-recovery.php',
     'tests/chat-response-relevance.php',
     'tests/cloud-provider-preservation.php',
     'tests/tracky-shared-scene-v1g3d.php',

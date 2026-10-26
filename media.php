@@ -30,6 +30,14 @@ if($type==='cover'&&$catalogId>0&&($pdo=db())){
     $cover=artist_music_v185_public_cover($pdo,'track',$catalogId,current_user());
     if($cover){$mime=music_media_mime($cover['path'],'cover');if($mime)music_media_send($cover['path'],$mime);}
 }
+// Platform tracks retain their original master even when a catalog shadow has
+// stale audio. Native catalog tracks still resolve through their owned store.
+$original=$type==='audio'&&!empty($track['artist_track_id'])&&$trackId<1000000000
+    ?music_media_local_path((string)($track['audio_path']??'')):null;
+if($original){
+    $mime=music_media_mime($original,'audio');
+    if($mime)music_media_send($original,$mime);
+}
 if($type==='audio'&&$catalogId>0&&($pdo=db())){
     $catalog=artist_music_v185_public_track($pdo,$catalogId,current_user());
     $path=$catalog?artist_music_v185_resolve_audio($pdo,$catalog):null;
