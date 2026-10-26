@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 NODE_TESTS = [
     'tests/chat-player-volume.mjs',
+    'tests/stem-first-paint-loader-v233.mjs',
     'tests/tracky-shared-scene-ui-v1g3d.mjs',
     'tests/tracky-agent-eyes-experience-v1g4.mjs',
     'tests/annotated-connector-v100.mjs',

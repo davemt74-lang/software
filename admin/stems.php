@@ -22,7 +22,7 @@ $html = str_replace('</head>', '<link rel="stylesheet" href="' . e(url('/admin/s
 
 $token = 'conversation-integration-v131-20260826';
 $transportToken = 'c9d55f75';
-$projectLoaderToken = 'cace5655-media-20261026';
+$projectLoaderToken = 'bb08edb1';
 $coreToken = 'f07e7f70';
 $editingToken = 'stem-editing-foundation-v209-20260901';
 $professionalEditingToken = 'stem-professional-editing-v210-20260901';
