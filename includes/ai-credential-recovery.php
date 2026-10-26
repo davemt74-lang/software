@@ -170,7 +170,9 @@ function ai_recovery_reconnect(PDO $pdo, array $input, bool $confirmed): void
             $pdo->commit();
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
-            unlink($journal); unlink($stage);
+            // A lost connection during COMMIT has an uncertain outcome. Keep
+            // the staged key: the next request checks the durable DB snapshot
+            // to distinguish committed recovery from an uncommitted attempt.
             throw $e;
         }
         ai_recovery_finish_pending($pdo);
