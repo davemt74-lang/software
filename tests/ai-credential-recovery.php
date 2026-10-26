@@ -4,7 +4,7 @@ declare(strict_types=1);
 // Fresh PHP processes exercise filesystem recovery and real transactional SQL.
 if (count($argv) === 1) {
     $total = 0;
-    foreach (['restore','reconnect','accounts','rollback','ambiguous','publish','uncommitted','crash'] as $case) {
+    foreach (['restore','reconnect','accounts','domains','rollback','ambiguous','publish','uncommitted','crash'] as $case) {
         $root = sys_get_temp_dir().'/vp3-credential-'.bin2hex(random_bytes(6));
         mkdir($root, 0700);
         try {
@@ -93,6 +93,16 @@ switch ($case) {
         rejects(fn()=>ai_recovery_reconnect($pdo,$plain,true),'Cannot strand account credentials');
         check(!is_file(ai_master_key_file()),'Account protection creates no replacement key');
         ksort($saved); check(ai_recovery_saved($pdo) === $saved,'Account protection retains all database values');
+        break;
+    case 'domains':
+        $pdo->exec('CREATE TABLE cloud_hosting_custom_domains(verification_token_enc TEXT)');
+        $token = ai_encrypt_secret_with_key('fixture-domain-verification',$old);
+        $pdo->prepare('INSERT INTO cloud_hosting_custom_domains VALUES(?)')->execute([$token]);
+        rejects(fn()=>ai_recovery_reconnect($pdo,$plain,true),'Hosted-domain verification cannot be stranded');
+        check(!is_file(ai_master_key_file()),'Domain protection creates no replacement key');
+        ai_recovery_restore($pdo,$backup);
+        check(ai_decrypt_secret($token)==='fixture-domain-verification','Original key restores domain verification too');
+        ksort($saved); check(ai_recovery_saved($pdo)===$saved,'Domain backup restore leaves saved site keys unchanged');
         break;
     case 'rollback':
         $pdo->exec("CREATE TRIGGER fail_update BEFORE UPDATE ON settings WHEN NEW.setting_key='ai_elevenlabs_api_key' BEGIN SELECT RAISE(ABORT,'fixture transaction failure'); END");

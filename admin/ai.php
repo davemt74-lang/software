@@ -193,7 +193,7 @@ require __DIR__ . '/_header.php';
   <?php else: ?>
   <details>
     <summary>Restore the original encryption file from a backup</summary>
-    <p>This validates the backup against saved site and personal account credentials before restoring it. Database values stay unchanged.</p>
+    <p>This validates the backup against saved site, personal account and hosted-domain credentials before restoring it. Database values stay unchanged.</p>
     <form method="post" enctype="multipart/form-data" class="grid-form">
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="restore_credentials">
@@ -204,8 +204,8 @@ require __DIR__ . '/_header.php';
   <details>
     <summary>No backup available: reconnect using your existing API keys</summary>
     <p>Enter the same keys from your provider accounts. This creates a new local encryption file and reconnects all saved site services together. Existing provider, model and voice selections stay unchanged. The old encrypted database values are retained as recovery data.</p>
-    <?php if (ai_recovery_account_secrets($pdo)): ?>
-    <p role="alert">Personal account credentials also depend on the original file. Restore that file to preserve those accounts; site reconnection is unavailable.</p>
+    <?php if (ai_recovery_dependent_secrets($pdo)): ?>
+    <p role="alert">Personal account or hosted-domain credentials also depend on the original file. Restore that file to preserve those credentials; site reconnection is unavailable.</p>
     <?php else: ?>
     <form method="post" class="grid-form" autocomplete="off">
       <?= csrf_field() ?>
