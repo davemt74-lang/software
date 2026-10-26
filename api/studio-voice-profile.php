@@ -16,10 +16,7 @@ function studio_voice_profile_json(bool $ok, array $data = [], int $status = 200
 
 function studio_voice_profile_elevenlabs_key(): string
 {
-    $key = trim((string)(getenv('ELEVENLABS_API_KEY') ?: ''));
-    if ($key !== '') return $key;
-    $encrypted = trim((string)setting('ai_elevenlabs_api_key', ''));
-    return $encrypted !== '' && function_exists('ai_decrypt_secret') ? ai_decrypt_secret($encrypted) : '';
+    return ai_elevenlabs_credential()[0];
 }
 
 function studio_voice_profile_delete_remote_voice(string $apiKey, string $voiceId): array

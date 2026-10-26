@@ -246,6 +246,7 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 ]
 
 PHP_TESTS = [
+    'tests/elevenlabs-database-credential.php',
     'tests/ai-credential-recovery.php',
     'tests/ai-credential-recovery-page.php',
     'tests/media-source-recovery.php',

@@ -21,11 +21,7 @@ function vp3_extension_voice_json_v2140(int $status,string $code,string $message
 
 function vp3_extension_voice_settings_v2140(): array
 {
-    $apiKey=trim((string)(getenv('ELEVENLABS_API_KEY')?:''));
-    if($apiKey===''){
-        $encrypted=trim((string)setting('ai_elevenlabs_api_key',''));
-        $apiKey=ai_decrypt_secret($encrypted);
-    }
+    [$apiKey]=ai_elevenlabs_credential();
     $voiceId=trim((string)(getenv('ELEVENLABS_VOICE_ID')?:setting('ai_elevenlabs_voice_id','JBFqnCBsd6RMkjVDRZzb')));
     $model=trim((string)(getenv('ELEVENLABS_MODEL_ID')?:setting('ai_elevenlabs_model_id','eleven_flash_v2_5')));
     $allowedModels=['eleven_flash_v2_5','eleven_flash_v2','eleven_turbo_v2_5','eleven_multilingual_v2'];

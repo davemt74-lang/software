@@ -37,10 +37,7 @@ if ($text === '') {
 }
 if (mb_strlen($text) > 4000) $text = mb_substr($text, 0, 4000);
 
-$apiKey = trim((string)(getenv('ELEVENLABS_API_KEY') ?: ''));
-if ($apiKey === '') {
-    $apiKey = ai_decrypt_secret((string)setting('ai_elevenlabs_api_key', ''));
-}
+[$apiKey] = ai_elevenlabs_credential();
 $voiceId = trim((string)(getenv('ELEVENLABS_VOICE_ID') ?: setting('ai_elevenlabs_voice_id', 'JBFqnCBsd6RMkjVDRZzb')));
 $modelId = trim((string)(getenv('ELEVENLABS_MODEL_ID') ?: setting('ai_elevenlabs_model_id', 'eleven_v3')));
 

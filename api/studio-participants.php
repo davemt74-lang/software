@@ -16,10 +16,7 @@ function studio_participants_json(bool $ok, array $data = [], int $status = 200)
 
 function studio_participants_elevenlabs_key(): string
 {
-    $key = trim((string)(getenv('ELEVENLABS_API_KEY') ?: ''));
-    if ($key !== '') return $key;
-    $encrypted = trim((string)setting('ai_elevenlabs_api_key', ''));
-    return $encrypted !== '' && function_exists('ai_decrypt_secret') ? ai_decrypt_secret($encrypted) : '';
+    return ai_elevenlabs_credential()[0];
 }
 
 function studio_participants_existing_binding(PDO $pdo, array $user, int $participantId): array
