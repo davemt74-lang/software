@@ -208,6 +208,14 @@ function ai_encrypt_secret(string $plaintext): string
         throw new RuntimeException('API credential encryption is unavailable.');
     }
 
+    return ai_encrypt_secret_with_key($plaintext, $key);
+}
+
+/** Explicit-key variant used to validate/stage administrator recovery. */
+function ai_encrypt_secret_with_key(string $plaintext, string $key): string
+{
+    if (strlen($key) !== 32) throw new RuntimeException('Invalid credential encryption key.');
+
     if (function_exists('sodium_crypto_secretbox')) {
         $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
         $cipher = sodium_crypto_secretbox($plaintext, $nonce, $key);
@@ -249,6 +257,14 @@ function ai_decrypt_secret(string $encrypted): string
     if (!is_string($key) || strlen($key) !== 32) {
         return '';
     }
+
+    return ai_decrypt_secret_with_key($encrypted, $key);
+}
+
+/** Does not change the installation key or execute an uploaded key file. */
+function ai_decrypt_secret_with_key(string $encrypted, string $key): string
+{
+    if (strlen($key) !== 32) return '';
 
     if (str_starts_with($encrypted, 'sbx1:') && function_exists('sodium_crypto_secretbox_open')) {
         $raw = base64_decode(substr($encrypted, 5), true);

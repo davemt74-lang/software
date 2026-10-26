@@ -2,6 +2,8 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_permission('ai.manage');
+require_once dirname(__DIR__).'/includes/ai-credential-recovery.php';
+header('Cache-Control: no-store');
 
 $pdo = db();
 if (!$pdo) {
@@ -20,6 +22,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string)($_POST['action'] ?? 'save');
 
     try {
+        if ($action === 'restore_credentials') {
+            $upload = $_FILES['original_key_file'] ?? [];
+            if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
+                || (int)($upload['size'] ?? 0) > 1024
+                || !is_uploaded_file((string)($upload['tmp_name'] ?? ''))) {
+                throw new RuntimeException('Select the original ai-key.php backup file (up to 1 KB).');
+            }
+            $contents = file_get_contents($upload['tmp_name'], false, null, 0, 1025);
+            if (!is_string($contents)) throw new RuntimeException('Could not read the selected backup file.');
+            ai_recovery_restore($pdo, $contents);
+            flash('notice', 'Original encryption file restored. Saved credentials are readable again. Test Chat and voice.');
+            redirect(url('/admin/ai.php'));
+        }
+        if ($action === 'reconnect_credentials') {
+            ai_recovery_reconnect($pdo, (array)($_POST['recovery_keys'] ?? []), !empty($_POST['confirm_reconnection']));
+            flash('notice', 'Saved services reconnected. Original encrypted database values were retained for recovery. Test Chat and voice.');
+            redirect(url('/admin/ai.php'));
+        }
         if ($action === 'save') {
             $systemAgentName = trim(preg_replace('/\s+/u', ' ', (string)($_POST['system_agent_name'] ?? '')) ?? '');
             if ($systemAgentName === '') {
@@ -157,6 +177,51 @@ require __DIR__ . '/_header.php';
   <?= e($credentialRecoveryMessage) ?>
   The deploy process must preserve <code>/private/ai-key.php</code>; do not create a replacement key unless the original cannot be recovered.
 </div>
+<?php endif; ?>
+<?php if ($credentialKeyState === 'missing_key' && $encryptedCredentialsExist): ?>
+<section class="panel" aria-labelledby="credential-recovery-heading">
+  <h2 id="credential-recovery-heading">Restore Chat and voice access</h2>
+  <p>Your provider keys are still saved in the database. This installation is missing the file needed to unlock them. Choose a recovery method below.</p>
+  <?php if (is_file(ai_private_dir().'/.ai-credential-recovery.json')): ?>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="reconnect_credentials">
+    <input type="hidden" name="confirm_reconnection" value="1">
+    <p>A reconnection was interrupted. Resume it using the saved recovery data.</p>
+    <button class="btn" type="submit">Finish interrupted reconnection</button>
+  </form>
+  <?php else: ?>
+  <details>
+    <summary>Restore the original encryption file from a backup</summary>
+    <p>This validates the backup against saved site and personal account credentials before restoring it. Database values stay unchanged.</p>
+    <form method="post" enctype="multipart/form-data" class="grid-form">
+      <?= csrf_field() ?>
+      <input type="hidden" name="action" value="restore_credentials">
+      <label class="field full">Original ai-key.php file<input type="file" name="original_key_file" accept=".php" required></label>
+      <button class="btn" type="submit">Validate and restore original file</button>
+    </form>
+  </details>
+  <details>
+    <summary>No backup available: reconnect using your existing API keys</summary>
+    <p>Enter the same keys from your provider accounts. This creates a new local encryption file and reconnects all saved site services together. Existing provider, model and voice selections stay unchanged. The old encrypted database values are retained as recovery data.</p>
+    <?php if (ai_recovery_account_secrets($pdo)): ?>
+    <p role="alert">Personal account credentials also depend on the original file. Restore that file to preserve those accounts; site reconnection is unavailable.</p>
+    <?php else: ?>
+    <form method="post" class="grid-form" autocomplete="off">
+      <?= csrf_field() ?>
+      <input type="hidden" name="action" value="reconnect_credentials">
+      <?php foreach (ai_recovery_saved($pdo) as $name => $unused): ?>
+      <label class="field full"><?= e(ai_recovery_labels()[$name]) ?> API key
+        <input type="password" name="recovery_keys[<?= e($name) ?>]" autocomplete="new-password" maxlength="4000" required>
+      </label>
+      <?php endforeach; ?>
+      <label class="field full"><span><input type="checkbox" name="confirm_reconnection" value="1" required> The original encryption file cannot be recovered. Reconnect the saved site services using the keys entered above.</span></label>
+      <button class="btn" type="submit">Reconnect saved services</button>
+    </form>
+    <?php endif; ?>
+  </details>
+  <?php endif; ?>
+</section>
 <?php endif; ?>
 <div class="panel ai-overview-panel">
   <div class="ai-settings-heading">
