@@ -81,16 +81,21 @@ try {
             check(in_array(($provider==='openai'?'Authorization: Bearer ':'x-api-key: ').$key,$request['headers'],true),'HTTP request uses original decrypted credential');
             check(str_contains(json_encode($request['payload']),"Hey what's up"),'Latest user question is present in the request');
         }
+        $test=ai_test_provider($provider);
+        check(!empty($test['ok'])&&$test['model']===$model,'Admin connection test uses the saved provider and model');
+        check(in_array(($provider==='openai'?'Authorization: Bearer ':'x-api-key: ').$key,end($requests)['headers'],true),'Admin connection test sends the saved decrypted key');
         $requests=[];$replyStatus=401;
         $failed=ai_generate_chat_response('Hello',[],[],$user);
         check(empty($failed['ok'])&&$failed['status']===401,'Provider authentication rejection is preserved');
         check(str_contains(chat_local_answer('Hello',[],$failed),'rejected this request'),'Authentication rejection has its own safe notice');
+        check((ai_test_provider($provider)['status']??0)===401,'Admin connection test preserves provider authentication rejection');
         $replyStatus=200;
         $settings['ai_'.$provider.'_enabled']='0';
         $requests=[];
         $failed=ai_generate_chat_response('Hello',[],[],$user);
         check(($failed['failure_code']??'')==='provider_disabled'&&$requests===[],'Disabled provider is identified before HTTP');
         check(str_contains(chat_local_answer('Hello',[],$failed),'disabled on the server'),'Disabled notice is distinct from connection failure');
+        check((ai_test_provider($provider)['failure_code']??'')==='provider_disabled','Admin connection test identifies a disabled provider');
         $settings['ai_'.$provider.'_enabled']='1';
         $settings['ai_'.$provider.'_api_key']='';
         check(ai_provider_configuration_failure($provider)['failure_code']==='credential_empty','Missing saved credential is distinct');
@@ -99,6 +104,7 @@ try {
         $settings['ai_'.$provider.'_api_key']=$cipher;
         unlink(ai_master_key_file());
         check(ai_provider_configuration_failure($provider)['failure_code']==='credential_missing_key','Missing installation key is distinct');
+        check((ai_test_provider($provider)['failure_code']??'')==='credential_missing_key','Admin connection test identifies the missing installation key before HTTP');
         file_put_contents(ai_master_key_file(),$keyFile);
         $settings['ai_'.$provider.'_api_key']=$cipher;
         $settings['ai_active_provider']='local';unset($settings['ai_haiku55_defaults_applied']);

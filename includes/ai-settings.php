@@ -595,9 +595,8 @@ function ai_test_provider(string $provider): array
         return ['ok' => false, 'error' => 'Select OpenAI or Claude to test.'];
     }
 
-    if (!ai_provider_enabled($provider)) {
-        return ['ok' => false, 'error' => 'Enable the provider before testing it.'];
-    }
+    $configurationFailure = ai_provider_configuration_failure($provider);
+    if ($configurationFailure !== null) return $configurationFailure;
 
     $context = [[
         'source' => 'system:test',
