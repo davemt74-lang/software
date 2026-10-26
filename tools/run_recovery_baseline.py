@@ -247,6 +247,7 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 
 PHP_TESTS = [
     'tests/ai-credential-recovery.php',
+    'tests/ai-credential-recovery-page.php',
     'tests/media-source-recovery.php',
     'tests/chat-response-relevance.php',
     'tests/cloud-provider-preservation.php',

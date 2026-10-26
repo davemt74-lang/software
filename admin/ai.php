@@ -12,6 +12,7 @@ if (!$pdo) {
 }
 
 seed_permission_catalog();
+$credentialRecoveryRequired = ai_master_key_state() === 'missing_key' && ai_saved_encrypted_credentials_exist();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
@@ -41,6 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(url('/admin/ai.php'));
         }
         if ($action === 'save') {
+            if ($credentialRecoveryRequired) {
+                flash('error', 'Reconnect the saved services using the recovery form. Your credentials and settings have not been changed.');
+                redirect(url('/admin/ai.php').'#credential-recovery');
+            }
             $systemAgentName = trim(preg_replace('/\s+/u', ' ', (string)($_POST['system_agent_name'] ?? '')) ?? '');
             if ($systemAgentName === '') {
                 throw new RuntimeException('Enter a system agent name.');
@@ -174,12 +179,16 @@ require __DIR__ . '/_header.php';
 <?php if ($credentialRecoveryMessage !== ''): ?>
 <div class="vp3-alert error" role="alert">
   <strong>API credential recovery required.</strong>
+  <?php if ($credentialRecoveryRequired): ?>
+  Your saved keys are locked. Reconnect the services using the form below. Their existing database values will be kept as recovery data.
+  <?php else: ?>
   <?= e($credentialRecoveryMessage) ?>
   The deploy process must preserve <code>/private/ai-key.php</code>; do not create a replacement key unless the original cannot be recovered.
+  <?php endif; ?>
 </div>
 <?php endif; ?>
 <?php if ($credentialKeyState === 'missing_key' && $encryptedCredentialsExist): ?>
-<section class="panel" aria-labelledby="credential-recovery-heading">
+<section class="panel" id="credential-recovery" aria-labelledby="credential-recovery-heading">
   <h2 id="credential-recovery-heading">Restore Chat and voice access</h2>
   <p>Your provider keys are still saved in the database. This installation is missing the file needed to unlock them. Choose a recovery method below.</p>
   <?php if (is_file(ai_private_dir().'/.ai-credential-recovery.json')): ?>
@@ -193,7 +202,7 @@ require __DIR__ . '/_header.php';
   <?php else: ?>
   <details>
     <summary>Restore the original encryption file from a backup</summary>
-    <p>This validates the backup against saved site and personal account credentials before restoring it. Database values stay unchanged.</p>
+    <p>This validates the backup against saved site, personal account and hosted-domain credentials before restoring it. Database values stay unchanged.</p>
     <form method="post" enctype="multipart/form-data" class="grid-form">
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="restore_credentials">
@@ -201,11 +210,11 @@ require __DIR__ . '/_header.php';
       <button class="btn" type="submit">Validate and restore original file</button>
     </form>
   </details>
-  <details>
-    <summary>No backup available: reconnect using your existing API keys</summary>
-    <p>Enter the same keys from your provider accounts. This creates a new local encryption file and reconnects all saved site services together. Existing provider, model and voice selections stay unchanged. The old encrypted database values are retained as recovery data.</p>
-    <?php if (ai_recovery_account_secrets($pdo)): ?>
-    <p role="alert">Personal account credentials also depend on the original file. Restore that file to preserve those accounts; site reconnection is unavailable.</p>
+  <div>
+    <h3>Reconnect saved services</h3>
+    <p>Enter the API keys for the services below, then select Reconnect saved services. Your provider, model and voice selections will be kept.</p>
+    <?php if (ai_recovery_dependent_secrets($pdo)): ?>
+    <p role="alert">Personal account or hosted-domain credentials also depend on the original file. Restore that file to preserve those credentials; site reconnection is unavailable.</p>
     <?php else: ?>
     <form method="post" class="grid-form" autocomplete="off">
       <?= csrf_field() ?>
@@ -215,14 +224,15 @@ require __DIR__ . '/_header.php';
         <input type="password" name="recovery_keys[<?= e($name) ?>]" autocomplete="new-password" maxlength="4000" required>
       </label>
       <?php endforeach; ?>
-      <label class="field full"><span><input type="checkbox" name="confirm_reconnection" value="1" required> The original encryption file cannot be recovered. Reconnect the saved site services using the keys entered above.</span></label>
+      <label class="field full"><span><input type="checkbox" name="confirm_reconnection" value="1" required> I do not have the original backup file. Reconnect these services and keep the old encrypted values as recovery data.</span></label>
       <button class="btn" type="submit">Reconnect saved services</button>
     </form>
     <?php endif; ?>
-  </details>
+  </div>
   <?php endif; ?>
 </section>
 <?php endif; ?>
+<?php if (!$credentialRecoveryRequired): ?>
 <div class="panel ai-overview-panel">
   <div class="ai-settings-heading">
     <div>
@@ -435,6 +445,7 @@ require __DIR__ . '/_header.php';
   </div>
 </div>
 
+<?php endif; ?>
 <div class="panel">
   <h2>Credential Security</h2>
   <p class="muted">API keys are encrypted before being stored in the database. The local encryption key is created at <code>/private/ai-key.php</code> the first time a credential is saved. Back up that file with your private site configuration. Production deploy packages must never replace the <code>/private</code> runtime directory; without the original key, existing saved API credentials cannot be decrypted.</p>

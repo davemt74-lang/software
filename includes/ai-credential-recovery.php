@@ -22,16 +22,23 @@ function ai_recovery_saved(PDO $pdo, bool $lock = false): array
     return $saved;
 }
 
-function ai_recovery_account_secrets(PDO $pdo): array
+function ai_recovery_dependent_secrets(PDO $pdo): array
 {
-    try {
-        return $pdo->query('SELECT encrypted_key FROM user_llm_credentials')->fetchAll(PDO::FETCH_COLUMN);
-    } catch (PDOException $e) {
-        // An installation predating account BYOK may not have this table.
-        if (($e->errorInfo[0] ?? '') === '42S02'
-            || ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite' && str_contains($e->getMessage(), 'no such table: user_llm_credentials'))) return [];
-        throw $e;
+    $secrets = [];
+    // These are the other production callers of ai_encrypt_secret().
+    foreach (['user_llm_credentials'=>'encrypted_key', 'cloud_hosting_custom_domains'=>'verification_token_enc'] as $table=>$column) {
+        try {
+            $rows = $pdo->query('SELECT '.$column.' FROM '.$table)->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($rows as $secret) if (trim((string)$secret) !== '') $secrets[] = (string)$secret;
+        } catch (PDOException $e) {
+            // Older installations may predate either feature; other DB errors
+            // must fail closed rather than hiding unknown dependent secrets.
+            if (($e->errorInfo[0] ?? '') === '42S02'
+                || ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite' && str_contains($e->getMessage(), 'no such table: '.$table))) continue;
+            throw $e;
+        }
     }
+    return $secrets;
 }
 
 function ai_recovery_parse_key(string $file): string
@@ -94,7 +101,7 @@ function ai_recovery_restore(PDO $pdo, string $uploaded): void
     try {
         if (file_exists(ai_master_key_file()) || is_link(ai_master_key_file())) throw new RuntimeException('An installation key already exists. It was not replaced.');
         if (is_file(ai_private_dir().'/.ai-credential-recovery.json')) throw new RuntimeException('Finish the pending reconnection first.');
-        $secrets = array_merge(array_values(ai_recovery_saved($pdo)), ai_recovery_account_secrets($pdo));
+        $secrets = array_merge(array_values(ai_recovery_saved($pdo)), ai_recovery_dependent_secrets($pdo));
         if (!$secrets) throw new RuntimeException('No saved credentials are available to validate this backup key.');
         foreach ($secrets as $secret) {
             if (ai_decrypt_secret_with_key((string)$secret, $key) === '') throw new RuntimeException('This backup key cannot unlock all of this site’s saved credentials. Nothing was changed.');
@@ -144,7 +151,7 @@ function ai_recovery_reconnect(PDO $pdo, array $input, bool $confirmed): void
         if (ai_recovery_finish_pending($pdo)) return;
         if (!function_exists('link')) throw new RuntimeException('The server needs PHP link support for credential recovery. No saved credentials were changed.');
         if (file_exists(ai_master_key_file()) || is_link(ai_master_key_file())) throw new RuntimeException('Reconnection is available only when the installation encryption file is missing.');
-        if (ai_recovery_account_secrets($pdo)) throw new RuntimeException('Personal account keys also use the missing file. Restore the original file to preserve those accounts; site reconnection has not changed anything.');
+        if (ai_recovery_dependent_secrets($pdo)) throw new RuntimeException('Personal account or hosted-domain credentials also use the missing file. Restore the original file to preserve those credentials; site reconnection has not changed anything.');
         $saved = ai_recovery_saved($pdo);
         if (!$saved) throw new RuntimeException('No saved credentials require recovery.');
         $key = random_bytes(32); $replacement = [];
@@ -160,7 +167,7 @@ function ai_recovery_reconnect(PDO $pdo, array $input, bool $confirmed): void
         ai_recovery_write_private($journal, json_encode(['id'=>$id], JSON_THROW_ON_ERROR));
         $pdo->beginTransaction();
         try {
-            if (ai_recovery_saved($pdo, true) !== $saved || ai_recovery_account_secrets($pdo)) throw new RuntimeException('Saved credentials changed. Reload and retry recovery.');
+            if (ai_recovery_saved($pdo, true) !== $saved || ai_recovery_dependent_secrets($pdo)) throw new RuntimeException('Saved credentials changed. Reload and retry recovery.');
             // Preserve original ciphertext for later recovery; never store plaintext.
             $snapshot = json_encode(['id'=>$id, 'created_at'=>gmdate('c'), 'credentials'=>$saved], JSON_THROW_ON_ERROR);
             $stmt = $pdo->prepare('INSERT INTO settings (setting_key,setting_value) VALUES (?,?)');

@@ -75,6 +75,9 @@ if (!hash_equals(csrf_token(), (string)($input['csrf_token'] ?? ''))) {
 }
 
 try {
+    if (ai_master_key_state() === 'missing_key' && ai_saved_encrypted_credentials_exist()) {
+        throw new RuntimeException('Reconnect the saved services in AI / API Settings before changing ElevenLabs settings. Your saved credentials and voice settings have not been changed.');
+    }
     $voiceId = trim((string)($input['voice_id'] ?? ''));
     $modelId = trim((string)($input['model_id'] ?? 'eleven_flash_v2_5'));
     $apiKey = trim((string)($input['api_key'] ?? ''));
