@@ -170,6 +170,22 @@
     };
     const failureKey=item=>`${String(item?.type||'unknown')}:${Number(item?.id||0)}`;
     const failureAccepted=item=>acceptedFailures.has(failureKey(item));
+    const audioDiagnostics=new Map(),diagnosticsPending=new Set();
+    const inspectAudioFailure=id=>{
+      if(!originalFetch||audioDiagnostics.has(id)||diagnosticsPending.has(id))return;
+      const audio=mediaFor(id),meta=metaById.get(Number(id))||{};
+      const url=parseUrl(audio?.currentSrc||audio?.src||meta.url||'');
+      const origin=parseUrl(host.location?.href||'http://localhost/');
+      if(!url||url.origin!==origin?.origin||!url.pathname.endsWith('/stem-media-v34.php'))return;
+      diagnosticsPending.add(id);
+      originalFetch(url.href,{method:'HEAD',credentials:'same-origin',cache:'no-store'}).then(response=>{
+        const reason=String(response.headers?.get?.('X-Stonefellow-Media-Status')||'');
+        const messages={missing:'Original audio file is missing from server storage',empty:'Original audio file is empty',invalid_path:'Saved audio reference is invalid',outside_stem_root:'Saved audio reference is outside project storage',invalid_signature:'Audio bytes are damaged or do not match their format',forbidden:'Your account cannot access this audio',not_found:'Audio registration no longer exists'};
+        const pageResponse=String(response.headers?.get?.('Content-Type')||'').includes('text/html');
+        audioDiagnostics.set(id,messages[reason]||([401,403].includes(response.status)?'Audio access was denied':response.status===404?'Audio file or registration was not found':response.status===415?'Audio format is unsupported':pageResponse?'Audio request returned a sign-in or error page':response.ok?'The browser could not decode this audio':'Audio request failed; retry loading'));
+        renderFailures(lastFailures);
+      }).catch(()=>{audioDiagnostics.set(id,'Could not reach the audio service');renderFailures(lastFailures);});
+    };
     const acceptFailures=failures=>{
       (Array.isArray(failures)?failures:[]).forEach(item=>acceptedFailures.set(failureKey(item),{...item}));
     };
@@ -178,7 +194,8 @@
       if(!failuresNode)return;
       if(!lastFailures.length){failuresNode.hidden=true;failuresNode.innerHTML='';return;}
       failuresNode.hidden=false;
-      failuresNode.innerHTML=`<strong>Could not load</strong><ul>${lastFailures.map(item=>`<li>${escapeHtml(stemLabel(item.id))} — ${item.type==='audio'?'Audio unavailable':'Waveform unavailable'}</li>`).join('')}</ul>`;
+      failuresNode.innerHTML=`<strong>Could not load</strong><ul>${lastFailures.map(item=>`<li>${escapeHtml(stemLabel(item.id))} — ${escapeHtml(item.type==='audio'?(audioDiagnostics.get(item.id)||'Checking audio file…'):'Waveform unavailable')}</li>`).join('')}</ul>`;
+      lastFailures.filter(item=>item.type==='audio').forEach(item=>inspectAudioFailure(item.id));
     };
     const mediaState=id=>{
       const stem=liveStem(id);

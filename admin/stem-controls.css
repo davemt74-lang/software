@@ -1,0 +1,17 @@
+/* Stem Studio only: retain the existing layout and transport behavior. */
+body.admin-canvas-mode{margin:0;background:#090c0b;color:#d5dfd8;color-scheme:dark}
+body.admin-canvas-mode .admin-layout-canvas,
+body.admin-canvas-mode .admin-content-canvas{display:block;width:100%;max-width:none;margin:0;padding:0;background:#090c0b}
+body.admin-canvas-mode :is(.daw-studio,.daw-canvas-header,.daw-transport,.daw-mixer) :is(select,input[type="number"],input[type="text"]){box-sizing:border-box;min-height:28px;padding:4px 7px;border:1px solid #39463e;border-radius:5px;background:#151c18;color:#dce6df;font:inherit;box-shadow:inset 0 1px 2px #0005}
+body.admin-canvas-mode :is(.daw-studio,.daw-canvas-header,.daw-transport,.daw-mixer) select{max-width:100%;cursor:pointer}
+body.admin-canvas-mode :is(select,input,button):focus-visible{outline:2px solid #a7c892;outline-offset:2px}
+body.admin-canvas-mode input[type="range"]{appearance:none;-webkit-appearance:none;min-height:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;accent-color:#a7c892}
+body.admin-canvas-mode input[type="range"]::-webkit-slider-runnable-track{height:5px;border:1px solid #425148;border-radius:4px;background:#202b24}
+body.admin-canvas-mode input[type="range"]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border:1px solid #a6b8a8;border-radius:4px;background:linear-gradient(#b8c9b7,#809780);box-shadow:0 2px 4px #0009;cursor:pointer}
+body.admin-canvas-mode input[type="range"]::-moz-range-track{height:4px;border:1px solid #425148;border-radius:4px;background:#202b24}
+body.admin-canvas-mode input[type="range"]::-moz-range-thumb{width:12px;height:12px;border:1px solid #a6b8a8;border-radius:4px;background:#9caf9b;cursor:pointer}
+body.admin-canvas-mode input.daw-fader::-webkit-slider-thumb{width:18px;height:12px;margin-top:-5px;cursor:ns-resize}
+body.admin-canvas-mode input.daw-fader::-moz-range-thumb{width:16px;height:10px;cursor:ns-resize}
+body.admin-canvas-mode .daw-stem-volume-control{width:96px;height:18px}
+body.admin-canvas-mode .stem-project-loader-v232-card{max-height:calc(100dvh - 32px);overflow:auto}
+body.admin-canvas-mode .stem-project-loader-v232{padding:16px;box-sizing:border-box}

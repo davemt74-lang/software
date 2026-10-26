@@ -8,6 +8,7 @@ ob_start();
 
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_permission('tracks.manage');
+require_once dirname(__DIR__).'/includes/stem-import-media.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -1707,6 +1708,7 @@ try {
         $rppInfo = $state['rpp_info'] ?? [];
         $projectId = (int)$save['project_id'];
 
+        stem_import_validate_staged_media($pdo,$trackId,$projectId,$save['new_stem_ids']??[],$total);
         $pdo->beginTransaction();
 
         try {
@@ -1818,6 +1820,9 @@ try {
         }
 
         foreach (($save['old_paths'] ?? []) as $oldPath) {
+            // A song may explicitly use an imported file as its original audio.
+            // Replacing project stems must not delete that separate reference.
+            if((string)$oldPath===(string)($track['audio_path']??''))continue;
             stem_delete_path_if_local((string)$oldPath);
             stem_cleanup_empty_parent((string)$oldPath);
         }

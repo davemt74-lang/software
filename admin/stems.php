@@ -15,9 +15,14 @@ ob_start();
 require __DIR__ . '/stems-legacy-v108.php';
 $html = (string)ob_get_clean();
 
+// The global light admin theme overrides the Studio's canvas and faders.
+// Exclude it only from this rendered page; other admin pages retain it.
+$html = preg_replace('~<link\b[^>]*\bdata-admin-tech-theme\b[^>]*>~i', '', $html) ?? $html;
+$html = str_replace('</head>', '<link rel="stylesheet" href="' . e(url('/admin/stem-controls.css?v=media-20261026')) . '"></head>', $html);
+
 $token = 'conversation-integration-v131-20260826';
 $transportToken = 'c9d55f75';
-$projectLoaderToken = 'cace5655';
+$projectLoaderToken = 'cace5655-media-20261026';
 $coreToken = 'f07e7f70';
 $editingToken = 'stem-editing-foundation-v209-20260901';
 $professionalEditingToken = 'stem-professional-editing-v210-20260901';
