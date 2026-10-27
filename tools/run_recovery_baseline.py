@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 NODE_TESTS = [
+    'tests/homeserver-v235-voice-profile-contract.mjs',
     'tests/profile-notifications-v1341.mjs',
     'tests/chat-send-recovery.mjs',
     'tests/chat-player-volume.mjs',
