@@ -42,6 +42,7 @@ function vp3_cloud_hosting_normalize_cpanel_server_v100(string $s):string{return
 function vp3_cloud_hosting_v110_normalize_domain(string $s,string $label):string{return trim($s);}
 PHP;
 $bootstrap.="\nrequire ".var_export($repo.'/includes/functions.php',true).";\nrequire ".var_export($repo.'/includes/ai-settings.php',true).";\n";
+$bootstrap.="require ".var_export($repo.'/includes/ai-runtime-v100.php',true).";\n";
 file_put_contents($root.'/includes/bootstrap.php',$bootstrap);
 file_put_contents($root.'/admin/_header.php','<!doctype html><html><body><?php foreach(["notice","error"] as $type){$message=flash($type);if($message)echo "<p>".e($message)."</p>";} ?>');
 file_put_contents($root.'/admin/_footer.php','</body></html>');
@@ -72,6 +73,21 @@ try{
  check(!str_contains($html,'ai-overview-panel')&&!str_contains($html,'Save AI / API Settings'),'Conflicting normal save controls not rendered');
  check(!str_contains($html,'Restore /private/ai-key.php from the previous installation'),'Missing-key page does not repeat the file-hunting warning');
  preg_match('/name="csrf_token" value="([^"]+)"/',$html,$match);$csrf=$match[1]??'';check($csrf!=='','Production CSRF field present');
+ preg_match('/<button\b[^>]*>Test Claude<\/button>/',$html,$testButton);
+ check(isset($testButton[0])&&!str_contains($testButton[0],'disabled'),'Claude test stays usable when its credential cannot be decrypted');
+ check(str_contains($html,'Test Cloud Chat')&&str_contains($html,'Test ElevenLabs'),'Chat and ElevenLabs tests stay visible during recovery');
+ foreach(['anthropic','chat','elevenlabs'] as $provider){
+  [$status,,$headers]=request('/admin/ai.php',['action'=>'test','provider'=>$provider,'csrf_token'=>$csrf]);
+  check($status===302&&in_array('Location: /admin/ai.php#connection-tests',$headers,true),'Connection test returns to its result section');
+  [$status,$html]=request('/admin/ai.php');
+  check($status===200&&str_contains($html,'credential_missing_key'),'Connection test reports the actual missing-key code');
+  check(rows()===$before&&!is_file($root.'/private/ai-key.php'),'Connection test never replaces keys or changes settings');
+ }
+ [$status]=request('/admin/ai.php',['action'=>'test','provider'=>'chat','csrf_token'=>$csrf],false,'viewer');
+ check($status===403,'Connection tests retain administrator permission checks');
+ [$status]=request('/admin/ai.php',['action'=>'test','provider'=>'chat','csrf_token'=>'invalid']);
+ check($status===302&&rows()===$before,'Connection tests reject invalid CSRF without writes');
+ request('/admin/ai.php');
  [$status,,$headers]=request('/admin/ai.php',['action'=>'save','csrf_token'=>$csrf,'system_agent_name'=>'Wrong Agent','active_provider'=>'openai','anthropic_api_key'=>'fixture-new-key']);
  check($status===302&&in_array('Location: /admin/ai.php#credential-recovery',$headers,true),'Stale normal save redirects to recovery');
  check(rows()===$before&&!is_file($root.'/private/ai-key.php'),'Stale save leaves credentials and selections unchanged');

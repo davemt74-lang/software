@@ -132,26 +132,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'test') {
             $provider = trim((string)($_POST['provider'] ?? ''));
-            $result = ai_test_provider($provider);
+            $chatTest = $provider === 'chat';
+            $voiceTest = $provider === 'elevenlabs';
+            $result = $chatTest ? ai_test_chat_connection(current_user()) : ($voiceTest ? ai_test_elevenlabs_connection() : ai_test_provider($provider));
+            $label = $chatTest ? 'Cloud Chat' : ($voiceTest ? 'ElevenLabs' : ($provider === 'openai' ? 'OpenAI' : 'Claude'));
 
             if ($result['ok'] ?? false) {
                 flash(
                     'notice',
-                    ($provider === 'openai' ? 'OpenAI' : 'Claude') .
+                    $label .
                     ' connected successfully using ' .
                     (string)($result['model'] ?? ai_provider_model($provider)) .
-                    '.'
+                    ($chatTest ? '. Fresh text and streaming AI replies verified with the ' . ($result['credential_source'] === 'account' ? 'account' : 'saved system') . ' key.' : ($voiceTest ? '. Audio received for voice ' . (string)$result['voice_id'] . '.' : '.'))
                 );
             } else {
+                $detail = (string)($result['error'] ?? 'Unknown provider error.');
+                if (!empty($result['failure_code'])) $detail .= ' [' . (string)$result['failure_code'] . ']';
+                if (!empty($result['status'])) $detail .= ' (HTTP ' . (int)$result['status'] . ')';
                 flash(
                     'error',
-                    ($provider === 'openai' ? 'OpenAI' : 'Claude') .
-                    ' test failed: ' .
-                    (string)($result['error'] ?? 'Unknown provider error.')
+                    $label . ' test failed' . ($chatTest ? ' at ' . (string)($result['stage'] ?? 'connection') : '') . ': ' . $detail
                 );
             }
 
-            redirect(url('/admin/ai.php'));
+            redirect(url('/admin/ai.php').'#connection-tests');
         }
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
@@ -418,23 +422,30 @@ require __DIR__ . '/_header.php';
   </form>
 </div>
 
-<div class="panel">
+<?php endif; ?>
+<div class="panel" id="connection-tests">
   <h2>Connection Tests</h2>
-  <p class="muted">Save your settings first, then test the enabled provider. A test makes one small API request.</p>
+  <p class="muted">Save edits before testing. Cloud Chat checks fresh text and conversational AI responses. ElevenLabs checks audio generation with the configured voice.</p>
 
   <div class="actions">
     <form method="post" class="inline-form">
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="test">
+      <input type="hidden" name="provider" value="chat">
+      <button class="btn primary" type="submit">Test Cloud Chat</button>
+    </form>
+    <form method="post" class="inline-form">
+      <?= csrf_field() ?>
+      <input type="hidden" name="action" value="test">
       <input type="hidden" name="provider" value="openai">
-      <button class="btn" type="submit" <?= !ai_provider_ready('openai') ? 'disabled' : '' ?>>Test OpenAI</button>
+      <button class="btn" type="submit">Test OpenAI</button>
     </form>
 
     <form method="post" class="inline-form">
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="test">
       <input type="hidden" name="provider" value="anthropic">
-      <button class="btn" type="submit" <?= !ai_provider_ready('anthropic') ? 'disabled' : '' ?>>Test Claude</button>
+      <button class="btn" type="submit">Test Claude</button>
     </form>
 
     <form method="post" class="inline-form">
@@ -442,10 +453,15 @@ require __DIR__ . '/_header.php';
       <input type="hidden" name="action" value="test_cpanel">
       <button class="btn" type="submit" <?= empty($cpanelPublicState['configured']) ? 'disabled' : '' ?>>Test cPanel</button>
     </form>
+    <form method="post" class="inline-form">
+      <?= csrf_field() ?>
+      <input type="hidden" name="action" value="test">
+      <input type="hidden" name="provider" value="elevenlabs">
+      <button class="btn" type="submit">Test ElevenLabs</button>
+    </form>
   </div>
 </div>
 
-<?php endif; ?>
 <div class="panel">
   <h2>Credential Security</h2>
   <p class="muted">API keys are encrypted before being stored in the database. The local encryption key is created at <code>/private/ai-key.php</code> the first time a credential is saved. Back up that file with your private site configuration. Production deploy packages must never replace the <code>/private</code> runtime directory; without the original key, existing saved API credentials cannot be decrypted.</p>
