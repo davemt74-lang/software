@@ -1,7 +1,7 @@
   </main>
 </div>
 
-<script src="<?= e(url('/admin/admin.js?v=77')) ?>"></script>
+<script src="<?= e(url('/admin/admin.js?v=profile-notifications-v1341-20261027')) ?>"></script>
 <?php $stemMediaHealthV229 = basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'stems.php'; ?>
 <?php if ($stemMediaHealthV229): ?>
 <style data-stem-media-health-v229>

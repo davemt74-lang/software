@@ -293,7 +293,8 @@ function vp3_cognitive_presentation_voice_candidate_v510(PDO $pdo,array $user,ar
     $rows=vp3_cognitive_presentation_notification_rows_v510($pdo,$user,max(0,(int)($state['last_voice_notification_id']??0)),50);
     if(!$rows)return null;
     $maxId=max(array_map(static fn($r)=>max(0,(int)($r['id']??0)),$rows));
-    $eligible=array_values(array_filter($rows,'vp3_cognitive_presentation_voice_allowed_type_v510'));
+    // Only this digest defers Profile/Radar speech to the canonical canvas handoff.
+    $eligible=array_values(array_filter($rows,static fn(array $row):bool=>vp3_cognitive_presentation_voice_allowed_type_v510($row)&&!notification_is_profile_attention_v1341($row)));
     if(!$eligible)return ['skip_through_id'=>$maxId];
     usort($eligible,static function($a,$b){
         $aa=function_exists('notification_requires_attention')&&notification_requires_attention($a)?1:0;

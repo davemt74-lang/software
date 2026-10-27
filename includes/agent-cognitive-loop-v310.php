@@ -82,6 +82,7 @@ function agent_cognitive_loop_v310_notification_priority(string $type): int
     if($type==='radar_agent_conversion')return 186;
     if($type==='analytics_traffic_spike')return 180;
     if($type==='radar_agent_opportunity')return 176;
+    if($type==='profile_message_received')return 182;
     if($type==='profile_conversation_started')return 172;
     if($type==='radar_agent_watchlist')return 158;
     if(str_starts_with($type,'profile_'))return 132;

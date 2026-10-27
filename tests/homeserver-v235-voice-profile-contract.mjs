@@ -30,7 +30,7 @@ const checks=[
  ['Profile Agent helper uses only stateless agent.infer.local',/agent\.infer\.local/.test(profile)&&!/'agent\.chat'/.test(profile)],
  ['Profile Agent helper requires advertised privacy-safe capability flags',/caller_supplied_context_only/.test(profile)&&/tools_enabled/.test(profile)&&/local_only/.test(profile)],
  ['Profile Agent local prompt is built only from approved context argument',/approvedContext/.test(profile)&&/Approved source/.test(profile)],
- ['public Profile Agent tries HomeServer before legacy Cloud answer',profileService.indexOf('homeserver_profile_v235_answer')>=0&&profileService.indexOf('homeserver_profile_v235_answer')<profileService.indexOf('chat_remote_answer')],
+ ['public Profile Agent tries HomeServer before owner-quota Cloud inference',profileService.indexOf('homeserver_profile_v235_answer')>=0&&profileService.indexOf('ai_generate_chat_response')>profileService.indexOf('homeserver_profile_v235_answer')],
  ['public Profile Agent stores sanitized HomeServer compute metadata',/homeserver_compute/.test(profileService)&&/failure_class/.test(profileService)&&/execution/.test(profileService)],
  ['public Profile Agent API delegates to canonical shared service',/profile-agent-public-service-v110\.php/.test(profileApi)&&/vp3_profile_agent_public_message_service_v110/.test(profileApi)],
  ['Agent voice warm path can select HomeServer local voice',/homeserver_local/.test(agentVoice)&&/homeserver-speech-status/.test(agentVoice)],

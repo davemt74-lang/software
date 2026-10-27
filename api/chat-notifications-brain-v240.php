@@ -522,12 +522,9 @@ function chat_notifications_v240_activity_context(array $notification): array
     ];
 }
 
-function chat_notifications_v240_present_attention(PDO $pdo, array $user, array $input): array
+function chat_notifications_v240_present_attention_locked(PDO $pdo, array $user, array $input): array
 {
     $userId = (int)$user['id'];
-    if(function_exists('vp3_cognitive_presentation_owns_attention_v510')&&vp3_cognitive_presentation_owns_attention_v510()){
-        return ['ok'=>true,'handled'=>false,'presentation_owner'=>'cognitive_runtime_v510','notification_id'=>max(0,(int)($input['notification_id']??0))];
-    }
     $notificationId = max(0, (int)($input['notification_id'] ?? 0));
     if ($notificationId < 1) throw new DomainException('Notification is required.');
 
@@ -535,6 +532,9 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
     $stmt->execute([$notificationId, $userId]);
     $notification = $stmt->fetch();
     if (!$notification) throw new DomainException('Notification was not found.');
+    if(function_exists('vp3_cognitive_presentation_owns_attention_v510')&&vp3_cognitive_presentation_owns_attention_v510()&&!notification_is_profile_attention_v1341($notification)){
+        return ['ok'=>true,'handled'=>false,'presentation_owner'=>'cognitive_runtime_v510','notification_id'=>max(0,(int)($input['notification_id']??0))];
+    }
     if (!notification_requires_attention($notification)) {
         return ['ok'=>true,'handled'=>false,'notification_id'=>$notificationId];
     }
@@ -617,6 +617,7 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         'activity'=>$activity,
         'attention'=>[
             'required'=>!$presenceUpdate,
+            'priority'=>notification_is_profile_attention_v1341($notification)?'high':'normal',
             'notification_id'=>$notificationId,
             'notification_type'=>(string)($notification['type'] ?? ''),
             'prompt'=>$presenceUpdate?'':$prompt,
@@ -642,10 +643,6 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
     $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')
         ->execute([$conversationId, $userId]);
 
-    if (personal_capability_has_v242('agent_brain.access', $user)) {
-        agent_brain_archive_and_parse($user, $conversationId, $messageId, 'assistant', $message, 'text');
-    }
-
     return [
         'ok'=>true,'handled'=>true,'duplicate'=>false,
         'notification_id'=>$notificationId,
@@ -658,6 +655,43 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         'profile_contact'=>$contact,
         'response_timeout_ms'=>10000,
     ];
+}
+
+function chat_notifications_v240_present_attention(PDO $pdo,array $user,array $input): array
+{
+    $owned=!$pdo->inTransaction();$savepoint='attention_'.bin2hex(random_bytes(6));
+    if($owned)$pdo->beginTransaction();else $pdo->exec('SAVEPOINT '.$savepoint);
+    try{
+        $lock=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':'';
+        $s=$pdo->prepare('SELECT id FROM users WHERE id=?'.$lock);$s->execute([(int)$user['id']]);
+        if(!$s->fetchColumn())throw new DomainException('Notification owner is unavailable.');
+        $result=chat_notifications_v240_present_attention_locked($pdo,$user,$input);
+        if($owned)$pdo->commit();else $pdo->exec('RELEASE SAVEPOINT '.$savepoint);
+    }catch(Throwable $e){
+        if($owned&&$pdo->inTransaction())$pdo->rollBack();
+        elseif(!$owned&&$pdo->inTransaction()){$pdo->exec('ROLLBACK TO SAVEPOINT '.$savepoint);$pdo->exec('RELEASE SAVEPOINT '.$savepoint);}
+        throw $e;
+    }
+    $result['voice_allowed']=empty($result['duplicate']);
+    if(!empty($result['handled'])&&empty($result['duplicate'])&&function_exists('vp3_cognitive_attention_arbitrate_v2410')){
+        // The canonical attention policy still owns voice, focus and budget.
+        $result['voice_allowed']=false;
+        try{
+            $s=$pdo->prepare('SELECT * FROM notifications WHERE id=? AND user_id=?');
+            $s->execute([(int)$result['notification_id'],(int)$user['id']]);$note=$s->fetch();
+            $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,max(0,(int)($input['agent_id']??0)));
+            $signal=vp3_cognitive_attention_notification_row_signal_v2410($user,$note);
+            $context=vp3_cognitive_presentation_context_v500($pdo,$user,['voice_candidate_allowed'=>true]);
+            $decision=vp3_cognitive_attention_arbitrate_v2410($pdo,$user,$namespace,$signal,$context);
+            $result['voice_allowed']=!empty($decision['voice']);
+            vp3_cognitive_attention_mark_delivered_v2410($pdo,$user,$namespace,(string)$signal['key']);
+        }catch(Throwable $e){error_log('Profile attention voice policy unavailable.');}
+    }
+    if(!empty($result['handled'])&&empty($result['duplicate'])&&personal_capability_has_v242('agent_brain.access',$user)){
+        try{agent_brain_archive_and_parse($user,(int)$result['conversation_id'],(int)$result['message_id'],'assistant',(string)$result['message'],'text');}
+        catch(Throwable $e){error_log('Profile attention Brain archive unavailable.');}
+    }
+    return $result;
 }
 
 $user = current_user();
@@ -675,6 +709,10 @@ try {
         chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
     if ($method === 'GET' && $action === 'attention') {
+        if((string)($input['scope']??'')==='profile'){
+            profile_agent_reconcile_notifications_v1341($pdo,$user);
+            chat_notifications_v240_json(notification_profile_attention_after_v1341($user,max(0,(int)($input['after_id']??0))));
+        }
         $afterId = max(0, (int)($input['after_id'] ?? 0));
         chat_notifications_v240_json([
             'ok'=>true,

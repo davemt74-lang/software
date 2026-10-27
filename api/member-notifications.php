@@ -16,6 +16,9 @@ if(strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'))!=='GET'){
     exit;
 }
 
+if(function_exists('profile_agent_reconcile_notifications_v1341')){
+    try{profile_agent_reconcile_notifications_v1341(db(),$user);}catch(Throwable $e){error_log('Profile notification reconciliation unavailable.');}
+}
 $recent=notification_recent($user,8);
 $items=[];
 foreach($recent as $row){

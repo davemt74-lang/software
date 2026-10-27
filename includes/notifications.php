@@ -465,3 +465,36 @@ function mark_all_notifications_read(int $userId): void
     );
     $stmt->execute([$userId]);
 }
+
+/** Profile service and actionable Radar updates have an explicit Chat handoff. */
+function notification_is_profile_attention_v1341(array $row): bool
+{
+    if(!notification_requires_attention($row))return false;
+    $source=strtolower(trim((string)($row['source_type']??'')));
+    $type=strtolower(trim((string)($row['type']??'')));
+    return in_array($source,['profile_event','radar_event'],true)||in_array($type,['profile_view','profile_profile_view','profile_conversation_started'],true);
+}
+
+function notification_profile_attention_after_v1341(array $user,int $afterId=0,int $limit=25): array
+{
+    $pdo=db();$afterId=max(0,$afterId);$limit=max(1,min(25,$limit));
+    $out=['ok'=>true,'latest_id'=>$afterId,'items'=>[]];
+    if(!$pdo||!table_exists('notifications'))return $out;
+    $predicate=notification_system_sql_predicate('n');
+    $hasAttention=table_exists('agent_attention_items');
+    $active=$hasAttention?"NOT EXISTS (SELECT 1 FROM agent_attention_items a WHERE n.source_type='profile_event' AND a.source_event_id=n.source_id AND a.owner_user_id=n.user_id AND (a.status IN ('handled','ignored') OR (a.status='snoozed' AND a.snoozed_until>UTC_TIMESTAMP())))":'1=1';
+    $wake=$hasAttention?" OR (n.source_type='profile_event' AND EXISTS (SELECT 1 FROM agent_attention_items a WHERE a.source_event_id=n.source_id AND a.owner_user_id=n.user_id AND a.status='snoozed' AND a.snoozed_until<=UTC_TIMESTAMP()))":'';
+    $s=$pdo->prepare("SELECT n.* FROM notifications n WHERE n.user_id=? AND (n.id>? {$wake}) AND n.is_read=0 AND {$active}
+      AND n.created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 7 DAY) AND {$predicate}
+      AND (n.source_type IN ('profile_event','radar_event') OR n.type IN ('profile_view','profile_profile_view','profile_conversation_started'))
+      ORDER BY n.id ASC LIMIT 50");
+    $s->execute([(int)$user['id'],$afterId]);
+    foreach($s->fetchAll()?:[] as $row){
+        $out['latest_id']=max($out['latest_id'],(int)$row['id']);
+        if(notification_is_profile_attention_v1341($row)){
+            $out['items'][]=['id'=>(int)$row['id'],'type'=>(string)$row['type'],'title'=>(string)$row['title'],'body'=>(string)$row['body'],'target_url'=>(string)$row['target_url'],'prompt'=>notification_attention_prompt($row)];
+            if(count($out['items'])>=$limit)break;
+        }
+    }
+    return $out;
+}

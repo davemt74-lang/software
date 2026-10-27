@@ -22,8 +22,9 @@ assert.match(service,/profile_agent_rate_check\(\$pdo,\$cid\)/,'canonical per-co
 assert.match(service,/profile_agent_context\(/,'approved Profile Agent context retained');
 assert.match(service,/profile_agent_transcript_brain_context_v255/,'transcript brain context retained');
 assert.match(service,/homeserver_profile_v235_answer/,'HomeServer Profile Agent compute retained');
-assert.match(service,/chat_remote_answer/,'remote answer fallback retained');
-assert.match(service,/chat_local_answer/,'local answer fallback retained');
+assert.match(service,/ai_generate_chat_response\(\$query,\$history,\$context,\$ownerUser,'profile_agent',\$control\)/,'remote inference must use owner quota and explicit Profile Agent scope');
+assert.doesNotMatch(service,/chat_local_answer/,'a deterministic retrieval reply must not impersonate a model answer');
+assert.match(service,/quota_handoff/,'exhausted account allowance must produce an actual owner handoff');
 assert.match(service,/profile_agent_needs_owner/,'owner escalation retained');
 assert.match(service,/vp3_profile_agent_agent_may_reply_v390\(\$current\)/,'owner takeover must be rechecked after model generation');
 assert.match(service,/profile:identity','profile:rules/,'internal identity/rule context must not be emitted as source citations');

@@ -66,6 +66,7 @@
   let activeTab = 'notifications';
   let busy = false;
   let attentionCursor = 0;
+  let profileAttentionCursor = 0;
   let attentionTimer = 0;
   let attentionBusy = false;
   let speechQueue = Promise.resolve();
@@ -1063,7 +1064,9 @@
     const id = Math.max(0, Number(conversationId || 0));
     const chat = continuity();
     if (id < 1 || typeof chat.openConversation !== 'function') return false;
-    const opened = await chat.openConversation(id);
+    const opened = Number(chat.conversationId?.() || 0) === id && typeof chat.syncConversation === 'function'
+      ? await chat.syncConversation(id)
+      : await chat.openConversation(id);
     if (!opened) return false;
     const expected = String(message || '').trim();
     const deadline = Date.now() + 5000;
@@ -1278,19 +1281,27 @@
       throw new Error('Actionable notification could not be surfaced in Agent Chat.');
     }
 
-    if (speak) queueSpeech(String(data.message || ''));
+    if (speak && !data.duplicate && data.voice_allowed !== false) queueSpeech(String(data.message || ''));
     if (!await requestState('mark_read', {notification_id:notificationId})) return true;
     render();
     syncMainFeedBrainOutcomeControls();
     return true;
   }
 
-  async function pollAttention(bootstrap = false) {
+  async function pollAttention(bootstrap = false, scope = '') {
+    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention && scope !== 'profile') return;
     if (!chatCanvasAvailable()) return;
+    if (scope === 'profile') {
+      const chat = continuity();
+      if (chat.isRestoring?.() || chat.isReady?.() === false || String(document.getElementById?.('chatInput')?.value || '').trim()) return;
+      if (['processing','speaking','recording'].includes(String(document.body?.dataset.stonefellowAgentState || ''))) return;
+    }
     if (attentionBusy || (document.hidden && !bootstrap)) return;
     attentionBusy = true;
     try {
-      const data = await request('attention', null, {after_id:bootstrap ? 0 : attentionCursor});
+      const cursor = scope === 'profile' ? profileAttentionCursor : attentionCursor;
+      if (scope === 'profile') bootstrap = cursor === 0;
+      const data = await request('attention', null, {after_id:bootstrap ? 0 : cursor, ...(scope ? {scope} : {})});
       const items = Array.isArray(data.items) ? data.items : [];
       for (let index = 0; index < items.length; index += 1) {
         // Only genuine user-attention notifications reach this path. Agent
@@ -1298,7 +1309,8 @@
         const speak = !bootstrap || index === items.length - 1;
         await presentAttention(items[index], speak);
       }
-      attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
+      if (scope === 'profile') profileAttentionCursor = Math.max(profileAttentionCursor, Number(data.latest_id || 0));
+      else attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
     } catch (_error) {
       // Keep the cursor unchanged so a failed canvas presentation is retried
       // instead of silently consuming an actionable notification.
@@ -1349,6 +1361,7 @@
     close:closeDrawer,
     refresh,
     pollAttention,
+    pollProfileAttention:() => pollAttention(false, 'profile'),
     announce:text => queueSpeech(String(text || '')),
     cancelSpeech,
     syncMainFeedOutcomes:syncMainFeedBrainOutcomeControls
