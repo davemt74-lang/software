@@ -32,4 +32,16 @@ check((int)$pdo->query('SELECT COUNT(*) FROM agent_event_inbox')->fetchColumn()=
 $other=vp3_eyes_record($pdo,['id'=>2],array_replace($event,['participant_id'=>8]));
 check(count(vp3_eyes_recent($pdo,$user))===1,'Brain timeline stays owner scoped');
 check(vp3_eyes_recent($pdo,$user)[0]['payload']['display_name']==='David','timeline uses canonical event payload');
+$intro=vp3_eyes_event($pdo,$user,array_replace($event,['participant_id'=>9,'identity_source'=>'self_introduction','display_name'=>'Spoofed label']));
+check($intro['display_name']==='Revoked'&&$intro['identity_source']==='browser_reported_self_introduction','introduced name uses canonical owned record without granting visual consent');
+check(str_contains($intro['summary'],'Self-introduced')&&!$intro['authentication_authority'],'introduced name is conversational evidence only');
+rejects(fn()=>vp3_eyes_event($pdo,$user,array_replace($event,['participant_id'=>8,'identity_source'=>'self_introduction'])),'self introduction cannot cross owner boundary');
+$inactive=vp3_eyes_event($pdo,$user,array_replace($event,['participant_id'=>10,'identity_source'=>'self_introduction']));check($inactive['participant_id']===0,'inactive introduced participant stays unknown');
 echo "AGENT_EYES_SERVICE=PASS ($checks cases)\n";
+require dirname(__DIR__).'/includes/voice-speaker-context.php';
+$hint=['source'=>'local_voice_similarity','confidence'=>0.95,'participant_id'=>7,'display_name'=>'Pretend admin','authentication_authority'=>false,'embedding'=>[1,2,3]];
+$safe=vp3_voice_speaker_context($pdo,$user,$hint);check($safe['display_name']==='David'&&!$safe['identity_verified'],'voice hint resolves canonical name without declaring verified identity');
+check(!isset($safe['embedding']),'voice features cannot enter inference context');
+foreach([8,9,10] as $id)check(vp3_voice_speaker_context($pdo,$user,array_replace($hint,['participant_id'=>$id]))===null,'foreign revoked or inactive voice name excluded');
+check(vp3_voice_speaker_context($pdo,$user,array_replace($hint,['authentication_authority'=>true]))===null,'voice match cannot acquire account authority');
+echo "VOICE_SPEAKER_CONTEXT=PASS\n";

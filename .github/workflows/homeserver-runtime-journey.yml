@@ -56,6 +56,7 @@ jobs:
         run: |
           node tests/agent-orb-browser.mjs
           node tests/agent-orb-cloud-browser.mjs
+          node tests/agent-voice-guard-browser.mjs
       - name: Agent Teams A3 real browser and Brain drawer acceptance
         run: node tests/agent-missions-cloud-a3-browser.mjs
       - name: A5C2 reviewed specialist assignments browser acceptance

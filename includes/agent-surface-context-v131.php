@@ -107,6 +107,9 @@ function agent_surface_v131_sanitize(array $raw): array
         'events'=>[],
     ];
     $browserContext=agent_surface_v131_browser_context($raw);
+    if(is_array($raw['voice_speaker']??null)){
+        try{require_once __DIR__.'/voice-speaker-context.php';$voicePdo=db();$voiceUser=current_user();if($voicePdo&&is_array($voiceUser))$out['voice_speaker']=vp3_voice_speaker_context($voicePdo,$voiceUser,$raw['voice_speaker']);}catch(Throwable $e){$out['voice_speaker']=null;}
+    }
     if($browserContext)$out['browser_context']=$browserContext;
     if(is_array($raw['voice']??null)){
         $voice=$raw['voice'];

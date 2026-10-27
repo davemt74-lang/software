@@ -19,12 +19,12 @@
     try{return await new Promise((resolve,reject)=>{const tx=db.transaction('samples',mode==='read'?'readonly':'readwrite'),store=tx.objectStore('samples');const request=mode==='read'?store.getAll():mode==='remove'?store.delete(String(id)):store.put({id:String(id),embeddings:value});let result;request.onsuccess=()=>{result=request.result;};tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('Local samples could not be saved.'));});}finally{db.close();}
   }
   const recording=()=>Boolean(document.querySelector('[data-recording="true"],.is-recording,.chat-media-studio button.recording,[data-agent-state="recording"]'));
-  const state=()=>({state:audible?'speaking':preparing?'thinking':window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState||($('sendChatButton')?.disabled?'thinking':'idle'),recording:recording()});
+  const state=()=>{const current=window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState;return {state:audible||current==='speaking'?'speaking':preparing?'thinking':current||($('sendChatButton')?.disabled?'thinking':'idle'),recording:recording()};};
   const adapter={
-    ownerKey:cfg.ownerKey,chatUrl:cfg.chatUrl,state,
+    ownerKey:cfg.ownerKey,chatUrl:cfg.chatUrl,state,voiceFeatureUrl:cfg.voiceFeatureUrl,
     isMainChat:()=>!!$('chatForm'),focusChat:()=>$('chatInput')?.focus(),
     busy:()=>Boolean(['processing','thinking','speaking','starting'].includes(state().state)||recording()||$('sendChatButton')?.disabled||$('chatInput')?.value.trim()),
-    listen:()=>$('chatVoiceButton')?.click(),
+    listen:()=>{if(!window.VP3ConversationControls?.isEnabled?.())$('chatVoiceButton')?.click();},
     stop:()=>{voiceEpoch++;preparing=false;audible=false;window.VP3ConversationControls?.stop();window.STONEFELLOW_NOTIFICATION_CENTER?.cancelSpeech();if(recording())window.StonefellowMediaStudio?.close?.();},
     greet:async(text,isCurrent=()=>true)=>{
       const epoch=++voiceEpoch;preparing=true;
@@ -35,6 +35,14 @@
     loadEyesProfiles:async()=>{
       const [data,local]=await Promise.all([api(cfg.participantsEndpoint),samples('read')]);
       return data.profiles.map(p=>({id:String(p.id),name:p.display_name,recognitionEnabled:p.recognition_consent===true,embeddings:p.recognition_consent===true?(local.find(x=>x.id===String(p.id))?.embeddings||[]):[]}));
+    },
+    introduceEyes:async({name,isCurrent=()=>true})=>{
+      const data=await api(cfg.participantsEndpoint);if(!isCurrent())throw Error('Introduction stopped.');
+      const existing=data.profiles.filter(p=>p.display_name.normalize('NFKC').toLocaleLowerCase()===name.normalize('NFKC').toLocaleLowerCase());
+      if(existing.length>1)throw Error('More than one participant has that name. Choose the participant in Eyes.');
+      if(existing.length)return {id:String(existing[0].id),name:existing[0].display_name};
+      const created=await api(cfg.participantsEndpoint,{action:'save_profile',display_name:name,relationship:'guest'});
+      const p=created.profiles.find(p=>String(p.id)===String(created.participant_id));if(!p)throw Error('Participant name could not be saved.');return {id:String(p.id),name:p.display_name};
     },
     enrollEyes:async({id,name,embeddings,isCurrent=()=>true})=>{
       if(!isCurrent())throw Error('Enrollment stopped.');
@@ -47,6 +55,9 @@
       if(!isCurrent())throw Error('Enrollment stopped.');
       await samples('write',id,embeddings);
     },
+    loadVoiceProfiles:async()=>{const [data,local]=await Promise.all([api(cfg.participantsEndpoint),samples('read')]);return data.profiles.map(p=>{const voice=local.find(v=>v.id==='voice:'+p.id);return {id:String(p.id),name:p.display_name,voiceEmbeddings:voice?.embeddings||[],voiceRecognitionEnabled:p.recognition_consent===true&&!!voice,voiceProfileReady:p.recognition_consent===true&&(voice?.embeddings?.length||0)>=3};});},
+    saveVoiceSample:async({id,embedding,isCurrent})=>{const rows=await adapter.loadVoiceProfiles(),p=rows.find(p=>p.id===String(id));if(!p||!isCurrent())throw Error('Voice enrollment stopped.');await api(cfg.participantsEndpoint,{action:'allow_local_voice_recognition',participant_id:Number(id),consent_confirmed:true});if(!isCurrent())throw Error('Voice enrollment stopped.');const embeddings=[...p.voiceEmbeddings,embedding].slice(-5);await samples('write','voice:'+id,embeddings);return {...p,voiceEmbeddings:embeddings,voiceRecognitionEnabled:true,voiceProfileReady:embeddings.length>=3};},
+    forgetVoice:id=>samples('remove','voice:'+id),
     forgetEyes:id=>samples('remove',id),recordEyes:event=>api(cfg.eyesEndpoint,event,true),
   };
   window.VP3_ORB_ADAPTER=adapter;
