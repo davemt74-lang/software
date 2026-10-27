@@ -20,6 +20,8 @@ Scope: `davemt74-lang/software` at #613 plus the calendar v13.40 changes, and `d
 
 8. **Pending confirmations needed coordination.** A prepared personal-calendar change could remain in its session namespace after a later booking draft was prepared. The v13.40 handler retires older booking drafts when preparing a calendar change and yields to a newer booking/team draft before interpreting a plain confirmation. Regression coverage verifies that confirming a newer booking cannot remove the earlier calendar event.
 
+9. **Confirmed timezone defect in conversational scheduling.** The shared parser used the server timezone to interpret weekday and named-month requests, then converted midnight into the account timezone. With a UTC server and a Phoenix account, “next Monday” became Sunday. The follow-up fix parses those dates in the account timezone and includes regression cases across server/account timezone combinations and invalid calendar dates. Explicit ISO dates and today/tomorrow retain their existing paths.
+
 ## Changes in the calendar section
 
 - One time / Every week and Include agent notifications in the Cloud event editor.
