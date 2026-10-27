@@ -87,6 +87,13 @@ denied(fn()=>user_calendar_update_event_v1300($pdo,$user,$id,array_merge($input,
 $off=user_calendar_update_event_v1300($pdo,$user,$id,array_merge($input,['recurrence'=>'none','agent_notifications'=>false]));
 check($off['recurrence']==='none'&&!(bool)$off['agent_notifications'],'Both options can be disabled');
 check(array_values(array_filter(user_calendar_events_v1300($pdo,$user,'2026-11-01 00:00:00','2026-11-10 00:00:00'),static fn(array $row):bool=>$row['id']===$id))===[],'Stopping recurrence removes future projections');
+// A newer booking draft must own its confirmation, never an older calendar edit.
+user_calendar_agent_set_pending_v1300($user,11,['operation'=>'cancel','event_id'=>$id,'expected_revision'=>section12_revision($off)]);
+$_SESSION[agent_scheduling_tools_pending_key_v460(1,11)]=['user_id'=>1,'conversation_id'=>11,'expires_at'=>time()+900];
+$handoff=user_calendar_agent_query_v1300('yes',$user,11);
+check(empty($handoff['handled'])&&user_calendar_event_v1300($pdo,1,$id)['status']==='active','A newer booking confirmation cannot cancel an old calendar event');
+user_calendar_agent_set_pending_v1300($user,11,['title'=>'Fresh draft']);
+check(agent_scheduling_tools_pending_v460($user,11)===null,'A new calendar draft retires older booking confirmations');
 // Exercise the real conversational create/confirm/update/cancel entry point.
 $_SESSION=[];
 $prepared=user_calendar_agent_query_v1300('add "Chat review" to my calendar 2026-11-02 at 9 AM every week include agent notifications',$user,11);

@@ -29,6 +29,10 @@ function user_calendar_agent_pending_v1300(array $user,int $conversationId): ?ar
 function user_calendar_agent_set_pending_v1300(array $user,int $conversationId,array $pending): void
 {
     if(!isset($_SESSION['user_calendar_agent_v1300_pending'])||!is_array($_SESSION['user_calendar_agent_v1300_pending']))$_SESSION['user_calendar_agent_v1300_pending']=[];
+    // One conversational calendar/scheduling change at a time. A later plain
+    // confirmation must never execute an older event change instead of booking.
+    if(function_exists('agent_scheduling_tools_clear_pending_v460'))agent_scheduling_tools_clear_pending_v460($user,$conversationId);
+    if(function_exists('agent_team_scheduling_tools_clear_pending_v610'))agent_team_scheduling_tools_clear_pending_v610($user,$conversationId);
     $pending['expires_at']=time()+900;
     $_SESSION['user_calendar_agent_v1300_pending'][user_calendar_agent_pending_key_v1300($user,$conversationId)]=$pending;
 }
@@ -160,6 +164,9 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
     $pending=user_calendar_agent_pending_v1300($user,$conversationId);
     $confirmation=user_calendar_agent_confirmation_v1300($query);
     if($pending&&$confirmation!==null){
+        $bookingPending=function_exists('agent_scheduling_tools_pending_v460')?agent_scheduling_tools_pending_v460($user,$conversationId):null;
+        $teamPending=function_exists('agent_team_scheduling_tools_pending_v610')?agent_team_scheduling_tools_pending_v610($user,$conversationId):null;
+        if($bookingPending||$teamPending){user_calendar_agent_clear_pending_v1300($user,$conversationId);return $empty;}
         $result=$empty;$result['handled']=true;
         if($confirmation===false){
             user_calendar_agent_clear_pending_v1300($user,$conversationId);

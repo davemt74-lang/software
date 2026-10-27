@@ -18,6 +18,8 @@ Scope: `davemt74-lang/software` at #613 plus the calendar v13.40 changes, and `d
 
 7. **Weekly calendar entries are not recurring video-meeting sessions.** The calendar recurrence projection can safely repeat personal time. The existing video-meeting lifecycle has its own identity, dates, invitations, and completion state. v13.40 prevents a weekly personal-calendar series from silently masquerading as repeated meeting invitations. Recurring video meetings need an explicit occurrence/session design before that combination is enabled.
 
+8. **Pending confirmations needed coordination.** A prepared personal-calendar change could remain in its session namespace after a later booking draft was prepared. The v13.40 handler retires older booking drafts when preparing a calendar change and yields to a newer booking/team draft before interpreting a plain confirmation. Regression coverage verifies that confirming a newer booking cannot remove the earlier calendar event.
+
 ## Changes in the calendar section
 
 - One time / Every week and Include agent notifications in the Cloud event editor.
