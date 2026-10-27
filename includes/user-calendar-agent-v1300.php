@@ -31,8 +31,8 @@ function user_calendar_agent_set_pending_v1300(array $user,int $conversationId,a
     if(!isset($_SESSION['user_calendar_agent_v1300_pending'])||!is_array($_SESSION['user_calendar_agent_v1300_pending']))$_SESSION['user_calendar_agent_v1300_pending']=[];
     // One conversational calendar/scheduling change at a time. A later plain
     // confirmation must never execute an older event change instead of booking.
-    if(function_exists('agent_scheduling_tools_clear_pending_v460'))agent_scheduling_tools_clear_pending_v460($user,$conversationId);
-    if(function_exists('agent_team_scheduling_tools_clear_pending_v610'))agent_team_scheduling_tools_clear_pending_v610($user,$conversationId);
+    user_calendar_agent_reset_confirmations_v1340($user,$conversationId);
+    $pending['mutation_id']??=bin2hex(random_bytes(16));
     $pending['expires_at']=time()+900;
     $_SESSION['user_calendar_agent_v1300_pending'][user_calendar_agent_pending_key_v1300($user,$conversationId)]=$pending;
 }
@@ -40,6 +40,13 @@ function user_calendar_agent_set_pending_v1300(array $user,int $conversationId,a
 function user_calendar_agent_clear_pending_v1300(array $user,int $conversationId): void
 {
     unset($_SESSION['user_calendar_agent_v1300_pending'][user_calendar_agent_pending_key_v1300($user,$conversationId)]);
+}
+
+function user_calendar_agent_reset_confirmations_v1340(array $user,int $conversationId): void
+{
+    user_calendar_agent_clear_pending_v1300($user,$conversationId);
+    if(function_exists('agent_scheduling_tools_clear_pending_v460'))agent_scheduling_tools_clear_pending_v460($user,$conversationId);
+    if(function_exists('agent_team_scheduling_tools_clear_pending_v610'))agent_team_scheduling_tools_clear_pending_v610($user,$conversationId);
 }
 
 function user_calendar_agent_explicit_intent_v1300(string $query): bool
@@ -192,7 +199,7 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
             }
             $agentId=max(0,(int)($pending['agent_id']??0));
             $source='agent';
-            $event=user_calendar_create_local_event_v1300($pdo,$user,$pending,$source,$agentId>0?$agentId:null);
+            $event=user_calendar_create_local_event_v1300($pdo,$user,$pending,$source,$agentId>0?$agentId:null,!empty($pending['mutation_id'])?'chat:'.(string)$pending['mutation_id']:'');
             user_calendar_agent_clear_pending_v1300($user,$conversationId);
             $timezone=user_calendar_timezone_v1300((string)$event['timezone']);
             $result['answer']='Added “'.(string)$event['title'].'” to your calendar for '.user_calendar_agent_label_v1300($event,$timezone).'.';
@@ -209,6 +216,7 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
     }
 
     if(!user_calendar_agent_explicit_intent_v1300($query))return $empty;
+    if(preg_match('/\b(?:add|create|put|schedule|block|remove|delete|cancel|move|reschedule|change|update|enable|disable|mark)\b/iu',$query))user_calendar_agent_reset_confirmations_v1340($user,$conversationId);
     $result=$empty;$result['handled']=true;
     $timezone=user_calendar_default_timezone_v1300($pdo,$user);
     try{$management=user_calendar_agent_manage_v1340($pdo,$user,$query,$conversationId);if($management!==null)return $management;}
