@@ -106,14 +106,12 @@ function agent_scheduling_tools_date_v460(string $query,string $timezone,?string
     if(preg_match('/\b(?:(next|this)\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i',$query,$m)){
         $modifier=trim((string)($m[1]??''));$weekday=strtolower($m[2]);
         $phrase=($modifier!==''?$modifier.' ':'next ').$weekday;
-        $ts=strtotime($phrase,$now->getTimestamp());
-        if($ts!==false)return (new DateTimeImmutable('@'.$ts))->setTimezone($tz)->format('Y-m-d');
+        return $now->modify($phrase)->format('Y-m-d');
     }
     if(preg_match('/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,\s*(20\d{2}))?\b/i',$query,$m)){
-        $phrase=$m[1].' '.$m[2].(!empty($m[3])?' '.$m[3]:' '.$now->format('Y'));
-        $ts=strtotime($phrase,$now->getTimestamp());
-        if($ts!==false){
-            $d=(new DateTimeImmutable('@'.$ts))->setTimezone($tz);
+        $phrase=$m[1].' '.$m[2].' '.(!empty($m[3])?$m[3]:$now->format('Y'));
+        $d=DateTimeImmutable::createFromFormat('!F j Y',$phrase,$tz);
+        if($d&&(int)$d->format('j')===(int)$m[2]){
             if($d<$now->setTime(0,0)&&empty($m[3]))$d=$d->modify('+1 year');
             return $d->format('Y-m-d');
         }

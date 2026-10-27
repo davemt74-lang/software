@@ -247,6 +247,7 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 ]
 
 PHP_TESTS = [
+    'tests/agent-scheduling-timezone-v1340.php',
     'tests/calendar-recurrence-v1340.php',
     'tests/calendar-event-v1340-page.php',
     'tests/elevenlabs-database-credential.php',
