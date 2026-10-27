@@ -149,7 +149,8 @@ function homeserver_task_calendar_v243_homeserver_calendar_items(int $userId,str
           'title'=>(string)($item['title']??'HomeServer event'),
           'description'=>(string)($item['description']??''),'location'=>(string)($item['location']??''),
           'start_at_utc'=>$start,'end_at_utc'=>$end,'timezone'=>(string)($item['timezone']??'UTC'),
-          'all_day'=>!empty($item['all_day']),'source'=>'homeserver','status'=>'active','editable'=>false,
+          'all_day'=>!empty($item['all_day']),'recurrence'=>(string)($item['recurrence']??'none'),
+          'agent_notifications'=>!empty($item['agent_notifications']),'occurrence_id'=>(string)($item['occurrence_id']??('homeserver_event:'.(int)($item['id']??0))),'source'=>'homeserver','status'=>'active','editable'=>false,
           'homeserver_managed'=>true,'authority_source'=>'homeserver','authority_key'=>$item['authority_key'],
           'canonical_id'=>$item['canonical_id'],'record_revision'=>$item['record_revision'],
           'federation_version'=>'2.4','mirror_only'=>true,'mutation_route'=>'homeserver_governed',
@@ -163,13 +164,22 @@ function homeserver_task_calendar_v243_cloud_calendar_records(int $userId,string
     $pdo=db();if(!$pdo||$userId<1||!table_exists('user_calendar_events'))return [];
     $from=homeserver_task_calendar_v243_iso($fromUtc);$to=homeserver_task_calendar_v243_iso($toUtc);
     if(!$from||!$to)return [];
-    $stmt=$pdo->prepare("SELECT id,title,description,location,start_at_utc,end_at_utc,timezone,all_day,source,status,updated_at
-      FROM user_calendar_events WHERE owner_user_id=? AND status='active' AND start_at_utc<? AND end_at_utc>?
-      ORDER BY start_at_utc,id LIMIT 300");
-    $stmt->execute([$userId,$to,$from]);$out=[];
-    foreach($stmt->fetchAll()?:[] as $row){
+    // The continuity endpoint's default window spans 401 days. Split wider
+    // reads into bounded projection windows without duplicating boundary items.
+    $cursor=user_calendar_validate_utc_v1300($from);$finish=user_calendar_validate_utc_v1300($to);
+    $rows=[];$seen=[];
+    for($window=0;$window<100&&$cursor<$finish&&count($rows)<300;$window++){
+        $end=$cursor->modify('+370 days');if($end>$finish)$end=$finish;
+        foreach(user_calendar_owned_events_v1340($pdo,$userId,$cursor->format('Y-m-d H:i:s'),$end->format('Y-m-d H:i:s')) as $row){
+            $key=(string)($row['occurrence_id']??('event:'.(int)$row['id']));
+            if(isset($seen[$key]))continue;$seen[$key]=true;$rows[]=$row;if(count($rows)>=300)break;
+        }
+        $cursor=$end;
+    }
+    $out=[];
+    foreach(array_slice($rows,0,300) as $row){
         $key='user_calendar_event:'.(int)$row['id'];
-        $content=trim((string)$row['description'].' · '.(string)$row['location'].' · '.(string)$row['start_at_utc'].' → '.(string)$row['end_at_utc']);
+        $content=trim((string)$row['description'].' · '.(string)$row['location'].' · '.(string)($row['series_start_at_utc']??$row['start_at_utc']).' → '.(string)($row['series_end_at_utc']??$row['end_at_utc']).' · '.(string)($row['recurrence']??'none').' · agent_notifications:'.(int)($row['agent_notifications']??0));
         $envelope=homeserver_federated_v240_envelope('vp3_cloud','calendar',$key,(string)$row['title'],$content,(string)($row['updated_at']??''));
         homeserver_federated_v240_observe($userId,$envelope,'vp3_cloud');
         $row['authority_source']='vp3_cloud';$row['authority_key']=$key;$row['canonical_id']=$envelope['canonical_id'];

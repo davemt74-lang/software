@@ -344,6 +344,11 @@ function agent_calendar_sync_conflict_v500(PDO $pdo,int $scheduleId,string $star
         $calendarEvent=$native->fetch();
         if($calendarEvent){$calendarEvent['user_calendar']=true;return $calendarEvent;}
     }
+    if(function_exists('user_calendar_owned_events_v1340') && user_calendar_recurrence_schema_ready_v1340($pdo)){
+        $owner=$pdo->prepare('SELECT owner_user_id FROM agent_scheduling_schedules WHERE id=?');$owner->execute([$scheduleId]);
+        $events=user_calendar_owned_events_v1340($pdo,(int)$owner->fetchColumn(),$startUtc,$endUtc);
+        if($events){$event=$events[0];$event['user_calendar']=true;return $event;}
+    }
     if(!agent_calendar_sync_schema_ready_v500($pdo))return null;
     $stmt=$pdo->prepare("SELECT bb.id,bb.connection_id,bb.start_at_utc,bb.end_at_utc,c.provider,c.account_email FROM agent_calendar_busy_blocks bb INNER JOIN agent_calendar_connections c ON c.id=bb.connection_id INNER JOIN agent_calendar_schedule_connections sc ON sc.connection_id=c.id WHERE sc.schedule_id=? AND sc.blocks_availability=1 AND c.status IN ('connected','error') AND c.sync_enabled=1 AND bb.start_at_utc<? AND bb.end_at_utc>? ORDER BY bb.start_at_utc LIMIT 1");
     $stmt->execute([$scheduleId,$endUtc,$startUtc]);

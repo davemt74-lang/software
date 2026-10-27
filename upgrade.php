@@ -139,6 +139,7 @@ function vp3_upgrade_complete(): bool
         && agent_scheduling_schema_ready_v430()
         && agent_calendar_sync_schema_ready_v500()
         && user_calendar_schema_ready_v1300()
+        && user_calendar_recurrence_schema_ready_v1340()
         && agent_team_scheduling_schema_ready_v600()
         && agent_appointment_lifecycle_schema_ready_v700()
         && video_meeting_schema_ready_v1800()

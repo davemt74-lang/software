@@ -198,12 +198,20 @@ function vp3_cognitive_cards_object_v520(PDO $pdo,array $user,string $namespace,
             return $row?['type'=>$type,'row'=>$row]:null;
         }
         if($type==='calendar_booking'){
-            $kind='';$numeric=$id;
+            $kind='';$numeric=$id;$occurrence='';
             if(str_contains($id,':'))[$kind,$numeric]=array_pad(explode(':',$id,2),2,'');
+            if(str_contains($numeric,'@'))[$numeric,$occurrence]=explode('@',$numeric,2);
             if(!ctype_digit($numeric))return null;
+            if($occurrence!==''&&!preg_match('/^\d{8}T\d{6}Z$/D',$occurrence))return null;
             $numericId=(int)$numeric;
             if($kind!=='booking'){
                 $event=function_exists('user_calendar_event_v1300')?user_calendar_event_v1300($pdo,$uid,$numericId):null;
+                if($event && $occurrence!==''){
+                    $at=DateTimeImmutable::createFromFormat('!Ymd\THis\Z',$occurrence,new DateTimeZone('UTC'));
+                    if(!$at||$at->format('Ymd\THis\Z')!==$occurrence)return null;
+                    $matches=user_calendar_occurrences_v1340($event,$at->format('Y-m-d H:i:s'),$at->modify('+1 second')->format('Y-m-d H:i:s'));
+                    $event=null;foreach($matches as $match)if($match['start_at_utc']===$at->format('Y-m-d H:i:s')){$event=$match;break;}
+                }
                 if($event)return ['type'=>$type,'row'=>$event,'kind'=>'calendar'];
                 if($kind==='event')return null;
             }
@@ -520,7 +528,7 @@ function vp3_cognitive_cards_chat_requests_v520(PDO $pdo,array $user,string $nam
             foreach((array)(function_exists('user_calendar_events_v1300')?user_calendar_events_v1300($pdo,$user,$from,$to):[]) as $event){
                 $eid=(int)($event['id']??0);if($eid<1)continue;
                 $kind=(string)($event['kind']??'calendar');
-                $add('calendar_booking',($kind==='booking'?'booking:':'event:').$eid);
+                $add('calendar_booking',$kind==='event'?(string)($event['occurrence_id']??('event:'.$eid)):'booking:'.$eid);
             }
         }elseif($type==='workflow'&&table_exists('agent_workflow_runs')){
             $stmt=$pdo->prepare("SELECT id FROM agent_workflow_runs WHERE owner_user_id=? AND status<>'cancelled' ORDER BY updated_at DESC,id DESC LIMIT {$limit}");

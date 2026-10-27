@@ -7,7 +7,7 @@ function workspace_native_fields_v1(string $table): array
     return match($table){
         'crm_contacts'=>['display_name'=>120,'organization'=>190,'email'=>190,'phone'=>80,'relationship'=>80],
         'knowledge_items'=>['title'=>190,'description'=>10000,'content_text'=>50000],
-        'user_calendar_events'=>['title'=>190,'description'=>10000,'location'=>500,'date'=>10,'start_time'=>5,'end_date'=>10,'end_time'=>5,'timezone'=>80,'all_day'=>0],
+        'user_calendar_events'=>['title'=>190,'description'=>10000,'location'=>500,'date'=>10,'start_time'=>5,'end_date'=>10,'end_time'=>5,'timezone'=>80,'all_day'=>0,'recurrence'=>16,'agent_notifications'=>0],
         default=>[],
     };
 }
@@ -64,7 +64,7 @@ function workspace_native_edit_v1(PDO $pdo,int $uid,string $dataset,array $body)
     if(!is_string($mutation)||!preg_match('/^[A-Za-z0-9._:-]{8,128}$/D',$mutation)||!is_string($expected)||!preg_match('/^[a-f0-9]{64}$/D',$expected)||!is_array($fields)||!$fields||array_is_list($fields))throw new InvalidArgumentException('A change ID, source revision and changed fields are required.');
     if(array_diff(array_keys($fields),array_keys($limits)))throw new InvalidArgumentException('Unsupported workspace edit field.');
     foreach($fields as $field=>$value){
-        if($field==='all_day'){if(!is_bool($value))throw new InvalidArgumentException('All-day must be true or false.');continue;}
+        if(in_array($field,['all_day','agent_notifications'],true)){if(!is_bool($value))throw new InvalidArgumentException('All-day must be true or false.');continue;}
         if(!is_string($value)||mb_strlen($value)>$limits[$field])throw new InvalidArgumentException('Workspace field value is invalid or too long.');
     }
     if(strlen(json_encode($fields,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES))>65536)throw new InvalidArgumentException('Keep each workspace change under 64 KB.');

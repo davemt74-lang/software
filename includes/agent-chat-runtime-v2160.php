@@ -59,6 +59,11 @@ function vp3_agent_chat_runtime_calendar_events_v2160(array $awareness): array
 {
     $events=[];
     if(empty($awareness['available']))return $events;
+    foreach(array_slice((array)($awareness['priority_events']??[]),0,2) as $priority){
+        $events[]=['id'=>'calendar-priority-'.(string)$priority['ref'],'type'=>'event','event_kind'=>'calendar_priority',
+            'title'=>(string)$priority['title'],'summary'=>'Priority event — starts '.(string)$priority['start_local'].'.',
+            'source'=>'calendar_awareness','agent_notifications'=>true];
+    }
     $current=is_array($awareness['current']??null)?$awareness['current']:null;
     if($current)$events[]=[
         'id'=>'calendar-current-'.(string)($current['ref']??''),'type'=>'event','event_kind'=>'calendar_current',

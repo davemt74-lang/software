@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS user_calendar_events (
   end_at_utc DATETIME NOT NULL,
   timezone VARCHAR(80) NOT NULL DEFAULT 'UTC',
   all_day TINYINT(1) NOT NULL DEFAULT 0,
+  recurrence VARCHAR(16) NOT NULL DEFAULT 'none',
+  agent_notifications TINYINT(1) NOT NULL DEFAULT 0,
   source VARCHAR(32) NOT NULL DEFAULT 'user',
   source_reference VARCHAR(190) NOT NULL DEFAULT '',
   status VARCHAR(24) NOT NULL DEFAULT 'active',

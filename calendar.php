@@ -49,7 +49,7 @@ function calendar_v1300_event_url(array $event): string{$meeting=calendar_v1300_
 <?php foreach(['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] as $weekday): ?><div class="calendar-weekday" role="columnheader"><?= e($weekday) ?></div><?php endforeach; ?>
 <?php for($i=0;$i<42;$i++): $day=$gridStart->modify('+'.$i.' days');$date=$day->format('Y-m-d');$items=$byDay[$date]??[];$outside=$day->format('Y-m')!==$month->format('Y-m'); ?>
 <div class="calendar-day<?= $outside?' outside':'' ?><?= $date===$today?' today':'' ?>" role="gridcell" aria-label="<?= e($day->format('l, F j, Y')) ?>"><div class="calendar-day-number"><span><?= (int)$day->format('j') ?></span><?php if($date===$today): ?><small>Today</small><?php endif; ?></div><div class="calendar-events">
-<?php foreach(array_slice($items,0,4) as $event): $source=calendar_v1300_source($event); ?><a class="calendar-event <?= e($source) ?>" href="<?= e(calendar_v1300_event_url($event)) ?>"><strong><?= e((string)$event['title']) ?></strong><small><?= e(calendar_v1300_time($event,$tz)) ?> · <?= e(calendar_v1300_source_label($event)) ?></small></a><?php endforeach; ?>
+<?php foreach(array_slice($items,0,4) as $event): $source=calendar_v1300_source($event); ?><a class="calendar-event <?= e($source) ?>" href="<?= e(calendar_v1300_event_url($event)) ?>"><strong><?= e((string)$event['title']) ?></strong><small><?= e(calendar_v1300_time($event,$tz)) ?> · <?= e(calendar_v1300_source_label($event)) ?><?= ($event['recurrence']??'none')==='weekly'?' · Weekly':'' ?><?= !empty($event['agent_notifications'])?' · Agent priority':'' ?></small></a><?php endforeach; ?>
 <?php if(count($items)>4): ?><span class="calendar-overflow">+<?= count($items)-4 ?> more</span><?php endif; ?>
 </div></div><?php endfor; ?>
 </div>
