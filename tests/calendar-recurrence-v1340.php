@@ -19,6 +19,8 @@ function agent_scheduling_timezone_v430(string $tz):string{return $tz;}
 function agent_tool_log(...$args):void{}
 function url(string $path):string{return $path;}
 function video_meeting_schema_ready_v1800(PDO $pdo):bool{return false;}
+function homeserver_federated_v240_envelope(string $authority,string $dataset,string $key,string $title,string $content,string $updated):array{return ['canonical_id'=>'fixture-'.$key,'record_revision'=>hash('sha256',$key.$content.$updated)];}
+function homeserver_federated_v240_observe(...$args):void{}
 require dirname(__DIR__).'/includes/user-calendar-v1300.php';
 require dirname(__DIR__).'/includes/user-calendar-agent-v1300.php';
 require dirname(__DIR__).'/includes/agent-scheduling-tools-v460.php';
@@ -27,6 +29,7 @@ require dirname(__DIR__).'/includes/cognitive-runtime-v500.php';
 require dirname(__DIR__).'/includes/cognitive-cards-v520.php';
 require dirname(__DIR__).'/includes/agent-workflow-runs-v1400.php';
 require dirname(__DIR__).'/includes/agent-calendar-sync-v500.php';
+require dirname(__DIR__).'/includes/homeserver-tasks-calendar-v243.php';
 $checks=0;
 function check(bool $ok,string $message):void{$GLOBALS['checks']++;if(!$ok)throw new RuntimeException($message);}
 function denied(callable $call,string $message):void{try{$call();}catch(Throwable $e){check(true,$message);return;}throw new RuntimeException($message);}
@@ -55,6 +58,11 @@ check(vp3_cognitive_cards_object_v520($pdo,['id'=>2],'personal',['type'=>'calend
 check(vp3_cognitive_cards_object_v520($pdo,$user,'personal',['type'=>'calendar_booking','id'=>'event:'.$id.'@20261103T140000Z'])===null,'A fabricated occurrence cannot produce a card');
 check(user_calendar_events_v1300($pdo,['id'=>2],'2026-10-26 00:00:00','2026-11-10 00:00:00')===[],'Another owner cannot read the series');
 check(count(user_calendar_events_v1300($pdo,$user,'2030-10-01 00:00:00','2030-11-01 00:00:00'))>=4,'An old anchor appears years later without materialization');
+$federated=homeserver_task_calendar_v243_cloud_calendar_records(1,'2026-10-01 00:00:00','2027-11-07 00:00:00');
+check(count($federated)>52,'The existing 401-day continuity range remains supported');
+check(count(array_unique(array_column($federated,'occurrence_id')))===count($federated),'Continuity chunks do not duplicate a weekly occurrence');
+check(count(array_unique(array_column($federated,'record_revision')))===1,'Occurrence projections preserve the canonical series revision');
+check(homeserver_task_calendar_v243_cloud_calendar_records(2,'2026-10-01 00:00:00','2027-11-07 00:00:00')===[],'Federated recurrence reads retain owner isolation');
 check(count(user_calendar_events_v1300($pdo,$user,'2026-10-26 13:30:00','2026-10-26 13:31:00'))===1,'Overlap ranges include an in-progress occurrence');
 check(user_calendar_events_v1300($pdo,$user,'2026-10-26 14:00:00','2026-10-26 14:01:00')===[],'Event end is exclusive');
 $gap=$event;$gap['start_at_utc']='2026-03-01 07:30:00';$gap['end_at_utc']='2026-03-01 08:00:00';

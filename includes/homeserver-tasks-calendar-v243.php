@@ -164,7 +164,19 @@ function homeserver_task_calendar_v243_cloud_calendar_records(int $userId,string
     $pdo=db();if(!$pdo||$userId<1||!table_exists('user_calendar_events'))return [];
     $from=homeserver_task_calendar_v243_iso($fromUtc);$to=homeserver_task_calendar_v243_iso($toUtc);
     if(!$from||!$to)return [];
-    $rows=user_calendar_owned_events_v1340($pdo,$userId,$from,$to);$out=[];
+    // The continuity endpoint's default window spans 401 days. Split wider
+    // reads into bounded projection windows without duplicating boundary items.
+    $cursor=user_calendar_validate_utc_v1300($from);$finish=user_calendar_validate_utc_v1300($to);
+    $rows=[];$seen=[];
+    for($window=0;$window<100&&$cursor<$finish&&count($rows)<300;$window++){
+        $end=$cursor->modify('+370 days');if($end>$finish)$end=$finish;
+        foreach(user_calendar_owned_events_v1340($pdo,$userId,$cursor->format('Y-m-d H:i:s'),$end->format('Y-m-d H:i:s')) as $row){
+            $key=(string)($row['occurrence_id']??('event:'.(int)$row['id']));
+            if(isset($seen[$key]))continue;$seen[$key]=true;$rows[]=$row;if(count($rows)>=300)break;
+        }
+        $cursor=$end;
+    }
+    $out=[];
     foreach(array_slice($rows,0,300) as $row){
         $key='user_calendar_event:'.(int)$row['id'];
         $content=trim((string)$row['description'].' · '.(string)$row['location'].' · '.(string)($row['series_start_at_utc']??$row['start_at_utc']).' → '.(string)($row['series_end_at_utc']??$row['end_at_utc']).' · '.(string)($row['recurrence']??'none').' · agent_notifications:'.(int)($row['agent_notifications']??0));
