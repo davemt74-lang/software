@@ -66,6 +66,7 @@ function load_source(string $source):void{
     eval('namespace '.__NAMESPACE__.'; use \\Throwable; use \\RuntimeException;'.$source);
 }
 load_source(\file_get_contents($repo.'/includes/ai-settings.php'));
+load_source(\file_get_contents($repo.'/includes/ai-runtime-v100.php'));
 $voiceSource=\file_get_contents($repo.'/api/agent-voice-v117.php');
 $voiceSource=str_replace("require dirname(__DIR__) . '/includes/bootstrap.php';",'',$voiceSource);
 
@@ -99,6 +100,7 @@ try{
     $pdo->exec('CREATE TABLE settings(setting_key TEXT PRIMARY KEY,setting_value TEXT NOT NULL)');
     $key='fixture-database-key';$cipher=ai_encrypt_secret($key);
     save_setting('ai_elevenlabs_api_key',$cipher);save_setting('ai_elevenlabs_voice_id','fixture-voice');
+    save_setting('ai_test_requests_per_minute','120');
     $master=\file_get_contents(ai_master_key_file());
     check(ai_elevenlabs_credential()===[$key,'saved'],'Saved database key wins over a conflicting environment key');
     $environmentKey='fixture-other-environment-key';
@@ -112,6 +114,21 @@ try{
     check(in_array('xi-api-key: '.$key,$sent['headers']??[],true),'Actual TTS stream sends the same saved database key');
     check(str_contains($sent['endpoint']??'','/text-to-speech/fixture-voice/stream'),'Speech uses the configured voice and streaming endpoint');
     check((json_decode($sent['payload']??'',true)['model_id']??'')==='eleven_flash_v2_5','Speech preserves the saved model');
+    $responseBody='ID3'.str_repeat('a',100);$responseStatus=200;$requests=[];
+    $test=ai_test_elevenlabs_connection();
+    check(!empty($test['ok'])&&$test['audio_bytes']===103,'Admin ElevenLabs test verifies actual audio bytes rather than a configured flag');
+    check(in_array('xi-api-key: '.$key,$requests[0]['options'][CURLOPT_HTTPHEADER]??[],true),'Admin ElevenLabs test sends the saved database key');
+    check(str_contains($requests[0]['endpoint'],'/text-to-speech/fixture-voice/stream'),'Admin test uses speech generation instead of a metadata-only permission');
+    check(!str_contains(json_encode($test),$key),'Admin test result never exposes its key');
+    $responseBody='{"ok":true}';$badAudio=ai_test_elevenlabs_connection();
+    check(empty($badAudio['ok'])&&str_contains($badAudio['error'],'valid audio'),'A successful HTTP response without audio cannot pass the voice test');
+    foreach(['missing_permissions'=>'permission','quota_exceeded'=>'usage allowance','invalid_api_key'=>'rejected'] as $code=>$message){
+        $responseStatus=401;$responseBody=json_encode(['detail'=>['status'=>$code,'message'=>'fixture-private-detail']]);
+        $failed=ai_test_elevenlabs_connection();
+        check(empty($failed['ok'])&&$failed['failure_code']===$code&&str_contains($failed['error'],$message),'Admin voice test preserves the actual provider failure: '.$code);
+        check(!str_contains(json_encode($failed),'fixture-private-detail'),'Raw provider bodies do not leak through voice test results');
+    }
+    $responseStatus=200;$responseBody='';
     foreach([
         ['missing_permissions','The API key is missing the permission voices_read to execute this operation.',true,''],
         ['missing_permissions','The API key is missing the permission text_to_speech to execute this operation.',false,'permission'],

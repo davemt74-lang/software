@@ -71,9 +71,15 @@ verify(empty($stream['ok'])&&str_contains(chat_local_answer('How many visitors?'
 $history=ai_history_messages([
     ['role'=>'assistant','message'=>"Here’s the useful information I found:\n\n• HomeServer: offline"],
     ['role'=>'user','message'=>'Why did you say HomeServer: offline?'],
+    ['role'=>'assistant','message'=>'The server cannot read its saved AI credential. The site administrator needs to restore credential access in AI / API Settings.'],
+    ['role'=>'assistant','message'=>"No, I don't have access to the LLM right now. The server can't read its saved AI credential, so I can only send you this fixed message."],
     ['role'=>'assistant','message'=>'A real relevant answer.'],
 ]);
 verify(count($history)===2&&$history[0]['role']==='user','Known broken assistant fallback does not poison new turns; user messages remain');
+$quoted="The server can't read its saved AI credential";
+$history=ai_history_messages([['role'=>'user','message'=>$quoted],['role'=>'assistant','message'=>'We discussed an earlier connection incident.']]);
+verify(count($history)===2&&$history[0]['content']===$quoted,'User quotes and ordinary historical discussion remain intact');
+verify(str_contains(ai_system_prompt([]),'You are generating this reply through an AI provider for this request.'),'Generated replies are grounded in the current invocation rather than historical outage notices');
 
 foreach(['How many website visitors have I had','How many visitors today?','Number of visits this week','Website visitors','My website traffic'] as $query)verify(vp3_analytics_chat_intent($query),'Visitor question routes to existing analytics: '.$query);
 verify(!vp3_analytics_chat_intent('How many AI agent visits?'),'Agent Radar retains its own route');
