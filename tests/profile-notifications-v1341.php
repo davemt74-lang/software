@@ -108,6 +108,18 @@ check(profile_event_create($pdo,1,[...$session,'visitor_user_id'=>1],'profile_vi
 $pdo->prepare('DELETE FROM notifications WHERE id=?')->execute([(int)$note['id']]);
 profile_agent_reconcile_notifications_v1341($pdo,$user);profile_agent_reconcile_notifications_v1341($pdo,$user);
 check((int)$pdo->query("SELECT count(*) FROM notifications WHERE source_id=".(int)$note['source_id']." AND source_type='profile_event'")->fetchColumn()===1,'Existing attention ledger repairs a lost notification exactly once');
+$visitNote=$pdo->query("SELECT id FROM notifications WHERE type='profile_view' ORDER BY id LIMIT 1")->fetchColumn();
+$visitSource=$pdo->query('SELECT source_id FROM notifications WHERE id='.(int)$visitNote)->fetchColumn();
+$pdo->exec("UPDATE agent_attention_items SET status='handled' WHERE source_event_id=".(int)$visitSource);
+check(!in_array((int)$visitNote,array_column(notification_profile_attention_after_v1341($user)['items'],'id'),true),'A resolved/handled profile item does not return as a new priority');
+$pdo->exec("UPDATE agent_attention_items SET status='ignored' WHERE source_event_id=".(int)$visitSource);
+check(!in_array((int)$visitNote,array_column(notification_profile_attention_after_v1341($user)['items'],'id'),true),'Ignored attention stays ignored');
+$pdo->exec("UPDATE agent_attention_items SET status='snoozed',snoozed_until=datetime('now','+1 day') WHERE source_event_id=".(int)$visitSource);
+$scan=notification_profile_attention_after_v1341($user);$cursor=$scan['latest_id'];
+check(!in_array((int)$visitNote,array_column($scan['items'],'id'),true),'Active snooze defers the priority');
+$pdo->exec("UPDATE agent_attention_items SET snoozed_until=datetime('now','-1 minute') WHERE source_event_id=".(int)$visitSource);
+$wake=notification_profile_attention_after_v1341($user,$cursor);
+check(in_array((int)$visitNote,array_column($wake['items'],'id'),true)&&$wake['latest_id']>=$cursor,'Expired snooze wakes even after the scan cursor has advanced');
 // More than one response page must never skip IDs because of a global MAX(id).
 $pdo->exec('DELETE FROM notifications');
 for($i=0;$i<65;$i++)create_notification(1,'profile_message_received','Message '.$i,'new','/profile-agent.php','profile_event',1000+$i);
