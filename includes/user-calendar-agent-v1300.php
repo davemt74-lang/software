@@ -42,7 +42,7 @@ function user_calendar_agent_explicit_intent_v1300(string $query): bool
 {
     $q=mb_strtolower($query);
     if(!preg_match('/\bcalendar\b/u',$q))return false;
-    return (bool)preg_match('/\b(?:add|create|put|schedule|block|event|agenda|show|list|what|what\'s|whats|have|remove|delete|cancel)\b/u',$q);
+    return (bool)preg_match('/\b(?:add|create|put|schedule|block|event|agenda|show|list|what|what\'s|whats|have|remove|delete|cancel|move|reschedule|change|update|enable|disable|mark)\b/u',$q);
 }
 
 function user_calendar_agent_create_intent_v1300(string $query): bool
@@ -93,6 +93,64 @@ function user_calendar_agent_label_v1300(array $event,string $timezone): string
     }catch(Throwable $e){return (string)($event['start_at_utc']??'');}
 }
 
+/** Only explicit calendar changes enter this path; bookings use scheduling tools. */
+function user_calendar_agent_options_v1340(string $query,array $existing=[]): array
+{
+    $options=user_calendar_options_v1340([], $existing);
+    if(preg_match('/\b(?:weekly|every week|every (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i',$query))$options['recurrence']='weekly';
+    if(preg_match('/\b(?:one[ -]time|does not repeat|stop repeating)\b/i',$query))$options['recurrence']='none';
+    if(preg_match('/\b(?:include|enable|turn on) agent notifications\b|\b(?:make|mark)(?: it| this)?(?: an?)? priority\b/i',$query))$options['agent_notifications']=1;
+    if(preg_match('/\b(?:exclude|disable|turn off|no) agent notifications\b/i',$query))$options['agent_notifications']=0;
+    return $options;
+}
+
+function user_calendar_agent_manage_v1340(PDO $pdo,array $user,string $query,int $conversationId): ?array
+{
+    $operation=preg_match('/\b(?:remove|delete|cancel)\b/i',$query)?'cancel':(preg_match('/\b(?:move|reschedule|change|update|enable|disable|mark)\b/i',$query)?'update':'');
+    if($operation==='')return null;
+    $result=user_calendar_agent_empty_v1300();$result['handled']=true;$rows=[];
+    if(preg_match('/\b(?:event|calendar)\s*#(\d+)\b/i',$query,$m)){
+        $row=user_calendar_event_v1300($pdo,(int)$user['id'],(int)$m[1]);if($row&&$row['status']==='active')$rows[]=$row;
+    }elseif(preg_match('/["“]([^"”]{1,190})["”]/u',$query,$m)){
+        $s=$pdo->prepare("SELECT * FROM user_calendar_events WHERE owner_user_id=? AND status='active' AND title=? ORDER BY id");$s->execute([(int)$user['id'],trim($m[1])]);$rows=$s->fetchAll()?:[];
+    }else{
+        $result['answer']='Which calendar event? Use its event number or exact title in quotes, such as cancel calendar event #12.';return $result;
+    }
+    if(count($rows)!==1){$result['answer']=$rows?'More than one calendar event has that title. Use the event number to choose one.':'I could not find that active event in your calendar.';return $result;}
+    $event=$rows[0];$id=(int)$event['id'];
+    if(function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800($pdo)&&video_meeting_for_calendar_event_v1800($pdo,$id)){
+        $result['answer']='This event has a linked video meeting. Open its editor to keep the meeting and invitations synchronized.';
+        $result['actions'][]=['type'=>'open_url','label'=>'Edit meeting event','url'=>url('/calendar-event.php?id='.$id)];return $result;
+    }
+    $input=array_merge($event,user_calendar_event_local_parts_v1300($event));
+    $input['expected_revision']=section12_revision($event);
+    if($operation==='update'){
+        $date=agent_scheduling_tools_date_v460($query,(string)$event['timezone']);
+        $time=agent_scheduling_tools_time_request_v460($query);
+        if($time&&!empty($time['ambiguous'])){$result['answer']='Please include AM or PM for the new event time.';return $result;}
+        if($date||$time){
+            $zone=new DateTimeZone((string)$event['timezone']);
+            $oldStart=user_calendar_validate_utc_v1300((string)$event['start_at_utc'])->setTimezone($zone);
+            $oldEnd=user_calendar_validate_utc_v1300((string)$event['end_at_utc'])->setTimezone($zone);
+            $startTime=$time?sprintf('%02d:%02d',$time['hour'],$time['minute']):$input['start_time'];
+            $newStart=DateTimeImmutable::createFromFormat('!Y-m-d H:i',($date?:$input['date']).' '.$startTime,$zone);
+            if(!$newStart||$newStart->format('Y-m-d H:i')!==($date?:$input['date']).' '.$startTime){$result['answer']='That local event time does not exist. Choose another time.';return $result;}
+            $newEnd=$newStart->add($oldStart->diff($oldEnd));
+            $input['date']=$newStart->format('Y-m-d');$input['start_time']=$startTime;
+            $input['end_date']=(!empty($event['all_day'])?$newEnd->modify('-1 day'):$newEnd)->format('Y-m-d');$input['end_time']=$newEnd->format('H:i');
+        }
+        $input=array_merge($input,user_calendar_agent_options_v1340($query,$event));
+        if(!$date&&!$time&&$input['recurrence']===($event['recurrence']??'none')&&(int)$input['agent_notifications']===(int)($event['agent_notifications']??0)){
+            $result['answer']='What should change? Give a new date/time, One time or Every week, or enable/disable agent notifications.';return $result;
+        }
+        user_calendar_validate_options_v1340($pdo,user_calendar_options_v1340($input),user_calendar_local_range_v1300($input,(string)$event['timezone']));
+    }
+    $pending=$input+['operation'=>$operation,'event_id'=>$id];
+    user_calendar_agent_set_pending_v1300($user,$conversationId,$pending);
+    $result['answer']=($operation==='cancel'?'Remove':'Update').' calendar event #'.$id.' “'.(string)$event['title'].'”'.(($event['recurrence']??'none')==='weekly'?' and its entire weekly series':'').'?'.($operation==='update'?' New schedule: '.$input['date'].' '.$input['start_time'].' · '.$input['timezone'].' · '.($input['recurrence']==='weekly'?'Every week':'One time').' · agent notifications '.(!empty($input['agent_notifications'])?'on':'off').'.':'').' Confirm?';
+    return $result;
+}
+
 function user_calendar_agent_query_v1300(string $query,array $user,int $conversationId=0): array
 {
     $empty=user_calendar_agent_empty_v1300();
@@ -105,11 +163,26 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
         $result=$empty;$result['handled']=true;
         if($confirmation===false){
             user_calendar_agent_clear_pending_v1300($user,$conversationId);
-            $result['answer']='Okay — I did not add that calendar event.';
+            $result['answer']='Okay — I did not change your calendar.';
             agent_tool_log($user,'calendar.event.create',$query,'cancelled',['pending_title'=>(string)($pending['title']??'')],$conversationId);
             return $result;
         }
         try{
+            $operation=(string)($pending['operation']??'create');
+            if($operation!=='create'){
+                $id=(int)($pending['event_id']??0);
+                $event=section12_owner_transaction($pdo,(int)$user['id'],static function()use($pdo,$user,$id,$pending,$operation):array{
+                    if(function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800($pdo)&&video_meeting_for_calendar_event_v1800($pdo,$id))throw new RuntimeException('Open this linked video meeting in its event editor.');
+                    if($operation==='cancel'){
+                        if(!user_calendar_cancel_event_v1300($pdo,$user,$id,(string)$pending['expected_revision']))throw new RuntimeException('Calendar event could not be removed.');return $pending;
+                    }
+                    return user_calendar_update_event_v1300($pdo,$user,$id,$pending);
+                });
+                user_calendar_agent_clear_pending_v1300($user,$conversationId);
+                $result['answer']=($operation==='cancel'?'Removed':'Updated').' calendar event #'.$id.' “'.(string)$event['title'].'”.';
+                $result['actions'][]=['type'=>'open_url','label'=>'Open Calendar','url'=>url('/calendar.php')];
+                agent_tool_log($user,'calendar.event.'.$operation,$query,'success',['event_id'=>$id],$conversationId);return $result;
+            }
             $agentId=max(0,(int)($pending['agent_id']??0));
             $source='agent';
             $event=user_calendar_create_local_event_v1300($pdo,$user,$pending,$source,$agentId>0?$agentId:null);
@@ -131,6 +204,8 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
     if(!user_calendar_agent_explicit_intent_v1300($query))return $empty;
     $result=$empty;$result['handled']=true;
     $timezone=user_calendar_default_timezone_v1300($pdo,$user);
+    try{$management=user_calendar_agent_manage_v1340($pdo,$user,$query,$conversationId);if($management!==null)return $management;}
+    catch(Throwable $e){$result['answer']='I could not prepare that calendar change: '.$e->getMessage();return $result;}
 
     if(user_calendar_agent_list_intent_v1300($query)&&!user_calendar_agent_create_intent_v1300($query)){
         $date=agent_scheduling_tools_date_v460($query,$timezone,null);
@@ -150,7 +225,7 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
             foreach(array_slice($events,0,12) as $event){
                 $label=user_calendar_agent_label_v1300($event,$timezone);
                 $kind=(string)$event['kind']==='booking'?'Booking':'Event';
-                $lines[]='• '.$label.' — '.(string)$event['title'].' ('.$kind.')';
+                $lines[]='• '.$label.' — '.(string)$event['title'].' ('.$kind.((string)$event['kind']==='event'?' #'.(int)$event['id']:'').(($event['recurrence']??'none')==='weekly'?' · weekly':'').(!empty($event['agent_notifications'])?' · agent priority':'').')';
             }
             $result['answer']=($date?'Here’s your calendar for '.$start->format('l, F j').':':'Here’s your upcoming calendar:')."\n".implode("\n",$lines);
         }
@@ -174,11 +249,11 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
         $startTime=sprintf('%02d:%02d',(int)$time['hour'],(int)$time['minute']);
         $duration=user_calendar_agent_duration_v1300($query);
         $agentId=agent_scheduling_tools_conversation_agent_id_v460($pdo,$user,$conversationId);
-        $pending=['title'=>$title,'date'=>$date,'start_time'=>$startTime,'duration_minutes'=>$duration,'timezone'=>$timezone,'all_day'=>false,'location'=>'','description'=>'','agent_id'=>$agentId];
+        $pending=['title'=>$title,'date'=>$date,'start_time'=>$startTime,'duration_minutes'=>$duration,'timezone'=>$timezone,'all_day'=>false,'location'=>'','description'=>'','agent_id'=>$agentId]+user_calendar_agent_options_v1340($query);
         user_calendar_agent_set_pending_v1300($user,$conversationId,$pending);
         $start=DateTimeImmutable::createFromFormat('!Y-m-d H:i',$date.' '.$startTime,new DateTimeZone($timezone));
         $when=$start?$start->format('D, M j · g:i A T'):$date.' '.$startTime;
-        $result['answer']='I can add “'.$title.'” to your calendar for '.$when.' ('.$duration.' minutes). Confirm?';
+        $result['answer']='I can add “'.$title.'” to your calendar for '.$when.' ('.$duration.' minutes).'.($pending['recurrence']==='weekly'?' Repeats every week.':'').(!empty($pending['agent_notifications'])?' Agent notifications on.':'').' Confirm?';
         agent_tool_log($user,'calendar.event.prepare',$query,'pending',['title'=>$title,'date'=>$date,'start_time'=>$startTime,'duration_minutes'=>$duration,'agent_id'=>$agentId],$conversationId);
         return $result;
     }

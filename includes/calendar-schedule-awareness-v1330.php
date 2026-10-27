@@ -27,6 +27,7 @@ function calendar_schedule_awareness_empty_v1330(int $horizonDays = 7): array
         'starts_soon'=>false,
         'today'=>['date'=>'','count'=>0,'remaining_count'=>0],
         'upcoming'=>[],
+        'priority_events'=>[],
         'conflicts'=>[],
         'open_gaps_today'=>[],
     ];
@@ -45,7 +46,9 @@ function calendar_schedule_awareness_event_v1330(array $event, DateTimeImmutable
     $kind=(string)($event['kind']??'event');
     $id=max(0,(int)($event['id']??0));
     return [
-        'ref'=>$kind.':'.$id,
+        'ref'=>(string)($event['occurrence_id']??($kind.':'.$id)),
+        'recurrence'=>(string)($event['recurrence']??'none'),
+        'agent_notifications'=>!empty($event['agent_notifications']),
         'kind'=>$kind,
         'id'=>$id,
         'title'=>mb_strimwidth(trim((string)($event['title']??'Scheduled item')),0,190,'…'),
@@ -179,6 +182,7 @@ function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, ?Date
         'starts_soon'=>$startsSoon,
         'today'=>['date'=>$todayDate,'count'=>count($today),'remaining_count'=>count($remainingToday)],
         'upcoming'=>$upcoming,
+        'priority_events'=>array_slice(array_values(array_filter($events,static fn(array $event):bool=>!empty($event['agent_notifications']) && new DateTimeImmutable($event['end_local']) > $nowLocal)),0,10),
         'conflicts'=>calendar_schedule_awareness_conflicts_v1330($conflictPool),
         'open_gaps_today'=>calendar_schedule_awareness_open_gaps_v1330($todayFuture,$nowLocal),
     ];
@@ -213,5 +217,15 @@ function calendar_schedule_awareness_candidates_v1330(array $snapshot): array
             'priority'=>168,'score'=>0.84,'source'=>'calendar_upcoming','url'=>'/calendar.php','created_at'=>(string)($snapshot['generated_at']??gmdate('c')),
         ];
     }
+    foreach(array_slice((array)($snapshot['priority_events']??[]),0,2) as $event){
+        $key='calendar-priority:'.(string)$event['ref'];
+        $candidates[]=[
+            'hash'=>sha1('calendar|'.$key),'key'=>$key,'title'=>'Priority calendar event: '.(string)$event['title'],
+            'prompt'=>'Review my priority event and help me prepare: '.(string)$event['title'],
+            'reason'=>'You included agent notifications. Starts '.(string)$event['start_local'].'.',
+            'priority'=>200,'score'=>0.98,'source'=>'calendar_priority','url'=>'/calendar.php','created_at'=>(string)($snapshot['generated_at']??gmdate('c')),
+        ];
+    }
+    usort($candidates,static fn(array $a,array $b):int=>$b['priority']<=>$a['priority']);
     return array_slice($candidates,0,4);
 }

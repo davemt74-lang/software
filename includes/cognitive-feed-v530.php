@@ -239,11 +239,12 @@ function vp3_cognitive_feed_calendar_candidates_v530(PDO $pdo,array $user): arra
         $attention=$minutes<=15&&$minutes>=-60;
         $timeBucket=$minutes<=15?'imminent':($minutes<=60?'hour':($minutes<=1440?'day':'future'));
         $score=$minutes<=15?90:($minutes<=60?84:($minutes<=1440?74:58));
-        $objectId=($kind==='booking'?'booking:':'event:').$id;
+        if(!empty($event['agent_notifications'])){$score=max($score,96);$attention=true;}
+        $objectId=$kind==='event'?(string)($event['occurrence_id']??('event:'.$id)):'booking:'.$id;
         $out[]=vp3_cognitive_feed_candidate_v530(
             'calendar:'.$objectId,$attention?'attention':'next_up',$score,vp3_cognitive_feed_relative_time_v530((string)$event['start_at_utc']),
             vp3_cognitive_feed_request_v530('calendar_booking',$objectId,'personal','standard'),
-            'calendar',(string)($event['start_at_utc']??''),['status'=>$event['status']??'','kind'=>$kind,'time_bucket'=>$timeBucket],$attention
+            'calendar',(string)($event['start_at_utc']??''),['status'=>$event['status']??'','kind'=>$kind,'time_bucket'=>$timeBucket,'agent_notifications'=>!empty($event['agent_notifications'])],$attention
         );
     }
     return $out;

@@ -199,6 +199,8 @@ function vp3_cognitive_calendar_event_v2380(PDO $pdo,int $owner,string $eventTyp
         'end_at_utc'=>(string)($event['end_at_utc']??''),
         'status'=>(string)($event['status']??''),
         'source'=>(string)($event['source']??''),
+        'recurrence'=>(string)($event['recurrence']??'none'),
+        'agent_notifications'=>!empty($event['agent_notifications']),
     ]+$payload,['external_event_id'=>'calendar:'.$id.':'.$eventType.':'.substr(hash('sha256',(string)($event['updated_at']??$event['cancelled_at']??$event['created_at']??microtime(true))),0,16)]);
 }
 

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/section12-data.php';
+require_once __DIR__.'/user-calendar-recurrence-v1340.php';
 
 /**
  * VP3 User Calendar v13.00
@@ -36,6 +37,8 @@ function user_calendar_ensure_schema_v1300(?PDO $pdo = null): void
       end_at_utc DATETIME NOT NULL,
       timezone VARCHAR(80) NOT NULL DEFAULT 'UTC',
       all_day TINYINT(1) NOT NULL DEFAULT 0,
+      recurrence VARCHAR(16) NOT NULL DEFAULT 'none',
+      agent_notifications TINYINT(1) NOT NULL DEFAULT 0,
       source VARCHAR(32) NOT NULL DEFAULT 'user',
       source_reference VARCHAR(190) NOT NULL DEFAULT '',
       status VARCHAR(24) NOT NULL DEFAULT 'active',
@@ -49,6 +52,8 @@ function user_calendar_ensure_schema_v1300(?PDO $pdo = null): void
       CONSTRAINT fk_user_calendar_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
       CONSTRAINT fk_user_calendar_agent FOREIGN KEY (created_by_agent_id) REFERENCES user_agents(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    if (!column_exists('user_calendar_events','recurrence')) $pdo->exec("ALTER TABLE user_calendar_events ADD COLUMN recurrence VARCHAR(16) NOT NULL DEFAULT 'none'");
+    if (!column_exists('user_calendar_events','agent_notifications')) $pdo->exec("ALTER TABLE user_calendar_events ADD COLUMN agent_notifications TINYINT(1) NOT NULL DEFAULT 0");
 }
 
 function user_calendar_timezone_v1300(string $timezone, string $fallback = 'UTC'): string
@@ -184,6 +189,8 @@ function user_calendar_create_event_locked_v1300(PDO $pdo, array $user, array $i
         if ($row = $existing->fetch()) return $row;
     }
 
+    $options = user_calendar_options_v1340($input);
+    user_calendar_validate_options_v1340($pdo,$options,['timezone'=>$timezone,'start_at_utc'=>$start->format('Y-m-d H:i:s'),'end_at_utc'=>$end->format('Y-m-d H:i:s')]);
     $createdByUserId = $source === 'user' ? $ownerUserId : null;
     $stmt = $pdo->prepare(
         'INSERT INTO user_calendar_events (owner_user_id,created_by_user_id,created_by_agent_id,title,description,location,start_at_utc,end_at_utc,timezone,all_day,source,source_reference,status)
@@ -195,6 +202,10 @@ function user_calendar_create_event_locked_v1300(PDO $pdo, array $user, array $i
     ]);
     $event = user_calendar_event_v1300($pdo, $ownerUserId, (int)$pdo->lastInsertId());
     if (!$event) throw new RuntimeException('Calendar event could not be created.');
+    if (user_calendar_recurrence_schema_ready_v1340($pdo)) {
+        $pdo->prepare('UPDATE user_calendar_events SET recurrence=?,agent_notifications=? WHERE id=? AND owner_user_id=?')->execute([$options['recurrence'],$options['agent_notifications'],$event['id'],$ownerUserId]);
+        $event = user_calendar_event_v1300($pdo,$ownerUserId,(int)$event['id']);
+    }
     if(function_exists('vp3_cognitive_calendar_event_v2380'))vp3_cognitive_calendar_event_v2380($pdo,$ownerUserId,'calendar.event_created',$event);
     return $event;
 }
@@ -217,6 +228,9 @@ function user_calendar_update_event_locked_v1300(PDO $pdo, array $user, int $eve
     if (!$existing || (string)$existing['status'] !== 'active') throw new RuntimeException('Calendar event not found.');
     section12_assert_revision($existing,isset($input['expected_revision'])?(string)$input['expected_revision']:null);
     $range = user_calendar_local_range_v1300($input, (string)$existing['timezone']);
+    $options = user_calendar_options_v1340($input,$existing);
+    user_calendar_validate_options_v1340($pdo,$options,$range);
+    if($options['recurrence']==='weekly'&&function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800($pdo)&&video_meeting_for_calendar_event_v1800($pdo,$eventId))throw new RuntimeException('Use a one-time event for a linked video meeting.');
     $title = trim((string)($input['title'] ?? ''));
     if ($title === '' || mb_strlen($title) > 190) throw new RuntimeException('Enter an event title up to 190 characters.');
     $description = trim((string)($input['description'] ?? ''));
@@ -224,6 +238,7 @@ function user_calendar_update_event_locked_v1300(PDO $pdo, array $user, int $eve
     if (mb_strlen($description) > 10000 || mb_strlen($location) > 500) throw new RuntimeException('Event details are too long.');
     $stmt = $pdo->prepare("UPDATE user_calendar_events SET title=?,description=?,location=?,start_at_utc=?,end_at_utc=?,timezone=?,all_day=? WHERE id=? AND owner_user_id=? AND status='active'");
     $stmt->execute([$title,$description,$location,$range['start_at_utc'],$range['end_at_utc'],$range['timezone'],$range['all_day']?1:0,$eventId,$ownerUserId]);
+    if (user_calendar_recurrence_schema_ready_v1340($pdo)) $pdo->prepare("UPDATE user_calendar_events SET recurrence=?,agent_notifications=? WHERE id=? AND owner_user_id=? AND status='active'")->execute([$options['recurrence'],$options['agent_notifications'],$eventId,$ownerUserId]);
     $saved=user_calendar_event_v1300($pdo, $ownerUserId, $eventId) ?: $existing;
     if(function_exists('vp3_cognitive_calendar_event_v2380'))vp3_cognitive_calendar_event_v2380($pdo,$ownerUserId,'calendar.event_updated',$saved);
     return $saved;
@@ -265,14 +280,14 @@ function user_calendar_events_v1300(PDO $pdo, array $user, string $fromUtc, stri
     if ($to <= $from || ($to->getTimestamp() - $from->getTimestamp()) > 370 * 86400) throw new RuntimeException('Calendar range is invalid.');
 
     $events = [];
-    $stmt = $pdo->prepare("SELECT * FROM user_calendar_events WHERE owner_user_id=? AND status='active' AND start_at_utc<? AND end_at_utc>? ORDER BY start_at_utc,id");
-    $stmt->execute([$ownerUserId,$to->format('Y-m-d H:i:s'),$from->format('Y-m-d H:i:s')]);
-    foreach ($stmt->fetchAll() ?: [] as $row) {
+    foreach (user_calendar_owned_events_v1340($pdo,$ownerUserId,$fromUtc,$toUtc) as $row) {
         $events[] = [
             'kind'=>'event','id'=>(int)$row['id'],'title'=>(string)$row['title'],'description'=>(string)$row['description'],
             'location'=>(string)$row['location'],'start_at_utc'=>(string)$row['start_at_utc'],'end_at_utc'=>(string)$row['end_at_utc'],
             'timezone'=>(string)$row['timezone'],'all_day'=>!empty($row['all_day']),'source'=>(string)$row['source'],'status'=>(string)$row['status'],
             'created_by_agent_id'=>(int)($row['created_by_agent_id']??0),'editable'=>true,
+            'recurrence'=>(string)($row['recurrence']??'none'),'agent_notifications'=>!empty($row['agent_notifications']),
+            'series_id'=>(int)($row['series_id']??$row['id']),'occurrence_id'=>(string)($row['occurrence_id']??('event:'.(int)$row['id'])),
         ];
     }
 
@@ -320,6 +335,7 @@ function user_calendar_event_local_parts_v1300(array $event, string $fallbackTim
     $allDay = !empty($event['all_day']);
     return [
         'timezone'=>$timezone,'all_day'=>$allDay,'date'=>$start->format('Y-m-d'),'start_time'=>$start->format('H:i'),
+        'recurrence'=>(string)($event['recurrence']??'none'),'agent_notifications'=>!empty($event['agent_notifications']),
         'end_date'=>$allDay?$end->modify('-1 day')->format('Y-m-d'):$end->format('Y-m-d'),'end_time'=>$end->format('H:i'),
     ];
 }

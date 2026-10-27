@@ -223,7 +223,7 @@ function agent_workflow_type_v1400(array $priority): string
 {
     $source=(string)($priority['source']??'');$title=mb_strtolower((string)($priority['title']??''));
     if($source==='calendar_conflict')return 'calendar_conflict_resolution';
-    if($source==='calendar_upcoming')return 'calendar_commitment_prep';
+    if(in_array($source,['calendar_upcoming','calendar_priority'],true))return 'calendar_commitment_prep';
     if(str_contains($title,'follow-up')||str_contains($title,'follow up'))return 'post_meeting_followup';
     if(str_contains($source,'commerce'))return 'commerce_followup';
     return 'agent_next_action';
