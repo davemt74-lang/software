@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 NODE_TESTS = [
+    'tests/profile-notifications-v1341.mjs',
     'tests/chat-send-recovery.mjs',
     'tests/chat-player-volume.mjs',
     'tests/stem-first-paint-loader-v233.mjs',
@@ -247,6 +248,10 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 ]
 
 PHP_TESTS = [
+    'tests/profile-inference-v1341.php',
+    'tests/profile-inference-service-v1341.php',
+    'tests/profile-notifications-v1341.php',
+    'tests/radar-offsite-review-v1341.php',
     'tests/agent-scheduling-timezone-v1340.php',
     'tests/calendar-recurrence-v1340.php',
     'tests/calendar-event-v1340-page.php',

@@ -227,6 +227,12 @@ function profile_visitor_attention_decision_v243(PDO $pdo, int $ownerUserId, arr
             if ($lastQuestion !== '') $message .= ' Their latest message is “' . $lastQuestion . '”.';
             $message .= ' ' . $prompt;
         }
+    } elseif ($eventType === 'message_received') {
+        $message = $label . ' sent a new message to ' . $agentName . '.';
+        $body = trim((string)($notification['body'] ?? ''));
+        if ($body !== '') $message .= ' ' . $body;
+        $prompt = 'Would you like to review the message or join the conversation?';
+        $message .= ' ' . $prompt;
     } elseif ($eventType === 'needs_owner') {
         $question = $pendingQuestion !== '' ? $pendingQuestion : $lastQuestion;
         $message = $label . ' needs your input';

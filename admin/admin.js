@@ -17,6 +17,52 @@
   const notificationButton = document.getElementById('adminNotificationButton');
   const notificationDropdown = document.getElementById('adminNotificationDropdown');
 
+  const notificationBase = new URL('../', document.currentScript?.src || window.location.href);
+  let notificationRefreshBusy = false;
+  function renderAdminNotifications(data) {
+    if (!data?.ok || !notificationButton || !notificationDropdown) return;
+    const unread = Math.max(0, Number(data.unread) || 0);
+    let badge = notificationButton.querySelector('.admin-notification-badge');
+    if (unread) {
+      if (!badge) { badge = document.createElement('span'); badge.className = 'admin-notification-badge'; notificationButton.appendChild(badge); }
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+    } else badge?.remove();
+    const head = notificationDropdown.querySelector('.admin-notification-head');
+    if (head) {
+      let count = head.querySelector('span');
+      if (!count) { count = document.createElement('span'); head.appendChild(count); }
+      count.textContent = `${unread} unread`;
+    }
+    const list = notificationDropdown.querySelector('.admin-notification-list');
+    if (!list) return;
+    list.replaceChildren();
+    for (const item of (Array.isArray(data.items) ? data.items : [])) {
+      const target = new URL(String(item.open_url || ''), notificationBase);
+      if (target.origin !== notificationBase.origin) continue;
+      const link = document.createElement('a'); link.href = target.href; link.className = item.is_read ? '' : 'unread';
+      const dot = document.createElement('span'); dot.className = 'admin-notification-dot';
+      const text = document.createElement('span');
+      const title = document.createElement('strong'); title.textContent = String(item.title || 'Update');
+      const detail = document.createElement('small'); detail.textContent = String(item.body || '');
+      text.append(title, detail); link.append(dot, text); list.appendChild(link);
+    }
+    if (!list.children.length) { const empty = document.createElement('div'); empty.className = 'admin-notification-empty'; empty.textContent = 'No notifications yet.'; list.appendChild(empty); }
+  }
+  async function refreshAdminNotifications() {
+    if (!notificationButton || notificationRefreshBusy || document.hidden) return;
+    notificationRefreshBusy = true;
+    try {
+      const response = await fetch(new URL('api/member-notifications.php', notificationBase), {credentials:'same-origin', cache:'no-store'});
+      if (response.ok) renderAdminNotifications(await response.json());
+    } catch (_error) {} finally { notificationRefreshBusy = false; }
+  }
+  if (notificationButton) {
+    void refreshAdminNotifications();
+    const notificationTimer = window.setInterval(refreshAdminNotifications, 15000);
+    document.addEventListener('visibilitychange', refreshAdminNotifications);
+    window.addEventListener('pagehide', () => { window.clearInterval(notificationTimer); document.removeEventListener('visibilitychange', refreshAdminNotifications); }, {once:true});
+  }
+
   const safeStorageGet = key => {
     try { return window.localStorage.getItem(key); } catch (_error) { return null; }
   };
@@ -223,6 +269,7 @@
     if (!notificationDropdown) return;
     notificationDropdown.hidden = !opening;
     notificationButton.setAttribute('aria-expanded', String(opening));
+    if (opening) void refreshAdminNotifications();
   });
   notificationDropdown?.addEventListener('click', event => event.stopPropagation());
 

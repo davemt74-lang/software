@@ -100,10 +100,12 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         profile_agent_rate_check($pdo,$cid);
         $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'visitor',?,?)")
             ->execute([$cid,(int)($visitor['id']??0)?:null,$query]);
+        $visitorMessageId=(int)$pdo->lastInsertId();
         $pdo->prepare('UPDATE profile_visit_sessions SET last_message_at=NOW(),last_seen_at=NOW() WHERE id=? AND owner_user_id=?')
             ->execute([$sessionId,$owner]);
         $pdo->prepare('UPDATE profile_agent_conversations SET last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')
             ->execute([mb_strimwidth($query,0,900,'…'),$cid,$owner,$agentId,$sessionId]);
+        profile_agent_message_received_v1341($pdo,$profile,$agent,$session,$conversation,$visitorMessageId,$query);
         $pdo->commit();
     }catch(Throwable $e){
         if($pdo->inTransaction())$pdo->rollBack();
@@ -133,33 +135,34 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
     }
     if(count($context)>24)$context=array_slice($context,0,24);
 
-    $substantive=array_values(array_filter(
-        $context,
-        static fn(array $c):bool=>!in_array((string)$c['source'],['profile:identity','profile:rules'],true)
-    ));
     $greeting=(bool)preg_match('/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))[!.\s]*$/i',$query);
     $profileHome=['attempted'=>false,'success'=>false,'execution'=>null,'failure_class'=>'none'];
-
-    if(!$substantive&&!$greeting){
-        profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);
-        $answer='I don’t have approved information to answer that accurately yet. I’ve asked '.(string)$profile['display_name'].' for input rather than guessing.';
-    }elseif($greeting){
-        $answer=trim((string)($profile['profile_agent_greeting']??''))
-            ?: 'Hi — I’m '.(string)$agent['display_name'].', '.(string)$profile['display_name'].'’s AI representative. What would you like to know?';
+    $answerMode='model';
+    if($greeting&&trim((string)($profile['profile_agent_greeting']??''))!==''){
+        $answer=(string)$profile['profile_agent_greeting'];$answerMode='configured_greeting';
     }else{
+        // Approved knowledge constrains facts, not the ability to converse.
+        // Reuse the owner's stateless HomeServer route and Cloud quota engine.
         $homeAnswer=function_exists('homeserver_profile_v235_answer')
-            ?homeserver_profile_v235_answer($owner,$query,$history,$context)
-            :null;
+            ?homeserver_profile_v235_answer($owner,$query,$history,$context):null;
         $profileHome=function_exists('homeserver_profile_v235_last')?homeserver_profile_v235_last():$profileHome;
         if(is_array($homeAnswer)&&trim((string)($homeAnswer['answer']??''))!==''){
-            $answer=(string)$homeAnswer['answer'];
+            $answer=(string)$homeAnswer['answer'];$answerMode='homeserver_model';
         }else{
-            $answer=chat_remote_answer($query,$history,$context,$ownerUser);
-            if($answer===null)$answer=chat_local_answer($query,$context);
-        }
-        if(trim((string)$answer)===''){
-            profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);
-            $answer='I don’t have enough approved information to answer that accurately.';
+            $control=[
+                'surface'=>'profile_agent','profile_owner_user_id'=>$owner,
+                'profile_agent_id'=>$agentId,'profile_agent_name'=>(string)$agent['display_name'],
+                'profile_owner_name'=>(string)($profile['display_name']??$ownerUser['display_name']??''),
+                'profile_instructions'=>(string)($profile['profile_agent_instructions']??''),
+            ];
+            $generated=ai_generate_chat_response($query,$history,$context,$ownerUser,'profile_agent',$control);
+            $answer=!empty($generated['ok'])?trim((string)($generated['answer']??'')):'';
+            if($answer===''){
+                profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);
+                $answerMode=!empty($generated['quota_exhausted'])?'quota_handoff':'owner_handoff';
+                $answer=($answerMode==='quota_handoff'?'This Profile Agent has reached its AI usage allowance. ':'I could not complete that reply right now. ')
+                    .'I’ve asked '.(string)($profile['display_name']??'the profile owner').' for input rather than guessing.';
+            }
         }
     }
 
@@ -183,7 +186,7 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
                 'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()],
             ];
         }
-        $messageContext=['sources'=>$sources];
+        $messageContext=['sources'=>$sources,'answer_mode'=>$answerMode];
         if(!empty($profileHome['attempted'])){
             $messageContext['homeserver_compute']=[
                 'success'=>!empty($profileHome['success']),
@@ -204,7 +207,7 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
     }
 
     return [
-        'conversation_id'=>$cid,'answer'=>$answer,'sources'=>$sources,
+        'conversation_id'=>$cid,'answer'=>$answer,'sources'=>$sources,'answer_mode'=>$answerMode,
         'conversation'=>vp3_profile_agent_public_state_v390($current),
         'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()],
     ];

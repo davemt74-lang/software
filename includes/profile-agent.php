@@ -328,6 +328,7 @@ function profile_attention_from_event(PDO $pdo,array $event,array $session,?arra
 {
     $owner=(int)$event['owner_user_id'];$label=profile_visitor_label($pdo,$session);$type=(string)$event['event_type'];$agentName=trim((string)($agent['display_name']??''))?:system_agent_name();
     if($type==='profile_view'){$headline=$label.' viewed your profile';$summary=$summary?:('A visitor landed on your public '.system_agent_name().' profile.');$assessment='Profile interest detected.';$recommended='No response is required unless their activity becomes more meaningful.';$actions=['open_profile','ignore'];}
+    elseif($type==='message_received'){$headline=$label.' sent a message to '.$agentName;$summary=$summary?:'A visitor sent a new Profile Agent message.';$assessment='New visitor message.';$recommended='Review the message or join the conversation.';$actions=['open_conversation','reply','ignore'];}
     elseif($type==='conversation_started'){$headline=$label.' started a conversation with '.$agentName;$summary=$summary?:'A visitor started talking with your Profile Agent.';$assessment='Direct profile-agent engagement.';$recommended='Review the conversation if you want to participate.';$actions=['open_conversation','ignore'];}
     else{$headline=$agentName.' needs your input';$summary=$summary?:'Your Profile Agent reached a question it cannot answer from approved information.';$assessment='Owner knowledge or approval is required.';$recommended='Answer the question so the visitor can receive an accurate response.';$actions=['reply','snooze','ignore'];}
     try{
@@ -507,4 +508,37 @@ function profile_owner_dashboard_state(PDO $pdo,array $user): array
     foreach($conversationRows as &$c){$c['visitor_label']=profile_visitor_label($pdo,$c);unset($c['visitor_user_id']);}unset($c);
     $policies=[];foreach(user_agent_resource_catalog_v236() as $type=>$meta){$p=user_data_policy_get_v236($pdo,$uid,$type);$policies[$type]=['label'=>$meta['label'],'profile_agent_allowed'=>(bool)$p['profile_agent_allowed'],'audience_scope'=>(string)$p['audience_scope']];}
     return ['build'=>STONEFELLOW_PROFILE_AGENT_BUILD,'namespace'=>STONEFELLOW_PROFILE_NAMESPACE,'system_agent_name'=>system_agent_name(),'profile'=>$profile,'profile_url'=>!empty($profile['username'])?profile_public_url((string)$profile['username']):'','agents'=>$agents,'visits'=>$visitRows,'conversations'=>$conversationRows,'attention'=>profile_attention_list($pdo,$uid,20),'policies'=>$policies];
+}
+
+/** Record the saved visitor turn, not a model response or an empty thread. */
+function profile_agent_message_received_v1341(PDO $pdo,array $profile,array $agent,array $session,array $conversation,int $messageId,string $message): void
+{
+    $owner=(int)$profile['user_id'];$cid=(int)$conversation['id'];
+    if($messageId<1||(int)$conversation['owner_user_id']!==$owner||(int)$conversation['profile_session_id']!==(int)$session['id'])throw new DomainException('Profile message ownership mismatch.');
+    $event=profile_event_create($pdo,$owner,$session,'message_received',80,(int)$agent['id'],['conversation_id'=>$cid,'message_id'=>$messageId],hash('sha256','profile-message|'.$owner.'|'.$messageId));
+    if(!$event)return;
+    profile_attention_from_event($pdo,$event,$session,$agent,$cid,'Visitor said: “'.mb_strimwidth(trim($message),0,420,'…').'”');
+    // The saved message supersedes the empty conversation-start prompt.
+    $pdo->prepare("UPDATE notifications SET is_read=1 WHERE user_id=? AND source_type='profile_event' AND type='profile_conversation_started' AND source_id IN (SELECT id FROM profile_events WHERE owner_user_id=? AND event_type='conversation_started' AND id IN (SELECT source_event_id FROM agent_attention_items WHERE owner_user_id=? AND source_conversation_id=?))")
+        ->execute([$owner,$owner,$owner,$cid]);
+    $pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND attention_type='conversation_started' AND status IN ('pending','seen')")
+        ->execute([$owner,$cid]);
+}
+
+/** Repair missing notification projections from the existing attention ledger. */
+function profile_agent_reconcile_notifications_v1341(PDO $pdo,array $user): void
+{
+    $owner=(int)($user['id']??0);
+    if($owner<1||!table_exists('agent_attention_items')||!table_exists('profile_events')||!table_exists('notifications'))return;
+    $s=$pdo->prepare("SELECT a.*,e.profile_session_id FROM agent_attention_items a
+      INNER JOIN profile_events e ON e.id=a.source_event_id AND e.owner_user_id=a.owner_user_id
+      WHERE a.owner_user_id=? AND a.status IN ('pending','seen')
+        AND a.created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 7 DAY)
+        AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.user_id=a.owner_user_id AND n.source_type='profile_event' AND n.source_id=a.source_event_id)
+      ORDER BY a.id ASC LIMIT 50");
+    $s->execute([$owner]);
+    foreach($s->fetchAll()?:[] as $a){
+        $target=(int)($a['source_conversation_id']??0)>0?url('/profile-agent.php?tab=inbox&conversation='.(int)$a['source_conversation_id']):url('/profile-agent.php?tab=visitors&session='.(int)$a['profile_session_id']);
+        create_notification($owner,'profile_'.(string)$a['attention_type'],(string)$a['headline'],(string)$a['summary'],$target,'profile_event',(int)$a['source_event_id'],(string)$a['created_at']);
+    }
 }

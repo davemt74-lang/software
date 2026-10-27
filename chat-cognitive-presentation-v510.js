@@ -16,6 +16,10 @@
 
   let state = null;
   let timer = 0;
+  let profileAttentionTimer = 0;
+  function refreshProfileAttention() {
+    if (!document.hidden) void window.STONEFELLOW_NOTIFICATION_CENTER?.pollProfileAttention?.();
+  }
   let busy = false;
   let lastVoiceThrough = 0;
   let activeVoiceThrough = 0;
@@ -643,6 +647,7 @@
       renderBrief(state.brief || {});
       renderDigest(state.digest || null);
       renderHomeServerPresence(state.homeserver_presence || null);
+      refreshProfileAttention();
       await maybeSpeak(state.voice_candidate || null);
     } catch (error) {
       renderBriefError(error);
@@ -656,6 +661,8 @@
     if (timer) window.clearInterval(timer);
     const seconds = Math.max(15, Number((state && state.poll_seconds) || cfg.pollSeconds || 30));
     timer = window.setInterval(refresh, seconds * 1000);
+    if (profileAttentionTimer) window.clearInterval(profileAttentionTimer);
+    profileAttentionTimer = window.setInterval(refreshProfileAttention, 5000);
   }
 
   button.addEventListener('click', event => {
@@ -738,6 +745,7 @@
 
   window.addEventListener('pagehide', () => {
     if (timer) window.clearInterval(timer);
+    if (profileAttentionTimer) window.clearInterval(profileAttentionTimer);
     observer.disconnect();
   }, {once:true});
 
