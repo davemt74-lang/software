@@ -158,6 +158,13 @@ try {
         $profile = studio_participants_save_profile($pdo, $user, $input);
         studio_participants_json(true, ['participant_id'=>(int)$profile['id'],'profiles'=>studio_participants_list($pdo, $user)]);
     }
+    if ($action === 'allow_local_visual_recognition') {
+        if (($input['consent_confirmed'] ?? false) !== true) throw new RuntimeException('Participant consent is required.');
+        $participantId=max(0,(int)($input['participant_id']??0));
+        studio_participants_profile($pdo,$user,$participantId);
+        $pdo->prepare('UPDATE studio_participants SET recognition_consent=1,consent_updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$participantId,(int)$user['id']]);
+        studio_participants_json(true,['profiles'=>studio_participants_list($pdo,$user)]);
+    }
     if ($action === 'set_consent') {
         $profile = studio_participants_set_consent($pdo, $user, $input);
         studio_participants_json(true, ['participant_id'=>(int)$profile['id'],'profiles'=>studio_participants_list($pdo, $user)]);

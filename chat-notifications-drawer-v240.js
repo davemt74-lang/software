@@ -880,6 +880,7 @@
         </div>
       </section>
 
+      ${eyesHistoryView()}
       <section class="chat-activity-section">
         <div class="chat-activity-section-head"><div><strong>Agent State Timeline</strong><span>Live-state history shown only where its scope is authoritative</span></div></div>
         <div class="chat-brain-timeline">
@@ -900,10 +901,16 @@
       </section>`;
   }
 
+  function eyesHistoryView() {
+    const events=Array.isArray(state?.brain?.eyes_events)?state.brain.eyes_events:[];
+    if(!events.length)return '';
+    return `<section class="chat-activity-section"><div class="chat-activity-section-head"><div><strong>Agent Eyes Timeline</strong><span>Your workspace presence · browser reports, provisional identity</span></div></div><div class="chat-brain-timeline">${events.slice(0,30).map(event=>`<article class="chat-brain-event"><div><strong>${esc(String(event.event_type||'').replace('agent_eyes.','').replaceAll('_',' '))}</strong><p>${esc(event.payload?.summary||'Participant activity')}</p><small>${esc(relative(event.received_at||event.occurred_at))} · Agent Eyes · no authentication authority</small></div></article>`).join('')}</div></section>`;
+  }
+
   function historyView() {
     const rows = Array.isArray(state?.history) ? state.history : [];
     let lastDay = '';
-    return `
+    return `${eyesHistoryView()}
       <section class="chat-activity-section">
         <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Authorized conversation archive for the selected Agent identity</span></div></div>
         <div class="chat-brain-history">
@@ -1132,10 +1139,10 @@
     return true;
   }
 
-  function browserSpeak(text, generation) {
+  function browserSpeak(text, generation, canSpeak=()=>true) {
     return new Promise(resolve => {
       const message = String(text || '').trim();
-      if (!message || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) {
+      if (!canSpeak() || !message || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) {
         resolve(false);
         return;
       }
@@ -1161,7 +1168,7 @@
       };
       activeSpeechCancel = cancel;
       utterance.onstart = () => {
-        if (generation !== speechGeneration) {
+        if (!canSpeak() || generation !== speechGeneration) {
           cancel();
           return;
         }
@@ -1184,19 +1191,20 @@
     });
   }
 
-  async function speakWithExistingVoice(text, generation) {
+  async function speakWithExistingVoice(text, generation, canSpeak=()=>true) {
     if (!agentVoiceEnabled() || generation !== speechGeneration) return false;
+    if (!canSpeak()) return false;
     const message = String(text || '').trim();
     if (!message) return false;
     await waitForAgentIdle();
-    if (generation !== speechGeneration) return false;
+    if (!canSpeak() || generation !== speechGeneration) return false;
 
     let spoken = false;
     const PremiumVoice = window.StonefellowPremiumVoiceV122;
     if (typeof PremiumVoice === 'function') {
       try {
         const premium = PremiumVoice({
-          agentEndpoint:String(window.STONEFELLOW_CHAT?.endpoint || '/api/chat-v236.php'),
+          agentEndpoint:String(window.STONEFELLOW_CHAT?.endpoint || cfg.agentEndpoint || '/api/chat-v236.php'),
           csrf:String(cfg.csrf || '')
         });
         spoken = await new Promise(resolve => {
@@ -1222,7 +1230,7 @@
           activeSpeechCancel = cancel;
           Promise.resolve(premium.speak(message, {
             onStart:() => {
-              if (generation !== speechGeneration) {
+              if (!canSpeak() || generation !== speechGeneration) {
                 cancel();
                 return;
               }
@@ -1236,7 +1244,7 @@
               if (!started) settle(false);
             }
           })).then(ok => {
-            if (ok === true && !started && generation === speechGeneration) {
+            if (ok === true && !started && canSpeak() && generation === speechGeneration) {
               started = true;
               announceSpeechState('start', message);
               settle(true);
@@ -1250,14 +1258,14 @@
         spoken = false;
       }
     }
-    if (!spoken && generation === speechGeneration) spoken = await browserSpeak(message, generation);
+    if (!spoken && canSpeak() && generation === speechGeneration) spoken = await browserSpeak(message, generation, canSpeak);
     return spoken === true;
   }
 
-  function queueSpeech(text) {
+  function queueSpeech(text,canSpeak=()=>true) {
     const generation = speechGeneration;
     const queued = speechQueue
-      .then(() => generation === speechGeneration ? speakWithExistingVoice(text, generation) : false)
+      .then(() => generation === speechGeneration && canSpeak() ? speakWithExistingVoice(text, generation, canSpeak) : false)
       .catch(() => false);
     speechQueue = queued.then(() => undefined, () => undefined);
     return queued;
@@ -1327,6 +1335,14 @@
     attentionTimer = window.setInterval(() => pollAttention(false), 5000);
   }
 
+  if(cfg.orbOnly){
+    // Reuse the existing voice path on pages without an Activity Center bell.
+    window.STONEFELLOW_NOTIFICATION_CENTER={announceWhen:(text,canSpeak)=>queueSpeech(String(text||''),canSpeak),cancelSpeech};
+    window.addEventListener('stonefellow:agent-voice',event=>{agentVoicePreference=event.detail?.enabled!==false;if(!agentVoicePreference)cancelSpeech();});
+    window.addEventListener('pagehide',cancelSpeech,{once:true});
+    return;
+  }
+
   window.addEventListener('vp3:mission-notifications',event=>{missionUnread=Math.max(0,Number(event.detail?.unread)||0);updateUnread();if(drawer?.classList.contains('open'))render();});
   if (!ownNotificationButton()) return;
   ensureDrawer();
@@ -1363,6 +1379,7 @@
     pollAttention,
     pollProfileAttention:() => pollAttention(false, 'profile'),
     announce:text => queueSpeech(String(text || '')),
+    announceWhen:(text,canSpeak) => queueSpeech(String(text || ''),canSpeak),
     cancelSpeech,
     syncMainFeedOutcomes:syncMainFeedBrainOutcomeControls
   };

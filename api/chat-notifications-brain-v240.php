@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/agent-eyes.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -439,6 +440,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
             'priorities'=>$brainAllowed ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
             'operations'=>$brainAllowed ? chat_notifications_v240_brain_operations($user, 60) : [],
             'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
+            'eyes_events'=>$brainAllowed && function_exists('vp3_eyes_recent') ? vp3_eyes_recent($pdo,$user,30) : [],
         ],
         'history'=>$brainAllowed && function_exists('vp3_cognitive_context_history_rows_v2420')
             ? vp3_cognitive_context_history_rows_v2420($pdo, $user, $namespace, 60)

@@ -20,5 +20,6 @@
 </footer>
 <script src="<?= e(url('/site.js?v=13')) ?>"></script>
 <?php if (($activePage ?? '') === 'artist-profile'): ?><script src="<?= e(url('/artist-profile-v186.js')) ?>"></script><?php endif; ?>
+<?php require __DIR__.'/agent-orb.php'; ?>
 </body>
 </html>

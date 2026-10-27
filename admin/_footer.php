@@ -261,5 +261,6 @@ window.STONEFELLOW_ARTIST_CMS_V186=<?= json_encode([
 </script>
 <script src="<?= e(url('/admin/artist-cms-nav-v186.js')) ?>"></script>
 <?php endif; ?>
+<?php require dirname(__DIR__).'/includes'.'/agent-orb.php'; ?>
 </body>
 </html>
