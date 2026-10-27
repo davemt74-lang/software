@@ -1,0 +1,53 @@
+(() => {
+  'use strict';
+  const cfg=window.VP3_ORB_CONFIG;if(!cfg)return;
+  const $=id=>document.getElementById(id);let audible=false,preparing=false,voiceEpoch=0;
+  window.addEventListener('stonefellow:agent-proactive-speech',event=>{audible=event.detail?.state==='start';});
+  const loadScript=url=>new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=reject;document.head.append(s);});
+  if(window.STONEFELLOW_NOTIFICATION_DRAWER)window.STONEFELLOW_NOTIFICATION_DRAWER.agentEndpoint=cfg.chatEndpoint;
+  const voiceReady=(async()=>{
+    if(!window.StonefellowPremiumVoiceV122)await loadScript(cfg.voiceScript);
+    if(!window.STONEFELLOW_NOTIFICATION_CENTER){
+      window.STONEFELLOW_NOTIFICATION_DRAWER={endpoint:cfg.notificationsEndpoint,csrf:cfg.csrf,agentVoiceEnabled:cfg.agentVoiceEnabled,agentEndpoint:cfg.chatEndpoint,orbOnly:true};
+      await loadScript(cfg.drawerScript);
+    }
+  })().catch(()=>{});
+
+  async function api(url,body,keepalive=false){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',keepalive,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify({...body,csrf_token:cfg.csrf}):undefined});const data=await r.json();if(!r.ok||data.ok===false)throw Error(data.error||'Agent request failed.');return data;}
+  async function samples(mode,id,value){
+    const db=await new Promise((resolve,reject)=>{const request=indexedDB.open(`vp3-eyes-local-${cfg.ownerKey}`,1);request.onupgradeneeded=()=>request.result.createObjectStore('samples',{keyPath:'id'});request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+    try{return await new Promise((resolve,reject)=>{const tx=db.transaction('samples',mode==='read'?'readonly':'readwrite'),store=tx.objectStore('samples');const request=mode==='read'?store.getAll():mode==='remove'?store.delete(String(id)):store.put({id:String(id),embeddings:value});let result;request.onsuccess=()=>{result=request.result;};tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('Local samples could not be saved.'));});}finally{db.close();}
+  }
+  const recording=()=>Boolean(document.querySelector('[data-recording="true"],.is-recording,.chat-media-studio button.recording,[data-agent-state="recording"]'));
+  const state=()=>({state:audible?'speaking':preparing?'thinking':window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState||($('sendChatButton')?.disabled?'thinking':'idle'),recording:recording()});
+  const adapter={
+    ownerKey:cfg.ownerKey,chatUrl:cfg.chatUrl,state,
+    isMainChat:()=>!!$('chatForm'),focusChat:()=>$('chatInput')?.focus(),
+    busy:()=>Boolean(['processing','thinking','speaking','starting'].includes(state().state)||recording()||$('sendChatButton')?.disabled||$('chatInput')?.value.trim()),
+    listen:()=>$('chatVoiceButton')?.click(),
+    stop:()=>{voiceEpoch++;preparing=false;audible=false;window.VP3ConversationControls?.stop();window.STONEFELLOW_NOTIFICATION_CENTER?.cancelSpeech();if(recording())window.StonefellowMediaStudio?.close?.();},
+    greet:async(text,isCurrent=()=>true)=>{
+      const epoch=++voiceEpoch;preparing=true;
+      try{await voiceReady;if(epoch!==voiceEpoch||!isCurrent())return false;return await window.STONEFELLOW_NOTIFICATION_CENTER?.announceWhen(text,()=>epoch===voiceEpoch&&isCurrent());}
+      finally{if(epoch===voiceEpoch)preparing=false;}
+    },
+    cameraAllowed:async()=>!document.hidden&&!!window.isSecureContext&&!!navigator.mediaDevices?.getUserMedia&&!Array.from(document.querySelectorAll('video')).some(v=>!v.closest('.vp3-eyes-camera')&&v.srcObject?.active===true),
+    loadEyesProfiles:async()=>{
+      const [data,local]=await Promise.all([api(cfg.participantsEndpoint),samples('read')]);
+      return data.profiles.map(p=>({id:String(p.id),name:p.display_name,recognitionEnabled:p.recognition_consent===true,embeddings:p.recognition_consent===true?(local.find(x=>x.id===String(p.id))?.embeddings||[]):[]}));
+    },
+    enrollEyes:async({id,name,embeddings,isCurrent=()=>true})=>{
+      if(!isCurrent())throw Error('Enrollment stopped.');
+      let data=await api(cfg.participantsEndpoint);
+      if(!isCurrent())throw Error('Enrollment stopped.');
+      if(!id){const created=await api(cfg.participantsEndpoint,{action:'save_profile',display_name:name,relationship:'guest'});id=String(created.participant_id);data=created;}
+      const profile=data.profiles.find(p=>String(p.id)===String(id));if(!profile)throw Error('Participant unavailable.');
+      if(!isCurrent())throw Error('Enrollment stopped.');
+      await api(cfg.participantsEndpoint,{action:'allow_local_visual_recognition',participant_id:Number(id),consent_confirmed:true});
+      if(!isCurrent())throw Error('Enrollment stopped.');
+      await samples('write',id,embeddings);
+    },
+    forgetEyes:id=>samples('remove',id),recordEyes:event=>api(cfg.eyesEndpoint,event,true),
+  };
+  window.VP3_ORB_ADAPTER=adapter;
+})();

@@ -728,6 +728,7 @@
     if(voiceOn&&!speaking)scheduleListening(160,'route-'+route.state);
   });
 
+  window.VP3ConversationControls=Object.freeze({stop:()=>disableVoice({persist:true}),isBusy:()=>processing||speaking,listen:()=>enableVoice({start:true}),state:()=>({state:speaking?'speaking':processing?'thinking':recognitionListening?'listening':recognitionStarting?'connecting':'idle'})});
   const continuity={isVoice:()=>voiceOn,pendingVoiceSubmit:()=>voiceSubmitPending,conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
 
   syncConversation(lastConversationId);syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();

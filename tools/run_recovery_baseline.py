@@ -8,6 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 NODE_TESTS = [
+    'tests/agent-eyes-core.mjs',
+    'tests/agent-eyes-voice.mjs',
+    'tests/browser-cognitive-review-hardening-v2120.mjs',
     'tests/homeserver-v235-voice-profile-contract.mjs',
     'tests/profile-notifications-v1341.mjs',
     'tests/chat-send-recovery.mjs',
@@ -249,6 +252,7 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 ]
 
 PHP_TESTS = [
+    'tests/agent-eyes-service.php',
     'tests/profile-inference-v1341.php',
     'tests/profile-inference-service-v1341.php',
     'tests/profile-notifications-v1341.php',

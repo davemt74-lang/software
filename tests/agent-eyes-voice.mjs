@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source=fs.readFileSync('chat-notifications-drawer-v240.js','utf8');
+const functions=source.slice(source.indexOf('  async function speakWithExistingVoice('),source.indexOf('  async function presentAttention('));
+let release,idle=Promise.resolve(),allowed=true,preference=true,fallback=0,premiumCalls=0,stops=0,start=null;
+const events=[];
+const sandbox=vm.createContext({window:{},cfg:{csrf:'test'},agentVoiceEnabled:()=>preference,waitForAgentIdle:()=>idle,browserSpeak:async()=>{fallback++;return true;},announceSpeechState:(state,text)=>events.push({state,text})});
+vm.runInContext('let speechGeneration=0,speechQueue=Promise.resolve(),activeSpeechCancel=null;'+functions+';globalThis.speak=speakWithExistingVoice;globalThis.queue=queueSpeech;',sandbox);
+assert.equal(await sandbox.queue('Welcome.',()=>true),true);assert.equal(fallback,1);
+preference=false;assert.equal(await sandbox.queue('Muted.',()=>true),false);assert.equal(fallback,1);preference=true;
+idle=new Promise(resolve=>release=resolve);const waiting=sandbox.queue('Late greeting.',()=>allowed);await new Promise(resolve=>setImmediate(resolve));allowed=false;release();assert.equal(await waiting,false);assert.equal(fallback,1,'camera stop during idle wait cannot start a late greeting');
+idle=Promise.resolve();allowed=true;
+sandbox.window.StonefellowPremiumVoiceV122=()=>({stop:()=>stops++,speak:(_text,callbacks)=>{premiumCalls++;start=callbacks.onStart;return new Promise(()=>{});}});
+const prepared=sandbox.queue('Prepared greeting.',()=>allowed);await new Promise(resolve=>setImmediate(resolve));allowed=false;start();assert.equal(await prepared,false);assert.equal(stops,1);assert.equal(premiumCalls,1);assert.equal(fallback,1,'cancelled premium preparation must not fall through to browser speech');
+assert.ok(events.every(e=>e.state!=='start'),'a cancelled greeting cannot claim audible playback');
+console.log('AGENT_EYES_VOICE=PASS (preference, queued cancellation, late playback, existing premium path)');

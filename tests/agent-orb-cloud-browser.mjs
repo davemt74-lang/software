@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import http from 'node:http';import path from 'node:path';import {createRequire} from 'node:module';
+const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
+const writes=[],voiceConfigs=[];let consent=false;
+const profile=()=>({id:7,display_name:'David',recognition_consent:consent,cloning_consent:true,recognition_scope:'private'});
+const server=http.createServer((req,res)=>{
+  const url=new URL(req.url,'http://localhost');
+  if(url.pathname==='/sub/api/participants.php'){
+    let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{if(body){const data=JSON.parse(body);writes.push(data);if(data.action==='allow_local_visual_recognition')consent=true;}res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ok:true,profiles:[profile()]}));});return;
+  }
+  if(url.pathname==='/premium.js'){res.setHeader('Content-Type','text/javascript');res.end(`window.StonefellowPremiumVoiceV122=cfg=>{window.voiceConfig=cfg;return {stop:()=>window.cancelled=true,speak:(text,callbacks)=>{window.spoken=text;window.finishSpeech=callbacks.onEnd;callbacks.onStart();return Promise.resolve(true)}}};`);return;}
+  if(['/agent-eyes-core.js','/agent-orb-adapter.js','/agent-orb.js','/chat-notifications-drawer-v240.js','/agent-orb.css'].includes(url.pathname)){res.setHeader('Content-Type',url.pathname.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');res.end(fs.readFileSync(path.basename(url.pathname)));return;}
+  res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/agent-orb.css"><main><h1>Admin settings</h1></main><script>window.VP3_ORB_CONFIG={ownerKey:'${url.searchParams.get('owner')==='2'?'2':'1'}',csrf:'test',chatUrl:'/sub/chat.php',chatEndpoint:'/sub/api/chat.php',participantsEndpoint:'/sub/api/participants.php',notificationsEndpoint:'/sub/api/notifications.php',eyesEndpoint:'/sub/api/eyes.php',agentVoiceEnabled:true,voiceScript:'/premium.js',drawerScript:'/chat-notifications-drawer-v240.js'};</script><script src="/agent-eyes-core.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script>`);
+});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}`;
+const browser=await chromium.launch({headless:true,args:['--no-sandbox']});let checks=0;
+const check=async(name,fn)=>{await fn();checks++;console.log('PASS '+name);};
+try{
+  const context=await browser.newContext();const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(url);await page.waitForFunction(()=>!!window.STONEFELLOW_NOTIFICATION_CENTER);
+  await check('admin page reuses existing voice path without adding a header bell or opening chat',async()=>{assert.equal(await page.locator('iframe').count(),0);assert.equal(await page.locator('.chat-notification-drawer').count(),0);});
+  await check('automatic greeting uses configured voice and subdirectory-aware endpoint',async()=>{assert.equal(await page.evaluate(()=>window.VP3_ORB_ADAPTER.greet('Welcome.',()=>true)),true);assert.equal(await page.evaluate(()=>voiceConfig.agentEndpoint),'/sub/api/chat.php');await page.waitForFunction(()=>document.querySelector('.vp3-orb-root').dataset.state==='speaking');assert.equal(await page.evaluate(()=>spoken),'Welcome.');});
+  await check('actual speech end clears the pulse without opening popup',async()=>{await page.evaluate(()=>window.finishSpeech());await page.waitForFunction(()=>document.querySelector('.vp3-orb-root').dataset.state==='idle');assert.equal(await page.locator('#vp3AgentChatPopup').isVisible(),false);});
+  await check('orb Stop cancels existing premium output',async()=>{await page.evaluate(()=>window.VP3_ORB_ADAPTER.greet('Again.',()=>true));await page.locator('[data-orb-stop]').click();assert.equal(await page.evaluate(()=>cancelled),true);});
+  await check('Agent Voice off suppresses automatic audio',async()=>{await page.evaluate(()=>window.dispatchEvent(new CustomEvent('stonefellow:agent-voice',{detail:{enabled:false}})));assert.equal(await page.evaluate(()=>window.VP3_ORB_ADAPTER.greet('Muted.',()=>true)),false);});
+  const v=Array(32).fill(0).map((_,i)=>i===0?1:0);
+  await check('local enrollment uses the existing participant and leaves cloning preferences untouched',async()=>{await page.evaluate(v=>window.VP3_ORB_ADAPTER.enrollEyes({id:'7',embeddings:[v,v,v],isCurrent:()=>true}),v);assert.equal(writes.length,1);assert.equal(writes[0].action,'allow_local_visual_recognition');assert.equal(writes[0].consent_confirmed,true);assert.equal('cloning_consent' in writes[0],false);assert.equal('embeddings' in writes[0],false);const rows=await page.evaluate(()=>window.VP3_ORB_ADAPTER.loadEyesProfiles());assert.equal(rows[0].embeddings.length,3);});
+  await check('different Cloud account cannot load another account’s local samples',async()=>{const other=await context.newPage();await other.goto(url+'?owner=2');const rows=await other.evaluate(()=>window.VP3_ORB_ADAPTER.loadEyesProfiles());assert.equal(rows[0].embeddings.length,0);await other.close();});
+  await check('forgetting local samples does not change voice or participant settings',async()=>{await page.evaluate(()=>window.VP3_ORB_ADAPTER.forgetEyes('7'));assert.equal((await page.evaluate(()=>window.VP3_ORB_ADAPTER.loadEyesProfiles()))[0].embeddings.length,0);assert.equal(writes.length,1);});
+  assert.deepEqual(errors,[]);await context.close();console.log(`AGENT_ORB_CLOUD_BROWSER=PASS (${checks} cases)`);
+}finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

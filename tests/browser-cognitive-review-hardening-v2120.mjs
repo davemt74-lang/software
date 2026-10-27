@@ -122,8 +122,8 @@ must(runtime.includes("'agent_voice_enabled'=>false"),
 
 must(notificationCenter.includes("if (!agentVoiceEnabled() || generation !== speechGeneration) return false;"),
   'shared voice delivery must fail closed when Agent Voice is disabled or the proactive speech generation was cancelled');
-must(notificationCenter.includes("if (!spoken && generation === speechGeneration) spoken = await browserSpeak(message, generation);"),
-  'shared voice delivery must report browser fallback speech only while the proactive generation remains active');
+must(notificationCenter.includes("if (!spoken && canSpeak() && generation === speechGeneration) spoken = await browserSpeak(message, generation, canSpeak);"),
+  'shared voice delivery must report browser fallback speech only while its generation and optional greeting permission remain active');
 must(notificationCenter.includes("return spoken === true;"),
   'shared voice delivery must return actual speech success');
 must(notificationCenter.includes("announce:text => queueSpeech(String(text || ''))"),
