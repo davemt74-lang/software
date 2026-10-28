@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/studio-participants.php';
+require_once dirname(__DIR__) . '/includes/participant-conversation-details.php';
 require_once dirname(__DIR__) . '/includes/artist-listening.php';
 
 function studio_participants_json(bool $ok, array $data = [], int $status = 200): never
@@ -140,6 +141,9 @@ try {
                 'profiles'=>studio_participants_list($pdo, $user),
             ]);
         }
+        if ($action === 'agent_details') {
+            studio_participants_json(true, ['participant'=>vp3_participant_conversation_details($pdo,$user,(int)($_GET['participant_id']??0))]);
+        }
         if ($action === 'context') {
             studio_participants_json(true, ['context'=>studio_participants_context(
                 $pdo,$user,max(0,(int)($_GET['conversation_id'] ?? 0)),max(0,(int)($_GET['transcript_session_id'] ?? 0))
@@ -154,6 +158,9 @@ try {
     if ($csrf === '' || !hash_equals(csrf_token(), $csrf)) studio_participants_json(false, ['error'=>'Session expired. Refresh and try again.'], 419);
     $action = trim((string)($input['action'] ?? ''));
 
+    if ($action === 'save_agent_details') {
+        studio_participants_json(true, ['participant'=>vp3_participant_save_details($pdo,$user,$input)]);
+    }
     if ($action === 'save_profile') {
         $profile = studio_participants_save_profile($pdo, $user, $input);
         studio_participants_json(true, ['participant_id'=>(int)$profile['id'],'profiles'=>studio_participants_list($pdo, $user)]);

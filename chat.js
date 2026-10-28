@@ -98,6 +98,7 @@
   function restoreDraft() { input.value = recoveryDrafts()[conversationId]?.text || ''; autoSize(); }
   function rememberConversation() {
     try { localStorage.setItem(selectionKey, JSON.stringify({id:conversationId, at:Date.now()})); } catch (_) {}
+    if(contextReady)try{const url=new URL(location.href);if(url.searchParams.has('conversation_id')){url.searchParams.delete('conversation_id');history.replaceState(null,'',url.pathname+url.search+url.hash);}}catch(_){}
   }
   function initialConversation() {
     const requested=Number(new URLSearchParams(location.search).get('conversation_id')||0);
