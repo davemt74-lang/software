@@ -8,7 +8,7 @@ function vp3_eyes_event(PDO $pdo,array $user,array $input): array
     $allowed=['event_id','event_type','track_id','session_id','participant_id','display_name','identity_source','authentication_authority'];
     if(array_diff(array_keys($input),$allowed))throw new RuntimeException('Unsupported Agent Eyes event fields.');
     $type=(string)($input['event_type']??'');
-    if(!in_array($type,['arrival','departure','identity_changed','greeting','voice_turn'],true))throw new RuntimeException('Unsupported Agent Eyes event.');
+    if(!in_array($type,['arrival','departure','identity_changed','greeting','voice_turn','attribution_corrected','participant_updated','recognition_forgotten'],true))throw new RuntimeException('Unsupported Agent Eyes event.');
     foreach(['event_id','track_id','session_id'] as $key){
         if(!is_string($input[$key]??null)||!preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/Di',$input[$key]))throw new RuntimeException('Invalid Agent Eyes session reference.');
     }
@@ -19,12 +19,13 @@ function vp3_eyes_event(PDO $pdo,array $user,array $input): array
     $name='Unidentified participant';$source='unidentified';
     if($id>0){
         $profile=studio_participants_profile($pdo,$user,$id);
-        $introduced=($input['identity_source']??'')==='self_introduction';
+        $manual=($input['identity_source']??'')==='manual_correction';
+        $introduced=($input['identity_source']??'')==='self_introduction'||$manual;
         if(empty($profile['is_active'])||(!$introduced&&empty($profile['recognition_consent'])))$id=0;
-        else{$name=(string)$profile['display_name'];$source=$introduced?'browser_reported_self_introduction':(($input['identity_source']??'')==='local_voice_similarity'?'browser_reported_local_voice_similarity':'browser_reported_visual_similarity');}
+        else{$name=(string)$profile['display_name'];$source=$manual?'owner_reported_correction':($introduced?'browser_reported_self_introduction':(($input['identity_source']??'')==='local_voice_similarity'?'browser_reported_local_voice_similarity':'browser_reported_visual_similarity'));}
     }
-    $labels=['arrival'=>'arrived','departure'=>'left view','identity_changed'=>'participant attribution changed','greeting'=>'received an automatic greeting','voice_turn'=>'spoke in Agent chat'];
-    $summary=$name.' · '.$labels[$type].'. '.($id>0?($source==='browser_reported_self_introduction'?'Self-introduced name for this camera visit; ':($source==='browser_reported_local_voice_similarity'?'Provisional local voice match; ':'Provisional local visual match; ')):'').'Browser-reported context; no authentication authority.';
+    $labels=['arrival'=>'arrived','departure'=>'left view','identity_changed'=>'participant attribution changed','greeting'=>'received an automatic greeting','voice_turn'=>'spoke in Agent chat','attribution_corrected'=>'had a conversational match dismissed','participant_updated'=>'participant details updated','recognition_forgotten'=>'local recognition samples removed'];
+    $summary=$name.' · '.$labels[$type].'. '.($id>0?($source==='owner_reported_correction'?'Owner-reported participant correction; ':($source==='browser_reported_self_introduction'?'Self-introduced name for this camera visit; ':($source==='browser_reported_local_voice_similarity'?'Provisional local voice match; ':'Provisional local visual match; '))):'').'Browser-reported context; no authentication authority.';
     return ['event_id'=>strtolower($input['event_id']),'event_type'=>$type,'session_id'=>strtolower($input['session_id']),'track_id'=>strtolower($input['track_id']),
         'participant_id'=>$id,'display_name'=>$name,'identity_source'=>$source,'authentication_authority'=>false,'summary'=>$summary];
 }

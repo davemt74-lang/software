@@ -67,3 +67,8 @@ for(const kind of ['server','network','timeout']){
  assert.equal(f.messages.some(message=>message.text==='Stale answer.'),false);checks+=3;
 }
 console.log(`CHAT_SEND_RECOVERY=PASS (${checks} assertions; actual send owner; transport mocked)`);
+
+// Run the production URL handoff cleanup, preserving unrelated agent/query state.
+const remember=section('  function rememberConversation()', '  function initialConversation()');
+for(const ready of [false,true]){let replaced='';const stored=new Map();const ctx={URL,Date,Number,contextReady:ready,conversationId:73,selectionKey:'active',location:{href:'https://example.test/sub/chat.php?conversation_id=73&agent=5&view=chat#chat'},history:{replaceState:(_a,_b,url)=>replaced=url},localStorage:{setItem:(k,v)=>stored.set(k,v)}};vm.createContext(ctx);vm.runInContext(remember+';rememberConversation();',ctx);assert.equal(JSON.parse(stored.get('active')).id,73);assert.equal(replaced,ready?'/sub/chat.php?agent=5&view=chat#chat':'');}
+console.log('CHAT_HANDOFF_CLEANUP=PASS (2 cases)');

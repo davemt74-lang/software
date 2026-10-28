@@ -44,4 +44,5 @@ $safe=vp3_voice_speaker_context($pdo,$user,$hint);check($safe['display_name']===
 check(!isset($safe['embedding']),'voice features cannot enter inference context');
 foreach([8,9,10] as $id)check(vp3_voice_speaker_context($pdo,$user,array_replace($hint,['participant_id'=>$id]))===null,'foreign revoked or inactive voice name excluded');
 check(vp3_voice_speaker_context($pdo,$user,array_replace($hint,['authentication_authority'=>true]))===null,'voice match cannot acquire account authority');
+foreach(['attribution_corrected','participant_updated','recognition_forgotten'] as $type){$safe=vp3_eyes_event($pdo,$user,array_replace($event,['event_type'=>$type,'identity_source'=>'manual_correction','participant_id'=>9]));check($safe['display_name']==='Revoked'&&$safe['identity_source']==='owner_reported_correction','owner correction event preserves canonical name without recognition consent');}
 echo "VOICE_SPEAKER_CONTEXT=PASS\n";
