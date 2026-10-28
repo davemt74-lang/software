@@ -26,10 +26,11 @@ function vp3_participant_save_details(PDO $pdo,array $user,array $input): array
     $name=studio_participants_clean_name((string)($input['display_name']??''));
     $note=trim((string)($input['conversation_note']??''));
     if(mb_strlen($note)>1000)throw new RuntimeException('Conversation notes are limited to 1000 characters.');
-    $p=studio_participants_profile($pdo,$user,$id);
-    if(empty($p['is_active']))throw new RuntimeException('Participant unavailable.');
-    $pdo->beginTransaction();
+    $own=!$pdo->inTransaction();if($own)$pdo->beginTransaction();
     try{
+        $q=$pdo->prepare('SELECT * FROM studio_participants WHERE id=? AND owner_user_id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));
+        $q->execute([$id,(int)$user['id']]);$p=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$p||empty($p['is_active']))throw new RuntimeException('Participant unavailable.');
         $pdo->prepare('UPDATE studio_participants SET display_name=? WHERE id=? AND owner_user_id=?')->execute([$name,$id,(int)$user['id']]);
         $saved=vp3_participant_note_scope($user,function()use($user,$id,$note){
             return agent_brain_v122_upsert_system_memory($user,'participant_note','participant:'.$id,
@@ -37,7 +38,7 @@ function vp3_participant_save_details(PDO $pdo,array $user,array $input): array
                 ['participant_id'=>$id,'conversation_note'=>$note,'scope'=>'participant-profile','privacy_scope'=>'private','authentication_authority'=>false],0.95);
         });
         if($saved<1)throw new RuntimeException('Participant memory storage is unavailable. No details were changed.');
-        $pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+        if($own)$pdo->commit();
+    }catch(Throwable $e){if($own&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
     return ['id'=>(string)$id,'name'=>$name,'note'=>$note];
 }
