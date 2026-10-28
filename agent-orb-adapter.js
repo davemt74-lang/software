@@ -26,6 +26,8 @@
     conversationUrl:ref=>{const u=new URL(cfg.chatUrl,location.href);if(Number.isSafeInteger(Number(ref?.id))&&Number(ref.id)>0){u.searchParams.set('conversation_id',String(ref.id));u.searchParams.set('agent',Number(ref.agent)>0?String(Number(ref.agent)):'system');}return u.href;},
     participantDetails:async id=>(await api(cfg.participantsEndpoint+'?action=agent_details&participant_id='+encodeURIComponent(id))).participant,
     saveParticipantDetails:async({id,name,note,isCurrent})=>{if(!isCurrent())throw Error('Participant update stopped.');return (await api(cfg.participantsEndpoint,{action:'save_agent_details',participant_id:Number(id),display_name:name,conversation_note:note})).participant;},
+    participantSyncStatus:async()=>({text:'Saved in Cloud. A paired HomeServer receives participant text through workspace sync. Recognition samples stay local.'}),
+    removeParticipant:async id=>api(cfg.participantsEndpoint,{action:'delete_agent_participant',participant_id:Number(id)}),
     isMainChat:()=>!!$('chatForm'),focusChat:()=>$('chatInput')?.focus(),
     busy:()=>Boolean(['processing','thinking','speaking','starting'].includes(state().state)||recording()||$('sendChatButton')?.disabled||$('chatInput')?.value.trim()),
     listen:()=>{if(!window.VP3ConversationControls?.isEnabled?.())$('chatVoiceButton')?.click();},

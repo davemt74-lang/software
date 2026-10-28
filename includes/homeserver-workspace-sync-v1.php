@@ -8,6 +8,7 @@ const VP3_WORKSPACE_SYNC_MAX=67108864;
 const VP3_WORKSPACE_ASSET_CHUNK=1048576;
 require_once __DIR__.'/workspace-native-actions-v1.php';
 require_once __DIR__.'/vrss-v2b.php';
+require_once __DIR__.'/participant-memory-sync.php';
 
 function workspace_sync_registry_v1(): array
 {
@@ -391,6 +392,9 @@ function workspace_sync_exchange_v1(array $session,array $body): array
         $dataset=workspace_sync_dataset_v1($body['dataset']??null);
         $prepared=workspace_sync_export_v1($pdo,(int)$session['user_id'],$dataset);
     }
+    // Participant CAS reads must see the note committed before its row lock,
+    // even when another participant in the same batch established a snapshot.
+    if(($body['action']??'')==='participants'&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql')$pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
     $pdo->beginTransaction();
     try{
         $live=workspace_sync_session_lock_v1($pdo,$session);$uid=(int)$live['user_id'];
@@ -398,6 +402,8 @@ function workspace_sync_exchange_v1(array $session,array $body): array
         if($action==='catalog'){
             $out['datasets']=array_keys(workspace_sync_registry_v1());
             $q=$pdo->prepare("SELECT dataset,revision,synced_at,record_count FROM homeserver_workspace_snapshots_v1 WHERE user_id=? AND source='homeserver'");$q->execute([$uid]);$out['homeserver']=$q->fetchAll(PDO::FETCH_ASSOC);
+        }elseif($action==='participants'){
+            $out+=vp3_participant_sync_exchange($pdo,$uid,$body);
         }else{
             $dataset=workspace_sync_dataset_v1($body['dataset']??null);
             if(in_array($action,['edit','mutate'],true))$out+=workspace_native_edit_v1($pdo,$uid,$dataset,$body);

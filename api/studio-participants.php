@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/studio-participants.php';
 require_once dirname(__DIR__) . '/includes/participant-conversation-details.php';
+require_once dirname(__DIR__) . '/includes/participant-memory-sync.php';
 require_once dirname(__DIR__) . '/includes/artist-listening.php';
 
 function studio_participants_json(bool $ok, array $data = [], int $status = 200): never
@@ -160,6 +161,10 @@ try {
 
     if ($action === 'save_agent_details') {
         studio_participants_json(true, ['participant'=>vp3_participant_save_details($pdo,$user,$input)]);
+    }
+    if ($action === 'delete_agent_participant') {
+        vp3_participant_delete_details($pdo,$user,(int)($input['participant_id']??0));
+        studio_participants_json(true, ['removed'=>true]);
     }
     if ($action === 'save_profile') {
         $profile = studio_participants_save_profile($pdo, $user, $input);
