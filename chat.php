@@ -46,7 +46,7 @@ $cognitiveValueRoiBuild = 'cognitive-value-roi-v2570-20260923';
 $cognitiveDecisionCalibrationBuild = 'cognitive-decision-calibration-v2580-20260923';
 $cognitiveCurrentStateBuild = 'cognitive-current-state-v2590-20260923';
 $cognitivePresentationAssetBuild = $cognitivePresentationBuild . '-' . $cognitiveCurrentStateBuild . '-profile-priority-v1341-20261027';
-$notificationDrawerAssetBuild = $notificationDrawerBuild . '-' . $cognitiveContextBuild . '-' . $cognitiveTurnBuild . '-' . $cognitiveContinuityBuild . '-' . $cognitiveFollowthroughBuild . '-' . $cognitiveSupervisionBuild . '-' . $cognitiveAutonomyBuild . '-' . $cognitivePortfolioBuild . '-' . $cognitiveForecastBuild . '-' . $cognitiveOptimizationBuild . '-' . $cognitiveResourceBudgetBuild . '-' . $cognitiveReplanningBuild . '-' . $cognitiveCommitmentProtectionBuild . '-' . $cognitiveEconomicsBuild . '-' . $cognitiveBudgetGovernanceBuild . '-' . $cognitiveValueRoiBuild . '-' . $cognitiveDecisionCalibrationBuild . '-' . $cognitiveCurrentStateBuild . '-mission-notices-a5c8-20261011-profile-priority-v1341-20261027-eyes-v1342';
+$notificationDrawerAssetBuild = $notificationDrawerBuild . '-' . $cognitiveContextBuild . '-' . $cognitiveTurnBuild . '-' . $cognitiveContinuityBuild . '-' . $cognitiveFollowthroughBuild . '-' . $cognitiveSupervisionBuild . '-' . $cognitiveAutonomyBuild . '-' . $cognitivePortfolioBuild . '-' . $cognitiveForecastBuild . '-' . $cognitiveOptimizationBuild . '-' . $cognitiveResourceBudgetBuild . '-' . $cognitiveReplanningBuild . '-' . $cognitiveCommitmentProtectionBuild . '-' . $cognitiveEconomicsBuild . '-' . $cognitiveBudgetGovernanceBuild . '-' . $cognitiveValueRoiBuild . '-' . $cognitiveDecisionCalibrationBuild . '-' . $cognitiveCurrentStateBuild . '-mission-notices-a5c8-20261011-profile-priority-v1341-20261027-eyes-v1342-activity-v1348r2';
 $browserContextBuild = 'browser-context-v2130-20260919';
 $agentIdentityAssetBuild = $agentIdentityBuild . '-activation-v243';
 $cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-memory-v570';
@@ -462,7 +462,7 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
     . ';</script>';
 $cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationAssetBuild)) . '"></script>';
 
-$agentTeamsA3Build = 'agent-teams-homecloud-a3-20261015-voice-handoff';
+$agentTeamsA3Build = 'agent-teams-homecloud-a3-20261015-voice-handoff-activity-v1348r2';
 $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(url('/chat-agent-teams-a3.css?v=' . $agentTeamsA3Build)) . '">'
     . '<script data-agent-teams-config-a3>window.VP3_AGENT_TEAMS_A3='
     . json_encode(['endpoint'=>url('/api/agent-missions-cloud-v1.php'), 'csrf'=>csrf_token(), 'version'=>'A3'], JSON_UNESCAPED_SLASHES)

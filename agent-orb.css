@@ -39,5 +39,10 @@ html[data-vp3-orb-embed] .sidebar,html[data-vp3-orb-embed] .topbar,html[data-vp3
 .vp3-eyes-box{transition:left .16s linear,top .16s linear,width .16s linear,height .16s linear}
 .vp3-eyes-box.vp3-eyes-speaker{border:3px solid #55e59b;box-shadow:0 0 0 2px #082e23,0 0 14px #55e59b88}
 .vp3-eyes-box.vp3-eyes-speaker span{background:#12633f;border-radius:3px;font-weight:600}
-@media(prefers-reduced-motion:reduce){
+@media(prefers-reduced-motion:reduce){.vp3-eyes-box{transition:none}}
 .vp3-eyes-tv-boxes{position:absolute;inset:0;pointer-events:none}.vp3-tv-box{border-color:#f0bf61}.vp3-tv-box span{background:#644913}.vp3-tv-selecting{cursor:crosshair;outline:3px solid #f0bf61;touch-action:none}.vp3-tv-watching{display:grid;gap:8px}.vp3-tv-watching:not([open])>:not(summary){display:none}.vp3-tv-watching a{color:#a8d8ff}
+
+/* Cloud keeps its live composer in the footer while the existing canvas is open. */
+.vp3-orb-chat-host>.chat-thread{flex:1;min-height:0;min-width:0;width:100%;height:100%;max-height:none;margin:0;box-sizing:border-box;overflow-y:auto;background:#f5f8fc;color:#172538}
+
+.vp3-cloud-chat-placeholder{min-height:0;min-width:0;pointer-events:none}

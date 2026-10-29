@@ -179,41 +179,53 @@ form.addEventListener('submit',event=>{
 
 const schedulesPanel=el('section','vp3-specialist-schedules');schedulesPanel.setAttribute('aria-label','Scheduled specialist tasks');root.querySelector('.vp3-teams-body').appendChild(schedulesPanel);
 let schedules=[];
-let schedulerHealth=null,healthReceivedAt=0;
+let schedulerHealth=null,healthReceivedAt=0,scheduleReadEpoch=0,scheduleBrainRefresh=false;
 function unavailableHealth(){
  schedulerHealth={state:'unavailable',checked_at:new Date().toISOString()};healthReceivedAt=Date.now();
  renderScheduleList();const brain=document.querySelector('.vp3-schedules-brain');if(brain)renderScheduleList(brain);
 }
+function activityDates(parent,entries){
+ const dates=el('dl','vp3-activity-dates');
+ for(const [label,value] of entries){const item=el('div','');item.appendChild(el('dt','',label));const detail=el('dd','');const time=el('time','',fmt(value));if(value)time.dateTime=String(value);detail.appendChild(time);item.appendChild(detail);dates.appendChild(item);}
+ parent.appendChild(dates);
+}
 function renderScheduleList(parent=schedulesPanel){
- parent.replaceChildren();parent.appendChild(el('h4','','Scheduled specialist tasks'));
+ parent.replaceChildren();parent.classList.add('vp3-schedule-list');
+ const header=el('div','vp3-activity-card-head');header.appendChild(el('h4','','Scheduled specialist tasks'));parent.appendChild(header);
  const states={healthy:'Scheduler running',starting:'Scheduler starting',stopped:'Scheduler stopped',stopping:'Scheduler stopping',degraded:'Scheduler needs attention',stalled:'Scheduler heartbeat overdue',unavailable:'Scheduler status unavailable'};
  let state=schedulerHealth?.state;
  if(!Object.hasOwn(states,state)||Date.now()-healthReceivedAt>90000)state='unavailable';
- const healthLine=el('p',state==='healthy'?'vp3-teams-meta':'vp3-teams-error',states[state]);healthLine.setAttribute('role','status');healthLine.dataset.schedulerState=state;parent.appendChild(healthLine);
+ const healthLine=el('p','vp3-scheduler-state',states[state]);healthLine.setAttribute('role','status');healthLine.dataset.schedulerState=state;parent.appendChild(healthLine);
  if(schedulerHealth){
-  parent.appendChild(el('p','vp3-teams-meta','Checked '+fmt(schedulerHealth.checked_at)+' · Last tick '+fmt(schedulerHealth.last_tick_at)+' · Last successful tick '+fmt(schedulerHealth.last_success_at)));
+  activityDates(parent,[['Checked',schedulerHealth.checked_at],['Last tick',schedulerHealth.last_tick_at],['Last successful tick',schedulerHealth.last_success_at]]);
   if(schedulerHealth.consecutive_failures&&schedulerHealth.last_error)parent.appendChild(el('p','vp3-teams-error',schedulerHealth.last_error+' · Last failure '+fmt(schedulerHealth.last_failure_at)));
  }else parent.appendChild(el('p','vp3-teams-meta','Refresh status. An older HomeServer may need an update to report scheduler health.'));
- if(!schedules.length)parent.appendChild(el('p','','No schedules yet. Prepare a task and approve its assignments to schedule it.'));
+ if(!schedules.length)parent.appendChild(el('p','vp3-activity-empty','No schedules yet. Prepare a task and approve its assignments to schedule it.'));
  for(const schedule of schedules){
-  const row=el('article','vp3-schedule-row');row.appendChild(el('strong','',schedule.objective));
+  const row=el('article','vp3-schedule-row'),head=el('div','vp3-activity-card-head');head.appendChild(el('strong','',schedule.objective));head.appendChild(el('span','vp3-activity-badge',schedule.status));row.appendChild(head);
   const day=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][schedule.weekday];
-  row.appendChild(el('p','vp3-teams-meta',schedule.status+' · '+(schedule.frequency==='weekly'?day:'Daily')+' '+String(schedule.hour).padStart(2,'0')+':'+String(schedule.minute).padStart(2,'0')+' '+schedule.timezone+' · Next '+fmt(schedule.next_run_at)));
-  row.appendChild(el('p','vp3-teams-meta','Last run '+fmt(schedule.last_run_at)+' · Updated '+fmt(schedule.updated_at)));
+  row.appendChild(el('p','vp3-teams-meta',(schedule.frequency==='weekly'?day:'Daily')+' · '+String(schedule.hour).padStart(2,'0')+':'+String(schedule.minute).padStart(2,'0')+' '+schedule.timezone));
+  activityDates(row,[['Next run',schedule.next_run_at],['Last run',schedule.last_run_at],['Updated',schedule.updated_at]]);
   if(schedule.last_error)row.appendChild(el('p','vp3-teams-error',schedule.last_error));
-  if(schedule.status==='active')row.appendChild(btn('Pause schedule','schedule.pause',schedule.id));
-  if(schedule.status==='paused')row.appendChild(btn('Resume schedule','schedule.resume',schedule.id));
-  if(schedule.status!=='cancelled')row.appendChild(btn('Cancel future runs','schedule.cancel',schedule.id));
+  const actions=el('div','vp3-activity-actions');
+  if(schedule.status==='active')actions.appendChild(btn('Pause schedule','schedule.pause',schedule.id));
+  if(schedule.status==='paused')actions.appendChild(btn('Resume schedule','schedule.resume',schedule.id));
+  if(schedule.status!=='cancelled')actions.appendChild(btn('Cancel future runs','schedule.cancel',schedule.id));
+  if(actions.childNodes.length)row.appendChild(actions);
+  const runs=el('div','vp3-schedule-runs');
+  if(schedule.runs?.length)runs.appendChild(el('h5','','Recent runs'));
   for(const run of schedule.runs||[]){
-   const line=el('div','vp3-teams-meta',fmt(run.due_at)+' · '+run.status+' · '+(run.mission_status||run.reason||'')+' · '+fmt(run.completed_at||run.mission_updated_at||run.created_at));
-   if(run.needs_review)line.appendChild(el('span','vp3-teams-error',' · Needs review · '+(run.reason||'Open the run before resuming.')));
-   if(run.long_running_workers)line.appendChild(el('span','vp3-teams-error',' · Worker running longer than five minutes. Inspect the run before deciding whether to stop it.'));
-   if(run.mission_id)line.appendChild(btn('View run','get',run.mission_id));row.appendChild(line);
+   const line=el('div','vp3-schedule-run');line.appendChild(el('strong','',run.status+' · '+(run.mission_status||run.reason||'')));
+   activityDates(line,[['Due',run.due_at],['Last activity',run.completed_at||run.mission_updated_at||run.created_at]]);
+   if(run.needs_review)line.appendChild(el('p','vp3-teams-error','Needs review · '+(run.reason||'Open the run before resuming.')));
+   if(run.long_running_workers)line.appendChild(el('p','vp3-teams-error','Worker running longer than five minutes. Inspect the run before deciding whether to stop it.'));
+   if(run.mission_id)line.appendChild(btn('View run','get',run.mission_id));runs.appendChild(line);
   }
-  parent.appendChild(row);
+  row.appendChild(runs);parent.appendChild(row);
  }
- parent.appendChild(el('small','','Schedules reuse the reviewed plan. Every edit needs separate approval. Missed slots coalesce; unfinished runs or changes prevent overlap. Pausing or cancelling a schedule stops future runs; use the run controls to stop current work.'));
+ const policy=el('details','vp3-schedule-policy');policy.appendChild(el('summary','','How scheduled tasks work'));policy.appendChild(el('p','','Schedules reuse the reviewed plan. Every edit needs separate approval. Missed slots coalesce; unfinished runs or changes prevent overlap. Pausing or cancelling a schedule stops future runs; use the run controls to stop current work.'));parent.appendChild(policy);
 }
+
 function renderScheduleForm(m){
  const contract=toolsByMission.get(m.id);if(m.status!=='planned'||!m.chat_task||!contract?.configured||!contract.active||m.private||m.authority_current===false)return;
  if((contract.browser_requirements||[]).length)return;
@@ -227,8 +239,9 @@ function renderScheduleForm(m){
  panel.appendChild(btn('Create schedule','schedule.create',m.id));detail.appendChild(panel);
 }
 async function loadSchedules(){
- try{const result=await api('schedule.list');schedules=Array.isArray(result.schedules)?result.schedules:[];schedulerHealth=result.scheduler_health||null;healthReceivedAt=Date.now();renderScheduleList();const brain=document.querySelector('.vp3-schedules-brain');if(brain)renderScheduleList(brain);}
- catch(error){unavailableHealth();throw error;}
+ const epoch=++scheduleReadEpoch;
+ try{const result=await api('schedule.list');if(epoch!==scheduleReadEpoch)return;schedules=Array.isArray(result.schedules)?result.schedules:[];schedulerHealth=result.scheduler_health||null;healthReceivedAt=Date.now();renderScheduleList();const brain=document.querySelector('.vp3-schedules-brain');if(brain)renderScheduleList(brain);}
+ catch(error){if(epoch===scheduleReadEpoch)unavailableHealth();throw error;}
 }
 async function scheduleOperation(action,id){
  if(busy)return;let payload;
@@ -284,17 +297,20 @@ function renderLiveSummary(){
 }
 function renderNotices(host){
  if(!host)return;
- host.replaceChildren();host.appendChild(el('h4','','Mission notifications'));
- const state=el('p','vp3-teams-meta',(progressConnected&&Date.now()-progressReceived<=30000?'Live updates':'Updates disconnected · showing last received notifications')+' · '+Number(missionNotices.unread||0)+(missionNotices.count_is_lower_bound?'+':'')+' unread');state.setAttribute('role','status');host.appendChild(state);
+ host.replaceChildren();host.classList.add('vp3-mission-notifications');
+ const header=el('div','vp3-activity-card-head');header.appendChild(el('h4','','Mission notifications'));header.appendChild(el('span','vp3-activity-badge',Number(missionNotices.unread||0)+(missionNotices.count_is_lower_bound?'+':'')+' unread'));host.appendChild(header);
+ const state=el('p','vp3-teams-meta',progressConnected&&Date.now()-progressReceived<=30000?'Live updates':'Updates disconnected · showing last received notifications');state.setAttribute('role','status');host.appendChild(state);
  for(const n of (missionNotices.items||[]).slice(0,20)){
   const row=el('article','vp3-mission-notice');row.dataset.noticeId=String(n.id);row.dataset.read=String(Boolean(n.read_at||n.resolved_at));
-  row.appendChild(el('strong','',n.title||'Mission update'));row.appendChild(el('small','',fmt(n.created_at)+(n.resolved_at?' · resolved':'')));
-  const open=btn('Open mission','open-team-chat',n.mission_id);open.addEventListener('click',e=>{e.stopPropagation();operation('open-team-chat',n.mission_id);});row.appendChild(open);
-  if(!n.read_at&&!n.resolved_at){const read=btn('Mark read','notifications.read',n.mission_id);read.addEventListener('click',e=>{e.stopPropagation();void markMissionNotice(n.id);});row.appendChild(read);}
-  host.appendChild(row);
+  row.appendChild(el('strong','',n.title||'Mission update'));const time=el('time','vp3-teams-meta',fmt(n.created_at)+(n.resolved_at?' · resolved':''));if(n.created_at)time.dateTime=String(n.created_at);row.appendChild(time);
+  const actions=el('div','vp3-activity-actions');
+  const open=btn('Open mission','open-team-chat',n.mission_id);open.addEventListener('click',e=>{e.stopPropagation();operation('open-team-chat',n.mission_id);});actions.appendChild(open);
+  if(!n.read_at&&!n.resolved_at){const read=btn('Mark read','notifications.read',n.mission_id);read.addEventListener('click',e=>{e.stopPropagation();void markMissionNotice(n.id);});actions.appendChild(read);}
+  row.appendChild(actions);host.appendChild(row);
  }
- if(!missionNotices.items?.length)host.appendChild(el('p','vp3-teams-empty','No mission notifications yet.'));
+ if(!missionNotices.items?.length)host.appendChild(el('p','vp3-activity-empty','No mission notifications yet.'));
 }
+
 function publishProgress(){
  renderNotices(noticeHost);renderLiveSummary();
  window.dispatchEvent(new CustomEvent('vp3:mission-notifications',{detail:{unread:Number(missionNotices.unread||0),connected:progressConnected}}));
@@ -593,6 +609,7 @@ function renderBrain(body){
  const section=el('section','chat-activity-section vp3-agent-teams-brain-a3');
  section.setAttribute('data-agent-teams-brain-a3','');
  const scheduled=el('section','vp3-schedules-brain');renderScheduleList(scheduled);section.appendChild(scheduled);
+ if(!busy&&!scheduleBrainRefresh&&(!healthReceivedAt||Date.now()-healthReceivedAt>20000)){scheduleBrainRefresh=true;void loadSchedules().catch(()=>{}).finally(()=>{scheduleBrainRefresh=false;});}
  const header=el('div','chat-activity-section-head');
  const name=el('div','');name.appendChild(el('strong','','HomeServer Agent Teams'));
  name.appendChild(el('span','','Mission execution · '+(lastRefresh?fmt(new Date(lastRefresh).toISOString()):'not yet synchronized')));
