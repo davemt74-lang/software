@@ -484,7 +484,7 @@
 
   function createRecognition(){
     const current=new SpeechRecognitionCtor();const deliveredFinals=new Set();let startedAt=0;current.continuous=true;current.interimResults=true;current.lang=document.documentElement.lang||'en-US';
-    current.onstart=()=>{if(recognition!==current)return;clearStartWatchdog();recognitionStarting=false;recognitionListening=true;proof.starts+=1;startedAt=performance.now();if(responseWindowOwned){if(!responseWindowUntil)responseWindowUntil=Date.now()+15000;clearTimeout(responseWindowTimer);responseWindowTimer=setTimeout(finishResponseWindow,Math.max(0,responseWindowUntil-Date.now()));window.dispatchEvent(new CustomEvent('vp3:reply-window',{detail:{active:true,durationMs:15000}}));}setAgentState('listening',pendingFinalTranscript?`Listening · ${pendingFinalTranscript}`:'Listening…');log('SR_STARTED',{starts:proof.starts});};
+    current.onstart=()=>{if(recognition!==current)return;clearStartWatchdog();recognitionStarting=false;recognitionListening=true;proof.starts+=1;startedAt=Date.now();if(responseWindowOwned){if(!responseWindowUntil)responseWindowUntil=Date.now()+15000;clearTimeout(responseWindowTimer);responseWindowTimer=setTimeout(finishResponseWindow,Math.max(0,responseWindowUntil-Date.now()));window.dispatchEvent(new CustomEvent('vp3:reply-window',{detail:{active:true,durationMs:15000}}));}setAgentState('listening',pendingFinalTranscript?`Listening · ${pendingFinalTranscript}`:'Listening…');log('SR_STARTED',{starts:proof.starts});};
     current.onresult=event=>{
       if(recognition!==current)return;if(speaking||processing){log('SR_RESULT_IGNORED_BUSY',{speaking,processing});return;}
       recognitionFailures=0;proof.results+=1;let interim='';let finalText='';let finalConfidence=0;const start=Math.max(0,Number(event.resultIndex||0));
@@ -497,7 +497,7 @@
     };
     current.onerror=event=>{
       if(recognition!==current)return;const kind=String(event?.error||'unknown');
-      if(startedAt&&performance.now()-startedAt>10000)recognitionFailures=0;
+      if(startedAt&&Date.now()-startedAt>10000)recognitionFailures=0;
       if(kind==='aborted'){
         clearStartWatchdog();awaitNativeEnd(current);log('SR_ABORTED',{reason:recognitionStopReason||'browser-interruption'});
         if(recognitionStopReason)return;
@@ -576,7 +576,7 @@
   }
   function createBargeRecognition(){
     const current=new SpeechRecognitionCtor();let startedAt=0;current.continuous=true;current.interimResults=true;current.lang=document.documentElement.lang||'en-US';
-    current.onstart=()=>{if(bargeRecognition!==current)return;clearBargeStart();startedAt=performance.now();bargeStarting=false;bargeListening=true;proof.bargeStarts+=1;log('BARGE_SR_STARTED',{count:proof.bargeStarts});};
+    current.onstart=()=>{if(bargeRecognition!==current)return;clearBargeStart();startedAt=Date.now();bargeStarting=false;bargeListening=true;proof.bargeStarts+=1;log('BARGE_SR_STARTED',{count:proof.bargeStarts});};
     current.onspeechstart=()=>{if(bargeRecognition!==current||(!speaking&&!bargeCapturing)||!voiceOn)return;log('BARGE_SR_SPEECHSTART',{});};
     current.onresult=event=>{
       if(bargeRecognition!==current||(!speaking&&!bargeCapturing)||!voiceOn)return;bargeFailures=0;let interim='';let finalText='';const start=Math.max(0,Number(event.resultIndex||0));
@@ -590,7 +590,7 @@
     };
     current.onerror=event=>{
       if(bargeRecognition!==current)return;clearBargeStart();bargeStarting=false;bargeListening=false;proof.bargeErrors+=1;awaitNativeEnd(current);
-      const kind=String(event?.error||'unknown');if(startedAt&&performance.now()-startedAt>10000)bargeFailures=0;
+      const kind=String(event?.error||'unknown');if(startedAt&&Date.now()-startedAt>10000)bargeFailures=0;
       log('BARGE_SR_ERROR',{error:kind,count:proof.bargeErrors});bargeRecognition=null;
       if(['not-allowed','service-not-allowed','audio-capture'].includes(kind)){recoverBarge(kind);return;}
       if(bargeCapturing&&bargeLastText){finishBargeCapture(bargeLastText,`error:${kind}`);return;}recoverBarge(kind);
