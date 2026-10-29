@@ -16,6 +16,7 @@
     agentEndpoint: source?.dataset.agentEndpoint || '/api/user-agent-system-v236.php',
     voiceEndpoint: source?.dataset.voiceEndpoint || '/api/studio-voice-profile.php',
     ttsEndpoint: source?.dataset.ttsEndpoint || '/api/agent-voice-v117.php',
+    systemVoiceEndpoint: new URL('agent-voice-settings.php', new URL(source?.dataset.ttsEndpoint || '/api/agent-voice-v117.php',location.href)).href,
     chatSettingsEndpoint: source?.dataset.chatSettingsEndpoint || '/api/chat-settings-v237.php',
     csrf: source?.dataset.csrf || '',
     voiceProfileUrl: source?.dataset.voiceProfileUrl || '/voice-profile.php',
@@ -32,6 +33,8 @@
   let agentVoiceEnabled = false;
   let selectedAgentId = 0;
   let busy = false;
+  let catalogLoaded = false;
+  let catalogBusy = false;
 
   function activeAgents() {
     const rows = Array.isArray(agentState?.agents) ? agentState.agents : [];
@@ -69,7 +72,7 @@
 
         <div class="vp3-agent-voice-body" data-vp3-agent-voice-body hidden>
           <label class="vp3-agent-voice-field" data-vp3-agent-selector-wrap hidden>
-            <span>Agent</span>
+            <span>Default agent</span>
             <select data-vp3-agent-selector aria-label="Choose agent"></select>
           </label>
 
@@ -89,16 +92,11 @@
             </select>
           </label>
 
+          <label class="vp3-agent-voice-field"><span>ElevenLabs system voice</span><select data-vp3-system-voice aria-label="ElevenLabs system voice"><option value="">VP3 configured default</option></select><small data-vp3-system-voice-status role="status"></small></label>
           <div class="vp3-agent-voice-clone-card">
             <div><small>Voice clone</small><strong data-vp3-clone-state>Checking ElevenLabs…</strong><span data-vp3-clone-detail>Your existing Voice Profile remains the source of truth.</span></div>
             <a data-vp3-manage-voice href="${esc(cfg.voiceProfileUrl)}">Manage clone</a>
           </div>
-
-          <label class="vp3-agent-voice-toggle-row">
-            <span><strong>Agent Voice</strong><small>Master switch for spoken Agent responses and notification announcements.</small></span>
-            <input type="checkbox" data-vp3-global-agent-voice aria-label="Agent Voice">
-            <i aria-hidden="true"></i>
-          </label>
 
           <div class="vp3-agent-voice-actions">
             <a href="${esc(cfg.profileAgentUrl)}">Open My Agent</a>
@@ -112,7 +110,11 @@
     menu.classList.add('vp3-agent-voice-menu');
     menu.querySelector('.chat-profile-links')?.remove();
     const summary = menu.querySelector('.chat-profile-summary');
-    summary?.querySelector('.member-agent-voice-toggle')?.remove();
+    // One upper switch, owned here on Chat and all other member pages.
+    if (summary && !summary.querySelector('[data-vp3-global-agent-voice]')) {
+      summary.insertAdjacentHTML('beforeend','<label class="member-agent-voice-toggle"><span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle data-vp3-global-agent-voice aria-label="Agent Voice"><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span></label>');
+    }
+    menu.querySelectorAll('.vp3-agent-voice-toggle-row').forEach(node=>node.remove());
     let dashboard = menu.querySelector('[data-vp3-agent-voice-dashboard]');
     if (!dashboard) {
       menu.insertAdjacentHTML('beforeend', dashboardMarkup());
@@ -136,7 +138,9 @@
     voiceSource: dashboard.querySelector('[data-vp3-agent-voice-source]'),
     cloneState: dashboard.querySelector('[data-vp3-clone-state]'),
     cloneDetail: dashboard.querySelector('[data-vp3-clone-detail]'),
-    agentVoice: dashboard.querySelector('[data-vp3-global-agent-voice]')
+    systemVoice: dashboard.querySelector('[data-vp3-system-voice]'),
+    systemVoiceStatus: dashboard.querySelector('[data-vp3-system-voice-status]'),
+    agentVoice: menu.querySelector('[data-vp3-global-agent-voice]')
   };
 
   function setStatus(message = '', kind = '') {
@@ -168,7 +172,7 @@
       display_name:String(changes.display_name ?? agent.display_name ?? ''),
       agent_role:String(agent.agent_role || 'personal'),
       instructions:String(agent.instructions || ''),
-      is_default:Number(agent.is_default) === 1,
+      is_default:Object.prototype.hasOwnProperty.call(changes,'is_default') ? Boolean(changes.is_default) : Number(agent.is_default) === 1,
       is_profile_agent:Number(agent.is_profile_agent) === 1,
       is_active:Number(agent.is_active) === 1,
       voice_enabled:Object.prototype.hasOwnProperty.call(changes, 'voice_enabled')
@@ -194,8 +198,10 @@
       selectedAgentId = Number(preferred.id || 0);
     }
     const agent = selectedAgent();
-    el.selector.innerHTML = rows.map(row => `<option value="${Number(row.id)}"${Number(row.id) === selectedAgentId ? ' selected' : ''}>${esc(row.display_name || 'Agent')}</option>`).join('');
-    el.selectorWrap.hidden = rows.length < 2;
+    const hasDefault = rows.some(row=>Number(row.is_default)===1);
+    el.selector.innerHTML = (hasDefault?'':'<option value="">Choose your default agent</option>') + rows.map(row => `<option value="${Number(row.id)}"${hasDefault && Number(row.id) === selectedAgentId ? ' selected' : ''}>${esc(row.display_name || 'Agent')}</option>`).join('');
+    el.selectorWrap.hidden = false;
+    if(!hasDefault)el.selector.value='';
     el.nameWrap.hidden = false;
     el.name.value = String(agent?.display_name || '');
     el.voiceSource.disabled = false;
@@ -248,6 +254,7 @@
     renderAgents();
     renderVoice();
     if (el.body) el.body.hidden = false;
+    publishState();
     if (!activeAgents().length) return;
     if (!agentVoiceAllowed) {
       setStatus('Agent Voice is not available for this account.', 'info');
@@ -303,6 +310,7 @@
     try {
       await Promise.all(tasks);
       renderAgents();
+      renderSystemVoice();
       await refreshTtsState(false);
       render();
     } catch (error) {
@@ -332,10 +340,48 @@
     }
   }
 
+  function publishState() {
+    const agent=activeAgents().find(row=>Number(row.is_default)===1)||null;
+    window.VP3_AGENT_PREFERENCE_STATE={ownerKey:String(cfg.userId),enabled:agentVoiceEnabled,allowed:agentVoiceAllowed,agent:agent?{id:Number(agent.id),name:String(agent.display_name)}:null};
+    window.dispatchEvent(new CustomEvent('vp3:agent-preferences',{detail:window.VP3_AGENT_PREFERENCE_STATE}));
+  }
+
+  function renderSystemVoice(voices=null) {
+    if(!el.systemVoice)return;
+    const saved=agentState?.system_voice||{};
+    if(voices)el.systemVoice.innerHTML='<option value="">VP3 configured default</option>'+voices.map(v=>`<option value="${esc(v.voice_id)}">${esc(v.name)}</option>`).join('');
+    if(saved.voice_id&&!Array.from(el.systemVoice.options).some(o=>o.value===saved.voice_id))el.systemVoice.add(new Option(saved.voice_name||'Saved system voice',saved.voice_id));
+    el.systemVoice.value=saved.voice_id||'';
+    el.systemVoice.disabled=!agentVoiceAllowed;
+  }
+  async function loadCatalog(){
+    if(catalogLoaded||catalogBusy||!agentVoiceAllowed)return;
+    catalogBusy=true;el.systemVoiceStatus.textContent='Loading system voices…';
+    try{const data=await json(cfg.systemVoiceEndpoint);agentState.system_voice=data.selected;renderSystemVoice(data.voices||[]);catalogLoaded=true;el.systemVoiceStatus.textContent='Used when Voice source is VP3 default voice.';}
+    catch(error){el.systemVoiceStatus.textContent=error.message||'System voices could not be loaded.';}
+    finally{catalogBusy=false;}
+  }
+  document.getElementById('chatProfileButton')?.addEventListener('click',()=>void loadCatalog());
+  el.systemVoice?.addEventListener('focus',()=>void loadCatalog());
+  el.systemVoice?.addEventListener('change',()=>{
+    const id=el.systemVoice.value;el.systemVoice.disabled=true;
+    void post(cfg.systemVoiceEndpoint,'save_system_voice',{voice_id:id}).then(async data=>{
+      agentState.system_voice=data.selected;renderSystemVoice();
+      window.dispatchEvent(new CustomEvent('vp3:system-voice-changed'));
+      el.systemVoiceStatus.textContent='System voice saved for your account.';
+      await refreshTtsState(false);
+    }).catch(error=>{renderSystemVoice();el.systemVoiceStatus.textContent=error.message||'Voice could not be saved.';});
+  });
+
   el.selector?.addEventListener('change', () => {
-    selectedAgentId = Number(el.selector.value || 0);
-    render();
-    void refreshTtsState(false).then(() => render());
+    const id=Number(el.selector.value||0);if(id<1||busy)return;
+    busy=true;el.selector.disabled=true;
+    void post(cfg.agentEndpoint,'set_default_agent',{agent_id:id}).then(data=>{
+      agentState=data.state||agentState;selectedAgentId=id;render();
+      setStatus('Default agent saved. New chats will use this agent.','success');
+      return refreshTtsState(false);
+    }).catch(error=>{render();setStatus(error.message||'Default agent could not be saved.','error');})
+      .finally(()=>{busy=false;el.selector.disabled=false;});
   });
 
   el.saveName?.addEventListener('click', () => {
@@ -368,24 +414,27 @@
     event.stopPropagation();
     if(!agentVoiceAllowed){renderAgentVoice(false);return;}
     const requested = Boolean(el.agentVoice.checked);
+    el.agentVoice.disabled=true;
     void (async () => {
       try {
         const data = await post(cfg.chatSettingsEndpoint, 'save_agent_voice', {agent_voice_enabled:requested});
         renderAgentVoice(data.chat?.agent_voice_enabled !== false);
+        publishState();
+        publishAgentVoice(agentVoiceEnabled);
         window.dispatchEvent(new CustomEvent('stonefellow:agent-voice', {detail:{enabled:data.chat?.agent_voice_enabled !== false}}));
         if (requested) await refreshTtsState(true);
         else { ttsState = null; renderVoice(); setStatus('Agent Voice is off.', 'success'); }
       } catch (error) {
         renderAgentVoice(!requested);
         setStatus(error instanceof Error ? error.message : 'Agent Voice could not be saved.', 'error');
-      }
+      } finally { el.agentVoice.disabled=!agentVoiceAllowed; }
     })();
   });
 
-  window.addEventListener('stonefellow:agent-voice', event => { const enabled=event.detail?.enabled !== false; renderAgentVoice(enabled); publishAgentVoice(enabled); });
+  window.addEventListener('stonefellow:agent-voice', event => { const enabled=event.detail?.enabled !== false; renderAgentVoice(enabled); if(!event.detail?.fromStorage)publishAgentVoice(enabled); publishState(); });
   window.addEventListener('storage', event => {
     if (event.key !== agentVoiceSyncKey || !event.newValue) return;
-    try { const sync=JSON.parse(event.newValue); renderAgentVoice(sync?.enabled !== false); } catch (_error) {}
+    try { const sync=JSON.parse(event.newValue); renderAgentVoice(sync?.enabled !== false); publishState(); if(sync?.enabled===false)window.dispatchEvent(new CustomEvent('stonefellow:agent-voice',{detail:{enabled:false,fromStorage:true}})); } catch (_error) {}
   });
   void load();
 })();

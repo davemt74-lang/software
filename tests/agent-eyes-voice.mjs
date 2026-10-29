@@ -5,7 +5,7 @@ const source=fs.readFileSync('chat-notifications-drawer-v240.js','utf8');
 const functions=source.slice(source.indexOf('  async function speakWithExistingVoice('),source.indexOf('  async function presentAttention('));
 let release,idle=Promise.resolve(),allowed=true,preference=true,fallback=0,premiumCalls=0,stops=0,start=null;
 const events=[];
-const sandbox=vm.createContext({window:{},cfg:{csrf:'test'},agentVoiceEnabled:()=>preference,waitForAgentIdle:()=>idle,browserSpeak:async()=>{fallback++;return true;},announceSpeechState:(state,text)=>events.push({state,text})});
+const sandbox=vm.createContext({window:{},URL,location:{href:'https://voice.test/'},activeAgentId:()=>0,cfg:{csrf:'test'},agentVoiceEnabled:()=>preference,waitForAgentIdle:()=>idle,browserSpeak:async()=>{fallback++;return true;},announceSpeechState:(state,text)=>events.push({state,text})});
 vm.runInContext('let speechGeneration=0,speechQueue=Promise.resolve(),activeSpeechCancel=null;'+functions+';globalThis.speak=speakWithExistingVoice;globalThis.queue=queueSpeech;',sandbox);
 assert.equal(await sandbox.queue('Welcome.',()=>true),true);assert.equal(fallback,1);
 preference=false;assert.equal(await sandbox.queue('Muted.',()=>true),false);assert.equal(fallback,1);preference=true;

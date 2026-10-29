@@ -70,7 +70,7 @@
               <div class="chat-settings-section-title"><strong>Social Chat</strong><span>Control direct user-to-user conversations and incoming message alerts.</span></div>
               <label class="chat-settings-toggle"><span><strong>Allow user-to-user chat</strong><small>Other eligible users can find you and send direct messages.</small></span><input type="checkbox" name="social_chat_enabled"></label>
               <label class="chat-settings-toggle"><span><strong>Incoming message sound</strong><small>Play one notification sound when a new direct message arrives.</small></span><input type="checkbox" name="sound_enabled"></label>
-              <label class="chat-settings-toggle"><span><strong>Agent Voice</strong><small>Master switch for spoken Agent responses and notification announcements. Voice Conversation still requires an explicit microphone start.</small></span><input type="checkbox" name="agent_voice_enabled"></label>
+              <p>Agent Voice is controlled by the upper switch in your account menu.</p>
             </section>
             <section class="chat-settings-section" id="chatSettingsProfileAgentSection">
               <div class="chat-settings-section-title"><strong>Profile Agent Chat</strong><span>Use the same public Profile Agent controls already owned by your profile.</span></div>
@@ -131,6 +131,7 @@
 
   function ensureAgentVoiceToggle() {
     const existing = document.querySelector('[data-agent-voice-toggle]');
+    if (existing?.hasAttribute('data-vp3-global-agent-voice')) return existing;
     if (state?.agent_voice_allowed === false) { existing?.closest('.member-agent-voice-toggle')?.remove(); return null; }
     if (existing) return existing;
     const summary = document.querySelector('#chatProfileDropdown .chat-profile-summary');
@@ -255,8 +256,7 @@
       const chatResponse = await request('save_chat', {
         presence_mode:String(presence?.value || 'online'),
         social_chat_enabled:Boolean(social?.checked),
-        sound_enabled:Boolean(sound?.checked),
-        agent_voice_enabled:Boolean(voice?.checked)
+        sound_enabled:Boolean(sound?.checked)
       });
 
       let profileAgent = state?.profile_agent || null;

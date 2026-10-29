@@ -81,6 +81,10 @@ jobs:
         run: node tests/agent-missions-cloud-a5c5-browser.mjs
       - name: Compact Chat canvas and routed voice conversation
         run: node tests/chat-canvas-voice-browser.mjs
+      - name: Shared Agent Voice menu, greeting and movement
+        run: |
+          php tests/agent-voice-preferences.php
+          node tests/agent-voice-menu-browser.mjs
       - name: Cloud scheduled specialist controls
         run: node tests/agent-missions-cloud-a5c6-browser.mjs
       - name: Cloud automatic lead routing browser acceptance

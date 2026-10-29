@@ -75,6 +75,7 @@
     }
     async function stop(reason='Camera is off.'){
       void window.VP3TVWatching?.stop();
+      window.dispatchEvent(new Event('vp3:agent-eyes-stopped'));
       introduction=null;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');
       generation++;starting=false;enrolling=false;cameraIndicator(false);q('[data-eyes-consent]').checked=false;clearTimeout(timer);timer=0;
       if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}video.srcObject=null;observations=[];currentRows=[];core.clear().forEach(log);draw([]);say(reason);q('[data-eyes-start]').disabled=false;q('[data-eyes-stop]').disabled=true;
@@ -133,6 +134,7 @@
         acquired=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:{ideal:'user'}},audio:false});
         if(token!==generation){acquired.getTracks().forEach(t=>t.stop());return;}
         stream=acquired;acquired=null;cameraIndicator(true);for(const track of stream.getTracks())track.addEventListener('ended',()=>void stop('Camera disconnected.'),{once:true});video.srcObject=stream;await video.play();if(token!==generation)return;starting=false;
+        window.dispatchEvent(new Event('vp3:agent-eyes-started'));
         await scan(token);
       }catch(error){if(acquired)acquired.getTracks().forEach(t=>t.stop());if(token===generation)await stop(String(error.message||'Camera could not start.'));}
     }

@@ -32,6 +32,7 @@ function setting(string $name,mixed $fallback=''):mixed{
 function save_setting(string $name,string $value):void{
     $GLOBALS['pdo']->prepare('INSERT INTO settings VALUES(?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value')->execute([$name,$value]);
 }
+function table_exists(string $name):bool{$s=$GLOBALS['pdo']->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$s->execute([$name]);return (bool)$s->fetchColumn();}
 function db():\PDO{return $GLOBALS['pdo'];}
 function current_user():?array{return !empty($GLOBALS['scenario']['unauthenticated'])?null:['id'=>7];}
 function has_permission(string $name,?array $user=null):bool{return true;}
@@ -63,10 +64,11 @@ function curl_exec(object $ch):string|bool{
 }
 function load_source(string $source):void{
     $source=substr($source,strpos($source,'declare(strict_types=1);')+strlen('declare(strict_types=1);'));
-    eval('namespace '.__NAMESPACE__.'; use \\Throwable; use \\RuntimeException;'.$source);
+    eval('namespace '.__NAMESPACE__.'; use \\Throwable; use \\RuntimeException; use \\PDO;'.$source);
 }
 load_source(\file_get_contents($repo.'/includes/ai-settings.php'));
 load_source(\file_get_contents($repo.'/includes/ai-runtime-v100.php'));
+load_source(\file_get_contents($repo.'/includes/agent-voice-preferences.php'));
 $voiceSource=\file_get_contents($repo.'/api/agent-voice-v117.php');
 $voiceSource=str_replace("require dirname(__DIR__) . '/includes/bootstrap.php';",'',$voiceSource);
 

@@ -168,3 +168,7 @@
   .chat-profile-dropdown.vp3-agent-voice-menu{width:min(390px,calc(100vw - 16px));max-height:calc(100dvh - 68px)}
   .vp3-agent-voice-head,.vp3-agent-voice-body{padding-left:12px;padding-right:12px}
 }
+
+.vp3-agent-voice-menu .chat-profile-summary>.member-agent-voice-toggle{grid-column:1/-1;justify-self:start;margin-top:8px}
+.vp3-agent-voice-field>small{font-size:11px;line-height:1.4;color:#64748b;overflow-wrap:anywhere}
+.vp3-agent-voice-menu .member-agent-voice-toggle input:focus-visible+.member-agent-voice-switch{outline:2px solid #111827;outline-offset:3px}

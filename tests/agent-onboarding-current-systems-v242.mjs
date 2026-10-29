@@ -88,11 +88,11 @@ assert.doesNotMatch(notificationVoice,/setVoiceMode\(true\)/,'notification speec
 assert.doesNotMatch(notificationVoice,/responseTemporaryVoice/,'notification speech must not mint temporary mic authority');
 assert.doesNotMatch(notificationVoice,/setVoiceMode\(true\)[\s\S]{0,240}responseWindowActive = true/,'notification speech must not open a fresh listening window');
 
-assert.match(settingsUi,/Master switch for spoken Agent responses and notification announcements/);
+assert.match(settingsUi,/Agent Voice is controlled by the upper switch in your account menu/);
 assert.match(notificationSettings,/name="agent_voice_enabled"/,'Notification Settings must expose the canonical Agent Voice master');
 assert.match(notificationSettings,/does not turn on your microphone/,'Notification Settings must distinguish speech from microphone listening');
 assert.match(notificationSettings,/chat_settings_save_agent_voice_v237/,'Notification Settings must save through the canonical voice authority');
-assert.match(memberVoice,/Master switch for spoken Agent responses and notification announcements/);
+assert.doesNotMatch(memberVoice,/<label class="vp3-agent-voice-toggle-row"/,'member dashboard must not duplicate the upper master switch');
 assert.match(ui,/Turn on Agent Voice/);
 assert.match(ui,/Voice Conversation and spoken notifications stay off/);
 

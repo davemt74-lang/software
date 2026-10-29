@@ -1078,7 +1078,7 @@
   }
 
   function activeAgentId() {
-    return Math.max(0, Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId || 0));
+    return Math.max(0, Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId || window.VP3_AGENT_PREFERENCE_STATE?.agent?.id || 0));
   }
 
   async function showAttentionConversation(conversationId, message) {
@@ -1135,10 +1135,10 @@
     });
   }
 
-  function announceSpeechState(state, text = '') {
+  function announceSpeechState(state, text = '', completed=false) {
     try {
       window.dispatchEvent(new CustomEvent('stonefellow:agent-proactive-speech',{
-        detail:{state:String(state||''),text:String(text||'')}
+        detail:{state:String(state||''),text:String(text||''),completed:completed===true}
       }));
     } catch (_error) {}
   }
@@ -1169,11 +1169,11 @@
         settled = true;
         resolve(ok);
       };
-      const close = () => {
+      const close = (completed=false) => {
         if (closed) return;
         closed = true;
         if (activeSpeechCancel === cancel) activeSpeechCancel = null;
-        announceSpeechState('end', message);
+        announceSpeechState('end', message, completed);
       };
       const cancel = () => {
         try { window.speechSynthesis.cancel(); } catch (_error) {}
@@ -1190,7 +1190,7 @@
         announceSpeechState('start', message);
         settle(true);
       };
-      utterance.onend = () => close();
+      utterance.onend = () => close(true);
       utterance.onerror = () => {
         close();
         if (!started) settle(false);
@@ -1218,7 +1218,7 @@
     if (typeof PremiumVoice === 'function') {
       try {
         const premium = PremiumVoice({
-          agentEndpoint:String(window.STONEFELLOW_CHAT?.endpoint || cfg.agentEndpoint || '/api/chat-v236.php'),
+          agentEndpoint:(()=>{const u=new URL(String(window.STONEFELLOW_CHAT?.endpoint || cfg.agentEndpoint || '/api/chat-v236.php'),location.href);const id=activeAgentId();if(id>0)u.searchParams.set('agent',String(id));return u.href;})(),
           csrf:String(cfg.csrf || '')
         });
         spoken = await new Promise(resolve => {
@@ -1230,11 +1230,11 @@
             settled = true;
             resolve(ok);
           };
-          const close = () => {
+          const close = (completed=false) => {
             if (closed) return;
             closed = true;
             if (activeSpeechCancel === cancel) activeSpeechCancel = null;
-            announceSpeechState('end', message);
+            announceSpeechState('end', message, completed);
           };
           const cancel = () => {
             try { premium.stop?.(); } catch (_error) {}
@@ -1252,7 +1252,7 @@
               announceSpeechState('start', message);
               settle(true);
             },
-            onEnd:() => close(),
+            onEnd:() => close(true),
             onError:() => {
               close();
               if (!started) settle(false);
