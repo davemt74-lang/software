@@ -120,6 +120,7 @@ function agent_brain_tools(array $user): array
 
     if (has_permission('chat.access', $user)) {
         array_push($tools,
+            ['key'=>'tv_watching','label'=>'TV Watching','description'=>'Read TV history and explicit media preferences with Eyes off. Capture and correction controls are in the Eyes panel. Screen observations do not establish personal viewing.','kind'=>'memory','url'=>url('/chat.php')],
             ['key'=>'agent_chat','label'=>'Agent Chat','description'=>'Ask questions and work with the Stonefellow agent.','kind'=>'conversation','url'=>url('/chat.php')],
             ['key'=>'voice_chat','label'=>'Voice Chat','description'=>'Talk with the agent; transcripts enter the same chat and memory history.','kind'=>'conversation','url'=>url('/chat.php')],
             ['key'=>'player','label'=>'Player','description'=>'Play the Stonefellow song catalog available to this account.','kind'=>'media','url'=>url('/chat.php?view=player')],

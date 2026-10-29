@@ -46,6 +46,12 @@ jobs:
           node --version
           python3 --version
 
+      - name: TV Watching account history and multimodal provider payloads
+        run: |
+          php tests/tv-watching-v1.php
+          php tests/tv-vision-provider-v1.php
+          php -l api/tv-watching-v1.php
+
       - name: Haiku 5.5 routing and request compatibility
         run: php tests/haiku55.php
 

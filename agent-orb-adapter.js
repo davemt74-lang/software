@@ -26,7 +26,7 @@
   }
   const recording=()=>Boolean(document.querySelector('[data-recording="true"],.is-recording,.chat-media-studio button.recording,[data-agent-state="recording"]'));
   const state=()=>{const current=window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState;return {state:audible||current==='speaking'?'speaking':preparing?'thinking':current||($('sendChatButton')?.disabled?'thinking':'idle'),recording:recording()};};
-  const adapter={
+  const adapter={tvRequest:(body,{keepalive=false}={})=>api(cfg.tvEndpoint,body,keepalive),
     ownerKey:cfg.ownerKey,chatUrl:cfg.chatUrl,state,voiceFeatureUrl:cfg.voiceFeatureUrl,
     trainedVoiceUrl:cfg.trainedVoiceUrl,trainedVoiceSource:'cloud',
     conversationRef:()=>window.STONEFELLOW_CHAT_CONTINUITY?.isRestoring?.()||window.STONEFELLOW_CHAT_CONTINUITY?.isReady?.()===false?null:({id:window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()||0,agent:Number(window.STONEFELLOW_CHAT?.agentId||0)}),
