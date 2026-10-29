@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const BUILD='chat-voice-stable-capture-v1351';
+  const BUILD='chat-voice-proactive-v244-20260922';
   const POST_SPEECH_ECHO_MS=4000;
   const POST_SPEECH_LISTEN_DELAY=360;
   const TURN_END_PAUSE_MS=1800;
@@ -124,6 +124,7 @@
   const proof=window.STONEFELLOW_CHAT_VOICE={
     build:BUILD,
     lifecycleBuild:'v157',
+    microphoneStabilityBuild:'v1351',
     echoGuardBuild:'v157',
     fastVoiceBuild:'v144',
     pauseWindowMs:TURN_END_PAUSE_MS,
