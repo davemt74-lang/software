@@ -110,11 +110,27 @@
     menu.classList.add('vp3-agent-voice-menu');
     menu.querySelector('.chat-profile-links')?.remove();
     const summary = menu.querySelector('.chat-profile-summary');
-    // One upper switch, owned here on Chat and all other member pages.
-    if (summary && !summary.querySelector('[data-vp3-global-agent-voice]')) {
+    // Adopt legacy server markup or an early Chat control instead of adding a second owner.
+    let toggle=summary?.querySelector('[data-agent-voice-toggle]')||menu.querySelector('[data-agent-voice-toggle]');
+    if(summary&&!toggle){
       summary.insertAdjacentHTML('beforeend','<label class="member-agent-voice-toggle"><span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle data-vp3-global-agent-voice aria-label="Agent Voice"><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span></label>');
+      toggle=summary.querySelector('[data-agent-voice-toggle]');
     }
-    menu.querySelectorAll('.vp3-agent-voice-toggle-row').forEach(node=>node.remove());
+    if(toggle){
+      toggle.setAttribute('data-vp3-global-agent-voice','');
+      const row=toggle.closest('.member-agent-voice-toggle');if(summary&&row&&row.parentNode!==summary)summary.append(row);
+    }
+    const removeExtras=()=>{
+      menu.querySelectorAll('[data-agent-voice-toggle]').forEach(input=>{
+        if(input===toggle)return;
+        const row=input.closest('.member-agent-voice-toggle,.vp3-agent-voice-toggle-row,label');
+        if(row&&row!==menu&&!row.contains(toggle))row.remove();else input.remove();
+      });
+      menu.querySelectorAll('.vp3-agent-voice-toggle-row').forEach(row=>{if(!row.contains(toggle))row.remove();});
+    };
+    removeExtras();
+    const observer=new MutationObserver(removeExtras);observer.observe(menu,{childList:true,subtree:true});
+    window.addEventListener('pagehide',()=>observer.disconnect(),{once:true});
     let dashboard = menu.querySelector('[data-vp3-agent-voice-dashboard]');
     if (!dashboard) {
       menu.insertAdjacentHTML('beforeend', dashboardMarkup());
