@@ -133,7 +133,7 @@ function member_agent_voice_toggle_html(?array $user = null): string
     $user??=current_user();
     if(!$user||!member_navigation_package_permission($user,'chat.access',has_permission('chat.access',$user))||!member_navigation_entitled($user,'voice.access',true))return '';
     $checked=member_agent_voice_enabled($user)?' checked':'';
-    return '<label class="member-agent-voice-toggle" title="Allow spoken Agent responses and notification announcements"><span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle aria-label="Agent Voice"'.$checked.'><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span></label>';
+    return '<label class="member-agent-voice-toggle" title="Allow spoken Agent responses and notification announcements"><span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle data-vp3-global-agent-voice aria-label="Agent Voice"'.$checked.'><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span></label>';
 }
 
 function member_navigation_menu_links(?array $user = null): array

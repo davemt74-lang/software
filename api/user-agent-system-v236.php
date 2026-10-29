@@ -14,6 +14,7 @@ function user_agent_api_v236(bool $ok, array $data = [], int $status = 200): nev
 function user_agent_api_state_v236(PDO $pdo, array $user): array
 {
     $state = user_agent_state_v236($pdo, $user);
+    $state['system_voice'] = agent_voice_preferences_get($pdo, (int)$user['id']);
     $state['agents'] = vp3_user_agent_filter_visible_v390($pdo, (int)$user['id'], $state['agents'] ?? []);
     $state['data_usage'] = user_data_usage_owner_state_v236($pdo, (int)$user['id'], 30);
     $state['shared_knowledge'] = ['indexed' => 0, 'active' => 0];
@@ -119,6 +120,26 @@ try {
             'homeserver_scope' => $scope,
             'state' => user_agent_api_state_v236($pdo, $user),
         ]);
+    }
+
+    if ($action === 'set_default_agent') {
+        $agentId = (int)($input['agent_id'] ?? 0);
+        vp3_user_agent_require_current_v390($pdo, (int)$user['id'], $agentId);
+        $pdo->beginTransaction();
+        try {
+            // Serialize default changes for this owner and verify the active identity.
+            $lock = $pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');
+            $lock->execute([(int)$user['id']]);
+            $agent = user_agent_get_v236($pdo, (int)$user['id'], $agentId);
+            if (!$agent || empty($agent['is_active'])) throw new RuntimeException('Choose an active agent.');
+            $pdo->prepare('UPDATE user_agents SET is_default=0 WHERE owner_user_id=?')->execute([(int)$user['id']]);
+            $pdo->prepare('UPDATE user_agents SET is_default=1 WHERE id=? AND owner_user_id=?')->execute([$agentId,(int)$user['id']]);
+            $pdo->commit();
+        } catch (Throwable $error) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $error;
+        }
+        user_agent_api_v236(true, ['state' => user_agent_api_state_v236($pdo, $user)]);
     }
 
     if ($action === 'create_agent') {

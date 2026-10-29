@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-voice-preferences.php';
+
 const STONEFELLOW_USER_AGENT_SYSTEM_V236='user-agent-system-v236-20260903';
 
 function system_agent_name(): string

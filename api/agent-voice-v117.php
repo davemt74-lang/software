@@ -66,6 +66,13 @@ function stonefellow_voice_v117_settings(?array $user = null, int $agentId = 0):
     [$apiKey, $credentialState] = ai_elevenlabs_credential();
     $voiceId = trim((string)(getenv('ELEVENLABS_VOICE_ID') ?: setting('ai_elevenlabs_voice_id', 'JBFqnCBsd6RMkjVDRZzb')));
     $voiceSource = 'global';
+    if ($user && ($preferencesPdo = db())) {
+        $preference = agent_voice_preferences_get($preferencesPdo, (int)$user['id']);
+        if ($preference['voice_id'] !== '') {
+            $voiceId = $preference['voice_id'];
+            $voiceSource = 'account_default';
+        }
+    }
     if ($user && $agentId > 0) {
         $selection = stonefellow_voice_v244_agent_selection($user, $agentId);
         if (!empty($selection['requested'])) {

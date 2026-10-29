@@ -46,3 +46,15 @@ html[data-vp3-orb-embed] .sidebar,html[data-vp3-orb-embed] .topbar,html[data-vp3
 .vp3-orb-chat-host>.chat-thread{flex:1;min-height:0;min-width:0;width:100%;height:100%;max-height:none;margin:0;box-sizing:border-box;overflow-y:auto;background:#f5f8fc;color:#172538}
 
 .vp3-cloud-chat-placeholder{min-height:0;min-width:0;pointer-events:none}
+
+.vp3-agent-setup-notice{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);z-index:18200;display:flex;align-items:center;gap:12px;width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;padding:12px 14px;background:#fff;color:#172538;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 8px 30px #17253824;font:13px/1.4 system-ui,sans-serif}
+.vp3-agent-setup-notice[hidden]{display:none!important}
+.vp3-agent-setup-notice button{flex-shrink:0;border:1px solid #172538;border-radius:8px;background:#172538;color:#fff;padding:8px 12px;cursor:pointer;font:inherit}
+.vp3-orb-root{max-width:calc(100vw - 28px)}
+.vp3-orb-controls{flex-wrap:wrap;justify-content:center;max-width:190px}
+@media(max-width:480px){.vp3-agent-setup-notice{font-size:12px;gap:8px}.vp3-agent-setup-notice button{white-space:normal;max-width:115px}}
+
+/* Keep the orb compact. Controls appear without changing the tracking bounds. */
+.vp3-orb-controls{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .15s ease}
+.vp3-orb-root:hover .vp3-orb-controls,.vp3-orb-root:focus-within .vp3-orb-controls,.vp3-orb-root[data-controls-open=true] .vp3-orb-controls{opacity:1;visibility:visible;pointer-events:auto}
+@media(prefers-reduced-motion:reduce){.vp3-orb-controls{transition:none}}

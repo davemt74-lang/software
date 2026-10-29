@@ -203,7 +203,8 @@ function vp3_upgrade_complete(): bool
         && artist_music_v185_schema_ready()
         && table_exists('social_feed_posts_v1')
         && table_exists('tv_watching_state_v1')
-        && table_exists('tv_watching_records_v1');
+        && table_exists('tv_watching_records_v1')
+        && table_exists('user_agent_voice_preferences');
 }
 
 $error = '';
@@ -278,6 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             studio_participants_ensure_schema();
             studio_voice_profile_ensure_schema();
             user_agent_system_ensure_schema_v236();
+            agent_voice_preferences_schema($pdo);
             vp3_user_agent_lifecycle_ensure_schema_v390();
             vp3_agent_memory_scope_ensure_schema_v410();
             agent_scheduling_ensure_schema_v430();

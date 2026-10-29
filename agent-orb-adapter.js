@@ -38,6 +38,8 @@
     isMainChat:()=>!!$('chatForm'),focusChat:()=>$('chatInput')?.focus(),
     busy:()=>Boolean(['processing','thinking','speaking','starting'].includes(state().state)||recording()||$('sendChatButton')?.disabled||$('chatInput')?.value.trim()),
     listen:()=>{if(!window.VP3ConversationControls?.isEnabled?.())$('chatVoiceButton')?.click();},
+    responseWindow:()=>window.VP3AgentOrb?.listenForResponse?.(),
+    cancelResponseWindow:()=>window.VP3AgentOrb?.cancelResponseWindow?.(),
     stop:()=>{voiceEpoch++;preparing=false;audible=false;window.VP3ConversationControls?.stop();window.STONEFELLOW_NOTIFICATION_CENTER?.cancelSpeech();if(recording())window.StonefellowMediaStudio?.close?.();},
     greet:async(text,isCurrent=()=>true)=>{
       const epoch=++voiceEpoch;preparing=true;
