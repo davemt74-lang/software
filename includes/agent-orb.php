@@ -14,4 +14,4 @@ $GLOBALS['VP3_AGENT_ORB_RENDERED']=true;
 <script src="<?= e(url('/agent-trained-voice.js?v=eyes-v1348')) ?>" defer></script>
 <script src="<?= e(url('/agent-voice-guard.js?v=eyes-v1348')) ?>" defer></script>
 
-<script src="<?= e(url('/agent-tv-watching.js?v=eyes-v1348')) ?>" defer></script>
+<script src="<?= e(url('/agent-tv-watching.js?v=eyes-v1348r1')) ?>" defer></script>
