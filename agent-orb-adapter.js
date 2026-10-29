@@ -47,7 +47,7 @@
       try{await voiceReady;if(epoch!==voiceEpoch||!isCurrent())return false;return await window.STONEFELLOW_NOTIFICATION_CENTER?.announceWhen(text,()=>epoch===voiceEpoch&&isCurrent());}
       finally{if(epoch===voiceEpoch)preparing=false;}
     },
-    cameraAllowed:async()=>!document.hidden&&!!window.isSecureContext&&!!navigator.mediaDevices?.getUserMedia&&!Array.from(document.querySelectorAll('video')).some(v=>!v.closest('.vp3-eyes-camera')&&v.srcObject?.active===true),
+    cameraAllowed:async({allowHidden=false}={})=>(allowHidden||!document.hidden)&&!!window.isSecureContext&&!!navigator.mediaDevices?.getUserMedia&&!Array.from(document.querySelectorAll('video')).some(v=>!v.closest('.vp3-eyes-camera')&&v.srcObject?.active===true),
     loadEyesProfiles:async()=>{
       const [data,local]=await Promise.all([api(cfg.participantsEndpoint),samples('read')]);
       return data.profiles.map(p=>({id:String(p.id),name:p.display_name,recognitionEnabled:p.recognition_consent===true,portraits:p.recognition_consent===true?(local.find(x=>x.id===String(p.id))?.portraits||[]):[],embeddings:p.recognition_consent===true?(local.find(x=>x.id===String(p.id))?.embeddings||[]):[]}));

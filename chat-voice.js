@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const BUILD='chat-voice-proactive-v244-20260922';
+  const BUILD='chat-voice-stable-capture-v1351';
   const POST_SPEECH_ECHO_MS=4000;
   const POST_SPEECH_LISTEN_DELAY=360;
   const TURN_END_PAUSE_MS=1800;
@@ -46,7 +46,16 @@
   let responseWindowOwned=false,responseWindowClosing=false,responseWindowTimer=0,responseCleanupTimer=0,responseWindowUntil=0;
 
   const activeRecognizers=new Set();
-  function resumeAfterRelease(){if(!recognition){recognitionStarting=false;recognitionListening=false;}if(!bargeRecognition){bargeStarting=false;bargeListening=false;}if(!voiceOn||responseWindowClosing||processing||textBusy||voiceSubmitPending)return;if(speaking){if(!bargeRecognition)setTimeout(()=>startBarge(),0);}else scheduleListening(POST_SPEECH_LISTEN_DELAY,'native-released');}
+  const releaseTimers=new Map();let releaseBlocked=false;
+  function nativeEnded(current){activeRecognizers.delete(current);if(!activeRecognizers.size)releaseBlocked=false;clearTimeout(releaseTimers.get(current));releaseTimers.delete(current);}
+  function awaitNativeEnd(current){
+    if(!activeRecognizers.has(current)||releaseTimers.has(current))return;
+    releaseTimers.set(current,setTimeout(()=>{
+      releaseTimers.delete(current);if(!activeRecognizers.has(current)||!voiceOn)return;
+      releaseBlocked=true;disableVoice({persist:false});proof.lastError='The browser speech service did not release the microphone. Reload this page to reconnect.';setAgentState('error',proof.lastError);log('SR_RELEASE_BLOCKED',{});
+    },5000));
+  }
+  function resumeAfterRelease(){if(!recognition){recognitionStarting=false;recognitionListening=false;}if(!bargeRecognition){bargeStarting=false;bargeListening=false;}if(!voiceOn||responseWindowClosing||processing||textBusy||voiceSubmitPending)return;if(speaking){if(!bargeRecognition&&!bargeRestartTimer)setTimeout(()=>startBarge(),0);}else if(!restartTimer&&!recognition)scheduleListening(POST_SPEECH_LISTEN_DELAY,'native-released');}
   let recognition=null;
   let recognitionStarting=false;
   let recognitionListening=false;
@@ -75,7 +84,7 @@
   let lastNearFieldAt=0;
 
   let bargeRecognition=null;
-  let bargeStarting=false;
+  let bargeStarting=false,bargeFailures=0,bargeStartTimer=0;
   let bargeListening=false;
   let bargeCapturing=false;
   let bargeLastText='';
@@ -307,6 +316,7 @@
   function clearStartWatchdog(){if(recognitionStartTimer)clearTimeout(recognitionStartTimer);recognitionStartTimer=0;}
   function clearTurnEndTimer(){if(turnEndTimer)clearTimeout(turnEndTimer);turnEndTimer=0;}
   function resetPendingFinal(){clearTurnEndTimer();pendingFinalTranscript='';}
+  function clearBargeStart(){clearTimeout(bargeStartTimer);bargeStartTimer=0;}
   function clearBargeRestart(){if(bargeRestartTimer)clearTimeout(bargeRestartTimer);bargeRestartTimer=0;}
   function clearBargeCaptureTimer(){if(bargeCaptureTimer)clearTimeout(bargeCaptureTimer);bargeCaptureTimer=0;}
   function clearBargeArmTimer(){if(bargeArmTimer)clearTimeout(bargeArmTimer);bargeArmTimer=0;}
@@ -331,12 +341,14 @@
     clearRestart();
     if(!voiceOn||speaking||processing||textBusy||voiceSubmitPending||bargeCapturing)return;
     if(!recognitionListening&&!recognitionStarting)setAgentState('starting',reason==='conversation-restore'?'Restoring your conversation before listening…':pendingFinalTranscript?`Continuing · ${pendingFinalTranscript}`:'Connecting microphone…');
-    restartTimer=setTimeout(()=>startListening(reason),Math.max(0,Number(delay)||0));
+    restartTimer=setTimeout(()=>{restartTimer=0;startListening(reason);},Math.max(0,Number(delay)||0));
   }
 
   function stopRecognition(reason='pause',abort=false){
     clearRestart();clearStartWatchdog();clearRestoreWait();recognitionStopReason=reason;const current=recognition;if(!current)return;
-    try{abort?current.abort():current.stop();}catch(error){}
+    // A pending monitor acquisition has no native session to abort. Fence its launch.
+    if(!activeRecognizers.has(current)){recognition=null;recognitionStarting=false;recognitionListening=false;return;}
+    awaitNativeEnd(current);try{abort?current.abort():current.stop();}catch(error){}
   }
 
   function normalizeSpeechText(value){return String(value||'').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s']/gu,' ').replace(/\s+/g,' ').trim();}
@@ -466,12 +478,12 @@
       setAgentState('error',message+' Select the microphone to retry.');
       return;
     }
-    scheduleListening(350,reason);
+    scheduleListening(Math.min(4000,350*2**(recognitionFailures-1)),reason);
   }
 
   function createRecognition(){
-    const current=new SpeechRecognitionCtor();const deliveredFinals=new Set();current.continuous=false;current.interimResults=true;current.lang=document.documentElement.lang||'en-US';
-    current.onstart=()=>{if(recognition!==current)return;clearStartWatchdog();recognitionStarting=false;recognitionListening=true;proof.starts+=1;if(responseWindowOwned){if(!responseWindowUntil)responseWindowUntil=Date.now()+15000;clearTimeout(responseWindowTimer);responseWindowTimer=setTimeout(finishResponseWindow,Math.max(0,responseWindowUntil-Date.now()));window.dispatchEvent(new CustomEvent('vp3:reply-window',{detail:{active:true,durationMs:15000}}));}setAgentState('listening',pendingFinalTranscript?`Listening · ${pendingFinalTranscript}`:'Listening…');log('SR_STARTED',{starts:proof.starts});};
+    const current=new SpeechRecognitionCtor();const deliveredFinals=new Set();let startedAt=0;current.continuous=true;current.interimResults=true;current.lang=document.documentElement.lang||'en-US';
+    current.onstart=()=>{if(recognition!==current)return;clearStartWatchdog();recognitionStarting=false;recognitionListening=true;proof.starts+=1;startedAt=performance.now();if(responseWindowOwned){if(!responseWindowUntil)responseWindowUntil=Date.now()+15000;clearTimeout(responseWindowTimer);responseWindowTimer=setTimeout(finishResponseWindow,Math.max(0,responseWindowUntil-Date.now()));window.dispatchEvent(new CustomEvent('vp3:reply-window',{detail:{active:true,durationMs:15000}}));}setAgentState('listening',pendingFinalTranscript?`Listening · ${pendingFinalTranscript}`:'Listening…');log('SR_STARTED',{starts:proof.starts});};
     current.onresult=event=>{
       if(recognition!==current)return;if(speaking||processing){log('SR_RESULT_IGNORED_BUSY',{speaking,processing});return;}
       recognitionFailures=0;proof.results+=1;let interim='';let finalText='';let finalConfidence=0;const start=Math.max(0,Number(event.resultIndex||0));
@@ -480,12 +492,18 @@
       if(isPostSpeechEcho(heard)&&!commandOverride){proof.echoRejects+=1;proof.postSpeechEchoRejects+=1;log('SR_ECHO_REJECTED',{phase:'post-speech',final:!!finalText,text:heard,ageMs:Date.now()-lastSpeechEndedAt,count:proof.postSpeechEchoRejects});if(finalText.trim()){recognitionStopReason='echo-tail';try{current.stop();}catch(error){}}return;}
       if(commandOverride&&isPostSpeechEcho(heard)){proof.echoCommandOverrides+=1;log('SR_ECHO_COMMAND_OVERRIDE',{text:heard,count:proof.echoCommandOverrides});}
       const preview=[pendingFinalTranscript,heard].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();proof.lastTranscript=preview;updateComposer(preview);setAgentState('listening',`Listening · ${preview}`);log('SR_RESULT',{final:!!finalText,text:preview});
-      if(!finalText.trim())return;const finalTranscript=finalText.trim();const acceptance=acceptTranscript(finalTranscript,finalConfidence);if(!acceptance.ok){proof.lowConfidenceRejected+=1;updateComposer(pendingFinalTranscript);log('TRANSCRIPT_LOW_CONFIDENCE_REJECTED',{text:finalTranscript,confidence:finalConfidence,reason:acceptance.reason,count:proof.lowConfidenceRejected});recognitionStopReason='rejected';try{current.stop();}catch(error){}return;}proof.finals+=1;if(applyStopControl(finalTranscript,'recognition'))return;queueFinalTranscript(finalTranscript);recognitionStopReason='pause-window';try{current.stop();}catch(error){}
+      if(!finalText.trim())return;const finalTranscript=finalText.trim();const acceptance=acceptTranscript(finalTranscript,finalConfidence);if(!acceptance.ok){proof.lowConfidenceRejected+=1;updateComposer(pendingFinalTranscript);log('TRANSCRIPT_LOW_CONFIDENCE_REJECTED',{text:finalTranscript,confidence:finalConfidence,reason:acceptance.reason,count:proof.lowConfidenceRejected});recognitionStopReason='rejected';try{current.stop();}catch(error){}return;}proof.finals+=1;if(applyStopControl(finalTranscript,'recognition'))return;queueFinalTranscript(finalTranscript);
     };
     current.onerror=event=>{
       if(recognition!==current)return;const kind=String(event?.error||'unknown');
-      if(kind==='aborted'){clearStartWatchdog();recognitionStopReason=recognitionStopReason||'browser-interruption';log('SR_ABORTED',{reason:recognitionStopReason});return;}
-      clearStartWatchdog();recognitionStarting=false;recognitionListening=false;proof.errors+=1;proof.lastError=kind;log('SR_ERROR',{error:kind,message:String(event?.message||'')});
+      if(startedAt&&performance.now()-startedAt>10000)recognitionFailures=0;
+      if(kind==='aborted'){
+        clearStartWatchdog();awaitNativeEnd(current);log('SR_ABORTED',{reason:recognitionStopReason||'browser-interruption'});
+        if(recognitionStopReason)return;
+        recognition=null;recognitionStarting=false;recognitionListening=false;
+        if(voiceOn&&!processing&&!speaking)recoverRecognition('The browser speech connection was interrupted.','browser-interruption');return;
+      }
+      clearStartWatchdog();awaitNativeEnd(current);recognitionStarting=false;recognitionListening=false;proof.errors+=1;proof.lastError=kind;log('SR_ERROR',{error:kind,message:String(event?.message||'')});
       if(kind==='not-allowed'||kind==='service-not-allowed'){disableVoice({persist:true});setAgentState('error','Microphone permission is blocked.');return;}
       if(kind==='audio-capture'){disableVoice({persist:false});setAgentState('error','No usable microphone input is available.');return;}
       recognition=null;
@@ -496,7 +514,7 @@
       }
     };
     current.onend=()=>{
-      activeRecognizers.delete(current);if(recognition!==current){resumeAfterRelease();return;}const endedBeforeStart=recognitionStarting;clearStartWatchdog();recognitionStarting=false;recognitionListening=false;proof.ends+=1;const reason=recognitionStopReason;recognitionStopReason='';log('SR_ENDED',{reason,ends:proof.ends});
+      nativeEnded(current);if(recognition!==current){resumeAfterRelease();return;}const endedBeforeStart=recognitionStarting;clearStartWatchdog();recognitionStarting=false;recognitionListening=false;proof.ends+=1;const reason=recognitionStopReason;recognitionStopReason='';log('SR_ENDED',{reason,ends:proof.ends});
       recognition=null;
       if(speaking&&bargeArmPending){bargeArmPending=false;clearBargeArmTimer();setTimeout(()=>startBarge(),0);return;}
       if(!voiceOn||processing||speaking||voiceSubmitPending||textBusy||bargeCapturing)return;if(reason==='submit'||reason==='response'||reason==='off'||reason==='pagehide')return;
@@ -534,7 +552,7 @@
         if(recognition!==current||!recognitionStarting)return;
         proof.recognitionStartTimeouts+=1;recognitionStarting=false;recognitionListening=false;recognition=null;
         proof.lastError='Speech recognition start timed out';log('SR_START_TIMEOUT',{count:proof.recognitionStartTimeouts,timeoutMs:startTimeoutMs});
-        try{current.abort();}catch(error){}
+        awaitNativeEnd(current);try{current.abort();}catch(error){}
         if(voiceOn&&!processing&&!speaking)recoverRecognition('Speech recognition did not start. Check this site’s microphone permission.','start-watchdog');
       },startTimeoutMs);
       startRecognizer(current,'listen');return true;
@@ -542,16 +560,25 @@
     const generation=micGeneration;void ensureProcessedMic().then(()=>{if(recognition!==current||!voiceOn||responseWindowClosing||generation!==micGeneration||processing||speaking)return;launch();});return true;
   }
 
-  function stopBarge(reason='stop',abort=true){clearBargeRestart();clearBargeCaptureTimer();clearBargeCandidate();const current=bargeRecognition;bargeRecognition=null;bargeStarting=false;bargeListening=false;if(current&&abort){try{current.abort();}catch(error){}}log('BARGE_SR_STOP',{reason});}
+  function stopBarge(reason='stop',abort=true){clearBargeStart();clearBargeRestart();clearBargeCaptureTimer();clearBargeCandidate();const current=bargeRecognition;bargeRecognition=null;bargeStarting=false;bargeListening=false;if(current&&abort&&activeRecognizers.has(current)){awaitNativeEnd(current);try{current.abort();}catch(error){}}log('BARGE_SR_STOP',{reason});}
   function finishBargeCapture(text,reason='final'){const transcript=String(text||bargeLastText||'').trim();clearBargeCaptureTimer();bargeCapturing=false;bargeLastText='';stopBarge(`capture-${reason}`);if(!transcript){if(voiceOn&&!processing&&!speaking)scheduleListening(80,'barge-empty');return;}if(applyStopControl(transcript,`barge-${reason}`))return;proof.bargeSubmits+=1;proof.lastBargeTranscript=transcript;log('BARGE_SUBMIT',{text:transcript,reason,count:proof.bargeSubmits});submitVoiceTranscript(transcript);}
   function cutOffForBarge(text){if(bargeCapturing)return;const seed=String(text||'').trim();if(applyStopControl(seed,'barge'))return true;if(window.VP3VoiceGuard?.canInterrupt?.()===false)return false;clearBargeCandidate();resetPendingFinal();bargeCapturing=true;bargeLastText=seed;proof.interruptions+=1;log('INTERRUPT',{trigger:'speech-recognition-barge',count:proof.interruptions,text:seed});activeSpeechEpoch=++speechEpoch;if(currentSpokenText)lastSpokenText=currentSpokenText;lastSpeechEndedAt=Date.now();try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}cancelActiveRequest();speaking=false;processing=false;currentSpokenText='';recognition=null;recognitionStarting=false;recognitionListening=false;updateComposer(seed);setAgentState('listening',seed?`Listening · ${seed}`:'Listening…');scheduleBargeCaptureFinish();}
 
+  function recoverBarge(kind){
+    if(!voiceOn||!speaking)return;
+    if(kind==='not-allowed'||kind==='service-not-allowed'||kind==='audio-capture'){
+      disableVoice({persist:false});setAgentState('error',kind==='audio-capture'?'No usable microphone input is available.':'Microphone permission is blocked.');return;
+    }
+    if(kind!=='no-speech')bargeFailures++;
+    if(bargeFailures>=3){disableVoice({persist:false});setAgentState('error','The browser speech connection was interrupted repeatedly. Select the microphone to retry.');return;}
+    clearBargeRestart();bargeRestartTimer=setTimeout(()=>{bargeRestartTimer=0;startBarge();},Math.min(2000,350*2**Math.max(0,bargeFailures-1)));
+  }
   function createBargeRecognition(){
-    const current=new SpeechRecognitionCtor();current.continuous=true;current.interimResults=true;current.lang=document.documentElement.lang||'en-US';
-    current.onstart=()=>{if(bargeRecognition!==current)return;bargeStarting=false;bargeListening=true;proof.bargeStarts+=1;log('BARGE_SR_STARTED',{count:proof.bargeStarts});};
+    const current=new SpeechRecognitionCtor();let startedAt=0;current.continuous=true;current.interimResults=true;current.lang=document.documentElement.lang||'en-US';
+    current.onstart=()=>{if(bargeRecognition!==current)return;clearBargeStart();startedAt=performance.now();bargeStarting=false;bargeListening=true;proof.bargeStarts+=1;log('BARGE_SR_STARTED',{count:proof.bargeStarts});};
     current.onspeechstart=()=>{if(bargeRecognition!==current||(!speaking&&!bargeCapturing)||!voiceOn)return;log('BARGE_SR_SPEECHSTART',{});};
     current.onresult=event=>{
-      if(bargeRecognition!==current||(!speaking&&!bargeCapturing)||!voiceOn)return;let interim='';let finalText='';const start=Math.max(0,Number(event.resultIndex||0));
+      if(bargeRecognition!==current||(!speaking&&!bargeCapturing)||!voiceOn)return;bargeFailures=0;let interim='';let finalText='';const start=Math.max(0,Number(event.resultIndex||0));
       for(let i=start;i<event.results.length;i+=1){const result=event.results[i];const text=String(result?.[0]?.transcript||'');if(result?.isFinal)finalText+=text;else interim+=text;}
       const heard=String(finalText||interim||'').trim();if(!heard)return;proof.bargeResults+=1;const reference=currentSpokenText||lastSpokenText;const immediate=isStopControl(heard)||isImmediateBargeCommand(heard);const semanticEcho=isLikelyStonefellowEcho(heard,reference,{allowSingle:true});const nearField=hasRecentNearFieldSpeech(immediate?760:NEAR_FIELD_WINDOW_MS);const echo=semanticEcho&&(!immediate||!nearField);log('BARGE_SR_RESULT',{final:!!finalText,text:heard,echo,semanticEcho,nearField,immediate,capturing:bargeCapturing,count:proof.bargeResults});
       if(echo){proof.echoRejects+=1;proof.bargeEchoRejects+=1;log('BARGE_ECHO_REJECTED',{final:!!finalText,text:heard,count:proof.bargeEchoRejects});if(!bargeCapturing)clearBargeCandidate();return;}
@@ -560,12 +587,27 @@
       if(!bargeCapturing){const hits=recordBargeCandidate(heard);const enoughSpeech=speechTokens(heard).filter(word=>word.length>1).length>=2;const stableInterim=!finalText.trim()&&enoughSpeech&&hits>=2;const confirmed=!!finalText.trim()||immediate||stableInterim;if(!confirmed){bargeLastText=heard;log('BARGE_CANDIDATE',{text:heard,hits,enoughSpeech,reason:'await-confirmation'});return;}bargeLastText=heard;proof.lastBargeTranscript=heard;updateComposer(heard);if(stableInterim){proof.bargeFastCuts+=1;log('BARGE_FAST_CUT',{text:heard,hits,count:proof.bargeFastCuts});}if(cutOffForBarge(heard))return;}else{bargeLastText=heard;proof.lastBargeTranscript=heard;updateComposer(heard);setAgentState('listening',`Listening · ${heard}`);scheduleBargeCaptureFinish();}
       if(finalText.trim())finishBargeCapture(finalText.trim(),'final');
     };
-    current.onerror=event=>{if(bargeRecognition!==current)return;bargeStarting=false;bargeListening=false;proof.bargeErrors+=1;const kind=String(event?.error||'unknown');log('BARGE_SR_ERROR',{error:kind,count:proof.bargeErrors});bargeRecognition=null;if(bargeCapturing&&bargeLastText){finishBargeCapture(bargeLastText,`error:${kind}`);return;}if(voiceOn&&speaking&&kind!=='not-allowed'&&kind!=='service-not-allowed'){clearBargeRestart();bargeRestartTimer=setTimeout(()=>startBarge(),180);}};
-    current.onend=()=>{activeRecognizers.delete(current);if(bargeRecognition!==current){resumeAfterRelease();return;}bargeStarting=false;bargeListening=false;bargeRecognition=null;log('BARGE_SR_ENDED',{capturing:bargeCapturing,text:bargeLastText});if(bargeCapturing&&bargeLastText){finishBargeCapture(bargeLastText,'end');return;}const candidate=bargeCandidateText;if(candidate&&speechTokens(candidate).filter(word=>word.length>1).length>=2){if(cutOffForBarge(candidate))return;finishBargeCapture(candidate,'candidate-end');return;}clearBargeCandidate();bargeLastText='';if(voiceOn&&speaking){clearBargeRestart();bargeRestartTimer=setTimeout(()=>startBarge(),120);}};
+    current.onerror=event=>{
+      if(bargeRecognition!==current)return;clearBargeStart();bargeStarting=false;bargeListening=false;proof.bargeErrors+=1;awaitNativeEnd(current);
+      const kind=String(event?.error||'unknown');if(startedAt&&performance.now()-startedAt>10000)bargeFailures=0;
+      log('BARGE_SR_ERROR',{error:kind,count:proof.bargeErrors});bargeRecognition=null;
+      if(['not-allowed','service-not-allowed','audio-capture'].includes(kind)){recoverBarge(kind);return;}
+      if(bargeCapturing&&bargeLastText){finishBargeCapture(bargeLastText,`error:${kind}`);return;}recoverBarge(kind);
+    };
+    current.onend=()=>{nativeEnded(current);if(bargeRecognition!==current){resumeAfterRelease();return;}clearBargeStart();bargeStarting=false;bargeListening=false;bargeRecognition=null;log('BARGE_SR_ENDED',{capturing:bargeCapturing,text:bargeLastText});if(bargeCapturing&&bargeLastText){finishBargeCapture(bargeLastText,'end');return;}const candidate=bargeCandidateText;if(candidate&&speechTokens(candidate).filter(word=>word.length>1).length>=2){if(cutOffForBarge(candidate))return;finishBargeCapture(candidate,'candidate-end');return;}clearBargeCandidate();bargeLastText='';if(voiceOn&&speaking){clearBargeRestart();bargeRestartTimer=setTimeout(()=>{bargeRestartTimer=0;startBarge();},120);}};
     return current;
   }
 
-  function startBarge(){clearBargeRestart();if(!voiceOn||responseWindowClosing||activeRecognizers.size||!speaking||bargeCapturing||bargeStarting||bargeListening||recognitionStarting||recognitionListening||recognition||typeof SpeechRecognitionCtor!=='function')return false;const current=createBargeRecognition();bargeRecognition=current;bargeStarting=true;proof.bargeStartCalls+=1;log('BARGE_SR_START_CALL',{call:proof.bargeStartCalls});try{startRecognizer(current,'barge');return true;}catch(error){if(bargeRecognition===current)bargeRecognition=null;bargeStarting=false;proof.bargeErrors+=1;log('BARGE_SR_START_THROW',{name:String(error?.name||'Error'),message:String(error?.message||error||''),count:proof.bargeErrors});if(voiceOn&&speaking){clearBargeRestart();bargeRestartTimer=setTimeout(()=>startBarge(),220);}return false;}}
+  function startBarge(){
+    clearBargeRestart();if(!voiceOn||responseWindowClosing||activeRecognizers.size||!speaking||bargeCapturing||bargeStarting||bargeListening||recognitionStarting||recognitionListening||recognition||typeof SpeechRecognitionCtor!=='function')return false;
+    let current;try{current=createBargeRecognition();}catch(error){recoverBarge('constructor');return false;}bargeRecognition=current;bargeStarting=true;const generation=micGeneration;
+    // Barge-in shares the same prepared microphone as ordinary listening.
+    void ensureProcessedMic().then(()=>{
+      if(bargeRecognition!==current||!voiceOn||responseWindowClosing||generation!==micGeneration||!speaking)return;
+      proof.bargeStartCalls+=1;log('BARGE_SR_START_CALL',{call:proof.bargeStartCalls});
+      try{bargeStartTimer=setTimeout(()=>{if(bargeRecognition!==current||!bargeStarting)return;stopBarge('start-timeout');recoverBarge('start-timeout');},5000);startRecognizer(current,'barge');}catch(error){clearBargeStart();if(bargeRecognition===current)bargeRecognition=null;bargeStarting=false;proof.bargeErrors+=1;log('BARGE_SR_START_THROW',{name:String(error?.name||'Error'),message:String(error?.message||error||''),count:proof.bargeErrors});recoverBarge('start-throw');}
+    });return true;
+  }
   function armBargeAfterRecognizerRelease(){
     clearBargeArmTimer();
     if(!recognition){bargeArmPending=false;startBarge();return;}
@@ -578,7 +620,7 @@
     },BARGE_RELEASE_TIMEOUT_MS);
   }
   function onSpeechStart(epoch){if(epoch!==activeSpeechEpoch)return;window.VP3VoiceGuard?.reset();resetPendingFinal();if(pendingIntroSpeech&&normalizeSpeechText(pendingIntroSpeech)===normalizeSpeechText(currentSpokenText)){pendingIntroSpeech='';window.dispatchEvent(new CustomEvent('vp3:agent-welcomed'));}processing=false;speaking=true;proof.speechStarts+=1;setAgentState('speaking','Stonefellow is responding…');log('SPEECH_STARTED',{count:proof.speechStarts,epoch});if(!responseWindowClosing)armBargeAfterRecognizerRelease();}
-  function onSpeechEnd(epoch){if(epoch!==activeSpeechEpoch)return;window.VP3VoiceGuard?.reset();bargeArmPending=false;clearBargeArmTimer();stopBarge('speech-end');if(currentSpokenText)lastSpokenText=currentSpokenText;lastSpeechEndedAt=Date.now();currentSpokenText='';speaking=false;processing=false;proof.speechEnds+=1;log('SPEECH_ENDED',{count:proof.speechEnds,epoch});if(responseWindowClosing){disableVoice({persist:false});return;}if(voiceOn){recognition=null;scheduleListening(POST_SPEECH_LISTEN_DELAY,'speech-end');}else setAgentState('idle');}
+  function onSpeechEnd(epoch){if(epoch!==activeSpeechEpoch)return;window.VP3VoiceGuard?.reset();bargeArmPending=false;clearBargeArmTimer();stopBarge('speech-end');if(currentSpokenText)lastSpokenText=currentSpokenText;lastSpeechEndedAt=Date.now();currentSpokenText='';speaking=false;processing=false;proof.speechEnds+=1;log('SPEECH_ENDED',{count:proof.speechEnds,epoch});if(responseWindowClosing){disableVoice({persist:false});return;}if(voiceOn){recognition=null;recognitionStarting=false;recognitionListening=false;scheduleListening(POST_SPEECH_LISTEN_DELAY,'speech-end');}else setAgentState('idle');}
   function browserSpeak(text,epoch){
     const message=String(text||'').trim();
     if(!message||!('speechSynthesis' in window)||!window.SpeechSynthesisUtterance){onSpeechEnd(epoch);return;}
@@ -698,7 +740,7 @@
 
   async function submitVoiceTranscript(text){const transcript=String(text||'').trim();if(!transcript)return;if(applyStopControl(transcript,'transcript'))return;resetPendingFinal();if(isLowValueTranscript(transcript)&&!isImmediateBargeCommand(transcript)){proof.fillerRejects+=1;processing=false;voiceSubmitPending=false;updateComposer('');log('TRANSCRIPT_FILLER_REJECTED',{text:transcript,count:proof.fillerRejects});if(voiceOn)scheduleListening(40,'filler');return;}if(processing||speaking||textBusy||activeRequest){queuedTranscript=transcript;log('TRANSCRIPT_QUEUED',{text:transcript});return;}const filterGeneration=voiceDispatchGeneration;let decision={allowed:true};if(window.VP3VoiceGuard)try{decision=await window.VP3VoiceGuard.check(transcript,()=>voiceOn&&filterGeneration===voiceDispatchGeneration&&!textBusy&&!processing&&!speaking)||decision;}catch(error){decision.allowed=!window.VP3VoiceGuard?.isKnownOnly();}if(!voiceOn||filterGeneration!==voiceDispatchGeneration)return;if(!decision.allowed){if(input.value.trim()===transcript)updateComposer('');scheduleListening(150,'background-voice-filter');return;}proof.submits+=1;voiceSubmitPending=true;processing=true;if(responseWindowOwned)finishResponseWindow();updateComposer(transcript);setAgentState('processing','Thinking…');log('TRANSCRIPT_SUBMIT',{text:transcript,count:proof.submits});clearTimeout(voiceSubmitTimer);voiceSubmitTimer=setTimeout(()=>{if(!voiceOn||!voiceSubmitPending||activeRequest)return;voiceSubmitPending=false;processing=false;setAgentState('error','Chat was not submitted. Try again.');scheduleListening(320,'submit-not-dispatched');},2200);try{form.requestSubmit();}catch(error){clearTimeout(voiceSubmitTimer);processing=false;voiceSubmitPending=false;proof.lastError=String(error?.message||error||'Submit failed');setAgentState('error',proof.lastError);if(voiceOn)scheduleListening(320,'submit-error');}}
 
-  function enableVoice({persist=true,start=true,takeover=false}={}){if(!agentVoiceMaster){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Turn on Agent Voice before starting a voice conversation.');return false;}if(typeof SpeechRecognitionCtor!=='function'){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Browser speech recognition is unavailable.');return false;}if(!claimCapture(takeover)){setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}recognitionFailures=0;voiceOn=true;if(persist)writeMode();else syncButton();recognition=null;setAgentState('starting','Connecting microphone…');if(start)startListening('enable');else void ensureProcessedMic();return true;}
+  function enableVoice({persist=true,start=true,takeover=false}={}){if(releaseBlocked){setAgentState('error','The browser speech service did not release the microphone. Reload this page to reconnect.');return false;}if(voiceOn&&!responseWindowClosing){if(persist){clearTimeout(responseWindowTimer);clearTimeout(responseCleanupTimer);responseWindowOwned=false;responseWindowUntil=0;writeMode();}if(start&&!recognition&&!bargeRecognition&&!processing&&!speaking)startListening('already-enabled');return true;}if(!agentVoiceMaster){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Turn on Agent Voice before starting a voice conversation.');return false;}if(typeof SpeechRecognitionCtor!=='function'){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Browser speech recognition is unavailable.');return false;}if(!claimCapture(takeover)){setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}recognitionFailures=0;bargeFailures=0;voiceOn=true;if(persist)writeMode();else syncButton();recognition=null;setAgentState('starting','Connecting microphone…');if(start)startListening('enable');else void ensureProcessedMic();return true;}
   function disableVoice({persist=true}={}){clearTimeout(responseWindowTimer);clearTimeout(responseCleanupTimer);responseWindowOwned=false;responseWindowClosing=false;responseWindowUntil=0;window.dispatchEvent(new CustomEvent('vp3:reply-window',{detail:{active:false}}));voiceOn=false;if(persist)writeMode();else syncButton();resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();stopRecognition('off',true);releaseProcessedMic('voice-off');releaseCapture();recognition=null;recognitionStarting=false;recognitionListening=false;stopBarge('off');bargeCapturing=false;bargeLastText='';activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}cancelActiveRequest();processing=false;speaking=false;queuedTranscript='';setAgentState('idle');}
   async function toggleVoice(){if(voiceOn){disableVoice({persist:true});return;}if(!(await ensureAgentVoiceMaster()))return;let takeover=false;if(!claimCapture()){if(!window.confirm('Another tab is using voice capture. Switch capture to this tab?'))return;takeover=true;}if(!introPresented&&boot.intro?.greeting){enableVoice({persist:true,start:false,takeover});presentIntro();}else enableVoice({persist:true,start:true,takeover});}
 
