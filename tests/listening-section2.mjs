@@ -166,7 +166,10 @@ if(cloud){
   api.speakAnswer('The answer continues here');spoken[0].onstart();await flush();await timer.advance(1);
   assert.equal(api.state().speaking,true);assert.equal(api.state().proof.bargeStarts,1);
   instances.at(-1).onresult(result('stop'));await flush();
-  assert.equal(api.state().speaking,false);assert.equal(api.state().proof.stopControls,1);assert.equal(api.state().recognitionListening,true);
+  assert.equal(api.state().speaking,false);assert.equal(api.state().proof.stopControls,1);
+  // Native capture must release before the post-speech listening restart.
+  assert.equal(api.state().recognitionListening,false);await timer.advance(360);
+  assert.equal(api.state().recognitionListening,true);
   api.disableVoice();await flush();assert.equal(api.state().voiceOn,false);
   api.enableVoice();await flush();assert.equal(api.state().recognitionListening,true);api.disableVoice();
   const transcription=browser();clock(transcription);transcription.window.SpeechRecognition=NativeRecognition;
@@ -210,7 +213,7 @@ if(cloud){
  await test('Chat bounds recognizers ending before startup and allows an explicit retry',async()=>{
   const b=browser(),timer=clock(b);let starts=0;
   b.window.SpeechRecognition=class{start(){starts++;queueMicrotask(()=>this.onend?.());}abort(){this.onend?.();}};
-  const api=chat(b);api.enableVoice();await timer.advance(5000);
+  const api=chat(b);api.enableVoice();await flush();await timer.advance(5000);
   assert.equal(starts,3);assert.equal(api.state().voiceOn,false);assert.match(b.element('chatVoiceStatus').textContent,/retry/i);
   api.enableVoice();await flush();assert.equal(starts,4);api.disableVoice();
  });
@@ -270,15 +273,15 @@ if(cloud){
  await test('Chat allows a slow first connection and Stop invalidates pending startup',async()=>{
   const b=browser(),timer=clock(b);let starts=0,old;
   b.window.SpeechRecognition=class{start(){starts++;old=this;b.context.setTimeout(()=>this.onstart?.(),5000);}abort(){this.onend?.();}};
-  const api=chat(b);api.enableVoice();await timer.advance(5000);
+  const api=chat(b);api.enableVoice();await flush();await timer.advance(5000);
   assert.equal(starts,1);assert.equal(api.state().recognitionListening,true);assert.equal(api.state().proof.recognitionStartTimeouts,0);
-  api.disableVoice();api.enableVoice();const cancelled=old;api.disableVoice();await timer.advance(15000);
+  api.disableVoice();api.enableVoice();await flush();const cancelled=old;api.disableVoice();await timer.advance(15000);
   cancelled.onstart();cancelled.onend();assert.equal(starts,2);assert.equal(api.state().voiceOn,false);assert.equal(api.state().recognitionListening,false);assert.equal(timer.pending.size,0);
  });
  await test('Chat startup watchdog bounds silent failures and rejects late start callbacks',async()=>{
   const b=browser(),timer=clock(b);let starts=0,old;
   b.window.SpeechRecognition=class{start(){starts++;old=this;}abort(){this.onend?.();}};
-  const api=chat(b);api.enableVoice();await timer.advance(35000);
+  const api=chat(b);api.enableVoice();await flush();await timer.advance(35000);
   assert.equal(starts,3);assert.equal(api.state().proof.recognitionStartTimeouts,3);assert.equal(api.state().voiceOn,false);
   old.onstart();old.onend();assert.equal(api.state().recognitionListening,false);assert.match(b.element('chatVoiceStatus').textContent,/retry/i);assert.equal(timer.pending.size,0);
  });
@@ -291,7 +294,7 @@ if(cloud){
   const b=browser(),timer=clock(b);let sent=0;
   b.window.SpeechRecognition=class{start(){this.onstart?.();}abort(){this.onend?.();}};
   b.element('chatForm').requestSubmit=()=>sent++;
-  const api=chat(b);api.enableVoice();const old=api.state().recognition;old.onresult(result(phrase));await timer.advance(2500);
+  const api=chat(b);api.enableVoice();await flush();const old=api.state().recognition;old.onresult(result(phrase));await timer.advance(2500);
   assert.equal(sent,0);assert.equal(api.state().voiceOn,false);assert.equal(api.state().recognitionListening,false);assert.equal(b.storage.get('stonefellow:voice-mode:1'),'0');
   old.onresult(result('late echo'));await timer.advance(2500);assert.equal(sent,0);
  });
@@ -312,7 +315,7 @@ if(cloud){
   }else if(phrase!=='new question please'){
    assert.equal(api.state().voiceOn,true);
    assert.equal(api.state().proof.stopControls,1);assert.equal(b.events.filter(e=>e.type==='stonefellow:agent-stop').length,1);assert.equal(sent.length,0);
-   assert.equal(api.state().recognition,natives[1]);assert.equal(api.state().recognitionListening,true);
+   await timer.advance(360);assert.equal(api.state().recognition,natives[1]);assert.equal(api.state().recognitionListening,true);
   }else{assert.equal(api.state().voiceOn,true);assert.deepEqual(sent,[phrase]);assert.equal(api.state().proof.interruptions,1);}
   api.disableVoice();await timer.advance(1000);assert.equal(api.state().recognitionListening,false);
  });
