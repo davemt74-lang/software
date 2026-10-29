@@ -80,7 +80,9 @@ jobs:
       - name: Cloud ordinary composer task mode
         run: node tests/agent-missions-cloud-a5c5-browser.mjs
       - name: Compact Chat canvas and routed voice conversation
-        run: node tests/chat-canvas-voice-browser.mjs
+        run: |
+          node tests/chat-canvas-voice-browser.mjs
+          node tests/agent-eyes-listening-handoff-browser.mjs
       - name: Shared Agent Voice menu, greeting and movement
         run: |
           php tests/agent-voice-preferences.php

@@ -14,9 +14,9 @@
   })().catch(()=>{});
 
   async function api(url,body,keepalive=false){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',keepalive,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify({...body,csrf_token:cfg.csrf}):undefined});const data=await r.json();if(!r.ok||data.ok===false)throw Error(data.error||'Agent request failed.');return data;}
-  async function samples(mode,id,value){
+  async function samples(mode,id,value,isCurrent=()=>true){
     const db=await new Promise((resolve,reject)=>{const request=indexedDB.open(`vp3-eyes-local-${cfg.ownerKey}`,1);request.onupgradeneeded=()=>request.result.createObjectStore('samples',{keyPath:'id'});request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
-    try{return await new Promise((resolve,reject)=>{const tx=db.transaction('samples',mode==='read'?'readonly':'readwrite'),store=tx.objectStore('samples');const request=mode==='read'?store.getAll():mode==='remove'?store.delete(String(id)):store.put({id:String(id),embeddings:value});let result;request.onsuccess=()=>{result=request.result;};tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('Local samples could not be saved.'));});}finally{db.close();}
+    try{return await new Promise((resolve,reject)=>{if(mode!=='read'&&!isCurrent())return reject(Error('Enrollment stopped.'));const tx=db.transaction('samples',mode==='read'?'readonly':'readwrite'),store=tx.objectStore('samples');const request=mode==='read'?store.getAll():mode==='remove'?store.delete(String(id)):store.put({id:String(id),...(Array.isArray(value)?{embeddings:value}:value)});let result;request.onsuccess=()=>{if(mode!=='read'&&!isCurrent()){tx.abort();return;}result=request.result;};tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('Local samples could not be saved.'));});}finally{db.close();}
   }
   async function saveTrainedLocal(id,vector,lib,isCurrent){
     const db=await new Promise((resolve,reject)=>{const r=indexedDB.open(`vp3-eyes-local-${cfg.ownerKey}`,1);r.onupgradeneeded=()=>r.result.createObjectStore('samples',{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
@@ -37,6 +37,7 @@
     removeParticipant:async id=>api(cfg.participantsEndpoint,{action:'delete_agent_participant',participant_id:Number(id)}),
     isMainChat:()=>!!$('chatForm'),focusChat:()=>$('chatInput')?.focus(),
     busy:()=>Boolean(['processing','thinking','speaking','starting'].includes(state().state)||recording()||$('sendChatButton')?.disabled||$('chatInput')?.value.trim()),
+    beginVoiceEnrollment:()=>window.VP3ConversationControls?.beginEnrollmentCapture?.(),
     listen:()=>{if(!window.VP3ConversationControls?.isEnabled?.())$('chatVoiceButton')?.click();},
     responseWindow:()=>window.VP3AgentOrb?.listenForResponse?.(),
     cancelResponseWindow:()=>window.VP3AgentOrb?.cancelResponseWindow?.(),
@@ -49,7 +50,7 @@
     cameraAllowed:async()=>!document.hidden&&!!window.isSecureContext&&!!navigator.mediaDevices?.getUserMedia&&!Array.from(document.querySelectorAll('video')).some(v=>!v.closest('.vp3-eyes-camera')&&v.srcObject?.active===true),
     loadEyesProfiles:async()=>{
       const [data,local]=await Promise.all([api(cfg.participantsEndpoint),samples('read')]);
-      return data.profiles.map(p=>({id:String(p.id),name:p.display_name,recognitionEnabled:p.recognition_consent===true,embeddings:p.recognition_consent===true?(local.find(x=>x.id===String(p.id))?.embeddings||[]):[]}));
+      return data.profiles.map(p=>({id:String(p.id),name:p.display_name,recognitionEnabled:p.recognition_consent===true,portraits:p.recognition_consent===true?(local.find(x=>x.id===String(p.id))?.portraits||[]):[],embeddings:p.recognition_consent===true?(local.find(x=>x.id===String(p.id))?.embeddings||[]):[]}));
     },
     introduceEyes:async({name,isCurrent=()=>true})=>{
       const data=await api(cfg.participantsEndpoint);if(!isCurrent())throw Error('Introduction stopped.');
@@ -59,7 +60,7 @@
       const created=await api(cfg.participantsEndpoint,{action:'save_profile',display_name:name,relationship:'guest'});
       const p=created.profiles.find(p=>String(p.id)===String(created.participant_id));if(!p)throw Error('Participant name could not be saved.');return {id:String(p.id),name:p.display_name};
     },
-    enrollEyes:async({id,name,embeddings,isCurrent=()=>true})=>{
+    enrollEyes:async({id,name,embeddings,portraits=[],isCurrent=()=>true})=>{
       if(!isCurrent())throw Error('Enrollment stopped.');
       let data=await api(cfg.participantsEndpoint);
       if(!isCurrent())throw Error('Enrollment stopped.');
@@ -68,7 +69,8 @@
       if(!isCurrent())throw Error('Enrollment stopped.');
       await api(cfg.participantsEndpoint,{action:'allow_local_visual_recognition',participant_id:Number(id),consent_confirmed:true});
       if(!isCurrent())throw Error('Enrollment stopped.');
-      await samples('write',id,embeddings);
+      const pictures=portraits.filter(p=>typeof p?.image==='string'&&p.image.length<=65536&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.image)).slice(-3);
+      await samples('write',id,{embeddings,portraits:pictures},isCurrent);return {id};
     },
     loadVoiceProfiles:async()=>{const [data,local]=await Promise.all([api(cfg.participantsEndpoint),samples('read')]);return data.profiles.map(p=>{const voice=local.find(v=>v.id==='voice:'+p.id);return {id:String(p.id),name:p.display_name,voiceTrainedProfile:p.recognition_consent===true?local.find(v=>v.id==='trained-voice:'+p.id)?.profile||null:null,voiceEmbeddings:voice?.embeddings||[],voiceRecognitionEnabled:p.recognition_consent===true&&!!voice,voiceProfileReady:p.recognition_consent===true&&(voice?.embeddings?.length||0)>=3};});},
     saveTrainedVoiceSample:async({id,embedding,isCurrent})=>{const lib=await import(new URL('./voice-trained-core.js',new URL(cfg.trainedVoiceUrl,location.href)).href),vector=lib.unitVector(embedding);const rows=await adapter.loadVoiceProfiles(),p=rows.find(p=>p.id===String(id));if(!vector||!p||!isCurrent())throw Error('Trained voice enrollment stopped.');await api(cfg.participantsEndpoint,{action:'allow_local_voice_recognition',participant_id:Number(id),consent_confirmed:true});if(!isCurrent())throw Error('Trained voice enrollment stopped.');const profile=await saveTrainedLocal(id,vector,lib,isCurrent);return {...p,voiceTrainedProfile:profile,voiceEmbeddings:profile.embeddings,voiceProfileReady:profile.embeddings.length>=lib.MIN_SAMPLES};},

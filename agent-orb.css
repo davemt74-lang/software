@@ -58,3 +58,5 @@ html[data-vp3-orb-embed] .sidebar,html[data-vp3-orb-embed] .topbar,html[data-vp3
 .vp3-orb-controls{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .15s ease}
 .vp3-orb-root:hover .vp3-orb-controls,.vp3-orb-root:focus-within .vp3-orb-controls,.vp3-orb-root[data-controls-open=true] .vp3-orb-controls{opacity:1;visibility:visible;pointer-events:auto}
 @media(prefers-reduced-motion:reduce){.vp3-orb-controls{transition:none}}
+
+.vp3-eyes-portraits{display:flex;gap:8px;flex-wrap:wrap}.vp3-eyes-portraits:empty{display:none}.vp3-eyes-portraits img{width:80px;height:80px;border-radius:8px;object-fit:cover;border:1px solid #536b85}

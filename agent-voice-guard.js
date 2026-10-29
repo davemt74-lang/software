@@ -20,12 +20,39 @@
     panel.addEventListener('toggle',()=>{if(panel.open)void refresh();});
     q('[data-voice-filter]').addEventListener('change',()=>{enabled=q('[data-voice-filter]').checked;if(!enabled){knownOnly=false;q('[data-voice-known]').checked=false;learning=null;}persist();});
     q('[data-voice-known]').addEventListener('change',async()=>{const rows=await profiles().catch(()=>[]);knownOnly=q('[data-voice-known]').checked;if(knownOnly&&!rows.some(p=>window.VP3TrainedVoice?.enabled()?window.VP3TrainedVoice.readyProfile(p):p.voiceRecognitionEnabled&&p.voiceProfileReady)){knownOnly=false;q('[data-voice-known]').checked=false;say('Learn a participant voice before enabling known voices only.');}if(knownOnly){enabled=true;q('[data-voice-filter]').checked=true;}persist();});
-    for(const selector of ['[data-voice-person]','[data-voice-consent]'])q(selector).addEventListener('change',()=>{learning=null;epoch++;window.VP3AgentOrb?.cancelVoiceEnrollment?.();if(selector==='[data-voice-person]')q('[data-voice-consent]').checked=false;});
-    async function beginEnrollment(id){await refresh();const p=(await profiles()).find(p=>String(p.id)===String(id));if(!p)return say('Choose an existing participant.');q('[data-voice-person]').value=String(id);q('[data-voice-consent]').checked=true;enabled=true;q('[data-voice-filter]').checked=true;persist();learning={id:String(id),epoch};say(window.VP3TrainedVoice?.enabled()?'Speak three clean phrases of at least three seconds each, alone and without music.':'Speak three short phrases, alone and without music. Each clean phrase adds one local sample.');adapter.listen();}
-    q('[data-voice-learn]').addEventListener('click',()=>{const id=q('[data-voice-person]').value;if(!id||!q('[data-voice-consent]').checked)return say('Choose a participant and allow local voice features first.');if(window.VP3AgentOrb?.startVoiceEnrollment?.(id)){q('[data-voice-consent]').checked=false;say('Voice learning opened in the existing chat. Speak three clean phrases.');return;}void beginEnrollment(id).catch(()=>say('Voice enrollment is unavailable.'));});
+    let enrollmentSerial=0,startingId='',enrollmentEnd=null;
+    function releaseEnrollment(){const end=enrollmentEnd;enrollmentEnd=null;end?.();}
+    function cancelEnrollment(){enrollmentSerial++;startingId='';learning=null;q('[data-voice-consent]').checked=false;clear();releaseEnrollment();}
+    q('[data-voice-person]').addEventListener('change',()=>{cancelEnrollment();window.VP3AgentOrb?.cancelVoiceEnrollment?.();});
+    q('[data-voice-consent]').addEventListener('change',()=>{
+      if(!q('[data-voice-consent]').checked){cancelEnrollment();window.VP3AgentOrb?.cancelVoiceEnrollment?.();return;}
+      void startLearning();
+    });
+    async function beginEnrollment(id){
+      id=String(id);if(startingId===id||learning?.id===id)return;
+      const serial=++enrollmentSerial;startingId=id;q('[data-voice-consent]').checked=true;
+      try{
+        await refresh();const p=(await profiles()).find(p=>String(p.id)===id);
+        if(serial!==enrollmentSerial||!q('[data-voice-consent]').checked)return;
+        if(!p)throw Error('Choose an existing participant.');
+        q('[data-voice-person]').value=id;enabled=true;q('[data-voice-filter]').checked=true;persist();learning={id,epoch};
+        say(window.VP3TrainedVoice?.enabled()?'Speak three clean phrases of at least three seconds each, alone and without music.':'Speak three short phrases, alone and without music. Each clean phrase adds one local sample.');
+        const end=await adapter.beginVoiceEnrollment?.();
+        if(serial!==enrollmentSerial){end?.();return;}
+        enrollmentEnd=typeof end==='function'?end:null;if(!enrollmentEnd)adapter.listen();
+      }catch(error){cancelEnrollment();say(String(error.message||'Voice enrollment is unavailable.'));}
+      finally{if(serial===enrollmentSerial)startingId='';}
+    }
+    async function startLearning(){
+      const id=q('[data-voice-person]').value;
+      if(!id||!q('[data-voice-consent]').checked)return say('Choose a participant and allow local voice features first.');
+      if(window.VP3AgentOrb?.startVoiceEnrollment?.(id)){q('[data-voice-consent]').checked=false;say('Voice learning opened in the existing chat. Speak three clean phrases.');return;}
+      await beginEnrollment(id);
+    }
+    q('[data-voice-learn]').addEventListener('click',()=>void startLearning());
     q('[data-voice-forget]').addEventListener('click',async()=>{const id=q('[data-voice-person]').value;if(!id)return;clear();learning=null;window.VP3AgentOrb?.cancelVoiceEnrollment?.();try{const p=(await profiles()).find(p=>String(p.id)===id);await adapter.forgetVoice(id);window.dispatchEvent(new CustomEvent('vp3:participant-forgotten',{detail:{id,name:p?.name||''}}));await refresh();say('Local voice features removed. Participant names and visual samples are preserved.');}catch(_){say('Voice features could not be removed.');}});
     function clear(){chunks=[];length=0;lastAudio=0;pendingContext=null;epoch++;window.VP3TrainedVoice?.clear();window.VP3ParticipantContinuity?.clearSpeaker?.();}
-    function detach(keepLearning=false){clear();attachment=null;if(keepLearning&&learning)learning.epoch=epoch;else learning=null;for(const n of [processor,source,high,low,mute])try{n?.disconnect();}catch(_){}if(processor)processor.onaudioprocess=null;processor=source=high=low=mute=null;}
+    function detach(keepLearning=false){clear();attachment=null;if(keepLearning&&learning)learning.epoch=epoch;else {learning=null;enrollmentSerial++;startingId='';releaseEnrollment();}for(const n of [processor,source,high,low,mute])try{n?.disconnect();}catch(_){}if(processor)processor.onaudioprocess=null;processor=source=high=low=mute=null;}
     function attach(stream,context){
       detach(true);if(!enabled||!stream||!context?.createScriptProcessor)return false;
       void module().catch(()=>{});void profiles().catch(()=>{});
@@ -53,8 +80,8 @@
       if(learning&&learning.epoch===token&&embedding&&q('[data-voice-consent]').checked){
         const selected=learning;const saved=await adapter[trained?'saveTrainedVoiceSample':'saveVoiceSample']({id:selected.id,embedding,isCurrent:()=>current()&&learning===selected&&q('[data-voice-consent]').checked});
         if(!current())return {allowed:false,reason:'cancelled'};
-        if(saved.voiceProfileReady){learning=null;q('[data-voice-consent]').checked=false;say(`${saved.name} voice learned. Local matches remain provisional.`);}else say(`${saved.voiceEmbeddings.length} of 3 local voice samples saved.`);
-        return {allowed:true,learning:true};
+        if(saved.voiceProfileReady){learning=null;q('[data-voice-consent]').checked=false;releaseEnrollment();say(`${saved.name} voice learned. Local matches remain provisional.`);}else say(`${saved.voiceEmbeddings.length} of 3 local voice samples saved.`);
+        return {allowed:false,learning:true,reason:'enrollment'};
       }
       const match=trained?await window.VP3TrainedVoice.match(embedding,rows):lib.bestVoiceParticipantMatch(embedding,rows);
       if(!current())return {allowed:false,reason:'cancelled'};
@@ -74,7 +101,7 @@
     function takeContext(text){const p=pendingContext;pendingContext=null;if(!p||Date.now()-p.at>=5000||p.text!==String(text))return null;return window.VP3ParticipantContinuity&&!window.VP3ParticipantContinuity.assessVoice(p.value,{notify:false}).accepted?null:p.value;}
     function reset(){clear();if(learning)learning.epoch=epoch;}
     function canInterrupt(){if(!enabled||!knownOnly)return true;if(Date.now()-cachedAt>3000&&!refreshing){refreshing=true;void profiles().catch(()=>{}).finally(()=>refreshing=false);}if(!featureApi||Date.now()-cachedAt>5000||performance.now()-lastAudio>700)return false;const clean=chunks.filter(c=>c.rms>=Math.max(.008,noise*2.5)),size=clean.reduce((n,c)=>n+c.data.length,0);if(size<(window.VP3TrainedVoice?.enabled()?rate*1.5:rate*.45))return false;const pcm=new Float32Array(size);let at=0;for(const c of clean){pcm.set(c.data,at);at+=c.data.length;}if(window.VP3TrainedVoice?.enabled()){const token=epoch;return window.VP3TrainedVoice.canInterrupt(pcm,rate,cachedProfiles,()=>token===epoch&&performance.now()-lastAudio<700);}const match=featureApi.bestVoiceParticipantMatch(featureApi.voiceEmbeddingFromPcm(pcm,rate),cachedProfiles);return match.matched&&(!window.VP3ParticipantContinuity||window.VP3ParticipantContinuity.assessVoice({participant_id:match.participant.id,display_name:match.participant.name},{notify:false}).accepted);}
-    window.VP3VoiceGuard={attach,detach,check,takeContext,hasRecognizedTurn:text=>!!pendingContext&&pendingContext.text===String(text)&&Date.now()-pendingContext.at<5000&&(!window.VP3ParticipantContinuity||window.VP3ParticipantContinuity.assessVoice(pendingContext.value,{notify:false}).accepted),wasVoiceTurn:text=>!!lastChecked&&lastChecked.text===String(text)&&Date.now()-lastChecked.at<5000,clear,beginEnrollment,canInterrupt,inviteIntroduction:mode=>{invitation=['name','visual-consent'].includes(mode)?mode:'';invitationUntil=Date.now()+90000;},cancelEnrollment:()=>{clear();learning=null;q('[data-voice-consent]').checked=false;},reset,isKnownOnly:()=>knownOnly,isEnabled:()=>enabled};
+    window.VP3VoiceGuard={enrolling:()=>!!learning,attach,detach,check,takeContext,hasRecognizedTurn:text=>!!pendingContext&&pendingContext.text===String(text)&&Date.now()-pendingContext.at<5000&&(!window.VP3ParticipantContinuity||window.VP3ParticipantContinuity.assessVoice(pendingContext.value,{notify:false}).accepted),wasVoiceTurn:text=>!!lastChecked&&lastChecked.text===String(text)&&Date.now()-lastChecked.at<5000,clear,beginEnrollment,canInterrupt,inviteIntroduction:mode=>{invitation=['name','visual-consent'].includes(mode)?mode:'';invitationUntil=Date.now()+90000;},cancelEnrollment,reset,isKnownOnly:()=>knownOnly,isEnabled:()=>enabled};
     window.addEventListener('homeserver:voice-playback',event=>{if(event.detail?.active===false)reset();});
     window.addEventListener('stonefellow:agent-proactive-speech',event=>{if(event.detail?.state==='end')reset();});
     window.dispatchEvent(new Event('vp3:voice-guard-ready'));
