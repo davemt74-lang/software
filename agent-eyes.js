@@ -6,7 +6,7 @@
     const core=window.VP3EyesCore.create(),session=crypto.randomUUID();
     let generation=0,stream=null,engine=null,timer=0,profiles=[],observations=[],currentRows=[],starting=false,enrolling=false,pendingEnrollment=false,pending=[],flushing=false,profileVersion=0,profileSignature='',introduction=null,savingIntroduction=false,recognitionOffer=null;
     const panel=document.createElement('section');panel.className='vp3-eyes-panel';panel.hidden=true;panel.setAttribute('aria-label','Agent Eyes');
-    panel.innerHTML='<header><strong>Agent Eyes</strong><button type="button" data-eyes-close aria-label="Close Agent Eyes">×</button></header><div class="vp3-eyes-content"><p data-eyes-status role="status">Camera is off.</p><div class="vp3-eyes-actions"><button type="button" data-eyes-start>Start camera</button><button type="button" data-eyes-stop disabled>Stop camera</button></div><div class="vp3-eyes-camera"><video muted playsinline></video><div class="vp3-eyes-boxes"></div></div><p data-eyes-people>No participants in view.</p><label><input type="checkbox" data-eyes-greetings checked> Greet arrivals automatically</label><details><summary>Introduce / recognize a participant</summary><p>A tracking ID is temporary. A local visual match is provisional and grants no account access.</p><label>Existing participant<select data-eyes-profile aria-label="Existing participant"></select></label><label>Or introduce someone<input type="text" data-eyes-name maxlength="120" placeholder="Participant name"></label><label><input type="checkbox" data-eyes-consent> This participant agrees to save local visual samples for recognition.</label><div class="vp3-eyes-actions"><button type="button" data-eyes-enroll>Save three local samples</button><button type="button" data-eyes-forget>Forget local samples</button></div></details><details><summary>Recent Agent Eyes activity</summary><ol data-eyes-history></ol></details><p>Participant frames and visual samples stay in this browser. TV Watching has separate controls for cropped-screen sharing and account history.</p></div>';
+    panel.innerHTML='<header><strong>Agent Eyes</strong><button type="button" data-eyes-close aria-label="Close Agent Eyes">×</button></header><div class="vp3-eyes-content"><p data-eyes-status role="status">Camera is off.</p><div class="vp3-eyes-actions"><button type="button" data-eyes-start>Start camera</button><button type="button" data-eyes-stop disabled>Stop camera</button></div><div class="vp3-eyes-camera"><video muted playsinline></video><div class="vp3-eyes-boxes"></div></div><p data-eyes-people>No participants in view.</p><label><input type="checkbox" data-eyes-pause-hidden checked> Pause camera when this page is hidden</label><label><input type="checkbox" data-eyes-greetings checked> Greet arrivals automatically</label><details><summary>Introduce / recognize a participant</summary><p>A tracking ID is temporary. A local visual match is provisional and grants no account access.</p><label>Existing participant<select data-eyes-profile aria-label="Existing participant"></select></label><label>Or introduce someone<input type="text" data-eyes-name maxlength="120" placeholder="Participant name"></label><label><input type="checkbox" data-eyes-consent> This participant agrees to save local visual samples for recognition.</label><div class="vp3-eyes-actions"><button type="button" data-eyes-enroll>Save three local samples</button><button type="button" data-eyes-forget>Forget local samples</button></div></details><details><summary>Recent Agent Eyes activity</summary><ol data-eyes-history></ol></details><p>Participant frames and visual samples stay in this browser. TV Watching has separate controls for cropped-screen sharing and account history.</p></div>';
     document.body.append(panel);const q=s=>panel.querySelector(s),video=q('video'),status=q('[data-eyes-status]');
     const speakerStatus=document.createElement('p');speakerStatus.dataset.eyesSpeaker='';speakerStatus.setAttribute('role','status');q('.vp3-eyes-camera').after(speakerStatus);
     const legend=document.createElement('p');legend.textContent='Blue: tracked participant. Green: recent voice match (up to 3 seconds).';speakerStatus.after(legend);
@@ -20,6 +20,10 @@
     window.addEventListener('vp3:active-speaker',paintSpeaker);
     const movement=document.createElement('div');movement.innerHTML='<label><input type="checkbox" data-eyes-follow checked> Follow participant movement</label><label><input type="checkbox" data-eyes-mirror checked> Mirror camera movement</label>';q('[data-eyes-greetings]').closest('label').after(movement);
     for(const key of ['follow','mirror']){const input=q(`[data-eyes-${key}]`),pref=`vp3:eyes:${key}:${adapter.ownerKey}`;try{input.checked=localStorage.getItem(pref)!=='off';}catch(_){}input.addEventListener('change',()=>{try{localStorage.setItem(pref,input.checked?'on':'off');}catch(_){}draw(currentRows);});}
+    const pauseHidden=q('[data-eyes-pause-hidden]'),pauseKey=`vp3:eyes:pause-hidden:${adapter.ownerKey}`;
+    try{pauseHidden.checked=localStorage.getItem(pauseKey)!=='off';}catch(_){}
+    const cameraAllowed=()=>adapter.cameraAllowed({allowHidden:!pauseHidden.checked});
+    pauseHidden.addEventListener('change',()=>{try{localStorage.setItem(pauseKey,pauseHidden.checked?'on':'off');}catch(_){}if(pauseHidden.checked&&document.hidden)void stop('Camera stopped while this page is hidden.');});
     const say=text=>{status.textContent=String(text);};
     const history=q('[data-eyes-history]');
     const portraits=document.createElement('div');portraits.className='vp3-eyes-portraits';portraits.setAttribute('aria-label','Local visual samples');q('[data-eyes-enroll]').closest('.vp3-eyes-actions').after(portraits);
@@ -96,24 +100,24 @@
     async function scan(token){
       if(token!==generation||!stream)return;
       try{
-        if(!await adapter.cameraAllowed())return void stop('Camera stopped by privacy or session settings.');
+        if(!await cameraAllowed())return void stop('Camera stopped by privacy or session settings.');
         await loadProfiles();if(token!==generation||!stream)return;
         if(enrolling){timer=setTimeout(()=>void scan(token),900);return;}
         const result=await detectFrame();if(token!==generation||!stream)return;if(enrolling){timer=setTimeout(()=>void scan(token),900);return;}
         // Re-read revocations after inference; stale matches cannot revive a profile.
         await loadProfiles();if(token!==generation||!stream)return;
-        if(!await adapter.cameraAllowed())return void stop('Camera stopped by privacy settings.');
+        if(!await cameraAllowed())return void stop('Camera stopped by privacy settings.');
         if(token!==generation||!stream)return;
         observations=roomFaces(result).slice(0,8).map(f=>({box:[f.box[0]/video.videoWidth,f.box[1]/video.videoHeight,f.box[2]/video.videoWidth,f.box[3]/video.videoHeight],embedding:f.embedding?Array.from(f.embedding):null}));
         window.VP3TVWatching?.observe(result.object,video,()=>token===generation&&!!stream&&!document.hidden);
         const update=core.update(observations,profiles);currentRows=update.rows;draw(update.rows);update.events.forEach(log);if(pendingEnrollment&&q('[data-eyes-consent]').checked&&currentRows.length===1)void enroll();
         if(introduction&&(currentRows.length!==1||currentRows[0].track_id!==introduction.track||currentRows[0].participant_id)){introduction=null;window.VP3AgentOrb?.setIntroductionMode?.('');}
         if(recognitionOffer&&(Date.now()>recognitionOffer.expires||currentRows.length!==1||currentRows[0].track_id!==recognitionOffer.track)){recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');}
-        if(recognitionOffer&&!recognitionOffer.prompted&&!adapter.busy()){
+        if(recognitionOffer&&!recognitionOffer.prompted&&!document.hidden&&!adapter.busy()){
           const offer=recognitionOffer;offer.prompted=true;window.VP3AgentOrb?.setIntroductionMode?.('visual-consent');window.VP3AgentOrb?.bubble(offer.message);
           void Promise.resolve(adapter.greet(offer.message,()=>recognitionOffer===offer&&token===generation&&!!stream)).catch(()=>{});
         }
-        const greeting=q('[data-eyes-greetings]').checked&&!enrolling&&!adapter.busy()?core.greeting():null;
+        const greeting=q('[data-eyes-greetings]').checked&&!document.hidden&&!enrolling&&!adapter.busy()?core.greeting():null;
         if(greeting){
           if(!greeting.participant_id){introduction={track:greeting.track_id,expires:Date.now()+90000};window.VP3AgentOrb?.setIntroductionMode?.('name');}
           // No approval click: show immediately and speak through the existing voice owner.
@@ -129,7 +133,7 @@
       starting=true;const token=++generation;q('[data-eyes-start]').disabled=true;q('[data-eyes-stop]').disabled=false;
       let acquired=null;
       try{
-        if(!await adapter.cameraAllowed())throw Error('Camera is unavailable while privacy is enabled or another camera activity is running.');
+        if(!await cameraAllowed())throw Error('Camera is unavailable while privacy is enabled or another camera activity is running.');
         say('Loading local camera models…');
         if(!engine){
           const module=await import('https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6/dist/human.esm.js');if(token!==generation)return;
@@ -138,7 +142,7 @@
           await engine.load();
         }
         if(token!==generation)return;
-        if(!await adapter.cameraAllowed())throw Error('Camera privacy or session changed.');
+        if(!await cameraAllowed())throw Error('Camera privacy or session changed.');
         acquired=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:{ideal:'user'}},audio:false});
         if(token!==generation){acquired.getTracks().forEach(t=>t.stop());return;}
         stream=acquired;acquired=null;cameraIndicator(true);for(const track of stream.getTracks())track.addEventListener('ended',()=>void stop('Camera disconnected.'),{once:true});video.srcObject=stream;await video.play();if(token!==generation)return;starting=false;
@@ -154,7 +158,7 @@
       try{
         for(let i=0;i<3;i++){
           if(i)await new Promise(resolve=>setTimeout(resolve,700));
-          if(token!==generation||!stream||!q('[data-eyes-consent]').checked||!await adapter.cameraAllowed())throw Error('Enrollment stopped.');
+          if(token!==generation||!stream||!q('[data-eyes-consent]').checked||!await cameraAllowed())throw Error('Enrollment stopped.');
           const result=await detectFrame();
           if(token!==generation||!stream||!q('[data-eyes-consent]').checked||roomFaces(result).length!==1||currentRows[0]?.track_id!==track||currentRows.length!==1)throw Error('Keep the same participant alone in view.');
           const embedding=Array.from(roomFaces(result)[0].embedding||[]);if(window.VP3EyesCore.similarity(embedding,reference)<.8)throw Error('Keep the same participant alone in view.');if(window.VP3EyesCore.similarity(embedding,embedding)<.99)throw Error('Visual sample unavailable.');if(samples.length&&window.VP3EyesCore.similarity(embedding,samples[0])<.8)throw Error('Keep the same participant alone in view.');samples.push(embedding);pictures.push(portrait(roomFaces(result)[0]));showPortraits(pictures);enrollmentSay(`Visual sample ${samples.length} of 3 captured…`);
@@ -168,7 +172,7 @@
     q('[data-eyes-profile]').addEventListener('change',savedPortraits);
     q('[data-eyes-start]').addEventListener('click',()=>void start());q('[data-eyes-stop]').addEventListener('click',()=>void stop());q('[data-eyes-close]').addEventListener('click',()=>{panel.hidden=true;});q('[data-eyes-enroll]').addEventListener('click',()=>void requestEnrollment(true));
     q('[data-eyes-forget]').addEventListener('click',async()=>{const id=q('[data-eyes-profile]').value;if(!id)return say('Choose a participant.');try{await adapter.forgetEyes(id);window.dispatchEvent(new CustomEvent('vp3:participant-forgotten',{detail:{id,name:profiles.find(p=>String(p.id)===id)?.name||''}}));await loadProfiles();savedPortraits();core.clear().forEach(log);currentRows=[];observations=[];introduction=null;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');draw([]);window.VP3VoiceGuard?.clear();say('Local visual samples removed.');}catch(_){say('Local samples could not be removed.');}});
-    const hide=()=>{if(document.hidden)void stop('Camera stopped while this page is hidden.');};document.addEventListener('visibilitychange',hide);
+    const hide=()=>{if(document.hidden&&pauseHidden.checked)void stop('Camera stopped while this page is hidden.');};document.addEventListener('visibilitychange',hide);
     const retry=setInterval(()=>void flush(),5000);
     window.addEventListener('pagehide',()=>{void stop();clearInterval(retry);clearTimeout(speakerTimer);window.removeEventListener('vp3:active-speaker',paintSpeaker);document.removeEventListener('visibilitychange',hide);},{once:true});
     function rejectCurrent(){introduction=null;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');if(!stream||currentRows.length!==1)return;const track=currentRows[0].track_id;core.reject(track);currentRows=currentRows.map(row=>({...row,participant_id:'',display_name:'',identity_source:'unidentified'}));draw(currentRows);introduction={track,expires:Date.now()+90000};window.VP3AgentOrb?.setIntroductionMode?.('name');window.VP3AgentOrb?.bubble('Thanks for correcting me. What is your name?');}
