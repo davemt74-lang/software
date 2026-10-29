@@ -62,7 +62,7 @@ function agent_brain_v99_context(array $user,string $query,int $limit=12): array
     if($conversationId>0&&vp3_agent_memory_scope_conversation_id_v410($pdo,$uid,$conversationId)!==$agentId)$conversationId=0;
     if($conversationId<1){$s=$pdo->prepare('SELECT c.id FROM chat_conversations c WHERE c.user_id=? AND '.$conversationScope.' ORDER BY c.updated_at DESC,c.id DESC LIMIT 1');$s->execute(array_merge([$uid],$conversationParams));$conversationId=(int)$s->fetchColumn();}
     if(function_exists('agent_memory_v123_reconcile_user'))agent_memory_v123_reconcile_user($user);
-    $deep=agent_brain_v99_history_intent($query);$terms=agent_brain_v99_terms($query);$context=[];foreach(agent_brain_v123_system_context($user,$conversationId) as $item)$context[]=$item;
+    $deep=agent_brain_v99_history_intent($query);$terms=agent_brain_v99_terms($query);$context=[];if(function_exists('tv_brain_context_v1')&&table_exists('tv_watching_records_v1'))foreach(tv_brain_context_v1($pdo,$user,$query) as $item)$context[]=$item;foreach(agent_brain_v123_system_context($user,$conversationId) as $item)$context[]=$item;
 
     $archiveCount=agent_brain_v99_scalar('SELECT COUNT(*) FROM agent_chat_archive a WHERE a.user_id=? AND '.$archiveScope,array_merge([$uid],$archiveParams));
     $memoryCount=agent_brain_v99_scalar('SELECT COUNT(*) FROM agent_memory_items m WHERE m.user_id=? AND '.$memoryScope.' AND m.is_active=1',array_merge([$uid],$memoryParams));

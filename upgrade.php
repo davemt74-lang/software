@@ -341,6 +341,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             shared_knowledge_index_ensure_schema_v236();
             profile_agent_ensure_schema();
             personal_capability_ensure_schema_v242();
+            require_once __DIR__.'/includes/tv-watching-v1.php';
+            tv_schema_v1($pdo);
             crm_v180_ensure_schema();
             campaigns_rewards_platform_ensure_schema_v100($pdo);
             campaigns_rewards_ensure_schema_v100($pdo);

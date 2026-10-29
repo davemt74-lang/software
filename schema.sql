@@ -723,3 +723,6 @@ CREATE TABLE IF NOT EXISTS agent_activity_events (
   INDEX idx_agent_activity_transition (user_id,activity_state,created_at),
   CONSTRAINT fk_agent_activity_event_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tv_watching_state_v1 (owner_user_id BIGINT PRIMARY KEY, settings_json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tv_watching_records_v1 (owner_user_id BIGINT NOT NULL, record_key VARCHAR(128) NOT NULL, kind VARCHAR(24) NOT NULL, revision INT NOT NULL DEFAULT 1, updated_at VARCHAR(32) NOT NULL, search_text TEXT NOT NULL, first_seen VARCHAR(32) NOT NULL DEFAULT '', last_seen VARCHAR(32) NOT NULL DEFAULT '', body_json TEXT NOT NULL, PRIMARY KEY(owner_user_id,record_key));

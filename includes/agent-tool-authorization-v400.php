@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-profile-webmcp-v193.php';
 require_once __DIR__.'/vrss-v2b.php';
+require_once __DIR__.'/tv-watching-v1.php';
 
 /**
  * VP3 v4.00 canonical Agent tool authorization and execution boundary.
@@ -316,6 +317,10 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
 {
     $empty=vp3_agent_tool_empty_v400();$pdo=db();
     if(!$pdo)return $empty;
+    if(function_exists('has_permission')&&has_permission('chat.access',$user)&&table_exists('tv_watching_records_v1')){
+        $tv=tv_chat_query_v1($pdo,$user,$query);
+        if(!empty($tv['handled']))return vp3_agent_tool_authorize_result_v400($tv,$user,$query);
+    }
 
     // Voice streaming and canonical Chat share this boundary. The legacy
     // chat.php-only Radar hook did not make Analytics available to either.
