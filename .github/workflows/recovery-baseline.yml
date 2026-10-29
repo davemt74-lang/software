@@ -46,6 +46,9 @@ jobs:
           node --version
           python3 --version
 
+      - name: Upgrade POST database initialization and TV schema readiness
+        run: php tests/upgrade-database-connection.php
+
       - name: TV Watching account history and multimodal provider payloads
         run: |
           php tests/tv-watching-v1.php

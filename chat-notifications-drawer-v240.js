@@ -2,7 +2,7 @@
   'use strict';
 
   const cfg = window.STONEFELLOW_NOTIFICATION_DRAWER || {};
-  if (!cfg.endpoint || !cfg.csrf) return;
+  if (!cfg.endpoint || !cfg.csrf || (!cfg.orbOnly && window.VP3_ACTIVITY_CENTER_INITIALIZED)) return;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
@@ -157,17 +157,25 @@
         <div><small>Stonefellow</small><strong>Activity Center</strong></div>
         <button type="button" data-notification-drawer-close aria-label="Close Activity Center">×</button>
       </header>
-      <nav class="chat-notification-tabs" aria-label="Activity Center sections">
+      <nav class="chat-notification-tabs" role="tablist" aria-label="Activity Center sections">
         <button type="button" data-notification-tab="notifications" class="active">Notifications <em data-notification-tab-count hidden></em></button>
         <button type="button" data-notification-tab="brain">Agent Brain</button>
         <button type="button" data-notification-tab="history">History</button>
+        <button type="button" data-notification-tab="eyes">Agent Eyes</button>
       </nav>
-      <div class="chat-notification-drawer-body" data-notification-drawer-body></div>`;
+      <div id="chatActivityPanel" class="chat-notification-drawer-body" role="tabpanel" data-notification-drawer-body></div>`;
     document.body.append(backdrop, drawer);
 
     backdrop.addEventListener('click', closeDrawer);
     drawer.querySelector('[data-notification-drawer-close]')?.addEventListener('click', closeDrawer);
     drawer.addEventListener('click', handleDrawerClick);
+    drawer.querySelectorAll('[data-notification-tab]').forEach(tab=>{tab.setAttribute('role','tab');tab.id='chatActivityTab-'+tab.dataset.notificationTab;tab.setAttribute('aria-controls','chatActivityPanel');});
+    drawer.querySelector('.chat-notification-tabs').addEventListener('keydown',event=>{
+      const tabs=Array.from(drawer.querySelectorAll('[data-notification-tab]')),index=tabs.indexOf(event.target);
+      if(index<0||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+      activeTab=tabs[next].dataset.notificationTab;render();tabs[next].focus();
+    });
   }
 
   function notificationView() {
@@ -903,14 +911,19 @@
 
   function eyesHistoryView() {
     const events=Array.isArray(state?.brain?.eyes_events)?state.brain.eyes_events:[];
-    if(!events.length)return '';
-    return `<section class="chat-activity-section"><div class="chat-activity-section-head"><div><strong>Agent Eyes Timeline</strong><span>Your workspace presence · browser reports, provisional identity</span></div></div><div class="chat-brain-timeline">${events.slice(0,30).map(event=>`<article class="chat-brain-event"><div><strong>${esc(String(event.event_type||'').replace('agent_eyes.','').replaceAll('_',' '))}</strong><p>${esc(event.payload?.summary||'Participant activity')}</p><small>${esc(relative(event.received_at||event.occurred_at))} · Agent Eyes · no authentication authority</small></div></article>`).join('')}</div></section>`;
+    return `<section class="chat-activity-section" data-eyes-timeline>
+      <div class="chat-activity-section-head"><div><strong>Agent Eyes Timeline</strong><span>Timestamped presence observations · identity matches are provisional</span></div></div>
+      <div class="chat-brain-timeline">${events.length?events.slice(0,30).map(event=>{
+        const at=event.received_at||event.occurred_at||'';
+        return `<article class="chat-brain-event chat-eyes-event"><span class="chat-brain-event-state" aria-hidden="true"></span><div><strong>${esc(String(event.event_type||'').replace('agent_eyes.','').replaceAll('_',' '))}</strong><p>${esc(event.payload?.summary||'Participant activity')}</p><div class="chat-eyes-event-meta"><time datetime="${esc(at)}" title="${esc(at)}">${esc(relative(at))}</time><span>Agent Eyes · no account authority</span></div></div></article>`;
+      }).join(''):'<div class="chat-activity-empty">No Agent Eyes activity yet. Saved observations will appear here when available.</div>'}</div>
+    </section>`;
   }
 
   function historyView() {
     const rows = Array.isArray(state?.history) ? state.history : [];
     let lastDay = '';
-    return `${eyesHistoryView()}
+    return `
       <section class="chat-activity-section">
         <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Authorized conversation archive for the selected Agent identity</span></div></div>
         <div class="chat-brain-history">
@@ -927,7 +940,7 @@
 
   function render() {
     if (!drawer) return;
-    drawer.querySelectorAll('[data-notification-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.notificationTab === activeTab));
+    drawer.querySelectorAll('[data-notification-tab]').forEach(tab => {const active=tab.dataset.notificationTab===activeTab;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;});
     const count = drawer.querySelector('[data-notification-tab-count]');
     const unread = Number(state?.notifications?.unread || 0) + missionUnread;
     if (count) {
@@ -936,17 +949,18 @@
     }
     const body = drawer.querySelector('[data-notification-drawer-body]');
     if (!body) return;
+    body.setAttribute('aria-labelledby','chatActivityTab-'+activeTab);
     if (!state) {
       body.innerHTML = '<div class="chat-activity-loading">Loading Activity Center…</div>';
       return;
     }
-    body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : notificationView();
+    body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : activeTab === 'eyes' ? eyesHistoryView() : notificationView();
     if(activeTab==='brain'){window.VP3ChatDiagnostics?.renderBrain(body);window.VP3ProjectKnowledgeR6?.renderBrain(body);window.VP3ProjectKnowledgeR7?.renderBrain(body);window.VP3KnowledgeActionsR8?.renderBrain(body);}
     if (activeTab === 'brain' && typeof window.VP3_AGENT_TEAMS_A3_BRAIN === 'function') {
       window.VP3_AGENT_TEAMS_A3_BRAIN(body);
     }
     if (activeTab === 'notifications' && typeof window.VP3_AGENT_MISSION_NOTIFICATIONS === 'function') {
-      const missions=document.createElement('section');missions.className='chat-activity-section';body.prepend(missions);window.VP3_AGENT_MISSION_NOTIFICATIONS(missions);
+      const missions=document.createElement('section');missions.className='chat-activity-section';missions.dataset.missionNotices='';body.prepend(missions);window.VP3_AGENT_MISSION_NOTIFICATIONS(missions);
     }
     updateUnread();
   }
@@ -1345,6 +1359,7 @@
 
   window.addEventListener('vp3:mission-notifications',event=>{missionUnread=Math.max(0,Number(event.detail?.unread)||0);updateUnread();if(drawer?.classList.contains('open'))render();});
   if (!ownNotificationButton()) return;
+  window.VP3_ACTIVITY_CENTER_INITIALIZED=true;
   ensureDrawer();
   keepBellNextToProfile();
   if (!window.VP3_COGNITIVE_PRESENTATION_V510?.ownsBrainPresentation) observeMainFeedBrainPriorities();
@@ -1374,6 +1389,7 @@
     open:openDrawer,
     openBrain:() => { activeTab='brain'; openDrawer(); render(); },
     openHistory:() => { activeTab='history'; openDrawer(); render(); },
+    openEyes:() => { activeTab='eyes'; openDrawer(); render(); },
     close:closeDrawer,
     refresh,
     pollAttention,

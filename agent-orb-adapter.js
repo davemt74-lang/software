@@ -74,5 +74,21 @@
     forgetVoice:async id=>{await samples('remove','voice:'+id);await samples('remove','trained-voice:'+id);},
     forgetEyes:id=>samples('remove',id),recordEyes:event=>api(cfg.eyesEndpoint,event,true),
   };
+  if($('chatForm')&&$('chatThread'))adapter.attachChat=host=>{
+    const thread=$('chatThread'),marker=document.createElement('div');
+    marker.className='vp3-cloud-chat-placeholder';marker.setAttribute('aria-hidden','true');
+    const view=thread.dataset.view,scroll=thread.scrollTop;
+    const canvases=Array.from(thread.querySelectorAll('[data-chat-view]'),node=>({node,hidden:node.hidden}));
+    thread.before(marker);thread.dataset.view='chat';canvases.forEach(({node})=>{node.hidden=true;});host.append(thread);
+    // Keep the one live composer and conversation runtime in place; move the canvas only.
+    const navigate=event=>{if(event.target.closest?.('[data-chat-view-target]'))window.VP3AgentOrb?.close();};
+    document.addEventListener('click',navigate,true);
+    return ()=>{
+      document.removeEventListener('click',navigate,true);marker.replaceWith(thread);
+      if(view===undefined)delete thread.dataset.view;else thread.dataset.view=view;
+      canvases.forEach(({node,hidden})=>{node.hidden=hidden;});
+      if(view&&view!=='chat')thread.scrollTop=scroll;
+    };
+  };
   window.VP3_ORB_ADAPTER=adapter;
 })();

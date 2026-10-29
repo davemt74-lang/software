@@ -201,7 +201,9 @@ function vp3_upgrade_complete(): bool
         && artist_posts_v183_schema_ready()
         && artist_shows_v184_schema_ready()
         && artist_music_v185_schema_ready()
-        && table_exists('social_feed_posts_v1');
+        && table_exists('social_feed_posts_v1')
+        && table_exists('tv_watching_state_v1')
+        && table_exists('tv_watching_records_v1');
 }
 
 $error = '';
@@ -212,8 +214,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Session expired. Please try again.';
     } else {
         try {
+            $pdo = db();
+            if (!$pdo instanceof PDO) throw new RuntimeException('Database connection is unavailable.');
             ensure_access_schema();
-            social_feed_schema_v1(db());
+            social_feed_schema_v1($pdo);
             subscription_ensure_schema();
             subscription_entitlements_v340_ensure_schema();
                     artist_workspace_v104_ensure_schema();
@@ -284,8 +288,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             agent_commerce_ensure_schema_v800();
             agent_paid_appointments_ensure_schema_v800();
 
-            $pdo = db();
-            if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
             agent_work_control_ensure_schema_v173($pdo);
             agent_work_dependencies_ensure_schema_v174($pdo);
             agent_objective_verification_ensure_schema_v176($pdo);

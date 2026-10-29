@@ -62,6 +62,7 @@ jobs:
           node tests/agent-eyes-core.mjs
           node tests/agent-orb-browser.mjs
           node tests/agent-orb-cloud-browser.mjs
+          node tests/activity-center-layout-browser.mjs
           node tests/agent-voice-guard-browser.mjs
           node tests/participant-continuity-browser.mjs
           node tests/participant-tracking-browser.mjs

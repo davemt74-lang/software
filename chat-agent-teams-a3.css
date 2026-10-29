@@ -105,3 +105,14 @@
 .vp3-mission-followup{margin:.5rem 0;padding:.8rem;border:1px solid var(--border-color,#65718b);border-radius:12px;max-width:100%;min-width:0;overflow-wrap:anywhere}.vp3-mission-followup[hidden]{display:none}.vp3-mission-followup h4{margin:0 0 .5rem}.vp3-mission-followup p{margin:.5rem 0}.vp3-mission-followup button{margin:.25rem;max-width:100%;white-space:normal}.vp3-mission-followup label{display:block;margin:.5rem 0}.vp3-mission-followup small{display:block}
 
 .vp3-teams-list,.vp3-teams-detail,.vp3-teams-body{min-width:0;max-width:100%;overflow-wrap:anywhere}.vp3-browser-source small{overflow-wrap:anywhere}.vp3-integration-diagnostic{max-width:100%;overflow-wrap:anywhere}
+
+/* Reusable mission/schedule cards also render outside the Agent Teams disclosure. */
+.vp3-activity-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0;margin-bottom:10px}
+.vp3-activity-card-head h4{margin:0;font-size:14px}.vp3-activity-card-head strong{min-width:0;overflow-wrap:anywhere}
+.vp3-activity-badge,.vp3-scheduler-state{display:inline-flex;width:fit-content;max-width:100%;padding:4px 8px;border-radius:8px;background:var(--surface-secondary,#eef2f7);font-size:11px}
+.vp3-activity-dates{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px 14px;margin:10px 0;padding:0}
+.vp3-activity-dates>div{min-width:0}.vp3-activity-dates dt{font-size:10px;opacity:.75}.vp3-activity-dates dd{margin:3px 0 0;font-size:11px;overflow-wrap:anywhere}
+.vp3-activity-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.vp3-activity-actions button{margin:0}
+.vp3-activity-empty{padding:12px;border:1px dashed var(--border,#cbd5e1);border-radius:10px;font-size:12px;line-height:1.6}
+.vp3-schedule-runs{display:grid;gap:10px;margin-top:12px}.vp3-schedule-runs h5{margin:0;font-size:11px}.vp3-schedule-run{padding:10px;border:1px solid var(--border,#cbd5e1);border-radius:8px;font-size:12px}
+.vp3-schedule-policy{margin-top:14px;font-size:11px;line-height:1.6}.vp3-schedule-policy summary{cursor:pointer;font-weight:600}

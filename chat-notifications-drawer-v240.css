@@ -25,3 +25,47 @@ body.chat-notification-drawer-open{overflow:hidden}
 @media(max-width:700px){.chat-notification-drawer{width:100vw}.chat-brain-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.chat-notification-drawer-head{padding-top:max(16px,env(safe-area-inset-top))}}
 @media(max-width:420px){.chat-notification-tabs{padding:0 6px}.chat-notification-tabs button{padding:0 8px}.chat-activity-section-head,.chat-notification-item{padding-left:14px;padding-right:14px}.chat-brain-overview{padding-left:14px;padding-right:14px}.chat-brain-priority-list,.chat-brain-timeline,.chat-brain-memory-list,.chat-brain-history,.chat-brain-themes{padding-left:14px;padding-right:14px}.chat-brain-priority>header{grid-template-columns:auto minmax(0,1fr)}.chat-brain-priority>header em{grid-column:2}.chat-brain-priority-actions{grid-template-columns:1fr 1fr}.chat-brain-priority>footer{align-items:flex-start;flex-direction:column}.chat-brain-history-day{margin-left:-14px;margin-right:-14px;padding-left:14px;padding-right:14px}.chat-brain-metric{padding:8px}.chat-brain-metric strong{font-size:.9rem}}
 @media(prefers-reduced-motion:reduce){.chat-notification-drawer,.chat-notification-drawer-backdrop{transition:none!important}}
+
+/* Activity Center owns one scroll surface; embedded tools inherit the same readable scale. */
+.chat-notification-drawer{min-width:0;font:13px/1.5 system-ui,sans-serif;color:#172538}
+.chat-notification-drawer .chat-notification-tabs{display:grid;grid-template-columns:1.35fr 1fr .8fr 1fr;min-width:0;overflow:visible;padding:0 8px}
+.chat-notification-drawer .chat-notification-tabs button{min-width:0;padding:0 6px;font-size:11px}
+.chat-notification-drawer .chat-notification-drawer-body{min-width:0;overscroll-behavior:contain;scrollbar-gutter:stable}
+.chat-notification-drawer .chat-activity-section{min-width:0}
+.chat-notification-drawer .chat-activity-section-head>div,.chat-notification-drawer .chat-notification-item>div,.chat-brain-event>div{min-width:0;overflow-wrap:anywhere}
+.chat-notification-drawer .chat-eyes-event{grid-template-columns:12px minmax(0,1fr);align-items:start;gap:10px;padding:14px 0}
+.chat-notification-drawer .chat-eyes-event strong{font-size:13px;text-transform:capitalize}
+.chat-notification-drawer .chat-eyes-event p{font-size:12px;line-height:1.55}
+.chat-eyes-event-meta{display:flex!important;flex-wrap:wrap;gap:4px 10px;margin-top:4px;color:#64748b;font-size:11px}
+.chat-eyes-event-meta time{white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums}
+.chat-notification-drawer .vp3-mission-notifications,.chat-notification-drawer .vp3-schedules-brain{max-height:none;overflow:visible;margin:0;padding:16px 18px}
+.chat-notification-drawer .vp3-activity-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0;margin:0 0 10px}
+.chat-notification-drawer .vp3-activity-card-head h4{margin:0;font-size:14px;line-height:1.4}
+.chat-notification-drawer .vp3-activity-card-head strong{min-width:0;overflow-wrap:anywhere;font-size:13px;line-height:1.5}
+.chat-notification-drawer .vp3-activity-badge,.chat-notification-drawer .vp3-scheduler-state{display:inline-flex;align-items:center;max-width:100%;width:fit-content;padding:4px 8px;border-radius:8px;background:#eef2f7;color:#475569;font-size:11px;line-height:1.5}
+.chat-notification-drawer .vp3-activity-badge{flex-shrink:0;white-space:nowrap}
+.chat-notification-drawer .vp3-scheduler-state{margin:0 0 12px}
+.chat-notification-drawer .vp3-scheduler-state[data-scheduler-state=healthy]{background:#e8f7ef;color:#166534}
+.chat-notification-drawer .vp3-scheduler-state[data-scheduler-state=degraded],.chat-notification-drawer .vp3-scheduler-state[data-scheduler-state=stalled],.chat-notification-drawer .vp3-scheduler-state[data-scheduler-state=unavailable]{background:#fff4e5;color:#92400e}
+.chat-notification-drawer .vp3-teams-meta{display:block;margin:6px 0;color:#64748b;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.chat-notification-drawer .vp3-teams-error{margin:8px 0;padding:9px 10px;border-radius:8px;background:#fff1f2;color:#9f1239;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.chat-notification-drawer .vp3-activity-empty{margin:10px 0;padding:12px;border:1px dashed #dbe3ec;border-radius:10px;background:#f8fafc;color:#64748b;font-size:12px;line-height:1.6}
+.chat-notification-drawer .vp3-activity-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chat-notification-drawer .vp3-activity-actions button,.chat-notification-drawer .vp3-schedule-run button{appearance:none;margin:0;padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font:600 11px/1.4 system-ui;cursor:pointer}
+.chat-notification-drawer .vp3-mission-notice,.chat-notification-drawer .vp3-schedule-row{min-width:0;margin:10px 0 0;padding:12px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;overflow-wrap:anywhere}
+.chat-notification-drawer .vp3-mission-notice[data-read=false]{border-inline-start:3px solid #7faaff;background:#f8fbff}
+.chat-notification-drawer .vp3-mission-notice>strong{display:block;font-size:13px;line-height:1.5}
+.chat-notification-drawer .vp3-activity-dates{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px 14px;min-width:0;margin:10px 0;padding:0}
+.chat-notification-drawer .vp3-activity-dates>div{min-width:0}
+.chat-notification-drawer .vp3-activity-dates dt{color:#64748b;font-size:10px;font-weight:600}
+.chat-notification-drawer .vp3-activity-dates dd{margin:3px 0 0;color:#334155;font-size:11px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.chat-notification-drawer .vp3-schedule-runs{display:grid;gap:10px;margin-top:12px}
+.chat-notification-drawer .vp3-schedule-runs h5{margin:0;color:#475569;font-size:11px}
+.chat-notification-drawer .vp3-schedule-run{padding:10px;background:#f8fafc;border-radius:8px;font-size:11px}
+.chat-notification-drawer .vp3-schedule-policy{margin-top:14px;color:#64748b;font-size:11px;line-height:1.6}
+.chat-notification-drawer .vp3-schedule-policy summary{cursor:pointer;font-weight:600}
+@media(max-width:420px){.chat-notification-drawer .vp3-mission-notifications,.chat-notification-drawer .vp3-schedules-brain{padding:14px}.chat-notification-drawer .chat-notification-tabs button{font-size:10px;padding:0 3px}}
+
+.chat-notification-drawer,.chat-notification-drawer *{box-sizing:border-box}
+.chat-notification-drawer .chat-brain-metric{min-width:0;overflow-wrap:anywhere}
+@media(max-width:420px){.chat-notification-drawer .chat-brain-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}

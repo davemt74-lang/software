@@ -53,7 +53,7 @@
     function close(){panel.hidden=true;root.dataset.popupOpen='false';restorePanel?.();restorePanel=null;document.querySelectorAll('[data-orb-chat]').forEach(b=>b.setAttribute('aria-expanded','false'));returnFocus?.focus?.();}
     function open(){
       returnFocus=document.activeElement;
-      if(adapter.isMainChat?.()){adapter.focusChat?.();return;}
+      if(adapter.isMainChat?.()&&!adapter.attachChat){adapter.focusChat?.();return;}
       if(adapter.attachChat)restorePanel=restorePanel||adapter.attachChat(host);
       else if(!frame){
         frame=document.createElement('iframe');frame.title='VP3 Agent Chat';frame.allow='microphone; camera';const url=new URL(adapter.conversationUrl&&conversationRef?adapter.conversationUrl(conversationRef):adapter.chatUrl,location.href);url.searchParams.set('orb_embed','1');frame.src=url.href;host.append(frame);
