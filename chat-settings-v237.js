@@ -130,6 +130,9 @@
   }
 
   function ensureAgentVoiceToggle() {
+    const menu=document.getElementById('chatProfileDropdown');
+    // The shared account menu owns its switch, including legacy unmarked markup.
+    if(menu?.closest('[data-agent-voice-menu-config]'))return menu.querySelector('[data-agent-voice-toggle]');
     const existing = document.querySelector('[data-agent-voice-toggle]');
     if (existing?.hasAttribute('data-vp3-global-agent-voice')) return existing;
     if (state?.agent_voice_allowed === false) { existing?.closest('.member-agent-voice-toggle')?.remove(); return null; }

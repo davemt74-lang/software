@@ -1,0 +1,5 @@
+# Single account-menu Agent Voice control v1.352
+
+The shared member menu adopts an existing upper Agent Voice checkbox even when older server markup has no global-control marker. It keeps that same node as the owner, removes duplicate master-control rows, and reconciles later duplicate insertions. Chat settings defers control creation to the shared menu whenever that menu is present. Shared-menu and Chat-settings asset versions advance so both runtimes update together.
+
+The browser regression reproduces two upper rows on the pre-fix source with unmarked legacy server markup. The fixed version keeps one upper control on Chat in either runtime load order and on an ordinary account page. The same test verifies one save request per change, persistence across navigation, late duplicate removal, default-agent selection, system voice choice, greetings, response windows and orb controls. No microphone lifecycle or provider behavior changes are included. HomeServer uses its own single guarded member control and remains locally staged/unpublished.
