@@ -27,8 +27,6 @@ function waveform_error(string $message, int $status = 400): never
 
 function waveform_read_wav_layout(string $path): array
 {
-    $fileSize=@filesize($path);
-    if ($fileSize===false || $fileSize<44) throw new RuntimeException('WAV source is incomplete.');
     $handle = @fopen($path, 'rb');
 
     if (!$handle) {
@@ -36,6 +34,9 @@ function waveform_read_wav_layout(string $path): array
     }
 
     try {
+        // Read the open file's current size, not PHP's cached path metadata.
+        $fileSize = fstat($handle)['size'] ?? false;
+        if (!is_int($fileSize) || $fileSize < 44) throw new RuntimeException('WAV source is incomplete.');
         $header = fread($handle, 12);
 
         if (
