@@ -37,3 +37,7 @@ Deletion tombstones canonical session content. Subsequent history and Brain read
 TV server tests use production PHP with SQLite. The Chromium suite sends actual cropped JPEGs to that service and validates crop pixels, camera-off history, corrections, deletion, cancellation, account separation, manual fallback and voice gates. Vision and web responses are controlled fixtures. Provider payload tests exercise actual multimodal request builders and unchanged ordinary text Chat. HomeServer tests use its real pairing DB, owner tool registry and API with mocked external transport.
 
 These checks validate integration and lifecycle behavior, not real-world title/episode accuracy. No live paid-provider room benchmark has been run. A room trial should compare known programs, menus, ads, multiple screens, glare, oblique angles and small screens against independently recorded answers. Keep likely/unknown labels until stronger evidence is available.
+
+## Camera-off recall evidence
+
+The exact question “What was I watching?” returns saved observation timestamps, title status, extracted screen clues and supporting page URLs in Chat text and its source list. These pages support title matching, not scene verification. Deleted sessions contribute no citations to subsequent replies. The Chromium acceptance flow exercises recognition, saved history, camera Stop and this exact Chat query against the production TV recall function; model and search replies remain fixtures.
