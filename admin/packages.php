@@ -53,6 +53,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                     if(function_exists('subscription_entitlement_key_is_product_v340')&&!subscription_entitlement_key_is_product_v340($key))continue;
                     $limit=null;
                     if(($meta['type']??'boolean')==='limit'){$raw=trim((string)($limits[$key]??''));$limit=$raw===''?null:max(0,(int)$raw);}
+                    // Each carrier number is a recurring billable resource.
+                    // A blank phone limit must not silently grant unlimited numbers.
+                    if($key==='phone.numbers'&&array_key_exists($key,$enabled)&&($limit===null||$limit<1))
+                        throw new RuntimeException('Set an explicit included phone-number quantity (at least 1).');
                     $upsert->execute([$packageId,$key,array_key_exists($key,$enabled)?1:0,$limit]);
                 }
                 // Defensive cleanup for rows from pre-v3.40 package editors.

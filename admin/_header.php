@@ -81,6 +81,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
             <a class="<?= $adminActive === 'users' ? 'active' : '' ?>" href="<?= e(url('/admin/users.php')) ?>"><span>Users</span></a>
             <a class="<?= $adminActive === 'packages' ? 'active' : '' ?>" href="<?= e(url('/admin/packages.php')) ?>"><span>Packages</span></a>
             <a class="<?= $adminActive === 'billing' ? 'active' : '' ?>" href="<?= e(url('/admin/billing.php')) ?>"><span>Billing</span></a>
+            <a class="<?= $adminActive === 'phone' ? 'active' : '' ?>" href="<?= e(url('/admin/phone.php')) ?>"><span>Phone &amp; Messaging</span></a>
           <?php endif; ?>
         </div>
       </section>

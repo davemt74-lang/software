@@ -92,7 +92,7 @@
   font-weight:800;
   cursor:pointer;
 }
-.vp3-agent-voice-clone-card{
+.vp3-agent-voice-clone-card,.vp3-agent-phone-card{
   display:flex;
   align-items:center;
   justify-content:space-between;
@@ -102,11 +102,12 @@
   border-radius:8px;
   background:#fafafa;
 }
-.vp3-agent-voice-clone-card>div{display:grid;gap:2px;min-width:0}
-.vp3-agent-voice-clone-card small{color:#6b7280!important;font-size:.52rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em}
-.vp3-agent-voice-clone-card strong{font-size:.65rem;color:#111827!important}
-.vp3-agent-voice-clone-card span{font-size:.55rem;color:#6b7280!important;line-height:1.3}
+.vp3-agent-voice-clone-card>div,.vp3-agent-phone-card>div{display:grid;gap:2px;min-width:0}
+.vp3-agent-voice-clone-card small,.vp3-agent-phone-card small{color:#6b7280!important;font-size:.52rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em}
+.vp3-agent-voice-clone-card strong,.vp3-agent-phone-card strong{font-size:.65rem;color:#111827!important;overflow-wrap:anywhere}
+.vp3-agent-voice-clone-card span,.vp3-agent-phone-card span{font-size:.55rem;color:#6b7280!important;line-height:1.3}
 .vp3-agent-voice-clone-card a,
+.vp3-agent-phone-card a,
 .vp3-agent-voice-actions a{
   display:inline-flex;
   align-items:center;

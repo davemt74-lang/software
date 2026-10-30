@@ -21,7 +21,10 @@
     csrf: source?.dataset.csrf || '',
     voiceProfileUrl: source?.dataset.voiceProfileUrl || '/voice-profile.php',
     profileAgentUrl: source?.dataset.profileAgentUrl || '/profile-agent.php',
-    accountAgentsUrl: source?.dataset.accountAgentsUrl || '/account.php#agents-data'
+    accountAgentsUrl: source?.dataset.accountAgentsUrl || '/account.php#agents-data',
+    phoneEndpoint: source?.dataset.phoneEndpoint || '/api/phone-cloud-v100.php',
+    phoneRegisterUrl: source?.dataset.phoneRegisterUrl || '/phone.php',
+    pricingUrl: source?.dataset.pricingUrl || '/pricing.php'
   };
 
   const agentVoiceSyncKey = `vp3:agent-voice-sync:${cfg.userId || 0}`;
@@ -97,6 +100,10 @@
             <div><small>Voice clone</small><strong data-vp3-clone-state>Checking ElevenLabs…</strong><span data-vp3-clone-detail>Your existing Voice Profile remains the source of truth.</span></div>
             <a data-vp3-manage-voice href="${esc(cfg.voiceProfileUrl)}">Manage clone</a>
           </div>
+          <div class="vp3-agent-phone-card" data-vp3-agent-phone-card>
+            <div><small>Agent phone number</small><strong data-vp3-agent-phone-label>Checking phone package…</strong><span data-vp3-agent-phone-detail>Calls and texts are managed with your agent.</span></div>
+            <a data-vp3-agent-phone-link href="${esc(cfg.phoneRegisterUrl)}">Register number</a>
+          </div>
 
           <div class="vp3-agent-voice-actions">
             <a href="${esc(cfg.profileAgentUrl)}">Open My Agent</a>
@@ -136,6 +143,10 @@
       menu.insertAdjacentHTML('beforeend', dashboardMarkup());
       dashboard = menu.querySelector('[data-vp3-agent-voice-dashboard]');
     }
+    if (!dashboard.querySelector('[data-vp3-agent-phone-card]')) {
+      const clone=dashboard.querySelector('.vp3-agent-voice-clone-card');
+      clone?.insertAdjacentHTML('afterend',`<div class="vp3-agent-phone-card" data-vp3-agent-phone-card><div><small>Agent phone number</small><strong data-vp3-agent-phone-label>Checking phone package…</strong><span data-vp3-agent-phone-detail>Calls and texts are managed with your agent.</span></div><a data-vp3-agent-phone-link href="${esc(cfg.phoneRegisterUrl)}">Register number</a></div>`);
+    }
     return dashboard;
   }
 
@@ -156,7 +167,10 @@
     cloneDetail: dashboard.querySelector('[data-vp3-clone-detail]'),
     systemVoice: dashboard.querySelector('[data-vp3-system-voice]'),
     systemVoiceStatus: dashboard.querySelector('[data-vp3-system-voice-status]'),
-    agentVoice: menu.querySelector('[data-vp3-global-agent-voice]')
+    agentVoice: menu.querySelector('[data-vp3-global-agent-voice]'),
+    phoneLabel: dashboard.querySelector('[data-vp3-agent-phone-label]'),
+    phoneDetail: dashboard.querySelector('[data-vp3-agent-phone-detail]'),
+    phoneLink: dashboard.querySelector('[data-vp3-agent-phone-link]')
   };
 
   function setStatus(message = '', kind = '') {
@@ -164,6 +178,40 @@
     el.status.textContent = message;
     el.status.className = `vp3-agent-voice-status${kind ? ` ${kind}` : ''}`;
     el.status.hidden = message === '';
+  }
+
+  async function loadPhone() {
+    if (!el.phoneLabel || !el.phoneLink) return;
+    try {
+      const data=await json(cfg.phoneEndpoint);
+      const state=data.state||{};
+      const number=state.number?.phone_e164;
+      const pending=state.request?.phone_e164;
+      const allowed=state.package?.included===true;
+      el.phoneLink.href=cfg.phoneRegisterUrl;
+      if(number){
+        el.phoneLabel.textContent=number;
+        el.phoneDetail.textContent=`${state.number.agent_name||'Your agent'} · ${state.number.status||'Pending setup'}`;
+        el.phoneLink.textContent='Manage number';
+      }else if(pending){
+        el.phoneLabel.textContent=`Request pending · ${pending}`;
+        el.phoneDetail.textContent='Waiting for administrator review and carrier purchase.';
+        el.phoneLink.textContent='View request';
+      }else if(allowed){
+        el.phoneLabel.textContent='No number registered';
+        el.phoneDetail.textContent=data.provider_connected?'Your package includes an agent phone number.':'Your package includes a number; Twilio setup is pending.';
+        el.phoneLink.textContent='Register number';
+      }else{
+        el.phoneLabel.textContent='Not included in your package';
+        el.phoneDetail.textContent='Choose a plan with an agent phone number.';
+        el.phoneLink.href=cfg.pricingUrl;
+        el.phoneLink.textContent='View plans';
+      }
+    }catch(_error){
+      el.phoneLabel.textContent='Phone setup unavailable';
+      el.phoneDetail.textContent='Your administrator may need to run a Cloud upgrade.';
+      el.phoneLink.textContent='Phone settings';
+    }
   }
 
   async function json(url, options = {}) {
@@ -453,4 +501,5 @@
     try { const sync=JSON.parse(event.newValue); renderAgentVoice(sync?.enabled !== false); publishState(); if(sync?.enabled===false)window.dispatchEvent(new CustomEvent('stonefellow:agent-voice',{detail:{enabled:false,fromStorage:true}})); } catch (_error) {}
   });
   void load();
+  void loadPhone();
 })();

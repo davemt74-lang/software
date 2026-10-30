@@ -75,7 +75,7 @@ if (!$memberHeaderRuntimeRendered):
     $memberHeaderNotificationBuild = 'voice-v1349-activity-center-proactive-v244-20260922-a5c8-20261011-eyes-v1342';
     $memberHeaderTranscriptionBuild = 'chat-transcription-canvas-v243-layout-20260905';
     $memberHeaderRecordingUiBuild = 'chat-recording-results-v206-20260901';
-    $memberAgentVoiceMenuBuild = 'agent-voice-menu-v244-20260922' . '-voice-v1352';
+    $memberAgentVoiceMenuBuild = 'agent-voice-menu-v244-20260922' . '-voice-v1352-phone-ph2';
     $memberRuntimeBridgeBuild = 'authenticated-vp3-runtime-cleanup-20260914';
 ?>
 <link rel="stylesheet" data-member-header-ui href="<?= e(url('/chat-header-ui.css?v=' . $memberHeaderUiBuild)) ?>">

@@ -72,6 +72,20 @@ jobs:
       - name: Package entitlement composition contract
         run: node tests/package-entitlement-composition-v340.mjs
 
+      - name: Phone and Messaging Cloud PH2 lint
+        run: |
+          php -l includes/phone-cloud-v100.php
+          php -l api/phone-cloud-v100.php
+          php -l admin/phone.php
+          php -l phone.php
+          php -l includes/member-user-menu.php
+          php -l includes/member-header.php
+          php -l includes/main-sidebar.php
+          node --check member-agent-voice-menu.js
+
+      - name: Phone package and user dropdown contract
+        run: node tests/phone-cloud-ph2-contract.mjs
+
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
 
