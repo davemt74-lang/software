@@ -8,6 +8,7 @@ require_once dirname(__DIR__).'/includes/agent-chat-boundary-v380.php';
 require_once dirname(__DIR__).'/includes/agent-tool-authorization-v400.php';
 require_once dirname(__DIR__).'/includes/knowledge-retrieval-v162.php';
 require_once dirname(__DIR__).'/includes/agent-capability-awareness-v1.php';
+require_once dirname(__DIR__).'/includes/agent-capability-chat-v1.php';
 header('Content-Type: application/x-ndjson; charset=UTF-8');header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');header('X-Accel-Buffering: no');@ini_set('zlib.output_compression','0');@ini_set('output_buffering','0');@set_time_limit(180);ignore_user_abort(true);
 function chat_v121_emit(array $event): void{if(connection_aborted())return;if(function_exists('agent_runtime_v125_trace_id')&&!isset($event['trace_id']))$event['trace_id']=agent_runtime_v125_trace_id();echo json_encode($event,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)."\n";if(function_exists('ob_flush'))@ob_flush();flush();}
 function chat_v121_scope_sql(?array $agent,string $alias='c'): array{return vp3_agent_chat_scope_sql_v380($agent,$alias);}
@@ -33,8 +34,8 @@ $idempotencyKey=mb_substr(trim((string)($input['idempotency_key']??'')),0,160);$
 if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,$query,$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!chat_v121_owned($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
 $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$agentScopeId;$agentContext=agent_surface_v131_enrich($user,'chat',$rawAgentContext);$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,'voice');
 vp3_capability_begin_v1($pdo,$user,$principal,$agentContext,$input['knowledge_scope']??null);
-$reminderTool=vp3_agent_tool_empty_v400();
-if(knowledge_retrieval_v162_owner_session($user,$principal)){
+$reminderTool=vp3_capability_chat_v1($pdo,$user,$principal,$query,$agentContext,$input['knowledge_scope']??null,$history);
+if(empty($reminderTool['handled'])&&knowledge_retrieval_v162_owner_session($user,$principal)){
     $reminderZone=(string)($rawAgentContext['timezone']??$input['reminder_timezone']??user_calendar_default_timezone_v1300($pdo,$user));
     try{reminder_zone_v1($reminderZone);}catch(Throwable $ignored){$reminderZone=user_calendar_default_timezone_v1300($pdo,$user);}
     $reminderTool=reminder_chat_v1($pdo,$user,$query,'cloud:'.$conversationId,$idempotencyKey!==''?'stream:'.hash('sha256',$idempotencyKey):'message:'.$userMessageId,$conversationId,$reminderZone);

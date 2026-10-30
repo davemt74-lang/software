@@ -31,7 +31,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     if(!$chat)return $base;
     $reminders=vp3_capability_probe_v1(fn()=>reminder_ready_v1($pdo));
     $calendar=vp3_capability_probe_v1(fn()=>user_calendar_schema_ready_v1300($pdo));
-    $knowledge=vp3_capability_probe_v1(fn()=>table_exists('knowledge_items')&&table_exists('knowledge_chunks')&&table_exists('artist_transcript_folders_v177'));
+    $knowledge=vp3_capability_probe_v1(fn()=>table_exists('knowledge_items')&&table_exists('knowledge_chunks')&&table_exists('artist_transcript_folders_v177')&&column_exists('knowledge_items','created_by_user_id')&&column_exists('knowledge_items','knowledge_scope')&&column_exists('knowledge_items','folder_id'));
     if($scope['mode']==='off')$knowledge='scope_off';
     elseif($scope['mode']==='project')$knowledge='project_context_required';
     elseif($scope['mode']==='folder'&&$knowledge==='ready'){
@@ -47,7 +47,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('reminders.manage','Personal reminders','write','reminder_chat_v1',true,$reminders,['Create, list, reschedule, snooze, complete, dismiss, cancel and delete.','In-app only; once, daily, weekdays and weekly. Done preserves future repeats.']),
         vp3_capability_row_v1('calendar.read','Read personal calendar','read','user_calendar_agent_query_v1300',true,$calendar,['Own calendar; actual records must be retrieved before answering.']),
         vp3_capability_row_v1('calendar.manage','Change personal calendar','write','user_calendar_agent_query_v1300',true,$calendar,['Existing event confirmation and revision checks still apply. Linked meetings use their existing editor.']),
-        vp3_capability_row_v1('knowledge.search','Search personal Knowledge','read','knowledge_retrieval_v162_search',function_exists('personal_knowledge_available')&&personal_knowledge_available($user),$knowledge,['Honors current conversation Knowledge scope; no automatic scope expansion.','A search with no matches is different from unavailable access.']),
+        vp3_capability_row_v1('knowledge.search','Search personal Knowledge','read','knowledge_retrieval_v162_search',function_exists('personal_capability_has_v242')&&personal_capability_has_v242('personal_knowledge.access',$user),$knowledge,['Honors current conversation Knowledge scope; no automatic scope expansion.','A search with no matches is different from unavailable access.']),
         vp3_capability_row_v1('brain.read','Recall Agent Brain memory','read','agent_brain_context',function_exists('personal_capability_has_v242')&&personal_capability_has_v242('agent_brain.access',$user),$brain,['Only authorized owner memory; records must be retrieved before reporting facts.']),
         vp3_capability_row_v1('screen.context','Discuss the shared screen','read','agent_surface_v131_screen_observation',true,$screenReady?'ready':'share_required',['Only a fresh observation supplied by active screen sharing.','No hidden tabs, direct browser control or silent capture.']),
         vp3_capability_row_v1('homeserver.status','Inspect HomeServer capabilities','read','homeserver_capability_v033_registry',true,'not_checked',['Connection and allowed operations require a fresh authenticated registry check.','Cloud readiness does not establish HomeServer readiness.']),

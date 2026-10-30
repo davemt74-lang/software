@@ -7,7 +7,8 @@ $pdo=new PDO('sqlite::memory:');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMOD
 $permissions=['chat.access'=>true,'knowledge'=>true,'brain'=>true];$failSchema=false;
 function has_permission($key,$user){return $GLOBALS['permissions'][$key]??false;}
 function personal_knowledge_available($user){return $GLOBALS['permissions']['knowledge'];}
-function personal_capability_has_v242($key,$user){return $GLOBALS['permissions']['brain'];}
+function personal_capability_has_v242($key,$user){return $GLOBALS['permissions'][$key==='personal_knowledge.access'?'knowledge':'brain'];}
+function column_exists($table,$column){return true;}
 function table_exists($name){if($GLOBALS['failSchema'])throw new RuntimeException('SQL secret');$q=$GLOBALS['pdo']->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$name]);return(bool)$q->fetchColumn();}
 function reminder_ready_v1($pdo){return table_exists('reminders');}
 function reminder_chat_v1(){}
@@ -19,7 +20,7 @@ function knowledge_retrieval_v162_folder($pdo,$uid,$id){$q=$pdo->prepare('SELECT
 function knowledge_retrieval_v162_search(){}
 function agent_brain_schema_ready(){return table_exists('brain');}
 function agent_brain_context(){}
-function homeserver_capability_v033_registry(){throw new RuntimeException('Snapshot must never contact HomeServer');}
+function homeserver_capability_v033_registry(){if(isset($GLOBALS['homeFixture']))return $GLOBALS['homeFixture'];throw new RuntimeException('Snapshot must never contact HomeServer');}
 function agent_brain_soul($user){return [];}
 function agent_brain_default_soul(){return [];}
 function agent_brain_tool_prompt($user){return 'Old descriptive catalog';}
