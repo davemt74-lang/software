@@ -59,8 +59,24 @@ function vp3_capability_begin_v1(PDO $pdo,array $user,array $principal,array $co
 {
     unset($GLOBALS['vp3_capability_turn_v1']);
     $snapshot=vp3_capability_snapshot_v1($pdo,$user,$principal,$context,$scope);
+    if(vp3_capability_audit_v1($snapshot))throw new RuntimeException('Capability inventory could not be verified.');
     $GLOBALS['vp3_capability_turn_v1']=$snapshot;
     return $snapshot;
+}
+
+/** Detect drift between advertised metadata and executable functions before it reaches inference. */
+function vp3_capability_audit_v1(array $snapshot): array
+{
+    $problems=[];$seen=[];
+    foreach($snapshot['capabilities']??[] as $row){
+        $id=$row['id']??'';
+        if(!is_string($id)||$id===''||isset($seen[$id]))$problems[]='duplicate_or_invalid_id';
+        $seen[$id]=true;
+        if(!in_array($row['mode']??'', ['read','write'],true))$problems[]='invalid_mode';
+        if(!is_string($row['executor']??null)||!is_bool($row['registered']??null)||$row['registered']!==function_exists($row['executor']))$problems[]='executor_drift';
+        if(!empty($row['ready'])&&(empty($row['permitted'])||empty($row['registered'])||($row['reason']??'')!=='ready'))$problems[]='readiness_drift';
+    }
+    return array_values(array_unique($problems));
 }
 
 function vp3_capability_current_v1(array $user): ?array

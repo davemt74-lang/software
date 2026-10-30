@@ -59,4 +59,9 @@ $s=vp3_capability_begin_v1($pdo,$user,['kind'=>'user_agent','owner_user_id'=>2])
 $permissions['chat.access']=false;$s=vp3_capability_begin_v1($pdo,$user,$principal);check($s['capabilities']===[],'Chat revocation removes the inventory');
 $permissions['chat.access']=true;$s=vp3_capability_begin_v1($pdo,['id'=>1,'is_active'=>0],$principal);check($s['capabilities']===[],'inactive accounts receive no capabilities');
 $s=vp3_capability_row_v1('absent','Absent','read','missing_executor_for_test',true,'ready');check(!$s['ready']&&$s['reason']==='not_installed','advertised readiness requires a real executor');
+$permissions['chat.access']=true;$healthy=vp3_capability_snapshot_v1($pdo,$user,$principal);
+check(vp3_capability_audit_v1($healthy)===[],'current inventory has verified executor bindings');
+$duplicate=$healthy;$duplicate['capabilities'][]=$duplicate['capabilities'][0];check(in_array('duplicate_or_invalid_id',vp3_capability_audit_v1($duplicate),true),'inventory audit catches duplicate identifiers');
+$drift=$healthy;$drift['capabilities'][0]['executor']='missing_executor_for_test';check(in_array('executor_drift',vp3_capability_audit_v1($drift),true),'inventory audit catches a removed executable binding');
+$drift=$healthy;$drift['capabilities'][0]['permitted']=false;check(in_array('readiness_drift',vp3_capability_audit_v1($drift),true),'inventory audit catches readiness that contradicts permission');
 echo "CAPABILITY_AWARENESS=PASS ($checks cases)\n";

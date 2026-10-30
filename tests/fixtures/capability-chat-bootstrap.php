@@ -42,8 +42,8 @@ function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
-        $op=str_starts_with($q,'Remind me')?'continue':'inspect';$ids=str_contains($q,'HomeServer')?['homeserver.status']:['reminders.manage'];
-        if($op==='continue')$ids=[];
+        $op=str_starts_with($q,'Remind me')?'continue':(str_starts_with($q,'Did that')?'diagnose':'inspect');$ids=str_contains($q,'HomeServer')?['homeserver.status']:['reminders.manage'];
+        if(in_array($op,['continue','diagnose'],true))$ids=[];
         return ['ok'=>true,'answer'=>json_encode(['operation'=>$op,'ids'=>$ids])];
     }
     $at=(new DateTimeImmutable('+2 minutes',new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s');

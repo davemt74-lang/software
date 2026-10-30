@@ -252,6 +252,7 @@ try {
             ? vp3_cognitive_cards_chat_requests_v520($pdo,$user,'system',$query,8)
             : [];
         $messageContext = [
+            'tool_receipt'=>vp3_tool_receipt_normalize_v1($toolResult['tool_receipt']??null),
             'sources'=>$publicSources,
             'media'=>$media,
             'stem_media'=>!empty($toolResult['stem_media']) && is_array($toolResult['stem_media']) ? $toolResult['stem_media'] : [],
@@ -270,7 +271,7 @@ try {
         $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);
 
         echo json_encode([
-            'ok'=>true,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,
+            'ok'=>true,'tool_receipt'=>$messageContext['tool_receipt'],'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,
             'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,
             'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],
             'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,
