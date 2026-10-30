@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/agent-reminders-v1.php';
+require dirname(__DIR__).'/includes/notifications.php';
 $pdo=new PDO('sqlite::memory:');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);
 function db(): PDO{return $GLOBALS['pdo'];}
 function table_exists(string $table): bool{$q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return(bool)$q->fetchColumn();}
@@ -14,6 +15,7 @@ $pdo->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo-
 $pdo->exec('CREATE TABLE notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,type TEXT,title TEXT,body TEXT,target_url TEXT,source_type TEXT,source_id INTEGER,is_read INTEGER DEFAULT 0,created_at TEXT)');
 $pdo->exec('CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,updated_at TEXT)');$pdo->exec("INSERT INTO chat_conversations VALUES(1,1,''),(2,2,'')");
 $pdo->exec('CREATE TABLE chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT)');
+check(!notification_requires_attention(['type'=>'personal_reminder','title'=>'Approval required','body'=>'Needs your response','requires_attention'=>1]),'reminder delivery cannot be repeated by generic proactive attention');
 reminder_schema_v1($pdo);reminder_schema_v1($pdo);check(reminder_ready_v1($pdo),'idempotent schema installed');
 $now=new DateTimeImmutable('2026-10-30T14:00:00Z');
 $base=['title'=>'Do yoga','timezone'=>'America/Phoenix','start_local'=>'2026-10-30T08:00','recurrence'=>'daily','delivery'=>'both'];

@@ -137,6 +137,8 @@ function notification_agent_brain_activity_after(?array $user, int $afterId = 0,
  */
 function notification_requires_attention(array $notification): bool
 {
+    // The dedicated reminder ledger already owns Chat delivery and spoken presentation.
+    if (($notification['type'] ?? '') === 'personal_reminder') return false;
     if (notification_is_agent_brain_activity($notification)) return false;
 
     if (array_key_exists('requires_attention', $notification)) {
