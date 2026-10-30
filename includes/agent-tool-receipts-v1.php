@@ -12,7 +12,8 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
 {
     if(!is_array($value)||($value['contract']??'')!=='vp3.tool-receipt.v1')return null;
     $ops=[
-        'transcripts.read'=>['list','read','search','clarify','interpret'],
+        'transcripts.analyze'=>['run_analysis','run_research'],
+        'transcripts.read'=>['list','read','search','clarify','interpret','read_analysis','read_research'],
         'capabilities.inspect'=>['inspect'],
         'reminders.manage'=>['clarify','create','list','update','complete','snooze','dismiss','cancel','delete','interpret'],
         'calendar.read'=>['list'],
@@ -26,7 +27,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     if(!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/D',$at)||strtotime($at)===false)return null;
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;
     // A read, clarification or failed operation can never be a successful mutation.
-    $write=($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
+    $write=($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
     if($status==='completed'&&(!$write||$reason!==''))return null;
     if(in_array($status,['read_complete','no_matches'],true)&&$reason!=='')return null;
     return ['contract'=>'vp3.tool-receipt.v1','capability'=>$cap,'operation'=>$op,'status'=>$status,'reason'=>$reason,

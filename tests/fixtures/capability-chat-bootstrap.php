@@ -15,6 +15,7 @@ function personal_capability_has_v242(...$args){return false;}
 function artist_workspace_v181_scope_id($user){return 0;}
 function calendar_schedule_awareness_snapshot_v1330(...$args){return [];}
 function user_account_types_for_user_id(...$args){return ['member'];}
+function user_has_role(...$args){return false;}
 function vp3_agent_runtime_plan_v420(...$args){return ['route'=>'vp3_cloud','cloud'=>['ready'=>true],'effective_preference'=>'vp3_cloud'];}
 function vp3_agent_runtime_tool_plan_v420(...$args){return ['route'=>'vp3_tool'];}
 function vp3_agent_runtime_finalize_v420($plan,$execution,...$args){return $execution;}
@@ -38,7 +39,7 @@ function chat_context_is_internal_source($s){return str_starts_with($s,'runtime:
 function ai_v100_safe_exception($e,$fallback='Failed'){return $fallback;}
 function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_TRANSCRIPT_PLAN_V1')){
-        $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);return ['ok'=>true,'answer'=>json_encode(['operation'=>'read','session_id'=>(int)($json['selected_session_id']?:21)])];
+        $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);return ['ok'=>true,'answer'=>json_encode(['operation'=>str_contains($json['request'],'saved analysis')?'read_analysis':'read','session_id'=>(int)($json['selected_session_id']?:21)])];
     }
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
@@ -63,6 +64,8 @@ function capability_fixture_agents(PDO $pdo): void
     foreach(['user_agent_preferences','user_data_policies','user_agent_data_rules','user_relationships','user_data_policy_audit'] as $t)$pdo->exec("CREATE TABLE IF NOT EXISTS $t(id INTEGER)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS user_calendar_events(id INTEGER PRIMARY KEY,owner_user_id INTEGER,created_by_user_id INTEGER,created_by_agent_id INTEGER,title TEXT,description TEXT,location TEXT,start_at_utc TEXT,end_at_utc TEXT,timezone TEXT,all_day INTEGER,recurrence TEXT,agent_notifications INTEGER,source TEXT,source_reference TEXT,status TEXT,cancelled_at TEXT,created_at TEXT,updated_at TEXT)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,conversation_id INTEGER,title TEXT,status TEXT,started_at TEXT,last_activity_at TEXT,metadata_json TEXT);CREATE TABLE IF NOT EXISTS artist_transcript_segments_v172(id INTEGER PRIMARY KEY,session_id INTEGER,client_segment_key TEXT,segment_index INTEGER,segment_type TEXT,speaker_label TEXT,transcript_text TEXT,started_ms INTEGER,ended_ms INTEGER,confidence REAL,created_at TEXT,updated_at TEXT);INSERT OR IGNORE INTO artist_transcript_sessions_v172 VALUES(21,1,NULL,'Fixture transcript','draft','','','{}'),(22,2,NULL,'SECRET foreign transcript','draft','','','{}');INSERT OR IGNORE INTO artist_transcript_segments_v172 VALUES(1,21,'fixture',0,'transcript','Dave','The agreed pizza price is twenty dollars.',1000,5000,.9,'',''),(2,22,'foreign',0,'transcript','Other','SECRET transcript body',1000,5000,.9,'','')");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS artist_transcript_page_analysis_v237(session_id INTEGER,page_number INTEGER,source_hash TEXT,source_word_count INTEGER,start_segment_index INTEGER,end_segment_index INTEGER,analysis_json TEXT,provider TEXT,model TEXT,generated_at TEXT,PRIMARY KEY(session_id,page_number));CREATE TABLE IF NOT EXISTS artist_transcript_master_analysis_v237(session_id INTEGER PRIMARY KEY,source_hash TEXT,source_word_count INTEGER,page_count INTEGER,analyzed_page_count INTEGER,analysis_json TEXT,research_json TEXT,provider TEXT,model TEXT,generated_at TEXT)");
+    $map=artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,21));$hash=$map['source_hash'];$date=gmdate('c');$analysis=['modules'=>['basic'=>['source_hash'=>$hash,'generated_at'=>$date,'result'=>['summary'=>'Fixture saved AI analysis','key_findings'=>[['text'=>'Fixture finding','item_id'=>'f1','review_state'=>'unreviewed']]]]]];$q=$pdo->prepare("INSERT OR IGNORE INTO artist_transcript_master_analysis_v237 VALUES(?,?,?,?,?,?,?,'fixture','fixture',?)");$q->execute([21,$hash,8,1,0,json_encode($analysis),'{}',$date]);
     $from=gmdate('Y-m-d H:i:s',time()+3600);$to=gmdate('Y-m-d H:i:s',time()+7200);
     $q=$pdo->prepare("INSERT OR IGNORE INTO user_calendar_events VALUES(?, ?, ?, NULL, ?, '', '', ?, ?, 'UTC',0,'none',0,'user','','active',NULL,'','')");
     $q->execute([1,1,1,'Fixture calendar review',$from,$to]);$q->execute([2,2,2,'SECRET foreign calendar',$from,$to]);
