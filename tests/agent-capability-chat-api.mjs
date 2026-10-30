@@ -50,6 +50,16 @@ try{
   response=await post(endpoint,'Did that work?',{...named,conversation_id:longfellowConversation});
   check(response.data?.ok===true&&response.data.answer.includes('the read completed'),'named-Agent diagnosis reads its own receipt through '+endpoint+': '+response.body);
  }
+ const beforeReads=(await state()).reminders;
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  for(const phrase of ['What was on my uh reminder list','What did I have planned for today on my reminders','Yeah check my open reminders']){
+   response=await post(endpoint,phrase,{...named,conversation_id:longfellowConversation,input_mode:'voice'},{'X-Fixture-Reminder-Bad':'once'});
+   check(response.data?.ok===true&&response.data.tool_receipt?.status==='read_complete'&&!response.data.tool_receipt.changes_applied,'named-Agent read repairs malformed output through '+endpoint+': '+phrase+': '+response.body);
+  }
+  response=await post(endpoint,'Check my open reminders',{...named,conversation_id:longfellowConversation},{'X-Fixture-Reminder-Bad':'always'});
+  check(response.data?.ok===true&&response.data.tool_receipt?.reason==='invalid_plan'&&response.data.answer.includes('after retrying'),'persistent bad reminder output returns a bounded human error through '+endpoint);
+ }
+ check((await state()).reminders===beforeReads,'all transcript reminder reads and interpretation retries leave schedules unchanged');
  response=await post('chat-stream-v121.php','Can you create reminders?',{conversation_id:longfellowConversation,agent_context:{user_agent_id:8}});
  check(response.data?.type==='error','another owned Agent cannot reopen Longfellow conversation');
  response=await post('chat.php','Can you create reminders?',{conversation_id:longfellowConversation,agent_context:{user_agent_id:9}});
@@ -59,4 +69,4 @@ try{
   check(response.data?.ok===true&&response.data.answer.includes('database upgrade')&&response.data.tool_receipt?.status==='blocked','missing calendar schema reports its real blocker through '+endpoint);
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
-}finally{child.kill();await new Promise(r=>child.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}
+}finally{const exited=child.exitCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}
