@@ -18,6 +18,9 @@ $memberMenuRoleSummary = implode(' · ', user_role_labels($memberMenuUser));
   data-voice-profile-url="<?= e(url('/voice-profile.php')) ?>"
   data-profile-agent-url="<?= e(url('/profile-agent.php')) ?>"
   data-account-agents-url="<?= e(url('/account.php#agents-data')) ?>"
+  data-phone-endpoint="<?= e(url('/api/phone-cloud-v100.php')) ?>"
+  data-phone-register-url="<?= e(url('/phone.php')) ?>"
+  data-pricing-url="<?= e(url('/pricing.php')) ?>"
   data-csrf="<?= e(csrf_token()) ?>"
 >
   <button
@@ -68,6 +71,7 @@ $memberMenuRoleSummary = implode(' · ', user_role_labels($memberMenuUser));
         <label class="vp3-agent-voice-field"><span>Voice source</span><select data-vp3-agent-voice-source aria-label="Agent voice source"><option value="default">VP3 default voice</option><option value="clone">My ElevenLabs voice clone</option></select></label>
         <label class="vp3-agent-voice-field"><span>ElevenLabs system voice</span><select data-vp3-system-voice aria-label="ElevenLabs system voice"><option value="">VP3 configured default</option></select><small data-vp3-system-voice-status role="status"></small></label>
         <div class="vp3-agent-voice-clone-card"><div><small>Voice clone</small><strong data-vp3-clone-state>Checking ElevenLabs…</strong><span data-vp3-clone-detail>Your existing Voice Profile remains the source of truth.</span></div><a data-vp3-manage-voice href="<?= e(url('/voice-profile.php')) ?>">Manage clone</a></div>
+        <div class="vp3-agent-phone-card" data-vp3-agent-phone-card><div><small>Agent phone number</small><strong data-vp3-agent-phone-label>Checking phone package…</strong><span data-vp3-agent-phone-detail>Calls and texts are managed with your agent.</span></div><a data-vp3-agent-phone-link href="<?= e(url('/phone.php')) ?>">Register number</a></div>
         <div class="vp3-agent-voice-actions"><a href="<?= e(url('/profile-agent.php')) ?>">Open My Agent</a><a href="<?= e(url('/account.php#agents-data')) ?>">Agent settings</a></div>
       </div>
     </section>

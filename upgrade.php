@@ -48,6 +48,7 @@ require_once __DIR__ . '/includes/video-meetings-plan-action-handoff-v18190.php'
 require_once __DIR__ . '/includes/video-meetings-followthrough-verification-v18200.php';
 require_once __DIR__ . '/includes/video-meetings-cross-meeting-continuity-v18210.php';
 require_once __DIR__ . '/includes/video-meetings-closure-recurring-continuity-v18220.php';
+require_once __DIR__ . '/includes/phone-cloud-v100.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(): bool
@@ -134,6 +135,7 @@ function vp3_upgrade_complete(): bool
         && studio_participants_schema_ready()
         && studio_voice_profile_schema_ready()
         && user_agent_system_schema_ready_v236()
+        && vp3_phone_schema_ready_v100(db())
         && vp3_user_agent_lifecycle_schema_ready_v390()
         && vp3_agent_memory_scope_schema_ready_v410()
         && agent_scheduling_schema_ready_v430()
@@ -283,6 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             studio_participants_ensure_schema();
             studio_voice_profile_ensure_schema();
             user_agent_system_ensure_schema_v236();
+            vp3_phone_ensure_schema_v100($pdo);
             agent_voice_preferences_schema($pdo);
             vp3_user_agent_lifecycle_ensure_schema_v390();
             vp3_agent_memory_scope_ensure_schema_v410();
