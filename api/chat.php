@@ -185,6 +185,7 @@ try {
         $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];
         $rawAgentContext['conversation_id']=$conversationId;
         $agentContext=agent_surface_v131_enrich($user,'chat',$rawAgentContext);
+        vp3_capability_begin_v1($pdo,$user,['kind'=>'system','viewer_user_id'=>$userId],$agentContext,$input['knowledge_scope']??null);
 
         $historyStmt = $pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');
         $historyStmt->execute([$conversationId]);

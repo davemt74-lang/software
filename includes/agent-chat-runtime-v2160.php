@@ -11,6 +11,7 @@ require_once __DIR__.'/agent-work-control-v173.php';
 require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/user-calendar-agent-v1300.php';
 require_once __DIR__.'/agent-reminders-v1.php';
+require_once __DIR__.'/agent-capability-awareness-v1.php';
 require_once __DIR__.'/knowledge-retrieval-v162.php';
 require_once __DIR__.'/project-knowledge-r6.php';
 require_once __DIR__.'/knowledge-actions-r9.php';
@@ -152,6 +153,7 @@ if($rawBrowserContext){
     }
 }
 $rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$activeAgentId;$calendarAwareness=calendar_schedule_awareness_snapshot_v1330($pdo,$user);$calendarContextEvents=vp3_agent_chat_runtime_calendar_events_v2160($calendarAwareness);$clientEvents=is_array($rawAgentContext['events']??null)?$rawAgentContext['events']:[];$rawAgentContext['events']=array_merge($calendarContextEvents,$clientEvents);$meetingMemory=video_meeting_memory_agent_context_v18120($pdo,$userId,$query);$meetingMemory=video_meeting_commitment_command_enrich_v18230($pdo,$userId,$query,$meetingMemory);if(!empty($meetingMemory['relevant']))$rawAgentContext['meeting_memory']=$meetingMemory;$agentContext=agent_surface_v131_enrich($user,'chat',$rawAgentContext);if(!empty($meetingMemory['relevant']))$agentContext['meeting_memory']=$meetingMemory;$agentContext['calendar_awareness']=$calendarAwareness;
+vp3_capability_begin_v1($pdo,$user,$principal,$agentContext,!empty($r6Packet['active'])?$r6Packet['state']['scope']:($input['knowledge_scope']??null));
 $persistedAgentContext=$agentContext;
 unset($persistedAgentContext['browser_context']);$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$userMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,$inputMode);}
 $knowledgeDraft=null;$knowledgeTool=null;

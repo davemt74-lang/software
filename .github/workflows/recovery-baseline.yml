@@ -40,6 +40,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Current capability awareness and permission isolation
+        run: php tests/agent-capability-awareness-v1.php
+
       - name: Runtime versions
         run: |
           php --version
