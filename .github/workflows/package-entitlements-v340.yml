@@ -86,6 +86,18 @@ jobs:
       - name: Phone package and user dropdown contract
         run: node tests/phone-cloud-ph2-contract.mjs
 
+      - name: Agent SMS Inbox PH3A lint and contracts
+        run: |
+          php -l includes/phone-sms-v110.php
+          php -l api/phone-sms-inbound-v110.php
+          php -l api/phone-sms-v110.php
+          php -l phone-inbox.php
+          php -l admin/phone.php
+          php -l phone.php
+          php -l upgrade.php
+          node tests/phone-sms-ph3a-contract.mjs
+          php tests/phone-sms-ph3a-runtime.php
+
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
 

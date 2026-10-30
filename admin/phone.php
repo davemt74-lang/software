@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/phone-cloud-v100.php';
+require_once dirname(__DIR__).'/includes/phone-sms-v110.php';
 require_login();require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 $ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';
@@ -38,6 +39,24 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
                 save_setting('phone_gateway_public_url',$gateway);
                 flash('notice','Twilio settings saved. No numbers were purchased or activated.');
                 redirect(url('/admin/phone.php'));
+            }
+            if ($action==='save_sms_callback') {
+                $callback=vp3_phone_sms_validate_callback_url_v110((string)($_POST['callback_url']??''));
+                save_setting('phone_sms_webhook_url_v110',$callback);
+                flash('notice','Incoming SMS callback saved. Existing numbers were not activated.');
+                redirect(url('/admin/phone.php#sms'));
+            }
+            if ($action==='activate_incoming_sms') {
+                if (!vp3_phone_sms_schema_ready_v110()) throw new RuntimeException('Run the PH3A database upgrade first.');
+                vp3_phone_sms_activate_v110($pdo,(int)($_POST['number_id']??0));
+                flash('notice','Twilio incoming SMS webhook configured and inbox enabled for that number. Outbound sending remains disabled.');
+                redirect(url('/admin/phone.php#numbers'));
+            }
+            if ($action==='disable_incoming_sms') {
+                $pdo->prepare('UPDATE phone_cloud_numbers_v100 SET sms_enabled=0 WHERE id=?')
+                    ->execute([(int)($_POST['number_id']??0)]);
+                flash('notice','Incoming SMS storage disabled locally. Twilio may still call the signed endpoint, which will ignore this number.');
+                redirect(url('/admin/phone.php#numbers'));
             }
             if ($action==='test_connection') {
                 $sid=vp3_phone_twilio_credentials_v100()[0];
@@ -126,6 +145,11 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
       <p><small>SMS registration and voice/recording consent depend on number type, destination, and use case. No live sending is enabled by this page.</small></p>
     </section>
   </div>
+  <section class="phone-card" id="sms"><h2>Incoming SMS gateway · PH3A</h2>
+    <p>Configure the precise public Cloud callback URL. Twilio webhooks are checked against this URL and your saved Auth Token before any message is stored. No incoming content is forwarded to AI providers.</p>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_sms_callback"><label class="phone-field">Signed HTTPS SMS webhook URL<input type="url" name="callback_url" required placeholder="https://your-cloud.example/api/phone-sms-inbound-v110.php" value="<?= e(vp3_phone_sms_callback_url_v110()) ?>"></label><button <?= $ready?'':'disabled' ?>>Save callback URL</button></form>
+    <p><small>Activating a number sets its Twilio inbound SMS URL and enables your private Cloud inbox. It does not enable outbound messages. For live use, confirm that the public Cloud domain resolves and PHP can receive POST callbacks.</small></p>
+  </section>
   <section class="phone-card" id="requests"><h2>Member phone requests (<?= count($requests) ?>)</h2>
     <p>Members select an available number and their agent. You review and explicitly purchase it through Twilio.</p>
     <?php if(!$requests): ?><p>No pending requests.</p><?php else: ?><div class="phone-scroll"><table class="phone-table"><thead><tr><th>Member & agent</th><th>Requested number</th><th>Purchase approval</th></tr></thead><tbody>
@@ -134,7 +158,9 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
   </section>
   <section class="phone-card" id="numbers"><h2>Registered number inventory (<?= count($numbers) ?>)</h2>
     <?php if(!$numbers): ?><p>There are no imported or purchased numbers yet.</p><?php else: ?><div class="phone-scroll"><table class="phone-table"><thead><tr><th>Number</th><th>Member</th><th>Agent</th><th>State</th><th>Assign / reassign</th></tr></thead><tbody>
-    <?php foreach($numbers as $number): ?><tr><td><strong><?= e((string)$number['phone_e164']) ?></strong></td><td><?= e((string)($number['owner_name']?:'Unassigned')) ?></td><td><?= e((string)($number['agent_name']?:'—')) ?></td><td><?= e((string)$number['status']) ?><br><small>Calls/SMS disabled</small></td><td><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="assign_number"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><select name="agent_pair" required><option value="">Choose a member’s agent</option><?php foreach($agents as $agent): ?><option value="<?= (int)$agent['owner_user_id'] ?>:<?= (int)$agent['id'] ?>" <?= (int)$number['owner_user_id']===(int)$agent['owner_user_id']&&(int)$number['agent_id']===(int)$agent['id']?'selected':'' ?>><?= e((string)$agent['owner_name']) ?> — <?= e((string)$agent['agent_name']) ?></option><?php endforeach; ?></select><button class="phone-secondary">Assign</button></form></td></tr><?php endforeach; ?>
+    <?php foreach($numbers as $number): ?><tr><td><strong><?= e((string)$number['phone_e164']) ?></strong></td><td><?= e((string)($number['owner_name']?:'Unassigned')) ?></td><td><?= e((string)($number['agent_name']?:'—')) ?></td><td><?= e((string)$number['status']) ?><br><small>Incoming SMS: <?= (int)$number['sms_enabled']===1?'enabled':'disabled' ?> · Outbound: disabled</small></td><td><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="assign_number"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><select name="agent_pair" required><option value="">Choose a member’s agent</option><?php foreach($agents as $agent): ?><option value="<?= (int)$agent['owner_user_id'] ?>:<?= (int)$agent['id'] ?>" <?= (int)$number['owner_user_id']===(int)$agent['owner_user_id']&&(int)$number['agent_id']===(int)$agent['id']?'selected':'' ?>><?= e((string)$agent['owner_name']) ?> — <?= e((string)$agent['agent_name']) ?></option><?php endforeach; ?></select><button class="phone-secondary">Assign</button></form>
+    <?php if((int)$number['sms_enabled']===1): ?><form method="post" onsubmit="return confirm('Disable incoming SMS storage for this number?')"><?= csrf_field() ?><input type="hidden" name="action" value="disable_incoming_sms"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button class="phone-secondary">Disable incoming SMS</button></form>
+    <?php else: ?><form method="post" onsubmit="return confirm('Configure Twilio to deliver incoming SMS for this assigned number to the VP3 Cloud inbox?')"><?= csrf_field() ?><input type="hidden" name="action" value="activate_incoming_sms"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button <?= $state['configured']&&vp3_phone_sms_callback_url_v110()!==''?'':'disabled' ?>>Enable incoming SMS</button></form><?php endif; ?></td></tr><?php endforeach; ?>
     </tbody></table></div><?php endif; ?>
   </section>
 </div>
