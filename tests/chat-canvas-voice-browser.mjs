@@ -407,6 +407,16 @@ try {
   assert.equal(sends().at(-1).agent_context?.screen_observation??null,null);
   console.log('PASS typed and spoken canonical Chat attach current screen context; stopped sharing attaches none');
 
+  await boot();
+  const reminderCount=sends().length;
+  await page.locator('#chatInput').fill('Remind me to stretch tomorrow at 8 AM');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());await page.waitForFunction(()=>document.querySelector('#chatInput').disabled===false);
+  const typedReminder=sends().at(-1);assert.equal(sends().length,reminderCount+1);assert.match(typedReminder.reminder_request_id,/^[a-f0-9-]{36}$/);assert.equal(typedReminder.reminder_timezone,await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone));
+  await page.getByRole('button',{name:'Start voice conversation'}).click();await page.waitForFunction(()=>recognizers.some(r=>r.active));
+  await speak('Snooze that reminder for ten minutes');await page.waitForTimeout(2100);
+  const voiceReminder=sends().at(-1);assert.equal(voiceReminder.input_mode,'voice');assert.equal(voiceReminder.message,'Snooze that reminder for ten minutes');assert.notEqual(voiceReminder.reminder_request_id,typedReminder.reminder_request_id);assert.equal(voiceReminder.agent_context.timezone,typedReminder.reminder_timezone);
+  await page.evaluate(()=>VP3ConversationControls.stop());
+  console.log('PASS typed and spoken reminders share canonical Chat, distinct mutation references and browser timezone');
+
   assert.deepEqual(errors, []);
   if (process.env.VP3_CHAT_SCREENSHOT) await page.screenshot({path:process.env.VP3_CHAT_SCREENSHOT});
   console.log('PASS compact desktop/mobile canvas; tools preserve state; actual Chat + voice lease + automatic planner retain delayed voice input, speak once, resume listening, and reject failed/cancelled late routes.');

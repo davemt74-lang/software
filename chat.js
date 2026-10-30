@@ -3125,6 +3125,8 @@
         : null;
       const payload={
         action:'send',
+        reminder_request_id:globalThis.crypto?.randomUUID?.()||('reminder:'+Date.now().toString(36)+Math.random().toString(36).slice(2)),
+        reminder_timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
         conversation_id:conversationId,
         message:message.trim(),
         input_mode:inputMode === 'voice' ? 'voice' : 'text'

@@ -270,6 +270,7 @@
     const active=currentActivity();
     return {
       build:BUILD,
+      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
       surface:cleanText(cfg.surface||'chat',30),
       user_agent_id:activeUserAgentId(),
       track_id:Math.max(0,Number(cfg.trackId||0)),

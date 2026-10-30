@@ -10,6 +10,7 @@ require_once __DIR__.'/agent-tool-authorization-v400.php';
 require_once __DIR__.'/agent-work-control-v173.php';
 require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/user-calendar-agent-v1300.php';
+require_once __DIR__.'/agent-reminders-v1.php';
 require_once __DIR__.'/knowledge-retrieval-v162.php';
 require_once __DIR__.'/project-knowledge-r6.php';
 require_once __DIR__.'/knowledge-actions-r9.php';
@@ -176,7 +177,16 @@ if(empty($r6Packet['active'])&&$brainAllowed&&knowledge_retrieval_v162_owner_ses
     $researchRecall['answer']=$savedResearch?chat_research_context_r3($savedResearch,15000,false):'No saved research matching this question is currently available under your lead, project and website permissions.';
     foreach($savedResearch as $saved)$researchRecall['sources'][]=['source'=>'research:'.$saved['report']['id'],'title'=>$saved['question'],'url'=>$saved['report']['url']];
 }
-$toolResult=$knowledgeTool??$researchRecall??agent_work_control_chat_v173($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=user_calendar_agent_query_v1300($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();if(empty($toolResult['handled']))$toolResult=vp3_agent_tool_execute_query_v400($query,$user,$conversationId);else $toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}}
+$reminderTool=null;
+if(!$ephemeralProtocol&&knowledge_retrieval_v162_owner_session($user,$principal)){
+    $reminderKey=(string)($input['reminder_request_id']??('message:'.$userMessageId));
+    if(!preg_match('/^[A-Za-z0-9:_-]{8,100}$/D',$reminderKey))$reminderKey='message:'.$userMessageId;
+    $reminderZone=(string)($rawAgentContext['timezone']??$input['reminder_timezone']??user_calendar_default_timezone_v1300($pdo,$user));
+    try{reminder_zone_v1($reminderZone);}catch(Throwable $ignored){$reminderZone=user_calendar_default_timezone_v1300($pdo,$user);}
+    $reminderCandidate=reminder_chat_v1($pdo,$user,$query,'cloud:'.$conversationId,$reminderKey,$conversationId,$reminderZone,null,$currentAuthority);
+    if(!empty($reminderCandidate['handled']))$reminderTool=$reminderCandidate;
+}
+$toolResult=$reminderTool??$knowledgeTool??$researchRecall??agent_work_control_chat_v173($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=user_calendar_agent_query_v1300($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();if(empty($toolResult['handled']))$toolResult=vp3_agent_tool_execute_query_v400($query,$user,$conversationId);else $toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}}
 if(!empty($r6Packet['active'])&&knowledge_r6_unscoped_read($toolResult))$toolResult=vp3_agent_tool_empty_v400();
 $homeAttempted=false;$homeResult=null;$responseActions=[];$turnPrepared=null;$turn=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
 if(!empty($toolResult['handled'])){

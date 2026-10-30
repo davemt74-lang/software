@@ -204,6 +204,7 @@ function vp3_upgrade_complete(): bool
         && table_exists('social_feed_posts_v1')
         && table_exists('tv_watching_state_v1')
         && table_exists('tv_watching_records_v1')
+        && reminder_ready_v1(db())
         && table_exists('user_agent_voice_preferences');
 }
 
@@ -347,6 +348,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             personal_capability_ensure_schema_v242();
             require_once __DIR__.'/includes/tv-watching-v1.php';
             tv_schema_v1($pdo);
+            reminder_schema_v1($pdo);
             crm_v180_ensure_schema();
             campaigns_rewards_platform_ensure_schema_v100($pdo);
             campaigns_rewards_ensure_schema_v100($pdo);
