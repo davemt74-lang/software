@@ -54,6 +54,7 @@ function vp3_transcript_chat_v1(PDO $pdo,array $user,array $principal,string $qu
     if(!knowledge_retrieval_v162_owner_session($user,$principal))return $empty;
     if(!has_permission('artist_listening.access',$user))return [...$empty,'handled'=>true,'answer'=>'Transcript access is not available for this account.','tool_receipt'=>vp3_tool_receipt_v1('transcripts.read','interpret','blocked','permission_denied')];
     if(!table_exists('artist_transcript_sessions_v172')||!table_exists('artist_transcript_segments_v172'))return [...$empty,'handled'=>true,'answer'=>'Transcript storage needs the database upgrade.','tool_receipt'=>vp3_tool_receipt_v1('transcripts.read','interpret','blocked','upgrade_required')];
+    if($model===null&&function_exists('vp3_agent_runtime_plan_v420')){try{$route=vp3_agent_runtime_plan_v420($pdo,$user,($principal['kind']??'')==='user_agent'?(int)$principal['agent_id']:0,'chat');if(($route['route']??'')!=='vp3_cloud'||empty($route['cloud']['ready']))return $empty;}catch(Throwable $e){return $empty;}}
     try{
         $catalog=vp3_transcript_catalog_v1($pdo,$user,$principal);
         if($selected)vp3_transcript_session_v1($pdo,$user,$principal,$selected);

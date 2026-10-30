@@ -16,7 +16,7 @@ $r=discover('Can you remind me to stretch in two minutes?',modelplan('continue')
 check(!$r['handled'],'concrete action request continues to its existing authorized executor');
 $r=discover('What is on my calendar?',modelplan('continue'));check(!$r['handled'],'actual calendar retrieval is not replaced by capability information');
 $r=discover('Hello',modelplan('continue'));check(!$r['handled'],'ordinary conversation continues unchanged');
-$r=discover('What can you do here?',modelplan('inspect'));check(substr_count($r['answer'],'(')===8,'general inventory covers each assessed capability');
+$r=discover('What can you do here?',modelplan('inspect'));check(substr_count($r['answer'],'(')===count(vp3_capability_snapshot_v1($pdo,['id'=>1,'is_active'=>1],['kind'=>'system'])['capabilities']),'general inventory covers each assessed capability');
 $r=discover('Can you access my restaurant menu?',modelplan('unassessed'));check(str_contains($r['answer'],'outside the capabilities checked')&&!str_contains($r['answer'],'no access'),'unassessed integration is not falsely denied');
 $r=discover('Can you access Knowledge?',modelplan('inspect',['knowledge.search']),[],'off');check(str_contains($r['answer'],'Knowledge is off'),'conversation opt-out is explained without expanding scope');
 $r=discover('Why can you not search this folder?',modelplan('inspect',['knowledge.search']),[],['mode'=>'folder','folder_id'=>6]);check(str_contains($r['answer'],'folder is unavailable'),'foreign folder remains unavailable after model selection');
