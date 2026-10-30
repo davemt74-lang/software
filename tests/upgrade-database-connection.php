@@ -4,12 +4,12 @@ declare(strict_types=1);
 // Execute the production upgrade page with isolated migration dependencies.
 // Real PDO/SQLite and the production TV schema exercise the connection and readiness path.
 if (!isset($argv[1])) {
-    foreach (['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only'] as $mode) {
+    foreach (['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only'] as $mode) {
         $command = escapeshellarg(PHP_BINARY).(php_ini_loaded_file() ? ' -c '.escapeshellarg(php_ini_loaded_file()) : '').' '.escapeshellarg(__FILE__).' '.escapeshellarg($mode);
         passthru($command, $status);
         if ($status !== 0) exit($status);
     }
-    echo "UPGRADE_DATABASE_CONNECTION=PASS (7 cases)\n";
+    echo "UPGRADE_DATABASE_CONNECTION=PASS (8 cases)\n";
     exit;
 }
 
@@ -18,14 +18,17 @@ $fixture = new PDO('sqlite::memory:');
 $fixture->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $fixture->exec("CREATE TABLE existing_content (value TEXT); INSERT INTO existing_content VALUES ('preserve me')");
 require dirname(__DIR__).'/includes/tv-watching-v1.php';
-if ($mode === 'already-ready') tv_schema_v1($fixture);
+require dirname(__DIR__).'/includes/agent-reminders-v1.php';
+$fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');
+if (in_array($mode,['already-ready','tv-only'],true)) tv_schema_v1($fixture);
+if ($mode === 'already-ready') reminder_schema_v1($fixture);
 if ($mode === 'state-only') $fixture->exec('CREATE TABLE tv_watching_state_v1 (owner_user_id BIGINT PRIMARY KEY)');
 if ($mode === 'records-only') $fixture->exec('CREATE TABLE tv_watching_records_v1 (owner_user_id BIGINT)');
 $calls = []; $dbCalls = 0; $flashes = []; $redirects = [];
 function db(): ?PDO { $GLOBALS['dbCalls']++; return $GLOBALS['mode'] === 'missing-db' ? null : $GLOBALS['fixture']; }
 function setting(...$args): string { return '1'; }
 function table_exists(string $name): bool {
-    if (!in_array($name, ['tv_watching_state_v1', 'tv_watching_records_v1'], true)) return true;
+    if (!in_array($name, ['tv_watching_state_v1', 'tv_watching_records_v1','agent_reminders_v1','agent_reminder_occurrences_v1','agent_reminder_context_v1','agent_reminder_turns_v1'], true)) return true;
     $q = $GLOBALS['fixture']->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");
     $q->execute([$name]); return (bool)$q->fetchColumn();
 }
@@ -60,7 +63,7 @@ foreach ($functions as $name => $typed) {
     else eval('function '.$name.'(...$args) { return migration_dependency(__FUNCTION__, $args); }');
 }
 
-$_SERVER['REQUEST_METHOD'] = in_array($mode, ['get', 'state-only', 'records-only'], true) ? 'GET' : 'POST';
+$_SERVER['REQUEST_METHOD'] = in_array($mode, ['get', 'state-only', 'records-only', 'tv-only'], true) ? 'GET' : 'POST';
 // Reproduce the reported deployment: bootstrap does not supply a page-local PDO.
 $pdo = null;
 ob_start(); eval(preg_replace('/^<\?php\s*/', '', $source)); $html = ob_get_clean();
@@ -69,7 +72,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     check($error === '', 'Upgrade POST failed: '.$error);
     check($dbCalls === 1 && $pdo === $fixture, 'Upgrade must acquire its connection before the first migration');
     foreach (['social_feed_schema_v1', 'knowledge_r6_ensure_schema', 'knowledge_r7_ensure_schema', 'knowledge_r8_ensure_schema', 'workspace_native_schema_v1', 'artist_music_v185_ensure_schema'] as $name) check(in_array($name, $calls, true), 'Upgrade did not reach '.$name);
-    check(table_exists('tv_watching_state_v1') && table_exists('tv_watching_records_v1') && $complete, 'Upgrade skipped TV storage');
+    check(table_exists('tv_watching_state_v1') && table_exists('tv_watching_records_v1') && reminder_ready_v1($fixture) && $complete, 'Upgrade skipped TV/reminder storage');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'missing-db') {
     check($error === 'Database connection is unavailable.' && $calls === [], 'Unavailable database must stop before all migrations');

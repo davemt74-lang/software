@@ -195,9 +195,10 @@ try {
         $userMessageId = (int)$pdo->lastInsertId();
         agent_brain_archive_and_parse($user, $conversationId, $userMessageId, 'user', $query, $inputMode);
 
-        $toolResult = function_exists('vp3_radar_chat_tool')
+        $reminderTool=reminder_chat_v1($pdo,$user,$query,'cloud:'.$conversationId,'message:'.$userMessageId,$conversationId,(string)($rawAgentContext['timezone']??'UTC'));
+        $toolResult = !empty($reminderTool['handled']) ? $reminderTool : (function_exists('vp3_radar_chat_tool')
             ? vp3_radar_chat_tool($query, $user, $conversationId)
-            : ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+            : ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]]);
         if (empty($toolResult['handled'])) {
             $toolResult = function_exists('release_v105_chat_tool')
                 ? release_v105_chat_tool($query, $user, $conversationId)

@@ -85,6 +85,7 @@ require_once __DIR__.'/extension-device-auth-v2000.php';
 require_once __DIR__.'/extension-device-token-v2100.php';
 require_once __DIR__.'/subscription-request-gates.php';
 require_once __DIR__.'/notifications.php';
+require_once __DIR__.'/agent-reminders-v1.php';
 require_once __DIR__.'/client-release-intelligence-v100.php';
 require_once __DIR__.'/client-release-rollouts-v110.php';
 require_once __DIR__.'/client-release-health-v120.php';

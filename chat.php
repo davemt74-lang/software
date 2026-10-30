@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'chat-history-draft-recovery-20261018-startup-20261021-media-20261026-composer-participants-v1344';
-$controlBuild .= '-screen-v1353';
+$controlBuild .= '-screen-v1353-reminders-v1354';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer' . '-voice-v1351';
