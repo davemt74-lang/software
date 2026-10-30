@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'chat-history-draft-recovery-20261018-startup-20261021-media-20261026-composer-participants-v1344';
-$controlBuild .= '-screen-v1353-reminders-v1354-longfellow-r3';
+$controlBuild .= '-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s1';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer-r3' . '-voice-v1351';
@@ -11,6 +11,7 @@ $voiceCacheBuild .= '-eyes-v1344';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
+$transcriptionCanvasBuild .= '-transcripts-s1';
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
 $agentIdentityBuild = 'cloud-agent-onboarding-readiness-v110-20261001';

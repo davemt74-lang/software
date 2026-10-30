@@ -12,6 +12,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
 {
     if(!is_array($value)||($value['contract']??'')!=='vp3.tool-receipt.v1')return null;
     $ops=[
+        'transcripts.read'=>['list','read','search','clarify','interpret'],
         'capabilities.inspect'=>['inspect'],
         'reminders.manage'=>['clarify','create','list','update','complete','snooze','dismiss','cancel','delete','interpret'],
         'calendar.read'=>['list'],

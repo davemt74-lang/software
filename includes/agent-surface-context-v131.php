@@ -113,6 +113,7 @@ function agent_surface_v131_sanitize(array $raw): array
         'voice'=>null,
         'participants'=>null,
         'transcription'=>null,
+        'transcript_session_id'=>max(0,(int)($raw['transcript_session_id']??0)),
         'editor_capabilities'=>null,
         'browser_context'=>null,
         'screen_observation'=>agent_surface_v131_screen_observation($raw),

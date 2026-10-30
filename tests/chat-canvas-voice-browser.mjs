@@ -469,6 +469,18 @@ try {
   await page.evaluate(()=>VP3ConversationControls.stop());
   console.log('PASS voice preparation errors release the pending turn and the next request works without reload or replay');
 
+  await page.evaluate(()=>{window.STONEFELLOW_TRANSCRIPTION_CANVAS={selection:()=>({session_id:21,view:'home'})};});
+  await page.locator('#chatInput').fill('Read the selected transcript');
+  await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>!document.querySelector('#chatInput').disabled);
+  assert.equal(sends().at(-1).agent_context.transcript_session_id,21,'Typed Chat carries the current transcript selection');
+  await page.evaluate(()=>{window.STONEFELLOW_TRANSCRIPTION_CANVAS={selection:()=>null};});
+  await page.locator('#chatInput').fill('Talk about pizza with the panel closed');
+  await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>!document.querySelector('#chatInput').disabled);
+  assert.equal(sends().at(-1).agent_context.transcript_session_id,0,'Closing the transcript panel drops the browser selection hint');
+  console.log('PASS transcript selection follows the active panel and clears when closed');
+
   assert.deepEqual(errors, []);
   if (process.env.VP3_CHAT_SCREENSHOT) await page.screenshot({path:process.env.VP3_CHAT_SCREENSHOT});
   console.log('PASS compact desktop/mobile canvas; tools preserve state; actual Chat + voice lease + automatic planner retain delayed voice input, speak once, resume listening, and reject failed/cancelled late routes.');

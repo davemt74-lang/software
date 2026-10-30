@@ -282,6 +282,7 @@
       path:location.pathname+location.search,
       visible:document.visibilityState!=='hidden',
       screen_observation:window.VP3AgentScreenShare?.context()||null,
+      transcript_session_id:Number(window.STONEFELLOW_TRANSCRIPTION_CANVAS?.selection?.()?.session_id||window.STONEFELLOW_ARTIST_LISTENING_TRANSCRIPT?.api?.getState?.()?.sessionId||0),
       voice:voiceSession?{
         session_id:cleanText(voiceSession.id||voiceSession.sessionId||'',120),
         state:cleanText(voiceSession.state||'',30),
