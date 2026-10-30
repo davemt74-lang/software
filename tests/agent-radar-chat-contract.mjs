@@ -5,7 +5,7 @@ const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'ut
 
 const bootstrap = read('includes/bootstrap.php');
 const chatTool = read('includes/agent-radar-chat.php');
-const chatApi = read('api/chat.php');
+const chatApi = [read('api/chat.php'),read('includes/agent-tool-authorization-v400.php')].join('\n');
 const gateway = read('includes/agent-radar-gateway.php');
 
 assert.ok(bootstrap.includes("require_once __DIR__.'/agent-radar-chat.php';"), 'bootstrap must load the Radar chat tool');

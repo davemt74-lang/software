@@ -47,7 +47,7 @@ assert.doesNotMatch(textChat, /agent_compute_v020_route_plan\(/);
 assert.doesNotMatch(textChat, /agent_compute_v023_effective\(/);
 assert.doesNotMatch(textChat, /homeserver_agent_v018_write_cloud_usage\(/);
 assert.match(textChat, /homeserver_agent_v025_chat[\s\S]*!empty\(\$runtimePlan\['homeserver_cloud_allowed'\]\)/);
-assert.match(textChat, /vp3_agent_tool_execute_query_v400/);
+assert.match(textChat, /vp3_agent_chat_tool_query_v1/);
 assert.match(textChat, /ai_usage_accounting_v032_record/);
 
 // Streaming/voice is transport only: it uses exactly the same Agent compute
@@ -60,7 +60,7 @@ assert.match(streamChat, /vp3_agent_runtime_plan_v420/);
 assert.match(streamChat, /homeserver_agent_v025_chat[\s\S]*!empty\(\$runtimePlan\['homeserver_cloud_allowed'\]\)/);
 assert.match(streamChat, /vp3_agent_runtime_homeserver_execution_v420/);
 assert.match(streamChat, /vp3_agent_runtime_finalize_v420/);
-assert.match(streamChat, /vp3_agent_tool_execute_query_v400/);
+assert.match(streamChat, /vp3_agent_chat_tool_query_v1/);
 assert.doesNotMatch(streamChat, /\bagent_tool_execute_query\(/);
 assert.doesNotMatch(streamChat, /homeserver_agent_v018_write_cloud_usage\(/);
 assert.match(streamChat, /ai_usage_accounting_v032_record/);

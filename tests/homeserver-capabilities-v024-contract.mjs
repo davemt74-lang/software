@@ -49,7 +49,7 @@ assert.match(runtime, /fallback_reason/, 'canonical fallback reason must remain 
 
 // Deterministic tools run before model routing, and Chat consumes one v4.20
 // plan instead of independently resolving v0.24 capability state.
-const toolIndex = chat.indexOf('vp3_agent_tool_execute_query_v400');
+const toolIndex = chat.indexOf('vp3_agent_chat_tool_query_v1');
 const runtimePlanIndex = chat.indexOf('vp3_agent_runtime_plan_v420');
 const homeAttemptIndex = chat.indexOf('homeserver_agent_v025_chat');
 assert.ok(toolIndex >= 0 && runtimePlanIndex > toolIndex, 'existing VP3 tools must remain first in the canonical chat path');

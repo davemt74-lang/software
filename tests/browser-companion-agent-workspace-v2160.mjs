@@ -59,7 +59,7 @@ must(runtime.includes("function vp3_agent_chat_send_v2160("),'canonical shared A
 must(webApi.includes("$payload=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed);"),'web Chat send must delegate to shared runtime');
 must(extensionApi.includes("vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$runtimeInput,$brainAllowed,$r9Authority)"),'Browser Agent send must delegate to shared runtime');
 must(runtime.includes("$userId=(int)($user['id']??0);"),'shared runtime user identity initialization missing');
-must(runtime.includes("vp3_agent_tool_execute_query_v400"),'shared runtime must retain canonical Agent tools');
+must(runtime.includes("vp3_agent_chat_tool_query_v1")&&read("includes/agent-tool-authorization-v400.php").includes("return vp3_agent_tool_execute_query_v400($query,$user,$conversationId)"),'shared runtime must delegate through the shared authorized Agent tools');
 must(runtime.includes("knowledge_retrieval_v162_generate_answer"),'shared runtime must retain Knowledge retrieval');
 must(runtime.includes("homeserver_agent_v025_chat"),'shared runtime must retain HomeServer route');
 must(runtime.includes("ai_usage_accounting_v032"),'shared runtime must retain AI usage accounting');

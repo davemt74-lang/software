@@ -13,7 +13,8 @@ const browser=read('chat.js');
 
 assert.match(boundary,/VP3_AGENT_TOOL_AUTHORIZATION_V400/);
 assert.match(chat,/agent-tool-authorization-v400\.php/);
-assert.match(chat,/vp3_agent_tool_execute_query_v400\(\$query,\$user,\$conversationId\)/);
+assert.match(chat,/vp3_agent_chat_tool_query_v1\(\$query,\$user,\$conversationId\)/);
+assert.match(boundary,/return vp3_agent_tool_execute_query_v400\(\$query,\$user,\$conversationId\)/);
 assert.match(chat,/vp3_agent_tool_authorize_result_v400\(\$toolResult,\$user,\$query\)/);
 assert.doesNotMatch(chat,/if\(empty\(\$toolResult\['handled'\]\)\)\$toolResult=agent_tool_execute_query\(/,'Agent Chat must not call the legacy executable tool layer directly');
 

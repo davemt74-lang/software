@@ -9,7 +9,7 @@ const domains=read('includes/cognitive-domain-registry-v2600.php');
 const legacyTools=read('includes/agent-tools-v84.php');
 const authTools=read('includes/agent-tool-authorization-v400.php');
 const brain=read('includes/agent-brain-v82.php');
-const chat=read('api/chat.php');
+const chat=[read('api/chat.php'),read('includes/agent-chat-runtime-v2160.php'),read('includes/agent-tool-authorization-v400.php')].join('\n');
 const trackyPage=read('tracky.php');
 const packageWorkflow=read('.github/workflows/production-deploy-package.yml');
 

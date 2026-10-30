@@ -64,13 +64,13 @@ function vp3_capability_report_v1(array $snapshot,array $ids,?array $home=null):
     return implode("\n",$lines);
 }
 
-function vp3_capability_live_user_v1(PDO $pdo,array $user,array $context,?callable $authority): array
+function vp3_capability_live_user_v1(PDO $pdo,array $user,array $principal,array $context,?callable $authority): array
 {
     if($authority)$authority();
     $q=$pdo->prepare('SELECT * FROM users WHERE id=?');$q->execute([(int)$user['id']]);$live=$q->fetch(PDO::FETCH_ASSOC);
     if(!$live||empty($live['is_active'])||!has_permission('chat.access',$live))throw new RuntimeException('Account access changed. No action was taken.',403);
     if(function_exists('user_account_types_for_user_id'))$live['roles']=user_account_types_for_user_id((int)$live['id'],(string)($live['role']??''));
-    $agentId=max(0,(int)($context['user_agent_id']??0));$agent=$agentId>0?['id'=>$agentId]:null;
+    $agentId=($principal['kind']??'system')==='user_agent'?max(0,(int)($principal['agent_id']??0)):0;$agent=$agentId>0?['id'=>$agentId]:null;
     if($agentId>0&&function_exists('vp3_agent_chat_resolve_agent_v380'))$agent=vp3_agent_chat_resolve_agent_v380($pdo,$live,$agentId);
     $cid=max(0,(int)($context['conversation_id']??0));
     if($cid>0&&function_exists('vp3_agent_chat_conversation_v380')&&!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent))throw new RuntimeException('Conversation access changed. No action was taken.',403);
@@ -81,6 +81,8 @@ function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $qu
 {
     $empty=['handled'=>false,'answer'=>'','actions'=>[],'sources'=>[]];
     if(!knowledge_retrieval_v162_owner_session($user,$principal)||!has_permission('chat.access',$user))return $empty;
+    // Identity is resolved by the caller from the authenticated Agent, never UI context.
+    $context['user_agent_id']=($principal['kind']??'system')==='user_agent'?max(0,(int)($principal['agent_id']??0)):0;
     $snapshot=vp3_capability_begin_v1($pdo,$user,$principal,$context,$scope);
     if(!$snapshot['capabilities'])return $empty;
     // Capability inference obeys the same compute/privacy policy as normal Chat.
@@ -104,7 +106,7 @@ function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $qu
         return [...$empty,'handled'=>true,'answer'=>'I could not interpret this request through the configured AI service. No action was taken. Please try again.','tool_receipt'=>vp3_tool_receipt_v1('capabilities.inspect','inspect','failed',$interpretFailure)];
     }
     if($plan['operation']==='continue')return $empty;
-    $live=vp3_capability_live_user_v1($pdo,$user,$context,$authority);
+    $live=vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority);
     $snapshot=vp3_capability_begin_v1($pdo,$live,$principal,$context,$scope);
     if($plan['operation']==='diagnose'){$last=vp3_tool_last_receipt_v1($pdo,$live,$context);return [...$empty,'handled'=>true,'answer'=>vp3_tool_diagnosis_v1($last),'tool_receipt'=>$last['receipt']??null];}
     if($plan['operation']==='unassessed')return [...$empty,'handled'=>true,'answer'=>'That feature is outside the capabilities checked by this inventory. I have not verified its tools, permissions or connection, so I cannot claim it is available or unavailable.'];
@@ -112,7 +114,7 @@ function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $qu
     if(in_array('homeserver.status',$plan['ids'],true)){
         try{$home=vp3_capability_home_v1(homeserver_capability_v033_registry((int)$live['id'],true));}
         catch(Throwable $e){$home=['ready'=>false,'reason'=>'remote_unavailable','operations'=>[]];}
-        $live=vp3_capability_live_user_v1($pdo,$user,$context,$authority);
+        $live=vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority);
         $snapshot=vp3_capability_begin_v1($pdo,$live,$principal,$context,$scope);
         foreach($snapshot['capabilities'] as &$row)if($row['id']==='homeserver.status'){$row['ready']=$home['ready'];$row['reason']=$home['reason'];}unset($row);
         $GLOBALS['vp3_capability_turn_v1']=$snapshot;

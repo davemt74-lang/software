@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -163,119 +164,10 @@ try {
     }
 
     if ($action === 'send') {
-        $query = trim((string)($input['message'] ?? ''));
-        $conversationId = (int)($input['conversation_id'] ?? 0);
-        $inputMode = (string)($input['input_mode'] ?? 'text');
-        $inputMode = $inputMode === 'voice' ? 'voice' : 'text';
-
-        if ($query === '') throw new RuntimeException('Enter a message.');
-        if (mb_strlen($query) > 6000) throw new RuntimeException('That message is too long.');
-
-        if ($conversationId < 1) {
-            $title = mb_strimwidth($query, 0, 70, '…');
-            $workspaceId = artist_workspace_v181_scope_id($user);
-            $stmt = $pdo->prepare('INSERT INTO chat_conversations (user_id,artist_workspace_id,title) VALUES (?,?,?)');
-            $stmt->execute([$userId, $workspaceId ?: null, $title]);
-            $conversationId = (int)$pdo->lastInsertId();
-        } else {
-            $conversation = chat_conversation_owned($pdo, $conversationId, $userId);
-            if (!$conversation) throw new RuntimeException('Conversation not found.');
-        }
-
-        $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];
-        $rawAgentContext['conversation_id']=$conversationId;
-        $agentContext=agent_surface_v131_enrich($user,'chat',$rawAgentContext);
-        vp3_capability_begin_v1($pdo,$user,['kind'=>'system','viewer_user_id'=>$userId],$agentContext,$input['knowledge_scope']??null);
-
-        $historyStmt = $pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');
-        $historyStmt->execute([$conversationId]);
-        $history = array_reverse($historyStmt->fetchAll());
-
-        $stmt = $pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');
-        $stmt->execute([$conversationId,$userId,'user',$query]);
-        $userMessageId = (int)$pdo->lastInsertId();
-        agent_brain_archive_and_parse($user, $conversationId, $userMessageId, 'user', $query, $inputMode);
-
-        $reminderTool=vp3_capability_chat_v1($pdo,$user,['kind'=>'system','viewer_user_id'=>$userId],$query,$agentContext,$input['knowledge_scope']??null,$history);
-        if(empty($reminderTool['handled']))$reminderTool=reminder_chat_v1($pdo,$user,$query,'cloud:'.$conversationId,'message:'.$userMessageId,$conversationId,(string)($rawAgentContext['timezone']??'UTC'));
-        $toolResult = !empty($reminderTool['handled']) ? $reminderTool : (function_exists('vp3_radar_chat_tool')
-            ? vp3_radar_chat_tool($query, $user, $conversationId)
-            : ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]]);
-        if (empty($toolResult['handled'])) {
-            $toolResult = function_exists('release_v105_chat_tool')
-                ? release_v105_chat_tool($query, $user, $conversationId)
-                : ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-        }
-        if (empty($toolResult['handled']) && function_exists('tracky_agent_tools_query_v271')) {
-            $toolResult = tracky_agent_tools_query_v271($query, $user, $conversationId);
-        }
-        if (empty($toolResult['handled']) && function_exists('homeserver_agent_read_v230_query')) {
-            $toolResult = homeserver_agent_read_v230_query($query, $user, $conversationId);
-        }
-        if (empty($toolResult['handled'])) {
-            $toolResult = agent_tool_execute_query($query, $user, $conversationId);
-        }
-
-        if (!empty($toolResult['handled'])) {
-            $answer = (string)$toolResult['answer'];
-            $context = [];
-        } else {
-            $result = function_exists('chat_generate_answer_v105')
-                ? chat_generate_answer_v105($query, $history, $user, $agentContext)
-                : chat_generate_answer($query, $history, $user);
-            $answer = (string)$result['answer'];
-            $context = $result['context'];
-        }
-
-        $publicSources = [];
-        foreach ($context as $item) {
-            $source = (string)($item['source'] ?? '');
-            if($source==='agent-context:v131')continue;
-            $entry = ['source'=>$source,'title'=>(string)($item['title'] ?? '')];
-            if (str_starts_with($source, 'knowledge:')) {
-                $knowledgeId = (int)substr($source, strlen('knowledge:'));
-                $knowledge = get_knowledge_item($knowledgeId);
-                if ($knowledge && !empty($knowledge['file_path'])) $entry['url'] = url('/knowledge-file.php?id=' . $knowledgeId);
-            }
-            $publicSources[] = $entry;
-        }
-
-        $mediaLimit = track_is_playlist_request($query) ? 7 : (track_is_next_request($query) ? 1 : 4);
-        $answerMedia = track_media_from_answer($answer, $user, $mediaLimit);
-        $queryMedia = track_media_suggestions($query, $user, $mediaLimit);
-        $media = array_slice(track_merge_media_suggestions($answerMedia, $queryMedia),0,$mediaLimit);
-        $playlistTitle = $media ? track_playlist_title($query) : '';
-
-        $toolSources = !empty($toolResult['sources']) && is_array($toolResult['sources']) ? $toolResult['sources'] : [];
-        $publicSources = array_merge($publicSources, $toolSources);
-        $cardRequests = function_exists('vp3_cognitive_cards_chat_requests_v520')
-            ? vp3_cognitive_cards_chat_requests_v520($pdo,$user,'system',$query,8)
-            : [];
-        $messageContext = [
-            'tool_receipt'=>vp3_tool_receipt_normalize_v1($toolResult['tool_receipt']??null),
-            'sources'=>$publicSources,
-            'media'=>$media,
-            'stem_media'=>!empty($toolResult['stem_media']) && is_array($toolResult['stem_media']) ? $toolResult['stem_media'] : [],
-            'actions'=>!empty($toolResult['actions']) && is_array($toolResult['actions']) ? $toolResult['actions'] : [],
-            'cards'=>$cardRequests,
-            'playlist_title'=>$playlistTitle,
-            'agent_context'=>$agentContext,
-            'execution'=>is_array($toolResult['execution'] ?? null) ? $toolResult['execution'] : [],
-        ];
-
-        $contextJson = json_encode($messageContext,JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $stmt = $pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');
-        $stmt->execute([$conversationId,'assistant',$answer,$contextJson]);
-        $assistantMessageId = (int)$pdo->lastInsertId();
-        agent_brain_archive_and_parse($user, $conversationId, $assistantMessageId, 'assistant', $answer, $inputMode);
-        $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);
-
-        echo json_encode([
-            'ok'=>true,'tool_receipt'=>$messageContext['tool_receipt'],'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,
-            'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,
-            'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],
-            'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $scope=vp3_agent_chat_stream_scope_v380($pdo,$user,$input);
+        $brainAllowed=personal_capability_has_v242('agent_brain.access',$user);
+        $payload=vp3_agent_chat_send_v2160($pdo,$user,$scope['agent'],$scope['principal'],$input,$brainAllowed);
+        echo json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         exit;
     }
 

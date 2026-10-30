@@ -168,7 +168,11 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
 {
     $empty=user_calendar_agent_empty_v1300();
     $pdo=db();
-    if(!$pdo||!user_calendar_schema_ready_v1300($pdo)||(int)($user['id']??0)<1)return $empty;
+    if((int)($user['id']??0)<1)return $empty;
+    if(!$pdo||!user_calendar_schema_ready_v1300($pdo)){
+        if(!user_calendar_agent_explicit_intent_v1300($query))return $empty;
+        return [...$empty,'handled'=>true,'answer'=>$pdo?'Your personal calendar needs the database upgrade before I can read or change events.':'Calendar storage is temporarily unavailable. I have not checked your events.','tool_receipt'=>vp3_tool_receipt_v1('calendar.read','list',$pdo?'blocked':'failed',$pdo?'upgrade_required':'execution_failed')];
+    }
 
     $pending=user_calendar_agent_pending_v1300($user,$conversationId);
     $confirmation=user_calendar_agent_confirmation_v1300($query);
