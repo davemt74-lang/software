@@ -6,7 +6,7 @@ import net from 'node:net';
 import {spawn} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-reminders-api-'));
 for(const name of ['api','includes'])fs.mkdirSync(path.join(tmp,name));
-for(const name of ['api/agent-reminders-v1.php','includes/agent-reminders-v1.php','includes/agent-tool-receipts-v1.php'])fs.copyFileSync(name,path.join(tmp,name));
+for(const name of ['api/agent-reminders-v1.php','includes/agent-reminders-v1.php','includes/agent-tool-receipts-v1.php','includes/agent-tool-json-v1.php'])fs.copyFileSync(name,path.join(tmp,name));
 fs.writeFileSync(path.join(tmp,'includes/bootstrap.php'),`<?php
 require_once __DIR__.'/agent-reminders-v1.php';
 function db(){static $pdo;if(!$pdo){$pdo=new PDO('sqlite:'.__DIR__.'/../state.sqlite');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);reminder_schema_v1($pdo);$pdo->exec('CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo->exec('INSERT OR IGNORE INTO users VALUES(1,1)');}return $pdo;}
@@ -27,4 +27,4 @@ try{
  await check('malformed and oversized requests rejected',async()=>{assert.equal((await post('{')).r.status,422);assert.equal((await post('x'.repeat(12001))).r.status,413);assert.equal((await post({...input,action:'ack',id:1,token:'wrong'})).r.status,422);});
  await check('authenticated delivery poll succeeds with an empty ledger',async()=>{const {r,data}=await post();assert.equal(r.status,200);assert.equal(data.item,null);});
  console.log(`AGENT_REMINDERS_API=PASS (${checks} cases)`);
-}finally{child.kill();await new Promise(r=>child.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});if(logs.includes('Fatal error'))throw Error(logs);}
+}finally{const exited=child.exitCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});if(logs.includes('Fatal error'))throw Error(logs);}

@@ -40,10 +40,13 @@ function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
-        $op=(str_starts_with($q,'Remind me')||str_contains($q,'events on my calendar'))?'continue':(str_starts_with($q,'Did that')?'diagnose':'inspect');$ids=str_contains($q,'HomeServer')?['homeserver.status']:['reminders.manage'];
+        $op=(str_starts_with($q,'Remind me')||str_contains($q,'events on my calendar')||str_contains(strtolower($q),'reminder list')||str_contains(strtolower($q),'my reminders')||str_contains(strtolower($q),'open reminders'))?'continue':(str_starts_with($q,'Did that')?'diagnose':'inspect');$ids=str_contains($q,'HomeServer')?['homeserver.status']:['reminders.manage'];
         if(in_array($op,['continue','diagnose'],true))$ids=[];
         return ['ok'=>true,'answer'=>json_encode(['operation'=>$op,'ids'=>$ids])];
     }
+    $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);
+    if(isset($_SERVER['HTTP_X_FIXTURE_REMINDER_BAD'])&&(!isset($json['previous_invalid_output'])||$_SERVER['HTTP_X_FIXTURE_REMINDER_BAD']==='always'))return ['ok'=>true,'answer'=>'{"operation":"list","reminders":[]}'];
+    if(!str_starts_with($json['request']??'','Remind me'))return ['ok'=>true,'answer'=>json_encode(['operation'=>'list','view'=>str_contains($json['request']??'','today')?'today':'open'])];
     $at=(new DateTimeImmutable('+2 minutes',new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s');
     return ['ok'=>true,'answer'=>json_encode(['operation'=>'create','schedule'=>['title'=>'Stretch','timezone'=>'UTC','start_local'=>$at,'recurrence'=>'none','delivery'=>'chat']])];
 }

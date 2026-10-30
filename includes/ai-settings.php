@@ -454,6 +454,11 @@ function ai_context_prompt(array $context): string
 
 function ai_system_prompt(array $context, ?array $user = null, ?array $turnControl = null): string
 {
+    if(($turnControl['surface']??'')==='tool_json'){
+        require_once __DIR__.'/agent-tool-json-v1.php';
+        return vp3_tool_json_contract_v1((string)($turnControl['protocol']??''));
+    }
+
     if(($turnControl['surface']??'')==='profile_agent'){
         if((int)($turnControl['profile_owner_user_id']??0)!==(int)($user['id']??0))throw new RuntimeException('Profile inference owner mismatch.');
         $name=mb_strimwidth(trim((string)($turnControl['profile_agent_name']??'Profile Agent')),0,180,'');
