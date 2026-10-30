@@ -10,7 +10,7 @@ function ai_provider_api_key($p){return 'fixture';}function ai_provider_model($p
 function agent_brain_soul($u){return ['style'=>'friendly prose'];}function agent_brain_default_soul(){return [];}function agent_brain_tool_prompt($u){return 'Old tool description';}
 function ai_curl_json($url,$headers,$body,...$args){$GLOBALS['payload']=$body;return ['ok'=>true,'data'=>['output_text'=>'{"operation":"list"}','content'=>[['type'=>'text','text'=>'{"operation":"list"}']]]];}
 $checks=0;function check($ok,$why){if(!$ok)throw new RuntimeException($why);$GLOBALS['checks']++;echo "PASS $why\n";}
-foreach(['vp3.reminder-plan.v1','vp3.capability-plan.v1'] as $protocol){
+foreach(['vp3.reminder-plan.v1','vp3.capability-plan.v1','vp3.transcript-plan.v1'] as $protocol){
  $control=['surface'=>'tool_json','protocol'=>$protocol];
  ai_openai_response('request',[],[],['id'=>1],$control);$p=$payload['instructions'];
  check(str_contains($p,'exactly one JSON object')&&!str_contains($p,'USER STYLE')&&!str_contains($p,'Old tool description'),'OpenAI interpreter contract excludes persona and old catalogs');

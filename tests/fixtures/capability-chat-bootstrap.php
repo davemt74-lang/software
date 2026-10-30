@@ -37,10 +37,13 @@ function agent_brain_archive_and_parse(...$args){}
 function chat_context_is_internal_source($s){return str_starts_with($s,'runtime:');}
 function ai_v100_safe_exception($e,$fallback='Failed'){return $fallback;}
 function ai_generate_chat_response($prompt,...$args){
+    if(str_starts_with($prompt,'VP3_TRANSCRIPT_PLAN_V1')){
+        $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);return ['ok'=>true,'answer'=>json_encode(['operation'=>'read','session_id'=>(int)($json['selected_session_id']?:21)])];
+    }
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
-        $op=(str_starts_with($q,'Remind me')||str_contains($q,'events on my calendar')||str_contains(strtolower($q),'reminder list')||str_contains(strtolower($q),'my reminders')||str_contains(strtolower($q),'open reminders'))?'continue':(str_starts_with($q,'Did that')?'diagnose':'inspect');$ids=str_contains($q,'HomeServer')?['homeserver.status']:['reminders.manage'];
+        $op=(str_starts_with($q,'Remind me')||str_contains($q,'events on my calendar')||str_contains($q,'transcript')||str_contains(strtolower($q),'reminder list')||str_contains(strtolower($q),'my reminders')||str_contains(strtolower($q),'open reminders'))?'continue':(str_starts_with($q,'Did that')?'diagnose':'inspect');$ids=str_contains($q,'HomeServer')?['homeserver.status']:['reminders.manage'];
         if(in_array($op,['continue','diagnose'],true))$ids=[];
         return ['ok'=>true,'answer'=>json_encode(['operation'=>$op,'ids'=>$ids])];
     }
@@ -59,6 +62,7 @@ function capability_fixture_agents(PDO $pdo): void
     $pdo->exec("INSERT OR IGNORE INTO user_agents VALUES(7,1,'longfellow','Longfellow','personal','stonefellow','',1,0,1,1,'',''),(8,1,'other','Other Agent','personal','stonefellow','',0,0,1,1,'',''),(9,2,'foreign','Foreign Agent','personal','stonefellow','',1,0,1,1,'','')");
     foreach(['user_agent_preferences','user_data_policies','user_agent_data_rules','user_relationships','user_data_policy_audit'] as $t)$pdo->exec("CREATE TABLE IF NOT EXISTS $t(id INTEGER)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS user_calendar_events(id INTEGER PRIMARY KEY,owner_user_id INTEGER,created_by_user_id INTEGER,created_by_agent_id INTEGER,title TEXT,description TEXT,location TEXT,start_at_utc TEXT,end_at_utc TEXT,timezone TEXT,all_day INTEGER,recurrence TEXT,agent_notifications INTEGER,source TEXT,source_reference TEXT,status TEXT,cancelled_at TEXT,created_at TEXT,updated_at TEXT)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,conversation_id INTEGER,title TEXT,status TEXT,started_at TEXT,last_activity_at TEXT,metadata_json TEXT);CREATE TABLE IF NOT EXISTS artist_transcript_segments_v172(id INTEGER PRIMARY KEY,session_id INTEGER,client_segment_key TEXT,segment_index INTEGER,segment_type TEXT,speaker_label TEXT,transcript_text TEXT,started_ms INTEGER,ended_ms INTEGER,confidence REAL,created_at TEXT,updated_at TEXT);INSERT OR IGNORE INTO artist_transcript_sessions_v172 VALUES(21,1,NULL,'Fixture transcript','draft','','','{}'),(22,2,NULL,'SECRET foreign transcript','draft','','','{}');INSERT OR IGNORE INTO artist_transcript_segments_v172 VALUES(1,21,'fixture',0,'transcript','Dave','The agreed pizza price is twenty dollars.',1000,5000,.9,'',''),(2,22,'foreign',0,'transcript','Other','SECRET transcript body',1000,5000,.9,'','')");
     $from=gmdate('Y-m-d H:i:s',time()+3600);$to=gmdate('Y-m-d H:i:s',time()+7200);
     $q=$pdo->prepare("INSERT OR IGNORE INTO user_calendar_events VALUES(?, ?, ?, NULL, ?, '', '', ?, ?, 'UTC',0,'none',0,'user','','active',NULL,'','')");
     $q->execute([1,1,1,'Fixture calendar review',$from,$to]);$q->execute([2,2,2,'SECRET foreign calendar',$from,$to]);

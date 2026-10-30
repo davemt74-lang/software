@@ -9,6 +9,7 @@ require_once dirname(__DIR__).'/includes/agent-tool-authorization-v400.php';
 require_once dirname(__DIR__).'/includes/knowledge-retrieval-v162.php';
 require_once dirname(__DIR__).'/includes/agent-capability-awareness-v1.php';
 require_once dirname(__DIR__).'/includes/agent-capability-chat-v1.php';
+require_once dirname(__DIR__).'/includes/transcript-agent-v1.php';
 require_once dirname(__DIR__).'/includes/user-calendar-v1300.php';
 require_once dirname(__DIR__).'/includes/user-calendar-agent-v1300.php';
 require_once dirname(__DIR__).'/includes/agent-work-control-v173.php';
@@ -38,6 +39,7 @@ if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conver
 $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$agentScopeId;$agentContext=agent_surface_v131_enrich($user,'chat',$rawAgentContext);$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,'voice');
 vp3_capability_begin_v1($pdo,$user,$principal,$agentContext,$input['knowledge_scope']??null);
 $reminderTool=vp3_capability_chat_v1($pdo,$user,$principal,$query,$agentContext,$input['knowledge_scope']??null,$history);
+if(empty($reminderTool['handled']))$reminderTool=vp3_transcript_chat_v1($pdo,$user,$principal,$query,$agentContext,$history);
 if(empty($reminderTool['handled'])&&knowledge_retrieval_v162_owner_session($user,$principal)){
     $reminderZone=(string)($rawAgentContext['timezone']??$input['reminder_timezone']??user_calendar_default_timezone_v1300($pdo,$user));
     try{reminder_zone_v1($reminderZone);}catch(Throwable $ignored){$reminderZone=user_calendar_default_timezone_v1300($pdo,$user);}

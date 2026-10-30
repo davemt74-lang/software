@@ -439,6 +439,7 @@ async function bootstrap(){
 window.STONEFELLOW_TRANSCRIPTION_CANVAS={
   open:async(args={})=>{if(args.sessionId)return openRef(args.sessionId,args.key||'',args);return openLatestSession();},
   close:closeCanvas,
+  selection:()=>canvas&&!canvas.hidden?{session_id:sessionIdOf(currentSession),view:currentView}:null,
   refresh:async()=>{await refreshAll();return {sessions:[...sessions],recordings:[...recordings],currentSession:currentSession?{...currentSession}:null,currentView};},
   showHome:()=>{if(currentIntelligence){currentView='home';renderWorkspace();}},
 };
