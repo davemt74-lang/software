@@ -98,6 +98,18 @@ jobs:
           node tests/phone-sms-ph3a-contract.mjs
           php tests/phone-sms-ph3a-runtime.php
 
+      - name: Authorized Outgoing SMS PH3B lint and contracts
+        run: |
+          php -l includes/phone-sms-outbound-v120.php
+          php -l api/phone-sms-outbound-v120.php
+          php -l api/phone-sms-status-v120.php
+          php -l phone-inbox.php
+          php -l admin/phone.php
+          php -l admin/packages.php
+          php -l upgrade.php
+          node tests/phone-sms-ph3b-contract.mjs
+          php tests/phone-sms-ph3b-runtime.php
+
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
 

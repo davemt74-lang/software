@@ -42,6 +42,7 @@ function subscription_capability_catalog(): array
         'phone.numbers' => ['label'=>'Agent Phone Numbers Included','type'=>'limit','category'=>'Phone & Messaging'],
         'phone.voice' => ['label'=>'Agent Phone Calls','type'=>'boolean','category'=>'Phone & Messaging'],
         'phone.sms' => ['label'=>'Agent SMS Messaging','type'=>'boolean','category'=>'Phone & Messaging'],
+        'phone.sms.monthly' => ['label'=>'Monthly Outgoing SMS Included','type'=>'limit','category'=>'Phone & Messaging'],
         'transcription.access' => ['label'=>'Transcription','type'=>'boolean','category'=>'AI'],
         'music_workspace.access' => ['label'=>'Music Workspace','type'=>'boolean','category'=>'Studio'],
         'campaigns_rewards.access' => ['label'=>'Campaigns & Rewards','type'=>'boolean','category'=>'Business'],

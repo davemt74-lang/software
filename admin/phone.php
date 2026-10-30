@@ -3,6 +3,7 @@ declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/phone-cloud-v100.php';
 require_once dirname(__DIR__).'/includes/phone-sms-v110.php';
+require_once dirname(__DIR__).'/includes/phone-sms-outbound-v120.php';
 require_login();require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 $ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';
@@ -57,6 +58,33 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
                     ->execute([(int)($_POST['number_id']??0)]);
                 flash('notice','Incoming SMS storage disabled locally. Twilio may still call the signed endpoint, which will ignore this number.');
                 redirect(url('/admin/phone.php#numbers'));
+            }
+            if ($action==='save_sms_status_callback') {
+                $callback=vp3_phone_sms_validate_status_url_v120((string)($_POST['status_callback_url']??''));
+                save_setting('phone_sms_status_url_v120',$callback);
+                flash('notice','Signed Twilio delivery-status callback saved. Live outbound sending remains unchanged.');
+                redirect(url('/admin/phone.php#outbound'));
+            }
+            if ($action==='save_sms_monthly_cap') {
+                $cap=(int)($_POST['monthly_cap']??0);
+                if ($cap<1||$cap>100000) throw new RuntimeException('Set a monthly account safety cap between 1 and 100,000 outgoing texts.');
+                save_setting('phone_sms_account_monthly_cap_v120',(string)$cap);
+                flash('notice','Account-wide per-member monthly SMS safety cap saved.');
+                redirect(url('/admin/phone.php#outbound'));
+            }
+            if ($action==='enable_outbound_sms') {
+                if (!vp3_phone_sms_outbound_ready_v120()) throw new RuntimeException('Run the PH3B database upgrade first.');
+                vp3_phone_sms_validate_status_url_v120(vp3_phone_sms_status_url_v120());
+                if (empty($_POST['compliance_confirmed']) || trim((string)($_POST['authorization']??''))!=='ENABLE OUTBOUND SMS')
+                    throw new RuntimeException('Confirm messaging compliance and type ENABLE OUTBOUND SMS exactly.');
+                save_setting('phone_sms_outbound_live_v120','1');
+                flash('notice','Outbound SMS gateway enabled. Every message still requires account-owner approval and remaining package allowance.');
+                redirect(url('/admin/phone.php#outbound'));
+            }
+            if ($action==='disable_outbound_sms') {
+                save_setting('phone_sms_outbound_live_v120','0');
+                flash('notice','Outbound SMS gateway disabled for all accounts.');
+                redirect(url('/admin/phone.php#outbound'));
             }
             if ($action==='test_connection') {
                 $sid=vp3_phone_twilio_credentials_v100()[0];
@@ -149,6 +177,14 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
     <p>Configure the precise public Cloud callback URL. Twilio webhooks are checked against this URL and your saved Auth Token before any message is stored. No incoming content is forwarded to AI providers.</p>
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_sms_callback"><label class="phone-field">Signed HTTPS SMS webhook URL<input type="url" name="callback_url" required placeholder="https://your-cloud.example/api/phone-sms-inbound-v110.php" value="<?= e(vp3_phone_sms_callback_url_v110()) ?>"></label><button <?= $ready?'':'disabled' ?>>Save callback URL</button></form>
     <p><small>Activating a number sets its Twilio inbound SMS URL and enables your private Cloud inbox. It does not enable outbound messages. For live use, confirm that the public Cloud domain resolves and PHP can receive POST callbacks.</small></p>
+  </section>
+  <section class="phone-card" id="outbound"><h2>Authorized outgoing SMS · PH3B</h2>
+    <p>Gateway state: <strong><?= vp3_phone_sms_live_enabled_v120()?'Enabled':'Disabled (safe default)' ?></strong>. A subscriber may draft texts, but sending requires their exact approval, a documented consent source, an active SMS package and available monthly allowance.</p>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_sms_status_callback"><label class="phone-field">Public HTTPS delivery callback<input type="url" name="status_callback_url" required placeholder="https://your-cloud.example/api/phone-sms-status-v120.php" value="<?= e(vp3_phone_sms_status_url_v120()) ?>"></label><button <?= $ready?'':'disabled' ?>>Save delivery callback</button></form>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_sms_monthly_cap"><label class="phone-field">Per-member monthly outgoing SMS safety cap<input type="number" name="monthly_cap" min="1" max="100000" required value="<?= (int)setting('phone_sms_account_monthly_cap_v120','100') ?>"></label><button class="phone-secondary">Save account safety cap</button></form>
+    <?php if(vp3_phone_sms_live_enabled_v120()): ?><form method="post" onsubmit="return confirm('Disable all outbound SMS sending?')"><?= csrf_field() ?><input type="hidden" name="action" value="disable_outbound_sms"><button class="phone-secondary">Disable outbound SMS</button></form>
+    <?php else: ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="enable_outbound_sms"><label class="phone-field"><input type="checkbox" name="compliance_confirmed" value="1" required> I have verified the Twilio account’s business messaging registration, approved use case, consent process and destination rules.</label><label class="phone-field">Type ENABLE OUTBOUND SMS<input name="authorization" placeholder="ENABLE OUTBOUND SMS" autocomplete="off" required></label><button <?= $ready&&vp3_phone_sms_status_url_v120()!==''?'':'disabled' ?>>Enable outgoing text gateway</button></form><?php endif; ?>
+    <p><small>Messaging may incur carrier charges; Twilio account-level spend controls remain important. No bulk or automated marketing sends are provided by this feature.</small></p>
   </section>
   <section class="phone-card" id="requests"><h2>Member phone requests (<?= count($requests) ?>)</h2>
     <p>Members select an available number and their agent. You review and explicitly purchase it through Twilio.</p>
