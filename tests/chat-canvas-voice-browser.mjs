@@ -417,6 +417,58 @@ try {
   await page.evaluate(()=>VP3ConversationControls.stop());
   console.log('PASS typed and spoken reminders share canonical Chat, distinct mutation references and browser timezone');
 
+  // One uninterrupted page session: reads, general conversation and failed turns.
+  await boot();
+  await page.getByRole('button',{name:'Chat tools',exact:true}).click();
+  await page.getByLabel('Work mode').selectOption('chat');
+  await page.getByRole('button',{name:'Close chat tools'}).click();
+  await page.locator('#chatInput').fill('');
+  await page.getByRole('button',{name:'Start voice conversation'}).click();
+  const mixedStart=sends().length;
+  for(let turn=0;turn<20;turn++){
+    await page.waitForFunction(()=>window.recognizers.some(r=>r.active)&&!document.querySelector('#chatInput').disabled);
+    if(turn===4){
+      for(let n=0;n<3;n++){
+        await page.evaluate(()=>{const r=recognizers.findLast(r=>r.active);r.active=false;r.onerror?.({error:'aborted'});r.onend?.();});
+        await page.clock.runFor(1800);
+        await page.waitForFunction(()=>window.recognizers.some(r=>r.active));
+      }
+      assert.equal(await page.evaluate(()=>VP3ConversationControls.isEnabled()),true,'Three transient browser interruptions recover without a reload');
+    }
+    failSend=turn===6||turn===12;
+    const text=['What was on my reminder list','Do I have any events on my calendar','Can we talk about pizza','What can you access'][turn%4]+' turn '+turn;
+    await page.evaluate(text=>{const r=recognizers.findLast(r=>r.active);const f=[{transcript:text,confidence:.98}];f.isFinal=true;const e={resultIndex:0,results:[f]};r.onresult(e);r.onresult(e);},text);
+    await page.clock.runFor(2300);
+    await page.waitForFunction(()=>!document.querySelector('#chatInput').disabled&&window.STONEFELLOW_CHAT_CONTINUITY.isBusy()===false);
+    assert.equal(sends().length,mixedStart+turn+1,'Every turn is submitted once, including repeated cumulative final events');
+    assert.equal(sends().at(-1).message,text,'A failed draft or previous turn is never prefixed to new speech');
+  }
+  failSend=false;
+  await page.evaluate(()=>VP3ConversationControls.stop());
+  console.log('PASS 20 consecutive mixed voice turns, three browser aborts, two provider failures, cumulative final deduplication and no draft replay');
+
+  await boot();
+  await page.getByRole('button',{name:'Chat tools',exact:true}).click();
+  await page.getByLabel('Work mode').selectOption('chat');
+  await page.getByRole('button',{name:'Close chat tools'}).click();
+  await page.locator('#chatInput').fill('');
+  await page.evaluate(()=>{window.VP3VoiceGuard={check:async()=>({allowed:true}),takeContext(){throw Error('Fixture context preparation failed');}};});
+  await page.getByRole('button',{name:'Start voice conversation'}).click();
+  await page.waitForFunction(()=>window.recognizers.some(r=>r.active));
+  const prepareStart=sends().length;
+  await speak('Check my reminder list after this context failure');
+  await page.clock.runFor(2300);
+  await page.waitForFunction(()=>!document.querySelector('#chatInput').disabled&&window.recognizers.some(r=>r.active));
+  assert.equal(sends().length,prepareStart,'Preparation failure never reaches or retries the action endpoint');
+  await page.evaluate(()=>{delete window.VP3VoiceGuard;});
+  await speak('Talk about pizza after recovery');
+  await page.clock.runFor(2300);
+  await page.waitForFunction(()=>!document.querySelector('#chatInput').disabled&&window.STONEFELLOW_CHAT_CONTINUITY.isBusy()===false);
+  assert.equal(sends().length,prepareStart+1);
+  assert.equal(sends().at(-1).message,'Talk about pizza after recovery');
+  await page.evaluate(()=>VP3ConversationControls.stop());
+  console.log('PASS voice preparation errors release the pending turn and the next request works without reload or replay');
+
   assert.deepEqual(errors, []);
   if (process.env.VP3_CHAT_SCREENSHOT) await page.screenshot({path:process.env.VP3_CHAT_SCREENSHOT});
   console.log('PASS compact desktop/mobile canvas; tools preserve state; actual Chat + voice lease + automatic planner retain delayed voice input, speak once, resume listening, and reject failed/cancelled late routes.');

@@ -53,7 +53,7 @@ function agent_ecosystem_v118_scan(array $user, string $since=''): array
             }
             foreach((array)($proactive['suggestions']??[]) as $suggestion){
                 $source=(string)($suggestion['source']??'agent_brain');
-                if(in_array($source,['starter','fallback','activity_working'],true))continue;
+                if(in_array($source,['starter','fallback','activity_working','activity_resume','tool_pattern'],true))continue;
                 $items[]=agent_ecosystem_v118_item(
                     'brain:'.(string)($suggestion['hash']??sha1(json_encode($suggestion))),
                     (string)($suggestion['title']??'Next action'),

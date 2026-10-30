@@ -3092,7 +3092,7 @@
     if (navigator.onLine === false) { keepDraft(message); recoveryStatus('You are offline. Your message is kept.'); return; }
     recoveryStatus();
 
-    document.dispatchEvent(new CustomEvent('stonefellow:task-start',{detail:{title:`Agent Chat · ${message.trim().slice(0,80)}`,key:`chat:${Number(conversationId||0)}`}}));
+    document.dispatchEvent(new CustomEvent('stonefellow:chat-turn',{detail:{state:'pending',conversationId:Number(conversationId||0)}}));
 
     setChatCanvasView(
       'chat',
@@ -3348,6 +3348,7 @@
     conversationId:() => Number(conversationId || 0),
     isRestoring:() => initialRestorePending || restoringConversation > 0,
     isReady:() => contextReady,
+    isBusy:() => busy || initialRestorePending || restoringConversation > 0,
     openConversation:async id => {
       const target = Math.max(0, Number(id || 0));
       if (target < 1) return false;

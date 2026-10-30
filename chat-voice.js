@@ -61,6 +61,7 @@
   let recognitionListening=false;
   let recognitionStopReason='';
   let recognitionFailures=0;
+  let lastRecognitionFailureAt=0;
   let restartTimer=0;
   let recognitionStartTimer=0;
   let recognitionRestoreTimer=0;
@@ -472,9 +473,13 @@
   }
 
   function recoverRecognition(message,reason){
-    recognitionFailures+=1;
+    const now=Date.now();
+    if(now-lastRecognitionFailureAt>30000)recognitionFailures=0;
+    lastRecognitionFailureAt=now;recognitionFailures+=1;
     proof.lastError=message;
-    if(recognitionFailures>=3){
+    log('SR_RECOVERY',{reason,attempt:recognitionFailures});
+    const retryLimit=reason==='browser-interruption'?5:3;
+    if(recognitionFailures>=retryLimit){
       disableVoice({persist:false});
       setAgentState('error',message+' Select the microphone to retry.');
       return;
@@ -540,7 +545,7 @@
     if(runtime?.isReady?.()===false){disableVoice({persist:true});setAgentState('error','Open a conversation or start a new chat before listening.');return false;}
     // Dictation can continue an existing draft. Selecting the microphone must
     // not submit it; only newly recognized speech starts the turn-end timer.
-    if(input.value.trim()&&!pendingFinalTranscript)pendingFinalTranscript=input.value.trim();
+    if(['enable','manual','already-enabled'].includes(reason)&&input.value.trim()&&!pendingFinalTranscript)pendingFinalTranscript=input.value.trim();
     if(typeof SpeechRecognitionCtor!=='function'){disableVoice({persist:false});setAgentState('error','Browser speech recognition is unavailable.');return false;}
     if(!claimCapture()){disableVoice({persist:false});setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}
     try{if(!recognition)recognition=createRecognition();}
@@ -735,6 +740,12 @@
       if(init.signal?.aborted)throw new DOMException('Chat request cancelled.','AbortError');
       textBusy=true;resetPendingFinal();if(voiceOn)stopRecognition('text-send',true);
       try{return await nativeFetch(inputArg,init);}finally{textBusy=false;if(voiceOn&&!speaking&&!processing&&!bargeCapturing){recognition=null;scheduleListening(120,'text-send-end');}}
+    }catch(error){
+      if(voiceTurn&&dispatch===voiceDispatchGeneration&&!activeRequest){
+        voiceSubmitPending=false;processing=false;proof.apiErrors+=1;proof.lastError=String(error?.message||'Voice request preparation failed.');
+        setAgentState('error',proof.lastError);if(voiceOn)scheduleListening(320,'voice-prepare-error');
+      }
+      throw error;
     }finally{init.signal?.removeEventListener('abort',ownerAbort);}
   };
   window.fetch=routedFetch;
@@ -809,7 +820,7 @@
     return finish;
   }
   window.VP3ConversationControls=Object.freeze({beginEnrollmentCapture,responseWindow,cancelResponseWindow:finishResponseWindow,stop:()=>disableVoice({persist:true}),isBusy:()=>processing||speaking,isEnabled:()=>voiceOn,listen:()=>enableVoice({start:true}),state:()=>({state:speaking?'speaking':processing?'thinking':recognitionListening?'listening':recognitionStarting?'connecting':'idle'})});
-  const continuity={isVoice:()=>voiceOn,pendingVoiceSubmit:()=>voiceSubmitPending,conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
+  const continuity={isBusy:()=>processing||speaking||textBusy||voiceSubmitPending||!!activeRequest||!!pendingFinalTranscript||!!ChatRuntime?.isBusy?.(),isVoice:()=>voiceOn,pendingVoiceSubmit:()=>voiceSubmitPending,conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
 
   syncConversation(lastConversationId);syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
   window.addEventListener('storage',event=>{if(event.key===AGENT_VOICE_SYNC_KEY&&event.newValue){try{const sync=JSON.parse(event.newValue);if(sync?.enabled===false){agentVoiceMaster=false;if(voiceOn)disableVoice({persist:true});}}catch(error){}return;}if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(!next)disableVoice({persist:false});});

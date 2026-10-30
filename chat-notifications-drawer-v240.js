@@ -1125,10 +1125,11 @@
     return new Promise(resolve => {
       const tick = () => {
         const mode = String(document.body.dataset.stonefellowAgentState || 'idle');
-        if (!['processing','speaking'].includes(mode) || Date.now() >= deadline) {
-          resolve();
+        if (!continuity().isBusy?.() && !['processing','speaking'].includes(mode)) {
+          resolve(true);
           return;
         }
+        if (Date.now() >= deadline) { resolve(false); return; }
         window.setTimeout(tick, 120);
       };
       tick();
@@ -1210,9 +1211,11 @@
     if (!canSpeak()) return false;
     const message = String(text || '').trim();
     if (!message) return false;
-    await waitForAgentIdle();
+    if (!await waitForAgentIdle()) return false;
     if (!canSpeak() || generation !== speechGeneration) return false;
 
+    const allowed=canSpeak;canSpeak=()=>allowed()&&!continuity().isBusy?.();
+    if (!canSpeak()) return false;
     let spoken = false;
     const PremiumVoice = window.StonefellowPremiumVoiceV122;
     if (typeof PremiumVoice === 'function') {

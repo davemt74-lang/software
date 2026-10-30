@@ -59,7 +59,7 @@ function agent_proactive_v93_profile(array $user): array
     $archive=table_exists('agent_chat_archive')?agent_proactive_v93_scalar('SELECT COUNT(*) FROM agent_chat_archive WHERE user_id=?',[$uid]):0;
     $memory=table_exists('agent_memory_items')?agent_proactive_v93_scalar('SELECT COALESCE(SUM(LEAST(occurrence_count,5)),0) FROM agent_memory_items WHERE user_id=? AND is_active=1',[$uid]):0;
     $edits=table_exists('agent_edit_events')?agent_proactive_v93_scalar('SELECT COUNT(*) FROM agent_edit_events WHERE user_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)',[$uid]):0;
-    $tools=table_exists('agent_tool_history')?agent_proactive_v93_scalar('SELECT COUNT(*) FROM agent_tool_history WHERE user_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)',[$uid]):0;
+    $tools=table_exists('agent_tool_history')?agent_proactive_v93_scalar("SELECT COUNT(*) FROM agent_tool_history WHERE user_id=? AND status='success' AND created_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)",[$uid]):0;
     $media=table_exists('user_media_assets')?agent_proactive_v93_scalar('SELECT COUNT(*) FROM user_media_assets WHERE user_id=?',[$uid]):0;
     $sessions=table_exists('agent_studio_sessions')?agent_proactive_v93_scalar('SELECT COUNT(*) FROM agent_studio_sessions WHERE user_id=?',[$uid]):0;
     $score=min(200,$archive+($memory*2)+($edits*2)+$tools+($media*2)+($sessions*3));
@@ -75,10 +75,10 @@ function agent_proactive_v93_suggestions(array $user,string $surface='chat',arra
     $trackId=max(0,(int)($context['track_id']??0));$projectId=max(0,(int)($context['project_id']??0));
     $activity=function_exists('agent_activity_v94_snapshot')?agent_activity_v94_snapshot($user,$surface,$context):['state'=>'idle','label'=>'Idle','task_title'=>'','seconds_since_activity'=>0,'idle_for_seconds'=>0,'interruptible'=>true];
     $activityTask=trim((string)($activity['task_title']??''));
-    if($activityTask!==''&&in_array((string)($activity['state']??''),['paused','idle'],true)){
+    if((string)($activity['surface']??$surface)!=='chat'&&!str_starts_with((string)($activity['context_key']??''),'chat:')&&$activityTask!==''&&in_array((string)($activity['state']??''),['paused','idle'],true)){
         $idle=(string)$activity['state']==='idle';$secs=max(0,(int)($activity['idle_for_seconds']??$activity['seconds_since_activity']??0));$mins=max(1,(int)floor($secs/60));
         $items[]=agent_proactive_v93_item('activity-resume:'.sha1((string)($activity['context_key']??'').'|'.$activityTask),'Resume '.$activityTask,'Resume the task I was working on: '.$activityTask.'. Review where I stopped and help me continue with the most useful next step.',($idle?'Idle':'Paused').' on this task'.($mins>0?' for about '.$mins.' minute'.($mins===1?'':'s'):''),$idle?175:165,'activity_resume');
-    }elseif($activityTask!==''&&(string)($activity['state']??'')==='working'){
+    }elseif((string)($activity['surface']??$surface)!=='chat'&&!str_starts_with((string)($activity['context_key']??''),'chat:')&&$activityTask!==''&&(string)($activity['state']??'')==='working'){
         $items[]=agent_proactive_v93_item('activity-working:'.sha1((string)($activity['context_key']??'').'|'.$activityTask),'Next step on '.$activityTask,'Look at what I am actively doing on '.$activityTask.' and keep one useful next step ready without interrupting my current work.','Agent Brain sees active work on this task',112,'activity_working');
     }
 
@@ -140,7 +140,7 @@ function agent_proactive_v93_suggestions(array $user,string $surface='chat',arra
     }
 
     if(table_exists('agent_tool_history')&&in_array($profile['level'],['personalized','specialized'],true)){
-        foreach(agent_proactive_v93_query("SELECT tool_key,COUNT(*) AS c,MAX(created_at) AS last_seen FROM agent_tool_history WHERE user_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 30 DAY) GROUP BY tool_key HAVING COUNT(*)>=3 ORDER BY c DESC,last_seen DESC LIMIT 2",[$uid]) as $row){
+        foreach(agent_proactive_v93_query("SELECT tool_key,COUNT(*) AS c,MAX(created_at) AS last_seen FROM agent_tool_history WHERE user_id=? AND status='success' AND created_at>=DATE_SUB(NOW(),INTERVAL 30 DAY) GROUP BY tool_key HAVING COUNT(*)>=3 ORDER BY c DESC,last_seen DESC LIMIT 2",[$uid]) as $row){
             $label=str_replace(['_','.'],' ',(string)$row['tool_key']);
             $items[]=agent_proactive_v93_item('tool-pattern:'.(string)$row['tool_key'],'Keep momentum on '.$label,'I have used '.$label.' repeatedly recently. Look at that Agent Brain history and suggest the most useful next task related to it.','Repeated Agent tool usage · '.(int)$row['c'].' times',72+(int)$row['c'],'tool_pattern');
         }
