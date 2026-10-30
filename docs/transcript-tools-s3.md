@@ -6,7 +6,7 @@ Private Chat retrieves relevant retained content beyond the ordinary 360-charact
 
 Conversation commands can explicitly highlight source text, accept/reject a finding, then run its existing canonical Brain/Knowledge/task/project/CRM/Main Chat action. Unreviewed or stale results cannot execute. Reviewed follow-ups can create scheduled reminders through the existing idempotent reminder ledger. Canonical action receipts are preserved when stored analysis loads: the old depth-limited result sanitizer previously emptied nested receipt fields and could lose already-completed state. Only structurally valid stored receipts are restored; the AI-result sanitizer remains bounded.
 
-Validation includes 21 SQLite cases using actual Brain persistence, canonical Profile sharing policy, review/action services and reminder execution; production typed/streaming/legacy highlight endpoints; the actual transcript panel/context browser test; MySQL four-client highlight and action concurrency. Existing regression/permission/browser/phone checks remain required gates.
+Validation includes 21 SQLite cases using actual Brain persistence, canonical Profile sharing policy, review/action services and reminder execution; production typed/streaming/legacy highlight endpoints; the actual transcript panel/context browser test; MySQL four-client highlight and action concurrency. Browser certification caught a queued animation reopening a closed panel: logical open state now clears context immediately, fences late loads and prevents the queued frame from undoing Close. Existing regression/permission/browser/phone checks remain required gates.
 
 ## Scoped acceptance scorecard
 

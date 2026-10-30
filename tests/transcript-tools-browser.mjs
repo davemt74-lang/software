@@ -19,7 +19,13 @@ try{
  context=await page.evaluate(()=>StonefellowAgentContext.snapshot());assert.equal(context.transcript_selected_text,'');assert.equal(context.transcript_session_id,21);
  console.log('PASS selections outside the transcript panel never enter transcript context');
  await page.evaluate(()=>STONEFELLOW_TRANSCRIPTION_CANVAS.open({sessionId:22}));context=await page.evaluate(()=>StonefellowAgentContext.snapshot());assert.equal(context.transcript_session_id,22);assert.equal(context.transcript_selected_text,'');
- await page.evaluate(()=>STONEFELLOW_TRANSCRIPTION_CANVAS.close());await page.waitForTimeout(220);context=await page.evaluate(()=>StonefellowAgentContext.snapshot());assert.equal(context.transcript_session_id,0);assert.equal(context.transcript_selected_text,'');
+ await page.evaluate(()=>STONEFELLOW_TRANSCRIPTION_CANVAS.close());context=await page.evaluate(()=>StonefellowAgentContext.snapshot());assert.equal(context.transcript_session_id,0);assert.equal(context.transcript_selected_text,'');await page.waitForTimeout(220);assert.equal(await page.locator('#chatTranscriptionCanvas').evaluate(el=>el.hidden&&!el.classList.contains('open')),true);
  console.log('PASS switching and closing transcripts clears stale selection hints');
+ let releaseList,arrived;const waiting=new Promise(resolve=>arrived=resolve);
+ await page.route('**/api/artist-listening.php**',async r=>{arrived();await new Promise(resolve=>releaseList=resolve);await r.fulfill({json:{ok:true,sessions:[{id:21,title:'Pricing call',status:'draft'}]}});});
+ await page.evaluate(()=>{window.pendingTranscriptOpen=STONEFELLOW_TRANSCRIPTION_CANVAS.open({sessionId:21});});await waiting;
+ await page.evaluate(()=>STONEFELLOW_TRANSCRIPTION_CANVAS.close());releaseList();await page.evaluate(()=>window.pendingTranscriptOpen);await page.waitForTimeout(220);
+ context=await page.evaluate(()=>StonefellowAgentContext.snapshot());assert.equal(context.transcript_session_id,0);assert.equal(await page.locator('#chatTranscriptionCanvas').evaluate(el=>el.hidden&&!el.classList.contains('open')),true);
+ console.log('PASS closing during a delayed transcript load prevents reopening and stale context');
  assert.deepEqual(errors,[]);console.log('TRANSCRIPT_TOOLS_BROWSER=PASS (actual panel and shared context, fixture transcript API)');
 }finally{await browser.close();}

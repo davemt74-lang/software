@@ -15,7 +15,7 @@ const itemId=item=>`${Math.max(0,Number(item?.session_id||0))}:${String(item?.ke
 const refId=(sessionId,key)=>`${Math.max(0,Number(sessionId||0))}:${String(key||'')}`;
 const sessionIdOf=session=>Math.max(0,Number(session?.id||session?.session_id||0));
 
-let canvas=null,backdrop=null,button=null,badge=null,observer=null;
+let canvas=null,backdrop=null,button=null,badge=null,observer=null,canvasOpen=false;
 let recordings=[],sessions=[],currentSession=null,currentRecording=null,currentIntelligence=null,currentView='home';
 let seen=new Set(),seenLoaded=false,loadToken=0;
 const intelligenceCache=new Map();
@@ -106,14 +106,15 @@ function ensureCanvas(){
   canvas.addEventListener('play',handleCanvasPlay,true);
 }
 function openShell(){
-  ensureButton();ensureCanvas();canvas.hidden=false;backdrop.hidden=false;
-  requestAnimationFrame(()=>{canvas?.classList.add('open');backdrop?.classList.add('open');});
+  ensureButton();ensureCanvas();canvasOpen=true;canvas.hidden=false;backdrop.hidden=false;
+  requestAnimationFrame(()=>{if(!canvasOpen)return;canvas?.classList.add('open');backdrop?.classList.add('open');});
   button?.setAttribute('aria-expanded','true');document.body.classList.add('transcription-canvas-open');proof.opens++;
 }
 function closeCanvas(){
   if(!canvas)return;
+  canvasOpen=false;loadToken++;
   canvas.classList.remove('open');backdrop?.classList.remove('open');button?.setAttribute('aria-expanded','false');document.body.classList.remove('transcription-canvas-open');
-  setTimeout(()=>{if(canvas&&!canvas.classList.contains('open')){canvas.hidden=true;if(backdrop)backdrop.hidden=true;}},180);
+  setTimeout(()=>{if(canvas&&!canvasOpen){canvas.hidden=true;if(backdrop)backdrop.hidden=true;}},180);
 }
 
 async function refreshRecordings(force=true){
@@ -368,21 +369,27 @@ async function selectSession(sessionId,{force=false,key='',isNew=false}={}){
   }catch(error){if(token!==loadToken)return;proof.lastError=String(error?.message||error);renderError(proof.lastError);}
 }
 async function refreshAll(){
+  const token=loadToken;
   await Promise.allSettled([refreshSessions(),refreshRecordings(true)]);
+  if(!canvasOpen||token!==loadToken)return;
   if(currentSession){const sid=sessionIdOf(currentSession);currentSession=sessions.find(row=>sessionIdOf(row)===sid)||currentSession;intelligenceCache.delete(sid);await selectSession(sid,{force:true,key:currentRecording?.key||''});}
 }
 async function openLatestSession(){
   openShell();
+  const token=++loadToken;
   try{
     await Promise.all([refreshSessions(),refreshRecordings(true)]);
+    if(!canvasOpen||token!==loadToken)return;
     const target=currentSession&&sessions.some(row=>sessionIdOf(row)===sessionIdOf(currentSession))?currentSession:sessions[0];
     if(target)await selectSession(sessionIdOf(target));else renderWorkspace();
   }catch(error){proof.lastError=String(error?.message||error);renderError(proof.lastError);}
 }
 async function openRef(sessionId,key,options={}){
   openShell();
+  const token=++loadToken;
   try{
     await Promise.all([refreshSessions(),refreshRecordings(true)]);
+    if(!canvasOpen||token!==loadToken)return;
     const sid=Math.max(0,Number(sessionId||0));
     const session=sessions.find(row=>sessionIdOf(row)===sid);
     if(!session)throw new Error('That transcription is no longer available.');
@@ -433,13 +440,13 @@ async function bootstrap(){
     observer.observe(thread,{childList:true,subtree:true});
   }
   window.addEventListener('stonefellow:recording-saved',()=>setTimeout(()=>void Promise.allSettled([refreshSessions(),refreshRecordings(true)]).then(()=>detectNewCards(thread||document)),80));
-  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&canvas?.classList.contains('open'))closeCanvas();});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&canvasOpen)closeCanvas();});
 }
 
 window.STONEFELLOW_TRANSCRIPTION_CANVAS={
   open:async(args={})=>{if(args.sessionId)return openRef(args.sessionId,args.key||'',args);return openLatestSession();},
   close:closeCanvas,
-  selection:()=>{if(!canvas||canvas.hidden)return null;const s=window.getSelection?.();const text=s?.anchorNode&&canvas.contains(s.anchorNode)&&s?.focusNode&&canvas.contains(s.focusNode)?String(s.toString()).slice(0,6000):'';return {session_id:sessionIdOf(currentSession),selected_text:text,view:currentView};},
+  selection:()=>{if(!canvasOpen||!canvas||canvas.hidden)return null;const s=window.getSelection?.();const text=s?.anchorNode&&canvas.contains(s.anchorNode)&&s?.focusNode&&canvas.contains(s.focusNode)?String(s.toString()).slice(0,6000):'';return {session_id:sessionIdOf(currentSession),selected_text:text,view:currentView};},
   refresh:async()=>{await refreshAll();return {sessions:[...sessions],recordings:[...recordings],currentSession:currentSession?{...currentSession}:null,currentView};},
   showHome:()=>{if(currentIntelligence){currentView='home';renderWorkspace();}},
 };
