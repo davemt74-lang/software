@@ -135,7 +135,7 @@ function vp3_upgrade_complete(): bool
         && studio_participants_schema_ready()
         && studio_voice_profile_schema_ready()
         && user_agent_system_schema_ready_v236()
-        && vp3_phone_schema_ready_v100(db())
+        && vp3_phone_schema_ready_v100()
         && vp3_user_agent_lifecycle_schema_ready_v390()
         && vp3_agent_memory_scope_schema_ready_v410()
         && agent_scheduling_schema_ready_v430()

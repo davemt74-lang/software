@@ -6,9 +6,12 @@ declare(strict_types=1);
  * through this module. The PH1 gateway remains the only carrier webhook edge.
  */
 
-function vp3_phone_schema_ready_v100(?PDO $pdo): bool
+function vp3_phone_schema_ready_v100(?PDO $pdo=null): bool
 {
-    return $pdo instanceof PDO && table_exists('phone_cloud_numbers_v100') && table_exists('phone_cloud_requests_v100');
+    // The shared table_exists() helper already uses the production DB handle.
+    // Upgrade readiness must not acquire a second page-local connection.
+    return ($pdo===null || $pdo instanceof PDO)
+        && table_exists('phone_cloud_numbers_v100') && table_exists('phone_cloud_requests_v100');
 }
 
 function vp3_phone_ensure_schema_v100(PDO $pdo): void
