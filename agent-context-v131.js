@@ -282,6 +282,7 @@
       path:location.pathname+location.search,
       visible:document.visibilityState!=='hidden',
       screen_observation:window.VP3AgentScreenShare?.context()||null,
+      transcript_selected_text:String(window.STONEFELLOW_TRANSCRIPTION_CANVAS?.selection?.()?.selected_text||window.STONEFELLOW_ARTIST_LISTENING_WORKSPACE?.api?.getSelection?.()?.text?.value||'').slice(0,6000),
       transcript_session_id:Number(window.STONEFELLOW_TRANSCRIPTION_CANVAS?.selection?.()?.session_id||window.STONEFELLOW_ARTIST_LISTENING_TRANSCRIPT?.api?.getState?.()?.sessionId||0),
       voice:voiceSession?{
         session_id:cleanText(voiceSession.id||voiceSession.sessionId||'',120),

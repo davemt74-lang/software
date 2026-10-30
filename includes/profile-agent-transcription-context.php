@@ -54,7 +54,7 @@ function profile_agent_transcript_brain_context_v255(
         $stmt = $pdo->prepare(
             "SELECT id,memory_type,subject,memory_text,metadata_json,last_seen_at
              FROM agent_memory_items
-             WHERE user_id=? AND is_active=1 AND memory_type='transcript_analysis'
+             WHERE user_id=? AND is_active=1 AND memory_type IN ('transcript_analysis','transcript_highlight','transcript_intelligence','transcript_note')
              ORDER BY last_seen_at DESC,id DESC
              LIMIT 80"
         );
@@ -73,12 +73,13 @@ function profile_agent_transcript_brain_context_v255(
         $metadata = json_decode((string)($row['metadata_json'] ?? ''), true);
         if (!is_array($metadata)) $metadata = [];
         $sessionId = max(0, (int)($metadata['session_id'] ?? 0));
-        $sourceTitle = trim((string)($metadata['title'] ?? ''));
+        $sourceTitle = trim((string)($metadata['title'] ?? $metadata['source_title'] ?? ''));
         $title = $sourceTitle !== ''
             ? 'Transcript analysis · ' . $sourceTitle
             : 'Transcript analysis';
 
-        $haystack = mb_strtolower($title . ' ' . (string)($row['subject'] ?? '') . ' ' . $text);
+        $matchText=(string)(($metadata['highlight_text']??'')?:($metadata['retained_report_text']??'')?:$text);
+        $haystack = mb_strtolower($matchText.' '.$title . ' ' . (string)($row['subject'] ?? '') . ' ' . $text);
         if ($terms) {
             $matched = false;
             foreach ($terms as $term) {
@@ -108,7 +109,7 @@ function profile_agent_transcript_brain_context_v255(
         // If the same AI Summary was also saved into My Knowledge and that
         // item is approved for this visitor, My Knowledge remains the shared
         // source of truth so the Profile Agent does not receive duplicates.
-        if ($sessionId > 0 && column_exists('knowledge_items', 'knowledge_scope')) {
+        if (($row['memory_type']??'')==='transcript_analysis' && $sessionId > 0 && column_exists('knowledge_items', 'knowledge_scope')) {
             try {
                 $marker = 'personal-' . sha1('artist-listening-analysis:' . $sessionId) . '.txt';
                 $knowledge = $pdo->prepare(
@@ -134,6 +135,9 @@ function profile_agent_transcript_brain_context_v255(
             }
         }
 
+        if(($metadata['source']??'')==='transcript_highlight_v1'&&trim((string)($metadata['highlight_text']??''))!=='')$text=(string)$metadata['highlight_text'];
+        require_once __DIR__.'/transcript-brain-v1.php';
+        $text=vp3_transcript_retained_excerpt_v1($pdo,$ownerId,$metadata,$text,$terms);
         $source = 'agent-brain:transcript-analysis:' . $memoryId;
         $context[] = [
             'source' => $source,

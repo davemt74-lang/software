@@ -261,14 +261,14 @@ $config = [
 </script>
   <script src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-native-receiver-20261023')) ?>"></script>
   <script src="<?= e(url('/artist-listening-realtime.js?v=e07b7c39&listening=section2-20261003')) ?>"></script>
-  <script src="<?= e(url('/artist-listening-recognition.js?v=artist-listening-normalized-20260903&listening=section2-20261003&startup=20261022')) ?>"></script>
-  <script src="<?= e(url('/artist-listening-transcript.js?v=artist-listening-normalized-20260903&integrity=section4-20261003&transfer=section7-20261004')) ?>"></script>
-  <script src="<?= e(url('/artist-listening-workspace.js?v=artist-listening-normalized-20260903&capture=interactive-transcription-section3-20261003&integrity=section4-20261003&transfer=section7-20261004')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-recognition.js?v=artist-listening-normalized-20260903-highlights-s3&listening=section2-20261003&startup=20261022')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-transcript.js?v=artist-listening-normalized-20260903-highlights-s3&integrity=section4-20261003&transfer=section7-20261004')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-workspace.js?v=artist-listening-normalized-20260903-highlights-s3&capture=interactive-transcription-section3-20261003&integrity=section4-20261003&transfer=section7-20261004')) ?>"></script>
   <script src="<?= e(url('/artist-listening.js?v=9ac023be&capture=interactive-transcription-section3-20261003&integrity=section4-20261003&transfer=section7-20261004&startup=20261022')) ?>"></script>
   <script src="<?= e(url('/artist-listening-recordings.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script src="<?= e(url('/artist-listening-naming.js?v=transcription-folder-hotfix-20260913')) ?>"></script>
   <script>window.STONEFELLOW_ARTIST_LISTENING_V172=Object.assign(window.STONEFELLOW_ARTIST_LISTENING_V172||{},window.STONEFELLOW_ARTIST_LISTENING_CONFIG||{});</script>
-  <script src="<?= e(url('/artist-listening-ai.js?v=transcription-deeper-v307-20260907')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-ai.js?v=transcription-deeper-v307-20260907-highlights-s3')) ?>"></script>
   <script src="<?= e(url('/artist-listening-ui.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script src="<?= e(url('/transcription-editor.js?v=transcription-editor-api-20260903&capture=interactive-transcription-section3-20261003')) ?>"></script>
   <script>

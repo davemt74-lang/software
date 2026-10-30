@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/artist-listening.php';
+require_once dirname(__DIR__) . '/includes/transcript-brain-v1.php';
 require_once dirname(__DIR__) . '/includes/artist-listening-transcript.php';
 require_once dirname(__DIR__) . '/includes/transcription-app-registry.php';
 require_once dirname(__DIR__) . '/includes/transcription-apps-wave2.php';
@@ -218,9 +219,9 @@ try{
 
     if($action==='save_brain'){
         $permissions=transcription_app_permissions_v300($user);if(!$permissions['agent_brain_write'])throw new RuntimeException('Agent Brain storage is not available for this account.');
-        $id=agent_brain_v122_upsert_system_memory($user,'transcript_analysis','artist-listening:'.$sessionId,mb_strimwidth($text,0,18000,'…'),[
-            'source'=>'transcription-intelligence-v307','session_id'=>$sessionId,'title'=>(string)($session['title']??''),'tags'=>$tags,'source_hash'=>(string)$map['source_hash'],'saved_at'=>gmdate('c')
-        ],0.98);
+        $id=vp3_transcript_brain_scope_v1($pdo,$user,$session,static fn()=>agent_brain_v122_upsert_system_memory($user,'transcript_analysis','artist-listening:'.$sessionId,mb_strimwidth($text,0,18000,'…'),[
+            'source'=>'transcription-intelligence-v307','highlight_kind'=>'analysis_report','retained_report_text'=>$text,'session_id'=>$sessionId,'title'=>(string)($session['title']??''),'tags'=>$tags,'source_hash'=>(string)$map['source_hash'],'saved_at'=>gmdate('c')
+        ],0.98));
         if($id<1)throw new RuntimeException('Could not save the transcription intelligence to Agent Brain.');
         transcription_intelligence_json_v300(true,['saved'=>true,'memory_id'=>$id,'saved_at'=>gmdate('c'),'meeting_processing_policy'=>$meetingAiPolicyPublic]);
     }

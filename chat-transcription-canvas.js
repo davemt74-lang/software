@@ -439,7 +439,7 @@ async function bootstrap(){
 window.STONEFELLOW_TRANSCRIPTION_CANVAS={
   open:async(args={})=>{if(args.sessionId)return openRef(args.sessionId,args.key||'',args);return openLatestSession();},
   close:closeCanvas,
-  selection:()=>canvas&&!canvas.hidden?{session_id:sessionIdOf(currentSession),view:currentView}:null,
+  selection:()=>{if(!canvas||canvas.hidden)return null;const s=window.getSelection?.();const text=s?.anchorNode&&canvas.contains(s.anchorNode)&&s?.focusNode&&canvas.contains(s.focusNode)?String(s.toString()).slice(0,6000):'';return {session_id:sessionIdOf(currentSession),selected_text:text,view:currentView};},
   refresh:async()=>{await refreshAll();return {sessions:[...sessions],recordings:[...recordings],currentSession:currentSession?{...currentSession}:null,currentView};},
   showHome:()=>{if(currentIntelligence){currentView='home';renderWorkspace();}},
 };

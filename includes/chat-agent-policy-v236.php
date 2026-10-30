@@ -218,6 +218,7 @@ function chat_policy_context_v236(string $query,array $user,array $principal,int
 {
     $pdo=db();if(!$pdo)return [];$terms=chat_policy_terms_v236($query);$context=[];
     $brainAllowed=personal_capability_has_v242('agent_brain.access',$user);
+    if($brainAllowed){require_once __DIR__.'/transcript-brain-v1.php';try{foreach(vp3_transcript_highlight_context_v1($pdo,$user,$principal,$query) as $item)$context[]=$item;}catch(Throwable $e){error_log('Transcript highlight context unavailable.');}}
     if($brainAllowed&&agent_brain_schema_ready()){
       $brain=function_exists('agent_brain_v99_context')?agent_brain_v99_context($user,$query,8):agent_brain_context($user,$query,8);
       foreach($brain as $item)$context[]=$item;

@@ -134,6 +134,7 @@ function transcription_app_modules_v301(array $analysis, ?array $master = null):
         $module = $stored[$id] ?? null;
         if (!is_array($module)) continue;
         $result = is_array($module['result'] ?? null) ? transcription_app_sanitize_value_v300($module['result']) : [];
+        $result = transcription_app_restore_saved_actions_v1($result,(array)($module['result']??[]));
         $modules[$id] = [
             'app_id'=>$id,
             'source_hash'=>(string)($module['source_hash'] ?? $master['source_hash'] ?? ''),

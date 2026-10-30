@@ -1081,7 +1081,7 @@
       const data = await request(action, {session_id:sessionId});
       if (action === 'save_brain') {
         proof.brainSaves += 1;
-        state.actionMessage = `Added current reviewed intelligence to Agent Brain${data.saved_at ? ` · ${formatSaved(data.saved_at)}` : ''}.`;
+        state.actionMessage = `Saved current intelligence to Agent Brain; review labels are preserved. Profile Agent use follows Knowledge Access settings${data.saved_at ? ` · ${formatSaved(data.saved_at)}` : ''}.`;
       } else {
         proof.knowledgeSaves += 1;
         state.actionMessage = `Added current reviewed intelligence to Personal Knowledge Base${data.saved_at ? ` · ${formatSaved(data.saved_at)}` : ''}.`;
