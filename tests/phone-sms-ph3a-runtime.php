@@ -11,7 +11,7 @@ function subscription_entitlement_limit(?array $user,string $key,?int $default=n
 
 $pdo=new PDO('sqlite::memory:');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
 $pdo->exec('CREATE TABLE users(id INTEGER PRIMARY KEY)');
-$pdo->exec('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER)');
+$pdo->exec('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 $pdo->exec('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider TEXT,phone_e164 TEXT,
     owner_user_id INTEGER,agent_id INTEGER,sms_enabled INTEGER)');
 $pdo->exec('CREATE TABLE phone_sms_threads_v110(id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,7 +26,7 @@ $pdo->exec('CREATE TABLE phone_sms_contacts_v110(phone_number_id INTEGER,contact
     carrier_opted_out INTEGER DEFAULT 0,last_keyword TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(phone_number_id,contact_e164))');
 $pdo->exec('INSERT INTO users(id) VALUES (1),(2)');
-$pdo->exec('INSERT INTO user_agents VALUES (7,1,1),(8,2,1)');
+$pdo->exec("INSERT INTO user_agents VALUES (7,1,1,'Longfellow'),(8,2,1,'Other agent')");
 $pdo->exec("INSERT INTO phone_cloud_numbers_v100 VALUES (1,'twilio','+16025550101',1,7,1),
     (2,'twilio','+16025550102',2,8,1),(3,'twilio','+16025550103',1,7,0)");
 $url='https://vp3.example/api/phone-sms-inbound-v110.php';
