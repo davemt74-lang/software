@@ -1,0 +1,7 @@
+# Transcript tools S2: analysis and research
+
+The transcript interpreter can read saved analysis/research or explicitly request a new analysis/research run. Read operations never call the analysis or web-search engine. The same canonical master/module projections, review states, per-plugin context freshness, research age and public source lists used by Transcription Intelligence are exposed in Chat. Edited or stale analysis is labeled rather than silently refreshed or treated as current fact. Analysis is distinguished from recorded speech and independently verified user facts.
+
+Explicit runs reuse `transcription_app_analyze_v307`, standard/manual mode, a bounded existing-module allowlist and the existing meeting Cloud AI policy. The focus is bounded and transcript-only context is used. Research is enabled only for an explicit research run. Failures are not replayed; partial analysis may persist and the response asks the user to inspect it. Execution receipts distinguish reads from completed analysis writes.
+
+Acceptance: 12 saved-intelligence/review/freshness/source/ownership and execution cases, including an actual deterministic stats-engine run over SQLite (only MySQL persistence syntax adapted); 52 production typed/streaming/legacy API cases with the model fixture. Existing Recovery and browser workflows remain required merge gates. Live provider/web-search certification remains deployment acceptance.
