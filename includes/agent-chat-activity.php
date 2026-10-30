@@ -303,7 +303,7 @@ function agent_chat_activity_reconcile_proactive(PDO $pdo, array $user): void
         $stmt = $pdo->prepare(
             "SELECT p.id,p.event_type,p.title,p.prompt,p.source_kind,p.context_json,p.created_at
              FROM agent_proactive_events p
-             WHERE p.user_id=? AND p.event_type='shown' AND p.created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY)
+             WHERE p.user_id=? AND p.event_type='shown' AND p.source_kind NOT IN ('activity_resume','activity_working') AND p.created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY)
                AND NOT EXISTS (
                  SELECT 1 FROM notifications n
                  WHERE n.user_id=p.user_id AND n.source_type='agent_proactive_event' AND n.source_id=p.id

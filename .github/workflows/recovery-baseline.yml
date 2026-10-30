@@ -48,6 +48,7 @@ jobs:
           php tests/agent-tool-receipts-v1.php
           php tests/tool-json-provider-v1.php
           php tests/reminder-read-repair-v1.php
+          php tests/proactive-chat-repair-v1.php
           python3 tools/check_agent_capability_inventory.py
 
       - name: Runtime versions
