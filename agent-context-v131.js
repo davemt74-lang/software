@@ -280,6 +280,7 @@
       activity_state:cleanText(active.state||activity?.state||'',30),
       path:location.pathname+location.search,
       visible:document.visibilityState!=='hidden',
+      screen_observation:window.VP3AgentScreenShare?.context()||null,
       voice:voiceSession?{
         session_id:cleanText(voiceSession.id||voiceSession.sessionId||'',120),
         state:cleanText(voiceSession.state||'',30),

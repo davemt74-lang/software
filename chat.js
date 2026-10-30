@@ -3136,6 +3136,8 @@
       if(window.VP3ProjectKnowledgeR6)payload.project_knowledge_r6=window.VP3ProjectKnowledgeR6.value();
       const revision=window.VP3KnowledgeRevisionsR11?.value(message);if(revision)payload.knowledge_revision=revision;
       if(browserAgentContext)payload.agent_context=browserAgentContext;
+      const screenObservation=window.VP3AgentScreenShare?.context();
+      if(screenObservation)payload.agent_context={...(payload.agent_context||{}),screen_observation:screenObservation};
       const data = await new Promise((resolve, reject) => {
         const abort = () => reject(new DOMException('Chat request stopped or timed out.', 'AbortError'));
         request.controller.signal.addEventListener('abort', abort, {once:true});
