@@ -478,7 +478,8 @@
     lastRecognitionFailureAt=now;recognitionFailures+=1;
     proof.lastError=message;
     log('SR_RECOVERY',{reason,attempt:recognitionFailures});
-    if(recognitionFailures>=5){
+    const retryLimit=reason==='browser-interruption'?5:3;
+    if(recognitionFailures>=retryLimit){
       disableVoice({persist:false});
       setAgentState('error',message+' Select the microphone to retry.');
       return;

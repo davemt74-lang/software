@@ -217,6 +217,23 @@ if(cloud){
   assert.equal(starts,3);assert.equal(api.state().voiceOn,false);assert.match(b.element('chatVoiceStatus').textContent,/retry/i);
   api.enableVoice();await flush();assert.equal(starts,4);api.disableVoice();
  });
+ await test('Three transient browser interruptions recover while startup failures remain bounded',async()=>{
+  const b=browser(),timer=clock(b);let native,starts=0;
+  b.window.SpeechRecognition=class{constructor(){native=this;}start(){starts++;this.onstart?.();}abort(){this.onend?.();}};
+  const api=chat(b);api.enableVoice();await flush();
+  for(let i=0;i<3;i++){const old=native;old.onerror({error:'aborted'});old.onend();await timer.advance(1800);assert.equal(api.state().voiceOn,true);assert.equal(api.state().recognitionListening,true);}
+  assert.equal(starts,4);api.disableVoice();
+ });
+ await test('Automatic restart does not reimport a restored failed draft',async()=>{
+  const b=browser(),timer=clock(b),sent=[];let native;
+  b.window.SpeechRecognition=class{constructor(){native=this;}start(){this.onstart?.();}stop(){this.onend?.();}abort(){this.onend?.();}};
+  const api=chat(b);api.enableVoice();await flush();
+  b.element('chatInput').value='A restored failed request';
+  const old=native;old.onend();await timer.advance(400);
+  b.element('chatForm').requestSubmit=()=>sent.push(b.element('chatInput').value);
+  native.onresult(result('A new spoken question'));await timer.advance(1800);
+  assert.deepEqual(sent,['A new spoken question']);api.disableVoice();
+ });
  await test('Chat bounds conversation restore without opening a microphone or losing a draft',async()=>{
   const b=browser(),timer=clock(b);let starts=0;
   b.window.STONEFELLOW_CHAT_CONTINUITY={isRestoring:()=>true,isReady:()=>false};
