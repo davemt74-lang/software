@@ -204,7 +204,10 @@ function vp3_upgrade_complete(): bool
         && table_exists('social_feed_posts_v1')
         && table_exists('tv_watching_state_v1')
         && table_exists('tv_watching_records_v1')
-        && reminder_ready_v1(db())
+        && table_exists('agent_reminders_v1')
+        && table_exists('agent_reminder_occurrences_v1')
+        && table_exists('agent_reminder_turns_v1')
+        && table_exists('agent_reminder_context_v1')
         && table_exists('user_agent_voice_preferences');
 }
 
