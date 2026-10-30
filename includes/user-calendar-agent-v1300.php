@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-tool-receipts-v1.php';
 
 /** Owner-scoped conversational Calendar tool. Voice and text share this path. */
 const VP3_USER_CALENDAR_AGENT_V1300 = 'user-calendar-agent-v1300-20260912';
@@ -156,6 +157,7 @@ function user_calendar_agent_manage_v1340(PDO $pdo,array $user,string $query,int
         }
         user_calendar_validate_options_v1340($pdo,user_calendar_options_v1340($input),user_calendar_local_range_v1300($input,(string)$event['timezone']));
     }
+    $result['tool_receipt']=vp3_tool_receipt_v1('calendar.manage','prepare','clarification_required','confirmation_required');
     $pending=$input+['operation'=>$operation,'event_id'=>$id];
     user_calendar_agent_set_pending_v1300($user,$conversationId,$pending);
     $result['answer']=($operation==='cancel'?'Remove':'Update').' calendar event #'.$id.' “'.(string)$event['title'].'”'.(($event['recurrence']??'none')==='weekly'?' and its entire weekly series':'').'?'.($operation==='update'?' New schedule: '.$input['date'].' '.$input['start_time'].' · '.$input['timezone'].' · '.($input['recurrence']==='weekly'?'Every week':'One time').' · agent notifications '.(!empty($input['agent_notifications'])?'on':'off').'.':'').' Confirm?';
@@ -195,6 +197,7 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
                 user_calendar_agent_clear_pending_v1300($user,$conversationId);
                 $result['answer']=($operation==='cancel'?'Removed':'Updated').' calendar event #'.$id.' “'.(string)$event['title'].'”.';
                 $result['actions'][]=['type'=>'open_url','label'=>'Open Calendar','url'=>url('/calendar.php')];
+                $result['tool_receipt']=vp3_tool_receipt_v1('calendar.manage',$operation,'completed','',$id);
                 agent_tool_log($user,'calendar.event.'.$operation,$query,'success',['event_id'=>$id],$conversationId);return $result;
             }
             $agentId=max(0,(int)($pending['agent_id']??0));
@@ -205,11 +208,13 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
             $result['answer']='Added “'.(string)$event['title'].'” to your calendar for '.user_calendar_agent_label_v1300($event,$timezone).'.';
             $result['actions'][]=['type'=>'open_url','label'=>'Open Calendar','url'=>url('/calendar.php')];
             $result['sources'][]=['source'=>'calendar:event:'.(int)$event['id'],'title'=>(string)$event['title']];
+            $result['tool_receipt']=vp3_tool_receipt_v1('calendar.manage','create','completed','',(int)$event['id']);
             agent_tool_log($user,'calendar.event.create',$query,'success',['event_id'=>(int)$event['id'],'source'=>$source,'agent_id'=>$agentId],$conversationId);
             return $result;
         }catch(Throwable $e){
             user_calendar_agent_clear_pending_v1300($user,$conversationId);
             $result['answer']='I could not add that event: '.$e->getMessage();
+            $result['tool_receipt']=vp3_tool_receipt_v1('calendar.manage',(string)($operation??'create'),'failed','execution_failed');
             agent_tool_log($user,'calendar.event.create',$query,'error',['error'=>$e->getMessage()],$conversationId);
             return $result;
         }
@@ -245,6 +250,7 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
             $result['answer']=($date?'Here’s your calendar for '.$start->format('l, F j').':':'Here’s your upcoming calendar:')."\n".implode("\n",$lines);
         }
         $result['actions'][]=['type'=>'open_url','label'=>'Open Calendar','url'=>url('/calendar.php')];
+        $result['tool_receipt']=vp3_tool_receipt_v1('calendar.read','list',$events?'read_complete':'no_matches','',0,count($events));
         agent_tool_log($user,'calendar.event.list',$query,'success',['count'=>count($events),'days'=>$days],$conversationId);
         return $result;
     }
@@ -269,6 +275,7 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
         $start=DateTimeImmutable::createFromFormat('!Y-m-d H:i',$date.' '.$startTime,new DateTimeZone($timezone));
         $when=$start?$start->format('D, M j · g:i A T'):$date.' '.$startTime;
         $result['answer']='I can add “'.$title.'” to your calendar for '.$when.' ('.$duration.' minutes).'.($pending['recurrence']==='weekly'?' Repeats every week.':'').(!empty($pending['agent_notifications'])?' Agent notifications on.':'').' Confirm?';
+        $result['tool_receipt']=vp3_tool_receipt_v1('calendar.manage','prepare','clarification_required','confirmation_required');
         agent_tool_log($user,'calendar.event.prepare',$query,'pending',['title'=>$title,'date'=>$date,'start_time'=>$startTime,'duration_minutes'=>$duration,'agent_id'=>$agentId],$conversationId);
         return $result;
     }

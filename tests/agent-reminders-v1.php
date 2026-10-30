@@ -32,6 +32,7 @@ check(reminder_next_v1($base,new DateTimeImmutable('2030-05-01T22:00Z'))==='2030
 $create=['operation'=>'create','schedule'=>$base];
 $r=reminder_execute_v1($pdo,1,'cloud:1','request-one','Remind me daily',$create,[],1,$now);
 check(str_contains($r['answer'],'Saved reminder #1')&&countrows('agent_reminders_v1')===1,'explicit request saves reminder and returns authoritative receipt');
+check($r['tool_receipt']['status']==='completed'&&$r['tool_receipt']['changes_applied'],'reminder commit returns verified completion evidence');
 $r2=reminder_execute_v1($pdo,1,'cloud:1','request-one','Remind me daily',$create,[],1,$now);check($r===$r2&&countrows('agent_reminders_v1')===1,'replayed request is idempotent');
 rejects(fn()=>reminder_execute_v1($pdo,1,'cloud:1','request-one','Changed payload',$create,[],1,$now),'idempotency key cannot be reused for another request');
 check(reminder_tick_v1($pdo,1,new DateTimeImmutable('2026-10-30T14:59:59Z'))===0,'not delivered early');
