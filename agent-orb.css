@@ -60,3 +60,6 @@ html[data-vp3-orb-embed] .sidebar,html[data-vp3-orb-embed] .topbar,html[data-vp3
 @media(prefers-reduced-motion:reduce){.vp3-orb-controls{transition:none}}
 
 .vp3-eyes-portraits{display:flex;gap:8px;flex-wrap:wrap}.vp3-eyes-portraits:empty{display:none}.vp3-eyes-portraits img{width:80px;height:80px;border-radius:8px;object-fit:cover;border:1px solid #536b85}
+
+.vp3-screen-share{border:1px solid #476073;border-radius:10px;padding:12px;margin:0 0 16px;min-width:0;background:rgba(255,255,255,.04)}
+.vp3-screen-share h3{margin:0 0 8px;font-size:15px}.vp3-screen-share p{overflow-wrap:anywhere;line-height:1.5}.vp3-screen-share .vp3-eyes-actions{display:flex;flex-wrap:wrap;gap:6px}.vp3-screen-share img{display:block;width:100%;height:auto;border-radius:6px;margin-top:8px}.vp3-screen-share img[hidden]{display:none}.vp3-screen-share label{display:flex;align-items:center;gap:7px;margin:10px 0}.vp3-screen-share input{flex:0 0 auto}

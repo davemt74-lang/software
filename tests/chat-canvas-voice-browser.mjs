@@ -394,6 +394,19 @@ try {
   assert.equal(await page.evaluate(()=>window.recognizers.some(r=>r.active)),false);
   console.log('PASS a prompted name is submitted once, its answer completes and temporary listening returns off');
 
+  await boot();
+  await page.evaluate(()=>{window.sharedScreen={contract:'vp3.screen-observation.v1',owner_key:'1',captured_at:new Date().toISOString(),surface:'window',summary:'A product comparison is visible',visible_text:'Product A',site_hint:'Example store',page_title:'Comparison'};window.VP3AgentScreenShare={context:()=>window.sharedScreen};});
+  const typedScreenCount=sends().length;await page.locator('#chatInput').fill('What do you think about this?');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>document.querySelector('#chatInput').disabled===false);
+  assert.equal(sends().length,typedScreenCount+1);assert.equal(sends().at(-1).agent_context.screen_observation.summary,'A product comparison is visible');
+  await page.getByRole('button',{name:'Start voice conversation'}).click();await page.waitForFunction(()=>recognizers.some(r=>r.active));
+  await speak('Describe what I am showing you');await page.waitForFunction(()=>document.querySelector('#chatThread').innerText.includes('I heard you.'));
+  await page.waitForTimeout(2100);assert.equal(sends().length,typedScreenCount+2);assert.equal(sends().at(-1).message,'Describe what I am showing you');assert.equal(sends().at(-1).agent_context.screen_observation.page_title,'Comparison');
+  await page.evaluate(()=>{VP3ConversationControls.stop();window.sharedScreen=null;});
+  await page.locator('#chatInput').fill('And now?');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());await page.waitForFunction(()=>document.querySelector('#chatInput').disabled===false);
+  assert.equal(sends().at(-1).agent_context?.screen_observation??null,null);
+  console.log('PASS typed and spoken canonical Chat attach current screen context; stopped sharing attaches none');
+
   assert.deepEqual(errors, []);
   if (process.env.VP3_CHAT_SCREENSHOT) await page.screenshot({path:process.env.VP3_CHAT_SCREENSHOT});
   console.log('PASS compact desktop/mobile canvas; tools preserve state; actual Chat + voice lease + automatic planner retain delayed voice input, speak once, resume listening, and reject failed/cancelled late routes.');

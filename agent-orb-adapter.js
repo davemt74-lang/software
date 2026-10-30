@@ -27,6 +27,7 @@
   const recording=()=>Boolean(document.querySelector('[data-recording="true"],.is-recording,.chat-media-studio button.recording,[data-agent-state="recording"]'));
   const state=()=>{const current=window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState;return {state:audible||current==='speaking'?'speaking':preparing?'thinking':current||($('sendChatButton')?.disabled?'thinking':'idle'),recording:recording()};};
   const adapter={tvRequest:(body,{keepalive=false}={})=>api(cfg.tvEndpoint,body,keepalive),
+    screenRequest:async(body,{signal}={})=>{const response=await fetch(cfg.screenEndpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,owner_key:String(cfg.ownerKey),csrf_token:cfg.csrf})});const data=await response.json();if(!response.ok||!data.ok){const error=Error(data.error||'Screen analysis unavailable.');error.status=response.status;throw error;}return data;},
     ownerKey:cfg.ownerKey,chatUrl:cfg.chatUrl,state,voiceFeatureUrl:cfg.voiceFeatureUrl,
     trainedVoiceUrl:cfg.trainedVoiceUrl,trainedVoiceSource:'cloud',
     conversationRef:()=>window.STONEFELLOW_CHAT_CONTINUITY?.isRestoring?.()||window.STONEFELLOW_CHAT_CONTINUITY?.isReady?.()===false?null:({id:window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()||0,agent:Number(window.STONEFELLOW_CHAT?.agentId||0)}),
@@ -41,7 +42,7 @@
     listen:()=>{if(!window.VP3ConversationControls?.isEnabled?.())$('chatVoiceButton')?.click();},
     responseWindow:()=>window.VP3AgentOrb?.listenForResponse?.(),
     cancelResponseWindow:()=>window.VP3AgentOrb?.cancelResponseWindow?.(),
-    stop:()=>{voiceEpoch++;preparing=false;audible=false;window.VP3ConversationControls?.stop();window.STONEFELLOW_NOTIFICATION_CENTER?.cancelSpeech();if(recording())window.StonefellowMediaStudio?.close?.();},
+    stop:()=>{window.VP3AgentScreenShare?.stop();voiceEpoch++;preparing=false;audible=false;window.VP3ConversationControls?.stop();window.STONEFELLOW_NOTIFICATION_CENTER?.cancelSpeech();if(recording())window.StonefellowMediaStudio?.close?.();},
     greet:async(text,isCurrent=()=>true)=>{
       const epoch=++voiceEpoch;preparing=true;
       try{await voiceReady;if(epoch!==voiceEpoch||!isCurrent())return false;return await window.STONEFELLOW_NOTIFICATION_CENTER?.announceWhen(text,()=>epoch===voiceEpoch&&isCurrent());}
