@@ -26,7 +26,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $chat=$owner&&(!isset($user['is_active'])||!empty($user['is_active']))&&has_permission('chat.access',$user);
     $scope=is_array($rawScope)&&($rawScope['mode']??'')==='project'?['mode'=>'project','folder_id'=>0]:knowledge_retrieval_v162_normalize_scope($rawScope);
     $base=['contract'=>VP3_CAPABILITY_AWARENESS_V1,'checked_at'=>gmdate('Y-m-d\TH:i:s\Z'),'owner_user_id'=>$uid,
-        'agent_id'=>max(0,(int)($context['user_agent_id']??0)),'conversation_id'=>max(0,(int)($context['conversation_id']??0)),
+        'agent_id'=>($principal['kind']??'system')==='user_agent'?max(0,(int)($principal['agent_id']??0)):0,'conversation_id'=>max(0,(int)($context['conversation_id']??0)),
         'owner_conversation'=>$owner,'knowledge_scope'=>$scope,'authority'=>false,'capabilities'=>[]];
     if(!$chat)return $base;
     $reminders=vp3_capability_probe_v1(fn()=>reminder_ready_v1($pdo));

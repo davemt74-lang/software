@@ -62,8 +62,8 @@ assert(serverContext.includes('editor-capability')&&serverContext.includes('DATA
 assert(serverContext.includes('agent_proactive_v123_suggestions'),'server context can enrich missing proactive opportunities');
 
 assert(chatVoice.includes('agent_context:await AgentContext.refresh(false)')&&chatVoice.includes('agent_context:AgentContext.snapshot?.()'),'direct Chat requests attach v131 context');
-assert(chatApi.includes("agent_surface_v131_enrich($user,'chat'") ,'normal Chat sanitizes/enriches v131 context');
-assert(chatApi.includes('chat_generate_answer_v105($query, $history, $user, $agentContext)'),'normal Chat passes v131 context into generation');
+assert(chatApi.includes('vp3_agent_chat_send_v2160')&&fs.readFileSync('includes/agent-chat-runtime-v2160.php','utf8').includes("agent_surface_v131_enrich($user,'chat'"),'legacy Chat delegates context enrichment to canonical Chat');
+assert(chatApi.includes("require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php'"),'legacy Chat loads the canonical generation and tool boundary');
 assert(chatStream.includes("agent_surface_v131_enrich($user,'chat'") ,'stream Chat sanitizes/enriches v131 context');
 assert(chatStream.includes('chat_v121_context($query,$user,$principal,$agentContext,$conversationId)')&&chatStream.includes('ai_v121_stream_chat_response($query,$history,$context,$user'),'stream Chat passes enriched v131 context and selected agent principal into the active NDJSON generation path');
 assert(stemApi.includes("$agentContext=agent_surface_v131_enrich($user,'stem',$rawAgentContext)")&&stemApi.includes("$rawState['agent_context']=$agentContext")&&stemApi.includes("'agent_context'=>$agentContext"),'Stem sanitizes/enriches v131 context and propagates it through planning/history');

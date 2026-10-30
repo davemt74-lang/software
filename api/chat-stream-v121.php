@@ -9,6 +9,9 @@ require_once dirname(__DIR__).'/includes/agent-tool-authorization-v400.php';
 require_once dirname(__DIR__).'/includes/knowledge-retrieval-v162.php';
 require_once dirname(__DIR__).'/includes/agent-capability-awareness-v1.php';
 require_once dirname(__DIR__).'/includes/agent-capability-chat-v1.php';
+require_once dirname(__DIR__).'/includes/user-calendar-v1300.php';
+require_once dirname(__DIR__).'/includes/user-calendar-agent-v1300.php';
+require_once dirname(__DIR__).'/includes/agent-work-control-v173.php';
 header('Content-Type: application/x-ndjson; charset=UTF-8');header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');header('X-Accel-Buffering: no');@ini_set('zlib.output_compression','0');@ini_set('output_buffering','0');@set_time_limit(180);ignore_user_abort(true);
 function chat_v121_emit(array $event): void{if(connection_aborted())return;if(function_exists('agent_runtime_v125_trace_id')&&!isset($event['trace_id']))$event['trace_id']=agent_runtime_v125_trace_id();echo json_encode($event,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)."\n";if(function_exists('ob_flush'))@ob_flush();flush();}
 function chat_v121_scope_sql(?array $agent,string $alias='c'): array{return vp3_agent_chat_scope_sql_v380($agent,$alias);}
@@ -40,7 +43,7 @@ if(empty($reminderTool['handled'])&&knowledge_retrieval_v162_owner_session($user
     try{reminder_zone_v1($reminderZone);}catch(Throwable $ignored){$reminderZone=user_calendar_default_timezone_v1300($pdo,$user);}
     $reminderTool=reminder_chat_v1($pdo,$user,$query,'cloud:'.$conversationId,$idempotencyKey!==''?'stream:'.hash('sha256',$idempotencyKey):'message:'.$userMessageId,$conversationId,$reminderZone);
 }
-$toolResult=!empty($reminderTool['handled'])?vp3_agent_tool_authorize_result_v400($reminderTool,$user,$query):agent_runtime_v125_span('chat.tools',static function()use($query,$user,$conversationId):array{$result=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();if(empty($result['handled']))$result=vp3_agent_tool_execute_query_v400($query,$user,$conversationId);else $result=vp3_agent_tool_authorize_result_v400($result,$user,$query);return $result;},['conversation_id'=>$conversationId,'user_id'=>$userId,'agent_id'=>$agentScopeId]);
+$toolResult=!empty($reminderTool['handled'])?vp3_agent_tool_authorize_result_v400($reminderTool,$user,$query):agent_runtime_v125_span('chat.tools',static fn():array=>vp3_agent_chat_tool_query_v1($query,$user,$conversationId),['conversation_id'=>$conversationId,'user_id'=>$userId,'agent_id'=>$agentScopeId]);
 $runtimePlan=!empty($toolResult['handled'])?vp3_agent_runtime_tool_plan_v420($userId,$agentScopeId,'chat'):vp3_agent_runtime_plan_v420($pdo,$user,$agentScopeId,'chat');
 $stmt=$pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,'assistant','','{}')");$stmt->execute([$conversationId]);$assistantMessageId=(int)$pdo->lastInsertId();if(session_status()===PHP_SESSION_ACTIVE)session_write_close();while(ob_get_level()>0)@ob_end_flush();chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentScopeId,'agent_name'=>(string)$principal['display_name'],'runtime'=>vp3_agent_runtime_public_plan_v420($runtimePlan)]);
 $streamPartial=false;$homeAttempted=false;$homeResult=null;$context=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];

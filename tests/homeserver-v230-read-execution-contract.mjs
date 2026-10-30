@@ -7,6 +7,7 @@ const bootstrap=read('includes/bootstrap.php');
 const auth=read('includes/agent-tool-authorization-v400.php');
 const stream=read('api/chat-stream-v121.php');
 const chat=read('api/chat.php');
+const runtime=read('includes/agent-chat-runtime-v2160.php');
 const execution=read('includes/chat-execution-v019.php');
 const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
 
@@ -20,7 +21,7 @@ const checks=[
  ['canonical Agent tool boundary invokes HomeServer reads before domain Cloud tools',auth.indexOf('homeserver_agent_read_v230_query')<auth.indexOf('agent_team_scheduling_tools_query_v610')],
  ['streaming Agent Chat attributes local reads to HomeServer provenance',/chat_execution_v019_homeserver_receipt/.test(stream)&&/actual_source'=>'homeserver_local'/.test(stream)&&/homeserver_v230_local_read/.test(stream)],
  ['execution provenance carries only domain operation request id and sanitized runtime fields',/homeserver_domain/.test(execution)&&/homeserver_operation/.test(execution)&&/homeserver_request_id/.test(execution)],
- ['non-streaming Chat also executes HomeServer local reads and persists receipt context',/homeserver_agent_read_v230_query/.test(chat)&&/'execution'=>is_array\(\$toolResult\['execution'\]/.test(chat)],
+ ['non-streaming Chat also executes HomeServer local reads and persists receipt context',/vp3_agent_chat_send_v2160/.test(chat)&&/vp3_agent_chat_tool_query_v1/.test(runtime)&&/homeserver_agent_read_v230_query/.test(auth)&&/'execution'=>\$execution/.test(runtime)],
  ['runtime journey gates Section 2 contract and unit behavior',/homeserver-v230-read-execution-contract\.mjs/.test(workflow)&&/homeserver-v230-read-execution-unit\.php/.test(workflow)],
 ];
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}

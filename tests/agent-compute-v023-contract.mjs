@@ -52,7 +52,7 @@ assert.match(chat,/chat_execution_v019_vp3_direct\(\$user\)/);
 assert.match(chat,/chat_execution_v019_fallback\(\$user,!empty\(\$runtimePlan\['home'\]\['paired'\]\),true\)/);
 assert.ok(chat.includes("homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all'&&($r6Packet['state']['scope']['mode']??'all')!=='off'"));
 assert.match(delegation,/homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/);
-const toolIndex=chat.indexOf("release_v105_chat_tool");
+const toolIndex=chat.indexOf("vp3_agent_chat_tool_query_v1");
 const runtimePlanIndex=chat.indexOf("vp3_agent_runtime_plan_v420");
 assert.ok(toolIndex>=0&&runtimePlanIndex>toolIndex,'Deterministic tools must run before model compute routing is planned.');
 assert.match(chat,/vp3_agent_runtime_block_message_v420/);

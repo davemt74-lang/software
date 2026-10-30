@@ -17,7 +17,7 @@ const cognitiveLoop = read('includes/agent-cognitive-loop-v310.php');
 assert.match(cognitiveLoop,/vp3_agent_onboarding_skill_candidate_v100/,'Existing cognitive loop consumes onboarding skill, not a parallel Brain');
 const bootstrap = read('includes/bootstrap.php');
 const releaseChat = read('includes/release-chat-v105.php');
-const textChat = [read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
+const textChat = [read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php'),read('includes/agent-tool-authorization-v400.php')].join('\n');
 const voiceChat = read('api/chat-stream-v121.php');
 const upgrade = read('upgrade.php');
 const migration = read('sql/onboarding-trial-intelligence.sql');
@@ -138,7 +138,7 @@ assert.ok(capabilityGate >= 0 && releaseGate > capabilityGate, 'Capability state
 assert.match(releaseChat, /if \(!empty\(\$accountState\['handled'\]\)\) return \$accountState/);
 assert.match(releaseChat, /function chat_account_state_intent_v241/);
 assert.match(textChat, /release_v105_chat_tool/);
-assert.match(voiceChat, /release_v105_chat_tool/);
+assert.match(voiceChat, /vp3_agent_chat_tool_query_v1/);
 assert.match(textChat, /empty\(\$toolResult\['handled'\]\)[\s\S]*chat_generate_answer_policy_v236/);
 assert.match(voiceChat, /if\(!empty\(\$toolResult\['handled'\]\)\)[\s\S]*else\{[\s\S]*ai_v121_stream_chat_response/);
 

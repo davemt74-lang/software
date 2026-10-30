@@ -313,6 +313,22 @@ function vp3_agent_tool_authorize_result_v400(array $result,array $user,string $
     return $result;
 }
 
+/** Shared owner Chat tools; transport (typed/voice/stream) does not select capabilities. */
+function vp3_agent_chat_tool_query_v1(string $query,array $user,int $conversationId=0): array
+{
+    $result=agent_work_control_chat_v173($query,$user,$conversationId);
+    if(!empty($result['handled']))return vp3_agent_tool_authorize_result_v400($result,$user,$query);
+    $result=user_calendar_agent_query_v1300($query,$user,$conversationId);
+    if(!empty($result['handled']))return vp3_agent_tool_authorize_result_v400($result,$user,$query);
+    if(function_exists('vp3_radar_chat_tool')){
+        $result=vp3_radar_chat_tool($query,$user,$conversationId);
+        if(!empty($result['handled']))return vp3_agent_tool_authorize_result_v400($result,$user,$query);
+    }
+    $result=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();
+    if(!empty($result['handled']))return vp3_agent_tool_authorize_result_v400($result,$user,$query);
+    return vp3_agent_tool_execute_query_v400($query,$user,$conversationId);
+}
+
 function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conversationId=0): array
 {
     $empty=vp3_agent_tool_empty_v400();$pdo=db();

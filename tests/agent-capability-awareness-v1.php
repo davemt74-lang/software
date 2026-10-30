@@ -38,7 +38,7 @@ check(row($s,'calendar.read')['mode']==='read'&&row($s,'calendar.manage')['mode'
 check(row($s,'knowledge.search')['ready'],'available Knowledge is distinct from whether it has records');
 check(row($s,'homeserver.status')['reason']==='not_checked','Cloud snapshot does not invent HomeServer online status or perform network calls');
 check(row($s,'screen.context')['reason']==='share_required','screen discussion requires a fresh observation');
-check($s['conversation_id']===9&&$s['agent_id']===4&&!$s['authority'],'snapshot binds conversation and agent without granting authority');
+check($s['conversation_id']===9&&$s['agent_id']===0&&!$s['authority'],'system identity cannot be replaced by a browser-supplied named Agent');
 check(!str_contains(json_encode($s),'secret'),'client-supplied capability metadata is ignored');
 check(vp3_capability_prompt_v1(['id'=>2])==='','snapshot cannot cross account boundaries');
 $p=ai_system_prompt([],$user);check(str_contains($p,'CURRENT SERVER CAPABILITIES')&&str_contains($p,'successful execution receipt'),'normal provider prompt receives snapshot and execution evidence rules');
@@ -64,4 +64,6 @@ check(vp3_capability_audit_v1($healthy)===[],'current inventory has verified exe
 $duplicate=$healthy;$duplicate['capabilities'][]=$duplicate['capabilities'][0];check(in_array('duplicate_or_invalid_id',vp3_capability_audit_v1($duplicate),true),'inventory audit catches duplicate identifiers');
 $drift=$healthy;$drift['capabilities'][0]['executor']='missing_executor_for_test';check(in_array('executor_drift',vp3_capability_audit_v1($drift),true),'inventory audit catches a removed executable binding');
 $drift=$healthy;$drift['capabilities'][0]['permitted']=false;check(in_array('readiness_drift',vp3_capability_audit_v1($drift),true),'inventory audit catches readiness that contradicts permission');
+$named=vp3_capability_snapshot_v1($pdo,$user,['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7],['conversation_id'=>9]);check($named['agent_id']===7,'named Agent identity survives missing UI identity metadata');
+$named=vp3_capability_snapshot_v1($pdo,$user,['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7],['conversation_id'=>9,'user_agent_id'=>99]);check($named['agent_id']===7,'forged UI identity cannot replace authenticated Agent scope');
 echo "CAPABILITY_AWARENESS=PASS ($checks cases)\n";
