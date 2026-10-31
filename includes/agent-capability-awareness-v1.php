@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/phone-agent-read-v1.php';
+require_once __DIR__.'/agent-integration-readiness-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -40,6 +41,8 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         catch(Throwable $e){$knowledge='check_failed';}
     }
     $brain=vp3_capability_probe_v1(fn()=>agent_brain_schema_ready());
+    $work=vp3_capability_probe_v1(fn()=>agent_work_control_schema_ready_v173($pdo));
+    $scheduling=vp3_scheduling_readiness_v1($pdo,$user);
     $transcripts=vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172'));
     $analysis=$transcripts!=='ready'?$transcripts:vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_master_analysis_v237')&&table_exists('artist_transcript_page_analysis_v237'));
     try{$phone=vp3_phone_agent_readiness_v1($pdo,$user);}catch(Throwable $e){$phone=['numbers'=>'check_failed','sms'=>'check_failed','send'=>'check_failed'];}
@@ -57,6 +60,12 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('phone.sms.send','Send SMS through existing approval screen','write','vp3_phone_sms_authorize_send_v120',has_permission('account.access',$user),$phone['send'],['Chat does not send SMS. Open Phone inbox for exact recipient/body review and existing explicit SEND approval, admin activation, opt-out and quota checks.']),
         vp3_capability_row_v1('calendar.read','Read personal calendar','read','user_calendar_agent_query_v1300',true,$calendar,['Own calendar; actual records must be retrieved before answering.']),
         vp3_capability_row_v1('calendar.manage','Change personal calendar','write','user_calendar_agent_query_v1300',true,$calendar,['Existing event confirmation and revision checks still apply. Linked meetings use their existing editor.']),
+        vp3_capability_row_v1('workflows.read','Inspect owner workflow records','read','agent_work_control_chat_v173',has_permission('account.access',$user),$work,['Explicit workflow number. Owner queue scope, including the owner’s other Agents; not arbitrary private tasks.']),
+        vp3_capability_row_v1('workflows.manage','Control owner workflows','write','agent_work_control_chat_v173',has_permission('account.access',$user),$work,['Existing approve, pause, resume, retry, cancel, schedule and priority controls. A saved control request is not job completion.']),
+        vp3_capability_row_v1('scheduling.read','Read personal appointment scheduling','read','agent_scheduling_tools_query_v460',has_permission('account.access',$user),$scheduling['personal'],['Existing owned schedules and live availability. Separate from personal calendar event access.']),
+        vp3_capability_row_v1('scheduling.manage','Change personal appointments','write','agent_scheduling_tools_query_v460',has_permission('account.access',$user),$scheduling['personal'],['Existing same-conversation/Agent second-turn approval and live availability checks. A paid hold does not confirm payment or the appointment.']),
+        vp3_capability_row_v1('team_scheduling.read','Read Team appointment scheduling','read','agent_team_scheduling_tools_query_v610',has_permission('account.access',$user),$scheduling['team'],['Existing owner pools and Team plan requirements; live availability checked on request.']),
+        vp3_capability_row_v1('team_scheduling.manage','Change Team appointments','write','agent_team_scheduling_tools_query_v610',has_permission('account.access',$user),$scheduling['team'],['Existing bound Agent/pool approval and calendar mutation services. No bypass of confirmation or membership checks.']),
         vp3_capability_row_v1('knowledge.search','Search personal Knowledge','read','knowledge_retrieval_v162_search',function_exists('personal_capability_has_v242')&&personal_capability_has_v242('personal_knowledge.access',$user),$knowledge,['Honors current conversation Knowledge scope; no automatic scope expansion.','A search with no matches is different from unavailable access.']),
         vp3_capability_row_v1('brain.read','Recall Agent Brain memory','read','agent_brain_context',function_exists('personal_capability_has_v242')&&personal_capability_has_v242('agent_brain.access',$user),$brain,['Only authorized owner memory; records must be retrieved before reporting facts.']),
         vp3_capability_row_v1('screen.context','Discuss the shared screen','read','agent_surface_v131_screen_observation',true,$screenReady?'ready':'share_required',['Only a fresh observation supplied by active screen sharing.','No hidden tabs, direct browser control or silent capture.']),

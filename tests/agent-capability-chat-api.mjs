@@ -10,6 +10,7 @@ for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php'])fs.copyFil
 for(const name of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
 fs.copyFileSync('tests/fixtures/phone-agent-schema-v1.php',path.join(tmp,'includes/phone-agent-schema-v1.php'));
+fs.copyFileSync('tests/fixtures/workflow-agent-schema-v1.php',path.join(tmp,'includes/workflow-agent-schema-v1.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
@@ -93,6 +94,17 @@ try{
   check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('SECRET'),endpoint+' rejects another named Agent SMS thread');
   response=await post(endpoint,'Did that work?',{...named,conversation_id:longfellowConversation},headers);
   check(response.data?.answer.includes('phone.sms.read / read')&&response.data.answer.includes('failed'),endpoint+' diagnoses the actual phone execution receipt');
+ }
+ for(const [index,endpoint] of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php'].entries()){
+  const headers={'X-Fixture-Work-Ready':'1'},id=41+index*10;
+  response=await post(endpoint,'Inspect workflow #'+id,{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.tool_receipt?.capability==='workflows.read'&&response.data.tool_receipt.status==='read_complete',endpoint+' inspects the actual owner work queue with a receipt');
+  response=await post(endpoint,'Pause workflow #'+(id+1),{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.tool_receipt?.operation==='pause_request'&&response.data.tool_receipt.changes_applied&&response.data.answer.includes('finishing current action'),endpoint+' saves an executing-work pause request without claiming work stopped');
+  response=await post(endpoint,'Did that work?',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('not completion of the underlying job')&&response.data.answer.includes('may still be finishing'),endpoint+' diagnoses the exact queued control receipt');
+  response=await post(endpoint,'Inspect workflow #43',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('SECRET'),endpoint+' denies a foreign owner workflow');
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

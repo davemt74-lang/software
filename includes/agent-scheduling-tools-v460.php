@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-tool-receipts-v1.php';
+require_once __DIR__.'/agent-capability-chat-v1.php';
 
 /**
  * VP3 Agent Scheduling Tools v4.60
@@ -57,7 +59,7 @@ function agent_scheduling_tools_schedule_v460(PDO $pdo,array $user,int $agentId=
         $stmt=$pdo->prepare('SELECT * FROM agent_scheduling_schedules WHERE owner_user_id=? AND is_active=1 ORDER BY is_default DESC,id ASC LIMIT 1');
         $stmt->execute([$userId]);
         return $stmt->fetch()?:null;
-    }catch(Throwable $e){return null;}
+    }catch(Throwable $e){throw new RuntimeException('The active schedule could not be verified.',0,$e);}
 }
 
 function agent_scheduling_tools_events_v460(PDO $pdo,array $user,?array $schedule=null): array
@@ -67,7 +69,7 @@ function agent_scheduling_tools_events_v460(PDO $pdo,array $user,?array $schedul
         $stmt=$pdo->prepare('SELECT * FROM agent_scheduling_event_types WHERE schedule_id=? AND is_active=1 ORDER BY sort_order,title,id');
         $stmt->execute([(int)$schedule['id']]);
         return $stmt->fetchAll()?:[];
-    }catch(Throwable $e){return [];}
+    }catch(Throwable $e){throw new RuntimeException('Appointment types could not be read.',0,$e);}
 }
 
 function agent_scheduling_tools_event_v460(PDO $pdo,array $user,array $events,string $query): ?array
@@ -215,7 +217,7 @@ function agent_scheduling_tools_booking_rows_v460(PDO $pdo,array $user,int $sche
              LIMIT ".max(1,min(100,$limit))
         );
         $stmt->execute([$userId,$scheduleId]);return $stmt->fetchAll()?:[];
-    }catch(Throwable $e){return [];}
+    }catch(Throwable $e){throw new RuntimeException('Appointment records could not be read.',0,$e);}
 }
 
 function agent_scheduling_tools_find_booking_v460(PDO $pdo,array $user,int $scheduleId,string $query): array
@@ -316,6 +318,8 @@ function agent_scheduling_tools_reschedule_owner_v460(PDO $pdo,array $user,array
 
 function agent_scheduling_tools_execute_pending_v460(PDO $pdo,array $user,int $conversationId,array $pending): array
 {
+    $user=vp3_capability_control_user_v1($pdo,$user,$conversationId);
+    if(!has_permission('account.access',$user)||!has_permission('chat.access',$user)||(isset($user['is_active'])&&empty($user['is_active'])))throw new RuntimeException('Scheduling access changed.',403);
     $operation=(string)$pending['operation'];$payload=(array)($pending['payload']??[]);$agentId=max(0,(int)($pending['agent_id']??0));
     $currentAgentId=agent_scheduling_tools_conversation_agent_id_v460($pdo,$user,$conversationId);
     if($currentAgentId!==$agentId)throw new RuntimeException('The Agent principal changed before approval. Please prepare the scheduling action again.');
@@ -354,12 +358,12 @@ function agent_scheduling_tools_execute_pending_v460(PDO $pdo,array $user,int $c
             $result['answer']='Time held pending payment. '.(string)$booking['event_title'].' with '.(string)$booking['guest_name'].' is reserved for '.agent_scheduling_tools_slot_label_v460((string)$booking['start_at_utc'],(string)$booking['organizer_timezone']).'. The appointment is not confirmed until the payment provider verifies payment.';
             $result['actions'][]=['type'=>'open_url','label'=>'Open secure payment','url'=>$paymentUrl];
             agent_tool_log($user,'scheduling.book',(string)$pending['request_text'],'success',['booking_id'=>(int)$booking['id'],'event_type_id'=>(int)$booking['event_type_id'],'start_at_utc'=>(string)$booking['start_at_utc'],'agent_id'=>$agentId,'payment_status'=>'awaiting_payment','paid_booking_id'=>(int)$paid['id']],$conversationId);
-            return $result;
+            $result['tool_receipt']=vp3_tool_receipt_v1('scheduling.manage','hold_for_payment','completed','',(int)$booking['id'],1);return $result;
         }
         $result['answer']='Booked. '.(string)$booking['event_title'].' with '.(string)$booking['guest_name'].' is set for '.agent_scheduling_tools_slot_label_v460((string)$booking['start_at_utc'],(string)$booking['organizer_timezone']).'.';
         $result['actions'][]=['type'=>'open_url','label'=>'Open Scheduling','url'=>url('/scheduling.php?open='.(int)$booking['id'].'#bookings')];
         agent_tool_log($user,'scheduling.book',(string)$pending['request_text'],'success',['booking_id'=>(int)$booking['id'],'event_type_id'=>(int)$booking['event_type_id'],'start_at_utc'=>(string)$booking['start_at_utc'],'agent_id'=>$agentId],$conversationId);
-        return $result;
+        $result['tool_receipt']=vp3_tool_receipt_v1('scheduling.manage','create','completed','',(int)$booking['id'],1);return $result;
     }
     if($operation==='reschedule'){
         $stmt=$pdo->prepare('SELECT * FROM agent_scheduling_bookings WHERE id=? AND owner_user_id=? AND schedule_id=? LIMIT 1');
@@ -369,7 +373,7 @@ function agent_scheduling_tools_execute_pending_v460(PDO $pdo,array $user,int $c
         $result['answer']='Rescheduled. '.(string)$new['event_title'].' with '.(string)$new['guest_name'].' is now '.agent_scheduling_tools_slot_label_v460((string)$new['start_at_utc'],(string)$new['organizer_timezone']).'.';
         $result['actions'][]=['type'=>'open_url','label'=>'Open Scheduling','url'=>url('/scheduling.php?open='.(int)$new['id'].'#bookings')];
         agent_tool_log($user,'scheduling.reschedule',(string)$pending['request_text'],'success',['booking_id'=>(int)$new['id'],'rescheduled_from_id'=>(int)$booking['id'],'start_at_utc'=>(string)$new['start_at_utc'],'agent_id'=>$agentId],$conversationId);
-        return $result;
+        $result['tool_receipt']=vp3_tool_receipt_v1('scheduling.manage','reschedule','completed','',(int)$new['id'],1);return $result;
     }
     if($operation==='cancel'){
         $bookingId=(int)($payload['booking_id']??0);$scheduleId=(int)($payload['schedule_id']??0);
@@ -382,7 +386,7 @@ function agent_scheduling_tools_execute_pending_v460(PDO $pdo,array $user,int $c
         $result['answer']='Cancelled. '.(string)$booking['event_title'].' with '.(string)$booking['guest_name'].' is no longer on your schedule.';
         $result['actions'][]=['type'=>'open_url','label'=>'Open Scheduling','url'=>url('/scheduling.php#bookings')];
         agent_tool_log($user,'scheduling.cancel',(string)$pending['request_text'],'success',['booking_id'=>$bookingId,'agent_id'=>$agentId],$conversationId);
-        return $result;
+        $result['tool_receipt']=vp3_tool_receipt_v1('scheduling.manage','cancel','completed','',(int)$bookingId,1);return $result;
     }
     throw new RuntimeException('The pending scheduling action is no longer supported.');
 }
@@ -413,9 +417,25 @@ function agent_scheduling_tools_intent_v460(string $query,array $events=[]): str
 
 function agent_scheduling_tools_query_v460(string $query,array $user,int $conversationId=0): array
 {
+    $intent=agent_scheduling_tools_intent_v460($query);
+    $allowed=has_permission('account.access',$user)&&has_permission('chat.access',$user)&&(!isset($user['is_active'])||!empty($user['is_active']));
+    $pdo=db();
+    if(!$allowed||!$pdo||!agent_scheduling_tools_ready_v460($pdo)){
+        if($intent===''&&!(agent_scheduling_tools_pending_v460($user,$conversationId)&&(agent_scheduling_tools_confirmation_v460($query)||agent_scheduling_tools_reject_confirmation_v460($query))))return agent_scheduling_tools_empty_v460();
+        return ['handled'=>true,'answer'=>!$allowed?'Scheduling is not permitted for this account.':'Scheduling requires the database upgrade before I can check or change appointments.','actions'=>[],'sources'=>[],
+          'tool_receipt'=>vp3_tool_receipt_v1('scheduling.manage','prepare','blocked',!$allowed?'permission_denied':'upgrade_required')];
+    }
+    try{$user=vp3_capability_control_user_v1($pdo,$user,$conversationId);$result=agent_scheduling_tools_query_impl_v460($query,$user,$conversationId);}
+    catch(Throwable $e){$read=in_array($intent,['list','availability'],true);return ['handled'=>true,'answer'=>'The scheduling result could not be verified. Check its current state before retrying.','actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1($read?'scheduling.read':'scheduling.manage',$read?$intent:'prepare',$e->getCode()===403?'blocked':'failed',$e->getCode()===403?'permission_denied':($read?'execution_failed':'outcome_unverified'))];}
+    if(!empty($result['handled'])&&empty($result['tool_receipt']))$result['tool_receipt']=vp3_tool_receipt_v1('scheduling.manage','prepare','clarification_required',!empty($result['approval']['required'])?'confirmation_required':'');
+    return $result;
+}
+
+function agent_scheduling_tools_query_impl_v460(string $query,array $user,int $conversationId=0): array
+{
     $empty=agent_scheduling_tools_empty_v460();$pdo=db();
     if(!$pdo||!agent_scheduling_tools_ready_v460($pdo)||(int)($user['id']??0)<1)return $empty;
-    if(!has_permission('account.access',$user)&&!has_permission('chat.access',$user))return $empty;
+    if(!has_permission('account.access',$user)||!has_permission('chat.access',$user))return $empty;
 
     $pending=agent_scheduling_tools_pending_v460($user,$conversationId);
     if($pending&&agent_scheduling_tools_reject_confirmation_v460($query)){
@@ -429,7 +449,7 @@ function agent_scheduling_tools_query_v460(string $query,array $user,int $conver
             $result['approval']=['required'=>true,'approved'=>true,'risk'=>$pending['risk']??[],'version'=>'v4.60'];return $result;
         }catch(Throwable $e){
             agent_scheduling_tools_clear_pending_v460($user,$conversationId);$result=$empty;$result['handled']=true;
-            $result['answer']='I could not complete that scheduling change: '.$e->getMessage();
+            $result['answer']='The scheduling outcome could not be verified. Check the appointment before retrying.';$result['tool_receipt']=vp3_tool_receipt_v1('scheduling.manage','prepare','failed',$e->getCode()===403?'permission_denied':'outcome_unverified');
             agent_tool_log($user,'scheduling.'.(string)$pending['operation'],$query,'failed',['error'=>$e->getMessage()],$conversationId);return $result;
         }
     }
@@ -443,7 +463,7 @@ function agent_scheduling_tools_query_v460(string $query,array $user,int $conver
     $intent=agent_scheduling_tools_intent_v460($query,$events);
     if($intent==='')return $empty;
     if(!$schedule){
-        $result=$empty;$result['handled']=true;$result['answer']='Scheduling is not set up for this Agent yet. Open Scheduling to add an active schedule, availability and appointment type.';
+        $result=$empty;$result['handled']=true;$result['tool_receipt']=vp3_tool_receipt_v1('scheduling.manage','prepare','blocked','setup_required');$result['answer']='Scheduling is not set up for this Agent yet. Open Scheduling to add an active schedule, availability and appointment type.';
         $result['actions'][]=['type'=>'open_url','label'=>'Open Scheduling','url'=>url('/scheduling.php')];return $result;
     }
 
@@ -459,6 +479,7 @@ function agent_scheduling_tools_query_v460(string $query,array $user,int $conver
             $lines=[];foreach(array_slice($rows,0,12) as $row)$lines[]='• #'.(int)$row['id'].' · '.agent_scheduling_tools_slot_label_v460((string)$row['start_at_utc'],$timezone).' · '.(string)$row['event_title'].' with '.(string)$row['guest_name'];
             $result['answer']="Here are your upcoming appointments in {$timezone}:\n".implode("\n",$lines);
         }
+        $result['tool_receipt']=vp3_tool_receipt_v1('scheduling.read','list',$rows?'read_complete':'no_matches','',0,count($rows));
         agent_tool_log($user,'scheduling.list',$query,'success',['count'=>count($rows),'schedule_id'=>$scheduleId,'agent_id'=>$agentId],$conversationId);return $result;
     }
 
@@ -480,6 +501,7 @@ function agent_scheduling_tools_query_v460(string $query,array $user,int $conver
             $lines=[];foreach($days as $d=>$slots){$times=array_map(fn(array $s):string=>agent_scheduling_tools_slot_label_v460((string)$s['start_at_utc'],$timezone,'g:i A'),$slots);$lines[]='• '.(new DateTimeImmutable($d))->format('D, M j').' — '.implode(', ',$times);}
             $result['answer']='Open '.(string)$event['title']." times in {$timezone}:\n".implode("\n",$lines);
         }
+        $result['tool_receipt']=vp3_tool_receipt_v1('scheduling.read','availability',$days?'read_complete':'no_matches','',0,count($days));
         agent_tool_log($user,'scheduling.availability',$query,'success',['event_type_id'=>(int)$event['id'],'schedule_id'=>$scheduleId,'days'=>array_keys($days),'agent_id'=>$agentId],$conversationId);return $result;
     }
 

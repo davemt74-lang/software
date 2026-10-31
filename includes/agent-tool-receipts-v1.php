@@ -12,6 +12,12 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
 {
     if(!is_array($value)||($value['contract']??'')!=='vp3.tool-receipt.v1')return null;
     $ops=[
+        'workflows.read'=>['inspect'],
+        'workflows.manage'=>['approve','pause','pause_request','resume','cancel','retry','reschedule','priority'],
+        'scheduling.read'=>['list','availability'],
+        'scheduling.manage'=>['prepare','create','reschedule','cancel','hold_for_payment'],
+        'team_scheduling.read'=>['list','availability'],
+        'team_scheduling.manage'=>['prepare','create','cancel'],
         'phone.numbers.read'=>['list'],
         'phone.sms.read'=>['list','read'],
         'transcripts.highlight'=>['highlight','review_item','item_action'],
@@ -25,12 +31,12 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     $cap=$value['capability']??null;$op=$value['operation']??null;$status=$value['status']??null;
     if(!is_string($cap)||!isset($ops[$cap])||!in_array($op,$ops[$cap],true)||!in_array($status,['read_complete','no_matches','completed','clarification_required','blocked','failed'],true))return null;
     $reason=$value['reason']??'';
-    if(!in_array($reason,['','upgrade_required','provider_unavailable','invalid_plan','execution_failed','permission_denied','confirmation_required','cancelled_by_user','subscription_required'],true))return null;
+    if(!in_array($reason,['','upgrade_required','provider_unavailable','invalid_plan','execution_failed','permission_denied','confirmation_required','cancelled_by_user','subscription_required','outcome_unverified','setup_required'],true))return null;
     $at=$value['checked_at']??null;
     if(!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/D',$at)||strtotime($at)===false)return null;
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;
     // A read, clarification or failed operation can never be a successful mutation.
-    $write=($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
+    $write=($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
     if($status==='completed'&&(!$write||$reason!==''))return null;
     if(in_array($status,['read_complete','no_matches'],true)&&$reason!=='')return null;
     return ['contract'=>'vp3.tool-receipt.v1','capability'=>$cap,'operation'=>$op,'status'=>$status,'reason'=>$reason,
@@ -64,8 +70,14 @@ function vp3_tool_diagnosis_v1(?array $last): string
         'invalid_plan'=>'The AI plan failed validation.','execution_failed'=>'The executor could not complete the operation.',
         'permission_denied'=>'The account did not have permission.','confirmation_required'=>'The existing confirmation step was still pending.',
         'cancelled_by_user'=>'You cancelled the pending change.',
-        'subscription_required'=>'The subscription did not include this phone capability.',
+        'subscription_required'=>'The subscription did not include this capability.',
+        'setup_required'=>'An active scheduling configuration was required.',
+        'outcome_unverified'=>'Effects may already have been saved. Check the current record before repeating the request.',
     ][$r['reason']]??'';
-    return 'For the preceding turn, '.$r['capability'].' / '.$r['operation'].': '.$label.'.'.($reason!==''?' '.$reason:'')
+    if($r['reason']==='outcome_unverified')$label='the executor did not verify the final outcome';
+    $detail=$r['capability']==='workflows.manage'&&$r['status']==='completed'?' This verifies the queue/control request, not completion of the underlying job.':'';
+    if($r['operation']==='pause_request'&&$r['status']==='completed')$detail.=' The pause was requested; the current leased action may still be finishing.';
+    if($r['operation']==='hold_for_payment'&&$r['status']==='completed')$detail.=' Only a provisional hold was saved. Payment is unverified and the appointment is not confirmed.';
+    return 'For the preceding turn, '.$r['capability'].' / '.$r['operation'].': '.$label.'.'.($reason!==''?' '.$reason:'').$detail
         .' Recorded at '.$r['checked_at'].'. This is the recorded result of that turn; current access and record state may have changed.';
 }
