@@ -55,7 +55,7 @@ function vp3_system_apps_hosting_projection_v120(int $userId,int $appId,?PDO $pd
     $pdo??=db();if(!$pdo)return [];
     $stmt=$pdo->prepare("SELECT b.*,s.site_key,s.display_name,s.requested_hostname,s.canonical_hostname,s.desired_state,s.observed_state,s.desired_revision
       FROM vp3_system_app_hosting_bindings b
-      INNER JOIN cloud_hosting_sites s ON s.id=b.site_id
+      INNER JOIN cloud_hosting_sites s ON s.id=b.site_id AND s.user_id=b.user_id
       WHERE b.user_id=? AND b.app_id=? AND b.status='active' LIMIT 1");
     $stmt->execute([$userId,$appId]);$row=$stmt->fetch();
     if(!$row)return ['bound'=>false,'site_id'=>null,'site_key'=>null,'display_name'=>null,'hostname'=>null,'desired_state'=>null,'observed_state'=>null];
@@ -180,11 +180,11 @@ function vp3_system_apps_hosting_unbind_v120(int $userId,string $appKey,?callabl
     return ['hosting'=>vp3_system_apps_hosting_projection_v120($userId,(int)$app['id'],$pdo),'reconcile'=>$sync];
 }
 
-function vp3_system_apps_catalog_v120(?array $user=null,?PDO $pdo=null): array
+function vp3_system_apps_catalog_v120(?array $user=null,?PDO $pdo=null,bool $readOnly=false): array
 {
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    if(!vp3_system_apps_schema_ready_v120($pdo))vp3_system_apps_ensure_schema_v120($pdo);
-    $catalog=vp3_system_apps_catalog_v110($user,$pdo);
+    if(!vp3_system_apps_schema_ready_v120($pdo)){if($readOnly)throw new RuntimeException('System App storage requires upgrade.',409);vp3_system_apps_ensure_schema_v120($pdo);}
+    $catalog=vp3_system_apps_catalog_v110($user,$pdo,$readOnly);
     $userId=(int)($user['id']??0);$hosted=0;
     foreach($catalog['apps'] as &$app){
         $app['hosting']=vp3_system_apps_hosting_projection_v120($userId,(int)$app['id'],$pdo);

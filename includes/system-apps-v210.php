@@ -6,7 +6,7 @@ require_once __DIR__.'/system-apps-v200.php';
 const VP3_SYSTEM_APPS_V210='system-app-permission-governance-v210-20260930';
 
 function vp3_system_apps_permission_status_v210(
-    int $userId,string $appKey,?callable $remote=null,?PDO $pdo=null
+    int $userId,string $appKey,?callable $remote=null,?PDO $pdo=null,bool $strict=false
 ): array {
     $pdo??=db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
@@ -18,6 +18,14 @@ function vp3_system_apps_permission_status_v210(
     ],$remote);
     if((string)($status['app_key']??'')!==''&&(string)$status['app_key']!==(string)$app['homeserver_catalog_key']){
         throw new RuntimeException('HomeServer returned mismatched System App permission identity.');
+    }
+    if($strict){
+        if(($status['app_key']??null)!==(string)$app['homeserver_catalog_key']||!is_array($status['permissions']??null)||!array_is_list($status['permissions']))throw new RuntimeException('Permission response identity or shape could not be verified.');
+        vp3_app_read_counts_v1($status,['declared_count','allowed_count','denied_count']);$allowed=0;$seen=[];
+        foreach($status['permissions'] as $row){if(!is_array($row)||!is_string($row['permission']??null)||trim($row['permission'])===''||mb_strlen($row['permission'])>160||preg_match('/[\x00-\x20\x7F]/',$row['permission'])||isset($seen[$row['permission']])||!is_bool($row['allowed']??null))throw new RuntimeException('Permission row could not be verified.');$seen[$row['permission']]=true;if($row['allowed'])$allowed++;}
+        if($status['declared_count']!==count($status['permissions'])||$status['allowed_count']!==$allowed||$status['denied_count']!==count($status['permissions'])-$allowed)throw new RuntimeException('Permission counts contradict returned rows.');
+        $fresh=vp3_system_apps_owned_row_v110($userId,$appKey,$pdo);
+        if((int)$fresh['id']!==(int)$app['id']||$fresh['homeserver_catalog_key']!==$app['homeserver_catalog_key']||empty(vp3_system_apps_install_projection_v110($userId,(int)$fresh['id'],$pdo)['installed']))throw new RuntimeException('App ownership or installation changed.',403);
     }
     $rows=is_array($status['permissions']??null)?$status['permissions']:[];
     return [
@@ -94,28 +102,8 @@ function vp3_system_apps_permission_query_v210(
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
     if(!preg_match('/\\b(?:permission|permissions|capability|capabilities|camera|microphone|network access|notifications)\\b/i',$query))return $empty;
     if(preg_match('/\\b(?:allow|grant|enable|approve|revoke|deny|disable|remove)\\b/i',$query))return $empty;
-    if(!function_exists('vp3_system_apps_agent_find_app_v160'))return $empty;
-    $pdo??=db();if(!$pdo)return $empty;
-    $app=vp3_system_apps_agent_find_app_v160($query,$user,$pdo);
-    if(!$app)return ['handled'=>true,'answer'=>'I need the System App name to show its permissions.','stem_media'=>[],'media'=>[],'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],'sources'=>[]];
-    try{$status=vp3_system_apps_permission_status_v210((int)$user['id'],(string)$app['app_key'],$remote,$pdo);}
-    catch(Throwable $e){return ['handled'=>true,'answer'=>'I could not load that System App’s permission state: '.$e->getMessage(),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];}
-    $rows=$status['permissions'];$name=(string)$app['name'];
-    if(!$rows)$answer=$name.' does not currently declare any privileged HomeServer capabilities.';
-    else{
-        $answer=$name.' declares '.count($rows).' governed permission'.(count($rows)===1?'':'s').'.';
-        foreach($rows as $row){
-            $answer.="\n• ".(string)$row['permission'].' — '.(!empty($row['allowed'])?'allowed':'denied').' · '.(string)($row['risk']??'unknown').' risk';
-        }
-        $answer.="\nNew permissions introduced by an update default to denied and require review.";
-    }
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'system_apps.permissions',$query,'success',['app_key'=>$app['app_key'],'declared_count'=>$status['declared_count'],'allowed_count'=>$status['allowed_count']],$conversationId);
-    return [
-      'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],
-      'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],
-      'sources'=>[['source'=>'system-apps:permissions','title'=>'VP3 System App permission governance']],
-      'system_app_permissions'=>$status,
-    ];
+    $terms=preg_replace('/\b(?:show|list|inspect|read|check|permission|permissions|capability|capabilities|camera|microphone|network access|notifications|my|the|for|of)\b/i',' ',$query);
+    return vp3_system_app_agent_legacy_v1($user,$conversationId,'system_apps.permissions.read',trim(preg_replace('/\s+/',' ',$terms)),'all',$remote,$pdo);
 }
 
 function vp3_system_apps_catalog_v210(?array $user=null,?PDO $pdo=null): array

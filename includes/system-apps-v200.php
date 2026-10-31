@@ -291,11 +291,11 @@ function vp3_system_apps_release_query_v200(
     ];
 }
 
-function vp3_system_apps_catalog_v200(?array $user=null,?PDO $pdo=null): array
+function vp3_system_apps_catalog_v200(?array $user=null,?PDO $pdo=null,bool $readOnly=false): array
 {
     $pdo??=db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    $catalog=vp3_system_apps_catalog_v140($user,$pdo);
+    $catalog=vp3_system_apps_catalog_v140($user,$pdo,$readOnly);
     foreach($catalog['apps'] as &$app){
         $app['release']=vp3_system_apps_release_metadata_v200($app);
     }unset($app);

@@ -17,6 +17,7 @@ require_once __DIR__.'/homeserver-agent-read-v230.php';
 require_once __DIR__.'/system-apps-v300.php';
 require_once __DIR__.'/media-agent-schema-v1.php';
 require_once __DIR__.'/app-agent-remote-v1.php';
+require_once __DIR__.'/system-app-agent-schema-v1.php';
 class TranscriptFixturePDO extends PDO {public int $updatedId=0;public function lastInsertId(?string $name=null):string|false{return $this->updatedId?(string)$this->updatedId:parent::lastInsertId($name);}public function prepare(string $sql,array $options=[]):PDOStatement|false{if(str_starts_with(ltrim($sql),'INSERT'))$this->updatedId=0;$sql=str_replace(' FOR UPDATE','',$sql);if(str_contains($sql,'information_schema.statistics'))$sql="SELECT 1 FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=?";$sql=preg_replace('/ON DUPLICATE KEY UPDATE/i','ON CONFLICT DO UPDATE SET',$sql);$sql=preg_replace('/VALUES\((\w+)\)/i','excluded.$1',$sql);return parent::prepare($sql,$options);}}
 function db(){static $pdo;if(!$pdo){$pdo=new TranscriptFixturePDO('sqlite:'.__DIR__.'/../state.sqlite');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('LAST_INSERT_ID',function($id)use($pdo){$pdo->updatedId=(int)$id;return$id;});$pdo->sqliteCreateFunction('NOW',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));$pdo->exec('CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo->exec('INSERT OR IGNORE INTO users VALUES(1,1),(2,1)');$pdo->exec("CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,artist_workspace_id INTEGER,title TEXT,updated_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");reminder_schema_v1($pdo);capability_fixture_agents($pdo);}return $pdo;}
 function table_exists($table){if($table==='user_calendar_events'&&isset($_SERVER['HTTP_X_FIXTURE_CALENDAR_MISSING']))return false;$q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return(bool)$q->fetchColumn();}
@@ -49,8 +50,8 @@ function setting($key,$default=''){return $default;}
 function subscription_has_entitlement($user,$key){return isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY'])&&(int)$user['id']===1;}
 function subscription_entitlement_limit(...$args){return 3;}
 function homeserver_execution_v220_can_route(...$args){return isset($_SERVER['HTTP_X_FIXTURE_HOME_READY']);}
-function homeserver_https_v1300_status($uid){return ['paired'=>isset($_SERVER['HTTP_X_FIXTURE_MEDIA_READY'])||isset($_SERVER['HTTP_X_FIXTURE_APP_READY'])];}
-function homeserver_https_v1300_remote_operation(...$args){if(in_array($args[1]??'',['apps.user.list','apps.manager.status','apps.user.workspace.status'],true)&&isset($_SERVER['HTTP_X_FIXTURE_APP_READY']))return app_agent_remote_fixture_v1(...$args);if(str_starts_with($args[1]??'','apps.'))return media_fixture_remote_v1(...$args);if(isset($_SERVER['HTTP_X_FIXTURE_HOME_FAIL']))throw new RuntimeException('HomeServer offline');return ['items'=>[['name'=>'Fixture local file','ref'=>'hsf-1-0123456789abcdef','snippet'=>'Fixture local source']]];}
+function homeserver_https_v1300_status($uid){return ['paired'=>isset($_SERVER['HTTP_X_FIXTURE_MEDIA_READY'])||isset($_SERVER['HTTP_X_FIXTURE_APP_READY'])||isset($_SERVER['HTTP_X_FIXTURE_SYSTEM_APP_READY'])];}
+function homeserver_https_v1300_remote_operation(...$args){if(($args[1]??'')==='apps.system.permissions.status'&&isset($_SERVER['HTTP_X_FIXTURE_SYSTEM_APP_READY']))return system_app_agent_remote_v1(...$args);if(in_array($args[1]??'',['apps.user.list','apps.manager.status','apps.user.workspace.status'],true)&&isset($_SERVER['HTTP_X_FIXTURE_APP_READY']))return app_agent_remote_fixture_v1(...$args);if(str_starts_with($args[1]??'','apps.'))return media_fixture_remote_v1(...$args);if(isset($_SERVER['HTTP_X_FIXTURE_HOME_FAIL']))throw new RuntimeException('HomeServer offline');return ['items'=>[['name'=>'Fixture local file','ref'=>'hsf-1-0123456789abcdef','snippet'=>'Fixture local source']]];}
 function agent_brain_schema_ready(){return isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']);}
 function agent_brain_normalize($s){return strtolower(trim($s));}
 function agent_brain_sentences($s){return preg_split('/(?<=[.!?])\s+|\R+/u',trim($s))?:[];}
@@ -65,6 +66,10 @@ function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
+        if($q==='List Cloud System App catalog')return ['ok'=>true,'answer'=>'{"operation":"system_apps_read","ids":["system_apps.catalog.read"]}'];
+        if($q==='Read stored System App health')return ['ok'=>true,'answer'=>'{"operation":"system_apps_read","ids":["system_apps.health.read"]}'];
+        if(str_starts_with($q,'Read System App permissions for '))return ['ok'=>true,'answer'=>json_encode(['operation'=>'system_apps_read','ids'=>['system_apps.permissions.read'],'app_key'=>substr($q,strlen('Read System App permissions for '))])];
+        if($q==='Can you read System App permissions?')return ['ok'=>true,'answer'=>'{"operation":"inspect","ids":["system_apps.permissions.read"]}'];
         if($q==='List saved HomeServer user apps')return ['ok'=>true,'answer'=>'{"operation":"apps_read","ids":["apps.user.read"]}'];
         if($q==='List installed HomeServer apps')return ['ok'=>true,'answer'=>'{"operation":"apps_read","ids":["apps.manager.read"],"view":"installed"}'];
         if(str_starts_with($q,'Inspect workspace '))return ['ok'=>true,'answer'=>json_encode(['operation'=>'apps_read','ids'=>['apps.workspace.read'],'app_key'=>substr($q,strlen('Inspect workspace '))])];
@@ -113,6 +118,7 @@ function capability_fixture_agents(PDO $pdo): void
     if(isset($_SERVER['HTTP_X_FIXTURE_WORK_READY']))workflow_agent_fixture_v1($pdo);
     if(isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']))record_agent_fixture_v1($pdo);
     if(isset($_SERVER['HTTP_X_FIXTURE_MEDIA_READY']))media_agent_fixture_v1($pdo);
+    if(isset($_SERVER['HTTP_X_FIXTURE_SYSTEM_APP_READY']))system_app_agent_fixture_v1($pdo);
 }
 function agent_tool_log(...$args): void{}
 function agent_scheduling_timezone_v430(string $value,string $fallback='UTC'):string{return user_calendar_timezone_v1300($value,$fallback);}
