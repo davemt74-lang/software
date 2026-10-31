@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/phone-agent-read-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -39,15 +40,21 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         catch(Throwable $e){$knowledge='check_failed';}
     }
     $brain=vp3_capability_probe_v1(fn()=>agent_brain_schema_ready());
+    $transcripts=vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172'));
+    $analysis=$transcripts!=='ready'?$transcripts:vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_master_analysis_v237')&&table_exists('artist_transcript_page_analysis_v237'));
+    try{$phone=vp3_phone_agent_readiness_v1($pdo,$user);}catch(Throwable $e){$phone=['numbers'=>'check_failed','sms'=>'check_failed','send'=>'check_failed'];}
     // An observation is bounded visual evidence, never a browser-control or identity grant.
     $screen=function_exists('agent_surface_v131_screen_observation')?agent_surface_v131_screen_observation($context):null;
     $screenReady=$screen!==null&&$screen['owner_key']===(string)$uid;
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
         vp3_capability_row_v1('reminders.manage','Personal reminders','write','reminder_chat_v1',true,$reminders,['Create, list, reschedule, snooze, complete, dismiss, cancel and delete.','In-app only; once, daily, weekdays and weekly. Done preserves future repeats.']),
-        vp3_capability_row_v1('transcripts.highlight','Retain highlights and act on reviewed findings','write','vp3_transcript_reviewed_action_v1',has_permission('artist_listening.access',$user),vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_master_analysis_v237')),['Explicit user request; existing Brain, Knowledge, CRM and task permissions still apply. Profile sharing requires Knowledge Access policy.']),
-        vp3_capability_row_v1('transcripts.analyze','Analyze and research transcripts','write','vp3_transcript_analyze_v1',has_permission('artist_listening.access',$user),vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_master_analysis_v237')&&table_exists('artist_transcript_page_analysis_v237')),['Explicit request only; uses existing transcript analysis engine and meeting AI policy. Provider readiness is checked on execution.']),
-        vp3_capability_row_v1('transcripts.read','Read and search transcripts','read','vp3_transcript_chat_v1',has_permission('artist_listening.access',$user),vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172')),['Authorized recordings only; page and speaker/timestamp evidence. Selection is not permission.']),
+        vp3_capability_row_v1('transcripts.highlight','Retain highlights and act on reviewed findings','write','vp3_transcript_reviewed_action_v1',has_permission('artist_listening.access',$user)&&function_exists('personal_capability_has_v242')&&personal_capability_has_v242('agent_brain.access',$user),$transcripts!=='ready'?$transcripts:$brain,['Raw highlights require saved transcript and Brain storage. Reviewed actions additionally require fresh saved analysis and existing destination permissions. Profile sharing requires Knowledge Access policy.']),
+        vp3_capability_row_v1('transcripts.analyze','Analyze and research transcripts','write','vp3_transcript_analyze_v1',has_permission('artist_listening.access',$user),$analysis,['Explicit request only; uses existing transcript analysis engine and meeting AI policy. Provider readiness is checked on execution.']),
+        vp3_capability_row_v1('transcripts.read','Read and search transcripts','read','vp3_transcript_chat_v1',has_permission('artist_listening.access',$user),$transcripts,['Authorized recordings only; page and speaker/timestamp evidence. Selection is not permission.']),
+        vp3_capability_row_v1('phone.numbers.read','Read assigned phone numbers','read','vp3_phone_agent_read_v1',has_permission('account.access',$user),$phone['numbers'],['Current owner and named-Agent assignment only. No carrier call, purchase or number registration.']),
+        vp3_capability_row_v1('phone.sms.read','Read SMS inbox','read','vp3_phone_agent_read_v1',has_permission('account.access',$user),$phone['sms'],['Explicit read only; active owner/Agent scope. Reading sends no message and does not mark it read.']),
+        vp3_capability_row_v1('phone.sms.send','Send SMS through existing approval screen','write','vp3_phone_sms_authorize_send_v120',has_permission('account.access',$user),$phone['send'],['Chat does not send SMS. Open Phone inbox for exact recipient/body review and existing explicit SEND approval, admin activation, opt-out and quota checks.']),
         vp3_capability_row_v1('calendar.read','Read personal calendar','read','user_calendar_agent_query_v1300',true,$calendar,['Own calendar; actual records must be retrieved before answering.']),
         vp3_capability_row_v1('calendar.manage','Change personal calendar','write','user_calendar_agent_query_v1300',true,$calendar,['Existing event confirmation and revision checks still apply. Linked meetings use their existing editor.']),
         vp3_capability_row_v1('knowledge.search','Search personal Knowledge','read','knowledge_retrieval_v162_search',function_exists('personal_capability_has_v242')&&personal_capability_has_v242('personal_knowledge.access',$user),$knowledge,['Honors current conversation Knowledge scope; no automatic scope expansion.','A search with no matches is different from unavailable access.']),

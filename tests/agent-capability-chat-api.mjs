@@ -9,6 +9,7 @@ fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(pa
 for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
 for(const name of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
+fs.copyFileSync('tests/fixtures/phone-agent-schema-v1.php',path.join(tmp,'includes/phone-agent-schema-v1.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
@@ -77,6 +78,21 @@ try{
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php']){
   response=await post(endpoint,'Do I have any events on my calendar',{...named,conversation_id:longfellowConversation},{'X-Fixture-Calendar-Missing':'1'});
   check(response.data?.ok===true&&response.data.answer.includes('database upgrade')&&response.data.tool_receipt?.status==='blocked','missing calendar schema reports its real blocker through '+endpoint);
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const headers={'X-Fixture-Phone-Ready':'1'};
+  response=await post(endpoint,'Can you read SMS?',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('Read SMS inbox: ready')&&response.data.tool_receipt?.capability==='capabilities.inspect'&&!response.data.answer.includes('pizza pickup'),endpoint+' phone ability inspection does not read messages');
+  response=await post(endpoint,'List my phone numbers',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('15550001001')&&!response.data.answer.includes('15550001002')&&response.data.tool_receipt?.capability==='phone.numbers.read',endpoint+' reads only the named Agent phone assignment');
+  response=await post(endpoint,'List my SMS threads',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('Thread #11')&&!response.data.answer.includes('Thread #12'),endpoint+' lists SMS within the named Agent scope');
+  response=await post(endpoint,'Read SMS thread 11',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('pizza pickup at six')&&response.data.tool_receipt?.status==='read_complete'&&!response.data.tool_receipt.changes_applied,endpoint+' reads saved SMS through the shared broker without mutations');
+  response=await post(endpoint,'Read SMS thread 12',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('SECRET'),endpoint+' rejects another named Agent SMS thread');
+  response=await post(endpoint,'Did that work?',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('phone.sms.read / read')&&response.data.answer.includes('failed'),endpoint+' diagnoses the actual phone execution receipt');
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

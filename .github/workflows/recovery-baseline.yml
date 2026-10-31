@@ -44,6 +44,7 @@ jobs:
         run: |
           php tests/agent-capability-awareness-v1.php
           php tests/agent-capability-chat-v1.php
+          php tests/phone-agent-read-v1.php
           node tests/agent-capability-chat-api.mjs
           php tests/agent-tool-receipts-v1.php
           php tests/tool-json-provider-v1.php
