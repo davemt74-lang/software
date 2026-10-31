@@ -20,8 +20,8 @@ assert.match(knowledgeRuntime, /shared_knowledge_index_sync_item_v236\(\$pdo, \$
 // My Knowledge itself already participates in the Profile Agent policy boundary.
 assert.match(profileRuntime, /user_data_policy_can_use_v236\(\$pdo,\$principal,\$owner,'knowledge',\$rid,\$legacy\)/, 'Profile Agent My Knowledge retrieval must remain policy-gated');
 
-// Agent Brain integration is intentionally limited to explicitly saved transcript analyses.
-assert.match(bridge, /memory_type='transcript_analysis'/, 'Profile Agent bridge must not expose the entire Agent Brain');
+// Profile retrieval is limited to explicitly retained transcript record types and live Knowledge policy.
+assert.match(bridge, /memory_type IN \('transcript_analysis','transcript_highlight','transcript_intelligence','transcript_note'\)/, 'Profile Agent bridge must not expose the entire Agent Brain');
 assert.doesNotMatch(bridge, /agent_chat_archive|agent_edit_events|agent_tool_history/, 'Profile Agent bridge must not expose private Brain history ledgers');
 assert.match(bridge, /user_data_policy_can_use_v236[\s\S]*?'knowledge'[\s\S]*?\$brainResourceId[\s\S]*?false/, 'Transcript Brain context must use the existing Knowledge Access permission boundary');
 assert.ok(bridge.includes("'personal-' . sha1('artist-listening-analysis:' . $sessionId) . '.txt'"), 'Bridge must recognize the canonical deterministic My Knowledge copy');

@@ -1103,7 +1103,7 @@
       if (kind === 'memory') await api172('promote_memory', {session_id:Number(state.current.id),selected_text:text}, 'POST');
       if (kind === 'knowledge') await api172('promote_knowledge', {session_id:Number(state.current.id),track_id:trackId,selected_text:text}, 'POST');
       if (kind === 'project') await api172('promote_project_note', {session_id:Number(state.current.id),track_id:trackId,selected_text:text}, 'POST');
-      setFooter(text ? 'Selected transcript text sent successfully.' : 'Transcript sent successfully.');
+      setFooter(kind==='memory'?(text?'Highlight saved to your Agent Brain. Profile Agent use follows Knowledge Access settings.':'Transcript reference saved to your Agent Brain. Profile Agent use follows Knowledge Access settings.'):(text?'Selected transcript text sent successfully.':'Transcript sent successfully.'));
     } catch (error) {
       setFooter(String(error?.message || error), true);
     }

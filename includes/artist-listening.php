@@ -916,44 +916,10 @@ function artist_listening_v172_promotable_text(PDO $pdo, int $sessionId, string 
 
 function artist_listening_v172_promote_memory(array $user, int $sessionId, string $selectedText): array
 {
-    $pdo = db();
-    if (!$pdo || !agent_brain_schema_ready()) {
-        throw new RuntimeException('Agent Brain memory is unavailable.');
-    }
-    $pdo->beginTransaction();
-    try {
-        $session = artist_listening_v172_session($pdo, $user, $sessionId, true);
-        if ((string)$session['status'] === 'active') {
-            throw new RuntimeException('Stop listening before saving transcript content to Agent Brain memory.');
-        }
-        $existingId = (int)($session['agent_memory_id'] ?? 0);
-        if ($existingId > 0) {
-            $pdo->commit();
-            return ['memory_id'=>$existingId,'existing'=>true,'session'=>artist_listening_v172_payload($pdo, $user, $sessionId)];
-        }
-        $text = artist_listening_v172_promotable_text($pdo, $sessionId, $selectedText);
-        $memoryId = agent_brain_store_memory(
-            $user,
-            'transcript_note',
-            artist_listening_v172_clean_title((string)$session['title']),
-            mb_strimwidth($text, 0, 2000, '…'),
-            0,
-            0.94,
-            ['source'=>'artist_transcript_v172','session_id'=>$sessionId,'explicit_user_action'=>true]
-        );
-        if ($memoryId < 1) {
-            throw new RuntimeException('Agent Brain could not save this transcript memory.');
-        }
-        $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET agent_memory_id=?,last_activity_at=NOW() WHERE id=?')
-            ->execute([$memoryId, $sessionId]);
-        $pdo->commit();
-        return ['memory_id'=>$memoryId,'existing'=>false,'session'=>artist_listening_v172_payload($pdo, $user, $sessionId)];
-    } catch (Throwable $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        throw $e;
-    }
+    require_once __DIR__.'/transcript-brain-v1.php';
+    $pdo=db();if(!$pdo)throw new RuntimeException('Database unavailable.');
+    $result=vp3_transcript_highlight_v1($pdo,$user,$sessionId,$selectedText);
+    return $result+['session'=>artist_listening_v172_payload($pdo,$user,$sessionId)];
 }
 
 function artist_listening_v172_track_allowed(PDO $pdo, array $user, int $trackId): bool

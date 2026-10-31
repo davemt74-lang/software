@@ -55,6 +55,8 @@ try{
   check(response.data?.ok===true&&response.data.answer.includes('twenty dollars')&&response.data.tool_receipt?.capability==='transcripts.read','named-Agent selected transcript read through '+endpoint+': '+response.body);
   response=await post(endpoint,'Read the saved analysis for this transcript',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,transcript_session_id:21}});
   check(response.data?.ok===true&&response.data.answer.includes('Fixture saved AI analysis')&&response.data.answer.includes('unreviewed')&&response.data.tool_receipt?.operation==='read_analysis','saved AI interpretation stays distinct from transcript evidence through '+endpoint+': '+response.body);
+  response=await post(endpoint,'Highlight the selected transcript quote',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,transcript_session_id:21,transcript_selected_text:'The agreed pizza price is twenty dollars.'}},{'X-Fixture-Brain-Ready':'1'});
+  check(response.data?.ok===true&&response.data.tool_receipt?.capability==='transcripts.highlight'&&response.data.tool_receipt.changes_applied,'exact selected quote is retained through '+endpoint+': '+response.body);
   response=await post(endpoint,'Read the selected transcript',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,transcript_session_id:22}});
   check(response.data?.ok===true&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.status==='failed','forged foreign selection fails closed through '+endpoint);
  }

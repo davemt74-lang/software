@@ -89,6 +89,7 @@ function transcription_output_only_modules_v306(array $analysis, ?array $master=
         $module=$stored[$id]??null;
         if (!is_array($module)) continue;
         $result=is_array($module['result']??null)?transcription_app_sanitize_value_v300($module['result']):[];
+        $result=transcription_app_restore_saved_actions_v1($result,(array)($module['result']??[]));
         $out[$id]=[
             'app_id'=>$id,
             'source_hash'=>(string)($module['source_hash']??$master['source_hash']??''),
