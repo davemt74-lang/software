@@ -12,6 +12,8 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
 {
     if(!is_array($value)||($value['contract']??'')!=='vp3.tool-receipt.v1')return null;
     $ops=[
+        'phone.numbers.read'=>['list'],
+        'phone.sms.read'=>['list','read'],
         'transcripts.highlight'=>['highlight','review_item','item_action'],
         'transcripts.analyze'=>['run_analysis','run_research'],
         'transcripts.read'=>['list','read','search','clarify','interpret','read_analysis','read_research'],
@@ -23,7 +25,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     $cap=$value['capability']??null;$op=$value['operation']??null;$status=$value['status']??null;
     if(!is_string($cap)||!isset($ops[$cap])||!in_array($op,$ops[$cap],true)||!in_array($status,['read_complete','no_matches','completed','clarification_required','blocked','failed'],true))return null;
     $reason=$value['reason']??'';
-    if(!in_array($reason,['','upgrade_required','provider_unavailable','invalid_plan','execution_failed','permission_denied','confirmation_required','cancelled_by_user'],true))return null;
+    if(!in_array($reason,['','upgrade_required','provider_unavailable','invalid_plan','execution_failed','permission_denied','confirmation_required','cancelled_by_user','subscription_required'],true))return null;
     $at=$value['checked_at']??null;
     if(!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/D',$at)||strtotime($at)===false)return null;
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;
@@ -62,6 +64,7 @@ function vp3_tool_diagnosis_v1(?array $last): string
         'invalid_plan'=>'The AI plan failed validation.','execution_failed'=>'The executor could not complete the operation.',
         'permission_denied'=>'The account did not have permission.','confirmation_required'=>'The existing confirmation step was still pending.',
         'cancelled_by_user'=>'You cancelled the pending change.',
+        'subscription_required'=>'The subscription did not include this phone capability.',
     ][$r['reason']]??'';
     return 'For the preceding turn, '.$r['capability'].' / '.$r['operation'].': '.$label.'.'.($reason!==''?' '.$reason:'')
         .' Recorded at '.$r['checked_at'].'. This is the recorded result of that turn; current access and record state may have changed.';

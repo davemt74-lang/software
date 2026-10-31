@@ -194,15 +194,20 @@ function vp3_phone_sms_ingest_v110(PDO $pdo,array $form,string $signature,string
     }
 }
 
-function vp3_phone_sms_threads_v110(PDO $pdo,int $ownerId): array
+function vp3_phone_sms_threads_v110(PDO $pdo,int $ownerId,?int $scopeAgentId=null): array
 {
+    $scope='';$args=[$ownerId];
+    if($scopeAgentId!==null){
+        $scope=' AND n.agent_id=t.agent_id AND EXISTS (SELECT 1 FROM user_agents pa WHERE pa.id=t.agent_id AND pa.owner_user_id=t.owner_user_id AND pa.is_active=1)';
+        if($scopeAgentId>0){$scope.=' AND t.agent_id=?';$args[]=$scopeAgentId;}
+    }
     $query=$pdo->prepare('SELECT t.id,t.phone_number_id,t.agent_id,t.contact_e164,t.unread_count,t.last_message_at,
       n.phone_e164,a.display_name AS agent_name
       FROM phone_sms_threads_v110 t
       INNER JOIN phone_cloud_numbers_v100 n ON n.id=t.phone_number_id AND n.owner_user_id=t.owner_user_id
       LEFT JOIN user_agents a ON a.id=t.agent_id AND a.owner_user_id=t.owner_user_id
-      WHERE t.owner_user_id=? ORDER BY t.last_message_at DESC,t.id DESC LIMIT 100');
-    $query->execute([$ownerId]);return $query->fetchAll(PDO::FETCH_ASSOC)?:[];
+      WHERE t.owner_user_id=?'.$scope.' ORDER BY t.last_message_at DESC,t.id DESC LIMIT 100');
+    $query->execute($args);return $query->fetchAll(PDO::FETCH_ASSOC)?:[];
 }
 
 function vp3_phone_sms_messages_v110(PDO $pdo,int $ownerId,int $threadId): array
