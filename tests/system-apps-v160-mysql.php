@@ -129,7 +129,7 @@ $otherAcquire=vp3_system_apps_agent_prepare_v160($other,'ownership.acquire','vp3
 try{vp3_system_apps_agent_confirm_v160($owner,(string)$otherAcquire['confirmation_code'],7,null,$testPdo);throw new RuntimeException('Another user confirmation code was accepted.');}
 catch(RuntimeException $e){if($e->getMessage()==='Another user confirmation code was accepted.')throw $e;}
 
-require dirname(__DIR__).'/includes/vrss-v2b.php';
+require_once dirname(__DIR__).'/includes/vrss-v2b.php';
 $vrssCalls=[];
 $vrssRemote=static function(int $uid,string $operation,array $payload)use(&$vrssCalls):array{
     if($uid!==1||$operation!=='apps.control.invoke'||$payload['app_key']!=='vp3.feed')throw new RuntimeException('Invalid VRSS remote target.');
