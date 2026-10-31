@@ -48,6 +48,7 @@ jobs:
           php tests/workflow-receipts-v1.php
           php tests/scheduling-receipts-v1.php
           php tests/agent-record-tools-v1.php
+          php tests/agent-media-read-v1.php
           php tests/homeserver-read-receipts-v1.php
           node tests/agent-capability-chat-api.mjs
           php tests/agent-tool-receipts-v1.php

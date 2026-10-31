@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-tool-receipts-v1.php';
 
 /* Account-owned observations. Screen content is untrusted media, never authority. */
 const VP3_TV_CONTRACT='vp3.tv-watching.v1';
@@ -179,18 +180,19 @@ function tv_time_filters_v1(string $query,string $zone,?DateTimeImmutable $now=n
     if(preg_match('/\blast night\b/i',$query)){$start=$local->modify('yesterday')->setTime(18,0);$end=$local->setTime(6,0);}elseif(preg_match('/\byesterday\b/i',$query)){$start=$local->modify('yesterday')->setTime(0,0);$end=$local->setTime(0,0)->modify('-1 second');}elseif(preg_match('/\btoday\b/i',$query)){$start=$local->setTime(0,0);$end=$local;}elseif(preg_match('/\blast (?:week|7 days)\b/i',$query)){$start=$local->modify('-7 days');$end=$local;}
     $utc=new DateTimeZone('UTC');return $start?['after'=>$start->setTimezone($utc)->format('Y-m-d\TH:i:s\Z'),'before'=>$end->setTimezone($utc)->format('Y-m-d\TH:i:s\Z')]:[];
 }
-function tv_chat_query_v1(PDO $pdo,array $user,string $query): array
+function tv_chat_query_v1(PDO $pdo,array $user,string $query,array $read=[]): array
 {
     if(!tv_intent_v1($query)||preg_match('/\brecommend/i',$query)||!preg_match('/history|watch(?:ed|ing)?|interest|prefer|pattern|usually|(?:what|which).{0,30}(?:playing|was on)|\b(?:start|enable|stop|disable|turn on|turn off)\b/i',$query))return ['handled'=>false];
-    if(preg_match('/\b(start|enable|turn on|stop|disable|turn off)\b.*\b(tv|television|watching)\b/i',$query))return ['handled'=>true,'answer'=>'Use TV Watching in the Eyes panel to enable or stop screen capture. Your saved TV history is available with the camera off.','actions'=>[],'sources'=>[]];
-    $patterns=(bool)preg_match('/interest|prefer|pattern|usually/i',$query);$zone=tv_settings_v1($pdo,(int)$user['id'])['timezone']??'UTC';$filters=tv_time_filters_v1($query,$zone);$data=$patterns?tv_patterns_v1($pdo,(int)$user['id']):tv_history_v1($pdo,(int)$user['id'],['limit'=>20,...$filters]);$lines=[];$sources=[];
+    if(preg_match('/\b(start|enable|turn on|stop|disable|turn off)\b.*\b(tv|television|watching)\b/i',$query))return ['handled'=>true,'answer'=>'Use TV Watching in the Eyes panel to enable or stop screen capture. Your saved TV history is available with the camera off.','actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1('tv.capture.manage','prepare','blocked','confirmation_required')];
+    $patterns=(bool)preg_match('/interest|prefer|pattern|usually/i',$query);$zone=tv_settings_v1($pdo,(int)$user['id'])['timezone']??'UTC';$filters=tv_time_filters_v1($query,$zone);$data=$patterns?tv_patterns_v1($pdo,(int)$user['id']):tv_history_v1($pdo,(int)$user['id'],['limit'=>20,...$filters,'query'=>$read['query']??'']);$lines=[];$sources=[];
     if($patterns){foreach($data['confirmed_preferences'] as $r)$lines[]=$r['title'].': '.$r['preference'].' (you confirmed this preference)';foreach($data['observed_patterns'] as $r)$lines[]=$r['title'].': '.$r['confirmed_sessions'].' confirmed viewing sessions; this alone does not establish a preference.';}
     else foreach($data['items'] as $r){$lines[]=$r['first_seen'].' — '.$r['last_seen'].' UTC: '.($r['title']?:($r['candidate_title']?:'Unknown program')).' ['.$r['status'].']'.($r['episode']!==''?' · '.$r['episode']:'').(!empty($r['personal_viewing_confirmed'])?' · you confirmed watching':' · screen observation; personal viewing unconfirmed');
         $clue=tv_text_v1($r['visible_text']??'',1000);if($clue!=='')$lines[]='Saved screen clue (untrusted media): '.json_encode($clue,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
         foreach(tv_sources_v1((array)($r['sources']??[])) as $source){$sources[$source['url']]=['source'=>'tv:screen-evidence','title'=>$source['title'],'url'=>$source['url']];$lines[]='Saved supporting page (title match; not scene verification): '.$source['title'].' — '.$source['url'];}
     }
     $range=$filters?'TV observation window: '.$filters['after'].' — '.$filters['before'].' UTC ('.$zone.(preg_match('/last night/i',$query)?'; last night means 6 pm–6 am':'').").\n":'';
-    return ['handled'=>true,'answer'=>$range.($lines?implode("\n",$lines):'No matching TV history is saved for this request. Saved history remains available with Eyes off.'),'actions'=>[],'sources'=>array_values($sources),'tv_watching'=>['contract'=>VP3_TV_CONTRACT,'data'=>$data,'camera_required'=>false,'untrusted_media'=>true]];
+    $count=$patterns?count($data['confirmed_preferences'])+count($data['observed_patterns']):count($data['items']);
+    return ['handled'=>true,'answer'=>$range.($lines?implode("\n",$lines):'No matching TV history is saved for this request. Saved history remains available with Eyes off.'),'actions'=>[],'sources'=>array_values($sources),'tool_receipt'=>vp3_tool_receipt_v1($patterns?'tv.preferences.read':'tv.history.read','list',$count?'read_complete':'no_matches','',0,$count),'tv_watching'=>['contract'=>VP3_TV_CONTRACT,'data'=>$data,'camera_required'=>false,'untrusted_media'=>true]];
 }
 function tv_brain_context_v1(PDO $pdo,array $user,string $query): array
 {
