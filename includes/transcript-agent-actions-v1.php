@@ -12,7 +12,8 @@ function vp3_transcript_reviewed_action_v1(PDO $pdo,array $user,array $principal
     if($op==='item_action'&&($plan['action']??'')==='reminder'){
         $m=$load();$snap=transcription_deeper_item_snapshot_v307($m,$plugin,$item);transcription_intelligence_require_accepted_v303($snap['item']);
         $schedule=$plan['schedule']??null;if(!is_array($schedule))throw new RuntimeException('What time and repeat schedule should this reminder use?');
-        $schedule['title']=mb_substr($snap['text'],0,240);reminder_schedule_v1($schedule,reminder_now_v1());
+        $schedule['title']=mb_substr($snap['text'],0,240);$normalized=reminder_schedule_v1($schedule,reminder_now_v1());
+        $schedule=array_intersect_key($normalized,array_flip(['title','timezone','start_local','recurrence','delivery']));
         $canonical=json_encode(['transcript'=>$id,'item'=>$item,'schedule'=>$schedule],JSON_THROW_ON_ERROR);$key='transcript:'.hash('sha256',$canonical);
         // The existing reminder ledger provides atomic schedule creation and replay protection.
         return reminder_execute_v1($pdo,(int)$user['id'],'transcript:'.$id,$key,$canonical,['operation'=>'create','schedule'=>$schedule],[],(int)($context['conversation_id']??0));
