@@ -31,6 +31,11 @@ for match in re.finditer(r'\b([A-Za-z_][A-Za-z_0-9]*)\s*\(', dispatch):
         dispatched.add(name)
 assert explicit <= dispatched, 'Audit dropped a nonstandard dispatcher binding'
 assert dispatched <= definitions, 'Dispatched executor definition is missing'
+plan = root / 'docs/agent-integration-audit-plan.md'
+if plan.exists():
+    listed = re.findall(r'^\| `([A-Za-z_][A-Za-z_0-9]*)` \|', plan.read_text(), re.M)
+    assert len(listed) == len(set(listed)), 'Managed work list duplicates a handler'
+    assert set(listed) == dispatched, 'Managed work list drifted from the actual dispatcher'
 assessed = {executor for _, _, executor in rows}
 report = {'assessed_capabilities': len(rows), 'executor_bindings_verified': True,
           'legacy_dispatchers_found': len(dispatched),

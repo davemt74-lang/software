@@ -5,10 +5,16 @@ require_once __DIR__.'/system-apps-v250.php';
 
 const VP3_SYSTEM_APPS_V260='unified-app-manager-v260-20260930';
 
-function vp3_app_manager_status_v260(int $userId,?callable $remote=null): array
+function vp3_app_manager_status_v260(int $userId,?callable $remote=null,bool $strict=false): array
 {
     if($userId<1)throw new RuntimeException('Account is required.');
     $payload=vp3_system_apps_remote_v110($userId,'apps.manager.status',[],$remote);
+    if($strict){
+        vp3_app_read_items_v1($payload['items']??null);
+        if(!is_array($payload['counts']??null))throw new RuntimeException('App manager counts unavailable.');
+        vp3_app_read_counts_v1($payload['counts'],['installed','available','updates','running','hosted']);
+        foreach($payload['items'] as $row)foreach(['installed','available','update_available','hosted','shared'] as $key)if(!is_bool($row[$key]??null))throw new RuntimeException('App state could not be verified.');
+    }
     $items=is_array($payload['items']??null)?array_values($payload['items']):[];
     return [
       'contract'=>'vp3.unified-app-manager.v1',
@@ -52,23 +58,8 @@ function vp3_app_manager_query_v260(
 ): array {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
     if(!preg_match('/\b(?:app manager|my apps|installed apps|available apps|vp3 apps|system apps|app updates|hosted apps|shared apps|what apps)\b/i',$query))return $empty;
-    $uid=(int)($user['id']??0);if($uid<1)return $empty;
-    try{$state=vp3_app_manager_status_v260($uid,$remote);}
-    catch(Throwable $e){return $empty;}
-    $counts=(array)$state['counts'];
-    $answer='HomeServer Apps: '.(int)($counts['installed']??0).' installed, '.(int)($counts['available']??0).' available, '.(int)($counts['updates']??0).' updates, '.(int)($counts['running']??0).' running, and '.(int)($counts['hosted']??0).' hosted.';
-    $updates=array_values(array_filter($state['items'],static fn($row)=>!empty($row['update_available'])));
-    if($updates){
-        $answer.=' Updates: '.implode(', ',array_map(static fn($row)=>(string)$row['name'],$updates)).'.';
-    }
-    $answer.=' HomeServer remains authoritative for install state, permissions, storage, releases, private-share provenance, and hosting.';
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'homeserver.app_manager.read',$query,'success',['count'=>$state['count'],'updates'=>count($updates)],$conversationId);
-    return [
-      'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],
-      'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],
-      'sources'=>[['source'=>'homeserver:app-manager','title'=>'HomeServer App Manager']],
-      'app_manager'=>$state,
-    ];
+    $view='all';foreach(['installed','running','available','hosted','shared','updates'] as $candidate)if(str_contains(mb_strtolower($query),$candidate)){$view=$candidate;break;}
+    return vp3_app_agent_legacy_v1($user,$conversationId,'apps.manager.read','',$remote,$view);
 }
 
 function vp3_system_apps_capability_v260(): array
