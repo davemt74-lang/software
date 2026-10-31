@@ -162,7 +162,7 @@ function agent_memory_v123_reconcile_user(array $user): array
     return $result;
 }
 
-function agent_memory_v123_tasks(array $user,bool $includeClosed=false): array
+function agent_memory_v123_tasks(array $user,bool $includeClosed=false,bool $reconcile=true,bool $strict=false): array
 {
     $uid=(int)($user['id']??0);$pdo=db();if(!$pdo||$uid<1||!table_exists('agent_memory_items'))return [];
     $agentId=0;$scopeSql='';$scopeParams=[];
@@ -172,7 +172,7 @@ function agent_memory_v123_tasks(array $user,bool $includeClosed=false): array
         vp3_agent_memory_scope_set_current_v410($uid,$agentId);
         [$scopeSql,$scopeParams]=vp3_agent_memory_scope_sql_v410($agentId);
     }
-    agent_memory_v123_reconcile_user($user);
+    if($reconcile)agent_memory_v123_reconcile_user($user);
     try{
         if($scopeSql!==''){
             $s=$pdo->prepare("SELECT * FROM agent_memory_items WHERE user_id=? AND {$scopeSql} AND is_active=1 AND memory_type IN ('commitment','task') ORDER BY last_seen_at DESC,id DESC LIMIT 100");
@@ -182,7 +182,7 @@ function agent_memory_v123_tasks(array $user,bool $includeClosed=false): array
             $s->execute([$uid]);
         }
         $rows=$s->fetchAll()?:[];
-    }catch(Throwable $e){return [];}
+    }catch(Throwable $e){if($strict)throw new RuntimeException('Task records could not be read.',0,$e);return [];}
     $out=[];
     foreach($rows as $row){
         $meta=agent_memory_v123_metadata($row);$status=(string)($meta['task_status']??'open');

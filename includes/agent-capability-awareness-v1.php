@@ -41,6 +41,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         catch(Throwable $e){$knowledge='check_failed';}
     }
     $brain=vp3_capability_probe_v1(fn()=>agent_brain_schema_ready());
+    $tasks=$brain!=='ready'?$brain:vp3_capability_probe_v1(fn()=>vp3_agent_memory_scope_schema_ready_v410($pdo));
     $work=vp3_capability_probe_v1(fn()=>agent_work_control_schema_ready_v173($pdo));
     $scheduling=vp3_scheduling_readiness_v1($pdo,$user);
     $transcripts=vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172'));
@@ -68,6 +69,9 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('team_scheduling.manage','Change Team appointments','write','agent_team_scheduling_tools_query_v610',has_permission('account.access',$user),$scheduling['team'],['Existing bound Agent/pool approval and calendar mutation services. No bypass of confirmation or membership checks.']),
         vp3_capability_row_v1('knowledge.search','Search personal Knowledge','read','knowledge_retrieval_v162_search',function_exists('personal_capability_has_v242')&&personal_capability_has_v242('personal_knowledge.access',$user),$knowledge,['Honors current conversation Knowledge scope; no automatic scope expansion.','A search with no matches is different from unavailable access.']),
         vp3_capability_row_v1('brain.read','Recall Agent Brain memory','read','agent_brain_context',function_exists('personal_capability_has_v242')&&personal_capability_has_v242('agent_brain.access',$user),$brain,['Only authorized owner memory; records must be retrieved before reporting facts.']),
+        vp3_capability_row_v1('tasks.read','Read saved Brain tasks','read','vp3_agent_record_tool_v1',function_exists('personal_capability_has_v242')&&personal_capability_has_v242('agent_brain.access',$user),$tasks,['Current Agent memory namespace only. No inferred status changes or reconciliation. Separate from workflows and reminders.']),
+        vp3_capability_row_v1('tasks.manage','Update saved Brain task status','write','vp3_agent_record_tool_v1',function_exists('personal_capability_has_v242')&&personal_capability_has_v242('agent_brain.access',$user),$tasks,['Explicit saved task ID and status; canonical lifecycle/history and verified scoped persistence. No new task store.']),
+        vp3_capability_row_v1('homeserver.read','Read authorized HomeServer data','read','homeserver_agent_read_v230_query',has_permission('account.access',$user),'not_checked',['Existing paired HTTPS read executor. Fresh operation-specific scope and connection checks during execution. No implicit Cloud fallback or HomeServer source publication.']),
         vp3_capability_row_v1('screen.context','Discuss the shared screen','read','agent_surface_v131_screen_observation',true,$screenReady?'ready':'share_required',['Only a fresh observation supplied by active screen sharing.','No hidden tabs, direct browser control or silent capture.']),
         vp3_capability_row_v1('homeserver.status','Inspect HomeServer capabilities','read','homeserver_capability_v033_registry',true,'not_checked',['Connection and allowed operations require a fresh authenticated registry check.','Cloud readiness does not establish HomeServer readiness.']),
     ];

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+$fixtureDb=new PDO('sqlite::memory:');$fixtureDb->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$fixtureDb->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER);INSERT INTO users VALUES(7,1);CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER);INSERT INTO chat_conversations VALUES(44,7,NULL)');
+function db(){return $GLOBALS['fixtureDb'];}function has_permission($p,$u){return true;}
 $GLOBALS['read_calls']=[];
 function homeserver_execution_v230_execute(int $userId,string $operation,array $payload=[],?callable $fallback=null): array {
     $GLOBALS['read_calls'][]=['user_id'=>$userId,'operation'=>$operation,'payload'=>$payload];

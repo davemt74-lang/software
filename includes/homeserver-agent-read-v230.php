@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-capability-chat-v1.php';
 
 /**
  * HomeServer v2.3 Section 2 — explicit read-domain Agent execution.
@@ -129,12 +130,18 @@ function homeserver_agent_read_v230_query(string $query,array $user,int $convers
     if($userId<1)return $empty;
 
     try{
+        $pdo=db();if(!$pdo)throw new RuntimeException('Local read authority could not be verified.');
+        $user=vp3_capability_control_user_v1($pdo,$user,$conversationId);$userId=(int)$user['id'];
         $execution=homeserver_execution_v230_execute(
             $userId,
             (string)$intent['operation'],
             is_array($intent['payload']??null)?$intent['payload']:[]
         );
         $payload=is_array($execution['result']??null)?$execution['result']:[];
+        $verified=$execution['execution']??[];
+        if(empty($execution['ok'])||($verified['version']??'')!=='2.3'||($verified['status']??'')!=='completed'||($verified['route']??'')!=='homeserver'||!empty($verified['fallback_used'])||($verified['operation']??'')!==$intent['operation'])throw new RuntimeException('Local execution receipt could not be verified.');
+        if($intent['kind']!=='file_read'&&!is_array($payload['items']??$payload['result']['items']??null))throw new RuntimeException('Local read response shape could not be verified.');
+        $count=$intent['kind']==='file_read'?1:count(homeserver_agent_read_v230_items($payload));
         $answer=homeserver_agent_read_v230_answer((string)$intent['kind'],$payload);
         if(function_exists('agent_tool_log')){
             agent_tool_log($user,'homeserver.read.'.(string)$intent['kind'],$query,'success',[
@@ -145,6 +152,7 @@ function homeserver_agent_read_v230_query(string $query,array $user,int $convers
         }
         return [
           'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],
+          'tool_receipt'=>vp3_tool_receipt_v1('homeserver.read',(string)$intent['kind'],$count?'read_complete':'no_matches','',0,$count),
           'sources'=>[[
             'source'=>'homeserver:local-read',
             'title'=>'HomeServer · '.match((string)$intent['kind']){
@@ -156,12 +164,14 @@ function homeserver_agent_read_v230_query(string $query,array $user,int $convers
         ];
     }catch(Throwable $e){
         if(function_exists('agent_tool_log'))agent_tool_log($user,'homeserver.read.'.(string)$intent['kind'],$query,'failed',[],$conversationId);
+        $denied=$e->getCode()===403||(function_exists('homeserver_execution_v230_failure_class')&&homeserver_execution_v230_failure_class($e)==='authorization');
         return [
           'handled'=>true,
           'answer'=>'HomeServer could not complete that local read right now. Your Cloud Agent is still available, but this request specifically requires the connected HomeServer.',
           'stem_media'=>[],'media'=>[],'actions'=>[],
           'sources'=>[['source'=>'homeserver:local-read','title'=>'HomeServer local execution unavailable']],
           'homeserver_read'=>['kind'=>(string)$intent['kind'],'version'=>'2.3','failed'=>true],
+          'tool_receipt'=>vp3_tool_receipt_v1('homeserver.read',(string)$intent['kind'],$denied?'blocked':'failed',$denied?'permission_denied':'execution_failed'),
         ];
     }
 }

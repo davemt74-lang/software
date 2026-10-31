@@ -8,14 +8,20 @@ require_once __DIR__.'/agent-scheduling-tools-v460.php';
 require_once __DIR__.'/agent-brain-v122.php';
 require_once __DIR__.'/phone-agent-schema-v1.php';
 require_once __DIR__.'/workflow-agent-schema-v1.php';
-class TranscriptFixturePDO extends PDO {public int $updatedId=0;public function lastInsertId(?string $name=null):string|false{return $this->updatedId?(string)$this->updatedId:parent::lastInsertId($name);}public function prepare(string $sql,array $options=[]):PDOStatement|false{if(str_starts_with(ltrim($sql),'INSERT'))$this->updatedId=0;$sql=str_replace(' FOR UPDATE','',$sql);$sql=preg_replace('/ON DUPLICATE KEY UPDATE/i','ON CONFLICT DO UPDATE SET',$sql);$sql=preg_replace('/VALUES\((\w+)\)/i','excluded.$1',$sql);return parent::prepare($sql,$options);}}
+require_once __DIR__.'/record-agent-schema-v1.php';
+require_once __DIR__.'/agent-brain-owner-context-v1.php';
+require_once __DIR__.'/agent-memory-lifecycle-v123.php';
+require_once __DIR__.'/agent-task-lifecycle-v123.php';
+require_once __DIR__.'/homeserver-local-execution-v230.php';
+require_once __DIR__.'/homeserver-agent-read-v230.php';
+class TranscriptFixturePDO extends PDO {public int $updatedId=0;public function lastInsertId(?string $name=null):string|false{return $this->updatedId?(string)$this->updatedId:parent::lastInsertId($name);}public function prepare(string $sql,array $options=[]):PDOStatement|false{if(str_starts_with(ltrim($sql),'INSERT'))$this->updatedId=0;$sql=str_replace(' FOR UPDATE','',$sql);if(str_contains($sql,'information_schema.statistics'))$sql="SELECT 1 FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=?";$sql=preg_replace('/ON DUPLICATE KEY UPDATE/i','ON CONFLICT DO UPDATE SET',$sql);$sql=preg_replace('/VALUES\((\w+)\)/i','excluded.$1',$sql);return parent::prepare($sql,$options);}}
 function db(){static $pdo;if(!$pdo){$pdo=new TranscriptFixturePDO('sqlite:'.__DIR__.'/../state.sqlite');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('LAST_INSERT_ID',function($id)use($pdo){$pdo->updatedId=(int)$id;return$id;});$pdo->sqliteCreateFunction('NOW',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));$pdo->exec('CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo->exec('INSERT OR IGNORE INTO users VALUES(1,1),(2,1)');$pdo->exec("CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,artist_workspace_id INTEGER,title TEXT,updated_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");reminder_schema_v1($pdo);capability_fixture_agents($pdo);}return $pdo;}
 function table_exists($table){if($table==='user_calendar_events'&&isset($_SERVER['HTTP_X_FIXTURE_CALENDAR_MISSING']))return false;$q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return(bool)$q->fetchColumn();}
 function column_exists($table,$column){foreach(db()->query('PRAGMA table_info('.$table.')') as $r)if($r['name']===$column)return true;return false;}
 function current_user(){if(isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS']))return null;$id=(int)($_SERVER['HTTP_X_FIXTURE_USER']??1);return ['id'=>$id,'is_active'=>1];}
 function csrf_token(){return 'fixture';}
 function has_permission($key,$user){return !isset($_SERVER['HTTP_X_FIXTURE_DENIED']);}
-function personal_capability_has_v242($key,...$args){return $key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']);}
+function personal_capability_has_v242($key,...$args){return ($key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']))||($key==='personal_knowledge.access'&&isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']));}
 function artist_workspace_v181_scope_id($user){return 0;}
 function calendar_schedule_awareness_snapshot_v1330(...$args){return [];}
 function user_account_types_for_user_id(...$args){return ['member'];}
@@ -39,6 +45,8 @@ function url($path){return $path;}
 function setting($key,$default=''){return $default;}
 function subscription_has_entitlement($user,$key){return isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY'])&&(int)$user['id']===1;}
 function subscription_entitlement_limit(...$args){return 3;}
+function homeserver_execution_v220_can_route(...$args){return isset($_SERVER['HTTP_X_FIXTURE_HOME_READY']);}
+function homeserver_https_v1300_remote_operation(...$args){if(isset($_SERVER['HTTP_X_FIXTURE_HOME_FAIL']))throw new RuntimeException('HomeServer offline');return ['items'=>[['name'=>'Fixture local file','ref'=>'hsf-1-0123456789abcdef','snippet'=>'Fixture local source']]];}
 function agent_brain_schema_ready(){return isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']);}
 function agent_brain_normalize($s){return strtolower(trim($s));}
 function agent_brain_sentences($s){return preg_split('/(?<=[.!?])\s+|\R+/u',trim($s))?:[];}
@@ -54,13 +62,18 @@ function ai_generate_chat_response($prompt,...$args){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
         if(in_array($q,['List my phone numbers','List my SMS threads','Read SMS thread 11','Read SMS thread 12'],true))return ['ok'=>true,'answer'=>json_encode(['operation'=>'phone_read','ids'=>[$q==='List my phone numbers'?'phone.numbers.read':'phone.sms.read'],'thread_id'=>str_starts_with($q,'Read SMS thread ')?(int)substr($q,16):0])];
+        if($q==='Search saved Knowledge for pizza')return ['ok'=>true,'answer'=>json_encode(['operation'=>'record_read','ids'=>['knowledge.search'],'query'=>'pizza'])];
+        if($q==='Search saved Brain for pizza')return ['ok'=>true,'answer'=>json_encode(['operation'=>'record_read','ids'=>['brain.read'],'query'=>'pizza'])];
+        if($q==='List saved Brain tasks')return ['ok'=>true,'answer'=>json_encode(['operation'=>'record_read','ids'=>['tasks.read'],'query'=>''])];
+        if(str_starts_with($q,'Complete saved Brain task #'))return ['ok'=>true,'answer'=>json_encode(['operation'=>'record_task','ids'=>['tasks.manage'],'task_id'=>(int)substr($q,strlen('Complete saved Brain task #')),'task_status'=>'completed'])];
+        if($q==='Search my HomeServer files for fixture')return ['ok'=>true,'answer'=>'{"operation":"continue","ids":[]}'];
         if($q==='Can you read SMS?')return ['ok'=>true,'answer'=>json_encode(['operation'=>'inspect','ids'=>['phone.sms.read']])];
         $op=(str_starts_with($q,'Remind me')||str_contains($q,'events on my calendar')||str_contains($q,'transcript')||str_contains(strtolower($q),'reminder list')||str_contains(strtolower($q),'my reminders')||str_contains(strtolower($q),'open reminders'))?'continue':(str_starts_with($q,'Did that')?'diagnose':'inspect');$ids=str_contains($q,'HomeServer')?['homeserver.status']:['reminders.manage'];
         if(str_contains($q,'workflow'))$op='continue';if(in_array($op,['continue','diagnose'],true))$ids=[];
         return ['ok'=>true,'answer'=>json_encode(['operation'=>$op,'ids'=>$ids])];
     }
     $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);
-    if(str_contains($json['request']??'','workflow'))return ['ok'=>true,'answer'=>'{"operation":"none"}'];
+    if(str_contains($json['request']??'','workflow')||($json['request']??'')==='Search my HomeServer files for fixture')return ['ok'=>true,'answer'=>'{"operation":"none"}'];
     if(isset($_SERVER['HTTP_X_FIXTURE_REMINDER_BAD'])&&(!isset($json['previous_invalid_output'])||$_SERVER['HTTP_X_FIXTURE_REMINDER_BAD']==='always'))return ['ok'=>true,'answer'=>'{"operation":"list","reminders":[]}'];
     if(!str_starts_with($json['request']??'','Remind me'))return ['ok'=>true,'answer'=>json_encode(['operation'=>'list','view'=>str_contains($json['request']??'','today')?'today':'open'])];
     $at=(new DateTimeImmutable('+2 minutes',new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s');
@@ -85,6 +98,7 @@ function capability_fixture_agents(PDO $pdo): void
     $q->execute([1,1,1,'Fixture calendar review',$from,$to]);$q->execute([2,2,2,'SECRET foreign calendar',$from,$to]);
     if(isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY']))phone_agent_fixture_v1($pdo);
     if(isset($_SERVER['HTTP_X_FIXTURE_WORK_READY']))workflow_agent_fixture_v1($pdo);
+    if(isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']))record_agent_fixture_v1($pdo);
 }
 function agent_tool_log(...$args): void{}
 function agent_scheduling_timezone_v430(string $value,string $fallback='UTC'):string{return user_calendar_timezone_v1300($value,$fallback);}

@@ -11,6 +11,7 @@ for(const name of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeF
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
 fs.copyFileSync('tests/fixtures/phone-agent-schema-v1.php',path.join(tmp,'includes/phone-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/workflow-agent-schema-v1.php',path.join(tmp,'includes/workflow-agent-schema-v1.php'));
+fs.copyFileSync('tests/fixtures/record-agent-schema-v1.php',path.join(tmp,'includes/record-agent-schema-v1.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
@@ -105,6 +106,29 @@ try{
   check(response.data?.answer.includes('not completion of the underlying job')&&response.data.answer.includes('may still be finishing'),endpoint+' diagnoses the exact queued control receipt');
   response=await post(endpoint,'Inspect workflow #43',{...named,conversation_id:longfellowConversation},headers);
   check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('SECRET'),endpoint+' denies a foreign owner workflow');
+ }
+ for(const [index,endpoint] of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php'].entries()){
+  const headers={'X-Fixture-Record-Ready':'1','X-Fixture-Brain-Ready':'1'},id=210+index*10;
+  response=await post(endpoint,'Search saved Knowledge for pizza',{...named,conversation_id:longfellowConversation,knowledge_scope:'all'},headers);
+  check(response.data?.answer.includes('Fixture pizza supplier Knowledge')&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.capability==='knowledge.search',endpoint+' explicitly searches actual scoped Knowledge');
+  response=await post(endpoint,'Search saved Knowledge for pizza',{...named,conversation_id:longfellowConversation,knowledge_scope:'off'},headers);
+  check(response.data?.tool_receipt?.status==='blocked'&&response.data.tool_receipt.reason==='scope_restricted',endpoint+' never expands Knowledge Off');
+  response=await post(endpoint,'Search saved Brain for pizza',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('Fixture pizza Brain record')&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.capability==='brain.read',endpoint+' recalls only current Agent Brain records');
+  response=await post(endpoint,'List saved Brain tasks',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('Task #'+id)&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.capability==='tasks.read',endpoint+' lists real scoped Brain tasks');
+  response=await post(endpoint,'Complete saved Brain task #'+id,{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.tool_receipt?.capability==='tasks.manage'&&response.data.tool_receipt.changes_applied&&response.data.answer.includes('completed'),endpoint+' verifies canonical task status persistence');
+  response=await post(endpoint,'Did that work?',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('tasks.manage / set_status')&&response.data.answer.includes('change completed'),endpoint+' diagnoses the actual task status receipt');
+  response=await post(endpoint,'Complete saved Brain task #'+(id+1),{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('SECRET'),endpoint+' cannot change another Agent task');
+  response=await post(endpoint,'Search my HomeServer files for fixture',{...named,conversation_id:longfellowConversation},{...headers,'X-Fixture-Home-Ready':'1'});
+  check(response.data?.answer.includes('Fixture local file')&&response.data.tool_receipt?.capability==='homeserver.read'&&response.data.tool_receipt.status==='read_complete',endpoint+' preserves authenticated HomeServer read provenance');
+  response=await post(endpoint,'Search my HomeServer files for fixture',{...named,conversation_id:longfellowConversation},{...headers,'X-Fixture-Home-Ready':'1','X-Fixture-Home-Fail':'1'});
+  check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('Fixture local file'),endpoint+' does not replace a failed local read with a Cloud answer');
+  response=await post(endpoint,'Did that work?',{...named,conversation_id:longfellowConversation},headers);
+  check(response.data?.answer.includes('homeserver.read / files')&&response.data.answer.includes('failed'),endpoint+' diagnoses the failed local execution receipt');
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}
