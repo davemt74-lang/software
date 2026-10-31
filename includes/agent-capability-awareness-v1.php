@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/phone-agent-read-v1.php';
 require_once __DIR__.'/agent-integration-readiness-v1.php';
 require_once __DIR__.'/agent-media-read-v1.php';
+require_once __DIR__.'/agent-app-read-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -54,6 +55,9 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $screenReady=$screen!==null&&$screen['owner_key']===(string)$uid;
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
+        vp3_capability_row_v1('apps.user.read','Read HomeServer user-app registry','read','vp3_user_apps_agent_query_v220',has_permission('account.access',$user),'not_checked',['Explicit live paired registry read. Bounded name/key filtering; no Cloud app registry, source-code retrieval, install or permission changes.']),
+        vp3_capability_row_v1('apps.manager.read','Read HomeServer App Manager','read','vp3_app_manager_query_v260',has_permission('account.access',$user),'not_checked',['Live installed/available/running/update/hosting/shared state. Missing response fields are failures, not zero counts. Open Apps is a link, not verified navigation.']),
+        vp3_capability_row_v1('apps.workspace.read','Inspect HomeServer app workspace diagnostics','read','vp3_user_app_workspace_query_v230',has_permission('account.access',$user),'not_checked',['Exact app from the current owner registry only. Reads reported diagnostics and counts; does not run validation/build or expose source/native paths.']),
         vp3_capability_row_v1('tv.history.read','Read saved TV observations','read','tv_chat_query_v1',has_permission('account.access',$user),$tv,['Account-owned timestamped observations; available with Eyes and camera off. Screen presence is not proof you watched.']),
         vp3_capability_row_v1('tv.preferences.read','Read confirmed TV preferences and patterns','read','tv_chat_query_v1',has_permission('account.access',$user),$tv,['Explicit owner preferences are distinct from repeated confirmed viewing. No sensitive-trait inference.']),
         vp3_capability_row_v1('tv.capture.manage','Manage TV capture through Eyes panel','write','tv_dispatch_v1',has_permission('account.access',$user),$tv==='ready'?'capture_surface_required':$tv,['Existing Eyes panel and browser camera/screen sharing approval are required. Chat reads do not start capture.']),
