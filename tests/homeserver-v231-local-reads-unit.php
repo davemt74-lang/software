@@ -58,7 +58,9 @@ assert(count($enriched['context'])===2);
 assert(str_starts_with($enriched['context'][0]['source'],'homeserver-local:'));
 
 $GLOBALS['mode']='fail';
-$failed=homeserver_reads_v231_context($user,'Search my local knowledge about launch');
+$beforeFailure=count($GLOBALS['calls']);
+$failed=homeserver_reads_v231_context($user,'Search my local knowledge about missing launch');
+assert(count($GLOBALS['calls'])===$beforeFailure+1,'failure fixture must execute a fresh request rather than reuse the same-turn cache');
 assert($failed['attempted']===true);
 assert($failed['context']===[]);
 assert(($failed['execution']['failure_class']??'')==='timeout');

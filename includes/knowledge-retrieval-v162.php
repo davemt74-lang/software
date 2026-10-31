@@ -123,12 +123,12 @@ function knowledge_retrieval_v162_for_chat(PDO $pdo,array $user,array $principal
 {
     $scope=knowledge_retrieval_v162_normalize_scope($rawScope);$uid=(int)($user['id']??0);$empty=['scope'=>$scope,'context'=>$baseContext,'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
     if($uid<1||!knowledge_retrieval_v162_owner_session($user,$principal))return $empty;
-    if(($scope['mode']??'off')==='folder'&&knowledge_retrieval_v162_folder($pdo,$uid,(int)$scope['folder_id'])===null)$scope=['mode'=>'off','folder_id'=>0];
-    if(($scope['mode']??'off')==='off')return [...$empty,'scope'=>$scope,'context'=>array_values(array_filter($baseContext,static fn($entry)=>!is_array($entry)||!preg_match('/^knowledge:\\d+$/',(string)($entry['source']??'')))),'cloud_search_status'=>'scope_off'];
     $context=knowledge_retrieval_v162_strip_legacy_personal($pdo,$uid,$baseContext);
+    if(($scope['mode']??'off')==='folder'&&knowledge_retrieval_v162_folder($pdo,$uid,(int)$scope['folder_id'])===null)$scope=['mode'=>'off','folder_id'=>0];
     $cloud=[];$cloudStatus='not_queried';
     $cloudAllowed=!function_exists('personal_knowledge_available')||personal_knowledge_available($user);
-    if($cloudAllowed){try{$cloud=knowledge_retrieval_v162_search($pdo,$uid,$query,$scope,6,true);$cloudStatus=$cloud?'matches':'no_matches';}catch(Throwable $e){$cloudStatus='failed';$context[]=['source'=>'runtime:knowledge-read-failure','title'=>'Cloud Knowledge read unavailable','text'=>'Cloud Personal Knowledge search failed. Do not report it as an empty search, lost permission or absence of records. Other sources must be identified separately.'];}}else $cloudStatus='permission_denied';
+    if(($scope['mode']??'off')==='off')$cloudStatus='scope_off';
+    elseif($cloudAllowed){try{$cloud=knowledge_retrieval_v162_search($pdo,$uid,$query,$scope,6,true);$cloudStatus=$cloud?'matches':'no_matches';}catch(Throwable $e){$cloudStatus='failed';$context[]=['source'=>'runtime:knowledge-read-failure','title'=>'Cloud Knowledge read unavailable','text'=>'Cloud Personal Knowledge search failed. Do not report it as an empty search, lost permission or absence of records. Other sources must be identified separately.'];}}else $cloudStatus='permission_denied';
     $annotations=capture_r5_retrieve($pdo,$user,$query,$scope);
     $annotationIds=array_filter(array_column($annotations,'item_id'));
     $cloud=array_merge($annotations,array_values(array_filter($cloud,static fn($r)=>!in_array($r['item_id'],$annotationIds,true))));
@@ -136,8 +136,10 @@ function knowledge_retrieval_v162_for_chat(PDO $pdo,array $user,array $principal
         foreach($cloud as $index=>$row)$cloud[$index]=homeserver_knowledge_v242_project_cloud_retrieval($uid,$row);
     }
 
-    $homeState=['status'=>($scope['mode']??'off')==='all'?'not_queried':'scope_restricted','items'=>[]];
-    if(($scope['mode']??'off')==='all'&&function_exists('homeserver_knowledge_v242_agent_search'))$homeState=homeserver_knowledge_v242_agent_search($uid,$query,6);
+    // This legacy scope selects Cloud Personal Knowledge only. Canonical R6
+    // conversation scopes bypass this service and apply their own local fence.
+    $homeState=['status'=>'not_queried','items'=>[]];
+    if(function_exists('homeserver_knowledge_v242_agent_search'))$homeState=homeserver_knowledge_v242_agent_search($uid,$query,6);
     $home=is_array($homeState['items']??null)?$homeState['items']:[];
     $results=function_exists('homeserver_knowledge_v242_merge_retrieval')
       ?homeserver_knowledge_v242_merge_retrieval($cloud,$home,8)
