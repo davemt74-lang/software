@@ -2,7 +2,7 @@
 
 This is the managed build order for the legacy handlers called by the shared VP3 Chat dispatcher. It is not a count of every tool in VP3: reminders, transcripts, phone and newer record adapters also expose capabilities through the shared broker. Handler count and capability count are separate measures. “Pending” means unassessed, not necessarily broken or disconnected.
 
-Before S5: 8 of 29 legacy handlers certified; 21 remaining. S5 implements 3 more, leaving 18 pending. Its release requires the PR checks and exact merged-package verification. The source inventory has 31 individual capability IDs after S5. Use `python3 tools/check_agent_capability_inventory.py` for current executable bindings, remaining handlers and source locations; that check also rejects a missing or duplicated handler in this list.
+Before S6: 11 of 29 legacy handlers certified; 18 remaining. S6 implements 3 more, leaving 15 pending. Its release requires the PR checks and exact merged-package verification. The source inventory has 34 individual capability IDs after S6. Use `python3 tools/check_agent_capability_inventory.py` for current executable bindings, remaining handlers and source locations; that check also rejects a missing or duplicated handler in this list.
 
 | Handler | Section | State / evidence |
 |---|---|---|
@@ -14,12 +14,12 @@ Before S5: 8 of 29 legacy handlers certified; 21 remaining. S5 implements 3 more
 | `tv_chat_query_v1` | S4 | Certified PR #651; current TV records and preferences, camera-off reads. |
 | `vp3_media_server_agent_query_v270` | S4 | Certified PR #651; strict Media Server library reads, no playback claim. |
 | `vp3_music_server_agent_query_v300` | S4 | Certified PR #651; strict Music Server library reads, no playback claim. |
-| `vp3_user_apps_agent_query_v220` | S5 | Implemented in this change; canonical user-app registry and strict read receipts. |
-| `vp3_app_manager_query_v260` | S5 | Implemented in this change; strict manager projections and live authority. |
-| `vp3_user_app_workspace_query_v230` | S5 | Implemented in this change; exact app selection and reported diagnostics. |
-| `vp3_system_apps_agent_query_v150` | S6 | Pending: Cloud catalog/ownership versus observed HomeServer state; inspect read-side schema/seed effects. |
-| `vp3_system_apps_health_query_v170` | S6 | Pending: health/reconciliation, fresh failures versus missing app or permission. |
-| `vp3_system_apps_permission_query_v210` | S6 | Pending: actual permission projection versus authority to change it. |
+| `vp3_user_apps_agent_query_v220` | S5 | Certified PR #652; canonical user-app registry and strict read receipts. |
+| `vp3_app_manager_query_v260` | S5 | Certified PR #652; strict manager projections and live authority. |
+| `vp3_user_app_workspace_query_v230` | S5 | Certified PR #652; exact app selection and reported diagnostics. |
+| `vp3_system_apps_agent_query_v150` | S6 | Implemented in this change; read-only canonical catalog and owner observations, no schema/seed side effects. |
+| `vp3_system_apps_health_query_v170` | S6 | Implemented in this change; stored health and age versus live verification, no implicit hosting binding. |
+| `vp3_system_apps_permission_query_v210` | S6 | Implemented in this change; exact owned/installed app, verified live permission read, no grants/revocations. |
 | `vp3_system_apps_agent_action_query_v160` | S7 | Pending: existing approval, action execution and verified outcomes. |
 | `vp3_app_control_agent_query_v290` | S7 | Pending: actual app manifest/control scopes, settings redaction and existing confirmations. |
 | `vp3_system_apps_release_query_v200` | S7 | Pending: release/update/rollback authority and actual outcome versus request. |

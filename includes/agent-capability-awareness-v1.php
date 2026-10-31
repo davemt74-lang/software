@@ -4,6 +4,7 @@ require_once __DIR__.'/phone-agent-read-v1.php';
 require_once __DIR__.'/agent-integration-readiness-v1.php';
 require_once __DIR__.'/agent-media-read-v1.php';
 require_once __DIR__.'/agent-app-read-v1.php';
+require_once __DIR__.'/agent-system-app-read-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -45,6 +46,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $brain=vp3_capability_probe_v1(fn()=>agent_brain_schema_ready());
     $tasks=$brain!=='ready'?$brain:vp3_capability_probe_v1(fn()=>vp3_agent_memory_scope_schema_ready_v410($pdo));
     $tv=vp3_capability_probe_v1(fn()=>table_exists('tv_watching_records_v1')&&table_exists('tv_watching_state_v1'));
+    $systemApps=vp3_capability_probe_v1(fn()=>vp3_system_app_read_ready_v1());
     $work=vp3_capability_probe_v1(fn()=>agent_work_control_schema_ready_v173($pdo));
     $scheduling=vp3_scheduling_readiness_v1($pdo,$user);
     $transcripts=vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172'));
@@ -55,6 +57,9 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $screenReady=$screen!==null&&$screen['owner_key']===(string)$uid;
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
+        vp3_capability_row_v1('system_apps.catalog.read','Read Cloud System App catalog and stored state','read','vp3_system_apps_agent_query_v150',has_permission('account.access',$user),$systemApps,['Read-only Cloud ownership/catalog and timestamped HomeServer projections. No schema, catalog seeding or live network check. Stored state is not current runtime proof.']),
+        vp3_capability_row_v1('system_apps.health.read','Read stored System App health observations','read','vp3_system_apps_health_query_v170',has_permission('account.access',$user),$systemApps,['Stored health classification and observation times only. No implicit hosting binding or live route/TLS diagnosis; use the existing explicit Hosting diagnostic surface.']),
+        vp3_capability_row_v1('system_apps.permissions.read','Read live owned System App permissions','read','vp3_system_apps_permission_query_v210',has_permission('account.access',$user),$systemApps==='ready'?'not_checked':$systemApps,['Exact current Cloud app selection, active ownership and installed projection required. Live paired HomeServer response must match the app and counts. No grant/revoke action.']),
         vp3_capability_row_v1('apps.user.read','Read HomeServer user-app registry','read','vp3_user_apps_agent_query_v220',has_permission('account.access',$user),'not_checked',['Explicit live paired registry read. Bounded name/key filtering; no Cloud app registry, source-code retrieval, install or permission changes.']),
         vp3_capability_row_v1('apps.manager.read','Read HomeServer App Manager','read','vp3_app_manager_query_v260',has_permission('account.access',$user),'not_checked',['Live installed/available/running/update/hosting/shared state. Missing response fields are failures, not zero counts. Open Apps is a link, not verified navigation.']),
         vp3_capability_row_v1('apps.workspace.read','Inspect HomeServer app workspace diagnostics','read','vp3_user_app_workspace_query_v230',has_permission('account.access',$user),'not_checked',['Exact app from the current owner registry only. Reads reported diagnostics and counts; does not run validation/build or expose source/native paths.']),

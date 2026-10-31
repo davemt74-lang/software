@@ -14,7 +14,7 @@ assert.match(svc,/function vp3_system_apps_agent_snapshot_v150/);
 assert.match(svc,/function vp3_system_apps_agent_context_items_v150/);
 assert.match(svc,/function vp3_system_apps_agent_query_v150/);
 assert.match(svc,/function vp3_system_apps_agent_reconcile_activity_v150/);
-assert.match(svc,/agent_tool_log/);
+assert.match(svc+fs.readFileSync(new URL('includes/agent-system-app-read-v1.php',root),'utf8'),/agent_tool_log/);
 assert.match(svc,/system_app_event/);
 assert.match(svc,/NOT EXISTS/);
 assert.match(svc,/activity_center_events'\s*=>\s*true/);

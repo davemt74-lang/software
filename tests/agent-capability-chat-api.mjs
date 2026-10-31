@@ -14,6 +14,7 @@ fs.copyFileSync('tests/fixtures/workflow-agent-schema-v1.php',path.join(tmp,'inc
 fs.copyFileSync('tests/fixtures/record-agent-schema-v1.php',path.join(tmp,'includes/record-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/media-agent-schema-v1.php',path.join(tmp,'includes/media-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/app-agent-remote-v1.php',path.join(tmp,'includes/app-agent-remote-v1.php'));
+fs.copyFileSync('tests/fixtures/system-app-agent-schema-v1.php',path.join(tmp,'includes/system-app-agent-schema-v1.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
@@ -172,6 +173,27 @@ try{
   check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('SECRET'),endpoint+' explicit local app-read failure cannot fall through into a Cloud answer');
   response=await post(endpoint,'Did that work?',context,headers);
   check(response.data?.answer.includes('apps.manager.read')&&response.data.answer.includes('failed'),endpoint+' diagnoses the persisted app read receipt');
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const context={...named,conversation_id:longfellowConversation,input_mode:'voice'},headers={'X-Fixture-System-App-Ready':'1'};
+  response=await post(endpoint,'Can you read System App permissions?',context,headers);
+  check(response.data?.tool_receipt?.capability==='capabilities.inspect'&&!response.data.answer.includes('hardware.camera'),endpoint+' permission ability inspection does not read permission records');
+  response=await post(endpoint,'List Cloud System App catalog',context,headers);
+  check(response.data?.tool_receipt?.capability==='system_apps.catalog.read'&&response.data.tool_receipt.status==='read_complete'&&response.data.answer.includes('2020-01-01')&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' retrieves actual Cloud ownership and stored runtime projections');
+  response=await post(endpoint,'Read stored System App health',context,headers);
+  check(response.data?.tool_receipt?.capability==='system_apps.health.read'&&response.data.answer.includes('not live runtime')&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' distinguishes stored health from a live diagnostic and redacts raw errors');
+  response=await post(endpoint,'Read System App permissions for vp3.notes',context,headers);
+  check(response.data?.tool_receipt?.status==='read_complete'&&response.data.answer.includes('hardware.camera · denied')&&!response.data.tool_receipt.changes_applied&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' reads exact owned-app permissions without granting them');
+  response=await post(endpoint,'Read System App permissions for vp3.inventory',context,headers);
+  check(response.data?.tool_receipt?.reason==='permission_denied',endpoint+' rejects permission lookup for an unowned System App');
+  response=await post(endpoint,'Read System App permissions for unknown.app',context,headers);
+  check(response.data?.tool_receipt?.status==='clarification_required',endpoint+' unknown System App requires a current catalog selection');
+  for(const mode of ['malformed','identity','counts','offline']){
+   response=await post(endpoint,'Read System App permissions for vp3.notes',context,{...headers,'X-Fixture-System-App-Mode':mode});
+   check(response.data?.tool_receipt?.status==='failed'&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' preserves '+mode+' permission-read failure evidence');
+  }
+  response=await post(endpoint,'Did that work?',context,headers);
+  check(response.data?.answer.includes('system_apps.permissions.read')&&response.data.answer.includes('failed'),endpoint+' diagnoses the persisted permission read failure');
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

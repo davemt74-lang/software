@@ -2,10 +2,11 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/system-apps-v140.php';
+require_once __DIR__.'/agent-system-app-read-v1.php';
 
 const VP3_SYSTEM_APPS_V150='system-app-agent-integration-v150-20260930';
 
-function vp3_system_apps_agent_snapshot_v150(array $user,?PDO $pdo=null): array
+function vp3_system_apps_agent_snapshot_v150(array $user,?PDO $pdo=null,bool $readOnly=false): array
 {
     $pdo??=db();
     if(!$pdo||(int)($user['id']??0)<1)return [
@@ -13,7 +14,7 @@ function vp3_system_apps_agent_snapshot_v150(array $user,?PDO $pdo=null): array
       'counts'=>['available'=>0,'owned'=>0,'installed'=>0,'running'=>0,'hosted'=>0,'updates'=>0,'cleanup_pending'=>0],
       'apps'=>[],
     ];
-    $catalog=function_exists('vp3_system_apps_catalog_v200')?vp3_system_apps_catalog_v200($user,$pdo):vp3_system_apps_catalog_v140($user,$pdo);
+    $catalog=function_exists('vp3_system_apps_catalog_v200')?vp3_system_apps_catalog_v200($user,$pdo,$readOnly):vp3_system_apps_catalog_v140($user,$pdo,$readOnly);
     $apps=[];
     foreach($catalog['apps'] as $app){
         $ui=(array)($app['ui']??[]);
@@ -64,23 +65,26 @@ function vp3_system_apps_agent_snapshot_v150(array $user,?PDO $pdo=null): array
 
 function vp3_system_apps_agent_context_items_v150(array $user,string $query='',?PDO $pdo=null): array
 {
-    $snapshot=vp3_system_apps_agent_snapshot_v150($user,$pdo);
+    if(!has_permission('account.access',$user)||!has_permission('chat.access',$user))return [];
+    try{$snapshot=vp3_system_apps_agent_snapshot_v150($user,$pdo,true);}catch(Throwable $e){return [['source'=>'runtime:system-app-read-failure','title'=>'Stored System App projection unavailable','text'=>'The stored System App read failed. Do not treat this as an empty catalog, missing permission, or verified HomeServer health.']];}
     $counts=(array)$snapshot['counts'];
     $connection=(array)$snapshot['connection'];
     $lines=[
-      'HomeServer: '.(string)($connection['label']??ucfirst((string)($connection['state']??'unknown'))),
+      'Stored System App observations; live HomeServer status was not checked.',
+      'Recorded HomeServer connection: '.(string)($connection['label']??ucfirst((string)($connection['state']??'unknown'))),
       'Owned: '.(int)$counts['owned'].' · installed: '.(int)$counts['installed'].' · running: '.(int)$counts['running'].' · hosted: '.(int)$counts['hosted'],
       'Updates available: '.(int)$counts['updates'].' · cleanup pending: '.(int)$counts['cleanup_pending'],
     ];
     foreach((array)$snapshot['apps'] as $app){
         $detail=[
           (string)$app['name'],
-          'state '.(string)$app['state'],
+          'recorded state '.(string)$app['state'],
+          !empty($app['last_synced_at'])?'observed '.(string)$app['last_synced_at'].' UTC':'runtime unobserved',
           !empty($app['installed_version'])?'version '.(string)$app['installed_version']:'',
           !empty($app['release']['release_channel'])?'channel '.(string)$app['release']['release_channel']:'',
           !empty($app['update_available'])?'update available':'',
           !empty($app['hostname'])?'hosted at '.(string)$app['hostname']:'',
-          !empty($app['error'])?'issue '.(string)$app['error']:'',
+          !empty($app['error'])?'stored runtime error; review Apps diagnostics':'',
         ];
         $lines[]=implode(' · ',array_values(array_filter($detail,static fn($x)=>trim((string)$x)!=='')));
     }
@@ -88,7 +92,7 @@ function vp3_system_apps_agent_context_items_v150(array $user,string $query='',?
       'source'=>'system-apps:canonical',
       'title'=>'VP3 System Apps · canonical ownership, runtime and hosting state',
       'text'=>implode("\n",$lines),
-      'data'=>$snapshot,
+      'data'=>['stored_projection'=>true,'counts'=>$snapshot['counts']],
     ]];
 }
 
@@ -103,48 +107,11 @@ function vp3_system_apps_agent_intent_v150(string $query): bool
 function vp3_system_apps_agent_query_v150(string $query,array $user,int $conversationId=0,?PDO $pdo=null): array
 {
     if(!vp3_system_apps_agent_intent_v150($query))return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    $pdo??=db();
-    if(!$pdo)return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-
-    $snapshot=vp3_system_apps_agent_snapshot_v150($user,$pdo);
-    $apps=(array)$snapshot['apps'];
-    $q=mb_strtolower($query);
-    if(preg_match('/\b(?:vrss|feed)\b/i',$q))$apps=array_values(array_filter($apps,static fn($a)=>$a['app_key']==='vp3.feed'));
-    $filtered=$apps;
-    if(str_contains($q,'running'))$filtered=array_values(array_filter($apps,static fn($a)=>!empty($a['running'])));
-    elseif(str_contains($q,'installed'))$filtered=array_values(array_filter($apps,static fn($a)=>!empty($a['installed'])));
-    elseif(str_contains($q,'hosted')||str_contains($q,'subdomain')||str_contains($q,'domain'))$filtered=array_values(array_filter($apps,static fn($a)=>!empty($a['hosted'])));
-    elseif(str_contains($q,'update'))$filtered=array_values(array_filter($apps,static fn($a)=>!empty($a['update_available'])));
-    elseif(str_contains($q,'owned'))$filtered=array_values(array_filter($apps,static fn($a)=>!empty($a['owned'])));
-    elseif(str_contains($q,'available'))$filtered=array_values(array_filter($apps,static fn($a)=>(string)($a['availability']??'')==='available'));
-
-    $connection=(array)$snapshot['connection'];
-    $answer='HomeServer is '.mb_strtolower((string)($connection['label']??$connection['state']??'unknown')).'.';
-    if(!$filtered){
-        $answer.=" I do not see any System Apps matching that state.";
-    }else{
-        $rows=[];
-        foreach($filtered as $app){
-            $parts=[(string)$app['name'],ucfirst((string)$app['state'])];
-            if(!empty($app['installed_version']))$parts[]='v'.(string)$app['installed_version'];
-            if(!empty($app['update_available']))$parts[]='update available';
-            if(!empty($app['hostname']))$parts[]=(string)$app['hostname'];
-            if(!empty($app['cleanup_pending']))$parts[]='cleanup pending';
-            $rows[]='• '.implode(' · ',$parts);
-        }
-        $answer.="\n".implode("\n",$rows);
-    }
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'system_apps.status',$query,'success',[
-      'count'=>count($filtered),'connection_state'=>(string)($connection['state']??'unknown')
-    ],$conversationId);
-    return [
-      'handled'=>true,
-      'answer'=>$answer,
-      'stem_media'=>[],'media'=>[],
-      'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],
-      'sources'=>[['source'=>'system-apps:canonical','title'=>'VP3 System Apps']],
-      'system_apps'=>$snapshot,
-    ];
+    $view='all';foreach(['running','installed','hosted','updates','owned','available'] as $v)if(str_contains(mb_strtolower($query),$v)){$view=$v;break;}
+    $terms=preg_replace('/\b(?:what|which|show|list|status|running|installed|owned|available|hosted|hosting|subdomain|domain|updates?|offline|problem|issue|health|where|open|my|apps?|applications?|do|i|have|are|the|for)\b/i',' ',$query);
+    $terms=trim(preg_replace('/\s+/',' ',$terms)," \t\n\r\0\x0B?.!");
+    if(preg_match('/\b(?:vrss|feed)\b/i',$terms))$terms='vp3.feed';
+    return vp3_system_app_agent_legacy_v1($user,$conversationId,'system_apps.catalog.read',$terms,$view,null,$pdo);
 }
 
 function vp3_system_apps_agent_event_title_v150(array $row): array

@@ -268,7 +268,7 @@ function homeserver_vp3_remote_operation_for_user(int $userId,string $operation,
     return homeserver_vp3_remote_operation($relay,$operation,$payload,$homeServerToken);
 }
 
-function homeserver_vp3_connection(int $userId): ?array
+function homeserver_vp3_connection(int $userId,bool $readOnly=false): ?array
 {
     if ($userId < 1) {
         return null;
@@ -277,7 +277,8 @@ function homeserver_vp3_connection(int $userId): ?array
     if (!$pdo) {
         return null;
     }
-    homeserver_vp3_ensure_schema($pdo);
+    if($readOnly){if(!table_exists('homeserver_connections'))throw new RuntimeException('HomeServer connection storage requires upgrade.',409);}
+    else homeserver_vp3_ensure_schema($pdo);
     $stmt = $pdo->prepare('SELECT * FROM homeserver_connections WHERE user_id=? LIMIT 1');
     $stmt->execute([$userId]);
     $row = $stmt->fetch();

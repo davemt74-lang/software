@@ -35,6 +35,9 @@ $testPdo->exec("CREATE TABLE homeserver_connections (user_id INT UNSIGNED NOT NU
 $testPdo->exec("INSERT INTO users(id,email,display_name,role) VALUES (1,'owner@example.com','Owner','user'),(2,'other@example.com','Other','user')");
 $testPdo->exec("INSERT INTO homeserver_connections(user_id,status,last_seen_at) VALUES (1,'connected',NOW()),(2,'connected',NOW())");
 
+require __DIR__.'/fixtures/system-app-chat-auth-v1.php';
+system_app_chat_auth_fixture_v1($testPdo,42);
+
 require dirname(__DIR__).'/includes/cloud-hosting-v100.php';
 require dirname(__DIR__).'/includes/cloud-hosting-v110.php';
 require dirname(__DIR__).'/includes/cloud-hosting-v120.php';
@@ -126,7 +129,7 @@ $otherAcquire=vp3_system_apps_agent_prepare_v160($other,'ownership.acquire','vp3
 try{vp3_system_apps_agent_confirm_v160($owner,(string)$otherAcquire['confirmation_code'],7,null,$testPdo);throw new RuntimeException('Another user confirmation code was accepted.');}
 catch(RuntimeException $e){if($e->getMessage()==='Another user confirmation code was accepted.')throw $e;}
 
-require dirname(__DIR__).'/includes/vrss-v2b.php';
+require_once dirname(__DIR__).'/includes/vrss-v2b.php';
 $vrssCalls=[];
 $vrssRemote=static function(int $uid,string $operation,array $payload)use(&$vrssCalls):array{
     if($uid!==1||$operation!=='apps.control.invoke'||$payload['app_key']!=='vp3.feed')throw new RuntimeException('Invalid VRSS remote target.');

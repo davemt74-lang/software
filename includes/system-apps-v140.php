@@ -5,10 +5,10 @@ require_once __DIR__.'/system-apps-v130.php';
 
 const VP3_SYSTEM_APPS_V140='system-app-product-ux-v140-20260930';
 
-function vp3_system_apps_connection_snapshot_v140(int $userId,?PDO $pdo=null): array
+function vp3_system_apps_connection_snapshot_v140(int $userId,?PDO $pdo=null,bool $readOnly=false): array
 {
     $pdo??=db();
-    $row=function_exists('homeserver_vp3_connection')?homeserver_vp3_connection($userId):null;
+    $row=function_exists('homeserver_vp3_connection')?homeserver_vp3_connection($userId,$readOnly):null;
     if(!$row)return ['state'=>'unpaired','connected'=>false,'paired'=>false,'last_seen_at'=>null,'label'=>'Not paired'];
     $status=strtolower(trim((string)($row['status']??'')));
     $paired=!in_array($status,['unpaired','revoked','disconnected',''],true);
@@ -48,11 +48,11 @@ function vp3_system_apps_view_item_v140(array $app,array $connection): array
     ];
 }
 
-function vp3_system_apps_catalog_v140(?array $user=null,?PDO $pdo=null): array
+function vp3_system_apps_catalog_v140(?array $user=null,?PDO $pdo=null,bool $readOnly=false): array
 {
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    $catalog=vp3_system_apps_catalog_v120($user,$pdo);
-    $connection=vp3_system_apps_connection_snapshot_v140((int)($user['id']??0),$pdo);
+    $catalog=vp3_system_apps_catalog_v120($user,$pdo,$readOnly);
+    $connection=vp3_system_apps_connection_snapshot_v140((int)($user['id']??0),$pdo,$readOnly);
     $counts=['running'=>0,'hosted'=>(int)($catalog['counts']['hosted']??0),'updates'=>0,'cleanup_pending'=>0];
     foreach($catalog['apps'] as &$app){
         $app['ui']=vp3_system_apps_view_item_v140($app,$connection);

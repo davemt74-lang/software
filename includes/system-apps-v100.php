@@ -144,13 +144,13 @@ function vp3_system_apps_eligible_v100(array $app,?array $user): bool
     return false;
 }
 
-function vp3_system_apps_catalog_v100(?array $user=null,?PDO $pdo=null): array
+function vp3_system_apps_catalog_v100(?array $user=null,?PDO $pdo=null,bool $readOnly=false): array
 {
     $pdo??=db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    if(!vp3_system_apps_schema_ready_v100($pdo))vp3_system_apps_ensure_schema_v100($pdo);
+    if(!vp3_system_apps_schema_ready_v100($pdo)){if($readOnly)throw new RuntimeException('System App storage requires upgrade.',409);vp3_system_apps_ensure_schema_v100($pdo);}
     // Existing installations already have the tables; seed the new included app once.
-    if($pdo->query("SELECT current_version FROM vp3_system_app_catalog WHERE app_key='vp3.feed' LIMIT 1")->fetchColumn()!=='1.8.0')vp3_system_apps_seed_v100($pdo);
+    if(!$readOnly&&$pdo->query("SELECT current_version FROM vp3_system_app_catalog WHERE app_key='vp3.feed' LIMIT 1")->fetchColumn()!=='1.8.0')vp3_system_apps_seed_v100($pdo);
     $userId=(int)($user['id']??0);
     $stmt=$pdo->prepare("SELECT c.*,o.id ownership_id,o.status ownership_status,o.source_kind ownership_source,
       o.acquired_at,o.revoked_at

@@ -89,7 +89,7 @@ function vp3_system_apps_owned_row_v110(int $userId,string $appKey,?PDO $pdo=nul
       WHERE o.user_id=? AND o.status='active' AND c.app_key=? AND c.is_active=1 LIMIT 1");
     $stmt->execute([$userId,strtolower(trim($appKey))]);
     $row=$stmt->fetch();
-    if(!$row)throw new RuntimeException('You must own this VP3 system app before installing it.');
+    if(!$row)throw new RuntimeException('You must own this VP3 system app before installing it.',403);
     return $row;
 }
 
@@ -290,11 +290,11 @@ function vp3_system_apps_reconcile_v110(int $userId,?callable $remote=null,?PDO 
     return ['contract'=>'vp3.system-app-reconciliation.v1','count'=>count($items),'items'=>$items];
 }
 
-function vp3_system_apps_catalog_v110(?array $user=null,?PDO $pdo=null): array
+function vp3_system_apps_catalog_v110(?array $user=null,?PDO $pdo=null,bool $readOnly=false): array
 {
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    if(!vp3_system_apps_schema_ready_v110($pdo))vp3_system_apps_ensure_schema_v110($pdo);
-    $catalog=vp3_system_apps_catalog_v100($user,$pdo);
+    if(!vp3_system_apps_schema_ready_v110($pdo)){if($readOnly)throw new RuntimeException('System App storage requires upgrade.',409);vp3_system_apps_ensure_schema_v110($pdo);}
+    $catalog=vp3_system_apps_catalog_v100($user,$pdo,$readOnly);
     $userId=(int)($user['id']??0);
     $installed=0;$updates=0;
     foreach($catalog['apps'] as &$app){
