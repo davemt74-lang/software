@@ -33,7 +33,8 @@ function vp3_capability_reason_v1(string $reason): string
         'unpaired'=>'HomeServer is not paired','offline'=>'HomeServer is offline','credentials_unavailable'=>'HomeServer pairing credentials are unavailable',
         'invalid_response'=>'HomeServer capability response could not be verified','remote_unavailable'=>'HomeServer did not complete the capability check',
         'scope_restricted'=>'the authenticated HomeServer scope does not allow this operation',
-        'subscription_required'=>'your subscription does not include this phone capability',
+        'subscription_required'=>'your subscription does not include this capability',
+        'setup_required'=>'an active schedule or Team pool must be configured first',
         'confirmation_surface_required'=>'use the Phone inbox approval screen; Chat has no SMS send adapter',
     ][$reason]??'current readiness is unknown';
 }
@@ -80,6 +81,21 @@ function vp3_capability_live_user_v1(PDO $pdo,array $user,array $principal,array
     if($agentId>0&&function_exists('vp3_agent_chat_resolve_agent_v380'))$agent=vp3_agent_chat_resolve_agent_v380($pdo,$live,$agentId);
     $cid=max(0,(int)($context['conversation_id']??0));
     if($cid>0&&function_exists('vp3_agent_chat_conversation_v380')&&!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent))throw new RuntimeException('Conversation access changed. No action was taken.',403);
+    return $live;
+}
+
+/** Existing control services share the same live owner/Agent/conversation recheck. */
+function vp3_capability_control_user_v1(PDO $pdo,array $user,int $conversationId): array
+{
+    $snapshot=vp3_capability_current_v1($user);$aid=0;
+    if($snapshot&&(int)$snapshot['conversation_id']===$conversationId)$aid=(int)$snapshot['agent_id'];
+    elseif($conversationId>0){
+        $q=$pdo->prepare('SELECT user_agent_id FROM chat_conversations WHERE id=? AND user_id=?');$q->execute([$conversationId,(int)$user['id']]);$row=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$row)throw new RuntimeException('Conversation access changed.',403);$aid=(int)($row['user_agent_id']??0);
+    }
+    $principal=['kind'=>$aid>0?'user_agent':'system','owner_user_id'=>(int)$user['id'],'agent_id'=>$aid];
+    $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$conversationId],null);
+    if(!has_permission('account.access',$live))throw new RuntimeException('Account access changed.',403);
     return $live;
 }
 

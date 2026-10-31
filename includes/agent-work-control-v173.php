@@ -13,6 +13,8 @@ const VP3_AGENT_WORK_PRIORITY_NORMAL_V173=50;
 
 require_once __DIR__.'/agent-workflow-runs-v1400.php';
 require_once __DIR__.'/agent-job-engine-v1900.php';
+require_once __DIR__.'/agent-tool-receipts-v1.php';
+require_once __DIR__.'/agent-capability-chat-v1.php';
 
 function agent_work_control_schema_ready_v173(?PDO $pdo=null): bool
 {
@@ -327,9 +329,11 @@ function agent_work_control_chat_v173(string $query,array $user,int $conversatio
     $command=agent_work_control_command_v173($query);
     if(($command['action']??'')==='')return $empty;
     $pdo=db();
-    if(!$pdo)return ['handled'=>true,'answer'=>'Agent Work Control is temporarily unavailable because the database is unavailable.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+    if(!$pdo)return ['handled'=>true,'answer'=>'Agent Work Control is temporarily unavailable because the database is unavailable.','tool_receipt'=>vp3_tool_receipt_v1($command['action']==='inspect'?'workflows.read':'workflows.manage',$command['action'],'failed','execution_failed'),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
     $runId=(int)$command['run_id'];$action=(string)$command['action'];
     try{
+        $user=vp3_capability_control_user_v1($pdo,$user,$conversationId);
+        if(!has_permission('account.access',$user)||!has_permission('chat.access',$user)||(isset($user['is_active'])&&empty($user['is_active'])))throw new RuntimeException('Work control is not permitted for this Chat account.',403);
         $run=match($action){
             'approve'=>agent_work_control_approve_v173($pdo,$user,$runId),
             'pause'=>agent_work_control_pause_v173($pdo,$user,$runId),
@@ -340,11 +344,18 @@ function agent_work_control_chat_v173(string $query,array $user,int $conversatio
             'priority'=>agent_work_control_priority_v173($pdo,$user,$runId,(string)($command['value']??'normal')),
             default=>agent_work_control_inspect_v173($pdo,$user,$runId),
         };
+        if((int)($run['id']??0)!==$runId)throw new RuntimeException('The workflow control result could not be verified.');
+        if($action==='pause'&&($run['status']??'')!=='paused'&&!(($run['status']??'')==='executing'&&!empty($run['pause_requested_at'])))throw new RuntimeException('The pause outcome changed before it could be verified. Inspect the workflow before retrying.');
+        $receiptOp=$action==='pause'&&($run['status']??'')==='executing'?'pause_request':$action;
+        $receipt=vp3_tool_receipt_v1($action==='inspect'?'workflows.read':'workflows.manage',$receiptOp,$action==='inspect'?'read_complete':'completed','',$runId,1);
         $answer=agent_work_control_summary_v173($run,$action);
         if(function_exists('agent_tool_log'))agent_tool_log($user,'agent_work_control_v173',$query,'completed',['action'=>$action,'run_id'=>$runId,'status'=>(string)($run['status']??'')],$conversationId>0?$conversationId:null);
-        return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-workflow:'.$runId,'title'=>'Agent Work Queue #'.$runId]]];
-    }catch(RuntimeException $e){
+        return ['handled'=>true,'answer'=>$answer,'tool_receipt'=>$receipt,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-workflow:'.$runId,'title'=>'Agent Work Queue #'.$runId]]];
+    }catch(Throwable $e){
         if(function_exists('agent_tool_log'))agent_tool_log($user,'agent_work_control_v173',$query,'blocked',['action'=>$action,'run_id'=>$runId,'error'=>$e->getMessage()],$conversationId>0?$conversationId:null);
-        return ['handled'=>true,'answer'=>$e->getMessage(),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-workflow:'.$runId,'title'=>'Agent Work Queue #'.$runId]]];
+        $reason=$e->getCode()===403?'permission_denied':($action==='inspect'?'execution_failed':'outcome_unverified');$status=$reason==='permission_denied'?'blocked':'failed';
+        try{if($reason!=='permission_denied'&&!agent_work_control_schema_ready_v173($pdo)){$reason='upgrade_required';$status='blocked';}}catch(Throwable $ignored){}
+        $message=$e instanceof PDOException?'The workflow control outcome could not be verified. Inspect its current state before retrying.':$e->getMessage();
+        return ['handled'=>true,'answer'=>$message,'tool_receipt'=>vp3_tool_receipt_v1($action==='inspect'?'workflows.read':'workflows.manage',$action,$status,$reason),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-workflow:'.$runId,'title'=>'Agent Work Queue #'.$runId]]];
     }
 }
