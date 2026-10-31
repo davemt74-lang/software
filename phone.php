@@ -65,6 +65,7 @@ $notice=flash('notice');
 <?php $memberHeaderUser=$user;$memberHeaderTitle='Phone & Messaging';$memberHeaderSubtitle='Your number, agent and package';$memberHeaderActiveKey='account';require __DIR__.'/includes/member-header.php'; ?>
 <section class="vp3-phone-canvas"><div class="vp3-phone-wrap">
 <section class="vp3-phone-card"><h1>Your Agent Phone</h1><p>Choose an agent and request a real phone number inside VP3. Numbers are part of your monthly subscription package. An administrator reviews each carrier purchase before billing occurs.</p>
+<p><a href="<?= e(url('/phone-inbox.php')) ?>">Open your SMS inbox</a> · Incoming messages appear once your administrator activates the signed Twilio webhook.</p>
 <?php if($notice): ?><div class="vp3-phone-alert vp3-phone-success" role="status"><?= e($notice) ?></div><?php endif; ?>
 <?php if($error): ?><div class="vp3-phone-alert" role="alert"><?= e($error) ?></div><?php endif; ?>
 <?php if(!$ready): ?><div class="vp3-phone-alert">The phone registry is pending a Cloud upgrade.</div><?php endif; ?>

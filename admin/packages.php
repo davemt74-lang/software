@@ -57,6 +57,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                     // A blank phone limit must not silently grant unlimited numbers.
                     if($key==='phone.numbers'&&array_key_exists($key,$enabled)&&($limit===null||$limit<1))
                         throw new RuntimeException('Set an explicit included phone-number quantity (at least 1).');
+                    if($key==='phone.sms.monthly'&&array_key_exists('phone.sms',$enabled)
+                        &&(!array_key_exists($key,$enabled)||$limit===null||$limit<1))
+                        throw new RuntimeException('SMS packages require an explicit monthly outgoing-text allowance (at least 1).');
                     $upsert->execute([$packageId,$key,array_key_exists($key,$enabled)?1:0,$limit]);
                 }
                 // Defensive cleanup for rows from pre-v3.40 package editors.

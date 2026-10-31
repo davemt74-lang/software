@@ -49,6 +49,8 @@ require_once __DIR__ . '/includes/video-meetings-followthrough-verification-v182
 require_once __DIR__ . '/includes/video-meetings-cross-meeting-continuity-v18210.php';
 require_once __DIR__ . '/includes/video-meetings-closure-recurring-continuity-v18220.php';
 require_once __DIR__ . '/includes/phone-cloud-v100.php';
+require_once __DIR__ . '/includes/phone-sms-v110.php';
+require_once __DIR__ . '/includes/phone-sms-outbound-v120.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(): bool
@@ -136,6 +138,8 @@ function vp3_upgrade_complete(): bool
         && studio_voice_profile_schema_ready()
         && user_agent_system_schema_ready_v236()
         && vp3_phone_schema_ready_v100()
+        && vp3_phone_sms_schema_ready_v110()
+        && vp3_phone_sms_outbound_ready_v120()
         && vp3_user_agent_lifecycle_schema_ready_v390()
         && vp3_agent_memory_scope_schema_ready_v410()
         && agent_scheduling_schema_ready_v430()
@@ -286,6 +290,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             studio_voice_profile_ensure_schema();
             user_agent_system_ensure_schema_v236();
             vp3_phone_ensure_schema_v100($pdo);
+            vp3_phone_sms_ensure_schema_v110($pdo);
+            vp3_phone_sms_outbound_ensure_schema_v120($pdo);
             agent_voice_preferences_schema($pdo);
             vp3_user_agent_lifecycle_ensure_schema_v390();
             vp3_agent_memory_scope_ensure_schema_v410();
