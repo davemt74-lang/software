@@ -110,6 +110,20 @@ jobs:
           node tests/phone-sms-ph3b-contract.mjs
           php tests/phone-sms-ph3b-runtime.php
 
+      - name: Incoming Voice and Voicemail PH3C lint and contracts
+        run: |
+          php -l includes/phone-voice-v130.php
+          php -l api/phone-voice-inbound-v130.php
+          php -l api/phone-voice-complete-v130.php
+          php -l api/phone-voice-recording-v130.php
+          php -l api/phone-voice-audio-v130.php
+          php -l phone-calls.php
+          php -l admin/phone.php
+          php -l phone.php
+          php -l upgrade.php
+          node tests/phone-voice-ph3c-contract.mjs
+          php tests/phone-voice-ph3c-runtime.php
+
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
 

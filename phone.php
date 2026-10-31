@@ -73,10 +73,11 @@ $notice=flash('notice');
 <div class="vp3-phone-two">
 <section class="vp3-phone-card"><h2>My registered number<?= count((array)$state['numbers'])===1?'':'s' ?></h2>
 <?php if(!empty($state['numbers'])): ?>
-<?php foreach($state['numbers'] as $number): ?><div class="vp3-phone-number"><?= e((string)$number['phone_e164']) ?></div><span class="vp3-phone-pill"><?= e((string)$number['status']) ?></span><p>Assigned to <?= e((string)($number['agent_name']?:'your Agent')) ?> · Calls/SMS are not active until gateway certification.</p><?php endforeach; ?>
+<?php foreach($state['numbers'] as $number): ?><div class="vp3-phone-number"><?= e((string)$number['phone_e164']) ?></div><span class="vp3-phone-pill"><?= e((string)$number['status']) ?></span><p>Assigned to <?= e((string)($number['agent_name']?:'your Agent')) ?> · Incoming calls: <?= (int)$number['voice_enabled']===1?'voicemail on':'off' ?> · SMS: <?= (int)$number['sms_enabled']===1?'on':'off' ?></p><?php endforeach; ?>
 <?php else: ?><p>No phone number has been assigned yet.</p><?php endif; ?>
 <?php if($state['request']): ?><p><strong>Pending request:</strong> <?= e((string)$state['request']['phone_e164']) ?> for <?= e((string)($state['request']['agent_name']?:'your Agent')) ?>.</p><?php endif; ?>
 </section>
+<section class="vp3-phone-card"><h2>Phone activity</h2><p><a href="<?= e(url('/phone-calls.php')) ?>">View calls and voicemail</a> · <a href="<?= e(url('/phone-inbox.php')) ?>">Open SMS inbox</a></p></section>
 <section class="vp3-phone-card"><h2>Subscription allowance</h2>
 <?php $plan=$state['package'];if($plan['included']): ?>
 <p><strong><?= $plan['limit']===null?'Unlimited':(int)$plan['limit'] ?></strong> agent phone number<?= (int)($plan['limit']??2)===1?'':'s' ?> included.</p>
