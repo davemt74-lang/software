@@ -57,16 +57,17 @@ function knowledge_retrieval_v162_score(array $row,array $terms,string $query): 
     if($matched>1)$score+=min(6.0,(float)$matched*0.75);if($terms!==[]&&$matched===count($terms))$score+=4.0;return $score;
 }
 
-function knowledge_retrieval_v162_search(PDO $pdo,int $userId,string $query,array $scope,int $limit=6): array
+function knowledge_retrieval_v162_search(PDO $pdo,int $userId,string $query,array $scope,int $limit=6,bool $strict=false): array
 {
-    if($userId<1||($scope['mode']??'off')==='off'||!table_exists('knowledge_items')||!table_exists('knowledge_chunks'))return [];
+    if($userId<1||($scope['mode']??'off')==='off')return [];
+    if(!table_exists('knowledge_items')||!table_exists('knowledge_chunks')){if($strict)throw new RuntimeException('Knowledge storage is unavailable.');return [];}
     $limit=max(1,min(8,$limit));$query=mb_substr(trim($query),0,1000);$terms=knowledge_retrieval_v162_terms($query);if($query===''||$terms===[])return [];
     $folderId=0;if(($scope['mode']??'')==='folder'){$folderId=max(0,(int)($scope['folder_id']??0));if($folderId<1||knowledge_retrieval_v162_folder($pdo,$userId,$folderId)===null)return [];}
     $sql='SELECT kc.id AS chunk_id,kc.knowledge_id,kc.chunk_index,kc.chunk_text,ki.title,ki.folder_id,ki.updated_at,f.folder_name FROM knowledge_chunks kc INNER JOIN knowledge_items ki ON ki.id=kc.knowledge_id LEFT JOIN artist_transcript_folders_v177 f ON f.id=ki.folder_id AND f.created_by_user_id=ki.created_by_user_id WHERE ki.created_by_user_id=:owner_id AND ki.knowledge_scope=\'personal\' ';
     $params=[':owner_id'=>$userId];if($folderId>0){$sql.='AND ki.folder_id=:folder_id ';$params[':folder_id']=$folderId;}$likes=[];
     foreach(array_slice($terms,0,8) as $index=>$term){$key=':term_'.$index;$likes[]='(LOWER(kc.chunk_text) LIKE '.$key.' OR LOWER(ki.title) LIKE '.$key.')';$params[$key]='%'.$term.'%';}
     if($likes)$sql.='AND ('.implode(' OR ',$likes).') ';$sql.='ORDER BY ki.updated_at DESC,kc.id DESC LIMIT 160';
-    try{$stmt=$pdo->prepare($sql);$stmt->execute($params);$rows=$stmt->fetchAll(PDO::FETCH_ASSOC)?:[];}catch(Throwable $e){return [];}
+    try{$stmt=$pdo->prepare($sql);$stmt->execute($params);$rows=$stmt->fetchAll(PDO::FETCH_ASSOC)?:[];}catch(Throwable $e){if($strict)throw new RuntimeException('Knowledge search could not be verified.',0,$e);return [];}
     $ranked=[];foreach($rows as $row){$score=knowledge_retrieval_v162_score($row,$terms,$query);if($score<=0.0)continue;$row['_score']=$score;$ranked[]=$row;}
     usort($ranked,static function(array $a,array $b):int{$cmp=($b['_score']??0)<=>($a['_score']??0);return $cmp!==0?$cmp:((int)($b['chunk_id']??0)<=>(int)($a['chunk_id']??0));});
     $results=[];$seen=[];foreach($ranked as $row){$itemId=(int)($row['knowledge_id']??0);if($itemId<1)continue;if(isset($seen[$itemId])&&count($results)<min(3,$limit))continue;$seen[$itemId]=true;$results[]=['source'=>'cloud','item_id'=>$itemId,'chunk_id'=>(int)($row['chunk_id']??0),'chunk_index'=>max(0,(int)($row['chunk_index']??0)),'title'=>trim((string)($row['title']??'Untitled Knowledge'))?:'Untitled Knowledge','folder_id'=>max(0,(int)($row['folder_id']??0)),'folder_name'=>trim((string)($row['folder_name']??'')),'excerpt'=>knowledge_retrieval_v162_excerpt((string)($row['chunk_text']??'')),'score'=>round((float)$row['_score'],3),'updated_at'=>$row['updated_at']??null];if(count($results)>=$limit)break;}
@@ -114,7 +115,7 @@ function knowledge_retrieval_v162_citations(array $results): array
 function knowledge_retrieval_v162_strip_legacy_personal(PDO $pdo,int $userId,array $context): array
 {
     if($userId<1||!$context)return $context;$ids=[];foreach($context as $entry){if(is_array($entry)&&preg_match('/^knowledge:(\d+)$/',(string)($entry['source']??''),$m))$ids[(int)$m[1]]=true;}if(!$ids)return $context;
-    $personal=[];try{$idList=array_keys($ids);$marks=implode(',',array_fill(0,count($idList),'?'));$stmt=$pdo->prepare("SELECT id FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal' AND id IN ({$marks})");$stmt->execute(array_merge([$userId],$idList));foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $id)$personal[(int)$id]=true;}catch(Throwable $e){return $context;}
+    $personal=[];try{$idList=array_keys($ids);$marks=implode(',',array_fill(0,count($idList),'?'));$stmt=$pdo->prepare("SELECT id FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal' AND id IN ({$marks})");$stmt->execute(array_merge([$userId],$idList));foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $id)$personal[(int)$id]=true;}catch(Throwable $e){return array_values(array_filter($context,static fn($entry)=>!is_array($entry)||!preg_match('/^knowledge:\d+$/',(string)($entry['source']??''))));}
     return array_values(array_filter($context,static function($entry)use($personal):bool{if(!is_array($entry))return true;$source=(string)($entry['source']??'');if(!preg_match('/^knowledge:(\d+)$/',$source,$m))return true;return !isset($personal[(int)$m[1]]);}));
 }
 
@@ -124,10 +125,10 @@ function knowledge_retrieval_v162_for_chat(PDO $pdo,array $user,array $principal
     if($uid<1||!knowledge_retrieval_v162_owner_session($user,$principal))return $empty;
     $context=knowledge_retrieval_v162_strip_legacy_personal($pdo,$uid,$baseContext);
     if(($scope['mode']??'off')==='folder'&&knowledge_retrieval_v162_folder($pdo,$uid,(int)$scope['folder_id'])===null)$scope=['mode'=>'off','folder_id'=>0];
-
-    $cloud=[];
+    $cloud=[];$cloudStatus='not_queried';
     $cloudAllowed=!function_exists('personal_knowledge_available')||personal_knowledge_available($user);
-    if($cloudAllowed)$cloud=knowledge_retrieval_v162_search($pdo,$uid,$query,$scope);
+    if(($scope['mode']??'off')==='off')$cloudStatus='scope_off';
+    elseif($cloudAllowed){try{$cloud=knowledge_retrieval_v162_search($pdo,$uid,$query,$scope,6,true);$cloudStatus=$cloud?'matches':'no_matches';}catch(Throwable $e){$cloudStatus='failed';$context[]=['source'=>'runtime:knowledge-read-failure','title'=>'Cloud Knowledge read unavailable','text'=>'Cloud Personal Knowledge search failed. Do not report it as an empty search, lost permission or absence of records. Other sources must be identified separately.'];}}else $cloudStatus='permission_denied';
     $annotations=capture_r5_retrieve($pdo,$user,$query,$scope);
     $annotationIds=array_filter(array_column($annotations,'item_id'));
     $cloud=array_merge($annotations,array_values(array_filter($cloud,static fn($r)=>!in_array($r['item_id'],$annotationIds,true))));
@@ -135,6 +136,8 @@ function knowledge_retrieval_v162_for_chat(PDO $pdo,array $user,array $principal
         foreach($cloud as $index=>$row)$cloud[$index]=homeserver_knowledge_v242_project_cloud_retrieval($uid,$row);
     }
 
+    // This legacy scope selects Cloud Personal Knowledge only. Canonical R6
+    // conversation scopes bypass this service and apply their own local fence.
     $homeState=['status'=>'not_queried','items'=>[]];
     if(function_exists('homeserver_knowledge_v242_agent_search'))$homeState=homeserver_knowledge_v242_agent_search($uid,$query,6);
     $home=is_array($homeState['items']??null)?$homeState['items']:[];
@@ -152,7 +155,7 @@ function knowledge_retrieval_v162_for_chat(PDO $pdo,array $user,array $principal
     $provenance=[];foreach($results as $r){$source=(string)($r['source']??'cloud');if($source!==''&&!in_array($source,$provenance,true))$provenance[]=$source;}
     return [
       'scope'=>$scope,'context'=>$context,'citations'=>knowledge_retrieval_v162_citations($results),
-      'provenance'=>$provenance,'homeserver_local_knowledge'=>(string)($homeState['status']??'not_queried')
+      'provenance'=>$provenance,'homeserver_local_knowledge'=>(string)($homeState['status']??'not_queried'),'cloud_search_status'=>$cloudStatus
     ];
 }
 
