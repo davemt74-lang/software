@@ -109,7 +109,9 @@ function vp3_system_apps_agent_query_v150(string $query,array $user,int $convers
     if(!vp3_system_apps_agent_intent_v150($query))return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
     $view='all';foreach(['running','installed','hosted','updates','owned','available'] as $v)if(str_contains(mb_strtolower($query),$v)){$view=$v;break;}
     $terms=preg_replace('/\b(?:what|which|show|list|status|running|installed|owned|available|hosted|hosting|subdomain|domain|updates?|offline|problem|issue|health|where|open|my|apps?|applications?|do|i|have|are|the|for)\b/i',' ',$query);
-    return vp3_system_app_agent_legacy_v1($user,$conversationId,'system_apps.catalog.read',trim(preg_replace('/\s+/',' ',$terms)),$view,null,$pdo);
+    $terms=trim(preg_replace('/\s+/',' ',$terms)," \t\n\r\0\x0B?.!");
+    if(preg_match('/\b(?:vrss|feed)\b/i',$terms))$terms='vp3.feed';
+    return vp3_system_app_agent_legacy_v1($user,$conversationId,'system_apps.catalog.read',$terms,$view,null,$pdo);
 }
 
 function vp3_system_apps_agent_event_title_v150(array $row): array

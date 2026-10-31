@@ -95,7 +95,7 @@ function vp3_system_apps_health_query_v170(string $query,array $user,int $conver
     if(!preg_match('/\b(?:app|apps|application|vp3 notes|vp3 inventory|vp3 checklists|notes|inventory|checklists)\b/i',$query))return $empty;
     if(!preg_match('/\b(?:health|healthy|diagnos|why|problem|issue|error|not working|broken|offline)\b/i',$query))return $empty;
     $terms=preg_replace('/\b(?:show|list|inspect|check|diagnose|health|healthy|diagnostics|why|is|are|my|app|apps|application|the|for|of|problem|issue|error|not working|broken|offline)\b/i',' ',$query);
-    return vp3_system_app_agent_legacy_v1($user,$conversationId,'system_apps.health.read',trim(preg_replace('/\s+/',' ',$terms)),'all',$remote,$pdo);
+    return vp3_system_app_agent_legacy_v1($user,$conversationId,'system_apps.health.read',trim(preg_replace('/\s+/',' ',$terms)," \t\n\r\0\x0B?.!"),'all',$remote,$pdo);
 }
 
 function vp3_system_apps_capability_v170(): array

@@ -35,6 +35,9 @@ $testPdo->exec("CREATE TABLE homeserver_connections (user_id INT UNSIGNED NOT NU
 $testPdo->exec("INSERT INTO users(id,email,display_name,role) VALUES (1,'owner@example.com','Owner','user'),(2,'other@example.com','Other','user')");
 $testPdo->exec("INSERT INTO homeserver_connections(user_id,status,last_seen_at) VALUES (1,'connected',NOW()),(2,'connected',NOW())");
 
+require __DIR__.'/fixtures/system-app-chat-auth-v1.php';
+system_app_chat_auth_fixture_v1($testPdo,42);
+
 require dirname(__DIR__).'/includes/cloud-hosting-v100.php';
 require dirname(__DIR__).'/includes/cloud-hosting-v110.php';
 require dirname(__DIR__).'/includes/cloud-hosting-v120.php';

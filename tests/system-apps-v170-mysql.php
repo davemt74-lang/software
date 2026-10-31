@@ -33,6 +33,9 @@ $testPdo->exec("CREATE TABLE homeserver_connections (user_id INT UNSIGNED NOT NU
 $testPdo->exec("INSERT INTO users(id,email,display_name,role) VALUES (1,'owner@example.com','Owner','user')");
 $testPdo->exec("INSERT INTO homeserver_connections(user_id,status,last_seen_at) VALUES (1,'connected',NOW())");
 
+require __DIR__.'/fixtures/system-app-chat-auth-v1.php';
+system_app_chat_auth_fixture_v1($testPdo,17);
+
 require dirname(__DIR__).'/includes/cloud-hosting-v100.php';
 require dirname(__DIR__).'/includes/cloud-hosting-v110.php';
 require dirname(__DIR__).'/includes/cloud-hosting-v120.php';
@@ -84,7 +87,7 @@ foreach($health['apps'] as $candidate)if($candidate['app_key']==='vp3.notes')$no
 if(!$notes||$notes['health_state']!=='healthy'||$notes['health_issues'])throw new RuntimeException('Recovered app did not project healthy state.');
 
 $diagnosis=vp3_system_apps_health_query_v170('why is Notes app not working?',$owner,17,null,$testPdo);
-if(empty($diagnosis['handled'])||!isset($diagnosis['system_app_health']['app']))throw new RuntimeException('Agent diagnostic query was not handled from canonical health state.');
+if(empty($diagnosis['handled'])||($diagnosis['tool_receipt']['status']??'')!=='read_complete'||($diagnosis['tool_receipt']['count']??0)!==1||!empty($diagnosis['tool_receipt']['changes_applied'])||!str_contains($diagnosis['answer'],'VP3 Notes')||!str_contains($diagnosis['answer'],'stored health classification')||!str_contains($diagnosis['answer'],'not live runtime'))throw new RuntimeException('Agent diagnostic query did not return a verified stored-health read.');
 
 $cap=vp3_system_apps_capability_v180();
 foreach(['transition_health_events','proactive_update_events','proactive_error_recovery_events','agent_health_context','agent_diagnostics','hosting_diagnostics_integration'] as $key){
