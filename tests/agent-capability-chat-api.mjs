@@ -12,6 +12,7 @@ fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'in
 fs.copyFileSync('tests/fixtures/phone-agent-schema-v1.php',path.join(tmp,'includes/phone-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/workflow-agent-schema-v1.php',path.join(tmp,'includes/workflow-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/record-agent-schema-v1.php',path.join(tmp,'includes/record-agent-schema-v1.php'));
+fs.copyFileSync('tests/fixtures/media-agent-schema-v1.php',path.join(tmp,'includes/media-agent-schema-v1.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
@@ -129,6 +130,25 @@ try{
   check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('Fixture local file'),endpoint+' does not replace a failed local read with a Cloud answer');
   response=await post(endpoint,'Did that work?',{...named,conversation_id:longfellowConversation},headers);
   check(response.data?.answer.includes('homeserver.read / files')&&response.data.answer.includes('failed'),endpoint+' diagnoses the failed local execution receipt');
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const context={...named,conversation_id:longfellowConversation,input_mode:'voice'},headers={'X-Fixture-Media-Ready':'1'};
+  response=await post(endpoint,'Read saved TV history',context,headers);
+  check(response.data?.tool_receipt?.capability==='tv.history.read'&&response.data.tool_receipt.status==='read_complete'&&response.data.answer.includes('Fixture Cheers')&&!response.data.answer.includes('SECRET')&&response.data.answer.includes('personal viewing unconfirmed'),endpoint+' recalls actual TV history with camera off');
+  response=await post(endpoint,'Read saved TV preferences',context,headers);
+  check(response.data?.tool_receipt?.capability==='tv.preferences.read'&&response.data.answer.includes('you confirmed this preference'),endpoint+' distinguishes confirmed preferences from screen observations');
+  for(const [phrase,cap] of [['Search local Music Server library','music.library.read'],['Search local Media Server library','media.library.read']]){
+   response=await post(endpoint,phrase,context,headers);
+   check(response.data?.tool_receipt?.capability===cap&&response.data.tool_receipt.status==='read_complete'&&!response.data.tool_receipt.changes_applied&&response.data.answer.includes('Playback has not been started'),endpoint+' reads '+cap+' without claiming playback');
+   for(const [mode,status] of [['empty','no_matches'],['malformed','failed'],['offline','failed']]){
+    response=await post(endpoint,phrase,context,{...headers,'X-Fixture-Media-Mode':mode});
+    check(response.data?.tool_receipt?.status===status&&!response.data.answer.includes('SECRET'),endpoint+' preserves '+cap+' '+mode+' execution evidence');
+   }
+   response=await post(endpoint,'Did that work?',context,headers);
+   check(response.data?.answer.includes(cap)&&response.data.answer.includes('failed'),endpoint+' diagnoses the actual '+cap+' failure');
+  }
+  response=await post(endpoint,'Can you play music on HomeServer?',context,headers);
+  check(response.data?.tool_receipt?.capability==='capabilities.inspect'&&response.data.answer.includes('browser player controls are separate')&&!response.data.answer.includes('Fixture local song'),endpoint+' playback capability question does not retrieve or play a track');
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/phone-agent-read-v1.php';
 require_once __DIR__.'/agent-integration-readiness-v1.php';
+require_once __DIR__.'/agent-media-read-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -42,6 +43,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     }
     $brain=vp3_capability_probe_v1(fn()=>agent_brain_schema_ready());
     $tasks=$brain!=='ready'?$brain:vp3_capability_probe_v1(fn()=>vp3_agent_memory_scope_schema_ready_v410($pdo));
+    $tv=vp3_capability_probe_v1(fn()=>table_exists('tv_watching_records_v1')&&table_exists('tv_watching_state_v1'));
     $work=vp3_capability_probe_v1(fn()=>agent_work_control_schema_ready_v173($pdo));
     $scheduling=vp3_scheduling_readiness_v1($pdo,$user);
     $transcripts=vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172'));
@@ -52,6 +54,11 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $screenReady=$screen!==null&&$screen['owner_key']===(string)$uid;
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
+        vp3_capability_row_v1('tv.history.read','Read saved TV observations','read','tv_chat_query_v1',has_permission('account.access',$user),$tv,['Account-owned timestamped observations; available with Eyes and camera off. Screen presence is not proof you watched.']),
+        vp3_capability_row_v1('tv.preferences.read','Read confirmed TV preferences and patterns','read','tv_chat_query_v1',has_permission('account.access',$user),$tv,['Explicit owner preferences are distinct from repeated confirmed viewing. No sensitive-trait inference.']),
+        vp3_capability_row_v1('tv.capture.manage','Manage TV capture through Eyes panel','write','tv_dispatch_v1',has_permission('account.access',$user),$tv==='ready'?'capture_surface_required':$tv,['Existing Eyes panel and browser camera/screen sharing approval are required. Chat reads do not start capture.']),
+        vp3_capability_row_v1('media.library.read','Read HomeServer Media Server library','read','vp3_media_server_agent_query_v270',has_permission('account.access',$user),'not_checked',['Live paired HomeServer read and operation permission checks happen on execution. Status/search only; no playback acknowledgement, folder grants or rescans.']),
+        vp3_capability_row_v1('music.library.read','Read HomeServer Music Server library','read','vp3_music_server_agent_query_v300',has_permission('account.access',$user),'not_checked',['Live HomeServer app identity and action receipt are required. Library search does not start playback; browser player controls are separate.']),
         vp3_capability_row_v1('reminders.manage','Personal reminders','write','reminder_chat_v1',true,$reminders,['Create, list, reschedule, snooze, complete, dismiss, cancel and delete.','In-app only; once, daily, weekdays and weekly. Done preserves future repeats.']),
         vp3_capability_row_v1('transcripts.highlight','Retain highlights and act on reviewed findings','write','vp3_transcript_reviewed_action_v1',has_permission('artist_listening.access',$user)&&function_exists('personal_capability_has_v242')&&personal_capability_has_v242('agent_brain.access',$user),$transcripts!=='ready'?$transcripts:$brain,['Raw highlights require saved transcript and Brain storage. Reviewed actions additionally require fresh saved analysis and existing destination permissions. Profile sharing requires Knowledge Access policy.']),
         vp3_capability_row_v1('transcripts.analyze','Analyze and research transcripts','write','vp3_transcript_analyze_v1',has_permission('artist_listening.access',$user),$analysis,['Explicit request only; uses existing transcript analysis engine and meeting AI policy. Provider readiness is checked on execution.']),
