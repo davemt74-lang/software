@@ -8,6 +8,7 @@ require_once dirname(__DIR__).'/includes/phone-voice-v130.php';
 require_once dirname(__DIR__).'/includes/phone-voice-conversation-v140.php';
 require_once dirname(__DIR__).'/includes/phone-voice-stream-v150.php';
 require_once dirname(__DIR__).'/includes/phone-voice-readiness-v160.php';
+require_once dirname(__DIR__).'/includes/phone-setup-v170.php';
 require_login();require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 $ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';$streamReadiness=null;
@@ -191,6 +192,21 @@ if ($ready) {
       FROM user_agents a INNER JOIN users u ON u.id=a.owner_user_id WHERE a.is_active=1
       ORDER BY u.display_name,a.display_name LIMIT 250')->fetchAll();
 }
+$callbackSaved=false;
+try {$callbackSaved=vp3_phone_voice_validate_url_v130(vp3_phone_voice_callback_url_v130())!=='';}
+catch (Throwable) {}
+$assigned=0;$voiceEnabled=0;
+foreach ($numbers as $number) {
+    if ((int)($number['owner_user_id']??0)>0 && (int)($number['agent_id']??0)>0) $assigned++;
+    if ((int)($number['voice_enabled']??0)===1) $voiceEnabled++;
+}
+$setupPlan=vp3_phone_setup_plan_v170([
+    'twilio_credentials_saved'=>$state['configured'],
+    'assigned_numbers'=>$assigned,
+    'voice_callback_saved'=>$callbackSaved,
+    'inbound_voice_enabled'=>$voiceEnabled,
+    'cloud_sip_saved'=>vp3_phone_stream_configured_v150(),
+]);
 $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.php';
 ?>
 <style>
@@ -209,14 +225,40 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
 .vp3-phone-admin .phone-table th,.vp3-phone-admin .phone-table td{padding:10px;border-bottom:1px solid #e5eaf0;text-align:left;vertical-align:top}
 .vp3-phone-admin .phone-table th{color:#596576}.vp3-phone-admin .phone-table form{display:grid;gap:6px;min-width:180px}
 .vp3-phone-admin .phone-scroll{overflow:auto}.vp3-phone-admin small{color:#66758a}
+.vp3-phone-admin .phone-setup-list{list-style:none;padding:0;margin:14px 0 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:10px}
+.vp3-phone-admin .phone-setup-step{background:#f7fafc;border:1px solid #dce6f0;border-radius:11px;padding:14px;min-width:0}
+.vp3-phone-admin .phone-setup-step h3{font-size:14px;margin:8px 0 6px;line-height:1.35}
+.vp3-phone-admin .phone-setup-step p{font-size:12px;margin:6px 0 12px}
+.vp3-phone-admin .phone-setup-state{display:inline-flex;align-items:center;padding:4px 8px;border-radius:99px;background:#e5edf7;color:#345370;font-size:11px;font-weight:800}
+.vp3-phone-admin .phone-setup-state.is-configured{background:#e4f7ec;color:#246845}
+.vp3-phone-admin .phone-setup-actions{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;font-weight:700}
+.vp3-phone-admin .phone-setup-actions a{color:#145a89;text-decoration:underline;text-underline-offset:3px}
 @media(max-width:640px){.vp3-phone-admin{padding:12px}.vp3-phone-admin .phone-card{padding:14px}.vp3-phone-admin .phone-table{min-width:620px}}
 </style>
 <div class="vp3-phone-admin">
   <?php if(!$ready): ?><div class="phone-alert" role="alert">Phone registry is not installed. <a href="<?= e(url('/upgrade.php')) ?>">Run the VP3 Cloud upgrade</a> before setting up Twilio.</div><?php endif; ?>
   <?php if($error!==''): ?><div class="phone-alert" role="alert"><?= e($error) ?></div><?php endif; ?>
   <?php if($connectionTest!==''): ?><div class="phone-alert phone-ok" role="status"><?= e($connectionTest) ?></div><?php endif; ?>
+  <section class="phone-card" id="setup" aria-labelledby="phone-setup-title">
+    <h2 id="phone-setup-title">PH3I-A · Set up calling from scratch</h2>
+    <p>You do not need a Twilio or LiveKit account to start preparing VP3. Follow the steps below when you are ready. No account creation, phone purchase or live call happens automatically.</p>
+    <p><strong>VP3 local configuration: <?= (int)$setupPlan['configured_local_steps'] ?>/<?= (int)$setupPlan['total_local_steps'] ?> checks saved.</strong>
+      <?= $setupPlan['local_configuration_ready']?'Configuration ready for provider verification.':'Provider accounts, phone routing or SIP settings still need attention.' ?>
+      Real calls are <strong>not certified</strong> by this checklist.</p>
+    <ol class="phone-setup-list">
+      <?php foreach($setupPlan['steps'] as $index=>$step): ?>
+        <li class="phone-setup-step">
+          <span class="phone-setup-state <?= $step['status']==='configured'?'is-configured':'' ?>"><?= (int)$index+1 ?> · <?= e($step['status']==='configured'?'Saved in VP3':($step['status']==='manual_unverified'?'Manual verification':'Action needed')) ?></span>
+          <h3><?= e($step['name']) ?></h3><p><?= e($step['description']) ?></p>
+          <div class="phone-setup-actions"><a href="<?= e($step['action_url']) ?>"><?= e($step['action_label']) ?></a>
+            <?php if(isset($step['guide_url'])): ?><a href="<?= e($step['guide_url']) ?>" rel="noopener noreferrer" target="_blank"><?= e($step['guide_label']) ?></a><?php endif; ?>
+          </div>
+        </li>
+      <?php endforeach; ?>
+    </ol>
+  </section>
   <div class="phone-grid">
-    <section class="phone-card">
+    <section class="phone-card" id="twilio-account">
       <h2>Twilio platform account</h2>
       <p>One platform-managed Twilio connection for now. Credentials stay encrypted on the Cloud server; they are not exposed to agents or users.</p>
       <p><strong><?= $state['configured']?'Connected credentials':'Not connected' ?></strong> · <?= e((string)$state['credential_state']) ?></p>
