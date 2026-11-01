@@ -35,6 +35,12 @@ try{
   check(data?.ok===true&&data.answer.includes('Personal reminders: ready'),endpoint+' uses production discovery before legacy reminder routing: '+body);
   check((await state()).reminders===0,endpoint+' ability question does not save a reminder');
  }
+ for(const endpoint of ['chat-v236.php','chat-stream-v121.php','chat.php']){
+  const before=await state(),{data,body}=await post(endpoint,'Learn my voice');
+  check(data?.ok===true&&data.actions?.some(a=>a.type==='voice_enrollment'&&a.auto===false),'guided voice setup uses the actual '+endpoint+': '+body);
+  check(data.tool_receipt?.capability==='voice.profiles.enroll'&&data.tool_receipt?.status==='clarification_required'&&!data.tool_receipt.changes_applied,'voice setup receipt does not claim microphone capture or profile save');
+  check((await state()).reminders===before.reminders,'voice setup does not invoke reminder writes');
+ }
  let response=await post('chat-v236.php','Can you create reminders?',{}, {'X-Fixture-Model-Fail':'1'});check(response.data?.answer.includes('No action was taken')&&(await state()).reminders===0,'failed discovery inference cannot fall through to an unintended mutation');
  response=await post('chat-v236.php','Remind me to stretch in two minutes');check(response.data?.ok===true&&response.data.answer.includes('Saved reminder #')&&(await state()).reminders===1,'actual action request reaches production reminder executor once: '+response.body);
  const savedConversation=response.data.conversation_id;check(response.data.tool_receipt?.status==='completed'&&response.data.tool_receipt.changes_applied,'typed endpoint exposes only the real successful mutation receipt');

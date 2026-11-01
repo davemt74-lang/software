@@ -82,6 +82,7 @@ function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
+        if($q==='Learn my voice')return ['ok'=>true,'answer'=>json_encode(['operation'=>'voice_profile','ids'=>['voice.profiles.enroll'],'action'=>'prepare'])];
         if($q==='Load from the asteroid you saved me')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'open','destination'=>'stem_studio','query'=>'From the asteroid you saved me'])];
         if($q==='Offer to open that track in Stem Studio')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'prepare','destination'=>'stem_studio','track_id'=>9])];
         if($q==='Yes open it')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'confirm'])];
