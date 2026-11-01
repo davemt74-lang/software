@@ -79,7 +79,7 @@
     return !!captureTicket;
   }
   function releaseCapture(){captureTicket?.release();captureTicket=null;}
-  let inputTrackMode='default';
+  let inputTrackMode='default',enrollmentPcmOnly=false;
   let inputContext=null;
   let inputAnalyser=null;
   let inputMonitorFrame=0;
@@ -550,7 +550,7 @@
   }
 
   function startListening(reason='manual'){
-    clearRestart();if(!voiceOn||responseWindowClosing||processing||speaking||textBusy||voiceSubmitPending||bargeCapturing||recognitionStarting||recognitionListening)return false;
+    clearRestart();if(enrollmentPcmOnly||!voiceOn||responseWindowClosing||processing||speaking||textBusy||voiceSubmitPending||bargeCapturing||recognitionStarting||recognitionListening)return false;
     if(speechRetryAt>Date.now()){scheduleListening(speechRetryAt-Date.now(),'reconnect-wait');return false;}
     if(activeRecognizers.size){scheduleListening(120,'wait-native-end');return false;}
     const runtime=ChatRuntime;
@@ -776,7 +776,7 @@
   async function submitVoiceTranscript(text){const transcript=String(text||'').trim();if(!transcript)return;if(applyStopControl(transcript,'transcript'))return;resetPendingFinal();if(isLowValueTranscript(transcript)&&!isImmediateBargeCommand(transcript)){proof.fillerRejects+=1;processing=false;voiceSubmitPending=false;updateComposer('');log('TRANSCRIPT_FILLER_REJECTED',{text:transcript,count:proof.fillerRejects});if(voiceOn)scheduleListening(40,'filler');return;}if(processing||speaking||textBusy||activeRequest){queuedTranscript=transcript;log('TRANSCRIPT_QUEUED',{text:transcript});return;}const filterGeneration=voiceDispatchGeneration;let decision={allowed:true};if(window.VP3VoiceGuard)try{decision=await window.VP3VoiceGuard.check(transcript,()=>voiceOn&&filterGeneration===voiceDispatchGeneration&&!textBusy&&!processing&&!speaking)||decision;}catch(error){decision.allowed=!window.VP3VoiceGuard?.isKnownOnly();}if(!voiceOn||filterGeneration!==voiceDispatchGeneration)return;if(!decision.allowed){if(input.value.trim()===transcript)updateComposer('');scheduleListening(150,'background-voice-filter');return;}proof.submits+=1;voiceSubmitPending=true;processing=true;if(responseWindowOwned)finishResponseWindow();updateComposer(transcript);setAgentState('processing','Thinking…');log('TRANSCRIPT_SUBMIT',{text:transcript,count:proof.submits});clearTimeout(voiceSubmitTimer);voiceSubmitTimer=setTimeout(()=>{if(!voiceOn||!voiceSubmitPending||activeRequest)return;voiceSubmitPending=false;processing=false;setAgentState('error','Chat was not submitted. Try again.');scheduleListening(320,'submit-not-dispatched');},2200);try{form.requestSubmit();}catch(error){clearTimeout(voiceSubmitTimer);processing=false;voiceSubmitPending=false;proof.lastError=String(error?.message||error||'Submit failed');setAgentState('error',proof.lastError);if(voiceOn)scheduleListening(320,'submit-error');}}
 
   function enableVoice({persist=true,start=true,takeover=false}={}){if(releaseBlocked){setAgentState('error','The browser speech service did not release the microphone. Reload this page to reconnect.');return false;}if(voiceOn&&!responseWindowClosing){if(persist){clearTimeout(responseWindowTimer);clearTimeout(responseCleanupTimer);responseWindowOwned=false;responseWindowUntil=0;writeMode();}if(start&&!recognition&&!bargeRecognition&&!processing&&!speaking)startListening('already-enabled');return true;}if(!agentVoiceMaster){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Turn on Agent Voice before starting a voice conversation.');return false;}if(typeof SpeechRecognitionCtor!=='function'){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Browser speech recognition is unavailable.');return false;}if(!claimCapture(takeover)){setAgentState('error','Another tab is using voice capture. Stop it there or switch capture here.');return false;}resetSpeechRecovery();recognitionFailures=0;bargeFailures=0;voiceOn=true;if(persist)writeMode();else syncButton();recognition=null;setAgentState('starting','Connecting microphone…');if(start)startListening('enable');return true;}
-  function disableVoice({persist=true}={}){clearTimeout(responseWindowTimer);clearTimeout(responseCleanupTimer);responseWindowOwned=false;responseWindowClosing=false;responseWindowUntil=0;resetSpeechRecovery();window.dispatchEvent(new CustomEvent('vp3:reply-window',{detail:{active:false}}));voiceOn=false;if(persist)writeMode();else syncButton();resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();stopRecognition('off',true);releaseProcessedMic('voice-off');releaseCapture();recognition=null;recognitionStarting=false;recognitionListening=false;stopBarge('off');bargeCapturing=false;bargeLastText='';activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}cancelActiveRequest();processing=false;speaking=false;queuedTranscript='';setAgentState('idle');}
+  function disableVoice({persist=true}={}){enrollmentPcmOnly=false;clearTimeout(responseWindowTimer);clearTimeout(responseCleanupTimer);responseWindowOwned=false;responseWindowClosing=false;responseWindowUntil=0;resetSpeechRecovery();window.dispatchEvent(new CustomEvent('vp3:reply-window',{detail:{active:false}}));voiceOn=false;if(persist)writeMode();else syncButton();resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();stopRecognition('off',true);releaseProcessedMic('voice-off');releaseCapture();recognition=null;recognitionStarting=false;recognitionListening=false;stopBarge('off');bargeCapturing=false;bargeLastText='';activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}cancelActiveRequest();processing=false;speaking=false;queuedTranscript='';setAgentState('idle');}
   async function toggleVoice(){if(voiceOn){disableVoice({persist:true});return;}if(!(await ensureAgentVoiceMaster()))return;let takeover=false;if(!claimCapture()){if(!window.confirm('Another tab is using voice capture. Switch capture to this tab?'))return;takeover=true;}if(!introPresented&&boot.intro?.greeting){enableVoice({persist:true,start:false,takeover});presentIntro();}else enableVoice({persist:true,start:true,takeover});}
 
   function introTexts(intro){const greeting=String(intro?.greeting||'').trim();const updates=Array.isArray(intro?.updates)?intro.updates:[];const display=updates.length?`${greeting}\n\nHere’s what changed:\n${updates.map(update=>`• ${String(update?.title||'Update')}${update?.body?` — ${String(update.body)}`:''}`).join('\n')}`:greeting;const spoken=updates.length?`${greeting} Here are the priorities I found. ${updates.map(update=>`${String(update?.title||'Update')}. ${String(update?.body||'')}`).join(' ')}`:greeting;return {display,spoken,updates};}
@@ -834,12 +834,22 @@
     if(!enableVoice({persist:false,start:true})){responseWindowOwned=false;return false;}
     responseWindowTimer=setTimeout(finishResponseWindow,15000);return true;
   }
-  function beginEnrollmentCapture(){
+  function beginEnrollmentCapture({pcmOnly=false}={}){
+    if(pcmOnly&&(processing||speaking))return null;
     const keepListening=voiceOn&&!responseWindowOwned;
     clearTimeout(responseWindowTimer);clearTimeout(responseCleanupTimer);responseWindowOwned=false;responseWindowClosing=false;responseWindowUntil=0;
-    if(!voiceOn){if(!enableVoice({persist:false,start:true}))return null;}else startListening('voice-enrollment');
-    let finished=false;const finish=()=>{if(finished)return;finished=true;clearTimeout(deadline);if(!keepListening)disableVoice({persist:false});};
+    if(pcmOnly){clearRestart();resetPendingFinal();stopRecognition('voice-enrollment',true);stopBarge('voice-enrollment');enrollmentPcmOnly=true;}
+    if(!voiceOn){if(!enableVoice({persist:false,start:!pcmOnly})){enrollmentPcmOnly=false;return null;}}else if(!pcmOnly)startListening('voice-enrollment');
+    // Guided recordings use the existing local PCM monitor without submitting
+    // sample speech to the browser's transcription service.
+    let finished=false;const finish=()=>{if(finished)return;finished=true;clearTimeout(deadline);enrollmentPcmOnly=false;if(!keepListening)disableVoice({persist:false});else if(voiceOn)scheduleListening(160,'voice-enrollment-complete');};
     const deadline=setTimeout(()=>{window.VP3VoiceGuard?.cancelEnrollment();finish();},60000);
+    if(pcmOnly)return (async()=>{
+      const track=await ensureProcessedMic(),started=Date.now();
+      while(voiceOn&&activeRecognizers.size&&Date.now()-started<3000)await new Promise(resolve=>setTimeout(resolve,50));
+      if(!voiceOn||!track||activeRecognizers.size){finish();return null;}
+      return finish;
+    })();
     return finish;
   }
   window.VP3ConversationControls=Object.freeze({beginEnrollmentCapture,responseWindow,cancelResponseWindow:finishResponseWindow,stop:()=>disableVoice({persist:true}),isBusy:()=>processing||speaking,isEnabled:()=>voiceOn,listen:()=>enableVoice({start:true}),state:()=>({state:speaking?'speaking':processing?'thinking':recognitionListening?'listening':recognitionStarting?'connecting':voiceOn&&speechRetryAt>Date.now()?'reconnecting':'idle'})});

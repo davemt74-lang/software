@@ -68,7 +68,7 @@
       let finish=null;
       const wait=ms=>new Promise(r=>setTimeout(r,ms));
       try{
-        finish=await adapter.beginVoiceEnrollment?.();marker.finish=finish;if(typeof finish!=='function')throw Error('Microphone capture is unavailable. Enable Agent Voice and allow the microphone.');
+        finish=await adapter.beginVoiceEnrollment?.({pcmOnly:true});marker.finish=finish;if(typeof finish!=='function')throw Error('Microphone capture is unavailable. Enable Agent Voice and allow the microphone.');
         const start=Date.now();while(!processor||!rate){if(!current())throw Error('Voice recording cancelled.');if(Date.now()-start>10000)throw Error('Microphone audio did not become ready. Check microphone permission and try again.');await wait(50);}
         if(!current())throw Error('Voice recording cancelled.');marker.started=true;chunks=[];length=0;
         for(let second=0;second<5;second++){onProgress(second);await wait(1000);if(!current())throw Error('Voice recording cancelled.');}
