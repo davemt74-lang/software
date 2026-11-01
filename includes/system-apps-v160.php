@@ -70,7 +70,9 @@ function vp3_system_apps_agent_catalog_row_v160(int $userId,string $appKey,?PDO 
 function vp3_system_apps_agent_find_app_v160(string $query,array $user,?PDO $pdo=null): ?array
 {
     $snapshot=vp3_system_apps_agent_snapshot_v150($user,$pdo,true);
-    $q=mb_strtolower($query);$matches=[];
+    $q=mb_strtolower($query);
+    if(preg_match('/\bhost(?:ing)?\b.*\bat\b/u',$q))$q=preg_split('/\bat\b/u',$q,2)[0];
+    $matches=[];
     foreach((array)$snapshot['apps'] as $app){
         $key=mb_strtolower((string)$app['app_key']);$name=mb_strtolower((string)$app['name']);
         $short=preg_replace('/^vp3\s+/','',$name)??$name;$score=0;

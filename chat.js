@@ -1454,7 +1454,7 @@
         }).join('')+'</div>'
       : '';
     const pending=card.reconcile_pending
-      ? '<div class="chat-system-app-action-note">HomeServer reconciliation is still pending. The Cloud action is saved and will converge on refresh.</div>'
+      ? '<div class="chat-system-app-action-note">Hosting or app reconciliation remains pending. Check Apps before preparing another request.</div>'
       : '';
     const error=card.error
       ? '<div class="chat-system-app-action-error">'+escapeHtml(card.error)+'</div>'

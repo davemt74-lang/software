@@ -9,7 +9,7 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
 {
     if(!$plan)return null;
     $status='prepared';
-    if(!empty($plan['completed']))$status='completed';
+    if(!empty($plan['completed']))$status=($plan['result']['verified']??null)===true?'completed':'failed';
     elseif((string)($plan['status']??'')==='failed'||!empty($plan['error']))$status='failed';
 
     $type=(string)($plan['action_type']??'');
@@ -39,10 +39,11 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
         $summary='Review this action, then confirm it. Nothing changes until you confirm.';
     }elseif($status==='completed'){
         $summary=$reconcilePending
-          ?'The Cloud action completed. HomeServer reconciliation is still pending and will converge on the next successful refresh.'
+          ?'The Cloud action was processed; reconciliation is still pending and the final outcome is unverified.'
           :'The action completed successfully.';
     }else{
-        $summary='The action did not complete. Review the error before trying again.';
+        $summary='The requested final outcome was not verified. Effects may already exist; inspect Apps before preparing another request.';
+        if(!empty($result['rolled_back']))$summary.=' The update rolled back; the requested new release is not active.';
     }
 
     $details=[];
@@ -52,11 +53,13 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
       'Hosting site'=>$preview['hosting_site']??null,
       'Hostname'=>$preview['hostname']??null,
       'Operation'=>$preview['operation']??null,
-      'Version'=>$preview['to_version']??null,
+      'Version'=>$preview['catalog_version']??$preview['to_version']??null,
+      'Previous release'=>$preview['previous_release_id']??null,
+      'Site ID'=>$preview['site_id']??null,
       'Channel'=>$preview['release_channel']??null,
       'Permission'=>$preview['permission']??null,
       'Risk'=>$preview['risk']??null,
-      'New state'=>$preview['new_state']??null,
+      'New state'=>$preview['new_state']??(array_key_exists('allowed',$preview)?($preview['allowed']?'allowed':'denied'):null),
       'Scope'=>$preview['scope']??null,
     ] as $label=>$value){
         if($value!==null&&trim((string)$value)!=='')$details[]=['label'=>$label,'value'=>(string)$value];

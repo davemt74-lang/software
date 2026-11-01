@@ -31,7 +31,7 @@ function vp3_system_app_action_authority_v1(PDO $pdo,array $user,int $cid,?array
 function vp3_system_app_action_failure_v1(Throwable $e,string $operation='confirm'): array
 {
     $denied=$e->getCode()===403;$reason=$e->getCode()===502?'outcome_unverified':($denied?'permission_denied':($e->getCode()===409?'upgrade_required':'execution_failed'));
-    return ['handled'=>true,'answer'=>$reason==='outcome_unverified'?'The final app action outcome could not be verified. Effects may already exist. Check Apps before preparing another request. The same confirmation will not execute again.':($denied?'The current owner, Agent or account does not permit that app action.':'The app action could not be prepared or confirmed. Check Apps; no successful outcome was verified.'),'actions'=>[],'sources'=>[],
+    return ['handled'=>true,'answer'=>$reason==='outcome_unverified'?'The final app action outcome could not be verified. Effects may already exist. Check Apps before preparing another request. The same confirmation will not execute again.':($denied?'The current owner, Agent or account does not permit that app action.':'The app action could not be prepared or confirmed. Check Apps; no successful outcome was verified.'),'actions'=>[],'sources'=>[],'system_app_plan'=>['status'=>'failed','result'=>['verified'=>false],'error'=>$reason==='outcome_unverified'?'Outcome unverified. Effects may exist; inspect Apps before preparing another request.':'No successful app action was verified.'],
         'tool_receipt'=>vp3_tool_receipt_v1('system_apps.manage',$operation,$denied?'blocked':'failed',$reason)];
 }
 
@@ -42,7 +42,7 @@ function vp3_system_app_action_done_v1(array $done): array
     if(!empty($safe['reconcile_pending']))$answer.=' Hosting or app reconciliation is still pending.';
     if(!empty($safe['rolled_back']))$answer.=' The update rolled back; the requested new release is not active.';
     return ['handled'=>true,'answer'=>$answer,'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php'),'auto'=>false]],'sources'=>[['source'=>'system-apps:action','title'=>'Recorded app action outcome']],
-        'system_app_plan'=>['action_id'=>$done['action_id'],'action_type'=>$done['action_type'],'app_key'=>$done['app_key'],'completed'=>true,'idempotent_replay'=>$replay,'result'=>$safe],
+        'system_app_plan'=>['action_id'=>$done['action_id'],'action_type'=>$done['action_type'],'app_key'=>$done['app_key'],'preview'=>['app'=>$done['app_key'],'operation'=>$done['action_type']],'completed'=>true,'idempotent_replay'=>$replay,'result'=>$safe],
         'tool_receipt'=>vp3_tool_receipt_v1('system_apps.manage','confirm',$verified?($replay?'read_complete':'completed'):'failed',$verified?'':'outcome_unverified')];
 }
 
@@ -135,7 +135,7 @@ function vp3_system_app_action_remote_v1(PDO $pdo,array $user,int $cid,array $sc
             $app=vp3_system_apps_owned_row_v110($uid,$identity['app_key'],$pdo);
             if(vp3_system_app_catalog_identity_v1($app)!==$identity)throw new RuntimeException('App selection changed.',403);
         }
-        $response=vp3_system_apps_remote_v110($uid,$op,$input,$remote);
+        $response=str_starts_with($op,'hosting.')?vp3_cloud_hosting_v120_remote($uid,$op,$input,$remote):vp3_system_apps_remote_v110($uid,$op,$input,$remote);
         vp3_system_app_action_authority_v1($pdo,$user,$cid,$scope);
         if($identity!==null){$app=vp3_system_apps_owned_row_v110($uid,$identity['app_key'],$pdo);if(vp3_system_app_catalog_identity_v1($app)!==$identity)throw new RuntimeException('App selection changed.',403);}
         if(in_array($op,['apps.system.install','apps.system.status','apps.system.deactivate'],true)){

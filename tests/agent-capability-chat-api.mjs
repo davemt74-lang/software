@@ -208,6 +208,7 @@ try{
   }
   response=await post(endpoint,'Install System App vp3.notes',context,headers);
   check(response.data?.tool_receipt?.status==='clarification_required'&&response.data.tool_receipt.reason==='confirmation_required'&&!response.data.tool_receipt.changes_applied,endpoint+' concrete app action saves a reviewable confirmation only: '+response.body);
+  check(response.data?.system_app_action_card?.status==='prepared'&&response.data.system_app_action_card.details.some(x=>x.label==='Version'),endpoint+' existing action card exposes the reviewed catalog version');
   const code=response.data.answer.match(/Confirmation code: \*\*([A-Z2-9]{8})\*\*/)?.[1];check(Boolean(code),endpoint+' returns the existing exact confirmation code');
   response=await post(endpoint,'Confirm app '+code,context,headers);
   check(response.data?.tool_receipt?.status==='completed'&&response.data.tool_receipt.changes_applied&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' confirmed app installation persists verified canonical outcome: '+response.body);
@@ -216,6 +217,7 @@ try{
   response=await post(endpoint,'Install System App vp3.notes',context,headers);const failedCode=response.data.answer.match(/Confirmation code: \*\*([A-Z2-9]{8})\*\*/)?.[1];
   response=await post(endpoint,'Confirm app '+failedCode,context,{...headers,'X-Fixture-Operation-Mode':'offline'});
   check(response.data?.tool_receipt?.reason==='outcome_unverified'&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' uncertain remote mutation returns outcome evidence, not success');
+  check(response.data?.system_app_action_card?.status==='failed',endpoint+' uncertain action uses a Needs attention card instead of completed');
   response=await post(endpoint,'Confirm app '+failedCode,context,headers);
   check(response.data?.tool_receipt?.reason==='outcome_unverified',endpoint+' uncertain confirmation stays consumed when HomeServer recovers');
   response=await post(endpoint,'Did that work?',context,headers);
