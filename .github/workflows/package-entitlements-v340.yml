@@ -124,6 +124,12 @@ jobs:
           node tests/phone-voice-ph3c-contract.mjs
           php tests/phone-voice-ph3c-runtime.php
 
+      - name: Tenant-bound Voice Routing PH3E runtime
+        run: |
+          php -l includes/phone-voice-v130.php
+          php -l tests/phone-voice-ph3e-runtime.php
+          php tests/phone-voice-ph3e-runtime.php
+
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
 
