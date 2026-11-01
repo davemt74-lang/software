@@ -12,6 +12,12 @@ $before=$checks;
 $r=discover('Can you create reminders?',modelplan('inspect',['reminders.manage']));
 check($r['handled']&&str_contains($r['answer'],'Personal reminders: ready')&&$r['actions']===[],'LLM ability question produces discovery without an action');
 check(!$r['capability_receipt']['changes_applied']&&!$r['capability_receipt']['records_queried'],'discovery receipt cannot claim a mutation or record lookup');
+foreach(['Can you set a reminder','Could you create a reminder?','Please add a reminder for me'] as $request){
+ $r=discover($request,fn()=>throw new RuntimeException('Bare reminder setup must reach clarification without inventory inference'));
+ check(!$r['handled'],'incomplete reminder setup continues to its clarification service');
+}
+$r=discover('Do we have a list tool yet',modelplan('inspect',['capabilities.inspect']));
+check(str_contains($r['answer'],'Which list')&&!str_contains($r['answer'],'ready (read)')&&!$r['capability_receipt']['records_queried'],'list capability answer is conversational and does not claim a read');
 $r=discover('Can you remind me to stretch in two minutes?',modelplan('continue'));
 check(!$r['handled'],'concrete action request continues to its existing authorized executor');
 $r=discover('What is on my calendar?',modelplan('continue'));check(!$r['handled'],'actual calendar retrieval is not replaced by capability information');
