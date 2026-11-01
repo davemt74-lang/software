@@ -5,10 +5,16 @@ $pdo=new PDO('sqlite::memory:');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMOD
 function db(){return $GLOBALS['pdo'];}function table_exists($t){$q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$t]);return(bool)$q->fetchColumn();}function has_permission($p,$u){return true;}function url($p){return $p;}
 $pdo->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER);INSERT INTO users VALUES(1,1),(2,1);CREATE TABLE notifications(id INTEGER PRIMARY KEY,user_id INTEGER,source_type TEXT,source_id INTEGER,is_read INTEGER);CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER);CREATE TABLE chat_messages(id INTEGER PRIMARY KEY,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT)');reminder_schema_v1($pdo);
 $checks=0;function check($ok,$why){if(!$ok)throw new RuntimeException($why);$GLOBALS['checks']++;echo "PASS $why\n";}
-$now=new DateTimeImmutable('2026-10-31T06:50:00Z');$zone='America/Phoenix';
+$zone='America/Phoenix';
+// Anchor the Phoenix midnight-boundary fixture to the runner's current local
+// date. Chat uses the real clock, so a fixed 2026-10-30 fixture eventually
+// becomes yesterday and incorrectly reports no matches after that date.
+$local=(new DateTimeImmutable('now',new DateTimeZone($zone)))->setTime(23,50);
+$now=$local->setTimezone(new DateTimeZone('UTC'));
+$todayDate=$local->format('Y-m-d');$tomorrowDate=$local->modify('+1 day')->format('Y-m-d');
 function save($owner,$title,$at,$when){return reminder_execute_v1(db(),$owner,'cloud:'.$owner,'create-'.hash('crc32b',$title),$title,['operation'=>'create','schedule'=>['title'=>$title,'timezone'=>'America/Phoenix','start_local'=>$at,'recurrence'=>'none','delivery'=>'chat']],[],0,$when);}
-save(1,'Today before midnight','2026-10-30T23:55:00',$now);save(1,'Tomorrow after midnight','2026-10-31T00:05:00',$now);save(2,'SECRET foreign reminder','2026-10-30T23:56:00',$now);
-save(1,'Overdue today','2026-10-30T22:00:00',$now->modify('-3 hours'));save(1,'Done today','2026-10-30T23:00:00',$now->modify('-3 hours'));reminder_tick_v1($pdo,1,$now);
+save(1,'Today before midnight',$todayDate.'T23:55:00',$now);save(1,'Tomorrow after midnight',$tomorrowDate.'T00:05:00',$now);save(2,'SECRET foreign reminder',$todayDate.'T23:56:00',$now);
+save(1,'Overdue today',$todayDate.'T22:00:00',$now->modify('-3 hours'));save(1,'Done today',$todayDate.'T23:00:00',$now->modify('-3 hours'));reminder_tick_v1($pdo,1,$now);
 $rows=reminder_rows_v1($pdo,1);$done=(int)array_values(array_filter($rows,fn($r)=>$r['title']==='Done today'))[0]['id'];reminder_execute_v1($pdo,1,'cloud:1','complete-today','Done',['operation'=>'complete','id'=>$done],$rows,0,$now);
 $today=reminder_list_rows_v1($pdo,1,'today',$zone,$now);$titles=array_column($today,'title');
 check(in_array('Today before midnight',$titles,true)&&!in_array('Tomorrow after midnight',$titles,true),'today uses Phoenix midnight rather than the UTC date');
