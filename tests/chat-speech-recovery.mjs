@@ -44,8 +44,15 @@ function fixture({pendingMonitor=false,silentRecognition=false}={}){
 {
  const f=fixture({pendingMonitor:true});f.window.VP3ConversationControls.listen();await f.settle();
  f.emit('stonefellow:agent-proactive-speech',{state:'start',text:'The agent is answering.'});await f.advance(0);
- check(f.window.STONEFELLOW_CHAT_VOICE.bargeStarts===1,'barge recognition also starts without awaiting the optional monitor');
+ check(f.window.STONEFELLOW_CHAT_VOICE.bargeStarts===0,'handoff waits for an already pending device acquisition');
+ f.monitorRequests[0]();await f.settle();check(f.window.STONEFELLOW_CHAT_VOICE.bargeStarts===1,'barge starts after existing acquisition settles without overlapping native capture');
  f.window.VP3ConversationControls.stop();f.monitorRequests.forEach(resolve=>resolve());await f.settle();check(f.tracks.every(t=>t.readyState==='ended'),'barge Stop fences the late optional monitor');
+}
+{
+ const f=fixture({pendingMonitor:true});f.window.VP3ConversationControls.listen();await f.settle();
+ f.emit('stonefellow:agent-proactive-speech',{state:'start',text:'An answer.'});await f.advance(11000);
+ check(!f.window.VP3ConversationControls.isEnabled()&&f.starts===1,'a stalled existing monitor handoff stops with a bounded diagnostic instead of hanging or racing the device');
+ f.monitorRequests[0]();await f.settle();check(f.tracks.every(t=>t.readyState==='ended'),'timed-out handoff closes late monitor streams');
 }
 {
  const f=fixture();check(f.starts===0,'saved preferences and page load do not open capture');f.window.VP3ConversationControls.listen();await f.settle();
