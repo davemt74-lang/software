@@ -81,9 +81,16 @@ if(cloud){
  await test('Chat fallback result is disposed after Stop',async()=>{
   const b=browser(),pending=deferred(),audio=stream();let calls=0;b.context.navigator.mediaDevices.getUserMedia=()=>++calls===1?Promise.reject(Object.assign(Error('unsupported'),{name:'TypeError'})):pending.promise;const api=chat(b);api.seed();const opening=api.ensureProcessedMic();for(let i=0;i<8;i++)await Promise.resolve();assert.equal(calls,2);api.disableVoice();pending.resolve(audio);await opening;assert.equal(audio.track.readyState,'ended');
  });
- await test('old Chat permission completion cannot clear a newer request',async()=>{
-  const b=browser(),a=deferred(),c=deferred(),old=stream(),fresh=stream();let calls=0;b.context.navigator.mediaDevices.getUserMedia=()=>++calls===1?a.promise:c.promise;const api=chat(b);api.seed();const first=api.ensureProcessedMic();api.disableVoice();api.seed();const second=api.ensureProcessedMic();a.resolve(old);await first;assert(api.state().inputTrackPromise);c.resolve(fresh);await second;assert.equal(api.state().inputStream,fresh);assert.equal(old.track.readyState,'ended');api.disableVoice();
+ await test('Chat serializes new monitor acquisition behind an unsettled permission request',async()=>{
+  const b=browser(),a=deferred(),c=deferred(),old=stream(),fresh=stream();let calls=0;
+  b.context.navigator.mediaDevices.getUserMedia=()=>++calls===1?a.promise:c.promise;
+  const api=chat(b);api.seed();const first=api.ensureProcessedMic();api.disableVoice();api.seed();const waiting=api.ensureProcessedMic();
+  assert.equal(calls,1,'Stop does not permit a second device request while the first is pending');
+  a.resolve(old);await first;await waiting;assert.equal(old.track.readyState,'ended');assert.equal(api.state().inputStream,null);
+  const second=api.ensureProcessedMic();assert.equal(calls,2);assert(api.state().inputTrackPromise);
+  c.resolve(fresh);await second;assert.equal(api.state().inputStream,fresh);api.disableVoice();
  });
+
  function transcription(b){b.window.STONEFELLOW_ARTIST_LISTENING_V172={endpoint:'/api/artist-listening-v172.php',csrf:'synthetic',userId:1};load('artist-listening.js',b,'window.Test={state,startAudioRecording,startMeter,startRecognition,stopRecognition,stopCapture,seed:()=>{state.active=true;state.session={id:41,status:"active",segments:[]};state.captureStartedAt=Date.now();}};');return b.window.Test;}
  for(const method of ['startAudioRecording','startMeter'])await test('transcription Stop disposes late '+method,async()=>{
   const b=browser(),pending=deferred(),audio=stream();b.context.navigator.mediaDevices.getUserMedia=()=>pending.promise;const api=transcription(b);api.seed();const opening=api[method]();await api.stopCapture();pending.resolve(audio);await opening;assert.equal(audio.track.readyState,'ended');assert.equal(api.state.recordingActive,false);assert.equal(api.state.meterStream,null);
