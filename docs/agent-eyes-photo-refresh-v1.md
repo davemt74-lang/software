@@ -1,6 +1,6 @@
 # Agent Eyes photo capture and periodic gallery refresh
 
-A named participant’s visible photo offer now accepts a scoped yes/no through typed Chat, listening and the existing popup. The voice guard uses the same reply parser, including for an unknown voice responding to its own pending invitation. Photo replies are handled locally instead of also invoking the general Chat model. Unrelated yes replies remain ordinary Chat. The offer expires after 90 seconds or a track/presence change.
+A named participant’s visible photo offer now accepts a scoped yes/no through typed Chat, listening and the existing popup. The voice guard uses the same reply parser, including for an unknown voice responding to its own pending invitation. Photo replies are handled locally instead of also invoking the general Chat model. Unrelated yes replies remain ordinary Chat. Local photo replies use the existing request lifecycle to cancel the native voice submission watchdog and resume listening only after capture completes, including through the popup. The offer expires after 90 seconds or a track/presence change.
 
 The initial capture analyzes a frozen camera frame for each saved crop and saves three 160×160 JPEGs plus recognition embeddings in the existing account-owned IndexedDB record. Capture previews explicitly say not saved yet; only transaction completion produces the saved result. The gallery displays dated photos and last update, retains at most 12 photos, and restores when a participant is selected after reload. Failures remain visible.
 

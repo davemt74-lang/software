@@ -4,7 +4,7 @@ import http from 'node:http';
 import {chromium} from 'playwright';
 const server=http.createServer((req,res)=>{
  const requestUrl=new URL(req.url,'http://fixture');const name=requestUrl.pathname.slice(1);
- if(['chat-voice.js','voice-lease-v122.js','agent-response-window.js'].includes(name)){
+ if(['chat-voice.js','voice-lease-v122.js','agent-response-window.js','agent-eyes-core.js','agent-orb.js'].includes(name)){
   res.setHeader('Content-Type','text/javascript');res.end(fs.readFileSync(name==='chat-voice.js'&&process.env.VP3_VOICE_SOURCE?process.env.VP3_VOICE_SOURCE:name));return;
  }
  res.setHeader('Content-Type','text/html');res.end(`<!doctype html><form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button><button type="button" id="chatVoiceButton">Listen</button></form><div id="chatVoiceStatus"></div><div id="chatThread"></div><script>
@@ -26,7 +26,11 @@ const server=http.createServer((req,res)=>{
   finish(aborted){if(this.ending||!nativeLive.has(this))return;this.ending=true;if(aborted)queueMicrotask(()=>this.onerror?.({error:'aborted'}));setTimeout(()=>{nativeLive.delete(this);this.onend?.();},aborted?900:20);}
  };
  document.getElementById('chatForm').addEventListener('submit',e=>{e.preventDefault();submitted.push(document.getElementById('chatInput').value);});
- </script><script src="/voice-lease-v122.js"></script><script src="/chat-voice.js"></script><script>window.VP3_ORB_ADAPTER={responseWindow:()=>VP3ConversationControls.responseWindow(),cancelResponseWindow:()=>VP3ConversationControls.cancelResponseWindow()};</script><script src="/agent-response-window.js"></script>`);
+ </script><script src="/voice-lease-v122.js"></script><script src="/chat-voice.js"></script><script>window.VP3_ORB_ADAPTER={responseWindow:()=>VP3ConversationControls.responseWindow(),cancelResponseWindow:()=>VP3ConversationControls.cancelResponseWindow()};</script><script src="/agent-response-window.js"></script>${requestUrl.searchParams.has('photo')?`<script>
+ Object.assign(VP3_ORB_ADAPTER,{ownerKey:'photo-voice',chatUrl:'/',state:()=>VP3ConversationControls.state(),isMainChat:()=>true,busy:()=>false});
+ window.VP3VoiceGuard={check:async()=>({allowed:true}),wasVoiceTurn:()=>true,hasRecognizedTurn:()=>false,reset(){}};
+ window.VP3AgentEyes={acceptsPhotoReply:text=>text==='yes',hear:async()=>{window.photoReplyStarted=true;await new Promise(r=>window.finishPhotoReply=r);}};
+ </script><script src="/agent-eyes-core.js"></script><script src="/agent-orb.js"></script>`:''}`);
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`;
 const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
@@ -117,7 +121,14 @@ try{
  assert.equal(await bargeDenied.evaluate(()=>VP3ConversationControls.isEnabled()),false);assert.equal(await bargeDenied.evaluate(()=>nativeLive.size),0);
  assert.match(await bargeDenied.locator('#chatVoiceStatus').innerText(),/permission is blocked/);await bargeDenied.close();
  console.log('PASS microphone denial during barge-in stops without reconnect loops');
- console.log('AGENT_EYES_LISTENING_HANDOFF_BROWSER=PASS (10 cases)');
+ const photo=await browser.newPage();await photo.goto(base+'/?photo=1');await photo.waitForFunction(()=>window.VP3AgentOrb);await photo.clock.install();
+ await photo.evaluate(()=>VP3ConversationControls.listen());await photo.clock.runFor(200);
+ await photo.evaluate(()=>{const r=[...nativeLive][0];r.onresult({resultIndex:0,results:[{0:{transcript:'yes',confidence:.99},isFinal:true}]});});
+ await photo.clock.runFor(1800);assert.equal(await photo.evaluate(()=>photoReplyStarted),true);assert.deepEqual(await photo.evaluate(()=>submitted),[]);
+ await photo.clock.runFor(3000);assert.equal(await photo.evaluate(()=>VP3ConversationControls.state().state),'thinking');assert.doesNotMatch(await photo.locator('#chatVoiceStatus').innerText(),/not submitted/);
+ await photo.evaluate(()=>finishPhotoReply());await photo.clock.runFor(1500);assert.equal(await photo.evaluate(()=>VP3ConversationControls.state().state),'listening');assert.equal(await photo.evaluate(()=>nativeLive.size),1);await photo.close();
+ console.log('PASS local photo capture owns voice dispatch until completion and resumes one listener without the Chat watchdog');
+ console.log('AGENT_EYES_LISTENING_HANDOFF_BROWSER=PASS (11 cases)');
 
 
 }finally{await browser.close();await new Promise(r=>server.close(r));}
