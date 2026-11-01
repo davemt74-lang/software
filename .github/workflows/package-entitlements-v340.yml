@@ -164,6 +164,13 @@ jobs:
           php -l tests/phone-voice-ph3h-runtime.php
           php tests/phone-voice-ph3h-runtime.php
 
+      - name: PH3I-A account setup guidance
+        run: |
+          php -l includes/phone-setup-v170.php
+          php -l admin/phone.php
+          php -l tests/phone-setup-ph3ia-runtime.php
+          php tests/phone-setup-ph3ia-runtime.php
+
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
 
