@@ -20,7 +20,7 @@ require_once __DIR__.'/app-agent-remote-v1.php';
 require_once __DIR__.'/system-app-agent-schema-v1.php';
 require_once __DIR__.'/app-operation-schema-v1.php';
 class TranscriptFixturePDO extends PDO {public int $updatedId=0;public function lastInsertId(?string $name=null):string|false{return $this->updatedId?(string)$this->updatedId:parent::lastInsertId($name);}public function prepare(string $sql,array $options=[]):PDOStatement|false{if(str_starts_with(ltrim($sql),'INSERT'))$this->updatedId=0;$sql=str_replace(' FOR UPDATE','',$sql);$sql=preg_replace('/DATE_ADD\(UTC_TIMESTAMP\(\),INTERVAL (\d+) MINUTE\)/i',"datetime('now','+$1 minutes')",$sql);$sql=str_replace('IF(','IIF(',$sql);if(str_contains($sql,'information_schema.statistics'))$sql="SELECT 1 FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=?";$sql=preg_replace('/ON DUPLICATE KEY UPDATE/i','ON CONFLICT DO UPDATE SET',$sql);$sql=preg_replace('/VALUES\((\w+)\)/i','excluded.$1',$sql);return parent::prepare($sql,$options);}}
-function db(){static $pdo;if(!$pdo){$pdo=new TranscriptFixturePDO('sqlite:'.__DIR__.'/../state.sqlite');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('LAST_INSERT_ID',function($id)use($pdo){$pdo->updatedId=(int)$id;return$id;});$pdo->sqliteCreateFunction('NOW',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));$pdo->exec('CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo->exec('INSERT OR IGNORE INTO users VALUES(1,1),(2,1)');$pdo->exec("CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,artist_workspace_id INTEGER,title TEXT,updated_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");reminder_schema_v1($pdo);capability_fixture_agents($pdo);}return $pdo;}
+function db(){static $pdo;if(!$pdo){$pdo=new TranscriptFixturePDO('sqlite:'.__DIR__.'/../state.sqlite');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('LAST_INSERT_ID',function($id)use($pdo){$pdo->updatedId=(int)$id;return$id;});$pdo->sqliteCreateFunction('NOW',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));$pdo->exec('CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo->exec('INSERT OR IGNORE INTO users VALUES(1,1),(2,1)');$pdo->exec("CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,artist_workspace_id INTEGER,title TEXT,updated_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");reminder_schema_v1($pdo);capability_fixture_agents($pdo);vp3_task_lists_schema_v1($pdo);}return $pdo;}
 function table_exists($table){if($table==='user_calendar_events'&&isset($_SERVER['HTTP_X_FIXTURE_CALENDAR_MISSING']))return false;$q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return(bool)$q->fetchColumn();}
 function column_exists($table,$column){foreach(db()->query('PRAGMA table_info('.$table.')') as $r)if($r['name']===$column)return true;return false;}
 function current_user(){if(isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS']))return null;$id=(int)($_SERVER['HTTP_X_FIXTURE_USER']??1);return ['id'=>$id,'is_active'=>1];}
@@ -55,12 +55,14 @@ function homeserver_https_v1300_status($uid){return ['paired'=>isset($_SERVER['H
 function homeserver_https_v1300_remote_operation(...$args){if(isset($_SERVER['HTTP_X_FIXTURE_OPERATION_READY']))return app_operation_remote_v1(...$args);if(($args[1]??'')==='apps.system.permissions.status'&&isset($_SERVER['HTTP_X_FIXTURE_SYSTEM_APP_READY']))return system_app_agent_remote_v1(...$args);if(in_array($args[1]??'',['apps.user.list','apps.manager.status','apps.user.workspace.status'],true)&&isset($_SERVER['HTTP_X_FIXTURE_APP_READY']))return app_agent_remote_fixture_v1(...$args);if(str_starts_with($args[1]??'','apps.'))return media_fixture_remote_v1(...$args);if(isset($_SERVER['HTTP_X_FIXTURE_HOME_FAIL']))throw new RuntimeException('HomeServer offline');return ['items'=>[['name'=>'Fixture local file','ref'=>'hsf-1-0123456789abcdef','snippet'=>'Fixture local source']]];}
 function agent_brain_schema_ready(){return isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']);}
 function agent_brain_normalize($s){return strtolower(trim($s));}
+function agent_brain_extract_dates($s){return [];}
 function agent_brain_sentences($s){return preg_split('/(?<=[.!?])\s+|\R+/u',trim($s))?:[];}
 function agent_background_v125_enqueue(...$args){}
 function agent_brain_archive_and_parse(...$args){}
 function chat_context_is_internal_source($s){return str_starts_with($s,'runtime:');}
 function ai_v100_safe_exception($e,$fallback='Failed'){return $fallback;}
 function ai_generate_chat_response($prompt,...$args){
+    if(!str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')&&str_contains($prompt,'personal reminder commands.')&&str_contains($prompt,'Show reminders'))return ['ok'=>true,'answer'=>'{"operation":"list","view":"open"}'];
     if(str_starts_with($prompt,'VP3_TRANSCRIPT_ANSWER_V1')){
         $data=json_decode(substr($prompt,strpos($prompt,"\n")+1),true);$segments=$data['evidence']['segments'];return ['ok'=>true,'answer'=>json_encode(['answer'=>'The discussion covers the project budget and delivery date.','citations'=>[(int)$segments[0]['id']]])];
     }
@@ -77,6 +79,15 @@ function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
+        $taskPlan=null;
+        if(preg_match('/^Add (.+) to my (.+) list$/i',$q,$m))$taskPlan=['action'=>'add','list_name'=>$m[2],'title'=>$m[1]];
+        elseif(preg_match('/^Save (.+) as a task$/i',$q,$m))$taskPlan=['action'=>'create_task','title'=>$m[1]];
+        elseif(preg_match('/^Show (.+) list$/i',$q,$m))$taskPlan=['action'=>'show','list_name'=>$m[1]];
+        elseif($q==='Show my lists')$taskPlan=['action'=>'show_lists'];
+        elseif(in_array($q,['Yes create it','Yes save it'],true)&&!empty($json['pending_task_list']))$taskPlan=['action'=>'confirm'];
+        elseif($q==='No cancel the list'&&!empty($json['pending_task_list']))$taskPlan=['action'=>'cancel'];
+        if($taskPlan)return ['ok'=>true,'answer'=>json_encode(['operation'=>'task_list','ids'=>['tasks.lists']]+$taskPlan)];
+        if($q==='Show reminders')return ['ok'=>true,'answer'=>'{"operation":"continue","ids":[]}'];
         if($q==='What were the main issues?')return ['ok'=>true,'answer'=>'{"operation":"transcript_read","ids":["transcripts.read"]}'];
         if(in_array($q,['Tell me about this transcription','Can you read transcripts?'],true))return ['ok'=>true,'answer'=>'{"operation":"inspect","ids":["transcripts.read"]}'];
         if(in_array($q,['What did they say about the budget?','Detach this transcript'],true))return ['ok'=>true,'answer'=>'{"operation":"continue","ids":[]}'];

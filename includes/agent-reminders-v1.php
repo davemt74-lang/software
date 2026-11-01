@@ -213,6 +213,7 @@ function reminder_execute_v1(PDO $pdo,int $uid,string $thread,string $key,string
         }
         if($op==='none'){$old=reminder_state_v1($pdo,$uid,$thread);$focus=(int)($old['focus']??0);}
         if($op!=='none')$result['tool_receipt']=vp3_tool_receipt_v1('reminders.manage',$op,$op==='clarify'?'clarification_required':($op==='list'?($rows?'read_complete':'no_matches'):'completed'),'',($op==='delete'?(int)$plan['id']:$focus),$op==='list'?count($rows):0);
+        if($op==='list')$result['sticky_notes']=[['kind'=>'reminders','id'=>0,'view'=>$view,'timezone'=>$timezone]];
         reminder_save_state_v1($pdo,$uid,$thread,['focus'=>$focus,'pending'=>$pending],$stamp);
         $pdo->prepare('INSERT INTO agent_reminder_turns_v1(owner_user_id,thread_key,request_key,payload_hash,result_json,created_at) VALUES(?,?,?,?,?,?)')->execute([$uid,$thread,$key,$hash,json_encode($result,JSON_THROW_ON_ERROR),$stamp]);
         $pdo->commit();return $result;
@@ -232,6 +233,12 @@ function reminder_chat_v1(PDO $pdo,array $user,string $query,string $thread,stri
     if(strlen($thread)>160||!preg_match('/^[A-Za-z0-9:_-]{8,100}$/D',$key)||mb_strlen($query)>6000)throw new InvalidArgumentException('Invalid reminder request.');
     $uid=(int)$user['id'];$empty=['handled'=>false,'answer'=>'','actions'=>[],'sources'=>[]];
     $ready=reminder_ready_v1($pdo);$state=$ready?reminder_state_v1($pdo,$uid,$thread):[];
+    // An older reminder draft does not own a reply after a task/list turn.
+    if(function_exists('column_exists')&&column_exists('chat_conversations','user_agent_id')&&$conversation>0){
+        $q=$pdo->prepare('SELECT user_agent_id FROM chat_conversations WHERE id=? AND user_id=?');$q->execute([$conversation,$uid]);$aid=(int)$q->fetchColumn();
+        $last=vp3_tool_last_receipt_v1($pdo,$user,['conversation_id'=>$conversation,'user_agent_id'=>$aid]);
+        if(str_starts_with($last['receipt']['capability']??'','tasks.')&&!preg_match('/\b(?:remind(?:er|ers)?|snooze|nudge|ping me|alert me)\b/i',$query))return $empty;
+    }
     if(!reminder_intent_v1($query,$state))return $empty;
     if(!$ready)return [...$empty,'handled'=>true,'answer'=>'Reminders need the VP3 database upgrade before I can save one.','tool_receipt'=>vp3_tool_receipt_v1('reminders.manage','interpret','blocked','upgrade_required')];
     if(!has_permission('chat.access',$user))throw new RuntimeException('Agent Chat access required.',403);

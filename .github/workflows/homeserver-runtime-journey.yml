@@ -89,6 +89,7 @@ jobs:
         run: |
           node tests/chat-canvas-voice-browser.mjs
           node tests/transcript-tools-browser.mjs
+          node tests/task-notes-browser.mjs
           node tests/agent-eyes-listening-handoff-browser.mjs
       - name: Shared Agent Voice menu, greeting and movement
         run: |
@@ -153,6 +154,7 @@ jobs:
           php tests/chat-browser-research-mysql.php
           php tests/agent-reminders-mysql.php
           php tests/transcript-brain-mysql.php
+          php tests/task-lists-mysql.php
   connection-mysql:
     needs: transfer-scope
     if: needs.transfer-scope.outputs.connection == 'true'

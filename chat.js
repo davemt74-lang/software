@@ -3157,6 +3157,7 @@
         browserContextRuntime.consume();
       }
 
+      window.VP3TaskNotes?.consume(data.sticky_notes || []);
       conversationId = Number(data.conversation_id); rememberConversation();
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(data.user_message_id||0),Number(data.assistant_message_id||0));
       typing.remove();
