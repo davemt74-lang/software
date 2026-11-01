@@ -85,6 +85,25 @@ try{
   check(response.data?.tool_receipt?.record_id===23&&response.data.answer.includes('different local recording day'),'ordinal transcript choice follows the preceding clarification through '+endpoint);
  }
  check((await state()).reminders===beforeChatRepair,'conversational setup, list discovery and transcript date reads never create reminders');
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  response=await post(endpoint,'Summarize the transcription titled jcal',{...named,conversation_id:longfellowConversation});
+  check(response.data?.tool_receipt?.operation==='summarize'&&response.data.tool_receipt.record_id===24&&response.data.answer.includes('project budget'),'title discovery summarizes the source in one turn through '+endpoint);
+  response=await post(endpoint,'Tell me about this transcription',{...named,conversation_id:longfellowConversation});
+  check(response.data?.tool_receipt?.operation==='discuss'&&response.data.tool_receipt.record_id===24&&!response.data.answer.includes('ready (read)'),'content request overrides mistaken capability inspection through '+endpoint);
+  response=await post(endpoint,'Can you set a reminder',{...named,conversation_id:longfellowConversation});
+  response=await post(endpoint,'What did they say about the budget?',{...named,conversation_id:longfellowConversation});
+  check(response.data?.tool_receipt?.record_id===24&&response.data.answer.includes('project budget'),'server source attachment survives an unrelated reminder turn through '+endpoint);
+  response=await post(endpoint,'What were the main issues?',{...named,conversation_id:longfellowConversation});
+  check(response.data?.tool_receipt?.operation==='discuss'&&response.data.tool_receipt.record_id===24,'source-aware routing understands content follow-ups without transcript keywords through '+endpoint);
+  response=await post(endpoint,'Can you read transcripts?',{...named,conversation_id:longfellowConversation});
+  check(response.data?.tool_receipt?.capability==='capabilities.inspect','genuine capability question remains inspection through '+endpoint);
+  response=await post(endpoint,'Detach this transcript',{...named,conversation_id:longfellowConversation});
+  response=await post(endpoint,'Tell me about this transcription',{...named,conversation_id:longfellowConversation});
+  check(response.data?.tool_receipt?.status==='clarification_required','detached source is not silently reopened through '+endpoint);
+  response=await post(endpoint,'Find the transcription titled jcal',{...named,conversation_id:longfellowConversation});
+  response=await post(endpoint,'Tell me about this transcription',{...named,conversation_id:longfellowConversation});
+  check(response.data?.tool_receipt?.record_id===24&&response.data.tool_receipt.operation==='discuss','single catalog result supports this transcript follow-up through '+endpoint);
+ }
  const beforeReads=(await state()).reminders;
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
   for(const phrase of ['What was on my uh reminder list','What did I have planned for today on my reminders','Yeah check my open reminders']){
