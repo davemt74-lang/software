@@ -18,7 +18,7 @@ function fixture(){
  class Recognition {constructor(){recognizers.push(this);}start(){check(!recognizers.some(r=>r!==this&&r.active),'at most one native recognizer starts');starts++;this.active=true;maxActive=Math.max(maxActive,recognizers.filter(r=>r.active).length);queueMicrotask(()=>this.onstart?.());}stop(){if(this.holdEnd)return;this.end();}abort(){this.stop();}end(){this.active=false;queueMicrotask(()=>this.onend?.());}fail(error,hold=false){this.holdEnd=hold;this.onerror?.({error});if(!hold)this.end();}}
  class Event {constructor(type,options={}){this.type=type;this.detail=options.detail||{};}}
  const localStorage={getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,String(v)),removeItem:k=>store.delete(k)};
- const navigator={onLine:true,userActivation:{isActive:true},mediaDevices:{getSupportedConstraints:()=>({}),getUserMedia:async()=>{const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(){}};tracks.push(track);return {getAudioTracks:()=>[track],getTracks:()=>[track]};}}};
+ const navigator={onLine:true,userActivation:{isActive:true},mediaDevices:{getSupportedConstraints:()=>({}),getUserMedia:async()=>{const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(type,fn){this[type]=fn;}};tracks.push(track);return {getAudioTracks:()=>[track],getTracks:()=>[track]};}}};
  const window={STONEFELLOW_CHAT:{userId:1,endpoint:'/api/chat.php'},STONEFELLOW_CHAT_VOICE_BOOT:{button:elements.chatVoiceButton},SpeechRecognition:Recognition,
  fetch:async()=>{fetches++;return new Response('{}');},speechSynthesis:{cancel(){},speak(){}},SpeechSynthesisUtterance:class{},
  addEventListener:(t,f)=>{if(!listeners.has(t))listeners.set(t,[]);listeners.get(t).push(f);},removeEventListener(){},dispatchEvent:e=>{emit(e.type,e.detail);return true;},
@@ -61,6 +61,9 @@ function fixture(){
 }
 {
  const f=fixture();f.window.VP3ConversationControls.responseWindow();await f.settle();f.current().fail('network');await f.settle();f.navigator.onLine=false;f.emit('offline');await f.advance(16000);check(!f.window.VP3ConversationControls.isEnabled(),'transient reconnect never extends the temporary reply-listening window');const before=f.starts;f.navigator.onLine=true;f.emit('online');await f.advance(60000);check(f.starts===before,'expired reply window cannot reopen capture on network return');
+}
+{
+ const f=fixture();f.window.VP3ConversationControls.listen();await f.settle();f.tracks.at(-1).readyState='ended';f.tracks.at(-1).ended();await f.advance(60000);check(!f.window.VP3ConversationControls.isEnabled()&&f.starts===1,'browser or device ending microphone capture cancels reconnect intent');
 }
 for(const error of ['not-allowed','service-not-allowed','audio-capture']){
  const f=fixture();f.window.VP3ConversationControls.listen();await f.settle();f.current().fail(error);await f.advance(60000);check(!f.window.VP3ConversationControls.isEnabled()&&f.starts===1,'hard '+error+' failure stops capture without an automatic permission retry');

@@ -457,7 +457,7 @@
         const track=stream.getAudioTracks?.()[0]||null;if(!track||track.readyState!=='live')throw new Error('Processed microphone track is not live.');
         try{track.contentHint='speech-recognition';}catch(error){try{track.contentHint='speech';}catch(ignore){}}
         inputStream=stream;inputTrack=track;inputTrackMode='monitor';proof.processedMicReady=true;startInputMonitor(stream);log('MIC_TRACK_READY',{label:String(track.label||''),settings:track.getSettings?.()||{},constraints:track.getConstraints?.()||{}});
-        track.addEventListener?.('ended',()=>{if(inputTrack===track)releaseProcessedMic('ended');},{once:true});return track;
+        track.addEventListener?.('ended',()=>{if(inputTrack!==track)return;disableVoice({persist:false});proof.lastError='The microphone input ended. Select the microphone to reconnect.';setAgentState('error',proof.lastError);log('MIC_INPUT_ENDED',{});},{once:true});return track;
       }catch(error){for(const track of stream?.getTracks?.()||[]){try{track.stop();}catch(ignore){}}if(!current())return null;proof.micErrors+=1;proof.processedMicReady=false;inputTrackMode='default';log('MIC_TRACK_ERROR',{message:String(error?.message||error||'Microphone processing failed'),count:proof.micErrors});return null;}
     })();inputTrackPromise=acquisition;acquisition.finally(()=>{if(inputTrackPromise===acquisition)inputTrackPromise=null;});return acquisition;
   }
