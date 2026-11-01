@@ -28,6 +28,10 @@ $segment->execute([2,'transcript','imported private words']);
 function check(bool $ok,string $message): void {if(!$ok)throw new LogicException($message);}
 function pass(string $name): void {echo "PASS {$name}\n";}
 
+check((agent_surface_v131_sanitize(['timezone'=>'America/Phoenix'])['timezone']??'')==='America/Phoenix','valid client timezone was dropped');
+check(!isset(agent_surface_v131_sanitize(['timezone'=>'invalid/zone'])['timezone']),'invalid timezone survived sanitizer');
+pass('surface context retains validated local timezone for recording-day reads');
+
 $forged=agent_surface_v131_sanitize([
     'surface'=>'chat','conversation_id'=>11,
     'transcription'=>['session_id'=>999,'title'=>'Forged','status'=>'active','duration_ms'=>999999,'source'=>'cloud_transcription'],

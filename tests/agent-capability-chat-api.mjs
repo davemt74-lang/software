@@ -78,6 +78,10 @@ try{
    check(response.data?.ok===true&&response.data.answer.includes('twenty dollars')&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.status==='read_complete','dated transcript request reads authorized evidence through '+endpoint+' '+input_mode);
   }
  }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  response=await post(endpoint,'Tell me about the transcription from October 30th',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,timezone:'UTC'}});
+  check(response.data?.tool_receipt?.status==='clarification_required'&&response.data.answer.includes('Phoenix previous day'),'UTC date correctly includes the second recording that Phoenix excludes through '+endpoint);
+ }
  check((await state()).reminders===beforeChatRepair,'conversational setup, list discovery and transcript date reads never create reminders');
  const beforeReads=(await state()).reminders;
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
