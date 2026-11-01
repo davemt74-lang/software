@@ -62,11 +62,12 @@ function chat_context_is_internal_source($s){return str_starts_with($s,'runtime:
 function ai_v100_safe_exception($e,$fallback='Failed'){return $fallback;}
 function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_TRANSCRIPT_PLAN_V1')){
-        $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);if(str_contains($json['request'],'October 30th'))return ['ok'=>true,'answer'=>'{"operation":"read","date":"2026-10-30"}'];return ['ok'=>true,'answer'=>json_encode(['query'=>$json['selected_text']??'','operation'=>str_starts_with($json['request'],'Highlight')?'highlight':(str_contains($json['request'],'saved analysis')?'read_analysis':'read'),'session_id'=>(int)($json['selected_session_id']?:21)])];
+        $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);if($json['request']==='The first one')return ['ok'=>true,'answer'=>'{"operation":"read","session_id":23}'];if(str_contains($json['request'],'October 30th'))return ['ok'=>true,'answer'=>'{"operation":"read","date":"2026-10-30"}'];return ['ok'=>true,'answer'=>json_encode(['query'=>$json['selected_text']??'','operation'=>str_starts_with($json['request'],'Highlight')?'highlight':(str_contains($json['request'],'saved analysis')?'read_analysis':'read'),'session_id'=>(int)($json['selected_session_id']?:21)])];
     }
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
+        if($q==='The first one')return ['ok'=>true,'answer'=>'{"operation":"continue","ids":[]}'];
         if($q==='Do we have a list tool yet')return ['ok'=>true,'answer'=>'{"operation":"inspect","ids":["capabilities.inspect"]}'];
         if($q==='Can you install System Apps?')return ['ok'=>true,'answer'=>'{"operation":"inspect","ids":["system_apps.manage"]}'];
         if($q==='Install System App vp3.notes')return ['ok'=>true,'answer'=>'{"operation":"system_apps_action","ids":["system_apps.manage"],"action":"install","app_key":"vp3.notes"}'];

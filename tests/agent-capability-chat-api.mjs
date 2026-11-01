@@ -81,6 +81,8 @@ try{
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
   response=await post(endpoint,'Tell me about the transcription from October 30th',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,timezone:'UTC'}});
   check(response.data?.tool_receipt?.status==='clarification_required'&&response.data.answer.includes('Phoenix previous day'),'UTC date correctly includes the second recording that Phoenix excludes through '+endpoint);
+  response=await post(endpoint,'The first one',{...named,conversation_id:longfellowConversation});
+  check(response.data?.tool_receipt?.record_id===23&&response.data.answer.includes('different local recording day'),'ordinal transcript choice follows the preceding clarification through '+endpoint);
  }
  check((await state()).reminders===beforeChatRepair,'conversational setup, list discovery and transcript date reads never create reminders');
  const beforeReads=(await state()).reminders;
