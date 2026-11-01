@@ -6,7 +6,8 @@ require __DIR__.'/../includes/phone-voice-v130.php';
 
 function subscription_has_entitlement(?array $user,string $key): bool
 {
-    return (int)($user['id']??0)===1 && in_array($key,['phone.numbers','phone.voice'],true);
+    return empty($GLOBALS['phonePlanSuspended']) && (int)($user['id']??0)===1
+        && in_array($key,['phone.numbers','phone.voice'],true);
 }
 function subscription_entitlement_limit(?array $user,string $key,?int $default=null): ?int {return 2;}
 $pdo=new PDO('sqlite::memory:');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);

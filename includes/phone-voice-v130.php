@@ -117,6 +117,47 @@ function vp3_phone_voice_check_event_v130(array $form,string $signature,string $
     return $sid;
 }
 
+/**
+ * PH3E: revalidate a carrier-proven call against the *current* Cloud tenant.
+ * The signed inbound event creates the immutable receipt; this function has no
+ * network side effects and grants no browser/session or agent tool authority.
+ * It is also the eligibility boundary a future live audio bridge must use.
+ */
+function vp3_phone_voice_current_route_v131(PDO $pdo,string $callSid,int $maxAgeSeconds=14400): array
+{
+    if (!preg_match('/^CA[a-f0-9]{32}$/iD',$callSid)||$maxAgeSeconds<1||$maxAgeSeconds>86400)
+        return ['accepted'=>false,'reason'=>'invalid_call'];
+    $q=$pdo->prepare('SELECT c.owner_user_id,c.phone_number_id,c.agent_id,c.caller_e164,c.called_e164,
+        c.state,c.created_at,n.owner_user_id AS current_owner,n.agent_id AS current_agent,
+        n.voice_enabled,n.phone_e164 AS current_did,n.provider AS current_provider
+        FROM phone_voice_calls_v130 c
+        LEFT JOIN phone_cloud_numbers_v100 n ON n.id=c.phone_number_id
+        WHERE c.provider=\'twilio\' AND c.provider_call_sid=? LIMIT 1');
+    $q->execute([$callSid]);$receipt=$q->fetch(PDO::FETCH_ASSOC);
+    if (!$receipt) return ['accepted'=>false,'reason'=>'unknown_call'];
+    $owner=(int)$receipt['owner_user_id'];$numberId=(int)$receipt['phone_number_id'];
+    $agent=(int)$receipt['agent_id'];
+    // A reallocation, agent switch, or voicemail completion invalidates any
+    // future routing turn. Historical voicemail remains with the old owner.
+    if ($owner<1||$numberId<1||$agent<1||(int)$receipt['current_owner']!==$owner
+        ||(int)$receipt['current_agent']!==$agent||(int)$receipt['voice_enabled']!==1
+        ||(string)$receipt['current_provider']!=='twilio'
+        ||(string)$receipt['current_did']!==(string)$receipt['called_e164']
+        ||(string)$receipt['state']!=='voicemail_offered')
+        return ['accepted'=>false,'reason'=>'assignment_changed'];
+    $created=strtotime((string)$receipt['created_at']);
+    if ($created===false||$created>time()+60||time()-$created>$maxAgeSeconds)
+        return ['accepted'=>false,'reason'=>'call_expired'];
+    if (!vp3_phone_package_v100($pdo,$owner)['voice']
+        ||!vp3_phone_agent_owned_v100($pdo,$owner,$agent))
+        return ['accepted'=>false,'reason'=>'account_ineligible'];
+    return ['accepted'=>true,'owner_user_id'=>$owner,'phone_number_id'=>$numberId,
+        'agent_id'=>$agent,'caller_e164'=>(string)$receipt['caller_e164'],
+        'called_e164'=>(string)$receipt['called_e164'],
+        // Neither the carrier caller ID nor this receipt authenticates a member.
+        'authority'=>'unauthenticated_caller','execution'=>'disabled'];
+}
+
 function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
     string $callback,string $token,string $accountSid): array
 {
@@ -141,11 +182,12 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
     $q->execute([$agent,$owner]);$agentName=(string)($q->fetchColumn()?:'');
     $pdo->beginTransaction();
     try {
-        $exists=$pdo->prepare('SELECT id,owner_user_id,phone_number_id,caller_e164,called_e164
+        $exists=$pdo->prepare('SELECT id,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164,state
           FROM phone_voice_calls_v130 WHERE provider=\'twilio\' AND provider_call_sid=? LIMIT 1');
         $exists->execute([$callSid]);$row=$exists->fetch(PDO::FETCH_ASSOC);
         if ($row) {
             if ((int)$row['owner_user_id']!==$owner||(int)$row['phone_number_id']!==(int)$number['id']
+                ||(int)$row['agent_id']!==$agent||(string)$row['state']!=='voicemail_offered'
                 ||(string)$row['called_e164']!==$to||(string)$row['caller_e164']!==$caller)
                 throw new RuntimeException('Call receipt conflicts with number assignment.');
         } else {
@@ -159,6 +201,8 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
     }
+    $route=vp3_phone_voice_current_route_v131($pdo,$callSid);
+    if (!$route['accepted']) return $route;
     return ['accepted'=>true,'twiml'=>vp3_phone_voice_twiml_v130($agentName,$callback)];
 }
 
