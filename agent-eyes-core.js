@@ -81,6 +81,24 @@
     if(/\b(?:yes|no|okay|ok|fine|good|great|thanks|thank|you|hello|hey|stop|listening|recording|help|what|who|where|when|why|how|can|could|would|please|tell|show|doing|looking|going|ready|happy|sorry)\b/iu.test(name))return '';
     return name.replace(/\s+/g,' ');
   }
+  const PORTRAIT_INTERVAL=7*24*60*60*1000,MAX_PORTRAITS=12;
+  function visualReply(text){
+    const value=String(text||'').normalize('NFKC').trim().replace(/[.!?]+$/u,'');
+    if(/^(?:no(?: thanks| thank you)?|not now|cancel|do not remember me|don't remember me)$/iu.test(value))return 'decline';
+    if(/^(?:yes(?: please)?|yeah|yep|sure|ok(?:ay)?|go ahead|(?:please )?(?:remember me visually|save my local visual samples|recognize me next time|take (?:my |the )?(?:photo|picture)|save (?:my |the )?(?:photos?|pictures?)))$/iu.test(value))return 'accept';
+    return '';
+  }
+  function cleanPortraits(rows){return (Array.isArray(rows)?rows:[]).filter(p=>typeof p?.image==='string'&&p.image.length<=65536&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.image)&&Number.isFinite(Date.parse(p.captured_at))).map(p=>({image:p.image,captured_at:new Date(p.captured_at).toISOString()})).sort((a,b)=>Date.parse(a.captured_at)-Date.parse(b.captured_at)).slice(-MAX_PORTRAITS);}
+  function portraitDue(profile,at=Date.now()){
+    if(!profile||profile.recognitionEnabled!==true||profile.portraitRefreshEnabled!==true||!Array.isArray(profile.embeddings)||profile.embeddings.filter(vector).length<3)return false;
+    const dates=cleanPortraits(profile.portraits).map(p=>Date.parse(p.captured_at));
+    const last=Math.max(0,...dates,Number(profile.portraitUpdatedAt)||0);
+    return Number.isFinite(at)&&at>=last&&at-last>=PORTRAIT_INTERVAL;
+  }
+  function refreshMatch(embedding,profiles,id){
+    const person=match(embedding,profiles);if(!person||person.id!==String(id)||person.score<.85)return false;
+    return !(profiles||[]).some(p=>String(p.id)!==String(id)&&p.recognitionEnabled===true&&p.embeddings?.length>=3&&p.embeddings.reduce((n,v)=>n+similarity(embedding,v),0)/p.embeddings.length>person.score-.1);
+  }
   function followPoint(rows,mirrored=true){if(!Array.isArray(rows)||rows.length!==1)return null;const b=box(rows[0].box);if(!b)return null;const x=b[0]+b[2]/2;return {x:mirrored?1-x:x,y:b[1]+b[3]/2};}
   function speakerTrack(rows,speaker,at=Date.now()){
     if(!speaker?.participant_id||!Number.isFinite(speaker.at)||!Number.isFinite(speaker.expires_at)||speaker.at>at||speaker.expires_at<=at||speaker.expires_at-speaker.at>3000)return '';
@@ -88,5 +106,5 @@
     return same.length===1&&same[0].track_id===speaker.track_id?same[0].track_id:'';
   }
   function visualState({state='idle',recording=false}={}){return {state:({processing:'thinking',transcribing:'thinking',starting:'connecting'})[state]||(['listening','thinking','speaking','error','connecting'].includes(state)?state:'idle'),recording:recording===true};}
-  return {create,match,similarity,box,visualState,introductionName,followPoint,speakerTrack};
+  return {create,match,similarity,box,visualState,introductionName,followPoint,speakerTrack,visualReply,cleanPortraits,portraitDue,refreshMatch,PORTRAIT_INTERVAL,MAX_PORTRAITS};
 });

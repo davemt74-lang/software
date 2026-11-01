@@ -4,9 +4,9 @@
   async function boot(){
     const adapter=window.VP3_ORB_ADAPTER;if(!adapter||window.VP3AgentEyes||new URLSearchParams(location.search).get('orb_embed')==='1')return;
     const core=window.VP3EyesCore.create(),session=crypto.randomUUID();
-    let generation=0,stream=null,engine=null,timer=0,profiles=[],observations=[],currentRows=[],starting=false,enrolling=false,pendingEnrollment=false,pending=[],flushing=false,profileVersion=0,profileSignature='',introduction=null,savingIntroduction=false,recognitionOffer=null;
+    let generation=0,stream=null,engine=null,timer=0,profiles=[],observations=[],currentRows=[],starting=false,enrolling=false,pendingEnrollment=false,pending=[],flushing=false,profileVersion=0,profileSignature='',introduction=null,savingIntroduction=false,recognitionOffer=null,refreshing=false,stablePhoto=null;const photoRetry=new Map();
     const panel=document.createElement('section');panel.className='vp3-eyes-panel';panel.hidden=true;panel.setAttribute('aria-label','Agent Eyes');
-    panel.innerHTML='<header><strong>Agent Eyes</strong><button type="button" data-eyes-close aria-label="Close Agent Eyes">×</button></header><div class="vp3-eyes-content"><p data-eyes-status role="status">Camera is off.</p><div class="vp3-eyes-actions"><button type="button" data-eyes-start>Start camera</button><button type="button" data-eyes-stop disabled>Stop camera</button></div><div class="vp3-eyes-camera"><video muted playsinline></video><div class="vp3-eyes-boxes"></div></div><p data-eyes-people>No participants in view.</p><label><input type="checkbox" data-eyes-pause-hidden checked> Pause camera when this page is hidden</label><label><input type="checkbox" data-eyes-greetings checked> Greet arrivals automatically</label><details><summary>Introduce / recognize a participant</summary><p>A tracking ID is temporary. A local visual match is provisional and grants no account access.</p><label>Existing participant<select data-eyes-profile aria-label="Existing participant"></select></label><label>Or introduce someone<input type="text" data-eyes-name maxlength="120" placeholder="Participant name"></label><label><input type="checkbox" data-eyes-consent> This participant agrees to save local visual samples for recognition.</label><div class="vp3-eyes-actions"><button type="button" data-eyes-enroll>Save three local samples</button><button type="button" data-eyes-forget>Forget local samples</button></div></details><details><summary>Recent Agent Eyes activity</summary><ol data-eyes-history></ol></details><p>Participant frames and visual samples stay in this browser. TV Watching has separate controls for cropped-screen sharing and account history.</p></div>';
+    panel.innerHTML='<header><strong>Agent Eyes</strong><button type="button" data-eyes-close aria-label="Close Agent Eyes">×</button></header><div class="vp3-eyes-content"><p data-eyes-status role="status">Camera is off.</p><div class="vp3-eyes-actions"><button type="button" data-eyes-start>Start camera</button><button type="button" data-eyes-stop disabled>Stop camera</button></div><div class="vp3-eyes-camera"><video muted playsinline></video><div class="vp3-eyes-boxes"></div></div><p data-eyes-people>No participants in view.</p><label><input type="checkbox" data-eyes-pause-hidden checked> Pause camera when this page is hidden</label><label><input type="checkbox" data-eyes-greetings checked> Greet arrivals automatically</label><details><summary>Introduce / recognize a participant</summary><p>A tracking ID is temporary. A local visual match is provisional and grants no account access.</p><label>Existing participant<select data-eyes-profile aria-label="Existing participant"></select></label><label>Or introduce someone<input type="text" data-eyes-name maxlength="120" placeholder="Participant name"></label><label><input type="checkbox" data-eyes-consent> This participant agrees to save local visual samples for recognition.</label><label><input type="checkbox" data-eyes-photo-refresh checked> Refresh saved photos weekly while this participant is clearly recognized</label><div class="vp3-eyes-actions"><button type="button" data-eyes-enroll>Take and save three photos</button><button type="button" data-eyes-forget>Forget local samples</button></div></details><details><summary>Recent Agent Eyes activity</summary><ol data-eyes-history></ol></details><p>Participant frames and visual samples stay in this browser. TV Watching has separate controls for cropped-screen sharing and account history.</p></div>';
     document.body.append(panel);const q=s=>panel.querySelector(s),video=q('video'),status=q('[data-eyes-status]');
     const speakerStatus=document.createElement('p');speakerStatus.dataset.eyesSpeaker='';speakerStatus.setAttribute('role','status');q('.vp3-eyes-camera').after(speakerStatus);
     const legend=document.createElement('p');legend.textContent='Blue: tracked participant. Green: recent voice match (up to 3 seconds).';speakerStatus.after(legend);
@@ -26,16 +26,17 @@
     pauseHidden.addEventListener('change',()=>{try{localStorage.setItem(pauseKey,pauseHidden.checked?'on':'off');}catch(_){}if(pauseHidden.checked&&document.hidden)void stop('Camera stopped while this page is hidden.');});
     const say=text=>{status.textContent=String(text);};
     const history=q('[data-eyes-history]');
-    const portraits=document.createElement('div');portraits.className='vp3-eyes-portraits';portraits.setAttribute('aria-label','Local visual samples');q('[data-eyes-enroll]').closest('.vp3-eyes-actions').after(portraits);
-    const enrollmentStatus=document.createElement('p');enrollmentStatus.dataset.eyesEnrollmentStatus='';enrollmentStatus.setAttribute('role','status');portraits.after(enrollmentStatus);const enrollmentSay=text=>{enrollmentStatus.textContent=String(text);say(text);};
-    function showPortraits(rows=[]){portraits.replaceChildren();for(const [i,row] of rows.slice(-3).entries()){const image=String(row.image||'');if(!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(image)||image.length>65536)continue;const img=document.createElement('img');img.src=image;img.alt=`Local visual sample ${i+1}`;img.width=80;img.height=80;portraits.append(img);}}
-    function savedPortraits(){showPortraits(profiles.find(p=>String(p.id)===q('[data-eyes-profile]').value)?.portraits||[]);}
-    function portrait(face){const [x,y,w,h]=face.box||[];if(!video.videoWidth||!video.videoHeight||!(w>0&&h>0))throw Error('Wait for a clear camera frame before saving samples.');const left=Math.max(0,x-w*.2),top=Math.max(0,y-h*.2),width=Math.min(video.videoWidth-left,w*1.4),height=Math.min(video.videoHeight-top,h*1.4);const canvas=document.createElement('canvas');canvas.width=canvas.height=160;canvas.getContext('2d').drawImage(video,left,top,width,height,0,0,160,160);const image=canvas.toDataURL('image/jpeg',.72);if(image.length>65536)throw Error('Visual portrait exceeded its local size limit.');return {image,captured_at:new Date().toISOString()};}
+    const portraits=document.createElement('div');portraits.className='vp3-eyes-portraits';portraits.setAttribute('aria-label','Participant photo gallery');q('[data-eyes-enroll]').closest('.vp3-eyes-actions').after(portraits);
+    const enrollmentStatus=document.createElement('p');enrollmentStatus.dataset.eyesEnrollmentStatus='';enrollmentStatus.setAttribute('role','status');portraits.after(enrollmentStatus);const photoStatus=document.createElement('p');photoStatus.dataset.eyesPhotoStatus='';photoStatus.setAttribute('role','status');portraits.before(photoStatus);const enrollmentSay=text=>{enrollmentStatus.textContent=String(text);say(text);};
+    function showPortraits(rows=[],preview=false){portraits.replaceChildren();const saved=window.VP3EyesCore.cleanPortraits(rows);for(const [i,row] of saved.entries()){const figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=row.image;img.alt=`${preview?'Captured':'Saved'} participant photo ${i+1}`;img.width=80;img.height=80;caption.textContent=new Date(row.captured_at).toLocaleString();figure.append(img,caption);portraits.append(figure);}photoStatus.textContent=preview?`${saved.length} of 3 photos captured · Not saved yet` :saved.length?`${saved.length} saved photo${saved.length===1?'':'s'} · Last updated ${new Date(saved.at(-1).captured_at).toLocaleString()}`:'No saved photos on this device.';}
+    function savedPortraits(){const p=profiles.find(p=>String(p.id)===q('[data-eyes-profile]').value);showPortraits(p?.portraits||[]);q('[data-eyes-photo-refresh]').checked=p?p.portraitRefreshEnabled===true:true;}
+    function portrait(face,source=video){const widthPx=source.videoWidth||source.width,heightPx=source.videoHeight||source.height;const [x,y,w,h]=face.box||[];if(!widthPx||!heightPx||![x,y,w,h].every(Number.isFinite)||w<64||h<64||x<0||y<0||x+w>widthPx||y+h>heightPx)throw Error('Wait for a clear camera frame before saving samples.');const left=Math.max(0,x-w*.2),top=Math.max(0,y-h*.2),width=Math.min(widthPx-left,w*1.4),height=Math.min(heightPx-top,h*1.4);const canvas=document.createElement('canvas');canvas.width=canvas.height=160;canvas.getContext('2d').drawImage(source,left,top,width,height,0,0,160,160);const image=canvas.toDataURL('image/jpeg',.72);if(image.length>65536)throw Error('Visual portrait exceeded its local size limit.');return {image,captured_at:new Date().toISOString()};}
 
     const greetingKey=`vp3:eyes:greetings:${adapter.ownerKey}`;
     try{q('[data-eyes-greetings]').checked=localStorage.getItem(greetingKey)!=='off';}catch(_){}
     q('[data-eyes-greetings]').addEventListener('change',()=>{try{localStorage.setItem(greetingKey,q('[data-eyes-greetings]').checked?'on':'off');}catch(_){}});
-    for(const selector of ['[data-eyes-profile]','[data-eyes-name]'])q(selector).addEventListener('input',()=>{q('[data-eyes-consent]').checked=false;pendingEnrollment=false;savedPortraits();});
+    for(const selector of ['[data-eyes-profile]','[data-eyes-name]'])q(selector).addEventListener('input',()=>{q('[data-eyes-consent]').checked=false;pendingEnrollment=false;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');savedPortraits();});
+    q('[data-eyes-photo-refresh]').addEventListener('change',async()=>{const id=q('[data-eyes-profile]').value,p=profiles.find(p=>String(p.id)===id),enabled=q('[data-eyes-photo-refresh]').checked;if(!p?.embeddings?.length)return;try{await adapter.setEyesPhotoRefresh({id,enabled,isCurrent:()=>q('[data-eyes-profile]').value===id});await loadProfiles();enrollmentSay(enabled?'Weekly photo refresh enabled for this participant.':'Automatic photo refresh disabled.');}catch(error){savedPortraits();enrollmentSay(String(error.message||'Photo preference could not be saved.'));}});
     function cameraIndicator(active){const root=document.querySelector('.vp3-orb-root');if(root)root.dataset.eyesActive=String(active);const button=document.querySelector('[data-orb-eyes]');if(button){button.textContent=active?'Eyes on':'Eyes';button.setAttribute('aria-pressed',String(active));}}
 
     async function flush(){
@@ -62,9 +63,9 @@
       if(window.VP3TVWatching?.hear(text,context))return true;
       if(window.VP3ParticipantContinuity?.hear(text))return true;
       if(recognitionOffer&&stream&&!enrolling&&!savingIntroduction&&currentRows.length===1&&currentRows[0].track_id===recognitionOffer.track&&Date.now()<recognitionOffer.expires){
-        const answer=String(text||'').trim().replace(/[.!]$/,'');
-        if(/^(?:no(?: thanks| thank you)?|do not remember me|don't remember me)$/i.test(answer)){recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');say('Your name is saved. No visual samples were saved.');return true;}
-        if(recognitionOffer.prompted&&/^(?:please )?(?:remember me visually|save my local visual samples|recognize me next time)$/i.test(answer)){q('[data-eyes-profile]').value=recognitionOffer.id;q('[data-eyes-consent]').checked=true;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');await enroll();return true;}
+        const answer=window.VP3EyesCore.visualReply(text);
+        if(answer==='decline'){recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');say('Your name is saved. No visual samples were saved.');return true;}
+        if(recognitionOffer.prompted&&answer==='accept'){q('[data-eyes-profile]').value=recognitionOffer.id;q('[data-eyes-photo-refresh]').checked=true;q('[data-eyes-consent]').checked=true;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');await enroll();return true;}
       }
       if(!stream||enrolling||savingIntroduction||!introduction||Date.now()>introduction.expires||currentRows.length!==1||currentRows[0].track_id!==introduction.track)return false;
       const name=window.VP3EyesCore.introductionName(text,true);if(!name)return false;
@@ -76,8 +77,8 @@
         const event=core.introduce(track,profile);if(!event)return false;
         introduction=null;currentRows=currentRows.map(row=>({...row,participant_id:profile.id,display_name:profile.name,identity_source:'self_introduction'}));draw(currentRows);log(event);
         q('[data-eyes-profile]').value=String(profile.id);q('[data-eyes-name]').value='';q('[data-eyes-consent]').checked=false;
-        recognitionOffer={id:String(profile.id),track,expires:Date.now()+90000,prompted:false};
-        const message=`Thanks, ${profile.name}. Your name is saved. Say “remember me visually” to allow local visual samples so I can recognize you next time on this device.`;
+        recognitionOffer={id:String(profile.id),track,expires:Date.now()+90000,prompted:true,spoken:false};window.VP3AgentOrb?.setIntroductionMode?.('visual-consent');
+        const message=`Thanks, ${profile.name}. May I take three photos for your local Agent Eyes gallery and refresh them weekly while I recognize you? Say “yes” or “remember me visually”, or “no”.`;
         recognitionOffer.message=message;
         window.VP3AgentOrb?.bubble(message);say(message);return true;
       }catch(error){if(current())say(String(error.message||'Your name could not be saved. Please try again.'));return false;}
@@ -87,14 +88,17 @@
       void window.VP3TVWatching?.stop();
       window.dispatchEvent(new Event('vp3:agent-eyes-stopped'));
       introduction=null;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');
-      generation++;starting=false;enrolling=false;pendingEnrollment=false;cameraIndicator(false);q('[data-eyes-consent]').checked=false;clearTimeout(timer);timer=0;
-      if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}video.srcObject=null;observations=[];currentRows=[];core.clear().forEach(log);draw([]);say(reason);q('[data-eyes-start]').disabled=false;q('[data-eyes-stop]').disabled=true;
+      generation++;starting=false;pendingEnrollment=false;stablePhoto=null;cameraIndicator(false);q('[data-eyes-consent]').checked=false;clearTimeout(timer);timer=0;
+      if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}video.srcObject=null;observations=[];currentRows=[];core.clear().forEach(log);draw([]);savedPortraits();say(reason);q('[data-eyes-start]').disabled=false;q('[data-eyes-stop]').disabled=true;
     }
     let detection=Promise.resolve();
-    function detectFrame(){const next=detection.catch(()=>{}).then(detectOneFrame);detection=next;return next;}
-    async function detectOneFrame(){
-      const tv=window.VP3TVWatching,enabled=tv?.needsDetection()===true;
-      try{return await engine.detect(video,{object:{enabled}});}catch(error){if(!enabled)throw error;tv.detectorFailed();return engine.detect(video,{object:{enabled:false}});}
+    function detectFrame(snapshot=false){const next=detection.catch(()=>{}).then(()=>detectOneFrame(snapshot));detection=next;return next;}
+    async function detectOneFrame(snapshot=false){
+      let source=video;
+      if(snapshot){source=document.createElement('canvas');source.width=video.videoWidth;source.height=video.videoHeight;if(!source.width||!source.height)throw Error('Wait for a clear camera frame.');source.getContext('2d').drawImage(video,0,0);}
+      const tv=window.VP3TVWatching,enabled=tv?.needsDetection()===true;let result;
+      try{result=await engine.detect(source,{object:{enabled}});}catch(error){if(!enabled)throw error;tv.detectorFailed();result=await engine.detect(source,{object:{enabled:false}});}
+      return snapshot?{...result,portraitSource:source}:result;
     }
     function roomFaces(result){const tv=window.VP3TVWatching,boxes=tv?.screenBoxes(result.object,video.videoWidth,video.videoHeight)||[];return (result.face||[]).filter(face=>!tv?.faceOnScreen(face,boxes,video.videoWidth,video.videoHeight));}
     async function scan(token){
@@ -102,8 +106,8 @@
       try{
         if(!await cameraAllowed())return void stop('Camera stopped by privacy or session settings.');
         await loadProfiles();if(token!==generation||!stream)return;
-        if(enrolling){timer=setTimeout(()=>void scan(token),900);return;}
-        const result=await detectFrame();if(token!==generation||!stream)return;if(enrolling){timer=setTimeout(()=>void scan(token),900);return;}
+        if(enrolling||refreshing){timer=setTimeout(()=>void scan(token),900);return;}
+        const result=await detectFrame();if(token!==generation||!stream)return;if(enrolling||refreshing){timer=setTimeout(()=>void scan(token),900);return;}
         // Re-read revocations after inference; stale matches cannot revive a profile.
         await loadProfiles();if(token!==generation||!stream)return;
         if(!await cameraAllowed())return void stop('Camera stopped by privacy settings.');
@@ -113,10 +117,11 @@
         const update=core.update(observations,profiles);currentRows=update.rows;draw(update.rows);update.events.forEach(log);if(pendingEnrollment&&q('[data-eyes-consent]').checked&&currentRows.length===1)void enroll();
         if(introduction&&(currentRows.length!==1||currentRows[0].track_id!==introduction.track||currentRows[0].participant_id)){introduction=null;window.VP3AgentOrb?.setIntroductionMode?.('');}
         if(recognitionOffer&&(Date.now()>recognitionOffer.expires||currentRows.length!==1||currentRows[0].track_id!==recognitionOffer.track)){recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');}
-        if(recognitionOffer&&!recognitionOffer.prompted&&!document.hidden&&!adapter.busy()){
-          const offer=recognitionOffer;offer.prompted=true;window.VP3AgentOrb?.setIntroductionMode?.('visual-consent');window.VP3AgentOrb?.bubble(offer.message);
+        if(recognitionOffer&&!recognitionOffer.spoken&&!document.hidden&&!adapter.busy()){
+          const offer=recognitionOffer;offer.spoken=true;window.VP3AgentOrb?.setIntroductionMode?.('visual-consent');window.VP3AgentOrb?.bubble(offer.message);
           void Promise.resolve(adapter.greet(offer.message,()=>recognitionOffer===offer&&token===generation&&!!stream)).catch(()=>{});
         }
+        if(!enrolling&&!savingIntroduction&&!recognitionOffer)void refreshPhoto(token,result);
         const greeting=q('[data-eyes-greetings]').checked&&!document.hidden&&!enrolling&&!adapter.busy()?core.greeting():null;
         if(greeting){
           if(!greeting.participant_id){introduction={track:greeting.track_id,expires:Date.now()+90000};window.VP3AgentOrb?.setIntroductionMode?.('name');}
@@ -127,6 +132,21 @@
         say(`Camera active · ${update.rows.length} participant${update.rows.length===1?'':'s'} in view.`);void flush();
       }catch(_){if(token===generation)return void stop('Agent Eyes stopped because camera, model, or privacy status is unavailable.');}
       if(token===generation&&stream)timer=setTimeout(()=>void scan(token),900);
+    }
+    async function refreshPhoto(token,result){
+      const row=currentRows.length===1?currentRows[0]:null,p=profiles.find(p=>String(p.id)===row?.participant_id),face=roomFaces(result)[0];
+      if(!row||row.identity_source!=='local_visual_similarity'||roomFaces(result).length!==1||document.hidden||!window.VP3EyesCore.portraitDue(p)||!window.VP3EyesCore.refreshMatch(Array.from(face?.embedding||[]),profiles,p.id)){stablePhoto=null;return;}
+      if(stablePhoto?.track!==row.track_id||stablePhoto?.id!==p.id){stablePhoto={track:row.track_id,id:p.id,since:Date.now()};return;}
+      if(refreshing||Date.now()-stablePhoto.since<3000||Date.now()-(photoRetry.get(p.id)||0)<60000)return;
+      refreshing=true;photoRetry.set(p.id,Date.now());
+      const current=()=>token===generation&&!!stream&&!document.hidden&&!enrolling&&currentRows.length===1&&currentRows[0].track_id===row.track_id&&currentRows[0].participant_id===p.id&&currentRows[0].identity_source==='local_visual_similarity';
+      try{
+        if(!await cameraAllowed()||!current())return;
+        const fresh=await detectFrame(true),faces=roomFaces(fresh);if(!current()||faces.length!==1||!window.VP3EyesCore.refreshMatch(Array.from(faces[0].embedding||[]),profiles,p.id))return;
+        const picture=portrait(faces[0],fresh.portraitSource);const saved=await adapter.refreshEyesPortrait({id:p.id,portrait:picture,isCurrent:current});if(!current())return;
+        if(saved?.saved){await loadProfiles();if(!current())return;if(!q('[data-eyes-profile]').value)q('[data-eyes-profile]').value=p.id;if(q('[data-eyes-profile]').value===p.id)savedPortraits();enrollmentSay(`Updated ${p.name}’s saved photo. Next automatic refresh is in a week.`);}
+      }catch(error){if(current())enrollmentSay(String(error.message||'Photo could not be saved. Will retry later.'));}
+      finally{refreshing=false;}
     }
     async function start(){
       if(starting||stream)return;if(document.hidden)return;
@@ -151,7 +171,7 @@
       }catch(error){if(acquired)acquired.getTracks().forEach(t=>t.stop());if(token===generation)await stop(String(error.message||'Camera could not start.'));}
     }
     async function enroll(){
-      if(enrolling)return;pendingEnrollment=false;if(!stream||currentRows.length!==1||observations.length!==1)return enrollmentSay('Start the camera with exactly one participant in view.');
+      if(enrolling||refreshing)return;pendingEnrollment=false;if(!stream||currentRows.length!==1||observations.length!==1)return enrollmentSay('Start the camera with exactly one participant in view.');
       if(!q('[data-eyes-consent]').checked)return enrollmentSay('The participant must agree to local recognition samples.');
       let id=q('[data-eyes-profile]').value;const name=q('[data-eyes-name]').value.trim();if(!id&&!name&&currentRows[0]?.participant_id){id=String(currentRows[0].participant_id);q('[data-eyes-profile]').value=id;}if(!id&&!name)return enrollmentSay('Choose a participant or enter their name.');
       enrolling=true;const token=generation,track=currentRows[0].track_id,reference=observations[0].embedding,samples=[],pictures=[];enrollmentSay('Capturing visual sample 1 of 3…');q('[data-eyes-enroll]').disabled=true;
@@ -159,25 +179,26 @@
         for(let i=0;i<3;i++){
           if(i)await new Promise(resolve=>setTimeout(resolve,700));
           if(token!==generation||!stream||!q('[data-eyes-consent]').checked||!await cameraAllowed())throw Error('Enrollment stopped.');
-          const result=await detectFrame();
+          const result=await detectFrame(true);
           if(token!==generation||!stream||!q('[data-eyes-consent]').checked||roomFaces(result).length!==1||currentRows[0]?.track_id!==track||currentRows.length!==1)throw Error('Keep the same participant alone in view.');
-          const embedding=Array.from(roomFaces(result)[0].embedding||[]);if(window.VP3EyesCore.similarity(embedding,reference)<.8)throw Error('Keep the same participant alone in view.');if(window.VP3EyesCore.similarity(embedding,embedding)<.99)throw Error('Visual sample unavailable.');if(samples.length&&window.VP3EyesCore.similarity(embedding,samples[0])<.8)throw Error('Keep the same participant alone in view.');samples.push(embedding);pictures.push(portrait(roomFaces(result)[0]));showPortraits(pictures);enrollmentSay(`Visual sample ${samples.length} of 3 captured…`);
+          const embedding=Array.from(roomFaces(result)[0].embedding||[]);if(window.VP3EyesCore.similarity(embedding,reference)<.8)throw Error('Keep the same participant alone in view.');if(window.VP3EyesCore.similarity(embedding,embedding)<.99)throw Error('Visual sample unavailable.');if(samples.length&&window.VP3EyesCore.similarity(embedding,samples[0])<.8)throw Error('Keep the same participant alone in view.');samples.push(embedding);pictures.push(portrait(roomFaces(result)[0],result.portraitSource));showPortraits(pictures,true);enrollmentSay(`Visual sample ${samples.length} of 3 captured…`);
         }
         if(token!==generation||!q('[data-eyes-consent]').checked)throw Error('Enrollment stopped.');
-        const saved=await adapter.enrollEyes({id,name,embeddings:samples,portraits:pictures,isCurrent:()=>token===generation&&!!stream&&q('[data-eyes-consent]').checked});await loadProfiles();if(saved?.id)q('[data-eyes-profile]').value=String(saved.id);showPortraits(pictures);q('[data-eyes-consent]').checked=false;q('[data-eyes-name]').value='';enrollmentSay('Three local portraits and visual samples saved. Future matches remain provisional.');
-      }catch(error){savedPortraits();enrollmentSay(String(error.message||'Enrollment could not be saved.'));}finally{enrolling=false;q('[data-eyes-enroll]').disabled=false;}
+        const saved=await adapter.enrollEyes({id,name,embeddings:samples,portraits:pictures,portraitRefreshEnabled:q('[data-eyes-photo-refresh]').checked,isCurrent:()=>token===generation&&!!stream&&q('[data-eyes-consent]').checked&&currentRows.length===1&&currentRows[0].track_id===track});await loadProfiles();if(token!==generation||!stream)return;if(saved?.id)q('[data-eyes-profile]').value=String(saved.id);savedPortraits();q('[data-eyes-consent]').checked=false;q('[data-eyes-name]').value='';const message='Three photos saved to the Agent Eyes gallery on this device.';enrollmentSay(message);window.VP3AgentOrb?.bubble(message);
+      }catch(error){savedPortraits();const message=String(error.message||'Photos could not be saved.');enrollmentSay(message);window.VP3AgentOrb?.bubble(message);}finally{enrolling=false;q('[data-eyes-enroll]').disabled=false;}
     }
-    async function requestEnrollment(startCamera=false){if(!q('[data-eyes-consent]').checked)return enrollmentSay('The participant must agree to local recognition samples.');pendingEnrollment=true;if(!stream&&startCamera&&!starting)await start();if(stream&&currentRows.length===1&&!enrolling)await enroll();else if(!enrolling)enrollmentSay('Authorized. Waiting for the camera and one clear participant; choose a participant or enter a name.');}
+    async function requestEnrollment(startCamera=false){if(!q('[data-eyes-consent]').checked)return enrollmentSay('The participant must agree to local recognition samples.');pendingEnrollment=true;if(!stream&&startCamera&&!starting)await start();if(stream&&currentRows.length===1&&!enrolling&&!refreshing)await enroll();else if(!enrolling)enrollmentSay('Authorized. Waiting for the camera and one clear participant; choose a participant or enter a name.');}
     q('[data-eyes-consent]').addEventListener('change',()=>{pendingEnrollment=q('[data-eyes-consent]').checked;if(pendingEnrollment)void requestEnrollment();});
     q('[data-eyes-profile]').addEventListener('change',savedPortraits);
     q('[data-eyes-start]').addEventListener('click',()=>void start());q('[data-eyes-stop]').addEventListener('click',()=>void stop());q('[data-eyes-close]').addEventListener('click',()=>{panel.hidden=true;});q('[data-eyes-enroll]').addEventListener('click',()=>void requestEnrollment(true));
-    q('[data-eyes-forget]').addEventListener('click',async()=>{const id=q('[data-eyes-profile]').value;if(!id)return say('Choose a participant.');try{await adapter.forgetEyes(id);window.dispatchEvent(new CustomEvent('vp3:participant-forgotten',{detail:{id,name:profiles.find(p=>String(p.id)===id)?.name||''}}));await loadProfiles();savedPortraits();core.clear().forEach(log);currentRows=[];observations=[];introduction=null;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');draw([]);window.VP3VoiceGuard?.clear();say('Local visual samples removed.');}catch(_){say('Local samples could not be removed.');}});
+    q('[data-eyes-forget]').addEventListener('click',async()=>{const id=q('[data-eyes-profile]').value;if(!id)return say('Choose a participant.');q('[data-eyes-consent]').checked=false;pendingEnrollment=false;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');try{await adapter.forgetEyes(id);window.dispatchEvent(new CustomEvent('vp3:participant-forgotten',{detail:{id,name:profiles.find(p=>String(p.id)===id)?.name||''}}));await loadProfiles();savedPortraits();core.clear().forEach(log);currentRows=[];observations=[];introduction=null;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');draw([]);window.VP3VoiceGuard?.clear();say('Local visual samples removed.');}catch(_){say('Local samples could not be removed.');}});
     const hide=()=>{if(document.hidden&&pauseHidden.checked)void stop('Camera stopped while this page is hidden.');};document.addEventListener('visibilitychange',hide);
     const retry=setInterval(()=>void flush(),5000);
     window.addEventListener('pagehide',()=>{void stop();clearInterval(retry);clearTimeout(speakerTimer);window.removeEventListener('vp3:active-speaker',paintSpeaker);document.removeEventListener('visibilitychange',hide);},{once:true});
     function rejectCurrent(){introduction=null;recognitionOffer=null;window.VP3AgentOrb?.setIntroductionMode?.('');if(!stream||currentRows.length!==1)return;const track=currentRows[0].track_id;core.reject(track);currentRows=currentRows.map(row=>({...row,participant_id:'',display_name:'',identity_source:'unidentified'}));draw(currentRows);introduction={track,expires:Date.now()+90000};window.VP3AgentOrb?.setIntroductionMode?.('name');window.VP3AgentOrb?.bubble('Thanks for correcting me. What is your name?');}
     async function refreshProfiles(){await loadProfiles();currentRows=currentRows.map(row=>{const p=profiles.find(p=>String(p.id)===String(row.participant_id));return p?{...row,display_name:p.name}:{...row,participant_id:'',display_name:'',identity_source:'unidentified'};});draw(currentRows);}
-    window.VP3AgentEyes={start,rejectCurrent,refreshProfiles,toggle:()=>{panel.hidden=!panel.hidden;if(!panel.hidden)void loadProfiles().catch(()=>say('Participant list unavailable.'));},stop,hear,expectingIntroduction:()=>!!stream&&!!introduction&&Date.now()<introduction.expires&&currentRows.length===1&&currentRows[0].track_id===introduction.track,isActive:()=>!!stream};
+    function acceptsPhotoReply(text){return !!recognitionOffer&&recognitionOffer.prompted&&!!stream&&!enrolling&&!savingIntroduction&&Date.now()<recognitionOffer.expires&&currentRows.length===1&&currentRows[0].track_id===recognitionOffer.track&&!!window.VP3EyesCore.visualReply(text);}
+    window.VP3AgentEyes={acceptsPhotoReply,start,rejectCurrent,refreshProfiles,toggle:()=>{panel.hidden=!panel.hidden;if(!panel.hidden)void loadProfiles().then(savedPortraits).catch(()=>say('Participant list unavailable.'));},stop,hear,expectingIntroduction:()=>!!stream&&!!introduction&&Date.now()<introduction.expires&&currentRows.length===1&&currentRows[0].track_id===introduction.track,isActive:()=>!!stream};
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>void boot(),{once:true});else void boot();
 })();

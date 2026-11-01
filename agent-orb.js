@@ -3,12 +3,22 @@
   const boot=()=>{
     const adapter=window.VP3_ORB_ADAPTER;if(!adapter||window.VP3AgentOrb)return;
     const $=id=>document.getElementById(id),embed=new URLSearchParams(location.search).get('orb_embed')==='1'&&parent!==window;
-    const origin=location.origin;let lastState='',disposed=false,timer=0,pendingText='',pendingListen=false,pendingReplyWindow=false,pendingVoiceEnrollment='',introductionMode='',ready=false,frame=null,returnFocus=null,restorePanel=null;
+    const origin=location.origin;let lastState='',disposed=false,timer=0,pendingText='',pendingListen=false,pendingReplyWindow=false,pendingVoiceEnrollment='',introductionMode='',ready=false,frame=null,returnFocus=null,restorePanel=null,photoRoute='';
     const state=()=>window.VP3EyesCore.visualState(adapter.state());
-    const userTurn=event=>{if(event.target?.id!=='chatForm')return;const text=String($('chatInput')?.value||'').slice(0,240);const context={voice:window.VP3VoiceGuard?.wasVoiceTurn?.(text)===true,known_voice:window.VP3VoiceGuard?.hasRecognizedTurn?.(text)===true};if(embed)parent.postMessage({channel:'vp3-orb',kind:'user-turn',text,...context},origin);else void window.VP3AgentEyes?.hear?.(text,context);};
+    const photoRouteEvent=(id,state)=>window.dispatchEvent(new CustomEvent('vp3:chat-route',{detail:{id,state,voiceTurn:true}}));
+    const finishPhotoRoute=id=>{if(id&&photoRoute===id){photoRoute='';photoRouteEvent(id,'handled');}};
+    const userTurn=event=>{
+      if(event.target?.id!=='chatForm')return;
+      const input=$('chatInput'),text=String(input?.value||'').slice(0,240),context={voice:window.VP3VoiceGuard?.wasVoiceTurn?.(text)===true,known_voice:window.VP3VoiceGuard?.hasRecognizedTurn?.(text)===true};
+      const photoReply=embed?introductionMode==='visual-consent'&&!!window.VP3EyesCore.visualReply(text):window.VP3AgentEyes?.acceptsPhotoReply?.(text);
+      const routeId=photoReply&&context.voice?crypto.randomUUID():'';
+      if(photoReply){event.preventDefault();event.stopImmediatePropagation();if(input){input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));}if(routeId){photoRoute=routeId;photoRouteEvent(routeId,'started');}}
+      if(embed)parent.postMessage({channel:'vp3-orb',kind:'user-turn',text,...context,photoRoute:routeId},origin);
+      else void Promise.resolve(window.VP3AgentEyes?.hear?.(text,context)).finally(()=>finishPhotoRoute(routeId)).catch(()=>{});
+    };
     document.addEventListener('submit',userTurn,true);window.addEventListener('pagehide',()=>document.removeEventListener('submit',userTurn,true),{once:true});
     if(embed){
-      let queuedEnrollment='',queuedIntroduction='',queuedResponse=false;window.addEventListener('vp3:voice-guard-ready',()=>{if(queuedEnrollment){void window.VP3VoiceGuard.beginEnrollment(queuedEnrollment);queuedEnrollment='';}window.VP3VoiceGuard.inviteIntroduction(queuedIntroduction);});
+      let queuedEnrollment='',queuedIntroduction='',queuedResponse=false;window.addEventListener('vp3:voice-guard-ready',()=>{if(queuedEnrollment){void window.VP3VoiceGuard.beginEnrollment(queuedEnrollment);queuedEnrollment='';}window.VP3VoiceGuard.inviteIntroduction(queuedIntroduction);introductionMode=queuedIntroduction;});
       document.documentElement.dataset.vp3OrbEmbed='1';
       const announce=()=>{if(!disposed)parent.postMessage({channel:'vp3-orb',kind:'state',state:state(),conversation:adapter.conversationRef?.()},origin);};
       const commands=async event=>{
@@ -28,9 +38,10 @@
         if(event.data.kind==='listen')adapter.listen();
         if(event.data.kind==='response-window'){queuedResponse=true;const listen=()=>{if(queuedResponse){queuedResponse=false;(window.VP3ConversationControls||window.HomeServerConversationVoice)?.responseWindow?.();}};if(window.VP3ConversationControls||window.HomeServerConversationVoice)listen();else window.addEventListener('stonefellow:conversation-engine-ready',listen,{once:true});}
         if(event.data.kind==='response-window-cancel'){queuedResponse=false;(window.VP3ConversationControls||window.HomeServerConversationVoice)?.cancelResponseWindow?.();}
+        if(event.data.kind==='photo-reply-complete')finishPhotoRoute(String(event.data.id||''));
         if(event.data.kind==='voice-enroll'){if(window.VP3VoiceGuard)void window.VP3VoiceGuard.beginEnrollment(String(event.data.id||''));else queuedEnrollment=String(event.data.id||'');}
         if(event.data.kind==='voice-enroll-cancel'){queuedEnrollment='';window.VP3VoiceGuard?.cancelEnrollment();}
-        if(event.data.kind==='introduction-window'){queuedIntroduction=['name','visual-consent'].includes(event.data.mode)?event.data.mode:'';window.VP3VoiceGuard?.inviteIntroduction(queuedIntroduction);}
+        if(event.data.kind==='introduction-window'){queuedIntroduction=['name','visual-consent'].includes(event.data.mode)?event.data.mode:'';introductionMode=queuedIntroduction;window.VP3VoiceGuard?.inviteIntroduction(queuedIntroduction);}
       };
       window.addEventListener('message',commands);timer=setInterval(announce,250);
       window.addEventListener('vp3:voice-filter-status',event=>parent.postMessage({channel:'vp3-orb',kind:'voice-filter-status',message:String(event.detail?.message||'').slice(0,300)},origin));
@@ -86,7 +97,7 @@
       if(event.origin!==origin||event.source!==frame?.contentWindow||event.data?.channel!=='vp3-orb')return;
       const data=event.data;if(data.kind==='ready'){ready=true;if(pendingListen){pendingListen=false;command('listen');}if(pendingReplyWindow){pendingReplyWindow=false;command('response-window');}if(pendingText)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'compose',text:pendingText},origin);if(pendingVoiceEnrollment){frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id:pendingVoiceEnrollment},origin);pendingVoiceEnrollment='';}}
       if(data.kind==='voice-filter-status')window.dispatchEvent(new CustomEvent('vp3:voice-filter-remote-status',{detail:{message:String(data.message||'').slice(0,300)}}));
-      if(data.kind==='user-turn')void window.VP3AgentEyes?.hear?.(String(data.text||'').slice(0,240),{voice:data.voice===true,known_voice:data.known_voice===true});
+      if(data.kind==='user-turn')void Promise.resolve(window.VP3AgentEyes?.hear?.(String(data.text||'').slice(0,240),{voice:data.voice===true,known_voice:data.known_voice===true})).finally(()=>{if(typeof data.photoRoute==='string'&&data.photoRoute.length<=64)frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'photo-reply-complete',id:data.photoRoute},origin);}).catch(()=>{});
       if(data.kind==='ready'){frame.contentWindow.postMessage({channel:'vp3-orb',kind:'introduction-window',mode:introductionMode},origin);frame.contentWindow.postMessage({channel:'vp3-orb',kind:'participant-presence',value:window.VP3ParticipantContinuity?.snapshot()},origin);frame.contentWindow.postMessage({channel:'vp3-orb',kind:'participant-selection',value:window.VP3ParticipantContinuity?.selectedContext()},origin);}
       if(data.kind==='participant-selection')window.VP3ParticipantContinuity?.setSelection(data.value,true);
       if(data.kind==='participant-speaker')window.VP3ParticipantContinuity?.receiveSpeaker(data.value);
