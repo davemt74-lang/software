@@ -87,7 +87,7 @@ function vp3_task_list_save_task_v1(PDO $pdo,array $u,array $p,string $title,?ar
         if($id<1)throw new RuntimeException('Task save was not verified.');
         $q=$pdo->prepare("UPDATE agent_memory_items SET subject=? WHERE id=? AND user_id=? AND memory_type='task'");$q->execute([$title,$id,(int)$u['id']]);
         $q=$pdo->prepare('SELECT subject FROM agent_memory_items WHERE id=? AND user_id=?');$q->execute([$id,(int)$u['id']]);if($q->fetchColumn()!==$title)throw new RuntimeException('Task title was not verified.');
-        if($list)$pdo->prepare('INSERT INTO agent_task_list_items_v1(list_id,task_id,item_key,created_at) VALUES(?,?,?,?)')->execute([(int)$list['id'],$id,vp3_task_list_key_v1($title),gmdate('c')]);
+        if($list)$pdo->prepare('INSERT INTO agent_task_list_items_v1(list_id,task_id,item_key,created_at) VALUES(?,?,?,?)')->execute([(int)$list['id'],$id,vp3_task_list_key_v1($title),gmdate('Y-m-d\TH:i:s\Z')]);
         return $id;
     }finally{if($old===null)unset($GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']);else $GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']=$old;}
 }
@@ -129,9 +129,9 @@ function vp3_task_list_execute_v1(PDO $pdo,array $u,array $p,array $plan,array $
             $list=vp3_task_list_find_v1($pdo,$u,$p,$name);
             if(!$list&&!$pending){$r=vp3_task_list_prepare_v1($pdo,$u,$p,$cid,['action'=>$op,'list_name'=>$name,'title'=>$title,'task_id'=>$existingId]);$pdo->commit();return $r;}
             $created=false;
-            if(!$list){$pdo->prepare('INSERT INTO agent_task_lists_v1(owner_user_id,agent_scope_id,name,name_key,created_at) VALUES(?,?,?,?,?)')->execute([$uid,$aid,$name,vp3_task_list_key_v1($name),gmdate('c')]);$list=vp3_task_list_find_v1($pdo,$u,$p,$name);if(!$list)throw new RuntimeException('List save was not verified.');$created=true;}
+            if(!$list){$pdo->prepare('INSERT INTO agent_task_lists_v1(owner_user_id,agent_scope_id,name,name_key,created_at) VALUES(?,?,?,?,?)')->execute([$uid,$aid,$name,vp3_task_list_key_v1($name),gmdate('Y-m-d\TH:i:s\Z')]);$list=vp3_task_list_find_v1($pdo,$u,$p,$name);if(!$list)throw new RuntimeException('List save was not verified.');$created=true;}
             $id=0;$duplicate=false;
-            if($title!==''){$q=$pdo->prepare('SELECT task_id FROM agent_task_list_items_v1 WHERE list_id=? AND item_key=?');$q->execute([(int)$list['id'],vp3_task_list_key_v1($title)]);$duplicate=(bool)$q->fetchColumn();if($existingId&&!$duplicate){vp3_task_list_existing_task_v1($pdo,$u,$p,$existingId);$pdo->prepare('INSERT INTO agent_task_list_items_v1(list_id,task_id,item_key,created_at) VALUES(?,?,?,?)')->execute([(int)$list['id'],$existingId,vp3_task_list_key_v1($title),gmdate('c')]);$id=$existingId;}else $id=vp3_task_list_save_task_v1($pdo,$u,$p,$title,$list,$pending['token']??bin2hex(random_bytes(16)),$cid);}
+            if($title!==''){$q=$pdo->prepare('SELECT task_id FROM agent_task_list_items_v1 WHERE list_id=? AND item_key=?');$q->execute([(int)$list['id'],vp3_task_list_key_v1($title)]);$duplicate=(bool)$q->fetchColumn();if($existingId&&!$duplicate){vp3_task_list_existing_task_v1($pdo,$u,$p,$existingId);$pdo->prepare('INSERT INTO agent_task_list_items_v1(list_id,task_id,item_key,created_at) VALUES(?,?,?,?)')->execute([(int)$list['id'],$existingId,vp3_task_list_key_v1($title),gmdate('Y-m-d\TH:i:s\Z')]);$id=$existingId;}else $id=vp3_task_list_save_task_v1($pdo,$u,$p,$title,$list,$pending['token']??bin2hex(random_bytes(16)),$cid);}
             $text=($created?'Created “'.$list['name'].'”. ':'').($title!==''?($duplicate?'“'.$title.'” is already in “'.$list['name'].'”.':'Added “'.$title.'” to “'.$list['name'].'”.'):'The list is ready.');
             $r=vp3_task_list_result_v1($text,($duplicate||(!$created&&$title===''))?'show':$op,($duplicate||(!$created&&$title===''))?'read_complete':'completed',(int)$list['id'],$id?1:0);$r['sticky_notes']=[['kind'=>'task_list','id'=>(int)$list['id']]];
         }

@@ -38,7 +38,7 @@
     const n={root,title,body,status,ref,seq:0};notes.set(id,n);body.hidden=!!saved.collapsed;
     header.tabIndex=0;header.setAttribute('aria-label','Move note with arrow keys');
     header.append(title,button('↻','Refresh note',()=>refresh(n)),button('−','Collapse or expand note',()=>{body.hidden=!body.hidden;store();}),button('×','Close note',()=>{n.seq++;root.remove();notes.delete(id);store();}));
-    foot.append(button('Ask Chat','Ask about this note',()=>prompt(ref.kind==='reminders'?'Show reminders':`Show list "${title.textContent}"`)),status);
+    foot.append(status);
     root.append(header,body,foot);document.body.append(root);place(n,saved.x??innerWidth-320-(notes.size-1)*18,saved.y??130+(notes.size-1)*28);
     let drag=null;
     header.addEventListener('pointerdown',e=>{if(e.target.closest('button')||e.button!==0)return;drag={x:e.clientX,y:e.clientY,left:parseInt(root.style.left,10),top:parseInt(root.style.top,10)};root.style.zIndex=String(++z);header.setPointerCapture(e.pointerId);});

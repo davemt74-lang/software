@@ -2,6 +2,9 @@
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/agent-task-lists-v1.php';
+require_once dirname(__DIR__).'/includes/agent-chat-boundary-v380.php';
+require_once dirname(__DIR__).'/includes/knowledge-retrieval-v162.php';
+require_once dirname(__DIR__).'/includes/user-calendar-v1300.php';
 require_once dirname(__DIR__).'/includes/agent-reminders-v1.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');
 try{
@@ -9,7 +12,7 @@ try{
     $raw=(string)file_get_contents('php://input');if(strlen($raw)>8000)throw new RuntimeException('Request too large.',413);
     $input=json_decode($raw,true,16,JSON_THROW_ON_ERROR);if(!is_array($input))throw new RuntimeException('Invalid request.',422);
     $user=current_user();if(!$user)throw new RuntimeException('Sign in to view your notes.',401);
-    if(!hash_equals(csrf_token(),(string)($input['csrf_token']??'')))throw new RuntimeException('Refresh the page and try again.',419);
+    if(!is_string($input['csrf_token']??null)||!hash_equals(csrf_token(),$input['csrf_token']))throw new RuntimeException('Refresh the page and try again.',419);
     $pdo=db();if(!$pdo)throw new RuntimeException('Database unavailable.',503);
     $agentId=$input['agent_id']??0;if(!is_int($agentId)||$agentId<0)throw new RuntimeException('Invalid Agent.',422);
     $agent=$agentId?vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId):null;
