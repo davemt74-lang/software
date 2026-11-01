@@ -47,6 +47,9 @@ function track_media_from_answer(...$args){return [];}
 function track_media_suggestions(...$args){return [];}
 function track_merge_media_suggestions(...$args){return [];}
 function url($path){return $path;}
+function member_navigation_menu_links($u){return [['key'=>'contacts','label'=>'Contacts','url'=>'/contacts.php']];}
+function music_workspace_resources_v330_can_manage_track($pdo,$t,$u){return (int)$t['owner_user_id']===(int)$u['id'];}
+function music_workspace_resources_v330_track_workspace_id($pdo,$t){return 0;}
 function setting($key,$default=''){return $default;}
 function subscription_has_entitlement($user,$key){return isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY'])&&(int)$user['id']===1;}
 function subscription_entitlement_limit(...$args){return 3;}
@@ -79,6 +82,11 @@ function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
+        if($q==='Load from the asteroid you saved me')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'open','destination'=>'stem_studio','query'=>'From the asteroid you saved me'])];
+        if($q==='Offer to open that track in Stem Studio')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'prepare','destination'=>'stem_studio','track_id'=>9])];
+        if($q==='Yes open it')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'confirm'])];
+        if($q==='Open forbidden Studio track')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'open','destination'=>'stem_studio','track_id'=>10])];
+        if($q==='Open contacts')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'open','destination'=>'contacts'])];
         $taskPlan=null;
         if(preg_match('/^Add (.+) to my (.+) list$/i',$q,$m))$taskPlan=['action'=>'add','list_name'=>$m[2],'title'=>$m[1]];
         elseif(preg_match('/^Save (.+) as a task$/i',$q,$m))$taskPlan=['action'=>'create_task','title'=>$m[1]];
@@ -145,6 +153,7 @@ function capability_fixture_agents(PDO $pdo): void
     $map=artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,21));$hash=$map['source_hash'];$date=gmdate('c');$analysis=['modules'=>['basic'=>['source_hash'=>$hash,'generated_at'=>$date,'result'=>['summary'=>'Fixture saved AI analysis','key_findings'=>[['text'=>'Fixture finding','item_id'=>'f1','review_state'=>'unreviewed']]]]]];$q=$pdo->prepare("INSERT OR IGNORE INTO artist_transcript_master_analysis_v237 VALUES(?,?,?,?,?,?,?,'fixture','fixture',?)");$q->execute([21,$hash,8,1,0,json_encode($analysis),'{}',$date]);
     $pdo->exec("CREATE TABLE IF NOT EXISTS user_data_policies(owner_user_id INTEGER,resource_type TEXT,resource_id TEXT,audience_scope TEXT,owner_agents_allowed INTEGER,profile_agent_allowed INTEGER,stonefellow_shared INTEGER);CREATE TABLE IF NOT EXISTS user_agent_data_rules(agent_id INTEGER,resource_type TEXT,resource_id TEXT,access_mode TEXT)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_memory_items(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,memory_type TEXT,subject TEXT,memory_text TEXT,memory_hash TEXT UNIQUE,memory_scope_version INTEGER,source_archive_id INTEGER,confidence REAL,occurrence_count INTEGER,first_seen_at TEXT,last_seen_at TEXT,is_active INTEGER,metadata_json TEXT)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS tracks(id INTEGER PRIMARY KEY,title TEXT,owner_user_id INTEGER,producer_user_id INTEGER);INSERT OR IGNORE INTO tracks VALUES(9,'From the asteroid you saved me',1,NULL),(10,'SECRET foreign track',2,NULL)");
     $from=gmdate('Y-m-d H:i:s',time()+3600);$to=gmdate('Y-m-d H:i:s',time()+7200);
     $q=$pdo->prepare("INSERT OR IGNORE INTO user_calendar_events VALUES(?, ?, ?, NULL, ?, '', '', ?, ?, 'UTC',0,'none',0,'user','','active',NULL,'','')");
     $q->execute([1,1,1,'Fixture calendar review',$from,$to]);$q->execute([2,2,2,'SECRET foreign calendar',$from,$to]);

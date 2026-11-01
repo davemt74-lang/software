@@ -257,6 +257,14 @@ function vp3_agent_tool_internal_action_v400(array $action,array $user,string $q
     parse_str((string)($parts['query']??''),$params);
     $pdo=db();if(!$pdo)return null;
 
+    $navigationKey=(string)($action['navigation_target']??'');
+    $approved=$GLOBALS['vp3_navigation_approved_v1']??[];
+    $serverNavigation=($approved['user_id']??0)===(int)$user['id']&&($approved['key']??'')===$navigationKey&&($approved['url']??'')===$raw;
+    if($navigationKey!==''&&$navigationKey!=='stem_studio'&&function_exists('vp3_navigation_targets_v1')){
+        $allowed=vp3_navigation_targets_v1($user);
+        if(!$serverNavigation||!isset($allowed[$navigationKey])||!hash_equals($allowed[$navigationKey]['url'],$raw))return null;
+        return ['type'=>'open_url','label'=>$allowed[$navigationKey]['label'],'url'=>$raw,'auto'=>true,'policy'=>['version'=>'v4.00','domain'=>'navigation','risk'=>'low','requires_approval'=>false,'authorized'=>true]];
+    }
     $autoAllowed=false;
     if(str_ends_with($path,'/admin/stems.php')||$path==='/admin/stems.php'){
         $trackId=max(0,(int)($params['track']??0));
@@ -278,6 +286,7 @@ function vp3_agent_tool_internal_action_v400(array $action,array $user,string $q
     }
 
     $explicit=(bool)preg_match('/\b(?:open|show|start|launch|go to)\b/i',$query);
+    if($navigationKey==='stem_studio'&&$serverNavigation)$explicit=true;
     return [
         'type'=>'open_url','label'=>mb_substr(trim((string)($action['label']??'Open')),0,120),'url'=>$raw,
         'auto'=>$autoAllowed&&$explicit,
