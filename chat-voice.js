@@ -834,7 +834,7 @@
     if(!enableVoice({persist:false,start:true})){responseWindowOwned=false;return false;}
     responseWindowTimer=setTimeout(finishResponseWindow,15000);return true;
   }
-  function beginEnrollmentCapture({pcmOnly=false}={}){
+  function beginEnrollmentCapture({pcmOnly=false,signal}={}){
     if(pcmOnly&&(processing||speaking))return null;
     const keepListening=voiceOn&&!responseWindowOwned;
     clearTimeout(responseWindowTimer);clearTimeout(responseCleanupTimer);responseWindowOwned=false;responseWindowClosing=false;responseWindowUntil=0;
@@ -842,8 +842,9 @@
     if(!voiceOn){if(!enableVoice({persist:false,start:!pcmOnly})){enrollmentPcmOnly=false;return null;}}else if(!pcmOnly)startListening('voice-enrollment');
     // Guided recordings use the existing local PCM monitor without submitting
     // sample speech to the browser's transcription service.
-    let finished=false;const finish=()=>{if(finished)return;finished=true;clearTimeout(deadline);enrollmentPcmOnly=false;if(!keepListening)disableVoice({persist:false});else if(voiceOn)scheduleListening(160,'voice-enrollment-complete');};
+    let finished=false;const finish=()=>{if(finished)return;finished=true;clearTimeout(deadline);signal?.removeEventListener('abort',finish);if(!pcmOnly||!keepListening)enrollmentPcmOnly=false;if(!keepListening)disableVoice({persist:false});else if(!pcmOnly&&voiceOn)scheduleListening(160,'voice-enrollment-complete');};
     const deadline=setTimeout(()=>{window.VP3VoiceGuard?.cancelEnrollment();finish();},60000);
+    signal?.addEventListener('abort',finish,{once:true});if(signal?.aborted){finish();return null;}
     if(pcmOnly)return (async()=>{
       const track=await ensureProcessedMic(),started=Date.now();
       while(voiceOn&&activeRecognizers.size&&Date.now()-started<3000)await new Promise(resolve=>setTimeout(resolve,50));
@@ -852,7 +853,7 @@
     })();
     return finish;
   }
-  window.VP3ConversationControls=Object.freeze({beginEnrollmentCapture,responseWindow,cancelResponseWindow:finishResponseWindow,stop:()=>disableVoice({persist:true}),isBusy:()=>processing||speaking,isEnabled:()=>voiceOn,listen:()=>enableVoice({start:true}),state:()=>({state:speaking?'speaking':processing?'thinking':recognitionListening?'listening':recognitionStarting?'connecting':voiceOn&&speechRetryAt>Date.now()?'reconnecting':'idle'})});
+  window.VP3ConversationControls=Object.freeze({endEnrollmentSession:()=>{enrollmentPcmOnly=false;resetPendingFinal();queuedTranscript='';stopRecognition('voice-enrollment',true);if(voiceOn)scheduleListening(160,'guided-setup-complete');},beginEnrollmentCapture,responseWindow,cancelResponseWindow:finishResponseWindow,stop:()=>disableVoice({persist:true}),isBusy:()=>processing||speaking,isEnabled:()=>voiceOn,listen:()=>enableVoice({start:true}),state:()=>({state:speaking?'speaking':processing?'thinking':recognitionListening?'listening':recognitionStarting?'connecting':voiceOn&&speechRetryAt>Date.now()?'reconnecting':'idle'})});
   const continuity={isBusy:()=>processing||speaking||textBusy||voiceSubmitPending||!!activeRequest||!!pendingFinalTranscript||!!ChatRuntime?.isBusy?.(),isVoice:()=>voiceOn,pendingVoiceSubmit:()=>voiceSubmitPending,conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
 
   syncConversation(lastConversationId);syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();

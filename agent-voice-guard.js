@@ -64,11 +64,11 @@
     const guidedCurrent=token=>guidedSession&&token===guidedSerial&&!document.hidden;
     async function captureGuidedSample({session,isCurrent=()=>true,onProgress=()=>{}}){
       if(guidedSession!==session||guidedCapture||learning||!window.VP3TrainedVoice?.enabled())throw Error('Voice learning is not ready.');
-      const token=++guidedSerial,marker={token},current=()=>guidedCurrent(token)&&guidedCapture===marker&&isCurrent();guidedCapture=marker;
+      const token=++guidedSerial,marker={token,abort:new AbortController()},current=()=>guidedCurrent(token)&&guidedCapture===marker&&isCurrent();guidedCapture=marker;
       let finish=null;
       const wait=ms=>new Promise(r=>setTimeout(r,ms));
       try{
-        finish=await adapter.beginVoiceEnrollment?.({pcmOnly:true});marker.finish=finish;if(typeof finish!=='function')throw Error('Microphone capture is unavailable. Enable Agent Voice and allow the microphone.');
+        finish=await adapter.beginVoiceEnrollment?.({pcmOnly:true,signal:marker.abort.signal});marker.finish=finish;if(typeof finish!=='function')throw Error('Microphone capture is unavailable. Enable Agent Voice and allow the microphone.');
         const start=Date.now();while(!processor||!rate){if(!current())throw Error('Voice recording cancelled.');if(Date.now()-start>10000)throw Error('Microphone audio did not become ready. Check microphone permission and try again.');await wait(50);}
         if(!current())throw Error('Voice recording cancelled.');marker.started=true;chunks=[];length=0;
         for(let second=0;second<5;second++){onProgress(second);await wait(1000);if(!current())throw Error('Voice recording cancelled.');}
@@ -76,7 +76,7 @@
         const sampleRate=rate,result=await window.VP3TrainedVoice.extract(pcm,sampleRate,{enrollment:true});if(!current())throw Error('Voice recording cancelled.');
         if(!result.embedding)throw Error(result.quality?.message||'That sample could not be learned. Try a clear five-second phrase.');
         return {embedding:result.embedding,pcm,sampleRate,quality:result.quality};
-      }finally{if(guidedCapture===marker)guidedCapture=null;chunks=[];length=0;guidedMuteUntil=Date.now()+5000;finish?.();}
+      }finally{if(guidedCapture===marker)guidedCapture=null;chunks=[];length=0;guidedMuteUntil=guidedSession?Date.now()+5000:0;finish?.();}
     }
     async function evaluateVoice(text,isCurrent=()=>true){
       if(guidedSession||Date.now()<guidedMuteUntil)return {allowed:false,learning:true,reason:'guided-enrollment'};
@@ -120,7 +120,7 @@
     function takeContext(text){const p=pendingContext;pendingContext=null;if(!p||Date.now()-p.at>=5000||p.text!==String(text))return null;return window.VP3ParticipantContinuity&&!window.VP3ParticipantContinuity.assessVoice(p.value,{notify:false}).accepted?null:p.value;}
     function reset(){clear();if(learning)learning.epoch=epoch;}
     function canInterrupt(){if(!enabled||!knownOnly)return true;if(Date.now()-cachedAt>3000&&!refreshing){refreshing=true;void profiles().catch(()=>{}).finally(()=>refreshing=false);}if(!featureApi||Date.now()-cachedAt>5000||performance.now()-lastAudio>700)return false;const clean=chunks.filter(c=>c.rms>=Math.max(.008,noise*2.5)),size=clean.reduce((n,c)=>n+c.data.length,0);if(size<(window.VP3TrainedVoice?.enabled()?rate*1.5:rate*.45))return false;const pcm=new Float32Array(size);let at=0;for(const c of clean){pcm.set(c.data,at);at+=c.data.length;}if(window.VP3TrainedVoice?.enabled()){const token=epoch;return window.VP3TrainedVoice.canInterrupt(pcm,rate,cachedProfiles,()=>token===epoch&&performance.now()-lastAudio<700);}const match=featureApi.bestVoiceParticipantMatch(featureApi.voiceEmbeddingFromPcm(pcm,rate),cachedProfiles);return match.matched&&(!window.VP3ParticipantContinuity||window.VP3ParticipantContinuity.assessVoice({participant_id:match.participant.id,display_name:match.participant.name},{notify:false}).accepted);}
-    window.VP3VoiceGuard={beginGuidedSession:session=>{cancelEnrollment();enabled=true;q('[data-voice-filter]').checked=true;persist();guidedSession=String(session);guidedSerial++;},endGuidedSession:session=>{if(guidedSession===session){guidedSession='';guidedSerial++;guidedCapture?.finish?.();guidedMuteUntil=Date.now()+5000;chunks=[];length=0;window.VP3TrainedVoice?.clear();}},captureGuidedSample,enrolling:()=>!!learning,attach,detach,check,takeContext,hasRecognizedTurn:text=>!!pendingContext&&pendingContext.text===String(text)&&Date.now()-pendingContext.at<5000&&(!window.VP3ParticipantContinuity||window.VP3ParticipantContinuity.assessVoice(pendingContext.value,{notify:false}).accepted),wasVoiceTurn:text=>!!lastChecked&&lastChecked.text===String(text)&&Date.now()-lastChecked.at<5000,clear,beginEnrollment,canInterrupt,inviteIntroduction:mode=>{invitation=['name','visual-consent'].includes(mode)?mode:'';invitationUntil=Date.now()+90000;},cancelEnrollment,reset,isKnownOnly:()=>knownOnly,isEnabled:()=>enabled};
+    window.VP3VoiceGuard={beginGuidedSession:session=>{cancelEnrollment();enabled=true;q('[data-voice-filter]').checked=true;persist();guidedSession=String(session);guidedSerial++;},endGuidedSession:session=>{if(guidedSession===session){guidedSession='';guidedSerial++;guidedCapture?.abort.abort();guidedCapture?.finish?.();guidedMuteUntil=0;window.VP3ConversationControls?.endEnrollmentSession?.();chunks=[];length=0;window.VP3TrainedVoice?.clear();}},captureGuidedSample,enrolling:()=>!!learning,attach,detach,check,takeContext,hasRecognizedTurn:text=>!!pendingContext&&pendingContext.text===String(text)&&Date.now()-pendingContext.at<5000&&(!window.VP3ParticipantContinuity||window.VP3ParticipantContinuity.assessVoice(pendingContext.value,{notify:false}).accepted),wasVoiceTurn:text=>!!lastChecked&&lastChecked.text===String(text)&&Date.now()-lastChecked.at<5000,clear,beginEnrollment,canInterrupt,inviteIntroduction:mode=>{invitation=['name','visual-consent'].includes(mode)?mode:'';invitationUntil=Date.now()+90000;},cancelEnrollment,reset,isKnownOnly:()=>knownOnly,isEnabled:()=>enabled};
     window.addEventListener('homeserver:voice-playback',event=>{if(event.detail?.active===false)reset();});
     window.addEventListener('stonefellow:agent-proactive-speech',event=>{if(event.detail?.state==='end')reset();});
     window.dispatchEvent(new Event('vp3:voice-guard-ready'));
