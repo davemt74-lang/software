@@ -141,6 +141,21 @@ jobs:
           php -l tests/phone-voice-ph3f-runtime.php
           node tests/phone-voice-ph3f-contract.mjs
           php tests/phone-voice-ph3f-runtime.php
+      - name: Cloud SIP Streaming PH3G runtime and contracts
+        run: |
+          php -l includes/phone-voice-stream-v150.php
+          php -l includes/phone-voice-v130.php
+          php -l api/phone-voice-stream-resolve-v150.php
+          php -l api/phone-voice-stream-active-v150.php
+          php -l api/phone-voice-stream-complete-v150.php
+          php -l api/phone-voice-inbound-v130.php
+          php -l admin/phone.php
+          php -l upgrade.php
+          php -l tests/phone-voice-ph3g-runtime.php
+          php -l tests/phone-voice-ph3g-integration.php
+          node tests/phone-voice-ph3g-contract.mjs
+          php tests/phone-voice-ph3g-runtime.php
+          php tests/phone-voice-ph3g-integration.php
 
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs

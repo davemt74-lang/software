@@ -61,7 +61,8 @@ function vp3_phone_voice_validate_url_v130(string $url): string
 function vp3_phone_voice_sibling_url_v130(string $callback,string $name): string
 {
     vp3_phone_voice_validate_url_v130($callback);
-    if (!in_array($name,['phone-voice-complete-v130.php','phone-voice-recording-v130.php','phone-voice-turn-v140.php'],true)) {
+    if (!in_array($name,['phone-voice-complete-v130.php','phone-voice-recording-v130.php','phone-voice-turn-v140.php',
+        'phone-voice-stream-complete-v150.php'],true)) {
         throw new InvalidArgumentException('Invalid carrier callback path.');
     }
     return substr($callback,0,-strlen('phone-voice-inbound-v130.php')).$name;
@@ -188,7 +189,7 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
         $exists->execute([$callSid]);$row=$exists->fetch(PDO::FETCH_ASSOC);
         if ($row) {
             if ((int)$row['owner_user_id']!==$owner||(int)$row['phone_number_id']!==(int)$number['id']
-                ||!in_array((string)$row['state'],['voicemail_offered','conversation_active'],true)
+                ||!in_array((string)$row['state'],['voicemail_offered','conversation_active','streaming_active'],true)
                 ||(int)$row['agent_id']!==$agent
                 ||(string)$row['called_e164']!==$to||(string)$row['caller_e164']!==$caller)
                 throw new RuntimeException('Call receipt conflicts with number assignment.');
@@ -203,8 +204,21 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
     }
-    $route=vp3_phone_voice_current_route_v131($pdo,$callSid,14400,['voicemail_offered','conversation_active']);
+    $route=vp3_phone_voice_current_route_v131($pdo,$callSid,14400,['voicemail_offered','conversation_active','streaming_active']);
     if (!$route['accepted']) return $route;
+    if (function_exists('vp3_phone_stream_route_v150') && vp3_phone_stream_route_v150($pdo,$route)) {
+        if ($row && (string)$row['state']==='streaming_active')
+            return ['accepted'=>false,'reason'=>'call_already_streaming'];
+        $start=$pdo->prepare("UPDATE phone_voice_calls_v130 SET state='streaming_active'
+          WHERE provider='twilio' AND provider_call_sid=? AND state='voicemail_offered'");
+        $start->execute([$callSid]);
+        if ($start->rowCount()!==1) return ['accepted'=>false,'reason'=>'call_already_routed'];
+        $stream=vp3_phone_stream_route_v150($pdo,$route);
+        return ['accepted'=>true,'twiml'=>vp3_phone_stream_dial_v150($callSid,$route,
+            (int)$stream['homeserver_agent_id'],$callback,time())];
+    }
+    if (($row['state']??'')==='streaming_active')
+        return ['accepted'=>false,'reason'=>'streaming_mode_changed'];
     if (function_exists('vp3_phone_voice_live_config_v140')
         && vp3_phone_voice_live_config_v140($pdo,$route)) {
         $pdo->prepare('UPDATE phone_voice_calls_v130 SET state=\'conversation_active\'
