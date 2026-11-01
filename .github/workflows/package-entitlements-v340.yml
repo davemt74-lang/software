@@ -130,6 +130,18 @@ jobs:
           php -l tests/phone-voice-ph3e-runtime.php
           php tests/phone-voice-ph3e-runtime.php
 
+      - name: Cloud Voice Conversations PH3F runtime and contracts
+        run: |
+          php -l includes/phone-voice-conversation-v140.php
+          php -l api/phone-voice-turn-v140.php
+          php -l includes/ai-settings.php
+          php -l admin/phone.php
+          php -l phone-calls.php
+          php -l upgrade.php
+          php -l tests/phone-voice-ph3f-runtime.php
+          node tests/phone-voice-ph3f-contract.mjs
+          php tests/phone-voice-ph3f-runtime.php
+
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
 

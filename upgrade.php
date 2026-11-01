@@ -52,6 +52,7 @@ require_once __DIR__ . '/includes/phone-cloud-v100.php';
 require_once __DIR__ . '/includes/phone-sms-v110.php';
 require_once __DIR__ . '/includes/phone-sms-outbound-v120.php';
 require_once __DIR__ . '/includes/phone-voice-v130.php';
+require_once __DIR__ . '/includes/phone-voice-conversation-v140.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(): bool
@@ -142,6 +143,7 @@ function vp3_upgrade_complete(): bool
         && vp3_phone_sms_schema_ready_v110()
         && vp3_phone_sms_outbound_ready_v120()
         && vp3_phone_voice_schema_ready_v130()
+        && vp3_phone_voice_ready_v140()
         && vp3_user_agent_lifecycle_schema_ready_v390()
         && vp3_agent_memory_scope_schema_ready_v410()
         && agent_scheduling_schema_ready_v430()
@@ -295,6 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_phone_sms_ensure_schema_v110($pdo);
             vp3_phone_sms_outbound_ensure_schema_v120($pdo);
             vp3_phone_voice_ensure_schema_v130($pdo);
+            vp3_phone_voice_ensure_v140($pdo);
             agent_voice_preferences_schema($pdo);
             vp3_user_agent_lifecycle_ensure_schema_v390();
             vp3_agent_memory_scope_ensure_schema_v410();
