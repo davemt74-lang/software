@@ -524,10 +524,10 @@ try {
   assert.equal(sends().at(-1).agent_context.transcript_session_id,0,'Closing the transcript panel drops the browser selection hint');
   console.log('PASS transcript selection follows the active panel and clears when closed');
 
-  await page.evaluate(()=>{window.STONEFELLOW_CHAT.canStemStudio=true;window.VP3ConversationControls={isEnabled:()=>true};});
+  await page.evaluate(()=>{window.STONEFELLOW_CHAT.canStemStudio=true;window.STONEFELLOW_CHAT.stemStudioBase='/admin/stems.php';window.VP3ConversationControls={isEnabled:()=>true};});
   await page.locator('#chatInput').fill('Show Studio handoff link');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());await page.waitForFunction(()=>!document.querySelector('#chatInput').disabled);
   const studioHref=await page.locator('a.chat-stem-studio').last().getAttribute('href');const studioTarget=new URL(studioHref,'http://chat.test/');
-  assert.equal(studioTarget.searchParams.get('track'),'9');assert.equal(studioTarget.searchParams.get('conversation_id'),'42');assert.equal(studioTarget.searchParams.get('voice'),'1');assert.ok(studioTarget.searchParams.has('return'));
+  assert.equal(studioTarget.searchParams.get('track'),'9');assert.equal(studioTarget.searchParams.get('conversation_id'),String(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.conversationId())));assert.equal(studioTarget.searchParams.get('voice'),'1');assert.ok(studioTarget.searchParams.has('return'));
   console.log('PASS Studio handoff link retains the active conversation, listening state and return destination');
 
   assert.deepEqual(errors, []);
