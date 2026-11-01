@@ -15,6 +15,7 @@ fs.copyFileSync('tests/fixtures/record-agent-schema-v1.php',path.join(tmp,'inclu
 fs.copyFileSync('tests/fixtures/media-agent-schema-v1.php',path.join(tmp,'includes/media-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/app-agent-remote-v1.php',path.join(tmp,'includes/app-agent-remote-v1.php'));
 fs.copyFileSync('tests/fixtures/system-app-agent-schema-v1.php',path.join(tmp,'includes/system-app-agent-schema-v1.php'));
+fs.copyFileSync('tests/fixtures/app-operation-schema-v1.php',path.join(tmp,'includes/app-operation-schema-v1.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
@@ -194,6 +195,31 @@ try{
   }
   response=await post(endpoint,'Did that work?',context,headers);
   check(response.data?.answer.includes('system_apps.permissions.read')&&response.data.answer.includes('failed'),endpoint+' diagnoses the persisted permission read failure');
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const context={...named,conversation_id:longfellowConversation,input_mode:'voice'},headers={'X-Fixture-Operation-Ready':'1'};
+  response=await post(endpoint,'Can you install System Apps?',context,headers);
+  check(response.data?.tool_receipt?.capability==='capabilities.inspect',endpoint+' app action capability question does not prepare a change');
+  for(const [phrase,cap] of [['Inspect app controls user.notes','apps.control.read'],['Inspect System App release vp3.notes','system_apps.release.read']]){
+   response=await post(endpoint,phrase,context,headers);
+   check(response.data?.tool_receipt?.capability===cap&&response.data.tool_receipt.status==='read_complete'&&!JSON.stringify(response.data).includes('SECRET')&&!response.data.tool_receipt.changes_applied,endpoint+' reads verified '+cap+' through the shared model');
+   response=await post(endpoint,phrase,context,{...headers,'X-Fixture-Operation-Mode':'missing'});
+   check(response.data?.tool_receipt?.status==='failed'&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' missing '+cap+' metadata remains a failure');
+  }
+  response=await post(endpoint,'Install System App vp3.notes',context,headers);
+  check(response.data?.tool_receipt?.status==='clarification_required'&&response.data.tool_receipt.reason==='confirmation_required'&&!response.data.tool_receipt.changes_applied,endpoint+' concrete app action saves a reviewable confirmation only: '+response.body);
+  const code=response.data.answer.match(/Confirmation code: \*\*([A-Z2-9]{8})\*\*/)?.[1];check(Boolean(code),endpoint+' returns the existing exact confirmation code');
+  response=await post(endpoint,'Confirm app '+code,context,headers);
+  check(response.data?.tool_receipt?.status==='completed'&&response.data.tool_receipt.changes_applied&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' confirmed app installation persists verified canonical outcome: '+response.body);
+  response=await post(endpoint,'Confirm app '+code,context,headers);
+  check(response.data?.tool_receipt?.status==='read_complete'&&!response.data.tool_receipt.changes_applied,endpoint+' repeated confirmation reads prior result without executing again');
+  response=await post(endpoint,'Install System App vp3.notes',context,headers);const failedCode=response.data.answer.match(/Confirmation code: \*\*([A-Z2-9]{8})\*\*/)?.[1];
+  response=await post(endpoint,'Confirm app '+failedCode,context,{...headers,'X-Fixture-Operation-Mode':'offline'});
+  check(response.data?.tool_receipt?.reason==='outcome_unverified'&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' uncertain remote mutation returns outcome evidence, not success');
+  response=await post(endpoint,'Confirm app '+failedCode,context,headers);
+  check(response.data?.tool_receipt?.reason==='outcome_unverified',endpoint+' uncertain confirmation stays consumed when HomeServer recovers');
+  response=await post(endpoint,'Did that work?',context,headers);
+  check(response.data?.answer.includes('Effects may already have been saved')&&response.data.tool_receipt?.reason==='outcome_unverified',endpoint+' diagnoses uncertain app outcome from the persisted receipt');
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

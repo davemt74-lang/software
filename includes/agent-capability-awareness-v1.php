@@ -5,6 +5,7 @@ require_once __DIR__.'/agent-integration-readiness-v1.php';
 require_once __DIR__.'/agent-media-read-v1.php';
 require_once __DIR__.'/agent-app-read-v1.php';
 require_once __DIR__.'/agent-system-app-read-v1.php';
+require_once __DIR__.'/agent-app-operations-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -57,6 +58,9 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $screenReady=$screen!==null&&$screen['owner_key']===(string)$uid;
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
+        vp3_capability_row_v1('system_apps.manage','Prepare and confirm existing System App changes','write','vp3_system_apps_agent_action_query_v160',has_permission('account.access',$user),$systemApps==='ready'?vp3_capability_probe_v1(fn()=>vp3_system_apps_agent_actions_schema_ready_v160($pdo)):$systemApps,['Exact Cloud app and existing action only. Durable owner/Agent/conversation confirmation, current ownership and release selection. A consumed request or pending reconciliation is not verified completion. No arbitrary code or generic app invocation.']),
+        vp3_capability_row_v1('system_apps.release.read','Inspect System App release metadata','read','vp3_system_apps_release_query_v200',has_permission('account.access',$user),$systemApps==='ready'?'not_checked':$systemApps,['Exact Cloud app. Stored catalog metadata is distinct from verified live owned/installed release status. No update, rollback or live health claim.']),
+        vp3_capability_row_v1('apps.control.read','Inspect declared HomeServer app controls','read','vp3_app_control_agent_query_v290',has_permission('account.access',$user),'not_checked',['Exact installed app from current App Manager; strict live declaration and identity checks. No settings values, source, native paths, execution or permission grants.']),
         vp3_capability_row_v1('system_apps.catalog.read','Read Cloud System App catalog and stored state','read','vp3_system_apps_agent_query_v150',has_permission('account.access',$user),$systemApps,['Read-only Cloud ownership/catalog and timestamped HomeServer projections. No schema, catalog seeding or live network check. Stored state is not current runtime proof.']),
         vp3_capability_row_v1('system_apps.health.read','Read stored System App health observations','read','vp3_system_apps_health_query_v170',has_permission('account.access',$user),$systemApps,['Stored health classification and observation times only. No implicit hosting binding or live route/TLS diagnosis; use the existing explicit Hosting diagnostic surface.']),
         vp3_capability_row_v1('system_apps.permissions.read','Read live owned System App permissions','read','vp3_system_apps_permission_query_v210',has_permission('account.access',$user),$systemApps==='ready'?'not_checked':$systemApps,['Exact current Cloud app selection, active ownership and installed projection required. Live paired HomeServer response must match the app and counts. No grant/revoke action.']),
