@@ -94,6 +94,9 @@ catch(RuntimeException $e) {checkPh3f($e->getMessage()==='Invalid provider signa
 checkPh3f(turnPh3f($pdo,$sid,2,'Are you there?',$generator)['accepted'],
     'second spoken turn uses only prior phone history');
 checkPh3f($generations===2,'exactly one model call per unique speech turn');
+$inboundReplay=inboundPh3f($pdo,$sid);
+checkPh3f($inboundReplay['accepted']&&str_contains($inboundReplay['twiml'],'?step=3'),
+    'carrier retry of initial webhook resumes the current conversation');
 vp3_phone_voice_set_mode_v140($pdo,1,false);
 checkPh3f(turnPh3f($pdo,$sid,3,'Private data',$generator)['reason']==='call_not_authorized',
     'admin disable revokes live calls immediately');
