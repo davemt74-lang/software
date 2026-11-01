@@ -90,7 +90,7 @@
   }
   function cleanPortraits(rows){return (Array.isArray(rows)?rows:[]).filter(p=>typeof p?.image==='string'&&p.image.length<=65536&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.image)&&Number.isFinite(Date.parse(p.captured_at))).map(p=>({image:p.image,captured_at:new Date(p.captured_at).toISOString()})).sort((a,b)=>Date.parse(a.captured_at)-Date.parse(b.captured_at)).slice(-MAX_PORTRAITS);}
   function portraitDue(profile,at=Date.now()){
-    if(!profile||profile.recognitionEnabled!==true||profile.portraitRefreshEnabled!==true||profile.embeddings?.length<3)return false;
+    if(!profile||profile.recognitionEnabled!==true||profile.portraitRefreshEnabled!==true||!Array.isArray(profile.embeddings)||profile.embeddings.filter(vector).length<3)return false;
     const dates=cleanPortraits(profile.portraits).map(p=>Date.parse(p.captured_at));
     const last=Math.max(0,...dates,Number(profile.portraitUpdatedAt)||0);
     return Number.isFinite(at)&&at>=last&&at-last>=PORTRAIT_INTERVAL;
