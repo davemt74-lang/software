@@ -86,4 +86,8 @@ $a=reminder_chat_v1($pdo,['id'=>1],'What reminders do I have?','cloud:1','model-
 $a=reminder_chat_v1($pdo,['id'=>1],'What reminders do I have?','cloud:1','model-invalid',1,'UTC',fn()=>['ok'=>true,'answer'=>'not json']);check(str_contains($a['answer'],'Nothing was changed'),'malformed model output produces no changes');
 rejects(fn()=>reminder_chat_v1($pdo,['id'=>3],'Remind me now','cloud:3','denied-one',0,'UTC',$model),'revoked Chat permission blocks reminder tool');
 $pdo->exec('UPDATE users SET is_active=0 WHERE id=1');rejects(fn()=>reminder_chat_v1($pdo,['id'=>1],'Cancel reminder','cloud:1','denied-two',0,'UTC',fn()=>['ok'=>true,'answer'=>'{"operation":"list"}']),'account authority rechecked after inference');
+$pdo->exec('UPDATE users SET is_active=1 WHERE id=1');
+$beforeSetup=countrows('agent_reminders_v1');$r=reminder_chat_v1($pdo,['id'=>1,'is_active'=>1],'Can you set a reminder','setup:chat','bare-setup-request',1,'America/Phoenix',fn()=>throw new RuntimeException('Incomplete setup must not require a model call'));
+check($r['handled']&&$r['reminder_pending']&&str_contains($r['answer'],'when?')&&countrows('agent_reminders_v1')===$beforeSetup,'bare setup asks what and when without creating or guessing a schedule');
+check(!empty(reminder_state_v1($pdo,1,'setup:chat')['pending']),'bare setup is retained for the following user answer');
 echo "AGENT_REMINDERS_V1=PASS ($checks cases)\n";

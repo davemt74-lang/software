@@ -67,6 +67,24 @@ try{
   response=await post(endpoint,'Read the selected transcript',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,transcript_session_id:22}});
   check(response.data?.ok===true&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.status==='failed','forged foreign selection fails closed through '+endpoint);
  }
+ const beforeChatRepair=(await state()).reminders;
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  for(const input_mode of ['text','voice']){
+   response=await post(endpoint,'Can you set a reminder',{...named,conversation_id:longfellowConversation,input_mode});
+   check(response.data?.ok===true&&response.data.answer.includes('when?')&&response.data.tool_receipt?.status==='clarification_required'&&!response.data.tool_receipt.changes_applied,'incomplete reminder setup asks for details through '+endpoint+' '+input_mode);
+   response=await post(endpoint,'Do we have a list tool yet',{...named,conversation_id:longfellowConversation,input_mode});
+   check(response.data?.ok===true&&response.data.answer.includes('Which list')&&!response.data.answer.includes('ready (read)'),'list question stays conversational through '+endpoint+' '+input_mode);
+   response=await post(endpoint,'Hey tell me about the transcription from October 30th',{...named,conversation_id:longfellowConversation,input_mode});
+   check(response.data?.ok===true&&response.data.answer.includes('twenty dollars')&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.status==='read_complete','dated transcript request reads authorized evidence through '+endpoint+' '+input_mode);
+  }
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  response=await post(endpoint,'Tell me about the transcription from October 30th',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,timezone:'UTC'}});
+  check(response.data?.tool_receipt?.status==='clarification_required'&&response.data.answer.includes('Phoenix previous day'),'UTC date correctly includes the second recording that Phoenix excludes through '+endpoint);
+  response=await post(endpoint,'The first one',{...named,conversation_id:longfellowConversation});
+  check(response.data?.tool_receipt?.record_id===23&&response.data.answer.includes('different local recording day'),'ordinal transcript choice follows the preceding clarification through '+endpoint);
+ }
+ check((await state()).reminders===beforeChatRepair,'conversational setup, list discovery and transcript date reads never create reminders');
  const beforeReads=(await state()).reminders;
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
   for(const phrase of ['What was on my uh reminder list','What did I have planned for today on my reminders','Yeah check my open reminders']){
