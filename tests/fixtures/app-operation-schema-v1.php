@@ -29,6 +29,7 @@ function app_operation_remote_v1(int $uid,string $op,array $payload=[]): array
         return ['app_key'=>$payload['app_key'],'permissions'=>[['permission'=>'hardware.camera','allowed'=>$allowed]],'declared_count'=>1,'allowed_count'=>$allowed?1:0,'denied_count'=>$allowed?0:1];
     }
     if($op==='apps.system.rollback')return ['changed'=>true,'rollback'=>['release'=>['release_id'=>'release-previous','version'=>'1.0.0']]];
+    if($op==='apps.system.reconcile'&&$mode==='reconcile_missing')return ['items'=>[['package'=>['key'=>$payload['app_keys'][0]]]]];
     if($op==='apps.system.reconcile')return ['items'=>[['package'=>['key'=>$payload['app_keys'][0],'installed_version'=>'1.0.0'],'installed'=>true,'current'=>true,'update_available'=>false,'state'=>'running']]];
     if($op==='apps.system.release.status'){
 

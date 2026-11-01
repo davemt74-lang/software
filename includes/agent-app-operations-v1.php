@@ -146,6 +146,18 @@ function vp3_system_app_action_remote_v1(PDO $pdo,array $user,int $cid,array $sc
             if($response['state']===''||($op==='apps.system.install'&&($response['installed']!==true||!is_string($item['package_sha256'])||!preg_match('/^[a-f0-9]{64}$/D',$item['package_sha256']))))throw new RuntimeException('Installation was not verified.');
             if(isset($input['expected_version'])&&empty($response['rolled_back'])&&($item['installed_version']!==$input['expected_version']||$item['package_sha256']!==($input['expected_sha256']??null)))throw new RuntimeException('Activated release differs from the confirmed release.');
         }
+        if($op==='apps.system.deactivate'&&($response['installed']??null)!==false)throw new RuntimeException('App deactivation was not verified.');
+        if($op==='apps.system.reconcile'){
+            if(!is_array($response['items']??null)||!array_is_list($response['items']))throw new RuntimeException('Reconciliation rows could not be verified.');
+            $seen=[];$expected=$input['app_keys']??[];
+            foreach($response['items'] as $item){
+                if(!is_array($item))throw new RuntimeException('Reconciliation item could not be verified.');$key=vp3_system_apps_remote_item_v110($item)['app_key'];
+                if(!in_array($key,$expected,true)||isset($seen[$key])||!is_string($item['state']??null)||$item['state']===''||!empty($item['error']))throw new RuntimeException('Reconciliation identity or state could not be verified.');$seen[$key]=true;
+                foreach(['installed','current','update_available'] as $field)if(!is_bool($item[$field]??null))throw new RuntimeException('Reconciliation flags were not reported.');
+                if($item['installed']&&(!is_string($item['package']['installed_version']??$item['installed_version']??null)||trim($item['package']['installed_version']??$item['installed_version'])===''))throw new RuntimeException('Reconciled installed version was not reported.');
+            }
+            if(count($seen)!==count($expected))throw new RuntimeException('Reconciliation omitted requested apps.');
+        }
         if($op==='apps.system.release.status'){
             vp3_system_app_release_response_v1($response,(string)$input['app_key']);
             if($releaseExpectation!==null&&[($response['runtime']['active_release_id']??null),($response['runtime']['previous_release_id']??null)]!==$releaseExpectation)throw new RuntimeException('The reviewed rollback target changed.',403);
@@ -165,7 +177,7 @@ function vp3_system_app_release_response_v1(array $r,string $key): void
 }
 
 /** A consumed confirmation is distinct from a verified requested outcome. Never export raw remote results. */
-function vp3_system_app_action_outcome_v1(array $result): array
+function vp3_system_app_action_outcome_v1(array $result,string $actionType=''): array
 {
     $pending=false;$rolledBack=false;$error=false;
     $visit=static function(array $value) use (&$visit,&$pending,&$rolledBack,&$error):void {
@@ -174,7 +186,7 @@ function vp3_system_app_action_outcome_v1(array $result): array
     if(isset($result['ownership']))$verified=($result['ownership']['owned']??false)===true;
     if(isset($result['installation']))$verified=($result['installation']['homeserver']['installed']??false)===true;
     if(isset($result['permission']))$verified=is_bool($result['permission']['allowed']??null)&&is_array($result['permission']['status']['permissions']??null);
-    if(isset($result['hosting']))$verified=is_bool($result['hosting']['hosting']['bound']??null);
+    if(isset($result['hosting'])){$bound=$result['hosting']['hosting']['bound']??null;$verified=is_bool($bound)&&($actionType===''||($actionType==='hosting.bind'?$bound:!$bound));}
     if(isset($result['vrss']))$verified=($result['vrss']['contract']??'')==='vp3.app.agent-action-result.v1'&&array_key_exists('result',$result['vrss']);
     if(isset($result['reconciliation']))$verified=is_array($result['reconciliation']['owned']['items']??null)&&is_array($result['reconciliation']['revoked_cleanup']['items']??null);
     if(isset($result['release'])){
