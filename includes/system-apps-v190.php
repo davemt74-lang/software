@@ -9,7 +9,7 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
 {
     if(!$plan)return null;
     $status='prepared';
-    if(!empty($plan['completed']))$status=($plan['result']['verified']??null)===true?'completed':'failed';
+    if(!empty($plan['completed']))$status=($plan['result']['verified']??null)===true&&empty($plan['result']['reconcile_pending'])&&empty($plan['result']['rolled_back'])?'completed':'failed';
     elseif((string)($plan['status']??'')==='failed'||!empty($plan['error']))$status='failed';
 
     $type=(string)($plan['action_type']??'');
