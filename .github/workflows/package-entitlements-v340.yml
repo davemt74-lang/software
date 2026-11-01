@@ -171,6 +171,15 @@ jobs:
           php -l tests/phone-setup-ph3ia-runtime.php
           php tests/phone-setup-ph3ia-runtime.php
 
+      - name: PH3I-B signed worker heartbeat and health view
+        run: |
+          php -l includes/phone-worker-health-v171.php
+          php -l api/phone-worker-heartbeat-v171.php
+          php -l admin/phone.php
+          php -l upgrade.php
+          php -l tests/phone-worker-ph3ib-runtime.php
+          php tests/phone-worker-ph3ib-runtime.php
+
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
 

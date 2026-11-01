@@ -9,6 +9,7 @@ require_once dirname(__DIR__).'/includes/phone-voice-conversation-v140.php';
 require_once dirname(__DIR__).'/includes/phone-voice-stream-v150.php';
 require_once dirname(__DIR__).'/includes/phone-voice-readiness-v160.php';
 require_once dirname(__DIR__).'/includes/phone-setup-v170.php';
+require_once dirname(__DIR__).'/includes/phone-worker-health-v171.php';
 require_login();require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 $ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';$streamReadiness=null;
@@ -207,6 +208,7 @@ $setupPlan=vp3_phone_setup_plan_v170([
     'inbound_voice_enabled'=>$voiceEnabled,
     'cloud_sip_saved'=>vp3_phone_stream_configured_v150(),
 ]);
+$workerHealth=vp3_phone_worker_health_state_v171($pdo,time());
 $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.php';
 ?>
 <style>
@@ -233,6 +235,8 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
 .vp3-phone-admin .phone-setup-state.is-configured{background:#e4f7ec;color:#246845}
 .vp3-phone-admin .phone-setup-actions{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;font-weight:700}
 .vp3-phone-admin .phone-setup-actions a{color:#145a89;text-decoration:underline;text-underline-offset:3px}
+.vp3-phone-admin .phone-health-list{padding-left:20px;margin:10px 0}
+.vp3-phone-admin .phone-health-list li{margin:6px 0;line-height:1.5}
 @media(max-width:640px){.vp3-phone-admin{padding:12px}.vp3-phone-admin .phone-card{padding:14px}.vp3-phone-admin .phone-table{min-width:620px}}
 </style>
 <div class="vp3-phone-admin">
@@ -256,6 +260,24 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
         </li>
       <?php endforeach; ?>
     </ol>
+  </section>
+  <section class="phone-card" id="worker-health" aria-labelledby="worker-health-title">
+    <h2 id="worker-health-title">PH3I-B · HomeServer voice worker health</h2>
+    <p>Outbound signed check-ins show whether the optional worker launcher is reporting. A recent check-in does <strong>not</strong> prove that LiveKit, carrier audio or the phone Agent is connected. No phone numbers, caller transcripts or credentials are transmitted.</p>
+    <?php if(!$workerHealth['schema_ready']): ?>
+      <p class="phone-alert">Run <a href="<?= e(url('/upgrade.php')) ?>">upgrade.php</a> to install the worker health tables. Calling and voicemail are unchanged.</p>
+    <?php elseif(!$workerHealth['workers']): ?>
+      <p><strong>Not reporting.</strong> This is expected until HomeServer is installed, credentials are configured, and its optional worker health flag is enabled.</p>
+    <?php else: ?>
+      <ul class="phone-health-list">
+        <?php foreach($workerHealth['workers'] as $worker): ?>
+          <li><strong><?= e($worker['id']) ?></strong> · <?= e($worker['status']==='reporting'?'Process reporting':'Stale / offline') ?> · last check-in <?= e($worker['last_seen_utc']) ?>
+            · local preflight <?= $worker['preflight_ready']?'passed':'not ready' ?>
+            <small>(<?= (int)$worker['age_seconds'] ?> seconds ago)</small></li>
+        <?php endforeach; ?>
+      </ul>
+    <?php endif; ?>
+    <p><small>Refresh this admin page to update. The worker must explicitly set VP3_PHONE_WORKER_HEALTH_ENABLED=1; check-ins require the existing private Cloud/worker signing secret and stop appearing online within 90 seconds after a disconnect. Live-call certification remains pending.</small></p>
   </section>
   <div class="phone-grid">
     <section class="phone-card" id="twilio-account">
