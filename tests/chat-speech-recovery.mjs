@@ -4,9 +4,9 @@ import vm from 'node:vm';
 const source=fs.readFileSync('chat-voice.js','utf8'),lease=fs.readFileSync('voice-lease-v122.js','utf8');
 let checks=0;
 const check=(ok,label)=>{assert.ok(ok,label);checks++;console.log('PASS '+label);};
-function fixture(){
+function fixture({pendingMonitor=false,silentRecognition=false}={}){
  let now=Date.UTC(2026,9,31),next=1,starts=0,maxActive=0,fetches=0;
- const timers=new Map(),recognizers=[],tracks=[],listeners=new Map(),store=new Map();
+ const timers=new Map(),recognizers=[],tracks=[],monitorRequests=[],listeners=new Map(),store=new Map();
  const later=(fn,ms=0,interval=0)=>{const id=next++;timers.set(id,{fn,at:now+Math.max(0,ms),interval});return id;};
  const clear=id=>timers.delete(id);
  class ClockDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
@@ -15,10 +15,10 @@ function fixture(){
  const elements=Object.fromEntries(['chatForm','chatInput','sendChatButton','chatVoiceStatus','chatVoiceButton'].map(id=>[id,new Element()]));
  const document={body:new Element(),documentElement:{lang:'en-US'},getElementById:id=>elements[id]||null,querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>new Element(),addEventListener(){}};
  const emit=(type,detail={})=>{for(const fn of listeners.get(type)||[])fn({type,detail});};
- class Recognition {constructor(){recognizers.push(this);}start(){check(!recognizers.some(r=>r!==this&&r.active),'at most one native recognizer starts');starts++;this.active=true;maxActive=Math.max(maxActive,recognizers.filter(r=>r.active).length);queueMicrotask(()=>this.onstart?.());}stop(){if(this.holdEnd)return;this.end();}abort(){this.stop();}end(){this.active=false;queueMicrotask(()=>this.onend?.());}fail(error,hold=false){this.holdEnd=hold;this.onerror?.({error});if(!hold)this.end();}}
+ class Recognition {constructor(){recognizers.push(this);}start(){check(!recognizers.some(r=>r!==this&&r.active),'at most one native recognizer starts');starts++;this.active=true;maxActive=Math.max(maxActive,recognizers.filter(r=>r.active).length);if(!silentRecognition)queueMicrotask(()=>this.onstart?.());}stop(){if(this.holdEnd)return;this.end();}abort(){this.stop();}end(){this.active=false;queueMicrotask(()=>this.onend?.());}fail(error,hold=false){this.holdEnd=hold;this.onerror?.({error});if(!hold)this.end();}}
  class Event {constructor(type,options={}){this.type=type;this.detail=options.detail||{};}}
  const localStorage={getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,String(v)),removeItem:k=>store.delete(k)};
- const navigator={onLine:true,userActivation:{isActive:true},mediaDevices:{getSupportedConstraints:()=>({}),getUserMedia:async()=>{const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(type,fn){this[type]=fn;}};tracks.push(track);return {getAudioTracks:()=>[track],getTracks:()=>[track]};}}};
+ const navigator={onLine:true,userActivation:{isActive:true},mediaDevices:{getSupportedConstraints:()=>({}),getUserMedia:async()=>{if(pendingMonitor)await new Promise(resolve=>monitorRequests.push(resolve));const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(type,fn){this[type]=fn;}};tracks.push(track);return {getAudioTracks:()=>[track],getTracks:()=>[track]};}}};
  const window={STONEFELLOW_CHAT:{userId:1,endpoint:'/api/chat.php'},STONEFELLOW_CHAT_VOICE_BOOT:{button:elements.chatVoiceButton},SpeechRecognition:Recognition,
  fetch:async()=>{fetches++;return new Response('{}');},speechSynthesis:{cancel(){},speak(){}},SpeechSynthesisUtterance:class{},
  addEventListener:(t,f)=>{if(!listeners.has(t))listeners.set(t,[]);listeners.get(t).push(f);},removeEventListener(){},dispatchEvent:e=>{emit(e.type,e.detail);return true;},
@@ -27,7 +27,25 @@ function fixture(){
  Object.assign(window,globals);vm.runInNewContext(lease,globals);vm.runInNewContext(source,globals);
  const settle=async()=>{for(let i=0;i<6;i++)await Promise.resolve();};
  const advance=async ms=>{const target=now+ms;let guard=0;await settle();while(true){const entry=[...timers].filter(([,t])=>t.at<=target).sort((a,b)=>a[1].at-b[1].at)[0];if(!entry)break;if(++guard>10000)throw Error('timer loop');const [id,t]=entry;now=t.at;timers.delete(id);if(t.interval)timers.set(id,{...t,at:now+t.interval});t.fn();await settle();}now=target;await settle();};
- return {window,document,elements,navigator,recognizers,tracks,emit,advance,settle,get starts(){return starts;},get fetches(){return fetches;},get maxActive(){return maxActive;},current:()=>recognizers.findLast(r=>r.active)};
+ return {window,document,elements,navigator,recognizers,tracks,monitorRequests,emit,advance,settle,get starts(){return starts;},get fetches(){return fetches;},get maxActive(){return maxActive;},current:()=>recognizers.findLast(r=>r.active)};
+}
+{
+ const f=fixture({pendingMonitor:true});f.window.VP3ConversationControls.listen();
+ check(f.starts===1,'main recognizer starts in the enable call while the optional monitor is still pending');
+ await f.advance(15000);check(f.document.body.dataset.stonefellowAgentState==='listening'&&f.starts===1,'an unresolved monitor cannot stall or restart healthy native listening');
+ f.window.VP3ConversationControls.stop();f.monitorRequests[0]();await f.settle();
+ check(f.tracks.length===1&&f.tracks[0].readyState==='ended'&&f.starts===1,'late monitor acquisition after Stop releases its stream without restarting recognition');
+}
+{
+ const f=fixture({pendingMonitor:true,silentRecognition:true});f.window.VP3ConversationControls.listen();await f.advance(35000);
+ check(f.starts===3&&!f.window.VP3ConversationControls.isEnabled(),'native startup watchdog remains bounded even when the optional monitor never settles');
+ f.monitorRequests.forEach(resolve=>resolve());await f.settle();check(f.tracks.every(t=>t.readyState==='ended'),'watchdog shutdown fences all pending monitor streams');
+}
+{
+ const f=fixture({pendingMonitor:true});f.window.VP3ConversationControls.listen();await f.settle();
+ f.emit('stonefellow:agent-proactive-speech',{state:'start',text:'The agent is answering.'});await f.advance(0);
+ check(f.window.STONEFELLOW_CHAT_VOICE.bargeStarts===1,'barge recognition also starts without awaiting the optional monitor');
+ f.window.VP3ConversationControls.stop();f.monitorRequests.forEach(resolve=>resolve());await f.settle();check(f.tracks.every(t=>t.readyState==='ended'),'barge Stop fences the late optional monitor');
 }
 {
  const f=fixture();check(f.starts===0,'saved preferences and page load do not open capture');f.window.VP3ConversationControls.listen();await f.settle();

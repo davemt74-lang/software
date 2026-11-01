@@ -464,6 +464,28 @@ try {
   assert.equal(sends().length,beforeOffline,'Speech reconnect and online events never replay a saved Chat turn');
   console.log('PASS offline/back-online recovery and permanent Stop without background capture or request replay');
 
+  // The optional analyser used to hold native startup behind getUserMedia.
+  const monitorStartup=await page.evaluate(()=>{
+    window.savedGetUserMedia=navigator.mediaDevices.getUserMedia;
+    navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>{window.resolveDelayedMonitor=resolve;});
+    VP3ConversationControls.listen();
+    return recognizers.some(r=>r.active);
+  });
+  assert.equal(monitorStartup,true,'Native recognition starts in the explicit enable call with a pending monitor');
+  await page.clock.runFor(15000);
+  assert.equal(await page.evaluate(()=>VP3ConversationControls.state().state),'listening','An unresolved monitor cannot hang main listening');
+  const lateMonitor=await page.evaluate(async()=>{
+    VP3ConversationControls.stop();
+    const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(){}};
+    window.resolveDelayedMonitor({getTracks:()=>[track],getAudioTracks:()=>[track]});
+    for(let n=0;n<8;n++)await Promise.resolve();
+    navigator.mediaDevices.getUserMedia=window.savedGetUserMedia;
+    return {ended:track.readyState==='ended',active:recognizers.some(r=>r.active)};
+  });
+  assert.deepEqual(lateMonitor,{ended:true,active:false},'Stop fences a late monitor stream without restarting native capture');
+  console.log('PASS immediate native startup with a stalled optional monitor and safe late-stream cleanup');
+
+
   await boot();
   await page.getByRole('button',{name:'Chat tools',exact:true}).click();
   await page.getByLabel('Work mode').selectOption('chat');

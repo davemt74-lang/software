@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031';
+  const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031-mic-startup-20261101';
   const POST_SPEECH_ECHO_MS=4000;
   const POST_SPEECH_LISTEN_DELAY=360;
   const TURN_END_PAUSE_MS=1800;
@@ -573,7 +573,9 @@
       },startTimeoutMs);
       startRecognizer(current,'listen');return true;
     }catch(error){clearStartWatchdog();recognitionStarting=false;proof.errors+=1;proof.lastError=String(error?.message||error||'start failed');log('SR_START_THROW',{name:String(error?.name||'Error'),message:proof.lastError});recognition=null;if(voiceOn)recoverRecognition(proof.lastError,'start-throw');return false;}};
-    const generation=micGeneration;void ensureProcessedMic().then(()=>{if(recognition!==current||!voiceOn||responseWindowClosing||generation!==micGeneration||processing||speaking)return;launch();});return true;
+    // The monitor is optional: native speech must start in the enable call,
+    // even if getUserMedia is waiting on a permission prompt or device.
+    void ensureProcessedMic();return launch();
   }
 
   function stopBarge(reason='stop',abort=true){clearBargeStart();clearBargeRestart();clearBargeCaptureTimer();clearBargeCandidate();const current=bargeRecognition;bargeRecognition=null;bargeStarting=false;bargeListening=false;if(current&&abort&&activeRecognizers.has(current)){awaitNativeEnd(current);try{current.abort();}catch(error){}}log('BARGE_SR_STOP',{reason});}
@@ -617,13 +619,12 @@
 
   function startBarge(){
     clearBargeRestart();if(voiceOn&&speaking&&speechRetryAt>Date.now()){bargeRestartTimer=setTimeout(()=>{bargeRestartTimer=0;startBarge();},speechRetryAt-Date.now());return false;}if(!voiceOn||responseWindowClosing||activeRecognizers.size||!speaking||bargeCapturing||bargeStarting||bargeListening||recognitionStarting||recognitionListening||recognition||typeof SpeechRecognitionCtor!=='function')return false;
-    let current;try{current=createBargeRecognition();}catch(error){recoverBarge('constructor');return false;}bargeRecognition=current;bargeStarting=true;const generation=micGeneration;
-    // Barge-in shares the same prepared microphone as ordinary listening.
-    void ensureProcessedMic().then(()=>{
-      if(bargeRecognition!==current||!voiceOn||responseWindowClosing||generation!==micGeneration||!speaking)return;
-      proof.bargeStartCalls+=1;log('BARGE_SR_START_CALL',{call:proof.bargeStartCalls});
-      try{bargeStartTimer=setTimeout(()=>{if(bargeRecognition!==current||!bargeStarting)return;stopBarge('start-timeout');recoverBarge('start-timeout');},5000);startRecognizer(current,'barge');}catch(error){clearBargeStart();if(bargeRecognition===current)bargeRecognition=null;bargeStarting=false;proof.bargeErrors+=1;log('BARGE_SR_START_THROW',{name:String(error?.name||'Error'),message:String(error?.message||error||''),count:proof.bargeErrors});recoverBarge('start-throw');}
-    });return true;
+    let current;try{current=createBargeRecognition();}catch(error){recoverBarge('constructor');return false;}bargeRecognition=current;bargeStarting=true;
+    // The monitor remains generation/lease fenced, but never gates native speech.
+    void ensureProcessedMic();
+    proof.bargeStartCalls+=1;log('BARGE_SR_START_CALL',{call:proof.bargeStartCalls});
+    try{bargeStartTimer=setTimeout(()=>{if(bargeRecognition!==current||!bargeStarting)return;stopBarge('start-timeout');recoverBarge('start-timeout');},5000);startRecognizer(current,'barge');}catch(error){clearBargeStart();if(bargeRecognition===current)bargeRecognition=null;bargeStarting=false;proof.bargeErrors+=1;log('BARGE_SR_START_THROW',{name:String(error?.name||'Error'),message:String(error?.message||error||''),count:proof.bargeErrors});recoverBarge('start-throw');return false;}
+    return true;
   }
   function armBargeAfterRecognizerRelease(){
     clearBargeArmTimer();
