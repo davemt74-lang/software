@@ -157,6 +157,13 @@ jobs:
           php tests/phone-voice-ph3g-runtime.php
           php tests/phone-voice-ph3g-integration.php
 
+      - name: PH3H non-billable live calling preflight
+        run: |
+          php -l includes/phone-voice-readiness-v160.php
+          php -l admin/phone.php
+          php -l tests/phone-voice-ph3h-runtime.php
+          php tests/phone-voice-ph3h-runtime.php
+
       - name: Tracky navigation and overview contract
         run: node tests/tracky-navigation-overview-v282.mjs
 
