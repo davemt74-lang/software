@@ -245,6 +245,12 @@ function vp3_phone_assign_v100(PDO $pdo, int $numberId, int $userId, int $agentI
             throw new RuntimeException('That user’s phone number allowance is full.');
         $pdo->prepare('UPDATE phone_cloud_numbers_v100 SET owner_user_id=?, agent_id=?,status=\'unconfigured\',
           sms_enabled=0,voice_enabled=0 WHERE id=?')->execute([$userId,$agentId,$numberId]);
+        // Assignment changes revoke PH3F opt-in and any active conversation.
+        if (table_exists('phone_voice_modes_v140')) {
+            $pdo->prepare('DELETE FROM phone_voice_modes_v140 WHERE phone_number_id=?')->execute([$numberId]);
+            $pdo->prepare("UPDATE phone_voice_calls_v130 SET state='completed'
+              WHERE phone_number_id=? AND state='conversation_active'")->execute([$numberId]);
+        }
         $pdo->prepare('UPDATE phone_cloud_requests_v100 SET status=\'fulfilled\'
           WHERE owner_user_id=? AND agent_id=? AND phone_e164=(SELECT phone_e164 FROM phone_cloud_numbers_v100 WHERE id=?) AND status=\'pending\'')
           ->execute([$userId,$agentId,$numberId]);

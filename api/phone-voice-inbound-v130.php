@@ -5,6 +5,7 @@ require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/phone-cloud-v100.php';
 require_once dirname(__DIR__).'/includes/phone-sms-v110.php';
 require_once dirname(__DIR__).'/includes/phone-voice-v130.php';
+require_once dirname(__DIR__).'/includes/phone-voice-conversation-v140.php';
 
 header('Cache-Control: no-store');
 header('Content-Type: application/xml; charset=UTF-8');

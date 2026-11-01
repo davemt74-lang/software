@@ -3,6 +3,7 @@ declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/phone-cloud-v100.php';
 require_once __DIR__.'/includes/phone-voice-v130.php';
+require_once __DIR__.'/includes/phone-voice-conversation-v140.php';
 require_permission('account.access');
 $user=current_user();
 if (!$user||!has_permission('chat.access',$user)) redirect(url('/account.php'));
@@ -10,6 +11,19 @@ $ready=vp3_phone_voice_schema_ready_v130();$calls=[];$error='';
 if ($ready) {
     try {$calls=vp3_phone_voice_calls_v130(db(),(int)$user['id']);}
     catch(Throwable) {$error='Call history is temporarily unavailable.';}
+}
+$selectedCall=null;$turns=[];
+if ($ready&&vp3_phone_voice_ready_v140()&&(int)($_GET['call']??0)>0) {
+    $q=db()->prepare("SELECT id,provider_call_sid,created_at,state FROM phone_voice_calls_v130
+      WHERE id=? AND owner_user_id=? LIMIT 1");
+    $q->execute([(int)$_GET['call'],(int)$user['id']]);$selectedCall=$q->fetch(PDO::FETCH_ASSOC)?:null;
+    if ($selectedCall) {
+        $q=db()->prepare("SELECT step_number,speech_text,response_text,created_at FROM phone_voice_turns_v140
+          WHERE call_sid=? AND owner_user_id=? AND state='ready'
+          ORDER BY step_number ASC LIMIT 8");
+        $q->execute([(string)$selectedCall['provider_call_sid'],(int)$user['id']]);
+        $turns=$q->fetchAll(PDO::FETCH_ASSOC)?:[];
+    }
 }
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -27,14 +41,18 @@ if ($ready) {
 <?php $memberHeaderUser=$user;$memberHeaderTitle='Agent Phone Calls';$memberHeaderSubtitle='Private inbound call history and voicemail';$memberHeaderActiveKey='account';require __DIR__.'/includes/member-header.php'; ?>
 <section class="vp3-calls-canvas"><div class="vp3-calls-wrap">
 <h1>Calls & voicemail</h1><p><a href="<?= e(url('/phone.php')) ?>">Manage phone numbers</a> · <a href="<?= e(url('/phone-inbox.php')) ?>">SMS inbox</a></p>
-<p>Calls belong to the registered number's owner and selected agent. A caller's phone number alone does not authenticate their identity. Voicemail stays private to your account and is not automatically sent to an AI provider.</p>
+<p>Calls belong to the registered number's owner and selected agent. A caller's phone number alone does not authenticate their identity. Voicemail stays private to your account and is not automatically sent to an AI provider. For enabled AI conversations, caller speech transcripts and AI replies are saved to this private call history; they are not automatically added to Agent Brain.</p>
+<?php if($selectedCall): ?><section><h2>Conversation · <?= e((string)$selectedCall['created_at']) ?></h2><p><a href="<?= e(url('/phone-calls.php')) ?>">Back to all calls</a></p>
+<?php if(!$turns): ?><p>No completed speech turns are available for this call.</p><?php else: ?>
+<?php foreach($turns as $turn): ?><p><strong>Caller:</strong> <?= e((string)$turn['speech_text']) ?></p><p><strong>Agent:</strong> <?= e((string)$turn['response_text']) ?></p><?php endforeach; ?>
+<?php endif; ?></section><?php endif; ?>
 <?php if (!$ready): ?><p role="alert">Run the Cloud database upgrade to enable call history.</p><?php elseif ($error): ?><p role="alert"><?= e($error) ?></p><?php elseif (!$calls): ?><p>No incoming calls recorded yet. Your administrator can activate the voice webhook for an assigned number.</p><?php else: ?>
-<div class="vp3-calls-list"><table><thead><tr><th>When</th><th>Caller</th><th>Called number / agent</th><th>Result</th><th>Voicemail</th></tr></thead><tbody>
+<div class="vp3-calls-list"><table><thead><tr><th>When</th><th>Caller</th><th>Called number / agent</th><th>Result</th><th>Voicemail</th><th>Conversation</th></tr></thead><tbody>
 <?php foreach ($calls as $call): ?><tr>
 <td><?= e((string)$call['created_at']) ?></td><td><?= e((string)($call['caller_e164']?:'Private caller')) ?></td>
 <td><?= e((string)$call['called_e164']) ?><br><small><?= e((string)($call['agent_name']?:'Agent')) ?></small></td>
 <td><?= e((string)$call['state']) ?></td><td>
 <?php if (!empty($call['voicemail_id'])): ?><audio controls preload="none" aria-label="Voicemail playback" src="<?= e(url('/api/phone-voice-audio-v130.php?id='.(int)$call['voicemail_id'])) ?>"></audio><small><?= (int)$call['duration_seconds'] ?> sec</small>
 <?php else: ?><small>None available</small><?php endif; ?>
-</td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
+</td><td><a href="<?= e(url('/phone-calls.php?call='.(int)$call['id'])) ?>">View turns</a></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
 </div></section></main></div></body></html>

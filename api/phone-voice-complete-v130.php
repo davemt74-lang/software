@@ -23,7 +23,7 @@ try {
         (string)($_SERVER['HTTP_X_TWILIO_SIGNATURE']??''),$url,
         vp3_phone_twilio_credentials_v100()[1],(string)$provider['account_sid']);
     $pdo->prepare('UPDATE phone_voice_calls_v130 SET state=\'completed\'
-      WHERE provider=\'twilio\' AND provider_call_sid=? AND state=\'voicemail_offered\'')
+      WHERE provider=\'twilio\' AND provider_call_sid=? AND state IN (\'voicemail_offered\',\'voicemail_fallback\')')
       ->execute([$callSid]);
     http_response_code(200);
     echo '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';

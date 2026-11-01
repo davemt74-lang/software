@@ -61,7 +61,7 @@ function vp3_phone_voice_validate_url_v130(string $url): string
 function vp3_phone_voice_sibling_url_v130(string $callback,string $name): string
 {
     vp3_phone_voice_validate_url_v130($callback);
-    if (!in_array($name,['phone-voice-complete-v130.php','phone-voice-recording-v130.php'],true)) {
+    if (!in_array($name,['phone-voice-complete-v130.php','phone-voice-recording-v130.php','phone-voice-turn-v140.php'],true)) {
         throw new InvalidArgumentException('Invalid carrier callback path.');
     }
     return substr($callback,0,-strlen('phone-voice-inbound-v130.php')).$name;
@@ -123,7 +123,8 @@ function vp3_phone_voice_check_event_v130(array $form,string $signature,string $
  * network side effects and grants no browser/session or agent tool authority.
  * It is also the eligibility boundary a future live audio bridge must use.
  */
-function vp3_phone_voice_current_route_v131(PDO $pdo,string $callSid,int $maxAgeSeconds=14400): array
+function vp3_phone_voice_current_route_v131(PDO $pdo,string $callSid,int $maxAgeSeconds=14400,
+    array $allowedStates=['voicemail_offered']): array
 {
     if (!preg_match('/^CA[a-f0-9]{32}$/iD',$callSid)||$maxAgeSeconds<1||$maxAgeSeconds>86400)
         return ['accepted'=>false,'reason'=>'invalid_call'];
@@ -143,7 +144,7 @@ function vp3_phone_voice_current_route_v131(PDO $pdo,string $callSid,int $maxAge
         ||(int)$receipt['current_agent']!==$agent||(int)$receipt['voice_enabled']!==1
         ||(string)$receipt['current_provider']!=='twilio'
         ||(string)$receipt['current_did']!==(string)$receipt['called_e164']
-        ||(string)$receipt['state']!=='voicemail_offered')
+        ||!in_array((string)$receipt['state'],$allowedStates,true))
         return ['accepted'=>false,'reason'=>'assignment_changed'];
     $created=strtotime((string)$receipt['created_at']);
     if ($created===false||$created>time()+60||time()-$created>$maxAgeSeconds)
@@ -187,7 +188,8 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
         $exists->execute([$callSid]);$row=$exists->fetch(PDO::FETCH_ASSOC);
         if ($row) {
             if ((int)$row['owner_user_id']!==$owner||(int)$row['phone_number_id']!==(int)$number['id']
-                ||(int)$row['agent_id']!==$agent||(string)$row['state']!=='voicemail_offered'
+                ||!in_array((string)$row['state'],['voicemail_offered','conversation_active'],true)
+                ||(int)$row['agent_id']!==$agent
                 ||(string)$row['called_e164']!==$to||(string)$row['caller_e164']!==$caller)
                 throw new RuntimeException('Call receipt conflicts with number assignment.');
         } else {
@@ -201,8 +203,33 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
     }
-    $route=vp3_phone_voice_current_route_v131($pdo,$callSid);
+    $route=vp3_phone_voice_current_route_v131($pdo,$callSid,14400,['voicemail_offered','conversation_active']);
     if (!$route['accepted']) return $route;
+    if (function_exists('vp3_phone_voice_live_config_v140')
+        && vp3_phone_voice_live_config_v140($pdo,$route)) {
+        $pdo->prepare('UPDATE phone_voice_calls_v130 SET state=\'conversation_active\'
+          WHERE provider=\'twilio\' AND provider_call_sid=? AND state=\'voicemail_offered\'')
+          ->execute([$callSid]);
+        $step=1;
+        $spoken='Hello. I am '.$agentName.', an AI phone assistant. How can I help?';
+        if ($row&&(string)$row['state']==='conversation_active') {
+            // Twilio can retry the original inbound webhook. Resume at the
+            // next saved step; never restart a live caller at step one.
+            $prior=$pdo->prepare('SELECT step_number,response_text,state FROM phone_voice_turns_v140
+              WHERE call_sid=? ORDER BY step_number DESC LIMIT 1');
+            $prior->execute([$callSid]);$last=$prior->fetch(PDO::FETCH_ASSOC);
+            if ($last) {
+                if ((string)$last['state']!=='ready'||(int)$last['step_number']>=8)
+                    return ['accepted'=>false,'reason'=>'call_processing'];
+                $step=(int)$last['step_number']+1;
+                $spoken=(string)$last['response_text'];
+            }
+        }
+        return ['accepted'=>true,'twiml'=>vp3_phone_voice_gather_v140(
+            $agentName,$callback,$spoken,$step)];
+    }
+    if ((string)($row['state']??'')==='conversation_active')
+        return ['accepted'=>false,'reason'=>'conversation_mode_changed'];
     return ['accepted'=>true,'twiml'=>vp3_phone_voice_twiml_v130($agentName,$callback)];
 }
 
