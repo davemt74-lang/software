@@ -466,8 +466,11 @@ try {
 
   // The optional analyser used to hold native startup behind getUserMedia.
   const monitorStartup=await page.evaluate(()=>{
-    window.savedGetUserMedia=navigator.mediaDevices.getUserMedia;
-    navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>{window.resolveDelayedMonitor=resolve;});
+    window.savedMediaDevices=Object.getOwnPropertyDescriptor(navigator,'mediaDevices');
+    // chat.test is HTTP: provide the controlled monitor API explicitly.
+    Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{
+      getUserMedia:()=>new Promise(resolve=>{window.resolveDelayedMonitor=resolve;})
+    }});
     VP3ConversationControls.listen();
     return recognizers.some(r=>r.active);
   });
@@ -479,7 +482,8 @@ try {
     const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(){}};
     window.resolveDelayedMonitor({getTracks:()=>[track],getAudioTracks:()=>[track]});
     for(let n=0;n<8;n++)await Promise.resolve();
-    navigator.mediaDevices.getUserMedia=window.savedGetUserMedia;
+    if(window.savedMediaDevices)Object.defineProperty(navigator,'mediaDevices',window.savedMediaDevices);
+    else delete navigator.mediaDevices;
     return {ended:track.readyState==='ended',active:recognizers.some(r=>r.active)};
   });
   assert.deepEqual(lateMonitor,{ended:true,active:false},'Stop fences a late monitor stream without restarting native capture');
