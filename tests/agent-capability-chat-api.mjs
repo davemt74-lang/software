@@ -67,6 +67,14 @@ try{
   response=await post(endpoint,'Read the selected transcript',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,transcript_session_id:22}});
   check(response.data?.ok===true&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.status==='failed','forged foreign selection fails closed through '+endpoint);
  }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  let n=await post(endpoint,'Load from the asteroid you saved me',named);const cid=n.data.conversation_id;
+  check(n.data.tool_receipt?.capability==='navigation.open'&&n.data.actions?.[0]?.auto&&n.data.actions[0].url.includes('track=9'),'explicit Studio load returns an authorized auto navigation through '+endpoint);
+  n=await post(endpoint,'Offer to open that track in Stem Studio',{...named,conversation_id:cid});check(n.data.tool_receipt?.status==='clarification_required'&&n.data.actions.length===0,'Studio offer remains a pending source reference through '+endpoint);
+  n=await post(endpoint,'Yes open it',{...named,conversation_id:cid});check(n.data.actions?.[0]?.auto&&n.data.actions[0].url.includes('track=9'),'affirmative follow-up resolves the saved Studio destination through '+endpoint);
+  n=await post(endpoint,'Open forbidden Studio track',{...named,conversation_id:cid});check(n.data.actions.length===0&&!n.data.answer.includes('SECRET'),'Studio navigation cannot expose a foreign track through '+endpoint);
+  n=await post(endpoint,'Open contacts',{...named,conversation_id:cid});check(n.data.actions?.[0]?.auto&&n.data.actions[0].url==='/contacts.php','canonical authorized page navigation works through '+endpoint);
+ }
  const listHeaders={'X-Fixture-Brain-Ready':'1','X-Fixture-Record-Ready':'1'};
  for(const [index,endpoint] of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php'].entries()){
   const name='prep '+index;

@@ -1275,6 +1275,8 @@
         return raw;
       }
       target.searchParams.set('return', currentStudioReturnTarget());
+      if(Number(conversationId)>0)target.searchParams.set('conversation_id',String(conversationId));
+      if(window.VP3ConversationControls?.isEnabled?.())target.searchParams.set('voice','1');
       return `${target.pathname}${target.search}${target.hash}`;
     } catch (error) {
       return raw;

@@ -125,6 +125,13 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
         'homeserver_cloud_allowed'=>$homeCloudAllowed,
     ]);
 
+    // Automatic has already selected an executable Cloud route. Do not dispatch
+    // a possibly mutating Chat turn as a recovery probe to an unready HomeServer.
+    if($effective==='auto'&&($gateway['route']??'')==='vp3_cloud'){
+        $gateway['try_homeserver']=false;
+        if($home['paired']&&$home['supported']&&!$home['ready'])$gateway['reason']='homeserver_not_ready_cloud';
+    }
+
     return [
         'version'=>'v4.20','surface'=>ai_gateway_v031_surface($surface),'user_id'=>$userId,'agent_id'=>$agentId,
         'requested_preference'=>$requested,'effective_preference'=>$effective,

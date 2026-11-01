@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'chat-history-draft-recovery-20261018-startup-20261021-media-20261026-composer-participants-v1344-app-outcomes-s7';
-$controlBuild .= '-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
+$controlBuild .= '-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351-speech-recovery-20261031-mic-startup-20261101';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer-r3' . '-voice-v1351';
@@ -245,6 +245,7 @@ if (!$agentFeatureReady) {
 
 $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict";var cfg=window.STONEFELLOW_CHAT||{};cfg.endpoint='
     . json_encode($chatApiEndpoint, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    . ';cfg.agentId=' . (int)($activeUserAgent['id'] ?? 0)
     . ';cfg.initialConversationId=' . (int)$agentInitialConversationId . ';window.STONEFELLOW_AGENT_IDENTITY_V236={'
     . 'displayName:' . json_encode($agentDisplayName, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ',systemName:' . json_encode($systemAgentName, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)

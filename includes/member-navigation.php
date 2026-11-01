@@ -96,6 +96,9 @@ function member_navigation_active_key(?string $scriptName = null): string
         'team.php'=>'team',
         'team-scheduling.php'=>'team_scheduling',
         'music-workspace.php'=>'music_workspace',
+        'music-library.php'=>'music_library',
+        'music-releases.php'=>'music_releases',
+        'player.php'=>'music_player',
     ];
     return $map[basename($path)]??'';
 }
@@ -107,7 +110,7 @@ function member_navigation_section_label(string $key): string
         'messages','contacts','knowledge','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
         'meetings','scheduling','appointment_lifecycle','commerce','campaigns','rewards','claim_terminal','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
         'team','team_scheduling','team_workspaces'=>'Team',
-        'music_workspace'=>'Creator',
+        'music_workspace','music_library','music_releases','music_player'=>'Music',
         'account','homeserver','hosting','apps','client_updates','plugins','subscription','token_packs','ai_usage'=>'Account',
         'admin'=>'Administration',
         default=>'Workspace',

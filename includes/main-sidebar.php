@@ -79,6 +79,19 @@ foreach ($mainSidebarMenuLinks as $link) {
     $key = (string)($link['key'] ?? '');
     if ($key !== '') $mainSidebarLinkIndex[$key] = $link;
 }
+if(isset($mainSidebarLinkIndex['music_workspace'])){
+    $musicLinks=[
+        'music_workspace'=>['Music Workspace','/music-workspace.php','♫'],
+        'music_library'=>['Music Library','/music-library.php','♪'],
+        'music_releases'=>['Releases','/music-releases.php','◈'],
+        'music_player'=>['Music Player','/player.php','▶'],
+    ];
+    foreach($musicLinks as $key=>[$label,$path,$icon]){
+        $mainSidebarLinkIndex[$key]=['key'=>$key,'label'=>$label,'url'=>url($path),'group'=>'creator'];
+        $mainSidebarPrimaryOrder[]=$key;$mainSidebarPrimaryKeys[$key]=true;
+        $mainSidebarPrimaryLabels[$key]=$label;$mainSidebarPrimaryIcons[$key]=$icon;$mainSidebarPrimarySections[$key]='Music';
+    }
+}
 $mainSidebarPrimaryLinks = [];
 foreach ($mainSidebarPrimaryOrder as $key) {
     if (isset($mainSidebarLinkIndex[$key])) $mainSidebarPrimaryLinks[] = $mainSidebarLinkIndex[$key];

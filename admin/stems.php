@@ -39,6 +39,16 @@ $projectAgentToken = 'stem-project-library-v158-20260829';
 $commandBusToken = 'stem-command-bus-v159-20260829';
 $studioUser = current_user();
 $studioConversationId = max(0,(int)($_GET['conversation_id'] ?? 0));
+$studioAgentIdentity=['agentId'=>0];
+if($studioConversationId>0&&$studioUser&&($studioPdo=db())&&table_exists('chat_conversations')){
+    $studioScope=$studioPdo->prepare('SELECT user_agent_id FROM chat_conversations WHERE id=? AND user_id=?');
+    $studioScope->execute([$studioConversationId,(int)$studioUser['id']]);$storedStudioAgent=$studioScope->fetchColumn();
+    if($storedStudioAgent===false)$studioConversationId=0;
+    elseif((int)$storedStudioAgent>0){
+        $studioNamedAgent=user_agent_get_v236($studioPdo,(int)$studioUser['id'],(int)$storedStudioAgent);
+        if($studioNamedAgent&&!empty($studioNamedAgent['is_active']))$studioAgentIdentity=['agentId'=>(int)$storedStudioAgent];else $studioConversationId=0;
+    }
+}
 $studioTaskTitle = 'Stem Studio · ' . (string)($track['title'] ?? 'Track');
 $preloaderTitle = e((string)($track['title'] ?? 'song'));
 $preloaderHead = <<<'HTML'
@@ -291,7 +301,7 @@ if ($advancedStudioRuntime) {
 
 $html = preg_replace('~<script[^>]+src="[^"]*editor-voice-barge-v117\.js[^"]*"[^>]*></script>~i','',$html) ?? $html;
 
-$contextConfig = '<script>window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)($studioUser['id'] ?? 0) . ',surface:"stem",trackId:' . (int)$trackId . ',projectId:0,conversationId:' . $studioConversationId . ',taskTitle:' . json_encode($studioTaskTitle) . ',taskKey:' . json_encode('stem:' . (int)$trackId) . ',csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';
+$contextConfig = '<script>window.STONEFELLOW_AGENT_IDENTITY_V236=' . json_encode($studioAgentIdentity) . ';window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)($studioUser['id'] ?? 0) . ',surface:"stem",trackId:' . (int)$trackId . ',projectId:0,conversationId:' . $studioConversationId . ',taskTitle:' . json_encode($studioTaskTitle) . ',taskKey:' . json_encode('stem:' . (int)$trackId) . ',csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';
 $sharedConversation = $contextConfig
     . '<script src="' . e(url('/conversation-voice-v122.js?v=' . $voiceToken . '&capture=interactive-listening-section2-20261003')) . '" onload="window.STONEFELLOW_STUDIO_RUNTIME_PROBE.conversationEngine=!!window.StonefellowConversationVoiceV122"></script>'
     . '<script src="' . e(url('/editor-voice-barge-v117.js?v=' . $voiceToken . '&capture=interactive-listening-section2-20261003')) . '"></script>'
