@@ -5,10 +5,10 @@
     const $=id=>document.getElementById(id),embed=new URLSearchParams(location.search).get('orb_embed')==='1'&&parent!==window;
     const origin=location.origin;let lastState='',disposed=false,timer=0,pendingText='',pendingListen=false,pendingReplyWindow=false,pendingVoiceEnrollment='',introductionMode='',ready=false,frame=null,returnFocus=null,restorePanel=null;
     const state=()=>window.VP3EyesCore.visualState(adapter.state());
-    const userTurn=event=>{if(event.target?.id!=='chatForm')return;const text=String($('chatInput')?.value||'').slice(0,240);const context={voice:window.VP3VoiceGuard?.wasVoiceTurn?.(text)===true,known_voice:window.VP3VoiceGuard?.hasRecognizedTurn?.(text)===true};if(embed)parent.postMessage({channel:'vp3-orb',kind:'user-turn',text,...context},origin);else void window.VP3AgentEyes?.hear?.(text,context);};
+    const userTurn=event=>{if(event.target?.id!=='chatForm')return;const input=$('chatInput'),text=String(input?.value||'').slice(0,240),context={voice:window.VP3VoiceGuard?.wasVoiceTurn?.(text)===true,known_voice:window.VP3VoiceGuard?.hasRecognizedTurn?.(text)===true};const photoReply=embed?introductionMode==='visual-consent'&&!!window.VP3EyesCore.visualReply(text):window.VP3AgentEyes?.acceptsPhotoReply?.(text);if(photoReply){event.preventDefault();event.stopImmediatePropagation();if(input){input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));}}if(embed)parent.postMessage({channel:'vp3-orb',kind:'user-turn',text,...context},origin);else void window.VP3AgentEyes?.hear?.(text,context);};
     document.addEventListener('submit',userTurn,true);window.addEventListener('pagehide',()=>document.removeEventListener('submit',userTurn,true),{once:true});
     if(embed){
-      let queuedEnrollment='',queuedIntroduction='',queuedResponse=false;window.addEventListener('vp3:voice-guard-ready',()=>{if(queuedEnrollment){void window.VP3VoiceGuard.beginEnrollment(queuedEnrollment);queuedEnrollment='';}window.VP3VoiceGuard.inviteIntroduction(queuedIntroduction);});
+      let queuedEnrollment='',queuedIntroduction='',queuedResponse=false;window.addEventListener('vp3:voice-guard-ready',()=>{if(queuedEnrollment){void window.VP3VoiceGuard.beginEnrollment(queuedEnrollment);queuedEnrollment='';}window.VP3VoiceGuard.inviteIntroduction(queuedIntroduction);introductionMode=queuedIntroduction;});
       document.documentElement.dataset.vp3OrbEmbed='1';
       const announce=()=>{if(!disposed)parent.postMessage({channel:'vp3-orb',kind:'state',state:state(),conversation:adapter.conversationRef?.()},origin);};
       const commands=async event=>{
@@ -30,7 +30,7 @@
         if(event.data.kind==='response-window-cancel'){queuedResponse=false;(window.VP3ConversationControls||window.HomeServerConversationVoice)?.cancelResponseWindow?.();}
         if(event.data.kind==='voice-enroll'){if(window.VP3VoiceGuard)void window.VP3VoiceGuard.beginEnrollment(String(event.data.id||''));else queuedEnrollment=String(event.data.id||'');}
         if(event.data.kind==='voice-enroll-cancel'){queuedEnrollment='';window.VP3VoiceGuard?.cancelEnrollment();}
-        if(event.data.kind==='introduction-window'){queuedIntroduction=['name','visual-consent'].includes(event.data.mode)?event.data.mode:'';window.VP3VoiceGuard?.inviteIntroduction(queuedIntroduction);}
+        if(event.data.kind==='introduction-window'){queuedIntroduction=['name','visual-consent'].includes(event.data.mode)?event.data.mode:'';introductionMode=queuedIntroduction;window.VP3VoiceGuard?.inviteIntroduction(queuedIntroduction);}
       };
       window.addEventListener('message',commands);timer=setInterval(announce,250);
       window.addEventListener('vp3:voice-filter-status',event=>parent.postMessage({channel:'vp3-orb',kind:'voice-filter-status',message:String(event.detail?.message||'').slice(0,300)},origin));

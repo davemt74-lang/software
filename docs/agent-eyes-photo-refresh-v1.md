@@ -1,0 +1,11 @@
+# Agent Eyes photo capture and periodic gallery refresh
+
+A named participant’s visible photo offer now accepts a scoped yes/no through typed Chat, listening and the existing popup. The voice guard uses the same reply parser, including for an unknown voice responding to its own pending invitation. Photo replies are handled locally instead of also invoking the general Chat model. Unrelated yes replies remain ordinary Chat. The offer expires after 90 seconds or a track/presence change.
+
+The initial capture saves three 160×160 JPEGs plus recognition embeddings in the existing account-owned IndexedDB record. Capture previews explicitly say not saved yet; only transaction completion produces the saved result. The gallery displays dated photos and last update, retains at most 12 photos, and restores when a participant is selected after reload. Failures remain visible.
+
+Weekly refresh is a separate per-participant option, included in the new conversational photo offer and selectable in Agent Eyes. Older enrollments remain manual until this option is enabled. Refresh requires a single stable recognized participant, a strong unique visual match, a full week since the most recent save and an active visible camera. It appends one portrait without modifying enrollment embeddings. A read/write transaction rechecks the latest saved timestamp and opt-in to prevent concurrent tabs from appending twice or reviving forgotten records. Cloud consent is reread before writing; automatic refresh never grants consent. Small/clipped face crops, ambiguity, revoked profiles, stopped/hidden cameras and corrections do not refresh. A failed automatic attempt backs off one minute.
+
+Photos and recognition embeddings stay on the current browser/device, as before; no photo upload or cross-device gallery is added. Participant IDs, notes and authorized Brain summaries still use the existing Cloud routes. No database migration.
+
+Verification: shared identity core, existing Orb/Cloud browser suites and a new production-adapter browser suite covering canvas JPEGs, actual IndexedDB transactions, reload/account isolation, scoped consent, weekly cadence, concurrent tabs, opt-out, ambiguity, stop, revocation, storage failure and forget. Camera model/speech input are fixtures; physical camera/provider acceptance remains necessary.

@@ -64,7 +64,7 @@
       const turnSerial=++turn;
       window.VP3ParticipantContinuity?.clearSpeaker?.();
       lastChecked={text:String(text),at:Date.now()};
-      if(Date.now()<invitationUntil&&((invitation==='name'&&window.VP3EyesCore?.introductionName(text,true))||(invitation==='visual-consent'&&/^(?:please )?(?:remember me visually|save my local visual samples|recognize me next time)[.!]?$/i.test(String(text).trim())))){invitation='';pendingContext=null;return {allowed:true,reason:'invited-introduction'};}
+      if(Date.now()<invitationUntil&&((invitation==='name'&&window.VP3EyesCore?.introductionName(text,true))||(invitation==='visual-consent'&&window.VP3EyesCore?.visualReply(text)))){invitation='';pendingContext=null;return {allowed:true,reason:'invited-introduction'};}
       pendingContext=null;if(/^(?:that['’]s not me|that is not me|you have the wrong person)[.!]?$/i.test(String(text).trim()))return {allowed:true,reason:'participant-correction'};if(/^(?:stop|cancel|pause|stop listening|stop the microphone)[.!]?$/i.test(String(text).trim()))return {allowed:true};if(window.VP3AgentEyes?.expectingIntroduction?.()&&window.VP3EyesCore?.introductionName(text,true))return {allowed:true,reason:'invited-introduction'};if(!enabled)return {allowed:true};const token=epoch;
       const current=()=>token===epoch&&turnSerial===turn&&isCurrent();
       const captured=chunks;chunks=[];length=0;
