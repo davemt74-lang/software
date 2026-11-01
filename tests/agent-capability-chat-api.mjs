@@ -6,7 +6,7 @@ import net from 'node:net';
 import {spawn} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-capability-chat-'));
 fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(path.join(tmp,'api'));
-for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
+for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
 for(const name of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
 fs.copyFileSync('tests/fixtures/phone-agent-schema-v1.php',path.join(tmp,'includes/phone-agent-schema-v1.php'));
@@ -66,6 +66,32 @@ try{
   check(response.data?.ok===true&&response.data.tool_receipt?.capability==='transcripts.highlight'&&response.data.tool_receipt.changes_applied,'exact selected quote is retained through '+endpoint+': '+response.body);
   response=await post(endpoint,'Read the selected transcript',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,transcript_session_id:22}});
   check(response.data?.ok===true&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.status==='failed','forged foreign selection fails closed through '+endpoint);
+ }
+ const listHeaders={'X-Fixture-Brain-Ready':'1','X-Fixture-Record-Ready':'1'};
+ for(const [index,endpoint] of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php'].entries()){
+  const name='prep '+index;
+  let t=await post(endpoint,'Add take a shower to my '+name+' list',named,listHeaders);const cid=t.data.conversation_id;
+  check(t.data.tool_receipt?.status==='clarification_required'&&!t.data.tool_receipt.changes_applied&&t.data.answer.includes('Create it'),'missing named list asks before any list/item save through '+endpoint);
+  t=await post(endpoint,'Yes create it',{...named,conversation_id:cid},listHeaders);
+  check(t.data.tool_receipt?.changes_applied&&t.data.answer.includes('take a shower')&&t.data.sticky_notes?.[0]?.kind==='task_list','yes creates the frozen list and item through '+endpoint);
+  const note=t.data.sticky_notes[0];
+  let n=await fetch(base+'/api/task-notes-v1.php',{method:'POST',headers:{'Content-Type':'application/json',...listHeaders},body:JSON.stringify({csrf_token:'fixture',agent_id:7,note})});let nd=await n.json();
+  check(nd.ok&&nd.note.items.length===1&&nd.note.items[0].title==='take a shower','sticky note resolves actual saved task through '+endpoint);
+  t=await post(endpoint,'Add pizza dough to my '+name+' list',{...named,conversation_id:cid},listHeaders);
+  check(t.data.tool_receipt?.changes_applied&&!t.data.answer.includes('Create it'),'existing named list accepts a new item through '+endpoint);
+  t=await post(endpoint,'Add pizza dough to my '+name+' list',{...named,conversation_id:cid},listHeaders);
+  check(!t.data.tool_receipt?.changes_applied&&t.data.answer.includes('already'),'repeated add does not duplicate a task through '+endpoint);
+  t=await post(endpoint,'Show '+name+' list',{...named,conversation_id:cid},listHeaders);
+  check(t.data.sticky_notes?.[0]?.id===note.id&&!t.data.tool_receipt.changes_applied,'show named list returns a current authorized note reference through '+endpoint);
+  n=await fetch(base+'/api/task-notes-v1.php',{method:'POST',headers:{'Content-Type':'application/json',...listHeaders},body:JSON.stringify({csrf_token:'fixture',agent_id:8,note})});nd=await n.json();check(n.status===404&&!nd.ok&&!JSON.stringify(nd).includes('shower'),'sticky API rejects another Agent list through '+endpoint);
+  t=await post(endpoint,'Save take a shower as a task',{...named,conversation_id:cid},listHeaders);
+  check(t.data.tool_receipt?.changes_applied&&t.data.answer.includes('as task #')&&!t.data.answer.includes('remind'),'explicit save task does not loop into reminder setup through '+endpoint);
+  t=await post(endpoint,'Add olive oil to my cancelled '+name+' list',{...named,conversation_id:cid},listHeaders);
+  check(t.data.tool_receipt?.status==='clarification_required','second missing list is staged through '+endpoint);
+  t=await post(endpoint,'No cancel the list',{...named,conversation_id:cid},listHeaders);
+  check(!t.data.tool_receipt?.changes_applied&&t.data.answer.includes('Cancelled'),'cancelled list proposal makes no task/list mutation through '+endpoint);
+  t=await post(endpoint,'Show reminders',{...named,conversation_id:cid},listHeaders);
+  check(t.data.sticky_notes?.[0]?.kind==='reminders'&&!t.data.tool_receipt.changes_applied,'show reminders returns a sticky reference through '+endpoint);
  }
  const beforeChatRepair=(await state()).reminders;
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
