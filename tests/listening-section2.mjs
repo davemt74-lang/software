@@ -51,8 +51,9 @@ async function test(name,run){await run();checks.push(name);console.log('PASS '+
 
 
 const flush=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
-function clock(b){
- let time=0,sequence=0;const pending=new Map();
+function clock(b,{wallClock=false}={}){
+ let time=0,sequence=0;
+ if(wallClock){const epoch=Date.now();const NativeDate=Date;const TimedDate=class extends NativeDate{constructor(...args){super(...(args.length?args:[epoch+time]));}static now(){return epoch+time;}};b.context.Date=TimedDate;b.window.Date=TimedDate;}const pending=new Map();
  const set=(fn,delay=0)=>{const id=++sequence;pending.set(id,{fn,at:time+Number(delay)});return id;};
  const clear=id=>pending.delete(id);
  Object.assign(b.context,{setTimeout:set,clearTimeout:clear});Object.assign(b.window,{setTimeout:set,clearTimeout:clear});
@@ -217,12 +218,12 @@ if(cloud){
   assert.equal(starts,3);assert.equal(api.state().voiceOn,false);assert.match(b.element('chatVoiceStatus').textContent,/retry/i);
   api.enableVoice();await flush();assert.equal(starts,4);api.disableVoice();
  });
- await test('Three transient browser interruptions recover while startup failures remain bounded',async()=>{
-  const b=browser(),timer=clock(b);let native,starts=0;
+ await test('Seven transient browser interruptions recover with bounded backoff while startup failures remain bounded',async()=>{
+  const b=browser(),timer=clock(b,{wallClock:true});let native,starts=0;
   b.window.SpeechRecognition=class{constructor(){native=this;}start(){starts++;this.onstart?.();}abort(){this.onend?.();}};
   const api=chat(b);api.enableVoice();await flush();
-  for(let i=0;i<3;i++){const old=native;old.onerror({error:'aborted'});old.onend();await timer.advance(1800);assert.equal(api.state().voiceOn,true);assert.equal(api.state().recognitionListening,true);}
-  assert.equal(starts,4);api.disableVoice();
+  for(let i=0;i<7;i++){const old=native;old.onerror({error:i%2?'network':'aborted'});old.onend();const delay=api.state().proof.speechRetryDelayMs;assert(delay>0&&delay<=30000);await timer.advance(delay-1);assert.equal(api.state().voiceOn,true);assert.equal(api.state().recognitionListening,false);await timer.advance(1);assert.equal(api.state().recognitionListening,true);}
+  assert.equal(starts,8);api.disableVoice();
  });
  await test('Automatic restart does not reimport a restored failed draft',async()=>{
   const b=browser(),timer=clock(b),sent=[];let native;
