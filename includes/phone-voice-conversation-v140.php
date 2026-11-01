@@ -66,8 +66,10 @@ function vp3_phone_voice_set_mode_v140(PDO $pdo,int $numberId,bool $enabled): vo
     }
     // A mode change invalidates all currently active sessions immediately.
     $pdo->prepare("UPDATE phone_voice_calls_v130 SET state='completed'
-      WHERE phone_number_id=? AND state='conversation_active'")->execute([$numberId]);
+      WHERE phone_number_id=? AND state IN ('conversation_active','streaming_active')")->execute([$numberId]);
     $pdo->prepare('DELETE FROM phone_voice_modes_v140 WHERE phone_number_id=?')->execute([$numberId]);
+    if (table_exists('phone_voice_stream_routes_v150'))
+        $pdo->prepare('DELETE FROM phone_voice_stream_routes_v150 WHERE phone_number_id=?')->execute([$numberId]);
     if ($enabled) $pdo->prepare("INSERT INTO phone_voice_modes_v140
       (phone_number_id,owner_user_id,agent_id,mode) VALUES (?,?,?,'conversation')")
       ->execute([$numberId,$owner,$agent]);

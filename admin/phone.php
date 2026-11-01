@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/includes/phone-sms-v110.php';
 require_once dirname(__DIR__).'/includes/phone-sms-outbound-v120.php';
 require_once dirname(__DIR__).'/includes/phone-voice-v130.php';
 require_once dirname(__DIR__).'/includes/phone-voice-conversation-v140.php';
+require_once dirname(__DIR__).'/includes/phone-voice-stream-v150.php';
 require_login();require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 $ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';
@@ -66,6 +67,34 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
                 save_setting('phone_voice_webhook_url_v130',$callback);
                 flash('notice','Incoming voice callback saved. Existing numbers were not activated.');
                 redirect(url('/admin/phone.php#voice'));
+            }
+            if ($action==='save_stream_bridge') {
+                $uri=vp3_phone_stream_sip_uri_v150((string)($_POST['stream_sip_uri']??''));
+                $secret=trim((string)($_POST['stream_worker_secret']??''));
+                if ($secret!=='' && (strlen($secret)<32 || strlen($secret)>160 || preg_match('/\s/',$secret)))
+                    throw new RuntimeException('Use a distinct worker signing secret of 32 to 160 characters with no spaces.');
+                if ($secret==='' && strlen(vp3_phone_stream_secret_v150())<32)
+                    throw new RuntimeException('Configure the private LiveKit worker signing secret first.');
+                // A changed SIP trunk or key revokes in-flight sessions immediately.
+                if ($uri!==(string)setting('phone_voice_stream_sip_uri_v150','') || $secret!=='')
+                    $pdo->exec("UPDATE phone_voice_calls_v130 SET state='completed' WHERE state='streaming_active'");
+                save_setting('phone_voice_stream_sip_uri_v150',$uri);
+                if ($secret!=='') save_setting('phone_voice_stream_worker_secret_v150',ai_encrypt_secret($secret));
+                flash('notice','Streaming gateway saved. Nothing is activated until each number is explicitly enabled.');
+                redirect(url('/admin/phone.php#voice'));
+            }
+            if ($action==='enable_stream') {
+                if (trim((string)($_POST['confirmation']??''))!=='ENABLE STREAMING PHONE')
+                    throw new RuntimeException('Type ENABLE STREAMING PHONE to authorize the LiveKit calling costs and audio processing.');
+                vp3_phone_stream_set_v150($pdo,(int)($_POST['number_id']??0),
+                    (int)($_POST['homeserver_agent_id']??0),true);
+                flash('notice','Live streaming configured for this number. HomeServer still checks secondary Agent grants on every turn.');
+                redirect(url('/admin/phone.php#numbers'));
+            }
+            if ($action==='disable_stream') {
+                vp3_phone_stream_set_v150($pdo,(int)($_POST['number_id']??0),0,false);
+                flash('notice','Streaming disabled for this number; new calls use voicemail.');
+                redirect(url('/admin/phone.php#numbers'));
             }
             if ($action==='activate_incoming_voice') {
                 if (!vp3_phone_voice_schema_ready_v130()) throw new RuntimeException('Run the PH3C database upgrade first.');
@@ -215,7 +244,15 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
     <p>Voicemail is the safe default. Optionally enable Cloud AI phone conversation per number. The caller hears an AI disclosure, speaks to the assigned agent, and receives spoken replies. This first Cloud route processes one utterance at a time; it is not continuous full-duplex streaming. Speech text goes to the configured AI provider and uses the number owner's AI token allowance. Caller speech is not treated as owner authentication. No private tools, chat, or Agent Brain are accessible.</p>
     <?php if(!vp3_phone_voice_schema_ready_v130()): ?><p class="phone-alert">Run the PH3C database upgrade before activation.</p><?php endif; ?>
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_voice_callback"><label class="phone-field">Signed HTTPS voice webhook URL<input type="url" name="voice_callback_url" required placeholder="https://your-cloud.example/api/phone-voice-inbound-v130.php" value="<?= e(vp3_phone_voice_callback_url_v130()) ?>"></label><button <?= $ready?'':'disabled' ?>>Save voice callback URL</button></form>
-    <p><small>Run upgrade.php for PH3F tables. Activation changes only the selected Twilio number's inbound Voice URL. Speech callbacks are individually signature-checked and capped at eight turns / 30 minutes; after a timeout or provider error the caller can leave voicemail. This does not place outbound calls or continuously record audio. Verify carrier cost, transcription accuracy and AI disclosure requirements before activation.</small></p>
+    <p><small>Run upgrade.php for PH3G tables. Activation changes only the selected Twilio number's inbound Voice URL. Turn-based callbacks are individually signature-checked and capped at eight turns / 30 minutes. A failed SIP connection falls back to voicemail. Outbound calls are not enabled.</small></p>
+    <h3>PH3G · Optional real-time SIP bridge</h3>
+    <p>For a separately provisioned LiveKit SIP trunk and supervised HomeServer voice worker. All calls start in voicemail mode until enabled per number. The bridge uses TLS, a short-lived signed SIP handoff, and an independently granted HomeServer secondary Agent ID (not the Cloud Agent ID). The worker must be configured to use Cloud resolve mode. The caller is anonymous and receives no account permissions. Test your carrier metadata and voice disclosure before enabling live traffic.</p>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_stream_bridge">
+      <label class="phone-field">Fixed LiveKit SIP destination (TLS)<input name="stream_sip_uri" placeholder="sip:your-trunk@region.sip.livekit.cloud;transport=tls" required autocomplete="off" value="<?= e((string)setting('phone_voice_stream_sip_uri_v150','')) ?>"></label>
+      <label class="phone-field">Private Cloud / HomeServer worker signing secret<input type="password" name="stream_worker_secret" autocomplete="new-password" placeholder="<?= vp3_phone_stream_secret_v150()!==''?'Saved — leave blank to keep':'At least 32 random characters' ?>"></label>
+      <button <?= vp3_phone_stream_ready_v150()?'':'disabled' ?>>Save streaming bridge</button>
+    </form>
+    <p><small>Bridge: <?= vp3_phone_stream_configured_v150()?'Configured (per-number opt-in required)':'Not configured — voicemail/turn-based remain available' ?>. Set LiveKit trunk headers_to_attributes for X-VP3-Parent, X-VP3-Issued, X-VP3-Proof to vp3.parent, vp3.issued, vp3.proof.</small></p>
   </section>
   <section class="phone-card" id="outbound"><h2>Authorized outgoing SMS · PH3B</h2>
     <p>Gateway state: <strong><?= vp3_phone_sms_live_enabled_v120()?'Enabled':'Disabled (safe default)' ?></strong>. A subscriber may draft texts, but sending requires their exact approval, a documented consent source, an active SMS package and available monthly allowance.</p>
@@ -239,11 +276,18 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
     <?php if((int)$number['voice_enabled']===1): ?><form method="post" onsubmit="return confirm('Disable inbound call handling for this number?')"><?= csrf_field() ?><input type="hidden" name="action" value="disable_incoming_voice"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button class="phone-secondary">Disable incoming calls</button></form>
     <?php else: ?><form method="post" onsubmit="return confirm('Activate an automated voicemail greeting with recording for this number?')"><?= csrf_field() ?><input type="hidden" name="action" value="activate_incoming_voice"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button <?= $state['configured']&&vp3_phone_voice_schema_ready_v130()&&vp3_phone_voice_callback_url_v130()!==''?'':'disabled' ?>>Enable incoming voicemail</button></form><?php endif; ?>
     <?php $live=vp3_phone_voice_live_config_v140($pdo,['phone_number_id'=>(int)$number['id'],'owner_user_id'=>(int)$number['owner_user_id'],'agent_id'=>(int)$number['agent_id']]); ?>
-    <?php if($live): ?>
+    <?php $stream=vp3_phone_stream_route_v150($pdo,['phone_number_id'=>(int)$number['id'],'owner_user_id'=>(int)$number['owner_user_id'],'agent_id'=>(int)$number['agent_id']]); ?>
+    <?php if($stream): ?>
+      <p><strong>Real-time streaming enabled</strong> · HomeServer secondary Agent #<?= (int)$stream['homeserver_agent_id'] ?></p>
+      <form method="post" onsubmit="return confirm('Disable streaming on this number and end active calls?')"><?= csrf_field() ?><input type="hidden" name="action" value="disable_stream"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button class="phone-secondary">Use voicemail only</button></form>
+    <?php elseif($live): ?>
       <p><strong>AI phone conversation enabled</strong> · <?= e((string)$number['agent_name']) ?></p>
       <form method="post" onsubmit="return confirm('Stop new AI calls and end active conversations for this number?')"><?= csrf_field() ?><input type="hidden" name="action" value="disable_live_conversation"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button class="phone-secondary">Use voicemail only</button></form>
     <?php elseif((int)$number['voice_enabled']===1): ?>
       <form method="post" onsubmit="return confirm('Enable AI phone conversations? Caller speech is sent to the configured AI provider and uses owner AI tokens.')"><?= csrf_field() ?><input type="hidden" name="action" value="enable_live_conversation"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><label>Enable turn-based AI conversation <input name="confirmation" placeholder="Type ENABLE AI PHONE" required autocomplete="off"></label><button <?= vp3_phone_voice_ready_v140()?'':'disabled' ?>>Enable AI calls</button></form>
+    <?php endif; ?>
+    <?php if((int)$number['voice_enabled']===1 && !$stream && vp3_phone_stream_ready_v150() && vp3_phone_stream_configured_v150()): ?>
+      <form method="post" onsubmit="return confirm('Switch this number to paid real-time LiveKit streaming? Verify the HomeServer Agent grant and SIP setup first.')"><?= csrf_field() ?><input type="hidden" name="action" value="enable_stream"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><label>HomeServer public/secondary Agent ID<input type="number" name="homeserver_agent_id" min="1" max="2147483647" required></label><label>Type ENABLE STREAMING PHONE<input name="confirmation" placeholder="ENABLE STREAMING PHONE" required autocomplete="off"></label><button>Enable streaming</button></form>
     <?php endif; ?>
     </td></tr><?php endforeach; ?>
     </tbody></table></div><?php endif; ?>
