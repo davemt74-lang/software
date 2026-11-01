@@ -103,6 +103,7 @@ NODE_TESTS = [
     'tests/chat-settings-v237.mjs',
     'tests/chat-notifications-brain-v240.mjs',
     'tests/chat-proactive-voice-hardening-v244.mjs',
+    'tests/chat-speech-recovery.mjs',
     'tests/ai-credential-key-preservation-v2453.mjs',
     'tests/cognitive-live-session-v2370.mjs',
     'tests/cognitive-domain-integration-v2380.mjs',

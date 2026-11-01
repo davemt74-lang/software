@@ -428,12 +428,14 @@ try {
   for(let turn=0;turn<20;turn++){
     await page.waitForFunction(()=>window.recognizers.some(r=>r.active)&&!document.querySelector('#chatInput').disabled);
     if(turn===4){
-      for(let n=0;n<3;n++){
-        await page.evaluate(()=>{const r=recognizers.findLast(r=>r.active);r.active=false;r.onerror?.({error:'aborted'});r.onend?.();});
-        await page.clock.runFor(1800);
+      for(let n=0;n<7;n++){
+        const delay=await page.evaluate(n=>{const r=recognizers.findLast(r=>r.active);r.active=false;r.onerror?.({error:n%2?'network':'aborted'});r.onend?.();return STONEFELLOW_CHAT_VOICE.speechRetryDelayMs;},n);
+        assert.equal(await page.locator('#chatVoiceButton').getAttribute('aria-pressed'),'true');
+        assert.equal(await page.locator('#chatVoiceButton').getAttribute('data-agent-state'),'reconnecting');
+        await page.clock.runFor(delay);
         await page.waitForFunction(()=>window.recognizers.some(r=>r.active));
       }
-      assert.equal(await page.evaluate(()=>VP3ConversationControls.isEnabled()),true,'Three transient browser interruptions recover without a reload');
+      assert.equal(await page.evaluate(()=>VP3ConversationControls.isEnabled()),true,'Seven transient browser interruptions recover with bounded backoff without a reload');
     }
     failSend=turn===6||turn===12;
     const text=['What was on my reminder list','Do I have any events on my calendar','Can we talk about pizza','What can you access'][turn%4]+' turn '+turn;
@@ -445,7 +447,22 @@ try {
   }
   failSend=false;
   await page.evaluate(()=>VP3ConversationControls.stop());
-  console.log('PASS 20 consecutive mixed voice turns, three browser aborts, two provider failures, cumulative final deduplication and no draft replay');
+  console.log('PASS 20 consecutive mixed voice turns, seven transient speech failures, two provider failures, cumulative final deduplication and no draft replay');
+
+  await page.evaluate(()=>VP3ConversationControls.listen());await page.waitForFunction(()=>recognizers.some(r=>r.active));
+  const beforeOffline=sends().length;
+  await page.evaluate(()=>{Object.defineProperty(navigator,'onLine',{configurable:true,value:false});dispatchEvent(new Event('offline'));});
+  await page.clock.runFor(1000);
+  assert.equal(await page.evaluate(()=>recognizers.some(r=>r.active)),false,'Offline backoff releases recognition instead of retrying immediately');
+  await page.evaluate(()=>{Object.defineProperty(navigator,'onLine',{configurable:true,value:true});dispatchEvent(new Event('online'));});
+  await page.clock.runFor(200);
+  assert.equal(await page.evaluate(()=>recognizers.some(r=>r.active)),true,'Network return resumes the enabled session without a reload');
+  await page.evaluate(()=>VP3ConversationControls.stop());
+  await page.evaluate(()=>{dispatchEvent(new Event('offline'));dispatchEvent(new Event('online'));});
+  await page.clock.runFor(31000);
+  assert.equal(await page.evaluate(()=>recognizers.some(r=>r.active)),false,'Network events cannot reopen a microphone after Stop');
+  assert.equal(sends().length,beforeOffline,'Speech reconnect and online events never replay a saved Chat turn');
+  console.log('PASS offline/back-online recovery and permanent Stop without background capture or request replay');
 
   await boot();
   await page.getByRole('button',{name:'Chat tools',exact:true}).click();
