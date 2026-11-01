@@ -7,9 +7,10 @@ require_once dirname(__DIR__).'/includes/phone-sms-outbound-v120.php';
 require_once dirname(__DIR__).'/includes/phone-voice-v130.php';
 require_once dirname(__DIR__).'/includes/phone-voice-conversation-v140.php';
 require_once dirname(__DIR__).'/includes/phone-voice-stream-v150.php';
+require_once dirname(__DIR__).'/includes/phone-voice-readiness-v160.php';
 require_login();require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-$ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';
+$ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';$streamReadiness=null;
 
 if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
     if (!verify_csrf()) $error='Session expired. Refresh and try again.';
@@ -148,7 +149,9 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
                 flash('notice','Outbound SMS gateway disabled for all accounts.');
                 redirect(url('/admin/phone.php#outbound'));
             }
-            if ($action==='test_connection') {
+            if ($action==='check_stream_readiness') {
+                $streamReadiness=vp3_phone_stream_readiness_number_v160($pdo,(int)($_POST['number_id']??0));
+            } elseif ($action==='test_connection') {
                 $sid=vp3_phone_twilio_credentials_v100()[0];
                 $account=vp3_phone_twilio_http_v100('GET','/2010-04-01/Accounts/'.$sid.'.json');
                 $connectionTest='Twilio connection verified: '.(string)($account['friendly_name']??'account').' ('.(string)($account['status']??'status unknown').').';
@@ -168,7 +171,7 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
                     (string)($_POST['confirmation']??''));
                 flash('notice','Purchased '.(string)$purchased['number'].' through Twilio. Gateway activation is still required.');
                 redirect(url('/admin/phone.php#numbers'));
-            } elseif (!in_array($action,['test_connection'],true)) {
+            } elseif (!in_array($action,['test_connection','check_stream_readiness'],true)) {
                 throw new RuntimeException('Unknown phone administration action.');
             }
         } catch(Throwable $exception) {$error=$exception->getMessage();}
@@ -253,6 +256,16 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
       <button <?= vp3_phone_stream_ready_v150()?'':'disabled' ?>>Save streaming bridge</button>
     </form>
     <p><small>Bridge: <?= vp3_phone_stream_configured_v150()?'Configured (per-number opt-in required)':'Not configured — voicemail/turn-based remain available' ?>. Set LiveKit trunk headers_to_attributes for X-VP3-Parent, X-VP3-Issued, X-VP3-Proof to vp3.parent, vp3.issued, vp3.proof.</small></p>
+    <h3>PH3H · Live calling readiness (non-billable)</h3>
+    <p>Run a read-only checklist per registered number. It verifies the number's Twilio POST webhook without placing a call, changing routing or spending carrier minutes. A passing checklist means <strong>ready for a supervised staging call</strong>, not that live audio is certified.</p>
+    <?php if($streamReadiness!==null): ?>
+      <div class="phone-alert <?= $streamReadiness['ready_for_staging']?'phone-ok':'' ?>" role="status">
+        <strong><?= $streamReadiness['ready_for_staging']?'Configuration ready for staging':'Configuration needs attention' ?></strong>
+        <ul><?php foreach($streamReadiness['checks'] as $check): ?><li><?= e(strtoupper($check['status']).' · '.$check['label']) ?></li><?php endforeach; ?></ul>
+        <?php if($streamReadiness['carrier_warning']!==''): ?><p><?= e($streamReadiness['carrier_warning']) ?></p><?php endif; ?>
+        <p><strong>Live audio certification pending:</strong> <?= e(implode('; ',$streamReadiness['live_tests_pending'])) ?>.</p>
+      </div>
+    <?php endif; ?>
   </section>
   <section class="phone-card" id="outbound"><h2>Authorized outgoing SMS · PH3B</h2>
     <p>Gateway state: <strong><?= vp3_phone_sms_live_enabled_v120()?'Enabled':'Disabled (safe default)' ?></strong>. A subscriber may draft texts, but sending requires their exact approval, a documented consent source, an active SMS package and available monthly allowance.</p>
@@ -277,6 +290,7 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
     <?php else: ?><form method="post" onsubmit="return confirm('Activate an automated voicemail greeting with recording for this number?')"><?= csrf_field() ?><input type="hidden" name="action" value="activate_incoming_voice"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button <?= $state['configured']&&vp3_phone_voice_schema_ready_v130()&&vp3_phone_voice_callback_url_v130()!==''?'':'disabled' ?>>Enable incoming voicemail</button></form><?php endif; ?>
     <?php $live=vp3_phone_voice_live_config_v140($pdo,['phone_number_id'=>(int)$number['id'],'owner_user_id'=>(int)$number['owner_user_id'],'agent_id'=>(int)$number['agent_id']]); ?>
     <?php $stream=vp3_phone_stream_route_v150($pdo,['phone_number_id'=>(int)$number['id'],'owner_user_id'=>(int)$number['owner_user_id'],'agent_id'=>(int)$number['agent_id']]); ?>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="check_stream_readiness"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button class="phone-secondary" <?= $state['configured']?'':'disabled' ?>>Check PH3H streaming readiness</button></form>
     <?php if($stream): ?>
       <p><strong>Real-time streaming enabled</strong> · HomeServer secondary Agent #<?= (int)$stream['homeserver_agent_id'] ?></p>
       <form method="post" onsubmit="return confirm('Disable streaming on this number and end active calls?')"><?= csrf_field() ?><input type="hidden" name="action" value="disable_stream"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button class="phone-secondary">Use voicemail only</button></form>
