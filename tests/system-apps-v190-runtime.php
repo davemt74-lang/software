@@ -26,6 +26,7 @@ $completed=vp3_system_apps_action_card_v190([
   'preview'=>['app'=>'VP3 Inventory','hosting_site'=>'Inventory Host','hostname'=>'inventory.example.com'],
   'completed'=>true,
   'result'=>[
+    'verified'=>true, // contradictory completion evidence must still show Needs attention
     'reconcile_pending'=>true,
     'system_apps'=>[
       'apps'=>[[
@@ -35,9 +36,12 @@ $completed=vp3_system_apps_action_card_v190([
     ],
   ],
 ]);
-if(($completed['status']??'')!=='completed'||empty($completed['reconcile_pending']))throw new RuntimeException('Completed reconcile-pending card mismatch.');
-$labels=array_map(static fn(array $a):string=>(string)($a['label']??''),(array)$completed['actions']);
-foreach(['Open Apps','Manage Hosting','Open hosted app'] as $label)if(!in_array($label,$labels,true))throw new RuntimeException('Completed card missing '.$label.' action.');
+if(($completed['status']??'')!=='failed'||empty($completed['reconcile_pending'])||!str_contains($completed['summary'],'not verified'))throw new RuntimeException('Pending reconciliation was presented as a verified completed action.');
+foreach($completed['actions'] as $action)if(($action['type']??'')==='prompt'||($action['label']??'')==='Open hosted app')throw new RuntimeException('Unverified card offered execution or unverified hosted navigation.');
+$verified=vp3_system_apps_action_card_v190(['completed'=>true,'action_type'=>'hosting.bind','result'=>['verified'=>true,'reconcile_pending'=>false]]);
+if($verified['status']!=='completed')throw new RuntimeException('Verified completed action did not retain its completed state.');
+$labels=array_column($verified['actions'],'label');
+foreach(['Open Apps','Manage Hosting'] as $label)if(!in_array($label,$labels,true))throw new RuntimeException('Verified card missing '.$label.' navigation.');
 
 $failed=vp3_system_apps_action_card_v190([
   'status'=>'failed',

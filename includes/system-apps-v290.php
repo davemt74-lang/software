@@ -5,12 +5,17 @@ require_once __DIR__.'/system-apps-v280.php';
 
 const VP3_SYSTEM_APPS_V290='vp3-universal-app-control-v290-20260930';
 
-function vp3_app_control_status_v290(int $userId,string $appKey,?callable $remote=null): array
+function vp3_app_control_status_v290(int $userId,string $appKey,?callable $remote=null,bool $strict=false): array
 {
     if($userId<1)throw new RuntimeException('Account is required.');
     $appKey=strtolower(trim($appKey));
     if($appKey==='')throw new RuntimeException('app_key is required.');
     $payload=vp3_system_apps_remote_v110($userId,'apps.control.status',['app_key'=>$appKey],$remote);
+    if($strict){
+        if(($payload['app_key']??null)!==$appKey||!is_bool($payload['compatibility']['compatible']??null)||!is_array($payload['manifest']['actions']??null)||!array_is_list($payload['manifest']['actions'])||!is_array($payload['settings']['schema']['fields']??null)||!array_is_list($payload['settings']['schema']['fields'])||!is_int($payload['hosting']['count']??null)||$payload['hosting']['count']<0)throw new RuntimeException('App-control declarations could not be verified.');
+        $fields=[];foreach($payload['settings']['schema']['fields'] as $row){$key=$row['key']??null;if(!is_string($key)||!preg_match('/^[a-zA-Z0-9._:-]{1,160}$/D',$key)||isset($fields[$key]))throw new RuntimeException('Settings declaration could not be verified.');$fields[$key]=true;}
+        $seen=[];foreach($payload['manifest']['actions'] as $row){$key=$row['key']??null;if(!is_string($key)||!preg_match('/^[a-zA-Z0-9._:-]{1,160}$/D',$key)||isset($seen[$key]))throw new RuntimeException('App action key could not be verified.');$seen[$key]=true;}
+    }
     return [
       'contract'=>'vp3.app-control-cloud.v1',
       'app_key'=>(string)($payload['app_key']??$appKey),
@@ -108,29 +113,11 @@ function vp3_app_control_match_v290(string $query,int $userId,?callable $remote=
 function vp3_app_control_agent_query_v290(
     string $query,array $user,int $conversationId=0,?callable $remote=null
 ): array {
-    $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+    $empty=['handled'=>false,'answer'=>'','actions'=>[],'sources'=>[]];
     if(!preg_match('/\b(?:app control|agent control|settings|permissions|actions|capabilities|what can .* app|control .* app|manage .* app)\b/i',$query))return $empty;
-    $uid=(int)($user['id']??0);if($uid<1)return $empty;
-    $match=vp3_app_control_match_v290($query,$uid,$remote);if(!$match)return $empty;
-    $appKey=(string)($match['app_key']??'');if($appKey==='')return $empty;
-    try{$status=vp3_app_control_status_v290($uid,$appKey,$remote);}catch(Throwable $e){return $empty;}
-    $compatible=!empty($status['compatibility']['compatible']);
-    $actions=(array)($status['manifest']['actions']??[]);
-    $settings=(array)($status['settings']['schema']['fields']??[]);
-    $hosting=(int)($status['hosting']['count']??0);
-    $name=(string)($match['name']??$appKey);
-    $answer=$name.' is '.($compatible?'compatible':'not fully compatible').' with the universal HomeServer Agent control contract. ';
-    $answer.='It exposes '.count($actions).' app action'.(count($actions)===1?'':'s').', '.count($settings).' setting'.(count($settings)===1?'':'s').', and '.$hosting.' hosting binding'.($hosting===1?'':'s').'. ';
-    $answer.='Execution remains authoritative on the HomeServer; Cloud can inspect and orchestrate but does not become a second app runtime.';
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'homeserver.app_control.read',$query,'success',[
-      'app_key'=>$appKey,'compatible'=>$compatible,'actions'=>count($actions),'settings'=>count($settings)
-    ],$conversationId);
-    return [
-      'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],
-      'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],
-      'sources'=>[['source'=>'homeserver:app-control','title'=>$name.' App Control']],
-      'app_control'=>$status,
-    ];
+    $terms=preg_replace('/\b(?:show|list|the|my|app control|agent control|app|apps|settings|permissions|actions|capabilities|what|can|control|manage|for|of)\b/i',' ',$query);
+    $terms=trim(preg_replace('/\s+/',' ',$terms)," \t\n\r\0\x0B?.!");
+    return vp3_app_operation_legacy_v1($user,$conversationId,'apps.control.read',$terms,$remote);
 }
 
 function vp3_system_apps_capability_v290(): array

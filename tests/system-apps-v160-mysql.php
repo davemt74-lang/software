@@ -37,6 +37,7 @@ $testPdo->exec("INSERT INTO homeserver_connections(user_id,status,last_seen_at) 
 
 require __DIR__.'/fixtures/system-app-chat-auth-v1.php';
 system_app_chat_auth_fixture_v1($testPdo,42);
+$testPdo->exec('INSERT INTO chat_conversations(id,user_id,user_agent_id) VALUES(99,1,NULL),(7,2,NULL)');
 
 require dirname(__DIR__).'/includes/cloud-hosting-v100.php';
 require dirname(__DIR__).'/includes/cloud-hosting-v110.php';
@@ -222,4 +223,25 @@ foreach(['consequential_agent_actions','explicit_confirmation','action_execution
 }
 if(!empty($cap['ownership_revoke_via_agent']))throw new RuntimeException('Ownership revoke must remain disabled for Agent actions.');
 
+// Real MySQL transaction/lease authority regressions for the Chat confirmation service.
+$testPdo->exec("CREATE TABLE IF NOT EXISTS user_agents(id INT UNSIGNED PRIMARY KEY,owner_user_id INT UNSIGNED NOT NULL,is_active TINYINT NOT NULL DEFAULT 1) ENGINE=InnoDB");
+$testPdo->exec('INSERT INTO user_agents(id,owner_user_id,is_active) VALUES(7,1,1),(8,1,1) ON DUPLICATE KEY UPDATE is_active=1');
+$testPdo->exec('UPDATE chat_conversations SET user_agent_id=7 WHERE id=42');
+$rejectedCalls=0;$neverRemote=static function(...$args)use(&$rejectedCalls):array{$rejectedCalls++;throw new RuntimeException('Unexpected remote mutation');};
+$boundAgent=vp3_system_apps_agent_prepare_v160($owner,'install','vp3.inventory',[],[],42,null,$testPdo);
+$testPdo->exec('UPDATE chat_conversations SET user_agent_id=8 WHERE id=42');
+try{vp3_system_apps_agent_confirm_v160($owner,$boundAgent['confirmation_code'],42,$neverRemote,$testPdo);throw new RuntimeException('Changed Agent accepted confirmation');}catch(RuntimeException $e){if($e->getCode()!==403)throw $e;}
+$testPdo->exec('UPDATE chat_conversations SET user_agent_id=7 WHERE id=42');
+$revokedAccount=vp3_system_apps_agent_prepare_v160($owner,'install','vp3.inventory',[],[],42,null,$testPdo);
+$testPdo->exec('UPDATE users SET is_active=0 WHERE id=1');
+try{vp3_system_apps_agent_confirm_v160($owner,$revokedAccount['confirmation_code'],42,$neverRemote,$testPdo);throw new RuntimeException('Inactive account accepted confirmation');}catch(RuntimeException $e){if($e->getCode()!==403)throw $e;}
+$testPdo->exec('UPDATE users SET is_active=1 WHERE id=1');
+try{vp3_system_apps_agent_confirm_v160($owner,$revokedAccount['confirmation_code'],0,$neverRemote,$testPdo);throw new RuntimeException('Zero conversation bypass accepted');}catch(RuntimeException $e){if($e->getCode()!==403)throw $e;}
+if($rejectedCalls!==0)throw new RuntimeException('Revoked confirmations contacted HomeServer');
+$uncertain=vp3_system_apps_agent_prepare_v160($owner,'install','vp3.inventory',[],[],42,null,$testPdo);
+$attempts=0;$lostReply=static function(...$args)use(&$attempts):array{$attempts++;throw new RuntimeException('Simulated lost reply');};
+for($i=0;$i<2;$i++){try{vp3_system_apps_agent_confirm_v160($owner,$uncertain['confirmation_code'],42,$lostReply,$testPdo);throw new RuntimeException('Uncertain mutation claimed success');}catch(RuntimeException $e){if($e->getCode()!==502)throw $e;}}
+if($attempts!==1)throw new RuntimeException('Uncertain confirmation executed an external mutation twice');
+if(vp3_system_apps_agent_find_app_v160('install Notes and Inventory apps',$owner,$testPdo)!==null)throw new RuntimeException('Ambiguous app action selected the first app');
+echo "System Apps S7 MySQL Agent binding, revocation, zero-conversation and uncertain replay: PASS\n";
 echo "System Apps Agent Integration Section 2 governed actions MySQL: PASS\n";
