@@ -59,6 +59,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $screenReady=$screen!==null&&$screen['owner_key']===(string)$uid;
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
+        vp3_capability_row_v1('voice.profiles.enroll','Learn my voice in Chat','read','vp3_voice_enrollment_prepare_v1',has_permission('chat.access',$user),function_exists('vp3_voice_enrollment_prepare_v1')?'ready':'upgrade_required',['Prepare local guided setup only. Participant consent, model download, sample playback/retry and explicit save happen in this browser. No cloning or automatic microphone capture.']),
         vp3_capability_row_v1('navigation.open','Open authorized pages and Stem Studio tracks','read','vp3_navigation_tool_v1',has_permission('chat.access',$user),function_exists('vp3_navigation_tool_v1')?'ready':'upgrade_required',['Model-selected server-defined pages and current authorized Studio tracks. Follow-up confirmations use the last saved offer only. Browser navigation is requested, not proof that the page loaded. Stem edits use the active Studio editor agent.']),
         vp3_capability_row_v1('system_apps.manage','Prepare and confirm existing System App changes','write','vp3_system_apps_agent_action_query_v160',has_permission('account.access',$user),$systemApps==='ready'?vp3_capability_probe_v1(fn()=>vp3_system_apps_agent_actions_schema_ready_v160($pdo)):$systemApps,['Exact Cloud app and existing action only. Durable owner/Agent/conversation confirmation, current ownership and release selection. A consumed request or pending reconciliation is not verified completion. No arbitrary code or generic app invocation.']),
         vp3_capability_row_v1('system_apps.release.read','Inspect System App release metadata','read','vp3_system_apps_release_query_v200',has_permission('account.access',$user),$systemApps==='ready'?'not_checked':$systemApps,['Exact Cloud app. Stored catalog metadata is distinct from verified live owned/installed release status. No update, rollback or live health claim.']),
@@ -103,7 +104,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
 
 function vp3_capability_begin_v1(PDO $pdo,array $user,array $principal,array $context=[],$scope=null): array
 {
-    unset($GLOBALS['vp3_capability_turn_v1'],$GLOBALS['vp3_navigation_approved_v1']);
+    unset($GLOBALS['vp3_capability_turn_v1'],$GLOBALS['vp3_navigation_approved_v1'],$GLOBALS['vp3_voice_enrollment_approved_v1']);
     $snapshot=vp3_capability_snapshot_v1($pdo,$user,$principal,$context,$scope);
     if(vp3_capability_audit_v1($snapshot))throw new RuntimeException('Capability inventory could not be verified.');
     $GLOBALS['vp3_capability_turn_v1']=$snapshot;

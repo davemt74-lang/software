@@ -28,6 +28,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'music.library.read'=>['status','search'],
         'knowledge.search'=>['search'],
         'brain.read'=>['search'],
+        'voice.profiles.enroll'=>['prepare'],
         'navigation.open'=>['open','prepare'],
         'tasks.read'=>['list'],
         'tasks.lists'=>['show','show_lists','prepare','add','create_list','create_task','confirm','cancel'],

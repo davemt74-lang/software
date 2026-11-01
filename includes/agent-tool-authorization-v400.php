@@ -231,6 +231,10 @@ function vp3_agent_tool_internal_action_v400(array $action,array $user,string $q
             'policy'=>['version'=>'v4.00','domain'=>'browser_local','risk'=>'low','requires_approval'=>false,'authorized'=>true],
         ];
     }
+    if($type==='voice_enrollment'){
+        if(($GLOBALS['vp3_voice_enrollment_approved_v1']??0)!==(int)$user['id']||!has_permission('chat.access',$user))return null;
+        return ['type'=>'voice_enrollment','label'=>'Learn my voice','auto'=>false,'policy'=>['version'=>'v4.00','domain'=>'browser_local','risk'=>'low','requires_approval'=>true,'authorized'=>true]];
+    }
     if($type!=='open_url')return null;
     $raw=trim((string)($action['url']??''));
     $systemAppKey=strtolower(trim((string)($action['system_app_key']??'')));

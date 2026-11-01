@@ -4,7 +4,7 @@ import http from 'node:http';
 import {chromium} from 'playwright';
 const server=http.createServer((req,res)=>{
  const requestUrl=new URL(req.url,'http://fixture');const name=requestUrl.pathname.slice(1);
- if(['chat-voice.js','voice-lease-v122.js','agent-response-window.js','agent-eyes-core.js','agent-orb.js'].includes(name)){
+ if(['chat-voice.js','voice-lease-v122.js','agent-response-window.js','agent-eyes-core.js','agent-orb.js','agent-voice-guard.js','voice-profile-core.js'].includes(name)){
   res.setHeader('Content-Type','text/javascript');res.end(fs.readFileSync(name==='chat-voice.js'&&process.env.VP3_VOICE_SOURCE?process.env.VP3_VOICE_SOURCE:name));return;
  }
  res.setHeader('Content-Type','text/html');res.end(`<!doctype html><form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button><button type="button" id="chatVoiceButton">Listen</button></form><div id="chatVoiceStatus"></div><div id="chatThread"></div><script>
@@ -12,9 +12,9 @@ const server=http.createServer((req,res)=>{
  window.STONEFELLOW_AGENT_IDENTITY_V236={agentVoiceEnabled:true};
  window.STONEFELLOW_CHAT_VOICE_BOOT={intro:null};
  window.VP3_AGENT_PREFERENCE_STATE={enabled:true,allowed:true,agent:{id:7,name:'Longfellow'}};
- window.micDelay=${Number(requestUrl.searchParams.get('micDelay')||60)};window.submitted=[];window.nativeRecognizers=[];window.nativeLive=new Set();window.preparingMic=false;window.captureRaces=0;window.nativeOverlaps=0;
+ window.micAcquisitions=0;window.micDelay=${Number(requestUrl.searchParams.get('micDelay')||60)};window.submitted=[];window.nativeRecognizers=[];window.nativeLive=new Set();window.preparingMic=false;window.captureRaces=0;window.nativeOverlaps=0;
  Object.defineProperty(navigator,'permissions',{value:{query:async()=>({state:'granted'})}});
- Object.defineProperty(navigator,'mediaDevices',{value:{getUserMedia:async()=>{window.preparingMic=true;await new Promise(r=>setTimeout(r,window.micDelay));window.preparingMic=false;const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(){}};return {getTracks:()=>[track],getAudioTracks:()=>[track]};}}});
+ Object.defineProperty(navigator,'mediaDevices',{value:{getUserMedia:async()=>{window.micAcquisitions++;window.preparingMic=true;await new Promise(r=>setTimeout(r,window.micDelay));window.preparingMic=false;const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(){}};window.latestTrack=track;return {getTracks:()=>[track],getAudioTracks:()=>[track]};}}});
  window.SpeechRecognition=class {
   constructor(){nativeRecognizers.push(this);this.ending=false;}
   start(){
@@ -26,7 +26,12 @@ const server=http.createServer((req,res)=>{
   finish(aborted){if(this.ending||!nativeLive.has(this))return;this.ending=true;if(aborted)queueMicrotask(()=>this.onerror?.({error:'aborted'}));setTimeout(()=>{nativeLive.delete(this);this.onend?.();},aborted?900:20);}
  };
  document.getElementById('chatForm').addEventListener('submit',e=>{e.preventDefault();submitted.push(document.getElementById('chatInput').value);});
- </script><script src="/voice-lease-v122.js"></script><script src="/chat-voice.js"></script><script>window.VP3_ORB_ADAPTER={responseWindow:()=>VP3ConversationControls.responseWindow(),cancelResponseWindow:()=>VP3ConversationControls.cancelResponseWindow()};</script><script src="/agent-response-window.js"></script>${requestUrl.searchParams.has('photo')?`<script>
+ </script><script src="/voice-lease-v122.js"></script><script src="/chat-voice.js"></script><script>window.VP3_ORB_ADAPTER={responseWindow:()=>VP3ConversationControls.responseWindow(),cancelResponseWindow:()=>VP3ConversationControls.cancelResponseWindow()};</script><script src="/agent-response-window.js"></script>${requestUrl.searchParams.has('guided')?`<script>
+ Object.assign(VP3_ORB_ADAPTER,{ownerKey:'guided-mic',voiceFeatureUrl:'/voice-profile-core.js',loadVoiceProfiles:async()=>[],beginVoiceEnrollment:options=>VP3ConversationControls.beginEnrollmentCapture(options)});
+ window.AudioContext=class {constructor(){this.sampleRate=16000;this.destination={};this.state='running';}createMediaStreamSource(){return {connect(){},disconnect(){}};}createBiquadFilter(){return {frequency:{},connect(){},disconnect(){}};}createGain(){return {gain:{},connect(){},disconnect(){}};}createScriptProcessor(){return window.guidedProcessor={connect(){},disconnect(){}};}createAnalyser(){return {fftSize:512,smoothingTimeConstant:0,getFloatTimeDomainData:data=>data.fill(.02)};}close(){}resume(){return Promise.resolve();}};
+ window.VP3TrainedVoice={enabled:()=>true,clear(){},extract:async(pcm,rate)=>({embedding:Array.from({length:512},(_,i)=>i===0?1:0),quality:{ok:true,seconds:pcm.length/rate}})};
+ window.startGuidedFeed=()=>window.guidedFeed=setInterval(()=>window.guidedProcessor?.onaudioprocess?.({inputBuffer:{getChannelData:()=>Float32Array.from({length:2048},(_,i)=>.05*Math.sin(i*.2))}}),128);
+ </script><script src="/agent-voice-guard.js"></script>`:''}${requestUrl.searchParams.has('photo')?`<script>
  Object.assign(VP3_ORB_ADAPTER,{ownerKey:'photo-voice',chatUrl:'/',state:()=>VP3ConversationControls.state(),isMainChat:()=>true,busy:()=>false});
  window.VP3VoiceGuard={check:async()=>({allowed:true}),wasVoiceTurn:()=>true,hasRecognizedTurn:()=>false,reset(){}};
  window.VP3AgentEyes={acceptsPhotoReply:text=>text==='yes',hear:async()=>{window.photoReplyStarted=true;await new Promise(r=>window.finishPhotoReply=r);}};
@@ -128,7 +133,14 @@ try{
  await photo.clock.runFor(3000);assert.equal(await photo.evaluate(()=>VP3ConversationControls.state().state),'thinking');assert.doesNotMatch(await photo.locator('#chatVoiceStatus').innerText(),/not submitted/);
  await photo.evaluate(()=>finishPhotoReply());await photo.clock.runFor(1500);assert.equal(await photo.evaluate(()=>VP3ConversationControls.state().state),'listening');assert.equal(await photo.evaluate(()=>nativeLive.size),1);await photo.close();
  console.log('PASS local photo capture owns voice dispatch until completion and resumes one listener without the Chat watchdog');
- console.log('AGENT_EYES_LISTENING_HANDOFF_BROWSER=PASS (11 cases)');
+ const guided=await browser.newPage();await guided.goto(base+'/?guided=1');await guided.waitForFunction(()=>window.VP3VoiceGuard);await guided.clock.install();
+ await guided.evaluate(()=>{startGuidedFeed();VP3VoiceGuard.beginGuidedSession('test-session');window.guidedResult=VP3VoiceGuard.captureGuidedSample({session:'test-session'});});await guided.clock.runFor(6500);
+ const sample=await guided.evaluate(async()=>{const s=await guidedResult;return {dimensions:s.embedding.length,seconds:s.quality.seconds};});assert.equal(sample.dimensions,512);assert.ok(sample.seconds>=4.5);assert.deepEqual(await guided.evaluate(()=>submitted),[]);assert.equal(await guided.evaluate(()=>VP3ConversationControls.isEnabled()),false);assert.equal(await guided.evaluate(()=>micAcquisitions),1);assert.equal(await guided.evaluate(()=>nativeRecognizers.length),0,'Training recordings must not start the browser transcription service');assert.equal(await guided.evaluate(()=>captureRaces),0);assert.equal(await guided.evaluate(()=>nativeOverlaps),0);
+ await guided.evaluate(()=>{VP3VoiceGuard.endGuidedSession('test-session');VP3ConversationControls.listen();});await guided.clock.runFor(1500);assert.equal(await guided.evaluate(()=>nativeLive.size),1);
+ await guided.evaluate(()=>{VP3VoiceGuard.beginGuidedSession('already-listening');window.secondGuided=VP3VoiceGuard.captureGuidedSample({session:'already-listening'});});await guided.clock.runFor(1500);assert.equal(await guided.evaluate(()=>nativeLive.size),0,'Browser transcription stays paused while recording a training sample');await guided.clock.runFor(5000);await guided.evaluate(()=>secondGuided);assert.equal(await guided.evaluate(()=>nativeLive.size),0);await guided.evaluate(()=>VP3VoiceGuard.endGuidedSession('already-listening'));await guided.clock.runFor(1300);assert.equal(await guided.evaluate(()=>nativeLive.size),1);assert.equal(await guided.evaluate(()=>micAcquisitions),2,'Guided capture reuses the already active PCM microphone');assert.equal(await guided.evaluate(()=>nativeOverlaps),0);await guided.evaluate(()=>VP3VoiceGuard.endGuidedSession('already-listening'));await guided.close();console.log('PASS guided PCM sampling uses the actual native microphone owner, pauses transcription and restores the prior listening state');
+ const cancelledGuided=await browser.newPage();await cancelledGuided.goto(base+'/?guided=1&micDelay=1800');await cancelledGuided.waitForFunction(()=>window.VP3VoiceGuard);await cancelledGuided.clock.install();
+ await cancelledGuided.evaluate(()=>{VP3VoiceGuard.beginGuidedSession('cancel-pending');window.cancelledSample=VP3VoiceGuard.captureGuidedSample({session:'cancel-pending'}).then(()=>false,()=>true);});await cancelledGuided.clock.runFor(200);await cancelledGuided.evaluate(()=>VP3VoiceGuard.endGuidedSession('cancel-pending'));await cancelledGuided.clock.runFor(3000);assert.equal(await cancelledGuided.evaluate(()=>cancelledSample),true);assert.equal(await cancelledGuided.evaluate(()=>VP3ConversationControls.isEnabled()),false);assert.equal(await cancelledGuided.evaluate(()=>latestTrack.readyState),'ended');assert.equal(await cancelledGuided.evaluate(()=>nativeRecognizers.length),0);await cancelledGuided.close();console.log('PASS cancel during a pending guided microphone acquisition releases the late track without starting transcription');
+ console.log('AGENT_EYES_LISTENING_HANDOFF_BROWSER=PASS (13 cases)');
 
 
 }finally{await browser.close();await new Promise(r=>server.close(r));}
