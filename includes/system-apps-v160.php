@@ -132,7 +132,7 @@ function vp3_system_apps_agent_prepare_v160(
         if(!$release['rollback_available']||!$release['rollback_safe']||!is_string($runtime['active_release_id']??null)||$runtime['active_release_id']===''||!is_string($runtime['previous_release_id']??null)||$runtime['previous_release_id']==='')throw new RuntimeException('A safe exact previous release is required.');
         $payload['_release_expectation_v1']=[$runtime['active_release_id'],$runtime['previous_release_id']];$preview['previous_release_id']=$runtime['previous_release_id'];
     }
-    $preview['operation']=$actionType;$preview['app_key']=$app['app_key']??'all owned apps';
+    $preview['operation']??=$actionType;$preview['app_key']=$app['app_key']??'all owned apps';
     if($app)$preview['catalog_version']=(string)$app['current_version'];
     $payload['_agent_scope_v1']=$auth['scope'];
     $payload['_app_identity_v1']=$app?vp3_system_app_catalog_identity_v1($app):null;
