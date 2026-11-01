@@ -28,5 +28,10 @@ $unverified=vp3_phone_stream_readiness_evaluate_v160($number,$context,null);
 check_ph3h(!$unverified['ready_for_staging'],'carrier read not skipped');
 $carrierCheck=end($unverified['checks']);
 check_ph3h($carrierCheck['status']==='unverified','unknown carrier labeled unverified');
-check_ph3h(!str_contains(json_encode($ready),'secret'),'no secret field in output');
+$private='private-signing-secret-sentinel';
+$redacted=vp3_phone_stream_readiness_evaluate_v160($number,
+    [...$context,'worker_secret'=>$private],
+    [...$carrier,'auth_token'=>$private]);
+check_ph3h(!str_contains((string)json_encode($redacted),$private),
+    'injected private credential values never appear in the report');
 echo 'PHONE_VOICE_PH3H_RUNTIME=PASS ('.$checks.' checks)'.PHP_EOL;
