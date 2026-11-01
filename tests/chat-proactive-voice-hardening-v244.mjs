@@ -31,7 +31,7 @@ for (const [name, source] of [
   assert.doesNotThrow(() => new Function(source), `${name} must remain valid JavaScript`);
 }
 
-assert.match(chatVoice,/const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031'/);
+assert.match(chatVoice,/const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031-mic-startup-20261101'/);
 assert.match(chatVoice,/function isStopControl\(/,'v2.44 must classify spoken stop/cancel as control');
 assert.match(chatVoice,/function applyStopControl\(/,'v2.44 must own stop locally in the voice runtime');
 assert.match(chatVoice,/if\(applyStopControl\(transcript,'transcript'\)\)return/,'stop must be consumed before transcript submission');
@@ -103,7 +103,7 @@ assert.match(memberMenu,/voice_source/);
 assert.match(chat,/\$premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1'/);
 assert.match(chat,/\$voiceAssetBuild = 'chat-voice-proactive-v244-20260922'/);
 assert.match(chat,/\$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer-r3'/);
-assert.match(chat,/\$voiceCacheBuild \.= '-eyes-v1344-speech-recovery-20261031'/,'deployed Chat must load the recovered speech controller instead of a cached old script');
+assert.match(chat,/\$voiceCacheBuild \.= '-eyes-v1344-speech-recovery-20261031-mic-startup-20261101'/,'deployed Chat must load the recovered speech controller instead of a cached old script');
 assert.match(chat,/\$notificationDrawerBuild = 'chat-notifications-recovery-20261016'/);
 assert.match(chat,/\$cognitivePresentationBuild = 'cognitive-presentation-footer-v2451-20260922'/);
 assert.match(memberHeader,/\$memberAgentVoiceMenuBuild = 'agent-voice-menu-v244-20260922'/);

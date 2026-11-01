@@ -187,6 +187,13 @@ if(cloud){
   assert.equal(api.state().voiceOn,false);assert.equal(starts,0);assert.equal(microphones,0);assert.equal(b.document.body.dataset.stonefellowAgentState,'idle');
   api.enableVoice();await flush();assert.equal(starts,1);assert.equal(api.state().recognitionListening,true);api.disableVoice();
  });
+ await test('greeting preparation does not open a monitor ahead of the first native connection',async()=>{
+  const b=browser();clock(b);let starts=0,microphones=0;
+  b.window.SpeechRecognition=class{start(){starts++;this.onstart?.();}abort(){this.onend?.();}};
+  b.context.navigator.mediaDevices.getUserMedia=async()=>{microphones++;return stream();};
+  const api=chat(b);api.enableVoice({start:false});await flush();assert.equal(starts,0);assert.equal(microphones,0);
+  api.startListening();assert.equal(starts,1);await flush();assert.equal(microphones,1);api.disableVoice();
+ });
  await test('microphone click stops a pending greeting and interrupts speech before restarting',async()=>{
   const b=browser(),timer=clock(b),spoken=[];b.window.speechSynthesis.speak=u=>spoken.push(u);
   b.window.SpeechRecognition=class{start(){this.onstart?.();}abort(){this.onend?.();}};

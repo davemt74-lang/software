@@ -37,8 +37,8 @@ try{
  await page.clock.install();
  await page.evaluate(()=>window.dispatchEvent(new Event('vp3:agent-eyes-started')));
  await page.waitForFunction(()=>document.body.dataset.stonefellowAgentState==='listening');
- assert.equal(await page.evaluate(()=>captureRaces),0,'Recognition must wait for microphone monitor acquisition');
- console.log('PASS Eyes starts temporary listening after microphone acquisition');
+ assert.equal(await page.evaluate(()=>captureRaces),0,'Recognition must never start during an existing microphone monitor acquisition');
+ console.log('PASS Eyes starts native listening before preparing the optional monitor');
  for(let i=0;i<4;i++){
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('stonefellow:agent-proactive-speech',{detail:{state:'start',text:'What should I call you?'}})));
   await page.waitForTimeout(80);
