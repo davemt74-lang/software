@@ -96,9 +96,9 @@ check($recent[0]['last_position_seconds']===23.0&&$recent[0]['listened_seconds_t
 $viewer=$outsider;check(player_recent_history($outsider,[],12)===[],'Foreign draft history disclosed track details');
 $viewer=$owner;$pdo->exec('UPDATE users SET enabled=0 WHERE id=11');check(player_recent_history($owner,[],12)===[],'Disabled workspace retained history metadata');$pdo->exec('UPDATE users SET enabled=1 WHERE id=11');
 $historyPolicy=true;
-function user_data_policy_can_use_v236(...$args):bool{return $GLOBALS['historyPolicy'];}
+function user_data_policy_can_use_v236(...$args):bool{if($GLOBALS['historyPolicy']==='unavailable')throw new RuntimeException('Unavailable policy storage');return $GLOBALS['historyPolicy'];}
 $viewer=$owner;check(count(player_history_brain_context($owner,'What music did I play?',4))===1,'Listening ledger is not available to the owner Agent Brain');
-$historyPolicy=false;check(player_history_brain_context($owner,'What music did I play?',4)===[],'Agent Knowledge deny was ignored');$historyPolicy=true;
+$historyPolicy=false;check(player_history_brain_context($owner,'What music did I play?',4)===[],'Agent Knowledge deny was ignored');$historyPolicy=true;$historyPolicy='unavailable';check(player_history_brain_context($owner,'What music did I play?',4)===[],'Unavailable policy broke Brain retrieval');$historyPolicy=true;
 $viewer=$outsider;check(player_history_brain_context($owner,'What music did I play?')===[],'Other viewer received private listening context');$viewer=$owner;
 require dirname(__DIR__).'/includes/notifications.php';require dirname(__DIR__).'/includes/agent-chat-activity.php';
 function has_permission(string $key,?array $user=null):bool{return $key==='chat.access';}

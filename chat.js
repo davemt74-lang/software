@@ -3635,12 +3635,13 @@
 
   async function libraryApi(
     action,
-    payload = {}
+    payload = {},
+    signal
   ) {
     const response = await fetch(
       cfg.libraryEndpoint,
       {
-        method:'POST',
+        method:'POST',signal,
         headers:{
           'Content-Type':
             'application/json',
@@ -3678,7 +3679,7 @@
     return data;
   }
 
-  let recentHistoryBusy=false,recentHistoryQueued=false,recentHistoryRevision=0,recentHistoryTimer=0;
+  let recentHistoryBusy=false,recentHistoryQueued=false,recentHistoryRevision=0,recentHistoryTimer=0,recentHistoryController=null;
   const recentHistoryPlaying=grid=>[...grid.querySelectorAll('audio')].some(audio=>!audio.paused&&!audio.ended);
   async function refreshRecentPlayerHistory(){
     const section=document.getElementById('playerRecent'),grid=section?.querySelector('.chat-player-recent-grid');
@@ -3686,9 +3687,9 @@
     if(recentHistoryBusy){recentHistoryQueued=true;return;}
     // Rebuilding a history card must never interrupt its current audio.
     if(recentHistoryPlaying(grid))return;
-    recentHistoryBusy=true;const revision=recentHistoryRevision;
+    recentHistoryBusy=true;const revision=recentHistoryRevision,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);recentHistoryController=controller;
     try{
-      const data=await libraryApi('recent_history');
+      const data=await libraryApi('recent_history',{},controller.signal);
       if(revision!==recentHistoryRevision||!grid.isConnected||recentHistoryPlaying(grid))return;
       const rows=Array.isArray(data.tracks)?data.tracks:[];
       grid.innerHTML=rows.map(track=>{
@@ -3708,15 +3709,16 @@
         grid.textContent='Playback history could not be loaded. It will retry automatically.';
         const count=section.querySelector('header>small');if(count)count.textContent='Unavailable';
       }
-    }finally{recentHistoryBusy=false;if(recentHistoryQueued){recentHistoryQueued=false;scheduleRecentPlayerHistory();}}
+    }finally{clearTimeout(timeout);if(recentHistoryController===controller)recentHistoryController=null;recentHistoryBusy=false;if(recentHistoryQueued){recentHistoryQueued=false;scheduleRecentPlayerHistory();}}
   }
   function scheduleRecentPlayerHistory(){clearTimeout(recentHistoryTimer);recentHistoryTimer=setTimeout(()=>void refreshRecentPlayerHistory(),350);}
   window.addEventListener('vp3:playback-history-changed',scheduleRecentPlayerHistory);
   window.addEventListener('focus',scheduleRecentPlayerHistory);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleRecentPlayerHistory();});
   document.addEventListener('pause',event=>{if(event.target.matches?.('.chat-audio-player'))scheduleRecentPlayerHistory();},true);
-  const recentHistoryPoll=setInterval(()=>void refreshRecentPlayerHistory(),30000);
-  window.addEventListener('pagehide',()=>{recentHistoryRevision++;clearTimeout(recentHistoryTimer);clearInterval(recentHistoryPoll);},{once:true});
+  let recentHistoryPoll=setInterval(()=>void refreshRecentPlayerHistory(),30000);
+  window.addEventListener('pageshow',()=>{if(!recentHistoryPoll)recentHistoryPoll=setInterval(()=>void refreshRecentPlayerHistory(),30000);scheduleRecentPlayerHistory();});
+  window.addEventListener('pagehide',()=>{recentHistoryRevision++;recentHistoryQueued=false;recentHistoryController?.abort();clearTimeout(recentHistoryTimer);clearInterval(recentHistoryPoll);recentHistoryPoll=0;});
   scheduleRecentPlayerHistory();
 
   async function toggleTrackFavorite(
