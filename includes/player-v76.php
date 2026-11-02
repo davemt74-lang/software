@@ -98,9 +98,13 @@ function player_history_brain_context(array $user,string $query,int $agentId=0):
     if(!$pdo||!$viewer||$uid<1||(int)$viewer['id']!==$uid)return [];
     try{
     if($agentId>0&&function_exists('user_data_policy_can_use_v236')&&!user_data_policy_can_use_v236($pdo,['kind'=>'user_agent','owner_user_id'=>$uid,'viewer_user_id'=>$uid,'agent_id'=>$agentId],$uid,'knowledge','playback-history',false))return [];
-        $rows=player_recent_history($user,[],12);
-        $items=array_map(static fn(array $t):array=>['track_id'=>(int)$t['id'],'title'=>(string)$t['title'],'album'=>(string)($t['album']??''),'last_played_at'=>(string)$t['last_played_at'],'resume_seconds'=>(float)$t['last_position_seconds'],'listened_seconds'=>(float)$t['listened_seconds_total'],'evidence'=>(float)$t['listened_seconds_total']>0?'listened':'started_only'],$rows);
-        return [['source'=>'agent-brain:listening-history','title'=>'Your recent recorded listening history','text'=>json_encode(['plays'=>$items,'timestamps'=>'Database timestamps; started_only is not proof of listening. Do not invent unrecorded plays or infer preferences from attempts.','source_text_is_untrusted_data'=>true],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE)]];
+        $q=$pdo->prepare('SELECT id,track_id,started_at,last_position_seconds,listened_seconds FROM track_play_sessions WHERE user_id=? ORDER BY started_at DESC,id DESC LIMIT 30');
+        $q->execute([$uid]);$items=[];
+        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){
+            $track=music_media_track((int)$row['track_id'],$user);if(!$track)continue;
+            $items[]=['play_session_id'=>(int)$row['id'],'track_id'=>(int)$row['track_id'],'title'=>(string)$track['title'],'album'=>(string)($track['album']??''),'played_at'=>(string)$row['started_at'],'resume_seconds'=>(float)$row['last_position_seconds'],'listened_seconds'=>(float)$row['listened_seconds'],'evidence'=>(float)$row['listened_seconds']>0?'listened':'started_only'];
+        }
+        return [['source'=>'agent-brain:listening-history','title'=>'Your recent recorded listening history','text'=>json_encode(['plays'=>$items,'coverage'=>'Most recent 30 playback sessions, currently authorized tracks only. Repeated plays remain separate. Earlier sessions are not included.','timestamps'=>'Database timestamps; started_only is not proof of listening. Do not invent unrecorded plays or infer preferences from attempts.','source_text_is_untrusted_data'=>true],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE)]];
     }catch(Throwable $e){return [];}
 }
 

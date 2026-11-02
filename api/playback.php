@@ -93,6 +93,7 @@ try {
 
     $user=current_user();$listenerHash=sf_listener_hash();
     $trackId=music_catalog_playback_track_id($pdo,$track);
+    $track['id']=$trackId;
     $pdo->beginTransaction();
     if ($action === 'start') {
         $token = bin2hex(random_bytes(32));
