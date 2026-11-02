@@ -9,9 +9,9 @@
     const data=await response.json();if(!response.ok||!data.ok)throw Error(data.error||'Reminders unavailable.');return data;
   };
   async function poll(){
-    if(disposed||busy||document.hidden||!window.VP3_AGENT_PREFERENCE_STATE||adapter.busy?.())return;
+    if(window.VP3ParticipantUpdates?.suppressOwnerAnnouncements?.()||disposed||busy||document.hidden||!window.VP3_AGENT_PREFERENCE_STATE||adapter.busy?.())return;
     busy=true;const token=generation;
-    const current=()=>!disposed&&token===generation&&!document.hidden;
+    const current=()=>!disposed&&token===generation&&!document.hidden&&!window.VP3ParticipantUpdates?.suppressOwnerAnnouncements?.();
     try{
       const thread=String(adapter.conversationRef?.()?.id||'');
       const data=await request({action:'claim',thread}),item=data.item;if(!item||!current())return;

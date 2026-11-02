@@ -28,6 +28,7 @@
       };
     const syncPanel=document.createElement('div');
     syncPanel.innerHTML='<p data-participant-sync-status role="status"></p><div data-participant-sync-link hidden><label>Cloud participant<select data-participant-cloud aria-label="Cloud participant to link"></select></label><button type="button" data-participant-link>Link selected Cloud participant</button><button type="button" data-participant-separate>Sync as a separate participant</button></div><div data-participant-sync-conflict hidden><p>Saved local details:</p><pre data-participant-local-version></pre><p>Cloud details:</p><pre data-participant-cloud-version></pre><button type="button" data-participant-use-cloud>Use Cloud details</button><button type="button" data-participant-keep-local>Keep local details</button></div><button type="button" data-participant-remove>Remove participant</button>';
+    window.VP3ParticipantUpdates?.mount(panel);
     panel.append(syncPanel);let syncToken=0;
     async function syncStatus(){
       const id=q('[data-participant-select]').value,token=++syncToken;
@@ -79,6 +80,7 @@
       };
     }
     function updatePresence(value, remote = false) {
+      window.VP3ParticipantUpdates?.camera(value);
       const rows = Array.isArray(value?.rows)
           ? value.rows.slice(0, 8).map(safePerson).sort((a,b)=>a.track_id.localeCompare(b.track_id))
           : [],
@@ -175,6 +177,15 @@
           : 'No participant assigned to this conversation turn.',
       );
     }
+    function confirmedVoice(value) {
+      if(!assessVoice(value,{notify:false}).accepted)return;
+      if(embed)signal('task-heard',{...safePerson(value),matched_at:Date.now(),presence_key:signature});
+      else window.VP3ParticipantUpdates?.heard(value);
+    }
+    function receiveTaskHeard(value) {
+      const at=Date.now(),matched=value?.matched_at;
+      if(value&&value.presence_key===signature&&Number.isFinite(matched)&&matched<=at&&at-matched<3000&&assessVoice(value,{notify:false}).accepted)window.VP3ParticipantUpdates?.heard(safePerson(value));
+    }
     function selectedContext() {
       if (!selectedParticipant || Date.now() - selectedParticipant.at > 1800000)
         return null;
@@ -182,6 +193,7 @@
       return value;
     }
     function setSelection(value, remote = false) {
+      window.VP3ParticipantUpdates?.selected(value);
       const previous = selectedContext();
       selectedParticipant =
         value?.source === 'manual_selection' &&
@@ -460,6 +472,8 @@
       updatePresence,
       assessVoice,
       receiveSpeaker,
+      confirmedVoice,
+      receiveTaskHeard,
       activeSpeaker,
       clearSpeaker,
       rejectCurrent,

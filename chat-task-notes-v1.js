@@ -5,8 +5,8 @@
   const key=`vp3-task-notes-v1:${Number(cfg.userId)}:${Number(cfg.agentId)}`;
   let z=1065, generation=0;
   const make=(tag,cls,value)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(value!==undefined)e.textContent=String(value);return e;};
-  const refKey=r=>r.kind==='reminders'?`reminders:${r.view||'open'}`:`task_list:${Number(r.id)}`;
-  function safeRef(r){if(!r||typeof r!=='object')return null;if(r.kind==='task_list'&&Number.isInteger(r.id)&&r.id>0)return {kind:r.kind,id:r.id};if(r.kind==='reminders'&&['open','today','all','overdue'].includes(r.view||'open'))return {kind:r.kind,id:0,view:r.view||'open',timezone:typeof r.timezone==='string'?r.timezone:'UTC'};return null;}
+  const refKey=r=>`${Number(r.participant_id)||0}:`+(r.kind==='reminders'?`reminders:${r.view||'open'}`:`task_list:${Number(r.id)}`);
+  function safeRef(r){if(!r||typeof r!=='object')return null;if(r.kind==='task_list'&&Number.isInteger(r.id)&&r.id>0)return {kind:r.kind,id:r.id,...(Number.isInteger(r.participant_id)&&r.participant_id>0?{participant_id:r.participant_id}:{})};if(r.kind==='reminders'&&['open','today','all','overdue'].includes(r.view||'open'))return {kind:r.kind,id:0,view:r.view||'open',timezone:typeof r.timezone==='string'?r.timezone:'UTC',...(Number.isInteger(r.participant_id)&&r.participant_id>0?{participant_id:r.participant_id}:{})};return null;}
   function store(){try{localStorage.setItem(key,JSON.stringify([...notes.values()].map(n=>({ref:n.ref,x:parseInt(n.root.style.left,10),y:parseInt(n.root.style.top,10),collapsed:n.body.hidden}))));}catch{}}
   function place(n,x,y){const w=n.root.offsetWidth||300,h=Math.min(n.root.offsetHeight||180,innerHeight-110);n.root.style.left=Math.max(8,Math.min(Number(x)||8,innerWidth-w-8))+'px';n.root.style.top=Math.max(62,Math.min(Number(y)||100,innerHeight-h-90))+'px';}
   function prompt(value){const input=document.getElementById('chatInput'),form=document.getElementById('chatForm');if(!input||!form)return false;input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));form.requestSubmit();return true;}
@@ -22,6 +22,7 @@
         const row=make('label','vp3-task-note-row');row.dataset.done=String(!!item.done);
         const box=make('input');box.type='checkbox';box.checked=!!item.done;box.setAttribute('aria-label',`${item.done?'Reopen':'Complete'} ${item.title}`);
         if(note.kind==='reminders')box.disabled=!!item.done||!['pending','overdue'].includes(item.status);
+        if(note.read_only)box.disabled=true;
         box.addEventListener('change',()=>{box.checked=!!item.done;box.disabled=true;n.status.textContent='Sending to Chat…';const sent=prompt(note.kind==='reminders'?`Mark reminder #${item.id} done`:`Mark task #${item.id} ${item.done?'open':'completed'}`);if(!sent){box.disabled=false;n.status.textContent='Open Chat to update this item.';}});
         const copy=make('span');copy.append(make('span','vp3-task-note-label',item.title));if(item.detail)copy.append(make('small','',item.detail));else if(item.status&&item.status!=='open')copy.append(make('small','',item.status));row.append(box,copy);n.body.append(row);
       }
@@ -31,7 +32,7 @@
     }catch(e){if(epoch!==generation||seq!==n.seq||!n.root.isConnected)return;n.body.replaceChildren();n.title.textContent='Note unavailable';n.status.textContent=e.message||'Could not load this note.';}
   }
   function open(ref,saved={}){
-    ref=safeRef(ref);if(!ref)return;const id=refKey(ref);if(notes.has(id)){const n=notes.get(id);n.ref=ref;n.body.hidden=false;n.root.style.zIndex=String(++z);refresh(n);store();return;}
+    ref=safeRef(ref);if(!ref||(!saved.explicitParticipantView&&window.VP3ParticipantUpdates?.allowsNote?.(ref)===false))return;const id=refKey(ref);if(notes.has(id)){const n=notes.get(id);n.ref=ref;n.body.hidden=false;n.root.style.zIndex=String(++z);refresh(n);store();return;}
     if(notes.size>=8)return;
     const root=make('section','vp3-task-note');root.dataset.kind=ref.kind;root.setAttribute('role','region');root.style.zIndex=String(++z);
     const header=make('header'),title=make('strong','',ref.kind==='reminders'?'Reminders':'List'),body=make('div','vp3-task-note-body'),status=make('p','vp3-task-note-status'),foot=make('footer');status.setAttribute('role','status');
@@ -53,6 +54,7 @@
     const shortcuts=make('nav','vp3-task-notes-shortcuts');shortcuts.setAttribute('aria-label','Show lists and reminders');shortcuts.append(button('SHOW REMINDERS','Show reminders',()=>prompt('Show reminders')),button('SHOW PREP LIST','Show prep list',()=>prompt('Show prep list')));document.body.append(shortcuts);
   }
   window.addEventListener('resize',()=>{for(const n of notes.values())place(n,parseInt(n.root.style.left,10),parseInt(n.root.style.top,10));store();});
+  window.addEventListener('vp3:participant-task-context',event=>{generation++;for(const [id,n] of notes){if((Number(n.ref.participant_id)||0)!==event.detail?.participant_id){n.root.remove();notes.delete(id);}}store();});
   window.addEventListener('pagehide',()=>{generation++;store();});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

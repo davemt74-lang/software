@@ -49,6 +49,8 @@ jobs:
           php tests/scheduling-receipts-v1.php
           php tests/agent-record-tools-v1.php
           php tests/task-lists-v1.php
+          php tests/participant-updates-v1.php
+          node tests/participant-updates-api.mjs
           php tests/agent-navigation-v1.php
           php tests/voice-enrollment-tool-v1.php
           php tests/runtime-route-selection-v1.php

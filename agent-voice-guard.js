@@ -113,6 +113,7 @@
       const note=adapter.voiceParticipantNote?await adapter.voiceParticipantNote(String(fresh.id)).catch(()=>''):'';if(!current())return {allowed:false,reason:'cancelled'};
       const finalAttribution=window.VP3ParticipantContinuity?.assessVoice(person);
       if(finalAttribution&&!finalAttribution.accepted)return {allowed:!knownOnly,reason:finalAttribution.reason};
+      if(window.VP3ParticipantContinuity?.confirmedVoice)window.VP3ParticipantContinuity.confirmedVoice({participant_id:String(fresh.id),display_name:fresh.name});else window.VP3ParticipantUpdates?.heard({participant_id:String(fresh.id)});
       pendingContext={text:String(text),at:Date.now(),value:{conversation_note:String(note).slice(0,1000),participant_id:String(fresh.id),display_name:String(fresh.name).slice(0,120),source:'local_voice_similarity',confidence:match.similarity,authentication_authority:false}};
       void Promise.resolve(adapter.recordEyes?.({event_id:crypto.randomUUID(),session_id:voiceSession,track_id:crypto.randomUUID(),event_type:'voice_turn',participant_id:String(fresh.id),display_name:fresh.name,identity_source:'local_voice_similarity',authentication_authority:false})).catch(()=>{});say(`Listening to ${fresh.name} · provisional ${trained?'trained':'local'} voice match.`);return {allowed:true,participant:pendingContext.value};
     }

@@ -28,7 +28,7 @@ function csrf_token(){return 'fixture';}
 function has_permission($key,$user){return !isset($_SERVER['HTTP_X_FIXTURE_DENIED']);}
 function personal_capability_has_v242($key,...$args){return ($key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']))||($key==='personal_knowledge.access'&&isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']));}
 function artist_workspace_v181_scope_id($user){return 0;}
-function calendar_schedule_awareness_snapshot_v1330(...$args){return [];}
+function calendar_schedule_awareness_snapshot_v1330(...$args){if(isset($_SERVER['HTTP_X_FIXTURE_OWNER_TRAP']))throw new RuntimeException('OWNER_READ_REACHED');return [];}
 function user_account_types_for_user_id(...$args){return ['member'];}
 function user_has_role(...$args){return false;}
 function vp3_agent_runtime_plan_v420(...$args){return ['route'=>'vp3_cloud','cloud'=>['ready'=>true],'effective_preference'=>'vp3_cloud'];}
@@ -65,6 +65,7 @@ function agent_brain_archive_and_parse(...$args){}
 function chat_context_is_internal_source($s){return str_starts_with($s,'runtime:');}
 function ai_v100_safe_exception($e,$fallback='Failed'){return $fallback;}
 function ai_generate_chat_response($prompt,...$args){
+    if(str_starts_with($prompt,'VP3_PARTICIPANT_TASKS_V1')){file_put_contents(__DIR__.'/../participant-prompt.txt',$prompt);return ['ok'=>true,'answer'=>$_SERVER['HTTP_X_FIXTURE_PARTICIPANT_PLAN']??'{"operation":"show","kind":"all","id":0}'];}
     if(!str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')&&str_contains($prompt,'personal reminder commands.')&&str_contains($prompt,'Show reminders'))return ['ok'=>true,'answer'=>'{"operation":"list","view":"open"}'];
     if(str_starts_with($prompt,'VP3_TRANSCRIPT_ANSWER_V1')){
         $data=json_decode(substr($prompt,strpos($prompt,"\n")+1),true);$segments=$data['evidence']['segments'];return ['ok'=>true,'answer'=>json_encode(['answer'=>'The discussion covers the project budget and delivery date.','citations'=>[(int)$segments[0]['id']]])];
