@@ -512,6 +512,9 @@ try {
   await page.evaluate(()=>VP3ConversationControls.stop());
   console.log('PASS voice preparation errors release the pending turn and the next request works without reload or replay');
 
+  await page.evaluate(()=>{window.VP3_ORB_ADAPTER={ownerKey:'correction-test',loadEyesProfiles:async()=>[],recordEyes:async()=>{}};});
+  await page.addScriptTag({content:await source('participant-recovery-v1.js')});
+  await page.addScriptTag({content:await source('agent-participant-continuity.js')});
   await page.evaluate(()=>{window.spoken=[];VP3ConversationControls.listen();});
   await page.waitForFunction(()=>recognizers.some(r=>r.active));
   let releaseParticipantSend;sendGate=new Promise(resolve=>{releaseParticipantSend=resolve;});
@@ -520,13 +523,16 @@ try {
   await page.waitForFunction(()=>document.querySelector('#chatInput').disabled);
   for(let i=0;i<100&&sends().length<participantSendStart+1;i++)await page.waitForTimeout(20);
   assert.equal(sends().length,participantSendStart+1);
-  await page.evaluate(()=>{STONEFELLOW_CHAT_CONTINUITY.participantChanged();window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:702}}));});
+  await page.waitForFunction(()=>recognizers.some(r=>r.active));
+  await speak("That's not me");await page.clock.runFor(2300);
+  assert.match(await page.locator('.vp3-recovery-question').innerText(),/Show updates for the previous participant/);
+  assert.equal(sends().length,participantSendStart+1,'Correction never dispatches a second Chat request');
   releaseParticipantSend();sendGate=null;await page.clock.runFor(1200);
   await page.waitForFunction(()=>!document.querySelector('#chatInput').disabled);
   assert.equal(await page.evaluate(()=>window.spoken.length),0,'A previous participant response cannot speak after the participant changes');
   assert.equal(await page.evaluate(()=>VP3ConversationControls.isEnabled()),true,'Participant change keeps the listening preference enabled');
   await page.evaluate(()=>VP3ConversationControls.stop());
-  console.log('PASS participant change cancels a delayed Chat response and preserves listening');
+  console.log('PASS spoken correction preserves the original question, cancels a delayed response and preserves listening');
 
   await page.evaluate(()=>{window.STONEFELLOW_TRANSCRIPTION_CANVAS={selection:()=>({session_id:21,view:'home'})};});
   await page.locator('#chatInput').fill('Read the selected transcript');

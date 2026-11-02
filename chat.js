@@ -76,7 +76,7 @@
   let conversationId = 0;
   let lastLoadedMessageId = 0;
   let busy = false;
-  let chatRevision = 0, pendingSend = null, restoringConversation = 0;
+  let chatRevision = 0, pendingSend = null, restoringConversation = 0, lastParticipantQuestion = null;
   let initialRestorePending = true, contextReady = false;
   const recoveryKey = `vp3:chat:drafts:${Number(cfg.userId || 0)}:${Number(cfg.agentId || 0)}`;
   const selectionKey = `vp3:chat:active:${Number(cfg.userId || 0)}:${Number(cfg.agentId || 0)}`;
@@ -129,6 +129,7 @@
     host.hidden = !message; host.textContent = message;
   }
   function leaveChat() {
+    lastParticipantQuestion=null;
     if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId);
     chatRevision++;
     if (pendingSend) { clearTimeout(pendingSend.timer); pendingSend.controller.abort(); pendingSend.typing?.remove(); pendingSend = null; busy = false; send.disabled = false; input.disabled=false; showStop(); }
@@ -3113,7 +3114,7 @@
     );
 
     busy = true;
-    const request={controller:new AbortController(),revision:++chatRevision,conversationId,message:message.trim()};pendingSend=request;
+    const request={controller:new AbortController(),revision:++chatRevision,conversationId,message:message.trim()};pendingSend=request;lastParticipantQuestion={message:request.message,conversation_id:request.conversationId,at:Date.now(),submitted:true};
     request.timer=setTimeout(() => request.controller.abort(),120000);showStop();
     keepDraft(request.message,request.conversationId);
     send.disabled = true; input.disabled=true;
@@ -3168,6 +3169,7 @@
       }
 
       window.VP3TaskNotes?.consume(data.sticky_notes || []);
+      if(lastParticipantQuestion?.message===request.message){lastParticipantQuestion.conversation_id=Number(data.conversation_id);lastParticipantQuestion.at=Date.now();}
       conversationId = Number(data.conversation_id); rememberConversation();
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(data.user_message_id||0),Number(data.assistant_message_id||0));
       typing.remove();
@@ -3357,6 +3359,7 @@
   }, true);
 
   const canonicalChatContinuity = {
+    pendingParticipantQuestion:()=>pendingSend?{message:pendingSend.message,conversation_id:pendingSend.conversationId,submitted:true}:lastParticipantQuestion&&Date.now()-lastParticipantQuestion.at<120000&&lastParticipantQuestion.conversation_id===Number(conversationId||0)?{...lastParticipantQuestion}:null,
     isVoice:() => Boolean(voiceMode),
     conversationId:() => Number(conversationId || 0),
     isRestoring:() => initialRestorePending || restoringConversation > 0,

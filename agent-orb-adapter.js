@@ -84,8 +84,8 @@
       await api(cfg.participantsEndpoint,{action:'allow_local_visual_recognition',participant_id:Number(id),consent_confirmed:true});
       if(!isCurrent())throw Error('Enrollment stopped.');
       const pictures=window.VP3EyesCore.cleanPortraits(portraits);
-      if(!pictures.length)throw Error('No photos were captured. Please try again.');
-      await samples('update',id,previous=>({embeddings,portraits:window.VP3EyesCore.cleanPortraits([...(previous?.portraits||[]),...pictures]),portraitRefreshEnabled:portraitRefreshEnabled===true,portraitUpdatedAt:Date.now()}),isCurrent);return {id};
+      if(pictures.length!==3)throw Error('Three valid photos are required. Please try again.');
+      const saved=await samples('update',id,previous=>({embeddings,portraits:window.VP3EyesCore.cleanPortraits([...(previous?.portraits||[]),...pictures]),portraitRefreshEnabled:portraitRefreshEnabled===true,portraitUpdatedAt:Date.now()}),isCurrent);if(!saved?.saved)throw Error('Photos were not saved. Please try again.');return {id,saved:true,portraitsSaved:pictures.length};
     },
     setEyesPhotoRefresh:async({id,enabled,isCurrent=()=>true})=>{
       const p=(await adapter.loadEyesProfiles()).find(p=>p.id===String(id));
