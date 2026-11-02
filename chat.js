@@ -1476,6 +1476,7 @@
 
   function agentActionHtml(action) {
     if (!action) return '';
+    if(action.type==='participant_setup'&&/^[a-f0-9]{32}$/.test(String(action.token||''))&&Number.isInteger(action.conversation_id)&&action.conversation_id>0)return '<button class="chat-agent-action-button" type="button" data-participant-setup-token="'+escapeHtml(action.token)+'" data-participant-setup-conversation="'+action.conversation_id+'">Review participant setup</button>';
     if (action.type === 'voice_enrollment') return '<button class="chat-agent-action-button" type="button" data-voice-enrollment-open>Learn my voice</button>';
     if (action.type === 'media_capture') {
       return `<button class="chat-agent-action-button" type="button" data-media-agent-mode="${escapeHtml(action.mode||'camera')}" data-media-camera-index="${Number(action.camera_index||0)}">${escapeHtml(action.label||'Open Camera')}</button>`;

@@ -54,5 +54,35 @@ try{
  r=await post('participant-updates-v1.php',{action:'settings'},{'X-Fixture-Anonymous':'1'});check(r.status===401,'settings rejects anonymous requests');
  r=await post('participant-updates-v1.php',{action:'settings'},{'X-Fixture-Denied':'1'});check(r.status===403,'live permission denial blocks sharing reads');
  check((await fetch(base+'/api/participant-updates-v1.php',{headers})).status===405,'settings is POST only');
+ // Chat-native participant setup, with real owner confirmation and canonical receipts.
+ r=await post('participant-updates-v1.php',{...configure,revision,enabled:false,self_participant_id:0,grants:[]});check(r.status===200,'fixture resets mode for Chat-native onboarding');
+ const ownerPlan=(action,extra={})=>({'X-Fixture-Participant-Owner-Plan':JSON.stringify({operation:'participant',ids:[action==='presence'?'participants.read':action==='overview'?'tasks.overview':'participants.setup'],action,...extra})});
+ const ownerTurn={action:'send',agent_context:{user_agent_id:7},knowledge_scope:'off',input_mode:'text'};
+ for(const endpoint of ['chat.php','chat-v236.php?agent=7','chat-stream-v121.php?agent=7']){
+  // The stream endpoint is always voice. Before enrollment, mode is off; afterward the current own voice is supplied.
+  const context=endpoint.includes('stream')?{user_agent_id:7,voice_speaker:{...guest,participant_id:701}}:{user_agent_id:7};
+  r=await post(endpoint,{...ownerTurn,agent_context:context,message:'That is me'},ownerPlan('link_self',{participant_id:701}));
+  check(r.data?.actions?.some(a=>a.type==='participant_setup'&&a.auto===false)&&!r.data.tool_receipt.changes_applied,endpoint+' prepares an owner card without claiming profile enrollment');
+  const card=r.data.actions.find(a=>a.type==='participant_setup'),cid=r.data.conversation_id;
+  let reviewResult=await post('participant-updates-v1.php',{action:'review_setup',token:card.token,conversation_id:cid});check(reviewResult.status===200&&reviewResult.data.review.kind==='link_self',endpoint+' card resolves only its canonical proposal');
+  const selection={action:'confirm_setup',token:card.token,conversation_id:cid,decision:'confirm',owner_confirmed:true,revision:reviewResult.data.review.revision,participant_id:701};
+  const saved=await post('participant-updates-v1.php',selection);check(saved.status===200&&saved.data.result.settings.self_participant_id===701&&saved.data.result.settings.enabled,endpoint+' owner confirmation saves the mapping and canonical Chat receipt');
+  const replay=await post('participant-updates-v1.php',selection);check(replay.data.result.replayed&&replay.data.result.assistant_message_id===saved.data.result.assistant_message_id,endpoint+' repeated confirmation reuses its receipt');
+ }
+ r=await post('chat-v236.php?agent=7',{...ownerTurn,message:'Share my prep list with Alex'},ownerPlan('share_list',{participant_id:702,list_id:601,access_mode:'choose'}));
+ const sharing=r.data.actions.find(a=>a.type==='participant_setup'),sharingCid=r.data.conversation_id;
+ let reviewResult=await post('participant-updates-v1.php',{action:'review_setup',token:sharing.token,conversation_id:sharingCid});check(reviewResult.status===200&&reviewResult.data.review.access_modes.join(',')==='read,edit','sharing card explicitly offers view/edit choices');
+ const sharingInput={action:'confirm_setup',token:sharing.token,conversation_id:sharingCid,decision:'confirm',revision:reviewResult.data.review.revision,participant_id:702,list_id:601,access_mode:'read'};
+ check((await post('participant-updates-v1.php',sharingInput)).status===403,'sharing requires the authenticated owner confirmation checkbox');
+ check((await post('participant-updates-v1.php',{action:'review_setup',token:sharing.token,conversation_id:sharingCid,agent_id:8})).status===403,'another Agent cannot use the review conversation');
+ check((await post('participant-updates-v1.php',{...sharingInput,owner_confirmed:true,csrf_token:'forged'})).status===419,'sharing confirmation requires valid CSRF');
+ const yes=await post('chat-v236.php?agent=7',{...ownerTurn,conversation_id:sharingCid,message:'Yes'},ownerPlan('review'));check(yes.data.actions?.some(a=>a.token===sharing.token)&&!yes.data.tool_receipt.changes_applied,'bare yes reopens the same review without granting access');
+ r=await post('participant-updates-v1.php',{...sharingInput,owner_confirmed:true});check(r.status===200&&r.data.result.tool_receipt.changes_applied,'explicit owner confirmation applies selected read access');
+ r=await post('task-notes-v1.php',{note:{kind:'task_list',id:601,participant_id:702}});check(r.status===200&&r.data.note.read_only,'confirmed share immediately supports scoped note reads');
+ await post('participant-updates-v1.php',{action:'heartbeat',session_id:'33333333-3333-4333-8333-333333333333',sequence:1,participants:[701,702]});
+ r=await post('chat-v236.php?agent=7',{...ownerTurn,message:'Who is here?'},ownerPlan('presence'));check(r.data.answer.includes('David')&&r.data.answer.includes('Alex')&&!r.data.tool_receipt.changes_applied,'owner room question reads recent named observations');
+ r=await post('chat.php',{...ownerTurn,input_mode:'voice',agent_context:{user_agent_id:7,voice_speaker:guest},message:'Who is here?'},{'X-Fixture-Participant-Plan':'{"operation":"presence"}','X-Fixture-Owner-Trap':'1'});check(r.data.answer.includes('Alex')&&!r.text.includes('PRIVATE'),'guest room question avoids owner personal retrieval');
+ r=await post('chat.php',{...ownerTurn,input_mode:'voice',agent_context:{user_agent_id:7,voice_speaker:guest},message:'What do I need to do?'},{'X-Fixture-Participant-Plan':'{"operation":"overview"}','X-Fixture-Owner-Trap':'1'});check(r.data.answer.includes('Fixture pizza task 210')&&!r.text.includes('PRIVATE')&&r.data.sticky_notes[0].participant_id===702,'guest combined work update contains only shared open work');
+ r=await post('chat.php',{...ownerTurn,input_mode:'voice',agent_context:{user_agent_id:7,voice_speaker:guest},message:'That is me'},{'X-Fixture-Participant-Plan':'{"operation":"link_self"}','X-Fixture-Owner-Trap':'1'});check(r.data.actions?.some(a=>a.type==='participant_setup')&&!r.data.tool_receipt.changes_applied,'recognized guest can request a profile review but cannot map themselves');
  console.log(`PARTICIPANT_UPDATES_API=PASS (${checks} cases; production endpoints and canonical persistence, fixture infrastructure/model)`);
 }finally{child.kill();fs.rmSync(tmp,{recursive:true,force:true});}

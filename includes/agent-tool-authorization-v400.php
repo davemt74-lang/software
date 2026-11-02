@@ -231,6 +231,11 @@ function vp3_agent_tool_internal_action_v400(array $action,array $user,string $q
             'policy'=>['version'=>'v4.00','domain'=>'browser_local','risk'=>'low','requires_approval'=>false,'authorized'=>true],
         ];
     }
+    if($type==='participant_setup'){
+        $token=$action['token']??'';$approved=is_string($token)?($GLOBALS['VP3_PARTICIPANT_CARDS_V2'][$token]??null):null;
+        if(!$approved||$approved['owner']!==(int)$user['id']||!has_permission('chat.access',$user))return null;
+        return ['type'=>'participant_setup','token'=>$token,'conversation_id'=>$approved['conversation_id'],'label'=>'Review participant setup','auto'=>false,'policy'=>['version'=>'v4.00','domain'=>'participant_setup','risk'=>'low','requires_approval'=>true,'authorized'=>true]];
+    }
     if($type==='voice_enrollment'){
         if(($GLOBALS['vp3_voice_enrollment_approved_v1']??0)!==(int)$user['id']||!has_permission('chat.access',$user))return null;
         return ['type'=>'voice_enrollment','label'=>'Learn my voice','auto'=>false,'policy'=>['version'=>'v4.00','domain'=>'browser_local','risk'=>'low','requires_approval'=>true,'authorized'=>true]];
