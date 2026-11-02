@@ -3,12 +3,14 @@ declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_login();
 require_once __DIR__.'/includes/stem-import-media.php';
+require_once __DIR__.'/includes/music-file-repair.php';
 $user=current_user();$pdo=db();
 if(!$pdo){http_response_code(503);exit('Database unavailable.');}
-$workspaceId=max(0,(int)($_GET['workspace']??0));$catalogId=max(0,(int)($_GET['track']??0));
-if($workspaceId<1||$catalogId<1){http_response_code(400);exit('Choose a saved Music Library track first.');}
+$workspaceId=max(0,(int)($_GET['workspace']??0));$catalogId=max(0,(int)($_GET['track']??0));$legacyId=max(0,(int)($_GET['source_track']??0));
+if($workspaceId<1||($catalogId<1&&$legacyId<1)){http_response_code(400);exit('Choose a saved Music Library track first.');}
 try{
-    $track=music_workspace_resources_v331_prepare_studio_track($pdo,$workspaceId,$catalogId,$user);
+    if($catalogId>0)$track=music_workspace_resources_v331_prepare_studio_track($pdo,$workspaceId,$catalogId,$user);
+    else{$target=music_file_repair_target($pdo,$workspaceId,$user,'source',$legacyId);$track=$target['source'];}
     if(!can_manage_track_production($track,$user))throw new RuntimeException('Production access is required.');
 }catch(Throwable $e){http_response_code(403);exit('This track is not available for project import.');}
 $sourceId=(int)$track['id'];$project=stem_project_for_track($sourceId);$stems=stems_for_track($sourceId);
@@ -24,13 +26,13 @@ if($project){
     $rpp=realpath(STONEFELLOW_ROOT.'/'.ltrim((string)($project['rpp_file_path']??''),'/'));
     $rppReady=$base&&$rpp&&str_starts_with($rpp,rtrim($base,DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR)&&is_file($rpp)&&is_readable($rpp)&&filesize($rpp)>0;
 }
-$back=url('/music-library.php?workspace='.$workspaceId.'&edit='.$catalogId.'#editor');
-$self=url('/music-project-import.php?workspace='.$workspaceId.'&track='.$catalogId);
+$back=$catalogId>0?url('/music-library.php?workspace='.$workspaceId.'&edit='.$catalogId.'#editor'):url('/music-file-repair.php?workspace='.$workspaceId);
+$self=url('/music-project-import.php?workspace='.$workspaceId.($catalogId>0?'&track='.$catalogId:'&source_track='.$legacyId));
 $studio=url('/admin/stems.php?track='.$sourceId.'&return='.rawurlencode($self));
 $memberHeaderUser=$user;$memberHeaderTitle='REAPER project';$memberHeaderSubtitle=(string)$track['title'];$memberHeaderActions='';
 $config=['endpoint'=>url('/api/stem-direct-v79.php'),'trackId'=>$sourceId,'csrf'=>csrf_token(),'chunkBytes'=>stem_chunk_bytes(),'maxBytes'=>stem_max_package_bytes(),'track'=>$track,'hasExisting'=>(bool)$project,'reviewBeforeSave'=>true,'requireProject'=>true,'successUrl'=>$self];
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VP3 | REAPER project</title><link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><style>
-.project-main{background:#f7f7f8;min-width:0}.project-wrap{max-width:960px;margin:auto;padding:24px 20px 70px}.project-card{background:white;border:1px solid #dfe1e4;border-radius:16px;padding:22px;margin:16px 0}.project-card h2{margin-top:0}.project-actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.project-btn{display:inline-flex;align-items:center;justify-content:center;padding:11px 15px;border:1px solid #ccc;border-radius:9px;background:white;color:#202226;text-decoration:none;font:inherit;cursor:pointer}.project-btn.primary{background:#202226;color:white}.project-card input[type=file]{max-width:100%}.project-card p,.project-card li{line-height:1.6;overflow-wrap:anywhere}.project-progress{height:8px;background:#eee;border-radius:8px;overflow:hidden;margin:12px 0}.project-progress span{display:block;background:#25785b;height:100%;width:0}.project-status{white-space:pre-wrap;overflow-wrap:anywhere}.project-status.error{color:#a32323}.project-card small{color:#60646a}.project-files{padding-left:20px}@media(max-width:600px){.project-wrap{padding:12px 12px 65px}.project-card{padding:16px}.project-actions>*{flex:1 1 150px}}
+.project-main{display:flex;flex-direction:column;min-height:0;overflow:hidden;background:#f7f7f8;min-width:0}.project-wrap{flex:1;min-height:0;overflow-y:auto;width:100%;max-width:960px;margin:0 auto;padding:24px 20px 70px}.project-card{background:white;border:1px solid #dfe1e4;border-radius:16px;padding:22px;margin:16px 0}.project-card h2{margin-top:0}.project-actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.project-btn{display:inline-flex;align-items:center;justify-content:center;padding:11px 15px;border:1px solid #ccc;border-radius:9px;background:white;color:#202226;text-decoration:none;font:inherit;cursor:pointer}.project-btn.primary{background:#202226;color:white}.project-card input[type=file]{max-width:100%}.project-card p,.project-card li{line-height:1.6;overflow-wrap:anywhere}.project-progress{height:8px;background:#eee;border-radius:8px;overflow:hidden;margin:12px 0}.project-progress span{display:block;background:#25785b;height:100%;width:0}.project-status{white-space:pre-wrap;overflow-wrap:anywhere}.project-status.error{color:#a32323}.project-card small{color:#60646a}.project-files{padding-left:20px}@media(max-width:600px){.project-wrap{padding:12px 12px 65px}.project-card{padding:16px}.project-actions>*{flex:1 1 150px}}
 </style></head><body><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='music_workspace';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div><main class="chat-main project-main"><?php require __DIR__.'/includes/member-header.php'; ?><div class="project-wrap"><div class="project-actions"><a class="project-btn" href="<?= e($back) ?>">Back to song</a><a class="project-btn" href="<?= e($studio) ?>">Open Stem Studio</a></div>
 <section class="project-card"><h2><?= e((string)$track['title']) ?></h2><p>Attach a REAPER project to this existing song. Its listening audio, artwork and visibility stay as saved.</p>
 <?php if($project): ?><p><strong>Saved project:</strong> <?= e((string)$project['project_name']) ?> · <?= count($stems) ?> active stems<?= !empty($project['tempo_bpm'])?' · '.e((string)$project['tempo_bpm']).' BPM':'' ?> · <?= e((string)($project['time_signature']??'')) ?></p><p>REAPER project file: <?= $rppReady?'Available':'Missing or unreadable — import a complete package' ?></p><p>Last imported: <?= e((string)($project['imported_at']??'')) ?></p><ul class="project-files"><?php foreach($checks as $check): ?><li><?= e($check['name']) ?> — <?= $check['ok']?'Audio available':'Missing or unreadable audio — restore this file or import a complete package' ?></li><?php endforeach; ?></ul><?php else: ?><p>No REAPER project has been imported for this song yet.</p><?php endif; ?></section>
