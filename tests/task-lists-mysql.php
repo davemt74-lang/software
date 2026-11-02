@@ -4,6 +4,7 @@ require dirname(__DIR__).'/includes/agent-task-lists-v1.php';
 require dirname(__DIR__).'/includes/agent-memory-scope-v410.php';
 require dirname(__DIR__).'/includes/agent-brain-v122.php';
 require dirname(__DIR__).'/includes/participant-updates-v1.php';
+require dirname(__DIR__).'/includes/participant-conversation-v2.php';
 $dsn=(string)getenv('VP3_SECTION7_MYSQL_DSN');if(!$dsn)throw new RuntimeException('Explicit task-list fixture DSN required.');
 $pdo=new PDO($dsn,'root',(string)getenv('VP3_SECTION7_MYSQL_PASSWORD'),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
 $mode=$argv[1]??'';$name=(string)getenv('VP3_TASK_LIST_FIXTURE_DATABASE');
@@ -11,7 +12,9 @@ if($mode===''){$name='tasklists_'.bin2hex(random_bytes(6));$pdo->exec('CREATE DA
 if(!preg_match('/^tasklists_[a-f0-9]{12}$/D',$name))throw new RuntimeException('Invalid fixture database.');$pdo->exec('USE `'.$name.'`');
 function db(){return $GLOBALS['pdo'];}function table_exists($t){$q=db()->prepare('SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');$q->execute([$t]);return(bool)$q->fetchColumn();}function column_exists($t,$c){$q=db()->prepare('SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?');$q->execute([$t,$c]);return(bool)$q->fetchColumn();}
 function has_permission(...$a){return true;}function personal_capability_has_v242(...$a){return true;}function knowledge_retrieval_v162_owner_session($u,$p){return $u['id']===($p['owner_user_id']??0);}function agent_brain_schema_ready(){return true;}function agent_brain_normalize($s){return mb_strtolower(trim($s));}function ck($ok,$why){if(!$ok)throw new RuntimeException($why);}
+function vp3_capability_live_user_v1($pdo,$u,$p,$ctx,$authority){vp3_task_list_authorize_v1($pdo,$u,$p,(int)($ctx['conversation_id']??0));return $u;}
 $u=['id'=>1,'is_active'=>1];$p=['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7];$ctx=['conversation_id'=>1];
+if($mode==='owner-share'){$input=json_decode((string)getenv('VP3_PARTICIPANT_SETUP_CONFIRM_V2'),true,16,JSON_THROW_ON_ERROR);echo json_encode(vp3_participant_confirm_v2($pdo,$u,$p,$input));exit;}
 if($mode==='presence'){vp3_participant_observed_v1($pdo,$u,8,'heard');echo '{}';exit;}
 if($mode==='offer'){echo json_encode(vp3_participant_offer_v1($pdo,$u,8));exit;}
 if($mode==='shared-add'){$r=vp3_participant_with_scope_v1($pdo,$u,$p,8,true,fn()=>vp3_task_list_execute_v1($pdo,$u,$p,['action'=>'add','list_name'=>'Prep','title'=>'Shared flour'],$ctx));echo json_encode($r);exit;}
@@ -38,6 +41,12 @@ try{
  workers('presence');ck((int)$pdo->query('SELECT COUNT(*) FROM agent_participant_presence_v1')->fetchColumn()===1,'Four simultaneous first voice events create one presence row.');
  $results=workers('offer');ck(count(array_filter($results))===1,'Only one tab claims an update offer for the visit.');
  $offer=array_values(array_filter($results))[0];vp3_participant_offer_v1($pdo,$u,8,$offer);ck(vp3_participant_offer_v1($pdo,$u,8)===null,'Acknowledged offer is not repeated.');
+ $pdo->exec('ALTER TABLE chat_messages ADD user_id INT NULL,ADD message TEXT;ALTER TABLE chat_conversations ADD updated_at DATETIME NULL');
+ $draft=vp3_participant_prepare_v2($pdo,$u,$p,['action'=>'share_list','participant_id'=>8,'list_id'=>$list,'access_mode'=>'read'],$ctx);$token=$draft['actions'][0]['token'];$review=vp3_participant_review_v2($pdo,$u,$p,$token,1);
+ putenv('VP3_PARTICIPANT_SETUP_CONFIRM_V2='.json_encode(['token'=>$token,'conversation_id'=>1,'decision'=>'confirm','owner_confirmed'=>true,'revision'=>$review['revision'],'participant_id'=>8,'list_id'=>$list,'access_mode'=>'read']));
+ $beforeMessages=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();$beforeRevision=vp3_participant_settings_v1($pdo,$u)['revision'];
+ $results=workers('owner-share');ck(count(array_filter($results,fn($r)=>empty($r['replayed'])))===1,'Concurrent owner confirms apply once and replay one saved receipt.');
+ ck((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$beforeMessages+2&&vp3_participant_settings_v1($pdo,$u)['revision']===$beforeRevision+1,'Sharing confirmation logs one user choice and one assistant receipt atomically.');
  $pdo->exec('DELETE FROM agent_participant_grants_v1');$r=vp3_participant_with_scope_v1($pdo,$u,$p,8,true,fn()=>vp3_task_list_execute_v1($pdo,$u,$p,['action'=>'add','list_name'=>'Prep','title'=>'Revoked flour'],$ctx));ck($r['tool_receipt']['status']==='blocked','Revoked shared write is blocked on MySQL.');
  $pdo->exec('DELETE FROM users WHERE id=1');foreach(['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_actions_v1','agent_participant_settings_v1','agent_participant_grants_v1','agent_participant_presence_v1','agent_participant_observers_v1'] as $table)ck((int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn()===0,'Owner deletion cleans '.$table);
  echo "TASK_LISTS_MYSQL=PASS (real schema; concurrent confirms and owner/shared adds, voice presence, cross-tab offers, grant revocation and owner cleanup)\n";

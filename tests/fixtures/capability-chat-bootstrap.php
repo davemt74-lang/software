@@ -81,6 +81,7 @@ function ai_generate_chat_response($prompt,...$args){
         if($json['request']==='The first one')return ['ok'=>true,'answer'=>'{"operation":"read","session_id":23}'];if(str_contains($json['request'],'October 30th'))return ['ok'=>true,'answer'=>'{"operation":"read","date":"2026-10-30"}'];return ['ok'=>true,'answer'=>json_encode(['query'=>$json['selected_text']??'','operation'=>str_starts_with($json['request'],'Highlight')?'highlight':(str_contains($json['request'],'saved analysis')?'read_analysis':'read'),'session_id'=>(int)((str_contains($json['request'],'selected')?($json['ui_selected_session_id']??0):0)?:$json['selected_session_id']?:21)])];
     }
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
+        if(isset($_SERVER['HTTP_X_FIXTURE_PARTICIPANT_OWNER_PLAN']))return ['ok'=>true,'answer'=>$_SERVER['HTTP_X_FIXTURE_PARTICIPANT_OWNER_PLAN']];
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
         if($q==='Learn my voice')return ['ok'=>true,'answer'=>json_encode(['operation'=>'voice_profile','ids'=>['voice.profiles.enroll'],'action'=>'prepare'])];

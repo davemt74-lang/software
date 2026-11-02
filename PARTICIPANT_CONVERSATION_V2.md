@@ -1,0 +1,13 @@
+# Participant setup and combined work in Chat
+
+The Chat interpreter now supports profile mapping (“That’s me” / “Link my profile”), explicit list sharing (“Share my prep list with Alex”), recent room observations (“Who’s here?”), and combined open work (“What do I need to do?”). The existing participant/list tables are reused; installations already upgraded for PR672 need no new database upgrade.
+
+Profile/link and sharing requests create a server-stored review card. The signed-in owner selects the exact profile/list and view or edit access, checks the owner confirmation, then confirms. A recognized guest or unassigned voice can request a profile review, but cannot approve it. A bare “yes” reopens the review without changing access. Linking enables participant-aware task conversations; it does not sign in another account, change recognition/cloning consent, or infer account ownership from a name.
+
+Reviews are bound to the owner, Agent and conversation, expire after 15 minutes, and carry a digest of the current choices and settings. Renames, removals and changed settings require a fresh review. Confirmation rechecks current permissions and target records under the owner lock. It preserves unrelated grants and writes the owner choice plus assistant receipt to canonical Chat history in the same transaction. Repeated confirmations replay the saved receipt. Cancel does not change permissions. Saved history cards can display the prior result after reload. Switching conversations/participants or hiding the page closes pending cards and rejects late UI results; a write already committed on the server remains visible in its saved receipt.
+
+Recent room observations include up to four consented, active, owner-managed participants seen in the last 45 seconds or heard in the last 90 seconds, with separate explicit UTC timestamps. These are provisional observations, not proof everyone is still present or an authentication mechanism.
+
+The combined work view reads canonical open list items and standalone tasks, deduplicates task IDs, excludes completed/cancelled work, and includes due active reminders. Guest reads retain explicit per-Agent sharing. Reads do not tick reminder delivery, claim occurrences, acknowledge notifications, mark work complete or change schedules. Bounded list previews disclose partial coverage and retain the existing sticky notes for fuller reads.
+
+Typed, voice and streaming Chat use the same server executors. Owner routing and guest interpretation retain their existing Cloud/compute policy boundaries. Guest sharing creation remains unavailable; owners manage sharing through the review card or existing settings UI. Physical microphone and face/voice recognition testing still belongs to the deployed browser/device.
