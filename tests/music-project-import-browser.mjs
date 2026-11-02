@@ -6,7 +6,7 @@ const read=p=>fs.readFile(new URL('../'+p,import.meta.url),'utf8');
 const zip=(names=['session.rpp','Bass.wav'])=>execFileSync('python3',['-c',String.raw`import io,zipfile,sys,json
 b=io.BytesIO()
 with zipfile.ZipFile(b,'w') as z:
- for n in json.loads(sys.argv[1]):z.writestr(n,'<REAPER_PROJECT 0.1 7\nTEMPO 86\n  <TRACK\n    NAME "Bass"\n    <ITEM\n      <SOURCE WAVE\n        FILE "Bass.wav"\n      >\n    >\n  >\n>\n' if n.endswith('.rpp') else b'RIFF'+bytes(100))
+ for n in json.loads(sys.argv[1]):z.writestr(n,'<REAPER_PROJECT 0.1 7\nTEMPO 86 4 4\n  <TRACK {11111111-1111-1111-1111-111111111111}\n    NAME "Bass"\n    <ITEM\n      <SOURCE WAVE\n        FILE "Bass.wav"\n      >\n    >\n  >\n>\n' if n.endswith('.rpp') else b'RIFF'+bytes(100))
 sys.stdout.buffer.write(b.getvalue())`,JSON.stringify(names)]);
 const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
 const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
