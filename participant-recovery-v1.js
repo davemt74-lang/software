@@ -42,7 +42,7 @@
  },true);
  window.addEventListener('vp3:participant-photo-state',event=>{
   const d=event.detail||{};if(!['waiting','capturing','saving','saved','failed','deferred'].includes(d.state)||typeof d.message!=='string')return;
-  if(!photo||!photo.root.isConnected){const root=make('section');root.className='vp3-participant-recovery';const status=make('p');status.setAttribute('role','status');root.append(make('strong','Participant photo capture'),status,button('Open Agent Eyes gallery',()=>{const panel=document.querySelector('.vp3-eyes-panel');if(panel?.hidden)window.VP3AgentEyes?.toggle?.();document.querySelector('.vp3-eyes-portraits')?.scrollIntoView({block:'nearest'});}));host().append(root);photo={root,status};}
+  if(!photo||!photo.root.isConnected){const root=make('section');root.className='vp3-participant-recovery';const status=make('p');status.setAttribute('role','status');root.append(make('strong','Participant photo capture'),status,button('Open Agent Eyes gallery',()=>{if(window.VP3AgentOrb?.openEyesGallery){window.VP3AgentOrb.openEyesGallery();return;}const panel=document.querySelector('.vp3-eyes-panel');if(panel?.hidden)window.VP3AgentEyes?.toggle?.();document.querySelector('.vp3-eyes-portraits')?.scrollIntoView({block:'nearest'});}));host().append(root);photo={root,status};}
   photo.root.dataset.photoState=d.state;photo.status.textContent=d.message.slice(0,500);
  });
  window.addEventListener('stonefellow:chat-context-changing',clear);window.addEventListener('homeserver:chat-context-changing',clear);window.addEventListener('pagehide',clear,{once:true});document.addEventListener('visibilitychange',()=>{if(document.hidden)clear();});
