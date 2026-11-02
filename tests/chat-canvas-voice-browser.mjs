@@ -433,7 +433,7 @@ try {
       for(let n=0;n<7;n++){
         const delay=await page.evaluate(n=>{const r=recognizers.findLast(r=>r.active);r.active=false;r.onerror?.({error:n%2?'network':'aborted'});r.onend?.();return STONEFELLOW_CHAT_VOICE.speechRetryDelayMs;},n);
         assert.equal(await page.locator('#chatVoiceButton').getAttribute('aria-pressed'),'true');
-        assert.equal(await page.locator('#chatVoiceButton').getAttribute('data-agent-state'),'reconnecting');
+        assert.equal(await page.locator('#chatVoiceButton').getAttribute('data-agent-state'),n===0?'starting':'reconnecting');
         await page.clock.runFor(delay);
         await page.waitForFunction(()=>window.recognizers.some(r=>r.active));
       }

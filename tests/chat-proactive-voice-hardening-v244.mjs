@@ -31,7 +31,7 @@ for (const [name, source] of [
   assert.doesNotThrow(() => new Function(source), `${name} must remain valid JavaScript`);
 }
 
-assert.match(chatVoice,/const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031-mic-startup-20261101'/);
+assert.match(chatVoice,/const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031-mic-startup-20261101-quiet-abort-20261102'/);
 assert.match(chatVoice,/function isStopControl\(/,'v2.44 must classify spoken stop/cancel as control');
 assert.match(chatVoice,/function applyStopControl\(/,'v2.44 must own stop locally in the voice runtime');
 assert.match(chatVoice,/if\(applyStopControl\(transcript,'transcript'\)\)return/,'stop must be consumed before transcript submission');

@@ -81,7 +81,7 @@ elements.chatForm.requestSubmit=()=>{void window.fetch('/api/chat.php',{method:'
 
 vm.runInNewContext(source,sandbox,{filename:'chat-voice.js'});
 
-assert(source.includes("const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031-mic-startup-20261101'"),'fast voice behavior remains active inside the v2.44 proactive lifecycle');
+assert(source.includes("const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031-mic-startup-20261101-quiet-abort-20261102'"),'fast voice behavior remains active inside the v2.44 proactive lifecycle');
 assert(source.includes('TURN_END_PAUSE_MS=1800'),'fast voice path honors the v148 natural pause window');
 assert(source.includes("new URL('chat-stream-v121.php',chatUrl)"),'voice turn derives the existing NDJSON Chat stream endpoint');
 assert(source.includes('premium.createStream({'),'voice turn feeds incremental AI text into the premium stream');
