@@ -9,7 +9,11 @@ const pcm=Buffer.alloc(8000*2*60),wav=Buffer.alloc(44+pcm.length);wav.write('RIF
 const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
 const calls=[];let recent=[],failPlaylist=false,failHistory=false;const media={id:9,title:'Last song <img>',album:'Studio',audio:'/song.wav',cover:'/cover.svg',detail:'/track.php?id=9'};
 await page.route('http://listening.test/chat.php**',r=>r.fulfill({contentType:'text/html',body:html}));
-await page.route('**/song.wav',r=>r.fulfill({contentType:'audio/wav',body:wav}));await page.route('**/cover.svg',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'}));
+await page.route('**/song.wav',r=>{
+ const range=r.request().headers().range?.match(/^bytes=(\d+)-(\d*)$/);if(!range)return r.fulfill({contentType:'audio/wav',headers:{'Accept-Ranges':'bytes'},body:wav});
+ const start=Number(range[1]),end=range[2]?Math.min(Number(range[2]),wav.length-1):wav.length-1;
+ return r.fulfill({status:206,contentType:'audio/wav',headers:{'Accept-Ranges':'bytes','Content-Range':`bytes ${start}-${end}/${wav.length}`},body:wav.subarray(start,end+1)});
+});await page.route('**/cover.svg',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'}));
 await page.route('**/api/**',async r=>{
  const body=r.request().postDataJSON()||{};calls.push({...body,path:new URL(r.request().url()).pathname});
  if(body.action==='recent_history')return r.fulfill(failHistory?{status:503,json:{ok:false,error:'Unavailable'}}:{json:{ok:true,user_id:11,tracks:recent}});
@@ -30,8 +34,11 @@ async function boot(view='chat'){
 }
 try{
  await boot('player');await page.locator('#playerSong [data-player-toggle]').click();await page.waitForFunction(()=>{const a=document.querySelector('#playerSong audio');return !a.paused&&a.readyState>=3&&a.currentTime>0;});await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY);
- await page.locator('#playerSong audio').evaluate(a=>{a.currentTime=24;a.pause();});
- await page.waitForTimeout(400);assert.ok(recent[0].last_position_seconds>=24,'Player did not record the actual saved position');
+ await page.locator('#playerSong audio').evaluate(a=>{a.currentTime=24;});
+ await page.waitForFunction(()=>{const a=document.querySelector('#playerSong audio');return !a.seeking&&a.currentTime>=24;});
+ await page.locator('#playerSong audio').evaluate(a=>a.pause());
+ for(let i=0;i<50&&!(recent[0]?.last_position_seconds>=24);i++)await page.waitForTimeout(100);
+ assert.ok(recent[0]?.last_position_seconds>=24,'Player did not record the actual saved position: '+JSON.stringify(calls.filter(x=>x.path==='/api/playback.php')));
  await boot();const card=page.locator('#chatListeningContinuation');await card.getByRole('button',{name:'Resume play',exact:true}).waitFor();
  assert.equal(await card.isVisible(),true);assert.match(await card.innerText(),/Last song <img>/);assert.equal(await card.locator('strong img').count(),0);assert.equal(await card.locator('audio').evaluate(a=>a.paused),true,'Loading Chat auto-played the last song');assert.ok(Number(await card.locator('[data-resume-track]').getAttribute('data-resume-position'))>=24);
  assert.equal(await page.locator('#playerRecent').count(),0,'Fixture accidentally relies on the hidden history shelf');assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Mobile card overflowed');
