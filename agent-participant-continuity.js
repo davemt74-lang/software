@@ -433,7 +433,7 @@
         speaker &&
         (Date.now() - speaker.at > 10000 || speaker.revision !== revision)
       ) {
-        speaker = null;lastConfirmed=null;
+        speaker = null;
         announceSpeaker();
         say(selectedParticipant
           ? `${selectedParticipant.display_name} selected for typed Chat.`
@@ -444,7 +444,7 @@
     window.addEventListener('stonefellow:chat-context-changing',changeConversation);
     window.addEventListener('homeserver:chat-context-changing',changeConversation);
     window.addEventListener('vp3:participant-forgotten', (event) => {
-      clearSelection();
+      lastConfirmed=null;clearSelection();
       revision++;
       speaker = null;
       announceSpeaker();

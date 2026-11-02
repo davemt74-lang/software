@@ -523,16 +523,19 @@ try {
   await page.waitForFunction(()=>document.querySelector('#chatInput').disabled);
   for(let i=0;i<100&&sends().length<participantSendStart+1;i++)await page.waitForTimeout(20);
   assert.equal(sends().length,participantSendStart+1);
-  await page.waitForFunction(()=>recognizers.some(r=>r.active));
-  await speak("That's not me");await page.clock.runFor(2300);
+  await page.evaluate(()=>{document.getElementById('chatInput').value="That's not me";document.getElementById('chatForm').requestSubmit();});
   assert.match(await page.locator('.vp3-recovery-question').innerText(),/Show updates for the previous participant/);
   assert.equal(sends().length,participantSendStart+1,'Correction never dispatches a second Chat request');
   releaseParticipantSend();sendGate=null;await page.clock.runFor(1200);
   await page.waitForFunction(()=>!document.querySelector('#chatInput').disabled);
   assert.equal(await page.evaluate(()=>window.spoken.length),0,'A previous participant response cannot speak after the participant changes');
   assert.equal(await page.evaluate(()=>VP3ConversationControls.isEnabled()),true,'Participant change keeps the listening preference enabled');
+  await page.waitForFunction(()=>recognizers.some(r=>r.active));
+  await speak("That's not me");await page.clock.runFor(2300);
+  assert.equal(sends().length,participantSendStart+1,'Spoken correction also stays local');
+  assert.match(await page.locator('.vp3-recovery-question').innerText(),/Show updates for the previous participant/);
   await page.evaluate(()=>VP3ConversationControls.stop());
-  console.log('PASS spoken correction preserves the original question, cancels a delayed response and preserves listening');
+  console.log('PASS typed and spoken correction preserve the question without replay and keep listening');
 
   await page.evaluate(()=>{window.STONEFELLOW_TRANSCRIPTION_CANVAS={selection:()=>({session_id:21,view:'home'})};});
   await page.locator('#chatInput').fill('Read the selected transcript');
