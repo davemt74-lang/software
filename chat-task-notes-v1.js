@@ -51,7 +51,6 @@
   function consume(refs){for(const ref of (Array.isArray(refs)?refs:[]).slice(0,8))open(ref);for(const n of notes.values())if(!(refs||[]).some(r=>safeRef(r)&&refKey(r)===refKey(n.ref)))refresh(n);}
   window.VP3TaskNotes={consume,open,refresh:()=>{for(const n of notes.values())refresh(n);}};
   function boot(){try{const saved=JSON.parse(localStorage.getItem(key)||'[]');if(Array.isArray(saved))for(const n of saved.slice(0,8))open(n.ref,n);}catch{}
-    const shortcuts=make('nav','vp3-task-notes-shortcuts');shortcuts.setAttribute('aria-label','Show lists and reminders');shortcuts.append(button('SHOW REMINDERS','Show reminders',()=>prompt('Show reminders')),button('SHOW PREP LIST','Show prep list',()=>prompt('Show prep list')));document.body.append(shortcuts);
   }
   window.addEventListener('resize',()=>{for(const n of notes.values())place(n,parseInt(n.root.style.left,10),parseInt(n.root.style.top,10));store();});
   window.addEventListener('vp3:participant-task-context',event=>{generation++;for(const [id,n] of notes){if((Number(n.ref.participant_id)||0)!==event.detail?.participant_id){n.root.remove();notes.delete(id);}}store();});
