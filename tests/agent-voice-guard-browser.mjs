@@ -18,4 +18,18 @@ await test('known-only mode cannot silently accept speech without a current micr
 await test('forgetting a profile preserves its participant name',async()=>{await page.locator('[data-voice-forget]').click();await page.waitForFunction(()=>people[0].voiceEmbeddings.length===0);assert.equal(await page.evaluate(()=>people[0].name),'David');});
 await test('the Learn button uses the same authorized capture and restores listening after three samples',async()=>{await page.locator('[data-voice-consent]').evaluate(n=>{n.checked=true;});await page.locator('[data-voice-learn]').click();await page.waitForFunction(()=>VP3VoiceGuard.enrolling());for(let n=0;n<3;n++){await page.evaluate(async()=>{VP3VoiceGuard.attach({},audioContext);feed();const result=await VP3VoiceGuard.check('a manual enrollment phrase');if(result.allowed)throw Error('Enrollment leaked into Chat');});}assert.equal(await page.evaluate(()=>enrollmentCaptures),2);assert.equal(await page.evaluate(()=>enrollmentEnds),2);});
 await test('withdrawing consent fences a pending automatic enrollment',async()=>{await page.evaluate(()=>{window.waitProfiles=true;});await page.locator('[data-voice-consent]').check();await page.waitForFunction(()=>typeof window.releaseProfiles==='function');await page.locator('[data-voice-consent]').uncheck();await page.evaluate(()=>{window.waitProfiles=false;window.releaseProfiles();});await page.waitForTimeout(30);assert.equal(await page.evaluate(()=>VP3VoiceGuard.enrolling()),false);assert.equal(await page.evaluate(()=>enrollmentCaptures),2);});
+
+await test('trained matching preserves pauses within one utterance and never reuses its audio',async()=>{
+ const r=await page.evaluate(async()=>{
+  window.extractions=[];window.VP3TrainedVoice={enabled:()=>true,clear:()=>{},readyProfile:()=>true,extract:async pcm=>{extractions.push(Array.from(pcm));return {embedding:[1],quality:{}};},match:async()=>({matched:false})};
+  VP3VoiceGuard.attach({},audioContext);
+  for(const level of [.06,0,.07]){const data=Float32Array.from({length:2048},(_,i)=>level*Math.sin(i*.3));processor.onaudioprocess({inputBuffer:{getChannelData:()=>data}});}
+  const first=await VP3VoiceGuard.check('Hello Longfellow');const second=await VP3VoiceGuard.check('a new voice turn');
+  return {lengths:extractions.map(x=>x.length),pause:extractions[0].slice(2048,4096).every(x=>x===0),first,second,context:VP3VoiceGuard.takeContext('Hello Longfellow')};
+ });assert.deepEqual(r.lengths,[6144]);assert.equal(r.pause,true);assert.equal(r.first.reason,'unknown');assert.equal(r.second.reason,'unavailable');assert.equal(r.context,null);
+});
+await test('a too-short trained greeting asks for a longer phrase without assigning a speaker',async()=>{
+ const r=await page.evaluate(async()=>{VP3TrainedVoice.extract=async()=>({embedding:null,quality:{reason:'too-short',message:'Short'}});feed();const decision=await VP3VoiceGuard.check('Hello Longfellow');return {decision,context:VP3VoiceGuard.takeContext('Hello Longfellow')};});
+ assert.equal(r.decision.reason,'too-short');assert.equal(r.context,null);assert.match(await page.locator('[data-voice-status]').innerText(),/normal speaking voice/);
+});
 assert.deepEqual(errors,[]);console.log('AGENT_VOICE_GUARD_BROWSER=PASS ('+checks+' cases)');}finally{await browser.close();await new Promise(r=>server.close(r));}

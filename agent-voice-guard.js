@@ -80,21 +80,26 @@
     }
     async function evaluateVoice(text,isCurrent=()=>true){
       if(guidedSession||Date.now()<guidedMuteUntil)return {allowed:false,learning:true,reason:'guided-enrollment'};
+      if(/^(?:that['’]s not me|that is not me|you have the wrong person)[.!]?$/i.test(String(text).trim())){pendingContext=null;return {allowed:true,reason:'participant-correction'};}
       const turnSerial=++turn;
-      window.VP3ParticipantContinuity?.clearSpeaker?.();
+      if(window.VP3ParticipantContinuity?.beginVoiceAttribution)window.VP3ParticipantContinuity.beginVoiceAttribution();else window.VP3ParticipantContinuity?.clearSpeaker?.();
       lastChecked={text:String(text),at:Date.now()};
       if(Date.now()<invitationUntil&&((invitation==='name'&&window.VP3EyesCore?.introductionName(text,true))||(invitation==='visual-consent'&&window.VP3EyesCore?.visualReply(text)))){invitation='';pendingContext=null;return {allowed:true,reason:'invited-introduction'};}
-      pendingContext=null;if(/^(?:that['’]s not me|that is not me|you have the wrong person)[.!]?$/i.test(String(text).trim()))return {allowed:true,reason:'participant-correction'};if(/^(?:stop|cancel|pause|stop listening|stop the microphone)[.!]?$/i.test(String(text).trim()))return {allowed:true};if(window.VP3AgentEyes?.expectingIntroduction?.()&&window.VP3EyesCore?.introductionName(text,true))return {allowed:true,reason:'invited-introduction'};if(!enabled)return {allowed:true};const token=epoch;
+      pendingContext=null;if(/^(?:stop|cancel|pause|stop listening|stop the microphone)[.!]?$/i.test(String(text).trim()))return {allowed:true};if(window.VP3AgentEyes?.expectingIntroduction?.()&&window.VP3EyesCore?.introductionName(text,true))return {allowed:true,reason:'invited-introduction'};if(!enabled)return {allowed:true};const token=epoch;
       const current=()=>token===epoch&&turnSerial===turn&&isCurrent();
       const captured=chunks;chunks=[];length=0;
       if(!rate||!captured.length||performance.now()-lastAudio>2200){if(knownOnly)say('Speech ignored: voice matching has no current microphone evidence.');return {allowed:!knownOnly,reason:'unavailable'};}
       const clean=captured.filter(c=>c.rms>=Math.max(.008,noise*2.5));const count=clean.reduce((n,c)=>n+c.data.length,0);
       if(count<rate*.12){say('Background noise ignored. Listening continues.');return {allowed:false,reason:'noise'};}
-      const pcm=new Float32Array(count);let offset=0;for(const c of clean){pcm.set(c.data,offset);offset+=c.data.length;}
-      const trained=window.VP3TrainedVoice?.enabled()===true,lib=await module();if(!current())return {allowed:false,reason:'cancelled'};
+      const trained=window.VP3TrainedVoice?.enabled()===true;
+      // Trained embeddings need natural within-utterance timing, including pauses. Never join separate turns.
+      const first=captured.indexOf(clean[0]),last=captured.indexOf(clean.at(-1));
+      const rowsForMatch=trained?captured.slice(Math.max(0,first-1),last+2):clean;
+      const pcm=new Float32Array(rowsForMatch.reduce((n,c)=>n+c.data.length,0));let offset=0;for(const c of rowsForMatch){pcm.set(c.data,offset);offset+=c.data.length;}
+      const lib=await module();if(!current())return {allowed:false,reason:'cancelled'};
       const result=trained?await window.VP3TrainedVoice.extract(pcm,rate,{enrollment:!!learning}):null;
       if(!current())return {allowed:false,reason:'cancelled'};
-      if(trained&&!result.embedding){say(result.quality?.message||'No trained voice match is available.');return {allowed:!knownOnly,reason:result.quality?.reason||'unavailable'};}
+      if(trained&&!result.embedding){say(result.quality?.reason==='too-short'?'That phrase is too short to identify a speaker. Try “Hello Longfellow, this is my normal speaking voice.”':result.quality?.message||'No trained voice match is available.');return {allowed:!knownOnly,reason:result.quality?.reason||'unavailable'};}
       const embedding=trained?result.embedding:lib.voiceEmbeddingFromPcm(pcm,rate),rows=await profiles();if(!current())return {allowed:false,reason:'cancelled'};
       if(learning&&learning.epoch===token&&embedding&&q('[data-voice-consent]').checked){
         const selected=learning;const saved=await adapter[trained?'saveTrainedVoiceSample':'saveVoiceSample']({id:selected.id,embedding,isCurrent:()=>current()&&learning===selected&&q('[data-voice-consent]').checked});

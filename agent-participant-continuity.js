@@ -5,7 +5,7 @@
     const adapter = window.VP3_ORB_ADAPTER;
     if (!adapter || window.VP3ParticipantContinuity) return;
     let presence = { active: false, rows: [], at: 0 },
-      speaker = null,
+      speaker = null, lastConfirmed = null,
       revision = 0,
       signature = '',
       mounted = false,
@@ -89,9 +89,9 @@
       const next = JSON.stringify([active, rows]);
       presence = { active, rows, at: Date.now() };
       if (next !== signature) {
-        signature = next;
+        signature = next;lastConfirmed=null;
         revision++;
-        speaker = null;
+        speaker = null;lastConfirmed=null;
         announceSpeaker();
         clearSelection();
         window.VP3VoiceGuard?.clear();
@@ -177,14 +177,16 @@
           : 'No participant assigned to this conversation turn.',
       );
     }
+    function beginVoiceAttribution(remote=false){lastConfirmed=null;clearSpeaker(remote);if(embed&&!remote)signal('attribution-start',{});}
     function confirmedVoice(value) {
       if(!assessVoice(value,{notify:false}).accepted)return;
+      lastConfirmed={...safePerson(value),at:Date.now()};
       if(embed)signal('task-heard',{...safePerson(value),matched_at:Date.now(),presence_key:signature});
       else window.VP3ParticipantUpdates?.heard(value);
     }
     function receiveTaskHeard(value) {
       const at=Date.now(),matched=value?.matched_at;
-      if(value&&value.presence_key===signature&&Number.isFinite(matched)&&matched<=at&&at-matched<3000&&assessVoice(value,{notify:false}).accepted)window.VP3ParticipantUpdates?.heard(safePerson(value));
+      if(value&&value.presence_key===signature&&Number.isFinite(matched)&&matched<=at&&at-matched<3000&&assessVoice(value,{notify:false}).accepted){lastConfirmed={...safePerson(value),at};window.VP3ParticipantUpdates?.heard(safePerson(value));}
     }
     function selectedContext() {
       if (!selectedParticipant || Date.now() - selectedParticipant.at > 1800000)
@@ -262,13 +264,22 @@
       ).catch(() => {});
     }
     function rejectCurrent(remote = false, id = '') {
+      window.VP3ParticipantRecovery?.capture?.();
       const current =
         speaker && Date.now() - speaker.at < 10000
           ? speaker
-          : presence.rows.length === 1
+          : lastConfirmed&&Date.now()-lastConfirmed.at<90000
+            ? lastConfirmed
+            : selectedContext()
+              ? selectedContext()
+              : presence.rows.length === 1
             ? presence.rows[0]
             : null;
       const participantId = String(id || current?.participant_id || '');
+      lastConfirmed=null;
+      window.STONEFELLOW_CHAT_CONTINUITY?.participantChanged?.();
+      window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:-1,reason:'correction'}}));
+      window.VP3ParticipantUpdates?.stop?.();
       if (participantId) rejected.set(participantId, Date.now() + 120000);
       speaker = null;
       announceSpeaker();
@@ -358,7 +369,7 @@
         if (token !== loadToken) return;
         editing = false;
         revision++;
-        speaker = null;
+        speaker = null;lastConfirmed=null;
         announceSpeaker();
         clearSelection();
         window.VP3VoiceGuard?.clear();
@@ -429,11 +440,11 @@
           : 'No participant assigned to this conversation turn.');
       }
     }, 1000);
-    const changeConversation=()=>{clearSelection();revision++;clearSpeaker();window.VP3VoiceGuard?.clear();};
+    const changeConversation=()=>{lastConfirmed=null;clearSelection();revision++;clearSpeaker();window.VP3VoiceGuard?.clear();};
     window.addEventListener('stonefellow:chat-context-changing',changeConversation);
     window.addEventListener('homeserver:chat-context-changing',changeConversation);
     window.addEventListener('vp3:participant-forgotten', (event) => {
-      clearSelection();
+      lastConfirmed=null;clearSelection();
       revision++;
       speaker = null;
       announceSpeaker();
@@ -450,7 +461,7 @@
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         clearSelection();
-        speaker = null;
+        speaker = null;lastConfirmed=null;
         announceSpeaker();
         presence = { active: false, rows: [], at: 0 };
         revision++;
@@ -463,7 +474,7 @@
       () => {
         clearInterval(timer);
         loadToken++;
-        speaker = null;
+        speaker = null;lastConfirmed=null;
         announceSpeaker();
       },
       { once: true },
@@ -473,6 +484,7 @@
       assessVoice,
       receiveSpeaker,
       confirmedVoice,
+      beginVoiceAttribution,
       receiveTaskHeard,
       activeSpeaker,
       clearSpeaker,
@@ -483,7 +495,7 @@
       snapshot: () => ({ active: presence.active, rows: presence.rows }),
       invalidate: () => {
         revision++;
-        speaker = null;
+        speaker = null;lastConfirmed=null;
         announceSpeaker();
         window.VP3VoiceGuard?.clear();
       },
