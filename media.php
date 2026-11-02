@@ -8,20 +8,29 @@ $trackId = (int)($_GET['track'] ?? 0);
 $type = (string)($_GET['type'] ?? 'audio');
 
 if ($trackId < 1 || !in_array($type, ['audio', 'cover'], true)) {
-    http_response_code(400);
-    exit('Invalid media request.');
+    music_media_error(400,'invalid_request','Invalid media request.');
 }
 
 $track = music_media_track($trackId, current_user());
 if (!$track) {
-    http_response_code(404);
-    exit('Media not found.');
+    music_media_error(404,'track_unavailable','Media not found or not accessible to this account.');
 }
 
 if (!can_view_track($track)) {
-    http_response_code(is_logged_in() ? 403 : 401);
-    header('Cache-Control: no-store');
-    exit('You do not have access to this media.');
+    music_media_error(is_logged_in()?403:401,'access_denied','You do not have access to this media.');
+}
+
+// Temporary owner-only playback diagnostics, requested only after a player failure.
+if(($_GET['debug']??'')==='1'&&current_user()&&can_manage_track_production($track,current_user())){
+    $saved=(string)($track[$type==='cover'?'cover_path':'audio_path']??'');
+    $checked=STONEFELLOW_ROOT.'/'.ltrim($saved,'/');
+    $resolved=music_media_local_path($saved);
+    $real=realpath($checked);$root=realpath(STONEFELLOW_ROOT);
+    $inside=$real&&$root&&str_starts_with($real,rtrim($root,DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR);
+    $exists=$inside&&is_file($real);$readable=$exists&&is_readable($real);
+    header('X-Stonefellow-Media-Debug: '.base64_encode(json_encode([
+        'stored_path'=>$saved,'checked_path'=>$checked,'file_exists'=>(bool)$exists,'readable'=>(bool)$readable,'bytes'=>$exists?(int)filesize($real):null,'playable_file_found'=>$resolved!==null,
+    ],JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE)));
 }
 
 // Resolve catalog artwork through its owned photo reference, including album inheritance.
@@ -42,7 +51,7 @@ if($type==='audio'&&$catalogId>0&&($pdo=db())){
     $catalog=artist_music_v185_public_track($pdo,$catalogId,current_user());
     $path=$catalog?artist_music_v185_resolve_audio($pdo,$catalog):null;
     if($path){
-        $mime=music_media_mime($path,'audio');if(!$mime){http_response_code(415);exit('Unsupported audio.');}
+        $mime=music_media_mime($path,'audio');if(!$mime){music_media_error(415,'unsupported_audio','Unsupported audio.');}
         music_media_send($path,$mime);
     }
 }
@@ -50,24 +59,21 @@ $relative=$type==='cover'?(string)($track['cover_path']??''):(string)($track['au
 if($type==='cover'&&$relative==='')$relative='/images/stonefellow-studio.png';
 
 if ($relative === '' || preg_match('#^https?://#i', $relative)) {
-    http_response_code(404);
-    exit('Media file is not available.');
+    music_media_error(404,$relative===''?'audio_path_empty':'stored_file_unavailable','Media file is not available.');
 }
 
 $absolute = music_media_local_path($relative);
 if(!$absolute && $type==='cover')$absolute=music_media_local_path('/images/stonefellow-studio.png');
 
 if (!$absolute) {
-    http_response_code(404);
-    exit('Media file is not available.');
+    music_media_error(404,'stored_file_unavailable','Media file is not available.');
 }
 
 $size = filesize($absolute);
 if ($size === false || $size < 1) {
-    http_response_code(404);
-    exit('Media file is empty.');
+    music_media_error(404,'file_empty','Media file is empty.');
 }
 
 $mime=music_media_mime($absolute,$type);
-if(!$mime){http_response_code(415);exit('Unsupported media.');}
+if(!$mime){music_media_error(415,'unsupported_audio','Unsupported media.');}
 music_media_send($absolute,$mime);

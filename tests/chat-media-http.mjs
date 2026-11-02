@@ -52,6 +52,10 @@ try {
   assert.equal((await read('/media.php?track=3&type=audio',{headers:owner})).status,404,'Missing full-song audio fabricated');
   response=await read('/media.php?track=2&type=audio');assert.equal(response.status,200,'Stale catalog reference blocked valid backing audio');assert.deepEqual(Buffer.from(await response.arrayBuffer()),wav);
   response=await read('/media.php?track=1000000099&type=audio');assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),stale,'Native catalog audio still resolves through its owned store');
+  response=await read('/media.php?track=1&type=audio&debug=1',{method:'HEAD',headers:owner});assert.equal(response.status,200);const debug=JSON.parse(Buffer.from(response.headers.get('X-Stonefellow-Media-Debug'),'base64').toString());assert.equal(debug.stored_path,'/song.wav');assert.equal(debug.file_exists,true);assert.equal(debug.readable,true);assert.equal(debug.bytes,wav.length);
+  response=await read('/media.php?track=2&type=audio&debug=1',{method:'HEAD'});assert.equal(response.headers.get('X-Stonefellow-Media-Debug'),null,'Anonymous listener received storage paths');
+  response=await read('/media.php?track=3&type=audio&debug=1',{method:'HEAD',headers:owner});assert.equal(response.status,404);assert.equal(response.headers.get('X-Stonefellow-Media-Status'),'audio_path_empty');
+  response=await read('/media.php?track=1&type=audio&debug=1',{method:'HEAD',headers:{'X-Fixture-User':'12'}});assert.equal(response.headers.get('X-Stonefellow-Media-Debug'),null,'Foreign viewer received storage paths');
   response=await read('/media.php?track=1&type=audio',{headers:{...owner,Range:'bytes=999999-'}});assert.equal(response.status,416);assert.equal(response.headers.get('content-range'),`bytes */${wav.length}`);
 
   if(process.argv.includes('--browser')) {
@@ -65,7 +69,7 @@ try {
     await page.goto(base+'/browser.html');await page.waitForTimeout(350);assert.equal(requested.length,0,'Hidden players fetched media at page load');
     await page.locator('audio').first().evaluate(audio=>audio.play());await page.waitForFunction(()=>document.querySelector('audio').currentTime>0);
     assert.equal(await page.locator('audio').first().evaluate(audio=>Math.round(audio.duration)),1,'Valid draft audio failed to decode');
-    await page.locator('#missing').evaluate(audio=>audio.play().catch(()=>{}));await page.locator('[data-chat-media-status]').waitFor();assert.match(await page.locator('[data-chat-media-status]').textContent(),/Audio is unavailable/);
+    await page.locator('#missing').evaluate(audio=>audio.play().catch(()=>{}));await page.locator('[data-chat-media-status]').waitFor();assert.match(await page.locator('[data-chat-media-status]').textContent(),/Audio is unavailable/);await page.waitForFunction(()=>document.querySelector('[data-chat-media-status]').textContent.includes('HTTP 404'));assert.match(await page.locator('[data-chat-media-status]').textContent(),/audio_path_empty/);assert.match(await page.locator('[data-chat-media-status]').textContent(),/Saved path: \(empty\)/);
     console.log('CHAT_MEDIA_BROWSER=PASS zero-eager-requests draft-playback failure-feedback');
     // The actual custom-player handler must start audible audio with no
     // volume preference, rather than just testing native audio.play().

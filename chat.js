@@ -1420,12 +1420,36 @@
       status.dataset.chatMediaStatus = '';
       status.setAttribute('role', 'status');
       status.setAttribute('aria-live', 'polite');
+      status.style.whiteSpace='pre-wrap';
       host.appendChild(status);
     }
-    if (status) {
-      status.hidden = !failed;
-      status.textContent = failed ? 'Audio is unavailable. Open Stem Studio or Song Info to check the file and your access.' : '';
+    if(!status)return;
+    const marker={};status.mediaDebugMarker=marker;
+    status.hidden=!failed;
+    if(!failed){status.textContent='';return;}
+    const source=audio.currentSrc||audio.getAttribute('src')||'';
+    let url;try{url=new URL(source,location.href);}catch{status.textContent='Audio is unavailable. Debug: no valid audio URL.';return;}
+    const track=url.searchParams.get('track')||audio.dataset.trackId||'';
+    const stem=url.searchParams.get('id')||'';
+    const browserCode=Number(audio.error?.code||0);
+    const heading=`Audio is unavailable. Playback debug${track?' · track #'+track:stem?' · stem #'+stem:''} · browser error ${browserCode}.`;
+    status.textContent=heading+' Checking the media endpoint…';
+    if(url.origin!==location.origin||!/^\/(?:.*\/)?(?:media|stem-media(?:-v34)?)\.php$/.test(url.pathname)){
+      status.textContent=heading+' Diagnostic request skipped for an external or unsupported endpoint.';return;
     }
+    url.searchParams.set('debug','1');
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+    fetch(url.href,{method:'HEAD',credentials:'same-origin',cache:'no-store',redirect:'manual',signal:controller.signal}).then(response=>{
+      if(status.mediaDebugMarker!==marker||!status.isConnected||(audio.currentSrc||audio.getAttribute('src')||'')!==source)return;
+      const raw=response.headers.get('X-Stonefellow-Media-Status')||'unknown';
+      const reason=/^[a-z0-9_-]{1,64}$/i.test(raw)?raw:'unknown';
+      const meanings={track_unavailable:'Track not found or unavailable to this account.',access_denied:'Track access denied.',audio_path_empty:'No audio path is saved on this track.',stored_file_unavailable:'The saved file path could not be resolved to readable, non-empty audio.',file_empty:'The saved audio file is empty.',file_unreadable:'The audio file could not be opened.',unsupported_audio:'The server did not recognize a supported audio format.',ok:'The server can serve audio. Check browser format/decoding if playback still fails.'};
+      const type=(response.headers.get('Content-Type')||'unknown').split(';')[0].slice(0,80);
+      let detail='';try{const encoded=response.headers.get('X-Stonefellow-Media-Debug');if(encoded){const d=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded),c=>c.charCodeAt(0))));detail='\nSaved path: '+String(d.stored_path||'(empty)').slice(0,1200)+'\nChecked location: '+String(d.checked_path||'').slice(0,1600)+'\nFile exists: '+(d.file_exists===true?'yes':'no')+' · readable: '+(d.readable===true?'yes':'no')+' · bytes: '+(Number.isFinite(d.bytes)?d.bytes:'unknown');}}catch{}
+      status.textContent=heading+'\n'+url.pathname+' · HTTP '+response.status+' · '+reason+' · '+type+'\n'+(response.type==='opaqueredirect'?'The request redirected; your sign-in may have expired.':meanings[reason]||'Copy this notification so we can trace the server response.')+detail;
+    }).catch(error=>{
+      if(status.mediaDebugMarker===marker&&status.isConnected)status.textContent=heading+' Debug request '+(error.name==='AbortError'?'timed out.':'failed before an HTTP response was received.');
+    }).finally(()=>clearTimeout(timer));
   }
 
   // Media errors do not bubble. Capture them for native stem controls and custom players.

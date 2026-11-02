@@ -1,6 +1,17 @@
 <?php
 declare(strict_types=1);
 
+/** Safe diagnostics: codes describe the failure without disclosing storage paths. */
+function music_media_error(int $status,string $reason,string $message): never
+{
+    http_response_code($status);
+    header('Cache-Control: no-store');
+    header('Content-Type: text/plain; charset=UTF-8');
+    header('X-Stonefellow-Media-Status: '.$reason);
+    header('X-Content-Type-Options: nosniff');
+    exit($message);
+}
+
 /** Draft production media is private to the owning production workspace. */
 function music_media_track(int $trackId, ?array $viewer): ?array
 {
@@ -37,14 +48,14 @@ function music_media_range(string $range,int $size): ?array
 
 function music_media_send(string $path,string $mime): never
 {
-    if(!in_array($_SERVER['REQUEST_METHOD']??'GET',['GET','HEAD'],true)){header('Allow: GET, HEAD');http_response_code(405);exit;}
+    if(!in_array($_SERVER['REQUEST_METHOD']??'GET',['GET','HEAD'],true)){header('Allow: GET, HEAD');music_media_error(405,'method_not_allowed','Use GET or HEAD.');}
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
-    $size=filesize($path);if($size===false||$size<1){http_response_code(404);exit('Media is unavailable.');}
+    $size=filesize($path);if($size===false||$size<1){music_media_error(404,'file_empty','Media is unavailable.');}
     $range=music_media_range((string)($_SERVER['HTTP_RANGE']??''),$size);
-    header('Accept-Ranges: bytes');header('Cache-Control: private, no-cache, no-transform');header('X-Content-Type-Options: nosniff');
+    header('X-Stonefellow-Media-Status: ok');header('Accept-Ranges: bytes');header('Cache-Control: private, no-cache, no-transform');header('X-Content-Type-Options: nosniff');
     if(!$range){header('Content-Range: bytes */'.$size);http_response_code(416);exit;}
     [$start,$end,$status]=$range;$length=$end-$start+1;
-    $handle=fopen($path,'rb');if(!$handle){http_response_code(404);exit;}
+    $handle=fopen($path,'rb');if(!$handle)music_media_error(404,'file_unreadable','Media is unavailable.');
     if($start>0&&fseek($handle,$start)!==0){fclose($handle);http_response_code(500);exit;}
     http_response_code($status);header('Content-Type: '.$mime);header('Content-Length: '.$length);
     if($status===206)header('Content-Range: bytes '.$start.'-'.$end.'/'.$size);

@@ -39,9 +39,17 @@ for(const file of ['chat.js','chat-legacy-v108.php'])assert.doesNotMatch(fs.read
 const errorUi=source.slice(source.indexOf('  function showChatMediaError('),source.indexOf('  // Media errors do not bubble.'));
 context.audioFeedbackHosts=new WeakMap();
 let node;const host={querySelector:()=>node,appendChild:value=>{node=value;}};
-context.document.createElement=()=>({dataset:{},setAttribute:()=>{}});
+context.document.createElement=()=>({dataset:{},style:{},isConnected:true,setAttribute:()=>{}});
+context.URL=URL;context.location={href:'https://app.test/chat.php',origin:'https://app.test'};
 vm.runInContext(errorUi+'\nglobalThis.showError=showChatMediaError;',context);
-const audio={closest:()=>host};context.showError(audio,true);assert.match(node.textContent,/Audio is unavailable/);assert.equal(node.hidden,false);
+const audio={closest:()=>host,getAttribute:()=>'',dataset:{}};context.showError(audio,true);assert.match(node.textContent,/Audio is unavailable/);assert.equal(node.hidden,false);
 const first=node;context.showError(audio,true);assert.equal(node,first,'Repeated errors duplicated status');context.showError(audio,false);assert.equal(node.hidden,true);
-const hiddenAudio={closest:()=>null,parentElement:null};context.audioFeedbackHosts.set(hiddenAudio,host);context.showError(hiddenAudio,true);assert.equal(node.hidden,false,'Full-song failure stayed inside a hidden player');
+const hiddenAudio={closest:()=>null,parentElement:null,getAttribute:()=>'',dataset:{}};context.audioFeedbackHosts.set(hiddenAudio,host);context.showError(hiddenAudio,true);assert.equal(node.hidden,false,'Full-song failure stayed inside a hidden player');
+// A successful retry must stay successful even if the old debug HEAD finishes late.
+context.setTimeout=()=>1;context.clearTimeout=()=>{};let debugFinish;
+context.fetch=(_url,options)=>{assert.equal(options.method,'HEAD');assert.equal(options.redirect,'manual');return new Promise(resolve=>{debugFinish=resolve;});};
+const failedAudio={closest:()=>host,currentSrc:'https://app.test/media.php?track=9&type=audio',dataset:{trackId:'9'},error:{code:4}};
+context.showError(failedAudio,true);assert.match(node.textContent,/track #9/);context.showError(failedAudio,false);
+debugFinish({status:404,type:'basic',headers:{get:name=>name==='X-Stonefellow-Media-Status'?'audio_path_empty':null}});
+await Promise.resolve();await Promise.resolve();assert.equal(node.hidden,true);assert.equal(node.textContent,'','Late diagnostic replaced successful playback');
 console.log('CHAT_LOAD_RUNTIME=PASS missing-status timeout retry lazy-audio error-feedback');
