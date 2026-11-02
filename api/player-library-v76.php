@@ -113,7 +113,7 @@ function player_library_visible_track_ids(
     $allowed = [];
 
     foreach ($ids as $trackId) {
-        $track = get_track_by_id((int)$trackId);
+        $track = music_media_track((int)$trackId,$user);
 
         if ($track && can_view_track($track, $user)) {
             $allowed[] = (int)$trackId;
@@ -126,7 +126,7 @@ function player_library_visible_track_ids(
 try {
     if($action==='recent_history'){
         $tracks=player_recent_history($user,[],12);
-        player_library_json(true,['tracks'=>array_map(static fn(array $track):array=>[
+        player_library_json(true,['user_id'=>$userId,'tracks'=>array_map(static fn(array $track):array=>[
             ...track_media_payload($track),
             'last_played_at'=>date('c',strtotime((string)$track['last_played_at'])),
             'last_position_seconds'=>(float)$track['last_position_seconds'],
@@ -383,7 +383,7 @@ try {
         $pdo->beginTransaction();
         $lock=$pdo->prepare('SELECT id FROM playlists WHERE id=? AND owner_user_id=? FOR UPDATE');$lock->execute([$playlistId,$userId]);if(!$lock->fetchColumn())throw new RuntimeException('Playlist is unavailable.');
         $playlist = player_library_playlist($pdo, $playlistId);
-        $track = get_track_by_id($trackId);
+        $track = music_media_track($trackId,$user);
 
         if (
             !$playlist ||

@@ -92,6 +92,7 @@ jobs:
         run: node tests/agent-missions-cloud-a5c5-browser.mjs
       - name: Compact Chat canvas and routed voice conversation
         run: |
+          node tests/chat-listening-continuation-browser.mjs
           node tests/music-file-repair-api.mjs
           node tests/music-file-repair-browser.mjs
           php tests/music-project-import.php
