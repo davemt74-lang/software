@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'voice-learning-v1-20261101';
-$controlBuild .= '-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
+$controlBuild .= '-participant-updates-20261102-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351-speech-recovery-20261031-mic-startup-20261101';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer-r3' . '-voice-v1351';
@@ -430,7 +430,7 @@ $cognitiveCardsRuntime = '<link rel="stylesheet" data-cognitive-cards-v520 href=
 
 $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-task-notes-v1.css?v=20261101')).'">'
     . '<script>window.VP3_TASK_NOTES_V1='.json_encode(['endpoint'=>url('/api/task-notes-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
-    . '<script src="'.e(url('/chat-task-notes-v1.js?v=20261101')).'"></script>';
+    . '<script src="'.e(url('/chat-task-notes-v1.js?v=participant-updates-v1')).'"></script>';
 
 $cognitiveFeedRuntime = '<link rel="stylesheet" data-cognitive-feed-v530 href="' . e(url('/chat-cognitive-feed-v530.css?v=' . $cognitiveFeedAssetBuild . '-' . $onboardingActivationAssetBuild)) . '">'
     . '<script data-cognitive-feed-config>window.VP3_COGNITIVE_FEED_V530='

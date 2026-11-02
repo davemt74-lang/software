@@ -45,7 +45,7 @@
       };
       window.addEventListener('message',commands);timer=setInterval(announce,250);
       window.addEventListener('vp3:voice-filter-status',event=>parent.postMessage({channel:'vp3-orb',kind:'voice-filter-status',message:String(event.detail?.message||'').slice(0,300)},origin));
-      window.VP3AgentOrb={participantSignal:(kind,value)=>{if(['speaker','reject','selection'].includes(kind))parent.postMessage({channel:'vp3-orb',kind:'participant-'+kind,value},origin);}};
+      window.VP3AgentOrb={participantSignal:(kind,value)=>{if(['speaker','task-heard','reject','selection'].includes(kind))parent.postMessage({channel:'vp3-orb',kind:'participant-'+kind,value},origin);}};
       parent.postMessage({channel:'vp3-orb',kind:'ready'},origin);
       window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);window.removeEventListener('message',commands);},{once:true});
       return;
@@ -100,6 +100,7 @@
       if(data.kind==='user-turn')void Promise.resolve(window.VP3AgentEyes?.hear?.(String(data.text||'').slice(0,240),{voice:data.voice===true,known_voice:data.known_voice===true})).finally(()=>{if(typeof data.photoRoute==='string'&&data.photoRoute.length<=64)frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'photo-reply-complete',id:data.photoRoute},origin);}).catch(()=>{});
       if(data.kind==='ready'){frame.contentWindow.postMessage({channel:'vp3-orb',kind:'introduction-window',mode:introductionMode},origin);frame.contentWindow.postMessage({channel:'vp3-orb',kind:'participant-presence',value:window.VP3ParticipantContinuity?.snapshot()},origin);frame.contentWindow.postMessage({channel:'vp3-orb',kind:'participant-selection',value:window.VP3ParticipantContinuity?.selectedContext()},origin);}
       if(data.kind==='participant-selection')window.VP3ParticipantContinuity?.setSelection(data.value,true);
+      if(data.kind==='participant-task-heard')window.VP3ParticipantContinuity?.receiveTaskHeard(data.value);
       if(data.kind==='participant-speaker')window.VP3ParticipantContinuity?.receiveSpeaker(data.value);
       if(data.kind==='participant-reject')window.VP3ParticipantContinuity?.rejectCurrent(false,String(data.value?.participant_id||''));
       if(data.kind==='state'&&data.conversation)rememberRef(data.conversation);

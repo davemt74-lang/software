@@ -28,6 +28,7 @@ function vp3_task_list_authorize_v1(PDO $pdo,array $u,array $p,int $cid): void
 {
     $q=$pdo->prepare('SELECT is_active FROM users WHERE id=?');$q->execute([(int)$u['id']]);
     if(!$q->fetchColumn()||!knowledge_retrieval_v162_owner_session($u,$p)||!has_permission('account.access',$u)||!has_permission('chat.access',$u)||!personal_capability_has_v242('agent_brain.access',$u))throw new RuntimeException('Task and list access is unavailable.',403);
+    if(function_exists('vp3_participant_scope_check_v1'))vp3_participant_scope_check_v1($pdo,$u,$p);
     if($cid>0){$aid=vp3_task_list_agent_v1($p);$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? AND '.($aid?'user_agent_id=?':'user_agent_id IS NULL'));$q->execute($aid?[$cid,(int)$u['id'],$aid]:[$cid,(int)$u['id']]);if(!$q->fetchColumn())throw new RuntimeException('Conversation not found.',403);}
 }
 function vp3_task_list_pending_v1(PDO $pdo,array $u,array $p,array $ctx): ?array
@@ -40,14 +41,16 @@ function vp3_task_list_pending_v1(PDO $pdo,array $u,array $p,array $ctx): ?array
     if(!is_string($token)||!preg_match('/^[a-f0-9]{32}$/D',$token))return null;
     $q=$pdo->prepare("SELECT COUNT(*) FROM chat_messages WHERE conversation_id=? AND role='user' AND id>?");$q->execute([$cid,(int)$row['id']]);if((int)$q->fetchColumn()>1)return null;
     $q=$pdo->prepare("SELECT * FROM agent_task_list_actions_v1 WHERE token=? AND owner_user_id=? AND agent_scope_id=? AND conversation_id=? AND status='prepared' AND expires_at>=?");$q->execute([$token,(int)$u['id'],vp3_task_list_agent_v1($p),$cid,time()]);$action=$q->fetch(PDO::FETCH_ASSOC);
+    if(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)return null;
     return $action?['token'=>$token,'action'=>json_decode($action['action_json'],true)]:null;
 }
 function vp3_task_list_find_v1(PDO $pdo,array $u,array $p,string $name): ?array
 {
-    $q=$pdo->prepare('SELECT * FROM agent_task_lists_v1 WHERE owner_user_id=? AND agent_scope_id=? AND name_key=?');$q->execute([(int)$u['id'],vp3_task_list_agent_v1($p),vp3_task_list_key_v1($name)]);return $q->fetch(PDO::FETCH_ASSOC)?:null;
+    $q=$pdo->prepare('SELECT * FROM agent_task_lists_v1 WHERE owner_user_id=? AND agent_scope_id=? AND name_key=?');$q->execute([(int)$u['id'],vp3_task_list_agent_v1($p),vp3_task_list_key_v1($name)]);$row=$q->fetch(PDO::FETCH_ASSOC)?:null;return $row&&(!function_exists('vp3_participant_resource_v1')||vp3_participant_resource_v1($pdo,$u,$p,'task_list',(int)$row['id']))?$row:null;
 }
 function vp3_task_list_task_allowed_v1(PDO $pdo,array $u,array $p,int $id): bool
 {
+    if(function_exists('vp3_participant_resource_v1')&&!vp3_participant_resource_v1($pdo,$u,$p,'task',$id))return false;
     return vp3_task_list_agent_v1($p)===0||!function_exists('user_data_policy_can_use_v236')||user_data_policy_can_use_v236($pdo,$p,(int)$u['id'],'knowledge','brain:'.$id,false);
 }
 function vp3_task_list_existing_task_v1(PDO $pdo,array $u,array $p,int $id): array
@@ -55,13 +58,15 @@ function vp3_task_list_existing_task_v1(PDO $pdo,array $u,array $p,int $id): arr
     $aid=vp3_task_list_agent_v1($p);$q=$pdo->prepare("SELECT id,subject FROM agent_memory_items WHERE id=? AND user_id=? AND ".($aid?'user_agent_id=?':'user_agent_id IS NULL')." AND is_active=1 AND memory_type IN ('task','commitment')");$q->execute($aid?[$id,(int)$u['id'],$aid]:[$id,(int)$u['id']]);$t=$q->fetch(PDO::FETCH_ASSOC);
     if(!$t||!vp3_task_list_task_allowed_v1($pdo,$u,$p,$id))throw new RuntimeException('Task unavailable in this Agent.',403);return $t;
 }
-function vp3_task_list_note_v1(PDO $pdo,array $u,array $p,int $id): array
+function vp3_task_list_note_v1(PDO $pdo,array $u,array $p,int $id,int $limit=200): array
 {
+    $limit=max(1,min(200,$limit));
     vp3_task_list_authorize_v1($pdo,$u,$p,0);
+    if(function_exists('vp3_participant_require_resource_v1'))vp3_participant_require_resource_v1($pdo,$u,$p,'task_list',$id);
     $aid=vp3_task_list_agent_v1($p);$q=$pdo->prepare('SELECT * FROM agent_task_lists_v1 WHERE id=? AND owner_user_id=? AND agent_scope_id=?');$q->execute([$id,(int)$u['id'],$aid]);$list=$q->fetch(PDO::FETCH_ASSOC);if(!$list)throw new RuntimeException('List not found.',404);
-    $q=$pdo->prepare("SELECT t.id,t.subject,t.metadata_json FROM agent_task_list_items_v1 i JOIN agent_memory_items t ON t.id=i.task_id WHERE i.list_id=? AND t.user_id=? AND ".($aid?'t.user_agent_id=?':'t.user_agent_id IS NULL')." AND t.is_active=1 AND t.memory_type IN ('task','commitment') ORDER BY i.created_at,t.id LIMIT 201");$q->execute($aid?[$id,(int)$u['id'],$aid]:[$id,(int)$u['id']]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);$items=[];
-    foreach(array_slice($rows,0,200) as $t){if(!vp3_task_list_task_allowed_v1($pdo,$u,$p,(int)$t['id']))continue;$meta=json_decode((string)$t['metadata_json'],true);$status=$meta['task_status']??'open';$items[]=['id'=>(int)$t['id'],'title'=>$t['subject'],'status'=>$status,'done'=>in_array($status,['completed','cancelled'],true)];}
-    return ['kind'=>'task_list','id'=>$id,'title'=>$list['name'],'items'=>$items,'truncated'=>count($rows)>200];
+    $q=$pdo->prepare("SELECT t.id,t.subject,t.metadata_json FROM agent_task_list_items_v1 i JOIN agent_memory_items t ON t.id=i.task_id WHERE i.list_id=? AND t.user_id=? AND ".($aid?'t.user_agent_id=?':'t.user_agent_id IS NULL')." AND t.is_active=1 AND t.memory_type IN ('task','commitment') ORDER BY i.created_at,t.id LIMIT ".($limit+1));$q->execute($aid?[$id,(int)$u['id'],$aid]:[$id,(int)$u['id']]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);$items=[];
+    foreach(array_slice($rows,0,$limit) as $t){if(!vp3_task_list_task_allowed_v1($pdo,$u,$p,(int)$t['id']))continue;$meta=json_decode((string)$t['metadata_json'],true);$status=$meta['task_status']??'open';$items[]=['id'=>(int)$t['id'],'title'=>$t['subject'],'status'=>$status,'done'=>in_array($status,['completed','cancelled'],true)];}
+    return ['kind'=>'task_list','id'=>$id,'title'=>$list['name'],'items'=>$items,'truncated'=>count($rows)>$limit];
 }
 function vp3_task_list_result_v1(string $text,string $op,string $status='read_complete',int $id=0,int $count=0): array
 {
@@ -78,6 +83,7 @@ function vp3_task_list_prepare_v1(PDO $pdo,array $u,array $p,int $cid,array $act
 }
 function vp3_task_list_save_task_v1(PDO $pdo,array $u,array $p,string $title,?array $list,string $identity,int $cid): int
 {
+    if(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null){if(!$list)throw new RuntimeException('Ask the account owner to create and share a list first.',403);vp3_participant_require_resource_v1($pdo,$u,$p,'task_list',(int)$list['id'],true);}
     if($list){$q=$pdo->prepare('SELECT task_id FROM agent_task_list_items_v1 WHERE list_id=? AND item_key=?');$q->execute([(int)$list['id'],vp3_task_list_key_v1($title)]);$existing=(int)$q->fetchColumn();if($existing){vp3_task_list_existing_task_v1($pdo,$u,$p,$existing);return $existing;}}
     $old=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??null;vp3_agent_memory_scope_set_current_v410((int)$u['id'],vp3_task_list_agent_v1($p));
     try{
@@ -101,7 +107,7 @@ function vp3_task_list_execute_v1(PDO $pdo,array $u,array $p,array $plan,array $
         $name=vp3_task_list_text_v1($plan['list_name']??'',120);$title=vp3_task_list_text_v1($plan['title']??'',180);$existingId=(int)($plan['task_id']??0);
         if($existingId){$existingTask=vp3_task_list_existing_task_v1($pdo,$u,$p,$existingId);$title=$existingTask['subject'];}
         if($op==='show_lists'){
-            $q=$pdo->prepare('SELECT id,name FROM agent_task_lists_v1 WHERE owner_user_id=? AND agent_scope_id=? ORDER BY name LIMIT 101');$q->execute([$uid,$aid]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);
+            $q=$pdo->prepare('SELECT id,name FROM agent_task_lists_v1 WHERE owner_user_id=? AND agent_scope_id=? ORDER BY name LIMIT 101');$q->execute([$uid,$aid]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);if(function_exists('vp3_participant_resource_v1'))$rows=array_values(array_filter($rows,fn($r)=>vp3_participant_resource_v1($pdo,$u,$p,'task_list',(int)$r['id'])));
             return vp3_task_list_result_v1($rows?"Your lists:\n".implode("\n",array_map(static fn($r)=>$r['name'],array_slice($rows,0,100))).(count($rows)>100?"\nShowing the first 100 lists.":''):'You have no saved lists yet.','show_lists',$rows?'read_complete':'no_matches',0,min(count($rows),100));
         }
         if($op==='show'){
@@ -127,6 +133,7 @@ function vp3_task_list_execute_v1(PDO $pdo,array $u,array $p,array $plan,array $
             if($name==='')throw new InvalidArgumentException('Which list should I use?');
             if($op==='add'&&$title==='')throw new InvalidArgumentException('What should I add to “'.$name.'”?');
             $list=vp3_task_list_find_v1($pdo,$u,$p,$name);
+            if(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null){if(!$list)throw new RuntimeException('Ask the account owner to create and share this list first.',403);vp3_participant_require_resource_v1($pdo,$u,$p,'task_list',(int)$list['id'],true);}
             if(!$list&&!$pending){$r=vp3_task_list_prepare_v1($pdo,$u,$p,$cid,['action'=>$op,'list_name'=>$name,'title'=>$title,'task_id'=>$existingId]);$pdo->commit();return $r;}
             $created=false;
             if(!$list){$pdo->prepare('INSERT INTO agent_task_lists_v1(owner_user_id,agent_scope_id,name,name_key,created_at) VALUES(?,?,?,?,?)')->execute([$uid,$aid,$name,vp3_task_list_key_v1($name),gmdate('Y-m-d\TH:i:s\Z')]);$list=vp3_task_list_find_v1($pdo,$u,$p,$name);if(!$list)throw new RuntimeException('List save was not verified.');$created=true;}

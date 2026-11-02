@@ -375,6 +375,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             reminder_schema_v1($pdo);
             require_once __DIR__.'/includes/agent-task-lists-v1.php';
             vp3_task_lists_schema_v1($pdo);
+            require_once __DIR__.'/includes/participant-updates-v1.php';
+            vp3_participant_updates_schema_v1($pdo);
             crm_v180_ensure_schema();
             campaigns_rewards_platform_ensure_schema_v100($pdo);
             campaigns_rewards_ensure_schema_v100($pdo);

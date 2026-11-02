@@ -135,6 +135,12 @@
     window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
     recoveryStatus();
   }
+  window.addEventListener('vp3:participant-task-context',()=>{
+    if(!pendingSend)return;
+    const request=pendingSend;keepDraft(request.message,request.conversationId);chatRevision++;
+    clearTimeout(request.timer);request.controller.abort();request.typing?.remove();pendingSend=null;busy=false;send.disabled=false;input.disabled=false;showStop();
+    recoveryStatus('Participant changed. Previous response stopped.');
+  });
   function clearPrivateRecovery() {
     leaveChat();
     try { sessionStorage.removeItem(recoveryKey); localStorage.removeItem(selectionKey); } catch (_) {}

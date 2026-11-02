@@ -73,6 +73,7 @@ jobs:
           node tests/activity-center-layout-browser.mjs
           node tests/agent-voice-guard-browser.mjs
           node tests/participant-continuity-browser.mjs
+          node tests/participant-updates-browser.mjs
           node tests/participant-tracking-browser.mjs
           node tests/tv-watching-browser.mjs
           node tests/trained-voice-core.mjs

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/studio-participants.php';
+require_once __DIR__.'/participant-updates-v1.php';
 
 /** Browser reports are conversational context, never identity or action authority. */
 function vp3_eyes_event(PDO $pdo,array $user,array $input): array
@@ -48,6 +49,9 @@ function vp3_eyes_record(PDO $pdo,array $user,array $input): array
             'participant_id'=>$event['participant_id'],'identity_source'=>$event['identity_source'],
             'authentication_authority'=>false,'occurred_at'=>(string)($row['occurred_at']??$row['received_at']??''),
         ],0.5);
+    }
+    if(empty($result['duplicate'])&&(int)$event['participant_id']>0&&in_array($event['event_type'],['arrival','voice_turn','identity_changed'],true)){
+        try{vp3_participant_observed_v1($pdo,$user,(int)$event['participant_id'],$event['event_type']==='voice_turn'?'heard':'seen');}catch(Throwable $e){error_log('Participant presence update unavailable.');}
     }
     return ['event'=>$event,'stored_id'=>$id,'duplicate'=>!empty($result['duplicate'])];
 }

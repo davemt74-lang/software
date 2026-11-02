@@ -44,6 +44,7 @@
     trainedVoiceUrl:cfg.trainedVoiceUrl,trainedVoiceSource:'cloud',
     conversationRef:()=>window.STONEFELLOW_CHAT_CONTINUITY?.isRestoring?.()||window.STONEFELLOW_CHAT_CONTINUITY?.isReady?.()===false?null:({id:window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()||0,agent:Number(window.STONEFELLOW_CHAT?.agentId||0)}),
     conversationUrl:ref=>{const u=new URL(cfg.chatUrl,location.href);if(Number.isSafeInteger(Number(ref?.id))&&Number(ref.id)>0){u.searchParams.set('conversation_id',String(ref.id));u.searchParams.set('agent',Number(ref.agent)>0?String(Number(ref.agent)):'system');}return u.href;},
+    participantUpdates:body=>api(cfg.participantUpdatesEndpoint,{...body,agent_id:Number(adapter.conversationRef()?.agent)||0}),
     participantDetails:async id=>(await api(cfg.participantsEndpoint+'?action=agent_details&participant_id='+encodeURIComponent(id))).participant,
     saveParticipantDetails:async({id,name,note,isCurrent})=>{if(!isCurrent())throw Error('Participant update stopped.');return (await api(cfg.participantsEndpoint,{action:'save_agent_details',participant_id:Number(id),display_name:name,conversation_note:note})).participant;},
     participantSyncStatus:async()=>({text:'Saved in Cloud. A paired HomeServer receives participant text through workspace sync. Recognition samples stay local.'}),

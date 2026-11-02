@@ -512,6 +512,22 @@ try {
   await page.evaluate(()=>VP3ConversationControls.stop());
   console.log('PASS voice preparation errors release the pending turn and the next request works without reload or replay');
 
+  await page.evaluate(()=>{window.spoken=[];VP3ConversationControls.listen();});
+  await page.waitForFunction(()=>recognizers.some(r=>r.active));
+  let releaseParticipantSend;sendGate=new Promise(resolve=>{releaseParticipantSend=resolve;});
+  const participantSendStart=sends().length;
+  await speak('Show updates for the previous participant');await page.clock.runFor(2300);
+  await page.waitForFunction(()=>document.querySelector('#chatInput').disabled);
+  for(let i=0;i<100&&sends().length<participantSendStart+1;i++)await page.waitForTimeout(20);
+  assert.equal(sends().length,participantSendStart+1);
+  await page.evaluate(()=>{STONEFELLOW_CHAT_CONTINUITY.participantChanged();window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:702}}));});
+  releaseParticipantSend();sendGate=null;await page.clock.runFor(1200);
+  await page.waitForFunction(()=>!document.querySelector('#chatInput').disabled);
+  assert.equal(await page.evaluate(()=>window.spoken.length),0,'A previous participant response cannot speak after the participant changes');
+  assert.equal(await page.evaluate(()=>VP3ConversationControls.isEnabled()),true,'Participant change keeps the listening preference enabled');
+  await page.evaluate(()=>VP3ConversationControls.stop());
+  console.log('PASS participant change cancels a delayed Chat response and preserves listening');
+
   await page.evaluate(()=>{window.STONEFELLOW_TRANSCRIPTION_CANVAS={selection:()=>({session_id:21,view:'home'})};});
   await page.locator('#chatInput').fill('Read the selected transcript');
   await page.locator('#chatForm').evaluate(form=>form.requestSubmit());

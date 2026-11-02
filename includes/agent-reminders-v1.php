@@ -166,6 +166,7 @@ function reminder_execute_v1(PDO $pdo,int $uid,string $thread,string $key,string
     $now??=reminder_now_v1();$stamp=reminder_utc_v1($now);$hash=hash('sha256',$query);$op=$plan['operation']??'';
     if(!in_array($op,['none','clarify','create','list','update','complete','snooze','dismiss','cancel','delete'],true))throw new InvalidArgumentException('Invalid reminder operation.');
     $pdo->beginTransaction();try{
+        if(function_exists('vp3_participant_reminder_authorize_v1'))vp3_participant_reminder_authorize_v1($pdo,$uid,$plan);
         $q=$pdo->prepare('SELECT result_json,payload_hash FROM agent_reminder_turns_v1 WHERE owner_user_id=? AND thread_key=? AND request_key=?'.reminder_lock_v1($pdo));$q->execute([$uid,$thread,$key]);$receipt=$q->fetch(PDO::FETCH_ASSOC);
         if($receipt){if(!hash_equals($receipt['payload_hash'],$hash))throw new RuntimeException('Reminder request changed. Send a new request.',409);$pdo->commit();return json_decode($receipt['result_json'],true,32,JSON_THROW_ON_ERROR);}
         $result=['handled'=>$op!=='none','answer'=>'','actions'=>[],'sources'=>[],'reminder_pending'=>$op==='clarify'];$focus=0;$pending=[];
