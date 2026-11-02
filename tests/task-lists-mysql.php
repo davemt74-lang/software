@@ -28,6 +28,12 @@ try{
  vp3_participant_updates_schema_v1($pdo);vp3_participant_updates_schema_v1($pdo);ck(vp3_participant_updates_ready_v1($pdo),'Participant MySQL schema is ready and idempotent.');
  $pdo->exec('INSERT INTO agent_participant_settings_v1(owner_user_id,enabled,self_participant_id,offer_updates) VALUES(1,1,7,1)');
  $list=(int)$pdo->query('SELECT id FROM agent_task_lists_v1 LIMIT 1')->fetchColumn();$pdo->exec("INSERT INTO agent_participant_grants_v1(owner_user_id,participant_id,agent_scope_id,resource_kind,resource_id,access_mode) VALUES(1,8,7,'task_list',$list,'edit')");
+ $currentRead=vp3_participant_with_scope_v1($pdo,$u,$p,8,true,function()use($pdo,$u,$p,$list,$dsn,$name){
+  $other=new PDO($dsn,'root',(string)getenv('VP3_SECTION7_MYSQL_PASSWORD'),[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$other->exec('USE `'.$name.'`');$pdo->beginTransaction();
+  try{$pdo->query('SELECT recognition_consent FROM studio_participants WHERE id=8')->fetchColumn();$other->exec('UPDATE studio_participants SET recognition_consent=0 WHERE id=8');
+   try{vp3_participant_resource_v1($pdo,$u,$p,'task_list',$list,true);return false;}catch(RuntimeException $e){return $e->getCode()===403;}
+  }finally{if($pdo->inTransaction())$pdo->rollBack();$other->exec('UPDATE studio_participants SET recognition_consent=1 WHERE id=8');}
+ });ck($currentRead,'A locking current read observes consent revoked after a repeatable-read snapshot.');
  $results=workers('shared-add');ck(count(array_filter($results,fn($r)=>$r['tool_receipt']['changes_applied']))===1,'Four concurrent shared adds save one canonical task.');
  workers('presence');ck((int)$pdo->query('SELECT COUNT(*) FROM agent_participant_presence_v1')->fetchColumn()===1,'Four simultaneous first voice events create one presence row.');
  $results=workers('offer');ck(count(array_filter($results))===1,'Only one tab claims an update offer for the visit.');

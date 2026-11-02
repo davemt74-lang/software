@@ -36,8 +36,10 @@ function vp3_participant_scope_check_v1(PDO $pdo,array $u,array $p): ?array
     $s=vp3_participant_scope_v1();if($s===null)return null;
     $settings=vp3_participant_settings_v1($pdo,$u);
     if((int)$s['owner']!==(int)$u['id']||(int)$s['agent']!==vp3_task_list_agent_v1($p)||!$settings['enabled']||(int)$s['revision']!==$settings['revision'])throw new RuntimeException('Participant permissions changed. Please ask again.',403);
-    if($pdo->inTransaction()&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){$q=$pdo->prepare('SELECT id FROM studio_participants WHERE id=? AND owner_user_id=? FOR UPDATE');$q->execute([(int)$s['participant'],(int)$u['id']]);}
-    vp3_participant_owned_v1($pdo,$u,(int)$s['participant'],!empty($s['recognition']));return $s;
+    if($pdo->inTransaction()&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
+        $q=$pdo->prepare('SELECT * FROM studio_participants WHERE id=? AND owner_user_id=? FOR UPDATE');$q->execute([(int)$s['participant'],(int)$u['id']]);$profile=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$profile||empty($profile['is_active'])||(!empty($s['recognition'])&&empty($profile['recognition_consent'])))throw new RuntimeException('Participant recognition access changed.',403);
+    }else vp3_participant_owned_v1($pdo,$u,(int)$s['participant'],!empty($s['recognition']));return $s;
 }
 function vp3_participant_resource_v1(PDO $pdo,array $u,array $p,string $kind,int $id,bool $edit=false): bool
 {
@@ -111,6 +113,7 @@ function vp3_participant_observed_v1(PDO $pdo,array $u,int $id,string $kind,?int
     $ownTransaction=!$pdo->inTransaction();if($ownTransaction)$pdo->beginTransaction();
     try{
     $lock=$pdo->prepare('SELECT id FROM users WHERE id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));$lock->execute([$uid]);
+    $profile=$pdo->prepare('SELECT * FROM studio_participants WHERE id=? AND owner_user_id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));$profile->execute([$id,$uid]);$live=$profile->fetch(PDO::FETCH_ASSOC);if(!$live||empty($live['is_active'])||empty($live['recognition_consent']))throw new RuntimeException('Participant recognition access changed.',403);
     $q=$pdo->prepare('SELECT * FROM agent_participant_presence_v1 WHERE owner_user_id=? AND participant_id=?');$q->execute([$uid,$id]);$r=$q->fetch(PDO::FETCH_ASSOC);
     if(!$r){$pdo->prepare("INSERT INTO agent_participant_presence_v1(owner_user_id,participant_id,visit_id) VALUES(?,?,?)")->execute([$uid,$id,bin2hex(random_bytes(16))]);$r=['last_activity'=>0];}
     $new=$now-(int)$r['last_activity']>600;$field=$kind==='seen'?'last_seen':'last_heard';
@@ -131,7 +134,7 @@ function vp3_participant_heartbeat_v1(PDO $pdo,array $u,array $p,array $input,?i
         if($old!==false&&(int)$old>=$seq){$pdo->commit();return;}
         if($old===false)$pdo->prepare('INSERT INTO agent_participant_observers_v1(owner_user_id,session_id,sequence_no,updated_at) VALUES(?,?,?,?)')->execute([(int)$u['id'],$session,$seq,$now]);
         else $pdo->prepare('UPDATE agent_participant_observers_v1 SET sequence_no=?,updated_at=? WHERE owner_user_id=? AND session_id=?')->execute([$seq,$now,(int)$u['id'],$session]);
-        foreach(array_unique($ids) as $id)vp3_participant_observed_v1($pdo,$u,$id,'seen',$now);
+        foreach(array_unique($ids) as $id){$profile=vp3_participant_owned_v1($pdo,$u,$id);if(!empty($profile['recognition_consent']))vp3_participant_observed_v1($pdo,$u,$id,'seen',$now);}
         $pdo->prepare('DELETE FROM agent_participant_observers_v1 WHERE owner_user_id=? AND updated_at<?')->execute([(int)$u['id'],$now-86400]);$pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }

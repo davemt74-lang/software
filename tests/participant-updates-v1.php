@@ -71,6 +71,8 @@ rejects(fn()=>settings([],['self_participant_id'=>9]),'another owner participant
 rejects(fn()=>settings([],['self_participant_id'=>10]),'inactive profile cannot become self');
 $wrong=['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>8];$rows=vp3_participant_with_scope_v1($pdo,$u,$wrong,8,true,fn()=>vp3_participant_resources_v1($pdo,$u,$wrong));ck(!$rows['lists']&&!$rows['tasks']&&!$rows['reminders'],'sharing never crosses Agent namespace');
 $pdo->exec('UPDATE studio_participants SET recognition_consent=0 WHERE id=8');rejects(fn()=>guest(fn()=>vp3_participant_resources_v1($pdo,$u,$p)),'recognition revocation invalidates current voice scope');$pdo->exec('UPDATE studio_participants SET recognition_consent=1 WHERE id=8');
+$pdo->exec('UPDATE studio_participants SET recognition_consent=0 WHERE id=8');
+vp3_participant_heartbeat_v1($pdo,$u,$p,['session_id'=>'22222222-2222-4222-8222-222222222222','sequence'=>1,'participants'=>[7,8]],900);ck((int)$pdo->query('SELECT COUNT(*) FROM agent_participant_presence_v1')->fetchColumn()===1,'unconsented newcomer does not block recognized participant heartbeat');$pdo->exec('UPDATE studio_participants SET recognition_consent=1 WHERE id=8');
 $session='11111111-1111-4111-8111-111111111111';$heartbeat=['session_id'=>$session,'sequence'=>1,'participants'=>[7,8]];
 vp3_participant_heartbeat_v1($pdo,$u,$p,$heartbeat,1000);$before=$pdo->query('SELECT * FROM agent_participant_presence_v1 WHERE participant_id=7')->fetch();
 vp3_participant_observed_v1($pdo,$u,7,'heard',1010);$row=$pdo->query('SELECT * FROM agent_participant_presence_v1 WHERE participant_id=7')->fetch();ck((int)$row['last_seen']===1000&&(int)$row['last_heard']===1010,'nighttime voice updates heard independently of seen');

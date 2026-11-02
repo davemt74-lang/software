@@ -23,6 +23,7 @@
   }
   function invalidate(id=-1){
     if(id===actor)return;actor=id;epoch++;updates.replaceChildren();offerBox.replaceChildren();if(settings?.enabled)status.textContent='Participant changed. Request current shared updates.';
+    if(settings?.enabled)window.STONEFELLOW_CHAT_CONTINUITY?.participantChanged?.();
     if(settings?.enabled)window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:id}}));
   }
   function paintPresence(){
@@ -112,7 +113,7 @@
     mount:panel=>{if(!embed){panel.append(root);void load();}},
     camera:value=>{const rows=Array.isArray(value?.rows)?value.rows.slice(0,4).sort((a,b)=>String(a.track_id).localeCompare(String(b.track_id))):[];const next=JSON.stringify([value?.active===true,rows.map(r=>[r.participant_id,r.track_id])]);const wasActive=cameraState.active;const old=JSON.stringify([cameraState.active,cameraState.rows.map(r=>[r.participant_id,r.track_id])]);cameraState={active:value?.active===true,rows,at:Date.now()};if(next!==old){if(value?.active===true&&!wasActive)paused=false;heardState=null;invalidate(participantId());}void poll();},
     heard:value=>{const id=Number(value?.participant_id);if(!Number.isInteger(id)||id<1)return;paused=false;heardState={id,at:Date.now()};invalidate(id);void poll();},
-    selected:value=>{if(settings?.enabled)invalidate(Number(value?.participant_id)||-1);},
+    selected:value=>{if(settings?.enabled)invalidate(Number(value?.participant_id)||(paused?-1:participantId()));},
     // Scheduled owner reminder speech is paused while participant-aware mode is enabled.
     suppressOwnerAnnouncements:()=>settings.enabled,
     allowsNote:ref=>!settings.enabled||Number(ref.participant_id||0)===actor||(actor===Number(settings.self_participant_id)&&Number(ref.participant_id||0)===0)||(actor===-1&&!cameraState.active&&!heardState&&Number(ref.participant_id||0)===0),
