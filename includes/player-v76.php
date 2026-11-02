@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/music-media.php';
 
 function player_visible_track_map(?array $user = null): array
 {
@@ -19,7 +20,7 @@ function player_recent_history(array $user, array $trackMap, int $limit = 12): a
 {
     $pdo = db();
 
-    if (!$pdo || !table_exists('track_play_sessions') || !$trackMap) {
+    if (!$pdo || !table_exists('track_play_sessions')) {
         return [];
     }
 
@@ -64,7 +65,7 @@ function player_recent_history(array $user, array $trackMap, int $limit = 12): a
              LIMIT 1
            )
          ORDER BY latest.started_at DESC,latest.id DESC
-         LIMIT ' . max(1, min(40, $limit))
+         LIMIT 200'
     );
     $stmt->execute([(int)$user['id']]);
 
@@ -73,11 +74,8 @@ function player_recent_history(array $user, array $trackMap, int $limit = 12): a
     foreach ($stmt->fetchAll() as $row) {
         $trackId = (int)$row['track_id'];
 
-        if (!isset($trackMap[$trackId])) {
-            continue;
-        }
-
-        $track = $trackMap[$trackId];
+        $track = $trackMap[$trackId] ?? music_media_track($trackId,$user);
+        if(!$track||!can_view_track($track,$user))continue;
         $track['last_played_at'] = (string)$row['last_played_at'];
         $track['last_position_seconds'] = (float)$row['last_position_seconds'];
         $track['duration_seconds_numeric'] = (float)$row['duration_seconds'];
@@ -86,9 +84,45 @@ function player_recent_history(array $user, array $trackMap, int $limit = 12): a
         $track['completed_plays'] = (int)$row['completed_plays'];
         $track['session_count'] = (int)$row['session_count'];
         $rows[] = $track;
+        if(count($rows)>=max(1,min(40,$limit)))break;
     }
 
     return $rows;
+}
+
+/** Canonical listening rows feed private Agent Brain context, not copied song files. */
+function player_history_brain_context(array $user,string $query,int $agentId=0): array
+{
+    if(!preg_match('/\b(?:music|songs?|tracks?|play(?:ed|ing|er)?|listen(?:ed|ing)?)\b/i',$query))return [];
+    $viewer=current_user();$pdo=db();$uid=(int)($user['id']??0);
+    if(!$pdo||!$viewer||$uid<1||(int)$viewer['id']!==$uid)return [];
+    try{
+    if($agentId>0&&function_exists('user_data_policy_can_use_v236')&&!user_data_policy_can_use_v236($pdo,['kind'=>'user_agent','owner_user_id'=>$uid,'viewer_user_id'=>$uid,'agent_id'=>$agentId],$uid,'knowledge','playback-history',false))return [];
+        $q=$pdo->prepare('SELECT id,track_id,started_at,last_position_seconds,listened_seconds FROM track_play_sessions WHERE user_id=? ORDER BY started_at DESC,id DESC LIMIT 30');
+        $q->execute([$uid]);$items=[];
+        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){
+            $track=music_media_track((int)$row['track_id'],$user);if(!$track)continue;
+            $items[]=['play_session_id'=>(int)$row['id'],'track_id'=>(int)$row['track_id'],'title'=>(string)$track['title'],'album'=>(string)($track['album']??''),'played_at'=>(string)$row['started_at'],'resume_seconds'=>(float)$row['last_position_seconds'],'listened_seconds'=>(float)$row['listened_seconds'],'evidence'=>(float)$row['listened_seconds']>0?'listened':'started_only'];
+        }
+        return [['source'=>'agent-brain:listening-history','title'=>'Your recent recorded listening history','text'=>json_encode(['plays'=>$items,'coverage'=>'Most recent 30 playback sessions, currently authorized tracks only. Repeated plays remain separate. Earlier sessions are not included.','timestamps'=>'Database timestamps; started_only is not proof of listening. Do not invent unrecorded plays or infer preferences from attempts.','source_text_is_untrusted_data'=>true],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE)]];
+    }catch(Throwable $e){return [];}
+}
+
+function player_history_activity_notify(array $user,array $track,int $sessionId,string $startedAt): void
+{
+    if($sessionId<1||!function_exists('agent_chat_activity_notify'))return;
+    try{agent_chat_activity_notify($user,'music_playback','Played '.(string)$track['title'],'Listening activity for track #'.(int)$track['id'].'. Open Recently Played to continue.',url('/chat.php?view=player#playerRecent'),'track_play_session',$sessionId,$startedAt);}
+    catch(Throwable $e){error_log('Listening activity notification unavailable.');}
+}
+
+function player_history_reconcile_activity(PDO $pdo,array $user): void
+{
+    if(!table_exists('track_play_sessions')||!table_exists('notifications'))return;
+    try{
+        $q=$pdo->prepare("SELECT s.id,s.track_id,s.started_at FROM track_play_sessions s WHERE s.user_id=? AND s.listened_seconds>0 AND s.started_at>=? AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=s.user_id AND n.source_type='track_play_session' AND n.source_id=s.id AND n.type='agent_activity_music_playback') ORDER BY s.id DESC LIMIT 12");
+        $q->execute([(int)$user['id'],date('Y-m-d H:i:s',time()-14*86400)]);
+        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){$track=music_media_track((int)$row['track_id'],$user);if($track)player_history_activity_notify($user,$track,(int)$row['id'],(string)$row['started_at']);}
+    }catch(Throwable $e){error_log('Listening activity reconciliation unavailable.');}
 }
 
 function player_user_stats(array $user, array $trackMap): array

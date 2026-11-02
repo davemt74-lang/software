@@ -86,13 +86,14 @@ try {
         $sourceContext = 'player';
     }
 
-    $track = get_track_by_id($trackId);
+    $track = music_media_track($trackId,current_user());
     if (!$track || !can_view_track($track)) {
         throw new RuntimeException('Track is not available.');
     }
 
     $user=current_user();$listenerHash=sf_listener_hash();
     $trackId=music_catalog_playback_track_id($pdo,$track);
+    $track['id']=$trackId;
     $pdo->beginTransaction();
     if ($action === 'start') {
         $token = bin2hex(random_bytes(32));
@@ -249,6 +250,7 @@ try {
     ]);
 
     $pdo->commit();
+    if($user&&$delta>0)player_history_activity_notify($user,$track,(int)$session['id'],(string)$session['started_at']);
     echo json_encode(['ok'=>true]);
 } catch (Throwable $e) {
     if($pdo->inTransaction())$pdo->rollBack();

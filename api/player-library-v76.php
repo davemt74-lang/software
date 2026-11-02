@@ -124,6 +124,15 @@ function player_library_visible_track_ids(
 }
 
 try {
+    if($action==='recent_history'){
+        $tracks=player_recent_history($user,[],12);
+        player_library_json(true,['tracks'=>array_map(static fn(array $track):array=>[
+            ...track_media_payload($track),
+            'last_played_at'=>date('c',strtotime((string)$track['last_played_at'])),
+            'last_position_seconds'=>(float)$track['last_position_seconds'],
+        ],$tracks)]);
+    }
+
     if ($action === 'favorite_album') {
         $albumId = (int)($input['album_id'] ?? 0);
         $responseAlbumId=$albumId;

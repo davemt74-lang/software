@@ -346,6 +346,7 @@ function agent_chat_activity_reconcile(?array $user = null): void
     // Reconcile authoritative ledgers into the one existing notification → Chat
     // delivery path. Each query excludes source rows already promoted, so the
     // 5-second Chat poll stays cheap after the initial catch-up.
+    if(function_exists('player_history_reconcile_activity'))player_history_reconcile_activity($pdo,$user);
     agent_chat_activity_reconcile_stem($pdo, $user);
     agent_chat_activity_reconcile_transcriptions($pdo, $user);
     agent_chat_activity_reconcile_tools($pdo, $user);

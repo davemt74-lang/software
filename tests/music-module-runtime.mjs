@@ -7,7 +7,7 @@ const delta=source.slice(source.indexOf('  function audioListenedDelta(audio)'),
 let now=15000;const requests=[];let finish;
 const state={trackId:1,sessionToken:'',startPromise:null,sessionGeneration:0,lastTick:10000,wasPlaying:true};
 const audio={paused:false,currentTime:5,duration:120,closest:()=>true};
-const context={performance:{now:()=>now},audioState:new Map([[audio,state]]),playbackApi:payload=>{requests.push(payload);if(payload.action==='start')return new Promise(resolve=>{finish=resolve});return Promise.resolve({ok:true});}};
+const historyEvents=[];const context={Event,window:{dispatchEvent:event=>historyEvents.push(event.type)},performance:{now:()=>now},audioState:new Map([[audio,state]]),playbackApi:payload=>{requests.push(payload);if(payload.action==='start')return new Promise(resolve=>{finish=resolve});return Promise.resolve({ok:true});}};
 vm.createContext(context);vm.runInContext(delta+start+'\nglobalThis.api={audioStartSession,audioTrackEvent,audioListenedDelta};',context);
 const one=context.api.audioStartSession(audio),two=context.api.audioStartSession(audio);
 assert.equal(requests.filter(x=>x.action==='start').length,1,'Overlapping starts must coalesce');
@@ -16,7 +16,7 @@ audio.paused=true;assert.equal(context.api.audioListenedDelta(audio),5,'Pause mu
 state.wasPlaying=false;now=25000;assert.equal(context.api.audioListenedDelta(audio),0,'Buffering must not count as listening');
 state.sessionToken='';audio.paused=false;const pending=context.api.audioStartSession(audio);state.sessionGeneration++;finish({ok:true,session_token:'late'});await pending;
 assert.equal(state.sessionToken,'','Stopped generation must not acquire a late session');assert.ok(requests.some(x=>x.action==='stop'&&x.session_token==='late'));
-state.sessionToken='';const retry=context.api.audioStartSession(audio);finish({ok:true,session_token:'new'});await retry;assert.equal(state.sessionToken,'new');
+state.sessionToken='';const retry=context.api.audioStartSession(audio);finish({ok:true,session_token:'new'});await retry;assert.equal(state.sessionToken,'new');assert.deepEqual(historyEvents,['vp3:playback-history-changed','vp3:playback-history-changed'],'Only committed, current sessions refresh history');const starts=requests.filter(x=>x.action==='start').length;state.sessionToken='';state.wasPlaying=false;await context.api.audioTrackEvent(audio,'heartbeat',0);assert.equal(requests.filter(x=>x.action==='start').length,starts,'Buffering before first playback created a listening session');
 const read=p=>fs.readFileSync(p,'utf8');
 for(const route of ['music-library.php','admin/artist-music.php'])assert.match(read(route),/music_catalog_write\(\$pdo,\$workspaceId,\$user/,'Both editors must use the same writer');
 assert.match(read('includes/music-catalog.php'),/music_catalog_transaction/);assert.match(read('includes/music-catalog.php'),/music_catalog_revision/);
