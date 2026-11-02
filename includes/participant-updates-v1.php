@@ -65,16 +65,21 @@ function vp3_participant_with_scope_v1(PDO $pdo,array $u,array $p,int $id,bool $
     try{return $fn();}finally{if($old===null)unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);else $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=$old;}
 }
 /** Bounded canonical reads; no scheduler ticks, occurrence leases or delivery acknowledgments. */
-function vp3_participant_resources_v1(PDO $pdo,array $u,array $p): array
+function vp3_participant_resources_v1(PDO $pdo,array $u,array $p,bool $details=true): array
 {
     vp3_task_list_authorize_v1($pdo,$u,$p,0);$aid=vp3_task_list_agent_v1($p);$uid=(int)$u['id'];$lists=[];$tasks=[];$reminders=[];
     if(vp3_task_lists_ready_v1($pdo)){
         $q=$pdo->prepare('SELECT id,name FROM agent_task_lists_v1 WHERE owner_user_id=? AND agent_scope_id=? ORDER BY name,id LIMIT 101');$q->execute([$uid,$aid]);
-        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r)if(vp3_participant_resource_v1($pdo,$u,$p,'task_list',(int)$r['id']))$lists[]=['id'=>(int)$r['id'],'title'=>$r['name'],'edit'=>vp3_participant_resource_v1($pdo,$u,$p,'task_list',(int)$r['id'],true),'items'=>vp3_task_list_note_v1($pdo,$u,$p,(int)$r['id'])['items']];
+        $itemBudget=200;
+        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r)if(vp3_participant_resource_v1($pdo,$u,$p,'task_list',(int)$r['id'])){
+            $note=$details&&$itemBudget>0?vp3_task_list_note_v1($pdo,$u,$p,(int)$r['id'],min(25,$itemBudget)):['items'=>[],'truncated'=>true];$itemBudget-=count($note['items']);
+            $lists[]=['id'=>(int)$r['id'],'title'=>$r['name'],'edit'=>vp3_participant_resource_v1($pdo,$u,$p,'task_list',(int)$r['id'],true),'items'=>$note['items'],'truncated'=>$note['truncated']];
+        }
         $q=$pdo->prepare("SELECT id,subject,metadata_json FROM agent_memory_items WHERE user_id=? AND ".($aid?'user_agent_id=?':'user_agent_id IS NULL')." AND is_active=1 AND memory_type IN ('task','commitment') ORDER BY id DESC LIMIT 100");$q->execute($aid?[$uid,$aid]:[$uid]);
         foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r)if(vp3_task_list_task_allowed_v1($pdo,$u,$p,(int)$r['id'])){$meta=json_decode((string)$r['metadata_json'],true);$tasks[]=['id'=>(int)$r['id'],'title'=>$r['subject'],'status'=>$meta['task_status']??'open','edit'=>vp3_participant_resource_v1($pdo,$u,$p,'task',(int)$r['id'],true)];}
     }
     if(reminder_ready_v1($pdo))foreach(reminder_rows_v1($pdo,$uid) as $r)if(vp3_participant_resource_v1($pdo,$u,$p,'reminder',(int)$r['id']))$reminders[]=['id'=>(int)$r['id'],'title'=>$r['title'],'status'=>$r['status'],'next_at'=>$r['next_at'],'timezone'=>$r['timezone'],'revision'=>(int)$r['revision'],'edit'=>vp3_participant_resource_v1($pdo,$u,$p,'reminder',(int)$r['id'],true)];
+    vp3_task_list_authorize_v1($pdo,$u,$p,0);
     return ['lists'=>array_slice($lists,0,100),'tasks'=>$tasks,'reminders'=>$reminders,'bounded'=>true];
 }
 function vp3_participant_configure_v1(PDO $pdo,array $u,array $p,array $input): array
@@ -88,7 +93,7 @@ function vp3_participant_configure_v1(PDO $pdo,array $u,array $p,array $input): 
         vp3_task_list_authorize_v1($pdo,$u,$p,0);$current=vp3_participant_settings_v1($pdo,$u);if($expected!==$current['revision'])throw new RuntimeException('Settings changed in another window. Reload and try again.',409);
         if($self)vp3_participant_owned_v1($pdo,$u,$self);if($recipient)vp3_participant_owned_v1($pdo,$u,$recipient);
         if(!$recipient&&$grants)throw new InvalidArgumentException('Choose whom to share with.');
-        $catalog=vp3_participant_resources_v1($pdo,$u,$p);$available=[];
+        $catalog=vp3_participant_resources_v1($pdo,$u,$p,false);$available=[];
         foreach(['lists'=>'task_list','tasks'=>'task','reminders'=>'reminder'] as $key=>$kind)foreach($catalog[$key] as $r)$available[$kind.':'.$r['id']]=true;
         $clean=[];foreach($grants as $g){if(!is_array($g)||array_diff(array_keys($g),['kind','id','access'])||!is_int($g['id']??null)||!in_array($g['access']??'', ['read','edit'],true)||!isset($available[($g['kind']??'').':'.($g['id']??0)]))throw new RuntimeException('A shared record is no longer available in this Agent.',403);$clean[($g['kind']).':'.$g['id']]=$g;}
         if(!$current['revision'])$pdo->prepare('INSERT INTO agent_participant_settings_v1(owner_user_id) VALUES(?)')->execute([(int)$u['id']]);

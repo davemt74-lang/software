@@ -73,7 +73,8 @@
       for(const list of result.updates.lists){
         const row=make('div');row.append(make('strong',list.title));
         row.append(button('Show list note',()=>window.VP3TaskNotes?.open({kind:'task_list',id:list.id,participant_id:id},{explicitParticipantView:true})));
-        if(!list.items.length)row.append(make('p','Empty list.'));
+        if(list.truncated)row.append(make('p','Partial list preview. Open the list note for up to 200 items.'));
+        else if(!list.items.length)row.append(make('p','Empty list.'));
         for(const item of list.items)row.append(make('p',`#${item.id} · ${item.title} · ${item.status}`));updates.append(row);
       }
       for(const task of result.updates.tasks)updates.append(make('p',`Task #${task.id} · ${task.title} · ${task.status}`));
@@ -100,7 +101,7 @@
       offerBusy=true;
       try{
         const result=await request({action:'offer',participant_id:id});if(!current()||token!==epoch||participantId()!==id||adapter.busy?.()||!result.offer)return;
-        const offer=result.offer;offerBox.replaceChildren(make('p',`${offer.name}: ${offer.text}`),button('Show my updates',()=>void show(id,{automatic:true})));root.open=true;
+        const offer=result.offer;offerBox.replaceChildren(make('p',`${offer.name}: ${offer.text}`),button('Show my updates',()=>void show(id,{automatic:true})));root.open=true;for(let ancestor=root.parentElement;ancestor;ancestor=ancestor.parentElement)if(ancestor.tagName==='DETAILS')ancestor.open=true;
         window.VP3AgentOrb?.bubble?.(`${offer.name}, I can show your shared updates.`);
         await request({action:'ack_offer',participant_id:id,token:offer.token,visit_id:offer.visit_id});
       }finally{offerBusy=false;}

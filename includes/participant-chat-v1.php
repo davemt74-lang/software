@@ -42,7 +42,8 @@ function vp3_participant_show_v1(array $data,array $plan,int $participant): arra
     foreach($data['lists'] as $list)if(in_array($kind,['all','task_list'],true)&&(!$id||$id===$list['id'])){
         $lines[]='List #'.$list['id'].' · '.$list['title'].($list['edit']?'':' (read only)');
         foreach($list['items'] as $item)$lines[]='  Task #'.$item['id'].' · '.$item['title'].' · '.$item['status'];
-        if(!$list['items'])$lines[]='  Empty list.';
+        if(!empty($list['truncated']))$lines[]='  Partial list preview. Open its note for up to 200 items.';
+        elseif(!$list['items'])$lines[]='  Empty list.';
         $refs[]=['kind'=>'task_list','id'=>$list['id'],'participant_id'=>$participant];
     }
     if(in_array($kind,['all','task'],true))foreach($data['tasks'] as $r)if(!$id||$id===$r['id'])$lines[]='Task #'.$r['id'].' · '.$r['title'].' · '.$r['status'].($r['edit']?'':' (read only)');

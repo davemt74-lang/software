@@ -83,5 +83,10 @@ vp3_participant_observed_v1($pdo,$u,7,'heard',1700);$second=vp3_participant_offe
 vp3_participant_offer_v1($pdo,$u,7,$offer,1702);ck((int)$pdo->query('SELECT offered_at FROM agent_participant_presence_v1 WHERE participant_id=7')->fetchColumn()===0,'old visit receipt cannot acknowledge new offer');
 ck(vp3_participant_offer_v1($pdo,$u,8,null,2000)===null,'stale observation cannot trigger new update offer');
 foreach(['{"operation":"show","kind":"all","id":0,"answer":"Saved"}','{"operation":"add","id":1,"title":"x","grant":"edit"}','{"operation":"reminder_status","id":1,"status":"delete"}'] as $json)rejects(fn()=>vp3_participant_plan_v1($json),'strict plan rejects fabricated success, permission mutation or unsupported write');
+$retry=vp3_participant_offer_v1($pdo,$u,7,null,1747);ck($retry&&$retry['visit_id']===$second['visit_id']&&$retry['token']!==$second['token'],'abandoned display lease retries without inventing a new visit');
+for($i=0;$i<28;$i++)listOp('add',['list_name'=>'Prep','title'=>'Bounded item '.$i]);
+$preview=guest(fn()=>vp3_participant_resources_v1($pdo,$u,$p));ck(count($preview['lists'][0]['items'])===25&&$preview['lists'][0]['truncated'],'long shared lists report partial previews');
+ck(count(vp3_task_list_note_v1($pdo,$u,$p,$prep)['items'])===30,'full sticky note still reads canonical items beyond preview bound');
+$catalog=vp3_participant_resources_v1($pdo,$u,$p,false);ck(!$catalog['lists'][0]['items'],'sharing catalog does not expand every list item');
 $pdo->exec('UPDATE users SET is_active=0 WHERE id=1');rejects(fn()=>guest(fn()=>vp3_participant_resources_v1($pdo,$u,$p)),'live account disable blocks participant reads');
 echo "PARTICIPANT_UPDATES=PASS ($checks cases; canonical SQLite persistence, isolated Chat, grant revocation, visits and occurrence safety)\n";

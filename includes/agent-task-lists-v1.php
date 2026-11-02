@@ -58,14 +58,15 @@ function vp3_task_list_existing_task_v1(PDO $pdo,array $u,array $p,int $id): arr
     $aid=vp3_task_list_agent_v1($p);$q=$pdo->prepare("SELECT id,subject FROM agent_memory_items WHERE id=? AND user_id=? AND ".($aid?'user_agent_id=?':'user_agent_id IS NULL')." AND is_active=1 AND memory_type IN ('task','commitment')");$q->execute($aid?[$id,(int)$u['id'],$aid]:[$id,(int)$u['id']]);$t=$q->fetch(PDO::FETCH_ASSOC);
     if(!$t||!vp3_task_list_task_allowed_v1($pdo,$u,$p,$id))throw new RuntimeException('Task unavailable in this Agent.',403);return $t;
 }
-function vp3_task_list_note_v1(PDO $pdo,array $u,array $p,int $id): array
+function vp3_task_list_note_v1(PDO $pdo,array $u,array $p,int $id,int $limit=200): array
 {
+    $limit=max(1,min(200,$limit));
     vp3_task_list_authorize_v1($pdo,$u,$p,0);
     if(function_exists('vp3_participant_require_resource_v1'))vp3_participant_require_resource_v1($pdo,$u,$p,'task_list',$id);
     $aid=vp3_task_list_agent_v1($p);$q=$pdo->prepare('SELECT * FROM agent_task_lists_v1 WHERE id=? AND owner_user_id=? AND agent_scope_id=?');$q->execute([$id,(int)$u['id'],$aid]);$list=$q->fetch(PDO::FETCH_ASSOC);if(!$list)throw new RuntimeException('List not found.',404);
-    $q=$pdo->prepare("SELECT t.id,t.subject,t.metadata_json FROM agent_task_list_items_v1 i JOIN agent_memory_items t ON t.id=i.task_id WHERE i.list_id=? AND t.user_id=? AND ".($aid?'t.user_agent_id=?':'t.user_agent_id IS NULL')." AND t.is_active=1 AND t.memory_type IN ('task','commitment') ORDER BY i.created_at,t.id LIMIT 201");$q->execute($aid?[$id,(int)$u['id'],$aid]:[$id,(int)$u['id']]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);$items=[];
-    foreach(array_slice($rows,0,200) as $t){if(!vp3_task_list_task_allowed_v1($pdo,$u,$p,(int)$t['id']))continue;$meta=json_decode((string)$t['metadata_json'],true);$status=$meta['task_status']??'open';$items[]=['id'=>(int)$t['id'],'title'=>$t['subject'],'status'=>$status,'done'=>in_array($status,['completed','cancelled'],true)];}
-    return ['kind'=>'task_list','id'=>$id,'title'=>$list['name'],'items'=>$items,'truncated'=>count($rows)>200];
+    $q=$pdo->prepare("SELECT t.id,t.subject,t.metadata_json FROM agent_task_list_items_v1 i JOIN agent_memory_items t ON t.id=i.task_id WHERE i.list_id=? AND t.user_id=? AND ".($aid?'t.user_agent_id=?':'t.user_agent_id IS NULL')." AND t.is_active=1 AND t.memory_type IN ('task','commitment') ORDER BY i.created_at,t.id LIMIT ".($limit+1));$q->execute($aid?[$id,(int)$u['id'],$aid]:[$id,(int)$u['id']]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);$items=[];
+    foreach(array_slice($rows,0,$limit) as $t){if(!vp3_task_list_task_allowed_v1($pdo,$u,$p,(int)$t['id']))continue;$meta=json_decode((string)$t['metadata_json'],true);$status=$meta['task_status']??'open';$items[]=['id'=>(int)$t['id'],'title'=>$t['subject'],'status'=>$status,'done'=>in_array($status,['completed','cancelled'],true)];}
+    return ['kind'=>'task_list','id'=>$id,'title'=>$list['name'],'items'=>$items,'truncated'=>count($rows)>$limit];
 }
 function vp3_task_list_result_v1(string $text,string $op,string $status='read_complete',int $id=0,int $count=0): array
 {

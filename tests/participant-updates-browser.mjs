@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 const {chromium}=await import(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
 const files=['participant-updates-v1.js','chat-task-notes-v1.js','agent-reminders.js'];
-const html=`<!doctype html><meta charset="utf-8"><div id="host"></div><button data-orb-stop>Stop</button><script>
+const html=`<!doctype html><meta charset="utf-8"><details id="outer" open><summary>Conversation participant</summary><div id="host"></div></details><button data-orb-stop>Stop</button><script>
 window.calls=[];window.bubbles=[];window.noteReads=[];window.busy=false;window.offerReady=true;
 window.state={settings:{enabled:false,offer_updates:false,self_participant_id:0,revision:0},profiles:[{id:701,display_name:'David'},{id:702,display_name:'Alex'}],catalog:{lists:[{id:601,title:'Prep',items:[{id:210,title:'Pizza <img src=x onerror="window.bad=true">',status:'open'}]}],tasks:[],reminders:[],bounded:true},grants:[],presence:[]};
 window.VP3_ORB_CONFIG={participantUpdatesEnabled:false,ownerKey:'1',remindersEndpoint:'/reminders'};
@@ -33,8 +33,9 @@ try{
  await root.getByLabel('Enable participant-aware voice tasks').check();await root.getByLabel('Offer updates once per visit').check();await root.getByLabel('My recognized profile',{exact:true}).selectOption('701');await root.getByLabel('Share with participant',{exact:true}).selectOption('702');await root.locator('select[data-kind="task_list"]').selectOption('edit');await root.getByRole('button',{name:'Save participant sharing',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('.vp3-participant-updates')?.textContent.includes('Participant sharing saved'));
  await check('save sends only the explicit recipient and selected permissions',async()=>{const cfg=await page.evaluate(()=>calls.find(c=>c.action==='configure'));assert.equal(cfg.self_participant_id,701);assert.deepEqual(cfg.grants,[{kind:'task_list',id:601,access:'edit'}]);});
+ await page.locator('#outer').evaluate(n=>n.open=false);
  await page.evaluate(()=>VP3ParticipantUpdates.heard({participant_id:702}));await page.waitForFunction(()=>calls.some(c=>c.action==='ack_offer'));
- await check('voice-only arrival offers generic update without speaking private titles',async()=>{const text=await page.evaluate(()=>bubbles.join(' '));assert.match(text,/Alex/);assert.doesNotMatch(text,/Pizza|Prep/);assert.equal(await page.locator('.vp3-task-note').count(),0);});
+ await check('voice-only arrival offers generic update without speaking private titles',async()=>{const text=await page.evaluate(()=>bubbles.join(' '));assert.match(text,/Alex/);assert.doesNotMatch(text,/Pizza|Prep/);assert.equal(await page.locator('#outer').evaluate(n=>n.open),true);assert.equal(await page.locator('.vp3-task-note').count(),0);});
  await root.getByRole('button',{name:'Show my updates',exact:true}).click();await root.getByRole('button',{name:'Show list note',exact:true}).waitFor();
  await check('explicit update request renders literal canonical titles without HTML execution',async()=>{assert.match(await root.textContent(),/Pizza <img/);assert.equal(await root.locator('img').count(),0);assert.equal(await page.evaluate(()=>window.bad===true),false);});
  await root.getByRole('button',{name:'Show list note',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.vp3-task-note input')?.disabled===true);

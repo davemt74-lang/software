@@ -20,7 +20,7 @@ try{
     if($action==='settings'){
         $settings=vp3_participant_settings_v1($pdo,$u);$profiles=studio_participants_list($pdo,$u);
         $q=$pdo->prepare('SELECT participant_id,resource_kind AS kind,resource_id AS id,access_mode AS access FROM agent_participant_grants_v1 WHERE owner_user_id=? AND agent_scope_id=? ORDER BY participant_id,resource_kind,resource_id');$q->execute([(int)$u['id'],vp3_task_list_agent_v1($p)]);$grants=$q->fetchAll(PDO::FETCH_ASSOC);
-        $result=['settings'=>$settings,'profiles'=>$profiles,'catalog'=>vp3_participant_resources_v1($pdo,$u,$p),'grants'=>$grants,'presence'=>vp3_participant_presence_rows_v1($pdo,$u)];
+        $result=['settings'=>$settings,'profiles'=>$profiles,'catalog'=>vp3_participant_resources_v1($pdo,$u,$p,false),'grants'=>$grants,'presence'=>vp3_participant_presence_rows_v1($pdo,$u)];
     }elseif($action==='configure')$result=['settings'=>vp3_participant_configure_v1($pdo,$u,$p,$input)];
     elseif($action==='heartbeat'){vp3_participant_heartbeat_v1($pdo,$u,$p,$input);$result=[];}
     elseif($action==='presence')$result=['presence'=>vp3_participant_presence_rows_v1($pdo,$u)];
