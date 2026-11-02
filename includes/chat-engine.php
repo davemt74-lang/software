@@ -188,6 +188,9 @@ function chat_allowed_database_context(string $query, array $user): array
     }
 
 
+    require_once __DIR__.'/music-file-repair.php';
+    foreach(music_file_repair_context($pdo,$user,$query) as $item)$context[]=$item;
+
     // Saved project details are private to accounts with production authority.
     if($productionRequest&&table_exists('track_stems')&&table_exists('track_projects')){
         try{
