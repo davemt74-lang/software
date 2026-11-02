@@ -93,7 +93,7 @@ function player_recent_history(array $user, array $trackMap, int $limit = 12): a
 /** Canonical listening rows feed private Agent Brain context, not copied song files. */
 function player_history_brain_context(array $user,string $query,int $agentId=0): array
 {
-    if(!preg_match('/\b(?:music|songs?|tracks?|played|listening|listen)\b/i',$query))return [];
+    if(!preg_match('/\b(?:music|songs?|tracks?|play(?:ed|ing|er)?|listen(?:ed|ing)?)\b/i',$query))return [];
     $viewer=current_user();$pdo=db();$uid=(int)($user['id']??0);
     if(!$pdo||!$viewer||$uid<1||(int)$viewer['id']!==$uid)return [];
     try{
