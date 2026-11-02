@@ -110,6 +110,8 @@ function music_catalog_player_track(array $track,?int $playerId=null): array
 function music_catalog_playlist_tracks(PDO $pdo,int $playlistId,array $user,?array $visibleTracks=null): array
 {
     $rows=[];
+    $owner=$pdo->prepare('SELECT owner_user_id FROM playlists WHERE id=?');$owner->execute([$playlistId]);
+    $owned=(int)$owner->fetchColumn()===(int)($user['id']??0)&&(int)($user['id']??0)>0;
     $stmt=$pdo->prepare('SELECT track_id AS player_id,sort_order,added_at FROM playlist_tracks WHERE playlist_id=?');$stmt->execute([$playlistId]);
     $refs=$stmt->fetchAll();
     if(table_exists('artist_workspace_playlist_tracks_v181')){
@@ -122,7 +124,13 @@ function music_catalog_playlist_tracks(PDO $pdo,int $playlistId,array $user,?arr
         $artistId=(int)($track['artist_track_id']??0);
         if($artistId>0){$alias=$track;$alias['id']=1000000000+$artistId;$known[$alias['id']]=$alias;}
     }
-    foreach($refs as $ref){$id=(int)$ref['player_id'];$track=$known[$id]??get_track_by_id($id);if($track&&can_view_track($track,$user))$rows[]=$track;}
+    foreach($refs as $ref){
+        $id=(int)$ref['player_id'];$track=$known[$id]??get_track_by_id($id);
+        // Only the playlist owner may see their authorized production drafts.
+        // Sharing a playlist never publishes those songs to other viewers.
+        if(!$track&&$owned&&function_exists('music_media_track'))$track=music_media_track($id,$user);
+        if($track&&($owned||(int)($track['is_published']??1)===1)&&can_view_track($track,$user))$rows[]=$track;
+    }
     return $rows;
 }
 

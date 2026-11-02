@@ -5753,3 +5753,15 @@ body.chat-create-modal-open{
   .chat-system-app-action-buttons{display:grid}
   .chat-system-app-action-button{width:100%}
 }
+
+/* Current listening is account context, separate from saved Chat messages. */
+.chat-listening-continuation{width:min(980px,100%);margin:18px auto;color:#202226}
+.chat-listening-continuation[hidden],.chat-thread[data-view]:not([data-view="chat"]) .chat-listening-continuation{display:none!important}
+.chat-listening-continuation>header{font-size:12px;color:#60646a;margin-bottom:8px}
+.chat-listening-continuation .chat-audio-card{grid-template-columns:64px minmax(0,1fr);padding:14px}
+.chat-listening-continuation .chat-audio-cover{width:64px;height:64px}
+.chat-listening-continuation .chat-audio-title-row strong{overflow-wrap:anywhere}
+.chat-listening-continuation .chat-audio-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.chat-listening-continuation .chat-audio-actions button{border:1px solid #d8dce2;border-radius:8px;padding:8px 12px;background:white;color:#202226;font:inherit;font-size:12px;cursor:pointer}
+.chat-listening-continuation .chat-audio-actions button:first-child{background:#202226;color:white;border-color:#202226}
+@media(max-width:600px){.chat-listening-continuation .chat-audio-card{grid-template-columns:42px minmax(0,1fr);gap:9px;padding:10px}.chat-listening-continuation .chat-audio-cover{width:42px;height:42px}.chat-listening-continuation .chat-audio-actions button{flex:1 1 110px}}
