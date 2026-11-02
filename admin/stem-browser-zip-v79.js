@@ -481,7 +481,7 @@
     input.disabled = true;
     cancel.hidden = false;
 
-    setStatus('Browser ZIP importer v79 · parsed metadata stays editable until save');
+    setStatus(cfg.reviewBeforeSave?'Preparing your REAPER project…':'Browser ZIP importer v79 · parsed metadata stays editable until save');
     setProgress(1, 'Checking direct-upload endpoint…');
 
     const probe = await request(base('probe'));
@@ -500,6 +500,12 @@
       (chosen.rpp ? ' · REAPER project found' : ' · no RPP found')
     );
 
+    if(cfg.requireProject&&entries.filter(e=>/\.rpp$/i.test(e.name)).length>1)throw new Error('This ZIP contains multiple REAPER projects. Choose one project and its exported stems.');
+    if(cfg.reviewBeforeSave&&chosen.audio.reduce((sum,e)=>sum+e.size,Number(chosen.rpp?.size||0))>Number(cfg.maxBytes||0))throw new Error('The extracted project exceeds the configured project-size limit.');
+    const names=chosen.audio.map(e=>baseName(e.name).toLowerCase());
+    if(new Set(names).size!==names.length)throw new Error('Two stems have the same file name. Rename them before importing.');
+    if(cfg.requireProject&&!chosen.rpp)throw new Error('This ZIP has no REAPER .rpp project. Export the project with its MP3/WAV stems.');
+
     const metadata = chosen.audio.map(entry => ({
       name: baseName(entry.name),
       size: entry.size,
@@ -512,6 +518,7 @@
     await request(init);
 
     let rppMeta = null;
+    let missingReferences=[];
 
     if (chosen.rpp) {
       setProgress(8, 'Extracting and reading REAPER project in your browser…');
@@ -528,6 +535,11 @@
 
       const rppText = await rppBlob.text();
       rppMeta = metaHelper.parseRppText(rppText, rppName);
+      if(cfg.reviewBeforeSave){
+        const key=name=>baseName(name).toLowerCase().replace(/\.(?:mp3|wav)$/i,'');
+        const available=new Set(chosen.audio.map(e=>key(e.name)));
+        missingReferences=Object.keys(rppMeta.file_map||{}).filter(name=>!available.has(key(name)));
+      }
 
       const rppForm = base('rpp');
       rppForm.append('rpp', rppBlob, rppName);
@@ -569,6 +581,12 @@
     setProgress(93, 'Analyzing stems and auto-mapping metadata…');
     const preparedReview = await request(base('review_prepare'));
 
+    if(cfg.reviewBeforeSave){
+      const reviewed=await metaHelper.review(preparedReview.review||{},{beforeSave:true,warning:missingReferences.length?'RPP media references without a matching selected stem: '+missingReferences.slice(0,12).join(', ')+'. Check your consolidated exports before saving.':''});
+      if(!reviewed)throw new Error('Import cancelled. The existing project is unchanged.');
+      const reviewForm=base('review');reviewForm.append('review_json',JSON.stringify(reviewed));await request(reviewForm);
+    }
+
     setProgress(93.5, 'Opening stem save session…');
     await request(base('save_open'));
 
@@ -604,12 +622,12 @@
     setProgress(99.4, 'Activating parsed stem library…');
     const done = await request(base('save_finish'));
 
-    setProgress(100, 'REAPER package imported. Review saved metadata…');
+    setProgress(100, cfg.reviewBeforeSave?'REAPER project saved.':'REAPER package imported. Review saved metadata…');
     setStatus(
       `${Number(done.stem_count || chosen.audio.length)} stems imported from ${file.name}. Review the saved mapping before closing.`
     );
 
-    const reviewed = await metaHelper.review(preparedReview.review || {});
+    const reviewed = cfg.reviewBeforeSave ? null : await metaHelper.review(preparedReview.review || {});
     if (reviewed) {
       setStatus('Saving metadata corrections…');
       const reviewForm = base('metadata_update');
@@ -619,14 +637,14 @@
         `Metadata saved · ${Number(updated.updated_stems || chosen.audio.length)} stems updated.`
       );
     } else {
-      setStatus('Parsed metadata kept as imported.');
+      setStatus(cfg.reviewBeforeSave?'Import saved. Your reviewed metadata and stems are ready.':'Parsed metadata kept as imported.');
     }
 
     uploadId = '';
 
     window.setTimeout(() => {
-      if (done.studio_url) {
-        window.location.href = done.studio_url;
+      if (cfg.successUrl || done.studio_url) {
+        window.location.href = cfg.successUrl || done.studio_url;
       } else {
         window.location.reload();
       }

@@ -329,6 +329,7 @@
     style.id = 'stemImportReviewStyles';
     style.textContent = `
       .stem-import-review-shell{position:fixed;inset:0;z-index:100000;background:rgba(5,4,3,.82);backdrop-filter:blur(10px);display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow:auto}
+      .stem-import-review-shell.is-before-save .stem-import-review-stems{max-height:none;overflow:visible;padding-right:0}
       .stem-import-review{width:min(1180px,100%);background:#11100e;border:1px solid #3b3328;border-radius:18px;color:#eee6dc;box-shadow:0 24px 80px rgba(0,0,0,.55);overflow:hidden}
       .stem-import-review *{box-sizing:border-box}
       .stem-import-review header{display:flex;justify-content:space-between;gap:24px;padding:22px 24px;border-bottom:1px solid #302a22;background:#15130f}
@@ -380,7 +381,7 @@
     return Number.isFinite(number) && number > 0 ? number.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1') : '—';
   }
 
-  function review(preview) {
+  function review(preview, options = {}) {
     addStyles();
 
     const defaults = JSON.parse(JSON.stringify(preview || {}));
@@ -391,7 +392,7 @@
 
     return new Promise(resolve => {
       const shell = document.createElement('div');
-      shell.className = 'stem-import-review-shell';
+      shell.className = 'stem-import-review-shell'+(options.beforeSave?' is-before-save':'');
       shell.setAttribute('role', 'dialog');
       shell.setAttribute('aria-modal', 'true');
       shell.setAttribute('aria-label', 'Review imported track metadata');
@@ -400,9 +401,9 @@
         <section class="stem-import-review">
           <header>
             <div>
-              <span>IMPORT SAVED · METADATA REVIEW</span>
+              <span>${options.beforeSave?'REVIEW BEFORE IMPORT':'IMPORT SAVED · METADATA REVIEW'}</span>
               <h2>Review Track & Stem Metadata</h2>
-              <p>Stonefellow has already saved its best parsed mapping. Adjust anything below to correct or enrich the saved Track Library and recommendation metadata.</p>
+              <p>${options.beforeSave?'Review the parsed project and stems. Save Import activates this package; Cancel Import keeps the current project.':'Stonefellow has already saved its best parsed mapping. Adjust anything below to correct or enrich the saved Track Library and recommendation metadata.'}</p>
             </div>
             <div class="stem-import-review-badges">
               <b>${stems.length} stems</b>
@@ -412,6 +413,7 @@
             </div>
           </header>
 
+          ${options.warning?`<p role="status" style="padding:12px 20px">${esc(options.warning)}</p>`:''}
           <div class="stem-import-review-main">
             <section class="stem-import-review-section">
               <div class="stem-import-review-section-head">
@@ -466,10 +468,10 @@
           </div>
 
           <footer>
-            <small>The parsed import is already saved. Closing this panel keeps Stonefellow’s automatic mapping; saving changes resaves only the metadata you adjusted.</small>
+            <small>${options.beforeSave?'The current project stays active until you save this import.':'The parsed import is already saved. Closing this panel keeps Stonefellow’s automatic mapping; saving changes resaves only the metadata you adjusted.'}</small>
             <div class="stem-import-review-actions">
-              <button type="button" data-review-cancel>Keep Parsed Settings</button>
-              <button type="button" class="primary" data-review-save>Save Metadata Changes</button>
+              <button type="button" data-review-cancel>${options.beforeSave?'Cancel Import':'Keep Parsed Settings'}</button>
+              <button type="button" class="primary" data-review-save>${options.beforeSave?'Save Import':'Save Metadata Changes'}</button>
             </div>
           </footer>
         </section>`;

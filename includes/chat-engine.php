@@ -188,56 +188,12 @@ function chat_allowed_database_context(string $query, array $user): array
     }
 
 
-    // REAPER/stem metadata is only relevant when the user explicitly asks a
-    // production question. A normal song/library request should never dump
-    // channels, sample rates or raw REAPER metadata into the answer.
-    if (
-        $productionRequest &&
-        has_permission('tracks.manage', $user) &&
-        table_exists('track_stems')
-    ) {
-        try {
-            $stems = $pdo->query(
-                'SELECT t.title,s.stem_name,s.stem_role,s.channels,s.sample_rate,s.bit_depth,
-                        s.duration_seconds,s.start_offset_seconds,s.rpp_fx_summary,
-                        p.project_name,p.tempo_bpm,p.time_signature
-                 FROM track_stems s
-                 JOIN tracks t ON t.id=s.track_id
-                 JOIN track_projects p ON p.id=s.project_id
-                 WHERE s.is_active=1
-                 ORDER BY t.title,s.sort_order
-                 LIMIT 300'
-            )->fetchAll();
-
-            foreach ($stems as $stem) {
-                $text = sprintf(
-                    'Production stem for %s: %s. Role: %s. Channels: %s. Sample rate: %s Hz. Bit depth: %s. Duration: %.2f seconds. Start offset: %.2f seconds. REAPER project: %s. Tempo: %s BPM. Time signature: %s. REAPER FX: %s.',
-                    $stem['title'],
-                    $stem['stem_name'],
-                    $stem['stem_role'],
-                    $stem['channels'],
-                    $stem['sample_rate'],
-                    $stem['bit_depth'],
-                    $stem['duration_seconds'],
-                    $stem['start_offset_seconds'],
-                    $stem['project_name'],
-                    $stem['tempo_bpm'] ?: 'not set',
-                    $stem['time_signature'] ?: 'not set',
-                    $stem['rpp_fx_summary'] ?: 'none listed'
-                );
-
-                if (
-                    $matches($text) ||
-                    $productionRequest
-                ) {
-                    $context[] = [
-                        'source'=>'database:track_stems',
-                        'title'=>(string)$stem['title'] . ' — ' . (string)$stem['stem_name'],
-                        'text'=>$text,
-                    ];
-                }
-            }
-        } catch (Throwable $e) {}
+    // Saved project details are private to accounts with production authority.
+    if($productionRequest&&table_exists('track_stems')&&table_exists('track_projects')){
+        try{
+            require_once __DIR__.'/music-project-import.php';
+            foreach(music_project_import_context($pdo,$user,$query) as $item)$context[]=$item;
+        }catch(Throwable $e){}
     }
 
     // Public/published show data.

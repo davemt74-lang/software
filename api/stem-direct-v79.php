@@ -7,8 +7,9 @@ declare(strict_types=1);
 ob_start();
 
 require dirname(__DIR__) . '/includes/bootstrap.php';
-require_permission('tracks.manage');
+require_login();
 require_once dirname(__DIR__).'/includes/stem-import-media.php';
+require_once dirname(__DIR__).'/includes/music-project-import.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -704,6 +705,7 @@ try {
                 $updatedStems += $stemUpdate->rowCount() > 0 ? 1 : 0;
             }
 
+            music_project_import_sync_catalog($pdo,$trackId);
             $pdo->commit();
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
@@ -1811,6 +1813,7 @@ try {
                 ]);
             }
 
+            music_project_import_sync_catalog($pdo,$trackId);
             $pdo->commit();
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
@@ -1828,6 +1831,7 @@ try {
         }
 
         direct_stem_cleanup($dir);
+        music_project_import_activity($user,$trackId,$projectId,$total);
 
         direct_stem_log(
             $requestId,
