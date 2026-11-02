@@ -4,7 +4,7 @@ import vm from 'node:vm';
 const source=fs.readFileSync('chat-voice.js','utf8'),lease=fs.readFileSync('voice-lease-v122.js','utf8');
 let checks=0;
 const check=(ok,label)=>{assert.ok(ok,label);checks++;console.log('PASS '+label);};
-function fixture({pendingMonitor=false,silentRecognition=false}={}){
+function fixture({pendingMonitor=false,silentRecognition=false,abortError=false}={}){
  let now=Date.UTC(2026,9,31),next=1,starts=0,maxActive=0,fetches=0;
  const timers=new Map(),recognizers=[],tracks=[],monitorRequests=[],listeners=new Map(),store=new Map();
  const later=(fn,ms=0,interval=0)=>{const id=next++;timers.set(id,{fn,at:now+Math.max(0,ms),interval});return id;};
@@ -15,7 +15,7 @@ function fixture({pendingMonitor=false,silentRecognition=false}={}){
  const elements=Object.fromEntries(['chatForm','chatInput','sendChatButton','chatVoiceStatus','chatVoiceButton'].map(id=>[id,new Element()]));
  const document={body:new Element(),documentElement:{lang:'en-US'},getElementById:id=>elements[id]||null,querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>new Element(),addEventListener(){}};
  const emit=(type,detail={})=>{for(const fn of listeners.get(type)||[])fn({type,detail});};
- class Recognition {constructor(){recognizers.push(this);}start(){check(!recognizers.some(r=>r!==this&&r.active),'at most one native recognizer starts');starts++;this.active=true;maxActive=Math.max(maxActive,recognizers.filter(r=>r.active).length);if(!silentRecognition)queueMicrotask(()=>this.onstart?.());}stop(){if(this.holdEnd)return;this.end();}abort(){this.stop();}end(){this.active=false;queueMicrotask(()=>this.onend?.());}fail(error,hold=false){this.holdEnd=hold;this.onerror?.({error});if(!hold)this.end();}}
+ class Recognition {constructor(){recognizers.push(this);}start(){check(!recognizers.some(r=>r!==this&&r.active),'at most one native recognizer starts');starts++;this.active=true;maxActive=Math.max(maxActive,recognizers.filter(r=>r.active).length);if(!silentRecognition)queueMicrotask(()=>this.onstart?.());}stop(){if(this.holdEnd)return;this.end();}abort(){if(abortError)this.onerror?.({error:'aborted'});this.stop();}end(){this.active=false;queueMicrotask(()=>this.onend?.());}fail(error,hold=false){this.holdEnd=hold;this.onerror?.({error});if(!hold)this.end();}}
  class Event {constructor(type,options={}){this.type=type;this.detail=options.detail||{};}}
  const localStorage={getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,String(v)),removeItem:k=>store.delete(k)};
  const navigator={onLine:true,userActivation:{isActive:true},mediaDevices:{getSupportedConstraints:()=>({}),getUserMedia:async()=>{if(pendingMonitor)await new Promise(resolve=>monitorRequests.push(resolve));const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(type,fn){this[type]=fn;}};tracks.push(track);return {getAudioTracks:()=>[track],getTracks:()=>[track]};}}};
@@ -55,12 +55,40 @@ function fixture({pendingMonitor=false,silentRecognition=false}={}){
  f.monitorRequests[0]();await f.settle();check(f.tracks.every(t=>t.readyState==='ended'),'timed-out handoff closes late monitor streams');
 }
 {
+ const f=fixture();f.window.VP3ConversationControls.listen();await f.settle();const monitor=f.tracks[0];
+ for(let n=0;n<3;n++){
+  f.current().fail('aborted');await f.settle();const delay=f.window.STONEFELLOW_CHAT_VOICE.speechRetryDelayMs;
+  if(n<2){
+   check(f.document.body.dataset.stonefellowAgentState==='starting'&&!/disconnected/i.test(f.elements.chatVoiceStatus.textContent),'brief native abort resumes without declaring a connection outage');
+   check(f.window.VP3ConversationControls.state().state==='connecting'&&f.window.STONEFELLOW_CHAT_VOICE.lastError==='','brief restart is honest about capture state without a stale error');
+   check(monitor.readyState==='live'&&f.tracks.length===1,'brief native abort retains the same local microphone monitor');
+  }else check(f.document.body.dataset.stonefellowAgentState==='reconnecting'&&monitor.readyState==='ended','repeated native abort escalates to a visible bounded reconnect');
+  await f.advance(delay);
+ }
+ check(f.fetches===0&&f.maxActive===1,'quiet restarts neither replay Chat nor overlap native capture');f.window.VP3ConversationControls.stop();check(f.tracks.every(t=>t.readyState==='ended'),'Stop releases the monitor preserved during brief recovery');
+}
+{
+ const f=fixture();f.window.VP3ConversationControls.listen();await f.settle();f.current().fail('network');await f.settle();
+ check(f.document.body.dataset.stonefellowAgentState==='reconnecting'&&/disconnected/i.test(f.elements.chatVoiceStatus.textContent),'a real speech network failure still displays its reconnect state');
+ check(f.tracks.every(t=>t.readyState==='ended'),'real disconnection releases optional monitor capture');f.window.VP3ConversationControls.stop();
+}
+{
+ const f=fixture({abortError:true});f.window.VP3ConversationControls.listen();await f.settle();const monitor=f.tracks[0];
+ f.emit('stonefellow:agent-proactive-speech',{state:'start',text:'An answer.'});await f.advance(0);
+ check(f.window.STONEFELLOW_CHAT_VOICE.bargeStarts===1&&f.window.STONEFELLOW_CHAT_VOICE.speechReconnects===0,'intentional speech handoff abort never starts outage recovery');
+ f.current().fail('aborted');await f.settle();check(monitor.readyState==='live'&&f.document.body.dataset.stonefellowAgentState==='speaking','brief barge abort retains capture and lets the spoken answer finish');
+ await f.advance(f.window.STONEFELLOW_CHAT_VOICE.speechRetryDelayMs);check(f.tracks.length===1&&f.maxActive===1,'barge restart reuses the monitor without overlapping native sessions');
+ f.emit('stonefellow:agent-proactive-speech',{state:'end'});await f.advance(400);check(f.document.body.dataset.stonefellowAgentState==='listening','normal listening resumes after intentional barge shutdown');
+ f.window.VP3ConversationControls.stop();await f.advance(60000);check(!f.window.VP3ConversationControls.isEnabled()&&f.tracks.every(t=>t.readyState==='ended'),'intentional Stop during abort-emitting native capture cancels recovery and closes tracks');
+}
+{
  const f=fixture();check(f.starts===0,'saved preferences and page load do not open capture');f.window.VP3ConversationControls.listen();await f.settle();
  for(let n=0;n<7;n++){
   const r=f.current();assert.ok(r);r.fail(n%2?'network':'aborted');await f.settle();const delay=f.window.STONEFELLOW_CHAT_VOICE.speechRetryDelayMs;
   check(f.window.VP3ConversationControls.isEnabled(),'transient failure '+(n+1)+' retains the explicit listening request');
-  check(delay>0&&delay<=30000&&f.document.body.dataset.stonefellowAgentState==='reconnecting','failure '+(n+1)+' is rate-limited and never displayed as listening');
-  check(f.tracks.every(t=>t.readyState==='ended'),'monitor capture is released while speech is disconnected');
+  const quiet=n===0;
+  check(delay>0&&delay<=30000&&f.document.body.dataset.stonefellowAgentState===(quiet?'starting':'reconnecting'),'failure '+(n+1)+' is rate-limited and never displayed as listening');
+  check(quiet?f.tracks.some(t=>t.readyState==='live'):f.tracks.every(t=>t.readyState==='ended'),'monitor capture follows brief-restart versus disconnection state');
   const before=f.starts;await f.advance(delay-1);check(f.starts===before,'onend cannot bypass reconnect backoff');await f.advance(1);check(f.starts===before+1,'a fresh recognizer reconnects after the backoff');
  }
  check(f.window.STONEFELLOW_CHAT_VOICE.lastError===''&&f.document.body.dataset.stonefellowAgentState==='listening','actual native onstart clears the stale connection error');

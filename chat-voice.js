@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031-mic-startup-20261101';
+  const BUILD='chat-voice-proactive-v244-20260922-speech-recovery-20261031-mic-startup-20261101-quiet-abort-20261102';
   const POST_SPEECH_ECHO_MS=4000;
   const POST_SPEECH_LISTEN_DELAY=360;
   const TURN_END_PAUSE_MS=1800;
@@ -62,7 +62,7 @@
   let recognitionStopReason='';
   let recognitionFailures=0;
   let lastRecognitionFailureAt=0;
-  let speechRetryAt=0,speechOffline=navigator.onLine===false;
+  let speechRetryAt=0,speechRetryQuiet=false,speechOffline=navigator.onLine===false;
   const SPEECH_RETRY_MAX_MS=30000;
   let restartTimer=0;
   let recognitionStartTimer=0;
@@ -348,7 +348,10 @@
     clearRestart();
     if(!voiceOn||speaking||processing||textBusy||voiceSubmitPending||bargeCapturing)return;
     delay=Math.max(Number(delay)||0,speechRetryAt-Date.now());
-    if(speechRetryAt>Date.now())setAgentState('reconnecting',`${speechOffline?'Browser appears offline.':'Browser speech disconnected.'} Retrying in ${Math.ceil(delay/1000)} seconds…`);
+    if(speechRetryAt>Date.now()){
+      if(speechRetryQuiet)setAgentState('starting','Resuming listening…');
+      else setAgentState('reconnecting',`${speechOffline?'Browser appears offline.':'Browser speech disconnected.'} Retrying in ${Math.ceil(delay/1000)} seconds…`);
+    }
     else if(!recognitionListening&&!recognitionStarting)setAgentState('starting',reason==='conversation-restore'?'Restoring your conversation before listening…':pendingFinalTranscript?`Continuing · ${pendingFinalTranscript}`:'Connecting microphone…');
     restartTimer=setTimeout(()=>{restartTimer=0;startListening(reason);},Math.max(0,Number(delay)||0));
   }
@@ -490,19 +493,22 @@
     },TURN_END_PAUSE_MS);
   }
 
-  function resetSpeechRecovery(){speechRetryAt=0;proof.speechRetryDelayMs=0;proof.speechConnectionState='idle';}
+  function resetSpeechRecovery(){speechRetryAt=0;speechRetryQuiet=false;proof.speechRetryDelayMs=0;proof.speechConnectionState='idle';}
   function deferSpeechReconnect(attempt,reason){
+    // An aborted native session is not evidence of a network outage. Preserve
+    // the current monitor through brief restarts instead of reopening capture.
+    speechRetryQuiet=!speechOffline&&attempt<=2&&(reason==='browser-interruption'||reason==='barge:aborted');
     const delay=speechOffline?SPEECH_RETRY_MAX_MS:Math.min(SPEECH_RETRY_MAX_MS,350*2**Math.min(7,Math.max(0,attempt-1)));
-    speechRetryAt=Date.now()+delay;proof.speechReconnects+=1;proof.speechRetryDelayMs=delay;proof.speechConnectionState=speechOffline?'offline':'reconnecting';
-    // No audio monitor is needed while the recognition service is disconnected.
-    releaseProcessedMic('speech-reconnect');log('SR_RECONNECT_WAIT',{reason,attempt,delayMs:delay,offline:speechOffline});return delay;
+    speechRetryAt=Date.now()+delay;proof.speechReconnects+=1;proof.speechRetryDelayMs=delay;proof.speechConnectionState=speechOffline?'offline':speechRetryQuiet?'restarting':'reconnecting';
+    if(!speechRetryQuiet)releaseProcessedMic('speech-reconnect');
+    log('SR_RECONNECT_WAIT',{reason,attempt,delayMs:delay,offline:speechOffline,quiet:speechRetryQuiet});return delay;
   }
   function recoverRecognition(message,reason){
     const now=Date.now();const transient=reason==='browser-interruption'||reason==='error:network';
     if(!transient&&now-lastRecognitionFailureAt>30000)recognitionFailures=0;
     lastRecognitionFailureAt=now;recognitionFailures+=1;proof.lastError=message;
     log('SR_RECOVERY',{reason,attempt:recognitionFailures});
-    if(transient){scheduleListening(deferSpeechReconnect(recognitionFailures,reason),reason);return;}
+    if(transient){const delay=deferSpeechReconnect(recognitionFailures,reason);if(speechRetryQuiet)proof.lastError='';scheduleListening(delay,reason);return;}
     if(recognitionFailures>=3){disableVoice({persist:false});setAgentState('error',message+' Select the microphone to retry.');return;}
     scheduleListening(Math.min(4000,350*2**(recognitionFailures-1)),reason);
   }
@@ -854,7 +860,7 @@
     })();
     return finish;
   }
-  window.VP3ConversationControls=Object.freeze({endEnrollmentSession:()=>{enrollmentPcmOnly=false;resetPendingFinal();queuedTranscript='';stopRecognition('voice-enrollment',true);if(voiceOn)scheduleListening(160,'guided-setup-complete');},beginEnrollmentCapture,responseWindow,cancelResponseWindow:finishResponseWindow,stop:()=>disableVoice({persist:true}),isBusy:()=>processing||speaking,isEnabled:()=>voiceOn,listen:()=>enableVoice({start:true}),state:()=>({state:speaking?'speaking':processing?'thinking':recognitionListening?'listening':recognitionStarting?'connecting':voiceOn&&speechRetryAt>Date.now()?'reconnecting':'idle'})});
+  window.VP3ConversationControls=Object.freeze({endEnrollmentSession:()=>{enrollmentPcmOnly=false;resetPendingFinal();queuedTranscript='';stopRecognition('voice-enrollment',true);if(voiceOn)scheduleListening(160,'guided-setup-complete');},beginEnrollmentCapture,responseWindow,cancelResponseWindow:finishResponseWindow,stop:()=>disableVoice({persist:true}),isBusy:()=>processing||speaking,isEnabled:()=>voiceOn,listen:()=>enableVoice({start:true}),state:()=>({state:speaking?'speaking':processing?'thinking':recognitionListening?'listening':recognitionStarting?'connecting':voiceOn&&speechRetryAt>Date.now()?(speechRetryQuiet?'connecting':'reconnecting'):'idle'})});
   const continuity={isBusy:()=>processing||speaking||textBusy||voiceSubmitPending||!!activeRequest||!!pendingFinalTranscript||!!ChatRuntime?.isBusy?.(),isVoice:()=>voiceOn,pendingVoiceSubmit:()=>voiceSubmitPending,participantChanged:()=>{if(processing||speaking||textBusy||activeRequest||voiceSubmitPending){if(!interruptResponse('participant-changed'))cancelActiveRequest();}},conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
 
   syncConversation(lastConversationId);syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
