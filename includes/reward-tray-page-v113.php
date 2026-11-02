@@ -36,7 +36,7 @@ $memberHeaderLeadingHtml='<nav id="rewardTrayTabs" class="reward-tray-tabs rewar
 <meta name="theme-color" content="#f7f7f8">
 <title>VP3 | Rewards · <?= e($labels[$bucket]) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" data-reward-tray-v113 href="<?= e(url('/reward-tray-v110.css?v=113')) ?>">
+<link rel="stylesheet" data-reward-tray-v113 href="<?= e(url('/reward-tray-v110.css?v=113-mobile-header-v114')) ?>">
 </head>
 <body class="reward-page reward-tray-ready" data-reward-page="<?= e($bucket) ?>">
 <div class="chat-app">
