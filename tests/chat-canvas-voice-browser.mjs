@@ -12,6 +12,7 @@ const errors = [], calls = [];
 page.on('pageerror', error => errors.push(error.message));
 let routeDelay = 0, failRoute = false, routeGate = null, sendGate = null, failSend = false, failHistory = false, failLoad = false;
 let streamState = 'success';
+let recentPlayback=[];
 let loadGate = null;
 const messages = new Map([[42,[]],[43,[{id:101,role:'assistant',message:'The other conversation'}]]]);
 const html = `<!doctype html><html lang="en-US"><head><meta charset="UTF-8"></head><body>
@@ -34,6 +35,7 @@ await page.route('**/api/**', async route => {
     if (routeDelay) await new Promise(resolve => setTimeout(resolve, routeDelay));
     return route.fulfill(failRoute ? {status:503,json:{ok:false,error:'HomeServer routing unavailable'}} : {json:{ok:true,route:'chat'}});
   }
+  if(payload.action==='recent_history')return route.fulfill({json:{ok:true,tracks:recentPlayback}});
   if (payload.action === 'send') {
     if(sendGate)await sendGate;
     if(failSend)return route.fulfill({status:503,json:{ok:false,error:'Provider unavailable'}});
@@ -555,6 +557,13 @@ try {
   assert.equal(studioTarget.searchParams.get('track'),'9');assert.equal(studioTarget.searchParams.get('conversation_id'),String(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.conversationId())));assert.equal(studioTarget.searchParams.get('voice'),'1');assert.ok(studioTarget.searchParams.has('return'));
   console.log('PASS Studio handoff link retains the active conversation, listening state and return destination');
 
+  recentPlayback=[{id:9,title:'Recently played <img>',album:'Studio',audio:'/media.php?track=9&type=audio',cover:'/cover.png',detail:'/track.php?id=9',last_played_at:'2026-11-02T12:00:00+00:00',last_position_seconds:12}];
+  await page.evaluate(()=>{STONEFELLOW_CHAT.libraryEndpoint='/api/player-library-v76.php';const s=document.createElement('section');s.id='playerRecent';s.innerHTML='<header><small>0 recent</small></header><div class="chat-player-recent-grid"></div>';document.body.append(s);window.dispatchEvent(new Event('vp3:playback-history-changed'));});
+  await page.clock.runFor(500);await page.waitForFunction(()=>document.querySelector('#playerRecent strong')?.textContent==='Recently played <img>');
+  assert.equal(await page.locator('#playerRecent strong img').count(),0);assert.equal(await page.locator('#playerRecent [data-resume-track]').getAttribute('data-resume-position'),'12');
+  recentPlayback[0].last_position_seconds=25;await page.evaluate(()=>window.dispatchEvent(new Event('vp3:playback-history-changed')));await page.clock.runFor(500);await page.waitForFunction(()=>document.querySelector('#playerRecent [data-resume-track]')?.dataset.resumePosition==='25');
+  assert.equal(await page.locator('#playerRecent header>small').innerText(),'1 recent');
+  console.log('PASS saved playback updates Recently Played and resume position without a page reload, with safe text rendering');
   assert.deepEqual(errors, []);
   if (process.env.VP3_CHAT_SCREENSHOT) await page.screenshot({path:process.env.VP3_CHAT_SCREENSHOT});
   console.log('PASS compact desktop/mobile canvas; tools preserve state; actual Chat + voice lease + automatic planner retain delayed voice input, speak once, resume listening, and reject failed/cancelled late routes.');

@@ -2190,6 +2190,7 @@
         return;
       }
       state.sessionToken=data.session_token;
+      window.dispatchEvent(new Event('vp3:playback-history-changed'));
       if(audio.paused)await audioTrackEvent(audio,'pause',0);
     })();
     state.startPromise=request;
@@ -2209,6 +2210,7 @@
       return;
     }
     const eventGeneration=state.sessionGeneration;
+    if(!state.sessionToken&&action==='heartbeat'&&!state.wasPlaying&&delta<=0)return;
 
     if (
       !state.sessionToken &&
@@ -2330,7 +2332,7 @@
         }
       );
 
-      audio.addEventListener('playing',()=>{state.lastTick=performance.now();state.wasPlaying=true;});
+      audio.addEventListener('playing',()=>{state.lastTick=performance.now();state.wasPlaying=true;void audioStartSession(audio);});
       ['waiting','stalled'].forEach(event=>audio.addEventListener(event,()=>{
         const delta=audioListenedDelta(audio);state.wasPlaying=false;
         if(state.sessionToken&&delta>0)audioTrackEvent(audio,'heartbeat',delta);
@@ -2356,13 +2358,7 @@
             audio
           );
 
-          if (
-            !state.sessionToken
-          ) {
-            await audioStartSession(
-              audio
-            );
-          } else {
+          if (state.sessionToken) {
             await audioTrackEvent(
               audio,
               'resume',
@@ -3681,6 +3677,47 @@
 
     return data;
   }
+
+  let recentHistoryBusy=false,recentHistoryQueued=false,recentHistoryRevision=0,recentHistoryTimer=0;
+  const recentHistoryPlaying=grid=>[...grid.querySelectorAll('audio')].some(audio=>!audio.paused&&!audio.ended);
+  async function refreshRecentPlayerHistory(){
+    const section=document.getElementById('playerRecent'),grid=section?.querySelector('.chat-player-recent-grid');
+    if(!grid||!cfg.libraryEndpoint||document.hidden)return;
+    if(recentHistoryBusy){recentHistoryQueued=true;return;}
+    // Rebuilding a history card must never interrupt its current audio.
+    if(recentHistoryPlaying(grid))return;
+    recentHistoryBusy=true;const revision=recentHistoryRevision;
+    try{
+      const data=await libraryApi('recent_history');
+      if(revision!==recentHistoryRevision||!grid.isConnected||recentHistoryPlaying(grid))return;
+      const rows=Array.isArray(data.tracks)?data.tracks:[];
+      grid.innerHTML=rows.map(track=>{
+        const id=Number(track.id)||0,resume=Math.max(0,Number(track.last_position_seconds)||0),date=new Date(track.last_played_at);
+        const when=Number.isNaN(date.getTime())?'Recently':date.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+        return `<article class="chat-player-recent-card" data-player-search-text="${escapeHtml((track.title||'')+' '+(track.album||''))}">
+          <img src="${escapeHtml(track.cover||'')}" alt="">
+          <div><span>Last played ${escapeHtml(when)}</span><strong>${escapeHtml(track.title||'')}</strong><small>${escapeHtml(track.album||'')}</small></div>
+          <button type="button" data-resume-track="${id}" data-resume-position="${resume}">${resume>5?'Continue':'Play'}</button>
+          <audio class="chat-audio-player" preload="none" data-track-id="${id}" data-player-title="${escapeHtml(track.title||'')}" data-player-album="${escapeHtml(track.album||'')}" data-player-cover="${escapeHtml(track.cover||'')}" data-player-detail="${escapeHtml(track.detail||'')}" src="${escapeHtml(track.audio||'')}"></audio>
+        </article>`;
+      }).join('')||'<div class="chat-canvas-empty compact">Start listening and your recent tracks will appear here.</div>';
+      const count=section.querySelector('header>small');if(count)count.textContent=rows.length+' recent';
+      attachAudioTracking(grid);
+    }catch(_){
+      if(revision===recentHistoryRevision&&grid.isConnected&&!recentHistoryPlaying(grid)){
+        grid.textContent='Playback history could not be loaded. It will retry automatically.';
+        const count=section.querySelector('header>small');if(count)count.textContent='Unavailable';
+      }
+    }finally{recentHistoryBusy=false;if(recentHistoryQueued){recentHistoryQueued=false;scheduleRecentPlayerHistory();}}
+  }
+  function scheduleRecentPlayerHistory(){clearTimeout(recentHistoryTimer);recentHistoryTimer=setTimeout(()=>void refreshRecentPlayerHistory(),350);}
+  window.addEventListener('vp3:playback-history-changed',scheduleRecentPlayerHistory);
+  window.addEventListener('focus',scheduleRecentPlayerHistory);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleRecentPlayerHistory();});
+  document.addEventListener('pause',event=>{if(event.target.matches?.('.chat-audio-player'))scheduleRecentPlayerHistory();},true);
+  const recentHistoryPoll=setInterval(()=>void refreshRecentPlayerHistory(),30000);
+  window.addEventListener('pagehide',()=>{recentHistoryRevision++;clearTimeout(recentHistoryTimer);clearInterval(recentHistoryPoll);},{once:true});
+  scheduleRecentPlayerHistory();
 
   async function toggleTrackFavorite(
     trackId

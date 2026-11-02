@@ -83,6 +83,32 @@ music_catalog_write($pdo,1,$owner,'track','delete',['id'=>1]);check((int)$pdo->q
 $_SESSION=['music_workspace_id'=>1];check(music_workspace_resources_v330_resolve_active($pdo,$owner,2)===null,'Explicit foreign workspace silently fell back');
 $pdo->exec('UPDATE users SET enabled=0 WHERE id=11');check(!music_workspace_resources_v330_can_access($pdo,1,$manager),'Disabled workspace still admits manager');$pdo->exec('UPDATE users SET enabled=1 WHERE id=11');
 $pdo->exec('DELETE FROM artist_team_members WHERE member_user_id=12');check(!music_workspace_resources_v330_can_access($pdo,1,$manager),'Removed team member still has access');
+require dirname(__DIR__).'/includes/player-v76.php';
+$pdo->exec('CREATE TABLE track_play_sessions(id INTEGER PRIMARY KEY,user_id INTEGER,track_id INTEGER,started_at TEXT,last_position_seconds REAL,duration_seconds REAL,listened_seconds REAL,qualified_play INTEGER,completed INTEGER)');
+$session=$pdo->prepare('INSERT INTO track_play_sessions VALUES(?,?,?,?,?,?,?,?,?)');
+$session->execute([1,(int)$owner['id'],$source,date('Y-m-d H:i:s',time()-3600),10,100,10,0,0]);
+$session->execute([2,(int)$owner['id'],$source,date('Y-m-d H:i:s',time()-1800),23,100,28,1,0]);
+$session->execute([3,(int)$owner['id'],99999,date('Y-m-d H:i:s',time()-900),5,100,5,0,0]);
+$session->execute([4,(int)$outsider['id'],$source,date('Y-m-d H:i:s',time()-300),50,100,50,1,0]);
+$viewer=$owner;$recent=player_recent_history($owner,[],1);
+check(count($recent)===1&&(int)$recent[0]['id']===$source,'Owner draft history vanished from the published-only map');
+check($recent[0]['last_position_seconds']===23.0&&$recent[0]['listened_seconds_total']===38.0,'Recent history lost the latest position or crossed user scope');
+$viewer=$outsider;check(player_recent_history($outsider,[],12)===[],'Foreign draft history disclosed track details');
+$viewer=$owner;$pdo->exec('UPDATE users SET enabled=0 WHERE id=11');check(player_recent_history($owner,[],12)===[],'Disabled workspace retained history metadata');$pdo->exec('UPDATE users SET enabled=1 WHERE id=11');
+$historyPolicy=true;
+function user_data_policy_can_use_v236(...$args):bool{return $GLOBALS['historyPolicy'];}
+$viewer=$owner;check(count(player_history_brain_context($owner,'What music did I play?',4))===1,'Listening ledger is not available to the owner Agent Brain');
+$historyPolicy=false;check(player_history_brain_context($owner,'What music did I play?',4)===[],'Agent Knowledge deny was ignored');$historyPolicy=true;
+$viewer=$outsider;check(player_history_brain_context($owner,'What music did I play?')===[],'Other viewer received private listening context');$viewer=$owner;
+require dirname(__DIR__).'/includes/notifications.php';require dirname(__DIR__).'/includes/agent-chat-activity.php';
+function has_permission(string $key,?array $user=null):bool{return $key==='chat.access';}
+$pdo->exec('CREATE TABLE notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,type TEXT,title TEXT,body TEXT,target_url TEXT,source_type TEXT,source_id INTEGER,is_read INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP)');
+$track=music_media_track($source,$owner);player_history_activity_notify($owner,$track,2,date('Y-m-d H:i:s',time()-1800));player_history_activity_notify($owner,$track,2,date('Y-m-d H:i:s',time()-1800));
+check((int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn()===1,'Duplicate playback activity notification was created');
+check(notification_is_agent_brain_activity($pdo->query('SELECT * FROM notifications')->fetch()),'Playback activity was not routed into Agent Brain notifications');
+player_history_reconcile_activity($pdo,$owner);player_history_reconcile_activity($pdo,$owner);
+check((int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn()===2,'Existing playback activity did not reconcile exactly once per authorized session');
+
 foreach([['',100,[0,99,200]],['bytes=0-',100,[0,99,206]],['bytes=5-500',100,[5,99,206]],['bytes=-5',100,[95,99,206]],['bytes=-500',100,[0,99,206]],['bytes=100-',100,null],['bytes=-0',100,null],['bytes=-',100,null],['bytes=0-1,3-4',100,null],['other=0-1',100,null],['bytes=10-5',100,null]] as [$request,$size,$expected])check(music_media_range($request,$size)===$expected,'Byte range failure: '.$request);
 $path=tempnam(sys_get_temp_dir(),'music-mime-');file_put_contents($path,'not an image');check(music_media_mime($path,'cover')===null,'Unsupported file served as image');unlink($path);
 echo "MUSIC_MODULE_INTEGRITY=PASS\n";
