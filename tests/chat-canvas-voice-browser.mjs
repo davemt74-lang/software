@@ -560,6 +560,7 @@ try {
   recentPlayback=[{id:9,title:'Recently played <img>',album:'Studio',audio:'/media.php?track=9&type=audio',cover:'/cover.png',detail:'/track.php?id=9',last_played_at:'2026-11-02T12:00:00+00:00',last_position_seconds:12}];
   await page.evaluate(()=>{STONEFELLOW_CHAT.libraryEndpoint='/api/player-library-v76.php';const s=document.createElement('section');s.id='playerRecent';s.innerHTML='<header><small>0 recent</small></header><div class="chat-player-recent-grid"></div>';document.body.append(s);window.dispatchEvent(new Event('vp3:playback-history-changed'));});
   await page.clock.runFor(500);await page.waitForFunction(()=>document.querySelector('#playerRecent strong')?.textContent==='Recently played <img>');
+  assert.equal(await page.locator('#playerRecent .chat-inline-player').count(),1,'Refreshed history initializes the existing audio controls');
   assert.equal(await page.locator('#playerRecent strong img').count(),0);assert.equal(await page.locator('#playerRecent [data-resume-track]').getAttribute('data-resume-position'),'12');
   recentPlayback[0].last_position_seconds=25;await page.evaluate(()=>window.dispatchEvent(new Event('vp3:playback-history-changed')));await page.clock.runFor(500);await page.waitForFunction(()=>document.querySelector('#playerRecent [data-resume-track]')?.dataset.resumePosition==='25');
   assert.equal(await page.locator('#playerRecent header>small').innerText(),'1 recent');

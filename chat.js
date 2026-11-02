@@ -3336,6 +3336,10 @@
 
   thread.dataset.view = 'chat';
   attachAudioTracking(thread);
+  window.addEventListener('vp3:audio-players-added',event=>{
+    const scope=event.detail;
+    if(scope instanceof Element&&scope.isConnected)attachAudioTracking(scope);
+  });
 
   const allowedInitialViews =
     new Set([
@@ -3703,7 +3707,7 @@
         </article>`;
       }).join('')||'<div class="chat-canvas-empty compact">Start listening and your recent tracks will appear here.</div>';
       const count=section.querySelector('header>small');if(count)count.textContent=rows.length+' recent';
-      attachAudioTracking(grid);
+      window.dispatchEvent(new CustomEvent('vp3:audio-players-added',{detail:grid}));
     }catch(_){
       if(revision===recentHistoryRevision&&grid.isConnected&&!recentHistoryPlaying(grid)){
         grid.textContent='Playback history could not be loaded. It will retry automatically.';
