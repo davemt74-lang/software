@@ -222,6 +222,13 @@ function vp3_upgrade_complete(): bool
         && table_exists('agent_reminder_occurrences_v1')
         && table_exists('agent_reminder_turns_v1')
         && table_exists('agent_reminder_context_v1')
+        && table_exists('agent_task_lists_v1')
+        && table_exists('agent_task_list_items_v1')
+        && table_exists('agent_task_list_actions_v1')
+        && table_exists('agent_participant_settings_v1')
+        && table_exists('agent_participant_grants_v1')
+        && table_exists('agent_participant_presence_v1')
+        && table_exists('agent_participant_observers_v1')
         && table_exists('user_agent_voice_preferences');
 }
 
