@@ -12,8 +12,7 @@ try{
   await page.route('**/api/notes',async r=>{const ref=r.request().postDataJSON().note;if(delayed){arrived();await new Promise(resolve=>release=resolve);}return blocked?r.fulfill({status:403,json:{ok:false,error:'Note access denied.'}}):r.fulfill({json:{ok:true,note:{kind:ref.kind,id:ref.id,title:ref.kind==='reminders'?'Reminders':'Prep',items:[{id:42,title:'<img src=x onerror=alert(1)> Pizza dough',status:completed?'completed':'open',done:completed}],truncated:false}}});});
   await page.goto('http://notes.test/');await page.evaluate(()=>VP3TaskNotes.consume([{kind:'task_list',id:1}]));await page.getByText('Pizza dough',{exact:false}).waitFor();
   check(await page.locator('.vp3-task-note img').count()===0,'note labels are text, including HTML-like task titles at '+viewport.width);
-  await page.getByRole('button',{name:'Show reminders',exact:true}).click();check((await page.evaluate(()=>prompts.at(-1)))==='Show reminders','SHOW REMINDERS submits canonical Chat command at '+viewport.width);
-  await page.getByRole('button',{name:'Show prep list',exact:true}).click();check((await page.evaluate(()=>prompts.at(-1)))==='Show prep list','SHOW PREP LIST submits canonical Chat command at '+viewport.width);
+  check(await page.locator('.vp3-task-notes-shortcuts').count()===0&&await page.getByRole('button',{name:/^Show (?:reminders|prep list)$/i}).count()===0,'canvas has no fixed reminder or prep-list shortcut buttons at '+viewport.width);
   const note=page.locator('.vp3-task-note'),header=note.locator('header');const before=await note.boundingBox();
   await header.focus();await page.keyboard.press('ArrowLeft');let after=await note.boundingBox();check(after.x<before.x,'keyboard moves the note at '+viewport.width);
   const box=await header.boundingBox();await page.mouse.move(box.x+30,box.y+15);await page.mouse.down();await page.mouse.move(box.x+45,box.y+60);await page.mouse.up();after=await note.boundingBox();
