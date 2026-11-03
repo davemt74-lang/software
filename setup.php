@@ -6,6 +6,8 @@ require_once __DIR__ . '/includes/homeserver-scheduling-connector-v620.php';
 require_once __DIR__ . '/includes/homeserver-commerce-agent-v1000.php';
 require_once __DIR__ . '/includes/homeserver-https-relay-v1300.php';
 require_once __DIR__ . '/includes/homeserver-shared-agent-v210.php';
+require_once __DIR__ . '/includes/profile-agent-handoff-pa3.php';
+require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
 
 $pdo = db();
 if (!$pdo) {
@@ -52,6 +54,9 @@ try {
     music_workspace_resources_v330_ensure_schema($pdo);
     password_reset_ensure_schema();
     user_agent_system_ensure_schema_v236($pdo);
+    profile_agent_ensure_schema($pdo);
+    agent_job_engine_ensure_schema_v1900($pdo);
+    vp3_profile_handoff_ensure_schema_pa3($pdo);
     agent_commerce_ensure_schema_v800($pdo);
     vp3_user_agent_lifecycle_ensure_schema_v390($pdo);
     vp3_agent_memory_scope_ensure_schema_v410($pdo);

@@ -63,6 +63,24 @@ jobs:
           php tests/profile-public-authority-pa1.php
           php tests/agent-message-authority-pa1.php
           node tests/profile-owner-api-pa1.mjs
+      - name: Profile Agent PA3 handoff and recovery on SQLite
+        run: |
+          php tests/profile-handoff-pa3.php
+          php tests/profile-handoff-binding-pa3.php
+          php tests/profile-handoff-recovery-pa3.php
+          node tests/profile-handoff-api-pa3.mjs
+          node tests/profile-visitor-doorbell-pa3.mjs
+          node tests/profile-visitor-handoff-pa3.mjs
+      - name: Profile Agent PA3 MySQL handoff and concurrent takeover
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-handoff-pa3.php
+          php tests/profile-handoff-binding-pa3.php
+          php tests/profile-handoff-recovery-pa3.php
+          node tests/profile-handoff-api-pa3.mjs
   profile_owner_browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -77,3 +95,7 @@ jobs:
         run: node tests/profile-owner-threads-pa1-browser.mjs
       - name: Profile checkout review, retry and accurate status
         run: node tests/profile-checkout-review-pa2-browser.mjs
+      - name: Main Chat visitor card, exact visible acknowledgement and mobile replies
+        run: node tests/profile-visitor-doorbell-pa3-browser.mjs
+      - name: Native visitor admission, reload, dispatch and account changes
+        run: node tests/profile-visitor-handoff-pa3-browser.mjs

@@ -78,6 +78,12 @@ jobs:
           node tests/agent-message-api-pa1.mjs
           node tests/profile-owner-api-pa1.mjs
           node tests/profile-owner-threads-pa1.mjs
+          php tests/profile-handoff-pa3.php
+          php tests/profile-handoff-binding-pa3.php
+          php tests/profile-handoff-recovery-pa3.php
+          node tests/profile-handoff-api-pa3.mjs
+          node tests/profile-visitor-doorbell-pa3.mjs
+          node tests/profile-visitor-handoff-pa3.mjs
           php tests/commerce-provider-evidence-pa2.php
           php tests/commerce-recovery-pa2.php
           php tests/commerce-projection-recovery-pa2.php

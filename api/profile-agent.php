@@ -45,11 +45,25 @@ function profile_agent_owner_state_v242(PDO $pdo,array $user): array{
     return $state;
 }
 
+/** Existing portal actions participate in the same turn fence without inventing a private Chat card. */
+function profile_agent_owner_handoff_pa3(PDO $pdo,array $user,array $conversation,string $operation,string $message='',string $requestId=''): ?array
+{
+    require_once dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
+    if(!vp3_profile_handoff_schema_ready_pa3($pdo))return null;
+    $current=vp3_profile_handoff_public_pa3($pdo,(int)$user['id'],(int)$conversation['id']);
+    if((int)($current['turn_id']??0)<1)return null;
+    return vp3_profile_handoff_owner_action_pa3($pdo,$user,[
+        'operation'=>$operation,'turn_id'=>(int)$current['turn_id'],'revision'=>(int)$current['revision'],
+        'conversation_id'=>(int)$conversation['id'],'request_id'=>$requestId!==''?$requestId:bin2hex(random_bytes(16)),
+        'message'=>$message,
+    ],true);
+}
+
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 if(!in_array($method,['GET','POST'],true))profile_agent_method_required('GET, POST');
 $input=$method==='POST'?json_decode((string)file_get_contents('php://input'),true):$_GET;if(!is_array($input))$input=$_POST;
 $action=$input['action']??'state';if(!is_string($action))profile_agent_json(false,['error'=>'Choose a Profile Agent action.','code'=>'VALIDATION_FAILED'],422);$action=trim($action);
-$ownerActions=['owner_state','save_profile','save_profile_media','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply'];
+$ownerActions=['owner_state','save_profile','save_profile_media','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply','doorbell_claim','doorbell_reply','doorbell_delegate','doorbell_resolve'];
 $ownerReads=['owner_state','conversation_messages'];
 // A URL, preload, HEAD request or cross-site navigation must never send an
 // owner reply or change Profile settings, attention or conversation status.
@@ -62,6 +76,14 @@ if(in_array($action,$ownerActions,true)){
     if(!$user||!has_permission('account.access',$user))profile_agent_json(false,['error'=>'Sign in to manage your Profile Agent.'],401);
     if(!personal_capability_has_v242('profile_agent.access',$user))profile_agent_json(false,['error'=>'Profile Agent access is unavailable for this account.'],403);
     $uid=(int)$user['id'];if($method==='POST')profile_agent_require_csrf($input);
+    if(in_array($action,['doorbell_claim','doorbell_reply','doorbell_delegate','doorbell_resolve'],true)){
+        require_once dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
+        $wire=$input;$wire['operation']=substr($action,9);unset($wire['legacy']);
+        $result=vp3_profile_handoff_owner_action_pa3($pdo,$user,$wire);
+        profile_agent_json(true,array_merge($result,[
+            'turn_id'=>(int)$input['turn_id'],'conversation_id'=>(int)$input['conversation_id'],'request_id'=>(string)$input['request_id'],
+        ]));
+    }
     if($action==='owner_state')profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user)]);
     if($action==='save_profile'){personal_profile_save_v242($pdo,$user,$input);profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user)]);}
     if($action==='save_profile_media'){
@@ -95,8 +117,11 @@ if(in_array($action,$ownerActions,true)){
         $pdo->beginTransaction();
         try{
             $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid,true);if(!$conversation)throw new VP3ProfileAgentPublicException('CONVERSATION_NOT_FOUND','Conversation not found.',404);
-            $pdo->prepare('UPDATE profile_agent_conversations SET status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$cid,$uid]);
-            if($status==='resolved')$pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
+            $handoff=profile_agent_owner_handoff_pa3($pdo,$user,$conversation,match($status){'owner_joined'=>'claim','resolved'=>'resolve',default=>'delegate'});
+            if($handoff===null){
+                $pdo->prepare('UPDATE profile_agent_conversations SET status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$cid,$uid]);
+                if($status==='resolved')$pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
+            }
             $pdo->commit();
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
         profile_agent_json(true,['conversation_id'=>$cid,'state'=>profile_agent_owner_state_v242($pdo,$user)]);
@@ -106,9 +131,12 @@ if(in_array($action,$ownerActions,true)){
         $pdo->beginTransaction();
         try{
             $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid,true);if(!$conversation)throw new VP3ProfileAgentPublicException('CONVERSATION_NOT_FOUND','Conversation not found.',404);
-            $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'owner',?,?)")->execute([$cid,$uid,$reply]);
-            $pdo->prepare("UPDATE profile_agent_conversations SET status='owner_joined',last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=?")->execute([mb_strimwidth($reply,0,900,'…'),$cid,$uid]);
-            $pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
+            $handoff=profile_agent_owner_handoff_pa3($pdo,$user,$conversation,'reply',$reply,is_string($input['request_id']??null)?$input['request_id']:'');
+            if($handoff===null){
+                $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'owner',?,?)")->execute([$cid,$uid,$reply]);
+                $pdo->prepare("UPDATE profile_agent_conversations SET status='owner_joined',last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=?")->execute([mb_strimwidth($reply,0,900,'…'),$cid,$uid]);
+                $pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
+            }
             $pdo->commit();
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
         profile_agent_json(true,['conversation_id'=>$cid,'state'=>profile_agent_owner_state_v242($pdo,$user),'messages'=>profile_agent_messages($pdo,$cid)]);
@@ -117,21 +145,33 @@ if(in_array($action,$ownerActions,true)){
 
 $username=profile_username_normalize((string)($input['username']??''));$profile=profile_by_username($pdo,$username);
 if(!$profile||empty($profile['is_active'])||empty($profile['is_public']))profile_agent_json(false,['error'=>'That profile is not available.'],404);
-$publicCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$user);$owner=(int)$publicCtx['owner_user_id'];
+$publicCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$user,$action==='poll');$owner=(int)$publicCtx['owner_user_id'];
+if(array_key_exists('conversation_namespace',$input)){
+    $namespace=$input['conversation_namespace'];
+    $expected=hash('sha256','profile-widget-v1|'.(string)$publicCtx['conversation_authority']['credential_hash']);
+    if(!is_string($namespace)||!preg_match('/^[a-f0-9]{64}$/D',$namespace)||!hash_equals($expected,$namespace)){
+        throw new VP3ProfileAgentPublicException('PROFILE_SESSION_CHANGED','Your visitor session changed. Refresh this profile before continuing.',409);
+    }
+}
 if($method==='POST'&&!profile_chat_token_valid($owner,(string)($input['profile_token']??'')))profile_agent_json(false,['error'=>'Profile session expired. Refresh and try again.'],419);
 
 if($action==='state'){
     $cid=max(0,(int)($input['conversation_id']??0));
     profile_agent_json(true,vp3_profile_agent_public_state_service_v110($pdo,$publicCtx,$cid));
 }
-if($method!=='POST')profile_agent_method_required('POST');
-if($action==='message'){
-    $cid=max(0,(int)($input['conversation_id']??0));
-    profile_agent_json(true,vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,(string)($input['message']??''),$cid));
-}
 if($action==='poll'){
     $cid=max(0,(int)($input['conversation_id']??0));$after=max(0,(int)($input['after_id']??0));
     profile_agent_json(true,vp3_profile_agent_public_poll_service_v110($pdo,$publicCtx,$cid,$after));
 }
+if($method!=='POST')profile_agent_method_required('POST');
+if($action==='message'){
+    $cid=max(0,(int)($input['conversation_id']??0));
+    profile_agent_json(true,vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,(string)($input['message']??''),$cid,[
+        'async'=>true,'client_request_id'=>$input['client_request_id']??'',
+    ]));
+}
+if($action==='dispatch'){
+    profile_agent_json(true,vp3_profile_agent_public_dispatch_pa3($pdo,$publicCtx,max(0,(int)($input['conversation_id']??0)),max(0,(int)($input['turn_id']??0))));
+}
 profile_agent_json(false,['error'=>'Unknown Profile Agent action.'],404);
-}catch(VP3ProfileAgentPublicException $e){profile_agent_json(false,['error'=>$e->getMessage(),'code'=>$e->publicCode],$e->httpStatus);}catch(Throwable $e){profile_agent_unexpected_error($e);}
+}catch(VP3ProfileAgentPublicException|VP3ProfileHandoffException $e){profile_agent_json(false,['error'=>$e->getMessage(),'code'=>$e->publicCode],$e->httpStatus);}catch(Throwable $e){profile_agent_unexpected_error($e);}

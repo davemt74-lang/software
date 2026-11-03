@@ -4,6 +4,7 @@ declare(strict_types=1);
 $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'voice-learning-v1-20261101';
 $controlBuild .= '-vrss-outcome-cards-s8b-20261103';
+$controlBuild .= '-profile-doorbell-pa3-20261103';
 $controlBuild .= '-canvas-image-generation-v1-listening-continuation-v1-live-player-history-v1-audio-debug-v1-recognition-reliability-v1-participant-conversation-v2-20261102-participant-updates-20261102-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351-speech-recovery-20261031-mic-startup-20261101';
@@ -22,6 +23,7 @@ $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 $chatSettingsBuild = 'chat-settings-v239-canonical-20260905' . '-voice-v1352';
 $notificationDrawerBuild = 'chat-notifications-recovery-20261016' . '-voice-v1351';
+$notificationDrawerBuild .= '-profile-doorbell-pa3-20261103';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 $agentIntelligenceBuild = 'agent-chat-intelligence-v171-20260914';
@@ -414,6 +416,17 @@ $profileActivityRuntime = $agentFeatureReady && $pdoForAgent && profile_agent_sc
         . '<script data-profile-activity-chat src="' . e(url('/profile-activity-chat.js?v=' . $profileActivityBuild)) . '"></script>'
     : '';
 
+$profileDoorbellBuild='profile-doorbell-pa3-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-visitor-doorbell-pa3.js').hash_file('sha256',__DIR__.'/profile-visitor-doorbell-pa3.css')),0,12);
+$profileDoorbellRuntime=$profileActivityRuntime!==''
+    ? '<link rel="stylesheet" data-profile-doorbell-pa3 href="'.e(url('/profile-visitor-doorbell-pa3.css?v='.$profileDoorbellBuild)).'">'
+        .'<script>window.VP3_PROFILE_DOORBELL_PA3='.json_encode([
+            'endpoint'=>url('/api/chat-notifications-brain-v240.php'),
+            'ownerEndpoint'=>url('/api/profile-agent.php'),
+            'csrf'=>csrf_token(),'userId'=>(int)$user['id'],
+        ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
+        .'<script data-profile-doorbell-pa3 src="'.e(url('/profile-visitor-doorbell-pa3.js?v='.$profileDoorbellBuild)).'"></script>'
+    : '';
+
 $chatSettingsRuntime = '<link rel="stylesheet" data-chat-settings-canonical href="' . e(url('/chat-settings-v237.css?v=' . $chatSettingsBuild)) . '">'
     . '<script data-chat-settings-config>window.STONEFELLOW_CHAT_SETTINGS='
     . json_encode([
@@ -566,6 +579,7 @@ $runtime = $headerUiRuntime
          . '<script data-chat-voice data-chat-echo-guard="canonical" data-chat-streaming="enabled" data-chat-processed-input="enabled" data-chat-barge="speech-recognition" data-chat-turn-pause="1800" data-chat-lifecycle="canonical" src="' . e(url('/chat-voice.js?v=' . $voiceCacheBuild . '&capture=interactive-listening-section2-20261003')) . '"></script>'
          . $agentIdentityRuntime
          . $profileActivityRuntime
+         . $profileDoorbellRuntime
          . $browserContextRuntime
          . $agentTeamsA3Runtime
          . $cognitivePresentationPre

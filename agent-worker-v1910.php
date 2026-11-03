@@ -33,10 +33,10 @@ function agent_worker_runner_owner_ids_v1910(PDO $pdo,int $limit=50): array
     return array_values(array_filter(array_map(static fn(array $r):int=>(int)($r['owner_user_id']??0),$rows),static fn(int $id):bool=>$id>0));
 }
 
-function agent_worker_runner_lock_v1910(): mixed
+function agent_worker_runner_lock_v1910(string $executor='all'): mixed
 {
     $dir=agent_runtime_v125_dir('workers');
-    $path=$dir.'/distributed-v1910.lock';
+    $path=$dir.($executor==='profile'?'/profile-handoff-pa3.lock':'/distributed-v1910.lock');
     $fh=@fopen($path,'c+');
     if(!$fh)return null;
     @chmod($path,0600);
@@ -49,6 +49,7 @@ function agent_worker_runner_lock_v1910(): mixed
 
 function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLimit): array
 {
+    if($executor==='profile'){require_once __DIR__.'/includes/profile-agent-handoff-pa3.php';return vp3_profile_handoff_runner_pa3($pdo,$ownerLimit)+['completed_at'=>gmdate('c')];}
     $counts=['owners'=>0,'cloud_completed'=>0,'homeserver_completed'=>0,'no_work'=>0,'failed'=>0];
     $ownerIds=agent_worker_runner_owner_ids_v1910($pdo,$ownerLimit);
     if($executor==='all'||$executor==='cloud'){cloud_mission_schema_v1($pdo);cloud_mission_schedules_schema_v1($pdo);cloud_mission_schedule_background_v1($pdo);$ownerIds=array_values(array_unique(array_merge(cloud_mission_schedule_owner_ids_v1($pdo,$ownerLimit),$ownerIds)));}
@@ -80,14 +81,14 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
 }
 
 $executor=strtolower(agent_worker_runner_option_v1910($argv,'executor','all'));
-if(!in_array($executor,['all','cloud','homeserver'],true)){
-    fwrite(STDERR,"Invalid --executor. Use all, cloud, or homeserver.\n");
+if(!in_array($executor,['all','cloud','homeserver','profile'],true)){
+    fwrite(STDERR,"Invalid --executor. Use all, cloud, homeserver, or profile.\n");
     exit(2);
 }
 $loop=in_array('--loop',$argv,true);
-$sleep=max(1,min(60,(int)agent_worker_runner_option_v1910($argv,'sleep','5')));
+$sleep=max(1,min(60,(int)agent_worker_runner_option_v1910($argv,'sleep',$executor==='profile'?'1':'5')));
 $ownerLimit=max(1,min(250,(int)agent_worker_runner_option_v1910($argv,'max-owners','50')));
-$lock=agent_worker_runner_lock_v1910();
+$lock=agent_worker_runner_lock_v1910($executor);
 if(!$lock){fwrite(STDOUT,json_encode(['ok'=>true,'reason'=>'runner_already_active','build'=>VP3_AGENT_WORKER_RUNNER_V1910]).PHP_EOL);exit(0);}
 
 $pdo=db();

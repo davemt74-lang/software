@@ -534,6 +534,15 @@ function chat_notifications_v240_present_attention_locked(PDO $pdo, array $user,
     $stmt->execute([$notificationId, $userId]);
     $notification = $stmt->fetch();
     if (!$notification) throw new DomainException('Notification was not found.');
+    if(notification_is_profile_attention_v1341($notification)){
+        require_once dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
+        if(vp3_profile_handoff_notification_owned_pa3($pdo,$user,$notification)){
+            // Delivery to the canvas is separate from notification read/voice.
+            // Only the exact visible card ACK can start the pickup deadline.
+            return ['ok'=>true,'handled'=>false,'notification_id'=>$notificationId,
+                'presentation_owner'=>'profile_handoff_pa3','voice_allowed'=>false];
+        }
+    }
     if(function_exists('vp3_cognitive_presentation_owns_attention_v510')&&vp3_cognitive_presentation_owns_attention_v510()&&!notification_is_profile_attention_v1341($notification)){
         return ['ok'=>true,'handled'=>false,'presentation_owner'=>'cognitive_runtime_v510','notification_id'=>max(0,(int)($input['notification_id']??0))];
     }
@@ -674,7 +683,7 @@ function chat_notifications_v240_present_attention(PDO $pdo,array $user,array $i
         elseif(!$owned&&$pdo->inTransaction()){$pdo->exec('ROLLBACK TO SAVEPOINT '.$savepoint);$pdo->exec('RELEASE SAVEPOINT '.$savepoint);}
         throw $e;
     }
-    $result['voice_allowed']=empty($result['duplicate']);
+    if(!array_key_exists('voice_allowed',$result))$result['voice_allowed']=empty($result['duplicate']);
     if(!empty($result['handled'])&&empty($result['duplicate'])&&function_exists('vp3_cognitive_attention_arbitrate_v2410')){
         // The canonical attention policy still owns voice, focus and budget.
         $result['voice_allowed']=false;
@@ -727,6 +736,17 @@ try {
     }
     chat_notifications_v240_require_csrf($input);
 
+    if(in_array($action,['doorbell_presence','doorbell_list','doorbell_delivery','doorbell_ack'],true)){
+        require_once dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
+        $result=match($action){
+            'doorbell_presence'=>vp3_profile_handoff_presence_pa3($pdo,$user,$input),
+            'doorbell_list'=>vp3_profile_handoff_owner_list_pa3($pdo,$user,$input),
+            'doorbell_delivery'=>vp3_profile_handoff_delivery_pa3($pdo,$user,$input),
+            'doorbell_ack'=>vp3_profile_handoff_ack_pa3($pdo,$user,$input),
+        };
+        chat_notifications_v240_json(['ok'=>true]+$result);
+    }
+
     if ($action === 'present_attention') {
         chat_notifications_v240_json(chat_notifications_v240_present_attention($pdo, $user, $input));
     }
@@ -747,6 +767,8 @@ try {
     }
 
     chat_notifications_v240_json(['ok'=>false,'error'=>'unknown_action'], 400);
+} catch (VP3ProfileHandoffException $e) {
+    chat_notifications_v240_json(['ok'=>false,'code'=>$e->publicCode,'error'=>$e->getMessage()],$e->httpStatus);
 } catch (DomainException $e) {
     chat_notifications_v240_json(['ok'=>false,'error'=>$e->getMessage()], 400);
 } catch (Throwable $e) {
