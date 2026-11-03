@@ -8,7 +8,7 @@
   const node=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;};
   const canonical=()=>window.STONEFELLOW_CHAT_CONTINUITY_V87||{},doorbell=()=>window.VP3_PROFILE_DOORBELL_PA3_RUNTIME||{};
   const items=new Map(),controls=new Set(),attached=new WeakSet(),clientInstance=random();
-  let alive=true,epoch=0,lastContext='',loading=false,player=null,armed=null,otherSpeech=false,voiceMaster=window.STONEFELLOW_AGENT_IDENTITY_V236?.agentVoiceEnabled!==false;
+  let alive=true,epoch=0,requestSequence=0,lastContext='',loading=false,player=null,armed=null,otherSpeech=false,voiceMaster=window.STONEFELLOW_AGENT_IDENTITY_V236?.agentVoiceEnabled!==false;
   const states=new Set(['available','pending','granted','playing','client_finished','interrupted','blocked','outcome_unverified','expired']);
   const privateInput=document.getElementById('chatInput'),privateForm=document.getElementById('chatForm'),thread=document.getElementById('chatThread');
   function context(){const chat=canonical(),presence=doorbell().speechContext?.()||{};return {chat_conversation_id:Number(chat.conversationId?.()||0),chat_agent_id:Number(chat.agentId?.()||0),tab_id:presence.tab_id||'',availability:presence.availability,reachable:presence.reachable===true,
@@ -65,7 +65,7 @@
     return 'Visitor speech is unavailable. You can read the message and reply in text.';
   }
   async function request(action,payload={},options={}){
-    const method=options.method||'POST',controller=options.controller||new AbortController(),sentAt=time();let timer;
+    const method=options.method||'POST',controller=options.controller||new AbortController(),sentAt=time(),sequence=++requestSequence;let timer;
     const url=new URL(cfg.endpoint,location.href),init={method,credentials:'same-origin',cache:'no-store',signal:controller.signal};
     if(method==='GET')Object.entries({action,...payload}).forEach(([key,value])=>url.searchParams.set(key,String(value)));
     else{init.headers={'Content-Type':'application/json'};init.body=JSON.stringify({action,csrf_token:cfg.csrf,...payload});}
@@ -73,18 +73,18 @@
       const response=await fetch(url,init);
       if(options.audio&&response.ok&&response.status!==202&&/^audio\/mpeg(?:;|$)/i.test(response.headers.get('Content-Type')||'')){
         const size=Number(response.headers.get('Content-Length'));if(!positive(size)||size>4194304)throw new Error('Invalid audio size.');
-        const blob=await response.blob();if(blob.size!==size||!blob.size||blob.size>4194304)throw new Error('Invalid audio body.');return {blob,sentAt};
+        const blob=await response.blob();if(blob.size!==size||!blob.size||blob.size>4194304)throw new Error('Invalid audio body.');return {blob,sentAt,sequence};
       }
       const data=await response.json().catch(()=>null);
       if(!response.ok||response.status===202||data?.ok!==true||data.contract!==CONTRACT){const error=new Error('Speech unavailable.');error.code=typeof data?.code==='string'?data.code:'';error.status=response.status;throw error;}
-      return {data,sentAt};
+      return {data,sentAt,sequence};
     })();
     try{return await Promise.race([run,new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('Speech request timed out.'));},options.audio?65000:12000);})]);}finally{clearTimeout(timer);}
   }
   function show(record,message){if(record?.node?.isConnected)record.notice.textContent=message;}
   function render(record){
     record.text.textContent=record.item.display_text;record.label.textContent=(record.item.visitor_label||'Profile visitor')+' · '+(record.item.kind==='arrival'?'Agent announcement':'Visitor reading voice');
-    const busy=player?.record===record;record.play.textContent=busy?(player.started?'Playing':'Preparing speech…'):'Play';record.play.disabled=busy||record.awaitingReport||!record.item.can_play||!current(record.snapshot);record.stop.hidden=!busy;
+    const busy=player?.record===record,tapReady=busy&&player.awaitingGesture===true;record.play.textContent=tapReady?'Tap to play':busy?(player.started?'Playing':'Preparing speech…'):'Play';record.play.disabled=(busy&&!tapReady)||record.awaitingReport||(!busy&&!record.item.can_play)||!current(record.snapshot);record.stop.hidden=!busy;
     record.retry.hidden=record.item.can_retry!==true&&!record.retryAllowed;
     record.retry.disabled=busy||!current(record.snapshot);
   }
@@ -111,20 +111,44 @@
     if(session.audio){session.audio.onplaying=session.audio.onended=session.audio.onerror=null;try{session.audio.pause();session.audio.removeAttribute('src');session.audio.load?.();}catch(_){}session.audio.remove();}
     if(session.url)URL.revokeObjectURL(session.url);
     if(session.started)echo('end',session);
-    if(session.playToken){session.record.awaitingReport=true;void report(session,status);}show(session.record,reason);render(session.record);
+    if(session.playToken){session.record.awaitingReport=true;void report(session,status);}show(session.record,reason);render(session.record);updateControls();
   }
-  function validSession(session){return player===session&&!session.closed&&current(session.snapshot)&&session.record.item.id===session.bound.item_id&&session.record.item.revision===session.bound.revision&&session.record.item.voice_revision===session.voiceRevision&&presented(session.record)&&!mediaBusy()&&(!session.deadline||time()<session.deadline)&&(!session.authorityDeadline||time()<session.authorityDeadline);}
+  function validSession(session){return player===session&&!session.closed&&current(session.snapshot)&&session.record.item.id===session.bound.item_id&&session.record.item.revision===session.bound.revision&&session.record.item.voice_revision===session.voiceRevision&&session.record.item.display_text===session.sourceText&&session.record.item.visitor_label===session.sourceLabel&&presented(session.record)&&!mediaBusy()&&(!session.deadline||time()<session.deadline)&&(!session.authorityDeadline||time()<session.authorityDeadline);}
+  function invalidPlayback(session){
+    if(player!==session)return;
+    const expired=(session.deadline&&time()>=session.deadline)||(session.authorityDeadline&&time()>=session.authorityDeadline);
+    if(expired&&!session.started)session.record.claim=null;
+    stop(expired&&!session.started?'Playback permission expired. Choose Play to authorize the saved audio again.':'Visitor speech stopped because the current context or voice surface changed.',session.started?'interrupted':'blocked');
+  }
+  function startAudio(session){
+    if(player!==session||session.playPending)return Promise.resolve();
+    if(!validSession(session)){invalidPlayback(session);return Promise.resolve();}
+    session.awaitingGesture=false;session.playPending=true;render(session.record);updateControls();
+    // A retained-element tap must reach play() synchronously in its click task.
+    // No network request, await or permission renewal precedes this call.
+    let result;try{result=session.audio.play();}catch(error){result=Promise.reject(error);}
+    return Promise.resolve(result).then(()=>{if(player===session&&!validSession(session))invalidPlayback(session);}).catch(error=>{
+      if(player!==session)return;
+      if(error?.name==='NotAllowedError'&&!session.started&&validSession(session)){
+        session.awaitingGesture=true;show(session.record,'Your browser blocked playback. Tap to play the prepared audio.');
+      }else stop(safeError(error),session.started?'interrupted':'blocked');
+    }).finally(()=>{session.playPending=false;if(player===session){render(session.record);updateControls();}});
+  }
+  function playFromControl(record){
+    if(player?.record===record){if(player.awaitingGesture)void startAudio(player);return;}
+    void play(record);
+  }
   async function play(record,automatic=false,retry=false){
     if(player||armed||record.awaitingReport||!eligible(record,automatic,retry)){show(record,'Speech is paused while another voice surface or call is active. You can read and reply in text.');return;}
     if(retry&&!window.confirm('Generate this visitor speech again? The previous request may already have used voice credits, and this request may use additional credits.'))return;
     const proof=window.STONEFELLOW_CHAT_VOICE||{};
-    const session={record,snapshot:capture(),bound:binding(record),voiceRevision:record.item.voice_revision,controller:new AbortController(),closed:false,started:false,deadline:0,attempt:null,playToken:null,audio:null,url:null,
+    const session={record,snapshot:capture(),bound:binding(record),voiceRevision:record.item.voice_revision,sourceText:record.item.display_text,sourceLabel:record.item.visitor_label,openedSequence:requestSequence,controller:new AbortController(),closed:false,started:false,deadline:0,attempt:null,playToken:null,audio:null,url:null,
       chatListening:idleChatListening(),voiceProof:{submits:proof.submits,apiTurns:proof.apiTurns,interruptions:proof.interruptions}};
     player=session;render(record);show(record,'Preparing visitor speech…');
     // Exact request identity remains in memory for a pending/uncertain response;
     // a refresh or context change never silently creates a second paid attempt.
     const key=JSON.stringify({...session.bound,revision:0});if(!record.claim||record.claim.key!==key||retry)record.claim={key,request_id:random(),mode:automatic?'automatic':'manual',play_request_id:random()};
-    session.timer=setInterval(()=>{if(!validSession(session))stop('Visitor speech stopped because the current context or voice surface changed.');else if(session.started&&time()-(session.lastReport||0)>=8000)void report(session,'playing');},150);
+    session.timer=setInterval(()=>{if(!validSession(session))invalidPlayback(session);else if(session.started&&time()-(session.lastReport||0)>=8000)void report(session,'playing');},150);
     try{
       const extra=retry?{retry_of:record.item.latest_attempt_id||record.lastAttemptId,retry_confirmed:true}:{};
       const {data:claim}=await request(retry?'owner_retry':'owner_claim',{...session.bound,...extra,request_id:record.claim.request_id,mode:record.claim.mode},{controller:session.controller});
@@ -136,7 +160,7 @@
       // Claims may advance a source revision; use only the server's returned
       // source bound to the same immutable public message and voice assignment.
       if(item.public_conversation_id!==record.item.public_conversation_id||item.visitor_message_id!==record.item.visitor_message_id||item.turn_id!==record.item.turn_id||item.voice_assignment_id!==record.item.voice_assignment_id)throw new Error('Speech source changed.');
-      record.item=item;session.bound.revision=item.revision;session.voiceRevision=item.voice_revision;
+      record.item=item;session.bound.revision=item.revision;session.voiceRevision=item.voice_revision;session.sourceText=item.display_text;session.sourceLabel=item.visitor_label;
       const {blob}=await request('owner_audio',{...session.bound,attempt_id:claim.attempt_id,ticket:claim.ticket,request_id:record.claim.request_id},{audio:true,controller:session.controller});
       if(!validSession(session))return;
       session.audio=node('audio','profile-speech-audio');session.audio.hidden=true;session.audio.preload='none';session.url=URL.createObjectURL(blob);session.audio.src=session.url;record.node.appendChild(session.audio);
@@ -145,11 +169,11 @@
       if(permit.attempt_id!==claim.attempt_id||permit.granted!==true||!token(permit.play_token)||!nonnegative(permit.server_now_ms)||!positive(permit.lease_until_ms))throw new Error('Playback permission was not confirmed.');
       const remaining=permit.lease_until_ms-permit.server_now_ms,absolute=permit.absolute_until_ms===undefined?600000:permit.absolute_until_ms-permit.server_now_ms;
       if(!Number.isSafeInteger(absolute)||absolute<=0||absolute>600000)throw new Error('Playback limit was not confirmed.');
-      session.deadline=sentAt+remaining;session.absoluteDeadline=sentAt+absolute;session.authorityDeadline=sentAt+Math.min(10000,remaining);session.playToken=permit.play_token;
+      session.deadline=sentAt+remaining;session.absoluteDeadline=sentAt+absolute;session.authorityDeadline=sentAt+Math.min(10000,remaining);session.playToken=permit.play_token;session.permitReadSequence=requestSequence;
       if(remaining<=0||remaining>30000||!validSession(session))throw new Error('Playback permission expired.');
       session.audio.onplaying=()=>{if(!validSession(session)){stop();return;}session.started=true;show(record,'Playing visitor speech.');render(record);session.echoAttached=true;session.emittingEcho=true;try{echo('start',session);}finally{session.emittingEcho=false;}void report(session,'playing');};
       session.audio.onended=()=>stop('Visitor speech finished.','ended');session.audio.onerror=()=>stop('Audio playback failed. The visitor text remains available.','blocked');
-      await session.audio.play();if(!validSession(session))stop();
+      await startAudio(session);
     }catch(error){
       if(player!==session)return;record.retryAllowed=/AUDIO_EXPIRED$|UNVERIFIED|RETRY_REQUIRED/.test(error?.code||'');
       stop(safeError(error),session.started?'interrupted':'blocked');
@@ -161,20 +185,24 @@
     playButton.type=stopButton.type=retry.type='button';playButton.dataset.speechAction='play';stopButton.dataset.speechAction='stop';retry.dataset.speechAction='retry';notice.setAttribute('role','status');actions.append(playButton,stopButton,retry);card.append(label,text,actions,notice);
     const body=element.querySelector('.message-body')||element;body.appendChild(card);const placeholder=element.querySelector('.message-text');if(placeholder)placeholder.hidden=true;
     const record={item,node:card,element,label,text,play:playButton,stop:stopButton,retry,notice,binding:bound,snapshot,fresh,autoTried:false};items.set(item.id,record);
-    playButton.addEventListener('click',()=>void play(record));stopButton.addEventListener('click',()=>stop());retry.addEventListener('click',()=>void play(record,false,true));render(record);return record;
+    playButton.addEventListener('click',()=>playFromControl(record));stopButton.addEventListener('click',()=>stop());retry.addEventListener('click',()=>void play(record,false,true));render(record);return record;
   }
   async function refresh(){
     if(loading||!cfg.endpoint||!cfg.csrf||!alive)return;const snapshot=capture();if(!current(snapshot))return;
     if(lastContext!==snapshot.key){invalidate('Chat context changed.');lastContext=snapshot.key;return refresh();}
     loading=true;
     try{
-      const {data}=await request('owner_state',{chat_conversation_id:snapshot.chat_conversation_id,chat_agent_id:snapshot.chat_agent_id,tab_id:snapshot.tab_id,client_instance_id:clientInstance},{method:'GET'});
+      const {data,sequence}=await request('owner_state',{chat_conversation_id:snapshot.chat_conversation_id,chat_agent_id:snapshot.chat_agent_id,tab_id:snapshot.tab_id,client_instance_id:clientInstance},{method:'GET'});
       if(!current(snapshot))return;if(!Array.isArray(data.items)||data.items.length>50||typeof data.ready!=='boolean')throw new Error('Invalid speech list.');
       if(!data.ready&&player)stop('Visitor speech is no longer available.');
       const seen=new Set();
       for(const raw of data.items){const item=normalize(raw);if(!item)continue;seen.add(item.id);let record=items.get(item.id);
         if(record?.node.isConnected&&current(record.snapshot)){
-          if(item.revision>=record.item.revision){if(player?.record===record&&(item.revision!==record.item.revision||item.voice_revision!==record.item.voice_revision||item.reason!==''))stop('This visitor speech changed.');record.item=item;record.snapshot=snapshot;if(item.can_play&&item.latest_attempt_id===record.lastAttemptId&&['ended','interrupted','blocked'].includes(item.playback_state))record.claim=null;render(record);}continue;
+          if(item.revision>=record.item.revision){
+            const session=player?.record===record?player:null;
+            if(session&&(item.revision!==record.item.revision||item.voice_revision!==record.item.voice_revision||item.display_text!==session.sourceText||item.visitor_label!==session.sourceLabel||item.reason!==''||(session.playToken&&sequence>session.permitReadSequence&&((item.attempt_id??item.latest_attempt_id)!==session.attempt.attempt_id||!['granted','playing'].includes(item.playback_state)))))stop('This visitor speech changed.');
+            record.item=item;record.snapshot=snapshot;if(item.can_play&&item.latest_attempt_id===record.lastAttemptId&&['ended','interrupted','blocked'].includes(item.playback_state))record.claim=null;render(record);
+          }continue;
         }
         const {data:delivery}=await request('owner_delivery',{item_id:item.id,revision:item.revision,chat_conversation_id:snapshot.chat_conversation_id,chat_agent_id:snapshot.chat_agent_id,tab_id:snapshot.tab_id,client_instance_id:clientInstance,request_id:random()});
         if(!current(snapshot))return;const next=normalize(delivery.item);
@@ -183,7 +211,10 @@
         const element=canonical().mountProfileSpeech?.(delivery);if(!element)continue;
         record=create(next,element,{chat_conversation_id:delivery.chat_conversation_id,chat_agent_id:delivery.chat_agent_id,chat_message_id:delivery.chat_message_id,delivery_id:delivery.delivery_id},snapshot,!existed);
       }
-      for(const record of items.values())if(current(record.snapshot)&&!seen.has(record.item.id)&&!selectedSource(record)){if(player?.record===record)stop('This visitor speech is no longer available.');record.item.can_play=false;record.node.hidden=true;}
+      for(const record of items.values())if(current(record.snapshot)&&!seen.has(record.item.id)){
+        if(player?.record===record&&sequence>player.openedSequence)stop('This visitor speech is no longer available.');
+        if(!selectedSource(record)){record.item.can_play=false;record.node.hidden=true;}
+      }
       updateControls();autoPlay();
     }catch(error){if(current(snapshot)&&[401,403,404,419].includes(error.status))invalidate('Visitor speech access changed.');}
     finally{loading=false;}
@@ -193,7 +224,7 @@
     for(const record of items.values())if(record.fresh&&!record.autoTried&&record.item.state==='available'&&eligible(record,true)){record.autoTried=true;void play(record,true);break;}
   }
   function sourceRecord(source){return source?[...items.values()].find(record=>record.item.kind==='visitor_message'&&record.item.turn_id===source.turn_id&&record.item.public_conversation_id===source.public_conversation_id&&record.item.visitor_message_id===source.visitor_message_id&&current(record.snapshot)):null;}
-  function updateControls(){for(const control of controls){if(!control.host.isConnected)continue;const target=control.options.target(),source=control.options.source(),record=sourceRecord(source);control.speak.disabled=!target||!target.draft_empty;control.speak.textContent=armed?.control===control?'Cancel spoken draft':'Speak reply';control.play.disabled=!source||control.loading||Boolean(player);control.stop.hidden=!player||player.record!==record;}}
+  function updateControls(){for(const control of controls){if(!control.host.isConnected)continue;const target=control.options.target(),source=control.options.source(),record=sourceRecord(source),tapReady=player?.record===record&&player?.awaitingGesture===true;control.speak.disabled=!target||!target.draft_empty;control.speak.textContent=armed?.control===control?'Cancel spoken draft':'Speak reply';control.play.textContent=tapReady?'Tap to play visitor message':'Play visitor message';control.play.disabled=!source||control.loading||Boolean(player&&!tapReady);control.stop.hidden=!player||player.record!==record;}}
   async function playSelected(control){
     const source=control.options.source(),snapshot=capture();
     if(!source||control.loading||player||armed||!current(snapshot)||!painted(control.host))return;
@@ -222,7 +253,7 @@
     const row=node('div','profile-speech-card-controls'),playButton=node('button','','Play visitor message'),stopButton=node('button','','Stop'),speak=node('button','','Speak reply');
     for(const button of [playButton,stopButton,speak])button.type='button';speak.dataset.speechAction='draft';playButton.dataset.speechAction='visitor-play';row.append(playButton,stopButton,speak);host.appendChild(row);
     const control={host,options,speak,play:playButton,stop:stopButton};controls.add(control);
-    playButton.addEventListener('click',()=>void playSelected(control));stopButton.addEventListener('click',()=>stop());speak.addEventListener('click',()=>armed?.control===control?cancelArm('Spoken draft cancelled.'):arm(control));updateControls();
+    playButton.addEventListener('click',()=>{const record=sourceRecord(control.options.source());if(record&&player?.record===record)playFromControl(record);else void playSelected(control);});stopButton.addEventListener('click',()=>stop());speak.addEventListener('click',()=>armed?.control===control?cancelArm('Spoken draft cancelled.'):arm(control));updateControls();
   }
   function targetCurrent(target){const next=doorbell().speechTarget?.(target?.turn_id);return next&&next.draft_empty&&['turn_id','revision','public_conversation_id','visitor_message_id','chat_conversation_id','chat_agent_id','chat_message_id','delivery_id','tab_id'].every(key=>target[key]===next[key]);}
   function cancelArm(message='Spoken draft cancelled. Your private Chat draft is unchanged.'){

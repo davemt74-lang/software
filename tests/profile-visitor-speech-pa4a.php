@@ -8,6 +8,12 @@ function ps_throws(callable $run,string $name,?string $code=null): void
     try{$run();}catch(VP3ProfileSpeechException $e){ps_ok($code===null||$e->publicCode===$code,$name);return;}throw new RuntimeException('FAIL expected denial: '.$name);
 }
 function ps_play_input(array $claim,array $extra=[]): array{return $extra+array_replace($claim['input'],['request_id'=>bin2hex(random_bytes(16))]);}
+function ps_read_only_state(): array
+{
+    $pdo=db();$mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
+    if($mysql){$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();}else $pdo->exec('PRAGMA query_only=ON');
+    try{return ps_state();}finally{if($mysql)$pdo->rollBack();else $pdo->exec('PRAGMA query_only=OFF');}
+}
 
 ps_reset();$p=db();ps_ok(vp3_profile_speech_schema_ready_pa4a($p),'real schema ready');
 $ctx=ps_context(2);$page=ps_page($ctx);$again=ps_page($ctx);ps_ok((int)$page['id']===(int)$again['id'],'same native arrival deduped');ps_ok(pa3_count('profile_agent_conversations')===0&&pa3_count('profile_agent_messages')===0&&pa3_count('profile_agent_handoff_turns_pa3')===0,'page arrival makes no fake chat');
@@ -37,6 +43,31 @@ foreach(['sending','outcome_unverified','rejected','blocked'] as $scenario){
 }
 
 ps_reset();$claim=ps_claim(ps_page(),['mode'=>'automatic']);$request=ps_ready($claim);$play=vp3_profile_speech_play_pa4a($p,ps_owner(),ps_play_input($claim));ps_tick(30001);vp3_profile_speech_maintenance_pa4a($p);$item=vp3_profile_speech_item_pa4a($p,$claim['item']['id']);ps_ok((int)$item['auto_consumed']===1&&!ps_state()['items'][0]['automatic_allowed'],'lost playback ack never automatically replays');ps_ok(vp3_profile_speech_attempt_row_pa4a($p,$claim['attempt_id'])['playback_state']==='interrupted','crashed client holds only30s');
+
+foreach(['granted','playing'] as $lostState){
+    ps_reset();$claim=ps_claim(ps_page(),['mode'=>'automatic']);ps_ready($claim);$playInput=ps_play_input($claim);$permit=vp3_profile_speech_play_pa4a($p,ps_owner(),$playInput);
+    $report=$playInput+['play_token'=>$permit['play_token'],'status'=>'playing','report_sequence'=>1];
+    if($lostState==='playing'){vp3_profile_speech_report_pa4a($p,ps_owner(),$report);$report['report_sequence']=2;}
+    ps_tick(30000);$beforeItem=vp3_profile_speech_item_pa4a($p,$claim['item']['id']);$beforeAttempt=vp3_profile_speech_attempt_row_pa4a($p,$claim['attempt_id']);$beforeVoice=vp3_profile_speech_voice_row_pa4a($p,(int)$beforeItem['voice_assignment_id']);
+    $view=ps_read_only_state()['items'][0];
+    ps_ok($view['state']==='interrupted'&&$view['playback_state']==='interrupted'&&$view['can_play']&&!$view['can_retry']&&!$view['automatic_allowed'],'expired '.$lostState.' permit projects explicit manual cache replay without maintenance');
+    ps_ok($beforeAttempt['playback_state']===$lostState&&vp3_profile_speech_attempt_row_pa4a($p,$claim['attempt_id'])===$beforeAttempt&&vp3_profile_speech_item_pa4a($p,$claim['item']['id'])===$beforeItem&&vp3_profile_speech_voice_row_pa4a($p,(int)$beforeItem['voice_assignment_id'])===$beforeVoice,'read-only expired '.$lostState.' projection preserves saved evidence and automatic consumption');
+    ps_throws(fn()=>vp3_profile_speech_play_pa4a($p,ps_owner(),$playInput),'expired '.$lostState.' permit cannot be issued again','PROFILE_SPEECH_ALREADY_PLAYED');
+    ps_throws(fn()=>vp3_profile_speech_report_pa4a($p,ps_owner(),$report),'expired '.$lostState.' report cannot renew its permit','PROFILE_SPEECH_ALREADY_PLAYED');
+    $input=ps_input($beforeItem);$cached=vp3_profile_speech_claim_pa4a($p,ps_owner(),$input);$row=vp3_profile_speech_attempt_row_pa4a($p,$cached['attempt_id']);
+    ps_ok($cached['state']==='ready'&&(int)$row['cache_of']===$claim['attempt_id']&&(int)$row['provider_attempted']===0&&!$cached['retry_may_charge'],'fresh manual claim after lost '.$lostState.' report links the ready cache');
+    $input['revision']=$cached['item']['revision'];$cachedInput=$input+['attempt_id'=>$cached['attempt_id'],'ticket'=>$cached['ticket']];$begin=vp3_profile_speech_attempt_begin_pa4a($p,ps_owner(),$cachedInput);
+    ps_ok(!$begin['provider_required']&&count($GLOBALS['psProviderCalls'])===1&&pa3_count('profile_speech_attempts_pa4a')===2&&(int)vp3_profile_speech_item_pa4a($p,$claim['item']['id'])['auto_consumed']===1,'manual '.$lostState.' cache recovery neither synthesizes nor resets automatic consumption');
+    ps_throws(fn()=>vp3_profile_speech_play_pa4a($p,ps_owner(),$playInput),'old '.$lostState.' permit remains unusable after a fresh claim');
+    ps_throws(fn()=>vp3_profile_speech_report_pa4a($p,ps_owner(),$report),'old '.$lostState.' report remains unusable after a fresh claim');
+    $newPermit=vp3_profile_speech_play_pa4a($p,ps_owner(),array_replace($cachedInput,['request_id'=>bin2hex(random_bytes(16))]));
+    ps_ok($newPermit['granted']&&$newPermit['attempt_id']===$cached['attempt_id']&&$newPermit['play_token']!==$permit['play_token']&&count($GLOBALS['psProviderCalls'])===1,'explicit '.$lostState.' cache replay receives only its own new permit');
+}
+ps_reset();$claim=ps_claim(ps_page(),['mode'=>'automatic']);ps_ready($claim);vp3_profile_speech_play_pa4a($p,ps_owner(),ps_play_input($claim));ps_tick(600001);$view=ps_read_only_state()['items'][0];
+ps_ok($view['state']==='expired'&&$view['playback_state']==='interrupted'&&!$view['can_play']&&$view['can_retry']&&!$view['automatic_allowed'],'audio-cache expiry still requires explicit potentially billed retry');
+$item=vp3_profile_speech_item_pa4a($p,$claim['item']['id']);ps_throws(fn()=>vp3_profile_speech_claim_pa4a($p,ps_owner(),ps_input($item)),'expired audio cannot silently regenerate','PROFILE_SPEECH_RETRY_REQUIRED');
+$retry=vp3_profile_speech_claim_pa4a($p,ps_owner(),ps_input($item,['retry_of'=>$claim['attempt_id'],'retry_confirmed'=>true]),true);
+ps_ok($retry['state']==='reserved'&&$retry['retry_may_charge']&&count($GLOBALS['psProviderCalls'])===1,'only confirmed paid retry reserves another provider attempt');
 
 foreach(['block','profile','agent','private_chat','message','voice','mute','presence'] as $change){
     ps_reset();$ctx=ps_context(2);$m=ps_message('Protected exact visitor message.','agent',$ctx);$claim=ps_claim($m['item']);$begin=vp3_profile_speech_attempt_begin_pa4a($p,ps_owner(),$claim['input']);

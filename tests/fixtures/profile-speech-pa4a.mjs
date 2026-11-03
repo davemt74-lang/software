@@ -27,10 +27,10 @@ Element.prototype.dispatchEvent=function(event){if(!event.target)Object.definePr
 // HTTP and HTMLAudioElement are simulated. Chromium exercises native event
 // propagation and the full Chat renderer with the same API projection shapes.
 export async function speechFixture({items=[speechItem()],privateDraft='',voice=true,widget=false,automatic=false,scopedOnly=false}={}){
-  const document=new Document(),window=new EventTarget(),timers=new Map(),local=new Map(),session=new Map(),requests=[],holds=[],failures=new Map(),audio=[],urls=new Set(),recognizers=[];
+  const document=new Document(),window=new EventTarget(),timers=new Map(),local=new Map(),session=new Map(),requests=[],holds=[],failures=new Map(),audio=[],urls=new Set(),recognizers=[],mediaEvents=[];
   document.querySelectorAll=selector=>[...document.body.querySelectorAll(selector),...document.head.querySelectorAll(selector)];
   document.documentElement={lang:'en-US',clientWidth:900,clientHeight:900};
-  let elapsed=0,clock=1800000000000,nextTimer=0,sequence=0,present=false,availability='available',callBusy=false,ready=true,autoplayBlocked=false,attemptNo=0,providerCalls=0,preferenceRevision=1,preferenceStyle='preset',preferenceKey='';
+  let elapsed=0,clock=1800000000000,nextTimer=0,sequence=0,present=false,availability='available',callBusy=false,ready=true,autoplayBlocked=false,gestureRequired=false,inGesture=false,attemptNo=0,providerCalls=0,preferenceRevision=1,preferenceStyle='preset',preferenceKey='';
   const records=new Map(items.map(item=>[item.id,structuredClone({...item,automatic_allowed:automatic||item.automatic_allowed})])),turns=new Map([101,202].map(id=>[id,ownerCard(id,{state:'owner_claimed',responder:'owner'})])),attempts=new Map(),claimRequests=new Map(),delivered=new Map();
   const schedule=(fn,delay,repeat=false)=>{const id=++nextTimer;timers.set(id,{fn,delay:Math.max(0,delay),due:elapsed+Math.max(0,delay),repeat});return id;};
   const timerApi={setTimeout:(fn,delay=0)=>schedule(fn,delay),setInterval:(fn,delay)=>schedule(fn,delay,true),clearTimeout:id=>timers.delete(id),clearInterval:id=>timers.delete(id)};
@@ -40,12 +40,12 @@ export async function speechFixture({items=[speechItem()],privateDraft='',voice=
   const button=document.createElement('button');button.id='chatVoiceButtonLegacyDormant';const status=document.createElement('span');status.id='chatVoiceStatus';document.body.append(topbar,thread,form,button,status);
   const create=document.createElement.bind(document);document.createElement=tag=>{const element=create(tag);if(tag==='audio'){
     element.paused=true;element.ended=false;element.playCalls=0;element.stops=0;
-    element.play=async()=>{element.playCalls++;if(autoplayBlocked){const error=new Error('Blocked');error.name='NotAllowedError';throw error;}element.paused=false;const event=new Event('play');Object.defineProperty(event,'target',{value:element});document.dispatchEvent(event);element.onplaying?.();};
+    element.play=async()=>{element.playCalls++;mediaEvents.push({type:'play',element,gesture:inGesture});if(inGesture)element.gestureUnlocked=true;if(autoplayBlocked||(gestureRequired&&!element.gestureUnlocked)){const error=new Error('Blocked');error.name='NotAllowedError';throw error;}element.paused=false;const event=new Event('play');Object.defineProperty(event,'target',{value:element});document.dispatchEvent(event);element.onplaying?.();};
     element.pause=()=>{element.paused=true;element.stops++;};element.finish=()=>{element.paused=true;element.ended=true;element.onended?.();};element.load=()=>{};audio.push(element);
   }return element;};
   const json=(data,status=200)=>({ok:status>=200&&status<300,status,headers:new Headers({'Content-Type':'application/json'}),json:async()=>structuredClone(data)});
   const normal=item=>{
-    const attempt=[...attempts.values()].filter(row=>row.itemId===item.id).at(-1),playback=attempt?.playback||'none',provider=attempt?.state||(attempt?.ready?'ready':'reserved');
+    const attempt=[...attempts.values()].filter(row=>row.itemId===item.id).at(-1),storedPlayback=attempt?.playback||'none',playback=attempt&&['granted','playing'].includes(storedPlayback)&&attempt.playUntil<=clock?'interrupted':storedPlayback,provider=attempt?.state||(attempt?.ready?'ready':'reserved');
     let state=attempt?({reserved:'pending',sending:'pending',outcome_unverified:'outcome_unverified',rejected:'blocked',blocked:'blocked'}[provider]||'available'):item.state;
     state=({granted:'granted',playing:'playing',ended:'client_finished',interrupted:'interrupted',blocked:'blocked'})[playback]||state;
     const retry=Boolean(attempt&&['outcome_unverified','rejected'].includes(provider));
@@ -56,7 +56,7 @@ export async function speechFixture({items=[speechItem()],privateDraft='',voice=
   async function transport(url,options={}){
     const parsed=new URL(url,'https://fixture.test'),body=options.method==='GET'?Object.fromEntries(parsed.searchParams):JSON.parse(options.body||'{}');
     for(const key of ['conversation_id','public_conversation_id','chat_conversation_id','chat_agent_id','item_id','revision','turn_id','attempt_id','retry_of'])if(body[key]!==undefined)body[key]=Number(body[key]);
-    requests.push({path:parsed.pathname,method:options.method||'GET',...structuredClone(body)});
+    requests.push({path:parsed.pathname,method:options.method||'GET',...structuredClone(body)});mediaEvents.push({type:'fetch',action:body.action,gesture:inGesture});
     if(failures.has(body.action)){const error=failures.get(body.action);return json({ok:false,contract,code:error.code||'PROFILE_SPEECH_UNAVAILABLE'},error.status||403);}
     let result={ok:true},binary=false;
     if(body.action==='doorbell_list')Object.assign(result,{availability,turns:[...turns.values()].map(card=>({...structuredClone(card),server_now_ms:clock})),server_now_ms:clock});
@@ -73,7 +73,7 @@ export async function speechFixture({items=[speechItem()],privateDraft='',voice=
     }else if(body.action==='owner_audio'){
       const attempt=attempts.get(body.attempt_id);if(!attempt)throw new Error('Unknown exact fixture attempt.');if(!attempt.ready){providerCalls++;attempt.ready=true;}binary=true;
     }else if(body.action==='owner_play'){
-      const attempt=attempts.get(body.attempt_id);if(attempt.playRequest&&attempt.playRequest!==body.request_id)return json({ok:false,contract,code:'PROFILE_SPEECH_ALREADY_PLAYED'},409);attempt.playRequest=body.request_id;attempt.playback='granted';
+      const attempt=attempts.get(body.attempt_id);if(attempt.playRequest&&attempt.playRequest!==body.request_id)return json({ok:false,contract,code:'PROFILE_SPEECH_ALREADY_PLAYED'},409);attempt.playRequest=body.request_id;attempt.playback='granted';attempt.playUntil=clock+30000;
       Object.assign(result,{contract,attempt_id:body.attempt_id,play_token:'f'.repeat(32),server_now_ms:clock,lease_until_ms:clock+30000,granted:true});
     }else if(body.action==='owner_report'){
       const attempt=attempts.get(body.attempt_id);if(body.status==='playing'&&body.report_sequence>(attempt.sequence||0)){attempt.sequence=body.report_sequence;attempt.playUntil=clock+30000;}attempt.playback=body.status;Object.assign(result,{contract,attempt_id:attempt.id,state:body.status,client_reported:true,report_sequence:attempt.sequence||0,server_now_ms:clock,lease_until_ms:attempt.playUntil||clock+30000});
@@ -105,9 +105,10 @@ export async function speechFixture({items=[speechItem()],privateDraft='',voice=
   form.addEventListener('submit',event=>{if(event.defaultPrevented)return;event.preventDefault();void window.fetch('/api/chat.php',{method:'POST',body:JSON.stringify({action:'send',conversation_id:42,message:input.value,input_mode:'text'})});});
   vm.runInContext(read('profile-visitor-doorbell-pa3.js'),context,{filename:'profile-visitor-doorbell-pa3.js'});await settle();
   vm.runInContext(read('profile-speech-pa4a.js'),context,{filename:'profile-speech-pa4a.js'});await settle();
-  const fixture={window,document,thread,input,form,records,turns,requests,audio,recognizers,failures,urls,local,context,
+  const fixture={window,document,thread,input,form,records,turns,requests,audio,recognizers,failures,urls,local,context,mediaEvents,attempts,
     get providerCalls(){return providerCalls;},get clock(){return clock;},get elapsed(){return elapsed;},card:id=>thread.querySelector('[data-profile-doorbell-turn="'+id+'"]'),speech:id=>thread.querySelector('[data-speech-item="'+id+'"]'),
-    hold(action){const held={action,work:null};holds.push(held);return held;},setAutoplayBlocked:value=>autoplayBlocked=value,setReady:value=>ready=value,
+    hold(action){const held={action,work:null};holds.push(held);return held;},setAutoplayBlocked:value=>autoplayBlocked=value,setGestureRequired:value=>gestureRequired=value,setReady:value=>ready=value,
+    async gestureClick(element){inGesture=true;try{element.click();}finally{inGesture=false;}await settle();},
     async refresh(){await window.VP3ProfileSpeechPa4a.refresh();await settle();},async settle(){await settle();},
     async advance(ms){for(let remaining=ms;remaining>0;){const step=Math.min(100,remaining);clock+=step;elapsed+=step;remaining-=step;for(const[id,timer]of [...timers])if(timer.due<=elapsed&&timers.has(id)){if(timer.repeat)timer.due=elapsed+Math.max(timer.delay,1);else timers.delete(id);timer.fn();}await settle();}},
     async arm(id=101){this.card(id).querySelector('[data-speech-action="draft"]').click();await settle();},

@@ -539,14 +539,26 @@ Only an explicit subsequent Play can reuse completed audio. An uncertain request
 keeps its original identity, and an automatic announcement cannot replay after a
 lost playback acknowledgement.
 
+When a browser rejects playback because it needs a fresh gesture, the dedicated
+player retains the prepared audio and current permit and offers **Tap to play**.
+That button calls the same element's `play()` directly inside the click, before
+any request or asynchronous wait. Pending playback does not emit speech-start
+events or renew an unplayed permit. The existing shorter client authority limit,
+source checks and call/context cleanup still apply. An expired server permit is
+projected as interrupted even before scheduled maintenance, without changing its
+saved receipt; a new explicit claim may reuse a valid cache, while expired audio
+still requires a separately confirmed generation. See WebKit's
+[gesture-triggered media guidance](https://webkit.org/blog/6784/new-video-policies-for-ios/)
+and [transient user activation](https://webkit.org/blog/13862/the-user-activation-api/).
+
 The exact saved arrival also owns narration in the older notification presenter.
 That suppresses a second spoken announcement without marking its notification
 read, handling its attention item, creating another Chat turn or acknowledging
 the doorbell. Historical notifications without a linked speech item keep their
 existing presentation path.
 
-Local evidence before PR verification: core SQL 102, provider/storage 76,
-actual speech API HTTP 83, actual Admin HTTP 23, UI runtime 77 and notification
+Local evidence before PR verification: core SQL 123, provider/storage 76,
+actual speech API HTTP 83, actual Admin HTTP 23, UI runtime 94 and notification
 presentation 11 checks passed. Fresh-install normalization passed 8 checks and
 Upgrade readiness passed 35 cases; the retained
 full Recovery Baseline and production Cloud worker/API suite also passed. The

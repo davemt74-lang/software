@@ -255,6 +255,9 @@ function vp3_profile_speech_projection_pa4a(PDO $pdo,array $item,array $source,a
     $state='available';$q=$pdo->prepare('SELECT * FROM profile_speech_attempts_pa4a WHERE item_id=? ORDER BY attempt_no DESC LIMIT 1');$q->execute([(int)$item['id']]);$attempt=$q->fetch(PDO::FETCH_ASSOC);$playback='none';$retry=false;
     if($attempt){
         $state=match($attempt['provider_state']){'reserved','sending'=>'pending','outcome_unverified'=>'outcome_unverified','rejected','blocked'=>'blocked',default=>'available'};$playback=$attempt['playback_state'];
+        // A lost terminal report must not hide manual cache replay until cron.
+        // Project expiry without changing the saved permit or consumption proof.
+        if(in_array($playback,['granted','playing'],true)&&(int)$attempt['play_lease_until_ms']<=vp3_profile_speech_now_pa4a())$playback='interrupted';
         $state=match($playback){'granted'=>'granted','playing'=>'playing','ended'=>'client_finished','interrupted'=>'interrupted','blocked'=>'blocked',default=>$state};
         if($attempt['provider_state']==='ready'&&((int)($attempt['audio_expires_at_ms']??0)<=vp3_profile_speech_now_pa4a()||!empty($attempt['audio_removed_at_ms'])))$state='expired';
         $retry=$can&&!in_array($attempt['provider_state'],['reserved','sending'],true)&&($state==='expired'||in_array($attempt['provider_state'],['outcome_unverified','rejected'],true)||($attempt['provider_state']==='blocked'&&$attempt['provider_attempted']!==0&&$attempt['provider_attempted']!=='0'));

@@ -31,11 +31,47 @@ const sent=f=>f.requests.filter(r=>r.action==='doorbell_reply');
   check(f.thread.querySelector('[data-profile-speech-item="82"]').dataset.profileSpeechConversation==='0','page-only arrival retains its honest zero public conversation marker');await f.stop();
 }
 {
-  const f=await speechFixture();f.setAutoplayBlocked(true);await click(f);
-  check(f.audio[0].paused&&f.speech(81).textContent.includes('browser blocked'),'autoplay refusal preserves text and explains explicit playback');
-  check(!f.requests.some(r=>r.action==='owner_report'&&r.status==='playing')&&f.requests.some(r=>r.action==='owner_report'&&r.status==='blocked'),'rejected Audio.play never reports playing');
-  await f.advance(12000);check(f.requests.filter(r=>r.action==='owner_claim').length===1&&f.providerCalls===1,'blocked playback never starts another synthesis automatically');
-  f.setAutoplayBlocked(false);await click(f);check(!f.audio.at(-1).paused&&f.providerCalls===1,'explicit Play after autoplay refusal reuses cached audio');await f.stop();
+  const f=await speechFixture();f.setGestureRequired(true);const echo=[];f.window.addEventListener('stonefellow:agent-proactive-speech',event=>echo.push(event.detail));
+  const button=f.speech(81).querySelector('[data-speech-action=play]');await f.gestureClick(button);
+  check(f.audio[0].paused&&f.urls.size===1&&button.textContent==='Tap to play'&&!button.disabled,'a fresh element prepared after network work retains its audio and offers a direct tap');
+  check(!f.requests.some(r=>r.action==='owner_report')&&echo.length===0,'an unplayed gesture-blocked grant neither reports playing nor renews permission or attaches speech echo');
+  const element=f.audio[0],before=f.requests.filter(r=>['owner_claim','owner_audio','owner_play'].includes(r.action)).length,mark=f.mediaEvents.length;
+  await f.gestureClick(button);const next=f.mediaEvents.slice(mark);
+  check(next[0]?.type==='play'&&next[0].gesture===true&&next[0].element===element,'the new tap synchronously plays the same prepared element before any fetch');
+  check(!element.paused&&f.audio.length===1&&f.providerCalls===1&&f.requests.filter(r=>['owner_claim','owner_audio','owner_play'].includes(r.action)).length===before,'direct tap reuses the exact Blob and permit without another claim, download or synthesis');
+  check(f.requests.some(r=>r.action==='owner_report'&&r.status==='playing')&&echo.length===1,'playing and speech echo begin only when the prepared element actually starts');await f.stop();
+}
+{
+  const f=await speechFixture();f.setGestureRequired(true);const button=f.speech(81).querySelector('[data-speech-action=play]');await f.gestureClick(button);const original=f.audio[0];await f.advance(11000);
+  check(original.paused&&original.playCalls===1&&f.urls.size===0&&f.speech(81).textContent.includes('permission expired'),'an unplayed prepared element expires under its original short permission without renewal');
+  check(f.requests.filter(r=>r.action==='owner_claim').length===1&&f.providerCalls===1&&!f.requests.some(r=>r.action==='owner_report'&&r.status==='playing'),'permission expiry performs no automatic synthesis or audible-playback claim');
+  await f.gestureClick(button);check(f.audio.length===2&&f.audio[1].paused&&button.textContent==='Tap to play'&&f.providerCalls===1,'explicit Play after expiry obtains cached reauthorization and prepares a fresh tap without synthesizing');
+  await f.gestureClick(button);check(!f.audio[1].paused&&original.playCalls===1,'only a new current permit can start after the previous prepared element expired');await f.stop();
+}
+for(const interruption of ['call','context','stop']){
+  const f=await speechFixture();f.setGestureRequired(true);await f.gestureClick(f.speech(81).querySelector('[data-speech-action=play]'));
+  if(interruption==='call')await f.call(true);else if(interruption==='context')await f.changeContext();else{f.window.VP3ProfileSpeechPa4a.stop();await f.settle();}
+  check(f.audio[0].paused&&f.audio[0].playCalls===1&&f.urls.size===0&&!f.requests.some(r=>r.action==='owner_report'&&r.status==='playing'),interruption+' discards gesture-blocked prepared audio without starting it');await f.stop();
+}
+{
+  const f=await speechFixture();f.setGestureRequired(true);const button=f.speech(81).querySelector('[data-speech-action=play]');await f.gestureClick(button);f.failures.set('owner_report',{status:503});await f.advance(11000);
+  check(button.disabled&&f.urls.size===0,'lost terminal report keeps the expired local grant stopped while the server still owns its short lease');
+  await f.advance(21000);f.failures.delete('owner_report');await f.refresh();await f.gestureClick(button);
+  const claims=f.requests.filter(r=>r.action==='owner_claim');check(claims.length===2&&claims[0].request_id!==claims[1].request_id&&f.providerCalls===1,'canonical expired-grant projection enables a new explicit cache-linked request after a lost terminal report');
+  await f.gestureClick(button);check(!f.audio[1].paused&&f.audio[0].playCalls===1,'cached reauthorization never reuses the expired one-play permission');await f.stop();
+}
+for(const change of ['missing','label','text','attempt','terminal']){
+  const f=await speechFixture({scopedOnly:true});f.setGestureRequired(true);await f.gestureClick(f.card(101).querySelector('[data-speech-action=visitor-play]'));
+  if(change==='missing')f.records.delete(81);
+  if(change==='label')f.records.get(81).visitor_label='Anonymous visitor';
+  if(change==='text')f.records.get(81).display_text='A visitor opened your Profile.';
+  if(change==='attempt')f.attempts.set(2,{id:2,itemId:81,ready:true,playback:'granted',playUntil:f.clock+30000});
+  if(change==='terminal')f.attempts.get(1).playback='interrupted';
+  await f.refresh();check(f.audio[0].paused&&f.audio[0].playCalls===1&&f.urls.size===0,'fresh '+change+' projection cancels prepared audio even for an explicitly selected visitor card');await f.stop();
+}
+{
+  const f=await speechFixture();f.setGestureRequired(true);const held=f.hold('owner_state');void f.refresh();await f.settle();await f.gestureClick(f.speech(81).querySelector('[data-speech-action=play]'));held.work.resolve();await f.settle();
+  check(f.urls.size===1&&f.speech(81).querySelector('[data-speech-action=play]').textContent==='Tap to play','a state read begun before the grant cannot invalidate the later exact prepared permit');await f.stop();
 }
 {
   const f=await speechFixture();await click(f);f.audio[0].onerror();await f.settle();
