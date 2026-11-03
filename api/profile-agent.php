@@ -117,6 +117,7 @@ if(in_array($action,$ownerActions,true)){
         $pdo->beginTransaction();
         try{
             $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid,true);if(!$conversation)throw new VP3ProfileAgentPublicException('CONVERSATION_NOT_FOUND','Conversation not found.',404);
+            vp3_profile_agent_response_token_v1($pdo,$cid,true);
             $handoff=profile_agent_owner_handoff_pa3($pdo,$user,$conversation,match($status){'owner_joined'=>'claim','resolved'=>'resolve',default=>'delegate'});
             if($handoff===null){
                 $pdo->prepare('UPDATE profile_agent_conversations SET status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$cid,$uid]);
@@ -131,6 +132,7 @@ if(in_array($action,$ownerActions,true)){
         $pdo->beginTransaction();
         try{
             $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid,true);if(!$conversation)throw new VP3ProfileAgentPublicException('CONVERSATION_NOT_FOUND','Conversation not found.',404);
+            vp3_profile_agent_response_token_v1($pdo,$cid,true);
             $handoff=profile_agent_owner_handoff_pa3($pdo,$user,$conversation,'reply',$reply,is_string($input['request_id']??null)?$input['request_id']:'');
             if($handoff===null){
                 $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'owner',?,?)")->execute([$cid,$uid,$reply]);

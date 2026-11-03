@@ -164,4 +164,33 @@ foreach([
     pa3_check(pa3_count('profile_agent_messages',"sender_type='agent'")===0,$label.' revoked during inference suppresses derived public answer');
 }
 
+pa3_reset();$receipt=pa3_admit('Visitor A question',0,null,2);$turn=pa3_turn($receipt);
+$card=vp3_profile_handoff_owner_card_pa3($pdo,$turn);
+pa3_check($card['visitor_label']==='Visitor A','visitor card names the explicitly disclosed admitted member');
+$pdo->prepare('UPDATE profile_visit_sessions SET visitor_user_id=3,identity_disclosed=1 WHERE id=?')->execute([(int)$turn['profile_session_id']]);
+$card=vp3_profile_handoff_owner_card_pa3($pdo,$turn);
+pa3_check($card['visitor_label']==='Visitor'&&!str_contains(json_encode($card),'Visitor B'),'changed CRM principal cannot rename or disclose a different member on the old card');
+pa3_reset();$receipt=pa3_admit();$turn=pa3_turn($receipt);
+$pdo->prepare('UPDATE profile_visit_sessions SET visitor_user_id=3,identity_disclosed=1 WHERE id=?')->execute([(int)$turn['profile_session_id']]);
+pa3_check(vp3_profile_handoff_owner_card_pa3($pdo,$turn)['visitor_label']==='Visitor','guest card remains a guest after shared-browser member recognition');
+
+pa3_reset();$receipt=pa3_admit('First durable question');$turn=pa3_turn($receipt);$next=null;
+$GLOBALS['pa3ModelHook']=function()use($pdo,$turn,&$next){
+    $GLOBALS['pa3ModelHook']=null;pa3_age();
+    $next=vp3_profile_agent_public_message_service_v110($pdo,pa3_context(),'Retained caller follow-up',(int)$turn['conversation_id']);
+};
+vp3_profile_handoff_dispatch_pa3($pdo,(int)$turn['id']);
+pa3_check(!empty($next['accepted'])&&count($GLOBALS['pa3ModelCalls'])===1&&pa3_count('profile_agent_messages',"sender_type='agent'")===1,'retained native caller joins durable work instead of competing with active generation');
+vp3_profile_handoff_dispatch_pa3($pdo,(int)$next['handoff']['turn_id']);
+pa3_check(count($GLOBALS['pa3ModelCalls'])===2&&pa3_count('profile_agent_messages',"sender_type='agent'")===2,'retained native follow-up completes through the same ordered conversation queue');
+
+pa3_reset();$receipt=pa3_admit();$turn=pa3_turn($receipt);
+$GLOBALS['pa3ModelHook']=function()use($pdo,$receipt){
+    $current=pa3_turn($receipt);
+    vp3_profile_handoff_owner_action_pa3($pdo,pa3_owner(),pa3_action_input($current));
+    vp3_profile_handoff_owner_action_pa3($pdo,pa3_owner(),pa3_action_input(pa3_turn($receipt),'delegate'));
+};
+vp3_profile_handoff_dispatch_pa3($pdo,(int)$turn['id']);
+pa3_check(pa3_count('profile_agent_messages',"sender_type='owner'")===1&&pa3_count('profile_agent_messages',"sender_type='agent'")===0,'owner reply followed by delegation during generation suppresses the obsolete Agent answer');
+
 echo 'PROFILE_HANDOFF_PA3=PASS ('.$checks.' cases; '.$pdo->getAttribute(PDO::ATTR_DRIVER_NAME).")\n";

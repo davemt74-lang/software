@@ -161,6 +161,36 @@ Provider contracts informing this section:
 - [Square retrieving a payment from an Order](https://developer.squareup.com/docs/payments-api/retrieve-payments)
 - [PayPal webhook delivery](https://developer.paypal.com/api/rest/webhooks/rest/)
 
+### PA1R / PA2R: independent re-audit
+
+Re-audited merged `main` at `50699a2e1012e19379d81c0e1b317a90d2575e61`,
+including the actual owner endpoint, public authority checks, external grant
+history, provider evidence adapters, recovery transactions and customer review
+state. Re-ran the existing focused suites: 408 messaging/isolation checks and
+551 Commerce checks passed locally with SQLite and controlled transports.
+This verifies those bounded cases; it does not establish live provider setup.
+
+The review found an additional responder race: owner pickup and delegation
+could return a retained synchronous conversation to `open` before old inference
+finished. That old response then published, even if the owner had answered.
+The hidden canonical authority binding now carries a rotating response token.
+Visitor admission and owner operations invalidate older synchronous inference;
+the publication transaction checks the token as well as current authority.
+Both native and external synchronous paths have regression coverage. A retained
+native caller entering a durable thread joins that same queue instead of
+starting competing inference. No second messaging store is introduced.
+
+The PA3 review also found a mutable CRM session could name a different member
+on an older visitor card. Labels now require the session's disclosed principal
+to match the admitted turn. Duplicated browser tabs can inherit sessionStorage;
+each document now receives a separate presence identity while the server keeps
+the original pickup deadline. These cases extend the acceptance suites.
+
+The expanded local authority suite passes 127 SQLite cases. The MySQL matrix
+also includes the non-UTC clock case. Commerce code is preserved. The remaining
+known attention snooze/replay and Brain projection concerns remain scheduled;
+this text release does not claim those features are complete.
+
 ### PA3: owner pickup and main Chat canvas
 
 PA3A introduces explicit pending pickup, owner handling, Agent handling, and
@@ -177,10 +207,12 @@ together because the visible card is necessary to prove delivery before the
 15-second clock starts. Explicit voice commands such as “Tell Jamie …” join PA4
 and must resolve to one current visitor conversation before sending.
 
-Native Profile requests enter the durable handoff path. Existing direct service
-and external WebMCP callers retain their synchronous PA1 contract in this slice,
-including current public authority and source rechecks. They do not acquire the
-native browser's conversation credentials or an implicit owner-forwarding path.
+Native Profile requests enter the durable handoff path. Retained native service
+callers entering an existing durable thread join its canonical queue. External
+WebMCP and older direct threads retain their synchronous contract, including
+current public authority, source rechecks and the response-token fence. They do
+not acquire the native browser's conversation credentials or an implicit
+owner-forwarding path.
 
 The execution path uses the existing Agent job engine. A bounded exact-turn
 POST can dispatch eligible work on shared hosting; a filtered worker supports
@@ -216,9 +248,9 @@ If every browser closes, automatic processing waits for the configured worker.
 The 15-second deadline determines eligibility; provider response time is extra.
 Explicit canonical job pause/resume remains authoritative.
 
-The local PA3 focused suite passes 95 core handoff checks, 46 canonical binding
+The local PA3 focused suite passes 101 core handoff checks, 46 canonical binding
 and provenance checks, 24 recovery checks, 57 production HTTP checks, 50 owner
-UI runtime assertions, and 28 native visitor UI assertions (300 total). The
+UI runtime assertions, and 28 native visitor UI assertions (306 total). The
 expanded Upgrade fixture passes 24 cases, and the retained Recovery Baseline
 passes. The PR additionally runs the SQL and HTTP fixtures with MySQL 8 on PHP
 8.1 and 8.3, including independent-process takeover races, plus both actual

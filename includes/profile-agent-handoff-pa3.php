@@ -252,7 +252,9 @@ function vp3_profile_handoff_owner_card_pa3(PDO $pdo,array $turn): array
         if((int)$latest->fetchColumn()===(int)$turn['id']){$out['can_claim']=$thread['mode']!=='owner';$out['can_reply']=true;$out['can_delegate']=$thread['mode']==='owner';$out['can_resolve']=true;$out['responder']=$thread['mode']==='owner'?'owner':'agent';}
     }
     $q=$pdo->prepare("SELECT message FROM profile_agent_messages WHERE id=? AND conversation_id=? AND sender_type='visitor'");$q->execute([(int)$turn['visitor_message_id'],$cid]);$message=$q->fetchColumn();if(!is_string($message))vp3_profile_handoff_error_pa3('HANDOFF_CHANGED',409);
-    $q=$pdo->prepare('SELECT s.identity_disclosed,u.display_name FROM profile_visit_sessions s LEFT JOIN users u ON u.id=s.visitor_user_id WHERE s.id=? AND s.owner_user_id=?');$q->execute([(int)$turn['profile_session_id'],$owner]);$session=$q->fetch(PDO::FETCH_ASSOC);
+    // CRM recognition is mutable across account switches; it cannot rename an
+    // older conversation or disclose a different member's identity on its card.
+    $q=$pdo->prepare('SELECT CASE WHEN s.visitor_user_id=? THEN s.identity_disclosed ELSE 0 END identity_disclosed,u.display_name FROM profile_visit_sessions s LEFT JOIN users u ON u.id=? WHERE s.id=? AND s.owner_user_id=?');$q->execute([(int)$turn['visitor_user_id'],(int)$turn['visitor_user_id'],(int)$turn['profile_session_id'],$owner]);$session=$q->fetch(PDO::FETCH_ASSOC);
     $q=$pdo->prepare('SELECT display_name FROM user_agents WHERE id=? AND owner_user_id=?');$q->execute([(int)$turn['profile_agent_id'],$owner]);$agent=$q->fetchColumn();
     $out['visitor_label']=!empty($session['identity_disclosed'])&&is_string($session['display_name']??null)?mb_substr(trim($session['display_name']),0,100):'Visitor';
     if($out['visitor_label']==='')$out['visitor_label']='Visitor';$out['visitor_message']=mb_substr($message,0,4000);$out['agent_name']=is_string($agent)?mb_substr($agent,0,100):'Profile Agent';
@@ -381,6 +383,7 @@ function vp3_profile_handoff_owner_action_pa3(PDO $pdo,array $user,array $input,
             if($turn['state']!=='replied'||!$thread||$thread['mode']==='resolved'||(int)$latest->fetchColumn()!==$turnId||($operation==='delegate'&&$thread['mode']!=='owner'))vp3_profile_handoff_error_pa3();
         }
         if($legacy&&$terminal&&$turn['state']!=='replied'&&$operation==='reply')vp3_profile_handoff_error_pa3();
+        vp3_profile_agent_response_token_v1($pdo,$publicCid,true);
         $mode=match($operation){'delegate'=>'agent','resolve'=>'resolved',default=>'owner'};vp3_profile_handoff_mode_pa3($pdo,$owner,$publicCid,$mode);$messageId=0;
         if($operation==='reply'){
             $ctx=['profile_handoff'=>['contract'=>VP3_PROFILE_HANDOFF_PA3,'turn_id'=>$turnId,'owner_request_id'=>$requestId]];$pdo->prepare("INSERT INTO profile_agent_messages(conversation_id,sender_type,sender_user_id,message,context_json,created_at) VALUES(?,'owner',?,?,?,?)")->execute([$publicCid,$owner,$message,json_encode($ctx,JSON_THROW_ON_ERROR),vp3_profile_handoff_date_pa3()]);$messageId=(int)$pdo->lastInsertId();

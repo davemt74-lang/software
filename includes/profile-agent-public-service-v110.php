@@ -288,6 +288,12 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
     // WebMCP and direct service callers retain their synchronous contract.
     if(($delivery['async']??false)===true)return vp3_profile_agent_public_accept_pa3($pdo,$ctx,$query,$conversationId,$delivery);
     $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx);
+    // A retained native caller cannot bypass a thread already owned by the
+    // durable service. Its new turn joins the same ordered work queue.
+    if($conversationId>0&&($ctx['conversation_authority']['transport']??null)==='native'){
+        $handoff=vp3_profile_agent_public_handoff_pa3($pdo,$ctx,$conversationId);
+        if((int)($handoff['turn_id']??0)>0)return vp3_profile_agent_public_accept_pa3($pdo,$ctx,$query,$conversationId,$delivery);
+    }
     $profile=$ctx['profile'];$owner=(int)$ctx['owner_user_id'];$ownerUser=$ctx['owner_user'];
     $visitor=$ctx['visitor'];$agent=$ctx['agent'];$agentId=(int)$ctx['agent_id'];
     $session=vp3_profile_agent_public_event_session_v1($ctx);$sessionId=(int)$ctx['session_id'];$cid=max(0,$conversationId);
@@ -307,6 +313,8 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         $pdo->prepare('UPDATE profile_agent_conversations SET last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')
             ->execute([mb_strimwidth($query,0,900,'…'),$cid,$owner,$agentId,$sessionId]);
         profile_agent_message_received_v1341($pdo,$profile,$agent,$session,$conversation,$visitorMessageId,$query);
+        $responseToken=vp3_profile_agent_response_token_v1($pdo,$cid,true);
+        if($responseToken==='')vp3_profile_agent_public_unavailable_v1();
         vp3_profile_agent_public_live_v1($pdo,$ctx,true);
         $pdo->commit();
     }catch(Throwable $e){
@@ -386,7 +394,7 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         if(!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$context,$historySources))vp3_profile_agent_public_unavailable_v1();
         vp3_profile_agent_public_live_v1($pdo,$ctx,true);
         $current=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$cid,true);
-        if(!vp3_profile_agent_agent_may_reply_v390($current)){
+        if(!vp3_profile_agent_agent_may_reply_v390($current)||!hash_equals($responseToken,vp3_profile_agent_response_token_v1($pdo,$cid))){
             $pdo->commit();
             return [
                 'conversation_id'=>$cid,'answer'=>'',
@@ -486,6 +494,8 @@ function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,i
             profile_agent_message_received_v1341($pdo,$ctx['profile'],$ctx['agent'],vp3_profile_agent_public_event_session_v1($ctx),$conversation,$visitorMessageId,$query);
             $ctx['accepted_message_sha256']=hash('sha256',$query);
             $turn=vp3_profile_handoff_admit_pa3($pdo,$ctx,$conversation,$visitorMessageId,$requestId,vp3_profile_agent_accepted_snapshot_pa3($ctx));
+            // Admission supersedes any older synchronous request on this thread.
+            vp3_profile_agent_response_token_v1($pdo,$cid,true);
         }
         vp3_profile_agent_public_live_v1($pdo,$ctx,true);$pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}

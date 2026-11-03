@@ -62,9 +62,31 @@ function vp3_profile_agent_conversation_bind_v1(PDO $pdo,array $conversation,arr
     if(!$pdo->inTransaction()||!vp3_profile_agent_conversation_authority_valid_v1($authority,(int)$conversation['owner_user_id'])
        ||(int)($conversation['visitor_user_id']??0)!==$authority['visitor_user_id'])throw new RuntimeException('Conversation authority could not be established.');
     $binding=$authority+['profile_agent_id'=>(int)$conversation['profile_agent_id'],'profile_session_id'=>(int)$conversation['profile_session_id']];
+    $binding['response_token']=bin2hex(random_bytes(16));
     // A hidden binding row does not represent a message and creates no event or notification.
     $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'system',NULL,'',?)")
         ->execute([(int)$conversation['id'],json_encode($binding,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)]);
+}
+
+/** A hidden conversation binding also fences retained synchronous inference.
+ * Rotate only under the canonical conversation lock. A status returning to
+ * "open" must not revive a response started before the owner intervened.
+ */
+function vp3_profile_agent_response_token_v1(PDO $pdo,int $conversationId,bool $rotate=false): string
+{
+    if($rotate&&!$pdo->inTransaction())throw new RuntimeException('Response fencing requires a transaction.');
+    $q=$pdo->prepare("SELECT id,context_json FROM profile_agent_messages WHERE conversation_id=? AND sender_type='system' ORDER BY id ASC LIMIT 2");
+    $q->execute([$conversationId]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);
+    if(count($rows)!==1||strlen((string)$rows[0]['context_json'])>65536)return '';
+    $binding=json_decode((string)$rows[0]['context_json'],true);
+    if(!is_array($binding)||!vp3_profile_agent_conversation_authority_valid_v1($binding,(int)($binding['owner_user_id']??0)))return '';
+    if($rotate){
+        $binding['response_token']=bin2hex(random_bytes(16));
+        $pdo->prepare("UPDATE profile_agent_messages SET context_json=? WHERE id=? AND conversation_id=? AND sender_type='system'")
+            ->execute([json_encode($binding,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),(int)$rows[0]['id'],$conversationId]);
+    }
+    $token=$binding['response_token']??'';
+    return is_string($token)&&preg_match('/^[a-f0-9]{32}$/D',$token)?$token:'';
 }
 
 /**
