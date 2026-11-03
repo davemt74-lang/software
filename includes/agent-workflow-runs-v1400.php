@@ -121,7 +121,7 @@ function agent_workflow_public_json_v1400(string $json): array
     foreach(array_slice($decoded,0,30,true) as $key=>$value){
         $key=agent_workflow_text_v1400($key,80);
         if($key===''||preg_match('/(?:token|secret|password|credential|authorization|cookie|prompt|reasoning)/i',$key))continue;
-        if(is_scalar($value)||$value===null)$safe[$key]=agent_workflow_text_v1400($value??'',500);
+        if(is_scalar($value)||$value===null)$safe[$key]=agent_workflow_text_v1400($value??'',$key==='mission_output'?16000:500);
     }
     return $safe;
 }
