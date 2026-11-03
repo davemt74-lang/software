@@ -477,7 +477,7 @@ $cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . 
 $agentTeamsA3Build = 'agent-teams-' . substr(hash('sha256', (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.js') . (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.css')), 0, 12);
 $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(url('/chat-agent-teams-a3.css?v=' . $agentTeamsA3Build)) . '">'
     . '<script data-agent-teams-config-a3>window.VP3_AGENT_TEAMS_A3='
-    . json_encode(['endpoint'=>url('/api/agent-missions-cloud-v1.php'), 'csrf'=>csrf_token(), 'version'=>'A3', 'knowledgeUrl'=>url('/knowledge.php')], JSON_UNESCAPED_SLASHES)
+    . json_encode(['endpoint'=>url('/api/agent-missions-cloud-v1.php'), 'csrf'=>csrf_token(), 'version'=>'A3', 'knowledgeUrl'=>url('/knowledge.php'), 'openSourceCatalog'=>(($_GET['mission_sources']??'')==='1')], JSON_UNESCAPED_SLASHES)
     . ';</script>'
     . '<script data-agent-teams-a3 src="' . e(url('/chat-agent-teams-a3.js?v=' . $agentTeamsA3Build)) . '" defer></script>'
     . '<script>window.VP3_CHAT_RESEARCH={endpoint:' . json_encode(url('/api/chat-browser-research-v1.php'),JSON_UNESCAPED_SLASHES) . ',csrf:' . json_encode(csrf_token()) . '};</script>'
