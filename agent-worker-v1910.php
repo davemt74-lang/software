@@ -9,6 +9,7 @@ if(PHP_SAPI!=='cli'){
 require_once __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-job-worker-v1900.php';
 require_once __DIR__.'/includes/agent-worker-cloud-v1910.php';
+require_once __DIR__.'/includes/cloud-mission-schedules-v1.php';
 
 const VP3_AGENT_WORKER_RUNNER_V1910='agent-worker-runner-v1910-20260914';
 
@@ -49,13 +50,17 @@ function agent_worker_runner_lock_v1910(): mixed
 function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLimit): array
 {
     $counts=['owners'=>0,'cloud_completed'=>0,'homeserver_completed'=>0,'no_work'=>0,'failed'=>0];
-    foreach(agent_worker_runner_owner_ids_v1910($pdo,$ownerLimit) as $uid){
+    $ownerIds=agent_worker_runner_owner_ids_v1910($pdo,$ownerLimit);
+    if($executor==='all'||$executor==='cloud'){cloud_mission_schema_v1($pdo);cloud_mission_schedules_schema_v1($pdo);cloud_mission_schedule_background_v1($pdo);$ownerIds=array_values(array_unique(array_merge(cloud_mission_schedule_owner_ids_v1($pdo,$ownerLimit),$ownerIds)));}
+    foreach($ownerIds as $uid){
         $user=agent_cognitive_loop_v310_user($uid);
         if(!$user)continue;
         $counts['owners']++;
         if($executor==='all'||$executor==='cloud'){
             try{
+                cloud_mission_schedule_tick_v1($pdo,$user);
                 $result=agent_worker_cloud_execute_once_v1910($pdo,$user,25);
+                cloud_mission_schedule_tick_v1($pdo,$user);
                 if(($result['reason']??'')==='completed')$counts['cloud_completed']++;
                 elseif(($result['reason']??'')==='no_work')$counts['no_work']++;
                 elseif(empty($result['ok']))$counts['failed']++;
