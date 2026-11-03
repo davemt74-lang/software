@@ -327,6 +327,7 @@ require_once __DIR__.'/profile-agent.php';
 require_once __DIR__.'/profile-agent-boundary-v390.php';
 require_once __DIR__.'/profile-visitor-crm-v243.php';
 require_once __DIR__.'/profile-agent-runtime.php';
+require_once __DIR__.'/profile-visitor-speech-pa4a.php';
 require_once __DIR__.'/profile-conversion-outcomes-v179.php';
 require_once __DIR__.'/agent-visual-onboarding-v120.php';
 require_once __DIR__.'/agent-onboarding-skill-v100.php';
