@@ -104,5 +104,13 @@ try{
   check(reply.input.message==='Mobile visitor reply'&&reply.input.conversation_id===1101,'mobile card reply reaches the correct visitor thread');await reply.release();
   check(await f.page.locator('#chatInput').isEnabled(),'mobile private composer remains usable after visitor reply');await f.close();
  }
+ {
+  const first=await fixture();await first.boot();
+  const inherited=await first.page.evaluate(()=>Object.fromEntries(Object.entries(sessionStorage)));
+  const second=await fixture();await second.page.addInitScript(values=>{for(const [key,value] of Object.entries(values))sessionStorage.setItem(key,value);},inherited);await second.boot();
+  const firstTab=first.calls.find(c=>c.action==='doorbell_presence').tab_id,secondTab=second.calls.find(c=>c.action==='doorbell_presence').tab_id;
+  check(firstTab!==secondTab,'duplicated browser storage cannot merge two documents into one presence authority');
+  await first.close();await second.close();
+ }
  console.log(`PROFILE_VISITOR_DOORBELL_PA3_BROWSER=PASS (${checks} checks; actual Chat renderer, persisted history and mobile)`);
 }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}

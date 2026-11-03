@@ -264,4 +264,30 @@ if($mysqlDsn){
     denied(fn()=>vp3_profile_agent_public_message_service_v110($pdo,$ctx,'Non-UTC immediate message'),'MySQL reporting timezone cannot bypass real-time pacing','RATE_LIMITED');
     $pdo->exec("SET time_zone='+00:00'");
 }
+foreach(['native','external'] as $transport){
+    foreach([false,true] as $ownerReplies){
+        resetPublic();$ctx=$transport==='native'?nativeContext(0):externalContext();
+        $GLOBALS['modelHook']=function()use($pdo,$ownerReplies){
+            $cid=(int)$pdo->query('SELECT MAX(id) FROM profile_agent_conversations')->fetchColumn();
+            $pdo->beginTransaction();
+            vp3_profile_agent_owner_conversation_v390($pdo,$cid,1,true);
+            vp3_profile_agent_response_token_v1($pdo,$cid,true);
+            $pdo->exec("UPDATE profile_agent_conversations SET status='owner_joined'");
+            if($ownerReplies)$pdo->prepare("INSERT INTO profile_agent_messages(conversation_id,sender_type,sender_user_id,message) VALUES(?,'owner',1,'Owner already answered')")->execute([$cid]);
+            vp3_profile_agent_response_token_v1($pdo,$cid,true);
+            $pdo->exec("UPDATE profile_agent_conversations SET status='open'");
+            $pdo->commit();
+        };
+        $r=vp3_profile_agent_public_message_service_v110($pdo,$ctx,'Public hours please');
+        check($r['answer']===''&&countRows('profile_agent_messages',"sender_type='agent'")===0,$transport.' owner '.($ownerReplies?'reply':'claim').' then delegation cannot revive old synchronous inference');
+    }
+    resetPublic();$ctx=$transport==='native'?nativeContext(0):externalContext();
+    $GLOBALS['modelHook']=function()use($pdo,$ctx){
+        $GLOBALS['modelHook']=null;ageMessages();
+        $cid=(int)$pdo->query('SELECT MAX(id) FROM profile_agent_conversations')->fetchColumn();
+        vp3_profile_agent_public_message_service_v110($pdo,$ctx,'A newer visitor question',$cid);
+    };
+    $r=vp3_profile_agent_public_message_service_v110($pdo,$ctx,'A slow visitor question');
+    check($r['answer']===''&&countRows('profile_agent_messages',"sender_type='agent'")===1,$transport.' newer synchronous turn supersedes an older in-flight response');
+}
 echo 'PROFILE_PUBLIC_AUTHORITY_PA1=PASS '.$checks.' cases ('.($mysqlDsn?'MySQL':'SQLite').", inference transports mocked)\n";

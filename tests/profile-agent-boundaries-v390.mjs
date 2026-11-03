@@ -50,7 +50,8 @@ assert.match(publicService,/'awaiting_owner'=>true/);
 assert.match(profileApi,/owner_reply[\s\S]*vp3_profile_agent_owner_conversation_v390\(\$pdo,\$cid,\$uid,true\)/);
 assert.match(profileApi,/SET status='owner_joined'/);
 assert.match(publicService,/\$current=vp3_profile_agent_public_bound_conversation_v1\(\$pdo,\$ctx,\$cid,true\)/);
-assert.match(publicService,/if\(!vp3_profile_agent_agent_may_reply_v390\(\$current\)\)/);
+assert.match(publicService,/if\(!vp3_profile_agent_agent_may_reply_v390\(\$current\)/);
+assert.match(publicService,/hash_equals\(\$responseToken,vp3_profile_agent_response_token_v1\(\$pdo,\$cid\)\)/,'returning to open cannot revive superseded inference');
 
 // Visitor and owner mutations serialize on the conversation row. Agent model
 // generation happens outside the lock, then status is rechecked before persistence.

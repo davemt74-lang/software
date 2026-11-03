@@ -159,7 +159,7 @@ for(const failed of [false,true]){
  const f=await fixture();await f.frames();const deadline=f.turns.get(101).pickup_deadline_ms;f.card(101).querySelector('textarea').value='Saved visitor draft';f.card(101).querySelector('textarea').dispatchEvent(new Event('input'));const saved=copy(f.turns.get(101));const firstTab=f.requests.find(r=>r.action==='doorbell_presence').tab_id;f.stop();await tick();
  const restored=await fixture({cards:[saved],storage:f.storage});await restored.frames();check(restored.card(101).querySelector('textarea').value==='Saved visitor draft','reload restores the unsent visitor draft independently of notification read state');
  check(!restored.requests.some(r=>r.action==='doorbell_ack')&&restored.turns.get(101).pickup_deadline_ms===deadline,'reload of active acknowledged turn does not restart15seconds');
- check(restored.requests.find(r=>r.action==='doorbell_presence').tab_id===firstTab&&restored.requests.find(r=>r.action==='doorbell_presence').presence_sequence>f.requests.filter(r=>r.action==='doorbell_presence').at(-1).presence_sequence,'same-tab reload retains token and advances presence sequence');restored.stop();
+ check(restored.requests.find(r=>r.action==='doorbell_presence').tab_id!==firstTab,'reloaded or duplicated document gets independent presence authority despite copied sessionStorage');restored.stop();
 }
 {
  const hostile=ownerCard(101,{visitor_label:'Visitor <img onerror=alert(1)>',visitor_message:'<script>PRIVATE INSTRUCTIONS</script>'}),f=await fixture({cards:[hostile]});

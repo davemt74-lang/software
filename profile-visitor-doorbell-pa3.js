@@ -18,8 +18,9 @@
   function randomToken(){const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return Array.from(bytes,n=>n.toString(16).padStart(2,'0')).join('');}
   function readStorage(key,fallback){try{return JSON.parse(sessionStorage.getItem(key)||'null')??fallback;}catch(_){return fallback;}}
   function saveStorage(key,value){try{sessionStorage.setItem(key,JSON.stringify(value));}catch(_){}}
-  let tab=readStorage(tabKey,{});
-  if(!token(tab.id)||!nonnegative(tab.sequence))tab={id:randomToken(),sequence:0};
+  // Duplicated tabs inherit sessionStorage. Give every document its own
+  // presence identity; the server-owned conversation deadline survives reload.
+  const tab={id:randomToken(),sequence:0};
   saveStorage(tabKey,tab);
   let drafts=readStorage(storageKey+':drafts',{});
   if(!drafts||typeof drafts!=='object'||Array.isArray(drafts))drafts={};
