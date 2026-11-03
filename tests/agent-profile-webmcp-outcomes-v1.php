@@ -52,7 +52,22 @@ foreach(['owner_user_id'=>2,'profile_username'=>'FIXTURE','surface'=>'external_s
 }
 woReset();$bad=$ctx;$bad['server_outcome']=['contract'=>'vp3.webmcp.outcome.v1','verification'=>'verified','state'=>'recorded'];unset($bad['server_action']);woTest(vp3_profile_webmcp_outcome_read_v1($pdo,$bad)['verification']==='unverified','cached or legacy completed context without a binding stays unverified');
 foreach(['profile_user_id'=>2,'profile_username'=>'FIXTURE','created_at'=>time()+5] as $key=>$value){$bad=$ctx;$bad[$key]=$value;woTest(vp3_profile_webmcp_outcome_read_v1($pdo,$bad)['verification']==='unverified','wrong source context '.$key.' is rejected');}
-foreach(['null'=>null,'array'=>'["not-an-object"]','oversized'=>str_repeat('x',65537),'numeric'=>'0','malformed'=>'{'] as $label=>$value){woReset();woWritable(fn()=>$pdo->prepare('UPDATE profile_webmcp_actions SET result_json=? WHERE id=?')->execute([$value,$base['action']['id']]));woTest(vp3_profile_webmcp_outcome_read_v1($pdo,$ctx)['verification']==='unverified',$label.' receipt body stays unverified');}
+// Keep the canonical LONGTEXT storage capacity; the reader, not MySQL TEXT,
+// must enforce the 64KiB limit. JSON whitespace preserves an otherwise valid receipt.
+$validReceipt=vp3_profile_webmcp_replay_projection_v1('booking',$base['resultId'],$base['result']);
+$validJson=json_encode($validReceipt,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+$atLimit=str_pad($validJson,65536,' ');$oversized=str_pad($validJson,65537,' ');
+woReset();woWritable(fn()=>$pdo->prepare('UPDATE profile_webmcp_actions SET result_json=? WHERE id=?')->execute([$atLimit,$base['action']['id']]));
+$q=$pdo->prepare('SELECT result_json FROM profile_webmcp_actions WHERE id=?');$q->execute([$base['action']['id']]);
+woTest($q->fetchColumn()===$atLimit&&vp3_profile_webmcp_outcome_read_v1($pdo,$ctx)['verification']==='verified','canonical receipt at exactly 64KiB round-trips unchanged and remains verified');
+foreach(['null'=>null,'array'=>'["not-an-object"]','oversized'=>$oversized,'numeric'=>'0','malformed'=>'{'] as $label=>$value){
+    woReset();woWritable(fn()=>$pdo->prepare('UPDATE profile_webmcp_actions SET result_json=? WHERE id=?')->execute([$value,$base['action']['id']]));
+    if($label==='oversized'){
+        $q=$pdo->prepare('SELECT result_json FROM profile_webmcp_actions WHERE id=?');$q->execute([$base['action']['id']]);$stored=$q->fetchColumn();
+        woTest($stored===$oversized&&strlen($stored)===65537&&json_decode($stored,true,512,JSON_THROW_ON_ERROR)===$validReceipt,'oversized valid receipt reaches the reader with exact LONGTEXT byte fidelity');
+    }
+    woTest(vp3_profile_webmcp_outcome_read_v1($pdo,$ctx)['verification']==='unverified',$label.' receipt body stays unverified');
+}
 woReset();woWritable(fn()=>$pdo->exec('ALTER TABLE profile_webmcp_actions RENAME TO fixture_missing_actions'));woTest(vp3_profile_webmcp_outcome_read_v1($pdo,$ctx)['verification']==='unverified','missing ledger schema is unverified without initialization');woWritable(fn()=>$pdo->exec('ALTER TABLE fixture_missing_actions RENAME TO profile_webmcp_actions'));
 woReset();woWritable(fn()=>$pdo->prepare('DELETE FROM profile_webmcp_actions WHERE id=?')->execute([$base['action']['id']]));woTest(vp3_profile_webmcp_outcome_read_v1($pdo,$ctx)['verification']==='unverified','missing exact receipt stays unverified');
 woReset();$pdo->onRead=function($sql)use($pdo,$base):void{if(str_starts_with($sql,'SELECT id FROM agent_scheduling_bookings')){$pdo->onRead=null;woWritable(fn()=>$pdo->prepare('UPDATE profile_webmcp_actions SET result_id=999 WHERE id=?')->execute([$base['action']['id']]));}};woTest(vp3_profile_webmcp_outcome_read_v1($pdo,$ctx)['verification']==='unverified','receipt identity changed during canonical result verification is discarded');

@@ -12,6 +12,7 @@ const css=read('browser-companion/sidepanel.css');
 const extensionApi=read('api/extension-agent-chat-v2160.php');
 const webApi=read('api/chat-v236.php');
 const runtime=read('includes/agent-chat-runtime-v2160.php');
+const toolBoundary=read('includes/agent-tool-authorization-v400.php');
 const chat=read('chat.php');
 
 const workspaceVersion=String(manifest.version||'').split('.').map(Number);
@@ -59,7 +60,10 @@ must(runtime.includes("function vp3_agent_chat_send_v2160("),'canonical shared A
 must(webApi.includes("$payload=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed);"),'web Chat send must delegate to shared runtime');
 must(extensionApi.includes("vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$runtimeInput,$brainAllowed,$r9Authority)"),'Browser Agent send must delegate to shared runtime');
 must(runtime.includes("$userId=(int)($user['id']??0);"),'shared runtime user identity initialization missing');
-must(runtime.includes("vp3_agent_chat_tool_query_v1")&&read("includes/agent-tool-authorization-v400.php").includes("return vp3_agent_tool_execute_query_v400($query,$user,$conversationId)"),'shared runtime must delegate through the shared authorized Agent tools');
+must(runtime.includes("vp3_agent_chat_tool_query_v1($query,$user,$conversationId,$agentContext)")&&toolBoundary.includes("return vp3_agent_tool_execute_query_v400($query,$user,$conversationId,$serverContext);"),'shared runtime must delegate through the shared authorized Agent tools with its server context');
+must(toolBoundary.includes("$serverContext['conversation_id']=$conversationId;"),'shared tool delegation must bind context to the current server conversation');
+must(runtime.includes("$agentContext['chat_user_message_id']=$userMessageId;")&&runtime.indexOf("$agentContext['chat_user_message_id']=$userMessageId;")>runtime.indexOf("$userMessageId=(int)$pdo->lastInsertId();"),'shared tool context must receive the actual saved user turn');
+must(runtime.includes("vp3_agent_tool_authorize_result_v400($toolResult,$user,$query,$agentContext,$principal)"),'shared results must be reauthorized with the current server context and principal');
 must(runtime.includes("knowledge_retrieval_v162_generate_answer"),'shared runtime must retain Knowledge retrieval');
 must(runtime.includes("homeserver_agent_v025_chat"),'shared runtime must retain HomeServer route');
 must(runtime.includes("ai_usage_accounting_v032"),'shared runtime must retain AI usage accounting');

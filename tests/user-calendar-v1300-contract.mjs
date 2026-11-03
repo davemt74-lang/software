@@ -46,9 +46,9 @@ assert.match(agent, /calendar\.event\.create/);
 
 assert.match(chat, /\$inputMode=\$inputMode==='voice'\?'voice':'text'/);
 const calendarToolIndex = chat.indexOf('user_calendar_agent_query_v1300($query,$user,$conversationId)');
-const releaseToolIndex = chat.indexOf("release_v105_chat_tool($query,$user,$conversationId)");
+const releaseToolIndex = chat.indexOf('release_v105_chat_tool($query,$user,$conversationId,$serverContext)');
 assert.ok(calendarToolIndex > 0 && releaseToolIndex > calendarToolIndex, 'User Calendar must route before generic/release tools');
-assert.match(chat, /vp3_agent_tool_authorize_result_v400\(\$toolResult,\$user,\$query\)/);
+assert.match(chat, /vp3_agent_tool_authorize_result_v400\(\$toolResult,\$user,\$query,\$agentContext,\$principal\)/, 'Shared Chat must authorize the selected result using its actual server context and principal');
 
 const conflictStart = calendarSync.indexOf('function agent_calendar_sync_conflict_v500');
 assert.ok(conflictStart >= 0, 'Calendar sync conflict helper must exist');
