@@ -22,10 +22,15 @@ function vp3_image_authority_v1(PDO $pdo,array $user,array $row): array
     $principal=['kind'=>(int)$row['agent_id']>0?'user_agent':'system','owner_user_id'=>(int)$user['id'],'agent_id'=>(int)$row['agent_id']];
     return vp3_image_scope_v1($pdo,$user,$principal,['conversation_id'=>(int)$row['conversation_id']]);
 }
+function vp3_image_run_v1(PDO $pdo,array $user,array $row,bool $lock=false): array
+{
+    $run=agent_workflow_row_v1400($pdo,(int)$user['id'],(int)$row['run_id'],$lock);
+    if(!$run||$run['source_kind']!=='image_generation'||$run['source_key']!==$row['generation_id']||(int)($run['agent_id']??0)!==(int)$row['agent_id']||$run['execution_target']!=='cloud'||$run['capability_key']!=='images.generate')throw new RuntimeException('Image job binding is unavailable.',409);
+    return $run;
+}
 function vp3_image_view_v1(PDO $pdo,array $user,array $row): array
 {
-    vp3_image_authority_v1($pdo,$user,$row);$run=agent_workflow_row_v1400($pdo,(int)$user['id'],(int)$row['run_id']);
-    if(!$run||$run['source_kind']!=='image_generation'||$run['source_key']!==$row['generation_id'])throw new RuntimeException('Image job binding is unavailable.',409);
+    vp3_image_authority_v1($pdo,$user,$row);$run=vp3_image_run_v1($pdo,$user,$row);
     $config=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);$status=match($run['status']){'approved','queued'=>'queued','executing'=>'generating',default=>$run['status']};
     $asset=null;if($status==='completed'&&(int)$row['asset_id']>0){$saved=media_studio_asset((int)$row['asset_id'],$user);if($saved)$asset=media_studio_asset_payload($saved);if(!$asset||!$asset['available'])$status='file_unavailable';}
     $messages=['provider_access_denied'=>'OpenAI denied this image request. Check image-model access for the saved API key.','provider_rate_limited'=>'OpenAI rate-limited the image request. It was not automatically retried.','provider_request_rejected'=>'OpenAI rejected the image request. Revise the prompt or check the image settings.','subscription_required'=>'The account needs sufficient AI quota before generating an image.','provider_unavailable'=>'Image generation is disabled or the saved OpenAI key is unavailable.','provider_usage_unconfirmed'=>'OpenAI did not return verifiable usage. The request was not automatically retried.','quota_preflight_failed'=>'The AI quota check did not complete. No image request was sent to OpenAI.','image_storage_unavailable'=>'The generated image could not be saved in private storage. The request was not automatically retried.'];
@@ -59,7 +64,7 @@ function vp3_image_queue_v1(PDO $pdo,array $user,array $principal,array $plan,ar
 function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $transport=null): array
 {
     $run=agent_worker_cloud_active_row_v1910($pdo,$user,$claim);if(!$run||$run['action_capability_key']!=='images.generate'||$run['source_kind']!=='image_generation')throw new RuntimeException('Image execution lease is unavailable.',409);
-    $row=vp3_image_row_v1($pdo,$user,$run['source_key']);$reservation=0;$file='';$createdFile=false;$committed=false;$sent=false;
+    $row=vp3_image_row_v1($pdo,$user,$run['source_key']);$bound=vp3_image_run_v1($pdo,$user,$row);if((int)$bound['id']!==(int)$run['id']||$run['action_key']!==$row['generation_id'])throw new RuntimeException('Image action binding changed.',409);$reservation=0;$file='';$createdFile=false;$committed=false;$sent=false;
     try{
         $user=vp3_image_authority_v1($pdo,$user,$row);if(!subscription_has_entitlement($user,'main_ai.access'))throw new RuntimeException('subscription_required');
         if(!vp3_image_provider_ready_v1())throw new RuntimeException('provider_unavailable');
@@ -76,7 +81,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         $root=media_studio_ensure_user_root((int)$user['id']);$base=realpath(media_studio_private_root());if(!$base||realpath($root)!==$base.DIRECTORY_SEPARATOR.(int)$user['id'])throw new RuntimeException('image_storage_unavailable');
         $file=$root.'/generated-'.$row['generation_id'].'.png';$handle=@fopen($file,'x+b');if(!$handle)throw new RuntimeException('image_storage_unavailable');$createdFile=true;
         try{if(fwrite($handle,$output['bytes'])!==strlen($output['bytes']))throw new RuntimeException('image_storage_unavailable');}finally{fclose($handle);}@chmod($file,0600);
-        $pdo->beginTransaction();$locked=agent_workflow_row_v1400($pdo,(int)$user['id'],(int)$row['run_id'],true);vp3_image_authority_v1($pdo,$user,$row);if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim))throw new RuntimeException('execution_cancelled');
+        $pdo->beginTransaction();vp3_image_run_v1($pdo,$user,$row,true);vp3_image_authority_v1($pdo,$user,$row);if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim))throw new RuntimeException('execution_cancelled');
         $meta=['generation_id'=>$row['generation_id'],'model'=>$config['model'],'prompt'=>$config['prompt'],'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'sha256'=>$output['sha256'],'width'=>$output['width'],'height'=>$output['height'],'usage'=>$output['usage']];
         $relative='private/user-media/'.(int)$user['id'].'/'.basename($file);
         $pdo->prepare("INSERT INTO user_media_assets(user_id,media_type,title,mime_type,file_path,file_size,duration_seconds,source,metadata_json,created_at,updated_at) VALUES(?,'photo',?,'image/png',?,?,0,'openai_image',?,UTC_TIMESTAMP(),UTC_TIMESTAMP())")->execute([(int)$user['id'],$config['title'],$relative,strlen($output['bytes']),json_encode($meta,JSON_THROW_ON_ERROR)]);$asset=(int)$pdo->lastInsertId();
@@ -100,7 +105,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
 
 function vp3_image_tick_v1(PDO $pdo,array $user,array $row,?callable $transport=null): array
 {
-    $user=vp3_image_authority_v1($pdo,$user,$row);agent_job_recover_expired_v1900($pdo,$user,25);
+    $user=vp3_image_authority_v1($pdo,$user,$row);vp3_image_run_v1($pdo,$user,$row);agent_job_recover_expired_v1900($pdo,$user,25);
     $claim=agent_job_claim_run_v1900($pdo,$user,(int)$row['run_id'],'cloud',agent_worker_cloud_worker_id_v1910((int)$user['id']),300);if($claim)vp3_image_execute_v1($pdo,$user,$claim,$transport);
     return vp3_image_view_v1($pdo,$user,vp3_image_row_v1($pdo,$user,$row['generation_id']));
 }

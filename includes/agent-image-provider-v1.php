@@ -15,6 +15,23 @@ function vp3_image_provider_ready_v1(): bool
     return function_exists('ai_provider_api_key')&&function_exists('curl_init')&&vp3_image_settings_v1()['enabled']&&ai_provider_enabled('openai')&&ai_provider_api_key('openai')!=='';
 }
 
+/** Verify the PNG container as well as its header before publishing provider bytes. */
+function vp3_image_png_check_v1(string $bytes): void
+{
+    if(substr($bytes,0,8)!=="\x89PNG\r\n\x1a\n")throw new RuntimeException('provider_image_unconfirmed');
+    $offset=8;$chunks=0;$data=false;$end=false;$size=strlen($bytes);
+    while($offset+12<=$size){
+        if(++$chunks>4096)throw new RuntimeException('provider_image_unconfirmed');
+        $length=unpack('N',substr($bytes,$offset,4))[1];$type=substr($bytes,$offset+4,4);
+        if($length>$size-$offset-12||!preg_match('/^[A-Za-z]{4}$/D',$type)||($chunks===1&&($type!=='IHDR'||$length!==13))||($chunks>1&&$type==='IHDR'))throw new RuntimeException('provider_image_unconfirmed');
+        $payload=substr($bytes,$offset+8,$length);$crc=substr($bytes,$offset+8+$length,4);
+        if(!hash_equals(hash('crc32b',$type.$payload,true),$crc))throw new RuntimeException('provider_image_unconfirmed');
+        $offset+=$length+12;if($type==='IDAT'&&$length>0)$data=true;
+        if($type==='IEND'){$end=$length===0&&$offset===$size;break;}
+    }
+    if(!$data||!$end)throw new RuntimeException('provider_image_unconfirmed');
+}
+
 /** Exactly one paid POST. Unknown outcomes never trigger a transport retry. */
 function vp3_image_provider_v1(array $config,array $user,?callable $transport=null): array
 {
@@ -33,6 +50,7 @@ function vp3_image_provider_v1(array $config,array $user,?callable $transport=nu
     if(!is_array($result)||!is_array($result['data']??null)||count($result['data'])!==1||!is_string($result['data'][0]['b64_json']??null))throw new RuntimeException('provider_image_unconfirmed');
     $encoded=$result['data'][0]['b64_json'];if(strlen($encoded)>34*1024*1024)throw new RuntimeException('image_too_large');
     $bytes=base64_decode($encoded,true);unset($encoded);if(!is_string($bytes)||strlen($bytes)<24||strlen($bytes)>25*1024*1024)throw new RuntimeException('provider_image_unconfirmed');
+    vp3_image_png_check_v1($bytes);
     $image=@getimagesizefromstring($bytes);
     if(!$image||($image['mime']??'')!=='image/png'||$image[0]<1||$image[1]<1||$image[0]>4096||$image[1]>4096||$image[0]*$image[1]>16777216)throw new RuntimeException('provider_image_unconfirmed');
     [$expectedWidth,$expectedHeight]=array_map('intval',explode('x',$config['size']));
