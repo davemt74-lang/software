@@ -217,8 +217,8 @@ The 15-second deadline determines eligibility; provider response time is extra.
 Explicit canonical job pause/resume remains authoritative.
 
 The local PA3 focused suite passes 95 core handoff checks, 46 canonical binding
-and provenance checks, 24 recovery checks, 57 production HTTP checks, 49 owner
-UI runtime assertions, and 28 native visitor UI assertions (299 total). The
+and provenance checks, 24 recovery checks, 57 production HTTP checks, 50 owner
+UI runtime assertions, and 28 native visitor UI assertions (300 total). The
 expanded Upgrade fixture passes 24 cases, and the retained Recovery Baseline
 passes. The PR additionally runs the SQL and HTTP fixtures with MySQL 8 on PHP
 8.1 and 8.3, including independent-process takeover races, plus both actual

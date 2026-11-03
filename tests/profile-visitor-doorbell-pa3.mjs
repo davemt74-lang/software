@@ -182,9 +182,9 @@ for(const failed of [false,true]){
  const storage=new Map([['vp3:profile-doorbell:1:drafts',JSON.stringify({101:{text:'s'.repeat(4001),at:Date.now(),attempt:null}})]]),restored=await fixture({storage});
  check(restored.card(101).textContent.includes('saved reply is longer than 4,000')&&restored.card(101).querySelector('textarea').value.length===4001,'overlong restored draft receives an explicit correction message without silently sending or truncating it');restored.stop();
 }
-{
- const f=await fixture({cards:[ownerCard(101,{state:'agent_ready',responder:'agent',execution_paused:true,can_delegate:false})]});
- check(f.card(101).textContent.includes('Profile Agent is paused')&&!f.card(101).textContent.includes('preparing a reply')&&f.card(101).querySelector('[data-doorbell-action="delegate"]').disabled,'canonical paused execution has truthful status and no implied automatic resume');f.stop();
+for(const pauseField of ['execution_paused','dispatch_execution_paused']){
+ const f=await fixture({cards:[ownerCard(101,{state:'agent_ready',responder:'agent',[pauseField]:true,can_delegate:false})]});
+ check(f.card(101).textContent.includes('Profile Agent is paused')&&!f.card(101).textContent.includes('preparing a reply')&&f.card(101).querySelector('[data-doorbell-action="delegate"]').disabled,'canonical '+pauseField+' has truthful status and no implied automatic resume');f.stop();
 }
 {
  const malformed=ownerCard(101,{can_reply:'true'}),f=await fixture({cards:[malformed]});check(f.cards().length===0&&!f.requests.some(r=>r.action==='doorbell_delivery'),'malformed current authority projection cannot become a card');f.stop();

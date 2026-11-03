@@ -50,11 +50,11 @@
   function normalize(value){
     if(!value||value.contract!==contract||!['turn_id','revision','conversation_id','profile_agent_id','visitor_message_id'].every(k=>positive(value[k]))||!states.has(value.state)||!['waiting','agent','owner','none'].includes(value.responder))return null;
     if(!['can_claim','can_reply','can_delegate','can_resolve'].every(k=>typeof value[k]==='boolean'))return null;
-    if(value.execution_paused!==undefined&&typeof value.execution_paused!=='boolean')return null;
+    if(['execution_paused','dispatch_execution_paused'].some(key=>value[key]!==undefined&&typeof value[key]!=='boolean'))return null;
     if(!nonnegative(value.server_now_ms)||!['acknowledged_at_ms','pickup_deadline_ms'].every(k=>value[k]===null||nonnegative(value[k])))return null;
     if(typeof value.visitor_label!=='string'||value.visitor_label.length>240||typeof value.agent_name!=='string'||value.agent_name.length>240||typeof value.visitor_message!=='string'||value.visitor_message.length>16000)return null;
     if(!Array.isArray(value.history)||value.history.length>20||value.history.some(row=>!row||!positive(row.id)||!['visitor','owner','agent'].includes(row.sender_type)||typeof row.message!=='string'||row.message.length>32000||typeof row.created_at!=='string'||row.created_at.length>40))return null;
-    return {...value,execution_paused:value.execution_paused===true,history:value.history.map(row=>({id:row.id,sender_type:row.sender_type,message:row.message,created_at:row.created_at}))};
+    return {...value,execution_paused:value.execution_paused===true,dispatch_execution_paused:value.dispatch_execution_paused===true,history:value.history.map(row=>({id:row.id,sender_type:row.sender_type,message:row.message,created_at:row.created_at}))};
   }
   function updatePresence(){
     if(!availabilityNode)return;
@@ -120,7 +120,7 @@
     record.input.disabled=!allowed(record,'reply');
     if(record.pending)record.status.textContent='Saving your visitor action…';
     else if(record.superseded)record.status.textContent='A newer message from this visitor is shown in this Chat.';
-    else if(record.data.execution_paused)record.status.textContent='Profile Agent is paused. You can reply to this visitor.';
+    else if(record.data.execution_paused||record.data.dispatch_execution_paused)record.status.textContent='Profile Agent is paused. You can reply to this visitor.';
     else record.status.textContent=({awaiting_delivery:'Waiting for visible delivery.',awaiting_owner:'You can reply, or let your Profile Agent answer.',owner_claimed:'You are handling this visitor.',agent_ready:'Your Profile Agent is preparing a reply.',agent_running:'Your Profile Agent is replying.',replied:record.data.responder==='owner'?'Your reply was sent.':record.data.responder==='agent'?'Your Profile Agent replied.':'A reply was sent.',blocked:'This visitor request needs attention.',cancelled:'This visitor request is closed.'})[record.data.state];
     const seconds=remaining(record);
     record.countdown.hidden=record.data.state!=='awaiting_owner';
