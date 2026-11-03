@@ -19,6 +19,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'system_apps.health.read'=>['list'],
         'system_apps.permissions.read'=>['inspect'],
         'apps.user.read'=>['list'],
+        'apps.shares.read'=>['list'],
         'apps.manager.read'=>['list'],
         'apps.workspace.read'=>['inspect'],
         'tv.history.read'=>['list'],

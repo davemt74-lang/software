@@ -61,6 +61,7 @@ jobs:
           php tests/agent-image-transport-v1.php
           node tests/chat-canvas-media-api.mjs
           php tests/agent-app-read-v1.php
+          php tests/agent-private-share-read-v1.php
           php tests/agent-system-app-read-v1.php
           php tests/agent-app-operations-v1.php
           php tests/homeserver-read-receipts-v1.php
