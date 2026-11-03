@@ -191,7 +191,7 @@
     root.querySelector('[data-screen-delete]').addEventListener('click',async()=>{
       const id=selectedSession;if(!id)return historySay('Choose a session first.');
       if(!confirm('Delete all captures, transcripts and analyses collected in this session? Unrelated Knowledge items and the folder are preserved.'))return;
-      try{if(id===sessionId){void finishAudio(false);stop();}await historyApi({action:'delete_session',session_id:id,remove_brain:root.querySelector('[data-screen-delete-brain]').checked});selectedSession=null;await refreshHistory();historySay('Session data deleted. The Knowledge folder and unrelated items were preserved.');}catch(e){historySay(e.message);}
+      try{if(id===sessionId){void finishAudio(false);stop();}await historyApi({action:'delete_session',session_id:id,remove_brain:root.querySelector('[data-screen-delete-brain]').checked});selectedSession=null;window.dispatchEvent(new Event('vp3:screen-observation-reviewed'));await refreshHistory();historySay('Session data deleted. The Knowledge folder and unrelated items were preserved.');}catch(e){historySay(e.message);}
     });
     root.querySelector('[data-screen-save]').addEventListener('click',async()=>{const token=generation;try{const f=capture();if(!f)return;await persistFrame(f,token,undefined,false);historySay('Capture saved to My Knowledge.');}catch(e){historySay(e.message);}});
     root.querySelector('[data-screen-history]').addEventListener('click',async e=>{
