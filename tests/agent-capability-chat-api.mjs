@@ -6,7 +6,7 @@ import net from 'node:net';
 import {spawn} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-capability-chat-'));
 fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(path.join(tmp,'api'));
-for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
+for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php','chat-canvas-media-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
 for(const name of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
 fs.copyFileSync('tests/fixtures/phone-agent-schema-v1.php',path.join(tmp,'includes/phone-agent-schema-v1.php'));
@@ -310,6 +310,20 @@ try{
    response=await post(endpoint,'Show my requested media records',context,{...headers,'X-Fixture-Media-Mode':'offline'});
    check(response.data?.tool_receipt?.status==='failed'&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' unavailable '+cap+' never becomes an empty or completed result');
   }
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const agent=endpoint.includes('v236')?7:0,context=endpoint.includes('stream')?{agent_context:{user_agent_id:agent}}:{};
+  const mediaHeaders={'X-Fixture-Images-Ready':'1','X-Fixture-Participant-Owner-Plan':JSON.stringify({operation:'cloud_media_read',ids:['media.assets.read'],media_type:'photo'})};
+  let response=await post(endpoint,'Show my photos',context,mediaHeaders);
+  check(response.data?.canvas_media?.asset_ids?.includes(1)&&!response.data.canvas_media.asset_ids.includes(2),endpoint+' Cloud photo search returns only the owner canvas references');
+  const generationHeaders={...mediaHeaders,'X-Fixture-Participant-Owner-Plan':JSON.stringify({operation:'image_generate',ids:['images.generate'],prompt:'A cinematic Arizona desert sunset',title:'Desert artwork'})};
+  response=await post(endpoint,'Create a desert image',context,generationHeaders);
+  check(response.data?.tool_receipt?.capability==='images.generate'&&response.data.tool_receipt.status==='completed'&&response.data.canvas_media?.generation_ids?.length===1,endpoint+' concrete image command queues a canonical job and returns its canvas card: '+response.body);
+  const cid=response.data.conversation_id,id=response.data.canvas_media.generation_ids[0];
+  const history=await fetch(base+'/api/'+(endpoint.includes('v236')?'chat-v236.php?agent=7':'chat.php'),{method:'POST',headers:{'Content-Type':'application/json',...mediaHeaders},body:JSON.stringify({csrf_token:'fixture',action:'load',conversation_id:cid})});
+  const saved=await history.json();check(saved.messages.some(m=>m.role==='assistant'&&m.context_json?.includes(id)),endpoint+' image job references survive a fresh conversation history load');
+  const cancel=await fetch(base+'/api/chat-canvas-media-v1.php',{method:'POST',headers:{'Content-Type':'application/json',...mediaHeaders},body:JSON.stringify({csrf_token:'fixture',action:'cancel',confirmed:true,generation_id:id,conversation_id:cid,agent_id:agent})});
+  const cancelled=await cancel.json();check(cancelled.generation?.status==='cancelled',endpoint+' cancel button uses the canonical owner job control: '+JSON.stringify(cancelled));
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

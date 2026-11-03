@@ -69,6 +69,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Select a valid Claude model.');
             }
 
+            $imageModel=(string)($_POST['image_model']??vp3_image_settings_v1()['model']);
+            if(!isset(vp3_image_models_v1()[$imageModel]))throw new RuntimeException('Select a supported image model.');
+            save_setting('ai_image_enabled',isset($_POST['image_enabled'])?'1':'0');
+            save_setting('ai_image_model',$imageModel);
+
             save_setting('system_agent_name', $systemAgentName);
             save_setting('ai_active_provider', $activeProvider);
             save_setting('ai_openai_enabled', isset($_POST['openai_enabled']) ? '1' : '0');
@@ -277,7 +282,7 @@ require __DIR__ . '/_header.php';
           <span class="ai-provider-mark">O</span>
           <div>
             <h3>OpenAI</h3>
-            <p>Responses API</p>
+            <p>Chat and image generation</p>
           </div>
         </div>
 
@@ -303,6 +308,12 @@ require __DIR__ . '/_header.php';
           <input id="openai_api_key" name="openai_api_key" type="password" autocomplete="new-password" placeholder="<?= ai_provider_has_saved_key('openai') ? 'Saved encrypted key' . ($openaiCredentialState === 'ready' ? ' ••••••' . e(ai_key_suffix('openai')) : '') : 'sk-…' ?>">
           <small><?= ai_provider_has_saved_key('openai') ? e($openaiCredentialState === 'ready' ? 'An encrypted API key is saved. Leave blank to keep it.' : ai_credential_state_message($openaiCredentialState, 'OpenAI')) : 'No OpenAI API key is saved.' ?></small>
         </div>
+      </div>
+
+      <div class="ai-provider-fields">
+        <label class="admin-inline-check"><input type="checkbox" name="image_enabled" value="1" <?= vp3_image_settings_v1()['enabled'] ? 'checked' : '' ?>> Enable image generation in Chat</label>
+        <label class="field">Image model<select name="image_model"><?php foreach(vp3_image_models_v1() as $key=>$label): ?><option value="<?= e($key) ?>" <?= vp3_image_settings_v1()['model']===$key?'selected':'' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
+        <p>Uses this saved OpenAI key independently of the active Chat provider. Explicit image requests create one private image at a time, with progress and saved results on the Chat canvas. Image API usage uses the account AI quota.</p>
       </div>
 
       <?php if (ai_provider_has_saved_key('openai')): ?>

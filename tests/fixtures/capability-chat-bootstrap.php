@@ -16,6 +16,7 @@ require_once __DIR__.'/homeserver-local-execution-v230.php';
 require_once __DIR__.'/homeserver-agent-read-v230.php';
 require_once __DIR__.'/system-apps-v330.php';
 require_once __DIR__.'/media-agent-schema-v1.php';
+require_once __DIR__.'/media-studio-v86.php';
 require_once __DIR__.'/app-agent-remote-v1.php';
 require_once __DIR__.'/system-app-agent-schema-v1.php';
 require_once __DIR__.'/app-operation-schema-v1.php';
@@ -51,7 +52,7 @@ function member_navigation_menu_links($u){return [['key'=>'contacts','label'=>'C
 function music_workspace_resources_v330_can_manage_track($pdo,$t,$u){return (int)$t['owner_user_id']===(int)$u['id'];}
 function music_workspace_resources_v330_track_workspace_id($pdo,$t){return 0;}
 function setting($key,$default=''){return $default;}
-function subscription_has_entitlement($user,$key){return isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY'])&&(int)$user['id']===1;}
+function subscription_has_entitlement($user,$key){return (isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY'])||isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY']))&&(int)$user['id']===1;}
 function subscription_entitlement_limit(...$args){return 3;}
 function homeserver_execution_v220_can_route(...$args){return isset($_SERVER['HTTP_X_FIXTURE_HOME_READY']);}
 function homeserver_https_v1300_status($uid){return ['paired'=>isset($_SERVER['HTTP_X_FIXTURE_MEDIA_READY'])||isset($_SERVER['HTTP_X_FIXTURE_APP_READY'])||isset($_SERVER['HTTP_X_FIXTURE_SYSTEM_APP_READY'])||isset($_SERVER['HTTP_X_FIXTURE_OPERATION_READY'])];}
@@ -162,6 +163,7 @@ function capability_fixture_agents(PDO $pdo): void
     $q->execute([1,1,1,'Fixture calendar review',$from,$to]);$q->execute([2,2,2,'SECRET foreign calendar',$from,$to]);
     if(isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY']))phone_agent_fixture_v1($pdo);
     if(isset($_SERVER['HTTP_X_FIXTURE_WORK_READY']))workflow_agent_fixture_v1($pdo);
+    if(isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY']))image_capability_fixture_v1($pdo);
     if(isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']))record_agent_fixture_v1($pdo);
     if(isset($_SERVER['HTTP_X_FIXTURE_MEDIA_READY']))media_agent_fixture_v1($pdo);
     if(isset($_SERVER['HTTP_X_FIXTURE_SYSTEM_APP_READY'])||isset($_SERVER['HTTP_X_FIXTURE_OPERATION_READY']))system_app_agent_fixture_v1($pdo);
@@ -169,3 +171,14 @@ function capability_fixture_agents(PDO $pdo): void
 }
 function agent_tool_log(...$args): void{}
 function agent_scheduling_timezone_v430(string $value,string $fallback='UTC'):string{return user_calendar_timezone_v1300($value,$fallback);}
+
+function ai_provider_api_key($provider): string{return isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY'])?'fixture-image-key':'';}
+function ai_provider_enabled($provider): bool{return isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY']);}
+function image_capability_fixture_v1(PDO $pdo): void{
+    if(!defined('STONEFELLOW_ROOT'))define('STONEFELLOW_ROOT',dirname(__DIR__));
+    workflow_agent_fixture_v1($pdo);
+    foreach(['capability_key TEXT','action_key TEXT','action_type TEXT','label TEXT','summary TEXT','attempt_count INTEGER DEFAULT 0','result_summary TEXT','result_json TEXT','error_class TEXT','started_at TEXT','completed_at TEXT','updated_at TEXT'] as $c){$name=explode(' ',$c)[0];if(!column_exists('agent_workflow_actions',$name))$pdo->exec('ALTER TABLE agent_workflow_actions ADD COLUMN '.$c);}
+    foreach(['run_id INTEGER','owner_user_id INTEGER','action_id INTEGER','depends_on_action_id INTEGER'] as $c){$name=explode(' ',$c)[0];if(!column_exists('agent_workflow_action_dependencies',$name))$pdo->exec('ALTER TABLE agent_workflow_action_dependencies ADD COLUMN '.$c);}
+    foreach(['receipt_key TEXT','result_json TEXT'] as $c){$name=explode(' ',$c)[0];if(!column_exists('agent_workflow_receipts',$name))$pdo->exec('ALTER TABLE agent_workflow_receipts ADD COLUMN '.$c);}
+    $pdo->exec("CREATE TABLE IF NOT EXISTS user_media_assets(id INTEGER PRIMARY KEY,user_id INTEGER,media_type TEXT,title TEXT,mime_type TEXT,file_path TEXT,file_size INTEGER,duration_seconds REAL,source TEXT,metadata_json TEXT,created_at TEXT,updated_at TEXT);CREATE TABLE IF NOT EXISTS video_editor_projects(id INTEGER PRIMARY KEY,user_id INTEGER);INSERT OR IGNORE INTO user_media_assets(id,user_id,media_type,title) VALUES(1,1,'photo','Fixture uploaded sunset'),(2,2,'photo','SECRET foreign photo')");
+}

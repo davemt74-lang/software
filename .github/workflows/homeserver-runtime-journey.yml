@@ -71,6 +71,10 @@ jobs:
           php tests/agent-screen-insights-v1.php
           node tests/agent-screen-insights-browser.mjs
           php tests/agent-photo-media-v1.php
+          php tests/agent-image-generation-v1.php
+          php tests/agent-image-transport-v1.php
+          node tests/chat-canvas-media-api.mjs
+          node tests/chat-canvas-media-browser.mjs
           php tests/cloud-missions-v1.php
           node tests/cloud-missions-api.mjs
           node tests/cloud-missions-browser.mjs
@@ -192,6 +196,7 @@ jobs:
           php tests/cloud-mission-schedules-v1.php
           php tests/cloud-mission-web-v1.php
           php tests/cloud-mission-sources-v1.php
+          php tests/agent-image-generation-v1.php
   connection-mysql:
     needs: transfer-scope
     if: needs.transfer-scope.outputs.connection == 'true'

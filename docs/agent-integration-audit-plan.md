@@ -2,7 +2,7 @@
 
 This is the managed build order for the legacy handlers called by the shared VP3 Chat dispatcher. It is not a count of every tool in VP3: reminders, transcripts, phone and newer record adapters also expose capabilities through the shared broker. Handler count and capability count are separate measures. “Pending” means unassessed, not necessarily broken or disconnected.
 
-Through S7: 17 of 29 legacy handlers assessed. S9A adds the four photo/media handlers, bringing assessed coverage to 21 of 29, with 8 remaining. S9A is prioritized before S8 for the requested photo/media work. Its release requires green PR checks and exact merged-package verification. Individual capability count is generated from source rather than inferred from handler count. Use `python3 tools/check_agent_capability_inventory.py` for current executable bindings, remaining handlers and source locations; that check also rejects a missing or duplicated handler in this list.
+Through S7: 17 of 29 legacy handlers assessed. S9A adds the four photo/media handlers, bringing assessed coverage to 21 of 29, with 8 remaining. S9A is prioritized before S8 for the requested photo/media work. Its release requires green PR checks and exact merged-package verification. Individual capability count is generated from source rather than inferred from handler count. S9B adds private Cloud media search and OpenAI image generation with canvas delivery; the current executable inventory has 49 capabilities while legacy-handler coverage stays 21 of 29. Use `python3 tools/check_agent_capability_inventory.py` for current executable bindings, remaining handlers and source locations; that check also rejects a missing or duplicated handler in this list.
 
 | Handler | Section | State / evidence |
 |---|---|---|

@@ -1383,6 +1383,7 @@
       cards:Array.isArray(raw.cards) ? raw.cards : (Array.isArray(raw.cognitive_cards) ? raw.cognitive_cards : []),
       system_app_action_card:raw.system_app_action_card && typeof raw.system_app_action_card === 'object' ? raw.system_app_action_card : null,
       knowledge_actions_r9:raw.knowledge_actions_r9 || null,
+      canvas_media:raw.canvas_media && typeof raw.canvas_media==='object' ? raw.canvas_media : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1514,7 +1515,7 @@
     return `<a class="chat-agent-action" href="${escapeHtml(withStudioReturn(action.url))}">${escapeHtml(action.label||'Open')}</a>`;
   }
 
-  function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null) {
+  function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, canvasMedia = null) {
     const wrapper = document.createElement('article');
     wrapper.className = `message ${role}`;
 
@@ -1548,6 +1549,7 @@
       </div>`;
 
     wrapper.querySelector('.message-text').textContent = text;
+    if(canvasMedia){const host=document.createElement('section');host.className='vp3-canvas-media';host.setAttribute('aria-label','Chat media');host._vp3CanvasMediaRef=canvasMedia;wrapper.querySelector('.message-text').after(host);}
     if (cards.length) {
       const cardHost = wrapper.querySelector('[data-cognitive-card-host]');
       if (cardHost) {
@@ -1559,9 +1561,9 @@
     return wrapper;
   }
 
-  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, knowledgeDraft = null) {
+  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, knowledgeDraft = null, canvasMedia = null) {
     if (welcome) welcome.hidden = true;
-    const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards, systemAppActionCard);
+    const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards, systemAppActionCard, canvasMedia);
     const listening=thread.querySelector('.chat-listening-continuation');
     if(listening)thread.insertBefore(el,listening);else thread.appendChild(el);
     window.VP3KnowledgeActionsR9?.show(knowledgeDraft,el.querySelector('.message-body')||el);
@@ -3045,7 +3047,8 @@
         context.actions || [],
         context.cards || [],
         context.system_app_action_card || null,
-        context.knowledge_actions_r9 || null
+        context.knowledge_actions_r9 || null,
+        context.canvas_media || null
       );
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
@@ -3069,7 +3072,7 @@
     data.messages.forEach(message=>{
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
-      addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null);
+      addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory(signal);
@@ -3207,7 +3210,8 @@
         data.actions || [],
         data.cards || data.cognitive_cards || [],
         data.system_app_action_card || null,
-        data.knowledge_actions_r9 || null
+        data.knowledge_actions_r9 || null,
+        data.canvas_media || null
       );
       const autoAction=(data.actions||[]).find(action=>action && action.auto && action.url);
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}
