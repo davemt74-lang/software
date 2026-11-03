@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const STONEFELLOW_CHAT_SETTINGS_V237 = 'chat-settings-v237-20260921-voice-authority';
+const STONEFELLOW_CHAT_SETTINGS_V237 = 'chat-settings-v237-pa3c-assisted-phone';
 
 function chat_settings_agent_voice_allowed_v237(?array $user=null): bool
 {
@@ -38,6 +38,7 @@ function chat_settings_defaults_v237(): array
         'social_chat_enabled' => true,
         'sound_enabled' => true,
         'agent_voice_enabled' => true,
+        'agent_assisted_phone_chat_enabled' => false,
     ];
 }
 
@@ -57,6 +58,42 @@ function chat_settings_agent_voice_schema_ready_v237(?PDO $pdo = null): bool
     return (bool)$pdo
         && table_exists('team_user_presence')
         && column_exists('team_user_presence', 'agent_voice_enabled');
+}
+
+function chat_settings_agent_assisted_phone_chat_schema_ready_v237(?PDO $pdo = null): bool
+{
+    $pdo ??= db();
+    if (!$pdo) return false;
+    require_once __DIR__.'/schema-metadata.php';
+    return schema_metadata_column_exists($pdo, 'team_user_presence', 'agent_assisted_phone_chat_enabled');
+}
+
+/** Read only the stored opt-in. Call authority and disclosure are checked separately. */
+function chat_settings_agent_assisted_phone_chat_enabled_v237(PDO $pdo, int $userId, bool $currentRead = false): bool
+{
+    if ($userId < 1) return false;
+    $inTransaction = $currentRead && $pdo->inTransaction();
+    try {
+        $lock = $inTransaction && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite' ? ' FOR UPDATE' : '';
+        $stmt = $pdo->prepare('SELECT agent_assisted_phone_chat_enabled FROM team_user_presence WHERE user_id=? LIMIT 1'.$lock);
+        $stmt->execute([$userId]);
+        return in_array($stmt->fetchColumn(), [1, '1', true], true);
+    } catch (PDOException $error) {
+        if ($inTransaction && !$pdo->inTransaction()) throw $error;
+        return false;
+    }
+}
+
+function chat_settings_agent_assisted_phone_chat_allowed_v237(PDO $pdo, array $user): bool
+{
+    try {
+        if (!has_permission('account.access', $user) || !has_permission('chat.access', $user)) return false;
+        require_once __DIR__.'/agent-observation-authority-v1.php';
+        return vp3_observation_personal_permission_v1($pdo, $user, 'profile_agent.access')
+            && vp3_observation_personal_permission_v1($pdo, $user, 'profile_chat.access');
+    } catch (Throwable $error) {
+        return false;
+    }
 }
 
 function chat_settings_ensure_schema_v237(?PDO $pdo = null): void
@@ -81,6 +118,9 @@ function chat_settings_ensure_schema_v237(?PDO $pdo = null): void
     if (!column_exists('team_user_presence', 'agent_voice_enabled')) {
         $pdo->exec("ALTER TABLE team_user_presence ADD COLUMN agent_voice_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER sound_enabled");
     }
+    if (!chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo)) {
+        $pdo->exec('ALTER TABLE team_user_presence ADD COLUMN agent_assisted_phone_chat_enabled TINYINT(1) NOT NULL DEFAULT 0');
+    }
 }
 
 function chat_settings_get_v237(PDO $pdo, int $userId): array
@@ -91,8 +131,10 @@ function chat_settings_get_v237(PDO $pdo, int $userId): array
     }
 
     $voiceReady = chat_settings_agent_voice_schema_ready_v237($pdo);
+    $assistedPhoneReady = chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo);
     $columns = 'presence_mode,social_chat_enabled,sound_enabled'
-        . ($voiceReady ? ',agent_voice_enabled' : '');
+        . ($voiceReady ? ',agent_voice_enabled' : '')
+        . ($assistedPhoneReady ? ',agent_assisted_phone_chat_enabled' : '');
     $stmt = $pdo->prepare(
         'SELECT ' . $columns . '
          FROM team_user_presence
@@ -117,6 +159,7 @@ function chat_settings_get_v237(PDO $pdo, int $userId): array
         'agent_voice_enabled' => $voiceReady
             ? (bool)($row['agent_voice_enabled'] ?? true)
             : true,
+        'agent_assisted_phone_chat_enabled' => in_array($row['agent_assisted_phone_chat_enabled'] ?? null, [1, '1', true], true),
     ];
 }
 
@@ -125,6 +168,21 @@ function chat_settings_save_v237(PDO $pdo, array $user, array $input): array
     $userId = (int)($user['id'] ?? 0);
     if ($userId < 1) {
         throw new RuntimeException('Sign in to change Chat settings.');
+    }
+
+    $assistedPhoneEnabled = null;
+    if (array_key_exists('agent_assisted_phone_chat_enabled', $input)) {
+        $requested = $input['agent_assisted_phone_chat_enabled'];
+        if (!in_array($requested, [true, false, 1, 0, '1', '0'], true)) {
+            throw new RuntimeException('Choose On or Off for Agent-assisted phone chat.');
+        }
+        $assistedPhoneEnabled = (int)(bool)$requested;
+        if ($assistedPhoneEnabled && !chat_settings_agent_assisted_phone_chat_allowed_v237($pdo, $user)) {
+            throw new RuntimeException('Agent-assisted phone chat is not available for this account.');
+        }
+        if (!chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo)) {
+            throw new RuntimeException('Agent-assisted phone chat is not ready. Run /upgrade.php.');
+        }
     }
 
     if (!chat_settings_schema_ready_v237($pdo) || !chat_settings_agent_voice_schema_ready_v237($pdo)) {
@@ -153,18 +211,22 @@ function chat_settings_save_v237(PDO $pdo, array $user, array $input): array
             : (!empty($current['agent_voice_enabled']) ? 1 : 0))
         : 0;
 
-    $stmt = $pdo->prepare(
-        'INSERT INTO team_user_presence
-            (user_id,presence_mode,social_chat_enabled,sound_enabled,agent_voice_enabled,last_seen_at)
-         VALUES (?,?,?,?,?,NOW())
-         ON DUPLICATE KEY UPDATE
-            presence_mode=VALUES(presence_mode),
-            social_chat_enabled=VALUES(social_chat_enabled),
-            sound_enabled=VALUES(sound_enabled),
-            agent_voice_enabled=VALUES(agent_voice_enabled),
-            updated_at=NOW()'
-    );
-    $stmt->execute([$userId, $mode, $socialEnabled, $soundEnabled, $agentVoiceEnabled]);
+    // Old clients and the account menu's Agent Voice control must not write this opt-in.
+    $settings = [
+        'presence_mode'=>$mode,
+        'social_chat_enabled'=>$socialEnabled,
+        'sound_enabled'=>$soundEnabled,
+        'agent_voice_enabled'=>$agentVoiceEnabled,
+    ];
+    if ($assistedPhoneEnabled !== null) $settings['agent_assisted_phone_chat_enabled'] = $assistedPhoneEnabled;
+    $names = array_keys($settings);
+    $marks = implode(',', array_fill(0, count($settings), '?'));
+    $sqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
+    $upsert = $sqlite ? 'ON CONFLICT(user_id) DO UPDATE SET' : 'ON DUPLICATE KEY UPDATE';
+    $updates = implode(',', array_map(static fn(string $name): string => $name.'='.($sqlite ? 'excluded.'.$name : 'VALUES('.$name.')'), $names));
+    $stmt = $pdo->prepare('INSERT INTO team_user_presence (user_id,'.implode(',', $names).',last_seen_at) '
+        .'VALUES (?,'.$marks.',CURRENT_TIMESTAMP) '.$upsert.' '.$updates.',updated_at=CURRENT_TIMESTAMP');
+    $stmt->execute([$userId, ...array_values($settings)]);
 
     return chat_settings_get_v237($pdo, $userId);
 }

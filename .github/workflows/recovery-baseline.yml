@@ -82,8 +82,12 @@ jobs:
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php
           php tests/profile-live-text-pa3d.php
+          php tests/profile-assisted-phone-settings-pa3c.php
+          php tests/profile-call-research-pa3c.php
           node tests/profile-handoff-api-pa3.mjs
           node tests/profile-live-chat-api-pa3d.mjs
+          node tests/profile-call-api-pa3c.mjs
+          python3 -B tests/profile-call-worker-pa3c.py
           node tests/profile-visitor-doorbell-pa3.mjs
           node tests/profile-visitor-handoff-pa3.mjs
           node tests/profile-chat-choice-pa3d.mjs

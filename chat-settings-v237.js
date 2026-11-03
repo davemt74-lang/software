@@ -65,6 +65,7 @@
             <section class="chat-settings-section">
               <div class="chat-settings-section-title"><strong>Availability</strong><span>Choose whether other VP3 users see you as online. Offline also turns off live-text requests from your public Profile.</span></div>
               <label class="chat-settings-field"><span>Status</span><select name="presence_mode"><option value="online">Online</option><option value="offline">Offline</option></select></label>
+              <div id="chatSettingsAgentAssistedPhone" hidden><label class="chat-settings-toggle"><span><strong>Agent-assisted phone chat</strong><small>Your Profile Agent can listen and transcribe assisted calls. Visitors see a notice before calling.</small></span><input type="checkbox" name="agent_assisted_phone_chat_enabled" disabled></label></div>
             </section>
             <section class="chat-settings-section">
               <div class="chat-settings-section-title"><strong>Social Chat</strong><span>Control direct user messages, public Profile live-text requests and incoming message alerts.</span></div>
@@ -189,7 +190,8 @@
         presence_mode:online ? 'online' : 'offline',
         social_chat_enabled:social,
         sound_enabled:sound,
-        agent_voice_enabled:agentVoice
+        agent_voice_enabled:agentVoice,
+        agent_assisted_phone_chat_enabled:settings.agent_assisted_phone_chat_enabled === true
       }
     }));
   }
@@ -202,10 +204,16 @@
       const social = form.elements.namedItem('social_chat_enabled');
       const sound = form.elements.namedItem('sound_enabled');
       const voice = form.elements.namedItem('agent_voice_enabled');
+      const assistedPhone = form.elements.namedItem('agent_assisted_phone_chat_enabled');
       if (mode) mode.value = String(chat.presence_mode || 'online');
       if (social) social.checked = chat.social_chat_enabled !== false;
       if (sound) sound.checked = chat.sound_enabled !== false;
       if (voice) { voice.checked = voiceAllowed && chat.agent_voice_enabled !== false; voice.disabled = !voiceAllowed; }
+      if (assistedPhone) {
+        assistedPhone.checked = chat.agent_assisted_phone_chat_enabled === true;
+        assistedPhone.disabled = state?.agent_assisted_phone_chat_ready !== true || (state?.agent_assisted_phone_chat_allowed !== true && !assistedPhone.checked);
+        document.getElementById('chatSettingsAgentAssistedPhone').hidden = assistedPhone.disabled;
+      }
     }
     renderProfileAgent(state?.profile_agent || null);
     applyRuntimeSettings({...chat, agent_voice_enabled:voiceAllowed && chat.agent_voice_enabled !== false});
@@ -253,13 +261,16 @@
     const presence = form.elements.namedItem('presence_mode');
     const social = form.elements.namedItem('social_chat_enabled');
     const sound = form.elements.namedItem('sound_enabled');
-    const voice = form.elements.namedItem('agent_voice_enabled');
+    const assistedPhone = form.elements.namedItem('agent_assisted_phone_chat_enabled');
 
     try {
       const chatResponse = await request('save_chat', {
         presence_mode:String(presence?.value || 'online'),
         social_chat_enabled:Boolean(social?.checked),
-        sound_enabled:Boolean(sound?.checked)
+        sound_enabled:Boolean(sound?.checked),
+        ...(assistedPhone && !assistedPhone.disabled && assistedPhone.checked !== (state?.chat?.agent_assisted_phone_chat_enabled === true)
+          ? {agent_assisted_phone_chat_enabled:assistedPhone.checked}
+          : {})
       });
 
       let profileAgent = state?.profile_agent || null;
@@ -277,7 +288,7 @@
         profileAgent = profileResponse.profile_agent || profileAgent;
       }
 
-      state = { ok:true, agent_voice_allowed:chatResponse.agent_voice_allowed ?? state?.agent_voice_allowed ?? false, chat:chatResponse.chat, profile_agent:profileAgent };
+      state = { ...state, ok:true, agent_voice_allowed:chatResponse.agent_voice_allowed ?? state?.agent_voice_allowed ?? false, chat:chatResponse.chat, profile_agent:profileAgent };
       renderState();
       setStatus('Chat settings saved.', 'success');
       window.setTimeout(closeModal, 450);

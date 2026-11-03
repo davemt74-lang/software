@@ -69,8 +69,11 @@ jobs:
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php
           php tests/profile-live-text-pa3d.php
+          php tests/profile-assisted-phone-settings-pa3c.php
+          php tests/profile-call-research-pa3c.php
           node tests/profile-handoff-api-pa3.mjs
           node tests/profile-live-chat-api-pa3d.mjs
+          node tests/profile-call-api-pa3c.mjs
           node tests/profile-visitor-doorbell-pa3.mjs
           node tests/profile-visitor-handoff-pa3.mjs
           node tests/profile-chat-choice-pa3d.mjs
@@ -84,8 +87,11 @@ jobs:
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php
           php tests/profile-live-text-pa3d.php
+          php tests/profile-assisted-phone-settings-pa3c.php
+          php tests/profile-call-research-pa3c.php
           node tests/profile-handoff-api-pa3.mjs
           node tests/profile-live-chat-api-pa3d.mjs
+          node tests/profile-call-api-pa3c.mjs
   profile_owner_browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -106,3 +112,8 @@ jobs:
         run: node tests/profile-visitor-handoff-pa3-browser.mjs
       - name: Public Agent or live owner text choice, consent, recovery and mobile
         run: node tests/profile-chat-choice-pa3d-browser.mjs
+      - name: Profile call settings, media controls and Agent activity drawer
+        run: |
+          node tests/profile-assisted-phone-settings-pa3c-browser.mjs
+          node tests/profile-call-media-pa3c-browser.mjs
+          node tests/profile-call-activity-pa3c-browser.mjs

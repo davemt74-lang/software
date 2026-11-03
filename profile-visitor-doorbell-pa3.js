@@ -123,6 +123,7 @@
   function allowed(record,operation){
     const chat=record.data.chat,accepted=chat?.live_status==='accepted';
     if(!writable(record)||record.pending||record.data['can_'+operation]!==true)return false;
+    if((operation==='delegate'||operation==='resolve')&&profileCalls?.hasActiveCall(record.data.conversation_id))return false;
     if(operation==='delegate'&&accepted&&!chat.can_end_live_chat)return false;
     if((liveWaiting(record)||accepted)&&(operation==='claim'||operation==='reply')&&(settingsPending||!chat.live_text_available))return false;
     return record.data.state!=='awaiting_owner'||remaining(record)!==0;
@@ -134,6 +135,7 @@
     record.buttons.delegate.textContent=waiting?'Decline':accepted?'End live chat':'Let Agent reply';
     for(const [operation,button] of Object.entries(record.buttons))button.disabled=!allowed(record,operation);
     record.input.disabled=!allowed(record,'reply');
+    profileCalls?.bindCard(record.callSlot,record.data.conversation_id,accepted&&writable(record)&&!record.pending&&!settingsPending&&chat.live_text_available);
     if(record.pending)record.status.textContent='Saving your visitor action…';
     else if(record.superseded)record.status.textContent='A newer message from this visitor is shown in this Chat.';
     else if((waiting||accepted)&&settingsPending)record.status.textContent='Checking your updated Chat Settings…';
@@ -171,8 +173,10 @@
     const form=node('form','profile-doorbell-reply'),label=node('label','','Reply to this visitor'),input=node('textarea');
     input.rows=2;input.maxLength=4000;input.id='profileDoorbellReply'+data.turn_id;label.setAttribute('for',input.id);input.setAttribute('aria-label','Reply to '+(data.visitor_label||'this visitor'));input.placeholder='Your reply goes only to this visitor';
     const send=node('button','','Send to visitor');send.type='submit';send.dataset.doorbellAction='reply';buttons.reply=send;form.append(label,input,send);
-    const notice=node('p','profile-doorbell-notice');notice.setAttribute('role','status');card.append(header,status,countdown,question,details,controls,form,notice);
-    const record={data,node:card,element,binding,epoch,clockServer:data.server_now_ms,clockLocal:now(),status,countdown,question,history,input,buttons,notice,pending:false,attempt:null,ackBusy:false,ackRevision:0,historySignature:'',superseded:false};
+    const notice=node('p','profile-doorbell-notice');notice.setAttribute('role','status');
+    const callSlot=node('div','profile-call-card');callSlot.hidden=true;
+    card.append(header,status,countdown,question,details,controls,callSlot,form,notice);
+    const record={data,node:card,element,binding,epoch,callSlot,clockServer:data.server_now_ms,clockLocal:now(),status,countdown,question,history,input,buttons,notice,pending:false,attempt:null,ackBusy:false,ackRevision:0,historySignature:'',superseded:false};
     const saved=drafts[data.turn_id];if(saved&&typeof saved.text==='string'&&saved.text.length<=8000){input.value=saved.text;if(saved.text.length>4000)notice.textContent='Your saved reply is longer than 4,000 characters. Shorten it before sending.';if(saved.attempt&&token(saved.attempt.request_id))record.attempt=saved.attempt;}
     input.addEventListener('input',()=>{record.notice.textContent='';saveDraft(record);});
     for(const operation of ['claim','delegate','resolve'])buttons[operation].addEventListener('click',()=>void perform(record,operation));
@@ -307,9 +311,15 @@
     finally{pumping=false;if(queued&&!stopped){queued=false;window.setTimeout(()=>void pump(),0);}}
   }
   function restoreMarkers(){for(const [id,data] of projections){const record=cards.get(id);if(!record?.node.isConnected)applyProjection(data);}scheduleAcks();}
+  let profileCalls=null;
+  if(cfg.callEndpoint&&window.VP3ProfileCallPA3C){
+    const callHost=node('section','profile-call-owner');
+    callHost.setAttribute('aria-label','Profile voice call');callHost.hidden=true;document.body.appendChild(callHost);
+    profileCalls=window.VP3ProfileCallPA3C.mount(callHost,{side:'owner',endpoint:cfg.callEndpoint,credentials:()=>({csrf_token:cfg.csrf}),visible:()=>!document.hidden});
+  }
   window.addEventListener('vp3:profile-handoff-message',restoreMarkers);
   window.addEventListener('vp3:profile-handoff-refresh',()=>void pump());
-  window.addEventListener('stonefellow:chat-settings-updated',()=>{settingsPending=true;actionSequence++;tab.sequence++;saveStorage(tabKey,tab);presenceAt=0;reachable=false;for(const record of cards.values())refreshControls(record);updatePresence();void pump();});
+  window.addEventListener('stonefellow:chat-settings-updated',()=>{profileCalls?.refresh();settingsPending=true;actionSequence++;tab.sequence++;saveStorage(tabKey,tab);presenceAt=0;reachable=false;for(const record of cards.values())refreshControls(record);updatePresence();void pump();});
   window.addEventListener('vp3:chat-context-ready',()=>{syncContext();void pump();});
   window.addEventListener('stonefellow:chat-context-changing',invalidate);
   window.addEventListener('vp3:chat-canvas-view-changed',()=>{if(!active())invalidate();else void pump();});

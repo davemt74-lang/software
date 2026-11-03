@@ -1,0 +1,41 @@
+.profile-call-visitor,.profile-call-owner {
+  padding: .65rem .8rem;
+  color: #162133;
+  background: #f5f8fd;
+  border: 1px solid #c7d6eb;
+  font: 500 .78rem/1.35 system-ui,sans-serif;
+  overflow-wrap: anywhere;
+}
+.profile-call-visitor {border-width: 0 0 1px;}
+.profile-call-owner {
+  position: fixed;
+  inset: max(76px,env(safe-area-inset-top)) 68px auto auto;
+  z-index: 96;
+  width: min(360px,calc(100vw - 92px));
+  border-radius: 12px;
+  box-shadow: 0 8px 28px #16213320;
+}
+.profile-call-notice,.profile-call-status {margin: 0 0 .35rem;}
+.profile-call-notice {color: #254b76;}
+.profile-call-status {font-weight: 700;}
+.profile-call-controls,.profile-call-card {display: flex;flex-wrap: wrap;align-items: center;gap: .35rem;}
+.profile-call-card {margin-block: .4rem;}
+.profile-call-card .profile-call-notice {margin: 0;}
+.profile-call-controls button,.profile-call-card button {
+  min-height: 36px;
+  padding: .35rem .65rem;
+  border: 1px solid #9baec7;
+  border-radius: 8px;
+  background: #fff;
+  color: #162133;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.profile-call-controls button:focus-visible,.profile-call-card button:focus-visible {outline: 2px solid #316ab0;outline-offset: 2px;}
+.profile-call-controls button:disabled,.profile-call-card button:disabled {opacity: .55;cursor: default;}
+.profile-call-visitor[hidden],.profile-call-owner[hidden],.profile-call-card[hidden],.profile-call-controls [hidden],.profile-call-notice[hidden],.profile-call-status[hidden] {display: none;}
+@media (max-width: 760px) {
+  .profile-call-owner {right: max(10px,env(safe-area-inset-right));width: min(360px,calc(100vw - 20px));}
+  .profile-call-controls button,.profile-call-card button {min-height: 44px;}
+}

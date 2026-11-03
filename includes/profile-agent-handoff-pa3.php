@@ -398,6 +398,11 @@ function vp3_profile_handoff_mode_pa3(PDO $pdo,int $owner,int $cid,string $mode,
     if($liveStatus===null)$liveStatus=$requestedMode==='live'?match($mode){'owner'=>'accepted','pending'=>'waiting','agent'=>$thread['live_status']==='waiting'?'declined':'ended',default=>'ended'}:'none';
     if(!in_array($liveStatus,['none','waiting','accepted','declined','expired','unavailable','ended'],true))throw new RuntimeException('Visitor live status is invalid.');
     $deliveryUntil=$mode==='pending'?$now+VP3_PROFILE_HANDOFF_DELIVERY_MS_PA3:null;
+    if($thread['mode']==='owner'&&$thread['requested_mode']==='live'&&$thread['live_status']==='accepted'){
+        require_once __DIR__.'/profile-call-pa3c.php';
+        $preserveCall=$mode==='owner'&&$requestedMode==='live'&&$liveStatus==='accepted';
+        vp3_profile_call_text_transition_pa3c($pdo,$owner,$cid,(int)$thread['epoch'],$preserveCall?$epoch:null);
+    }
     $pdo->prepare('UPDATE profile_agent_handoff_conversations_pa3 SET mode=?,requested_mode=?,live_status=?,epoch=?,delivery_until_ms=?,acknowledged_at_ms=NULL,pickup_deadline_ms=NULL,updated_at_ms=? WHERE conversation_id=? AND owner_user_id=?')->execute([$mode,$requestedMode,$liveStatus,$epoch,$deliveryUntil,$now,$cid,$owner]);
     $q=$pdo->prepare("SELECT id,run_id,action_id FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND conversation_id=? AND state IN ('awaiting_delivery','awaiting_owner','agent_ready','agent_running','owner_claimed') ORDER BY id".vp3_profile_handoff_lock_pa3($pdo));$q->execute([$owner,$cid]);$turns=$q->fetchAll(PDO::FETCH_ASSOC);
     foreach($turns as $turn){

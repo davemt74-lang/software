@@ -4,7 +4,8 @@ declare(strict_types=1);
 // Execute the production upgrade page with isolated migration dependencies.
 // Real PDO/SQLite and the production TV schema exercise the connection and readiness path.
 $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_actions_v1','agent_participant_settings_v1','agent_participant_grants_v1','agent_participant_presence_v1','agent_participant_observers_v1',
-    'profile_agent_handoff_owners_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3'];
+    'profile_agent_handoff_owners_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3',
+    'profile_call_owner_locks_pa3c','profile_calls_pa3c','profile_call_assistance_pa3c','profile_call_research_pa3c'];
 if (!isset($argv[1])) {
     $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get'],array_map(fn($table)=>'missing-'.$table,$newTables));
     foreach ($modes as $mode) {
@@ -25,12 +26,13 @@ require dirname(__DIR__).'/includes/agent-reminders-v1.php';
 require dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
 $fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');
 // Load only the production DDL functions; unrelated upgrade dependencies stay isolated.
-foreach([['agent-task-lists-v1.php','vp3_task_lists_schema_v1','vp3_task_lists_ready_v1'],['participant-updates-v1.php','vp3_participant_updates_schema_v1','vp3_participant_updates_ready_v1']] as [$file,$schema,$ready]){
+foreach([['agent-task-lists-v1.php','vp3_task_lists_schema_v1','vp3_task_lists_ready_v1'],['participant-updates-v1.php','vp3_participant_updates_schema_v1','vp3_participant_updates_ready_v1'],
+    ['profile-call-pa3c.php','vp3_profile_call_ensure_schema_pa3c','vp3_profile_call_error_pa3c'],['profile-call-activity-pa3c.php','vp3_profile_call_activity_ensure_schema_pa3c','vp3_profile_call_activity_schema_ready_pa3c']] as [$file,$schema,$ready]){
     $ddl=file_get_contents(dirname(__DIR__).'/includes/'.$file);$start=strpos($ddl,'function '.$schema.'(');$end=strpos($ddl,'function '.$ready.'(',$start);eval(substr($ddl,$start,$end-$start));
 }
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_');
 $modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get'],true)||$missingTable;
-if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);}
+if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);}
 if($missingTable){$missing=substr($mode,8);if(!in_array($missing,$newTables,true))throw new RuntimeException('Invalid missing table fixture.');$fixture->exec('DROP TABLE '.$missing);}
 if (in_array($mode,['already-ready','tv-only'],true)) tv_schema_v1($fixture);
 if ($mode === 'already-ready') reminder_schema_v1($fixture);

@@ -9,7 +9,7 @@ The worker is explicitly dispatched by VP3 when the organizer joins a meeting wi
 - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` — standard LiveKit Agent worker credentials.
 - `VP3_LIVEKIT_AGENT_NAME` — must match the dispatch name configured by the VP3 web app. Default: `vp3-meeting-agent`.
 - `VP3_MEETING_API_BASE` — public HTTPS origin of the VP3 deployment, for example `https://vp3.example.com`.
-- `VP3_MEETING_WORKER_SECRET` — long random shared secret used only for the server-to-server transcript ingest endpoint.
+- `VP3_MEETING_WORKER_SECRET` — long random shared secret used only for the server-to-server transcript and Profile call worker endpoints.
 - `VP3_MEETING_STT_MODEL` — optional LiveKit Inference STT model. Default: `deepgram/nova-3`.
 - `VP3_MEETING_STT_LANGUAGE` — optional STT language. Default: `en`.
 
@@ -31,3 +31,28 @@ For production, deploy this directory using the normal LiveKit Agents deployment
 The worker is intentionally notes-first. It transcribes all subscribed human audio tracks and appears in the room as the user's existing VP3 Agent identity. Final transcript segments are mirrored into the canonical `artist_transcript_sessions_v172` / `artist_transcript_segments_v172` pipeline so the existing VP3 transcription intelligence, AI Summary, Knowledge, CRM and Agent Brain workflows can operate on meeting output. Recording remains off unless a later phase adds explicit recording controls and consent.
 
 Generative spoken participation is not enabled by this worker yet; `notes` is the production-safe Phase 18.0 behavior. The server-side meeting model retains additional Agent modes for later policy-controlled voice participation without changing the meeting or transcript architecture.
+
+## Profile Agent-assisted calls
+
+Deploy the current worker before enabling Profile call assistance on the VP3
+server. It uses the existing LiveKit and VP3 environment settings above. A
+Profile dispatch has its own call and room identifiers, an Agent display name,
+and a short-scope worker key. VP3 authorizes the dispatch and renews a bounded
+lease through the HTTPS Profile call worker endpoint.
+
+The worker subscribes to one microphone for each of the two authorized call
+participants and only while both are present. Each microphone has its own
+streaming speech-to-text pipeline. The callback sends final segment text and
+timing with the participant identity. VP3 resolves the displayed speaker names.
+The worker does not record or retain audio. When call assistance is paused it
+cancels both streams and unsubscribes. Resuming creates fresh streams under the
+new capture revision. A disconnected call or expired lease ends capture without
+draining buffered results.
+
+The Profile worker transcribes only. The Chat sidebar shows transcript and
+research activity tracked by VP3. The worker does not speak in Profile calls.
+
+Run the deterministic worker tests from the repository root with
+`python3 tests/profile-call-worker-pa3c.py`. Use two devices and a configured
+LiveKit/STT account to verify physical media, worker dispatch, and transcript
+latency before enabling the feature in production.

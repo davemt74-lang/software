@@ -30,19 +30,16 @@ to choose the requested voice category. Do not infer sex/gender from names,
 photos, or audio. Unknown guests use a selectable/default visitor preset. Keep
 speaker labels and voice assignment separate from identity/authentication.
 
-The owner and visitor can also talk directly. Live text uses the same explicit
-visitor card and durable public conversation. The next slice adds an in-browser
-voice call with optional video: either participant can offer a call, the other
-must accept, and each controls their own microphone and camera. The owner stays
-in the main Chat canvas; the visitor stays in the Profile chat. An unanswered or
-declined call leaves the Agent available. Accepting a call atomically claims the
-conversation so a late Agent answer cannot interrupt the people talking.
+The owner and visitor can also talk directly. An accepted live-text thread
+supports an in-browser voice call. Either participant can offer a call, the
+other must accept, and each controls their own microphone. The owner stays in
+the main Chat canvas and the visitor stays in Profile chat. A missed or declined
+call keeps the accepted text thread available.
 
-Live calls carry the participants' actual voices. ElevenLabs synthesis remains
-for Agent speech and reading typed visitor messages. Recording, transcription,
-and Agent participation are off for a direct call unless a later, explicit
-feature enables them with clear participant notice. Browser calling is distinct
-from calling a real telephone number through the existing Twilio integration.
+Live calls carry the participants' actual voices. The owner can enable Profile
+Agent assistance in Chat Settings and the visitor sees a notice before joining.
+The Agent transcribes opted-in calls and displays private call notes and research
+to the owner. Browser calling and Twilio telephone calls use separate routes.
 
 ## Build order and acceptance
 
@@ -57,8 +54,8 @@ hold. The Cloud work does not change HomeServer source or Stonefellow playback.
 | PA1 | Profile mutation permissions; visitor/account conversation isolation; fresh public authority; exact owner reply target; separate external Agent Messaging histories | Complete: PR #694 merged; all 13 PR and 14 post-merge workflows passed |
 | PA2 | Payment webhook recovery; late payment reconciliation; durable fulfillment retry; accurate review/payment cards | Complete: PR #695 merged; all 13 PR and 14 post-merge workflows passed |
 | PA3 | Availability, exact visible-card acknowledgement, 15-second pickup, durable automatic takeover, and functional main Chat visitor cards with explicit text reply/claim/delegate/resolve | Released in PRs #696 and #697 |
-| PA3D | Visitor chooses Agent chat or requests live owner text; owner accepts or declines using existing Chat Settings | Acceptance gates below |
-| PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Planned |
+| PA3D | Visitor chooses Agent chat or requests live owner text and the owner accepts or declines using existing Chat Settings | Released in PR #698 |
+| PA3C | Browser voice, optional Profile Agent transcription, sourced research and the owner activity drawer | Implementation and acceptance below |
 | PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Planned |
 | PA4B | Notification and Brain state; snooze/wake; routing; replay and projection repair | Planned |
 | PA5 | Ordinary public Profile conversation checkout using the canonical Commerce order/payment/receipt path | Planned |
@@ -294,67 +291,63 @@ schema installer. Existing installations run Upgrade once. Missing fields fail
 closed; public GET reads never initialize storage. Live media and synthesized
 visitor announcements remain later sections.
 
-### PA3C: direct voice and video
+### PA3C: Profile voice calls and Agent assistance
 
-Repository audit found an existing LiveKit media configuration, server-side
-participant token signer, room/participant services, and browser audio/video
-controls in `includes/video-meetings-v1800.php`,
-`api/video-meeting-token.php`, and `video-meetings-v1800.js`. Reuse the narrow
-media infrastructure with a new Profile call authority adapter. An existing
-meeting invitation is not proof of permission to join a visitor conversation;
-the new adapter must verify the exact Profile visitor binding and owner on every
-call mutation and token issue. Do not create calendar appointments, paid
-bookings, CRM identities, recordings, or Agent transcription merely to connect
-two people.
+PA3C implements the browser audio path. Open an accepted live-text conversation
+to offer a call. Both participants act on the call card before media starts.
+The server binds the room, expiring microphone grant and connected browser tab to
+the exact owner and native visitor. Live text stays available during and after
+the call. Leaving the text thread closes its call and queues room cleanup.
 
-The public widget offers **Voice call** and **Video call** only when the service
-is ready. The main Chat card shows the caller, call type, and Accept/Decline.
-The owner can make the same offer from the card. Neither a page visit nor an
-incoming offer opens a microphone or camera. Voice calls start with camera off;
-video requires the participant's explicit selection and browser permission.
-The card shows ringing, connecting, live, reconnecting, ended, or unavailable
-from actual call state, with mute, camera, and hang-up controls.
+Enable **Agent-assisted phone chat** in the existing Chat Settings gear. This
+defaults to off and affects new calls. An assisted offer displays the named
+Profile Agent and transcription notice in public Profile chat. The right rail
+shows the Agent and opens a slide-out with speaker-labeled transcript, sourced
+public research and an **Agent assistance** switch. The switch affects only
+the current call. Pausing fences transcript writes and research responses in
+the same transaction. The worker unsubscribes on its next lease refresh and
+enforces a hard eight-second local lease if the server cannot be reached. The
+human call and already saved material stay available. Re-enabling a disclosed
+call creates a new capture revision. A stale switch response cannot revive a
+newer paused revision.
 
-Use an immutable call ID and revision tied to the conversation, conversation
-epoch, owner, and accepted visitor principal. Bind each participant token to one
-call room and role, with only the allowed microphone/camera publication sources.
-Use short-lived join tokens, never expose provider secrets, and do not treat
-token expiry as disconnection of an already connected participant. On hang-up
-or revocation, stop local tracks immediately, reject further tokens, close the
-room through the provider, and retain a durable retry obligation if provider
-cleanup fails. Ended rooms are never reused by a subsequent call. Account or
-Profile authority changes must terminate/revoke the call rather than merely
-hide its controls.
+The updated LiveKit worker assigns the owner's and visitor's authorized audio
+tracks to independent streaming speech-to-text sessions. Final transcript
+segments go directly into the owner's existing Transcriptions workspace without
+retaining call audio. The drawer links to the canonical transcript for timeline,
+entities, action and Knowledge workflows. An owner-entered research question
+uses the existing public research provider and stores cited results for this
+call. The question is the only call content passed to public research. The ring
+pulses only for confirmed worker capture or an active research request.
 
-The owner can have one accepted live call at a time. Other visitor conversations
-remain isolated and can continue with the Agent. Repeated offers are bounded
-per visitor and owner and cannot restart the pickup window or create an
-unlimited ringing stream. Decline/cancel and late acceptance compete against a
-server-owned deadline. A failed connection gives both people a truthful status
-and a clear path back to text or Agent assistance; it cannot silently leave the
-conversation claimed forever. Ending a call preserves its text thread and
-offers the owner explicit continued text handling or delegation.
+Run Cloud Upgrade once to install the preference, call and assistance tables.
+Configure the existing VP3 LiveKit settings and run the existing Profile runner
+for durable room cleanup. Deploy the updated LiveKit worker before enabling
+`VP3_PROFILE_CALL_AGENT_ENABLED=1`. Assistance requires the owner to have
+Transcriptions access and a Cloud-compatible compute policy. A paired Automatic
+account uses an explicit VP3 Cloud preference for this guest audio path. See the
+[worker setup](../workers/vp3-meeting-agent/README.md).
 
 | Gate | Required behavior | Evidence |
 | --- | --- | --- |
-| 1 | Exact current visitor and owner authority for every offer, accept, poll, token, and end; no borrowed meeting invitation | Real SQL and production HTTP isolation tests |
-| 2 | Both parties explicitly agree; browser media starts only after local consent; voice never implicitly enables camera | DOM and Chromium permission/media fixtures |
-| 3 | Room and participant grants cannot join another call or gain screen-share, moderation, recording, or Agent privileges | Token claim and forged-grant tests |
-| 4 | One active call per owner; competing accepts, visitor retries, and multiple tabs cannot create duplicate sessions | Independent MySQL connection races and replay tests |
-| 5 | Accepted call and Agent/owner turn handling have one winner; late model output cannot interrupt the call | Paused-provider and handoff race tests |
-| 6 | No answer, decline, cancel, unavailable service, or failed media retains the visitor thread and a usable Agent/text fallback | Timeout and failure integration tests |
-| 7 | Hang-up, logout, blocked visitor, or revoked Profile authority stops tracks, denies new tokens, and retries failed room closure | Browser teardown, revocation and durable recovery tests |
-| 8 | Reload/reconnect cannot revive an ended call or switch visitors; current connection state remains accurate | Network interruption, stale event and mobile browser tests |
-| 9 | Unconfigured LiveKit, denied microphone/camera, autoplay limits, and mobile layout have usable truthful states | Readiness and browser fixtures; live-device verification reported separately |
-| 10 | Private Chat remains private; no implicit recording/transcription, synthesized voice substitution, or telephone purchase/dial | Cross-surface boundary tests and retained PA1/PA3 regressions |
+| 1 | Default-off saved preference, exact named visitor notice and compatible existing settings | SQL and Chromium settings tests |
+| 2 | Exact owner, visitor, conversation and browser authority | Production HTTP tests for sessions, grants, blocks and password changes |
+| 3 | One accepted call, deadline, replay handling and microphone-only room grants | SQLite and MySQL-compatible HTTP fixtures and independent-connection race |
+| 4 | Controls, keyboard and mobile, no mic while ringing, local teardown and fallback | Chromium and controlled media transport |
+| 5 | Separate human audio tracks and canonical speaker-labeled transcript with bounded worker authority | Worker runtime and production HTTP ingest |
+| 6 | Owner-only right rail, paginated transcript, truthful activity and cited research | Chromium, SQL and production HTTP |
+| 7 | Per-call pause, resume, stale switch/worker/research fencing and preserved human media | HTTP, worker and research regression fixtures |
+| 8 | Existing live-text, meeting, settings and recovery contracts, with a complete flat archive layout | Local regression and production packaging smoke |
+| 9 | Exact-head PHP 8.1/8.3, MySQL 8 and Chromium CI, merged source and verified GitHub deploy ZIP | PR, main and package evidence |
+| 10 | Live two-device WebRTC audio and streaming STT with overlap, pause/resume and disconnect | Supervised staging call with configured LiveKit and worker |
 
-Existing Twilio telephone and SIP adapters provide a future route to actual
-phone numbers. That follow-on needs its own exact-number confirmation,
-availability and caller-identity rules, cost disclosure, and carrier setup
-verification. The browser-call section does not provision numbers or place
-telephone calls. Existing LiveKit code also does not prove deployment readiness
-or installed microphone/camera performance; automated and live-provider/device
-evidence must be reported separately.
+#### Future media and voice participation
+
+Camera sharing requires separate publication permission and controls. Spoken
+Agent answers need their own output track and turn-taking policy. Twilio and
+SIP can support a later telephone path with carrier setup, caller authority,
+and cost disclosure. Keep live-provider certification separate from controlled
+SQL, HTTP and browser test results.
 
 Provider contracts for the call adapter:
 

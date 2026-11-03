@@ -25,6 +25,7 @@ require_once __DIR__ . '/includes/extension-notifications-v2140.php';
 require_once __DIR__ . '/includes/vp3-public.php';
 require_once __DIR__ . '/includes/artist-listening.php';
 require_once __DIR__ . '/includes/artist-listening-transcript.php';
+require_once __DIR__ . '/includes/profile-call-activity-pa3c.php';
 require_once __DIR__ . '/includes/studio-participants.php';
 require_once __DIR__ . '/includes/studio-voice-profile.php';
 require_once __DIR__ . '/includes/onboarding-intelligence.php';
@@ -217,6 +218,11 @@ function vp3_upgrade_complete(): bool
         && column_exists('profile_agent_handoff_turns_pa3','conversation_epoch')
         && table_exists('profile_agent_handoff_deliveries_pa3')
         && table_exists('profile_agent_handoff_operations_pa3')
+        && column_exists('team_user_presence','agent_assisted_phone_chat_enabled')
+        && table_exists('profile_call_owner_locks_pa3c')
+        && table_exists('profile_calls_pa3c')
+        && table_exists('profile_call_assistance_pa3c')
+        && table_exists('profile_call_research_pa3c')
         && crm_v180_schema_ready()
         && artist_workspace_v181_schema_ready()
         && music_workspace_release_schema_v330_ready()
@@ -387,6 +393,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             shared_knowledge_index_ensure_schema_v236();
             profile_agent_ensure_schema();
             vp3_profile_handoff_ensure_schema_pa3($pdo);
+            vp3_profile_call_ensure_schema_pa3c($pdo);
+            vp3_profile_call_activity_ensure_schema_pa3c($pdo);
             personal_capability_ensure_schema_v242();
             require_once __DIR__.'/includes/tv-watching-v1.php';
             tv_schema_v1($pdo);

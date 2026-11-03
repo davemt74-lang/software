@@ -13,6 +13,18 @@
   const ownerLabel=shell.querySelector('[data-profile-owner-name]');
   const endLiveButton=shell.querySelector('[data-profile-end-live]');
   const disclosure=shell.querySelector('[data-profile-agent-disclosure]');
+  const callLauncher=document.querySelector('[data-profile-agent-launcher-label]');
+  const launcherText=callLauncher?.textContent||'';
+  let callActive=false;
+  const callControls=window.VP3ProfileCallPA3C?.mount(shell.querySelector('[data-profile-call-controls]'),{
+    side:'visitor',endpoint:cfg.callEndpoint,visible:()=>!shell.hidden,
+    credentials:()=>({username:cfg.username,profile_token:cfg.profileToken,conversation_namespace:cfg.conversationNamespace}),
+    onActivity:(active,assisted)=>{
+      callActive=active;
+      if(callLauncher)callLauncher.textContent=active?(assisted?'Agent-assisted voice call':'Profile voice call'):launcherText;
+      if(endLiveButton&&active)endLiveButton.disabled=true;
+    },
+  });
   const storageKey=`stonefellow-profile-agent:v1:${cfg.username}:${String(cfg.conversationNamespace||'unbound')}`;
   let conversationId=cfg.conversationNamespace?Math.max(0,Number(localStorage.getItem(storageKey)||0)):0;
   let conversationStatus='open';
@@ -308,6 +320,7 @@
     return {...value,owner_name:value.owner_name.trim()||cfg.ownerName||'the profile owner'};
   }
   function updateChatChoice(){
+    callControls?.setConversation(conversationId);
     const activeLive=Boolean(chat&&['waiting','accepted'].includes(chat.live_status));
     const owner=chat?.owner_name||cfg.ownerName||'the profile owner';
     if(ownerLabel)ownerLabel.textContent=owner;
@@ -323,10 +336,10 @@
     }
     if(endLiveButton){
       endLiveButton.hidden=!chat?.can_end_live_chat||!activeLive;
-      endLiveButton.disabled=!alive||sessionChanged||sending||endBusy||Boolean(pendingSend);
+      endLiveButton.disabled=callActive||!alive||sessionChanged||sending||endBusy||Boolean(pendingSend);
       endLiveButton.textContent=endBusy?'Returning to Agent…':chat?.live_status==='waiting'?'Cancel live request':'End live chat · return to Agent';
     }
-    if(disclosure)disclosure.textContent=chat?.live_status==='accepted'||conversationStatus==='owner_joined'?`You are chatting with ${owner}. The Profile Agent is paused.`:'AI representative — answers use only information this profile has approved. The owner joins after accepting a live chat or taking over.';
+    if(disclosure)disclosure.textContent=chat?.live_status==='accepted'||conversationStatus==='owner_joined'?`You are chatting with ${owner}. The Profile Agent is paused for text replies.`:'AI representative — answers use only information this profile has approved. The owner joins after accepting a live chat or taking over.';
     for(const message of thread.querySelectorAll('.profile-agent-message.owner')){
       const label=message.querySelector('.profile-agent-message-speaker');if(label)label.textContent=owner;
     }
@@ -383,7 +396,7 @@
     requestEpoch++;conversationId=0;conversationStatus='open';lastMessageId=0;handoff=null;chat=null;choiceTouched=false;uncertainEnd=null;localStorage.removeItem(storageKey);clearTimeout(pollTimer);pollTimer=0;updateChatChoice();
   }
   function stopChangedSession(){
-    sessionChanged=true;pendingSend=null;try{sessionStorage.removeItem(retryStorageKey);}catch(_error){}
+    sessionChanged=true;callControls?.stop();pendingSend=null;try{sessionStorage.removeItem(retryStorageKey);}catch(_error){}
     resetConversation();renderMessages([]);textarea.disabled=true;submit.disabled=true;
     status.textContent='Your visitor session changed. Refresh this profile before continuing.';
   }
@@ -495,7 +508,7 @@
     }
   }
   async function endLiveChat(){
-    if(!alive||sessionChanged||sending||endBusy||pendingSend||chat?.can_end_live_chat!==true||!conversationId)return;
+    if(callActive||!alive||sessionChanged||sending||endBusy||pendingSend||chat?.can_end_live_chat!==true||!conversationId)return;
     const turnId=Number(handoff?.turn_id||0),revision=Number(handoff?.revision||0),cid=conversationId;
     if(!Number.isSafeInteger(turnId)||turnId<1||!Number.isSafeInteger(revision)||revision<1)return;
     requestEpoch++;endBusy=true;formNotice='';uncertainEnd=null;textarea.disabled=true;submit.disabled=true;updateChatChoice();
@@ -531,7 +544,7 @@
   });
   textarea?.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit();}});
   window.addEventListener('pagehide',()=>{alive=false;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(choiceTimer);clearInterval(countdownTimer);},{once:true});
-  window.addEventListener('vp3:profile-agent-open',()=>{if(conversationId)void poll();else void heartbeat();});
+  window.addEventListener('vp3:profile-agent-open',()=>{callControls?.refresh();if(conversationId)void poll();else void heartbeat();});
   updateChatChoice();loadState();presenceTimer=window.setInterval(heartbeat,60000);
   choiceTimer=window.setInterval(()=>{if(!conversationId&&shell.hidden!==true)void heartbeat();},10000);
   countdownTimer=window.setInterval(showHandoffStatus,1000);

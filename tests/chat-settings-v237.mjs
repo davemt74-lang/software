@@ -40,10 +40,15 @@ assert.match(settingsApi, /Agent Voice is not included for this account/);
 assert.match(settingsApi, /save_profile_agent/);
 assert.match(settingsApi, /profile_configure_agent/);
 assert.match(settingsApi, /profile_runtime_owner_state/);
+assert.match(settingsApi, /'agent_assisted_phone_chat_ready' => chat_settings_agent_assisted_phone_chat_schema_ready_v237\(\$pdo\)/);
+assert.match(settingsApi, /'agent_assisted_phone_chat_allowed' => chat_settings_agent_assisted_phone_chat_allowed_v237\(\$pdo, \$user\)/);
 
 assert.match(settingsUi, /chatSettingsLauncher/);
 assert.match(settingsUi, /Chat Settings/);
 assert.match(settingsUi, /presence_mode/);
+assert.equal((settingsUi.match(/name="agent_assisted_phone_chat_enabled"/g) || []).length, 1, 'the existing dialog has one assisted call preference');
+assert.match(settingsUi, /Agent-assisted phone chat[\s\S]*Visitors see a notice before calling/);
+assert.match(settingsUi, /assistedPhone\.checked !== \(state\?\.chat\?\.agent_assisted_phone_chat_enabled === true\)/, 'unrelated settings saves cannot overwrite a separately changed opt-in');
 assert.match(settingsUi, /Allow user-to-user chat/);
 assert.match(settingsUi, /Incoming message sound/);
 assert.match(settingsUi, /Agent Voice is controlled by the upper switch in your account menu/);
