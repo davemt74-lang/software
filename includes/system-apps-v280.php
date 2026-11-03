@@ -71,31 +71,11 @@ function vp3_video_editor_invoke_v280(
     ],$remote);
 }
 
-function vp3_video_editor_agent_query_v280(
-    string $query,array $user,int $conversationId=0,?callable $remote=null
-): array {
-    $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    if(!preg_match('/\b(?:video editor|editing project|timeline|render queue|video project)\b/i',$query))return $empty;
-    $uid=(int)($user['id']??0);if($uid<1)return $empty;
-    try{
-        $status=vp3_video_editor_status_v280($uid,$remote);
-        $projects=vp3_video_editor_projects_v280($uid,12,$remote);
-        $manifest=vp3_video_editor_agent_actions_v280($uid,$remote);
-    }catch(Throwable $e){return $empty;}
-
-    $answer='Video Editor has '.$status['projects'].' project'.($status['projects']===1?'':'s')
-      .', '.$status['clips'].' timeline clip'.($status['clips']===1?'':'s')
-      .', and '.$status['renders_active'].' active render job'.($status['renders_active']===1?'':'s').'. ';
-    $answer.='The HomeServer Agent has the app action manifest and can control the editor. Destructive or consequential actions still require confirmation.';
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'homeserver.video_editor.read',$query,'success',[
-      'projects'=>$status['projects'],'agent_actions'=>count($manifest['actions'])
-    ],$conversationId);
-    return [
-      'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],
-      'actions'=>[['type'=>'open_url','label'=>'Open Video Editor','url'=>url('/apps.php')]],
-      'sources'=>[['source'=>'homeserver:video-editor','title'=>'VP3 Video Editor']],
-      'video_editor'=>$status,'video_projects'=>$projects,'app_agent'=>$manifest,
-    ];
+function vp3_video_editor_agent_query_v280(string $query,array $user,int $conversationId=0,?callable $remote=null): array
+{
+    $empty=['handled'=>false,'answer'=>'','actions'=>[],'sources'=>[]];
+    if(!preg_match('/\b(?:video editor|editing project|timeline|render queue|video projects?)\b/i',$query)||!preg_match('/\b(?:show|list|find|search|status|how many|overview|jobs|projects|queue)\b/i',$query))return $empty;
+    return vp3_photo_media_legacy_v1($query,$user,$conversationId,'video.projects.read',$remote);
 }
 
 function vp3_system_apps_capability_v280(): array

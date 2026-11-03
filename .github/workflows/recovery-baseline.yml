@@ -56,6 +56,7 @@ jobs:
           php tests/voice-enrollment-tool-v1.php
           php tests/runtime-route-selection-v1.php
           php tests/agent-media-read-v1.php
+          php tests/agent-photo-media-v1.php
           php tests/agent-app-read-v1.php
           php tests/agent-system-app-read-v1.php
           php tests/agent-app-operations-v1.php

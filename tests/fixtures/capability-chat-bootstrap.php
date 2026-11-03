@@ -14,7 +14,7 @@ require_once __DIR__.'/agent-memory-lifecycle-v123.php';
 require_once __DIR__.'/agent-task-lifecycle-v123.php';
 require_once __DIR__.'/homeserver-local-execution-v230.php';
 require_once __DIR__.'/homeserver-agent-read-v230.php';
-require_once __DIR__.'/system-apps-v300.php';
+require_once __DIR__.'/system-apps-v330.php';
 require_once __DIR__.'/media-agent-schema-v1.php';
 require_once __DIR__.'/app-agent-remote-v1.php';
 require_once __DIR__.'/system-app-agent-schema-v1.php';

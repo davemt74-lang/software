@@ -73,41 +73,11 @@ function vp3_download_manager_brain_context_v320(int $userId,?callable $remote=n
     ];
 }
 
-function vp3_download_manager_agent_query_v320(
-    string $query,array $user,int $conversationId=0,?callable $remote=null
-): array {
-    $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    if(!preg_match('/\b(?:download manager|downloads?|download queue|downloading)\b/i',$query))return $empty;
-    $uid=(int)($user['id']??0);if($uid<1)return $empty;
-    try{
-        $status=vp3_download_manager_status_v320($uid,$remote);
-        $context=vp3_download_manager_brain_context_v320($uid,$remote);
-        $list=vp3_download_manager_list_v320($uid,'',8,$remote);
-    }catch(Throwable $e){return $empty;}
-    $answer='Download Manager has '.$status['active'].' active, '.$status['queued'].' queued, '
-      .$status['paused'].' paused, '.$status['failed'].' failed, and '.$status['completed'].' completed download'
-      .($status['completed']===1?'':'s').'. ';
-    if(!empty($context['attention'])){
-        $answer.='There '.(count($context['attention'])===1?'is ':'are ').count($context['attention'])
-          .' download'.(count($context['attention'])===1?'':'s').' needing attention. ';
-    }
-    if($list['count']>0){
-        $first=$list['downloads'][0];
-        $label=$first['final_filename']!==''?$first['final_filename']:$first['display_url'];
-        $answer.='Most recent: '.$label.' — '.$first['status'].'.';
-    }
-    if(preg_match('/\b(?:download|add|start|pause|resume|cancel|retry|priority|destination|bandwidth|limit|schedule)\b/i',$query)){
-        $answer.=' Changes are governed by the HomeServer Agent control/approval path; Cloud does not execute downloads directly.';
-    }
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'homeserver.downloads.read',$query,'success',[
-      'active'=>$status['active'],'queued'=>$status['queued'],'failed'=>$status['failed']
-    ],$conversationId);
-    return [
-      'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],
-      'actions'=>[['type'=>'open_url','label'=>'Open Download Manager','url'=>url('/apps.php')]],
-      'sources'=>[['source'=>'homeserver:download-manager','title'=>'VP3 Download Manager']],
-      'download_manager'=>$status,'download_brain_context'=>$context,'download_list'=>$list,
-    ];
+function vp3_download_manager_agent_query_v320(string $query,array $user,int $conversationId=0,?callable $remote=null): array
+{
+    $empty=['handled'=>false,'answer'=>'','actions'=>[],'sources'=>[]];
+    if(!preg_match('/\b(?:download manager|downloads?|download queue|downloading)\b/i',$query)||!preg_match('/\b(?:show|list|find|search|status|how many|overview|jobs|projects|queue)\b/i',$query))return $empty;
+    return vp3_photo_media_legacy_v1($query,$user,$conversationId,'downloads.jobs.read',$remote);
 }
 
 function vp3_system_apps_capability_v320(): array

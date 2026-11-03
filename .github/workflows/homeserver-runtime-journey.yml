@@ -70,6 +70,7 @@ jobs:
           node tests/agent-screen-sessions-browser.mjs
           php tests/agent-screen-insights-v1.php
           node tests/agent-screen-insights-browser.mjs
+          php tests/agent-photo-media-v1.php
           php tests/cloud-missions-v1.php
           node tests/cloud-missions-api.mjs
           node tests/cloud-missions-browser.mjs

@@ -300,5 +300,16 @@ try{
   response=await post(endpoint,'Did that work?',context,headers);
   check(response.data?.answer.includes('Effects may already have been saved')&&response.data.tool_receipt?.reason==='outcome_unverified',endpoint+' diagnoses uncertain app outcome from the persisted receipt');
  }
+ for(const endpoint of ['chat-v236.php','chat-stream-v121.php','chat.php']){
+  const context=endpoint==='chat.php'?{}:{agent_id:7};
+  for(const cap of ['photos.library.read','downloads.jobs.read','media.processing.read','video.projects.read']){
+   const view=cap==='photos.library.read'?'search':'list',plan={operation:'photo_media_read',ids:[cap],view};
+   const headers={'X-Fixture-Media-Ready':'1','X-Fixture-Participant-Owner-Plan':JSON.stringify(plan)};
+   let response=await post(endpoint,'Show my requested media records',context,headers);
+   check(response.data?.tool_receipt?.status==='read_complete'&&!response.data.tool_receipt.changes_applied&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' verifies '+cap+' through the shared production read: '+response.body);
+   response=await post(endpoint,'Show my requested media records',context,{...headers,'X-Fixture-Media-Mode':'offline'});
+   check(response.data?.tool_receipt?.status==='failed'&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' unavailable '+cap+' never becomes an empty or completed result');
+  }
+ }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}
