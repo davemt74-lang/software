@@ -29,7 +29,7 @@ assert.ok(adapter.includes('vp3_observation_personal_permission_v1') && adapter.
 assert.ok(adapter.includes('outcome_unverified') && adapter.includes('Effects may already exist'), 'an uncertain saved result must not report completion or repeat a write');
 assert.ok(adapter.includes("$same?'read_complete':'completed'"), 'unchanged saved policy must produce a read receipt without a new mutation');
 assert.ok(chatTool.indexOf('$nonexecuting=vp3_radar_nonexecuting_v1') < chatTool.indexOf('vp3_agent_access_chat_tool($query'), 'capability, tutorial and conditional guards must precede older delegated reads/writes');
-assert.ok(chatTool.includes('$incoming||!$directRadar'), 'explicit Radar reads must not enter the broad operator-summary delegate while incoming messaging retains its separate workflow');
+assert.ok(chatTool.includes("if($incoming&&function_exists('vp3_agent_access_chat_tool'))") && chatTool.includes("if(!$incoming&&!$directRadar&&function_exists('vp3_agent_access_chat_tool'))"), 'explicit Radar reads must not enter the broad operator-summary delegate while incoming messaging retains its separate workflow');
 assert.ok(adapter.includes('LIMIT 13') && adapter.includes('array_slice($rows,0,12)'), 'record reads must be bounded and explicitly truncated');
 assert.ok(!/\b(?:CREATE TABLE|ALTER TABLE|DROP TABLE)\b/.test(adapter), 'the adapter must not create or upgrade storage');
 

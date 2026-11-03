@@ -8,6 +8,7 @@ const crm = read('includes/agent-crm.php');
 const crmChat = read('includes/agent-crm-chat.php');
 const accessChat = read('includes/agent-access-chat.php');
 const radarChat = read('includes/agent-radar-chat.php');
+const radarAdapter = read('includes/agent-radar-read-v1.php');
 const policyApi = read('api/agent-radar-policy.php');
 const mainFeed = read('api/chat.php');
 const contacts = read('contacts.php');
@@ -27,8 +28,9 @@ assert.ok(crm.includes("source_type='radar_session'"), 'watch materialization mu
 assert.ok(policyApi.includes("$action==='set_contact_watch'"), 'canonical policy API must manage contact watch state');
 assert.ok(policyApi.includes("'agent_policy_changed'"), 'UI/API Gateway changes must enter the contact audit trail');
 assert.ok(policyApi.includes("'surface'=>'agent_gateway_api'"), 'audit trail must record the UI/API source');
-assert.ok(radarChat.includes("'agent_policy_changed'"), 'Main Feed Gateway changes must enter the contact audit trail');
-assert.ok(radarChat.includes("'surface'=>'main_feed'"), 'audit trail must record the Main Feed source');
+assert.ok(radarChat.includes('vp3_radar_apply_command_v1($pdo,$user,'), 'Main Feed Gateway commands must delegate to the shared verified writer');
+assert.ok(radarAdapter.includes("if(!$same&&function_exists('vp3_agent_crm_audit_event'))vp3_agent_crm_audit_event") && radarAdapter.includes("'agent_policy_changed'"), 'verified new Main Feed Gateway changes must enter the canonical contact audit trail');
+assert.ok(radarAdapter.includes("'surface'=>'main_feed'"), 'audit trail must record the Main Feed source');
 
 assert.ok(crmChat.includes('show watched agents') || crmChat.includes('watched agents'), 'Main Feed must list watched agents');
 assert.ok(crmChat.includes('stop watching'), 'Main Feed must support stop-watching commands');

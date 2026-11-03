@@ -101,8 +101,9 @@ function vp3_radar_chat_tool(string $query,array $user,int $conversationId=0): a
     // Explicit Radar reads skip the older operator-summary fallback inside that delegate.
     $directRadar=vp3_radar_chat_intent($query)&&(bool)preg_match('/^\s*(?:please\s+)?(?:show|list|read|review|check|what|which|who|how many|tell me|block|allow|monitor|limit|use|apply|set|switch|change|enable|disable|delete|remove)\b/i',$query);
     $incoming=function_exists('vp3_agent_access_chat_intent')&&vp3_agent_access_chat_intent($query);
+    if($incoming&&function_exists('vp3_agent_access_chat_tool')){$messaging=vp3_agent_access_chat_tool($query,$user,$conversationId);if(!empty($messaging['handled']))return $messaging;}
     if(!$incoming&&function_exists('vp3_analytics_chat_intent')&&vp3_analytics_chat_intent($query)&&function_exists('vp3_analytics_chat_tool'))return vp3_analytics_chat_tool($query,$user,$conversationId);
-    if(function_exists('vp3_agent_access_chat_tool')&&($incoming||!$directRadar)){$messaging=vp3_agent_access_chat_tool($query,$user,$conversationId);if(!empty($messaging['handled']))return $messaging;}
+    if(!$incoming&&!$directRadar&&function_exists('vp3_agent_access_chat_tool')){$messaging=vp3_agent_access_chat_tool($query,$user,$conversationId);if(!empty($messaging['handled']))return $messaging;}
     if(!$directRadar&&function_exists('vp3_analytics_chat_tool')){$analytics=vp3_analytics_chat_tool($query,$user,$conversationId);if(!empty($analytics['handled']))return $analytics;}
     if(!vp3_radar_chat_intent($query))return $empty;
     try{
