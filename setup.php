@@ -52,6 +52,7 @@ try {
     music_workspace_resources_v330_ensure_schema($pdo);
     password_reset_ensure_schema();
     user_agent_system_ensure_schema_v236($pdo);
+    agent_commerce_ensure_schema_v800($pdo);
     vp3_user_agent_lifecycle_ensure_schema_v390($pdo);
     vp3_agent_memory_scope_ensure_schema_v410($pdo);
     agent_event_ensure_schema_v1920($pdo);

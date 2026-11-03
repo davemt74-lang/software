@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-commerce-recovery-pa2.php';
+
 function agent_commerce_schema_ready_v800(?PDO $pdo=null): bool
 {
     $pdo??=db();if(!$pdo)return false;
@@ -14,7 +16,8 @@ function agent_commerce_schema_ready_v800(?PDO $pdo=null): bool
     return column_exists('agent_commerce_products_v800','fulfillment_type')
         &&column_exists('agent_commerce_orders_v800','fulfillment_ref_type')
         &&column_exists('agent_commerce_order_items_v800','fulfillment_ref_type')
-        &&column_exists('agent_commerce_payments_v800','external_payment_id');
+        &&column_exists('agent_commerce_payments_v800','external_payment_id')
+        &&agent_commerce_recovery_schema_ready_pa2($pdo);
 }
 
 function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
@@ -270,6 +273,7 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
       CONSTRAINT fk_commerce_audit_user FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL,
       CONSTRAINT fk_commerce_audit_agent FOREIGN KEY (actor_agent_id) REFERENCES user_agents(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    agent_commerce_recovery_ensure_schema_pa2($pdo);
 }
 
 function agent_commerce_config_v800(): array

@@ -17,6 +17,8 @@
 .profile-agent-confirmation-actions{display:flex;gap:7px}.profile-agent-confirmation-actions button{min-height:32px;padding:0 12px;border-radius:999px;font:800 10px/1 inherit;cursor:pointer}
 .profile-agent-confirmation-actions .confirm{border:0;background:var(--profile-dark);color:#fff}.profile-agent-confirmation-actions .dismiss{border:1px solid var(--profile-line);background:#fff;color:var(--profile-text)}
 .profile-agent-confirmation-actions button:disabled{opacity:.48;cursor:not-allowed}
+.profile-agent-checkout-terms{padding:10px;border:1px solid var(--profile-line);border-radius:10px;line-height:1.5}.profile-agent-checkout-terms p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--profile-text)}
+.profile-agent-confirmation-links{display:flex;flex-wrap:wrap;gap:8px}.profile-agent-confirmation-links a{display:inline-flex;align-items:center;min-height:34px;padding:0 12px;border-radius:999px;background:var(--profile-dark);color:#fff;text-decoration:none;font-weight:750}.profile-agent-confirmation-card[aria-busy="true"]{border-color:var(--profile-dark)}
 
 
 /* Profile WebMCP v1.94 cross-surface continuity */

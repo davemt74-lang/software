@@ -19,6 +19,9 @@ assert.match(delivery,/profile_delivery_saved/,'delivery saves must enter the Co
 assert.match(delivery,/message_chars.*resource_present/s,'audit metadata must record only bounded delivery facts, not delivery content');
 assert.match(delivery,/profile_commerce_set_fulfillment_v900/,'delivery state transitions must reuse the existing Profile Commerce fulfillment engine');
 assert.match(delivery,/\['paid','partially_refunded'\]/,'customer delivery remains readable after a partial refund');
+assert.match(delivery,/function profile_commerce_delivery_review_required_v1120/,'payment and fulfillment review share an explicit gate');
+assert.match(delivery,/if\(profile_commerce_delivery_review_required_v1120\(\$order\)\)return null/,'financial payment does not release private resources during review');
+assert.match(read('includes/profile-commerce-delivery-file-v1130.php'),/if\(profile_commerce_delivery_review_required_v1120\(\$order\)\)return null/,'the private file download route uses the same review gate');
 assert.doesNotMatch(delivery,/api\.stripe\.com|connect\.square|api-m\.paypal/,'delivery must not duplicate payment adapters');
 assert.doesNotMatch(delivery,/CREATE TABLE|ALTER TABLE/,'delivery must not create a second lifecycle schema');
 

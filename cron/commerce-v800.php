@@ -7,5 +7,5 @@ if(!agent_commerce_schema_ready_v800($pdo)){fwrite(STDERR,"Commerce schema is no
 try{
     $result=agent_commerce_housekeeping_v800($pdo,500);
     if(function_exists('agent_paid_appointments_reconcile_cancelled_v800')&&agent_paid_appointments_schema_ready_v800($pdo))$result['appointment_cancelled']=agent_paid_appointments_reconcile_cancelled_v800($pdo,500);
-    echo json_encode(['ok'=>true,'phase'=>'commerce-v800']+$result,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).PHP_EOL;
-}catch(Throwable $e){fwrite(STDERR,'Commerce housekeeping failed: '.$e->getMessage().PHP_EOL);exit(3);}
+    echo json_encode(['ok'=>true,'phase'=>'commerce-v800','recovery'=>'pa2']+$result,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).PHP_EOL;
+}catch(Throwable $e){fwrite(STDERR,'Commerce housekeeping could not complete ['.get_class($e).'].'.PHP_EOL);exit(3);}

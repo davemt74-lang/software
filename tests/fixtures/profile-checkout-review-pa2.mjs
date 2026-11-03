@@ -1,0 +1,19 @@
+export const copy=value=>structuredClone(value);
+export const policy='Cancellation requests must reach the seller at least 24 hours before the agreed service time. A USD 5.00 cancellation fee applies. '+ 'The seller will review each refund request against these agreed terms. '.repeat(5)+'<img src=x onerror=alert(1)> This text is part of the policy.';
+export function preparedAction(id='a'.repeat(32)){
+  return {contract:'vp3.webmcp.action.v1',phase:'prepared',prepare_tool:'vp3.commerce.checkout.prepare',confirm_tool:'vp3.commerce.checkout.confirm',title:'Review checkout',requires_confirmation:true,intent_id:id,expires_at_unix:1999999999,
+    preview:{product:{id:7,slug:'guide',title:'Service guide',description:'A public product description',product_type:'digital',fulfillment_type:'digital',payment_mode:'full',price_cents:2500,deposit_cents:2500,currency:'usd',price_label:'$25.00 USD',featured:false,sort:100,cta:'Buy',binding_type:'',binding_id:0,product_url:'/demo/product/guide',checkout_url:'/demo/product/guide'},
+      terms:{payment_mode:'full',price_cents:2500,currency:'usd',hold_minutes:30,refund_before_hours:24,cancellation_fee_cents:500,cancellation_policy:policy},
+      payment_provider:{connection_id:3,provider:'stripe',provider_label:'Stripe'},payer_email:'buyer@example.com',seller_terms_acceptance_required:true},
+    confirmation:{token:'SECRET_CONFIRMATION_TOKEN',intent:{product_id:7,product_slug:'guide',product_state_hash:'SECRET_STATE_HASH',terms_digest:'SECRET_TERMS_HASH',payer_email:'buyer@example.com',connection_id:3,receipt_token:'c'.repeat(64)},requires_terms_acceptance:true},
+    idempotency:{required:true,reuse_same_key_on_retry:true,minimum_length:8,maximum_length:96},reprepare_required:false};
+}
+export function checkoutResult(code='payment_pending'){
+  const reviews=code==='payment_review',paid=['paid','fulfilled','processing','payment_review'].includes(code);
+  const descriptions={payment_pending:['Payment pending','Your order is recorded. Complete payment with the selected provider; payment has not been verified yet.'],payment_review:['Payment received; review required','Your payment is verified. The seller must review fulfillment before this order can proceed.'],paid:['Payment verified','Payment is verified. Fulfillment has not been confirmed complete.'],fulfilled:['Order fulfilled','Payment is verified and the seller has marked the order fulfilled.'],processing:['Order processing','Payment is verified and fulfillment is processing.']};
+  const [title,message]=descriptions[code]||descriptions.payment_pending;
+  return {ok:true,order:{order_number:'ORDER-7',payment_status:paid?'paid':'awaiting_payment',order_status:reviews?'payment_review':(paid?'paid':'pending_payment'),fulfillment_status:reviews?'review_required':(['fulfilled','processing'].includes(code)?code:'pending'),review_required:reviews},checkout_url:'https://checkout.stripe.com/c/pay_fixture',checkout_status:'open',receipt_url:'/profile-commerce-order.php?username=demo&order=ORDER-7&receipt='+'c'.repeat(64),
+    action:{contract:'vp3.webmcp.action.v1',phase:'recorded',prepare_tool:'vp3.commerce.checkout.prepare',confirm_tool:'vp3.commerce.checkout.confirm',requires_confirmation:false,outcome:{contract:'vp3.webmcp.confirmation-result.v1',operation:'commerce.checkout',code,title,message}}};
+}
+export const manifest={manifest_version:'vp3.profile.webmcp.v1',surface:'native_profile',profile_username:'demo',capabilities:{commerce:true,booking:true},allowed_tools:['vp3.commerce.checkout.prepare','vp3.commerce.checkout.confirm','vp3.commerce.refund.prepare','vp3.commerce.refund.confirm']};
+export const markup='<section id="profileAgentShell"><div data-profile-agent-thread></div><form><textarea></textarea><button type="submit">Send</button></form><div data-profile-agent-status></div></section>';

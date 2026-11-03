@@ -75,3 +75,5 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Profile owner thread selection, drafts and refresh
         run: node tests/profile-owner-threads-pa1-browser.mjs
+      - name: Profile checkout review, retry and accurate status
+        run: node tests/profile-checkout-review-pa2-browser.mjs

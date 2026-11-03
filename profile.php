@@ -158,7 +158,7 @@ if($webmcpResumeRequested){
 <meta name="theme-color" content="#f6f5f2">
 <link rel="canonical" href="<?= e(profile_public_url($username)) ?>">
 <title><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
-<link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-media-20260905')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-checkout-pa2-20261103')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-cleanup-v174.css?v=profile-cleanup-v174-20260913')) ?>">
 </head>
 <body class="profile-page">
@@ -342,9 +342,9 @@ window.VP3_PROFILE_WEBMCP={
   resume:<?= json_encode($webmcpResume,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>
 };
 </script>
-<script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-webmcp-v100-20260928')) ?>"></script>
+<script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-checkout-pa2-20261103')) ?>"></script>
 <?php endif; ?>
 <?php if($viewer): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
-<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-authority-pa1-20261103')) ?>"></script><?php endif; ?>
+<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-checkout-pa2-20261103')) ?>"></script><?php endif; ?>
 </body>
 </html>

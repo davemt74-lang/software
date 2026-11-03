@@ -49,3 +49,51 @@ jobs:
           php -l profile-commerce-delivery-file.php
           php -l profile-commerce-delivery.php
           php -l profile-commerce-order.php
+  payment_recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        php: ['8.1', '8.3']
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: pa2-fixture
+          MYSQL_DATABASE: commerce_recovery_ci
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -ppa2-fixture"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, pdo_sqlite, pdo_mysql, curl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Commerce PA2 SQLite recovery and customer review
+        run: |
+          php tests/commerce-provider-evidence-pa2.php
+          php tests/commerce-recovery-pa2.php
+          php tests/commerce-projection-recovery-pa2.php
+          php tests/commerce-checkout-creation-pa2.php
+          php tests/commerce-appointment-recovery-pa2.php
+          php tests/profile-checkout-status-pa2.php
+          node tests/commerce-webhook-pa2.mjs
+          node tests/profile-checkout-review-pa2.mjs
+      - name: Commerce PA2 MySQL recovery and concurrent delivery
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=commerce_recovery_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa2-fixture
+        run: |
+          php tests/commerce-provider-evidence-pa2.php
+          php tests/commerce-recovery-pa2.php
+          php tests/commerce-projection-recovery-pa2.php
+          php tests/commerce-checkout-creation-pa2.php
+          php tests/commerce-appointment-recovery-pa2.php
+          node tests/commerce-webhook-pa2.mjs

@@ -78,6 +78,14 @@ jobs:
           node tests/agent-message-api-pa1.mjs
           node tests/profile-owner-api-pa1.mjs
           node tests/profile-owner-threads-pa1.mjs
+          php tests/commerce-provider-evidence-pa2.php
+          php tests/commerce-recovery-pa2.php
+          php tests/commerce-projection-recovery-pa2.php
+          php tests/commerce-checkout-creation-pa2.php
+          php tests/commerce-appointment-recovery-pa2.php
+          php tests/profile-checkout-status-pa2.php
+          node tests/commerce-webhook-pa2.mjs
+          node tests/profile-checkout-review-pa2.mjs
           php tests/agent-system-app-read-v1.php
           php tests/agent-app-operations-v1.php
           php tests/homeserver-read-receipts-v1.php

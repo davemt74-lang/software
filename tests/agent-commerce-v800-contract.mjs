@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const read=p=>fs.readFileSync(new URL(`../${p}`,import.meta.url),'utf8');
-const core=[read('includes/agent-commerce-v800.php'),...Array.from({length:4},(_,i)=>read(`includes/agent-commerce-v800-part${i+1}.php`))].join('\n');
+const core=[read('includes/agent-commerce-v800.php'),...Array.from({length:4},(_,i)=>read(`includes/agent-commerce-v800-part${i+1}.php`)),read('includes/agent-commerce-recovery-pa2.php'),read('includes/agent-commerce-provider-transport-pa2.php')].join('\n');
 const adapter=[read('includes/agent-paid-appointments-v800.php'),read('includes/agent-paid-appointments-v800-part1.php'),read('includes/agent-paid-appointments-v800-part2.php')].join('\n');
 const config=read('config-example.php');
 const bootstrap=read('includes/bootstrap.php');
@@ -54,10 +54,11 @@ assert.match(core,/function agent_commerce_dispatch_fulfillment_v800/,'Commerce 
 assert.match(core,/agent_commerce_fulfillment_.*_.*_v800/,'Fulfillment dispatch must not hard-code Appointment into Commerce core');
 assert.match(core,/partially_paid/,'Deposits must remain distinct from paid-in-full state');
 assert.match(core,/balance_due_cents/,'Payment audit must retain remaining-balance state');
-assert.match(core,/SELECT id FROM agent_commerce_payments_v800 WHERE provider=\? AND external_payment_id=\?/,'Duplicate provider callbacks must not double-count payments');
+assert.match(core,/SELECT \* FROM agent_commerce_payments_v800 WHERE provider=\? AND external_payment_id=\?/,'Duplicate provider callbacks must load the original receipt for exact lineage validation');
+assert.match(core,/payment\['order_id'\]!==\$orderId[\s\S]*payment\['checkout_attempt_id'\]!==\(int\)\$a\['id'\]/,'An existing provider payment must match the exact original order and attempt');
 assert.match(core,/Explicit refund approval is required/,'External refunds require explicit owner approval');
 assert.match(core,/payment_status IN \('awaiting_payment','partially_paid','paid','partially_refunded'\)/,'A provider cannot be disconnected while a deposit-paid order still has a balance or refund exposure');
-assert.match(core,/floor\(\$due\*\(int\)agent_commerce_config_v800\(\)\['platform_fee_bps'\]\/10000\)/,'Each checkout, including a post-deposit balance payment, must calculate its platform fee from that checkout amount');
+assert.match(core,/floor\(\$due\*\(int\)\$cfg\['platform_fee_bps'\]\/10000\)/,'Each frozen checkout request, including a post-deposit balance payment, must calculate its fee from that checkout amount');
 assert.match(core,/function agent_commerce_payment_refund_reserved_v800/,'Refund allocation must track refund exposure per original payment');
 assert.match(core,/SELECT p\.\*,a\.connection_id,a\.id checkout_attempt_id[\s\S]*ORDER BY p\.id DESC/,'A refund request must allocate across canonical original payments rather than only the latest charge');
 assert.match(core,/function agent_commerce_issue_refund_slice_v800/,'Multi-payment refunds must issue provider refunds against each original payment lineage');

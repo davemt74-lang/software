@@ -5,6 +5,7 @@ const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'ut
 const outcomes = read('includes/profile-conversion-outcomes-v179.php');
 const runtime = read('includes/profile-agent-runtime.php');
 const commerceCore = read('includes/agent-commerce-v800-part4.php');
+const commerceRecovery = read('includes/agent-commerce-recovery-pa2.php');
 const booking = read('public-booking-controller-v700.php');
 const product = read('profile-commerce-product.php');
 const commerceReturn = read('profile-commerce-return.php');
@@ -50,10 +51,12 @@ assert.ok(booking.indexOf('profile_conversion_booking_confirmed_v179', paidCreat
 const markPaidStart = commerceCore.indexOf('function agent_commerce_mark_paid_v800');
 const markPaidEnd = commerceCore.indexOf('function agent_commerce_expire_one_v800');
 const markPaidBody = commerceCore.slice(markPaidStart, markPaidEnd);
-const fulfillmentProjection = markPaidBody.lastIndexOf('agent_commerce_dispatch_fulfillment_v800');
-const outcomeProjection = markPaidBody.lastIndexOf('profile_conversion_commerce_order_v179');
-assert.ok(markPaidStart > -1 && fulfillmentProjection > -1 && outcomeProjection > fulfillmentProjection, 'true paid outcomes must project from canonical Commerce after fulfillment dispatch');
-assert.match(markPaidBody, /seen->fetchColumn\(\)[\s\S]*profile_conversion_commerce_order_v179/, 'idempotent duplicate payment verification must be able to repair a missed outcome projection');
+assert.match(markPaidBody, /agent_commerce_fulfillment_enqueue_pa2/, 'verified payment must atomically record its durable obligations');
+assert.match(commerceRecovery, /'project_paid'/, 'canonical paid outcomes must have a durable projection obligation');
+assert.match(commerceRecovery, /event_type<>'project_paid'[\s\S]*agent_commerce_project_paid_pa2/, 'projection worker must check domain fulfillment dependencies before publishing paid outcomes');
+assert.match(commerceCore, /profile_conversion_commerce_order_v179/, 'durable projection must retain the canonical Profile conversion bridge');
+assert.match(markPaidBody, /if\(\$payment\)[\s\S]*agent_commerce_fulfillment_enqueue_pa2/, 'exact duplicate receipt can repair a missing durable projection obligation');
+assert.match(markPaidBody, /agent_commerce_projection_repair_pa2/, 'post-commit payment verification can resume a pending outcome projection');
 
 const commerceVerify = commerceReturn.indexOf('agent_commerce_return_verify_v800');
 const commerceOutcome = commerceReturn.indexOf('profile_conversion_commerce_order_v179');
