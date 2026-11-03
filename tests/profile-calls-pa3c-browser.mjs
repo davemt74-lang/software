@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import http from 'node:http';
 import {createRequire} from 'node:module';
 import {contract,callCard,copy,installFakeMedia} from './fixtures/profile-calls-pa3c.mjs';
-import {mainChatMarkup} from './fixtures/profile-visitor-doorbell-pa3.mjs';
+import {mainChatVoiceMarkup} from './fixtures/profile-visitor-doorbell-pa3.mjs';
 import {chatChoice} from './fixtures/profile-chat-choice-pa3d.mjs';
 
 const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
 const read=file=>fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');
-const files={'/calls.js':read('profile-calls-pa3c.js'),'/calls.css':read('profile-calls-pa3c.css'),'/chat.js':read('chat.js'),'/chat.css':read('chat.css'),'/profile.css':read('profile.css'),'/profile-agent.js':read('profile-agent.js'),'/lease.js':read('voice-lease-v122.js')};
+const files={'/calls.js':read('profile-calls-pa3c.js'),'/calls.css':read('profile-calls-pa3c.css'),'/chat.js':read('chat.js'),'/voice.js':read('chat-voice.js'),'/chat.css':read('chat.css'),'/profile.css':read('profile.css'),'/profile-agent.js':read('profile-agent.js'),'/lease.js':read('voice-lease-v122.js')};
 const namespace='a'.repeat(64),storageKey='stonefellow-profile-agent:v1:fixture-owner:'+namespace;
 const chatStyle='html,body{margin:0;height:100%;overflow:hidden}.chat-app{height:100dvh}.chat-sidebar{display:none}.chat-main{height:100dvh;display:flex;flex-direction:column;min-width:0}.chat-thread{overflow:auto;flex:1;min-height:0;padding:12px}.chat-thread .message{max-width:100%;box-sizing:border-box}.message-body{min-width:0;max-width:100%}#chatComposerShell{flex-shrink:0;padding:8px}#chatForm{display:flex;gap:8px}#chatInput{min-width:0;flex:1}';
 const publicChoiceControls='<div data-profile-agent-disclosure class="profile-agent-disclosure">AI representative</div><div data-profile-live-choice class="profile-agent-live-choice"><label><input type="checkbox" data-profile-live-chat disabled><span>Request live text chat with <strong data-profile-owner-name>Human Owner</strong></span></label><small data-profile-live-availability role="status">Checking availability</small><button type="button" data-profile-end-live hidden>Return to Agent</button></div>';
@@ -18,7 +18,7 @@ const server=http.createServer((request,response)=>{
   if(files[path]){response.writeHead(200,{'Content-Type':path.endsWith('.css')?'text/css':'text/javascript'});response.end(files[path]);return;}
   response.writeHead(200,{'Content-Type':'text/html'});
   if(path==='/visitor'){response.end(publicMarkup);return;}
-  response.end(mainChatMarkup.replace('</head>','<link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/calls.css"><style>'+chatStyle+'</style></head>').replace('</body>',`<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'FIXTURE_CSRF',initialView:'chat',initialConversationId:42};window.VP3_PROFILE_CALLS_PA3C={role:'owner',endpoint:'/api/profile-calls-pa3c.php',csrf:'FIXTURE_CSRF',userId:1};</script><script src="/chat.js"></script><script data-voice-capture-scope="fixture-user" src="/lease.js"></script><script src="/calls.js"></script></body>`));
+  response.end(mainChatVoiceMarkup.replace('</head>','<link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/calls.css"><style>'+chatStyle+'</style></head>').replace('</body>',`<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'FIXTURE_CSRF',initialView:'chat',initialConversationId:42};window.STONEFELLOW_CHAT_VOICE_BOOT={button:document.getElementById('chatVoiceButtonLegacyDormant'),intro:null,legacyDormant:true};window.VP3_PROFILE_CALLS_PA3C={role:'owner',endpoint:'/api/profile-calls-pa3c.php',csrf:'FIXTURE_CSRF',userId:1};</script><script src="/chat.js"></script><script data-voice-capture-scope="fixture-user" src="/lease.js"></script><script src="/voice.js"></script><script src="/calls.js"></script></body>`));
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port;
 let browser,checks=0;function check(ok,label){assert.ok(ok,label);checks++;console.log('PASS '+label);}
@@ -82,6 +82,8 @@ try{
   browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
   {
     const f=await fixture();check(await f.page.evaluate(()=>__callMediaFixture.microphones===0&&__callMediaFixture.rooms.length===0),'restored main Chat call card does not capture or join');
+    check(await f.page.evaluate(()=>STONEFELLOW_CHAT_VOICE.directOwner===true&&STONEFELLOW_CHAT_CONTINUITY!==STONEFELLOW_CHAT_CONTINUITY_V87&&typeof STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit==='function'&&STONEFELLOW_CHAT_VOICE.starts===0),'real Chat and voice scripts execute in production order before calls without starting capture');
+    check(f.requests.filter(r=>['owner_state','owner_delivery'].includes(r.action)).every(r=>r.chat_agent_id===7&&r.chat_conversation_id===42),'production-order browser call delivery retains canonical Agent7 and private Chat42');
     const marker=f.chatMessages.get(42)[0];check(JSON.parse(marker.context_json).profile_call.conversation_id===31&&!JSON.parse(marker.context_json).profile_handoff,'call-only delivery stores a distinct actual Chat marker without inventing a visitor text turn');
     await f.card().locator('[data-call-action=accept]').click();await f.card().locator('[data-call-action=join]').waitFor({state:'visible'});
     check(await f.card().locator('[data-call-action=join]').isDisabled()&&await f.page.evaluate(()=>__callMediaFixture.microphones===0),'accepted browser call still requires explicit local microphone consent');

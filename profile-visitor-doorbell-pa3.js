@@ -33,9 +33,12 @@
     drafts=Object.fromEntries(Object.entries(drafts).filter(([id,row])=>/^\d+$/.test(id)&&typeof row?.text==='string'&&row.text.length<=4000&&Number.isFinite(row.at)&&row.at<=Date.now()&&Date.now()-row.at<86400000).sort((a,b)=>b[1].at-a[1].at).slice(0,20));
     saveStorage(storageKey+':drafts',drafts);
   }
-  const continuity=()=>window.STONEFELLOW_CHAT_CONTINUITY || window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
-  function current(){const chat=continuity();return {chat_conversation_id:Number(chat.conversationId?.()||0),chat_agent_id:Number(chat.agentId?.()??window.STONEFELLOW_CHAT?.agentId??0)};}
-  function active(){const chat=continuity();return !stopped&&!document.hidden&&document.visibilityState!=='hidden'&&navigator.onLine!==false&&thread.dataset.view==='chat'&&chat.isReady?.()!==false&&!chat.isRestoring?.();}
+  // The voice runtime owns the unversioned object. Identity and canvas methods
+  // remain on Chat's canonical object even while voice is loaded or busy.
+  const continuity=()=>window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
+  const voiceBusy=()=>window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.()===true||window.STONEFELLOW_CHAT_CONTINUITY?.pendingVoiceSubmit?.()===true;
+  function current(){const chat=continuity();return {chat_conversation_id:Number(chat.conversationId?.()||0),chat_agent_id:Number(chat.agentId?.()||0)};}
+  function active(){const chat=continuity();return !stopped&&!document.hidden&&document.visibilityState!=='hidden'&&navigator.onLine!==false&&thread.dataset.view==='chat'&&chat.isReady?.()===true&&chat.isRestoring?.()===false;}
   function same(snapshot){const ctx=current();return !stopped&&snapshot.epoch===epoch&&ctx.chat_conversation_id===snapshot.chat_conversation_id&&ctx.chat_agent_id===snapshot.chat_agent_id;}
   function capture(){return {...current(),epoch};}
   function node(tag,className,text){const element=document.createElement(tag);if(className)element.className=className;if(text!==undefined)element.textContent=text;return element;}
@@ -81,7 +84,7 @@
   }
   async function initializeBlank(){
     if(current().chat_conversation_id>0)return true;
-    if(initializedBlank||!active()||typeof continuity().ensureConversation!=='function')return false;
+    if(initializedBlank||!active()||continuity().isBusy?.()===true||voiceBusy()||typeof continuity().ensureConversation!=='function')return false;
     initializedBlank=true;
     try{await continuity().ensureConversation();}catch(_){errorText='Open or start a Chat to receive visitor cards.';}
     syncContext();return current().chat_conversation_id>0;

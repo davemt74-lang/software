@@ -49,7 +49,7 @@ export function installFakeMedia(window){
 
 export class FixtureCustomEvent extends Event{constructor(type,options={}){super(type);this.detail=options.detail;}}
 export class Element extends EventTarget{
-  constructor(document,tag='div'){super();this.ownerDocument=document;this.tagName=tag.toUpperCase();this.children=[];this.parentElement=null;this.attrs={};this.dataset={};this.style={};this._text='';this.value='';this.hidden=false;this.disabled=false;this.checked=false;this.scrollTop=0;this.scrollHeight=1000;this.clientHeight=700;this.classList={add:(...names)=>{this.className=[...new Set([...this.className.split(/\s+/),...names])].join(' ');}};}
+  constructor(document,tag='div'){super();this.ownerDocument=document;this.tagName=tag.toUpperCase();this.children=[];this.parentElement=null;this.attrs={};this.dataset={};this.style={};this._text='';this.value='';this.hidden=false;this.disabled=false;this.checked=false;this.scrollTop=0;this.scrollHeight=1000;this.clientHeight=700;this.classList={add:(...names)=>{this.className=[...new Set([...this.className.split(/\s+/),...names])].join(' ');},toggle:(name,on)=>{const names=new Set(this.className.split(/\s+/).filter(Boolean));if(on)names.add(name);else names.delete(name);this.className=[...names].join(' ');}};}
   get id(){return this.attrs.id||'';}set id(v){this.attrs.id=String(v);}
   get className(){return this.attrs.class||'';}set className(v){this.attrs.class=String(v);}
   get type(){return this.attrs.type||'';}set type(v){this.attrs.type=String(v);}

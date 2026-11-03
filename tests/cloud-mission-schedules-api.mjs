@@ -38,7 +38,7 @@ try{
   fs.writeFileSync(path.join(worker,'includes/bootstrap.php'),'<?php define("STONEFELLOW_ROOT",'+JSON.stringify(worker)+'); require '+JSON.stringify(root+'/tests/fixtures/cloud-mission-schedules-v1.php')+'; require '+JSON.stringify(root+'/includes/agent-runtime-v125.php')+';');
   // This Cloud-only journey excludes unrelated HomeServer transport setup.
   fs.writeFileSync(path.join(worker,'includes/agent-job-worker-v1900.php'),'<?php');
-  for(const name of ['agent-worker-cloud-v1910.php','cloud-mission-schedules-v1.php'])fs.writeFileSync(path.join(worker,'includes',name),'<?php require_once '+JSON.stringify(root+'/includes/'+name)+';');
+  for(const name of ['agent-worker-cloud-v1910.php','cloud-mission-schedules-v1.php','profile-calls-pa3c.php'])fs.writeFileSync(path.join(worker,'includes',name),'<?php require_once '+JSON.stringify(root+'/includes/'+name)+';');
   for(let i=0;i<2;i++){const r=spawnSync(php,[path.join(worker,'agent-worker-v1910.php'),'--executor=cloud'],{env,encoding:'utf8'});assert.equal(r.status,0,r.stderr+r.stdout);const result=JSON.parse(r.stdout.trim());assert.equal(result.cycle.cloud_completed,1,r.stdout);}
   const list=(await post('schedule.list')).data;assert.equal(list.cloud_scheduler_health.background_ready,true);assert.ok(list.schedules.some(s=>s.status==='active'&&s.runs[0]?.report_state==='saved'));
  });

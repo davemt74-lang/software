@@ -6,7 +6,7 @@ import {contract,copy,callCard,installFakeMedia,Document,FixtureCustomEvent} fro
 import {chatChoice} from './fixtures/profile-chat-choice-pa3d.mjs';
 
 const read=name=>fs.readFileSync(new URL('../'+name,import.meta.url),'utf8');
-const runtime=read('profile-calls-pa3c.js'),leaseSource=read('voice-lease-v122.js'),publicSource=read('profile-agent.js'),chatSource=read('chat.js');
+const runtime=read('profile-calls-pa3c.js'),leaseSource=read('voice-lease-v122.js'),publicSource=read('profile-agent.js'),chatSource=read('chat.js'),voiceSource=read('chat-voice.js');
 const settle=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
 let checks=0;function check(value,label){assert.ok(value,label);checks++;console.log('PASS '+label);}
 const storage=map=>({getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,String(v)),removeItem:k=>map.delete(k)});
@@ -66,8 +66,13 @@ async function fixture({role='visitor',initial=callCard(role),widget=false,cid=3
   if(role==='owner'){
     host.id='chatThread';host.dataset.view='chat';
     const helpers=chatSource.slice(chatSource.indexOf('  function bindStoredMessagePa3('),chatSource.indexOf('  function formatPlaybackTime('));
-    vm.runInContext('let conversationId=42,contextReady=true,restoringConversation=0;const thread=document.getElementById("chatThread"),cfg={agentId:7};function addMessage(role,text){const n=document.createElement("article");n.className="message assistant";const b=document.createElement("div");b.className="message-body";const t=document.createElement("p");t.className="message-text";t.textContent=text;b.append(t);n.append(b);thread.append(n);return n;}'+helpers+';window.__realMount=mountProfileCallPa3c;window.__binding=(cid,aid)=>{conversationId=cid;cfg.agentId=aid;};',context);
-    window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>chatCid,agentId:()=>chatAgent,isReady:()=>true,isRestoring:()=>false,mountProfileCall:delivery=>window.__realMount(delivery)};
+    const exports=chatSource.slice(chatSource.indexOf('  const canonicalChatContinuity = {'),chatSource.indexOf('  function speakIntroV101('));
+    vm.runInContext('let conversationId=42,contextReady=true,restoringConversation=0,initialRestorePending=false,busy=false,voiceMode=false;const thread=document.getElementById("chatThread"),cfg={agentId:7};function addMessage(role,text){const n=document.createElement("article");n.className="message assistant";const b=document.createElement("div");b.className="message-body";const t=document.createElement("p");t.className="message-text";t.textContent=text;b.append(t);n.append(b);thread.append(n);return n;}'+helpers+exports+';window.__binding=(cid,aid)=>{conversationId=cid;cfg.agentId=aid;};',context);
+    const voiceForm=document.createElement('form');voiceForm.id='chatForm';const send=document.createElement('button');send.id='sendChatButton';voiceForm.append(privateInput,send);
+    const button=document.createElement('button');button.id='chatVoiceButtonLegacyDormant';const voiceStatus=document.createElement('div');voiceStatus.id='chatVoiceStatus';document.body.append(voiceForm,button,voiceStatus);
+    window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'FIXTURE_CSRF'};
+    window.STONEFELLOW_CHAT_VOICE_BOOT={button,intro:null,legacyDormant:true};window.fetch=transport;
+    vm.runInContext(voiceSource,context,{filename:'chat-voice.js'});
     window.VP3_PROFILE_CALLS_PA3C={role:'owner',endpoint:'/api/profile-calls-pa3c.php',csrf:'FIXTURE_CSRF'};
   }
   vm.runInContext(runtime,context);
@@ -149,6 +154,8 @@ for(const kind of ['connect','microphone','camera'])for(const reject of [false,t
 }
 {
   const f=await fixture({role:'owner'});check(f.host.querySelector('[data-chat-message-id="701"]')&&f.card(),'real Chat helper binds the call card to its actual private message');
+  check(f.window.STONEFELLOW_CHAT_VOICE?.directOwner===true&&f.window.STONEFELLOW_CHAT_CONTINUITY!==f.window.STONEFELLOW_CHAT_CONTINUITY_V87&&typeof f.window.STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit==='function','real voice IIFE executes before calls and replaces only the primary continuity object');
+  check(f.requests.filter(r=>r.action==='owner_state'||r.action==='owner_delivery').every(r=>r.chat_agent_id===7&&r.chat_conversation_id===42),'voice-layer overwrite cannot replace the canonical Agent7 or private Chat identity for call delivery');
   check(f.host.querySelector('[data-chat-message-id="701"]').dataset.profileCallConversation==='31','stored call marker has its exact public conversation without a fake text turn');
   await f.refresh();check(f.host.querySelectorAll('.message').length===1,'repeated delivery deduplicates the persisted main Chat message');
   await f.ready();await f.consent();const held=f.stats.hold('connect');await f.click('join');await f.changeContext();held.pending.resolve();await settle();

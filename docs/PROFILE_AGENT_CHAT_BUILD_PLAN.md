@@ -386,9 +386,9 @@ ended media session to resume.
 | 9 | Unconfigured LiveKit, denied microphone/camera, autoplay limits, and mobile layout have usable truthful states | Readiness and browser fixtures; live-device verification reported separately |
 | 10 | Private Chat remains private; no implicit recording/transcription, synthesized voice substitution, or telephone purchase/dial | Cross-surface boundary tests and retained PA1/PA3 regressions |
 
-The focused local suite passes **408 checks**: 153 production call-state and
+The focused local suite passes **410 checks**: 153 production call-state and
 recovery checks, 79 provider-contract checks, 85 actual HTTP API checks,
-16 actual Admin HTTP checks, and 75 interface runtime assertions. Supporting
+16 actual Admin HTTP checks, and 77 interface runtime assertions. Supporting
 credential recovery passes 98 checks and the upgrade page passes 28 cases.
 The CI matrix adds independent MySQL acceptance races on PHP 8.1 and 8.3 and
 the actual Chromium call-interface runner, alongside retained PA1, PA2 and PA3
@@ -409,6 +409,13 @@ media ends. Live-text expiry and a hidden Chat tab cannot delegate an ongoing
 media call; explicit Offline, disabled user chat, permissions and account blocks
 still govern media authority. Accepting a call does not relabel an earlier
 declined or expired text request as accepted.
+
+Owner visitor and call cards use Chat's canonical identity and canvas controller
+when the voice runtime installs its separate controller. The runtime and browser
+fixtures load the actual Chat and voice scripts in production order, verify that
+the voice controller is active, and retain the exact nonzero Agent and private
+conversation when mounting saved cards. Blank Chat initialization also waits for
+a pending voice submission.
 
 Existing Twilio telephone and SIP adapters provide a future route to actual
 phone numbers. That follow-on needs its own exact-number confirmation,

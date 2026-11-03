@@ -297,10 +297,10 @@
   }
   let ownerSurface=null;
   function mountVisitor(options){const surface=new Surface({...options,role:'visitor'});surface.visitorOffers=surface.offers(options.host,()=>({...options.context().binding}));return surface.start();}
-  function ownerContext(){const c=window.STONEFELLOW_CHAT_CONTINUITY||window.STONEFELLOW_CHAT_CONTINUITY_V87||{},cid=Number(c.conversationId?.()||0),aid=Number(c.agentId?.()||0);return {key:cid+':'+aid,binding:{chat_conversation_id:cid,chat_agent_id:aid},active:c.isReady?.()!==false&&!c.isRestoring?.()&&document.getElementById('chatThread')?.dataset.view==='chat'};}
+  function ownerContext(){const c=window.STONEFELLOW_CHAT_CONTINUITY_V87||{},cid=Number(c.conversationId?.()||0),aid=Number(c.agentId?.()||0);return {key:cid+':'+aid,binding:{chat_conversation_id:cid,chat_agent_id:aid},active:c.isReady?.()===true&&c.isRestoring?.()===false&&document.getElementById('chatThread')?.dataset.view==='chat'};}
   function mountOwner(config){
     const request=async(action,payload,method)=>{const url=new URL(config.endpoint,location.href),options={method,credentials:'same-origin',cache:'no-store'};if(method==='GET'){Object.entries({action,...payload}).forEach(([key,value])=>url.searchParams.set(key,String(value)));}else{options.headers={'Content-Type':'application/json'};options.body=JSON.stringify({action,csrf_token:config.csrf,...payload});}const response=await fetch(url,options),data=await response.json().catch(()=>null);if(!response.ok||!data?.ok){const error=new Error('Call request unavailable.');error.status=response.status;error.code=data?.code||'';throw error;}return data;};
-    ownerSurface=new Surface({role:'owner',context:ownerContext,request,mount:delivery=>(window.STONEFELLOW_CHAT_CONTINUITY||{}).mountProfileCall?.(delivery)}).start();return ownerSurface;
+    ownerSurface=new Surface({role:'owner',context:ownerContext,request,mount:delivery=>(window.STONEFELLOW_CHAT_CONTINUITY_V87||{}).mountProfileCall?.(delivery)}).start();return ownerSurface;
   }
   window.VP3ProfileCallsPa3c={mountVisitor,attachOwnerThread(host,options){if(!ownerSurface)return;const control=ownerSurface.offers(host,()=>options.binding());void ownerSurface.refreshOffers(control);},refresh:()=>ownerSurface?.refresh(),invalidateVisitor(surface,reason){surface?.invalidate(reason);}};
   window.addEventListener('stonefellow:chat-context-changing',()=>ownerSurface?.invalidate('Chat context changed.'));
