@@ -1,5 +1,6 @@
 export const copy=value=>JSON.parse(JSON.stringify(value));
 export const contract='vp3.profile-handoff.v1';
+export const chatChoice=(overrides={})=>({contract:'vp3.profile-chat-choice.v1',owner_name:'Profile owner',mode:'live',live_status:'waiting',live_text_available:true,can_end_live_chat:false,...overrides});
 export function ownerCard(id=101,overrides={}){
   return {contract,turn_id:id,revision:1,conversation_id:id+1000,profile_agent_id:7,visitor_message_id:id+2000,
     state:'awaiting_delivery',responder:'waiting',visitor_label:'Visitor '+id,visitor_message:'Public visitor question '+id,

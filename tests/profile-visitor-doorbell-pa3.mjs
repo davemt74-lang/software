@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
-import {copy,contract,ownerCard} from './fixtures/profile-visitor-doorbell-pa3.mjs';
+import {copy,contract,ownerCard,chatChoice} from './fixtures/profile-visitor-doorbell-pa3.mjs';
 
 // Execute the production IIFE. Only the browser, clock and HTTP boundaries are
 // controlled; the companion Chromium test also loads the actual Chat renderer.
@@ -62,6 +62,12 @@ async function fixture({cards=[ownerCard()],cid=42,storage=new Map(),hidden=fals
     }else if(['doorbell_claim','doorbell_reply','doorbell_delegate','doorbell_resolve'].includes(input.action)){
       const card=turns.get(input.turn_id);card.revision++;card.state=({doorbell_claim:'owner_claimed',doorbell_reply:'replied',doorbell_delegate:'agent_ready',doorbell_resolve:'cancelled'})[input.action];card.responder=input.action==='doorbell_reply'?'owner':input.action==='doorbell_claim'?'owner':input.action==='doorbell_delegate'?'agent':'none';
       if(input.action==='doorbell_reply'){card.history.push({id:9000+requests.length,sender_type:'owner',message:input.message,created_at:'2027-01-15 08:00:01'});card.can_claim=card.can_reply=card.can_delegate=card.can_resolve=true;}
+      if(card.chat){
+        const accepted=card.chat.live_status==='accepted';
+        if(['doorbell_claim','doorbell_reply'].includes(input.action)&&card.chat.mode==='live'){card.chat.live_status='accepted';card.chat.can_end_live_chat=true;card.can_claim=false;}
+        else if(input.action==='doorbell_delegate'){card.chat.mode='agent';card.chat.live_status=accepted?'ended':'declined';card.chat.can_end_live_chat=false;}
+        else if(input.action==='doorbell_resolve'){card.chat.live_status='ended';card.chat.can_end_live_chat=false;}
+      }
       Object.assign(payload,{turn_id:input.turn_id,conversation_id:input.conversation_id,request_id:input.request_id,turn:{...copy(card),server_now_ms:clock}});
     }else throw new Error('Unexpected action '+input.action);
     const index=holds.findIndex(h=>h.action===input.action);
@@ -159,7 +165,7 @@ for(const failed of [false,true]){
  const f=await fixture();await f.frames();const deadline=f.turns.get(101).pickup_deadline_ms;f.card(101).querySelector('textarea').value='Saved visitor draft';f.card(101).querySelector('textarea').dispatchEvent(new Event('input'));const saved=copy(f.turns.get(101));const firstTab=f.requests.find(r=>r.action==='doorbell_presence').tab_id;f.stop();await tick();
  const restored=await fixture({cards:[saved],storage:f.storage});await restored.frames();check(restored.card(101).querySelector('textarea').value==='Saved visitor draft','reload restores the unsent visitor draft independently of notification read state');
  check(!restored.requests.some(r=>r.action==='doorbell_ack')&&restored.turns.get(101).pickup_deadline_ms===deadline,'reload of active acknowledged turn does not restart15seconds');
- check(restored.requests.find(r=>r.action==='doorbell_presence').tab_id===firstTab&&restored.requests.find(r=>r.action==='doorbell_presence').presence_sequence>f.requests.filter(r=>r.action==='doorbell_presence').at(-1).presence_sequence,'same-tab reload retains token and advances presence sequence');restored.stop();
+ check(restored.requests.find(r=>r.action==='doorbell_presence').tab_id!==firstTab,'reloaded or duplicated document gets independent presence authority despite copied sessionStorage');restored.stop();
 }
 {
  const hostile=ownerCard(101,{visitor_label:'Visitor <img onerror=alert(1)>',visitor_message:'<script>PRIVATE INSTRUCTIONS</script>'}),f=await fixture({cards:[hostile]});
@@ -189,6 +195,75 @@ for(const pauseField of ['execution_paused','dispatch_execution_paused']){
 {
  const malformed=ownerCard(101,{can_reply:'true'}),f=await fixture({cards:[malformed]});check(f.cards().length===0&&!f.requests.some(r=>r.action==='doorbell_delivery'),'malformed current authority projection cannot become a card');f.stop();
  const f2=await fixture();const denied=f2.hold('doorbell_list'),refresh=f2.refresh();const work=await denied;work.resolve({ok:false},403);await refresh;check(f2.card(101).hidden&&f2.card(101).querySelector('[data-doorbell-action="reply"]').disabled,'revoked access hides cached visitor details and disables controls');f2.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{chat:chatChoice()}),ownerCard(202,{chat:chatChoice({mode:'agent',live_status:'none'})})]});await f.frames();
+ const card=f.card(101),other=f.card(202).querySelector('textarea');other.value='Other visitor draft';other.dispatchEvent(new Event('input'));
+ check(card.querySelector('[data-doorbell-action="claim"]').textContent==='Accept live chat'&&card.querySelector('[data-doorbell-action="delegate"]').textContent==='Decline'&&card.textContent.includes('requested live text chat with you'),'explicit live request offers Accept and Decline in the existing visitor card');
+ check(f.card(202).textContent.includes('The visitor chose Agent chat.')&&f.card(202).querySelector('[data-doorbell-action="claim"]').textContent==="I'll reply",'Agent choice is clear without changing the legacy owner controls');
+ const pending=f.hold('doorbell_claim');card.querySelector('[data-doorbell-action="claim"]').click();const work=await pending;
+ check(work.input.turn_id===101&&work.input.revision===2&&work.input.conversation_id===1101&&work.input.chat_conversation_id===42&&work.input.chat_agent_id===7&&!Object.hasOwn(work.input,'message'),'live acceptance uses the exact existing turn, revision, public conversation and private Chat binding');
+ check(card.querySelector('[data-doorbell-action="delegate"]').textContent==='Decline'&&!card.textContent.includes('Live chat accepted.'),'unconfirmed live acceptance shows no success or active chat');
+ work.resolve();await f.settle();
+ check(card.textContent.includes('Live text chat with this visitor is active.')&&card.querySelector('[data-doorbell-action="delegate"]').textContent==='End live chat'&&card.querySelector('[data-doorbell-action="claim"]').disabled,'confirmed acceptance clearly shows the active direct chat and End action');
+ const ending=f.hold('doorbell_delegate');card.querySelector('[data-doorbell-action="delegate"]').click();const end=await ending;
+ check(!card.textContent.includes('Live chat ended.')&&other.value==='Other visitor draft'&&f.privateInput.value==='PRIVATE CHAT DRAFT','ending waits for confirmation and keeps the other visitor and private drafts separate');
+ end.resolve();await f.settle();check(card.textContent.includes('Live chat has ended.')&&card.textContent.includes('Live chat ended. Your Profile Agent will handle this visitor.')&&card.querySelector('[data-doorbell-action="delegate"]').textContent==='Let Agent reply','confirmed End returns the card to Agent handling');f.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{chat:chatChoice()})]});await f.frames();const pending=f.hold('doorbell_delegate');f.card(101).querySelector('[data-doorbell-action="delegate"]').click();const work=await pending;
+ check(!f.card(101).textContent.includes('Live chat declined.'),'Decline does not announce a result before the server confirms it');work.resolve();await f.settle();
+ check(f.card(101).textContent.includes('Live chat was declined.')&&f.card(101).textContent.includes('Your Profile Agent is preparing a reply.'),'declined request truthfully shows the Agent responder');f.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{chat:chatChoice()})]});await f.frames();const input=f.card(101).querySelector('textarea');input.value='Keep across settings refresh';input.dispatchEvent(new Event('input'));
+ const oldList=f.hold('doorbell_list'),refresh=f.refresh(),old=await oldList,nextList=f.hold('doorbell_list');
+ f.turns.get(101).chat.live_text_available=false;f.turns.get(101).can_claim=false;f.turns.get(101).can_reply=false;
+ f.window.dispatchEvent(new CustomEventFixture('stonefellow:chat-settings-updated',{detail:{presence_mode:'offline',social_chat_enabled:false}}));
+ check(f.card(101).querySelector('[data-doorbell-action="claim"]').disabled&&f.card(101).querySelector('textarea').disabled&&f.card(101).textContent.includes('Checking your updated Chat Settings'),'existing Chat Settings event immediately freezes live acceptance pending an authoritative refresh');
+ old.resolve();await refresh;const next=await nextList;
+ check(f.card(101).querySelector('[data-doorbell-action="claim"]').disabled&&f.card(101).textContent.includes('Checking your updated Chat Settings'),'a list from before the settings event cannot re-enable acceptance');
+ next.resolve();await f.settle();
+ check(f.card(101).textContent.includes('current Chat Settings or availability prevent acceptance')&&f.card(101).querySelector('[data-doorbell-action="claim"]').disabled&&f.card(101).querySelector('[data-doorbell-action="reply"]').disabled&&!f.card(101).querySelector('[data-doorbell-action="delegate"]').disabled&&input.value==='Keep across settings refresh','refreshed canonical authority blocks acceptance while preserving Decline and the exact draft');
+ check(f.requests.filter(r=>r.action==='doorbell_presence').every(r=>!Object.hasOwn(r,'availability')),'settings refresh and normal heartbeats do not write the global or visitor availability preference');f.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{chat:chatChoice()})]});await f.frames();const pending=f.hold('doorbell_claim');f.card(101).querySelector('[data-doorbell-action="claim"]').click();const work=await pending;
+ await f.changeContext(55);f.card(101).querySelector('textarea').value='Current private context visitor draft';work.resolve();await f.settle();
+ check(f.card(101).querySelector('textarea').value==='Current private context visitor draft'&&!f.card(101).textContent.includes('Live chat accepted.'),'late live acceptance cannot announce success or clear a draft in another private Chat context');f.stop();
+}
+for(const live_status of ['expired','unavailable','ended']){
+ const f=await fixture({cards:[ownerCard(101,{state:'agent_ready',responder:'agent',chat:chatChoice({mode:'agent',live_status}),can_delegate:false})]});
+ check(f.card(101).dataset.liveStatus===live_status&&!f.card(101).textContent.includes('live text chat with you')&&f.card(101).textContent.includes('Your Profile Agent is preparing a reply.'),'canonical '+live_status+' live outcome stays explicit with the current Agent responder');f.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{state:'owner_claimed',responder:'owner',chat:chatChoice({live_status:'accepted',live_text_available:false,can_end_live_chat:true})})]});
+ const card=f.card(101);
+ check(card.querySelector('[data-doorbell-action="claim"]').disabled&&card.querySelector('textarea').disabled&&!card.querySelector('[data-doorbell-action="delegate"]').disabled&&card.textContent.includes('availability prevent replying'),'unavailable accepted chat blocks human replies while retaining the End action');f.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{state:'agent_ready',responder:'agent',execution_paused:true,can_reply:false,chat:chatChoice({live_status:'declined'})})]});
+ check(f.card(101).textContent.includes('Live chat was declined. Profile Agent is paused.')&&!f.card(101).textContent.includes('You can reply'),'paused Agent fallback does not promise a reply action that is unavailable');f.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{state:'owner_claimed',responder:'owner',chat:chatChoice({live_status:'accepted',can_end_live_chat:true})})]});
+ const card=f.card(101);await f.submit(101,'Reply from the owner');await f.settle();
+ const turn=f.turns.get(101);turn.revision++;turn.responder='agent';turn.chat.mode='agent';turn.chat.live_status='ended';turn.chat.can_end_live_chat=false;await f.refresh();
+ check(card.textContent.includes('Live chat has ended. Your Profile Agent handles new messages.')&&!card.textContent.includes('Your Profile Agent replied.')&&turn.history.at(-1).sender_type==='owner','ended live chat identifies the next responder without reattributing the previous owner reply');f.stop();
+}
+for(const chat of [null,chatChoice({contract:'wrong'}),chatChoice({live_status:'invented'}),chatChoice({live_text_available:'true'}),chatChoice({can_end_live_chat:1}),chatChoice({owner_name:'x'.repeat(241)}),chatChoice({media_call_active:'true'})]){
+ const f=await fixture({cards:[ownerCard(101,{chat})]});check(f.cards().length===0,'malformed optional chat choice cannot enable owner controls');f.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{state:'owner_claimed',responder:'owner',can_claim:false,chat:chatChoice({live_status:'accepted',can_end_live_chat:false})})]});
+ check(f.card(101).querySelector('[data-doorbell-action="delegate"]').disabled,'an accepted chat cannot end when its canonical live end capability is false');f.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{state:'owner_claimed',responder:'owner',chat:chatChoice({mode:'auto',live_status:'ended',media_call_active:true,live_text_available:false,can_end_live_chat:false})})]});
+ const card=f.card(101);check(card.textContent.includes('A direct call is handling this visitor')&&!card.querySelector('textarea').disabled,'accepted direct call preserves canonical owner text replies even when text-only availability ends');
+ check(card.querySelector('[data-doorbell-action="delegate"]').disabled&&card.querySelector('[data-doorbell-action="resolve"]').disabled,'owner text card cannot delegate or resolve the conversation underneath a direct call');
+ const turn=f.turns.get(101);turn.chat.media_call_active=false;turn.chat.live_status='expired';turn.revision++;await f.refresh();
+ check(card.textContent.includes('You are handling this visitor.')&&!card.textContent.includes('live chat request expired'),'post-call owner continuation is not mislabelled with a historical live-text expiration');f.stop();
 }
 // Run the actual Chat continuity helpers with the same mutable context as Chat.
 // These tests cover adoption/cursor races that a stand-in continuity API cannot.

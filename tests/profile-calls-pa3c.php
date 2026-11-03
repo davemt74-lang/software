@@ -197,5 +197,54 @@ foreach([[false,false],[false,true],[true,false]] as [$successor,$uncertain]){
 pa3c_reset();$call=pcAccepted();$id=$call['call_id'];$pausedRun=0;$GLOBALS['pa3cProviderHook']=function($operation)use($id,&$pausedRun){if($operation!=='create')return;$GLOBALS['pa3cProviderHook']=null;db()->prepare('UPDATE profile_calls_pa3c SET provider_lease_until_ms=0 WHERE id=?')->execute([$id]);vp3_profile_call_work_pa3c(db(),$id,'pa3c_provider');vp3_profile_call_owner_action_pa3c(db(),pa3c_owner(),pa3c_owner_input(pcCall($id),'end'));$pausedRun=(int)pcRow($id)['cleanup_run_id'];agent_work_control_pause_v173(db(),pa3c_owner(),$pausedRun);};vp3_profile_call_work_pa3c(db(),$id,'pa3c_provider');
 pcCheck(pcRow($id)['state']==='ending'&&(int)pcRow($id)['cleanup_run_id']===$pausedRun&&(int)pcRow($id)['cleanup_generation']===1&&db()->query('SELECT status FROM agent_workflow_runs WHERE id='.$pausedRun)->fetchColumn()==='paused','late result invalidates proof without resetting explicitly paused cleanup authority');
 
+// PA3D text grants and PA3C media share a responder, but not a visibility lease.
+$textSend=static function(array $ctx,int $cid,string $mode='agent',bool $continuing=false):array{
+    pa3_age();return vp3_profile_agent_public_message_service_v110(db(),$ctx,'Text alongside the human call',$cid,['async'=>true,'client_request_id'=>bin2hex(random_bytes(16)),'chat_mode'=>$mode]+($continuing?['continue_live'=>true]:[]));
+};
+$textRow=static fn(array $receipt):array=>vp3_profile_handoff_row_pa3(db(),(int)$receipt['handoff']['turn_id'])??throw new RuntimeException('Missing text turn.');
+$textAction=static fn(array $turn,string $operation):array=>['operation'=>$operation,'turn_id'=>(int)$turn['id'],'revision'=>(int)$turn['version'],'conversation_id'=>(int)$turn['conversation_id'],'chat_conversation_id'=>11,'chat_agent_id'=>7,'request_id'=>bin2hex(random_bytes(16)),'message'=>'Owner text during the call'];
+$textDenied=static function(callable $work,string $label):void{
+    try{$work();}catch(VP3ProfileHandoffException $error){pcCheck($error->publicCode==='HANDOFF_MEDIA_ACTIVE',$label);return;}throw new RuntimeException('FAIL: '.$label.' (was accepted)');
+};
+$threadCall=static function(array $ctx,int $cid):array{
+    $offer=vp3_profile_call_visitor_action_pa3c(db(),$ctx,['operation'=>'offer','request_id'=>bin2hex(random_bytes(16)),'conversation_id'=>$cid,'mode'=>'audio']);
+    return vp3_profile_call_owner_action_pa3c(db(),pa3c_owner(),pa3c_owner_input($offer,'accept'))+['context'=>$ctx];
+};
+foreach(['waiting','accepted','declined','expired'] as $prior){
+    pa3c_reset();$ctx=pa3c_context();$text=$textSend($ctx,0,'live');$cid=(int)$text['conversation_id'];
+    if(in_array($prior,['accepted','declined'],true))vp3_profile_handoff_owner_action_pa3(db(),pa3_owner(),$textAction($textRow($text),$prior==='accepted'?'claim':'delegate'));
+    elseif($prior==='expired'){$GLOBALS['pa3Now']=(int)$textRow($text)['delivery_until_ms'];vp3_profile_handoff_tick_pa3(db(),1,$cid);}
+    $responseToken=vp3_profile_agent_response_token_v1(db(),$cid);$call=$threadCall($ctx,$cid);$chat=vp3_profile_handoff_chat_pa3d(db(),1,$cid);
+    pcCheck($chat['media_call_active']===true&&$chat['mode']==='auto'&&$chat['live_status']===(in_array($prior,['waiting','accepted'],true)?'ended':$prior)&&!$chat['can_end_live_chat'],'call consent does not revive the prior '.$prior.' live-text grant');
+    pcCheck($textRow($text)['state']==='owner_claimed'&&!hash_equals($responseToken,vp3_profile_agent_response_token_v1(db(),$cid)),'call acceptance fences queued and synchronous text authority after '.$prior);
+}
+// Keep the last accepted media call alive while ordinary old/new clients send text.
+$id=$call['call_id'];vp3_profile_call_work_pa3c(db(),$id,'pa3c_provider');pcJoin($call,'owner','c');pcJoin($call,'visitor','d');$room=pcRow($id)['room_name'];$GLOBALS['pa3cRooms'][$room]['owner']=true;$GLOBALS['pa3cRooms'][$room]['visitor']=true;$GLOBALS['pa3Now']+=10001;vp3_profile_call_work_pa3c(db(),$id,'pa3c_provider');
+$epoch=(int)vp3_profile_handoff_thread_pa3(db(),1,$cid)['epoch'];db()->exec('UPDATE profile_agent_handoff_presence_pa3 SET visible=0');vp3_profile_handoff_tick_pa3(db(),1,$cid);
+pcCheck(pcRow($id)['state']==='active'&&vp3_profile_handoff_thread_pa3(db(),1,$cid)['mode']==='owner'&&(int)vp3_profile_handoff_thread_pa3(db(),1,$cid)['epoch']===$epoch,'hidden main Chat does not release accepted media ownership or its heartbeat');
+foreach([['agent',false],['live',false],['live',true],['auto',false]] as [$mode,$continuing]){
+    $text=$textSend($ctx,$cid,$mode,$continuing);$turn=$textRow($text);
+    pcCheck($turn['state']==='owner_claimed'&&$turn['chat_mode']==='auto'&&$text['chat']['media_call_active']===true&&(int)vp3_profile_handoff_thread_pa3(db(),1,$cid)['epoch']===$epoch,'ordinary '.$mode.($continuing?' continuation':'').' text stays with the call owner without another pickup');
+}
+$card=vp3_profile_handoff_owner_card_pa3(db(),$turn,11,7);pcCheck($card['can_reply']&&!$card['can_delegate']&&!$card['can_resolve'],'owner text remains usable while disruptive text controls are disabled');
+$textDenied(fn()=>vp3_profile_agent_public_end_live_chat_pa3d(db(),$ctx,$cid,(int)$turn['id'],(int)$turn['version']),'explicit live-text End cannot release an ongoing call');
+foreach(['delegate','resolve'] as $operation)$textDenied(fn()=>vp3_profile_handoff_owner_action_pa3(db(),pa3_owner(),$textAction($turn,$operation)),'explicit text '.$operation.' cannot change the active human responder');
+$textDenied(fn()=>vp3_profile_handoff_atomic_pa3(db(),fn()=>vp3_profile_handoff_mode_pa3(db(),1,$cid,'agent')),'canonical Agent mode transition cannot bypass active media');
+vp3_profile_handoff_dispatch_pa3(db(),(int)$turn['id']);pcCheck($GLOBALS['pa3ModelCalls']===[]&&pa3_count('profile_agent_messages',"sender_type='agent'")===0,'call-time text never starts a competing Agent response');
+vp3_profile_call_owner_action_pa3c(db(),pa3c_owner(),pa3c_owner_input(pcCall($id),'end'));$continued=$textSend($ctx,$cid,'auto');
+pcCheck($textRow($continued)['state']==='owner_claimed'&&$continued['chat']['mode']==='auto'&&!$continued['chat']['media_call_active']&&(int)vp3_profile_handoff_thread_pa3(db(),1,$cid)['epoch']===$epoch,'ordinary owner text remains usable after Hangup without implicit Agent delegation');
+$responseToken=vp3_profile_agent_response_token_v1(db(),$cid);
+vp3_profile_call_visitor_action_pa3c(db(),$ctx,pa3c_visitor_input(pcCall($id,'visitor'),'return_to_agent'));$chat=vp3_profile_handoff_chat_pa3d(db(),1,$cid);
+pcCheck(!$chat['media_call_active']&&$chat['mode']==='agent'&&$chat['live_status']==='ended'&&!$chat['can_end_live_chat']&&!hash_equals($responseToken,vp3_profile_agent_response_token_v1(db(),$cid)),'explicit call Return to Agent clears live-text status and rotates response authority');
+$text=$textSend($ctx,$cid,'live',true);pcCheck($textRow($text)['state']==='agent_ready'&&$text['chat']['mode']==='agent'&&$text['chat']['live_status']==='ended','stale live continuation cannot revive ownership after call Return to Agent');
+pa3c_reset();$call=pcReady();$id=$call['call_id'];vp3_profile_call_owner_action_pa3c(db(),pa3c_owner(),pa3c_owner_input(pcCall($id),'end'));$text=$textSend($call['context'],(int)$call['conversation_id'],'agent');
+pcCheck($textRow($text)['state']==='agent_ready'&&$text['chat']['mode']==='agent'&&!vp3_profile_call_can_return_pa3c(db(),pcRow($id)),'an explicit visitor Agent choice remains available after Hangup and supersedes old call Return');
+foreach([['offline',1],['online',0]] as [$presence,$social]){
+    pa3c_reset();$call=pcReady();$id=$call['call_id'];db()->prepare('INSERT INTO team_user_presence(user_id,presence_mode,social_chat_enabled,sound_enabled) VALUES(1,?,?,1)')->execute([$presence,$social]);
+    vp3_profile_call_work_pa3c(db(),$id,'pa3c_provider');pcCheck(in_array(pcRow($id)['state'],['ending','ended'],true)&&!pcCall($id)['can_join'],'explicit '.$presence.'/'.$social.' preference revokes media despite its separate heartbeat');
+}
+pa3c_reset();$call=pcReady();$id=$call['call_id'];$GLOBALS['pa3cProviderHook']=static function(string $op):void{if($op==='token'){$GLOBALS['pa3cProviderHook']=null;db()->exec("INSERT INTO team_user_presence(user_id,presence_mode,social_chat_enabled,sound_enabled) VALUES(1,'online',0,1)");}};
+pcReject(fn()=>pcJoin($call),'late social-chat disable fences the provider token','PROFILE_CALL_UNAVAILABLE');
+pcCheck(in_array(pcRow($id)['state'],['ending','ended'],true),'late preference revocation retains durable cleanup');
 pcCheck($GLOBALS['pa3ModelCalls']===[],'human call lifecycle never invokes a model');
 echo 'PROFILE_CALLS_PA3C=PASS ('.$checks.' checks; '.db()->getAttribute(PDO::ATTR_DRIVER_NAME).")\n";

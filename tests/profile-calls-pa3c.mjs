@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import {contract,copy,callCard,installFakeMedia,Document,FixtureCustomEvent} from './fixtures/profile-calls-pa3c.mjs';
+import {chatChoice} from './fixtures/profile-chat-choice-pa3d.mjs';
 
 const read=name=>fs.readFileSync(new URL('../'+name,import.meta.url),'utf8');
 const runtime=read('profile-calls-pa3c.js'),leaseSource=read('voice-lease-v122.js'),publicSource=read('profile-agent.js'),chatSource=read('chat.js');
@@ -10,10 +11,10 @@ const settle=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmedia
 let checks=0;function check(value,label){assert.ok(value,label);checks++;console.log('PASS '+label);}
 const storage=map=>({getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,String(v)),removeItem:k=>map.delete(k)});
 
-async function fixture({role='visitor',initial=callCard(role),widget=false,cid=31,sdk=true}={}){
+async function fixture({role='visitor',initial=callCard(role),widget=false,cid=31,sdk=true,liveStatus='none'}={}){
   const document=new Document(),window=new EventTarget(),host=document.createElement('div'),privateInput=document.createElement('textarea');
   privateInput.id='chatInput';privateInput.value='PRIVATE_DRAFT_DO_NOT_RELAY';document.body.append(host,privateInput);
-  let now=1800000000000,elapsed=0,nextTimer=0,chatCid=42,chatAgent=7,publicCid=cid,contextEpoch=0,visible=true;
+  let now=1800000000000,elapsed=0,nextTimer=0,chatCid=42,chatAgent=7,publicCid=cid,contextEpoch=0,visible=true,ownerMode=Boolean(initial&&['preparing','ready','active'].includes(initial.state));
   const timers=new Map(),requests=[],holds=[],failures=new Map(),operations=new Map(),cards=new Map(initial?[[initial.call_id,copy(initial)]]:[]),local=new Map(),session=new Map();
   const schedule=(fn,delay,repeat=false)=>{const id=++nextTimer;timers.set(id,{fn,delay,due:elapsed+delay,repeat});return id;};
   const timerApi={setTimeout:(fn,delay=0)=>schedule(fn,delay),setInterval:(fn,delay)=>schedule(fn,delay,true),clearTimeout:id=>timers.delete(id),clearInterval:id=>timers.delete(id)};
@@ -21,7 +22,8 @@ async function fixture({role='visitor',initial=callCard(role),widget=false,cid=3
   let stats=installFakeMedia(window);if(!sdk)delete window.LivekitClient;
   const response=(data,status=200)=>({ok:status<400,status,json:async()=>copy(data)});
   const normalized=card=>({...copy(card),role,server_now_ms:now,...(role==='owner'?{chat_conversation_id:chatCid,chat_agent_id:chatAgent}: {})});
-  function setState(card,state){Object.assign(card,{state,revision:card.revision+1,can_accept:false,can_decline:false,can_cancel:false,can_end:['preparing','ready','active'].includes(state),can_join:['ready','active'].includes(state),cleanup_pending:state==='ending',can_return_to_agent:state==='ending'||state==='ended',dispatch_due:state==='preparing'});}
+  const profileChat=()=>chatChoice({owner_name:'Human Owner',mode:ownerMode?'auto':'agent',live_status:liveStatus,media_call_active:[...cards.values()].some(c=>['preparing','ready','active'].includes(c.state))});
+  function setState(card,state){if(['preparing','ready','active'].includes(state))ownerMode=true;Object.assign(card,{state,revision:card.revision+1,can_accept:false,can_decline:false,can_cancel:false,can_end:['preparing','ready','active'].includes(state),can_join:['ready','active'].includes(state),cleanup_pending:state==='ending',can_return_to_agent:state==='ending'||state==='ended',dispatch_due:state==='preparing'});}
   const transport=async(url,options={})=>{
     const parsed=new URL(url,'https://fixture.test'),body=options.method==='GET'?Object.fromEntries(parsed.searchParams):JSON.parse(options.body||'{}');
     for(const key of ['call_id','revision','conversation_id','chat_conversation_id','chat_agent_id'])if(body[key]!==undefined)body[key]=Number(body[key]);
@@ -29,8 +31,8 @@ async function fixture({role='visitor',initial=callCard(role),widget=false,cid=3
     if(failures.has(body.action)){const failure=failures.get(body.action);return response({ok:false,code:failure.code},failure.status);}
     let result={ok:true};const action=body.action;
     if(parsed.pathname==='/api/profile-agent.php'){
-      if(action==='state'||action==='poll')Object.assign(result,{messages:[],conversation:publicCid?{id:publicCid,status:'open'}:null,agent:{greeting:''}});
-      else if(action==='message'){publicCid=publicCid||31;Object.assign(result,{conversation_id:publicCid,visitor_message_id:500,client_request_id:body.client_request_id,conversation:{id:publicCid,status:'owner_joined'},handoff:null});}
+      if(action==='state'||action==='poll')Object.assign(result,{messages:[],conversation:publicCid?{conversation_id:publicCid,status:ownerMode?'owner_joined':'open'}:null,agent:{greeting:''},chat:profileChat()});
+      else if(action==='message'){publicCid=publicCid||31;if(!profileChat().media_call_active&&body.chat_mode==='agent')ownerMode=false;Object.assign(result,{conversation_id:publicCid,visitor_message_id:500+requests.length,client_request_id:body.client_request_id,conversation:{conversation_id:publicCid,status:ownerMode?'owner_joined':'open'},handoff:null,chat:profileChat()});}
       else throw new Error('Unexpected Profile action '+action);
     }else{
       const operation=action.replace(/^(owner|visitor)_/,'');
@@ -44,7 +46,7 @@ async function fixture({role='visitor',initial=callCard(role),widget=false,cid=3
         if(operation==='accept')setState(card,'preparing');
         else if(operation==='dispatch'){if(card.state==='preparing')setState(card,'ready');}
         else if(operation==='end')setState(card,'ending');
-        else if(operation==='return_to_agent'){card.revision++;card.can_return_to_agent=false;}
+        else if(operation==='return_to_agent'){card.revision++;card.can_return_to_agent=false;ownerMode=false;}
         else if(operation==='join')card.authority_valid_until_ms=now+30000;
         else if(operation==='heartbeat')card.authority_valid_until_ms=now+30000;
         else if(!['delivery','cancel','decline'].includes(operation))throw new Error('Unexpected call action '+action);
@@ -70,8 +72,10 @@ async function fixture({role='visitor',initial=callCard(role),widget=false,cid=3
   }
   vm.runInContext(runtime,context);
   if(widget){
-    shell=document.createElement('section');shell.id='profileAgentShell';const thread=document.createElement('div');thread.dataset.profileAgentThread='';form=document.createElement('form');textarea=document.createElement('textarea');const submit=document.createElement('button');submit.type='submit';submit.textContent='Send';form.append(textarea,submit);const status=document.createElement('div');status.dataset.profileAgentStatus='';shell.append(thread,form,status);document.body.append(shell);
-    window.STONEFELLOW_PROFILE_AGENT={username:'fixture-owner',endpoint:'/api/profile-agent.php',callEndpoint:'/api/profile-calls-pa3c.php',callOwnerName:'Human Owner',conversationNamespace:'a'.repeat(64),profileToken:'FIXTURE_PROFILE_TOKEN',greeting:''};
+    shell=document.createElement('section');shell.id='profileAgentShell';const thread=document.createElement('div');thread.dataset.profileAgentThread='';form=document.createElement('form');textarea=document.createElement('textarea');const submit=document.createElement('button');submit.type='submit';submit.textContent='Send';form.append(textarea,submit);const status=document.createElement('div');status.dataset.profileAgentStatus='';
+    const choice=document.createElement('input');choice.type='checkbox';choice.dataset.profileLiveChat='';const availability=document.createElement('small');availability.dataset.profileLiveAvailability='';const end=document.createElement('button');end.dataset.profileEndLive='';end.hidden=true;const disclosure=document.createElement('div');disclosure.dataset.profileAgentDisclosure='';
+    shell.append(disclosure,choice,availability,end,thread,form,status);document.body.append(shell);
+    window.STONEFELLOW_PROFILE_AGENT={username:'fixture-owner',endpoint:'/api/profile-agent.php',callEndpoint:'/api/profile-calls-pa3c.php',callOwnerName:'Human Owner',ownerName:'Human Owner',conversationNamespace:'a'.repeat(64),profileToken:'FIXTURE_PROFILE_TOKEN',greeting:''};
     if(cid)local.set('stonefellow-profile-agent:v1:fixture-owner:'+'a'.repeat(64),String(cid));
     vm.runInContext(publicSource,context);
   }else if(role==='visitor'){
@@ -161,9 +165,26 @@ for(const kind of ['connect','microphone','camera'])for(const reject of [false,t
   const f=await fixture({widget:true,initial:null,cid:0});const offer=f.document.querySelector('[data-call-offer=audio]');check(offer&&!offer.disabled,'actual native Profile bridge exposes an available call before any message');offer.click();await settle();
   const req=f.requests.find(r=>r.action==='visitor_offer');check(req.path==='/api/profile-calls-pa3c.php'&&req.profile_token==='FIXTURE_PROFILE_TOKEN'&&req.conversation_namespace==='a'.repeat(64)&&req.conversation_id===0,'call-only request reuses the captured native session/token and namespace at the real new endpoint');
   check(f.local.get('stonefellow-profile-agent:v1:fixture-owner:'+'a'.repeat(64))==='31'&&!f.requests.some(r=>r.action==='message'),'canonical call-only CID is adopted without fabricating a public message');
-  await f.ready();await f.consent();await f.click('join');f.textarea.value='Can we discuss the public product?';f.form.requestSubmit();await settle();check(f.stats.microphones===1&&!f.stats.tracks[0].stopped,'typing a real public message does not invalidate the live call namespace');
+  await f.ready();await f.consent();await f.click('join');
+  check(f.shell.querySelector('[data-profile-live-chat]').disabled&&!f.shell.querySelector('[data-profile-live-chat]').checked&&f.shell.querySelector('[data-profile-end-live]').hidden,'accepted direct call disables PA3D live choice and the conflicting text-only End control');
+  check(f.shell.querySelector('[data-profile-agent-status]').textContent.includes('paused for your direct call'),'canonical call transition refreshes truthful public text responder status');
+  f.shell.querySelector('[data-profile-end-live]').dispatchEvent(new Event('click'));await settle();check(!f.requests.some(r=>r.action==='end_live_chat'),'a synthetic text-only End cannot delegate a direct call');
+  f.textarea.value='Can we discuss the public product?';f.form.requestSubmit();await settle();check(f.stats.microphones===1&&!f.stats.tracks[0].stopped,'typing a real public message does not invalidate the live call namespace');
   const text=f.requests.find(r=>r.action==='message');check(text.conversation_id===31&&text.message==='Can we discuss the public product?'&&!text.message.includes('PRIVATE'),'public text remains on its canonical thread while main Chat stays private');
+  check(text.chat_mode==='auto'&&!Object.hasOwn(text,'continue_live'),'call-time text preserves the current owner responder without a new live-text or Agent choice');
   await f.closeWidget();check(f.stats.tracks.every(t=>t.stopped)&&f.requests.some(r=>r.action==='visitor_end'),'closing the actual Profile widget stops media and requests exact call cleanup');await f.stop();
+}
+{
+  const f=await fixture({widget:true});await f.ready();await f.consent();await f.click('join');f.textarea.value='Draft retained after the call';await f.click('end');await f.click('return_to_agent');
+  check(!f.shell.querySelector('[data-profile-live-chat]').disabled&&!f.shell.querySelector('[data-profile-live-chat]').checked&&f.textarea.value==='Draft retained after the call','explicit call Return to Agent refreshes canonical PA3D choice without replacing its draft');await f.stop();
+}
+{
+  const f=await fixture({widget:true,liveStatus:'expired'});await f.ready();await f.consent();await f.click('join');await f.click('end');
+  const choice=f.shell.querySelector('[data-profile-live-chat]');check(choice.checked&&!choice.disabled&&f.shell.querySelector('[data-profile-agent-status]').textContent.includes('owner has joined'),'Hangup preserves owner continuation despite a historical expired live-text request');
+  f.textarea.value='One more question for the owner';f.form.requestSubmit();await settle();const continued=f.requests.filter(r=>r.action==='message').at(-1);
+  check(continued.chat_mode==='auto'&&!Object.hasOwn(continued,'continue_live')&&continued.conversation_id===31,'ordinary post-hangup message continues the same owner thread instead of silently switching to Agent');
+  choice.checked=false;choice.dispatchEvent(new Event('change'));f.textarea.value='Use the Agent for this question';f.form.requestSubmit();await settle();
+  check(f.requests.filter(r=>r.action==='message').at(-1).chat_mode==='agent'&&!choice.checked,'explicit post-hangup uncheck selects Agent for the next message');await f.stop();
 }
 {
   const f=await fixture({widget:true});await f.ready();await f.consent();await f.click('join');

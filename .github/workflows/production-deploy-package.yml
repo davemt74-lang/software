@@ -101,6 +101,9 @@ jobs:
           test -f _deploy/includes/agent-integration-diagnostics-v1.php
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
+          test -f _deploy/includes/profile-live-text-pa3d.php
+          test -f _deploy/includes/profile-agent-handoff-pa3.php
+          test -f _deploy/profile-visitor-doorbell-pa3.js
 
           # Campaigns & Rewards V1.26 release hardening: the production artifact must contain
           # the canonical cognitive loop, live-session/event foundation and user surfaces.

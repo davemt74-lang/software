@@ -117,6 +117,7 @@ if(in_array($action,$ownerActions,true)){
         $pdo->beginTransaction();
         try{
             $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid,true);if(!$conversation)throw new VP3ProfileAgentPublicException('CONVERSATION_NOT_FOUND','Conversation not found.',404);
+            vp3_profile_agent_response_token_v1($pdo,$cid,true);
             $handoff=profile_agent_owner_handoff_pa3($pdo,$user,$conversation,match($status){'owner_joined'=>'claim','resolved'=>'resolve',default=>'delegate'});
             if($handoff===null){
                 $pdo->prepare('UPDATE profile_agent_conversations SET status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$cid,$uid]);
@@ -131,6 +132,7 @@ if(in_array($action,$ownerActions,true)){
         $pdo->beginTransaction();
         try{
             $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid,true);if(!$conversation)throw new VP3ProfileAgentPublicException('CONVERSATION_NOT_FOUND','Conversation not found.',404);
+            vp3_profile_agent_response_token_v1($pdo,$cid,true);
             $handoff=profile_agent_owner_handoff_pa3($pdo,$user,$conversation,'reply',$reply,is_string($input['request_id']??null)?$input['request_id']:'');
             if($handoff===null){
                 $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'owner',?,?)")->execute([$cid,$uid,$reply]);
@@ -166,9 +168,17 @@ if($action==='poll'){
 if($method!=='POST')profile_agent_method_required('POST');
 if($action==='message'){
     $cid=max(0,(int)($input['conversation_id']??0));
-    profile_agent_json(true,vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,(string)($input['message']??''),$cid,[
-        'async'=>true,'client_request_id'=>$input['client_request_id']??'',
-    ]));
+    $delivery=['async'=>true,'client_request_id'=>$input['client_request_id']??''];
+    if(array_key_exists('chat_mode',$input))$delivery['chat_mode']=$input['chat_mode'];
+    if(array_key_exists('continue_live',$input))$delivery['continue_live']=$input['continue_live'];
+    profile_agent_json(true,vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,(string)($input['message']??''),$cid,$delivery));
+}
+if($action==='end_live_chat'){
+    require_once dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
+    profile_agent_json(true,vp3_profile_agent_public_end_live_chat_pa3d($pdo,$publicCtx,
+        vp3_profile_handoff_id_pa3($input['conversation_id']??null),
+        vp3_profile_handoff_id_pa3($input['turn_id']??null),
+        vp3_profile_handoff_id_pa3($input['revision']??null)));
 }
 if($action==='dispatch'){
     profile_agent_json(true,vp3_profile_agent_public_dispatch_pa3($pdo,$publicCtx,max(0,(int)($input['conversation_id']??0)),max(0,(int)($input['turn_id']??0))));

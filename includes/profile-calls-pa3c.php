@@ -269,7 +269,9 @@ function vp3_profile_call_takeover_pa3c(PDO $pdo,int $owner,int $cid): array
 {
     $thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$cid,true);
     if(!$thread){$pdo->prepare("INSERT INTO profile_agent_handoff_conversations_pa3(conversation_id,owner_user_id,mode,epoch,updated_at_ms) VALUES(?,?,'owner',1,?)")->execute([$cid,$owner,vp3_profile_call_now_pa3c()]);}
-    return vp3_profile_handoff_mode_pa3($pdo,$owner,$cid,'owner');
+    $liveStatus=(string)($thread['live_status']??'none');if(in_array($liveStatus,['waiting','accepted'],true))$liveStatus='ended';
+    vp3_profile_agent_response_token_v1($pdo,$cid,true);
+    return vp3_profile_handoff_mode_pa3($pdo,$owner,$cid,'owner',$liveStatus,'auto');
 }
 function vp3_profile_call_cleanup_enqueue_pa3c(PDO $pdo,array $row): array
 {
@@ -337,7 +339,7 @@ function vp3_profile_call_action_pa3c(PDO $pdo,string $role,array $auth,array $i
                 if(!in_array($row['state'],['ready','active'],true)||(int)$row[$role.'_authority_until_ms']<$now||!hash_equals($row[$role.'_client_hash'],hash('sha256',$instance)))vp3_profile_call_error_pa3c();
                 $pdo->prepare('UPDATE profile_calls_pa3c SET '.$role.'_authority_until_ms=?,updated_at_ms=? WHERE id=?')->execute([$now+VP3_PROFILE_CALL_AUTH_MS_PA3C,$now,$id]);
             }elseif($op==='return_to_agent'){
-                if(!vp3_profile_call_can_return_pa3c($pdo,$row))vp3_profile_call_error_pa3c();vp3_profile_handoff_mode_pa3($pdo,$owner,$cid,'agent');$pdo->prepare('UPDATE profile_calls_pa3c SET revision=revision+1,updated_at_ms=? WHERE id=?')->execute([$now,$id]);
+                if(!vp3_profile_call_can_return_pa3c($pdo,$row))vp3_profile_call_error_pa3c();vp3_profile_agent_response_token_v1($pdo,$cid,true);vp3_profile_handoff_mode_pa3($pdo,$owner,$cid,'agent','ended','agent');$pdo->prepare('UPDATE profile_calls_pa3c SET revision=revision+1,updated_at_ms=? WHERE id=?')->execute([$now,$id]);
             }
             $row=vp3_profile_call_row_pa3c($pdo,$id,true);
         }
@@ -383,6 +385,8 @@ function vp3_profile_call_media_current_pa3c(PDO $pdo,array $row,bool $lock=fals
     vp3_profile_call_integrity_pa3c($row);vp3_profile_call_context_pa3c($pdo,(int)$row['owner_user_id'],(int)$row['conversation_id'],$lock,$row);vp3_profile_call_ready_pa3c($row);
     $thread=vp3_profile_handoff_thread_pa3($pdo,(int)$row['owner_user_id'],(int)$row['conversation_id'],$lock);
     if(!$thread||$thread['mode']!=='owner'||vp3_profile_call_expiry_reason_pa3c($row)!=='')vp3_profile_call_error_pa3c('PROFILE_CALL_UNAVAILABLE',403);
+    try{$settingsAllowed=vp3_profile_handoff_settings_allowed_pa3d($pdo,(int)$row['owner_user_id'],$lock);}catch(PDOException $error){vp3_profile_call_error_pa3c('PROFILE_CALL_NOT_READY',503);}
+    if(!$settingsAllowed)vp3_profile_call_error_pa3c('PROFILE_CALL_UNAVAILABLE',403);
     vp3_profile_call_block_check_pa3c($pdo,(int)$row['owner_user_id'],(int)$row['visitor_user_id'],$lock);
 }
 function vp3_profile_call_proof_pa3c(array $proof,array $row,int $started): array

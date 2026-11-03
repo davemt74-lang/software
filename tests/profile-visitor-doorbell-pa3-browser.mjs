@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import {createRequire} from 'node:module';
-import {copy,contract,ownerCard,mainChatMarkup} from './fixtures/profile-visitor-doorbell-pa3.mjs';
+import {copy,contract,ownerCard,chatChoice,mainChatMarkup} from './fixtures/profile-visitor-doorbell-pa3.mjs';
 
 const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
 const read=name=>fs.readFileSync(new URL('../'+name,import.meta.url),'utf8');
@@ -50,6 +50,12 @@ async function fixture(viewport={width:1200,height:1000}){
    else{
     const turn=turns.get(input.turn_id);turn.revision++;turn.state=({doorbell_claim:'owner_claimed',doorbell_reply:'replied',doorbell_delegate:'agent_ready',doorbell_resolve:'cancelled'})[input.action];turn.responder=input.action==='doorbell_delegate'?'agent':input.action==='doorbell_resolve'?'none':'owner';
     if(input.action==='doorbell_reply')turn.history.push({id:++nextMessage,sender_type:'owner',message:input.message,created_at:'2026-11-03 12:00:01'});
+    if(turn.chat){
+     const accepted=turn.chat.live_status==='accepted';
+     if(['doorbell_claim','doorbell_reply'].includes(input.action)&&turn.chat.mode==='live'){turn.chat.live_status='accepted';turn.chat.can_end_live_chat=true;turn.can_claim=false;}
+     else if(input.action==='doorbell_delegate'){turn.chat.mode='agent';turn.chat.live_status=accepted?'ended':'declined';turn.chat.can_end_live_chat=false;}
+     else if(input.action==='doorbell_resolve'){turn.chat.live_status='ended';turn.chat.can_end_live_chat=false;}
+    }
     Object.assign(payload,{turn_id:input.turn_id,conversation_id:input.conversation_id,request_id:input.request_id,turn:{...copy(turn),server_now_ms:clock}});operations.set(input.request_id,copy(payload));
    }
   }else Object.assign(payload,{conversations:[],items:[],tracks:[],updates:[],route:'chat'});
@@ -96,13 +102,55 @@ try{
   await f.close();
  }
  {
-  const f=await fixture({width:390,height:844});f.turns.set(101,ownerCard(101,{server_now_ms:f.clock,visitor_label:'Visitor <img src=x onerror=alert(1)>',visitor_message:'Hello <script>window.__visitorExecuted=true</script>'}));await f.boot();
+  const f=await fixture();f.turns.set(101,ownerCard(101,{server_now_ms:f.clock,chat:chatChoice()}));f.turns.set(202,ownerCard(202,{server_now_ms:f.clock,chat:chatChoice({mode:'agent',live_status:'none'})}));await f.boot();
+  const card=f.card(101);await card.locator('.profile-doorbell-countdown').waitFor();await f.card(202).waitFor();
+  check(await card.locator('[data-doorbell-action=claim]').innerText()==='Accept live chat'&&await card.locator('[data-doorbell-action=delegate]').innerText()==='Decline'&&(await card.innerText()).includes('requested live text chat with you'),'actual main Chat live request offers explicit Accept and Decline');
+  await f.page.locator('#chatInput').fill('Private live-chat draft');await f.card(202).locator('textarea').fill('Other visitor live-chat draft');
+  const hold=f.hold('doorbell_claim');await card.locator('[data-doorbell-action=claim]').click();const acceptance=await hold;
+  check(acceptance.input.turn_id===101&&acceptance.input.revision===2&&acceptance.input.conversation_id===1101&&acceptance.input.chat_conversation_id===42&&acceptance.input.chat_agent_id===7,'actual live acceptance preserves exact turn, revision and conversation bindings');
+  check(!(await card.innerText()).includes('Live chat accepted.')&&await card.locator('[data-doorbell-action=delegate]').innerText()==='Decline','pending browser acceptance does not announce active chat');
+  await acceptance.release();await f.page.waitForFunction(()=>document.querySelector('[data-profile-doorbell-turn="101"]')?.dataset.liveStatus==='accepted');
+  check((await card.innerText()).includes('Live text chat with this visitor is active.')&&await card.locator('[data-doorbell-action=delegate]').innerText()==='End live chat','confirmed direct live text status and End action appear in the real card');
+  const ending=f.hold('doorbell_delegate');await card.locator('[data-doorbell-action=delegate]').click();const end=await ending;check(!(await card.innerText()).includes('Live chat ended.'),'browser End action waits for server confirmation');await end.release();
+  await f.page.waitForFunction(()=>document.querySelector('[data-profile-doorbell-turn="101"]')?.dataset.liveStatus==='ended');
+  check((await card.innerText()).includes('Live chat has ended.')&&await f.card(202).locator('textarea').inputValue()==='Other visitor live-chat draft'&&await f.page.locator('#chatInput').inputValue()==='Private live-chat draft','confirmed End hands back to Agent without mixing another visitor or private draft');
+  f.turns.set(303,ownerCard(303,{server_now_ms:f.clock,chat:chatChoice()}));await f.refresh();const decline=f.card(303);await decline.waitFor();const declining=f.hold('doorbell_delegate');await decline.locator('[data-doorbell-action=delegate]').click();const declined=await declining;
+  check(declined.input.turn_id===303&&!(await decline.innerText()).includes('Live chat declined.'),'actual Decline targets its own visitor and has no premature success');await declined.release();
+  await f.page.waitForFunction(()=>document.querySelector('[data-profile-doorbell-turn="303"]')?.dataset.liveStatus==='declined');check((await decline.innerText()).includes('Live chat was declined.'),'actual declined card identifies the confirmed live outcome');await f.close();
+ }
+ {
+  const f=await fixture();f.turns.set(101,ownerCard(101,{server_now_ms:f.clock,chat:chatChoice()}));await f.boot();await f.card(101).locator('.profile-doorbell-countdown').waitFor();await f.card(101).locator('textarea').fill('Draft retained when owner goes offline');
+  const oldList=f.hold('doorbell_list'),refresh=f.refresh(),old=await oldList,nextList=f.hold('doorbell_list');f.turns.get(101).chat.live_text_available=false;
+  await f.page.evaluate(()=>window.dispatchEvent(new CustomEvent('stonefellow:chat-settings-updated',{detail:{presence_mode:'offline',social_chat_enabled:false}})));
+  check(await f.card(101).locator('[data-doorbell-action=claim]').isDisabled()&&(await f.card(101).innerText()).includes('Checking your updated Chat Settings'),'existing settings event immediately freezes browser live acceptance');
+  await old.release();await refresh;const next=await nextList;check(await f.card(101).locator('[data-doorbell-action=claim]').isDisabled()&&(await f.card(101).innerText()).includes('Checking your updated Chat Settings'),'pre-settings response cannot re-enable browser acceptance');await next.release();
+  await f.page.waitForFunction(()=>document.querySelector('[data-profile-doorbell-turn="101"] .profile-doorbell-status')?.textContent.includes('current Chat Settings or availability prevent acceptance'));
+  check(await f.card(101).locator('[data-doorbell-action=claim]').isDisabled()&&await f.card(101).locator('[data-doorbell-action=reply]').isDisabled()&&await f.card(101).locator('[data-doorbell-action=delegate]').isEnabled()&&await f.card(101).locator('textarea').inputValue()==='Draft retained when owner goes offline','server refresh keeps truthful availability, decline and the retained visitor draft');
+  check(f.calls.filter(c=>c.action==='doorbell_presence').every(c=>!Object.hasOwn(c,'availability')),'browser settings refresh never writes an availability preference');await f.close();
+ }
+ {
+  const f=await fixture();f.turns.set(101,ownerCard(101,{server_now_ms:f.clock,chat:chatChoice()}));await f.boot();await f.card(101).locator('.profile-doorbell-countdown').waitFor();
+  const held=f.hold('doorbell_claim');await f.card(101).locator('[data-doorbell-action=claim]').click();const acceptance=await held;await f.page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.openConversation(55));await f.card(101).waitFor();await f.card(101).locator('textarea').fill('Current context draft after live request');await acceptance.release();
+  check(await f.page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.conversationId())===55&&await f.card(101).locator('textarea').inputValue()==='Current context draft after live request'&&!(await f.card(101).innerText()).includes('Live chat accepted.'),'stale live acceptance response cannot announce success, clear a draft or navigate the new private Chat');await f.close();
+ }
+ {
+  const f=await fixture({width:390,height:844});f.turns.set(101,ownerCard(101,{server_now_ms:f.clock,chat:chatChoice(),visitor_label:'Visitor <img src=x onerror=alert(1)>',visitor_message:'Hello <script>window.__visitorExecuted=true</script>'}));await f.boot();
   check(await f.card(101).locator('script,img').count()===0&&await f.page.evaluate(()=>window.__visitorExecuted)!==true,'visitor markup remains literal text in the real browser');
   check(await f.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'visitor card and availability fit the mobile viewport without horizontal scrolling');
   await f.card(101).locator('textarea').scrollIntoViewIfNeeded();await f.card(101).locator('textarea').fill('Mobile visitor reply');
   const hold=f.hold('doorbell_reply');await f.card(101).locator('button[type=submit]').click();const reply=await hold;
   check(reply.input.message==='Mobile visitor reply'&&reply.input.conversation_id===1101,'mobile card reply reaches the correct visitor thread');await reply.release();
+  await f.page.waitForFunction(()=>document.querySelector('[data-profile-doorbell-turn="101"]')?.dataset.liveStatus==='accepted');
+  check(await f.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)&&await f.card(101).locator('[data-doorbell-action=delegate]').innerText()==='End live chat','accepted live text status and End control also fit the mobile viewport');
   check(await f.page.locator('#chatInput').isEnabled(),'mobile private composer remains usable after visitor reply');await f.close();
+ }
+ {
+  const first=await fixture();await first.boot();
+  const inherited=await first.page.evaluate(()=>Object.fromEntries(Object.entries(sessionStorage)));
+  const second=await fixture();await second.page.addInitScript(values=>{for(const [key,value] of Object.entries(values))sessionStorage.setItem(key,value);},inherited);await second.boot();
+  const firstTab=first.calls.find(c=>c.action==='doorbell_presence').tab_id,secondTab=second.calls.find(c=>c.action==='doorbell_presence').tab_id;
+  check(firstTab!==secondTab,'duplicated browser storage cannot merge two documents into one presence authority');
+  await first.close();await second.close();
  }
  console.log(`PROFILE_VISITOR_DOORBELL_PA3_BROWSER=PASS (${checks} checks; actual Chat renderer, persisted history and mobile)`);
 }finally{if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}
