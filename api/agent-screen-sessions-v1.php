@@ -13,7 +13,7 @@ try{
         $input=json_decode($raw,true,16,JSON_THROW_ON_ERROR);if(!is_array($input)||array_is_list($input))throw new InvalidArgumentException('Use a sharing request object.');
         if(!hash_equals(csrf_token(),(string)($input['csrf_token']??'')))throw new RuntimeException('Refresh before updating sharing history.',419);
         if((string)($input['owner_key']??'')!==(string)$uid)throw new RuntimeException('Screen account changed. Refresh this page.',409);
-    }else $input=$_GET;
+    }else{$input=$_GET;if(isset($input['owner_key'])&&(string)$input['owner_key']!==(string)$uid)throw new RuntimeException('Screen account changed. Refresh this page.',409);}
     screen_sessions_schema_v1($pdo);$action=$input['action']??($method==='GET'?'list':'');
     if($method==='GET'){
         if($action==='list'){$q=$pdo->prepare("SELECT * FROM agent_screen_sessions_v1 WHERE owner_user_id=? AND status<>'deleted' ORDER BY updated_at DESC,session_id DESC LIMIT 200");$q->execute([$uid]);$response=['sessions'=>array_map(fn($s)=>screen_session_public_v1($pdo,$user,$s),$q->fetchAll(PDO::FETCH_ASSOC))];}
@@ -34,7 +34,7 @@ try{
         if(!is_bool($input['remove_brain']??null))throw new InvalidArgumentException('Choose whether to remove this session’s Brain memories.');
         $response=screen_session_delete_v1($pdo,$user,screen_session_id_v1($input['session_id']??null),$input['remove_brain']);
     }else throw new InvalidArgumentException('Unknown sharing session action.');
-    $response=['ok'=>true,...$response];
+    $response=['ok'=>true,'owner_key'=>(string)$uid,...$response];
 }catch(Throwable $e){$code=(int)$e->getCode();$status=in_array($code,[403,404,405,409,413,419,429,502,503],true)?$code:422;$response=['ok'=>false,'error'=>$e instanceof JsonException?'Invalid sharing request.':($e instanceof PDOException?'Sharing storage is unavailable. Please retry.':$e->getMessage())];}
 finally{if($claim!=='')try{screen_budget_v1($uid,$claim);}catch(Throwable $ignored){}}
 http_response_code($status);echo json_encode($response,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);

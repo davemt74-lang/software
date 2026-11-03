@@ -161,7 +161,7 @@
     if(starting||stream)return;const token=++generation;starting=true;controls();say('Choose a browser window or monitor in the sharing picker.');
     let acquired;
     try{
-      acquired=await navigator.mediaDevices.getDisplayMedia({video:{displaySurface:'window'},audio:root.querySelector('[data-screen-transcribe]').checked,systemAudio:'exclude',selfBrowserSurface:'exclude',monitorTypeSurfaces:'include',surfaceSwitching:'include'});
+      acquired=await navigator.mediaDevices.getDisplayMedia({video:{displaySurface:root.querySelector('[data-screen-transcribe]').checked?'browser':'window'},audio:root.querySelector('[data-screen-transcribe]').checked,systemAudio:'exclude',selfBrowserSurface:'exclude',monitorTypeSurfaces:'include',surfaceSwitching:'include'});
       if(token!==generation){acquired.getTracks().forEach(t=>t.stop());return;}
       if(!root.querySelector('[data-screen-transcribe]').checked)acquired.getAudioTracks().forEach(t=>t.stop());const track=acquired.getVideoTracks()[0];if(!track||track.readyState!=='live')throw Error('No shared display was selected.');
       stream=acquired;video.srcObject=stream;
