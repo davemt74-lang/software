@@ -5,6 +5,9 @@ import {Document,Element,FixtureCustomEvent} from './profile-calls-pa3c.mjs';
 import {ownerCard} from './profile-visitor-doorbell-pa3.mjs';
 
 export const contract='vp3.profile-speech.v1';
+// Valid silent MP3 generated locally with FFmpeg (24 kHz mono, 32 kbit/s).
+// Chromium still validates media sources when its play() boundary is simulated.
+export const speechAudio=Buffer.from('//NExAAAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMu//NExFMAAANIAAAAADEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMu//NExKYAAANIAAAAADEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMu//NExKwAAANIAAAAADEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMu//NExKwAAANIAAAAADEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NExKwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//NExKwAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV','base64');
 export const speechItem=(overrides={})=>({id:81,revision:1,kind:'visitor_message',public_conversation_id:1101,turn_id:101,visitor_message_id:2101,
   visitor_label:'Visitor 101',display_text:'Public message for the owner.',voice_assignment_id:7,voice_revision:1,state:'available',can_play:true,automatic_allowed:false,reason:'',
   chat_conversation_id:0,chat_agent_id:0,chat_message_id:0,delivery_id:'',...overrides});
@@ -79,7 +82,7 @@ export async function speechFixture({items=[speechItem()],privateDraft='',voice=
     }else if(parsed.pathname==='/api/profile-agent.php'&&body.action==='state')Object.assign(result,{agent:{greeting:''},messages:[],conversation:null});
     else if(body.action==='send')Object.assign(result,{conversation_id:42,assistant_message_id:9000,answer:'PRIVATE_CHAT_REPLY'});
     else throw new Error('Unexpected fixture action '+body.action+' on '+parsed.pathname);
-    const response=()=>binary?new Response(new Uint8Array([73,68,51,1,2,3]),{status:200,headers:{'Content-Type':'audio/mpeg','Content-Length':'6'}}):json(result);
+    const response=()=>binary?new Response(speechAudio,{status:200,headers:{'Content-Type':'audio/mpeg','Content-Length':String(speechAudio.length)}}):json(result);
     const index=holds.findIndex(held=>held.action===body.action);
     if(index>=0){const held=holds.splice(index,1)[0];return new Promise((resolve,reject)=>{held.work={body,result,resolve:(override={},status=200)=>{if(body.action==='owner_claim'&&override.state)attempts.get(result.attempt_id).state=override.state;resolve(binary&&!Object.keys(override).length?response():json({...result,...override},status));},reject};});}
     return response();

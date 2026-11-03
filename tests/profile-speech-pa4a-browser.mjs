@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import {createRequire} from 'node:module';
-import {speechItem,contract} from './fixtures/profile-speech-pa4a.mjs';
+import {speechItem,speechAudio,contract} from './fixtures/profile-speech-pa4a.mjs';
 import {ownerCard,mainChatVoiceMarkup} from './fixtures/profile-visitor-doorbell-pa3.mjs';
 import {callCard} from './fixtures/profile-calls-pa3c.mjs';
 const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
@@ -30,8 +30,9 @@ function installBoundaries(){
   HTMLMediaElement.prototype.pause=function(){state(this).paused=true;};HTMLMediaElement.prototype.load=function(){};
   window.__speakFixture=text=>{const result=[{transcript:text,confidence:.98}];result.isFinal=true;window.__recognitions.at(-1).onresult({resultIndex:0,results:[result]});};
 }
-async function fixture({visitor=false}={}){
+async function fixture({visitor=false,invalidAudio=false}={}){
   const context=await browser.newContext({viewport:{width:390,height:844}}),requests=[],errors=[],holds=[],messages=[],items=new Map([[81,speechItem()]]),turn=ownerCard(101,{state:'owner_claimed',responder:'owner'}),calls=[],attempts=new Map(),claimRequests=new Map();
+  const audioBytes=invalidAudio?Buffer.from([73,68,51,1,2,3]):speechAudio;
   let present=false,sequence=0,attemptId=0,providerCalls=0,style='preset',presetKey='',preferenceRevision=1;
   const projected=item=>{
     const attempt=[...attempts.values()].filter(row=>row.itemId===item.id).at(-1),playback=attempt?.playback||'none';
@@ -84,7 +85,7 @@ async function fixture({visitor=false}={}){
         Object.assign(result,{contract,style,preset_key:presetKey,revision:preferenceRevision,ready:true,reason:'',presets:[{preset_key:'a'.repeat(64),label:'Public reading preset',style:'unclassified'}]});
       }else throw new Error('Unexpected speech action '+input.action);
     }else Object.assign(result,{items:[],updates:[],tracks:[]});
-    const send=()=>binary?route.fulfill({status:200,contentType:'audio/mpeg',headers:{'Content-Length':'6'},body:Buffer.from([73,68,51,1,2,3])}):route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(result)});
+    const send=()=>binary?route.fulfill({status:200,contentType:'audio/mpeg',headers:{'Content-Length':String(audioBytes.length)},body:audioBytes}):route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(result)});
     const index=holds.findIndex(held=>held.action===input.action);if(index>=0){const held=holds.splice(index,1)[0];held.arrived({input,result,release:send});}else await send();
   });
   const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(error.message));await page.goto(base+(visitor?'/visitor':'/owner'));
@@ -142,6 +143,12 @@ try{
     check(idleSpeech.players===1&&!idleSpeech.media[0].paused&&idleSpeech.speechStarts===1&&idleSpeech.voiceBusy,'actual idle Chat voice coordinates speech echo without suppressing or stopping the announcement: '+JSON.stringify(idleSpeech));
     await f.page.evaluate(()=>STONEFELLOW_CHAT_CONTINUITY.interrupt('fixture-user-stop'));await f.page.waitForFunction(()=>__speechMedia.players.every(audio=>audio.paused));
     check(await f.page.evaluate(()=>VP3ConversationControls.isEnabled()),'actual voice interrupt stops visitor playback while keeping Chat listening available');await f.close();
+  }
+  {
+    const f=await fixture({invalidAudio:true});const reported=f.page.waitForResponse(response=>response.url().includes('/api/profile-speech-pa4a.php')&&response.request().method()==='POST'&&response.request().postDataJSON()?.action==='owner_report'&&response.request().postDataJSON()?.status==='blocked');
+    await f.speech().locator('[data-speech-action=play]').click();await f.page.getByText('Audio playback failed. The visitor text remains available.',{exact:true}).waitFor();await reported;
+    check(await f.page.evaluate(()=>__speechMedia.players.length===1&&__speechMedia.players.every(audio=>audio.paused))&&await f.speech().locator('.profile-speech-text').textContent()==='Public message for the owner.','unsupported browser audio stops playback and retains the attributed visitor text');
+    check(f.requests.some(r=>r.action==='owner_report'&&r.status==='blocked')&&!f.requests.some(r=>r.action==='owner_report'&&r.status==='ended'),'unsupported browser audio records a blocked outcome without claiming completed playback');await f.close();
   }
   {
     const f=await fixture({visitor:true});await f.page.locator('#profileVisitorSpeechPreference').selectOption('female');await f.page.getByText('Voice preference saved. Your messages stay available as text.',{exact:true}).waitFor();

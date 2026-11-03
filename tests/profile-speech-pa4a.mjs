@@ -38,6 +38,11 @@ const sent=f=>f.requests.filter(r=>r.action==='doorbell_reply');
   f.setAutoplayBlocked(false);await click(f);check(!f.audio.at(-1).paused&&f.providerCalls===1,'explicit Play after autoplay refusal reuses cached audio');await f.stop();
 }
 {
+  const f=await speechFixture();await click(f);f.audio[0].onerror();await f.settle();
+  check(f.audio[0].paused&&f.urls.size===0&&f.speech(81).textContent.includes('Audio playback failed')&&f.speech(81).textContent.includes('Public message for the owner.'),'media decode failure stops and releases audio while retaining the visitor text');
+  check(f.requests.some(r=>r.action==='owner_report'&&r.status==='blocked')&&!f.requests.some(r=>r.action==='owner_report'&&r.status==='ended'),'media decode failure records blocked playback without claiming completion');await f.stop();
+}
+{
   const f=await speechFixture();await click(f);await f.advance(45000);
   check(!f.audio[0].paused&&f.requests.filter(r=>r.action==='owner_report'&&r.status==='playing').length>=5,'authorized long audio continues beyond the initial30s through fresh bounded playback reports');
   const renewals=f.requests.filter(r=>r.action==='owner_report'&&r.status==='playing');check(renewals.every((report,index)=>report.report_sequence===index+1)&&new Set(renewals.map(r=>r.request_id)).size===renewals.length&&new Set(renewals.map(r=>r.play_token)).size===1,'renewals use monotonic report sequences for one play permit and no replay');

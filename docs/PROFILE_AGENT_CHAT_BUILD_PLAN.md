@@ -546,7 +546,7 @@ the doorbell. Historical notifications without a linked speech item keep their
 existing presentation path.
 
 Local evidence before PR verification: core SQL 102, provider/storage 76,
-actual speech API HTTP 83, actual Admin HTTP 23, UI runtime 75 and notification
+actual speech API HTTP 83, actual Admin HTTP 23, UI runtime 77 and notification
 presentation 11 checks passed. Fresh-install normalization passed 8 checks and
 Upgrade readiness passed 35 cases; the retained
 full Recovery Baseline and production Cloud worker/API suite also passed. The
