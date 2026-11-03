@@ -83,8 +83,8 @@ function vp3_profile_webmcp_action_prepare_v150(
     $intentId=bin2hex(random_bytes(16));
     $ttlSeconds=max(60,min(1800,$ttlSeconds));
     $stmt=$pdo->prepare("INSERT INTO profile_webmcp_actions
-      (owner_user_id,profile_username,surface,property_id,session_hash,intent_id,operation,payload_hash,state,expires_at)
-      VALUES (?,?,?,?,?,?,?,?,'prepared',DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? SECOND))");
+      (owner_user_id,profile_username,surface,property_id,session_hash,intent_id,operation,payload_hash,state,expires_at,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,'prepared',DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? SECOND),UTC_TIMESTAMP(),UTC_TIMESTAMP())");
     $stmt->execute([$owner,$username,$surface,$propertyId,$sessionHash,$intentId,$operation,$payloadHash,$ttlSeconds]);
     return [
         'id'=>(int)$pdo->lastInsertId(),
@@ -119,16 +119,8 @@ function vp3_profile_webmcp_action_by_idempotency_v150(PDO $pdo,int $ownerUserId
 
 function vp3_profile_webmcp_action_commit_v150(PDO $pdo,int $actionId,string $idempotencyHash,string $resultType,int $resultId,array $result): void
 {
-    $booking=is_array($result['booking']??null)?$result['booking']:[];
-    $safeBooking=[];
-    foreach(['booking_id','event_type_id','event_title','start_at_utc','end_at_utc','organizer_timezone','guest_timezone','status','location_type'] as $key){
-        if(array_key_exists($key,$booking))$safeBooking[$key]=$booking[$key];
-    }
-    $safe=[
-        'booking'=>$safeBooking?:null,
-        'payment_required'=>!empty($result['payment_required']),
-        'payment_status'=>mb_strimwidth((string)($result['payment_status']??''),0,40,''),
-    ];
+    require_once __DIR__.'/agent-profile-webmcp-outcomes-v1.php';
+    $safe=vp3_profile_webmcp_replay_projection_v1($resultType,$resultId,$result);
     $stmt=$pdo->prepare("UPDATE profile_webmcp_actions
       SET idempotency_hash=?,state='committed',result_type=?,result_id=?,result_json=?,last_error_code='',committed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
       WHERE id=? AND state='prepared'");

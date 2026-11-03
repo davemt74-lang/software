@@ -13,6 +13,8 @@ require_once __DIR__.'/agent-observation-authority-v1.php';
 require_once __DIR__.'/agent-tracky-read-v1.php';
 require_once __DIR__.'/agent-radar-read-v1.php';
 require_once __DIR__.'/agent-analytics-read-v1.php';
+require_once __DIR__.'/agent-release-tools-v1.php';
+require_once __DIR__.'/agent-profile-webmcp-read-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -61,9 +63,14 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $tracky=vp3_capability_probe_v1(fn()=>function_exists('vp3_tracky_schema_ready_v1')&&vp3_tracky_schema_ready_v1($pdo));
     $radar=vp3_capability_probe_v1(fn()=>function_exists('vp3_radar_read_ready_v1')&&vp3_radar_read_ready_v1($pdo));
     $analytics=vp3_capability_probe_v1(fn()=>function_exists('vp3_analytics_schema_ready_v1')&&vp3_analytics_schema_ready_v1($pdo));
+    $releases=vp3_capability_probe_v1(fn()=>vp3_release_schema_ready_v1($pdo));
+    $profileWebmcp=vp3_capability_probe_v1(fn()=>vp3_profile_webmcp_schema_ready_v1($pdo));
     $observationPermissionFailures=[];$profileAccess=false;
     try{$profileAccess=vp3_observation_personal_permission_v1($pdo,$user,'profile_agent.access');}
-    catch(Throwable $e){$observationPermissionFailures=['radar.read','radar.gateway.manage','analytics.read'];}
+    catch(Throwable $e){$observationPermissionFailures=['radar.read','radar.gateway.manage','analytics.read','profile.webmcp.read','profile.webmcp.handoff','profile.webmcp.return.read'];}
+    $releaseAccess=false;
+    try{$releaseAccess=$releases==='ready'&&vp3_release_permission_v1($pdo,$user);}
+    catch(Throwable $e){$observationPermissionFailures=[...$observationPermissionFailures,'music.releases.read','music.releases.create'];}
     $trackyAccess=false;try{$trackyAccess=function_exists('tracky_cloud_v270_plugin_enabled')&&tracky_cloud_v270_plugin_enabled($pdo,$user);}
     catch(Throwable $e){$observationPermissionFailures=[...$observationPermissionFailures,'tracky.context.read','tracky.perception.request'];}
     $work=vp3_capability_probe_v1(fn()=>agent_work_control_schema_ready_v173($pdo));
@@ -106,6 +113,11 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('radar.read','Read Agent Radar evidence and saved Gateway policies','read','vp3_radar_chat_tool',$profileAccess,$radar,['Owner-scoped recent/high-risk contacts, contact policies, scoped rules and access-profile state. Current Profile Agent access and conversation authority; bounded literal evidence, no policy mutation or message sending.']),
         vp3_capability_row_v1('radar.gateway.manage','Save an explicitly requested Gateway policy','write','vp3_radar_chat_tool',$profileAccess,$radar,['Existing canonical policy commands and Gateway review surface. Exact owned contact or explicit operator/class/path scope; ambiguous targets require clarification. A saved policy does not establish enforcement on an external site.']),
         vp3_capability_row_v1('analytics.read','Read scoped website and profile analytics','read','vp3_analytics_chat_tool',$profileAccess,$analytics,['Exact owned property or explicit all-owned scope. Reporting timezone and date boundaries are stated; complete aggregates are distinguished from recorded native-profile events. Sessions are not unique people. Reads do not create, activate or reconfigure tracking properties.']),
+        vp3_capability_row_v1('music.releases.read','Read Music Workspace release plans','read','release_v105_chat_tool',$releaseAccess,$releases,['Exact currently manageable Music Workspace and release selection. Complete counts, bounded records, upcoming/overdue dates and stored task state. No provider publication, schema initialization or workspace selection changes.']),
+        vp3_capability_row_v1('music.releases.create','Create an internal release plan','write','release_v105_chat_tool',$releaseAccess,$releases,['Explicit exact title and calendar date in the current saved user turn. Existing canonical Music Workspace writer and transactional read-back; same-turn replay verifies the existing record. This creates a planning record, not distribution or external publication.']),
+        vp3_capability_row_v1('profile.webmcp.read','Inspect owned Profile WebMCP capabilities','read','vp3_agent_profile_webmcp_plan_v193',$profileAccess,$profileWebmcp,['Fresh owner, Agent, conversation and Profile permissions. Read-only capability inspection; no handoff token, telemetry, schema or transactional action is created.']),
+        vp3_capability_row_v1('profile.webmcp.handoff','Prepare a Profile action handoff','write','vp3_agent_profile_webmcp_plan_v193',$profileAccess,$profileWebmcp,['Explicit handoff request only. Bound to the current owner, Agent, conversation and active public Profile. Existing signed Profile surface and confirmation remain required; preparing a link does not execute the action.']),
+        vp3_capability_row_v1('profile.webmcp.return.read','Verify a returned Profile action','read','vp3_profile_webmcp_return_followthrough_v195',$profileAccess,$profileWebmcp,['Exact current session and context binding with a matching server action ledger. Prepared, executing, recorded and unverified outcomes remain distinct. Browser completion text cannot establish success; checkout, refund request and Reward handoff are not payment, refund or redemption proof.']),
         vp3_capability_row_v1('reminders.manage','Personal reminders','write','reminder_chat_v1',true,$reminders,['Create, list, reschedule, snooze, complete, dismiss, cancel and delete.','In-app only; once, daily, weekdays and weekly. Done preserves future repeats.']),
         vp3_capability_row_v1('transcripts.highlight','Retain highlights and act on reviewed findings','write','vp3_transcript_reviewed_action_v1',has_permission('artist_listening.access',$user)&&function_exists('personal_capability_has_v242')&&personal_capability_has_v242('agent_brain.access',$user),$transcripts!=='ready'?$transcripts:$brain,['Raw highlights require saved transcript and Brain storage. Reviewed actions additionally require fresh saved analysis and existing destination permissions. Profile sharing requires Knowledge Access policy.']),
         vp3_capability_row_v1('transcripts.analyze','Analyze and research transcripts','write','vp3_transcript_analyze_v1',has_permission('artist_listening.access',$user),$analysis,['Explicit request only; uses existing transcript analysis engine and meeting AI policy. Provider readiness is checked on execution.']),
@@ -133,7 +145,13 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('screen.context','Discuss the shared screen','read','agent_surface_v131_screen_observation',true,$screenReady?'ready':'share_required',['Only a fresh observation supplied by active screen sharing.','No hidden tabs, direct browser control or silent capture.']),
         vp3_capability_row_v1('homeserver.status','Inspect HomeServer capabilities','read','homeserver_capability_v033_registry',true,'not_checked',['Connection and allowed operations require a fresh authenticated registry check.','Cloud readiness does not establish HomeServer readiness.']),
     ];
-    foreach($base['capabilities'] as &$row)if(in_array($row['id'],$observationPermissionFailures,true)){$row['permitted']=false;$row['ready']=false;$row['reason']='check_failed';}
+    foreach($base['capabilities'] as &$row){
+        if(in_array($row['id'],$observationPermissionFailures,true)){$row['permitted']=false;$row['ready']=false;$row['reason']='check_failed';}
+        elseif(in_array($row['id'],['music.releases.read','music.releases.create'],true)&&$releases!=='ready'){
+            // Missing storage prevents a permission assessment; it does not prove denial.
+            $row['permitted']=false;$row['ready']=false;$row['reason']=$row['registered']?$releases:'not_installed';
+        }
+    }
     unset($row);
     return $base;
 }

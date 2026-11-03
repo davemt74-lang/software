@@ -7,6 +7,7 @@ const compat = read('includes/release-workspace-v332.php');
 const guard = read('includes/release-guard-v105.php');
 const proactive = read('includes/release-proactive-v105.php');
 const chat = read('includes/release-chat-v105.php');
+const releaseTools = read('includes/agent-release-tools-v1.php');
 const bootstrap = read('includes/bootstrap.php');
 
 // Legacy public signatures stay compatible, but the old arbitrary first-Team
@@ -57,11 +58,14 @@ assert.doesNotMatch(proactive, /release_v105_workspace_owner_id/);
 
 // Agent open/list/create routes are workspace-native and creation uses the
 // canonical v331 writer rather than a raw owner_user_id insert.
-assert.match(chat, /release_workspace_v332_can_manage/);
-assert.match(chat, /release_workspace_v332_plans/);
-assert.match(chat, /music_workspace_resources_v331_save_release/);
-assert.match(chat, /music-releases\.php\?workspace=/);
-assert.match(chat, /release_workspace_v332_agent_context/);
+assert.match(chat, /vp3_release_legacy_v1\(\$query,\$user,\$conversationId,\$serverContext\)/);
+assert.match(chat, /vp3_release_context_v1/);
+assert.match(releaseTools, /music_workspace_resources_v330_can_manage/);
+assert.match(releaseTools, /music_workspace_resources_v331_save_release/);
+assert.match(releaseTools, /music-releases\.php\?workspace=/);
+assert.doesNotMatch(releaseTools, /release_workspace_v332_context\(/);
+assert.doesNotMatch(releaseTools, /music_workspace_resources_v330_resolve_active\(/);
+assert.doesNotMatch(releaseTools, /INSERT INTO release_plans/);
 assert.doesNotMatch(chat, /INSERT INTO release_plans/);
 assert.doesNotMatch(chat, /release_v105_workspace_owner_id/);
 

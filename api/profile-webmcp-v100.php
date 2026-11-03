@@ -87,6 +87,21 @@ if ((string)($input['surface'] ?? '') !== 'native_profile') {
 }
 
 $viewer = current_user();
+$continuityContext=null;$nativeTransport=null;
+if(array_key_exists('continuity',$input)){
+    try{
+        if(!is_array($input['continuity'])||$input['continuity']===[]||!is_array($viewer))throw new RuntimeException('Invalid continuity proof.',403);
+        require_once dirname(__DIR__).'/includes/agent-profile-webmcp-read-v1.php';
+        require_once dirname(__DIR__).'/includes/agent-profile-webmcp-outcomes-v1.php';
+        $continuityContext=vp3_profile_webmcp_context_for_native_v1($pdo,$profile,$viewer,$input['continuity']);
+        if(!$continuityContext)throw new RuntimeException('Invalid continuity proof.',403);
+        $session=vp3_profile_webmcp_transport_id_v130((string)($telemetry['webmcp_session_id']??''));
+        if($session==='')throw new RuntimeException('Missing native action session.',403);
+        $nativeTransport=['owner_user_id'=>(int)$profile['user_id'],'profile_username'=>(string)$profile['username'],'surface'=>'native_profile','property_id'=>0,'session_hash'=>hash('sha256',$session)];
+    }catch(Throwable){
+        vp3_profile_webmcp_json_v100(false,['error'=>['code'=>'CONTINUITY_DENIED','message'=>'The Chat handoff is no longer authorized. Return to its originating Chat to continue.','retryable'=>false]],403);
+    }
+}
 try {
     $manifest = vp3_profile_webmcp_manifest_v100($pdo, $profile, $viewer, ['surface'=>'native_profile']);
     $manifest['negotiation']=$negotiation;
@@ -102,13 +117,34 @@ if (!isset($catalog[$tool]) || !in_array($tool, $manifest['allowed_tools'], true
     vp3_profile_webmcp_json_v100(false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']],404);
 }
 $args = is_array($input['input'] ?? null) ? $input['input'] : [];
+if($continuityContext){
+    try{
+        $continuityContext=vp3_profile_webmcp_context_live_v1($pdo,$profile,$viewer,$continuityContext);
+        vp3_profile_webmcp_request_binding_v1($pdo,$profile,$continuityContext,$nativeTransport,$tool,$args);
+    }catch(Throwable){
+        vp3_profile_webmcp_json_v100(false,['error'=>['code'=>'CONTINUITY_DENIED','message'=>'This action does not match the authorized Chat handoff.','retryable'=>false]],403);
+    }
+}
 $startedAt=microtime(true);
 vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_tool_called',$tool,'called');
 
 try {
     vp3_profile_webmcp_dispatch_v191(
         $pdo,$profile,$viewer,$manifest,'native_profile',$tool,$args,$telemetry,$telemetryContext,$startedAt,
-        static function(bool $ok,array $payload=[],int $status=200,string $resultCode='') use ($pdo,$telemetryContext,$tool,$startedAt): never {
+        static function(bool $ok,array $payload=[],int $status=200,string $resultCode='') use ($pdo,$telemetryContext,$tool,$startedAt,$profile,$viewer,$continuityContext,$nativeTransport,$args): never {
+            if($continuityContext){
+                try{
+                    $liveContext=vp3_profile_webmcp_context_live_v1($pdo,$profile,$viewer,$continuityContext);
+                    $patch=$ok?vp3_profile_webmcp_server_evidence_v1($pdo,$profile,$liveContext,$nativeTransport,$tool,$args,$payload):[];
+                    if($patch){
+                        vp3_profile_webmcp_context_store_server_v1($pdo,$profile,$viewer,$liveContext,$patch);
+                        $payload['profile_webmcp_outcome']=$patch['server_outcome'];
+                    }else vp3_profile_webmcp_context_live_v1($pdo,$profile,$viewer,$liveContext);
+                }catch(Throwable){
+                    vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,
+                        ['error'=>['code'=>'ACTION_OUTCOME_UNVERIFIED','message'=>'The action response could not be verified for this Chat return. Do not repeat it with a new idempotency key.','retryable'=>false]],503,'ACTION_OUTCOME_UNVERIFIED');
+                }
+            }
             vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,$ok,$payload,$status,$resultCode);
         },
         ['proof'=>$proof]

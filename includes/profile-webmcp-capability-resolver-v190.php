@@ -43,22 +43,25 @@ function vp3_profile_webmcp_external_tool_policy_v190(): array
     ];
 }
 
-function vp3_profile_webmcp_detect_capabilities_v190(PDO $pdo,array $profile,?array $viewer): array
+function vp3_profile_webmcp_detect_capabilities_v190(PDO $pdo,array $profile,?array $viewer,bool $strictObservation=false): array
 {
     $ownerUserId=(int)($profile['user_id']??0);
     $viewerId=(int)($viewer['id']??0);
     $ownerUser=function_exists('vp3_profile_webmcp_owner_user_v100')
         ?vp3_profile_webmcp_owner_user_v100($pdo,$profile)
         :(function_exists('profile_user_row')?profile_user_row($pdo,$ownerUserId):null);
+    if($strictObservation&&(!$ownerUser||(int)($ownerUser['id']??0)!==$ownerUserId||empty($ownerUser['is_active'])))throw new RuntimeException('Profile capability owner is unavailable.');
 
     $profileAgent=false;
     try{
         $agent=function_exists('profile_active_agent')?profile_active_agent($pdo,$profile):null;
-        $entitled=!$ownerUser||!function_exists('personal_capability_has_v242')
+        $entitled=$strictObservation&&function_exists('vp3_observation_personal_permission_v1')
+            ?(vp3_observation_personal_permission_v1($pdo,$ownerUser,'profile_agent.access')&&vp3_observation_personal_permission_v1($pdo,$ownerUser,'profile_chat.access'))
+            :(!$ownerUser||!function_exists('personal_capability_has_v242')
             ?true
-            :(personal_capability_has_v242('profile_agent.access',$ownerUser)&&personal_capability_has_v242('profile_chat.access',$ownerUser));
+            :(personal_capability_has_v242('profile_agent.access',$ownerUser)&&personal_capability_has_v242('profile_chat.access',$ownerUser)));
         $profileAgent=(bool)$agent&&$entitled&&($viewerId<1||$viewerId!==$ownerUserId);
-    }catch(Throwable $e){$profileAgent=false;}
+    }catch(Throwable $e){if($strictObservation)throw $e;$profileAgent=false;}
 
     $booking=false;
     try{
@@ -66,14 +69,14 @@ function vp3_profile_webmcp_detect_capabilities_v190(PDO $pdo,array $profile,?ar
             $schedule=agent_scheduling_public_schedule_v450($pdo,$ownerUserId);
             $booking=is_array($schedule)&&count(agent_scheduling_public_events_v450($pdo,(int)$schedule['id']))>0;
         }
-    }catch(Throwable $e){$booking=false;}
+    }catch(Throwable $e){if($strictObservation)throw $e;$booking=false;}
 
     $commerce=false;
     try{
         if(function_exists('profile_commerce_products_for_profile_v900')){
             $commerce=count(profile_commerce_products_for_profile_v900($pdo,$profile,true,1))>0;
         }
-    }catch(Throwable $e){$commerce=false;}
+    }catch(Throwable $e){if($strictObservation)throw $e;$commerce=false;}
 
     $campaigns=false;
     try{
@@ -81,7 +84,7 @@ function vp3_profile_webmcp_detect_capabilities_v190(PDO $pdo,array $profile,?ar
             &&function_exists('campaigns_rewards_profile_campaigns_v100')){
             $campaigns=count(campaigns_rewards_profile_campaigns_v100($pdo,$ownerUserId,1))>0;
         }
-    }catch(Throwable $e){$campaigns=false;}
+    }catch(Throwable $e){if($strictObservation)throw $e;$campaigns=false;}
 
     $rewards=$viewerId>0&&function_exists('campaigns_rewards_reward_tray_v110');
     $social=false;$messaging=false;
@@ -91,7 +94,7 @@ function vp3_profile_webmcp_detect_capabilities_v190(PDO $pdo,array $profile,?ar
             if($social&&function_exists('vp3_social_dm_route_v320')){
                 $messaging=vp3_social_dm_route_v320($pdo,$viewerId,$ownerUserId)!=='blocked';
             }
-        }catch(Throwable $e){$social=false;$messaging=false;}
+        }catch(Throwable $e){if($strictObservation)throw $e;$social=false;$messaging=false;}
     }
 
     return [
@@ -134,7 +137,8 @@ function vp3_profile_webmcp_resolve_capabilities_v190(
     $surface=(string)($context['surface']??'native_profile');
     $registry=vp3_profile_webmcp_capability_registry_v190();
     $provided=is_array($context['capabilities']??null)?$context['capabilities']:null;
-    $capabilities=$provided??vp3_profile_webmcp_detect_capabilities_v190($pdo,$profile,$viewer);
+    $strictObservation=($context['strict_observation']??false)===true;
+    $capabilities=$provided??vp3_profile_webmcp_detect_capabilities_v190($pdo,$profile,$viewer,$strictObservation);
     foreach($capabilities as $key=>$enabled){
         if(!isset($registry[$key])||!in_array($surface,$registry[$key]['surfaces']??[],true))$capabilities[$key]=false;
     }
@@ -156,7 +160,7 @@ function vp3_profile_webmcp_resolve_capabilities_v190(
     $authenticated=(int)($viewer['id']??0)>0;
     $identityDisclosed=false;
     if($authenticated&&function_exists('profile_visitor_discloses_identity')){
-        try{$identityDisclosed=profile_visitor_discloses_identity($pdo,$viewer);}catch(Throwable $e){$identityDisclosed=false;}
+        try{$identityDisclosed=profile_visitor_discloses_identity($pdo,$viewer);}catch(Throwable $e){if($strictObservation)throw $e;$identityDisclosed=false;}
     }
 
     $enabledCapabilities=[];

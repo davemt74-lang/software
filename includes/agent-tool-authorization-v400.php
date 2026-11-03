@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-profile-webmcp-v193.php';
+require_once __DIR__.'/profile-webmcp-continuity-v195.php';
 require_once __DIR__.'/vrss-v2b.php';
 require_once __DIR__.'/tv-watching-v1.php';
 
@@ -303,9 +304,18 @@ function vp3_agent_tool_internal_action_v400(array $action,array $user,string $q
     ];
 }
 
-function vp3_agent_tool_authorize_result_v400(array $result,array $user,string $query=''): array
+function vp3_agent_tool_authorize_result_v400(array $result,array $user,string $query='',array $serverContext=[],?array $serverPrincipal=null): array
 {
     $pdo=db();
+    // Rebuild Profile prose, links and receipts from the current server context
+    // before any browser action can survive. Result payloads cannot supply it.
+    if(is_array($result['profile_webmcp_plan']??null)||is_array($result['profile_webmcp_return']??null)||str_starts_with((string)($result['tool_receipt']['capability']??''),'profile.webmcp.')){
+        require_once __DIR__.'/agent-profile-webmcp-read-v1.php';
+        if(!$pdo||$serverPrincipal===null||!array_key_exists('conversation_id',$serverContext)){
+            $result=['handled'=>true,'answer'=>'The Profile response could not be verified in the current Agent and conversation. Open it again from this Chat.','actions'=>[],'sources'=>[],'media'=>[],'stem_media'=>[],'profile_webmcp_plan'=>null,'profile_webmcp_return'=>null,
+                'tool_receipt'=>vp3_tool_receipt_v1('profile.webmcp.read','inspect','failed','check_failed')];
+        }else $result=vp3_profile_webmcp_authorize_result_v1($pdo,$user,$serverPrincipal,$serverContext,$result);
+    }
     $stems=[];
     foreach(array_values(array_filter((array)($result['stem_media']??[]),'is_array')) as $stem){
         $trackId=max(0,(int)($stem['track_id']??0));if(!$pdo||$trackId<1)continue;
@@ -320,19 +330,13 @@ function vp3_agent_tool_authorize_result_v400(array $result,array $user,string $
         if($clean)$actions[]=$clean;
     }
     $result['actions']=$actions;
-    if(isset($result['profile_webmcp_plan'])&&is_array($result['profile_webmcp_plan'])&&function_exists('vp3_agent_profile_webmcp_authorize_plan_v193')){
-        $result['profile_webmcp_plan']=$pdo
-            ?vp3_agent_profile_webmcp_authorize_plan_v193($pdo,$result['profile_webmcp_plan'],$user)
-            :null;
-    }else{
-        $result['profile_webmcp_plan']=null;
-    }
+    if(!is_array($result['profile_webmcp_plan']??null))$result['profile_webmcp_plan']=null;
     $result['authorization']=['version'=>'v4.00','principal_user_id'=>(int)($user['id']??0),'server_derived'=>true];
     return $result;
 }
 
 /** Shared owner Chat tools; transport (typed/voice/stream) does not select capabilities. */
-function vp3_agent_chat_tool_query_v1(string $query,array $user,int $conversationId=0): array
+function vp3_agent_chat_tool_query_v1(string $query,array $user,int $conversationId=0,array $serverContext=[]): array
 {
     $result=agent_work_control_chat_v173($query,$user,$conversationId);
     if(!empty($result['handled']))return vp3_agent_tool_authorize_result_v400($result,$user,$query);
@@ -342,12 +346,13 @@ function vp3_agent_chat_tool_query_v1(string $query,array $user,int $conversatio
         $result=vp3_radar_chat_tool($query,$user,$conversationId);
         if(!empty($result['handled']))return vp3_agent_tool_authorize_result_v400($result,$user,$query);
     }
-    $result=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();
+    $serverContext['conversation_id']=$conversationId;
+    $result=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId,$serverContext):vp3_agent_tool_empty_v400();
     if(!empty($result['handled']))return vp3_agent_tool_authorize_result_v400($result,$user,$query);
-    return vp3_agent_tool_execute_query_v400($query,$user,$conversationId);
+    return vp3_agent_tool_execute_query_v400($query,$user,$conversationId,$serverContext);
 }
 
-function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conversationId=0): array
+function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conversationId=0,array $serverContext=[]): array
 {
     $empty=vp3_agent_tool_empty_v400();$pdo=db();
     if(!$pdo)return $empty;
@@ -466,8 +471,12 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
     }
 
     if(function_exists('vp3_profile_webmcp_return_followthrough_v195')){
-        $returned=vp3_profile_webmcp_return_followthrough_v195($user,$query,$conversationId);
-        if(is_array($returned)&&!empty($returned['handled']))return vp3_agent_tool_authorize_result_v400($returned,$user,$query);
+        $returned=vp3_profile_webmcp_return_followthrough_v195($user,$query,$conversationId,$pdo);
+        if(is_array($returned)&&!empty($returned['handled'])){
+            $serverContext['conversation_id']=$conversationId;
+            try{$profilePrincipal=vp3_capability_control_principal_v1($pdo,$user,$conversationId);}catch(Throwable $e){$profilePrincipal=null;}
+            return vp3_agent_tool_authorize_result_v400($returned,$user,$query,$serverContext,$profilePrincipal);
+        }
     }
 
     // Explicit Profile/WebMCP requests use the existing agent_brain capability
@@ -484,7 +493,9 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
                     $conversationId
                 );
             }
-            return vp3_agent_tool_authorize_result_v400($profileWebmcp,$user,$query);
+            $serverContext['conversation_id']=$conversationId;
+            try{$profilePrincipal=vp3_capability_control_principal_v1($pdo,$user,$conversationId);}catch(Throwable $e){$profilePrincipal=null;}
+            return vp3_agent_tool_authorize_result_v400($profileWebmcp,$user,$query,$serverContext,$profilePrincipal);
         }
     }
 

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 
 const actions=read('includes/profile-webmcp-actions-v150.php');
+const outcomes=read('includes/agent-profile-webmcp-outcomes-v1.php');
 const scheduling=read('includes/profile-webmcp-scheduling-v150.php');
 const catalog=read('includes/profile-webmcp-v100.php');
 const nativeApi=read('api/profile-webmcp-v100.php');
@@ -29,8 +30,11 @@ assert.doesNotMatch(actions,/guest_name|guest_email|manage_token|cancel_token|pa
 const commitStart=actions.indexOf('function vp3_profile_webmcp_action_commit_v150');
 assert.ok(commitStart>0);
 const commitBlock=actions.slice(commitStart);
-assert.match(commitBlock,/safeBooking/);
+assert.match(commitBlock,/vp3_profile_webmcp_replay_projection_v1\(\$resultType,\$resultId,\$result\)/,'commit delegates to the operation-specific bounded replay projection');
 assert.doesNotMatch(commitBlock,/guest_name|guest_email|public_token|manage_token|cancel_token/,'committed action snapshot must remain PII/credential free');
+const replayProjection=outcomes.slice(outcomes.indexOf('function vp3_profile_webmcp_replay_projection_v1'),outcomes.indexOf('function vp3_profile_webmcp_outcome_result_v1'));
+assert.match(replayProjection,/\$type==='booking'/);
+assert.doesNotMatch(replayProjection,/guest_name|guest_email|public_token|manage_token|cancel_token/,'delegated projection preserves the original booking snapshot privacy boundary');
 
 assert.match(bootstrap,/profile-webmcp-actions-v150\.php/);
 assert.match(catalog,/vp3_profile_webmcp_tool_runtime_ready_v150/,'state-changing scheduling tools must be hidden until ledger upgrade');

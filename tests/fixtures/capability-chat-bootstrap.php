@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 // Infrastructure/model fixtures only. Endpoints, Chat runtime, discovery and reminder executors are production files.
+if(isset($_SERVER['HTTP_X_FIXTURE_PROFILE_READY'])&&session_status()!==PHP_SESSION_ACTIVE)session_start();
 require_once __DIR__.'/cognitive-runtime-v500.php';
 require_once __DIR__.'/agent-chat-runtime-v2160.php';
 require_once __DIR__.'/agent-surface-context-v131.php';
@@ -27,7 +28,7 @@ function column_exists($table,$column){foreach(db()->query('PRAGMA table_info('.
 function current_user(){if(isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS']))return null;$id=(int)($_SERVER['HTTP_X_FIXTURE_USER']??1);return ['id'=>$id,'is_active'=>1];}
 function csrf_token(){return 'fixture';}
 function has_permission($key,$user){return !isset($_SERVER['HTTP_X_FIXTURE_DENIED']);}
-function personal_capability_has_v242($key,...$args){return ($key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']))||($key==='personal_knowledge.access'&&isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']))||($key==='profile_agent.access'&&!isset($_SERVER['HTTP_X_FIXTURE_OBSERVATION_DENIED'])&&(isset($_SERVER['HTTP_X_FIXTURE_RADAR_READY'])||isset($_SERVER['HTTP_X_FIXTURE_ANALYTICS_READY'])));}
+function personal_capability_has_v242($key,...$args){return ($key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']))||($key==='personal_knowledge.access'&&isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']))||($key==='profile_agent.access'&&!isset($_SERVER['HTTP_X_FIXTURE_OBSERVATION_DENIED'])&&(isset($_SERVER['HTTP_X_FIXTURE_RADAR_READY'])||isset($_SERVER['HTTP_X_FIXTURE_ANALYTICS_READY'])||isset($_SERVER['HTTP_X_FIXTURE_PROFILE_READY'])));}
 function artist_workspace_v181_scope_id($user){return 0;}
 function calendar_schedule_awareness_snapshot_v1330(...$args){if(isset($_SERVER['HTTP_X_FIXTURE_OWNER_TRAP']))throw new RuntimeException('OWNER_READ_REACHED');return [];}
 function user_account_types_for_user_id(...$args){return ['member'];}
@@ -49,8 +50,10 @@ function track_media_suggestions(...$args){return [];}
 function track_merge_media_suggestions(...$args){return [];}
 function url($path){return $path;}
 function member_navigation_menu_links($u){return [['key'=>'contacts','label'=>'Contacts','url'=>'/contacts.php']];}
+if(!isset($_SERVER['HTTP_X_FIXTURE_RELEASE_READY'])){
 function music_workspace_resources_v330_can_manage_track($pdo,$t,$u){return (int)$t['owner_user_id']===(int)$u['id'];}
 function music_workspace_resources_v330_track_workspace_id($pdo,$t){return 0;}
+}
 function setting($key,$default=''){return $default;}
 function subscription_has_entitlement($user,$key){return (isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY'])||isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY'])||($key==='tracky.access'&&isset($_SERVER['HTTP_X_FIXTURE_TRACKY_READY'])&&!isset($_SERVER['HTTP_X_FIXTURE_OBSERVATION_DENIED'])))&&(int)$user['id']===1;}
 function subscription_schema_ready(?PDO $pdo=null):bool{return isset($_SERVER['HTTP_X_FIXTURE_TRACKY_READY']);}
@@ -155,7 +158,7 @@ function agent_scheduling_schema_ready_v430(...$args){return false;}
 function capability_fixture_agents(PDO $pdo): void
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,agent_key TEXT,display_name TEXT,agent_role TEXT,engine_key TEXT,instructions TEXT,is_default INTEGER,is_profile_agent INTEGER,is_active INTEGER,voice_enabled INTEGER,created_at TEXT,updated_at TEXT)");
-    $pdo->exec("INSERT OR IGNORE INTO user_agents VALUES(7,1,'longfellow','Longfellow','personal','stonefellow','',1,0,1,1,'',''),(8,1,'other','Other Agent','personal','stonefellow','',0,0,1,1,'',''),(9,2,'foreign','Foreign Agent','personal','stonefellow','',1,0,1,1,'','')");
+    $pdo->exec("INSERT OR IGNORE INTO user_agents(id,owner_user_id,agent_key,display_name,agent_role,engine_key,instructions,is_default,is_profile_agent,is_active,voice_enabled,created_at,updated_at) VALUES(7,1,'longfellow','Longfellow','personal','stonefellow','',1,0,1,1,'',''),(8,1,'other','Other Agent','personal','stonefellow','',0,0,1,1,'',''),(9,2,'foreign','Foreign Agent','personal','stonefellow','',1,0,1,1,'','')");
     foreach(['user_agent_preferences','user_relationships','user_data_policy_audit'] as $t)$pdo->exec("CREATE TABLE IF NOT EXISTS $t(id INTEGER)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS user_calendar_events(id INTEGER PRIMARY KEY,owner_user_id INTEGER,created_by_user_id INTEGER,created_by_agent_id INTEGER,title TEXT,description TEXT,location TEXT,start_at_utc TEXT,end_at_utc TEXT,timezone TEXT,all_day INTEGER,recurrence TEXT,agent_notifications INTEGER,source TEXT,source_reference TEXT,status TEXT,cancelled_at TEXT,created_at TEXT,updated_at TEXT)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,conversation_id INTEGER,title TEXT,status TEXT,started_at TEXT,last_activity_at TEXT,metadata_json TEXT,agent_memory_id INTEGER);CREATE TABLE IF NOT EXISTS artist_transcript_segments_v172(id INTEGER PRIMARY KEY,session_id INTEGER,client_segment_key TEXT,segment_index INTEGER,segment_type TEXT,speaker_label TEXT,transcript_text TEXT,started_ms INTEGER,ended_ms INTEGER,confidence REAL,created_at TEXT,updated_at TEXT);INSERT OR IGNORE INTO artist_transcript_sessions_v172 VALUES(21,1,NULL,'Fixture transcript','draft','2026-10-30 15:00:00','2026-10-30 15:05:00','{}',NULL),(22,2,NULL,'SECRET foreign transcript','draft','2026-10-30 15:00:00','2026-10-30 15:05:00','{}',NULL);INSERT OR IGNORE INTO artist_transcript_segments_v172 VALUES(1,21,'fixture',0,'transcript','Dave','The agreed pizza price is twenty dollars.',1000,5000,.9,'',''),(2,22,'foreign',0,'transcript','Other','SECRET transcript body',1000,5000,.9,'','')");
@@ -188,6 +191,17 @@ function capability_fixture_agents(PDO $pdo): void
         if(!table_exists('vp3_user_app_private_shares_v240'))private_share_agent_fixture_v1($pdo);
         $pdo->exec("UPDATE vp3_user_app_private_shares_v240 SET status='accepted' WHERE id=1");
         if(($_SERVER['HTTP_X_FIXTURE_PRIVATE_SHARE_MODE']??'')==='invalid_status')$pdo->exec("UPDATE vp3_user_app_private_shares_v240 SET status='SECRET_INVALID_STATE' WHERE id=1");
+    }
+    if(isset($_SERVER['HTTP_X_FIXTURE_PROFILE_READY'])){
+        require_once __DIR__.'/agent-scheduling-public-v450.php';
+        require_once __DIR__.'/profile-webmcp-actions-v150.php';
+        require_once __DIR__.'/profile-webmcp-agent-v1.php';
+        profile_webmcp_agent_fixture_v1($pdo);
+    }
+    if(isset($_SERVER['HTTP_X_FIXTURE_RELEASE_READY'])){
+        require_once __DIR__.'/release-chat-v105.php';
+        require_once __DIR__.'/release-agent-v1.php';
+        release_agent_fixture_v1($pdo);
     }
     if(isset($_SERVER['HTTP_X_FIXTURE_ANALYTICS_READY'])){
         require_once __DIR__.'/vp3-analytics-chat.php';

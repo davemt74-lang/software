@@ -110,4 +110,60 @@ check(($last['receipt']['status']??null)==='failed'&&($last['receipt']['reason']
 $last=$rememberVrss(['tool_receipt'=>[...$queuedReceipt,'token'=>'SECRET transport token'],'system_app_plan'=>[...$vrssPlan,'result'=>[...$vrssPlan['result'],'body'=>'SECRET source body']]]);
 check(($last['receipt']['vrss_outcome']??null)===$queued&&!str_contains(json_encode($last),'SECRET'),'valid saved Feed evidence discards unrelated plan and receipt payloads');
 check(vp3_tool_last_receipt_v1($pdo,['id'=>2],['conversation_id'=>1])===null&&vp3_tool_last_receipt_v1($pdo,['id'=>1],['conversation_id'=>1,'user_agent_id'=>7])===null,'phase-aware receipt recall retains exact owner and Agent boundaries');
+// Profile return receipts retain the exact server outcome rather than generic completion.
+require_once dirname(__DIR__).'/includes/agent-profile-webmcp-outcomes-v1.php';
+$profileBase=vp3_tool_receipt_v1('profile.webmcp.return.read','read','read_complete');
+check(str_contains(vp3_tool_diagnosis_v1(['receipt'=>$profileBase]),'no verified outcome evidence'),'a direct Profile read receipt without outcome proof cannot claim success');
+$insert->execute([$storedId++,1,'assistant',json_encode(['tool_receipt'=>$profileBase,'profile_webmcp_return'=>['phase'=>'completed','status_text'=>'The Profile action completed']])]);
+$missingProfile=vp3_tool_last_receipt_v1($pdo,['id'=>1],['conversation_id'=>1]);
+check($missingProfile['receipt']['status']==='failed'&&$missingProfile['receipt']['reason']==='outcome_unverified','stored Profile success without proof is downgraded even if old browser text claims completion');
+$profileTime=gmdate('Y-m-d\TH:i:s\Z',time()-10);
+$profileOutcomes=[
+    'prepared'=>['contract'=>'vp3.webmcp.outcome.v1','verification'=>'verified','operation'=>'booking.create','state'=>'prepared','result'=>'awaiting_confirmation','committed_at'=>null,'replayed'=>false],
+    'executing'=>['contract'=>'vp3.webmcp.outcome.v1','verification'=>'verified','operation'=>'booking.create','state'=>'executing','result'=>'execution_pending','committed_at'=>null,'replayed'=>false],
+];
+foreach(vp3_profile_webmcp_outcome_operations_v1() as $op=>$spec)$profileOutcomes[$op]=['contract'=>'vp3.webmcp.outcome.v1','verification'=>'verified','operation'=>$op,'state'=>'recorded','result'=>$spec[3],'committed_at'=>$profileTime,'replayed'=>false];
+foreach($profileOutcomes as $label=>$outcome){
+    $receipt=vp3_tool_receipt_normalize_v1([...$profileBase,'profile_webmcp_outcome'=>$outcome,'token'=>'SECRET']);
+    check($receipt!==null&&$receipt['profile_webmcp_outcome']===$outcome&&!$receipt['changes_applied']&&!str_contains(json_encode($receipt),'SECRET'),$label.' Profile result remains a bounded verified read');
+    $text=vp3_tool_diagnosis_v1(['receipt'=>$receipt]);
+    check(str_contains($text,vp3_profile_webmcp_outcome_text_v1($outcome))&&str_contains($text,'current state may have changed')&&!str_contains($text,'the requested change completed'),$label.' Profile diagnosis preserves the actual business result and time');
+    $insert->execute([$storedId++,1,'assistant',json_encode(['tool_receipt'=>$receipt])]);
+    check(vp3_tool_last_receipt_v1($pdo,['id'=>1],['conversation_id'=>1])['receipt']===$receipt,$label.' Profile result survives saved Chat history');
+}
+$unverified=vp3_profile_webmcp_outcome_unverified_v1();
+$unverifiedReceipt=vp3_tool_receipt_normalize_v1([...$profileBase,'status'=>'failed','reason'=>'outcome_unverified','profile_webmcp_outcome'=>$unverified]);
+check($unverifiedReceipt!==null&&str_contains(vp3_tool_diagnosis_v1(['receipt'=>$unverifiedReceipt]),'could not be verified'),'unverified Profile return never claims an action failed without effects');
+$recorded=$profileOutcomes['commerce.checkout'];
+foreach([
+    'extra token'=>[...$recorded,'token'=>'SECRET'],
+    'arbitrary operation'=>[...$recorded,'operation'=>'shell.execute'],
+    'wrong result'=>[...$recorded,'result'=>'payment_complete'],
+    'future receipt'=>[...$recorded,'committed_at'=>gmdate('Y-m-d\TH:i:s\Z',time()+100)],
+    'missing receipt'=>[...$recorded,'committed_at'=>null],
+    'string replay'=>[...$recorded,'replayed'=>'true'],
+    'unverified success'=>[...$recorded,'verification'=>'unverified'],
+    'prepared with time'=>[...$profileOutcomes['prepared'],'committed_at'=>$profileTime],
+    'empty'=>[],
+] as $label=>$bad){
+    $receipt=[...$profileBase,'profile_webmcp_outcome'=>$bad];
+    check(vp3_tool_receipt_normalize_v1($receipt)===null,$label.' Profile evidence rejects the whole receipt');
+    check(str_contains(vp3_tool_diagnosis_v1(['receipt'=>$receipt]),'could not be verified')&&!str_contains(vp3_tool_diagnosis_v1(['receipt'=>$receipt]),'SECRET'),$label.' Profile diagnosis cannot restore generic success or raw payload');
+}
+foreach([
+    'other read'=>['capability'=>'analytics.read','operation'=>'list'],
+    'handoff'=>['capability'=>'profile.webmcp.handoff','operation'=>'prepare'],
+    'completed'=>['status'=>'completed'],
+    'empty'=>['status'=>'no_matches'],
+    'blocked'=>['status'=>'blocked','reason'=>'permission_denied'],
+    'failed verified'=>['status'=>'failed','reason'=>'outcome_unverified'],
+] as $label=>$change)check(vp3_tool_receipt_normalize_v1([...$profileBase,...$change,'profile_webmcp_outcome'=>$recorded])===null,'Profile evidence cannot attach to '.$label.' receipt');
+check(vp3_tool_receipt_normalize_v1([...$profileBase,'profile_webmcp_outcome'=>$unverified])===null,'unverified Profile evidence cannot become a successful read');
+$handoff=vp3_tool_receipt_v1('profile.webmcp.handoff','prepare','clarification_required','confirmation_required');
+check(!$handoff['changes_applied']&&str_contains(vp3_tool_diagnosis_v1(['receipt'=>$handoff]),'prepared for review'),'Profile handoff is pending existing surface confirmation');
+$release=vp3_tool_receipt_v1('music.releases.create','create','completed','',101,1);
+check($release['changes_applied']&&str_contains(vp3_tool_diagnosis_v1(['receipt'=>$release]),'internal release plan'),'created release receipt describes internal planning only');
+$replayedRelease=vp3_tool_receipt_normalize_v1([...$release,'status'=>'read_complete']);
+check(!$replayedRelease['changes_applied']&&str_contains(vp3_tool_diagnosis_v1(['receipt'=>$replayedRelease]),'no second plan'),'same-turn release replay cannot claim another write');
+foreach([['music.releases.read','list'],['profile.webmcp.read','inspect'],['profile.webmcp.handoff','prepare'],['profile.webmcp.return.read','read']] as [$cap,$op])check(vp3_tool_receipt_normalize_v1([...$profileBase,'capability'=>$cap,'operation'=>$op,'status'=>'completed'])===null,$cap.' cannot claim a completed mutation');
 echo "TOOL_RECEIPTS=PASS ($checks cases)\n";

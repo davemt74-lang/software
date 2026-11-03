@@ -67,6 +67,12 @@ jobs:
           php tests/agent-tracky-read-v1.php
           php tests/agent-radar-read-v1.php
           php tests/agent-analytics-read-v1.php
+          php tests/agent-release-routing-v1.php
+          php tests/agent-release-tools-v1.php
+          php tests/agent-profile-webmcp-read-v1.php
+          php tests/agent-profile-webmcp-outcomes-v1.php
+          node tests/agent-release-profile-chat-api.mjs
+          node tests/profile-webmcp-native-outcomes-v1.mjs
           php tests/agent-system-app-read-v1.php
           php tests/agent-app-operations-v1.php
           php tests/homeserver-read-receipts-v1.php

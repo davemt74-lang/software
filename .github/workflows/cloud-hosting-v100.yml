@@ -20,6 +20,30 @@ on:
       - "includes/agent-tracky-read-v1.php"
       - "includes/agent-radar-read-v1.php"
       - "includes/agent-analytics-read-v1.php"
+      - "includes/agent-release-tools-v1.php"
+      - "includes/agent-scheduling-public-v450.php"
+      - "includes/agent-profile-webmcp-read-v1.php"
+      - "includes/agent-profile-webmcp-outcomes-v1.php"
+      - "includes/release-chat-v105.php"
+      - "includes/agent-profile-webmcp-v193.php"
+      - "includes/profile-webmcp-continuity-v194.php"
+      - "includes/profile-webmcp-continuity-v195.php"
+      - "includes/profile-webmcp-capability-resolver-v190.php"
+      - "includes/profile-webmcp-actions-v150.php"
+      - "api/profile-webmcp-v100.php"
+      - "api/profile-webmcp-continuity-v195.php"
+      - "profile-webmcp-v100.js"
+      - "tests/agent-release-tools-v1.php"
+      - "tests/agent-release-routing-v1.php"
+      - "tests/agent-profile-webmcp-read-v1.php"
+      - "tests/agent-profile-webmcp-outcomes-v1.php"
+      - "tests/agent-release-profile-chat-api.mjs"
+      - "tests/profile-webmcp-native-outcomes-v1.mjs"
+      - "tests/fixtures/release-agent-v1.php"
+      - "tests/fixtures/profile-webmcp-agent-v1.php"
+      - "tests/fixtures/profile-webmcp-outcomes-v1.php"
+      - "tests/fixtures/profile-webmcp-native-*.php"
+      - "tests/fixtures/release-profile-api-state-v1.php"
       - "includes/tracky-agent-v271.php"
       - "includes/agent-radar-chat.php"
       - "includes/vp3-analytics-chat.php"
@@ -127,6 +151,30 @@ on:
       - "includes/agent-tracky-read-v1.php"
       - "includes/agent-radar-read-v1.php"
       - "includes/agent-analytics-read-v1.php"
+      - "includes/agent-release-tools-v1.php"
+      - "includes/agent-scheduling-public-v450.php"
+      - "includes/agent-profile-webmcp-read-v1.php"
+      - "includes/agent-profile-webmcp-outcomes-v1.php"
+      - "includes/release-chat-v105.php"
+      - "includes/agent-profile-webmcp-v193.php"
+      - "includes/profile-webmcp-continuity-v194.php"
+      - "includes/profile-webmcp-continuity-v195.php"
+      - "includes/profile-webmcp-capability-resolver-v190.php"
+      - "includes/profile-webmcp-actions-v150.php"
+      - "api/profile-webmcp-v100.php"
+      - "api/profile-webmcp-continuity-v195.php"
+      - "profile-webmcp-v100.js"
+      - "tests/agent-release-tools-v1.php"
+      - "tests/agent-release-routing-v1.php"
+      - "tests/agent-profile-webmcp-read-v1.php"
+      - "tests/agent-profile-webmcp-outcomes-v1.php"
+      - "tests/agent-release-profile-chat-api.mjs"
+      - "tests/profile-webmcp-native-outcomes-v1.mjs"
+      - "tests/fixtures/release-agent-v1.php"
+      - "tests/fixtures/profile-webmcp-agent-v1.php"
+      - "tests/fixtures/profile-webmcp-outcomes-v1.php"
+      - "tests/fixtures/profile-webmcp-native-*.php"
+      - "tests/fixtures/release-profile-api-state-v1.php"
       - "includes/tracky-agent-v271.php"
       - "includes/agent-radar-chat.php"
       - "includes/vp3-analytics-chat.php"
@@ -272,6 +320,18 @@ jobs:
           php -l includes/agent-tracky-read-v1.php
           php -l includes/agent-radar-read-v1.php
           php -l includes/agent-analytics-read-v1.php
+          php -l includes/agent-release-tools-v1.php
+          php -l includes/agent-scheduling-public-v450.php
+          php -l includes/agent-profile-webmcp-read-v1.php
+          php -l includes/agent-profile-webmcp-outcomes-v1.php
+          php -l includes/release-chat-v105.php
+          php -l includes/agent-profile-webmcp-v193.php
+          php -l includes/profile-webmcp-continuity-v194.php
+          php -l includes/profile-webmcp-continuity-v195.php
+          php -l includes/profile-webmcp-capability-resolver-v190.php
+          php -l includes/profile-webmcp-actions-v150.php
+          php -l api/profile-webmcp-v100.php
+          php -l api/profile-webmcp-continuity-v195.php
           php -l includes/system-apps-v170.php
           php -l includes/system-apps-v180.php
           php -l includes/system-apps-v190.php
@@ -439,6 +499,9 @@ jobs:
           php tests/agent-tracky-read-v1.php
           php tests/agent-radar-read-v1.php
           php tests/agent-analytics-read-v1.php
+          php tests/agent-release-tools-v1.php
+          php tests/agent-profile-webmcp-read-v1.php
+          php tests/agent-profile-webmcp-outcomes-v1.php
           php tests/cloud-hosting-v100-mysql.php
           php tests/cloud-hosting-v110-mysql.php
           php tests/cloud-hosting-v120-mysql.php
