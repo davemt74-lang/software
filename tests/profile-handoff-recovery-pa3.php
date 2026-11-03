@@ -93,8 +93,25 @@ if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
             [$firstProcess,$firstPipes,$firstReady]=$start($firstActor,true);
             pa3_check(($firstReady['phase']??'')==='locked',$firstActor.' winner holds real MySQL conversation lock before competing operation');
             [$secondProcess,$secondPipes,$secondReady]=$start($firstActor==='owner'?'timeout':'owner',false);
-            $wait=false;$q=$pdo->prepare('SELECT 1 FROM performance_schema.data_lock_waits w INNER JOIN information_schema.innodb_trx t ON t.trx_id=w.REQUESTING_ENGINE_TRANSACTION_ID WHERE t.trx_mysql_thread_id=? LIMIT 1');
+            $wait=false;$q=$pdo->prepare('SELECT 1 FROM performance_schema.data_lock_waits w INNER JOIN performance_schema.threads t ON t.THREAD_ID=w.REQUESTING_THREAD_ID WHERE t.PROCESSLIST_ID=? LIMIT 1');
             for($i=0;$i<500;$i++){$q->execute([(int)$secondReady['connection']]);if($q->fetchColumn()){$wait=true;break;}usleep(10000);}
+            if(!$wait){
+                // Keep the lock gate strict, but retain evidence if the contender
+                // exited early or the server did not expose the expected wait.
+                $workerDiagnostic=static function($process,array $pipes,array $ready):array{
+                    $result=['ready'=>$ready,'process'=>proc_get_status($process)];
+                    foreach([1=>'stdout',2=>'stderr'] as $index=>$name){stream_set_blocking($pipes[$index],false);$result[$name]=(string)stream_get_contents($pipes[$index],16384);}
+                    return $result;
+                };
+                $diagnostic=['first_actor'=>$firstActor,'first'=>$workerDiagnostic($firstProcess,$firstPipes,$firstReady),'second'=>$workerDiagnostic($secondProcess,$secondPipes,$secondReady)];
+                try{
+                    $diagnostic['performance_schema_enabled']=(int)$pdo->query('SELECT @@performance_schema')->fetchColumn();
+                    $diagnostic['data_lock_waits']=$pdo->query('SELECT * FROM performance_schema.data_lock_waits LIMIT 50')->fetchAll(PDO::FETCH_ASSOC);
+                    $threads=$pdo->prepare('SELECT THREAD_ID,PROCESSLIST_ID,PROCESSLIST_COMMAND,PROCESSLIST_STATE,LEFT(PROCESSLIST_INFO,2000) statement_text FROM performance_schema.threads WHERE PROCESSLIST_ID IN (?,?)');
+                    $threads->execute([(int)$firstReady['connection'],(int)$secondReady['connection']]);$diagnostic['threads']=$threads->fetchAll(PDO::FETCH_ASSOC);
+                }catch(Throwable $error){$diagnostic['observer_error']=['class'=>get_class($error),'message'=>$error->getMessage()];}
+                fwrite(STDERR,'PA3_MYSQL_RACE_DIAGNOSTIC='.json_encode($diagnostic,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE)."\n");
+            }
             pa3_check($wait,'competing '.$firstActor.' race is observed waiting on actual MySQL row lock');
             fwrite($firstPipes[0],"commit\n");fclose($firstPipes[0]);fclose($secondPipes[0]);
             $out1=stream_get_contents($firstPipes[1]);$err1=stream_get_contents($firstPipes[2]);$out2=stream_get_contents($secondPipes[1]);$err2=stream_get_contents($secondPipes[2]);foreach([$firstPipes,$secondPipes] as $pipes){fclose($pipes[1]);fclose($pipes[2]);}
