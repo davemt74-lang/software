@@ -16,6 +16,7 @@ if($screenKnowledgeSession):
 <div class="screen-session-actions"><button type="button" data-ks-refresh>Refresh captures</button><?php if($canManage):?><label><input type="checkbox" data-ks-remove-brain checked> Also remove this session’s Brain memories when deleting</label><button type="button" data-ks-delete>Delete session data</button><?php endif;?></div>
 <p data-ks-status role="status"></p><div data-ks-captures></div>
 </section>
-<script>window.VP3_SCREEN_KNOWLEDGE=<?= json_encode(['endpoint'=>url('/api/agent-screen-sessions-v1.php'),'sessionId'=>$screenKnowledgeSession['session_id'],'ownerKey'=>(string)$uid,'csrf'=>csrf_token(),'canManage'=>$canManage],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES) ?>;</script>
-<script src="<?= e(url('/agent-screen-knowledge-v1.js?v=1')) ?>" defer></script>
+<script>window.VP3_SCREEN_KNOWLEDGE=<?= json_encode(['endpoint'=>url('/api/agent-screen-sessions-v1.php'),'sessionId'=>$screenKnowledgeSession['session_id'],'ownerKey'=>(string)$uid,'csrf'=>csrf_token(),'canManage'=>$canManage,'agentId'=>(int)$screenKnowledgeSession['agent_id'],'insightsEndpoint'=>url('/api/agent-screen-insights-v1.php')],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES) ?>;</script>
+<script src="<?= e(url('/agent-screen-review-v1.js?v=1')) ?>" defer></script>
+<script src="<?= e(url('/agent-screen-knowledge-v1.js?v=2')) ?>" defer></script>
 <?php endif; ?>

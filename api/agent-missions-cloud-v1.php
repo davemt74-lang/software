@@ -240,6 +240,7 @@ try {
             $payload['limit']=40;
         }
     }
+    if(in_array($action,['start','resume','retry','approve','tools.start','actions.review'],true)&&($action!=='actions.review'||($payload['decision']??'')==='approve')&&function_exists('db')&&db()&&table_exists('agent_screen_handoffs_v1')){require_once __DIR__.'/../includes/agent-screen-handoffs-v1.php';screen_handoff_guard_mission_v1(db(),$user,(string)($payload['mission_id']??''));}
     $status=homeserver_https_v1300_status($userId);
     if(!$status||!($status['connected']??false)){
         if($action==='task.route'){

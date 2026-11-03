@@ -432,6 +432,10 @@ $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-task-note
     . '<script>window.VP3_TASK_NOTES_V1='.json_encode(['endpoint'=>url('/api/task-notes-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-task-notes-v1.js?v=voice-managed-lists-v2')).'"></script>';
 
+$cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-screen-insights-v1.css?v=1')).'">'
+    . '<script>window.VP3_SCREEN_INSIGHTS='.json_encode(['endpoint'=>url('/api/agent-screen-insights-v1.php'),'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),'csrf'=>csrf_token()],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<script src="'.e(url('/chat-screen-insights-v1.js?v=1')).'"></script>';
+
 $cognitiveFeedRuntime = '<link rel="stylesheet" data-cognitive-feed-v530 href="' . e(url('/chat-cognitive-feed-v530.css?v=' . $cognitiveFeedAssetBuild . '-' . $onboardingActivationAssetBuild)) . '">'
     . '<script data-cognitive-feed-config>window.VP3_COGNITIVE_FEED_V530='
     . json_encode([
