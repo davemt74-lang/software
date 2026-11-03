@@ -41,6 +41,10 @@
     return sdkPromise;
   }
   let activeMedia=null,mediaGeneration=0;
+  const speechSurfaces=new Set();let lastSpeechBusy=null;
+  // Read-only coordination: announcements never take capture from a call.
+  function speechBusy(){return Boolean(activeMedia&&!activeMedia.closed)||[...speechSurfaces].some(surface=>[...surface.records.values()].some(record=>record.call.cleanup_pending||['preparing','ready','active','ending'].includes(record.call.state)));}
+  function speechState(){const busy=speechBusy();if(busy===lastSpeechBusy)return;lastSpeechBusy=busy;window.dispatchEvent(new CustomEvent('vp3:profile-call-state',{detail:{busy,source:'profile-calls-pa3c'}}));}
   const clientInstance=random();
   class MediaSession {
     constructor(surface,record,consent){this.surface=surface;this.record=record;this.snapshot=surface.capture();this.consent=consent;this.generation=++mediaGeneration;this.room=null;this.ticket=null;this.closed=false;this.phase='preparing';this.deadline=0;this.auth=null;this.tracks=new Set();this.attached=new Map();this.timer=0;this.heartbeatBusy=false;this.lastHeartbeat=time();record.joinRequests??={};this.joinRequest=record.joinRequests[String(consent.camera)]||(record.joinRequests[String(consent.camera)]=random());this.mediaBusy=false;this.ownedMedia=false;}
@@ -173,7 +177,7 @@
     }
   }
   class Surface {
-    constructor(options){this.options=options;this.role=options.role;this.records=new Map();this.epoch=0;this.lastContext='';this.alive=true;this.busy=false;this.queued=false;this.offerBusy=false;this.offerAttempt=null;this.canOffer=false;this.scopeControls=new Set();this.pollTimer=0;this.lastDispatch=new Map();this.pendingMutations=0;this.mutationGeneration=0;}
+    constructor(options){this.options=options;this.role=options.role;this.records=new Map();this.epoch=0;this.lastContext='';this.alive=true;this.busy=false;this.queued=false;this.offerBusy=false;this.offerAttempt=null;this.canOffer=false;this.scopeControls=new Set();this.pollTimer=0;this.lastDispatch=new Map();this.pendingMutations=0;this.mutationGeneration=0;speechSurfaces.add(this);}
     capture(){const value=this.options.context();return {key:String(value.key),binding:{...value.binding},epoch:this.epoch};}
     sameContext(snapshot){return this.alive&&snapshot.epoch===this.epoch&&String(this.options.context().key)===snapshot.key;}
     current(snapshot){const current=this.options.context();return this.alive&&snapshot.epoch===this.epoch&&String(current.key)===snapshot.key&&current.active!==false;}
@@ -187,6 +191,7 @@
       return call.state==='offered'?(call.offered_by===this.role?'Waiting for the other person to accept.':'Incoming '+call.mode+' call request.'):(call.state==='preparing'?'Preparing the call service…':'Call accepted. Join when you are ready; your microphone and camera are off.');
     }
     render(record){
+      speechState();
       if(!record.node.isConnected)return;
       const call=record.call,media=record.media,live=this.current(record.snapshot),pending=record.pending||Boolean(media&&['preparing','connecting'].includes(media.phase));
       record.status.textContent=this.status(record);record.node.dataset.callState=call.state;
@@ -302,7 +307,7 @@
     const request=async(action,payload,method)=>{const url=new URL(config.endpoint,location.href),options={method,credentials:'same-origin',cache:'no-store'};if(method==='GET'){Object.entries({action,...payload}).forEach(([key,value])=>url.searchParams.set(key,String(value)));}else{options.headers={'Content-Type':'application/json'};options.body=JSON.stringify({action,csrf_token:config.csrf,...payload});}const response=await fetch(url,options),data=await response.json().catch(()=>null);if(!response.ok||!data?.ok){const error=new Error('Call request unavailable.');error.status=response.status;error.code=data?.code||'';throw error;}return data;};
     ownerSurface=new Surface({role:'owner',context:ownerContext,request,mount:delivery=>(window.STONEFELLOW_CHAT_CONTINUITY_V87||{}).mountProfileCall?.(delivery)}).start();return ownerSurface;
   }
-  window.VP3ProfileCallsPa3c={mountVisitor,attachOwnerThread(host,options){if(!ownerSurface)return;const control=ownerSurface.offers(host,()=>options.binding());void ownerSurface.refreshOffers(control);},refresh:()=>ownerSurface?.refresh(),invalidateVisitor(surface,reason){surface?.invalidate(reason);}};
+  window.VP3ProfileCallsPa3c={mountVisitor,speechBusy,attachOwnerThread(host,options){if(!ownerSurface)return;const control=ownerSurface.offers(host,()=>options.binding());void ownerSurface.refreshOffers(control);},refresh:()=>ownerSurface?.refresh(),invalidateVisitor(surface,reason){surface?.invalidate(reason);}};
   window.addEventListener('stonefellow:chat-context-changing',()=>ownerSurface?.invalidate('Chat context changed.'));
   window.addEventListener('vp3:chat-context-ready',()=>void ownerSurface?.refresh());
   window.addEventListener('vp3:profile-call-message',()=>void ownerSurface?.refresh());

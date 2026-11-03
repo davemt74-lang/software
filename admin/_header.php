@@ -92,6 +92,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
         <div class="admin-nav-group-links" id="admin-nav-ai-platform">
           <?php if (has_permission('ai.manage')): ?>
             <a class="<?= $adminActive === 'ai' ? 'active' : '' ?>" href="<?= e(url('/admin/ai.php')) ?>"><span>AI / API</span></a>
+            <a class="<?= $adminActive === 'profile-speech' ? 'active' : '' ?>" href="<?= e(url('/admin/profile-speech.php')) ?>"><span>Profile speech</span></a>
             <a class="<?= $adminActive === 'ai-data-usage' ? 'active' : '' ?>" href="<?= e(url('/admin/ai-data-usage-v236.php')) ?>"><span>AI Data Usage</span></a>
             <a class="<?= $adminActive === 'webmcp' ? 'active' : '' ?>" href="<?= e(url('/admin/webmcp.php')) ?>"><span>WebMCP</span></a>
           <?php endif; ?>

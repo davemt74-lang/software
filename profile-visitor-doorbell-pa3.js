@@ -177,7 +177,7 @@
     input.rows=2;input.maxLength=4000;input.id='profileDoorbellReply'+data.turn_id;label.setAttribute('for',input.id);input.setAttribute('aria-label','Reply to '+(data.visitor_label||'this visitor'));input.placeholder='Your reply goes only to this visitor';
     const send=node('button','','Send to visitor');send.type='submit';send.dataset.doorbellAction='reply';buttons.reply=send;form.append(label,input,send);
     const notice=node('p','profile-doorbell-notice');notice.setAttribute('role','status');card.append(header,status,countdown,question,details,controls,form,notice);
-    const record={data,node:card,element,binding,epoch,clockServer:data.server_now_ms,clockLocal:now(),status,countdown,question,history,input,buttons,notice,pending:false,attempt:null,ackBusy:false,ackRevision:0,historySignature:'',superseded:false};
+    const record={data,node:card,element,binding,epoch,clockServer:data.server_now_ms,clockLocal:now(),status,countdown,question,history,input,buttons,notice,controls,pending:false,attempt:null,ackBusy:false,ackRevision:0,historySignature:'',superseded:false};
     const saved=drafts[data.turn_id];if(saved&&typeof saved.text==='string'&&saved.text.length<=8000){input.value=saved.text;if(saved.text.length>4000)notice.textContent='Your saved reply is longer than 4,000 characters. Shorten it before sending.';if(saved.attempt&&token(saved.attempt.request_id))record.attempt=saved.attempt;}
     input.addEventListener('input',()=>{record.notice.textContent='';saveDraft(record);});
     for(const operation of ['claim','delegate','resolve'])buttons[operation].addEventListener('click',()=>void perform(record,operation));
@@ -187,7 +187,27 @@
     window.VP3ProfileCallsPa3c?.attachOwnerThread(controls,{binding:()=>writable(record)?{
       conversation_id:record.data.conversation_id,chat_conversation_id:record.binding.chat_conversation_id,chat_agent_id:record.binding.chat_agent_id
     }:null});
+    attachSpeech(record);
     return record;
+  }
+  function speechTarget(id){
+    const record=cards.get(id);
+    if(!record||!visible(record)||!allowed(record,'reply')||record.attempt||record.data.chat?.media_call_active===true)return null;
+    return Object.freeze({turn_id:record.data.turn_id,revision:record.data.revision,public_conversation_id:record.data.conversation_id,
+      visitor_message_id:record.data.visitor_message_id,visitor_label:record.data.visitor_label,...record.binding,tab_id:tab.id,
+      draft_empty:String(record.input.value||'').trim()===''});
+  }
+  function stageVoiceDraft(target,text){
+    const currentTarget=speechTarget(target?.turn_id);
+    if(!currentTarget||!currentTarget.draft_empty||!target?.draft_empty||typeof text!=='string'||!text.trim()||text.length>4000)return false;
+    for(const key of ['turn_id','revision','public_conversation_id','visitor_message_id','chat_conversation_id','chat_agent_id','chat_message_id','delivery_id','tab_id'])if(currentTarget[key]!==target[key])return false;
+    const record=cards.get(target.turn_id);record.input.value=text.trim();saveDraft(record);
+    record.notice.textContent='Spoken reply drafted for this visitor. Review it, then choose Send to visitor.';record.input.focus();return true;
+  }
+  function attachSpeech(record){
+    window.VP3ProfileSpeechPa4a?.attachOwnerCard(record.controls,{target:()=>speechTarget(record.data.turn_id),source:()=>writable(record)?{
+      turn_id:record.data.turn_id,public_conversation_id:record.data.conversation_id,visitor_message_id:record.data.visitor_message_id}:null,
+      notice:text=>{if(writable(record))record.notice.textContent=text;}});
   }
   function updateCard(record,data,binding){
     if(data.revision<record.data.revision)return record;
@@ -329,6 +349,7 @@
   setupPresence();
   interval=window.setInterval(()=>void pump(),3000);
   countdownInterval=window.setInterval(()=>{for(const record of cards.values())refreshControls(record);},500);
-  window.VP3_PROFILE_DOORBELL_PA3_RUNTIME={refresh:()=>pump()};
+  window.VP3_PROFILE_DOORBELL_PA3_RUNTIME={refresh:()=>pump(),speechTarget,stageVoiceDraft,speechContext:()=>({...current(),tab_id:tab.id,availability,reachable,active:active()&&positive(current().chat_conversation_id)})};
+  window.addEventListener('vp3:profile-speech-ready',()=>{for(const record of cards.values())attachSpeech(record);});
   void pump();
 })();

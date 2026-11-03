@@ -106,6 +106,28 @@ jobs:
           php tests/profile-live-text-pa3d.php
           node tests/profile-handoff-api-pa3.mjs
           node tests/profile-live-chat-api-pa3d.mjs
+      - name: Profile speech PA4A source authority, provider receipts and private playback
+        run: |
+          php tests/profile-speech-install-pa4a.php
+          php tests/profile-visitor-speech-pa4a.php
+          php tests/profile-speech-notifications-pa4a.php
+          php tests/profile-speech-provider-pa4a.php
+          php tests/upgrade-database-connection.php
+          node tests/profile-speech-api-pa4a.mjs
+          node tests/profile-speech-admin-pa4a.mjs
+          node tests/profile-speech-pa4a.mjs
+      - name: Profile speech PA4A MySQL claims, uncertain sends and call interruption
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-speech-install-pa4a.php
+          php tests/profile-visitor-speech-pa4a.php
+          php tests/profile-speech-notifications-pa4a.php
+          php tests/profile-speech-provider-pa4a.php
+          php tests/profile-speech-concurrency-pa4a.php
+          node tests/profile-speech-api-pa4a.mjs
   profile_owner_browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -128,3 +150,5 @@ jobs:
         run: node tests/profile-calls-pa3c-browser.mjs
       - name: Public Agent or live owner text choice, consent, recovery and mobile
         run: node tests/profile-chat-choice-pa3d-browser.mjs
+      - name: Profile visitor announcements, playback and exact dictated reply review
+        run: node tests/profile-speech-pa4a-browser.mjs

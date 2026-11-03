@@ -436,6 +436,15 @@ $profileDoorbellRuntime=$profileActivityRuntime!==''
         .'<script data-profile-doorbell-pa3 src="'.e(url('/profile-visitor-doorbell-pa3.js?v='.$profileDoorbellBuild)).'"></script>'
     : '';
 
+$profileSpeechBuild='profile-speech-pa4a-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-speech-pa4a.js').hash_file('sha256',__DIR__.'/profile-speech-pa4a.css')),0,12);
+$profileSpeechRuntime=$profileActivityRuntime!==''
+    ? '<link rel="stylesheet" data-profile-speech-pa4a href="'.e(url('/profile-speech-pa4a.css?v='.$profileSpeechBuild)).'">'
+        .'<script>window.VP3_PROFILE_SPEECH_PA4A='.json_encode([
+            'endpoint'=>url('/api/profile-speech-pa4a.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],
+        ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
+        .'<script data-profile-speech-pa4a src="'.e(url('/profile-speech-pa4a.js?v='.$profileSpeechBuild)).'"></script>'
+    : '';
+
 $chatSettingsRuntime = '<link rel="stylesheet" data-chat-settings-canonical href="' . e(url('/chat-settings-v237.css?v=' . $chatSettingsBuild)) . '">'
     . '<script data-chat-settings-config>window.STONEFELLOW_CHAT_SETTINGS='
     . json_encode([
@@ -590,6 +599,7 @@ $runtime = $headerUiRuntime
          . $profileActivityRuntime
          . $profileCallsRuntime
          . $profileDoorbellRuntime
+         . $profileSpeechRuntime
          . $browserContextRuntime
          . $agentTeamsA3Runtime
          . $cognitivePresentationPre

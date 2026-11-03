@@ -57,9 +57,10 @@ require_once __DIR__ . '/includes/phone-voice-stream-v150.php';
 require_once __DIR__ . '/includes/phone-worker-health-v171.php';
 require_once __DIR__ . '/includes/profile-agent-handoff-pa3.php';
 require_once __DIR__ . '/includes/profile-calls-pa3c.php';
+require_once __DIR__ . '/includes/profile-visitor-speech-pa4a.php';
 require_permission('users.manage');
 
-function vp3_upgrade_complete(): bool
+function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
 {
     return (string)setting('ai_haiku55_defaults_applied', '') === '1'
         && access_schema_ready()
@@ -231,6 +232,9 @@ function vp3_upgrade_complete(): bool
         && table_exists('profile_call_operations_pa3c')
         && column_exists('profile_call_operations_pa3c','result_json')
         && table_exists('profile_call_deliveries_pa3c')
+        && table_exists('profile_visitor_voices_pa4a')
+        && table_exists('profile_speech_items_pa4a')
+        && table_exists('profile_speech_attempts_pa4a')
         && crm_v180_schema_ready()
         && artist_workspace_v181_schema_ready()
         && music_workspace_release_schema_v330_ready()
@@ -253,7 +257,9 @@ function vp3_upgrade_complete(): bool
         && table_exists('agent_participant_grants_v1')
         && table_exists('agent_participant_presence_v1')
         && table_exists('agent_participant_observers_v1')
-        && table_exists('user_agent_voice_preferences');
+        && table_exists('user_agent_voice_preferences')
+        && ($schemaConnection ??= db()) instanceof PDO
+        && vp3_profile_speech_schema_ready_pa4a($schemaConnection);
 }
 
 $error = '';
@@ -402,6 +408,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             profile_agent_ensure_schema();
             vp3_profile_handoff_ensure_schema_pa3($pdo);
             vp3_profile_call_ensure_schema_pa3c($pdo);
+            vp3_profile_speech_ensure_schema_pa4a($pdo);
             personal_capability_ensure_schema_v242();
             require_once __DIR__.'/includes/tv-watching-v1.php';
             tv_schema_v1($pdo);
@@ -440,7 +447,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             artist_shows_v184_ensure_schema();
             artist_music_v185_ensure_schema();
             ai_haiku55_upgrade_defaults();
-            $complete = vp3_upgrade_complete();
+            $complete = vp3_upgrade_complete($pdo);
 
             if ($complete) {
                 flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, Browser Companion device authentication + Browser Share backend + private rich media + Live Rooms/Cloak Mode + Source Change Intelligence + Claims + Moderation + Search & Discovery, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence + Meeting Agenda orchestration + Meeting Action execution + Follow-Through Intelligence + Meeting Outcome Learning + Adaptive Meeting Planning + Plan-to-Action Handoff + Follow-Through Verification & Closure + Cross-Meeting Continuity + Meeting Closure & Recurring Continuity + manual Calendar meetings, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, VP3 Cognitive Runtime Core v5.00 + Cognitive Presentation v5.10 + Cognitive Feed Composition v5.30 + Cognitive Outcomes & Learning v5.40 + Proactive Planning & Suggested Actions v5.50 + Cognitive Plan Orchestration & Follow-Through v5.60 + Cognitive Memory & Cross-Time Continuity v5.70 + Unified Live Session & Event Foundation v23.70, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');

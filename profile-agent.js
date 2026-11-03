@@ -21,6 +21,7 @@
   let handoff=null,clockOffset=0,pollBusy=false,dispatchBusy=false,sending=false,alive=true,sessionChanged=false,requestEpoch=0;
   let formNotice='',lastDispatchAt=0,lastDispatchTurn=0;
   let callSurface=null,callHost=null,callContextEpoch=0;
+  let speechPreference=null,speechChoice=null,speechNotice=null,speechBusy=false,speechSequence=0,speechAttempt=null;
   let chat=null,choiceTouched=false,endBusy=false,presenceBusy=false,uncertainEnd=null;
   const retryStorageKey=storageKey+':pending';
   const originalSubmitLabel=submit?.textContent||'Send';
@@ -400,10 +401,11 @@
   function stopChangedSession(){
     sessionChanged=true;pendingSend=null;try{sessionStorage.removeItem(retryStorageKey);}catch(_error){}
     resetConversation();renderMessages([]);textarea.disabled=true;submit.disabled=true;
+    if(speechChoice)speechChoice.disabled=true;
     status.textContent='Your visitor session changed. Refresh this profile before continuing.';
   }
   async function request(action,payload={},method='POST',endpoint=cfg.endpoint){
-    const callRequest=Boolean(cfg.callEndpoint&&endpoint===cfg.callEndpoint);
+    const callRequest=Boolean((cfg.callEndpoint&&endpoint===cfg.callEndpoint)||(cfg.speechEndpoint&&endpoint===cfg.speechEndpoint));
     const epoch=callRequest?callContextEpoch:requestEpoch;
     const identity=`${cfg.username}|${cfg.conversationNamespace||''}|${cfg.profileToken||''}`;
     const options={method,credentials:'same-origin',cache:'no-store'};
@@ -548,6 +550,45 @@
     void sendSaved({message,conversation_id:conversationId,client_request_id:messageRequestId(),chat_mode:mode,...(continuing?{continue_live:true}:{})});
   });
   textarea?.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit();}});
+  function speechProjection(value){
+    if(value?.contract!=='vp3.profile-speech.v1'||!['preset','male','female','neutral'].includes(value.style)||!Number.isSafeInteger(value.revision)||value.revision<1||typeof value.ready!=='boolean'||!Array.isArray(value.presets)||value.presets.length>100)return null;
+    if(value.preset_key!==null&&value.preset_key!==''&&(typeof value.preset_key!=='string'||!/^[a-f0-9]{64}$/.test(value.preset_key)))return null;
+    if(value.presets.some(preset=>!preset||! /^[a-f0-9]{64}$/.test(preset.preset_key)||typeof preset.label!=='string'||!preset.label.trim()||Array.from(preset.label).length>120||!['unclassified','male','female','neutral'].includes(preset.style)))return null;
+    return value;
+  }
+  function renderSpeechPreference(value){
+    speechPreference=value;speechChoice.replaceChildren();
+    const choices=[['preset','No preference'],['male','Masculine sounding'],['female','Feminine sounding'],['neutral','Neutral sounding'],...value.presets.map(preset=>['key:'+preset.preset_key,preset.label])];
+    for(const [key,title] of choices){const option=document.createElement('option');option.value=key;option.textContent=title;speechChoice.appendChild(option);}
+    speechChoice.value=value.preset_key?'key:'+value.preset_key:value.style;speechChoice.disabled=!value.ready||speechBusy||sessionChanged;
+    speechNotice.textContent=value.ready?'Optional. This selects a reading voice, not your identity.':'Visitor speech is unavailable. Your messages and text chat still work.';
+  }
+  async function loadSpeechPreference(){
+    if(!cfg.speechEndpoint||!speechChoice||!alive||sessionChanged||speechBusy)return;
+    const sequence=++speechSequence,cid=conversationId;
+    try{const value=speechProjection(await request('visitor_state',{},'GET',cfg.speechEndpoint));if(!value)throw new Error('Voice preference unavailable.');if(sequence===speechSequence&&cid===conversationId)renderSpeechPreference(value);}
+    catch(error){if(!error.stale&&sequence===speechSequence){speechChoice.disabled=true;speechNotice.textContent='Voice preference is unavailable. You can keep chatting in text.';if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419)stopChangedSession();}}
+  }
+  async function saveSpeechPreference(){
+    if(speechBusy||!speechPreference?.ready||sessionChanged||!alive)return;
+    const chosen=speechChoice.value,preset=chosen.startsWith('key:')?speechPreference.presets.find(row=>'key:'+row.preset_key===chosen):null;
+    if(!preset&&!['preset','male','female','neutral'].includes(chosen))return;
+    const payload={style:preset?'preset':chosen,preset_key:preset?.preset_key||'',revision:speechPreference.revision},key=JSON.stringify([conversationId,payload]);
+    if(!speechAttempt||speechAttempt.key!==key)speechAttempt={key,payload,request_id:messageRequestId()};const attempt=speechAttempt,cid=conversationId,sequence=++speechSequence;
+    let refreshSaved=false;speechBusy=true;speechChoice.disabled=true;speechNotice.textContent='Saving your voice preference…';
+    try{const value=speechProjection(await request('visitor_preference',{...attempt.payload,request_id:attempt.request_id},'POST',cfg.speechEndpoint));if(!value)throw new Error('Voice preference was not confirmed.');if(sequence===speechSequence&&cid===conversationId){speechAttempt=null;renderSpeechPreference(value);speechNotice.textContent='Voice preference saved. Your messages stay available as text.';}}
+    catch(error){if(!error.stale&&sequence===speechSequence){speechNotice.textContent='Checking the current saved voice preference…';refreshSaved=true;if([400,403,404,409,419,422].includes(error.status))speechAttempt=null;if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419)stopChangedSession();}}
+    finally{speechBusy=false;if(alive&&!sessionChanged){speechChoice.disabled=!speechPreference?.ready;if(refreshSaved&&cid===conversationId)void loadSpeechPreference();}}
+  }
+  if(cfg.speechEndpoint&&form){
+    const box=document.createElement('div');box.className='profile-speech-preference';
+    const label=document.createElement('label');label.textContent='Reading voice (optional)';label.htmlFor='profileVisitorSpeechPreference';
+    speechChoice=document.createElement('select');speechChoice.id='profileVisitorSpeechPreference';speechChoice.disabled=true;speechChoice.setAttribute('aria-label','Voice used when the owner listens to your typed messages');
+    const description=document.createElement('p');description.textContent='Voice used when the owner listens to your typed messages.';
+    speechNotice=document.createElement('p');speechNotice.setAttribute('role','status');speechNotice.textContent='Checking available reading voices…';
+    box.append(label,speechChoice,description,speechNotice);form.parentElement.insertBefore(box,form);speechChoice.addEventListener('change',()=>void saveSpeechPreference());void loadSpeechPreference();
+    window.addEventListener('vp3:profile-agent-open',()=>void loadSpeechPreference());
+  }
   if(cfg.callEndpoint&&window.VP3ProfileCallsPa3c&&thread){
     let observedCallState='';
     callHost=document.createElement('div');callHost.className='profile-call-visitor-host';callHost.dataset.profileCallVisitorHost='1';thread.appendChild(callHost);

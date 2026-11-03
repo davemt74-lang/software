@@ -243,7 +243,12 @@ function vp3_profile_handoff_admit_pa3(PDO $pdo,array $ctx,array $conversation,i
     $pdo->prepare("INSERT INTO agent_workflow_actions(run_id,owner_user_id,sequence_no,action_key,action_type,label,summary,status,requires_approval,execution_target,capability_key,max_attempts,timeout_seconds) VALUES(?,?,1,?,'execute','Reply to Profile visitor','Use only the accepted public conversation.','queued',0,'cloud','profile.visitor.reply',3,300)")->execute([$runId,$uid,$source]);$actionId=(int)$pdo->lastInsertId();
     $pdo->prepare('UPDATE profile_agent_handoff_turns_pa3 SET run_id=?,action_id=?,notification_id=? WHERE id=?')->execute([$runId,$actionId,$notification?:null,$turnId]);
     vp3_profile_handoff_schedule_pa3($pdo,$uid,$cid);
-    return vp3_profile_handoff_row_pa3($pdo,$turnId)??throw new RuntimeException('Visitor turn was not saved.');
+    $savedTurn=vp3_profile_handoff_row_pa3($pdo,$turnId)??throw new RuntimeException('Visitor turn was not saved.');
+    if(function_exists('vp3_profile_speech_message_pa4a')){
+        // Optional narration never grants or changes the public responder.
+        try{vp3_profile_speech_message_pa4a($pdo,$ctx,$savedTurn);}catch(VP3ProfileSpeechException $e){if($e->httpStatus!==403)throw $e;}
+    }
+    return $savedTurn;
 }
 
 function vp3_profile_handoff_projection_pa3(array $turn): array

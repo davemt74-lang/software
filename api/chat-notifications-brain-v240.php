@@ -542,6 +542,13 @@ function chat_notifications_v240_present_attention_locked(PDO $pdo, array $user,
             return ['ok'=>true,'handled'=>false,'notification_id'=>$notificationId,
                 'presentation_owner'=>'profile_handoff_pa3','voice_allowed'=>false];
         }
+        if(function_exists('vp3_profile_speech_notification_owned_pa4a')
+            &&vp3_profile_speech_notification_owned_pa4a($pdo,$user,$notification)){
+            // The exact saved arrival owns narration. Keep its notification and
+            // attention state intact; playback does not acknowledge a visitor.
+            return ['ok'=>true,'handled'=>false,'notification_id'=>$notificationId,
+                'presentation_owner'=>'profile_speech_pa4a','voice_allowed'=>false];
+        }
     }
     if(function_exists('vp3_cognitive_presentation_owns_attention_v510')&&vp3_cognitive_presentation_owns_attention_v510()&&!notification_is_profile_attention_v1341($notification)){
         return ['ok'=>true,'handled'=>false,'presentation_owner'=>'cognitive_runtime_v510','notification_id'=>max(0,(int)($input['notification_id']??0))];

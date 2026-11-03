@@ -31,11 +31,13 @@ function profile_runtime_record_view(PDO $pdo,array $profile,?array $visitor): ?
     if((int)($visitor['id']??0)===$owner)return null;
     $session=profile_runtime_session($pdo,$owner,$visitor,true);
     $agent=profile_active_agent($pdo,$profile);
+    // Explicit page entry only: state/poll context construction never records speech activity.
+    $speechArrival=function_exists('vp3_profile_speech_page_entry_pa4a')?vp3_profile_speech_page_entry_pa4a($pdo,$profile,$visitor,$session):null;
 
     if(function_exists('profile_visitor_session_hash_v243')){
         $recent=$pdo->prepare("SELECT id FROM profile_events WHERE owner_user_id=? AND profile_session_id=? AND event_type='profile_view' AND created_at>=DATE_SUB(NOW(),INTERVAL 30 MINUTE) ORDER BY id DESC LIMIT 1");
         $recent->execute([$owner,(int)$session['id']]);
-        if($recent->fetchColumn())return $session;
+        if($recentEvent=(int)$recent->fetchColumn()){if($speechArrival&&function_exists('vp3_profile_speech_link_event_pa4a'))vp3_profile_speech_link_event_pa4a($pdo,$speechArrival,$recentEvent);return $session;}
     }
 
     $window=function_exists('profile_visitor_session_hash_v243')
@@ -51,7 +53,7 @@ function profile_runtime_record_view(PDO $pdo,array $profile,?array $visitor): ?
         $metadata['returning']=$metadata['visit_number']>1;
     }
     $event=profile_event_create($pdo,$owner,$session,'profile_view',10,$agent?(int)$agent['id']:null,$metadata,$dedupe);
-    if($event)profile_attention_from_event($pdo,$event,$session,$agent);
+    if($event){if($speechArrival&&function_exists('vp3_profile_speech_link_event_pa4a'))vp3_profile_speech_link_event_pa4a($pdo,$speechArrival,(int)$event['id']);profile_attention_from_event($pdo,$event,$session,$agent);}
     return $session;
 }
 

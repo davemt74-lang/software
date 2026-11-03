@@ -1,0 +1,11 @@
+.profile-speech-card{padding:16px;border:1px solid var(--border,#d9dfe7);border-radius:14px;background:var(--surface,#fff);color:var(--text,#172131);min-width:0;max-width:100%;box-sizing:border-box}
+.profile-speech-label{font-size:14px;margin:0 0 8px;font-weight:700;overflow-wrap:anywhere}
+.profile-speech-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.5;margin:0 0 12px}
+.profile-speech-controls,.profile-speech-card-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.profile-speech-controls button,.profile-speech-card-controls button{min-height:40px;padding:8px 12px;border:1px solid var(--border,#b6c3d2);border-radius:9px;background:var(--surface,#fff);color:inherit;font:inherit;cursor:pointer}
+.profile-speech-controls button:disabled,.profile-speech-card-controls button:disabled{opacity:.55;cursor:default}
+.profile-speech-notice{font-size:13px;line-height:1.45;margin:8px 0 0;overflow-wrap:anywhere}
+.profile-speech-preference{display:grid;gap:7px;padding:12px 0;min-width:0}
+.profile-speech-preference label{font-size:13px;font-weight:650}.profile-speech-preference p{font-size:12px;line-height:1.45;margin:0}
+.profile-speech-preference select{max-width:100%;min-height:40px;font-size:16px;border-radius:8px;padding:7px;background:var(--surface,#fff);color:inherit;border:1px solid var(--border,#c4cdd6)}
+@media(max-width:600px){.profile-speech-card{padding:12px}.profile-speech-controls button,.profile-speech-card-controls button{min-height:44px}.profile-speech-preference{padding:10px 0}.profile-doorbell-reply textarea{font-size:16px}}

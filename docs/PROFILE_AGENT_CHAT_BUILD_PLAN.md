@@ -58,8 +58,8 @@ hold. The Cloud work does not change HomeServer source or Stonefellow playback.
 | PA2 | Payment webhook recovery; late payment reconciliation; durable fulfillment retry; accurate review/payment cards | Complete: PR #695 merged; all 13 PR and 14 post-merge workflows passed |
 | PA3 | Availability, exact visible-card acknowledgement, 15-second pickup, durable automatic takeover, and functional main Chat visitor cards with explicit text reply/claim/delegate/resolve | Released in PRs #696 and #697 |
 | PA3D | Visitor chooses Agent chat or requests live owner text; owner accepts or declines using existing Chat Settings | Released in PR #698; acceptance gates below |
-| PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Implemented in PR #699 with the ten acceptance gates below; PR checks and the release artifact provide final deployment evidence |
-| PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Planned |
+| PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Released in PR #699; all 16 PR and 15 post-merge workflows passed |
+| PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Implemented; local verification passed, MySQL and Chromium release gates pending |
 | PA4B | Notification and Brain state; snooze/wake; routing; replay and projection repair | Planned |
 | PA5 | Ordinary public Profile conversation checkout using the canonical Commerce order/payment/receipt path | Planned |
 
@@ -395,6 +395,17 @@ the actual Chromium call-interface runner, alongside retained PA1, PA2 and PA3
 coverage. Provider HTTP and browser media are controlled fixtures; no live
 provider call is used to establish these results.
 
+The merged PA3C release is commit
+`5429f484ee639e7ce44bcef759c8a31bf53a8cd3`. All 16 PR workflows and all
+15 post-merge workflows passed. MySQL on PHP 8.1 and 8.3 passed 21 independent
+acceptance/replay concurrency checks per version, with observed row-lock waits.
+Chromium passed 30 calling checks and 42 owner visitor-card checks using the real
+Chat and voice scripts in production order. Retained PA1, PA2, native handoff and
+explicit Agent/live-choice browser suites passed 58, 31, 11 and 21 checks.
+The flat artifact from run `41708765620` was verified against all 1,752 packaged
+application source files; SHA-256
+`83d3d24184ad4f1749c85ef155b705ef02bbea01b93cdae871d6f91edd65e139`.
+
 The recovery cases include existing account blocks before admission and during
 a call, an account switch during a slow Join, delayed microphone/camera
 permissions after hang-up, lost responses, and a CreateRoom response that
@@ -476,9 +487,73 @@ The Profile and Studio schema surfaces reviewed so far do not provide an explici
 visitor sex/gender or preferred speech-voice field; PA4A must offer a voluntary
 voice preference instead of deriving it from a name, photo or recording.
 
-The following are planned acceptance gates, not completed results. Live calls
-continue to use actual participant audio; synthetic announcements and typed
-message playback must yield to an accepted human call.
+The following acceptance gates define this section's release score. Local
+verification has passed; the MySQL concurrency and Chromium jobs must also pass
+before this section is scored 10/10 or merged. Live calls continue to use actual
+participant audio; synthetic announcements and typed message playback yield to
+an accepted human call.
+
+The implementation uses separate durable visitor voice assignments, immutable
+speech source items, and provider attempts. Arrival identity comes from the
+actual native visitor principal and an explicit arrival generation, independently
+of mutable CRM recognition. Reloads, polls and duplicate notifications cannot
+create another automatic announcement. An Agent-only chat may receive a factual
+arrival announcement when the owner's current settings permit it, without
+requesting owner pickup or changing the public responder. Message speech is
+resolved from the exact saved public visitor message; browser requests contain
+selectors and delivery proof, never arbitrary speech text or provider voice IDs.
+
+Reuse the existing ElevenLabs key and current provider settings. Voice choices
+come from the current default catalog or a bounded list of explicitly
+Admin-approved public-library presets with validated provider origin and access.
+Personal and workspace clones cannot become visitor presets. This second path
+also serves newer provider accounts: ElevenLabs documents that its older Default
+voices are limited to accounts created before March 2026 and retire on December
+31, 2026. Do not infer a replacement voice or its style from a previous voice ID.
+See [Default voice migration](https://elevenlabs.io/docs/help-center/product/voices/my-voices/what-are-default-voices)
+and [voice metadata](https://elevenlabs.io/docs/api-reference/voices/get).
+
+A provider attempt is durably marked `sending` before network I/O. Abandoned or
+uncertain sends become `outcome_unverified`; neither read polling nor the worker
+starts another synthesis. Explicit retries are linked new attempts and disclose
+possible additional quota use. Completed audio is private, bounded and temporary,
+and serving it requires fresh source and owner authority. Provider completion,
+client-reported playback and notification handling remain distinct facts.
+Record provider-reported character cost and request/trace IDs when supplied;
+never fabricate a token count or dollar cost. See
+[generation metadata](https://elevenlabs.io/docs/api-reference/introduction) and
+[the speech endpoint](https://elevenlabs.io/docs/api-reference/text-to-speech/stream).
+
+Visitor reply dictation explicitly arms one current visible card and stages its
+transcript for review through the existing public reply boundary. It must not
+inherit an unsent private composer draft. An occupied private composer, ordinary
+typing during capture, changed Chat/visitor authority or an accepted human call
+cancels that visitor capture route while preserving private text. The existing
+Stonefellow voice/playback source remains unchanged.
+
+Playback starts with a 30-second authorization lease. Increasing client report
+sequences can renew it within the saved audio expiry and an absolute ten-minute
+limit; duplicate reports cannot extend it. The client measures the deadline from
+request-send time and stops on a missed renewal, changed source or accepted call.
+Only an explicit subsequent Play can reuse completed audio. An uncertain request
+keeps its original identity, and an automatic announcement cannot replay after a
+lost playback acknowledgement.
+
+The exact saved arrival also owns narration in the older notification presenter.
+That suppresses a second spoken announcement without marking its notification
+read, handling its attention item, creating another Chat turn or acknowledging
+the doorbell. Historical notifications without a linked speech item keep their
+existing presentation path.
+
+Local evidence before PR verification: core SQL 102, provider/storage 76,
+actual speech API HTTP 83, actual Admin HTTP 23, UI runtime 75 and notification
+presentation 11 checks passed. Fresh-install normalization passed 8 checks and
+Upgrade readiness passed 35 cases; the retained
+full Recovery Baseline and production Cloud worker/API suite also passed. The
+independent-process MySQL runner requires observed row-lock contention for
+competing claims, request replay and both call/playback orderings. Browser tests
+use actual production Chat and voice scripts with simulated external boundaries;
+no live provider request, physical microphone or device connectivity is claimed.
 
 | PA4A gate | Required behavior |
 | --- | --- |

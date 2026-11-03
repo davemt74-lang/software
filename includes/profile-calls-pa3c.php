@@ -328,6 +328,7 @@ function vp3_profile_call_action_pa3c(PDO $pdo,string $role,array $auth,array $i
                 if($row['state']!=='offered'||$now>=(int)$row['offer_expires_at_ms']||(($op==='cancel')!==($row['offered_by']===$role)))vp3_profile_call_error_pa3c();
                 if($op==='accept'){
                     vp3_profile_call_ready_pa3c($row);if(vp3_profile_call_owner_busy_pa3c($pdo,$owner))vp3_profile_call_error_pa3c('PROFILE_CALL_BUSY',409);
+                    if(function_exists('vp3_profile_speech_interrupt_pa4a'))vp3_profile_speech_interrupt_pa4a($pdo,$owner,'call_active');
                     $thread=vp3_profile_call_takeover_pa3c($pdo,$owner,$cid);
                     $pdo->prepare("UPDATE profile_calls_pa3c SET state='preparing',revision=revision+1,accepted_at_ms=?,connect_until_ms=?,handoff_epoch=?,last_reason='',updated_at_ms=? WHERE id=?")->execute([$now,$now+VP3_PROFILE_CALL_CONNECT_MS_PA3C,(int)$thread['epoch'],$now,$id]);
                     $pdo->prepare('UPDATE profile_call_slots_pa3c SET active_call_id=?,revision=revision+1,updated_at_ms=? WHERE owner_user_id=?')->execute([$id,$now,$owner]);
