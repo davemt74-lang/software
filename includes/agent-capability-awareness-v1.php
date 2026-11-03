@@ -9,6 +9,10 @@ require_once __DIR__.'/agent-private-share-read-v1.php';
 require_once __DIR__.'/agent-vrss-read-v1.php';
 require_once __DIR__.'/agent-system-app-read-v1.php';
 require_once __DIR__.'/agent-app-operations-v1.php';
+require_once __DIR__.'/agent-observation-authority-v1.php';
+require_once __DIR__.'/agent-tracky-read-v1.php';
+require_once __DIR__.'/agent-radar-read-v1.php';
+require_once __DIR__.'/agent-analytics-read-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -54,6 +58,14 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $systemApps=vp3_capability_probe_v1(fn()=>vp3_system_app_read_ready_v1());
     $privateShares=vp3_capability_probe_v1(fn()=>vp3_private_share_schema_ready_v1($pdo));
     $vrssActions=$systemApps==='ready'?vp3_capability_probe_v1(fn()=>vp3_system_apps_agent_actions_schema_ready_v160($pdo)):$systemApps;
+    $tracky=vp3_capability_probe_v1(fn()=>function_exists('vp3_tracky_schema_ready_v1')&&vp3_tracky_schema_ready_v1($pdo));
+    $radar=vp3_capability_probe_v1(fn()=>function_exists('vp3_radar_read_ready_v1')&&vp3_radar_read_ready_v1($pdo));
+    $analytics=vp3_capability_probe_v1(fn()=>function_exists('vp3_analytics_schema_ready_v1')&&vp3_analytics_schema_ready_v1($pdo));
+    $observationPermissionFailures=[];$profileAccess=false;
+    try{$profileAccess=vp3_observation_personal_permission_v1($pdo,$user,'profile_agent.access');}
+    catch(Throwable $e){$observationPermissionFailures=['radar.read','radar.gateway.manage','analytics.read'];}
+    $trackyAccess=false;try{$trackyAccess=function_exists('tracky_cloud_v270_plugin_enabled')&&tracky_cloud_v270_plugin_enabled($pdo,$user);}
+    catch(Throwable $e){$observationPermissionFailures=[...$observationPermissionFailures,'tracky.context.read','tracky.perception.request'];}
     $work=vp3_capability_probe_v1(fn()=>agent_work_control_schema_ready_v173($pdo));
     $scheduling=vp3_scheduling_readiness_v1($pdo,$user);
     $transcripts=vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172'));
@@ -89,6 +101,11 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('downloads.jobs.read','Read HomeServer download jobs','read','vp3_download_manager_agent_query_v320',has_permission('account.access',$user),'not_checked',['Reported status and bounded job list; queued is not completed. No download control, source URLs or paths.']),
         vp3_capability_row_v1('media.processing.read','Read HomeServer media processing jobs','read','vp3_media_processor_agent_query_v330',has_permission('account.access',$user),'not_checked',['Reported jobs/output readiness only. No FFmpeg invocation, render, source or output paths.']),
         vp3_capability_row_v1('video.projects.read','Read HomeServer Video Editor projects','read','vp3_video_editor_agent_query_v280',has_permission('account.access',$user),'not_checked',['Project metadata only; no action-manifest control claim, project changes or rendering.']),
+        vp3_capability_row_v1('tracky.context.read','Read saved Tracky and Agent Eyes observations','read','tracky_agent_tools_query_v271',$trackyAccess,$tracky,['Current owner/Agent/conversation and plugin access; exact owned site and entity selection. Governed stored observations retain their observation time, freshness and continuity state. A stored read does not activate sensing or refresh data.']),
+        vp3_capability_row_v1('tracky.perception.request','Request an explicit governed Tracky observation','write','tracky_agent_tools_query_v271',$trackyAccess,$tracky==='ready'?'not_checked':$tracky,['Explicit current sensing request only through the existing HomeServer route, opt-in and privacy controls. A request receipt does not by itself verify a fresh observation. Capability questions do not capture or refresh.']),
+        vp3_capability_row_v1('radar.read','Read Agent Radar evidence and saved Gateway policies','read','vp3_radar_chat_tool',$profileAccess,$radar,['Owner-scoped recent/high-risk contacts, contact policies, scoped rules and access-profile state. Current Profile Agent access and conversation authority; bounded literal evidence, no policy mutation or message sending.']),
+        vp3_capability_row_v1('radar.gateway.manage','Save an explicitly requested Gateway policy','write','vp3_radar_chat_tool',$profileAccess,$radar,['Existing canonical policy commands and Gateway review surface. Exact owned contact or explicit operator/class/path scope; ambiguous targets require clarification. A saved policy does not establish enforcement on an external site.']),
+        vp3_capability_row_v1('analytics.read','Read scoped website and profile analytics','read','vp3_analytics_chat_tool',$profileAccess,$analytics,['Exact owned property or explicit all-owned scope. Reporting timezone and date boundaries are stated; complete aggregates are distinguished from recorded native-profile events. Sessions are not unique people. Reads do not create, activate or reconfigure tracking properties.']),
         vp3_capability_row_v1('reminders.manage','Personal reminders','write','reminder_chat_v1',true,$reminders,['Create, list, reschedule, snooze, complete, dismiss, cancel and delete.','In-app only; once, daily, weekdays and weekly. Done preserves future repeats.']),
         vp3_capability_row_v1('transcripts.highlight','Retain highlights and act on reviewed findings','write','vp3_transcript_reviewed_action_v1',has_permission('artist_listening.access',$user)&&function_exists('personal_capability_has_v242')&&personal_capability_has_v242('agent_brain.access',$user),$transcripts!=='ready'?$transcripts:$brain,['Raw highlights require saved transcript and Brain storage. Reviewed actions additionally require fresh saved analysis and existing destination permissions. Profile sharing requires Knowledge Access policy.']),
         vp3_capability_row_v1('transcripts.analyze','Analyze and research transcripts','write','vp3_transcript_analyze_v1',has_permission('artist_listening.access',$user),$analysis,['Explicit request only; uses existing transcript analysis engine and meeting AI policy. Provider readiness is checked on execution.']),
@@ -116,6 +133,8 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('screen.context','Discuss the shared screen','read','agent_surface_v131_screen_observation',true,$screenReady?'ready':'share_required',['Only a fresh observation supplied by active screen sharing.','No hidden tabs, direct browser control or silent capture.']),
         vp3_capability_row_v1('homeserver.status','Inspect HomeServer capabilities','read','homeserver_capability_v033_registry',true,'not_checked',['Connection and allowed operations require a fresh authenticated registry check.','Cloud readiness does not establish HomeServer readiness.']),
     ];
+    foreach($base['capabilities'] as &$row)if(in_array($row['id'],$observationPermissionFailures,true)){$row['permitted']=false;$row['ready']=false;$row['reason']='check_failed';}
+    unset($row);
     return $base;
 }
 

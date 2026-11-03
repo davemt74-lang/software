@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-tracky-read-v1.php';
 
 /**
  * Tracky V2.71 — VP3 Agent Brain / Physical Context integration.
@@ -29,8 +30,7 @@ function tracky_agent_enabled_v271(PDO $pdo,array $user): bool
     return (int)($user['id']??0)>0
         && function_exists('tracky_cloud_v270_plugin_enabled')
         && tracky_cloud_v270_plugin_enabled($pdo,$user)
-        && function_exists('tracky_cloud_v270_schema_ready')
-        && tracky_cloud_v270_schema_ready($pdo);
+        && vp3_tracky_schema_ready_v1($pdo);
 }
 
 function tracky_agent_entity_label_v271(string $id): string
@@ -45,19 +45,11 @@ function tracky_agent_entity_label_v271(string $id): string
 
 function tracky_agent_freshness_v271(?string $asOf,?array $site=null): array
 {
-    $asOf=trim((string)$asOf);$age=null;
-    if($asOf!==''){
-        try{$dt=new DateTimeImmutable($asOf,new DateTimeZone('UTC'));$age=max(0,time()-$dt->getTimestamp());}
-        catch(Throwable $e){$age=null;}
-    }
-    $siteStatus=strtolower(trim((string)($site['status']??'')));
-    $siteUnavailable=in_array($siteStatus,['offline','disabled','failed'],true);
-    if(!$siteUnavailable&&$age!==null&&$age<=VP3_TRACKY_AGENT_CURRENT_SECONDS_V271){
-        return ['state'=>'current','age_seconds'=>$age,'live'=>true];
-    }
-    if(!$siteUnavailable&&$age!==null&&$age<=VP3_TRACKY_AGENT_RECENT_SECONDS_V271){
-        return ['state'=>'recent','age_seconds'=>$age,'live'=>false];
-    }
+    $stamp=vp3_tracky_timestamp_v1($asOf);$age=$stamp===null?null:time()-$stamp;
+    if($age===null||$age<0)return ['state'=>'unknown','age_seconds'=>null,'live'=>false];
+    $unavailable=in_array(strtolower(trim((string)($site['status']??''))),['offline','disabled','failed','recovering','unknown'],true);
+    if(!$unavailable&&$age<=VP3_TRACKY_AGENT_CURRENT_SECONDS_V271)return ['state'=>'current','age_seconds'=>$age,'live'=>true];
+    if(!$unavailable&&$age<=VP3_TRACKY_AGENT_RECENT_SECONDS_V271)return ['state'=>'recent','age_seconds'=>$age,'live'=>false];
     return ['state'=>'stale','age_seconds'=>$age,'live'=>false];
 }
 
@@ -111,17 +103,12 @@ function tracky_agent_intent_v271(string $query): string
 
 function tracky_agent_site_v271(PDO $pdo,int $userId,string $query=''): ?array
 {
-    if($userId<1||!tracky_cloud_v270_schema_ready($pdo))return null;
-    $stmt=$pdo->prepare('SELECT * FROM tracky_cloud_sites WHERE user_id=? ORDER BY COALESCE(last_seen_at,created_at) DESC,site_id ASC');
-    $stmt->execute([$userId]);$rows=$stmt->fetchAll()?:[];
-    if(!$rows)return null;
-    $q=mb_strtolower($query);
-    foreach($rows as $row){
-        $siteId=mb_strtolower((string)$row['site_id']);
-        $label=mb_strtolower(trim((string)$row['label']));
-        if(($label!==''&&str_contains($q,$label))||($siteId!==''&&str_contains($q,$siteId)))return $row;
-    }
-    return $rows[0];
+    if($userId<1||!vp3_tracky_schema_ready_v1($pdo))return null;
+    $rows=vp3_tracky_sites_v1($pdo,$userId);$matches=[];
+    foreach($rows as $row)if(vp3_tracky_query_has_label_v1($query,$row['site_id'])||($row['label']!==''&&vp3_tracky_query_has_label_v1($query,$row['label'])))$matches[]=$row;
+    if(count($matches)===1&&count($rows)<=100)return $matches[0];
+    if($matches||preg_match('/\bsite\s+[A-Za-z0-9]/i',$query))return null;
+    return count($rows)===1?$rows[0]:null;
 }
 
 function tracky_agent_location_rows_v271(PDO $pdo,int $userId,string $siteId): array
@@ -136,19 +123,9 @@ function tracky_agent_location_rows_v271(PDO $pdo,int $userId,string $siteId): a
 
 function tracky_agent_row_score_v271(array $row,string $query): int
 {
-    $q=mb_strtolower($query);
-    $subject=mb_strtolower((string)($row['subject_id']??''));
-    $subjectLabel=mb_strtolower(tracky_agent_entity_label_v271($subject));
-    $object=mb_strtolower((string)($row['object_id']??''));
-    $objectLabel=mb_strtolower(tracky_agent_entity_label_v271($object));
-    $score=0;
-    if($subject!==''&&str_contains($q,$subject))$score+=100;
-    if($subjectLabel!==''&&str_contains($q,$subjectLabel))$score+=80;
-    foreach(tracky_agent_query_terms_v271($query) as $term){
-        if(str_contains($subject,$term)||str_contains($subjectLabel,$term))$score+=20;
-        if(str_contains($object,$term)||str_contains($objectLabel,$term))$score+=4;
-    }
-    return $score;
+    $subject=(string)($row['subject_id']??'');if($subject==='')return 0;
+    if(vp3_tracky_query_has_label_v1($query,$subject))return 100;
+    return vp3_tracky_query_has_label_v1($query,tracky_agent_entity_label_v271($subject))?80:0;
 }
 
 function tracky_agent_where_v271(PDO $pdo,array $user,array $site,string $query): array
@@ -161,8 +138,8 @@ function tracky_agent_where_v271(PDO $pdo,array $user,array $site,string $query)
             return [
                 'kind'=>'current_room','entity'=>'You','location'=>$room,
                 'confidence'=>(float)($context['context']['confidence']??0),
-                'as_of'=>(string)($context['observed_at']??$context['updated_at']??''),
-                'freshness'=>tracky_agent_freshness_v271((string)($context['observed_at']??$context['updated_at']??''),$site),
+                'as_of'=>(string)($context['observed_at']??''),
+                'freshness'=>vp3_tracky_observation_v1($context['observed_at']??null,$site,vp3_tracky_continuity_v1($pdo,$uid)),
                 'site_id'=>$siteId,
             ];
         }
@@ -182,7 +159,6 @@ function tracky_agent_where_v271(PDO $pdo,array $user,array $site,string $query)
         $confidence=(float)$b['row']['confidence']<=>(float)$a['row']['confidence'];
         return $confidence!==0?$confidence:strcmp((string)$b['row']['as_of'],(string)$a['row']['as_of']);
     });
-    if(!$scored&&count($rows)===1)$scored[]=['score'=>1,'row'=>$rows[0]];
     if(!$scored)return ['kind'=>'where','matches'=>[],'site_id'=>$siteId];
 
     $top=(int)$scored[0]['score'];$matches=[];
@@ -201,7 +177,7 @@ function tracky_agent_where_v271(PDO $pdo,array $user,array $site,string $query)
             'source_event_id'=>(string)$row['source_event_id'],
             'sequence'=>(int)$row['sequence_no'],
             'as_of'=>(string)$row['as_of'],
-            'freshness'=>tracky_agent_freshness_v271((string)$row['as_of'],$site),
+            'freshness'=>vp3_tracky_observation_v1($row['as_of']??null,$site,vp3_tracky_continuity_v1($pdo,$uid),(string)($row['temporal_state']??'unknown')),
         ];
     }
     return ['kind'=>'where','matches'=>$matches,'site_id'=>$siteId];
@@ -240,15 +216,15 @@ function tracky_agent_present_v271(PDO $pdo,array $user,array $site,string $quer
             'room'=>tracky_agent_entity_label_v271((string)$row['object_id']),
             'confidence'=>(float)$row['confidence'],
             'as_of'=>(string)$row['as_of'],
-            'freshness'=>tracky_agent_freshness_v271((string)$row['as_of'],$site),
+            'freshness'=>vp3_tracky_observation_v1($row['as_of']??null,$site,vp3_tracky_continuity_v1($pdo,$uid),(string)($row['temporal_state']??'unknown')),
         ];
     }
     if(!$people&&$roomId===''&&$roomLabel!==''){
         $context=tracky_cloud_v270_current_context($pdo,$uid,$siteId);
         foreach((array)($context['context']['people_present']??[]) as $name){
             $name=trim((string)$name);if($name==='')continue;
-            $observed=(string)($context['observed_at']??$context['updated_at']??'');
-            $people[]=['entity_id'=>'','name'=>$name,'room_id'=>'','room'=>$roomLabel,'confidence'=>(float)($context['context']['confidence']??0),'as_of'=>$observed,'freshness'=>tracky_agent_freshness_v271($observed,$site)];
+            $observed=(string)($context['observed_at']??'');
+            $people[]=['entity_id'=>'','name'=>$name,'room_id'=>'','room'=>$roomLabel,'confidence'=>(float)($context['context']['confidence']??0),'as_of'=>$observed,'freshness'=>vp3_tracky_observation_v1($observed,$site,vp3_tracky_continuity_v1($pdo,$uid))];
         }
     }
     return ['kind'=>'present','room'=>$roomLabel,'room_id'=>$roomId,'people'=>array_slice($people,0,20),'site_id'=>$siteId];
@@ -348,18 +324,10 @@ function tracky_agent_health_v271(PDO $pdo,array $user): array
 
 function tracky_agent_current_v271(PDO $pdo,array $user,array $site): array
 {
-    $context=tracky_cloud_v270_current_context($pdo,(int)$user['id'],(string)$site['site_id']);
-    $observed=(string)($context['observed_at']??$context['updated_at']??'');
-    return [
-        'kind'=>'current',
-        'site_id'=>(string)$site['site_id'],
-        'site_label'=>(string)($site['label']?:$site['site_id']),
-        'status'=>(string)$site['status'],
-        'context'=>$context,
-        'agent_scene'=>$context['agent_scene']??[],
-        'agent_eyes_status'=>$context['agent_eyes_status']??[],
-        'freshness'=>tracky_agent_freshness_v271($observed,$site),
-    ];
+    $projection=vp3_tracky_current_v1($pdo,(int)$user['id'],$site);
+    return ['kind'=>'current','site_id'=>(string)$site['site_id'],'site_label'=>(string)($site['label']?:$site['site_id']),'status'=>(string)$site['status'],
+        'context'=>['site_id'=>(string)$site['site_id'],'context'=>$projection['context'],'observed_at'=>$projection['freshness']['observed_at']],
+        'agent_scene'=>$projection['scene'],'agent_eyes_status'=>$projection['eyes'],'freshness'=>$projection['freshness']];
 }
 
 function tracky_agent_query_data_v271(PDO $pdo,array $user,string $query,string $intent=''): array
@@ -471,10 +439,11 @@ function tracky_agent_answer_v271(array $data,string $intent): string
             $fresh=(string)($fact['freshness']['state']??'stale');
             return 'That room estimate comes from Tracky’s latest governed context snapshot ('.$fresh.'). Confidence is '.number_format((float)$fact['confidence']*100,1).'% and the snapshot is from '.tracky_agent_time_label_v271((string)$fact['as_of']).'. Raw camera evidence stays on the HomeServer.';
         }
-        $answer='Tracky’s current fact is '.(string)$fact['entity'].' '.str_replace('_',' ',(string)$fact['predicate']).' '.(string)$fact['location'].' at '.number_format((float)$fact['confidence']*100,1).'% confidence.';
+        $answer='Tracky’s stored fact is '.(string)$fact['entity'].' '.str_replace('_',' ',(string)$fact['predicate']).' '.(string)$fact['location'].' at '.number_format((float)$fact['confidence']*100,1).'% confidence.';
         $evidence=$data['evidence']??null;
         if(is_array($evidence))$answer.=' It is backed by governed event '.(string)$evidence['event_type'].' from '.tracky_agent_time_label_v271((string)$evidence['occurred_at']).'.';
         else $answer.=' The source event is no longer available in the bounded Cloud projection.';
+        if(isset($fact['freshness']))$answer.=' '.vp3_tracky_fresh_text_v1($fact['freshness']).'.';
         return $answer.' Raw perception evidence is not copied into VP3 Cloud.';
     }
     return 'Tracky physical context is available.';
@@ -482,39 +451,8 @@ function tracky_agent_answer_v271(array $data,string $intent): string
 
 function tracky_agent_tools_query_v271(string $query,array $user,int $conversationId=0): array
 {
-    $intent=tracky_agent_intent_v271($query);if($intent==='')return tracky_agent_empty_v271();
-    $pdo=db();if(!$pdo)return tracky_agent_empty_v271();
-    $result=tracky_agent_empty_v271();$result['handled']=true;
-    if(!tracky_agent_enabled_v271($pdo,$user)){
-        $result['answer']='Tracky physical awareness is not enabled and ready for this account. Enable Tracky in Plugins and connect a compatible OTRO HomeServer.';
-        $result['actions'][]=['type'=>'open_url','label'=>'Open Plugins','url'=>url('/plugins.php')];
-        if(function_exists('agent_tool_log'))agent_tool_log($user,'tracky.'.$intent,$query,'unavailable',[],$conversationId);
-        return $result;
-    }
-    try{
-        $data=tracky_agent_query_data_v271($pdo,$user,$query,$intent);
-        $refresh=function_exists('tracky_v273_maybe_refresh')
-            ?tracky_v273_maybe_refresh($pdo,$user,$query,$intent,$data)
-            :['attempted'=>false,'status'=>'unavailable'];
-        if(!empty($refresh['attempted'])&&($refresh['status']??'')==='completed'&&empty($refresh['cloud_sync_error'])){
-            $data=tracky_agent_query_data_v271($pdo,$user,$query,$intent);
-        }
-        $result['answer']=tracky_agent_answer_v271($data,$intent);
-        if(function_exists('tracky_v273_refresh_note'))$result['answer'].=tracky_v273_refresh_note($refresh);
-        $result['sources'][]=['source'=>'tracky:physical_context','title'=>'Tracky governed physical context'];
-        $result['tracky']=[
-            'contract'=>VP3_TRACKY_AGENT_CONTRACT_V271,'intent'=>$intent,'data'=>$data,
-            'active_perception'=>$refresh,'read_only'=>true,'raw_perception_exposed'=>false
-        ];
-        if(function_exists('agent_tool_log'))agent_tool_log($user,'tracky.'.$intent,$query,'success',[
-            'intent'=>$intent,'site_id'=>(string)($data['site_id']??''),'read_only'=>true,
-            'active_perception_status'=>(string)($refresh['status']??'not_attempted')
-        ],$conversationId);
-    }catch(Throwable $e){
-        $result['answer']='Tracky physical context could not be read safely right now.';
-        if(function_exists('agent_tool_log'))agent_tool_log($user,'tracky.'.$intent,$query,'failed',['error'=>mb_strimwidth($e->getMessage(),0,240,'')],$conversationId);
-    }
-    return $result;
+    // The shared adapter keeps stored reads separate from the explicit governed observation path.
+    return vp3_tracky_legacy_v1($query,$user,$conversationId);
 }
 
 function tracky_agent_tool_catalog_entry_v271(PDO $pdo,array $user): ?array
@@ -540,67 +478,67 @@ function tracky_agent_context_relevant_v271(string $query): bool
     );
 }
 
+
 function tracky_agent_fresh_alerts_v271(PDO $pdo,int $userId,int $limit=4): array
 {
-    if($userId<1||!tracky_cloud_v270_schema_ready($pdo))return [];
-    $limit=max(1,min(10,$limit));
-    $stmt=$pdo->prepare("SELECT site_id,event_id,event_type,severity,confidence,occurred_at,event_json
-      FROM tracky_cloud_events
-      WHERE user_id=? AND is_fresh=1 AND severity IN ('urgent','system-health')
-      ORDER BY occurred_at DESC,id DESC LIMIT {$limit}");
-    $stmt->execute([$userId]);$out=[];
-    foreach($stmt->fetchAll()?:[] as $row){
-        $event=json_decode((string)$row['event_json'],true);if(!is_array($event))$event=[];
-        $out[]=[
-            'site_id'=>(string)$row['site_id'],'event_id'=>(string)$row['event_id'],
-            'event_type'=>(string)$row['event_type'],'severity'=>(string)$row['severity'],
-            'confidence'=>(float)$row['confidence'],'occurred_at'=>(string)$row['occurred_at'],
-            'summary'=>(string)($event['summary']??''),'room_id'=>(string)($event['room_id']??''),
-        ];
+    if($userId<1||!vp3_tracky_schema_ready_v1($pdo))return [];
+    $limit=max(1,min(10,$limit));$now=time();$continuity=vp3_tracky_continuity_v1($pdo,$userId);
+    $q=$pdo->prepare("SELECT e.site_id,e.event_id,e.event_type,e.severity,e.confidence,e.privacy_class,e.occurred_at,e.event_json,s.status,s.last_seen_at
+      FROM tracky_cloud_events e JOIN tracky_cloud_sites s ON s.user_id=e.user_id AND s.site_id=e.site_id
+      WHERE e.user_id=? AND e.is_fresh=1 AND e.severity IN ('urgent','system-health') AND e.occurred_at>=? AND e.occurred_at<=?
+      ORDER BY e.occurred_at DESC,e.id DESC LIMIT {$limit}");
+    $q->execute([$userId,gmdate('Y-m-d H:i:s',$now-300),gmdate('Y-m-d H:i:s',$now)]);$out=[];
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){
+        $event=vp3_tracky_event_v1($row,$row,$continuity);
+        if($event['freshness']['state']!=='current')continue;
+        $out[]=['site_id'=>$row['site_id'],'event_id'=>$event['event_id'],'event_type'=>$event['event_type'],'severity'=>$row['severity'],
+            'confidence'=>$event['confidence'],'occurred_at'=>$event['freshness']['observed_at'],'summary'=>$event['summary'],'room_id'=>$event['room_id'],'freshness'=>$event['freshness']];
     }
     return $out;
 }
 
 function tracky_agent_context_items_v271(PDO $pdo,array $user,string $namespace,string $query,array $options=[]): array
 {
-    if(!tracky_agent_enabled_v271($pdo,$user))return [];
-    $direct=tracky_agent_context_relevant_v271($query);
-    $alerts=tracky_agent_fresh_alerts_v271($pdo,(int)$user['id'],4);
-    if(!$direct&&!$alerts)return [];
-
-    $out=[];$site=tracky_agent_site_v271($pdo,(int)$user['id'],$query);
-    if($site&&$direct){
-        $current=tracky_agent_current_v271($pdo,$user,$site);
-        $safe=[
-            'site_id'=>(string)$site['site_id'],'site_label'=>(string)($site['label']?:$site['site_id']),
-            'status'=>(string)$site['status'],'current'=>$current['context']??[],
-            'freshness'=>$current['freshness']??['state'=>'stale','live'=>false],
-            'query_intent'=>tracky_agent_intent_v271($query),
-        ];
-        $json=json_encode($safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-        if(function_exists('vp3_cognitive_context_item_v2420')){
-            $item=vp3_cognitive_context_item_v2420(
-                'physical_context','tracky:physical-context','Physical context',
-                'Governed Tracky physical context: '.(is_string($json)?$json:'{}'),97.0,
-                ['direct'=>true,'read_only'=>true,'protocol'=>VP3_TRACKY_PROTOCOL_V270,'raw_perception_exposed'=>false]
-            );
-            if($item)$out[]=$item;
-        }else{
-            $out[]=['source'=>'tracky:physical-context','title'=>'Physical context','text'=>(string)$json,'section'=>'physical_context','score'=>97.0];
+    if(vp3_tracky_nonexecuting_v1($query)!=='')return [];
+    if($namespace!=='system'&&!preg_match('/^agent:([1-9][0-9]*)$/D',$namespace,$m))return [];
+    $aid=$namespace==='system'?0:(int)$m[1];$principal=['kind'=>$aid?'user_agent':'system','owner_user_id'=>(int)($user['id']??0),'agent_id'=>$aid];
+    $context=['conversation_id'=>(int)($options['conversation_id']??0)];
+    try{
+        $live=vp3_tracky_authority_v1($pdo,$user,$principal,$context);
+        if(!tracky_agent_enabled_v271($pdo,$live))return [];
+        if(function_exists('tracky_v272_settings')&&empty(tracky_v272_settings($pdo,(int)$live['id'])['chat_enabled']))return [];
+        $direct=tracky_agent_context_relevant_v271($query);$continuity=vp3_tracky_continuity_v1($pdo,(int)$live['id']);$alerts=tracky_agent_fresh_alerts_v271($pdo,(int)$live['id'],4);$out=[];$alertSites=[];
+        foreach($alerts as $alert){$owned=vp3_tracky_sites_v1($pdo,(int)$live['id'],$alert['site_id']);if(count($owned)!==1)return [];$alertSites[$alert['site_id']]=$owned[0];}
+        $site=$direct?tracky_agent_site_v271($pdo,(int)$live['id'],$query):null;
+        if($site){
+            $read=vp3_tracky_read_v1($pdo,$live,$principal,['operation'=>'tracky_read','ids'=>['tracky.context.read'],'view'=>'current','site_id'=>$site['site_id']],$context);
+            if(in_array($read['tool_receipt']['status']??'',['read_complete','no_matches'],true)){
+                $current=$read['tracky']['data'];$safe=['site_id'=>$site['site_id'],'site_label'=>$site['label'],'current'=>$current['context'],'freshness'=>$current['freshness'],'scene'=>$current['scene'],'eyes'=>$current['eyes']];
+                $json=json_encode($safe,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+                if(function_exists('vp3_cognitive_context_item_v2420'))$item=vp3_cognitive_context_item_v2420('physical_context','tracky:physical-context','Stored physical context','Governed stored Tracky observations; use their timestamps and continuity, never infer current presence from missing records: '.$json,97.0,['direct'=>true,'read_only'=>true,'protocol'=>VP3_TRACKY_PROTOCOL_V270,'raw_perception_exposed'=>false]);
+                else $item=['source'=>'tracky:physical-context','title'=>'Stored physical context','text'=>$json,'section'=>'physical_context','score'=>97.0];
+                if($item)$out[]=$item;
+            }
         }
-    }
-    if($alerts){
-        $json=json_encode($alerts,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-        if(function_exists('vp3_cognitive_context_item_v2420')){
-            $item=vp3_cognitive_context_item_v2420(
-                'physical_context','tracky:physical-alerts','Physical alerts',
-                'Fresh governed Tracky alerts: '.(is_string($json)?$json:'[]'),99.0,
-                ['attention'=>true,'read_only'=>true,'raw_perception_exposed'=>false]
-            );
-            if($item)$out[]=$item;
+        if($alerts){
+            $json=json_encode($alerts,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+            if(function_exists('vp3_cognitive_context_item_v2420')){$item=vp3_cognitive_context_item_v2420('physical_context','tracky:physical-alerts','Recent stored physical alerts','Recent stored Tracky alerts; retain each continuity and observation state: '.$json,99.0,['attention'=>true,'read_only'=>true,'raw_perception_exposed'=>false]);if($item)$out[]=$item;}
         }
-    }
-    return array_slice($out,0,3);
+        vp3_tracky_authority_v1($pdo,$user,$principal,$context);
+        $guardSites=$alertSites;if($site)$guardSites[$site['site_id']]=$site;
+        foreach($guardSites as $id=>$before){
+            $owned=vp3_tracky_sites_v1($pdo,(int)$live['id'],$id);if(count($owned)!==1)return [];
+            foreach(['status','last_seen_at','device_id'] as $key)if(($before[$key]??null)!==($owned[0][$key]??null))return [];
+        }
+        if(vp3_tracky_continuity_v1($pdo,(int)$live['id'])!==$continuity)return [];
+        if(function_exists('tracky_v272_settings')&&empty(tracky_v272_settings($pdo,(int)$live['id'])['chat_enabled']))return [];
+        if(($current['scene']['state']??'')==='available'){
+            $scene=tracky_scene_read_v1g3d($pdo,(int)$live['id'],$site['site_id']);$keys=array_flip(['state','reason','observed_at','objects','owner_corrections']);
+            if(array_intersect_key($current['scene'],$keys)!==array_intersect_key($scene,$keys))return [];
+        }
+        vp3_tracky_authority_v1($pdo,$user,$principal,$context);
+        return array_slice($out,0,3);
+    }catch(Throwable){return [];}
 }
 
 function tracky_agent_object_exists_v271(PDO $pdo,int $userId,array $ref): bool
@@ -628,34 +566,75 @@ function tracky_agent_cognitive_permission_v271(PDO $pdo,array $user,string $age
     return tracky_agent_object_exists_v271($pdo,(int)$user['id'],$ref);
 }
 
+function tracky_agent_cognitive_scope_v271(PDO $pdo,array $user,string $namespace,array $options): array
+{
+    if($namespace!=='system'&&!preg_match('/^agent:([1-9][0-9]*)$/D',$namespace,$m))throw new RuntimeException('Physical context access denied.');
+    $aid=$namespace==='system'?0:(int)$m[1];
+    $principal=['kind'=>$aid?'user_agent':'system','owner_user_id'=>(int)($user['id']??0),'agent_id'=>$aid];
+    $context=['conversation_id'=>(int)($options['conversation_id']??0)];
+    return [vp3_tracky_authority_v1($pdo,$user,$principal,$context),$principal,$context];
+}
+
+/** Graph consumers drop observation metadata, so authority must be final before their projection. */
+function tracky_agent_cognitive_finish_v271(PDO $pdo,array $user,array $principal,array $context,array $sites,array $continuity): void
+{
+    foreach($sites as $id=>$before){
+        $owned=vp3_tracky_sites_v1($pdo,(int)$user['id'],$id);
+        if(count($owned)!==1)throw new RuntimeException('Physical context access changed.');
+        foreach(['status','last_seen_at','device_id'] as $key)if(($before[$key]??null)!==($owned[0][$key]??null))throw new RuntimeException('Physical observation continuity changed.');
+    }
+    if(vp3_tracky_continuity_v1($pdo,(int)$user['id'])!==$continuity)throw new RuntimeException('Physical observation continuity changed.');
+    vp3_tracky_authority_v1($pdo,$user,$principal,$context);
+}
+
 function tracky_agent_cognitive_context_v271(PDO $pdo,array $user,string $agentNamespace,array $ref,array $options=[]): array
 {
+    [$live,$principal,$context]=tracky_agent_cognitive_scope_v271($pdo,$user,$agentNamespace,$options);
     if(!tracky_agent_cognitive_permission_v271($pdo,$user,$agentNamespace,$ref,'read'))throw new RuntimeException('Physical context access denied.');
-    $uid=(int)$user['id'];$type=(string)$ref['type'];$id=(string)$ref['id'];
+    $uid=(int)$live['id'];$type=(string)$ref['type'];$id=(string)$ref['id'];$continuity=vp3_tracky_continuity_v1($pdo,$uid);$sites=[];
     if($type==='physical_site'){
-        $site=tracky_cloud_v270_site_status($pdo,$uid,$id)?:throw new RuntimeException('Tracky site unavailable.');
+        $owned=vp3_tracky_sites_v1($pdo,$uid,$id);if(count($owned)!==1)throw new RuntimeException('Tracky site unavailable.');$site=$owned[0];
+        $q=$pdo->prepare('SELECT capabilities_json FROM tracky_cloud_sites WHERE user_id=? AND site_id=?');$q->execute([$uid,$id]);$caps=$q->fetchColumn();
+        $q=$pdo->prepare('SELECT sequence_no,updated_at FROM tracky_cloud_context WHERE user_id=? AND site_id=?');$q->execute([$uid,$id]);$meta=$q->fetch(PDO::FETCH_ASSOC)?:[];
+        $health=tracky_cloud_v270_health(vp3_tracky_json_v1($site['health_json']??'[]'));
+        $capabilities=tracky_cloud_v270_capabilities($caps===false||$caps===null?[]:vp3_tracky_json_v1($caps));
+        // The shared reader performs the final site, consent, continuity and live-principal checks.
+        $read=vp3_tracky_read_v1($pdo,$live,$principal,['operation'=>'tracky_read','ids'=>['tracky.context.read'],'view'=>'current','site_id'=>$id],$context);
+        if(!in_array($read['tool_receipt']['status']??'',['read_complete','no_matches'],true)||($read['tracky']['site_id']??'')!==$id||!isset($read['tracky']['data']['freshness']))throw new RuntimeException('Tracky site observation unavailable.');
+        $current=$read['tracky']['data'];
         return [
             'site'=>['site_id'=>$id,'label'=>(string)$site['label'],'status'=>(string)$site['status'],'protocol'=>(string)$site['protocol_version'],'last_seen_at'=>$site['last_seen_at']??null],
-            'current'=>tracky_cloud_v270_current_context($pdo,$uid,$id),
-            'health'=>$site['health']??[],'capabilities'=>$site['capabilities']??[],
+            'current'=>['site_id'=>$id,'sequence'=>(int)($meta['sequence_no']??0),'observed_at'=>$current['freshness']['observed_at'],'updated_at'=>$meta['updated_at']??null,
+                'context'=>$current['context'],'agent_scene'=>$current['scene'],'agent_eyes_status'=>$current['eyes'],'freshness'=>$current['freshness']],
+            'health'=>$health,'capabilities'=>$capabilities,
             'authority'=>'tracky_cloud_projection','read_only'=>true,'raw_perception_exposed'=>false,
         ];
     }
-    if($type==='physical_entity'){
+    if(in_array($type,['physical_entity','physical_room'],true)){
+        $entity=$type==='physical_entity';$column=$entity?'subject_id':'object_id';$limit=$entity?40:60;
         $q=$pdo->prepare("SELECT site_id,subject_id,predicate,object_id,value_json,confidence,temporal_state,source_event_id,sequence_no,as_of
-          FROM tracky_cloud_world_state WHERE user_id=? AND subject_id=? ORDER BY as_of DESC LIMIT 40");
-        $q->execute([$uid,$id]);$rows=$q->fetchAll()?:[];
-        foreach($rows as &$row){$value=json_decode((string)($row['value_json']??''),true);$row['value']=is_array($value)?$value:[];unset($row['value_json']);}unset($row);
-        return ['entity_id'=>$id,'label'=>tracky_agent_entity_label_v271($id),'relations'=>$rows,'authority'=>'tracky_cloud_world_state','read_only'=>true];
-    }
-    if($type==='physical_room'){
-        $q=$pdo->prepare("SELECT site_id,subject_id,predicate,object_id,confidence,temporal_state,source_event_id,sequence_no,as_of
-          FROM tracky_cloud_world_state WHERE user_id=? AND object_id=? ORDER BY as_of DESC LIMIT 60");
-        $q->execute([$uid,$id]);$rows=$q->fetchAll()?:[];
-        return ['room_id'=>$id,'label'=>tracky_agent_entity_label_v271($id),'occupants_and_objects'=>$rows,'authority'=>'tracky_cloud_world_state','read_only'=>true];
+          FROM tracky_cloud_world_state WHERE user_id=? AND {$column}=? ORDER BY as_of DESC LIMIT {$limit}");
+        $q->execute([$uid,$id]);$rows=[];
+        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){
+            if(($row[$column]??null)!==$id||tracky_scene_reserved_v1g3d($row))continue;
+            $siteId=vp3_tracky_text_v1($row['site_id'],100);
+            if(!isset($sites[$siteId])){$owned=vp3_tracky_sites_v1($pdo,$uid,$siteId);if(count($owned)!==1)throw new RuntimeException('Tracky site unavailable.');$sites[$siteId]=$owned[0];}
+            foreach(['subject_id'=>128,'predicate'=>80,'object_id'=>128,'source_event_id'=>128] as $key=>$max)$row[$key]=vp3_tracky_text_v1($row[$key],$max);
+            if(!in_array($row['temporal_state'],['current','last_seen','historical','inferred','predicted','unknown'],true))throw new RuntimeException('Stored Tracky relation is invalid.');
+            $row['confidence']=vp3_tracky_confidence_v1($row['confidence']);
+            if($entity)$row['value']=tracky_cloud_v270_relation_value($row['value_json']===null?null:vp3_tracky_json_v1($row['value_json']));
+            unset($row['value_json']);
+            $row['freshness']=vp3_tracky_observation_v1($row['as_of'],$sites[$siteId],$continuity,$row['temporal_state']);
+            $row['observation_note']=vp3_tracky_fresh_text_v1($row['freshness']);
+            $rows[]=$row;
+        }
+        tracky_agent_cognitive_finish_v271($pdo,$user,$principal,$context,$sites,$continuity);
+        return [$entity?'entity_id':'room_id'=>$id,'label'=>tracky_agent_entity_label_v271($id),$entity?'relations':'occupants_and_objects'=>$rows,'authority'=>'tracky_cloud_world_state','read_only'=>true];
     }
     if($type==='physical_event'&&ctype_digit($id)&&function_exists('tracky_v272_event_row_by_numeric_id')){
         $row=tracky_v272_event_row_by_numeric_id($pdo,$uid,(int)$id);
+        if($row){$owned=vp3_tracky_sites_v1($pdo,$uid,(string)$row['site_id']);if(count($owned)!==1)throw new RuntimeException('Tracky site unavailable.');$sites[$row['site_id']]=$owned[0];$row['freshness']=vp3_tracky_observation_v1($row['occurred_at'],$owned[0],$continuity,'historical');}
+        tracky_agent_cognitive_finish_v271($pdo,$user,$principal,$context,$sites,$continuity);
         return $row?['event'=>$row,'authority'=>'tracky_cloud_events','read_only'=>true,'raw_perception_exposed'=>false]:[];
     }
     return [];
@@ -663,34 +642,40 @@ function tracky_agent_cognitive_context_v271(PDO $pdo,array $user,string $agentN
 
 function tracky_agent_cognitive_relationships_v271(PDO $pdo,array $user,string $agentNamespace,array $ref,array $options=[]): array
 {
-    if(!tracky_agent_cognitive_permission_v271($pdo,$user,$agentNamespace,$ref,'read'))return [];
+    try{
     $uid=(int)$user['id'];$type=(string)$ref['type'];$id=(string)$ref['id'];$out=[];
     if($type==='physical_site'){
-        $q=$pdo->prepare("SELECT DISTINCT object_id FROM tracky_cloud_world_state WHERE user_id=? AND site_id=? AND object_id LIKE 'room:%' LIMIT 24");
+        [$live,$principal,$context]=tracky_agent_cognitive_scope_v271($pdo,$user,$agentNamespace,$options);
+        if(!tracky_agent_cognitive_permission_v271($pdo,$live,$agentNamespace,$ref,'read'))return [];
+        $owned=vp3_tracky_sites_v1($pdo,$uid,$id);if(count($owned)!==1)return [];$continuity=vp3_tracky_continuity_v1($pdo,$uid);
+        $q=$pdo->prepare("SELECT DISTINCT site_id,object_id FROM tracky_cloud_world_state WHERE user_id=? AND site_id=? AND object_id LIKE 'room:%' LIMIT 24");
         $q->execute([$uid,$id]);
         foreach($q->fetchAll()?:[] as $row){
-            $room=(string)$row['object_id'];if($room==='')continue;
+            $room=(string)$row['object_id'];if($row['site_id']!==$id||$room==='')continue;
             $out[]=['relation'=>'has_location','object_ref'=>['type'=>'physical_room','id'=>$room,'scope'=>'personal'],'provenance'=>'tracky_cloud_world_state','confidence'=>1.0,'confirmation_state'=>'deterministic'];
         }
-    }elseif($type==='physical_entity'){
-        $q=$pdo->prepare("SELECT predicate,object_id,confidence,temporal_state FROM tracky_cloud_world_state WHERE user_id=? AND subject_id=? AND temporal_state IN ('current','inferred') ORDER BY as_of DESC LIMIT 24");
-        $q->execute([$uid,$id]);
-        foreach($q->fetchAll()?:[] as $row){
+        tracky_agent_cognitive_finish_v271($pdo,$user,$principal,$context,[$id=>$owned[0]],$continuity);
+    }elseif(in_array($type,['physical_entity','physical_room'],true)){
+        $data=tracky_agent_cognitive_context_v271($pdo,$user,$agentNamespace,$ref,$options);
+        foreach($data[$type==='physical_entity'?'relations':'occupants_and_objects'] as $row){
+            $fresh=$row['freshness'];$inferred=$row['temporal_state']==='inferred';
+            // The graph contract carries no freshness field. Keep stale/future/unreconciled
+            // observations in stored context, never promote them into current location edges.
+            if(!$fresh['live']&&!($inferred&&$fresh['state']==='current'&&$fresh['site_contact_current']&&$fresh['continuity']==='current'))continue;
+            if($type==='physical_room'){
+                $subject=(string)$row['subject_id'];if($subject==='')continue;
+                $out[]=['relation'=>'location_of','object_ref'=>['type'=>'physical_entity','id'=>$subject,'scope'=>'personal'],'provenance'=>'tracky_cloud_world_state','confidence'=>$row['confidence'],'confirmation_state'=>$inferred?'model_inferred':'deterministic'];
+                continue;
+            }
             $object=(string)$row['object_id'];if($object==='')continue;
             $targetType=str_starts_with(strtolower($object),'room:')?'physical_room':'physical_entity';
             $predicate=(string)$row['predicate'];
             $relation=$targetType==='physical_room'&&in_array($predicate,['located_in','located_on','present_in','moving_between'],true)?'has_location':$predicate;
-            $out[]=['relation'=>$relation,'object_ref'=>['type'=>$targetType,'id'=>$object,'scope'=>'personal'],'provenance'=>'tracky_cloud_world_state','confidence'=>(float)$row['confidence'],'confirmation_state'=>(string)$row['temporal_state']==='inferred'?'model_inferred':'deterministic'];
-        }
-    }elseif($type==='physical_room'){
-        $q=$pdo->prepare("SELECT subject_id,predicate,confidence,temporal_state FROM tracky_cloud_world_state WHERE user_id=? AND object_id=? AND temporal_state IN ('current','inferred') ORDER BY as_of DESC LIMIT 30");
-        $q->execute([$uid,$id]);
-        foreach($q->fetchAll()?:[] as $row){
-            $subject=(string)$row['subject_id'];if($subject==='')continue;
-            $out[]=['relation'=>'location_of','object_ref'=>['type'=>'physical_entity','id'=>$subject,'scope'=>'personal'],'provenance'=>'tracky_cloud_world_state','confidence'=>(float)$row['confidence'],'confirmation_state'=>(string)$row['temporal_state']==='inferred'?'model_inferred':'deterministic'];
+            $out[]=['relation'=>$relation,'object_ref'=>['type'=>$targetType,'id'=>$object,'scope'=>'personal'],'provenance'=>'tracky_cloud_world_state','confidence'=>$row['confidence'],'confirmation_state'=>$inferred?'model_inferred':'deterministic'];
         }
     }
-    return $out;
+    return array_slice($out,0,$type==='physical_room'?30:24);
+    }catch(Throwable){return [];}
 }
 
 function tracky_agent_domain_contract_v271(): array

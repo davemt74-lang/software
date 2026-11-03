@@ -64,6 +64,9 @@ jobs:
           php tests/agent-private-share-read-v1.php
           php tests/agent-vrss-read-v1.php
           php tests/agent-vrss-outcomes-v1.php
+          php tests/agent-tracky-read-v1.php
+          php tests/agent-radar-read-v1.php
+          php tests/agent-analytics-read-v1.php
           php tests/agent-system-app-read-v1.php
           php tests/agent-app-operations-v1.php
           php tests/homeserver-read-receipts-v1.php

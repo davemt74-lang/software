@@ -7,20 +7,35 @@ require dirname(__DIR__).'/includes/agent-brain-context-v142.php';
 require dirname(__DIR__).'/includes/ai-settings.php';
 require dirname(__DIR__).'/includes/ai-stream-v121.php';
 require dirname(__DIR__).'/includes/vp3-analytics-chat.php';
+require __DIR__.'/fixtures/analytics-agent-v1.php';
 
 $checks=0;
 function verify(bool $ok,string $label): void {global $checks;if(!$ok)throw new RuntimeException($label);$checks++;}
-function db(): PDO {static $pdo;return $pdo??=new PDO('sqlite::memory:');}
+class RelevanceAnalyticsPDO extends PDO
+{
+    public function prepare(string $sql,array $options=[]): PDOStatement|false
+    {
+        if(preg_match('/\b(?:FROM|JOIN)\s+(?:vp3_radar_sessions|vp3_radar_events|profile_events)\b/i',$sql))$GLOBALS['reads'][]=$sql;
+        return parent::prepare($sql,$options);
+    }
+}
+function db(): PDO
+{
+    static $pdo;if($pdo)return $pdo;
+    $pdo=new RelevanceAnalyticsPDO('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
+    $pdo->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo->exec('INSERT INTO users VALUES(7,1),(8,1)');analytics_agent_fixture_v1($pdo);
+    foreach(['vp3_radar_properties','vp3_radar_sessions','vp3_radar_events','profile_visit_sessions','profile_events'] as $table)$pdo->exec('UPDATE '.$table.' SET owner_user_id=CASE owner_user_id WHEN 1 THEN 7 WHEN 2 THEN 8 ELSE owner_user_id END');
+    return $pdo;
+}
 function setting(string $key,mixed $fallback=''): mixed {return ['ai_provider'=>'openai','ai_openai_enabled'=>'0'][$key]??$fallback;}
 function ai_v100_rate_limit(...$args): void {}
 function agent_brain_default_soul(): array {return [];}
-$allowed=true;$schemaReady=true;$reads=[];
+$allowed=true;$reads=[];
 function personal_capability_has_v242(string $key,array $user): bool {global $allowed;return $allowed;}
-function vp3_radar_schema_ready(PDO $pdo): bool {global $schemaReady;return $schemaReady;}
-function vp3_analytics_dashboard_state_v2(PDO $pdo,array $user,int $propertyId=0,int $days=30): array {
-    global $reads;$reads[]=[(int)$user['id'],$days];
-    return ['ready'=>true,'stats'=>['sessions'=>((int)$user['id']===7?12:104),'human_sessions'=>((int)$user['id']===7?9:100),'agent_sessions'=>((int)$user['id']===7?3:4),'page_views'=>30],'property_stats'=>[]];
-}
+function has_permission($key,$user): bool{return true;}
+function table_exists($table): bool{return vp3_analytics_tables_v1(db(),[$table]);}
+function column_exists(...$args): bool{return false;}
+function url($path): string{return $path;}
 
 $reported=[
     'Are you listening',
@@ -84,18 +99,19 @@ verify(str_contains(ai_system_prompt([]),'You are generating this reply through 
 foreach(['How many website visitors have I had','How many visitors today?','Number of visits this week','Website visitors','My website traffic'] as $query)verify(vp3_analytics_chat_intent($query),'Visitor question routes to existing analytics: '.$query);
 verify(!vp3_analytics_chat_intent('How many AI agent visits?'),'Agent Radar retains its own route');
 $result=vp3_analytics_chat_tool('How many website visitors have I had',['id'=>7]);
-verify($result['handled']&&str_contains($result['answer'],'9 human visits')&&str_contains($result['answer'],'last 30 days'),'Visitor answer uses recorded human sessions and an explicit period');
+verify($result['handled']&&str_contains($result['answer'],'2 classified human')&&str_contains($result['answer'],'rolling 30d'),'Visitor answer uses recorded human sessions and an explicit period');
 verify(str_contains($result['answer'],'not unique people'),'Sessions are not mislabeled as unique people');
-verify($reads===[[7,30]],'Analytics read remains bound to the signed-in owner');
+verify($reads&&str_contains($result['answer'],'4 browser page-view events')&&!str_contains($result['answer'],'Foreign Private Site'),'Analytics read remains bound to the signed-in owner');
 $allowed=false;$before=count($reads);$denied=vp3_analytics_chat_tool('How many visitors today?',['id'=>8]);
-verify(!$denied['handled']&&count($reads)===$before,'Denied analytics cannot read another owner’s counts');
-$allowed=true;$schemaReady=false;$unavailable=vp3_analytics_chat_tool('How many visitors?',['id'=>7]);
-verify($unavailable['handled']&&str_contains($unavailable['answer'],'cannot verify')&&!str_contains($unavailable['answer'],'0 visits'),'Missing tracking is not reported as zero visitors');
+verify($denied['handled']&&$denied['tool_receipt']['status']==='blocked'&&count($reads)===$before,'Denied analytics cannot read another owner’s counts');
+$allowed=true;db()->exec('ALTER TABLE vp3_radar_events RENAME TO unavailable_analytics_events');$unavailable=vp3_analytics_chat_tool('How many visitors?',['id'=>7]);
+verify($unavailable['handled']&&$unavailable['tool_receipt']['reason']==='upgrade_required'&&!str_contains($unavailable['answer'],'0 visits'),'Missing tracking is not reported as zero visitors');
+db()->exec('ALTER TABLE unavailable_analytics_events RENAME TO vp3_radar_events');
 // Load the actual router and result authorization functions with only their
 // module bootstrap removed; their dependencies are the fixtures above.
 $router=file_get_contents(dirname(__DIR__).'/includes/agent-tool-authorization-v400.php');
 eval(preg_replace('/^require_once[^\n]*\n/m','',substr($router,5)));
-$schemaReady=true;$routed=vp3_agent_tool_execute_query_v400('How many website visitors have I had',['id'=>7]);
-verify($routed['handled']&&str_contains($routed['answer'],'9 human visits'),'Canonical Chat and voice router actually reaches Analytics');
+$routed=vp3_agent_tool_execute_query_v400('How many website visitors have I had',['id'=>7]);
+verify($routed['handled']&&str_contains($routed['answer'],'2 classified human'),'Canonical Chat and voice router actually reaches Analytics');
 verify(($routed['authorization']['principal_user_id']??0)===7,'Canonical Analytics result passes existing principal authorization');
 echo "CHAT_RESPONSE_RELEVANCE=PASS ($checks assertions)\n";

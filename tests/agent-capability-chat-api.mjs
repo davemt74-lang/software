@@ -18,6 +18,8 @@ fs.copyFileSync('tests/fixtures/system-app-agent-schema-v1.php',path.join(tmp,'i
 fs.copyFileSync('tests/fixtures/app-operation-schema-v1.php',path.join(tmp,'includes/app-operation-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/private-share-agent-v1.php',path.join(tmp,'includes/private-share-agent-v1.php'));
 fs.copyFileSync('tests/fixtures/vrss-agent-v1.php',path.join(tmp,'includes/vrss-agent-v1.php'));
+for(const name of ['analytics-agent-v1.php','radar-agent-v1.php','tracky-agent-v1.php'])fs.copyFileSync('tests/fixtures/'+name,path.join(tmp,'includes',name));
+fs.copyFileSync('tests/fixtures/observation-api-state-v1.php',path.join(tmp,'observation-state.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
@@ -30,6 +32,7 @@ async function post(endpoint,message,extra={},headers={}){
 }
 const state=async()=>await(await fetch(base+'/state.php')).json();
 const vrssCalls=()=>fs.existsSync(path.join(tmp,'vrss-calls.jsonl'))?fs.readFileSync(path.join(tmp,'vrss-calls.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
+const observationState=async(domain,headers={},reset=false)=>{const r=await fetch(base+'/observation-state.php?domain='+domain+(reset?'&action=reset':''),{headers});return await r.json();};
 function check(ok,why){assert.ok(ok,why);checks++;console.log('PASS '+why.split(': {')[0]);}
 try{
  for(let i=0;i<60;i++){try{await fetch(base+'/state.php');break;}catch{await new Promise(r=>setTimeout(r,50));}}
@@ -413,6 +416,103 @@ try{
   check(response.data?.tool_receipt?.reason==='outcome_unverified'&&vrssCalls().length===before+1&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' lost feed mutation response records an uncertain outcome without provider errors');
   response=await post(endpoint,'confirm app '+lostPlan.confirmation_code,{...context,conversation_id:lostCid},lostHeaders);
   check(response.data?.tool_receipt?.reason==='outcome_unverified'&&vrssCalls().length===before+1&&!response.data.tool_receipt.changes_applied,endpoint+' uncertain feed confirmation cannot run again after the provider recovers');
+ }
+ // S10 uses the production planners, adapters and legacy handlers over real stored SQL evidence.
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const context={...named,conversation_id:longfellowConversation,input_mode:'voice'};
+  const baseHeaders={'X-Fixture-Analytics-Ready':'1'};
+  const route=plan=>({...baseHeaders,'X-Fixture-Participant-Owner-Plan':JSON.stringify(plan)});
+  const planFor=view=>({operation:'analytics_read',ids:['analytics.read'],scope:'all_owned',period:'30d',view});
+  await observationState('analytics',{},true);const before=await observationState('analytics',baseHeaders);
+  for(const [view,marker] of [['summary','4 stored Radar sessions'],['properties','Fixture Workshop Site'],['top_pages','/home'],['referrers','search.example'],['conversions','1 tracked conversion events'],['devices','Desktop'],['browsers','Chrome']]){
+   response=await post(endpoint,'Read my requested Analytics view',context,route(planFor(view)));
+   check(response.data?.tool_receipt?.capability==='analytics.read'&&response.data.tool_receipt.status==='read_complete'&&!response.data.tool_receipt.changes_applied&&response.data.answer.includes(marker),endpoint+' Analytics '+view+' reads complete stored evidence: '+response.body);
+   check(!JSON.stringify(response.data).includes('SECRET')&&!response.data.answer.includes('9999')&&!response.data.answer.includes('5000')&&response.data.answer.includes('database timezone'),endpoint+' Analytics '+view+' omits private fields and lifetime totals and names its reporting clock');
+  }
+  const one={...planFor('summary'),scope:'property',property_id:11,period:'today'};
+  response=await post(endpoint,'Read today for my kitchen site',context,route(one));
+  check(response.data?.answer.includes('property #11')&&response.data.answer.includes('2 browser page-view events')&&!response.data.answer.includes('recorded profile-visit'),endpoint+' Analytics exact-property today scope excludes yesterday and native profile totals: '+response.body);
+  for(const selector of [{property_id:21},{property:'absent.example'}]){
+   response=await post(endpoint,'Read a selected Analytics site',context,route({...planFor('summary'),scope:'property',...selector}));
+   check(response.data?.tool_receipt?.status==='clarification_required'&&!response.data.answer.includes('stored Radar sessions'),endpoint+' Analytics unavailable property never broadens to all sites');
+  }
+  const {scope:unusedScope,...unscoped}=planFor('summary');
+  response=await post(endpoint,'Read analytics',context,route(unscoped));check(response.data?.tool_receipt?.reason==='invalid_plan',endpoint+' Analytics requires an explicit scope');
+  response=await post(endpoint,'Read Analytics',context,{...route(planFor('summary')),'X-Fixture-Observation-Denied':'1'});check(response.data?.tool_receipt?.status==='blocked'&&!response.data.answer.includes('stored Radar sessions'),endpoint+' Analytics respects current permission denial');
+  response=await post(endpoint,'Can you read Analytics?',context,route({operation:'inspect',ids:['analytics.read']}));check(response.data?.tool_receipt?.capability==='capabilities.inspect'&&!response.data.answer.includes('Fixture Kitchen Site'),endpoint+' Analytics capability question does not return traffic records');
+  for(const phrase of ['Show Analytics for kitchen.example today','Show my website traffic today']){
+   response=await post(endpoint,phrase,context,route({operation:'continue',ids:[]}));
+   check(response.data?.tool_receipt?.capability==='analytics.read'&&response.data.tool_receipt.status==='read_complete'&&response.data.answer.includes('database timezone'),endpoint+' Analytics legacy fallback preserves the shared stored read: '+response.body);
+  }
+  check((await observationState('analytics')).fingerprint===before.fingerprint,endpoint+' Analytics reads do not create/reactivate properties, change counters or initialize schema');
+  for(const [mode,status] of [['bad_json','failed'],['missing_schema','blocked'],['empty','read_complete']]){
+   await observationState('analytics',{},true);
+   response=await post(endpoint,'Read my Analytics summary',context,{...route(planFor('summary')),'X-Fixture-Analytics-Mode':mode});
+   check(response.data?.tool_receipt?.status===status&&!JSON.stringify(response.data).includes('SECRET')&&(mode!=='empty'||response.data.answer.includes('0 stored Radar sessions')),endpoint+' Analytics '+mode+' is reported accurately: '+response.body);
+  }
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const context={...named,conversation_id:longfellowConversation,input_mode:'voice'},baseHeaders={'X-Fixture-Radar-Ready':'1'};
+  const route=plan=>({...baseHeaders,'X-Fixture-Participant-Owner-Plan':JSON.stringify(plan)}),planFor=view=>({operation:'radar_read',ids:['radar.read'],view});
+  const legacy=route({operation:'continue',ids:[]});
+  await observationState('radar',{},true);const before=await observationState('radar',baseHeaders);
+  for(const [view,marker] of [['recent','Fixture GPTBot'],['high_risk','Fixture GPTBot'],['contact_policies','Fixture GPTBot'],['scoped_rules','Fixture OpenAI'],['access_profile','Monitor All']]){
+   response=await post(endpoint,'Read my requested Radar view',context,route(planFor(view)));
+   check(response.data?.tool_receipt?.capability==='radar.read'&&response.data.tool_receipt.status==='read_complete'&&!response.data.tool_receipt.changes_applied&&response.data.answer.includes(marker),endpoint+' Radar '+view+' reports current-owner saved evidence: '+response.body);
+   check(!JSON.stringify(response.data).includes('SECRET')&&!response.data.answer.includes('FOREIGN')&&response.data.answer.includes('do not prove enforcement'),endpoint+' Radar '+view+' keeps sensitive fields private and distinguishes saved policy from enforcement');
+  }
+  response=await post(endpoint,'Read selected contact policy',context,route({...planFor('contact_policies'),contact_id:201}));check(response.data?.tool_receipt?.status==='no_matches'&&!response.data.answer.includes('FOREIGN'),endpoint+' Radar foreign contact ID cannot expose another owner policy');
+  response=await post(endpoint,'Read Radar',context,{...route(planFor('recent')),'X-Fixture-Observation-Denied':'1'});check(response.data?.tool_receipt?.status==='blocked'&&!response.data.answer.includes('Fixture GPTBot'),endpoint+' Radar respects current permission denial');
+  response=await post(endpoint,'Read Radar',context,route({...planFor('recent'),owner_user_id:2}));check(response.data?.tool_receipt?.reason==='invalid_plan',endpoint+' Radar planner rejects an owner override');
+  response=await post(endpoint,'Show high-risk agents',context,legacy);check(response.data?.tool_receipt?.capability==='radar.read'&&response.data.answer.includes('Fixture GPTBot')&&!response.data.answer.includes('Fixture ChatGPT'),endpoint+' Radar legacy high-risk read uses the bounded adapter');
+  for(const phrase of ['Can you block all crawlers?','How do I set my access profile to Locked Down?','If I block Fixture GPTBot, what happens?']){
+   await post(endpoint,phrase,context,legacy);
+   check((await observationState('radar')).fingerprint===before.fingerprint,endpoint+' Radar capability/tutorial/conditional wording cannot change saved policies');
+  }
+  response=await post(endpoint,'Block agent Fixture OpenAI',context,legacy);check(response.data?.tool_receipt?.status==='clarification_required'&&(await observationState('radar')).fingerprint===before.fingerprint,endpoint+' Radar operator text cannot silently choose one contact: '+response.body);
+  for(const command of ['Block agent 101','Block operator Fixture OpenAI','Set access profile to Locked Down']){
+   response=await post(endpoint,command,context,legacy);const cid=response.data?.conversation_id;
+   check(response.data?.tool_receipt?.capability==='radar.gateway.manage'&&response.data.tool_receipt.status==='completed'&&response.data.tool_receipt.changes_applied&&!response.data.answer.includes('is now blocked across'),endpoint+' Radar explicit command verifies canonical saved state: '+response.body);
+   const saved=await observationState('radar');
+   response=await post(endpoint,command,{...context,conversation_id:cid},legacy);
+   check(response.data?.tool_receipt?.status==='read_complete'&&!response.data.tool_receipt.changes_applied&&(await observationState('radar')).fingerprint===saved.fingerprint,endpoint+' Radar identical command reports the existing policy without another write');
+   response=await post(endpoint,'Did that work?',{...context,conversation_id:cid},route({operation:'diagnose',ids:[]}));
+   check(response.data?.tool_receipt?.capability==='radar.gateway.manage'&&/policy|Gateway/.test(response.data.answer)&&/enforcement|integration/.test(response.data.answer),endpoint+' Radar follow-up diagnosis preserves saved-policy scope: '+response.body);
+  }
+  for(const mode of ['bad_metadata','foreign_property']){
+   await observationState('radar',{},true);
+   response=await post(endpoint,'Read Radar policy evidence',context,{...route(planFor(mode==='bad_metadata'?'contact_policies':'scoped_rules')),'X-Fixture-Radar-Mode':mode});
+   check(response.data?.tool_receipt?.status===(mode==='foreign_property'?'blocked':'failed')&&!JSON.stringify(response.data).includes('SECRET')&&!response.data.answer.includes('FOREIGN'),endpoint+' Radar '+mode+' cannot become a verified policy summary: '+response.body);
+  }
+  await observationState('radar',{},true);
+  response=await post(endpoint,'Block agent 101',context,{...legacy,'X-Fixture-Radar-Mode':'unverified_write'});
+  check(response.data?.tool_receipt?.reason==='outcome_unverified'&&response.data.answer.includes('Effects may already exist'),endpoint+' Radar failed saved-state verification records uncertainty without claiming success: '+response.body);
+  await observationState('radar',{},true);
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const context={...named,conversation_id:longfellowConversation,input_mode:'voice'},baseHeaders={'X-Fixture-Tracky-Ready':'1'};
+  const route=plan=>({...baseHeaders,'X-Fixture-Participant-Owner-Plan':JSON.stringify(plan)}),planFor=view=>({operation:'tracky_read',ids:['tracky.context.read'],view});
+  await observationState('tracky',{},true);const before=await observationState('tracky',baseHeaders);
+  for(const [view,selectors,marker] of [['current',{},'Fixture quiet room'],['health',{},'Fixture Home'],['location',{entity:'keys'},'office'],['presence',{entity:'office'},'alex'],['last_seen',{entity_id:'object:keys'},'Fixture keys observed'],['changes',{},'Fixture recent health alert'],['evidence',{entity:'keys'},'Fixture keys observed']]){
+   response=await post(endpoint,'Read my requested stored Tracky observations',context,route({...planFor(view),...selectors}));
+   check(response.data?.tool_receipt?.capability==='tracky.context.read'&&response.data.tool_receipt.status==='read_complete'&&!response.data.tool_receipt.changes_applied&&response.data.answer.toLowerCase().includes(marker.toLowerCase()),endpoint+' Tracky '+view+' uses exact stored evidence: '+response.body);
+   check(!JSON.stringify(response.data).includes('SECRET')&&!response.data.tracky?.active_perception?.attempted,endpoint+' Tracky '+view+' cannot expose raw perception or trigger sensing');
+  }
+  response=await post(endpoint,'Where is my absent object?',context,route({...planFor('location'),entity:'absent object'}));check(response.data?.tool_receipt?.status==='no_matches'&&!response.data.answer.includes('garage'),endpoint+' Tracky unknown object cannot fall back to another object location');
+  response=await post(endpoint,'Read selected stored site',context,route({...planFor('current'),site_id:'foreign-site'}));check(response.data?.tool_receipt?.status==='no_matches'&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' Tracky foreign site selection stays empty');
+  response=await post(endpoint,'Read Tracky',context,{...route(planFor('current')),'X-Fixture-Observation-Denied':'1'});check(response.data?.tool_receipt?.status==='blocked'&&!response.data.answer.includes('Fixture quiet room'),endpoint+' Tracky entitlement revocation blocks stored evidence');
+  response=await post(endpoint,'Can you use Agent Eyes?',context,route({operation:'inspect',ids:['tracky.context.read','tracky.perception.request']}));check(response.data?.tool_receipt?.capability==='capabilities.inspect'&&!response.data.answer.includes('Fixture quiet room'),endpoint+' Tracky ability question describes tools without returning observations');
+  response=await post(endpoint,'Where are my keys?',context,route({operation:'continue',ids:[]}));check(response.data?.tool_receipt?.capability==='tracky.context.read'&&response.data.answer.toLowerCase().includes('office'),endpoint+' Tracky legacy location uses the shared passive read: '+response.body);
+  check((await observationState('tracky')).fingerprint===before.fingerprint,endpoint+' Tracky stored reads do not capture, ingest, refresh or initialize schema');
+  for(const [mode,marker] of [['missing_observation','observation time unknown'],['future','future timestamp; not current'],['stale','stale stored observation'],['reconciling','continuity reconciling']]){
+   await observationState('tracky',{},true);
+   response=await post(endpoint,'Read stored context',context,{...route(planFor('current')),'X-Fixture-Tracky-Mode':mode});
+   check(response.data?.tool_receipt?.status==='read_complete'&&response.data.answer.includes(marker)&&!response.data.tracky?.active_perception?.attempted,endpoint+' Tracky '+mode+' cannot masquerade as current sensing: '+response.body);
+  }
+  await observationState('tracky',{},true);
+  response=await post(endpoint,'Read stored context',context,{...route(planFor('current')),'X-Fixture-Tracky-Mode':'multi_site'});check(response.data?.tool_receipt?.status==='clarification_required'&&!response.data.answer.includes('Fixture quiet room'),endpoint+' Tracky multiple sites require a selection instead of the latest site');
+  await observationState('tracky',{},true);
+  response=await post(endpoint,'Read stored context',context,{...route(planFor('current')),'X-Fixture-Tracky-Mode':'scene_revoked'});check(!JSON.stringify(response.data).includes('cup')&&!response.data.tracky?.active_perception?.attempted,endpoint+' Tracky revoked scene is omitted from canvas and Chat evidence');
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

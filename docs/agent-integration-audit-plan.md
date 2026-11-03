@@ -2,7 +2,7 @@
 
 This is the managed build order for the legacy handlers called by the shared VP3 Chat dispatcher. It is not a count of every tool in VP3: reminders, transcripts, phone and newer record adapters also expose capabilities through the shared broker. Handler count and capability count are separate measures. “Pending” means unassessed, not necessarily broken or disconnected.
 
-Through S7: 17 of 29 legacy handlers assessed. S9A adds the four photo/media handlers and S9B adds private Cloud media search and OpenAI image generation with canvas delivery. S9 was prioritized before S8 for the requested photo/media work; both are merged in PRs #688 and #689. S8A private app sharing is merged in PR #690. S8B assesses feed reads, mutation preflights and recorded outcomes, bringing coverage to 23 of 29 legacy handlers, with 6 remaining. The executable inventory has 52 capabilities; capability count is separate from legacy-handler count. S10 and S11 remain next. Each section requires green PR checks and exact merged-package verification. Use `python3 tools/check_agent_capability_inventory.py` for current executable bindings, remaining handlers and source locations; that check also rejects a missing or duplicated handler in this list.
+Through S7: 17 of 29 legacy handlers assessed. S9A adds the four photo/media handlers and S9B adds private Cloud media search and OpenAI image generation with canvas delivery. S9 was prioritized before S8 for the requested photo/media work; both are merged in PRs #688 and #689. S8A private app sharing and S8B feed reads/outcomes are merged in PRs #690 and #691. S10 assesses Tracky/Agent Eyes, Radar/Gateway and Analytics, bringing coverage to 26 of 29 legacy handlers, with 3 remaining in S11. The executable inventory has 57 capabilities; capability count is separate from legacy-handler count. Each section requires green PR checks and exact merged-package verification. Use `python3 tools/check_agent_capability_inventory.py` for current executable bindings, remaining handlers and source locations; that check also rejects a missing or duplicated handler in this list.
 
 | Handler | Section | State / evidence |
 |---|---|---|
@@ -29,9 +29,9 @@ Through S7: 17 of 29 legacy handlers assessed. S9A adds the four photo/media han
 | `vp3_download_manager_agent_query_v320` | S9A | Shared model-selected bounded reads, strict raw projections, current owner/Agent/conversation fencing and honest job/failure receipts. See agent-integration-audit-s9.md. |
 | `vp3_media_processor_agent_query_v330` | S9A | Shared model-selected bounded reads, strict raw projections, current owner/Agent/conversation fencing and honest job/failure receipts. See agent-integration-audit-s9.md. |
 | `vp3_video_editor_agent_query_v280` | S9A | Shared model-selected bounded reads, strict raw projections, current owner/Agent/conversation fencing and honest job/failure receipts. See agent-integration-audit-s9.md. |
-| `tracky_agent_tools_query_v271` | S10 | Pending: existing observations/continuity, inference limits and current evidence. |
-| `vp3_radar_chat_tool` | S10 | Pending: current owner Radar records and reviewed next actions. |
-| `vp3_analytics_chat_tool` | S10 | Pending: actual data permissions, query scope and evidence. |
+| `tracky_agent_tools_query_v271` | S10 | Shared passive stored reads, exact site/entity selection, observation freshness/continuity, ordered scene consent and retained explicit governed perception. See agent-integration-audit-s10.md. |
+| `vp3_radar_chat_tool` | S10 | Bounded current-owner Radar reads and exact existing Gateway commands, live authority, verified saved policy and honest enforcement limits. See agent-integration-audit-s10.md. |
+| `vp3_analytics_chat_tool` | S10 | Exact property scope, complete SQL aggregates, actual reporting clock, dated native visits and explicit metric coverage without property creation/reactivation. See agent-integration-audit-s10.md. |
 | `release_v105_chat_tool` | S11 | Pending: existing VP3 release module and its workspace permissions. |
 | `vp3_agent_profile_webmcp_plan_v193` | S11 | Pending: public Profile Agent, owner-approved tools and external action plans. |
 | `vp3_profile_webmcp_return_followthrough_v195` | S11 | Pending: bound return results, stale plans and follow-through. |

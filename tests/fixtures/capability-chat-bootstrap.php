@@ -20,14 +20,14 @@ require_once __DIR__.'/media-studio-v86.php';
 require_once __DIR__.'/app-agent-remote-v1.php';
 require_once __DIR__.'/system-app-agent-schema-v1.php';
 require_once __DIR__.'/app-operation-schema-v1.php';
-class TranscriptFixturePDO extends PDO {public int $updatedId=0;public function lastInsertId(?string $name=null):string|false{return $this->updatedId?(string)$this->updatedId:parent::lastInsertId($name);}public function prepare(string $sql,array $options=[]):PDOStatement|false{if(str_starts_with(ltrim($sql),'INSERT'))$this->updatedId=0;$sql=str_replace(' FOR UPDATE','',$sql);$sql=preg_replace('/DATE_ADD\(UTC_TIMESTAMP\(\),INTERVAL (\d+) MINUTE\)/i',"datetime('now','+$1 minutes')",$sql);$sql=str_replace('IF(','IIF(',$sql);if(str_contains($sql,'information_schema.statistics'))$sql="SELECT 1 FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=?";$sql=preg_replace('/ON DUPLICATE KEY UPDATE/i','ON CONFLICT DO UPDATE SET',$sql);$sql=preg_replace('/VALUES\((\w+)\)/i','excluded.$1',$sql);return parent::prepare($sql,$options);}}
+class TranscriptFixturePDO extends PDO {public int $updatedId=0;public function lastInsertId(?string $name=null):string|false{return $this->updatedId?(string)$this->updatedId:parent::lastInsertId($name);}public function prepare(string $sql,array $options=[]):PDOStatement|false{if(str_starts_with(ltrim($sql),'INSERT'))$this->updatedId=0;$sql=str_replace(' FOR UPDATE','',$sql);$sql=preg_replace('/DATE_ADD\(UTC_TIMESTAMP\(\),INTERVAL (\d+) MINUTE\)/i',"datetime('now','+$1 minutes')",$sql);$sql=str_replace('IF(','IIF(',$sql);$sql=str_replace('COALESCE(property_id,0)=?','COALESCE(property_id,0)=CAST(? AS INTEGER)',$sql);if(str_contains($sql,'information_schema.statistics'))$sql="SELECT 1 FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=?";$sql=preg_replace('/ON DUPLICATE KEY UPDATE/i','ON CONFLICT DO UPDATE SET',$sql);$sql=preg_replace('/VALUES\((\w+)\)/i','excluded.$1',$sql);return parent::prepare($sql,$options);}}
 function db(){static $pdo;if(!$pdo){$pdo=new TranscriptFixturePDO('sqlite:'.__DIR__.'/../state.sqlite');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('LAST_INSERT_ID',function($id)use($pdo){$pdo->updatedId=(int)$id;return$id;});$pdo->sqliteCreateFunction('NOW',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));$pdo->exec('CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo->exec('INSERT OR IGNORE INTO users(id,is_active) VALUES(1,1),(2,1)');$pdo->exec("CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,artist_workspace_id INTEGER,title TEXT,updated_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");reminder_schema_v1($pdo);capability_fixture_agents($pdo);vp3_task_lists_schema_v1($pdo);}return $pdo;}
 function table_exists($table){if($table==='user_calendar_events'&&isset($_SERVER['HTTP_X_FIXTURE_CALENDAR_MISSING']))return false;$q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return(bool)$q->fetchColumn();}
 function column_exists($table,$column){foreach(db()->query('PRAGMA table_info('.$table.')') as $r)if($r['name']===$column)return true;return false;}
 function current_user(){if(isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS']))return null;$id=(int)($_SERVER['HTTP_X_FIXTURE_USER']??1);return ['id'=>$id,'is_active'=>1];}
 function csrf_token(){return 'fixture';}
 function has_permission($key,$user){return !isset($_SERVER['HTTP_X_FIXTURE_DENIED']);}
-function personal_capability_has_v242($key,...$args){return ($key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']))||($key==='personal_knowledge.access'&&isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']));}
+function personal_capability_has_v242($key,...$args){return ($key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']))||($key==='personal_knowledge.access'&&isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']))||($key==='profile_agent.access'&&!isset($_SERVER['HTTP_X_FIXTURE_OBSERVATION_DENIED'])&&(isset($_SERVER['HTTP_X_FIXTURE_RADAR_READY'])||isset($_SERVER['HTTP_X_FIXTURE_ANALYTICS_READY'])));}
 function artist_workspace_v181_scope_id($user){return 0;}
 function calendar_schedule_awareness_snapshot_v1330(...$args){if(isset($_SERVER['HTTP_X_FIXTURE_OWNER_TRAP']))throw new RuntimeException('OWNER_READ_REACHED');return [];}
 function user_account_types_for_user_id(...$args){return ['member'];}
@@ -52,7 +52,8 @@ function member_navigation_menu_links($u){return [['key'=>'contacts','label'=>'C
 function music_workspace_resources_v330_can_manage_track($pdo,$t,$u){return (int)$t['owner_user_id']===(int)$u['id'];}
 function music_workspace_resources_v330_track_workspace_id($pdo,$t){return 0;}
 function setting($key,$default=''){return $default;}
-function subscription_has_entitlement($user,$key){return (isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY'])||isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY']))&&(int)$user['id']===1;}
+function subscription_has_entitlement($user,$key){return (isset($_SERVER['HTTP_X_FIXTURE_PHONE_READY'])||isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY'])||($key==='tracky.access'&&isset($_SERVER['HTTP_X_FIXTURE_TRACKY_READY'])&&!isset($_SERVER['HTTP_X_FIXTURE_OBSERVATION_DENIED'])))&&(int)$user['id']===1;}
+function subscription_schema_ready(?PDO $pdo=null):bool{return isset($_SERVER['HTTP_X_FIXTURE_TRACKY_READY']);}
 function subscription_entitlement_limit(...$args){return 3;}
 function homeserver_execution_v220_can_route(...$args){return isset($_SERVER['HTTP_X_FIXTURE_HOME_READY']);}
 function homeserver_https_v1300_status($uid){return ['paired'=>isset($_SERVER['HTTP_X_FIXTURE_MEDIA_READY'])||isset($_SERVER['HTTP_X_FIXTURE_APP_READY'])||isset($_SERVER['HTTP_X_FIXTURE_SYSTEM_APP_READY'])||isset($_SERVER['HTTP_X_FIXTURE_OPERATION_READY'])||isset($_SERVER['HTTP_X_FIXTURE_VRSS_READY'])];}
@@ -187,6 +188,23 @@ function capability_fixture_agents(PDO $pdo): void
         if(!table_exists('vp3_user_app_private_shares_v240'))private_share_agent_fixture_v1($pdo);
         $pdo->exec("UPDATE vp3_user_app_private_shares_v240 SET status='accepted' WHERE id=1");
         if(($_SERVER['HTTP_X_FIXTURE_PRIVATE_SHARE_MODE']??'')==='invalid_status')$pdo->exec("UPDATE vp3_user_app_private_shares_v240 SET status='SECRET_INVALID_STATE' WHERE id=1");
+    }
+    if(isset($_SERVER['HTTP_X_FIXTURE_ANALYTICS_READY'])){
+        require_once __DIR__.'/vp3-analytics-chat.php';
+        require_once __DIR__.'/analytics-agent-v1.php';
+        analytics_agent_fixture_v1($pdo);
+    }
+    if(isset($_SERVER['HTTP_X_FIXTURE_RADAR_READY'])){
+        require_once __DIR__.'/agent-radar-chat.php';
+        require_once __DIR__.'/radar-agent-v1.php';
+        radar_agent_fixture_v1($pdo);
+    }
+    if(isset($_SERVER['HTTP_X_FIXTURE_TRACKY_READY'])){
+        if(!function_exists('vp3_tracky_dependencies_v1'))require_once __DIR__.'/agent-tracky-read-v1.php';
+        require_once __DIR__.'/tracky-agent-v271.php';
+        require_once __DIR__.'/tracky-agent-v1.php';
+        tracky_agent_fixture_v1($pdo);
+        if(function_exists('tracky_agent_fixture_mode_v1'))tracky_agent_fixture_mode_v1($pdo,$_SERVER['HTTP_X_FIXTURE_TRACKY_MODE']??'');
     }
 }
 function agent_tool_log(...$args): void{}

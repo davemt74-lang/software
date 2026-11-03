@@ -1,11 +1,13 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-analytics-read-v1.php';
 
 function vp3_analytics_chat_intent(string $query): bool
 {
     $q=mb_strtolower(trim($query));
     // Explicit Agent/Radar/Gateway requests belong to the dedicated Radar tool.
     if(preg_match('/\b(?:agent radar|agent gateway|ai agent|bot|crawler|block agent|allow agent|limit agent)\b/',$q))return false;
+    if(preg_match('/\b(?:who|how many(?:\s+(?:people|visitors?))?)\s+visited\s+(?:my\s+)?(?:website|web site|site|profile)\b/u',$q))return true;
     if(preg_match('/\b(?:website|web site|site|profile)\s+(?:visitors?|visits?)\b|\b(?:how many|number of|count|total)\b.*\b(?:visitors?|visits?)\b/u',$q))return true;
     foreach(['analytics','my traffic','website traffic','profile traffic','page views','pageviews','visitors this','sessions this','traffic this','traffic today','which website','which site','top page','top pages','referrers','referral traffic','conversions','conversion rate','device mix','browser mix'] as $needle){
         if(str_contains($q,$needle))return true;
@@ -29,31 +31,48 @@ function vp3_analytics_chat_property_name(array $row): string
         : (trim((string)($row['label']??'')) ?: (trim((string)($row['domain']??'')) ?: 'Connected site'));
 }
 
-function vp3_analytics_chat_summary(PDO $pdo,array $user,string $query): string
+/** The fallback grammar only chooses the same strict read plan used by typed and voice Chat. */
+function vp3_analytics_chat_plan_v1(string $query): array
 {
-    $days=vp3_analytics_chat_days($query);$state=vp3_analytics_dashboard_state_v2($pdo,$user,0,$days);$s=$state['stats']??[];
-    if(empty($state['ready']))return 'I cannot verify a visitor count because traffic tracking is not available for this account yet.';
-    $sessions=(int)($s['sessions']??0);$views=(int)($s['page_views']??0);$human=(int)($s['human_sessions']??0);$agents=(int)($s['agent_sessions']??0);$conversions=(int)($s['conversions']??0);
-    $label=$days===1?'today':($days===7?'the last 7 days':($days===90?'the last 90 days':'the last 30 days'));
-    $lines=['Across your tracked sites and VP3 profile, there were '.$human.' human visits (sessions) during '.$label.'. These count visits, not unique people.'];
-    $lines[]=$views.' total page views across '.$sessions.' human and automated sessions.';
-    $lines[]=$human.' human sessions and '.$agents.' Agent Radar sessions'.($sessions>0?' ('.round($agents/$sessions*100).'% agent share).':'.');
-    if($conversions>0)$lines[]=$conversions.' tracked conversion'.($conversions===1?'':'s').' from connected-site custom events.';
-    $properties=array_values(array_filter($state['property_stats']??[],static fn(array $r):bool=>(int)($r['sessions']??0)>0||(int)($r['page_views']??0)>0));
-    usort($properties,static fn(array $a,array $b):int=>((int)($b['page_views']??0)<=>(int)($a['page_views']??0))?:((int)($b['sessions']??0)<=>(int)($a['sessions']??0)));
-    if($properties){$top=$properties[0];$lines[]='Top property: '.vp3_analytics_chat_property_name($top).' with '.(int)$top['page_views'].' views across '.(int)$top['sessions'].' sessions.';}
-    $pages=$state['top_pages']??[];if($pages){$page=$pages[0];$lines[]='Top content: '.(string)$page['path'].' with '.(int)$page['events'].' tracked interactions.';}
-    $refs=$state['referrers']??[];if($refs){$ref=$refs[0];$lines[]='Top external referrer: '.(string)$ref['referrer_host'].' with '.(int)$ref['sessions'].' sessions.';}
-    if((int)($s['high_risk_events']??0)>0)$lines[]=(int)$s['high_risk_events'].' high-risk automated event'.((int)$s['high_risk_events']===1?'':'s').' also appeared in this period; ask me for high-risk agents to review them.';
-    return implode("\n",$lines);
+    $q=mb_strtolower($query);$view='summary';
+    foreach(['top_pages'=>'/\btop pages?\b/','referrers'=>'/\b(?:referrers?|referral traffic)\b/','conversions'=>'/\bconversions?\b/','devices'=>'/\bdevices?\b/','browsers'=>'/\bbrowsers?\b/','properties'=>'/\b(?:properties|tracked sites|connected sites|which (?:web)?site)\b/'] as $candidate=>$pattern)if(preg_match($pattern,$q)){$view=$candidate;break;}
+    $period=str_contains($q,'today')?'today':(preg_match('/\b(?:90\s*(?:days?|d)|quarter)\b/',$q)?'90d':(preg_match('/\b(?:7\s*(?:days?|d)|week)\b/',$q)?'7d':'30d'));
+    if(preg_match('/\b(?:yesterday|tomorrow|last month|this month|last year|this year|between|timezone|time zone)\b|\b(?:19|20)\d{2}-\d{2}-\d{2}\b/',$q))throw new InvalidArgumentException('Choose a supported reporting period.');
+    if(preg_match('/\b[0-9]+\s*(?:seconds?|minutes?|hours?|h|weeks?|months?|years?)\b/',$q))throw new InvalidArgumentException('Choose a supported reporting period.');
+    if(preg_match_all('/\b([0-9]+)\s*days?\b/',$q,$durations))foreach($durations[1] as $duration)if(!in_array($duration,['7','30','90'],true))throw new InvalidArgumentException('Choose a supported reporting period.');
+    $plan=['operation'=>'analytics_read','ids'=>['analytics.read'],'view'=>$view,'period'=>$period,'scope'=>'all_owned'];
+    if(preg_match('/\b(?:property|site)\s*#\s*([1-9][0-9]*)\b/i',$query,$m))return vp3_analytics_plan_v1(array_replace($plan,['scope'=>'property','property_id'=>vp3_analytics_count_v1($m[1])]));
+    if(preg_match_all('~https?://[^\s<>"\x27]+|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b~i',$query,$matches)&&$matches[0]){
+        $targets=array_values(array_unique(array_map(static fn($target)=>rtrim($target,',;.!?'),$matches[0])));
+        if(count($targets)!==1)throw new InvalidArgumentException('Choose one exact tracked property.');
+        return vp3_analytics_plan_v1(array_replace($plan,['scope'=>'property','property'=>$targets[0]]));
+    }
+    if(preg_match('/\b(?:my|vp3) profile\b/i',$query))return array_replace($plan,['scope'=>'property','property'=>'VP3 Profile']);
+    if(preg_match('/\b(?:for|on|named)\s+["\x27]([^"\x27]+)["\x27]/u',$query,$m))return vp3_analytics_plan_v1(array_replace($plan,['scope'=>'property','property'=>$m[1]]));
+    if(preg_match('/\b(?:for|on)\s+(.+)$/iu',$query,$m)){
+        $selector=trim(preg_replace('/\s+(?:today|(?:in|over|during|for)\s+)?(?:the\s+)?(?:last|past)?\s*(?:7|30|90)\s*days?\s*[?.!]*$|\s+today\s*[?.!]*$/iu','',$m[1])??'');$selector=rtrim($selector,'?.!');
+        if(!preg_match('/^(?:all\s+)?(?:my\s+)?(?:owned\s+)?(?:tracked\s+)?(?:sites|properties|websites)$/iu',$selector))return vp3_analytics_plan_v1(array_replace($plan,['scope'=>'property','property'=>$selector]));
+    }
+    return $plan;
+}
+
+function vp3_analytics_chat_summary(PDO $pdo,array $user,string $query,int $conversationId=0): string
+{
+    try{if(!function_exists('vp3_capability_control_principal_v1'))require_once __DIR__.'/agent-capability-chat-v1.php';$principal=vp3_capability_control_principal_v1($pdo,$user,$conversationId);return vp3_analytics_read_v1($pdo,$user,$principal,vp3_analytics_chat_plan_v1($query),['conversation_id'=>$conversationId])['answer'];}
+    catch(Throwable $e){return vp3_analytics_failure_v1($e)['answer'];}
 }
 
 function vp3_analytics_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    if(!vp3_analytics_chat_intent($query)||!personal_capability_has_v242('profile_agent.access',$user))return $empty;
-    $pdo=db();if(!$pdo||!vp3_radar_schema_ready($pdo))return ['handled'=>true,'answer'=>'I cannot verify a visitor count because traffic tracking is not available for this account yet.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    $answer=vp3_analytics_chat_summary($pdo,$user,$query);
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'vp3.analytics',$query,'success',['days'=>vp3_analytics_chat_days($query)],$conversationId);
-    return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'vp3-analytics','title'=>'VP3 Analytics']]];
+    if(!vp3_analytics_chat_intent($query))return $empty;
+    if(preg_match('/\b(?:tutorial|hypothetical|imagine|suppose|explain|how (?:to|does|do)|what (?:is|are) (?!my\b)|(?:if|when|unless) (?:i|we|you|the|my|our|a|an)|build|design|implement|create|delete|connect|disconnect|activate|deactivate|enable|disable)\b/i',$query))return $empty;
+    if(preg_match('/\b(?:capabilit(?:y|ies)|what can you do|are you (?:able|allowed)|do you have (?:access|permission)|(?:can|could|would) you (?:access|read|inspect|manage)|(?:does|do)\b.*\b(?:support|allow|handle))\b/i',$query))return ['handled'=>true,'answer'=>'Analytics can read current-owner stored properties and bounded traffic aggregates. This description has not read traffic records or changed tracking.','actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1('capabilities.inspect','inspect','read_complete')];
+    try{
+        $plan=vp3_analytics_chat_plan_v1($query);$pdo=db();if(!$pdo)throw new RuntimeException('Analytics storage unavailable.',409);
+        if(!function_exists('vp3_capability_control_principal_v1'))require_once __DIR__.'/agent-capability-chat-v1.php';
+        $principal=vp3_capability_control_principal_v1($pdo,$user,$conversationId);
+        return vp3_analytics_read_v1($pdo,$user,$principal,$plan,['conversation_id'=>$conversationId]);
+    }catch(InvalidArgumentException $e){return ['handled'=>true,'answer'=>'Choose today or a rolling 7, 30 or 90 days in the stated database reporting timezone, and one exact tracked property or all owned properties. No traffic was read for the unsupported selection.','actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1('analytics.read','list','clarification_required')];}
+    catch(Throwable $e){return vp3_analytics_failure_v1($e);}
 }
