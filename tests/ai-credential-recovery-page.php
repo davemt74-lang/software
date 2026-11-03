@@ -19,6 +19,7 @@ $before=$pdo->query('SELECT * FROM settings ORDER BY setting_key')->fetchAll(PDO
 copy($repo.'/admin/ai.php',$root.'/admin/ai.php');
 copy($repo.'/api/admin-elevenlabs-v102.php',$root.'/api/admin-elevenlabs-v102.php');
 copy($repo.'/includes/ai-credential-recovery.php',$root.'/includes/ai-credential-recovery.php');
+copy($repo.'/includes/agent-image-provider-v1.php',$root.'/includes/agent-image-provider-v1.php');
 $bootstrap= <<<'PHP'
 <?php
 declare(strict_types=1);
@@ -103,12 +104,15 @@ try{
  foreach($keys as $name=>$value){$stmt=$pdo->prepare('SELECT setting_value FROM settings WHERE setting_key=?');$stmt->execute([$name]);$cipher=(string)$stmt->fetchColumn();$stmt->closeCursor();check(ai_decrypt_secret($cipher)===$value,'Reconnected credential readable: '.$name);}
  [$status,$html]=request('/admin/ai.php');
  check($status===200&&str_contains($html,'ai-overview-panel')&&str_contains($html,'Save AI / API Settings'),'Normal settings return after successful recovery');
+ check(str_contains($html,'name="image_model"')&&str_contains($html,'name="image_enabled"'),'Existing admin settings expose separate image controls');
  preg_match('/<button\b[^>]*>Test Claude<\/button>/',$html,$testButton);
  check(isset($testButton[0])&&!str_contains($testButton[0],'disabled'),'Claude connection-test button becomes enabled after reconnection');
  check(!str_contains($html,'id="credential-recovery"'),'Recovery form no longer displayed once unlocked');
- [$status]=request('/admin/ai.php',['action'=>'save','csrf_token'=>$csrf,'system_agent_name'=>'Updated Agent','active_provider'=>'anthropic','anthropic_enabled'=>'1','anthropic_model'=>'claude-haiku-4-5','openai_model'=>'gpt-5.4-mini']);
+ [$status]=request('/admin/ai.php',['action'=>'save','csrf_token'=>$csrf,'system_agent_name'=>'Updated Agent','active_provider'=>'anthropic','anthropic_enabled'=>'1','anthropic_model'=>'claude-haiku-4-5','openai_model'=>'gpt-5.4-mini','image_enabled'=>'1','image_model'=>'gpt-image-2.5-flare']);
  check($status===302,'Ordinary save works after recovery');
  check($pdo->query("SELECT setting_value FROM settings WHERE setting_key='system_agent_name'")->fetchColumn()==='Updated Agent','Normal settings persist after recovery');
+ check($pdo->query("SELECT setting_value FROM settings WHERE setting_key='ai_image_model'")->fetchColumn()==='gpt-image-2.5-flare'&&$pdo->query("SELECT setting_value FROM settings WHERE setting_key='ai_image_enabled'")->fetchColumn()==='1','Image options persist through the existing admin save');
+ foreach($keys as $name=>$value){$stmt=$pdo->prepare('SELECT setting_value FROM settings WHERE setting_key=?');$stmt->execute([$name]);$cipher=(string)$stmt->fetchColumn();$stmt->closeCursor();check(ai_decrypt_secret($cipher)===$value,'Saving image options preserves existing encrypted credentials: '.$name);}
  [$status,$json]=request('/api/admin-elevenlabs-v102.php',['csrf_token'=>$csrf,'api_key'=>'','voice_id'=>'updated-voice','model_id'=>'eleven_flash_v2_5'],true);
  check($status===200&&!empty(json_decode($json,true)['ok']),'Normal ElevenLabs save works after recovery');
  check($pdo->query("SELECT setting_value FROM settings WHERE setting_key='ai_elevenlabs_voice_id'")->fetchColumn()==='updated-voice','Voice settings persist after recovery');

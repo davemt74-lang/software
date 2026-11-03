@@ -27,6 +27,8 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'media.library.read'=>['status','search'],
         'music.library.read'=>['status','search'],
         'photos.library.read'=>['status','search'],
+        'media.assets.read'=>['search'],
+        'images.generate'=>['queue'],
         'downloads.jobs.read'=>['status','list'],
         'media.processing.read'=>['status','list'],
         'video.projects.read'=>['status','list'],
@@ -65,7 +67,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     if(!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/D',$at)||strtotime($at)===false)return null;
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;
     // A read, clarification or failed operation can never be a successful mutation.
-    $write=($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
+    $write=($cap==='images.generate'&&$op==='queue')||($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
     if($status==='completed'&&(!$write||$reason!==''))return null;
     if(in_array($status,['read_complete','no_matches'],true)&&$reason!=='')return null;
     return ['contract'=>'vp3.tool-receipt.v1','capability'=>$cap,'operation'=>$op,'status'=>$status,'reason'=>$reason,
@@ -88,6 +90,7 @@ function vp3_tool_last_receipt_v1(PDO $pdo,array $user,array $context): ?array
 
 function vp3_tool_diagnosis_v1(?array $last): string
 {
+    if(($last['receipt']['capability']??'')==='images.generate'&&($last['receipt']['status']??'')==='completed')return 'The image request was queued. Its Chat canvas card shows whether the image was generated and saved; a queue receipt alone does not confirm image completion.';
     if(!$last)return 'The preceding response has no verified tool receipt. I cannot confirm an action or diagnose its failure from the response text alone. Ask me to check the relevant capability or record.';
     $r=$last['receipt'];$label=[
         'read_complete'=>'the read completed','no_matches'=>'the read completed with no matching records',

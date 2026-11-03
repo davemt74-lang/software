@@ -1,0 +1,12 @@
+.vp3-canvas-media{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;min-width:0;margin:12px 0;max-width:100%;}
+.vp3-canvas-media:empty{display:none;}
+.vp3-canvas-media-card{min-width:0;max-width:100%;margin:0;padding:10px;border:1px solid var(--border,#465168);border-radius:12px;background:var(--surface-secondary,rgba(20,27,40,.65));overflow-wrap:anywhere;}
+.vp3-canvas-media-card img,.vp3-canvas-media-card video{display:block;width:100%;height:auto;max-height:65vh;object-fit:contain;border-radius:8px;margin:8px 0;}
+.vp3-canvas-media-card audio{display:block;width:100%;max-width:100%;margin:8px 0;}
+.vp3-canvas-media-card figcaption,.vp3-canvas-media-card small{display:block;margin:5px 0;}
+.vp3-canvas-media-card p{white-space:pre-wrap;}
+.vp3-canvas-media-controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.vp3-canvas-media-controls a,.vp3-canvas-media-controls button{max-width:100%;white-space:normal;}
+.vp3-canvas-media-card[data-state=generating]::before{content:'';display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:vp3-image-spin 1s linear infinite;margin-right:7px;}
+@keyframes vp3-image-spin{to{transform:rotate(360deg);}}
+@media(prefers-reduced-motion:reduce){.vp3-canvas-media-card[data-state=generating]::before{animation:none;}}
