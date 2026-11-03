@@ -4,12 +4,14 @@
   const thread=document.getElementById('chatThread');
   if(!thread || !cfg.endpoint || !cfg.ownerEndpoint || !cfg.csrf || !Number.isSafeInteger(cfg.userId) || cfg.userId<1)return;
   const contract='vp3.profile-handoff.v1';
+  const chatContract='vp3.profile-chat-choice.v1';
+  const liveStates=new Set(['none','waiting','accepted','declined','expired','unavailable','ended']);
   const states=new Set(['awaiting_delivery','awaiting_owner','agent_ready','agent_running','owner_claimed','replied','blocked','cancelled']);
   const storageKey='vp3:profile-doorbell:'+cfg.userId;
   const tabKey=storageKey+':tab';
   const cards=new Map(),projections=new Map();
   let stopped=false,epoch=0,contextKey='',availability=null,reachable=false,presenceAt=0;
-  let pumping=false,queued=false,preferenceBusy=false,initializedBlank=false,listSequence=0,actionSequence=0;
+  let pumping=false,queued=false,preferenceBusy=false,settingsPending=false,initializedBlank=false,listSequence=0,actionSequence=0;
   let errorText='',availabilityNode=null,presenceText=null,interval=0,countdownInterval=0;
   const now=()=>typeof performance?.now==='function'?performance.now():Date.now();
   const positive=value=>Number.isSafeInteger(value)&&value>0;
@@ -55,7 +57,9 @@
     if(!nonnegative(value.server_now_ms)||!['acknowledged_at_ms','pickup_deadline_ms'].every(k=>value[k]===null||nonnegative(value[k])))return null;
     if(typeof value.visitor_label!=='string'||value.visitor_label.length>240||typeof value.agent_name!=='string'||value.agent_name.length>240||typeof value.visitor_message!=='string'||value.visitor_message.length>16000)return null;
     if(!Array.isArray(value.history)||value.history.length>20||value.history.some(row=>!row||!positive(row.id)||!['visitor','owner','agent'].includes(row.sender_type)||typeof row.message!=='string'||row.message.length>32000||typeof row.created_at!=='string'||row.created_at.length>40))return null;
-    return {...value,execution_paused:value.execution_paused===true,dispatch_execution_paused:value.dispatch_execution_paused===true,history:value.history.map(row=>({id:row.id,sender_type:row.sender_type,message:row.message,created_at:row.created_at}))};
+    const chat=value.chat;
+    if(chat!==undefined&&(!chat||chat.contract!==chatContract||typeof chat.owner_name!=='string'||chat.owner_name.length>240||!['auto','agent','live'].includes(chat.mode)||!liveStates.has(chat.live_status)||typeof chat.live_text_available!=='boolean'||typeof chat.can_end_live_chat!=='boolean'))return null;
+    return {...value,...(chat?{chat:{...chat}}:{}),execution_paused:value.execution_paused===true,dispatch_execution_paused:value.dispatch_execution_paused===true,history:value.history.map(row=>({id:row.id,sender_type:row.sender_type,message:row.message,created_at:row.created_at}))};
   }
   function updatePresence(){
     if(!availabilityNode)return;
@@ -115,14 +119,35 @@
   }
   function remaining(record){const deadline=record.data.pickup_deadline_ms;return deadline===null?null:Math.max(0,Math.ceil((deadline-record.clockServer-(now()-record.clockLocal))/1000));}
   function writable(record){return active()&&record.node.isConnected&&!record.blocked&&record.binding.chat_conversation_id===current().chat_conversation_id&&record.binding.chat_agent_id===current().chat_agent_id&&record.epoch===epoch&&!record.superseded;}
-  function allowed(record,operation){return writable(record)&&!record.pending&&record.data['can_'+operation]===true&&!(record.data.state==='awaiting_owner'&&remaining(record)===0);}
+  function liveWaiting(record){return record.data.chat?.mode==='live'&&record.data.chat.live_status==='waiting';}
+  function allowed(record,operation){
+    const chat=record.data.chat,accepted=chat?.live_status==='accepted';
+    if(!writable(record)||record.pending||record.data['can_'+operation]!==true)return false;
+    if(operation==='delegate'&&accepted&&!chat.can_end_live_chat)return false;
+    if((liveWaiting(record)||accepted)&&(operation==='claim'||operation==='reply')&&(settingsPending||!chat.live_text_available))return false;
+    return record.data.state!=='awaiting_owner'||remaining(record)!==0;
+  }
   function refreshControls(record){
+    const chat=record.data.chat,waiting=liveWaiting(record),accepted=chat?.live_status==='accepted';
+    record.node.dataset.chatMode=chat?.mode||'auto';record.node.dataset.liveStatus=chat?.live_status||'none';
+    record.buttons.claim.textContent=waiting?'Accept live chat':accepted?'Live chat accepted':"I'll reply";
+    record.buttons.delegate.textContent=waiting?'Decline':accepted?'End live chat':'Let Agent reply';
     for(const [operation,button] of Object.entries(record.buttons))button.disabled=!allowed(record,operation);
     record.input.disabled=!allowed(record,'reply');
     if(record.pending)record.status.textContent='Saving your visitor action…';
     else if(record.superseded)record.status.textContent='A newer message from this visitor is shown in this Chat.';
-    else if(record.data.execution_paused||record.data.dispatch_execution_paused)record.status.textContent='Profile Agent is paused. You can reply to this visitor.';
-    else record.status.textContent=({awaiting_delivery:'Waiting for visible delivery.',awaiting_owner:'You can reply, or let your Profile Agent answer.',owner_claimed:'You are handling this visitor.',agent_ready:'Your Profile Agent is preparing a reply.',agent_running:'Your Profile Agent is replying.',replied:record.data.responder==='owner'?'Your reply was sent.':record.data.responder==='agent'?'Your Profile Agent replied.':'A reply was sent.',blocked:'This visitor request needs attention.',cancelled:'This visitor request is closed.'})[record.data.state];
+    else if((waiting||accepted)&&settingsPending)record.status.textContent='Checking your updated Chat Settings…';
+    else if(waiting)record.status.textContent=chat.live_text_available&&record.data.can_claim?'This visitor requested live text chat with you. Accept or decline this request.':'This visitor requested live text chat. Your current Chat Settings or availability prevent acceptance.';
+    else if(accepted)record.status.textContent=chat.live_text_available&&record.data.can_reply?'Live text chat with this visitor is active. Your replies go directly to this visitor.':'Live text chat is active. Your current Chat Settings or availability prevent replying.';
+    else{
+      const liveOutcome=({declined:'Live chat was declined.',expired:'The live chat request expired.',unavailable:'Live chat is unavailable.',ended:'Live chat has ended.'})[chat?.live_status];
+      const outcome=liveOutcome||(chat?.mode==='agent'?'The visitor chose Agent chat.':'');
+      const replied=record.data.responder==='owner'?'Your reply was sent.':record.data.responder==='agent'?(liveOutcome?'Your Profile Agent handles new messages.':'Your Profile Agent replied.'):'A reply was sent.';
+      const base=record.data.execution_paused||record.data.dispatch_execution_paused
+        ?'Profile Agent is paused.'+(record.buttons.reply.disabled?'':' You can reply to this visitor.')
+        :({awaiting_delivery:'Waiting for visible delivery.',awaiting_owner:'You can reply, or let your Profile Agent answer.',owner_claimed:'You are handling this visitor.',agent_ready:'Your Profile Agent is preparing a reply.',agent_running:'Your Profile Agent is replying.',replied,blocked:'This visitor request needs attention.',cancelled:'This visitor request is closed.'})[record.data.state];
+      record.status.textContent=(outcome?outcome+' ':'')+base;
+    }
     const seconds=remaining(record);
     record.countdown.hidden=record.data.state!=='awaiting_owner';
     record.countdown.textContent=seconds>0?seconds+'s to pick up':seconds===0?'Checking the current responder…':'';
@@ -231,7 +256,8 @@
       const data=normalize(result.turn);
       if(result.turn_id!==payload.turn_id||result.conversation_id!==payload.conversation_id||result.request_id!==payload.request_id||!data||data.turn_id!==payload.turn_id||data.conversation_id!==payload.conversation_id||data.revision<payload.revision)throw new Error('Action identity was not confirmed.');
       if(operation==='reply'&&String(record.input.value||'').trim()===message)record.input.value='';
-      record.attempt=null;record.notice.textContent=({claim:'You picked up this visitor.',reply:'Reply sent to this visitor.',delegate:'Your Profile Agent will handle this visitor.',resolve:'Visitor conversation resolved.'})[operation];
+      record.attempt=null;
+      record.notice.textContent=operation==='claim'&&data.chat?.live_status==='accepted'?'Live chat accepted. Your replies go directly to this visitor.':operation==='delegate'&&data.chat?.live_status==='declined'?'Live chat declined. Your Profile Agent will handle this visitor.':operation==='delegate'&&data.chat?.live_status==='ended'?'Live chat ended. Your Profile Agent will handle this visitor.':({claim:'You picked up this visitor.',reply:'Reply sent to this visitor.',delegate:'Your Profile Agent will handle this visitor.',resolve:'Visitor conversation resolved.'})[operation];
       applyProjection(data,record.binding,record.element);saveDraft(record);
     }catch(error){
       if(same(snapshot)&&record.node.isConnected&&record.attempt===attempt){
@@ -243,11 +269,12 @@
       record.pending=false;actionSequence++;refreshControls(record);if(same(snapshot))void pump();
     }
   }
-  async function deliver(data,snapshot){
+  async function deliver(data,snapshot,isCurrent=()=>same(snapshot)){
+    if(!isCurrent())return;
     const prior=cards.get(data.turn_id);
     if(prior&&prior.node.isConnected&&prior.binding.delivery_id&&prior.binding.chat_conversation_id===snapshot.chat_conversation_id&&prior.binding.chat_agent_id===snapshot.chat_agent_id){applyProjection(data,prior.binding,prior.element);return;}
     const result=await request('doorbell_delivery',{turn_id:data.turn_id,revision:data.revision,tab_id:tab.id,chat_conversation_id:snapshot.chat_conversation_id,chat_agent_id:snapshot.chat_agent_id});
-    if(!same(snapshot))return;
+    if(!isCurrent())return;
     const next=normalize(result.turn),messageId=Number(result.chat_message_id||result.message_id);
     if(!next||next.turn_id!==data.turn_id||next.conversation_id!==data.conversation_id||result.chat_conversation_id!==snapshot.chat_conversation_id||next.chat_agent_id!==snapshot.chat_agent_id||!positive(messageId)||!token(result.delivery_id))return;
     const element=continuity().mountProfileHandoff?.({...result,turn:next});
@@ -262,15 +289,17 @@
     try{
       syncContext();snapshot=capture();
       const seq=++listSequence,actionsAtStart=actionSequence;
+      const isCurrent=()=>same(snapshot)&&seq===listSequence&&actionsAtStart===actionSequence;
       const result=await request('doorbell_list',{...current(),tab_id:tab.id});
-      if(!same(snapshot)||seq!==listSequence||actionsAtStart!==actionSequence)return;
+      if(!isCurrent())return;
       if(!['available','away','dnd'].includes(result.availability)||!Array.isArray(result.turns)||result.turns.length>50)throw new Error('Invalid visitor list.');
       availability=result.availability;
       if(snapshot.chat_conversation_id===0&&availability==='available'){if(await initializeBlank()){queued=true;return;}errorText='Open or start a Chat to receive visitor cards.';updatePresence();return;}
       if(!presenceAt||now()-presenceAt>=10000)await heartbeat();
-      if(!same(snapshot))return;
+      if(!isCurrent())return;
       const returned=new Set();
-      for(const value of result.turns){const data=normalize(value);if(!data)continue;returned.add(data.turn_id);projections.set(data.turn_id,data);try{await deliver(data,snapshot);}catch(_){if(same(snapshot))errorText='Visitor cards are reconnecting. Your drafts are kept.';}if(!same(snapshot))return;}
+      for(const value of result.turns){const data=normalize(value);if(!data)continue;returned.add(data.turn_id);projections.set(data.turn_id,data);try{await deliver(data,snapshot,isCurrent);}catch(_){if(isCurrent())errorText='Visitor cards are reconnecting. Your drafts are kept.';}if(!isCurrent())return;}
+      settingsPending=false;
       for(const record of cards.values())if(record.node.isConnected&&!returned.has(record.data.turn_id)){saveDraft(record);record.blocked=true;record.node.hidden=true;const text=record.element.querySelector('.message-text');if(text){text.hidden=false;text.textContent='Review this visitor conversation in Profile Activity.';}}
       for(const record of cards.values())refreshControls(record);
       updatePresence();scheduleAcks();
@@ -280,6 +309,7 @@
   function restoreMarkers(){for(const [id,data] of projections){const record=cards.get(id);if(!record?.node.isConnected)applyProjection(data);}scheduleAcks();}
   window.addEventListener('vp3:profile-handoff-message',restoreMarkers);
   window.addEventListener('vp3:profile-handoff-refresh',()=>void pump());
+  window.addEventListener('stonefellow:chat-settings-updated',()=>{settingsPending=true;actionSequence++;tab.sequence++;saveStorage(tabKey,tab);presenceAt=0;reachable=false;for(const record of cards.values())refreshControls(record);updatePresence();void pump();});
   window.addEventListener('vp3:chat-context-ready',()=>{syncContext();void pump();});
   window.addEventListener('stonefellow:chat-context-changing',invalidate);
   window.addEventListener('vp3:chat-canvas-view-changed',()=>{if(!active())invalidate();else void pump();});
