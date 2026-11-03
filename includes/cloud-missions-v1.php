@@ -137,7 +137,11 @@ function cloud_mission_service_v1(PDO $pdo,array $user,string $action,array $inp
     elseif($action==='resume'){if(($input['allow_reexecution']??false)!==true)throw new RuntimeException('Confirm any interrupted model reexecution.',409);cloud_mission_authority_v1($pdo,$user,$m,true);agent_work_control_resume_v173($pdo,$user,(int)$run['id']);}
     elseif($action==='retry'){cloud_mission_authority_v1($pdo,$user,$m,true);$failed=array_values(array_filter(agent_workflow_actions_v1400($pdo,(int)$user['id'],(int)$run['id']),fn($a)=>$a['status']==='failed'));if(!$failed||($input['task_id']??'')!==$failed[0]['action_key'])throw new RuntimeException('Choose the current failed worker.',409);if((int)$failed[0]['attempt_count']>=3)throw new RuntimeException('This worker exhausted its three-attempt budget. Prepare a fresh Mission.',409);if((int)$run['attempt_count']>=6)throw new RuntimeException('This Mission exhausted its worker attempt budget. Prepare a fresh Mission.',409);agent_job_retry_v1900($pdo,$user,(int)$run['id']);}
     elseif($action==='events')return $base+['events'=>agent_workflow_events_v1400($pdo,(int)$user['id'],(int)$run['id'])];
-    elseif($action==='execution')return $base+['execution'=>agent_job_public_run_v1900($pdo,$run,true)];
+    elseif($action==='execution'){
+        cloud_mission_authority_v1($pdo,$user,$m);
+        foreach(agent_workflow_actions_v1400($pdo,(int)$user['id'],(int)$run['id']) as $a)cloud_mission_result_authority_v1($pdo,$user,$m,json_decode((string)($a['result_json']??''),true)?:[]);
+        return $base+['execution'=>agent_job_public_run_v1900($pdo,$run,true)];
+    }
     elseif(in_array($action,['decisions','actions.list'],true))return $base+[$action==='decisions'?'decisions':'actions'=>[]];
     elseif($action==='tools.status')return $base+['tools'=>cloud_mission_tools_v1($m),'mission'=>cloud_mission_view_v1($pdo,$user,$m)];
     elseif($action==='bind_provider'){if(($input['provider_key']??'auto')!=='auto')throw new InvalidArgumentException('Cloud Missions use the provider configured in AI settings.');}
