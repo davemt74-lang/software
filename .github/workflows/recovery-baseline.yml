@@ -84,6 +84,11 @@ jobs:
           node tests/profile-handoff-api-pa3.mjs
           node tests/profile-visitor-doorbell-pa3.mjs
           node tests/profile-visitor-handoff-pa3.mjs
+          php tests/profile-calls-pa3c.php
+          php tests/profile-calls-provider-pa3c.php
+          php tests/profile-calls-concurrency-pa3c.php
+          node tests/profile-calls-api-pa3c.mjs
+          node tests/profile-calls-pa3c.mjs
           php tests/commerce-provider-evidence-pa2.php
           php tests/commerce-recovery-pa2.php
           php tests/commerce-projection-recovery-pa2.php

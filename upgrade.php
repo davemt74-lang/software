@@ -56,6 +56,7 @@ require_once __DIR__ . '/includes/phone-voice-conversation-v140.php';
 require_once __DIR__ . '/includes/phone-voice-stream-v150.php';
 require_once __DIR__ . '/includes/phone-worker-health-v171.php';
 require_once __DIR__ . '/includes/profile-agent-handoff-pa3.php';
+require_once __DIR__ . '/includes/profile-calls-pa3c.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(): bool
@@ -217,6 +218,13 @@ function vp3_upgrade_complete(): bool
         && column_exists('profile_agent_handoff_turns_pa3','conversation_epoch')
         && table_exists('profile_agent_handoff_deliveries_pa3')
         && table_exists('profile_agent_handoff_operations_pa3')
+        && table_exists('profile_calls_pa3c')
+        && column_exists('profile_calls_pa3c','provider_snapshot')
+        && column_exists('profile_calls_pa3c','cleanup_run_id')
+        && column_exists('profile_calls_pa3c','provider_lease_until_ms')
+        && table_exists('profile_call_slots_pa3c')
+        && table_exists('profile_call_operations_pa3c')
+        && table_exists('profile_call_deliveries_pa3c')
         && crm_v180_schema_ready()
         && artist_workspace_v181_schema_ready()
         && music_workspace_release_schema_v330_ready()
@@ -387,6 +395,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             shared_knowledge_index_ensure_schema_v236();
             profile_agent_ensure_schema();
             vp3_profile_handoff_ensure_schema_pa3($pdo);
+            vp3_profile_call_ensure_schema_pa3c($pdo);
             personal_capability_ensure_schema_v242();
             require_once __DIR__.'/includes/tv-watching-v1.php';
             tv_schema_v1($pdo);
