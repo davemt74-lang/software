@@ -68,6 +68,8 @@ jobs:
           php tests/agent-screen-sessions-v1.php
           node tests/agent-screen-sessions-api.mjs
           node tests/agent-screen-sessions-browser.mjs
+          php tests/agent-screen-insights-v1.php
+          node tests/agent-screen-insights-browser.mjs
           node tests/agent-eyes-core.mjs
           node tests/agent-orb-browser.mjs
           node tests/agent-orb-cloud-browser.mjs
