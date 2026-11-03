@@ -57,7 +57,7 @@ hold. The Cloud work does not change HomeServer source or Stonefellow playback.
 | PA1 | Profile mutation permissions; visitor/account conversation isolation; fresh public authority; exact owner reply target; separate external Agent Messaging histories | Complete: PR #694 merged; all 13 PR and 14 post-merge workflows passed |
 | PA2 | Payment webhook recovery; late payment reconciliation; durable fulfillment retry; accurate review/payment cards | Complete: PR #695 merged; all 13 PR and 14 post-merge workflows passed |
 | PA3 | Availability, exact visible-card acknowledgement, 15-second pickup, durable automatic takeover, and functional main Chat visitor cards with explicit text reply/claim/delegate/resolve | Complete: PR #696 merged; all 16 PR and 15 post-merge workflows passed; ten acceptance gates passed |
-| PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Building the requested direct calling section |
+| PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Implemented with the ten acceptance gates below; PR checks and the release artifact provide final deployment evidence |
 | PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Planned |
 | PA4B | Notification and Brain state; snooze/wake; routing; replay and projection repair | Planned |
 | PA5 | Ordinary public Profile conversation checkout using the canonical Commerce order/payment/receipt path | Planned |
@@ -254,7 +254,7 @@ secure transport. Short-lived join tokens and room deletion alone do not prove
 immediate revocation of cached tokens on stock self-hosted LiveKit. Existing
 meeting credentials do not silently enable public Profile calls. The Admin
 surface separates configured credentials, an acknowledged human-only project
-configuration, and a recent successful API authentication check. The check does
+configuration, and the last successful API authentication check. The check does
 not prove microphone/camera connectivity or the absence of a future deployed
 worker. A human-only project must not auto-dispatch unnamed Agent workers or
 automatically record rooms; an empty CreateRoom agents array does not suppress
@@ -297,6 +297,13 @@ and a clear path back to text or Agent assistance; it cannot silently leave the
 conversation claimed forever. Ending a call preserves its text thread and
 offers the owner explicit continued text handling or delegation.
 
+After a failed or ended call, an explicit **Return to Agent** action is available
+to the exact visitor or owner only while the handoff is still the one installed
+by that call's acceptance. It must not override a later owner reply, claim or
+resolution. Local media stops before returning to Agent assistance. Any pending
+provider cleanup remains a separate durable obligation and never permits the
+ended media session to resume.
+
 | Gate | Required behavior | Evidence |
 | --- | --- | --- |
 | 1 | Exact current visitor and owner authority for every offer, accept, poll, token, and end; no borrowed meeting invitation | Real SQL and production HTTP isolation tests |
@@ -309,6 +316,23 @@ offers the owner explicit continued text handling or delegation.
 | 8 | Reload/reconnect cannot revive an ended call or switch visitors; current connection state remains accurate | Network interruption, stale event and mobile browser tests |
 | 9 | Unconfigured LiveKit, denied microphone/camera, autoplay limits, and mobile layout have usable truthful states | Readiness and browser fixtures; live-device verification reported separately |
 | 10 | Private Chat remains private; no implicit recording/transcription, synthesized voice substitution, or telephone purchase/dial | Cross-surface boundary tests and retained PA1/PA3 regressions |
+
+The focused local suite passes **373 checks**: 126 production call-state and
+recovery checks, 79 provider-contract checks, 85 actual HTTP API checks,
+16 actual Admin HTTP checks, and 67 interface runtime assertions. Supporting
+credential recovery passes 98 checks and the upgrade page passes 28 cases.
+The CI matrix adds independent MySQL acceptance races on PHP 8.1 and 8.3 and
+the actual Chromium call-interface runner, alongside retained PA1, PA2 and PA3
+coverage. Provider HTTP and browser media are controlled fixtures; no live
+provider call is used to establish these results.
+
+The recovery cases include existing account blocks before admission and during
+a call, an account switch during a slow Join, delayed microphone/camera
+permissions after hang-up, lost responses, and a CreateRoom response that
+arrives after cleanup. A late possible room creation invalidates the old proof
+and retains an exact-room cleanup obligation. A completed cleanup gets a new
+canonical generation; a pending or manually paused cleanup retains its existing
+job controls. Repair never ends or releases an already accepted successor call.
 
 Existing Twilio telephone and SIP adapters provide a future route to actual
 phone numbers. That follow-on needs its own exact-number confirmation,
@@ -323,6 +347,36 @@ Provider contracts for the call adapter:
 - [LiveKit access tokens and room/source grants](https://docs.livekit.io/frontends/reference/tokens-grants/)
 - [LiveKit participant management and removal](https://docs.livekit.io/intro/basics/rooms-participants-tracks/participants/)
 - [LiveKit camera and microphone publication](https://docs.livekit.io/transport/media/publish/)
+
+Deployment steps for PA3C:
+
+1. Upload and extract the flat Cloud ZIP, run `/upgrade.php` once, and reload
+   Chat and the public Profile page. The canonical upgrade installs the four
+   call tables and checks the existing social-block schema.
+2. Open **Admin → Profile voice & video**. Save dedicated LiveKit Cloud
+   credentials, or explicitly choose the existing supported meeting project.
+   Confirm its human-only configuration and run **Check metadata API**. This
+   does not create a room or access a microphone.
+3. Keep the Profile recovery worker configured, for example a hosting cron
+   invoking `php agent-worker-v1910.php --executor=profile`. Active call views
+   can drive eligible work; the worker handles obligations after both browsers
+   close. Cleanup timing then depends on that worker schedule and provider
+   availability.
+4. With the owner Available in Chat, use two consenting browsers on HTTPS to
+   verify an actual audio call, optional video, hang-up, denied permissions and
+   an interrupted connection. Automated transport and media fixtures do not
+   establish the deployed account's media connectivity or iPhone microphone,
+   speaker and camera behavior.
+
+Call IDs and public/private conversation markers persist across reloads. Media
+tokens stay in memory and restoring a card never reconnects automatically.
+Network reconnection in the same open tab keeps its participant binding; a new
+tab cannot replace that participant. A reload can require ending the previous
+call and making a new offer after cleanup. An old ended call cannot be resumed;
+a new offer creates a new room. A cleanup-pending card
+retains the owner's busy slot until closure is proved. A stored closure proof
+lets a failed completion-receipt write retry without pretending that a later
+missing-room response proves participant revocation.
 
 ### PA4: speech, notifications and Brain
 

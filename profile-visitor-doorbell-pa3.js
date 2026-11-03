@@ -152,7 +152,11 @@
     for(const operation of ['claim','delegate','resolve'])buttons[operation].addEventListener('click',()=>void perform(record,operation));
     form.addEventListener('submit',event=>{event.preventDefault();event.stopPropagation();void perform(record,'reply');});
     body.appendChild(card);const placeholder=element.querySelector('.message-text');if(placeholder)placeholder.hidden=true;
-    cards.set(data.turn_id,record);renderHistory(record);refreshControls(record);return record;
+    cards.set(data.turn_id,record);renderHistory(record);refreshControls(record);
+    window.VP3ProfileCallsPa3c?.attachOwnerThread(controls,{binding:()=>writable(record)?{
+      conversation_id:record.data.conversation_id,chat_conversation_id:record.binding.chat_conversation_id,chat_agent_id:record.binding.chat_agent_id
+    }:null});
+    return record;
   }
   function updateCard(record,data,binding){
     if(data.revision<record.data.revision)return record;

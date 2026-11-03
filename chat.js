@@ -1385,6 +1385,7 @@
       knowledge_actions_r9:raw.knowledge_actions_r9 || null,
       canvas_media:raw.canvas_media && typeof raw.canvas_media==='object' ? raw.canvas_media : null,
       profile_handoff:raw.profile_handoff && typeof raw.profile_handoff==='object' ? raw.profile_handoff : null,
+      profile_call:raw.profile_call && typeof raw.profile_call==='object' ? raw.profile_call : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1612,6 +1613,15 @@
     window.dispatchEvent(new CustomEvent('vp3:profile-handoff-message',{detail:{element}}));
   }
 
+  function bindProfileCallPa3c(element, marker) {
+    if(!element || marker?.contract!=='vp3.profile-call.v1' ||
+      !['call_id','revision','conversation_id'].every(key=>Number.isSafeInteger(marker[key])&&marker[key]>0))return;
+    element.dataset.profileCallId=String(marker.call_id);
+    element.dataset.profileCallRevision=String(marker.revision);
+    element.dataset.profileCallConversation=String(marker.conversation_id);
+    window.dispatchEvent(new CustomEvent('vp3:profile-call-message',{detail:{element}}));
+  }
+
   let initializingConversationPa3=null;
   async function ensureConversationPa3() {
     if(conversationId>0)return conversationId;
@@ -1645,6 +1655,25 @@
     const previousScroll=thread.scrollTop, nearBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<100;
     const element=addMessage('assistant','A Profile visitor sent you a message.');
     bindStoredMessagePa3(element,id,marker);
+    if(!nearBottom)thread.scrollTop=previousScroll;
+    return element;
+  }
+
+  function mountProfileCallPa3c(delivery) {
+    const call=delivery?.call,id=Number(delivery?.chat_message_id||delivery?.message_id);
+    if(!contextReady||restoringConversation||thread.dataset.view!=='chat'||
+      Number(delivery?.chat_conversation_id)!==conversationId||Number(delivery?.chat_agent_id)!==Number(cfg.agentId||0)||
+      call?.contract!=='vp3.profile-call.v1'||call.role!=='owner'||!Number.isSafeInteger(id)||id<1||
+      !['call_id','revision','conversation_id'].every(key=>Number.isSafeInteger(call[key])&&call[key]>0))return null;
+    const existing=thread.querySelector('[data-chat-message-id="'+id+'"]');
+    if(existing){
+      if(Number(existing.dataset.chatConversationId)!==conversationId||Number(existing.dataset.profileCallId)!==call.call_id||
+        Number(existing.dataset.profileCallConversation)!==call.conversation_id)return null;
+      return existing;
+    }
+    const previousScroll=thread.scrollTop,nearBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<100;
+    const element=addMessage('assistant','Profile visitor call.');
+    bindStoredMessagePa3(element,id);bindProfileCallPa3c(element,call);
     if(!nearBottom)thread.scrollTop=previousScroll;
     return element;
   }
@@ -3106,6 +3135,7 @@
         context.canvas_media || null
       );
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
+      if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
 
@@ -3133,6 +3163,7 @@
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
       const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null);
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
+      if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory(signal);
@@ -3463,6 +3494,7 @@
     agentId:() => Number(cfg.agentId || 0),
     ensureConversation:ensureConversationPa3,
     mountProfileHandoff:mountProfileHandoffPa3,
+    mountProfileCall:mountProfileCallPa3c,
     isRestoring:() => initialRestorePending || restoringConversation > 0,
     isReady:() => contextReady,
     isBusy:() => busy || initialRestorePending || restoringConversation > 0,

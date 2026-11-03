@@ -38,7 +38,7 @@ function vp3_profile_call_livekit_origin_pa3c(mixed $value): string
     $parts=parse_url(trim($value));
     if(!is_array($parts)||strtolower((string)($parts['scheme']??''))!=='wss'
         ||!preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.livekit\.cloud$/D',strtolower((string)($parts['host']??'')))
-        ||isset($parts['user'],$parts['pass'])||isset($parts['user'])||isset($parts['pass'])||isset($parts['query'])||isset($parts['fragment'])
+        ||isset($parts['user'])||isset($parts['pass'])||isset($parts['query'])||isset($parts['fragment'])
         ||(isset($parts['port'])&&(int)$parts['port']!==443)||!in_array($parts['path']??'',['','/'],true)){
         vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_NOT_CONFIGURED',503);
     }
@@ -131,7 +131,7 @@ function vp3_profile_call_livekit_http_pa3c(array $config,string $method,array $
     $token=vp3_profile_call_livekit_jwt_pa3c($config,$claims);$url='https://'.substr($config['url'],6).'/twirp/livekit.RoomService/'.$method;
     $body=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);if(strlen($body)>8192)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REQUEST_INVALID',422);
     $headers=['Authorization: Bearer '.$token,'Content-Type: application/json'];
-    if($http){$response=$http($url,$headers,$body,min(8000,$remaining));}
+    if($http){try{$response=$http($url,$headers,$body,min(8000,$remaining));}catch(VP3ProfileCallProviderException $e){throw $e;}catch(Throwable){vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_UNAVAILABLE',503,true);}}
     else{
         if(!function_exists('curl_init'))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_UNAVAILABLE',503,true);
         $ch=curl_init($url);$raw='';$oversized=false;
@@ -149,7 +149,7 @@ function vp3_profile_call_livekit_http_pa3c(array $config,string $method,array $
         if(in_array($response['status'],[401,403,408,429],true)||$response['status']>=500)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_UNAVAILABLE',503,true);
         vp3_profile_call_livekit_error_pa3c();
     }
-    if(isset($json->code)||isset($json->error))vp3_profile_call_livekit_error_pa3c();
+    if(property_exists($json,'code')||property_exists($json,'error'))vp3_profile_call_livekit_error_pa3c();
     return $json;
 }
 function vp3_profile_call_livekit_field_pa3c(object $row,string $snake,string $camel,mixed $default=null): mixed
@@ -165,7 +165,7 @@ function vp3_profile_call_livekit_room_pa3c(object $room,array $binding): array
     if(!is_string($sid)||!preg_match('/^RM_[A-Za-z0-9_-]{1,90}$/D',$sid)||$name!==$binding['room_name']||($binding['room_sid']!==''&&!hash_equals($binding['room_sid'],$sid))
         ||vp3_profile_call_livekit_field_pa3c($room,'max_participants','maxParticipants')!==2||!is_string($metadata)||strlen($metadata)>512)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
     try{$meta=json_decode($metadata,true,8,JSON_THROW_ON_ERROR);}catch(Throwable){vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);}
-    if(!is_array($meta)||$meta!==['contract'=>'vp3.profile-call.pa3c','call'=>$binding['public_id']])vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+    if(!is_array($meta)||count($meta)!==2||($meta['contract']??null)!=='vp3.profile-call.pa3c'||($meta['call']??null)!==$binding['public_id'])vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
     if(vp3_profile_call_livekit_bool_pa3c(vp3_profile_call_livekit_field_pa3c($room,'active_recording','activeRecording',false)))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
     return ['room_sid'=>$sid,'room_name'=>$name];
 }
@@ -177,15 +177,16 @@ function vp3_profile_call_livekit_participants_pa3c(object $response,array $bind
     foreach($rows as $row){
         if(!is_object($row))vp3_profile_call_livekit_error_pa3c();$identity=$row->identity??null;$sid=$row->sid??null;
         if(!in_array($identity,[$binding['owner_identity'],$binding['visitor_identity']],true)||isset($seen[$identity])||!is_string($sid)||!preg_match('/^PA_[A-Za-z0-9_-]{1,90}$/D',$sid))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
-        $kind=$row->kind??'STANDARD';if(!in_array($kind,['STANDARD',0],true))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+        $kind=property_exists($row,'kind')?$row->kind:'STANDARD';if(!in_array($kind,['STANDARD',0],true))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
         $permission=$row->permission??null;if(!is_object($permission))vp3_profile_call_livekit_error_pa3c();
+        foreach([['can_publish','canPublish'],['can_subscribe','canSubscribe']] as [$snake,$camel])if(!vp3_profile_call_livekit_bool_pa3c(vp3_profile_call_livekit_field_pa3c($permission,$snake,$camel,false)))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
         foreach([['hidden','hidden'],['recorder','recorder'],['can_publish_data','canPublishData'],['can_update_metadata','canUpdateMetadata']] as [$snake,$camel])if(vp3_profile_call_livekit_bool_pa3c(vp3_profile_call_livekit_field_pa3c($permission,$snake,$camel,false)))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
         $sources=vp3_profile_call_livekit_field_pa3c($permission,'can_publish_sources','canPublishSources',[]);
         if(!is_array($sources)||!$sources||count($sources)>2)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
         foreach($sources as $source)if(!in_array($source,$binding['mode']==='audio'?['MICROPHONE',2]:['MICROPHONE','CAMERA',1,2],true))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
-        $state=match($row->state??'JOINING'){'JOINING',0=>'joining','JOINED',1=>'joined','ACTIVE',2=>'active',default=>''};if($state==='')vp3_profile_call_livekit_error_pa3c();
-        $tracks=$row->tracks??[];if(!is_array($tracks)||count($tracks)>2)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);$mic=false;$camera=false;
-        foreach($tracks as $track){if(!is_object($track))vp3_profile_call_livekit_error_pa3c();$source=$track->source??null;$muted=vp3_profile_call_livekit_bool_pa3c($track->muted??false);
+        $state=match(property_exists($row,'state')?$row->state:'JOINING'){'JOINING',0=>'joining','JOINED',1=>'joined','ACTIVE',2=>'active',default=>''};if($state==='')vp3_profile_call_livekit_error_pa3c();
+        $tracks=property_exists($row,'tracks')?$row->tracks:[];if(!is_array($tracks)||count($tracks)>2)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);$mic=false;$camera=false;
+        foreach($tracks as $track){if(!is_object($track))vp3_profile_call_livekit_error_pa3c();$source=$track->source??null;$muted=vp3_profile_call_livekit_bool_pa3c(property_exists($track,'muted')?$track->muted:false);
             if(in_array($source,['MICROPHONE',2],true))$mic=!$muted;elseif($binding['mode']==='video'&&in_array($source,['CAMERA',1],true))$camera=!$muted;else vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
         }
         $seen[$identity]=true;$out[]=['identity'=>$identity,'sid'=>$sid,'state'=>$state,'microphone'=>$mic,'camera'=>$camera];
@@ -194,7 +195,7 @@ function vp3_profile_call_livekit_participants_pa3c(object $response,array $bind
 }
 function vp3_profile_call_livekit_inspect_pa3c(array $config,array $binding,int $deadline,?callable $http=null): array
 {
-    $response=vp3_profile_call_livekit_http_pa3c($config,'ListRooms',['names'=>[$binding['room_name']]],$deadline,$http);$rooms=$response->rooms??[];
+    $response=vp3_profile_call_livekit_http_pa3c($config,'ListRooms',['names'=>[$binding['room_name']]],$deadline,$http);$rooms=property_exists($response,'rooms')?$response->rooms:[];
     if(!is_array($rooms)||count($rooms)>1)vp3_profile_call_livekit_error_pa3c();
     $out=['status'=>'absent','room_sid'=>'','room_name'=>$binding['room_name'],'config_fingerprint'=>$config['config_fingerprint'],'owner_connected'=>false,'visitor_connected'=>false,'participants'=>[],'recording'=>false,'observed_at_ms'=>(int)floor(microtime(true)*1000)];
     if(!$rooms)return $out;if(!is_object($rooms[0]))vp3_profile_call_livekit_error_pa3c();$room=vp3_profile_call_livekit_room_pa3c($rooms[0],$binding);
@@ -214,7 +215,7 @@ function vp3_profile_call_livekit_provider_pa3c(string $operation,array $binding
             if(count(get_object_vars($reply))!==0)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REVOCATION_UNVERIFIED',502,true);$cutoffs[$role]=$cutoff;
         }
         $reply=vp3_profile_call_livekit_http_pa3c($config,'DeleteRoom',['room'=>$binding['room_name']],$deadline,$http);if(count(get_object_vars($reply))!==0&&!isset($reply->__provider_room_absent))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REVOCATION_UNVERIFIED',502,true);
-        $response=vp3_profile_call_livekit_http_pa3c($config,'ListRooms',['names'=>[$binding['room_name']]],$deadline,$http);$rooms=$response->rooms??[];
+        $response=vp3_profile_call_livekit_http_pa3c($config,'ListRooms',['names'=>[$binding['room_name']]],$deadline,$http);$rooms=property_exists($response,'rooms')?$response->rooms:[];
         if(!is_array($rooms)||count($rooms)!==0)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REVOCATION_UNVERIFIED',502,true);
         return ['status'=>'closed','owner_revoked'=>true,'visitor_revoked'=>true,'room_absent'=>true,'owner_revoked_before_sec'=>$cutoffs['owner'],'visitor_revoked_before_sec'=>$cutoffs['visitor'],'revoked_before_sec'=>min($cutoffs),'observed_at_ms'=>(int)floor(microtime(true)*1000)];
     }
@@ -278,9 +279,15 @@ function vp3_profile_call_livekit_save_pa3c(PDO $pdo,array $input): array
 function vp3_profile_call_livekit_verify_pa3c(PDO $pdo,?callable $http=null): array
 {
     $config=vp3_profile_call_livekit_config_pa3c();$nonce='vp3-profile-readiness-'.bin2hex(random_bytes(16));$deadline=(int)floor(microtime(true)*1000)+10000;
-    $reply=vp3_profile_call_livekit_http_pa3c($config,'ListRooms',['names'=>[$nonce]],$deadline,$http);$rooms=$reply->rooms??[];
+    $reply=vp3_profile_call_livekit_http_pa3c($config,'ListRooms',['names'=>[$nonce]],$deadline,$http);$rooms=property_exists($reply,'rooms')?$reply->rooms:[];
     if(!is_array($rooms)||$rooms!==[])vp3_profile_call_livekit_error_pa3c();
     $current=vp3_profile_call_livekit_config_pa3c();if(!hash_equals($current['config_fingerprint'],$config['config_fingerprint']))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_CONFIGURATION_CHANGED',409);
     vp3_profile_call_livekit_store_pa3c($pdo,'profile_calls_api_verified_pa3c',json_encode(['config_fingerprint'=>$config['config_fingerprint'],'verified_at_ms'=>(int)floor(microtime(true)*1000)],JSON_THROW_ON_ERROR));
+    return vp3_profile_call_livekit_readiness_pa3c();
+}
+function vp3_profile_call_livekit_disable_pa3c(PDO $pdo): array
+{
+    if(function_exists('vp3_profile_call_configuration_changed_pa3c'))vp3_profile_call_configuration_changed_pa3c($pdo);
+    vp3_profile_call_livekit_store_pa3c($pdo,'profile_calls_enabled_pa3c','0');
     return vp3_profile_call_livekit_readiness_pa3c();
 }

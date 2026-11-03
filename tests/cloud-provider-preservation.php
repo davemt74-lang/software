@@ -11,12 +11,13 @@ $root=sys_get_temp_dir().'/vp3-provider-'.bin2hex(random_bytes(6));
 $settings=[];$requests=[];$replyStatus=200;$checks=0;$own=['route'=>'system'];$wrongTestReply=false;$streamReplyStatus=null;
 function db(): \PDO {
     static $pdo;
-    return $pdo??=new class('sqlite::memory:') extends \PDO {
-        public function query(string $query,?int $mode=null,mixed ...$args): \PDOStatement|false {
-            if($query==="SHOW TABLES LIKE 'user_llm_credentials'")$query='SELECT 1 WHERE 0';
-            return $mode===null?parent::query($query):parent::query($query,$mode,...$args);
-        }
-    };
+    if($pdo instanceof \PDO)return $pdo;
+    $pdo=new \PDO('sqlite::memory:',null,null,[\PDO::ATTR_ERRMODE=>\PDO::ERRMODE_EXCEPTION]);
+    // Actual empty SQL inventories let production prove that no encrypted
+    // Profile call settings/snapshots exist before creating the fixture key.
+    $pdo->exec('CREATE TABLE settings(setting_key TEXT PRIMARY KEY,setting_value TEXT NOT NULL)');
+    $pdo->exec('CREATE TABLE profile_calls_pa3c(id INTEGER PRIMARY KEY,provider_snapshot TEXT NOT NULL)');
+    return $pdo;
 }
 function vp3_user_llm_v1_effective(\PDO $pdo,array $user): array {return $GLOBALS['own'];}
 // The HTTP double also runs in local/CI PHP builds without the cURL extension.
@@ -61,7 +62,7 @@ function curl_exec(object $handle): string|bool {
 }
 foreach(['ai-settings.php','ai-runtime-v100.php','ai-stream-v121.php','recommendations.php','agent-brain-context-v99.php','chat-engine.php'] as $file){
     $source=file_get_contents(dirname(__DIR__).'/includes/'.$file);
-    eval('namespace '.__NAMESPACE__.'; use \\Throwable; use \\RuntimeException;'.substr($source,strpos($source,'declare(strict_types=1);')+strlen('declare(strict_types=1);')));
+    eval('namespace '.__NAMESPACE__.'; use \\Throwable; use \\RuntimeException; use \\PDO;'.substr($source,strpos($source,'declare(strict_types=1);')+strlen('declare(strict_types=1);')));
 }
 try {
     foreach(['openai'=>'gpt-5.4-mini','anthropic'=>'claude-haiku-4-5'] as $provider=>$model){
@@ -154,7 +155,7 @@ try {
     }
     echo 'CLOUD_PROVIDER_PRESERVATION=PASS ('.$checks." assertions; HTTP mocked)\n";
 } finally {
-    $paths=new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root,\FilesystemIterator::SKIP_DOTS),\RecursiveIteratorIterator::CHILD_FIRST);
+    $paths=is_dir($root)?new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root,\FilesystemIterator::SKIP_DOTS),\RecursiveIteratorIterator::CHILD_FIRST):[];
     foreach($paths as $path){if($path->isDir())rmdir($path->getPathname());else unlink($path->getPathname());}
     if(is_dir($root))rmdir($root);
 }

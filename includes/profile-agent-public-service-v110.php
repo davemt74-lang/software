@@ -192,7 +192,10 @@ function vp3_profile_agent_public_source_dependencies_v1(array $context,array $h
 
 function vp3_profile_agent_public_start_v1(PDO $pdo,array $ctx): array
 {
-    $pdo->beginTransaction();
+    // A call-only offer may compose this canonical start with its own atomic
+    // admission. Standalone chat/WebMCP callers retain the original transaction.
+    $ownTransaction=!$pdo->inTransaction();
+    if($ownTransaction)$pdo->beginTransaction();else $pdo->exec('SAVEPOINT profile_public_start_v1');
     try{
         $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx,true);
         $q=$pdo->prepare("SELECT id FROM profile_agent_conversations WHERE owner_user_id=? AND profile_agent_id=? AND profile_session_id=? AND status IN ('open','owner_joined','resolved') ORDER BY id DESC LIMIT 20");
@@ -202,8 +205,9 @@ function vp3_profile_agent_public_start_v1(PDO $pdo,array $ctx): array
             if($conversation)break;
         }
         if(!$conversation){vp3_profile_agent_public_admit_v1($pdo,$ctx);$conversation=vp3_profile_agent_public_create_bound_v1($pdo,$ctx);}
-        vp3_profile_agent_public_live_v1($pdo,$ctx,true);$pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+        vp3_profile_agent_public_live_v1($pdo,$ctx,true);
+        if($ownTransaction)$pdo->commit();else $pdo->exec('RELEASE SAVEPOINT profile_public_start_v1');
+    }catch(Throwable $e){if($pdo->inTransaction()){if($ownTransaction)$pdo->rollBack();else{$pdo->exec('ROLLBACK TO SAVEPOINT profile_public_start_v1');$pdo->exec('RELEASE SAVEPOINT profile_public_start_v1');}}throw $e;}
     return vp3_profile_agent_public_state_service_v110($pdo,$ctx,(int)$conversation['id']);
 }
 

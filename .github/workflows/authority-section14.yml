@@ -75,8 +75,10 @@ jobs:
         run: |
           php tests/profile-calls-pa3c.php
           php tests/profile-calls-provider-pa3c.php
+          php tests/ai-credential-recovery.php
           php tests/profile-calls-concurrency-pa3c.php
           node tests/profile-calls-api-pa3c.mjs
+          node tests/profile-calls-admin-pa3c.mjs
           node tests/profile-calls-pa3c.mjs
       - name: Profile direct calls PA3C MySQL authority and competing acceptance
         env:
@@ -85,8 +87,10 @@ jobs:
           VP3_TEST_MYSQL_PASS: pa1-fixture
         run: |
           php tests/profile-calls-pa3c.php
+          php tests/profile-calls-provider-pa3c.php
           php tests/profile-calls-concurrency-pa3c.php
           node tests/profile-calls-api-pa3c.mjs
+          node tests/profile-calls-admin-pa3c.mjs
       - name: Profile Agent PA3 MySQL handoff and concurrent takeover
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4

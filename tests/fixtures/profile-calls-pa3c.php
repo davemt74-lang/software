@@ -18,7 +18,10 @@ function pa3c_reset(): void
 {
     $p=db();if($p->inTransaction())$p->rollBack();$p->afterSql=null;$p->failSql='';
     foreach(['profile_call_operations_pa3c','profile_call_deliveries_pa3c','profile_calls_pa3c','profile_call_slots_pa3c'] as $table)if(table_exists($table))$p->exec('DELETE FROM '.$table);
+    if(table_exists('user_blocks'))$p->exec('DELETE FROM user_blocks');
     pa3_reset();vp3_profile_call_ensure_schema_pa3c($p);
+    // Canonical setup/upgrade owns this social schema in production; no call request initializes it.
+    $p->exec('CREATE TABLE IF NOT EXISTS user_blocks(blocker_user_id INTEGER NOT NULL,blocked_user_id INTEGER NOT NULL,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(blocker_user_id,blocked_user_id))');
     $GLOBALS['pa3cReady']=true;$GLOBALS['pa3cFingerprint']=hash('sha256','original-provider');$GLOBALS['pa3cProviderCalls']=[];$GLOBALS['pa3cProviderHook']=null;$GLOBALS['pa3cProviderMode']='';$GLOBALS['pa3cRooms']=[];
     vp3_profile_handoff_presence_pa3($p,pa3_owner(),['tab_id'=>str_repeat('a',32),'chat_conversation_id'=>11,'chat_agent_id'=>7,'visible'=>true,'presence_sequence'=>1]);
 }

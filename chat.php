@@ -5,6 +5,7 @@ $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'voice-learning-v1-20261101';
 $controlBuild .= '-vrss-outcome-cards-s8b-20261103';
 $controlBuild .= '-profile-doorbell-pa3-20261103';
+$controlBuild .= '-profile-direct-calls-pa3c-20261104';
 $controlBuild .= '-canvas-image-generation-v1-listening-continuation-v1-live-player-history-v1-audio-debug-v1-recognition-reliability-v1-participant-conversation-v2-20261102-participant-updates-20261102-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351-speech-recovery-20261031-mic-startup-20261101';
@@ -417,6 +418,14 @@ $profileActivityRuntime = $agentFeatureReady && $pdoForAgent && profile_agent_sc
     : '';
 
 $profileDoorbellBuild='profile-doorbell-pa3-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-visitor-doorbell-pa3.js').hash_file('sha256',__DIR__.'/profile-visitor-doorbell-pa3.css')),0,12);
+$profileCallsBuild='profile-calls-pa3c-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-calls-pa3c.js').hash_file('sha256',__DIR__.'/profile-calls-pa3c.css')),0,12);
+$profileCallsRuntime=$profileActivityRuntime!==''
+    ? '<link rel="stylesheet" data-profile-calls-pa3c href="'.e(url('/profile-calls-pa3c.css?v='.$profileCallsBuild)).'">'
+        .'<script>window.VP3_PROFILE_CALLS_PA3C='.json_encode([
+            'role'=>'owner','endpoint'=>url('/api/profile-calls-pa3c.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],
+        ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
+        .'<script data-profile-calls-pa3c src="'.e(url('/profile-calls-pa3c.js?v='.$profileCallsBuild)).'"></script>'
+    : '';
 $profileDoorbellRuntime=$profileActivityRuntime!==''
     ? '<link rel="stylesheet" data-profile-doorbell-pa3 href="'.e(url('/profile-visitor-doorbell-pa3.css?v='.$profileDoorbellBuild)).'">'
         .'<script>window.VP3_PROFILE_DOORBELL_PA3='.json_encode([
@@ -579,6 +588,7 @@ $runtime = $headerUiRuntime
          . '<script data-chat-voice data-chat-echo-guard="canonical" data-chat-streaming="enabled" data-chat-processed-input="enabled" data-chat-barge="speech-recognition" data-chat-turn-pause="1800" data-chat-lifecycle="canonical" src="' . e(url('/chat-voice.js?v=' . $voiceCacheBuild . '&capture=interactive-listening-section2-20261003')) . '"></script>'
          . $agentIdentityRuntime
          . $profileActivityRuntime
+         . $profileCallsRuntime
          . $profileDoorbellRuntime
          . $browserContextRuntime
          . $agentTeamsA3Runtime

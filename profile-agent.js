@@ -15,6 +15,7 @@
   let pollTimer=0,presenceTimer=0,countdownTimer=0;
   let handoff=null,clockOffset=0,pollBusy=false,dispatchBusy=false,sending=false,alive=true,sessionChanged=false,requestEpoch=0;
   let formNotice='',lastDispatchAt=0,lastDispatchTurn=0;
+  let callSurface=null,callHost=null,callContextEpoch=0;
   const retryStorageKey=storageKey+':pending';
   const originalSubmitLabel=submit?.textContent||'Send';
   let pendingSend=null;
@@ -278,13 +279,17 @@
   function appendMessage(type,text,id=0){
     if(!String(text||'').trim())return;
     if(id>0&&thread.querySelector(`[data-message-id="${id}"]`)){lastMessageId=Math.max(lastMessageId,id);return;}
-    const node=messageNode(type,text,id);thread.appendChild(node);if(id>lastMessageId)lastMessageId=id;thread.scrollTop=thread.scrollHeight;
+    const node=messageNode(type,text,id);if(callHost?.parentNode===thread)thread.insertBefore(node,callHost);else thread.appendChild(node);if(id>lastMessageId)lastMessageId=id;thread.scrollTop=thread.scrollHeight;
     return node;
   }
   function renderMessages(messages){
+    // The media host is a stable sibling of messages. Polls must not detach a
+    // live room, discard consent controls, or recreate a call connection.
+    if(callHost?.parentNode===thread)callHost.remove();
     thread.innerHTML='';lastMessageId=0;
     (messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0)));
     if(!messages?.length&&cfg.greeting)appendMessage('agent',cfg.greeting);
+    if(callHost)thread.appendChild(callHost);
   }
   function activeHandoff(){return Boolean(handoff&&['awaiting_delivery','awaiting_owner','agent_ready','agent_running'].includes(String(handoff.dispatch_state||handoff.state||'')));}
   function dispatchPaused(){return handoff?.dispatch_execution_paused===true||(handoff?.dispatch_execution_paused===undefined&&Number(handoff?.dispatch_turn_id||handoff?.turn_id||0)===Number(handoff?.turn_id||0)&&handoff?.execution_paused===true);}
@@ -315,6 +320,7 @@
     showHandoffStatus();
   }
   function resetConversation(){
+    callSurface?.invalidate('The visitor conversation changed.');callContextEpoch++;
     requestEpoch++;conversationId=0;conversationStatus='open';lastMessageId=0;handoff=null;localStorage.removeItem(storageKey);clearTimeout(pollTimer);pollTimer=0;
   }
   function stopChangedSession(){
@@ -322,11 +328,12 @@
     resetConversation();renderMessages([]);textarea.disabled=true;submit.disabled=true;
     status.textContent='Your visitor session changed. Refresh this profile before continuing.';
   }
-  async function request(action,payload={},method='POST'){
-    const epoch=requestEpoch;
+  async function request(action,payload={},method='POST',endpoint=cfg.endpoint){
+    const callRequest=Boolean(cfg.callEndpoint&&endpoint===cfg.callEndpoint);
+    const epoch=callRequest?callContextEpoch:requestEpoch;
     const identity=`${cfg.username}|${cfg.conversationNamespace||''}|${cfg.profileToken||''}`;
     const options={method,credentials:'same-origin',cache:'no-store'};
-    let url=cfg.endpoint;
+    let url=endpoint;
     const body={action,username:cfg.username,conversation_id:conversationId,...(cfg.conversationNamespace?{conversation_namespace:cfg.conversationNamespace}:{}),...payload};
     if(method==='GET'){
       const q=new URLSearchParams(body);url+=`?${q}`;
@@ -336,7 +343,7 @@
     }
     const r=await fetch(url,options);const data=await r.json().catch(()=>null);
     if(alive&&identity!==`${cfg.username}|${cfg.conversationNamespace||''}|${cfg.profileToken||''}`)stopChangedSession();
-    if(!alive||epoch!==requestEpoch||sessionChanged){const error=new Error('This visitor request is no longer current.');error.stale=true;throw error;}
+    if(!alive||epoch!==(callRequest?callContextEpoch:requestEpoch)||sessionChanged){const error=new Error('This visitor request is no longer current.');error.stale=true;throw error;}
     if(!r.ok||!data?.ok){const error=new Error(data?.error||'Profile Agent is unavailable.');error.status=r.status;error.code=data?.code||'';throw error;}
     return data;
   }
@@ -418,6 +425,22 @@
     void sendSaved({message,conversation_id:conversationId,client_request_id:messageRequestId()});
   });
   textarea?.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit();}});
-  window.addEventListener('pagehide',()=>{alive=false;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(countdownTimer);},{once:true});
+  if(cfg.callEndpoint&&window.VP3ProfileCallsPa3c&&thread){
+    callHost=document.createElement('div');callHost.className='profile-call-visitor-host';callHost.dataset.profileCallVisitorHost='1';thread.appendChild(callHost);
+    callSurface=window.VP3ProfileCallsPa3c.mountVisitor({
+      host:callHost,peerLabel:String(cfg.callOwnerName||'Profile owner'),
+      context:()=>({key:[cfg.username,cfg.conversationNamespace,cfg.profileToken,conversationId,callContextEpoch].join('|'),binding:{conversation_id:conversationId},active:alive&&!sessionChanged&&!shell.hidden}),
+      request:(action,payload,method)=>request(action,payload,method,cfg.callEndpoint),
+      allowOffer:()=>!sending&&!pendingSend,
+      adopt:result=>{
+        const cid=result.conversation_id;
+        if(!Number.isSafeInteger(cid)||cid<1||(conversationId>0&&conversationId!==cid)||sessionChanged||!alive)throw new Error('The visitor conversation changed.');
+        conversationId=cid;localStorage.setItem(storageKey,String(cid));startPolling();
+      },
+      returnedToAgent:()=>{conversationStatus='open';handoff=null;showHandoffStatus();void poll();}
+    });
+    window.addEventListener('vp3:profile-agent-visibility',event=>{if(event.detail?.open)void callSurface.refresh();else callSurface.invalidate('You closed the live call view.');});
+  }
+  window.addEventListener('pagehide',()=>{callSurface?.stop('You left the profile.');alive=false;callContextEpoch++;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(countdownTimer);},{once:true});
   loadState();presenceTimer=window.setInterval(heartbeat,60000);countdownTimer=window.setInterval(showHandoffStatus,1000);
 })();
