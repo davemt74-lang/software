@@ -7,7 +7,7 @@ require_once __DIR__.'/shared-folders-v161.php';
 function screen_sessions_schema_v1(PDO $pdo): void
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_screen_sessions_v1 (owner_user_id BIGINT NOT NULL,session_id CHAR(36) NOT NULL,folder_id BIGINT NOT NULL DEFAULT 0,agent_id BIGINT NOT NULL DEFAULT 0,title VARCHAR(80) NOT NULL,status VARCHAR(12) NOT NULL,created_at VARCHAR(32) NOT NULL,updated_at VARCHAR(32) NOT NULL,PRIMARY KEY(owner_user_id,session_id))");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_screen_captures_v1 (owner_user_id BIGINT NOT NULL,session_id CHAR(36) NOT NULL,capture_id CHAR(36) NOT NULL,kind VARCHAR(16) NOT NULL,captured_at VARCHAR(32) NOT NULL,knowledge_id BIGINT NOT NULL DEFAULT 0,memory_id BIGINT NOT NULL DEFAULT 0,revision INT NOT NULL DEFAULT 1,body_json LONGTEXT NOT NULL,PRIMARY KEY(owner_user_id,capture_id))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_screen_captures_v1 (owner_user_id BIGINT NOT NULL,session_id CHAR(36) NOT NULL,capture_id CHAR(36) NOT NULL,kind VARCHAR(16) NOT NULL,captured_at VARCHAR(32) NOT NULL,knowledge_id BIGINT NOT NULL DEFAULT 0,memory_id BIGINT NOT NULL DEFAULT 0,revision INT NOT NULL DEFAULT 1,image_data LONGTEXT NOT NULL,body_json LONGTEXT NOT NULL,PRIMARY KEY(owner_user_id,capture_id))");
 }
 function screen_session_id_v1(mixed $id): string
 {
@@ -47,10 +47,10 @@ function screen_session_start_v1(PDO $pdo,array $user,array $input): array
         $pdo->commit();return screen_session_public_v1($pdo,$user,screen_session_v1($pdo,$user,$id));
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
-function screen_capture_v1(PDO $pdo,array $user,string $id): array
+function screen_capture_v1(PDO $pdo,array $user,string $id,bool $pixels=false): array
 {
-    $q=$pdo->prepare('SELECT * FROM agent_screen_captures_v1 WHERE owner_user_id=? AND capture_id=?');$q->execute([(int)$user['id'],screen_session_id_v1($id)]);$r=$q->fetch(PDO::FETCH_ASSOC);if(!$r)throw new RuntimeException('Capture not found.',404);
-    $r['body']=json_decode($r['body_json'],true,32,JSON_THROW_ON_ERROR);unset($r['body_json']);return $r;
+    $q=$pdo->prepare('SELECT owner_user_id,session_id,capture_id,kind,captured_at,knowledge_id,memory_id,revision,body_json'.($pixels?',image_data':'').' FROM agent_screen_captures_v1 WHERE owner_user_id=? AND capture_id=?');$q->execute([(int)$user['id'],screen_session_id_v1($id)]);$r=$q->fetch(PDO::FETCH_ASSOC);if(!$r)throw new RuntimeException('Capture not found.',404);
+    $r['body']=json_decode($r['body_json'],true,32,JSON_THROW_ON_ERROR);if($pixels&&$r['image_data']!=='')$r['body']['image']=$r['image_data'];unset($r['body_json'],$r['image_data']);return $r;
 }
 function screen_capture_public_v1(array $r,bool $pixels=false): array
 {
@@ -63,14 +63,14 @@ function screen_capture_text_v1(array $s,array $r): string
 }
 function screen_capture_store_v1(PDO $pdo,array $user,string $sid,string $id,array $body,string $kind='screen'): array
 {
-    $id=screen_session_id_v1($id);$at=(string)$body['captured_at'];
+    $id=screen_session_id_v1($id);$at=(string)$body['captured_at'];$image=(string)($body['image']??'');unset($body['image']);
     $pdo->beginTransaction();
     try{
         $s=screen_session_v1($pdo,$user,$sid,true);if($s['status']!=='active')throw new RuntimeException('Sharing has stopped. Start a new session.',409);
         $q=$pdo->prepare('SELECT capture_id FROM agent_screen_captures_v1 WHERE owner_user_id=? AND capture_id=?');$q->execute([(int)$user['id'],$id]);if($q->fetchColumn()){$r=screen_capture_v1($pdo,$user,$id);if($r['session_id']!==$sid)throw new RuntimeException('Capture reference belongs to another session.',409);$pdo->commit();return $r;}
         $q=$pdo->prepare('SELECT COUNT(*) FROM agent_screen_captures_v1 WHERE owner_user_id=?');$q->execute([(int)$user['id']]);if((int)$q->fetchColumn()>=1000)throw new RuntimeException('Capture history is full. Delete an unneeded session.',409);
         if(!personal_knowledge_folder($pdo,$user,(int)$s['folder_id']))throw new RuntimeException('The session Knowledge folder was removed. Start a new session.',409);
-        $pdo->prepare('INSERT INTO agent_screen_captures_v1(owner_user_id,session_id,capture_id,kind,captured_at,body_json) VALUES(?,?,?,?,?,?)')->execute([(int)$user['id'],$sid,$id,$kind,$at,json_encode($body,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
+        $pdo->prepare('INSERT INTO agent_screen_captures_v1(owner_user_id,session_id,capture_id,kind,captured_at,image_data,body_json) VALUES(?,?,?,?,?,?,?)')->execute([(int)$user['id'],$sid,$id,$kind,$at,$image,json_encode($body,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
         $r=screen_capture_v1($pdo,$user,$id);$kid=personal_knowledge_store($user,'screen-capture:'.$id,($kind==='tab_audio'?'Tab audio':'Screen capture').' · '.$at,screen_capture_text_v1($s,$r),'Source: Agent Eyes shared session '.$sid,(int)$s['folder_id']);
         $pdo->prepare('UPDATE agent_screen_captures_v1 SET knowledge_id=? WHERE owner_user_id=? AND capture_id=?')->execute([$kid,(int)$user['id'],$id]);
         $pdo->prepare('UPDATE agent_screen_sessions_v1 SET updated_at=? WHERE owner_user_id=? AND session_id=?')->execute([gmdate('Y-m-d\TH:i:s\Z'),(int)$user['id'],$sid]);
@@ -79,13 +79,13 @@ function screen_capture_store_v1(PDO $pdo,array $user,string $sid,string $id,arr
 }
 function screen_capture_analyze_v1(PDO $pdo,array $user,string $id,?callable $vision=null): array
 {
-    $r=screen_capture_v1($pdo,$user,$id);$s=screen_session_v1($pdo,$user,$r['session_id']);if($r['kind']!=='screen')throw new InvalidArgumentException('Choose a screen capture to analyze.');$revision=(int)$r['revision'];
+    $r=screen_capture_v1($pdo,$user,$id,true);$s=screen_session_v1($pdo,$user,$r['session_id']);if($r['kind']!=='screen')throw new InvalidArgumentException('Choose a screen capture to analyze.');$revision=(int)$r['revision'];
     // Stored frames are intentionally historical; validate pixels with a fresh transport timestamp, preserve source time in the result.
     $frame=screen_frame_v1(['image'=>$r['body']['image'],'surface'=>$r['body']['surface'],'captured_at'=>gmdate('Y-m-d\TH:i:s\Z')]);$o=screen_analyze_v1($frame,$user,$vision);$o['captured_at']=$r['captured_at'];
     $pdo->beginTransaction();
     try{
         $s=screen_session_v1($pdo,$user,$r['session_id'],true);$current=screen_capture_v1($pdo,$user,$id);if((int)$current['revision']!==$revision)throw new RuntimeException('Capture changed. Refresh before analyzing again.',409);
-        $r['body']['observation']=$o;
+        $r['body']['observation']=$o;unset($r['body']['image']);
         $kid=personal_knowledge_store($user,'screen-capture:'.$id,'Screen capture · '.$r['captured_at'],screen_capture_text_v1($s,$r),'Source: Agent Eyes shared session '.$s['session_id'],personal_knowledge_folder($pdo,$user,(int)$s['folder_id'])?(int)$s['folder_id']:0);
         $pdo->prepare('UPDATE agent_screen_captures_v1 SET body_json=?,knowledge_id=?,revision=revision+1 WHERE owner_user_id=? AND capture_id=?')->execute([json_encode($r['body'],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),$kid,(int)$user['id'],$id]);
         $pdo->commit();return screen_capture_v1($pdo,$user,$id);

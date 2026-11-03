@@ -36,7 +36,7 @@
       const data=await historyApi({action:'history',session_id:selectedSession},{read:true});if(epoch!==historyEpoch)return;
       link.href=data.session.knowledge_url;link.textContent='Open in My Knowledge · '+data.session.folder_name;link.hidden=false;
       for(const r of data.captures.slice(0,50))host.append(historyRow(r));
-      historySay(`${data.captures.length} saved captures${data.captures.length>50?' · showing latest 50':''}.`);
+      historySay(`${data.captures.length} recent saved captures${data.captures.length>50?' · showing latest 50':''}.`);
     }catch(e){if(epoch===historyEpoch)historySay(e.message||'Sharing history unavailable.');}
   }
   async function persistFrame(frame,token,signal,analyzeIt){

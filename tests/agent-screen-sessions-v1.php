@@ -31,7 +31,7 @@ rejects(fn()=>screen_session_v1($pdo,$other,$sid),'another account cannot read a
 $frame=screen_frame_v1(['image'=>'data:image/jpeg;base64,'.trim(file_get_contents(__DIR__.'/fixtures/tv-frame.b64')),'captured_at'=>gmdate('Y-m-d\TH:i:s\Z'),'surface'=>'browser']);$frame['note']='Compare this song';
 $r=screen_capture_store_v1($pdo,$user,$sid,$cid,$frame);check($r['knowledge_id']>0&&get_knowledge_item((int)$r['knowledge_id'])['folder_id']===$fid,'capture note is stored and indexed in its existing session folder');
 check(!str_contains(get_knowledge_item((int)$r['knowledge_id'])['content_text'],'base64'),'raw screenshot bytes stay out of Knowledge search and Brain');
-check(!isset(screen_capture_public_v1($r)['body']['image'])&&isset(screen_capture_public_v1($r,true)['body']['image']),'history lists omit pixels; authorized detail includes the screenshot');
+check(!isset(screen_capture_public_v1($r)['body']['image'])&&isset(screen_capture_public_v1(screen_capture_v1($pdo,$user,$cid,true),true)['body']['image']),'history lists omit pixels; authorized detail includes the screenshot');
 check(screen_capture_store_v1($pdo,$user,$sid,$cid,$frame)['knowledge_id']===$r['knowledge_id'],'capture retry does not duplicate Knowledge notes');
 rejects(fn()=>screen_capture_v1($pdo,$other,$cid),'another account cannot read capture pixels',404);
 rejects(fn()=>screen_capture_brain_v1($pdo,$user,$cid),'unanalyzed pixels are not promoted as Brain facts',409);
