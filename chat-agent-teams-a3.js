@@ -927,8 +927,7 @@ create.addEventListener('submit',async ev=>{
  ev.preventDefault();if(busy)return;const objective=input.value.trim();if(!objective||objective.length>4000)return;
  const request_id=window.crypto&&window.crypto.randomUUID?window.crypto.randomUUID():'';
  if(!request_id){say('Secure request IDs are unavailable in this browser.');return;}
- const raw=Number((window.STONEFELLOW_CHAT||{}).initialConversationId||0);
- const thread_id=Number.isSafeInteger(raw)&&raw>0&&raw<2147483648?raw:0;
+ const thread_id=taskContext().thread_id;
  setBusy(true);say('Creating worker mission…');
  try{
   const created=await api('create',{objective,request_id,thread_id,agent_id:Number(window.STONEFELLOW_CHAT?.agentId)||0,executor:runtimeSelect.value});
