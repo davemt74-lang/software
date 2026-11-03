@@ -32,9 +32,12 @@ $checkout=vp3_profile_webmcp_action_envelope_v192('vp3.commerce.checkout.prepare
 ]);
 t(!empty($checkout['action']['confirmation']['requires_terms_acceptance']),'checkout terms gate');
 
-$done=vp3_profile_webmcp_action_envelope_v192('vp3.rewards.transfer.confirm',['idempotent_replay'=>true]);
-t(($done['action']['phase']??'')==='completed','completed phase');
+$done=vp3_profile_webmcp_action_envelope_v192('vp3.rewards.transfer.confirm',['status'=>'sent','transfer_public_id'=>'fixture-transfer','idempotent_replay'=>true]);
+t(($done['action']['phase']??'')==='recorded','canonical transfer is recorded');
+t(($done['action']['outcome']['code']??'')==='reward_transferred','result describes transfer rather than redemption');
 t(!empty($done['action']['idempotent_replay']),'replay preserved');
+$missing=vp3_profile_webmcp_action_envelope_v192('vp3.commerce.checkout.confirm',[]);
+t(($missing['action']['phase']??'')==='unverified','transport success without an order is unverified');
 
 $cases=[
  ['Scheduling confirmation expired. Prepare the action again.','CONFIRMATION_EXPIRED',true,false],

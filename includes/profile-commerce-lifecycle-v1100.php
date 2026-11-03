@@ -74,16 +74,31 @@ function profile_commerce_owner_refund_request_set_v1100(PDO $pdo,int $ownerUser
     return profile_commerce_order_for_owner_v900($pdo,$ownerUserId,$orderId)?:throw new RuntimeException('Profile Commerce order could not be reloaded.');
 }
 
+function profile_commerce_customer_review_required_v1100(array $order): bool
+{
+    if(!function_exists('profile_commerce_delivery_review_required_v1120'))require_once __DIR__.'/profile-commerce-delivery-v1120.php';
+    return profile_commerce_delivery_review_required_v1120($order);
+}
+
 function profile_commerce_customer_status_v1100(array $order): array
 {
-    $payment=strtolower(trim((string)($order['payment_status']??'awaiting_payment')));
+    $payment=is_string($order['payment_status']??null)?$order['payment_status']:'';
     $fulfillment=profile_commerce_fulfillment_state_v900($order);
     if($payment==='refunded')return ['key'=>'refunded','label'=>'Refunded','message'=>'This order has been refunded.'];
     if($payment==='partially_refunded')return ['key'=>'partially_refunded','label'=>'Partially refunded','message'=>'Part of this order has been refunded.'];
-    if($payment!=='paid')return ['key'=>'payment_pending','label'=>'Payment pending','message'=>'Payment has not been fully verified yet.'];
+    if(profile_commerce_customer_review_required_v1100($order)&&in_array($payment,['paid','partially_paid'],true)){
+        return ['key'=>'payment_review','label'=>'Payment received; review required',
+            'message'=>($payment==='paid'?'Your payment is verified. ':'A partial payment is verified. ').'The seller must review fulfillment before this order can proceed.'];
+    }
+    if($payment==='expired'||($order['order_status']??'')==='expired')return ['key'=>'expired','label'=>'Order expired','message'=>'This order expired. Check with the seller before making another payment.'];
+    if($payment==='cancelled'||($order['order_status']??'')==='cancelled')return ['key'=>'cancelled','label'=>'Order cancelled','message'=>'This order is cancelled. Check with the seller before making another payment.'];
+    if($payment==='partially_paid')return ['key'=>'partially_paid','label'=>'Partial payment received','message'=>'A partial payment is verified. The full order balance has not been paid.'];
+    if($payment==='awaiting_payment')return ['key'=>'payment_pending','label'=>'Payment pending','message'=>'Payment has not been fully verified yet.'];
+    if($payment==='failed')return ['key'=>'payment_failed','label'=>'Payment unsuccessful','message'=>'The payment was not completed. Check the existing order before trying again.'];
+    if($payment!=='paid')return ['key'=>'unverified','label'=>'Payment status unavailable','message'=>'The current payment status could not be verified. Check with the seller before making another payment.'];
     if($fulfillment==='fulfilled')return ['key'=>'fulfilled','label'=>'Fulfilled','message'=>'The seller has marked this order fulfilled.'];
     if($fulfillment==='processing')return ['key'=>'processing','label'=>'Processing','message'=>'Payment is verified and the seller is processing your order.'];
-    return ['key'=>'paid','label'=>'Paid','message'=>'Payment is verified. Fulfillment has not started yet.'];
+    return ['key'=>'paid','label'=>'Paid','message'=>'Payment is verified. Fulfillment has not been confirmed complete.'];
 }
 
 function profile_commerce_customer_projection_v1100(array $order): array
@@ -100,8 +115,10 @@ function profile_commerce_customer_projection_v1100(array $order): array
     }
     return [
         'order_number'=>(string)($order['order_number']??''),
-        'payment_status'=>(string)($order['payment_status']??'awaiting_payment'),
-        'fulfillment_status'=>profile_commerce_fulfillment_state_v900($order),
+        'order_status'=>in_array($order['order_status']??null,['pending_payment','paid','processing','fulfilled','expired','cancelled','payment_review','refunded','partially_refunded'],true)?$order['order_status']:'unknown',
+        'payment_status'=>in_array($order['payment_status']??null,['awaiting_payment','partially_paid','paid','partially_refunded','refunded','expired','cancelled','failed'],true)?$order['payment_status']:'unknown',
+        'fulfillment_status'=>profile_commerce_customer_review_required_v1100($order)?'review_required':profile_commerce_fulfillment_state_v900($order),
+        'review_required'=>profile_commerce_customer_review_required_v1100($order),
         'status'=>$status,
         'refund_request'=>profile_commerce_customer_refund_request_v1100($order),
         'refundable_cents'=>max(0,(int)($order['amount_paid_cents']??0)-(int)($order['amount_refunded_cents']??0)),

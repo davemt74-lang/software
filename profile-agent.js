@@ -87,94 +87,177 @@
     walk(preview);
     return rows;
   }
-  function confirmationCard(action){
-    if(!thread||action?.contract!=='vp3.webmcp.action.v1'||action?.phase!=='prepared'||!action?.requires_confirmation)return null;
-    const intentId=String(action.intent_id||'').toLowerCase();
-    if(!/^[a-f0-9]{32}$/.test(intentId))return null;
-    const existing=thread.querySelector(`[data-webmcp-confirmation="${intentId}"]`);
-    if(existing)existing.remove();
-
-    const card=document.createElement('section');
-    card.className='profile-agent-confirmation-card';
-    card.dataset.webmcpConfirmation=intentId;
-    const heading=document.createElement('strong');
-    heading.className='profile-agent-confirmation-title';
-    heading.textContent=String(action.title||'Review action');
-    card.appendChild(heading);
-
-    const intro=document.createElement('p');
-    intro.textContent='Review the prepared action before confirming.';
-    card.appendChild(intro);
-
-    const rows=safePreviewRows(action.preview||{});
-    if(rows.length){
-      const list=document.createElement('dl');
-      list.className='profile-agent-confirmation-preview';
-      rows.forEach(([label,value])=>{
-        const dt=document.createElement('dt');dt.textContent=label;
-        const dd=document.createElement('dd');dd.textContent=value;
-        list.append(dt,dd);
-      });
-      card.appendChild(list);
+  const confirmationCards=new Map();
+  let confirmationAttempt=0;
+  const confirmationKey=action=>`${String(action?.confirm_tool||'')}:${String(action?.intent_id||'')}`;
+  function freezeAction(value){
+    if(value&&typeof value==='object'){Object.values(value).forEach(freezeAction);Object.freeze(value);}
+    return value;
+  }
+  function previewList(card,rows){
+    const list=document.createElement('dl');list.className='profile-agent-confirmation-preview';
+    rows.forEach(([label,value])=>{
+      const dt=document.createElement('dt');dt.textContent=label;
+      const dd=document.createElement('dd');dd.textContent=value;list.append(dt,dd);
+    });card.appendChild(list);
+  }
+  function checkoutReview(card,action){
+    const preview=action.preview||{},product=preview.product,terms=preview.terms,provider=preview.payment_provider,intent=action.confirmation?.intent;
+    const text=(value,max)=>typeof value==='string'&&value.trim()!==''&&value.length<=max;
+    const cents=value=>Number.isSafeInteger(value)&&value>=0;
+    const providers={stripe:'Stripe',paypal:'PayPal',square:'Square'};
+    if(!product||!terms||!provider||!intent||!text(product.title,500)||!text(product.slug,80)
+      ||!Number.isSafeInteger(product.id)||product.id<1||product.id!==intent.product_id||product.slug!==intent.product_slug
+      ||terms.payment_mode!=='full'||product.payment_mode!=='full'||!cents(terms.price_cents)||terms.price_cents<1
+      ||product.price_cents!==terms.price_cents||typeof terms.currency!=='string'||! /^[a-z]{3}$/i.test(terms.currency)
+      ||String(product.currency).toLowerCase()!==terms.currency.toLowerCase()
+      ||!cents(terms.cancellation_fee_cents)||terms.cancellation_fee_cents>terms.price_cents
+      ||!Number.isSafeInteger(terms.refund_before_hours)||terms.refund_before_hours<0||terms.refund_before_hours>2160
+      ||!Number.isSafeInteger(terms.hold_minutes)||terms.hold_minutes<30||terms.hold_minutes>120
+      ||typeof terms.cancellation_policy!=='string'||terms.cancellation_policy.length>4000
+      ||!Object.hasOwn(providers,provider.provider)||!Number.isSafeInteger(provider.connection_id)||provider.connection_id<1||provider.connection_id!==intent.connection_id
+      ||!text(preview.payer_email,190)||preview.payer_email!==intent.payer_email||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(preview.payer_email)
+      ||preview.seller_terms_acceptance_required!==true||action.confirmation?.requires_terms_acceptance!==true)return false;
+    const currency=terms.currency.toUpperCase();
+    const money=value=>`${currency} ${(value/100).toFixed(2)}`;
+    previewList(card,[['Product',product.title],['Total',money(terms.price_cents)],['Payment provider',providers[provider.provider]],
+      ['Receipt email',preview.payer_email],['Payment hold',`${terms.hold_minutes} minutes`],
+      ['Refund cutoff',terms.refund_before_hours===0?'No advance cutoff specified (0 hours)':`${terms.refund_before_hours} hours in advance`],
+      ['Cancellation fee',money(terms.cancellation_fee_cents)]]);
+    const section=document.createElement('section');section.className='profile-agent-checkout-terms';
+    const title=document.createElement('strong');title.textContent='Seller cancellation and refund policy';
+    const policy=document.createElement('p');policy.textContent=terms.cancellation_policy.trim()||'The seller has not provided additional cancellation or refund terms.';
+    section.append(title,policy);card.appendChild(section);return true;
+  }
+  function confirmationCard(rawAction){
+    if(!thread||rawAction?.contract!=='vp3.webmcp.action.v1'||rawAction?.phase!=='prepared'||rawAction?.requires_confirmation!==true)return null;
+    const intentId=String(rawAction.intent_id||'');
+    if(!/^[a-f0-9]{32}$/.test(intentId)||typeof rawAction.confirm_tool!=='string')return null;
+    const action=freezeAction(structuredClone(rawAction)),key=confirmationKey(action);
+    const existing=confirmationCards.get(key);
+    if(existing&&existing.card.isConnected){
+      // A repeated prepare response must not reset a pending or finished review.
+      if(JSON.stringify(existing.action)!==JSON.stringify(action)){
+        existing.state='reprepare';existing.feedback.textContent='This review changed. Request a new review before confirming.';existing.sync();
+      }
+      return existing.card;
     }
-
+    const card=document.createElement('section');card.className='profile-agent-confirmation-card';
+    card.dataset.webmcpConfirmation=intentId;card.dataset.confirmTool=action.confirm_tool;
+    const heading=document.createElement('strong');heading.className='profile-agent-confirmation-title';heading.textContent=String(action.title||'Review action');card.appendChild(heading);
+    const intro=document.createElement('p');intro.textContent='Review the prepared action before confirming.';card.appendChild(intro);
+    const checkout=action.confirm_tool==='vp3.commerce.checkout.confirm';
+    const reviewComplete=checkout?checkoutReview(card,action):true;
+    if(!checkout){const rows=safePreviewRows(action.preview||{});if(rows.length)previewList(card,rows);}
     let terms=null;
-    if(action?.confirmation?.requires_terms_acceptance){
-      const label=document.createElement('label');
-      label.className='profile-agent-confirmation-terms';
+    if(checkout&&reviewComplete){
+      const label=document.createElement('label');label.className='profile-agent-confirmation-terms';
       terms=document.createElement('input');terms.type='checkbox';
-      const span=document.createElement('span');span.textContent='I accept the seller terms shown in this checkout.';
+      const span=document.createElement('span');span.textContent='I accept the displayed price and seller terms for this checkout.';
       label.append(terms,span);card.appendChild(label);
     }
-
-    const feedback=document.createElement('div');
-    feedback.className='profile-agent-confirmation-feedback';
-    feedback.setAttribute('role','status');
-    card.appendChild(feedback);
-
-    const actions=document.createElement('div');
-    actions.className='profile-agent-confirmation-actions';
-    const confirm=document.createElement('button');
-    confirm.type='button';confirm.className='confirm';confirm.textContent='Confirm';
-    if(terms)confirm.disabled=true;
-    const dismiss=document.createElement('button');
-    dismiss.type='button';dismiss.className='dismiss';dismiss.textContent='Cancel';
+    const feedback=document.createElement('div');feedback.className='profile-agent-confirmation-feedback';feedback.setAttribute('role','status');card.appendChild(feedback);
+    const actions=document.createElement('div');actions.className='profile-agent-confirmation-actions';
+    const confirm=document.createElement('button');confirm.type='button';confirm.className='confirm';confirm.textContent=checkout?'Confirm checkout':'Confirm';
+    const dismiss=document.createElement('button');dismiss.type='button';dismiss.className='dismiss';dismiss.textContent='Cancel';
     actions.append(confirm,dismiss);card.appendChild(actions);
-
-    terms?.addEventListener('change',()=>{confirm.disabled=!terms.checked;});
-    dismiss.addEventListener('click',()=>{document.dispatchEvent(new CustomEvent('vp3:webmcp-cancel',{detail:{action}}));card.remove();});
-    confirm.addEventListener('click',()=>{
-      confirm.disabled=true;dismiss.disabled=true;feedback.textContent='Confirming…';
-      document.dispatchEvent(new CustomEvent('vp3:webmcp-confirm',{detail:{action,terms_accepted:Boolean(terms?.checked)}}));
+    const entry={action,card,heading,feedback,confirm,dismiss,terms,reviewComplete,state:'ready',attemptId:'',sync(){
+      confirm.disabled=this.state!=='ready'||!reviewComplete||Boolean(terms&&!terms.checked);
+      dismiss.disabled=this.state==='pending';
+      if(terms)terms.disabled=this.state!=='ready';
+      card.setAttribute('aria-busy',this.state==='pending'?'true':'false');
+    }};
+    confirmationCards.set(key,entry);
+    if(!reviewComplete){entry.state='reprepare';feedback.textContent='The full checkout price, provider and seller terms could not be verified. Request a new checkout review.';}
+    terms?.addEventListener('change',()=>entry.sync());
+    dismiss.addEventListener('click',()=>{
+      if(entry.state==='pending'||!card.isConnected)return;
+      if(entry.state!=='settled')document.dispatchEvent(new CustomEvent('vp3:webmcp-cancel',{detail:{action}}));
+      card.remove();confirmationCards.delete(key);
     });
-    thread.appendChild(card);thread.scrollTop=thread.scrollHeight;
-    return card;
+    confirm.addEventListener('click',()=>{
+      if(entry.state!=='ready'||confirm.disabled||!card.isConnected||confirmationCards.get(key)!==entry)return;
+      entry.state='pending';entry.attemptId=`review-${++confirmationAttempt}`;feedback.textContent='Confirming…';entry.sync();
+      document.dispatchEvent(new CustomEvent('vp3:webmcp-confirm',{detail:{action,attempt_id:entry.attemptId,terms_accepted:terms?.checked===true}}));
+    });
+    entry.sync();thread.appendChild(card);thread.scrollTop=thread.scrollHeight;return card;
+  }
+  function safeActionUrl(value,{local=false,receipt=false,orderNumber=''}={}){
+    if(typeof value!=='string'||!value||value.length>4096||/[\u0000-\u0020\u007f]/.test(value))return '';
+    try{
+      const parsed=new URL(value,window.location.href);
+      if(parsed.username||parsed.password||!parsed.hostname||!['https:','http:'].includes(parsed.protocol))return '';
+      if(parsed.protocol!=='https:'&&parsed.origin!==window.location.origin)return '';
+      if(local&&parsed.origin!==window.location.origin)return '';
+      if(receipt&&(!parsed.pathname.endsWith('/profile-commerce-order.php')
+        ||parsed.searchParams.getAll('username').length!==1||parsed.searchParams.get('username')!==String(cfg.username)
+        ||parsed.searchParams.getAll('order').length!==1||parsed.searchParams.get('order')!==orderNumber
+        ||parsed.searchParams.getAll('receipt').length!==1||! /^[a-f0-9]{64}$/.test(parsed.searchParams.get('receipt')||'')))return '';
+      return parsed.href;
+    }catch{return '';}
+  }
+  function resultLinks(entry,result,outcome){
+    const links=document.createElement('div');links.className='profile-agent-confirmation-links';
+    const add=(label,value,options={})=>{
+      const href=safeActionUrl(value,options);if(!href)return false;
+      const link=document.createElement('a');link.textContent=label;link.href=href;link.rel='noopener noreferrer nofollow';
+      if(new URL(href).origin!==window.location.origin)link.target='_blank';links.appendChild(link);return true;
+    };
+    if(entry.action.confirm_tool==='vp3.commerce.checkout.confirm'){
+      if(['payment_pending','partially_paid'].includes(outcome.code)&&result.order?.review_required!==true&&result.checkout_status==='open')add('Continue to payment',result.checkout_url);
+      add('View receipt',result.receipt_url,{local:true,receipt:true,orderNumber:String(result.order?.order_number||'')});
+    }else if(entry.action.confirm_tool.startsWith('vp3.booking.')){
+      if(outcome.code==='booking_payment_pending')add('Open booking payment',result.payment_url,{local:true});
+      add('View booking',result.manage_url,{local:true});
+    }else if(outcome.code==='reward_claim_handoff')add('Open Reward Inbox',result.claim_handoff_url,{local:true});
+    if(links.children.length)entry.card.appendChild(links);
   }
   function confirmationResult(detail){
-    const intentId=String(detail?.intent_id||'').toLowerCase();
-    if(!/^[a-f0-9]{32}$/.test(intentId)||!thread)return;
-    const card=thread.querySelector(`[data-webmcp-confirmation="${intentId}"]`);
-    if(!card)return;
-    const feedback=card.querySelector('.profile-agent-confirmation-feedback');
-    const controls=card.querySelectorAll('button,input');
-    const result=detail?.result||{};
-    if(result?.ok===true){
-      if(feedback)feedback.textContent='Completed.';
-      controls.forEach(control=>{control.disabled=true;});
-      card.classList.add('is-complete');
+    const key=confirmationKey({intent_id:detail?.intent_id,confirm_tool:detail?.confirm_tool});
+    const entry=confirmationCards.get(key);
+    if(!entry||!entry.card.isConnected||entry.state==='settled'||entry.state==='reprepare')return;
+    if(entry.attemptId&&detail?.attempt_id!==entry.attemptId)return;
+    const result=detail?.result||{},outcome=result?.action?.outcome;
+    if(result.ok===true){
+      const operations={
+        'vp3.commerce.checkout.confirm':['commerce.checkout',['payment_pending','partially_paid','paid','processing','fulfilled','payment_review','refunded','partially_refunded','order_expired','order_cancelled','payment_failed']],
+        'vp3.commerce.refund.confirm':['commerce.refund_request',['refund_requested','refund_submitted','refund_declined']],
+        'vp3.booking.confirm':['booking.create',['booking_created','booking_payment_pending','booking_cancelled']],
+        'vp3.booking.reschedule.confirm':['booking.reschedule',['booking_rescheduled','booking_payment_pending','booking_cancelled']],
+        'vp3.booking.cancel.confirm':['booking.cancel',['booking_cancelled']],
+        'vp3.campaign.participation.confirm':['campaign.participate',['campaign_recorded']],
+        'vp3.rewards.claim.confirm':['reward.claim_handoff',['reward_claim_handoff']],
+        'vp3.rewards.transfer.confirm':['reward.transfer',['reward_transferred']]
+      };
+      const expected=operations[entry.action.confirm_tool];
+      const valid=outcome?.contract==='vp3.webmcp.confirmation-result.v1'&&expected&&outcome.operation===expected[0]
+        &&expected[1].includes(outcome.code)&&typeof outcome.title==='string'&&outcome.title.length<=160
+        &&typeof outcome.message==='string'&&outcome.message.length<=1000&&outcome.message.trim()!=='';
+      entry.state='settled';entry.dismiss.textContent='Close';
+      entry.heading.textContent=valid?outcome.title:'Result unavailable';
+      entry.feedback.textContent=valid?outcome.message:'The request returned, but its saved result could not be verified. Check the existing action before starting another.';
+      entry.card.classList.add(valid?'is-complete':'has-error');entry.sync();
+      if(valid)resultLinks(entry,result,outcome);
       return;
     }
     const code=String(result?.error?.code||'');
-    const message=String(result?.error?.message||'The action could not be completed.');
-    if(feedback)feedback.textContent=code==='CONFIRMATION_EXPIRED'?'This review expired. Prepare the action again.':message;
-    const retryable=code==='ACTION_IN_PROGRESS'||Boolean(result?.error?.retryable);
-    controls.forEach(control=>{control.disabled=false;});
-    const confirm=card.querySelector('button.confirm');
-    const terms=card.querySelector('input[type=checkbox]');
-    if(confirm&&terms&&!terms.checked)confirm.disabled=true;
-    if(!retryable&&code!=='')card.classList.add('has-error');
+    const reprepare=result?.action?.reprepare_required===true||['CONFIRMATION_EXPIRED','CONFIRMATION_MISMATCH','IDEMPOTENCY_CONFLICT'].includes(code);
+    const retryable=result?.error?.retryable===true||code==='ACTION_IN_PROGRESS'||code==='TERMS_REQUIRED';
+    entry.state=reprepare?'reprepare':(retryable?'ready':'blocked');
+    const message=typeof result?.error?.message==='string'?result.error.message:'The result could not be verified. Check the existing action before starting another.';
+    entry.feedback.textContent=code==='CONFIRMATION_EXPIRED'?'This review expired. Check any existing order, then request a new review.':message;
+    if(reprepare&&code!=='CONFIRMATION_EXPIRED')entry.feedback.textContent+=' Request a new review before confirming.';
+    if(retryable&&!reprepare){entry.confirm.textContent='Retry this confirmation';entry.feedback.textContent+=' A retry will use this same prepared action.';}
+    entry.dismiss.textContent='Close';entry.card.classList.add('has-error');entry.sync();
+  }
+  function confirmationStarted(detail){
+    const entry=confirmationCards.get(confirmationKey(detail));
+    if(!entry||!entry.card.isConnected||entry.state==='pending'||entry.state==='reprepare'
+      ||typeof detail?.attempt_id!=='string'||!detail.attempt_id||detail.attempt_id.length>100)return;
+    entry.state='pending';entry.attemptId=detail.attempt_id;entry.feedback.textContent='Confirming…';entry.sync();
   }
   document.addEventListener('vp3:webmcp-confirmation',event=>confirmationCard(event.detail));
+  document.addEventListener('vp3:webmcp-confirmation-started',event=>confirmationStarted(event.detail));
   document.addEventListener('vp3:webmcp-confirmation-result',event=>confirmationResult(event.detail));
 
   function messageNode(type,text,id=0){

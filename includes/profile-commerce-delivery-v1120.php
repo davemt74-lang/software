@@ -33,10 +33,20 @@ function profile_commerce_delivery_url_valid_v1120(string $url): bool
         &&empty($parts['user'])&&empty($parts['pass']);
 }
 
+function profile_commerce_delivery_review_required_v1120(array $order): bool
+{
+    if(($order['order_status']??'')==='payment_review')return true;
+    foreach((array)($order['items']??[]) as $item){
+        if(is_array($item)&&($item['fulfillment_status']??'')==='review_required')return true;
+    }
+    return false;
+}
+
 function profile_commerce_delivery_eligible_v1120(array $order): bool
 {
     if(!profile_commerce_order_is_profile_v900($order))return false;
     if((string)($order['payment_status']??'')!=='paid')return false;
+    if(profile_commerce_delivery_review_required_v1120($order))return false;
     $type=strtolower(trim((string)($order['fulfillment_type']??'')));
     return in_array($type,['digital','virtual','membership','event','gift','local_pickup','other'],true);
 }
@@ -44,6 +54,7 @@ function profile_commerce_delivery_eligible_v1120(array $order): bool
 function profile_commerce_delivery_for_customer_v1120(array $order): ?array
 {
     if(!in_array((string)($order['payment_status']??''),['paid','partially_refunded'],true))return null;
+    if(profile_commerce_delivery_review_required_v1120($order))return null;
     return profile_commerce_delivery_v1120($order);
 }
 

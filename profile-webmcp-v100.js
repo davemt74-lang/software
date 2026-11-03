@@ -209,6 +209,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
     this.registrations=new Map();
     this.confirmationListenerAttached=false;
     this.confirmationHandler=event=>this.#handleConfirmationRequest(event);
+    // Confirmation material stays in request memory. An uncertain retry must
+    // retain the original key for this exact prepared action and session.
+    this.preparedConfirmations=new Map();
+    this.confirmationEpoch=0;
     this.resumeContinueListenerAttached=false;
     this.resumeContinueHandler=event=>this.#handleResumeContinue(event);
     this.cancelListenerAttached=false;
@@ -301,6 +305,9 @@ export class VP3ProfileWebMCPRuntimeV100 {
     if (!manifest || manifest.manifest_version !== 'vp3.profile.webmcp.v1' || manifest.surface !== 'native_profile' || !protocolCompatibleV200(manifest,'native_profile')) {
       throw new Error('Invalid or incompatible VP3 Profile WebMCP manifest.');
     }
+    if(this.manifest&&this.manifest.profile_username!==manifest.profile_username){
+      this.preparedConfirmations.clear();this.confirmationEpoch++;
+    }
     this.manifest=structuredClone(manifest);
     const desired=new Set(this.effectiveToolNames(manifest));
 
@@ -327,6 +334,8 @@ export class VP3ProfileWebMCPRuntimeV100 {
   }
 
   stop() {
+    this.confirmationEpoch++;
+    this.preparedConfirmations.clear();
     for (const entry of this.registrations.values()) entry.controller.abort();
     this.registrations.clear();
     if(this.confirmationListenerAttached&&this.documentObject?.removeEventListener){
@@ -378,6 +387,8 @@ export class VP3ProfileWebMCPRuntimeV100 {
   async #handleCancelledAction(event) {
     const action=event?.detail?.action||{};
     if(action?.contract!=='vp3.webmcp.action.v1')return;
+    const entry=this.preparedConfirmations.get(this.#confirmationKey(action));
+    if(entry&&!entry.busy)entry.closed=true;
     await this.noteContinuity(String(action.prepare_tool||action.confirm_tool||''),'cancelled','',false);
   }
 
@@ -408,27 +419,77 @@ export class VP3ProfileWebMCPRuntimeV100 {
     }catch{return null;}
   }
 
+  #confirmationKey(action) {
+    return stable({profile:String(this.manifest?.profile_username||''),proof:this.sessionProof,
+      tool:String(action?.confirm_tool||''),intent:String(action?.intent_id||'')});
+  }
+
+  #confirmationFingerprint(action) {
+    return stable({prepare_tool:action?.prepare_tool,confirm_tool:action?.confirm_tool,
+      intent_id:action?.intent_id,expires_at_unix:action?.expires_at_unix,
+      confirmation:action?.confirmation,preview:action?.preview});
+  }
+
+  #rememberConfirmation(action) {
+    if(action?.contract!=='vp3.webmcp.action.v1'||action?.phase!=='prepared'||action?.requires_confirmation!==true
+      ||! /^[a-f0-9]{32}$/.test(String(action.intent_id||''))
+      ||typeof action?.confirmation?.token!=='string'||!action.confirmation.token
+      ||!action.confirmation.intent||typeof action.confirmation.intent!=='object'||Array.isArray(action.confirmation.intent))return null;
+    const key=this.#confirmationKey(action),fingerprint=this.#confirmationFingerprint(action);
+    const existing=this.preparedConfirmations.get(key);
+    if(existing)return existing.fingerprint===fingerprint?existing:null;
+    if(this.preparedConfirmations.size>=64){
+      for(const [oldKey,entry] of this.preparedConfirmations){
+        if(!entry.busy&&(entry.closed||entry.terminal||(!entry.attempted&&Number(entry.action.expires_at_unix)*1000<=Date.now()))){
+          this.preparedConfirmations.delete(oldKey);if(this.preparedConfirmations.size<64)break;
+        }
+      }
+      if(this.preparedConfirmations.size>=64)return null;
+    }
+    const entry={action:structuredClone(action),fingerprint,idempotencyKey:transportIdV130(),
+      busy:false,attempted:false,terminal:false,closed:false,reprepare:false,result:null};
+    this.preparedConfirmations.set(key,entry);return entry;
+  }
+
   async #handleConfirmationRequest(event) {
     const detail=event?.detail||{};
     const action=detail?.action||{};
     if(action?.contract!=='vp3.webmcp.action.v1'||action?.phase!=='prepared'||action?.requires_confirmation!==true)return;
     const confirmTool=String(action.confirm_tool||'');
-    if(!confirmTool||!this.effectiveToolNames().includes(confirmTool))return;
-    const token=String(action?.confirmation?.token||'');
-    const intent=action?.confirmation?.intent;
-    if(!token||!intent||typeof intent!=='object'||Array.isArray(intent))return;
-    const args={
-      confirmation_token:token,
-      idempotency_key:transportIdV130(),
-      intent:structuredClone(intent)
-    };
-    if(confirmTool==='vp3.commerce.checkout.confirm')args.terms_accepted=Boolean(detail.terms_accepted);
-    const result=await this.#execute(confirmTool,args,{});
-    this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
-      intent_id:String(action.intent_id||''),
-      confirm_tool:confirmTool,
-      result
+    const entry=this.preparedConfirmations.get(this.#confirmationKey(action));
+    const attemptId=typeof detail.attempt_id==='string'?detail.attempt_id.slice(0,100):'';
+    const publish=result=>this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
+      intent_id:String(action.intent_id||''),confirm_tool:confirmTool,attempt_id:attemptId,result
     });
+    if(!confirmTool||!this.effectiveToolNames().includes(confirmTool)){
+      publish({...safeError('CAPABILITY_UNAVAILABLE','This confirmation is no longer available.'),action:{reprepare_required:true}});return;
+    }
+    if(!entry||entry.fingerprint!==this.#confirmationFingerprint(action)){
+      publish({...safeError('CONFIRMATION_MISMATCH','This review no longer matches the prepared action.'),action:{reprepare_required:true}});return;
+    }
+    if(entry.busy)return;
+    if(entry.terminal){publish(structuredClone(entry.result));return;}
+    if(entry.closed||entry.reprepare){publish({...safeError('CONFIRMATION_EXPIRED','Prepare this action again before confirming.'),action:{reprepare_required:true}});return;}
+    if(!entry.attempted&&Number(action.expires_at_unix)>0&&Number(action.expires_at_unix)*1000<=Date.now()){
+      entry.reprepare=true;publish({...safeError('CONFIRMATION_EXPIRED','This review expired. Prepare the action again.'),action:{reprepare_required:true}});return;
+    }
+    if(confirmTool==='vp3.commerce.checkout.confirm'&&detail.terms_accepted!==true){
+      publish(safeError('TERMS_REQUIRED','Review and accept the seller terms before checkout.'));return;
+    }
+    const args={
+      confirmation_token:entry.action.confirmation.token,
+      idempotency_key:entry.idempotencyKey,
+      intent:structuredClone(entry.action.confirmation.intent)
+    };
+    if(confirmTool==='vp3.commerce.checkout.confirm')args.terms_accepted=true;
+    const epoch=this.confirmationEpoch;
+    entry.busy=true;entry.attempted=true;
+    const result=await this.#execute(confirmTool,args,{humanConfirmation:true});
+    entry.busy=false;
+    if(epoch!==this.confirmationEpoch||this.preparedConfirmations.get(this.#confirmationKey(action))!==entry)return;
+    if(result?.ok===true){entry.terminal=true;entry.result=structuredClone(result);}
+    if(result?.action?.reprepare_required===true||['CONFIRMATION_EXPIRED','CONFIRMATION_MISMATCH','IDEMPOTENCY_CONFLICT'].includes(result?.error?.code))entry.reprepare=true;
+    publish(result);
   }
 
   async #register(name,definition,fingerprint) {
@@ -450,7 +511,35 @@ export class VP3ProfileWebMCPRuntimeV100 {
     }
   }
 
-  async #execute(name,args,options) {
+  async #execute(name,args,options={}) {
+    // Direct registered-tool confirmation uses the same server-issued review
+    // as a human button. Correlate by token + exact intent, never a browser ID.
+    const entry=options?.humanConfirmation?null:[...this.preparedConfirmations.values()].find(row=>
+      row.action.confirm_tool===name&&row.action.confirmation.token===args?.confirmation_token
+      &&stable(row.action.confirmation.intent)===stable(args?.intent)
+      &&this.preparedConfirmations.get(this.#confirmationKey(row.action))===row);
+    if(!entry)return this.#executeRequest(name,args,options);
+    if(entry.busy)return safeError('ACTION_IN_PROGRESS','This confirmation is already in progress. Retry with the same key.',true);
+    if(entry.closed||entry.reprepare)return {...safeError('CONFIRMATION_EXPIRED','Request a new review before confirming.'),action:{reprepare_required:true}};
+    if(typeof args.idempotency_key!=='string'||! /^[A-Za-z0-9_-]{8,96}$/.test(args.idempotency_key))return safeError('VALIDATION_FAILED','A valid idempotency key is required.');
+    if(entry.attempted&&entry.idempotencyKey!==args.idempotency_key)return safeError('IDEMPOTENCY_CONFLICT','This prepared action already has a confirmation key. Reuse the original key.');
+    const epoch=this.confirmationEpoch,attemptId=transportIdV130();
+    entry.idempotencyKey=args.idempotency_key;entry.busy=true;entry.attempted=true;
+    this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-started',{
+      intent_id:entry.action.intent_id,confirm_tool:name,attempt_id:attemptId
+    });
+    const result=await this.#executeRequest(name,args,{...options,humanConfirmation:true});
+    entry.busy=false;
+    if(epoch!==this.confirmationEpoch||this.preparedConfirmations.get(this.#confirmationKey(entry.action))!==entry)return result;
+    if(result?.ok===true){entry.terminal=true;entry.result=structuredClone(result);}
+    if(result?.action?.reprepare_required===true||['CONFIRMATION_EXPIRED','CONFIRMATION_MISMATCH','IDEMPOTENCY_CONFLICT'].includes(result?.error?.code))entry.reprepare=true;
+    this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
+      intent_id:entry.action.intent_id,confirm_tool:name,attempt_id:attemptId,result
+    });
+    return result;
+  }
+
+  async #executeRequest(name,args,options) {
     if (options?.signal?.aborted) {
       return safeError('CANCELLED','The profile capability request was cancelled.');
     }
@@ -460,6 +549,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
     if (!this.effectiveToolNames().includes(name)) {
       return safeError('CAPABILITY_UNAVAILABLE','That profile capability is unavailable.');
     }
+    const epoch=this.confirmationEpoch,profile=this.manifest.profile_username,proof=this.sessionProof,resume=this.resumeContext;
+    const current=()=>epoch===this.confirmationEpoch&&profile===this.manifest?.profile_username
+      &&proof===this.sessionProof&&resume===this.resumeContext&&this.effectiveToolNames().includes(name);
+    const stale=()=>({...safeError('CONTEXT_CHANGED','This response belongs to an earlier Profile session.'),action:{reprepare_required:true}});
     const interactionId=transportIdV130();
     const correlationId=/^[A-Za-z0-9_-]{8,96}$/.test(String(this.resumeContext?.action_context_id||''))?String(this.resumeContext.action_context_id):interactionId;
     const startedAt=Date.now();
@@ -492,18 +585,21 @@ export class VP3ProfileWebMCPRuntimeV100 {
         }),
         signal:options?.signal
       });
+      if(!current())return stale();
       let data;
       try { data=await response.json(); }
-      catch { return safeError('INVALID_GATEWAY_RESPONSE','VP3 returned an invalid profile response.'); }
+      catch { return current()?safeError('INVALID_GATEWAY_RESPONSE','The Profile response could not be read. Check the existing action or retry this same confirmation.',true):stale(); }
+      if(!current())return stale();
       if (!response.ok || data?.ok!==true) {
         const error=safeError(
           data?.error?.code || ('HTTP_'+response.status),
           data?.error?.message || 'The profile capability could not be completed.',
-          Boolean(data?.error?.retryable)
+          data?.error?.retryable===true||(response.status>=500&&response.status<=599)
         );
         if(data?.action?.contract==='vp3.webmcp.action.v1'){
           error.action=data.action;
           await this.noteContinuity(name,String(data.action.phase||'error'),String(data?.error?.code||''),false);
+          if(!current())return stale();
         }
         this.onEvent({event:'tool_failed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt,code:error.error.code});
         return error;
@@ -512,11 +608,15 @@ export class VP3ProfileWebMCPRuntimeV100 {
       if(action?.contract==='vp3.webmcp.action.v1'){
         if(action.phase==='prepared'&&action.requires_confirmation===true){
           await this.noteContinuity(name,'prepared','',false);
+          if(!current())return stale();
+          if(!this.#rememberConfirmation(action))return safeError('CONFIRMATION_MISMATCH','The prepared review could not be retained safely. Request a new review.');
           this.#dispatchConfirmationEvent('vp3:webmcp-confirmation',structuredClone(action));
           this.onEvent({event:'confirmation_required',tool:name,intent_id:String(action.intent_id||'')});
-        }else if(action.phase==='completed'){
+        }else if(['recorded','completed','unverified'].includes(action.phase)){
+          // v195 treats this as UI telemetry and re-reads server evidence.
           await this.noteContinuity(name,'completed','',Boolean(action.idempotent_replay||data?.idempotent_replay));
-          if(action.intent_id)this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
+          if(!current())return stale();
+          if(action.intent_id&&!options?.humanConfirmation)this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
             intent_id:String(action.intent_id),
             confirm_tool:String(action.confirm_tool||name),
             result:data
@@ -526,6 +626,7 @@ export class VP3ProfileWebMCPRuntimeV100 {
       this.onEvent({event:'tool_completed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt});
       return data;
     } catch (error) {
+      if(!current())return stale();
       if (options?.signal?.aborted || error?.name==='AbortError') {
         this.onEvent({event:'tool_cancelled',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt});
         return safeError('CANCELLED','The profile capability request was cancelled.');

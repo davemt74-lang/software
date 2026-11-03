@@ -18,13 +18,13 @@ try{
     $provider=strtolower(trim((string)($order['provider_snapshot']??'')));if($provider==='')throw new RuntimeException('Checkout provider lineage is unavailable.');
     $verified=agent_commerce_return_verify_v800($pdo,$order,$provider,$_GET);
     if(function_exists('profile_conversion_commerce_order_v179'))profile_conversion_commerce_order_v179($pdo,$verified);
-    $status=(string)($verified['payment_status']??'awaiting_payment');
-    if($status==='paid'){$notice=['kind'=>'verified','headline'=>'Payment verified.','message'=>'Your payment is confirmed in the canonical Commerce order.'];}
-    elseif($status==='partially_paid'){$notice=['kind'=>'verified','headline'=>'Deposit verified.','message'=>'Your deposit is confirmed in the canonical Commerce order.'];}
-    else{$notice=['kind'=>'pending','headline'=>'Payment return received.','message'=>'The provider has not confirmed payment yet. VP3 will only mark the order paid after verification.'];}
+    $status=(string)($verified['payment_status']??'');
+    $customerStatus=profile_commerce_customer_status_v1100($verified);
+    $notice=['kind'=>in_array($status,['paid','partially_paid'],true)?'verified':'pending',
+        'headline'=>$customerStatus['label'].'.','message'=>$customerStatus['message']];
 }catch(Throwable $e){
     error_log('VP3 Profile Commerce return verification failed: '.$e->getMessage());
-    $notice=['kind'=>'pending','headline'=>'Payment verification is still pending.','message'=>'VP3 did not mark this order paid because provider verification was not complete.'];
+    $notice=['kind'=>'pending','headline'=>'Payment status could not be refreshed.','message'=>'Open your existing receipt to check payment and fulfillment before starting another checkout.'];
 }
 if($receiptToken!==''&&profile_commerce_customer_order_v1100($pdo,$owner,(string)$order['order_number'],$receiptToken)){
     if(($notice['kind']??'')==='verified')profile_commerce_checkout_intent_forget_v900($nonce);

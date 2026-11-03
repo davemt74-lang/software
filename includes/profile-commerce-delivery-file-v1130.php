@@ -74,6 +74,7 @@ function profile_commerce_delivery_file_path_v1130(int $ownerUserId,int $orderId
 function profile_commerce_delivery_file_for_customer_v1130(array $order): ?array
 {
     if(!in_array((string)($order['payment_status']??''),['paid','partially_refunded'],true))return null;
+    if(profile_commerce_delivery_review_required_v1120($order))return null;
     return profile_commerce_delivery_file_metadata_v1130($order);
 }
 

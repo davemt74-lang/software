@@ -46,5 +46,5 @@ try{
 }catch(Throwable $e){
     error_log('WebMCP commerce return failed: '.$e->getMessage());
     http_response_code(400);
-    ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Commerce return</title></head><body><main><h1>Payment verification is pending</h1><p>VP3 did not mark this order paid unless the payment provider verified it. Return to the seller profile or your secure receipt link.</p></main></body></html><?php
+    ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Commerce return</title></head><body><main><h1>Payment status unavailable</h1><p>This payment return could not be verified. Open your existing secure receipt link to check payment and fulfillment, or contact the seller before starting another checkout.</p></main></body></html><?php
 }

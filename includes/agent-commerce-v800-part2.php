@@ -63,7 +63,10 @@ function agent_commerce_checkout_attempt_v800(PDO $pdo,int $attemptId): ?array
 }
 function agent_commerce_attempt_by_external_v800(PDO $pdo,string $provider,string $externalId): ?array
 {
-    $provider=strtolower(trim($provider));$externalId=trim($externalId);if($externalId==='')return null;$stmt=$pdo->prepare('SELECT a.*,o.owner_user_id,o.workspace_owner_user_id,o.payment_status order_payment_status FROM agent_commerce_checkout_attempts_v800 a JOIN agent_commerce_orders_v800 o ON o.id=a.order_id WHERE a.provider=? AND (a.external_session_id=? OR a.external_payment_id=?) ORDER BY a.id DESC LIMIT 1');$stmt->execute([$provider,$externalId,$externalId]);return $stmt->fetch()?:null;
+    $provider=strtolower(trim($provider));if($externalId===''||strlen($externalId)>190)return null;
+    $stmt=$pdo->prepare('SELECT a.*,o.owner_user_id,o.workspace_owner_user_id,o.payment_status order_payment_status FROM agent_commerce_checkout_attempts_v800 a JOIN agent_commerce_orders_v800 o ON o.id=a.order_id WHERE a.provider=? AND (a.external_session_id=? OR a.provider_order_id=? OR a.external_payment_id=?) ORDER BY a.id DESC LIMIT 3');$stmt->execute([$provider,$externalId,$externalId,$externalId]);$matches=[];
+    foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $a){if((string)$a['provider']!==$provider)continue;foreach(['external_session_id','provider_order_id','external_payment_id'] as $key)if(hash_equals((string)$a[$key],$externalId)){$matches[]=$a;break;}}
+    return count($matches)===1?$matches[0]:null;
 }
 function agent_commerce_available_connections_v800(PDO $pdo,array $order): array
 {
