@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/system-apps-v240.php';
+require_once __DIR__.'/agent-private-share-read-v1.php';
 
 const VP3_SYSTEM_APPS_V250='trusted-share-update-lifecycle-v250-20260930';
 
@@ -200,28 +201,7 @@ function vp3_user_app_share_lifecycle_v250(int $userId,?callable $remote=null,?P
 function vp3_user_app_share_agent_query_v250(
     string $query,array $user,int $conversationId=0,?callable $remote=null,?PDO $pdo=null
 ): array {
-    $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    if(!preg_match('/\b(?:shared app|private app|app update|update available|who shared|publisher fingerprint|shared with me)\b/i',$query))return $empty;
-    $uid=(int)($user['id']??0);if($uid<1)return $empty;
-    try{$state=vp3_user_app_share_lifecycle_v250($uid,$remote,$pdo);}
-    catch(Throwable $e){return $empty;}
-    $rows=[];
-    foreach($state['received'] as $share){
-        $parts=[(string)$share['app_name'],'from '.(string)$share['sender_name']];
-        if(!empty($share['installed']))$parts[]='installed'.(!empty($share['installed_version'])?' v'.$share['installed_version']:'');
-        if(!empty($share['update_available']))$parts[]='update available';
-        if((string)$share['status']==='revoked')$parts[]='share revoked';
-        $rows[]='• '.implode(' · ',$parts);
-    }
-    $answer=$rows?"Private app status:\n".implode("\n",$rows):'You do not currently have any private app shares.';
-    $answer.=" Updates are never installed automatically; new permissions and schema changes are reviewed before activation.";
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'homeserver.user_app_shares.read',$query,'success',['count'=>count($rows)],$conversationId);
-    return [
-      'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],
-      'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php')]],
-      'sources'=>[['source'=>'homeserver:user-app-shares','title'=>'Trusted private app lifecycle']],
-      'private_app_lifecycle'=>$state,
-    ];
+    return vp3_private_share_legacy_v1($query,$user,$conversationId,$remote,$pdo);
 }
 
 function vp3_system_apps_capability_v250(): array

@@ -391,6 +391,7 @@ jobs:
           php tests/system-apps-v200-mysql.php
           php tests/system-apps-v240-mysql.php
           php tests/system-apps-v250-mysql.php
+          php tests/agent-private-share-read-v1.php
           php tests/cloud-hosting-v100-mysql.php
           php tests/cloud-hosting-v110-mysql.php
           php tests/cloud-hosting-v120-mysql.php

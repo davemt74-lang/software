@@ -16,6 +16,7 @@ fs.copyFileSync('tests/fixtures/media-agent-schema-v1.php',path.join(tmp,'includ
 fs.copyFileSync('tests/fixtures/app-agent-remote-v1.php',path.join(tmp,'includes/app-agent-remote-v1.php'));
 fs.copyFileSync('tests/fixtures/system-app-agent-schema-v1.php',path.join(tmp,'includes/system-app-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/app-operation-schema-v1.php',path.join(tmp,'includes/app-operation-schema-v1.php'));
+fs.copyFileSync('tests/fixtures/private-share-agent-v1.php',path.join(tmp,'includes/private-share-agent-v1.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
@@ -324,6 +325,25 @@ try{
   const saved=await history.json();check(saved.messages.some(m=>m.role==='assistant'&&m.context_json?.includes(id)),endpoint+' image job references survive a fresh conversation history load');
   const cancel=await fetch(base+'/api/chat-canvas-media-v1.php',{method:'POST',headers:{'Content-Type':'application/json',...mediaHeaders},body:JSON.stringify({csrf_token:'fixture',action:'cancel',confirmed:true,generation_id:id,conversation_id:cid,agent_id:agent})});
   const cancelled=await cancel.json();check(cancelled.generation?.status==='cancelled',endpoint+' cancel button uses the canonical owner job control: '+JSON.stringify(cancelled));
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const context=endpoint.includes('stream')?{agent_context:{user_agent_id:7}}:{};
+  const plan={operation:'private_share_read',ids:['apps.shares.read'],view:'all'};
+  const headers={'X-Fixture-Private-Share-Ready':'1','X-Fixture-Participant-Owner-Plan':JSON.stringify(plan)};
+  let response=await post(endpoint,'Show my private app shares',context,headers);
+  check(response.data?.tool_receipt?.capability==='apps.shares.read'&&response.data.tool_receipt.status==='read_complete'&&response.data.tool_receipt.count===6&&!response.data.tool_receipt.changes_applied,endpoint+' private app shares use a verified read-only receipt: '+response.body);
+  check(response.data.answer.includes('Kitchen Notes')&&response.data.answer.includes('Sent Inventory')&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' private share list scopes both directions to the authenticated owner');
+  check(response.data.answer.includes('2020-01-02 09:30:00')&&response.data.answer.includes('historical')&&!response.data.private_app_lifecycle,endpoint+' saved installation evidence retains its timestamp without raw lifecycle payload');
+  response=await post(endpoint,'Show only private apps I sent',context,{...headers,'X-Fixture-Participant-Owner-Plan':JSON.stringify({...plan,view:'sent'})});
+  check(response.data?.tool_receipt?.count===1&&response.data.answer.includes('Sent Inventory')&&!response.data.answer.includes('Kitchen Notes'),endpoint+' sent view does not silently include received apps');
+  response=await post(endpoint,'Find the Weekend Plan shared app',context,{...headers,'X-Fixture-Participant-Owner-Plan':JSON.stringify({...plan,view:'received',query:'Weekend Plan'})});
+  check(response.data?.tool_receipt?.count===1&&response.data.answer.includes('Weekend Plan')&&!response.data.answer.includes('Kitchen Notes'),endpoint+' explicit app title filters saved share records');
+  response=await post(endpoint,'Find an absent private app',context,{...headers,'X-Fixture-Participant-Owner-Plan':JSON.stringify({...plan,query:'No Such Fixture'})});
+  check(response.data?.tool_receipt?.status==='no_matches'&&response.data.tool_receipt.count===0,endpoint+' verified empty private-share search differs from unavailable data');
+  response=await post(endpoint,'Show my private app shares',context,{...headers,'X-Fixture-Private-Share-Mode':'invalid_status'});
+  check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('Kitchen Notes')&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' malformed share storage cannot produce partial success or leak raw fields');
+  response=await post(endpoint,'Can you read private app shares?',context,{...headers,'X-Fixture-Private-Share-Mode':'invalid_status','X-Fixture-Participant-Owner-Plan':JSON.stringify({operation:'inspect',ids:['apps.shares.read']})});
+  check(response.data?.tool_receipt?.capability==='capabilities.inspect'&&response.data.tool_receipt.status==='read_complete'&&!response.data.answer.includes('Kitchen Notes'),endpoint+' capability inspection does not retrieve private-share rows');
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}
