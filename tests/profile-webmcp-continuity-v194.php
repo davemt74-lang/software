@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-session_start();
+session_save_path(sys_get_temp_dir());session_start();
 require dirname(__DIR__).'/includes/profile-webmcp-continuity-v194.php';
 
 function t(bool $v,string $m): void{if(!$v){fwrite(STDERR,"FAIL: {$m}\n");exit(1);}}
@@ -18,7 +18,7 @@ t(!isset($rows['bad-token']),'invalid token removed');
 $many=[];
 for($i=0;$i<20;$i++){
     $token=str_pad(dechex($i),32,'0',STR_PAD_LEFT);
-    $many[$token]=['expires_at'=>time()+600,'created_at'=>time()+$i];
+    $many[$token]=['expires_at'=>time()+600-$i,'created_at'=>time()-$i];
 }
 $trimmed=vp3_profile_webmcp_resume_prune_v194($many,time());
 t(count($trimmed)===VP3_PROFILE_WEBMCP_RESUME_MAX_V194,'resume store is bounded');

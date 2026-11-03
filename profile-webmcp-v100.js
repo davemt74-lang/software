@@ -479,6 +479,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
           profile_username:this.manifest.profile_username,
           tool:name,
           input:args,
+          ...(this.resumeContext?{continuity:{
+            context_id:String(this.resumeContext.action_context_id),
+            return_token:String(this.resumeContext.return_token)
+          }}:{}),
           telemetry:{
             webmcp_session_id:this.webmcpSessionId,
             interaction_id:interactionId,

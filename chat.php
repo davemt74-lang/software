@@ -133,7 +133,12 @@ if($profileWebmcpReturnToken!==''){
         $returnProfile=$pdoForAgent&&function_exists('profile_for_user')?profile_for_user($pdoForAgent,(int)$user['id'],false):null;
         if(is_array($returnProfile)){
             $profileWebmcpReturn=vp3_profile_webmcp_return_consume_v195($returnProfile,$user,$profileWebmcpReturnToken,$pdoForAgent);
-            if(is_array($profileWebmcpReturn)&&(int)($profileWebmcpReturn['conversation_id']??0)>0){
+            if(is_array($profileWebmcpReturn)){
+                // The consumed server context selects its exact source Agent and conversation, including system/zero.
+                $requestedAgentId=(int)$profileWebmcpReturn['agent_id'];
+                $explicitSystemAgent=$requestedAgentId===0;
+                $requestedAgentRaw=$explicitSystemAgent?'system':(string)$requestedAgentId;
+                $_GET['agent']=$requestedAgentRaw;
                 $_GET['conversation_id']=(int)$profileWebmcpReturn['conversation_id'];
             }
         }
@@ -192,6 +197,7 @@ try {
             $validatedConversationId=(int)$requestedConversation->fetchColumn();
             if($validatedConversationId>0)$agentInitialConversationId=$validatedConversationId;
         }
+        if(is_array($profileWebmcpReturn)&&(int)$profileWebmcpReturn['conversation_id']===0)$agentInitialConversationId=0;
 
         // Onboarding is a persistent Agent skill: an existing Agent identity
         // must not hide unfinished required setup or selected optional tasks.
@@ -208,6 +214,7 @@ try {
     $agentInitialConversationId = (int)$chatInitialConversationId;
 }
 
+if(is_array($profileWebmcpReturn)&&((int)($activeUserAgent['id']??0)!==(int)$profileWebmcpReturn['agent_id']||(int)$agentInitialConversationId!==(int)$profileWebmcpReturn['conversation_id']))$profileWebmcpReturn=null;
 if(is_array($profileWebmcpReturn)){
     $returnStatus=e((string)($profileWebmcpReturn['status_text']??'Profile action status updated.'));
     $returnPhase=e((string)($profileWebmcpReturn['phase']??'viewed'));

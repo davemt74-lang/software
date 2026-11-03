@@ -265,6 +265,8 @@ function agent_work_control_inspect_v173(PDO $pdo,array $user,int $runId): array
 function agent_work_control_extract_run_id_v173(string $query): int
 {
     if(preg_match('/\b(?:workflow|work|job|run)\s*#?\s*(\d{1,12})\b/i',$query,$m))return max(0,(int)$m[1]);
+    // A release record is a different namespace. Only an explicitly named workflow may override it.
+    if(preg_match('/\breleases?\b/i',$query))return 0;
     if(preg_match('/#(\d{1,12})\b/',$query,$m))return max(0,(int)$m[1]);
     return 0;
 }

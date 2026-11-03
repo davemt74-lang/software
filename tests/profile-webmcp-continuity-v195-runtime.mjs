@@ -7,7 +7,7 @@ const doc=new Doc();const calls=[];const returnEvents=[];
 doc.addEventListener('vp3:webmcp-return-ready',e=>returnEvents.push(e.detail));
 const fetchImpl=async(url,options)=>{
   const body=JSON.parse(options.body);calls.push({url,body});
-  if(String(url).includes('continuity'))return {ok:true,status:200,async json(){return {ok:true,context:{contract:'vp3.webmcp.return.v1',phase:body.phase}};}};
+  if(String(url).includes('continuity'))return {ok:true,status:200,async json(){return {ok:true,context:{contract:'vp3.webmcp.return.v1',phase:'recorded',status_text:'The checkout was started.',outcome:{contract:'vp3.webmcp.outcome.v1',verification:'verified',operation:'commerce.checkout',state:'recorded',result:'checkout_started',committed_at:'2026-11-03T00:00:00Z',replayed:false}}};}};
   if(body.tool==='vp3.intent.resolve')return {ok:true,status:200,async json(){return {ok:true,resolution:{recommended_capabilities:['commerce']}};}};
   if(body.tool==='vp3.commerce.products.list')return {ok:true,status:200,async json(){return {ok:true,products:[]};}};
   if(body.tool==='vp3.commerce.checkout.confirm')return {ok:true,status:200,async json(){return {ok:true,action:{contract:'vp3.webmcp.action.v1',phase:'completed',confirm_tool:'vp3.commerce.checkout.confirm',idempotent_replay:true}};}};
@@ -26,5 +26,7 @@ const note=calls.find(c=>String(c.url).includes('continuity')&&c.body.phase==='c
 assert.ok(note,'completed action must update continuity');
 assert.equal(note.body.idempotent_replay,true);
 assert.equal(note.body.confirmation_token,undefined);
-assert.equal(returnEvents.at(-1).phase,'completed');
+assert.equal(returnEvents.at(-1).phase,'recorded','browser phase must not replace the returned server evidence');
+assert.equal(returnEvents.at(-1).outcome.result,'checkout_started');
+for(const c of calls.filter(c=>!String(c.url).includes('continuity')&&c.body.tool==='vp3.commerce.checkout.confirm'))assert.deepEqual(c.body.continuity,{context_id:'a'.repeat(32),return_token:'b'.repeat(32)},'native confirmations carry the exact owner-context proof');
 console.log('PROFILE_WEBMCP_CONTINUITY_V195_RUNTIME=PASS');

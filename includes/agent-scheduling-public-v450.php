@@ -16,7 +16,7 @@ function agent_scheduling_public_schedule_v450(PDO $pdo, int $ownerUserId): ?arr
     $stmt = $pdo->prepare(
         "SELECT s.*,ua.display_name AS agent_name
          FROM agent_scheduling_schedules s
-         LEFT JOIN user_agents ua ON ua.id=s.agent_id AND ua.user_id=s.owner_user_id AND ua.is_active=1
+         LEFT JOIN user_agents ua ON ua.id=s.agent_id AND ua.owner_user_id=s.owner_user_id AND ua.is_active=1
          WHERE s.owner_user_id=? AND s.is_active=1 AND s.public_enabled=1
          ORDER BY s.is_default DESC,s.id ASC
          LIMIT 1"

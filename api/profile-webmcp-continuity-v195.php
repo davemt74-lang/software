@@ -19,7 +19,9 @@ if(($_SERVER['REQUEST_METHOD']??'GET')!=='POST')vp3_profile_webmcp_continuity_js
 $raw=file_get_contents('php://input')?:'';
 if(strlen($raw)>8192)vp3_profile_webmcp_continuity_json_v195(false,['error'=>['code'=>'PAYLOAD_TOO_LARGE']],413);
 $input=json_decode($raw,true);
-if(!is_array($input))vp3_profile_webmcp_continuity_json_v195(false,['error'=>['code'=>'INVALID_JSON']],400);
+if(!is_array($input)||array_is_list($input)||array_diff(array_keys($input),['profile_username','context_id','return_token','tool','phase','result_code','idempotent_replay']))vp3_profile_webmcp_continuity_json_v195(false,['error'=>['code'=>'INVALID_JSON']],400);
+foreach(['profile_username','context_id','return_token','tool','phase'] as $key)if(!is_string($input[$key]??null)||strlen($input[$key])>160)vp3_profile_webmcp_continuity_json_v195(false,['error'=>['code'=>'INVALID_INPUT']],400);
+if((array_key_exists('result_code',$input)&&(!is_string($input['result_code'])||strlen($input['result_code'])>80))||(array_key_exists('idempotent_replay',$input)&&!is_bool($input['idempotent_replay'])))vp3_profile_webmcp_continuity_json_v195(false,['error'=>['code'=>'INVALID_INPUT']],400);
 $pdo=db();$viewer=current_user();
 if(!$pdo||!is_array($viewer)||(int)($viewer['id']??0)<1)vp3_profile_webmcp_continuity_json_v195(false,['error'=>['code'=>'AUTH_REQUIRED']],401);
 $username=profile_username_normalize((string)($input['profile_username']??''));
@@ -33,7 +35,7 @@ $context=vp3_profile_webmcp_action_context_note_v195(
     $profile,$viewer,
     (string)($input['context_id']??''),(string)($input['return_token']??''),
     (string)($input['tool']??''),(string)($input['phase']??'error'),
-    (string)($input['result_code']??''),!empty($input['idempotent_replay'])
+    (string)($input['result_code']??''),$input['idempotent_replay']??false,$pdo
 );
 if(!$context)vp3_profile_webmcp_continuity_json_v195(false,['error'=>['code'=>'CONTEXT_INVALID']],404);
 vp3_profile_webmcp_continuity_json_v195(true,['context'=>$context]);

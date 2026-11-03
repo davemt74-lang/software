@@ -198,8 +198,8 @@ if($transcriptTool===null&&$capabilityTool===null&&!$ephemeralProtocol&&knowledg
     $reminderCandidate=reminder_chat_v1($pdo,$user,$query,'cloud:'.$conversationId,$reminderKey,$conversationId,$reminderZone,null,$currentAuthority);
     if(!empty($reminderCandidate['handled']))$reminderTool=$reminderCandidate;
 }
-$toolResult=$capabilityTool??$transcriptTool??$reminderTool??$knowledgeTool??$researchRecall??vp3_agent_chat_tool_query_v1($query,$user,$conversationId);
-if(!empty($toolResult['handled']))$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);
+$toolResult=$capabilityTool??$transcriptTool??$reminderTool??$knowledgeTool??$researchRecall??vp3_agent_chat_tool_query_v1($query,$user,$conversationId,$agentContext);
+if(!empty($toolResult['handled']))$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query,$agentContext,$principal);
 if(!empty($r6Packet['active'])&&knowledge_r6_unscoped_read($toolResult))$toolResult=vp3_agent_tool_empty_v400();
 $homeAttempted=false;$homeResult=null;$responseActions=[];$turnPrepared=null;$turn=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
 if(!empty($toolResult['handled'])){
@@ -295,5 +295,5 @@ if(function_exists('vp3_live_session_note_action_v2370')){
         ]);
     }catch(Throwable $e){error_log('VP3 live-session Chat response action failed: '.$e->getMessage());}
 }
-return ['ok'=>true,'canvas_media'=>$messageContext['canvas_media'],'sticky_notes'=>$messageContext['sticky_notes'],'tool_receipt'=>$toolReceipt,'knowledge_actions_r9'=>$knowledgeDraft,'project_knowledge_r6'=>$r6Packet,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'system_app_plan'=>$messageContext['system_app_plan'],'system_app_action_card'=>$messageContext['system_app_action_card'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
+return ['ok'=>true,'canvas_media'=>$messageContext['canvas_media'],'sticky_notes'=>$messageContext['sticky_notes'],'tool_receipt'=>$toolReceipt,'knowledge_actions_r9'=>$knowledgeDraft,'project_knowledge_r6'=>$r6Packet,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'profile_webmcp_plan'=>$messageContext['profile_webmcp_plan'],'profile_webmcp_return'=>$messageContext['profile_webmcp_return'],'system_app_plan'=>$messageContext['system_app_plan'],'system_app_action_card'=>$messageContext['system_app_action_card'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
 }

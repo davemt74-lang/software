@@ -7,7 +7,9 @@ const jsRuntime=read('profile-webmcp-v100.js');
 const externalRuntime=read('profile-webmcp-external-v120.js');
 const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const router=read('includes/profile-webmcp-tool-router-v191.php');
-const agent=read('includes/agent-profile-webmcp-v193.php');
+const legacyAgent=read('includes/agent-profile-webmcp-v193.php');
+const agent=legacyAgent+read('includes/agent-profile-webmcp-read-v1.php');
+assert.match(legacyAgent,/require_once __DIR__\.'\/agent-profile-webmcp-read-v1\.php'/,'legacy bridge must reach the inspected shared adapter');
 const v194=read('includes/profile-webmcp-continuity-v194.php');
 const v195=read('includes/profile-webmcp-continuity-v195.php');
 

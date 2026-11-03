@@ -26,6 +26,11 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'radar.read'=>['list'],
         'radar.gateway.manage'=>['set_policy'],
         'analytics.read'=>['list'],
+        'music.releases.read'=>['list'],
+        'music.releases.create'=>['create'],
+        'profile.webmcp.read'=>['inspect'],
+        'profile.webmcp.handoff'=>['prepare'],
+        'profile.webmcp.return.read'=>['read'],
         'apps.manager.read'=>['list'],
         'apps.workspace.read'=>['inspect'],
         'tv.history.read'=>['list'],
@@ -74,7 +79,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     if(!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/D',$at)||strtotime($at)===false)return null;
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;
     // A read, clarification or failed operation can never be a successful mutation.
-    $write=($cap==='tracky.perception.request'&&$op==='request')||($cap==='radar.gateway.manage'&&$op==='set_policy')||($cap==='images.generate'&&$op==='queue')||($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
+    $write=($cap==='music.releases.create'&&$op==='create')||($cap==='tracky.perception.request'&&$op==='request')||($cap==='radar.gateway.manage'&&$op==='set_policy')||($cap==='images.generate'&&$op==='queue')||($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
     if($status==='completed'&&(!$write||$reason!==''))return null;
     if(in_array($status,['read_complete','no_matches'],true)&&$reason!=='')return null;
     $extra=[];
@@ -83,6 +88,13 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         $summary=vp3_vrss_outcome_summary_v1($value['vrss_outcome']);
         if($cap!=='system_apps.manage'||$op!=='confirm'||!in_array($status,['completed','read_complete'],true)||$summary===null)return null;
         $extra['vrss_outcome']=$summary;
+    }
+    if(array_key_exists('profile_webmcp_outcome',$value)){
+        require_once __DIR__.'/agent-profile-webmcp-outcomes-v1.php';
+        if($cap!=='profile.webmcp.return.read'||$op!=='read'||!is_array($value['profile_webmcp_outcome']))return null;
+        try{$summary=vp3_profile_webmcp_outcome_projection_v1($value['profile_webmcp_outcome']);}catch(Throwable $e){return null;}
+        if(!(($status==='read_complete'&&$reason===''&&$summary['verification']==='verified')||($status==='failed'&&$reason==='outcome_unverified'&&$summary['verification']==='unverified')))return null;
+        $extra['profile_webmcp_outcome']=$summary;
     }
     return ['contract'=>'vp3.tool-receipt.v1','capability'=>$cap,'operation'=>$op,'status'=>$status,'reason'=>$reason,
         'record_id'=>$value['record_id'],'count'=>$value['count'],'checked_at'=>$at,'changes_applied'=>$status==='completed'&&$write,...$extra];
@@ -99,6 +111,10 @@ function vp3_tool_last_receipt_v1(PDO $pdo,array $user,array $context): ?array
     if((int)$pending->fetchColumn()>1)return null;
     try{$data=json_decode((string)$row['context_json'],true,32,JSON_THROW_ON_ERROR);}catch(Throwable $e){return null;}
     $receipt=vp3_tool_receipt_normalize_v1($data['tool_receipt']??null);
+    if($receipt&&$receipt['capability']==='profile.webmcp.return.read'&&$receipt['status']==='read_complete'&&!isset($receipt['profile_webmcp_outcome'])){
+        $receipt['status']='failed';$receipt['reason']='outcome_unverified';$receipt['count']=0;
+        $receipt=vp3_tool_receipt_normalize_v1($receipt);
+    }
     // Historical generic VRSS success cannot regain a final-completion claim through diagnosis.
     if($receipt&&($data['system_app_plan']['action_type']??null)==='vrss.invoke'&&$receipt['capability']==='system_apps.manage'&&$receipt['operation']==='confirm'){
         require_once __DIR__.'/agent-vrss-outcomes-v1.php';
@@ -114,6 +130,14 @@ function vp3_tool_last_receipt_v1(PDO $pdo,array $user,array $context): ?array
 
 function vp3_tool_diagnosis_v1(?array $last): string
 {
+    if(($last['receipt']['capability']??'')==='profile.webmcp.return.read'&&($last['receipt']['status']??'')==='read_complete'&&!isset($last['receipt']['profile_webmcp_outcome']))return 'The preceding Profile return has no verified outcome evidence. Check the Profile action before repeating it.';
+    if(array_key_exists('profile_webmcp_outcome',$last['receipt']??[])){
+        $r=vp3_tool_receipt_normalize_v1($last['receipt']);
+        if(!$r)return 'The preceding Profile outcome receipt could not be verified. Check the Profile action before repeating it.';
+        return vp3_profile_webmcp_outcome_text_v1($r['profile_webmcp_outcome']).' Recorded at '.$r['checked_at'].'. This is the saved result of that turn; current state may have changed.';
+    }
+    if(($last['receipt']['capability']??'')==='music.releases.create'&&in_array($last['receipt']['status']??'',['completed','read_complete'],true))return (($last['receipt']['status']??'')==='completed'?'The internal release plan was created and verified.':'The saved release plan was verified from the same turn; no second plan was created.').' This receipt does not establish music publication, distribution or a provider action.';
+    if(($last['receipt']['capability']??'')==='profile.webmcp.handoff'&&($last['receipt']['status']??'')==='clarification_required'&&($last['receipt']['reason']??'')==='confirmation_required')return 'The Profile handoff was prepared for review. Open the signed Profile surface and complete its existing confirmation step. No booking, checkout, refund, reward or message action was executed by Chat.';
     if(($last['receipt']['capability']??'')==='tracky.perception.request'&&($last['receipt']['status']??'')==='completed')return 'The governed observation request was accepted. Check its returned observation and timestamp to establish whether fresh evidence was collected; a request receipt alone does not verify a current scene.';
     if(($last['receipt']['capability']??'')==='radar.gateway.manage'&&in_array($last['receipt']['status']??'',['completed','read_complete'],true))return (($last['receipt']['status']??'')==='completed'?'The requested Gateway policy was saved and verified.':'The requested Gateway policy was already saved; no new change was made.').' Enforcement depends on the connected site using the server-side Gateway integration. The saved-policy receipt does not establish that a particular request was blocked or allowed.';
     if(($last['receipt']['capability']??'')==='images.generate'&&($last['receipt']['status']??'')==='completed')return 'The image request was queued. Its Chat canvas card shows whether the image was generated and saved; a queue receipt alone does not confirm image completion.';
