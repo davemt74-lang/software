@@ -1,7 +1,9 @@
 <?php
 declare(strict_types=1);
 
-/** Existing System App control, with HomeServer as the only Feed execution authority. */
+require_once __DIR__.'/agent-vrss-read-v1.php';
+
+/** Existing Feed writes keep S7 confirmation; reads and mutation previews use current authority. */
 function vp3_vrss_agent_query_v2b(string $query,array $user,int $conversationId=0,?callable $remote=null,?PDO $pdo=null): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
@@ -9,117 +11,94 @@ function vp3_vrss_agent_query_v2b(string $query,array $user,int $conversationId=
     $social=(bool)preg_match('/\b(?:vrss|authenticated)\b/i',$query);
     $follow=(bool)preg_match('/^\s*(?:please\s+)?(?:follow|subscribe to)\s+https?:\/\//i',$query);
     if(!$feed&&!$follow)return $empty;
+    $intent=vp3_vrss_nonexecuting_query_v1($query);
+    if($intent==='continue')return $empty;
+    if($intent==='inspect')return ['handled'=>true,'answer'=>'The VRSS tools can read your authorized feed, connection and conversation records. Existing follow, refresh, interaction and moderation actions prepare a request for explicit confirmation. This capability description has not read feed records or prepared a change.','actions'=>[],'sources'=>[],
+        'tool_receipt'=>vp3_tool_receipt_v1('capabilities.inspect','inspect','read_complete')];
     $conversationIntent=(bool)preg_match('/^\s*(?:follow|unfollow|mute|unmute|show|read)\s+VRSS\s+conversations?\b/i',$query);
     if(!$conversationIntent&&!preg_match('/^\s*(?:please\s+)?(?:comment|reply)\s+VRSS\b/i',$query)&&preg_match('/\b(?:hosting|subdomain|install|upgrade|update app)\b/i',$query))return $empty;
-    $uid=(int)($user['id']??0);if($uid<1)return $empty;
-    $pdo??=db();if(!$pdo)return $empty;
-    $answer='';$result=[];
+    if((int)($user['id']??0)<1)return $empty;
+    $writing=false;
     try{
+        $pdo??=db();if(!$pdo)throw new RuntimeException('Storage unavailable.');
+        $principal=vp3_capability_control_principal_v1($pdo,$user,$conversationId);
         $action='';$args=[];$commentPreview=[];
         if($social&&preg_match('~^\s*(follow|unfollow|mute|unmute)\s+VRSS\s+conversation\s+(https://[^\s<>"\x27]+)\s*$~i',$query,$m)){
-            if(!vp3_vrss_post_url_v2d($m[2]))throw new RuntimeException('Include the canonical VRSS post URL.');
-            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.conversations','arguments'=>[],'confirmed'=>false],$remote);
-            $watch=['enabled'=>false,'muted'=>false,'revision'=>0];foreach((array)($payload['result']['conversations']['items']??[]) as $item){if(($item['object']??'')===$m[2]){$watch=$item;break;}}
-            if(!is_int($watch['revision']??null))throw new RuntimeException('Refresh the conversation controls first.');
-            $verb=strtolower($m[1]);$action='vrss.social.conversation';$args=['url'=>$m[2],'enabled'=>in_array($verb,['follow','unfollow'],true)?$verb==='follow':(bool)$watch['enabled'],'muted'=>in_array($verb,['mute','unmute'],true)?$verb==='mute':(bool)$watch['muted'],'expected_revision'=>$watch['revision'],'request_id'=>bin2hex(random_bytes(16))];$commentPreview=['conversation_followed'=>$args['enabled'],'conversation_muted'=>$args['muted'],'revision'=>$args['expected_revision']];
+            $writing=true;$verb=strtolower($m[1]);
+            $m[2]=vp3_vrss_url_identity_v1($m[2])??throw new InvalidArgumentException('A canonical VRSS post URL is required.');
+            $data=vp3_vrss_preflight_v1($pdo,$user,$principal,$conversationId,'vrss.social.conversations',[],$remote);
+            $watch=null;foreach($data['items'] as $item)if($item['object']===$m[2]){$watch=$item;break;}
+            if($watch===null){
+                if(!$data['complete']||$verb!=='follow')throw new RuntimeException('The requested conversation setting was not reported.');
+                // A complete, verified list proves this is a new watch; the existing create contract uses revision zero.
+                $watch=['enabled'=>false,'muted'=>false,'revision'=>0];
+            }
+            $action='vrss.social.conversation';$args=['url'=>$m[2],'enabled'=>in_array($verb,['follow','unfollow'],true)?$verb==='follow':$watch['enabled'],'muted'=>in_array($verb,['mute','unmute'],true)?$verb==='mute':$watch['muted'],'expected_revision'=>$watch['revision'],'request_id'=>bin2hex(random_bytes(16))];
+            $commentPreview=['conversation_followed'=>$args['enabled'],'conversation_muted'=>$args['muted'],'revision'=>$args['expected_revision']];
         }elseif($social&&preg_match('~^\s*(?:show|read)\s+VRSS\s+conversation\s+(https://[^\s<>"\x27]+)(?:\s+after\s+([1-9][0-9]{0,15}))?\s*$~i',$query,$m)){
-            if(!vp3_vrss_post_url_v2d($m[1]))throw new RuntimeException('Include the canonical VRSS post URL.');
-            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.thread','arguments'=>['url'=>$m[1],'cursor'=>$m[2]??'0'],'confirmed'=>false],$remote);$result=(array)$payload['result'];$answer='Current public VRSS conversation:';
-            foreach(array_slice((array)($result['thread']['items']??[]),0,5) as $item){$answer.="\n\n".(string)($item['name']??'Author')."\n> ".str_replace("\n","\n> ",str_replace('`',"'",mb_substr((string)($item['body']??''),0,2000)));}
-            if(!empty($result['thread']['next_cursor']))$answer.="\nMore: show VRSS conversation ".$m[1].' after '.$result['thread']['next_cursor'];
+            return vp3_vrss_legacy_read_v1($pdo,$user,$principal,$conversationId,'thread',['url'=>$m[1],'cursor'=>$m[2]??'0'],$remote);
         }elseif($social&&preg_match('~^\s*(?:show|read)\s+VRSS\s+conversations\s*$~i',$query)){
-            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.conversations','arguments'=>[],'confirmed'=>false],$remote);$result=(array)$payload['result'];$answer='Your VRSS conversations:';foreach((array)($result['conversations']['items']??[]) as $item)$answer.="\n".(empty($item['enabled'])?'Not followed':(!empty($item['muted'])?'Followed · muted':'Followed')).' · '.(string)$item['object'];
+            return vp3_vrss_legacy_read_v1($pdo,$user,$principal,$conversationId,'conversations',[],$remote);
         }elseif($social&&preg_match('~^\s*(?:please\s+)?comment\s+VRSS\s+(https://[^\s<>"\x27]+)\s*:\s+([\s\S]+)$~i',$query,$m)){
-            if(!vp3_vrss_post_url_v2d($m[1]))throw new RuntimeException('Include the canonical VRSS post URL.');
-            $body=trim($m[2]);if($body===''||strlen($body)>2000)throw new RuntimeException('Include a shorter, nonempty comment.');
+            $writing=true;$m[1]=vp3_vrss_url_identity_v1($m[1])??throw new InvalidArgumentException('A canonical VRSS post URL is required.');
+            $body=trim($m[2]);if($body===''||strlen($body)>2000)throw new InvalidArgumentException('Include a shorter, nonempty comment.');
             $action='vrss.social.comment';$args=['url'=>$m[1],'body'=>$body,'parent'=>'','request_id'=>bin2hex(random_bytes(16))];$commentPreview=['comment'=>$body,'publication'=>'Awaits post-owner review'];
         }elseif($social&&preg_match('~^\s*(?:please\s+)?reply\s+VRSS\s+(https://[^\s<>"\x27]+)\s+to\s+(https://[^\s<>"\x27]+)\s*:\s+([\s\S]+)$~i',$query,$m)){
-            if(!vp3_vrss_post_url_v2d($m[1])||!vp3_vrss_comment_url_v2e($m[2]))throw new RuntimeException('Include the canonical post URL and published parent comment ID.');
-            $body=trim($m[3]);if($body===''||strlen($body)>2000)throw new RuntimeException('Include a shorter, nonempty reply.');
+            $writing=true;$m[1]=vp3_vrss_url_identity_v1($m[1])??throw new InvalidArgumentException('A canonical VRSS post URL is required.');
+            $m[2]=vp3_vrss_url_identity_v1($m[2],'comment')??throw new InvalidArgumentException('A canonical parent comment URL is required.');
+            $body=trim($m[3]);if($body===''||strlen($body)>2000)throw new InvalidArgumentException('Include a shorter, nonempty reply.');
             $action='vrss.social.comment';$args=['url'=>$m[1],'body'=>$body,'parent'=>$m[2],'request_id'=>bin2hex(random_bytes(16))];$commentPreview=['comment'=>$body,'parent'=>$m[2],'publication'=>'Awaits post-owner review'];
         }elseif($social&&preg_match('~^\s*(approve|hide|retract)\s+VRSS\s+comment\s+(https://[^\s<>"\x27]+)\s+on\s+(https://[^\s<>"\x27]+)\s*$~i',$query,$m)){
-            if(!vp3_vrss_comment_url_v2e($m[2])||!vp3_vrss_post_url_v2d($m[3]))throw new RuntimeException('Include the canonical comment ID and its post URL.');
+            $writing=true;$m[2]=vp3_vrss_url_identity_v1($m[2],'comment')??throw new InvalidArgumentException('A canonical comment URL is required.');
+            $m[3]=vp3_vrss_url_identity_v1($m[3])??throw new InvalidArgumentException('A canonical VRSS post URL is required.');
             $args=['url'=>$m[3],'comment_id'=>$m[2],'request_id'=>bin2hex(random_bytes(16))];
             if(strtolower($m[1])==='retract')$action='vrss.social.comment_delete';
             else{
-                $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.comment_review','arguments'=>['url'=>$m[3],'comment_id'=>$m[2]],'confirmed'=>false],$remote);
-                $item=(array)($payload['result']['comment']??[]);
-                if(($item['id']??'')!==$m[2]||empty($item['can_moderate'])||!is_int($item['revision']??null))throw new RuntimeException('Refresh this incoming comment before moderating it.');
-                $action='vrss.social.moderate';$args+=['decision'=>strtolower($m[1]),'expected_revision'=>$item['revision']];$commentPreview=['author'=>(string)($item['name']??''),'comment'=>(string)($item['body']??''),'revision'=>$item['revision']];
+                $item=vp3_vrss_preflight_v1($pdo,$user,$principal,$conversationId,'vrss.social.comment_review',['url'=>$m[3],'comment_id'=>$m[2]],$remote);
+                $action='vrss.social.moderate';$args+=['decision'=>strtolower($m[1]),'expected_revision'=>$item['revision']];$commentPreview=['author'=>$item['name'],'comment'=>$item['body'],'revision'=>$item['revision']];
             }
         }elseif($social&&preg_match('~^\s*(?:show|read|review)\s+VRSS\s+comments\s+(https://[^\s<>"\x27]+)(?:\s+after\s+([1-9][0-9]{0,15}))?\s*$~i',$query,$m)){
-            if(!vp3_vrss_post_url_v2d($m[1]))throw new RuntimeException('Include the canonical VRSS post URL.');
-            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.comments','arguments'=>['url'=>$m[1],'cursor'=>$m[2]??'0'],'confirmed'=>false],$remote);
-            $result=(array)$payload['result'];$thread=(array)($result['thread']??[]);$answer=!empty($thread['owner'])?'Incoming comments for your review:':'Published VRSS comments:';
-            foreach(array_slice((array)($thread['items']??[]),0,5) as $item){$body=mb_substr((string)($item['body']??''),0,2000);$body=str_replace('`',"'",$body);$answer.="\n\n".(string)($item['name']??'Comment').(!empty($thread['owner'])?' · '.(string)($item['state']??''):'')."\n> ".str_replace("\n","\n> ",$body)."\nComment ID: ".(string)($item['id']??'');}
-            if(empty($thread['items']))$answer.=' No comments on this page.';
-            if(!empty($thread['next_cursor']))$answer.="\nMore: show VRSS comments ".$m[1].' after '.$thread['next_cursor'];
+            return vp3_vrss_legacy_read_v1($pdo,$user,$principal,$conversationId,'comments',['url'=>$m[1],'cursor'=>$m[2]??'0'],$remote);
         }elseif($social&&preg_match('~^\s*(?:please\s+)?(repost|undo repost)\s+(?:this\s+)?VRSS(?:\s+post)?\s+(https://[^\s<>"\x27]+)\s*$~i',$query,$m)){
-            if(!vp3_vrss_post_url_v2d($m[2]))throw new RuntimeException('Include the canonical original VRSS post URL.');
+            $writing=true;$m[2]=vp3_vrss_url_identity_v1($m[2])??throw new InvalidArgumentException('A canonical original post URL is required.');
             $action='vrss.social.repost';$args=['url'=>$m[2],'enabled'=>strtolower($m[1])==='repost','request_id'=>bin2hex(random_bytes(16))];
             $commentPreview=['publication'=>$args['enabled']?'Publish an attributed link; original content stays with its author':'Withdraw your repost; original post is unchanged'];
         }elseif($social&&preg_match('~^\s*(?:show|read|refresh)\s+VRSS\s+reposts\s+(https://[^\s<>"\x27]+)\s*$~i',$query,$m)){
-            if(!vp3_vrss_post_url_v2d($m[1]))throw new RuntimeException('Include the canonical original VRSS post URL.');
-            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.reposts','arguments'=>['url'=>$m[1]],'confirmed'=>false],$remote);
-            $result=(array)$payload['result'];$repost=(array)($result['repost']??[]);
-            $answer=isset($repost['reposts'])?(int)$repost['reposts'].' reposts reported by the original author.':'The original author’s repost count is unavailable.';
-            if(!empty($repost['pending']))$answer.=' Your repost update is waiting for delivery.';
-            elseif(!empty($repost['reposted']))$answer.=!empty($repost['published'])?' Your attributed repost is published.':' Your repost is paused until its source can be verified.';
+            return vp3_vrss_legacy_read_v1($pdo,$user,$principal,$conversationId,'reposts',['url'=>$m[1]],$remote);
         }elseif($social&&preg_match('~^\s*(?:please\s+)?(like|unlike)\s+(?:this\s+)?VRSS(?:\s+post)?\s+(https://[^\s<>"\x27]+)\s*$~i',$query,$m)){
-            if(!vp3_vrss_post_url_v2d($m[2]))throw new RuntimeException('Include the canonical public VRSS post URL.');
+            $writing=true;$m[2]=vp3_vrss_url_identity_v1($m[2])??throw new InvalidArgumentException('A canonical public post URL is required.');
             $action='vrss.social.like';$args=['url'=>$m[2],'enabled'=>strtolower($m[1])==='like','request_id'=>bin2hex(random_bytes(16))];
         }elseif($social&&preg_match('~^\s*(?:show|read|refresh)\s+VRSS\s+likes\s+(https://[^\s<>"\x27]+)\s*$~i',$query,$m)){
-            if(!vp3_vrss_post_url_v2d($m[1]))throw new RuntimeException('Include the canonical public VRSS post URL.');
-            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.reactions','arguments'=>['url'=>$m[1]],'confirmed'=>false],$remote);
-            $result=(array)$payload['result'];$reaction=(array)($result['reaction']??[]);
-            $answer=isset($reaction['likes'])?(int)$reaction['likes'].' like'.((int)$reaction['likes']===1?'':'s').' reported by the post author.':'The author’s like count is not available yet.';
-            if(!empty($reaction['pending']))$answer.=' Your '.(!empty($reaction['liked'])?'like':'unlike').' is waiting for delivery.';
+            return vp3_vrss_legacy_read_v1($pdo,$user,$principal,$conversationId,'likes',['url'=>$m[1]],$remote);
+        }elseif(preg_match('/^\s*(?:please\s+)?(?:(?:comment|reply|like|unlike|repost|undo repost|approve|hide|retract|mute|unmute|delete)\b|(?:follow|unfollow)\s+VRSS\s+conversation\b)/i',$query)){
+            return ['handled'=>true,'answer'=>'Choose the exact VRSS post, comment or conversation and use its canonical URL before preparing this action. No request was prepared.','actions'=>[],'sources'=>[],
+                'tool_receipt'=>vp3_tool_receipt_v1('system_apps.manage','prepare','clarification_required')];
         }elseif($social&&preg_match('/\b(?:unfollow|unblock|block|remove follower)\b/i',$query,$command)){
-            if(!preg_match('~https?://[^\s<>"\x27]+~i',$query,$m))throw new RuntimeException('Include the canonical VRSS actor URL from your connections.');
-            $action='vrss.social.'.($command[0]==='remove follower'?'remove':strtolower($command[0]));$args=['actor'=>$m[0]];
+            $writing=true;if(!preg_match('~https?://[^\s<>"\x27]+~i',$query,$m))throw new InvalidArgumentException('A canonical VRSS actor URL is required.');
+            $verb=strtolower($command[0]);$action='vrss.social.'.($verb==='remove follower'?'remove':$verb);$args=['actor'=>$m[0]];
         }elseif($social&&preg_match('/\b(?:followers?|connections?|delivery)\b/i',$query)&&!preg_match('/\bfollow\s/i',$query)){
-            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.social.status','arguments'=>[],'confirmed'=>false],$remote);
-            $result=(array)$payload['result'];$state=(array)($result['social']??[]);
-            $answer='VRSS has '.(int)($state['followers']??0).' verified followers and follows '.(int)($state['following']??0).' profiles. '.(int)($state['pending_deliveries']??count((array)($state['deliveries']??[]))).' connection updates are waiting for delivery.';
-            foreach(array_slice((array)($state['relations']??[]),0,10) as $relation){
-                if(($relation['state']??'')==='removed'||!empty($relation['blocked']))continue;
-                $name=mb_substr(str_replace(["\r","\n"],[' ',' '],(string)($relation['name']??'Profile')),0,120);
-                $answer.="\n• ".$name.': '.(($relation['direction']??'')==='in'?'follows you':(string)($relation['state']??'pending'));
-            }
+            return vp3_vrss_legacy_read_v1($pdo,$user,$principal,$conversationId,'connections',[],$remote);
         }elseif($follow||preg_match('/\b(?:follow|subscribe)\b/i',$query)){
-            if(!preg_match('~https?://[^\s<>"\x27]+~i',$query,$m))throw new RuntimeException('Include the website, VRSS profile or feed URL to follow.');
+            $writing=true;if(!preg_match('~https?://[^\s<>"\x27]+~i',$query,$m))throw new InvalidArgumentException('A website, VRSS profile or feed URL is required.');
             $action=$social?'vrss.social.follow':'vrss.follow';$args=['url'=>$m[0]];
-        }elseif(preg_match('/\brefresh\b/i',$query)){
-            $action='vrss.refresh_all';
+        }elseif(preg_match('/^\s*(?:please\s+)?(?:refresh\b|VRSS\s+refresh\b)/i',$query)){
+            $writing=true;$action='vrss.refresh_all';
         }elseif(preg_match('/\b(?:show|read|new|latest)\b/i',$query)&&preg_match('/\bposts?\b/i',$query)){
-            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.feed','arguments'=>[],'confirmed'=>false],$remote);
-            $result=(array)$payload['result'];$posts=(array)($result['feed']['items']??[]);
-            $lines=[];
-            foreach(array_slice($posts,0,8) as $post){
-                $title=(string)($post['title']??$post['body']??'Post');
-                $lines[]='• '.mb_substr(preg_replace('/[\r\n\t]+/',' ',$title)??'',0,180);
-            }
-            $answer=$lines?"Recent VRSS posts:\n".implode("\n",$lines):'Your VRSS feed has no posts yet.';
+            return vp3_vrss_legacy_read_v1($pdo,$user,$principal,$conversationId,'posts',[],$remote);
         }elseif(preg_match('/\b(?:status|health|subscriptions?|following|last refresh|errors?)\b/i',$query)){
-            $payload=vp3_system_apps_remote_v110($uid,'apps.control.invoke',['app_key'=>'vp3.feed','action'=>'vrss.status','arguments'=>[],'confirmed'=>false],$remote);
-            $result=(array)$payload['result'];$subs=(array)($result['subscriptions']??[]);
-            $errors=count(array_filter($subs,static fn($s)=>!empty($s['error'])));
-            $answer='VRSS follows '.count($subs).' feeds. Automatic checks run about every 15 minutes; '.$errors.' sources are retrying after an error.';
-            foreach(array_slice($subs,0,8) as $sub){
-                $title=mb_substr(str_replace(["\r","\n","`"],[' ',' ',"'"],(string)($sub['title']??'Feed')),0,120);
-                $last=(string)($sub['last_success_at']??'');
-                $answer.="\n• `".$title.'`: '.($last!==''?'last updated '.$last:'waiting for first update')
-                    .(!empty($sub['error'])?' · retrying after an error':'');
-            }
+            return vp3_vrss_legacy_read_v1($pdo,$user,$principal,$conversationId,'subscriptions',[],$remote);
         }else{return $empty;}
         if($action!==''){
-            $plan=vp3_system_apps_agent_prepare_v160($user,'vrss.invoke','vp3.feed',['action'=>$action,'arguments'=>$args],
+            $live=vp3_vrss_authority_v1($pdo,$user,$principal,['conversation_id'=>$conversationId]);
+            $plan=vp3_system_apps_agent_prepare_v160($live,'vrss.invoke','vp3.feed',['action'=>$action,'arguments'=>$args],
                 ['app'=>'VRSS Feed','operation'=>$action,'target'=>(string)($args['url']??$args['actor']??'All followed feeds')]+$commentPreview,$conversationId,null,$pdo);
             return vp3_system_apps_agent_prepare_result_v160($plan,'I prepared the VRSS action for your review.');
         }
-    }catch(Throwable $e){$answer='I could not complete the VRSS request: '.mb_substr($e->getMessage(),0,300);}
-    return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],
-        'sources'=>[['source'=>'homeserver:vrss','title'=>'HomeServer VRSS']],'vrss'=>$result];
+        return $empty;
+    }catch(Throwable $e){
+        if($writing){$failure=vp3_system_app_action_failure_v1($e,'prepare');unset($failure['system_app_plan']);return $failure;}
+        return vp3_vrss_failure_v1($e);
+    }
 }
 
 /** Project only committed, account-bound HomeServer notices into the existing Chat delivery pipeline. */

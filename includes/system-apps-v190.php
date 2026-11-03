@@ -18,6 +18,13 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
     $result=is_array($plan['result']??null)?$plan['result']:[];
     $snapshot=is_array($result['system_apps']??null)?$result['system_apps']:[];
     $reconcilePending=!empty($result['reconcile_pending']);
+    $vrssRecorded=$type==='vrss.invoke'&&!empty($plan['completed']);
+    $outcomeLabel='';
+    if($vrssRecorded){
+        $result=vp3_vrss_saved_outcome_v1($result);
+        $status=$result['verified']?'recorded':'failed';
+        $outcomeLabel=vp3_vrss_outcome_label_v1($result['vrss_outcome']??null);
+    }
 
     $labels=[
       'ownership.acquire'=>'Add app',
@@ -35,7 +42,9 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
     if($appName==='')$appName=$appKey!==''?$appKey:'System Apps';
 
     $summary='';
-    if($status==='prepared'){
+    if($vrssRecorded){
+        $summary=vp3_vrss_action_text_v1($result,!empty($plan['idempotent_replay']));
+    }elseif($status==='prepared'){
         $summary='Review this action, then confirm it. Nothing changes until you confirm.';
     }elseif($status==='completed'){
         $summary=$reconcilePending
@@ -80,7 +89,7 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
           'url'=>url('/apps.php'),
           'kind'=>'secondary',
         ];
-    }elseif($status==='completed'){
+    }elseif(in_array($status,['completed','recorded'],true)){
         $actions[]=['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php'),'kind'=>'primary'];
         if(in_array($type,['hosting.bind','hosting.unbind'],true)){
             $actions[]=['type'=>'open_url','label'=>'Manage Hosting','url'=>url('/hosting.php'),'kind'=>'secondary'];
@@ -103,6 +112,7 @@ function vp3_system_apps_action_card_v190(?array $plan): ?array
     return [
       'contract'=>'vp3.system-app-action-card.v1',
       'status'=>$status,
+      'outcome_label'=>$outcomeLabel,
       'title'=>$title,
       'summary'=>$summary,
       'action_type'=>$type,

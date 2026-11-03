@@ -1469,7 +1469,8 @@
     const status=String(card.status||'prepared');
     const details=Array.isArray(card.details)?card.details:[];
     const actions=Array.isArray(card.actions)?card.actions:[];
-    const statusLabel=status==='completed'?'Completed':status==='failed'?'Needs attention':'Confirmation required';
+    const recordedLabels=['Queued','Pending','Saved locally','Verified'];
+    const statusLabel=status==='recorded'?(recordedLabels.includes(card.outcome_label)?card.outcome_label:'Recorded'):status==='completed'?'Completed':status==='failed'?'Needs attention':'Confirmation required';
     const detailsHtml=details.length
       ? '<dl class="chat-system-app-action-details">'+details.map(item=>'<div><dt>'+escapeHtml(item.label||'')+'</dt><dd>'+escapeHtml(item.value||'')+'</dd></div>').join('')+'</dl>'
       : '';

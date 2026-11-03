@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'voice-learning-v1-20261101';
+$controlBuild .= '-vrss-outcome-cards-s8b-20261103';
 $controlBuild .= '-canvas-image-generation-v1-listening-continuation-v1-live-player-history-v1-audio-debug-v1-recognition-reliability-v1-participant-conversation-v2-20261102-participant-updates-20261102-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351-speech-recovery-20261031-mic-startup-20261101';

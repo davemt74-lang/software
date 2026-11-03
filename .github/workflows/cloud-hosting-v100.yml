@@ -11,6 +11,11 @@ on:
       - "includes/system-apps-v150.php"
       - "includes/system-apps-v160.php"
       - "includes/vrss-v2b.php"
+      - "includes/agent-vrss-*.php"
+      - "includes/agent-app-operations-v1.php"
+      - "includes/agent-tool-receipts-v1.php"
+      - "tests/agent-vrss-*.php"
+      - "tests/fixtures/vrss-agent-v1.php"
       - "includes/system-apps-v170.php"
       - "includes/system-apps-v180.php"
       - "includes/system-apps-v190.php"
@@ -100,6 +105,11 @@ on:
       - "includes/system-apps-v150.php"
       - "includes/system-apps-v160.php"
       - "includes/vrss-v2b.php"
+      - "includes/agent-vrss-*.php"
+      - "includes/agent-app-operations-v1.php"
+      - "includes/agent-tool-receipts-v1.php"
+      - "tests/agent-vrss-*.php"
+      - "tests/fixtures/vrss-agent-v1.php"
       - "includes/system-apps-v170.php"
       - "includes/system-apps-v180.php"
       - "includes/system-apps-v190.php"
@@ -230,6 +240,8 @@ jobs:
           php -l includes/system-apps-v140.php
           php -l includes/system-apps-v150.php
           php -l includes/system-apps-v160.php
+          php -l includes/agent-vrss-read-v1.php
+          php -l includes/agent-vrss-outcomes-v1.php
           php -l includes/system-apps-v170.php
           php -l includes/system-apps-v180.php
           php -l includes/system-apps-v190.php
@@ -392,6 +404,8 @@ jobs:
           php tests/system-apps-v240-mysql.php
           php tests/system-apps-v250-mysql.php
           php tests/agent-private-share-read-v1.php
+          php tests/agent-vrss-read-v1.php
+          php tests/agent-vrss-outcomes-v1.php
           php tests/cloud-hosting-v100-mysql.php
           php tests/cloud-hosting-v110-mysql.php
           php tests/cloud-hosting-v120-mysql.php
