@@ -35,7 +35,20 @@ try{
             ps_race_check($scenario==='play_then_call'?($two['ok']??false)===true:($two['ok']??true)===false,$scenario.': call preempts or prevents playback');$attempt=vp3_profile_speech_attempt_row_pa4a($pdo,$claim['attempt_id']);ps_race_check($attempt['delivery_state']==='blocked'&&!in_array($attempt['playback_state'],['granted','playing'],true)&&(int)$attempt['play_lease_until_ms']===0,$scenario.': no usable playback grant survives accepted call');
             ps_race_check((int)$pdo->query('SELECT active_call_id FROM profile_call_slots_pa3c WHERE owner_user_id=1')->fetchColumn()===(int)$offer['call_id'],$scenario.': exact human call owns slot');
         }
-        ps_race_check(pa3_count('profile_agent_messages')===0&&pa3_count('agent_workflow_runs')===0,$scenario.': source narration and calling fabricate no public text or model task');
+        ps_race_check(pa3_count('profile_agent_messages',"sender_type IN ('visitor','agent','owner')")===0,$scenario.': narration and calling fabricate no visible public message');
+        if(in_array($scenario,['play_then_call','call_then_play'],true)){
+            // A call-only native conversation has one hidden authority binding,
+            // not a visitor/Agent/owner message or an inference task.
+            $messages=$pdo->query('SELECT conversation_id,sender_type,sender_user_id,message,context_json FROM profile_agent_messages')->fetchAll(PDO::FETCH_ASSOC);
+            $binding=count($messages)===1?json_decode((string)$messages[0]['context_json'],true):null;
+            $expected=$offer['context']['conversation_authority']+['profile_agent_id'=>(int)$offer['context']['agent_id'],'profile_session_id'=>(int)$offer['context']['session_id']];
+            $exact=is_array($binding)&&count($binding)===count($expected)+1&&(bool)preg_match('/^[a-f0-9]{32}$/D',(string)($binding['response_token']??''));
+            foreach($expected as $key=>$value)$exact=$exact&&($binding[$key]??null)===$value;
+            $call=vp3_profile_call_row_pa3c($pdo,(int)$offer['call_id']);
+            ps_race_check($exact&&(int)$messages[0]['conversation_id']===(int)$offer['conversation_id']&&$messages[0]['sender_type']==='system'&&$messages[0]['sender_user_id']===null&&$messages[0]['message']===''
+                &&$call!==null&&(int)$call['conversation_id']===(int)$offer['conversation_id']&&(int)$call['owner_user_id']===$expected['owner_user_id']&&(int)$call['profile_agent_id']===$expected['profile_agent_id']&&(int)$call['profile_session_id']===$expected['profile_session_id']&&(int)$call['visitor_user_id']===$expected['visitor_user_id']&&hash_equals((string)$call['credential_hash'],$expected['credential_hash']),$scenario.': only hidden authority record exactly binds the native call conversation');
+        }else ps_race_check(pa3_count('profile_agent_messages')===0,$scenario.': narration alone creates no public conversation authority record');
+        ps_race_check(pa3_count('agent_workflow_runs')===0&&pa3_count('agent_workflow_actions')===0,$scenario.': no model or other workflow is created before provider work');
     }
 }finally{foreach($workers as [$process,$pipes])if(is_resource($process)){proc_terminate($process);foreach($pipes as $pipe)if(is_resource($pipe))fclose($pipe);proc_close($process);}foreach(glob($temp.'/*')?:[] as $file)unlink($file);rmdir($temp);}
 echo 'PROFILE_SPEECH_CONCURRENCY_PA4A=PASS ('.$checks." checks; MySQL)\n";
