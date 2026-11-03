@@ -99,6 +99,8 @@ function agent_worker_cloud_execute_once_v1910(PDO $pdo,array $user,int $limit=2
         return ['ok'=>false,'reason'=>'authorization_denied','receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
     }
 
+    if(($run['action_capability_key']??'')==='missions.analyze'){require_once __DIR__.'/cloud-missions-v1.php';return cloud_mission_execute_claim_v1($pdo,$user,$claim);}
+
     $type=strtolower(trim((string)($run['action_type']??'')));
     $capability=trim((string)($run['action_capability_key']??''));
     $instruction=trim((string)($run['action_summary']??''));

@@ -8,15 +8,15 @@ if (!shell||!form||!cfg.endpoint||!cfg.csrf) return;
 const root=document.createElement('details');
 root.className='vp3-agent-teams-a3';
 root.setAttribute('data-agent-teams-a3','');
-root.innerHTML='<summary><span aria-hidden="true">◉</span> Agent Teams <small>HomeServer missions</small></summary>'+
- '<div class="vp3-teams-body"><p>Specialists research and prepare changes for your review on HomeServer.</p>'+
+root.innerHTML='<summary><span aria-hidden="true">◉</span> Agent Teams <small>Cloud + HomeServer missions</small></summary>'+
+ '<div class="vp3-teams-body"><p>Cloud specialists analyze approved Knowledge and Brain evidence. HomeServer adds local tools and browser operations.</p>'+
  '<form class="vp3-teams-create"><label for="vp3MissionObjective">Mission objective</label>'+
  '<div class="vp3-teams-entry"><input id="vp3MissionObjective" name="objective" maxlength="4000" required '+
  'placeholder="Give the team a research objective…" autocomplete="off">'+
  '<button type="submit">Create &amp; run</button></div>'+
  '<label class="vp3-provider-label" for="vp3MissionProvider">Initial worker model</label>'+
  '<select id="vp3MissionProvider" name="provider_key">'+
- '<option value="auto">HomeServer default</option><option value="ollama">Ollama (local)</option>'+
+ '<option value="auto">Configured runtime default</option><option value="ollama">Ollama (local)</option>'+
  '<option value="anthropic">Claude / Anthropic</option><option value="openai">OpenAI</option>'+
  '<option value="openrouter">OpenRouter</option></select>'+
  '<small class="vp3-teams-provider-note">Workers use isolated contexts. Prepare a mission to review read capabilities, budgets and outputs; browser pages need separate approval.</small>'+
@@ -54,11 +54,12 @@ async function api(action,extra,signal){
 }
 // Automatic routing preserves a lost-response intent before any dispatch.
 const chatInput=document.getElementById('chatInput'),chatSubmit=form.querySelector('button[type="submit"]');
+const runtimeSelect=el('select');runtimeSelect.id='vp3MissionRuntime';runtimeSelect.setAttribute('aria-label','Mission execution location');for(const [value,label] of [['cloud','VP3 Cloud'],['homeserver','HomeServer']]){const o=el('option','',label);o.value=value;runtimeSelect.appendChild(o);}const runtimeLabel=el('label','','Mission execution ');runtimeLabel.appendChild(runtimeSelect);create.prepend(runtimeLabel);create.querySelector('[name="prepare_only"]').checked=true;create.querySelector('button[type="submit"]').textContent='Prepare Mission';const selectProvider=create.querySelector('[name="provider_key"]');const syncRuntime=()=>{selectProvider.disabled=runtimeSelect.value==='cloud';if(selectProvider.disabled)selectProvider.value='auto';};runtimeSelect.addEventListener('change',syncRuntime);syncRuntime();
 const taskMode=el('select');taskMode.id='vp3ChatTaskMode';taskMode.setAttribute('aria-label','Work mode');
 for(const [value,label] of [['automatic','Automatic'],['chat','Chat only'],['specialists','Specialist plan']]){const option=el('option','',label);option.value=value;taskMode.appendChild(option);}
 const taskLabel=el('label','vp3-chat-task-mode','Work mode ');taskLabel.appendChild(taskMode);if(chatInput)shell.insertBefore(taskLabel,form);
 function taskContext(){
-const raw=Number(window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()??window.STONEFELLOW_CHAT?.initialConversationId??0);return {thread_id:Number.isSafeInteger(raw)&&raw>0&&raw<2147483648?raw:0};
+const raw=Number(window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()??window.STONEFELLOW_CHAT?.initialConversationId??0);return {thread_id:Number.isSafeInteger(raw)&&raw>0&&raw<2147483648?raw:0,agent_id:Number(window.STONEFELLOW_CHAT?.agentId)||0,executor:runtimeSelect.value};
 }
 let followupContext='',followupReview=null,followupRetry=null;
 const followupHost=el('section','vp3-mission-followup');followupHost.setAttribute('aria-label','Review mission command');followupHost.setAttribute('aria-live','polite');followupHost.hidden=true;shell.insertBefore(followupHost,form);
@@ -227,6 +228,7 @@ function renderScheduleList(parent=schedulesPanel){
 }
 
 function renderScheduleForm(m){
+ if(m.execution_target==='cloud')return;
  const contract=toolsByMission.get(m.id);if(m.status!=='planned'||!m.chat_task||!contract?.configured||!contract.active||m.private||m.authority_current===false)return;
  if((contract.browser_requirements||[]).length)return;
  const panel=el('section','vp3-schedule-create');panel.setAttribute('aria-label','Schedule reviewed task');panel.appendChild(el('h4','','Schedule this reviewed task'));
@@ -343,7 +345,7 @@ async function pollProgress(){
  try{
   const response=await api('progress.feed',{},controller.signal);
   if(busy||generation!==viewGeneration||context!==JSON.stringify(taskContext()))return;
-  if(!Array.isArray(response.items)||!response.notifications||!Array.isArray(response.notifications.items))throw new Error('Update HomeServer to enable live mission progress.');
+  if(!Array.isArray(response.items)||!response.notifications||!Array.isArray(response.notifications.items))throw new Error('The Mission runtime did not return live progress.');
   items=response.items;missionNotices=response.notifications;progressReceived=Date.now();progressConnected=true;lastRefresh=Date.now();
   for(const m of items){if(m.private||m.authority_current===false){toolsByMission.delete(m.id);toolDrafts.delete(m.id);changesByMission.delete(m.id);for(const key of liveByWorker.keys()){if(key.startsWith(m.id+'|')){liveByWorker.delete(key);browserByWorker.delete(key);}}}}
   showList();const current=items.find(m=>m.id===selected);if(current&&(current.private||current.authority_current===false||!detail.contains(document.activeElement)))showMission(current);publishProgress();
@@ -351,6 +353,16 @@ async function pollProgress(){
   if(!busy&&generation===viewGeneration){progressConnected=false;if([401,403,419].includes(e.status))clearPrivateMissionState();publishProgress();say('Mission updates disconnected. Last received status is shown; no work is replayed.');}
  }finally{window.clearTimeout(timer);progressInflight=false;}
 }
+let cloudTickInflight=false;
+async function tickCloudMission(){
+ if(cloudTickInflight||busy||document.hidden)return;
+ const mission=items.find(m=>m.execution_target==='cloud'&&m.status==='running'&&m.authority_current!==false);if(!mission)return;
+ cloudTickInflight=true;
+ try{await api('cloud.tick',{mission_id:mission.id});if(!busy)await pollProgress();}
+ catch(e){if(!busy)say(e.message||'Cloud worker is waiting. Check Mission history before retrying.');}
+ finally{cloudTickInflight=false;}
+}
+window.setInterval(()=>void tickCloudMission(),5000);
 window.setInterval(pollProgress,5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void pollProgress();});
 window.addEventListener('online',()=>void pollProgress());
@@ -373,7 +385,7 @@ function showMission(m){
    .map(pane=>pane.dataset.browserWorker));
  selected=String(m.id||'');detail.hidden=false;detail.replaceChildren();
  detail.appendChild(el('h3','',m.objective||'Mission'));
- detail.appendChild(el('p','vp3-teams-meta',missionProgress(m)+' · '+fmt(m.updated_at||m.created_at)+' · Specialists prepare changes; saving requires your review'));
+ detail.appendChild(el('p','vp3-teams-meta',missionProgress(m)+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.execution_target==='cloud'?'VP3 Cloud analysis; no external changes':'Specialists prepare changes; saving requires your review')));
  const buttons=el('div','vp3-teams-actions');
  if(m.status==='planned'){buttons.appendChild(btn('Review specialist assignments','tools.get',selected));if(!m.chat_task||m.tools_configured){const start=btn('Start',m.tools_configured||toolsByMission.get(selected)?.configured?'tools.start':'start',selected);const needs=toolsByMission.get(selected)?.browser_requirements||[];start.disabled=needs.some(r=>!r.ready||!r.expires_at||Date.parse(r.expires_at.replace(' ','T')+'Z')<=Date.now());start.dataset.browserBlocked=String(start.disabled);buttons.appendChild(start);}}
  if(m.status==='running')buttons.appendChild(btn('Pause','pause',selected));
@@ -401,7 +413,7 @@ function showMission(m){
    let text=t.result;try{const out=JSON.parse(text);if(out.kind&&out.body)text=out.title+'\n\n'+out.body+'\n\nEvidence IDs: '+(out.citations||[]).join(', ');}catch(_){}
    exp.appendChild(el('pre','',text));li.appendChild(exp);}
   for(const source of t.browser_sources||[]){try{const url=new URL(source.url);if(url.protocol!=='https:'||url.username||url.password)continue;const evidence=el('p','vp3-browser-source');const link=el('a','',source.title||url.hostname);link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';evidence.appendChild(link);evidence.appendChild(el('small','',' · '+source.citation_id+' · '+fmt(source.captured_at)));li.appendChild(evidence);}catch(_){}}
-  const browser=el('details','vp3-worker-browser');
+  const browser=el('details','vp3-worker-browser');browser.hidden=m.execution_target==='cloud';
   browser.dataset.browserWorker=t.id;
   browser.open=openBrowsers.has(t.id);
   browser.appendChild(el('summary','','Worker browser · supervised read-only'));
@@ -730,7 +742,7 @@ function renderAssignments(m){
  const draft=toolDrafts.get(m.id)||contract.assignments||{};
  const field=(node,key,tid,value)=>{node.dataset.toolField=key;if(tid)node.dataset.toolTask=tid;node.value=String(value);return node;};
  const label=(text,node)=>{const x=el('label','',text+' ');x.appendChild(node);return x;};
- const parallel=field(el('input'),'max_parallel','',draft.max_parallel||2);parallel.type='number';parallel.min='1';parallel.max='4';
+ const parallel=field(el('input'),'max_parallel','',draft.max_parallel||2);parallel.type='number';parallel.min='1';parallel.max=String(contract.max_parallel_limit||4);
  panel.appendChild(label('Concurrent workers (1–4)',parallel));
  for(const task of m.tasks||[]){
   const entry=(draft.assignments||[]).find(a=>a.task_id===task.id)||{tools:[],max_calls:0,output:'analysis',browser_url:''};
@@ -915,11 +927,10 @@ create.addEventListener('submit',async ev=>{
  ev.preventDefault();if(busy)return;const objective=input.value.trim();if(!objective||objective.length>4000)return;
  const request_id=window.crypto&&window.crypto.randomUUID?window.crypto.randomUUID():'';
  if(!request_id){say('Secure request IDs are unavailable in this browser.');return;}
- const raw=Number((window.STONEFELLOW_CHAT||{}).initialConversationId||0);
- const thread_id=Number.isSafeInteger(raw)&&raw>0&&raw<2147483648?raw:0;
+ const thread_id=taskContext().thread_id;
  setBusy(true);say('Creating worker mission…');
  try{
-  const created=await api('create',{objective,request_id,thread_id});
+  const created=await api('create',{objective,request_id,thread_id,agent_id:Number(window.STONEFELLOW_CHAT?.agentId)||0,executor:runtimeSelect.value});
   const mid=created.mission&&created.mission.id;if(!mid)throw new Error('Mission ID was not returned.');
   selected=mid;input.value='';showMission(created.mission);
   const preferred=String(create.querySelector('[name="provider_key"]')?.value||'auto');
@@ -929,7 +940,7 @@ create.addEventListener('submit',async ev=>{
    say('Configuring '+workers.length+' worker models…');
    for(const task of workers){await api('bind_provider',{mission_id:mid,task_id:task.id,provider_key:preferred});}
   }
-  if(create.querySelector('[name="prepare_only"]')?.checked){
+  if(created.mission.execution_target==='cloud'||create.querySelector('[name="prepare_only"]')?.checked){
    say('Mission prepared. Review specialist assignments and approve browser pages before starting.');
    await load();
   }else{

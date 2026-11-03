@@ -144,6 +144,8 @@ try {
   assert.equal(await page.locator('[data-agent-teams-a3]').count(),1,'one mission panel');
   assert.equal(await page.locator('#chatForm').count(),1,'original Chat composer retained');
   await page.locator('[data-agent-teams-a3]>summary').click();
+  await page.locator('#vp3MissionRuntime').selectOption('homeserver');
+  await page.locator('[name="prepare_only"]').uncheck();
   await page.waitForFunction(()=>document.querySelector('.vp3-teams-list').textContent.includes('Viewing')===false && document.querySelector('.vp3-teams-list').textContent.includes('View'));
   await page.locator('#vp3MissionObjective').fill('Compare three hosting providers');
   await page.locator('#vp3MissionProvider').selectOption('anthropic');

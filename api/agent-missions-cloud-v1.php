@@ -22,6 +22,12 @@ try {
         throw new RuntimeException('Your session expired. Refresh the page.',419);
 
     $action=trim((string)($input['action']??''));
+    if(function_exists('db')&&db()&&function_exists('agent_job_engine_schema_ready_v1900')){
+        require_once __DIR__.'/../includes/cloud-missions-v1.php';
+        session_write_close();
+        $cloud=cloud_mission_dispatch_v1(db(),$user,$action,$input);
+        if($cloud!==null){session_write_close();echo json_encode($cloud,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);return;}
+    }
     if($action==='diagnostics.get'){
         require_once __DIR__.'/../includes/agent-integration-diagnostics-v1.php';
         echo json_encode(['ok'=>true,'contract'=>'vp3.agent-missions.cloud.v1','diagnostics'=>vp3_agent_integration_diagnostics_v1($user)],JSON_THROW_ON_ERROR);
