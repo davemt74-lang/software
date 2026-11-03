@@ -14,6 +14,37 @@ const STONEFELLOW_PROFILE_VISITOR_COOKIE_MAX_AGE_V243 = 34560000; // 400 days.
 const STONEFELLOW_PROFILE_VISITOR_REENTRY_SECONDS_V243 = 1800; // 30-minute visit boundary.
 const STONEFELLOW_PROFILE_CONTACT_REF_HEX_V243 = 16; // 64-bit display reference.
 
+/** Conversation access is separate from the long-lived CRM contact identity. */
+function profile_conversation_cookie_token_v1(): string
+{
+    $name='sf_profile_conversation';
+    $token=strtolower(trim((string)($_COOKIE[$name]??'')));
+    if(preg_match('/^[a-f0-9]{64}$/D',$token))return $token;
+    $token=bin2hex(random_bytes(32));$_COOKIE[$name]=$token;
+    if(!headers_sent())setcookie($name,$token,[
+        'expires'=>time()+STONEFELLOW_PROFILE_VISITOR_COOKIE_MAX_AGE_V243,'path'=>'/',
+        'secure'=>!empty($_SERVER['HTTPS'])&&strtolower((string)$_SERVER['HTTPS'])!=='off',
+        'httponly'=>true,'samesite'=>'Lax',
+    ]);
+    return $token;
+}
+
+function profile_conversation_native_authority_v1(int $ownerUserId,int $visitorUserId): array
+{
+    return [
+        'contract'=>'vp3.profile-conversation-authority.v1','transport'=>'native',
+        'owner_user_id'=>$ownerUserId,'visitor_user_id'=>max(0,$visitorUserId),
+        'credential_hash'=>hash('sha256','profile-conversation-v1|'.$ownerUserId.'|'.max(0,$visitorUserId).'|'.profile_conversation_cookie_token_v1()),
+    ];
+}
+
+function profile_conversation_browser_namespace_v1(int $ownerUserId,int $visitorUserId): string
+{
+    $authority=profile_conversation_native_authority_v1($ownerUserId,$visitorUserId);
+    // This separate display namespace is never accepted as a conversation credential.
+    return hash('sha256','profile-widget-v1|'.$authority['credential_hash']);
+}
+
 function profile_visitor_cookie_token_v243(int $ownerUserId): string
 {
     $name = STONEFELLOW_PROFILE_VISITOR_COOKIE_V243;

@@ -466,7 +466,7 @@ function profile_agent_conversation_create(PDO $pdo,array $profile,array $agent,
 
 function profile_agent_messages(PDO $pdo,int $conversationId,int $limit=120): array
 {
-    $limit=max(1,min(200,$limit));$stmt=$pdo->prepare('SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? ORDER BY id DESC LIMIT '.$limit);$stmt->execute([$conversationId]);return array_reverse($stmt->fetchAll()?:[]);
+    $limit=max(1,min(200,$limit));$stmt=$pdo->prepare("SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND sender_type IN ('visitor','agent','owner') ORDER BY id DESC LIMIT ".$limit);$stmt->execute([$conversationId]);return array_reverse($stmt->fetchAll()?:[]);
 }
 
 function profile_agent_rate_check(PDO $pdo,int $conversationId): void

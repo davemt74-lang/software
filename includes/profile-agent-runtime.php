@@ -100,7 +100,7 @@ function profile_runtime_visitor_descriptor(PDO $pdo,int $ownerUserId,array $row
 function profile_runtime_attention_list(PDO $pdo,int $ownerUserId,int $limit=20): array
 {
     $limit=max(1,min(50,$limit));
-    $stmt=$pdo->prepare("SELECT a.*,s.identity_disclosed,s.session_key,s.id AS profile_session_id,c.status AS conversation_status,c.last_message_at AS conversation_last_message FROM agent_attention_items a LEFT JOIN profile_agent_conversations c ON c.id=a.source_conversation_id LEFT JOIN profile_events e ON e.id=a.source_event_id LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE a.owner_user_id=? AND a.status IN ('pending','seen','snoozed') AND (a.snoozed_until IS NULL OR a.snoozed_until<=NOW()) ORDER BY a.priority DESC,a.created_at DESC,a.id DESC LIMIT ".$limit);
+    $stmt=$pdo->prepare("SELECT a.*,CASE WHEN s.visitor_user_id=a.visitor_user_id THEN s.identity_disclosed ELSE 0 END AS identity_disclosed,s.session_key,s.id AS profile_session_id,c.status AS conversation_status,c.last_message_at AS conversation_last_message FROM agent_attention_items a LEFT JOIN profile_agent_conversations c ON c.id=a.source_conversation_id LEFT JOIN profile_events e ON e.id=a.source_event_id LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE a.owner_user_id=? AND a.status IN ('pending','seen','snoozed') AND (a.snoozed_until IS NULL OR a.snoozed_until<=NOW()) ORDER BY a.priority DESC,a.created_at DESC,a.id DESC LIMIT ".$limit);
     $stmt->execute([$ownerUserId]);
     $rows=$stmt->fetchAll()?:[];
     foreach($rows as &$row){
@@ -151,11 +151,11 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
         unset($v['visitor_user_id'],$v['session_key']);
     }unset($v);
 
-    $convos=$pdo->prepare('SELECT c.id,c.profile_agent_id,c.profile_session_id,c.status,c.last_summary,c.started_at,c.last_message_at,s.session_key,s.identity_disclosed,s.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.owner_user_id=? ORDER BY c.last_message_at DESC,c.id DESC LIMIT 100');
+    $convos=$pdo->prepare('SELECT c.id,c.profile_agent_id,c.profile_session_id,c.status,c.last_summary,c.started_at,c.last_message_at,s.session_key,CASE WHEN s.visitor_user_id=c.visitor_user_id THEN s.identity_disclosed ELSE 0 END AS identity_disclosed,c.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.owner_user_id=? ORDER BY c.last_message_at DESC,c.id DESC LIMIT 100');
     $convos->execute([$uid]);$conversationRows=$convos->fetchAll()?:[];
     foreach($conversationRows as &$c){$c=array_merge($c,profile_runtime_visitor_descriptor($pdo,$uid,$c));unset($c['visitor_user_id'],$c['session_key']);}unset($c);
 
-    $events=$pdo->prepare('SELECT e.id,e.profile_session_id,e.event_type,e.priority,e.metadata_json,e.created_at,s.session_key,s.identity_disclosed,s.visitor_user_id FROM profile_events e LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE e.owner_user_id=? ORDER BY e.created_at DESC,e.id DESC LIMIT 100');
+    $events=$pdo->prepare('SELECT e.id,e.profile_session_id,e.event_type,e.priority,e.metadata_json,e.created_at,s.session_key,CASE WHEN s.visitor_user_id=e.visitor_user_id THEN s.identity_disclosed ELSE 0 END AS identity_disclosed,e.visitor_user_id FROM profile_events e LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE e.owner_user_id=? ORDER BY e.created_at DESC,e.id DESC LIMIT 100');
     $events->execute([$uid]);$activityRows=$events->fetchAll()?:[];
     foreach($activityRows as &$event){
         $event=array_merge($event,profile_runtime_visitor_descriptor($pdo,$uid,$event));
@@ -265,7 +265,7 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
 
 function profile_runtime_conversation_owner(PDO $pdo,int $conversationId,int $ownerUserId): ?array
 {
-    $stmt=$pdo->prepare('SELECT c.*,s.session_key,s.identity_disclosed,s.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.id=? AND c.owner_user_id=? LIMIT 1');
+    $stmt=$pdo->prepare('SELECT c.*,s.session_key,CASE WHEN s.visitor_user_id=c.visitor_user_id THEN s.identity_disclosed ELSE 0 END AS identity_disclosed FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.id=? AND c.owner_user_id=? LIMIT 1');
     $stmt->execute([$conversationId,$ownerUserId]);
     $row=$stmt->fetch();
     if(!$row)return null;

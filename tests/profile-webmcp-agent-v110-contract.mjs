@@ -18,7 +18,9 @@ assert.match(webmcp,/registeredCapabilities/,'intent resolver must derive adapte
 assert.match(webmcp,/requires_domain_adapter/,'intent resolver must report only genuinely missing adapters');
 
 assert.match(service,/vp3_profile_agent_public_conversation_v390/,'conversation authority must use v3.90 boundary');
-assert.match(service,/profile_agent_rate_check\(\$pdo,\$cid\)/,'canonical per-conversation rate limit retained');
+assert.match(service,/vp3_profile_agent_public_admit_v1\(\$pdo,\$ctx\)/,'canonical admission must apply before starting or continuing a thread');
+assert.match(service,/c\.owner_user_id=\? AND c\.profile_session_id=\?/,'starting another thread must not reset owner/session admission');
+assert.match(service,/vp3_profile_agent_public_admit_v1\(\$pdo,\$ctx\);[\s\S]*vp3_profile_agent_public_create_bound_v1/,'admission precedes new conversation allocation');
 assert.match(service,/profile_agent_context\(/,'approved Profile Agent context retained');
 assert.match(service,/profile_agent_transcript_brain_context_v255/,'transcript brain context retained');
 assert.match(service,/homeserver_profile_v235_answer/,'HomeServer Profile Agent compute retained');

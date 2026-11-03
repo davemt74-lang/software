@@ -5,6 +5,7 @@ const read=path=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 const boundary=read('includes/profile-agent-boundary-v390.php');
 const lifecycle=read('includes/user-agent-lifecycle-v390.php');
 const profileApi=read('api/profile-agent.php');
+const publicService=read('includes/profile-agent-public-service-v110.php');
 const agentApi=read('api/user-agent-system-v236.php');
 const publicUi=read('profile-agent.js');
 const accountUi=read('account-agent-settings-v236.js');
@@ -19,8 +20,13 @@ assert.match(boundary,/VP3_PROFILE_AGENT_BOUNDARY_V390/);
 assert.match(boundary,/function vp3_profile_agent_public_conversation_v390/);
 assert.match(boundary,/c\.id=\? AND c\.owner_user_id=\? AND c\.profile_agent_id=\? AND c\.profile_session_id=\?/);
 assert.match(boundary,/FOR UPDATE/);
-assert.match(profileApi,/vp3_profile_agent_public_conversation_v390\(\$pdo,\$cid,\$owner,\$agentId,\$sessionId/);
-assert.match(profileApi,/Conversation not found for this Profile Agent/);
+assert.match(profileApi,/require_once[^;]*profile-agent-public-service-v110\.php/);
+for(const operation of ['state','message','poll'])assert.match(profileApi,new RegExp(`vp3_profile_agent_public_${operation}_service_v110\\(\\$pdo,\\$publicCtx`));
+assert.match(publicService,/vp3_profile_agent_public_bound_conversation_v1/);
+assert.match(publicService,/Conversation not found for this Profile Agent/);
+assert.match(boundary,/vp3_profile_agent_conversation_authority_valid_v1/);
+assert.match(boundary,/visitor_user_id/);
+assert.match(boundary,/hash_equals\(\(string\)\$stored\['credential_hash'\]/);
 assert.doesNotMatch(profileApi,/\$cid\?profile_agent_conversation_get\(/,'public API no longer authorizes by owner + session while ignoring Agent identity');
 
 // Owner history is deliberately broader than public authority: the owner can
@@ -39,19 +45,20 @@ assert.match(boundary,/status==='resolved'/);
 assert.match(boundary,/SET status='open'/);
 assert.match(boundary,/function vp3_profile_agent_agent_may_reply_v390/);
 assert.match(boundary,/==='open'/);
-assert.match(profileApi,/if\(!vp3_profile_agent_agent_may_reply_v390\(\$conversation\)\)/);
-assert.match(profileApi,/'awaiting_owner'=>true/);
+assert.match(publicService,/if\(!vp3_profile_agent_agent_may_reply_v390\(\$conversation\)\)/);
+assert.match(publicService,/'awaiting_owner'=>true/);
 assert.match(profileApi,/owner_reply[\s\S]*vp3_profile_agent_owner_conversation_v390\(\$pdo,\$cid,\$uid,true\)/);
 assert.match(profileApi,/SET status='owner_joined'/);
-assert.match(profileApi,/The owner may have joined or resolved the thread while model generation was/);
-assert.match(profileApi,/\$current=vp3_profile_agent_public_conversation_v390\(\$pdo,\$cid,\$owner,\$agentId,\$sessionId,true\)/);
-assert.match(profileApi,/if\(!vp3_profile_agent_agent_may_reply_v390\(\$current\)\)/);
+assert.match(publicService,/\$current=vp3_profile_agent_public_bound_conversation_v1\(\$pdo,\$ctx,\$cid,true\)/);
+assert.match(publicService,/if\(!vp3_profile_agent_agent_may_reply_v390\(\$current\)\)/);
 
 // Visitor and owner mutations serialize on the conversation row. Agent model
 // generation happens outside the lock, then status is rechecked before persistence.
-assert.match(profileApi,/\$pdo->beginTransaction\(\);[\s\S]*vp3_profile_agent_public_conversation_v390\(\$pdo,\$cid,\$owner,\$agentId,\$sessionId,true\)[\s\S]*INSERT INTO profile_agent_messages/);
-assert.match(profileApi,/\$pdo->commit\(\);[\s\S]*\$history=\[\]/);
-assert.match(profileApi,/\$pdo->beginTransaction\(\);[\s\S]*\$current=vp3_profile_agent_public_conversation_v390[\s\S]*INSERT INTO profile_agent_messages \(conversation_id,sender_type,sender_user_id,message,context_json\)/);
+const messageService=publicService.split('function vp3_profile_agent_public_message_service_v110')[1].split('function vp3_profile_agent_public_poll_service_v110')[0];
+assert.match(messageService,/\$pdo->beginTransaction\(\);[\s\S]*vp3_profile_agent_public_bound_conversation_v1\(\$pdo,\$ctx,\$cid,true\)[\s\S]*INSERT INTO profile_agent_messages/);
+assert.match(messageService,/\$pdo->commit\(\);[\s\S]*\$history=/);
+assert.match(messageService,/ai_generate_chat_response[\s\S]*\$pdo->beginTransaction\(\);[\s\S]*\$current=vp3_profile_agent_public_bound_conversation_v1[\s\S]*INSERT INTO profile_agent_messages \(conversation_id,sender_type,sender_user_id,message,context_json\)/);
+assert.match(messageService,/vp3_profile_agent_public_admit_v1[\s\S]*vp3_profile_agent_public_create_bound_v1/,'rate admission precedes new conversation allocation');
 
 // Public browser continuity recovers safely when the owner changes Profile Agent.
 assert.match(publicUi,/error\.status===404/);

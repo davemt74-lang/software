@@ -14,8 +14,9 @@ function db():PDO{return $GLOBALS['pdo'];}
 function table_exists(string $table):bool{$s=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$s->execute([$table]);return(bool)$s->fetchColumn();}
 function system_agent_name():string{return 'Longfellow';}
 function url(string $s):string{return $s;}
-function current_user():array{return ['id'=>1];}
-function personal_capability_has_v242(...$args):bool{return false;}
+function current_user():?array{return !empty($GLOBALS['profilePublicGuest'])?null:['id'=>1];}
+function personal_capability_has_v242(...$args):bool{return in_array($args[0]??'',['profile_agent.access','profile_chat.access'],true);}
+function user_agent_get_v236(PDO $pdo,int $owner,int $id):?array{$q=$pdo->prepare('SELECT * FROM user_agents WHERE owner_user_id=? AND id=?');$q->execute([$owner,$id]);return $q->fetch()?:null;}
 function artist_workspace_v181_scope_id(...$args):int{return 0;}
 function vp3_cognitive_presentation_owns_attention_v510():bool{return true;}
 $policyCalls=[];$delivered=[];
@@ -25,12 +26,10 @@ function vp3_cognitive_presentation_context_v500(PDO $pdo,array $user,array $opt
 function vp3_cognitive_attention_arbitrate_v2410(PDO $pdo,array $user,string $namespace,array $signal,array $context):array{$GLOBALS['policyCalls'][]=$context;return ['voice'=>false];}
 function vp3_cognitive_attention_mark_delivered_v2410(PDO $pdo,array $user,string $namespace,string $key):void{$GLOBALS['delivered'][]=$key;}
 
-function vp3_profile_agent_public_conversation_v390(PDO $pdo,int $cid,int $owner,int $agent,int $session,bool $lock=false):?array{$s=$pdo->prepare('SELECT * FROM profile_agent_conversations WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?');$s->execute([$cid,$owner,$agent,$session]);return $s->fetch()?:null;}
-function vp3_profile_agent_prepare_visitor_turn_v390(PDO $pdo,array $c):array{return $c;}
-function vp3_profile_agent_agent_may_reply_v390(array $c):bool{return false;}
-function vp3_profile_agent_public_state_v390(array $c):array{return $c;}
 require dirname(__DIR__).'/includes/notifications.php';
 require dirname(__DIR__).'/includes/profile-agent.php';
+require dirname(__DIR__).'/includes/profile-agent-boundary-v390.php';
+require dirname(__DIR__).'/includes/profile-visitor-crm-v243.php';
 require dirname(__DIR__).'/includes/profile-agent-public-service-v110.php';
 // Load the actual API service functions without executing its HTTP dispatcher.
 $source=file_get_contents(dirname(__DIR__).'/api/chat-notifications-brain-v240.php');
@@ -48,17 +47,34 @@ $pdo->exec("CREATE TABLE agent_attention_items(id INTEGER PRIMARY KEY AUTOINCREM
 $pdo->exec("CREATE TABLE notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,type TEXT,title TEXT,body TEXT,target_url TEXT,source_type TEXT,source_id INTEGER,is_read INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
 $pdo->exec("CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,artist_workspace_id INTEGER,title TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP)");
 $pdo->exec("CREATE TABLE chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+$pdo->exec("CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,display_name TEXT,is_active INTEGER)");
+$pdo->exec("INSERT INTO user_agents VALUES(7,1,'Profile helper',1)");
+// Real current authority and hidden binding for the retained public-service cases.
+$pdo->exec("CREATE TABLE user_profiles(user_id INTEGER PRIMARY KEY,username TEXT,bio TEXT,is_public INTEGER,profile_agent_enabled INTEGER,profile_agent_id INTEGER,profile_agent_greeting TEXT,profile_agent_instructions TEXT)");
+$pdo->exec("INSERT INTO user_profiles VALUES(1,'owner','',1,1,7,'','Welcome visitors')");
+$pdo->exec("ALTER TABLE profile_visit_sessions ADD COLUMN session_key TEXT DEFAULT ''");
+$pdo->exec("UPDATE profile_visit_sessions SET session_key='fixture-session-key' WHERE id=10");
+$_COOKIE['sf_profile_conversation']=str_repeat('b',64);
+$authority=profile_conversation_native_authority_v1(1,0);
+$pdo->beginTransaction();
+vp3_profile_agent_conversation_bind_v1($pdo,profile_agent_conversation_get($pdo,100,1,10),$authority);
+$pdo->commit();
+function profileFixturePublicMessage(PDO $pdo,array $ctx,string $message,int $cid):array {
+    $GLOBALS['profilePublicGuest']=true;
+    try{return vp3_profile_agent_public_message_service_v110($pdo,$ctx,$message,$cid);}
+    finally{$GLOBALS['profilePublicGuest']=false;}
+}
 $checks=0;
 function check(bool $ok,string $message):void{$GLOBALS['checks']++;if(!$ok)throw new RuntimeException($message);}
 function reject(callable $call,string $message):void{try{$call();}catch(Throwable $e){check(true,$message);return;}throw new RuntimeException($message);}
-$user=['id'=>1];$profile=['user_id'=>1];$agent=['id'=>7,'display_name'=>'Profile helper'];$session=['id'=>10,'visitor_user_id'=>null,'identity_disclosed'=>0];
+$user=['id'=>1];$profile=profile_for_user($pdo,1,false);$agent=['id'=>7,'owner_user_id'=>1,'display_name'=>'Profile helper'];$session=$pdo->query('SELECT * FROM profile_visit_sessions WHERE id=10')->fetch();
 $visit=profile_event_create($pdo,1,$session,'profile_view',10,7,[],'visit-1');profile_attention_from_event($pdo,$visit,$session,$agent);
 check((int)$pdo->query("SELECT count(*) FROM notifications WHERE type='profile_view'")->fetchColumn()===1,'Visit creates canonical owner notification');
 $first=notification_profile_attention_after_v1341($user);
 check(count($first['items'])===1&&$first['items'][0]['type']==='profile_view','Profile priority poll sees visits with cognitive ownership enabled');
 $start=profile_event_create($pdo,1,$session,'conversation_started',60,7,[],'start-100');profile_attention_from_event($pdo,$start,$session,$agent,100);
-$ctx=['profile'=>$profile,'owner_user_id'=>1,'owner_user'=>$user,'visitor'=>null,'agent'=>$agent,'agent_id'=>7,'session'=>$session,'session_id'=>10];
-$result=vp3_profile_agent_public_message_service_v110($pdo,$ctx,'Can we meet next week?',100);
+$ctx=['profile'=>$profile,'owner_user_id'=>1,'owner_user'=>$user,'visitor'=>null,'agent'=>$agent,'agent_id'=>7,'session'=>$session,'session_id'=>10,'conversation_authority'=>$authority];
+$result=profileFixturePublicMessage($pdo,$ctx,'Can we meet next week?',100);
 check(!empty($result['awaiting_owner']),'Owner takeover remains intact');
 $note=$pdo->query("SELECT * FROM notifications WHERE type='profile_message_received'")->fetch();
 check(is_array($note)&&str_contains($note['body'],'Can we meet next week?'),'Actual visitor service records message notification before owner-takeover return');
@@ -68,9 +84,9 @@ $messageId=(int)$pdo->query('SELECT MAX(id) FROM profile_agent_messages')->fetch
 profile_agent_message_received_v1341($pdo,$profile,$agent,$session,['id'=>100,'owner_user_id'=>1,'profile_session_id'=>10],$messageId,'Can we meet next week?');
 check((int)$pdo->query("SELECT count(*) FROM notifications WHERE type='profile_message_received'")->fetchColumn()===1,'Saved message identity deduplicates event retry');
 $pdo->exec("UPDATE profile_agent_messages SET created_at=datetime('now','-10 seconds')");
-vp3_profile_agent_public_message_service_v110($pdo,$ctx,'Please call tomorrow.',100);
+profileFixturePublicMessage($pdo,$ctx,'Please call tomorrow.',100);
 check((int)$pdo->query("SELECT count(*) FROM notifications WHERE type='profile_message_received'")->fetchColumn()===2,'Later messages in an existing thread also notify');
-reject(fn()=>vp3_profile_agent_public_message_service_v110($pdo,[...$ctx,'session_id'=>20],'Other session',100),'Public session cannot notify from another conversation');
+reject(fn()=>profileFixturePublicMessage($pdo,[...$ctx,'session_id'=>20],'Other session',100),'Public session cannot notify from another conversation');
 reject(fn()=>profile_agent_message_received_v1341($pdo,[...$profile,'user_id'=>2],$agent,$session,['id'=>100,'owner_user_id'=>1,'profile_session_id'=>10],900,'bad'),'Message ownership mismatch rejects');
 $present=chat_notifications_v240_present_attention($pdo,$user,['notification_id'=>(int)$note['id']]);
 check(!empty($present['handled'])&&empty($present['duplicate']),'Cognitive owner hands profile priority to the existing canonical writer');

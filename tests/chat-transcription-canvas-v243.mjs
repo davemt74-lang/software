@@ -27,7 +27,7 @@ assert.ok(listening.includes("header('Content-Range: bytes '"),'partial recordin
 assert.ok(chat.includes("$transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907'"),'Chat must cache-bust the v308 Intelligence Home runtime');
 assert.ok(chat.includes("url('/api/artist-listening.php')"),'Chat must provide the canonical transcription-session endpoint');
 assert.ok(chat.includes("url('/api/artist-listening-intelligence-v300.php')"),'Chat must provide the stable intelligence endpoint');
-assert.ok(chat.includes("$profileActivityBuild = 'profile-activity-overlay-20260905'"),'Chat must preserve the corrected Profile Activity overlay runtime');
+assert.ok(chat.includes("$profileActivityBuild = 'profile-activity-safety-pa1-20261103'"),'Chat must load the current Profile Activity conversation-safety runtime');
 assert.ok(chat.includes("$chatProfileMenuExcluded = ['account'=>true, 'profile_agent'=>true]"),'Chat account dropdown must retain the canonical View Profile item');
 assert.ok(!chat.includes("$chatProfileMenuExcluded = ['profile'=>true"),'Chat must not suppress View Profile');
 assert.ok(chat.includes('data-chat-transcription-canvas'),'Chat must load the one canonical transcription canvas runtime');

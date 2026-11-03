@@ -18,6 +18,16 @@ const knowledgeHost=document.getElementById('profileAgentKnowledge');
 const profileHost=document.getElementById('profileAgentProfileSettings');
 const analyticsHost=document.getElementById('profileAgentAnalytics');
 let state=null,radarState=null,radarFilter='all',selectedConversation=0,selectedSession=0,refreshTimer=null,requestBusy=false;
+let selectedThread=null,displayedThread=null,threadRead=0,stateRead=0,activeTab='inbox',pendingSettings=0;
+const drafts=new Map(),threadMutations=new Map(),boundControls=new WeakSet(),editVersions=new WeakMap();
+const conversationId=value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):0;
+const threadSelected=binding=>binding!==null&&selectedThread===binding&&selectedConversation===binding.id;
+const threadDisplayed=binding=>threadSelected(binding)&&displayedThread===binding;
+function rememberDraft(){const form=threadHost.querySelector('#paReplyForm');if(displayedThread&&form)drafts.set(displayedThread.id,form.elements.message.value);}
+function bindOnce(node,event,handler){if(!node||boundControls.has(node))return;boundControls.add(node);node.addEventListener(event,handler);}
+function renderEditable(host,render){if(host.children.length&&(host.querySelector('[data-pa-dirty="1"],[data-pa-pending="1"]')||host.contains(document.activeElement)))return;render();}
+function markEdited(event){const node=event.target.closest('form,[data-policy]');if(!node||![agentHost,profileHost,knowledgeHost].some(host=>host.contains(node)))return;node.dataset.paDirty='1';editVersions.set(node,(editVersions.get(node)||0)+1);}
+app.addEventListener('input',markEdited,true);app.addEventListener('change',markEdited,true);
 const setNotice=(message='',error=false)=>{notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;};
 async function req(action,payload=null){
   const post=payload!==null;
@@ -48,6 +58,7 @@ function moneyMinor(cents,currency){const amount=Number(cents||0),code=String(cu
 function activateTab(name){
   const tabs=[...document.querySelectorAll('[data-pa-tab]')],views=[...root.querySelectorAll('[data-pa-view]')];
   if(!views.some(v=>v.dataset.paView===name))name='inbox';
+  activeTab=name;
   tabs.forEach(b=>b.classList.toggle('active',b.dataset.paTab===name));
   views.forEach(v=>v.classList.toggle('active',v.dataset.paView===name));
   if(root.scrollTop>0)root.scrollTo({top:0,behavior:'auto'});
@@ -167,27 +178,98 @@ function renderAnalytics(){
   const responsePct=Number(a.total_conversations||0)>0?Math.round((Number(a.owner_joined||0)/Number(a.total_conversations||1))*100):0;
   analyticsHost.innerHTML=`<div class="profile-agent-card"><h2>Profile Agent Analytics</h2><p>A service-level snapshot from your existing visitor, conversation, conversion-intent, conversion-outcome, and attention records.</p><div class="profile-agent-analytics-grid"><article class="profile-agent-analytics-card"><strong>${Number(a.total_views||0).toLocaleString()}</strong><span>Total profile views</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.visitor_sessions||0).toLocaleString()}</strong><span>Visitor sessions</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.active_visitors||0).toLocaleString()}</strong><span>Active in last 5 minutes</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.booking_intents||0).toLocaleString()}</strong><span>Booking intent</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.booking_conversions||0).toLocaleString()}</strong><span>Booking conversions</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.booking_conversion_rate||0).toLocaleString(undefined,{maximumFractionDigits:1})}%</strong><span>Booking conversion rate</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.product_intents||0).toLocaleString()}</strong><span>Product intent</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.product_conversions||0).toLocaleString()}</strong><span>Product conversions</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.product_conversion_rate||0).toLocaleString(undefined,{maximumFractionDigits:1})}%</strong><span>Product conversion rate</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.conversion_intents_24h||0).toLocaleString()}</strong><span>Conversion intent · 24h</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.conversions_24h||0).toLocaleString()}</strong><span>Conversions · 24h</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.total_conversations||0).toLocaleString()}</strong><span>Total conversations</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.open_conversations||0).toLocaleString()}</strong><span>Open conversations</span></article><article class="profile-agent-analytics-card"><strong>${responsePct}%</strong><span>Owner joined conversations</span></article></div></div>`;
 }
-function renderAll(){renderService();renderMetrics();renderInbox();renderVisitors();renderRadar();renderAgentSettings();renderKnowledge();renderProfileSettings();renderAnalytics();const unread=Number(state?.notifications?.unread||0),bell=document.getElementById('chatNotificationButton');if(bell){let badge=bell.querySelector(':scope > span');if(unread>0){if(!badge){badge=document.createElement('span');bell.appendChild(badge);}badge.textContent=unread>99?'99+':String(unread);}else badge?.remove();}bindDynamic();}
+function renderAll(){renderService();renderMetrics();renderInbox();renderVisitors();renderRadar();renderEditable(agentHost,renderAgentSettings);renderEditable(knowledgeHost,renderKnowledge);renderEditable(profileHost,renderProfileSettings);renderAnalytics();const unread=Number(state?.notifications?.unread||0),bell=document.getElementById('chatNotificationButton');if(bell){let badge=bell.querySelector(':scope > span');if(unread>0){if(!badge){badge=document.createElement('span');bell.appendChild(badge);}badge.textContent=unread>99?'99+':String(unread);}else badge?.remove();}bindDynamic();}
 async function refresh(silent=false){
-  if(requestBusy)return;requestBusy=true;
-  try{const [d,r]=await Promise.all([req('owner_state'),radarReq().catch(()=>null)]);state=d.state;if(r)radarState=r;renderAll();if(!silent)setNotice('Profile Agent workspace refreshed.');}
-  catch(err){setNotice(err.message,true);}finally{requestBusy=false;}
+  if(requestBusy||threadMutations.size||pendingSettings)return;requestBusy=true;const request=++stateRead;
+  try{const [d,r]=await Promise.all([req('owner_state'),radarReq().catch(()=>null)]);if(request!==stateRead)return;state=d.state;if(r)radarState=r;renderAll();if(activeTab==='inbox'&&selectedThread)await refreshConversation(selectedThread);if(!silent)setNotice('Profile Agent workspace refreshed.');}
+  catch(err){if(request===stateRead)setNotice(err.message,true);}finally{requestBusy=false;}
+}
+function threadNotice(binding,message='',error=false){if(!threadDisplayed(binding))return;const node=threadHost.querySelector('[data-thread-notice]');node.textContent=message;node.setAttribute('role',error?'alert':'status');}
+function updateThreadControls(binding){if(!threadDisplayed(binding))return;const busy=threadMutations.has(binding.id);threadHost.querySelectorAll('#paReplyForm input,#paReplyForm button,[data-thread-status]').forEach(node=>{node.disabled=busy;});}
+function renderThread(binding,c,m){
+  if(!threadSelected(binding))return;
+  if(!threadDisplayed(binding)){
+    threadHost.innerHTML=`<div class="profile-agent-thread-head"><div data-thread-identity></div><div class="profile-agent-row-actions"><button type="button" data-thread-status="open">Open</button><button type="button" data-thread-status="resolved">Resolve</button></div></div><div class="profile-agent-thread-messages"></div><form class="profile-agent-reply" id="paReplyForm" data-conversation-id="${binding.id}"><input name="message" maxlength="4000" autocomplete="off" placeholder="Reply as profile owner"><button type="submit">Send Reply</button></form><p data-thread-notice role="status" aria-live="polite"></p>`;
+    displayedThread=binding;
+    const form=threadHost.querySelector('#paReplyForm');form.elements.message.value=drafts.get(binding.id)||'';
+    form.elements.message.addEventListener('input',()=>drafts.set(binding.id,form.elements.message.value));
+    bindThread(binding);
+  }
+  const identity=threadHost.querySelector('[data-thread-identity]');
+  const heading=`<strong>${esc(c.visitor_label||'Visitor')}</strong><small>${esc(String(c.status||'open').replace('_',' '))} · last message ${esc(relative(c.last_message_at))}</small>`;
+  if(identity.innerHTML!==heading)identity.innerHTML=heading;
+  const messages=threadHost.querySelector('.profile-agent-thread-messages');
+  const html=m.map(x=>`<div class="profile-agent-message ${esc(x.sender_type)}"><small>${esc(x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':'Profile Agent')}</small>${esc(x.message)}</div>`).join('')||'<div class="profile-agent-empty">No messages yet.</div>';
+  if(messages.innerHTML!==html){const top=messages.scrollTop,atEnd=messages.scrollHeight-messages.scrollTop-messages.clientHeight<40;messages.innerHTML=html;messages.scrollTop=atEnd?messages.scrollHeight:top;}
+  updateThreadControls(binding);
+}
+async function refreshConversation(binding){
+  if(!threadSelected(binding)||threadMutations.has(binding.id))return;const request=++threadRead;
+  try{
+    const d=await req('conversation_messages',{conversation_id:binding.id});
+    if(!threadSelected(binding)||request!==threadRead)return;
+    if(conversationId(d.conversation?.id)!==binding.id||!Array.isArray(d.messages))throw new Error('The selected conversation could not be verified.');
+    renderThread(binding,d.conversation,d.messages);threadNotice(binding);return true;
+  }catch(err){
+    if(!threadSelected(binding)||request!==threadRead)return;
+    if(threadDisplayed(binding))threadNotice(binding,err.message,true);
+    else threadHost.innerHTML=`<div class="profile-agent-thread-empty" role="alert"><strong>${esc(err.message)}</strong></div>`;
+    return false;
+  }
 }
 async function openConversation(id){
-  selectedConversation=Number(id||0);renderInbox();threadHost.innerHTML='<div class="profile-agent-thread-empty"><strong>Loading conversation…</strong></div>';
-  try{const d=await req('conversation_messages',{conversation_id:selectedConversation});const c=d.conversation,m=d.messages||[];threadHost.innerHTML=`<div class="profile-agent-thread-head"><div><strong>${esc(c.visitor_label||'Visitor')}</strong><small>${esc(String(c.status||'open').replace('_',' '))} · last message ${relative(c.last_message_at)}</small></div><div class="profile-agent-row-actions"><button type="button" data-thread-status="open">Open</button><button type="button" data-thread-status="resolved">Resolve</button></div></div><div class="profile-agent-thread-messages">${m.map(x=>`<div class="profile-agent-message ${esc(x.sender_type)}"><small>${esc(x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':'Profile Agent')}</small>${esc(x.message)}</div>`).join('')||'<div class="profile-agent-empty">No messages yet.</div>'}</div><form class="profile-agent-reply" id="paReplyForm"><input name="message" maxlength="4000" autocomplete="off" placeholder="Reply as profile owner"><button type="submit">Send Reply</button></form>`;bindThread();}
-  catch(err){threadHost.innerHTML=`<div class="profile-agent-thread-empty"><strong>${esc(err.message)}</strong></div>`;}
+  id=conversationId(id);if(!id)return;
+  if(selectedThread?.id===id&&threadDisplayed(selectedThread))return refreshConversation(selectedThread);
+  rememberDraft();selectedConversation=id;selectedThread=Object.freeze({id});displayedThread=null;renderInbox();
+  threadHost.innerHTML='<div class="profile-agent-thread-empty"><strong>Loading conversation…</strong></div>';
+  return refreshConversation(selectedThread);
 }
-function bindThread(){
-  threadHost.querySelector('#paReplyForm')?.addEventListener('submit',async e=>{e.preventDefault();const input=e.currentTarget.elements.message,message=input.value.trim();if(!message)return;input.disabled=true;try{const d=await req('owner_reply',{conversation_id:selectedConversation,message});state=d.state;renderAll();await openConversation(selectedConversation);setNotice('Reply sent.');}catch(err){setNotice(err.message,true);}finally{input.disabled=false;}});
-  threadHost.querySelectorAll('[data-thread-status]').forEach(b=>b.addEventListener('click',async()=>{try{const d=await req('conversation_status',{conversation_id:selectedConversation,status:b.dataset.threadStatus});state=d.state;renderAll();await openConversation(selectedConversation);setNotice(b.dataset.threadStatus==='resolved'?'Conversation resolved.':'Conversation reopened.');}catch(err){setNotice(err.message,true);}}));
+function bindThread(binding){
+  threadHost.querySelector('#paReplyForm').addEventListener('submit',async e=>{
+    e.preventDefault();if(!threadDisplayed(binding)||!threadHost.contains(e.currentTarget)||threadMutations.has(binding.id))return;
+    const input=e.currentTarget.elements.message,raw=input.value,message=raw.trim();if(!message)return;
+    drafts.set(binding.id,raw);const token={};threadMutations.set(binding.id,token);threadRead++;const request=++stateRead;updateThreadControls(binding);threadNotice(binding);
+    try{
+      const d=await req('owner_reply',{conversation_id:binding.id,message});
+      if(conversationId(d.conversation_id)!==binding.id)throw new Error('The reply could not be confirmed for this conversation.');
+      if(!threadDisplayed(binding))return;
+      if(input.value===raw){input.value='';drafts.delete(binding.id);}
+      if(request===stateRead){stateRead++;state=d.state||state;renderAll();}
+      threadMutations.delete(binding.id);const fresh=await refreshConversation(binding);threadNotice(binding,fresh?'Reply sent.':'Reply sent. The latest messages could not be loaded.',!fresh);
+    }catch(err){if(threadDisplayed(binding))threadNotice(binding,err.message,true);}
+    finally{if(threadMutations.get(binding.id)===token)threadMutations.delete(binding.id);if(selectedThread?.id===binding.id)updateThreadControls(selectedThread);}
+  });
+  threadHost.querySelectorAll('[data-thread-status]').forEach(button=>button.addEventListener('click',async()=>{
+    if(!threadDisplayed(binding)||!threadHost.contains(button)||threadMutations.has(binding.id))return;
+    const status=button.dataset.threadStatus;rememberDraft();const token={};threadMutations.set(binding.id,token);threadRead++;const request=++stateRead;updateThreadControls(binding);threadNotice(binding);
+    try{
+      const d=await req('conversation_status',{conversation_id:binding.id,status});
+      if(conversationId(d.conversation_id)!==binding.id)throw new Error('The conversation status could not be confirmed.');
+      if(!threadDisplayed(binding))return;
+      if(request===stateRead){stateRead++;state=d.state||state;renderAll();}
+      threadMutations.delete(binding.id);const fresh=await refreshConversation(binding);threadNotice(binding,(status==='resolved'?'Conversation resolved.':'Conversation reopened.')+(fresh?'':' The latest messages could not be loaded.'),!fresh);
+    }catch(err){if(threadDisplayed(binding))threadNotice(binding,err.message,true);}
+    finally{if(threadMutations.get(binding.id)===token)threadMutations.delete(binding.id);if(selectedThread?.id===binding.id)updateThreadControls(selectedThread);}
+  }));
+}
+async function saveEditable(node,save,message){
+  if(node.dataset.paPending==='1')return;
+  const revision=editVersions.get(node)||0,request=++stateRead;node.dataset.paPending='1';pendingSettings++;
+  const button=node.querySelector('button[type=submit]');if(button)button.disabled=true;
+  try{
+    const d=await save();
+    if((editVersions.get(node)||0)===revision)delete node.dataset.paDirty;
+    if(request===stateRead){stateRead++;state=d.state||state;}
+    setNotice(message);
+  }catch(err){node.dataset.paDirty='1';setNotice(err.message,true);}
+  finally{delete node.dataset.paPending;pendingSettings--;if(button)button.disabled=false;renderAll();}
 }
 function bindDynamic(){
-  profileHost.querySelectorAll('[data-profile-media-form]').forEach(form=>form.addEventListener('submit',async e=>{e.preventDefault();const input=form.querySelector('input[type=file]'),file=input?.files?.[0];const button=form.querySelector('button[type=submit]');if(button)button.disabled=true;try{const d=await uploadProfileMedia(form.dataset.profileMediaForm,file);state=d.state;renderAll();setNotice(form.dataset.profileMediaForm==='cover'?'Cover image updated.':'Profile image updated.');}catch(err){setNotice(err.message,true);}finally{if(button)button.disabled=false;}}));
-  document.getElementById('paAgentForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await req('save_profile_agent',{profile_agent_id:Number(f.get('profile_agent_id')||0),profile_agent_enabled:f.get('profile_agent_enabled')?1:0,profile_agent_greeting:f.get('profile_agent_greeting'),profile_agent_instructions:f.get('profile_agent_instructions')});state=d.state;renderAll();setNotice('Profile Agent settings saved.');}catch(err){setNotice(err.message,true);}});
-  document.getElementById('paProfileForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await req('save_profile',{username:f.get('username'),bio:f.get('bio'),website_url:f.get('website_url'),instagram_url:f.get('instagram_url'),tiktok_url:f.get('tiktok_url'),youtube_url:f.get('youtube_url'),spotify_url:f.get('spotify_url'),apple_music_url:f.get('apple_music_url'),is_public:f.get('is_public')?1:0,share_visit_identity:f.get('share_visit_identity')?1:0});state=d.state;renderAll();setNotice('Public profile saved.');}catch(err){setNotice(err.message,true);}});
-  knowledgeHost.querySelectorAll('[data-policy]').forEach(row=>{const allow=row.querySelector('[data-policy-allow]'),audience=row.querySelector('[data-policy-audience]');const save=async()=>{try{const d=await req('save_profile_access',{resource_type:row.dataset.policy,profile_agent_allowed:allow.checked?1:0,audience_scope:audience.value});state=d.state;renderAll();setNotice('Knowledge access updated.');}catch(err){setNotice(err.message,true);}};allow?.addEventListener('change',save);audience?.addEventListener('change',save);});
-  document.getElementById('profileAgentRadarRefresh')?.addEventListener('click',async()=>{try{radarState=await radarReq();renderRadar();setNotice('Agent Radar refreshed.');}catch(err){setNotice(err.message,true);}});
+  profileHost.querySelectorAll('[data-profile-media-form]').forEach(form=>bindOnce(form,'submit',e=>{e.preventDefault();const file=form.querySelector('input[type=file]')?.files?.[0];return saveEditable(form,()=>uploadProfileMedia(form.dataset.profileMediaForm,file),form.dataset.profileMediaForm==='cover'?'Cover image updated.':'Profile image updated.');}));
+  bindOnce(document.getElementById('paAgentForm'),'submit',e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);return saveEditable(form,()=>req('save_profile_agent',{profile_agent_id:Number(f.get('profile_agent_id')||0),profile_agent_enabled:f.get('profile_agent_enabled')?1:0,profile_agent_greeting:f.get('profile_agent_greeting'),profile_agent_instructions:f.get('profile_agent_instructions')}),'Profile Agent settings saved.');});
+  bindOnce(document.getElementById('paProfileForm'),'submit',e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);return saveEditable(form,()=>req('save_profile',{username:f.get('username'),bio:f.get('bio'),website_url:f.get('website_url'),instagram_url:f.get('instagram_url'),tiktok_url:f.get('tiktok_url'),youtube_url:f.get('youtube_url'),spotify_url:f.get('spotify_url'),apple_music_url:f.get('apple_music_url'),is_public:f.get('is_public')?1:0,share_visit_identity:f.get('share_visit_identity')?1:0}),'Public profile saved.');});
+  knowledgeHost.querySelectorAll('[data-policy]').forEach(row=>{const allow=row.querySelector('[data-policy-allow]'),audience=row.querySelector('[data-policy-audience]');const save=async()=>{if(row.dataset.paPending==='1'){row.dataset.paQueued='1';return;}await saveEditable(row,()=>req('save_profile_access',{resource_type:row.dataset.policy,profile_agent_allowed:allow.checked?1:0,audience_scope:audience.value}),'Knowledge access updated.');if(row.isConnected&&row.dataset.paQueued==='1'){delete row.dataset.paQueued;await save();}};bindOnce(allow,'change',save);bindOnce(audience,'change',save);});
+  bindOnce(document.getElementById('profileAgentRadarRefresh'),'click',async()=>{try{radarState=await radarReq();renderRadar();bindDynamic();setNotice('Agent Radar refreshed.');}catch(err){setNotice(err.message,true);}});
 }
 app.addEventListener('click',async e=>{
   const tab=e.target.closest('[data-pa-tab]');if(tab){activateTab(tab.dataset.paTab);return;}

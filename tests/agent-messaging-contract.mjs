@@ -26,7 +26,8 @@ assert.ok(access.includes("hash('sha256',$token)"), 'request grant secret must b
 assert.ok(access.includes('FOR UPDATE'), 'grant claiming must lock the access row atomically');
 assert.ok(access.includes("status='consumed'"), 'one-time grants must be consumed atomically');
 assert.ok(access.includes('vp3_agent_access_restore_once'), 'failed one-time message attempts must be restorable');
-assert.ok(access.includes("ai_generate_chat_response($query,$history,$approvedContext,$ownerUser,'agent.messaging')"), 'Agent Messaging must bill through the owner’s canonical AI quota scope');
+assert.ok(access.includes("ai_generate_chat_response($query,$history,$approvedContext,$ownerUser,'agent.messaging',$turnControl)"), 'Agent Messaging must bill through the owner’s canonical AI quota scope with explicit public turn control');
+assert.ok(access.includes("'surface'=>'profile_agent'"), 'external Agent Messaging must use the public Profile prompt, not private owner Chat');
 assert.ok(access.includes('profile_agent_context($pdo,$profile,$agent,null,$query)'), 'Agent Messaging must reuse the public Profile Agent context boundary');
 assert.ok(access.includes("event_type IN ('agent_message_inbound','agent_message_outbound')"), 'agent conversation history must remain in Radar/CRM events');
 
@@ -38,7 +39,8 @@ assert.ok(requestApi.includes("409"), 'duplicate pending requests must be suppre
 
 assert.ok(messageApi.includes("vp3_agent_access_grant_claim"), 'message endpoint must require an approved grant');
 assert.ok(messageApi.includes("((string)$grant['capability']!=='agent.message')"), 'message endpoint must bind grants to Agent Messaging capability');
-assert.ok(messageApi.includes("vp3_agent_access_restore_once"), 'message endpoint must restore one-time grants when processing fails');
+assert.ok(messageApi.includes("vp3_agent_access_restore_once($pdo,$owner,(int)$grant['id'],$grant,$context)"), 'only a still-authorized exact pre-provider one-time claim may be restored');
+assert.ok(messageApi.indexOf('vp3_agent_message_authority_v1($pdo,$context,$grant)')>messageApi.indexOf('vp3_agent_referral_create_for_message($pdo,$context,$grant)'), 'grant and Profile authority must be checked after optional referral work');
 assert.ok(messageApi.includes("vp3_agent_message_json(429"), 'message endpoint must reserve HTTP 429 for rate limiting');
 assert.ok(messageApi.includes("vp3_agent_message_json(402"), 'message endpoint must report unavailable owner AI quota distinctly');
 assert.ok(messageApi.includes("vp3_agent_message_json(403"), 'message endpoint must report access/Gateway denial distinctly');
