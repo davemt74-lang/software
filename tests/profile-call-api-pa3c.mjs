@@ -166,7 +166,18 @@ async function startPhpServer() {
   });
   servers.push(child);
   child.stderr.on('data', value => { logs += value; });
-  return `http://127.0.0.1:${port}`;
+  const origin = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && child.exitCode === null && child.signalCode === null) {
+    try {
+      const response = await fetch(`${origin}/ready.txt`, { signal: AbortSignal.timeout(500) });
+      if (response.ok && await response.text() === 'ready') return origin;
+    } catch {
+      // The child can still be starting even after spawn has returned.
+    }
+    await new Promise(resolve => setTimeout(resolve, 30));
+  }
+  throw Error(`PHP fixture server did not become ready at ${origin}\n${logs.slice(-3500)}`);
 }
 
 async function waitForFile(file) {
@@ -279,18 +290,9 @@ header('Content-Type: application/json');
 $context = vp3_profile_agent_public_context_v110(db(), profile_by_username(db(),'fixture-owner'), current_user());
 echo json_encode(['token'=>profile_chat_token(1),'namespace'=>hash('sha256','profile-widget-v1|'.$context['conversation_authority']['credential_hash'])], JSON_THROW_ON_ERROR);
 `);
+  fs.writeFileSync(path.join(temp, 'ready.txt'), 'ready');
   base = await startPhpServer();
-  let ready = false;
-  for (let attempt = 0; attempt < 80; attempt++) {
-    try {
-      publicBase = await bootstrapActor(visitor);
-      ready = true;
-      break;
-    } catch {
-      await new Promise(resolve => setTimeout(resolve, 30));
-    }
-  }
-  assert.ok(ready, logs);
+  publicBase = await bootstrapActor(visitor);
   foreignBase = await bootstrapActor(foreign);
   foreignBrowserBase = await bootstrapActor(sameMemberOtherBrowser);
 
