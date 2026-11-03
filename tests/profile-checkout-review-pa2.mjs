@@ -101,12 +101,12 @@ for(const mode of ['network','invalid_json','http_500','in_progress']){
  const other=await f.prepare(preparedAction('b'.repeat(32)));await f.click(other);check(f.calls[2].input.idempotency_key!==key,'different prepared intent has a distinct idempotency key');await f.respond();f.close();
 }
 for(const payload of [
- {ok:false,error:{code:'CONFIRMATION_EXPIRED',message:'Expired'},action:{reprepare_required:true}},
- {ok:false,error:{code:'CONFIRMATION_CHANGED',message:'Terms changed'},action:{reprepare_required:true}},
- {ok:false,error:{code:'IDEMPOTENCY_CONFLICT',message:'Different key'},action:{phase:'conflict'}}
+ {ok:false,error:{code:'CONFIRMATION_EXPIRED',message:'Expired'},action:{contract:'vp3.webmcp.action.v1',phase:'expired',reprepare_required:true}},
+ {ok:false,error:{code:'CONFIRMATION_CHANGED',message:'Terms changed'},action:{contract:'vp3.webmcp.action.v1',phase:'conflict',reprepare_required:true}},
+ {ok:false,error:{code:'IDEMPOTENCY_CONFLICT',message:'Different key'},action:{contract:'vp3.webmcp.action.v1',phase:'conflict'}}
 ]){
  const f=await fixture(),card=await f.prepare();await f.click(card);await f.respond(payload,422);const before=f.calls.length;await f.click(card);
- check(f.calls.length===before&&card.querySelector('button.confirm').disabled&&card.textContent.includes('review'),payload.error.code+' cannot replay an invalid prepared review');f.close();
+ check(f.calls.length===before&&card.querySelector('button.confirm').disabled&&card.querySelector('.profile-agent-confirmation-feedback').textContent.toLowerCase().includes('new review'),payload.error.code+' explicitly requires a new review and cannot replay the invalid preparation');f.close();
 }
 {
  const f=await fixture(),a=preparedAction(),card=await f.prepare(a);await f.click(card);const before=card.textContent;

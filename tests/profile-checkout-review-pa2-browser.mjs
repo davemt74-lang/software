@@ -68,8 +68,8 @@ try{
   check(await card.locator('button.confirm').isDisabled()&&await card.locator('input').count()===0,'missing policy evidence cannot produce an acceptance checkbox');await f.close();
  }
  {
-  const f=await fixture(),card=await f.prepare();await f.click(card);await f.respond({ok:false,error:{code:'CONFIRMATION_CHANGED',message:'Seller terms changed'},action:{reprepare_required:true}},422);
-  check(await card.locator('button.confirm').isDisabled()&&(await card.innerText()).includes('new review'),'changed terms require a new review in the browser');await f.close();
+  const f=await fixture(),card=await f.prepare();await f.click(card);await f.respond({ok:false,error:{code:'CONFIRMATION_CHANGED',message:'Seller terms changed'},action:{contract:'vp3.webmcp.action.v1',phase:'conflict',reprepare_required:true}},422);
+  check(await card.locator('button.confirm').isDisabled()&&(await card.locator('.profile-agent-confirmation-feedback').innerText()).includes('Request a new review'),'changed terms require a new review in the browser');await f.close();
  }
  {
   const f=await fixture(),card=await f.prepare();await f.click(card);await f.respond(checkoutResult('payment_review'));

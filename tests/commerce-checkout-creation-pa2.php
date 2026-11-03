@@ -41,7 +41,11 @@ foreach (['stripe','square','paypal'] as $provider) {
     creation_check_pa2(count($writes)===2&&$writes[0]===$writes[1],$provider.' uncertain retry reuses identical provider body and idempotency key');
     creation_check_pa2(count(creation_rows_pa2($f))===1&&$created['status']==='open'&&$created['external_payment_id']==='',$provider.' successful retry completes the original attempt without inventing a payment');
     creation_check_pa2($created['provider_order_id']!==''&&$created['provider_account_id']===$f['account'],$provider.' keeps immutable provider order and merchant identity');
-    if($provider==='stripe')creation_check_pa2($writes[0]['body']['expires_at']>=time()+1790&&$writes[0]['body']['expires_at']<=time()+86400,'Stripe hosted checkout expiration is explicitly bounded');
+    if($provider==='stripe'){
+        creation_check_pa2($writes[0]['body']['expires_at']>=time()+1790&&$writes[0]['body']['expires_at']<=time()+86400,'Stripe hosted checkout expiration is explicitly bounded');
+        $deadline=agent_commerce_date_pa2(agent_commerce_order_v800(db(),$f['id'])['hold_expires_at']);
+        creation_check_pa2($writes[0]['body']['expires_at']-($deadline-1)>=1800,'frozen Stripe request retains the provider minimum expiry window even on the last permitted local retry');
+    }
     if($provider==='square')creation_check_pa2($created['provider_order_id']!==$created['external_session_id']&&$created['provider_location_id']!=='','Square Link, Order and location identities stay distinct');
     $again=creation_call_pa2($f);creation_check_pa2($again['id']===$created['id']&&count($writes)===2,$provider.' repeat submit returns the existing checkout without new provider I/O');
     db()->prepare('UPDATE agent_commerce_orders_v800 SET amount_due_cents=6000 WHERE id=?')->execute([$f['id']]);

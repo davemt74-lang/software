@@ -62,7 +62,10 @@ function agent_commerce_checkout_request_pa2(PDO $pdo,array $order,array $connec
             'line_items'=>[['quantity'=>1,'price_data'=>['currency'=>$currency,'unit_amount'=>$due,'product_data'=>['name'=>$name]]]],
             'metadata'=>['vp3_commerce_order_id'=>(string)$order['id']],'payment_intent_data'=>['metadata'=>['vp3_commerce_order_id'=>(string)$order['id']]]];
         $deadline=agent_commerce_date_pa2($order['hold_expires_at']??null);
-        if($deadline>0)$body['expires_at']=min(time()+86400,max(time()+1800,$deadline));
+        // Stripe requires at least 30 minutes after actual Session creation.
+        // Keep the frozen request valid for retries throughout the local hold;
+        // the local deadline still governs late-payment fulfillment review.
+        if($deadline>0)$body['expires_at']=min(time()+86340,max(time()+1860,$deadline+1860));
         $email=(string)($order['payer_email']??'');if(filter_var($email,FILTER_VALIDATE_EMAIL))$body['customer_email']=$email;
         if($fee>0)$body['payment_intent_data']['application_fee_amount']=$fee;
         return ['path'=>'/v1/checkout/sessions','form'=>true,'body'=>$body];
