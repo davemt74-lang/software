@@ -106,8 +106,8 @@ function profile_runtime_attention_list(PDO $pdo,int $ownerUserId,int $limit=20)
     $stmt->execute([$ownerUserId]);
     $rows=$stmt->fetchAll()?:[];
     foreach($rows as &$row){
-        $row=array_merge($row,profile_runtime_visitor_descriptor($pdo,$ownerUserId,$row));
-        $row['actions']=json_decode((string)($row['actions_json']??'[]'),true)?:[];
+        if(function_exists('vp3_profile_attention_legacy_row_pa4b'))$row=vp3_profile_attention_legacy_row_pa4b($pdo,$ownerUserId,$row);
+        else{$row=array_merge($row,profile_runtime_visitor_descriptor($pdo,$ownerUserId,$row));$row['actions']=json_decode((string)($row['actions_json']??'[]'),true)?:[];}
         unset($row['visitor_user_id'],$row['session_key'],$row['actions_json'],$row['context_json']);
     }
     unset($row);

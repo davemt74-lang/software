@@ -60,6 +60,27 @@ function agent_worker_profile_speech_maintenance_v1910(PDO $pdo,int $limit): arr
     return $result;
 }
 
+function agent_worker_profile_attention_maintenance_v1910(PDO $pdo,int $limit): array
+{
+    require_once __DIR__.'/includes/profile-attention-pa4b.php';
+    require_once __DIR__.'/includes/profile-event-projection-pa4b.php';
+    $limit=max(1,min(20,$limit));
+    $result=[];
+    // Maintenance only advances saved local evidence. It never installs tables,
+    // synthesizes speech, creates a public reply or retries a payment.
+    try{
+        $result['attention']=vp3_profile_attention_schema_ready_pa4b($pdo)
+            ? vp3_profile_attention_maintenance_pa4b($pdo,$limit)
+            : ['failed'=>1,'reason'=>'attention_schema_unavailable'];
+    }catch(Throwable $e){$result['attention']=['failed'=>1,'reason'=>'attention_recovery_unavailable'];agent_runtime_v125_trace('worker.profile_attention.failed',['error_class'=>get_class($e)]);}
+    try{
+        $result['projections']=vp3_profile_projection_schema_ready_pa4b($pdo)
+            ? vp3_profile_projection_sweep_pa4b($pdo,$limit)
+            : ['failed'=>1,'reason'=>'projection_schema_unavailable'];
+    }catch(Throwable $e){$result['projections']=['failed'=>1,'reason'=>'projection_recovery_unavailable'];agent_runtime_v125_trace('worker.profile_projection.failed',['error_class'=>get_class($e)]);}
+    return $result;
+}
+
 function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLimit): array
 {
     if($executor==='profile'){
@@ -67,7 +88,7 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         require_once __DIR__.'/includes/profile-calls-pa3c.php';
         try{$calls=vp3_profile_call_runner_pa3c($pdo,$ownerLimit);}
         catch(Throwable $e){$calls=['failed'=>1,'reason'=>'call_recovery_unavailable'];agent_runtime_v125_trace('worker.profile_calls.failed',['error_class'=>get_class($e)]);}
-        return vp3_profile_handoff_runner_pa3($pdo,$ownerLimit)+['calls'=>$calls,'speech'=>agent_worker_profile_speech_maintenance_v1910($pdo,$ownerLimit),'completed_at'=>gmdate('c')];
+        return vp3_profile_handoff_runner_pa3($pdo,$ownerLimit)+['calls'=>$calls,'speech'=>agent_worker_profile_speech_maintenance_v1910($pdo,$ownerLimit),'attention'=>agent_worker_profile_attention_maintenance_v1910($pdo,$ownerLimit),'completed_at'=>gmdate('c')];
     }
     $counts=['owners'=>0,'cloud_completed'=>0,'homeserver_completed'=>0,'no_work'=>0,'failed'=>0];
     if($executor==='all'||$executor==='cloud'){
@@ -75,6 +96,7 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         try{$counts['profile_calls']=vp3_profile_call_runner_pa3c($pdo,$ownerLimit);}
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.profile_calls.failed',['error_class'=>get_class($e)]);}
         $counts['profile_speech']=agent_worker_profile_speech_maintenance_v1910($pdo,$ownerLimit);
+        $counts['profile_attention']=agent_worker_profile_attention_maintenance_v1910($pdo,$ownerLimit);
     }
     $ownerIds=agent_worker_runner_owner_ids_v1910($pdo,$ownerLimit);
     if($executor==='all'||$executor==='cloud'){cloud_mission_schema_v1($pdo);cloud_mission_schedules_schema_v1($pdo);cloud_mission_schedule_background_v1($pdo);$ownerIds=array_values(array_unique(array_merge(cloud_mission_schedule_owner_ids_v1($pdo,$ownerLimit),$ownerIds)));}

@@ -5,13 +5,13 @@ const read=p=>fs.readFileSync(p,'utf8');
 let checks=0;const check=(value,message)=>{assert.ok(value,message);checks++;};
 const drawer=read('chat-notifications-drawer-v240.js');
 const poll=drawer.slice(drawer.indexOf('  async function pollAttention('),drawer.indexOf('  function startAttentionPolling('));
-let draft='',restoring=false,calls=[],presented=[],failPresentation=false,response={latest_id:30,items:[{id:20},{id:30}]};
-const context=vm.createContext({window:{VP3_COGNITIVE_PRESENTATION_V510:{ownsAttention:true}},document:{hidden:false,getElementById:()=>({value:draft})},continuity:()=>({isRestoring:()=>restoring}),chatCanvasAvailable:()=>true,request:async(a,b,q)=>{calls.push(q);return response;},presentAttention:async(item,speak)=>{presented.push({item,speak});if(failPresentation)throw Error('canvas unavailable');}});
+let draft='',restoring=false,calls=[],presented=[],profileRefreshes=0,failPresentation=false,response={latest_id:30,items:[{id:20,source_type:'radar_event'},{id:30,source_type:'radar_event'}]};
+const context=vm.createContext({window:{VP3_COGNITIVE_PRESENTATION_V510:{ownsAttention:true}},document:{hidden:false,getElementById:()=>({value:draft})},profileAttention:{refresh:async()=>profileRefreshes++},continuity:()=>({isRestoring:()=>restoring}),chatCanvasAvailable:()=>true,request:async(a,b,q)=>{calls.push(q);return response;},presentAttention:async(item,speak)=>{presented.push({item,speak});if(failPresentation)throw Error('canvas unavailable');}});
 vm.runInContext('let attentionBusy=false,attentionCursor=0,profileAttentionCursor=0;'+poll+';globalThis.api={pollAttention,get cursor(){return profileAttentionCursor}};',context);
 await context.api.pollAttention();check(calls.length===0,'Cognitive owner does not restart generic legacy attention');
-draft='Unsent draft';await context.api.pollAttention(false,'profile');check(calls.length===0,'Unsent draft defers priority without opening another conversation');draft='';
+draft='Unsent draft';await context.api.pollAttention(false,'profile');check(calls.length===0&&profileRefreshes===1,'Typed Profile controller owns its read/presentation fence while a draft defers the legacy Radar handoff');draft='';
 restoring=true;await context.api.pollAttention(false,'profile');check(calls.length===0,'Initial conversation restore defers the priority handoff');restoring=false;
-await context.api.pollAttention(false,'profile');check(calls[0].scope==='profile'&&calls[0].after_id===0,'Scoped handoff bootstraps existing profile notifications');
+await context.api.pollAttention(false,'profile');check(calls[0].scope==='profile'&&calls[0].after_id===0,'Retained scoped handoff bootstraps existing Radar notifications after typed Profile refresh');
 check(context.api.cursor===30&&presented.length===2,'Successful canvas presentation advances scoped cursor');
 check(!presented[0].speak&&presented[1].speak,'Initial backlog voices only the final priority');
 response={latest_id:50,items:[{id:50}]};failPresentation=true;
@@ -21,11 +21,17 @@ context.document.hidden=true;const count=calls.length;await context.api.pollAtte
 // Exercise the existing writer-to-canvas acknowledgement sequence itself.
 const present=drawer.slice(drawer.indexOf('  async function presentAttention('),drawer.indexOf('  async function pollAttention('));
 let surfaced=false,reads=0,speech=0,duplicate=false;
-const canvas=vm.createContext({request:async()=>({handled:true,duplicate,conversation_id:10,message:'Visitor said hello'}),activeConversationId:()=>10,activeAgentId:()=>0,showAttentionConversation:async()=>surfaced,queueSpeech:()=>speech++,requestState:async()=>{reads++;return true;},render:()=>{},syncMainFeedBrainOutcomeControls:()=>{}});
+let typed=0;const canvas=vm.createContext({window:{},document:{getElementById:()=>({value:''})},profileAttention:{refresh:async()=>typed++},request:async()=>({handled:true,duplicate,conversation_id:10,message_id:101,message:'Radar attention update'}),activeConversationId:()=>10,activeAgentId:()=>0,showAttentionConversation:async()=>surfaced,queueSpeech:()=>speech++,requestState:async()=>{reads++;return true;},render:()=>{},syncMainFeedBrainOutcomeControls:()=>{}});
 vm.runInContext(present+';globalThis.presentAttention=presentAttention;',canvas);
 await assert.rejects(canvas.presentAttention({id:5}));check(reads===0&&speech===0,'An unseen turn is neither marked read nor voiced');
-surfaced=true;await canvas.presentAttention({id:5});check(reads===1&&speech===1,'Confirmed canvas turn is acknowledged then uses existing voice transport');
+surfaced=true;await canvas.presentAttention({id:5,source_type:'radar_event'});check(reads===1&&speech===1,'Confirmed non-Profile Radar turn retains existing acknowledgement and voice transport');
 duplicate=true;await canvas.presentAttention({id:5});check(reads===2&&speech===1,'A duplicate durable turn is not announced twice');
+await canvas.presentAttention({id:6,source_type:'profile_event'});check(typed===1&&reads===2&&speech===1,'Exact Profile sources delegate before legacy read or speech');
+const mount=drawer.slice(drawer.indexOf('  async function showAttentionConversation('),drawer.indexOf('  function voiceButton('));
+let cid=10,agent=7,opened=0,syncs=0,found='';const binding=vm.createContext({continuity:()=>({conversationId:()=>cid,syncConversation:async()=>{syncs++;},openConversation:async()=>opened++}),activeConversationId:()=>cid,activeAgentId:()=>agent,document:{getElementById:()=>({value:''}),querySelector:selector=>{found=selector;return {};}}});
+vm.runInContext(mount+';globalThis.mount=showAttentionConversation;',binding);
+check(await binding.mount(99,101)===false&&opened===0&&syncs===0,'Retained Radar duplicate elsewhere cannot auto-open its old private Chat');
+check(await binding.mount(10,101)===true&&found.includes('data-chat-message-id="101"')&&found.includes('data-chat-conversation-id="10"'),'Legacy current Chat display binds saved message ID instead of matching public text');
 // Run the actual admin polling/renderer with a tiny DOM adapter, including an
 // installation under a URL subdirectory and attacker-controlled display text.
 class Node{

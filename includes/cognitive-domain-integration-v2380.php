@@ -15,7 +15,7 @@ function vp3_cognitive_domain_event_types_v2380(): array
     return [
         'profile_agent'=>[
             'profile.visited','profile.return_visitor','profile.conversation_started',
-            'profile.message_received','profile.message_sent','profile.booking_intent',
+            'profile.message_received','profile.message_sent','profile.needs_owner','profile.booking_intent',
             'profile.product_intent','profile.booking_converted','profile.product_converted',
         ],
         'scheduling'=>['schedule.created','schedule.updated','availability.changed'],
@@ -125,10 +125,14 @@ function vp3_cognitive_domain_record_v2380(
 function vp3_cognitive_profile_event_bridge_v2380(PDO $pdo,array $event,array $session,array $metadata=[]): void
 {
     $owner=(int)($event['owner_user_id']??0);$eventId=(int)($event['id']??0);$type=(string)($event['event_type']??'');
+    if($owner>0&&$eventId>0&&function_exists('vp3_profile_projection_schema_ready_pa4b')&&vp3_profile_projection_schema_ready_pa4b($pdo)){
+        vp3_profile_projection_atomic_pa4b($pdo,static fn()=>vp3_profile_projection_oblige_event_pa4b($pdo,$owner,$eventId));return;
+    }
     $map=[
         'conversation_started'=>'profile.conversation_started',
         'message_received'=>'profile.message_received',
         'message_sent'=>'profile.message_sent',
+        'needs_owner'=>'profile.needs_owner',
         'booking_intent'=>'profile.booking_intent',
         'product_intent'=>'profile.product_intent',
         'booking_converted'=>'profile.booking_converted',
@@ -295,11 +299,35 @@ function vp3_cognitive_domain_row_v2380(PDO $pdo,array $user,array $ref): ?array
 function vp3_cognitive_domain_permission_v2380(PDO $pdo,array $user,string $agentNamespace,array $ref,string $operation='read'): bool
 {
     if($operation!=='read')return false;
+    if(($ref['type']??null)==='profile_event'){try{vp3_cognitive_profile_event_context_v2380($pdo,$user,$agentNamespace,$ref);return true;}catch(Throwable $e){return false;}}
     try{return vp3_cognitive_domain_row_v2380($pdo,$user,$ref)!==null;}catch(Throwable $e){return false;}
+}
+
+/** Typed public evidence is resolved afresh; it is never an owner's instruction
+ * or a preference-extraction input, and statement text is not an event receipt.
+ */
+function vp3_cognitive_profile_event_context_v2380(PDO $pdo,array $user,string $agentNamespace,array $ref): array
+{
+    $id=(string)($ref['id']??'');if(($ref['scope']??null)!=='profile_agent'||!preg_match('/^[1-9][0-9]{0,14}$/D',$id))throw new RuntimeException('Profile evidence is unavailable.');
+    if(!function_exists('vp3_profile_projection_source_pa4b'))require_once __DIR__.'/profile-event-projection-pa4b.php';
+    if(!function_exists('vp3_observation_personal_permission_v1'))require_once __DIR__.'/agent-observation-authority-v1.php';
+    $owner=(int)($user['id']??0);$live=vp3_profile_projection_user_pa4b($pdo,$owner);$aid=0;
+    if($agentNamespace!=='system'){
+        if(!preg_match('/^agent:([1-9][0-9]{0,14})$/D',$agentNamespace,$match))throw new RuntimeException('Profile evidence is unavailable.');$aid=(int)$match[1];
+        $q=$pdo->prepare('SELECT id FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1');$q->execute([$aid,$owner]);if(!$q->fetchColumn())throw new RuntimeException('Profile evidence is unavailable.');
+    }
+    if(!vp3_observation_personal_permission_v1($pdo,$live,'agent_brain.access'))throw new RuntimeException('Profile evidence is unavailable.');
+    $source=vp3_profile_projection_source_pa4b($pdo,$owner,(int)$id);if($source['status']!=='verified')throw new RuntimeException('Profile evidence is unavailable.');
+    $fresh=vp3_profile_projection_source_pa4b($pdo,$owner,(int)$id);if($fresh['status']!=='verified'||!hash_equals($source['source_hash'],$fresh['source_hash']))throw new RuntimeException('Profile evidence is unavailable.');
+    if($aid>0){$q->execute([$aid,$owner]);if(!$q->fetchColumn())throw new RuntimeException('Profile evidence is unavailable.');}
+    if(!vp3_observation_personal_permission_v1($pdo,vp3_profile_projection_user_pa4b($pdo,$owner),'agent_brain.access'))throw new RuntimeException('Profile evidence is unavailable.');
+    $record=vp3_profile_projection_references_pa4b($fresh)+['speaker_label'=>$fresh['projection']['speaker_label'],'statement'=>$fresh['projection']['body'],'statement_origin'=>'public_profile','instruction_authority'=>'none','owner_preference_extraction'=>false];
+    return ['record'=>$record,'authority'=>'typed_public_profile_evidence','build'=>VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380];
 }
 
 function vp3_cognitive_domain_context_v2380(PDO $pdo,array $user,string $agentNamespace,array $ref,array $options=[]): array
 {
+    if(($ref['type']??null)==='profile_event')return vp3_cognitive_profile_event_context_v2380($pdo,$user,$agentNamespace,$ref);
     $row=vp3_cognitive_domain_row_v2380($pdo,$user,$ref);if(!$row)throw new RuntimeException('Cognitive domain object is unavailable.');
     foreach(['guest_email','guest_phone','cancel_token','public_token','access_token_ciphertext','refresh_token_ciphertext','metadata_json','terms_snapshot_json'] as $key)unset($row[$key]);
     return ['record'=>$row,'authority'=>'domain_record','build'=>VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380];
@@ -322,7 +350,7 @@ function vp3_cognitive_register_domain_module_v2380(string $module,array $object
 function vp3_cognitive_register_domains_v2380(): void
 {
     $events=vp3_cognitive_domain_event_types_v2380();
-    vp3_cognitive_register_domain_module_v2380('profile_agent',['profile','profile_visit','profile_conversation'],$events['profile_agent'],['default_seconds'=>30]);
+    vp3_cognitive_register_domain_module_v2380('profile_agent',['profile','profile_visit','profile_conversation','profile_event'],$events['profile_agent'],['default_seconds'=>30]);
     vp3_cognitive_register_domain_module_v2380('scheduling',['schedule','scheduling_type'],$events['scheduling'],['default_seconds'=>60]);
     vp3_cognitive_register_domain_module_v2380('booking_appointments',['booking','appointment'],$events['booking_appointments'],['default_seconds'=>30]);
     vp3_cognitive_register_domain_module_v2380('calendar',['calendar_event'],$events['calendar'],['default_seconds'=>30]);

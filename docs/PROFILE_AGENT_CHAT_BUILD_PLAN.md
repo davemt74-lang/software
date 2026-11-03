@@ -31,7 +31,7 @@ photos, or audio. Unknown guests use a selectable/default visitor preset. Keep
 speaker labels and voice assignment separate from identity/authentication.
 
 The owner and visitor can also talk directly. Live text uses the same explicit
-visitor card and durable public conversation. The next slice adds an in-browser
+visitor card and durable public conversation. PA3C adds an in-browser
 voice call with optional video: either participant can offer a call, the other
 must accept, and each controls their own microphone and camera. The owner stays
 in the main Chat canvas; the visitor stays in the Profile chat. An unanswered or
@@ -59,8 +59,8 @@ hold. The Cloud work does not change HomeServer source or Stonefellow playback.
 | PA3 | Availability, exact visible-card acknowledgement, 15-second pickup, durable automatic takeover, and functional main Chat visitor cards with explicit text reply/claim/delegate/resolve | Released in PRs #696 and #697 |
 | PA3D | Visitor chooses Agent chat or requests live owner text; owner accepts or declines using existing Chat Settings | Released in PR #698; acceptance gates below |
 | PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Released in PR #699; all 16 PR and 15 post-merge workflows passed |
-| PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Implemented; local verification passed, MySQL and Chromium release gates pending |
-| PA4B | Notification and Brain state; snooze/wake; routing; replay and projection repair | Planned |
+| PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Released in PR #701; all 16 PR and 15 post-merge workflows passed; 10/10 bounded acceptance gates |
+| PA4B | Notification and Brain state; snooze/wake; routing; replay and projection repair | Implemented with the ten release gates below; exact-revision CI establishes acceptance |
 | PA5 | Ordinary public Profile conversation checkout using the canonical Commerce order/payment/receipt path | Planned |
 
 ### PA1: conversation and permission foundation
@@ -479,17 +479,15 @@ arrival announcement per session, and safe playback interruption/queue behavior.
 Reuse existing ElevenLabs credentials and provider settings. A voice selection
 must not grant access to another account's saved voice clone.
 
-The existing implementation points for the next focused audit are
-`api/agent-voice-v117.php`, `api/admin-elevenlabs-v102.php`,
-`includes/ai-settings.php`, and the Studio voice-profile services. Their current
-general speech/provider configuration is not a visitor voice-assignment record.
-The Profile and Studio schema surfaces reviewed so far do not provide an explicit
-visitor sex/gender or preferred speech-voice field; PA4A must offer a voluntary
-voice preference instead of deriving it from a name, photo or recording.
+PA4A reuses the existing provider configuration in `api/agent-voice-v117.php`,
+`api/admin-elevenlabs-v102.php` and `includes/ai-settings.php`. It keeps visitor
+voice assignments separate from Studio voice profiles and offers a voluntary
+voice preference. It does not derive that preference from a name, photo or
+recording.
 
-The following acceptance gates define this section's release score. Local
-verification has passed; the MySQL concurrency and Chromium jobs must also pass
-before this section is scored 10/10 or merged. Live calls continue to use actual
+The following acceptance gates define this section's release score. All 16 PR
+workflows passed on commit `526916f4d0b9c58ced51f00fc5477a779762167d`, including
+45 actual Chromium assertions and the MySQL gates on PHP 8.1 and 8.3. Live calls continue to use actual
 participant audio; synthetic announcements and typed message playback yield to
 an accepted human call.
 
@@ -557,15 +555,25 @@ read, handling its attention item, creating another Chat turn or acknowledging
 the doorbell. Historical notifications without a linked speech item keep their
 existing presentation path.
 
-Local evidence before PR verification: core SQL 123, provider/storage 76,
+Local evidence: core SQL 123, provider/storage 76,
 actual speech API HTTP 83, actual Admin HTTP 23, UI runtime 94 and notification
 presentation 11 checks passed. Fresh-install normalization passed 8 checks and
 Upgrade readiness passed 35 cases; the retained
 full Recovery Baseline and production Cloud worker/API suite also passed. The
-independent-process MySQL runner requires observed row-lock contention for
-competing claims, request replay and both call/playback orderings. Browser tests
+independent-process MySQL runner passed 38 checks with observed row-lock
+contention for competing claims, request replay and both call/playback orderings.
+Both PHP versions passed the installation, core, notification, provider and
+production API suites on MySQL without skipping PA4A gates. Browser tests
 use actual production Chat and voice scripts with simulated external boundaries;
 no live provider request, physical microphone or device connectivity is claimed.
+
+PR #701 merged as `25ae238f3a8d38d8735156223311f0cfc604acbe` after all 16 PR
+workflows passed. All 15 post-merge workflows also passed. Packaging run
+`41725126831` produced the verified flat ZIP with 1,758 source files, all compared
+byte for byte to that merge. Existing installations run Upgrade once, then reload
+Chat. Admin's Profile speech page uses the existing encrypted ElevenLabs
+settings and validates any approved visitor presets. Live provider and physical
+iPhone behavior remain deployment checks rather than automated test claims.
 
 | PA4A gate | Required behavior |
 | --- | --- |
@@ -580,6 +588,8 @@ no live provider request, physical microphone or device connectivity is claimed.
 | 9 | Preserve visible text and useful retry/error states when voice is unavailable; account for provider usage without claiming exactly-once provider billing |
 | 10 | Verify replay, interruption, capture exclusion, simultaneous visitors, account changes and mobile browser behavior without live provider calls |
 
+### PA4B: notification lifecycle and Brain recovery
+
 PA4B makes presented/read/snoozed/handled/ignored states consistent. Snoozed
 attention must wake after expiry even if it was previously presented. A stale
 poll result cannot present an item already handled or ignored. Replay cannot
@@ -588,11 +598,53 @@ reported as “caught up.” Repair a missed Brain projection from durable event
 evidence, with visitor, Agent and owner statements and actions attributed
 separately.
 
-The notification query already contains an expired-snooze wake condition in
-`notification_profile_attention_after_v1341()`. Verify it through the later
-presentation/replay path before claiming wake-up works end to end. That function
-currently returns an empty successful result when the connection or notification
-table is unavailable; gate 9 must distinguish that case from an empty inbox.
+The focused audit reproduced four failures across the existing query and
+presentation paths: handled items could create a new Chat turn, expired snoozes
+could remain invisible after their previous presentation, replay could reopen an
+older private conversation, and an unavailable notification table could appear
+to be an empty successful inbox. Brain archival also happened after Chat commit
+without an exact retry obligation, so a lost archival write could stay missing.
+
+The PA4B implementation separates canonical attention disposition, read
+generation and visible-card acknowledgement. State revisions reject stale
+operations; each due snooze receives one new wake generation. The current
+generation is unread until an explicit read action, independently of whether its
+card has been displayed. Handled and ignored attention cannot return to pending
+through a delayed acknowledgement or stale replay. Read endpoints inspect saved
+state; bounded maintenance or an explicit presentation request materializes a
+due wake.
+
+Each display is bound to one exact owner, notification, attention item, source
+event, public conversation and generation. A neutral private Chat marker refers
+to that source; public visitor instructions are not copied into trusted assistant
+history. Current source resolution retains visitor, owner and Agent attribution,
+checks the original native authority, and respects current access and identity
+disclosure. Aggregate contact recognition never substitutes for that evidence.
+Historical sources whose binding cannot be proved remain unverified.
+
+The owner keeps the selected private Chat and any unsent draft. A delivery saved
+in another conversation is reported as elsewhere, rather than automatically
+opening that conversation. The drawer and Profile portal share the same strict
+API contract and lifecycle controls. Bounded Previous/Next pages keep older
+attention and handled history reachable; navigating the list does not present a
+new Chat card or acknowledge a visitor. Partial and failed reads preserve the last
+known display with a visible retry state; “caught up” requires complete current
+counts showing no unread or outstanding attention. PA3 doorbell pickup and PA4A speech keep their existing ownership of those
+interactions; generic notification replay grants no new speech permission.
+
+Local projection receipts distinguish a source event recorded, a private Chat
+marker saved, and an exact Brain archive row saved. The repair worker reads
+current source authority, writes the intended local destination and verifies its
+receipt in one transaction. It does not execute a public reply, provider request,
+workflow action or payment. Brain uses the exact private Chat message ID and
+neutral marker, while typed public-source references retain speaker attribution.
+Conflicting destination evidence is reported for review instead of overwritten.
+
+Fresh setup and Upgrade install the lifecycle fields, operation/delivery tables
+and local projection receipts. The existing Cloud/Profile worker performs bounded
+snooze and projection maintenance. An incomplete schema is reported as
+unavailable, and worker execution never installs tables. Production release still
+requires the following ten gates and all exact-commit CI workflows to pass.
 
 | PA4B gate | Required behavior |
 | --- | --- |
@@ -603,9 +655,22 @@ table is unavailable; gate 9 must distinguish that case from an empty inbox.
 | 5 | Multiple tabs and retries produce one authoritative notification outcome and avoid duplicate audible announcements |
 | 6 | Public visitor, human owner and Agent statements retain accurate attribution in Chat and Brain |
 | 7 | Repair a missed Chat/Brain projection from saved event evidence, without replaying the public action or payment |
-| 8 | Notification replay preserves private Chat selection, unsent drafts and exact public reply targets |
+| 8 | Notification replay and backlog paging preserve private Chat selection, unsent drafts and exact public reply targets; all owned items remain reachable |
 | 9 | Failed/partial reads remain visibly unsuccessful rather than reporting that all attention is handled |
 | 10 | SQL, HTTP and browser fixtures cover expiry, concurrent state changes, projection failure, account revocation and retained doorbell/call behavior |
+
+The focused local suite passes **332 checks**: 79 source/lifecycle SQL checks,
+93 local projection/recovery checks, 59 production HTTP and notification-page
+checks, 87 interface runtime assertions, and 14 actual installer/recovery checks.
+The Upgrade fixture passes 41 cases. Retained historical owner HTTP checks pass
+82 assertions and retained Profile notification integration passes 35. The
+65-source backlog cases cover every page, current active priority, handled/read
+history, and navigation without a presentation or acknowledgement.
+
+Release CI executes the SQL and HTTP gates on MySQL 8 with PHP 8.1 and 8.3,
+including 40 independent-process concurrency checks, and the actual Chromium
+Chat/voice/drawer/portal integration. Transport and media boundaries remain
+controlled; these gates do not place live provider, payment, voice or video calls.
 
 ### PA5: checkout in ordinary Profile conversation
 
