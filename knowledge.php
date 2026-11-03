@@ -289,7 +289,7 @@ $typeLabels = ['all'=>'All types','documents'=>'Documents','audio'=>'Audio / Med
 <meta name="theme-color" content="#ffffff">
 <title>My Knowledge | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" href="<?= e(url('/personal-knowledge.css?v=knowledge-library-v161-20260913')) ?>">
+<link rel="stylesheet" href="<?= e(url('/personal-knowledge.css?v=screen-sessions-v1')) ?>">
 </head>
 <body>
 <div class="chat-app personal-knowledge-app">
@@ -308,6 +308,7 @@ $memberHeaderActions=implode('', $memberHeaderActionParts);
 require __DIR__.'/includes/member-header.php';
 ?>
 <section class="personal-knowledge-canvas"><div class="personal-knowledge-wrap">
+<?php require __DIR__.'/includes/agent-screen-knowledge-panel-v1.php'; ?>
     <div class="personal-knowledge-hero">
         <div><small>Personal Agent Data</small><h1>Your Knowledge Library</h1><p>Organize documents, media, notes, transcription intelligence and music context with the same shared folders used across VP3.</p></div>
         <div class="personal-knowledge-stats">
