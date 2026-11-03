@@ -16,6 +16,7 @@ function system_agent_name():string{return 'Longfellow';}
 function url(string $s):string{return $s;}
 function current_user():?array{return !empty($GLOBALS['profilePublicGuest'])?null:['id'=>1];}
 function personal_capability_has_v242(...$args):bool{return in_array($args[0]??'',['profile_agent.access','profile_chat.access'],true);}
+function has_permission(string $key,?array $user=null):bool{return (int)($user['id']??0)===1&&$key==='chat.access';}
 function user_agent_get_v236(PDO $pdo,int $owner,int $id):?array{$q=$pdo->prepare('SELECT * FROM user_agents WHERE owner_user_id=? AND id=?');$q->execute([$owner,$id]);return $q->fetch()?:null;}
 function artist_workspace_v181_scope_id(...$args):int{return 0;}
 function vp3_cognitive_presentation_owns_attention_v510():bool{return true;}
@@ -59,6 +60,17 @@ $authority=profile_conversation_native_authority_v1(1,0);
 $pdo->beginTransaction();
 vp3_profile_agent_conversation_bind_v1($pdo,profile_agent_conversation_get($pdo,100,1,10),$authority);
 $pdo->commit();
+$pdo->exec('ALTER TABLE notifications ADD COLUMN read_at DATETIME NULL');
+$pdo->exec("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''");
+$pdo->exec('ALTER TABLE user_profiles ADD COLUMN share_visit_identity INTEGER NOT NULL DEFAULT 0');
+$pdo->exec('CREATE TABLE user_blocks(blocker_user_id INTEGER NOT NULL,blocked_user_id INTEGER NOT NULL,PRIMARY KEY(blocker_user_id,blocked_user_id))');
+$pdo->exec("INSERT INTO chat_conversations(id,user_id,user_agent_id,title) VALUES(11,1,7,'Current selected Chat')");
+require_once dirname(__DIR__).'/includes/profile-attention-pa4b.php';
+vp3_profile_attention_ensure_schema_pa4b($pdo);
+function profileFixtureAttentionInput(PDO $pdo,array $user,int $nid,array $extra=[]):array{
+    $source=vp3_profile_attention_source_pa4b($pdo,$user,$nid);$row=$source['attention'];
+    return $extra+['notification_id'=>$nid,'attention_id'=>(int)$row['id'],'state_revision'=>(int)$row['state_revision'],'wake_generation'=>(int)$row['wake_generation'],'request_id'=>bin2hex(random_bytes(16)),'conversation_id'=>11,'agent_id'=>7];
+}
 function profileFixturePublicMessage(PDO $pdo,array $ctx,string $message,int $cid):array {
     $GLOBALS['profilePublicGuest']=true;
     try{return vp3_profile_agent_public_message_service_v110($pdo,$ctx,$message,$cid);}
@@ -70,8 +82,8 @@ function reject(callable $call,string $message):void{try{$call();}catch(Throwabl
 $user=['id'=>1];$profile=profile_for_user($pdo,1,false);$agent=['id'=>7,'owner_user_id'=>1,'display_name'=>'Profile helper'];$session=$pdo->query('SELECT * FROM profile_visit_sessions WHERE id=10')->fetch();
 $visit=profile_event_create($pdo,1,$session,'profile_view',10,7,[],'visit-1');profile_attention_from_event($pdo,$visit,$session,$agent);
 check((int)$pdo->query("SELECT count(*) FROM notifications WHERE type='profile_view'")->fetchColumn()===1,'Visit creates canonical owner notification');
-$first=notification_profile_attention_after_v1341($user);
-check(count($first['items'])===1&&$first['items'][0]['type']==='profile_view','Profile priority poll sees visits with cognitive ownership enabled');
+$first=vp3_profile_attention_state_pa4b($pdo,$user,['conversation_id'=>11,'agent_id'=>7]);
+check(count($first['items'])===1&&$first['items'][0]['source_status']==='historical_unverified'&&!$first['items'][0]['eligible'],'Unproved historical visit remains visible and neutral in the current controller');
 $start=profile_event_create($pdo,1,$session,'conversation_started',60,7,[],'start-100');profile_attention_from_event($pdo,$start,$session,$agent,100);
 $ctx=['profile'=>$profile,'owner_user_id'=>1,'owner_user'=>$user,'visitor'=>null,'agent'=>$agent,'agent_id'=>7,'session'=>$session,'session_id'=>10,'conversation_authority'=>$authority];
 $result=profileFixturePublicMessage($pdo,$ctx,'Can we meet next week?',100);
@@ -81,22 +93,25 @@ check(is_array($note)&&str_contains($note['body'],'Can we meet next week?'),'Act
 check((int)$pdo->query("SELECT is_read FROM notifications WHERE type='profile_conversation_started'")->fetchColumn()===1,'Saved message supersedes empty start notification');
 check((int)$pdo->query("SELECT count(*) FROM agent_attention_items WHERE attention_type='conversation_started' AND status='handled'")->fetchColumn()===1,'Superseded start attention is retired');
 $messageId=(int)$pdo->query('SELECT MAX(id) FROM profile_agent_messages')->fetchColumn();
-profile_agent_message_received_v1341($pdo,$profile,$agent,$session,['id'=>100,'owner_user_id'=>1,'profile_session_id'=>10],$messageId,'Can we meet next week?');
+$GLOBALS['profilePublicGuest']=true;
+try{profile_agent_message_received_v1341($pdo,$profile,$agent,$session,['id'=>100,'owner_user_id'=>1,'profile_session_id'=>10],$messageId,'Can we meet next week?');}
+finally{$GLOBALS['profilePublicGuest']=false;}
 check((int)$pdo->query("SELECT count(*) FROM notifications WHERE type='profile_message_received'")->fetchColumn()===1,'Saved message identity deduplicates event retry');
 $pdo->exec("UPDATE profile_agent_messages SET created_at=datetime('now','-10 seconds')");
 profileFixturePublicMessage($pdo,$ctx,'Please call tomorrow.',100);
 check((int)$pdo->query("SELECT count(*) FROM notifications WHERE type='profile_message_received'")->fetchColumn()===2,'Later messages in an existing thread also notify');
 reject(fn()=>profileFixturePublicMessage($pdo,[...$ctx,'session_id'=>20],'Other session',100),'Public session cannot notify from another conversation');
 reject(fn()=>profile_agent_message_received_v1341($pdo,[...$profile,'user_id'=>2],$agent,$session,['id'=>100,'owner_user_id'=>1,'profile_session_id'=>10],900,'bad'),'Message ownership mismatch rejects');
-$present=chat_notifications_v240_present_attention($pdo,$user,['notification_id'=>(int)$note['id']]);
-check(!empty($present['handled'])&&empty($present['duplicate']),'Cognitive owner hands profile priority to the existing canonical writer');
-check($present['voice_allowed']===false&&end($delivered)==='notification:'.$note['id'],'Voice policy can suppress speech without suppressing the priority turn');
-check(end($policyCalls)['agent_voice_enabled']===false,'Handoff preserves the authoritative voice preference');
-check(str_contains($present['message'],'Can we meet next week?'),'Main chat turn includes the actual visitor message');
+$presentInput=profileFixtureAttentionInput($pdo,$user,(int)$note['id']);
+$present=chat_notifications_v240_present_attention($pdo,$user,$presentInput);
+check($present['item']['delivery_location']==='current'&&empty($present['duplicate']),'Exact Profile priority uses the captured current Chat and canonical lifecycle');
+check($present['voice_allowed']===false&&$delivered===[],'Notification replay grants no speech or cognitive voice delivery');
+check($policyCalls===[],'Profile lifecycle preserves voice ownership without invoking synthesis policy');
+check($present['message']==='Profile attention update.'&&str_contains($present['item']['display_text'],'Can we meet next week?'),'Public statement is a typed source beside a neutral private marker');
 $stored=$pdo->query('SELECT * FROM chat_messages')->fetch();$context=json_decode($stored['context_json'],true);
-check($context['attention']['priority']==='high'&&$context['attention']['required']===true,'Persisted assistant turn is high-priority actionable attention');
-check($context['actions'][0]['url']==='/profile-agent.php?tab=inbox&conversation=100','Turn links to its exact profile conversation');
-$retry=chat_notifications_v240_present_attention($pdo,$user,['notification_id'=>(int)$note['id']]);
+check($context['profile_attention']['notification_id']===(int)$note['id']&&$context['profile_attention']['contract']===VP3_PROFILE_ATTENTION_PA4B,'Persisted marker identifies the exact saved attention source');
+check($context['profile_attention']['public_conversation_id']===100,'Marker binds its exact public conversation without an automatic navigation');
+$retry=chat_notifications_v240_present_attention($pdo,$user,$presentInput);
 check(!empty($retry['duplicate'])&&(int)$pdo->query('SELECT count(*) FROM chat_messages')->fetchColumn()===1,'Lost response retry reuses the persisted turn');
 reject(fn()=>chat_notifications_v240_present_attention($pdo,['id'=>2],['notification_id'=>(int)$note['id']]),'Another owner cannot present the notification');
 create_notification(1,'approval_required','Unrelated approval','Review','/tasks.php','task',11);
@@ -109,12 +124,13 @@ $batch=notification_profile_attention_after_v1341($user);
 check(!in_array('agent_activity_radar_visit',array_column($batch['items'],'type'),true),'Routine crawler activity stays in Brain');
 check(in_array('radar_agent_visit_needs_attention',array_column($batch['items'],'type'),true),'Actionable Radar visit reaches priority handoff');
 $newNote=$pdo->query("SELECT id FROM notifications WHERE type='profile_message_received' ORDER BY id DESC LIMIT 1")->fetchColumn();
+$newInput=profileFixtureAttentionInput($pdo,$user,(int)$newNote);
 $pdo->exec("CREATE TRIGGER fail_attention_insert BEFORE INSERT ON chat_messages BEGIN SELECT RAISE(ABORT,'injected write failure'); END");
-reject(fn()=>chat_notifications_v240_present_attention($pdo,$user,['notification_id'=>(int)$newNote]),'Failed canonical insert rejects');
+reject(fn()=>chat_notifications_v240_present_attention($pdo,$user,$newInput),'Failed canonical insert rejects');
 check(!$pdo->inTransaction()&&(int)$pdo->query('SELECT count(*) FROM chat_messages')->fetchColumn()===1,'Failed presentation rolls back the complete write');
 $pdo->exec('DROP TRIGGER fail_attention_insert');
-$recovered=chat_notifications_v240_present_attention($pdo,$user,['notification_id'=>(int)$newNote]);
-check(!empty($recovered['handled'])&&(int)$pdo->query('SELECT count(*) FROM chat_messages')->fetchColumn()===2,'A failed canonical write can be retried safely');
+$recovered=chat_notifications_v240_present_attention($pdo,$user,$newInput);
+check($recovered['item']['delivery_location']==='current'&&(int)$pdo->query('SELECT count(*) FROM chat_messages')->fetchColumn()===2,'A failed canonical write can be retried safely');
 $privateSession=[...$session,'visitor_user_id'=>2];
 $privateEvent=profile_event_create($pdo,1,$privateSession,'profile_view',10,7,[],'private-visit');
 profile_attention_from_event($pdo,$privateEvent,$privateSession,$agent);
@@ -123,7 +139,9 @@ check(str_contains($privateNote['title'],'Signed-in member')&&!str_contains(json
 check(profile_event_create($pdo,1,[...$session,'visitor_user_id'=>1],'profile_view',10,7)===null,'Owner self-visits remain excluded');
 $pdo->prepare('DELETE FROM notifications WHERE id=?')->execute([(int)$note['id']]);
 profile_agent_reconcile_notifications_v1341($pdo,$user);profile_agent_reconcile_notifications_v1341($pdo,$user);
-check((int)$pdo->query("SELECT count(*) FROM notifications WHERE source_id=".(int)$note['source_id']." AND source_type='profile_event'")->fetchColumn()===1,'Existing attention ledger repairs a lost notification exactly once');
+check((int)$pdo->query("SELECT count(*) FROM notifications WHERE source_id=".(int)$note['source_id']." AND source_type='profile_event'")->fetchColumn()===0,'Legacy read reconciler never mutates notification storage');
+vp3_profile_attention_maintenance_pa4b($pdo);vp3_profile_attention_maintenance_pa4b($pdo);
+check((int)$pdo->query("SELECT count(*) FROM notifications WHERE source_id=".(int)$note['source_id']." AND source_type='profile_event'")->fetchColumn()===1,'Bounded worker repairs the exact missing notification once');
 $visitNote=$pdo->query("SELECT id FROM notifications WHERE type='profile_view' ORDER BY id LIMIT 1")->fetchColumn();
 $visitSource=$pdo->query('SELECT source_id FROM notifications WHERE id='.(int)$visitNote)->fetchColumn();
 $pdo->exec("UPDATE agent_attention_items SET status='handled' WHERE source_event_id=".(int)$visitSource);
@@ -134,15 +152,15 @@ $pdo->exec("UPDATE agent_attention_items SET status='snoozed',snoozed_until=date
 $scan=notification_profile_attention_after_v1341($user);$cursor=$scan['latest_id'];
 check(!in_array((int)$visitNote,array_column($scan['items'],'id'),true),'Active snooze defers the priority');
 $pdo->exec("UPDATE agent_attention_items SET snoozed_until=datetime('now','-1 minute') WHERE source_event_id=".(int)$visitSource);
-$wake=notification_profile_attention_after_v1341($user,$cursor);
-check(in_array((int)$visitNote,array_column($wake['items'],'id'),true)&&$wake['latest_id']>=$cursor,'Expired snooze wakes even after the scan cursor has advanced');
+$wake=vp3_profile_attention_state_pa4b($pdo,$user,['conversation_id'=>11,'agent_id'=>7,'after_id'=>$cursor]);$due=array_values(array_filter($wake['items'],static fn(array $row):bool=>$row['notification_id']===(int)$visitNote));
+check(count($due)===1&&$due[0]['wake_due']&&!$due[0]['eligible'],'Expired historical snooze is visible behind the cursor without inventing native proof');
 // More than one response page must never skip IDs because of a global MAX(id).
 $pdo->exec('DELETE FROM notifications');
-for($i=0;$i<65;$i++)create_notification(1,'profile_message_received','Message '.$i,'new','/profile-agent.php','profile_event',1000+$i);
-create_notification(2,'profile_message_received','Other owner','private','/profile-agent.php','profile_event',2000);
+for($i=0;$i<65;$i++)create_notification(1,'radar_agent_visit_needs_attention','Message '.$i,'new','/profile-agent.php','radar_event',1000+$i);
+create_notification(2,'radar_agent_visit_needs_attention','Other owner','private','/profile-agent.php','radar_event',2000);
 $ids=[];$cursor=0;
 for($i=0;$i<4;$i++){$batch=notification_profile_attention_after_v1341($user,$cursor);$cursor=$batch['latest_id'];$ids=array_merge($ids,array_column($batch['items'],'id'));}
-check(count($ids)===65&&count(array_unique($ids))===65,'Paged backlog delivers all 65 owner items once without skipping');
+check(count($ids)===65&&count(array_unique($ids))===65,'Retained Radar backlog delivers all 65 owner items once without skipping');
 check(!in_array('Other owner',array_column(notification_profile_attention_after_v1341($user)['items'],'title'),true),'Priority queue stays owner scoped');
 $pdo->exec("UPDATE notifications SET is_read=1");
 check(notification_profile_attention_after_v1341($user)['items']===[],'Read priorities do not replay on reload');

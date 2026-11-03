@@ -64,7 +64,7 @@ function ai_saved_encrypted_credentials_exist(): bool
     if (!function_exists('setting')) {
         return false;
     }
-    foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key','hosting_cpanel_api_token'] as $settingKey) {
+    foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key','hosting_cpanel_api_token','profile_calls_livekit_config_pa3c'] as $settingKey) {
         if (trim((string)setting($settingKey, '')) !== '') {
             return true;
         }
@@ -75,10 +75,20 @@ function ai_saved_encrypted_credentials_exist(): bool
         try{
             $pdo=db();
             if(!$pdo)return true; // Cannot establish the absence of encrypted credentials.
-            $stmt=$pdo->query("SHOW TABLES LIKE 'user_llm_credentials'");
-            if($stmt&&$stmt->fetchColumn()){
-                $encrypted=$pdo->query('SELECT 1 FROM user_llm_credentials LIMIT 1');
-                if($encrypted&&$encrypted->fetchColumn())return true;
+            // Call cleanup retains its original encrypted provider snapshot,
+            // including ended calls. A lost key must not be silently replaced.
+            $settings=$pdo->prepare("SELECT 1 FROM settings WHERE setting_key=? AND setting_value<>'' LIMIT 1");
+            $settings->execute(['profile_calls_livekit_config_pa3c']);
+            if($settings->fetchColumn())return true;
+            foreach(['user_llm_credentials','profile_calls_pa3c'] as $table){
+                $stmt=$pdo->prepare($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
+                    ?"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?"
+                    :'SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');
+                $stmt->execute([$table]);
+                if($stmt->fetchColumn()){
+                    $encrypted=$pdo->query($table==='user_llm_credentials'?'SELECT 1 FROM user_llm_credentials LIMIT 1':"SELECT 1 FROM profile_calls_pa3c WHERE provider_snapshot<>'' LIMIT 1");
+                    if($encrypted&&$encrypted->fetchColumn())return true;
+                }
             }
         }catch(Throwable $e){return true;}
     }

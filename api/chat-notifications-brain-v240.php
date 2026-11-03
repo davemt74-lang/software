@@ -542,6 +542,21 @@ function chat_notifications_v240_present_attention_locked(PDO $pdo, array $user,
             return ['ok'=>true,'handled'=>false,'notification_id'=>$notificationId,
                 'presentation_owner'=>'profile_handoff_pa3','voice_allowed'=>false];
         }
+        if(function_exists('vp3_profile_speech_notification_owned_pa4a')
+            &&vp3_profile_speech_notification_owned_pa4a($pdo,$user,$notification)){
+            // The exact saved arrival owns narration. Keep its notification and
+            // attention state intact; playback does not acknowledge a visitor.
+            return ['ok'=>true,'handled'=>false,'notification_id'=>$notificationId,
+                'presentation_owner'=>'profile_speech_pa4a','voice_allowed'=>false];
+        }
+    }
+    if(($notification['source_type']??null)==='profile_event'){
+        require_once dirname(__DIR__).'/includes/profile-attention-pa4b.php';
+        return vp3_profile_attention_present_pa4b($pdo,$user,$input);
+    }
+    if(notification_is_profile_source_pa4b($notification)){
+        // A display type alone is not an exact source, permission or voice grant.
+        return ['ok'=>true,'handled'=>false,'notification_id'=>$notificationId,'presentation_owner'=>'profile_attention_pa4b','voice_allowed'=>false,'source_status'=>'historical_unverified','reason'=>'source_unverified'];
     }
     if(function_exists('vp3_cognitive_presentation_owns_attention_v510')&&vp3_cognitive_presentation_owns_attention_v510()&&!notification_is_profile_attention_v1341($notification)){
         return ['ok'=>true,'handled'=>false,'presentation_owner'=>'cognitive_runtime_v510','notification_id'=>max(0,(int)($input['notification_id']??0))];
@@ -670,6 +685,11 @@ function chat_notifications_v240_present_attention_locked(PDO $pdo, array $user,
 
 function chat_notifications_v240_present_attention(PDO $pdo,array $user,array $input): array
 {
+    // Profile lifecycle takes the public conversation lock before attention.
+    // Do not invert that order through the legacy global-owner wrapper.
+    $profileNote=$pdo->prepare("SELECT id FROM notifications WHERE id=? AND user_id=? AND source_type='profile_event'");
+    $profileNote->execute([max(0,(int)($input['notification_id']??0)),(int)$user['id']]);
+    if($profileNote->fetchColumn())return chat_notifications_v240_present_attention_locked($pdo,$user,$input);
     $owned=!$pdo->inTransaction();$savepoint='attention_'.bin2hex(random_bytes(6));
     if($owned)$pdo->beginTransaction();else $pdo->exec('SAVEPOINT '.$savepoint);
     try{
@@ -707,21 +727,34 @@ function chat_notifications_v240_present_attention(PDO $pdo,array $user,array $i
 
 $user = current_user();
 if (!$user) chat_notifications_v240_json(['ok'=>false,'error'=>'login_required'], 401);
-if (!has_permission('chat.access', $user)) chat_notifications_v240_json(['ok'=>false,'error'=>'forbidden'], 403);
 $pdo = db();
 if (!$pdo) chat_notifications_v240_json(['ok'=>false,'error'=>'database_unavailable'], 503);
 
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $input = $method === 'POST' ? chat_notifications_v240_input() : $_GET;
 $action = trim((string)($input['action'] ?? 'state'));
+if (!has_permission('chat.access', $user)&&!in_array($action,['profile_attention_state','profile_attention_item','profile_attention_present','profile_attention_ack','profile_attention_update'],true)) chat_notifications_v240_json(['ok'=>false,'error'=>'forbidden'], 403);
 
 try {
+    if(in_array($action,['profile_attention_state','profile_attention_item','profile_attention_present','profile_attention_ack','profile_attention_update'],true)){
+        require_once dirname(__DIR__).'/includes/profile-attention-pa4b.php';
+        $read=in_array($action,['profile_attention_state','profile_attention_item'],true);
+        if($method!==($read?'GET':'POST'))chat_notifications_v240_json(['ok'=>false,'complete'=>false,'counts'=>null,'voice_allowed'=>false,'error'=>'This action uses '.($read?'GET':'POST').'.'],405);
+        if(!$read)chat_notifications_v240_require_csrf($input);
+        $result=match($action){
+            'profile_attention_state'=>vp3_profile_attention_state_pa4b($pdo,$user,$input),
+            'profile_attention_item'=>vp3_profile_attention_item_pa4b($pdo,$user,$input),
+            'profile_attention_present'=>vp3_profile_attention_present_pa4b($pdo,$user,$input),
+            'profile_attention_ack'=>vp3_profile_attention_ack_pa4b($pdo,$user,$input),
+            'profile_attention_update'=>vp3_profile_attention_update_pa4b($pdo,$user,$input),
+        };
+        chat_notifications_v240_json($result);
+    }
     if ($method === 'GET' && $action === 'state') {
         chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
     if ($method === 'GET' && $action === 'attention') {
         if((string)($input['scope']??'')==='profile'){
-            profile_agent_reconcile_notifications_v1341($pdo,$user);
             chat_notifications_v240_json(notification_profile_attention_after_v1341($user,max(0,(int)($input['after_id']??0))));
         }
         $afterId = max(0, (int)($input['after_id'] ?? 0));
@@ -758,20 +791,28 @@ try {
         if ($id < 1) {
             chat_notifications_v240_json(['ok'=>false,'error'=>'notification_required'], 400);
         }
+        $note=$pdo->prepare("SELECT id FROM notifications WHERE id=? AND user_id=? AND source_type='profile_event'");$note->execute([$id,(int)$user['id']]);
+        if($note->fetchColumn()){
+            require_once dirname(__DIR__).'/includes/profile-attention-pa4b.php';
+            chat_notifications_v240_json(vp3_profile_attention_update_pa4b($pdo,$user,array_replace($input,['operation'=>'read'])));
+        }
         mark_notification_read($id, (int)$user['id']);
         chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
     if ($action === 'mark_all_read') {
+        // Bulk drawer input has no captured revision for Profile generations.
         mark_all_notifications_read((int)$user['id']);
         chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
 
     chat_notifications_v240_json(['ok'=>false,'error'=>'unknown_action'], 400);
+} catch (VP3ProfileAttentionException $e) {
+    chat_notifications_v240_json(['contract'=>VP3_PROFILE_ATTENTION_PA4B,'ok'=>false,'complete'=>false,'counts'=>null,'voice_allowed'=>false,'code'=>$e->publicCode,'error'=>$e->getMessage()],$e->httpStatus);
 } catch (VP3ProfileHandoffException $e) {
     chat_notifications_v240_json(['ok'=>false,'code'=>$e->publicCode,'error'=>$e->getMessage()],$e->httpStatus);
 } catch (DomainException $e) {
     chat_notifications_v240_json(['ok'=>false,'error'=>$e->getMessage()], 400);
 } catch (Throwable $e) {
     error_log('Stonefellow notification brain drawer v240 error: ' . $e->getMessage());
-    chat_notifications_v240_json(['ok'=>false,'error'=>'Activity Center is temporarily unavailable.'], 500);
+    chat_notifications_v240_json(['ok'=>false,'complete'=>false,'counts'=>null,'voice_allowed'=>false,'error'=>'Activity Center is temporarily unavailable.'], 503);
 }

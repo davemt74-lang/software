@@ -38,9 +38,10 @@ class Document extends EventTarget{
   createElement(tag){return new Element(this,tag);}querySelector(selector){return this.body.querySelector(selector);}getElementById(id){return this.querySelector('#'+id);}
 }
 const source=fs.readFileSync(new URL('../profile-visitor-doorbell-pa3.js',import.meta.url),'utf8');
+const voiceSource=fs.readFileSync(new URL('../chat-voice.js',import.meta.url),'utf8'),canonicalSource=fs.readFileSync(new URL('../chat.js',import.meta.url),'utf8');
 const tick=async()=>{for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r));};
 let checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;console.log('PASS '+label);};
-async function fixture({cards=[ownerCard()],cid=42,storage=new Map(),hidden=false}={}){
+async function fixture({cards=[ownerCard()],cid=42,storage=new Map(),hidden=false,voiceRuntime=false}={}){
   const document=new Document(),window=new EventTarget(),thread=document.createElement('section'),topbar=document.createElement('div'),privateInput=document.createElement('textarea');
   thread.id='chatThread';thread.dataset.view='chat';thread.rect={top:70,left:0,right:800,bottom:850,width:800,height:780};topbar.className='chat-topbar-actions';privateInput.id='chatInput';privateInput.value='PRIVATE CHAT DRAFT';document.body.append(topbar,thread,privateInput);
   document.hidden=hidden;document.visibilityState=hidden?'hidden':'visible';
@@ -81,14 +82,23 @@ async function fixture({cards=[ownerCard()],cid=42,storage=new Map(),hidden=fals
     const body=document.createElement('div');body.className='message-body';const text=document.createElement('p');text.className='message-text';text.textContent='Profile visitor conversation.';body.append(text);element.append(body);thread.append(element);return element;
   }
   Object.assign(window,{innerHeight:900,innerWidth:900,VP3_PROFILE_DOORBELL_PA3:{endpoint:'/notes',ownerEndpoint:'/owner',csrf:'fixture',userId:1},STONEFELLOW_CHAT:{agentId:7},
-    STONEFELLOW_CHAT_CONTINUITY:{conversationId:()=>activeCid,agentId:()=>agent,isReady:()=>true,isRestoring:()=>false,ensureConversation:async()=>{ensureCalls++;activeCid=99;window.dispatchEvent(new Event('vp3:chat-context-ready'));return 99;},mountProfileHandoff:mount},
+    STONEFELLOW_CHAT_CONTINUITY_V87:{conversationId:()=>activeCid,agentId:()=>agent,isReady:()=>true,isRestoring:()=>false,ensureConversation:async()=>{ensureCalls++;activeCid=99;window.dispatchEvent(new Event('vp3:chat-context-ready'));return 99;},mountProfileHandoff:mount},
     setInterval(fn,delay){intervals.push({fn,delay});return intervals.length;},clearInterval(){},setTimeout(fn,delay){const timer={fn,delay};timers.push(timer);return timer;},clearTimeout(timer){const i=timers.indexOf(timer);if(i>=0)timers.splice(i,1);},requestAnimationFrame:fn=>frames.push(fn),getComputedStyle:()=>({display:'block',visibility:'visible'})});
   const sessionStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
-  vm.runInNewContext(source,{window,document,sessionStorage,navigator:{onLine:true},crypto:webcrypto,Uint8Array,performance:{now:()=>elapsed},Date,JSON,Number,String,Map,Set,Event,AbortController,CustomEvent:CustomEventFixture,fetch:transport});
+  const context=vm.createContext({window,document,sessionStorage,localStorage:sessionStorage,navigator:{onLine:true},crypto:webcrypto,Uint8Array,performance:{now:()=>elapsed},Date,JSON,Number,String,Map,Set,Event,AbortController,CustomEvent:CustomEventFixture,fetch:transport,URL,URLSearchParams,setTimeout:window.setTimeout,clearTimeout:window.clearTimeout,setInterval:window.setInterval,clearInterval:window.clearInterval});
+  if(voiceRuntime){
+    const form=document.createElement('form');form.id='chatForm';const send=document.createElement('button');send.id='sendChatButton';form.append(privateInput,send);const button=document.createElement('button');button.id='chatVoiceButtonLegacyDormant';button.classList={toggle(){}};const status=document.createElement('div');status.id='chatVoiceStatus';document.body.append(form,button,status);
+    const helpers=canonicalSource.slice(canonicalSource.indexOf('  function bindStoredMessagePa3('),canonicalSource.indexOf('  function formatPlaybackTime(')),exports=canonicalSource.slice(canonicalSource.indexOf('  const canonicalChatContinuity = {'),canonicalSource.indexOf('  function speakIntroV101('));
+    vm.runInContext('let conversationId=42,contextReady=true,restoringConversation=0,initialRestorePending=false,busy=false,voiceMode=false;const thread=document.getElementById("chatThread"),cfg={agentId:7};function addMessage(role,text){const n=document.createElement("article");n.className="message assistant";const b=document.createElement("div");b.className="message-body";const t=document.createElement("p");t.className="message-text";t.textContent=text;b.append(t);n.append(b);thread.append(n);return n;}'+helpers+exports+';window.__binding=(cid,aid)=>{conversationId=cid;cfg.agentId=aid;};',context);
+    window.location={href:'https://fixture.test/chat.php',origin:'https://fixture.test',pathname:'/chat.php'};context.location=window.location;
+    window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'fixture'};window.STONEFELLOW_CHAT_VOICE_BOOT={button,intro:null,legacyDormant:true};window.fetch=transport;
+    vm.runInContext(voiceSource,context,{filename:'chat-voice.js'});
+  }
+  vm.runInContext(source,context);
   const f={document,window,thread,privateInput,turns,requests,pending,storage,errors,get ensureCalls(){return ensureCalls;},get activeCid(){return activeCid;},get clock(){return clock;},cards:()=>thread.querySelectorAll('.profile-doorbell-card'),card:id=>thread.querySelector('[data-profile-doorbell-turn="'+id+'"]'),
     hold:action=>new Promise(arrived=>holds.push({action,arrived})),async settle(){await tick();while(timers.some(timer=>timer.delay===0)){const current=timers.filter(timer=>timer.delay===0);for(const timer of current){timers.splice(timers.indexOf(timer),1);timer.fn();}await tick();}},async timeout(){for(const timer of [...timers].filter(timer=>timer.delay===12000))timer.fn();await this.settle();},async frames(){for(let i=0;i<2;i++){const current=frames.splice(0);for(const fn of current)fn();await tick();}},
     async refresh(){await window.VP3_PROFILE_DOORBELL_PA3_RUNTIME.refresh();await this.settle();},
-    async changeContext(nextCid,nextAgent=7){window.dispatchEvent(new Event('stonefellow:chat-context-changing'));activeCid=nextCid;agent=nextAgent;thread.replaceChildren();window.dispatchEvent(new Event('vp3:chat-context-ready'));await this.settle();},
+    async changeContext(nextCid,nextAgent=7){window.dispatchEvent(new Event('stonefellow:chat-context-changing'));activeCid=nextCid;agent=nextAgent;window.__binding?.(nextCid,nextAgent);thread.replaceChildren();window.dispatchEvent(new Event('vp3:chat-context-ready'));await this.settle();},
     async visibility(value){document.hidden=!value;document.visibilityState=value?'visible':'hidden';document.dispatchEvent(new Event('visibilitychange'));await this.settle();},
     async advance(ms){clock+=ms;elapsed+=ms;for(const timer of intervals.filter(x=>x.delay===500))timer.fn();await tick();},
     async submit(id,text){const card=this.card(id),input=card.querySelector('textarea');input.value=text;input.dispatchEvent(new Event('input'));card.querySelector('form').dispatchEvent(new Event('submit'));await tick();},
@@ -251,12 +261,31 @@ for(const live_status of ['expired','unavailable','ended']){
  const turn=f.turns.get(101);turn.revision++;turn.responder='agent';turn.chat.mode='agent';turn.chat.live_status='ended';turn.chat.can_end_live_chat=false;await f.refresh();
  check(card.textContent.includes('Live chat has ended. Your Profile Agent handles new messages.')&&!card.textContent.includes('Your Profile Agent replied.')&&turn.history.at(-1).sender_type==='owner','ended live chat identifies the next responder without reattributing the previous owner reply');f.stop();
 }
-for(const chat of [null,chatChoice({contract:'wrong'}),chatChoice({live_status:'invented'}),chatChoice({live_text_available:'true'}),chatChoice({can_end_live_chat:1}),chatChoice({owner_name:'x'.repeat(241)})]){
+for(const chat of [null,chatChoice({contract:'wrong'}),chatChoice({live_status:'invented'}),chatChoice({live_text_available:'true'}),chatChoice({can_end_live_chat:1}),chatChoice({owner_name:'x'.repeat(241)}),chatChoice({media_call_active:'true'})]){
  const f=await fixture({cards:[ownerCard(101,{chat})]});check(f.cards().length===0,'malformed optional chat choice cannot enable owner controls');f.stop();
 }
 {
  const f=await fixture({cards:[ownerCard(101,{state:'owner_claimed',responder:'owner',can_claim:false,chat:chatChoice({live_status:'accepted',can_end_live_chat:false})})]});
  check(f.card(101).querySelector('[data-doorbell-action="delegate"]').disabled,'an accepted chat cannot end when its canonical live end capability is false');f.stop();
+}
+{
+ const f=await fixture({cards:[ownerCard(101,{state:'owner_claimed',responder:'owner',chat:chatChoice({mode:'auto',live_status:'ended',media_call_active:true,live_text_available:false,can_end_live_chat:false})})]});
+ const card=f.card(101);check(card.textContent.includes('A direct call is handling this visitor')&&!card.querySelector('textarea').disabled,'accepted direct call preserves canonical owner text replies even when text-only availability ends');
+ check(card.querySelector('[data-doorbell-action="delegate"]').disabled&&card.querySelector('[data-doorbell-action="resolve"]').disabled,'owner text card cannot delegate or resolve the conversation underneath a direct call');
+ const turn=f.turns.get(101);turn.chat.media_call_active=false;turn.chat.live_status='expired';turn.revision++;await f.refresh();
+ check(card.textContent.includes('You are handling this visitor.')&&!card.textContent.includes('live chat request expired'),'post-call owner continuation is not mislabelled with a historical live-text expiration');f.stop();
+}
+{
+ const f=await fixture({voiceRuntime:true});await f.frames();
+ check(f.window.STONEFELLOW_CHAT_VOICE?.directOwner===true&&f.window.STONEFELLOW_CHAT_CONTINUITY!==f.window.STONEFELLOW_CHAT_CONTINUITY_V87&&typeof f.window.STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit==='function','actual voice module runs before doorbell and replaces primary continuity without a fixture early return');
+ check(f.card(101)&&f.thread.querySelector('[data-chat-message-id="701"]')?.dataset.profileHandoffConversation==='1101','canonical Chat mount creates the persisted visitor card after the voice overwrite');
+ check(f.requests.filter(r=>['doorbell_presence','doorbell_list','doorbell_delivery','doorbell_ack'].includes(r.action)).every(r=>r.chat_conversation_id===42&&r.chat_agent_id===7),'voice overwrite cannot change the exact selected Agent7 or private Chat for visitor delivery');f.stop();
+}
+{
+ const f=await fixture({cid:0,hidden:true});f.window.STONEFELLOW_CHAT_CONTINUITY={isBusy:()=>false,pendingVoiceSubmit:()=>true};await f.visibility(true);
+ check(f.ensureCalls===0&&!f.requests.some(r=>r.action==='doorbell_delivery'),'a pending voice submission blocks implicit blank-Chat initialization');
+ f.window.STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit=()=>false;await f.refresh();
+ check(f.ensureCalls===1&&f.card(101),'canonical blank Chat initializes after the exact voice submission settles');f.stop();
 }
 // Run the actual Chat continuity helpers with the same mutable context as Chat.
 // These tests cover adoption/cursor races that a stand-in continuity API cannot.

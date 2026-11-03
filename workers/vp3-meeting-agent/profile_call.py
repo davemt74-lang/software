@@ -9,7 +9,6 @@ import re
 import secrets
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -18,7 +17,7 @@ from typing import Any
 from livekit import rtc
 from livekit.agents import AutoSubscribe, JobContext
 
-logger = logging.getLogger("vp3-meeting-agent")
+logger = logging.getLogger("vp3-profile-call-agent")
 HEARTBEAT_SECONDS = 2.0
 HTTP_TIMEOUT_SECONDS = 3.0
 MAX_LEASE_SECONDS = 8
@@ -32,6 +31,40 @@ class LeaseRejected(Exception):
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args: Any, **kwargs: Any) -> None:
         return None
+
+
+@dataclass(frozen=True)
+class ProfileDispatch:
+    call_id: str
+    room_name: str
+    worker_key: str
+    display_name: str
+
+    @property
+    def identity(self) -> str:
+        return f"agent-{self.call_id}"
+
+
+def parse_dispatch(raw: str, room: str) -> ProfileDispatch:
+    if not isinstance(raw, str) or len(raw) > 1024:
+        raise ValueError("Invalid Profile Agent dispatch")
+    metadata = json.loads(raw)
+    if not isinstance(metadata, dict) or set(metadata) != {
+        "vp3_profile_call_id", "room_name", "worker_key", "agent_display_name",
+    }:
+        raise ValueError("Invalid Profile Agent dispatch")
+    call_id = metadata["vp3_profile_call_id"]
+    room_name = metadata["room_name"]
+    worker_key = metadata["worker_key"]
+    name = metadata["agent_display_name"]
+    if (
+        not isinstance(call_id, str) or not re.fullmatch(r"[0-9a-f]{32}", call_id)
+        or room_name != f"vp3-profile-{call_id}" or room_name != room
+        or not isinstance(worker_key, str) or not re.fullmatch(r"[0-9a-f]{64}", worker_key)
+        or not isinstance(name, str) or not name.strip() or len(name) > 190
+    ):
+        raise ValueError("Invalid Profile Agent dispatch")
+    return ProfileDispatch(call_id, room_name, worker_key, name)
 
 
 @dataclass
@@ -91,7 +124,8 @@ class ProfileCall:
             "worker_key": worker_key,
             "worker_id": secrets.token_hex(16),
         }
-        self.identities = {f"vp3-profile-{side}-{call_id}" for side in ("owner", "visitor")}
+        self.identities = {f"{side}-{call_id}" for side in ("owner", "visitor")}
+        self.identity = f"agent-{call_id}"
         self.present: set[str] = set()
         self.mics: dict[str, Microphone] = {}
         self.unsubscribing: set[str] = set()
@@ -182,10 +216,30 @@ class ProfileCall:
 
     def eligible(self, publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant) -> bool:
         return (
-            participant.identity in self.identities
+            self.authorized_human(participant)
             and publication.kind == rtc.TrackKind.KIND_AUDIO
             and publication.source == rtc.TrackSource.SOURCE_MICROPHONE
         )
+
+    def authorized_human(self, participant: rtc.RemoteParticipant) -> bool:
+        return (
+            participant.identity in self.identities
+            and participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD
+        )
+
+    def scoped_agent(self, participant: rtc.LocalParticipant) -> bool:
+        permission = participant.permissions
+        return (
+            participant.identity == self.identity
+            and participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_AGENT
+            and permission.hidden and permission.can_subscribe
+            and not (permission.can_publish or permission.can_publish_data
+                     or permission.can_update_metadata or permission.can_publish_sources)
+        )
+
+    def permissions_changed(self, participant: rtc.Participant, _permissions: Any) -> None:
+        if participant.identity == self.identity and not self.scoped_agent(self.room.local_participant):
+            self.stop()
 
     def consider(self, publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant) -> None:
         if not self.capturing() or not self.eligible(publication, participant):
@@ -297,9 +351,11 @@ class ProfileCall:
             mic.subscribed_requested = False
 
     def participant_joined(self, participant: rtc.RemoteParticipant) -> None:
-        if participant.identity in self.identities:
-            self.present.add(participant.identity)
-            self.scan_microphones()
+        if not self.authorized_human(participant):
+            self.stop()
+            return
+        self.present.add(participant.identity)
+        self.scan_microphones()
 
     def participant_left(self, participant: rtc.RemoteParticipant) -> None:
         if participant.identity in self.present:
@@ -308,13 +364,20 @@ class ProfileCall:
 
     def reconnecting(self) -> None:
         self.connected = False
+        self.capture = False
         self.present.clear()
         self.clear_microphones()
 
     def reconnected(self) -> None:
+        if self.room.name != self.room_name or not self.scoped_agent(self.room.local_participant):
+            self.stop()
+            return
+        participants = self.room.remote_participants.values()
+        if not all(self.authorized_human(participant) for participant in participants):
+            self.stop()
+            return
         self.connected = not self.stopped.is_set()
-        self.present = self.identities.intersection(p.identity for p in self.room.remote_participants.values())
-        self.scan_microphones()
+        self.present = {participant.identity for participant in participants}
 
     def stop(self, *_: Any) -> None:
         self.connected = False
@@ -323,7 +386,7 @@ class ProfileCall:
         self.stopped.set()
         self.clear_microphones()
 
-    async def run(self, agent_name: str) -> None:
+    async def run(self) -> None:
         self.room.on("track_published", self.consider)
         self.room.on("track_subscribed", self.track_subscribed)
         self.room.on("track_unsubscribed", self.track_unsubscribed)
@@ -331,22 +394,21 @@ class ProfileCall:
         self.room.on("track_subscription_failed", self.subscription_failed)
         self.room.on("participant_connected", self.participant_joined)
         self.room.on("participant_disconnected", self.participant_left)
+        self.room.on("participant_permissions_changed", self.permissions_changed)
         self.room.on("reconnecting", self.reconnecting)
         self.room.on("reconnected", self.reconnected)
         self.room.on("disconnected", self.stop)
 
         try:
             await self.renew()
+            # The pre-join lease authorizes connecting only. Read current capture
+            # authority again once the SDK reports the exact connected identity.
+            self.capture = False
             await asyncio.wait_for(
                 self.ctx.connect(auto_subscribe=AutoSubscribe.SUBSCRIBE_NONE),
                 timeout=max(0.0, self.deadline - time.monotonic()),
             )
             self.reconnected()
-            if agent_name and self.connected:
-                try:
-                    await asyncio.wait_for(self.room.local_participant.set_name(agent_name), timeout=1.0)
-                except Exception:
-                    logger.debug("Profile Agent display name could not be updated")
             while not self.stopped.is_set() and time.monotonic() < self.deadline:
                 try:
                     await self.renew()
@@ -375,25 +437,16 @@ class ProfileCall:
 
 async def run_profile_call(
     ctx: JobContext,
-    metadata: dict[str, Any],
+    dispatch: ProfileDispatch,
     base_url: str,
     secret: str,
     transcribe: Callable[..., Awaitable[None]],
 ) -> None:
-    call_id = metadata.get("vp3_profile_call_id")
-    room_name = metadata.get("room_name")
-    worker_key = metadata.get("worker_key")
-    parsed_url = urllib.parse.urlsplit(base_url)
-    if (
-        "vp3_meeting_public_id" in metadata
-        or not isinstance(call_id, str) or not re.fullmatch(r"[0-9a-f]{32}", call_id)
-        or room_name != f"vp3-profile-call-{call_id}" or ctx.room.name != room_name
-        or not isinstance(worker_key, str) or not re.fullmatch(r"[0-9a-f]{32,128}", worker_key)
-        or parsed_url.scheme != "https" or not parsed_url.hostname or parsed_url.username is not None
-        or parsed_url.query or parsed_url.fragment or not secret
-    ):
-        raise RuntimeError("Profile call worker dispatch configuration is invalid")
-    ctx.log_context_fields = {"room": room_name, "vp3_profile_call": call_id, "agent_mode": "notes"}
-    worker = ProfileCall(ctx, call_id, room_name, worker_key, f"{base_url}/api/profile-call-worker-pa3c.php", secret, transcribe)
-    agent_name = metadata.get("agent_display_name")
-    await worker.run(agent_name.strip()[:100] if isinstance(agent_name, str) else "")
+    ctx.log_context_fields = {
+        "room": dispatch.room_name, "vp3_profile_call": dispatch.call_id, "agent_mode": "notes",
+    }
+    worker = ProfileCall(
+        ctx, dispatch.call_id, dispatch.room_name, dispatch.worker_key,
+        f"{base_url}/api/profile-call-worker-pa3c.php", secret, transcribe,
+    )
+    await worker.run()

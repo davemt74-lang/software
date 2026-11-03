@@ -1,0 +1,24 @@
+.profile-call-card{box-sizing:border-box;width:100%;max-width:650px;border:1px solid var(--border,#ced7e5);border-left:4px solid var(--accent,#5865d8);border-radius:14px;margin:.65rem 0;padding:1rem;background:var(--surface,#fff);color:var(--text,#1c2940);overflow-wrap:anywhere;text-align:left}
+.profile-call-card *,.profile-call-offer-actions *{box-sizing:border-box}
+.profile-call-card h3{font-size:1rem;margin:0 0 .65rem;line-height:1.4}
+.profile-call-status,.profile-call-notice{font-size:.83rem;line-height:1.45;margin:.5rem 0;color:var(--muted,#526078)}
+.profile-call-notice:empty{display:none}
+.profile-call-actions,.profile-call-offer-actions{display:flex;gap:.45rem;flex-wrap:wrap;margin:.6rem 0;align-items:center}
+.profile-call-offer-actions .profile-call-notice{flex-basis:100%;margin:0}
+.profile-call-card button,.profile-call-offer-actions button{font:inherit;font-size:.82rem;min-height:42px;padding:.5rem .75rem;border:1px solid var(--border,#cbd5e1);border-radius:8px;color:inherit;background:var(--surface,#fff);cursor:pointer}
+.profile-call-card button:disabled,.profile-call-offer-actions button:disabled{opacity:.5;cursor:default}
+.profile-call-card button:focus-visible,.profile-call-card input:focus-visible,.profile-call-offer-actions button:focus-visible{outline:2px solid var(--accent,#5865d8);outline-offset:2px}
+.profile-call-card [data-call-action="join"],.profile-call-card [data-call-action="accept"]{background:var(--accent,#5865d8);border-color:var(--accent,#5865d8);color:#fff}
+.profile-call-card [data-call-action="end"]{border-color:#e6b8b8;color:#942b2b}
+.profile-call-consent{padding:.7rem;border-radius:9px;background:var(--surface-soft,#f3f6fa);font-size:.82rem;line-height:1.45}
+.profile-call-consent p{margin:0 0 .65rem}
+.profile-call-consent label{display:flex;gap:.55rem;align-items:flex-start;margin:.6rem 0}
+.profile-call-consent input{flex:0 0 auto;width:18px;height:18px;margin:.1rem 0}
+.profile-call-stage{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;margin:.65rem 0}
+.profile-call-stage:has(> :empty){grid-template-columns:minmax(0,1fr)}
+.profile-call-stage>div:empty{display:none}
+.profile-call-stage video{display:block;width:100%;max-width:100%;aspect-ratio:4/3;object-fit:contain;border-radius:10px;background:#0e1728}
+.profile-call-stage audio{display:none}
+.profile-call-card [hidden]{display:none!important}
+[data-profile-call-visitor-host]{min-width:0;width:100%;padding:.2rem 0}
+@media(max-width:650px){.profile-call-card{padding:.8rem;min-width:0}.profile-call-card button,.profile-call-offer-actions button{min-height:44px}.profile-call-consent{font-size:16px}.profile-call-stage{grid-template-columns:minmax(0,1fr)}.profile-call-actions button{flex:1 1 auto}.profile-call-offer-actions button{flex:1 1 130px}}

@@ -82,7 +82,7 @@ async function fixture(browser, width, reducedMotion = 'no-preference', persistL
   });
   await page.goto(url);
   const emit = (id, status, assisted = true) => page.evaluate(detail => {
-    window.dispatchEvent(new CustomEvent('vp3:profile-call-state', {detail}));
+    window.dispatchEvent(new CustomEvent('vp3:profile-call-assistance', {detail}));
   }, {id, status, assisted, agent: {name: 'Longfellow'}});
   const host = page.locator('#profileCallActivityPa3c');
   const launch = host.getByRole('button');

@@ -89,7 +89,10 @@ assert.match(ui, /speechGeneration \+= 1/, 'cancelling speech invalidates queued
 assert.match(ui, /stonefellow:agent-proactive-speech/, 'proactive announcements publish speech lifecycle into canonical Chat voice');
 assert.doesNotMatch(ui, /setVoiceMode\(false\)/, 'proactive speech must not toggle the canonical voice conversation off');
 assert.doesNotMatch(ui, /responseTemporaryVoice/, 'notifications must never create temporary microphone authority');
-assert.match(ui, /return Boolean\(continuity\(\)\.isVoice\?\.\(\)\)/, 'attention reads voice state through the canonical continuity fallback');
+assert.match(ui, /return window\.STONEFELLOW_CHAT_CONTINUITY_V87 \|\| \{\}/, 'identity and saved-card mounting use canonical V87 even after the voice IIFE replaces primary continuity');
+assert.match(ui, /window\.STONEFELLOW_CHAT_CONTINUITY\?\.isVoice\?\.\(\) \|\| continuity\(\)\.isVoice\?\.\(\)/, 'existing non-Profile speech reads live voice state separately from canonical identity');
+assert.match(ui, /item\?\.source_type === 'profile_event'[\s\S]{0,120}profileAttention\?\.refresh/, 'typed Profile lifecycle takes precedence over generic read and voice delivery');
+assert.doesNotMatch(ui, /clearResponseWindow\(\)/, 'page teardown never calls the removed response-window function');
 assert.doesNotMatch(ui, /markUserResponse|responseWindowActive|responseTimer/, 'notification runtime must not retain obsolete temporary microphone response-window state');
 assert.doesNotMatch(ui, /TRANSCRIPT_SUBMIT[\s\S]{0,220}markUserResponse|chatForm[\s\S]{0,220}markUserResponse/, 'typed and spoken replies must not be coupled to removed temporary listening authority');
 

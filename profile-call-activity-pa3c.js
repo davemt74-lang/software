@@ -382,6 +382,7 @@
   }
 
   function receiveCall(call) {
+    if (call?.clear === true) { reset(); return; }
     const id = identifier(call?.id);
     if (!id || retiredCalls.has(id)) return;
     if (call.status === 'ended') {
@@ -407,7 +408,7 @@
     placeLauncher();
     schedule(current);
   }
-  window.addEventListener('vp3:profile-call-state', event => receiveCall(event.detail));
+  window.addEventListener('vp3:profile-call-assistance', event => receiveCall(event.detail));
   receiveCall(window.VP3_PROFILE_CALL_OWNER_STATE);
 
   launcher.addEventListener('click', () => {

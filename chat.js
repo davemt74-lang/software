@@ -1385,6 +1385,9 @@
       knowledge_actions_r9:raw.knowledge_actions_r9 || null,
       canvas_media:raw.canvas_media && typeof raw.canvas_media==='object' ? raw.canvas_media : null,
       profile_handoff:raw.profile_handoff && typeof raw.profile_handoff==='object' ? raw.profile_handoff : null,
+      profile_call:raw.profile_call && typeof raw.profile_call==='object' ? raw.profile_call : null,
+      profile_speech:raw.profile_speech && typeof raw.profile_speech==='object' ? raw.profile_speech : null,
+      profile_attention:raw.profile_attention && typeof raw.profile_attention==='object' ? raw.profile_attention : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1612,6 +1615,28 @@
     window.dispatchEvent(new CustomEvent('vp3:profile-handoff-message',{detail:{element}}));
   }
 
+  function bindProfileCallPa3c(element, marker) {
+    if(!element || marker?.contract!=='vp3.profile-call.v1' ||
+      !['call_id','revision','conversation_id'].every(key=>Number.isSafeInteger(marker[key])&&marker[key]>0))return;
+    element.dataset.profileCallId=String(marker.call_id);
+    element.dataset.profileCallRevision=String(marker.revision);
+    element.dataset.profileCallConversation=String(marker.conversation_id);
+    window.dispatchEvent(new CustomEvent('vp3:profile-call-message',{detail:{element}}));
+  }
+  function bindProfileSpeechPa4a(element,marker){
+    if(!element||marker?.contract!=='vp3.profile-speech.v1'||!['item_id','revision'].every(key=>Number.isSafeInteger(marker[key])&&marker[key]>0)||
+      !['arrival','visitor_message'].includes(marker.kind)||!Number.isSafeInteger(marker.public_conversation_id)||marker.public_conversation_id<0)return;
+    element.dataset.profileSpeechItem=String(marker.item_id);element.dataset.profileSpeechRevision=String(marker.revision);
+    element.dataset.profileSpeechKind=marker.kind;element.dataset.profileSpeechConversation=String(marker.public_conversation_id);
+    window.dispatchEvent(new CustomEvent('vp3:profile-speech-message',{detail:{element}}));
+  }
+  function bindProfileAttentionPa4b(element,marker){
+    if(!element||marker?.contract!=='vp3.profile-attention.v1'||!['delivery_id','attention_id','notification_id','wake_generation'].every(key=>Number.isSafeInteger(marker[key])&&marker[key]>0))return;
+    element.dataset.profileAttentionDelivery=String(marker.delivery_id);element.dataset.profileAttentionId=String(marker.attention_id);
+    element.dataset.profileAttentionNotification=String(marker.notification_id);element.dataset.profileAttentionWake=String(marker.wake_generation);
+    window.dispatchEvent(new CustomEvent('vp3:profile-attention-message',{detail:{element}}));
+  }
+
   let initializingConversationPa3=null;
   async function ensureConversationPa3() {
     if(conversationId>0)return conversationId;
@@ -1647,6 +1672,49 @@
     bindStoredMessagePa3(element,id,marker);
     if(!nearBottom)thread.scrollTop=previousScroll;
     return element;
+  }
+
+  function mountProfileCallPa3c(delivery) {
+    const call=delivery?.call,id=Number(delivery?.chat_message_id||delivery?.message_id);
+    if(!contextReady||restoringConversation||thread.dataset.view!=='chat'||
+      Number(delivery?.chat_conversation_id)!==conversationId||Number(delivery?.chat_agent_id)!==Number(cfg.agentId||0)||
+      call?.contract!=='vp3.profile-call.v1'||call.role!=='owner'||!Number.isSafeInteger(id)||id<1||
+      !['call_id','revision','conversation_id'].every(key=>Number.isSafeInteger(call[key])&&call[key]>0))return null;
+    const existing=thread.querySelector('[data-chat-message-id="'+id+'"]');
+    if(existing){
+      if(Number(existing.dataset.chatConversationId)!==conversationId||Number(existing.dataset.profileCallId)!==call.call_id||
+        Number(existing.dataset.profileCallConversation)!==call.conversation_id)return null;
+      return existing;
+    }
+    const previousScroll=thread.scrollTop,nearBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<100;
+    const element=addMessage('assistant','Profile visitor call.');
+    bindStoredMessagePa3(element,id);bindProfileCallPa3c(element,call);
+    if(!nearBottom)thread.scrollTop=previousScroll;
+    return element;
+  }
+  function mountProfileSpeechPa4a(delivery){
+    const item=delivery?.item,id=delivery?.chat_message_id;
+    if(!contextReady||restoringConversation||thread.dataset.view!=='chat'||delivery?.contract!=='vp3.profile-speech.v1'||
+      delivery.chat_conversation_id!==conversationId||delivery.chat_agent_id!==Number(cfg.agentId||0)||
+      !Number.isSafeInteger(id)||id<1||!item||!['id','revision'].every(key=>Number.isSafeInteger(item[key])&&item[key]>0)||
+      !['arrival','visitor_message'].includes(item.kind)||!Number.isSafeInteger(item.public_conversation_id)||item.public_conversation_id<0)return null;
+    const existing=thread.querySelector('[data-chat-message-id="'+id+'"]');
+    if(existing)return Number(existing.dataset.chatConversationId)===conversationId&&Number(existing.dataset.profileSpeechItem)===item.id?existing:null;
+    const previousScroll=thread.scrollTop,nearBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<100;
+    const element=addMessage('assistant','Profile visitor announcement.');
+    bindStoredMessagePa3(element,id);bindProfileSpeechPa4a(element,{...item,item_id:item.id,contract:'vp3.profile-speech.v1'});
+    if(!nearBottom)thread.scrollTop=previousScroll;return element;
+  }
+  function mountProfileAttentionPa4b(delivery){
+    const item=delivery?.item,id=item?.chat_message_id;
+    if(!contextReady||restoringConversation||thread.dataset.view!=='chat'||delivery?.contract!=='vp3.profile-attention.v1'||
+      !item||item.delivery_location!=='current'||item.chat_conversation_id!==conversationId||item.chat_agent_id!==Number(cfg.agentId||0)||
+      !['delivery_id','attention_id','notification_id','wake_generation','chat_message_id'].every(key=>Number.isSafeInteger(item[key])&&item[key]>0))return null;
+    const existing=thread.querySelector('[data-chat-message-id="'+id+'"]');
+    if(existing)return Number(existing.dataset.chatConversationId)===conversationId&&Number(existing.dataset.profileAttentionDelivery)===item.delivery_id&&Number(existing.dataset.profileAttentionId)===item.attention_id&&Number(existing.dataset.profileAttentionNotification)===item.notification_id&&Number(existing.dataset.profileAttentionWake)===item.wake_generation?existing:null;
+    const previousScroll=thread.scrollTop,nearBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<100;
+    const element=addMessage('assistant','Profile attention update.');bindStoredMessagePa3(element,id);bindProfileAttentionPa4b(element,{contract:'vp3.profile-attention.v1',...item});
+    if(!nearBottom)thread.scrollTop=previousScroll;return element;
   }
 
   function formatPlaybackTime(value) {
@@ -3106,6 +3174,9 @@
         context.canvas_media || null
       );
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
+      if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
+      if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
+      if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
 
@@ -3133,6 +3204,9 @@
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
       const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null);
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
+      if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
+      if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
+      if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory(signal);
@@ -3463,6 +3537,9 @@
     agentId:() => Number(cfg.agentId || 0),
     ensureConversation:ensureConversationPa3,
     mountProfileHandoff:mountProfileHandoffPa3,
+    mountProfileCall:mountProfileCallPa3c,
+    mountProfileSpeech:mountProfileSpeechPa4a,
+    mountProfileAttention:mountProfileAttentionPa4b,
     isRestoring:() => initialRestorePending || restoringConversation > 0,
     isReady:() => contextReady,
     isBusy:() => busy || initialRestorePending || restoringConversation > 0,

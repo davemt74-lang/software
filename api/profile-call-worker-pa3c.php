@@ -13,7 +13,7 @@ $respond=static function(int $status,array $payload): never {
 };
 if (($_SERVER['REQUEST_METHOD']??'')!=='POST') $respond(405,['ok'=>false,'error'=>'POST required.']);
 $authorization=(string)($_SERVER['HTTP_AUTHORIZATION']??$_SERVER['REDIRECT_HTTP_AUTHORIZATION']??'');
-$secret=video_meeting_worker_secret_v1800();
+$secret=vp3_profile_call_worker_secret_pa3c();
 if (strlen($secret)<32||!preg_match('/^Bearer ([^\s]+)$/D',$authorization,$match)||!hash_equals($secret,$match[1])) {
     $respond(401,['ok'=>false,'error'=>'Worker authentication failed.']);
 }

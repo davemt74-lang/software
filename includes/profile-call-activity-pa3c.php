@@ -1,11 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__.'/profile-call-pa3c.php';
-require_once __DIR__.'/chat-settings-v237.php';
-require_once __DIR__.'/artist-listening.php';
-require_once __DIR__.'/video-meetings-transcription-v1800.php';
-require_once __DIR__.'/video-meetings-agent-v1800.php';
+require_once __DIR__.'/profile-calls-pa3c.php';
 
 const VP3_PROFILE_CALL_WORKER_LEASE_MS_PA3C = 8000;
 
@@ -38,6 +34,7 @@ function vp3_profile_call_activity_ensure_schema_pa3c(PDO $pdo): void
 function vp3_profile_call_activity_schema_ready_pa3c(PDO $pdo): bool
 {
     try {
+        $pdo->query('SELECT assisted,agent_name,agent_worker_name FROM profile_calls_pa3c WHERE 1=0');
         $pdo->query('SELECT capture_revision,transcript_session_id FROM profile_call_assistance_pa3c WHERE 1=0');
         $pdo->query('SELECT capture_revision,result_json FROM profile_call_research_pa3c WHERE 1=0');
         return true;
@@ -48,15 +45,51 @@ function vp3_profile_call_activity_schema_ready_pa3c(PDO $pdo): bool
 
 function vp3_profile_call_assistance_ready_pa3c(PDO $pdo): bool
 {
-    return getenv('VP3_PROFILE_CALL_AGENT_ENABLED')==='1'
-        && trim((string)(video_meeting_livekit_config_v1800()['agent_name']??''))!==''
-        && strlen(video_meeting_worker_secret_v1800())>=32
-        && vp3_profile_call_activity_schema_ready_pa3c($pdo)
-        && artist_listening_v172_schema_ready();
+    if(getenv('VP3_PROFILE_CALL_AGENT_ENABLED')!=='1'||strlen(vp3_profile_call_worker_secret_pa3c())<32
+        ||vp3_profile_call_worker_name_pa3c()===''||!vp3_profile_call_activity_schema_ready_pa3c($pdo))return false;
+    if(!function_exists('artist_listening_v172_schema_ready'))require_once __DIR__.'/artist-listening.php';
+    if(!artist_listening_v172_schema_ready())return false;
+    if(!function_exists('vp3_profile_call_livekit_readiness_pa3c'))require_once __DIR__.'/profile-calls-livekit-pa3c.php';
+    return function_exists('vp3_profile_call_livekit_assistance_configured_pa3c')&&vp3_profile_call_livekit_assistance_configured_pa3c();
+}
+
+function vp3_profile_call_worker_secret_pa3c(): string
+{return trim((string)getenv('VP3_PROFILE_CALL_WORKER_SECRET'));}
+
+function vp3_profile_call_worker_name_pa3c(): string
+{
+    $name=(string)getenv('VP3_PROFILE_CALL_AGENT_NAME');
+    return preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/D',$name)?$name:'';
+}
+
+/** An ordinary call action carries the version of the notice rendered with its controls. */
+function vp3_profile_call_assistance_offer_pa3c(PDO $pdo,int $owner,array $agent,bool $lock=false): ?array
+{
+    $agentId=(int)($agent['id']??0);
+    if($agentId<1||!vp3_profile_call_assistance_ready_pa3c($pdo)||!vp3_profile_call_owner_assistance_allowed_pa3c($pdo,$owner,$agentId,$lock))return null;
+    $name=mb_substr(trim((string)($agent['display_name']??'')),0,100)?:'Profile Agent';
+    $binding=json_encode([$owner,$agentId,$name,vp3_profile_call_worker_name_pa3c(),vp3_profile_call_provider_ready_pa3c()['config_fingerprint']??''],JSON_THROW_ON_ERROR);
+    return ['agent'=>['name'=>$name],'notice'=>hash_hmac('sha256','profile-call-offer|'.$binding,vp3_profile_call_worker_secret_pa3c())];
+}
+
+function vp3_profile_call_assistance_incoming_notice_pa3c(array $call): string
+{
+    $secret=vp3_profile_call_worker_secret_pa3c();
+    return strlen($secret)>=32?hash_hmac('sha256','profile-call-incoming|'.$call['public_id'].'|'.$call['binding_hash'],$secret):'';
+}
+
+function vp3_profile_call_assistance_projection_pa3c(array $call,string $role): ?array
+{
+    if(empty($call['assisted'])||$call['mode']!=='audio')return null;
+    $out=['agent'=>['name'=>(string)$call['agent_name']]];
+    if($role==='owner')$out['id']=(string)$call['public_id'];
+    elseif($call['state']==='offered'&&$call['offered_by']==='owner')$out['notice']=vp3_profile_call_assistance_incoming_notice_pa3c($call);
+    return $out;
 }
 
 function vp3_profile_call_owner_assistance_allowed_pa3c(PDO $pdo,int $ownerId,int $agentId,bool $lock=false): bool
 {
+    if(!function_exists('chat_settings_agent_assisted_phone_chat_enabled_v237'))require_once __DIR__.'/chat-settings-v237.php';
     if (!chat_settings_agent_assisted_phone_chat_enabled_v237($pdo,$ownerId,$lock)) return false;
     $owner=profile_user_row($pdo,$ownerId);
     if (!$owner||empty($owner['is_active'])||!has_permission('artist_listening.access',$owner)) return false;
@@ -87,6 +120,38 @@ function vp3_profile_call_activity_begin_pa3c(PDO $pdo): void
     $pdo->beginTransaction();
 }
 
+function vp3_profile_call_assistance_by_id_pa3c(PDO $pdo,string $id): ?array
+{
+    $query=$pdo->prepare('SELECT * FROM profile_calls_pa3c WHERE public_id=?');
+    $query->execute([$id]);
+    return $query->fetch(PDO::FETCH_ASSOC)?:null;
+}
+
+function vp3_profile_call_assistance_media_current_pa3c(PDO $pdo,array $call,bool $lock=false): bool
+{
+    if(!in_array($call['state'],['preparing','ready','active'],true))return false;
+    try{vp3_profile_call_media_current_pa3c($pdo,$call,$lock);return true;}
+    catch(VP3ProfileCallException $error){return false;}
+}
+
+function vp3_profile_call_assistance_live_proof_pa3c(array $call): bool
+{
+    $now=vp3_profile_call_now_pa3c();$observed=(int)$call['provider_observed_at_ms'];
+    return $call['state']==='active'&&$observed<=$now&&$observed>=$now-15000
+        &&(int)$call['owner_connected']===1&&(int)$call['visitor_connected']===1
+        &&(int)$call['owner_authority_until_ms']>$now&&(int)$call['visitor_authority_until_ms']>$now
+        &&preg_match('/^RM_[A-Za-z0-9_-]{1,90}$/D',(string)$call['room_sid'])===1;
+}
+
+function vp3_profile_call_assistance_lock_current_pa3c(PDO $pdo,string $id): ?array
+{
+    $expected=vp3_profile_call_assistance_by_id_pa3c($pdo,$id);
+    if(!$expected||empty($expected['assisted'])||!in_array($expected['state'],['preparing','ready','active'],true))return null;
+    try{$current=vp3_profile_call_locked_pa3c($pdo,$expected);}
+    catch(VP3ProfileCallException $error){return null;}
+    return vp3_profile_call_assistance_media_current_pa3c($pdo,$current,true)?$current:null;
+}
+
 function vp3_profile_call_activity_row_pa3c(PDO $pdo,string $id,bool $lock=false): ?array
 {
     $suffix=$lock&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite'?' FOR UPDATE':'';
@@ -106,20 +171,23 @@ function vp3_profile_call_activity_ensure_row_pa3c(PDO $pdo,string $id): array
 
 function vp3_profile_call_worker_key_pa3c(array $call): string
 {
-    return hash_hmac('sha256','vp3-profile-call|'.$call['id'].'|'.$call['room_name'],video_meeting_worker_secret_v1800());
+    return hash_hmac('sha256','vp3-profile-call|'.$call['public_id'].'|'.$call['room_name'].'|'.$call['binding_hash'],vp3_profile_call_worker_secret_pa3c());
 }
 
 function vp3_profile_call_try_dispatch_pa3c(PDO $pdo,array $call): void
 {
-    if (empty($call['assisted'])||$call['status']!=='live'||!vp3_profile_call_assistance_ready_pa3c($pdo)) return;
-    $id=(string)$call['id'];
+    if (empty($call['assisted'])||!vp3_profile_call_assistance_live_proof_pa3c($call)||!vp3_profile_call_assistance_ready_pa3c($pdo)) return;
+    $id=(string)$call['public_id'];
     $now=vp3_profile_call_now_pa3c();
     $snapshot=vp3_profile_call_activity_row_pa3c($pdo,$id);
     if ($snapshot&&((int)$snapshot['dispatch_retry_ms']>$now||(int)$snapshot['lease_until_ms']>$now||empty($snapshot['capture_enabled']))) return;
+    $token=bin2hex(random_bytes(16));
+    $deadline=$now+12000;
     vp3_profile_call_activity_begin_pa3c($pdo);
     try {
-        $current=vp3_profile_call_lock_current_pa3c($pdo,$id);
-        if (!$current||$current['status']!=='live'||!vp3_profile_call_owner_assistance_allowed_pa3c($pdo,(int)$current['owner_user_id'],(int)$current['profile_agent_id'],true)) {
+        $current=vp3_profile_call_assistance_lock_current_pa3c($pdo,$id);
+        if (!$current||!vp3_profile_call_assistance_live_proof_pa3c($current)||!vp3_profile_call_activity_can_capture_pa3c($pdo,$current,true)
+            ||((string)$current['provider_lease_token']!==''&&(int)$current['provider_lease_until_ms']>$now)) {
             $pdo->commit();
             return;
         }
@@ -130,63 +198,64 @@ function vp3_profile_call_try_dispatch_pa3c(PDO $pdo,array $call): void
         }
         $pdo->prepare('UPDATE profile_call_assistance_pa3c SET dispatch_at_ms=?,dispatch_retry_ms=? WHERE call_id=?')
             ->execute([(int)$row['dispatch_at_ms']?:$now,$now+30000,$id]);
+        // CreateDispatch may create a missing room. Use the canonical provider lease
+        // so call cleanup cannot overtake a bounded dispatch request.
+        $pdo->prepare("UPDATE profile_calls_pa3c SET provider_lease_token=?,provider_lease_kind='assistant',provider_lease_until_ms=? WHERE id=?")
+            ->execute([$token,$deadline,(int)$current['id']]);
         $pdo->commit();
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
     }
 
-    $room=(string)$current['room_name'];
-    $worker=(string)video_meeting_livekit_config_v1800()['agent_name'];
-    $service=['public_id'=>$id,'room_name'=>$room];
-    $listed=video_meeting_livekit_twirp_v1800($service,'ListDispatch',['room'=>$room],2);
-    if (empty($listed['ok'])) return;
-    $rows=$listed['json']['agent_dispatches']??$listed['json']['agentDispatches']??[];
-    foreach ((array)$rows as $entry) {
-        if (!is_array($entry)||($entry['agent_name']??$entry['agentName']??'')!==$worker) continue;
-        $dispatchId=$entry['id']??'';
-        // A dispatch that never claimed a lease gets a startup window. A dead
-        // worker may be replaced after the cooldown, under the exact room.
-        if ((int)($snapshot['dispatch_at_ms']??0)<1||!is_string($dispatchId)||$dispatchId==='') return;
+    $attempted=false;
+    $dispatched=false;
+    try {
+        $fresh=vp3_profile_call_assistance_by_id_pa3c($pdo,$id);
         $latest=vp3_profile_call_activity_row_pa3c($pdo,$id);
-        if (!$latest||(int)$latest['lease_until_ms']>vp3_profile_call_now_pa3c()||empty($latest['capture_enabled'])) return;
-        $deleted=video_meeting_livekit_twirp_v1800($service,'DeleteDispatch',['room'=>$room,'dispatch_id'=>$dispatchId],1);
-        if (empty($deleted['ok'])) return;
-        break;
+        if(!$fresh||!$latest||empty($latest['capture_enabled'])||!hash_equals((string)$fresh['provider_lease_token'],$token)
+            ||!vp3_profile_call_assistance_live_proof_pa3c($fresh)||!vp3_profile_call_activity_can_capture_pa3c($pdo,$fresh)
+            ||!vp3_profile_call_assistance_media_current_pa3c($pdo,$fresh)||vp3_profile_call_now_pa3c()>=$deadline)return;
+        $attempted=true;
+        vp3_profile_call_livekit_dispatch_assistant_pa3c(vp3_profile_call_binding_pa3c($fresh),(string)$fresh['agent_worker_name'],[
+            'vp3_profile_call_id'=>$id,'room_name'=>(string)$fresh['room_name'],
+            'agent_display_name'=>(string)$fresh['agent_name'],'worker_key'=>vp3_profile_call_worker_key_pa3c($fresh),
+        ],(int)($row['dispatch_at_ms']??0)>0,$deadline);
+        $dispatched=true;
+    } finally {
+        vp3_profile_handoff_atomic_pa3($pdo,function()use($pdo,$current,$token,$attempted,$dispatched){
+            $final=vp3_profile_call_locked_pa3c($pdo,$current,true);
+            if(hash_equals((string)$final['provider_lease_token'],$token)){
+                // Retain the lease/cleanup fence when an unconfirmed request
+                // may still complete after the current call started ending.
+                if($final['state']!=='ending'||!$attempted||$dispatched)vp3_profile_call_settled_pa3c($pdo,$final,$token);
+            }elseif($attempted&&in_array($final['state'],['ending','ended'],true)){
+                vp3_profile_call_late_create_pa3c($pdo,$current,$token);
+            }
+        });
     }
-    $fresh=vp3_profile_call_by_id_pa3c($pdo,$id);
-    $latest=vp3_profile_call_activity_row_pa3c($pdo,$id);
-    if (!$fresh||!$latest||empty($latest['capture_enabled'])||!vp3_profile_call_live_pa3c($pdo,$fresh)||!vp3_profile_call_activity_can_capture_pa3c($pdo,$fresh)) return;
-    video_meeting_livekit_twirp_v1800($service,'CreateDispatch',[
-        'agent_name'=>$worker,'room'=>$room,
-        'metadata'=>json_encode([
-            'vp3_profile_call_id'=>$id,'room_name'=>$room,
-            'agent_display_name'=>(string)$current['agent_name'],
-            'worker_key'=>vp3_profile_call_worker_key_pa3c($current),
-        ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),
-    ],2);
 }
 
 function vp3_profile_call_activity_can_capture_pa3c(PDO $pdo,array $call,bool $lock=false): bool
 {
-    return !empty($call['assisted'])&&vp3_profile_call_assistance_ready_pa3c($pdo)
+    return !empty($call['assisted'])&&$call['mode']==='audio'&&hash_equals((string)$call['agent_worker_name'],vp3_profile_call_worker_name_pa3c())&&vp3_profile_call_assistance_ready_pa3c($pdo)
         &&vp3_profile_call_owner_assistance_allowed_pa3c($pdo,(int)$call['owner_user_id'],(int)$call['profile_agent_id'],$lock);
 }
 
 function vp3_profile_call_worker_pa3c(PDO $pdo,array $input): array
 {
-    $id=(string)($input['call_id']??'');
-    $worker=(string)($input['worker_id']??'');
+    $id=is_string($input['call_id']??null)?$input['call_id']:'';
+    $worker=is_string($input['worker_id']??null)?$input['worker_id']:'';
     $action=$input['action']??'';
     if (!preg_match('/^[a-f0-9]{32}$/D',$id)||!preg_match('/^[a-f0-9]{32}$/D',$worker)||!in_array($action,['lease','segment'],true)) {
         throw new InvalidArgumentException('Invalid worker request.');
     }
     vp3_profile_call_activity_begin_pa3c($pdo);
     try {
-        $call=vp3_profile_call_lock_current_pa3c($pdo,$id);
+        $call=vp3_profile_call_assistance_lock_current_pa3c($pdo,$id);
         $result=['active'=>false];
-        if ($call&&$call['status']==='live'&&hash_equals((string)$call['room_name'],(string)($input['room_name']??''))
-            &&hash_equals(vp3_profile_call_worker_key_pa3c($call),(string)($input['worker_key']??''))
+        if ($call&&vp3_profile_call_assistance_live_proof_pa3c($call)&&is_string($input['room_name']??null)&&hash_equals((string)$call['room_name'],$input['room_name'])
+            &&is_string($input['worker_key']??null)&&hash_equals(vp3_profile_call_worker_key_pa3c($call),$input['worker_key'])
             &&vp3_profile_call_activity_can_capture_pa3c($pdo,$call,true)) {
             $row=vp3_profile_call_activity_row_pa3c($pdo,$id,true);
             if ($row&&(int)$row['dispatch_at_ms']>0) $result=vp3_profile_call_worker_locked_pa3c($pdo,$call,$row,$worker,$action,$input);
@@ -202,9 +271,9 @@ function vp3_profile_call_worker_pa3c(PDO $pdo,array $input): array
 function vp3_profile_call_worker_locked_pa3c(PDO $pdo,array $call,array $row,string $worker,string $action,array $input): array
 {
     $now=vp3_profile_call_now_pa3c();
-    $id=(string)$call['id'];
-    $ownerIdentity=vp3_profile_call_identity_pa3c($call,'owner');
-    $visitorIdentity=vp3_profile_call_identity_pa3c($call,'visitor');
+    $id=(string)$call['public_id'];
+    $ownerIdentity=(string)$call['owner_identity'];
+    $visitorIdentity=(string)$call['visitor_identity'];
     $revision=(int)$row['capture_revision'];
     $sameRevision=($input['capture_revision']??null)===$revision;
     $sameWorker=hash_equals((string)$row['worker_id'],$worker);
@@ -213,11 +282,15 @@ function vp3_profile_call_worker_locked_pa3c(PDO $pdo,array $call,array $row,str
     if ($fresh&&!$sameWorker) return ['active'=>false];
     if ($action==='lease') {
         if ($sameWorker&&!$fresh&&(int)$row['lease_until_ms']>0) return ['active'=>false];
+        $authorityUntil=min((int)$call['provider_observed_at_ms']+15000,(int)$call['owner_authority_until_ms'],(int)$call['visitor_authority_until_ms']);
+        $seconds=intdiv(min(VP3_PROFILE_CALL_WORKER_LEASE_MS_PA3C,max(0,$authorityUntil-$now)),1000);
+        if($seconds<1)return ['active'=>false];
+        $expires=$now+$seconds*1000;
         $ready=$capture&&$sameRevision&&($input['connected']??false)===true&&($input['ready']??false)===true;
         $pdo->prepare('UPDATE profile_call_assistance_pa3c SET worker_id=?,lease_until_ms=?,ready_until_ms=? WHERE call_id=?')
-            ->execute([$worker,$now+VP3_PROFILE_CALL_WORKER_LEASE_MS_PA3C,$ready?$now+5000:0,$id]);
+            ->execute([$worker,$expires,$ready?min($expires,$now+5000):0,$id]);
         return [
-            'active'=>true,'capture'=>$capture,'capture_revision'=>$revision,'lease_seconds'=>8,
+            'active'=>true,'capture'=>$capture,'capture_revision'=>$revision,'lease_seconds'=>$seconds,
             'participants'=>[$ownerIdentity,$visitorIdentity],
             'elapsed_ms'=>max(0,$now-(int)$call['accepted_at_ms']),
         ];
@@ -250,7 +323,7 @@ function vp3_profile_call_segment_pa3c(PDO $pdo,array $call,array $row,bool $own
     $fallback=$ownerTrack?'Profile owner':'Profile visitor';
     $name=trim((string)($speaker['display_name']??''));
     $name=$name===''?$fallback:mb_strimwidth($name,0,68,'').($ownerTrack?' (owner)':' (visitor)');
-    $callId=(string)$call['id'];
+    $callId=(string)$call['public_id'];
     $confidence=is_numeric($input['confidence']??null)?max(0.0,min(1.0,(float)$input['confidence'])):null;
     if ($session===0) {
         $metadata=json_encode(['source'=>'profile_call_pa3c','profile_call_id'=>$callId,'audio_retained'=>false],JSON_THROW_ON_ERROR);
@@ -280,7 +353,7 @@ function vp3_profile_call_segment_pa3c(PDO $pdo,array $call,array $row,bool $own
 function vp3_profile_call_activity_owner_pa3c(PDO $pdo,int $ownerId,string $id): array
 {
     if (!preg_match('/^[a-f0-9]{32}$/D',$id)) throw new InvalidArgumentException('Invalid call.');
-    $call=vp3_profile_call_by_id_pa3c($pdo,$id);
+    $call=vp3_profile_call_assistance_by_id_pa3c($pdo,$id);
     if (!$call||(int)$call['owner_user_id']!==$ownerId||empty($call['assisted'])) {
         throw new RuntimeException('Assisted call not found.',404);
     }
@@ -295,18 +368,19 @@ function vp3_profile_call_research_ready_pa3c(): bool
 
 function vp3_profile_call_activity_view_pa3c(PDO $pdo,array $call,int $after): array
 {
-    $id=(string)$call['id'];
+    $id=(string)$call['public_id'];
     $now=vp3_profile_call_now_pa3c();
     $row=vp3_profile_call_activity_row_pa3c($pdo,$id);
-    $live=vp3_profile_call_live_pa3c($pdo,$call);
+    $live=vp3_profile_call_assistance_media_current_pa3c($pdo,$call);
+    $verified=$live&&vp3_profile_call_assistance_live_proof_pa3c($call);
     $eligible=$live&&vp3_profile_call_activity_can_capture_pa3c($pdo,$call);
     $enabled=$eligible&&(!$row||!empty($row['capture_enabled']));
-    $researchAllowed=$enabled&&$call['status']==='live'&&vp3_profile_call_research_ready_pa3c();
+    $researchAllowed=$enabled&&$verified&&vp3_profile_call_research_ready_pa3c();
     $state='connecting';
-    if (!$live&&($call['status']!=='ringing'||vp3_profile_call_expired_pa3c($call,$now))) $state='ended';
+    if (!$live&&($call['state']!=='offered'||vp3_profile_call_expiry_reason_pa3c($call)!=='')) $state='ended';
     elseif ($live&&!$eligible) $state='unavailable';
     elseif ($eligible&&!$enabled) $state='paused';
-    elseif ($row&&(int)$row['ready_until_ms']>$now) $state='listening';
+    elseif ($verified&&$row&&(int)$row['ready_until_ms']>$now) $state='listening';
     elseif ($row&&(int)$row['dispatch_at_ms']>0&&$now-(int)$row['dispatch_at_ms']>20000&&(int)$row['lease_until_ms']<=$now) $state='unavailable';
 
     $research=[];
@@ -315,7 +389,7 @@ function vp3_profile_call_activity_view_pa3c(PDO $pdo,array $call,int $after): a
     foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $result) {
         $status=(string)$result['status'];
         if ($status==='running') {
-            if (!$enabled||$now-(int)$result['started_at_ms']>90000) $status='failed';
+            if (!$enabled||!$verified||$now-(int)$result['started_at_ms']>90000) $status='failed';
             else $state='researching';
         }
         $payload=json_decode((string)($result['result_json']??''),true);
@@ -358,7 +432,7 @@ function vp3_profile_call_assistance_toggle_pa3c(PDO $pdo,int $ownerId,string $i
 {
     vp3_profile_call_activity_begin_pa3c($pdo);
     try {
-        $call=vp3_profile_call_lock_current_pa3c($pdo,$id);
+        $call=vp3_profile_call_assistance_lock_current_pa3c($pdo,$id);
         if (!$call||(int)$call['owner_user_id']!==$ownerId||!vp3_profile_call_activity_can_capture_pa3c($pdo,$call,true)) {
             throw new RuntimeException('Assistance is unavailable for this call.',409);
         }
@@ -390,8 +464,8 @@ function vp3_profile_call_research_pa3c(PDO $pdo,array $user,string $id,string $
     $now=vp3_profile_call_now_pa3c();
     vp3_profile_call_activity_begin_pa3c($pdo);
     try {
-        $call=vp3_profile_call_lock_current_pa3c($pdo,$id);
-        if (!$call||$call['status']!=='live'||(int)$call['owner_user_id']!==$ownerId||!vp3_profile_call_activity_can_capture_pa3c($pdo,$call,true)) {
+        $call=vp3_profile_call_assistance_lock_current_pa3c($pdo,$id);
+        if (!$call||!vp3_profile_call_assistance_live_proof_pa3c($call)||(int)$call['owner_user_id']!==$ownerId||!vp3_profile_call_activity_can_capture_pa3c($pdo,$call,true)) {
             throw new RuntimeException('Research is unavailable for this call.',409);
         }
         $row=vp3_profile_call_activity_ensure_row_pa3c($pdo,$id);
@@ -439,10 +513,10 @@ function vp3_profile_call_research_pa3c(PDO $pdo,array $user,string $id,string $
 
     vp3_profile_call_activity_begin_pa3c($pdo);
     try {
-        $current=vp3_profile_call_lock_current_pa3c($pdo,$id);
+        $current=vp3_profile_call_assistance_lock_current_pa3c($pdo,$id);
         $row=$current?vp3_profile_call_activity_row_pa3c($pdo,$id,true):null;
         $keep=$payload&&$row&&!empty($row['capture_enabled'])&&(int)$row['capture_revision']===$revision
-            &&(int)$current['owner_user_id']===$ownerId&&vp3_profile_call_activity_can_capture_pa3c($pdo,$current,true);
+            &&(int)$current['owner_user_id']===$ownerId&&vp3_profile_call_assistance_live_proof_pa3c($current)&&vp3_profile_call_activity_can_capture_pa3c($pdo,$current,true);
         $status=$keep?'complete':'failed';
         $write=$pdo->prepare("UPDATE profile_call_research_pa3c SET status=?,result_json=? WHERE call_id=? AND request_id=? AND capture_revision=? AND status='running'");
         $write->execute([$status,$keep?json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR):null,$id,$request,$revision]);

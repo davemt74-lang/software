@@ -133,8 +133,9 @@ function vp3_profile_agent_public_bound_conversation_v1(PDO $pdo,array $ctx,int 
 function vp3_profile_agent_public_create_bound_v1(PDO $pdo,array $ctx): array
 {
     $session=vp3_profile_agent_public_event_session_v1($ctx);
-    $conversation=profile_agent_conversation_create($pdo,$ctx['profile'],$ctx['agent'],$session);
+    $conversation=profile_agent_conversation_create($pdo,$ctx['profile'],$ctx['agent'],$session,true);
     vp3_profile_agent_conversation_bind_v1($pdo,$conversation,$ctx['conversation_authority']);
+    profile_agent_conversation_started_pa4b($pdo,$ctx['profile'],$ctx['agent'],$session,(int)$conversation['id']);
     return $conversation;
 }
 
@@ -193,7 +194,10 @@ function vp3_profile_agent_public_source_dependencies_v1(array $context,array $h
 
 function vp3_profile_agent_public_start_v1(PDO $pdo,array $ctx): array
 {
-    $pdo->beginTransaction();
+    // A call-only offer may compose this canonical start with its own atomic
+    // admission. Standalone chat/WebMCP callers retain the original transaction.
+    $ownTransaction=!$pdo->inTransaction();
+    if($ownTransaction)$pdo->beginTransaction();else $pdo->exec('SAVEPOINT profile_public_start_v1');
     try{
         $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx,true);
         $q=$pdo->prepare("SELECT id FROM profile_agent_conversations WHERE owner_user_id=? AND profile_agent_id=? AND profile_session_id=? AND status IN ('open','owner_joined','resolved') ORDER BY id DESC LIMIT 20");
@@ -203,8 +207,9 @@ function vp3_profile_agent_public_start_v1(PDO $pdo,array $ctx): array
             if($conversation)break;
         }
         if(!$conversation){vp3_profile_agent_public_admit_v1($pdo,$ctx);$conversation=vp3_profile_agent_public_create_bound_v1($pdo,$ctx);}
-        vp3_profile_agent_public_live_v1($pdo,$ctx,true);$pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+        vp3_profile_agent_public_live_v1($pdo,$ctx,true);
+        if($ownTransaction)$pdo->commit();else $pdo->exec('RELEASE SAVEPOINT profile_public_start_v1');
+    }catch(Throwable $e){if($pdo->inTransaction()){if($ownTransaction)$pdo->rollBack();else{$pdo->exec('ROLLBACK TO SAVEPOINT profile_public_start_v1');$pdo->exec('RELEASE SAVEPOINT profile_public_start_v1');}}throw $e;}
     return vp3_profile_agent_public_state_service_v110($pdo,$ctx,(int)$conversation['id']);
 }
 
@@ -422,6 +427,8 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         }
         $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'agent',NULL,?,?)")
             ->execute([$cid,$answer,json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
+        $answerMessageId=(int)$pdo->lastInsertId();
+        if(function_exists('vp3_profile_attention_message_sent_pa4b'))vp3_profile_attention_message_sent_pa4b($pdo,$current,$answerMessageId);
         $pdo->prepare('UPDATE profile_agent_conversations SET last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')
             ->execute([$cid,$owner,$agentId,$sessionId]);
         if(!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$context,$historySources))vp3_profile_agent_public_unavailable_v1();

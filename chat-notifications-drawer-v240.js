@@ -77,6 +77,8 @@
   let mainFeedObserver = null;
   let mainFeedSyncQueued = false;
   let mainFeedRefreshTimer = 0;
+  let profileAttention = null;
+  let activityReadError = '';
 
   async function request(action = 'state', payload = null, query = {}) {
     const post = payload !== null;
@@ -97,7 +99,8 @@
     } : {credentials:'same-origin', cache:'no-store'};
     const response = await fetch(url, options);
     const data = await response.json().catch(() => null);
-    if (!response.ok || !data?.ok) throw new Error(data?.error || 'Unable to load notifications.');
+    if (!response.ok || !data?.ok || data.complete === false) throw Object.assign(new Error(data?.error || 'Unable to load notifications.'), {status:response.status});
+    if (action === 'state' && (!data.notifications || !Array.isArray(data.notifications.items) || !Number.isSafeInteger(data.notifications.unread) || data.notifications.unread < 0)) throw new Error('Notification counts could not be verified. Retry to load the current list.');
     return data;
   }
 
@@ -180,13 +183,15 @@
 
   function notificationView() {
     const block = state?.notifications || {};
-    const items = Array.isArray(block.items) ? block.items : [];
+    const profileIds = new Set((profileAttention?.getState().items || []).map(item => item.notification_id));
+    const items = Array.isArray(block.items) ? block.items.filter(item => item.source_type !== 'profile_event' && !profileIds.has(Number(item.id))) : [];
     const unread = Number(block.unread || 0);
     return `
+      ${profileAttention?.view() || '<section class="chat-activity-inline-error">Profile attention is unavailable. Reload to retry.</section>'}
       <section class="chat-activity-section">
         <div class="chat-activity-section-head">
-          <div><strong>Notifications</strong><span>${unread ? `${unread} unread` : 'You are caught up'}</span></div>
-          ${unread ? '<button type="button" data-notification-mark-all>Mark all read</button>' : ''}
+          <div><strong>Notifications</strong><span>${activityReadError ? 'Showing the last confirmed notification count' : unread ? `${unread} unread` : 'No unread notifications in the last complete read'}</span></div>
+          ${unread ? '<button type="button" data-notification-mark-all>Mark other notifications read</button>' : ''}
         </div>
         <div class="chat-notification-list">
           ${items.length ? items.map(item => `
@@ -197,7 +202,7 @@
                 ${item.body ? `<p>${esc(item.body)}</p>` : ''}
                 <small>${esc(relative(item.created_at))}${item.type ? ` · ${esc(String(item.type).replaceAll('_',' '))}` : ''}</small>
               </div>
-              ${item.target_url ? `<a href="${esc(item.target_url)}" data-notification-open>Open</a>` : (!Number(item.is_read || 0) ? '<button type="button" data-notification-read>Read</button>' : '')}
+              ${item.source_type === 'profile_event' ? '<small>Profile source · review in Profile attention</small>' : item.target_url ? `<a href="${esc(item.target_url)}" data-notification-open>Open</a>` : (!Number(item.is_read || 0) ? '<button type="button" data-notification-read>Read</button>' : '')}
             </article>`).join('') : '<div class="chat-activity-empty">No notifications yet.</div>'}
         </div>
       </section>`;
@@ -951,10 +956,11 @@
     if (!body) return;
     body.setAttribute('aria-labelledby','chatActivityTab-'+activeTab);
     if (!state) {
-      body.innerHTML = '<div class="chat-activity-loading">Loading Activity Center…</div>';
+      body.innerHTML = activityReadError ? `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>${activeTab === 'notifications' ? profileAttention?.view() || '' : ''}` : '<div class="chat-activity-loading">Loading Activity Center…</div>';
       return;
     }
     body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : activeTab === 'eyes' ? eyesHistoryView() : notificationView();
+    if (activityReadError) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>`);
     if(activeTab==='brain'){window.VP3ChatDiagnostics?.renderBrain(body);window.VP3ProjectKnowledgeR6?.renderBrain(body);window.VP3ProjectKnowledgeR7?.renderBrain(body);window.VP3KnowledgeActionsR8?.renderBrain(body);}
     if (activeTab === 'brain' && typeof window.VP3_AGENT_TEAMS_A3_BRAIN === 'function') {
       window.VP3_AGENT_TEAMS_A3_BRAIN(body);
@@ -969,16 +975,16 @@
     if (busy || mainFeedOutcomeBusy || attentionBusy || pendingStateWrites) return;
     try {
       if (!await requestState('state')) return;
+      activityReadError = '';
       if (Object.prototype.hasOwnProperty.call(state, 'agent_voice_enabled')) {
         agentVoicePreference = state.agent_voice_enabled !== false;
       }
       render();
       syncMainFeedBrainOutcomeControls();
     } catch (error) {
-      if (showError && drawer) {
-        const body = drawer.querySelector('[data-notification-drawer-body]');
-        if (body) body.innerHTML = `<div class="chat-activity-empty error">${esc(error instanceof Error ? error.message : 'Activity Center unavailable.')}</div>`;
-      }
+      activityReadError = 'Activity Center could not refresh. The last confirmed list is retained. Retry to check for updates.';
+      if ([401,403,419].includes(error?.status)) state = null;
+      render();
     }
   }
 
@@ -994,6 +1000,7 @@
     document.body.classList.add('chat-notification-drawer-open');
     render();
     void refresh(true);
+    void profileAttention?.refresh({present:false});
   }
 
   function closeDrawer() {
@@ -1027,6 +1034,8 @@
   }
 
   function handleDrawerClick(event) {
+    if (profileAttention?.handleClick(event)) return;
+    if (event.target.closest('[data-notification-retry]')) { void refresh(true); void profileAttention?.refresh({present:false}); return; }
     const tab = event.target.closest('[data-notification-tab]');
     if (tab) {
       activeTab = tab.dataset.notificationTab || 'notifications';
@@ -1050,6 +1059,8 @@
     if (!item) return;
     const id = Number(item.dataset.notificationId || 0);
     if (id < 1) return;
+    const saved = state?.notifications?.items?.find(row => Number(row.id) === id);
+    if (saved?.source_type === 'profile_event') return;
     if (event.target.closest('[data-notification-open]')) {
       if (item.classList.contains('unread')) void request('mark_read', {notification_id:id}).catch(() => {});
       return;
@@ -1066,7 +1077,7 @@
   }
 
   function continuity() {
-    return window.STONEFELLOW_CHAT_CONTINUITY || window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
+    return window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
   }
 
   function chatCanvasAvailable() {
@@ -1078,26 +1089,17 @@
   }
 
   function activeAgentId() {
-    return Math.max(0, Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId || window.VP3_AGENT_PREFERENCE_STATE?.agent?.id || 0));
+    return Math.max(0, Number(continuity().agentId?.() || 0));
   }
 
-  async function showAttentionConversation(conversationId, message) {
+  async function showAttentionConversation(conversationId, messageId) {
     const id = Math.max(0, Number(conversationId || 0));
     const chat = continuity();
-    if (id < 1 || typeof chat.openConversation !== 'function') return false;
-    const opened = Number(chat.conversationId?.() || 0) === id && typeof chat.syncConversation === 'function'
-      ? await chat.syncConversation(id)
-      : await chat.openConversation(id);
-    if (!opened) return false;
-    const expected = String(message || '').trim();
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline) {
-      const texts = [...document.querySelectorAll('#chatThread .message.assistant .message-text')];
-      if (texts.some(node => String(node.textContent || '').trim() === expected)) return true;
-      if (typeof chat.syncConversation === 'function') await chat.syncConversation(id);
-      await new Promise(resolve => setTimeout(resolve, 80));
-    }
-    return false;
+    const agent = activeAgentId(), stored = Number(messageId);
+    if (id < 1 || id !== activeConversationId() || !Number.isSafeInteger(stored) || stored < 1 || typeof chat.syncConversation !== 'function' || String(document.getElementById('chatInput')?.value || '').trim()) return false;
+    await chat.syncConversation(id);
+    if (id !== activeConversationId() || agent !== activeAgentId() || String(document.getElementById('chatInput')?.value || '').trim()) return false;
+    return Boolean(document.querySelector(`#chatThread [data-chat-message-id="${stored}"][data-chat-conversation-id="${id}"]`));
   }
 
   function voiceButton() {
@@ -1105,7 +1107,7 @@
   }
 
   function voiceIsOn() {
-    return Boolean(continuity().isVoice?.());
+    return Boolean(window.STONEFELLOW_CHAT_CONTINUITY?.isVoice?.() || continuity().isVoice?.());
   }
 
   function setVoiceMode(enabled) {
@@ -1125,7 +1127,7 @@
     return new Promise(resolve => {
       const tick = () => {
         const mode = String(document.body.dataset.stonefellowAgentState || 'idle');
-        if (!continuity().isBusy?.() && !['processing','speaking'].includes(mode)) {
+        if (!continuity().isBusy?.() && !window.STONEFELLOW_CHAT_CONTINUITY?.pendingVoiceSubmit?.() && !window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.() && !['processing','speaking'].includes(mode)) {
           resolve(true);
           return;
         }
@@ -1291,26 +1293,34 @@
   async function presentAttention(item, speak = true) {
     const notificationId = Number(item?.id || 0);
     if (notificationId < 1) return true;
+    if (item?.source_type === 'profile_event') { await profileAttention?.refresh(); return true; }
+    const capturedConversation = activeConversationId(), capturedAgent = activeAgentId();
+    if (capturedConversation < 1 || String(document.getElementById('chatInput')?.value || '').trim()) return false;
     const data = await request('present_attention', {
       notification_id:notificationId,
-      conversation_id:activeConversationId(),
-      agent_id:activeAgentId()
+      conversation_id:capturedConversation,
+      agent_id:capturedAgent
     });
+    if (capturedConversation !== activeConversationId() || capturedAgent !== activeAgentId() || String(document.getElementById('chatInput')?.value || '').trim()) throw new Error('Chat context changed before notification presentation.');
     if(data.presentation_owner==='profile_handoff_pa3'){
       window.dispatchEvent(new Event('vp3:profile-handoff-refresh'));
       return true;
     }
+    if(data.presentation_owner==='profile_speech_pa4a'){window.VP3ProfileSpeechPa4a?.refresh?.();return true;}
+    if(data.presentation_owner==='profile_attention_pa4b'){await profileAttention?.refresh();return true;}
     if (!data.handled) return true;
 
     const surfaced = await showAttentionConversation(
       Number(data.conversation_id || 0),
-      String(data.message || '')
+      Number(data.message_id || 0)
     );
     if (!surfaced) {
       throw new Error('Actionable notification could not be surfaced in Agent Chat.');
     }
 
     if (speak && !data.duplicate && data.voice_allowed !== false) queueSpeech(String(data.message || ''));
+    // Legacy non-Profile integrations (including Radar) retain their delivery
+    // acknowledgement. Profile lifecycle reads use the explicit PA4B action.
     if (!await requestState('mark_read', {notification_id:notificationId})) return true;
     render();
     syncMainFeedBrainOutcomeControls();
@@ -1318,6 +1328,7 @@
   }
 
   async function pollAttention(bootstrap = false, scope = '') {
+    if (scope === 'profile' && !document.hidden) await profileAttention?.refresh();
     if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention && scope !== 'profile') return;
     if (!chatCanvasAvailable()) return;
     if (scope === 'profile') {
@@ -1336,7 +1347,7 @@
         // Only genuine user-attention notifications reach this path. Agent
         // Brain operational activity is rendered in the Brain tab instead.
         const speak = !bootstrap || index === items.length - 1;
-        await presentAttention(items[index], speak);
+        if (await presentAttention(items[index], speak) === false) throw new Error('Notification presentation was deferred.');
       }
       if (scope === 'profile') profileAttentionCursor = Math.max(profileAttentionCursor, Number(data.latest_id || 0));
       else attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
@@ -1349,11 +1360,12 @@
   }
 
   function startAttentionPolling() {
-    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention) return;
     if (!chatCanvasAvailable()) return;
+    void pollAttention(false, 'profile');
+    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention) return;
     void pollAttention(true);
     if (attentionTimer) window.clearInterval(attentionTimer);
-    attentionTimer = window.setInterval(() => pollAttention(false), 5000);
+    attentionTimer = window.setInterval(() => {void pollAttention(false);void pollAttention(false,'profile');}, 5000);
   }
 
   if(cfg.orbOnly){
@@ -1368,6 +1380,7 @@
   if (!ownNotificationButton()) return;
   window.VP3_ACTIVITY_CENTER_INITIALIZED=true;
   ensureDrawer();
+  profileAttention = window.VP3ProfileAttentionPa4b?.create({mode:'chat',onChange:()=>{if(activeTab==='notifications')render();},onMutation:()=>void refresh(),onOpen:conversationId=>window.STONEFELLOW_PROFILE_ACTIVITY?.open?.({tab:'conversations',conversationId})}) || null;
   keepBellNextToProfile();
   if (!window.VP3_COGNITIVE_PRESENTATION_V510?.ownsBrainPresentation) observeMainFeedBrainPriorities();
   const actions = document.querySelector('.chat-topbar-actions');
@@ -1379,8 +1392,9 @@
     agentVoicePreference = event.detail?.enabled !== false;
   });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && chatCanvasAvailable()) void pollAttention(false);
+    if (!document.hidden && chatCanvasAvailable()) {void pollAttention(false);void pollAttention(false,'profile');}
   });
+  window.addEventListener('vp3:chat-context-ready',()=>{if(!document.hidden)void pollAttention(false,'profile');});
   window.addEventListener('pagehide', () => {
     if (attentionTimer) window.clearInterval(attentionTimer);
     attentionTimer = 0;
@@ -1389,7 +1403,7 @@
     mainFeedObserver?.disconnect();
     mainFeedObserver = null;
     cancelSpeech();
-    clearResponseWindow();
+    profileAttention?.dispose();
   }, {once:true});
 
   window.STONEFELLOW_NOTIFICATION_CENTER = {

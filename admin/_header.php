@@ -82,6 +82,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
             <a class="<?= $adminActive === 'packages' ? 'active' : '' ?>" href="<?= e(url('/admin/packages.php')) ?>"><span>Packages</span></a>
             <a class="<?= $adminActive === 'billing' ? 'active' : '' ?>" href="<?= e(url('/admin/billing.php')) ?>"><span>Billing</span></a>
             <a class="<?= $adminActive === 'phone' ? 'active' : '' ?>" href="<?= e(url('/admin/phone.php')) ?>"><span>Phone &amp; Messaging</span></a>
+            <a class="<?= $adminActive === 'profile-calls' ? 'active' : '' ?>" href="<?= e(url('/admin/profile-calls.php')) ?>"><span>Profile voice &amp; video</span></a>
           <?php endif; ?>
         </div>
       </section>
@@ -91,6 +92,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
         <div class="admin-nav-group-links" id="admin-nav-ai-platform">
           <?php if (has_permission('ai.manage')): ?>
             <a class="<?= $adminActive === 'ai' ? 'active' : '' ?>" href="<?= e(url('/admin/ai.php')) ?>"><span>AI / API</span></a>
+            <a class="<?= $adminActive === 'profile-speech' ? 'active' : '' ?>" href="<?= e(url('/admin/profile-speech.php')) ?>"><span>Profile speech</span></a>
             <a class="<?= $adminActive === 'ai-data-usage' ? 'active' : '' ?>" href="<?= e(url('/admin/ai-data-usage-v236.php')) ?>"><span>AI Data Usage</span></a>
             <a class="<?= $adminActive === 'webmcp' ? 'active' : '' ?>" href="<?= e(url('/admin/webmcp.php')) ?>"><span>WebMCP</span></a>
           <?php endif; ?>

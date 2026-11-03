@@ -82,15 +82,20 @@ jobs:
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php
           php tests/profile-live-text-pa3d.php
-          php tests/profile-assisted-phone-settings-pa3c.php
-          php tests/profile-call-research-pa3c.php
           node tests/profile-handoff-api-pa3.mjs
           node tests/profile-live-chat-api-pa3d.mjs
-          node tests/profile-call-api-pa3c.mjs
-          python3 -B tests/profile-call-worker-pa3c.py
           node tests/profile-visitor-doorbell-pa3.mjs
           node tests/profile-visitor-handoff-pa3.mjs
           node tests/profile-chat-choice-pa3d.mjs
+          php tests/profile-calls-pa3c.php
+          php tests/profile-calls-provider-pa3c.php
+          php tests/profile-calls-concurrency-pa3c.php
+          node tests/profile-calls-api-pa3c.mjs
+          node tests/profile-calls-admin-pa3c.mjs
+          node tests/profile-calls-pa3c.mjs
+          php tests/profile-assisted-phone-settings-pa3c.php
+          node tests/profile-call-assistance-api-pa3c.mjs
+          python3 -B tests/profile-call-worker-pa3c.py
           php tests/commerce-provider-evidence-pa2.php
           php tests/commerce-recovery-pa2.php
           php tests/commerce-projection-recovery-pa2.php

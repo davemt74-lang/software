@@ -19,6 +19,7 @@ const profileHost=document.getElementById('profileAgentProfileSettings');
 const analyticsHost=document.getElementById('profileAgentAnalytics');
 let state=null,radarState=null,radarFilter='all',selectedConversation=0,selectedSession=0,refreshTimer=null,requestBusy=false;
 let selectedThread=null,displayedThread=null,threadRead=0,stateRead=0,activeTab='inbox',pendingSettings=0;
+let profileAttention=null;
 const drafts=new Map(),threadMutations=new Map(),boundControls=new WeakSet(),editVersions=new WeakMap();
 const conversationId=value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):0;
 const threadSelected=binding=>binding!==null&&selectedThread===binding&&selectedConversation===binding.id;
@@ -84,9 +85,7 @@ function renderMetrics(){
   metrics.innerHTML=rows.map(([label,value])=>`<article class="profile-agent-metric"><strong>${Number(value).toLocaleString()}</strong><span>${esc(label)}</span></article>`).join('');
 }
 function attentionHtml(){
-  const rows=Array.isArray(state?.attention)?state.attention:[];
-  if(!rows.length)return '';
-  return `<div class="profile-agent-subhead">Needs attention</div>${rows.map(a=>`<article class="profile-agent-attention-item ${Number(a.priority)>=80?'high':''}"><div class="profile-agent-row-main"><strong>${esc(a.headline||'Needs attention')}</strong><p>${esc(a.summary||'')}</p><small>${esc(a.visitor_label||'Visitor')} · ${relative(a.created_at)}</small></div><div class="profile-agent-row-actions">${Number(a.source_conversation_id||0)>0?`<button type="button" data-open-conversation="${Number(a.source_conversation_id)}">Open</button>`:''}<button type="button" data-attention="${Number(a.id)}" data-attention-action="ignored">Ignore</button>${Number(a.priority)>=80?`<button type="button" data-attention="${Number(a.id)}" data-attention-action="snooze">Later</button>`:''}</div></article>`).join('')}`;
+  return profileAttention?.view() || '<p role="status">Profile attention is unavailable. Reload to retry.</p>';
 }
 function renderInbox(){
   attentionHost.innerHTML=attentionHtml();
@@ -180,6 +179,7 @@ function renderAnalytics(){
 }
 function renderAll(){renderService();renderMetrics();renderInbox();renderVisitors();renderRadar();renderEditable(agentHost,renderAgentSettings);renderEditable(knowledgeHost,renderKnowledge);renderEditable(profileHost,renderProfileSettings);renderAnalytics();const unread=Number(state?.notifications?.unread||0),bell=document.getElementById('chatNotificationButton');if(bell){let badge=bell.querySelector(':scope > span');if(unread>0){if(!badge){badge=document.createElement('span');bell.appendChild(badge);}badge.textContent=unread>99?'99+':String(unread);}else badge?.remove();}bindDynamic();}
 async function refresh(silent=false){
+  void profileAttention?.refresh({present:false});
   if(requestBusy||threadMutations.size||pendingSettings)return;requestBusy=true;const request=++stateRead;
   try{const [d,r]=await Promise.all([req('owner_state'),radarReq().catch(()=>null)]);if(request!==stateRead)return;state=d.state;if(r)radarState=r;renderAll();if(activeTab==='inbox'&&selectedThread)await refreshConversation(selectedThread);if(!silent)setNotice('Profile Agent workspace refreshed.');}
   catch(err){if(request===stateRead)setNotice(err.message,true);}finally{requestBusy=false;}
@@ -272,14 +272,15 @@ function bindDynamic(){
   bindOnce(document.getElementById('profileAgentRadarRefresh'),'click',async()=>{try{radarState=await radarReq();renderRadar();bindDynamic();setNotice('Agent Radar refreshed.');}catch(err){setNotice(err.message,true);}});
 }
 app.addEventListener('click',async e=>{
+  if(profileAttention?.handleClick(e))return;
   const tab=e.target.closest('[data-pa-tab]');if(tab){activateTab(tab.dataset.paTab);return;}
   const filter=e.target.closest('[data-radar-filter]');if(filter){radarFilter=filter.dataset.radarFilter||'all';renderRadar();return;}
   const open=e.target.closest('[data-open-conversation]');if(open){activateTab('inbox');openConversation(Number(open.dataset.openConversation));return;}
-  const attention=e.target.closest('[data-attention]');if(attention){try{const d=await req('attention_action',{attention_id:Number(attention.dataset.attention),attention_action:attention.dataset.attentionAction});state=d.state;renderAll();setNotice('Attention item updated.');}catch(err){setNotice(err.message,true);}return;}
 });
+profileAttention=window.VP3ProfileAttentionPa4b?.create({mode:'portal',onChange:()=>{attentionHost.innerHTML=attentionHtml();},onOpen:id=>{activateTab('inbox');void openConversation(id);}})||null;
 document.getElementById('profileAgentRefresh')?.addEventListener('click',()=>refresh(false));
 const deepLink=new URLSearchParams(window.location.search);selectedConversation=Number(deepLink.get('conversation')||0);selectedSession=Number(deepLink.get('session')||0);let initialTab=deepLink.get('tab')||'';try{if(!initialTab)initialTab=localStorage.getItem('profile-agent-portal-tab')||'inbox';}catch(e){if(!initialTab)initialTab='inbox';}activateTab(initialTab);
 refresh(true).then(()=>{if(selectedConversation){activateTab('inbox');openConversation(selectedConversation);}else if(selectedSession){activateTab('visitors');renderVisitors();const row=visitorsHost.querySelector(`[data-profile-session="${selectedSession}"]`);row?.scrollIntoView({block:'center'});}});
 refreshTimer=setInterval(()=>{if(document.visibilityState==='visible')refresh(true);},15000);
-window.addEventListener('beforeunload',()=>clearInterval(refreshTimer));
+window.addEventListener('beforeunload',()=>{clearInterval(refreshTimer);profileAttention?.dispose();});
 })();

@@ -2,29 +2,52 @@
 
 import asyncio
 import importlib.util
+import json
+import os
 import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 livekit = SimpleNamespace(
     rtc=SimpleNamespace(
         TrackKind=SimpleNamespace(KIND_AUDIO="audio"),
         TrackSource=SimpleNamespace(SOURCE_MICROPHONE="mic"),
+        ParticipantKind=SimpleNamespace(PARTICIPANT_KIND_STANDARD="human", PARTICIPANT_KIND_AGENT="agent"),
+        LocalParticipant=SimpleNamespace(permissions=None),
     ),
 )
-agents = SimpleNamespace(AutoSubscribe=SimpleNamespace(SUBSCRIBE_NONE="none"), JobContext=object)
-spec = importlib.util.spec_from_file_location(
-    "vp3_profile_call_worker", Path(__file__).resolve().parents[1] / "workers/vp3-meeting-agent/profile_call.py",
+agents = SimpleNamespace(
+    AutoSubscribe=SimpleNamespace(SUBSCRIBE_NONE="none"), JobContext=object, JobRequest=object,
+    WorkerPermissions=SimpleNamespace, AgentServer=SimpleNamespace, cli=None, inference=None, stt=None,
 )
-worker = importlib.util.module_from_spec(spec)
-with patch.dict(sys.modules, {"livekit": livekit, "livekit.agents": agents, spec.name: worker}):
-    spec.loader.exec_module(worker)
+WORKERS = Path(__file__).resolve().parents[1] / "workers/vp3-meeting-agent"
+
+
+def load_worker(name):
+    spec = importlib.util.spec_from_file_location(name, WORKERS / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+with patch.dict(sys.modules, {"livekit": livekit, "livekit.agents": agents}):
+    worker = load_worker("profile_call")
+    profile_agent = load_worker("profile_agent")
 
 CALL_ID = "a" * 32
-ROOM_NAME = f"vp3-profile-call-{CALL_ID}"
-IDENTITIES = [f"vp3-profile-{side}-{CALL_ID}" for side in ("owner", "visitor")]
+ROOM_NAME = f"vp3-profile-{CALL_ID}"
+AGENT_ID = f"agent-{CALL_ID}"
+IDENTITIES = [f"{side}-{CALL_ID}" for side in ("owner", "visitor")]
+METADATA = {"vp3_profile_call_id": CALL_ID, "room_name": ROOM_NAME, "worker_key": "f" * 64,
+            "agent_display_name": "Profile Agent"}
+SETTINGS = {
+    "VP3_PROFILE_CALL_AGENT_ENABLED": "1", "VP3_PROFILE_CALL_AGENT_NAME": "vp3-profile-test",
+    "VP3_PROFILE_CALL_AGENT_URL": "wss://project.livekit.cloud", "LIVEKIT_URL": "wss://PROJECT.livekit.cloud:443/",
+    "VP3_PROFILE_CALL_WORKER_API_BASE": "https://example.com/vp3/", "VP3_PROFILE_CALL_WORKER_SECRET": "s" * 32,
+}
 
 
 class Publication:
@@ -42,7 +65,14 @@ class Publication:
 
 
 def participant(identity, *publications):
-    return SimpleNamespace(identity=identity, track_publications={p.sid: p for p in publications})
+    return SimpleNamespace(identity=identity, kind="human", track_publications={p.sid: p for p in publications})
+
+
+def local_agent():
+    return SimpleNamespace(identity=AGENT_ID, kind="agent", permissions=SimpleNamespace(
+        hidden=True, can_subscribe=True, can_publish=False, can_publish_data=False,
+        can_update_metadata=False, can_publish_sources=[],
+    ))
 
 
 class ProfileWorkerTests(unittest.IsolatedAsyncioTestCase):
@@ -53,7 +83,7 @@ class ProfileWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(clock.stop)
         self.requests = []
         self.streams = []
-        self.room = SimpleNamespace(name=ROOM_NAME, remote_participants={})
+        self.room = SimpleNamespace(name=ROOM_NAME, local_participant=local_agent(), remote_participants={})
         self.ctx = SimpleNamespace(room=self.room)
         self.call = worker.ProfileCall(
             self.ctx, CALL_ID, ROOM_NAME, "f" * 64, "https://example.com/worker", "secret", self.transcribe,
@@ -96,7 +126,7 @@ class ProfileWorkerTests(unittest.IsolatedAsyncioTestCase):
         owner = participant(IDENTITIES[0], owner_mic, duplicate, camera, screen)
         visitor = participant(IDENTITIES[1], visitor_mic)
         foreign = participant(f"another-agent-{CALL_ID}", foreign_mic)
-        self.room.remote_participants = {p.identity: p for p in (owner, visitor, foreign)}
+        self.room.remote_participants = {p.identity: p for p in (owner, visitor)}
         self.call.reconnected()
         await self.call.renew()
         self.assertEqual(self.requests[0], ("lease", {"connected": True, "ready": False, "capture_revision": 0}))
@@ -201,19 +231,187 @@ class ProfileWorkerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(worker.LeaseRejected):
             await self.call.renew()
 
-    async def test_rejects_wrong_participants_and_invalid_dispatch(self):
+    async def test_rejects_wrong_participants(self):
         self.response = {**self.response, "participants": [IDENTITIES[0], "spoof"]}
         with self.assertRaises(worker.LeaseRejected):
             await self.call.renew()
         self.assertFalse(self.call.capture)
         self.assertEqual(self.call.deadline, 0)
 
-        metadata = {"vp3_profile_call_id": CALL_ID, "room_name": ROOM_NAME, "worker_key": "f" * 64}
-        with self.assertRaisesRegex(RuntimeError, "invalid"):
-            await worker.run_profile_call(self.ctx, metadata, "http://example.com", "secret", self.transcribe)
-        mixed = {**metadata, "vp3_meeting_public_id": "b" * 32}
-        with self.assertRaisesRegex(RuntimeError, "invalid"):
-            await worker.run_profile_call(self.ctx, mixed, "https://example.com", "secret", self.transcribe)
+    async def test_wrong_room_grant_stops_capture(self):
+        self.room.local_participant.permissions.can_publish_data = True
+        self.call.reconnected()
+        self.assertTrue(self.call.stopped.is_set())
+        self.assertFalse(self.call.connected)
+
+    async def test_permission_change_cancels_existing_capture(self):
+        owner = participant(IDENTITIES[0], Publication("owner"))
+        visitor = participant(IDENTITIES[1])
+        self.room.remote_participants = {p.identity: p for p in (owner, visitor)}
+        self.call.reconnected()
+        await self.call.renew()
+        self.assertTrue(self.call.capturing())
+        self.room.local_participant.permissions.hidden = False
+        self.call.permissions_changed(self.room.local_participant, self.room.local_participant.permissions)
+        self.assertFalse(self.call.capturing())
+        self.assertTrue(self.call.stopped.is_set())
+
+    async def test_visible_intruder_stops_capture(self):
+        owner = participant(IDENTITIES[0], Publication("owner"))
+        visitor = participant(IDENTITIES[1])
+        self.room.remote_participants = {p.identity: p for p in (owner, visitor)}
+        self.call.reconnected()
+        await self.call.renew()
+        self.assertTrue(self.call.capturing())
+        self.call.participant_joined(participant(f"outsider-{CALL_ID}"))
+        self.assertTrue(self.call.stopped.is_set())
+        self.assertFalse(self.call.capturing())
+
+    async def test_connect_does_not_subscribe_under_the_prejoin_lease(self):
+        mic = Publication("owner")
+        owner = participant(IDENTITIES[0], mic)
+        visitor = participant(IDENTITIES[1])
+        self.room.remote_participants = {p.identity: p for p in (owner, visitor)}
+        self.room.on = lambda *_: None
+        self.room.disconnect = AsyncMock()
+
+        async def connect(*, auto_subscribe):
+            self.assertEqual(auto_subscribe, "none")
+            self.assertEqual(self.requests[0], ("lease", {"connected": False, "ready": False, "capture_revision": 0}))
+            self.call.participant_joined(owner)
+            self.call.participant_joined(visitor)
+            self.assertFalse(self.call.capturing())
+            self.assertEqual(mic.requests, [])
+            # A pause may have happened while the Agent joined the room.
+            self.response = {**self.response, "active": False}
+
+        self.ctx.connect = connect
+        await self.call.run()
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(self.requests[-1], ("lease", {"connected": True, "ready": False, "capture_revision": 1}))
+        self.assertEqual(mic.requests, [])
+        self.room.disconnect.assert_awaited_once()
+
+
+class ProfileRegistrationTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        env = patch.dict(os.environ, SETTINGS, clear=True)
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_separate_opt_in_and_exact_project(self):
+        config = profile_agent.worker_config()
+        self.assertEqual(config.livekit_url, SETTINGS["VP3_PROFILE_CALL_AGENT_URL"])
+        self.assertEqual(config.api_base, "https://example.com/vp3")
+        for key, value in (
+            ("VP3_PROFILE_CALL_AGENT_ENABLED", "0"), ("LIVEKIT_URL", "wss://other.livekit.cloud"),
+            ("VP3_PROFILE_CALL_WORKER_API_BASE", "http://example.com"),
+            ("VP3_PROFILE_CALL_WORKER_SECRET", "short"),
+            ("VP3_MEETING_WORKER_SECRET", SETTINGS["VP3_PROFILE_CALL_WORKER_SECRET"]),
+            ("VP3_PROFILE_CALL_AGENT_NAME", "vp3-meeting-agent"),
+        ):
+            with self.subTest(key=key), patch.dict(os.environ, {key: value}):
+                with self.assertRaises(ValueError):
+                    profile_agent.worker_config()
+
+    def test_dedicated_server_grant_and_dispatch_handler(self):
+        with patch.object(profile_agent, "AgentServer") as constructor:
+            server = profile_agent.build_server()
+        self.assertEqual(vars(constructor.call_args.kwargs["permissions"]), {
+            "can_subscribe": True, "can_publish": False, "can_publish_data": False,
+            "can_update_metadata": False, "hidden": True,
+        })
+        self.assertEqual(constructor.call_args.kwargs["ws_url"], SETTINGS["VP3_PROFILE_CALL_AGENT_URL"])
+        server.rtc_session.assert_called_once_with(
+            agent_name=SETTINGS["VP3_PROFILE_CALL_AGENT_NAME"], on_request=profile_agent.request_profile_call,
+        )
+
+    def test_older_rtc_stops_before_registering(self):
+        with patch.object(profile_agent.rtc, "LocalParticipant", object), patch.object(profile_agent, "AgentServer") as constructor:
+            with self.assertRaisesRegex(RuntimeError, "livekit-agents>=1.8.10"):
+                profile_agent.build_server()
+        constructor.assert_not_called()
+
+    async def test_accepts_only_the_canonical_scope_with_exact_identity(self):
+        for name, room, metadata in (
+            (SETTINGS["VP3_PROFILE_CALL_AGENT_NAME"], ROOM_NAME, METADATA),
+            ("other-worker", ROOM_NAME, METADATA),
+            (SETTINGS["VP3_PROFILE_CALL_AGENT_NAME"], f"vp3-profile-call-{CALL_ID}", METADATA),
+            (SETTINGS["VP3_PROFILE_CALL_AGENT_NAME"], ROOM_NAME, {**METADATA, "vp3_meeting_public_id": "b" * 32}),
+            (SETTINGS["VP3_PROFILE_CALL_AGENT_NAME"], ROOM_NAME, {**METADATA, "worker_key": "bad"}),
+        ):
+            req = SimpleNamespace(agent_name=name, room=SimpleNamespace(name=room),
+                                  job=SimpleNamespace(metadata=json.dumps(metadata)),
+                                  accept=AsyncMock(), reject=AsyncMock())
+            await profile_agent.request_profile_call(req)
+            if name == SETTINGS["VP3_PROFILE_CALL_AGENT_NAME"] and room == ROOM_NAME and metadata == METADATA:
+                req.accept.assert_awaited_once_with(identity=AGENT_ID, name="Profile Agent")
+                req.reject.assert_not_awaited()
+            else:
+                req.accept.assert_not_awaited()
+                req.reject.assert_awaited_once()
+
+    async def test_entrypoint_uses_job_room_before_the_rtc_connection(self):
+        ctx = SimpleNamespace(
+            job=SimpleNamespace(agent_name=SETTINGS["VP3_PROFILE_CALL_AGENT_NAME"], metadata=json.dumps(METADATA),
+                                room=SimpleNamespace(name=ROOM_NAME)),
+            room=SimpleNamespace(name=""),
+        )
+        with patch.object(profile_agent, "run_profile_call", AsyncMock()) as run:
+            await profile_agent.profile_call_agent(ctx)
+        args = run.await_args.args
+        self.assertIs(args[0], ctx)
+        self.assertEqual(args[1].identity, AGENT_ID)
+        self.assertEqual(args[1].room_name, ROOM_NAME)
+        self.assertEqual(args[2:4], ("https://example.com/vp3", SETTINGS["VP3_PROFILE_CALL_WORKER_SECRET"]))
+
+    async def test_transcribes_only_final_results_from_allowed_frames(self):
+        queue = asyncio.Queue()
+        final = SimpleNamespace(text=" phrase ", start_time=0.25, end_time=0.5, confidence=0.8)
+        flushed = asyncio.Event()
+        send = AsyncMock(side_effect=lambda _: flushed.set())
+
+        class Speech:
+            aclose = AsyncMock()
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                return await queue.get()
+
+            def push_frame(self, frame):
+                self.frame = frame
+                queue.put_nowait(SimpleNamespace(type="interim", alternatives=[final]))
+                queue.put_nowait(SimpleNamespace(type="final", alternatives=[final], request_id="result"))
+
+        class Audio:
+            aclose = AsyncMock()
+
+            async def __aiter__(self):
+                yield SimpleNamespace(frame="allowed")
+                await asyncio.wait_for(flushed.wait(), timeout=1)
+
+        speech, audio = Speech(), Audio()
+        engine = SimpleNamespace(stream=lambda: speech)
+        with (
+            patch.object(profile_agent, "inference", SimpleNamespace(STT=lambda **_: engine)),
+            patch.object(profile_agent, "stt", SimpleNamespace(SpeechEventType=SimpleNamespace(FINAL_TRANSCRIPT="final"))),
+            patch.object(profile_agent, "time", SimpleNamespace(monotonic=lambda: 100.0)),
+            patch.object(profile_agent.rtc, "AudioStream", return_value=audio, create=True),
+        ):
+            await profile_agent.transcribe_microphone(
+                SimpleNamespace(sid="track"), IDENTITIES[0], CALL_ID, ROOM_NAME, 99.0, send,
+                allow_stream=lambda: True, accept_frame=lambda: True,
+            )
+        self.assertEqual(speech.frame, "allowed")
+        send.assert_awaited_once()
+        segment = send.await_args.args[0]
+        self.assertEqual((segment["participant_identity"], segment["text"]), (IDENTITIES[0], "phrase"))
+        self.assertEqual((segment["start_ms"], segment["end_ms"]), (1250, 1500))
+        self.assertEqual(len(segment["source_key"]), 64)
+        speech.aclose.assert_awaited_once()
+        audio.aclose.assert_awaited_once()
 
 
 if __name__ == "__main__":

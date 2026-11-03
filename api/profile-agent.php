@@ -105,7 +105,11 @@ if(in_array($action,$ownerActions,true)){
         user_data_policy_save_v236($pdo,$user,['resource_type'=>$type,'resource_id'=>'*','audience_scope'=>(string)($input['audience_scope']??$current['audience_scope']),'owner_agents_allowed'=>!empty($current['owner_agents_allowed']),'profile_agent_allowed'=>!empty($input['profile_agent_allowed']),'stonefellow_shared'=>!empty($current['stonefellow_shared'])]);
         profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user)]);
     }
-    if($action==='attention_action'){profile_attention_update($pdo,$uid,(int)($input['attention_id']??0),(string)($input['attention_action']??''));profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user)]);}
+    if($action==='attention_action'){
+        require_once dirname(__DIR__).'/includes/profile-attention-pa4b.php';
+        $operation=(string)($input['attention_action']??'');if($operation==='seen')$operation='read';
+        profile_agent_json(true,vp3_profile_attention_update_pa4b($pdo,$user,array_replace($input,['operation'=>$operation])));
+    }
     if($action==='conversation_messages'){
         $cid=max(0,(int)($input['conversation_id']??0));
         if(!vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid))profile_agent_json(false,['error'=>'Conversation not found.'],404);
@@ -121,7 +125,10 @@ if(in_array($action,$ownerActions,true)){
             $handoff=profile_agent_owner_handoff_pa3($pdo,$user,$conversation,match($status){'owner_joined'=>'claim','resolved'=>'resolve',default=>'delegate'});
             if($handoff===null){
                 $pdo->prepare('UPDATE profile_agent_conversations SET status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$cid,$uid]);
-                if($status==='resolved')$pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
+                if($status==='resolved'){
+                    require_once dirname(__DIR__).'/includes/profile-attention-pa4b.php';
+                    vp3_profile_attention_settle_conversation_pa4b($pdo,$uid,$cid);
+                }
             }
             $pdo->commit();
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
@@ -136,8 +143,11 @@ if(in_array($action,$ownerActions,true)){
             $handoff=profile_agent_owner_handoff_pa3($pdo,$user,$conversation,'reply',$reply,is_string($input['request_id']??null)?$input['request_id']:'');
             if($handoff===null){
                 $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'owner',?,?)")->execute([$cid,$uid,$reply]);
+                $messageId=(int)$pdo->lastInsertId();
                 $pdo->prepare("UPDATE profile_agent_conversations SET status='owner_joined',last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=?")->execute([mb_strimwidth($reply,0,900,'…'),$cid,$uid]);
-                $pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
+                require_once dirname(__DIR__).'/includes/profile-attention-pa4b.php';
+                vp3_profile_attention_message_sent_pa4b($pdo,$conversation,$messageId);
+                vp3_profile_attention_settle_conversation_pa4b($pdo,$uid,$cid);
             }
             $pdo->commit();
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
@@ -184,4 +194,4 @@ if($action==='dispatch'){
     profile_agent_json(true,vp3_profile_agent_public_dispatch_pa3($pdo,$publicCtx,max(0,(int)($input['conversation_id']??0)),max(0,(int)($input['turn_id']??0))));
 }
 profile_agent_json(false,['error'=>'Unknown Profile Agent action.'],404);
-}catch(VP3ProfileAgentPublicException|VP3ProfileHandoffException $e){profile_agent_json(false,['error'=>$e->getMessage(),'code'=>$e->publicCode],$e->httpStatus);}catch(Throwable $e){profile_agent_unexpected_error($e);}
+}catch(VP3ProfileAgentPublicException|VP3ProfileHandoffException|VP3ProfileAttentionException $e){profile_agent_json(false,['error'=>$e->getMessage(),'code'=>$e->publicCode,'complete'=>false,'counts'=>null,'voice_allowed'=>false],$e->httpStatus);}catch(Throwable $e){profile_agent_unexpected_error($e);}

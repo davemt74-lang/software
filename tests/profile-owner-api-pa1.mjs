@@ -60,6 +60,8 @@ try{
   let saved=await state();
   check(r.response.status===200&&r.data.conversation_id===102&&r.data.messages.at(-1).message==='Owner historical reply','successful reply acknowledges the exact historical owned thread');
   check(saved.profile_agent_messages.filter(m=>m.sender_type==='owner').length===1&&saved.profile_agent_messages.at(-1).conversation_id==102&&saved.profile_agent_conversations.find(c=>c.id==102).status==='owner_joined','owner reply stores once in the selected thread and takes over that thread');
+  const sentEvent=saved.profile_events[0],sentMetadata=sentEvent&&JSON.parse(sentEvent.metadata_json);
+  check(saved.profile_events.length===1&&sentEvent.owner_user_id==1&&sentEvent.profile_session_id==12&&sentEvent.profile_agent_id==8&&sentEvent.visitor_user_id==4&&sentEvent.event_type==='message_sent'&&sentMetadata.conversation_id===102&&sentMetadata.message_id==saved.profile_agent_messages.at(-1).id&&sentMetadata.sender_type==='owner'&&sentMetadata.sender_user_id===1&&!('source_authority' in sentMetadata),'historical owner reply records its exact canonical actor and message without inventing visitor authority');
   check(saved.agent_attention_items.find(a=>a.id==2).status==='handled'&&saved.agent_attention_items.find(a=>a.id==1).status==='pending'&&saved.agent_attention_items.find(a=>a.id==3).status==='pending','owner reply handles only that thread’s attention');
   r=await request('POST',{action:'conversation_status',conversation_id:101,status:'resolved',...csrf});
   saved=await state();
@@ -69,7 +71,7 @@ try{
     r=await request('POST',{...args,...csrf});check(r.response.status===422&&r.data.code==='VALIDATION_FAILED','reviewed invalid input retains a safe actionable validation response');
   }
   const beforeFailure=await state();
-  for(const fault of ['insert','after_insert']){
+  for(const fault of ['insert','after_insert','event_insert']){
     r=await request('POST',{action:'owner_reply',conversation_id:101,message:'Uncommitted reply',...csrf},{'X-Fixture-Fault':fault});
     check(r.response.status===500&&r.data.code==='PROFILE_AGENT_REQUEST_FAILED'&&!/SECRET|SQLSTATE|private\/|config\.php/.test(r.text),'database '+fault+' failure exposes no server diagnostic');
     check(JSON.stringify(await state())===JSON.stringify(beforeFailure),'database '+fault+' failure rolls back the full owner reply transaction');

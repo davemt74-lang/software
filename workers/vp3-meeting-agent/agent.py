@@ -4,18 +4,14 @@ import asyncio
 import hashlib
 import json
 import logging
-import math
 import os
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 from livekit import rtc
 from livekit.agents import AgentServer, AutoSubscribe, JobContext, cli, inference, stt
-
-from profile_call import run_profile_call
 
 logger = logging.getLogger("vp3-meeting-agent")
 
@@ -83,96 +79,6 @@ async def _finish_result_task(result_task: asyncio.Task[Any], timeout: float = F
         await asyncio.gather(result_task, return_exceptions=True)
 
 
-def _seconds(value: float | None) -> float:
-    return max(0.0, value) if value is not None and math.isfinite(value) else 0.0
-
-
-async def _stream_audio_track(
-    track: rtc.Track,
-    participant_identity: str,
-    source_id: str,
-    room_name: str,
-    job_started: float,
-    send: Callable[[dict[str, Any]], Awaitable[None]],
-    *,
-    allow_stream: Callable[[], bool] | None = None,
-    accept_frame: Callable[[], bool] | None = None,
-) -> None:
-    track_started = time.monotonic()
-    engine = inference.STT(model=STT_MODEL, language=STT_LANGUAGE)
-    speech_stream = engine.stream()
-    audio_stream = rtc.AudioStream(track)
-    track_sid = str(getattr(track, "sid", "") or getattr(track, "name", "") or "audio")
-    base_ms = max(0, int((track_started - job_started) * 1000))
-
-    async def consume_results() -> None:
-        async for event in speech_stream:
-            if allow_stream is not None and not allow_stream():
-                return
-            if event.type != stt.SpeechEventType.FINAL_TRANSCRIPT or not event.alternatives:
-                continue
-            alternative = event.alternatives[0]
-            text = str(alternative.text or "").strip()
-            if not text:
-                continue
-            start_seconds = _seconds(getattr(alternative, "start_time", None))
-            end_seconds = max(start_seconds, _seconds(getattr(alternative, "end_time", None)))
-            start_ms = base_ms + int(start_seconds * 1000)
-            end_ms = base_ms + int(end_seconds * 1000)
-            request_id = str(getattr(event, "request_id", "") or "")
-            source_key = hashlib.sha256(
-                f"{source_id}|{room_name}|{participant_identity}|{track_sid}|{request_id}|{start_ms}|{end_ms}|{text}".encode("utf-8")
-            ).hexdigest()
-            confidence = getattr(alternative, "confidence", None)
-            await send({
-                "participant_identity": participant_identity,
-                "start_ms": start_ms,
-                "end_ms": end_ms,
-                "text": text,
-                "confidence": confidence if confidence is not None and math.isfinite(confidence) else None,
-                "source_key": source_key,
-            })
-
-    result_task = asyncio.create_task(consume_results())
-    try:
-        async for audio_event in audio_stream:
-            if allow_stream is not None and not allow_stream():
-                return
-            if result_task.done():
-                await result_task
-                return
-            if accept_frame is None or accept_frame():
-                speech_stream.push_frame(audio_event.frame)
-        if allow_stream is None or allow_stream():
-            speech_stream.end_input()
-            await _finish_result_task(result_task)
-    except asyncio.CancelledError:
-        if allow_stream is None:
-            # Meetings retain their existing bounded final-STT grace period.
-            # An authorized Profile stream is cancelled without any drain.
-            speech_stream.end_input()
-            await _finish_result_task(result_task, min(FINAL_DRAIN_SECONDS, 5.0))
-        raise
-    except Exception:
-        if allow_stream is None:
-            logger.exception("Meeting audio transcription failed for participant %s", participant_identity)
-            try:
-                speech_stream.end_input()
-                await _finish_result_task(result_task, min(FINAL_DRAIN_SECONDS, 5.0))
-            except Exception:
-                pass
-        else:
-            logger.warning("Profile microphone transcription failed")
-    finally:
-        if not result_task.done():
-            result_task.cancel()
-        await asyncio.gather(result_task, return_exceptions=True)
-        try:
-            await speech_stream.aclose()
-        finally:
-            await audio_stream.aclose()
-
-
 async def _transcribe_track(
     track: rtc.Track,
     participant: rtc.RemoteParticipant,
@@ -180,17 +86,75 @@ async def _transcribe_track(
     room_name: str,
     job_started: float,
 ) -> None:
-    async def send(fields: dict[str, Any]) -> None:
-        await _send_segment({
-            **fields,
-            "meeting": meeting_public_id,
-            "room_name": room_name,
-            "speaker_name": participant.name or participant.identity or "Participant",
-            "source": "livekit-agent",
-            "is_final": True,
-        })
+    track_started = time.monotonic()
+    engine = inference.STT(model=STT_MODEL, language=STT_LANGUAGE)
+    speech_stream = engine.stream()
+    audio_stream = rtc.AudioStream(track)
 
-    await _stream_audio_track(track, participant.identity, meeting_public_id, room_name, job_started, send)
+    async def consume_results() -> None:
+        try:
+            async for event in speech_stream:
+                if event.type != stt.SpeechEventType.FINAL_TRANSCRIPT or not event.alternatives:
+                    continue
+                alternative = event.alternatives[0]
+                text = str(alternative.text or "").strip()
+                if not text:
+                    continue
+                base_ms = max(0, int((track_started - job_started) * 1000))
+                start_seconds = max(0.0, float(getattr(alternative, "start_time", 0.0) or 0.0))
+                end_seconds = max(start_seconds, float(getattr(alternative, "end_time", start_seconds) or start_seconds))
+                start_ms = base_ms + int(start_seconds * 1000)
+                end_ms = base_ms + int(end_seconds * 1000)
+                request_id = str(getattr(event, "request_id", "") or "")
+                track_sid = str(getattr(track, "sid", "") or getattr(track, "name", "") or "audio")
+                source_key = hashlib.sha256(
+                    f"{meeting_public_id}|{room_name}|{participant.identity}|{track_sid}|{request_id}|{start_ms}|{end_ms}|{text}".encode("utf-8")
+                ).hexdigest()
+                confidence_raw = getattr(alternative, "confidence", None)
+                confidence = float(confidence_raw) if confidence_raw is not None else None
+                await _send_segment(
+                    {
+                        "meeting": meeting_public_id,
+                        "room_name": room_name,
+                        "participant_identity": participant.identity,
+                        "speaker_name": participant.name or participant.identity or "Participant",
+                        "start_ms": start_ms,
+                        "end_ms": end_ms,
+                        "text": text,
+                        "confidence": confidence,
+                        "source": "livekit-agent",
+                        "source_key": source_key,
+                        "is_final": True,
+                    }
+                )
+        finally:
+            await speech_stream.aclose()
+
+    result_task = asyncio.create_task(consume_results())
+    try:
+        async for audio_event in audio_stream:
+            speech_stream.push_frame(audio_event.frame)
+        speech_stream.end_input()
+        await _finish_result_task(result_task)
+    except asyncio.CancelledError:
+        # A room may disconnect while the STT provider still has a final phrase
+        # buffered. Close input and give that final result a short bounded drain
+        # before abandoning it; the VP3 callback accepts a five-minute final-STT
+        # grace period after the organizer ends the meeting.
+        speech_stream.end_input()
+        await _finish_result_task(result_task, min(FINAL_DRAIN_SECONDS, 5.0))
+        raise
+    except Exception:
+        logger.exception("Meeting audio transcription failed for participant %s", participant.identity)
+        try:
+            speech_stream.end_input()
+            await _finish_result_task(result_task, min(FINAL_DRAIN_SECONDS, 5.0))
+        except Exception:
+            if not result_task.done():
+                result_task.cancel()
+            await asyncio.gather(result_task, return_exceptions=True)
+    finally:
+        await audio_stream.aclose()
 
 
 @server.rtc_session(agent_name=AGENT_NAME)
@@ -201,9 +165,6 @@ async def vp3_meeting_agent(ctx: JobContext) -> None:
         metadata = {}
     if not isinstance(metadata, dict):
         metadata = {}
-    if "vp3_profile_call_id" in metadata:
-        await run_profile_call(ctx, metadata, API_BASE, WORKER_SECRET, _stream_audio_track)
-        return
     meeting_public_id = str(metadata.get("vp3_meeting_public_id", "")).strip().lower()
     expected_room_name = str(metadata.get("room_name", "")).strip()
     if not meeting_public_id or not expected_room_name:

@@ -10,3 +10,4 @@ export function ownerCard(id=101,overrides={}){
     ...overrides};
 }
 export const mainChatMarkup='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="chat-app"><aside class="chat-sidebar"><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside><main class="chat-main"><div class="chat-topbar-actions"></div><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section><div id="chatComposerShell"><form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form></div></main></div></body></html>';
+export const mainChatVoiceMarkup=mainChatMarkup.replace('<div class="chat-topbar-actions"></div>','<div class="chat-topbar-actions"><button id="chatVoiceButtonLegacyDormant" type="button">Voice</button><span id="chatVoiceStatus" hidden></span></div>');

@@ -315,13 +315,23 @@ function profile_visitor_label(PDO $pdo, array $session): string
 function profile_event_create(PDO $pdo,int $ownerUserId,array $session,string $type,int $priority,?int $agentId=null,array $metadata=[],?string $dedupeKey=null): ?array
 {
     if((int)($session['visitor_user_id']??0)===$ownerUserId)return null;
+    if(function_exists('vp3_profile_attention_capture_source_pa4b')&&!array_key_exists('source_authority',$metadata)){
+        $proof=vp3_profile_attention_capture_source_pa4b($pdo,$ownerUserId,$session,(int)$agentId,$metadata);if($proof)$metadata['source_authority']=$proof;
+    }
+    $owns=!$pdo->inTransaction();$savepoint='profile_event_'.bin2hex(random_bytes(6));if($owns)$pdo->beginTransaction();else $pdo->exec('SAVEPOINT '.$savepoint);$created=true;
     try{
-        $stmt=$pdo->prepare('INSERT INTO profile_events (owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json) VALUES (?,?,?,?,?,?,?,?)');
-        $stmt->execute([$ownerUserId,(int)$session['id'],(int)($session['visitor_user_id']??0)?:null,$agentId?:null,$type,$priority,$dedupeKey,json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
-        $id=(int)$pdo->lastInsertId();$get=$pdo->prepare('SELECT * FROM profile_events WHERE id=?');$get->execute([$id]);$row=$get->fetch()?:null;
+        try{
+            $stmt=$pdo->prepare('INSERT INTO profile_events (owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json) VALUES (?,?,?,?,?,?,?,?)');
+            $stmt->execute([$ownerUserId,(int)$session['id'],(int)($session['visitor_user_id']??0)?:null,$agentId?:null,$type,$priority,$dedupeKey,json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);
+            $id=(int)$pdo->lastInsertId();$get=$pdo->prepare('SELECT * FROM profile_events WHERE id=?');$get->execute([$id]);$row=$get->fetch()?:null;
+        }catch(PDOException $e){
+            if((string)$e->getCode()!=='23000'||$dedupeKey===null)throw $e;$get=$pdo->prepare('SELECT * FROM profile_events WHERE owner_user_id=? AND dedupe_key=?');$get->execute([$ownerUserId,$dedupeKey]);$row=$get->fetch();
+            if(!$row||(int)$row['profile_session_id']!==(int)$session['id']||(int)($row['visitor_user_id']??0)!==(int)($session['visitor_user_id']??0)||(int)($row['profile_agent_id']??0)!==(int)$agentId||$row['event_type']!==$type||json_decode((string)$row['metadata_json'],true)!==$metadata)throw $e;$created=false;
+        }
+        if($row&&function_exists('vp3_profile_projection_schema_ready_pa4b')&&vp3_profile_projection_schema_ready_pa4b($pdo))vp3_profile_projection_oblige_event_pa4b($pdo,$ownerUserId,(int)$row['id']);
         if($row&&function_exists('vp3_cognitive_profile_event_bridge_v2380'))vp3_cognitive_profile_event_bridge_v2380($pdo,$row,$session,$metadata);
-        return $row;
-    }catch(PDOException $e){if((string)$e->getCode()==='23000')return null;throw $e;}
+        if($owns)$pdo->commit();else $pdo->exec('RELEASE SAVEPOINT '.$savepoint);return $created?$row:null;
+    }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();elseif(!$owns&&$pdo->inTransaction()){$pdo->exec('ROLLBACK TO SAVEPOINT '.$savepoint);$pdo->exec('RELEASE SAVEPOINT '.$savepoint);}throw $e;}
 }
 
 function profile_attention_from_event(PDO $pdo,array $event,array $session,?array $agent=null,?int $conversationId=null,string $summary=''): ?array
@@ -332,7 +342,8 @@ function profile_attention_from_event(PDO $pdo,array $event,array $session,?arra
     elseif($type==='conversation_started'){$headline=$label.' started a conversation with '.$agentName;$summary=$summary?:'A visitor started talking with your Profile Agent.';$assessment='Direct profile-agent engagement.';$recommended='Review the conversation if you want to participate.';$actions=['open_conversation','ignore'];}
     else{$headline=$agentName.' needs your input';$summary=$summary?:'Your Profile Agent reached a question it cannot answer from approved information.';$assessment='Owner knowledge or approval is required.';$recommended='Answer the question so the visitor can receive an accurate response.';$actions=['reply','snooze','ignore'];}
     try{
-        $stmt=$pdo->prepare('INSERT INTO agent_attention_items (owner_user_id,source_event_id,source_conversation_id,profile_agent_id,visitor_user_id,attention_type,priority,headline,summary,assessment,recommended_response,actions_json,context_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+        $versioned=function_exists('vp3_profile_attention_has_column_pa4b')&&vp3_profile_attention_has_column_pa4b($pdo,'agent_attention_items','read_generation');
+        $stmt=$pdo->prepare('INSERT INTO agent_attention_items (owner_user_id,source_event_id,source_conversation_id,profile_agent_id,visitor_user_id,attention_type,priority,headline,summary,assessment,recommended_response,actions_json,context_json'.($versioned?',read_generation':'').') VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?'.($versioned?',0':'').')');
         $stmt->execute([$owner,(int)$event['id'],$conversationId,$agent?(int)$agent['id']:null,(int)($event['visitor_user_id']??0)?:null,$type,(int)$event['priority'],$headline,$summary,$assessment,$recommended,json_encode($actions),json_encode(['profile_session_id'=>(int)$session['id'],'identity_disclosed'=>(bool)$session['identity_disclosed']],JSON_UNESCAPED_SLASHES)]);
         $id=(int)$pdo->lastInsertId();
         $target=$conversationId?url('/profile-agent.php?tab=inbox&conversation='.(int)$conversationId):url('/profile-agent.php?tab=visitors&session='.(int)$session['id']);
@@ -454,14 +465,20 @@ function profile_agent_conversation_get(PDO $pdo,int $conversationId,int $ownerU
     $stmt=$pdo->prepare('SELECT * FROM profile_agent_conversations WHERE id=? AND owner_user_id=? AND profile_session_id=? LIMIT 1');$stmt->execute([$conversationId,$ownerUserId,$sessionId]);return $stmt->fetch()?:null;
 }
 
-function profile_agent_conversation_create(PDO $pdo,array $profile,array $agent,array $session): array
+function profile_agent_conversation_create(PDO $pdo,array $profile,array $agent,array $session,bool $deferEvent=false): array
 {
     $stmt=$pdo->prepare('INSERT INTO profile_agent_conversations (owner_user_id,profile_agent_id,profile_session_id,visitor_user_id) VALUES (?,?,?,?)');
     $stmt->execute([(int)$profile['user_id'],(int)$agent['id'],(int)$session['id'],(int)($session['visitor_user_id']??0)?:null]);
     $id=(int)$pdo->lastInsertId();
-    $event=profile_event_create($pdo,(int)$profile['user_id'],$session,'conversation_started',60,(int)$agent['id'],['conversation_id'=>$id],hash('sha256','conversation_started|'.$id));
-    if($event)profile_attention_from_event($pdo,$event,$session,$agent,$id);
+    if(!$deferEvent)profile_agent_conversation_started_pa4b($pdo,$profile,$agent,$session,$id);
     return profile_agent_conversation_get($pdo,$id,(int)$profile['user_id'],(int)$session['id'])?:throw new RuntimeException('Conversation could not be started.');
+}
+
+/** Native callers persist their exact authority binding before source evidence. */
+function profile_agent_conversation_started_pa4b(PDO $pdo,array $profile,array $agent,array $session,int $conversationId): void
+{
+    $event=profile_event_create($pdo,(int)$profile['user_id'],$session,'conversation_started',60,(int)$agent['id'],['conversation_id'=>$conversationId],hash('sha256','conversation_started|'.$conversationId));
+    if($event)profile_attention_from_event($pdo,$event,$session,$agent,$conversationId);
 }
 
 function profile_agent_messages(PDO $pdo,int $conversationId,int $limit=120): array
@@ -486,15 +503,19 @@ function profile_agent_needs_owner(PDO $pdo,array $profile,array $agent,array $s
 function profile_attention_list(PDO $pdo,int $ownerUserId,int $limit=20): array
 {
     $limit=max(1,min(50,$limit));
-    $stmt=$pdo->prepare("SELECT a.*,s.identity_disclosed,s.profile_session_id,c.status conversation_status,c.last_message_at conversation_last_message FROM agent_attention_items a LEFT JOIN profile_agent_conversations c ON c.id=a.source_conversation_id LEFT JOIN profile_events e ON e.id=a.source_event_id LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE a.owner_user_id=? AND a.status IN ('pending','seen','snoozed') AND (a.snoozed_until IS NULL OR a.snoozed_until<=NOW()) ORDER BY a.priority DESC,a.created_at DESC,a.id DESC LIMIT ".$limit);
+    $stmt=$pdo->prepare("SELECT a.*,s.identity_disclosed,s.id AS profile_session_id,c.status conversation_status,c.last_message_at conversation_last_message FROM agent_attention_items a LEFT JOIN profile_agent_conversations c ON c.id=a.source_conversation_id LEFT JOIN profile_events e ON e.id=a.source_event_id LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE a.owner_user_id=? AND a.status IN ('pending','seen','snoozed') AND (a.snoozed_until IS NULL OR a.snoozed_until<=NOW()) ORDER BY a.priority DESC,a.created_at DESC,a.id DESC LIMIT ".$limit);
     $stmt->execute([$ownerUserId]);$rows=$stmt->fetchAll()?:[];
-    foreach($rows as &$row){$row['visitor_label']='Someone';if(!empty($row['identity_disclosed'])&&(int)($row['visitor_user_id']??0)>0){$u=profile_user_row($pdo,(int)$row['visitor_user_id']);if($u)$row['visitor_label']=(string)$u['display_name'];}$row['actions']=json_decode((string)($row['actions_json']??'[]'),true)?:[];unset($row['actions_json'],$row['context_json']);}unset($row);
+    foreach($rows as &$row){if(function_exists('vp3_profile_attention_legacy_row_pa4b'))$row=vp3_profile_attention_legacy_row_pa4b($pdo,$ownerUserId,$row);else{$row['visitor_label']='Someone';if(!empty($row['identity_disclosed'])&&(int)($row['visitor_user_id']??0)>0){$u=profile_user_row($pdo,(int)$row['visitor_user_id']);if($u)$row['visitor_label']=(string)$u['display_name'];}$row['actions']=json_decode((string)($row['actions_json']??'[]'),true)?:[];}unset($row['visitor_user_id'],$row['actions_json'],$row['context_json']);}unset($row);
     return $rows;
 }
 
-function profile_attention_update(PDO $pdo,int $ownerUserId,int $attentionId,string $action): void
+function profile_attention_update(PDO $pdo,int $ownerUserId,int $attentionId,string $action,array $input=[]): void
 {
     $allowed=['seen','handled','ignored','snooze'];if(!in_array($action,$allowed,true))throw new RuntimeException('Unknown attention action.');
+    if(function_exists('vp3_profile_attention_schema_ready_pa4b')&&vp3_profile_attention_schema_ready_pa4b($pdo)){
+        $q=$pdo->prepare('SELECT * FROM users WHERE id=?');$q->execute([$ownerUserId]);$user=$q->fetch(PDO::FETCH_ASSOC);if(!$user)vp3_profile_attention_error_pa4b('PROFILE_ATTENTION_UNAVAILABLE',403);
+        vp3_profile_attention_update_pa4b($pdo,$user,array_replace($input,['attention_id'=>$attentionId,'operation'=>$action==='seen'?'read':$action]));return;
+    }
     if($action==='snooze'){$stmt=$pdo->prepare("UPDATE agent_attention_items SET status='snoozed',snoozed_until=DATE_ADD(NOW(),INTERVAL 1 DAY) WHERE id=? AND owner_user_id=?");$stmt->execute([$attentionId,$ownerUserId]);return;}
     $status=$action==='seen'?'seen':($action==='handled'?'handled':'ignored');$stmt=$pdo->prepare('UPDATE agent_attention_items SET status=?,snoozed_until=NULL WHERE id=? AND owner_user_id=?');$stmt->execute([$status,$attentionId,$ownerUserId]);
 }
@@ -521,13 +542,16 @@ function profile_agent_message_received_v1341(PDO $pdo,array $profile,array $age
     // The saved message supersedes the empty conversation-start prompt.
     $pdo->prepare("UPDATE notifications SET is_read=1 WHERE user_id=? AND source_type='profile_event' AND type='profile_conversation_started' AND source_id IN (SELECT id FROM profile_events WHERE owner_user_id=? AND event_type='conversation_started' AND id IN (SELECT source_event_id FROM agent_attention_items WHERE owner_user_id=? AND source_conversation_id=?))")
         ->execute([$owner,$owner,$owner,$cid]);
-    $pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND attention_type='conversation_started' AND status IN ('pending','seen')")
-        ->execute([$owner,$cid]);
+    if(function_exists('vp3_profile_attention_settle_conversation_pa4b'))vp3_profile_attention_atomic_pa4b($pdo,fn()=>vp3_profile_attention_settle_conversation_pa4b($pdo,$owner,$cid,'conversation_started'));
+    else $pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND attention_type='conversation_started' AND status IN ('pending','seen')")->execute([$owner,$cid]);
 }
 
 /** Repair missing notification projections from the existing attention ledger. */
 function profile_agent_reconcile_notifications_v1341(PDO $pdo,array $user): void
 {
+    // Legacy callers include GET notification pages. Recovery belongs to the
+    // bounded worker or explicit lifecycle action, never an owner's read.
+    if(function_exists('vp3_profile_attention_schema_ready_pa4b'))return;
     $owner=(int)($user['id']??0);
     if($owner<1||!table_exists('agent_attention_items')||!table_exists('profile_events')||!table_exists('notifications'))return;
     $s=$pdo->prepare("SELECT a.*,e.profile_session_id FROM agent_attention_items a

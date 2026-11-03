@@ -9,7 +9,7 @@ The worker is explicitly dispatched by VP3 when the organizer joins a meeting wi
 - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` — standard LiveKit Agent worker credentials.
 - `VP3_LIVEKIT_AGENT_NAME` — must match the dispatch name configured by the VP3 web app. Default: `vp3-meeting-agent`.
 - `VP3_MEETING_API_BASE` — public HTTPS origin of the VP3 deployment, for example `https://vp3.example.com`.
-- `VP3_MEETING_WORKER_SECRET` — long random shared secret used only for the server-to-server transcript and Profile call worker endpoints.
+- `VP3_MEETING_WORKER_SECRET` — long random shared secret used only for the server-to-server transcript ingest endpoint.
 - `VP3_MEETING_STT_MODEL` — optional LiveKit Inference STT model. Default: `deepgram/nova-3`.
 - `VP3_MEETING_STT_LANGUAGE` — optional STT language. Default: `en`.
 
@@ -32,27 +32,31 @@ The worker is intentionally notes-first. It transcribes all subscribed human aud
 
 Generative spoken participation is not enabled by this worker yet; `notes` is the production-safe Phase 18.0 behavior. The server-side meeting model retains additional Agent modes for later policy-controlled voice participation without changing the meeting or transcript architecture.
 
-## Profile Agent-assisted calls
+## Profile call transcription
 
-Deploy the current worker before enabling Profile call assistance on the VP3
-server. It uses the existing LiveKit and VP3 environment settings above. A
-Profile dispatch has its own call and room identifiers, an Agent display name,
-and a short-scope worker key. VP3 authorizes the dispatch and renews a bounded
-lease through the HTTPS Profile call worker endpoint.
+Run the Profile call Agent as a separate service. Install the supported SDK in
+that service's Python environment before starting it:
 
-The worker subscribes to one microphone for each of the two authorized call
-participants and only while both are present. Each microphone has its own
-streaming speech-to-text pipeline. The callback sends final segment text and
-timing with the participant identity. VP3 resolves the displayed speaker names.
-The worker does not record or retain audio. When call assistance is paused it
-cancels both streams and unsubscribes. Resuming creates fresh streams under the
-new capture revision. A disconnected call or expired lease ends capture without
-draining buffered results.
+```bash
+python -m pip install --upgrade 'livekit-agents>=1.8.10,<2'
+python profile_agent.py start
+```
 
-The Profile worker transcribes only. The Chat sidebar shows transcript and
-research activity tracked by VP3. The worker does not speak in Profile calls.
+The Profile worker verifies its active grant using the current RTC permission API
+and registers its own hidden, subscribe-only participant permissions. The ordinary Profile call notice
+appears before a visitor uses the normal call controls. Assistance is available for
+audio calls. The worker subscribes to the two authorized microphone tracks and
+does not publish media or data. A short renewable VP3 lease governs capture, and
+the owner can pause capture from the activity drawer while the call continues.
 
-Run the deterministic worker tests from the repository root with
-`python3 tests/profile-call-worker-pa3c.py`. Use two devices and a configured
-LiveKit/STT account to verify physical media, worker dispatch, and transcript
-latency before enabling the feature in production.
+Configure these environment variables for the dedicated process:
+
+- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` for the same LiveKit Cloud project used by VP3 Profile calls.
+- `VP3_PROFILE_CALL_AGENT_ENABLED=1` to enable the worker. Keep the same opt-in on the VP3 web server.
+- `VP3_PROFILE_CALL_AGENT_URL` with the same `wss://<project>.livekit.cloud` origin, configured on both the worker and the VP3 web server.
+- `VP3_PROFILE_CALL_AGENT_NAME` with a dedicated dispatch name, such as `vp3-profile-call-agent`. Use the same name on both sides and a different name for meeting dispatches.
+- `VP3_PROFILE_CALL_WORKER_API_BASE` with the HTTPS base URL of the VP3 web app, including any subdirectory.
+- `VP3_PROFILE_CALL_WORKER_SECRET` with the same separate random secret on both sides, at least 32 printable non-space ASCII characters.
+- Optional `VP3_PROFILE_CALL_STT_MODEL` and `VP3_PROFILE_CALL_STT_LANGUAGE`, defaulting to `deepgram/nova-3` and `en`.
+
+Run the isolated worker tests with `python -B tests/profile-call-worker-pa3c.py` from the repository root. A live staging call also needs two Profile participants, a verified Profile calling project, and transcription enabled for the dedicated worker.

@@ -6,7 +6,7 @@ declare(strict_types=1);
  * transport; processing may use the existing cloud Agent worker or a paired
  * HomeServer when the canonical privacy/readiness boundary selects it.
  */
-function video_meeting_livekit_twirp_v1800(array $meeting,string $method,array $payload,int $timeout=12): array
+function video_meeting_livekit_twirp_v1800(array $meeting,string $method,array $payload): array
 {
     if(!video_meeting_livekit_ready_v1800())return ['ok'=>false,'status'=>0,'json'=>[],'error'=>'livekit_not_configured'];
     if(!function_exists('curl_init'))return ['ok'=>false,'status'=>0,'json'=>[],'error'=>'curl_unavailable'];
@@ -15,8 +15,8 @@ function video_meeting_livekit_twirp_v1800(array $meeting,string $method,array $
     curl_setopt_array($ch,[
         CURLOPT_RETURNTRANSFER=>true,
         CURLOPT_FOLLOWLOCATION=>false,
-        CURLOPT_CONNECTTIMEOUT=>min(6,$timeout),
-        CURLOPT_TIMEOUT=>$timeout,
+        CURLOPT_CONNECTTIMEOUT=>6,
+        CURLOPT_TIMEOUT=>12,
         CURLOPT_POST=>true,
         CURLOPT_HTTPHEADER=>[
             'Authorization: Bearer '.video_meeting_livekit_service_token_v1800($meeting,'roomAdmin'),
