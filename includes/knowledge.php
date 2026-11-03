@@ -276,7 +276,7 @@ function personal_knowledge_store(
  * globally discoverable library here. Cross-user personal sharing must go
  * through shared_knowledge_index_v236 and live policy revalidation.
  */
-function search_knowledge(string $query, ?array $user = null, int $limit = 8): array
+function search_knowledge(string $query, ?array $user = null, int $limit = 8, array $excludedDescriptionPrefixes = []): array
 {
     $pdo = db();
     $user ??= current_user();
@@ -303,6 +303,11 @@ function search_knowledge(string $query, ?array $user = null, int $limit = 8): a
             if($canPersonal){$clauses[]="(i.knowledge_scope='personal' AND i.created_by_user_id=?)";$params[]=$userId;}
             if($canSystem){$clauses[]="(i.knowledge_scope='system' AND i.is_published=1)";}
             $where=$clauses?'('.implode(' OR ',$clauses).')':'0=1';
+            foreach(array_slice($excludedDescriptionPrefixes,0,4) as $prefix){
+                if(!is_string($prefix)||$prefix==='')continue;
+                $where.=" AND (i.description IS NULL OR i.description NOT LIKE ? ESCAPE '!')";
+                $params[]=strtr(mb_substr($prefix,0,100),['!'=>'!!','%'=>'!%','_'=>'!_']).'%';
+            }
             $stmt=$pdo->prepare(
                 "SELECT i.id,i.title,i.description,i.file_name,i.file_type,i.visibility,i.is_published,
                         i.created_by_user_id,i.knowledge_scope,c.chunk_text,t.title AS track_title

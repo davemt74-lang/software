@@ -179,10 +179,10 @@ form.addEventListener('submit',event=>{
 },true);
 
 const schedulesPanel=el('section','vp3-specialist-schedules');schedulesPanel.setAttribute('aria-label','Scheduled specialist tasks');root.querySelector('.vp3-teams-body').appendChild(schedulesPanel);
-let schedules=[];
+let schedules=[],cloudScheduleHealth=null,cloudScheduleFolders=[];
 let schedulerHealth=null,healthReceivedAt=0,scheduleReadEpoch=0,scheduleBrainRefresh=false;
 function unavailableHealth(){
- schedulerHealth={state:'unavailable',checked_at:new Date().toISOString()};healthReceivedAt=Date.now();
+ cloudScheduleHealth=null;cloudScheduleFolders=[];schedulerHealth={state:'unavailable',checked_at:new Date().toISOString()};healthReceivedAt=Date.now();
  renderScheduleList();const brain=document.querySelector('.vp3-schedules-brain');if(brain)renderScheduleList(brain);
 }
 function activityDates(parent,entries){
@@ -194,9 +194,10 @@ function renderScheduleList(parent=schedulesPanel){
  parent.replaceChildren();parent.classList.add('vp3-schedule-list');
  const header=el('div','vp3-activity-card-head');header.appendChild(el('h4','','Scheduled specialist tasks'));parent.appendChild(header);
  const states={healthy:'Scheduler running',starting:'Scheduler starting',stopped:'Scheduler stopped',stopping:'Scheduler stopping',degraded:'Scheduler needs attention',stalled:'Scheduler heartbeat overdue',unavailable:'Scheduler status unavailable'};
+ if(cloudScheduleHealth){const healthy=cloudScheduleHealth.background_ready&&Date.now()-healthReceivedAt<90000;const cloudLine=el('p','vp3-scheduler-state',healthy?'Cloud scheduler running':'Cloud scheduler · browser-assisted while Chat is open');cloudLine.dataset.cloudSchedulerState=healthy?'healthy':'browser_assisted';parent.appendChild(cloudLine);if(!healthy)parent.appendChild(el('p','vp3-teams-meta','For runs while Chat is closed, enable the existing Cloud worker on your host.'));if(cloudScheduleHealth.background_at)activityDates(parent,[['Cloud worker last seen',cloudScheduleHealth.background_at]]);}
  let state=schedulerHealth?.state;
  if(!Object.hasOwn(states,state)||Date.now()-healthReceivedAt>90000)state='unavailable';
- const healthLine=el('p','vp3-scheduler-state',states[state]);healthLine.setAttribute('role','status');healthLine.dataset.schedulerState=state;parent.appendChild(healthLine);
+ const healthLine=el('p','vp3-scheduler-state',(cloudScheduleHealth?'HomeServer · ':'')+states[state]);healthLine.setAttribute('role','status');healthLine.dataset.schedulerState=state;parent.appendChild(healthLine);
  if(schedulerHealth){
   activityDates(parent,[['Checked',schedulerHealth.checked_at],['Last tick',schedulerHealth.last_tick_at],['Last successful tick',schedulerHealth.last_success_at]]);
   if(schedulerHealth.consecutive_failures&&schedulerHealth.last_error)parent.appendChild(el('p','vp3-teams-error',schedulerHealth.last_error+' · Last failure '+fmt(schedulerHealth.last_failure_at)));
@@ -206,6 +207,7 @@ function renderScheduleList(parent=schedulesPanel){
   const row=el('article','vp3-schedule-row'),head=el('div','vp3-activity-card-head');head.appendChild(el('strong','',schedule.objective));head.appendChild(el('span','vp3-activity-badge',schedule.status));row.appendChild(head);
   const day=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][schedule.weekday];
   row.appendChild(el('p','vp3-teams-meta',(schedule.frequency==='weekly'?day:'Daily')+' · '+String(schedule.hour).padStart(2,'0')+':'+String(schedule.minute).padStart(2,'0')+' '+schedule.timezone));
+  if(schedule.execution_target==='cloud'){row.appendChild(el('p','vp3-teams-meta','Ongoing Cloud Mission · reviewed read tools and private reports'));if(schedule.folder_id){const link=el('a','','Open Mission Knowledge folder');link.href=String(cfg.knowledgeUrl||'/knowledge.php')+'?folder='+Number(schedule.folder_id);row.appendChild(link);}}
   activityDates(row,[['Next run',schedule.next_run_at],['Last run',schedule.last_run_at],['Updated',schedule.updated_at]]);
   if(schedule.last_error)row.appendChild(el('p','vp3-teams-error',schedule.last_error));
   const actions=el('div','vp3-activity-actions');
@@ -220,6 +222,7 @@ function renderScheduleList(parent=schedulesPanel){
    activityDates(line,[['Due',run.due_at],['Last activity',run.completed_at||run.mission_updated_at||run.created_at]]);
    if(run.needs_review)line.appendChild(el('p','vp3-teams-error','Needs review · '+(run.reason||'Open the run before resuming.')));
    if(run.long_running_workers)line.appendChild(el('p','vp3-teams-error','Worker running longer than five minutes. Inspect the run before deciding whether to stop it.'));
+   if(schedule.execution_target==='cloud')line.appendChild(el('p','vp3-teams-meta',run.report_state==='saved'?'Report saved in My Knowledge · '+(run.evidence_changed<0?'First comparison baseline':run.evidence_changed?'Retrieved evidence changed':'Retrieved evidence unchanged'):'Report: '+(run.report_state||'pending')));
    if(run.mission_id)line.appendChild(btn('View run','get',run.mission_id));runs.appendChild(line);
   }
   row.appendChild(runs);parent.appendChild(row);
@@ -228,8 +231,8 @@ function renderScheduleList(parent=schedulesPanel){
 }
 
 function renderScheduleForm(m){
- if(m.execution_target==='cloud')return;
- const contract=toolsByMission.get(m.id);if(m.status!=='planned'||!m.chat_task||!contract?.configured||!contract.active||m.private||m.authority_current===false)return;
+ const isCloud=m.execution_target==='cloud';if(m.recurrence)return;
+ const contract=toolsByMission.get(m.id);if(!(m.status==='planned'||(isCloud&&m.status==='completed'))||!m.chat_task||!contract?.configured||!contract.active||m.private||m.authority_current===false)return;
  if((contract.browser_requirements||[]).length)return;
  const panel=el('section','vp3-schedule-create');panel.setAttribute('aria-label','Schedule reviewed task');panel.appendChild(el('h4','','Schedule this reviewed task'));
  const frequency=el('select');frequency.dataset.scheduleField='frequency';frequency.setAttribute('aria-label','Schedule frequency');
@@ -238,11 +241,12 @@ function renderScheduleForm(m){
  ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].forEach((label,index)=>{const option=el('option','',label);option.value=String(index);weekday.appendChild(option);});panel.appendChild(weekday);
  const time=el('input');time.type='time';time.value='09:00';time.dataset.scheduleField='time';time.setAttribute('aria-label','Schedule local time');panel.appendChild(time);
  const zone=el('input');zone.value=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';zone.maxLength=80;zone.dataset.scheduleField='timezone';zone.setAttribute('aria-label','Schedule timezone');panel.appendChild(zone);
+ if(isCloud){const destination=el('select');destination.dataset.scheduleField='folder_id';destination.setAttribute('aria-label','Mission report folder');const fresh=el('option','','Create a Mission folder in My Knowledge');fresh.value='0';destination.appendChild(fresh);for(const folder of cloudScheduleFolders){const option=el('option','',folder.folder_name);option.value=String(folder.id);destination.appendChild(option);}panel.appendChild(destination);panel.appendChild(el('p','vp3-teams-meta','Each completed run saves a private draft report here. At least one Knowledge or Brain read must be approved.'));}
  panel.appendChild(btn('Create schedule','schedule.create',m.id));detail.appendChild(panel);
 }
 async function loadSchedules(){
  const epoch=++scheduleReadEpoch;
- try{const result=await api('schedule.list');if(epoch!==scheduleReadEpoch)return;schedules=Array.isArray(result.schedules)?result.schedules:[];schedulerHealth=result.scheduler_health||null;healthReceivedAt=Date.now();renderScheduleList();const brain=document.querySelector('.vp3-schedules-brain');if(brain)renderScheduleList(brain);}
+ try{const result=await api('schedule.list');if(epoch!==scheduleReadEpoch)return;schedules=Array.isArray(result.schedules)?result.schedules:[];cloudScheduleHealth=result.cloud_scheduler_health||null;cloudScheduleFolders=Array.isArray(result.knowledge_folders)?result.knowledge_folders:[];schedulerHealth=result.scheduler_health||null;healthReceivedAt=Date.now();renderScheduleList();const brain=document.querySelector('.vp3-schedules-brain');if(brain)renderScheduleList(brain);}
  catch(error){if(epoch===scheduleReadEpoch)unavailableHealth();throw error;}
 }
 async function scheduleOperation(action,id){
@@ -251,7 +255,8 @@ async function scheduleOperation(action,id){
   const panel=detail.querySelector('.vp3-schedule-create'),contract=toolsByMission.get(id);if(!panel||!contract?.active)return;
   const field=k=>panel.querySelector('[data-schedule-field="'+k+'"]').value;const time=field('time').split(':');
   payload={mission_id:id,expected_revision:contract.revision,confirmed:true,timing:{frequency:field('frequency'),weekday:Number(field('weekday')),hour:Number(time[0]),minute:Number(time[1]),timezone:field('timezone').trim()}};
-  if(!window.confirm('Run this exact reviewed specialist plan on this schedule? Each run may use the configured model and tools within the reviewed budgets. Every proposed edit still requires separate approval.'))return;
+  if(panel.querySelector('[data-schedule-field="folder_id"]')){payload.folder_id=Number(field('folder_id'));payload.save_reports=true;}
+  if(!window.confirm('Run this exact reviewed specialist plan on this schedule? Each run may use the configured model and tools within the reviewed budgets. Cloud runs also save private reports to the selected My Knowledge folder. Every proposed edit still requires separate approval.'))return;
  }else{
   const schedule=schedules.find(s=>s.id===id);if(!schedule)return;
   payload={schedule_id:id,expected_revision:schedule.revision,confirmed:true};
@@ -326,7 +331,7 @@ function clearPrivateMissionState(){
  detail.replaceChildren();detail.hidden=true;const diagnostic=root.querySelector('.vp3-integration-diagnostic');if(diagnostic){diagnostic.replaceChildren();diagnostic.hidden=true;}
  for(const cache of [toolsByMission,toolDrafts,changesByMission,staffingByMission,liveByWorker,browserByWorker,pendingOperations])cache.clear();
  followupReview=null;followupRetry=null;followupHost.replaceChildren();followupHost.hidden=true;storeFollowup();
- schedules=[];schedulerHealth=null;healthReceivedAt=0;renderScheduleList();
+ schedules=[];cloudScheduleHealth=null;cloudScheduleFolders=[];schedulerHealth=null;healthReceivedAt=0;renderScheduleList();
  // Pending route/schedule intents contain private objectives and must not survive revocation.
  try{for(const key of Object.keys(sessionStorage)){if(key.startsWith('vp3.chat-task.pending.a5c7.'+String(cfg.csrf))||key.startsWith('vp3.schedule.pending.a5c6.'+String(cfg.csrf)))sessionStorage.removeItem(key);}}catch(_){}
  showList();publishProgress();
@@ -363,6 +368,14 @@ async function tickCloudMission(){
  finally{cloudTickInflight=false;}
 }
 window.setInterval(()=>void tickCloudMission(),5000);
+let cloudScheduleTickInflight=false;
+async function tickCloudSchedules(){
+ if(cloudScheduleTickInflight||busy||document.hidden||!cloudScheduleHealth)return;cloudScheduleTickInflight=true;
+ try{await api('cloud.schedule.tick');await pollProgress();if(!busy)await loadSchedules();}
+ catch(e){if(!busy)say(e.message||'Cloud scheduling needs attention. Check Mission history.');}
+ finally{cloudScheduleTickInflight=false;}
+}
+window.setInterval(()=>void tickCloudSchedules(),30000);
 window.setInterval(pollProgress,5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void pollProgress();});
 window.addEventListener('online',()=>void pollProgress());
@@ -399,6 +412,7 @@ function showMission(m){
  if(m.chat_task?.automatic_reason&&!m.private&&m.authority_current!==false)detail.appendChild(el('p','vp3-teams-meta','Lead chose specialists: '+m.chat_task.automatic_reason+' · '+fmt(m.chat_task.decided_at)));
  if(m.chat_task&&!m.private&&m.authority_current!==false)detail.appendChild(el('p','vp3-teams-meta','Plan prepared '+fmt(m.chat_task.prepared_at)+' · '+m.chat_task.provider_key+' · '+m.chat_task.model+' · assignment review required before tools run'));
  renderAssignments(m);
+ if(m.recurrence&&m.authority_current!==false){const r=m.recurrence;const info=el('p','vp3-teams-meta','Ongoing Cloud Mission run · report '+r.report_state);if(r.knowledge_id)info.appendChild(el('span','',' · Knowledge #'+r.knowledge_id));detail.appendChild(info);}
  renderScheduleForm(m);
  renderChanges(m);
  renderCompletion(m,detail);
@@ -691,8 +705,8 @@ async function load(){
  inflight=true;
  try{
   const result=await api('list');items=Array.isArray(result.items)?result.items:[];lastRefresh=Date.now();showList();renderLiveSummary();await loadSchedules();
-  say('HomeServer connected · '+items.length+' recent mission'+(items.length===1?'':'s')+'.');
-  if(selected&&items.some(x=>x.id===selected)){const current=await api('get',{mission_id:selected});if(current.mission){if(current.mission.chat_task&&current.mission.status==='planned'&&!current.mission.private&&current.mission.authority_current!==false){const tools=await api('tools.get',{mission_id:selected});toolsByMission.set(selected,tools.tools);}if(current.mission.tools_enabled&&!current.mission.private&&current.mission.authority_current!==false){const changes=await api('actions.list',{mission_id:selected});changesByMission.set(selected,Array.isArray(changes.actions)?changes.actions:[]);}showMission(current.mission);}
+  say((result.runtimes?.cloud?'Cloud Missions available':'HomeServer connected')+' · '+items.length+' recent mission'+(items.length===1?'':'s')+'.');
+  if(selected&&items.some(x=>x.id===selected)){const current=await api('get',{mission_id:selected});if(current.mission){if(current.mission.chat_task&&(current.mission.status==='planned'||current.mission.execution_target==='cloud')&&!current.mission.private&&current.mission.authority_current!==false){const tools=await api('tools.get',{mission_id:selected});toolsByMission.set(selected,tools.tools);}if(current.mission.tools_enabled&&!current.mission.private&&current.mission.authority_current!==false){const changes=await api('actions.list',{mission_id:selected});changesByMission.set(selected,Array.isArray(changes.actions)?changes.actions:[]);}showMission(current.mission);}
    try{await loadSupervision(selected);}catch(_){/* Mission status remains available if supervision is unsupported. */}}
  }catch(error){unavailableHealth();throw error;}finally{inflight=false;}
 }
@@ -887,7 +901,7 @@ async function operation(action,id,taskId,decision){
   if(action==='approve'||action==='reject'){payload.decision_id=taskId;payload.confirmed=true;}
   const response=await api(action,payload);
   if(Array.isArray(response.actions))changesByMission.set(id,response.actions);
-  if(action==='get'&&response.mission?.chat_task&&response.mission.status==='planned'&&!response.mission.private&&response.mission.authority_current!==false){const tools=await api('tools.get',{mission_id:id});toolsByMission.set(id,tools.tools);}
+  if(action==='get'&&response.mission?.chat_task&&(response.mission.status==='planned'||response.mission.execution_target==='cloud')&&!response.mission.private&&response.mission.authority_current!==false){const tools=await api('tools.get',{mission_id:id});toolsByMission.set(id,tools.tools);}
   if(action==='get'&&response.mission?.tools_enabled&&!response.mission.private&&response.mission.authority_current!==false){const changes=await api('actions.list',{mission_id:id});changesByMission.set(id,Array.isArray(changes.actions)?changes.actions:[]);}
   if(response.tools){toolsByMission.set(id,response.tools);if(action!=='tools.get')toolDrafts.delete(id);}
   if(payload.request_id)for(const [key,value] of pendingOperations)if(value===payload.request_id)pendingOperations.delete(key);

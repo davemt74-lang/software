@@ -73,6 +73,9 @@ jobs:
           php tests/cloud-missions-v1.php
           node tests/cloud-missions-api.mjs
           node tests/cloud-missions-browser.mjs
+          php tests/cloud-mission-schedules-v1.php
+          node tests/cloud-mission-schedules-api.mjs
+          node tests/cloud-mission-schedules-browser.mjs
           node tests/agent-eyes-core.mjs
           node tests/agent-orb-browser.mjs
           node tests/agent-orb-cloud-browser.mjs
@@ -175,6 +178,11 @@ jobs:
           php tests/agent-reminders-mysql.php
           php tests/transcript-brain-mysql.php
           php tests/task-lists-mysql.php
+      - name: Recurring Cloud Missions and concurrent scheduler slots
+        env:
+          VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
+          VP3_SECTION7_MYSQL_PASSWORD: section7-fixture
+        run: php tests/cloud-mission-schedules-v1.php
   connection-mysql:
     needs: transfer-scope
     if: needs.transfer-scope.outputs.connection == 'true'

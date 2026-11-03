@@ -8,7 +8,7 @@ Agent Teams can prepare Cloud Missions while HomeServer is offline. Cloud uses t
 
 The Chat page submits one bounded Cloud worker tick at a time while visible. The existing Cloud CLI worker can claim the same jobs. A browser tick is not a background scheduler: continuous unattended execution requires a deployed worker. Model usage follows normal provider, quota and accounting rules. Source access is checked before inference, before saving and when displaying results. Ordinary Chat remains ordinary Chat.
 
-Cloud assignments currently allow at most three read calls per worker across attempts, one worker at a time, and a fifteen-minute reviewed execution window. They create analysis text, source summaries or document drafts; selecting document output does not publish or create a separate product. Unsupported browser, scheduling and external-action operations remain explicit HomeServer dependencies.
+Cloud assignments currently allow at most three read calls per worker across attempts, one worker at a time, and a fifteen-minute one-shot reviewed execution window. They create analysis text, source summaries or document drafts; selecting document output does not publish or create a separate product. [Recurring Cloud Missions](cloud-mission-schedules-v1.md) add explicit durable read/save grants, daily/weekly execution and private Knowledge reports. Browser and external-action operations remain HomeServer dependencies.
 
 The three Cloud metadata tables initialize on first use. The existing job engine and job-control database migrations must already be applied; otherwise Cloud preparation reports that an upgrade is needed.
 
@@ -16,7 +16,7 @@ The three Cloud metadata tables initialize on first use. The existing job engine
 
 The user's target is a persistent research and data collection module. Its parent Mission definition should outlive individual executions and retain its objective, permitted sources, schedule/triggers, budget, assigned specialist roles, skills, destination folder and notification rules. Each execution should be a separate canonical job linked to that parent, preserving run history and allowing pause, edit and deletion of the ongoing Mission without fabricating worker completion.
 
-1. Add persistent Mission definitions and recurring Cloud scheduling. Keep each scheduled run separate from the enduring Mission. Prevent overlapping runs and duplicate scheduled submissions.
+1. Delivered in recurring Cloud Missions: persistent reviewed definitions, daily/weekly scheduling, per-run jobs, overlap protection and private Knowledge reports. Subsequent sections can expand source filters and event triggers.
 2. Connect external collection adapters, starting with web search and approved email reads. Preserve URLs/message references, retrieval times, content provenance and collection failures. Compare results across runs, deduplicate and report meaningful changes.
 3. Store Mission source collections, reports and artifacts under the user's existing Knowledge folders. Link shared-screen sessions, existing Research jobs and Brain memories by source reference. Retain important derived findings through the existing reviewed Brain flow.
 4. Add configurable specialists and skill workflows: collector, verifier, analyst and report/product creator. Expose each worker's permitted tools and actual results in Chat.

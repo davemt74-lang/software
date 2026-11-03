@@ -270,12 +270,12 @@ function agent_workflow_create_from_priority_v1400(PDO $pdo,array $user,array $p
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 
-function agent_workflow_approve_v1400(PDO $pdo,array $user,int $runId): array
+function agent_workflow_approve_v1400(PDO $pdo,array $user,int $runId,string $actorKind='user'): array
 {
     $ownerUserId=(int)($user['id']??0);if($ownerUserId<1)throw new RuntimeException('A signed-in account is required.');
-    try{$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');if((string)$row['status']!=='approval_pending')throw new RuntimeException('This workflow is not waiting for approval.');
-        $pdo->prepare("UPDATE agent_workflow_runs SET status='approved',approval_status='approved',approved_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status='approval_pending'")->execute([$runId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_actions SET status='queued' WHERE run_id=? AND owner_user_id=? AND status='approval_pending'")->execute([$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'approved','approval_pending','approved','user','User explicitly approved the workflow plan.');$pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    $ownsTransaction=!$pdo->inTransaction();try{if($ownsTransaction)$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');if((string)$row['status']!=='approval_pending')throw new RuntimeException('This workflow is not waiting for approval.');
+        $pdo->prepare("UPDATE agent_workflow_runs SET status='approved',approval_status='approved',approved_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status='approval_pending'")->execute([$runId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_actions SET status='queued' WHERE run_id=? AND owner_user_id=? AND status='approval_pending'")->execute([$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'approved','approval_pending','approved',$actorKind,$actorKind==='scheduler'?'Scheduled plan approved under the owner’s recurring grant.':'User explicitly approved the workflow plan.');if($ownsTransaction)$pdo->commit();
+    }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
     $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);return agent_workflow_public_run_v1400($pdo,$row?:[],true);
 }
 
