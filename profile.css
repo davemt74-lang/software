@@ -33,3 +33,16 @@
 .profile-webmcp-resume-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 13px;border:1px solid var(--profile-line);border-radius:999px;background:#fff;color:var(--profile-text);font:800 10px/1 inherit;text-decoration:none}
 .profile-webmcp-resume-actions a[hidden]{display:none}
 @media(max-width:680px){.profile-webmcp-resume-actions{width:100%;display:grid;grid-template-columns:1fr}.profile-webmcp-resume-actions a,.profile-webmcp-resume-actions button{width:100%}}
+
+.profile-agent-live-choice{flex:0 0 auto;padding:10px 14px;border-bottom:1px solid var(--profile-line);background:#fff;overflow-wrap:anywhere}
+.profile-agent-live-choice label{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.45;cursor:pointer}
+.profile-agent-live-choice input{flex:0 0 auto;width:18px;height:18px;margin:0;accent-color:var(--profile-dark)}
+.profile-agent-live-choice input:disabled{cursor:default}
+.profile-agent-live-choice small{display:block;margin-top:6px;font-size:11px;line-height:1.4;color:var(--profile-muted)}
+.profile-agent-live-choice button{min-height:36px;margin-top:8px;padding:7px 10px;border:1px solid var(--profile-line);border-radius:8px;background:var(--profile-soft);color:var(--profile-text);font:inherit;font-size:11px;cursor:pointer}
+.profile-agent-live-choice [hidden]{display:none!important}
+.profile-agent-live-choice input:focus-visible,.profile-agent-live-choice button:focus-visible{outline:2px solid var(--profile-dark);outline-offset:3px}
+.profile-agent-message.owner::before{content:none}
+.profile-agent-message-speaker{display:block;margin-bottom:3px;font-size:10px;font-weight:850}
+.profile-agent-message-body{display:block;overflow-wrap:anywhere}
+@media(max-width:600px){.profile-agent-live-choice{padding:9px 12px}.profile-agent-live-choice label{min-height:28px}.profile-agent-live-choice button{min-height:44px}.profile-agent-compose textarea{font-size:16px}}

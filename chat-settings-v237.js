@@ -63,12 +63,12 @@
         <form id="chatSettingsForm">
           <div class="chat-settings-body">
             <section class="chat-settings-section">
-              <div class="chat-settings-section-title"><strong>Availability</strong><span>Choose whether other VP3 users see you as online.</span></div>
+              <div class="chat-settings-section-title"><strong>Availability</strong><span>Choose whether other VP3 users see you as online. Offline also turns off live-text requests from your public Profile.</span></div>
               <label class="chat-settings-field"><span>Status</span><select name="presence_mode"><option value="online">Online</option><option value="offline">Offline</option></select></label>
             </section>
             <section class="chat-settings-section">
-              <div class="chat-settings-section-title"><strong>Social Chat</strong><span>Control direct user-to-user conversations and incoming message alerts.</span></div>
-              <label class="chat-settings-toggle"><span><strong>Allow user-to-user chat</strong><small>Other eligible users can find you and send direct messages.</small></span><input type="checkbox" name="social_chat_enabled"></label>
+              <div class="chat-settings-section-title"><strong>Social Chat</strong><span>Control direct user messages, public Profile live-text requests and incoming message alerts.</span></div>
+              <label class="chat-settings-toggle"><span><strong>Allow user-to-user chat</strong><small>Allow eligible users to message you and Profile visitors to request a live text chat. You choose whether to accept each visitor request.</small></span><input type="checkbox" name="social_chat_enabled"></label>
               <label class="chat-settings-toggle"><span><strong>Incoming message sound</strong><small>Play one notification sound when a new direct message arrives.</small></span><input type="checkbox" name="sound_enabled"></label>
               <p>Agent Voice is controlled by the upper switch in your account menu.</p>
             </section>

@@ -140,11 +140,12 @@ function pa3_reset(): void
 {
     $p=db();if($p->inTransaction())$p->rollBack();$p->afterSql=null;$p->failSql='';
     $GLOBALS['pa3ModelCalls']=[];$GLOBALS['pa3ModelHook']=null;$GLOBALS['pa3Now']=(int)floor(microtime(true)*1000);$GLOBALS['pa3Settings']=[];
-    foreach(['profile_agent_handoff_operations_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_owners_pa3','agent_workflow_receipts','agent_workflow_action_dependencies','agent_workflow_events','agent_workflow_actions','agent_workflow_runs','chat_messages','chat_conversations'] as $table)if(table_exists($table))$p->exec('DELETE FROM '.$table);
+    foreach(['profile_agent_handoff_operations_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_owners_pa3','agent_workflow_receipts','agent_workflow_action_dependencies','agent_workflow_events','agent_workflow_actions','agent_workflow_runs','chat_messages','chat_conversations','team_user_presence'] as $table)if(table_exists($table))$p->exec('DELETE FROM '.$table);
     if($p->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'&&!table_exists('users'))$p->exec('CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,display_name VARCHAR(190),email VARCHAR(190),role VARCHAR(40),is_active INTEGER,avatar_path VARCHAR(255),password_hash VARCHAR(255),last_login_at DATETIME)');
     profile_public_authority_fixture_pa1($p);
     $p->exec("INSERT INTO role_permissions VALUES('member','chat.access'),('member','account.access')");
     $auto=$p->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY':'INTEGER PRIMARY KEY AUTOINCREMENT';
+    $p->exec("CREATE TABLE IF NOT EXISTS team_user_presence(user_id INTEGER PRIMARY KEY,presence_mode VARCHAR(16) NOT NULL DEFAULT 'online',social_chat_enabled INTEGER NOT NULL DEFAULT 1,sound_enabled INTEGER NOT NULL DEFAULT 1)");
     $p->exec('CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER,title VARCHAR(190),updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)');
     $p->exec("CREATE TABLE IF NOT EXISTS chat_messages(id $auto,conversation_id INTEGER,user_id INTEGER,role VARCHAR(20),message TEXT,context_json TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $p->exec("INSERT INTO chat_conversations(id,user_id,user_agent_id,title) VALUES(11,1,7,'Owner main Chat'),(12,1,8,'Owner other Agent'),(13,4,9,'Foreign private Chat')");

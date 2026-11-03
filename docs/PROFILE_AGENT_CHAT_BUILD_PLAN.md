@@ -56,8 +56,9 @@ hold. The Cloud work does not change HomeServer source or Stonefellow playback.
 | --- | --- | --- |
 | PA1 | Profile mutation permissions; visitor/account conversation isolation; fresh public authority; exact owner reply target; separate external Agent Messaging histories | Complete: PR #694 merged; all 13 PR and 14 post-merge workflows passed |
 | PA2 | Payment webhook recovery; late payment reconciliation; durable fulfillment retry; accurate review/payment cards | Complete: PR #695 merged; all 13 PR and 14 post-merge workflows passed |
-| PA3 | Availability, exact visible-card acknowledgement, 15-second pickup, durable automatic takeover, and functional main Chat visitor cards with explicit text reply/claim/delegate/resolve | Building PA3A and PA3B together as one usable text handoff release |
-| PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Next after PA3; added at the owner's request |
+| PA3 | Availability, exact visible-card acknowledgement, 15-second pickup, durable automatic takeover, and functional main Chat visitor cards with explicit text reply/claim/delegate/resolve | Released in PRs #696 and #697 |
+| PA3D | Visitor chooses Agent chat or requests live owner text; owner accepts or declines using existing Chat Settings | Acceptance gates below |
+| PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Planned |
 | PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Planned |
 | PA4B | Notification and Brain state; snooze/wake; routing; replay and projection repair | Planned |
 | PA5 | Ordinary public Profile conversation checkout using the canonical Commerce order/payment/receipt path | Planned |
@@ -256,6 +257,42 @@ passes. The PR additionally runs the SQL and HTTP fixtures with MySQL 8 on PHP
 8.1 and 8.3, including independent-process takeover races, plus both actual
 browser interfaces in Chromium with mobile viewport checks. These controlled
 tests do not call a live model, voice, payment or media provider.
+
+### PA3D: explicit Agent or live owner text chat
+
+The public Profile chat defaults to Agent chat. A visitor can check a live-text
+request option only while the server reports the owner available. The checkbox
+prepares the next message's mode; it does not silently create a request. Existing
+Online/Offline, Allow user-to-user chat, Profile Agent acceptance and fresh
+visible main Chat presence remain authoritative. The rail's Chat Settings form
+keeps its layout and controls. Existing PA3 Away/DND can narrow availability.
+
+An available live request enters the existing acknowledged 15-second pickup
+window. The owner card offers Accept/Decline. Acceptance or a targeted owner
+reply pauses automatic Agent responses. Decline, elapsed pickup, visitor end,
+owner end, or lost owner availability returns the same public conversation to
+the Agent. A delayed follow-up from an already closed live chat cannot start
+another request; only a fresh explicit choice can. Agent-only messages start
+without an owner pickup delay. Message
+speaker labels distinguish visitor, Agent and owner. Private Chat stays private.
+
+| Gate | Required behavior | Evidence required |
+| --- | --- | --- |
+| 1 | New widget defaults to Agent chat and sends an explicit immutable Agent/live intent; old pending retries retain their original mode | Native runtime and reload/uncertain-response fixtures |
+| 2 | Public live availability reuses current Online and user-chat preferences plus exact fresh Chat presence, without private metadata or schema writes | Production SQL setting/permission and safe-projection fixtures |
+| 3 | Agent-only turns skip pickup and do not ring a new live visitor card; ordinary Profile inbox/history remain available | Canonical SQL, owner-list and native widget fixtures |
+| 4 | Available live requests reuse the exact server-owned 15-second deadline; repeated messages, reloads and two tabs cannot extend it | Deadline, delivery and multi-tab fixtures |
+| 5 | Accept/reply, decline and timeout have one canonical winner; late Agent inference cannot compete | Version/lease fences, controlled inference and MySQL races |
+| 6 | Either side can end the direct chat and return to Agent in the same thread; stale visitor end cannot terminate a newer request | Exact-principal, revision, retry and transcript fixtures |
+| 7 | Offline, disabled user chat, revoked Profile/Agent access and disconnects cannot accept new live chats; cleanup still works | Settings/presence and in-flight revocation fixtures |
+| 8 | Mode changes and retries cannot duplicate messages, reinterpret a saved request, revive obsolete work or mix visitors | Atomic admission, failed commit, retry and two-visitor fixtures |
+| 9 | Both UIs show truthful requested/accepted/declined/ended states and real speaker names with inert text; drafts and private composer remain isolated | DOM and real Chromium, including mobile viewport |
+| 10 | Supported PHP/SQLite/MySQL, retained contracts, required CI and post-merge checks pass; flat deployment ZIP matches merged source | PHP 8.1/8.3, MySQL 8, Chromium and release verification |
+
+This section adds durable choice/status columns through the existing handoff
+schema installer. Existing installations run Upgrade once. Missing fields fail
+closed; public GET reads never initialize storage. Live media and synthesized
+visitor announcements remain later sections.
 
 ### PA3C: direct voice and video
 

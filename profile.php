@@ -158,7 +158,7 @@ if($webmcpResumeRequested){
 <meta name="theme-color" content="#f6f5f2">
 <link rel="canonical" href="<?= e(profile_public_url($username)) ?>">
 <title><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
-<link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-checkout-pa2-20261103')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-live-text-pa3d-'.substr(hash_file('sha256',__DIR__.'/profile.css'),0,12))) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-cleanup-v174.css?v=profile-cleanup-v174-20260913')) ?>">
 </head>
 <body class="profile-page">
@@ -284,19 +284,24 @@ if($webmcpResumeRequested){
 <div class="profile-agent-widget-root" data-profile-agent-widget>
   <section class="profile-agent-widget" id="profileAgentShell" hidden aria-label="Chat with <?= e((string)$agent['display_name']) ?>">
     <header class="profile-agent-widget-head"><span class="profile-agent-avatar"><?= e(mb_strtoupper(mb_substr((string)$agent['display_name'],0,1))) ?></span><div><strong><?= e((string)$agent['display_name']) ?></strong><small><?= e($displayName) ?>’s Profile Agent · powered by <?= e(system_agent_name()) ?></small></div><button type="button" class="profile-agent-widget-close" data-close-profile-agent aria-label="Close Profile Agent">×</button></header>
-    <div class="profile-agent-disclosure">AI representative — not the profile owner live. Answers use only information this profile has approved.</div>
+    <div class="profile-agent-disclosure" data-profile-agent-disclosure>AI representative — not the profile owner live. Answers use only information this profile has approved.</div>
+    <?php if(!$preview): ?><div class="profile-agent-live-choice" data-profile-live-choice>
+      <label><input type="checkbox" data-profile-live-chat disabled><span>Request live text chat with <strong data-profile-owner-name><?= e($displayName) ?></strong></span></label>
+      <small data-profile-live-availability role="status">Checking live chat availability…</small>
+      <button type="button" data-profile-end-live hidden>Return to Agent chat</button>
+    </div><?php endif; ?>
     <?php if($preview): ?><div class="profile-agent-preview"><p><?= e($agentGreeting) ?></p><strong>Visitor preview</strong><span>Conversation sending is disabled here so your own preview cannot create visitor events, notifications, or attention items.</span></div><?php else: ?><div class="profile-agent-thread" data-profile-agent-thread aria-live="polite"></div><form class="profile-agent-compose"><textarea maxlength="2000" placeholder="Ask about this profile…" aria-label="Message Profile Agent"></textarea><button type="submit">Send</button><div class="profile-agent-status" data-profile-agent-status role="status" aria-live="polite"></div></form><?php endif; ?>
   </section>
   <button type="button" class="profile-agent-launcher" data-open-profile-agent aria-controls="profileAgentShell" aria-expanded="false"><span class="profile-agent-launcher-mark"><?= e(mb_strtoupper(mb_substr((string)$agent['display_name'],0,1))) ?></span><span>Ask <?= e((string)$agent['display_name']) ?></span></button>
 </div>
 <?php endif; ?>
 <script>
-window.STONEFELLOW_PROFILE_AGENT={username:<?= json_encode($username,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,endpoint:<?= json_encode(url('/api/profile-agent.php'),JSON_UNESCAPED_SLASHES) ?>,profileToken:<?= json_encode($profileToken,JSON_UNESCAPED_SLASHES) ?>,conversationNamespace:<?= json_encode($conversationNamespace,JSON_UNESCAPED_SLASHES) ?>,agentName:<?= json_encode((string)($agent['display_name']??''),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,greeting:<?= json_encode($agentGreeting,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>};
+window.STONEFELLOW_PROFILE_AGENT={username:<?= json_encode($username,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,endpoint:<?= json_encode(url('/api/profile-agent.php'),JSON_UNESCAPED_SLASHES) ?>,profileToken:<?= json_encode($profileToken,JSON_UNESCAPED_SLASHES) ?>,conversationNamespace:<?= json_encode($conversationNamespace,JSON_UNESCAPED_SLASHES) ?>,agentName:<?= json_encode((string)($agent['display_name']??''),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,ownerName:<?= json_encode($displayName,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,greeting:<?= json_encode($agentGreeting,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>};
 for(const tab of document.querySelectorAll('[data-profile-tab]'))tab.addEventListener('click',()=>{const key=tab.dataset.profileTab;document.querySelectorAll('[data-profile-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===tab)));document.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==key);});
 const profileAgentShell=document.getElementById('profileAgentShell');
 const profileAgentLauncher=document.querySelector('[data-open-profile-agent]');
 const profileAgentClose=document.querySelector('[data-close-profile-agent]');
-function setProfileAgentOpen(open){if(!profileAgentShell||!profileAgentLauncher)return;profileAgentShell.hidden=!open;profileAgentLauncher.setAttribute('aria-expanded',String(open));if(open){(profileAgentShell.querySelector('textarea')||profileAgentClose)?.focus();}else{profileAgentLauncher.focus();}}
+function setProfileAgentOpen(open){if(!profileAgentShell||!profileAgentLauncher)return;profileAgentShell.hidden=!open;profileAgentLauncher.setAttribute('aria-expanded',String(open));if(open){(profileAgentShell.querySelector('textarea')||profileAgentClose)?.focus();window.dispatchEvent(new CustomEvent('vp3:profile-agent-open'));}else{profileAgentLauncher.focus();}}
 profileAgentLauncher?.addEventListener('click',()=>setProfileAgentOpen(profileAgentShell?.hidden!==false));
 profileAgentClose?.addEventListener('click',()=>setProfileAgentOpen(false));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgentShell&&!profileAgentShell.hidden)setProfileAgentOpen(false);});
@@ -335,16 +340,16 @@ document.addEventListener('vp3:webmcp-return-ready',event=>{
 <?php if($webmcpManifest&&$webmcpSessionProof): ?>
 <script>
 window.VP3_PROFILE_WEBMCP={
-  manifest:<?= json_encode($webmcpManifest,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,
+  manifest:<?= json_encode($webmcpManifest,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,
   endpoint:<?= json_encode(url('/api/profile-webmcp-v100.php'),JSON_UNESCAPED_SLASHES) ?>,
   continuityEndpoint:<?= json_encode(url('/api/profile-webmcp-continuity-v195.php'),JSON_UNESCAPED_SLASHES) ?>,
   sessionProof:<?= json_encode($webmcpSessionProof,JSON_UNESCAPED_SLASHES) ?>,
-  resume:<?= json_encode($webmcpResume,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>
+  resume:<?= json_encode($webmcpResume,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>
 };
 </script>
 <script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-checkout-pa2-20261103')) ?>"></script>
 <?php endif; ?>
 <?php if($viewer): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
-<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-doorbell-pa3-20261104')) ?>"></script><?php endif; ?>
+<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-live-text-pa3d-'.substr(hash_file('sha256',__DIR__.'/profile-agent.js'),0,12))) ?>"></script><?php endif; ?>
 </body>
 </html>
