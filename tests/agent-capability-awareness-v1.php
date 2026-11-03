@@ -8,6 +8,9 @@ $permissions=['chat.access'=>true,'knowledge'=>true,'brain'=>true];$failSchema=f
 function has_permission($key,$user){return $GLOBALS['permissions'][$key]??false;}
 function personal_knowledge_available($user){return $GLOBALS['permissions']['knowledge'];}
 function personal_capability_has_v242($key,$user){return $GLOBALS['permissions'][$key==='personal_knowledge.access'?'knowledge':'brain'];}
+function permissions_schema_ready(){return !empty($GLOBALS['observationSeeded']);}
+function personal_capability_seeded_v242(){return !empty($GLOBALS['observationSeeded']);}
+function user_roles_for_user($user){return ['member'];}
 function column_exists($table,$column){return true;}
 function table_exists($name){if($GLOBALS['failSchema'])throw new RuntimeException('SQL secret');$q=$GLOBALS['pdo']->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$name]);return(bool)$q->fetchColumn();}
 function reminder_ready_v1($pdo){return table_exists('reminders');}
@@ -66,4 +69,7 @@ $drift=$healthy;$drift['capabilities'][0]['executor']='missing_executor_for_test
 $drift=$healthy;$drift['capabilities'][0]['permitted']=false;check(in_array('readiness_drift',vp3_capability_audit_v1($drift),true),'inventory audit catches readiness that contradicts permission');
 $named=vp3_capability_snapshot_v1($pdo,$user,['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7],['conversation_id'=>9]);check($named['agent_id']===7,'named Agent identity survives missing UI identity metadata');
 $named=vp3_capability_snapshot_v1($pdo,$user,['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7],['conversation_id'=>9,'user_agent_id'=>99]);check($named['agent_id']===7,'forged UI identity cannot replace authenticated Agent scope');
+$GLOBALS['observationSeeded']=true;$s=vp3_capability_snapshot_v1($pdo,$user,$principal);
+foreach(['radar.read','radar.gateway.manage','analytics.read'] as $id)check(row($s,$id)['reason']==='check_failed'&&!row($s,$id)['ready']&&!row($s,$id)['permitted'],'failed seeded permission lookup cannot advertise '.$id.' via default access');
+$GLOBALS['observationSeeded']=false;
 echo "CAPABILITY_AWARENESS=PASS ($checks cases)\n";

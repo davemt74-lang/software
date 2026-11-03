@@ -21,6 +21,11 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'apps.user.read'=>['list'],
         'apps.shares.read'=>['list'],
         'feeds.vrss.read'=>['list'],
+        'tracky.context.read'=>['list'],
+        'tracky.perception.request'=>['request'],
+        'radar.read'=>['list'],
+        'radar.gateway.manage'=>['set_policy'],
+        'analytics.read'=>['list'],
         'apps.manager.read'=>['list'],
         'apps.workspace.read'=>['inspect'],
         'tv.history.read'=>['list'],
@@ -69,7 +74,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     if(!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/D',$at)||strtotime($at)===false)return null;
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;
     // A read, clarification or failed operation can never be a successful mutation.
-    $write=($cap==='images.generate'&&$op==='queue')||($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
+    $write=($cap==='tracky.perception.request'&&$op==='request')||($cap==='radar.gateway.manage'&&$op==='set_policy')||($cap==='images.generate'&&$op==='queue')||($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
     if($status==='completed'&&(!$write||$reason!==''))return null;
     if(in_array($status,['read_complete','no_matches'],true)&&$reason!=='')return null;
     $extra=[];
@@ -109,6 +114,8 @@ function vp3_tool_last_receipt_v1(PDO $pdo,array $user,array $context): ?array
 
 function vp3_tool_diagnosis_v1(?array $last): string
 {
+    if(($last['receipt']['capability']??'')==='tracky.perception.request'&&($last['receipt']['status']??'')==='completed')return 'The governed observation request was accepted. Check its returned observation and timestamp to establish whether fresh evidence was collected; a request receipt alone does not verify a current scene.';
+    if(($last['receipt']['capability']??'')==='radar.gateway.manage'&&in_array($last['receipt']['status']??'',['completed','read_complete'],true))return (($last['receipt']['status']??'')==='completed'?'The requested Gateway policy was saved and verified.':'The requested Gateway policy was already saved; no new change was made.').' Enforcement depends on the connected site using the server-side Gateway integration. The saved-policy receipt does not establish that a particular request was blocked or allowed.';
     if(($last['receipt']['capability']??'')==='images.generate'&&($last['receipt']['status']??'')==='completed')return 'The image request was queued. Its Chat canvas card shows whether the image was generated and saved; a queue receipt alone does not confirm image completion.';
     if(!$last)return 'The preceding response has no verified tool receipt. I cannot confirm an action or diagnose its failure from the response text alone. Ask me to check the relevant capability or record.';
     if(array_key_exists('vrss_outcome',$last['receipt']??[])){

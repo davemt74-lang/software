@@ -16,6 +16,19 @@ on:
       - "includes/agent-tool-receipts-v1.php"
       - "tests/agent-vrss-*.php"
       - "tests/fixtures/vrss-agent-v1.php"
+      - "includes/agent-observation-authority-v1.php"
+      - "includes/agent-tracky-read-v1.php"
+      - "includes/agent-radar-read-v1.php"
+      - "includes/agent-analytics-read-v1.php"
+      - "includes/tracky-agent-v271.php"
+      - "includes/agent-radar-chat.php"
+      - "includes/vp3-analytics-chat.php"
+      - "tests/agent-tracky-read-v1.php"
+      - "tests/agent-radar-read-v1.php"
+      - "tests/agent-analytics-read-v1.php"
+      - "tests/fixtures/tracky-agent-v1.php"
+      - "tests/fixtures/radar-agent-v1.php"
+      - "tests/fixtures/analytics-agent-v1.php"
       - "includes/system-apps-v170.php"
       - "includes/system-apps-v180.php"
       - "includes/system-apps-v190.php"
@@ -110,6 +123,19 @@ on:
       - "includes/agent-tool-receipts-v1.php"
       - "tests/agent-vrss-*.php"
       - "tests/fixtures/vrss-agent-v1.php"
+      - "includes/agent-observation-authority-v1.php"
+      - "includes/agent-tracky-read-v1.php"
+      - "includes/agent-radar-read-v1.php"
+      - "includes/agent-analytics-read-v1.php"
+      - "includes/tracky-agent-v271.php"
+      - "includes/agent-radar-chat.php"
+      - "includes/vp3-analytics-chat.php"
+      - "tests/agent-tracky-read-v1.php"
+      - "tests/agent-radar-read-v1.php"
+      - "tests/agent-analytics-read-v1.php"
+      - "tests/fixtures/tracky-agent-v1.php"
+      - "tests/fixtures/radar-agent-v1.php"
+      - "tests/fixtures/analytics-agent-v1.php"
       - "includes/system-apps-v170.php"
       - "includes/system-apps-v180.php"
       - "includes/system-apps-v190.php"
@@ -242,6 +268,10 @@ jobs:
           php -l includes/system-apps-v160.php
           php -l includes/agent-vrss-read-v1.php
           php -l includes/agent-vrss-outcomes-v1.php
+          php -l includes/agent-observation-authority-v1.php
+          php -l includes/agent-tracky-read-v1.php
+          php -l includes/agent-radar-read-v1.php
+          php -l includes/agent-analytics-read-v1.php
           php -l includes/system-apps-v170.php
           php -l includes/system-apps-v180.php
           php -l includes/system-apps-v190.php
@@ -406,6 +436,9 @@ jobs:
           php tests/agent-private-share-read-v1.php
           php tests/agent-vrss-read-v1.php
           php tests/agent-vrss-outcomes-v1.php
+          php tests/agent-tracky-read-v1.php
+          php tests/agent-radar-read-v1.php
+          php tests/agent-analytics-read-v1.php
           php tests/cloud-hosting-v100-mysql.php
           php tests/cloud-hosting-v110-mysql.php
           php tests/cloud-hosting-v120-mysql.php

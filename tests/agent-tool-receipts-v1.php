@@ -11,6 +11,13 @@ $pending=vp3_tool_receipt_v1('calendar.manage','prepare','clarification_required
 check(!$pending['changes_applied']&&str_contains(vp3_tool_diagnosis_v1(['receipt'=>$pending]),'still pending'),'pending confirmation cannot be described as completed');
 $failed=vp3_tool_receipt_v1('capabilities.inspect','inspect','failed','provider_unavailable');
 check(str_contains(vp3_tool_diagnosis_v1(['receipt'=>$failed]),'AI service was unavailable'),'provider failure is distinguished from permission denial');
+$perception=vp3_tool_receipt_v1('tracky.perception.request','request','completed');
+check(str_contains(vp3_tool_diagnosis_v1(['receipt'=>$perception]),'request was accepted')&&!str_contains(vp3_tool_diagnosis_v1(['receipt'=>$perception]),'the requested change completed'),'observation request diagnosis does not claim a fresh scene');
+$policy=vp3_tool_receipt_v1('radar.gateway.manage','set_policy','completed');
+check(str_contains(vp3_tool_diagnosis_v1(['receipt'=>$policy]),'policy was saved')&&str_contains(vp3_tool_diagnosis_v1(['receipt'=>$policy]),'Enforcement depends'),'saved Gateway policy is distinct from external enforcement');
+$policySame=vp3_tool_receipt_v1('radar.gateway.manage','set_policy','read_complete');
+check(!$policySame['changes_applied']&&str_contains(vp3_tool_diagnosis_v1(['receipt'=>$policySame]),'no new change'),'existing matching policy does not claim another write');
+foreach(['tracky.context.read','radar.read','analytics.read'] as $cap){$read=vp3_tool_receipt_v1($cap,'list','read_complete');check(!$read['changes_applied']&&vp3_tool_receipt_normalize_v1([...$read,'status'=>'completed'])===null,$cap.' cannot turn a record read into a completed mutation');}
 check(str_contains(vp3_tool_diagnosis_v1(['receipt'=>$created]),'current access and record state may have changed'),'historical success does not claim current record existence');
 check(str_contains(vp3_tool_diagnosis_v1(null),'no verified tool receipt'),'untracked legacy result is explicitly unverified');
 foreach([null,[],['contract'=>'vp3.tool-receipt.v1'],[...$created,'capability'=>'shell.execute'],[...$created,'operation'=>'eval'],[...$created,'record_id'=>'12'],[...$created,'status'=>'made_up'],[...$created,'checked_at'=>'yesterday'],[...$created,'reason'=>'SQL password'],[...$created,'reason'=>'execution_failed'],[...$created,'capability'=>'calendar.read','operation'=>'list']] as $bad)check(vp3_tool_receipt_normalize_v1($bad)===null,'malformed or unauthorized receipt is rejected');

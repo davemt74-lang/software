@@ -6,6 +6,7 @@ const join=read('includes/tracky-join-v273.php');
 const routing=read('includes/homeserver-execution-routing-v220.php');
 const proactive=read('includes/tracky-proactive-v272.php');
 const agent=read('includes/tracky-agent-v271.php');
+const storedReader=read('includes/agent-tracky-read-v1.php');
 const page=read('tracky.php');
 const packageWorkflow=read('.github/workflows/production-deploy-package.yml');
 const recovery=read('tools/run_recovery_baseline.py');
@@ -33,9 +34,12 @@ assert.match(proactive,/'active_perception_enabled'=>false/);
 assert.match(proactive,/'auto_refresh_stale'=>false/);
 assert.match(proactive,/tracky-join-v273\.php/);
 
-assert.match(agent,/tracky_v273_maybe_refresh/);
-assert.match(agent,/tracky_v273_refresh_note/);
-assert.match(agent,/'active_perception'=>\$refresh/);
+assert.match(agent,/return vp3_tracky_legacy_v1\(\$query,\$user,\$conversationId\)/);
+assert.match(storedReader,/if\(!\$active\)return vp3_tracky_read_v1/,'ordinary stored reads must bypass active perception');
+assert.match(storedReader,/tracky_v273_maybe_refresh\(\$pdo,\$live,\$query,\$intent,\$current\)/,'explicit observations preserve the existing governed route');
+assert.match(storedReader,/tracky_v273_refresh_note\(\$refresh\)/);
+assert.match(storedReader,/\['active_perception'\]=\[/,'only bounded request evidence is returned');
+assert.match(storedReader,/'tracky\.perception\.request','request'/,'explicit observation requests have their own honest receipt');
 assert.match(agent,/'raw_perception_exposed'=>false/);
 
 assert.match(page,/active_perception_enabled/);
