@@ -20,10 +20,13 @@ const namespace='c'.repeat(64),publicMarkup=`<!doctype html><html><head><meta na
 const server=http.createServer((request,response)=>{const path=new URL(request.url,'http://localhost').pathname;if(files[path]){response.writeHead(200,{'Content-Type':path.endsWith('.css')?'text/css':'text/javascript'});response.end(files[path]);}else{response.writeHead(200,{'Content-Type':'text/html'});response.end(path==='/visitor'?publicMarkup:ownerMarkup);}});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port;
 let browser,checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;console.log('PASS '+label);};
-function installBoundaries({gestureRequired=false}={}){
+function installBoundaries({gestureRequired=false,playFailure=''}={}){
   window.__recognitions=[];window.SpeechRecognition=class{constructor(){window.__recognitions.push(this);}start(){queueMicrotask(()=>this.onstart?.());}stop(){queueMicrotask(()=>this.onend?.());}abort(){queueMicrotask(()=>this.onend?.());}};
   Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{throw new DOMException('Physical capture disabled in fixture.','NotAllowedError');}});
-  const states=new WeakMap();let mediaId=0;window.__speechMedia={players:[],attempts:[],events:[],echo:[],block:false,gestureRequired,inGesture:false,gestureId:0};
+  const states=new WeakMap();let mediaId=0;window.__speechMedia={players:[],elements:[],attempts:[],events:[],echo:[],liveUrls:new Set(),block:false,gestureRequired,playFailure,inGesture:false,gestureId:0};
+  const createObjectURL=URL.createObjectURL.bind(URL),revokeObjectURL=URL.revokeObjectURL.bind(URL);
+  URL.createObjectURL=blob=>{const url=createObjectURL(blob);__speechMedia.liveUrls.add(url);return url;};
+  URL.revokeObjectURL=url=>{__speechMedia.liveUrls.delete(url);return revokeObjectURL(url);};
   // A grant belongs to the exact element and actual trusted click dispatch.
   // Network completion cannot inherit a flag left behind by that click.
   document.addEventListener('click',event=>{__speechMedia.inGesture=event.isTrusted;if(event.isTrusted)__speechMedia.gestureId++;const id=__speechMedia.gestureId;setTimeout(()=>{if(__speechMedia.gestureId===id)__speechMedia.inGesture=false;},0);},true);
@@ -32,20 +35,20 @@ function installBoundaries({gestureRequired=false}={}){
   const nativeFetch=window.fetch.bind(window);window.fetch=(input,init={})=>{let action='';try{action=init.body?JSON.parse(init.body).action:new URL(String(input),location.href).searchParams.get('action');}catch(_){}__speechMedia.events.push({type:'fetch',action,gestureId:__speechMedia.inGesture?__speechMedia.gestureId:0});return nativeFetch(input,init);};
   const state=element=>{if(!states.has(element))states.set(element,{id:++mediaId,paused:true,ended:false,plays:0,unlocked:false});return states.get(element);};
   Object.defineProperty(HTMLMediaElement.prototype,'paused',{get(){return state(this).paused;}});Object.defineProperty(HTMLMediaElement.prototype,'ended',{get(){return state(this).ended;}});
-  HTMLMediaElement.prototype.play=async function(){const current=state(this);current.plays++;const event={type:'play',id:current.id,src:this.src,gestureId:__speechMedia.inGesture?__speechMedia.gestureId:0};__speechMedia.events.push(event);__speechMedia.attempts.push(event);if(__speechMedia.inGesture)current.unlocked=true;if(__speechMedia.block||(__speechMedia.gestureRequired&&!current.unlocked))throw new DOMException('Autoplay blocked.','NotAllowedError');if(!__speechMedia.players.includes(this))__speechMedia.players.push(this);current.paused=false;this.dispatchEvent(new Event('play'));this.dispatchEvent(new Event('playing'));};
+  HTMLMediaElement.prototype.play=async function(){const current=state(this);current.plays++;if(!__speechMedia.elements.includes(this))__speechMedia.elements.push(this);const event={type:'play',id:current.id,src:this.src,gestureId:__speechMedia.inGesture?__speechMedia.gestureId:0};__speechMedia.events.push(event);__speechMedia.attempts.push(event);if(__speechMedia.inGesture)current.unlocked=true;if(__speechMedia.block||(__speechMedia.gestureRequired&&!current.unlocked))throw new DOMException('Autoplay blocked.','NotAllowedError');if(__speechMedia.playFailure==='not_supported')throw new DOMException('The element has no supported sources.','NotSupportedError');if(!__speechMedia.players.includes(this))__speechMedia.players.push(this);current.paused=false;this.dispatchEvent(new Event('play'));this.dispatchEvent(new Event('playing'));};
   HTMLMediaElement.prototype.pause=function(){state(this).paused=true;};HTMLMediaElement.prototype.load=function(){};
   window.__speakFixture=text=>{const result=[{transcript:text,confidence:.98}];result.isFinal=true;window.__recognitions.at(-1).onresult({resultIndex:0,results:[result]});};
 }
-async function fixture({visitor=false,invalidAudio=false,gestureRequired=false,permitMs=30000}={}){
+async function fixture({visitor=false,playFailure='',gestureRequired=false,permitMs=30000}={}){
   const context=await browser.newContext({viewport:{width:390,height:844}}),requests=[],errors=[],holds=[],messages=[],items=new Map([[81,speechItem()]]),turn=ownerCard(101,{state:'owner_claimed',responder:'owner'}),calls=[],attempts=new Map(),claimRequests=new Map(),failures=new Map();
-  const audioBytes=invalidAudio?Buffer.from([73,68,51,1,2,3]):speechAudio;
+  const audioBytes=speechAudio;
   let present=false,sequence=0,attemptId=0,providerCalls=0,style='preset',presetKey='',preferenceRevision=1;
   const projected=item=>{
     const attempt=[...attempts.values()].filter(row=>row.itemId===item.id).at(-1),storedPlayback=attempt?.playback||'none',playback=attempt&&['granted','playing'].includes(storedPlayback)&&attempt.until<=Date.now()?'interrupted':storedPlayback;
     const state=({granted:'granted',playing:'playing',ended:'client_finished',interrupted:'interrupted',blocked:'blocked'})[playback]||(attempt&&!attempt.ready?'pending':'available');
     return {...copy(item),state,playback_state:playback,can_play:item.can_play!==false&&!['pending','granted','playing'].includes(state),can_retry:false,automatic_allowed:false,latest_attempt_id:attempt?.id||null,latest_attempt_state:attempt?(attempt.ready?'ready':'reserved'):null,latest_attempt_reason:attempt?'':null};
   };
-  await context.addInitScript(installBoundaries,{gestureRequired});
+  await context.addInitScript(installBoundaries,{gestureRequired,playFailure});
   await context.route('**/api/**',async route=>{
     const req=route.request(),url=new URL(req.url()),input=req.method()==='GET'?Object.fromEntries(url.searchParams):req.postDataJSON()||{};
     for(const key of ['conversation_id','chat_conversation_id','chat_agent_id','item_id','revision','turn_id','attempt_id'])if(input[key]!==undefined)input[key]=Number(input[key]);requests.push({path:url.pathname,...copy(input)});
@@ -183,11 +186,23 @@ try{
     check(await f.page.evaluate(()=>__speechMedia.gestureRequired&&__speechMedia.attempts.length===1&&__speechMedia.players.length===0&&__speechMedia.echo.length===0),'a stale prepared-button callback cannot play after '+invalidation);
     check(f.providerCalls===1&&f.requests.filter(r=>r.action==='owner_claim').length===1&&!f.requests.some(r=>r.action==='owner_report'&&r.status==='playing'),'the '+invalidation+' grant causes neither replacement synthesis nor a false playback receipt');await f.close();
   }
-  {
-    const f=await fixture({invalidAudio:true});const reported=f.page.waitForResponse(response=>response.url().includes('/api/profile-speech-pa4a.php')&&response.request().method()==='POST'&&response.request().postDataJSON()?.action==='owner_report'&&response.request().postDataJSON()?.status==='blocked');
-    await f.speech().locator('[data-speech-action=play]').click();await f.page.getByText('Audio playback failed. The visitor text remains available.',{exact:true}).waitFor();await reported;
-    check(await f.page.evaluate(()=>__speechMedia.players.length===1&&__speechMedia.players.every(audio=>audio.paused))&&await f.speech().locator('.profile-speech-text').textContent()==='Public message for the owner.','unsupported browser audio stops playback and retains the attributed visitor text');
-    check(f.requests.some(r=>r.action==='owner_report'&&r.status==='blocked')&&!f.requests.some(r=>r.action==='owner_report'&&r.status==='ended'),'unsupported browser audio records a blocked outcome without claiming completed playback');await f.close();
+  // Keep valid bytes under the simulated playback boundary. Corrupt bytes can
+  // raise a native error before owner_play returns, while an always-successful
+  // play mock cannot reproduce the browser's subsequent NotSupportedError.
+  // Exercise both rejection and a later error in explicit, observable order.
+  for(const failure of ['early_rejection','late_error']){
+    const early=failure==='early_rejection',f=await fixture({playFailure:early?'not_supported':''});
+    const reportMatches=status=>response=>response.url().includes('/api/profile-speech-pa4a.php')&&response.request().method()==='POST'&&response.request().postDataJSON()?.action==='owner_report'&&response.request().postDataJSON()?.status===status;
+    if(early){
+      await Promise.all([f.page.waitForResponse(reportMatches('blocked')),f.speech().locator('[data-speech-action=play]').click()]);
+    }else{
+      await Promise.all([f.page.waitForResponse(reportMatches('playing')),f.speech().locator('[data-speech-action=play]').click()]);
+      await Promise.all([f.page.waitForResponse(reportMatches('blocked')),f.page.evaluate(()=>document.querySelector('.profile-speech-audio').dispatchEvent(new Event('error')))]);
+    }
+    await f.page.getByText(early?'Visitor speech is unavailable. You can read the message and reply in text.':'Audio playback failed. The visitor text remains available.',{exact:true}).waitFor();
+    check(await f.page.evaluate(expectedPlayers=>__speechMedia.elements.length===1&&__speechMedia.players.length===expectedPlayers&&__speechMedia.elements.every(audio=>audio.paused&&!audio.isConnected&&!audio.getAttribute('src'))&&__speechMedia.liveUrls.size===0,early?0:1)&&await f.speech().locator('.profile-speech-text').textContent()==='Public message for the owner.'&&(await f.speech().locator('.profile-speech-label').textContent()).includes('Visitor 101'),failure+' releases paused media and its Blob while retaining attributed visitor text');
+    const reports=f.requests.filter(r=>r.action==='owner_report');
+    check(reports.filter(r=>r.status==='blocked').length===1&&!reports.some(r=>r.status==='ended')&&(early?!reports.some(r=>r.status==='playing')&&await f.page.evaluate(()=>__speechMedia.echo.length===0):reports.findIndex(r=>r.status==='playing')<reports.findIndex(r=>r.status==='blocked')),failure+' records blocked playback without a false completion or premature playing receipt');await f.close();
   }
   {
     const f=await fixture({visitor:true});await f.page.locator('#profileVisitorSpeechPreference').selectOption('female');await f.page.getByText('Voice preference saved. Your messages stay available as text.',{exact:true}).waitFor();
