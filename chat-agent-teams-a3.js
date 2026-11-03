@@ -973,6 +973,7 @@ async function pollBrowserStatus(){
  try{
   const missions=items.slice(0,5);
   for(const m of missions){
+   if(m.execution_target==='cloud')continue;
    if(busy)break;
    const full=await api('get',{mission_id:m.id});
    if(full.mission){const idx=items.findIndex(x=>x.id===m.id);if(idx>=0)items[idx]=full.mission;}

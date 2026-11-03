@@ -33,6 +33,6 @@ try{
  await page.getByRole('button',{name:'Pause schedule',exact:true}).click();await page.getByRole('button',{name:'Resume schedule',exact:true}).click();
  await page.clock.runFor(31000);await page.waitForFunction(()=>document.querySelector('[data-cloud-scheduler-state]'));
  await check('browser-assisted ticks are explicit and controls retain history',async()=>{assert.equal(calls.filter(c=>c.action==='cloud.schedule.tick').length,1);assert.ok(calls.find(c=>c.action==='cloud.schedule.tick').csrf_token);await page.getByRole('button',{name:'Cancel future runs',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.vp3-specialist-schedules')?.textContent.includes('cancelled'));assert.match(await page.locator('.vp3-specialist-schedules').innerText(),/Report saved/);});
- await check('mobile schedule interface is safe and fits the viewport',async()=>{assert.deepEqual(errors,[]);assert.equal(await page.locator('.vp3-specialist-schedules img').count(),0);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));});
+ await check('mobile schedule interface is safe and fits the viewport',async()=>{assert.deepEqual(errors,[]);assert.equal(calls.some(c=>c.action==='browser.live.get'),false);assert.equal(await page.locator('.vp3-specialist-schedules img').count(),0);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));});
  console.log(`CLOUD_MISSION_SCHEDULES_BROWSER=PASS (${checks} cases)`);
 }finally{await browser.close();}
