@@ -4,7 +4,7 @@ declare(strict_types=1);
 // Fresh PHP processes exercise filesystem recovery and real transactional SQL.
 if (count($argv) === 1) {
     $total = 0;
-    foreach (['restore','reconnect','accounts','domains','rollback','ambiguous','publish','uncommitted','crash'] as $case) {
+    foreach (['restore','reconnect','accounts','domains','call_settings','call_snapshots','call_inventory_failure','rollback','ambiguous','publish','uncommitted','crash'] as $case) {
         $root = sys_get_temp_dir().'/vp3-credential-'.bin2hex(random_bytes(6));
         mkdir($root, 0700);
         try {
@@ -48,6 +48,10 @@ function setting(string $name, mixed $fallback = ''): mixed {
 function db(): PDO { return $GLOBALS['pdo']; }
 class RecoveryPDO extends PDO {
     public string $mode = '';
+    public function query(string $query,?int $fetchMode=null,mixed ...$fetchModeArgs): PDOStatement|false {
+        if($this->mode==='call_inventory_failure'&&str_contains($query,'provider_snapshot'))throw new PDOException('SECRET_CALL_CREDENTIAL_DIAGNOSTIC');
+        return $fetchMode===null?parent::query($query):parent::query($query,$fetchMode,...$fetchModeArgs);
+    }
     public function commit(): bool {
         $ok = parent::commit();
         if ($this->mode === 'crash') exit(73);
@@ -103,6 +107,29 @@ switch ($case) {
         ai_recovery_restore($pdo,$backup);
         check(ai_decrypt_secret($token)==='fixture-domain-verification','Original key restores domain verification too');
         ksort($saved); check(ai_recovery_saved($pdo)===$saved,'Domain backup restore leaves saved site keys unchanged');
+        break;
+    case 'call_settings':
+    case 'call_snapshots':
+        $pdo->exec("DELETE FROM settings WHERE setting_key IN ('ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key','hosting_cpanel_api_token')");
+        $callCipher=ai_encrypt_secret_with_key('SECRET_ORIGINAL_CALL_PROJECT_CREDENTIALS',$old);
+        if($case==='call_settings')$pdo->prepare('INSERT INTO settings VALUES(?,?)')->execute(['profile_calls_livekit_config_pa3c',$callCipher]);
+        else{$pdo->exec('CREATE TABLE profile_calls_pa3c(state TEXT,provider_snapshot TEXT)');$pdo->prepare('INSERT INTO profile_calls_pa3c VALUES(?,?)')->execute(['ended',$callCipher]);}
+        check(ai_saved_encrypted_credentials_exist(),'A calls-only installation retains encrypted credential inventory');
+        rejects(fn()=>ai_master_key(true),'Ordinary save cannot replace the key used for original call cleanup');
+        rejects(fn()=>ai_recovery_reconnect($pdo,$plain,true),'Re-entered AI keys cannot strand original calling credentials');
+        check(!is_file(ai_master_key_file()),'Calling safeguard creates no replacement key');
+        rejects(fn()=>ai_recovery_restore($pdo,"<?php return '".base64_encode(random_bytes(32))."';"),'A replacement key cannot validate the retained call snapshot');
+        ai_recovery_restore($pdo,$backup);
+        check(ai_decrypt_secret($callCipher)==='SECRET_ORIGINAL_CALL_PROJECT_CREDENTIALS','Original backup restores retained calling credentials');
+        check(ai_recovery_dependent_secrets($pdo)===[$callCipher],'Recovery never rewrites original provider ciphertext');
+        break;
+    case 'call_inventory_failure':
+        $pdo->exec('DELETE FROM settings');$pdo->exec('CREATE TABLE profile_calls_pa3c(provider_snapshot TEXT)');$pdo->mode='call_inventory_failure';
+        check(ai_saved_encrypted_credentials_exist(),'Failed calling inventory cannot prove no encrypted credentials exist');
+        rejects(fn()=>ai_master_key(true),'Inventory SQL failure prevents automatic key creation');
+        try{ai_recovery_restore($pdo,$backup);throw new LogicException('Expected inventory failure');}
+        catch(RuntimeException $e){check(!str_contains($e->getMessage(),'SECRET_CALL'),'Calling inventory diagnostics do not enter the recovery error');}
+        check(!is_file(ai_master_key_file()),'Failed inventory leaves the key absent');
         break;
     case 'rollback':
         $pdo->exec("CREATE TRIGGER fail_update BEFORE UPDATE ON settings WHEN NEW.setting_key='ai_elevenlabs_api_key' BEGIN SELECT RAISE(ABORT,'fixture transaction failure'); END");

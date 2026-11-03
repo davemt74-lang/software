@@ -7,6 +7,7 @@ require_once __DIR__ . '/includes/homeserver-commerce-agent-v1000.php';
 require_once __DIR__ . '/includes/homeserver-https-relay-v1300.php';
 require_once __DIR__ . '/includes/homeserver-shared-agent-v210.php';
 require_once __DIR__ . '/includes/profile-agent-handoff-pa3.php';
+require_once __DIR__ . '/includes/profile-calls-pa3c.php';
 require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
 
 $pdo = db();
@@ -57,6 +58,7 @@ try {
     profile_agent_ensure_schema($pdo);
     agent_job_engine_ensure_schema_v1900($pdo);
     vp3_profile_handoff_ensure_schema_pa3($pdo);
+    vp3_profile_call_ensure_schema_pa3c($pdo);
     agent_commerce_ensure_schema_v800($pdo);
     vp3_user_agent_lifecycle_ensure_schema_v390($pdo);
     vp3_agent_memory_scope_ensure_schema_v410($pdo);

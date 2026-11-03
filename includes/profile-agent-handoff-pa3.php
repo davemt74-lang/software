@@ -26,6 +26,7 @@ function vp3_profile_handoff_error_pa3(string $code='HANDOFF_CHANGED',int $statu
         'HANDOFF_REPLAY_CONFLICT'=>'That request was already used for a different visitor action.',
         'HANDOFF_NOT_READY'=>'Visitor handoff needs a database upgrade.',
         'HANDOFF_JOB_CHANGED'=>'Visitor reply execution changed. Refresh the conversation.',
+        'HANDOFF_MEDIA_ACTIVE'=>'End the call before returning this conversation to the Agent.',
     ];
     throw new VP3ProfileHandoffException($code,$messages[$code]??$messages['HANDOFF_UNAVAILABLE'],$status);
 }
@@ -199,7 +200,12 @@ function vp3_profile_handoff_admit_pa3(PDO $pdo,array $ctx,array $conversation,i
     $now=vp3_profile_handoff_now_pa3();$thread=vp3_profile_handoff_thread_pa3($pdo,$uid,$cid,true);
     $continuationActive=$continueLive&&$thread&&$thread['requested_mode']==='live'&&in_array($thread['mode'],['pending','owner'],true)&&in_array($thread['live_status'],['waiting','accepted'],true);
     $staleContinuation=$continueLive&&!$continuationActive;
-    if(!$thread){
+    $mediaActive=vp3_profile_handoff_media_active_pa3d($pdo,$uid,$cid,true);
+    if($mediaActive){
+        // Older clients still submit agent/live choices with ordinary messages.
+        // An accepted human call owns those messages until its explicit end path.
+        if(!$thread||$thread['mode']!=='owner')vp3_profile_handoff_error_pa3('HANDOFF_MEDIA_ACTIVE',409);
+    }elseif(!$thread){
         $mode=$chatMode==='agent'||$staleContinuation?'agent':(($chatMode==='auto'&&($conversation['status']??'')==='owner_joined')?'owner':(vp3_profile_handoff_reachable_pa3($pdo,$uid,true)?'pending':'agent'));
         $liveStatus=$chatMode==='live'?($mode==='pending'?'waiting':'unavailable'):'none';$requestedMode=$staleContinuation?'agent':$chatMode;
         $pdo->prepare('INSERT INTO profile_agent_handoff_conversations_pa3(conversation_id,owner_user_id,mode,requested_mode,live_status,epoch,delivery_until_ms,updated_at_ms) VALUES(?,?,?,?,?,1,?,?)')->execute([$cid,$uid,$mode,$requestedMode,$liveStatus,$mode==='pending'?$now+VP3_PROFILE_HANDOFF_DELIVERY_MS_PA3:null,$now]);
@@ -228,7 +234,7 @@ function vp3_profile_handoff_admit_pa3(PDO $pdo,array $ctx,array $conversation,i
         $mode=vp3_profile_handoff_reachable_pa3($pdo,$uid,true)?'pending':'agent';$thread=vp3_profile_handoff_mode_pa3($pdo,$uid,$cid,$mode,'none','auto');
     }
     $state=match($thread['mode']){'owner'=>'owner_claimed','agent'=>'agent_ready',default=>$thread['acknowledged_at_ms']!==null?'awaiting_owner':'awaiting_delivery'};
-    $storedMode=$continueLive&&$thread['mode']==='agent'?'agent':$chatMode;
+    $storedMode=$mediaActive?'auto':($continueLive&&$thread['mode']==='agent'?'agent':$chatMode);
     $a=$ctx['conversation_authority'];$q=$pdo->prepare('INSERT INTO profile_agent_handoff_turns_pa3(owner_user_id,profile_agent_id,profile_session_id,conversation_id,visitor_message_id,visitor_user_id,transport,credential_hash,client_request_id,request_hash,chat_mode,accepted_json,state,conversation_epoch,delivery_until_ms,acknowledged_at_ms,pickup_deadline_ms,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     $q->execute([$uid,(int)$ctx['agent_id'],(int)$ctx['session_id'],$cid,$visitorMessageId,(int)$a['visitor_user_id'],(string)$a['transport'],(string)$a['credential_hash'],$clientRequestId,vp3_profile_handoff_request_hash_pa3($ctx,(string)$message['message'],$chatMode,$continueLive),$storedMode,$accepted,$state,(int)$thread['epoch'],$thread['delivery_until_ms'],$thread['acknowledged_at_ms'],$thread['pickup_deadline_ms'],vp3_profile_handoff_date_pa3($now),vp3_profile_handoff_date_pa3($now)]);$turnId=(int)$pdo->lastInsertId();
     $q=$pdo->prepare("SELECT n.id FROM notifications n INNER JOIN profile_events e ON e.id=n.source_id AND e.owner_user_id=n.user_id WHERE n.user_id=? AND n.source_type='profile_event' AND e.dedupe_key=? ORDER BY n.id ASC LIMIT 1");$q->execute([$uid,hash('sha256','profile-message|'.$uid.'|'.$visitorMessageId)]);$notification=(int)$q->fetchColumn();
@@ -288,6 +294,7 @@ function vp3_profile_handoff_owner_card_pa3(PDO $pdo,array $turn,int $chatCid=0,
         if((int)$latest->fetchColumn()===(int)$turn['id']){$out['can_claim']=$thread['mode']!=='owner';$out['can_reply']=true;$out['can_delegate']=$thread['mode']==='owner';$out['can_resolve']=true;$out['responder']=$thread['mode']==='owner'?'owner':'agent';}
     }
     if(($thread['requested_mode']??'auto')==='live'&&(!in_array($thread['live_status'],['waiting','accepted'],true)||!$out['chat']['live_text_available']||($chatCid>0&&!vp3_profile_handoff_live_allowed_pa3d($pdo,$owner,(int)$turn['profile_agent_id'],$chatCid,$chatAid)))){$out['can_claim']=false;$out['can_reply']=false;}
+    if($out['chat']['media_call_active']){$out['can_delegate']=false;$out['can_resolve']=false;}
     $q=$pdo->prepare("SELECT message FROM profile_agent_messages WHERE id=? AND conversation_id=? AND sender_type='visitor'");$q->execute([(int)$turn['visitor_message_id'],$cid]);$message=$q->fetchColumn();if(!is_string($message))vp3_profile_handoff_error_pa3('HANDOFF_CHANGED',409);
     // CRM recognition is mutable across account switches; it cannot rename an
     // older conversation or disclose a different member's identity on its card.
@@ -393,6 +400,7 @@ function vp3_profile_handoff_mode_pa3(PDO $pdo,int $owner,int $cid,string $mode,
 {
     if(!$pdo->inTransaction()||!in_array($mode,['agent','owner','resolved','pending'],true))throw new RuntimeException('Visitor handoff transition is invalid.');
     $thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$cid,true);if(!$thread)vp3_profile_handoff_error_pa3('HANDOFF_NOT_FOUND',404);
+    if($mode!=='owner'&&vp3_profile_handoff_media_active_pa3d($pdo,$owner,$cid,true))vp3_profile_handoff_error_pa3('HANDOFF_MEDIA_ACTIVE',409);
     $now=vp3_profile_handoff_now_pa3();$epoch=(int)$thread['epoch']+1;$state=match($mode){'agent'=>'agent_ready','owner'=>'owner_claimed','pending'=>'awaiting_delivery',default=>'cancelled'};
     $requestedMode=$requestedMode??(string)$thread['requested_mode'];vp3_profile_handoff_chat_mode_pa3d($requestedMode);
     if($liveStatus===null)$liveStatus=$requestedMode==='live'?match($mode){'owner'=>'accepted','pending'=>'waiting','agent'=>$thread['live_status']==='waiting'?'declined':'ended',default=>'ended'}:'none';
@@ -461,6 +469,7 @@ function vp3_profile_handoff_tick_pa3(PDO $pdo,int $owner,int $conversationId=0,
     $q=$pdo->prepare("SELECT conversation_id FROM profile_agent_handoff_conversations_pa3 WHERE owner_user_id=? AND (mode IN ('pending','agent') OR (mode='owner' AND requested_mode='live' AND live_status='accepted'))".$where.' ORDER BY updated_at_ms,conversation_id LIMIT '.$limit);$q->execute($params);$changed=0;
     foreach($q->fetchAll(PDO::FETCH_COLUMN) as $cid){$changed+=vp3_profile_handoff_atomic_pa3($pdo,function()use($pdo,$owner,$cid){
         vp3_profile_handoff_conversation_pa3($pdo,$owner,(int)$cid,true);$thread=vp3_profile_handoff_thread_pa3($pdo,$owner,(int)$cid,true);if(!$thread)return 0;$now=vp3_profile_handoff_now_pa3();
+        if(vp3_profile_handoff_media_active_pa3d($pdo,$owner,(int)$cid,true))return 0;
         if($thread['mode']==='pending'){
             $deadline=$thread['acknowledged_at_ms']!==null?$thread['pickup_deadline_ms']:$thread['delivery_until_ms'];
             $available=vp3_profile_handoff_reachable_pa3($pdo,$owner,true);if(!$available||$deadline===null||$now>=(int)$deadline){$reason=$available?'expired':'unavailable';vp3_profile_handoff_mode_pa3($pdo,$owner,(int)$cid,'agent',$thread['requested_mode']==='live'?$reason:'none');return 1;}

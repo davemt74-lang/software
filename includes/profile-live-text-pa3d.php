@@ -8,6 +8,28 @@ function vp3_profile_handoff_chat_mode_pa3d(mixed $mode): string
     return $mode;
 }
 
+/** Explicit preferences remain authority even while an accepted call uses its own heartbeat. */
+function vp3_profile_handoff_settings_allowed_pa3d(PDO $pdo,int $owner,bool $currentRead=false): bool
+{
+    if($owner<1)return false;
+    $current=$currentRead&&$pdo->inTransaction()?vp3_profile_handoff_lock_pa3($pdo):'';
+    $q=$pdo->prepare('SELECT presence_mode,social_chat_enabled,sound_enabled FROM team_user_presence WHERE user_id=? LIMIT 2'.$current);$q->execute([$owner]);$settings=$q->fetchAll(PDO::FETCH_ASSOC);
+    return count($settings)===0||(count($settings)===1&&$settings[0]['presence_mode']==='online'&&in_array($settings[0]['social_chat_enabled'],[1,'1',true],true));
+}
+
+/** No media module or DDL is needed by text-only installations. The public conversation lock serializes writers. */
+function vp3_profile_handoff_media_active_pa3d(PDO $pdo,int $owner,int $cid,bool $currentRead=false): bool
+{
+    if($owner<1||$cid<1)return false;
+    try{
+        $current=$currentRead&&$pdo->inTransaction()?vp3_profile_handoff_lock_pa3($pdo):'';
+        $q=$pdo->prepare("SELECT id FROM profile_calls_pa3c WHERE owner_user_id=? AND conversation_id=? AND state IN ('preparing','ready','active') LIMIT 1".$current);$q->execute([$owner,$cid]);return(bool)$q->fetchColumn();
+    }catch(PDOException $error){
+        if((string)$error->getCode()==='42S02'||($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'&&str_contains($error->getMessage(),'no such table: profile_calls_pa3c')))return false;
+        throw $error;
+    }
+}
+
 /** A strict, uncached read. Never initialize settings or infer presence from Team Chat. */
 function vp3_profile_handoff_live_allowed_pa3d(PDO $pdo,int $owner,int $profileAgentId=0,int $chatCid=0,int $chatAid=0,bool $currentRead=false): bool
 {
@@ -15,9 +37,7 @@ function vp3_profile_handoff_live_allowed_pa3d(PDO $pdo,int $owner,int $profileA
     try{
         // Selecting sound_enabled also verifies the established form's ready schema.
         $current=$currentRead&&$pdo->inTransaction()?vp3_profile_handoff_lock_pa3($pdo):'';
-        $q=$pdo->prepare('SELECT presence_mode,social_chat_enabled,sound_enabled FROM team_user_presence WHERE user_id=? LIMIT 2'.$current);$q->execute([$owner]);$settings=$q->fetchAll(PDO::FETCH_ASSOC);
-        if(count($settings)>1)return false;
-        if($settings&&($settings[0]['presence_mode']!=='online'||!in_array($settings[0]['social_chat_enabled'],[1,'1',true],true)))return false;
+        if(!vp3_profile_handoff_settings_allowed_pa3d($pdo,$owner,$currentRead))return false;
         $q=$pdo->prepare('SELECT p.is_public,p.profile_agent_enabled,p.profile_agent_id,u.* FROM user_profiles p INNER JOIN users u ON u.id=p.user_id WHERE p.user_id=?');$q->execute([$owner]);$user=$q->fetch(PDO::FETCH_ASSOC);
         if(!$user||!in_array($user['is_active']??null,[1,'1',true],true)||!in_array($user['is_public']??null,[1,'1',true],true)||!in_array($user['profile_agent_enabled']??null,[1,'1',true],true))return false;
         $selected=(int)($user['profile_agent_id']??0);if($selected<1||($profileAgentId>0&&$selected!==$profileAgentId))return false;
@@ -64,7 +84,8 @@ function vp3_profile_handoff_chat_pa3d(PDO $pdo,int $owner,int $conversationId=0
         $thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$conversationId);
         if($thread){$mode=in_array($thread['requested_mode']??null,['auto','agent','live'],true)?$thread['requested_mode']:'auto';$status=in_array($thread['live_status']??null,['none','waiting','accepted','declined','expired','unavailable','ended'],true)?$thread['live_status']:'unavailable';$canEnd=$mode==='live'&&in_array($thread['mode'],['pending','owner'],true)&&in_array($status,['waiting','accepted'],true);}
     }
-    return ['contract'=>'vp3.profile-chat-choice.v1','owner_name'=>$name,'mode'=>$mode,'live_status'=>$status,'live_text_available'=>$ready&&vp3_profile_handoff_live_allowed_pa3d($pdo,$owner),'can_end_live_chat'=>$canEnd];
+    $media=$ready&&vp3_profile_handoff_media_active_pa3d($pdo,$owner,$conversationId);
+    return ['contract'=>'vp3.profile-chat-choice.v1','owner_name'=>$name,'mode'=>$mode,'live_status'=>$status,'live_text_available'=>$ready&&vp3_profile_handoff_live_allowed_pa3d($pdo,$owner),'can_end_live_chat'=>$canEnd&&!$media,'media_call_active'=>$media];
 }
 
 /** End only the exact visitor's latest observed live turn; a retry cannot end a new request. */
@@ -75,6 +96,7 @@ function vp3_profile_agent_public_end_live_chat_pa3d(PDO $pdo,array $ctx,int $ci
     if(($ctx['conversation_authority']['transport']??null)!=='native')vp3_profile_agent_public_unavailable_v1();
     vp3_profile_handoff_atomic_pa3($pdo,function()use($pdo,$ctx,$cid,$turnId,$revision){
         $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx,true);vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$cid,true);$owner=(int)$ctx['owner_user_id'];
+        if(vp3_profile_handoff_media_active_pa3d($pdo,$owner,$cid,true))vp3_profile_handoff_error_pa3('HANDOFF_MEDIA_ACTIVE',409);
         $turn=vp3_profile_handoff_row_pa3($pdo,$turnId,true);$thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$cid,true);
         if(!$turn||!$thread||(int)$turn['owner_user_id']!==$owner||(int)$turn['conversation_id']!==$cid||(int)$turn['profile_agent_id']!==(int)$ctx['agent_id']||(int)$turn['profile_session_id']!==(int)$ctx['session_id']||(int)$turn['visitor_user_id']!==(int)$ctx['conversation_authority']['visitor_user_id']||$turn['transport']!==$ctx['conversation_authority']['transport']||!hash_equals((string)$turn['credential_hash'],(string)$ctx['conversation_authority']['credential_hash']))vp3_profile_agent_public_unavailable_v1();
         $q=$pdo->prepare('SELECT id FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND conversation_id=? ORDER BY visitor_message_id DESC,id DESC LIMIT 1');$q->execute([$owner,$cid]);if((int)$q->fetchColumn()!==$turnId)vp3_profile_handoff_error_pa3();

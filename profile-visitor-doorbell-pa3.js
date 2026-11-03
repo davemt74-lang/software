@@ -33,9 +33,12 @@
     drafts=Object.fromEntries(Object.entries(drafts).filter(([id,row])=>/^\d+$/.test(id)&&typeof row?.text==='string'&&row.text.length<=4000&&Number.isFinite(row.at)&&row.at<=Date.now()&&Date.now()-row.at<86400000).sort((a,b)=>b[1].at-a[1].at).slice(0,20));
     saveStorage(storageKey+':drafts',drafts);
   }
-  const continuity=()=>window.STONEFELLOW_CHAT_CONTINUITY || window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
-  function current(){const chat=continuity();return {chat_conversation_id:Number(chat.conversationId?.()||0),chat_agent_id:Number(chat.agentId?.()??window.STONEFELLOW_CHAT?.agentId??0)};}
-  function active(){const chat=continuity();return !stopped&&!document.hidden&&document.visibilityState!=='hidden'&&navigator.onLine!==false&&thread.dataset.view==='chat'&&chat.isReady?.()!==false&&!chat.isRestoring?.();}
+  // The voice runtime owns the unversioned object. Identity and canvas methods
+  // remain on Chat's canonical object even while voice is loaded or busy.
+  const continuity=()=>window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
+  const voiceBusy=()=>window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.()===true||window.STONEFELLOW_CHAT_CONTINUITY?.pendingVoiceSubmit?.()===true;
+  function current(){const chat=continuity();return {chat_conversation_id:Number(chat.conversationId?.()||0),chat_agent_id:Number(chat.agentId?.()||0)};}
+  function active(){const chat=continuity();return !stopped&&!document.hidden&&document.visibilityState!=='hidden'&&navigator.onLine!==false&&thread.dataset.view==='chat'&&chat.isReady?.()===true&&chat.isRestoring?.()===false;}
   function same(snapshot){const ctx=current();return !stopped&&snapshot.epoch===epoch&&ctx.chat_conversation_id===snapshot.chat_conversation_id&&ctx.chat_agent_id===snapshot.chat_agent_id;}
   function capture(){return {...current(),epoch};}
   function node(tag,className,text){const element=document.createElement(tag);if(className)element.className=className;if(text!==undefined)element.textContent=text;return element;}
@@ -58,7 +61,7 @@
     if(typeof value.visitor_label!=='string'||value.visitor_label.length>240||typeof value.agent_name!=='string'||value.agent_name.length>240||typeof value.visitor_message!=='string'||value.visitor_message.length>16000)return null;
     if(!Array.isArray(value.history)||value.history.length>20||value.history.some(row=>!row||!positive(row.id)||!['visitor','owner','agent'].includes(row.sender_type)||typeof row.message!=='string'||row.message.length>32000||typeof row.created_at!=='string'||row.created_at.length>40))return null;
     const chat=value.chat;
-    if(chat!==undefined&&(!chat||chat.contract!==chatContract||typeof chat.owner_name!=='string'||chat.owner_name.length>240||!['auto','agent','live'].includes(chat.mode)||!liveStates.has(chat.live_status)||typeof chat.live_text_available!=='boolean'||typeof chat.can_end_live_chat!=='boolean'))return null;
+    if(chat!==undefined&&(!chat||chat.contract!==chatContract||typeof chat.owner_name!=='string'||chat.owner_name.length>240||!['auto','agent','live'].includes(chat.mode)||!liveStates.has(chat.live_status)||typeof chat.live_text_available!=='boolean'||typeof chat.can_end_live_chat!=='boolean'||(chat.media_call_active!==undefined&&typeof chat.media_call_active!=='boolean')))return null;
     return {...value,...(chat?{chat:{...chat}}:{}),execution_paused:value.execution_paused===true,dispatch_execution_paused:value.dispatch_execution_paused===true,history:value.history.map(row=>({id:row.id,sender_type:row.sender_type,message:row.message,created_at:row.created_at}))};
   }
   function updatePresence(){
@@ -81,7 +84,7 @@
   }
   async function initializeBlank(){
     if(current().chat_conversation_id>0)return true;
-    if(initializedBlank||!active()||typeof continuity().ensureConversation!=='function')return false;
+    if(initializedBlank||!active()||continuity().isBusy?.()===true||voiceBusy()||typeof continuity().ensureConversation!=='function')return false;
     initializedBlank=true;
     try{await continuity().ensureConversation();}catch(_){errorText='Open or start a Chat to receive visitor cards.';}
     syncContext();return current().chat_conversation_id>0;
@@ -119,16 +122,17 @@
   }
   function remaining(record){const deadline=record.data.pickup_deadline_ms;return deadline===null?null:Math.max(0,Math.ceil((deadline-record.clockServer-(now()-record.clockLocal))/1000));}
   function writable(record){return active()&&record.node.isConnected&&!record.blocked&&record.binding.chat_conversation_id===current().chat_conversation_id&&record.binding.chat_agent_id===current().chat_agent_id&&record.epoch===epoch&&!record.superseded;}
-  function liveWaiting(record){return record.data.chat?.mode==='live'&&record.data.chat.live_status==='waiting';}
+  function liveWaiting(record){return record.data.chat?.media_call_active!==true&&record.data.chat?.mode==='live'&&record.data.chat.live_status==='waiting';}
   function allowed(record,operation){
-    const chat=record.data.chat,accepted=chat?.live_status==='accepted';
+    const chat=record.data.chat,media=chat?.media_call_active===true,accepted=!media&&chat?.live_status==='accepted';
     if(!writable(record)||record.pending||record.data['can_'+operation]!==true)return false;
+    if(media&&['delegate','resolve'].includes(operation))return false;
     if(operation==='delegate'&&accepted&&!chat.can_end_live_chat)return false;
     if((liveWaiting(record)||accepted)&&(operation==='claim'||operation==='reply')&&(settingsPending||!chat.live_text_available))return false;
     return record.data.state!=='awaiting_owner'||remaining(record)!==0;
   }
   function refreshControls(record){
-    const chat=record.data.chat,waiting=liveWaiting(record),accepted=chat?.live_status==='accepted';
+    const chat=record.data.chat,media=chat?.media_call_active===true,waiting=liveWaiting(record),accepted=!media&&chat?.live_status==='accepted';
     record.node.dataset.chatMode=chat?.mode||'auto';record.node.dataset.liveStatus=chat?.live_status||'none';
     record.buttons.claim.textContent=waiting?'Accept live chat':accepted?'Live chat accepted':"I'll reply";
     record.buttons.delegate.textContent=waiting?'Decline':accepted?'End live chat':'Let Agent reply';
@@ -136,12 +140,13 @@
     record.input.disabled=!allowed(record,'reply');
     if(record.pending)record.status.textContent='Saving your visitor action…';
     else if(record.superseded)record.status.textContent='A newer message from this visitor is shown in this Chat.';
+    else if(media)record.status.textContent='A direct call is handling this visitor. You can keep messaging here. Use the call controls to end the call or return to the Agent.';
     else if((waiting||accepted)&&settingsPending)record.status.textContent='Checking your updated Chat Settings…';
     else if(waiting)record.status.textContent=chat.live_text_available&&record.data.can_claim?'This visitor requested live text chat with you. Accept or decline this request.':'This visitor requested live text chat. Your current Chat Settings or availability prevent acceptance.';
     else if(accepted)record.status.textContent=chat.live_text_available&&record.data.can_reply?'Live text chat with this visitor is active. Your replies go directly to this visitor.':'Live text chat is active. Your current Chat Settings or availability prevent replying.';
     else{
       const liveOutcome=({declined:'Live chat was declined.',expired:'The live chat request expired.',unavailable:'Live chat is unavailable.',ended:'Live chat has ended.'})[chat?.live_status];
-      const outcome=liveOutcome||(chat?.mode==='agent'?'The visitor chose Agent chat.':'');
+      const outcome=chat?.mode==='auto'&&record.data.responder==='owner'?'':liveOutcome||(chat?.mode==='agent'?'The visitor chose Agent chat.':'');
       const replied=record.data.responder==='owner'?'Your reply was sent.':record.data.responder==='agent'?(liveOutcome?'Your Profile Agent handles new messages.':'Your Profile Agent replied.'):'A reply was sent.';
       const base=record.data.execution_paused||record.data.dispatch_execution_paused
         ?'Profile Agent is paused.'+(record.buttons.reply.disabled?'':' You can reply to this visitor.')
@@ -178,7 +183,11 @@
     for(const operation of ['claim','delegate','resolve'])buttons[operation].addEventListener('click',()=>void perform(record,operation));
     form.addEventListener('submit',event=>{event.preventDefault();event.stopPropagation();void perform(record,'reply');});
     body.appendChild(card);const placeholder=element.querySelector('.message-text');if(placeholder)placeholder.hidden=true;
-    cards.set(data.turn_id,record);renderHistory(record);refreshControls(record);return record;
+    cards.set(data.turn_id,record);renderHistory(record);refreshControls(record);
+    window.VP3ProfileCallsPa3c?.attachOwnerThread(controls,{binding:()=>writable(record)?{
+      conversation_id:record.data.conversation_id,chat_conversation_id:record.binding.chat_conversation_id,chat_agent_id:record.binding.chat_agent_id
+    }:null});
+    return record;
   }
   function updateCard(record,data,binding){
     if(data.revision<record.data.revision)return record;

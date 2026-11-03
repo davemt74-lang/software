@@ -57,8 +57,8 @@ hold. The Cloud work does not change HomeServer source or Stonefellow playback.
 | PA1 | Profile mutation permissions; visitor/account conversation isolation; fresh public authority; exact owner reply target; separate external Agent Messaging histories | Complete: PR #694 merged; all 13 PR and 14 post-merge workflows passed |
 | PA2 | Payment webhook recovery; late payment reconciliation; durable fulfillment retry; accurate review/payment cards | Complete: PR #695 merged; all 13 PR and 14 post-merge workflows passed |
 | PA3 | Availability, exact visible-card acknowledgement, 15-second pickup, durable automatic takeover, and functional main Chat visitor cards with explicit text reply/claim/delegate/resolve | Released in PRs #696 and #697 |
-| PA3D | Visitor chooses Agent chat or requests live owner text; owner accepts or declines using existing Chat Settings | Acceptance gates below |
-| PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Planned |
+| PA3D | Visitor chooses Agent chat or requests live owner text; owner accepts or declines using existing Chat Settings | Released in PR #698; acceptance gates below |
+| PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Implemented in PR #699 with the ten acceptance gates below; PR checks and the release artifact provide final deployment evidence |
 | PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Planned |
 | PA4B | Notification and Brain state; snooze/wake; routing; replay and projection repair | Planned |
 | PA5 | Ordinary public Profile conversation checkout using the canonical Commerce order/payment/receipt path | Planned |
@@ -258,6 +258,15 @@ passes. The PR additionally runs the SQL and HTTP fixtures with MySQL 8 on PHP
 browser interfaces in Chromium with mobile viewport checks. These controlled
 tests do not call a live model, voice, payment or media provider.
 
+The merged PA3 release is commit
+`d1bd983fa41020beeb75c3e4701cd98d84dba0ff`. All 16 PR workflows and all
+15 post-merge workflows passed. Both MySQL/PHP matrix jobs passed 33 recovery
+checks including observed row-lock races; Chromium passed 21 main Chat and
+11 native visitor checks, retaining PA1's 58 and PA2's 31 browser checks. The
+flat production artifact from run `41691110705` was verified against all 1,745
+application source files; SHA-256
+`0192659045e5946fbe27d43730926e26b52b2aef3e95a9b5f5a51bde94690750`.
+
 ### PA3D: explicit Agent or live owner text chat
 
 The public Profile chat defaults to Agent chat. A visitor can check a live-text
@@ -291,21 +300,43 @@ speaker labels distinguish visitor, Agent and owner. Private Chat stays private.
 
 This section adds durable choice/status columns through the existing handoff
 schema installer. Existing installations run Upgrade once. Missing fields fail
-closed; public GET reads never initialize storage. Live media and synthesized
-visitor announcements remain later sections.
+closed; public GET reads never initialize storage. Direct media follows in
+PA3C, with synthesized visitor announcements in PA4A.
 
 ### PA3C: direct voice and video
 
 Repository audit found an existing LiveKit media configuration, server-side
-participant token signer, room/participant services, and browser audio/video
-controls in `includes/video-meetings-v1800.php`,
+JWT signer, a room-deletion wrapper, and browser audio/video controls in
+`includes/video-meetings-v1800.php`,
 `api/video-meeting-token.php`, and `video-meetings-v1800.js`. Reuse the narrow
 media infrastructure with a new Profile call authority adapter. An existing
 meeting invitation is not proof of permission to join a visitor conversation;
 the new adapter must verify the exact Profile visitor binding and owner on every
-call mutation and token issue. Do not create calendar appointments, paid
+call mutation and token issue. Narrow CreateRoom, ListParticipants and
+RemoveParticipant adapters are new work; the old participant list reads local
+meeting records and does not administer provider participants. Do not create calendar appointments, paid
 bookings, CRM identities, recordings, or Agent transcription merely to connect
 two people.
+
+This section initially supports explicitly enabled LiveKit Cloud projects with
+secure transport. Short-lived join tokens and room deletion alone do not prove
+immediate revocation of cached tokens on stock self-hosted LiveKit. Existing
+meeting credentials do not silently enable public Profile calls. The Admin
+surface separates configured credentials, an acknowledged human-only project
+configuration, and the last successful API authentication check. The check does
+not prove microphone/camera connectivity or the absence of a future deployed
+worker. A human-only project must not auto-dispatch unnamed Agent workers or
+automatically record rooms; an empty CreateRoom agents array does not suppress
+unnamed auto-dispatch. Unexpected provider participants fail closed.
+
+Each call retains an encrypted server-only snapshot of its original provider
+configuration. Disabling calls or rotating credentials prevents further joins
+and schedules closure using that original project, not the replacement project.
+Ending a call denies new grants immediately, then the canonical job engine
+retries participant revocation and room deletion until the provider has confirmed
+closure. While that is pending, the interface reports cleanup pending rather
+than claiming the other participant was disconnected. A configured recovery
+worker is necessary when both browsers have closed.
 
 The public widget offers **Voice call** and **Video call** only when the service
 is ready. The main Chat card shows the caller, call type, and Accept/Decline.
@@ -335,6 +366,13 @@ and a clear path back to text or Agent assistance; it cannot silently leave the
 conversation claimed forever. Ending a call preserves its text thread and
 offers the owner explicit continued text handling or delegation.
 
+After a failed or ended call, an explicit **Return to Agent** action is available
+to the exact visitor or owner only while the handoff is still the one installed
+by that call's acceptance. It must not override a later owner reply, claim or
+resolution. Local media stops before returning to Agent assistance. Any pending
+provider cleanup remains a separate durable obligation and never permits the
+ended media session to resume.
+
 | Gate | Required behavior | Evidence |
 | --- | --- | --- |
 | 1 | Exact current visitor and owner authority for every offer, accept, poll, token, and end; no borrowed meeting invitation | Real SQL and production HTTP isolation tests |
@@ -347,6 +385,37 @@ offers the owner explicit continued text handling or delegation.
 | 8 | Reload/reconnect cannot revive an ended call or switch visitors; current connection state remains accurate | Network interruption, stale event and mobile browser tests |
 | 9 | Unconfigured LiveKit, denied microphone/camera, autoplay limits, and mobile layout have usable truthful states | Readiness and browser fixtures; live-device verification reported separately |
 | 10 | Private Chat remains private; no implicit recording/transcription, synthesized voice substitution, or telephone purchase/dial | Cross-surface boundary tests and retained PA1/PA3 regressions |
+
+The focused local suite passes **410 checks**: 153 production call-state and
+recovery checks, 79 provider-contract checks, 85 actual HTTP API checks,
+16 actual Admin HTTP checks, and 77 interface runtime assertions. Supporting
+credential recovery passes 98 checks and the upgrade page passes 28 cases.
+The CI matrix adds independent MySQL acceptance races on PHP 8.1 and 8.3 and
+the actual Chromium call-interface runner, alongside retained PA1, PA2 and PA3
+coverage. Provider HTTP and browser media are controlled fixtures; no live
+provider call is used to establish these results.
+
+The recovery cases include existing account blocks before admission and during
+a call, an account switch during a slow Join, delayed microphone/camera
+permissions after hang-up, lost responses, and a CreateRoom response that
+arrives after cleanup. A late possible room creation invalidates the old proof
+and retains an exact-room cleanup obligation. A completed cleanup gets a new
+canonical generation; a pending or manually paused cleanup retains its existing
+job controls. Repair never ends or releases an already accepted successor call.
+
+Integration with PA3D keeps ordinary messages owner-directed during a call and
+after a simple hang-up. A fresh explicit Agent choice remains available after
+media ends. Live-text expiry and a hidden Chat tab cannot delegate an ongoing
+media call; explicit Offline, disabled user chat, permissions and account blocks
+still govern media authority. Accepting a call does not relabel an earlier
+declined or expired text request as accepted.
+
+Owner visitor and call cards use Chat's canonical identity and canvas controller
+when the voice runtime installs its separate controller. The runtime and browser
+fixtures load the actual Chat and voice scripts in production order, verify that
+the voice controller is active, and retain the exact nonzero Agent and private
+conversation when mounting saved cards. Blank Chat initialization also waits for
+a pending voice submission.
 
 Existing Twilio telephone and SIP adapters provide a future route to actual
 phone numbers. That follow-on needs its own exact-number confirmation,
@@ -362,12 +431,67 @@ Provider contracts for the call adapter:
 - [LiveKit participant management and removal](https://docs.livekit.io/intro/basics/rooms-participants-tracks/participants/)
 - [LiveKit camera and microphone publication](https://docs.livekit.io/transport/media/publish/)
 
+Deployment steps for PA3C:
+
+1. Upload and extract the flat Cloud ZIP, run `/upgrade.php` once, and reload
+   Chat and the public Profile page. The canonical upgrade installs the four
+   call tables and checks the existing social-block schema.
+2. Open **Admin → Profile voice & video**. Save dedicated LiveKit Cloud
+   credentials, or explicitly choose the existing supported meeting project.
+   Confirm its human-only configuration and run **Check metadata API**. This
+   does not create a room or access a microphone.
+3. Keep the Profile recovery worker configured, for example a hosting cron
+   invoking `php agent-worker-v1910.php --executor=profile`. Active call views
+   can drive eligible work; the worker handles obligations after both browsers
+   close. Cleanup timing then depends on that worker schedule and provider
+   availability.
+4. With the owner Available in Chat, use two consenting browsers on HTTPS to
+   verify an actual audio call, optional video, hang-up, denied permissions and
+   an interrupted connection. Automated transport and media fixtures do not
+   establish the deployed account's media connectivity or iPhone microphone,
+   speaker and camera behavior.
+
+Call IDs and public/private conversation markers persist across reloads. Media
+tokens stay in memory and restoring a card never reconnects automatically.
+Network reconnection in the same open tab keeps its participant binding; a new
+tab cannot replace that participant. A reload can require ending the previous
+call and making a new offer after cleanup. An old ended call cannot be resumed;
+a new offer creates a new room. A cleanup-pending card
+retains the owner's busy slot until closure is proved. A stored closure proof
+lets a failed completion-receipt write retry without pretending that a later
+missing-room response proves participant revocation.
+
 ### PA4: speech, notifications and Brain
 
 PA4A adds visitor voice assignment, distinct owner/visitor speaker cues, one
 arrival announcement per session, and safe playback interruption/queue behavior.
 Reuse existing ElevenLabs credentials and provider settings. A voice selection
 must not grant access to another account's saved voice clone.
+
+The existing implementation points for the next focused audit are
+`api/agent-voice-v117.php`, `api/admin-elevenlabs-v102.php`,
+`includes/ai-settings.php`, and the Studio voice-profile services. Their current
+general speech/provider configuration is not a visitor voice-assignment record.
+The Profile and Studio schema surfaces reviewed so far do not provide an explicit
+visitor sex/gender or preferred speech-voice field; PA4A must offer a voluntary
+voice preference instead of deriving it from a name, photo or recording.
+
+The following are planned acceptance gates, not completed results. Live calls
+continue to use actual participant audio; synthetic announcements and typed
+message playback must yield to an accepted human call.
+
+| PA4A gate | Required behavior |
+| --- | --- |
+| 1 | Announce a currently authorized Profile visitor/chat arrival once per durable visitor session, without treating a page refresh as another arrival |
+| 2 | Route arrival and message announcements to the exact owner's current Chat and preserve the current private conversation |
+| 3 | Respect Available/Away/Do not disturb, audio preferences, hidden tabs, browser autoplay restrictions and current human calls |
+| 4 | Give each visitor a stable permitted ElevenLabs voice distinct from the contacted owner/Agent voice |
+| 5 | Match a supplied voice category or explicit visitor profile preference; anonymous/unknown visitors use a selectable preset with no sex/gender inference |
+| 6 | Read only authorized public visitor content with correct speaker attribution; never send private Chat, Brain context or unrelated visitor text to speech |
+| 7 | Bind queued playback to current owner, visitor conversation, message and voice; stale or revoked items cannot play after a context change |
+| 8 | An explicit spoken owner reply resolves to one current visitor and uses the same targeted public reply boundary as the text card |
+| 9 | Preserve visible text and useful retry/error states when voice is unavailable; account for provider usage without claiming exactly-once provider billing |
+| 10 | Verify replay, interruption, capture exclusion, simultaneous visitors, account changes and mobile browser behavior without live provider calls |
 
 PA4B makes presented/read/snoozed/handled/ignored states consistent. Snoozed
 attention must wake after expiry even if it was previously presented. A stale
@@ -376,6 +500,25 @@ silently switch the owner's private Chat conversation. Failed reads cannot be
 reported as “caught up.” Repair a missed Brain projection from durable event
 evidence, with visitor, Agent and owner statements and actions attributed
 separately.
+
+The notification query already contains an expired-snooze wake condition in
+`notification_profile_attention_after_v1341()`. Verify it through the later
+presentation/replay path before claiming wake-up works end to end. That function
+currently returns an empty successful result when the connection or notification
+table is unavailable; gate 9 must distinguish that case from an empty inbox.
+
+| PA4B gate | Required behavior |
+| --- | --- |
+| 1 | Durable source events bind the exact owner, visitor, public thread and action; aggregate contact recognition never grants conversation access |
+| 2 | Presented, read, snoozed, handled and ignored are separate durable states with explicit transitions |
+| 3 | Snooze expiry makes an unhandled item eligible again without duplicating the underlying event |
+| 4 | A stale poll or delayed acknowledgement cannot revive handled, ignored or revoked attention |
+| 5 | Multiple tabs and retries produce one authoritative notification outcome and avoid duplicate audible announcements |
+| 6 | Public visitor, human owner and Agent statements retain accurate attribution in Chat and Brain |
+| 7 | Repair a missed Chat/Brain projection from saved event evidence, without replaying the public action or payment |
+| 8 | Notification replay preserves private Chat selection, unsent drafts and exact public reply targets |
+| 9 | Failed/partial reads remain visibly unsuccessful rather than reporting that all attention is handled |
+| 10 | SQL, HTTP and browser fixtures cover expiry, concurrent state changes, projection failure, account revocation and retained doorbell/call behavior |
 
 ### PA5: checkout in ordinary Profile conversation
 
@@ -391,6 +534,22 @@ purchase, but only the buyer's explicit confirmation authorizes it. Preserve
 owner handoff during a sale. Do not infer payment success from a browser return
 or an Agent's completion text. Keep appointments on the Scheduling payment path
 and supported products within the existing Commerce fulfillment capabilities.
+
+PA5 remains an outline until its own section is built and verified. Its planned
+acceptance gates are:
+
+| Gate | Required behavior |
+| --- | --- |
+| 1 | Resolve only current published products belonging to the contacted owner and a currently enabled canonical merchant integration |
+| 2 | Display the canonical product, quantity, price, currency, applicable charges, fulfillment method and seller terms in the visitor's conversation |
+| 3 | Bind each review to the exact visitor, public thread, merchant, product/version, quantity and expiry; changed terms require another review |
+| 4 | Require the buyer's explicit confirmation of that review; Agent prose, an owner reply, a call acceptance or an unrelated yes cannot authorize checkout |
+| 5 | Reuse the same canonical prepared intent and provider request identity after an uncertain result rather than creating a second checkout |
+| 6 | Let the configured provider collect payment details and show the returned checkout destination; do not collect card data through ordinary Agent text |
+| 7 | Use PA2's verified payment evidence and durable recovery for status; browser return parameters never establish payment success |
+| 8 | Scope receipts and private delivery to the exact authorized buyer/order, and show awaiting payment, paid, review required and fulfilled accurately |
+| 9 | Preserve human/Agent handoff, call state and the conversation when payment is cancelled, unavailable or delayed; use the Scheduling path for appointments |
+| 10 | Test current authority, changed terms, duplicate confirmations, lost responses, late payment, fulfillment retry and mobile cards without live financial effects |
 
 ## Validation and deployment contract
 

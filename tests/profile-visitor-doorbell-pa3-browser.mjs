@@ -2,17 +2,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import {createRequire} from 'node:module';
-import {copy,contract,ownerCard,chatChoice,mainChatMarkup} from './fixtures/profile-visitor-doorbell-pa3.mjs';
+import {copy,contract,ownerCard,chatChoice,mainChatVoiceMarkup} from './fixtures/profile-visitor-doorbell-pa3.mjs';
 
 const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
 const read=name=>fs.readFileSync(new URL('../'+name,import.meta.url),'utf8');
-const files={'/chat.js':read('chat.js'),'/doorbell.js':read('profile-visitor-doorbell-pa3.js'),'/chat.css':read('chat.css'),'/doorbell.css':read('profile-visitor-doorbell-pa3.css')};
+const files={'/chat.js':read('chat.js'),'/voice.js':read('chat-voice.js'),'/lease.js':read('voice-lease-v122.js'),'/doorbell.js':read('profile-visitor-doorbell-pa3.js'),'/chat.css':read('chat.css'),'/doorbell.css':read('profile-visitor-doorbell-pa3.css')};
 const fixtureStyle='html,body{margin:0;height:100%;overflow:hidden}.chat-app{height:100dvh}.chat-sidebar{display:none}.chat-main{height:100dvh;display:flex;flex-direction:column;min-width:0}.chat-topbar-actions{display:flex;padding:10px;flex-shrink:0}.chat-thread{overflow:auto;flex:1;min-height:0;padding:12px}.chat-thread .message{max-width:100%;box-sizing:border-box}.message-body{min-width:0;max-width:100%}#chatComposerShell{flex-shrink:0;padding:8px}#chatForm{display:flex;gap:8px}#chatInput{min-width:0;flex:1}';
 const server=http.createServer((req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname;
  if(files[path]){res.writeHead(200,{'Content-Type':path.endsWith('.css')?'text/css':'text/javascript'});res.end(files[path]);return;}
  res.writeHead(200,{'Content-Type':'text/html'});
- res.end(mainChatMarkup.replace('</head>','<link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/doorbell.css"><style>'+fixtureStyle+'</style></head>').replace('</body>',`<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',initialConversationId:42};window.VP3_PROFILE_DOORBELL_PA3={endpoint:'/api/chat-notifications-brain-v240.php',ownerEndpoint:'/api/profile-agent.php',csrf:'fixture',userId:1};</script><script src="/chat.js"></script><script src="/doorbell.js"></script></body>`));
+ res.end(mainChatVoiceMarkup.replace('</head>','<link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/doorbell.css"><style>'+fixtureStyle+'</style></head>').replace('</body>',`<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',initialConversationId:42};window.STONEFELLOW_CHAT_VOICE_BOOT={button:document.getElementById('chatVoiceButtonLegacyDormant'),intro:null,legacyDormant:true};window.VP3_PROFILE_DOORBELL_PA3={endpoint:'/api/chat-notifications-brain-v240.php',ownerEndpoint:'/api/profile-agent.php',csrf:'fixture',userId:1};</script><script src="/chat.js"></script><script data-voice-capture-scope="fixture-user" src="/lease.js"></script><script src="/voice.js"></script><script src="/doorbell.js"></script></body>`));
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base=`http://127.0.0.1:${server.address().port}`;
@@ -73,6 +73,7 @@ try{
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
  {
   const f=await fixture(),ackHold=f.hold('doorbell_ack');await f.boot();const ack=await ackHold;
+  check(await f.page.evaluate(()=>STONEFELLOW_CHAT_VOICE.directOwner===true&&STONEFELLOW_CHAT_CONTINUITY!==STONEFELLOW_CHAT_CONTINUITY_V87&&typeof STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit==='function'&&STONEFELLOW_CHAT_VOICE.starts===0),'real Chat and voice scripts execute in production order before doorbell without capture');
   check(ack.input.chat_message_id===701&&ack.input.chat_conversation_id===42&&ack.input.chat_agent_id===7&&ack.input.turn_id===101&&ack.input.revision===1,'real mounted card ACK binds persisted Chat message and current Agent');
   check(await f.card(101).locator('.profile-doorbell-countdown').isHidden(),'a held server ACK does not invent a deadline');
   await ack.release();await f.card(101).locator('.profile-doorbell-countdown').waitFor();
@@ -89,7 +90,7 @@ try{
   check(await f.card(101).locator('textarea').inputValue()==='Visitor draft'&&await f.page.locator('#chatInput').inputValue()==='Private unsent text','confirmed targeted reply leaves other drafts untouched');
   check(!JSON.stringify(f.calls.filter(c=>c.path==='/api/profile-agent.php')).includes('Private unsent text'),'private composer text is absent from all owner reply requests');
   const old=f.hold('doorbell_claim');await f.card(101).locator('[data-doorbell-action=claim]').click();const claim=await old;
-  await f.page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.openConversation(55));await f.card(101).waitFor();await f.card(101).locator('textarea').fill('Draft in current Chat55');await claim.release();
+  await f.page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(55));await f.card(101).waitFor();await f.card(101).locator('textarea').fill('Draft in current Chat55');await claim.release();
   check(await f.page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.conversationId())===55&&await f.card(101).locator('textarea').inputValue()==='Draft in current Chat55'&&!(await f.card(101).innerText()).includes('You picked up this visitor.'),'late old-context mutation cannot overwrite or navigate the current Chat');
   const before=f.calls.filter(c=>c.action==='doorbell_ack').length;await f.page.reload();await f.card(101).waitFor();
   check(await f.card(101).locator('textarea').inputValue()==='Draft in current Chat55','reload restores current visitor draft from the persisted marker');
@@ -130,7 +131,7 @@ try{
  }
  {
   const f=await fixture();f.turns.set(101,ownerCard(101,{server_now_ms:f.clock,chat:chatChoice()}));await f.boot();await f.card(101).locator('.profile-doorbell-countdown').waitFor();
-  const held=f.hold('doorbell_claim');await f.card(101).locator('[data-doorbell-action=claim]').click();const acceptance=await held;await f.page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.openConversation(55));await f.card(101).waitFor();await f.card(101).locator('textarea').fill('Current context draft after live request');await acceptance.release();
+  const held=f.hold('doorbell_claim');await f.card(101).locator('[data-doorbell-action=claim]').click();const acceptance=await held;await f.page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(55));await f.card(101).waitFor();await f.card(101).locator('textarea').fill('Current context draft after live request');await acceptance.release();
   check(await f.page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.conversationId())===55&&await f.card(101).locator('textarea').inputValue()==='Current context draft after live request'&&!(await f.card(101).innerText()).includes('Live chat accepted.'),'stale live acceptance response cannot announce success, clear a draft or navigate the new private Chat');await f.close();
  }
  {
