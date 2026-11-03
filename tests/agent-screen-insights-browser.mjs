@@ -7,7 +7,7 @@ const source={session_id:'00000000-0000-4000-8000-000000000001',capture_id:'0000
 const repeat={key:'a'.repeat(64),review_hash:'b'.repeat(64),kind:'recurrence',title:'You returned to Pizza dough <img>',why:'The same subject appears in two different sharing sessions; this is not a confirmed preference.',sources:[source],refs:[source]};
 const wrap={...repeat,key:'c'.repeat(64),kind:'wrapup',title:'Session wrap-up: Pizza research'};let hidden=false,withdrawn=false,links=[],calls=[],foreign=false;
 await page.route('https://insights.test/',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><main id="chatThread"></main><select id="vp3ChatTaskMode"><option value="automatic">Automatic</option><option value="chat">Chat</option></select><form id="chatForm"><textarea id="chatInput"></textarea></form><section id="review"></section>'}));
-await page.route('https://insights.test/api/insights',async r=>{const body=r.request().method()==='POST'?r.request().postDataJSON():Object.fromEntries(new URL(r.request().url()).searchParams);calls.push(body);const common={ok:true,owner_key:foreign?'2':'1',agent_id:4};
+await page.route('https://insights.test/api/insights**',async r=>{const body=r.request().method()==='POST'?r.request().postDataJSON():Object.fromEntries(new URL(r.request().url()).searchParams);calls.push(body);const common={ok:true,owner_key:foreign?'2':'1',agent_id:4};
  if(body.action==='feed')return r.fulfill({json:{...common,cards:withdrawn?[]:[...(hidden?[]:[repeat]),wrap],handoffs:links}});
  if(body.action==='decide'){hidden=true;return r.fulfill({json:{...common,decision:body.decision}});}
  if(body.action==='reset_suggestions'){hidden=false;return r.fulfill({json:common});}
