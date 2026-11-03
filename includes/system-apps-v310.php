@@ -67,40 +67,11 @@ function vp3_photo_library_search_terms_v310(string $query): string
     return mb_substr($clean!==''?$clean:$query,0,200);
 }
 
-function vp3_photo_library_agent_query_v310(
-    string $query,array $user,int $conversationId=0,?callable $remote=null
-): array {
-    $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    if(!preg_match('/\b(?:photo library|photos?|pictures?|image library|photo album|photo albums)\b/i',$query))return $empty;
-    $uid=(int)($user['id']??0);if($uid<1)return $empty;
-    try{
-        $status=vp3_photo_library_status_v310($uid,$remote);
-        $terms=vp3_photo_library_search_terms_v310($query);
-        $search=vp3_photo_library_search_v310($uid,$terms,12,$remote);
-    }catch(Throwable $e){return $empty;}
-    $answer='Photo Library has '.$status['photos'].' photo'.($status['photos']===1?'':'s')
-      .', '.$status['albums'].' album'.($status['albums']===1?'':'s')
-      .', and '.$status['favorites'].' favorite'.($status['favorites']===1?'':'s').'. ';
-    if($status['mapped_sources']>0){
-        $answer.='It is using '.$status['mapped_sources'].' mapped media source'.($status['mapped_sources']===1?'':'s').'. ';
-    }
-    if($search['count']>0){
-        $first=$search['photos'][0];
-        $answer.='A matching photo is '.$first['title'];
-        if($first['folder_album']!=='')$answer.=' in '.$first['folder_album'];
-        $answer.='.';
-    }else{
-        $answer.='No matching indexed photo was found for that request.';
-    }
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'homeserver.photos.read',$query,'success',[
-      'photos'=>$status['photos'],'matches'=>$search['count']
-    ],$conversationId);
-    return [
-      'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],
-      'actions'=>[['type'=>'open_url','label'=>'Open Photo Library','url'=>url('/apps.php')]],
-      'sources'=>[['source'=>'homeserver:photo-library','title'=>'VP3 Photo Library']],
-      'photo_library'=>$status,'photo_search'=>$search,
-    ];
+function vp3_photo_library_agent_query_v310(string $query,array $user,int $conversationId=0,?callable $remote=null): array
+{
+    $empty=['handled'=>false,'answer'=>'','actions'=>[],'sources'=>[]];
+    if(!preg_match('/\b(?:photo library|photos?|pictures?|image library|photo albums?)\b/i',$query)||!preg_match('/\b(?:show|list|find|search|status|how many|overview|jobs|projects|queue)\b/i',$query))return $empty;
+    return vp3_photo_media_legacy_v1($query,$user,$conversationId,'photos.library.read',$remote);
 }
 
 function vp3_system_apps_capability_v310(): array

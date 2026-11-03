@@ -75,48 +75,11 @@ function vp3_media_processor_brain_context_v330(int $userId,?callable $remote=nu
     ];
 }
 
-function vp3_media_processor_agent_query_v330(
-    string $query,array $user,int $conversationId=0,?callable $remote=null
-): array {
-    $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    if(!preg_match('/\b(?:media processor|transcod|convert|compress|thumbnail|editing prox|video prox|media processing)\b/i',$query))return $empty;
-    $uid=(int)($user['id']??0);if($uid<1)return $empty;
-    try{
-        $status=vp3_media_processor_status_v330($uid,$remote);
-        $context=vp3_media_processor_brain_context_v330($uid,$remote);
-        $jobs=vp3_media_processor_jobs_v330($uid,8,$remote);
-    }catch(Throwable $e){return $empty;}
-    $answer='Media Processor has '.$status['active'].' active, '.$status['queued'].' queued, '
-      .$status['failed'].' failed, and '.$status['completed'].' completed processing job'
-      .($status['completed']===1?'':'s').'. ';
-    if($status['ffmpeg_available']){
-        $answer.='HomeServer-managed FFmpeg is available'
-          .($status['ffmpeg_version']!==''?' ('.$status['ffmpeg_version'].')':'').'. ';
-    }else{
-        $answer.='HomeServer-managed FFmpeg is not currently available. ';
-    }
-    if(!empty($context['attention'])){
-        $answer.=count($context['attention']).' processing job'
-          .(count($context['attention'])===1?' needs':'s need').' attention. ';
-    }
-    if($jobs['count']>0){
-        $first=$jobs['jobs'][0];
-        $answer.='Most recent: '.$first['operation'].' — '.$first['status'].'.';
-    }
-    if(preg_match('/\b(?:convert|compress|create|make|generate|cancel|retry|process|proxy|thumbnail)\b/i',$query)){
-        $answer.=' Processing changes are executed through the governed HomeServer Agent action path; Cloud does not run FFmpeg.';
-    }
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'homeserver.media_processor.read',$query,'success',[
-      'active'=>$status['active'],'queued'=>$status['queued'],'failed'=>$status['failed']
-    ],$conversationId);
-    return [
-      'handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],
-      'actions'=>[['type'=>'open_url','label'=>'Open Media Processor','url'=>url('/apps.php')]],
-      'sources'=>[['source'=>'homeserver:media-processor','title'=>'VP3 Media Processor']],
-      'media_processor'=>$status,
-      'media_processor_brain_context'=>$context,
-      'media_processor_jobs'=>$jobs,
-    ];
+function vp3_media_processor_agent_query_v330(string $query,array $user,int $conversationId=0,?callable $remote=null): array
+{
+    $empty=['handled'=>false,'answer'=>'','actions'=>[],'sources'=>[]];
+    if(!preg_match('/\b(?:media processor|transcod\\w*|convert|compress|thumbnails?|editing prox\\w*|video prox\\w*|media processing)\b/i',$query)||!preg_match('/\b(?:show|list|find|search|status|how many|overview|jobs|projects|queue)\b/i',$query))return $empty;
+    return vp3_photo_media_legacy_v1($query,$user,$conversationId,'media.processing.read',$remote);
 }
 
 function vp3_system_apps_capability_v330(): array

@@ -2,7 +2,7 @@
 
 This is the managed build order for the legacy handlers called by the shared VP3 Chat dispatcher. It is not a count of every tool in VP3: reminders, transcripts, phone and newer record adapters also expose capabilities through the shared broker. Handler count and capability count are separate measures. “Pending” means unassessed, not necessarily broken or disconnected.
 
-Through S6 (PR #653): 14 of 29 legacy handlers certified; 15 remaining. S7 implements 3 more, leaving 12 pending. Its release requires PR checks and exact merged-package verification. The source inventory has 37 individual capability IDs after S7. Use `python3 tools/check_agent_capability_inventory.py` for current executable bindings, remaining handlers and source locations; that check also rejects a missing or duplicated handler in this list.
+Through S7: 17 of 29 legacy handlers assessed. S9A adds the four photo/media handlers, bringing assessed coverage to 21 of 29, with 8 remaining. S9A is prioritized before S8 for the requested photo/media work. Its release requires green PR checks and exact merged-package verification. Individual capability count is generated from source rather than inferred from handler count. Use `python3 tools/check_agent_capability_inventory.py` for current executable bindings, remaining handlers and source locations; that check also rejects a missing or duplicated handler in this list.
 
 | Handler | Section | State / evidence |
 |---|---|---|
@@ -25,10 +25,10 @@ Through S6 (PR #653): 14 of 29 legacy handlers certified; 15 remaining. S7 imple
 | `vp3_system_apps_release_query_v200` | S7 | Implemented in S7: read-only catalog metadata, explicit live-release verification/failure and no raw remote export. |
 | `vp3_user_app_share_agent_query_v250` | S8 | Pending: private-share identity, provenance, access and lifecycle boundaries. |
 | `vp3_vrss_agent_query_v2b` | S8 | Pending: existing feed operations and owned-resource receipts. |
-| `vp3_photo_library_agent_query_v310` | S9 | Pending: existing photo discovery and selection/privacy boundaries. |
-| `vp3_download_manager_agent_query_v320` | S9 | Pending: download jobs, approvals and status versus completion. |
-| `vp3_media_processor_agent_query_v330` | S9 | Pending: processing jobs, source/destination scope and verified results. |
-| `vp3_video_editor_agent_query_v280` | S9 | Pending: existing project actions and approval/execution boundaries. |
+| `vp3_photo_library_agent_query_v310` | S9A | Shared model-selected bounded reads, strict raw projections, current owner/Agent/conversation fencing and honest job/failure receipts. See agent-integration-audit-s9.md. |
+| `vp3_download_manager_agent_query_v320` | S9A | Shared model-selected bounded reads, strict raw projections, current owner/Agent/conversation fencing and honest job/failure receipts. See agent-integration-audit-s9.md. |
+| `vp3_media_processor_agent_query_v330` | S9A | Shared model-selected bounded reads, strict raw projections, current owner/Agent/conversation fencing and honest job/failure receipts. See agent-integration-audit-s9.md. |
+| `vp3_video_editor_agent_query_v280` | S9A | Shared model-selected bounded reads, strict raw projections, current owner/Agent/conversation fencing and honest job/failure receipts. See agent-integration-audit-s9.md. |
 | `tracky_agent_tools_query_v271` | S10 | Pending: existing observations/continuity, inference limits and current evidence. |
 | `vp3_radar_chat_tool` | S10 | Pending: current owner Radar records and reviewed next actions. |
 | `vp3_analytics_chat_tool` | S10 | Pending: actual data permissions, query scope and evidence. |
