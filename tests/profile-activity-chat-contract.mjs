@@ -9,6 +9,8 @@ const activity=read('profile-activity-chat.js');
 const notifications=read('includes/notifications.php');
 const attentionApi=read('api/chat-notifications-brain-v240.php');
 const attentionUi=read('chat-notifications-drawer-v240.js');
+const profileAttentionUi=read('profile-attention-pa4b.js');
+const chatRuntime=read('chat.js');
 const attention=read('agent-attention.js');
 const member=read('member-shell-v77.js');
 const notificationApi=read('api/member-notifications.php');
@@ -53,7 +55,13 @@ assert.ok(!/openai|anthropic|gemini|chat_remote_answer|chat_local_answer/i.test(
 
 assert.ok(attentionUi.includes("request('attention'"), 'Activity Center should poll actionable notifications');
 assert.ok(attentionUi.includes("request('present_attention'"), 'Activity Center should route an actionable notification into Agent Chat');
-assert.ok(attentionUi.includes('await chat.openConversation(id)'), 'new attention conversations must open through the canonical Chat continuity API');
+assert.ok(attentionUi.includes('return window.STONEFELLOW_CHAT_CONTINUITY_V87 || {}'), 'background attention must use canonical Chat identity even when the voice facade replaces primary continuity');
+assert.ok(attentionUi.includes('id !== activeConversationId()'), 'legacy attention may synchronize only the currently selected private conversation');
+assert.ok(attentionUi.includes('data-chat-message-id="${stored}"') && attentionUi.includes('data-chat-conversation-id="${id}"'), 'legacy attention must verify the exact saved message and current conversation, not matching display text');
+assert.ok(profileAttentionUi.includes('canonical().mountProfileAttention?.({contract:CONTRACT,item:next})'), 'Profile attention must mount its exact saved marker through canonical Chat');
+assert.ok(profileAttentionUi.includes('item.chat_conversation_id===bound.conversation_id && item.chat_agent_id===bound.agent_id'), 'Profile card restoration must retain the captured private conversation and Agent');
+assert.ok(chatRuntime.includes('mountProfileAttention:mountProfileAttentionPa4b'), 'canonical Chat must expose the governed Profile marker mount');
+assert.doesNotMatch(attentionUi + profileAttentionUi, /\.openConversation\s*\??\.?(\s*)\(/, 'background attention must never open a different private conversation');
 assert.ok(!attentionUi.includes('ensureHistoryButton'), 'attention flow must not fabricate or depend on temporary chat-history UI');
 assert.ok(attentionUi.includes('StonefellowPremiumVoiceV122'), 'attention turns should use the existing ElevenLabs voice runtime');
 assert.ok(attentionUi.includes('speechSynthesis'), 'attention speech must retain system voice fallback');

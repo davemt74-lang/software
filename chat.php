@@ -6,6 +6,7 @@ $controlBuild = 'voice-learning-v1-20261101';
 $controlBuild .= '-vrss-outcome-cards-s8b-20261103';
 $controlBuild .= '-profile-doorbell-pa3-20261103';
 $controlBuild .= '-profile-direct-calls-pa3c-20261104';
+$controlBuild .= '-profile-attention-pa4b-' . substr(hash_file('sha256',__DIR__.'/chat.js'),0,12);
 $controlBuild .= '-canvas-image-generation-v1-listening-continuation-v1-live-player-history-v1-audio-debug-v1-recognition-reliability-v1-participant-conversation-v2-20261102-participant-updates-20261102-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351-speech-recovery-20261031-mic-startup-20261101';
@@ -55,6 +56,7 @@ $cognitiveCurrentStateBuild = 'cognitive-current-state-v2590-20260923';
 $cognitivePresentationAssetBuild = $cognitivePresentationBuild . '-' . $cognitiveCurrentStateBuild . '-profile-priority-v1341-20261027';
 $notificationDrawerAssetBuild = $notificationDrawerBuild . '-' . $cognitiveContextBuild . '-' . $cognitiveTurnBuild . '-' . $cognitiveContinuityBuild . '-' . $cognitiveFollowthroughBuild . '-' . $cognitiveSupervisionBuild . '-' . $cognitiveAutonomyBuild . '-' . $cognitivePortfolioBuild . '-' . $cognitiveForecastBuild . '-' . $cognitiveOptimizationBuild . '-' . $cognitiveResourceBudgetBuild . '-' . $cognitiveReplanningBuild . '-' . $cognitiveCommitmentProtectionBuild . '-' . $cognitiveEconomicsBuild . '-' . $cognitiveBudgetGovernanceBuild . '-' . $cognitiveValueRoiBuild . '-' . $cognitiveDecisionCalibrationBuild . '-' . $cognitiveCurrentStateBuild . '-mission-notices-a5c8-20261011-profile-priority-v1341-20261027-eyes-v1342-activity-v1348r2-longfellow-r3';
 $browserContextBuild = 'browser-context-v2130-20260919';
+$notificationDrawerAssetBuild .= '-pa4b-' . substr(hash('sha256',hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.js').hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.css')),0,12);
 $agentIdentityAssetBuild = $agentIdentityBuild . '-activation-v243';
 $cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-memory-v570';
 $cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350';
@@ -535,7 +537,13 @@ $browserContextRuntime = '<link rel="stylesheet" data-browser-context-v2130 href
     . '<script data-browser-context-v2130 src="' . e(url('/chat-browser-context-v2130.js?v=' . $browserContextBuild)) . '"></script>';
 
 $notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-drawer href="' . e(url('/chat-notifications-drawer-v240.css?v=' . $notificationDrawerAssetBuild)) . '">'
+    . '<link rel="stylesheet" data-profile-attention-pa4b href="' . e(url('/profile-attention-pa4b.css?v=' . substr(hash_file('sha256',__DIR__.'/profile-attention-pa4b.css'),0,12))) . '">'
     . '<link rel="stylesheet" data-brain-learning-history-v317 href="' . e(url('/chat-brain-learning-history-v317.css?v=' . $brainLearningBuild)) . '">'
+    . '<script>window.PROFILE_ATTENTION_PA4B_CONFIG=' . json_encode([
+        'endpoint'=>url('/api/chat-notifications-brain-v240.php'),
+        'csrfToken'=>csrf_token(),
+    ], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';</script>'
+    . '<script data-profile-attention-pa4b src="' . e(url('/profile-attention-pa4b.js?v=' . substr(hash_file('sha256',__DIR__.'/profile-attention-pa4b.js'),0,12))) . '"></script>'
     . '<script data-chat-notification-drawer-config>window.STONEFELLOW_NOTIFICATION_DRAWER='
     . json_encode([
         'endpoint'=>url('/api/chat-notifications-brain-v240.php'),

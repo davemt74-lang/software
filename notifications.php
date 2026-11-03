@@ -18,6 +18,7 @@ if ($openId > 0) {
     $stmt->execute([$openId, (int)$user['id']]);
     $notification = $stmt->fetch();
     if ($notification) {
+        $notification=notification_profile_projection_pa4b($pdo,$user,$notification);
         mark_notification_read($openId, (int)$user['id']);
         $target = trim((string)$notification['target_url']);
         if ($target !== '' && str_starts_with($target, '/')) redirect($target);
@@ -33,7 +34,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string)($_POST['action'] ?? '');
     if ($action === 'all_read') {
         mark_all_notifications_read((int)$user['id']);
-        flash('notification_notice', 'Notifications marked as read.');
+        flash('notification_notice', 'Other notifications marked as read. Profile activity keeps its current read generation until you choose Read.');
+    }
+    if ($action === 'profile_read') {
+        try{
+            require_once __DIR__.'/includes/profile-attention-pa4b.php';
+            vp3_profile_attention_update_pa4b($pdo,$user,array_replace($_POST,['operation'=>'read','conversation_id'=>0,'agent_id'=>0]));
+            flash('notification_notice','This Profile notification is marked as read.');
+        }catch(VP3ProfileAttentionException $e){flash('notification_error',$e->getMessage());}
+        catch(Throwable $e){flash('notification_error','Profile attention could not be updated. Refresh and try again.');}
     }
     redirect(url('/notifications.php'));
 }
@@ -45,7 +54,7 @@ $stmt = $pdo->prepare(
      LIMIT 200'
 );
 $stmt->execute([(int)$user['id']]);
-$notifications = $stmt->fetchAll();
+$notifications = array_map(static fn(array $row):array=>notification_profile_projection_pa4b($pdo,$user,$row),$stmt->fetchAll());
 
 $notice = flash('notification_notice');
 $error = flash('notification_error');
@@ -58,7 +67,7 @@ if ($unreadCount > 0) {
     $memberHeaderActions .= '<form method="post" class="notification-header-form">'
         . csrf_field()
         . '<input type="hidden" name="action" value="all_read">'
-        . '<button class="notification-button" type="submit">Mark all read</button>'
+        . '<button class="notification-button" type="submit">Mark other notifications read</button>'
         . '</form>';
 }
 ?>
@@ -91,15 +100,27 @@ if ($unreadCount > 0) {
         <?php if ($error): ?><div class="notification-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
 
         <div class="notification-list">
-          <?php foreach ($notifications as $notification): ?>
-            <a class="notification-row <?= !(int)$notification['is_read'] ? 'unread' : '' ?>" href="<?= e(url('/notifications.php?open=' . (int)$notification['id'])) ?>">
+          <?php foreach ($notifications as $notification): $profileManaged=($notification['source_type']??'')==='profile_event'; ?>
+            <<?= $profileManaged?'div':'a' ?> class="notification-row <?= !(int)$notification['is_read'] ? 'unread' : '' ?>"<?= $profileManaged?'':' href="'.e(url('/notifications.php?open=' . (int)$notification['id'])).'"' ?>>
               <span class="notification-row-icon" aria-hidden="true"></span>
-              <span class="notification-row-copy">
-                <strong><?= e((string)$notification['title']) ?></strong>
+              <div class="notification-row-copy">
+                <?php if($profileManaged): ?><a href="<?= e((string)$notification['target_url']) ?>"><strong><?= e((string)$notification['title']) ?></strong></a><?php else: ?><strong><?= e((string)$notification['title']) ?></strong><?php endif; ?>
                 <?php if ((string)$notification['body'] !== ''): ?><span><?= e((string)$notification['body']) ?></span><?php endif; ?>
-              </span>
+                <?php if($profileManaged&&!empty($notification['can_read'])): ?>
+                  <form method="post" class="notification-header-form">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="profile_read">
+                    <input type="hidden" name="notification_id" value="<?= (int)$notification['id'] ?>">
+                    <input type="hidden" name="attention_id" value="<?= (int)$notification['attention_id'] ?>">
+                    <input type="hidden" name="state_revision" value="<?= (int)$notification['state_revision'] ?>">
+                    <input type="hidden" name="wake_generation" value="<?= (int)$notification['wake_generation'] ?>">
+                    <input type="hidden" name="request_id" value="<?= bin2hex(random_bytes(16)) ?>">
+                    <button class="notification-button" type="submit">Read</button>
+                  </form>
+                <?php endif; ?>
+              </div>
               <time datetime="<?= e((string)$notification['created_at']) ?>"><?= e(date('M j, Y g:i A', strtotime((string)$notification['created_at']))) ?></time>
-            </a>
+            </<?= $profileManaged?'div':'a' ?>>
           <?php endforeach; ?>
           <?php if (!$notifications): ?>
             <div class="notification-empty"><h2>No notifications yet.</h2><p>New VP3 activity for your account will appear here.</p></div>

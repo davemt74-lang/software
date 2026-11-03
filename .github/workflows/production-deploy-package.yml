@@ -110,6 +110,10 @@ jobs:
           test -f _deploy/admin/profile-speech.php
           test -f _deploy/profile-speech-pa4a.js
           test -f _deploy/profile-speech-pa4a.css
+          test -f _deploy/includes/profile-attention-pa4b.php
+          test -f _deploy/includes/profile-event-projection-pa4b.php
+          test -f _deploy/profile-attention-pa4b.js
+          test -f _deploy/profile-attention-pa4b.css
 
           # Campaigns & Rewards V1.26 release hardening: the production artifact must contain
           # the canonical cognitive loop, live-session/event foundation and user surfaces.

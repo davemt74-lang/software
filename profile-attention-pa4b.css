@@ -1,0 +1,19 @@
+/* Profile attention shares the canvas/page scroll surface. */
+.profile-attention-section{min-width:0;padding:12px 0;color:#172538;font:14px/1.5 system-ui,sans-serif}
+.profile-attention-section>.chat-activity-section-head{align-items:flex-start;flex-wrap:wrap}
+.profile-attention-section .chat-activity-section-head p{margin:4px 0;color:#526277;font-size:13px;overflow-wrap:anywhere}
+.profile-attention-card{min-width:0;margin:10px 14px;padding:14px;border:1px solid #dbe3ec;border-radius:12px;background:#fff;overflow-wrap:anywhere;font:14px/1.55 system-ui,sans-serif;color:#172538}
+.profile-attention-card.in-chat{margin:10px 0 0}
+.profile-attention-card>strong{display:block;margin:4px 0;font-size:15px}
+.profile-attention-source,.profile-attention-state{font-size:12px;color:#526277}
+.profile-attention-text{margin:8px 0;white-space:pre-wrap}
+.profile-attention-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.profile-attention-actions button,.profile-attention-section>div>button,[data-profile-attention-card]>button{min-height:44px;max-width:100%;padding:8px 12px;border:1px solid #c5cfdb;border-radius:8px;background:#fff;color:#24374d;font:600 13px/1.4 system-ui,sans-serif;white-space:normal;cursor:pointer}
+.profile-attention-actions button:disabled{opacity:.6;cursor:default}
+.profile-attention-error{color:#9f321f;font-size:13px;overflow-wrap:anywhere}
+.profile-attention-pages{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:14px}
+.profile-attention-pages button{min-height:44px;padding:8px 14px;border:1px solid #c5cfdb;border-radius:8px;background:#fff;color:#24374d;font:600 13px/1.4 system-ui,sans-serif;cursor:pointer}
+.profile-attention-pages button:disabled{opacity:.55;cursor:default}
+.profile-attention-pages span,.profile-attention-page-note{color:#526277;font-size:12px}
+.profile-attention-page-note{margin:4px 14px 12px}
+@media(max-width:420px){.profile-attention-card{margin-inline:10px;padding:12px}.profile-attention-card.in-chat{margin-inline:0}.profile-attention-actions button{flex:1 1 130px}}

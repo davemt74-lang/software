@@ -9,7 +9,8 @@ final class ProfileOwnerApiFixturePDO extends PDO
     {
         $fault=(string)($_SERVER['HTTP_X_FIXTURE_FAULT']??'');
         if(($fault==='insert'&&str_starts_with($sql,'INSERT INTO profile_agent_messages'))
-           ||($fault==='after_insert'&&str_starts_with($sql,'UPDATE profile_agent_conversations'))){
+           ||($fault==='after_insert'&&str_starts_with($sql,'UPDATE profile_agent_conversations'))
+           ||($fault==='event_insert'&&str_starts_with($sql,'INSERT INTO profile_events'))){
             throw new PDOException('SECRET SQLSTATE fixture provider credential /private/config.php');
         }
         if($this->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')$sql=str_replace(' FOR UPDATE','',$sql);
@@ -73,3 +74,11 @@ function profile_by_username(PDO $pdo,string $username): ?array
     return null;
 }
 require_once __DIR__.'/profile-agent-boundary-v390.php';
+// Keep controlled settings/identity adapters above, but execute the canonical
+// event writer unchanged. Historical conversations have real session/event
+// storage; missing browser binding must not be fabricated by this fixture.
+$eventSource=file_get_contents(__DIR__.'/profile-agent.php');
+$eventStart=strpos($eventSource,'function profile_event_create(');
+$eventEnd=$eventStart===false?false:strpos($eventSource,"\nfunction profile_attention_from_event(",$eventStart);
+if($eventStart===false||$eventEnd===false)throw new RuntimeException('Canonical Profile event producer was not found.');
+eval(substr($eventSource,$eventStart,$eventEnd-$eventStart));

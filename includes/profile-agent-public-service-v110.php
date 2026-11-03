@@ -133,8 +133,9 @@ function vp3_profile_agent_public_bound_conversation_v1(PDO $pdo,array $ctx,int 
 function vp3_profile_agent_public_create_bound_v1(PDO $pdo,array $ctx): array
 {
     $session=vp3_profile_agent_public_event_session_v1($ctx);
-    $conversation=profile_agent_conversation_create($pdo,$ctx['profile'],$ctx['agent'],$session);
+    $conversation=profile_agent_conversation_create($pdo,$ctx['profile'],$ctx['agent'],$session,true);
     vp3_profile_agent_conversation_bind_v1($pdo,$conversation,$ctx['conversation_authority']);
+    profile_agent_conversation_started_pa4b($pdo,$ctx['profile'],$ctx['agent'],$session,(int)$conversation['id']);
     return $conversation;
 }
 
@@ -426,6 +427,8 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         }
         $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'agent',NULL,?,?)")
             ->execute([$cid,$answer,json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
+        $answerMessageId=(int)$pdo->lastInsertId();
+        if(function_exists('vp3_profile_attention_message_sent_pa4b'))vp3_profile_attention_message_sent_pa4b($pdo,$current,$answerMessageId);
         $pdo->prepare('UPDATE profile_agent_conversations SET last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')
             ->execute([$cid,$owner,$agentId,$sessionId]);
         if(!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$context,$historySources))vp3_profile_agent_public_unavailable_v1();

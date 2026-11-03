@@ -42,6 +42,30 @@ function notification_system_sql_predicate(string $alias = ''): string
     return 'NOT ' . notification_agent_brain_sql_predicate($alias);
 }
 
+/** Known legacy Profile rows require saved native source proof before display. */
+function notification_is_profile_source_pa4b(array $row): bool
+{
+    if(($row['source_type']??'')==='radar_event')return false;
+    return ($row['source_type']??'')==='profile_event'||in_array($row['type']??'',['profile_view','profile_profile_view','profile_conversation_started','profile_message_received','profile_needs_owner','profile_return_visitor'],true);
+}
+function notification_profile_projection_pa4b(PDO $pdo,array $user,array $row): array
+{
+    if(!notification_is_profile_source_pa4b($row))return $row;
+    $safe=array_replace($row,['title'=>'Profile attention','body'=>'The saved Profile source is unavailable for current presentation.','target_url'=>url('/profile-agent.php?tab=attention'),'attention_prompt'=>'Review the saved Profile activity.','voice_allowed'=>false,'presentation_owner'=>'profile_attention_pa4b','source_status'=>'historical_unverified','source_label'=>'Profile source','source_role'=>'system','source_complete'=>false,'attention_id'=>0,'state_revision'=>0,'wake_generation'=>0,'can_read'=>false]);
+    if(!function_exists('vp3_profile_attention_source_pa4b')||($row['source_type']??'')!=='profile_event')return $safe;
+    try{
+        $source=vp3_profile_attention_source_pa4b($pdo,$user,(int)$row['id']);
+        $safe['source_status']=$source['status'];$safe['source_complete']=true;$safe['presentation_owner']=$source['presentation_owner'];
+        $safe['attention_id']=(int)$source['attention']['id'];$safe['state_revision']=(int)$source['attention']['state_revision'];$safe['wake_generation']=(int)$source['attention']['wake_generation'];$safe['can_read']=(int)$source['attention']['read_generation']<(int)$source['attention']['wake_generation'];
+        if($source['status']==='verified'){
+            $safe['title']=mb_substr($source['projection']['title'],0,240);$safe['body']=$source['projection']['body'];
+            $safe['source_label']=$source['projection']['speaker_label'];$safe['source_role']=$source['projection']['actor_role'];
+            $safe['target_url']=$source['public_conversation_id']>0?url('/profile-agent.php?tab=inbox&conversation='.$source['public_conversation_id']):url('/profile-agent.php?tab=visitors&session='.$source['profile_session_id']);
+        }
+    }catch(Throwable $error){$safe['source_status']='unavailable';}
+    return $safe;
+}
+
 function notification_unread_count(?array $user = null): int
 {
     $user ??= current_user();
@@ -83,7 +107,7 @@ function notification_recent(?array $user = null, int $limit = 8): array
              LIMIT ' . max(1, min(200, $limit))
         );
         $stmt->execute([(int)$user['id']]);
-        return $stmt->fetchAll();
+        return array_map(static fn(array $row):array=>notification_profile_projection_pa4b($pdo,$user,$row),$stmt->fetchAll());
     } catch (Throwable $e) {
         return [];
     }
@@ -276,7 +300,7 @@ function notification_attention_after(?array $user, int $afterId = 0, int $limit
                 $stmt->execute([(int)$user['id']]);
             }
         }
-        $rows = $stmt->fetchAll() ?: [];
+        $rows = array_map(static fn(array $row):array=>notification_profile_projection_pa4b($pdo,$user,$row),$stmt->fetchAll() ?: []);
         if ($afterId < 1) $rows = array_reverse($rows);
         return array_values(array_filter($rows, 'notification_requires_attention'));
     } catch (Throwable $e) {
@@ -444,10 +468,11 @@ function mark_notification_read(int $notificationId, int $userId): void
         return;
     }
 
+    $profileGuard=function_exists('vp3_profile_attention_schema_ready_pa4b')?" AND COALESCE(source_type,'')<>'profile_event'":'';
     $stmt = $pdo->prepare(
         'UPDATE notifications
          SET is_read=1,read_at=COALESCE(read_at,NOW())
-         WHERE id=? AND user_id=? AND ' . notification_system_sql_predicate()
+         WHERE id=? AND user_id=? AND ' . notification_system_sql_predicate().$profileGuard
     );
     $stmt->execute([$notificationId, $userId]);
     if($stmt->rowCount()>0&&function_exists('vp3_cognitive_notification_event_v2380'))vp3_cognitive_notification_event_v2380($pdo,$userId,'notification.read',$notificationId);
@@ -460,10 +485,11 @@ function mark_all_notifications_read(int $userId): void
         return;
     }
 
+    $profileGuard=function_exists('vp3_profile_attention_schema_ready_pa4b')?" AND COALESCE(source_type,'')<>'profile_event'":'';
     $stmt = $pdo->prepare(
         'UPDATE notifications
          SET is_read=1,read_at=COALESCE(read_at,NOW())
-         WHERE user_id=? AND is_read=0 AND ' . notification_system_sql_predicate()
+         WHERE user_id=? AND is_read=0 AND ' . notification_system_sql_predicate().$profileGuard
     );
     $stmt->execute([$userId]);
 }
@@ -480,18 +506,22 @@ function notification_is_profile_attention_v1341(array $row): bool
 function notification_profile_attention_after_v1341(array $user,int $afterId=0,int $limit=25): array
 {
     $pdo=db();$afterId=max(0,$afterId);$limit=max(1,min(25,$limit));
-    $out=['ok'=>true,'latest_id'=>$afterId,'items'=>[]];
-    if(!$pdo||!table_exists('notifications'))return $out;
+    $out=['ok'=>true,'complete'=>true,'voice_allowed'=>false,'latest_id'=>$afterId,'items'=>[]];
+    if(!$pdo||!table_exists('notifications'))return ['ok'=>false,'complete'=>false,'voice_allowed'=>false,'latest_id'=>$afterId,'items'=>[],'error'=>'Notification state is unavailable.'];
+    // The revision-aware controller owns all Profile sources. Legacy polling
+    // remains available for its existing non-Profile attention integrations.
+    $profileGuard=function_exists('vp3_profile_attention_schema_ready_pa4b')?" AND COALESCE(n.source_type,'')<>'profile_event'":'';
     $predicate=notification_system_sql_predicate('n');
     $hasAttention=table_exists('agent_attention_items');
     $active=$hasAttention?"NOT EXISTS (SELECT 1 FROM agent_attention_items a WHERE n.source_type='profile_event' AND a.source_event_id=n.source_id AND a.owner_user_id=n.user_id AND (a.status IN ('handled','ignored') OR (a.status='snoozed' AND a.snoozed_until>UTC_TIMESTAMP())))":'1=1';
     $wake=$hasAttention?" OR (n.source_type='profile_event' AND EXISTS (SELECT 1 FROM agent_attention_items a WHERE a.source_event_id=n.source_id AND a.owner_user_id=n.user_id AND a.status='snoozed' AND a.snoozed_until<=UTC_TIMESTAMP()))":'';
     $s=$pdo->prepare("SELECT n.* FROM notifications n WHERE n.user_id=? AND (n.id>? {$wake}) AND n.is_read=0 AND {$active}
       AND n.created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 7 DAY) AND {$predicate}
-      AND (n.source_type IN ('profile_event','radar_event') OR n.type IN ('profile_view','profile_profile_view','profile_conversation_started'))
+      AND (n.source_type IN ('profile_event','radar_event') OR n.type IN ('profile_view','profile_profile_view','profile_conversation_started')) {$profileGuard}
       ORDER BY n.id ASC LIMIT 50");
     $s->execute([(int)$user['id'],$afterId]);
     foreach($s->fetchAll()?:[] as $row){
+        $row=notification_profile_projection_pa4b($pdo,$user,$row);
         $out['latest_id']=max($out['latest_id'],(int)$row['id']);
         if(notification_is_profile_attention_v1341($row)){
             $out['items'][]=['id'=>(int)$row['id'],'type'=>(string)$row['type'],'title'=>(string)$row['title'],'body'=>(string)$row['body'],'target_url'=>(string)$row['target_url'],'prompt'=>notification_attention_prompt($row)];

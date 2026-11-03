@@ -286,6 +286,11 @@ function vp3_profile_speech_delivery_pa4a(PDO $pdo,array $user,array $input): ar
             $pdo->prepare('UPDATE profile_speech_items_pa4a SET delivery_id=?,chat_conversation_id=?,chat_agent_id=?,chat_message_id=?,tab_id=?,client_hash=?,revision=revision+1,updated_at_ms=? WHERE id=?')->execute([bin2hex(random_bytes(16)),$scope['chat_conversation_id'],$scope['chat_agent_id'],$messageId,$scope['tab_id'],$scope['client_hash'],$now,$id]);
         }
         $item=vp3_profile_speech_item_pa4a($pdo,$id,true);$bound=$scope+['chat_message_id'=>$messageId,'delivery_id'=>$item['delivery_id']];vp3_profile_speech_delivery_check_pa4a($pdo,$item,$bound);$source=vp3_profile_speech_source_pa4a($pdo,$item,true);vp3_profile_speech_owner_pa4a($pdo,$user,$scope);
+        if(function_exists('vp3_profile_projection_schema_ready_pa4b')&&vp3_profile_projection_schema_ready_pa4b($pdo)){
+            $destination=['chat_conversation_id'=>$scope['chat_conversation_id'],'chat_agent_id'=>$scope['chat_agent_id'],'chat_message_id'=>$messageId];
+            if($item['kind']==='arrival'&&(int)$item['source_event_id']>0){$eventSource=vp3_profile_projection_source_pa4b($pdo,(int)$user['id'],(int)$item['source_event_id']);vp3_profile_projection_capture_marker_pa4b($pdo,$eventSource,$destination);}
+            elseif($item['kind']==='visitor_message')vp3_profile_projection_oblige_message_marker_pa4b($pdo,(int)$user['id'],(int)$item['visitor_message_id'],$destination);
+        }
         return ['contract'=>VP3_PROFILE_SPEECH_PA4A,'item'=>vp3_profile_speech_projection_pa4a($pdo,$item,$source,$scope),'delivery_id'=>$item['delivery_id'],'chat_conversation_id'=>$scope['chat_conversation_id'],'chat_agent_id'=>$scope['chat_agent_id'],'chat_message_id'=>$messageId,'server_now_ms'=>$now];
     });
 }

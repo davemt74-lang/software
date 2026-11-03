@@ -30,6 +30,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 <title>Profile Agent | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=agent-radar-interface-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-attention-pa4b.css?v='.substr(hash_file('sha256',__DIR__.'/profile-attention-pa4b.css'),0,12))) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-radar.css?v=agent-radar-interface-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-radar-sites.css?v=agent-manifest-messaging-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-radar-gateway.css?v=agent-access-controls-20260906')) ?>">
@@ -169,7 +170,12 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
   'initialTab'=>(string)($_GET['tab'] ?? ''),
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;</script>
 <script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script>
-<script src="<?= e(url('/profile-agent-portal.js?v=profile-owner-safety-pa1-20261103')) ?>"></script>
+<script>window.PROFILE_ATTENTION_PA4B_CONFIG=<?= json_encode([
+  'endpoint'=>url('/api/chat-notifications-brain-v240.php'),
+  'csrfToken'=>csrf_token(),
+], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
+<script src="<?= e(url('/profile-attention-pa4b.js?v='.substr(hash_file('sha256',__DIR__.'/profile-attention-pa4b.js'),0,12))) ?>"></script>
+<script src="<?= e(url('/profile-agent-portal.js?v='.substr(hash_file('sha256',__DIR__.'/profile-agent-portal.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-agent-radar-sites.js?v=agent-manifest-messaging-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-radar-gateway.js?v=agent-access-controls-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-access-requests.js?v=agent-messaging-20260906')) ?>"></script>

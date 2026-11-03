@@ -1387,6 +1387,7 @@
       profile_handoff:raw.profile_handoff && typeof raw.profile_handoff==='object' ? raw.profile_handoff : null,
       profile_call:raw.profile_call && typeof raw.profile_call==='object' ? raw.profile_call : null,
       profile_speech:raw.profile_speech && typeof raw.profile_speech==='object' ? raw.profile_speech : null,
+      profile_attention:raw.profile_attention && typeof raw.profile_attention==='object' ? raw.profile_attention : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1629,6 +1630,12 @@
     element.dataset.profileSpeechKind=marker.kind;element.dataset.profileSpeechConversation=String(marker.public_conversation_id);
     window.dispatchEvent(new CustomEvent('vp3:profile-speech-message',{detail:{element}}));
   }
+  function bindProfileAttentionPa4b(element,marker){
+    if(!element||marker?.contract!=='vp3.profile-attention.v1'||!['delivery_id','attention_id','notification_id','wake_generation'].every(key=>Number.isSafeInteger(marker[key])&&marker[key]>0))return;
+    element.dataset.profileAttentionDelivery=String(marker.delivery_id);element.dataset.profileAttentionId=String(marker.attention_id);
+    element.dataset.profileAttentionNotification=String(marker.notification_id);element.dataset.profileAttentionWake=String(marker.wake_generation);
+    window.dispatchEvent(new CustomEvent('vp3:profile-attention-message',{detail:{element}}));
+  }
 
   let initializingConversationPa3=null;
   async function ensureConversationPa3() {
@@ -1696,6 +1703,17 @@
     const previousScroll=thread.scrollTop,nearBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<100;
     const element=addMessage('assistant','Profile visitor announcement.');
     bindStoredMessagePa3(element,id);bindProfileSpeechPa4a(element,{...item,item_id:item.id,contract:'vp3.profile-speech.v1'});
+    if(!nearBottom)thread.scrollTop=previousScroll;return element;
+  }
+  function mountProfileAttentionPa4b(delivery){
+    const item=delivery?.item,id=item?.chat_message_id;
+    if(!contextReady||restoringConversation||thread.dataset.view!=='chat'||delivery?.contract!=='vp3.profile-attention.v1'||
+      !item||item.delivery_location!=='current'||item.chat_conversation_id!==conversationId||item.chat_agent_id!==Number(cfg.agentId||0)||
+      !['delivery_id','attention_id','notification_id','wake_generation','chat_message_id'].every(key=>Number.isSafeInteger(item[key])&&item[key]>0))return null;
+    const existing=thread.querySelector('[data-chat-message-id="'+id+'"]');
+    if(existing)return Number(existing.dataset.chatConversationId)===conversationId&&Number(existing.dataset.profileAttentionDelivery)===item.delivery_id&&Number(existing.dataset.profileAttentionId)===item.attention_id&&Number(existing.dataset.profileAttentionNotification)===item.notification_id&&Number(existing.dataset.profileAttentionWake)===item.wake_generation?existing:null;
+    const previousScroll=thread.scrollTop,nearBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<100;
+    const element=addMessage('assistant','Profile attention update.');bindStoredMessagePa3(element,id);bindProfileAttentionPa4b(element,{contract:'vp3.profile-attention.v1',...item});
     if(!nearBottom)thread.scrollTop=previousScroll;return element;
   }
 
@@ -3158,6 +3176,7 @@
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
+      if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
 
@@ -3187,6 +3206,7 @@
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
+      if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory(signal);
@@ -3519,6 +3539,7 @@
     mountProfileHandoff:mountProfileHandoffPa3,
     mountProfileCall:mountProfileCallPa3c,
     mountProfileSpeech:mountProfileSpeechPa4a,
+    mountProfileAttention:mountProfileAttentionPa4b,
     isRestoring:() => initialRestorePending || restoringConversation > 0,
     isReady:() => contextReady,
     isBusy:() => busy || initialRestorePending || restoringConversation > 0,

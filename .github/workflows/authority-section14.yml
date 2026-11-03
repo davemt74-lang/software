@@ -128,6 +128,24 @@ jobs:
           php tests/profile-speech-provider-pa4a.php
           php tests/profile-speech-concurrency-pa4a.php
           node tests/profile-speech-api-pa4a.mjs
+      - name: Profile attention PA4B lifecycle, exact routing and local projection recovery
+        run: |
+          php tests/profile-attention-install-pa4b.php
+          php tests/profile-attention-pa4b.php
+          php tests/profile-event-projection-pa4b.php
+          node tests/profile-attention-api-pa4b.mjs
+          node tests/profile-attention-pa4b.mjs
+      - name: Profile attention PA4B MySQL state changes and projection recovery
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-attention-install-pa4b.php
+          php tests/profile-attention-pa4b.php
+          php tests/profile-event-projection-pa4b.php
+          php tests/profile-attention-concurrency-pa4b.php
+          node tests/profile-attention-api-pa4b.mjs
   profile_owner_browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -152,3 +170,5 @@ jobs:
         run: node tests/profile-chat-choice-pa3d-browser.mjs
       - name: Profile visitor announcements, playback and exact dictated reply review
         run: node tests/profile-speech-pa4a-browser.mjs
+      - name: Profile attention snooze, explicit handling and current Chat routing
+        run: node tests/profile-attention-pa4b-browser.mjs
