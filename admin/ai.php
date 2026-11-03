@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_permission('ai.manage');
+require_once dirname(__DIR__).'/includes/agent-image-provider-v1.php';
 require_once dirname(__DIR__).'/includes/ai-credential-recovery.php';
 header('Cache-Control: no-store');
 

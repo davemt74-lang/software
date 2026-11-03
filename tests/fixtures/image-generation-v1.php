@@ -2,6 +2,7 @@
 declare(strict_types=1);
 $imageFixtureRoot=basename(__DIR__)==='includes'?dirname(__DIR__):dirname(__DIR__,2);
 require_once $imageFixtureRoot.'/includes/agent-capability-chat-v1.php';
+require_once $imageFixtureRoot.'/includes/agent-worker-cloud-v1910.php';
 require_once $imageFixtureRoot.'/includes/knowledge-retrieval-v162.php';
 require_once $imageFixtureRoot.'/includes/agent-chat-boundary-v380.php';
 require_once $imageFixtureRoot.'/includes/user-agent-system-v236.php';

@@ -1,7 +1,6 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/agent-image-provider-v1.php';
-require_once __DIR__.'/agent-worker-cloud-v1910.php';
 
 function vp3_image_schema_v1(PDO $pdo): void
 {
@@ -24,6 +23,7 @@ function vp3_image_authority_v1(PDO $pdo,array $user,array $row): array
 }
 function vp3_image_run_v1(PDO $pdo,array $user,array $row,bool $lock=false): array
 {
+    require_once __DIR__.'/agent-worker-cloud-v1910.php';
     $run=agent_workflow_row_v1400($pdo,(int)$user['id'],(int)$row['run_id'],$lock);
     if(!$run||$run['source_kind']!=='image_generation'||$run['source_key']!==$row['generation_id']||(int)($run['agent_id']??0)!==(int)$row['agent_id']||$run['execution_target']!=='cloud'||$run['capability_key']!=='images.generate')throw new RuntimeException('Image job binding is unavailable.',409);
     return $run;
@@ -41,6 +41,7 @@ function vp3_image_view_v1(PDO $pdo,array $user,array $row): array
 /** The canonical workflow is the execution queue; this table binds prompt, turn and output. */
 function vp3_image_queue_v1(PDO $pdo,array $user,array $principal,array $plan,array $context): array
 {
+    require_once __DIR__.'/agent-worker-cloud-v1910.php';
     $user=vp3_image_scope_v1($pdo,$user,$principal,$context);$uid=(int)$user['id'];$cid=(int)$context['conversation_id'];$aid=($principal['kind']??'')==='user_agent'?(int)$principal['agent_id']:0;$turn=(int)($context['chat_user_message_id']??0);
     if(!subscription_has_entitlement($user,'main_ai.access'))throw new RuntimeException('AI image generation is not included in this account.',403);
     if(!agent_job_engine_schema_ready_v1900($pdo)||!agent_job_control_ready_v1900($pdo)||!media_studio_schema_ready())throw new RuntimeException('Image generation needs the current job and Media Studio database upgrade.',503);
@@ -63,6 +64,7 @@ function vp3_image_queue_v1(PDO $pdo,array $user,array $principal,array $plan,ar
 
 function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $transport=null): array
 {
+    require_once __DIR__.'/agent-worker-cloud-v1910.php';
     $run=agent_worker_cloud_active_row_v1910($pdo,$user,$claim);if(!$run||$run['action_capability_key']!=='images.generate'||$run['source_kind']!=='image_generation')throw new RuntimeException('Image execution lease is unavailable.',409);
     $row=vp3_image_row_v1($pdo,$user,$run['source_key']);$bound=vp3_image_run_v1($pdo,$user,$row);if((int)$bound['id']!==(int)$run['id']||$run['action_key']!==$row['generation_id'])throw new RuntimeException('Image action binding changed.',409);$reservation=0;$file='';$createdFile=false;$committed=false;$sent=false;
     try{
