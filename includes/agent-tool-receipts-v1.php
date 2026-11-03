@@ -20,6 +20,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'system_apps.permissions.read'=>['inspect'],
         'apps.user.read'=>['list'],
         'apps.shares.read'=>['list'],
+        'feeds.vrss.read'=>['list'],
         'apps.manager.read'=>['list'],
         'apps.workspace.read'=>['inspect'],
         'tv.history.read'=>['list'],
@@ -71,8 +72,15 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     $write=($cap==='images.generate'&&$op==='queue')||($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
     if($status==='completed'&&(!$write||$reason!==''))return null;
     if(in_array($status,['read_complete','no_matches'],true)&&$reason!=='')return null;
+    $extra=[];
+    if(array_key_exists('vrss_outcome',$value)){
+        require_once __DIR__.'/agent-vrss-outcomes-v1.php';
+        $summary=vp3_vrss_outcome_summary_v1($value['vrss_outcome']);
+        if($cap!=='system_apps.manage'||$op!=='confirm'||!in_array($status,['completed','read_complete'],true)||$summary===null)return null;
+        $extra['vrss_outcome']=$summary;
+    }
     return ['contract'=>'vp3.tool-receipt.v1','capability'=>$cap,'operation'=>$op,'status'=>$status,'reason'=>$reason,
-        'record_id'=>$value['record_id'],'count'=>$value['count'],'checked_at'=>$at,'changes_applied'=>$status==='completed'&&$write];
+        'record_id'=>$value['record_id'],'count'=>$value['count'],'checked_at'=>$at,'changes_applied'=>$status==='completed'&&$write,...$extra];
 }
 
 function vp3_tool_last_receipt_v1(PDO $pdo,array $user,array $context): ?array
@@ -86,6 +94,16 @@ function vp3_tool_last_receipt_v1(PDO $pdo,array $user,array $context): ?array
     if((int)$pending->fetchColumn()>1)return null;
     try{$data=json_decode((string)$row['context_json'],true,32,JSON_THROW_ON_ERROR);}catch(Throwable $e){return null;}
     $receipt=vp3_tool_receipt_normalize_v1($data['tool_receipt']??null);
+    // Historical generic VRSS success cannot regain a final-completion claim through diagnosis.
+    if($receipt&&($data['system_app_plan']['action_type']??null)==='vrss.invoke'&&$receipt['capability']==='system_apps.manage'&&$receipt['operation']==='confirm'){
+        require_once __DIR__.'/agent-vrss-outcomes-v1.php';
+        $safe=vp3_vrss_saved_outcome_v1($data['system_app_plan']['result']??null);
+        if(!$safe['verified']||!in_array($receipt['status'],['completed','read_complete'],true)||
+            (isset($receipt['vrss_outcome'])&&$receipt['vrss_outcome']!==$safe['vrss_outcome'])){
+            unset($receipt['vrss_outcome']);$receipt['status']='failed';$receipt['reason']='outcome_unverified';
+        }else $receipt['vrss_outcome']=$safe['vrss_outcome'];
+        $receipt=vp3_tool_receipt_normalize_v1($receipt);
+    }
     return $receipt?['message_id'=>(int)$row['id'],'receipt'=>$receipt]:null;
 }
 
@@ -93,6 +111,12 @@ function vp3_tool_diagnosis_v1(?array $last): string
 {
     if(($last['receipt']['capability']??'')==='images.generate'&&($last['receipt']['status']??'')==='completed')return 'The image request was queued. Its Chat canvas card shows whether the image was generated and saved; a queue receipt alone does not confirm image completion.';
     if(!$last)return 'The preceding response has no verified tool receipt. I cannot confirm an action or diagnose its failure from the response text alone. Ask me to check the relevant capability or record.';
+    if(array_key_exists('vrss_outcome',$last['receipt']??[])){
+        $r=vp3_tool_receipt_normalize_v1($last['receipt']);
+        if(!$r)return 'The preceding VRSS outcome receipt could not be verified. Check Feed before preparing another request.';
+        $safe=['ok'=>true,'verified'=>true,'reconcile_pending'=>false,'rolled_back'=>false,'vrss_outcome'=>$r['vrss_outcome']];
+        return vp3_vrss_action_text_v1($safe,$r['status']==='read_complete').' Recorded at '.$r['checked_at'].'. This is the saved outcome of that turn; current state may have changed.';
+    }
     $r=$last['receipt'];$label=[
         'read_complete'=>'the read completed','no_matches'=>'the read completed with no matching records',
         'completed'=>'the requested change completed','clarification_required'=>'the executor needed clarification or confirmation; no change was completed',

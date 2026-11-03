@@ -17,6 +17,7 @@ fs.copyFileSync('tests/fixtures/app-agent-remote-v1.php',path.join(tmp,'includes
 fs.copyFileSync('tests/fixtures/system-app-agent-schema-v1.php',path.join(tmp,'includes/system-app-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/app-operation-schema-v1.php',path.join(tmp,'includes/app-operation-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/private-share-agent-v1.php',path.join(tmp,'includes/private-share-agent-v1.php'));
+fs.copyFileSync('tests/fixtures/vrss-agent-v1.php',path.join(tmp,'includes/vrss-agent-v1.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
@@ -28,6 +29,7 @@ async function post(endpoint,message,extra={},headers={}){
  return {r,data,body};
 }
 const state=async()=>await(await fetch(base+'/state.php')).json();
+const vrssCalls=()=>fs.existsSync(path.join(tmp,'vrss-calls.jsonl'))?fs.readFileSync(path.join(tmp,'vrss-calls.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
 function check(ok,why){assert.ok(ok,why);checks++;console.log('PASS '+why.split(': {')[0]);}
 try{
  for(let i=0;i<60;i++){try{await fetch(base+'/state.php');break;}catch{await new Promise(r=>setTimeout(r,50));}}
@@ -344,6 +346,73 @@ try{
   check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('Kitchen Notes')&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' malformed share storage cannot produce partial success or leak raw fields');
   response=await post(endpoint,'Can you read private app shares?',context,{...headers,'X-Fixture-Private-Share-Mode':'invalid_status','X-Fixture-Participant-Owner-Plan':JSON.stringify({operation:'inspect',ids:['apps.shares.read']})});
   check(response.data?.tool_receipt?.capability==='capabilities.inspect'&&response.data.tool_receipt.status==='read_complete'&&!response.data.answer.includes('Kitchen Notes'),endpoint+' capability inspection does not retrieve private-share rows');
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const context=endpoint.includes('stream')?{agent_context:{user_agent_id:7}}:{};
+  const postUrl='https://social.example/vrss/v1/posts/11111111-1111-4111-8111-111111111111';
+  const baseHeaders={'X-Fixture-Vrss-Ready':'1'};
+  const route=plan=>({...baseHeaders,'X-Fixture-Participant-Owner-Plan':JSON.stringify(plan)});
+  const planFor=view=>({operation:'vrss_read',ids:['feeds.vrss.read'],view,...(['likes','reposts','comments','thread'].includes(view)?{url:postUrl}:{}),...(['comments','thread'].includes(view)?{cursor:'0'}:{})});
+  const views=[['subscriptions','vrss.status','Fixture Kitchen Journal'],['posts','vrss.feed','Fixture Desert News'],['connections','vrss.social.status','Fixture Publisher'],['likes','vrss.social.reactions','2 likes'],['reposts','vrss.social.reposts','2 reposts'],['comments','vrss.social.comments','Fixture public comment'],['conversations','vrss.social.conversations','conversation settings'],['thread','vrss.social.thread','Fixture conversation reply']];
+  let response;
+  for(const [view,action,marker] of views){
+   const before=vrssCalls().length;
+   response=await post(endpoint,'Show VRSS '+view+(planFor(view).url?' '+postUrl:''),context,route(planFor(view)));
+   check(response.data?.tool_receipt?.capability==='feeds.vrss.read'&&response.data.tool_receipt.status==='read_complete'&&!response.data.tool_receipt.changes_applied&&response.data.answer.includes(marker),endpoint+' verified '+view+' uses shared read receipt: '+response.body);
+   const calls=vrssCalls();check(calls.length===before+1&&calls.at(-1)[2].action===action&&calls.at(-1)[2].app_key==='vp3.feed'&&calls.at(-1)[2].confirmed===false&&!JSON.stringify(response.data).includes('SECRET')&&!response.data.vrss,endpoint+' '+view+' is one authorized read with no raw provider payload');
+  }
+  for(const mode of ['offline','wrong_app','wrong_action','missing_result','bad_result','missing_projection','bad_row']){
+   response=await post(endpoint,'Show my VRSS posts',context,{...route(planFor('posts')),'X-Fixture-Vrss-Mode':mode});
+   check(response.data?.tool_receipt?.status==='failed'&&!response.data.answer.includes('Fixture Desert News')&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' VRSS '+mode+' cannot masquerade as a successful or empty read');
+  }
+  response=await post(endpoint,'Show my VRSS posts',context,{...route(planFor('posts')),'X-Fixture-Vrss-Mode':'empty'});
+  check(response.data?.tool_receipt?.status==='no_matches'&&response.data.tool_receipt.count===0,endpoint+' an explicitly empty feed page is distinct from unavailable data');
+  response=await post(endpoint,'Show VRSS likes '+postUrl,context,{...route(planFor('likes')),'X-Fixture-Vrss-Mode':'missing_count'});
+  check(response.data?.tool_receipt?.status==='failed',endpoint+' omitted author count cannot become zero');
+  response=await post(endpoint,'Show VRSS likes '+postUrl,context,{...route(planFor('likes')),'X-Fixture-Vrss-Mode':'unavailable_count'});
+  check(response.data?.tool_receipt?.status==='read_complete'&&response.data.answer.includes('unavailable')&&!response.data.answer.includes('0 likes'),endpoint+' explicitly unavailable author count remains unavailable');
+  let before=vrssCalls().length;
+  response=await post(endpoint,'Can you read and manage VRSS feeds?',context,{...route({operation:'inspect',ids:['feeds.vrss.read','feeds.vrss.manage']}),'X-Fixture-Vrss-Mode':'offline'});
+  check(response.data?.tool_receipt?.capability==='capabilities.inspect'&&vrssCalls().length===before&&!response.data.answer.includes('Fixture'),endpoint+' feed capability inspection performs no remote read');
+  response=await post(endpoint,'Show VRSS posts',context,route({...planFor('posts'),url:postUrl}));
+  check(response.data?.tool_receipt?.reason==='invalid_plan'&&vrssCalls().length===before,endpoint+' read plan rejects unrelated URL selectors before I/O');
+  response=await post(endpoint,'Show VRSS posts',context,route({...planFor('posts'),ids:['feeds.vrss.manage']}));
+  check(response.data?.tool_receipt?.reason==='invalid_plan'&&vrssCalls().length===before,endpoint+' write capability cannot authorize a read plan');
+  response=await post(endpoint,'Show VRSS posts',context,{...route(planFor('posts')),'X-Fixture-Vrss-Mode':'revoke'});
+  check(response.data?.tool_receipt?.status==='blocked'&&!response.data.answer.includes('Fixture Desert News'),endpoint+' owner deactivation during the read discards remote content');
+  response=await post(endpoint,'Show VRSS posts',context,route(planFor('posts')));
+  const swapCid=response.data.conversation_id;
+  response=await post(endpoint,'Show VRSS posts',{...context,conversation_id:swapCid},{...route(planFor('posts')),'X-Fixture-Vrss-Mode':'swap','X-Fixture-Vrss-Conversation':String(swapCid)});
+  check(response.data?.tool_receipt?.status==='blocked'&&!response.data.answer.includes('Fixture Desert News'),endpoint+' changed conversation Agent discards remote content');
+  for(const [command,action,mode,label] of [['refresh my feed','vrss.refresh_all','success','Queued'],['like VRSS '+postUrl,'vrss.social.like','success','Pending'],['refresh my feed','vrss.refresh_all','missing_projection','']]){
+   before=vrssCalls().length;
+   response=await post(endpoint,command,context,route({operation:'continue',ids:[]}));
+   const plan=response.data?.system_app_plan,cid=response.data?.conversation_id;
+   check(plan?.requires_confirmation===true&&plan.preview.operation===action&&vrssCalls().length===before,endpoint+' '+action+' saves a bound confirmation before any remote change: '+response.body);
+   const headers={...route({operation:'system_apps_action',ids:['system_apps.manage'],action:'confirm',code:plan.confirmation_code}),'X-Fixture-Vrss-Mode':mode};
+   response=await post(endpoint,'confirm app '+plan.confirmation_code,{...context,conversation_id:cid},headers);
+   const card=response.data?.system_app_action_card;
+   check(vrssCalls().length===before+1&&vrssCalls().at(-1)[2].confirmed===true&&response.data?.tool_receipt?.status===(label?'completed':'failed'),endpoint+' '+action+' confirms once and reports '+(label||'unverified')+': '+response.body);
+   check(card?.status===(label?'recorded':'failed')&&(!label||card.outcome_label===label)&&!card.confirmation_code&&!card.actions.some(a=>a.type==='prompt')&&!JSON.stringify(response.data).includes('SECRET')&&!response.data.answer.includes('completed with a verified result'),endpoint+' feed card and answer preserve the observed outcome phase');
+   if(label==='Queued')check(response.data.answer.includes('queued')&&!response.data.system_app_plan.result.vrss_outcome.final_verified,endpoint+' a queued refresh is not a completed refresh');
+   if(label==='Pending')check(/pending|waiting for delivery/i.test(response.data.answer)&&!response.data.system_app_plan.result.vrss_outcome.final_verified,endpoint+' pending delivery is not a published interaction');
+   response=await post(endpoint,'confirm app '+plan.confirmation_code,{...context,conversation_id:cid},headers);
+   check(response.data?.system_app_plan?.idempotent_replay===true&&vrssCalls().length===before+1&&response.data?.tool_receipt?.status===(label?'read_complete':'failed')&&!response.data.tool_receipt.changes_applied,endpoint+' repeated feed confirmation reads its recorded outcome without a second effect');
+   response=await post(endpoint,'Did that finish?',{...context,conversation_id:cid},route({operation:'diagnose',ids:[]}));
+   check(vrssCalls().length===before+1&&!response.data.answer.includes('the requested change completed')&&(label==='Queued'?response.data.answer.includes('queued'):label==='Pending'?/pending|waiting for delivery/i.test(response.data.answer):response.data.answer.includes('did not verify')),endpoint+' next-turn diagnosis preserves the recorded feed phase: '+response.body);
+   const historyEndpoint=endpoint.includes('v236')?'chat-v236.php?agent=7':'chat.php';
+   const history=await fetch(base+'/api/'+historyEndpoint,{method:'POST',headers:{'Content-Type':'application/json',...baseHeaders},body:JSON.stringify({csrf_token:'fixture',action:'load',conversation_id:cid})});
+   const saved=await history.json();
+   const cards=saved.messages.filter(m=>m.role==='assistant').map(m=>JSON.parse(m.context_json||'{}').system_app_action_card).filter(c=>c?.action_id===plan.action_id);
+   check(cards.some(c=>c.status===(label?'recorded':'failed')&&(!label||c.outcome_label===label)),endpoint+' persisted feed outcome card survives history reload');
+  }
+  response=await post(endpoint,'refresh my feed',context,route({operation:'continue',ids:[]}));
+  const lostPlan=response.data.system_app_plan,lostCid=response.data.conversation_id;before=vrssCalls().length;
+  const lostHeaders=route({operation:'system_apps_action',ids:['system_apps.manage'],action:'confirm',code:lostPlan.confirmation_code});
+  response=await post(endpoint,'confirm app '+lostPlan.confirmation_code,{...context,conversation_id:lostCid},{...lostHeaders,'X-Fixture-Vrss-Mode':'lost_reply'});
+  check(response.data?.tool_receipt?.reason==='outcome_unverified'&&vrssCalls().length===before+1&&!JSON.stringify(response.data).includes('SECRET'),endpoint+' lost feed mutation response records an uncertain outcome without provider errors');
+  response=await post(endpoint,'confirm app '+lostPlan.confirmation_code,{...context,conversation_id:lostCid},lostHeaders);
+  check(response.data?.tool_receipt?.reason==='outcome_unverified'&&vrssCalls().length===before+1&&!response.data.tool_receipt.changes_applied,endpoint+' uncertain feed confirmation cannot run again after the provider recovers');
  }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

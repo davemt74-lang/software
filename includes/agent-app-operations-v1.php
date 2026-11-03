@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/agent-tool-receipts-v1.php';
+require_once __DIR__.'/agent-vrss-outcomes-v1.php';
 
 function vp3_system_app_catalog_identity_v1(array $row): array
 {
@@ -38,12 +39,17 @@ function vp3_system_app_action_failure_v1(Throwable $e,string $operation='confir
 function vp3_system_app_action_done_v1(array $done): array
 {
     $safe=$done['result']??[];$verified=($safe['verified']??false)===true;$replay=!empty($done['idempotent_replay']);
-    $answer=$verified?($replay?'The saved app action result was already completed; it was not executed again.':'The confirmed app action completed with a verified result.'):'The confirmation was processed, but the requested final outcome remains unverified. Check Apps before repeating it.';
+    if(($done['action_type']??'')==='vrss.invoke'){
+        $safe=vp3_vrss_saved_outcome_v1($safe);$verified=$safe['verified'];
+        $answer=vp3_vrss_action_text_v1($safe,$replay);
+    }else $answer=$verified?($replay?'The saved app action result was already completed; it was not executed again.':'The confirmed app action completed with a verified result.'):'The confirmation was processed, but the requested final outcome remains unverified. Check Apps before repeating it.';
     if(!empty($safe['reconcile_pending']))$answer.=' Hosting or app reconciliation is still pending.';
     if(!empty($safe['rolled_back']))$answer.=' The update rolled back; the requested new release is not active.';
+    $receipt=vp3_tool_receipt_v1('system_apps.manage','confirm',$verified?($replay?'read_complete':'completed'):'failed',$verified?'':'outcome_unverified');
+    if(($done['action_type']??'')==='vrss.invoke'&&$verified)$receipt=vp3_tool_receipt_normalize_v1([...$receipt,'vrss_outcome'=>$safe['vrss_outcome']])??throw new RuntimeException('Invalid recorded VRSS outcome.');
     return ['handled'=>true,'answer'=>$answer,'actions'=>[['type'=>'open_url','label'=>'Open Apps','url'=>url('/apps.php'),'auto'=>false]],'sources'=>[['source'=>'system-apps:action','title'=>'Recorded app action outcome']],
         'system_app_plan'=>['action_id'=>$done['action_id'],'action_type'=>$done['action_type'],'app_key'=>$done['app_key'],'preview'=>['app'=>$done['app_key'],'operation'=>$done['action_type']],'completed'=>true,'idempotent_replay'=>$replay,'result'=>$safe],
-        'tool_receipt'=>vp3_tool_receipt_v1('system_apps.manage','confirm',$verified?($replay?'read_complete':'completed'):'failed',$verified?'':'outcome_unverified')];
+        'tool_receipt'=>$receipt];
 }
 
 function vp3_system_app_select_v1(PDO $pdo,array $user,string $selector): ?array
@@ -177,8 +183,10 @@ function vp3_system_app_release_response_v1(array $r,string $key): void
 }
 
 /** A consumed confirmation is distinct from a verified requested outcome. Never export raw remote results. */
-function vp3_system_app_action_outcome_v1(array $result,string $actionType=''): array
+function vp3_system_app_action_outcome_v1(array $result,string $actionType='',array $request=[]): array
 {
+    // VRSS phase evidence must survive confirmation replay; an envelope alone is not completion.
+    if($actionType==='vrss.invoke'||array_key_exists('vrss',$result))return vp3_vrss_action_outcome_v1(is_array($result['vrss']??null)?$result['vrss']:[],$request);
     $pending=false;$rolledBack=false;$error=false;
     $visit=static function(array $value) use (&$visit,&$pending,&$rolledBack,&$error):void {
         foreach($value as $key=>$v){if(in_array($key,['pending','reconcile_pending'],true)&&$v===true)$pending=true;if($key==='rolled_back'&&$v===true)$rolledBack=true;if(($key==='error'&&is_string($v)&&$v!=='')||($key==='ok'&&$v===false))$error=true;if(is_array($v))$visit($v);}
@@ -187,7 +195,6 @@ function vp3_system_app_action_outcome_v1(array $result,string $actionType=''): 
     if(isset($result['installation']))$verified=($result['installation']['homeserver']['installed']??false)===true;
     if(isset($result['permission']))$verified=is_bool($result['permission']['allowed']??null)&&is_array($result['permission']['status']['permissions']??null);
     if(isset($result['hosting'])){$bound=$result['hosting']['hosting']['bound']??null;$verified=is_bool($bound)&&($actionType===''||($actionType==='hosting.bind'?$bound:!$bound));}
-    if(isset($result['vrss']))$verified=($result['vrss']['contract']??'')==='vp3.app.agent-action-result.v1'&&array_key_exists('result',$result['vrss']);
     if(isset($result['reconciliation']))$verified=is_array($result['reconciliation']['owned']['items']??null)&&is_array($result['reconciliation']['revoked_cleanup']['items']??null);
     if(isset($result['release'])){
         $r=$result['release'];$verified=($r['homeserver']['installed']??false)===true;

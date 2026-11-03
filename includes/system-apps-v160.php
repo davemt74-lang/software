@@ -234,9 +234,9 @@ function vp3_system_apps_agent_execute_v160(
     throw new RuntimeException('Unsupported System App Agent action.');
 }
 
-function vp3_system_apps_agent_safe_result_v160(array $result,array $user,?PDO $pdo=null,string $actionType=''): array
+function vp3_system_apps_agent_safe_result_v160(array $result,array $user,?PDO $pdo=null,string $actionType='',array $request=[]): array
 {
-    return vp3_system_app_action_outcome_v1($result,$actionType);
+    return vp3_system_app_action_outcome_v1($result,$actionType,$request);
 }
 
 function vp3_system_apps_agent_confirm_v160(
@@ -275,6 +275,7 @@ function vp3_system_apps_agent_confirm_v160(
         }
         if((string)$row['status']==='completed'){
             $result=json_decode((string)($row['result_json']??''),true);if(!is_array($result))$result=[];
+            if((string)$row['action_type']==='vrss.invoke')$result=vp3_vrss_saved_outcome_v1($result,is_string($stored['action']??null)?$stored['action']:'');
             $pdo->commit();
             return ['action_id'=>(string)$row['public_id'],'action_type'=>(string)$row['action_type'],'app_key'=>$confirmedAppKey,'preview'=>$confirmedPreview,'completed'=>true,'idempotent_replay'=>true,'result'=>$result];
         }
@@ -296,7 +297,7 @@ function vp3_system_apps_agent_confirm_v160(
         vp3_system_app_action_authority_v1($pdo,$user,$conversationId,$auth['scope']);
         $result=vp3_system_apps_agent_execute_v160($row,$user,$guarded,$pdo);
         vp3_system_app_action_authority_v1($pdo,$user,$conversationId,$auth['scope']);
-        $safe=vp3_system_apps_agent_safe_result_v160($result,$user,$pdo,(string)$row['action_type']);
+        $safe=vp3_system_apps_agent_safe_result_v160($result,$user,$pdo,(string)$row['action_type'],$stored);
         $stmt=$pdo->prepare("UPDATE vp3_system_app_agent_actions
           SET status='completed',result_json=?,error_message='',execution_token='',execution_expires_at=NULL,completed_at=UTC_TIMESTAMP()
           WHERE id=? AND execution_token=?");

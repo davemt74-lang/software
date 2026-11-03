@@ -26,4 +26,81 @@ check(vp3_tool_last_receipt_v1($pdo,['id'=>1],['conversation_id'=>3,'user_agent_
 $insert->execute([4,1,'assistant','{"tool_receipt":{"contract":"forged"}}']);check(vp3_tool_last_receipt_v1($pdo,['id'=>1],['conversation_id'=>1])===null,'invalid latest receipt does not revive an older success');
 $insert->execute([5,1,'assistant',json_encode(['tool_receipt'=>$created])]);$insert->execute([6,1,'user','{}']);check(vp3_tool_last_receipt_v1($pdo,['id'=>1],['conversation_id'=>1])!==null,'current diagnostic question may follow the recorded response');
 $insert->execute([7,1,'user','{}']);check(vp3_tool_last_receipt_v1($pdo,['id'=>1],['conversation_id'=>1])===null,'an unanswered failed turn prevents attribution of older success');
+
+// A consumed Feed confirmation may only prove a queued request or local save.
+// That distinction must survive the next-turn diagnosis and persisted receipt.
+require_once dirname(__DIR__).'/includes/agent-vrss-outcomes-v1.php';
+$vrssBase=vp3_tool_receipt_v1('system_apps.manage','confirm','completed');
+$vrssSummaries=[
+    'queued'=>['schema'=>VP3_VRSS_OUTCOME_SCHEMA_V1,'action'=>'vrss.refresh_all','phase'=>'refresh_queued','final_verified'=>false,'queued_count'=>2],
+    'pending'=>['schema'=>VP3_VRSS_OUTCOME_SCHEMA_V1,'action'=>'vrss.social.like','phase'=>'reaction_pending','final_verified'=>false,'enabled'=>true],
+    'local'=>['schema'=>VP3_VRSS_OUTCOME_SCHEMA_V1,'action'=>'vrss.social.unfollow','phase'=>'local_relationship_saved','final_verified'=>false],
+    'delivered'=>['schema'=>VP3_VRSS_OUTCOME_SCHEMA_V1,'action'=>'vrss.social.like','phase'=>'reaction_delivered','final_verified'=>true,'enabled'=>false],
+];
+$vrssWords=['queued'=>'queued 2','pending'=>'waiting for delivery','local'=>'saved locally','delivered'=>'reported delivery'];
+foreach($vrssSummaries as $phase=>$summary){
+    $r=vp3_tool_receipt_normalize_v1([...$vrssBase,'vrss_outcome'=>$summary,'token'=>'SECRET raw credential']);
+    check($r!==null&&$r['vrss_outcome']===$summary&&!str_contains(json_encode($r),'SECRET'),$phase.' phase evidence survives normalization without unrelated payloads');
+    $diagnosis=vp3_tool_diagnosis_v1(['receipt'=>$r]);
+    check(str_contains($diagnosis,$vrssWords[$phase])&&!str_contains($diagnosis,'the requested change completed')&&str_contains($diagnosis,'Recorded at ')&&str_contains($diagnosis,'current state may have changed'),$phase.' diagnosis uses the evidenced Feed phase and historical timestamp');
+    $replay=vp3_tool_receipt_normalize_v1([...$r,'status'=>'read_complete']);$diagnosis=vp3_tool_diagnosis_v1(['receipt'=>$replay]);
+    check(!$replay['changes_applied']&&str_contains($diagnosis,$vrssWords[$phase])&&str_contains($diagnosis,'not executed again')&&!str_contains($diagnosis,'the requested change completed'),$phase.' replay remains a saved phase rather than a second action or generic completion');
+}
+$queued=$vrssSummaries['queued'];
+foreach([
+    'null'=>null,'empty'=>[],
+    'legacy schema'=>array_replace($queued,['schema'=>'vp3.vrss.action-outcome.v0']),
+    'invented action'=>array_replace($queued,['action'=>'vrss.delete']),
+    'wrong action phase'=>array_replace($queued,['action'=>'vrss.social.like']),
+    'queued marked final'=>array_replace($queued,['final_verified'=>true]),
+    'string count'=>array_replace($queued,['queued_count'=>'2']),
+    'raw field'=>[...$queued,'url'=>'https://SECRET.example/post'],
+] as $label=>$summary){
+    $raw=[...$vrssBase,'vrss_outcome'=>$summary];
+    check(vp3_tool_receipt_normalize_v1($raw)===null,'invalid Feed summary '.$label.' is rejected instead of stripped into generic success');
+    $diagnosis=vp3_tool_diagnosis_v1(['receipt'=>$raw]);
+    check(str_contains($diagnosis,'could not be verified')&&!str_contains($diagnosis,'the requested change completed')&&!str_contains($diagnosis,'SECRET'),'invalid Feed summary '.$label.' cannot regain completion through direct diagnosis');
+}
+foreach([
+    'other capability'=>['capability'=>'reminders.manage','operation'=>'create'],
+    'preparation'=>['operation'=>'prepare','status'=>'read_complete'],
+    'navigation'=>['operation'=>'navigate','status'=>'read_complete'],
+    'failed'=>['status'=>'failed','reason'=>'outcome_unverified'],
+    'blocked'=>['status'=>'blocked','reason'=>'permission_denied'],
+    'no matches'=>['status'=>'no_matches'],
+    'confirmation required'=>['status'=>'clarification_required','reason'=>'confirmation_required'],
+] as $label=>$change)check(vp3_tool_receipt_normalize_v1([...$vrssBase,...$change,'vrss_outcome'=>$queued])===null,'Feed phase evidence cannot attach to '.$label.' receipt');
+
+$storedId=20;
+$rememberVrss=static function(array $context)use($pdo,$insert,&$storedId): ?array{
+    $insert->execute([$storedId++,1,'assistant',json_encode($context)]);
+    return vp3_tool_last_receipt_v1($pdo,['id'=>1],['conversation_id'=>1]);
+};
+$safeVrss=static fn(array $summary):array=>['ok'=>true,'verified'=>true,'reconcile_pending'=>false,'rolled_back'=>false,'vrss_outcome'=>$summary];
+$vrssPlan=['action_type'=>'vrss.invoke','app_key'=>'vp3.feed','completed'=>true,'result'=>$safeVrss($queued)];
+$queuedReceipt=vp3_tool_receipt_normalize_v1([...$vrssBase,'vrss_outcome'=>$queued]);
+$last=$rememberVrss(['tool_receipt'=>$queuedReceipt,'system_app_plan'=>$vrssPlan]);
+check($last['receipt']===$queuedReceipt&&str_contains(vp3_tool_diagnosis_v1($last),'queued 2'),'matching persisted Feed receipt and plan preserve the queue diagnosis');
+$last=$rememberVrss(['tool_receipt'=>$vrssBase,'system_app_plan'=>$vrssPlan]);
+check(($last['receipt']['vrss_outcome']??null)===$queued&&str_contains(vp3_tool_diagnosis_v1($last),'queued 2'),'a valid versioned stored plan supplies phase evidence missing from an older receipt');
+foreach([
+    'old generic success'=>['verified'=>true,'token'=>'SECRET old raw payload'],
+    'missing versioned evidence'=>[],
+    'invalid saved flags'=>array_replace($safeVrss($queued),['verified'=>'true']),
+    'contradictory action'=>$safeVrss($vrssSummaries['pending']),
+    'contradictory queue count'=>$safeVrss(array_replace($queued,['queued_count'=>3])),
+    'malformed saved summary'=>$safeVrss([...$queued,'error'=>'SECRET provider diagnostic']),
+] as $label=>$result){
+    $last=$rememberVrss(['tool_receipt'=>$queuedReceipt,'system_app_plan'=>array_replace($vrssPlan,['result'=>$result])]);$r=$last['receipt']??[];
+    check(($r['status']??null)==='failed'&&($r['reason']??null)==='outcome_unverified'&&($r['changes_applied']??null)===false&&!isset($r['vrss_outcome']),$label.' cannot establish a successful persisted Feed outcome');
+    $diagnosis=vp3_tool_diagnosis_v1($last);
+    check(!str_contains($diagnosis,'the requested change completed')&&!str_contains($diagnosis,'SECRET')&&str_contains($diagnosis,'did not verify the final outcome'),$label.' diagnosis remains unverified without exposing stored content');
+}
+$last=$rememberVrss(['tool_receipt'=>[...$vrssBase,'vrss_outcome'=>null],'system_app_plan'=>$vrssPlan]);
+check($last===null,'a malformed supplied Feed receipt is not silently repaired from a valid plan');
+$last=$rememberVrss(['tool_receipt'=>[...$vrssBase,'status'=>'failed','reason'=>'execution_failed'],'system_app_plan'=>$vrssPlan]);
+check(($last['receipt']['status']??null)==='failed'&&($last['receipt']['reason']??null)==='outcome_unverified','failed persisted confirmation cannot borrow successful phase evidence from a contradictory plan');
+$last=$rememberVrss(['tool_receipt'=>[...$queuedReceipt,'token'=>'SECRET transport token'],'system_app_plan'=>[...$vrssPlan,'result'=>[...$vrssPlan['result'],'body'=>'SECRET source body']]]);
+check(($last['receipt']['vrss_outcome']??null)===$queued&&!str_contains(json_encode($last),'SECRET'),'valid saved Feed evidence discards unrelated plan and receipt payloads');
+check(vp3_tool_last_receipt_v1($pdo,['id'=>2],['conversation_id'=>1])===null&&vp3_tool_last_receipt_v1($pdo,['id'=>1],['conversation_id'=>1,'user_agent_id'=>7])===null,'phase-aware receipt recall retains exact owner and Agent boundaries');
 echo "TOOL_RECEIPTS=PASS ($checks cases)\n";

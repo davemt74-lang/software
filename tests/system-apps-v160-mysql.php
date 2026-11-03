@@ -135,21 +135,49 @@ $vrssCalls=[];
 $vrssRemote=static function(int $uid,string $operation,array $payload)use(&$vrssCalls):array{
     if($uid!==1||$operation!=='apps.control.invoke'||$payload['app_key']!=='vp3.feed')throw new RuntimeException('Invalid VRSS remote target.');
     $vrssCalls[]=$payload;
-    if($payload['action']==='vrss.social.comment_review')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['comment'=>['id'=>$payload['arguments']['comment_id'],'name'=>'Alice','body'=>'Exact text awaiting moderation','state'=>'pending','revision'=>3,'can_moderate'=>true]]];
-    if($payload['action']==='vrss.social.conversations')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['conversations'=>['items'=>[['object'=>'https://social.example/vrss/v1/posts/11111111-1111-4111-8111-111111111111','enabled'=>true,'muted'=>false,'revision'=>7]]]]];
-    if($payload['action']==='vrss.social.thread')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['thread'=>['items'=>[['name'=>'Bob','body'=>'Public conversation reply']],'next_cursor'=>'']]];
-    if($payload['action']==='vrss.social.comments')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['thread'=>['owner'=>true,'items'=>[['id'=>'https://alice.example/vrss/v1/comments/22222222-2222-4222-8222-222222222222','name'=>'Alice','body'=>'A comment','state'=>'pending']],'next_cursor'=>'']]];
-    if($payload['action']==='vrss.social.reposts')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['repost'=>['reposts'=>2,'reposted'=>true,'published'=>true,'pending'=>false]]];
-    if($payload['action']==='vrss.social.reactions')return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>['reaction'=>['likes'=>2,'liked'=>true,'pending'=>false]]];
-    $value=$payload['action']==='vrss.status'?['subscriptions'=>[['error'=>''],['error'=>'retry']]]:
-      ($payload['action']==='vrss.social.status'?['social'=>['followers'=>2,'following'=>1,'deliveries'=>[],'relations'=>[]]]:($payload['action']==='vrss.feed'?['feed'=>['items'=>[['title'=>'A real post']]]]:['queued'=>2]));
-    return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$payload['action'],'result'=>$value];
+    if(($payload['confirmed']??false)===true){
+        $a=$payload['action'];$args=$payload['arguments'];
+        // Mirror the deployed HomeServer wire contract, including SQLite record flags.
+        $result=match($a){
+          'vrss.follow'=>['subscription_id'=>'33333333-3333-4333-8333-333333333333','replayed'=>false],
+          'vrss.refresh_all'=>['queued'=>2],
+          'vrss.social.follow'=>['actor'=>'https://social.example/vrss/v1/actor','state'=>'pending'],
+          'vrss.social.unfollow','vrss.social.remove'=>['state'=>'removed'],
+          'vrss.social.block'=>['state'=>'blocked'],
+          'vrss.social.unblock'=>['unblocked'=>true],
+          'vrss.social.like'=>['reaction'=>['object'=>$args['url'],'likes'=>2,'liked'=>$args['enabled'],'can_like'=>true,'pending'=>true,'state'=>'pending','checked_at'=>1780000000],'replayed'=>false],
+          'vrss.social.repost'=>['repost'=>['object'=>$args['url'],'reposts'=>2,'reposted'=>$args['enabled'],'can_repost'=>true,'can_undo'=>$args['enabled'],'pending'=>true,'published'=>false,'state'=>'pending','checked_at'=>1780000000,'url'=>'https://alice.example/vrss/v1/reposts/33333333-3333-4333-8333-333333333333'],'replayed'=>false],
+          'vrss.social.conversation'=>['conversation'=>['object'=>$args['url'],'actor'=>'https://social.example/vrss/v1/actor','enabled'=>(int)$args['enabled'],'muted'=>(int)$args['muted'],'revision'=>$args['expected_revision']+1,'error'=>''],'replayed'=>false],
+          'vrss.social.comment'=>['comment'=>['id'=>'https://alice.example/vrss/v1/comments/22222222-2222-4222-8222-222222222222','object'=>$args['url'],'state'=>'pending_delivery'],'replayed'=>false],
+          'vrss.social.comment_delete'=>['comment'=>['id'=>$args['comment_id'],'object'=>$args['url'],'state'=>'deleted'],'replayed'=>false],
+          'vrss.social.moderate'=>['comment'=>['id'=>$args['comment_id'],'object'=>$args['url'],'state'=>$args['decision']==='approve'?'approved':'hidden','revision'=>$args['expected_revision']+1],'replayed'=>false],
+          default=>throw new RuntimeException('Unexpected confirmed VRSS action.'),
+        };
+        if($a!=='vrss.refresh_all')$result+=['ok'=>true,'contract'=>'vp3.vrss.v1','viewer_id'=>'urn:uuid:44444444-4444-4444-8444-444444444444'];
+        return ['contract'=>'vp3.app.agent-action-result.v1','app_key'=>'vp3.feed','action'=>$a,'risk'=>$a==='vrss.refresh_all'?'background':'write','result'=>$result];
+    }
+    $a=$payload['action'];$args=$payload['arguments'];
+    $value=match($a){
+      'vrss.social.comment_review'=>['comment'=>['id'=>$args['comment_id'],'name'=>'Alice','body'=>'Exact text awaiting moderation','state'=>'pending','revision'=>3,'can_moderate'=>true]],
+      'vrss.social.conversations'=>['conversations'=>['items'=>[['object'=>'https://social.example/vrss/v1/posts/11111111-1111-4111-8111-111111111111','enabled'=>1,'muted'=>0,'revision'=>7]]]],
+      'vrss.social.thread'=>['thread'=>['object'=>$args['url'],'owner'=>false,'items'=>[['id'=>'https://alice.example/vrss/v1/comments/22222222-2222-4222-8222-222222222222','name'=>'Bob','body'=>'Public conversation reply']],'next_cursor'=>'']],
+      'vrss.social.comments'=>['thread'=>['object'=>$args['url'],'owner'=>true,'items'=>[['id'=>'https://alice.example/vrss/v1/comments/22222222-2222-4222-8222-222222222222','name'=>'Alice','body'=>'A comment','state'=>'pending']],'next_cursor'=>'']],
+      'vrss.social.reposts'=>['repost'=>['object'=>$args['url'],'reposts'=>2,'reposted'=>true,'published'=>true,'pending'=>false]],
+      'vrss.social.reactions'=>['reaction'=>['object'=>$args['url'],'likes'=>2,'liked'=>true,'pending'=>false]],
+      'vrss.status'=>['subscriptions'=>[['error'=>''],['error'=>'retry']]],
+      'vrss.social.status'=>['social'=>['followers'=>2,'following'=>1,'deliveries'=>[],'relations'=>[]]],
+      'vrss.feed'=>['feed'=>['items'=>[['title'=>'A real post']]]],
+      default=>throw new RuntimeException('Unexpected read-only VRSS action.'),
+    };
+    if($a!=='vrss.status')$value+=['ok'=>true,'contract'=>'vp3.vrss.v1','viewer_id'=>'urn:uuid:44444444-4444-4444-8444-444444444444'];
+    return ['app_key'=>'vp3.feed','contract'=>'vp3.app.agent-action-result.v1','action'=>$a,'risk'=>'read','result'=>$value];
 };
 $planResult=vp3_vrss_agent_query_v2b('follow https://news.example/',$owner,42,$vrssRemote,$testPdo);
 if(empty($planResult['system_app_plan']['requires_confirmation'])||$vrssCalls)throw new RuntimeException('Follow ran before confirmation.');
 $plan=$planResult['system_app_plan'];
 $done=vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);
 if(empty($done['completed'])||count($vrssCalls)!==1||$vrssCalls[0]['action']!=='vrss.follow'||$vrssCalls[0]['confirmed']!==true)throw new RuntimeException('Confirmed follow did not reach governed HomeServer control.');
+if(($done['result']['vrss_outcome']['phase']??'')!=='subscription_saved'||empty($done['result']['verified']))throw new RuntimeException('Subscription receipt did not verify only its saved phase.');
 vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);
 if(count($vrssCalls)!==1)throw new RuntimeException('Follow confirmation replay executed twice.');
 $health=vp3_vrss_agent_query_v2b('show VRSS subscription health',$owner,42,$vrssRemote,$testPdo);
@@ -158,13 +186,27 @@ $posts=vp3_vrss_agent_query_v2b('show new VRSS posts',$owner,42,$vrssRemote,$tes
 if(!str_contains($posts['answer'],'A real post'))throw new RuntimeException('VRSS posts did not reach Chat.');
 $refresh=vp3_vrss_agent_query_v2b('refresh my feed',$owner,42,$vrssRemote,$testPdo);
 if(($refresh['system_app_plan']['preview']['operation']??'')!=='vrss.refresh_all')throw new RuntimeException('Refresh did not prepare the Feed action.');
+$refreshPlan=$refresh['system_app_plan'];$refreshDone=vp3_system_apps_agent_confirm_v160($owner,$refreshPlan['confirmation_code'],42,$vrssRemote,$testPdo);
+if(($refreshDone['result']['vrss_outcome']['phase']??'')!=='refresh_queued'||($refreshDone['result']['vrss_outcome']['queued_count']??null)!==2||($refreshDone['result']['vrss_outcome']['final_verified']??null)!==false)throw new RuntimeException('Queued refresh was not preserved as nonfinal evidence.');
+$callsBeforeReplay=count($vrssCalls);$refreshReplay=vp3_system_apps_agent_confirm_v160($owner,$refreshPlan['confirmation_code'],42,$vrssRemote,$testPdo);
+if($refreshReplay['result']!==$refreshDone['result']||count($vrssCalls)!==$callsBeforeReplay)throw new RuntimeException('Refresh phase did not survive durable confirmation replay.');
+// Older completed rows must remain consumed without inheriting their old generic success claim.
+$testPdo->prepare('UPDATE vp3_system_app_agent_actions SET result_json=? WHERE public_id=?')->execute([json_encode(['ok'=>true,'verified'=>true,'reconcile_pending'=>false,'rolled_back'=>false,'SECRET'=>'raw historical diagnostic']),$refreshPlan['action_id']]);
+$legacyReplay=vp3_system_apps_agent_confirm_v160($owner,$refreshPlan['confirmation_code'],42,$vrssRemote,$testPdo);
+if(empty($legacyReplay['idempotent_replay'])||!empty($legacyReplay['result']['verified'])||str_contains(json_encode($legacyReplay['result']),'SECRET')||count($vrssCalls)!==$callsBeforeReplay)throw new RuntimeException('Historical generic VRSS success was trusted or reexecuted.');
+$unverifiedPlan=vp3_system_apps_agent_prepare_v160($owner,'vrss.invoke','vp3.feed',['action'=>'vrss.refresh_all','arguments'=>[]],[],42,null,$testPdo);$unverifiedCalls=0;
+$unverifiedRemote=static function(int $uid,string $operation,array $payload)use(&$unverifiedCalls):array{$unverifiedCalls++;return ['contract'=>'vp3.app.agent-action-result.v1','app_key'=>'vp3.feed','action'=>$payload['action'],'risk'=>'background','result'=>['queued'=>'SECRET not an integer']];};
+$unverifiedDone=vp3_system_apps_agent_confirm_v160($owner,$unverifiedPlan['confirmation_code'],42,$unverifiedRemote,$testPdo);
+$unverifiedReplay=vp3_system_apps_agent_confirm_v160($owner,$unverifiedPlan['confirmation_code'],42,$unverifiedRemote,$testPdo);
+if(!empty($unverifiedDone['result']['verified'])||empty($unverifiedReplay['idempotent_replay'])||$unverifiedCalls!==1||str_contains(json_encode($unverifiedReplay['result']),'SECRET'))throw new RuntimeException('Malformed action result was trusted, exposed or replayed.');
 $count=count($vrssCalls);
 $followers=vp3_vrss_agent_query_v2b('show VRSS new follower notifications',$owner,42,$vrssRemote,$testPdo);
 if(!str_contains($followers['answer'],'2 verified followers')||count($vrssCalls)!==$count+1)throw new RuntimeException('Verified follower status did not reach Chat.');
 foreach(['follow VRSS profile https://social.example/'=>'vrss.social.follow','unfollow VRSS https://social.example/vrss/v1/actor'=>'vrss.social.unfollow','block VRSS https://social.example/vrss/v1/actor'=>'vrss.social.block','unblock VRSS https://social.example/vrss/v1/actor'=>'vrss.social.unblock','remove follower VRSS https://social.example/vrss/v1/actor'=>'vrss.social.remove'] as $query=>$action){
  $before=count($vrssCalls);$reply=vp3_vrss_agent_query_v2b($query,$owner,42,$vrssRemote,$testPdo);$p=$reply['system_app_plan']??null;
  if(!$p||empty($p['requires_confirmation'])||count($vrssCalls)!==$before)throw new RuntimeException('Social write ran before confirmation: '.$query);
- vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
+ $socialDone=vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
+ if(($socialDone['result']['vrss_outcome']['phase']??'')!==($action==='vrss.social.follow'?'follow_pending':'local_relationship_saved')||!empty($socialDone['result']['vrss_outcome']['final_verified']))throw new RuntimeException('Social action overstated its local/pending outcome.');
  if(count($vrssCalls)!==$before+1||end($vrssCalls)['action']!==$action||end($vrssCalls)['confirmed']!==true)throw new RuntimeException('Confirmed social action did not use governed control: '.$query);
  vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
  if(count($vrssCalls)!==$before+1)throw new RuntimeException('Social confirmation replayed twice.');
@@ -173,7 +215,8 @@ $postUrl='https://social.example/vrss/v1/posts/11111111-1111-4111-8111-111111111
 foreach(['like'=>true,'unlike'=>false] as $verb=>$enabled){
  $before=count($vrssCalls);$reply=vp3_vrss_agent_query_v2b($verb.' VRSS '.$postUrl,$owner,42,$vrssRemote,$testPdo);$p=$reply['system_app_plan']??null;
  if(!$p||empty($p['requires_confirmation'])||count($vrssCalls)!==$before)throw new RuntimeException('Reaction ran before confirmation.');
- vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
+ $reactionDone=vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
+ if(($reactionDone['result']['vrss_outcome']['phase']??'')!=='reaction_pending'||!empty($reactionDone['result']['vrss_outcome']['final_verified']))throw new RuntimeException('Reaction delivery was not preserved as pending.');
  $call=end($vrssCalls);
  if($call['action']!=='vrss.social.like'||$call['arguments']['url']!==$postUrl||$call['arguments']['enabled']!==$enabled||!preg_match('/^[0-9a-f]{32}$/D',$call['arguments']['request_id']))throw new RuntimeException('Reaction approval did not preserve exact intent/nonce.');
  vp3_system_apps_agent_confirm_v160($owner,$p['confirmation_code'],42,$vrssRemote,$testPdo);
@@ -188,7 +231,9 @@ foreach(['comment VRSS '.$postUrl.': Keep the hosting text intact'=>'vrss.social
  $before=count($vrssCalls);$reply=vp3_vrss_agent_query_v2b($query,$owner,42,$vrssRemote,$testPdo);$plan=$reply['system_app_plan']??null;
  if(!$plan||empty($plan['requires_confirmation']))throw new RuntimeException('Comment operation was not prepared for review: '.$query.' '.($reply['answer']??''));
  $reads=array_slice($vrssCalls,$before);foreach($reads as $read)if($read['action']!=='vrss.social.comment_review'||$read['confirmed']!==false)throw new RuntimeException('Comment write ran before confirmation.');
- $before=count($vrssCalls);vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);$call=end($vrssCalls);
+ $before=count($vrssCalls);$commentDone=vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);$call=end($vrssCalls);
+ $commentPhase=match($action){'vrss.social.comment'=>'comment_pending_delivery','vrss.social.comment_delete'=>'comment_retraction_saved',default=>'moderation_saved'};
+ if(($commentDone['result']['vrss_outcome']['phase']??'')!==$commentPhase)throw new RuntimeException('Comment result did not preserve exact pending, retraction or moderation evidence.');
  if($call['action']!==$action||$call['arguments']['url']!==$postUrl||$call['confirmed']!==true)throw new RuntimeException('Comment confirmation changed its exact target.');
  if($action==='vrss.social.moderate'&&($call['arguments']['expected_revision']!==3||$plan['preview']['comment']!=='Exact text awaiting moderation'))throw new RuntimeException('Moderation omitted the exact body/revision review.');
  if($action==='vrss.social.comment'&&(!str_contains($call['arguments']['body'],str_starts_with($query,'reply')?'A reply':'hosting')||!preg_match('/^[a-f0-9]{32}$/D',$call['arguments']['request_id'])))throw new RuntimeException('Comment body/nonce was not preserved.');
@@ -198,7 +243,8 @@ foreach(['comment VRSS '.$postUrl.': Keep the hosting text intact'=>'vrss.social
 foreach(['repost'=>true,'undo repost'=>false] as $command=>$enabled){
  $before=count($vrssCalls);$reply=vp3_vrss_agent_query_v2b($command.' VRSS '.$postUrl,$owner,42,$vrssRemote,$testPdo);$plan=$reply['system_app_plan']??null;
  if(!$plan||empty($plan['requires_confirmation'])||count($vrssCalls)!==$before)throw new RuntimeException('Repost ran before confirmation.');
- vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);$call=end($vrssCalls);
+ $repostDone=vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);$call=end($vrssCalls);
+ if(($repostDone['result']['vrss_outcome']['phase']??'')!=='repost_pending'||!empty($repostDone['result']['vrss_outcome']['final_verified']))throw new RuntimeException('Pending repost was presented as publication.');
  if($call['action']!=='vrss.social.repost'||$call['arguments']['url']!==$postUrl||$call['arguments']['enabled']!==$enabled||!preg_match('/^[a-f0-9]{32}$/D',$call['arguments']['request_id']))throw new RuntimeException('Repost approval changed exact intent or nonce.');
  vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);
  if(count($vrssCalls)!==$before+1)throw new RuntimeException('Repost approval executed twice.');
@@ -211,7 +257,8 @@ foreach(['follow','unfollow','mute','unmute'] as $verb){
  $before=count($vrssCalls);$result=vp3_vrss_agent_query_v2b($verb.' VRSS conversation '.$postUrl,$owner,42,$vrssRemote,$testPdo);$plan=$result['system_app_plan']??null;
  if(!$plan||empty($plan['requires_confirmation']))throw new RuntimeException('Conversation change must require review.');
  foreach(array_slice($vrssCalls,$before) as $read)if($read['action']!=='vrss.social.conversations'||$read['confirmed']!==false)throw new RuntimeException('Conversation changed before confirmation.');
- $before=count($vrssCalls);vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);$call=end($vrssCalls);
+ $before=count($vrssCalls);$conversationDone=vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);$call=end($vrssCalls);
+ if(($conversationDone['result']['vrss_outcome']['phase']??'')!=='conversation_saved'||($conversationDone['result']['vrss_outcome']['revision']??null)!==8)throw new RuntimeException('Conversation settings lost exact saved revision.');
  if($call['action']!=='vrss.social.conversation'||$call['arguments']['url']!==$postUrl||$call['arguments']['expected_revision']!==7||!preg_match('/^[a-f0-9]{32}$/D',$call['arguments']['request_id'])||$plan['preview']['conversation_muted']!==($verb==='mute'))throw new RuntimeException('Conversation review lost exact choices/revision/nonce.');
  vp3_system_apps_agent_confirm_v160($owner,$plan['confirmation_code'],42,$vrssRemote,$testPdo);if(count($vrssCalls)!==$before+1)throw new RuntimeException('Conversation confirmation executed twice.');
 }
