@@ -8,6 +8,7 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: private, no-store');
 header('X-Content-Type-Options: nosniff');
 
+$usingCloudDispatcher=false;
 try {
     if(($_SERVER['REQUEST_METHOD']??'GET')!=='POST')throw new RuntimeException('POST required.',405);
     require_permission('chat.access');
@@ -25,8 +26,9 @@ try {
     if(function_exists('db')&&db()&&function_exists('agent_job_engine_schema_ready_v1900')){
         require_once __DIR__.'/../includes/cloud-missions-v1.php';
         session_write_close();
+        $usingCloudDispatcher=true;
         $cloud=cloud_mission_dispatch_v1(db(),$user,$action,$input);
-        if($cloud!==null){session_write_close();echo json_encode($cloud,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);return;}
+        if($cloud!==null){session_write_close();echo json_encode($cloud,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);return;}$usingCloudDispatcher=false;
     }
     if($action==='diagnostics.get'){
         require_once __DIR__.'/../includes/agent-integration-diagnostics-v1.php';
@@ -261,10 +263,10 @@ try {
         throw new RuntimeException('HomeServer mission protocol is unavailable. Update HomeServer.',503);
     echo json_encode($remote,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);
 }catch(Throwable $e){
-    $status=(int)$e->getCode();
+    $status=$e instanceof InvalidArgumentException||$e instanceof JsonException?422:(int)$e->getCode();
     if(!in_array($status,[401,403,404,405,409,413,419,422,503],true))$status=503;
     http_response_code($status);
     if($status===503)error_log('HomeServer agent mission relay unavailable: '.get_class($e));
-    $message=$status===503?'HomeServer mission service is temporarily unavailable.':$e->getMessage();
+    $message=$status===503?($usingCloudDispatcher?($e instanceof RuntimeException&&!($e instanceof PDOException)?$e->getMessage():'Cloud Mission service is temporarily unavailable.'):'HomeServer mission service is temporarily unavailable.'):$e->getMessage();
     echo json_encode(['ok'=>false,'error'=>$message],JSON_UNESCAPED_SLASHES);
 }

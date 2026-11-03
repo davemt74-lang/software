@@ -76,7 +76,7 @@ require __DIR__.'/_header.php';
 
 <section class="admin-dashboard-hero">
   <div><span class="eyebrow">Operating Center</span><h2>VP3 platform overview</h2><p>User growth, package adoption, AI activity and operational attention from the systems already running in VP3.</p></div>
-  <div class="actions"><a class="btn" href="<?= e(url('/admin/users.php')) ?>">Users</a><a class="btn" href="<?= e(url('/admin/packages.php')) ?>">Packages</a><a class="btn primary" href="<?= e(url('/admin/ai-data-usage-v236.php')) ?>">AI Usage</a></div>
+  <div class="actions"><?php if(has_permission('ai.manage')): ?><a class="btn" href="<?= e(url('/chat.php?mission_sources=1')) ?>">Mission web sources</a><?php endif; ?><a class="btn" href="<?= e(url('/admin/users.php')) ?>">Users</a><a class="btn" href="<?= e(url('/admin/packages.php')) ?>">Packages</a><a class="btn primary" href="<?= e(url('/admin/ai-data-usage-v236.php')) ?>">AI Usage</a></div>
 </section>
 
 <section class="admin-kpi-grid" aria-label="Key SaaS metrics">

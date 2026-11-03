@@ -27,7 +27,7 @@ function column_exists(string $table,string $column): bool {
 function current_user(): ?array {return isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS'])?null:['id'=>(int)($_SERVER['HTTP_X_FIXTURE_USER']??1),'denied'=>isset($_SERVER['HTTP_X_FIXTURE_DENIED'])];}
 function require_permission($p): void {if(!current_user()||!has_permission($p,current_user()))throw new RuntimeException('Access denied.',403);}
 function csrf_token(): string {return 'fixture';}
-function has_permission($p,$u): bool {return empty($u['denied'])&&empty($GLOBALS['revoked']);}
+function has_permission($p,$u): bool {return empty($u['denied'])&&empty($GLOBALS['revoked'])&&($p!=='ai.manage'||(int)$u['id']===1);}
 function personal_capability_has_v242($p,$u): bool {return has_permission($p,$u);}
 function can_view_visibility($visibility,$user): bool {return true;}
 function user_agent_get_v236($pdo,$uid,$aid): ?array {return $uid===1&&$aid===7?['id'=>7,'is_active'=>1]:null;}

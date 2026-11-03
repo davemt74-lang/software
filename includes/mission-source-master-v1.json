@@ -1,0 +1,22 @@
+[
+  {"label":"Amazon","category":"General retail","url":"https://www.amazon.com/"},
+  {"label":"Walmart","category":"General retail","url":"https://www.walmart.com/"},
+  {"label":"Target","category":"General retail","url":"https://www.target.com/"},
+  {"label":"Costco","category":"General retail","url":"https://www.costco.com/"},
+  {"label":"Sam's Club","category":"General retail","url":"https://www.samsclub.com/"},
+  {"label":"Best Buy","category":"Electronics","url":"https://www.bestbuy.com/"},
+  {"label":"B&H Photo Video","category":"Electronics","url":"https://www.bhphotovideo.com/"},
+  {"label":"Newegg","category":"Electronics","url":"https://www.newegg.com/"},
+  {"label":"Home Depot","category":"Home and hardware","url":"https://www.homedepot.com/"},
+  {"label":"Lowe's","category":"Home and hardware","url":"https://www.lowes.com/"},
+  {"label":"Harbor Freight","category":"Home and hardware","url":"https://www.harborfreight.com/"},
+  {"label":"Ace Hardware","category":"Home and hardware","url":"https://www.acehardware.com/"},
+  {"label":"WebstaurantStore","category":"Restaurant supplies","url":"https://www.webstaurantstore.com/"},
+  {"label":"Restaurant Depot","category":"Restaurant supplies","url":"https://www.restaurantdepot.com/"},
+  {"label":"CHEF'STORE","category":"Restaurant supplies","url":"https://www.chefstore.com/"},
+  {"label":"Smart & Final","category":"Restaurant supplies","url":"https://www.smartandfinal.com/"},
+  {"label":"Staples","category":"Office supplies","url":"https://www.staples.com/"},
+  {"label":"Office Depot","category":"Office supplies","url":"https://www.officedepot.com/"},
+  {"label":"Fry's Food Stores","category":"Groceries","url":"https://www.frysfood.com/"},
+  {"label":"Safeway","category":"Groceries","url":"https://www.safeway.com/"}
+]

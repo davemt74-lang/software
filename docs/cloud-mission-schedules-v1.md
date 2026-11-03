@@ -28,7 +28,7 @@ Four metadata tables initialize automatically on first use. The existing durable
 
 Current account, Agent, source and folder access are checked again before reads, inference results and report writes. Shared-screen source corrections/deletions invalidate descendant runs through the original template's source guard. Budgets are immutable for scheduled runs; new capabilities require another reviewed plan. Reports are private, indexed canonical Knowledge notes, saved once per completed run. They remain model-generated drafts and are not automatically promoted into Brain memories or published. Removing a destination folder prevents new writes rather than recreating it.
 
-This section collects existing Knowledge and Brain evidence. Live web harvesting, email collection, phone operations, product creation and image generation remain separate adapters to build next. The current specialist pair remains evidence analyst and synthesis reviewer; configurable role/skill catalogs are a later section.
+Recurring Missions can collect existing Knowledge and Brain evidence, and [public web evidence](cloud-mission-web-v1.md) from reviewed queries, saved sources or exact page URLs. Email collection, phone operations, product creation and image generation remain separate adapters to build next. The current specialist pair remains evidence analyst and synthesis reviewer; configurable role/skill catalogs are a later section.
 
 ## Validation
 

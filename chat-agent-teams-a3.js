@@ -9,7 +9,7 @@ const root=document.createElement('details');
 root.className='vp3-agent-teams-a3';
 root.setAttribute('data-agent-teams-a3','');
 root.innerHTML='<summary><span aria-hidden="true">◉</span> Agent Teams <small>Cloud + HomeServer missions</small></summary>'+
- '<div class="vp3-teams-body"><p>Cloud specialists analyze approved Knowledge and Brain evidence. HomeServer adds local tools and browser operations.</p>'+
+ '<div class="vp3-teams-body"><p>Cloud specialists analyze approved Knowledge, Brain and public web evidence. HomeServer adds local tools and browser operations.</p>'+
  '<form class="vp3-teams-create"><label for="vp3MissionObjective">Mission objective</label>'+
  '<div class="vp3-teams-entry"><input id="vp3MissionObjective" name="objective" maxlength="4000" required '+
  'placeholder="Give the team a research objective…" autocomplete="off">'+
@@ -31,7 +31,8 @@ const status=root.querySelector('.vp3-teams-status'), list=root.querySelector('.
 let authorityGeneration=0;
 let busy=false,selected='',items=[],lastRefresh=0,inflight=false;
 const toolsByMission=new Map(), toolDrafts=new Map(), changesByMission=new Map();
-const staffingByMission=new Map();
+const staffingByMission=new Map(),webEvidenceByMission=new Map();
+let sourceCatalog={items:[],can_manage_master:false},sourceBusy=false,sourceEditing=null,sourceLoad=null;
 const browserByWorker=new Map();
 const liveByWorker=new Map();let liveLastPoll=0;
 const pendingOperations=new Map();let statusInflight=false,viewGeneration=0;
@@ -52,6 +53,32 @@ async function api(action,extra,signal){
  if(authorityAtRequest!==authorityGeneration){const error=new Error('Mission access changed while loading. Refresh authorized status.');error.status=403;throw error;}
  return payload;
 }
+const sourcePanel=el('details','vp3-mission-sources');sourcePanel.setAttribute('aria-label','Saved web sources');sourcePanel.appendChild(el('summary','','Saved web sources · master list and my URLs'));
+const sourceInfo=el('p','vp3-teams-meta','Choose saved websites for discovery or exact public pages for monitoring. Saving a source does not fetch it.');sourcePanel.appendChild(sourceInfo);
+const sourceForm=el('form','vp3-mission-source-form');const sourceName=el('input'),sourceUrl=el('input'),sourceCategory=el('input'),sourceKind=el('select'),sourceMaster=el('input');
+for(const [input,label] of [[sourceName,'Source name'],[sourceUrl,'Source public URL'],[sourceCategory,'Source category']]){const row=el('label','',label+' ');input.setAttribute('aria-label',label);row.appendChild(input);sourceForm.appendChild(row);}sourceName.maxLength=120;sourceName.required=true;sourceUrl.type='url';sourceUrl.maxLength=1800;sourceUrl.required=true;sourceCategory.maxLength=50;sourceCategory.value='My sources';
+for(const [value,label] of [['page','Public page (product or category URL)'],['website','Website (homepage and search scope)']]){const option=el('option','',label);option.value=value;sourceKind.appendChild(option);}sourceKind.setAttribute('aria-label','Source type');sourceForm.appendChild(sourceKind);
+const masterLabel=el('label','','Add to shared master list ');sourceMaster.type='checkbox';sourceMaster.setAttribute('aria-label','Add to shared master list');masterLabel.appendChild(sourceMaster);masterLabel.hidden=true;sourceForm.appendChild(masterLabel);
+const saveSource=el('button','','Save source');saveSource.type='submit';sourceForm.appendChild(saveSource);const cancelSource=el('button','','Cancel source edit');cancelSource.type='button';cancelSource.hidden=true;sourceForm.appendChild(cancelSource);sourcePanel.appendChild(sourceForm);
+const sourceStatus=el('p','','Open to load saved sources.');sourceStatus.setAttribute('role','status');sourcePanel.appendChild(sourceStatus);const sourceList=el('div','vp3-mission-source-list');sourcePanel.appendChild(sourceList);const refreshSources=el('button','','Refresh saved sources');refreshSources.type='button';sourcePanel.appendChild(refreshSources);root.querySelector('.vp3-teams-body').appendChild(sourcePanel);
+function resetSourceForm(){sourceEditing=null;sourceName.value='';sourceUrl.value='';sourceCategory.value='My sources';sourceKind.value='page';sourceMaster.checked=false;sourceMaster.disabled=false;saveSource.textContent='Save source';cancelSource.hidden=true;}
+function renderSourceCatalog(){
+ sourceList.replaceChildren();masterLabel.hidden=!sourceCatalog.can_manage_master;let category='';
+ for(const item of sourceCatalog.items||[]){if(item.category!==category){category=item.category;sourceList.appendChild(el('h5','',category));}const row=el('article','vp3-mission-source-row');row.appendChild(el('strong','',item.label));row.appendChild(el('small','',(item.scope==='master'?'Master list':'My source')+' · '+(item.kind==='website'?'Website':'Public page')+' · '+item.status));row.appendChild(el('p','vp3-teams-meta',item.url));
+  if(item.can_edit){for(const [action,label] of [['edit','Edit source'],[item.status==='active'?'disable':'enable',item.status==='active'?'Disable source':'Enable source']]){const button=el('button','',label);button.type='button';button.disabled=sourceBusy;button.addEventListener('click',()=>{if(action==='edit'){sourceEditing=item;sourceName.value=item.label;sourceUrl.value=item.url;sourceCategory.value=item.category;sourceKind.value=item.kind;sourceMaster.checked=item.scope==='master';sourceMaster.disabled=true;saveSource.textContent='Update source';cancelSource.hidden=false;sourceName.focus();}else void sourceOperation('sources.'+action,{source_id:item.id,expected_revision:item.revision,confirmed:true});});row.appendChild(button);}}
+  sourceList.appendChild(row);
+ }
+ if(!sourceCatalog.items?.length)sourceList.appendChild(el('p','','No saved sources available.'));
+}
+async function loadSources(){if(sourceLoad)return sourceLoad;sourceLoad=(async()=>{const result=await api('sources.list');sourceCatalog=result.source_catalog||{items:[],can_manage_master:false};renderSourceCatalog();sourceStatus.textContent=(sourceCatalog.items||[]).length+' saved sources. Master entries are managed by admins; personal URLs stay with their owner.';})().finally(()=>{sourceLoad=null;});return sourceLoad;}
+async function sourceOperation(action,payload){
+ if(sourceBusy||busy)return;sourceBusy=true;setBusy(true);saveSource.disabled=true;const storage='vp3.mission-source.pending.'+String(cfg.csrf)+'.'+JSON.stringify([action,payload]);
+ try{let rid=sessionStorage.getItem(storage);if(!rid){rid=window.crypto.randomUUID();sessionStorage.setItem(storage,rid);}const result=await api(action,{...payload,request_id:rid});sourceCatalog=result.source_catalog;sessionStorage.removeItem(storage);resetSourceForm();renderSourceCatalog();sourceStatus.textContent='Saved-source list updated. Existing Mission evidence remains in history. New or changed targets need assignment review.';if(selected){const response=await api('get',{mission_id:selected});if(response.mission)showMission(response.mission);}}
+ catch(e){sourceStatus.textContent=(e.message||'Source update interrupted.')+' Retry the same operation if its response is unconfirmed.';}
+ finally{sourceBusy=false;setBusy(false);saveSource.disabled=false;sourceList.querySelectorAll('button').forEach(b=>b.disabled=false);}
+}
+sourceForm.addEventListener('submit',event=>{event.preventDefault();const payload={label:sourceName.value.trim(),url:sourceUrl.value.trim(),category:sourceCategory.value.trim(),kind:sourceKind.value,scope:sourceMaster.checked?'master':'personal',confirmed:true};if(sourceEditing){payload.source_id=sourceEditing.id;payload.expected_revision=sourceEditing.revision;}void sourceOperation(sourceEditing?'sources.update':'sources.create',payload);});cancelSource.addEventListener('click',resetSourceForm);refreshSources.addEventListener('click',()=>void loadSources().catch(e=>{sourceStatus.textContent=e.message;}));sourcePanel.addEventListener('toggle',()=>{if(sourcePanel.open)void loadSources().catch(e=>{sourceStatus.textContent=e.message;});});
+
 // Automatic routing preserves a lost-response intent before any dispatch.
 const chatInput=document.getElementById('chatInput'),chatSubmit=form.querySelector('button[type="submit"]');
 const runtimeSelect=el('select');runtimeSelect.id='vp3MissionRuntime';runtimeSelect.setAttribute('aria-label','Mission execution location');for(const [value,label] of [['cloud','VP3 Cloud'],['homeserver','HomeServer']]){const o=el('option','',label);o.value=value;runtimeSelect.appendChild(o);}const runtimeLabel=el('label','','Mission execution ');runtimeLabel.appendChild(runtimeSelect);create.prepend(runtimeLabel);create.querySelector('[name="prepare_only"]').checked=true;create.querySelector('button[type="submit"]').textContent='Prepare Mission';const selectProvider=create.querySelector('[name="provider_key"]');const syncRuntime=()=>{selectProvider.disabled=runtimeSelect.value==='cloud';if(selectProvider.disabled)selectProvider.value='auto';};runtimeSelect.addEventListener('change',syncRuntime);syncRuntime();
@@ -329,8 +356,9 @@ function clearPrivateMissionState(){
  authorityGeneration++;viewGeneration++;
  items=[];missionNotices={items:[],unread:0};selected='';progressConnected=false;
  detail.replaceChildren();detail.hidden=true;const diagnostic=root.querySelector('.vp3-integration-diagnostic');if(diagnostic){diagnostic.replaceChildren();diagnostic.hidden=true;}
- for(const cache of [toolsByMission,toolDrafts,changesByMission,staffingByMission,liveByWorker,browserByWorker,pendingOperations])cache.clear();
+ for(const cache of [toolsByMission,toolDrafts,changesByMission,staffingByMission,webEvidenceByMission,liveByWorker,browserByWorker,pendingOperations])cache.clear();
  followupReview=null;followupRetry=null;followupHost.replaceChildren();followupHost.hidden=true;storeFollowup();
+ sourceCatalog={items:[],can_manage_master:false};sourceLoad=null;resetSourceForm();renderSourceCatalog();sourceStatus.textContent='Refresh after restoring source access.';
  schedules=[];cloudScheduleHealth=null;cloudScheduleFolders=[];schedulerHealth=null;healthReceivedAt=0;renderScheduleList();
  // Pending route/schedule intents contain private objectives and must not survive revocation.
  try{for(const key of Object.keys(sessionStorage)){if(key.startsWith('vp3.chat-task.pending.a5c7.'+String(cfg.csrf))||key.startsWith('vp3.schedule.pending.a5c6.'+String(cfg.csrf)))sessionStorage.removeItem(key);}}catch(_){}
@@ -352,7 +380,7 @@ async function pollProgress(){
   if(busy||generation!==viewGeneration||context!==JSON.stringify(taskContext()))return;
   if(!Array.isArray(response.items)||!response.notifications||!Array.isArray(response.notifications.items))throw new Error('The Mission runtime did not return live progress.');
   items=response.items;missionNotices=response.notifications;progressReceived=Date.now();progressConnected=true;lastRefresh=Date.now();
-  for(const m of items){if(m.private||m.authority_current===false){toolsByMission.delete(m.id);toolDrafts.delete(m.id);changesByMission.delete(m.id);for(const key of liveByWorker.keys()){if(key.startsWith(m.id+'|')){liveByWorker.delete(key);browserByWorker.delete(key);}}}}
+  for(const m of items){if(m.private||m.authority_current===false){toolsByMission.delete(m.id);toolDrafts.delete(m.id);changesByMission.delete(m.id);webEvidenceByMission.delete(m.id);for(const key of liveByWorker.keys()){if(key.startsWith(m.id+'|')){liveByWorker.delete(key);browserByWorker.delete(key);}}}}
   showList();const current=items.find(m=>m.id===selected);if(current&&(current.private||current.authority_current===false||!detail.contains(document.activeElement)))showMission(current);publishProgress();
  }catch(e){
   if(!busy&&generation===viewGeneration){progressConnected=false;if([401,403,419].includes(e.status))clearPrivateMissionState();publishProgress();say('Mission updates disconnected. Last received status is shown; no work is replayed.');}
@@ -411,6 +439,7 @@ function showMission(m){
  if(m.chat_task&&m.status==='planned'&&!m.tools_configured&&!toolDrafts.has(m.id))toolDrafts.set(m.id,m.chat_task.draft);
  if(m.chat_task?.automatic_reason&&!m.private&&m.authority_current!==false)detail.appendChild(el('p','vp3-teams-meta','Lead chose specialists: '+m.chat_task.automatic_reason+' · '+fmt(m.chat_task.decided_at)));
  if(m.chat_task&&!m.private&&m.authority_current!==false)detail.appendChild(el('p','vp3-teams-meta','Plan prepared '+fmt(m.chat_task.prepared_at)+' · '+m.chat_task.provider_key+' · '+m.chat_task.model+' · assignment review required before tools run'));
+ renderWebEvidence(m);
  renderAssignments(m);
  if(m.recurrence&&m.authority_current!==false){const r=m.recurrence;const info=el('p','vp3-teams-meta','Ongoing Cloud Mission run · report '+r.report_state);if(r.knowledge_id)info.appendChild(el('span','',' · Knowledge #'+r.knowledge_id));detail.appendChild(info);}
  renderScheduleForm(m);
@@ -704,7 +733,7 @@ async function load(){
  if(inflight)return;
  inflight=true;
  try{
-  const result=await api('list');items=Array.isArray(result.items)?result.items:[];lastRefresh=Date.now();showList();renderLiveSummary();await loadSchedules();
+  const result=await api('list');items=Array.isArray(result.items)?result.items:[];lastRefresh=Date.now();showList();renderLiveSummary();await loadSchedules();if(result.runtimes?.cloud)await loadSources().catch(e=>{sourceStatus.textContent=e.message;});
   say((result.runtimes?.cloud?'Cloud Missions available':'HomeServer connected')+' · '+items.length+' recent mission'+(items.length===1?'':'s')+'.');
   if(selected&&items.some(x=>x.id===selected)){const current=await api('get',{mission_id:selected});if(current.mission){if(current.mission.chat_task&&(current.mission.status==='planned'||current.mission.execution_target==='cloud')&&!current.mission.private&&current.mission.authority_current!==false){const tools=await api('tools.get',{mission_id:selected});toolsByMission.set(selected,tools.tools);}if(current.mission.tools_enabled&&!current.mission.private&&current.mission.authority_current!==false){const changes=await api('actions.list',{mission_id:selected});changesByMission.set(selected,Array.isArray(changes.actions)?changes.actions:[]);}showMission(current.mission);}
    try{await loadSupervision(selected);}catch(_){/* Mission status remains available if supervision is unsupported. */}}
@@ -746,6 +775,19 @@ function renderChanges(m){
  if(m.tools_enabled)panel.appendChild(btn('Refresh prepared changes','actions.list',m.id));
  detail.appendChild(panel);
 }
+function renderWebEvidence(m){
+ if(m.private||m.authority_current===false)return;
+ const detailed=webEvidenceByMission.get(m.id),collections=detailed||m.web_sources||[];if(!collections.length)return;
+ const section=el('section','vp3-mission-web-evidence');section.appendChild(el('h4','','Collected web evidence'));
+ for(const collection of collections){section.appendChild(el('p','vp3-teams-meta','Web collection: '+collection.query+' · Collected '+fmt(collection.collected_at)+' · Requests used '+collection.requests_used));
+  if(!collection.sources.length)section.appendChild(el('p','','No eligible public sources were returned. This is not proof that no matching information exists.'));
+  for(const source of collection.sources){const row=el('article','vp3-browser-source');try{const url=new URL(source.url);if(url.protocol!=='https:'||url.username||url.password)continue;const link=el('a','',source.title||url.hostname);link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';row.appendChild(link);}catch(_){continue;}
+   const coverage=source.status==='read'?'Fetched page excerpt'+(source.truncated?' · truncated':''):source.status==='discovered'?(source.origin==='reviewed_url'?'Reviewed URL · page not read':'Search match · page not read'):'Page unavailable'+(source.http_status?' · HTTP '+source.http_status:'');row.appendChild(el('small','',source.source_id+' · '+coverage));if(source.error)row.appendChild(el('small','',({request_budget_exhausted:'Read budget exhausted',page_outside_public_scope:'Page or redirect is outside the reviewed public scope',public_dns_unavailable:'A public website address could not be confirmed',page_too_large:'Page exceeds the collection size limit',page_access_blocked:'Website blocked automated reading',page_text_unavailable:'No readable page text was available',page_type_unsupported:'This page type is not supported',page_request_failed:'Page request failed'}[source.error])||'This page could not be read.'));
+   if(detailed&&source.excerpt){const text=el('details','vp3-teams-result');text.appendChild(el('summary','','Read captured excerpt'));text.appendChild(el('pre','',source.excerpt));row.appendChild(text);}section.appendChild(row);
+  }
+ }
+ if(!detailed)section.appendChild(btn('Read collected evidence','web.evidence',m.id));detail.appendChild(section);
+}
 function renderAssignments(m){
  const contract=toolsByMission.get(m.id);if(!contract)return;
  const panel=el('section','vp3-specialist-assignments');panel.setAttribute('aria-label','Specialist assignments');
@@ -757,16 +799,24 @@ function renderAssignments(m){
  const field=(node,key,tid,value)=>{node.dataset.toolField=key;if(tid)node.dataset.toolTask=tid;node.value=String(value);return node;};
  const label=(text,node)=>{const x=el('label','',text+' ');x.appendChild(node);return x;};
  const parallel=field(el('input'),'max_parallel','',draft.max_parallel||2);parallel.type='number';parallel.min='1';parallel.max=String(contract.max_parallel_limit||4);
- panel.appendChild(label('Concurrent workers (1–4)',parallel));
+ panel.appendChild(label('Concurrent workers (1–'+parallel.max+')',parallel));
  for(const task of m.tasks||[]){
   const entry=(draft.assignments||[]).find(a=>a.task_id===task.id)||{tools:[],max_calls:0,output:'analysis',browser_url:''};
   const group=el('fieldset');group.appendChild(el('legend','',task.title||task.role));
-  for(const capability of contract.capabilities||[]){const checkbox=field(el('input'),'tool',task.id,capability);checkbox.type='checkbox';checkbox.checked=entry.tools.includes(capability);group.appendChild(label(capability,checkbox));}
+  for(const capability of contract.capabilities||[]){const checkbox=field(el('input'),'tool',task.id,capability);checkbox.type='checkbox';checkbox.checked=entry.tools.includes(capability);if(contract.execution_target==='cloud'&&capability.startsWith('web.')&&contract.web_ready===false)checkbox.disabled=true;group.appendChild(label(capability,checkbox));}
   for(const capability of contract.action_capabilities||[]){const checkbox=field(el('input'),'action',task.id,capability);checkbox.type='checkbox';checkbox.checked=(entry.actions||[]).includes(capability);group.appendChild(label('Propose '+capability,checkbox));}
-  if(contract.action_capabilities){const actionBudget=field(el('input'),'max_actions',task.id,entry.max_actions||0);actionBudget.type='number';actionBudget.min='0';actionBudget.max=String(contract.max_actions_per_worker||3);group.appendChild(label('Prepared changes (0–3; approval required)',actionBudget));}
+  if(contract.action_capabilities&&(m.execution_target!=='cloud'||contract.action_capabilities.length)){const actionBudget=field(el('input'),'max_actions',task.id,entry.max_actions||0);actionBudget.type='number';actionBudget.min='0';actionBudget.max=String(contract.max_actions_per_worker||3);group.appendChild(label('Prepared changes (0–3; approval required)',actionBudget));}
   const calls=field(el('input'),'max_calls',task.id,entry.max_calls);calls.type='number';calls.min='0';calls.max=String(contract.max_calls_per_worker||3);group.appendChild(label('Read calls (0–3)',calls));
   const output=el('select');for(const kind of ['analysis','sources','document']){const option=el('option','',kind);option.value=kind;output.appendChild(option);}field(output,'output',task.id,entry.output);group.appendChild(label('Output',output));
-  const url=field(el('input'),'browser_url',task.id,entry.browser_url);url.type='url';url.maxLength=1400;url.placeholder='Separately approved HTTPS URL';group.appendChild(label('Browser URL',url));panel.appendChild(group);
+  if(contract.execution_target==='cloud'&&(contract.capabilities||[]).includes('web.search')){
+   const web=entry.web||{};const choices=el('details','vp3-mission-source-picker');choices.appendChild(el('summary','','Choose saved sources (up to five)'));for(const source of sourceCatalog.items||[]){if(source.status!=='active')continue;const pick=field(el('input'),'web_source',task.id,source.id);pick.type='checkbox';pick.dataset.sourceRevision=String(source.revision);pick.checked=(web.sources||[]).some(ref=>ref.id===source.id);choices.appendChild(label(source.label+' · '+(source.scope==='master'?'Master':'Mine')+' · '+source.url,pick));}group.appendChild(choices);
+   const query=field(el('input'),'web_query',task.id,web.query||'');query.maxLength=400;query.setAttribute('aria-label','External search query for '+task.title);group.appendChild(label('External search query',query));
+   const known=field(el('textarea'),'web_urls',task.id,(web.urls||[]).join('\n'));known.rows=2;known.maxLength=3700;known.setAttribute('aria-label','Known public pages for '+task.title);group.appendChild(label('Known public page URLs (optional; one per line)',known));
+   const domains=field(el('textarea'),'web_domains',task.id,(web.domains||[]).join('\n'));domains.rows=2;domains.maxLength=1300;domains.setAttribute('aria-label','Websites for '+task.title);group.appendChild(label('Websites (optional; includes subdomains)',domains));
+   const pages=field(el('select'),'web_max_pages',task.id,web.max_pages||1);for(const n of [1,2]){const option=el('option','',String(n));option.value=String(n);pages.appendChild(option);}pages.value=String(web.max_pages||1);group.appendChild(label('Maximum pages per run',pages));
+   group.appendChild(el('p','vp3-teams-meta',contract.web_ready===false?'Web collection needs PHP cURL and DOM on this host.':'Only this reviewed query goes to web search. Search, page requests and redirects share the read budget. Select web.search for discovery and web.read for page excerpts. To monitor known pages without search, select web.read and enter their URLs. Selected saved sources add their websites to the scope. Empty websites and no saved sources allows public HTTPS sources.'));
+  }
+  if(m.execution_target!=='cloud'){const url=field(el('input'),'browser_url',task.id,entry.browser_url);url.type='url';url.maxLength=1400;url.placeholder='Separately approved HTTPS URL';group.appendChild(label('Browser URL',url));}panel.appendChild(group);
  }
  panel.appendChild(btn('Approve assignments','tools.configure',m.id));detail.appendChild(panel);
 }
@@ -776,7 +826,7 @@ function assignmentDraft(){
  for(const group of panel.querySelectorAll('fieldset')){
   const nodes=Array.from(group.querySelectorAll('[data-tool-field]'));const task=nodes[0]?.dataset.toolTask;
   const get=key=>nodes.find(n=>n.dataset.toolField===key)?.value||'';
-  value.assignments.push({task_id:task,tools:nodes.filter(n=>n.dataset.toolField==='tool'&&n.checked).map(n=>n.value),max_calls:Number(get('max_calls')),...(nodes.some(n=>n.dataset.toolField==='max_actions')?{actions:nodes.filter(n=>n.dataset.toolField==='action'&&n.checked).map(n=>n.value),max_actions:Number(get('max_actions'))}:{}),output:get('output'),browser_url:get('browser_url')});
+  value.assignments.push({task_id:task,tools:nodes.filter(n=>n.dataset.toolField==='tool'&&n.checked).map(n=>n.value),max_calls:Number(get('max_calls')),...(nodes.some(n=>n.dataset.toolField==='max_actions')?{actions:nodes.filter(n=>n.dataset.toolField==='action'&&n.checked).map(n=>n.value),max_actions:Number(get('max_actions'))}:{}),output:get('output'),browser_url:get('browser_url'),...(nodes.some(n=>n.dataset.toolField==='web_query')?{web:{query:get('web_query').trim(),sources:nodes.filter(n=>n.dataset.toolField==='web_source'&&n.checked).map(n=>({id:n.value,revision:Number(n.dataset.sourceRevision)})),urls:get('web_urls').split(/[\n]+/).map(x=>x.trim()).filter(Boolean),domains:get('web_domains').split(/[\n,]+/).map(x=>x.trim()).filter(Boolean),max_pages:Number(get('web_max_pages'))}}:{})});
  }
  return value;
 }
@@ -903,6 +953,7 @@ async function operation(action,id,taskId,decision){
   if(Array.isArray(response.actions))changesByMission.set(id,response.actions);
   if(action==='get'&&response.mission?.chat_task&&(response.mission.status==='planned'||response.mission.execution_target==='cloud')&&!response.mission.private&&response.mission.authority_current!==false){const tools=await api('tools.get',{mission_id:id});toolsByMission.set(id,tools.tools);}
   if(action==='get'&&response.mission?.tools_enabled&&!response.mission.private&&response.mission.authority_current!==false){const changes=await api('actions.list',{mission_id:id});changesByMission.set(id,Array.isArray(changes.actions)?changes.actions:[]);}
+  if(response.web_evidence)webEvidenceByMission.set(id,response.web_evidence);
   if(response.tools){toolsByMission.set(id,response.tools);if(action!=='tools.get')toolDrafts.delete(id);}
   if(payload.request_id)for(const [key,value] of pendingOperations)if(value===payload.request_id)pendingOperations.delete(key);
   if(response.live_browser!==undefined){
@@ -991,5 +1042,6 @@ async function pollBrowserStatus(){
  }catch(_){/* Preserve drafts on transient relay failures. */}finally{statusInflight=false;}
 }
 window.setInterval(pollBrowserStatus,9000);
+if(cfg.openSourceCatalog){root.open=true;sourcePanel.open=true;}
 
 })();

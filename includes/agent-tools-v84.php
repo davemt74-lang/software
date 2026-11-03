@@ -300,7 +300,14 @@ function booking_agent_search_location(string $query): string
 
 function booking_agent_web_search(string $query, int $limit = 8): array
 {
-    if (!function_exists('curl_init')) return [];
+    $response=booking_agent_web_search_response($query,$limit);
+    return $response['ok']?$response['results']:[];
+}
+
+/** Structured status for collectors that must distinguish a provider failure from no matches. */
+function booking_agent_web_search_response(string $query,int $limit=8): array
+{
+    if (!function_exists('curl_init')) return ['ok'=>false,'provider'=>'DuckDuckGo','results'=>[]];
     $url = 'https://html.duckduckgo.com/html/?q=' . rawurlencode($query);
     $curl = curl_init($url);$html='';
     curl_setopt_array($curl,[
@@ -316,9 +323,10 @@ function booking_agent_web_search(string $query, int $limit = 8): array
     $ok = curl_exec($curl);
     $status = (int)curl_getinfo($curl,CURLINFO_HTTP_CODE);
     curl_close($curl);
-    if ($ok===false || strlen($html)>2000000 || $status < 200 || $status >= 300) return [];
-
-    return booking_agent_parse_web_search($html,$limit);
+    if ($ok===false || strlen($html)>2000000 || $status !== 200) return ['ok'=>false,'provider'=>'DuckDuckGo','results'=>[]];
+    $results=booking_agent_parse_web_search($html,$limit);
+    $confirmed=($results!==[]||preg_match('/no-results|result--no-result|No results found/i',$html))&&!preg_match('/anomaly-modal|challenge-form|bots use DuckDuckGo|captcha/i',$html);
+    return ['ok'=>(bool)$confirmed,'provider'=>'DuckDuckGo','results'=>$results];
 }
 
 function booking_agent_parse_web_search(string $html,int $limit=8): array
