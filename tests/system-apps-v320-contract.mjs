@@ -21,7 +21,7 @@ assert.match(layer,/source_urls_exposed'\s*=>\s*false/);
 assert.match(layer,/filesystem_paths_exposed'\s*=>\s*false/);
 assert.match(layer,/homeserver_execution_authority'\s*=>\s*true/);
 assert.match(layer,/cloud_execution_authority'\s*=>\s*false/);
-assert.match(layer,/HomeServer Agent control\/approval path/);
+assert.match(layer,/vp3_photo_media_legacy_v1\([\s\S]*'downloads.jobs.read'/);
 assert.match(bootstrap,/system-apps-v320\.php/);
 assert.match(router,/vp3_download_manager_agent_query_v320/);
 

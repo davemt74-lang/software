@@ -18,8 +18,8 @@ for(const fn of [
 assert.match(layer,/vp3\.media-processor-cloud\.v1/);
 assert.match(layer,/processor\.brain-context/);
 assert.match(layer,/ffmpeg_managed_by_homeserver/);
-assert.match(layer,/HomeServer Agent action path/);
-assert.match(layer,/Cloud does not run FFmpeg/);
+assert.match(layer,/vp3_photo_media_legacy_v1\([\s\S]*'media.processing.read'/);
+assert.match(layer,/media_processor_cloud_execution'\s*=>\s*false/);
 assert.match(layer,/source_paths_exposed'\s*=>\s*false/);
 assert.match(layer,/output_paths_exposed'\s*=>\s*false/);
 assert.match(layer,/media_processor_media_server_handoff'\s*=>\s*true/);
