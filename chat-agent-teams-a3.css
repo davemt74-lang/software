@@ -89,6 +89,7 @@
 .vp3-mission-web-evidence article {margin:10px 0;}
 .vp3-mission-web-evidence small {display:block;}
 .vp3-mission-sources {margin-top:12px;min-width:0;overflow-wrap:anywhere;}
+.vp3-agent-teams-a3 .vp3-mission-sources [hidden] {display:none;}
 .vp3-mission-source-form {display:grid;gap:8px;margin:10px 0;}
 .vp3-mission-source-form input:not([type=checkbox]),.vp3-mission-source-form select {box-sizing:border-box;width:100%;min-width:0;max-width:100%;}
 .vp3-mission-source-row {padding:10px 0;border-bottom:1px solid var(--border,#414552);overflow-wrap:anywhere;}
