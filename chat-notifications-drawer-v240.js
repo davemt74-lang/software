@@ -1296,6 +1296,10 @@
       conversation_id:activeConversationId(),
       agent_id:activeAgentId()
     });
+    if(data.presentation_owner==='profile_handoff_pa3'){
+      window.dispatchEvent(new Event('vp3:profile-handoff-refresh'));
+      return true;
+    }
     if (!data.handled) return true;
 
     const surfaced = await showAttentionConversation(

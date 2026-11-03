@@ -3,14 +3,16 @@ declare(strict_types=1);
 
 // Execute the production upgrade page with isolated migration dependencies.
 // Real PDO/SQLite and the production TV schema exercise the connection and readiness path.
-$newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_actions_v1','agent_participant_settings_v1','agent_participant_grants_v1','agent_participant_presence_v1','agent_participant_observers_v1'];
+$newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_actions_v1','agent_participant_settings_v1','agent_participant_grants_v1','agent_participant_presence_v1','agent_participant_observers_v1',
+    'profile_agent_handoff_owners_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3'];
 if (!isset($argv[1])) {
-    foreach (array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get'],array_map(fn($table)=>'missing-'.$table,$newTables)) as $mode) {
+    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get'],array_map(fn($table)=>'missing-'.$table,$newTables));
+    foreach ($modes as $mode) {
         $command = escapeshellarg(PHP_BINARY).(php_ini_loaded_file() ? ' -c '.escapeshellarg(php_ini_loaded_file()) : '').' '.escapeshellarg(__FILE__).' '.escapeshellarg($mode);
         passthru($command, $status);
         if ($status !== 0) exit($status);
     }
-    echo "UPGRADE_DATABASE_CONNECTION=PASS (18 cases)\n";
+    echo 'UPGRADE_DATABASE_CONNECTION=PASS ('.count($modes)." cases)\n";
     exit;
 }
 
@@ -20,14 +22,16 @@ $fixture->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $fixture->exec("CREATE TABLE existing_content (value TEXT); INSERT INTO existing_content VALUES ('preserve me')");
 require dirname(__DIR__).'/includes/tv-watching-v1.php';
 require dirname(__DIR__).'/includes/agent-reminders-v1.php';
+require dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
 $fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');
 // Load only the production DDL functions; unrelated upgrade dependencies stay isolated.
 foreach([['agent-task-lists-v1.php','vp3_task_lists_schema_v1','vp3_task_lists_ready_v1'],['participant-updates-v1.php','vp3_participant_updates_schema_v1','vp3_participant_updates_ready_v1']] as [$file,$schema,$ready]){
     $ddl=file_get_contents(dirname(__DIR__).'/includes/'.$file);$start=strpos($ddl,'function '.$schema.'(');$end=strpos($ddl,'function '.$ready.'(',$start);eval(substr($ddl,$start,$end-$start));
 }
-$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get'],true)||str_starts_with($mode,'missing-agent_');
-if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);}
-if(str_starts_with($mode,'missing-agent_')){$missing=substr($mode,8);if(!in_array($missing,$newTables,true))throw new RuntimeException('Invalid missing table fixture.');$fixture->exec('DROP TABLE '.$missing);}
+$missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_');
+$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get'],true)||$missingTable;
+if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);}
+if($missingTable){$missing=substr($mode,8);if(!in_array($missing,$newTables,true))throw new RuntimeException('Invalid missing table fixture.');$fixture->exec('DROP TABLE '.$missing);}
 if (in_array($mode,['already-ready','tv-only'],true)) tv_schema_v1($fixture);
 if ($mode === 'already-ready') reminder_schema_v1($fixture);
 if ($mode === 'state-only') $fixture->exec('CREATE TABLE tv_watching_state_v1 (owner_user_id BIGINT PRIMARY KEY)');
@@ -71,7 +75,7 @@ foreach ($functions as $name => $typed) {
     else eval('function '.$name.'(...$args) { return migration_dependency(__FUNCTION__, $args); }');
 }
 
-$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get'], true)||str_starts_with($mode,'missing-agent_')) ? 'GET' : 'POST';
+$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get'], true)||$missingTable) ? 'GET' : 'POST';
 // Reproduce the reported deployment: bootstrap does not supply a page-local PDO.
 $pdo = null;
 ob_start(); eval(preg_replace('/^<\?php\s*/', '', $source)); $html = ob_get_clean();

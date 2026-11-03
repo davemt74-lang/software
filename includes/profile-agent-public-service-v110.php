@@ -47,8 +47,9 @@ function vp3_profile_agent_public_live_v1(PDO $pdo,array $ctx,bool $lock=false):
         $freshAuthority=profile_conversation_native_authority_v1($owner,$visitorId);
         if(!hash_equals($authority['credential_hash'],$freshAuthority['credential_hash']))vp3_profile_agent_public_unavailable_v1();
         if($visitorId>0){
-            $q=$pdo->prepare('SELECT id,is_active FROM users WHERE id=? LIMIT 1'.$suffix);$q->execute([$visitorId]);$member=$q->fetch(PDO::FETCH_ASSOC);
+            $q=$pdo->prepare('SELECT id,is_active,password_hash FROM users WHERE id=? LIMIT 1'.$suffix);$q->execute([$visitorId]);$member=$q->fetch(PDO::FETCH_ASSOC);
             if(!$member||empty($member['is_active']))vp3_profile_agent_public_unavailable_v1();
+            $ctx['accepted_visitor_auth_revision']=hash('sha256',(string)$visitorId.'|'.(string)($member['password_hash']??''));
         }
     }elseif(!function_exists('vp3_profile_webmcp_external_chat_authorized_v1')||!vp3_profile_webmcp_external_chat_authorized_v1($pdo,$ctx,$lock)){
         vp3_profile_agent_public_unavailable_v1();
@@ -145,10 +146,11 @@ function vp3_profile_agent_public_event_session_v1(array $ctx): array
 }
 
 /** Reusing a past Agent answer also requires its recorded sources to remain shared. */
-function vp3_profile_agent_public_history_v1(PDO $pdo,array $ctx,int $conversationId): array
+function vp3_profile_agent_public_history_v1(PDO $pdo,array $ctx,int $conversationId,int $throughMessageId=0): array
 {
-    $q=$pdo->prepare("SELECT sender_type,message,SUBSTR(context_json,1,65537) context_json FROM profile_agent_messages WHERE conversation_id=? AND sender_type IN ('visitor','agent','owner') ORDER BY id DESC LIMIT 14");
-    $q->execute([$conversationId]);$history=[];$sourceSets=[];
+    $through=$throughMessageId>0?' AND id<=?':'';
+    $q=$pdo->prepare("SELECT sender_type,message,SUBSTR(context_json,1,65537) context_json FROM profile_agent_messages WHERE conversation_id=? AND sender_type IN ('visitor','agent','owner')".$through." ORDER BY id DESC LIMIT 14");
+    $q->execute($throughMessageId>0?[$conversationId,$throughMessageId]:[$conversationId]);$history=[];$sourceSets=[];
     foreach(array_reverse($q->fetchAll(PDO::FETCH_ASSOC)) as $row){
         if($row['sender_type']==='agent'){
             if(strlen((string)$row['context_json'])>65536)continue;
@@ -205,7 +207,7 @@ function vp3_profile_agent_public_start_v1(PDO $pdo,array $ctx): array
     return vp3_profile_agent_public_state_service_v110($pdo,$ctx,(int)$conversation['id']);
 }
 
-function vp3_profile_agent_public_context_v110(PDO $pdo,array $profile,?array $visitor): array
+function vp3_profile_agent_public_context_v110(PDO $pdo,array $profile,?array $visitor,bool $readOnly=false): array
 {
     $owner=(int)($profile['user_id']??0);
     $fresh=$owner>0?profile_for_user($pdo,$owner,false):null;
@@ -224,7 +226,10 @@ function vp3_profile_agent_public_context_v110(PDO $pdo,array $profile,?array $v
     if(!$agent){
         throw new VP3ProfileAgentPublicException('PROFILE_AGENT_UNAVAILABLE','This Profile Agent is not available.',404);
     }
-    $session=profile_runtime_session($pdo,$owner,$visitor,false);
+    if($readOnly){
+        $hash=function_exists('profile_visitor_session_hash_v243')?profile_visitor_session_hash_v243($owner):profile_session_hash($owner);
+        $q=$pdo->prepare('SELECT * FROM profile_visit_sessions WHERE owner_user_id=? AND session_key=? LIMIT 1');$q->execute([$owner,$hash]);$session=$q->fetch(PDO::FETCH_ASSOC);
+    }else $session=profile_runtime_session($pdo,$owner,$visitor,false);
     if(!is_array($session)||(int)($session['id']??0)<1){
         throw new VP3ProfileAgentPublicException('PROFILE_SESSION_UNAVAILABLE','The visitor session could not be established.',503);
     }
@@ -262,20 +267,26 @@ function vp3_profile_agent_public_state_service_v110(PDO $pdo,array $ctx,int $co
         $conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId);
         $conversationState=vp3_profile_agent_public_state_v390($conversation);
     }
+    $handoff=$conversationId>0?vp3_profile_agent_public_handoff_pa3($pdo,$ctx,$conversationId):null;
     vp3_profile_agent_public_live_v1($pdo,$ctx);
+    if($conversationId>0)$conversationState=vp3_profile_agent_public_state_v390(vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId));
     return [
         'agent'=>vp3_profile_agent_public_agent_projection_v110($ctx),
         'conversation'=>$conversationState,
         'messages'=>$messages,
+        'handoff'=>$handoff,
     ];
 }
 
-function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,string $query,int $conversationId=0): array
+function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,string $query,int $conversationId=0,array $delivery=[]): array
 {
     $query=trim($query);
     if($query===''||mb_strlen($query)>2000){
         throw new VP3ProfileAgentPublicException('VALIDATION_FAILED','Enter a message up to 2,000 characters.',422);
     }
+    // Only the native HTTP adapter chooses queued delivery. Existing signed
+    // WebMCP and direct service callers retain their synchronous contract.
+    if(($delivery['async']??false)===true)return vp3_profile_agent_public_accept_pa3($pdo,$ctx,$query,$conversationId,$delivery);
     $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx);
     $profile=$ctx['profile'];$owner=(int)$ctx['owner_user_id'];$ownerUser=$ctx['owner_user'];
     $visitor=$ctx['visitor'];$agent=$ctx['agent'];$agentId=(int)$ctx['agent_id'];
@@ -425,8 +436,86 @@ function vp3_profile_agent_public_poll_service_v110(PDO $pdo,array $ctx,int $con
     $s->execute([$conversationId,max(0,$afterId)]);
     $messages=$s->fetchAll()?:[];
     $conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId);
+    $handoff=vp3_profile_agent_public_handoff_pa3($pdo,$ctx,$conversationId);
     vp3_profile_agent_public_live_v1($pdo,$ctx);
-    return ['messages'=>$messages,'conversation'=>vp3_profile_agent_public_state_v390($conversation)];
+    $conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId);
+    return ['messages'=>$messages,'conversation'=>vp3_profile_agent_public_state_v390($conversation),'handoff'=>$handoff];
+}
+
+/** A projection read never advances a deadline, claims work or calls a model. */
+function vp3_profile_agent_public_handoff_pa3(PDO $pdo,array $ctx,int $conversationId): ?array
+{
+    if(!function_exists('vp3_profile_handoff_schema_ready_pa3'))require_once __DIR__.'/profile-agent-handoff-pa3.php';
+    if(!vp3_profile_handoff_schema_ready_pa3($pdo))return null;
+    $state=vp3_profile_handoff_public_pa3($pdo,(int)$ctx['owner_user_id'],$conversationId);
+    return $state?:null;
+}
+
+/** Native admission is durable before the HTTP request returns. */
+function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,int $conversationId,array $delivery): array
+{
+    require_once __DIR__.'/profile-agent-handoff-pa3.php';
+    require_once __DIR__.'/profile-agent-accepted-turn-pa3.php';
+    $requestId=$delivery['client_request_id']??'';
+    if(!is_string($requestId)||($requestId!==''&&!preg_match('/^[a-f0-9]{32}$/D',$requestId)))throw new VP3ProfileAgentPublicException('VALIDATION_FAILED','The message retry identifier is invalid.',422);
+    if($requestId==='')$requestId=bin2hex(random_bytes(16));
+    $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx);
+    if(($ctx['conversation_authority']['transport']??null)!=='native')vp3_profile_agent_public_unavailable_v1();
+    // DDL must not implicitly commit the message, attention and job transaction.
+    vp3_profile_handoff_ensure_schema_pa3($pdo);
+    $cid=max(0,$conversationId);$duplicate=false;
+    $pdo->beginTransaction();
+    try{
+        $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx,true);
+        if($cid>0)$conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$cid,true);
+        $turn=vp3_profile_handoff_retry_pa3($pdo,$ctx,$requestId,$query);
+        if($turn){
+            if($cid>0&&$cid!==(int)$turn['conversation_id'])throw new VP3ProfileAgentPublicException('HANDOFF_CONFLICT','This retry belongs to another conversation.',409);
+            $cid=(int)$turn['conversation_id'];$conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$cid,true);$duplicate=true;
+        }else{
+            vp3_profile_agent_public_admit_v1($pdo,$ctx);
+            if($cid<1){$conversation=vp3_profile_agent_public_create_bound_v1($pdo,$ctx);$cid=(int)$conversation['id'];}
+            $conversation=vp3_profile_agent_prepare_visitor_turn_v390($pdo,$conversation);
+            $owner=(int)$ctx['owner_user_id'];$sessionId=(int)$ctx['session_id'];$agentId=(int)$ctx['agent_id'];
+            $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'visitor',?,?)")
+                ->execute([$cid,(int)($ctx['visitor']['id']??0)?:null,$query]);
+            $visitorMessageId=(int)$pdo->lastInsertId();
+            $pdo->prepare('UPDATE profile_visit_sessions SET last_message_at=NOW(),last_seen_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$sessionId,$owner]);
+            $pdo->prepare('UPDATE profile_agent_conversations SET last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')
+                ->execute([mb_strimwidth($query,0,900,'…'),$cid,$owner,$agentId,$sessionId]);
+            profile_agent_message_received_v1341($pdo,$ctx['profile'],$ctx['agent'],vp3_profile_agent_public_event_session_v1($ctx),$conversation,$visitorMessageId,$query);
+            $ctx['accepted_message_sha256']=hash('sha256',$query);
+            $turn=vp3_profile_handoff_admit_pa3($pdo,$ctx,$conversation,$visitorMessageId,$requestId,vp3_profile_agent_accepted_snapshot_pa3($ctx));
+        }
+        vp3_profile_agent_public_live_v1($pdo,$ctx,true);$pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    return ['conversation_id'=>$cid,'visitor_message_id'=>(int)$turn['visitor_message_id'],'client_request_id'=>$requestId,
+        'answer'=>'','accepted'=>true,'duplicate'=>$duplicate,'awaiting_owner'=>vp3_profile_agent_status_v390($conversation)==='owner_joined',
+        'conversation'=>vp3_profile_agent_public_state_v390($conversation),'agent'=>vp3_profile_agent_public_agent_projection_v110($ctx),
+        'handoff'=>vp3_profile_handoff_projection_pa3($turn)];
+}
+
+/** Exact-turn POST assistance uses the same durable claim as the Cloud runner. */
+function vp3_profile_agent_public_dispatch_pa3(PDO $pdo,array $ctx,int $conversationId,int $turnId): array
+{
+    if($conversationId<1||$turnId<1)throw new VP3ProfileAgentPublicException('VALIDATION_FAILED','Choose a saved visitor turn.',422);
+    require_once __DIR__.'/profile-agent-handoff-pa3.php';
+    require_once __DIR__.'/profile-agent-accepted-turn-pa3.php';
+    $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx);
+    vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId);
+    $turn=vp3_profile_handoff_row_pa3($pdo,$turnId);
+    if(!$turn||(int)$turn['owner_user_id']!==(int)$ctx['owner_user_id']||(int)$turn['conversation_id']!==$conversationId
+       ||(int)$turn['profile_agent_id']!==(int)$ctx['agent_id']||(int)$turn['profile_session_id']!==(int)$ctx['session_id']
+       ||(int)$turn['visitor_user_id']!==(int)($ctx['visitor']['id']??0)
+       ||($turn['transport']??null)!==($ctx['conversation_authority']['transport']??null)
+       ||!hash_equals((string)$turn['credential_hash'],(string)$ctx['conversation_authority']['credential_hash']))vp3_profile_agent_public_unavailable_v1();
+    // The admitted-turn checker revalidates persisted authority during inference.
+    // Releasing PHP's file lock allows the owner to claim/reply concurrently.
+    if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+    vp3_profile_handoff_dispatch_pa3($pdo,$turnId);
+    // No answer text is returned from this slow request. A fresh authenticated
+    // poll obtains the result, including after a member switches account.
+    return ['conversation_id'=>$conversationId,'turn_id'=>$turnId,'dispatch_checked'=>true];
 }
 
 function vp3_profile_agent_public_request_owner_v110(PDO $pdo,array $ctx,int $conversationId,string $reason=''): array

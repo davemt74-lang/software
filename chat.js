@@ -1384,6 +1384,7 @@
       system_app_action_card:raw.system_app_action_card && typeof raw.system_app_action_card === 'object' ? raw.system_app_action_card : null,
       knowledge_actions_r9:raw.knowledge_actions_r9 || null,
       canvas_media:raw.canvas_media && typeof raw.canvas_media==='object' ? raw.canvas_media : null,
+      profile_handoff:raw.profile_handoff && typeof raw.profile_handoff==='object' ? raw.profile_handoff : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1593,6 +1594,59 @@
     if(listening)thread.insertBefore(el,listening);else thread.appendChild(el);
     thread.scrollTop = thread.scrollHeight;
     return el;
+  }
+
+  // A visitor card is attached to a server-created private Chat message. Its
+  // marker contains identities only; the current owner projection is fetched
+  // separately so reloading old history cannot restore stale reply authority.
+  function bindStoredMessagePa3(element, id, marker = null) {
+    const messageId=Number(id);
+    if(!element || !Number.isSafeInteger(messageId) || messageId<1)return;
+    element.dataset.chatMessageId=String(messageId);
+    element.dataset.chatConversationId=String(conversationId);
+    if(!marker || marker.contract!=='vp3.profile-handoff.v1' ||
+      !['turn_id','revision','conversation_id'].every(key=>Number.isSafeInteger(marker[key])&&marker[key]>0))return;
+    element.dataset.profileHandoffTurn=String(marker.turn_id);
+    element.dataset.profileHandoffRevision=String(marker.revision);
+    element.dataset.profileHandoffConversation=String(marker.conversation_id);
+    window.dispatchEvent(new CustomEvent('vp3:profile-handoff-message',{detail:{element}}));
+  }
+
+  let initializingConversationPa3=null;
+  async function ensureConversationPa3() {
+    if(conversationId>0)return conversationId;
+    if(initializingConversationPa3)return initializingConversationPa3;
+    if(!contextReady || initialRestorePending || restoringConversation || busy || thread.dataset.view!=='chat')return 0;
+    const revision=chatRevision;
+    const controller=new AbortController();let timer=0;
+    initializingConversationPa3=(async()=>{
+      const deadline=new Promise((_,reject)=>{timer=window.setTimeout(()=>{controller.abort();reject(new Error('Chat initialization timed out. Your draft is kept.'));},10000);});
+      const data=await Promise.race([api({action:'new'},controller.signal),deadline]);
+      const id=Number(data.conversation_id);
+      if(revision!==chatRevision || conversationId!==0 || busy || thread.dataset.view!=='chat')return 0;
+      if(!Number.isSafeInteger(id)||id<1)throw new Error('Chat could not be initialized.');
+      const draft=input.value;
+      conversationId=id;keepDraft(draft,id);keepDraft('',0);rememberConversation();
+      window.dispatchEvent(new Event('vp3:chat-context-ready'));
+      void refreshHistory().catch(()=>{});
+      return id;
+    })();
+    try{return await initializingConversationPa3;}finally{window.clearTimeout(timer);initializingConversationPa3=null;}
+  }
+
+  function mountProfileHandoffPa3(delivery) {
+    const marker=delivery?.turn;
+    const id=Number(delivery?.chat_message_id || delivery?.message_id);
+    if(!contextReady || restoringConversation || Number(delivery?.chat_conversation_id)!==conversationId ||
+      Number(marker?.chat_agent_id)!==Number(cfg.agentId||0) || marker?.contract!=='vp3.profile-handoff.v1' ||
+      !Number.isSafeInteger(id)||id<1)return null;
+    const existing=thread.querySelector('[data-chat-message-id="'+id+'"]');
+    if(existing)return existing;
+    const previousScroll=thread.scrollTop, nearBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<100;
+    const element=addMessage('assistant','A Profile visitor sent you a message.');
+    bindStoredMessagePa3(element,id,marker);
+    if(!nearBottom)thread.scrollTop=previousScroll;
+    return element;
   }
 
   function formatPlaybackTime(value) {
@@ -3038,7 +3092,7 @@
         } catch (error) {}
       }
 
-      addMessage(
+      const renderedMessage=addMessage(
         message.role === 'user' ? 'user' : 'assistant',
         message.message,
         context.sources,
@@ -3051,6 +3105,7 @@
         context.knowledge_actions_r9 || null,
         context.canvas_media || null
       );
+      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
 
@@ -3062,7 +3117,7 @@
     });
 
     closeNav();
-    } finally { window.clearTimeout(restoreTimer); restoringConversation--; }
+    } finally { window.clearTimeout(restoreTimer); restoringConversation--; window.dispatchEvent(new Event('vp3:chat-context-ready')); }
   }
 
   async function syncConversationMessagesV101(id, signal) {
@@ -3071,9 +3126,13 @@
     const data=await api({action:'messages_after',conversation_id:targetId,after_id:lastLoadedMessageId}, signal);
     if(revision!==chatRevision||targetId!==conversationId||busy||!Array.isArray(data.messages))return;
     data.messages.forEach(message=>{
+      if(thread.querySelector('[data-chat-message-id="'+Number(message.id||0)+'"]')){
+        lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));return;
+      }
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
-      addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null);
+      const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null);
+      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory(signal);
@@ -3401,6 +3460,9 @@
     pendingParticipantQuestion:()=>pendingSend?{message:pendingSend.message,conversation_id:pendingSend.conversationId,submitted:true}:lastParticipantQuestion&&Date.now()-lastParticipantQuestion.at<120000&&lastParticipantQuestion.conversation_id===Number(conversationId||0)?{...lastParticipantQuestion}:null,
     isVoice:() => Boolean(voiceMode),
     conversationId:() => Number(conversationId || 0),
+    agentId:() => Number(cfg.agentId || 0),
+    ensureConversation:ensureConversationPa3,
+    mountProfileHandoff:mountProfileHandoffPa3,
     isRestoring:() => initialRestorePending || restoringConversation > 0,
     isReady:() => contextReady,
     isBusy:() => busy || initialRestorePending || restoringConversation > 0,
@@ -3454,7 +3516,7 @@
       if (error.status === 401) return;
       if (error.status === 404) { contextReady=true; conversationId=0; rememberConversation(); restoreDraft(); }
       recoveryStatus('Conversation history is unavailable. Your drafts are kept.');
-    } finally { initialRestorePending = false; }
+    } finally { initialRestorePending = false; window.dispatchEvent(new Event('vp3:chat-context-ready')); }
     presentIntroV101();
   }
   void restoreInitialConversationV101();

@@ -99,6 +99,8 @@ function agent_worker_cloud_execute_once_v1910(PDO $pdo,array $user,int $limit=2
         return ['ok'=>false,'reason'=>'authorization_denied','receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
     }
 
+    if(($run['action_capability_key']??'')==='profile.visitor.reply'&&($run['source_kind']??'')==='profile_visitor_turn'){require_once __DIR__.'/profile-agent-handoff-pa3.php';return vp3_profile_handoff_execute_claim_pa3($pdo,$user,$claim);}
+
     if(($run['action_capability_key']??'')==='images.generate'&&($run['source_kind']??'')==='image_generation'){require_once __DIR__.'/agent-image-generation-v1.php';return vp3_image_execute_v1($pdo,$user,$claim);}
 
     if(($run['action_capability_key']??'')==='missions.analyze'){require_once __DIR__.'/cloud-missions-v1.php';return cloud_mission_execute_claim_v1($pdo,$user,$claim);}

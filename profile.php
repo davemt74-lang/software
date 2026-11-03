@@ -345,6 +345,6 @@ window.VP3_PROFILE_WEBMCP={
 <script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-checkout-pa2-20261103')) ?>"></script>
 <?php endif; ?>
 <?php if($viewer): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
-<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-checkout-pa2-20261103')) ?>"></script><?php endif; ?>
+<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-doorbell-pa3-20261104')) ?>"></script><?php endif; ?>
 </body>
 </html>

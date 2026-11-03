@@ -12,7 +12,17 @@
   let conversationId=cfg.conversationNamespace?Math.max(0,Number(localStorage.getItem(storageKey)||0)):0;
   let conversationStatus='open';
   let lastMessageId=0;
-  let pollTimer=0,presenceTimer=0;
+  let pollTimer=0,presenceTimer=0,countdownTimer=0;
+  let handoff=null,clockOffset=0,pollBusy=false,dispatchBusy=false,sending=false,alive=true,sessionChanged=false,requestEpoch=0;
+  let formNotice='',lastDispatchAt=0,lastDispatchTurn=0;
+  const retryStorageKey=storageKey+':pending';
+  const originalSubmitLabel=submit?.textContent||'Send';
+  let pendingSend=null;
+  try{
+    const saved=JSON.parse(sessionStorage.getItem(retryStorageKey)||'null');
+    if(saved&&/^[a-f0-9]{32}$/.test(saved.client_request_id||'')&&typeof saved.message==='string'&&saved.message.trim()!==''&&saved.message.length<=4000
+       &&Number.isSafeInteger(saved.conversation_id)&&saved.conversation_id>=0)pendingSend=saved;
+  }catch(_error){}
 
   // Preserve the native scheduling CTA contract, but expose it only when the
   // canonical Profile renderer has a Booking tab backed by public event types.
@@ -267,34 +277,67 @@
   }
   function appendMessage(type,text,id=0){
     if(!String(text||'').trim())return;
-    if(id>0&&thread.querySelector(`[data-message-id="${id}"]`))return;
+    if(id>0&&thread.querySelector(`[data-message-id="${id}"]`)){lastMessageId=Math.max(lastMessageId,id);return;}
     const node=messageNode(type,text,id);thread.appendChild(node);if(id>lastMessageId)lastMessageId=id;thread.scrollTop=thread.scrollHeight;
+    return node;
   }
   function renderMessages(messages){
     thread.innerHTML='';lastMessageId=0;
     (messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0)));
     if(!messages?.length&&cfg.greeting)appendMessage('agent',cfg.greeting);
   }
-  function applyConversationState(conversation){
+  function activeHandoff(){return Boolean(handoff&&['awaiting_delivery','awaiting_owner','agent_ready','agent_running'].includes(String(handoff.dispatch_state||handoff.state||'')));}
+  function dispatchPaused(){return handoff?.dispatch_execution_paused===true||(handoff?.dispatch_execution_paused===undefined&&Number(handoff?.dispatch_turn_id||handoff?.turn_id||0)===Number(handoff?.turn_id||0)&&handoff?.execution_paused===true);}
+  function showHandoffStatus(){
+    if(sessionChanged||sending)return;
+    if(formNotice){status.textContent=formNotice;return;}
+    if(pendingSend){status.textContent='Your message may already be saved. Retry this same message to check its result.';return;}
+    const state=String(handoff?.state||'');
+    if(conversationStatus==='resolved')status.textContent='This conversation was resolved. Your next message will reopen it.';
+    else if(state==='owner_claimed'||conversationStatus==='owner_joined')status.textContent='The profile owner has joined this conversation.';
+    else if(state==='awaiting_delivery')status.textContent='Checking whether the profile owner is available…';
+    else if(state==='awaiting_owner'){
+      const deadline=Number(handoff.pickup_deadline_ms||handoff.deadline_ms||0);
+      const remaining=Math.max(0,Math.ceil((deadline-(Date.now()+clockOffset))/1000));
+      status.textContent=remaining>0?`Waiting for the profile owner · ${remaining} seconds`:'The Profile Agent will respond shortly…';
+    }else if(state==='agent_ready'||state==='agent_running')status.textContent=handoff.execution_paused===true||dispatchPaused()?`${cfg.agentName||'Profile Agent'} is paused. Waiting for the profile owner to resume.`:`${cfg.agentName||'Profile Agent'} is preparing a reply…`;
+    else if(state==='blocked')status.textContent='The Profile Agent could not complete this reply. The profile owner can review the conversation.';
+    else if(!pendingSend)status.textContent='';
+  }
+  function applyConversationState(conversation,nextHandoff=undefined){
+    if(handoff&&nextHandoff!==undefined){
+      if(!nextHandoff)return;
+      const oldId=Number(handoff.turn_id||0),nextId=Number(nextHandoff.turn_id||0);
+      if(nextId<oldId||(nextId===oldId&&Number(nextHandoff.revision||0)<Number(handoff.revision||0)))return;
+    }
     conversationStatus=String(conversation?.status||'open');
-    if(conversationStatus==='owner_joined')status.textContent='The profile owner has joined this conversation.';
-    else if(conversationStatus==='resolved')status.textContent='This conversation was resolved. Your next message will reopen it.';
-    else if(!submit?.disabled)status.textContent='';
+    if(nextHandoff!==undefined){handoff=nextHandoff&&typeof nextHandoff==='object'?nextHandoff:null;const serverNow=Number(handoff?.server_now_ms||0);if(Number.isFinite(serverNow)&&serverNow>0)clockOffset=serverNow-Date.now();}
+    showHandoffStatus();
   }
   function resetConversation(){
-    conversationId=0;conversationStatus='open';lastMessageId=0;localStorage.removeItem(storageKey);clearInterval(pollTimer);pollTimer=0;
+    requestEpoch++;conversationId=0;conversationStatus='open';lastMessageId=0;handoff=null;localStorage.removeItem(storageKey);clearTimeout(pollTimer);pollTimer=0;
+  }
+  function stopChangedSession(){
+    sessionChanged=true;pendingSend=null;try{sessionStorage.removeItem(retryStorageKey);}catch(_error){}
+    resetConversation();renderMessages([]);textarea.disabled=true;submit.disabled=true;
+    status.textContent='Your visitor session changed. Refresh this profile before continuing.';
   }
   async function request(action,payload={},method='POST'){
+    const epoch=requestEpoch;
+    const identity=`${cfg.username}|${cfg.conversationNamespace||''}|${cfg.profileToken||''}`;
     const options={method,credentials:'same-origin',cache:'no-store'};
     let url=cfg.endpoint;
+    const body={action,username:cfg.username,conversation_id:conversationId,...(cfg.conversationNamespace?{conversation_namespace:cfg.conversationNamespace}:{}),...payload};
     if(method==='GET'){
-      const q=new URLSearchParams({action,username:cfg.username,conversation_id:String(conversationId||0)});url+=`?${q}`;
+      const q=new URLSearchParams(body);url+=`?${q}`;
     }else{
       options.headers={'Content-Type':'application/json'};
-      options.body=JSON.stringify({action,username:cfg.username,profile_token:cfg.profileToken,conversation_id:conversationId,...payload});
+      options.body=JSON.stringify({...body,profile_token:cfg.profileToken});
     }
     const r=await fetch(url,options);const data=await r.json().catch(()=>null);
-    if(!r.ok||!data?.ok){const error=new Error(data?.error||'Profile Agent is unavailable.');error.status=r.status;throw error;}
+    if(alive&&identity!==`${cfg.username}|${cfg.conversationNamespace||''}|${cfg.profileToken||''}`)stopChangedSession();
+    if(!alive||epoch!==requestEpoch||sessionChanged){const error=new Error('This visitor request is no longer current.');error.stale=true;throw error;}
+    if(!r.ok||!data?.ok){const error=new Error(data?.error||'Profile Agent is unavailable.');error.status=r.status;error.code=data?.code||'';throw error;}
     return data;
   }
   async function loadState(){
@@ -302,41 +345,79 @@
       const data=await request('state',{},'GET');
       if(data.agent?.name)cfg.agentName=data.agent.name;
       if(Object.prototype.hasOwnProperty.call(data.agent||{},'greeting'))cfg.greeting=data.agent.greeting||'';
-      renderMessages(data.messages||[]);applyConversationState(data.conversation||null);
+      renderMessages(data.messages||[]);applyConversationState(data.conversation||null,data.handoff);
       if(conversationId)startPolling();
+      if(pendingSend&&!sessionChanged)void sendSaved(pendingSend);
+      else void dispatchIfDue();
     }catch(error){
+      if(error.stale)return;
+      if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419){stopChangedSession();return;}
       if(conversationId&&error.status===404){resetConversation();renderMessages([]);status.textContent='';return loadState();}
-      status.textContent=error.message;
+      formNotice=error.message;status.textContent=formNotice;
     }
   }
   async function poll(){
-    if(!conversationId)return;
+    if(!alive||sessionChanged||!conversationId||pollBusy)return;
+    pollBusy=true;
     try{
-      const data=await request('poll',{after_id:lastMessageId});
+      const data=await request('poll',{after_id:lastMessageId},'GET');
       (data.messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0)));
-      applyConversationState(data.conversation||null);
+      applyConversationState(data.conversation||null,data.handoff);
+      void dispatchIfDue();
     }catch(error){
-      if(error.status===404){resetConversation();renderMessages([]);loadState();}
+      if(!error.stale&&(error.code==='PROFILE_SESSION_CHANGED'||error.status===419)){stopChangedSession();return;}
+      if(!error.stale&&error.status===404){pendingSend=null;try{sessionStorage.removeItem(retryStorageKey);}catch(_error){}resetConversation();renderMessages([]);formNotice='The Profile Agent changed. Start a new conversation after refreshing this profile.';status.textContent=formNotice;}
+    }finally{pollBusy=false;if(alive&&!sessionChanged&&conversationId)startPolling();}
+  }
+  function startPolling(){clearTimeout(pollTimer);if(alive&&!sessionChanged&&conversationId)pollTimer=window.setTimeout(poll,activeHandoff()?1000:10000);}
+  async function dispatchIfDue(){
+    if(!alive||sessionChanged||dispatchBusy||!conversationId||!handoff||dispatchPaused())return;
+    const state=String(handoff.dispatch_state||handoff.state||'');
+    const turnId=Number(handoff.dispatch_turn_id||handoff.turn_id||0);
+    if(!Number.isSafeInteger(turnId)||turnId<1||!['awaiting_delivery','awaiting_owner','agent_ready','agent_running'].includes(state))return;
+    const deadline=Number(handoff.dispatch_due_at_ms|| (state==='awaiting_owner'?handoff.pickup_deadline_ms:state==='awaiting_delivery'?handoff.delivery_until_ms:0) ||0);
+    if(deadline>Date.now()+clockOffset)return;
+    if(lastDispatchTurn===turnId&&Date.now()-lastDispatchAt<1200)return;
+    const cid=conversationId;dispatchBusy=true;lastDispatchAt=Date.now();lastDispatchTurn=turnId;
+    try{await request('dispatch',{conversation_id:cid,turn_id:turnId});}
+    catch(error){if(!error.stale&&(error.code==='PROFILE_SESSION_CHANGED'||error.status===419))stopChangedSession();}
+    finally{dispatchBusy=false;if(alive&&!sessionChanged&&cid===conversationId)void poll();}
+  }
+  async function heartbeat(){if(document.visibilityState!=='visible'||sessionChanged)return;try{await request('state',{},'GET');}catch(error){if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419)stopChangedSession();}}
+  function savePending(value){pendingSend=value;try{if(value)sessionStorage.setItem(retryStorageKey,JSON.stringify(value));else sessionStorage.removeItem(retryStorageKey);}catch(_error){}}
+  function messageRequestId(){const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');}
+  async function sendSaved(saved){
+    if(sending||sessionChanged||!alive)return;
+    requestEpoch++;sending=true;formNotice='';savePending(saved);let accepted=false;
+    let optimistic=thread.querySelector(`[data-client-request-id="${saved.client_request_id}"]`);
+    if(!optimistic){optimistic=appendMessage('visitor',saved.message);if(optimistic)optimistic.dataset.clientRequestId=saved.client_request_id;}
+    textarea.value='';textarea.disabled=true;submit.disabled=true;status.textContent='Saving your message…';
+    try{
+      const data=await request('message',saved);
+      if(data.client_request_id!==saved.client_request_id||!Number.isSafeInteger(Number(data.visitor_message_id))||Number(data.visitor_message_id)<1)throw new Error('The saved message could not be verified. Retry the same message.');
+      conversationId=Number(data.conversation_id||0);if(conversationId)localStorage.setItem(storageKey,String(conversationId));
+      const existing=thread.querySelector(`[data-message-id="${Number(data.visitor_message_id)}"]`);
+      if(optimistic){if(existing&&existing!==optimistic)optimistic.remove();else optimistic.dataset.messageId=String(data.visitor_message_id);}
+      savePending(null);accepted=true;applyConversationState(data.conversation||null,data.handoff);startPolling();
+    }catch(error){
+      if(error.stale)return;
+      if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419){stopChangedSession();return;}
+      if(error.status===404){savePending(null);resetConversation();renderMessages([]);formNotice='The Profile Agent changed. Start a new conversation after refreshing this profile.';status.textContent=formNotice;}
+      else if([409,422,429].includes(error.status)){
+        savePending(null);optimistic?.remove();textarea.value=saved.message;formNotice=error.message;status.textContent=formNotice;
+      }else{textarea.value=saved.message;status.textContent='Your message may already be saved. Retry this same message to check its result.';}
+    }
+    finally{
+      sending=false;
+      if(alive&&!sessionChanged){textarea.disabled=false;submit.disabled=false;submit.textContent=pendingSend?'Retry message':originalSubmitLabel;textarea.focus();if(accepted){showHandoffStatus();void poll();void dispatchIfDue();}}
     }
   }
-  function startPolling(){clearInterval(pollTimer);pollTimer=window.setInterval(poll,10000);}
-  async function heartbeat(){if(document.visibilityState!=='visible')return;try{await request('state',{},'GET');}catch(_error){}}
-  form?.addEventListener('submit',async event=>{
-    event.preventDefault();const message=String(textarea.value||'').trim();if(!message)return;
-    appendMessage('visitor',message);textarea.value='';textarea.disabled=true;submit.disabled=true;status.textContent=`${cfg.agentName||'Profile Agent'} is thinking…`;
-    try{
-      const data=await request('message',{message});conversationId=Number(data.conversation_id||0);if(conversationId)localStorage.setItem(storageKey,String(conversationId));
-      if(data.answer)appendMessage('agent',data.answer||'');
-      applyConversationState(data.conversation||null);
-      if(data.awaiting_owner)status.textContent='The profile owner has joined this conversation.';
-      startPolling();
-    }catch(error){
-      if(error.status===404){resetConversation();renderMessages([]);status.textContent='The Profile Agent changed. Start a new conversation.';}
-      else status.textContent=error.message;
-    }
-    finally{textarea.disabled=false;submit.disabled=false;textarea.focus();}
+  form?.addEventListener('submit',event=>{
+    event.preventDefault();const message=String(textarea.value||'').trim();if(!message||sending||sessionChanged)return;
+    if(pendingSend){if(message!==pendingSend.message){status.textContent='Retry the saved message first so it is not sent twice.';return;}void sendSaved(pendingSend);return;}
+    void sendSaved({message,conversation_id:conversationId,client_request_id:messageRequestId()});
   });
   textarea?.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit();}});
-  window.addEventListener('pagehide',()=>{clearInterval(pollTimer);clearInterval(presenceTimer);},{once:true});
-  loadState();presenceTimer=window.setInterval(heartbeat,60000);
+  window.addEventListener('pagehide',()=>{alive=false;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(countdownTimer);},{once:true});
+  loadState();presenceTimer=window.setInterval(heartbeat,60000);countdownTimer=window.setInterval(showHandoffStatus,1000);
 })();

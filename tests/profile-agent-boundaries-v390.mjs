@@ -64,7 +64,11 @@ assert.match(messageService,/vp3_profile_agent_public_admit_v1[\s\S]*vp3_profile
 assert.match(publicUi,/error\.status===404/);
 assert.match(publicUi,/resetConversation\(\)/);
 assert.match(publicUi,/The Profile Agent changed\. Start a new conversation/);
-assert.match(publicUi,/if\(data\.answer\)appendMessage/);
+assert.match(profileApi,/'async'=>true,'client_request_id'/,'native HTTP selects queued delivery on the server');
+assert.match(publicUi,/data\.client_request_id!==saved\.client_request_id/,'the native widget verifies the accepted retry receipt');
+assert.match(publicUi,/request\('poll',\{after_id:lastMessageId\},'GET'\)/,'native results are read through the authenticated poll boundary');
+assert.match(publicUi,/data\.messages\|\|\[\]\)\.forEach\(m=>appendMessage/,'canonical saved visitor, owner and Agent messages are rendered by ID');
+assert.doesNotMatch(publicUi,/if\(data\.answer\)appendMessage/,'an admission/dispatch response cannot directly publish a competing answer');
 assert.match(publicUi,/owner_joined/);
 assert.match(publicUi,/The profile owner has joined this conversation/);
 
