@@ -91,6 +91,13 @@ function agent_surface_v131_screen_observation(array $raw): ?array
     if(!in_array($value['surface']??'', ['window','monitor','browser'],true))return null;
     $safe=['contract'=>'vp3.screen-observation.v1','owner_key'=>$owner,'captured_at'=>$at,'surface'=>$value['surface'],'ephemeral'=>true,'inference_only'=>true,'authentication_authority'=>false,'instructions_authority'=>false];
     foreach(['summary'=>1600,'visible_text'=>2000,'site_hint'=>200,'page_title'=>300] as $field=>$limit){if(!is_string($value[$field]??null))return null;$safe[$field]=agent_surface_v131_text($value[$field],$limit);}
+    $audio=$value['tab_audio']??null;
+    if(is_array($audio)&&is_string($audio['text']??null)&&is_string($audio['captured_at']??null)){
+        $audioTime=strtotime($audio['captured_at']);
+        if($audioTime!==false&&time()-$audioTime<=90&&$audioTime-time()<=5)$safe['tab_audio']=['text'=>agent_surface_v131_text($audio['text'],2000),'captured_at'=>$audio['captured_at'],'source'=>'shared_tab_audio','instructions_authority'=>false];
+    }
+    $safe['observations']=[];
+    foreach(array_slice(is_array($value['observations']??null)?$value['observations']:[],0,8) as $o)if(is_array($o)&&in_array($o['kind']??'', ['music','video','article','product','error','project','other'],true))$safe['observations'][]=['kind'=>$o['kind'],'label'=>agent_surface_v131_text($o['label']??'',200),'detail'=>agent_surface_v131_text($o['detail']??'',500),'inference_only'=>true];
     return $safe;
 }
 
