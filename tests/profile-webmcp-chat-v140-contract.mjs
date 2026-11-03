@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 
 const chat=read('includes/profile-webmcp-chat-v140.php');
+const service=read('includes/profile-agent-public-service-v110.php');
 const catalog=read('includes/profile-webmcp-v100.php');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
 const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
@@ -27,9 +28,12 @@ assert.match(chat,/CHAT_GRANT_MISMATCH/);
 assert.match(chat,/VP3_PROFILE_WEBMCP_CHAT_GRANT_SECONDS_V140=1200/,'grant must be short lived');
 assert.doesNotMatch(chat,/CREATE TABLE|ALTER TABLE/,'Section 5 must not add a parallel chat/session schema');
 assert.match(chat,/profile_visit_sessions/,'external chat must reuse canonical Profile Agent visit sessions');
-assert.match(chat,/profile_agent_conversations/,'chat start must reuse canonical conversations');
-assert.match(chat,/profile_agent_conversation_create/,'chat start must use canonical conversation creator');
-assert.match(chat,/status IN \('open','owner_joined','resolved'\)/,'chat start must resume the latest exact-session conversation, including resolved threads that reopen on the next visitor message');
+assert.match(chat,/vp3_profile_agent_public_start_v1\(\$pdo,\$ctx\)/,'chat start must delegate to the canonical guarded start');
+assert.match(service,/profile_agent_conversations/,'chat start must reuse canonical conversations');
+assert.match(service,/profile_agent_conversation_create/,'chat start must use canonical conversation creator');
+assert.match(service,/vp3_profile_agent_conversation_bind_v1/,'new conversations must receive private visitor authority');
+assert.match(service,/status IN \('open','owner_joined','resolved'\)/,'chat start resumes only the valid exact-session lifecycle states');
+assert.match(service,/vp3_profile_agent_public_conversation_v390\(\$pdo,\(int\)\$id,[^\n]*\$ctx\['conversation_authority'\]/,'resume must verify the current principal and credential, not only the CRM session');
 
 assert.match(catalog,/vp3\.agent\.chat\.start/);
 assert.match(nativeRuntime,/vp3\.agent\.chat\.start/);

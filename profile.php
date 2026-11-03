@@ -59,9 +59,9 @@ if($workspace){foreach(['Website'=>'website_url','Instagram'=>'instagram_url','T
 $links=array_filter($links,static fn(string $v):bool=>(bool)filter_var($v,FILTER_VALIDATE_URL)&&in_array(strtolower((string)parse_url($v,PHP_URL_SCHEME)),['http','https'],true));
 $roleLabel=function_exists('role_label')?role_label((string)($profile['role']??'')):ucfirst((string)($profile['role']??''));
 $agentGreeting=$agent?(trim((string)($profile['profile_agent_greeting']??''))?:'Hi — I’m '.(string)$agent['display_name'].', '.$displayName.'’s AI representative. What would you like to know?'):'';
-$profileToken='';
+$profileToken='';$conversationNamespace='';
 if($agent&&!$preview){
-    try { $profileToken=profile_chat_token((int)$profile['user_id']); }
+    try { $profileToken=profile_chat_token((int)$profile['user_id']);$conversationNamespace=profile_conversation_browser_namespace_v1((int)$profile['user_id'],(int)($viewer['id']??0)); }
     catch (Throwable $e) {
         vp3_profile_optional_failure('profile-agent-token',$e,$username);
         $agent=null;$agentGreeting='';$profileToken='';
@@ -291,7 +291,7 @@ if($webmcpResumeRequested){
 </div>
 <?php endif; ?>
 <script>
-window.STONEFELLOW_PROFILE_AGENT={username:<?= json_encode($username,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,endpoint:<?= json_encode(url('/api/profile-agent.php'),JSON_UNESCAPED_SLASHES) ?>,profileToken:<?= json_encode($profileToken,JSON_UNESCAPED_SLASHES) ?>,agentName:<?= json_encode((string)($agent['display_name']??''),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,greeting:<?= json_encode($agentGreeting,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>};
+window.STONEFELLOW_PROFILE_AGENT={username:<?= json_encode($username,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,endpoint:<?= json_encode(url('/api/profile-agent.php'),JSON_UNESCAPED_SLASHES) ?>,profileToken:<?= json_encode($profileToken,JSON_UNESCAPED_SLASHES) ?>,conversationNamespace:<?= json_encode($conversationNamespace,JSON_UNESCAPED_SLASHES) ?>,agentName:<?= json_encode((string)($agent['display_name']??''),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,greeting:<?= json_encode($agentGreeting,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>};
 for(const tab of document.querySelectorAll('[data-profile-tab]'))tab.addEventListener('click',()=>{const key=tab.dataset.profileTab;document.querySelectorAll('[data-profile-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===tab)));document.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==key);});
 const profileAgentShell=document.getElementById('profileAgentShell');
 const profileAgentLauncher=document.querySelector('[data-open-profile-agent]');
@@ -345,6 +345,6 @@ window.VP3_PROFILE_WEBMCP={
 <script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-webmcp-v100-20260928')) ?>"></script>
 <?php endif; ?>
 <?php if($viewer): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
-<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-activity-20260905')) ?>"></script><?php endif; ?>
+<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-authority-pa1-20261103')) ?>"></script><?php endif; ?>
 </body>
 </html>

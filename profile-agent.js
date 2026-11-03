@@ -8,8 +8,8 @@
   const textarea=form?.querySelector('textarea');
   const submit=form?.querySelector('button[type=submit]');
   const status=shell.querySelector('[data-profile-agent-status]');
-  const storageKey=`stonefellow-profile-agent:${cfg.username}`;
-  let conversationId=Math.max(0,Number(localStorage.getItem(storageKey)||0));
+  const storageKey=`stonefellow-profile-agent:v1:${cfg.username}:${String(cfg.conversationNamespace||'unbound')}`;
+  let conversationId=cfg.conversationNamespace?Math.max(0,Number(localStorage.getItem(storageKey)||0)):0;
   let conversationStatus='open';
   let lastMessageId=0;
   let pollTimer=0,presenceTimer=0;

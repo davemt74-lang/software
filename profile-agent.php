@@ -169,7 +169,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
   'initialTab'=>(string)($_GET['tab'] ?? ''),
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;</script>
 <script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script>
-<script src="<?= e(url('/profile-agent-portal.js?v=agent-radar-interface-20260906')) ?>"></script>
+<script src="<?= e(url('/profile-agent-portal.js?v=profile-owner-safety-pa1-20261103')) ?>"></script>
 <script src="<?= e(url('/profile-agent-radar-sites.js?v=agent-manifest-messaging-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-radar-gateway.js?v=agent-access-controls-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-access-requests.js?v=agent-messaging-20260906')) ?>"></script>

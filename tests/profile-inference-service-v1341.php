@@ -16,18 +16,16 @@ function setting(string $key,mixed $fallback=''):mixed{return $fallback;}
 function column_exists(string $t,string $c):bool{return false;}
 function chat_policy_terms_v236(string $q):array{return array_values(array_filter(preg_split('/[^a-z]+/',strtolower($q)),fn($x)=>strlen($x)>3));}
 function url(string $s):string{return $s;}
-function current_user():array{return ['id'=>1];}
+function current_user():?array{return !empty($GLOBALS['profilePublicGuest'])?null:['id'=>1];}
 function personal_capability_has_v242(...$args):bool{return true;}
 function artist_workspace_v181_scope_id(...$args):int{return 0;}
 function vp3_cognitive_presentation_owns_attention_v510():bool{return true;}
-function vp3_profile_agent_public_conversation_v390(PDO $pdo,int $cid,int $owner,int $agent,int $session,bool $lock=false):?array{$s=$pdo->prepare('SELECT * FROM profile_agent_conversations WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?');$s->execute([$cid,$owner,$agent,$session]);return $s->fetch()?:null;}
-function vp3_profile_agent_prepare_visitor_turn_v390(PDO $pdo,array $c):array{return $c;}
-function vp3_profile_agent_agent_may_reply_v390(array $c):bool{return $c['status']==='open';}
-function vp3_profile_agent_public_state_v390(array $c):array{return $c;}
 require dirname(__DIR__).'/includes/notifications.php';
 require dirname(__DIR__).'/includes/user-agent-system-v236.php';
 require dirname(__DIR__).'/includes/shared-knowledge-index-v236.php';
 require dirname(__DIR__).'/includes/profile-agent.php';
+require dirname(__DIR__).'/includes/profile-agent-boundary-v390.php';
+require dirname(__DIR__).'/includes/profile-visitor-crm-v243.php';
 require dirname(__DIR__).'/includes/profile-agent-public-service-v110.php';
 $pdo->exec("CREATE TABLE users(id INTEGER PRIMARY KEY,display_name TEXT,email TEXT,role TEXT,is_active INTEGER,avatar_path TEXT)");
 $pdo->exec("INSERT INTO users VALUES(1,'Owner','owner@example.test','admin',1,''),(2,'Other','other@example.test','member',1,'')");
@@ -53,6 +51,21 @@ $pdo->exec("CREATE TABLE user_data_policies(owner_user_id INTEGER,resource_type 
 $pdo->exec("INSERT INTO user_data_policies VALUES(1,'knowledge','*','inherit',1,1,0),(1,'homeserver_knowledge','*','public',1,1,0)");
 $pdo->exec("CREATE TABLE user_agent_data_rules(agent_id INTEGER,resource_type TEXT,resource_id TEXT,access_mode TEXT)");
 $pdo->exec("CREATE TABLE user_relationships(owner_user_id INTEGER,related_user_id INTEGER,relationship_scope TEXT,status TEXT)");
+// Real current authority and hidden binding for the retained public-service cases.
+$pdo->exec("CREATE TABLE user_profiles(user_id INTEGER PRIMARY KEY,username TEXT,bio TEXT,is_public INTEGER,profile_agent_enabled INTEGER,profile_agent_id INTEGER,profile_agent_greeting TEXT,profile_agent_instructions TEXT)");
+$pdo->exec("INSERT INTO user_profiles VALUES(1,'owner','',1,1,7,'','Welcome visitors')");
+$pdo->exec("ALTER TABLE profile_visit_sessions ADD COLUMN session_key TEXT DEFAULT ''");
+$pdo->exec("UPDATE profile_visit_sessions SET session_key='fixture-session-key' WHERE id=10");
+$_COOKIE['sf_profile_conversation']=str_repeat('b',64);
+$authority=profile_conversation_native_authority_v1(1,0);
+$pdo->beginTransaction();
+vp3_profile_agent_conversation_bind_v1($pdo,profile_agent_conversation_get($pdo,100,1,10),$authority);
+$pdo->commit();
+function profileFixturePublicMessage(PDO $pdo,array $ctx,string $message,int $cid):array {
+    $GLOBALS['profilePublicGuest']=true;
+    try{return vp3_profile_agent_public_message_service_v110($pdo,$ctx,$message,$cid);}
+    finally{$GLOBALS['profilePublicGuest']=false;}
+}
 $cloud=[];$home=[];$homeReady=false;$quotaClosed=false;$checks=0;
 function homeserver_shared_v210_exchange(int $owner,string $query):array{return ['datasets'=>['knowledge'=>[['key'=>'public','title'=>'Approved Home hours','content'=>'Approved Home hours are Tuesday']],'contacts'=>[['key'=>'secret','title'=>'Private contacts','content'=>'Secret contacts hours']]]];}
 function homeserver_profile_v235_answer(int $owner,string $query,array $history,array $context):?array{$GLOBALS['home'][]=compact('owner','query','history','context');return $GLOBALS['homeReady']?['answer'=>'HomeServer model answer']:null;}
@@ -61,8 +74,8 @@ function ai_generate_chat_response(string $query,array $history,array $context,?
 function check(bool $ok,string $message):void{$GLOBALS['checks']++;if(!$ok)throw new RuntimeException($message);}
 function turn(string $query):array{
     $pdo=db();$pdo->exec("UPDATE profile_agent_messages SET created_at=datetime('now','-5 minutes')");
-    $ctx=['profile'=>['user_id'=>1,'display_name'=>'Owner','profile_agent_greeting'=>'','profile_agent_instructions'=>'Welcome visitors'],'owner_user_id'=>1,'owner_user'=>['id'=>1,'display_name'=>'Owner'],'visitor'=>null,'agent'=>['id'=>7,'owner_user_id'=>1,'display_name'=>'Public Guide'],'agent_id'=>7,'session'=>['id'=>10,'visitor_user_id'=>null,'identity_disclosed'=>0],'session_id'=>10];
-    return vp3_profile_agent_public_message_service_v110($pdo,$ctx,$query,100);
+    $ctx=['profile'=>profile_for_user($pdo,1,false),'owner_user_id'=>1,'owner_user'=>profile_user_row($pdo,1),'visitor'=>null,'agent'=>user_agent_get_v236($pdo,1,7),'agent_id'=>7,'session'=>$pdo->query('SELECT * FROM profile_visit_sessions WHERE id=10')->fetch(),'session_id'=>10,'conversation_authority'=>profile_conversation_native_authority_v1(1,0)];
+    return profileFixturePublicMessage($pdo,$ctx,$query,100);
 }
 $result=turn('Can we chat?');
 check($result['answer']==='Cloud model answer','Conversation with no matching knowledge invokes the model');

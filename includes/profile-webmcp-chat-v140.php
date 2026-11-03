@@ -4,6 +4,21 @@ declare(strict_types=1);
 const VP3_PROFILE_WEBMCP_CHAT_V140='profile-webmcp-chat-v140-20260928';
 const VP3_PROFILE_WEBMCP_CHAT_GRANT_SECONDS_V140=1200;
 
+/** Request-local proof, populated only by successful signature verification. */
+function vp3_profile_webmcp_verified_chat_grant_v1(?array $set=null,bool $clear=false): ?array
+{
+    static $verified=null;
+    if($clear)$verified=null;
+    if($set!==null)$verified=$set;
+    return $verified;
+}
+
+function vp3_profile_webmcp_chat_property_fingerprint_v1(array $property): string
+{
+    $fields=[];foreach(['id','owner_user_id','property_type','domain','public_key','verification_token','is_active'] as $key)$fields[$key]=(string)($property[$key]??'');
+    return hash('sha256',json_encode($fields,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
+}
+
 function vp3_profile_webmcp_b64url_encode_v140(string $value): string
 {
     return rtrim(strtr(base64_encode($value),'+/','-_'),'=');
@@ -59,6 +74,7 @@ function vp3_profile_webmcp_chat_grant_create_v140(array $property,array $profil
 function vp3_profile_webmcp_chat_grant_verify_v140(
     array $property,array $profile,string $origin,string $webmcpSessionId,string $grant,int $now=0
 ): array {
+    vp3_profile_webmcp_verified_chat_grant_v1(null,true);
     $now=$now>0?$now:time();
     $parts=explode('.',$grant);
     if(count($parts)!==2)throw new VP3ProfileAgentPublicException('CHAT_GRANT_INVALID','Connected-site chat grant is invalid.',403);
@@ -73,6 +89,8 @@ function vp3_profile_webmcp_chat_grant_verify_v140(
     if((int)($payload['iat']??0)>$now+60)throw new VP3ProfileAgentPublicException('CHAT_GRANT_INVALID','Connected-site chat grant is invalid.',403);
     $sessionId=vp3_profile_webmcp_transport_id_v130($webmcpSessionId);
     $checks=[
+        !empty($property['is_active']),
+        (int)($property['owner_user_id']??0)===(int)($profile['user_id']??0),
         (int)($payload['property_id']??0)===(int)($property['id']??0),
         (int)($payload['owner_user_id']??0)===(int)($profile['user_id']??0),
         hash_equals((string)($payload['profile_username']??''),(string)($profile['username']??'')),
@@ -80,7 +98,31 @@ function vp3_profile_webmcp_chat_grant_verify_v140(
         $sessionId!==''&&hash_equals((string)($payload['session_hash']??''),hash('sha256',$sessionId)),
     ];
     if(in_array(false,$checks,true))throw new VP3ProfileAgentPublicException('CHAT_GRANT_MISMATCH','Connected-site chat grant does not match this site session.',403);
+    vp3_profile_webmcp_verified_chat_grant_v1([
+        'payload'=>$payload,'origin'=>$origin,
+        'property_fingerprint'=>vp3_profile_webmcp_chat_property_fingerprint_v1($property),
+        'credential_hash'=>hash_hmac('sha256','profile-conversation-v1|'.$payload['owner_user_id'].'|'.$payload['property_id'].'|'.$payload['origin_hash'].'|'.$payload['session_hash'],vp3_profile_webmcp_chat_grant_secret_v140($property)),
+    ]);
     return $payload;
+}
+
+function vp3_profile_webmcp_external_chat_authorized_v1(PDO $pdo,array $ctx,bool $lock=false): bool
+{
+    $proof=$ctx['external_chat_proof']??null;$verified=vp3_profile_webmcp_verified_chat_grant_v1();
+    if(!is_array($proof)||!is_array($verified)||!hash_equals((string)($proof['credential_hash']??''),(string)($verified['credential_hash']??'')))return false;
+    $payload=$proof['payload']??[];$owner=(int)($ctx['owner_user_id']??0);
+    if((int)($payload['exp']??0)<time()||(int)($payload['iat']??0)>time()+60
+       ||(int)($payload['owner_user_id']??0)!==$owner
+       ||(string)($payload['profile_username']??'')!==(string)($ctx['profile']['username']??'')
+       ||(int)($ctx['visitor']['id']??0)!==0)return false;
+    $q=$pdo->prepare('SELECT * FROM vp3_radar_properties WHERE id=? AND owner_user_id=? LIMIT 1'.($lock&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite'?' FOR UPDATE':''));
+    $q->execute([(int)($payload['property_id']??0),$owner]);$property=$q->fetch(PDO::FETCH_ASSOC);
+    if(!$property||empty($property['is_active'])||($property['property_type']??'')!=='external'
+       ||!hash_equals((string)$proof['property_fingerprint'],vp3_profile_webmcp_chat_property_fingerprint_v1($property)))return false;
+    if(!function_exists('vp3_profile_webmcp_external_origin_v120'))return false;
+    try{$origin=vp3_profile_webmcp_external_origin_v120($property,(string)$proof['origin']);}catch(Throwable $e){return false;}
+    return hash_equals((string)$payload['origin_hash'],hash('sha256',$origin))
+        &&hash_equals((string)$proof['credential_hash'],(string)($ctx['conversation_authority']['credential_hash']??''));
 }
 
 function vp3_profile_webmcp_external_profile_session_v140(PDO $pdo,array $property,array $profile,string $webmcpSessionId): array
@@ -100,6 +142,12 @@ function vp3_profile_webmcp_external_profile_session_v140(PDO $pdo,array $proper
 function vp3_profile_webmcp_external_chat_context_v140(PDO $pdo,array $property,array $profile,string $webmcpSessionId): array
 {
     $owner=(int)($profile['user_id']??0);
+    $proof=vp3_profile_webmcp_verified_chat_grant_v1();$payload=$proof['payload']??[];
+    $sessionToken=vp3_profile_webmcp_transport_id_v130($webmcpSessionId);
+    if(!is_array($proof)||(int)($payload['owner_user_id']??0)!==$owner
+       ||(int)($payload['property_id']??0)!==(int)($property['id']??0)
+       ||!hash_equals((string)($payload['session_hash']??''),hash('sha256',$sessionToken))
+       ||$sessionToken==='')throw new VP3ProfileAgentPublicException('CHAT_GRANT_INVALID','Connected-site chat grant is invalid.',403);
     $ownerUser=$owner>0?profile_user_row($pdo,$owner):null;
     if(!$ownerUser
        || !personal_capability_has_v242('profile_agent.access',$ownerUser)
@@ -109,7 +157,7 @@ function vp3_profile_webmcp_external_chat_context_v140(PDO $pdo,array $property,
     $agent=profile_active_agent($pdo,$profile);
     if(!$agent)throw new VP3ProfileAgentPublicException('PROFILE_AGENT_UNAVAILABLE','This Profile Agent is not available.',404);
     $session=vp3_profile_webmcp_external_profile_session_v140($pdo,$property,$profile,$webmcpSessionId);
-    return [
+    $ctx=[
         'profile'=>$profile,
         'owner_user_id'=>$owner,
         'owner_user'=>$ownerUser,
@@ -118,22 +166,16 @@ function vp3_profile_webmcp_external_chat_context_v140(PDO $pdo,array $property,
         'agent_id'=>(int)$agent['id'],
         'session'=>$session,
         'session_id'=>(int)$session['id'],
+        'external_chat_proof'=>$proof,
+        'conversation_authority'=>[
+            'contract'=>'vp3.profile-conversation-authority.v1','transport'=>'external_site',
+            'owner_user_id'=>$owner,'visitor_user_id'=>0,'credential_hash'=>$proof['credential_hash'],
+        ],
     ];
+    return vp3_profile_agent_public_live_v1($pdo,$ctx);
 }
 
 function vp3_profile_webmcp_chat_start_v140(PDO $pdo,array $ctx): array
 {
-    $owner=(int)$ctx['owner_user_id'];$agentId=(int)$ctx['agent_id'];$sessionId=(int)$ctx['session_id'];
-    $stmt=$pdo->prepare("SELECT * FROM profile_agent_conversations
-      WHERE owner_user_id=? AND profile_agent_id=? AND profile_session_id=?
-        AND status IN ('open','owner_joined','resolved')
-      ORDER BY id DESC LIMIT 1");
-    $stmt->execute([$owner,$agentId,$sessionId]);
-    $conversation=$stmt->fetch();
-    if(!$conversation)$conversation=profile_agent_conversation_create($pdo,$ctx['profile'],$ctx['agent'],$ctx['session']);
-    return [
-        'agent'=>vp3_profile_agent_public_agent_projection_v110($ctx),
-        'conversation'=>vp3_profile_agent_public_state_v390($conversation),
-        'messages'=>profile_agent_messages($pdo,(int)$conversation['id']),
-    ];
+    return vp3_profile_agent_public_start_v1($pdo,$ctx);
 }

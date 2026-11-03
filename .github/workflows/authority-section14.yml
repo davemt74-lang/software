@@ -11,6 +11,16 @@ concurrency:
 jobs:
   authority:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: pa1-fixture
+          MYSQL_DATABASE: profile_authority_ci
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -ppa1-fixture"
+          --health-interval=5s --health-timeout=5s --health-retries=20
     strategy:
       matrix:
         php: ['8.1', '8.3']
@@ -19,8 +29,11 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: mbstring, pdo_sqlite
+          extensions: mbstring, pdo_sqlite, pdo_mysql, curl
           coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Current principal and authorization fallback regressions
         run: |
           php -l includes/permissions.php
@@ -32,3 +45,33 @@ jobs:
           node tests/permission-architecture-v188.mjs
           node tests/agent-tool-authorization-v400.mjs
           php tests/agent-permissions-v035-contract.php
+      - name: Profile Agent PA1 SQLite and HTTP authority
+        run: |
+          php tests/profile-public-authority-pa1.php
+          php tests/agent-message-authority-pa1.php
+          node tests/agent-message-api-pa1.mjs
+          node tests/profile-owner-api-pa1.mjs
+          node tests/profile-owner-threads-pa1.mjs
+          node tests/profile-agent-boundaries-v390.mjs
+          node tests/agent-messaging-contract.mjs
+      - name: Profile Agent PA1 MySQL authority
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-public-authority-pa1.php
+          php tests/agent-message-authority-pa1.php
+          node tests/profile-owner-api-pa1.mjs
+  profile_owner_browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - name: Profile owner thread selection, drafts and refresh
+        run: node tests/profile-owner-threads-pa1-browser.mjs
