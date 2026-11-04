@@ -7,6 +7,8 @@ $fixtureFile = tempnam(sys_get_temp_dir(), 'vp3-initiative-worker-');
 if (!$fixtureFile) throw new RuntimeException('Could not create disposable SQLite fixture.');
 putenv('VP3_IMAGE_TEST_DSN=sqlite:'.$fixtureFile);
 require __DIR__.'/fixtures/image-generation-v1.php';
+require_once dirname(__DIR__).'/includes/agent-memory-scope-v410.php';
+require_once dirname(__DIR__).'/includes/agent-brain-v122.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-v1.php';
 $GLOBALS['initiativeBrainAccess']=true;
 register_shutdown_function(static fn() => unlink($fixtureFile));

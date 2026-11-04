@@ -7,14 +7,20 @@ const poll=source.slice(source.indexOf('  async function pollAgentActivity('),so
 const api=source.slice(source.indexOf('  async function api(payload'),source.indexOf('  function writeActivityCursor('));
 assert.doesNotMatch(source,/\bliveStatus\b|chatLiveStatus/,'Removed activity status must not be referenced');
 let response,requestCount=0,timer,delay,cleared=0;
-const context={AbortController,document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token'},
+const requestBodies=[],syncedConversations=[];
+const context={AbortController,document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token',agentId:7},
     window:{setTimeout:(fn,ms)=>{timer=fn;delay=ms;return 1;},clearTimeout:()=>{cleared++;}},
-    fetch:async(_url,options)=>{requestCount++;assert.equal(JSON.parse(options.body).csrf_token,'token');return response(options.signal);},
+    fetch:async(_url,options)=>{requestCount++;requestBodies.push(JSON.parse(options.body));return response(options.signal);},
     writeActivityCursor:value=>{context.activityCursor=value;},updateNotificationBadge:value=>{context.unread=value;},
-    syncConversationMessagesV101:async()=>{},activityBusy:false,activityCursor:0,conversationId:1,lastLoadedMessageId:0,pendingConversationSync:0,busy:false};
+    syncConversationMessagesV101:async id=>{syncedConversations.push(id);},activityBusy:false,activityCursor:0,
+    conversationId:1,lastLoadedMessageId:0,pendingConversationSync:0,busy:false,
+    contextReady:false,initialRestorePending:true,restoringConversation:1};
 vm.createContext(context);vm.runInContext(api+poll+'\nglobalThis.poll=pollAgentActivity;',context);
-response=async()=>({ok:true,json:async()=>({ok:true,latest_id:8,unread_count:2,updates:[]})});
+response=async()=>({ok:true,json:async()=>({ok:true,latest_id:8,unread_count:2,updates:[],conversation_id:1,latest_message_id:5})});
 await context.poll(true);assert.equal(context.activityCursor,8);assert.equal(context.unread,2);assert.equal(context.activityBusy,false);
+assert.deepEqual(requestBodies[0],{action:'activity',after_id:0,conversation_id:0,agent_context:{user_agent_id:7},csrf_token:'token'});
+assert.deepEqual(syncedConversations,[],'Startup activity must load notifications without syncing unfinished Chat history');
+Object.assign(context,{contextReady:true,initialRestorePending:false,restoringConversation:0});
 assert.equal(delay,15000,'Activity polling must have a finite timeout');
 let finish;
 response=signal=>new Promise((resolve,reject)=>{finish=resolve;signal.addEventListener('abort',()=>reject(new Error('timeout')),{once:true});});
@@ -25,6 +31,7 @@ await context.poll(true);assert.equal(context.activityBusy,false,'Failure perman
 response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[]})});
 await context.poll(true);assert.equal(context.activityCursor,9,'Polling did not recover');
 context.document.hidden=true;const count=requestCount;await context.poll();assert.equal(requestCount,count);await context.poll(true);assert.equal(requestCount,count+1);
+assert.deepEqual(requestBodies.at(-1),{action:'activity',after_id:9,conversation_id:1,agent_context:{user_agent_id:7},csrf_token:'token'});
 assert.equal(cleared,requestCount,'Polling timers leaked');
 
 const stem=source.slice(source.indexOf('  function stemMediaHtml(item)'),source.indexOf('  function showChatMediaError('));

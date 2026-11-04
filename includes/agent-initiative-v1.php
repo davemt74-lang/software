@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-tool-json-v1.php';
 require_once __DIR__.'/agent-catch-up-v1.php';
-require_once __DIR__.'/transcript-agent-v1.php';
 
 /** Accept only private preparation assignments grounded in the supplied snapshot. */
 function vp3_initiative_plan_v1(string $answer,array $evidence): array
@@ -57,6 +56,7 @@ function vp3_initiative_evidence_v1(PDO $pdo,array $user,DateTimeImmutable $now)
         }
     }
     try{
+        require_once __DIR__.'/transcript-agent-v1.php';
         $catalog=vp3_transcript_catalog_v1($pdo,$user,$principal);
         foreach(array_slice($catalog['sessions'],0,4) as $row){
             $updated=vp3_catch_up_timestamp_v1($row['last_activity_at']??null,new DateTimeZone('UTC'));
