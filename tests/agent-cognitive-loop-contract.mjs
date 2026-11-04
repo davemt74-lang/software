@@ -95,10 +95,7 @@ assert.ok(loop.includes("'skip_brain_archive'=>true"), 'Brain must not parse its
 assert.ok(continuity.includes("empty($context['skip_brain_archive'])"), 'canonical chat writer must honor the cognitive feedback-loop guard');
 assert.ok(!loop.includes('agent-update-overlay') && !loop.includes('agent-updates-overlay'), 'cognitive priorities must not recreate the removed Agent Updates panel');
 
-/* Canonical premium voice already speaks the intro update list; Brain priorities feed that same list. */
-assert.ok(voice.includes('const boot=window.STONEFELLOW_CHAT_VOICE_BOOT||{};'), 'canonical voice must own the server return briefing');
-assert.ok(voice.includes('function introTexts(intro)'), 'canonical voice must have one intro formatter');
-assert.ok(voice.includes('Here are the priorities I found.'), 'canonical voice must speak prioritized intro updates');
-assert.ok(voice.includes('speakAnswer(pendingIntroSpeech)'), 'priority briefing must use the canonical premium voice speech path');
+/* Reading Brain priorities does not replay an unsolicited greeting through Chat voice. */
+assert.ok(!voice.includes('boot.intro') && !voice.includes('pendingIntroSpeech'), 'Chat voice must not queue a return briefing at startup');
 
 console.log('AGENT_COGNITIVE_LOOP_CONTRACT=PASS');

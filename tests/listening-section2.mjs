@@ -145,7 +145,7 @@ if(cloud){
  });
  function chat(b){
   b.window.STONEFELLOW_CHAT={userId:1,endpoint:'/api/chat.php'};b.window.STONEFELLOW_CHAT_VOICE_BOOT={button:b.element('chatVoiceButton'),intro:null};
-  load('chat-voice.js',b,'window.Test={enableVoice,startListening,createRecognition,handleVoiceApiFetch,interruptResponse,disableVoice,submitVoiceTranscript,speakAnswer,queueIntro:()=>{pendingIntroSpeech="Queued greeting";},seed:()=>{voiceOn=true;},recognize:()=>{recognition=createRecognition();return recognition;},state:()=>({voiceOn,recognitionStarting,recognitionListening,recognition,processing,speaking,activeRequest,pendingFinalTranscript,lastConversationId,proof})};');return b.window.Test;
+  load('chat-voice.js',b,'window.Test={enableVoice,startListening,createRecognition,handleVoiceApiFetch,interruptResponse,disableVoice,submitVoiceTranscript,speakAnswer,seed:()=>{voiceOn=true;},recognize:()=>{recognition=createRecognition();return recognition;},state:()=>({voiceOn,recognitionStarting,recognitionListening,recognition,processing,speaking,activeRequest,pendingFinalTranscript,lastConversationId,proof})};');return b.window.Test;
  }
  await test('Chat lease supports native receiver checks through speech Stop and restart',async()=>{
   const b=browser(),timer=clock(b),instances=[],receivers=new WeakMap(),spoken=[];
@@ -187,18 +187,18 @@ if(cloud){
   assert.equal(api.state().voiceOn,false);assert.equal(starts,0);assert.equal(microphones,0);assert.equal(b.document.body.dataset.stonefellowAgentState,'idle');
   api.enableVoice();await flush();assert.equal(starts,1);assert.equal(api.state().recognitionListening,true);api.disableVoice();
  });
- await test('greeting preparation does not open a monitor ahead of the first native connection',async()=>{
+ await test('deferred listening does not open a monitor ahead of the first native connection',async()=>{
   const b=browser();clock(b);let starts=0,microphones=0;
   b.window.SpeechRecognition=class{start(){starts++;this.onstart?.();}abort(){this.onend?.();}};
   b.context.navigator.mediaDevices.getUserMedia=async()=>{microphones++;return stream();};
   const api=chat(b);api.enableVoice({start:false});await flush();assert.equal(starts,0);assert.equal(microphones,0);
   api.startListening();assert.equal(starts,1);await flush();assert.equal(microphones,1);api.disableVoice();
  });
- await test('microphone click stops a pending greeting and interrupts speech before restarting',async()=>{
+ await test('microphone click stops listening and interrupts a reply before restarting',async()=>{
   const b=browser(),timer=clock(b),spoken=[];b.window.speechSynthesis.speak=u=>spoken.push(u);
   b.window.SpeechRecognition=class{start(){this.onstart?.();}abort(){this.onend?.();}};
   const api=chat(b),click=()=>{for(const fn of b.element('chatVoiceButton').listeners.click||[])fn({preventDefault(){},stopImmediatePropagation(){}});};
-  api.enableVoice();api.queueIntro();click();await flush();assert.equal(api.state().voiceOn,false);
+  api.enableVoice();click();await flush();assert.equal(api.state().voiceOn,false);
   api.enableVoice();api.speakAnswer('A response');spoken[0].onstart();click();await flush();
   assert.equal(api.state().speaking,false);assert.equal(api.state().voiceOn,true);assert.equal(api.state().recognitionListening,true);
   spoken[0].onend();assert.equal(api.state().recognitionListening,true);

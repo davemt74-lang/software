@@ -13,6 +13,13 @@ if (!$user || !has_permission('chat.access', $user)) {
     exit;
 }
 
+if (isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION']) &&
+    !hash_equals(vp3_catch_up_page_binding_v1($user), (string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])) {
+    http_response_code(403);
+    echo json_encode(['ok'=>false,'code'=>'account_changed','error'=>'Your Chat session changed. Refresh the page and try again.']);
+    exit;
+}
+
 $pdo = db();
 if (!$pdo || !table_exists('chat_conversations')) {
     http_response_code(503);

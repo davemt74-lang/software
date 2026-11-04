@@ -178,9 +178,7 @@
     return '<article class="chat-agent-brief-card" data-agent-brief-working-attention>' +
       '<small>What needs attention</small><strong>' + esc(item.title) + '</strong>' +
       (item.summary ? '<p>' + esc(item.summary) + '</p>' : '') +
-      '<div class="chat-agent-brief-actions">' + link +
-      actionButton('Catch me up on work',' data-agent-brief-prompt="Catch me up on work"',false) +
-      '</div></article>';
+      (link ? '<div class="chat-agent-brief-actions">' + link + '</div>' : '') + '</article>';
   }
 
   function briefMarkup(brief) {
@@ -721,6 +719,10 @@
   if (notifications) notifications.addEventListener('click',openNotifications);
 
   popup.addEventListener('click', event => {
+    if (event.target.closest('[data-preserve-chat-draft]')) {
+      closePopup();
+      return;
+    }
     const retry = event.target.closest('[data-agent-brief-retry]');
     if (retry) {
       retry.disabled = true;

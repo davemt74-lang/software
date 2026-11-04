@@ -766,9 +766,11 @@
   );
 
   async function api(payload, signal) {
+    const headers = {'Content-Type':'application/json'};
+    if (cfg.workingAttentionBinding) headers['X-VP3-Working-Attention'] = cfg.workingAttentionBinding;
     const response = await fetch(cfg.endpoint, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers,
       credentials: 'same-origin',
       signal,
       body: JSON.stringify({...payload, csrf_token: cfg.csrf})
@@ -1520,6 +1522,21 @@
     return `<a class="chat-agent-action" href="${escapeHtml(withStudioReturn(action.url))}">${escapeHtml(action.label||'Open')}</a>`;
   }
 
+  function catchUpSourceLinks(sources) {
+    if (!Array.isArray(sources)) return '';
+    const links = [];
+    for (const source of sources) {
+      if (typeof source?.source !== 'string' || !source.source.startsWith('agent-catch-up:') ||
+          typeof source.url !== 'string' || !source.url.trim()) continue;
+      let url;
+      try { url = new URL(source.url, location.href); } catch (_) { continue; }
+      if (!/^https?:$/.test(url.protocol) || url.origin !== location.origin || url.username || url.password) continue;
+      links.push(`<a class="message-source" href="${escapeHtml(url.href)}">${escapeHtml(source.title || 'Open source')}</a>`);
+      if (links.length === 3) break;
+    }
+    return links.length ? `<div class="message-sources" aria-label="Priority sources">${links.join('')}</div>` : '';
+  }
+
   function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, canvasMedia = null) {
     const wrapper = document.createElement('article');
     wrapper.className = `message ${role}`;
@@ -1529,6 +1546,7 @@
       <div class="message-body">
         <div class="message-role">${role === 'user' ? 'You' : 'Stonefellow'}</div>
         <div class="message-text"></div>
+        ${role === 'assistant' ? catchUpSourceLinks(sources) : ''}
         ${media.length ? `
           <section class="chat-listening-canvas">
             <div class="chat-listening-head">
@@ -1751,7 +1769,8 @@
       )
     ].filter(
       candidate =>
-        !candidate.closest('[hidden]')
+        !candidate.closest('[hidden]') &&
+        (candidate === audio || !candidate.hasAttribute('data-listening-resume-audio'))
     );
   }
 
@@ -1827,6 +1846,7 @@
   function updateNowPlaying(audio) {
     if (
       !audio ||
+      !audio.isConnected ||
       !nowPlaying
     ) {
       return;
@@ -1976,6 +1996,7 @@
       audioState.get(audio);
 
     if (!state?.controls) {
+      if (audio === activeAudio) updateNowPlaying(audio);
       return;
     }
 
@@ -2099,8 +2120,6 @@
       return;
     }
 
-    audio.volume = playerVolume;
-    audio.muted = playerVolume <= .001;
     audio.controls = false;
     audio.classList.add(
       'chat-audio-native'
@@ -2420,9 +2439,9 @@
         state
       );
 
-      decorateAudioPlayer(
-        audio
-      );
+      audio.volume = playerVolume;
+      audio.muted = playerVolume <= .001;
+      if (!audio.hasAttribute('data-listening-resume-audio')) decorateAudioPlayer(audio);
 
       audio.addEventListener(
         'loadedmetadata',
@@ -2460,7 +2479,10 @@
         }
       );
 
-      audio.addEventListener('playing',()=>{state.lastTick=performance.now();state.wasPlaying=true;void audioStartSession(audio);});
+      audio.addEventListener('playing',()=>{
+        if (!audio.isConnected || audio.paused) return;
+        state.lastTick=performance.now();state.wasPlaying=true;void audioStartSession(audio);
+      });
       ['waiting','stalled'].forEach(event=>audio.addEventListener(event,()=>{
         const delta=audioListenedDelta(audio);state.wasPlaying=false;
         if(state.sessionToken&&delta>0)audioTrackEvent(audio,'heartbeat',delta);
@@ -2469,6 +2491,7 @@
       audio.addEventListener(
         'play',
         async () => {
+          if (!audio.isConnected || audio.paused) return;
           const playGeneration=state.sessionGeneration;
           pauseOtherAudio(
             audio
@@ -3428,6 +3451,10 @@
 
   document.querySelectorAll('[data-prompt]').forEach(button => {
     button.addEventListener('click', () => {
+      if (button.hasAttribute('data-preserve-chat-draft') && (input.disabled || input.value.trim())) {
+        if (!input.disabled) input.focus();
+        return;
+      }
       sendMessage(button.dataset.prompt || '');
     });
   });
@@ -3491,7 +3518,16 @@
     audio.pause();state.sessionGeneration++;state.wasPlaying=false;
     if(state.sessionToken)void audioTrackEvent(audio,'stop',0,true);state.sessionToken='';
     clearInterval(state.heartbeat);state.heartbeat=null;
-    if(activeAudio===audio){activeAudio=null;if(nowPlaying)nowPlaying.hidden=true;}
+    if (activeAudio === audio) {
+      activeAudio = null;
+      if (nowPlaying) nowPlaying.hidden = true;
+      if (nowPlayingCover) {
+        nowPlayingCover.removeAttribute('src');
+        nowPlayingCover.hidden = true;
+      }
+      if (nowPlayingTitle) nowPlayingTitle.textContent = '';
+      if (nowPlayingAlbum) nowPlayingAlbum.textContent = '';
+    }
   });
   window.addEventListener('vp3:audio-players-added',event=>{
     const scope=event.detail;
@@ -3845,38 +3881,95 @@
 
   let recentHistoryBusy=false,recentHistoryQueued=false,recentHistoryRevision=0,recentHistoryTimer=0,recentHistoryController=null;
   const recentHistoryPlaying=grid=>!!grid&&[...grid.querySelectorAll('audio')].some(audio=>!audio.paused&&!audio.ended);
-  const listeningTime=value=>{const n=Math.floor(Math.max(0,Number(value)||0));return Math.floor(n/60)+':'+String(n%60).padStart(2,'0');};
   function listeningHost(){
-    const thread=document.getElementById('chatThread');if(!thread)return null;
-    let host=document.getElementById('chatListeningContinuation');
-    if(!host){host=document.createElement('section');host.id='chatListeningContinuation';host.className='chat-listening-continuation';host.hidden=true;host.setAttribute('aria-label','Continue listening');thread.append(host);}
+    const thread = document.getElementById('chatThread');
+    if (!thread) return null;
+    let host = document.getElementById('chatListeningContinuation');
+    if (!host) {
+      host = document.createElement('section');
+      host.id = 'chatListeningContinuation';
+      host.className = 'chat-listening-continuation';
+      host.hidden = true;
+      host.setAttribute('aria-label', 'Continue listening');
+      host.setAttribute('data-player-queue', '');
+      thread.append(host);
+    }
     return host;
   }
+
+  function syncListeningRow(host, audio) {
+    const playing = !audio.paused && !audio.ended;
+    const toggle = host.querySelector('[data-listening-toggle]');
+    toggle.textContent = playing ? 'Pause' : 'Resume';
+    toggle.setAttribute('aria-label', playing ? 'Pause listening' : 'Resume listening');
+    const position = audio.readyState >= 1 ? audio.currentTime : Number(audio.dataset.resumePosition);
+    const seconds = Math.floor(position || 0);
+    host.querySelector('[data-listening-position]').textContent = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+  }
+
   function renderListeningContinuation(host,track){
-    if(!host)return;
-    const oldAudio=host.querySelector('audio');
-    if(!track){if(oldAudio)window.dispatchEvent(new CustomEvent('vp3:audio-player-removed',{detail:oldAudio}));host.replaceChildren();host.hidden=true;return;}
-    if(recentHistoryPlaying(host)&&Number(oldAudio?.dataset.trackId)!==Number(track.id))return;
-    const id=Number(track.id)||0,resume=Math.max(0,Number(track.last_position_seconds)||0),thread=host.parentElement;
-    const atEnd=thread.scrollHeight-thread.scrollTop-thread.clientHeight<96;
-    if(!oldAudio||Number(oldAudio.dataset.trackId)!==id){
-      if(oldAudio)window.dispatchEvent(new CustomEvent('vp3:audio-player-removed',{detail:oldAudio}));
-      host.innerHTML=`<header><strong>Continue listening</strong></header><article class="chat-audio-card" data-chat-listening-card>
-        <img class="chat-audio-cover" alt=""><div class="chat-audio-copy"><div class="chat-audio-title-row"><div><strong data-listening-title></strong><span data-listening-album></span></div><a data-listening-detail aria-label="Song details">↗</a></div>
-        <p class="chat-audio-meta" data-listening-position></p><div class="chat-audio-actions"><button type="button" data-resume-track="${id}" data-resume-position="${resume}">Resume play</button><button type="button" data-drawer-playlist="${id}">Add to playlist</button></div>
-        <audio class="chat-audio-player" preload="none" data-track-id="${id}"></audio></div></article>`;
-      const audio=host.querySelector('audio');audio.src=String(track.audio||'');
-      audio.addEventListener('loadedmetadata',()=>{const position=Number(host.querySelector('[data-resume-track]')?.dataset.resumePosition)||0;if(position>0)try{audio.currentTime=Number.isFinite(audio.duration)?Math.min(position,Math.max(0,audio.duration-.25)):position;}catch(_){}},{once:true});
-      const sync=()=>{const button=host.querySelector('[data-resume-track]');if(button){button.textContent=!audio.paused&&!audio.ended?'Playing':'Resume play';button.disabled=!audio.paused&&!audio.ended;}};
-      ['playing','pause','ended'].forEach(name=>audio.addEventListener(name,sync));
+    if (!host) return;
+    const thread = host.parentElement;
+    let audio = host.querySelector('audio');
+    const id = Number(track?.id);
+    const source = String(track?.audio || '');
+    const playable = Number.isSafeInteger(id) && id > 0 && source;
+    const atEnd = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 96;
+    if (audio && (!playable || Number(audio.dataset.trackId) !== id)) {
+      window.dispatchEvent(new CustomEvent('vp3:audio-player-removed', {detail:audio}));
+      audio = null;
     }
-    const audio=host.querySelector('audio');audio.dataset.playerTitle=String(track.title||'');audio.dataset.playerAlbum=String(track.album||'');audio.dataset.playerCover=String(track.cover||'');audio.dataset.playerDetail=String(track.detail||'');
-    host.querySelector('[data-listening-title]').textContent=String(track.title||'');host.querySelector('[data-listening-album]').textContent=String(track.album||'');host.querySelector('.chat-audio-cover').src=String(track.cover||'');host.querySelector('[data-listening-detail]').href=String(track.detail||'');
-    const date=new Date(track.last_played_at),when=Number.isNaN(date.getTime())?'Recently':date.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-    host.querySelector('[data-listening-position]').textContent='Last played '+when+' · Saved at '+listeningTime(resume);
-    host.querySelector('[data-resume-track]').dataset.resumePosition=String(resume);host.hidden=false;
-    window.dispatchEvent(new CustomEvent('vp3:audio-players-added',{detail:host}));
-    if(atEnd&&(!thread.dataset.view||thread.dataset.view==='chat'))thread.scrollTop=thread.scrollHeight;
+    if (!playable) {
+      host.hidden = true;
+      host.replaceChildren();
+      return;
+    }
+    if (!audio) {
+      host.innerHTML = `
+        <img class="chat-listening-resume-cover" alt="" hidden>
+        <strong data-listening-title></strong>
+        <span data-listening-position></span>
+        <button type="button" data-listening-toggle>Resume</button>
+        <audio class="chat-audio-player" preload="none" data-listening-resume-audio></audio>`;
+      audio = host.querySelector('audio');
+      audio.dataset.trackId = String(id);
+      audio.src = source;
+      audio.addEventListener('loadedmetadata', () => {
+        const position = Number(audio.dataset.resumePosition);
+        if (position > 0) {
+          try {
+            audio.currentTime = Number.isFinite(audio.duration)
+              ? Math.min(position, Math.max(0, audio.duration - .25))
+              : position;
+          } catch (_) {}
+        }
+      }, {once:true});
+      for (const event of ['loadedmetadata', 'play', 'pause', 'timeupdate', 'ended', 'error']) {
+        audio.addEventListener(event, () => {
+          if (audio.isConnected) syncListeningRow(host, audio);
+        });
+      }
+      host.querySelector('[data-listening-toggle]').addEventListener('click', () => {
+        if (audio.paused || audio.ended) audio.play().catch(() => {});
+        else audio.pause();
+      });
+      window.dispatchEvent(new CustomEvent('vp3:audio-players-added', {detail:host}));
+    }
+    const position = Number(track.last_position_seconds);
+    audio.dataset.resumePosition = String(Number.isFinite(position) && position > 0 ? position : 0);
+    audio.dataset.playerTitle = String(track.title || 'Untitled track');
+    audio.dataset.playerAlbum = String(track.album || '');
+    audio.dataset.playerCover = String(track.cover || '');
+    audio.dataset.playerDetail = String(track.detail || '');
+    const title = host.querySelector('[data-listening-title]');
+    title.textContent = title.title = audio.dataset.playerTitle;
+    const cover = host.querySelector('img');
+    cover.hidden = !audio.dataset.playerCover;
+    if (cover.hidden) cover.removeAttribute('src');
+    else cover.src = audio.dataset.playerCover;
+    syncListeningRow(host, audio);
+    host.hidden = false;
+    if (atEnd && (!thread.dataset.view || thread.dataset.view === 'chat')) thread.scrollTop = thread.scrollHeight;
   }
   async function refreshRecentPlayerHistory(){
     const section=document.getElementById('playerRecent'),grid=section?.querySelector('.chat-player-recent-grid'),host=listeningHost();
@@ -3886,10 +3979,16 @@
     try{
       const data=await libraryApi('recent_history',{},controller.signal);
       if(revision!==recentHistoryRevision)return;
-      const rows=(data.user_id!==undefined&&Number(data.user_id)!==Number(cfg.userId))?[]:(Array.isArray(data.tracks)?data.tracks:[]);
+      const sameOwner = Number(data.user_id) === Number(cfg.userId);
+      const rows = sameOwner && Array.isArray(data.tracks) ? data.tracks : [];
       rows.forEach(track=>{const id=Number(track.id)||0;if(id>0)tracks[id]={...tracks[id],...track};});
-      renderListeningContinuation(host,rows[0]||null);
-      if(!grid?.isConnected||recentHistoryPlaying(grid))return;
+      const playing = host?.querySelector('audio');
+      const currentTrack = playing && !playing.paused && !playing.ended
+        ? rows.find(track => Number(track.id) === Number(playing.dataset.trackId))
+        : null;
+      renderListeningContinuation(host, currentTrack || rows[0]);
+      if(!grid?.isConnected||(sameOwner&&recentHistoryPlaying(grid)))return;
+      if (!sameOwner) grid.querySelectorAll('audio').forEach(audio => window.dispatchEvent(new CustomEvent('vp3:audio-player-removed', {detail:audio})));
       grid.innerHTML=rows.map(track=>{
         const id=Number(track.id)||0,resume=Math.max(0,Number(track.last_position_seconds)||0),date=new Date(track.last_played_at);
         const when=Number.isNaN(date.getTime())?'Recently':date.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
@@ -3903,26 +4002,33 @@
       const count=section.querySelector('header>small');if(count)count.textContent=rows.length+' recent';
       window.dispatchEvent(new CustomEvent('vp3:audio-players-added',{detail:grid}));
     }catch(error){
-      if(revision===recentHistoryRevision&&grid?.isConnected&&!recentHistoryPlaying(grid)){
+      const accessLost = [401, 403, 419].includes(error.status);
+      if(revision===recentHistoryRevision&&grid?.isConnected&&(accessLost||!recentHistoryPlaying(grid))){
+        if (accessLost) grid.querySelectorAll('audio').forEach(audio => window.dispatchEvent(new CustomEvent('vp3:audio-player-removed', {detail:audio})));
         grid.textContent='Playback history could not be loaded. It will retry automatically.';
         const count=section.querySelector('header>small');if(count)count.textContent='Unavailable';
       }
-      if(revision===recentHistoryRevision&&host&&!recentHistoryPlaying(host)){
-        renderListeningContinuation(host,null);
-        if(![401,403].includes(error.status)){host.innerHTML='<p role="status">Recent listening could not be loaded.</p><button type="button" class="chat-listening-retry" data-listening-retry>Retry</button>';host.hidden=false;}
-      }
+      if (revision === recentHistoryRevision && (accessLost || !recentHistoryPlaying(host))) renderListeningContinuation(host, null);
     }finally{clearTimeout(timeout);if(recentHistoryController===controller)recentHistoryController=null;recentHistoryBusy=false;if(recentHistoryQueued){recentHistoryQueued=false;scheduleRecentPlayerHistory();}}
   }
   function scheduleRecentPlayerHistory(){clearTimeout(recentHistoryTimer);recentHistoryTimer=setTimeout(()=>void refreshRecentPlayerHistory(),350);}
   window.addEventListener('vp3:playback-history-changed',scheduleRecentPlayerHistory);
   window.addEventListener('vp3:chat-canvas-view-changed',scheduleRecentPlayerHistory);
-  document.addEventListener('click',event=>{if(event.target.closest?.('[data-listening-retry]'))scheduleRecentPlayerHistory();});
   window.addEventListener('focus',scheduleRecentPlayerHistory);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleRecentPlayerHistory();});
   document.addEventListener('pause',event=>{if(event.target.matches?.('.chat-audio-player'))scheduleRecentPlayerHistory();},true);
   let recentHistoryPoll=setInterval(()=>void refreshRecentPlayerHistory(),30000);
   window.addEventListener('pageshow',()=>{if(!recentHistoryPoll)recentHistoryPoll=setInterval(()=>void refreshRecentPlayerHistory(),30000);scheduleRecentPlayerHistory();});
-  window.addEventListener('pagehide',()=>{recentHistoryRevision++;recentHistoryQueued=false;recentHistoryController?.abort();clearTimeout(recentHistoryTimer);clearInterval(recentHistoryPoll);recentHistoryPoll=0;});
+  window.addEventListener('pagehide',()=>{
+    recentHistoryRevision++;
+    recentHistoryQueued=false;
+    recentHistoryController?.abort();
+    clearInterval(recentHistoryPoll);
+    recentHistoryPoll=0;
+    const host = document.getElementById('chatListeningContinuation');
+    if (host) renderListeningContinuation(host, null);
+    clearTimeout(recentHistoryTimer);
+  });
   scheduleRecentPlayerHistory();
 
   async function toggleTrackFavorite(
@@ -5895,7 +6001,7 @@
             0
           ),
           false,
-          resume.closest('[data-chat-listening-card], .chat-player-recent-card')?.querySelector('audio') || null
+          resume.closest('.chat-player-recent-card')?.querySelector('audio') || null
         );
         return;
       }

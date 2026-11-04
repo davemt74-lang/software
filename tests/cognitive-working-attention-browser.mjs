@@ -54,11 +54,6 @@ async function openChat() {
     window.VP3_COGNITIVE_PRESENTATION_V510 = {agentId:17,workingAttentionBinding:'owner-a-session'};
     window.speechCount = 0;
     window.STONEFELLOW_NOTIFICATION_CENTER = {announce:() => { window.speechCount += 1; return true; }};
-    window.submitted = '';
-    document.querySelector('#chatForm').addEventListener('submit', event => {
-      event.preventDefault();
-      window.submitted = document.querySelector('#chatInput').value;
-    });
   });
   await page.addScriptTag({content:script});
   return page;
@@ -105,10 +100,8 @@ try {
   assert.equal(await card.count(),0);
   await page.getByRole('button',{name:'Retry'}).click();
   await card.getByText(item.title,{exact:true}).waitFor();
-  await card.getByRole('button',{name:'Catch me up on work'}).click();
-  assert.equal(await page.evaluate(() => window.submitted),'Catch me up on work');
-  assert.equal(await card.count(),0);
-  console.log('PASS network interruption clears the previous item; retry and typed Catch me up use existing controls');
+  assert.equal(await card.getByRole('button',{name:/Catch me up/}).count(),0);
+  console.log('PASS network interruption clears the previous item and retry restores the optional working preview');
 
   const otherTab = await openChat();
   await otherTab.getByRole('button',{name:/VP3 Agent.*Active/}).waitFor();

@@ -2,7 +2,7 @@
   'use strict';
   const boot=async()=>{
     const adapter=window.VP3_ORB_ADAPTER;
-    if(!adapter||window.VP3AgentWelcome||new URLSearchParams(location.search).get('orb_embed')==='1')return;
+    if(!adapter||adapter.isMainChat?.()||window.VP3AgentWelcome||new URLSearchParams(location.search).get('orb_embed')==='1')return;
     let preference=window.VP3_AGENT_PREFERENCE_STATE||null,permission=null,busy=false,disposed=false,generation=0,attempted=false;
     const key=`vp3:agent-welcome:${adapter.ownerKey}`,cooldown=30*60*1000;
     const notice=document.createElement('aside');notice.className='vp3-agent-setup-notice';notice.hidden=true;
@@ -64,8 +64,6 @@
     try{permission=await navigator.permissions.query({name:'microphone'});permission.onchange=()=>{generation++;attempted=false;refresh();};}catch(_){}
     if(!preference&&adapter.welcomePreferences)try{preference=await adapter.welcomePreferences();}catch(_){}
     const timer=setInterval(refresh,2000);
-    // Canonical voice introductions count as this session's welcome as well.
-    window.addEventListener('vp3:agent-welcomed',markGreeted);
     document.addEventListener('visibilitychange',refresh);
     window.VP3AgentWelcome={refresh};refresh();
     window.addEventListener('pagehide',()=>{disposed=true;generation++;clearInterval(timer);if(permission)permission.onchange=null;window.removeEventListener('vp3:agent-preferences',update);window.removeEventListener('stonefellow:agent-voice',voice);document.removeEventListener('visibilitychange',refresh);document.removeEventListener('click',stop,true);notice.remove();},{once:true});

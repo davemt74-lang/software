@@ -4,120 +4,120 @@ import {createRequire} from 'node:module';
 
 const {chromium} = createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE || 'playwright');
 const asset = name => fs.readFile(new URL('../' + name, import.meta.url), 'utf8');
+const template = await asset('chat.php');
+const statusPopover = template.match(/<section class="chat-agent-brief-popover"[\s\S]*?<\/section>/)?.[0];
+assert.ok(statusPopover);
+assert.doesNotMatch(template, /chat-catch-up-v1\.(?:css|js)/);
 const browser = await chromium.launch({
   headless: true,
-  args: ['--no-sandbox'],
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined
 });
-const page = await browser.newPage({viewport: {width: 320, height: 740}});
-const requests = [];
 const errors = [];
-let mode = 'items';
-let releaseRequest;
-const html = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-  + '<link rel="stylesheet" href="/chat-catch-up-v1.css">'
-  + '<style>.chat-thread{height:460px;overflow:auto}.message{min-height:58px}</style>'
-  + '<main><section class="chat-thread" id="chatThread" data-view="chat">'
-  + '<div class="message" id="chatWelcome">Welcome</div></section>'
-  + '<form id="chatForm"><textarea id="chatInput">Draft</textarea></form></main>'
-  + '<script>window.VP3_COGNITIVE_PRESENTATION_V510={workingAttentionBinding:"fixture-page"}</script>'
-  + '<script src="/chat-catch-up-v1.js" data-endpoint="/api/agent-catch-up-v1.php" data-agent-id="7"></script>';
-const records = [
-  {id: 'office:1', title: 'Check your calendar <img src=x>', reason: 'Two commitments overlap.', source_label: 'Open calendar', url: '/calendar.php?event=3'},
-  {id: 'store:2', title: 'Review a campaign', reason: 'Delivery needs attention.', source_label: 'Open campaign', url: '/campaigns.php?id=2'},
-  {id: 'office:3', title: 'Task due', reason: 'Due today.', source_label: 'Open task', url: '/tasks.php?id=3'},
-  {id: 'store:4', title: 'Fourth item', reason: 'Outside limit.', source_label: 'Open order', url: '/orders.php'}
+const answer = 'Your 2 p.m. meeting is next. Review the agenda before it starts.';
+const sources = [
+  {source:'agent-catch-up:calendar:2',title:'Open calendar',url:'/calendar.php?event=2'},
+  {source:'agent-catch-up:invalid',title:'Invalid source',url:'//unrelated.test/data'}
 ];
-page.on('pageerror', error => errors.push(error.message));
-await page.route('https://catch-up.test/', route => route.fulfill({contentType: 'text/html', body: html}));
-await page.route('**/chat-catch-up-v1.js', async route => route.fulfill({contentType: 'text/javascript', body: await asset('chat-catch-up-v1.js')}));
-await page.route('**/chat-catch-up-v1.css', async route => route.fulfill({contentType: 'text/css', body: await asset('chat-catch-up-v1.css')}));
-await page.route('**/api/agent-catch-up-v1.php?*', async route => {
-  requests.push({url: route.request().url(), method: route.request().method(), binding: route.request().headers()['x-vp3-working-attention']});
-  if (mode === 'failed') return route.fulfill({status: 503, json: {ok: false, error: 'Private service error'}});
-  if (mode === 'slow') await new Promise(resolve => { releaseRequest = resolve; });
-  const items = mode === 'unsafe' ? [
-    records[0], {...records[1], url: '//external.test/campaigns'}, {...records[2], url: 'javascript:alert(1)'}
-  ] : ['items', 'slow'].includes(mode) ? records : [];
-  const coverage = mode === 'partial' ? {office: 'limited'} : {office: 'ready', commerce: mode === 'empty' ? 'ready' : 'limited'};
-  await route.fulfill({json: {ok: true, brief: {items, coverage, as_of: '2026-11-04T12:00:00Z'}}}).catch(() => {});
-});
-const card = page.locator('[data-chat-catch-up]');
-const status = card.getByRole('status');
+
 try {
-  await page.goto('https://catch-up.test/');
-  assert.equal(await card.count(), 1);
-  assert.equal(await card.getAttribute('open'), null);
-  assert.equal(requests.length, 0);
-  const reachableAfterRestore = await page.evaluate(() => {
-    const thread = document.getElementById('chatThread');
-    for (let index = 0; index < 40; index++) {
-      const message = document.createElement('div');
-      message.className = 'message';
-      message.textContent = 'Restored chat message ' + index;
-      thread.append(message);
+  for (const width of [320, 1280]) {
+    const page = await browser.newPage({viewport:{width,height:740}});
+    page.setDefaultTimeout(10000);
+    page.on('pageerror', error => errors.push(error.message));
+    const sends = [];
+    const briefReads = [];
+    const directReads = [];
+    const history = Array.from({length:30}, (_, i) => ({
+      id:i + 1, role:i % 2 ? 'assistant' : 'user', message:'Earlier conversation ' + (i + 1)
+    }));
+    await page.route('http://catch-up.test/', route => route.fulfill({contentType:'text/html',body:`
+      <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+      <div class="chat-app"><aside class="chat-sidebar"><button id="newChatButton">New chat</button>
+      <div id="chatHistory"></div></aside><main class="chat-main">
+      <header class="chat-topbar">Agent Chat</header><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section>
+      <div class="chat-composer-shell" id="chatComposerShell">${statusPopover}
+      <form class="chat-composer" id="chatForm"><button type="button" id="chatAgentBriefButton" aria-label="Agent status">✦</button>
+      <textarea id="chatInput" aria-label="Message"></textarea><button type="submit" id="sendChatButton">Send</button>
+      </form></div></main></div>`}));
+    await page.route('**/api/**', async route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      const body = request.postDataJSON() || {};
+      if (path === '/api/agent-catch-up-v1.php') {
+        directReads.push(request.url());
+        return route.fulfill({status:503,json:{ok:false}});
+      }
+      if (path === '/api/cognitive-presentation-v510.php') {
+        if (request.method() === 'GET') briefReads.push(request.headers()['x-vp3-working-attention'] || '');
+        return route.fulfill({json:{ok:true,state:{brief:{agent_name:'Longfellow',status_label:'Active'}}}});
+      }
+      if (body.action === 'send') {
+        sends.push({...body,pageBinding:request.headers()['x-vp3-working-attention']});
+        const id = history.length + 1;
+        history.push({id,role:'user',message:body.message},
+          {id:id + 1,role:'assistant',message:answer,context_json:JSON.stringify({sources})});
+        return route.fulfill({json:{ok:true,conversation_id:42,assistant_message_id:id + 1,answer,sources}});
+      }
+      return route.fulfill({json:{ok:true,messages:body.action === 'load' ? history : [],
+        conversations:[{id:42,title:'Current Chat'}]}});
+    });
+
+    async function boot() {
+      await page.goto('http://catch-up.test/');
+      await page.evaluate(() => {
+        window.STONEFELLOW_CHAT = {userId:1,agentId:17,initialConversationId:42,
+          endpoint:'/api/chat-v236.php',initialView:'chat',csrf:'fixture',workingAttentionBinding:'owner-a-session'};
+        window.VP3_COGNITIVE_PRESENTATION_V510 = {agentId:17,workingAttentionBinding:'owner-a-session'};
+      });
+      for (const name of ['chat.css','chat-cognitive-presentation-v510.css']) {
+        await page.addStyleTag({content:await asset(name)});
+      }
+      for (const name of ['chat.js','chat-cognitive-presentation-v510.js']) {
+        await page.addScriptTag({content:await asset(name)});
+      }
+      await page.getByText('Earlier conversation 30',{exact:true}).waitFor();
+      await page.getByRole('button',{name:'Longfellow · Active'}).waitFor();
     }
-    thread.scrollTop = thread.scrollHeight;
-    const control = thread.querySelector('[data-chat-catch-up] summary');
-    const {left, top, width, height} = control.getBoundingClientRect();
-    return thread.scrollTop > 0 && document.elementFromPoint(left + width / 2, top + height / 2) === control;
-  });
-  assert.equal(reachableAfterRestore, true, 'The collapsed control remains actionable at the bottom of a restored Chat');
-  assert.equal(requests.length, 0);
-  await card.locator('summary').click();
-  await card.getByText('Two commitments overlap.', {exact: true}).waitFor();
-  assert.deepEqual(requests, [{url: 'https://catch-up.test/api/agent-catch-up-v1.php?agent_id=7', method: 'GET', binding: 'fixture-page'}]);
-  assert.equal(await card.locator('li').count(), 3);
-  assert.equal(await card.locator('img').count(), 0);
-  assert.equal(await card.getByRole('link').count(), 3);
-  assert.equal(await card.getByRole('link', {name: 'Open calendar'}).getAttribute('href'), 'https://catch-up.test/calendar.php?event=3');
-  assert.equal(await status.innerText(), 'Some sources couldn’t be checked.');
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  assert.equal(await page.locator('#chatInput').inputValue(), 'Draft');
-  console.log('PASS explicit mobile brief request, bounded source-linked rows, safe content and intact Chat');
 
-  mode = 'unsafe';
-  await card.getByRole('button', {name: 'Refresh'}).click();
-  await status.getByText('Some priority updates couldn’t be displayed.').waitFor();
-  assert.equal(await card.locator('li').count(), 1);
-  assert.equal(await card.getByRole('link').count(), 1);
-  mode = 'empty';
-  await card.getByRole('button', {name: 'Refresh'}).click();
-  await status.getByText('Nothing needs your attention right now.').waitFor();
-  assert.equal(await card.locator('li').count(), 0);
-  mode = 'partial';
-  await card.getByRole('button', {name: 'Refresh'}).click();
-  await status.getByText('No priority updates from the sources checked. Some sources couldn’t be checked.').waitFor();
-  mode = 'failed';
-  await card.getByRole('button', {name: 'Refresh'}).click();
-  await status.getByText('Couldn’t check for updates. Try refreshing.').waitFor();
-  assert.doesNotMatch(await card.innerText(), /Private service error/);
-  console.log('PASS refresh distinguishes a quiet brief, partial coverage, and unavailable data');
+    await boot();
+    const thread = page.locator('#chatThread');
+    const input = page.getByRole('textbox',{name:'Message'});
+    const status = page.getByRole('button',{name:'Longfellow · Active'});
+    const catchUp = page.getByRole('button',{name:'Catch me up',exact:true});
+    assert.equal(await thread.locator('.message').count(),30);
+    assert.equal(await catchUp.isVisible(),false);
+    assert.equal(briefReads.includes('owner-a-session'),false);
+    await thread.evaluate(node => { node.scrollTop = node.scrollHeight; });
+    await input.fill('Unsent draft');
+    await status.click();
+    await catchUp.click();
+    assert.equal(await input.inputValue(),'Unsent draft');
+    assert.equal(sends.length,0);
 
-  mode = 'slow';
-  await card.getByRole('button', {name: 'Refresh'}).click();
-  await status.getByText('Checking for priority updates…').waitFor();
-  for (let attempt = 0; !releaseRequest && attempt < 40; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, 25));
+    await input.fill('');
+    await status.click();
+    await catchUp.click();
+    await thread.getByText(answer,{exact:true}).waitFor();
+    assert.equal(sends.length,1);
+    assert.equal(sends[0].message,'Catch me up');
+    assert.equal(sends[0].conversation_id,42);
+    assert.equal(sends[0].pageBinding,'owner-a-session');
+    assert.equal(await thread.locator('.message.assistant').last().getByRole('link',{name:'Open calendar'}).getAttribute('href'),'http://catch-up.test' + sources[0].url);
+    assert.equal(await thread.getByRole('link',{name:'Invalid source'}).count(),0);
+    assert.equal(await catchUp.isVisible(),false);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+
+    await boot();
+    assert.equal(await thread.getByText(answer,{exact:true}).count(),1);
+    assert.equal(await thread.getByRole('link',{name:'Open calendar'}).count(),1);
+    assert.equal(await thread.locator('.message').count(),32);
+    assert.equal(await thread.locator('[data-chat-catch-up],[data-agent-intro]').count(),0);
+    assert.equal(sends.length,1);
+    assert.deepEqual(directReads,[]);
+    await page.close();
   }
-  assert.equal(typeof releaseRequest, 'function');
-  await page.evaluate(() => {
-    document.getElementById('chatThread').dataset.view = 'music';
-    window.dispatchEvent(new Event('vp3:chat-canvas-view-changed'));
-  });
-  releaseRequest();
-  assert.equal(await card.isVisible(), false);
-  assert.equal(await card.getAttribute('open'), null);
-  assert.equal(await card.locator('li').count(), 0);
-  await page.evaluate(() => {
-    document.getElementById('chatThread').dataset.view = 'chat';
-    window.dispatchEvent(new Event('vp3:chat-canvas-view-changed'));
-  });
-  assert.equal(await card.isVisible(), true);
-  assert.equal(await card.getAttribute('open'), null);
-  assert.equal(requests.length, 6);
-  assert.deepEqual(errors, []);
-  console.log('PASS leaving Chat cancels a request and keeps the brief collapsed when returning');
+  assert.deepEqual(errors,[]);
+  console.log('PASS Catch me up uses one saved Chat reply on desktop and mobile, preserves drafts and stays quiet on reload');
 } finally {
   await browser.close();
 }
