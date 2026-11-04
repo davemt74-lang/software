@@ -213,21 +213,49 @@ $before=(int)$pdo->query('SELECT total_changes()')->fetchColumn();
 $pdo->exec('PRAGMA query_only=ON');
 $brief=vp3_agent_catch_up_v1($pdo,$user,'office');
 expect(ids($brief)===['calendar:event:55','mission:'.$mission,'task:101'],'a meeting about to start, blocked Mission and reviewed Profile call share the same ranking');
-expect(array_unique(array_values($brief['coverage']))===['ready'],'all office sources can assemble context in a read-only database');
+expect(array_unique(array_values(array_diff_key($brief['coverage'],['meeting_prep'=>true])))===['ready']
+    &&$brief['coverage']['meeting_prep']==='unavailable','office context stays read-only and reports missing meeting continuity separately');
 expect($brief['items'][1]['status']==='blocked'&&$brief['items'][1]['url']==='/vp3/chat.php?agent=system&mission='.$mission,
     'the blocked Mission points to its exact canonical owner Chat assignment');
 expect($brief['items'][2]['source_label']==='Profile call follow-up'&&$brief['items'][2]['url']==='/vp3/artist-listening.php?session=34'
     &&!str_contains(json_encode($brief,JSON_THROW_ON_ERROR),'private-'),'the reviewed task links to the exact owned recording without private call bindings');
-$attention=vp3_cognitive_presentation_working_attention_v510($pdo,$user,0);
+$attention=vp3_cognitive_presentation_working_attention_v510($brief['items'][0]);
 expect(($attention['type']??null)==='working_attention'&&$attention['title']===$brief['items'][0]['title']
     &&$attention['summary']===$brief['items'][0]['reason']&&$attention['href']===$brief['items'][0]['url']
     &&!array_key_exists('priority',$attention)&&!array_key_exists('time',$attention),
     'the owner attention presentation picks the same winning evidence without exposing internal ranking');
+$previewNow=new DateTimeImmutable('2026-11-04T19:00:00Z');
+$previewState=['last_meaningful_at'=>'2026-11-04 18:29:00'];
+$prep=['items'=>[['id'=>'meeting-prep:fixture','title'=>'Private follow-up','status'=>'open','starts_at'=>'2026-11-04T19:15:00Z']],
+    'coverage'=>['meeting_prep'=>'ready']];
+expect(vp3_cognitive_presentation_greeting_preview_v510($previewState,$prep,false,$previewNow)
+    ===['decision'=>'would_mention','reason'=>'linked_meeting_followup'],
+    'after a quiet interval a verified linked follow-up yields a preview decision without source content');
+expect(vp3_cognitive_presentation_greeting_preview_v510(['last_meaningful_at'=>'2026-11-04 18:31:00'],$prep,false,$previewNow)['reason']==='recent_interaction'
+    &&vp3_cognitive_presentation_greeting_preview_v510($previewState,$prep,true,$previewNow)['reason']==='agent_busy',
+    'recent interaction or active Agent work keeps a greeting quiet');
+expect(vp3_cognitive_presentation_greeting_preview_v510($previewState,['items'=>$brief['items'],'coverage'=>['meeting_prep'=>'ready']],false,$previewNow)['reason']==='no_candidate'
+    &&vp3_cognitive_presentation_greeting_preview_v510($previewState,$prep,false,$previewNow->modify('+15 minutes'))['reason']==='no_candidate'
+    &&vp3_cognitive_presentation_greeting_preview_v510($previewState,null,false,$previewNow)['reason']==='source_unavailable',
+    'ordinary priorities, expired meetings and unavailable data do not trigger this greeting experiment');
 $chat=vp3_capability_chat_v1($pdo,$user,user_agent_principal_v236($user,null),'What should I focus on right now?',[],null,[],
     static fn()=>throw new RuntimeException('An explicit catch-up request must not invoke inference.'));
 expect($chat['handled']&&array_column($chat['sources'],'url')===array_column($brief['items'],'url')
     &&$chat['tool_receipt']['capability']==='brief.attention.read'&&!$chat['tool_receipt']['changes_applied'],
     'the explicit Chat request uses the same ordered evidence and stays read only');
+$current=vp3_agent_catch_up_v1($pdo,$user);
+foreach([
+    'What did I miss while I was away?'=>'verified record of what changed while you were away',
+    'Has anything changed since this morning?'=>'verified comparison for that time window',
+    'What needs my attention before my next meeting?'=>'next meeting’s start time',
+] as $request=>$limit){
+    $chat=vp3_capability_chat_v1($pdo,$user,user_agent_principal_v236($user,null),$request,[],null,[],
+        static fn()=>throw new RuntimeException('A natural catch-up request must not invoke inference.'));
+    expect($chat['handled']&&array_column($chat['sources'],'url')===array_column($current['items'],'url')
+        &&str_contains($chat['answer'],$limit)&&str_contains($chat['answer'],'what needs your attention now')
+        &&$chat['tool_receipt']['capability']==='brief.attention.read'&&!$chat['tool_receipt']['changes_applied']&&$chat['actions']===[],
+        'natural catch-up shows the current authorized records and qualifies the requested time scope: '.$request);
+}
 $calendarStart('+60 minutes');
 $brief=vp3_agent_catch_up_v1($pdo,$user,'office');
 expect(ids($brief)===['mission:'.$mission,'task:101','task:102'],'the Mission leads outside the meeting attention window and the call follow-up consumes only one slot');

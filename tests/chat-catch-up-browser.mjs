@@ -48,7 +48,10 @@ try {
         return route.fulfill({status:503,json:{ok:false}});
       }
       if (path === '/api/cognitive-presentation-v510.php') {
-        if (request.method() === 'GET') briefReads.push(request.headers()['x-vp3-working-attention'] || '');
+        if (request.method() === 'GET') briefReads.push({
+          binding:request.headers()['x-vp3-working-attention'],
+          includeWorkingAttention:new URL(request.url()).searchParams.get('include_working_attention')
+        });
         return route.fulfill({json:{ok:true,state:{brief:{agent_name:'Longfellow',status_label:'Active'}}}});
       }
       if (body.action === 'send') {
@@ -86,7 +89,7 @@ try {
     const catchUp = page.getByRole('button',{name:'Catch me up',exact:true});
     assert.equal(await thread.locator('.message').count(),30);
     assert.equal(await catchUp.isVisible(),false);
-    assert.equal(briefReads.includes('owner-a-session'),false);
+    assert.deepEqual(briefReads,[{binding:'owner-a-session',includeWorkingAttention:'0'}]);
     await thread.evaluate(node => { node.scrollTop = node.scrollHeight; });
     await input.fill('Unsent draft');
     await status.click();

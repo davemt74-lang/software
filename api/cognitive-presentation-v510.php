@@ -22,6 +22,10 @@ function vp3_cognitive_presentation_api_input_v510(): array
 
 $user=current_user();
 if(!$user||!has_permission('chat.access',$user))vp3_cognitive_presentation_api_json_v510(403,['ok'=>false,'error'=>'forbidden']);
+$pageBinding=(string)($_SERVER['HTTP_X_VP3_WORKING_ATTENTION']??'');
+if($pageBinding===''||!hash_equals(vp3_catch_up_page_binding_v1($user),$pageBinding)){
+    vp3_cognitive_presentation_api_json_v510(403,['ok'=>false,'error'=>'account_changed']);
+}
 $pdo=db();
 if(!$pdo)vp3_cognitive_presentation_api_json_v510(503,['ok'=>false,'error'=>'database_unavailable']);
 if(!vp3_cognitive_presentation_schema_ready_v510($pdo))vp3_cognitive_presentation_api_json_v510(503,['ok'=>false,'error'=>'presentation_schema_not_ready']);
@@ -32,13 +36,13 @@ $agentId=max(0,(int)($input['agent_id']??0));
 try{
     $action=trim((string)($input['action']??'state'));
     $readState=$method==='GET'&&$action==='state';
-    $workingBinding=$readState?(string)($_SERVER['HTTP_X_VP3_WORKING_ATTENTION']??''):'';
-    if($workingBinding!==''&&!hash_equals(vp3_catch_up_page_binding_v1($user),$workingBinding)){
-        vp3_cognitive_presentation_api_json_v510(403,['ok'=>false,'error'=>'account_changed']);
-    }
     $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,$agentId);
     if($readState){
-        vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'state'=>vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$workingBinding!=='')]);
+        // Existing clients that supplied a binding used it to request working attention.
+        $includeWorkingAttention=$input['include_working_attention']??'1';
+        if(!in_array($includeWorkingAttention,['0','1'],true))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_working_attention']);
+        $greetingPreview=$includeWorkingAttention==='1'&&($input['greeting_preview']??'')==='1';
+        vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'state'=>vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$includeWorkingAttention==='1',$greetingPreview)]);
     }
     if($method!=='POST')vp3_cognitive_presentation_api_json_v510(405,['ok'=>false,'error'=>'method_not_allowed']);
     if(!hash_equals(csrf_token(),trim((string)($input['csrf_token']??''))))vp3_cognitive_presentation_api_json_v510(419,['ok'=>false,'error'=>'csrf']);

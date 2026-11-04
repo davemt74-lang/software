@@ -75,6 +75,16 @@ try{
     {...workingHeaders,'X-Fixture-Model-Fail':'1','X-Fixture-Owner-Trap':'1'});
   check(brief.data?.ok===true&&brief.data.tool_receipt?.capability==='brief.attention.read'&&
     !brief.data.tool_receipt.changes_applied&&brief.data.actions?.length===0,'shared brief bypasses inference and ambient calendar refresh through '+endpoint+': '+brief.body);
+  for(const [request,scopeNote] of [['What did I miss?','verified history of recent changes'],
+    ['What did I miss while I was away?','what changed while you were away'],
+    ['Has anything changed since this morning?','comparison for that time window'],
+    ['What needs my attention before my next meeting?','next meeting’s start time']]){
+   const natural=await post(endpoint,request,{input_mode:endpoint.includes('stream')?'voice':'text'},
+     {...workingHeaders,'X-Fixture-Model-Fail':'1','X-Fixture-Owner-Trap':'1'});
+   check(natural.data?.ok===true&&natural.data.tool_receipt?.capability==='brief.attention.read'&&
+     natural.data.answer.includes(scopeNote)&&!natural.data.tool_receipt.changes_applied&&natural.data.actions?.length===0,
+     'natural catch-up reads current evidence and qualifies the time scope through '+endpoint+': '+natural.body);
+  }
  }
  const briefUrl=base+'/api/agent-catch-up-v1.php';
  const projection=await fetch(briefUrl+'?scope=office');

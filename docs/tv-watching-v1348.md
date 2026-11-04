@@ -24,6 +24,8 @@ Confirm/correct the title and separately choose “I personally watched this ses
 
 Cloud Chat reads current canonical history with Eyes off and supplies it to Brain for relevant TV/recommendation turns. Relative dates use the saved IANA timezone. Last night is explicitly labelled 6 pm–6 am. HomeServer owner Chat exposes `tv.history` and `tv.interests` through the `tv.watching` skill and existing model tool registry. Structured title and UTC time filters query complete history; each call returns at most 50 records.
 
+Telling Cloud Chat “I’m watching the movie Willow” stays in the conversation. Asking “What was I watching last night?” reads saved observations. Asking what is currently playing on the TV points to **Identify TV now** in Eyes, where the existing camera and cropped-screen sharing settings apply.
+
 ## Lifecycle and data handling
 
 Capture requires separate opt-in to send crops to the configured model provider under its data policy. Public text-clue queries go to the existing search service. VP3 does not persist raw TV snapshots in history, Brain or browser storage. Textual extracted clues and source links can be saved with an observation. This is not fully local recognition. The optional object model is downloaded by the existing browser runtime, not bundled into the installer.

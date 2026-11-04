@@ -401,17 +401,9 @@ function vp3_cognitive_presentation_brief_v510(PDO $pdo,array $user,int $agentId
     ];
 }
 
-function vp3_cognitive_presentation_working_attention_v510(PDO $pdo,array $user,int $agentId): ?array
+function vp3_cognitive_presentation_working_attention_v510(?array $top): ?array
 {
-    require_once __DIR__.'/agent-catch-up-v1.php';
-    try{
-        $brief=vp3_agent_catch_up_v1($pdo,$user,'office',$agentId);
-    }catch(Throwable $e){
-        // A source or permission failure must not take the existing Brief offline.
-        return null;
-    }
-    $top=$brief['items'][0]??null;
-    if(!is_array($top)||trim((string)($top['title']??''))==='')return null;
+    if($top===null||trim((string)($top['title']??''))==='')return null;
     $href=(string)($top['url']??'');
     return vp3_cognitive_presentation_firewall_validate_v2590([
         'type'=>'working_attention',
@@ -423,7 +415,27 @@ function vp3_cognitive_presentation_working_attention_v510(PDO $pdo,array $user,
     ])['presentation'];
 }
 
-function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $namespace,int $agentId=0,bool $includeWorkingAttention=false): array
+/** Evaluate one proven situation without claiming delivery or writing history. */
+function vp3_cognitive_presentation_greeting_preview_v510(array $row,?array $workingBrief,bool $working,DateTimeImmutable $now): array
+{
+    if($working)return ['decision'=>'quiet','reason'=>'agent_busy'];
+    if($workingBrief===null||($workingBrief['coverage']['meeting_prep']??'')==='unavailable'){
+        return ['decision'=>'quiet','reason'=>'source_unavailable'];
+    }
+    $last=vp3_catch_up_timestamp_v1($row['last_meaningful_at']??null,new DateTimeZone('UTC'));
+    if($last===null||$now->getTimestamp()-$last<VP3_COGNITIVE_DIGEST_ATTENTION_IDLE_MINUTES_V510*60){
+        return ['decision'=>'quiet','reason'=>'recent_interaction'];
+    }
+    $top=$workingBrief['items'][0]??null;
+    $start=vp3_catch_up_timestamp_v1($top['starts_at']??null,new DateTimeZone('UTC'));
+    $untilStart=$start===null?0:$start-$now->getTimestamp();
+    if(!str_starts_with((string)($top['id']??''),'meeting-prep:')||($top['status']??'')!=='open'||$untilStart<=0||$untilStart>1800){
+        return ['decision'=>'quiet','reason'=>'no_candidate'];
+    }
+    return ['decision'=>'would_mention','reason'=>'linked_meeting_followup'];
+}
+
+function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $namespace,int $agentId=0,bool $includeWorkingAttention=false,bool $includeGreetingPreview=false): array
 {
     $row=vp3_cognitive_presentation_state_row_v510($pdo,$user,$namespace);
     $digest=vp3_cognitive_presentation_digest_v510($pdo,$user,$namespace,$row);
@@ -537,7 +549,15 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $brief['decision_manage_url']=$decisionCalibration['manage_url']??'';
     $brief['current_state_presentation']=$currentStatePresentation;
     if($includeWorkingAttention&&!empty($brief['active'])){
-        $brief['working_attention']=vp3_cognitive_presentation_working_attention_v510($pdo,$user,$agentId);
+        require_once __DIR__.'/agent-catch-up-v1.php';
+        try{$workingBrief=vp3_agent_catch_up_v1($pdo,$user,'office',$agentId);}
+        catch(Throwable $e){$workingBrief=null;}
+        $brief['working_attention']=vp3_cognitive_presentation_working_attention_v510($workingBrief['items'][0]??null);
+        if($includeGreetingPreview){
+            $brief['greeting_preview']=vp3_cognitive_presentation_greeting_preview_v510(
+                $row,$workingBrief,!empty($brief['working']),new DateTimeImmutable('now',new DateTimeZone('UTC'))
+            );
+        }
     }
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,

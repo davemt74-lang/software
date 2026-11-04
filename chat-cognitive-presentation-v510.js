@@ -4,6 +4,7 @@
   window.__VP3_COGNITIVE_PRESENTATION_V510__ = true;
 
   const cfg = window.VP3_COGNITIVE_PRESENTATION_V510 || {};
+  const pageBinding = String(cfg.workingAttentionBinding || '');
   const button = document.getElementById('chatAgentBriefButton');
   const popup = document.getElementById('chatAgentBriefPopover');
   const content = popup ? popup.querySelector('[data-agent-brief-content]') : null;
@@ -15,10 +16,13 @@
   if (!button || !popup || !content || !thread || !form) return;
 
   let state = null;
+  let pageController = new AbortController();
+  let readController = null;
+  let accountError = null;
   let timer = 0;
   let profileAttentionTimer = 0;
   function refreshProfileAttention() {
-    if (!document.hidden) void window.STONEFELLOW_NOTIFICATION_CENTER?.pollProfileAttention?.();
+    if (state && !pageController.signal.aborted && !document.hidden) void window.STONEFELLOW_NOTIFICATION_CENTER?.pollProfileAttention?.();
   }
   let busy = false;
   let workingAttentionView = 0;
@@ -26,6 +30,13 @@
   let activeVoiceThrough = 0;
   let suppressedVoiceThrough = 0;
   let currentDigestId = '';
+  const greetingReasons = {
+    agent_busy:'Your Agent is working.',
+    source_unavailable:'A source couldn’t be checked.',
+    recent_interaction:'You were here recently.',
+    no_candidate:'No current update stood out.',
+    linked_meeting_followup:'An upcoming meeting has an open follow-up.'
+  };
 
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -35,54 +46,68 @@
     const url = new URL(String(cfg.endpoint || '/api/cognitive-presentation-v510.php'), window.location.origin);
     url.searchParams.set('action', action);
     url.searchParams.set('agent_id', String(Number(cfg.agentId || 0)));
-    return url.toString();
+    return url;
+  }
+
+  async function presentationResponse(response, signal) {
+    const data = await response.json().catch(() => ({}));
+    if (signal.aborted) throw new DOMException('Agent status request cancelled.', 'AbortError');
+    const error = new Error(data.error || 'Cognitive presentation is unavailable.');
+    if (response.status === 401 || response.status === 403 || error.message === 'account_changed') invalidateAccount(error);
+    if (!response.ok || !data.ok) throw error;
+    return data;
   }
 
   async function getState(includeWorkingAttention) {
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timeout = controller ? window.setTimeout(() => controller.abort(), 10000) : 0;
-    const headers = {Accept:'application/json'};
-    if (includeWorkingAttention && cfg.workingAttentionBinding) {
-      headers['X-VP3-Working-Attention'] = String(cfg.workingAttentionBinding);
-    }
+    const controller = new AbortController();
+    readController = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    const url = endpoint('state');
+    url.searchParams.set('include_working_attention', includeWorkingAttention ? '1' : '0');
+    if (includeWorkingAttention && cfg.greetingPreview === true) url.searchParams.set('greeting_preview','1');
     try {
-      const response = await fetch(endpoint('state'), {
+      const response = await fetch(url.toString(), {
         credentials:'same-origin',
         cache:'no-store',
-        headers,
-        signal:controller ? controller.signal : undefined
+        headers:{Accept:'application/json','X-VP3-Working-Attention':pageBinding},
+        signal:controller.signal
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.ok) throw new Error(data.error || 'Cognitive presentation is unavailable.');
+      const data = await presentationResponse(response, controller.signal);
       return data.state || {};
     } catch (error) {
       if (error && error.name === 'AbortError') throw new Error('Agent status request timed out.');
       throw error;
     } finally {
-      if (timeout) window.clearTimeout(timeout);
+      window.clearTimeout(timeout);
+      if (readController === controller) readController = null;
     }
   }
 
   async function post(action, payload) {
+    const signal = pageController.signal;
+    if (signal.aborted || !pageBinding) return;
     const response = await fetch(String(cfg.endpoint || '/api/cognitive-presentation-v510.php'), {
       method:'POST',
       credentials:'same-origin',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      cache:'no-store',
+      headers:{'Content-Type':'application/json','Accept':'application/json','X-VP3-Working-Attention':pageBinding},
+      signal,
       body:JSON.stringify(Object.assign({
         action:action,
         agent_id:Number(cfg.agentId || 0),
         csrf_token:String(cfg.csrf || '')
       }, payload || {}))
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) throw new Error(data.error || 'Cognitive presentation update failed.');
-    return data;
+    return presentationResponse(response, signal);
   }
 
   function clearWorkingAttention() {
     workingAttentionView += 1;
-    if (state?.brief) delete state.brief.working_attention;
-    content.querySelector('[data-agent-brief-working-attention]')?.remove();
+    if (state?.brief) {
+      delete state.brief.working_attention;
+      delete state.brief.greeting_preview;
+    }
+    content.querySelectorAll('[data-agent-brief-working-attention],[data-agent-greeting-preview]').forEach(node => node.remove());
   }
 
   function closePopup() {
@@ -240,6 +265,14 @@
         '</div></article>';
     }
     if (workingAttention && workingAttention.title) html += workingAttentionMarkup(workingAttention);
+    const greeting = cfg.greetingPreview === true ? brief.greeting_preview : null;
+    const greetingDecision = greeting?.decision;
+    if (greetingDecision === 'would_mention' || greetingDecision === 'quiet') {
+      const reason = Object.hasOwn(greetingReasons, greeting.reason) ? greetingReasons[greeting.reason] : '';
+      html += '<p data-agent-greeting-preview><small>Greeting preview · ' +
+        (greetingDecision === 'would_mention' ? 'An update may be worth mentioning.' : 'Stay quiet for now.') +
+        (reason ? ' ' + reason : '') + '</small></p>';
+    }
 
     if (commitment) {
       const state = String(commitment.deadline_state || commitment.status || 'protected').replaceAll('_',' ');
@@ -530,17 +563,49 @@
     return 'Agent status is temporarily unavailable. Retry in a moment.';
   }
 
-  function renderBriefError(error) {
+  function renderBriefError(error, retry = true) {
     if (statusDot) statusDot.classList.remove('active');
     button.dataset.active='0';
     button.setAttribute('aria-label','Agent · status unavailable');
+    if (badge) {
+      badge.hidden = true;
+      badge.textContent = '';
+    }
     content.setAttribute('aria-busy','false');
     const message = briefErrorMessage(error);
     content.innerHTML =
       '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Unavailable</small></div>' +
       '<article class="chat-agent-brief-card" role="status"><small>Status</small><strong>Agent Brief could not load.</strong>' +
-      '<p>' + esc(message) + '</p><div class="chat-agent-brief-actions">' +
-      '<button type="button" class="primary" data-agent-brief-retry>Retry</button></div></article>';
+      '<p>' + esc(message) + '</p>' + (retry ? '<div class="chat-agent-brief-actions">' +
+      '<button type="button" class="primary" data-agent-brief-retry>Retry</button></div>' : '') + '</article>';
+  }
+
+  function stopUpdates() {
+    pageController.abort();
+    readController?.abort();
+    window.clearInterval(timer);
+    window.clearInterval(profileAttentionTimer);
+    observer.disconnect();
+  }
+
+  function clearPrivatePresentation() {
+    state = null;
+    currentDigestId = '';
+    activeVoiceThrough = 0;
+    content.replaceChildren();
+    thread.querySelectorAll('[data-vp3-return-digest],[data-homeserver-presence-id]').forEach(node => node.remove());
+    renderStatus({active:false});
+    try { window.STONEFELLOW_NOTIFICATION_CENTER?.cancelSpeech?.(); } catch (_error) {}
+  }
+
+  function invalidateAccount(error) {
+    if (accountError) return;
+    accountError = error;
+    stopUpdates();
+    clearPrivatePresentation();
+    popup.querySelector('footer')?.setAttribute('inert','');
+    window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+    renderBriefError(error, false);
   }
 
   function digestMarkup(digest) {
@@ -632,7 +697,8 @@
   }
 
   async function maybeSpeak(candidate) {
-    if (!candidate || !candidate.through_id || !candidate.message) return false;
+    const signal = pageController.signal;
+    if (signal.aborted || document.hidden || activeVoiceThrough || !candidate || !candidate.through_id || !candidate.message) return false;
     const through = Number(candidate.through_id || 0);
     if (through < 1) return false;
 
@@ -646,15 +712,17 @@
     }
 
     const center = window.STONEFELLOW_NOTIFICATION_CENTER;
-    if (!center || typeof center.announce !== 'function') return false;
+    if (!center || typeof center.announceWhen !== 'function') return false;
 
     let spoken = false;
     activeVoiceThrough = through;
     try {
-      spoken = (await Promise.resolve(center.announce(String(candidate.message)))) === true;
+      const canSpeak = () => !signal.aborted && !document.hidden && activeVoiceThrough === through;
+      spoken = (await Promise.resolve(center.announceWhen(String(candidate.message),canSpeak))) === true;
     } catch (_error) {
       spoken = false;
     }
+    if (signal.aborted) return false;
     if (!spoken) {
       if (activeVoiceThrough === through) activeVoiceThrough = 0;
       return false;
@@ -671,29 +739,34 @@
   }
 
   async function refresh(force = false) {
-    if (busy || (document.hidden && !force)) return;
+    const signal = pageController.signal;
+    if (signal.aborted || busy || (document.hidden && !force)) return;
     busy = true;
     const includeWorkingAttention = !popup.hidden && !document.hidden;
     const requestedView = workingAttentionView;
     content.setAttribute('aria-busy','true');
     try {
-      state = await getState(includeWorkingAttention);
+      const next = await getState(includeWorkingAttention);
+      if (signal.aborted || document.hidden) return;
+      state = next;
       if (state.brief && (!includeWorkingAttention || requestedView !== workingAttentionView)) {
         delete state.brief.working_attention;
+        delete state.brief.greeting_preview;
       }
       renderBrief(state.brief || {});
       renderDigest(state.digest || null);
       renderHomeServerPresence(state.homeserver_presence || null);
       refreshProfileAttention();
-      await maybeSpeak(state.voice_candidate || null);
+      void maybeSpeak(state.voice_candidate || null);
     } catch (error) {
-      if (error?.message === 'account_changed') state = null;
-      renderBriefError(error);
+      if (!signal.aborted) renderBriefError(error);
     } finally {
-      content.setAttribute('aria-busy','false');
-      busy = false;
-      // An open or return to the tab can overtake an in-flight background read.
-      if (!popup.hidden && !document.hidden && requestedView !== workingAttentionView) void refresh();
+      if (signal === pageController.signal) {
+        content.setAttribute('aria-busy','false');
+        busy = false;
+        // An open or return to the tab can overtake an in-flight background read.
+        if (!signal.aborted && !popup.hidden && !document.hidden && requestedView !== workingAttentionView) void refresh();
+      }
     }
   }
 
@@ -719,6 +792,11 @@
   if (notifications) notifications.addEventListener('click',openNotifications);
 
   popup.addEventListener('click', event => {
+    if (!pageController.signal.aborted || !event.target.closest('footer')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+  popup.addEventListener('click', event => {
     if (event.target.closest('[data-preserve-chat-draft]')) {
       closePopup();
       return;
@@ -742,12 +820,15 @@
   });
 
   thread.addEventListener('click', async event => {
+    const signal = pageController.signal;
     const action = event.target.closest('[data-digest-action]');
-    if (!action || !currentDigestId) return;
+    const digestId = action?.closest('[data-vp3-return-digest]')?.dataset.vp3ReturnDigest;
+    if (signal.aborted || !digestId || digestId !== currentDigestId) return;
     action.disabled = true;
     try {
-      await post('digest_ack',{digest_id:currentDigestId,status:String(action.dataset.digestAction || 'acknowledged')});
-      const selector = '[data-vp3-return-digest="' + CSS.escape(currentDigestId) + '"]';
+      await post('digest_ack',{digest_id:digestId,status:String(action.dataset.digestAction || 'acknowledged')});
+      if (signal.aborted || digestId !== currentDigestId) return;
+      const selector = '[data-vp3-return-digest="' + CSS.escape(digestId) + '"]';
       const node = document.querySelector(selector);
       if (node) node.remove();
       currentDigestId = '';
@@ -781,20 +862,34 @@
     if (!document.hidden) void refresh();
     else clearWorkingAttention();
   });
+  window.addEventListener('focus', () => void refresh());
 
   const observer = new MutationObserver(() => {
     button.dataset.runtimeState = runtimeState();
     if (state && state.brief) renderStatus(state.brief);
   });
-  observer.observe(document.body,{attributes:true,attributeFilter:['data-stonefellow-agent-state']});
-
   window.addEventListener('pagehide', () => {
     closePopup();
-    if (timer) window.clearInterval(timer);
-    if (profileAttentionTimer) window.clearInterval(profileAttentionTimer);
-    observer.disconnect();
-  }, {once:true});
+    stopUpdates();
+    if (!accountError) clearPrivatePresentation();
+  });
+  window.addEventListener('pageshow', event => {
+    if (!event.persisted || accountError) return;
+    pageController = new AbortController();
+    busy = false;
+    startUpdates();
+  });
+
+  function startUpdates() {
+    if (!pageBinding) {
+      invalidateAccount(new Error('account_changed'));
+      return;
+    }
+    observer.observe(document.body,{attributes:true,attributeFilter:['data-stonefellow-agent-state']});
+    const signal = pageController.signal;
+    void refresh().finally(() => { if (!signal.aborted) schedule(); });
+  }
 
   window.VP3_COGNITIVE_PRESENTATION = {refresh:refresh,openBrief:openPopup,closeBrief:closePopup};
-  void refresh().finally(schedule);
+  startUpdates();
 })();
