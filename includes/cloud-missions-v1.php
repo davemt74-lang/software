@@ -68,7 +68,9 @@ function cloud_mission_view_v1(PDO $pdo,array $user,array $m): array
     $tasks=[];$combined='';foreach($rows as $a){$result=json_decode((string)($a['result_json']??''),true)?:[];$status=match($a['status']){'executing'=>'running','approval_pending'=>'queued',default=>$a['status']};$text=$authority?(string)($result['mission_output']??''):'';if($text!=='')$combined=$text;$tasks[]=['id'=>$a['action_key'],'title'=>$a['label'],'role'=>$a['sequence_no']==1?'investigator':'reviewer','status'=>$status,'result'=>$text,'error'=>$a['status']==='failed'?(string)($a['result_summary']??$a['error_class']??''):'','read_calls_used'=>(int)($result['read_calls']??0),'started_at'=>$a['started_at']??'','completed_at'=>$a['completed_at']??'','activity'=>['stage'=>$status,'last_activity_at'=>$a['heartbeat_at']??$a['completed_at']??$run['updated_at']]];}
     $status=match($run['status']){'approval_pending','queued'=>'planned','approved','executing'=>'running','paused'=>'waiting_review',default=>$run['status']};$tools=cloud_mission_tools_v1($m);$config=json_decode($m['config_json'],true);$provider=function_exists('ai_active_provider')?ai_active_provider():'configured';
     $recurrence=function_exists('cloud_mission_schedule_link_v1')?cloud_mission_schedule_link_v1($pdo,$m['mission_id']):null;
-    return ['id'=>$m['mission_id'],'objective'=>$authority?$run['goal']:'Cloud Mission · source access changed','status'=>$status,'execution_target'=>'cloud','authority_current'=>$authority,'recurrence'=>$recurrence&&$authority?['schedule_id'=>$recurrence['schedule_id'],'report_state'=>$recurrence['report_state'],'knowledge_id'=>(int)$recurrence['knowledge_id'],'evidence_changed'=>(int)$recurrence['evidence_changed']]:null,'private'=>!$authority,'tasks'=>$authority?$tasks:[],'web_sources'=>$authority?cloud_mission_web_evidence_v1($pdo,$user,$m):[],'result'=>$authority?$combined:'','created_at'=>$m['created_at'],'updated_at'=>$run['updated_at']??$m['created_at'],'tools_enabled'=>true,'tools_configured'=>$tools['configured'],'chat_task'=>['draft'=>$config,'prepared_at'=>$m['created_at'],'provider_key'=>$provider,'model'=>function_exists('ai_provider_model')?ai_provider_model($provider):'configured','automatic_reason'=>'Cloud analysis with reviewed read capabilities'],'progress'=>['state'=>$authority?$status:'blocked','completed_workers'=>count(array_filter($tasks,fn($t)=>$t['status']==='completed')),'checked_at'=>gmdate('Y-m-d H:i:s')],'job_id'=>(int)$run['id']];
+    $progressState=$authority?$status:'blocked';
+    if($authority&&in_array($run['status'],['queued','planning','approved'],true)&&!agent_work_dependencies_satisfied_v174($pdo,(int)$user['id'],(int)$run['id']))$progressState='dependency_blocked';
+    return ['id'=>$m['mission_id'],'objective'=>$authority?$run['goal']:'Cloud Mission · source access changed','status'=>$status,'execution_target'=>'cloud','authority_current'=>$authority,'recurrence'=>$recurrence&&$authority?['schedule_id'=>$recurrence['schedule_id'],'report_state'=>$recurrence['report_state'],'knowledge_id'=>(int)$recurrence['knowledge_id'],'evidence_changed'=>(int)$recurrence['evidence_changed']]:null,'private'=>!$authority,'tasks'=>$authority?$tasks:[],'web_sources'=>$authority?cloud_mission_web_evidence_v1($pdo,$user,$m):[],'result'=>$authority?$combined:'','created_at'=>$m['created_at'],'updated_at'=>$run['updated_at']??$m['created_at'],'tools_enabled'=>true,'tools_configured'=>$tools['configured'],'chat_task'=>['draft'=>$config,'prepared_at'=>$m['created_at'],'provider_key'=>$provider,'model'=>function_exists('ai_provider_model')?ai_provider_model($provider):'configured','automatic_reason'=>'Cloud analysis with reviewed read capabilities'],'progress'=>['state'=>$progressState,'completed_workers'=>count(array_filter($tasks,fn($t)=>$t['status']==='completed')),'checked_at'=>gmdate('Y-m-d H:i:s')],'job_id'=>(int)$run['id']];
 }
 function cloud_mission_configure_v1(PDO $pdo,array $user,array $input): array
 {
@@ -164,6 +166,20 @@ function cloud_mission_service_v1(PDO $pdo,array $user,string $action,array $inp
 }
 function cloud_mission_dispatch_v1(PDO $pdo,array $user,string $action,array $input,?callable $home=null): ?array
 {
+    if($action==='catch_up.get'){
+        $id=$input['mission_id']??null;$agentId=$input['agent_id']??null;
+        if(!is_int($agentId)||$agentId<0||!is_string($id)||!preg_match('/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/D',$id))throw new InvalidArgumentException('Choose the exact Mission and Chat Agent.');
+        if(!has_permission('chat.access',$user)||!has_permission('account.access',$user)
+            ||(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null))throw new RuntimeException('Mission access changed.',403);
+        if(!table_exists('agent_cloud_missions_v1'))throw new RuntimeException('Mission not found.',404);
+        $mission=cloud_mission_row_v1($pdo,$user,$id);
+        if($mission['mission_id']!==$id||(int)$mission['agent_id']!==$agentId)throw new RuntimeException('Mission not found for this Agent.',404);
+        $run=cloud_mission_run_v1($pdo,$user,$mission);
+        if($agentId>0?(int)$run['agent_id']!==$agentId:$run['agent_id']!==null)throw new RuntimeException('Mission not found for this Agent.',404);
+        $view=cloud_mission_view_v1($pdo,$user,$mission);
+        if(empty($view['authority_current']))throw new RuntimeException('Mission access changed.',403);
+        return ['ok'=>true,'contract'=>'vp3.agent-missions.cloud.v1','execution_target'=>'cloud','mission'=>$view,'tools'=>cloud_mission_tools_v1($mission)];
+    }
     if(!cloud_mission_ready_v1($pdo)){if(($input['executor']??'auto')==='cloud')throw new RuntimeException('Run the current upgrade to enable the Cloud job engine.',503);return null;}cloud_mission_schema_v1($pdo);require_once __DIR__.'/cloud-mission-schedules-v1.php';cloud_mission_schedules_schema_v1($pdo);
     if($action==='sources.list')return cloud_mission_sources_list_v1($pdo,$user);
     if(in_array($action,['sources.create','sources.update','sources.disable','sources.enable'],true))return cloud_mission_sources_mutate_v1($pdo,$user,$action,$input);

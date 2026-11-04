@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import {createHmac} from 'node:crypto';
 import {spawn} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-capability-chat-'));
 fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(path.join(tmp,'api'));
@@ -69,6 +70,14 @@ try{
  const projected=await projection.json();
  check(projection.ok&&projected.ok&&projected.brief.items.length<=3&&projected.brief.coverage&&
    projection.headers.get('Cache-Control')==='no-store','Chat card uses a bounded read-only no-store endpoint');
+ const workingBinding=createHmac('sha256','fixture').update('working-attention|1|').digest('hex');
+ const workingHeaders={'X-VP3-Working-Attention':workingBinding};
+ const workingResponse=await fetch(briefUrl+'?scope=office',{headers:workingHeaders});
+ const workingBrief=(await workingResponse.json()).brief;
+ check(workingResponse.ok&&Object.hasOwn(workingBrief.coverage,'missions')&&Object.hasOwn(workingBrief.coverage,'profile_calls')&&
+   !Object.hasOwn(projected.brief.coverage,'profile_calls'),'current bound Chat page opts into new sources and old clients keep their original scope');
+ check((await fetch(briefUrl,{headers:{...workingHeaders,'X-Fixture-User':'2'}})).status===403,
+   'a stale page binding cannot read the newly signed-in owner’s brief');
  check((await fetch(briefUrl+'?scope=unknown')).status===422&&
    (await fetch(briefUrl+'?agent_id[]=7')).status===422,'brief endpoint rejects invalid scopes and selectors');
  check((await fetch(briefUrl+'?agent_id=7',{headers:{'X-Fixture-User':'2'}})).status===403&&

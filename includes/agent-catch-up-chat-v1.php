@@ -11,7 +11,7 @@ function vp3_catch_up_chat_scope_v1(string $query): ?string
     $query=preg_replace('/^(?:please |(?:can|could) you )/u','',$query)??'';
     return match($query){
         'catch me up','what needs my attention','what needs my attention today'=>'all',
-        'catch me up on work','what needs attention in my office'=>'office',
+        'catch me up on work','what needs attention in my office','what should i focus on right now'=>'office',
         'catch me up on commerce','what needs attention in my store',
         'what needs my attention in my store','what needs attention in my business'=>'commerce',
         default=>null,

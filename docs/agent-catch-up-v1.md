@@ -19,3 +19,11 @@ Calendar coverage uses Cloud records. Approved meeting follow-ups appear through
 | Apps & HomeServer | App discovery, status, and authorized operations | Existing tools |
 
 The capability catalog describes the read. It grants no domain access. Source availability is checked on request.
+
+## Everyday Working Context
+
+Calendar, due reminders, open tasks, actionable Cloud Missions, and Profile call follow-ups share one ranking. A meeting or conflict close to its start rises above a non-urgent item. A Mission waiting for assignment approval or an unfinished prerequisite can lead when Calendar is quiet. Recently failed Missions contribute a review item. Routine running jobs stay in Agent Teams.
+
+Profile call coverage includes recent unanswered incoming offers and open tasks already saved from reviewed findings with an exact authorized call transcript. A saved task that also appears in the ordinary task source occupies one slot. Call history, transcript content, and task creation continue through their owning features. The Mission link opens its exact Agent Teams record for review.
+
+The existing Agent Brief shows one leading work item while it is open. **Catch me up** can expand the view to three items through the Chat card or typed and voice Chat. The new item uses the existing presentation firewall and page session binding. It does not create a notification, claim a reminder, change call state, or start work. This section leaves proactive speech to the existing attention policy. The browser fixtures exercise the displayed ranking, stale responses and account changes, while source tests verify the canonical data and permissions.
