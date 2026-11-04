@@ -4,13 +4,31 @@
   if(window.VP3AgentScreenShare)return;
   const adapter=window.VP3_ORB_ADAPTER;if(!adapter)return;
   const owner=String(adapter.ownerKey),embedded=new URLSearchParams(location.search).get('orb_embed')==='1'&&parent!==window;
-  const maxSources=3,shares=[];
+  const maxSources=3,maxSetups=20,shares=[];
   let selected=null,pinnedAudio=null,pickerOwner=null,sharedAnalysis=null,lastAnalysisOwner=null,lastSharedAnalysis=0;
   let audioHandoff=Promise.resolve();
+  let updateLayoutControls=()=>{};
+  const setupUnavailable=()=>({ok:false,message:'Open Agent Eyes to load a tab setup.'});
+  let loadLocalSetup=setupUnavailable;
   const supported=()=>isSecureContext&&navigator.mediaDevices?.getDisplayMedia&&adapter.screenRequest;
-  const syncControls=()=>shares.forEach(share=>share.controls());
+  const syncControls=()=>{shares.forEach(share=>share.controls());updateLayoutControls();};
   const audioTarget=()=>pinnedAudio||selected;
   const cleanTabName=value=>value.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\s]+/g,' ').trim().normalize('NFC');
+  const setupToggles={
+    automatic:'[data-screen-auto]',
+    chatContext:'[data-screen-chat-context]',
+    transcribe:'[data-screen-transcribe]',
+    annotations:'[data-screen-annotation-log]'
+  };
+  function savedPageUrl(value){
+    if(typeof value!=='string')return '';
+    const text=value.trim();
+    if(text.length>2048||!/^https?:\/\//i.test(text)||/[\u0000-\u001f\u007f\\]/.test(text))return '';
+    try{
+      const url=new URL(text);
+      return !url.username&&!url.password&&url.href.length<=2048?url.href:'';
+    }catch{return '';}
+  }
   function holdAudio(done){
     audioHandoff=Promise.allSettled([audioHandoff,done]).then(()=>{});
   }
@@ -35,7 +53,7 @@
   function createShare(index,host){
     const label=index===0?'Share 1':'Tab '+(index+1);
     let stream=null,starting=false,generation=0,timer=0,controller=null,latest=null,observation=null,lastAnalyzedFrame=null,lastAnalysis=0,analyzedFingerprint=null;
-    let root,video,preview,status,startButton,stopButton,captureButton,automatic,transcribe,pinAudioButton,watchZone;
+    let root,video,preview,status,startButton,stopButton,captureButton,automatic,transcribe,pinAudioButton,watchZone,urlInput,openUrl;
     let tabName='';
     const clean=value=>String(value||'').slice(0,2000);
     let sessionId=null,selectedSession=null,historyEpoch=0,audioRun=null,recentAudio=[];
@@ -275,6 +293,13 @@
       return {...(visual||{contract:'vp3.screen-observation.v1',owner_key:owner,captured_at:named?audio.captured_at:latest.captured_at,surface:latest?.surface||'browser',summary:'',visible_text:'',site_hint:'',page_title:''}),...(audio?{tab_audio:{...audio}}:{})};
     }
     const say=text=>{if(status)status.textContent=text;};
+    function syncPageUrl(){
+      const value=urlInput.value.trim(),url=savedPageUrl(value);
+      urlInput.setCustomValidity(value&&!url?'Enter an http:// or https:// address without a username or password.':'');
+      if(url)openUrl.href=url;else openUrl.removeAttribute('href');
+      openUrl.hidden=!url;
+      return !value||!!url;
+    }
     function updateTab(){
       if(!source.tab)return;
       const label=source.tab.querySelector('[data-screen-source-label]');
@@ -282,21 +307,24 @@
       const name=source.name();
       if(label.textContent!==name)label.textContent=name;
       const track=stream?.getVideoTracks()[0];
-      let visualState='Share off';
-      if(starting)visualState='Opening share';
+      let visualState=['off','Share off'];
+      if(starting)visualState=['idle','Opening share'];
       else if(track?.readyState==='live'){
-        if(track.muted)visualState='Share paused';
-        else if(selected!==source)visualState='Preview paused';
-        else if(!latest||video.readyState<2)visualState='Waiting for frame';
-        else if(controller||automatic.checked||root.querySelector('[data-screen-annotation-log]').checked||watchZone?.active())visualState='Capturing';
-        else visualState='Previewing';
+        if(track.muted)visualState=['paused','Share paused'];
+        else if(selected!==source)visualState=['paused','Preview paused'];
+        else if(!latest||video.readyState<2)visualState=['idle','Waiting for frame'];
+        else if(controller||automatic.checked||root.querySelector('[data-screen-annotation-log]').checked||watchZone?.active())visualState=['active','Capturing'];
+        else visualState=['idle','Previewing'];
       }
-      let audioState='Ears off';
+      let audioState=['off','Ears off'];
       if(audioRun?.recorder?.state==='recording'){
-        audioState=stream.getAudioTracks().some(track=>track.readyState==='live'&&!track.muted)?'Listening':'Ears paused';
-      }else if(transcribe.checked)audioState='Ears idle';
-      const chatState=root.querySelector('[data-screen-chat-context]').checked?'Chat context on':'Chat context off';
-      const summary=[visualState,audioState,chatState].join(' · ');
+        audioState=stream.getAudioTracks().some(track=>track.readyState==='live'&&!track.muted)?['active','Listening']:['paused','Ears paused'];
+      }else if(transcribe.checked)audioState=['idle','Ears idle'];
+      const chatState=root.querySelector('[data-screen-chat-context]').checked?['active','Chat context on']:['off','Chat context off'];
+      const states=[visualState,audioState,chatState];
+      const icons=source.tab.querySelectorAll('[data-screen-source-icon]');
+      states.forEach(([state],position)=>{if(icons[position].dataset.state!==state)icons[position].dataset.state=state;});
+      const summary=states.map(([,description])=>description).join(' · ');
       if(indicator.textContent!==summary)indicator.textContent=summary;
     }
     function controls(){
@@ -425,7 +453,14 @@
         starting=false;lastAnalysis=0;syncControls();say('Screen sharing is active.');
         if(selected===source)void tick(token);
         if(audioTarget()===source)resumeAudio(token);
-      }catch(error){acquired?.getTracks().forEach(t=>t.stop());if(token===generation)stop(error.name==='NotAllowedError'?'Screen sharing was cancelled or not allowed. Select Share screen to retry.':error.message||'Screen sharing could not start.');}
+      }catch(error){
+        acquired?.getTracks().forEach(t=>t.stop());
+        if(token===generation){
+          const stagedZone=watchZone?.region();
+          stop(error.name==='NotAllowedError'?'Screen sharing was cancelled or not allowed. Select Share screen to retry.':error.message||'Screen sharing could not start.');
+          if(stagedZone)watchZone.restore(stagedZone);
+        }
+      }
     }
     function mount(){
       root=document.createElement('section');root.className='vp3-screen-share';
@@ -438,7 +473,13 @@
       const nameInput=document.createElement('input');
       nameInput.type='text';nameInput.maxLength=40;nameInput.placeholder=label;nameInput.dataset.screenTabName='';
       nameLabel.append('Tab name',nameInput);
-      root.querySelector('[data-screen-session-title]').closest('label').before(nameLabel);
+      const sessionTitle=root.querySelector('[data-screen-session-title]').closest('label');
+      sessionTitle.before(nameLabel);
+      const urlRow=document.createElement('div');urlRow.className='vp3-screen-source-url';
+      urlRow.innerHTML='<label>Page URL (optional)<input type="url" data-screen-source-url maxlength="2048" placeholder="https://example.com" spellcheck="false" autocomplete="off"></label><a data-screen-open-url target="_blank" rel="noopener noreferrer" hidden>Open page <span aria-hidden="true">↗</span></a>';
+      sessionTitle.after(urlRow);
+      urlInput=urlRow.querySelector('input');openUrl=urlRow.querySelector('a');
+      urlInput.addEventListener('input',syncPageUrl);
       nameInput.addEventListener('input',()=>{
         tabName=[...cleanTabName(nameInput.value)].slice(0,40).join('');
         syncControls();
@@ -509,7 +550,30 @@
     }
     const source={
       controls,context,stop,session:()=>sessionId,active:()=>!!stream,
+      busy:()=>starting||!!stream,
       name:()=>tabName?label+' · '+tabName:label,alias:()=>tabName,
+      validPageUrl:syncPageUrl,
+      reportPageUrl:()=>urlInput.reportValidity(),
+      setup:()=>({
+        name:tabName,
+        sessionTitle:root.querySelector('[data-screen-session-title]').value.trim(),
+        url:savedPageUrl(urlInput.value),
+        zone:watchZone?.region()??null,
+        ...Object.fromEntries(Object.entries(setupToggles).map(([key,selector])=>[key,root.querySelector(selector).checked]))
+      }),
+      loadSetup:settings=>{
+        const name=root.querySelector('[data-screen-tab-name]');
+        tabName=typeof settings.name==='string'?[...cleanTabName(settings.name)].slice(0,40).join(''):'';
+        name.value=tabName;
+        root.querySelector('[data-screen-session-title]').value=typeof settings.sessionTitle==='string'?cleanTabName(settings.sessionTitle).slice(0,55):'';
+        urlInput.value=savedPageUrl(settings.url);
+        syncPageUrl();
+        for(const [key,selector] of Object.entries(setupToggles)){
+          const toggle=root.querySelector(selector);
+          toggle.checked=!toggle.disabled&&settings[key]===true;
+        }
+        watchZone?.restore(settings.zone);
+      },
       canPinAudio,resumeAudio:()=>resumeAudio(generation),
       pauseAudio:()=>{recentAudio=[];void finishAudio(true);},
       show:()=>{root.hidden=false;if(stream&&!starting)void tick(generation);},
@@ -530,9 +594,63 @@
     const host=document.querySelector('.vp3-eyes-content');if(!host)return;
     const bar=document.createElement('div');bar.className='vp3-screen-source-bar';
     const tabs=document.createElement('div');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Screen shares');
-    const add=document.createElement('button');add.type='button';add.dataset.screenAddSource='';add.textContent='Add tab';
+    const add=document.createElement('button');add.type='button';add.dataset.screenAddSource='';add.textContent='+';
+    add.setAttribute('aria-label','Add tab');add.title='Add tab';
     const panels=document.createElement('div');
-    bar.append(tabs,add);host.prepend(bar,panels);
+    const actions=document.createElement('div');actions.className='vp3-screen-layout-actions';
+    actions.innerHTML='<label>New setup name<input type="text" data-screen-layout-name maxlength="60" placeholder="Optional"></label><label data-screen-layout-choices hidden>Saved setup<select data-screen-layout-select></select></label><button type="button" data-screen-layout-save title="Save a new setup in this browser">Save setup</button><button type="button" data-screen-layout-load>Load setup</button><button type="button" data-screen-layout-update hidden>Update setup</button><p role="status" data-screen-layout-status></p>';
+    const setupName=actions.querySelector('[data-screen-layout-name]');
+    const choices=actions.querySelector('[data-screen-layout-choices]'),setupSelect=actions.querySelector('[data-screen-layout-select]');
+    const saveSetup=actions.querySelector('[data-screen-layout-save]'),loadSetup=actions.querySelector('[data-screen-layout-load]');
+    const updateSetup=actions.querySelector('[data-screen-layout-update]');
+    const layoutStatus=actions.querySelector('[data-screen-layout-status]');
+    // Retain the original storage key so a single saved layout can become Setup 1.
+    const setupKey=adapter.ownerKey?'vp3:agent-eyes:setup:v1:'+owner:null;
+    const setupSay=message=>{layoutStatus.textContent=message;};
+    const normalizeName=name=>typeof name==='string'?[...cleanTabName(name)].slice(0,60).join('').trim():'';
+    const validLayout=layout=>Array.isArray(layout?.tabs)&&layout.tabs.length>=1&&layout.tabs.length<=maxSources&&
+      layout.tabs.every(slot=>slot&&typeof slot==='object'&&!Array.isArray(slot));
+    function readSetups(){
+      if(!setupKey)return null;
+      try{
+        const raw=localStorage.getItem(setupKey);
+        if(raw===null)return [];
+        if(raw.length>maxSetups*12288)return null;
+        const saved=JSON.parse(raw);
+        if(saved?.version===1&&validLayout(saved)){
+          return [{id:1,name:'Setup 1',selected:saved.selected,tabs:saved.tabs}];
+        }
+        if(saved?.version!==2||!Array.isArray(saved.setups)||saved.setups.length>maxSetups)return null;
+        if(!saved.setups.every((setup,index)=>validLayout(setup)&&setup.id===index+1&&normalizeName(setup.name)===setup.name&&setup.name))return null;
+        const names=new Set(saved.setups.map(setup=>setup.name.toLowerCase()));
+        return names.size===saved.setups.length?saved.setups:null;
+      }catch{return null;}
+    }
+    let setups=[],selectedSetupId=null,workingSetupId=null;
+    const isBusy=()=>!!pickerOwner||shares.some(share=>share.busy());
+    const selectedSetup=()=>setups.find(setup=>setup.id===selectedSetupId);
+    updateLayoutControls=()=>{
+      const setup=selectedSetup();
+      const busy=isBusy();
+      loadSetup.disabled=!setup||busy;
+      loadSetup.title=busy?'Stop active shares before loading a saved setup':setup?'Load '+setup.name:'No saved setups';
+      updateSetup.hidden=!setup;
+      updateSetup.disabled=!setup||setup.id!==workingSetupId;
+      updateSetup.title=setup?(updateSetup.disabled?'Load '+setup.name+' before updating it':'Replace the saved layout for '+setup.name):'';
+      saveSetup.disabled=!setupKey||setups.length>=maxSetups;
+    };
+    function showSetups(saved,preferredId=selectedSetupId){
+      setups=saved;
+      selectedSetupId=(saved.find(setup=>setup.id===preferredId)||saved[0])?.id??null;
+      choices.hidden=saved.length<=1;
+      setupSelect.replaceChildren(...saved.map(setup=>new Option(
+        setup.name==='Setup '+setup.id?setup.name:'Setup '+setup.id+' · '+setup.name,
+        String(setup.id)
+      )));
+      setupSelect.value=String(selectedSetupId??'');
+      updateLayoutControls();
+    }
+    bar.append(tabs,add);host.prepend(bar,actions,panels);
     function select(share){
       if(selected===share)return;
       const previousAudio=audioTarget();
@@ -545,7 +663,7 @@
       share.show();
       syncAudioTarget(previousAudio);
     }
-    function addShare(){
+    function addShare(settings){
       if(shares.length>=maxSources)return;
       const index=shares.length;
       const share=createShare(index,panels);
@@ -555,20 +673,111 @@
       tab.setAttribute('role','tab');tab.setAttribute('aria-controls','vp3-screen-source-panel-'+index);
       const label=document.createElement('span');label.dataset.screenSourceLabel='';label.id=tab.id+'-label';
       const indicator=document.createElement('span');indicator.dataset.screenSourceStatus='';indicator.id=tab.id+'-status';
+      indicator.setAttribute('role','tooltip');
+      const icons=document.createElement('span');icons.className='vp3-screen-source-icons';icons.setAttribute('aria-hidden','true');
+      const glyphs=[['visual','M2 3h12v8H2zm4 11h4m-2-3v3'],['ears','M2 9V8a6 6 0 0 1 12 0v1M2 8h2v5H2zm10 0h2v5h-2z'],['chat','M2 3h12v8H8l-4 3v-3H2z']];
+      for(const [kind,path] of glyphs){
+        const icon=document.createElement('span');icon.dataset.screenSourceIcon=kind;
+        icon.innerHTML=`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="${path}"/><path class="vp3-screen-source-slash" d="m2 14 12-12"/></svg>`;
+        icons.append(icon);
+      }
       tab.setAttribute('aria-labelledby',label.id);tab.setAttribute('aria-describedby',indicator.id);
-      tab.append(label,indicator);
+      tab.append(label,icons,indicator);
       tab.addEventListener('click',()=>select(share));
+      const restoreTooltip=()=>{delete tab.dataset.screenTooltipDismissed;};
+      tab.addEventListener('focus',restoreTooltip);
+      tab.addEventListener('pointerenter',event=>{
+        if(event.pointerType!=='mouse')return;
+        restoreTooltip();tab.dataset.screenTooltipHovered='';
+      });
+      tab.addEventListener('pointerleave',()=>{delete tab.dataset.screenTooltipHovered;});
       tab.addEventListener('keydown',event=>{
+        if(event.key==='Escape'){tab.dataset.screenTooltipDismissed='';return;}
         const keys={ArrowLeft:(index+shares.length-1)%shares.length,ArrowRight:(index+1)%shares.length,Home:0,End:shares.length-1};
         const target=shares[keys[event.key]];
         if(!target)return;
         event.preventDefault();select(target);target.tab.focus();
       });
-      share.tab=tab;tabs.append(tab);select(share);
+      share.tab=tab;tabs.append(tab);
+      if(settings)share.loadSetup(settings);
+      select(share);
       add.disabled=shares.length>=maxSources||!supported();
     }
     add.addEventListener('click',()=>{addShare();selected?.tab.focus();});
+    function saveCurrentSetup(update){
+      if(!setupKey)return;
+      const intended=selectedSetup();
+      const saved=readSetups();
+      if(!saved){setupSay('This browser could not read the saved setups.');return;}
+      showSetups(saved);
+      const current=saved.find(setup=>setup.id===intended?.id&&setup.name===intended?.name);
+      if(update&&(!current||current.id!==workingSetupId)){setupSay('Load the saved setup before updating it.');return;}
+      if(!update&&setups.length>=maxSetups){setupSay('This browser already has '+maxSetups+' saved tab setups.');return;}
+      const id=update?current.id:setups.length+1;
+      const name=update?current.name:normalizeName(setupName.value)||'Setup '+id;
+      const numberedName=/^setup (\d+)$/i.exec(name);
+      if(!update&&numberedName&&Number(numberedName[1])!==id){
+        setupSay('Choose a different name or use Setup '+id+' for this setup.');return;
+      }
+      if(!update&&setups.some(setup=>setup.name.toLowerCase()===name.toLowerCase())){
+        setupSay('That setup name is already saved. Choose a different name or use Update setup.');return;
+      }
+      const invalid=shares.find(share=>!share.validPageUrl());
+      if(invalid){
+        select(invalid);
+        invalid.reportPageUrl();
+        setupSay('Fix the page URL or leave it blank, then save again.');
+        return;
+      }
+      const setup={id,name,selected:shares.indexOf(selected),tabs:shares.map(share=>share.setup())};
+      const next=update?setups.map(existing=>existing.id===id?setup:existing):[...setups,setup];
+      try{
+        localStorage.setItem(setupKey,JSON.stringify({version:2,setups:next}));
+        if(!update)setupName.value='';
+        workingSetupId=id;
+        showSetups(next,id);
+        setupSay(name+' '+(update?'updated':'saved')+' in this browser.'+(isBusy()?' Stop active shares to load a setup.':''));
+      }catch{setupSay('This browser could not save the setup.');}
+    }
+    function loadSavedSetup(setup,focus){
+      let message;
+      if(!setup)message=setups.length?'That tab setup was not found.':'No tab setups are saved in this browser.';
+      else if(isBusy())message='Stop active screen shares before loading a tab setup.';
+      else{
+        workingSetupId=selectedSetupId=setup.id;setupSelect.value=String(setup.id);
+        shares.length=0;selected=null;
+        tabs.replaceChildren();panels.replaceChildren();
+        for(const slot of setup.tabs)addShare(slot);
+        select(shares[Number.isInteger(setup.selected)?setup.selected:0]||shares[0]);
+        if(focus)selected.tab.focus();
+        message=setup.name+' loaded. Open saved pages or reconnect each tab in the sharing picker.';
+        setupSay(message);
+        return {ok:true,message};
+      }
+      setupSay(message);
+      return {ok:false,message};
+    }
+    saveSetup.addEventListener('click',()=>saveCurrentSetup(false));
+    updateSetup.addEventListener('click',()=>saveCurrentSetup(true));
+    setupSelect.addEventListener('change',()=>{
+      selectedSetupId=Number(setupSelect.value);
+      updateLayoutControls();
+    });
+    loadSetup.addEventListener('click',()=>{
+      const id=selectedSetupId;
+      showSetups(readSetups()??[]);
+      loadSavedSetup(setups.find(setup=>setup.id===id),true);
+    });
+    loadLocalSetup=target=>{
+      showSetups(readSetups()??[]);
+      const name=typeof target==='string'?cleanTabName(target).toLowerCase():'';
+      return loadSavedSetup(setups.find(setup=>typeof target==='number'?setup.id===target:setup.name.toLowerCase()===name),false);
+    };
+    window.addEventListener('storage',event=>{
+      if(setupKey&&(event.key===setupKey||event.key===null))showSetups(readSetups()??[]);
+    });
     addShare();
+    showSetups(readSetups()??[]);
   }
 
   function context(){
@@ -622,7 +831,20 @@
     return {screen_observations:observations};
   }
   function stopAll(){for(const share of shares)share.stop();}
-  window.VP3AgentScreenShare=Object.freeze({context,contextForPrompt,stop:stopAll,isActive:()=>shares.some(share=>share.active())});
+  function loadSetupCommand(target){
+    if(embedded){
+      try{
+        if(parent.location.origin===location.origin&&String(parent.VP3_ORB_ADAPTER?.ownerKey)===owner){
+          return parent.VP3AgentScreenShare?.loadSetupCommand?.(target)||setupUnavailable();
+        }
+      }catch(_){}
+      return setupUnavailable();
+    }
+    const result=loadLocalSetup(target);
+    if(result.ok&&document.querySelector('.vp3-eyes-panel')?.hidden)window.VP3AgentEyes?.toggle?.();
+    return result;
+  }
+  window.VP3AgentScreenShare=Object.freeze({context,contextForPrompt,loadSetupCommand,stop:stopAll,isActive:()=>shares.some(share=>share.active())});
   window.addEventListener('vp3:screen-observation-reviewed',event=>{for(const share of shares)share.review(event.detail?.sessionId);});
   window.addEventListener('pagehide',stopAll);
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mountSources,{once:true});else mountSources();

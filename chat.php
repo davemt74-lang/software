@@ -15,6 +15,7 @@ $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351-speech-r
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer-r3' . '-voice-v1351';
 $voiceCacheBuild .= '-eyes-v1344-speech-recovery-20261031-mic-startup-20261101';
 $voiceCacheBuild .= '-learn-my-voice-v1-quiet-abort-20261102-eyes-cross-tab-v1';
+$voiceCacheBuild .= '-eyes-named-setups-v1';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';

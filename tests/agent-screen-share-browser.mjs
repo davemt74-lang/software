@@ -55,6 +55,19 @@ try{
   await page.getByRole('button',{name:'Stop sharing'}).click();assert.equal(await page.evaluate(()=>displayTrack.readyState),'ended');assert.equal(await page.evaluate(()=>VP3AgentScreenShare.context()),null);assert.equal(await page.locator('[data-screen-preview]').getAttribute('src'),null);
   const child=page.frames().find(f=>f.url().includes('orb_embed')&&!f.url().includes('foreign'));assert.equal(await child.evaluate(()=>VP3AgentScreenShare.context()),null);
  });
+ await check('embedded voice loads a setup only in the same-account parent',async()=>{
+  const title=page.locator('[data-screen-session-title]');
+  await title.fill('Parent setup');
+  await page.locator('[data-screen-layout-save]').click();
+  await title.fill('Unsaved change');
+  const foreign=page.frames().find(f=>f.url().includes('foreign'));
+  assert.equal((await foreign.evaluate(()=>VP3AgentScreenShare.loadSetupCommand(1))).ok,false);
+  assert.equal(await title.inputValue(),'Unsaved change');
+  const child=page.frames().find(f=>f.url().includes('orb_embed')&&!f.url().includes('foreign'));
+  assert.equal((await child.evaluate(()=>VP3AgentScreenShare.loadSetupCommand(1))).ok,true);
+  assert.equal(await title.inputValue(),'Parent setup');
+  assert.equal(await page.evaluate(()=>displayCalls.length),1);
+ });
  await page.close();
  const pending=await browser.newPage();await pending.goto(url);await pending.evaluate(()=>window.deferPicker=true);await pending.getByRole('button',{name:'Share screen',exact:true}).click();
  await check('Stop while picker is pending disposes a late granted stream',async()=>{await pending.getByRole('button',{name:'Stop sharing'}).click();await pending.evaluate(()=>releasePicker());await pending.waitForFunction(()=>window.displayTrack?.readyState==='ended');assert.equal(await pending.evaluate(()=>analysisCalls.length),0);assert.equal(await pending.evaluate(()=>VP3AgentScreenShare.isActive()),false);});await pending.close();
