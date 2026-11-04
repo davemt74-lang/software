@@ -1,6 +1,14 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-catch-up-missions-v1.php';
+require_once __DIR__.'/agent-catch-up-profile-calls-v1.php';
+
+function vp3_catch_up_page_binding_v1(array $user): string
+{
+    return hash_hmac('sha256','working-attention|'.(int)$user['id'].'|'.session_id(),csrf_token());
+}
+
 /** Read-only projections of current owner records. No notification or delivery state changes. */
 function vp3_catch_up_item_v1(string $id,string $title,string $reason,string $sourceLabel,string $path,int $priority,int $time): array
 {
@@ -32,6 +40,7 @@ function vp3_catch_up_calendar_v1(PDO $pdo,array $user,DateTimeImmutable $now): 
     if(empty($snapshot['available']))return ['unavailable',[]];
 
     $timezone=new DateTimeZone((string)$snapshot['timezone']);
+    $nowTimestamp=$now->getTimestamp();
     $events=[];
     foreach($snapshot['upcoming'] as $event)$events[$event['ref']]=$event;
     if(is_array($snapshot['current']))$events[$snapshot['current']['ref']]=$snapshot['current'];
@@ -44,13 +53,13 @@ function vp3_catch_up_calendar_v1(PDO $pdo,array $user,DateTimeImmutable $now): 
         $rightStart=vp3_catch_up_timestamp_v1($right['start_local'],$timezone);
         if($leftStart===null||$rightStart===null)continue;
         $starts=max($leftStart,$rightStart);
-        if($starts>$now->getTimestamp()+86400)continue;
+        if($starts>$nowTimestamp+86400)continue;
         $refs=[$left['ref'],$right['ref']];sort($refs,SORT_STRING);
         $id='calendar-conflict:'.hash('sha256',implode('|',$refs));
         $local=(new DateTimeImmutable('@'.$starts))->setTimezone($timezone);
         $items[]=vp3_catch_up_item_v1($id,$left['title'].' overlaps '.$right['title'],
             'Your calendar shows a '.$conflict['overlap_minutes'].'-minute overlap '.$local->format('D, M j \a\t g:i A T').'.',
-            'Cloud Calendar','/calendar.php?month='.$local->format('Y-m'),100,$starts);
+            'Cloud Calendar','/calendar.php?month='.$local->format('Y-m'),$starts<=$nowTimestamp+1800?100:84,$starts);
         foreach($refs as $ref)$covered[$ref]=true;
     }
     $next=$snapshot['next'];
@@ -59,7 +68,7 @@ function vp3_catch_up_calendar_v1(PDO $pdo,array $user,DateTimeImmutable $now): 
         if($start!==null){
             $local=(new DateTimeImmutable('@'.$start))->setTimezone($timezone);
             $items[]=vp3_catch_up_item_v1('calendar:'.$next['ref'],$next['title'],
-                'Starts at '.$local->format('g:i A T').'.','Cloud Calendar','/calendar.php?month='.$local->format('Y-m'),95,$start);
+                'Starts at '.$local->format('g:i A T').'.','Cloud Calendar','/calendar.php?month='.$local->format('Y-m'),$start<=$nowTimestamp+900?95:85,$start);
         }
     }
     return ['ready',$items];
@@ -204,7 +213,7 @@ function vp3_catch_up_rewards_v1(PDO $pdo,array $user,DateTimeImmutable $now): a
     return [count($rows)>=20?'limited':'ready',$items];
 }
 
-function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $agentId=0): array
+function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $agentId=0,bool $includeWorkingSources=true): array
 {
     if(!in_array($scope,['all','office','commerce'],true)||$agentId<0)throw new InvalidArgumentException('Invalid catch-up scope.');
     if((int)($user['id']??0)<1||!has_permission('chat.access',$user)||!has_permission('account.access',$user)
@@ -221,6 +230,10 @@ function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $age
         'reminders'=>fn()=>vp3_catch_up_reminders_v1($pdo,$user,$principal,$now),
         'tasks'=>fn()=>vp3_catch_up_tasks_v1($pdo,$user,$principal,$now),
     ];
+    if($includeWorkingSources){
+        $office['missions']=fn()=>vp3_catch_up_missions_v1($pdo,$user,$principal,$now);
+        $office['profile_calls']=fn()=>vp3_catch_up_profile_calls_v1($pdo,$user,$principal,$now);
+    }
     $commerce=[
         'orders'=>fn()=>vp3_catch_up_orders_v1($pdo,$user),
         'campaigns'=>fn()=>vp3_catch_up_campaigns_v1($pdo,$user),
@@ -234,6 +247,12 @@ function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $age
         catch(Throwable $e){$coverage[$key]=$e->getCode()===403?'forbidden':'unavailable';}
     }
     usort($items,static fn(array $a,array $b):int=>($b['priority']<=>$a['priority'])?:($a['time']<=>$b['time'])?:strcmp($a['id'],$b['id']));
-    $items=array_map(static function(array $item):array{unset($item['priority'],$item['time']);return $item;},array_slice($items,0,3));
-    return ['items'=>$items,'as_of'=>$now->format(DATE_ATOM),'coverage'=>$coverage];
+    $selected=[];
+    foreach($items as $item){
+        if(isset($selected[$item['id']]))continue;
+        unset($item['priority'],$item['time']);
+        $selected[$item['id']]=$item;
+        if(count($selected)===3)break;
+    }
+    return ['items'=>array_values($selected),'as_of'=>$now->format(DATE_ATOM),'coverage'=>$coverage];
 }

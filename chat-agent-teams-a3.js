@@ -5,6 +5,8 @@ if (window.__VP3_AGENT_TEAMS_A3__) return;
 window.__VP3_AGENT_TEAMS_A3__ = true;
 const cfg=window.VP3_AGENT_TEAMS_A3||{}, shell=document.getElementById('chatComposerShell'), form=document.getElementById('chatForm');
 if (!shell||!form||!cfg.endpoint||!cfg.csrf) return;
+const missionParam=new URLSearchParams(location.search).get('mission')||'';
+const linkedMission=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(missionParam)?missionParam:'';
 const root=document.createElement('details');
 root.className='vp3-agent-teams-a3';
 root.setAttribute('data-agent-teams-a3','');
@@ -311,7 +313,7 @@ function progressState(m){
  if(!progressConnected||Date.now()-progressReceived>30000)return 'disconnected';
  return m.progress?.state||m.status||'unknown';
 }
-const progressLabels={running:'Working',awaiting_review:'Awaiting assignment review',awaiting_approval:'Awaiting edit approval',awaiting_delivery:'Awaiting saved-change delivery',attention:'Results need attention',waiting_review:'Review required',stalled:'Stalled · review required',interrupted:'Interrupted · review required',blocked:'Permissions need review',completed:'Research completed',partial:'Partially completed',failed:'Failed',cancelled:'Cancelled',planned:'Awaiting review',disconnected:'Disconnected · last known status'};
+const progressLabels={running:'Working',awaiting_review:'Awaiting assignment review',awaiting_approval:'Awaiting edit approval',awaiting_delivery:'Awaiting saved-change delivery',attention:'Results need attention',waiting_review:'Review required',stalled:'Stalled · review required',interrupted:'Interrupted · review required',blocked:'Permissions need review',dependency_blocked:'Waiting for a prerequisite workflow',completed:'Research completed',partial:'Partially completed',failed:'Failed',cancelled:'Cancelled',planned:'Awaiting review',disconnected:'Disconnected · last known status'};
 function missionProgress(m){return progressLabels[progressState(m)]||progressState(m);}
 function workerProgress(t){
  const a=t.activity;
@@ -389,7 +391,7 @@ async function pollProgress(){
 let cloudTickInflight=false;
 async function tickCloudMission(){
  if(cloudTickInflight||busy||document.hidden)return;
- const mission=items.find(m=>m.execution_target==='cloud'&&m.status==='running'&&m.authority_current!==false);if(!mission)return;
+ const mission=items.find(m=>m.execution_target==='cloud'&&m.status==='running'&&m.progress?.state!=='dependency_blocked'&&m.authority_current!==false);if(!mission)return;
  cloudTickInflight=true;
  try{await api('cloud.tick',{mission_id:mission.id});if(!busy)await pollProgress();}
  catch(e){if(!busy)say(e.message||'Cloud worker is waiting. Check Mission history before retrying.');}
@@ -407,7 +409,7 @@ window.setInterval(()=>void tickCloudSchedules(),30000);
 window.setInterval(pollProgress,5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void pollProgress();});
 window.addEventListener('online',()=>void pollProgress());
-void pollProgress();
+if(!linkedMission)void pollProgress();
 
 function showList(){
  list.replaceChildren();
@@ -1043,5 +1045,14 @@ async function pollBrowserStatus(){
 }
 window.setInterval(pollBrowserStatus,9000);
 if(cfg.openSourceCatalog){root.open=true;sourcePanel.open=true;}
+if(linkedMission){
+ const agentId=taskContext().agent_id;
+ lastRefresh=Date.now();setBusy(true);root.open=true;say('Opening Mission…');
+ void api('catch_up.get',{mission_id:linkedMission,agent_id:agentId}).then(({mission,tools})=>{
+  if(taskContext().agent_id!==agentId||mission?.id!==linkedMission||mission.execution_target!=='cloud'||mission.authority_current!==true)throw Error('Mission could not be verified.');
+  progressReceived=Date.now();progressConnected=true;
+  toolsByMission.set(linkedMission,tools);items=[mission];showList();showMission(mission);say('Mission loaded.');
+ }).catch(error=>say(error.message||'Mission could not be opened.')).finally(()=>setBusy(false));
+}
 
 })();

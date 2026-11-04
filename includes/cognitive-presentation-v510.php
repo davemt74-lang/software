@@ -401,7 +401,29 @@ function vp3_cognitive_presentation_brief_v510(PDO $pdo,array $user,int $agentId
     ];
 }
 
-function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $namespace,int $agentId=0): array
+function vp3_cognitive_presentation_working_attention_v510(PDO $pdo,array $user,int $agentId): ?array
+{
+    require_once __DIR__.'/agent-catch-up-v1.php';
+    try{
+        $brief=vp3_agent_catch_up_v1($pdo,$user,'office',$agentId);
+    }catch(Throwable $e){
+        // A source or permission failure must not take the existing Brief offline.
+        return null;
+    }
+    $top=$brief['items'][0]??null;
+    if(!is_array($top)||trim((string)($top['title']??''))==='')return null;
+    $href=(string)($top['url']??'');
+    return vp3_cognitive_presentation_firewall_validate_v2590([
+        'type'=>'working_attention',
+        'title'=>$top['title'],
+        'summary'=>$top['reason']??'',
+        'status'=>'current',
+        'href'=>str_contains($href,'\\')?'':$href,
+        'action_label'=>$top['source_label']??'',
+    ])['presentation'];
+}
+
+function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $namespace,int $agentId=0,bool $includeWorkingAttention=false): array
 {
     $row=vp3_cognitive_presentation_state_row_v510($pdo,$user,$namespace);
     $digest=vp3_cognitive_presentation_digest_v510($pdo,$user,$namespace,$row);
@@ -514,6 +536,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $brief['decision_accuracy']=$decisionCalibration['accuracy']??[];
     $brief['decision_manage_url']=$decisionCalibration['manage_url']??'';
     $brief['current_state_presentation']=$currentStatePresentation;
+    if($includeWorkingAttention&&!empty($brief['active'])){
+        $brief['working_attention']=vp3_cognitive_presentation_working_attention_v510($pdo,$user,$agentId);
+    }
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),

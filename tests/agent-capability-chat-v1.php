@@ -49,6 +49,7 @@ check($brief['handled']&&!$called&&$brief['tool_receipt']['capability']==='brief
     'an explicit catch-up request returns through the read tool before model routing');
 check(vp3_catch_up_chat_scope_v1('What needs attention in my store?')==='commerce'&&
     vp3_catch_up_chat_scope_v1('Catch me up on work')==='office'&&
+    vp3_catch_up_chat_scope_v1('What should I focus on right now?')==='office'&&
     vp3_catch_up_chat_scope_v1('What does catch me up mean?')===null,
     'brief scopes match explicit commands and leave ordinary questions in Chat');
 $limited=vp3_catch_up_chat_result_v1(['items'=>[],'coverage'=>['calendar'=>'ready','orders'=>'unavailable']]);

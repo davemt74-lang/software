@@ -45,4 +45,40 @@ $next=cloud_mission_prepare_v1($pdo,$u,[...$request,'request_id'=>'00000000-0000
 $cancelModel=function()use($pdo,$u,$next){cloud_mission_service_v1($pdo,$u,'cancel',['mission_id'=>$next['id']]);return ['ok'=>true,'answer'=>'Late output'];};$cancelled=cloud_mission_tick_v1($pdo,$u,$next['id'],$cancelModel);check($cancelled['status']==='cancelled'&&$cancelled['result']==='','cancellation during inference fences a late model result');
 $third=cloud_mission_prepare_v1($pdo,$u,[...$request,'request_id'=>'00000000-0000-4000-8000-000000000005']);$d=$third['chat_task']['draft'];$d['assignments'][0]['tools']=['knowledge.search'];$d['assignments'][0]['max_calls']=1;cloud_mission_configure_v1($pdo,$u,[...$review,'mission_id'=>$third['id'],'request_id'=>'00000000-0000-4000-8000-000000000006','assignments'=>$d]);cloud_mission_service_v1($pdo,$u,'tools.start',['mission_id'=>$third['id'],'expected_revision'=>1,'confirmed'=>true]);$c=cloud_mission_tick_v1($pdo,$u,$third['id'],$model);check(str_contains(json_encode(end($calls)[1]),'Cold fermentation test results'),'approved Knowledge reads supply actual chunk text to inference');$GLOBALS['deletedSource']=true;$v=cloud_mission_view_v1($pdo,$u,cloud_mission_row_v1($pdo,$u,$third['id']));check(!$v['authority_current']&&$v['result']===''&&$v['tasks']===[],'deleted sources hide prior results and block further access');
 rejects(fn()=>cloud_mission_service_v1($pdo,$u,'execution',['mission_id'=>$third['id']]),'deleted sources cannot be recovered through raw execution receipts',403);
+
+require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
+require_once dirname(__DIR__).'/includes/agent-catch-up-missions-v1.php';
+function url(string $path): string{return '/vp3'.$path;}
+$approval=cloud_mission_prepare_v1($pdo,$u,['objective'=>'Review the next menu','request_id'=>'catch-up-mission-review']);
+$blocked=cloud_mission_prepare_v1($pdo,$u,[...$request,'objective'=>'Update prep plan','request_id'=>'catch-up-mission-blocked']);
+$running=cloud_mission_prepare_v1($pdo,$u,[...$request,'objective'=>'Routine research','request_id'=>'catch-up-mission-running']);
+$recentFailure=cloud_mission_prepare_v1($pdo,$u,['objective'=>'Review failed check','request_id'=>'catch-up-mission-failed']);
+$oldFailure=cloud_mission_prepare_v1($pdo,$u,['objective'=>'Old failure','request_id'=>'catch-up-mission-old']);
+$pdo->exec('CREATE TABLE agent_workflow_run_dependencies (owner_user_id INTEGER,run_id INTEGER,depends_on_run_id INTEGER)');
+$pdo->prepare('INSERT INTO agent_workflow_run_dependencies VALUES (1,?,41),(2,?,43)')->execute([$blocked['job_id'],$running['job_id']]);
+$update=$pdo->prepare('UPDATE agent_workflow_runs SET status=?,updated_at=? WHERE id=?');
+foreach([[$approval,'approval_pending','-3 minutes'],[$blocked,'approved','-2 minutes'],[$running,'approved','-1 minute'],[$recentFailure,'failed','-1 hour'],[$oldFailure,'failed','-10 days']] as [$mission,$status,$age]){
+    $update->execute([$status,gmdate('Y-m-d H:i:s',strtotime($age)),(int)$mission['job_id']]);
+}
+$now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+$system=['kind'=>'system','agent_id'=>0,'viewer_user_id'=>1];
+$named=['kind'=>'user_agent','agent_id'=>7,'owner_user_id'=>1,'viewer_user_id'=>1];
+$changes=(int)$pdo->query('SELECT total_changes()')->fetchColumn();
+[$coverage,$items]=vp3_catch_up_missions_v1($pdo,$u,$system,$now);
+check($coverage==='ready'&&array_column($items,'status')===['awaiting_review','failed'],'system brief includes its approval and fresh failure, excluding old failures and named work');
+check($items[0]['url']==='/vp3/chat.php?agent=system&mission='.$approval['id'],'system Mission links to the exact Agent Teams record');
+[$coverage,$items]=vp3_catch_up_missions_v1($pdo,$u,$named,$now);
+check($coverage==='ready'&&array_column($items,'id')===['mission:'.$blocked['id']]&&$items[0]['status']==='blocked','named Agent sees only its own dependency-blocked Mission, excluding routine or foreign-edge work');
+check(!str_contains(json_encode($items,JSON_THROW_ON_ERROR),'Fixture queued work')&&$items[0]['url']==='/vp3/chat.php?agent=7&mission='.$blocked['id'],'blocker details stay scoped and the linked Agent is exact');
+$open=['mission_id'=>$blocked['id'],'agent_id'=>7];
+$view=cloud_mission_dispatch_v1($pdo,$u,'catch_up.get',$open,static fn()=>throw new RuntimeException('Unexpected remote read'));
+check($view['mission']['id']===$blocked['id']&&$view['mission']['progress']['state']==='dependency_blocked','exact Cloud Mission read opens the canonical Agent Teams state');
+rejects(fn()=>cloud_mission_dispatch_v1($pdo,$u,'catch_up.get',[...$open,'agent_id'=>0]),'system Chat cannot open a named Agent Mission through a catch-up link',404);
+rejects(fn()=>cloud_mission_dispatch_v1($pdo,['id'=>2],'catch_up.get',$open),'another owner cannot open a Mission through a catch-up link',404);
+rejects(fn()=>cloud_mission_dispatch_v1($pdo,$u,'catch_up.get',['mission_id'=>$third['id'],'agent_id'=>7]),'catch-up links recheck result source authority',403);
+check((int)$pdo->query('SELECT total_changes()')->fetchColumn()===$changes,'Mission projection and deep link cause no record writes');
+$pdo->exec("UPDATE agent_workflow_runs SET status='completed' WHERE id=41");
+check(vp3_catch_up_missions_v1($pdo,$u,$named,$now)[1]===[],'verified prerequisite completion removes the Mission from attention');
+$update->execute(['failed',gmdate('Y-m-d H:i:s',strtotime('-1 minute')),(int)$third['job_id']]);
+check(vp3_catch_up_missions_v1($pdo,$u,$named,$now)===['limited',[]],'a failed Mission with revoked result evidence cannot reappear through Catch up');
 echo "CLOUD_MISSIONS_V1=PASS ($checks cases)\n";

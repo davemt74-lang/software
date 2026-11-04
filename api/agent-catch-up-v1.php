@@ -21,6 +21,10 @@ $user=current_user();
 if(!$user||empty($user['is_active'])||!has_permission('chat.access',$user)){
     vp3_catch_up_api_json_v1(403,['ok'=>false,'error'=>'forbidden']);
 }
+$pageBinding=(string)($_SERVER['HTTP_X_VP3_WORKING_ATTENTION']??'');
+if($pageBinding!==''&&!hash_equals(vp3_catch_up_page_binding_v1($user),$pageBinding)){
+    vp3_catch_up_api_json_v1(403,['ok'=>false,'error'=>'account_changed']);
+}
 $scope=$_GET['scope']??'all';
 $rawAgent=$_GET['agent_id']??'0';
 if(!in_array($scope,['all','office','commerce'],true)||!is_string($rawAgent)||
@@ -38,7 +42,7 @@ try{
     vp3_catch_up_api_json_v1(403,['ok'=>false,'error'=>'agent_unavailable']);
 }
 try{
-    vp3_catch_up_api_json_v1(200,['ok'=>true,'brief'=>vp3_agent_catch_up_v1($pdo,$user,$scope,$agentId)]);
+    vp3_catch_up_api_json_v1(200,['ok'=>true,'brief'=>vp3_agent_catch_up_v1($pdo,$user,$scope,$agentId,$pageBinding!=='')]);
 }catch(Throwable $e){
     if($e->getCode()===403)vp3_catch_up_api_json_v1(403,['ok'=>false,'error'=>'forbidden']);
     error_log('VP3 Catch me up: '.$e->getMessage());

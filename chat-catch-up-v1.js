@@ -18,6 +18,9 @@
   if (!endpoint) return;
   const agentId = Number(script.dataset.agentId || 0);
   if (Number.isSafeInteger(agentId) && agentId > 0) endpoint.searchParams.set('agent_id', String(agentId));
+  const headers = {Accept: 'application/json'};
+  const pageBinding = window.VP3_COGNITIVE_PRESENTATION_V510?.workingAttentionBinding;
+  if (typeof pageBinding === 'string' && pageBinding) headers['X-VP3-Working-Attention'] = pageBinding;
 
   const card = document.createElement('details');
   card.className = 'vp3-chat-catch-up';
@@ -73,7 +76,7 @@
     } else if (complete) {
       status.textContent = 'Nothing needs your attention right now.';
     } else {
-      status.textContent = coverage.includes('ready')
+      status.textContent = coverage.some(value => value === 'ready' || value === 'limited')
         ? 'No priority updates from the sources checked. Some sources couldn’t be checked.'
         : 'Priority sources are unavailable right now.';
     }
@@ -91,7 +94,7 @@
       const response = await fetch(endpoint.href, {
         credentials: 'same-origin',
         cache: 'no-store',
-        headers: {Accept: 'application/json'},
+        headers,
         signal: controller.signal
       });
       if (!response.ok) throw new Error('Brief unavailable');

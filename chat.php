@@ -56,7 +56,7 @@ $cognitiveBudgetGovernanceBuild = 'cognitive-budget-governance-v2560-20260923';
 $cognitiveValueRoiBuild = 'cognitive-value-roi-v2570-20260923';
 $cognitiveDecisionCalibrationBuild = 'cognitive-decision-calibration-v2580-20260923';
 $cognitiveCurrentStateBuild = 'cognitive-current-state-v2590-20260923';
-$cognitivePresentationAssetBuild = $cognitivePresentationBuild . '-' . $cognitiveCurrentStateBuild . '-profile-priority-v1341-20261027';
+$cognitivePresentationAssetBuild = $cognitivePresentationBuild . '-' . $cognitiveCurrentStateBuild . '-profile-priority-v1341-20261027-everyday-context-v1';
 $notificationDrawerAssetBuild = $notificationDrawerBuild . '-' . $cognitiveContextBuild . '-' . $cognitiveTurnBuild . '-' . $cognitiveContinuityBuild . '-' . $cognitiveFollowthroughBuild . '-' . $cognitiveSupervisionBuild . '-' . $cognitiveAutonomyBuild . '-' . $cognitivePortfolioBuild . '-' . $cognitiveForecastBuild . '-' . $cognitiveOptimizationBuild . '-' . $cognitiveResourceBudgetBuild . '-' . $cognitiveReplanningBuild . '-' . $cognitiveCommitmentProtectionBuild . '-' . $cognitiveEconomicsBuild . '-' . $cognitiveBudgetGovernanceBuild . '-' . $cognitiveValueRoiBuild . '-' . $cognitiveDecisionCalibrationBuild . '-' . $cognitiveCurrentStateBuild . '-mission-notices-a5c8-20261011-profile-priority-v1341-20261027-eyes-v1342-activity-v1348r2-longfellow-r3';
 $browserContextBuild = 'browser-context-v2130-20260919';
 $notificationDrawerAssetBuild .= '-pa4b-' . substr(hash('sha256',hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.js').hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.css')),0,12);
@@ -517,6 +517,7 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
         'endpoint'=>url('/api/cognitive-presentation-v510.php'),
         'csrf'=>csrf_token(),
         'agentId'=>(int)($activeUserAgent['id'] ?? 0),
+        'workingAttentionBinding'=>vp3_catch_up_page_binding_v1($user),
         'pollSeconds'=>30,
         'ownsAttention'=>true,
         'ownsBrainPresentation'=>true,
@@ -525,7 +526,7 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
     . ';</script>';
 $cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationAssetBuild)) . '"></script>';
 $chatCatchUpRuntime = '<link rel="stylesheet" href="' . e(url('/chat-catch-up-v1.css?v=1')) . '">'
-    . '<script src="' . e(url('/chat-catch-up-v1.js?v=1')) . '" data-endpoint="'
+    . '<script src="' . e(url('/chat-catch-up-v1.js?v=2')) . '" data-endpoint="'
     . e(url('/api/agent-catch-up-v1.php')) . '" data-agent-id="' . (int)($activeUserAgent['id'] ?? 0) . '"></script>';
 
 $agentTeamsA3Build = 'agent-teams-' . substr(hash('sha256', (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.js') . (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.css')), 0, 12);

@@ -30,9 +30,16 @@ $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?vp3_cognitive_presentation_api_input_v510():$_GET;
 $agentId=max(0,(int)($input['agent_id']??0));
 try{
-    $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,$agentId);
     $action=trim((string)($input['action']??'state'));
-    if($method==='GET'&&$action==='state')vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'state'=>vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId)]);
+    $readState=$method==='GET'&&$action==='state';
+    $workingBinding=$readState?(string)($_SERVER['HTTP_X_VP3_WORKING_ATTENTION']??''):'';
+    if($workingBinding!==''&&!hash_equals(vp3_catch_up_page_binding_v1($user),$workingBinding)){
+        vp3_cognitive_presentation_api_json_v510(403,['ok'=>false,'error'=>'account_changed']);
+    }
+    $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,$agentId);
+    if($readState){
+        vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'state'=>vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$workingBinding!=='')]);
+    }
     if($method!=='POST')vp3_cognitive_presentation_api_json_v510(405,['ok'=>false,'error'=>'method_not_allowed']);
     if(!hash_equals(csrf_token(),trim((string)($input['csrf_token']??''))))vp3_cognitive_presentation_api_json_v510(419,['ok'=>false,'error'=>'csrf']);
 

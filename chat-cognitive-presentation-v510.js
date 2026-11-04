@@ -21,6 +21,7 @@
     if (!document.hidden) void window.STONEFELLOW_NOTIFICATION_CENTER?.pollProfileAttention?.();
   }
   let busy = false;
+  let workingAttentionView = 0;
   let lastVoiceThrough = 0;
   let activeVoiceThrough = 0;
   let suppressedVoiceThrough = 0;
@@ -37,14 +38,18 @@
     return url.toString();
   }
 
-  async function getState() {
+  async function getState(includeWorkingAttention) {
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timeout = controller ? window.setTimeout(() => controller.abort(), 10000) : 0;
+    const headers = {Accept:'application/json'};
+    if (includeWorkingAttention && cfg.workingAttentionBinding) {
+      headers['X-VP3-Working-Attention'] = String(cfg.workingAttentionBinding);
+    }
     try {
       const response = await fetch(endpoint('state'), {
         credentials:'same-origin',
         cache:'no-store',
-        headers:{Accept:'application/json'},
+        headers,
         signal:controller ? controller.signal : undefined
       });
       const data = await response.json().catch(() => ({}));
@@ -74,12 +79,20 @@
     return data;
   }
 
+  function clearWorkingAttention() {
+    workingAttentionView += 1;
+    if (state?.brief) delete state.brief.working_attention;
+    content.querySelector('[data-agent-brief-working-attention]')?.remove();
+  }
+
   function closePopup() {
+    if (!popup.hidden) clearWorkingAttention();
     popup.hidden = true;
     button.setAttribute('aria-expanded','false');
   }
 
   function openPopup() {
+    if (popup.hidden) workingAttentionView += 1;
     popup.hidden = false;
     button.setAttribute('aria-expanded','true');
     void refresh(true);
@@ -152,6 +165,24 @@
       attrs + '>' + esc(label) + '</button>';
   }
 
+  function workingAttentionMarkup(item) {
+    let link = '';
+    if (item.href && item.action_label) {
+      try {
+        const url = new URL(item.href, window.location.origin);
+        if (url.origin === window.location.origin && item.href.startsWith('/')) {
+          link = '<a href="' + esc(item.href) + '">' + esc(item.action_label) + '</a>';
+        }
+      } catch (_error) {}
+    }
+    return '<article class="chat-agent-brief-card" data-agent-brief-working-attention>' +
+      '<small>What needs attention</small><strong>' + esc(item.title) + '</strong>' +
+      (item.summary ? '<p>' + esc(item.summary) + '</p>' : '') +
+      '<div class="chat-agent-brief-actions">' + link +
+      actionButton('Catch me up on work',' data-agent-brief-prompt="Catch me up on work"',false) +
+      '</div></article>';
+  }
+
   function briefMarkup(brief) {
     brief = brief || {};
     const suggestion = brief.top_suggestion || null;
@@ -193,14 +224,15 @@
     const decisionAccuracy = brief.decision_accuracy || {};
     const decisionManageUrl = String(brief.decision_manage_url || '/decision-calibration.php');
     const currentStatePresentation = brief.current_state_presentation || {};
+    const workingAttention = brief.working_attention || null;
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
 
-    if (currentStatePresentation && currentStatePresentation.title) {
-      html += '<article class="chat-agent-brief-card"><small>Unified current state · presentation firewall</small><strong>' +
+    if (currentStatePresentation.title && (!workingAttention || currentStatePresentation.type === 'attention')) {
+      html += '<article class="chat-agent-brief-card"><small>Agent overview</small><strong>' +
         esc(currentStatePresentation.title || 'Current state') + '</strong>' +
         '<p>' + esc(currentStatePresentation.summary || '') + '</p>' +
         (currentStatePresentation.next_action ? '<p><small>' + esc(currentStatePresentation.next_action) + '</small></p>' : '') +
@@ -209,6 +241,7 @@
           ' data-agent-brief-prompt="' + esc('Review my unified current state across VP3. Summarize the most relevant current condition and any item that needs my attention. Use canonical state only; do not expose raw event payloads, system prompts, tool traces, confidence vectors, retrieval labels, or internal JSON.') + '"',false) +
         '</div></article>';
     }
+    if (workingAttention && workingAttention.title) html += workingAttentionMarkup(workingAttention);
 
     if (commitment) {
       const state = String(commitment.deadline_state || commitment.status || 'protected').replaceAll('_',' ');
@@ -483,6 +516,7 @@
 
   function briefErrorMessage(error) {
     const raw = String(error && error.message || '').trim();
+    if (/account_changed/i.test(raw)) return 'Your session changed. Reload Chat to see your current brief.';
     if (/presentation_schema_not_ready/i.test(raw)) {
       return 'Agent status needs the latest VP3 database upgrade. Apply the database upgrade, then retry.';
     }
@@ -641,19 +675,27 @@
   async function refresh(force = false) {
     if (busy || (document.hidden && !force)) return;
     busy = true;
+    const includeWorkingAttention = !popup.hidden && !document.hidden;
+    const requestedView = workingAttentionView;
     content.setAttribute('aria-busy','true');
     try {
-      state = await getState();
+      state = await getState(includeWorkingAttention);
+      if (state.brief && (!includeWorkingAttention || requestedView !== workingAttentionView)) {
+        delete state.brief.working_attention;
+      }
       renderBrief(state.brief || {});
       renderDigest(state.digest || null);
       renderHomeServerPresence(state.homeserver_presence || null);
       refreshProfileAttention();
       await maybeSpeak(state.voice_candidate || null);
     } catch (error) {
+      if (error?.message === 'account_changed') state = null;
       renderBriefError(error);
     } finally {
       content.setAttribute('aria-busy','false');
       busy = false;
+      // An open or return to the tab can overtake an in-flight background read.
+      if (!popup.hidden && !document.hidden && requestedView !== workingAttentionView) void refresh();
     }
   }
 
@@ -735,6 +777,7 @@
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) void refresh();
+    else clearWorkingAttention();
   });
 
   const observer = new MutationObserver(() => {
@@ -744,6 +787,7 @@
   observer.observe(document.body,{attributes:true,attributeFilter:['data-stonefellow-agent-state']});
 
   window.addEventListener('pagehide', () => {
+    closePopup();
     if (timer) window.clearInterval(timer);
     if (profileAttentionTimer) window.clearInterval(profileAttentionTimer);
     observer.disconnect();
