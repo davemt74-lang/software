@@ -1,8 +1,6 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__.'/profile-commerce-lifecycle-v1100.php';
-
 /** Read-only projections of current owner records. No notification or delivery state changes. */
 function vp3_catch_up_item_v1(string $id,string $title,string $reason,string $sourceLabel,string $path,int $priority,int $time): array
 {
@@ -132,6 +130,7 @@ function vp3_catch_up_tasks_v1(PDO $pdo,array $user,array $principal,DateTimeImm
 function vp3_catch_up_orders_v1(PDO $pdo,array $user): array
 {
     if(!agent_commerce_schema_ready_v800($pdo))return ['unavailable',[]];
+    require_once __DIR__.'/profile-commerce-lifecycle-v1100.php';
     $owner=(int)$user['id'];
     $rows=agent_commerce_orders_for_owner_v800($pdo,$owner,100);$items=[];
     foreach($rows as $order){
