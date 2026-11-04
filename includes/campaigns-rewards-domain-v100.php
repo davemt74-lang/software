@@ -18,11 +18,11 @@ function campaigns_rewards_platform_require_v100(PDO $pdo): void
     }
 }
 
-function campaigns_rewards_platform_user_v100(int $userId): ?array
+function campaigns_rewards_platform_user_v100(int $userId,bool $forShare=false): ?array
 {
     if($userId<1)return null;
     $pdo=db();if(!$pdo)return null;
-    $stmt=$pdo->prepare('SELECT id,email,display_name,role,is_active,avatar_path FROM users WHERE id=? LIMIT 1');
+    $stmt=$pdo->prepare('SELECT id,email,display_name,role,is_active,avatar_path FROM users WHERE id=? LIMIT 1'.($forShare?' LOCK IN SHARE MODE':''));
     $stmt->execute([$userId]);$row=$stmt->fetch();return $row?:null;
 }
 
@@ -139,36 +139,37 @@ function campaigns_rewards_set_access_source_v100(PDO $pdo,int $merchantId,int $
     return campaigns_rewards_sync_member_projection_v100($pdo,$merchantId,$userId);
 }
 
-function campaigns_rewards_platform_member_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability): bool
+function campaigns_rewards_platform_member_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability,bool $forUpdate=false): bool
 {
     if($merchantId<1||$userId<1||$capability==='')return false;
-    $user=campaigns_rewards_platform_user_v100($userId);if(!$user||(int)($user['is_active']??0)!==1)return false;
+    $user=campaigns_rewards_platform_user_v100($userId,$forUpdate);if(!$user||(int)($user['is_active']??0)!==1)return false;
     if(function_exists('user_has_role')&&user_has_role('admin',$user))return true;
-    $member=campaigns_rewards_platform_member_v100($pdo,$merchantId,$userId);
+    $member=campaigns_rewards_platform_member_v100($pdo,$merchantId,$userId,$forUpdate);
     if(!$member||($member['status']??'')!=='active')return false;
     if(!empty($member['is_owner']))return true;
-    $override=$pdo->prepare("SELECT effect FROM merchant_member_capability_overrides WHERE merchant_member_id=? AND capability_key=? LIMIT 1");
+    $lock=$forUpdate?' LOCK IN SHARE MODE':'';
+    $override=$pdo->prepare("SELECT effect FROM merchant_member_capability_overrides WHERE merchant_member_id=? AND capability_key=? LIMIT 1".$lock);
     $override->execute([(int)$member['id'],$capability]);$effect=$override->fetchColumn();
     if($effect!==false)return $effect==='allow';
-    $stmt=$pdo->prepare("SELECT effect FROM merchant_role_capabilities WHERE role_id=? AND capability_key=? LIMIT 1");
+    $stmt=$pdo->prepare("SELECT effect FROM merchant_role_capabilities WHERE role_id=? AND capability_key=? LIMIT 1".$lock);
     $stmt->execute([(int)$member['role_id'],$capability]);return $stmt->fetchColumn()==='allow';
 }
 
-function campaigns_rewards_platform_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability): bool
+function campaigns_rewards_platform_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability,bool $forUpdate=false): bool
 {
-    $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId);if(!$merchant)return false;
+    $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId,$forUpdate);if(!$merchant)return false;
     $status=(string)$merchant['status'];
     if($status==='closed'){
-        $user=campaigns_rewards_platform_user_v100($userId);
+        $user=campaigns_rewards_platform_user_v100($userId,$forUpdate);
         return (bool)($user&&function_exists('user_has_role')&&user_has_role('admin',$user));
     }
     if($status==='archived'&&!in_array($capability,['merchant.view','merchant.manage','merchant.settings.manage'],true))return false;
     if(!in_array($status,['active','suspended','archived'],true))return false;
-    return campaigns_rewards_platform_member_can_v100($pdo,$merchantId,$userId,$capability);
+    return campaigns_rewards_platform_member_can_v100($pdo,$merchantId,$userId,$capability,$forUpdate);
 }
-function campaigns_rewards_platform_assert_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability): void
+function campaigns_rewards_platform_assert_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability,bool $forUpdate=false): void
 {
-    if(!campaigns_rewards_platform_can_v100($pdo,$merchantId,$userId,$capability)){
+    if(!campaigns_rewards_platform_can_v100($pdo,$merchantId,$userId,$capability,$forUpdate)){
         throw new RuntimeException('You do not have '.$capability.' access for this Merchant.');
     }
 }
@@ -432,6 +433,19 @@ function campaigns_rewards_resolve_contact_v100(PDO $pdo,int $merchantId,array $
     if(!$contact)throw new RuntimeException('CRM Contact could not be resolved.');
     return $contact;
 }
+
+function campaigns_rewards_active_contact_user_v100(PDO $pdo,array $contact,int $expectedUserId=0,bool $forUpdate=false): int
+{
+    $email=strtolower(trim((string)($contact['email']??'')));
+    if(!filter_var($email,FILTER_VALIDATE_EMAIL))return 0;
+    $stmt=$pdo->prepare('SELECT id,email FROM users WHERE email=? AND is_active=1 LIMIT 1'.($forUpdate?' FOR UPDATE':''));
+    $stmt->execute([$email]);$account=$stmt->fetch();
+    if(!$account||strtolower(trim((string)$account['email']))!==$email)return 0;
+    $userId=(int)$account['id'];$linkedUserId=(int)($contact['vp3_user_id']??0);
+    if(($linkedUserId>0&&$linkedUserId!==$userId)||($expectedUserId>0&&$expectedUserId!==$userId))return 0;
+    return $userId;
+}
+
 function campaigns_rewards_merchant_relationship_v100(PDO $pdo,int $merchantId,int $contactId,bool $forUpdate=false): ?array
 {
     if($merchantId<1||$contactId<1)return null;
@@ -667,7 +681,7 @@ function campaigns_rewards_attach_reward_v100(PDO $pdo,int $campaignId,int $rewa
     return $setId;
 }
 
-function campaigns_rewards_idempotency_begin_v100(PDO $pdo,int $merchantId,string $operation,string $key,array $request=[]): array
+function campaigns_rewards_idempotency_begin_v100(PDO $pdo,int $merchantId,string $operation,string $key,array $request=[],bool $forUpdate=false): array
 {
     $key=campaigns_rewards_text_v100($key,190);if($key==='')throw new RuntimeException('An idempotency key is required.');
     $hash=hash('sha256',campaigns_rewards_json_v100($request));
@@ -676,7 +690,7 @@ function campaigns_rewards_idempotency_begin_v100(PDO $pdo,int $merchantId,strin
           VALUES (?,?,?,?,'started',UTC_TIMESTAMP())")->execute([$merchantId,$operation,$key,$hash]);
         return ['new'=>true,'id'=>(int)$pdo->lastInsertId(),'status'=>'started','request_hash'=>$hash];
     }catch(Throwable $e){
-        $stmt=$pdo->prepare("SELECT * FROM campaign_idempotency_keys WHERE merchant_id=? AND operation_key=? AND idempotency_key=? LIMIT 1");
+        $stmt=$pdo->prepare("SELECT * FROM campaign_idempotency_keys WHERE merchant_id=? AND operation_key=? AND idempotency_key=? LIMIT 1".($forUpdate?' FOR UPDATE':''));
         $stmt->execute([$merchantId,$operation,$key]);$row=$stmt->fetch();if(!$row)throw $e;
         if(!hash_equals((string)$row['request_hash'],$hash))throw new RuntimeException('Idempotency key was reused with a different request.');
         return ['new'=>false]+$row;
@@ -731,6 +745,19 @@ function campaigns_rewards_reward_product_v100(PDO $pdo,int $rewardProductId): ?
     $stmt->execute([$rewardProductId]);$row=$stmt->fetch();return $row?:null;
 }
 
+function campaigns_rewards_issued_receipt_v100(array $row,?string $credential,bool $replay): array
+{
+    unset($row['credential_hash']);
+    // The authenticated holder displays an account-bound voucher from their Inbox.
+    if((int)($row['recipient_user_id']??0)>0){
+        $credential=null;
+        unset($row['credential_last4']);
+    }
+    $row['credential']=$credential;
+    $row['idempotent_replay']=$replay;
+    return $row;
+}
+
 function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewardProductId,int $contactId,int $actorUserId,array $options=[]): array
 {
     $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');
@@ -781,12 +808,26 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
     $request=['campaign_id'=>$campaignId,'reward_product_id'=>$rewardProductId,'contact_id'=>$contactId,'version_id'=>(int)$version['id'],'quantity'=>$quantity];
 
     $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    else $pdo->exec('SAVEPOINT reward_issue_v100');
     try{
         $locked=campaigns_rewards_campaign_platform_v100($pdo,$campaignId,true)?:throw new RuntimeException('Campaign not found.');
         $idem=campaigns_rewards_idempotency_begin_v100($pdo,(int)$campaign['merchant_id'],'reward.issue',$idempotency,$request);
         if(empty($idem['new'])&&($idem['status']??'')==='completed'&&($idem['result_ref_type']??'')==='reward_issuance'){
-            $q=$pdo->prepare('SELECT * FROM reward_issuances WHERE id=? LIMIT 1');$q->execute([(int)$idem['result_ref_id']]);$row=$q->fetch();
-            if($row){if($owns)$pdo->commit();$row['credential']=null;$row['idempotent_replay']=true;return $row;}
+            $q=$pdo->prepare('SELECT * FROM reward_issuances WHERE id=? LIMIT 1');$q->execute([(int)$idem['result_ref_id']]);$row=$q->fetch(PDO::FETCH_ASSOC);
+            if($row){
+                if($owns)$pdo->commit();
+                else $pdo->exec('RELEASE SAVEPOINT reward_issue_v100');
+                return campaigns_rewards_issued_receipt_v100($row,null,true);
+            }
+        }
+
+        $recipient=$pdo->prepare('SELECT email,vp3_user_id FROM crm_contacts WHERE id=? LIMIT 1 FOR UPDATE');
+        $recipient->execute([$contactId]);
+        $contact=$recipient->fetch()?:throw new RuntimeException('Reward recipient is unavailable.');
+        $expectedRecipientId=(int)($options['recipient_user_id']??0);
+        $recipientUserId=campaigns_rewards_active_contact_user_v100($pdo,$contact,$expectedRecipientId,true);
+        if($recipientUserId<1&&($expectedRecipientId>0||(int)$contact['vp3_user_id']>0)){
+            throw new RuntimeException('The Reward recipient’s linked VP3 account does not match an active account.');
         }
 
         if($locked['max_rewards']!==null){
@@ -832,7 +873,6 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
             'currency'=>$unitCurrency,'claim_limit'=>$claimLimit,'transferable'=>$transferable,'regiftable'=>$regiftable,
             'campaign_version'=>(int)$version['version_no'],'value_label'=>(string)($frozenSettings['value_label']??''),
         ];
-        $recipientUserId=isset($options['recipient_user_id'])?max(0,(int)$options['recipient_user_id']):0;
         $pdo->prepare("INSERT INTO reward_issuances
           (public_id,merchant_id,campaign_id,campaign_version_id,campaign_enrollment_id,campaign_case_id,reward_product_id,reward_variant_id,inventory_balance_id,recipient_contact_id,recipient_user_id,issued_by_user_id,issued_by_actor_type,environment,status,credential_hash,credential_last4,quantity,remaining_quantity,face_value_minor,currency,terms_snapshot_json,issued_at,expires_at)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'issued',?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)")
@@ -850,15 +890,24 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
         }
         campaigns_rewards_idempotency_complete_v100($pdo,(int)$idem['id'],'reward_issuance',$issuanceId);
         if($owns)$pdo->commit();
-    }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
+        else $pdo->exec('RELEASE SAVEPOINT reward_issue_v100');
+    }catch(Throwable $e){
+        if($pdo->inTransaction()){
+            if($owns)$pdo->rollBack();
+            else {
+                $pdo->exec('ROLLBACK TO SAVEPOINT reward_issue_v100');
+                $pdo->exec('RELEASE SAVEPOINT reward_issue_v100');
+            }
+        }
+        throw $e;
+    }
 
-    $q=$pdo->prepare('SELECT * FROM reward_issuances WHERE id=? LIMIT 1');$q->execute([$issuanceId]);$row=$q->fetch()?:throw new RuntimeException('Reward Issuance unavailable.');
-    $row['credential']=$credential;$row['idempotent_replay']=false;
+    $q=$pdo->prepare('SELECT * FROM reward_issuances WHERE id=? LIMIT 1');$q->execute([$issuanceId]);$row=$q->fetch(PDO::FETCH_ASSOC)?:throw new RuntimeException('Reward Issuance unavailable.');
     campaigns_rewards_activity_event_v100($pdo,(int)$campaign['merchant_id'],'reward.issued',['campaign_id'=>$campaignId,'contact_id'=>$contactId,'reward_issuance_id'=>$issuanceId],[
         'summary'=>'Reward issued','merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],
         'reward_product_public_id'=>$reward['public_id'],'reward_issuance_public_id'=>$public,
     ],(string)$campaign['environment'],$actorUserId?:null,$actorType);
-    return $row;
+    return campaigns_rewards_issued_receipt_v100($row,$credential,false);
 }
 
 function campaigns_rewards_public_enroll_v100(PDO $pdo,int $campaignId,int $contactId,string $idempotencyKey): array
@@ -903,16 +952,16 @@ function campaigns_rewards_public_enroll_v100(PDO $pdo,int $campaignId,int $cont
 function campaigns_rewards_wallet_v100(PDO $pdo,int $contactId=0,int $userId=0): array
 {
     if($contactId<1&&$userId<1)return ['inbox'=>[],'sent'=>[],'claimed'=>[]];
-    $where=[];$params=[];
-    if($contactId>0){$where[]='ri.recipient_contact_id=?';$params[]=$contactId;}
-    if($userId>0){$where[]='ri.recipient_user_id=?';$params[]=$userId;}
+    $where=$userId>0
+        ?'ri.recipient_user_id=? AND EXISTS (SELECT 1 FROM users u WHERE u.id=ri.recipient_user_id AND u.is_active=1)'
+        :'ri.recipient_contact_id=? AND ri.recipient_user_id IS NULL';
     $stmt=$pdo->prepare("SELECT ri.*,rp.name reward_name,rp.description reward_description,c.name campaign_name,m.name merchant_name,
       rc.status claim_status,rc.claimed_at
       FROM reward_issuances ri INNER JOIN reward_products rp ON rp.id=ri.reward_product_id
       INNER JOIN campaigns c ON c.id=ri.campaign_id INNER JOIN merchant_accounts m ON m.id=ri.merchant_id
       LEFT JOIN reward_claims rc ON rc.reward_issuance_id=ri.id AND rc.status='claimed'
-      WHERE (".implode(' OR ',$where).") ORDER BY ri.issued_at DESC,ri.id DESC");
-    $stmt->execute($params);$out=['inbox'=>[],'sent'=>[],'claimed'=>[]];
+      WHERE {$where} ORDER BY ri.issued_at DESC,ri.id DESC");
+    $stmt->execute([$userId>0?$userId:$contactId]);$out=['inbox'=>[],'sent'=>[],'claimed'=>[]];
     foreach($stmt->fetchAll()?:[] as $row){
         if(($row['status']??'')==='claimed'||($row['claim_status']??'')==='claimed')$out['claimed'][]=$row;
         elseif(in_array((string)$row['status'],['issued','sent','viewed'],true)&&((empty($row['expires_at']))||strtotime((string)$row['expires_at'])>time()))$out['inbox'][]=$row;
@@ -929,9 +978,9 @@ function campaigns_rewards_rotate_reward_credential_v100(PDO $pdo,int $issuanceI
         $stmt=$pdo->prepare("SELECT ri.*,c.public_id campaign_public_id,rp.public_id reward_product_public_id,m.public_id merchant_public_id
           FROM reward_issuances ri INNER JOIN campaigns c ON c.id=ri.campaign_id
           INNER JOIN reward_products rp ON rp.id=ri.reward_product_id INNER JOIN merchant_accounts m ON m.id=ri.merchant_id
-          LEFT JOIN crm_contacts cc ON cc.id=ri.recipient_contact_id
-          WHERE ri.id=? AND (ri.recipient_user_id=? OR cc.vp3_user_id=?) LIMIT 1 FOR UPDATE");
-        $stmt->execute([$issuanceId,$userId,$userId]);$issuance=$stmt->fetch()?:throw new RuntimeException('Reward is not in your Wallet.');
+          WHERE ri.id=? AND ri.recipient_user_id=?
+            AND EXISTS (SELECT 1 FROM users u WHERE u.id=ri.recipient_user_id AND u.is_active=1) LIMIT 1 FOR UPDATE");
+        $stmt->execute([$issuanceId,$userId]);$issuance=$stmt->fetch()?:throw new RuntimeException('Reward is not in your Wallet.');
         if(!in_array((string)$issuance['status'],['issued','sent','viewed'],true)||(int)$issuance['remaining_quantity']<1)throw new RuntimeException('This Reward is no longer redeemable.');
         if(!empty($issuance['expires_at'])&&strtotime((string)$issuance['expires_at'])<=time())throw new RuntimeException('This Reward has expired.');
         $credential=campaigns_rewards_secret_v100(24);$hash=campaigns_rewards_secret_hash_v100($credential);$last4=substr($credential,-4);
@@ -951,20 +1000,37 @@ function campaigns_rewards_create_claim_code_v100(PDO $pdo,int $merchantId,int $
     campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claim_codes.manage');
     $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant not found.');
     $locationId=((int)($input['location_id']??0))?:null;$memberId=((int)($input['merchant_member_id']??0))?:null;
-    if($locationId){$q=$pdo->prepare('SELECT 1 FROM merchant_locations WHERE id=? AND merchant_id=? AND is_active=1');$q->execute([$locationId,$merchantId]);if(!$q->fetchColumn())throw new RuntimeException('Claim Code Location is invalid.');}
-    if($memberId){$q=$pdo->prepare("SELECT 1 FROM merchant_members WHERE id=? AND merchant_id=? AND status='active'");$q->execute([$memberId,$merchantId]);if(!$q->fetchColumn())throw new RuntimeException('Claim Code Team Member is invalid.');}
+    $limits=[];
+    foreach(['daily_claim_limit'=>1,'total_claim_limit'=>1,'max_value_minor'=>0] as $field=>$minimum){
+        $value=trim((string)($input[$field]??''));
+        $limit=$value===''?null:filter_var($value,FILTER_VALIDATE_INT,['options'=>['min_range'=>$minimum]]);
+        if($limit===false)throw new RuntimeException('Enter a valid '.str_replace('_',' ',$field).'.');
+        $limits[$field]=$limit;
+    }
+    $currency=strtoupper(trim((string)($input['currency']??$merchant['currency'])));
+    if(!preg_match('/^[A-Z]{3}$/D',$currency))throw new RuntimeException('Enter a valid Claim Code currency.');
     $secret=campaigns_rewards_secret_v100(18);$hash=campaigns_rewards_secret_hash_v100($secret);$public=campaigns_rewards_uuid_v100();
 
     $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
     try{
+        $lockedMerchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId,true);
+        if(($lockedMerchant['status']??'')!=='active')throw new RuntimeException('Merchant is not accepting Claims.');
+        if($locationId){
+            $locations=campaigns_rewards_claim_locations_v100($pdo,$merchantId,0,$locationId,true);
+            if(!$locations)throw new RuntimeException('Claim Code Location is invalid.');
+        }
+        if($memberId){
+            $q=$pdo->prepare("SELECT 1 FROM merchant_members WHERE id=? AND merchant_id=? AND status='active' FOR UPDATE");
+            $q->execute([$memberId,$merchantId]);
+            if(!$q->fetchColumn())throw new RuntimeException('Claim Code Team Member is invalid.');
+        }
         $stmt=$pdo->prepare("INSERT INTO merchant_claim_codes
           (public_id,merchant_id,display_name,code_hash,code_last4,location_id,merchant_member_id,device_label,status,active_from,active_until,daily_claim_limit,total_claim_limit,max_value_minor,currency,rules_json,created_by_user_id)
           VALUES (?,?,?,?,?,?,?,?, 'active',?,?,?,?,?,?,?,?)");
         $stmt->execute([
             $public,$merchantId,campaigns_rewards_text_v100($input['display_name']??'Claim Code',190),$hash,substr($secret,-4),$locationId,$memberId,
             campaigns_rewards_text_v100($input['device_label']??'',120),campaigns_rewards_datetime_v100((string)($input['active_from']??'')),campaigns_rewards_datetime_v100((string)($input['active_until']??'')),
-            isset($input['daily_claim_limit'])?max(1,(int)$input['daily_claim_limit']):null,isset($input['total_claim_limit'])?max(1,(int)$input['total_claim_limit']):null,
-            isset($input['max_value_minor'])?max(0,(int)$input['max_value_minor']):null,strtoupper(substr((string)($input['currency']??$merchant['currency']),0,3)),
+            $limits['daily_claim_limit'],$limits['total_claim_limit'],$limits['max_value_minor'],$currency,
             campaigns_rewards_json_v100($input['rules']??[]),$actorUserId,
         ]);
         $id=(int)$pdo->lastInsertId();
@@ -982,6 +1048,42 @@ function campaigns_rewards_create_claim_code_v100(PDO $pdo,int $merchantId,int $
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 
+function campaigns_rewards_claim_locations_v100(PDO $pdo,int $merchantId,int $actorUserId=0,?int $locationId=null,bool $forUpdate=false): array
+{
+    $member=$actorUserId>0?campaigns_rewards_platform_member_v100($pdo,$merchantId,$actorUserId,$forUpdate):null;
+    $memberId=(int)($member['id']??0);
+    $assigned=[];
+    if($memberId>0){
+        $stmt=$pdo->prepare('SELECT location_id FROM merchant_member_locations WHERE merchant_member_id=?'.($forUpdate?' FOR UPDATE':''));
+        $stmt->execute([$memberId]);$assigned=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+    $sql="SELECT id,public_id,name,timezone FROM merchant_locations WHERE merchant_id=? AND is_active=1
+      AND location_type IN ('store','restaurant','office','warehouse','pop-up','event','mobile','other')";
+    $params=[$merchantId];
+    if($locationId!==null){$sql.=' AND id=?';$params[]=$locationId;}
+    if($assigned){
+        $sql.=' AND id IN ('.implode(',',array_fill(0,count($assigned),'?')).')';
+        array_push($params,...$assigned);
+    }
+    $stmt=$pdo->prepare($sql.' ORDER BY is_primary DESC,name,id'.($forUpdate?' FOR UPDATE':''));
+    $stmt->execute($params);return $stmt->fetchAll()?:[];
+}
+
+function campaigns_rewards_claim_receipt_v100(PDO $pdo,int $claimId): array
+{
+    $q=$pdo->prepare("SELECT rc.*,ri.public_id reward_issuance_public_id,c.public_id campaign_public_id,rp.public_id reward_product_public_id,m.public_id merchant_public_id,mc.public_id claim_code_public_id,
+      ml.name location_name,ml.timezone location_timezone
+      FROM reward_claims rc INNER JOIN reward_issuances ri ON ri.id=rc.reward_issuance_id INNER JOIN campaigns c ON c.id=rc.campaign_id
+      INNER JOIN reward_products rp ON rp.id=ri.reward_product_id INNER JOIN merchant_accounts m ON m.id=rc.merchant_id
+      INNER JOIN merchant_claim_codes mc ON mc.id=rc.claim_code_id
+      LEFT JOIN merchant_locations ml ON ml.id=rc.location_id AND ml.merchant_id=rc.merchant_id WHERE rc.id=? LIMIT 1 FOR UPDATE");
+    $q->execute([$claimId]);$claim=$q->fetch()?:throw new RuntimeException('Claim unavailable.');
+    $meta=json_decode((string)$claim['metadata_json'],true);
+    $claim['location_name']=$meta['location_name']??$claim['location_name'];
+    $claim['location_timezone']=$meta['location_timezone']??$claim['location_timezone'];
+    return $claim;
+}
+
 function campaigns_rewards_record_claim_attempt_v100(PDO $pdo,?int $merchantId,?int $issuanceId,?int $claimCodeId,string $result,string $reason,array $meta=[]): void
 {
     try{$pdo->prepare("INSERT INTO reward_claim_attempts (merchant_id,reward_issuance_id,claim_code_id,attempt_result,reason_code,request_fingerprint_hash,occurred_at,metadata_json)
@@ -992,53 +1094,112 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
 {
     if(empty($context['online']))throw new RuntimeException('Authoritative V1 Claim processing is online-only.');
     if($actorUserId<1)throw new RuntimeException('An authenticated Merchant operator is required.');
-    $rewardHash=campaigns_rewards_secret_hash_v100($rewardCredential);$claimHash=campaigns_rewards_secret_hash_v100($merchantClaimCode);
-    $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    $expectedMerchant=max(0,(int)($context['expected_merchant_id']??0));
+    $expectedIssuance=max(0,(int)($context['expected_issuance_id']??0));
+    $expectedHolder=max(0,(int)($context['expected_holder_user_id']??0));
+    $requestedLocation=max(0,(int)($context['location_id']??0));
+    $orderRef=campaigns_rewards_text_v100($context['order_ref']??'',190);
+    $actorType=(string)($context['actor_type']??'user');
+    $rewardHash=trim($rewardCredential)===''?null:campaigns_rewards_secret_hash_v100($rewardCredential);
+    $claimHash=campaigns_rewards_secret_hash_v100($merchantClaimCode);
+    if($rewardHash===null&&($expectedIssuance<1||$expectedHolder!==$actorUserId)){
+        throw new RuntimeException('Reward Credential is required.');
+    }
+    $clientKey=trim((string)($context['idempotency_key']??''));
+    if(strlen($clientKey)>190)throw new RuntimeException('Claim idempotency key is too long.');
+    $lookupId=$expectedIssuance;
+    if($rewardHash!==null){
+        $lookup=$pdo->prepare('SELECT id FROM reward_issuances WHERE credential_hash=? LIMIT 1');
+        $lookup->execute([$rewardHash]);$lookupId=(int)$lookup->fetchColumn();
+    }
+    $attemptContext=$context;
+    unset($attemptContext['idempotency_key']);
+    $owns=!$pdo->inTransaction();
+    if($owns)$pdo->beginTransaction();
+    else $pdo->exec('SAVEPOINT reward_claim_v100');
     $merchantId=0;$issuanceId=0;$claimCodeId=0;
     try{
-        $stmt=$pdo->prepare("SELECT ri.*,c.public_id campaign_public_id,c.status campaign_status,c.environment,c.merchant_id,
+        if($lookupId<1)throw new RuntimeException('Reward Credential is invalid.');
+        // Lock by primary key, like transfers. A transfer may have rotated the credential after the lookup.
+        $stmt=$pdo->prepare("SELECT ri.*,c.public_id campaign_public_id,c.status campaign_status,
           rp.public_id reward_product_public_id,rp.name reward_name,rp.inventory_mode,m.public_id merchant_public_id,m.status merchant_status
-          FROM reward_issuances ri INNER JOIN campaigns c ON c.id=ri.campaign_id
-          INNER JOIN reward_products rp ON rp.id=ri.reward_product_id INNER JOIN merchant_accounts m ON m.id=ri.merchant_id
-          WHERE ri.credential_hash=? LIMIT 1 FOR UPDATE");
-        $stmt->execute([$rewardHash]);$issuance=$stmt->fetch()?:throw new RuntimeException('Reward Credential is invalid.');
+          FROM reward_issuances ri INNER JOIN campaigns c ON c.id=ri.campaign_id AND c.merchant_id=ri.merchant_id
+          INNER JOIN reward_products rp ON rp.id=ri.reward_product_id AND rp.merchant_id=ri.merchant_id
+          INNER JOIN merchant_accounts m ON m.id=ri.merchant_id
+          WHERE ri.id=? LIMIT 1 FOR UPDATE");
+        $stmt->execute([$lookupId]);$issuance=$stmt->fetch();
+        if(!$issuance||($rewardHash!==null&&!hash_equals((string)$issuance['credential_hash'],$rewardHash))){
+            throw new RuntimeException('Reward Credential is invalid.');
+        }
         $issuanceId=(int)$issuance['id'];$merchantId=(int)$issuance['merchant_id'];
-        $expectedMerchant=max(0,(int)($context['expected_merchant_id']??0));
         if($expectedMerchant>0&&$expectedMerchant!==$merchantId)throw new RuntimeException('Reward Credential belongs to a different Merchant.');
+        if($expectedIssuance>0&&$expectedIssuance!==$issuanceId)throw new RuntimeException('Reward Credential belongs to a different Reward.');
         if((string)$issuance['merchant_status']!=='active')throw new RuntimeException('Merchant is not accepting Claims.');
-        campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claims.process');
+        $member=campaigns_rewards_platform_member_v100($pdo,$merchantId,$actorUserId,true);
+        campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claims.process',true);
+        $request=[
+            'actor'=>$actorUserId,'actor_type'=>$actorType,'issuance'=>$issuanceId,
+            'expected_merchant'=>$expectedMerchant,'expected_issuance'=>$expectedIssuance,'expected_holder'=>$expectedHolder,
+            'reward_hash'=>$rewardHash,'claim_hash'=>$claimHash,'location'=>$requestedLocation,'order_ref'=>$orderRef,
+        ];
+        $key=hash('sha256',$actorUserId.'|'.($clientKey!==''?'client|'.$clientKey:'legacy|'.campaigns_rewards_json_v100($request)));
+        $idempotency=campaigns_rewards_idempotency_begin_v100($pdo,$merchantId,'reward.claim',$key,$request,true);
+        if(!$idempotency['new']){
+            if($idempotency['status']!=='completed'||$idempotency['result_ref_type']!=='reward_claim'){
+                throw new RuntimeException('Claim request is incomplete. Please retry.');
+            }
+            $claim=campaigns_rewards_claim_receipt_v100($pdo,(int)$idempotency['result_ref_id']);
+            if((int)$claim['merchant_id']!==$merchantId||(int)$claim['reward_issuance_id']!==$issuanceId||(int)$claim['processed_by_user_id']!==$actorUserId){
+                throw new RuntimeException('Claim receipt is unavailable.');
+            }
+            if($owns)$pdo->commit();
+            else $pdo->exec('RELEASE SAVEPOINT reward_claim_v100');
+            return $claim+['duplicate'=>true];
+        }
+        $holderUserId=(int)($issuance['recipient_user_id']??0);
+        if($expectedHolder>0&&$expectedHolder!==$holderUserId)throw new RuntimeException('Reward certificate is not in your Inbox.');
         if(!in_array((string)$issuance['campaign_status'],['active','completed'],true))throw new RuntimeException('Campaign is not claimable.');
         if(!in_array((string)$issuance['status'],['issued','sent','viewed'],true)||((int)$issuance['remaining_quantity'])<1)throw new RuntimeException('Reward is no longer claimable.');
-        if(!empty($issuance['expires_at'])&&strtotime((string)$issuance['expires_at'])<=time())throw new RuntimeException('Reward has expired.');
+        if(!empty($issuance['expires_at'])&&strtotime($issuance['expires_at'].' UTC')<=time())throw new RuntimeException('Reward has expired.');
+        if($holderUserId>0){
+            $holder=campaigns_rewards_platform_user_v100($holderUserId,true);
+            if((int)($holder['is_active']??0)!==1)throw new RuntimeException('Reward holder account is inactive.');
+            if($rewardHash!==null&&empty($issuance['viewed_at']))throw new RuntimeException('The holder must display the Reward Credential from their Inbox.');
+        }
+        $quantity=(int)$issuance['remaining_quantity'];
 
         $codeStmt=$pdo->prepare("SELECT * FROM merchant_claim_codes WHERE code_hash=? LIMIT 1 FOR UPDATE");$codeStmt->execute([$claimHash]);$code=$codeStmt->fetch()?:throw new RuntimeException('Merchant Claim Code is invalid.');
         $claimCodeId=(int)$code['id'];
         if((int)$code['merchant_id']!==$merchantId||($code['status']??'')!=='active')throw new RuntimeException('Merchant Claim Code is not active for this Merchant.');
-        if(!empty($code['active_from'])&&strtotime((string)$code['active_from'])>time())throw new RuntimeException('Merchant Claim Code is not active yet.');
-        if(!empty($code['active_until'])&&strtotime((string)$code['active_until'])<=time())throw new RuntimeException('Merchant Claim Code has expired.');
+        if(!empty($code['active_from'])&&strtotime($code['active_from'].' UTC')>time())throw new RuntimeException('Merchant Claim Code is not active yet.');
+        if(!empty($code['active_until'])&&strtotime($code['active_until'].' UTC')<=time())throw new RuntimeException('Merchant Claim Code has expired.');
         if(!empty($code['merchant_member_id'])){
-            $member=campaigns_rewards_platform_member_v100($pdo,$merchantId,$actorUserId);
-            if(!$member||(int)$member['id']!==(int)$code['merchant_member_id'])throw new RuntimeException('Merchant Claim Code is assigned to a different Team Member.');
+            if(!$member||$member['status']!=='active'||(int)$member['id']!==(int)$code['merchant_member_id'])throw new RuntimeException('Merchant Claim Code is assigned to a different Team Member.');
         }
-        $requestedLocation=((int)($context['location_id']??0))?:null;
         if(!empty($code['location_id'])&&$requestedLocation!==(int)$code['location_id'])throw new RuntimeException('Reward must be claimed at the assigned Location.');
+        $location=campaigns_rewards_claim_locations_v100($pdo,$merchantId,$actorUserId,$requestedLocation,true)[0]??null;
+        if(!$location)throw new RuntimeException('Choose an active in-person Location assigned to you for this Merchant.');
         $restrictions=$pdo->prepare('SELECT campaign_id FROM merchant_claim_code_campaigns WHERE claim_code_id=?');$restrictions->execute([$claimCodeId]);$allowed=array_map('intval',$restrictions->fetchAll(PDO::FETCH_COLUMN)?:[]);
         if($allowed&&!in_array((int)$issuance['campaign_id'],$allowed,true))throw new RuntimeException('Merchant Claim Code is not authorized for this Campaign.');
-        if($code['max_value_minor']!==null&&$issuance['face_value_minor']!==null&&(int)$issuance['face_value_minor']>(int)$code['max_value_minor'])throw new RuntimeException('Reward exceeds this Claim Code value limit.');
+        if($code['max_value_minor']!==null&&$issuance['face_value_minor']!==null){
+            if(strtoupper((string)$code['currency'])!==strtoupper((string)$issuance['currency']))throw new RuntimeException('Reward currency differs from this Claim Code value limit.');
+            if((int)$issuance['face_value_minor']>intdiv((int)$code['max_value_minor'],$quantity))throw new RuntimeException('Reward exceeds this Claim Code value limit.');
+        }
         if($code['daily_claim_limit']!==null){
-            $q=$pdo->prepare("SELECT COUNT(*) FROM reward_claims WHERE claim_code_id=? AND status='claimed' AND claimed_at>=UTC_DATE()");$q->execute([$claimCodeId]);if((int)$q->fetchColumn()>=(int)$code['daily_claim_limit'])throw new RuntimeException('Merchant Claim Code daily limit reached.');
+            $q=$pdo->prepare("SELECT COUNT(*) FROM reward_claims WHERE claim_code_id=? AND status='claimed' AND claimed_at>=UTC_DATE() FOR UPDATE");$q->execute([$claimCodeId]);if((int)$q->fetchColumn()>=(int)$code['daily_claim_limit'])throw new RuntimeException('Merchant Claim Code daily limit reached.');
         }
         if($code['total_claim_limit']!==null){
-            $q=$pdo->prepare("SELECT COUNT(*) FROM reward_claims WHERE claim_code_id=? AND status='claimed'");$q->execute([$claimCodeId]);if((int)$q->fetchColumn()>=(int)$code['total_claim_limit'])throw new RuntimeException('Merchant Claim Code total limit reached.');
+            $q=$pdo->prepare("SELECT COUNT(*) FROM reward_claims WHERE claim_code_id=? AND status='claimed' FOR UPDATE");$q->execute([$claimCodeId]);if((int)$q->fetchColumn()>=(int)$code['total_claim_limit'])throw new RuntimeException('Merchant Claim Code total limit reached.');
         }
         $dup=$pdo->prepare("SELECT * FROM reward_claims WHERE reward_issuance_id=? AND status='claimed' LIMIT 1 FOR UPDATE");$dup->execute([$issuanceId]);if($dup->fetch())throw new RuntimeException('Reward has already been claimed.');
 
-        $public=campaigns_rewards_uuid_v100();$quantity=(int)$issuance['remaining_quantity'];
-        $memberId=null;if($actorUserId>0){$m=campaigns_rewards_platform_member_v100($pdo,$merchantId,$actorUserId);$memberId=$m?(int)$m['id']:null;}
+        $public=campaigns_rewards_uuid_v100();
+        $memberId=$member?(int)$member['id']:null;
+        $claimMeta=campaigns_rewards_json_v100(['online'=>true,'location_name'=>$location['name'],'location_timezone'=>$location['timezone']]);
         $pdo->prepare("INSERT INTO reward_claims
-          (public_id,merchant_id,campaign_id,reward_issuance_id,claim_code_id,location_id,merchant_member_id,processed_by_user_id,processed_by_actor_type,environment,quantity,value_minor,currency,status,order_ref,claimed_at,metadata_json)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?,'claimed',?,UTC_TIMESTAMP(),?)")
-          ->execute([$public,$merchantId,(int)$issuance['campaign_id'],$issuanceId,$claimCodeId,$requestedLocation,$memberId,$actorUserId?:null,(string)($context['actor_type']??'user'),(string)$issuance['environment'],$quantity,$issuance['face_value_minor'],$issuance['currency'],campaigns_rewards_text_v100($context['order_ref']??'',190)?:null,campaigns_rewards_json_v100(['online'=>true])]);
+          (public_id,merchant_id,campaign_id,reward_issuance_id,claim_code_id,location_id,merchant_member_id,processed_by_user_id,processed_by_actor_type,holder_user_id,holder_contact_id,environment,quantity,value_minor,currency,status,order_ref,claimed_at,metadata_json)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'claimed',?,UTC_TIMESTAMP(),?)")
+          ->execute([$public,$merchantId,(int)$issuance['campaign_id'],$issuanceId,$claimCodeId,$requestedLocation,$memberId,$actorUserId,$actorType,$holderUserId?:null,(int)$issuance['recipient_contact_id'],(string)$issuance['environment'],$quantity,$issuance['face_value_minor'],$issuance['currency'],$orderRef!==''?$orderRef:null,$claimMeta]);
         $claimId=(int)$pdo->lastInsertId();$remaining=max(0,(int)$issuance['remaining_quantity']-$quantity);
         $pdo->prepare("UPDATE reward_issuances SET remaining_quantity=?,status=?,claimed_at=IF(?=0,UTC_TIMESTAMP(),claimed_at),updated_at=UTC_TIMESTAMP() WHERE id=?")
             ->execute([$remaining,$remaining===0?'claimed':(string)$issuance['status'],$remaining,$issuanceId]);
@@ -1061,38 +1222,49 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
               VALUES (?,?,?,'claimed',?,?,?,?,?,'{}')")
               ->execute([$merchantId,(int)$issuance['campaign_id'],$issuanceId,$issuance['face_value_minor']===null?null:-1*(int)$issuance['face_value_minor']*$quantity,null,$issuance['currency'],'reward_claim',(string)$claimId]);
         }
+        $claim=campaigns_rewards_claim_receipt_v100($pdo,$claimId);
+        campaigns_rewards_activity_event_v100($pdo,$merchantId,'claim.accepted',[
+            'campaign_id'=>(int)$claim['campaign_id'],'reward_issuance_id'=>$issuanceId,'claim_id'=>$claimId,
+            'location_id'=>$requestedLocation,'merchant_member_id'=>$memberId,
+        ],[
+            'summary'=>'Reward claimed','merchant_public_id'=>$claim['merchant_public_id'],'campaign_public_id'=>$claim['campaign_public_id'],
+            'reward_product_public_id'=>$claim['reward_product_public_id'],'reward_issuance_public_id'=>$claim['reward_issuance_public_id'],
+            'claim_public_id'=>$claim['public_id'],'claim_code_public_id'=>$claim['claim_code_public_id'],'location_public_id'=>$location['public_id'],
+        ],(string)$claim['environment'],$actorUserId);
+        campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.conversion_attributed',[
+            'campaign_id'=>(int)$claim['campaign_id'],'reward_issuance_id'=>$issuanceId,'claim_id'=>$claimId,
+        ],[
+            'summary'=>'Campaign conversion attributed from Reward Claim','merchant_public_id'=>$claim['merchant_public_id'],'campaign_public_id'=>$claim['campaign_public_id'],
+            'reward_issuance_public_id'=>$claim['reward_issuance_public_id'],'claim_public_id'=>$claim['public_id'],
+        ],(string)$claim['environment'],$actorUserId);
+        campaigns_rewards_idempotency_complete_v100($pdo,(int)$idempotency['id'],'reward_claim',$claimId);
+        campaigns_rewards_record_claim_attempt_v100($pdo,$merchantId,$issuanceId,$claimCodeId,'accepted','accepted',$attemptContext);
         if($owns)$pdo->commit();
+        else $pdo->exec('RELEASE SAVEPOINT reward_claim_v100');
     }catch(Throwable $e){
-        if($owns&&$pdo->inTransaction())$pdo->rollBack();
-        campaigns_rewards_record_claim_attempt_v100($pdo,$merchantId?:null,$issuanceId?:null,$claimCodeId?:null,'rejected',campaigns_rewards_slug_v100($e->getMessage(),80),$context);
+        if($pdo->inTransaction()){
+            if($owns)$pdo->rollBack();
+            else {
+                $pdo->exec('ROLLBACK TO SAVEPOINT reward_claim_v100');
+                $pdo->exec('RELEASE SAVEPOINT reward_claim_v100');
+            }
+        }
+        campaigns_rewards_record_claim_attempt_v100($pdo,$merchantId?:null,$issuanceId?:null,$claimCodeId?:null,'rejected',campaigns_rewards_slug_v100($e->getMessage(),80),$attemptContext);
         if($merchantId>0){
-            $m=campaigns_rewards_platform_merchant_v100($pdo,$merchantId);
-            if($m)campaigns_rewards_activity_event_v100($pdo,$merchantId,'claim.rejected',['reward_issuance_id'=>$issuanceId],[
-                'summary'=>'Claim rejected','merchant_public_id'=>$m['public_id'],
-            ],isset($issuance['environment'])?(string)$issuance['environment']:'production',$actorUserId?:null);
+            try{
+                $m=campaigns_rewards_platform_merchant_v100($pdo,$merchantId);
+                if($m)campaigns_rewards_activity_event_v100($pdo,$merchantId,'claim.rejected',['reward_issuance_id'=>$issuanceId],[
+                    'summary'=>'Claim rejected','merchant_public_id'=>$m['public_id'],
+                ],isset($issuance['environment'])?(string)$issuance['environment']:'production',$actorUserId);
+            }catch(Throwable $auditError){error_log('Campaigns claim rejection activity failed: '.$auditError->getMessage());}
         }
         throw $e;
     }
-    campaigns_rewards_record_claim_attempt_v100($pdo,$merchantId,$issuanceId,$claimCodeId,'accepted','accepted',$context);
-    $q=$pdo->prepare("SELECT rc.*,ri.public_id reward_issuance_public_id,c.public_id campaign_public_id,rp.public_id reward_product_public_id,m.public_id merchant_public_id,mc.public_id claim_code_public_id
-      FROM reward_claims rc INNER JOIN reward_issuances ri ON ri.id=rc.reward_issuance_id INNER JOIN campaigns c ON c.id=rc.campaign_id
-      INNER JOIN reward_products rp ON rp.id=ri.reward_product_id INNER JOIN merchant_accounts m ON m.id=rc.merchant_id
-      INNER JOIN merchant_claim_codes mc ON mc.id=rc.claim_code_id WHERE rc.id=? LIMIT 1");
-    $q->execute([$claimId]);$claim=$q->fetch()?:throw new RuntimeException('Claim unavailable.');
-    campaigns_rewards_activity_event_v100($pdo,$merchantId,'claim.accepted',['campaign_id'=>(int)$claim['campaign_id'],'reward_issuance_id'=>$issuanceId,'claim_id'=>$claimId,'location_id'=>((int)($claim['location_id']??0))?:0,'merchant_member_id'=>((int)($claim['merchant_member_id']??0))?:0],[
-        'summary'=>'Reward claimed','merchant_public_id'=>$claim['merchant_public_id'],'campaign_public_id'=>$claim['campaign_public_id'],
-        'reward_product_public_id'=>$claim['reward_product_public_id'],'reward_issuance_public_id'=>$claim['reward_issuance_public_id'],
-        'claim_public_id'=>$claim['public_id'],'claim_code_public_id'=>$claim['claim_code_public_id'],
-    ],(string)$claim['environment'],$actorUserId?:null);
-    campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.conversion_attributed',['campaign_id'=>(int)$claim['campaign_id'],'reward_issuance_id'=>$issuanceId,'claim_id'=>$claimId],[
-        'summary'=>'Campaign conversion attributed from Reward Claim','merchant_public_id'=>$claim['merchant_public_id'],'campaign_public_id'=>$claim['campaign_public_id'],
-        'reward_issuance_public_id'=>$claim['reward_issuance_public_id'],'claim_public_id'=>$claim['public_id'],
-    ],(string)$claim['environment'],$actorUserId);
     if(function_exists('campaigns_rewards_attribute_claim_v120')){
         try{campaigns_rewards_attribute_claim_v120($pdo,(int)$claim['campaign_id'],(int)$issuance['recipient_contact_id'],$issuanceId,$claimId);}
         catch(Throwable $e){error_log('Campaign messaging V1.20 attribution failed: '.$e->getMessage());}
     }
-    return $claim;
+    return $claim+['duplicate'=>false];
 }
 
 function campaigns_rewards_make_good_v100(PDO $pdo,int $merchantId,int $contactId,int $actorUserId,array $rewardProductIds,array $case=[]): array

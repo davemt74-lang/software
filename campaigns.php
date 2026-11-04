@@ -31,7 +31,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         }elseif($action==='merchant_status'){
             campaigns_rewards_set_platform_merchant_status_v100($pdo,$merchantId,$uid,(string)($_POST['status']??'active'),(string)($_POST['reason']??''));flash('notice','Merchant lifecycle updated.');
         }elseif($action==='location_save'){
-            campaigns_rewards_save_location_v100($pdo,$merchantId,$uid,$_POST,max(0,(int)($_POST['location_id']??0)));flash('notice','Merchant Location saved.');
+            $locationInput=$_POST;
+            $locationInput['is_active']=!empty($_POST['is_active']);
+            campaigns_rewards_save_location_v100($pdo,$merchantId,$uid,$locationInput,max(0,(int)($_POST['location_id']??0)));flash('notice','Merchant Location saved.');
         }elseif($action==='campaign_save'){
             $campaign=campaigns_rewards_save_campaign_v100($pdo,$merchantId,$uid,$_POST,max(0,(int)($_POST['campaign_id']??0)));
             flash('notice','Campaign saved.');$redirectMerchant($merchantId,'&edit_campaign='.(int)$campaign['id'].'#campaign-editor');
@@ -42,14 +44,15 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $pdo,$merchantId,max(0,(int)($_POST['campaign_id']??0)),max(0,(int)($_POST['enrollment_id']??0)),
                 max(0,(int)($_POST['reward_product_id']??0)),$uid
             );
-            if(session_status()===PHP_SESSION_ACTIVE){
+            if(!empty($result['issuance']['credential'])&&session_status()===PHP_SESSION_ACTIVE){
                 $_SESSION['campaign_fulfillment_once']=[
-                    'credential'=>(string)($result['issuance']['credential']??''),
-                    'credential_last4'=>(string)($result['issuance']['credential_last4']??''),
+                    'credential'=>(string)$result['issuance']['credential'],
                     'campaign'=>(string)($result['campaign']['name']??'Campaign'),
                 ];
             }
-            flash('notice','Campaign participant fulfilled and Reward issued.');
+            flash('notice',!empty($result['issuance']['recipient_user_id'])
+                ?'Campaign participant fulfilled and Reward issued to the recipient’s VP3 Inbox.'
+                :'Campaign participant fulfilled and Reward issued.');
         }elseif($action==='automation_save'){
             $campaignId=max(0,(int)($_POST['campaign_id']??0));
             $rule=campaigns_rewards_automation_save_rule_v119($pdo,$merchantId,$campaignId,$uid,$_POST,max(0,(int)($_POST['rule_id']??0)));
@@ -241,6 +244,12 @@ $canCampaignPublish=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchant
 $canAnalytics=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'analytics.view'):false;
 
 $locations=$merchant?campaigns_rewards_locations_v100($pdo,$merchantId):[];
+$managedLocations=$locations;
+if($canLocations){
+    $locationQuery=$pdo->prepare('SELECT * FROM merchant_locations WHERE merchant_id=? ORDER BY is_active DESC,is_primary DESC,name,id');
+    $locationQuery->execute([$merchantId]);
+    $managedLocations=$locationQuery->fetchAll()?:[];
+}
 $campaigns=$merchant?campaigns_rewards_campaigns_v100($pdo,$merchantId):[];
 $members=$merchant?campaigns_rewards_merchant_members_v100($pdo,$merchantId):[];
 $report=$merchant&&$canAnalytics?campaigns_rewards_reporting_v100($pdo,$merchantId,$uid):['active_campaigns'=>0,'landing_views'=>0,'customers'=>0,'claims_redeemed'=>0];
@@ -335,7 +344,7 @@ $journeyConditionOperators=function_exists('campaigns_rewards_journey_condition_
 $journeyWaitModes=function_exists('campaigns_rewards_journey_wait_modes_v121')?campaigns_rewards_journey_wait_modes_v121():[];
 $simulationContacts=[];
 if($editCampaign)foreach($recentEnrollments as $enrollmentRow)if((int)($enrollmentRow['campaign_id']??0)===(int)$editCampaign['id']&&!empty($enrollmentRow['contact_id']))$simulationContacts[(int)$enrollmentRow['contact_id']]=(string)($enrollmentRow['contact_name']??$enrollmentRow['contact_email']??('Contact #'.(int)$enrollmentRow['contact_id']));
-$editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;foreach($locations as $row)if((int)$row['id']===$editLocationId)$editLocation=$row;
+$editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;foreach($managedLocations as $row)if((int)$row['id']===$editLocationId)$editLocation=$row;
 $notice=(string)(flash('notice')??'');$error=(string)(flash('error')??'');
 $fulfillmentOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_fulfillment_once']??null):null;
 $journeySimulationOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_journey_simulation_once']??null):null;
@@ -367,8 +376,8 @@ $memberHeaderActions=implode(' ',$actions);
 <?php if($canManage):?><form method="post" class="cr-form"><?= csrf_field() ?><input type="hidden" name="action" value="merchant_update"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><label>Name<input name="name" required value="<?= e((string)$merchant['name']) ?>"></label><label>Slug<input name="slug" required value="<?= e((string)$merchant['slug']) ?>"></label><label>Description<textarea name="description"><?= e((string)($merchant['description']??'')) ?></textarea></label><div class="cr-form-grid"><label>Website<input name="website_url" value="<?= e((string)($merchant['website_url']??'')) ?>"></label><label>Email<input name="contact_email" type="email" value="<?= e((string)($merchant['contact_email']??'')) ?>"></label><label>Phone<input name="contact_phone" value="<?= e((string)($merchant['contact_phone']??'')) ?>"></label><label>Timezone<input name="timezone" value="<?= e((string)$merchant['timezone']) ?>"></label><label>Currency<input name="currency" maxlength="3" value="<?= e((string)$merchant['currency']) ?>"></label></div><label class="cr-check"><input type="checkbox" name="sandbox_mode" value="1"<?= !empty($merchant['sandbox_mode'])?' checked':'' ?>> Sandbox mode</label><button class="cr-btn">Save Merchant</button></form>
 <form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="merchant_status"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><select name="status"><?php foreach(['active','suspended','archived','closed'] as $st):?><option value="<?= e($st) ?>"<?= $merchant['status']===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select><input name="reason" placeholder="Reason"><button>Update lifecycle</button></form><?php endif;?></section>
 
-<section class="cr-card"><header><div><span>Locations</span><h2>Merchant Locations</h2></div></header><div class="cr-list"><?php foreach($locations as $location):?><article><div><strong><?= e((string)$location['name']) ?><?= !empty($location['is_primary'])?' · Primary':'' ?></strong><small><?= e(trim((string)$location['city'].', '.(string)$location['region'],', ')) ?></small></div><?php if($canLocations):?><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_location='.(int)$location['id'].'#location-editor')) ?>">Edit</a><?php endif;?></article><?php endforeach;?><?php if(!$locations):?><p>No Locations yet.</p><?php endif;?></div>
-<?php if($canLocations):?><form method="post" class="cr-form cr-subform" id="location-editor"><?= csrf_field() ?><input type="hidden" name="action" value="location_save"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="location_id" value="<?= (int)($editLocation['id']??0) ?>"><h3><?= $editLocation?'Edit':'Add' ?> Location</h3><label>Name<input name="name" required value="<?= e((string)($editLocation['name']??'')) ?>"></label><div class="cr-form-grid"><label>Address<input name="address1" value="<?= e((string)($editLocation['address1']??'')) ?>"></label><label>City<input name="city" value="<?= e((string)($editLocation['city']??'')) ?>"></label><label>Region<input name="region" value="<?= e((string)($editLocation['region']??'')) ?>"></label><label>Postal<input name="postal_code" value="<?= e((string)($editLocation['postal_code']??'')) ?>"></label></div><label class="cr-check"><input type="checkbox" name="is_primary" value="1"<?= !empty($editLocation['is_primary'])?' checked':'' ?>> Primary Location</label><label class="cr-check"><input type="checkbox" name="is_active" value="1"<?= !isset($editLocation['is_active'])||!empty($editLocation['is_active'])?' checked':'' ?>> Active</label><button class="cr-btn">Save Location</button></form><?php endif;?></section>
+<section class="cr-card"><header><div><span>Locations</span><h2>Merchant Locations</h2></div></header><div class="cr-list"><?php foreach($managedLocations as $location):?><article><div><strong><?= e((string)$location['name']) ?><?= !empty($location['is_primary'])?' · Primary':'' ?><?= empty($location['is_active'])?' · Inactive':'' ?></strong><small><?= e(trim((string)$location['city'].', '.(string)$location['region'],', ')) ?></small></div><?php if($canLocations):?><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_location='.(int)$location['id'].'#location-editor')) ?>">Edit</a><?php endif;?></article><?php endforeach;?><?php if(!$managedLocations):?><p>No Locations yet.</p><?php endif;?></div>
+<?php if($canLocations):?><form method="post" class="cr-form cr-subform" id="location-editor"><?= csrf_field() ?><input type="hidden" name="action" value="location_save"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="location_id" value="<?= (int)($editLocation['id']??0) ?>"><h3><?= $editLocation?'Edit':'Add' ?> Location</h3><label>Name<input name="name" required value="<?= e((string)($editLocation['name']??'')) ?>"></label><label>Location type<select name="location_type"><?php foreach(['store','restaurant','office','warehouse','pop-up','event','mobile','online','other'] as $locationType):?><option value="<?= e($locationType) ?>"<?= ($editLocation['location_type']??'store')===$locationType?' selected':'' ?>><?= e(ucfirst($locationType)) ?></option><?php endforeach;?></select></label><div class="cr-form-grid"><label>Address<input name="address1" value="<?= e((string)($editLocation['address1']??'')) ?>"></label><label>City<input name="city" value="<?= e((string)($editLocation['city']??'')) ?>"></label><label>Region<input name="region" value="<?= e((string)($editLocation['region']??'')) ?>"></label><label>Postal<input name="postal_code" value="<?= e((string)($editLocation['postal_code']??'')) ?>"></label></div><label class="cr-check"><input type="checkbox" name="is_primary" value="1"<?= !empty($editLocation['is_primary'])?' checked':'' ?>> Primary Location</label><label class="cr-check"><input type="checkbox" name="is_active" value="1"<?= !isset($editLocation['is_active'])||!empty($editLocation['is_active'])?' checked':'' ?>> Active</label><button class="cr-btn">Save Location</button></form><?php endif;?></section>
 </div>
 
 <section class="cr-card"><header><div><span>Campaigns</span><h2>Campaign lifecycle & landing pages</h2></div><a class="cr-btn" href="<?= e(url('/rewards.php?merchant='.$merchantId)) ?>">Manage Rewards</a></header>

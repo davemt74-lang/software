@@ -18,6 +18,37 @@ permissions:
   contents: read
 
 jobs:
+  voucher-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: voucher-test-root
+          MYSQL_DATABASE: voucher_fixture
+          MYSQL_USER: fixture
+          MYSQL_PASSWORD: voucher-test-fixture
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_mysql
+          coverage: none
+      - name: Allow fixture triggers in the disposable database
+        run: docker exec ${{ job.services.mysql.id }} mysql -uroot -pvoucher-test-root -e 'SET GLOBAL log_bin_trust_function_creators = 1'
+      - name: Voucher authority, legacy migration, redemption and competing attempts
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=voucher_fixture;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: fixture
+          VP3_TEST_MYSQL_PASS: voucher-test-fixture
+        run: php tests/voucher-foundation.php
+
   contract:
     runs-on: ubuntu-latest
     timeout-minutes: 10

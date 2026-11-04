@@ -302,10 +302,10 @@ function crm_v180_upsert_contact_locked(PDO $pdo, array $data): int
     return (int)$find->fetchColumn();
 }
 
-function crm_v180_contact_for_owner(PDO $pdo,int $ownerUserId,int $contactId): ?array
+function crm_v180_contact_for_owner(PDO $pdo,int $ownerUserId,int $contactId,bool $forUpdate=false): ?array
 {
     if($ownerUserId<1||$contactId<1||!function_exists('column_exists')||!column_exists('crm_contacts','owner_user_id'))return null;
-    $stmt=$pdo->prepare("SELECT * FROM crm_contacts WHERE id=? AND owner_user_id=? AND status<>'archived' LIMIT 1");
+    $stmt=$pdo->prepare("SELECT * FROM crm_contacts WHERE id=? AND owner_user_id=? AND status<>'archived' LIMIT 1".($forUpdate?' FOR UPDATE':''));
     $stmt->execute([$contactId,$ownerUserId]);$row=$stmt->fetch();return $row?:null;
 }
 

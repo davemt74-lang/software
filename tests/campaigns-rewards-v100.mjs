@@ -92,8 +92,8 @@ const checks=[
  ['tracked inventory reserves on issuance and consumes on Claim',/reserved=reserved\+\?/.test(runtime)&&/on_hand=on_hand-\?,reserved=reserved-\?/.test(runtime)&&/movement_type/.test(schema)],
 
  ['Claim processing is online-only and requires authenticated operator',/Authoritative V1 Claim processing is online-only/.test(runtime)&&/authenticated Merchant operator is required/.test(runtime)],
- ['Claim processing requires Reward Credential and Merchant Claim Code hashes',/rewardHash=campaigns_rewards_secret_hash_v100/.test(runtime)&&/claimHash=campaigns_rewards_secret_hash_v100/.test(runtime)],
- ['Claim processing capability-gates the signed-in operator',/campaigns_rewards_platform_assert_can_v100\(\$pdo,\$merchantId,\$actorUserId,'claims\.process'\)/.test(runtime)],
+ ['Claim Terminal hashes the presented Reward Credential and Merchant Claim Code',/campaigns_rewards_secret_hash_v100\(\$rewardCredential\)/.test(runtime)&&/claimHash=campaigns_rewards_secret_hash_v100/.test(runtime)&&/Reward Credential is required/.test(runtime)],
+ ['Claim processing checks current capabilities for the signed-in operator',/campaigns_rewards_platform_assert_can_v100\(\$pdo,\$merchantId,\$actorUserId,'claims\.process',true\)/.test(runtime)],
  ['Claim Terminal binds mutation to selected Merchant before redemption',/expected_merchant_id/.test(claimPage)&&/Reward Credential belongs to a different Merchant/.test(runtime)],
  ['Claim Code supports location campaign value and usage restrictions',/daily_claim_limit/.test(runtime)&&/total_claim_limit/.test(runtime)&&/max_value_minor/.test(runtime)&&/merchant_claim_code_campaigns/.test(runtime)],
  ['legacy one-code validation and redemption are disabled',/Legacy one-code validation is disabled/.test(core)&&/Legacy one-code redemption is disabled/.test(core)],

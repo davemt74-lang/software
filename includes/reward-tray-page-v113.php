@@ -72,6 +72,6 @@ require __DIR__.'/workspace-sidebar-v82.php';
     'autoClaimPublicId'=>$autoClaimPublicId,
 ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;</script>
 <script data-reward-qr-v113 src="<?= e(url('/reward-qr-v110.js?v=113')) ?>"></script>
-<script data-reward-tray-v113 src="<?= e(url('/reward-tray-v110.js?v=113')) ?>"></script>
+<script data-reward-tray-v113 src="<?= e(url('/reward-tray-v110.js?v=114-voucher-foundation')) ?>"></script>
 </body>
 </html>

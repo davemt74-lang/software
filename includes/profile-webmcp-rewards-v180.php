@@ -174,10 +174,8 @@ function vp3_profile_webmcp_reward_holder_by_public_id_v182(PDO $pdo,int $viewer
 {
     $publicId=trim($publicId);
     if($viewerId<1||$publicId==='')throw new RuntimeException('Reward is unavailable.');
-    $stmt=$pdo->prepare("SELECT ri.id FROM reward_issuances ri
-      INNER JOIN crm_contacts cc ON cc.id=ri.recipient_contact_id
-      WHERE ri.public_id=? AND (ri.recipient_user_id=? OR cc.vp3_user_id=?) LIMIT 1");
-    $stmt->execute([$publicId,$viewerId,$viewerId]);
+    $stmt=$pdo->prepare('SELECT id FROM reward_issuances WHERE public_id=? AND recipient_user_id=? LIMIT 1');
+    $stmt->execute([$publicId,$viewerId]);
     $id=(int)$stmt->fetchColumn();
     if($id<1)throw new RuntimeException('Reward is not in your Wallet.');
     return campaigns_rewards_reward_holder_v110($pdo,$id,$viewerId,false);
@@ -341,8 +339,10 @@ function vp3_profile_webmcp_reward_transfer_contact_v183(PDO $pdo,int $viewerId,
     $stmt=$pdo->prepare("SELECT * FROM crm_contacts WHERE public_id=? AND owner_user_id=? AND status<>'archived' LIMIT 1");
     $stmt->execute([$publicId,$viewerId]);$row=$stmt->fetch();
     if(!$row)throw new RuntimeException('Reward recipient is unavailable.');
-    $email=strtolower(trim((string)($row['email']??'')));
-    if($email===''||!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('The selected Contact needs a valid email.');
+    $targetUserId=campaigns_rewards_active_contact_user_v100($pdo,$row);
+    if($targetUserId<1)throw new RuntimeException('The selected Contact needs a matching active VP3 account.');
+    if($targetUserId===$viewerId)throw new RuntimeException('Choose a different Contact to send this Reward to.');
+    $row['target_user_id']=$targetUserId;
     return $row;
 }
 
@@ -355,6 +355,7 @@ function vp3_profile_webmcp_reward_transfer_contact_hash_v183(array $row): strin
         'company'=>(string)($row['company']??''),
         'phone'=>(string)($row['phone']??''),
         'vp3_user_id'=>(int)($row['vp3_user_id']??0),
+        'target_user_id'=>(int)$row['target_user_id'],
         'status'=>(string)($row['status']??''),
         'updated_at'=>(string)($row['updated_at']??''),
     ]);
@@ -367,11 +368,8 @@ function vp3_profile_webmcp_reward_transfer_prepare_v183(PDO $pdo,array $profile
     $reward=vp3_profile_webmcp_reward_holder_by_public_id_v182($pdo,$viewerId,(string)($input['reward_public_id']??''));
     if(!in_array((string)$reward['status'],['issued','sent','viewed'],true)||(int)$reward['remaining_quantity']<1)throw new RuntimeException('This Reward can no longer be sent.');
     if(!empty($reward['expires_at'])&&strtotime((string)$reward['expires_at'])<=time())throw new RuntimeException('This Reward has expired.');
-    $terms=json_decode((string)($reward['terms_snapshot_json']??''),true);if(!is_array($terms))$terms=[];
-    $transferable=!empty($terms['transferable'])||!empty($terms['regiftable'])||!empty($reward['product_transferable'])||!empty($reward['product_regiftable']);
-    if(!$transferable)throw new RuntimeException('This Reward is marked non-transferable by the issuing Merchant.');
+    if(!campaigns_rewards_transfer_allowed_v110($reward))throw new RuntimeException('The issuing Merchant does not allow this Reward to be sent.');
     $contact=vp3_profile_webmcp_reward_transfer_contact_v183($pdo,$viewerId,(string)($input['recipient_public_id']??''));
-    if((int)($contact['vp3_user_id']??0)>0&&(int)$contact['vp3_user_id']===$viewerId)throw new RuntimeException('Choose a different Contact to send this Reward to.');
     $intent=[
         'viewer_user_id'=>$viewerId,
         'reward_public_id'=>(string)$reward['public_id'],
@@ -435,7 +433,7 @@ function vp3_profile_webmcp_reward_transfer_confirm_v183(PDO $pdo,array $profile
         $claim=$pdo->prepare("UPDATE profile_webmcp_actions SET idempotency_hash=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND state='prepared' AND idempotency_hash IS NULL");
         $claim->execute([$idem,(int)$action['id']]);
         if($claim->rowCount()!==1&&!hash_equals((string)($action['idempotency_hash']??''),$idem))throw new RuntimeException('Reward transfer idempotency changed before confirmation.');
-        $canonical=campaigns_rewards_transfer_reward_v110($pdo,(int)$reward['id'],$viewerId,(int)$contact['id'],(string)($intent['note']??''),'webmcp:'.$intentId.':'.$idem);
+        $canonical=campaigns_rewards_transfer_reward_v110($pdo,(int)$reward['id'],$viewerId,(int)$contact['id'],(string)($intent['note']??''),'webmcp:'.$intentId.':'.$idem,(int)$contact['target_user_id']);
         $result=[
             'reward_public_id'=>(string)$reward['public_id'],
             'transfer_public_id'=>(string)($canonical['public_id']??''),
