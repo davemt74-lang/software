@@ -112,9 +112,9 @@ $foreign=agent_surface_v131_context_item(['screen_observation'=>[...$screen,'own
 check(!str_contains($foreign['text'],'A letter for you.')&&!str_contains($foreign['text'],'The letter arrived today.'),'foreign audio or visual evidence reached Chat');
 pass('legacy transcripts, bad timestamps and foreign owners are handled independently');
 
-$tab1=[...$screen,'source_index'=>1,'source_label'=>'Forged label','image'=>'hidden screenshot'];
+$tab1=[...$screen,'source_index'=>1,'source_label'=>'Forged label','source_alias'=>" Movie\n\u{202E}captions ",'image'=>'hidden screenshot'];
 $tab2=[...$end,'source_index'=>2,'summary'=>'The second share shows a train.',
-    'tab_audio'=>[...$end['tab_audio'],'text'=>'The next train leaves at noon.']];
+    'source_alias'=>['malformed'],'tab_audio'=>[...$end['tab_audio'],'text'=>'The next train leaves at noon.']];
 $context=agent_surface_v131_enrich(['id'=>1],'chat',['screen_observation'=>$screen,'screen_observations'=>[
     $tab2,$tab1,[...$tab2,'summary'=>'Duplicate Tab 2 evidence.'],
     [...$screen,'source_index'=>3,'summary'=>'Fourth entry must be ignored.'],
@@ -123,7 +123,10 @@ $tabs=$context['screen_observations'];
 check($context['screen_observation']===null&&array_column($tabs,'source_label')===['Tab 2','Tab 1'],'comparison source labels, de-duplication, bounds or singleton exclusion failed');
 check($tabs[0]['tab_audio']['frame_within_segment']===false&&$tabs[1]['tab_audio']['frame_within_segment']===true,'an observation inherited timing from a different tab');
 check(!isset($tabs[1]['image'])&&$tabs[1]['instructions_authority']===false,'comparison kept raw screenshot or instruction authority');
+check($tabs[1]['source_alias']==='Movie captions'&&!isset($tabs[0]['source_alias']),'aliases retained control characters or accepted a malformed value');
+check(mb_strlen(agent_surface_v131_screen_observations(['screen_observations'=>[[...$tab1,'source_alias'=>str_repeat('画',45)]]])[0]['source_alias'])===40,'alias was not bounded');
 $items=agent_surface_v131_context_items($context);
+check($items[1]['title']==='Tab 1 shared evidence'&&str_contains($items[1]['text'],'User-provided name for Tab 1: Movie captions'),'alias displaced the canonical label or was lost from the evidence');
 check(str_contains($items[0]['text'],'The next train leaves at noon.')&&str_contains($items[1]['text'],'A letter for you.')&&str_contains($items[0]['text'],'relevant timestamp'),'Chat prompt dropped evidence or comparison instructions');
 check(!str_contains($items[0]['text'],'A letter for you.')&&!str_contains($items[1]['text'],'The next train leaves at noon.'),'comparison presentation mixed up source speech');
 pass('named screen comparisons are source-labeled, deduplicated, bounded and aligned independently');

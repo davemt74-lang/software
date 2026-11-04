@@ -155,6 +155,8 @@ try{
  const panelAt=index=>multi.locator('#vp3-screen-source-panel-'+index);
  const selectors=multi.locator('[data-screen-select-source]');
  const pinAt=index=>panelAt(index).locator('[data-screen-pin-audio]');
+ const statusAt=index=>selectors.nth(index).locator('[data-screen-source-status]');
+ const nameAt=index=>panelAt(index).getByRole('textbox',{name:'Tab name',exact:true});
  const share=async(index,name,withAudio)=>{
   if(index)await add.click();
   const panel=panelAt(index);
@@ -187,6 +189,28 @@ try{
   assert.deepEqual(await multi.evaluate(()=>displayStreams.map(s=>s.getVideoTracks()[0].readyState)),['live','live','live']);
   assert.deepEqual(await multi.evaluate(()=>sessions.map(s=>s.title)),titles);
   assert.equal(await multi.evaluate(()=>new Set(sessions.map(s=>s.session_id)).size),3);
+ });
+ await check('editable tab labels and live indicators preserve keyboard navigation and the saved session',async()=>{
+  const name=nameAt(2);
+  const label='<img src=x onerror=alert(1)>';
+  await name.fill(label);
+  const tab=multi.getByRole('tab',{name:'Tab 3 · '+label,exact:true});
+  assert.equal(await tab.locator('img').count(),0);
+  assert.match(await statusAt(2).innerText(),/Capturing · Ears off · Chat context on/);
+  assert.match(await statusAt(0).innerText(),/Preview paused · Ears idle · Chat context on/);
+  await panelAt(2).getByRole('checkbox',{name:'Supply scene context to Chat',exact:true}).uncheck();
+  assert.match(await statusAt(2).innerText(),/Chat context off/);
+  await panelAt(2).getByRole('checkbox',{name:'Supply scene context to Chat',exact:true}).check();
+  await tab.press('ArrowLeft');
+  assert.equal(await selectors.nth(1).getAttribute('aria-selected'),'true');
+  assert.equal(await selectors.nth(1).getAttribute('tabindex'),'0');
+  await statusAt(1).getByText(/Listening/).waitFor({state:'visible'});
+  await selectors.nth(1).press('End');
+  assert.equal(await tab.getAttribute('aria-selected'),'true');
+  assert.equal(await name.inputValue(),label);
+  assert.equal(await multi.evaluate(()=>sessions[2].title),'Third fixture');
+  await name.clear();
+  await multi.getByRole('tab',{name:'Tab 3',exact:true}).waitFor({state:'visible'});
  });
  await check('selected tab keeps its own scene and transcript without using another share',async()=>{
   const recorded=await multi.evaluate(()=>recordedTrackIds.length);
@@ -259,6 +283,33 @@ try{
   assert.deepEqual(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is on Share 3?')),{screen_observations:[]});
   assert.deepEqual(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('Compare Tab 2 with Tab 3').screen_observations.map(o=>o.source_index)),[2]);
  });
+ await check('quoted tab names preserve order, per-tab permission and numeric references',async()=>{
+  const ask=prompt=>multi.evaluate(text=>VP3AgentScreenShare.contextForPrompt(text),prompt);
+  await nameAt(0).fill('Tab 3');
+  await selectors.nth(1).click();
+  await nameAt(1).fill('Reference');
+  const comparison=await ask('Compare Share “reference” with Tab "Tab 3", then Tab 1.');
+  assert.deepEqual(comparison.screen_observations.map(o=>[o.source_index,o.source_label,o.source_alias]),[[2,'Tab 2','Reference'],[1,'Tab 1','Tab 3']]);
+  const numeric=await ask('What is on Tab 2?');
+  assert.equal(numeric.screen_observations[0].source_alias,undefined);
+  assert.deepEqual(await ask('What is on Tab "Missing Tab 1"?'),{screen_observations:[]});
+  assert.deepEqual(await ask('What is on Tab "Missing Tab 1?'),{screen_observations:[]});
+  await selectors.nth(2).click();
+  await nameAt(2).fill('Private');
+  await selectors.nth(1).click();
+  assert.deepEqual(await ask('What is on Tab "Private"?'),{screen_observations:[]});
+  const frameReady=multi.waitForEvent('framenavigated',{predicate:frame=>frame.url().includes('orb_embed=1')});
+  await multi.evaluate(()=>{const iframe=document.createElement('iframe');iframe.src='/?orb_embed=1';document.body.append(iframe);});
+  const embedded=await frameReady;
+  await embedded.waitForFunction(()=>window.VP3AgentScreenShare);
+  assert.deepEqual(await embedded.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is on Tab "Reference"?').screen_observations.map(o=>o.source_index)),[2]);
+  await multi.locator('iframe').evaluate(el=>el.remove());
+  await selectors.nth(2).click();
+  await nameAt(2).fill('reference');
+  await selectors.nth(1).click();
+  assert.deepEqual(await ask('What is on Tab "Reference"?'),{screen_observations:[]});
+  assert.deepEqual((await ask('What is on Tab 2?')).screen_observations.map(o=>o.source_index),[2]);
+ });
  await check('named evidence retains recent speech after its last visual observation expires',async()=>{
   await selectors.nth(0).click();
   const previous=await multi.evaluate(()=>audioCalls.length);
@@ -290,6 +341,7 @@ try{
  await check('pinned Agent Ears keeps its recorder across previews without borrowing Chat context',async()=>{
   await multi.evaluate(()=>{window.fixtureAudioInterval=2500;});
   await selectors.nth(0).click();
+  await nameAt(0).fill('Movie');
   const pin=pinAt(0);
   await pin.click();
   assert.equal(await pin.getAttribute('aria-pressed'),'true');
@@ -300,6 +352,18 @@ try{
   }).then(async h=>(await h.jsonValue())-1);
   const before=await multi.evaluate(()=>audioCalls.filter(call=>call.session_id===sessions[0].session_id).length);
   await selectors.nth(1).click();
+  assert.match(await statusAt(0).innerText(),/Preview paused · Listening/);
+  assert.match(await statusAt(1).innerText(),/Ears idle/);
+  assert.equal(await panelAt(1).locator('[data-screen-audio-pin-status]').innerText(),'Agent Ears is pinned to Share 1 · Movie.');
+  const muteAudio=muted=>multi.evaluate(value=>{
+   const track=displayStreams[0].getAudioTracks()[0];
+   if(value)Object.defineProperty(track,'muted',{configurable:true,value:true});else delete track.muted;
+   track.dispatchEvent(new Event(value?'mute':'unmute'));
+  },muted);
+  await muteAudio(true);
+  assert.match(await statusAt(0).innerText(),/Preview paused · Ears paused/);
+  await muteAudio(false);
+  assert.match(await statusAt(0).innerText(),/Preview paused · Listening/);
   await expectContext(panelAt(1),'Second fixture');
   assert.equal(await multi.evaluate(index=>recorders[index].state,recorderIndex),'recording');
   assert.equal(await multi.evaluate(()=>recorders.length),recorderIndex+1);

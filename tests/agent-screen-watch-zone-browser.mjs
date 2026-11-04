@@ -78,8 +78,12 @@ try{
   await panel(0).getByRole('button',{name:'Share screen',exact:true}).click();
   await panel(0).locator('[data-screen-preview]').waitFor({state:'visible'});
   await page.waitForFunction(()=>calls.some(c=>c.action==='analyze'));
+  await panel(0).getByRole('checkbox',{name:'Analyze shared frames automatically'}).uncheck();
+  const tabStatus=page.locator('[data-screen-source-status]').first();
+  await tabStatus.getByText(/Previewing/).waitFor();
   assert.deepEqual(await watchCalls(),[]);
   await draw(panel(0));
+  assert.match(await tabStatus.innerText(),/Capturing/);
   await page.evaluate(()=>{colors[0].outside='#7722ee';});
   await page.waitForTimeout(1250);
   assert.deepEqual(await watchCalls(),[]);
@@ -122,6 +126,7 @@ try{
   await page.waitForFunction(()=>calls.filter(c=>c.watch_region).length===2);
   await panel(0).locator('[data-screen-watch-clear]').click();
   assert.equal(await panel(0).locator('.vp3-screen-watch-box').isVisible(),false);
+  assert.match(await tabStatus.innerText(),/Previewing/);
   await page.evaluate(()=>{colors[0].inside='#000000';});
   await page.waitForTimeout(1150);
   assert.equal((await watchCalls()).length,2);
