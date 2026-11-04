@@ -1,7 +1,14 @@
 /* Watches pixels inside a user-drawn region of an active screen share. */
 (() => {
   'use strict';
-  const sampleInterval=500,minimumCaptureInterval=5000;
+  const sampleInterval=500,minimumCaptureInterval=5000,minimumZoneSide=.02;
+
+  function copyRegion(value){
+    if(!value||typeof value!=='object'||Array.isArray(value))return null;
+    const {x,y,width,height}=value;
+    if(![x,y,width,height].every(Number.isFinite)||x<0||y<0||width<minimumZoneSide||height<minimumZoneSide||x+width>1||y+height>1)return null;
+    return {x,y,width,height};
+  }
 
   function changeFraction(a,b){
     let changed=0;
@@ -16,18 +23,18 @@
     const box=document.createElement('div');box.className='vp3-screen-watch-box';box.hidden=true;box.setAttribute('aria-hidden','true');
     preview.before(area);area.append(preview,box);
     const tools=document.createElement('div');tools.className='vp3-screen-watch-tools';
-    tools.innerHTML='<button type="button" data-screen-watch-draw disabled>Draw watch zone</button><button type="button" data-screen-watch-clear disabled>Clear watch zone</button><p data-screen-watch-status role="status">A watch zone saves a crop when its pixels change.</p>';
+    tools.innerHTML='<button type="button" data-screen-watch-draw disabled>Draw watch zone</button><button type="button" data-screen-watch-clear disabled>Clear watch zone</button><button type="button" data-screen-watch-resume hidden>Resume watch zone</button><p data-screen-watch-status role="status">A watch zone saves a crop when its pixels change.</p>';
     area.after(tools);
     const draw=tools.querySelector('[data-screen-watch-draw]'),clear=tools.querySelector('[data-screen-watch-clear]');
-    const status=tools.querySelector('[data-screen-watch-status]');
+    const resume=tools.querySelector('[data-screen-watch-resume]'),status=tools.querySelector('[data-screen-watch-status]');
     const sample=document.createElement('canvas');sample.width=48;sample.height=24;
     const sampleContext=sample.getContext('2d',{willReadFrequently:true});
-    let zone=null,drag=null,drawing=false,active=false,timer=null,request=null,pending=null,epoch=0,lastCapture=-Infinity;
+    let zone=null,needsConfirmation=false,drag=null,drawing=false,active=false,timer=null,request=null,pending=null,epoch=0,lastCapture=-Infinity;
     let baseline=null,candidate=null,dimensions='';
 
     function paint(region){
-      box.hidden=!region;
-      if(region){
+      box.hidden=!region||preview.hidden;
+      if(!box.hidden){
         box.style.left=100*region.x+'%';box.style.top=100*region.y+'%';
         box.style.width=100*region.width+'%';box.style.height=100*region.height+'%';
       }
@@ -94,7 +101,7 @@
     }
     function tick(){
       timer=null;
-      if(!canWatch()||drawing||!zone){setActive(false);return;}
+      if(!canWatch()||drawing||!zone||needsConfirmation){setActive(false);return;}
       if(pending){
         if(!request&&performance.now()-lastCapture>=minimumCaptureInterval)savePending();
       }else if(video.readyState>=2&&video.videoWidth&&video.videoHeight){
@@ -118,27 +125,43 @@
     function sync(){
       const ready=canWatch()&&!preview.hidden;
       draw.disabled=!ready;clear.disabled=!zone;
-      if(ready&&zone&&!drawing&&timer===null){
+      resume.hidden=!ready||!needsConfirmation||drawing;
+      if(!drawing)paint(zone);
+      if(needsConfirmation&&!drawing){
+        const message=ready?'Review the saved rectangle and select Resume watch zone.':'Saved watch zone is paused. Share this source to review its framing.';
+        if(status.textContent!==message)status.textContent=message;
+      }else if(ready&&zone&&!drawing&&timer===null){
         if(!active)status.textContent='Watching the selected zone for stable pixel changes.';
         setActive(true);tick();
       }
     }
     function pause(){
-      stopSampling();endDrawing();draw.disabled=true;
+      stopSampling();endDrawing();draw.disabled=true;resume.hidden=true;
       if(zone)status.textContent='Watch zone paused.';
     }
     function reset(announce=true){
-      stopSampling();zone=null;endDrawing();lastCapture=-Infinity;
+      stopSampling();zone=null;needsConfirmation=false;endDrawing();lastCapture=-Infinity;
       if(announce)status.textContent='A watch zone saves a crop when its pixels change.';
       sync();
+    }
+    function restore(value){
+      if(value===null){reset();return true;}
+      const region=copyRegion(value);
+      if(!region)return false;
+      stopSampling();zone=region;needsConfirmation=true;endDrawing();lastCapture=-Infinity;sync();
+      return true;
     }
     draw.addEventListener('click',()=>{
       if(drawing){endDrawing();status.textContent=zone?'Watching the selected zone.':'Select a zone to start watching.';sync();return;}
       if(!canWatch()||preview.hidden)return;
-      stopSampling();drawing=true;area.dataset.watchDrawing='';draw.textContent='Cancel drawing';
+      stopSampling();drawing=true;resume.hidden=true;area.dataset.watchDrawing='';draw.textContent='Cancel drawing';
       status.textContent='Drag a rectangle on the preview.';
     });
     clear.addEventListener('click',()=>reset());
+    resume.addEventListener('click',()=>{
+      if(!needsConfirmation||drawing||preview.hidden||!canWatch())return;
+      needsConfirmation=false;sync();
+    });
     area.addEventListener('pointerdown',event=>{
       if(!drawing||drag||event.button!==0||!canWatch())return;
       event.preventDefault();drag={start:point(event),pointerId:event.pointerId};area.setPointerCapture(event.pointerId);
@@ -147,15 +170,15 @@
     area.addEventListener('pointermove',event=>{if(drag?.pointerId===event.pointerId)paint(rectangle(drag.start,point(event)));});
     area.addEventListener('pointerup',event=>{
       if(drag?.pointerId!==event.pointerId)return;
-      const region=rectangle(drag.start,point(event));
-      if(region.width>=.02&&region.height>=.02){zone=region;status.textContent='Watching the selected zone for stable pixel changes.';}
+      const region=copyRegion(rectangle(drag.start,point(event)));
+      if(region){zone=region;needsConfirmation=false;status.textContent='Watching the selected zone for stable pixel changes.';}
       else status.textContent='Draw a larger rectangle to watch it.';
       endDrawing();sync();
     });
     const cancel=event=>{if(drag?.pointerId===event.pointerId){endDrawing();sync();}};
     area.addEventListener('pointercancel',cancel);
     area.addEventListener('lostpointercapture',cancel);
-    return {sync,pause,reset,active:()=>active};
+    return {sync,pause,reset,restore,region:()=>zone?{...zone}:null,active:()=>active};
   }
 
   window.VP3ScreenWatchZone=Object.freeze({mount});

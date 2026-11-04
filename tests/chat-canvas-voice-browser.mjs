@@ -443,6 +443,49 @@ try {
   console.log('PASS typed and spoken Chat preserve named share evidence across context refresh without selected-share fallback');
 
   await boot();
+  await page.evaluate(()=>{
+    window.VP3_ORB_ADAPTER={ownerKey:'1',screenRequest:()=>{throw Error('Voice setup must not capture a screen');}};
+    const panel=document.createElement('section');
+    panel.className='vp3-eyes-panel';panel.innerHTML='<div class="vp3-eyes-content"></div>';
+    document.body.append(panel);
+  });
+  await page.addScriptTag({content:await source('agent-screen-share.js')});
+  const setupName=page.locator('[data-screen-layout-name]');
+  const sessionTitle=page.locator('[data-screen-session-title]');
+  for(const [name,title] of [['Studio','Studio sources'],['Research','Research sources']]){
+    await setupName.fill(name);
+    await sessionTitle.fill(title);
+    await page.locator('[data-screen-layout-save]').click();
+  }
+  await sessionTitle.fill('Unsaved sources');
+  const setupSends=sends().length;
+  const setupRoutes=calls.filter(call=>call.action==='task.route').length;
+  await page.getByRole('button',{name:'Start voice conversation'}).click();
+  await page.waitForFunction(()=>recognizers.some(recognizer=>recognizer.active));
+  await speak('Load tab setup one');
+  await page.clock.runFor(2400);
+  assert.equal(await sessionTitle.inputValue(),'Studio sources');
+  await page.waitForFunction(()=>recognizers.some(recognizer=>recognizer.active));
+  await speak('Load tab setup Research');
+  await page.clock.runFor(2400);
+  assert.equal(await sessionTitle.inputValue(),'Research sources');
+  await page.waitForFunction(()=>recognizers.some(recognizer=>recognizer.active));
+  await speak('Load tab setup 99');
+  await page.clock.runFor(2400);
+  assert.equal(await sessionTitle.inputValue(),'Research sources');
+  assert.match(await page.locator('[data-screen-layout-status]').innerText(),/not found/i);
+  assert.equal(sends().length,setupSends,'Setup commands must not enter Chat');
+  assert.equal(calls.filter(call=>call.action==='task.route').length,setupRoutes);
+  await page.waitForFunction(()=>recognizers.some(recognizer=>recognizer.active));
+  await speak('What does load tab setup one do?');
+  await page.clock.runFor(2400);
+  await page.waitForFunction(()=>document.querySelector('#chatThread').innerText.includes('I heard you.'));
+  assert.equal(sends().length,setupSends+1);
+  assert.equal(sends().at(-1).message,'What does load tab setup one do?');
+  await page.evaluate(()=>VP3ConversationControls.stop());
+  console.log('PASS finalized voice loads named Agent Eyes setups locally and ordinary questions still reach Chat');
+
+  await boot();
   const reminderCount=sends().length;
   await page.locator('#chatInput').fill('Remind me to stretch tomorrow at 8 AM');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());await page.waitForFunction(()=>document.querySelector('#chatInput').disabled===false);
   const typedReminder=sends().at(-1);assert.equal(sends().length,reminderCount+1);assert.match(typedReminder.reminder_request_id,/^[a-f0-9-]{36}$/);assert.equal(typedReminder.reminder_timezone,await page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone));
