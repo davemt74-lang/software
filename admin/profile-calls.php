@@ -17,7 +17,7 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
             vp3_profile_call_livekit_save_pa3c($pdo,$_POST);$callSettingsNotice='Profile call settings saved. Check the readiness steps below before inviting a visitor.';
         }elseif($action==='verify_api'){
             if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
-            vp3_profile_call_livekit_verify_pa3c($pdo);$callSettingsNotice='The authenticated RoomService metadata check passed. Browser media and the human-only project configuration still require your own verification.';
+            vp3_profile_call_livekit_verify_pa3c($pdo);$callSettingsNotice='The authenticated RoomService metadata check passed. Verify browser media and the project defaults separately.';
         }else{$error='Choose a Profile call settings action.';http_response_code(422);}
     }catch(VP3ProfileCallProviderException|VP3ProfileCallException $e){$error=$e->getMessage();http_response_code($e->httpStatus);}
     catch(Throwable $e){error_log('Profile call settings failed ('.get_class($e).').');$error='The calling settings could not be updated. Check server readiness and try again.';http_response_code(500);}
@@ -28,7 +28,7 @@ $source=($settings['profile_calls_source_pa3c']??'profile')==='meetings'?'meetin
 $reason=match($readiness['reason']??'configuration_missing'){
     'ready'=>'Ready for an explicit browser call',
     'disabled'=>'Calling is disabled',
-    'human_only_unacknowledged'=>'Confirm the human-only project configuration',
+    'human_only_unacknowledged'=>'Confirm the project defaults for Profile calls',
     'api_unverified'=>'Run the metadata API check',
     'credential_unavailable'=>'Restore the original encryption key before proceeding',
     'transport_unavailable'=>'The server needs PHP cURL with HTTPS support',
@@ -47,7 +47,7 @@ $adminTitle='Profile voice & video';$adminActive='profile-calls';require __DIR__
 <dl>
 <dt>Cloud storage</dt><dd><?= $schemaReady?'Ready':'Run /upgrade.php' ?></dd>
 <dt>Project credentials</dt><dd><?= !empty($readiness['configured'])?'Saved and readable':'Not configured or unavailable' ?></dd>
-<dt>Human-only setup</dt><dd><?= !empty($readiness['human_only_acknowledged'])?'Acknowledged by an administrator':'Administrator acknowledgement required' ?></dd>
+<dt>Project defaults</dt><dd><?= !empty($readiness['human_only_acknowledged'])?'Acknowledged by an administrator':'Administrator acknowledgement required' ?></dd>
 <dt>Metadata API</dt><dd><?= (int)($readiness['api_verified_at_ms']??0)>0?'Last check passed at '.e(gmdate('Y-m-d H:i:s \U\T\C',intdiv((int)$readiness['api_verified_at_ms'],1000))):'Not checked for these credentials' ?></dd>
 <dt>Browser media</dt><dd>Check microphone, speaker, camera and network access with two consenting people after setup.</dd>
 </dl>
@@ -58,11 +58,11 @@ $adminTitle='Profile voice & video';$adminActive='profile-calls';require __DIR__
 <?= csrf_field() ?><input type="hidden" name="action" value="save">
 <div class="fields">
 <label>Credential source<select name="source"><option value="profile" <?= $source==='profile'?'selected':'' ?>>Dedicated Profile call credentials</option><option value="meetings" <?= $source==='meetings'?'selected':'' ?>>Explicitly use the existing LiveKit meeting configuration</option></select></label>
-<p><small>Choosing the existing meeting configuration does not alter meeting settings. It must still point to a supported Cloud project with the human-only configuration below. For dedicated credentials, leave saved fields blank to keep them; changing the project URL or key requires its matching secret.</small></p>
+<p><small>The existing meeting configuration must point to a supported Cloud project with the defaults below. For dedicated credentials, leave saved fields blank to keep them. A different project URL or key requires the matching secret.</small></p>
 <label>LiveKit Cloud URL<input name="url" maxlength="250" placeholder="wss://your-project.livekit.cloud" value="<?= e($source==='profile'&&$saved?$saved['url']:'') ?>" spellcheck="false"></label>
 <label>API key<input type="password" name="api_key" maxlength="240" autocomplete="new-password" value="" placeholder="<?= $source==='profile'&&$saved?'Saved key — leave blank to keep':'Enter the project API key' ?>"></label>
 <label>API secret<input type="password" name="api_secret" maxlength="240" autocomplete="new-password" value="" placeholder="<?= $source==='profile'&&$saved?'Saved secret — leave blank to keep':'Enter the matching API secret' ?>"></label>
-<label class="check"><input type="checkbox" name="human_only_acknowledged" value="1" <?= !empty($readiness['human_only_acknowledged'])?'checked':'' ?>><span>I have checked this LiveKit Cloud project: unnamed automatic Agent dispatch is disabled and no automatic recording, transcription, room Agent or recording preset applies to these Profile rooms. I understand that the API check cannot verify this deployment configuration.</span></label>
+<label class="check"><input type="checkbox" name="human_only_acknowledged" value="1" <?= !empty($readiness['human_only_acknowledged'])?'checked':'' ?>><span>I checked this LiveKit Cloud project and confirmed that automatic Agent dispatch, recording and transcription are disabled for Profile rooms. Disclosed voice-call assistance uses a separately configured, named worker.</span></label>
 <label class="check"><input type="checkbox" name="enabled" value="1" <?= !empty($readiness['enabled'])?'checked':'' ?>><span>Enable Profile voice and video when the readiness checks pass.</span></label>
 </div>
 <div class="actions"><button <?= $schemaReady?'':'disabled' ?>>Save calling settings</button></div>

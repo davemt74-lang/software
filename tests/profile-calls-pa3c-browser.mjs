@@ -9,7 +9,10 @@ import {chatChoice} from './fixtures/profile-chat-choice-pa3d.mjs';
 const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
 const read=file=>fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');
 const files={'/calls.js':read('profile-calls-pa3c.js'),'/calls.css':read('profile-calls-pa3c.css'),'/chat.js':read('chat.js'),'/voice.js':read('chat-voice.js'),'/chat.css':read('chat.css'),'/profile.css':read('profile.css'),'/profile-agent.js':read('profile-agent.js'),'/lease.js':read('voice-lease-v122.js')};
+files['/call-activity.js']=read('profile-call-activity-pa3c.js');
+files['/call-activity.css']=read('profile-call-activity-pa3c.css');
 const namespace='a'.repeat(64),storageKey='stonefellow-profile-agent:v1:fixture-owner:'+namespace;
+const assistance={agent:{name:'Fixture Profile Agent'},id:'8'.repeat(32),notice:'9'.repeat(64)};
 const chatStyle='html,body{margin:0;height:100%;overflow:hidden}.chat-app{height:100dvh}.chat-sidebar{display:none}.chat-main{height:100dvh;display:flex;flex-direction:column;min-width:0}.chat-thread{overflow:auto;flex:1;min-height:0;padding:12px}.chat-thread .message{max-width:100%;box-sizing:border-box}.message-body{min-width:0;max-width:100%}#chatComposerShell{flex-shrink:0;padding:8px}#chatForm{display:flex;gap:8px}#chatInput{min-width:0;flex:1}';
 const publicChoiceControls='<div data-profile-agent-disclosure class="profile-agent-disclosure">AI representative</div><div data-profile-live-choice class="profile-agent-live-choice"><label><input type="checkbox" data-profile-live-chat disabled><span>Request live text chat with <strong data-profile-owner-name>Human Owner</strong></span></label><small data-profile-live-availability role="status">Checking availability</small><button type="button" data-profile-end-live hidden>Return to Agent</button></div>';
 const publicMarkup=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/profile.css"><link rel="stylesheet" href="/calls.css"><style>html,body{margin:0}.profile-agent-widget{position:static;width:100%;max-width:520px;margin:auto;max-height:100dvh;box-sizing:border-box}.profile-agent-thread{min-height:160px}textarea{font-size:16px}#privateFixture{display:none}</style></head><body><section id="profileAgentShell" class="profile-agent-widget"><button id="closeWidget" type="button">Close call view</button>${publicChoiceControls}<div class="profile-agent-thread" data-profile-agent-thread></div><form class="profile-agent-compose"><textarea aria-label="Message Profile Agent"></textarea><button type="submit">Send</button><div data-profile-agent-status role="status"></div></form></section><textarea id="privateFixture">PRIVATE_TEXT_NEVER_FORWARD</textarea><script>window.STONEFELLOW_PROFILE_AGENT={username:'fixture-owner',endpoint:'/api/profile-agent.php',callEndpoint:'/api/profile-calls-pa3c.php',callOwnerName:'Human Owner',conversationNamespace:'${namespace}',profileToken:'FIXTURE_PROFILE_TOKEN'};document.getElementById('closeWidget').onclick=()=>{document.getElementById('profileAgentShell').hidden=true;window.dispatchEvent(new CustomEvent('vp3:profile-agent-visibility',{detail:{open:false}}));};</script><script data-voice-capture-scope="fixture-user" src="/lease.js"></script><script src="/calls.js"></script><script src="/profile-agent.js"></script></body></html>`;
@@ -18,11 +21,11 @@ const server=http.createServer((request,response)=>{
   if(files[path]){response.writeHead(200,{'Content-Type':path.endsWith('.css')?'text/css':'text/javascript'});response.end(files[path]);return;}
   response.writeHead(200,{'Content-Type':'text/html'});
   if(path==='/visitor'){response.end(publicMarkup);return;}
-  response.end(mainChatVoiceMarkup.replace('</head>','<link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/calls.css"><style>'+chatStyle+'</style></head>').replace('</body>',`<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'FIXTURE_CSRF',initialView:'chat',initialConversationId:42};window.STONEFELLOW_CHAT_VOICE_BOOT={button:document.getElementById('chatVoiceButtonLegacyDormant'),intro:null,legacyDormant:true};window.VP3_PROFILE_CALLS_PA3C={role:'owner',endpoint:'/api/profile-calls-pa3c.php',csrf:'FIXTURE_CSRF',userId:1};</script><script src="/chat.js"></script><script data-voice-capture-scope="fixture-user" src="/lease.js"></script><script src="/voice.js"></script><script src="/calls.js"></script></body>`));
+  response.end(mainChatVoiceMarkup.replace('</head>','<link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/calls.css"><link rel="stylesheet" href="/call-activity.css"><style>'+chatStyle+'</style></head>').replace('</body>',`<div id="profileCallActivityPa3c" data-api="/api/profile-call-activity-pa3c.php" data-csrf="FIXTURE_CSRF" hidden></div><script>window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'FIXTURE_CSRF',initialView:'chat',initialConversationId:42};window.STONEFELLOW_CHAT_VOICE_BOOT={button:document.getElementById('chatVoiceButtonLegacyDormant'),intro:null,legacyDormant:true};window.VP3_PROFILE_CALLS_PA3C={role:'owner',endpoint:'/api/profile-calls-pa3c.php',csrf:'FIXTURE_CSRF',userId:1};</script><script src="/chat.js"></script><script data-voice-capture-scope="fixture-user" src="/lease.js"></script><script src="/voice.js"></script><script src="/call-activity.js"></script><script src="/calls.js"></script></body>`));
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port;
 let browser,checks=0;function check(ok,label){assert.ok(ok,label);checks++;console.log('PASS '+label);}
-async function fixture({role='owner',initial=callCard(role),cid=31,viewport={width:390,height:844}}={}){
+async function fixture({role='owner',initial=callCard(role),cid=31,viewport={width:390,height:844},assistanceOffer=null}={}){
   const context=await browser.newContext({viewport}),requests=[],errors=[],holds=[],calls=new Map(initial?[[initial.call_id,copy(initial)]]:[]),chatMessages=new Map([[42,[]],[55,[]]]),publicMessages=[],clients=new Map();
   let currentCid=cid,nextMessage=700,ownerMode=Boolean(initial&&['preparing','ready','active'].includes(initial.state));
   await context.addInitScript({content:'('+installFakeMedia.toString()+')(window);HTMLMediaElement.prototype.play=function(){return Promise.resolve();};'});
@@ -32,7 +35,7 @@ async function fixture({role='owner',initial=callCard(role),cid=31,viewport={wid
   const state=(card,value)=>{if(['preparing','ready','active'].includes(value))ownerMode=true;return Object.assign(card,{state:value,revision:card.revision+1,can_accept:false,can_decline:false,can_cancel:false,can_end:['preparing','ready','active'].includes(value),can_join:['ready','active'].includes(value),cleanup_pending:value==='ending',dispatch_due:value==='preparing',can_return_to_agent:value==='ending'||value==='ended'});};
   await context.route('**/api/**',async route=>{
     const request=route.request(),url=new URL(request.url()),input=request.method()==='GET'?Object.fromEntries(url.searchParams):request.postDataJSON()||{};
-    for(const key of ['call_id','revision','conversation_id','chat_conversation_id','chat_agent_id'])if(input[key]!==undefined)input[key]=Number(input[key]);requests.push({path:url.pathname,method:request.method(),...copy(input)});
+    if(url.pathname!=='/api/profile-call-activity-pa3c.php')for(const key of ['call_id','revision','conversation_id','chat_conversation_id','chat_agent_id'])if(input[key]!==undefined)input[key]=Number(input[key]);requests.push({path:url.pathname,method:request.method(),...copy(input)});
     let result={ok:true},status=200;
     if(url.pathname==='/api/chat-v236.php'){
       if(input.action==='load')Object.assign(result,{conversation:{id:input.conversation_id},messages:copy(chatMessages.get(input.conversation_id)||[])});
@@ -46,7 +49,7 @@ async function fixture({role='owner',initial=callCard(role),cid=31,viewport={wid
     }else if(url.pathname==='/api/profile-calls-pa3c.php'){
       const op=input.action.replace(/^(owner|visitor)_/,'');
       if(!['state','heartbeat','delivery'].includes(op)&&! /^[a-f0-9]{32}$/.test(input.request_id||'')){result={ok:false,code:'PROFILE_CALL_INVALID'};status=422;}
-      else if(op==='state')Object.assign(result,{contract,calls:role==='visitor'&&input.conversation_id===0?[]:[...calls.values()].map(c=>projected(c,input)),can_offer:calls.size===0&&(role!=='owner'||input.conversation_id>0),reason:'',server_now_ms:Date.now(),conversation_id:input.conversation_id||0});
+      else if(op==='state')Object.assign(result,{contract,calls:role==='visitor'&&input.conversation_id===0?[]:[...calls.values()].map(c=>projected(c,input)),can_offer:calls.size===0&&(role!=='owner'||input.conversation_id>0),assistance_offer:assistanceOffer,reason:'',server_now_ms:Date.now(),conversation_id:input.conversation_id||0});
       else{
         let call=calls.get(input.call_id);
         if(op==='offer'){currentCid=input.conversation_id||31;call=callCard(role,{conversation_id:currentCid,mode:input.mode,offered_by:role,can_accept:false,can_decline:false,can_cancel:true,offer_expires_at_ms:Date.now()+60000});calls.set(call.call_id,call);}
@@ -64,6 +67,9 @@ async function fixture({role='owner',initial=callCard(role),cid=31,viewport={wid
           }
         }
       }
+    }else if(url.pathname==='/api/profile-call-activity-pa3c.php'){
+      assert.equal(input.call_id,assistance.id);
+      Object.assign(result,{call_id:assistance.id,state:'listening',agent:assistance.agent,assistance_enabled:true,assistance_revision:1,assistance_toggle_available:true,segments:[{id:'segment-1',speaker:'Visitor',text:'Canonical call transcript.',start_ms:2000}]});
     }else Object.assign(result,{items:[],updates:[],route:'chat',tracks:[]});
     const index=holds.findIndex(h=>h.action===input.action);const send=(payload=result,httpStatus=status)=>route.fulfill({status:httpStatus,contentType:'application/json',body:JSON.stringify(payload)});
     if(index>=0){const hold=holds.splice(index,1)[0];hold.arrived({input,result,release:overrides=>send({...result,...overrides})});}else await send();
@@ -131,6 +137,59 @@ try{
     const f=await fixture();await f.ready();await f.consent(true);await f.page.evaluate(()=>{window.__lateCamera=__callMediaFixture.hold('camera');});await f.join();await f.page.waitForFunction(()=>Boolean(__lateCamera.pending));
     await f.card().locator('[data-call-action=end]').click();await f.page.evaluate(()=>__lateCamera.pending.reject());await f.page.waitForFunction(()=>__callMediaFixture.tracks.filter(t=>t.local).every(t=>t.stopped));
     check(await f.page.evaluate(()=>__callMediaFixture.tracks.some(t=>t.kind==='video')&&__callMediaFixture.tracks.every(t=>t.stopped)),'late rejected browser camera permission after End leaves no active track');await f.close();
+  }
+  {
+    const f=await fixture({role:'visitor',initial:null,cid:0,assistanceOffer:assistance});
+    const notice=f.page.locator('[data-call-assistance-offer]');
+    check(await notice.isVisible()&&(await notice.textContent()).includes('Fixture Profile Agent can listen to and transcribe this audio call'),
+      'visitor sees the named Agent notice before placing the audio call');
+    await f.page.locator('[data-call-offer=audio]').click();await f.card().waitFor();
+    check(f.requests.filter(r=>r.path==='/api/profile-calls-pa3c.php'&&r.method==='POST').length===1&&
+      f.requests.some(r=>r.action==='visitor_offer'&&r.assistance_notice===assistance.notice),
+      'normal audio offer sends the displayed notice token in its one call request');
+    await f.close();
+  }
+  {
+    const f=await fixture({role:'visitor',initial:null,cid:0,assistanceOffer:assistance});
+    await f.page.locator('[data-call-offer=video]').click();await f.card().waitFor();
+    check(f.requests.some(r=>r.action==='visitor_offer'&&r.mode==='video'&&!Object.hasOwn(r,'assistance_notice'))&&
+      await f.card().locator('[data-call-assistance-notice]').isHidden(),'video stays on the canonical two-human path');
+    await f.close();
+  }
+  {
+    const f=await fixture({role:'visitor',initial:null,cid:0,assistanceOffer:assistance});
+    const held=f.hold('visitor_state');await f.refresh();const refreshed=await held;
+    await refreshed.release({assistance_offer:{agent:assistance.agent,notice:'invalid'}});
+    await f.page.locator('[data-call-assistance-offer]').waitFor({state:'hidden'});
+    await f.page.locator('[data-call-offer=audio]').click();await f.card().waitFor();
+    check(f.requests.some(r=>r.action==='visitor_offer'&&!Object.hasOwn(r,'assistance_notice')),
+      'an invalid refreshed notice clears the previous token before a normal audio offer');
+    await f.close();
+  }
+  {
+    const f=await fixture({role:'visitor',initial:callCard('visitor',{mode:'audio',assistance:{agent:assistance.agent,notice:assistance.notice}})});
+    check(await f.card().locator('[data-call-assistance-notice]').isVisible()&&await f.card().locator('[data-call-action=accept]').isEnabled(),
+      'incoming assisted audio call shows its notice before the normal Accept action');
+    await f.card().locator('[data-call-action=accept]').click();
+    await f.card().locator('[data-call-action=join]').waitFor({state:'visible'});
+    check(f.requests.some(r=>r.action==='visitor_accept'&&r.assistance_notice===assistance.notice)&&
+      await f.card().locator('input[type=checkbox]:visible').count()===1,
+      'normal Accept echoes its notice and the existing microphone control is the only audio checkbox');
+    await f.close();
+  }
+  {
+    const f=await fixture({initial:callCard('owner',{mode:'audio',assistance:{id:assistance.id,agent:assistance.agent}})});
+    const activity=f.page.locator('#profileCallActivityPa3c'),drawer=f.page.locator('#vp3CallActivityDrawer');
+    check(await activity.isHidden(),'offered assisted call keeps the owner activity drawer hidden');
+    await f.card().locator('[data-call-action=accept]').click();
+    await activity.getByRole('button').waitFor({state:'visible'});
+    await activity.getByRole('button').click();
+    await drawer.getByText('Canonical call transcript.').waitFor({state:'visible'});
+    check(f.requests.some(r=>r.path==='/api/profile-call-activity-pa3c.php'&&r.call_id===assistance.id)&&await drawer.getByRole('switch').isVisible(),
+      'canonical authorized owner call opens its own private transcript and assistance switch');
+    check(await f.page.evaluate(()=>{window.dispatchEvent(new Event('stonefellow:chat-context-changing'));return document.getElementById('profileCallActivityPa3c').hidden&&!document.getElementById('vp3CallActivityDrawer').open;}),
+      'changing Chat context clears the drawer synchronously');
+    await f.close();
   }
   console.log('PROFILE_CALLS_PA3C_BROWSER=PASS ('+checks+' assertions)');
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}

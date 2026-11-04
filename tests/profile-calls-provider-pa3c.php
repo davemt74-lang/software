@@ -93,4 +93,86 @@ vp3_profile_call_livekit_disable_pa3c($pdo);$GLOBALS['pcRequests']=[];pc_check(!
 pc_check($oldSnapshot===$oldBinding['provider_snapshot']&&$oldFingerprint===$oldBinding['provider_config_fingerprint'],'configuration changes never rewrite original private call evidence');
 $bad=$oldBinding;$bad['provider_snapshot']=substr($oldSnapshot,0,-4).'AAAA';pc_reject(fn()=>vp3_profile_call_livekit_provider_pa3c('cleanup',$bad,pc_options(),'pc_http'),'damaged encrypted snapshot never falls back to current credentials','CALL_PROVIDER_CREDENTIALS_UNAVAILABLE');
 foreach(['ws://fixture.livekit.cloud','wss://livekit.example.test','wss://fixture.livekit.cloud/path','wss://fixture.livekit.cloud?token=SECRET','wss://user@fixture.livekit.cloud','wss://fixture.livekit.cloud.evil.test'] as $url)pc_reject(fn()=>vp3_profile_call_livekit_origin_pa3c($url),'strict Cloud transport rejects unsafe origin');
+
+$normal=pc_reset();
+$assisted=$normal+['assisted'=>true,'agent_worker_name'=>'vp3-profile-assistant'];
+$proof=vp3_profile_call_livekit_provider_pa3c('create',$assisted,pc_options(),'pc_http');
+$normal['room_sid']=$assisted['room_sid']=$proof['room_sid'];
+putenv('VP3_PROFILE_CALL_AGENT_ENABLED');
+putenv('VP3_PROFILE_CALL_AGENT_NAME=vp3-profile-assistant');
+putenv('VP3_PROFILE_CALL_AGENT_URL=wss://profile-first.livekit.cloud');
+pc_check(!vp3_profile_call_livekit_assistance_configured_pa3c(),'operator must explicitly activate assistance');
+putenv('VP3_PROFILE_CALL_AGENT_ENABLED=1');
+pc_check(vp3_profile_call_livekit_assistance_configured_pa3c(),'active worker URL matches the verified call project');
+putenv('VP3_PROFILE_CALL_AGENT_URL=wss://old-meetings.livekit.cloud');
+pc_check(!vp3_profile_call_livekit_assistance_configured_pa3c(),'an otherwise configured worker on a different project is unavailable');
+putenv('VP3_PROFILE_CALL_AGENT_URL=wss://profile-first.livekit.cloud');
+
+$assistantIdentity='agent-'.$assisted['public_id'];
+$makeAssistant=static fn()=>(object)['sid'=>'PA_agentFixture','identity'=>$assistantIdentity,'kind'=>'AGENT','state'=>'ACTIVE','permission'=>(object)['canSubscribe'=>true,'hidden'=>true]];
+$humans=[pc_participant($assisted,'owner'),pc_participant($assisted,'visitor')];
+$GLOBALS['pcParticipants']=[...$humans,$makeAssistant()];
+$observed=vp3_profile_call_livekit_provider_pa3c('inspect',$assisted,pc_options(),'pc_http');
+pc_check($observed['owner_connected']&&$observed['visitor_connected']&&count($observed['participants'])===2&&!str_contains(json_encode($observed),$assistantIdentity),'one exact scoped hidden agent preserves the two-human proof');
+pc_reject(fn()=>vp3_profile_call_livekit_provider_pa3c('inspect',$normal,pc_options(),'pc_http'),'ordinary calls reject even the exact hidden agent','CALL_PROVIDER_ROOM_UNSAFE');
+pc_reject(fn()=>vp3_profile_call_livekit_provider_pa3c('inspect',['mode'=>'video']+$assisted,pc_options(),'pc_http'),'video calls cannot enable assistance','CALL_PROVIDER_REQUEST_INVALID');
+foreach([
+    'foreign worker'=>fn($p)=>$p->identity='agent-'.str_repeat('b',32),
+    'standard participant'=>fn($p)=>$p->kind='STANDARD',
+    'visibility'=>fn($p)=>$p->permission->hidden=false,
+    'malformed permission'=>fn($p)=>$p->permission->hidden='true',
+    'publication'=>fn($p)=>$p->permission->canPublish=true,
+    'data publication'=>fn($p)=>$p->permission->canPublishData=true,
+    'metadata updates'=>fn($p)=>$p->permission->canUpdateMetadata=true,
+    'agent session management'=>fn($p)=>$p->permission->canManageAgentSession=true,
+    'publication source'=>fn($p)=>$p->permission->canPublishSources=['MICROPHONE'],
+    'published track'=>fn($p)=>$p->tracks=[(object)['source'=>'MICROPHONE']],
+] as $label=>$change){
+    $participant=$makeAssistant();$change($participant);$GLOBALS['pcParticipants']=[...$humans,$participant];
+    pc_reject(fn()=>vp3_profile_call_livekit_provider_pa3c('inspect',$assisted,pc_options(),'pc_http'),'assisted room rejects '.$label,'CALL_PROVIDER_ROOM_UNSAFE');
+}
+$GLOBALS['pcParticipants']=[$humans[0],$makeAssistant(),$makeAssistant()];
+pc_reject(fn()=>vp3_profile_call_livekit_provider_pa3c('inspect',$assisted,pc_options(),'pc_http'),'duplicate worker identities fail closed','CALL_PROVIDER_ROOM_UNSAFE');
+
+$dispatches=[];
+$GLOBALS['pcHttpHook']=static function(array $request)use(&$dispatches): ?array {
+    $input=$request['payload'];
+    switch($request['method']){
+        case 'ListDispatch':return pc_response((object)['agentDispatches'=>array_values($dispatches)]);
+        case 'CreateDispatch':$row=(object)['id'=>'AD_testDispatch','agentName'=>$input['agent_name'],'room'=>$input['room'],'metadata'=>$input['metadata']];$dispatches[$row->id]=$row;return pc_response($row);
+        case 'DeleteDispatch':$id=$input['dispatch_id'];if(!isset($dispatches[$id]))return pc_response((object)['code'=>'not_found'],404);$row=$dispatches[$id];unset($dispatches[$id]);return pc_response($row);
+        default:return null;
+    }
+};
+$metadata=['vp3_profile_call_id'=>$assisted['public_id'],'room_name'=>$assisted['room_name'],'agent_display_name'=>'Profile Agent','worker_key'=>str_repeat('d',64)];
+$dispatch=static fn(bool $replace=false,array $binding=[])=>vp3_profile_call_livekit_dispatch_assistant_pa3c($binding+$assisted,'vp3-profile-assistant',$metadata,$replace,null,'pc_http');
+$GLOBALS['pcParticipants']=[$humans[0]];$GLOBALS['pcRequests']=[];
+pc_reject(fn()=>$dispatch(),'dispatch requires provider evidence of both joined humans','CALL_PROVIDER_ROOM_UNSAFE');
+pc_check(array_column($GLOBALS['pcRequests'],'method')===['ListRooms','ListParticipants'],'unverified room never reaches Agent Dispatch RPC');
+$GLOBALS['pcParticipants']=$humans;$GLOBALS['pcRequests']=[];$dispatch();
+$created=end($GLOBALS['pcRequests']);$claims=pc_claims($created['auth']);
+pc_check(array_column($GLOBALS['pcRequests'],'method')===['ListRooms','ListParticipants','ListDispatch','CreateDispatch']&&$created['url']==='https://profile-first.livekit.cloud/twirp/livekit.AgentDispatchService/CreateDispatch'&&$claims['video']===['roomAdmin'=>true,'room'=>$assisted['room_name']],'dispatch uses the exact active room and canonical project credentials');
+pc_check(json_decode($created['payload']['metadata'],true,32,JSON_THROW_ON_ERROR)===$metadata&&$created['payload']['restart_policy']==='JRP_NEVER','worker gets only canonical call metadata and bounded app-controlled retries');
+$GLOBALS['pcRequests']=[];$dispatch();
+pc_check(array_column($GLOBALS['pcRequests'],'method')===['ListRooms','ListParticipants','ListDispatch']&&count($dispatches)===1,'retry reuses the exact dispatch');
+$GLOBALS['pcRequests']=[];$dispatch(true);
+pc_check(array_column($GLOBALS['pcRequests'],'method')===['ListRooms','ListParticipants','ListDispatch','DeleteDispatch','ListDispatch','CreateDispatch']&&count($dispatches)===1,'replacement waits for old dispatch removal before creating a new one');
+$oldDispatch=clone $dispatches['AD_testDispatch'];$dispatches['AD_testDispatch']->metadata='{}';$GLOBALS['pcRequests']=[];
+pc_reject(fn()=>$dispatch(true),'same worker name cannot substitute mismatched dispatch metadata','CALL_PROVIDER_ROOM_UNSAFE');
+pc_check(!in_array('CreateDispatch',array_column($GLOBALS['pcRequests'],'method'),true),'mismatched dispatch never creates a duplicate');
+$dispatches['AD_testDispatch']=$oldDispatch;
+putenv('VP3_PROFILE_CALL_AGENT_ENABLED=0');$GLOBALS['pcRequests']=[];
+pc_reject(fn()=>$dispatch(),'disabling the worker prevents new dispatch without removing the bound cleanup authority','CALL_PROVIDER_NOT_CONFIGURED');
+pc_check($GLOBALS['pcRequests']===[],'disabled worker makes no provider requests');
+$cleanup=vp3_profile_call_livekit_provider_pa3c('cleanup',$assisted,pc_options(),'pc_http');
+pc_check($cleanup['status']==='closed'&&$dispatches===[]&&array_column($GLOBALS['pcRequests'],'method')===['RemoveParticipant','ListDispatch','DeleteDispatch','RemoveParticipant','RemoveParticipant','DeleteRoom','ListRooms'],'closure removes the bound worker and dispatch before the human revocations and verified room absence');
+pc_check($GLOBALS['pcRequests'][0]['payload']['identity']===$assistantIdentity,'closure revokes the exact hidden worker identity');
+$GLOBALS['pcRequests']=[];
+$GLOBALS['pcHttpHook']=static fn(array $r)=>(($r['payload']['identity']??null)===$assistantIdentity||$r['method']==='ListDispatch')?pc_response((object)['code'=>'not_found'],404):null;
+pc_check(vp3_profile_call_livekit_provider_pa3c('cleanup',$assisted,pc_options(),'pc_http')['status']==='closed'&&array_column($GLOBALS['pcRequests'],'method')===['RemoveParticipant','ListDispatch','RemoveParticipant','RemoveParticipant','DeleteRoom','ListRooms'],'an assistant that never joined leaves the canonical human revocation and room proof required');
+$GLOBALS['pcRequests']=[];
+$GLOBALS['pcHttpHook']=static fn(array $r)=>$r['method']==='ListDispatch'?pc_response((object)['code'=>'unavailable'],503):null;
+pc_reject(fn()=>vp3_profile_call_livekit_provider_pa3c('cleanup',$assisted,pc_options(),'pc_http'),'assistant cleanup failure stays pending','CALL_PROVIDER_UNAVAILABLE');
+pc_check(array_column($GLOBALS['pcRequests'],'method')===['RemoveParticipant','ListDispatch','RemoveParticipant','RemoveParticipant','DeleteRoom','ListRooms'],'assistant cleanup failure still closes the human room');
+putenv('VP3_PROFILE_CALL_AGENT_ENABLED');putenv('VP3_PROFILE_CALL_AGENT_NAME');putenv('VP3_PROFILE_CALL_AGENT_URL');
 echo 'PROFILE_CALLS_PROVIDER_PA3C=PASS ('.$checks.' checks; '.$pdo->getAttribute(PDO::ATTR_DRIVER_NAME).")\n";

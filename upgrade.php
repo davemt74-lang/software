@@ -57,6 +57,7 @@ require_once __DIR__ . '/includes/phone-voice-stream-v150.php';
 require_once __DIR__ . '/includes/phone-worker-health-v171.php';
 require_once __DIR__ . '/includes/profile-agent-handoff-pa3.php';
 require_once __DIR__ . '/includes/profile-calls-pa3c.php';
+require_once __DIR__ . '/includes/profile-call-activity-pa3c.php';
 require_once __DIR__ . '/includes/profile-visitor-speech-pa4a.php';
 require_once __DIR__ . '/includes/profile-attention-pa4b.php';
 require_once __DIR__ . '/includes/profile-event-projection-pa4b.php';
@@ -231,10 +232,16 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && column_exists('profile_calls_pa3c','cleanup_generation')
         && column_exists('profile_calls_pa3c','cleanup_revision')
         && column_exists('profile_calls_pa3c','provider_lease_until_ms')
+        && column_exists('profile_calls_pa3c','assisted')
+        && column_exists('profile_calls_pa3c','agent_name')
+        && column_exists('profile_calls_pa3c','agent_worker_name')
         && table_exists('profile_call_slots_pa3c')
         && table_exists('profile_call_operations_pa3c')
         && column_exists('profile_call_operations_pa3c','result_json')
         && table_exists('profile_call_deliveries_pa3c')
+        && column_exists('team_user_presence','agent_assisted_phone_chat_enabled')
+        && table_exists('profile_call_assistance_pa3c')
+        && table_exists('profile_call_research_pa3c')
         && table_exists('profile_visitor_voices_pa4a')
         && table_exists('profile_speech_items_pa4a')
         && table_exists('profile_speech_attempts_pa4a')
@@ -266,6 +273,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && table_exists('agent_participant_observers_v1')
         && table_exists('user_agent_voice_preferences')
         && ($schemaConnection ??= db()) instanceof PDO
+        && vp3_profile_call_activity_schema_ready_pa3c($schemaConnection)
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)
         && vp3_profile_projection_schema_ready_pa4b($schemaConnection)
@@ -418,6 +426,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             profile_agent_ensure_schema();
             vp3_profile_handoff_ensure_schema_pa3($pdo);
             vp3_profile_call_ensure_schema_pa3c($pdo);
+            vp3_profile_call_activity_ensure_schema_pa3c($pdo);
             vp3_profile_speech_ensure_schema_pa4a($pdo);
             vp3_profile_attention_ensure_schema_pa4b($pdo);
             vp3_profile_projection_ensure_schema_pa4b($pdo);

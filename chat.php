@@ -23,7 +23,7 @@ $agentIdentityBuild = 'cloud-agent-onboarding-readiness-v110-20261001';
 $profileActivityBuild = 'profile-activity-safety-pa1-20261103';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
-$chatSettingsBuild = 'chat-settings-v239-canonical-20260905' . '-voice-v1352';
+$chatSettingsBuild = 'chat-settings-v239-canonical-20260905' . '-voice-v1352-chat-settings-v237-pa3c-assisted-phone';
 $notificationDrawerBuild = 'chat-notifications-recovery-20261016' . '-voice-v1351';
 $notificationDrawerBuild .= '-profile-doorbell-pa3-20261103';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
@@ -421,8 +421,12 @@ $profileActivityRuntime = $agentFeatureReady && $pdoForAgent && profile_agent_sc
 
 $profileDoorbellBuild='profile-doorbell-pa3-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-visitor-doorbell-pa3.js').hash_file('sha256',__DIR__.'/profile-visitor-doorbell-pa3.css')),0,12);
 $profileCallsBuild='profile-calls-pa3c-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-calls-pa3c.js').hash_file('sha256',__DIR__.'/profile-calls-pa3c.css')),0,12);
+$profileCallActivityBuild='profile-call-activity-pa3c-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-call-activity-pa3c.js').hash_file('sha256',__DIR__.'/profile-call-activity-pa3c.css')),0,12);
 $profileCallsRuntime=$profileActivityRuntime!==''
     ? '<link rel="stylesheet" data-profile-calls-pa3c href="'.e(url('/profile-calls-pa3c.css?v='.$profileCallsBuild)).'">'
+        .'<link rel="stylesheet" href="'.e(url('/profile-call-activity-pa3c.css?v='.$profileCallActivityBuild)).'">'
+        .'<div id="profileCallActivityPa3c" data-api="'.e(url('/api/profile-call-activity-pa3c.php')).'" data-csrf="'.e(csrf_token()).'" hidden></div>'
+        .'<script src="'.e(url('/profile-call-activity-pa3c.js?v='.$profileCallActivityBuild)).'"></script>'
         .'<script>window.VP3_PROFILE_CALLS_PA3C='.json_encode([
             'role'=>'owner','endpoint'=>url('/api/profile-calls-pa3c.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],
         ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'

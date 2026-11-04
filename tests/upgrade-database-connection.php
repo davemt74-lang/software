@@ -6,6 +6,7 @@ declare(strict_types=1);
 $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_actions_v1','agent_participant_settings_v1','agent_participant_grants_v1','agent_participant_presence_v1','agent_participant_observers_v1',
     'profile_agent_handoff_owners_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3',
     'profile_calls_pa3c','profile_call_slots_pa3c','profile_call_operations_pa3c','profile_call_deliveries_pa3c',
+    'profile_call_assistance_pa3c','profile_call_research_pa3c',
     'profile_visitor_voices_pa4a','profile_speech_items_pa4a','profile_speech_attempts_pa4a',
     'profile_attention_operations_pa4b','profile_attention_deliveries_pa4b','profile_event_projections_pa4b',
     'profile_conversation_checkouts_pa5'];
@@ -18,6 +19,8 @@ $partialSpeech=[
     'partial-attention-state'=>['agent_attention_items','state_revision'],
     'partial-attention-delivery'=>['profile_attention_deliveries_pa4b','source_hash'],
     'partial-projection-receipt'=>['profile_event_projections_pa4b','result_hash'],
+    'partial-assistance-revision'=>['profile_call_assistance_pa3c','capture_revision'],
+    'partial-assistance-research'=>['profile_call_research_pa3c','result_json'],
 ];
 if (!isset($argv[1])) {
     $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech));
@@ -38,6 +41,7 @@ require dirname(__DIR__).'/includes/tv-watching-v1.php';
 require dirname(__DIR__).'/includes/agent-reminders-v1.php';
 require dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
 require dirname(__DIR__).'/includes/profile-calls-pa3c.php';
+require_once dirname(__DIR__).'/includes/profile-call-activity-pa3c.php';
 require dirname(__DIR__).'/includes/profile-visitor-speech-pa4a.php';
 require dirname(__DIR__).'/includes/profile-attention-pa4b.php';
 require dirname(__DIR__).'/includes/profile-event-projection-pa4b.php';
@@ -63,7 +67,7 @@ if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_');
 $modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get'],true)||$missingTable||isset($partialSpeech[$mode]);
-if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);}
+if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);}
 if($missingTable){$missing=substr($mode,8);if(!in_array($missing,$newTables,true))throw new RuntimeException('Invalid missing table fixture.');$fixture->exec('DROP TABLE '.$missing);}
 if(isset($partialSpeech[$mode])){[$table,$column]=$partialSpeech[$mode];$fixture->exec('ALTER TABLE '.$table.' RENAME COLUMN '.$column.' TO removed_'.$column);}
 if (in_array($mode,['already-ready','tv-only'],true)) tv_schema_v1($fixture);

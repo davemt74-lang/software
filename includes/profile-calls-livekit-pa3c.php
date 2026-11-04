@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** Direct human Profile calls. No meeting, Agent dispatch, recording or SIP operations. */
+/** Profile calls and their scoped audio-only assistant. */
 require_once __DIR__.'/video-meetings-v1800.php';
 require_once __DIR__.'/ai-settings.php';
 
@@ -109,7 +109,25 @@ function vp3_profile_call_livekit_binding_pa3c(array $binding): array
     if(!is_int($binding['call_id']??null)||$binding['call_id']<1||!is_string($public)||!preg_match('/^[a-f0-9]{32}$/D',$public)
         ||($binding['room_name']??null)!=='vp3-profile-'.$public||($binding['owner_identity']??null)!=='owner-'.$public||($binding['visitor_identity']??null)!=='visitor-'.$public
         ||!in_array($binding['mode']??null,['audio','video'],true)||!is_string($binding['room_sid']??null)||strlen($binding['room_sid'])>100||($binding['room_sid']!==''&&!preg_match('/^RM_[A-Za-z0-9_-]+$/D',$binding['room_sid'])))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REQUEST_INVALID',422);
+    $assisted=$binding['assisted']??false;
+    if(!is_bool($assisted)||($assisted&&($binding['mode']!=='audio'||!vp3_profile_call_livekit_worker_name_pa3c($binding['agent_worker_name']??null))))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REQUEST_INVALID',422);
     return $binding;
+}
+
+function vp3_profile_call_livekit_worker_name_pa3c(mixed $value): bool
+{
+    return is_string($value)&&preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/D',$value)===1;
+}
+
+function vp3_profile_call_livekit_assistance_configured_pa3c(): bool
+{
+    if(getenv('VP3_PROFILE_CALL_AGENT_ENABLED')!=='1'||!vp3_profile_call_livekit_worker_name_pa3c(getenv('VP3_PROFILE_CALL_AGENT_NAME')))return false;
+    try{
+        $settings=vp3_profile_call_livekit_settings_pa3c();
+        $config=vp3_profile_call_livekit_config_pa3c($settings);
+        return vp3_profile_call_livekit_origin_pa3c(getenv('VP3_PROFILE_CALL_AGENT_URL'))===$config['url']
+            &&vp3_profile_call_livekit_readiness_from_pa3c($settings,$config)['ready'];
+    }catch(Throwable){return false;}
 }
 function vp3_profile_call_livekit_jwt_pa3c(array $config,array $claims): string
 {
@@ -122,13 +140,14 @@ function vp3_profile_call_livekit_deadline_pa3c(array $options): int
     if(!is_int($deadline)||$deadline<=$now+1000||$deadline>$now+120000)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_DEADLINE_EXPIRED',409);
     return $deadline;
 }
-/** Fixed RoomService methods only; this helper never exposes raw provider messages. */
-function vp3_profile_call_livekit_http_pa3c(array $config,string $method,array $payload,int $deadline,?callable $http=null): object
+/** Fixed LiveKit RPC methods; provider messages never leave this service. */
+function vp3_profile_call_livekit_http_pa3c(array $config,string $method,array $payload,int $deadline,?callable $http=null,bool $allowMissing=false): object
 {
     $now=time();$remaining=$deadline-(int)floor(microtime(true)*1000);if($remaining<1000)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_DEADLINE_EXPIRED',409);
-    $grant=match($method){'CreateRoom','DeleteRoom'=>['roomCreate'=>true],'ListRooms'=>['roomList'=>true],'ListParticipants','RemoveParticipant'=>['roomAdmin'=>true,'room'=>$payload['room']??''],default=>throw new LogicException('Unsupported Profile call provider operation.')};
+    $agentDispatch=in_array($method,['ListDispatch','CreateDispatch','DeleteDispatch'],true);
+    $grant=match($method){'CreateRoom','DeleteRoom'=>['roomCreate'=>true],'ListRooms'=>['roomList'=>true],'ListParticipants','RemoveParticipant','ListDispatch','CreateDispatch','DeleteDispatch'=>['roomAdmin'=>true,'room'=>$payload['room']??''],default=>throw new LogicException('Unsupported Profile call provider operation.')};
     $claims=['iss'=>$config['api_key'],'sub'=>'vp3-profile-call-service','nbf'=>$now-5,'exp'=>min($now+60,intdiv($deadline,1000)),'video'=>$grant];
-    $token=vp3_profile_call_livekit_jwt_pa3c($config,$claims);$url='https://'.substr($config['url'],6).'/twirp/livekit.RoomService/'.$method;
+    $token=vp3_profile_call_livekit_jwt_pa3c($config,$claims);$url='https://'.substr($config['url'],6).'/twirp/livekit.'.($agentDispatch?'AgentDispatchService':'RoomService').'/'.$method;
     $body=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);if(strlen($body)>8192)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REQUEST_INVALID',422);
     $headers=['Authorization: Bearer '.$token,'Content-Type: application/json'];
     if($http){try{$response=$http($url,$headers,$body,min(8000,$remaining));}catch(VP3ProfileCallProviderException $e){throw $e;}catch(Throwable){vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_UNAVAILABLE',503,true);}}
@@ -145,11 +164,12 @@ function vp3_profile_call_livekit_http_pa3c(array $config,string $method,array $
     if(!is_object($json))vp3_profile_call_livekit_error_pa3c();
     if($response['status']<200||$response['status']>=300){
         if($method==='DeleteRoom'&&$response['status']===404&&($json->code??null)==='not_found')return (object)['__provider_room_absent'=>true];
+        if($allowMissing&&in_array($method,['ListDispatch','DeleteDispatch','RemoveParticipant'],true)&&$response['status']===404&&($json->code??null)==='not_found')return (object)['__provider_resource_absent'=>true];
         if($method==='RemoveParticipant')vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REVOCATION_UNVERIFIED',502,true);
         if(in_array($response['status'],[401,403,408,429],true)||$response['status']>=500)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_UNAVAILABLE',503,true);
         vp3_profile_call_livekit_error_pa3c();
     }
-    if(property_exists($json,'code')||property_exists($json,'error'))vp3_profile_call_livekit_error_pa3c();
+    if(property_exists($json,'code')||property_exists($json,'error')||property_exists($json,'__provider_room_absent')||property_exists($json,'__provider_resource_absent'))vp3_profile_call_livekit_error_pa3c();
     return $json;
 }
 function vp3_profile_call_livekit_field_pa3c(object $row,string $snake,string $camel,mixed $default=null): mixed
@@ -159,6 +179,26 @@ function vp3_profile_call_livekit_field_pa3c(object $row,string $snake,string $c
 }
 function vp3_profile_call_livekit_bool_pa3c(mixed $value): bool
 {if(!is_bool($value))vp3_profile_call_livekit_error_pa3c();return $value;}
+
+function vp3_profile_call_livekit_assistant_identity_pa3c(array $binding): ?string
+{
+    return ($binding['assisted']??false)===true&&$binding['mode']==='audio'?'agent-'.$binding['public_id']:null;
+}
+
+function vp3_profile_call_livekit_assert_assistant_pa3c(object $row): void
+{
+    $permission=$row->permission??null;
+    if(!in_array($row->kind??null,['AGENT',4],true)||!is_object($permission)
+        ||!in_array($row->state??'JOINING',['JOINING','JOINED','ACTIVE','DISCONNECTED',0,1,2,3],true))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+    foreach([['can_subscribe','canSubscribe'],['hidden','hidden']] as [$snake,$camel]){
+        if(vp3_profile_call_livekit_field_pa3c($permission,$snake,$camel,false)!==true)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+    }
+    foreach([['can_publish','canPublish'],['can_publish_data','canPublishData'],['can_update_metadata','canUpdateMetadata'],['can_subscribe_metrics','canSubscribeMetrics'],['can_manage_agent_session','canManageAgentSession'],['recorder','recorder']] as [$snake,$camel]){
+        if(vp3_profile_call_livekit_field_pa3c($permission,$snake,$camel,false)!==false)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+    }
+    if(vp3_profile_call_livekit_field_pa3c($permission,'can_publish_sources','canPublishSources',[])!==[]
+        ||(property_exists($row,'tracks')&&$row->tracks!==[]))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+}
 function vp3_profile_call_livekit_room_pa3c(object $room,array $binding): array
 {
     $sid=$room->sid??null;$name=$room->name??null;$metadata=$room->metadata??null;
@@ -172,11 +212,18 @@ function vp3_profile_call_livekit_room_pa3c(object $room,array $binding): array
 function vp3_profile_call_livekit_participants_pa3c(object $response,array $binding): array
 {
     // Protobuf JSON omits an empty repeated field; supplied wrong types still fail.
-    $rows=property_exists($response,'participants')?$response->participants:[];if(!is_array($rows)||count($rows)>2)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+    $assistant=vp3_profile_call_livekit_assistant_identity_pa3c($binding);
+    $rows=property_exists($response,'participants')?$response->participants:[];if(!is_array($rows)||count($rows)>($assistant===null?2:3))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
     $seen=[];$out=[];
     foreach($rows as $row){
         if(!is_object($row))vp3_profile_call_livekit_error_pa3c();$identity=$row->identity??null;$sid=$row->sid??null;
-        if(!in_array($identity,[$binding['owner_identity'],$binding['visitor_identity']],true)||isset($seen[$identity])||!is_string($sid)||!preg_match('/^PA_[A-Za-z0-9_-]{1,90}$/D',$sid))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+        if(!is_string($identity)||isset($seen[$identity])||!is_string($sid)||!preg_match('/^PA_[A-Za-z0-9_-]{1,90}$/D',$sid))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+        $seen[$identity]=true;
+        if($identity===$assistant){
+            vp3_profile_call_livekit_assert_assistant_pa3c($row);
+            continue;
+        }
+        if(!in_array($identity,[$binding['owner_identity'],$binding['visitor_identity']],true))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
         $kind=property_exists($row,'kind')?$row->kind:'STANDARD';if(!in_array($kind,['STANDARD',0],true))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
         $permission=$row->permission??null;if(!is_object($permission))vp3_profile_call_livekit_error_pa3c();
         foreach([['can_publish','canPublish'],['can_subscribe','canSubscribe']] as [$snake,$camel])if(!vp3_profile_call_livekit_bool_pa3c(vp3_profile_call_livekit_field_pa3c($permission,$snake,$camel,false)))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
@@ -189,7 +236,7 @@ function vp3_profile_call_livekit_participants_pa3c(object $response,array $bind
         foreach($tracks as $track){if(!is_object($track))vp3_profile_call_livekit_error_pa3c();$source=$track->source??null;$muted=vp3_profile_call_livekit_bool_pa3c(property_exists($track,'muted')?$track->muted:false);
             if(in_array($source,['MICROPHONE',2],true))$mic=!$muted;elseif($binding['mode']==='video'&&in_array($source,['CAMERA',1],true))$camera=!$muted;else vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
         }
-        $seen[$identity]=true;$out[]=['identity'=>$identity,'sid'=>$sid,'state'=>$state,'microphone'=>$mic,'camera'=>$camera];
+        $out[]=['identity'=>$identity,'sid'=>$sid,'state'=>$state,'microphone'=>$mic,'camera'=>$camera];
     }
     return $out;
 }
@@ -204,12 +251,89 @@ function vp3_profile_call_livekit_inspect_pa3c(array $config,array $binding,int 
     foreach($participants as $p)if(in_array($p['state'],['joined','active'],true))$out[$p['identity']===$binding['owner_identity']?'owner_connected':'visitor_connected']=true;
     return $out;
 }
+
+function vp3_profile_call_livekit_dispatch_row_pa3c(mixed $row,array $binding): array
+{
+    if(!is_object($row)||!is_string($row->id??null)||!preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$row->id)||($row->room??null)!==$binding['room_name'])vp3_profile_call_livekit_error_pa3c();
+    $name=vp3_profile_call_livekit_field_pa3c($row,'agent_name','agentName');
+    $metadata=$row->metadata??'';
+    if(!is_string($name)||$name===''||strlen($name)>256||!is_string($metadata)||strlen($metadata)>8192)vp3_profile_call_livekit_error_pa3c();
+    return ['id'=>$row->id,'name'=>$name,'metadata'=>$metadata];
+}
+
+function vp3_profile_call_livekit_dispatch_list_pa3c(array $config,array $binding,int $deadline,?callable $http=null,bool $allowMissing=false): array
+{
+    $response=vp3_profile_call_livekit_http_pa3c($config,'ListDispatch',['room'=>$binding['room_name']],$deadline,$http,$allowMissing);
+    if(isset($response->__provider_resource_absent))return [];
+    $items=vp3_profile_call_livekit_field_pa3c($response,'agent_dispatches','agentDispatches',[]);
+    if(!is_array($items)||count($items)>16)vp3_profile_call_livekit_error_pa3c();
+    $dispatches=[];
+    foreach($items as $item){
+        $row=vp3_profile_call_livekit_dispatch_row_pa3c($item,$binding);
+        if(isset($dispatches[$row['id']]))vp3_profile_call_livekit_error_pa3c();
+        $dispatches[$row['id']]=$row;
+    }
+    return array_values($dispatches);
+}
+
+function vp3_profile_call_livekit_delete_dispatch_pa3c(array $config,array $binding,array $dispatch,int $deadline,?callable $http=null,bool $allowMissing=false): void
+{
+    $response=vp3_profile_call_livekit_http_pa3c($config,'DeleteDispatch',['room'=>$binding['room_name'],'dispatch_id'=>$dispatch['id']],$deadline,$http,$allowMissing);
+    if(isset($response->__provider_resource_absent))return;
+    $row=vp3_profile_call_livekit_dispatch_row_pa3c($response,$binding);
+    if($row['id']!==$dispatch['id']||$row['name']!==$dispatch['name'])vp3_profile_call_livekit_error_pa3c();
+}
+
+function vp3_profile_call_livekit_dispatch_assistant_pa3c(array $binding,string $workerName,array $metadata,bool $replace=false,?int $deadline=null,?callable $http=null): void
+{
+    $binding=vp3_profile_call_livekit_binding_pa3c($binding);
+    $config=vp3_profile_call_livekit_bound_config_pa3c($binding);
+    if(vp3_profile_call_livekit_assistant_identity_pa3c($binding)===null||$binding['room_sid']===''||$workerName!==$binding['agent_worker_name']
+        ||getenv('VP3_PROFILE_CALL_AGENT_ENABLED')!=='1'||getenv('VP3_PROFILE_CALL_AGENT_NAME')!==$workerName
+        ||vp3_profile_call_livekit_origin_pa3c(getenv('VP3_PROFILE_CALL_AGENT_URL'))!==$config['url'])vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_NOT_CONFIGURED',503);
+    $displayName=$metadata['agent_display_name']??null;
+    $workerKey=$metadata['worker_key']??null;
+    if(count($metadata)!==4||($metadata['vp3_profile_call_id']??null)!==$binding['public_id']||($metadata['room_name']??null)!==$binding['room_name']
+        ||!is_string($displayName)||trim($displayName)===''||strlen($displayName)>512||!is_string($workerKey)||!preg_match('/^[a-f0-9]{64}$/D',$workerKey))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REQUEST_INVALID',422);
+    $payload=json_encode(['vp3_profile_call_id'=>$binding['public_id'],'room_name'=>$binding['room_name'],'agent_display_name'=>$displayName,'worker_key'=>$workerKey],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    $deadline=vp3_profile_call_livekit_deadline_pa3c(['operation_deadline_ms'=>$deadline??((int)floor(microtime(true)*1000)+12000)]);
+    // CreateDispatch can create a missing room. Verify the reserved SID and both
+    // humans before using it, while the app keeps its provider operation leased.
+    $proof=vp3_profile_call_livekit_inspect_pa3c($config,$binding,$deadline,$http);
+    if($proof['status']!=='ready'||!$proof['owner_connected']||!$proof['visitor_connected'])vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+    $dispatches=vp3_profile_call_livekit_dispatch_list_pa3c($config,$binding,$deadline,$http);
+    if(count($dispatches)>1)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+    if($dispatches){
+        $prior=$dispatches[0];
+        if($prior['name']!==$workerName||!hash_equals($payload,$prior['metadata']))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+        if(!$replace)return;
+        vp3_profile_call_livekit_delete_dispatch_pa3c($config,$binding,$prior,$deadline,$http);
+        if(vp3_profile_call_livekit_dispatch_list_pa3c($config,$binding,$deadline,$http)!==[])vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_ROOM_UNSAFE',409);
+    }
+    $response=vp3_profile_call_livekit_http_pa3c($config,'CreateDispatch',['room'=>$binding['room_name'],'agent_name'=>$workerName,'metadata'=>$payload,'restart_policy'=>'JRP_NEVER'],$deadline,$http);
+    $created=vp3_profile_call_livekit_dispatch_row_pa3c($response,$binding);
+    if($created['name']!==$workerName||!hash_equals($payload,$created['metadata']))vp3_profile_call_livekit_error_pa3c();
+}
+
 function vp3_profile_call_livekit_provider_pa3c(string $operation,array $binding,array $options=[],?callable $http=null): array
 {
     if(!in_array($operation,['create','inspect','cleanup','token'],true))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REQUEST_INVALID',422);
     $binding=vp3_profile_call_livekit_binding_pa3c($binding);$config=vp3_profile_call_livekit_bound_config_pa3c($binding,$operation==='cleanup');$deadline=vp3_profile_call_livekit_deadline_pa3c($options);
     if($operation==='cleanup'){
         $reserved=$binding['revoke_before_sec']??null;if(!is_int($reserved)||$reserved<1||$reserved>time()+55)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REVOCATION_UNVERIFIED',502,true);
+        $assistant=vp3_profile_call_livekit_assistant_identity_pa3c($binding);
+        $assistantFailure=null;
+        if($assistant!==null){
+            // A worker need not have joined. Missing optional worker resources
+            // never substitute for the human revocations and verified room closure.
+            try{
+                $reply=vp3_profile_call_livekit_http_pa3c($config,'RemoveParticipant',['room'=>$binding['room_name'],'identity'=>$assistant,'revoke_token_ts'=>(string)max($reserved,time()+5)],$deadline,$http,true);
+                if(count(get_object_vars($reply))!==0&&!isset($reply->__provider_resource_absent))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REVOCATION_UNVERIFIED',502,true);
+                foreach(vp3_profile_call_livekit_dispatch_list_pa3c($config,$binding,$deadline,$http,true) as $dispatch){
+                    if($dispatch['name']===$binding['agent_worker_name'])vp3_profile_call_livekit_delete_dispatch_pa3c($config,$binding,$dispatch,$deadline,$http,true);
+                }
+            }catch(VP3ProfileCallProviderException $e){$assistantFailure=$e;}
+        }
         $cutoffs=[];
         foreach(['owner','visitor'] as $role){$cutoff=max($reserved,time()+5);$reply=vp3_profile_call_livekit_http_pa3c($config,'RemoveParticipant',['room'=>$binding['room_name'],'identity'=>$binding[$role.'_identity'],'revoke_token_ts'=>(string)$cutoff],$deadline,$http);
             if(count(get_object_vars($reply))!==0)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REVOCATION_UNVERIFIED',502,true);$cutoffs[$role]=$cutoff;
@@ -217,6 +341,7 @@ function vp3_profile_call_livekit_provider_pa3c(string $operation,array $binding
         $reply=vp3_profile_call_livekit_http_pa3c($config,'DeleteRoom',['room'=>$binding['room_name']],$deadline,$http);if(count(get_object_vars($reply))!==0&&!isset($reply->__provider_room_absent))vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REVOCATION_UNVERIFIED',502,true);
         $response=vp3_profile_call_livekit_http_pa3c($config,'ListRooms',['names'=>[$binding['room_name']]],$deadline,$http);$rooms=property_exists($response,'rooms')?$response->rooms:[];
         if(!is_array($rooms)||count($rooms)!==0)vp3_profile_call_livekit_error_pa3c('CALL_PROVIDER_REVOCATION_UNVERIFIED',502,true);
+        if($assistantFailure!==null)throw $assistantFailure;
         return ['status'=>'closed','owner_revoked'=>true,'visitor_revoked'=>true,'room_absent'=>true,'owner_revoked_before_sec'=>$cutoffs['owner'],'visitor_revoked_before_sec'=>$cutoffs['visitor'],'revoked_before_sec'=>min($cutoffs),'observed_at_ms'=>(int)floor(microtime(true)*1000)];
     }
     if($operation==='create'){

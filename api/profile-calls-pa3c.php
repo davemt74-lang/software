@@ -81,6 +81,7 @@ try{
             if($cid>0)profile_calls_json_pa3c(true,vp3_profile_call_visitor_state_pa3c($pdo,$auth,$cid));
             vp3_profile_call_require_pa3c($pdo);$ready=vp3_profile_call_provider_ready_pa3c();$owner=(int)$auth['owner_user_id'];$busy=vp3_profile_call_owner_busy_pa3c($pdo,$owner);$reachable=vp3_profile_handoff_reachable_pa3($pdo,$owner);
             $result=['contract'=>VP3_PROFILE_CALL_PA3C,'calls'=>[],'conversation_id'=>0,'server_now_ms'=>vp3_profile_call_now_pa3c(),'can_offer'=>($ready['ready']??false)===true&&!$busy&&$reachable,'reason'=>$busy?'owner_busy':(!$reachable?'owner_unavailable':(($ready['ready']??false)?'':(string)($ready['reason']??'not_configured')))];
+            $result['assistance_offer']=$result['can_offer']?vp3_profile_call_assistance_offer_pa3c($pdo,$owner,$auth['agent']):null;
             vp3_profile_agent_public_live_v1($pdo,$auth);profile_calls_json_pa3c(true,$result);
         }
         if($operation==='offer'&&$cid===0){

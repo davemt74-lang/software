@@ -59,6 +59,7 @@ hold. The Cloud work does not change HomeServer source or Stonefellow playback.
 | PA3 | Availability, exact visible-card acknowledgement, 15-second pickup, durable automatic takeover, and functional main Chat visitor cards with explicit text reply/claim/delegate/resolve | Released in PRs #696 and #697 |
 | PA3D | Visitor chooses Agent chat or requests live owner text; owner accepts or declines using existing Chat Settings | Released in PR #698; acceptance gates below |
 | PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Released in PR #699; all 16 PR and 15 post-merge workflows passed |
+| PA3C assistance | Profile Agent transcript and research on the canonical voice call, with pre-call notice and owner pause control | Production media gate below |
 | PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Released in PR #701; all 16 PR and 15 post-merge workflows passed; 10/10 bounded acceptance gates |
 | PA4B | Notification and Brain state; snooze/wake; routing; replay and projection repair | Implemented with the ten release gates below; exact-revision CI establishes acceptance |
 | PA5 | Ordinary public Profile conversation checkout using the canonical Commerce order/payment/receipt path | Acceptance gates below |
@@ -471,6 +472,31 @@ a new offer creates a new room. A cleanup-pending card
 retains the owner's busy slot until closure is proved. A stored closure proof
 lets a failed completion-receipt write retry without pretending that a later
 missing-room response proves participant revocation.
+
+### PA3C assistance: disclosed voice calls
+
+The owner opts in under Chat Settings. The voice call control displays the
+named Agent and explains that it can listen and transcribe before the visitor
+places or accepts the call. The ordinary Call and Accept controls carry the
+current notice automatically. Each offer binds its disclosed assistance to
+that specific call.
+
+The canonical call engine owns invitations, participant authority, reconnect
+and cleanup. An assisted voice call can admit one hidden Agent identity bound
+to the call and the verified LiveKit Cloud project. The worker selectively
+subscribes to the two expected microphone tracks. Ordinary calls and video
+calls retain the two human participants. The Agent drawer shows capture and
+research activity to the authorized owner. Pausing stops new transcript writes
+immediately, releases microphone subscriptions on the worker's next lease
+check and leaves the human call active. Ending or revoking the call removes
+the Agent's access.
+
+Deployment requires the normal PA3C setup and an explicitly named Profile
+worker registered on that same project. Follow the Profile worker configuration
+in [the worker README](../workers/vp3-meeting-agent/README.md). Before certifying
+live operation, verify on two devices that audio flows in both directions, the
+two speakers are labeled separately, pause and resume preserve the conversation,
+hang-up stops capture, and cleanup removes the room.
 
 ### PA4: speech, notifications and Brain
 

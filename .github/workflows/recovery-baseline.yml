@@ -93,6 +93,9 @@ jobs:
           node tests/profile-calls-api-pa3c.mjs
           node tests/profile-calls-admin-pa3c.mjs
           node tests/profile-calls-pa3c.mjs
+          php tests/profile-assisted-phone-settings-pa3c.php
+          node tests/profile-call-assistance-api-pa3c.mjs
+          python3 -B tests/profile-call-worker-pa3c.py
           php tests/commerce-provider-evidence-pa2.php
           php tests/commerce-recovery-pa2.php
           php tests/commerce-projection-recovery-pa2.php

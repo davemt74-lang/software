@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__.'/profile-agent-handoff-pa3.php';
 require_once __DIR__.'/profile-agent-boundary-v390.php';
 require_once __DIR__.'/profile-agent-public-service-v110.php';
+require_once __DIR__.'/profile-call-activity-pa3c.php';
 
 const VP3_PROFILE_CALL_PA3C='vp3.profile-call.v1';
 const VP3_PROFILE_CALL_OFFER_MS_PA3C=60000;
@@ -61,6 +62,7 @@ function vp3_profile_call_ensure_schema_pa3c(PDO $pdo): void
         id $auto,owner_user_id BIGINT NOT NULL,profile_agent_id BIGINT NOT NULL,profile_session_id BIGINT NOT NULL,conversation_id BIGINT NOT NULL,visitor_user_id BIGINT NOT NULL DEFAULT 0,
         credential_hash CHAR(64) NOT NULL,authority_json TEXT NOT NULL,binding_hash CHAR(64) NOT NULL DEFAULT '',public_id CHAR(32) NOT NULL UNIQUE,room_name VARCHAR(100) NOT NULL UNIQUE,owner_identity VARCHAR(80) NOT NULL,visitor_identity VARCHAR(80) NOT NULL,
         provider_snapshot TEXT NOT NULL,provider_config_fingerprint CHAR(64) NOT NULL,mode VARCHAR(12) NOT NULL,offered_by VARCHAR(12) NOT NULL,state VARCHAR(20) NOT NULL,revision BIGINT NOT NULL DEFAULT 1,
+        assisted SMALLINT NOT NULL DEFAULT 0,agent_name VARCHAR(100) NOT NULL DEFAULT '',agent_worker_name VARCHAR(100) NOT NULL DEFAULT '',
         offer_expires_at_ms BIGINT NOT NULL,accepted_at_ms BIGINT NULL,connect_until_ms BIGINT NULL,ended_at_ms BIGINT NULL,handoff_epoch BIGINT NOT NULL DEFAULT 0,
         owner_client_hash CHAR(64) NOT NULL DEFAULT '',visitor_client_hash CHAR(64) NOT NULL DEFAULT '',owner_join_intent CHAR(32) NOT NULL DEFAULT '',visitor_join_intent CHAR(32) NOT NULL DEFAULT '',
         owner_authority_until_ms BIGINT NOT NULL DEFAULT 0,visitor_authority_until_ms BIGINT NOT NULL DEFAULT 0,owner_token_issued_at_ms BIGINT NOT NULL DEFAULT 0,visitor_token_issued_at_ms BIGINT NOT NULL DEFAULT 0,
@@ -74,6 +76,9 @@ function vp3_profile_call_ensure_schema_pa3c(PDO $pdo): void
     // These additions also support an interrupted first installation of this release.
     foreach([['profile_calls_pa3c','binding_hash',"CHAR(64) NOT NULL DEFAULT ''"],['profile_calls_pa3c','provider_started_at_ms','BIGINT NOT NULL DEFAULT 0'],['profile_calls_pa3c','cleanup_generation','BIGINT NOT NULL DEFAULT 0'],['profile_calls_pa3c','cleanup_revision','BIGINT NOT NULL DEFAULT 0'],['profile_calls_pa3c','cleanup_proof_json','TEXT NULL'],['profile_call_operations_pa3c','result_json','TEXT NULL']] as [$table,$column,$definition]){
         try{$pdo->query('SELECT '.$column.' FROM '.$table.' WHERE 1=0');}catch(PDOException $e){$pdo->exec('ALTER TABLE '.$table.' ADD COLUMN '.$column.' '.$definition);}
+    }
+    foreach(['assisted'=>'SMALLINT NOT NULL DEFAULT 0','agent_name'=>"VARCHAR(100) NOT NULL DEFAULT ''",'agent_worker_name'=>"VARCHAR(100) NOT NULL DEFAULT ''"] as $column=>$definition){
+        try{$pdo->query('SELECT '.$column.' FROM profile_calls_pa3c WHERE 1=0');}catch(PDOException $e){$pdo->exec('ALTER TABLE profile_calls_pa3c ADD COLUMN '.$column.' '.$definition);}
     }
     foreach([
         ['profile_calls_pa3c','idx_profile_calls_owner_state','owner_user_id,state,id'],
@@ -177,15 +182,18 @@ function vp3_profile_call_delivery_check_pa3c(PDO $pdo,array $row,array $input):
 }
 function vp3_profile_call_binding_pa3c(array $row): array
 {
-    return ['call_id'=>(int)$row['id'],'public_id'=>(string)$row['public_id'],'room_name'=>(string)$row['room_name'],'owner_identity'=>(string)$row['owner_identity'],'visitor_identity'=>(string)$row['visitor_identity'],'mode'=>(string)$row['mode'],'provider_config_fingerprint'=>(string)$row['provider_config_fingerprint'],'provider_snapshot'=>(string)$row['provider_snapshot'],'room_sid'=>(string)$row['room_sid'],'revoke_before_sec'=>(int)$row['revoke_before_sec']];
+    return ['call_id'=>(int)$row['id'],'public_id'=>(string)$row['public_id'],'room_name'=>(string)$row['room_name'],'owner_identity'=>(string)$row['owner_identity'],'visitor_identity'=>(string)$row['visitor_identity'],'mode'=>(string)$row['mode'],'provider_config_fingerprint'=>(string)$row['provider_config_fingerprint'],'provider_snapshot'=>(string)$row['provider_snapshot'],'room_sid'=>(string)$row['room_sid'],'revoke_before_sec'=>(int)$row['revoke_before_sec'],'assisted'=>!empty($row['assisted']),'agent_worker_name'=>(string)($row['agent_worker_name']??'')];
 }
 function vp3_profile_call_binding_hash_pa3c(array $row): string
 {
-    return vp3_profile_call_fingerprint_pa3c($row,['id','owner_user_id','profile_agent_id','profile_session_id','conversation_id','visitor_user_id','credential_hash','authority_json','public_id','room_name','owner_identity','visitor_identity','provider_snapshot','provider_config_fingerprint','mode','offered_by','created_at_ms']);
+    $keys=['id','owner_user_id','profile_agent_id','profile_session_id','conversation_id','visitor_user_id','credential_hash','authority_json','public_id','room_name','owner_identity','visitor_identity','provider_snapshot','provider_config_fingerprint','mode','offered_by','created_at_ms'];
+    if(!empty($row['assisted']))$keys=array_merge($keys,['assisted','agent_name','agent_worker_name']);
+    return vp3_profile_call_fingerprint_pa3c($row,$keys);
 }
 function vp3_profile_call_integrity_pa3c(array $row): void
 {
     if(!preg_match('/^[a-f0-9]{64}$/D',(string)($row['binding_hash']??''))||!hash_equals($row['binding_hash'],vp3_profile_call_binding_hash_pa3c($row))||!preg_match('/^[a-f0-9]{32}$/D',(string)$row['public_id'])||$row['room_name']!=='vp3-profile-'.$row['public_id']||$row['owner_identity']!=='owner-'.$row['public_id']||$row['visitor_identity']!=='visitor-'.$row['public_id'])vp3_profile_call_error_pa3c();
+    if(!empty($row['assisted'])&&((int)$row['assisted']!==1||$row['mode']!=='audio'||trim((string)$row['agent_name'])===''||!preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/D',(string)$row['agent_worker_name'])))vp3_profile_call_error_pa3c();
 }
 function vp3_profile_call_provider_pa3c(string $operation,array $row,array $options=[],?callable $provider=null): array
 {
@@ -202,6 +210,7 @@ function vp3_profile_call_projection_pa3c(array $row,string $role,bool $authoriz
     return [
         'contract'=>VP3_PROFILE_CALL_PA3C,'call_id'=>(int)$row['id'],'revision'=>(int)$row['revision'],'conversation_id'=>(int)$row['conversation_id'],
         'role'=>$role,'offered_by'=>(string)$row['offered_by'],'mode'=>(string)$row['mode'],'state'=>$state,'server_now_ms'=>$now,
+        'assistance'=>$authorized?vp3_profile_call_assistance_projection_pa3c($row,$role):null,
         'offer_expires_at_ms'=>(int)$row['offer_expires_at_ms'],'connect_until_ms'=>$row['connect_until_ms']===null?null:(int)$row['connect_until_ms'],
         'authority_valid_until_ms'=>(int)$row[$role.'_authority_until_ms'],'provider_observed_at_ms'=>(int)$row['provider_observed_at_ms'],
         'connection_verified'=>$fresh,'owner_connected'=>$fresh&&(int)$row['owner_connected']===1,'visitor_connected'=>$fresh&&(int)$row['visitor_connected']===1,
@@ -242,6 +251,7 @@ function vp3_profile_call_visitor_state_pa3c(PDO $pdo,array $ctx,int $cid): arra
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){$valid=true;try{vp3_profile_call_context_pa3c($pdo,$owner,$cid,false,$row);}catch(VP3ProfileCallException $e){$valid=false;}$card=vp3_profile_call_projection_pa3c($row,'visitor',$valid);$card['can_return_to_agent']=$valid&&vp3_profile_call_can_return_pa3c($pdo,$row);try{vp3_profile_call_ready_pa3c($row);}catch(VP3ProfileCallException $e){$card['can_accept']=false;$card['can_join']=false;if($valid)$card['reason']='configuration_changed';}$calls[]=$card;if(in_array($card['state'],['offered','preparing','ready','active','ending'],true))$pending=true;}
     $busy=vp3_profile_call_owner_busy_pa3c($pdo,$owner);$reachable=vp3_profile_handoff_reachable_pa3($pdo,$owner);
     $out=['contract'=>VP3_PROFILE_CALL_PA3C,'calls'=>$calls,'can_offer'=>($ready['ready']??false)===true&&!$pending&&!$busy&&$reachable,'reason'=>$busy?'owner_busy':(!$reachable?'owner_unavailable':(($ready['ready']??false)?'':(string)($ready['reason']??'not_configured'))),'server_now_ms'=>vp3_profile_call_now_pa3c(),'conversation_id'=>$cid];
+    $out['assistance_offer']=$out['can_offer']?vp3_profile_call_assistance_offer_pa3c($pdo,$owner,$checked['context']['agent']):null;
     vp3_profile_call_authorize_pa3c($pdo,'visitor',$checked['auth'],$cid);return $out;
 }
 function vp3_profile_call_owner_list_pa3c(PDO $pdo,array $user,array $input=[]): array
@@ -250,7 +260,7 @@ function vp3_profile_call_owner_list_pa3c(PDO $pdo,array $user,array $input=[]):
     $out=['contract'=>VP3_PROFILE_CALL_PA3C,'calls'=>[],'can_offer'=>false,'reason'=>'','server_now_ms'=>vp3_profile_call_now_pa3c(),'conversation_id'=>$cid];if(!$chat)return $out;
     $sql="SELECT c.* FROM profile_calls_pa3c c WHERE c.owner_user_id=? AND (c.state IN ('offered','preparing','ready','active','ending') OR EXISTS(SELECT 1 FROM profile_call_deliveries_pa3c d WHERE d.call_id=c.id AND d.owner_user_id=c.owner_user_id AND d.chat_conversation_id=? AND d.chat_agent_id=?))"; $params=[$owner,$chat,$aid];if($cid){$sql.=' AND c.conversation_id=?';$params[]=$cid;}$sql.=' ORDER BY c.id DESC LIMIT 20';$q=$pdo->prepare($sql);$q->execute($params);$pending=false;
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){$valid=true;try{vp3_profile_call_context_pa3c($pdo,$owner,(int)$row['conversation_id'],false,$row);}catch(VP3ProfileCallException $e){$valid=false;}$card=vp3_profile_call_owner_card_pa3c($pdo,$row,$input,$valid);try{vp3_profile_call_ready_pa3c($row);}catch(VP3ProfileCallException $e){$card['can_accept']=false;$card['can_join']=false;if($valid)$card['reason']='configuration_changed';}$out['calls'][]=$card;if((int)$row['conversation_id']===$cid&&in_array($card['state'],['offered','preparing','ready','active','ending'],true))$pending=true;}
-    if($cid){try{vp3_profile_call_authorize_pa3c($pdo,'owner',$live,$cid,$input);vp3_profile_call_ready_pa3c();$busy=vp3_profile_call_owner_busy_pa3c($pdo,$owner);$out['can_offer']=!$pending&&!$busy;if($busy)$out['reason']='owner_busy';}catch(VP3ProfileCallException $e){$out['reason']='unavailable';}}
+    if($cid){try{$checked=vp3_profile_call_authorize_pa3c($pdo,'owner',$live,$cid,$input);vp3_profile_call_ready_pa3c();$busy=vp3_profile_call_owner_busy_pa3c($pdo,$owner);$out['can_offer']=!$pending&&!$busy;$out['assistance_offer']=$out['can_offer']?vp3_profile_call_assistance_offer_pa3c($pdo,$owner,$checked['context']['agent']):null;if($busy)$out['reason']='owner_busy';}catch(VP3ProfileCallException $e){$out['reason']='unavailable';}}
     vp3_profile_handoff_owner_pa3($pdo,$live,$chat,$aid);return $out;
 }
 function vp3_profile_call_owner_delivery_pa3c(PDO $pdo,array $user,array $input): array
@@ -306,8 +316,11 @@ function vp3_profile_call_action_pa3c(PDO $pdo,string $role,array $auth,array $i
     $cid=vp3_profile_call_id_pa3c($input['conversation_id']??null);$id=$op==='offer'?0:vp3_profile_call_id_pa3c($input['call_id']??null);$revision=$op==='offer'?0:vp3_profile_call_id_pa3c($input['revision']??null);$request=$op==='heartbeat'?'':vp3_profile_call_token_pa3c($input['request_id']??null);
     $mode=$op==='offer'?($input['mode']??null):null;if($op==='offer'&&!in_array($mode,['audio','video'],true))vp3_profile_call_error_pa3c('PROFILE_CALL_INVALID',422);
     $checked=vp3_profile_call_authorize_pa3c($pdo,$role,$auth,$cid,$input);$owner=$checked['owner'];$auth=$checked['auth'];$actor=hash('sha256',$role.'|'.$owner.'|'.($role==='visitor'?$checked['context']['binding']['credential_hash']:'owner'));
-    $hash=hash('sha256',json_encode([$role,$cid,$id,$revision,$op,$mode,(int)($input['chat_conversation_id']??0),(int)($input['chat_agent_id']??0)],JSON_THROW_ON_ERROR));
-    return vp3_profile_handoff_atomic_pa3($pdo,function()use($pdo,$role,$auth,$input,$checked,$owner,$cid,$id,$revision,$request,$op,$mode,$actor,$hash){
+    $notice=is_string($input['assistance_notice']??null)&&preg_match('/^[a-f0-9]{64}$/D',$input['assistance_notice'])?$input['assistance_notice']:'';
+    $intent=[$role,$cid,$id,$revision,$op,$mode,(int)($input['chat_conversation_id']??0),(int)($input['chat_agent_id']??0)];
+    if($notice!==''&&in_array($op,['offer','accept'],true))$intent[]=$notice;
+    $hash=hash('sha256',json_encode($intent,JSON_THROW_ON_ERROR));
+    return vp3_profile_handoff_atomic_pa3($pdo,function()use($pdo,$role,$auth,$input,$checked,$owner,$cid,$id,$revision,$request,$op,$mode,$actor,$hash,$notice){
         $slot=vp3_profile_call_slot_pa3c($pdo,$owner,true);vp3_profile_handoff_conversation_pa3($pdo,$owner,$cid,true);vp3_profile_handoff_thread_pa3($pdo,$owner,$cid,true);$now=vp3_profile_call_now_pa3c();
         if($request!==''){$q=$pdo->prepare('SELECT * FROM profile_call_operations_pa3c WHERE owner_user_id=? AND actor_key=? AND request_id=?');$q->execute([$owner,$actor,$request]);if($prior=$q->fetch(PDO::FETCH_ASSOC)){if(!hash_equals($prior['request_hash'],$hash))vp3_profile_call_error_pa3c();$row=vp3_profile_call_row_pa3c($pdo,(int)$prior['call_id'],true);if(!$row)vp3_profile_call_error_pa3c();vp3_profile_call_authorize_pa3c($pdo,$role,$auth,$cid,$input,$row,true);return vp3_profile_call_reply_pa3c($pdo,$row,$role,$input,$request,true);}}
         if($op==='offer'){
@@ -319,6 +332,11 @@ function vp3_profile_call_action_pa3c(PDO $pdo,string $role,array $auth,array $i
             if(!is_string($snapshot['encrypted']??null)||$snapshot['encrypted']===''||strlen($snapshot['encrypted'])>32768||!preg_match('/^[a-f0-9]{64}$/D',(string)($snapshot['config_fingerprint']??'')))vp3_profile_call_error_pa3c('PROFILE_CALL_NOT_READY',503);
             $public=bin2hex(random_bytes(16));$conversation=$context['conversation'];
             $pdo->prepare("INSERT INTO profile_calls_pa3c(owner_user_id,profile_agent_id,profile_session_id,conversation_id,visitor_user_id,credential_hash,authority_json,public_id,room_name,owner_identity,visitor_identity,provider_snapshot,provider_config_fingerprint,mode,offered_by,state,offer_expires_at_ms,created_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'offered',?,?,?)")->execute([$owner,(int)$conversation['profile_agent_id'],(int)$conversation['profile_session_id'],$cid,(int)($conversation['visitor_user_id']??0),$context['binding']['credential_hash'],json_encode($context['snapshot'],JSON_THROW_ON_ERROR),$public,'vp3-profile-'.$public,'owner-'.$public,'visitor-'.$public,$snapshot['encrypted'],$snapshot['config_fingerprint'],$mode,$role,$now+VP3_PROFILE_CALL_OFFER_MS_PA3C,$now,$now]);$row=vp3_profile_call_row_pa3c($pdo,(int)$pdo->lastInsertId(),true);
+            $assistance=$mode==='audio'&&$notice!==''?vp3_profile_call_assistance_offer_pa3c($pdo,$owner,$context['agent'],true):null;
+            if($assistance&&hash_equals($assistance['notice'],$notice)){
+                $pdo->prepare('UPDATE profile_calls_pa3c SET assisted=1,agent_name=?,agent_worker_name=? WHERE id=?')->execute([$assistance['agent']['name'],vp3_profile_call_worker_name_pa3c(),(int)$row['id']]);
+                $row=vp3_profile_call_row_pa3c($pdo,(int)$row['id'],true);
+            }
             $pdo->prepare('UPDATE profile_calls_pa3c SET binding_hash=? WHERE id=?')->execute([vp3_profile_call_binding_hash_pa3c($row),(int)$row['id']]);$row=vp3_profile_call_row_pa3c($pdo,(int)$row['id'],true);
         }else{
             $row=vp3_profile_call_row_pa3c($pdo,$id,true);if(!$row||(int)$row['owner_user_id']!==$owner||(int)$row['conversation_id']!==$cid)vp3_profile_call_error_pa3c('PROFILE_CALL_NOT_FOUND',404);
@@ -328,6 +346,11 @@ function vp3_profile_call_action_pa3c(PDO $pdo,string $role,array $auth,array $i
                 if($row['state']!=='offered'||$now>=(int)$row['offer_expires_at_ms']||(($op==='cancel')!==($row['offered_by']===$role)))vp3_profile_call_error_pa3c();
                 if($op==='accept'){
                     vp3_profile_call_ready_pa3c($row);if(vp3_profile_call_owner_busy_pa3c($pdo,$owner))vp3_profile_call_error_pa3c('PROFILE_CALL_BUSY',409);
+                    if(!empty($row['assisted'])&&(!vp3_profile_call_activity_can_capture_pa3c($pdo,$row,true)||($role==='visitor'&&!hash_equals(vp3_profile_call_assistance_incoming_notice_pa3c($row),$notice)))){
+                        // A stale or unavailable disclosure falls back to the ordinary call before the room exists.
+                        $row['assisted']=0;$row['agent_name']='';$row['agent_worker_name']='';
+                        $pdo->prepare("UPDATE profile_calls_pa3c SET assisted=0,agent_name='',agent_worker_name='',binding_hash=? WHERE id=?")->execute([vp3_profile_call_binding_hash_pa3c($row),$id]);
+                    }
                     if(function_exists('vp3_profile_speech_interrupt_pa4a'))vp3_profile_speech_interrupt_pa4a($pdo,$owner,'call_active');
                     $thread=vp3_profile_call_takeover_pa3c($pdo,$owner,$cid);
                     $pdo->prepare("UPDATE profile_calls_pa3c SET state='preparing',revision=revision+1,accepted_at_ms=?,connect_until_ms=?,handoff_epoch=?,last_reason='',updated_at_ms=? WHERE id=?")->execute([$now,$now+VP3_PROFILE_CALL_CONNECT_MS_PA3C,(int)$thread['epoch'],$now,$id]);
@@ -453,6 +476,9 @@ function vp3_profile_call_work_pa3c(PDO $pdo,int $callId,?callable $provider=nul
             $pdo->prepare('UPDATE profile_calls_pa3c SET state=?,revision=revision+?,room_sid=?,provider_observed_at_ms=?,owner_connected=?,visitor_connected=?,connect_until_ms=CASE WHEN ?=1 THEN NULL ELSE connect_until_ms END,last_reason=\'\',updated_at_ms=? WHERE id=?')->execute([$state,$changed?1:0,$proof['room_sid'],$proof['observed_at_ms'],$proof['owner_connected']?1:0,$proof['visitor_connected']?1:0,$state==='active'?1:0,vp3_profile_call_now_pa3c(),(int)$current['id']]);
             $current=vp3_profile_call_row_pa3c($pdo,(int)$current['id'],true);vp3_profile_call_media_current_pa3c($pdo,$current,true);return $current;
         });
+        if($provider===null&&$result['state']==='active'&&!empty($result['assisted'])){
+            try{vp3_profile_call_try_dispatch_pa3c($pdo,$result);}catch(Throwable $error){error_log('Profile call assistant dispatch failed ('.get_class($error).').');}
+        }
         return ['contract'=>VP3_PROFILE_CALL_PA3C,'call_id'=>$callId,'state'=>$result['state'],'reason'=>$result['state']==='ending'?'cleanup_pending':'verified'];
     }catch(Throwable $error){
         $permanent=$error instanceof VP3ProfileCallException||(property_exists($error,'retryable')&&$error->retryable===false);$reason=property_exists($error,'publicCode')&&$error->publicCode==='CALL_PROVIDER_CONFIGURATION_CHANGED'?'configuration_changed':($permanent?'provider_unsafe':'provider_unavailable');

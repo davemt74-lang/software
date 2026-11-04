@@ -7,16 +7,23 @@
   const SDK_URL='https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js';
   const positive=n=>Number.isSafeInteger(n)&&n>0,nonnegative=n=>Number.isSafeInteger(n)&&n>=0;
   const token=s=>typeof s==='string'&&/^[a-f0-9]{32}$/.test(s);
+  const noticeToken=s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
   const time=()=>performance.now();
   const random=()=>{const a=new Uint8Array(16);crypto.getRandomValues(a);return Array.from(a,n=>n.toString(16).padStart(2,'0')).join('');};
   const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
   const callFlags=['can_accept','can_decline','can_cancel','can_end','can_join','can_return_to_agent','cleanup_pending','dispatch_due'];
+  function assistanceProjection(raw){
+    if(typeof raw?.agent?.name!=='string'||!raw.agent.name.trim()||raw.agent.name.length>150)return null;
+    return {agent:{name:raw.agent.name.trim()},id:token(raw.id)?raw.id:'',notice:noticeToken(raw.notice)?raw.notice:''};
+  }
+  function assistanceText(assistance){return `${assistance.agent.name} can listen to and transcribe this audio call.`;}
   function projection(raw,role){
     if(!raw||raw.contract!==CONTRACT||raw.role!==role||!['call_id','revision','conversation_id'].every(k=>positive(raw[k]))||!STATES.has(raw.state)||!['audio','video'].includes(raw.mode)||!['owner','visitor'].includes(raw.offered_by))return null;
     if(!callFlags.every(k=>typeof raw[k]==='boolean')||!['server_now_ms','offer_expires_at_ms','authority_valid_until_ms'].every(k=>nonnegative(raw[k])))return null;
     if(typeof raw.reason!=='string'||raw.reason.length>100)return null;
     for(const key of ['connection_verified','owner_connected','visitor_connected'])if(raw[key]!==undefined&&typeof raw[key]!=='boolean')return null;
-    return {...raw,connection_verified:raw.connection_verified===true,owner_connected:raw.owner_connected===true,visitor_connected:raw.visitor_connected===true};
+    const assistance=raw.mode==='audio'?assistanceProjection(raw.assistance):null;
+    return {...raw,assistance,connection_verified:raw.connection_verified===true,owner_connected:raw.owner_connected===true,visitor_connected:raw.visitor_connected===true};
   }
   function messageFor(error){
     const code=String(error?.code||'');
@@ -184,6 +191,31 @@
     async request(operation,payload={},method='POST'){return bounded(this.options.request(this.role+'_'+operation,payload,method));}
     binding(record){return {...record.snapshot.binding,conversation_id:record.call.conversation_id,call_id:record.call.call_id,revision:record.call.revision,...(this.role==='owner'?{delivery_id:record.binding.delivery_id}:{} )};}
     async invoke(operation,record,extra={}){return this.request(operation,{...this.binding(record),...extra});}
+    emitActivity(detail){
+      window.VP3_PROFILE_CALL_OWNER_STATE=detail.clear?null:detail;
+      window.dispatchEvent(new CustomEvent('vp3:profile-call-assistance',{detail}));
+    }
+    clearActivity(){
+      if(!this.activity)return;
+      this.activity=null;this.emitActivity({clear:true});
+    }
+    publishActivity(record){
+      if(this.role!=='owner'||!this.current(record.snapshot)||record.node.hidden)return;
+      const {call_id,conversation_id,state,assistance}=record.call;
+      const id=assistance?.id;
+      if(['preparing','ready','active'].includes(state)){
+        if(!id){this.clearActivity();return;}
+        if(this.activity?.id===id)return;
+        this.activity={id,callId:call_id};
+        this.emitActivity({id,conversationId:conversation_id,status:state==='active'?'active':'connecting',assisted:true,agent:assistance.agent});
+      }else if(this.activity?.callId===call_id){
+        if(!id||id!==this.activity.id){this.clearActivity();return;}
+        if(!this.activity.ended&&(state==='ending'||TERMINAL.has(state))){
+          this.activity.ended=true;
+          this.emitActivity({id,conversationId:conversation_id,status:'ended',assisted:true,agent:assistance.agent});
+        }
+      }
+    }
     status(record){const call=record.call,media=record.media;if(media){if(media.phase==='capture_busy')return 'Another voice surface is using the microphone. Switch capture here only when you are ready.';if(media.phase==='preparing')return 'Preparing your call connection…';if(media.phase==='connecting')return 'Connecting your microphone…';if(media.phase==='reconnecting')return 'Connection interrupted. Reconnecting while authorization remains current…';if(media.phase==='connected'){const peer=media.room?.remoteParticipants;return peer&&[...peer.values()].some(p=>p.identity===media.auth?.peer_identity)?'Live call · you are speaking directly to the other person.':'Connected · waiting for the other person to join.';}}
       if(call.cleanup_pending||call.state==='ending')return 'Your microphone and camera are off. Service cleanup is pending.';
       if(TERMINAL.has(call.state))return ({ended:'Call ended.',declined:'Call declined.',cancelled:'Call cancelled.',expired:'Call request expired.',failed:'The call could not be connected. You can keep messaging.'})[call.state];
@@ -195,8 +227,11 @@
       if(!record.node.isConnected)return;
       const call=record.call,media=record.media,live=this.current(record.snapshot),pending=record.pending||Boolean(media&&['preparing','connecting'].includes(media.phase));
       record.status.textContent=this.status(record);record.node.dataset.callState=call.state;
+      record.assistanceNotice.hidden=!live||!call.assistance||TERMINAL.has(call.state)||call.state==='ending';
+      record.assistanceNotice.textContent=record.assistanceNotice.hidden?'':assistanceText(call.assistance);
       for(const name of ['accept','decline','cancel','end','return_to_agent']){const button=record.buttons[name];button.hidden=!call['can_'+name];button.disabled=!live||record.pending||(pending&&!['end','return_to_agent'].includes(name))||!call['can_'+name];}
       record.consent.hidden=!call.can_join||Boolean(media)||Boolean(record.localMessage);
+      record.description.textContent=call.assistance?'You will speak directly to the other person.':'You will speak directly to the other person. This call does not use the Profile Agent voice, recording or transcription.';
       record.join.disabled=!live||pending||!call.can_join||!record.mic.checked||Boolean(activeMedia&&activeMedia!==media);
       record.mic.disabled=record.camera.disabled=pending;
       record.cameraLabel.hidden=call.mode!=='video';
@@ -206,19 +241,22 @@
       record.mute.textContent=media?.room?.localParticipant?.isMicrophoneEnabled?'Mute microphone':'Unmute microphone';
       record.cameraToggle.hidden=call.mode!=='video'||media?.consent.camera!==true;record.cameraToggle.textContent=media?.room?.localParticipant?.isCameraEnabled?'Turn camera off':'Turn camera on';
       record.sound.hidden=!record.needsSound;record.sound.disabled=!media;
+      this.publishActivity(record);
     }
     create(call,host,binding){
       const card=node('section','profile-call-card');card.dataset.profileCallId=String(call.call_id);
       const title=this.role==='owner'?(call.visitor_label||'Profile visitor'):(this.options.peerLabel||'Profile owner');
       const heading=node('h3','','Live '+call.mode+' call · '+title),status=node('p','profile-call-status'),notice=node('p','profile-call-notice');status.setAttribute('role','status');notice.setAttribute('role','status');
+      const assistanceNotice=node('p','profile-call-notice');assistanceNotice.dataset.callAssistanceNotice='';assistanceNotice.setAttribute('id',`vp3-call-assistance-${call.call_id}`);
       const actions=node('div','profile-call-actions'),buttons={};for(const [name,label] of [['accept','Accept call'],['decline','Decline'],['cancel','Cancel request'],['end','End call'],['return_to_agent','Return to Profile Agent']]){const button=node('button','',label);button.type='button';button.dataset.callAction=name;buttons[name]=button;actions.appendChild(button);}
+      buttons.accept.setAttribute('aria-describedby',`vp3-call-assistance-${call.call_id}`);
       const consent=node('div','profile-call-consent'),micLabel=node('label'),mic=node('input');mic.type='checkbox';micLabel.append(mic,node('span','','I agree to turn on my microphone for this live call.'));
       const cameraLabel=node('label'),camera=node('input');camera.type='checkbox';cameraLabel.append(camera,node('span','','Also turn on my camera (optional).'));
-      const join=node('button','','Join call');join.type='button';join.dataset.callAction='join';consent.append(node('p','','You will speak directly to the other person. This call does not use the Profile Agent voice, recording or transcription.'),micLabel,cameraLabel,join);
+      const description=node('p'),join=node('button','','Join call');join.type='button';join.dataset.callAction='join';consent.append(description,micLabel,cameraLabel,join);
       const stage=node('div','profile-call-stage'),remoteMedia=node('div','profile-call-remote'),localMedia=node('div','profile-call-local');stage.append(remoteMedia,localMedia);
       const mediaControls=node('div','profile-call-actions'),mute=node('button','','Mute microphone'),cameraToggle=node('button','','Turn camera on'),sound=node('button','','Enable sound'),switchButton=node('button','','Switch microphone to this call');
-      for(const button of [mute,cameraToggle,sound,switchButton])button.type='button';mediaControls.append(mute,cameraToggle);sound.hidden=switchButton.hidden=true;card.append(heading,status,actions,consent,switchButton,stage,mediaControls,sound,notice);host.appendChild(card);
-      const record={surface:this,call,node:card,binding,snapshot:this.capture(),status,notice,buttons,consent,mic,camera,cameraLabel,join,stage,remoteMedia,localMedia,mediaControls,mute,cameraToggle,sound,switchButton,pending:false,attempt:null,media:null,needsSound:false,localMessage:''};
+      for(const button of [mute,cameraToggle,sound,switchButton])button.type='button';mediaControls.append(mute,cameraToggle);sound.hidden=switchButton.hidden=true;card.append(heading,status,assistanceNotice,actions,consent,switchButton,stage,mediaControls,sound,notice);host.appendChild(card);
+      const record={surface:this,call,node:card,binding,snapshot:this.capture(),status,notice,assistanceNotice,buttons,consent,description,mic,camera,cameraLabel,join,stage,remoteMedia,localMedia,mediaControls,mute,cameraToggle,sound,switchButton,pending:false,attempt:null,media:null,needsSound:false,localMessage:''};
       for(const action of ['accept','decline','cancel','end','return_to_agent'])buttons[action].addEventListener('click',()=>void this.action(record,action));
       mic.addEventListener('change',()=>this.render(record));camera.addEventListener('change',()=>this.render(record));
       join.addEventListener('click',()=>void this.join(record));switchButton.addEventListener('click',()=>{if(record.media?.phase==='capture_busy')void record.media.start(true);});
@@ -234,6 +272,7 @@
     async action(record,operation,closing=false){
       if(record.pending||!(this.current(record.snapshot)||(closing&&this.sameContext(record.snapshot)))||!record.call['can_'+operation])return;
       const snapshot=this.capture(),latest=this.binding(record),key=JSON.stringify([operation,{...latest,revision:0}]);
+      if(operation==='accept'&&this.role==='visitor'&&record.call.assistance?.notice&&!record.assistanceNotice.hidden){latest.assistance_notice=record.call.assistance.notice;}
       if(!record.attempt||record.attempt.key!==key)record.attempt={key,request_id:random(),payload:latest};const attempt=record.attempt,payload=attempt.payload;
       record.pending=true;this.pendingMutations++;this.mutationGeneration++;record.notice.textContent='';this.render(record);
       if(operation==='end'||operation==='return_to_agent'){record.localMessage='Your microphone and camera are off. Call cleanup is being checked.';void record.media?.close(record.localMessage);}
@@ -252,18 +291,34 @@
     }
     async offer(mode,controls){
       if(this.offerBusy||!controls.allowed||!['audio','video'].includes(mode)||this.options.allowOffer?.()===false)return;
-      const context=controls.context(),snapshot=this.capture();if(!context)return;
-      this.offerBusy=true;this.mutationGeneration++;controls.notice.textContent='';const key=JSON.stringify([mode,context]);if(!this.offerAttempt||this.offerAttempt.key!==key)this.offerAttempt={key,request_id:random()};
+      const context=controls.context(),snapshot=this.capture();if(!context||!controls.row.isConnected||!this.current(snapshot))return;
+      this.offerBusy=true;this.mutationGeneration++;controls.notice.textContent='';const key=JSON.stringify([mode,context]);if(!this.offerAttempt||this.offerAttempt.key!==key)this.offerAttempt={key,request_id:random(),notice:mode==='audio'&&!controls.disclosure.hidden?controls.assistance?.notice:''};
       const attempt=this.offerAttempt;controls.buttons.forEach(button=>button.disabled=true);
-      try{const result=await this.request('offer',{...context,mode,request_id:attempt.request_id});if(!this.current(snapshot))return;const call=projection(result.call,this.role);if(!call||result.request_id!==attempt.request_id||result.call_id!==call.call_id||result.conversation_id!==call.conversation_id)throw new Error('Call request identity changed.');if(this.role==='visitor')this.options.adopt?.(result);this.offerAttempt=null;await this.refresh();}
+      try{const result=await this.request('offer',{...context,mode,request_id:attempt.request_id,...(attempt.notice?{assistance_notice:attempt.notice}:{})});if(!this.current(snapshot))return;const call=projection(result.call,this.role);if(!call||result.request_id!==attempt.request_id||result.call_id!==call.call_id||result.conversation_id!==call.conversation_id)throw new Error('Call request identity changed.');if(this.role==='visitor')this.options.adopt?.(result);this.offerAttempt=null;await this.refresh();}
       catch(error){if(this.current(snapshot))controls.notice.textContent=messageFor(error);}
       finally{this.offerBusy=false;controls.buttons.forEach(button=>button.disabled=!controls.allowed);}
     }
     offers(host,context){
-      const row=node('div','profile-call-offer-actions'),notice=node('p','profile-call-notice'),buttons=[];const controls={row,notice,buttons,context,allowed:false,last:0};
-      for(const [mode,label] of [['audio','Request audio call'],['video','Request video call']]){const button=node('button','',label);button.type='button';button.disabled=true;button.dataset.callOffer=mode;button.addEventListener('click',()=>void this.offer(mode,controls));row.appendChild(button);buttons.push(button);}row.appendChild(notice);host.appendChild(row);this.scopeControls.add(controls);return controls;
+      const row=node('div','profile-call-offer-actions'),notice=node('p','profile-call-notice'),disclosure=node('p','profile-call-notice'),buttons=[];const controls={row,notice,disclosure,buttons,context,allowed:false,last:0};
+      const disclosureId=`vp3-call-assistance-offer-${this.scopeControls.size}`;disclosure.setAttribute('id',disclosureId);disclosure.dataset.callAssistanceOffer='';disclosure.hidden=true;row.appendChild(disclosure);
+      for(const [mode,label] of [['audio','Request audio call'],['video','Request video call']]){const button=node('button','',label);button.type='button';button.disabled=true;button.dataset.callOffer=mode;if(mode==='audio')button.setAttribute('aria-describedby',disclosureId);button.addEventListener('click',()=>void this.offer(mode,controls));row.appendChild(button);buttons.push(button);}row.appendChild(notice);host.appendChild(row);this.scopeControls.add(controls);return controls;
     }
-    async refreshOffers(controls){const binding=controls.context();if(!binding||!controls.row.isConnected)return;const snapshot=this.capture();try{const data=await this.request('state',binding,'GET');if(!this.current(snapshot)||!controls.row.isConnected)return;if(data.contract!==CONTRACT||typeof data.can_offer!=='boolean')throw new Error('Call capability unavailable.');controls.allowed=data.can_offer;controls.last=time();controls.notice.textContent=data.can_offer?'':'Live calls are unavailable right now. You can keep messaging.';}catch(_){controls.allowed=false;controls.notice.textContent='Live calls are unavailable. You can keep messaging.';}controls.buttons.forEach(button=>button.disabled=!controls.allowed||this.offerBusy);}
+    setOffers(controls,data,message='Live calls are unavailable right now. You can keep messaging.'){
+      controls.allowed=data?.can_offer===true;
+      controls.assistance=controls.allowed?assistanceProjection(data.assistance_offer):null;
+      controls.disclosure.hidden=!controls.assistance?.notice;
+      controls.disclosure.textContent=controls.disclosure.hidden?'':assistanceText(controls.assistance);
+      controls.notice.textContent=controls.allowed?'':message;
+      controls.buttons.forEach(button=>button.disabled=!controls.allowed||this.offerBusy);
+    }
+    async refreshOffers(controls){
+      const binding=controls.context();if(!binding||!controls.row.isConnected||controls.checking)return;
+      const snapshot=this.capture(),key=JSON.stringify(binding);controls.checking=true;
+      const current=()=>this.current(snapshot)&&controls.row.isConnected&&JSON.stringify(controls.context())===key;
+      try{const data=await this.request('state',binding,'GET');if(!current())return;if(data.contract!==CONTRACT||typeof data.can_offer!=='boolean')throw new Error('Call capability unavailable.');controls.last=time();this.setOffers(controls,data);}
+      catch(_){if(current())this.setOffers(controls,null);}
+      finally{controls.checking=false;}
+    }
     async dispatch(record){
       if(!record.call.dispatch_due||!this.current(record.snapshot))return;
       const prior=this.lastDispatch.get(record.call.call_id);if(prior!==undefined&&time()-prior<10000)return;
@@ -281,7 +336,8 @@
         const result=await this.request('state',snapshot.binding,'GET');if(!this.current(snapshot)||mutations!==this.mutationGeneration||this.pendingMutations)return;
         if(result.contract!==CONTRACT||!Array.isArray(result.calls)||result.calls.length>20||typeof result.can_offer!=='boolean')throw new Error('Call status unavailable.');
         this.canOffer=result.can_offer;
-        if(this.role==='visitor'&&this.visitorOffers){this.visitorOffers.allowed=result.can_offer;this.visitorOffers.buttons.forEach(button=>button.disabled=!result.can_offer||this.offerBusy);this.visitorOffers.notice.textContent=result.can_offer?'':'Live calls are unavailable right now. You can keep messaging.';}
+        if(this.role==='visitor'&&this.visitorOffers)this.setOffers(this.visitorOffers,result);
+        if(this.role==='owner'&&this.activity&&!result.calls.some(raw=>projection(raw,this.role)?.assistance?.id===this.activity.id))this.clearActivity();
         for(const raw of result.calls){const call=projection(raw,this.role);if(!call)continue;let record=this.records.get(call.call_id);
           if(this.role==='owner'){
             if(!record?.node.isConnected){const delivered=await this.request('delivery',{...snapshot.binding,conversation_id:call.conversation_id,call_id:call.call_id,revision:call.revision});if(!this.current(snapshot))return;const next=projection(delivered.call,this.role);if(!next||next.call_id!==call.call_id||delivered.chat_conversation_id!==snapshot.binding.chat_conversation_id||delivered.chat_agent_id!==snapshot.binding.chat_agent_id||!positive(delivered.chat_message_id)||!token(delivered.delivery_id))continue;const element=this.options.mount(delivered);if(!element)continue;const host=element.querySelector('.message-body')||element;const text=element.querySelector('.message-text');if(text)text.hidden=true;record=this.apply(next,host,{delivery_id:delivered.delivery_id,chat_message_id:delivered.chat_message_id});}
@@ -290,12 +346,12 @@
           if(record){record.snapshot=this.capture();this.render(record);void this.dispatch(record);}
         }
         for(const control of this.scopeControls)if(this.role==='owner'&&time()-control.last>30000)void this.refreshOffers(control);
-      }catch(error){if(this.current(snapshot)){if([401,403,419].includes(error.status)||error.code==='PROFILE_SESSION_CHANGED')this.invalidate('Call access changed.');if(this.visitorOffers){this.visitorOffers.allowed=false;this.visitorOffers.buttons.forEach(button=>button.disabled=true);this.visitorOffers.notice.textContent='Live calls are unavailable. You can keep messaging.';}}}
+      }catch(error){if(this.current(snapshot)){if([401,403,419].includes(error.status)||error.code==='PROFILE_SESSION_CHANGED')this.invalidate('Call access changed.');if(this.visitorOffers)this.setOffers(this.visitorOffers,null);}}
       finally{this.busy=false;if(this.queued&&this.alive){this.queued=false;setTimeout(()=>void this.refresh(),0);}}
     }
     invalidate(reason='Call context changed.'){
       if(activeMedia?.surface===this){const session=activeMedia,record=session.record;void session.close(reason+' Your microphone and camera are off.');if(session.ownedMedia)void this.endAfterMedia(record,true);}
-      this.epoch++;for(const record of this.records.values()){record.node.hidden=true;this.render(record);}for(const control of this.scopeControls){control.allowed=false;control.buttons.forEach(button=>button.disabled=true);}
+      this.epoch++;this.clearActivity();for(const record of this.records.values()){record.node.hidden=true;this.render(record);}for(const control of this.scopeControls){control.last=0;this.setOffers(control,null,'');}
     }
     start(){this.pollTimer=setInterval(()=>void this.refresh(),3000);void this.refresh();return this;}
     stop(reason='Call view closed.'){this.invalidate(reason);this.alive=false;clearInterval(this.pollTimer);}

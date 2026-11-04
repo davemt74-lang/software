@@ -104,6 +104,14 @@ jobs:
           test -f _deploy/includes/profile-live-text-pa3d.php
           test -f _deploy/includes/profile-agent-handoff-pa3.php
           test -f _deploy/profile-visitor-doorbell-pa3.js
+          test -f _deploy/api/profile-call-activity-pa3c.php
+          test -f _deploy/api/profile-call-worker-pa3c.php
+          test -f _deploy/includes/profile-call-activity-pa3c.php
+          test -f _deploy/includes/profile-calls-pa3c.php
+          test -f _deploy/profile-call-activity-pa3c.js
+          test -f _deploy/profile-call-activity-pa3c.css
+          test -f _deploy/workers/vp3-meeting-agent/profile_call.py
+          test -f _deploy/workers/vp3-meeting-agent/profile_agent.py
           test -f _deploy/includes/profile-visitor-speech-pa4a.php
           test -f _deploy/includes/profile-speech-elevenlabs-pa4a.php
           test -f _deploy/api/profile-speech-pa4a.php
