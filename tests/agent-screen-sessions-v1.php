@@ -38,6 +38,11 @@ rejects(fn()=>screen_capture_brain_v1($pdo,$user,$cid),'unanalyzed pixels are no
 $vision=fn()=>['ok'=>true,'answer'=>json_encode(['summary'=>'A song is at 1:20','visible_text'=>'Artist · Song · 1:20 / 4:00','site_hint'=>'Player','page_title'=>'Song','observations'=>[['kind'=>'music','label'=>'Playback position','detail'=>'1:20 of 4:00 displayed','confidence'=>'high']]])];
 $r=screen_capture_analyze_v1($pdo,$user,$cid,$vision);check($r['revision']===2&&str_contains(get_knowledge_item((int)$r['knowledge_id'])['content_text'],'1:20 of 4:00'),'structured observations update the canonical Knowledge note');
 check($r['body']['observation']['captured_at']===$frame['captured_at'],'reanalyzing preserves original observation time');
+$annotationId='00000000-0000-4000-8000-000000000009';
+screen_capture_store_v1($pdo,$user,$sid,$annotationId,[...$frame,'annotation_logging'=>true]);
+$annotation=screen_capture_analyze_v1($pdo,$user,$annotationId,fn()=>['ok'=>true,'answer'=>json_encode(['on_screen_translation'=>'The displayed translation'])]);
+check($annotation['body']['annotation_logging']===true&&$annotation['body']['observation']['on_screen_translation']==='The displayed translation'&&$annotation['body']['observation']['captured_at']===$frame['captured_at'],'annotation keeps the explicit capture opt-in and original timestamp');
+check(str_contains(get_knowledge_item((int)$annotation['knowledge_id'])['content_text'],'On-screen caption: The displayed translation'),'literal caption is labeled in the existing Knowledge record');
 $GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']=['user_id'=>1,'user_agent_id'=>9];$r=screen_capture_brain_v1($pdo,$user,$cid);check($r['memory_id']>0&&(int)$pdo->query('SELECT agent_id FROM agent_memory_items')->fetchColumn()===4,'Brain promotion uses the session’s server-resolved Agent scope');
 check($GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']['user_agent_id']===9,'Brain promotion restores the previous scope');
 check(screen_capture_brain_v1($pdo,$user,$cid)['memory_id']===$r['memory_id'],'repeated Brain saves are idempotent');
@@ -52,7 +57,33 @@ $sid2='00000000-0000-4000-8000-000000000003';$cid2='00000000-0000-4000-8000-0000
 rejects(fn()=>screen_capture_analyze_v1($pdo,$user,$cid2,function()use($pdo,$user,$sid2,$vision){screen_session_delete_v1($pdo,$user,$sid2,true);return $vision();}),'deletion during model execution fences late analysis',404);
 $sid3='00000000-0000-4000-8000-000000000005';$cid3='00000000-0000-4000-8000-000000000006';screen_session_start_v1($pdo,$user,['session_id'=>$sid3]);screen_capture_store_v1($pdo,$user,$sid3,$cid3,['captured_at'=>gmdate('Y-m-d\TH:i:s\Z'),'transcript'=>'A useful spoken idea','surface'=>'browser'],'tab_audio');$r=screen_capture_brain_v1($pdo,$user,$cid3);screen_session_delete_v1($pdo,$user,$sid3,false);check((int)$pdo->query('SELECT COUNT(*) FROM agent_memory_items')->fetchColumn()===1,'user can explicitly retain a Brain memory when deleting source captures');
 $file=tempnam(sys_get_temp_dir(),'screen-audio-');file_put_contents($file,'RIFF'.pack('V',100).'WAVE'.str_repeat("\0",100));$upload=['tmp_name'=>$file,'error'=>UPLOAD_ERR_OK];
-check(screen_audio_transcribe_v1($upload,$user,fn($file,$model)=>['text'=>'Tab speech'])==='Tab speech','valid audio uses the configured speech service and returns text');
+check(screen_audio_transcribe_v1($upload,$user,15,fn($file,$model)=>['text'=>'Tab speech'])===['transcript'=>'Tab speech'],'untimed speech retains the whole transcript for the segment fallback');
+$speech=['text'=>"First phrase.\nSecond phrase!",'words'=>[
+    ['type'=>'word','text'=>'First','start'=>.125,'end'=>.25],
+    ['type'=>'spacing','text'=>' '],
+    ['type'=>'word','text'=>'phrase.','start'=>.3,'end'=>.7],
+    ['type'=>'spacing','text'=>"\n"],
+    ['type'=>'word','text'=>'Second','start'=>2.1,'end'=>2.4],
+    ['type'=>'spacing','text'=>' '],
+    ['type'=>'word','text'=>'phrase!','start'=>2.4,'end'=>2.95],
+]];
+$timed=screen_audio_transcribe_v1($upload,$user,15,fn($file,$model)=>$speech);
+check($timed===['transcript'=>$speech['text'],'cues'=>[
+    ['start_seconds'=>.125,'end_seconds'=>.7,'text'=>'First phrase.'],
+    ['start_seconds'=>2.1,'end_seconds'=>2.95,'text'=>'Second phrase!'],
+]],'provider word times are retained as ordered segment-relative transcript cues');
+$invalid=$speech;$invalid['words'][4]['start']=.1;
+check(screen_audio_transcribe_v1($upload,$user,15,fn($file,$model)=>$invalid)===['transcript'=>$speech['text']],'overlapping timings fall back to the original transcript');
+$invalid=$speech;$invalid['words'][6]['end']=30;
+check(screen_audio_transcribe_v1($upload,$user,15,fn($file,$model)=>$invalid)===['transcript'=>$speech['text']],'timestamps outside the segment fall back to the original transcript');
+$incomplete=$speech;array_pop($incomplete['words']);
+check(screen_audio_transcribe_v1($upload,$user,15,fn($file,$model)=>$incomplete)===['transcript'=>$speech['text']],'incomplete timing cannot omit transcript text');
+$sid4='00000000-0000-4000-8000-000000000007';$cid4='00000000-0000-4000-8000-000000000008';
+screen_session_start_v1($pdo,$user,['session_id'=>$sid4]);
+$body=$timed+['captured_at'=>'2026-11-03T20:10:00.125Z','surface'=>'browser','duration_seconds'=>15];
+$r=screen_capture_public_v1(screen_capture_store_v1($pdo,$user,$sid4,$cid4,$body,'tab_audio'));
+check($r['captured_at']===$body['captured_at']&&$r['body']===$body,'saved audio history retains the millisecond anchor and cue ranges');
+screen_session_delete_v1($pdo,$user,$sid4,true);
 file_put_contents($file,'<script>'.str_repeat('x',100));rejects(fn()=>screen_audio_file_v1($upload),'non-audio uploads rejected');unlink($file);
 check((int)$pdo->query('SELECT COUNT(*) FROM agent_screen_captures_v1')->fetchColumn()===0,'raw audio bytes are not retained as capture files');
 echo "AGENT_SCREEN_SESSIONS_V1=PASS ($checks cases)\n";

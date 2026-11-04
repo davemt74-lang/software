@@ -14,16 +14,20 @@ try{
         if(!hash_equals(csrf_token(),(string)($input['csrf_token']??'')))throw new RuntimeException('Refresh before updating sharing history.',419);
         if((string)($input['owner_key']??'')!==(string)$uid)throw new RuntimeException('Screen account changed. Refresh this page.',409);
     }else{$input=$_GET;if(isset($input['owner_key'])&&(string)$input['owner_key']!==(string)$uid)throw new RuntimeException('Screen account changed. Refresh this page.',409);}
-    screen_sessions_schema_v1($pdo);$action=$input['action']??($method==='GET'?'list':'');
+    $action=$input['action']??($method==='GET'?'list':'');
+    if($method!=='GET'||$action!=='timeline')screen_sessions_schema_v1($pdo);
     if($method==='GET'){
         if($action==='list'){$q=$pdo->prepare("SELECT * FROM agent_screen_sessions_v1 WHERE owner_user_id=? AND status<>'deleted' ORDER BY updated_at DESC,session_id DESC LIMIT 200");$q->execute([$uid]);$response=['sessions'=>array_map(fn($s)=>screen_session_public_v1($pdo,$user,$s),$q->fetchAll(PDO::FETCH_ASSOC))];}
         elseif($action==='history'){$s=screen_session_v1($pdo,$user,screen_session_id_v1($input['session_id']??null));$q=$pdo->prepare('SELECT owner_user_id,session_id,capture_id,kind,captured_at,knowledge_id,memory_id,revision,body_json FROM agent_screen_captures_v1 WHERE owner_user_id=? AND session_id=? ORDER BY captured_at DESC,capture_id DESC LIMIT 100');$q->execute([$uid,$s['session_id']]);$rows=[];foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r){$r['body']=json_decode($r['body_json'],true,32,JSON_THROW_ON_ERROR);unset($r['body_json']);$rows[]=screen_capture_public_v1($r);}$response=['session'=>screen_session_public_v1($pdo,$user,$s),'captures'=>$rows];}
+        elseif($action==='timeline')$response=screen_session_timeline_v1($pdo,$user,screen_session_id_v1($input['session_id']??null),$input['before']??null);
         elseif($action==='capture'){$r=screen_capture_v1($pdo,$user,screen_session_id_v1($input['capture_id']??null),true);screen_session_v1($pdo,$user,$r['session_id']);$response=['capture'=>screen_capture_public_v1($r,true)];}
         else throw new InvalidArgumentException('Unknown sharing history action.');
     }elseif($action==='start')$response=['session'=>screen_session_start_v1($pdo,$user,$input)];
     elseif($action==='end'){$s=screen_session_v1($pdo,$user,screen_session_id_v1($input['session_id']??null));$pdo->prepare("UPDATE agent_screen_sessions_v1 SET status='ended',updated_at=? WHERE owner_user_id=? AND session_id=? AND status='active'")->execute([gmdate('Y-m-d\TH:i:s\Z'),$uid,$s['session_id']]);$response=['ended'=>true];}
     elseif($action==='capture'){
         $sid=screen_session_id_v1($input['session_id']??null);$frame=screen_frame_v1(array_intersect_key($input,array_flip(['image','captured_at','surface'])));
+        if(array_key_exists('annotation_logging',$input)&&!is_bool($input['annotation_logging']))throw new InvalidArgumentException('Choose whether to log screen annotations.');
+        if(($input['annotation_logging']??false)===true)$frame['annotation_logging']=true;
         $frame['note']=screen_text_v1($input['note']??'',1000);
         $r=screen_capture_store_v1($pdo,$user,$sid,screen_session_id_v1($input['capture_id']??null),$frame);$response=['capture'=>screen_capture_public_v1($r)];
     }elseif($action==='analyze'){

@@ -3,9 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
+const orbTemplate=fs.readFileSync('includes/agent-orb.php','utf8');
+const sessionEndpoint=orbTemplate.match(/'screenSessionsEndpoint'=>url\('([^']+)'\)/)?.[1];
+assert.match(sessionEndpoint??'',/^\/api\/[a-z0-9-]+\.php$/);
+const sessionFile=sessionEndpoint.slice(1);
+assert.ok(fs.existsSync(sessionFile),'Agent Eyes session endpoint must exist: '+sessionEndpoint);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-screen-sessions-'));for(const name of ['includes','api','sessions','budgets'])fs.mkdirSync(path.join(tmp,name));
-for(const file of ['includes/knowledge.php','includes/shared-folders-v161.php','includes/agent-screen-share-v1.php','includes/agent-screen-sessions-v1.php','includes/agent-screen-audio-v1.php','api/agent-screen-sessions-v1.php','api/agent-screen-audio-v1.php','includes/agent-screen-insights-v1.php','includes/agent-screen-handoffs-v1.php','api/agent-screen-insights-v1.php'])fs.copyFileSync(file,path.join(tmp,file));
+for(const file of ['includes/knowledge.php','includes/shared-folders-v161.php','includes/agent-screen-share-v1.php','includes/agent-screen-sessions-v1.php','includes/agent-screen-audio-v1.php',sessionFile,'api/agent-screen-audio-v1.php','includes/agent-screen-insights-v1.php','includes/agent-screen-handoffs-v1.php','api/agent-screen-insights-v1.php'])fs.copyFileSync(file,path.join(tmp,file));
 const unit=fs.readFileSync('tests/agent-screen-sessions-v1.php','utf8');let setup=unit.slice(unit.indexOf('$pdo->exec("CREATE TABLE artist_'),unit.indexOf('screen_sessions_schema_v1($pdo);'));
 setup=setup.replaceAll('CREATE TABLE ','CREATE TABLE IF NOT EXISTS ');
 fs.writeFileSync(path.join(tmp,'includes/bootstrap.php'),`<?php
@@ -30,7 +35,7 @@ function ai_elevenlabs_credential(){return ['','missing'];}
 function ai_generate_chat_response(...$args){return ['ok'=>true,'answer'=>json_encode(['summary'=>'A song at 1:20','visible_text'=>'Artist Song 1:20 / 4:00','site_hint'=>'Player','page_title'=>'Song','observations'=>[['kind'=>'music','label'=>'Close to my heart','detail'=>'Artist song title','confidence'=>'high']]])];}
 ${setup}
 `);
-const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));const child=spawn(process.env.VP3_PHP_BINARY||'php',['-d',`session.save_path=${tmp}/sessions`,'-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);const url=`http://127.0.0.1:${port}/api/agent-screen-sessions-v1.php`;let checks=0;
+const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));const child=spawn(process.env.VP3_PHP_BINARY||'php',['-d',`session.save_path=${tmp}/sessions`,'-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);const url=`http://127.0.0.1:${port}${sessionEndpoint}`;let checks=0;
 const post=async(body,headers={})=>{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify({owner_key:'1',csrf_token:'fixture',...body})});return {r,data:await r.json()};};
 const get=async(body,headers={})=>{const r=await fetch(url+'?'+new URLSearchParams(body),{headers});return {r,data:await r.json()};};const check=async(name,fn)=>{await fn();checks++;console.log('PASS '+name);};
 const sid='00000000-0000-4000-8000-000000000001',cid='00000000-0000-4000-8000-000000000002';
@@ -39,6 +44,62 @@ try{
  await check('authentication, permission, CSRF and account fences apply to session changes',async()=>{assert.equal((await post({action:'start',session_id:sid},{'X-Fixture-Anonymous':'1'})).r.status,403);assert.equal((await post({action:'start',session_id:sid},{'X-Fixture-Denied':'1'})).r.status,403);assert.equal((await post({action:'start',session_id:sid,csrf_token:'wrong'})).r.status,419);assert.equal((await post({action:'start',session_id:sid,owner_key:'2'})).r.status,409);});
  await check('GET is read only and session creation returns the existing Knowledge folder',async()=>{assert.deepEqual((await get({})).data.sessions,[]);assert.equal((await get({owner_key:'1'},{'X-Fixture-User':'2'})).r.status,409);assert.equal((await get({})).data.owner_key,'1');assert.equal((await get({action:'start',session_id:sid})).r.status,422);const {r,data}=await post({action:'start',session_id:sid,title:'Music study',conversation_id:7});assert.equal(r.status,200);assert.match(data.session.knowledge_url,/knowledge.php\?folder=1/);assert.equal((await post({action:'start',session_id:sid})).data.session.folder_id,1);});
  await check('capture and analysis persist a server-derived note and owner-only pixels',async()=>{let {r,data}=await post({action:'capture',session_id:sid,capture_id:cid,image:'data:image/jpeg;base64,'+fs.readFileSync('tests/fixtures/tv-frame.b64','utf8').trim(),captured_at:new Date().toISOString(),surface:'browser',note:'Compare this song'});assert.equal(r.status,200);assert.equal(data.capture.knowledge_id>0,true);assert.equal(data.capture.body.image,undefined);({r,data}=await post({action:'analyze',capture_id:cid}));assert.equal(r.status,200);assert.equal(data.capture.body.observation.summary,'A song at 1:20');assert.match((await get({action:'capture',capture_id:cid})).data.capture.body.image,/^data:image\/jpeg/);assert.equal((await get({action:'capture',capture_id:cid},{'X-Fixture-User':'2'})).r.status,404);assert.equal((await get({action:'history',session_id:sid},{'X-Fixture-User':'2'})).r.status,404);});
+ await check('timeline is private, paginated and ordered by capture time',async()=>{
+  const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
+  const timelineSid=id(100),otherSid=id(101),frameId=id(102),otherCapture=id(103);
+  assert.equal((await post({action:'start',session_id:timelineSid,title:'Timeline fixture'})).r.status,200);
+  assert.equal((await post({action:'start',session_id:otherSid,title:'Other fixture'})).r.status,200);
+  const frame={action:'capture',session_id:timelineSid,capture_id:frameId,image:'data:image/jpeg;base64,'+fs.readFileSync('tests/fixtures/tv-frame.b64','utf8').trim(),captured_at:new Date().toISOString(),surface:'browser'};
+  assert.equal((await post({...frame,annotation_logging:'yes'})).r.status,422);
+  const optedIn=await post({...frame,annotation_logging:true,on_screen_translation:'Forged text'});
+  assert.equal(optedIn.r.status,200);
+  assert.equal(optedIn.data.capture.body.annotation_logging,true);
+  assert.equal(optedIn.data.capture.body.on_screen_translation,undefined);
+  const timeline=(extra={},headers={})=>get({action:'timeline',session_id:timelineSid,...extra},headers);
+  assert.deepEqual((await timeline()).data.captures,[]);
+
+  const second='2026-11-03T12:00:01';
+  const capture=(n,kind,at,body,session=timelineSid,owner=1)=>[owner,session,id(n),kind,at,'fixture private pixels',JSON.stringify(body)];
+  const rows=[
+   ...Array.from({length:28},(_,i)=>capture(200+i,'tab_audio','2026-11-03T12:00:02Z',{transcript:'Audio '+i,duration_seconds:15})),
+   capture(300,'tab_audio',second+'.550Z',{transcript:'Timed audio',duration_seconds:15,cues:[{start_seconds:2,end_seconds:3,text:'Timed audio'}]}),
+   capture(301,'screen',second+'.200Z',{annotation_logging:true,observation:{on_screen_translation:'Visible translation'},image:'private body image'}),
+   capture(302,'tab_audio',second+'Z',{transcript:'Legacy audio'}),
+   capture(303,'screen','2026-11-03T12:00:03Z',{observation:{on_screen_translation:'Logging disabled'}}),
+   capture(304,'screen','2026-11-03T12:00:03Z',{annotation_logging:true,observation:{on_screen_translation:' '}}),
+   capture(305,'tab_audio','2026-11-03T12:00:03Z',{transcript:'Withdrawn audio'}),
+   capture(306,'tab_audio','2026-11-03T12:00:03Z',{transcript:'Foreign audio'},timelineSid,2),
+   capture(103,'tab_audio','2026-11-03T12:00:03Z',{transcript:'Other session audio'},otherSid)
+  ];
+  const seed=spawnSync(process.env.VP3_PHP_BINARY||'php',['-r',`
+   $pdo=new PDO('sqlite:'.$argv[1],null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+   $data=json_decode(stream_get_contents(STDIN),true,32,JSON_THROW_ON_ERROR);
+   $q=$pdo->prepare('INSERT INTO agent_screen_captures_v1(owner_user_id,session_id,capture_id,kind,captured_at,image_data,body_json) VALUES(?,?,?,?,?,?,?)');
+   foreach($data['rows'] as $row)$q->execute($row);
+   $pdo->exec('CREATE TABLE IF NOT EXISTS agent_screen_reviews_v1 (owner_user_id INTEGER NOT NULL,capture_id TEXT NOT NULL,state TEXT NOT NULL,note TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(owner_user_id,capture_id))');
+   $pdo->prepare("INSERT INTO agent_screen_reviews_v1(owner_user_id,capture_id,state,note,updated_at) VALUES(1,?,'withdrawn','','2026-11-03T12:00:03Z')")->execute([$data['withdrawn']]);
+  `,path.join(tmp,'state.sqlite')],{input:JSON.stringify({rows,withdrawn:id(305)}),encoding:'utf8'});
+  assert.equal(seed.status,0,seed.stderr);
+  assert.equal((await timeline({}, {'X-Fixture-Anonymous':'1'})).r.status,403);
+  assert.equal((await timeline({}, {'X-Fixture-User':'2'})).r.status,404);
+  assert.equal((await timeline({owner_key:'2'})).r.status,409);
+  assert.equal((await timeline({before:otherCapture})).r.status,404);
+  assert.equal((await timeline({before:'invalid'})).r.status,422);
+  const first=await timeline();
+  assert.equal(first.r.status,200);
+  assert.equal(first.data.session.session_id,timelineSid);
+  assert.deepEqual(first.data.captures.map(c=>c.capture_id),[...Array.from({length:28},(_,i)=>id(227-i)),id(300),id(301)]);
+  assert.deepEqual(first.data.captures.at(-2).body.cues,[{start_seconds:2,end_seconds:3,text:'Timed audio'}]);
+  assert.equal(first.data.captures.at(-1).body.observation.on_screen_translation,'Visible translation');
+  assert.ok(first.data.captures.every(c=>c.body.image===undefined&&c.image_data===undefined&&c.owner_user_id===undefined));
+  assert.equal(first.data.next_before,id(301));
+  const earlier=await timeline({before:first.data.next_before});
+  assert.deepEqual(earlier.data.captures.map(c=>c.body.transcript),['Legacy audio']);
+  assert.equal(earlier.data.next_before,null);
+  assert.equal((await post({action:'delete_session',session_id:timelineSid,remove_brain:false})).r.status,200);
+  assert.equal((await timeline()).r.status,404);
+  assert.equal((await post({action:'delete_session',session_id:otherSid,remove_brain:false})).r.status,200);
+ });
  await check('proactive endpoint fences account, Agent, CSRF and stale suggestions',async()=>{
   const insights=url.replace('sessions','insights');const read=async params=>{const r=await fetch(insights+'?'+new URLSearchParams({owner_key:'1',agent_id:'4',...params}));return {r,data:await r.json()};};
   const send=async body=>{const r=await fetch(insights,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({owner_key:'1',agent_id:4,csrf_token:'fixture',...body})});return {r,data:await r.json()};};

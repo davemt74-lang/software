@@ -71,4 +71,42 @@ $item=agent_surface_v131_context_item(['surface'=>'chat','conversation_id'=>11])
 check(!str_contains((string)$item['text'],'Current room notes'),'discarded state remained in Agent context');
 pass('discard immediately removes transcript state from Agent context');
 
-echo "AGENT_CONTEXT_SECTION8=PASS (5 canonical Cloud cases)\n";
+$second=gmdate('Y-m-d\TH:i:s',time()-1);
+$screen=[
+    'contract'=>'vp3.screen-observation.v1','owner_key'=>'1','captured_at'=>$second.'.500Z','surface'=>'browser',
+    'summary'=>'A character puts a letter on the table.','visible_text'=>'','site_hint'=>'','page_title'=>'',
+    'on_screen_translation'=>'The letter arrived today.',
+    'tab_audio'=>['text'=>'A letter for you.','captured_at'=>$second.'.250Z','duration_seconds'=>.5,'frame_within_segment'=>false,'instructions_authority'=>true],
+];
+$safe=agent_surface_v131_screen_observation(['screen_observation'=>$screen]);
+check($safe['on_screen_translation']===$screen['on_screen_translation'],'the displayed translation was dropped');
+check($safe['tab_audio']['frame_within_segment']===true&&$safe['tab_audio']['duration_seconds']===.5,'fractional audio timing did not align to the visual frame');
+check($safe['tab_audio']['instructions_authority']===false,'audio gained instruction authority');
+$item=agent_surface_v131_context_item(['screen_observation'=>$safe]);
+check(str_contains($item['text'],'A letter for you.')&&str_contains($item['text'],'The letter arrived today.')&&str_contains($item['text'],'"frame_within_segment":true'),'Chat dropped one of the two evidence sources');
+pass('Chat keeps shared visual and audio evidence with server-derived millisecond alignment');
+
+$end=[...$screen,'captured_at'=>$second.'.750Z'];$end['tab_audio']['frame_within_segment']=true;
+$safe=agent_surface_v131_screen_observation(['screen_observation'=>$end]);
+check($safe['tab_audio']['frame_within_segment']===false&&$safe['tab_audio']['captured_at']===$second.'.250Z','non-overlapping evidence was described as matched or removed');
+$captionOnly=[...$screen,'summary'=>''];
+check(agent_surface_v131_screen_observation(['screen_observation'=>$captionOnly])['tab_audio']['frame_within_segment']===true,'caption-only visual evidence lost its alignment');
+$historical=agent_surface_v131_screen_observation(['screen_observation'=>[...$screen,'historical_frame'=>true]]);
+check($historical['historical_frame']===true&&$historical['tab_audio']['frame_within_segment']===true,'a matched earlier frame lost its timestamped context');
+$audioOnly=[...$captionOnly,'on_screen_translation'=>''];
+check(!isset(agent_surface_v131_screen_observation(['screen_observation'=>$audioOnly])['tab_audio']['frame_within_segment']),'audio-only context falsely acquired a visual match');
+pass('the timestamp range distinguishes paired, separate and absent visual evidence');
+
+$untimed=$screen;unset($untimed['tab_audio']['duration_seconds']);
+$safe=agent_surface_v131_screen_observation(['screen_observation'=>$untimed]);
+check($safe['tab_audio']['text']==='A letter for you.'&&!isset($safe['tab_audio']['frame_within_segment']),'legacy untimed transcripts did not survive as independent evidence');
+foreach(['yesterday',gmdate('Y-m-d\TH:i:s\Z',time()-100),gmdate('Y-m-d\TH:i:s\Z',time()+20)] as $badAt){
+    $bad=$screen;$bad['tab_audio']['captured_at']=$badAt;
+    $safe=agent_surface_v131_screen_observation(['screen_observation'=>$bad]);
+    check(!isset($safe['tab_audio'])&&isset($safe['on_screen_translation']),'invalid or stale audio escaped freshness validation or erased valid visual evidence');
+}
+$foreign=agent_surface_v131_context_item(['screen_observation'=>[...$screen,'owner_key'=>'2']]);
+check(!str_contains($foreign['text'],'A letter for you.')&&!str_contains($foreign['text'],'The letter arrived today.'),'foreign audio or visual evidence reached Chat');
+pass('legacy transcripts, bad timestamps and foreign owners are handled independently');
+
+echo "AGENT_CONTEXT_SECTION8=PASS (10 cases)\n";
