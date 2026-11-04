@@ -628,10 +628,12 @@ function ai_generate_chat_response(
     ?array $turnControl = null,
     array $visionImages = []
 ): array {
+    $initiative=in_array($turnControl['protocol']??'',['vp3.initiative-plan.v1','vp3.initiative-draft.v1'],true);
     // Phone callers have no owner-session authority. Never run private Chat
     // context enrichment for this surface, including on a retry.
     if (($turnControl['surface']??'')==='phone_voice') $context=[];
-    elseif(($turnControl['surface']??'')!=='cloud_mission'&&!$visionImages&&function_exists('chat_response_context'))$context=chat_response_context($query,$context);
+    elseif(($turnControl['surface']??'')!=='cloud_mission'&&!$initiative
+        && !$visionImages&&function_exists('chat_response_context'))$context=chat_response_context($query,$context);
     $provider = ai_active_provider();
     $user??=function_exists('current_user')?current_user():null;
     $own=($user&&function_exists('vp3_user_llm_v1_effective')&&function_exists('db')&&db())
@@ -684,6 +686,8 @@ function ai_generate_chat_response(
         if(!$isOwn&&!empty($result['ok'])&&function_exists('subscription_ai_commit_usage')){
             $trace=function_exists('agent_runtime_v125_trace_id')?(string)agent_runtime_v125_trace_id():'';
             $requestKey=$trace!==''?'nonstream:'.$scope.':'.$trace:'';
+            // The long-lived worker shares a trace across independent provider calls.
+            if($initiative)$requestKey=$reservationId>0?'initiative:reservation:'.$reservationId:'';
             subscription_ai_commit_usage($reservationId,$user,$scope,$provider,(string)($result['model']??ai_provider_model($provider)),is_array($result['usage']??null)?$result['usage']:[],$requestKey);
             $reservationId=0;
         }

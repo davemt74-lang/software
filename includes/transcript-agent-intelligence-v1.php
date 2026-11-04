@@ -21,6 +21,18 @@ function vp3_transcript_intelligence_v1(PDO $pdo,array $user,array $principal,in
         foreach((array)($mod['result']??[]) as $rows)if(is_array($rows))foreach($rows as $row)if(is_array($row)&&isset($row['item_id'])){$review=$row['review_state']??'unreviewed';if(isset($counts[$review]))$counts[$review]++;}
     }
     $p['review_counts']=$counts;
+    if($view==='initiative'){
+        $p['fresh']=!empty($items['actions']['fresh']);
+        $actions=[];
+        foreach(($items['actions']['result']['items']??[]) as $row){
+            if(!is_array($row)||($row['review_state']??'')!=='accepted'||!is_string($row['action']??null))continue;
+            $action=trim(mb_substr($row['action'],0,180));
+            if($action!=='')$actions[]=$action;
+            if(count($actions)>=3)break;
+        }
+        $p['accepted_actions']=$actions;
+        return $p;
+    }
     if($view==='research'){
         $p['fresh']=!empty($status['app_status']['research_brief']['fresh']);
         if(!$p['fresh']){$p['fresh_reason']=$status['app_status']['research_brief']['fresh_reason']??'not_generated';return $p;}

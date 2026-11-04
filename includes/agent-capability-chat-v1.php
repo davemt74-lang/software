@@ -239,12 +239,21 @@ function vp3_capability_control_principal_v1(PDO $pdo,array $user,int $conversat
     return ['kind'=>$aid>0?'user_agent':'system','owner_user_id'=>(int)$user['id'],'agent_id'=>$aid];
 }
 
+function vp3_initiative_command_v1(string $query): ?string
+{
+    return preg_match('/\A\/initiative (on|off|status)\z/i',trim($query),$matches)?strtolower($matches[1]):null;
+}
+
 function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $query,array $context=[],$scope=null,array $history=[],?callable $model=null,?callable $authority=null): array
 {
     $empty=['handled'=>false,'answer'=>'','actions'=>[],'sources'=>[]];
     if(!knowledge_retrieval_v162_owner_session($user,$principal)||!has_permission('chat.access',$user))return $empty;
     // Identity is resolved by the caller from the authenticated Agent, never UI context.
     $context['user_agent_id']=($principal['kind']??'system')==='user_agent'?max(0,(int)($principal['agent_id']??0)):0;
+    if(($initiative=vp3_initiative_command_v1($query))!==null){
+        require_once __DIR__.'/agent-initiative-v1.php';
+        return vp3_initiative_chat_v1($pdo,$user,$principal,$context,$initiative,$authority);
+    }
     if(($briefScope=vp3_catch_up_chat_scope_v1($query))!==null){
         try{
             $live=vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority);

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /** Project actionable Cloud Mission runs in the exact owner Chat Agent namespace. */
-function vp3_catch_up_missions_v1(PDO $pdo,array $user,array $principal,DateTimeImmutable $now): array
+function vp3_catch_up_missions_v1(PDO $pdo,array $user,array $principal,DateTimeImmutable $now,bool $includeActive=false): array
 {
     $owner=(int)($user['id']??0);
     $agentId=(int)($principal['agent_id']??0);
@@ -25,13 +25,14 @@ function vp3_catch_up_missions_v1(PDO $pdo,array $user,array $principal,DateTime
     // The workflow ledger updates this DATETIME with the database session clock.
     $updatedEpoch=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
         ? "CAST(strftime('%s',r.updated_at) AS INTEGER)" : 'UNIX_TIMESTAMP(r.updated_at)';
-    $q=$pdo->prepare("SELECT m.*,r.source_kind,r.source_key,r.execution_target,r.title,r.status,{$updatedEpoch} AS updated_epoch
+    $active=$includeActive?" OR r.status IN ('approved','executing','paused')":'';
+    $q=$pdo->prepare("SELECT m.*,r.source_kind,r.source_key,r.execution_target,r.title,r.status,{$updatedEpoch} AS updated_epoch,{$blocked} AS is_blocked
         FROM agent_cloud_missions_v1 m JOIN agent_workflow_runs r
           ON r.id=m.run_id AND r.owner_user_id=m.owner_user_id AND {$runAgentScope}
         WHERE m.owner_user_id=? AND m.agent_id=? AND r.source_kind='cloud_mission'
           AND r.source_key=m.mission_id AND r.execution_target='cloud'
           AND (r.status='approval_pending' OR (r.status='failed' AND {$updatedEpoch}>=?)
-            OR (r.status IN ('queued','planning','approved') AND {$blocked}))
+            OR (r.status IN ('queued','planning','approved') AND {$blocked}){$active})
         ORDER BY CASE r.status WHEN 'approval_pending' THEN 1 WHEN 'failed' THEN 3 ELSE 2 END,r.updated_at DESC,r.id DESC
         LIMIT 21");
     $q->bindValue(1,$owner,PDO::PARAM_INT);
@@ -57,10 +58,12 @@ function vp3_catch_up_missions_v1(PDO $pdo,array $user,array $principal,DateTime
         }
         $updated=(int)$row['updated_epoch'];
         if($updated<1||$updated>$now->getTimestamp()){$limited=true;continue;}
-        [$status,$reason,$priority]=match($row['status']){
-            'approval_pending'=>['awaiting_review','This Mission is waiting for your assignment review or approval.',86],
-            'failed'=>['failed','A worker failed. Review the Mission before deciding how to continue.',78],
-            default=>['blocked','This Mission is waiting for an unfinished prerequisite workflow.',84],
+        [$status,$reason,$priority]=match(true){
+            $row['status']==='approval_pending'=>['awaiting_review','This Mission is waiting for your assignment review or approval.',86],
+            $row['status']==='failed'=>['failed','A worker failed. Review the Mission before deciding how to continue.',78],
+            !empty($row['is_blocked'])&&in_array($row['status'],['queued','planning','approved'],true)=>['blocked','This Mission is waiting for an unfinished prerequisite workflow.',84],
+            $row['status']==='paused'=>['paused','This Mission is paused.',72],
+            default=>['active','A Mission already owns this work.',68],
         };
         $path='/chat.php?agent='.($agentId>0?$agentId:'system').'&mission='.$missionId;
         $items[]=vp3_catch_up_item_v1('mission:'.$missionId,(string)$row['title'],$reason,'Cloud Missions',$path,$priority,$updated)

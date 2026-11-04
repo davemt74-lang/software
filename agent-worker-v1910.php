@@ -10,6 +10,7 @@ require_once __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-job-worker-v1900.php';
 require_once __DIR__.'/includes/agent-worker-cloud-v1910.php';
 require_once __DIR__.'/includes/cloud-mission-schedules-v1.php';
+require_once __DIR__.'/includes/agent-initiative-v1.php';
 
 const VP3_AGENT_WORKER_RUNNER_V1910='agent-worker-runner-v1910-20260914';
 
@@ -97,6 +98,8 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.profile_calls.failed',['error_class'=>get_class($e)]);}
         $counts['profile_speech']=agent_worker_profile_speech_maintenance_v1910($pdo,$ownerLimit);
         $counts['profile_attention']=agent_worker_profile_attention_maintenance_v1910($pdo,$ownerLimit);
+        try{vp3_initiative_sweep_v1($pdo,$ownerLimit);}
+        catch(Throwable $e){agent_runtime_v125_trace('initiative.sweep_failed',['error_class'=>get_class($e)]);}
     }
     $ownerIds=agent_worker_runner_owner_ids_v1910($pdo,$ownerLimit);
     if($executor==='all'||$executor==='cloud'){cloud_mission_schema_v1($pdo);cloud_mission_schedules_schema_v1($pdo);cloud_mission_schedule_background_v1($pdo);$ownerIds=array_values(array_unique(array_merge(cloud_mission_schedule_owner_ids_v1($pdo,$ownerLimit),$ownerIds)));}

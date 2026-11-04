@@ -65,7 +65,9 @@ try {
             $_SESSION['vp3_agent_crm_watch_refresh'][$userId]=time();
             try{vp3_agent_crm_watchlist_refresh($pdo,$user,7);}catch(Throwable $e){error_log('Agent CRM watchlist refresh failed: '.$e->getMessage());}
         }
-        $activeConversationId = agent_chat_v101_latest_conversation_id($pdo,$userId);
+        $activeConversationId = array_key_exists('conversation_id',$input)
+            ? vp3_agent_chat_stream_scope_v380($pdo,$user,$input)['conversation_id']
+            : agent_chat_v101_latest_conversation_id($pdo,$userId);
         $activeMessageId = 0;
         if ($activeConversationId > 0) {
             $messageStmt=$pdo->prepare('SELECT COALESCE(MAX(id),0) FROM chat_messages WHERE conversation_id=?');
@@ -146,8 +148,8 @@ try {
     }
 
     if ($action === 'messages_after') {
-        $conversationId=(int)($input['conversation_id']??0);
-        if(!chat_conversation_owned($pdo,$conversationId,$userId))throw new RuntimeException('Conversation not found.');
+        $conversationId=vp3_agent_chat_stream_scope_v380($pdo,$user,$input)['conversation_id'];
+        if($conversationId<1)throw new RuntimeException('Conversation not found.');
         $afterId=max(0,(int)($input['after_id']??0));
         $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');
         $stmt->execute([$conversationId,$afterId]);

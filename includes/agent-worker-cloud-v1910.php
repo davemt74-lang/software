@@ -107,6 +107,12 @@ function agent_worker_cloud_execute_once_v1910(PDO $pdo,array $user,int $limit=2
 
     if(($run['action_capability_key']??'')==='missions.analyze'){require_once __DIR__.'/cloud-missions-v1.php';return cloud_mission_execute_claim_v1($pdo,$user,$claim);}
 
+    if(($run['source_kind']??'')==='agent_initiative'
+        &&in_array($run['action_capability_key']??'',['initiative.plan','initiative.prepare'],true)){
+        require_once __DIR__.'/agent-initiative-v1.php';
+        return vp3_initiative_execute_v1($pdo,$user,$claim);
+    }
+
     $type=strtolower(trim((string)($run['action_type']??'')));
     $capability=trim((string)($run['action_capability_key']??''));
     $instruction=trim((string)($run['action_summary']??''));

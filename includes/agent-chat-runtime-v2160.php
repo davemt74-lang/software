@@ -163,7 +163,7 @@ if($rawBrowserContext){
 $historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$userMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();}
 $capabilityTool=$allowConnectedSites&&!$ephemeralProtocol
     ?vp3_connected_sites_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId):null;
-if($capabilityTool===null&&!$ephemeralProtocol&&vp3_catch_up_chat_scope_v1($query)!==null){
+if($capabilityTool===null&&!$ephemeralProtocol&&(vp3_catch_up_chat_scope_v1($query)!==null||vp3_initiative_command_v1($query)!==null)){
     $capabilityTool=vp3_capability_chat_v1($pdo,$user,$principal,$query,
         ['conversation_id'=>$conversationId,'user_agent_id'=>$activeAgentId],
         $input['knowledge_scope']??null,$history,null,$currentAuthority);
