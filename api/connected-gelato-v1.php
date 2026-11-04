@@ -23,13 +23,23 @@ $userId = (int)$user['id'];
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $pdo = db();
 $available = $pdo && vp3_gelato_schema_ready_v1($pdo);
+$knowledgeReady = $available && vp3_gelato_knowledge_ready_v1($pdo);
+$canReadKnowledge = $knowledgeReady && function_exists('personal_capability_has_v242')
+    && personal_capability_has_v242('personal_knowledge.access', $user);
+$canCreateKnowledgeFolder = $canReadKnowledge && personal_capability_has_v242('personal_knowledge.manage', $user);
 if ($method === 'GET') {
     try {
         $connections = $available ? vp3_gelato_connections_v1($pdo, $userId) : [];
+        $folders = $canReadKnowledge ? vp3_gelato_knowledge_folders_v1($pdo, $userId) : [];
+        foreach ($connections as &$connection) {
+            $connection['knowledgeFolder'] = $folders[$connection['id']] ?? null;
+        }
+        unset($connection);
     } catch (Throwable) {
         vp3_gelato_api_v1(503, ['ok'=>false,'error'=>'Gelato connections are currently unavailable.']);
     }
-    vp3_gelato_api_v1(200, ['ok'=>true,'available'=>$available,'connections'=>$connections]);
+    vp3_gelato_api_v1(200, ['ok'=>true,'available'=>$available,'connections'=>$connections,
+        'canCreateKnowledgeFolder'=>$canCreateKnowledgeFolder]);
 }
 if ($method !== 'POST') {
     header('Allow: GET, POST');
@@ -55,8 +65,21 @@ try {
         && !array_diff(array_keys($input), ['action','csrf_token','origin','code','label'])
         && is_string($input['origin'] ?? null) && is_string($input['code'] ?? null)
         && is_string($input['label'] ?? '')) {
-        $connection = vp3_gelato_connect_v1($pdo, $userId, $input['origin'], $input['code'], $input['label'] ?? '');
+        $connection = vp3_gelato_connect_v1($pdo, $userId, $input['origin'], $input['code'], $input['label'] ?? '',
+            createKnowledgeFolder: $canCreateKnowledgeFolder);
         vp3_gelato_api_v1(201, ['ok'=>true,'connection'=>$connection]);
+    }
+    if (($input['action'] ?? null) === 'createKnowledgeFolder'
+        && !array_diff(array_keys($input), ['action','csrf_token','connectionId'])
+        && is_string($input['connectionId'] ?? null)) {
+        if (!$knowledgeReady) {
+            vp3_gelato_api_v1(503, ['ok'=>false,'error'=>'Knowledge folders require the VP3 database upgrade.']);
+        }
+        if (!$canCreateKnowledgeFolder) {
+            vp3_gelato_api_v1(403, ['ok'=>false,'error'=>'Personal Knowledge management is unavailable for this account.']);
+        }
+        $folder = vp3_gelato_create_knowledge_folder_v1($pdo, $userId, $input['connectionId']);
+        vp3_gelato_api_v1(200, ['ok'=>true,'knowledgeFolder'=>$folder]);
     }
     if (($input['action'] ?? null) === 'disconnect'
         && !array_diff(array_keys($input), ['action','csrf_token','connectionId'])

@@ -279,7 +279,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)
         && vp3_profile_projection_schema_ready_pa4b($schemaConnection)
         && vp3_profile_checkout_schema_ready_pa5($schemaConnection)
-        && vp3_gelato_schema_ready_v1($schemaConnection);
+        && vp3_gelato_schema_ready_v1($schemaConnection)
+        && vp3_gelato_knowledge_ready_v1($schemaConnection);
 }
 
 $error = '';
@@ -434,6 +435,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_profile_projection_ensure_schema_pa4b($pdo);
             vp3_profile_checkout_ensure_schema_pa5($pdo);
             vp3_gelato_schema_v1($pdo);
+            vp3_gelato_knowledge_schema_v1($pdo);
             personal_capability_ensure_schema_v242();
             require_once __DIR__.'/includes/tv-watching-v1.php';
             tv_schema_v1($pdo);

@@ -599,13 +599,14 @@ $runtime = $headerUiRuntime
          . $mediaOverlayRuntime
          . $hardening
          . $composerControls
-         . '<link rel="stylesheet" href="' . e(url('/chat-tools.css?v=' . $controlBuild)) . '">'
+         . '<link rel="stylesheet" href="' . e(url('/chat-tools.css?v=' . $controlBuild . '-connected-knowledge')) . '">'
          . '<script src="' . e(url('/chat-tools.js?v=' . $controlBuild)) . '"></script>'
          . '<script>window.VP3_CONNECTED_GELATO_V1=' . json_encode([
              'endpoint'=>url('/api/connected-gelato-v1.php'),
              'csrf'=>csrf_token(),
+             'knowledgeUrl'=>url('/knowledge.php'),
          ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) . ';</script>'
-         . '<script src="' . e(url('/chat-connected-sites-v1.js?v=1')) . '"></script>'
+         . '<script src="' . e(url('/chat-connected-sites-v1.js?v=2')) . '"></script>'
          . $recordingLibraryRuntime
          . $chatSettingsRuntime
          . '<script data-agent-updates-autodismiss-v173 data-agent-overlay-build="' . e($agentOverlayBuild) . '" src="' . e(url('/chat-agent-updates-autodismiss-v173.js?v=' . $agentOverlayBuild)) . '"></script>'
