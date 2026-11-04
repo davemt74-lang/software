@@ -193,7 +193,7 @@ function vp3_profile_webmcp_outcome_result_v1(PDO $pdo,array $binding,array $row
         $q=$pdo->prepare('SELECT c.public_id FROM campaign_enrollments e JOIN campaigns c ON c.id=e.campaign_id JOIN merchant_accounts m ON m.id=c.merchant_id WHERE e.id=? AND m.owner_user_id=?');$q->execute([$id,$binding['owner_user_id']]);if($q->fetchColumn()!==$safe['campaign']['public_id'])throw new RuntimeException('Campaign result unavailable.');
     }elseif($type==='reward_claim_handoff'){
         $safe=vp3_profile_webmcp_replay_projection_v1($type,$id,$result);
-        $q=$pdo->prepare('SELECT ri.public_id FROM reward_issuances ri JOIN crm_contacts cc ON cc.id=ri.recipient_contact_id WHERE ri.id=? AND (ri.recipient_user_id=? OR cc.vp3_user_id=?)');$q->execute([$id,$binding['owner_user_id'],$binding['owner_user_id']]);if($q->fetchColumn()!==$safe['reward_public_id'])throw new RuntimeException('Reward handoff result unavailable.');
+        $q=$pdo->prepare('SELECT ri.public_id FROM reward_issuances ri JOIN users u ON u.id=ri.recipient_user_id AND u.is_active=1 WHERE ri.id=? AND ri.recipient_user_id=?');$q->execute([$id,$binding['owner_user_id']]);if($q->fetchColumn()!==$safe['reward_public_id'])throw new RuntimeException('Reward handoff result unavailable.');
     }else{
         $safe=vp3_profile_webmcp_replay_projection_v1($type,$id,$result);
         $q=$pdo->prepare('SELECT t.public_id,t.delivery_mode,t.status,ri.public_id AS reward_public_id FROM reward_transfers t JOIN reward_issuances ri ON ri.id=t.reward_issuance_id WHERE t.id=? AND t.sent_by_user_id=?');$q->execute([$id,$binding['owner_user_id']]);$transfer=$q->fetch(PDO::FETCH_ASSOC);

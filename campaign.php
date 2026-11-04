@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
+header('Cache-Control: no-store');
 
 $pdo=db();
 if(!$pdo||!function_exists('campaigns_rewards_platform_schema_ready_v100')||!campaigns_rewards_platform_schema_ready_v100($pdo)){
@@ -41,7 +42,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $issued=is_array($participation['issued']??null)?$participation['issued']:null;
             $issuedReward=is_array($participation['reward']??null)?$participation['reward']:null;
             $completionMessage=(string)($participation['message']??'Campaign participation completed.');
-            if($issued&&empty($issued['credential']))$completionMessage='Your Reward was already issued. Sign in to VP3 to view its current status.';
+            if($issued&&!empty($issued['recipient_user_id'])){
+                $completionMessage='Open Reward Inbox in the VP3 account for the email you entered to show the voucher.';
+            }elseif($issued&&empty($issued['credential'])){
+                $completionMessage='Your Reward was already issued. Use the credential shown when you received it.';
+            }
             if(session_status()===PHP_SESSION_ACTIVE)$_SESSION['campaign_public_request_tokens'][$campaign['public_id']]=bin2hex(random_bytes(20));
         }catch(Throwable $e){$error=$e->getMessage();}
     }
@@ -81,7 +86,15 @@ $renderForm=static function(?array $reward=null)use($requestToken,$campaign,$req
 ?>
 <?php if($error):?><div class="cr-notice error"><?= e($error) ?></div><?php endif;?>
 <?php if($issued&&$issuedReward&&empty($error)):?>
-<section class="cr-claim-card"><span>Reward issued</span><h2><?= e((string)$issuedReward['title']) ?></h2><p><?= e($completionMessage?:'Your Reward is ready.') ?></p><div class="cr-code"><?= e((string)$issued['credential']) ?></div><p><strong>Credential ending:</strong> <?= e((string)$issued['credential_last4']) ?></p><?php if(!empty($issued['expires_at'])):?><p>Expires <?= e(date('M j, Y',strtotime((string)$issued['expires_at']))) ?></p><?php endif;?><div class="cr-actions"><a class="cr-btn primary" href="<?= e(url('/reward-inbox.php')) ?>">Open Reward Inbox</a><a class="cr-btn" href="<?= e(campaigns_rewards_campaign_url_v100((string)$campaign['slug'])) ?>">Back to campaign</a></div></section>
+<section class="cr-claim-card">
+  <span>Reward issued</span><h2><?= e((string)$issuedReward['title']) ?></h2><p><?= e($completionMessage?:'Your Reward is ready.') ?></p>
+  <?php if(!empty($issued['credential'])):?><div class="cr-code"><?= e((string)$issued['credential']) ?></div><p><strong>Credential ending:</strong> <?= e((string)$issued['credential_last4']) ?></p><?php endif;?>
+  <?php if(!empty($issued['expires_at'])):?><p>Expires <?= e(date('M j, Y',strtotime((string)$issued['expires_at']))) ?></p><?php endif;?>
+  <div class="cr-actions">
+    <?php if(!empty($issued['recipient_user_id'])):?><a class="cr-btn primary" href="<?= e(url('/reward-inbox.php')) ?>">Open Reward Inbox</a><?php endif;?>
+    <a class="cr-btn" href="<?= e(campaigns_rewards_campaign_url_v100((string)$campaign['slug'])) ?>">Back to campaign</a>
+  </div>
+</section>
 <?php elseif($participation&&empty($error)):?>
 <section class="cr-claim-card"><span>You're in</span><h2><?= e((string)($behavior['name']??$campaign['campaign_type_name']??'Campaign')) ?></h2><p><?= e($completionMessage?:'Your participation has been recorded.') ?></p><div class="cr-actions"><a class="cr-btn" href="<?= e(campaigns_rewards_campaign_url_v100((string)$campaign['slug'])) ?>">Back to campaign</a></div></section>
 <?php elseif(empty($behavior['public'])):?>

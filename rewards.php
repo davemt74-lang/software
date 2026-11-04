@@ -44,7 +44,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             if(session_status()===PHP_SESSION_ACTIVE&&is_string($issuance['credential']??null)&&$issuance['credential']!==''){
                 $_SESSION['reward_workspace_secret_once']=['credential'=>$issuance['credential'],'public_id'=>$issuance['public_id'],'contact_name'=>$contact['name'],'contact_email'=>$contact['email']];
             }
-            flash('notice','Reward issued to CRM Contact.');
+            flash('notice',!empty($issuance['recipient_user_id'])
+                ?'Reward issued to the recipient’s VP3 Inbox.'
+                :'Reward issued to CRM Contact.');
         }elseif($action==='claim_code_create'){
             $code=campaigns_rewards_create_claim_code_v100($pdo,$merchantId,$uid,[
                 'display_name'=>$_POST['display_name']??'Claim Code',
@@ -67,8 +69,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 'internal_notes'=>$_POST['internal_notes']??'',
             ]);
             $first=$result['issuances'][0]??null;
-            if($first&&session_status()===PHP_SESSION_ACTIVE)$_SESSION['reward_workspace_secret_once']=['credential'=>$first['credential']??'','public_id'=>$first['public_id']??'','contact_name'=>$contact['name'],'contact_email'=>$contact['email']];
-            flash('notice','Make Good case opened and Reward issued.');
+            if(!empty($first['credential'])&&session_status()===PHP_SESSION_ACTIVE)$_SESSION['reward_workspace_secret_once']=['credential'=>$first['credential'],'public_id'=>$first['public_id']??'','contact_name'=>$contact['name'],'contact_email'=>$contact['email']];
+            flash('notice',!empty($first['recipient_user_id'])
+                ?'Make Good case opened and Reward issued to the recipient’s VP3 Inbox.'
+                :'Make Good case opened and Reward issued.');
         }elseif($action==='reconcile'){
             $run=campaigns_rewards_reconcile_v100($pdo,$merchantId,$uid);
             flash('notice','Reward reconciliation complete: '.(int)$run['summary']['findings'].' finding(s), no side effects replayed.');
@@ -87,7 +91,7 @@ $canAnalytics=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$ui
 $canCampaignEdit=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'campaigns.edit'):false;
 
 $campaigns=$merchant?campaigns_rewards_campaigns_v100($pdo,$merchantId):[];
-$locations=$merchant?campaigns_rewards_locations_v100($pdo,$merchantId):[];
+$locations=$merchant?campaigns_rewards_claim_locations_v100($pdo,$merchantId):[];
 $rewardProducts=$merchant?campaigns_rewards_reward_products_v110($pdo,$merchantId,$uid):[];
 $rewardTypes=[];$contacts=[];$claimCodes=[];$recentClaims=[];$metrics=['products'=>0,'issued'=>0,'active'=>0,'claimed'=>0,'sent'=>0];
 if($merchant){

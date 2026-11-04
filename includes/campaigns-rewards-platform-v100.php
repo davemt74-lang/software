@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/schema-metadata.php';
+
 /**
  * Campaigns & Rewards V1 canonical platform schema.
  *
@@ -42,7 +44,8 @@ function campaigns_rewards_platform_schema_ready_v100(?PDO $pdo=null): bool
     foreach(['public_id','owner_user_id','vp3_user_id','status','lifecycle_stage','marketing_status','metadata_json'] as $column){
         if(function_exists('column_exists')&&!column_exists('crm_contacts',$column))return false;
     }
-    return true;
+    return schema_metadata_column_exists($pdo,'reward_claims','holder_user_id')
+        && schema_metadata_column_exists($pdo,'reward_claims','holder_contact_id');
 }
 
 function campaigns_rewards_core_crm_ensure_v100(PDO $pdo): void
@@ -320,8 +323,22 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
 
     $exec("CREATE TABLE IF NOT EXISTS reward_claims (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,merchant_id BIGINT UNSIGNED NOT NULL,campaign_id BIGINT UNSIGNED NOT NULL,reward_issuance_id BIGINT UNSIGNED NOT NULL,claim_code_id BIGINT UNSIGNED NOT NULL,location_id BIGINT UNSIGNED NULL,merchant_member_id BIGINT UNSIGNED NULL,processed_by_user_id INT UNSIGNED NULL,processed_by_actor_type VARCHAR(30) NOT NULL DEFAULT 'user',environment VARCHAR(12) NOT NULL DEFAULT 'production',quantity INT UNSIGNED NOT NULL DEFAULT 1,value_minor BIGINT UNSIGNED NULL,currency CHAR(3) NULL,status VARCHAR(20) NOT NULL DEFAULT 'claimed',order_ref VARCHAR(190) NULL,claimed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,reversed_at DATETIME NULL,metadata_json LONGTEXT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_reward_claim_public (public_id),UNIQUE KEY uq_reward_claim_once (reward_issuance_id,status),INDEX idx_reward_claim_merchant (merchant_id,claimed_at,id)
+      holder_user_id INT UNSIGNED NULL,holder_contact_id BIGINT UNSIGNED NULL,
+      UNIQUE KEY uq_reward_claim_public (public_id),UNIQUE KEY uq_reward_claim_once (reward_issuance_id,status),INDEX idx_reward_claim_merchant (merchant_id,claimed_at,id),INDEX idx_reward_claim_holder (holder_user_id,claimed_at,id),INDEX idx_reward_claim_code (claim_code_id,status,claimed_at,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    if(!schema_metadata_column_exists($pdo,'reward_claims','holder_user_id')){
+        $pdo->exec("ALTER TABLE reward_claims ADD COLUMN holder_user_id INT UNSIGNED NULL, ADD INDEX idx_reward_claim_holder (holder_user_id,claimed_at,id)");
+    }
+    if(!schema_metadata_column_exists($pdo,'reward_claims','holder_contact_id')){
+        $pdo->exec("ALTER TABLE reward_claims ADD COLUMN holder_contact_id BIGINT UNSIGNED NULL");
+    }
+    if(!$pdo->query("SHOW INDEX FROM reward_claims WHERE Key_name='idx_reward_claim_code'")->fetch()){
+        $pdo->exec("ALTER TABLE reward_claims ADD INDEX idx_reward_claim_code (claim_code_id,status,claimed_at,id)");
+    }
+    // Historical claims inherit only the holder persisted on the issuance, never a live CRM link.
+    $pdo->exec("UPDATE reward_claims rc INNER JOIN reward_issuances ri ON ri.id=rc.reward_issuance_id
+      SET rc.holder_user_id=ri.recipient_user_id,rc.holder_contact_id=ri.recipient_contact_id,rc.updated_at=rc.updated_at
+      WHERE rc.holder_contact_id IS NULL");
     $exec("CREATE TABLE IF NOT EXISTS reward_claim_attempts (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,merchant_id BIGINT UNSIGNED NULL,reward_issuance_id BIGINT UNSIGNED NULL,claim_code_id BIGINT UNSIGNED NULL,location_id BIGINT UNSIGNED NULL,merchant_member_id BIGINT UNSIGNED NULL,attempt_result VARCHAR(30) NOT NULL,reason_code VARCHAR(80) NOT NULL DEFAULT '',request_fingerprint_hash CHAR(64) NULL,occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,metadata_json LONGTEXT NULL,INDEX idx_claim_attempt (merchant_id,occurred_at,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");

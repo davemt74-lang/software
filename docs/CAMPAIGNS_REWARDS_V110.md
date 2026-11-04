@@ -18,16 +18,16 @@ Agent Chat adds three tabs in the right-column header:
 
 - **INBOX** — active certificates currently held by the signed-in VP3 user.
 - **SENT** — durable certificate transfers initiated by the signed-in user.
-- **CLAIMED** — certificates claimed by the signed-in holder.
+- **CLAIMED** — successful merchant redemptions for the holder recorded at checkout, with the merchant, location, time and receipt ID.
 
 Each tab shows its current count.
 
-An Inbox certificate exposes **SEND** and **CLAIM**. SEND selects a target from the user's owner-scoped Core CRM. V1.10 resolves that identity into the issuing Merchant owner's Core CRM, changes the canonical Reward Issuance holder transactionally, invalidates any previously revealed holder credential, and writes a durable `reward_transfers` audit record. The certificate is not cloned.
+An Inbox certificate exposes **SEND** and **SHOW VOUCHER**. SEND selects an owner-scoped Core CRM contact with a matching active VP3 account. It changes the persisted holder transactionally, invalidates any previously revealed holder credential, and writes a durable `reward_transfers` audit record. The same certificate moves to the recipient. First sends and onward sends use their respective issuance terms.
 
-CLAIM rotates a fresh one-time Reward Credential and renders a QR locally in the browser. No credential is sent to a QR service. The QR points at the canonical Claim Terminal with the credential in the URL fragment, so the credential is not part of the HTTP request. The Claim Terminal consumes the fragment, fills the credential input and immediately clears the fragment from the address bar.
+SHOW VOUCHER rotates a fresh one-time Reward Credential and renders a QR locally in the browser. No credential is sent to a QR service. The QR points at the canonical Claim Terminal with the credential in the URL fragment, so the credential is not part of the initial HTTP request. The Claim Terminal consumes the fragment, fills the credential input and immediately clears the fragment from the address bar.
 
-If the current certificate holder is also an authorized Merchant operator, the modal accepts the Merchant Claim Code and uses the existing V1 three-factor claim engine. Otherwise the holder presents/scans the QR at an authorized Merchant terminal. V1.10 does not weaken the required factors: Reward Credential + Merchant Claim Code + authenticated operator with `claims.process`.
+At checkout, the three-factor check verifies the Reward Credential, Merchant Claim Code and operator’s `claims.process` permission at an eligible active in-person location. If the holder is also an authorized operator, the same controls are available in the modal. Retrying the same request after a lost response recovers the committed send or claim receipt.
 
 ## Authority
 
-Reward Issuance remains the certificate authority. `reward_transfers` is an append-only transfer/audit history, not a second certificate ledger. Core CRM remains contact identity authority. Claim state remains `reward_claims`. Campaign versions remain immutable snapshots. Production Claim inventory/liability and cognitive outcome flows remain the existing V1 authorities.
+The account persisted on the Reward Issuance is the sole VP3 holder. Core CRM relinking leaves the holder unchanged. Account-bound recipients reveal credentials from their Inbox. Historical accountless certificates can still redeem with their issued credential at the Merchant terminal. Claim state remains in `reward_claims`. Campaign versions, inventory, liability and conversion attribution retain their existing domain records.

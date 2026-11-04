@@ -54,20 +54,31 @@ function fmtDate(v){
   return Number.isNaN(d.getTime())?'':d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
 }
 
+function fmtClaimTime(v,timezone){
+  if(!v)return '';
+  const d=new Date(String(v).replace(' ','T')+'Z');
+  if(Number.isNaN(d.getTime()))return '';
+  const options={month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'};
+  try{return d.toLocaleString(undefined,{...options,timeZone:timezone||'UTC'});}
+  catch{return d.toLocaleString(undefined,{...options,timeZone:'UTC'});}
+}
+
 function card(row,bucket){
   const exp=row.expires_at?'<span>Expires '+esc(fmtDate(row.expires_at))+'</span>':'';
   const sent=row.sent_at?'<span>Sent '+esc(fmtDate(row.sent_at))+'</span>':'';
-  const claimed=row.claimed_at?'<span>Claimed '+esc(fmtDate(row.claimed_at))+'</span>':'';
+  const claimed=row.claimed_at?'<span>Claimed '+esc(fmtClaimTime(row.claimed_at,row.claim_location_timezone))+'</span>':'';
+  const location=row.claim_location_name?'<span>'+esc(row.claim_location_name)+'</span>':'';
+  const receipt=row.claim_public_id?'<span>Receipt '+esc(row.claim_public_id)+'</span>':'';
   const recipient=row.recipient_name||row.recipient_email?'<span>To '+esc(row.recipient_name||row.recipient_email)+(row.recipient_email&&row.recipient_name?' · '+esc(row.recipient_email):'')+'</span>':'';
   const value=row.value_label?'<span class="reward-cert-value">'+esc(row.value_label)+'</span>':'';
   let actions='';
   if(bucket==='inbox'){
     actions='<div class="reward-cert-actions">'+
       '<button type="button" data-reward-send="'+Number(row.id)+'"'+(row.transferable?'':' disabled title="The issuing Merchant marked this certificate non-transferable"')+'>SEND</button>'+
-      '<button class="primary" type="button" data-reward-claim="'+Number(row.id)+'">CLAIM</button></div>';
+      '<button class="primary" type="button" data-reward-claim="'+Number(row.id)+'">SHOW VOUCHER</button></div>';
   }
   return '<article class="reward-cert"><div class="reward-cert-top"><div><div class="reward-cert-kicker">'+esc(row.merchant_name||'Reward')+'</div><h3>'+esc(row.reward_name||'Reward')+'</h3></div>'+value+'</div>'+
-    '<div class="reward-cert-meta"><span>'+esc(row.campaign_name||'')+'</span>'+recipient+exp+sent+claimed+'</div>'+actions+'</article>';
+    '<div class="reward-cert-meta"><span>'+esc(row.campaign_name||'')+'</span>'+recipient+exp+sent+claimed+location+receipt+'</div>'+actions+'</article>';
 }
 
 function render(bucket){
@@ -113,7 +124,14 @@ function ensureHeaderTabs(){
 }
 
 function showError(err){
-  const el=qs('#rewardTrayStatus');
+  const dialog=qs('.reward-tray-modal:not([hidden]) .reward-tray-dialog');
+  let el=dialog&&qs('.reward-tray-status',dialog);
+  if(dialog&&!el){
+    el=document.createElement('div');
+    el.setAttribute('role','alert');
+    dialog.querySelector('header').after(el);
+  }
+  el=el||qs('#rewardTrayStatus');
   if(!el)return;
   el.textContent=err instanceof Error?err.message:String(err);
   el.className='reward-tray-status error';
@@ -122,7 +140,12 @@ function showError(err){
 
 function openModal(id){
   const el=qs(id);
-  if(el){el.hidden=false;document.body.style.overflow='hidden';}
+  if(el){
+    const status=qs('.reward-tray-status',el);
+    if(status)status.hidden=true;
+    el.hidden=false;
+    document.body.style.overflow='hidden';
+  }
 }
 
 function closeModal(el){
@@ -140,6 +163,10 @@ function contactOptions(){
   return '<option value="">Choose a Contact</option>'+state.contacts.map(c=>'<option value="'+Number(c.id)+'">'+esc(c.name)+' · '+esc(c.email)+(c.company?' · '+esc(c.company):'')+'</option>').join('');
 }
 
+function requestKey(){
+  return crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random();
+}
+
 function installModals(){
   if(qs('#rewardSendModal')||!qs('#rewardTrayList'))return;
   document.body.insertAdjacentHTML('beforeend',
@@ -153,7 +180,7 @@ function startSend(id){
   if(!form)return;
   form.reset();
   form.elements.issuance_id.value=String(id);
-  form.elements.idempotency_key.value=(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random());
+  form.elements.idempotency_key.value=requestKey();
   form.elements.contact_id.innerHTML=contactOptions();
   openModal('#rewardSendModal');
 }
@@ -163,6 +190,7 @@ async function prepareClaim(id){
     const data=await post({action:'prepare_claim',issuance_id:id});
     claimCtx=data.claim||null;
     if(!claimCtx)throw new Error('Claim preparation failed.');
+    claimCtx.idempotencyKey=requestKey();
     qs('#rewardClaimName').textContent=claimCtx.reward_name||'Reward';
     qs('#rewardClaimMerchant').textContent=claimCtx.merchant_name||'';
     const qr=qs('#rewardClaimQr');
@@ -175,13 +203,18 @@ async function prepareClaim(id){
     const form=qs('#rewardClaimForm');
     form.reset();
     form.elements.issuance_id.value=String(id);
-    form.elements.location_id.innerHTML='<option value="">No location</option>'+((claimCtx.locations||[]).map(l=>'<option value="'+Number(l.id)+'">'+esc(l.name)+'</option>').join(''));
-    const can=!!claimCtx.can_process;
+    const locations=claimCtx.locations||[];
+    form.elements.location_id.innerHTML='<option value="">Choose a location</option>'+locations.map(l=>'<option value="'+Number(l.id)+'">'+esc(l.name)+'</option>').join('');
+    form.elements.location_id.required=true;
+    if(locations.length===1)form.elements.location_id.value=String(locations[0].id);
+    const can=!!claimCtx.can_process&&locations.length>0;
     form.elements.merchant_claim_code.disabled=!can;
     form.elements.location_id.disabled=!can;
     form.elements.order_ref.disabled=!can;
     form.querySelector('[type=submit]').disabled=!can;
-    qs('#rewardClaimAuthority').hidden=can;
+    const authority=qs('#rewardClaimAuthority');
+    authority.hidden=can;
+    authority.textContent=claimCtx.can_process?'An active in-person Merchant location is required.':'This account is not an authorized claim operator for the issuing Merchant. A Merchant operator must scan the QR and complete the claim.';
     qs('#rewardClaimTerminal').href=claimCtx.claim_terminal_url||'#';
     openModal('#rewardClaimModal');
   }catch(err){showError(err);}
@@ -202,17 +235,20 @@ function wire(){
   qs('#rewardSendForm')?.addEventListener('submit',async e=>{
     e.preventDefault();
     const fd=new FormData(e.currentTarget);
+    const contactId=Number(fd.get('contact_id'));
+    const target=state.contacts.find(c=>Number(c.id)===contactId);
     try{
-      await post({action:'send',issuance_id:Number(fd.get('issuance_id')),contact_id:Number(fd.get('contact_id')),note:String(fd.get('note')||''),idempotency_key:String(fd.get('idempotency_key')||'')});
+      await post({action:'send',issuance_id:Number(fd.get('issuance_id')),contact_id:contactId,target_user_id:Number(target?.vp3_user_id||0),note:String(fd.get('note')||''),idempotency_key:String(fd.get('idempotency_key')||'')});
       location.assign(routes.sent);
     }catch(err){showError(err);}
   });
 
   qs('#rewardClaimForm')?.addEventListener('submit',async e=>{
     e.preventDefault();
+    if(!claimCtx)return;
     const fd=new FormData(e.currentTarget);
     try{
-      await post({action:'claim',issuance_id:Number(fd.get('issuance_id')),merchant_claim_code:String(fd.get('merchant_claim_code')||''),location_id:Number(fd.get('location_id')||0),order_ref:String(fd.get('order_ref')||'')});
+      await post({action:'claim',issuance_id:Number(fd.get('issuance_id')),reward_credential:claimCtx.credential,merchant_claim_code:String(fd.get('merchant_claim_code')||''),location_id:Number(fd.get('location_id')||0),order_ref:String(fd.get('order_ref')||''),idempotency_key:claimCtx.idempotencyKey});
       location.assign(routes.claimed);
     }catch(err){showError(err);}
   });

@@ -25,7 +25,8 @@ assert.match(adapter,/crm_contacts WHERE public_id=\? AND owner_user_id=\?/,'rec
 assert.match(adapter,/campaigns_rewards_transfer_reward_v110/,'confirm must delegate ownership change to canonical Reward transfer authority');
 assert.doesNotMatch(adapter,/UPDATE reward_issuances SET recipient_contact_id/,'WebMCP must not directly mutate Reward holder');
 assert.doesNotMatch(adapter,/INSERT INTO reward_transfers/,'WebMCP must not directly create transfer records');
-assert.match(adapter,/non-transferable/,'prepare must enforce canonical transferability');
+assert.match(adapter,/campaigns_rewards_transfer_allowed_v110\(\$reward\)/,'prepare must enforce canonical transferability');
+assert.match(adapter,/campaigns_rewards_active_contact_user_v100\(\$pdo,\$row\)/,'recipient resolution must confirm an active account');
 assert.match(adapter,/reward_state_hash/,'prepared transfer must bind Reward state');
 assert.match(adapter,/recipient_state_hash/,'prepared transfer must bind recipient state');
 assert.match(adapter,/vp3_profile_webmcp_action_prepare_v150/);

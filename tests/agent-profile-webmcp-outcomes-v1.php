@@ -19,6 +19,8 @@ $dsn=getenv('VP3_TEST_MYSQL_DSN')?:getenv('VP3_SECTION7_MYSQL_DSN');$dbUser=null
 if($dsn){$dbUser=getenv('VP3_TEST_MYSQL_USER')?:'root';$dbPass=getenv('VP3_TEST_MYSQL_PASS')?:getenv('VP3_SECTION7_MYSQL_PASSWORD')?:'section7-fixture';$admin=new PDO($dsn,$dbUser,$dbPass,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$name='vp3_webmcp_outcome_'.bin2hex(random_bytes(5));$admin->exec('CREATE DATABASE `'.$name.'` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');$dsn=preg_match('/dbname=[^;]+/',$dsn)?preg_replace('/dbname=[^;]+/','dbname='.$name,$dsn):rtrim($dsn,';').';dbname='.$name;register_shutdown_function(static fn()=>$admin->exec('DROP DATABASE IF EXISTS `'.$name.'`'));}else $dsn='sqlite::memory:';
 $pdo=new WebmcpOutcomePDO($dsn,$dbUser,$dbPass,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
 if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')$pdo->sqliteCreateFunction('UTC_TIMESTAMP',static fn()=>gmdate('Y-m-d H:i:s'));else $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);
+$pdo->exec('CREATE TABLE users (id INTEGER PRIMARY KEY,is_active INTEGER)');
+profile_webmcp_outcome_fixture_put_v1($pdo,'users',['id'=>1,'is_active'=>1]);
 $cases=profile_webmcp_outcome_fixture_v1($pdo);$checks=0;$contexts=[];
 function woTest(bool $ok,string $label): void{if(!$ok)throw new RuntimeException($label);$GLOBALS['checks']++;echo 'PASS '.$label."\n";}
 function woReject(callable $run): bool{try{$run();return false;}catch(Throwable){return true;}}
@@ -44,6 +46,13 @@ foreach($cases as $op=>$case){
 woTest(str_contains(vp3_profile_webmcp_outcome_text_v1($contexts['commerce.checkout']['server_outcome']),'does not establish that payment completed'),'checkout receipt cannot claim paid');
 woTest(str_contains(vp3_profile_webmcp_outcome_text_v1($contexts['commerce.refund_request']['server_outcome']),'does not establish that money was refunded'),'refund request receipt cannot claim refunded');
 woTest(str_contains(vp3_profile_webmcp_outcome_text_v1($contexts['reward.claim_handoff']['server_outcome']),'not redeemed'),'Reward handoff cannot claim redemption');
+$handoffId=$cases['reward.claim_handoff']['resultId'];
+woWritable(fn()=>$pdo->prepare('UPDATE reward_issuances SET recipient_user_id=NULL WHERE id=?')->execute([$handoffId]));
+woTest(vp3_profile_webmcp_outcome_read_v1($pdo,$contexts['reward.claim_handoff'])['verification']==='unverified','a linked CRM contact cannot recover another holder’s handoff receipt');
+woWritable(fn()=>$pdo->prepare('UPDATE reward_issuances SET recipient_user_id=1 WHERE id=?')->execute([$handoffId]));
+woWritable(fn()=>$pdo->exec('UPDATE users SET is_active=0 WHERE id=1'));
+woTest(vp3_profile_webmcp_outcome_read_v1($pdo,$contexts['reward.claim_handoff'])['verification']==='unverified','an inactive holder cannot recover a handoff receipt');
+woWritable(fn()=>$pdo->exec('UPDATE users SET is_active=1 WHERE id=1'));
 $rows=$pdo->query('SELECT * FROM profile_webmcp_actions')->fetchAll();
 function woReset(): void{woWritable(function():void{$p=$GLOBALS['pdo'];$p->onRead=null;$p->exec('DELETE FROM profile_webmcp_actions');foreach($GLOBALS['rows'] as $row)profile_webmcp_outcome_fixture_put_v1($p,'profile_webmcp_actions',$row);});}
 $base=$cases['booking.create'];$ctx=$contexts['booking.create'];

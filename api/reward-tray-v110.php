@@ -51,7 +51,8 @@ try{
             $userId,
             max(0,(int)($input['contact_id']??0)),
             (string)($input['note']??''),
-            (string)($input['idempotency_key']??'')
+            (string)($input['idempotency_key']??''),
+            max(0,(int)($input['target_user_id']??0))
         );
         reward_tray_json_v110(200,[
             'ok'=>true,'transfer'=>$result,
@@ -72,6 +73,8 @@ try{
             $userId,
             trim((string)($input['merchant_claim_code']??'')),
             [
+                'reward_credential'=>(string)($input['reward_credential']??''),
+                'idempotency_key'=>(string)($input['idempotency_key']??''),
                 'location_id'=>max(0,(int)($input['location_id']??0)),
                 'order_ref'=>(string)($input['order_ref']??''),
                 'request_fingerprint'=>(string)($_SERVER['REMOTE_ADDR']??'').'|'.(string)($_SERVER['HTTP_USER_AGENT']??''),
@@ -84,6 +87,9 @@ try{
     }
 
     reward_tray_json_v110(422,['ok'=>false,'error'=>'unknown_action']);
+}catch(PDOException $e){
+    error_log('VP3 Reward Tray V1.10 database error: '.$e->getMessage());
+    reward_tray_json_v110(503,['ok'=>false,'error'=>'Reward service is temporarily unavailable. Retry the same request.']);
 }catch(DomainException|InvalidArgumentException|RuntimeException $e){
     reward_tray_json_v110(422,['ok'=>false,'error'=>$e->getMessage()]);
 }catch(Throwable $e){
