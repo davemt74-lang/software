@@ -6,13 +6,31 @@ import {copy,contract,ownerCard,chatChoice,mainChatVoiceMarkup} from './fixtures
 
 const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
 const read=name=>fs.readFileSync(new URL('../'+name,import.meta.url),'utf8');
-const files={'/chat.js':read('chat.js'),'/voice.js':read('chat-voice.js'),'/lease.js':read('voice-lease-v122.js'),'/doorbell.js':read('profile-visitor-doorbell-pa3.js'),'/chat.css':read('chat.css'),'/doorbell.css':read('profile-visitor-doorbell-pa3.css')};
+const files = {
+  '/chat.js':read('chat.js'), '/voice.js':read('chat-voice.js'), '/lease.js':read('voice-lease-v122.js'),
+  '/doorbell.js':read('profile-visitor-doorbell-pa3.js'), '/chat.css':read('chat.css'), '/doorbell.css':read('profile-visitor-doorbell-pa3.css'),
+  '/settings.js':read('chat-settings-v237.js'), '/settings.css':read('chat-settings-v237.css'),
+  '/rail.js':read('chat-rail-controls-v132.js'), '/rail.css':read('chat-rail-controls-v132.css'), '/team.css':read('team-chat-v109.css')
+};
 const fixtureStyle='html,body{margin:0;height:100%;overflow:hidden}.chat-app{height:100dvh}.chat-sidebar{display:none}.chat-main{height:100dvh;display:flex;flex-direction:column;min-width:0}.chat-topbar-actions{display:flex;padding:10px;flex-shrink:0}.chat-thread{overflow:auto;flex:1;min-height:0;padding:12px}.chat-thread .message{max-width:100%;box-sizing:border-box}.message-body{min-width:0;max-width:100%}#chatComposerShell{flex-shrink:0;padding:8px}#chatForm{display:flex;gap:8px}#chatInput{min-width:0;flex:1}';
 const server=http.createServer((req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname;
  if(files[path]){res.writeHead(200,{'Content-Type':path.endsWith('.css')?'text/css':'text/javascript'});res.end(files[path]);return;}
  res.writeHead(200,{'Content-Type':'text/html'});
- res.end(mainChatVoiceMarkup.replace('</head>','<link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/doorbell.css"><style>'+fixtureStyle+'</style></head>').replace('</body>',`<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',initialConversationId:42};window.STONEFELLOW_CHAT_VOICE_BOOT={button:document.getElementById('chatVoiceButtonLegacyDormant'),intro:null,legacyDormant:true};window.VP3_PROFILE_DOORBELL_PA3={endpoint:'/api/chat-notifications-brain-v240.php',ownerEndpoint:'/api/profile-agent.php',csrf:'fixture',userId:1};</script><script src="/chat.js"></script><script data-voice-capture-scope="fixture-user" src="/lease.js"></script><script src="/voice.js"></script><script src="/doorbell.js"></script></body>`));
+ res.end(mainChatVoiceMarkup
+   .replace('</head>', ['chat','doorbell','settings','team','rail'].map(name => '<link rel="stylesheet" href="/'+name+'.css">').join('') + '<style>'+fixtureStyle+'</style></head>')
+   .replace('</body>', `
+     <script>
+       window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',initialConversationId:42};
+       window.STONEFELLOW_CHAT_SETTINGS={endpoint:'/api/chat-settings-v237.php',csrf:'fixture'};
+       window.STONEFELLOW_CHAT_VOICE_BOOT={button:document.getElementById('chatVoiceButtonLegacyDormant'),intro:null,legacyDormant:true};
+     </script>
+     <script src="/chat.js"></script><script src="/settings.js"></script>
+     <script data-voice-capture-scope="fixture-user" src="/lease.js"></script><script src="/voice.js"></script>
+     <script>window.VP3_PROFILE_DOORBELL_PA3={endpoint:'/api/chat-notifications-brain-v240.php',ownerEndpoint:'/api/profile-agent.php',csrf:'fixture',userId:1};</script>
+     <script src="/doorbell.js"></script>
+     <aside id="sfOnlineRailV109" class="sf-online-rail-v109"><div class="sf-online-users-v109"></div></aside>
+     <div id="sfTeamChatWindowsV109"></div><script src="/rail.js"></script></body>`));
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base=`http://127.0.0.1:${server.address().port}`;
@@ -20,12 +38,24 @@ let browser,checks=0;const check=(value,label)=>{assert.ok(value,label);checks++
 async function fixture(viewport={width:1200,height:1000}){
  const page=await browser.newPage({viewport}),errors=[],calls=[],holds=[];
  page.on('pageerror',error=>errors.push(error.message));page.setDefaultTimeout(12000);
- let clock=Date.now(),availability='available',nextMessage=700,blankId=99;
+ let clock=Date.now(),availability='available',nextMessage=700,blankId=99,failAvailability=false;
+ const chatSettings = {presence_mode:'online',social_chat_enabled:true,sound_enabled:true,agent_voice_enabled:false};
+ const profileSettings = {
+   profile:{profile_agent_id:7,profile_agent_enabled:true,profile_agent_greeting:'Hello'},
+   agents:[{id:7,display_name:'Profile helper'}]
+ };
  const turns=new Map([[101,ownerCard(101,{server_now_ms:clock})]]),messages=new Map([[42,[]],[55,[]]]),deliveries=new Map(),tabs=new Map(),operations=new Map();
  const putMessage=(cid,id,text,context={})=>{if(!messages.has(cid))messages.set(cid,[]);messages.get(cid).push({id,role:'assistant',message:text,context_json:JSON.stringify(context)});};
  await page.route('**/api/**',async route=>{
-  const request=route.request(),input=request.postDataJSON()||{},path=new URL(request.url()).pathname;calls.push({path,...input});let payload={ok:true};
-  if(path==='/api/chat-v236.php'){
+  const request=route.request(),url=new URL(request.url()),input=request.postDataJSON()||{action:url.searchParams.get('action')},path=url.pathname;calls.push({path,...input});let payload={ok:true};
+  if(path==='/api/chat-settings-v237.php'){
+   if(input.action==='save_chat') for(const name of ['presence_mode','social_chat_enabled','sound_enabled']) chatSettings[name]=input[name];
+   if(input.action==='save_profile_agent') Object.assign(profileSettings.profile, {
+    profile_agent_id:input.profile_agent_id,profile_agent_enabled:input.profile_agent_enabled,
+    profile_agent_greeting:input.profile_agent_greeting,profile_agent_instructions:input.profile_agent_instructions
+   });
+   Object.assign(payload,{chat:copy(chatSettings),profile_agent:copy(profileSettings),agent_voice_allowed:true});
+  }else if(path==='/api/chat-v236.php'){
    if(input.action==='load')Object.assign(payload,{conversation:{id:input.conversation_id},messages:copy(messages.get(input.conversation_id)||[])});
    else if(input.action==='messages_after')Object.assign(payload,{conversation_id:input.conversation_id,messages:copy((messages.get(input.conversation_id)||[]).filter(m=>m.id>input.after_id))});
    else if(input.action==='new'){messages.set(blankId,[]);payload.conversation_id=blankId++;}
@@ -35,6 +65,11 @@ async function fixture(viewport={width:1200,height:1000}){
    }else Object.assign(payload,{conversations:[...messages.keys()].map(id=>({id,title:'Private Chat '+id,updated_at:'2026-11-03 12:00:00'})),updates:[],items:[],tracks:[]});
   }else if(input.action==='doorbell_list')Object.assign(payload,{contract,availability,reachable:true,server_now_ms:clock,turns:input.chat_conversation_id>0?[...turns.values()].filter(t=>!['replied','blocked','cancelled'].includes(t.state)||deliveries.has(t.turn_id+':'+input.chat_conversation_id)).map(t=>({...copy(t),server_now_ms:clock,chat_conversation_id:input.chat_conversation_id,chat_agent_id:input.chat_agent_id,chat_message_id:0})):[]});
   else if(input.action==='doorbell_presence'){
+   if (Object.hasOwn(input, 'availability') && failAvailability) {
+    failAvailability=false;
+    await route.fulfill({status:503,json:{ok:false}});
+    return;
+   }
    const prior=tabs.get(input.tab_id),accepted=!prior||prior.presence_sequence<input.presence_sequence;
    if(accepted){tabs.set(input.tab_id,copy(input));if(input.availability)availability=input.availability;}
    Object.assign(payload,{contract,accepted,availability,reachable:availability==='available'&&[...tabs.values()].some(t=>t.visible),server_now_ms:clock});
@@ -64,6 +99,7 @@ async function fixture(viewport={width:1200,height:1000}){
   else await route.fulfill({contentType:'application/json',body:JSON.stringify(payload)});
  });
  const f={page,errors,calls,turns,messages,deliveries,operations,tabs,get clock(){return clock;},advance(ms){clock+=ms;},hold:action=>new Promise(arrived=>holds.push({action,arrived})),card:id=>page.locator('[data-profile-doorbell-turn="'+id+'"]'),
+  failNextAvailabilityWrite(){failAvailability=true;},
   refresh:()=>page.evaluate(()=>window.VP3_PROFILE_DOORBELL_PA3_RUNTIME.refresh()),
   async boot(){await page.goto(base+'/');await this.card(101).waitFor();},
   async close(){check(errors.length===0,'actual Chat and doorbell have no browser errors: '+errors.join('; '));await page.close();}};
@@ -98,8 +134,65 @@ try{
   check(await f.page.locator('[data-profile-doorbell-turn="101"]').count()===1,'real saved-message restore and current projection create exactly one card');
   await f.page.locator('#chatInput').fill('A normal private question');await f.page.locator('#chatForm').evaluate(form=>form.requestSubmit());await f.page.getByText('Private Chat response.',{exact:true}).waitFor();
   check(f.calls.some(c=>c.path==='/api/chat-v236.php'&&c.action==='send'&&c.message==='A normal private question')&&!f.calls.some(c=>c.action==='doorbell_reply'&&c.message==='A normal private question'),'regular composer continues through the private Chat endpoint');
-  await f.page.locator('#profileDoorbellAvailability').selectOption('dnd');await f.page.waitForFunction(()=>document.querySelector('#profileDoorbellAvailability')?.value==='dnd');
-  check(f.calls.some(c=>c.action==='doorbell_presence'&&c.availability==='dnd'),'explicit Do not disturb preference reaches the presence service');
+  await f.close();
+ }
+ {
+  const f = await fixture();
+  await f.boot();
+  const gear = f.page.locator('#chatSettingsButton');
+  const dialog = f.page.getByRole('dialog', {name:'Chat Settings'});
+  const availability = dialog.locator('#chatSettingsVisitorAvailability #profileDoorbellAvailability');
+  const online = dialog.locator('select[name="presence_mode"]');
+  const oneOfEachSetting = async () => (await Promise.all([
+    availability,online,dialog.locator('[name="social_chat_enabled"]'),
+    dialog.locator('[name="sound_enabled"]'),dialog.locator('[name="profile_agent_id"]')
+  ].map(field => field.count()))).every(count => count===1);
+  const preferenceWrites = () => f.calls.filter(call => call.action==='doorbell_presence' && Object.hasOwn(call,'availability'));
+  await gear.click();
+  await dialog.locator('select[name="profile_agent_id"]').waitFor();
+  await availability.waitFor();
+  check(await f.page.locator('.chat-topbar-actions #profileDoorbellAvailability').count()===0
+    && await dialog.count()===1 && await oneOfEachSetting(),
+  'desktop has one Chat Settings dialog with separate presence and visitor preferences and no header dropdown');
+
+  await availability.selectOption('away');
+  const refreshedList = f.page.waitForResponse(response => response.request().postDataJSON()?.action==='doorbell_list');
+  await f.refresh();
+  await refreshedList;
+  check(await availability.inputValue()==='away' && preferenceWrites().length===0,
+    'polling preserves the staged visitor availability without writing it');
+  await dialog.getByRole('button',{name:'Cancel'}).click();
+  await dialog.waitFor({state:'hidden'});
+  await gear.click();
+  await availability.waitFor();
+  check(await availability.inputValue()==='available' && preferenceWrites().length===0,
+    'Cancel discards the change and reopening reads the saved value');
+
+  await availability.selectOption('dnd');
+  f.failNextAvailabilityWrite();
+  await dialog.getByRole('button',{name:'Save settings'}).click();
+  await dialog.locator('#chatSettingsStatus.error').waitFor();
+  check(await availability.inputValue()==='dnd' && preferenceWrites().length===1,
+    'a failed availability save keeps the modal and staged value available for retry');
+  await online.selectOption('offline');
+  await dialog.getByRole('button',{name:'Save settings'}).click();
+  await dialog.waitFor({state:'hidden'});
+  check(preferenceWrites().map(call => call.availability).join(',')==='dnd,dnd'
+    && f.calls.some(call => call.action==='save_chat' && call.presence_mode==='offline' && !Object.hasOwn(call,'availability')),
+  'Save persists Do not disturb and the separate Offline setting through their own services');
+
+  await gear.click();
+  await availability.waitFor();
+  check(await availability.inputValue()==='dnd' && await online.inputValue()==='offline'
+    && await f.page.locator('#chatSettingsModal').count()===1 && await oneOfEachSetting(),
+  'successful save reopens with both confirmed values and no duplicate modal or control');
+  await dialog.getByRole('button',{name:'Cancel'}).click();
+  await f.page.reload();
+  await gear.click();
+  await dialog.locator('select[name="profile_agent_id"]').waitFor();
+  await availability.waitFor();
+  check(await availability.inputValue()==='dnd' && await online.inputValue()==='offline',
+    'both saved preferences hydrate in a fresh browser document');
   await f.close();
  }
  {
@@ -138,6 +231,13 @@ try{
   const f=await fixture({width:390,height:844});f.turns.set(101,ownerCard(101,{server_now_ms:f.clock,chat:chatChoice(),visitor_label:'Visitor <img src=x onerror=alert(1)>',visitor_message:'Hello <script>window.__visitorExecuted=true</script>'}));await f.boot();
   check(await f.card(101).locator('script,img').count()===0&&await f.page.evaluate(()=>window.__visitorExecuted)!==true,'visitor markup remains literal text in the real browser');
   check(await f.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'visitor card and availability fit the mobile viewport without horizontal scrolling');
+  const gear = f.page.locator('#chatSettingsButton');
+  await gear.click();
+  const settings = f.page.getByRole('dialog',{name:'Chat Settings'});
+  await settings.locator('#profileDoorbellAvailability').waitFor();
+  check(await gear.count()===1 && await settings.count()===1,
+    'mobile can open the single settings dialog and visitor availability without the desktop rail');
+  await settings.getByRole('button',{name:'Cancel'}).click();
   await f.card(101).locator('textarea').scrollIntoViewIfNeeded();await f.card(101).locator('textarea').fill('Mobile visitor reply');
   const hold=f.hold('doorbell_reply');await f.card(101).locator('button[type=submit]').click();const reply=await hold;
   check(reply.input.message==='Mobile visitor reply'&&reply.input.conversation_id===1101,'mobile card reply reaches the correct visitor thread');await reply.release();

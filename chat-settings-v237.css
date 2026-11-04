@@ -45,6 +45,7 @@
 .chat-settings-section-title strong{color:#111827;font-size:.76rem}
 .chat-settings-section-title span{color:#6b7280;font-size:.59rem;line-height:1.45}
 .chat-settings-field{display:grid;gap:6px;color:#374151;font-size:.62rem;font-weight:800}
+.chat-settings-field-note{display:block;margin-top:5px;color:#6b7280;font-size:.59rem;line-height:1.45}
 .chat-settings-field select,.chat-settings-field textarea{width:100%;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#111827;outline:0;font:inherit;font-weight:500}
 .chat-settings-field select{min-height:38px;padding:7px 9px}
 .chat-settings-field textarea{min-height:74px;padding:9px;resize:vertical;line-height:1.45}
@@ -73,7 +74,7 @@ body.chat-settings-open{overflow:hidden}
 .chat-now-playing-close:hover,.chat-now-playing-close:focus-visible{background:#f3f4f6;color:#111827;outline:0}
 
 @media(max-width:760px){
-  .chat-settings-launcher{display:none}
+  .chat-settings-launcher{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
   .chat-now-playing{grid-template-columns:38px minmax(0,1fr) auto 38px 30px!important}
   .chat-now-playing-progress{grid-column:1/-1!important}
 }
