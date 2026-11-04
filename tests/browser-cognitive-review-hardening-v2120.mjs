@@ -129,10 +129,11 @@ must(notificationCenter.includes("return spoken === true;"),
 must(notificationCenter.includes("announce:text => queueSpeech(String(text || ''))"),
   'notification center announce() must return the queued speech result');
 
-must(cognitivePresentationJs.includes("if (!center || typeof center.announce !== 'function') return false;"),
-  'Cognitive Presentation must not consume voice when no announcer exists');
-must(cognitivePresentationJs.includes("spoken = (await Promise.resolve(center.announce(String(candidate.message)))) === true;"),
-  'Cognitive Presentation must await actual voice delivery');
+must(cognitivePresentationJs.includes("if (!center || typeof center.announceWhen !== 'function') return false;"),
+  'Cognitive Presentation must not consume voice when no guarded announcer exists');
+must(cognitivePresentationJs.includes("const canSpeak = () => !signal.aborted && !document.hidden && activeVoiceThrough === through;")
+  && cognitivePresentationJs.includes("spoken = (await Promise.resolve(center.announceWhen(String(candidate.message),canSpeak))) === true;"),
+  'Cognitive Presentation must await actual voice delivery for the current visible page and candidate');
 must(cognitivePresentationJs.indexOf("lastVoiceThrough = through;") >
      cognitivePresentationJs.indexOf("if (!spoken) {"),
   'local voice cursor must advance only after successful speech');
