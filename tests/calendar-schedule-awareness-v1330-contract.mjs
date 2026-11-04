@@ -9,11 +9,14 @@ const proactive = read('includes/agent-proactive-operations-v036.php');
 const proactivePipeline = read('includes/agent-proactive-v123.php');
 const cognitive = read('includes/agent-cognitive-loop-v310.php');
 const chat = [read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
+const tools = read('includes/agent-tool-authorization-v400.php');
 
 assert.match(awareness, /user_calendar_events_v1300\(\$pdo,\$user,/,
   'awareness must project from the canonical User Calendar instead of duplicating booking/event reads');
 assert.match(calendar, /'kind'=>'booking'/,
   'canonical User Calendar projection must still include scheduling bookings');
+assert.match(calendar, /\$includeHomeServer&&function_exists\('homeserver_task_calendar_v243_homeserver_calendar_items'\)/,
+  'Cloud-only reads must skip the paired calendar adapter');
 assert.match(awareness, /'read_only'=>true/);
 assert.match(awareness, /'availability_authority'=>false/,
   'derived open gaps must never become scheduling availability authority');
@@ -56,7 +59,9 @@ assert.match(chat, /(?:chat_v236_calendar_context_events|vp3_agent_chat_runtime_
 assert.match(chat, /array_merge\(\$calendarContextEvents,\$clientEvents\)/,
   'server-derived schedule events must be placed before client-supplied surface events');
 
-const nativeCalendarTool = chat.indexOf('user_calendar_agent_query_v1300($query,$user,$conversationId)');
+assert.match(tools, /user_calendar_agent_query_v1300\(\$query,\$user,\$conversationId\)/,
+  'the shared owner tool dispatcher must retain the native calendar tool');
+const nativeCalendarTool = chat.indexOf('vp3_agent_chat_tool_query_v1($query,$user,$conversationId,$agentContext)');
 const homeRoute = chat.indexOf('homeserver_agent_v025_chat(');
 const cloudRoute = chat.indexOf('chat_generate_answer_policy_v236(');
 assert.ok(nativeCalendarTool >= 0 && homeRoute > nativeCalendarTool && cloudRoute > nativeCalendarTool,

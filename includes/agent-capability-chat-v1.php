@@ -10,6 +10,7 @@ require_once __DIR__.'/agent-record-tools-v1.php';
 require_once __DIR__.'/agent-photo-media-v1.php';
 require_once __DIR__.'/agent-image-generation-v1.php';
 require_once __DIR__.'/agent-conversation-intent-v1.php';
+require_once __DIR__.'/agent-catch-up-chat-v1.php';
 
 /** The model selects a bounded discovery/record plan; it cannot submit executable code. */
 function vp3_capability_plan_v1(string $text,array $snapshot): array
@@ -244,6 +245,17 @@ function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $qu
     if(!knowledge_retrieval_v162_owner_session($user,$principal)||!has_permission('chat.access',$user))return $empty;
     // Identity is resolved by the caller from the authenticated Agent, never UI context.
     $context['user_agent_id']=($principal['kind']??'system')==='user_agent'?max(0,(int)($principal['agent_id']??0)):0;
+    if(($briefScope=vp3_catch_up_chat_scope_v1($query))!==null){
+        try{
+            $live=vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority);
+            return vp3_catch_up_chat_result_v1(vp3_agent_catch_up_v1($pdo,$live,$briefScope,$context['user_agent_id']));
+        }catch(Throwable $e){
+            $blocked=$e->getCode()===403;
+            return [...$empty,'handled'=>true,
+                'answer'=>$blocked?'This Agent scope cannot access that brief.':'I couldn’t load that brief right now.',
+                'tool_receipt'=>vp3_tool_receipt_v1('brief.attention.read','read',$blocked?'blocked':'failed',$blocked?'permission_denied':'check_failed')];
+        }
+    }
     $snapshot=vp3_capability_begin_v1($pdo,$user,$principal,$context,$scope);
     if(!$snapshot['capabilities'])return $empty;
     if(vp3_reminder_setup_request_v1($query))return $empty;

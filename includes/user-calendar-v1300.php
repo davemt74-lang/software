@@ -271,7 +271,7 @@ function user_calendar_automation_create_event_v1300(PDO $pdo, array $ownerUser,
     return user_calendar_create_local_event_v1300($pdo, $ownerUser, $input, 'automation', null, $sourceReference);
 }
 
-function user_calendar_events_v1300(PDO $pdo, array $user, string $fromUtc, string $toUtc): array
+function user_calendar_events_v1300(PDO $pdo, array $user, string $fromUtc, string $toUtc, bool $includeHomeServer = true): array
 {
     $ownerUserId = (int)($user['id'] ?? 0);
     if ($ownerUserId < 1 || !user_calendar_schema_ready_v1300($pdo)) return [];
@@ -305,7 +305,7 @@ function user_calendar_events_v1300(PDO $pdo, array $user, string $fromUtc, stri
         }
     }
 
-    if(function_exists('homeserver_task_calendar_v243_homeserver_calendar_items')){
+    if($includeHomeServer&&function_exists('homeserver_task_calendar_v243_homeserver_calendar_items')){
         try{
             foreach(homeserver_task_calendar_v243_homeserver_calendar_items(
                 $ownerUserId,

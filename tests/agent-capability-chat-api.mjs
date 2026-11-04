@@ -6,7 +6,7 @@ import net from 'node:net';
 import {spawn} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-capability-chat-'));
 fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(path.join(tmp,'api'));
-for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php','chat-canvas-media-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
+for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php','chat-canvas-media-v1.php','agent-catch-up-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
 for(const name of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
 fs.copyFileSync('tests/fixtures/phone-agent-schema-v1.php',path.join(tmp,'includes/phone-agent-schema-v1.php'));
@@ -57,6 +57,24 @@ try{
  const before=await state();response=await post('chat-v236.php','Can you create reminders?',{conversation_id:1},{'X-Fixture-User':'2'});check(response.data?.ok===false&&(await state()).messages===before.messages,'foreign conversation fails before discovery or message insertion');
  response=await post('chat-v236.php','Can you create reminders?',{csrf_token:'wrong'});check(response.r.status===419,'existing CSRF boundary remains active');
  response=await post('chat-v236.php','Can you create reminders?',{}, {'X-Fixture-Denied':'1'});check(response.r.status===403,'existing account permission boundary remains active');
+ const beforeBrief=await state();
+ for(const endpoint of ['chat-v236.php','chat-stream-v121.php','chat.php']){
+  const brief=await post(endpoint,'Catch me up',{input_mode:endpoint.includes('stream')?'voice':'text'},
+    {'X-Fixture-Model-Fail':'1','X-Fixture-Owner-Trap':'1'});
+  check(brief.data?.ok===true&&brief.data.tool_receipt?.capability==='brief.attention.read'&&
+    !brief.data.tool_receipt.changes_applied&&brief.data.actions?.length===0,'shared brief bypasses inference and ambient calendar refresh through '+endpoint+': '+brief.body);
+ }
+ const briefUrl=base+'/api/agent-catch-up-v1.php';
+ const projection=await fetch(briefUrl+'?scope=office');
+ const projected=await projection.json();
+ check(projection.ok&&projected.ok&&projected.brief.items.length<=3&&projected.brief.coverage&&
+   projection.headers.get('Cache-Control')==='no-store','Chat card uses a bounded read-only no-store endpoint');
+ check((await fetch(briefUrl+'?scope=unknown')).status===422&&
+   (await fetch(briefUrl+'?agent_id[]=7')).status===422,'brief endpoint rejects invalid scopes and selectors');
+ check((await fetch(briefUrl+'?agent_id=7',{headers:{'X-Fixture-User':'2'}})).status===403&&
+   (await fetch(briefUrl,{headers:{'X-Fixture-Anonymous':'1'}})).status===403,'brief endpoint checks owner and named Agent scope');
+ check((await fetch(briefUrl,{method:'POST'})).status===405&&(await state()).reminders===beforeBrief.reminders,
+   'brief route rejects writes and leaves reminder records untouched');
  // Use the production named-agent principal, resolver and SQL ownership boundary.
  const named={agent_context:{user_agent_id:7,timezone:'America/Phoenix'}};
  response=await post('chat-v236.php?agent=7','Can you create reminders?',named);

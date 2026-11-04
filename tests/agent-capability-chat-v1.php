@@ -43,4 +43,17 @@ $r=vp3_capability_chat_v1($pdo,$user,['kind'=>'user_agent','owner_user_id'=>2],'
 $GLOBALS['routeFixture']=['route'=>'homeserver','cloud'=>['ready'=>true]];$r=vp3_capability_chat_v1($pdo,$user,$principal,'Hello');check(!$r['handled'],'HomeServer-routed turns do not make an extra Cloud model call');
 $GLOBALS['routeFixture']=['route'=>'blocked','cloud'=>['ready'=>false]];$r=vp3_capability_chat_v1($pdo,$user,$principal,'Hello');check(!$r['handled'],'blocked compute does not bypass the canonical runtime policy');
 check((int)$pdo->query('SELECT COUNT(*) FROM reminders')->fetchColumn()===0,'discovery never writes reminder records');
+$called=false;
+$brief=discover('Please catch me up.',function()use(&$called){$called=true;throw new RuntimeException('Briefs are deterministic.');});
+check($brief['handled']&&!$called&&$brief['tool_receipt']['capability']==='brief.attention.read'&&$brief['actions']===[],
+    'an explicit catch-up request returns through the read tool before model routing');
+check(vp3_catch_up_chat_scope_v1('What needs attention in my store?')==='commerce'&&
+    vp3_catch_up_chat_scope_v1('Catch me up on work')==='office'&&
+    vp3_catch_up_chat_scope_v1('What does catch me up mean?')===null,
+    'brief scopes match explicit commands and leave ordinary questions in Chat');
+$limited=vp3_catch_up_chat_result_v1(['items'=>[],'coverage'=>['calendar'=>'ready','orders'=>'unavailable']]);
+check(str_contains($limited['answer'],'sources I could check')&&str_contains($limited['answer'],'unavailable')&&
+    !$limited['tool_receipt']['changes_applied'],'partial coverage is not presented as an account-wide all-clear');
+$denied=discover('Catch me up',null,[],null,fn()=>throw new RuntimeException('Denied',403));
+check($denied['tool_receipt']['status']==='blocked'&&$denied['sources']===[],'brief revalidates the caller before returning evidence');
 echo 'CAPABILITY_CHAT=PASS ('.($checks-$before)." cases)\n";
