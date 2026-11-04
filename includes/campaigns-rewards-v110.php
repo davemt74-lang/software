@@ -231,7 +231,8 @@ function campaigns_rewards_send_contacts_v110(PDO $pdo,int $userId): array
 {
     if($userId<1||!function_exists('column_exists')||!column_exists('crm_contacts','owner_user_id'))return [];
     $stmt=$pdo->prepare("SELECT cc.*,u.id target_user_id,u.email account_email FROM crm_contacts cc
-      INNER JOIN users u ON u.email=cc.email_normalized AND u.is_active=1
+      INNER JOIN users u ON u.email=CONVERT(cc.email_normalized USING utf8mb4) COLLATE utf8mb4_unicode_ci
+        AND u.is_active=1
       WHERE cc.owner_user_id=? AND cc.status<>'archived' AND u.id<>?
         AND (COALESCE(cc.vp3_user_id,0)=0 OR cc.vp3_user_id=u.id)
       ORDER BY cc.updated_at DESC,cc.id DESC LIMIT 500");

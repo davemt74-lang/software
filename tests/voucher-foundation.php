@@ -197,7 +197,9 @@ if (($argv[1]??'')==='worker') {
 if ((int)fixture_query('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')->fetchColumn()!==0) {
     throw new RuntimeException('Start the voucher fixture on an empty database.');
 }
-db()->exec("CREATE TABLE users (id INT UNSIGNED NOT NULL PRIMARY KEY,is_active TINYINT NOT NULL,email VARCHAR(190) NOT NULL UNIQUE,
+// Exercise recipient matching when an existing users table uses a different collation from CRM.
+db()->exec("CREATE TABLE users (id INT UNSIGNED NOT NULL PRIMARY KEY,is_active TINYINT NOT NULL,
+    email VARCHAR(190) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL UNIQUE,
     display_name VARCHAR(190) NOT NULL,role VARCHAR(30) NOT NULL DEFAULT 'member',avatar_path VARCHAR(300) NOT NULL DEFAULT '') ENGINE=InnoDB");
 db()->exec("INSERT INTO users (id,is_active,email,display_name) VALUES
     (1,1,'owner@fixture.test','Merchant owner'),(2,1,'sender@fixture.test','Sender'),(3,1,'recipient@fixture.test','Recipient'),
