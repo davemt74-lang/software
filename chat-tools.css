@@ -21,6 +21,15 @@
 #chatToolsContent>.vp3-chat-task-mode{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0}
 #chatToolsContent select{max-width:100%;min-height:32px;font:inherit}
 #chatToolsContent details>summary{cursor:pointer}
+#chatToolsContent .vp3-connected-sites{padding:8px 0;border-top:1px solid #e5e7eb}
+.vp3-connected-sites p{margin:6px 0;color:#4b5563;overflow-wrap:anywhere}
+.vp3-connected-sites [role=status]{min-height:1.5em}
+.vp3-connected-sites [data-site-row]{padding:8px 0;border-top:1px solid #e5e7eb}
+.vp3-connected-sites [data-site-row] strong{overflow-wrap:anywhere}
+.vp3-connected-sites label{display:grid;gap:3px;margin:8px 0}
+.vp3-connected-sites input{width:100%;box-sizing:border-box;min-height:36px;padding:6px 8px;border:1px solid #9ca3af;border-radius:6px;background:#fff;color:#111827;font:inherit}
+.vp3-connected-sites button{min-height:36px;margin:0 8px 4px 0;padding:4px 10px;border:1px solid #9ca3af;border-radius:6px;background:#fff;color:#111827;font:inherit}
+.vp3-connected-sites button:disabled{opacity:.55}
 #chatToolsButton:focus-visible,#chatToolsPanel button:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
 @media(max-width:600px){.chat-main #chatForm{gap:5px;padding-left:8px}.chat-main #chatForm>button{flex-basis:30px;width:30px;height:32px}.chat-main #chatVoiceStatus{font-size:11px}#chatToolsPanel{max-height:60dvh}}
 

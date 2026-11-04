@@ -35,7 +35,7 @@ if($action==='load'){$conversationId=(int)($input['conversation_id']??0);$conver
 if($action==='messages_after'){$conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');$afterId=max(0,(int)($input['after_id']??0));$stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');$stmt->execute([$conversationId,$afterId]);echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$stmt->fetchAll()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
 if($action==='delete'){$conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');homeserver_agent_v018_forget($userId,$conversationId);$pdo->prepare('DELETE FROM chat_conversations WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);echo json_encode(['ok'=>true]);exit;}
 if($action==='send'){
-    $payload=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed);
+    $payload=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);
     echo json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     exit;
 }

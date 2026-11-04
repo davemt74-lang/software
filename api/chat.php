@@ -166,7 +166,7 @@ try {
     if ($action === 'send') {
         $scope=vp3_agent_chat_stream_scope_v380($pdo,$user,$input);
         $brainAllowed=personal_capability_has_v242('agent_brain.access',$user);
-        $payload=vp3_agent_chat_send_v2160($pdo,$user,$scope['agent'],$scope['principal'],$input,$brainAllowed);
+        $payload=vp3_agent_chat_send_v2160($pdo,$user,$scope['agent'],$scope['principal'],$input,$brainAllowed,allowConnectedSites:true);
         echo json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         exit;
     }

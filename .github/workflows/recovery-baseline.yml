@@ -33,12 +33,18 @@ jobs:
         with:
           php-version: '8.3'
           coverage: none
-          extensions: mbstring, pdo_sqlite, curl
+          extensions: mbstring, pdo_sqlite, curl, sodium
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Connected Sites authorization and direct Cloud routing
+        run: |
+          php tests/connected-gelato-v1.php
+          php tests/connected-sites-chat-v1.php
+          node tests/connected-gelato-api-v1.mjs
 
       - name: Current capability awareness and permission isolation
         run: |
@@ -244,4 +250,19 @@ jobs:
 
       - name: CI workflow governance
         run: node tests/ci-workflow-consolidation.mjs
+
+  connected-sites-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium for the shipped Chat tools
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Test pairing, the installed agent name and disconnect in Chat
+        run: node tests/connected-sites-browser.mjs
 
