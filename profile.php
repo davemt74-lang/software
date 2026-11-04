@@ -85,6 +85,13 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
 $commerceProducts=[];
 try { $commerceProducts=profile_commerce_products_for_profile_v900($pdo,$profile,true,40); }
 catch (Throwable $e) { vp3_profile_optional_failure('commerce',$e,$username); }
+$checkoutAvailable=false;
+foreach($commerceProducts as $product){
+    if($product['payment_mode']==='full'&&$product['binding_type']!=='appointment_event_type'&&$product['fulfillment_type']!=='physical'){
+        $checkoutAvailable=true;
+        break;
+    }
+}
 
 $campaigns=[];
 try {
@@ -297,6 +304,10 @@ if($webmcpResumeRequested){
 <?php endif; ?>
 <script>
 window.STONEFELLOW_PROFILE_AGENT={username:<?= json_encode($username,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,endpoint:<?= json_encode(url('/api/profile-agent.php'),JSON_UNESCAPED_SLASHES) ?>,callEndpoint:<?= json_encode(url('/api/profile-calls-pa3c.php'),JSON_UNESCAPED_SLASHES) ?>,speechEndpoint:<?= json_encode(url('/api/profile-speech-pa4a.php'),JSON_UNESCAPED_SLASHES) ?>,callOwnerName:<?= json_encode($displayName,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,profileToken:<?= json_encode($profileToken,JSON_UNESCAPED_SLASHES) ?>,conversationNamespace:<?= json_encode($conversationNamespace,JSON_UNESCAPED_SLASHES) ?>,agentName:<?= json_encode((string)($agent['display_name']??''),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,ownerName:<?= json_encode($displayName,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,greeting:<?= json_encode($agentGreeting,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>};
+<?php if($agent&&!$preview): ?>
+window.STONEFELLOW_PROFILE_AGENT.checkoutEndpoint=<?= json_encode(url('/api/profile-conversation-checkout-pa5.php'),JSON_UNESCAPED_SLASHES) ?>;
+window.STONEFELLOW_PROFILE_AGENT.checkoutAvailable=<?= json_encode($checkoutAvailable) ?>;
+<?php endif; ?>
 for(const tab of document.querySelectorAll('[data-profile-tab]'))tab.addEventListener('click',()=>{const key=tab.dataset.profileTab;document.querySelectorAll('[data-profile-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===tab)));document.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==key);});
 const profileAgentShell=document.getElementById('profileAgentShell');
 const profileAgentLauncher=document.querySelector('[data-open-profile-agent]');
@@ -355,6 +366,7 @@ window.VP3_PROFILE_WEBMCP={
 <link rel="stylesheet" href="<?= e(url('/profile-speech-pa4a.css?v='.substr(hash_file('sha256',__DIR__.'/profile-speech-pa4a.css'),0,12))) ?>">
 <script data-voice-capture-scope="<?= e($viewer?(string)(int)$viewer['id']:'guest') ?>" src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-native-receiver-20261023')) ?>"></script>
 <script src="<?= e(url('/profile-calls-pa3c.js?v='.$profileCallsBuild)) ?>"></script>
+<script src="<?= e(url('/profile-conversation-checkout-pa5.js?v='.substr(hash_file('sha256',__DIR__.'/profile-conversation-checkout-pa5.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-agent.js?v=profile-direct-calls-pa3c-'.substr(hash_file('sha256',__DIR__.'/profile-agent.js'),0,12))) ?>"></script>
 <?php endif; ?>
 </body>

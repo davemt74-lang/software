@@ -11,6 +11,7 @@ require_once __DIR__ . '/includes/profile-calls-pa3c.php';
 require_once __DIR__ . '/includes/profile-visitor-speech-pa4a.php';
 require_once __DIR__ . '/includes/profile-attention-pa4b.php';
 require_once __DIR__ . '/includes/profile-event-projection-pa4b.php';
+require_once __DIR__ . '/includes/profile-conversation-checkout-pa5.php';
 require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
 
 $pdo = db();
@@ -68,6 +69,7 @@ try {
     vp3_profile_attention_ensure_schema_pa4b($pdo);
     vp3_profile_projection_ensure_schema_pa4b($pdo);
     agent_commerce_ensure_schema_v800($pdo);
+    vp3_profile_checkout_ensure_schema_pa5($pdo);
     vp3_user_agent_lifecycle_ensure_schema_v390($pdo);
     vp3_agent_memory_scope_ensure_schema_v410($pdo);
     agent_event_ensure_schema_v1920($pdo);

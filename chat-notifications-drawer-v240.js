@@ -67,6 +67,7 @@
   let busy = false;
   let attentionCursor = 0;
   let profileAttentionCursor = 0;
+  let profileOrderCursor = 0;
   let attentionTimer = 0;
   let attentionBusy = false;
   let speechQueue = Promise.resolve();
@@ -1319,6 +1320,7 @@
     }
 
     if (speak && !data.duplicate && data.voice_allowed !== false) queueSpeech(String(data.message || ''));
+    if (data.preserve_unread === true) return true;
     // Legacy non-Profile integrations (including Radar) retain their delivery
     // acknowledgement. Profile lifecycle reads use the explicit PA4B action.
     if (!await requestState('mark_read', {notification_id:notificationId})) return true;
@@ -1328,44 +1330,55 @@
   }
 
   async function pollAttention(bootstrap = false, scope = '') {
+    const orderScope = scope === 'profile_orders';
     if (scope === 'profile' && !document.hidden) await profileAttention?.refresh();
-    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention && scope !== 'profile') return;
+    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention && scope !== 'profile' && !orderScope) return;
     if (!chatCanvasAvailable()) return;
-    if (scope === 'profile') {
+    if (scope === 'profile' || orderScope) {
       const chat = continuity();
       if (chat.isRestoring?.() || chat.isReady?.() === false || String(document.getElementById?.('chatInput')?.value || '').trim()) return;
       if (['processing','speaking','recording'].includes(String(document.body?.dataset.stonefellowAgentState || ''))) return;
     }
     if (attentionBusy || (document.hidden && !bootstrap)) return;
     attentionBusy = true;
+    let orderActivity = false;
     try {
-      const cursor = scope === 'profile' ? profileAttentionCursor : attentionCursor;
+      const cursor = orderScope ? profileOrderCursor : scope === 'profile' ? profileAttentionCursor : attentionCursor;
       if (scope === 'profile') bootstrap = cursor === 0;
       const data = await request('attention', null, {after_id:bootstrap ? 0 : cursor, ...(scope ? {scope} : {})});
       const items = Array.isArray(data.items) ? data.items : [];
+      orderActivity = orderScope && items.length > 0;
       for (let index = 0; index < items.length; index += 1) {
         // Only genuine user-attention notifications reach this path. Agent
         // Brain operational activity is rendered in the Brain tab instead.
         const speak = !bootstrap || index === items.length - 1;
         if (await presentAttention(items[index], speak) === false) throw new Error('Notification presentation was deferred.');
       }
-      if (scope === 'profile') profileAttentionCursor = Math.max(profileAttentionCursor, Number(data.latest_id || 0));
+      if (orderScope) profileOrderCursor = Math.max(profileOrderCursor, Number(data.latest_id || 0));
+      else if (scope === 'profile') profileAttentionCursor = Math.max(profileAttentionCursor, Number(data.latest_id || 0));
       else attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
     } catch (_error) {
       // Keep the cursor unchanged so a failed canvas presentation is retried
       // instead of silently consuming an actionable notification.
     } finally {
       attentionBusy = false;
+      if (orderActivity) void refresh(false);
     }
   }
 
   function startAttentionPolling() {
     if (!chatCanvasAvailable()) return;
-    void pollAttention(false, 'profile');
-    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention) return;
-    void pollAttention(true);
+    const cognitiveOwnsAttention = window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention;
+    void pollAttention(false, 'profile').then(() => pollAttention(false, 'profile_orders'));
+    if (!cognitiveOwnsAttention) void pollAttention(true);
     if (attentionTimer) window.clearInterval(attentionTimer);
-    attentionTimer = window.setInterval(() => {void pollAttention(false);void pollAttention(false,'profile');}, 5000);
+    attentionTimer = window.setInterval(async () => {
+      await pollAttention(false, 'profile_orders');
+      if (!cognitiveOwnsAttention) {
+        await pollAttention(false);
+        await pollAttention(false, 'profile');
+      }
+    }, 5000);
   }
 
   if(cfg.orbOnly){

@@ -45,6 +45,34 @@ function profile_agent_owner_state_v242(PDO $pdo,array $user): array{
     return $state;
 }
 
+/** Purchase suggestions carry current public catalog facts and no private checkout state. */
+function profile_agent_checkout_products_pa5(PDO $pdo,array $profile,string $message): array
+{
+    $search=static fn(string $value): string=>trim((string)preg_replace('/[^\pL\pN]+/u',' ',mb_strtolower($value)));
+    $query=$search($message);
+    if(!preg_match('/\b(?:buy|purchase|checkout|order|price|pricing|pay|cost|shop|store|products?|merch|catalog|sell|sale)\b/u',$query))return [];
+
+    try{
+        require_once dirname(__DIR__).'/includes/profile-conversation-checkout-pa5.php';
+        $catalog=vp3_profile_checkout_catalog_pa5($pdo,$profile)['products'];
+    }catch(Throwable $e){
+        // The Commerce module is optional. A missing migration or failed read
+        // must not undo a visitor message that has already been accepted.
+        return [];
+    }
+    $matches=[];
+    foreach($catalog as $product){
+        foreach([$search($product['title']),$search($product['slug'])] as $name){
+            if($name!==''&&str_contains(' '.$query.' ',' '.$name.' ')){
+                $matches[]=$product;
+                break;
+            }
+        }
+    }
+    $browse=(bool)preg_match('/\b(?:products|merch|catalog|store|shop|for sale|what can i (?:buy|purchase)|what do you sell)\b/u',$query);
+    return array_slice($matches?:($browse?$catalog:[]),0,5);
+}
+
 /** Existing portal actions participate in the same turn fence without inventing a private Chat card. */
 function profile_agent_owner_handoff_pa3(PDO $pdo,array $user,array $conversation,string $operation,string $message='',string $requestId=''): ?array
 {
@@ -181,7 +209,11 @@ if($action==='message'){
     $delivery=['async'=>true,'client_request_id'=>$input['client_request_id']??''];
     if(array_key_exists('chat_mode',$input))$delivery['chat_mode']=$input['chat_mode'];
     if(array_key_exists('continue_live',$input))$delivery['continue_live']=$input['continue_live'];
-    profile_agent_json(true,vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,(string)($input['message']??''),$cid,$delivery));
+    $message=(string)($input['message']??'');
+    $result=vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,$message,$cid,$delivery);
+    $products=profile_agent_checkout_products_pa5($pdo,$publicCtx['profile'],$message);
+    if($products)$result['checkout_products']=$products;
+    profile_agent_json(true,$result);
 }
 if($action==='end_live_chat'){
     require_once dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';

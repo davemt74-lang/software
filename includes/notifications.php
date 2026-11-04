@@ -494,9 +494,16 @@ function mark_all_notifications_read(int $userId): void
     $stmt->execute([$userId]);
 }
 
-/** Profile service and actionable Radar updates have an explicit Chat handoff. */
+function notification_is_profile_order_pa5(array $row): bool
+{
+    return ($row['type']??null)==='profile_commerce_order_paid'
+        &&($row['source_type']??null)==='profile_commerce_order'&&(int)($row['source_id']??0)>0;
+}
+
+/** Profile service, verified orders and actionable Radar updates have an explicit Chat handoff. */
 function notification_is_profile_attention_v1341(array $row): bool
 {
+    if(notification_is_profile_order_pa5($row))return true;
     if(!notification_requires_attention($row))return false;
     $source=strtolower(trim((string)($row['source_type']??'')));
     $type=strtolower(trim((string)($row['type']??'')));
@@ -529,4 +536,16 @@ function notification_profile_attention_after_v1341(array $user,int $afterId=0,i
         }
     }
     return $out;
+}
+
+/** Canvas delivery has its own cursor and is independent of bell read state. */
+function notification_profile_orders_after_pa5(PDO $pdo,int $owner,int $afterId): array
+{
+    $since=gmdate('Y-m-d H:i:s',time()-7*86400);
+    $q=$pdo->prepare("SELECT id,type FROM notifications WHERE user_id=? AND id>? AND created_at>=?
+        AND type='profile_commerce_order_paid' AND source_type='profile_commerce_order' AND source_id>0
+        ORDER BY id ASC LIMIT 25");
+    $q->execute([$owner,$afterId,$since]);
+    $items=$q->fetchAll(PDO::FETCH_ASSOC);
+    return ['ok'=>true,'latest_id'=>$items?(int)$items[count($items)-1]['id']:$afterId,'items'=>$items];
 }

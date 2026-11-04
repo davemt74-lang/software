@@ -23,8 +23,11 @@ const portal=`<!doctype html><html><head><meta name="viewport" content="width=de
 const server=http.createServer((request,response)=>{const path=new URL(request.url,'http://localhost').pathname;if(files[path]){response.writeHead(200,{'Content-Type':(path.endsWith('.css')?'text/css':'text/javascript')+'; charset=utf-8'});response.end(files[path]);}else{response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});response.end(path==='/portal'?portal:owner);}});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port;
 let browser,checks=0;const check=(ok,label)=>{assert.ok(ok,label);checks++;console.log('PASS '+label);};
+const orderNote={id:701,source_type:'profile_commerce_order',source_id:7,type:'profile_commerce_order_paid',title:'New Profile order',body:'Payment verified for PA5-7.',target_url:'/profile-commerce-products.php#orders',is_read:0};
+const orderAnnouncement='New Profile order PA5-7. Payment of USD 25.00 is verified.';
 async function fixture({isPortal=false,items=[attentionItem()],stored=[]}={}){
   const context=await browser.newContext({viewport:{width:390,height:844}}),requests=[],errors=[],holds=[],failures=new Map(),rows=new Map(items.map(item=>[item.attention_id,copy(item)])),messages=copy(stored),operations=new Map();let stateOverride=null,selectedCid=42;
+  let sellerOrder=false,orderRead=false;
   const envelope=()=>({ok:true,complete:true,contract,server_now_ms:Date.now(),voice_allowed:false});
   const projection=(raw,input)=>{const item={...copy(raw),delivery_location:raw.delivery_id?(raw.chat_conversation_id===input.conversation_id&&raw.chat_agent_id===input.agent_id?'current':'elsewhere'):'none'},due=item.disposition==='snoozed'&&item.snoozed_until_ms<=Date.now();if(item.read&&!due){item.eligible=false;item.reason||='read';}else if(item.presented&&!due){item.eligible=false;item.reason||='presented';}return item;};
   const ownerState=()=>({profile:{username:'owner',profile_agent_id:7,profile_agent_enabled:1,profile_agent_greeting:'Saved greeting'},profile_url:'/owner',agents:[],policies:{},analytics:{},notifications:{unread:1},public_agent_status:{reason:'live',agent_name:'Public helper'},conversations:[101,202].map(id=>({id,visitor_label:'Visitor '+id,status:'open',last_summary:'Visitor '+id})),activity:[],visits:[]});
@@ -51,8 +54,22 @@ async function fixture({isPortal=false,items=[attentionItem()],stored=[]}={}){
       else if(input.action==='save_profile_agent')result.state=ownerState();
       else throw Error('Unexpected Profile endpoint action '+input.action);
     }else if(url.pathname==='/api/chat-notifications-brain-v240.php'){
-      if(input.action==='state'||input.action==='mark_all_read'||input.action==='mark_read')Object.assign(result,{notifications:{unread:[...rows.values()].filter(item=>!item.read).length,items:[...rows.values()].map(item=>({id:item.notification_id,source_type:'profile_event',title:item.title,body:item.display_text,is_read:item.read?1:0}))},brain:{},history:{items:[]}});
-      else if(input.action==='attention')Object.assign(result,{items:[],latest_id:0,complete:true});
+      if(input.action==='state'||input.action==='mark_all_read'||input.action==='mark_read'){
+        if(sellerOrder&&(input.action==='mark_all_read'||Number(input.notification_id)===orderNote.id))orderRead=true;
+        const notifications=[...rows.values()].map(item=>({id:item.notification_id,source_type:'profile_event',title:item.title,body:item.display_text,is_read:item.read?1:0}));
+        if(sellerOrder)notifications.push({...orderNote,is_read:Number(orderRead)});
+        Object.assign(result,{notifications:{unread:notifications.filter(item=>!item.is_read).length,items:notifications},brain:{},history:{items:[]}});
+      }else if(input.action==='attention'){
+        const ready=sellerOrder&&input.scope==='profile_orders'&&input.after_id<orderNote.id;
+        Object.assign(result,{items:ready?[{id:orderNote.id,type:orderNote.type}]:[],latest_id:ready?orderNote.id:input.after_id,complete:true});
+      }else if(input.action==='present_attention'&&sellerOrder&&Number(input.notification_id)===orderNote.id){
+        const prior=messages.find(message=>message.id===801);
+        if(!prior)messages.push({id:801,conversation_id:input.conversation_id,role:'assistant',message:orderAnnouncement,
+          context_json:JSON.stringify({actions:[{type:'open_url',label:'View Profile orders',url:orderNote.target_url}],attention:{required:false,notification_id:orderNote.id}})});
+        const current=!prior||prior.conversation_id===input.conversation_id;
+        Object.assign(result,{handled:current,preserve_unread:true,voice_allowed:false,notification_id:orderNote.id,
+          ...(current?{conversation_id:input.conversation_id,message_id:801,duplicate:Boolean(prior),message:orderAnnouncement}:{})});
+      }
       else if(input.action==='profile_attention_state'){
         const rank=item=>item.disposition==='snoozed'&&item.snoozed_until_ms<=Date.now()?0:['handled','ignored'].includes(item.disposition)?3:!item.read&&!item.presented?1:2;
         const all=[...rows.values()].map(row=>projection(row,input)).sort((a,b)=>rank(a)-rank(b)||a.notification_id-b.notification_id),page=input.page||0,items=all.slice(page*25,(page+1)*25);
@@ -82,11 +99,12 @@ async function fixture({isPortal=false,items=[attentionItem()],stored=[]}={}){
   if(!isPortal)await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady?.()&&!window.STONEFELLOW_CHAT_CONTINUITY_V87?.isRestoring?.());
   const f={context,page,requests,errors,rows,messages,failures,hold:action=>new Promise(arrived=>holds.push({action,arrived})),setState:value=>stateOverride=value,
     poll:()=>page.evaluate(()=>STONEFELLOW_NOTIFICATION_CENTER.pollProfileAttention()),close:()=>context.close(),
+    publishSellerOrder(){sellerOrder=true;},
     issued:action=>requests.filter(input=>input.action===action)};
   return f;
 }
 try{
-  browser=await chromium.launch({headless:true});
+  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
   const f=await fixture();await f.page.waitForSelector('#chatThread [data-profile-attention-card]');await f.page.waitForFunction(()=>document.querySelector('#chatThread [data-profile-attention-card]')?.textContent.includes('Presented'));
   check(await f.page.evaluate(()=>STONEFELLOW_CHAT_CONTINUITY!==STONEFELLOW_CHAT_CONTINUITY_V87&&typeof STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit==='function'),'actual Chat voice IIFE overwrites primary continuity before attention loads');
   check(f.issued('profile_attention_present').every(input=>input.conversation_id===42&&input.agent_id===7),'real drawer uses exact canonical CID42 and Agent7');
@@ -166,5 +184,28 @@ try{
   check((await ids()).length===25&&(await pager.innerText()).includes('Page 2'),'failed Next visibly retains the last confirmed page instead of showing an empty list');
   paging.failures.delete('profile_attention_state');await paging.page.locator('#chatNotificationDrawer [data-profile-attention-action="refresh"]').click();await paging.page.waitForFunction(()=>document.querySelector('#chatNotificationDrawer .profile-attention-pages')?.textContent.includes('Page 3'));
   check((await ids()).length===15&&paging.errors.length===0,'Retry reaches the requested next page with no browser errors');await paging.close();
+
+  const seller=await fixture({items:[]});
+  await seller.page.waitForFunction(()=>document.getElementById('chatNotificationButton').getAttribute('aria-label')==='Notifications');
+  seller.publishSellerOrder();
+  await seller.page.evaluate(()=>STONEFELLOW_NOTIFICATION_CENTER.pollAttention(false,'profile_orders'));
+  const orderCanvas=seller.page.locator('#chatThread [data-chat-message-id="801"]');
+  await orderCanvas.getByText(orderAnnouncement,{exact:true}).waitFor();
+  check(seller.issued('attention').some(input=>input.scope==='profile_orders')&&seller.issued('present_attention').some(input=>input.conversation_id===42&&input.agent_id===7),'seller order appears in the current private Chat while Cognitive owns generic attention');
+  const ordersLink=orderCanvas.getByRole('link',{name:'View Profile orders',exact:true});
+  check(await ordersLink.getAttribute('href')===orderNote.target_url,'canvas announcement opens the seller orders surface');
+  await seller.page.locator('#chatNotificationButton').click();
+  const orderBell=seller.page.locator('#chatNotificationDrawer [data-notification-id="701"].unread');
+  await orderBell.getByText(orderNote.title,{exact:true}).waitFor();
+  check(await seller.page.locator('#chatNotificationButton').getAttribute('aria-label')==='Notifications, 1 unread'&&!seller.issued('mark_read').length,'canvas delivery leaves the order unread in the bell until the seller acts');
+  check(await seller.page.evaluate(()=>__speechCalls===0&&__mediaCalls===0),'verified order announcement does not narrate or play audio');
+  await seller.page.locator('[data-notification-drawer-close]').click();
+  await seller.page.evaluate(()=>STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(55));
+  const replay=seller.page.waitForResponse(response=>response.url().endsWith('/api/chat-notifications-brain-v240.php')&&response.request().postDataJSON()?.action==='present_attention'&&response.request().postDataJSON()?.conversation_id===55);
+  await seller.page.reload();
+  await replay;
+  check(await seller.page.evaluate(()=>STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===55)&&await orderCanvas.count()===0&&seller.messages.filter(message=>message.id===801).length===1,'replaying the order in another Chat neither switches threads nor duplicates the announcement');
+  check(!seller.issued('mark_read').length&&seller.errors.length===0,'seller notification replay stays unread and browser error-free');
+  await seller.close();
   console.log(`PROFILE_ATTENTION_PA4B_BROWSER=PASS (${checks} assertions)`);
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}

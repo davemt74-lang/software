@@ -237,6 +237,19 @@ function agent_commerce_fulfillment_enqueue_pa2(PDO $pdo,array $order,string $ev
         $pdo->prepare(agent_commerce_insert_ignore_pa2($pdo)." INTO agent_commerce_fulfillment_jobs_pa2 (job_key,order_id,order_item_id,payment_id,event_type,status,attempt_count,next_attempt_at,created_at,updated_at,last_error_class) VALUES (?,?,?,?,'project_paid',?,0,?,?,?,?)")
             ->execute([$key,(int)$order['id'],(int)$first['id'],$paymentId,$status,$review?null:$now,$now,$now,$review?'payment_review':'']);
         agent_commerce_fulfillment_verify_job_pa2($pdo,$key,(int)$order['id'],(int)$first['id'],$paymentId,'project_paid');
+        $metadata=json_decode((string)($order['metadata_json']??''),true);
+        if((int)$order['amount_due_cents']===0&&(int)$order['total_cents']>0
+            &&is_string($metadata['profile_checkout_review_id']??null)){
+            // One announcement for the order even if a separate verified
+            // payment or a provider replay arrives later. Fulfillment and
+            // payment review never delay this seller-facing projection.
+            $orderId=(int)$order['id'];$itemId=(int)$first['id'];
+            $key=hash('sha256',$orderId.'|announce_order');
+            $pdo->prepare(agent_commerce_insert_ignore_pa2($pdo)." INTO agent_commerce_fulfillment_jobs_pa2
+                (job_key,order_id,order_item_id,event_type,status,next_attempt_at,created_at,updated_at)
+                VALUES (?,?,?,'announce_order','pending',?,?,?)")->execute([$key,$orderId,$itemId,$now,$now,$now]);
+            agent_commerce_fulfillment_verify_job_pa2($pdo,$key,$orderId,$itemId,null,'announce_order');
+        }
     }
 }
 function agent_commerce_fulfillment_finish_pa2(PDO $pdo,array $job,string $status,string $reason=''): bool
@@ -255,7 +268,7 @@ function agent_commerce_fulfillment_run_pa2(PDO $pdo,int $limit=100,?callable $d
 {
     if($pdo->inTransaction())throw new RuntimeException('Commerce fulfillment cannot run before commit.');
     $limit=max(1,min(500,$limit));$now=agent_commerce_time_pa2();$stats=['completed'=>0,'retry'=>0,'review_required'=>0];
-    $scope=($onlyOrderId>0?' AND order_id='.$onlyOrderId:'').($projectionOnly?" AND event_type='project_paid'":'');
+    $scope=($onlyOrderId>0?' AND order_id='.$onlyOrderId:'').($projectionOnly?" AND event_type IN ('project_paid','announce_order')":'');
     $s=$pdo->prepare("SELECT id FROM agent_commerce_fulfillment_jobs_pa2 WHERE ((status IN ('pending','retry') AND (next_attempt_at IS NULL OR next_attempt_at<=?)) OR (status='processing' AND lease_expires_at<=?))".$scope." ORDER BY id LIMIT ".$limit);$s->execute([$now,$now]);
     foreach($s->fetchAll(PDO::FETCH_ASSOC)?:[] as $pick){
         $job=null;
@@ -281,7 +294,11 @@ function agent_commerce_fulfillment_run_pa2(PDO $pdo,int $limit=100,?callable $d
             $i=$pdo->prepare('SELECT * FROM agent_commerce_order_items_v800 WHERE id=? AND order_id=?'.agent_commerce_lock_pa2($pdo));$i->execute([(int)$job['order_item_id'],(int)$job['order_id']]);$item=$i->fetch(PDO::FETCH_ASSOC);
             if(!$order||!$item)throw new RuntimeException('Commerce fulfillment record unavailable.',409);
             $event=(string)$job['event_type'];
-            if($event==='expired'&&!in_array((string)$order['payment_status'],['expired','cancelled'],true)&&(string)$order['order_status']!=='payment_review'){
+            if($event==='announce_order'){
+                require_once __DIR__.'/profile-commerce-seller-alert-v1140.php';
+                profile_commerce_seller_order_alert_pa5($pdo,$order,$item);
+                if(!agent_commerce_fulfillment_finish_pa2($pdo,$job,'completed'))throw new RuntimeException('Commerce announcement lease changed.',503);
+            }elseif($event==='expired'&&!in_array((string)$order['payment_status'],['expired','cancelled'],true)&&(string)$order['order_status']!=='payment_review'){
                 if(!agent_commerce_fulfillment_finish_pa2($pdo,$job,'completed','expiry_superseded'))throw new RuntimeException('Commerce fulfillment lease changed.',503);
             }else{
                 if($event!=='expired'&&((string)$order['order_status']==='payment_review'||!in_array((string)$order['payment_status'],['paid','partially_paid'],true)))throw new RuntimeException('Commerce fulfillment requires review.',409);
@@ -304,10 +321,12 @@ function agent_commerce_fulfillment_run_pa2(PDO $pdo,int $limit=100,?callable $d
             $pdo->commit();$stats['completed']++;
         }catch(Throwable $e){
             if($pdo->inTransaction())$pdo->rollBack();if(!$job||empty($job['lease_token']))continue;
-            $terminal=(int)$e->getCode()===409||((int)$job['attempt_count']>=8&&(int)$e->getCode()!==425);$state=$terminal?'review_required':'retry';$reason=$terminal?'fulfillment_review_required':((int)$e->getCode()===425?'awaiting_fulfillment':'fulfillment_retry');
+            $announcement=(string)$job['event_type']==='announce_order';
+            $terminal=(int)$e->getCode()===409||(!$announcement&&(int)$job['attempt_count']>=8&&(int)$e->getCode()!==425);$state=$terminal?'review_required':'retry';
+            $reason=$announcement?($terminal?'announcement_source_unavailable':'announcement_retry'):($terminal?'fulfillment_review_required':((int)$e->getCode()===425?'awaiting_fulfillment':'fulfillment_retry'));
             if(agent_commerce_fulfillment_finish_pa2($pdo,$job,$state,$reason)){
                 $stats[$state]++;
-                if($terminal&&(string)$job['event_type']!=='project_paid')$pdo->prepare("UPDATE agent_commerce_order_items_v800 SET fulfillment_status='review_required',updated_at=? WHERE id=? AND fulfillment_status NOT IN ('fulfilled','confirmed','cancelled')")->execute([agent_commerce_time_pa2(),(int)$job['order_item_id']]);
+                if($terminal&&!$announcement&&(string)$job['event_type']!=='project_paid')$pdo->prepare("UPDATE agent_commerce_order_items_v800 SET fulfillment_status='review_required',updated_at=? WHERE id=? AND fulfillment_status NOT IN ('fulfilled','confirmed','cancelled')")->execute([agent_commerce_time_pa2(),(int)$job['order_item_id']]);
             }
         }
     }

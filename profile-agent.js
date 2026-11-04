@@ -21,6 +21,7 @@
   let handoff=null,clockOffset=0,pollBusy=false,dispatchBusy=false,sending=false,alive=true,sessionChanged=false,requestEpoch=0;
   let formNotice='',lastDispatchAt=0,lastDispatchTurn=0;
   let callSurface=null,callHost=null,callContextEpoch=0;
+  let checkoutSurface=null,checkoutHost=null,checkoutCreating=false,checkoutTimer=0;
   let speechPreference=null,speechChoice=null,speechNotice=null,speechBusy=false,speechSequence=0,speechAttempt=null;
   let chat=null,choiceTouched=false,endBusy=false,presenceBusy=false,uncertainEnd=null;
   const retryStorageKey=storageKey+':pending';
@@ -293,16 +294,21 @@
   function appendMessage(type,text,id=0){
     if(!String(text||'').trim())return;
     if(id>0&&thread.querySelector(`[data-message-id="${id}"]`)){lastMessageId=Math.max(lastMessageId,id);return;}
-    const node=messageNode(type,text,id);if(callHost?.parentNode===thread)thread.insertBefore(node,callHost);else thread.appendChild(node);if(id>lastMessageId)lastMessageId=id;thread.scrollTop=thread.scrollHeight;
+    const node=messageNode(type,text,id);
+    const host=checkoutHost?.parentNode===thread?checkoutHost:callHost?.parentNode===thread?callHost:null;
+    if(host)thread.insertBefore(node,host);else thread.appendChild(node);
+    if(id>lastMessageId)lastMessageId=id;thread.scrollTop=thread.scrollHeight;
     return node;
   }
   function renderMessages(messages){
     // The media host is a stable sibling of messages. Polls must not detach a
     // live room, discard consent controls, or recreate a call connection.
     if(callHost?.parentNode===thread)callHost.remove();
+    if(checkoutHost?.parentNode===thread)checkoutHost.remove();
     thread.innerHTML='';lastMessageId=0;
     (messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0)));
     if(!messages?.length&&cfg.greeting)appendMessage('agent',cfg.greeting);
+    if(checkoutHost)thread.appendChild(checkoutHost);
     if(callHost)thread.appendChild(callHost);
   }
   function activeHandoff(){return chat?.media_call_active===true||Boolean(chat&&['waiting','accepted'].includes(chat.live_status))||Boolean(handoff&&['awaiting_delivery','awaiting_owner','agent_ready','agent_running'].includes(String(handoff.dispatch_state||handoff.state||'')));}
@@ -395,7 +401,7 @@
     showHandoffStatus();
   }
   function resetConversation(){
-    callSurface?.invalidate('The visitor conversation changed.');callContextEpoch++;
+    callSurface?.invalidate('The visitor conversation changed.');checkoutSurface?.reset();callContextEpoch++;
     requestEpoch++;conversationId=0;conversationStatus='open';lastMessageId=0;handoff=null;chat=null;choiceTouched=false;uncertainEnd=null;localStorage.removeItem(storageKey);clearTimeout(pollTimer);pollTimer=0;updateChatChoice();
   }
   function stopChangedSession(){
@@ -405,8 +411,8 @@
     status.textContent='Your visitor session changed. Refresh this profile before continuing.';
   }
   async function request(action,payload={},method='POST',endpoint=cfg.endpoint){
-    const callRequest=Boolean((cfg.callEndpoint&&endpoint===cfg.callEndpoint)||(cfg.speechEndpoint&&endpoint===cfg.speechEndpoint));
-    const epoch=callRequest?callContextEpoch:requestEpoch;
+    const independentRequest=Boolean((cfg.callEndpoint&&endpoint===cfg.callEndpoint)||(cfg.speechEndpoint&&endpoint===cfg.speechEndpoint)||(cfg.checkoutEndpoint&&endpoint===cfg.checkoutEndpoint));
+    const epoch=independentRequest?callContextEpoch:requestEpoch;
     const identity=`${cfg.username}|${cfg.conversationNamespace||''}|${cfg.profileToken||''}`;
     const options={method,credentials:'same-origin',cache:'no-store'};
     let url=endpoint;
@@ -429,17 +435,41 @@
       })]):await read();
     }finally{if(timer)clearTimeout(timer);}
     if(alive&&identity!==`${cfg.username}|${cfg.conversationNamespace||''}|${cfg.profileToken||''}`)stopChangedSession();
-    if(!alive||epoch!==(callRequest?callContextEpoch:requestEpoch)||sessionChanged){const error=new Error('This visitor request is no longer current.');error.stale=true;throw error;}
+    if(!alive||epoch!==(independentRequest?callContextEpoch:requestEpoch)||sessionChanged){const error=new Error('This visitor request is no longer current.');error.stale=true;throw error;}
     if(!r.ok||!data?.ok){const error=new Error(data?.error||'Profile Agent is unavailable.');error.status=r.status;error.code=data?.code||'';throw error;}
     return data;
   }
   async function loadState(){
     try{
-      const data=await request('state',{},'GET');
+      let data=null;
+      if(checkoutSurface){
+        const profileUrl=new URL(window.location.href);
+        const returnIds=profileUrl.searchParams.getAll('profile_checkout');
+        if(returnIds.length){
+          profileUrl.searchParams.delete('profile_checkout');
+          window.history.replaceState(window.history.state,'',profileUrl);
+          const returned=Number(returnIds[0]);
+          if(returnIds.length===1&&/^[1-9][0-9]*$/.test(returnIds[0])&&Number.isSafeInteger(returned)){
+            try{
+              const candidate=await request('state',{conversation_id:returned},'GET');
+              if(candidate.conversation?.conversation_id===returned){
+                if(conversationId!==returned)checkoutSurface.reset();
+                if(pendingSend&&pendingSend.conversation_id!==returned){
+                  savePending(null);submit.textContent=originalSubmitLabel;
+                  formNotice='Review your previous draft before sending it in this conversation.';
+                }
+                conversationId=returned;localStorage.setItem(storageKey,String(returned));data=candidate;
+                if(shell.hidden)document.querySelector('[data-open-profile-agent]')?.click();
+              }
+            }catch(error){if(error.stale||error.code==='PROFILE_SESSION_CHANGED'||error.status===419)throw error;}
+          }
+        }
+      }
+      data??=await request('state',{},'GET');
       if(data.agent?.name)cfg.agentName=data.agent.name;
       if(Object.prototype.hasOwnProperty.call(data.agent||{},'greeting'))cfg.greeting=data.agent.greeting||'';
       renderMessages(data.messages||[]);applyConversationState(data.conversation||null,data.handoff,data.chat);
-      if(conversationId)startPolling();
+      if(conversationId){startPolling();void checkoutSurface?.refresh();}
       if(pendingSend&&!sessionChanged)void sendSaved(pendingSend);
       else void dispatchIfDue();
     }catch(error){
@@ -487,7 +517,7 @@
   function savePending(value){pendingSend=value;try{if(value)sessionStorage.setItem(retryStorageKey,JSON.stringify(value));else sessionStorage.removeItem(retryStorageKey);}catch(_error){}}
   function messageRequestId(){const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');}
   async function sendSaved(saved){
-    if(sending||sessionChanged||!alive)return;
+    if(sending||checkoutCreating||sessionChanged||!alive)return;
     requestEpoch++;sending=true;formNotice='';uncertainEnd=null;savePending(saved);updateChatChoice();let accepted=false;
     let optimistic=thread.querySelector(`[data-client-request-id="${saved.client_request_id}"]`);
     if(!optimistic){optimistic=appendMessage('visitor',saved.message);if(optimistic)optimistic.dataset.clientRequestId=saved.client_request_id;}
@@ -499,6 +529,8 @@
       const existing=thread.querySelector(`[data-message-id="${Number(data.visitor_message_id)}"]`);
       if(optimistic){if(existing&&existing!==optimistic)optimistic.remove();else optimistic.dataset.messageId=String(data.visitor_message_id);}
       savePending(null);accepted=true;applyConversationState(data.conversation||null,data.handoff,data.chat);startPolling();
+      checkoutSurface?.showOffers(data.checkout_products);
+      if(saved.conversation_id===0)void checkoutSurface?.refresh();
     }catch(error){
       if(error.stale)return;
       if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419){stopChangedSession();return;}
@@ -541,7 +573,7 @@
   });
   endLiveButton?.addEventListener('click',()=>void endLiveChat());
   form?.addEventListener('submit',event=>{
-    event.preventDefault();const message=String(textarea.value||'').trim();if(!message||sending||endBusy||sessionChanged)return;
+    event.preventDefault();const message=String(textarea.value||'').trim();if(!message||sending||checkoutCreating||endBusy||sessionChanged)return;
     if(pendingSend){if(message!==pendingSend.message){status.textContent='Retry the saved message first so it is not sent twice.';return;}void sendSaved(pendingSend);return;}
     const activeMedia=chat?.media_call_active===true;
     const ownerContinuation=conversationStatus==='owner_joined'&&chat?.mode==='auto'&&liveChoice?.checked!==false;
@@ -589,6 +621,38 @@
     box.append(label,speechChoice,description,speechNotice);form.parentElement.insertBefore(box,form);speechChoice.addEventListener('change',()=>void saveSpeechPreference());void loadSpeechPreference();
     window.addEventListener('vp3:profile-agent-open',()=>void loadSpeechPreference());
   }
+  if(cfg.checkoutEndpoint&&window.VP3ProfileCheckoutPa5&&thread){
+    checkoutHost=document.createElement('div');checkoutHost.className='profile-checkout-host';checkoutHost.dataset.profileCheckoutHost='';thread.appendChild(checkoutHost);
+    checkoutSurface=window.VP3ProfileCheckoutPa5.mount({
+      host:checkoutHost,username:cfg.username,browseAvailable:cfg.checkoutAvailable!==false,
+      attemptStorageKey:storageKey+':checkout-prepare',
+      context:()=>({key:[cfg.username,cfg.conversationNamespace,cfg.profileToken,conversationId,callContextEpoch].join('|'),id:conversationId,active:alive&&!sessionChanged&&!shell.hidden}),
+      request:async(action,payload)=>{
+        try{return await request(action,payload,'POST',cfg.checkoutEndpoint);}
+        catch(error){if(!error.stale&&(error.code==='PROFILE_SESSION_CHANGED'||error.status===419))stopChangedSession();throw error;}
+      },
+      adopt:cid=>{
+        if(conversationId||!checkoutCreating||!alive||sessionChanged)throw new Error('The visitor conversation changed.');
+        requestEpoch++;conversationId=cid;localStorage.setItem(storageKey,String(cid));startPolling();void poll();
+      },
+      beginPrepare:()=>{
+        if(conversationId)return true;
+        if(sending||pendingSend||endBusy||callSurface?.offerBusy)return false;
+        checkoutCreating=true;
+        if(submit)submit.disabled=true;
+        return true;
+      },
+      endPrepare:()=>{
+        if(!checkoutCreating)return;
+        checkoutCreating=false;
+        if(submit&&alive&&!sessionChanged&&!sending&&!endBusy)submit.disabled=false;
+      }
+    });
+    window.addEventListener('vp3:profile-agent-open',()=>void checkoutSurface.refresh());
+    window.addEventListener('focus',()=>void checkoutSurface.refresh());
+    document.addEventListener('visibilitychange',()=>void checkoutSurface.refresh());
+    checkoutTimer=window.setInterval(()=>void checkoutSurface.refresh(false,true),15000);
+  }
   if(cfg.callEndpoint&&window.VP3ProfileCallsPa3c&&thread){
     let observedCallState='';
     callHost=document.createElement('div');callHost.className='profile-call-visitor-host';callHost.dataset.profileCallVisitorHost='1';thread.appendChild(callHost);
@@ -604,17 +668,17 @@
         if(next!==observedCallState){observedCallState=next;if(conversationId)void poll();}
         return data;
       },
-      allowOffer:()=>!sending&&!pendingSend&&!endBusy,
+      allowOffer:()=>!sending&&!pendingSend&&!endBusy&&!checkoutCreating,
       adopt:result=>{
         const cid=result.conversation_id;
         if(!Number.isSafeInteger(cid)||cid<1||(conversationId>0&&conversationId!==cid)||sessionChanged||!alive)throw new Error('The visitor conversation changed.');
-        conversationId=cid;localStorage.setItem(storageKey,String(cid));startPolling();
+        conversationId=cid;localStorage.setItem(storageKey,String(cid));startPolling();void checkoutSurface?.refresh();
       },
       returnedToAgent:()=>{void poll();}
     });
     window.addEventListener('vp3:profile-agent-visibility',event=>{if(event.detail?.open)void callSurface.refresh();else callSurface.invalidate('You closed the live call view.');});
   }
-  window.addEventListener('pagehide',()=>{callSurface?.stop('You left the profile.');alive=false;callContextEpoch++;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(choiceTimer);clearInterval(countdownTimer);},{once:true});
+  window.addEventListener('pagehide',()=>{callSurface?.stop('You left the profile.');checkoutSurface?.reset(true);alive=false;callContextEpoch++;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(choiceTimer);clearInterval(countdownTimer);clearInterval(checkoutTimer);},{once:true});
   window.addEventListener('vp3:profile-agent-open',()=>{if(conversationId)void poll();else void heartbeat();});
   updateChatChoice();loadState();presenceTimer=window.setInterval(heartbeat,60000);
   choiceTimer=window.setInterval(()=>{if(!conversationId&&shell.hidden!==true)void heartbeat();},10000);
