@@ -116,7 +116,7 @@ function calendar_schedule_awareness_conflicts_v1330(array $events): array
     return $conflicts;
 }
 
-function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, ?DateTimeImmutable $now = null, int $horizonDays = 7): array
+function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, ?DateTimeImmutable $now = null, int $horizonDays = 7, bool $includeHomeServer = true): array
 {
     $horizonDays=max(1,min(VP3_CALENDAR_SCHEDULE_AWARENESS_MAX_HORIZON_DAYS_V1330,$horizonDays));
     $empty=calendar_schedule_awareness_empty_v1330($horizonDays);
@@ -133,7 +133,7 @@ function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, ?Date
     $rangeEnd=$nowLocal->modify('+'.$horizonDays.' days')->setTime(23,59,59)->setTimezone($utc);
 
     try {
-        $canonical=user_calendar_events_v1300($pdo,$user,$rangeStart->format('Y-m-d H:i:s'),$rangeEnd->format('Y-m-d H:i:s'));
+        $canonical=user_calendar_events_v1300($pdo,$user,$rangeStart->format('Y-m-d H:i:s'),$rangeEnd->format('Y-m-d H:i:s'),$includeHomeServer);
     } catch (Throwable $e) {
         return $empty;
     }

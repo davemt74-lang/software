@@ -524,6 +524,9 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';</script>';
 $cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationAssetBuild)) . '"></script>';
+$chatCatchUpRuntime = '<link rel="stylesheet" href="' . e(url('/chat-catch-up-v1.css?v=1')) . '">'
+    . '<script src="' . e(url('/chat-catch-up-v1.js?v=1')) . '" data-endpoint="'
+    . e(url('/api/agent-catch-up-v1.php')) . '" data-agent-id="' . (int)($activeUserAgent['id'] ?? 0) . '"></script>';
 
 $agentTeamsA3Build = 'agent-teams-' . substr(hash('sha256', (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.js') . (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.css')), 0, 12);
 $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(url('/chat-agent-teams-a3.css?v=' . $agentTeamsA3Build)) . '">'
@@ -629,6 +632,7 @@ $runtime = $headerUiRuntime
          . $cognitiveFeedRuntime
          . $cognitiveOrchestrationRuntime
          . $cognitivePresentationPost
+         . $chatCatchUpRuntime
          . '<script data-team-chat-admin-v109 data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" src="' . e(url('/team-chat-admin-v109.js?v=' . $teamChatAdminBuild)) . '"></script>'
          . $railLayout
          . $rewardTrayRuntime

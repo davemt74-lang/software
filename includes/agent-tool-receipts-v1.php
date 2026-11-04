@@ -49,6 +49,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'participants.setup'=>['prepare','confirm','cancel'],
         'participants.read'=>['presence'],
         'tasks.overview'=>['read'],
+        'brief.attention.read'=>['read'],
         'voice.profiles.enroll'=>['prepare'],
         'navigation.open'=>['open','prepare'],
         'tasks.read'=>['list'],
