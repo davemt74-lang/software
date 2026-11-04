@@ -44,7 +44,13 @@ function vp3_catch_up_missions_v1(PDO $pdo,array $user,array $principal,DateTime
         $missionId=(string)$row['mission_id'];
         if($row['source_kind']!=='cloud_mission'||$row['source_key']!==$missionId||$row['execution_target']!=='cloud'
             ||!preg_match('/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/D',$missionId))continue;
-        try{cloud_mission_authority_v1($pdo,$user,$row);}
+        try{
+            cloud_mission_authority_v1($pdo,$user,$row);
+            foreach(agent_workflow_actions_v1400($pdo,$owner,(int)$row['run_id']) as $action){
+                $result=json_decode((string)($action['result_json']??''),true);
+                if(!empty($result['mission_output']))cloud_mission_result_authority_v1($pdo,$user,$row,$result);
+            }
+        }
         catch(RuntimeException $e){
             if(!in_array($e->getCode(),[403,404,409],true))throw $e;
             $limited=true;continue;

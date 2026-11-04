@@ -79,4 +79,6 @@ rejects(fn()=>cloud_mission_dispatch_v1($pdo,$u,'catch_up.get',['mission_id'=>$t
 check((int)$pdo->query('SELECT total_changes()')->fetchColumn()===$changes,'Mission projection and deep link cause no record writes');
 $pdo->exec("UPDATE agent_workflow_runs SET status='completed' WHERE id=41");
 check(vp3_catch_up_missions_v1($pdo,$u,$named,$now)[1]===[],'verified prerequisite completion removes the Mission from attention');
+$update->execute(['failed',gmdate('Y-m-d H:i:s',strtotime('-1 minute')),(int)$third['job_id']]);
+check(vp3_catch_up_missions_v1($pdo,$u,$named,$now)===['limited',[]],'a failed Mission with revoked result evidence cannot reappear through Catch up');
 echo "CLOUD_MISSIONS_V1=PASS ($checks cases)\n";
