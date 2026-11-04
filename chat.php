@@ -9,6 +9,7 @@ $controlBuild .= '-profile-direct-calls-pa3c-20261104';
 $controlBuild .= '-profile-attention-pa4b-' . substr(hash_file('sha256',__DIR__.'/chat.js'),0,12);
 $controlBuild .= '-canvas-image-generation-v1-listening-continuation-v1-live-player-history-v1-audio-debug-v1-recognition-reliability-v1-participant-conversation-v2-20261102-participant-updates-20261102-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
 $controlBuild .= '-eyes-cross-tab-v1';
+$controlBuild .= '-connected-sites-v1';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351-speech-recovery-20261031-mic-startup-20261101';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer-r3' . '-voice-v1351';
@@ -600,6 +601,11 @@ $runtime = $headerUiRuntime
          . $composerControls
          . '<link rel="stylesheet" href="' . e(url('/chat-tools.css?v=' . $controlBuild)) . '">'
          . '<script src="' . e(url('/chat-tools.js?v=' . $controlBuild)) . '"></script>'
+         . '<script>window.VP3_CONNECTED_GELATO_V1=' . json_encode([
+             'endpoint'=>url('/api/connected-gelato-v1.php'),
+             'csrf'=>csrf_token(),
+         ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) . ';</script>'
+         . '<script src="' . e(url('/chat-connected-sites-v1.js?v=1')) . '"></script>'
          . $recordingLibraryRuntime
          . $chatSettingsRuntime
          . '<script data-agent-updates-autodismiss-v173 data-agent-overlay-build="' . e($agentOverlayBuild) . '" src="' . e(url('/chat-agent-updates-autodismiss-v173.js?v=' . $agentOverlayBuild)) . '"></script>'

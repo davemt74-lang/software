@@ -69,8 +69,8 @@ function ai_saved_encrypted_credentials_exist(): bool
             return true;
         }
     }
-    // Account BYOK ciphertext uses this SAME installation master key. If it
-    // disappears, do not quietly mint a new key and strand other users' keys.
+    // Account BYOK and connected Gelato credentials use this installation master key.
+    // A missing key must not be silently replaced while encrypted rows exist.
     if(function_exists('db')){
         try{
             $pdo=db();
@@ -80,13 +80,17 @@ function ai_saved_encrypted_credentials_exist(): bool
             $settings=$pdo->prepare("SELECT 1 FROM settings WHERE setting_key=? AND setting_value<>'' LIMIT 1");
             $settings->execute(['profile_calls_livekit_config_pa3c']);
             if($settings->fetchColumn())return true;
-            foreach(['user_llm_credentials','profile_calls_pa3c'] as $table){
+            foreach(['user_llm_credentials','profile_calls_pa3c','vp3_gelato_connections_v1'] as $table){
                 $stmt=$pdo->prepare($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
                     ?"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?"
                     :'SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');
                 $stmt->execute([$table]);
                 if($stmt->fetchColumn()){
-                    $encrypted=$pdo->query($table==='user_llm_credentials'?'SELECT 1 FROM user_llm_credentials LIMIT 1':"SELECT 1 FROM profile_calls_pa3c WHERE provider_snapshot<>'' LIMIT 1");
+                    $encrypted=$pdo->query(match ($table) {
+                        'user_llm_credentials'=>'SELECT 1 FROM user_llm_credentials LIMIT 1',
+                        'profile_calls_pa3c'=>"SELECT 1 FROM profile_calls_pa3c WHERE provider_snapshot<>'' LIMIT 1",
+                        'vp3_gelato_connections_v1'=>"SELECT 1 FROM vp3_gelato_connections_v1 WHERE token_ciphertext<>'' LIMIT 1",
+                    });
                     if($encrypted&&$encrypted->fetchColumn())return true;
                 }
             }
@@ -133,25 +137,39 @@ function ai_master_key(bool $create = false): ?string
         return null;
     }
 
-    if (ai_saved_encrypted_credentials_exist()) {
-        throw new RuntimeException('The API credential encryption key is missing while encrypted credentials still exist. Restore /private/ai-key.php before saving credentials, or remove all saved AI provider credentials before creating a new key.');
-    }
-
     $dir = ai_private_dir();
     if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
         throw new RuntimeException('Could not create the private credential directory.');
     }
 
-    $key = random_bytes(32);
-    $php = "<?php\nreturn " . var_export(base64_encode($key), true) . ";\n";
+    // Cloud users may attempt their first save in different sessions.
+    $lock = fopen($path.'.lock', 'c');
+    if ($lock === false) throw new RuntimeException('Could not lock the credential encryption key.');
+    try {
+        if (!flock($lock, LOCK_EX)) throw new RuntimeException('Could not lock the credential encryption key.');
+        clearstatcache(true, $path);
+        if (is_file($path)) return ai_master_key(true);
+        if (ai_saved_encrypted_credentials_exist()) {
+            throw new RuntimeException('The API credential encryption key is missing while encrypted credentials still exist. Restore /private/ai-key.php before saving credentials, or remove all saved credentials before creating a new key.');
+        }
 
-    if (file_put_contents($path, $php, LOCK_EX) === false) {
-        throw new RuntimeException('Could not create the API credential encryption key.');
+        $key = random_bytes(32);
+        $php = "<?php\nreturn " . var_export(base64_encode($key), true) . ";\n";
+        $temporary = tempnam($dir, '.ai-key-');
+        if ($temporary === false) throw new RuntimeException('Could not create the API credential encryption key.');
+        try {
+            if (file_put_contents($temporary, $php) !== strlen($php)
+                || !chmod($temporary, 0600) || !rename($temporary, $path)) {
+                throw new RuntimeException('Could not create the API credential encryption key.');
+            }
+        } finally {
+            if (is_file($temporary)) @unlink($temporary);
+        }
+        $cached = $key;
+        return $cached;
+    } finally {
+        fclose($lock);
     }
-
-    @chmod($path, 0600);
-    $cached = $key;
-    return $cached;
 }
 
 function ai_master_key_state(): string

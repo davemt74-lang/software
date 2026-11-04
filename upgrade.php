@@ -62,6 +62,7 @@ require_once __DIR__ . '/includes/profile-visitor-speech-pa4a.php';
 require_once __DIR__ . '/includes/profile-attention-pa4b.php';
 require_once __DIR__ . '/includes/profile-event-projection-pa4b.php';
 require_once __DIR__ . '/includes/profile-conversation-checkout-pa5.php';
+require_once __DIR__ . '/includes/connected-gelato-v1.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
@@ -277,7 +278,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)
         && vp3_profile_projection_schema_ready_pa4b($schemaConnection)
-        && vp3_profile_checkout_schema_ready_pa5($schemaConnection);
+        && vp3_profile_checkout_schema_ready_pa5($schemaConnection)
+        && vp3_gelato_schema_ready_v1($schemaConnection);
 }
 
 $error = '';
@@ -431,6 +433,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_profile_attention_ensure_schema_pa4b($pdo);
             vp3_profile_projection_ensure_schema_pa4b($pdo);
             vp3_profile_checkout_ensure_schema_pa5($pdo);
+            vp3_gelato_schema_v1($pdo);
             personal_capability_ensure_schema_v242();
             require_once __DIR__.'/includes/tv-watching-v1.php';
             tv_schema_v1($pdo);
