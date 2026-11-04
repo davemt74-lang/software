@@ -61,7 +61,7 @@ hold. The Cloud work does not change HomeServer source or Stonefellow playback.
 | PA3C | Direct browser voice and optional video between the exact visitor and owner; consent, call controls, reconnect, and Agent handoff | Released in PR #699; all 16 PR and 15 post-merge workflows passed |
 | PA4A | Arrival/chat announcements and distinct ElevenLabs visitor voices | Released in PR #701; all 16 PR and 15 post-merge workflows passed; 10/10 bounded acceptance gates |
 | PA4B | Notification and Brain state; snooze/wake; routing; replay and projection repair | Implemented with the ten release gates below; exact-revision CI establishes acceptance |
-| PA5 | Ordinary public Profile conversation checkout using the canonical Commerce order/payment/receipt path | Planned |
+| PA5 | Ordinary public Profile conversation checkout using the canonical Commerce order/payment/receipt path | Acceptance gates below |
 
 ### PA1: conversation and permission foundation
 
@@ -679,16 +679,24 @@ ordinary public Profile chat currently supplies approved product information and
 checkout links; it does not yet perform the whole canonical checkout flow in a
 conversation card.
 
-Build product selection, a complete price/provider/terms review, explicit buyer
-confirmation, the canonical checkout handoff, verified payment status, and
-receipt/delivery cards into the same visitor thread. The Agent may prepare a
-purchase, but only the buyer's explicit confirmation authorizes it. Preserve
-owner handoff during a sale. Do not infer payment success from a browser return
-or an Agent's completion text. Keep appointments on the Scheduling payment path
-and supported products within the existing Commerce fulfillment capabilities.
+The visitor can browse products and open a purchase review in the public chat.
+The review shows the seller terms, provider, quantity and total. Confirming
+that review opens the provider checkout. Payment status, the receipt and
+delivery links appear in the same visitor conversation after Commerce verifies
+the payment and fulfillment state. Appointments use the Scheduling payment
+flow.
 
-PA5 remains an outline until its own section is built and verified. Its planned
-acceptance gates are:
+A verified order adds a seller notification and an announcement in the
+seller's private Agent Chat. The announcement links to the Profile orders
+workspace. It preserves the notification's read state. Late payments are
+flagged for fulfillment review.
+
+Run `/upgrade.php` on existing installations before enabling conversation
+checkout. The migration adds storage for visitor-bound reviews and their
+canonical order links. Buyers can reopen the original conversation in the
+same browser to recover a checkout or check payment status.
+
+PA5 acceptance gates
 
 | Gate | Required behavior |
 | --- | --- |

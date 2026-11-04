@@ -31,6 +31,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             profile_commerce_publish_v900($pdo,$uid,(int)($_POST['product_id']??0),$_POST);profile_commerce_manage_redirect_v900('Profile publication settings saved.');
         }
         if($action==='fulfillment'){profile_commerce_set_fulfillment_v900($pdo,$uid,(int)($_POST['order_id']??0),(string)($_POST['fulfillment_status']??''));profile_commerce_manage_redirect_v900('Order fulfillment updated.');}
+        if($action==='release_payment_review'){
+            if(($_POST['confirm_payment_review']??null)!=='1')throw new RuntimeException('Confirm you reviewed the verified payment before starting fulfillment.');
+            profile_commerce_set_fulfillment_v900($pdo,$uid,(int)($_POST['order_id']??0),'processing',true);
+            redirect(url('/profile-commerce-products.php?saved='.rawurlencode('Payment review approved. Order fulfillment started.').'#orders'));
+        }
         if($action==='refund_profile'){$amount=agent_commerce_decimal_to_minor_v800((string)($_POST['refund_amount']??'0'));profile_commerce_refund_order_v900($pdo,$uid,(int)($_POST['order_id']??0),$amount,(string)($_POST['refund_reason']??''),$user,!empty($_POST['confirm_refund']));profile_commerce_manage_redirect_v900('Refund request sent to the original payment provider.');}
         throw new RuntimeException('Unknown Profile Commerce action.');
     }catch(Throwable $e){$error=$e->getMessage();}
@@ -43,5 +48,68 @@ $products=agent_commerce_products_for_owner_v800($pdo,$uid,200);$workspaceProduc
 <?php if($notice!==''):?><div class="pc-notice"><?=e($notice)?></div><?php endif;?><?php if($error!==''):?><div class="pc-notice err"><?=e($error)?></div><?php endif;?>
 <div class="pc-grid"><section class="pc-card"><span class="pc-eyebrow">Create generic product</span><h2>New profile product</h2><p class="pc-muted">Use this for full-payment services, digital products, memberships, events, gifts or local-pickup products. Shipped physical products and generic deposits stay disabled until their fulfillment/balance-payment adapters are installed. Appointment deposits remain managed by Scheduling.</p><form method="post" class="pc-form"><?=csrf_field()?><input type="hidden" name="action" value="save_generic"><input type="hidden" name="payment_mode" value="full"><input type="hidden" name="deposit" value="0"><input type="hidden" name="refund_before_hours" value="0"><input type="hidden" name="cancellation_fee" value="0"><label>Title<input name="title" maxlength="190" required></label><label>Type<select name="product_type"><option value="service">Service</option><option value="digital">Digital</option><option value="membership">Membership</option><option value="event">Event</option><option value="gift">Gift</option><option value="physical">Physical / pickup</option><option value="other">Other</option></select></label><label>Fulfillment<select name="fulfillment_type"><option value="virtual">Virtual/service</option><option value="digital">Digital</option><option value="membership">Membership</option><option value="event">Event</option><option value="gift">Gift</option><option value="local_pickup">Local pickup</option><option value="other">Other/manual</option><option value="physical" disabled>Shipping — coming later</option></select></label><label>Visibility<select name="profile_visibility"><option value="hidden">Hidden</option><option value="public">Public profile</option></select></label><label class="wide">Description<textarea name="description" rows="3" maxlength="1000"></textarea></label><label>Payment<input value="Full payment" disabled></label><label>Price<input type="number" name="price" min="0.01" step="0.01" required></label><label>Currency<input name="currency" maxlength="3" value="USD"></label><label>Provider<select name="provider_mode"><option value="guest_choice">Customer choice</option><option value="fixed">Fixed provider</option></select></label><label>Fixed provider<select name="fixed_connection_id"><option value="0">None</option><?php foreach($connections as $connection):?><option value="<?=(int)$connection['id']?>"><?=e(agent_commerce_provider_label_v800((string)$connection['provider']).' · '.(string)($connection['account_label']?:$connection['external_account_id']))?></option><?php endforeach;?></select></label><label>URL slug<input name="profile_slug" maxlength="80" placeholder="consultation-package"></label><label>Button label<input name="profile_cta" maxlength="40" value="Buy"></label><label>Sort<input type="number" name="profile_sort" min="0" max="9999" value="100"></label><label><span>Featured</span><span><input type="checkbox" name="profile_featured" value="1"> Show first</span></label><label>Payment hold minutes<input type="number" name="hold_minutes" min="30" max="120" value="30"></label><label class="wide">Seller cancellation / refund policy<textarea name="cancellation_policy" rows="2" maxlength="1000" placeholder="Optional terms shown to the buyer before checkout"></textarea></label><div class="wide"><button class="pc-btn primary" type="submit">Create product</button></div></form></section>
 <section class="pc-card"><span class="pc-eyebrow">Canonical products</span><h2>Profile publication</h2><p class="pc-muted">Nothing is published automatically. Existing appointment and generic products stay hidden until you explicitly expose them here.</p><?php if(!$products):?><p class="pc-muted">No Commerce products yet.</p><?php endif;?><?php foreach($products as $product):$meta=profile_commerce_metadata_v900($product);$visibility=profile_commerce_visibility_v900($product);$genericUnpayable=trim((string)($product['binding_type']??''))===''&&(string)($product['payment_mode']??'')!=='full';$physicalBlocked=(string)($product['fulfillment_type']??'')==='physical';?><div class="pc-row"><div class="pc-tags"><span class="pc-tag"><?=e((string)$product['product_type'])?></span><span class="pc-tag"><?=e((string)$product['fulfillment_type'])?></span><?php if(!empty($product['binding_type'])):?><span class="pc-tag"><?=e((string)$product['binding_type'])?></span><?php endif;?><?php if($genericUnpayable):?><span class="pc-tag">Generic deposit unavailable</span><?php endif;?><?php if($physicalBlocked):?><span class="pc-tag">Shipping unavailable</span><?php endif;?></div><h3><?=e((string)$product['title'])?></h3><p class="pc-muted"><?=e(agent_commerce_money_v800((int)$product['price_cents'],(string)$product['currency']))?> · <?=e((string)$product['payment_mode'])?> · <?=!empty($product['is_active'])?'Active':'Inactive'?></p><form method="post" class="pc-form"><?=csrf_field()?><input type="hidden" name="action" value="publish"><input type="hidden" name="product_id" value="<?=(int)$product['id']?>"><label>Profile visibility<select name="profile_visibility"><option value="hidden" <?=$visibility==='hidden'?'selected':''?>>Hidden</option><option value="public" <?=$visibility==='public'?'selected':''?> <?=($physicalBlocked||$genericUnpayable)?'disabled':''?>>Public</option></select></label><label>URL slug<input name="profile_slug" maxlength="80" value="<?=e(profile_commerce_public_slug_v900($product))?>"></label><label>Button label<input name="profile_cta" maxlength="40" value="<?=e((string)($meta['profile_cta']??''))?>"></label><label>Sort<input type="number" name="profile_sort" min="0" max="9999" value="<?=(int)($meta['profile_sort']??100)?>"></label><label><span>Featured</span><span><input type="checkbox" name="profile_featured" value="1" <?=!empty($meta['profile_featured'])?'checked':''?>> Show first</span></label><div class="wide"><button class="pc-btn" type="submit">Save profile settings</button><?php if($username!==''&&$visibility==='public'):?> <a class="pc-btn" href="<?=e(profile_commerce_product_url_v900($username,$product))?>">Open product</a><?php endif;?></div></form></div><?php endforeach;?></section>
-<section class="pc-card" id="orders"><span class="pc-eyebrow">Profile orders</span><h2>Fulfillment + refunds</h2><p class="pc-muted">These are only orders created from your public Profile Commerce products. Appointment orders stay in Appointment Commerce.</p><?php if(!$profileOrders):?><p class="pc-muted">No Profile Commerce orders yet.</p><?php endif;?><?php foreach($profileOrders as $order):$items=(array)($order['items']??[]);$item=$items[0]??[];$fulfillment=profile_commerce_fulfillment_state_v900($order);$remainingRefund=max(0,(int)$order['amount_paid_cents']-(int)$order['amount_refunded_cents']);?><div class="pc-row"><div class="pc-order-head"><div><div class="pc-tags"><span class="pc-tag"><?=e((string)$order['payment_status'])?></span><span class="pc-tag"><?=e($fulfillment)?></span><span class="pc-tag"><?=e((string)$order['fulfillment_type'])?></span></div><h3><?=e((string)($item['title_snapshot']??$order['order_number']))?></h3><p class="pc-muted"><?=e((string)$order['order_number'])?> · <?=e(agent_commerce_money_v800((int)$order['amount_paid_cents'],(string)$order['currency']))?> paid<?php if((int)$order['amount_refunded_cents']>0):?> · <?=e(agent_commerce_money_v800((int)$order['amount_refunded_cents'],(string)$order['currency']))?> refunded<?php endif;?><?php if(trim((string)$order['payer_email'])!==''):?> · <?=e((string)$order['payer_email'])?><?php endif;?></p></div><small class="pc-muted"><?=e((string)$order['created_at'])?></small></div><div class="pc-order-actions"><?php if((string)$order['payment_status']==='paid'&&$fulfillment!=='fulfilled'):?><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="fulfillment"><input type="hidden" name="order_id" value="<?=(int)$order['id']?>"><input type="hidden" name="fulfillment_status" value="<?= $fulfillment==='processing'?'fulfilled':'processing' ?>"><button class="pc-btn" type="submit"><?= $fulfillment==='processing'?'Mark fulfilled':'Start fulfillment' ?></button></form><?php endif;?><?php if($remainingRefund>0):?><form method="post" onsubmit="return confirm('Send this refund to the original payment provider?')"><?=csrf_field()?><input type="hidden" name="action" value="refund_profile"><input type="hidden" name="order_id" value="<?=(int)$order['id']?>"><input type="number" name="refund_amount" min="0.01" max="<?=e(number_format($remainingRefund/100,2,'.',''))?>" step="0.01" value="<?=e(number_format($remainingRefund/100,2,'.',''))?>" aria-label="Refund amount" required><input type="text" name="refund_reason" maxlength="500" placeholder="Refund reason" aria-label="Refund reason"><label class="pc-check"><input type="checkbox" name="confirm_refund" value="1" required> Approve refund</label><button class="pc-btn danger" type="submit">Refund</button></form><?php endif;?></div></div><?php endforeach;?></section></div>
+<section class="pc-card" id="orders">
+    <span class="pc-eyebrow">Profile orders</span>
+    <h2>Fulfillment + refunds</h2>
+    <p class="pc-muted">These are only orders created from your public Profile Commerce products. Appointment orders stay in Appointment Commerce.</p>
+    <?php if(!$profileOrders): ?><p class="pc-muted">No Profile Commerce orders yet.</p><?php endif; ?>
+    <?php foreach($profileOrders as $order):
+        $item=$order['items'][0]??[];
+        $fulfillment=profile_commerce_fulfillment_state_v900($order);
+        $paid=$order['payment_status']==='paid';
+        $reviewRequired=$paid&&profile_commerce_pa5_review_required($order);
+        $remainingRefund=max(0,(int)$order['amount_paid_cents']-(int)$order['amount_refunded_cents']);
+    ?>
+    <div class="pc-row">
+        <div class="pc-order-head">
+            <div>
+                <div class="pc-tags">
+                    <span class="pc-tag"><?= e((string)$order['payment_status']) ?></span>
+                    <span class="pc-tag"><?= e($reviewRequired?'Payment review required':$fulfillment) ?></span>
+                    <span class="pc-tag"><?= e((string)$order['fulfillment_type']) ?></span>
+                </div>
+                <h3><?= e((string)($item['title_snapshot']??$order['order_number'])) ?></h3>
+                <p class="pc-muted">
+                    <?= e((string)$order['order_number']) ?> · <?= e(agent_commerce_money_v800((int)$order['amount_paid_cents'],(string)$order['currency'])) ?> paid
+                    <?php if((int)$order['amount_refunded_cents']>0): ?> · <?= e(agent_commerce_money_v800((int)$order['amount_refunded_cents'],(string)$order['currency'])) ?> refunded<?php endif; ?>
+                    <?php if(trim((string)$order['payer_email'])!==''): ?> · <?= e((string)$order['payer_email']) ?><?php endif; ?>
+                </p>
+            </div>
+            <small class="pc-muted"><?= e((string)$order['created_at']) ?></small>
+        </div>
+        <div class="pc-order-actions">
+            <?php if($reviewRequired&&profile_commerce_pa5_review_releasable($order)): ?>
+                <form method="post">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="release_payment_review">
+                    <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+                    <label class="pc-check"><input type="checkbox" name="confirm_payment_review" value="1" required> I reviewed the verified late payment and approve fulfillment.</label>
+                    <button class="pc-btn" type="submit">Approve and start fulfillment</button>
+                </form>
+            <?php elseif($reviewRequired): ?>
+                <p class="pc-muted">Reconcile the verified payment before fulfilling this order.</p>
+            <?php elseif($paid&&$fulfillment!=='fulfilled'): ?>
+                <form method="post">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="fulfillment">
+                    <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+                    <input type="hidden" name="fulfillment_status" value="<?= $fulfillment==='processing'?'fulfilled':'processing' ?>">
+                    <button class="pc-btn" type="submit"><?= $fulfillment==='processing'?'Mark fulfilled':'Start fulfillment' ?></button>
+                </form>
+            <?php endif; ?>
+            <?php if($remainingRefund>0): ?>
+                <form method="post" onsubmit="return confirm('Send this refund to the original payment provider?')">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="refund_profile">
+                    <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+                    <input type="number" name="refund_amount" min="0.01" max="<?= e(number_format($remainingRefund/100,2,'.','')) ?>" step="0.01" value="<?= e(number_format($remainingRefund/100,2,'.','')) ?>" aria-label="Refund amount" required>
+                    <input type="text" name="refund_reason" maxlength="500" placeholder="Refund reason" aria-label="Refund reason">
+                    <label class="pc-check"><input type="checkbox" name="confirm_refund" value="1" required> Approve refund</label>
+                    <button class="pc-btn danger" type="submit">Refund</button>
+                </form>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endforeach; ?>
+</section></div>
 </div></section></main></div><script src="<?=e(url('/chat-shell-v82.js'))?>" defer></script></body></html>

@@ -146,6 +146,20 @@ jobs:
           php tests/profile-event-projection-pa4b.php
           php tests/profile-attention-concurrency-pa4b.php
           node tests/profile-attention-api-pa4b.mjs
+      - name: Profile conversation checkout PA5 review, provider retry and receipt authority
+        run: |
+          php tests/profile-conversation-checkout-pa5.php
+          php tests/profile-order-announcement-pa5.php
+          node tests/profile-conversation-checkout-pa5-api.mjs
+      - name: Profile conversation checkout PA5 MySQL review and payment recovery
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-conversation-checkout-pa5.php
+          php tests/profile-order-announcement-pa5.php
+          node tests/profile-conversation-checkout-pa5-api.mjs
   profile_owner_browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -160,6 +174,8 @@ jobs:
         run: node tests/profile-owner-threads-pa1-browser.mjs
       - name: Profile checkout review, retry and accurate status
         run: node tests/profile-checkout-review-pa2-browser.mjs
+      - name: Public Profile conversation checkout, confirmation, return and mobile
+        run: node tests/profile-conversation-checkout-pa5-browser.mjs
       - name: Main Chat visitor card, exact visible acknowledgement and mobile replies
         run: node tests/profile-visitor-doorbell-pa3-browser.mjs
       - name: Native visitor admission, reload, dispatch and account changes

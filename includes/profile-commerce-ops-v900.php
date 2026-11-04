@@ -42,21 +42,84 @@ function profile_commerce_fulfillment_state_v900(array $order): string
     return count($states)===1?$states[0]:'mixed';
 }
 
-function profile_commerce_set_fulfillment_v900(PDO $pdo,int $ownerUserId,int $orderId,string $status): array
+function profile_commerce_pa5_review_required(array $order): bool
+{
+    $metadata=profile_commerce_order_metadata_v900($order);
+    $review=$metadata['profile_checkout_review_id']??null;
+    if(!is_string($review)||!preg_match('/^[a-f0-9]{32}$/D',$review))return false;
+    return $order['order_status']==='payment_review'||in_array('review_required',array_column($order['items']??[],'fulfillment_status'),true);
+}
+
+function profile_commerce_pa5_review_releasable(array $order): bool
+{
+    $recovery=profile_commerce_order_metadata_v900($order)['payment_recovery']??[];
+    return $order['order_status']==='payment_review'&&$order['payment_status']==='paid'
+        &&($recovery['reason']??'')==='late_payment'&&(int)$order['amount_due_cents']===0
+        &&(int)$order['amount_refunded_cents']===0&&(int)$order['amount_paid_cents']===(int)$order['total_cents'];
+}
+
+/** Called under the order lock by seller projections and payment review. */
+function profile_commerce_verified_conversation_payment_pa5(PDO $pdo,array $order,array $item): int
+{
+    $metadata=profile_commerce_order_metadata_v900($order);
+    $review=$metadata['profile_checkout_review_id']??null;
+    $cid=(int)($metadata['profile_conversation_id']??0);
+    if(!$pdo->inTransaction()||$cid<1||!is_string($review)||!preg_match('/^[a-f0-9]{32}$/D',$review)
+        ||!profile_commerce_order_is_profile_v900($order)||!in_array($order['payment_status'],['paid','refunded','partially_refunded'],true)
+        ||(int)$order['amount_due_cents']!==0||(int)$order['total_cents']<1){
+        throw new RuntimeException('Verified Profile order payment is unavailable.',409);
+    }
+    $lineage=$pdo->prepare('SELECT id FROM profile_conversation_checkouts_pa5
+        WHERE order_id=? AND review_id=? AND conversation_id=? AND owner_user_id=? AND product_id=? AND connection_id=?');
+    $lineage->execute([(int)$order['id'],$review,$cid,(int)$order['owner_user_id'],(int)$item['product_id'],(int)$order['connection_id']]);
+    $receipt=$pdo->prepare("SELECT COALESCE(SUM(p.amount_cents),0) FROM agent_commerce_payments_v800 p
+        INNER JOIN agent_commerce_checkout_attempts_v800 a ON a.id=p.checkout_attempt_id AND a.order_id=p.order_id
+        WHERE p.order_id=? AND p.status='completed' AND p.currency=? AND a.connection_id=?
+          AND a.status='completed' AND p.provider=a.provider AND p.external_payment_id=a.external_payment_id
+          AND p.amount_cents=a.amount_cents AND p.currency=a.currency");
+    $receipt->execute([(int)$order['id'],(string)$order['currency'],(int)$order['connection_id']]);
+    $paid=(int)$receipt->fetchColumn();
+    if(!$lineage->fetchColumn()||$paid<(int)$order['total_cents']||$paid!==(int)$order['amount_paid_cents']){
+        throw new RuntimeException('Verified Profile order payment is unavailable.',409);
+    }
+    return $paid;
+}
+
+function profile_commerce_set_fulfillment_v900(PDO $pdo,int $ownerUserId,int $orderId,string $status,bool $reviewConfirmed=false): array
 {
     $status=strtolower(trim($status));if(!in_array($status,['processing','fulfilled'],true))throw new RuntimeException('Choose a valid fulfillment state.');
-    $order=profile_commerce_order_for_owner_v900($pdo,$ownerUserId,$orderId);if(!$order)throw new RuntimeException('Profile Commerce order not found.');
-    if((string)($order['fulfillment_type']??'')==='appointment')throw new RuntimeException('Appointment fulfillment remains authoritative in Scheduling.');
-    if((string)($order['payment_status']??'')!=='paid')throw new RuntimeException('Only fully paid Profile Commerce orders can enter fulfillment.');
-    $from=profile_commerce_fulfillment_state_v900($order);
-    $pdo->beginTransaction();
-    try{
+    agent_commerce_atomic_pa2($pdo,function()use($pdo,$ownerUserId,$orderId,$status,$reviewConfirmed):void{
+        $q=$pdo->prepare('SELECT * FROM agent_commerce_orders_v800 WHERE id=? AND owner_user_id=?'.agent_commerce_lock_pa2($pdo));
+        $q->execute([$orderId,$ownerUserId]);$order=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$order||!profile_commerce_order_is_profile_v900($order))throw new RuntimeException('Profile Commerce order not found.');
+        if($order['fulfillment_type']==='appointment')throw new RuntimeException('Appointment fulfillment remains authoritative in Scheduling.');
+        if($order['payment_status']!=='paid')throw new RuntimeException('Only fully paid Profile Commerce orders can enter fulfillment.');
+        $order['items']=agent_commerce_order_items_v800($pdo,$orderId);
+        $reviewRequired=profile_commerce_pa5_review_required($order);
+        $metadata=profile_commerce_order_metadata_v900($order);
+        if($reviewRequired){
+            if(!$reviewConfirmed||$status!=='processing')throw new RuntimeException('Review and explicitly approve this payment before starting fulfillment.');
+            if(!profile_commerce_pa5_review_releasable($order)||count($order['items'])!==1){
+                throw new RuntimeException('This payment requires reconciliation before fulfillment.');
+            }
+            profile_commerce_verified_conversation_payment_pa5($pdo,$order,$order['items'][0]);
+            $refunds=$pdo->prepare("SELECT id FROM agent_commerce_refunds_v800 WHERE order_id=? AND status IN ('pending','completed') LIMIT 1".agent_commerce_lock_pa2($pdo));
+            $refunds->execute([$orderId]);
+            if($refunds->fetchColumn())throw new RuntimeException('This payment has a refund and requires reconciliation before fulfillment.');
+            $metadata['payment_recovery']['status']='resolved';
+            $metadata['payment_recovery']['resolved_at']=gmdate('c');
+            $pdo->prepare('UPDATE agent_commerce_orders_v800 SET metadata_json=? WHERE id=?')->execute([json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),$orderId]);
+        }elseif($reviewConfirmed){
+            if(($metadata['payment_recovery']['status']??null)==='resolved')return;
+            throw new RuntimeException('This order is not awaiting payment review.');
+        }
+        $from=profile_commerce_fulfillment_state_v900($order);
         $stmt=$pdo->prepare("UPDATE agent_commerce_order_items_v800 SET fulfillment_status=?,updated_at=NOW() WHERE order_id=? AND fulfillment_type<>'appointment'");
         $stmt->execute([$status,$orderId]);if($stmt->rowCount()<1)throw new RuntimeException('No Profile Commerce items were available for fulfillment.');
         $pdo->prepare('UPDATE agent_commerce_orders_v800 SET order_status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$orderId,$ownerUserId]);
-        agent_commerce_audit_v800($pdo,$orderId,$ownerUserId,(int)($order['workspace_owner_user_id']??0)?:null,'user',$ownerUserId,null,'profile_fulfillment_'.$status,$from,$status,0,['source'=>'profile_commerce_v900']);
-        $pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+        $event=$reviewRequired?'profile_payment_review_released':'profile_fulfillment_'.$status;
+        agent_commerce_audit_v800($pdo,$orderId,$ownerUserId,(int)($order['workspace_owner_user_id']??0)?:null,'user',$ownerUserId,null,$event,$from,$status,0,['source'=>'profile_commerce_v900']);
+    });
     return profile_commerce_order_for_owner_v900($pdo,$ownerUserId,$orderId)?:throw new RuntimeException('Profile Commerce order could not be reloaded.');
 }
 

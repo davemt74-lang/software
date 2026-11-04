@@ -7,8 +7,10 @@ $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_ac
     'profile_agent_handoff_owners_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3',
     'profile_calls_pa3c','profile_call_slots_pa3c','profile_call_operations_pa3c','profile_call_deliveries_pa3c',
     'profile_visitor_voices_pa4a','profile_speech_items_pa4a','profile_speech_attempts_pa4a',
-    'profile_attention_operations_pa4b','profile_attention_deliveries_pa4b','profile_event_projections_pa4b'];
+    'profile_attention_operations_pa4b','profile_attention_deliveries_pa4b','profile_event_projections_pa4b',
+    'profile_conversation_checkouts_pa5'];
 $partialSpeech=[
+    'partial-conversation-checkout-review'=>['profile_conversation_checkouts_pa5','product_snapshot_hash'],
     'partial-speech-voice'=>['profile_visitor_voices_pa4a','assignment_revision'],
     'partial-speech-source'=>['profile_speech_items_pa4a','source_hash'],
     'partial-speech-ticket'=>['profile_speech_attempts_pa4a','ticket_hash'],
@@ -39,6 +41,7 @@ require dirname(__DIR__).'/includes/profile-calls-pa3c.php';
 require dirname(__DIR__).'/includes/profile-visitor-speech-pa4a.php';
 require dirname(__DIR__).'/includes/profile-attention-pa4b.php';
 require dirname(__DIR__).'/includes/profile-event-projection-pa4b.php';
+require_once dirname(__DIR__).'/includes/agent-commerce-recovery-pa2.php';
 $fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');
 // Older Profile migrations are isolated dependencies in this page fixture. Keep
 // their historical attention/notification shape, then execute real PA4B DDL.
@@ -52,6 +55,12 @@ function profile_agent_ensure_schema(?PDO $connection=null): void
 foreach([['agent-task-lists-v1.php','vp3_task_lists_schema_v1','vp3_task_lists_ready_v1'],['participant-updates-v1.php','vp3_participant_updates_schema_v1','vp3_participant_updates_ready_v1']] as [$file,$schema,$ready]){
     $ddl=file_get_contents(dirname(__DIR__).'/includes/'.$file);$start=strpos($ddl,'function '.$schema.'(');$end=strpos($ddl,'function '.$ready.'(',$start);eval(substr($ddl,$start,$end-$start));
 }
+$checkoutDdl=file_get_contents(dirname(__DIR__).'/includes/profile-conversation-checkout-pa5.php');
+$checkoutStart=strpos($checkoutDdl,'function '.'vp3_profile_checkout_ensure_schema_pa5(');
+$checkoutEnd=strpos($checkoutDdl,'function '.'vp3_profile_checkout_require_pa5(',$checkoutStart);
+eval(substr($checkoutDdl,$checkoutStart,$checkoutEnd-$checkoutStart));
+if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
+
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_');
 $modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get'],true)||$missingTable||isset($partialSpeech[$mode]);
 if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);}

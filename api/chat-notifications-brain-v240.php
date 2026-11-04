@@ -534,6 +534,11 @@ function chat_notifications_v240_present_attention_locked(PDO $pdo, array $user,
     $stmt->execute([$notificationId, $userId]);
     $notification = $stmt->fetch();
     if (!$notification) throw new DomainException('Notification was not found.');
+    if(notification_is_profile_order_pa5($notification)){
+        require_once dirname(__DIR__).'/includes/profile-order-announcement-pa5.php';
+        $agent=chat_notifications_v240_agent($pdo,$userId,max(0,(int)($input['agent_id']??0)));
+        return vp3_profile_order_present_pa5($pdo,$user,$notification,max(0,(int)($input['conversation_id']??0)),(int)($agent['id']??0));
+    }
     if(notification_is_profile_attention_v1341($notification)){
         require_once dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
         if(vp3_profile_handoff_notification_owned_pa3($pdo,$user,$notification)){
@@ -703,6 +708,7 @@ function chat_notifications_v240_present_attention(PDO $pdo,array $user,array $i
         elseif(!$owned&&$pdo->inTransaction()){$pdo->exec('ROLLBACK TO SAVEPOINT '.$savepoint);$pdo->exec('RELEASE SAVEPOINT '.$savepoint);}
         throw $e;
     }
+    if(!empty($result['preserve_unread']))return $result;
     if(!array_key_exists('voice_allowed',$result))$result['voice_allowed']=empty($result['duplicate']);
     if(!empty($result['handled'])&&empty($result['duplicate'])&&function_exists('vp3_cognitive_attention_arbitrate_v2410')){
         // The canonical attention policy still owns voice, focus and budget.
@@ -754,6 +760,9 @@ try {
         chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
     if ($method === 'GET' && $action === 'attention') {
+        if(($input['scope']??null)==='profile_orders'){
+            chat_notifications_v240_json(notification_profile_orders_after_pa5($pdo,(int)$user['id'],max(0,(int)($input['after_id']??0))));
+        }
         if((string)($input['scope']??'')==='profile'){
             chat_notifications_v240_json(notification_profile_attention_after_v1341($user,max(0,(int)($input['after_id']??0))));
         }

@@ -131,10 +131,10 @@ function profile_commerce_agent_context_v900(PDO $pdo,array $profile,string $que
     return $out;
 }
 
-function profile_commerce_owner_product_v900(PDO $pdo,int $ownerUserId,int $productId): ?array
+function profile_commerce_owner_product_v900(PDO $pdo,int $ownerUserId,int $productId,bool $lock=false): ?array
 {
     if($ownerUserId<1||$productId<1)return null;
-    $stmt=$pdo->prepare('SELECT p.*,b.binding_type,b.binding_id FROM agent_commerce_products_v800 p LEFT JOIN agent_commerce_product_bindings_v800 b ON b.product_id=p.id WHERE p.id=? AND p.owner_user_id=? LIMIT 1');
+    $stmt=$pdo->prepare('SELECT p.*,b.binding_type,b.binding_id FROM agent_commerce_products_v800 p LEFT JOIN agent_commerce_product_bindings_v800 b ON b.product_id=p.id WHERE p.id=? AND p.owner_user_id=? LIMIT 1'.($lock?agent_commerce_lock_pa2($pdo):''));
     $stmt->execute([$productId,$ownerUserId]);return $stmt->fetch()?:null;
 }
 

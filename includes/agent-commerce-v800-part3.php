@@ -87,16 +87,49 @@ function agent_commerce_checkout_request_pa2(PDO $pdo,array $order,array $connec
     }
     throw new RuntimeException('Commerce provider is unavailable.',409);
 }
-function agent_commerce_create_checkout_v800(PDO $pdo,array $order,int $connectionId,string $returnUrl,string $cancelUrl): array
+/** Stable merchant identity for a buyer-reviewed offer; refreshed credentials do not change it. */
+function agent_commerce_checkout_merchant_fingerprint_pa5(array $connection): string
+{
+    $provider=(string)$connection['provider'];
+    $caps=agent_commerce_capabilities_v800($connection);
+    $config=agent_commerce_config_v800()[$provider]??[];
+    $platform=match($provider){
+        'stripe'=>[(string)($config['connect_client_id']??''),substr((string)($config['secret_key']??''),3,4)==='test'?'test':'live'],
+        'square'=>[(string)($config['application_id']??''),(string)($config['environment']??'')],
+        'paypal'=>[(string)($config['client_id']??''),(string)($config['partner_id']??''),(string)($config['environment']??'')],
+        default=>[],
+    };
+    return hash('sha256',json_encode([
+        (int)$connection['id'],(int)$connection['owner_user_id'],$provider,(string)$connection['external_account_id'],
+        $platform,
+        $provider==='square'?(string)($caps['location_id']??''):'',
+        $provider==='square'?strtolower((string)($caps['currency']??'')):'',
+    ],JSON_THROW_ON_ERROR));
+}
+
+function agent_commerce_create_checkout_v800(PDO $pdo,array $order,int $connectionId,string $returnUrl,string $cancelUrl,?string $reviewedMerchant=null): array
 {
     if($pdo->inTransaction())throw new RuntimeException('Checkout must begin after the canonical order is committed.',409);
     if(!agent_commerce_recovery_schema_ready_pa2($pdo))throw new RuntimeException('Commerce recovery schema is unavailable.',503);
     foreach([$returnUrl,$cancelUrl] as $url){$parts=parse_url($url);if(!is_array($parts)||!in_array(strtolower((string)($parts['scheme']??'')),['https','http'],true)||empty($parts['host'])||isset($parts['user'])||isset($parts['pass'])||strlen($url)>8192||preg_match('/[\x00-\x20\x7f]/',$url))throw new RuntimeException('Commerce return and cancel URLs must be absolute.',409);}
-    $claim=agent_commerce_atomic_pa2($pdo,function()use($pdo,$order,$connectionId,$returnUrl,$cancelUrl):array{
+    $claim=agent_commerce_atomic_pa2($pdo,function()use($pdo,$order,$connectionId,$returnUrl,$cancelUrl,$reviewedMerchant):array{
         $s=$pdo->prepare('SELECT * FROM agent_commerce_orders_v800 WHERE id=?'.agent_commerce_lock_pa2($pdo));$s->execute([(int)$order['id']]);$live=$s->fetch(PDO::FETCH_ASSOC);
         if(!$live||!in_array((string)$live['payment_status'],['awaiting_payment','partially_paid'],true)||(int)$live['amount_due_cents']<1)throw new RuntimeException('This order is not awaiting payment.',409);
         if(!empty($live['hold_expires_at'])&&agent_commerce_date_pa2($live['hold_expires_at'])<=time())throw new RuntimeException('This payment hold has expired.',409);
         $connection=null;foreach(agent_commerce_available_connections_v800($pdo,$live) as $candidate)if((int)$candidate['id']===$connectionId){$connection=$candidate;break;}
+        if($reviewedMerchant!==null){
+            $q=$pdo->prepare('SELECT * FROM agent_commerce_provider_connections_v800 WHERE id=?'.agent_commerce_lock_pa2($pdo));
+            $q->execute([$connectionId]);
+            $locked=$q->fetch(PDO::FETCH_ASSOC);
+            if(!$connection||!$locked||$locked['status']!=='connected'
+                ||!hash_equals($reviewedMerchant,agent_commerce_checkout_merchant_fingerprint_pa5($locked))
+                ||(int)$live['connection_id']!==$connectionId
+                ||!hash_equals((string)$live['provider_snapshot'],(string)$locked['provider'])
+                ||!hash_equals((string)$live['external_account_snapshot'],(string)$locked['external_account_id'])){
+                throw new RuntimeException('The reviewed payment provider changed.',409);
+            }
+            $connection=$locked;
+        }
         if(!$connection)throw new RuntimeException('Choose an available payment provider.',409);
         $provider=(string)$connection['provider'];if(!agent_commerce_provider_ready_v800($provider))throw new RuntimeException(agent_commerce_provider_label_v800($provider).' is not configured on this VP3 deployment.',503);
         $q=$pdo->prepare("SELECT * FROM agent_commerce_checkout_attempts_v800 WHERE order_id=? AND connection_id=? AND status IN ('creating','open') ORDER BY id DESC LIMIT 1".agent_commerce_lock_pa2($pdo));$q->execute([(int)$live['id'],$connectionId]);$a=$q->fetch(PDO::FETCH_ASSOC);
@@ -109,6 +142,7 @@ function agent_commerce_create_checkout_v800(PDO $pdo,array $order,int $connecti
             $request=agent_commerce_checkout_request_pa2($pdo,$live,$connection,$returnUrl,$cancelUrl);
             $count=$pdo->prepare('SELECT COUNT(*) FROM agent_commerce_checkout_attempts_v800 WHERE order_id=? AND connection_id=?');$count->execute([(int)$live['id'],$connectionId]);$number=(int)$count->fetchColumn()+1;
             $idempotency=hash('sha256','vp3-commerce-checkout|'.(int)$live['id'].'|'.$connectionId.'|'.(int)$live['amount_due_cents'].'|'.strtolower((string)$live['currency']).'|'.$number);
+            if($reviewedMerchant!==null&&$number>1)throw new RuntimeException('The reviewed checkout can no longer be reopened.',409);
             if($provider==='square')$request['body']['idempotency_key']=$idempotency;
             $encoded=json_encode($request,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);if(strlen($encoded)>32768)throw new RuntimeException('Checkout request exceeds the supported size.',409);
             $caps=agent_commerce_capabilities_v800($connection);$location=$provider==='square'?(string)($caps['location_id']??''):'';$now=agent_commerce_time_pa2();

@@ -41,6 +41,7 @@ final class PA3PDO extends PDO
             $sql=preg_replace('/\s+UNSIGNED\b|\s+ON UPDATE CURRENT_TIMESTAMP|\s+AFTER [a-z_]+/i','',$sql);
             $sql=preg_replace('/UNIQUE KEY [a-z0-9_]+\s*\(/i','UNIQUE (',$sql);
             $sql=preg_replace('/,\s*INDEX [a-z0-9_]+\s*\([^)]*\)/i','',$sql);
+            $sql=preg_replace('/,\s*\)/',')',$sql);
             $sql=preg_replace('/\s+ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci/i','',$sql);
         }
         return parent::exec($sql);
