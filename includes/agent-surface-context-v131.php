@@ -137,6 +137,11 @@ function agent_surface_v131_screen_observations(array $raw): ?array
         $safe=agent_surface_v131_screen_observation(['screen_observation'=>$entry]);
         if($safe===null)continue;
         $seen[$index]=true;
+        if(is_string($entry['source_alias']??null)){
+            $alias=preg_replace('/[\p{Cc}\x{061C}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\s]+/u',' ',$entry['source_alias'])??'';
+            $alias=mb_substr(trim($alias),0,40,'UTF-8');
+            if($alias!=='')$safe['source_alias']=$alias;
+        }
         $observations[]=['source_index'=>$index,'source_label'=>'Tab '.$index,...$safe];
     }
     return $observations;
@@ -426,6 +431,7 @@ function agent_surface_v131_comparison_context_items(?array $observations): arra
     foreach($observations as $observation){
         $label=$observation['source_label'];
         $lines=[$instructions];
+        if(isset($observation['source_alias']))$lines[]='User-provided name for '.$label.': '.$observation['source_alias'];
         $frame=[];
         foreach(['summary'=>360,'visible_text'=>150,'on_screen_translation'=>220] as $field=>$limit){
             $value=agent_surface_v131_text($observation[$field]??'',$limit);

@@ -416,7 +416,7 @@ try {
       contextForPrompt:text=>({screen_observations:text.includes('Tab 2')?[
         {...current,source_index:2,summary:'Visual evidence from the second share'},
         {...current,source_index:1,summary:'',tab_audio:{text:'Speech from the first share'}},
-      ]:[]}),
+      ]:text.includes('Tab "Movie"')?[{...current,source_index:1,source_alias:'Movie'}]:[]}),
     };
   });
   await page.locator('#chatInput').fill('Compare Tab 2 to Tab 1');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
@@ -433,6 +433,9 @@ try {
   ]);
   assert.equal('screen_observation' in sends().at(-1).agent_context,false);
   await page.evaluate(()=>VP3ConversationControls.stop());
+  await page.locator('#chatInput').fill('What is on Tab "Movie"?');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>document.querySelector('#chatInput').disabled===false);
+  assert.deepEqual(sends().at(-1).agent_context.screen_observations.map(o=>[o.source_index,o.source_alias]),[[1,'Movie']]);
   await page.locator('#chatInput').fill('What is on Tab 3?');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
   await page.waitForFunction(()=>document.querySelector('#chatInput').disabled===false);
   assert.deepEqual(sends().at(-1).agent_context.screen_observations,[]);
