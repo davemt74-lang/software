@@ -63,7 +63,7 @@ final class ConnectedSiteChatFixturePdo extends PDO
     public function prepare(string $query, array $options=[]): PDOStatement|false
     {
         connected_site_chat_expect(str_contains($query,'conversation_id=? AND id<?'),'Continuation must bind the same conversation and current turn.');
-        connected_site_chat_expect(str_contains($query,'INTERVAL 15 MINUTE'),'Continuation marker must be fresh.');
+        connected_site_chat_expect(str_contains($query,'CURRENT_TIMESTAMP AS current_at'),'Continuation freshness must use the database clock.');
         return new ConnectedSiteChatFixtureStatement();
     }
 }
@@ -119,12 +119,14 @@ connected_site_chat_expect($result['sources'][0]['url']==='https://pizza.example
 [$stored,$storedContext]=vp3_connected_sites_chat_storage_v1($result,$result['answer'],['sources'=>$result['sources']]);
 connected_site_chat_expect($stored===VP3_CONNECTED_SITES_CHAT_RECEIPT_V1&&$storedContext['sources']===[]&&!str_contains(json_encode($storedContext),'270.00'),'Persist a content-free receipt and routing marker only.');
 connected_site_chat_expect(vp3_connected_sites_chat_storage_v1(['handled'=>true],'normal',['sources'=>['one']])===['normal',['sources'=>['one']]],'Ordinary chat history is unchanged.');
-$GLOBALS['fixturePrevious']=['role'=>'assistant','context_json'=>json_encode($storedContext)];
+$GLOBALS['fixturePrevious']=['role'=>'assistant','context_json'=>json_encode($storedContext),'created_at'=>'2026-11-03 16:24:00','current_at'=>'2026-11-03 16:29:00'];
 $GLOBALS['fixtureRequests']=[];
 $followup=vp3_connected_sites_chat_v1($pdo,$user,$principal,'Which ones have been open the longest?',80,32);
 connected_site_chat_expect($GLOBALS['fixtureRequests']===[[9,'food-21','tickets.open.read',21,null]],'Immediate follow-up fetches current ticket data only.');
 connected_site_chat_expect(strpos($followup['answer'],'#14')<strpos($followup['answer'],'#16'),'Longest-open follow-up orders tickets by current age.');
 connected_site_chat_expect(vp3_connected_sites_chat_v1($pdo,$user,$principal,'Which ones have been open the longest?',81,32)===null,'A different conversation cannot use the marker.');
+$GLOBALS['fixturePrevious']['current_at']='2026-11-03 16:39:01';
+connected_site_chat_expect(vp3_connected_sites_chat_v1($pdo,$user,$principal,'Which ones have been open the longest?',80,32)===null,'An expired continuation marker cannot trigger a read.');
 connected_site_chat_expect(vp3_connected_sites_chat_v1($pdo,$user,['kind'=>'profile_agent','owner_user_id'=>9,'viewer_user_id'=>9],$question,80,32)===null,'A public profile agent cannot access connected records.');
 connected_site_chat_expect(vp3_connected_sites_chat_v1($pdo,['id'=>9,'permissions'=>['chat.access']],$principal,$question,80,32)===null,'Cloud connection access is rechecked for each chat turn.');
 connected_site_chat_expect(vp3_connected_sites_chat_v1($pdo,['id'=>10,'permissions'=>['chat.access','account.access']],['kind'=>'user_agent','owner_user_id'=>10,'viewer_user_id'=>10],$question,80,32)===null,'A different owner cannot invoke this connection by name.');

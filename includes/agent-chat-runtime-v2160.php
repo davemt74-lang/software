@@ -172,7 +172,8 @@ if($capabilityTool===null){
     $agentContext=['conversation_id'=>$conversationId,'user_agent_id'=>$activeAgentId];
 }
 $persistedAgentContext=$agentContext;
-unset($persistedAgentContext['browser_context'],$persistedAgentContext['screen_observations']);
+unset($persistedAgentContext['browser_context']);
+unset($persistedAgentContext['screen_observations']);
 $agentContext['chat_user_message_id']=$userMessageId;
 if($capabilityTool===null&&$brainAllowed&&$userMessageId>0)agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,$inputMode);
 if($capabilityTool===null&&!$ephemeralProtocol){$capabilityCandidate=vp3_capability_chat_v1($pdo,$user,$principal,$query,$agentContext,!empty($r6Packet['active'])?$r6Packet['state']['scope']:($input['knowledge_scope']??null),$history,null,$currentAuthority);if(!empty($capabilityCandidate['handled']))$capabilityTool=$capabilityCandidate;}

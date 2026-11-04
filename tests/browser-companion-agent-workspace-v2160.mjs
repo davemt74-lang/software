@@ -57,8 +57,9 @@ must(panel.includes("if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceA
 
 // One canonical send runtime for web + Chrome.
 must(runtime.includes("function vp3_agent_chat_send_v2160("),'canonical shared Agent send runtime missing');
-must(webApi.includes("$payload=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed);"),'web Chat send must delegate to shared runtime');
+must(webApi.includes("$payload=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);"),'private web Chat send must delegate to shared runtime with Connected Sites enabled');
 must(extensionApi.includes("vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$runtimeInput,$brainAllowed,$r9Authority)"),'Browser Agent send must delegate to shared runtime');
+must(!extensionApi.includes('allowConnectedSites:'),'Browser Agent must not opt into private Connected Sites reads');
 must(runtime.includes("$userId=(int)($user['id']??0);"),'shared runtime user identity initialization missing');
 must(runtime.includes("vp3_agent_chat_tool_query_v1($query,$user,$conversationId,$agentContext)")&&toolBoundary.includes("return vp3_agent_tool_execute_query_v400($query,$user,$conversationId,$serverContext);"),'shared runtime must delegate through the shared authorized Agent tools with its server context');
 must(toolBoundary.includes("$serverContext['conversation_id']=$conversationId;"),'shared tool delegation must bind context to the current server conversation');

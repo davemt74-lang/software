@@ -42,13 +42,17 @@ function vp3_connected_sites_chat_actions_v1(string $question): array
 function vp3_connected_sites_chat_previous_v1(PDO $pdo, int $conversationId, int $messageId): array
 {
     $stmt=$pdo->prepare(
-        "SELECT role,context_json FROM chat_messages WHERE conversation_id=? AND id<?
-          AND role IN ('user','assistant') AND created_at>=DATE_SUB(NOW(),INTERVAL 15 MINUTE)
+        "SELECT role,context_json,created_at,CURRENT_TIMESTAMP AS current_at FROM chat_messages WHERE conversation_id=? AND id<?
+          AND role IN ('user','assistant')
           ORDER BY id DESC LIMIT 1"
     );
     $stmt->execute([$conversationId,$messageId]);
     $row=$stmt->fetch(PDO::FETCH_ASSOC);
     if(($row['role']??'')!=='assistant')return [];
+    // Both timestamps come from the same database session, including its timezone.
+    $created=strtotime((string)$row['created_at'].' UTC');
+    $now=strtotime((string)$row['current_at'].' UTC');
+    if($created===false||$now===false||$created>$now||$now-$created>900)return [];
     $context=json_decode((string)$row['context_json'],true);
     return is_array($context['connected_site_context_v1']??null)?$context['connected_site_context_v1']:[];
 }
@@ -243,12 +247,15 @@ function vp3_connected_sites_chat_v1(PDO $pdo, array $user, array $principal, st
 {
     if($conversationId<1||$messageId<1||!knowledge_retrieval_v162_owner_session($user,$principal)
         ||!has_permission('account.access',$user)||!has_permission('chat.access',$user))return null;
-    if(!preg_match('/^(?:(?:please|(?:can|could|would) you)\s+)?ask\s+/iu',$query)){
-        $previous=vp3_connected_sites_chat_previous_v1($pdo,$conversationId,$messageId);
-        if(!$previous)return null;
-    }
     $userId=(int)$user['id'];
-    try{$connections=vp3_gelato_connections_v1($pdo,$userId);}catch(Throwable $e){return null;}
+    try{
+        $connections=vp3_gelato_connections_v1($pdo,$userId);
+        if(!$connections)return null;
+        if(!preg_match('/^(?:(?:please|(?:can|could|would) you)\s+)?ask\s+/iu',$query)){
+            $previous=vp3_connected_sites_chat_previous_v1($pdo,$conversationId,$messageId);
+            if(!$previous)return null;
+        }
+    }catch(Throwable $e){return null;}
     $plan=vp3_connected_sites_chat_plan_v1($query,$connections,$previous??[]);
     if($plan===null)return null;
     $result=['handled'=>true,'answer'=>$plan['answer']??'','sources'=>[],'connected_site_context_v1'=>$plan['context']??[]];

@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/ai-settings.php';
-require_once __DIR__.'/cloud-mission-web-v1.php';
 
 const VP3_GELATO_OPERATIONS_V1 = ['orders.read', 'tickets.open.read', 'sales.daily.read'];
 
@@ -39,6 +38,7 @@ function vp3_gelato_schema_ready_v1(PDO $pdo): bool
 
 function vp3_gelato_origin_v1(string $input): string
 {
+    require_once __DIR__.'/cloud-mission-web-v1.php';
     $input = trim($input);
     if (!preg_match('~^https://([a-z0-9.-]{1,253})/?$~iD', $input, $match)) {
         throw new InvalidArgumentException('Enter the public HTTPS origin of your Gelato installation.');
