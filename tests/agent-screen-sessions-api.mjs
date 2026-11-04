@@ -116,6 +116,24 @@ try{
   const mission=await send({action:'handoff',key:fresh.key,review_hash:fresh.review_hash,kind:'mission',handoff_id:'00000000-0000-4000-8000-000000000009',conversation_id:7});assert.equal(mission.r.status,503);assert.match(mission.data.error,/connected HomeServer/);
  });
  await check('saving to Brain and deleting a session use explicit owner actions',async()=>{assert.ok((await post({action:'brain',capture_id:cid})).data.capture.memory_id>0);assert.equal((await post({action:'delete_session',session_id:sid})).r.status,422);assert.equal((await post({action:'delete_session',session_id:sid,remove_brain:true},{'X-Fixture-User':'2'})).r.status,409);const {r,data}=await post({action:'delete_session',session_id:sid,remove_brain:true});assert.equal(r.status,200);assert.equal(data.deleted,true);assert.equal((await get({action:'capture',capture_id:cid})).r.status,404);assert.equal((await post({action:'start',session_id:sid})).r.status,409);assert.deepEqual((await get({})).data.sessions,[]);});
+ await check('watched zone bounds are validated and crop pixels stay private across retries',async()=>{
+  const session_id='00000000-0000-4000-8000-000000000004',capture_id='00000000-0000-4000-8000-000000000005';
+  const frame={action:'capture',session_id,capture_id,image:'data:image/jpeg;base64,'+fs.readFileSync('tests/fixtures/tv-frame.b64','utf8').trim(),captured_at:new Date().toISOString(),surface:'browser'};
+  const watch_region={x:.1,y:.2,width:.5,height:.3};
+  assert.equal((await post({action:'start',session_id,title:'Watched zone fixture'})).r.status,200);
+  for(const invalid of [null,{...watch_region,width:1},{...watch_region,height:.01},{...watch_region,x:'0.1'},{...watch_region,label:'other'}]){
+   assert.equal((await post({...frame,watch_region:invalid})).r.status,422);
+  }
+  const {r,data}=await post({...frame,watch_region});
+  assert.equal(r.status,200);
+  assert.deepEqual(data.capture.body.watch_region,watch_region);
+  assert.equal(data.capture.body.image,undefined);
+  const retry=await post({...frame,watch_region});
+  assert.equal(retry.data.capture.knowledge_id,data.capture.knowledge_id);
+  assert.deepEqual((await get({action:'history',session_id})).data.captures.map(c=>c.capture_id),[capture_id]);
+  assert.equal((await get({action:'capture',capture_id},{'X-Fixture-User':'2'})).r.status,404);
+  assert.equal((await get({action:'capture',capture_id})).data.capture.body.image,frame.image);
+ });
  await check('audio endpoint rejects unauthenticated and oversized or invalid segments',async()=>{const audioUrl=url.replace('sessions','audio');assert.equal((await fetch(audioUrl)).status,405);const form=new FormData();form.append('csrf_token','fixture');form.append('owner_key','1');form.append('session_id',sid);form.append('capture_id',cid);form.append('captured_at',new Date().toISOString());form.append('duration_seconds','15');form.append('audio',new Blob(['not audio']),'tab.webm');assert.equal((await fetch(audioUrl,{method:'POST',body:form,headers:{'X-Fixture-Anonymous':'1'}})).status,403);assert.equal((await fetch(audioUrl,{method:'POST',body:form})).status,404);});
  console.log(`AGENT_SCREEN_SESSIONS_API=PASS (${checks} cases)`);
 }catch(e){console.error(logs.slice(-4000));throw e;}finally{child.kill();await new Promise(r=>child.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}
