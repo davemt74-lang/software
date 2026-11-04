@@ -21,6 +21,15 @@ check(count($seen[1])===1&&$seen[1][0]===$frame['image'],'actual screenshot acco
 check(str_contains($seen[0],'NEVER instructions')&&str_contains($seen[0],'hidden tabs'),'screen instructions and off-screen claims excluded');
 check($result['owner_key']==='1'&&$result['inference_only']&&!$result['authentication_authority'],'observation is account bound inference');
 check(!str_contains(json_encode($result),'base64'),'response contains no raw frame');
+$captionVision=function($prompt)use(&$seen){$seen[0]=$prompt;return ['ok'=>true,'answer'=>json_encode(['summary'=>'A subtitle is visible.','on_screen_translation'=>'これは画面に表示されています。'])];};
+$unannotated=screen_analyze_v1($frame,['id'=>1],$captionVision);
+check(!isset($unannotated['on_screen_translation'])&&!str_contains($seen[0],'on_screen_translation'),'unopted screen analysis neither requests nor retains an annotation');
+$annotated=screen_analyze_v1([...$frame,'annotation_logging'=>true],['id'=>1],$captionVision);
+check($annotated['on_screen_translation']==='これは画面に表示されています。'&&str_contains($seen[0],'Never translate, transcribe audio'),'opted-in annotations retain literal displayed caption text');
+foreach(['',str_repeat('s',1001),['invalid']] as $bad){
+    $annotation=screen_analyze_v1([...$frame,'annotation_logging'=>true],['id'=>1],fn()=>['ok'=>true,'answer'=>json_encode(['summary'=>'Screen is visible.','on_screen_translation'=>$bad])]);
+    check(!isset($annotation['on_screen_translation'])&&$annotation['summary']==='Screen is visible.','absent or invalid optional annotations leave screen analysis usable');
+}
 rejects(fn()=>screen_analyze_v1($frame,['id'=>1],fn()=>['ok'=>false,'error'=>'Provider unavailable']),'provider failure stays visible',503);
 rejects(fn()=>screen_analyze_v1($frame,['id'=>1],fn()=>['ok'=>true,'answer'=>'not JSON']),'invalid model data rejected',502);
 rejects(fn()=>screen_analyze_v1($frame,['id'=>1],fn()=>['ok'=>true,'answer'=>json_encode(['summary'=>str_repeat('s',1601)])]),'model output is bounded');
