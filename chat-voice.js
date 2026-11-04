@@ -710,7 +710,20 @@
     return true;
   }
   function isChatSend(inputArg,init,payload){if(!chatUrl||String(init?.method||'GET').toUpperCase()!=='POST'||payload?.action!=='send')return false;try{const target=new URL(typeof inputArg==='string'?inputArg:inputArg?.url||'',location.href);return target.origin===chatUrl.origin&&target.pathname===chatUrl.pathname;}catch(error){return false;}}
-  async function attachContext(payload){const speaker=window.VP3VoiceGuard?.takeContext(payload.message)||(!window.VP3VoiceGuard?.wasVoiceTurn?.(payload.message)?window.VP3ParticipantContinuity?.selectedContext():null);let result=payload;if(AgentContext)try{result={...payload,agent_context:await AgentContext.refresh(false)};}catch(error){result={...payload,agent_context:AgentContext.snapshot?.()||{}};}if(speaker)result={...result,agent_context:{...(result.agent_context||{}),voice_speaker:speaker}};return result;}
+  async function attachContext(payload){
+    const speaker=window.VP3VoiceGuard?.takeContext(payload.message)||(!window.VP3VoiceGuard?.wasVoiceTurn?.(payload.message)?window.VP3ParticipantContinuity?.selectedContext():null);
+    let context=payload.agent_context;
+    if(AgentContext)try{context=await AgentContext.refresh(false);}catch(error){context=AgentContext.snapshot?.()||{};}
+    const screenContext=window.VP3AgentScreenShare?.contextForPrompt?.(payload.message);
+    if(screenContext){
+      context={...context};
+      delete context.screen_observation;
+      delete context.screen_observations;
+      Object.assign(context,screenContext);
+    }
+    if(speaker)context={...context,voice_speaker:speaker};
+    return context?{...payload,agent_context:context}:payload;
+  }
 
   function cancelActiveRequest(){
     voiceDispatchGeneration+=1;clearTimeout(voiceSubmitTimer);

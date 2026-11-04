@@ -79,8 +79,14 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $analysis=$transcripts!=='ready'?$transcripts:vp3_capability_probe_v1(fn()=>table_exists('artist_transcript_master_analysis_v237')&&table_exists('artist_transcript_page_analysis_v237'));
     try{$phone=vp3_phone_agent_readiness_v1($pdo,$user);}catch(Throwable $e){$phone=['numbers'=>'check_failed','sms'=>'check_failed','send'=>'check_failed'];}
     // An observation is bounded visual evidence, never a browser-control or identity grant.
-    $screen=function_exists('agent_surface_v131_screen_observation')?agent_surface_v131_screen_observation($context):null;
-    $screenReady=$screen!==null&&$screen['owner_key']===(string)$uid;
+    $screenReady=false;
+    if(function_exists('agent_surface_v131_screen_observations')){
+        $comparison=agent_surface_v131_screen_observations($context);
+        $screens=$comparison??array_filter([agent_surface_v131_screen_observation($context)]);
+        foreach($screens as $screen){
+            if($screen['owner_key']===(string)$uid){$screenReady=true;break;}
+        }
+    }
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
         vp3_capability_row_v1('voice.profiles.enroll','Learn my voice in Chat','read','vp3_voice_enrollment_prepare_v1',has_permission('chat.access',$user),function_exists('vp3_voice_enrollment_prepare_v1')?'ready':'upgrade_required',['Prepare local guided setup only. Participant consent, model download, sample playback/retry and explicit save happen in this browser. No cloning or automatic microphone capture.']),

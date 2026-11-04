@@ -409,6 +409,36 @@ try {
   assert.equal(sends().at(-1).agent_context?.screen_observation??null,null);
   console.log('PASS typed and spoken canonical Chat attach current screen context; stopped sharing attaches none');
 
+  await page.evaluate(()=>{
+    const current={contract:'vp3.screen-observation.v1',owner_key:'1',captured_at:new Date().toISOString(),surface:'browser',summary:'Selected share'};
+    window.VP3AgentScreenShare={
+      context:()=>current,
+      contextForPrompt:text=>({screen_observations:text.includes('Tab 2')?[
+        {...current,source_index:2,summary:'Visual evidence from the second share'},
+        {...current,source_index:1,summary:'',tab_audio:{text:'Speech from the first share'}},
+      ]:[]}),
+    };
+  });
+  await page.locator('#chatInput').fill('Compare Tab 2 to Tab 1');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>document.querySelector('#chatInput').disabled===false);
+  assert.deepEqual(sends().at(-1).agent_context.screen_observations.map(o=>o.source_index),[2,1]);
+  assert.equal('screen_observation' in sends().at(-1).agent_context,false);
+  await page.getByRole('button',{name:'Start voice conversation'}).click();await page.waitForFunction(()=>recognizers.some(r=>r.active));
+  await speak('Compare Tab 2 with what they said on Tab 1');
+  await page.waitForTimeout(2100);
+  assert.equal(sends().at(-1).message,'Compare Tab 2 with what they said on Tab 1');
+  assert.equal(sends().at(-1).input_mode,'voice');
+  assert.deepEqual(sends().at(-1).agent_context.screen_observations.map(o=>[o.source_index,o.summary,o.tab_audio?.text]),[
+    [2,'Visual evidence from the second share',undefined],[1,'','Speech from the first share'],
+  ]);
+  assert.equal('screen_observation' in sends().at(-1).agent_context,false);
+  await page.evaluate(()=>VP3ConversationControls.stop());
+  await page.locator('#chatInput').fill('What is on Tab 3?');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>document.querySelector('#chatInput').disabled===false);
+  assert.deepEqual(sends().at(-1).agent_context.screen_observations,[]);
+  assert.equal('screen_observation' in sends().at(-1).agent_context,false);
+  console.log('PASS typed and spoken Chat preserve named share evidence across context refresh without selected-share fallback');
+
   await boot();
   const reminderCount=sends().length;
   await page.locator('#chatInput').fill('Remind me to stretch tomorrow at 8 AM');await page.locator('#chatForm').evaluate(form=>form.requestSubmit());await page.waitForFunction(()=>document.querySelector('#chatInput').disabled===false);

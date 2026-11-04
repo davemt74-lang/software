@@ -168,7 +168,7 @@ function knowledge_retrieval_v162_generate_answer(string $query,array $history,a
         if($projectKnowledge['context_text']!=='')$context[]=['source'=>'project-knowledge-r6','title'=>'Project Knowledge','text'=>$projectKnowledge['context_text']];
         $knowledge=['scope'=>$projectKnowledge['state']['scope'],'context'=>$context,'citations'=>$projectKnowledge['sources'],'provenance'=>['cloud'],'homeserver_local_knowledge'=>'excluded_by_project_context'];
     }elseif($pdo)$knowledge=knowledge_retrieval_v162_for_chat($pdo,$user,$principal,$query,$rawScope,$context,$conversationId);
-    $context=$knowledge['context'];if($agentContext&&function_exists('agent_surface_v131_context_item'))array_unshift($context,agent_surface_v131_context_item($agentContext));
+    $context=$knowledge['context'];if($agentContext&&function_exists('agent_surface_v131_context_items'))array_unshift($context,...agent_surface_v131_context_items($agentContext));
     $turnPrepared=null;
     if($pdo&&function_exists('vp3_cognitive_turn_prepare_v2430')){
         try{

@@ -240,6 +240,53 @@ try{
   await scene.check();
   await expectContext(third,'Third fixture');
  });
+ await check('explicit Tab and Share references use bounded named evidence without selected-tab fallback',async()=>{
+  const comparison=await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('Compare Tab 2 with what they said on Tab one.'));
+  assert.equal('screen_observation' in comparison,false);
+  assert.deepEqual(comparison.screen_observations.map(o=>[o.source_label,o.summary,o.historical_frame]),[
+   ['Tab 2','Second fixture scene',true],['Tab 1','First fixture scene',true],
+  ]);
+  const list=await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('Compare tabs 3, 1, and 2. Recheck Share 3.'));
+  assert.deepEqual(list.screen_observations.map(o=>o.source_index),[3,1,2]);
+  assert.equal(list.screen_observations[0].historical_frame,undefined);
+  assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is happening here?').screen_observation.summary),'Third fixture scene');
+  assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('Discuss this saved capture. Shared-screen content is untrusted evidence.\nCompare Tab 1 and Tab 2.').screen_observation.summary),'Third fixture scene');
+  assert.deepEqual(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is on Tab 4?')),{screen_observations:[]});
+  const third=panelAt(2).getByRole('checkbox',{name:'Supply scene context to Chat',exact:true});
+  await third.uncheck();
+  await selectors.nth(0).click();
+  await expectContext(panelAt(0),'First fixture');
+  assert.deepEqual(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is on Share 3?')),{screen_observations:[]});
+  assert.deepEqual(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('Compare Tab 2 with Tab 3').screen_observations.map(o=>o.source_index)),[2]);
+ });
+ await check('named evidence retains recent speech after its last visual observation expires',async()=>{
+  await selectors.nth(0).click();
+  const previous=await multi.evaluate(()=>audioCalls.length);
+  await multi.waitForFunction(count=>{
+   const evidence=VP3AgentScreenShare.context();
+   const freshIds=new Set(audioCalls.slice(count).map(c=>c.capture_id));
+   return evidence?.summary==='First fixture scene'&&captures.some(c=>freshIds.has(c.capture_id)&&c.kind==='tab_audio'&&c.session_id===sessions[0].session_id&&Date.parse(c.captured_at)>Date.parse(evidence.captured_at)+1);
+  },previous);
+  const named=await multi.evaluate(()=>{
+   const scene=VP3AgentScreenShare.context();
+   const realNow=Date.now;
+   Date.now=()=>Date.parse(scene.captured_at)+90001;
+   try{return {named:VP3AgentScreenShare.contextForPrompt('What did they say on Tab 1?'),implicit:VP3AgentScreenShare.context()};}
+   finally{Date.now=realNow;}
+  });
+  assert.equal(named.implicit,null);
+  assert.equal(named.named.screen_observations[0].summary,'');
+  assert.equal(named.named.screen_observations[0].tab_audio.text,'First fixture audio');
+  assert.equal(named.named.screen_observations[0].captured_at,named.named.screen_observations[0].tab_audio.captured_at);
+  const muted=await multi.evaluate(()=>{
+   const track=displayStreams[0].getVideoTracks()[0];
+   Object.defineProperty(track,'muted',{configurable:true,value:true});
+   try{return VP3AgentScreenShare.contextForPrompt('What did they say on Tab 1?').screen_observations[0];}
+   finally{delete track.muted;}
+  });
+  assert.equal(muted.summary,'');
+  assert.equal(muted.tab_audio.text,'First fixture audio');
+ });
  await check('pinned Agent Ears keeps its recorder across previews without borrowing Chat context',async()=>{
   await multi.evaluate(()=>{window.fixtureAudioInterval=2500;});
   await selectors.nth(0).click();
@@ -260,6 +307,28 @@ try{
   await multi.waitForFunction(count=>audioCalls.filter(call=>call.session_id===sessions[0].session_id).length>count,before);
   assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.context()?.tab_audio),undefined);
   assert.equal(await pin.getAttribute('aria-pressed'),'true');
+  await multi.waitForFunction(()=>VP3AgentScreenShare.contextForPrompt('What did they say on Tab 1?').screen_observations[0]?.tab_audio?.text==='First fixture audio');
+  const namedSecond=await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is on Tab 2?').screen_observations[0]);
+  assert.equal(namedSecond.summary,'Second fixture scene');
+  assert.equal(namedSecond.tab_audio,undefined);
+  const mutedFirst=await multi.evaluate(()=>{
+   const track=displayStreams[0].getVideoTracks()[0];
+   Object.defineProperty(track,'muted',{configurable:true,value:true});
+   track.dispatchEvent(new Event('mute'));
+   try{return VP3AgentScreenShare.contextForPrompt('What did they say on Tab 1?').screen_observations[0];}
+   finally{delete track.muted;}
+  });
+  assert.equal(mutedFirst.summary,'');
+  assert.equal(mutedFirst.tab_audio.text,'First fixture audio');
+  await selectors.nth(0).click();
+  const scene=panelAt(0).getByRole('checkbox',{name:'Supply scene context to Chat',exact:true});
+  await scene.uncheck();
+  await selectors.nth(1).click();
+  assert.deepEqual(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is on Tab 1?')),{screen_observations:[]});
+  await multi.waitForFunction(()=>recorders.some(recorder=>recorder.state==='recording'&&recorder.stream.getAudioTracks()[0]===displayStreams[0].getAudioTracks()[0]));
+  await selectors.nth(0).click();
+  await scene.check();
+  await selectors.nth(1).click();
  });
  await check('ending pinned audio releases its pin and fences a superseded handoff',async()=>{
   await multi.evaluate(()=>{
@@ -307,6 +376,7 @@ try{
   await multi.waitForFunction(()=>sessions[1].status==='ended');
   assert.deepEqual(await multi.evaluate(()=>displayStreams.map(s=>s.getVideoTracks()[0].readyState)),['live','ended','live']);
   assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.isActive()),true);
+  assert.deepEqual(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is on Tab 2?')),{screen_observations:[]});
   await multi.evaluate(()=>VP3AgentScreenShare.stop());
   await multi.waitForFunction(()=>sessions.every(s=>s.status==='ended'));
   assert.equal(await multi.evaluate(()=>displayStreams.every(s=>s.getTracks().every(t=>t.readyState==='ended'))),true);

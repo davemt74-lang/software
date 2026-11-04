@@ -7,6 +7,9 @@ function table_exists(string $table): bool {return in_array($table,['artist_tran
 function current_user(): array {return ['id'=>1];}
 
 require __DIR__.'/../includes/agent-surface-context-v131.php';
+require __DIR__.'/../includes/cognitive-runtime-v500.php';
+require __DIR__.'/../includes/cognitive-context-v2420.php';
+require __DIR__.'/../includes/ai-settings.php';
 
 $connection->exec("CREATE TABLE artist_transcript_sessions_v172(
  id INTEGER PRIMARY KEY,created_by_user_id INTEGER,conversation_id INTEGER,title TEXT,status TEXT,
@@ -109,4 +112,47 @@ $foreign=agent_surface_v131_context_item(['screen_observation'=>[...$screen,'own
 check(!str_contains($foreign['text'],'A letter for you.')&&!str_contains($foreign['text'],'The letter arrived today.'),'foreign audio or visual evidence reached Chat');
 pass('legacy transcripts, bad timestamps and foreign owners are handled independently');
 
-echo "AGENT_CONTEXT_SECTION8=PASS (10 cases)\n";
+$tab1=[...$screen,'source_index'=>1,'source_label'=>'Forged label','image'=>'hidden screenshot'];
+$tab2=[...$end,'source_index'=>2,'summary'=>'The second share shows a train.',
+    'tab_audio'=>[...$end['tab_audio'],'text'=>'The next train leaves at noon.']];
+$context=agent_surface_v131_enrich(['id'=>1],'chat',['screen_observation'=>$screen,'screen_observations'=>[
+    $tab2,$tab1,[...$tab2,'summary'=>'Duplicate Tab 2 evidence.'],
+    [...$screen,'source_index'=>3,'summary'=>'Fourth entry must be ignored.'],
+]]);
+$tabs=$context['screen_observations'];
+check($context['screen_observation']===null&&array_column($tabs,'source_label')===['Tab 2','Tab 1'],'comparison source labels, de-duplication, bounds or singleton exclusion failed');
+check($tabs[0]['tab_audio']['frame_within_segment']===false&&$tabs[1]['tab_audio']['frame_within_segment']===true,'an observation inherited timing from a different tab');
+check(!isset($tabs[1]['image'])&&$tabs[1]['instructions_authority']===false,'comparison kept raw screenshot or instruction authority');
+$items=agent_surface_v131_context_items($context);
+check(str_contains($items[0]['text'],'The next train leaves at noon.')&&str_contains($items[1]['text'],'A letter for you.')&&str_contains($items[0]['text'],'relevant timestamp'),'Chat prompt dropped evidence or comparison instructions');
+check(!str_contains($items[0]['text'],'A letter for you.')&&!str_contains($items[1]['text'],'The next train leaves at noon.'),'comparison presentation mixed up source speech');
+pass('named screen comparisons are source-labeled, deduplicated, bounded and aligned independently');
+
+$excluded=['screen_observation'=>$screen,'screen_observations'=>[
+    [...$tab2,'owner_key'=>'2'],[...$tab1,'captured_at'=>gmdate('Y-m-d\TH:i:s\Z',time()-100)],
+]];
+$context=agent_surface_v131_enrich(['id'=>1],'chat',$excluded);
+check($context['screen_observations']===[]&&$context['screen_observation']===null,'stale or foreign named evidence reached Chat enrichment');
+$items=agent_surface_v131_context_items($excluded);
+$prompt=ai_context_prompt($items);
+check(!str_contains($prompt,'The next train leaves at noon.')&&!str_contains($prompt,'A letter for you.')&&str_contains($items[0]['text'],'No evidence is available'),'unavailable named evidence was replaced by the selected screen');
+check(agent_surface_v131_sanitize(['screen_observation'=>$screen,'screen_observations'=>null])['screen_observation']===null,'malformed named evidence fell back to the selected screen');
+pass('missing, stale, malformed and foreign evidence cannot fall back to the current share');
+
+$denseTabs=[];
+for($i=1;$i<=3;$i++){
+    $denseTabs[]=[...$tab1,'source_index'=>$i,'summary'=>str_repeat('visual analysis ',150),
+        'visible_text'=>str_repeat('visible text ',150),'on_screen_translation'=>str_repeat('displayed caption ',70),
+        'tab_audio'=>[...$tab1['tab_audio'],'text'=>'Audio evidence for tab '.$i.' '.str_repeat('spoken words ',200)]];
+}
+$items=agent_surface_v131_context_items(['screen_observations'=>$denseTabs]);
+$legacy=vp3_cognitive_context_legacy_items_v2420($items,['screen','compare'],false);
+$selected=vp3_cognitive_context_select_v2420($legacy);
+$prompt=ai_context_prompt($selected['items']);
+check(($selected['section_counts']['screen_comparison']??0)===3&&($selected['section_counts']['live_session']??0)===1,'named shares competed with each other or the live session slot');
+for($i=1;$i<=3;$i++){
+    check(str_contains($prompt,'Audio evidence for tab '.$i)&&str_contains($prompt,'Tab '.$i.' · Visual frame at '.$screen['captured_at']),'model context clipping dropped visual or spoken evidence from Tab '.$i);
+}
+pass('all three large named shares survive cognitive selection and provider prompt budgets');
+
+echo "AGENT_CONTEXT_SECTION8=PASS (13 cases)\n";

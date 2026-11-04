@@ -57,6 +57,9 @@ $screen=['contract'=>'vp3.screen-observation.v1','owner_key'=>'1','captured_at'=
 $s=vp3_capability_begin_v1($pdo,$user,$principal,['screen_observation'=>$screen]);check(row($s,'screen.context')['ready'],'fresh same-owner observation permits discussion only');
 $screen['owner_key']='2';$s=vp3_capability_begin_v1($pdo,$user,$principal,['screen_observation'=>$screen]);check(!row($s,'screen.context')['ready'],'foreign-owner observation cannot enable screen context');
 $screen['owner_key']='1';$screen['captured_at']=gmdate('Y-m-d\TH:i:s\Z',time()-95);$s=vp3_capability_begin_v1($pdo,$user,$principal,['screen_observation'=>$screen]);check(!row($s,'screen.context')['ready'],'expired observation cannot enable screen context');
+$namedScreen=[...$screen,'captured_at'=>gmdate('Y-m-d\TH:i:s\Z'),'source_index'=>2];
+$s=vp3_capability_begin_v1($pdo,$user,$principal,['screen_observations'=>[$namedScreen]]);check(row($s,'screen.context')['ready'],'current same-owner named evidence permits screen discussion');
+$s=vp3_capability_begin_v1($pdo,$user,$principal,['screen_observations'=>[[...$namedScreen,'owner_key'=>'2']],'screen_observation'=>$namedScreen]);check(!row($s,'screen.context')['ready'],'missing named evidence cannot fall back to the selected share');
 $s=vp3_capability_begin_v1($pdo,$user,$principal);$GLOBALS['vp3_capability_turn_v1']['checked_at']=gmdate('Y-m-d\TH:i:s\Z',time()-121);check(vp3_capability_prompt_v1($user)==='','expired turn snapshot is not reused as current evidence');
 $s=vp3_capability_begin_v1($pdo,$user,['kind'=>'user_agent','owner_user_id'=>2]);check($s['capabilities']===[]&&vp3_capability_prompt_v1($user)==='','third-party agent cannot inspect owner tools');
 $permissions['chat.access']=false;$s=vp3_capability_begin_v1($pdo,$user,$principal);check($s['capabilities']===[],'Chat revocation removes the inventory');

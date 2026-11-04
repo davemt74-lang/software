@@ -250,7 +250,7 @@ function chat_policy_context_v236(string $query,array $user,array $principal,int
 function chat_generate_answer_policy_v236(string $query,array $history,array $user,array $principal,array $agentContext=[],int $conversationId=0): array
 {
     $context=chat_policy_context_v236($query,$user,$principal,$conversationId);
-    if($agentContext&&function_exists('agent_surface_v131_context_item'))array_unshift($context,agent_surface_v131_context_item($agentContext));
+    if($agentContext&&function_exists('agent_surface_v131_context_items'))array_unshift($context,...agent_surface_v131_context_items($agentContext));
     $turnPrepared=null;
     $pdo=db();
     if($pdo&&function_exists('vp3_cognitive_turn_prepare_v2430')){
