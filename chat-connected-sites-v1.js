@@ -73,7 +73,35 @@
     return 'find recipe for dough';
   }
 
-  function render(connections) {
+  function knowledgeControl(site, canCreate) {
+    const folder = site.knowledgeFolder;
+    if (!folder) {
+      if (!canCreate) return null;
+      const create = element('button', 'Create Knowledge folder');
+      create.type = 'button';
+      create.addEventListener('click', () => perform(async () => {
+        await request({ action: 'createKnowledgeFolder', connectionId: site.id });
+        await load();
+        status.textContent = 'Knowledge folder ready.';
+      }));
+      return create;
+    }
+    if (!Number.isSafeInteger(folder.id) || folder.id < 1 || !config.knowledgeUrl) return null;
+    let url;
+    try {
+      url = new URL(config.knowledgeUrl, window.location.href);
+    } catch {
+      return null;
+    }
+    if (url.origin !== window.location.origin || url.username || url.password) return null;
+    url.searchParams.set('folder', String(folder.id));
+    const link = element('a', 'Open Knowledge folder');
+    link.href = url.href;
+    link.setAttribute('aria-label', 'Open Knowledge folder for ' + folder.name);
+    return link;
+  }
+
+  function render(connections, canCreateKnowledgeFolder) {
     sites.replaceChildren();
     if (!connections.length) sites.append(element('p', 'No sites connected yet.'));
     for (const site of connections) {
@@ -111,6 +139,8 @@
       });
       row.append(element('strong', site.agentName), element('p', site.origin),
         element('p', [...permissions, ...locations].join(' · ')), ask, disconnect);
+      const knowledge = knowledgeControl(site, canCreateKnowledgeFolder);
+      if (knowledge) row.append(knowledge);
       sites.append(row);
     }
   }
@@ -118,7 +148,7 @@
   async function load() {
     const data = await request();
     available = data.available === true;
-    render(data.connections);
+    render(data.connections, data.canCreateKnowledgeFolder === true);
     if (!available) status.textContent = 'Connected Sites requires the VP3 Cloud database upgrade.';
   }
 
