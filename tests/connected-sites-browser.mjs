@@ -13,15 +13,23 @@ const calls = [];
 const name = 'Kitchen Fox';
 const origin = 'https://restaurant.example';
 const id = 'f'.repeat(32);
+const knowledgeUrl = 'https://vp3.test/vp3/knowledge.php';
+const firstFolder = { id: 21, name, url: 'https://untrusted.example/redirect' };
+const secondFolder = { id: 22, name: name + ' (other.example)' };
 let available = false;
 let connected = false;
 let remoteRevoke = true;
 let duplicate = false;
+let canCreateKnowledgeFolder = true;
+let knowledgeFolder = null;
 
 await page.route('https://vp3.test/', route => route.fulfill({
   contentType: 'text/html',
   body: `<main id="chatComposerShell"><form id="chatForm"><textarea id="chatInput"></textarea></form></main>
-    <script>window.VP3_CONNECTED_GELATO_V1 = {endpoint:'/api/connected-gelato-v1.php',csrf:'test-csrf'};</script>`,
+    <script>window.VP3_CONNECTED_GELATO_V1 = {endpoint:'/api/connected-gelato-v1.php',csrf:'test-csrf',knowledgeUrl:'/vp3/knowledge.php'};</script>`,
+}));
+await page.route(knowledgeUrl + '?folder=22', route => route.fulfill({
+  contentType: 'text/html', body: '<h1>Private Knowledge folder 22</h1>',
 }));
 await page.route('https://vp3.test/api/connected-gelato-v1.php', async route => {
   if (route.request().method() === 'GET') {
@@ -29,20 +37,28 @@ await page.route('https://vp3.test/api/connected-gelato-v1.php', async route => 
       id, origin, label: 'Owner display label', agentName: name,
       scopes: ['sales.daily.read', 'tickets.open.read', 'orders.read'],
       locations: [{ id: 7, name: '<Main Kitchen>', timezone: 'America/Phoenix' }],
+      knowledgeFolder,
     };
     const connections = connected ? [site] : [];
-    if (duplicate) connections.push({ ...site, id: 'd'.repeat(32), origin: 'https://other.example' });
-    await route.fulfill({ json: { ok: true, available, connections } });
+    if (duplicate) connections.push({ ...site, id: 'd'.repeat(32), origin: 'https://other.example', knowledgeFolder: secondFolder });
+    await route.fulfill({ json: { ok: true, available, connections, canCreateKnowledgeFolder } });
     return;
   }
   const body = route.request().postDataJSON();
   calls.push(body);
   if (body.action === 'connect') {
     connected = true;
+    if (canCreateKnowledgeFolder) knowledgeFolder ??= firstFolder;
     await route.fulfill({ json: { ok: true } });
-  } else {
+  } else if (body.action === 'createKnowledgeFolder') {
+    assert.equal(canCreateKnowledgeFolder, true);
+    knowledgeFolder = firstFolder;
+    await route.fulfill({ json: { ok: true, knowledgeFolder } });
+  } else if (body.action === 'disconnect') {
     connected = false;
     await route.fulfill({ json: { ok: true, revokedRemotely: remoteRevoke } });
+  } else {
+    assert.fail('Unexpected connection action ' + body.action);
   }
 });
 
@@ -56,7 +72,12 @@ try {
   await page.getByText('Connected Sites requires the VP3 Cloud database upgrade.').waitFor();
   assert.equal(await page.getByRole('button', { name: 'Connect Food Monster' }).isDisabled(), true);
   available = true;
-  await page.getByRole('button', { name: 'Refresh connections' }).click();
+  const refreshButton = page.getByRole('button', { name: 'Refresh connections' });
+  const refresh = async () => {
+    await refreshButton.click();
+    await refreshButton.and(page.locator(':enabled')).waitFor();
+  };
+  await refresh();
   const connect = async () => {
     await page.getByLabel('Food Monster site HTTPS address').fill(origin);
     await page.getByLabel('One-time pairing code').fill('fixture-pairing-code');
@@ -68,6 +89,9 @@ try {
   assert.equal(await page.getByLabel('One-time pairing code').inputValue(), '');
   assert.equal(await page.getByText('Owner display label', { exact: true }).count(), 0);
   assert.match(await page.locator('[data-site-row]').innerText(), /<Main Kitchen>/);
+  const primaryFolderLink = page.getByRole('link', { name: 'Open Knowledge folder for ' + name, exact: true });
+  assert.equal(await primaryFolderLink.getAttribute('href'), knowledgeUrl + '?folder=21');
+  assert.equal(await page.getByRole('button', { name: 'Create Knowledge folder' }).count(), 0);
   const input = page.locator('#chatInput');
   await input.fill('Keep this existing draft');
   await page.getByRole('button', { name: 'Ask ' + name }).click();
@@ -84,18 +108,37 @@ try {
   await page.getByRole('button', { name: 'Disconnect' }).click();
   await page.getByText('Site disconnected.', { exact: true }).waitFor();
   assert.deepEqual(calls[1], { action: 'disconnect', connectionId: id, csrf_token: 'test-csrf' });
+  assert.equal(await primaryFolderLink.count(), 0);
   remoteRevoke = false;
   await connect();
+  assert.equal(await primaryFolderLink.getAttribute('href'), knowledgeUrl + '?folder=21');
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Disconnect' }).click();
   await page.getByText('Disconnected from VP3. Open VP3 Connections on the site to revoke its grant.').waitFor();
   duplicate = connected = true;
-  await page.getByRole('button', { name: 'Refresh connections' }).click();
+  knowledgeFolder = null;
+  canCreateKnowledgeFolder = false;
+  await refresh();
+  assert.equal(await primaryFolderLink.count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Create Knowledge folder' }).count(), 0);
   await input.clear();
   const secondSite = page.locator('[data-site-row]').filter({ hasText: 'https://other.example' });
   await secondSite.getByRole('button', { name: 'Ask ' + name }).click();
   assert.equal(await input.inputValue(), 'Ask Kitchen Fox via other.example how we did today and what’s still open');
-  console.log('Connected Sites browser pairing, named ask and disconnect passed.');
+  await page.getByRole('button', { name: 'Chat tools' }).click();
+  canCreateKnowledgeFolder = true;
+  await refresh();
+  const createFolder = page.getByRole('button', { name: 'Create Knowledge folder' });
+  assert.equal(await createFolder.count(), 1);
+  await createFolder.click();
+  await page.getByText('Knowledge folder ready.', { exact: true }).waitFor();
+  assert.deepEqual(calls.at(-1), { action: 'createKnowledgeFolder', connectionId: id, csrf_token: 'test-csrf' });
+  assert.equal(await primaryFolderLink.getAttribute('href'), knowledgeUrl + '?folder=21');
+  const secondFolderLink = secondSite.getByRole('link', { name: 'Open Knowledge folder for ' + secondFolder.name });
+  assert.equal(await secondFolderLink.getAttribute('href'), knowledgeUrl + '?folder=22');
+  await secondFolderLink.click();
+  await page.getByRole('heading', { name: 'Private Knowledge folder 22' }).waitFor();
+  console.log('Connected Sites browser pairing, named ask, disconnect and Knowledge folders passed.');
 } finally {
   await browser.close();
 }

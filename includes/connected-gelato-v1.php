@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/ai-settings.php';
+require_once __DIR__.'/connected-gelato-knowledge-v1.php';
 
 const VP3_GELATO_OPERATIONS_V1 = ['orders.read', 'tickets.open.read', 'sales.daily.read'];
 
@@ -212,12 +213,13 @@ function vp3_gelato_connections_v1(PDO $pdo, int $userId): array
     return array_map('vp3_gelato_public_v1', $query->fetchAll(PDO::FETCH_ASSOC));
 }
 
-function vp3_gelato_connection_v1(PDO $pdo, int $userId, string $id): array
+function vp3_gelato_connection_v1(PDO $pdo, int $userId, string $id, bool $forUpdate = false): array
 {
     if ($userId < 1 || !preg_match('/^[a-f0-9]{32}$/D', $id) || !vp3_gelato_schema_ready_v1($pdo)) {
         throw new RuntimeException('Gelato connection is unavailable.', 404);
     }
-    $query = $pdo->prepare('SELECT * FROM vp3_gelato_connections_v1 WHERE owner_user_id=? AND id=?');
+    $lock = $forUpdate && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' FOR UPDATE' : '';
+    $query = $pdo->prepare('SELECT * FROM vp3_gelato_connections_v1 WHERE owner_user_id=? AND id=?'.$lock);
     $query->execute([$userId, $id]);
     $row = $query->fetch(PDO::FETCH_ASSOC);
     if (!$row) throw new RuntimeException('Gelato connection is unavailable.', 404);
@@ -239,7 +241,8 @@ function vp3_gelato_remote_revoke_v1(callable $request, string $token, string $i
     }
 }
 
-function vp3_gelato_connect_v1(PDO $pdo, int $userId, string $origin, string $code, string $label = '', ?callable $request = null): array
+function vp3_gelato_connect_v1(PDO $pdo, int $userId, string $origin, string $code, string $label = '',
+    ?callable $request = null, bool $createKnowledgeFolder = false): array
 {
     if ($userId < 1 || !vp3_gelato_schema_ready_v1($pdo)) {
         throw new RuntimeException('Gelato connections are not ready. Run the database upgrade.', 503);
@@ -277,6 +280,8 @@ function vp3_gelato_connect_v1(PDO $pdo, int $userId, string $origin, string $co
         || !is_string($remoteId) || !preg_match('/^[a-f0-9]{32}$/D', $remoteId)) {
         throw new RuntimeException('Gelato pairing did not match the discovered installation.', 502);
     }
+    $folder = null;
+    $folderTransaction = false;
     try {
         $scopes = $exchange['scopes'] ?? null;
         $allowed = array_merge(['menu', 'recipe'], VP3_GELATO_OPERATIONS_V1);
@@ -297,13 +302,23 @@ function vp3_gelato_connect_v1(PDO $pdo, int $userId, string $origin, string $co
             'locations_json'=>json_encode($locations, JSON_THROW_ON_ERROR), 'created_at'=>gmdate('Y-m-d\TH:i:s\Z'),
         ];
         $ciphertext = ai_encrypt_secret_with_key($token, vp3_gelato_token_key_v1($row));
+        if ($createKnowledgeFolder) {
+            $pdo->beginTransaction();
+            $folderTransaction = true;
+            vp3_gelato_knowledge_lock_owner_v1($pdo, $userId);
+        }
         $pdo->prepare('INSERT INTO vp3_gelato_connections_v1
             (id,owner_user_id,instance_id,remote_connection_id,origin,label,agent_name,scopes_json,locations_json,token_ciphertext,created_at)
             VALUES (?,?,?,?,?,?,?,?,?,?,?)')->execute([
                 $row['id'], $userId, $instance, $remoteId, $origin, $row['label'], $agentName,
                 $row['scopes_json'], $row['locations_json'], $ciphertext, $row['created_at'],
             ]);
+        if ($folderTransaction) {
+            $folder = vp3_gelato_knowledge_ensure_v1($pdo, $row);
+            $pdo->commit();
+        }
     } catch (Throwable $e) {
+        if ($folderTransaction && $pdo->inTransaction()) $pdo->rollBack();
         $revoked = vp3_gelato_remote_revoke_v1($request, $token, $instance, $remoteId);
         if (!$revoked) {
             throw new RuntimeException('VP3 did not save the connection. Revoke this pairing in Gelato before retrying.', 502);
@@ -313,7 +328,7 @@ function vp3_gelato_connect_v1(PDO $pdo, int $userId, string $origin, string $co
         }
         throw $e;
     }
-    return vp3_gelato_public_v1($row);
+    return vp3_gelato_public_v1($row) + ['knowledgeFolder'=>$folder];
 }
 
 function vp3_gelato_disconnect_v1(PDO $pdo, int $userId, string $id, ?callable $request = null): bool
