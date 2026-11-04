@@ -41,17 +41,22 @@
   }
 
   function dock() {
-    if (!entries.size || !document.body) return;
+    if (!entries.size || !document.body) return false;
     const rail = compact.matches ? null : document.getElementById('sfOnlineRailV109');
-    const useRail = rail && !rail.hidden;
-    const target = useRail ? rail : document.body;
-    const settings = useRail ? rail.querySelector(':scope > #sfChatSettingsRailSlotV132') : null;
-    if (host.parentNode !== target || (settings && host.nextSibling !== settings)) {
+    if (!rail || rail.hidden) {
+      const focused = host.contains(document.activeElement) || opened?.panel.contains(document.activeElement);
+      closePanel(false);
+      host.remove();
+      if (focused) document.getElementById('chatInput')?.focus();
+      return false;
+    }
+    const settings = rail.querySelector(':scope > #sfChatSettingsRailSlotV132');
+    if (host.parentNode !== rail || (settings && host.nextSibling !== settings)) {
       const focused = host.contains(document.activeElement) ? document.activeElement : null;
-      target.insertBefore(host, settings);
+      rail.insertBefore(host, settings);
       focused?.focus();
     }
-    host.classList.toggle('vp3-chat-specialist-rail-floating', !useRail);
+    return true;
   }
 
   const observer = new MutationObserver(dock);
@@ -130,7 +135,6 @@
       if (!entries.size) observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
       entries.set(key,entry);
       host.append(button);
-      dock();
     }
     entry.label = String(options.label || 'Specialist');
     entry.status = String(options.status || 'Working');
@@ -139,6 +143,7 @@
     entry.onView = typeof options.onView === 'function' ? options.onView : null;
     entry.button.setAttribute('aria-label',entry.label);
     entry.button.title = entry.label;
+    if (!dock()) return;
     if (opened?.entry === entry) renderPanel();
     else if (options.autoOpen === true && !opened) openPanel(entry, false);
   }

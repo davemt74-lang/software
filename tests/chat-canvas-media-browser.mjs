@@ -54,9 +54,17 @@ let checks=0;async function check(label,fn){await fn();checks++;console.log('PAS
 const specialist = page.locator('[data-chat-specialist="image-generator"]');
 const panel = page.locator('[data-chat-specialist-panel="image-generator"]');
 const readyMessage = page.getByText('Image Generator finished. Your image is ready.', {exact:true});
-const waitForGeneration = () => page.locator('.vp3-canvas-media-card[data-state="generating"]').waitFor();
+const cardFor = generationId => page.locator(`#chatThread .message.assistant .vp3-canvas-media-card[data-generation-id="${generationId}"]`);
 const tickCount = generationId => calls.filter(call => call.action==='tick' && call.generation_id===generationId).length;
-async function startNewImage(generationId) {
+async function assertInlineOnly(card, progress) {
+ await card.getByRole('status').filter({hasText:progress}).waitFor();
+ await specialist.waitFor({state:'hidden'});
+ await panel.waitFor({state:'hidden'});
+ assert.equal(await card.count(),1);
+ assert.equal(await page.getByRole('button',{name:'Image Generator',exact:true}).count(),0);
+ assert.equal(await page.locator('#sfOnlineRailV109').isVisible(),false);
+}
+async function startNewImage(generationId, {desktop=true} = {}) {
  mode='specialist';
  id=generationId;
  status='queued';
@@ -68,27 +76,20 @@ async function startNewImage(generationId) {
  assert.equal(await panel.isVisible(),false);
  await page.locator('#chatInput').fill(specialistPrompt);
  await page.locator('#sendChatButton').click();
- await panel.waitFor();
- await panel.getByText(/queued/i).waitFor();
+ const card = cardFor(generationId);
+ if (desktop) {
+  await panel.waitFor();
+  await panel.getByText(/queued/i).waitFor();
+ } else await assertInlineOnly(card,/queued/i);
  status='generating';
- await waitForGeneration();
+ await card.getByText('Generating image…',{exact:true}).waitFor();
+ return card;
 }
 try{
  await boot();await page.waitForFunction(()=>document.querySelector('.vp3-canvas-media-card[data-state=generating]'));
  await check('real Chat history mounts the image job and starts exactly one worker request',async()=>{assert.equal(calls.filter(c=>c.action==='tick').length,1);assert.equal(await page.locator('.vp3-canvas-media img').count(),0);assert.equal(await page.locator('#chatInput').isDisabled(),false);});
- await check('a pending job restored from history offers an Image Generator icon without opening the panel', async () => {
-  await specialist.waitFor();
-  assert.equal(await page.getByRole('button',{name:'Image Generator',exact:true}).count(),1);
-  assert.equal(await page.locator('#sfOnlineRailV109').isVisible(),false);
-  assert.equal(await specialist.locator('..').evaluate(host => host.parentElement===document.body),true);
-  assert.equal(await panel.isVisible(),false);
-  await specialist.click();
-  await panel.waitFor();
-  assert.match(await panel.innerText(),/generating/i);
-  assert.equal(await panel.getByRole('button',{name:'View in Chat',exact:true}).count(),1);
-  await panel.getByRole('button',{name:/^Close(?: Image Generator)?$/i}).click();
-  await panel.waitFor({state:'hidden'});
-  assert.equal(await specialist.isVisible(),true);
+ await check('mobile shows a pending job restored from history in its original Chat reply only', async () => {
+  await assertInlineOnly(cardFor(id),'Generating image…');
   assert.equal(tickCount(id),1);
  });
  await page.locator('#chatInput').fill('Continue chatting while that image runs');await page.locator('#chatForm').evaluate(f=>f.requestSubmit());await page.getByText('Another ordinary Chat reply.',{exact:true}).waitFor();
@@ -104,17 +105,45 @@ try{
  denied=true;await boot();await page.getByText('Media access changed.',{exact:true}).waitFor();await check('revoked media access clears displayed private content',async()=>{assert.equal(await page.locator('.vp3-canvas-media img').count(),0);});denied=false;
  for(const next of ['missing','hostile']){mode=next;await boot();await page.getByText('Saved media file is unavailable.',{exact:true}).waitFor();assert.equal(await page.locator('.vp3-canvas-media img').count(),0);}
  await check('missing files and foreign-origin media URLs cannot become image previews',async()=>{assert.deepEqual(errors,[]);});
+ const mobileCard = await startNewImage('66666666-6666-4666-8666-666666666666',{desktop:false});
+ await check('a fresh mobile request keeps image progress in its originating reply while ordinary Chat continues', async () => {
+  await assertInlineOnly(mobileCard,'Generating image…');
+  assert.equal(await mobileCard.locator('img').count(),0);
+  await page.locator('#chatInput').fill('Another question while the mobile image generates');
+  await page.locator('#sendChatButton').click();
+  const ordinaryReply = page.locator('#chatThread .message.assistant').filter({hasText:'Another ordinary Chat reply.'});
+  await ordinaryReply.waitFor();
+  assert.equal(await ordinaryReply.locator('.vp3-canvas-media').count(),0);
+  await assertInlineOnly(mobileCard,'Generating image…');
+  assert.equal(tickCount(id),1);
+ });
+ status='completed';
+ tickRelease();
+ await check('mobile completion displays and restores the private image in the same reply', async () => {
+  await assertInlineOnly(mobileCard,'Image Generator finished. Your image is ready.');
+  await mobileCard.locator('img').waitFor();
+  await boot();
+  await assertInlineOnly(mobileCard,'Image Generator finished. Your image is ready.');
+  await mobileCard.locator('img').waitFor();
+  assert.equal(tickCount(id),1);
+ });
+
+ await page.setViewportSize({width:1280,height:900});
  mode='generation';
  id='55555555-5555-4555-8555-555555555555';
  status='paused';
  await boot();
- await check('paused history exposes the specialist and status without starting a worker', async () => {
+ await check('desktop paused history offers the specialist without opening its panel or starting a worker', async () => {
+  await specialist.waitFor();
+  assert.equal(await panel.isVisible(),false);
   await specialist.click();
   await panel.getByText(/paused/i).waitFor();
   assert.equal(tickCount(id),0);
+  await panel.getByRole('button',{name:'Close',exact:true}).click();
+  await panel.waitFor({state:'hidden'});
+  assert.equal(await specialist.isVisible(),true);
  });
- await page.setViewportSize({width:1280,height:900});
- await startNewImage('33333333-3333-4333-8333-333333333333');
+ const desktopCard = await startNewImage('33333333-3333-4333-8333-333333333333');
  await check('a new image turn opens the Image Generator panel while Chat stays usable', async () => {
   assert.equal(await specialist.isVisible(),true);
   assert.equal(await panel.isVisible(),true);
@@ -126,6 +155,16 @@ try{
   await panel.getByRole('button',{name:'View in Chat',exact:true}).click();
   await panel.waitFor({state:'hidden'});
   await page.waitForFunction(() => document.activeElement?.matches('.vp3-canvas-media-card[data-state="generating"]'));
+ });
+ await check('shrinking an open desktop panel moves progress to inline-only without restarting the job', async () => {
+  await specialist.click();
+  await panel.waitFor();
+  await page.setViewportSize({width:390,height:844});
+  await assertInlineOnly(desktopCard,'Generating image…');
+  await page.setViewportSize({width:1280,height:900});
+  await specialist.waitFor();
+  assert.equal(await panel.isVisible(),false);
+  assert.equal(tickCount(id),1);
  });
  status='completed';
  tickRelease();

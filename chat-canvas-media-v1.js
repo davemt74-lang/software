@@ -44,9 +44,11 @@ function failure(s,card,error){
  if(!active(s))return;
  stop(s);clearSpecialist(s);s.generation=null;
  card.dataset.state='unavailable';
- card.replaceChildren(make('p',error.message||'Media unavailable.'));
+ s.caption.textContent='Image Generator';
+ s.status.textContent=error.message||'Media unavailable.';
+ s.details.replaceChildren();
  if([401,403,404,419].includes(error.status))return;
- const b=make('button','Refresh status');b.type='button';b.onclick=()=>void poll(s,card,card.dataset.generationId,true);card.appendChild(b);
+ const b=make('button','Refresh status');b.type='button';b.onclick=()=>void poll(s,card,card.dataset.generationId,true);s.details.appendChild(b);
 }
 function renderJob(s,card,g){
  if(!active(s))return;
@@ -56,26 +58,27 @@ function renderJob(s,card,g){
  const signature=JSON.stringify(g);
  if(s.generation&&signature===s.generation.signature)return;
  s.generation={status:g.status,signature};
- card.dataset.state=g.status;card.replaceChildren(make('figcaption',g.title||'Image generation'));
- card.appendChild(make('small',Object.hasOwn(inProgress,g.status)?inProgress[g.status]:g.status.replaceAll('_',' ')));
- card.appendChild(make('small',g.model+' · '+g.size+' · '+g.quality+(g.background==='transparent'?' · transparent background':'')));
- if(g.message)card.appendChild(make('p',g.message));
- if(g.status==='completed'&&g.asset?.available===true&&g.asset.media_type==='photo'&&ownUrl(g.asset.url,'/media-library-file-v86.php')){
-  const report=make('p','Image Generator finished. Your image is ready.');report.setAttribute('role','status');
-  card.append(report,assetCard(g.asset));return;
- }
- if(g.status==='file_unavailable'||g.status==='completed')card.appendChild(make('p','The saved image is unavailable.'));
+ card.dataset.state=g.status;
+ s.caption.textContent=g.title||'Image generation';
+ const hasImage=g.status==='completed'&&g.asset?.available===true&&g.asset.media_type==='photo'&&ownUrl(g.asset.url,'/media-library-file-v86.php');
+ let statusText=Object.hasOwn(inProgress,g.status)?inProgress[g.status]:g.status.replaceAll('_',' ');
+ if(hasImage)statusText='Image Generator finished. Your image is ready.';
+ else if(g.status==='file_unavailable'||g.status==='completed')statusText='The saved image is unavailable.';
+ if(s.status.textContent!==statusText)s.status.textContent=statusText;
+ s.details.replaceChildren(make('small',g.model+' · '+g.size+' · '+g.quality+(g.background==='transparent'?' · transparent background':'')));
+ if(g.message)s.details.appendChild(make('p',g.message));
+ if(hasImage){s.details.appendChild(assetCard(g.asset));return;}
  if(Object.hasOwn(inProgress,g.status)){
-  const details=make('details'),summary=make('summary','Requested image');details.append(summary,make('p',g.prompt));card.appendChild(details);
+  const details=make('details'),summary=make('summary','Requested image');details.append(summary,make('p',g.prompt));s.details.appendChild(details);
   const cancel=make('button','Cancel image');cancel.type='button';cancel.onclick=async()=>{
    if(!active(s)||s.cancelling)return;
    s.cancelling=true;cancel.disabled=true;stop(s);++s.ticket;
    try{const d=await api('cancel',{generation_id:g.id,confirmed:true},s);renderJob(s,card,d.generation);}
    catch(e){failure(s,card,e);}
    finally{s.cancelling=false;if(s.generation&&Object.hasOwn(inProgress,s.generation.status))schedule(s,card,g.id);}
-  };card.appendChild(cancel);
+  };s.details.appendChild(cancel);
  }
- if(g.status==='cancelled'&&g.provider_started)card.appendChild(make('p','Cancelled. OpenAI may already have processed the request; no output will be published by this job.'));
+ if(g.status==='cancelled'&&g.provider_started)s.details.appendChild(make('p','Cancelled. OpenAI may already have processed the request; no output will be published by this job.'));
 }
 function schedule(s,card,id){stop(s);s.timer=setTimeout(()=>void poll(s,card,id),2500);}
 async function poll(s,card,id,manual=false){
@@ -100,7 +103,13 @@ function mount(host,ref){
  const ids=Array.isArray(ref.asset_ids)?ref.asset_ids.filter(i=>Number.isSafeInteger(i)&&i>0).slice(0,12):[];
  if(ids.length){const pending=make('p','Loading private media…');host.appendChild(pending);void api('assets',{asset_ids:ids},s).then(d=>{if(!active(s))return;pending.remove();for(const asset of d.assets||[])host.appendChild(assetCard(asset));if(!d.assets?.length)host.appendChild(make('p','These media assets are no longer available.'));}).catch(e=>{if(active(s)){pending.textContent=e.message;}});}
  const jobs=Array.isArray(ref.generation_ids)?ref.generation_ids.filter(i=>typeof i==='string'&&/^[a-f0-9-]{36}$/.test(i)).slice(0,1):[];
- for(const id of jobs){const card=make('figure');card.className='vp3-canvas-media-card';card.dataset.generationId=id;card.tabIndex=-1;host.appendChild(card);void poll(s,card,id);}
+ for(const id of jobs){
+  const card=make('figure');card.className='vp3-canvas-media-card';card.dataset.generationId=id;card.tabIndex=-1;
+  s.caption=make('figcaption','Image Generator');
+  s.status=make('small','Checking image status…');s.status.className='vp3-image-generation-status';s.status.setAttribute('role','status');
+  s.details=make('div');
+  card.append(s.caption,s.status,s.details);host.appendChild(card);void poll(s,card,id);
+ }
 }
 function scan(){
  if(specialistJob&&!active(specialistJob))clearSpecialist();

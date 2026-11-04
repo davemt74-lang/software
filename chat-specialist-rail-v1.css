@@ -5,13 +5,6 @@
   gap:6px;
   padding:8px 4px;
 }
-.vp3-chat-specialist-rail-floating{
-  position:fixed;
-  z-index:3051;
-  right:10px;
-  bottom:calc(64px + env(safe-area-inset-bottom, 0px));
-  padding:0;
-}
 .vp3-chat-specialist-rail button,
 .vp3-chat-specialist-panel button{
   color:#24334a;
@@ -26,11 +19,6 @@
   height:34px;
   padding:0;
   border-radius:50%;
-}
-.vp3-chat-specialist-rail-floating button{
-  width:44px;
-  height:44px;
-  box-shadow:0 4px 14px rgba(15,23,42,.12);
 }
 .vp3-chat-specialist-rail button:hover,
 .vp3-chat-specialist-rail button[aria-expanded="true"],
@@ -95,8 +83,6 @@
 .vp3-chat-specialist-panel [hidden]{display:none}
 
 @media(max-width:760px){
-  .vp3-chat-specialist-panel{
-    right:62px;
-    width:min(280px, calc(100vw - 72px));
-  }
+  .vp3-chat-specialist-rail,
+  .vp3-chat-specialist-panel{display:none}
 }
