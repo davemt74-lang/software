@@ -3311,8 +3311,17 @@
       if(browserAgentContext)payload.agent_context=browserAgentContext;
       const transcriptSelection=window.STONEFELLOW_TRANSCRIPTION_CANVAS?.selection?.();
       if(transcriptSelection?.session_id)payload.agent_context={...(payload.agent_context||{}),transcript_session_id:Number(transcriptSelection.session_id),transcript_selected_text:String(transcriptSelection.selected_text||'').slice(0,6000)};
-      const screenObservation=window.VP3AgentScreenShare?.context();
-      if(screenObservation)payload.agent_context={...(payload.agent_context||{}),screen_observation:screenObservation};
+      const screenShare=window.VP3AgentScreenShare;
+      const screenContext=screenShare?.contextForPrompt?.(payload.message);
+      if(screenContext){
+        const context={...payload.agent_context};
+        delete context.screen_observation;
+        delete context.screen_observations;
+        payload.agent_context={...context,...screenContext};
+      }else{
+        const screenObservation=screenShare?.context();
+        if(screenObservation)payload.agent_context={...(payload.agent_context||{}),screen_observation:screenObservation};
+      }
       const data = await new Promise((resolve, reject) => {
         const abort = () => reject(new DOMException('Chat request stopped or timed out.', 'AbortError'));
         request.controller.signal.addEventListener('abort', abort, {once:true});

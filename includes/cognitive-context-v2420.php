@@ -18,7 +18,7 @@ const VP3_COGNITIVE_CONTEXT_MAX_PACKET_BYTES_V2420=65536;
 function vp3_cognitive_context_section_order_v2420(): array
 {
     return [
-        'current_state','physical_context','entity_graph','live_session','continuity','supervision','autonomy','portfolio','forecast','optimization','resource_budget','commitment_protection','budget_governance','value_roi','decision_calibration','economics','replanning','conversation','current_priorities','active_objects',
+        'current_state','screen_comparison','physical_context','entity_graph','live_session','continuity','supervision','autonomy','portfolio','forecast','optimization','resource_budget','commitment_protection','budget_governance','value_roi','decision_calibration','economics','replanning','conversation','current_priorities','active_objects',
         'attention','episodic_memory','durable_memory','domain','knowledge',
         'capabilities','external',
     ];
@@ -28,6 +28,7 @@ function vp3_cognitive_context_section_limit_v2420(string $section): int
 {
     return match($section){
         'current_state'=>1,
+        'screen_comparison'=>3,
         'physical_context'=>3,
         'entity_graph'=>1,
         'live_session'=>1,
@@ -59,6 +60,7 @@ function vp3_cognitive_context_section_limit_v2420(string $section): int
 
 function vp3_cognitive_context_section_weight_v2420(string $section,bool $historyIntent=false): float
 {
+    if($section==='screen_comparison')return 108.0;
     if($historyIntent){
         return match($section){
             'conversation'=>98.0,'current_state'=>96.10,'physical_context'=>96.08,'entity_graph'=>93.5,'entity_graph'=>93.5,'budget_governance'=>96.05,'value_roi'=>96.04,'decision_calibration'=>96.03,'durable_memory'=>96.0,'commitment_protection'=>95.99,'economics'=>95.985,'replanning'=>95.97,'resource_budget'=>95.95,'optimization'=>95.9,'forecast'=>95.8,'portfolio'=>95.7,'autonomy'=>95.5,'supervision'=>95.0,'continuity'=>94.0,'episodic_memory'=>92.0,
@@ -108,6 +110,7 @@ function vp3_cognitive_context_legacy_section_v2420(string $source): string
     if(str_starts_with($source,'knowledge:')||$source==='knowledge-v162')return 'knowledge';
     if(str_starts_with($source,'database:')||str_starts_with($source,'artist-profile:')||str_starts_with($source,'profile:'))return 'domain';
     if($source==='agent:tools'||str_starts_with($source,'plugin:')||str_starts_with($source,'capability:'))return 'capabilities';
+    if(str_starts_with($source,'agent-context:screen-comparison:'))return 'screen_comparison';
     if(str_starts_with($source,'agent-context:')||str_starts_with($source,'runtime:'))return 'live_session';
     return 'external';
 }

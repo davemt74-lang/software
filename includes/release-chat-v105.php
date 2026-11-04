@@ -118,7 +118,7 @@ function release_v105_chat_tool(string $query,array $user,int $conversationId=0,
 function chat_generate_answer_v105(string $query,array $history,array $user,array $agentContext=[]): array
 {
     $context=chat_context($query,$user);
-    if($agentContext&&function_exists('agent_surface_v131_context_item'))array_unshift($context,agent_surface_v131_context_item($agentContext));
+    if($agentContext&&function_exists('agent_surface_v131_context_items'))array_unshift($context,...agent_surface_v131_context_items($agentContext));
 
     $releasePdo=db();
     if($releasePdo instanceof PDO)$context=array_merge(vp3_release_context_v1($releasePdo,$user,$query,$agentContext),$context);

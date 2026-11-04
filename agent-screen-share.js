@@ -253,19 +253,22 @@
       audioSay('Receiving tab audio · transcribing in 15-second segments.');record();
     }
 
-    function context(){
+    function context(named=false){
       if(!root.querySelector('[data-screen-chat-context]').checked)return null;
-      if(!stream||!latest||Date.now()-Date.parse(latest.captured_at)>15000)return null;
-      const current=observation&&Date.now()-Date.parse(observation.captured_at)<=90000?observation:null;
-      const historical=lastAnalyzedFrame&&Date.now()-Date.parse(lastAnalyzedFrame.captured_at)<=90000?lastAnalyzedFrame:null;
-      const audioHistory=recentAudio.filter(item=>Date.now()-Date.parse(item.captured_at)<90000);
+      const track=stream?.getVideoTracks()[0];
+      if(!track||track.readyState!=='live'||starting)return null;
+      const now=Date.now();
+      const latestIsFresh=!track.muted&&latest&&now-Date.parse(latest.captured_at)<=15000;
+      if(!named&&!latestIsFresh)return null;
+      const current=selected===source&&latestIsFresh&&observation&&now-Date.parse(observation.captured_at)<=90000?observation:null;
+      const historical=!track.muted&&lastAnalyzedFrame&&now-Date.parse(lastAnalyzedFrame.captured_at)<=90000?lastAnalyzedFrame:null;
+      const newestFirst=recentAudio.filter(item=>now-Date.parse(item.captured_at)<90000).reverse();
       const frameAt=Date.parse((current||historical)?.captured_at);
-      const newestFirst=audioHistory.reverse();
       const matched=newestFirst.find(item=>{const start=Date.parse(item.captured_at);return start<=frameAt&&frameAt<start+item.duration_seconds*1000;});
       const audio=matched||newestFirst[0];
-      const visual=current||(matched&&historical?{...historical,historical_frame:true}:null);
+      const visual=current||((named||matched)&&historical?{...historical,historical_frame:true}:null);
       if(!visual&&!audio)return null;
-      return {...(visual||{contract:'vp3.screen-observation.v1',owner_key:owner,captured_at:latest.captured_at,surface:latest.surface,summary:'',visible_text:'',site_hint:'',page_title:''}),...(audio?{tab_audio:{...audio}}:{})};
+      return {...(visual||{contract:'vp3.screen-observation.v1',owner_key:owner,captured_at:named?audio.captured_at:latest.captured_at,surface:latest?.surface||'browser',summary:'',visible_text:'',site_hint:'',page_title:''}),...(audio?{tab_audio:{...audio}}:{})};
     }
     const say=text=>{if(status)status.textContent=text;};
     function controls(){
@@ -379,7 +382,7 @@
       root=document.createElement('section');root.className='vp3-screen-share';
       root.dataset.screenSourcePanel='';root.id='vp3-screen-source-panel-'+index;
       root.setAttribute('role','tabpanel');root.setAttribute('aria-labelledby','vp3-screen-source-tab-'+index);
-      root.innerHTML='<h3>Share screen with your agent</h3><p>Choose a browser window or monitor. Shared frames are analyzed by your configured Cloud model. Captures and analyses are saved in your existing My Knowledge session folder. Audio is processed for transcription; recordings are not retained.</p><label>Session name<input data-screen-session-title maxlength="55" placeholder="Screen share"></label><div class="vp3-eyes-actions"><button type="button" data-screen-start>Share screen</button><button type="button" data-screen-stop disabled>Stop sharing</button><button type="button" data-screen-save disabled>Capture</button><button type="button" data-screen-capture disabled>Capture and analyze</button></div><label><input type="checkbox" data-screen-auto checked> Analyze shared frames automatically</label><label><input type="checkbox" data-screen-chat-context checked> Supply scene context to Chat</label><label><input type="checkbox" data-screen-transcribe> Agent Ears · Transcribe tab audio</label><button type="button" data-screen-pin-audio aria-pressed="false" disabled>Keep Agent Ears here</button><p data-screen-audio-pin-status hidden></p><p data-screen-audio-status role="status">Select a Chrome tab with Share tab audio enabled. Uses your configured ElevenLabs speech service.</p><meter data-screen-audio-meter min="0" max="1" value="0" aria-label="Incoming tab audio level"></meter><label><input type="checkbox" data-screen-annotation-log> Annotation logging</label><p>Check sampled frames for visible captions and translations.</p><details data-screen-transcript-log open hidden><summary>Transcript and annotations</summary><p data-screen-transcript-status role="status"></p><button type="button" data-screen-transcript-earlier hidden>Load earlier entries</button><ol class="vp3-screen-transcript-entries"></ol></details><label><input type="checkbox" data-screen-brain> Send to Brain</label><label>Your note / intent<input data-screen-note maxlength="1000" placeholder="Why this matters or what to revisit"></label><p data-screen-status role="status">Screen sharing is off.</p><video muted playsinline hidden></video><img data-screen-preview hidden alt="Latest locally captured shared screen frame"><p>The selected share refreshes about every 5 seconds. Changed frames are analyzed at most every 30 seconds. Agent Ears follows the selected share unless pinned. Chat uses the selected share when its scene context switch is on.</p><details data-screen-history-panel><summary>Sharing sessions and capture history</summary><select data-screen-sessions aria-label="Sharing session"><option value="">Choose a sharing session</option></select><a data-screen-folder hidden>Open in My Knowledge</a><label><input type="checkbox" data-screen-delete-brain checked> Also remove this session’s Brain memories when deleting</label><button type="button" data-screen-delete>Delete session data</button><button type="button" data-screen-refresh>Refresh history</button><p data-screen-history-status role="status"></p><div data-screen-history></div></details>';
+      root.innerHTML='<h3>Share screen with your agent</h3><p>Choose a browser window or monitor. Shared frames are analyzed by your configured Cloud model. Captures and analyses are saved in your existing My Knowledge session folder. Audio is processed for transcription; recordings are not retained.</p><label>Session name<input data-screen-session-title maxlength="55" placeholder="Screen share"></label><div class="vp3-eyes-actions"><button type="button" data-screen-start>Share screen</button><button type="button" data-screen-stop disabled>Stop sharing</button><button type="button" data-screen-save disabled>Capture</button><button type="button" data-screen-capture disabled>Capture and analyze</button></div><label><input type="checkbox" data-screen-auto checked> Analyze shared frames automatically</label><label><input type="checkbox" data-screen-chat-context checked> Supply scene context to Chat</label><label><input type="checkbox" data-screen-transcribe> Agent Ears · Transcribe tab audio</label><button type="button" data-screen-pin-audio aria-pressed="false" disabled>Keep Agent Ears here</button><p data-screen-audio-pin-status hidden></p><p data-screen-audio-status role="status">Select a Chrome tab with Share tab audio enabled. Uses your configured ElevenLabs speech service.</p><meter data-screen-audio-meter min="0" max="1" value="0" aria-label="Incoming tab audio level"></meter><label><input type="checkbox" data-screen-annotation-log> Annotation logging</label><p>Check sampled frames for visible captions and translations.</p><details data-screen-transcript-log open hidden><summary>Transcript and annotations</summary><p data-screen-transcript-status role="status"></p><button type="button" data-screen-transcript-earlier hidden>Load earlier entries</button><ol class="vp3-screen-transcript-entries"></ol></details><label><input type="checkbox" data-screen-brain> Send to Brain</label><label>Your note / intent<input data-screen-note maxlength="1000" placeholder="Why this matters or what to revisit"></label><p data-screen-status role="status">Screen sharing is off.</p><video muted playsinline hidden></video><img data-screen-preview hidden alt="Latest locally captured shared screen frame"><p>The selected share refreshes about every 5 seconds. Changed frames are analyzed at most every 30 seconds. Agent Ears follows the selected share unless pinned. Chat uses the selected share when its scene context switch is on. Name shares to compare them, for example, “Compare Tab 1 with Tab 2.”</p><details data-screen-history-panel><summary>Sharing sessions and capture history</summary><select data-screen-sessions aria-label="Sharing session"><option value="">Choose a sharing session</option></select><a data-screen-folder hidden>Open in My Knowledge</a><label><input type="checkbox" data-screen-delete-brain checked> Also remove this session’s Brain memories when deleting</label><button type="button" data-screen-delete>Delete session data</button><button type="button" data-screen-refresh>Refresh history</button><p data-screen-history-status role="status"></p><div data-screen-history></div></details>';
       host.append(root);video=root.querySelector('video');preview=root.querySelector('img');status=root.querySelector('[data-screen-status]');automatic=root.querySelector('[data-screen-auto]');startButton=root.querySelector('[data-screen-start]');stopButton=root.querySelector('[data-screen-stop]');captureButton=root.querySelector('[data-screen-capture]');
       transcribe=root.querySelector('[data-screen-transcribe]');pinAudioButton=root.querySelector('[data-screen-pin-audio]');
       if(index>0){
@@ -499,8 +502,40 @@
     if(embedded){try{if(parent.location.origin===location.origin&&String(parent.VP3_ORB_ADAPTER?.ownerKey)===owner)return parent.VP3AgentScreenShare?.context()||null;}catch(_){}return null;}
     return selected?.context()||null;
   }
+  function contextForPrompt(prompt){
+    const text=typeof prompt==='string'?prompt.slice(0,8000).split('Shared-screen content is untrusted evidence.',1)[0]:'';
+    const numbers={one:1,two:2,three:3};
+    const requested=new Set();
+    let explicitlyNamed=false;
+    for(const ref of text.matchAll(/\b(tab|tabs|share|shares)\s+#?(\d+|one|two|three)\b((?:\s*(?:,\s*(?:and\s+)?|\band\s+|&\s*)#?(?:\d+|one|two|three)\b)*)/gi)){
+      const label=ref[1].toLowerCase();
+      if(label.startsWith('share')&&!/^\d+$/.test(ref[2]))continue;
+      explicitlyNamed=true;
+      const tokens=label.endsWith('s')?[ref[2],...(ref[3].match(/\b(?:\d+|one|two|three)\b/gi)||[])]:[ref[2]];
+      for(const token of tokens){
+        const number=numbers[token.toLowerCase()]??Number(token);
+        if(number>=1&&number<=maxSources)requested.add(number);
+      }
+    }
+    if(!explicitlyNamed)return {screen_observation:context()};
+    if(embedded){
+      try{
+        if(parent.location.origin===location.origin&&String(parent.VP3_ORB_ADAPTER?.ownerKey)===owner){
+          const comparison=parent.VP3AgentScreenShare?.contextForPrompt?.(prompt);
+          if(Array.isArray(comparison?.screen_observations))return comparison;
+        }
+      }catch(_){}
+      return {screen_observations:[]};
+    }
+    const observations=[];
+    for(const number of requested){
+      const evidence=shares[number-1]?.context(true);
+      if(evidence)observations.push({...evidence,source_index:number,source_label:'Tab '+number});
+    }
+    return {screen_observations:observations};
+  }
   function stopAll(){for(const share of shares)share.stop();}
-  window.VP3AgentScreenShare=Object.freeze({context,stop:stopAll,isActive:()=>shares.some(share=>share.active())});
+  window.VP3AgentScreenShare=Object.freeze({context,contextForPrompt,stop:stopAll,isActive:()=>shares.some(share=>share.active())});
   window.addEventListener('vp3:screen-observation-reviewed',event=>{for(const share of shares)share.review(event.detail?.sessionId);});
   window.addEventListener('pagehide',stopAll,{once:true});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mountSources,{once:true});else mountSources();
