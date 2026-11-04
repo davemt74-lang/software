@@ -325,7 +325,7 @@ function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $qu
     if($plan['operation']==='system_apps_action')return vp3_system_app_action_plan_v1($pdo,$live,$plan,$context,null,$query);
     if($plan['operation']==='cloud_media_read')return vp3_cloud_media_read_v1($pdo,$live,$principal,$plan,$context);
     if($plan['operation']==='image_generate'){
-        try{$job=vp3_image_queue_v1($pdo,$live,$principal,$plan,$context);return ['handled'=>true,'answer'=>'Your image request is queued. Its Chat canvas card will show progress and the saved image when generation is confirmed.','actions'=>[],'sources'=>[],'canvas_media'=>['asset_ids'=>[],'generation_ids'=>[$job['id']]],'tool_receipt'=>vp3_tool_receipt_v1('images.generate','queue','completed','',$job['job_id'],1)];}
+        try{$job=vp3_image_queue_v1($pdo,$live,$principal,$plan,$context);return ['handled'=>true,'answer'=>'I’ve queued your request with the Image Generator. It will report back here.','actions'=>[],'sources'=>[],'canvas_media'=>['asset_ids'=>[],'generation_ids'=>[$job['id']]],'tool_receipt'=>vp3_tool_receipt_v1('images.generate','queue','completed','',$job['job_id'],1)];}
         catch(Throwable $e){return ['handled'=>true,'answer'=>$e instanceof PDOException?'Image job storage could not be verified. Check its history before creating another request.':($e instanceof RuntimeException?$e->getMessage():'The image request could not be queued.'),'actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1('images.generate','queue',$e->getCode()===403?'blocked':'failed',$e->getCode()===403?'permission_denied':'execution_failed')];}
     }
     if($plan['operation']==='photo_media_read')return vp3_photo_media_read_v1($pdo,$live,$principal,$plan,$context);

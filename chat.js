@@ -3366,7 +3366,7 @@
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(data.user_message_id||0),Number(data.assistant_message_id||0));
       typing.remove();
 
-      addMessage(
+      const reply = addMessage(
         'assistant',
         data.answer,
         data.sources || [],
@@ -3379,6 +3379,9 @@
         data.knowledge_actions_r9 || null,
         data.canvas_media || null
       );
+      if (data.canvas_media?.generation_ids?.length) {
+        reply.querySelector('.vp3-canvas-media')?.setAttribute('data-specialist-launch', 'true');
+      }
       const autoAction=(data.actions||[]).find(action=>action && action.auto && action.url);
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}
       const autoMediaAction=(data.actions||[]).find(action=>action && action.auto && action.type==='media_capture');

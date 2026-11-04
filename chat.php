@@ -453,7 +453,9 @@ $cognitiveCardsRuntime = '<link rel="stylesheet" data-cognitive-cards-v520 href=
     . ';</script>'
     . '<script data-cognitive-cards-v520 src="' . e(url('/chat-cognitive-cards-v520.js?v=' . $cognitiveCardsAssetBuild . '-' . $onboardingActivationAssetBuild)) . '"></script>';
 
-$cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-canvas-media-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.css'),0,12))).'">'
+$cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-specialist-rail-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-specialist-rail-v1.css'),0,12))).'">'
+    . '<script src="'.e(url('/chat-specialist-rail-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-specialist-rail-v1.js'),0,12))).'"></script>'
+    . '<link rel="stylesheet" href="'.e(url('/chat-canvas-media-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.css'),0,12))).'">'
     . '<script>window.VP3_CANVAS_MEDIA_V1='.json_encode(['endpoint'=>url('/api/chat-canvas-media-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-canvas-media-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.js'),0,12))).'"></script>';
 $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-task-notes-v1.css?v=20261102-shortcut-free')).'">'

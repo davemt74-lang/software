@@ -1,0 +1,102 @@
+.vp3-chat-specialist-rail{
+  display:grid;
+  flex:0 0 auto;
+  justify-items:center;
+  gap:6px;
+  padding:8px 4px;
+}
+.vp3-chat-specialist-rail-floating{
+  position:fixed;
+  z-index:3051;
+  right:10px;
+  bottom:calc(64px + env(safe-area-inset-bottom, 0px));
+  padding:0;
+}
+.vp3-chat-specialist-rail button,
+.vp3-chat-specialist-panel button{
+  color:#24334a;
+  background:#fff;
+  border:1px solid #cbd5e1;
+  cursor:pointer;
+}
+.vp3-chat-specialist-rail button{
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:34px;
+  padding:0;
+  border-radius:50%;
+}
+.vp3-chat-specialist-rail-floating button{
+  width:44px;
+  height:44px;
+  box-shadow:0 4px 14px rgba(15,23,42,.12);
+}
+.vp3-chat-specialist-rail button:hover,
+.vp3-chat-specialist-rail button[aria-expanded="true"],
+.vp3-chat-specialist-panel button:hover{
+  background:#edf4ff;
+  border-color:#849dbf;
+}
+.vp3-chat-specialist-rail button:focus-visible,
+.vp3-chat-specialist-panel button:focus-visible{
+  outline:2px solid #1d4ed8;
+  outline-offset:2px;
+}
+.vp3-chat-specialist-rail svg{
+  width:19px;
+  height:19px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.7;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.vp3-chat-specialist-panel{
+  position:fixed;
+  z-index:9910;
+  right:60px;
+  bottom:calc(64px + env(safe-area-inset-bottom, 0px));
+  box-sizing:border-box;
+  width:min(280px, calc(100vw - 76px));
+  max-height:calc(100vh - 88px);
+  overflow:auto;
+  padding:12px;
+  color:#17233a;
+  background:#fff;
+  border:1px solid #d7e0ec;
+  border-radius:10px;
+  box-shadow:0 8px 28px rgba(15,23,42,.16);
+  overflow-wrap:anywhere;
+}
+.vp3-chat-specialist-panel header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.vp3-chat-specialist-panel h2{
+  margin:0;
+  font-size:1rem;
+}
+.vp3-chat-specialist-panel p{
+  margin:7px 0;
+  font-size:.875rem;
+  line-height:1.4;
+}
+.vp3-chat-specialist-title,
+.vp3-chat-specialist-panel [role="status"]{font-weight:600}
+.vp3-chat-specialist-panel button{
+  padding:5px 8px;
+  border-radius:5px;
+  font:inherit;
+  font-size:.8rem;
+}
+.vp3-chat-specialist-panel [hidden]{display:none}
+
+@media(max-width:760px){
+  .vp3-chat-specialist-panel{
+    right:62px;
+    width:min(280px, calc(100vw - 72px));
+  }
+}
