@@ -28,6 +28,7 @@ try{
         $sid=screen_session_id_v1($input['session_id']??null);$frame=screen_frame_v1(array_intersect_key($input,array_flip(['image','captured_at','surface'])));
         if(array_key_exists('annotation_logging',$input)&&!is_bool($input['annotation_logging']))throw new InvalidArgumentException('Choose whether to log screen annotations.');
         if(($input['annotation_logging']??false)===true)$frame['annotation_logging']=true;
+        if(array_key_exists('watch_region',$input))$frame['watch_region']=screen_watch_region_v1($input['watch_region']);
         $frame['note']=screen_text_v1($input['note']??'',1000);
         $r=screen_capture_store_v1($pdo,$user,$sid,screen_session_id_v1($input['capture_id']??null),$frame);$response=['capture'=>screen_capture_public_v1($r)];
     }elseif($action==='analyze'){
