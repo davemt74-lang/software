@@ -37,11 +37,12 @@ function agent_worker_cloud_claim_v1910(PDO $pdo,array $user,int $limit=25): ?ar
     return agent_job_claim_next_v1900($pdo,$user,'cloud',agent_worker_cloud_worker_id_v1910($uid),$limit);
 }
 
-function agent_worker_cloud_active_row_v1910(PDO $pdo,array $user,array $claim): ?array
+function agent_worker_cloud_active_row_v1910(PDO $pdo,array $user,array $claim,bool $lock=false): ?array
 {
     $uid=(int)($user['id']??0);$runId=(int)($claim['run_id']??0);$actionId=(int)($claim['action']['id']??0);
     if($uid<1||$runId<1||$actionId<1)return null;
-    $stmt=$pdo->prepare('SELECT r.*,a.action_type,a.action_key,a.label action_label,a.summary action_summary,a.status action_status,a.requires_approval action_requires_approval,a.execution_target action_execution_target,a.capability_key action_capability_key FROM agent_workflow_runs r INNER JOIN agent_workflow_actions a ON a.id=r.current_action_id AND a.run_id=r.id AND a.owner_user_id=r.owner_user_id WHERE r.id=? AND r.owner_user_id=? AND a.id=? LIMIT 1');
+    $lockSql=$lock&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite'?' FOR UPDATE':'';
+    $stmt=$pdo->prepare('SELECT r.*,a.action_type,a.action_key,a.label action_label,a.summary action_summary,a.status action_status,a.requires_approval action_requires_approval,a.execution_target action_execution_target,a.capability_key action_capability_key FROM agent_workflow_runs r INNER JOIN agent_workflow_actions a ON a.id=r.current_action_id AND a.run_id=r.id AND a.owner_user_id=r.owner_user_id WHERE r.id=? AND r.owner_user_id=? AND a.id=? LIMIT 1'.$lockSql);
     $stmt->execute([$runId,$uid,$actionId]);$row=$stmt->fetch();
     if(!is_array($row))return null;
     if((string)$row['status']!=='executing'||(string)$row['action_status']!=='executing')return null;

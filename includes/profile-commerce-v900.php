@@ -142,6 +142,7 @@ function profile_commerce_publish_v900(PDO $pdo,int $ownerUserId,int $productId,
 {
     $product=profile_commerce_owner_product_v900($pdo,$ownerUserId,$productId);if(!$product)throw new RuntimeException('Commerce product not found.');
     $meta=profile_commerce_metadata_v900($product);
+    if(($meta['listing_draft']??null)==='product_photo_v1')throw new RuntimeException('This private listing draft cannot be published.');
     $visibility=strtolower(trim((string)($input['profile_visibility']??'hidden')));if(!in_array($visibility,['public','hidden'],true))$visibility='hidden';
     $bindingType=trim((string)($product['binding_type']??''));
     if($visibility==='public'&&$bindingType===''&&(string)($product['payment_mode']??'')!=='full')throw new RuntimeException('Generic Profile Commerce products must use full payment.');
@@ -159,6 +160,7 @@ function profile_commerce_save_generic_product_v900(PDO $pdo,int $ownerUserId,ar
     if($ownerUserId<1)throw new RuntimeException('Sign in to create a Commerce product.');
     $productId=max(0,(int)($input['product_id']??0));$existing=$productId?profile_commerce_owner_product_v900($pdo,$ownerUserId,$productId):null;
     if($productId&&(!$existing||trim((string)($existing['binding_type']??''))!==''))throw new RuntimeException('Bound fulfillment products are managed by their fulfillment workspace.');
+    if($existing&&(profile_commerce_metadata_v900($existing)['listing_draft']??null)==='product_photo_v1')throw new RuntimeException('Edit this private listing in the draft review.');
     $title=mb_strimwidth(trim((string)($input['title']??'')),0,190,'');if($title==='')throw new RuntimeException('Product title is required.');
     $description=mb_strimwidth(trim((string)($input['description']??'')),0,1000,'');
     $productType=strtolower(trim((string)($input['product_type']??'service')));if(!in_array($productType,['service','digital','membership','event','gift','physical','other'],true))$productType='other';

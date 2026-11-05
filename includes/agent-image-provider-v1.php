@@ -33,13 +33,19 @@ function vp3_image_png_check_v1(string $bytes): void
 }
 
 /** Exactly one paid POST. Unknown outcomes never trigger a transport retry. */
-function vp3_image_provider_v1(array $config,array $user,?callable $transport=null): array
+function vp3_image_provider_v1(array $config,array $user,?callable $transport=null,?string $sourceImage=null): array
 {
     $key=ai_provider_api_key('openai');if($key==='')throw new RuntimeException('provider_unavailable');
     $body=['model'=>$config['model'],'prompt'=>$config['prompt'],'n'=>1,'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'output_format'=>'png','moderation'=>'auto','safety_identifier'=>hash('sha256','vp3-image-user:'.(int)$user['id'])];
-    if($transport)$result=$transport('https://api.openai.com/v1/images/generations',$body,$key);
+    $endpoint='https://api.openai.com/v1/images/generations';
+    if($sourceImage!==null){
+        if(strlen($sourceImage)>420000||!preg_match('~^data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}$~D',$sourceImage))throw new RuntimeException('image_source_changed');
+        $endpoint='https://api.openai.com/v1/images/edits';
+        $body['images']=[['image_url'=>$sourceImage]];
+    }
+    if($transport)$result=$transport($endpoint,$body,$key);
     else{
-        $received='';$curl=curl_init('https://api.openai.com/v1/images/generations');
+        $received='';$curl=curl_init($endpoint);
         curl_setopt_array($curl,[CURLOPT_POST=>true,CURLOPT_HTTPHEADER=>['Authorization: Bearer '.$key,'Content-Type: application/json'],CURLOPT_POSTFIELDS=>json_encode($body,JSON_THROW_ON_ERROR),CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_TIMEOUT=>120,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROXY=>'',CURLOPT_NETRC=>CURL_NETRC_IGNORED,CURLOPT_WRITEFUNCTION=>static function($ch,string $chunk)use(&$received): int{if(strlen($received)+strlen($chunk)>36*1024*1024)return 0;$received.=$chunk;return strlen($chunk);}]);
         if(defined('CURLOPT_PROTOCOLS'))curl_setopt($curl,CURLOPT_PROTOCOLS,CURLPROTO_HTTPS);
         $ok=curl_exec($curl);$status=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);curl_close($curl);

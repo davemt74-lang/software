@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+if (!function_exists('vp3_agent_chat_resolve_agent_v380')) require_once dirname(__DIR__) . '/includes/agent-chat-boundary-v380.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 try{
     if(($_SERVER['REQUEST_METHOD']??'')!=='POST')throw new RuntimeException('Use POST.',405);
@@ -24,6 +25,7 @@ try{
         if($action==='cancel'){
             if(($input['confirmed']??null)!==true)throw new InvalidArgumentException('Confirm the image cancellation.');
             $run=agent_workflow_row_v1400($pdo,(int)$user['id'],(int)$row['run_id']);if($run&&!in_array($run['status'],['completed','cancelled','failed'],true))agent_job_cancel_v1900($pdo,$user,(int)$row['run_id']);
+            $row=vp3_image_row_v1($pdo,$user,$id);
         }
         if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
         $view=$action==='tick'?vp3_image_tick_v1($pdo,$user,$row):vp3_image_view_v1($pdo,$user,$row);$result=['generation'=>$view];

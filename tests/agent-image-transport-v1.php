@@ -17,9 +17,16 @@ $wire=json_encode(['data'=>[['b64_json'=>base64_encode($png)]],'usage'=>['input_
 $config=['model'=>'gpt-image-2.5-flare','prompt'=>'Fixture requested image','size'=>'1024x1024','quality'=>'medium','background'=>'transparent'];
 $r=vp3_image_provider_v1($config,['id'=>1]);$body=json_decode($options[CURLOPT_POSTFIELDS],true);
 if($network!==1||$target!=='https://api.openai.com/v1/images/generations'||$r['width']!==1024||$body['n']!==1||$body['background']!=='transparent'||isset($body['response_format'])||$options[CURLOPT_FOLLOWLOCATION]!==false||$options[CURLOPT_SSL_VERIFYPEER]!==true||$options[CURLOPT_SSL_VERIFYHOST]!==2||$options[CURLOPT_PROXY]!==''||$options[CURLOPT_NETRC]!==CURL_NETRC_IGNORED||$options[CURLOPT_PROTOCOLS]!==CURLPROTO_HTTPS)throw new RuntimeException('Image transport contract mismatch.');
+$jpeg='data:image/jpeg;base64,'.trim(file_get_contents(__DIR__.'/fixtures/tv-frame.b64'));
+vp3_image_provider_v1($config,['id'=>1],null,$jpeg);
+$body=json_decode($options[CURLOPT_POSTFIELDS],true);
+if($network!==2||$target!=='https://api.openai.com/v1/images/edits'||$body['images']!==[['image_url'=>$jpeg]]||$body['n']!==1
+    ||$options[CURLOPT_FOLLOWLOCATION]!==false||$options[CURLOPT_PROTOCOLS]!==CURLPROTO_HTTPS)throw new RuntimeException('Screen edit transport contract mismatch.');
+try{vp3_image_provider_v1($config,['id'=>1],null,'https://example.test/frame.jpg');throw new LogicException('External source accepted.');}
+catch(RuntimeException $e){if($e->getMessage()!=='image_source_changed'||$network!==2)throw $e;}
 foreach([401=>'provider_access_denied',403=>'provider_access_denied',429=>'provider_rate_limited',302=>'provider_outcome_unconfirmed',503=>'provider_outcome_unconfirmed'] as $code=>$reason){$status=$code;$before=$network;try{vp3_image_provider_v1($config,['id'=>1]);throw new LogicException('Unsuccessful provider response accepted.');}catch(RuntimeException $e){if($e->getMessage()!==$reason||$network!==$before+1)throw $e;}}
 $status=200;$failed=true;$before=$network;try{vp3_image_provider_v1($config,['id'=>1]);throw new LogicException('Timeout accepted.');}catch(RuntimeException $e){if($e->getMessage()!=='provider_outcome_unconfirmed'||$network!==$before+1)throw $e;}
 $failed=false;$wire=str_repeat('x',36*1024*1024+1);try{vp3_image_provider_v1($config,['id'=>1]);throw new LogicException('Oversized response accepted.');}catch(RuntimeException $e){if($e->getMessage()!=='provider_outcome_unconfirmed')throw $e;}
-echo "IMAGE_TRANSPORT_V1=PASS (fixed endpoint, TLS, credential isolation, byte bound, no redirects and exactly one paid POST per attempt)\n";
+echo "IMAGE_TRANSPORT_V1=PASS (fixed generate/edit endpoints, TLS, credential isolation, byte bound, no redirects and exactly one paid POST per attempt)\n";
 
 }

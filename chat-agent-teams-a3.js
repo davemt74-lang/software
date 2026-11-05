@@ -788,7 +788,14 @@ function renderWebEvidence(m){
    if(detailed&&source.excerpt){const text=el('details','vp3-teams-result');text.appendChild(el('summary','','Read captured excerpt'));text.appendChild(el('pre','',source.excerpt));row.appendChild(text);}section.appendChild(row);
   }
  }
- if(!detailed)section.appendChild(btn('Read collected evidence','web.evidence',m.id));detail.appendChild(section);
+ if(!detailed)section.appendChild(btn('Read collected evidence','web.evidence',m.id));
+ const chatId=Number(window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()||0);
+ if(window.VP3InitiativeWorkbench&&m.execution_target==='cloud'&&m.status==='completed'&&chatId>0
+    &&Number(m.chat_task?.draft?.thread_id)===chatId&&collections.some(c=>c.sources?.some(s=>s.status==='read'))){
+  const brief=el('button','','Prepare decision brief');brief.type='button';
+  brief.addEventListener('click',()=>window.VP3InitiativeWorkbench.open('mission',m.id));section.appendChild(brief);
+ }
+ detail.appendChild(section);
 }
 function renderAssignments(m){
  const contract=toolsByMission.get(m.id);if(!contract)return;

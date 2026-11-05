@@ -72,6 +72,7 @@
     // Explicit Chrome research presents its consent review inside these tools.
     setOpen(document.getElementById('vp3ChatTaskMode')?.value === 'chrome');
   }, true);
+  window.addEventListener('vp3:initiative-workbench-open', () => setOpen(false));
   window.addEventListener('vp3:chat-route', event => {
     if (['review', 'failed'].includes(event.detail?.state)) setOpen(true);
   });
