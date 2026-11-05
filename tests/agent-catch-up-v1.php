@@ -63,6 +63,7 @@ require_once $root.'/includes/agent-memory-scope-v410.php';
 require_once $root.'/includes/video-meetings-v1800.php';
 require_once $root.'/includes/cognitive-presentation-firewall-v2590.php';
 require_once $root.'/includes/cognitive-presentation-v510.php';
+require_once $root.'/includes/agent-working-context-v1.php';
 
 $pdo=$GLOBALS['pdo']=new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
@@ -131,6 +132,28 @@ expect(ids($brief)===ids(vp3_agent_catch_up_v1($pdo,$user)),'stable current-sour
 $commerce=vp3_agent_catch_up_v1($pdo,$user,'commerce');
 expect(ids($commerce)===['order:1','order:2','campaign-journey:100'],'Commerce uses owner state, dedupes the same order and groups a production journey');
 expect(!isset($commerce['coverage']['calendar']),'unselected sources are not in coverage');
+$idle=['last_meaningful_at'=>$now->modify('-31 minutes')->format('Y-m-d H:i:s')];
+$initiative=['state'=>'off'];
+$foreground=vp3_cognitive_presentation_live_context_v510($user,0,50,$idle,$brief,false,$now,$initiative);
+expect($foreground['state']==='current'&&$foreground['opening']&&$foreground['initiative']===$initiative
+    &&$foreground['attention']['title']===$brief['items'][0]['title']
+    &&$foreground['attention']['key']===vp3_working_context_key_v1(1,0,50,$brief['items'][0])
+    &&array_keys($foreground['attention'])===['key','title','summary','action_label','href'],
+    'foreground Chat projects only the winning verified owner record and its exact follow-up key');
+$commerceForeground=vp3_cognitive_presentation_live_context_v510($user,0,50,$idle,$commerce,false,$now,$initiative);
+expect($commerceForeground['opening']&&$commerceForeground['attention']['title']==='Order PAID-1'
+    &&!str_contains(json_encode($commerceForeground,JSON_THROW_ON_ERROR),'PRIVATE REFUND TEXT'),
+    'a verified commerce priority can open an idle Chat without exposing customer text');
+expect(!vp3_cognitive_presentation_live_context_v510($user,0,50,$idle,$brief,true,$now,$initiative)['opening']
+    &&!vp3_cognitive_presentation_live_context_v510($user,0,50,[],$brief,false,$now,$initiative)['opening']
+    &&!vp3_cognitive_presentation_live_context_v510($user,0,50,['last_meaningful_at'=>$sqlTime],$brief,false,$now,$initiative)['opening'],
+    'working, unverified idle or recent activity can show a suggestion without an opening');
+$checked=vp3_cognitive_presentation_live_context_v510($user,0,50,$idle,['items'=>[],'coverage'=>['calendar'=>'ready']],false,$now,$initiative);
+$limited=vp3_cognitive_presentation_live_context_v510($user,0,50,$idle,['items'=>[],'coverage'=>['calendar'=>'ready','tasks'=>'limited']],false,$now,$initiative);
+$missing=vp3_cognitive_presentation_live_context_v510($user,0,50,$idle,['items'=>[],'coverage'=>['calendar'=>'ready','tasks'=>'unavailable']],false,$now,$initiative);
+expect($checked===['state'=>'quiet','attention'=>null,'opening'=>false,'initiative'=>$initiative]
+    &&$limited['state']==='unavailable'&&$missing['state']==='unavailable'&&!$missing['opening'],
+    'an empty foreground projection distinguishes verified quiet from incomplete source checks');
 expect(ids(['items'=>vp3_catch_up_rewards_v1($pdo,$user,$now)[1]])===['reward:1'],'only current, unexpired holder rewards from enabled merchants are surfaced');
 $taskRows=vp3_catch_up_tasks_v1($pdo,$user,user_agent_principal_v236($user,null),$now)[1];
 $taskLinks=array_column($taskRows,'url','id');
@@ -260,6 +283,37 @@ $calendarStart('+60 minutes');
 $brief=vp3_agent_catch_up_v1($pdo,$user,'office');
 expect(ids($brief)===['mission:'.$mission,'task:101','task:102'],'the Mission leads outside the meeting attention window and the call follow-up consumes only one slot');
 expect(vp3_agent_catch_up_v1($pdo,['id'=>2],'office')['items']===[],'account switching does not reuse the first owner’s situation');
+$system=user_agent_principal_v236($user,null);
+$all=vp3_agent_catch_up_v1($pdo,$user,'all');
+$missionItem=$all['items'][0];
+$callItem=$all['items'][1];
+$missionRef=vp3_working_context_key_v1(1,0,50,$missionItem);
+$callRef=vp3_working_context_key_v1(1,0,50,$callItem);
+expect(vp3_working_context_request_v1('Please help me with that.',$missionRef)===$missionRef
+    &&vp3_working_context_request_v1('Send an email',$missionRef)===null
+    &&vp3_working_context_request_v1('Help me with that',[])==='',
+    'a reference is used for an explicit contextual follow-up only');
+$follow=vp3_working_context_chat_v1($pdo,$user,$system,50,$callRef);
+expect($follow['tool_receipt']['status']==='read_complete'&&!$follow['tool_receipt']['changes_applied']
+    &&array_column($follow['sources'],'source')===['agent-catch-up:'.$callItem['id']]
+    &&!str_contains($follow['answer'],$missionItem['title']),
+    'the exact Profile call follow-up stays selected when a Mission ranks above it');
+$calendarStart('+10 minutes');
+$follow=vp3_working_context_chat_v1($pdo,$user,$system,50,$missionRef);
+expect(array_column($follow['sources'],'source')===['agent-catch-up:mission:'.$mission]
+    &&!str_contains($follow['answer'],'Partner meeting'),
+    'a new leading calendar item does not change which Mission the owner asked about');
+$changedItem=array_replace($missionItem,['reason'=>'Earlier stale source state']);
+$staleRef=vp3_working_context_key_v1(1,0,50,$changedItem);
+foreach([
+    vp3_working_context_chat_v1($pdo,$user,$system,50,$staleRef),
+    vp3_working_context_chat_v1($pdo,$user,$system,51,$missionRef),
+    vp3_working_context_chat_v1($pdo,['id'=>2],user_agent_principal_v236(['id'=>2],null),50,$missionRef),
+] as $unavailable){
+    expect($unavailable['tool_receipt']['status']!=='read_complete'&&$unavailable['sources']===[],
+        'stale, wrong Chat and wrong account references reveal no candidate or substitute');
+}
+
 expect((int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,'cross-source context does not acknowledge, schedule or mutate records');
 $pdo->exec('PRAGMA query_only=OFF');
 $pdo->exec('DROP TABLE profile_calls_pa3c');

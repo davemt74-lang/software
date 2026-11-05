@@ -22,6 +22,24 @@ fs.copyFileSync('tests/fixtures/vrss-agent-v1.php',path.join(tmp,'includes/vrss-
 for(const name of ['analytics-agent-v1.php','radar-agent-v1.php','tracky-agent-v1.php'])fs.copyFileSync('tests/fixtures/'+name,path.join(tmp,'includes',name));
 fs.copyFileSync('tests/fixtures/observation-api-state-v1.php',path.join(tmp,'observation-state.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'conversations'=>(int)db()->query('SELECT COUNT(*) FROM chat_conversations')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
+fs.writeFileSync(path.join(tmp,'working-context.php'),`<?php
+require __DIR__.'/includes/bootstrap.php';
+require_once __DIR__.'/includes/agent-working-context-v1.php';
+$pdo=db();$user=['id'=>1,'is_active'=>1];
+$cid=(int)$_GET['cid'];$reminder=(int)$_GET['reminder'];
+$title=isset($_GET['changed'])?'Updated recording reminder':'Original recording reminder';
+$pdo->prepare("UPDATE agent_reminders_v1 SET title=?,next_at='2020-01-01T00:00:00Z' WHERE owner_user_id=? AND id=?")
+    ->execute([$title,$user['id'],$reminder]);
+$brief=vp3_agent_catch_up_v1($pdo,$user,'all',0);
+foreach($brief['items'] as $item){
+    if($item['id']==='reminder:'.$reminder){
+        header('Content-Type: application/json');
+        echo json_encode(['key'=>vp3_working_context_key_v1($user['id'],0,$cid,$item),'title'=>$item['title']]);
+        exit;
+    }
+}
+http_response_code(404);echo '{}';
+`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
 const base=`http://127.0.0.1:${port}`;let checks=0;
@@ -51,6 +69,7 @@ try{
  let response=await post('chat-v236.php','Can you create reminders?',{}, {'X-Fixture-Model-Fail':'1'});check(response.data?.answer.includes('No action was taken')&&(await state()).reminders===0,'failed discovery inference cannot fall through to an unintended mutation');
  response=await post('chat-v236.php','Remind me to stretch in two minutes');check(response.data?.ok===true&&response.data.answer.includes('Saved reminder #')&&(await state()).reminders===1,'actual action request reaches production reminder executor once: '+response.body);
  const savedConversation=response.data.conversation_id;check(response.data.tool_receipt?.status==='completed'&&response.data.tool_receipt.changes_applied,'typed endpoint exposes only the real successful mutation receipt');
+ const savedReminder=response.data.tool_receipt.record_id;
  response=await post('chat-v236.php','Did that work?',{conversation_id:savedConversation});check(response.data?.answer.includes('the requested change completed')&&response.data.tool_receipt?.capability==='reminders.manage','typed follow-up diagnoses the saved executor receipt');
  response=await post('chat-stream-v121.php','Did that work?',{conversation_id:savedConversation});check(response.data?.answer.includes('the requested change completed')&&response.data.tool_receipt?.capability==='reminders.manage','streaming follow-up shares the same owner execution evidence');
  response=await post('chat.php','Did that work?',{conversation_id:savedConversation});check(response.data?.answer.includes('the requested change completed')&&response.data.tool_receipt?.capability==='reminders.manage','legacy follow-up shares the same owner execution evidence');
@@ -570,5 +589,33 @@ try{
  check(wrongAgent.r.status===400&&!wrongAgent.data.ok,'activity rejects a Chat outside the selected Agent');
  const wrongOwner=await post('chat-v236.php','',{action:'activity',conversation_id:selectedChat.conversation_id},{'X-Fixture-User':'2'});
  check(wrongOwner.r.status===400&&!wrongOwner.data.ok,'activity rejects another owner’s Chat');
+ const contextFixture=base+'/working-context.php?cid='+savedConversation+'&reminder='+savedReminder;
+ const offered=await (await fetch(contextFixture)).json();
+ check(/^[a-f0-9]{64}$/.test(offered.key)&&offered.title==='Original recording reminder',
+  'real overdue reminder provides the exact owned foreground reference');
+ const contextTurn={conversation_id:savedConversation,working_context_ref:offered.key};
+ const contextHeaders={...workingHeaders,'X-Fixture-Model-Fail':'1'};
+ for(const endpoint of ['chat-v236.php','chat-stream-v121.php']){
+  const followUp=await post(endpoint,'Help me with that',contextTurn,contextHeaders);
+  check(followUp.data?.ok===true&&followUp.data.answer.includes(offered.title)
+   &&followUp.data.tool_receipt?.capability==='brief.attention.read'&&followUp.data.tool_receipt?.status==='read_complete'
+   &&!followUp.data.tool_receipt.changes_applied&&followUp.data.actions?.length===0
+   &&followUp.data.sources?.some(source=>source.source==='agent-catch-up:reminder:'+savedReminder),
+   'exact working-context follow-up uses the saved reminder without inference through '+endpoint+': '+followUp.body);
+  const wrongChat=await post(endpoint,'Help me with that',{...contextTurn,conversation_id:newerChat.conversation_id},contextHeaders);
+  check(wrongChat.data?.ok===true&&wrongChat.data.tool_receipt?.capability==='brief.attention.read'
+   &&wrongChat.data.tool_receipt.status!=='read_complete'&&!wrongChat.data.answer.includes(offered.title),
+   'a different owned conversation cannot reuse the offered working context through '+endpoint+': '+wrongChat.body);
+ }
+ const replacement=await (await fetch(contextFixture+'&changed=1')).json();
+ check(replacement.title==='Updated recording reminder'&&replacement.key!==offered.key,
+  'changing the reminder creates a different available reference');
+ for(const endpoint of ['chat-v236.php','chat-stream-v121.php']){
+  const stale=await post(endpoint,'Help me with that',contextTurn,contextHeaders);
+  check(stale.data?.ok===true&&stale.data.tool_receipt?.capability==='brief.attention.read'
+   &&stale.data.tool_receipt.status!=='read_complete'&&!stale.data.tool_receipt.changes_applied
+   &&!stale.data.answer.includes(offered.title)&&!stale.data.answer.includes(replacement.title),
+   'stale follow-up stays read-only without substituting newer evidence or falling through to inference through '+endpoint+': '+stale.body);
+ }
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

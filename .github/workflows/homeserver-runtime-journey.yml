@@ -124,6 +124,7 @@ jobs:
           node tests/chat-catch-up-browser.mjs
           node tests/chat-initiative-browser.mjs
           node tests/cognitive-working-attention-browser.mjs
+          node tests/chat-live-attention-browser.mjs
           node tests/chat-listening-continuation-browser.mjs
           node tests/music-file-repair-api.mjs
           node tests/music-file-repair-browser.mjs

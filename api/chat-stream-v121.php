@@ -51,7 +51,13 @@ if($participantActor!==null){
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
 $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$agentScopeId;$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();
-$reminderTool=vp3_connected_sites_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId);
+$reminderTool=null;
+if(array_key_exists('working_context_ref',$input)){
+    require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';
+    $workingContextRef=vp3_working_context_request_v1($query,$input['working_context_ref']);
+    if($workingContextRef!==null)$reminderTool=vp3_working_context_chat_v1($pdo,$user,$principal,$conversationId,$workingContextRef);
+}
+if($reminderTool===null)$reminderTool=vp3_connected_sites_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId);
 if($reminderTool===null&&vp3_catch_up_chat_scope_v1($query)!==null){
     $reminderTool=vp3_capability_chat_v1($pdo,$user,$principal,$query,
         ['conversation_id'=>$conversationId,'user_agent_id'=>$agentScopeId],

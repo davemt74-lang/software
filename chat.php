@@ -57,7 +57,7 @@ $cognitiveBudgetGovernanceBuild = 'cognitive-budget-governance-v2560-20260923';
 $cognitiveValueRoiBuild = 'cognitive-value-roi-v2570-20260923';
 $cognitiveDecisionCalibrationBuild = 'cognitive-decision-calibration-v2580-20260923';
 $cognitiveCurrentStateBuild = 'cognitive-current-state-v2590-20260923';
-$cognitivePresentationAssetBuild = $cognitivePresentationBuild . '-' . $cognitiveCurrentStateBuild . '-profile-priority-v1341-20261027-everyday-context-v1-greeting-preview';
+$cognitivePresentationAssetBuild = $cognitivePresentationBuild . '-' . $cognitiveCurrentStateBuild . '-profile-priority-v1341-20261027-everyday-context-v1-greeting-preview-live-context';
 $notificationDrawerAssetBuild = $notificationDrawerBuild . '-' . $cognitiveContextBuild . '-' . $cognitiveTurnBuild . '-' . $cognitiveContinuityBuild . '-' . $cognitiveFollowthroughBuild . '-' . $cognitiveSupervisionBuild . '-' . $cognitiveAutonomyBuild . '-' . $cognitivePortfolioBuild . '-' . $cognitiveForecastBuild . '-' . $cognitiveOptimizationBuild . '-' . $cognitiveResourceBudgetBuild . '-' . $cognitiveReplanningBuild . '-' . $cognitiveCommitmentProtectionBuild . '-' . $cognitiveEconomicsBuild . '-' . $cognitiveBudgetGovernanceBuild . '-' . $cognitiveValueRoiBuild . '-' . $cognitiveDecisionCalibrationBuild . '-' . $cognitiveCurrentStateBuild . '-mission-notices-a5c8-20261011-profile-priority-v1341-20261027-eyes-v1342-activity-v1348r2-longfellow-r3';
 $browserContextBuild = 'browser-context-v2130-20260919';
 $notificationDrawerAssetBuild .= '-pa4b-' . substr(hash('sha256',hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.js').hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.css')),0,12);
@@ -292,7 +292,8 @@ $html = preg_replace(
 
 $debugMarker = '<span id="chatRuntimeDebug" hidden data-chat-build="' . e($controlBuild) . '"></span>';
 $welcomeAnchor = '<div id="chatWelcome" hidden></div>';
-$html = str_replace($welcomeAnchor, $debugMarker . $welcomeAnchor, $html);
+$liveContextHost = '<section id="chatLiveContext" aria-label="Agent check-in" hidden></section>';
+$html = str_replace($welcomeAnchor, $debugMarker . $welcomeAnchor . $liveContextHost, $html);
 
 // Phase 11B.2: Agent Brief moved out of the Chat timeline and into the footer control.
 // The canonical model is reused by Cognitive Presentation v5.10 on demand.
@@ -504,6 +505,7 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
         'agentId'=>(int)($activeUserAgent['id'] ?? 0),
         'workingAttentionBinding'=>$workingAttentionBinding,
         'greetingPreview'=>($_GET['greeting_preview']??'')==='1',
+        'liveContext'=>true,
         'pollSeconds'=>30,
         'ownsAttention'=>true,
         'ownsBrainPresentation'=>true,

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-chat-boundary-v380.php';
+
 const VP3_COGNITIVE_PRESENTATION_V510='vp3-cognitive-presentation-v510-20260918';
 const VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510=30;
 const VP3_COGNITIVE_DIGEST_NORMAL_IDLE_MINUTES_V510=60;
@@ -435,7 +437,27 @@ function vp3_cognitive_presentation_greeting_preview_v510(array $row,?array $wor
     return ['decision'=>'would_mention','reason'=>'linked_meeting_followup'];
 }
 
-function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $namespace,int $agentId=0,bool $includeWorkingAttention=false,bool $includeGreetingPreview=false): array
+/** Present one source-backed suggestion in foreground Chat without creating a delivery event. */
+function vp3_cognitive_presentation_live_context_v510(array $user,int $agentId,int $conversationId,array $row,?array $workingBrief,bool $working,DateTimeImmutable $now,array $initiative): array
+{
+    require_once __DIR__.'/agent-working-context-v1.php';
+    $top=$workingBrief['items'][0]??null;
+    $id=is_array($top)&&is_string($top['id']??null)?$top['id']:'';
+    $attention=$id!==''?vp3_cognitive_presentation_working_attention_v510($top):null;
+    $coverage=$workingBrief['coverage']??[];
+    $checked=$top===null&&in_array('ready',$coverage,true)&&!array_intersect($coverage,['limited','unavailable']);
+    $opening=false;
+    if($attention!==null){
+        $attention=['key'=>vp3_working_context_key_v1((int)$user['id'],$agentId,$conversationId,$top)]
+            +array_intersect_key($attention,array_flip(['title','summary','href','action_label']));
+        $last=vp3_catch_up_timestamp_v1($row['last_meaningful_at']??null,new DateTimeZone('UTC'));
+        $opening=!$working&&$last!==null&&$now->getTimestamp()-$last>=VP3_COGNITIVE_DIGEST_ATTENTION_IDLE_MINUTES_V510*60;
+    }
+    return ['state'=>$attention!==null?'current':($checked?'quiet':'unavailable'),
+        'attention'=>$attention,'opening'=>$opening,'initiative'=>$initiative];
+}
+
+function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $namespace,int $agentId=0,bool $includeWorkingAttention=false,bool $includeGreetingPreview=false,?int $liveConversationId=null): array
 {
     $row=vp3_cognitive_presentation_state_row_v510($pdo,$user,$namespace);
     $digest=vp3_cognitive_presentation_digest_v510($pdo,$user,$namespace,$row);
@@ -559,7 +581,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
             );
         }
     }
-    return [
+    $state=[
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
         'brief'=>$brief,
@@ -581,4 +603,18 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
         'digest'=>$digest,'voice_candidate'=>$voice,'homeserver_presence'=>$homeServerPresence,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];
+    if($liveConversationId!==null){
+        require_once __DIR__.'/agent-initiative-v1.php';
+        $liveBrief=null;
+        if(!empty($brief['active'])){
+            try{$liveBrief=vp3_agent_catch_up_v1($pdo,$user,'all',$agentId);}
+            catch(Throwable $e){}
+        }
+        try{$initiative=vp3_initiative_foreground_status_v1($pdo,$user,$agentId,$liveConversationId);}
+        catch(Throwable $e){$initiative=['state'=>'unavailable'];}
+        $state['live_context']=vp3_cognitive_presentation_live_context_v510(
+            $user,$agentId,$liveConversationId,$row,$liveBrief,!empty($brief['working']),new DateTimeImmutable('now',new DateTimeZone('UTC')),$initiative
+        );
+    }
+    return $state;
 }

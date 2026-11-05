@@ -4,6 +4,7 @@ import {createHmac} from 'node:crypto';
 import {copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 const temp = mkdtempSync(join(tmpdir(), 'vp3-cognitive-binding-'));
 const runner = join(temp, 'run.php');
@@ -16,6 +17,7 @@ try {
   mkdirSync(join(temp,'api'));
   mkdirSync(join(temp,'includes'));
   copyFileSync(new URL('../api/cognitive-presentation-v510.php',import.meta.url),join(temp,'api','cognitive-presentation-v510.php'));
+  copyFileSync(new URL('../includes/agent-chat-boundary-v380.php',import.meta.url),join(temp,'includes','agent-chat-boundary-v380.php'));
   writeFileSync(runner,`<?php
 $fixture=json_decode($argv[1],true);
 $trace=[];
@@ -27,17 +29,25 @@ session_id($fixture['session']);
 register_shutdown_function(static function(){global $trace;echo "\\n".json_encode(['status'=>http_response_code(),'trace'=>$trace]);});
 require __DIR__.'/api/cognitive-presentation-v510.php';`);
   writeFileSync(join(temp,'includes','bootstrap.php'),`<?php
+require __DIR__.'/agent-chat-boundary-v380.php';
 const VP3_COGNITIVE_PRESENTATION_V510='fixture';
 function current_user(){global $fixture;return ['id'=>$fixture['owner']];}
 function has_permission($capability,$user){return $capability==='chat.access';}
 function csrf_token(){return 'fixture-csrf';}
 function vp3_catch_up_page_binding_v1($user){return hash_hmac('sha256','working-attention|'.$user['id'].'|'.session_id(),csrf_token());}
-function db(){global $trace;$trace[]='db';return new stdClass();}
+function db(){
+    global $trace;$trace[]='db';$pdo=new PDO('sqlite::memory:');
+    $pdo->exec('CREATE TABLE chat_conversations (id INTEGER,user_id INTEGER,user_agent_id INTEGER);
+      INSERT INTO chat_conversations VALUES (42,1,NULL),(43,1,7),(44,2,NULL),(45,1,8)');
+    return $pdo;
+}
+function user_agent_get_v236($pdo,$owner,$agent){return $owner===1&&in_array($agent,[7,8],true)?['id'=>$agent,'is_active'=>$agent===7]:null;}
 function vp3_cognitive_presentation_schema_ready_v510($pdo){return true;}
 function vp3_cognitive_agent_namespace_v500($pdo,$user,$agent){return $agent?'agent:'.$agent:'system';}
-function vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agent,$working,$preview){
+function vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agent,$working,$preview,$liveConversation=null){
     global $trace;$trace[]='state';
-    return ['owner'=>$user['id'],'namespace'=>$namespace,'working'=>$working,'preview'=>$preview];
+    $state=['owner'=>$user['id'],'namespace'=>$namespace,'working'=>$working,'preview'=>$preview];
+    return $liveConversation===null?$state:$state+['live_conversation'=>$liveConversation];
 }
 function vp3_cognitive_presentation_touch_v510($pdo,$user,$namespace){global $trace;$trace[]='interaction';}
 function vp3_cognitive_presentation_digest_ack_v510($pdo,$user,$namespace,$id,$status){global $trace;$trace[]='digest_ack';}
@@ -69,6 +79,32 @@ function vp3_cognitive_presentation_voice_suppressed_v510($pdo,$user,$namespace,
     {owner:2,namespace:'system',working:true,preview:false});
   assert.equal(request({query:{include_working_attention:['1']}}).status,422);
 
+  const live = {include_working_attention:'0',include_live_context:'1',conversation_id:'42'};
+  assertRejected(request({binding:null,query:live}));
+  assertRejected(request({owner:2,session:'owner-b',query:live}));
+  assert.deepEqual(request({query:live}).response.state,
+    {owner:1,namespace:'system',working:false,preview:false,live_conversation:42});
+  assert.deepEqual(request({query:{...live,agent_id:'7',conversation_id:'43'}}).response.state,
+    {owner:1,namespace:'agent:7',working:false,preview:false,live_conversation:43});
+  for (const query of [{...live,agent_id:'7'},{...live,conversation_id:'43'},
+    {...live,agent_id:'8',conversation_id:'45'},{...live,agent_id:'99'},{...live,conversation_id:'999'}]) {
+    const denied=request({query});
+    assert.equal(denied.status,404);
+    assert.equal(denied.response.error,'conversation_not_found');
+    assert.deepEqual(denied.trace,['db']);
+  }
+  const foreign=request({owner:2,session:'owner-b',binding:ownerB,query:live});
+  assert.equal(foreign.status,404);
+  assert.deepEqual(foreign.trace,['db']);
+  for (const query of [{...live,include_live_context:['1']},{...live,conversation_id:undefined},
+    {...live,conversation_id:'0'},{...live,conversation_id:['42']},{...live,conversation_id:'42x'},
+    {...live,agent_id:'7x'},{...live,agent_id:['7']}]) {
+    const malformed=request({query});
+    assert.equal(malformed.status,422);
+    assert.equal(malformed.response.error,'invalid_live_context');
+    assert.deepEqual(malformed.trace,['db']);
+  }
+
   for (const action of ['interaction','digest_ack','voice_delivered','voice_suppressed']) {
     const body = {action,csrf_token:'fixture-csrf',digest_id:'digest',through_id:5};
     const mutation = {method:'POST',body};
@@ -80,7 +116,10 @@ function vp3_cognitive_presentation_voice_suppressed_v510($pdo,$user,$namespace,
     assert.equal(accepted.status,200);
     assert.deepEqual(accepted.trace,['db',action]);
   }
-  console.log('PASS cognitive presentation requires the rendered owner/session on state and every mutation, with opt-in projections');
+  assert.equal(execFileSync(php,['-r',
+    `require ${JSON.stringify(fileURLToPath(new URL('../includes/cognitive-presentation-v510.php',import.meta.url)))}; echo (int)function_exists('vp3_agent_chat_conversation_v380');`
+  ],{encoding:'utf8'}),'1');
+  console.log('PASS cognitive presentation requires the rendered owner/session and exact Chat Agent on foreground reads');
 } finally {
   rmSync(temp,{recursive:true,force:true});
 }
