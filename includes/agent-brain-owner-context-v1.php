@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-function agent_brain_context(array $user, string $query, int $limit = 10, bool $strictMatch = false): array
+function agent_brain_context(array $user, string $query, int $limit = 10, bool $strictMatch = false, array $excludedMemoryTypes = []): array
 {
     if (!agent_brain_schema_ready()) {
         return [];
@@ -21,6 +21,21 @@ function agent_brain_context(array $user, string $query, int $limit = 10, bool $
     $terms = array_slice(array_unique($terms), 0, 6);
     $params = array_merge([$userId], $scopeParams);
     $where = 'user_id=? AND ' . $scope . ' AND is_active=1';
+    // Background recall must not turn its own scheduler/receipt bookkeeping
+    // into fresh owner evidence. Explicit Chat recall retains the empty default.
+    $allowedExclusions = ['job_execution', 'initiative_policy', 'initiative_sweep', 'cognitive_state'];
+    if (!array_is_list($excludedMemoryTypes)) throw new InvalidArgumentException('Unknown Brain context exclusion.');
+    foreach ($excludedMemoryTypes as $excludedType) {
+        if (!is_string($excludedType) || !in_array($excludedType, $allowedExclusions, true)) {
+            throw new InvalidArgumentException('Unknown Brain context exclusion.');
+        }
+    }
+    $excludedMemoryTypes = array_values(array_unique($excludedMemoryTypes));
+    $excludedSql = $excludedMemoryTypes
+        ? ' AND memory_type NOT IN (' . implode(',', array_fill(0, count($excludedMemoryTypes), '?')) . ')'
+        : '';
+    $where .= $excludedSql;
+    $params = array_merge($params, $excludedMemoryTypes);
     if ($terms) {
         $parts = [];
         foreach ($terms as $term) {
@@ -46,11 +61,11 @@ function agent_brain_context(array $user, string $query, int $limit = 10, bool $
         $stmt = $pdo->prepare(
             "SELECT id,memory_type,subject,memory_text,occurrence_count,last_seen_at,confidence
              FROM agent_memory_items
-             WHERE user_id=? AND {$scope} AND is_active=1
+             WHERE user_id=? AND {$scope} AND is_active=1{$excludedSql}
              ORDER BY last_seen_at DESC,id DESC
              LIMIT {$limit}"
         );
-        $stmt->execute(array_merge([$userId], $scopeParams));
+        $stmt->execute(array_merge([$userId], $scopeParams, $excludedMemoryTypes));
         $rows = $stmt->fetchAll();
     }
 

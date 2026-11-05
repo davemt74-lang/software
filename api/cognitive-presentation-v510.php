@@ -32,17 +32,24 @@ if(!vp3_cognitive_presentation_schema_ready_v510($pdo))vp3_cognitive_presentatio
 
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?vp3_cognitive_presentation_api_input_v510():$_GET;
-$agentId=max(0,(int)($input['agent_id']??0));
+$rawAgentId=$input['agent_id']??0;
+$agentId=is_int($rawAgentId)||is_string($rawAgentId)?max(0,(int)$rawAgentId):0;
 try{
     $action=trim((string)($input['action']??'state'));
     $readState=$method==='GET'&&$action==='state';
     $liveConversationId=null;
+    $includeInitiativeRuntime=false;
     if($readState){
         // Existing clients that supplied a binding used it to request working attention.
         $includeWorkingAttention=$input['include_working_attention']??'1';
         if(!in_array($includeWorkingAttention,['0','1'],true))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_working_attention']);
         $includeLiveContext=$input['include_live_context']??'0';
         if(!in_array($includeLiveContext,['0','1'],true))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_live_context']);
+        $runtime=$input['include_initiative_runtime']??'0';
+        if(!in_array($runtime,['0','1'],true)||($runtime==='1'&&$includeLiveContext!=='1')){
+            vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_initiative_runtime']);
+        }
+        $includeInitiativeRuntime=$runtime==='1';
         if($includeLiveContext==='1'){
             $conversation=$input['conversation_id']??null;
             $rawAgent=$input['agent_id']??'0';
@@ -59,13 +66,72 @@ try{
             }
         }
     }
-    $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,$agentId);
+    $initiativeMutation=$method==='POST'&&in_array($action,['initiative_tick','initiative_setting'],true);
+    $namespace=$initiativeMutation?'':vp3_cognitive_agent_namespace_v500($pdo,$user,$agentId);
     if($readState){
         $greetingPreview=$includeWorkingAttention==='1'&&($input['greeting_preview']??'')==='1';
-        vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'state'=>vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$includeWorkingAttention==='1',$greetingPreview,$liveConversationId)]);
+        $state=vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$includeWorkingAttention==='1',$greetingPreview,$liveConversationId);
+        if($includeInitiativeRuntime){
+            // Observability is a read. Scheduling, model calls and tool execution
+            // are exclusively performed by the explicitly bound POST below.
+            require_once dirname(__DIR__).'/includes/agent-initiative-runtime-v1.php';
+            $state['live_context']['initiative']['runtime']=vp3_initiative_worker_health_v1($pdo,$user,$agentId,$liveConversationId);
+        }
+        vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'state'=>$state]);
     }
     if($method!=='POST')vp3_cognitive_presentation_api_json_v510(405,['ok'=>false,'error'=>'method_not_allowed']);
     if(!hash_equals(csrf_token(),trim((string)($input['csrf_token']??''))))vp3_cognitive_presentation_api_json_v510(419,['ok'=>false,'error'=>'csrf']);
+
+    if(in_array($action,['initiative_tick','initiative_setting'],true)){
+        $rawAgent=$input['agent_id']??0;
+        $rawConversation=$input['conversation_id']??null;
+        $validId=static fn(mixed $id,bool $zero):bool=>(is_int($id)||is_string($id))
+            &&preg_match($zero?'/^(?:0|[1-9][0-9]{0,17})$/D':'/^[1-9][0-9]{0,17}$/D',(string)$id)===1
+            &&filter_var($id,FILTER_VALIDATE_INT)!==false;
+        if(!$validId($rawAgent,true)||!$validId($rawConversation,false)){
+            vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_initiative_context']);
+        }
+        $conversationId=(int)$rawConversation;
+        try{$agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);}
+        catch(PDOException $e){throw $e;}
+        catch(RuntimeException $e){vp3_cognitive_presentation_api_json_v510(404,['ok'=>false,'error'=>'conversation_not_found']);}
+        if(!vp3_agent_chat_conversation_v380($pdo,$conversationId,(int)$user['id'],$agent)){
+            vp3_cognitive_presentation_api_json_v510(404,['ok'=>false,'error'=>'conversation_not_found']);
+        }
+        require_once dirname(__DIR__).'/includes/agent-initiative-runtime-v1.php';
+        if($action==='initiative_setting'){
+            if(!is_bool($input['enabled']??null))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_initiative_setting']);
+            $revision=$input['policy_revision']??null;
+            if(!is_string($revision)||($revision!==''&&!preg_match('/^[a-f0-9]{32}$/D',$revision))){
+                vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_initiative_revision']);
+            }
+            $scope=$input['knowledge_scope']??['mode'=>'off','folder_id'=>0];
+            if(!is_array($scope))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_knowledge_scope']);
+            $principal=vp3_agent_chat_principal_v380($user,$agent);
+            $setting=vp3_initiative_chat_v1($pdo,$user,$principal,['conversation_id'=>$conversationId,'knowledge_scope'=>$scope,
+                'initiative_expected_revision'=>$revision],$input['enabled']?'on':'off',null);
+            if(($setting['reason']??'')==='settings_changed'){
+                vp3_cognitive_presentation_api_json_v510(409,['ok'=>false,'error'=>'initiative_settings_changed']);
+            }
+            $policy=vp3_initiative_policy_v1($user,$agentId);
+            if(($setting['ok']??false)!==true||!array_key_exists('enabled',$policy)||!empty($policy['enabled'])!==$input['enabled']
+                ||($input['enabled']&&($policy['conversation_id']??null)!==$conversationId)){
+                vp3_cognitive_presentation_api_json_v510(409,['ok'=>false,'error'=>'initiative_setting_unconfirmed']);
+            }
+            vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'health'=>vp3_initiative_worker_health_v1($pdo,$user,$agentId,$conversationId)]);
+        }
+        $revision=$input['policy_revision']??null;
+        if(!is_string($revision)||!preg_match('/^[a-f0-9]{32}$/D',$revision)){
+            vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_initiative_revision']);
+        }
+        // Release the PHP session lock before bounded model/tool work so an
+        // ordinary owner turn is never blocked behind a foreground tick.
+        @set_time_limit(180);
+        ignore_user_abort(true);
+        if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+        $result=vp3_initiative_pump_v1($pdo,$user,$agentId,$conversationId,$revision);
+        vp3_cognitive_presentation_api_json_v510(200,$result);
+    }
 
     if($action==='interaction'){
         vp3_cognitive_presentation_touch_v510($pdo,$user,$namespace);
@@ -89,6 +155,10 @@ try{
 }catch(DomainException|InvalidArgumentException $e){
     vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>$e->getMessage()]);
 }catch(Throwable $e){
+    if(in_array($action??'',['initiative_tick','initiative_setting'],true)&&in_array($e->getCode(),[403,404,409,503],true)){
+        $reason=$e->getCode()===409?'initiative_settings_changed':($e->getCode()===503?'initiative_unavailable':'initiative_context_changed');
+        vp3_cognitive_presentation_api_json_v510($e->getCode(),['ok'=>false,'error'=>$reason]);
+    }
     error_log('VP3 Cognitive Presentation v5.10 API: '.$e->getMessage());
     vp3_cognitive_presentation_api_json_v510(500,['ok'=>false,'error'=>'presentation_unavailable']);
 }

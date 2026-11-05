@@ -47,7 +47,8 @@ const reviewDetails = {
 const review = (body, source, screenshot) => ({
   source_id: source.source_id,
   source_title: source.source_title,
-  revision: 'a'.repeat(64),
+  revision: body.tool === 'screen' && (body.mode !== 'cleanup' || body.instruction) ? 'c'.repeat(64) : 'a'.repeat(64),
+  ...(body.tool === 'screen' ? {reference_revision:'a'.repeat(64)} : {}),
   details: body.tool === 'screen' ? {
     mode: body.mode, captured_at: source.captured_at, provider: 'OpenAI', sends_capture: true, image_data: screenshot,
     summary: body.mode === 'cleanup' ? 'AI cleanup aims to keep the original layout and text. It can change details.'
@@ -86,12 +87,13 @@ const html = `<!doctype html><html><head><meta charset="utf-8">
   <div id="chatComposerShell"><form id="chatForm"><textarea id="chatInput" aria-label="Chat message"></textarea>
   <button id="sendChatButton">Send</button></form></div></main></body></html>`;
 
-async function fixture(page) {
+async function fixture(page, {chatConfig = true} = {}) {
   page.setDefaultTimeout(8000);
   const calls = [];
   const mediaCalls = [];
   const errors = [];
   let nextCreate;
+  let nextPreview;
   let imageStatus = 'queued';
   let screenshots;
   page.on('pageerror', error => errors.push(error.message));
@@ -120,7 +122,13 @@ async function fixture(page) {
     if (body.action === 'sources') return ok({ sources: sources[body.tool] || [] });
     const selected = sources[body.tool]?.find(source => source.source_id === body.source_id);
     if (!selected) return fail(404, 'That private source is unavailable.');
-    if (body.action === 'preview') return ok({ preview: review(body, selected, screenshots[body.source_id]), review_token: token(body) });
+    if (body.action === 'preview') {
+      const handlePreview = nextPreview;
+      nextPreview = undefined;
+      const preview = review(body, selected, screenshots[body.source_id]);
+      if (handlePreview) return handlePreview({route,body,ok,fail,preview});
+      return ok({ preview, review_token: token(body) });
+    }
     if (body.action !== 'create' || body.confirmed !== true || body.review_token !== token(body)) {
       return fail(409, 'Review the current source again.');
     }
@@ -130,11 +138,12 @@ async function fixture(page) {
     return ok({ output: outputs[body.tool] });
   });
   await page.goto(`${root}/`);
-  screenshots = await page.evaluate(({ endpoint, mediaEndpoint, owner, agent, conversation, capture, otherCapture }) => {
+  screenshots = await page.evaluate(({ endpoint, mediaEndpoint, owner, agent, conversation, capture, otherCapture, chatConfig }) => {
     window.fixtureChatId = conversation;
     window.STONEFELLOW_CHAT_CONTINUITY = { conversationId: () => window.fixtureChatId };
     window.VP3_CANVAS_MEDIA_V1 = { endpoint: mediaEndpoint, csrf: 'fixture', userId: Number(owner), agentId: agent };
     window.VP3_INITIATIVE_WORKBENCH = { endpoint, csrf: 'fixture', ownerKey: owner, agentId: agent };
+    if (chatConfig) window.STONEFELLOW_CHAT = {userId:Number(owner),agentId:agent,workingAttentionBinding:'fixture-session'};
     const picture = color => {
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 32;
@@ -144,7 +153,7 @@ async function fixture(page) {
       return canvas.toDataURL('image/jpeg');
     };
     return { [capture]: picture('#f59f64'), [otherCapture]: picture('#234c9f') };
-  }, { endpoint, mediaEndpoint, owner, agent, conversation, capture, otherCapture });
+  }, { endpoint, mediaEndpoint, owner, agent, conversation, capture, otherCapture, chatConfig });
   await page.addStyleTag({ path: workbenchStyle });
   await page.addScriptTag({ path: script('chat-tools') });
   await page.addScriptTag({ path: script('chat-canvas-media-v1') });
@@ -160,6 +169,7 @@ async function fixture(page) {
   });
   const flush = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   return { calls, mediaCalls, errors, dialog, button, control, waitForAction, flush, screenshots,
+    onPreview: handler => { nextPreview = handler; },
     onCreate: handler => { nextCreate = handler; } };
 }
 
@@ -353,6 +363,118 @@ try {
   assert.deepEqual(desktop.errors, []);
   assert.deepEqual(mobile.errors, []);
   pass('An interrupted create displays no fabricated brief or automatic replay');
+  const revisionPage = await browser.newPage();
+  const revisionFixture = await fixture(revisionPage);
+  await revisionPage.evaluate(() => window.VP3InitiativeWorkbench.open('product','31','b'.repeat(64)));
+  await revisionFixture.control('source').waitFor();
+  await revisionPage.waitForFunction(() => document.querySelector('[data-workbench-source]')?.value === '31');
+  await revisionFixture.button('Review source').click();
+  await revisionFixture.dialog.getByText('This source changed after the Agent prepared its suggestion. Reload the source to review its current version.',{exact:true}).waitFor();
+  assert.equal(await revisionFixture.dialog.locator('.vp3-workbench-actions button').last().isVisible(),false);
+  assert.equal(revisionFixture.calls.some(call => call.action==='create'),false);
+  pass('An old Agent review proposal cannot become approval for a changed source');
+  await revisionFixture.button('Reload sources').click();
+  await revisionPage.waitForFunction(() => !document.querySelector('[data-workbench-source]')?.disabled);
+  await revisionFixture.button('Review source').click();
+  await revisionFixture.dialog.getByText('Source ready for your review.',{exact:true}).waitFor();
+  assert.equal(revisionFixture.calls.some(call => call.action==='create'),false);
+  pass('Explicitly reloading a source permits a fresh review while creation still requires confirmation');
+
+  const treatmentPage = await browser.newPage();
+  const treatmentFixture = await fixture(treatmentPage);
+  await treatmentPage.evaluate(capture => window.VP3InitiativeWorkbench.open('screen',capture,'a'.repeat(64)),capture);
+  await treatmentPage.waitForFunction(() => document.querySelector('[data-workbench-source]')?.value !== '');
+  await treatmentFixture.control('mode').selectOption('redraw');
+  await treatmentFixture.control('instruction').fill('Use line art.');
+  await treatmentFixture.button('Review source').click();
+  await treatmentFixture.button('Create edited image').waitFor();
+  assert.equal(treatmentFixture.calls.filter(call=>call.action==='preview').at(-1).instruction,'Use line art.');
+  assert.equal(treatmentFixture.calls.some(call=>call.action==='create'),false);
+  pass('Owner-selected redraw and directions retain the Agent capture reference but require a fresh treatment review');
+  await treatmentFixture.control('instruction').fill('Use ink.');
+  treatmentFixture.onPreview(({body,ok,preview}) => ok({preview:{...preview,reference_revision:'b'.repeat(64)},review_token:token(body)}));
+  await treatmentFixture.button('Review source').click();
+  await treatmentFixture.dialog.getByText('This source changed after the Agent prepared its suggestion. Reload the source to review its current version.',{exact:true}).waitFor();
+  assert.equal(await treatmentFixture.button('Create edited image').isVisible(),false);
+  assert.equal(treatmentFixture.calls.some(call=>call.action==='create'),false);
+  assert.deepEqual(treatmentFixture.errors,[]);
+  pass('Changing edit directions cannot bypass a changed saved-capture reference');
+
+  const accountPage = await browser.newPage();
+  const accountFixture = await fixture(accountPage);
+  await accountPage.evaluate(() => window.VP3InitiativeWorkbench.open('product','31'));
+  await accountPage.waitForFunction(() => document.querySelector('[data-workbench-source]')?.value === '31');
+  let releasePreview;
+  const previewGate = new Promise(resolve => { releasePreview = resolve; });
+  let finishPreview;
+  const previewSettled = new Promise(resolve => { finishPreview = resolve; });
+  accountFixture.onPreview(async ({body,ok,preview}) => {
+    await previewGate;
+    try { await ok({preview,review_token:token(body)}); } catch {} finally { finishPreview(); }
+  });
+  const pendingPreview = accountFixture.waitForAction('preview','product');
+  await accountFixture.button('Review source').click();
+  await pendingPreview;
+  await accountPage.evaluate(() => {
+    window.originalChatConfig = window.STONEFELLOW_CHAT;
+    window.STONEFELLOW_CHAT = {...window.STONEFELLOW_CHAT,userId:99};
+  });
+  releasePreview();await previewSettled;
+  await accountFixture.dialog.waitFor({state:'hidden'});
+  assert.equal(await accountFixture.control('review').textContent(),'');
+  assert.equal(accountFixture.calls.some(call => call.action==='create'),false);
+  pass('A pending preview clears on account replacement without relying on a Chat event');
+
+  await accountPage.evaluate(() => {
+    window.STONEFELLOW_CHAT=window.originalChatConfig;
+    window.VP3InitiativeWorkbench.open('product','31');
+  });
+  await accountPage.waitForFunction(() => document.querySelector('[data-workbench-source]')?.value === '31');
+  await accountFixture.button('Review source').click();
+  await accountFixture.button('Create private draft').waitFor();
+  const beforeStaleCreate = accountFixture.calls.filter(call => call.action==='create').length;
+  await accountPage.evaluate(() => {
+    window.STONEFELLOW_CHAT = {...window.STONEFELLOW_CHAT,workingAttentionBinding:'rotated-session'};
+    document.querySelector('#vp3InitiativeWorkbench .vp3-workbench-actions button:last-child').click();
+  });
+  await accountFixture.dialog.waitFor({state:'hidden'});
+  assert.equal(accountFixture.calls.filter(call => call.action==='create').length,beforeStaleCreate);
+  assert.equal(await accountFixture.control('review').textContent(),'');
+  pass('A stale session cannot send an already-reviewed Create action');
+
+  await accountPage.evaluate(() => {
+    window.STONEFELLOW_CHAT=window.originalChatConfig;
+    window.VP3InitiativeWorkbench.open('product','31');
+  });
+  await accountPage.waitForFunction(() => document.querySelector('[data-workbench-source]')?.value === '31');
+  await accountFixture.button('Review source').click();
+  await accountFixture.button('Create private draft').waitFor();
+  let releaseCreate;
+  const createGate = new Promise(resolve => { releaseCreate = resolve; });
+  let finishCreate;
+  const createSettled = new Promise(resolve => { finishCreate = resolve; });
+  accountFixture.onCreate(async ({ok}) => {
+    await createGate;
+    try { await ok({output:{...outputs.product,title:'OLD ACCOUNT PRIVATE RESULT'}}); } catch {} finally { finishCreate(); }
+  });
+  const pendingCreate = accountFixture.waitForAction('create','product');
+  await accountFixture.button('Create private draft').click();await pendingCreate;
+  await accountPage.evaluate(() => { delete window.STONEFELLOW_CHAT; });
+  releaseCreate();await createSettled;
+  await accountFixture.dialog.waitFor({state:'hidden'});
+  assert.equal(await accountPage.getByText('OLD ACCOUNT PRIVATE RESULT',{exact:true}).count(),0);
+  assert.equal(await accountFixture.control('result').textContent(),'');
+  pass('A late Create response clears private data after logout configuration disappears');
+
+  const legacyPage = await browser.newPage();
+  const legacyFixture = await fixture(legacyPage,{chatConfig:false});
+  await legacyPage.evaluate(() => window.VP3InitiativeWorkbench.open('product','31'));
+  await legacyPage.waitForFunction(() => document.querySelector('[data-workbench-source]')?.value === '31');
+  await legacyFixture.button('Review source').click();
+  await legacyFixture.button('Create private draft').waitFor();
+  assert.equal(legacyFixture.calls.some(call=>call.action==='create'),false);
+  assert.deepEqual(accountFixture.errors,[]);assert.deepEqual(legacyFixture.errors,[]);
+  pass('A controlled standalone Workbench without Chat configuration retains explicit source review');
   console.log(`CHAT_INITIATIVE_WORKBENCH_BROWSER=PASS (${cases} cases; real renderer and canonical image card, controlled API)`);
 } finally {
   await browser.close();

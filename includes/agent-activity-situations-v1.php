@@ -240,7 +240,7 @@ function vp3_activity_situations_v1(PDO $pdo,array $user,string $namespace,?Date
 {
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $agent=vp3_cognitive_agent_id_v500($namespace);
-    $principal=vp3_agent_chat_principal_v380($user,$agent>0?['id'=>$agent]:null);
+    $principal=vp3_agent_chat_principal_v380($user,vp3_agent_chat_resolve_agent_v380($pdo,$user,$agent));
     $live=vp3_capability_live_user_v1($pdo,$user,$principal,[],null);
     if(!has_permission('chat.access',$live)||!has_permission('account.access',$live)
         ||(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null))throw new RuntimeException('Activity context is unavailable.',403);
@@ -295,12 +295,12 @@ function vp3_activity_situations_v1(PDO $pdo,array $user,string $namespace,?Date
 }
 
 /** Add supporting context only to work already admitted by canonical source readers. */
-function vp3_activity_situations_support_v1(PDO $pdo,array $user,array $evidence,DateTimeImmutable $now,?array &$coverage=null): array
+function vp3_activity_situations_support_v1(PDO $pdo,array $user,array $evidence,DateTimeImmutable $now,?array &$coverage=null,string $namespace='system'): array
 {
     $taskIds=[];
     foreach(array_keys($evidence) as $ref)if(preg_match('/^task:([1-9][0-9]*)$/D',$ref,$match))$taskIds[]=(int)$match[1];
     if(!$taskIds){$coverage['activity_context']='ready';return $evidence;}
-    $stream=vp3_activity_situations_v1($pdo,$user,'system',$now,$taskIds);
+    $stream=vp3_activity_situations_v1($pdo,$user,$namespace,$now,$taskIds);
     $coverage['activity_context']=$stream['complete']?'ready':'unavailable';
     foreach($stream['items'] as $item){
         if(!$item['private_preparation_allowed'])continue;

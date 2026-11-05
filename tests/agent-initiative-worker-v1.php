@@ -139,11 +139,11 @@ initiative_worker_check(str_contains($enabled['answer'], 'Initiative is on'), 'o
 initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'waiting_for_review']
     && vp3_initiative_foreground_status_v1($pdo,$user,0,0)===['state'=>'linked_elsewhere'],
     'foreground status distinguishes an opted-in Chat awaiting its first worker from a new Chat');
-initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,7,11)===['state'=>'unavailable']
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,7,11)===['state'=>'off']
     && vp3_initiative_foreground_status_v1($pdo,$user,0,11)===['state'=>'unavailable']
     && vp3_initiative_foreground_status_v1($pdo,['id'=>2,'is_active'=>1],0,42)===['state'=>'unavailable']
     && vp3_initiative_foreground_status_v1($pdo,$user,0,43)===['state'=>'unavailable'],
-    'named Agents and foreign conversations cannot see a System Chat Initiative status');
+    'a named Agent has its own off policy while foreign conversations cannot see System Chat Initiative status');
 $GLOBALS['initiativeFixtureParticipant']=['participant_id'=>8];
 initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'unavailable'],
     'a participant scope cannot see owner Initiative status');
@@ -158,7 +158,7 @@ initiative_worker_check(count($plans)===1 && $plans[0]['status']==='approved', '
 initiative_worker_check(initiative_worker_assistant_messages()===[], 'queueing a review does not send a Chat message');
 
 $planModel = static function (string $prompt, string $protocol): string {
-    $rows = json_decode($prompt, true, 16, JSON_THROW_ON_ERROR);
+    $rows = json_decode($prompt, true, 16, JSON_THROW_ON_ERROR)['evidence'];
     initiative_worker_check($protocol==='vp3.initiative-plan.v1' && count($rows)===1
         && $rows[0]['ref']==='calendar:event:42' && !isset($rows[0]['revision']) && !isset($rows[0]['url'])
         && !str_contains($prompt, 'Foreign calendar entry'), 'the planner sees only bounded current owner evidence');
@@ -264,7 +264,7 @@ initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)['st
 $GLOBALS['initiative_fixture_conflict'] = true;
 $multiplePlan = initiative_worker_new_review($user,'Owner launch review alongside independent calendar overlap');
 $multiple = vp3_initiative_execute_v1($pdo,$user,initiative_worker_claim($user,$multiplePlan),static function (string $prompt): string {
-    $evidence = json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+    $evidence = json_decode($prompt,true,16,JSON_THROW_ON_ERROR)['evidence'];
     return json_encode(['jobs'=>array_map(static fn(array $row): array => [
         'tool'=>'work.prepare_private','primary'=>$row['ref'],'refs'=>[$row['ref']],
         'focus'=>'Prepare a private next step for '.$row['title'],'report'=>false,
@@ -347,10 +347,12 @@ $screenCommand('screen on',44);
 initiative_worker_check($screenEvidence()===[],'base opt-in and another private Chat do not grant screen evidence');
 $screenCommand('screen on');
 $rows = $screenEvidence();
-initiative_worker_check(array_keys($rows)===[$screenRef] && $rows[$screenRef]['kind']==='screen_followup'
+$reviewRef='workbench-screen:'.initiative_worker_screen_intent($pdo,$user,$screen['session']['session_id'])['refs'][0]['capture_id'];
+initiative_worker_check(array_keys($rows)===[$screenRef,$reviewRef] && $rows[$reviewRef]['kind']==='workbench_review'
+    && $rows[$screenRef]['kind']==='screen_followup'
     && $rows[$screenRef]['detail']==='Compare the release checklist tomorrow.'
     && $rows[$screenRef]['url']===$screen['session']['knowledge_url'],
-    'screen opt-in folds repeated captures of a recent saved note into one owned, closed system session');
+    'screen opt-in folds repeated notes into one owned closed session and one exact consented image-review source');
 $GLOBALS['initiativeScreenAccess'] = false;
 initiative_worker_check($screenEvidence()===[],'losing personal Knowledge access withdraws the screen source');
 $GLOBALS['initiativeScreenAccess'] = true;
@@ -372,14 +374,15 @@ $otherRefs[0]['revision']++;
 $handoff = $pdo->prepare("INSERT INTO agent_screen_handoffs_v1(owner_user_id,handoff_id,agent_id,kind,status,refs_json,source_hash,updated_at)
     VALUES (1,'00000000-0000-4000-8000-000000000310',0,'research','prepared',?,?,?)");
 $handoff->execute([json_encode($otherRefs,JSON_THROW_ON_ERROR),screen_insights_hash_v1($otherRefs),gmdate('Y-m-d\TH:i:s\Z')]);
-initiative_worker_check(array_keys($screenEvidence())===[$screenRef],'a handoff for a different capture revision does not suppress the current note');
+initiative_worker_check(array_keys($screenEvidence())===[$screenRef,$reviewRef],'a handoff for a different capture revision does not suppress the current note or its exact review source');
 $pdo->prepare('UPDATE agent_screen_handoffs_v1 SET refs_json=?,source_hash=? WHERE owner_user_id=1')
     ->execute([json_encode($screenIntent['refs'],JSON_THROW_ON_ERROR),$screenIntent['review_hash']]);
 initiative_worker_check($screenEvidence()===[],'an exact prepared handoff suppresses duplicate screen initiative work');
 $pdo->exec('DELETE FROM agent_screen_handoffs_v1 WHERE owner_user_id=1');
 
 $screenPlanModel = static function (string $prompt,string $protocol) use ($screenRef): string {
-    $rows = json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+    $rows = json_decode($prompt,true,16,JSON_THROW_ON_ERROR)['evidence'];
+    $rows=array_values(array_filter($rows,static fn(array $row):bool=>$row['kind']==='screen_followup'));
     initiative_worker_check($protocol==='vp3.initiative-plan.v1' && count($rows)===1 && $rows[0]['ref']===$screenRef
         && $rows[0]['kind']==='screen_followup' && $rows[0]['detail']==='Compare the release checklist tomorrow.'
         && isset($rows[0]['saved_at']) && !array_diff(array_keys($rows[0]),['ref','kind','title','detail','saved_at']) && !str_contains($prompt,'PRIVATE-'),
@@ -414,7 +417,8 @@ initiative_worker_check(!$dismissed['ok'] && $screenEvidence()===[] && count(ini
 $reportScreen = initiative_worker_screen_capture($pdo,$user,10,'Outline the release checklist.');
 $reportScreenRef = $reportScreen['ref'];
 $screenReportDraft = initiative_worker_new_report($user,'',static function (string $prompt) use ($reportScreenRef): string {
-    $rows = json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+    $rows = json_decode($prompt,true,16,JSON_THROW_ON_ERROR)['evidence'];
+    $rows=array_values(array_filter($rows,static fn(array $row):bool=>$row['kind']==='screen_followup'));
     initiative_worker_check(array_column($rows,'ref')===[$reportScreenRef],'a different current screen note can still be prepared after a dismissal');
     return json_encode(['jobs'=>[['tool'=>'work.prepare_private','primary'=>$reportScreenRef,'refs'=>[$reportScreenRef],
         'focus'=>'Outline the checklist','report'=>true]]],JSON_THROW_ON_ERROR);
@@ -439,7 +443,7 @@ foreach (['deletion'=>11,'opt-out'=>12] as $withdrawal=>$number) {
     $withdrawn = initiative_worker_screen_capture($pdo,$user,$number,'Prepare release follow-up '.$number.'.');
     $withdrawnRef = $withdrawn['ref'];
     $runId = initiative_worker_new_report($user,'',static function (string $prompt) use ($withdrawnRef): string {
-        $rows = json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+        $rows = json_decode($prompt,true,16,JSON_THROW_ON_ERROR)['evidence'];
         if (!in_array($withdrawnRef,array_column($rows,'ref'),true)) throw new LogicException('The fixture source was unavailable before withdrawal.');
         return json_encode(['jobs'=>[['tool'=>'work.prepare_private','primary'=>$withdrawnRef,'refs'=>[$withdrawnRef],
             'focus'=>'Prepare release follow-up','report'=>true]]],JSON_THROW_ON_ERROR);

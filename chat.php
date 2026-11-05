@@ -32,6 +32,7 @@ $chatSettingsBuild = 'chat-settings-v239-canonical-20260905' . '-voice-v1352-cha
 $notificationDrawerBuild = 'chat-notifications-recovery-20261016' . '-voice-v1351';
 $notificationDrawerBuild .= '-profile-doorbell-pa3-20261103';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
+$activityBuild .= '-' . substr(hash_file('sha256', __DIR__ . '/agent-activity-v94.js'), 0, 12);
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 $agentIntelligenceBuild = 'agent-chat-intelligence-v171-20260914';
 $cognitivePresentationBuild = 'cognitive-presentation-footer-v2451-20260922';
@@ -516,6 +517,7 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
         'workingAttentionBinding'=>$workingAttentionBinding,
         'greetingPreview'=>($_GET['greeting_preview']??'')==='1',
         'liveContext'=>true,
+        'initiativeRuntime'=>true,
         'pollSeconds'=>30,
         'ownsAttention'=>true,
         'ownsBrainPresentation'=>true,
