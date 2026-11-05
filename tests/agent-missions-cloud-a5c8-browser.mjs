@@ -43,6 +43,9 @@ try{
   await page.waitForFunction(()=>document.querySelector('#chatNotificationButton > span')?.textContent==='3');
   await page.locator('#chatNotificationButton').click();
   assert.match(await page.locator('#chatNotificationDrawer').textContent(),/Mission notifications/);
+  const missionDetails=page.locator('#chatNotificationDrawer [data-activity-details="missions"]');
+  assert.equal(await missionDetails.getAttribute('open'),null,'Mission details start collapsed in Activity');
+  await missionDetails.locator(':scope > summary').click();
   await page.locator('#chatNotificationDrawer').getByRole('button',{name:'Mark read',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#chatNotificationButton > span')?.textContent==='2');
  }else{
