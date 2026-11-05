@@ -90,7 +90,15 @@ try{
     const feed=page.locator('[data-agent-top-of-mind]');await feed.getByText('Prepare the saved launch details',{exact:true}).waitFor();
     assert.equal(await page.locator('#chatNotificationDrawer').count(),1);await feed.getByText('Working',{exact:true}).waitFor();
     assert.ok(await page.getByText('Saved Brain memory is unavailable for this account.',{exact:true}).isVisible());
-    const box=await page.locator('#chatNotificationDrawer').boundingBox();assert.ok(box.width<=width&&box.x>=-1);
+    // Fast status IO can finish while the actual drawer is still sliding in.
+    // Measure its settled open geometry, not a fractional transform frame.
+    await page.locator('#chatNotificationDrawer').evaluate(async element=>{
+      await new Promise(requestAnimationFrame);
+      await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));
+      await new Promise(requestAnimationFrame);
+    });
+    const box=await page.locator('#chatNotificationDrawer').boundingBox();assert.ok(box.width<=width&&box.x>=-1,JSON.stringify({outside,expectedWidth:width,box,viewport:await page.evaluate(()=>({innerWidth,clientWidth:document.documentElement.clientWidth,drawerWidth:getComputedStyle(document.querySelector('#chatNotificationDrawer')).width,transform:getComputedStyle(document.querySelector('#chatNotificationDrawer')).transform}))}));
+    assert.ok(box.x+box.width<=width+1,'the settled drawer must fit inside the right viewport edge');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     if(process.env.VP3_TOP_OF_MIND_SCREENSHOT_DIR){mkdirSync(process.env.VP3_TOP_OF_MIND_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:join(process.env.VP3_TOP_OF_MIND_SCREENSHOT_DIR,outside?'top-of-mind-mobile.png':'top-of-mind-desktop.png')});}
     const count=reads.length;await page.waitForTimeout(2800);assert.ok(reads.length>count,'active work must refresh without reopening Brain');
