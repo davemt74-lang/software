@@ -7,7 +7,8 @@ $dsn=(string)getenv('VP3_SECTION7_MYSQL_DSN');
 if(!str_starts_with($dsn,'mysql:'))throw new RuntimeException('An explicit MySQL delivery fixture DSN is required.');
 $password=(string)getenv('VP3_SECTION7_MYSQL_PASSWORD');
 $options=[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false];
-$worker=($argv[1]??'')==='--worker';
+$mode=(string)($argv[1]??'');
+$worker=in_array($mode,['--worker','--insert-user'],true);
 $database=$worker?(string)$argv[2]:'initiative_delivery_'.bin2hex(random_bytes(6));
 if(!preg_match('/^initiative_delivery_[a-f0-9]{12}$/D',$database))throw new RuntimeException('Invalid disposable database name.');
 $admin=new PDO($dsn,'root',$password,$options);
@@ -53,11 +54,21 @@ function delivery_wait(callable $ready,string $message): void
 }
 
 if($worker){
-    $pdo->exec('SET SESSION innodb_lock_wait_timeout=10');
+    $pdo->exec('SET SESSION innodb_lock_wait_timeout='.($mode==='--insert-user'?1:10));
     $gate=(string)$argv[3];$index=(string)$argv[4];
     file_put_contents($gate.'/ready-'.$index,'ready');
     delivery_wait(static fn()=>is_file($gate.'/go'),'Concurrent worker did not receive the start barrier.');
     file_put_contents($gate.'/entered-'.$index,'entered');
+    if($mode==='--insert-user'){
+        try{
+            $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES (42,1,'user','Concurrent owner turn')");
+            echo json_encode(['blocked'=>false],JSON_THROW_ON_ERROR).PHP_EOL;
+        }catch(PDOException $e){
+            if((int)($e->errorInfo[1]??0)!==1205)throw $e;
+            echo json_encode(['blocked'=>true,'driver_error'=>1205],JSON_THROW_ON_ERROR).PHP_EOL;
+        }
+        exit(0);
+    }
     $delivered=vp3_initiative_deliver_pending_v1($pdo,['id'=>1,'is_active'=>1]);
     echo json_encode(['delivered'=>$delivered],JSON_THROW_ON_ERROR).PHP_EOL;
     exit(0);
@@ -68,6 +79,8 @@ $children=[];
 try{
     mkdir($gate,0700);
     $pdo->exec("ALTER TABLE chat_conversations ADD COLUMN updated_at DATETIME;
+        ALTER TABLE chat_messages ADD CONSTRAINT fk_delivery_fixture_chat
+            FOREIGN KEY(conversation_id) REFERENCES chat_conversations(id);
         INSERT INTO chat_conversations(id,user_id,user_agent_id) VALUES (42,1,NULL),(43,2,NULL);
         CREATE TABLE agent_memory_items (
             id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED,user_agent_id INT UNSIGNED NULL,
@@ -182,9 +195,62 @@ try{
     $pdo->exec('DROP TRIGGER initiative_delivery_fail_receipt');
     delivery_check(vp3_initiative_deliver_pending_v1($pdo,$user)&&$reports()===2
         &&$state($atomic)['initiative_delivery']==='delivered','retry after a rolled-back transaction delivers the verified result once');
+
+    $engage();
+    $contended=$seed('A report committed while a competing owner turn waits.');
+    $reportGate=$database.':report-gate';$reportEntered=$database.':report-entered';
+    $admin->prepare('SELECT GET_LOCK(?,0)')->execute([$reportGate]);
+    $pdo->exec("CREATE TRIGGER initiative_delivery_report_barrier BEFORE INSERT ON chat_messages FOR EACH ROW
+        BEGIN
+            IF NEW.role='assistant' AND NEW.context_json LIKE '%agent_initiative%' THEN
+                SET @delivery_entered=GET_LOCK('$reportEntered',0);
+                SET @delivery_gate=GET_LOCK('$reportGate',15);
+                IF @delivery_gate<>1 THEN
+                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture report barrier timed out';
+                END IF;
+                SET @delivery_released=RELEASE_LOCK('$reportGate');
+            END IF;
+        END");
+    $startChild=static function(string $mode,int $index)use($database,$gate,&$children): int{
+        $pipes=[];
+        $process=proc_open([PHP_BINARY,__FILE__,$mode,$database,$gate,(string)$index],
+            [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
+        if(!is_resource($process))throw new RuntimeException('Could not start the Chat contention worker.');
+        fclose($pipes[0]);
+        $children[$index]=['process'=>$process,'stdout'=>$pipes[1],'stderr'=>$pipes[2]];
+        return $index;
+    };
+    $finishChild=static function(int $index)use(&$children): array{
+        $child=$children[$index];
+        $output=stream_get_contents($child['stdout']);$error=stream_get_contents($child['stderr']);
+        fclose($child['stdout']);fclose($child['stderr']);
+        $exit=proc_close($child['process']);unset($children[$index]);
+        if($exit!==0)throw new RuntimeException('Chat contention worker failed: '.$error.$output);
+        return json_decode(trim($output),true,16,JSON_THROW_ON_ERROR);
+    };
+    $deliveryProcess=$startChild('--worker',2);
+    delivery_wait(static function()use($admin,$reportEntered): bool{
+        $stmt=$admin->prepare('SELECT IS_USED_LOCK(?)');$stmt->execute([$reportEntered]);
+        return $stmt->fetchColumn()!==null;
+    },'The production report did not reach its transaction barrier.');
+    $userProcess=$startChild('--insert-user',3);
+    $insert=$finishChild($userProcess);
+    delivery_check($insert['blocked']===true&&$insert['driver_error']===1205,
+        'the production report transaction blocks a concurrent user insert through the real Chat foreign key');
+    $admin->prepare('SELECT RELEASE_LOCK(?)')->execute([$reportGate]);
+    $delivery=$finishChild($deliveryProcess);
+    $pdo->exec('DROP TRIGGER initiative_delivery_report_barrier');
+    delivery_check($delivery['delivered']===true&&$reports()===3&&$state($contended)['initiative_delivery']==='delivered',
+        'the report and receipt commit once after the competing user insert times out');
+
+    $pendingTurn=$seed('A result that must wait for the pending user turn.');
+    $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES (42,1,'user','Answer this first')");
+    delivery_check(!vp3_initiative_deliver_pending_v1($pdo,$user)&&$reports()===3
+        &&$state($pendingTurn)['initiative_delivery']==='pending','an owner turn committed first keeps the saved result private');
     echo 'AGENT_INITIATIVE_DELIVERY_MYSQL=PASS ('.$GLOBALS['deliveryChecks'].' cases)'.PHP_EOL;
 }finally{
     if($pdo->inTransaction())$pdo->rollBack();
+    if(isset($reportGate))$admin->prepare('SELECT RELEASE_LOCK(?)')->execute([$reportGate]);
     foreach($children as $child){
         proc_terminate($child['process']);
         foreach(['stdout','stderr'] as $pipe)if(is_resource($child[$pipe]))fclose($child[$pipe]);
