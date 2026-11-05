@@ -17,6 +17,7 @@ $voiceCacheBuild .= '-eyes-v1344-speech-recovery-20261031-mic-startup-20261101';
 $voiceCacheBuild .= '-learn-my-voice-v1-quiet-abort-20261102-eyes-cross-tab-v1';
 $voiceCacheBuild .= '-eyes-named-setups-v1';
 $voiceCacheBuild .= '-quiet-chat-startup';
+$voiceCacheBuild .= '-' . substr(hash_file('sha256', __DIR__ . '/chat-voice.js'), 0, 12);
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
@@ -58,6 +59,10 @@ $cognitiveValueRoiBuild = 'cognitive-value-roi-v2570-20260923';
 $cognitiveDecisionCalibrationBuild = 'cognitive-decision-calibration-v2580-20260923';
 $cognitiveCurrentStateBuild = 'cognitive-current-state-v2590-20260923';
 $cognitivePresentationAssetBuild = $cognitivePresentationBuild . '-' . $cognitiveCurrentStateBuild . '-profile-priority-v1341-20261027-everyday-context-v1-greeting-preview-live-context';
+$cognitivePresentationAssetBuild .= '-' . substr(hash('sha256',
+    hash_file('sha256', __DIR__ . '/chat-cognitive-presentation-v510.js')
+    . hash_file('sha256', __DIR__ . '/chat-cognitive-presentation-v510.css')
+), 0, 12);
 $notificationDrawerAssetBuild = $notificationDrawerBuild . '-' . $cognitiveContextBuild . '-' . $cognitiveTurnBuild . '-' . $cognitiveContinuityBuild . '-' . $cognitiveFollowthroughBuild . '-' . $cognitiveSupervisionBuild . '-' . $cognitiveAutonomyBuild . '-' . $cognitivePortfolioBuild . '-' . $cognitiveForecastBuild . '-' . $cognitiveOptimizationBuild . '-' . $cognitiveResourceBudgetBuild . '-' . $cognitiveReplanningBuild . '-' . $cognitiveCommitmentProtectionBuild . '-' . $cognitiveEconomicsBuild . '-' . $cognitiveBudgetGovernanceBuild . '-' . $cognitiveValueRoiBuild . '-' . $cognitiveDecisionCalibrationBuild . '-' . $cognitiveCurrentStateBuild . '-mission-notices-a5c8-20261011-profile-priority-v1341-20261027-eyes-v1342-activity-v1348r2-longfellow-r3';
 $browserContextBuild = 'browser-context-v2130-20260919';
 $notificationDrawerAssetBuild .= '-pa4b-' . substr(hash('sha256',hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.js').hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.css')),0,12);

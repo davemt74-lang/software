@@ -125,6 +125,7 @@ jobs:
           node tests/chat-initiative-browser.mjs
           node tests/cognitive-working-attention-browser.mjs
           node tests/chat-live-attention-browser.mjs
+          node tests/chat-runtime-continuity-browser.mjs
           node tests/initiative-closed-chat-browser.mjs
           php tests/agent-activity-situations-v1.php
           node tests/activity-situations-browser.mjs

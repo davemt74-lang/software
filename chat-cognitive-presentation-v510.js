@@ -5,6 +5,8 @@
 
   const cfg = window.VP3_COGNITIVE_PRESENTATION_V510 || {};
   const pageBinding = String(cfg.workingAttentionBinding || '');
+  const pageAgent = Number(cfg.agentId || 0);
+  const pageChatOwner = window.STONEFELLOW_CHAT ? Number(window.STONEFELLOW_CHAT.userId || 0) : null;
   const button = document.getElementById('chatAgentBriefButton');
   const popup = document.getElementById('chatAgentBriefPopover');
   const content = popup ? popup.querySelector('[data-agent-brief-content]') : null;
@@ -58,9 +60,26 @@
     return url;
   }
 
+  function configurationMatches() {
+    const current = window.VP3_COGNITIVE_PRESENTATION_V510 || {};
+    const chat = window.STONEFELLOW_CHAT;
+    return Boolean(pageBinding) && String(current.workingAttentionBinding || '') === pageBinding
+      && Number(current.agentId || 0) === pageAgent
+      && ((pageChatOwner === null && !chat) || (chat && String(chat.workingAttentionBinding || '') === pageBinding
+        && Number(chat.agentId || 0) === pageAgent
+        && (pageChatOwner === null || Number(chat.userId || 0) === pageChatOwner)));
+  }
+
+  function requireCurrentConfiguration() {
+    if (configurationMatches()) return true;
+    invalidateAccount(new Error('account_changed'));
+    return false;
+  }
+
   async function presentationResponse(response, signal) {
     const data = await response.json().catch(() => ({}));
     if (signal.aborted) throw new DOMException('Agent status request cancelled.', 'AbortError');
+    if (!requireCurrentConfiguration()) throw new Error('account_changed');
     const error = new Error(data.error || 'Cognitive presentation is unavailable.');
     if (response.status === 401 || response.status === 403 || error.message === 'account_changed') invalidateAccount(error);
     if (!response.ok || !data.ok) throw error;
@@ -98,7 +117,7 @@
 
   async function post(action, payload) {
     const signal = pageController.signal;
-    if (signal.aborted || !pageBinding) return;
+    if (signal.aborted || !requireCurrentConfiguration()) return;
     const response = await fetch(String(cfg.endpoint || '/api/cognitive-presentation-v510.php'), {
       method:'POST',
       credentials:'same-origin',
@@ -125,8 +144,8 @@
 
 
   function liveConversation() {
-    if (!liveHost || document.hidden || thread.dataset.view !== 'chat') return null;
-    const chat = window.STONEFELLOW_CHAT_CONTINUITY;
+    if (!liveHost || document.hidden || thread.dataset.view !== 'chat' || !requireCurrentConfiguration()) return null;
+    const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
     if (!chat?.isReady?.() || chat.isRestoring?.()) return null;
     const agent = Number(chat.agentId?.() ?? cfg.agentId ?? 0);
     const id = Number(chat.conversationId?.());
@@ -873,7 +892,7 @@
     let spoken = false;
     activeVoiceThrough = through;
     try {
-      const canSpeak = () => !signal.aborted && !document.hidden && activeVoiceThrough === through;
+      const canSpeak = () => !signal.aborted && requireCurrentConfiguration() && !document.hidden && activeVoiceThrough === through;
       spoken = (await Promise.resolve(center.announceWhen(String(candidate.message),canSpeak))) === true;
     } catch (_error) {
       spoken = false;
@@ -896,7 +915,7 @@
 
   async function refresh(force = false) {
     const signal = pageController.signal;
-    if (signal.aborted || busy || (document.hidden && !force)) return;
+    if (signal.aborted || !requireCurrentConfiguration() || busy || (document.hidden && !force)) return;
     busy = true;
     const includeWorkingAttention = !popup.hidden && !document.hidden;
     const requestedView = workingAttentionView;
