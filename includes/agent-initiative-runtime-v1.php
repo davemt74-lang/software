@@ -27,14 +27,14 @@ function vp3_initiative_runtime_context_v1(PDO $pdo,array $user,int $agentId,int
 }
 
 /** Server-only selector: never release another Agent, policy or job family. */
-function vp3_initiative_runtime_runs_v1(PDO $pdo,int $uid,int $agentId,array $policy,bool $pending=false): array
+function vp3_initiative_runtime_runs_v1(PDO $pdo,int $uid,int $agentId,array $policy,bool $pending=false,bool $executingOnly=false): array
 {
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
     $value=static function(string $path)use($sqlite):string{
         $sql="JSON_EXTRACT(CASE WHEN JSON_VALID(r.goal) THEN r.goal ELSE '{}' END,'$path')";
         return $sqlite?$sql:"JSON_UNQUOTE($sql)";
     };
-    $states=$pending?" AND r.status IN ('approved','executing')":"";
+    $states=$executingOnly?" AND r.status='executing'":($pending?" AND r.status IN ('approved','executing')":"");
     $order=$pending?'ASC':'DESC';
     $sql="SELECT r.* FROM agent_workflow_runs r WHERE r.owner_user_id=? AND CAST(COALESCE(r.agent_id,0) AS CHAR)=?
         AND r.source_kind='agent_initiative' AND r.execution_target='cloud'
