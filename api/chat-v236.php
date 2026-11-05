@@ -15,6 +15,9 @@ require_once dirname(__DIR__) . '/includes/video-meetings-commitment-command-v18
 require_once dirname(__DIR__) . '/includes/agent-chat-runtime-v2160.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 $user=current_user();if(!$user||!has_permission('chat.access',$user)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'Chat access is not available for this account.']);exit;}
+if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!hash_equals(vp3_catch_up_page_binding_v1($user),(string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])){
+    http_response_code(403);echo json_encode(['ok'=>false,'code'=>'account_changed','error'=>'Your Chat session changed. Refresh the page and try again.']);exit;
+}
 $pdo=db();if(!$pdo||!table_exists('chat_conversations')||!user_agent_system_schema_ready_v236($pdo)){http_response_code(503);echo json_encode(['ok'=>false,'error'=>'Agent Chat storage is not ready. An administrator needs to run the database upgrade.']);exit;}
 $userId=(int)$user['id'];$brainAllowed=personal_capability_has_v242('agent_brain.access',$user);
 $requestedAgentId=max(0,(int)($_GET['agent']??0));

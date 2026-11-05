@@ -35,7 +35,7 @@ await page.route('**/api/**', async route => {
     if (routeDelay) await new Promise(resolve => setTimeout(resolve, routeDelay));
     return route.fulfill(failRoute ? {status:503,json:{ok:false,error:'HomeServer routing unavailable'}} : {json:{ok:true,route:'chat'}});
   }
-  if(payload.action==='recent_history')return route.fulfill({json:{ok:true,tracks:recentPlayback}});
+  if(payload.action==='recent_history')return route.fulfill({json:{ok:true,user_id:1,tracks:recentPlayback}});
   if (payload.action === 'send') {
     if(sendGate)await sendGate;
     if(failSend)return route.fulfill({status:503,json:{ok:false,error:'Provider unavailable'}});
@@ -75,13 +75,14 @@ try {
   });
   assert.deepEqual(nativeConstruction,{continuous:false,interimResults:true,lang:'en-US'});
   console.log('PASS lease facade accepts actual Chromium recognition handlers and options');
-  async function boot(fast=false) {
-  await page.goto('http://chat.test/');
-  await page.evaluate(fast => {
-    window.STONEFELLOW_CHAT = {userId:1,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat'};
-    localStorage.setItem('stonefellow:voice-mode:1','1');
+  async function boot(fast=false, {savedVoice='1',agentVoiceEnabled=true,reload=false}={}) {
+  if(reload)await page.reload();
+  else await page.goto('http://chat.test/');
+  await page.evaluate(({fast,savedVoice,agentVoiceEnabled}) => {
+    window.STONEFELLOW_CHAT = {userId:1,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',workingAttentionBinding:'fixture-working-attention'};
+    localStorage.setItem('stonefellow:voice-mode:1',savedVoice);
     window.STONEFELLOW_AGENT_CONTEXT = {userId:1,surface:'chat',csrf:'fixture',proactiveEndpoint:'/api/context'};
-    window.STONEFELLOW_AGENT_IDENTITY_V236 = {agentVoiceEnabled:true};
+    window.STONEFELLOW_AGENT_IDENTITY_V236 = {agentVoiceEnabled};
     window.VP3_AGENT_TEAMS_A3 = {endpoint:'/api/agent-missions-cloud-v1.php',csrf:'fixture'};
     window.VP3_CHAT_RESEARCH = {endpoint:'/api/research',csrf:'fixture'};
     window.VP3_PROJECT_KNOWLEDGE = {endpoint:'/api/project-knowledge-r5.php',csrf:'fixture'};
@@ -99,18 +100,24 @@ try {
     Object.defineProperty(window, 'speechSynthesis', {value:{cancel(){},speak(utterance){window.spoken.push(utterance.text);queueMicrotask(() => {utterance.onstart?.();utterance.onend?.();});}}});
     window.SpeechSynthesisUtterance = class { constructor(text){this.text=text;} };
     const button = document.getElementById('chatVoiceButton');
-    window.STONEFELLOW_CHAT_VOICE_BOOT = {button,intro:null};
+    // An old cached page may still provide an intro to the current voice asset.
+    window.STONEFELLOW_CHAT_VOICE_BOOT = {button,intro:{greeting:'Old return greeting',updates:[{title:'Old Studio update'}]}};
     button.id = 'chatVoiceButtonLegacyDormant';
     if(fast)window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){},stop(){}});
-  },fast);
+  },{fast,savedVoice,agentVoiceEnabled});
   for (const name of ['chat.css','chat-cognitive-presentation-v510.css','chat-agent-teams-a3.css','chat-tools.css']) await page.addStyleTag({content:await source(name)});
   // Real scripts, in production order; the recognition service alone is mocked.
   for (const name of ['chat.js','chat-tools.js','voice-lease-v122.js','agent-context-v131.js','chat-voice.js','chat-agent-teams-a3.js','chat-browser-research-v1.js','project-knowledge-r5.js','project-knowledge-r6.js','project-knowledge-r7.js','knowledge-actions-r8.js']) await page.addScriptTag({content:await source(name)});
   await page.waitForFunction(() => document.querySelectorAll('#chatToolsContent>details').length === 5);
   }
-  await boot();
-  assert.equal(await page.evaluate(()=>window.recognizers.length),0,'A saved preference cannot reopen the microphone on page load');
-  assert.equal(await page.locator('#chatVoiceButton').getAttribute('aria-pressed'),'false');
+  for(const agentVoiceEnabled of [false,true]){
+    await boot(false,{savedVoice:agentVoiceEnabled?'1':'0',agentVoiceEnabled,reload:true});
+    await page.waitForTimeout(180);
+    assert.equal(await page.locator('[data-agent-intro]').count(),0);
+    assert.deepEqual(await page.evaluate(()=>({recognizers:window.recognizers.length,spoken:window.spoken})),{recognizers:0,spoken:[]});
+    assert.equal(await page.locator('#chatVoiceButton').getAttribute('aria-pressed'),'false');
+  }
+  console.log('PASS Chat reload stays quiet with voice previously on or off, including stale intro data');
   assert.equal(await page.locator('#chatToolsPanel').isVisible(), false);
   assert.equal(await page.locator('#chatComposerShell>.project-knowledge-r6').count(), 0);
   assert.equal(await page.locator('#chatToolsContent #chatKnowledgeScopeV162').count(), 1);
@@ -132,6 +139,7 @@ try {
   console.log('PASS compact desktop/mobile canvas and stateful tools');
   await page.getByRole('button',{name:'Start voice conversation'}).click();
   await page.waitForFunction(() => window.STONEFELLOW_CHAT_VOICE.starts > 0);
+  assert.deepEqual(await page.evaluate(()=>window.spoken),[],'Explicit listening opens without playing the stale intro');
   console.log('PASS microphone starts through real lease');
   await speak('stop listening');
   await page.waitForFunction(()=>document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false');
@@ -312,7 +320,7 @@ try {
     const before=streams().length;
     const dispatched=page.waitForRequest('**/api/chat-stream-v121.php');
     await speak('Audit the '+kind+' voice provider turn');
-    await dispatched;
+    assert.equal((await dispatched).headers()['x-vp3-working-attention'],'fixture-working-attention');
     if(kind==='stop'){
       await page.getByRole('button',{name:'Stop response',exact:true}).click();
       releaseSend();sendGate=null;

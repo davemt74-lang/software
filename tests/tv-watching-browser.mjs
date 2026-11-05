@@ -21,8 +21,10 @@ try{
  await test('routine loop avoids searching every frame',async()=>{await page.waitForTimeout(1500);assert.equal(requests.filter(r=>r.action==='analyze').length,1);});
  await test('only an explicit TV frame save persists the exact crop and opens its review',async()=>{
   assert.deepEqual(screenRequests,[]);
+  const ended=page.waitForResponse(response=>response.url().endsWith('/screen')&&response.request().postDataJSON()?.action==='end');
   await page.getByRole('button',{name:'Save TV frame for editing'}).click();
   await page.waitForFunction(()=>workbenchOpens.length===1);
+  assert.equal((await ended).ok(),true);
   const [start,capture,end]=screenRequests;
   assert.deepEqual(screenRequests.map(r=>r.action),['start','capture','end']);
   assert.equal(start.conversation_id,41);
@@ -58,6 +60,24 @@ try{
  await test('Stop releases camera and TV overlays',async()=>{await page.locator('[data-eyes-stop]').click();await page.waitForFunction(()=>tvStream.getTracks().every(t=>t.readyState==='ended'));await page.waitForFunction(()=>document.querySelectorAll('.vp3-tv-box').length===0);});
  await test('saved history reads with Eyes off',async()=>{await page.locator('[data-tv-history]').click();await page.waitForFunction(()=>document.querySelector('[data-tv-feed]').textContent.includes('Cheers'));assert.equal(await page.evaluate(()=>captures.length),1);assert.equal(await page.evaluate(()=>VP3AgentEyes.isActive()),false);const count=screenRequests.length;await page.getByRole('button',{name:'Save TV frame for editing'}).click();assert.match(await page.locator('[data-tv-save-frame-status]').innerText(),/one current TV/);assert.equal(screenRequests.length,count);});
  await test('What was I watching retrieves saved timestamp and evidence with Eyes off',async()=>{const before=await page.evaluate(()=>captures.length);const result=await page.evaluate(async()=>{const response=await fetch('/tv',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'chat',query:'What was I watching?'})});return response.json();});assert.equal(result.handled,true);assert.match(result.answer,/Cheers.*likely/);assert.match(result.answer,/\d{4}-\d{2}-\d{2}T.*UTC/);assert.match(result.answer,/Saved screen clue.*Cheers/);assert.match(result.answer,/personal viewing unconfirmed/);assert.equal(result.sources[0].url,'https://www.imdb.com/title/tt0083399/');assert.equal(result.tv_watching.camera_required,false);assert.equal(await page.evaluate(()=>captures.length),before);assert.equal(await page.evaluate(()=>VP3AgentEyes.isActive()),false);});
+ await test('a viewing statement does not read history and a live TV question opens no camera', async () => {
+   const result = await page.evaluate(async () => {
+     const query = async text => {
+       const response = await fetch('/tv', {
+         method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'chat',query:text})
+       });
+       return response.json();
+     };
+     const before = captures.length;
+     const statement = await query("I'm watching the movie Willow");
+     const current = await query('What is playing on my TV right now?');
+     return {statement,current,opened:captures.length !== before || VP3AgentEyes.isActive()};
+   });
+   assert.equal(result.statement.handled, false);
+   assert.equal(result.current.tool_receipt.capability, 'tv.capture.manage');
+   assert.match(result.current.answer, /Identify TV now/);
+   assert.equal(result.opened, false);
+ });
  await test('a delayed history refresh preserves the owner correction draft',async()=>{holdHistory=true;await page.locator('[data-tv-history]').click();for(let n=0;n<100&&!heldHistory;n++)await page.waitForTimeout(20);assert.ok(heldHistory);await page.locator('[data-tv-title]').fill('Cheers');await page.locator('[data-tv-episode]').fill('Season 1, Episode 1');await page.locator('[data-tv-watched]').check();const refreshed=page.waitForResponse(r=>r.url().endsWith('/tv')&&JSON.parse(r.request().postData()||'{}').action==='history');heldHistory();heldHistory=null;await (await refreshed).finished();await page.waitForTimeout(50);assert.equal(await page.locator('[data-tv-episode]').inputValue(),'Season 1, Episode 1');assert.equal(await page.locator('[data-tv-watched]').isChecked(),true);await page.locator('[data-tv-correct]').click();await page.waitForFunction(()=>document.querySelector('[data-tv-feed]').textContent.includes('you confirmed watching'));assert.match(await page.locator('[data-tv-interests]').innerText(),/confirmed sessions/);});
  await test('explicit preferences can be forgotten independently',async()=>{await page.locator('[data-tv-preference]').fill('I enjoy this comedy');await page.locator('[data-tv-remember]').click();await page.waitForFunction(()=>document.querySelector('[data-tv-interests]').textContent.includes('I enjoy'));await page.locator('[data-tv-interests] button').click();await page.waitForFunction(()=>!document.querySelector('[data-tv-interests]').textContent.includes('I enjoy'));});
  await test('deletion clears feed and derived patterns',async()=>{await page.locator('[data-tv-forget]').click();await page.waitForFunction(()=>document.querySelector('[data-tv-feed]').children.length===0);assert.equal((await page.locator('[data-tv-interests]').innerText()).trim(),'');});

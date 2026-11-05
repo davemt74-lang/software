@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-catch-up-missions-v1.php';
 require_once __DIR__.'/agent-catch-up-profile-calls-v1.php';
+require_once __DIR__.'/agent-catch-up-meeting-prep-v1.php';
 
 function vp3_catch_up_page_binding_v1(array $user): string
 {
@@ -68,7 +69,8 @@ function vp3_catch_up_calendar_v1(PDO $pdo,array $user,DateTimeImmutable $now): 
         if($start!==null){
             $local=(new DateTimeImmutable('@'.$start))->setTimezone($timezone);
             $items[]=vp3_catch_up_item_v1('calendar:'.$next['ref'],$next['title'],
-                'Starts at '.$local->format('g:i A T').'.','Cloud Calendar','/calendar.php?month='.$local->format('Y-m'),$start<=$nowTimestamp+900?95:85,$start);
+                'Starts at '.$local->format('g:i A T').'.','Cloud Calendar','/calendar.php?month='.$local->format('Y-m'),$start<=$nowTimestamp+900?95:85,$start)
+                +['_calendar_event_id'=>$next['kind']==='event'?(int)$next['id']:0];
         }
     }
     return ['ready',$items];
@@ -233,6 +235,7 @@ function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $age
     if($includeWorkingSources){
         $office['missions']=fn()=>vp3_catch_up_missions_v1($pdo,$user,$principal,$now);
         $office['profile_calls']=fn()=>vp3_catch_up_profile_calls_v1($pdo,$user,$principal,$now);
+        $office['meeting_prep']=fn()=>vp3_catch_up_meeting_prep_v1($pdo,$user,$principal,$now);
     }
     $commerce=[
         'orders'=>fn()=>vp3_catch_up_orders_v1($pdo,$user),
@@ -240,17 +243,23 @@ function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $age
         'rewards'=>fn()=>vp3_catch_up_rewards_v1($pdo,$user,$now),
     ];
     $sources=match($scope){'office'=>$office,'commerce'=>$commerce,default=>$office+$commerce};
-    $coverage=[];$items=[];
+    $coverage=[];$items=[];$preparedStarts=[];
     foreach($sources as $key=>$read){
         if($agentId>0&&isset($commerce[$key])){$coverage[$key]='forbidden';continue;}
-        try{[$coverage[$key],$found]=$read();$items=[...$items,...$found];}
+        try{
+            [$coverage[$key],$found]=$read();$items=[...$items,...$found];
+            if($key==='meeting_prep'){
+                foreach($found as $item)$preparedStarts[$item['_calendar_event_id']][$item['time']]=true;
+            }
+        }
         catch(Throwable $e){$coverage[$key]=$e->getCode()===403?'forbidden':'unavailable';}
     }
     usort($items,static fn(array $a,array $b):int=>($b['priority']<=>$a['priority'])?:($a['time']<=>$b['time'])?:strcmp($a['id'],$b['id']));
     $selected=[];
     foreach($items as $item){
-        if(isset($selected[$item['id']]))continue;
-        unset($item['priority'],$item['time']);
+        if(isset($selected[$item['id']])||(str_starts_with($item['id'],'calendar:')
+            &&isset($preparedStarts[$item['_calendar_event_id']][$item['time']])))continue;
+        unset($item['priority'],$item['time'],$item['_calendar_event_id']);
         $selected[$item['id']]=$item;
         if(count($selected)===3)break;
     }

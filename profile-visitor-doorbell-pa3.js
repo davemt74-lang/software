@@ -12,7 +12,10 @@
   const cards=new Map(),projections=new Map();
   let stopped=false,epoch=0,contextKey='',availability=null,reachable=false,presenceAt=0;
   let pumping=false,queued=false,preferenceBusy=false,settingsPending=false,initializedBlank=false,listSequence=0,actionSequence=0;
-  let errorText='',availabilityNode=null,presenceText=null,interval=0,countdownInterval=0;
+  let errorText='',availabilityDraft=null,interval=0,countdownInterval=0;
+  const availabilityField=document.getElementById('chatSettingsVisitorAvailability');
+  const availabilityNode=document.getElementById('profileDoorbellAvailability');
+  const presenceText=document.getElementById('profileDoorbellAvailabilityStatus');
   const now=()=>typeof performance?.now==='function'?performance.now():Date.now();
   const positive=value=>Number.isSafeInteger(value)&&value>0;
   const nonnegative=value=>Number.isSafeInteger(value)&&value>=0;
@@ -65,22 +68,18 @@
     return {...value,...(chat?{chat:{...chat}}:{}),execution_paused:value.execution_paused===true,dispatch_execution_paused:value.dispatch_execution_paused===true,history:value.history.map(row=>({id:row.id,sender_type:row.sender_type,message:row.message,created_at:row.created_at}))};
   }
   function updatePresence(){
-    if(!availabilityNode)return;
-    availabilityNode.disabled=preferenceBusy||stopped;
-    if(availability)availabilityNode.value=availability;
-    const availableOption=availabilityNode.querySelector('option[value="available"]');
-    if(availableOption)availableOption.textContent=availability==='available'&&!reachable?(errorText?'Available · offline':'Available · connecting'):'Available';
-    presenceText.textContent=errorText || (availability==='away'?'Profile Agent handles new visitors while you are away.':availability==='dnd'?'Do not disturb. Profile Agent handles new visitors.':reachable&&active()?'Available here. Visitors appear in this Chat.':availability==='available'?'Connecting this Chat for visitors…':'Checking visitor availability…');
+    if(!availabilityField||!availabilityNode||!presenceText)return;
+    availabilityField.hidden=availability===null;
+    availabilityNode.disabled=preferenceBusy||stopped||availability===null;
+    if(availability)availabilityNode.value=availabilityDraft??availability;
+    presenceText.textContent=errorText || (availabilityDraft!==null?'Select Save settings to apply.':availability==='away'?'Profile Agent handles new visitors while you are away.':availability==='dnd'?'Do not disturb. Profile Agent handles new visitors.':reachable&&active()?'Available here. Visitors appear in this Chat.':'This Chat is not receiving visitor handoffs right now.');
   }
   function setupPresence(){
-    const host=document.querySelector('.chat-topbar-actions')||document.getElementById('chatComposerShell')?.parentElement;
-    if(!host)return;
-    const container=node('div','profile-doorbell-availability'),label=node('label','','Visitors');
-    const select=node('select');select.id='profileDoorbellAvailability';select.setAttribute('aria-label','Availability for Profile visitors');
-    [['available','Available'],['away','Away'],['dnd','Do not disturb']].forEach(([value,title])=>{const option=node('option','',title);option.value=value;select.appendChild(option);});
-    label.setAttribute('for',select.id);presenceText=node('span','profile-doorbell-availability-status');presenceText.setAttribute('role','status');
-    container.append(label,select,presenceText);host.appendChild(container);availabilityNode=select;updatePresence();
-    select.addEventListener('change',()=>void setAvailability(select.value));
+    availabilityNode?.addEventListener('change',()=>{
+      availabilityDraft=availabilityNode.value===availability?null:availabilityNode.value;
+      updatePresence();
+    });
+    updatePresence();
   }
   async function initializeBlank(){
     if(current().chat_conversation_id>0)return true;
@@ -96,18 +95,28 @@
     if(preference!==null)payload.availability=preference;
     try{
       const data=await request('doorbell_presence',payload,cfg.endpoint,keepalive);
-      if(!same(snapshot)||sequence!==tab.sequence||hidden)return;
+      if(!same(snapshot)||sequence!==tab.sequence||hidden){
+        if(preference!==null)throw new Error('Visitor availability could not be confirmed.');
+        return;
+      }
       if(!['available','away','dnd'].includes(data.availability)||typeof data.reachable!=='boolean'||data.accepted===false)throw new Error('Invalid presence response.');
       availability=data.availability;reachable=data.reachable;presenceAt=now();errorText='';updatePresence();
     }catch(error){if(same(snapshot)&&!hidden){reachable=false;presenceAt=0;errorText='Visitor connection is unavailable. Your private Chat is unchanged.';updatePresence();}if(preference!==null)throw error;}
   }
-  async function setAvailability(value){
-    if(preferenceBusy||!['available','away','dnd'].includes(value))return;
+  async function saveAvailability(){
+    const value=availabilityDraft;
+    if(value===null)return;
+    if(preferenceBusy||stopped||!['available','away','dnd'].includes(value))throw new Error('Visitor availability could not be saved.');
     preferenceBusy=true;actionSequence++;updatePresence();
-    try{if(value==='available')await initializeBlank();await heartbeat(value);}
-    catch(_){/* The last saved preference remains visible after a failed write. */}
+    try{
+      if(value==='available')await initializeBlank();
+      await heartbeat(value);
+      if(availability!==value)throw new Error('Visitor availability could not be confirmed.');
+      resetAvailability();
+    }
     finally{preferenceBusy=false;actionSequence++;updatePresence();void pump();}
   }
+  function resetAvailability(){availabilityDraft=null;updatePresence();}
   function syncContext(){
     const ctx=current(),key=ctx.chat_conversation_id+':'+ctx.chat_agent_id;
     if(key!==contextKey){if(ctx.chat_conversation_id===0&&contextKey&&!contextKey.startsWith('0:'))initializedBlank=false;contextKey=key;epoch++;projections.clear();presenceAt=0;reachable=false;errorText='';for(const record of cards.values())refreshControls(record);}
@@ -312,7 +321,7 @@
   }
   async function pump(){
     if(stopped)return;
-    if(pumping){queued=true;return;}
+    if(pumping||preferenceBusy){queued=true;return;}
     if(!active()){reachable=false;updatePresence();return;}
     pumping=true;queued=false;let snapshot=null;
     try{
@@ -349,7 +358,7 @@
   setupPresence();
   interval=window.setInterval(()=>void pump(),3000);
   countdownInterval=window.setInterval(()=>{for(const record of cards.values())refreshControls(record);},500);
-  window.VP3_PROFILE_DOORBELL_PA3_RUNTIME={refresh:()=>pump(),speechTarget,stageVoiceDraft,speechContext:()=>({...current(),tab_id:tab.id,availability,reachable,active:active()&&positive(current().chat_conversation_id)})};
+  window.VP3_PROFILE_DOORBELL_PA3_RUNTIME={refresh:()=>pump(),saveAvailability,resetAvailability,speechTarget,stageVoiceDraft,speechContext:()=>({...current(),tab_id:tab.id,availability,reachable,active:active()&&positive(current().chat_conversation_id)})};
   window.addEventListener('vp3:profile-speech-ready',()=>{for(const record of cards.values())attachSpeech(record);});
   void pump();
 })();

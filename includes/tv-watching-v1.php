@@ -169,9 +169,53 @@ function tv_dispatch_v1(PDO $pdo,array $user,array $input,?callable $vision=null
         else throw new InvalidArgumentException('Unsupported TV operation.');$pdo->commit();return $result;
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
+/** Keep current viewing separate from account-owned saved observations. */
+function tv_current_viewing_intent_v1(string $query): string
+{
+    $query = trim($query);
+    // A declaration can introduce a separate, explicit request about saved history.
+    if (preg_match('~
+        \b(?:my|our|saved)\s+(?:tv|television|viewing|watch(?:ing)?)\s+history\b
+        | \b(?:what|which|when|how\s+long)\s+(?:did|was|were|have|had)\b.{0,60}\bwatch(?:ed|ing)?\b
+        | \b(?:did|have|had)\s+(?:i|we)\s+(?:ever\s+)?watch(?:ed)?\b
+    ~iux', $query)) {
+        return '';
+    }
+    if (preg_match('~
+        ^(?:(?:please|(?:can|could|would)\s+you)\s+)?
+        (?:identify|check)\s+(?:what(?:[\x27’]s|\s+is)\s+(?:playing\s+)?on\s+)?
+        (?:(?:the|my)\s+)?(?:tv|television)(?:\s+(?:right\s+now|now|currently))?[?.!]*$
+    ~iux', $query) || preg_match('~
+        ^what(?:[\x27’]s|\s+is|\s+am\s+i\s+watching|\s+are\s+we\s+watching)
+        \s+(?:playing\s+)?on\s+(?:(?:the|my)\s+)?(?:tv|television)
+        (?:\s+(?:right\s+now|now|currently|at\s+the\s+moment))?[?.!]*$
+    ~iux', $query)) {
+        return 'identify';
+    }
+    if (preg_match('~
+        ^(?:(?:please|(?:can|could|would)\s+you)\s+)?
+        (?:start|enable|turn\s+on|stop|disable|turn\s+off)\s+
+        (?:(?:the\s+)?(?:tv|television)(?:\s+(?:watching|capture))?
+            | watching(?:\s+(?:(?:this|the|my)\s+)?(?:tv|television))?)
+        (?:\s+now)?[?.!]*$
+    ~iux', $query)) {
+        return 'capture';
+    }
+    if (preg_match('~
+        ^(?:(?:right\s+now|currently)\s*,?\s+)?
+        (?:(?:i\s+am|we\s+are|i[\x27’]m|we[\x27’]re)\s+(?:(?:just|currently|now)\s+)?)?watching\b
+        | ^(?:what|which)\s+(?:(?:movie|show|episode)\s+)?(?:am\s+i|are\s+we)\s+watching\b
+    ~iux', $query)) {
+        return 'conversation';
+    }
+    return '';
+}
+
 function tv_intent_v1(string $query): bool
 {
     if(preg_match('/\b(folder|directory|files?|filesystem)\b/i',$query))return false;
+    $current=tv_current_viewing_intent_v1($query);
+    if($current!=='')return $current!=='conversation';
     return (bool)preg_match('/\b(tv|television|viewing history|watch history|episode)\b|\b(?:what|which|when|how long)\b.{0,60}\bwatch(?:ed|ing)?\b|\bwatch(?:ed|ing)?\b.{0,40}\b(?:show|movie|last night|yesterday|recently)\b/i',$query);
 }
 function tv_time_filters_v1(string $query,string $zone,?DateTimeImmutable $now=null): array
@@ -182,8 +226,13 @@ function tv_time_filters_v1(string $query,string $zone,?DateTimeImmutable $now=n
 }
 function tv_chat_query_v1(PDO $pdo,array $user,string $query,array $read=[]): array
 {
-    if(!tv_intent_v1($query)||preg_match('/\brecommend/i',$query)||!preg_match('/history|watch(?:ed|ing)?|interest|prefer|pattern|usually|(?:what|which).{0,30}(?:playing|was on)|\b(?:start|enable|stop|disable|turn on|turn off)\b/i',$query))return ['handled'=>false];
-    if(preg_match('/\b(start|enable|turn on|stop|disable|turn off)\b.*\b(tv|television|watching)\b/i',$query))return ['handled'=>true,'answer'=>'Use TV Watching in the Eyes panel to enable or stop screen capture. Your saved TV history is available with the camera off.','actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1('tv.capture.manage','prepare','blocked','confirmation_required')];
+    if(!tv_intent_v1($query)||preg_match('/\brecommend/i',$query))return ['handled'=>false];
+    $current=tv_current_viewing_intent_v1($query);
+    if($current==='identify'||$current==='capture'){
+        $answer=$current==='identify'?'Open TV Watching in the Eyes panel and choose Identify TV now. This uses the camera and cropped-screen sharing settings you approve there.':'Use TV Watching in the Eyes panel to enable or stop screen capture. Your saved TV history is available with the camera off.';
+        return ['handled'=>true,'answer'=>$answer,'actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1('tv.capture.manage','prepare','blocked','confirmation_required')];
+    }
+    if(!preg_match('/history|watch(?:ed|ing)?|interest|prefer|pattern|usually|(?:what|which).{0,30}(?:playing|was on)/i',$query))return ['handled'=>false];
     $patterns=(bool)preg_match('/interest|prefer|pattern|usually/i',$query);$zone=tv_settings_v1($pdo,(int)$user['id'])['timezone']??'UTC';$filters=tv_time_filters_v1($query,$zone);$data=$patterns?tv_patterns_v1($pdo,(int)$user['id']):tv_history_v1($pdo,(int)$user['id'],['limit'=>20,...$filters,'query'=>$read['query']??'']);$lines=[];$sources=[];
     if($patterns){foreach($data['confirmed_preferences'] as $r)$lines[]=$r['title'].': '.$r['preference'].' (you confirmed this preference)';foreach($data['observed_patterns'] as $r)$lines[]=$r['title'].': '.$r['confirmed_sessions'].' confirmed viewing sessions; this alone does not establish a preference.';}
     else foreach($data['items'] as $r){$lines[]=$r['first_seen'].' — '.$r['last_seen'].' UTC: '.($r['title']?:($r['candidate_title']?:'Unknown program')).' ['.$r['status'].']'.($r['episode']!==''?' · '.$r['episode']:'').(!empty($r['personal_viewing_confirmed'])?' · you confirmed watching':' · screen observation; personal viewing unconfirmed');

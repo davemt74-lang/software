@@ -74,8 +74,8 @@ await sleep(20);
 assert(button.attributes['aria-pressed']==='false','microphone click turns listening off');
 assert(store.get('stonefellow:voice-mode:1')==='0','Stop clears the saved mode');
 
-assert(voice.includes('function isAutoplayBlockedError')&&voice.includes("log('INTRO_AUTOPLAY_BLOCKED'"),'browser autoplay blocking remains handled inside the existing Chat controller');
-assert(voice.includes('pendingIntroSpeech&&voiceOn&&!processing&&!speaking&&!introRetryScheduled')&&voice.includes('speakAnswer(pendingIntroSpeech)'),'queued intro retries after a successful user-gesture unlock');
+assert(!voice.includes('boot.intro')&&!voice.includes('pendingIntroSpeech'),'saved voice mode does not queue a return greeting');
+assert(voice.includes("requestPremiumUnlock('listen-button')"),'explicit listening unlocks premium audio for replies');
 assert(voice.includes("window.addEventListener('storage'")&&voice.includes("if(!next)disableVoice({persist:false})"),'foreign Stop is respected without activating local capture');
 assert(!chat.includes('conversation-voice-v122.js?v=')&&!chat.includes('voiceStreamEndpoint')&&!chat.includes('chat-voice-v140.js?v=')&&!chat.includes('chat-barge-v141.js?v='),'Agent Chat remains on one direct voice owner');
 

@@ -17,6 +17,17 @@ check($before===$pdo->query('SELECT GROUP_CONCAT(body_json) FROM tv_watching_rec
 $r=readMedia('tv.history.read',['query'=>'notfound']);check($r['tool_receipt']['status']==='no_matches','successful TV no-match read has an empty receipt');
 $r=readMedia('tv.history.read',['period'=>'yesterday']);check($r['tool_receipt']['status']==='no_matches'&&str_contains($r['answer'],'America/Phoenix'),'TV date filtering uses the saved account timezone');
 $r=readMedia('tv.preferences.read');check(str_contains($r['answer'],'you confirmed this preference')&&!str_contains($r['answer'],'confirmed viewing sessions'),'explicit preference is not inferred from an unconfirmed screen observation');
+$wrongPlan=fn()=>['ok'=>true,'answer'=>'{"operation":"media_read","ids":["tv.history.read"],"query":"Willow"}'];
+foreach(["I'm watching the movie Willow","I’m watching Willow. Have you seen it?","What movie am I watching?"] as $message){
+    $r=vp3_capability_chat_v1($pdo,$user,$principal,$message,['conversation_id'=>1],'off',[],$wrongPlan);
+    check(!$r['handled']&&!isset($r['tool_receipt']),'a model TV history plan cannot take over current conversation: '.$message);
+}
+$r=vp3_capability_chat_v1($pdo,$user,$principal,"I'm watching Willow. What was I watching last night?",['conversation_id'=>1],'off',[],$wrongPlan);
+check(($r['tool_receipt']['capability']??'')==='tv.history.read','an explicit history question can follow a viewing declaration');
+$r=vp3_capability_chat_v1($pdo,$user,$principal,'What is playing on my TV right now?',['conversation_id'=>1],'off',[],$wrongPlan);
+check(($r['tool_receipt']['capability']??'')==='tv.capture.manage'&&str_contains($r['answer'],'Identify TV now')&&!$r['tool_receipt']['changes_applied']&&!tv_settings_v1($pdo,1)['enabled'],'an explicitly current TV question uses Eyes guidance despite a mistaken history plan');
+$r=vp3_capability_chat_v1($pdo,$user,$principal,'Enable TV watching',['conversation_id'=>1],'off',[],$wrongPlan);
+check(($r['tool_receipt']['capability']??'')==='tv.capture.manage'&&!$r['tool_receipt']['changes_applied']&&!tv_settings_v1($pdo,1)['enabled'],'a mistaken history plan cannot replace the capture controls');
 $r=vp3_capability_chat_v1($pdo,$user,$principal,'Enable TV watching',['conversation_id'=>1],'off',[],fn()=>['ok'=>true,'answer'=>'{"operation":"inspect","ids":["tv.capture.manage"]}']);check(str_contains($r['answer'],'existing Eyes panel')&&!tv_settings_v1($pdo,1)['enabled']&&!$r['tool_receipt']['changes_applied'],'capture inspection explains the existing approval surface without starting capture');
 $saved=tv_row_v1($pdo,1,'session:fixture')['data'];$pdo->exec("UPDATE tv_watching_records_v1 SET body_json='invalid-json' WHERE owner_user_id=1 AND record_key='session:fixture'");$r=readMedia('tv.history.read');check($r['tool_receipt']['status']==='failed'&&!str_contains($r['answer'],'Syntax error'),'malformed stored TV evidence cannot become empty history or leak a parser error');$q=$pdo->prepare("UPDATE tv_watching_records_v1 SET body_json=? WHERE owner_user_id=1 AND record_key='session:fixture'");$q->execute([json_encode($saved)]);
 $count=count($media_calls);$r=vp3_capability_chat_v1($pdo,$user,$principal,'Can you read my local library?',['conversation_id'=>1],'off',[],fn()=>['ok'=>true,'answer'=>'{"operation":"inspect","ids":["music.library.read"]}']);check(count($media_calls)===$count&&str_contains($r['answer'],'not been checked')&&!str_contains($r['answer'],'Fixture local song'),'library discovery performs no remote or record read');

@@ -52,9 +52,43 @@ check(vp3_catch_up_chat_scope_v1('What needs attention in my store?')==='commerc
     vp3_catch_up_chat_scope_v1('What should I focus on right now?')==='office'&&
     vp3_catch_up_chat_scope_v1('What does catch me up mean?')===null,
     'brief scopes match explicit commands and leave ordinary questions in Chat');
+foreach([
+    'What did I miss while I was away?'=>'away',
+    'What did I miss?'=>'unspecified',
+    'Did I miss anything?'=>'unspecified',
+    'What’s changed?'=>'unspecified',
+    'Hey, could you tell me what I missed while I was gone?'=>'away',
+    'Has anything changed since this morning?'=>'changes',
+    'What’s changed since earlier today?'=>'changes',
+    'What needs my attention before my next meeting?'=>'meeting',
+    'Please tell me what needs my attention before the next meeting.'=>'meeting',
+    'Can you bring me up to speed?'=>'current',
+] as $request=>$window){
+    check(vp3_catch_up_chat_request_v1($request)===['scope'=>'all','window'=>$window],
+        'natural catch-up recognizes the scope and time qualifier for '.$request);
+}
+foreach([
+    'What did I miss in the transcript while I was away?',
+    'Has anything changed in my latest transcript since this morning?',
+    'Has anything changed since this morning with order #17?',
+    'What changed?',
+    'Research what changed since this morning.',
+    'Catch me up on the Pike Street project.',
+    'How should I prepare for my next meeting?',
+    'What needs my attention before my next meeting? Also approve order 17.',
+] as $request){
+    check(vp3_catch_up_chat_request_v1($request)===null,'catch-up leaves an ambiguous or task-specific request with its existing route');
+}
 $limited=vp3_catch_up_chat_result_v1(['items'=>[],'coverage'=>['calendar'=>'ready','orders'=>'unavailable']]);
 check(str_contains($limited['answer'],'sources I could check')&&str_contains($limited['answer'],'unavailable')&&
     !$limited['tool_receipt']['changes_applied'],'partial coverage is not presented as an account-wide all-clear');
+$prep=vp3_catch_up_chat_result_v1([
+    'items'=>[['id'=>'meeting-prep:4','title'=>'Review the agenda','reason'=>'An approved follow-up is open.',
+        'source_label'=>'Meeting follow-up','url'=>'/meeting.php?meeting=4']],
+    'coverage'=>['calendar'=>'ready','tasks'=>'ready'],
+],'meeting');
+check(str_contains($prep['answer'],'a follow-up for an upcoming meeting')&&str_contains($prep['answer'],'next meeting’s start time')&&
+    $prep['sources'][0]['url']==='/meeting.php?meeting=4','verified upcoming meeting follow-up is identified without claiming a next-meeting cutoff');
 $denied=discover('Catch me up',null,[],null,fn()=>throw new RuntimeException('Denied',403));
 check($denied['tool_receipt']['status']==='blocked'&&$denied['sources']===[],'brief revalidates the caller before returning evidence');
 echo 'CAPABILITY_CHAT=PASS ('.($checks-$before)." cases)\n";

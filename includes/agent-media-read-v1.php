@@ -8,14 +8,22 @@ function vp3_media_read_counts_v1(array $result,array $fields): void
     foreach($fields as $key)if(!is_int($result[$key]??null)||$result[$key]<0)throw new RuntimeException('Media read counts could not be verified.');
 }
 
-function vp3_media_agent_read_v1(PDO $pdo,array $user,array $principal,array $plan,array $context=[],?callable $remote=null): array
+function vp3_media_agent_read_v1(PDO $pdo,array $user,array $principal,array $plan,array $context=[],?callable $remote=null,string $request=''): array
 {
     $cap=$plan['ids'][0];$local=str_starts_with($cap,'tv.');$op=$local?'list':$plan['view'];
+    $currentViewing='';
+    if($local){
+        require_once __DIR__.'/tv-watching-v1.php';
+        $currentViewing=tv_current_viewing_intent_v1($request);
+        if($currentViewing==='conversation')return ['handled'=>false];
+    }
     try{
         if(!knowledge_retrieval_v162_owner_session($user,$principal))throw new RuntimeException('Owner conversation required.',403);
         $user=vp3_capability_live_user_v1($pdo,$user,$principal,$context,null);
         if(!has_permission('account.access',$user))throw new RuntimeException('Account access changed.',403);
-        if($local){
+        if($currentViewing==='identify'||$currentViewing==='capture'){
+            $result=tv_chat_query_v1($pdo,$user,$request);
+        }elseif($local){
             if(!table_exists('tv_watching_records_v1')||!table_exists('tv_watching_state_v1'))return ['handled'=>true,'answer'=>'TV history storage needs upgrade.php. Your camera was not started.','actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1($cap,$op,'blocked','upgrade_required')];
             $query=($cap==='tv.preferences.read'?'TV interests':'TV history').' '.str_replace('_',' ',$plan['period']??'recent');
             $result=tv_chat_query_v1($pdo,$user,$query,['query'=>$plan['query']]);

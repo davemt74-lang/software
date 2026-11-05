@@ -64,7 +64,11 @@
           <div class="chat-settings-body">
             <section class="chat-settings-section">
               <div class="chat-settings-section-title"><strong>Availability</strong><span>Choose whether other VP3 users see you as online. Offline also turns off live-text requests from your public Profile.</span></div>
-              <label class="chat-settings-field"><span>Status</span><select name="presence_mode"><option value="online">Online</option><option value="offline">Offline</option></select></label>
+              <label class="chat-settings-field"><span>Online status</span><select name="presence_mode"><option value="online">Online</option><option value="offline">Offline</option></select></label>
+              <div id="chatSettingsVisitorAvailability" hidden>
+                <label class="chat-settings-field"><span>Availability for Profile visitors</span><select id="profileDoorbellAvailability" aria-describedby="profileDoorbellAvailabilityStatus" disabled><option value="available">Available</option><option value="away">Away</option><option value="dnd">Do not disturb</option></select></label>
+                <small class="chat-settings-field-note" id="profileDoorbellAvailabilityStatus" role="status"></small>
+              </div>
               <div id="chatSettingsAgentAssistedPhone" hidden><label class="chat-settings-toggle"><span><strong>Agent-assisted phone chat</strong><small>Your Profile Agent can listen and transcribe assisted calls. Visitors see a notice before calling.</small></span><input type="checkbox" name="agent_assisted_phone_chat_enabled" disabled></label></div>
             </section>
             <section class="chat-settings-section">
@@ -243,9 +247,11 @@
   }
 
   function closeModal() {
+    if (busy) return;
     modal.hidden = true;
     modal.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('chat-settings-open');
+    window.VP3_PROFILE_DOORBELL_PA3_RUNTIME?.resetAvailability?.();
     setStatus('');
     if (lastFocus instanceof HTMLElement) lastFocus.focus();
   }
@@ -254,6 +260,8 @@
     event.preventDefault();
     if (busy || !form) return;
     busy = true;
+    const settingsBody = form.querySelector('.chat-settings-body');
+    settingsBody?.setAttribute('inert', '');
     saveButton.disabled = true;
     saveButton.textContent = 'Saving…';
     setStatus('Saving settings…');
@@ -289,6 +297,7 @@
       }
 
       state = { ...state, ok:true, agent_voice_allowed:chatResponse.agent_voice_allowed ?? state?.agent_voice_allowed ?? false, chat:chatResponse.chat, profile_agent:profileAgent };
+      await window.VP3_PROFILE_DOORBELL_PA3_RUNTIME?.saveAvailability?.();
       renderState();
       setStatus('Chat settings saved.', 'success');
       window.setTimeout(closeModal, 450);
@@ -296,6 +305,7 @@
       setStatus(error instanceof Error ? error.message : 'Could not save Chat settings.', 'error');
     } finally {
       busy = false;
+      settingsBody?.removeAttribute('inert');
       saveButton.disabled = false;
       saveButton.textContent = 'Save settings';
     }

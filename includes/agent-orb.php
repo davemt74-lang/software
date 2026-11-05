@@ -25,7 +25,7 @@ try{$participantUpdatesEnabled=db()?vp3_participant_settings_v1(db(),$orbUser)['
 <script src="<?= e(url('/agent-tv-watching.js?v=eyes-workbench-frame-v1')) ?>" defer></script>
 
 <script src="<?= e(url('/agent-orb-motion.js?v=voice-v1351')) ?>" defer></script>
-<script src="<?= e(url('/agent-welcome.js?v=voice-v1351')) ?>" defer></script>
+<script src="<?= e(url('/agent-welcome.js?v=outside-chat-v1')) ?>" defer></script>
 
 <script src="<?= e(url('/agent-response-window.js?v=voice-v1351')) ?>" defer></script>
 

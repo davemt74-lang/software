@@ -24,7 +24,7 @@ const checks={
   'successful Chat JSON is spoken': voice.includes("speakAnswer(String(data.answer||''))"),
   'voice mode remains persisted per user': voice.includes('stonefellow:voice-mode:') && voice.includes("localStorage.setItem(MODE_KEY,voiceOn?'1':'0')"),
   'current ElevenLabs output remains': chat.includes('premium-voice-v117.js?v=') && voice.includes('StonefellowPremiumVoiceV122'),
-  'automatic ElevenLabs page-load recovery stays inside the direct owner': !chat.includes('premium-autoplay-v148.js?v=') && voice.includes('pendingIntroSpeech') && voice.includes('INTRO_AUTOPLAY_BLOCKED') && voice.includes('introRetryScheduled'),
+  'Chat skips page-load speech and unlocks ElevenLabs through an explicit gesture': !chat.includes('premium-autoplay-v148.js?v=') && !voice.includes('boot.intro') && voice.includes("requestPremiumUnlock('listen-button')"),
   'current Agent Context remains': chat.includes('agent-context-v131.js?v=') && voice.includes('StonefellowAgentContext'),
   'native spoken barge lives in same owner': voice.includes('speechRecognitionBarge:true') && voice.includes('function startBarge()') && voice.includes('BARGE_SR_STARTED') && voice.includes('getFloatTimeDomainData'),
   'manual interruption remains in same owner': voice.includes("interruptResponse('button')") && voice.includes('activeRequest.controller.abort()'),

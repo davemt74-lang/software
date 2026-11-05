@@ -21,7 +21,7 @@ fs.copyFileSync('tests/fixtures/private-share-agent-v1.php',path.join(tmp,'inclu
 fs.copyFileSync('tests/fixtures/vrss-agent-v1.php',path.join(tmp,'includes/vrss-agent-v1.php'));
 for(const name of ['analytics-agent-v1.php','radar-agent-v1.php','tracky-agent-v1.php'])fs.copyFileSync('tests/fixtures/'+name,path.join(tmp,'includes',name));
 fs.copyFileSync('tests/fixtures/observation-api-state-v1.php',path.join(tmp,'observation-state.php'));
-fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
+fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'conversations'=>(int)db()->query('SELECT COUNT(*) FROM chat_conversations')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
 const base=`http://127.0.0.1:${port}`;let checks=0;
@@ -59,19 +59,38 @@ try{
  response=await post('chat-v236.php','Can you create reminders?',{csrf_token:'wrong'});check(response.r.status===419,'existing CSRF boundary remains active');
  response=await post('chat-v236.php','Can you create reminders?',{}, {'X-Fixture-Denied':'1'});check(response.r.status===403,'existing account permission boundary remains active');
  const beforeBrief=await state();
+ const workingBinding=createHmac('sha256','fixture').update('working-attention|1|').digest('hex');
+ const workingHeaders={'X-VP3-Working-Attention':workingBinding};
  for(const endpoint of ['chat-v236.php','chat-stream-v121.php','chat.php']){
+  const staleState=await state();
+  for(const headers of [{...workingHeaders,'X-Fixture-User':'2'},
+    {'X-VP3-Working-Attention':createHmac('sha256','fixture').update('working-attention|1|previous-session').digest('hex')},
+    {'X-VP3-Working-Attention':''}]){
+   const stale=await post(endpoint,'Catch me up',{conversation_id:0},headers);
+   check(stale.r.status===403&&stale.data?.code==='account_changed'&&!stale.data?.answer&&
+    !stale.body.includes('"type":"start"')&&JSON.stringify(await state())===JSON.stringify(staleState),
+    'a stale or invalid Chat page cannot create a conversation or receive a brief through '+endpoint);
+  }
   const brief=await post(endpoint,'Catch me up',{input_mode:endpoint.includes('stream')?'voice':'text'},
-    {'X-Fixture-Model-Fail':'1','X-Fixture-Owner-Trap':'1'});
+    {...workingHeaders,'X-Fixture-Model-Fail':'1','X-Fixture-Owner-Trap':'1'});
   check(brief.data?.ok===true&&brief.data.tool_receipt?.capability==='brief.attention.read'&&
     !brief.data.tool_receipt.changes_applied&&brief.data.actions?.length===0,'shared brief bypasses inference and ambient calendar refresh through '+endpoint+': '+brief.body);
+  for(const [request,scopeNote] of [['What did I miss?','verified history of recent changes'],
+    ['What did I miss while I was away?','what changed while you were away'],
+    ['Has anything changed since this morning?','comparison for that time window'],
+    ['What needs my attention before my next meeting?','next meeting’s start time']]){
+   const natural=await post(endpoint,request,{input_mode:endpoint.includes('stream')?'voice':'text'},
+     {...workingHeaders,'X-Fixture-Model-Fail':'1','X-Fixture-Owner-Trap':'1'});
+   check(natural.data?.ok===true&&natural.data.tool_receipt?.capability==='brief.attention.read'&&
+     natural.data.answer.includes(scopeNote)&&!natural.data.tool_receipt.changes_applied&&natural.data.actions?.length===0,
+     'natural catch-up reads current evidence and qualifies the time scope through '+endpoint+': '+natural.body);
+  }
  }
  const briefUrl=base+'/api/agent-catch-up-v1.php';
  const projection=await fetch(briefUrl+'?scope=office');
  const projected=await projection.json();
  check(projection.ok&&projected.ok&&projected.brief.items.length<=3&&projected.brief.coverage&&
    projection.headers.get('Cache-Control')==='no-store','Chat card uses a bounded read-only no-store endpoint');
- const workingBinding=createHmac('sha256','fixture').update('working-attention|1|').digest('hex');
- const workingHeaders={'X-VP3-Working-Attention':workingBinding};
  const workingResponse=await fetch(briefUrl+'?scope=office',{headers:workingHeaders});
  const workingBrief=(await workingResponse.json()).brief;
  check(workingResponse.ok&&Object.hasOwn(workingBrief.coverage,'missions')&&Object.hasOwn(workingBrief.coverage,'profile_calls')&&

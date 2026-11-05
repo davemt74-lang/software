@@ -2,6 +2,7 @@
   'use strict';
 
   let socialChatEnabled = true;
+  const compactRail = window.matchMedia('(max-width:760px)');
 
   function removeRedundantAgentHeading() {
     document.querySelectorAll('.workspace-main-sidebar .chat-sidebar-nav-section>.chat-history-label').forEach(label => {
@@ -52,21 +53,20 @@
 
     const rail = document.getElementById('sfOnlineRailV109');
     const launcher = document.getElementById('chatSettingsLauncher');
-    if (!rail || !launcher) return false;
+    if (!launcher) return false;
+
+    // The Team Chat rail is hidden on mobile. Keep the same settings button
+    // available outside it, without adding a second launcher.
+    if (!rail || compactRail.matches) {
+      if (launcher.parentElement !== document.body) document.body.appendChild(launcher);
+      delete launcher.dataset.railDocked;
+      return true;
+    }
 
     const slot = ensureSettingsSlot(rail);
     if (launcher.parentElement !== slot) slot.appendChild(launcher);
 
     launcher.dataset.railDocked = 'right-v132';
-    launcher.style.setProperty('position', 'static', 'important');
-    launcher.style.setProperty('inset', 'auto', 'important');
-    launcher.style.setProperty('display', 'grid', 'important');
-    launcher.style.setProperty('place-items', 'center', 'important');
-    launcher.style.setProperty('transform', 'none', 'important');
-    launcher.style.setProperty('z-index', '4', 'important');
-    normalizeControl(launcher);
-    normalizeControl(launcher.querySelector('.chat-settings-button'));
-
     const users = rail.querySelector('.sf-online-users-v109');
     const windows = document.getElementById('sfTeamChatWindowsV109');
     if (users) users.hidden = !socialChatEnabled;
@@ -89,6 +89,7 @@
   normalizeRail();
   document.addEventListener('DOMContentLoaded', normalizeRail, { once:true });
   window.addEventListener('load', normalizeRail, { once:true });
+  compactRail.addEventListener('change', normalizeRail);
 
   const observer = new MutationObserver(normalizeRail);
   observer.observe(document.documentElement, { childList:true, subtree:true });

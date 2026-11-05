@@ -44,6 +44,20 @@ let checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;console
 async function fixture({cards=[ownerCard()],cid=42,storage=new Map(),hidden=false,voiceRuntime=false}={}){
   const document=new Document(),window=new EventTarget(),thread=document.createElement('section'),topbar=document.createElement('div'),privateInput=document.createElement('textarea');
   thread.id='chatThread';thread.dataset.view='chat';thread.rect={top:70,left:0,right:800,bottom:850,width:800,height:780};topbar.className='chat-topbar-actions';privateInput.id='chatInput';privateInput.value='PRIVATE CHAT DRAFT';document.body.append(topbar,thread,privateInput);
+  const availabilitySection = document.createElement('section');
+  availabilitySection.id = 'chatSettingsVisitorAvailability';
+  const availabilitySelect = document.createElement('select');
+  availabilitySelect.id = 'profileDoorbellAvailability';
+  for (const value of ['available', 'away', 'dnd']) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    availabilitySelect.append(option);
+  }
+  const availabilityStatus = document.createElement('p');
+  availabilityStatus.id = 'profileDoorbellAvailabilityStatus';
+  availabilitySection.append(availabilitySelect, availabilityStatus);
+  document.body.append(availabilitySection);
   document.hidden=hidden;document.visibilityState=hidden?'hidden':'visible';
   let activeCid=cid,agent=7,clock=1800000000000,elapsed=0,availability='available',visiblePresence=false,seq=0,messageId=700,ensureCalls=0;
   const turns=new Map(cards.map(card=>[card.turn_id,copy(card)])),requests=[],pending=[],holds=[],intervals=[],frames=[],timers=[],deliveries=new Map(),errors=[];
@@ -163,9 +177,31 @@ for(const failed of [false,true]){
  check(f.card(101).querySelector('textarea').value==='Keep on mismatched receipt'&&!f.card(101).textContent.includes('Reply sent to this visitor.'),'mismatched mutation identity cannot clear the draft or announce success');f.stop();
 }
 {
- const f=await fixture();await f.frames();await f.choose('away');const away=f.requests.find(r=>r.action==='doorbell_presence'&&r.availability==='away');
- check(away.availability==='away'&&f.document.getElementById('profileDoorbellAvailability').value==='away','Away is an explicit saved preference');await f.advance(11000);await f.refresh();
- check(!Object.hasOwn(f.requests.filter(r=>r.action==='doorbell_presence').at(-1),'availability'),'normal heartbeat never overwrites availability preference');await f.choose('dnd');check(f.document.getElementById('profileDoorbellAvailability').value==='dnd','Do not disturb is distinct from Away');f.stop();
+ const f = await fixture();
+ const runtime = f.window.VP3_PROFILE_DOORBELL_PA3_RUNTIME;
+ const select = f.document.getElementById('profileDoorbellAvailability');
+ const writes = () => f.requests.filter(r => r.action === 'doorbell_presence' && Object.hasOwn(r, 'availability'));
+ await f.frames();
+ check(f.document.getElementById('chatSettingsVisitorAvailability').contains(select)
+   && !f.document.querySelector('.chat-topbar-actions').querySelector('select'), 'the doorbell binds the settings control without creating a header dropdown');
+ await f.choose('away');
+ await f.advance(11000);
+ await f.refresh();
+ check(select.value === 'away' && writes().length === 0, 'a staged Away choice survives polling without writing a preference');
+ runtime.resetAvailability();
+ check(select.value === 'available' && writes().length === 0, 'cancel restores the saved availability without writing');
+ await f.choose('away');
+ await runtime.saveAvailability();
+ await f.settle();
+ check(select.value === 'away' && writes().length === 1 && writes()[0].availability === 'away', 'save commits the staged Away preference exactly once');
+ await f.advance(11000);
+ await f.refresh();
+ check(!Object.hasOwn(f.requests.filter(r => r.action === 'doorbell_presence').at(-1), 'availability'), 'normal heartbeat never overwrites availability preference');
+ await f.choose('dnd');
+ await runtime.saveAvailability();
+ await f.settle();
+ check(select.value === 'dnd' && writes().at(-1).availability === 'dnd', 'Do not disturb is saved separately from Away');
+ f.stop();
 }
 {
  const f=await fixture({cid:0});check(f.ensureCalls===1&&f.activeCid===99&&f.cards().length===1,'blank current Chat initializes through canonical continuity before reachable delivery');f.stop();

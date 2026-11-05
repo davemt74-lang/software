@@ -16,6 +16,7 @@ $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-202610
 $voiceCacheBuild .= '-eyes-v1344-speech-recovery-20261031-mic-startup-20261101';
 $voiceCacheBuild .= '-learn-my-voice-v1-quiet-abort-20261102-eyes-cross-tab-v1';
 $voiceCacheBuild .= '-eyes-named-setups-v1';
+$voiceCacheBuild .= '-quiet-chat-startup';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
@@ -26,7 +27,7 @@ $agentIdentityBuild = 'cloud-agent-onboarding-readiness-v110-20261001';
 $profileActivityBuild = 'profile-activity-safety-pa1-20261103';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
-$chatSettingsBuild = 'chat-settings-v239-canonical-20260905' . '-voice-v1352-chat-settings-v237-pa3c-assisted-phone';
+$chatSettingsBuild = 'chat-settings-v239-canonical-20260905' . '-voice-v1352-chat-settings-v237-pa3c-assisted-phone-visitor-availability';
 $notificationDrawerBuild = 'chat-notifications-recovery-20261016' . '-voice-v1351';
 $notificationDrawerBuild .= '-profile-doorbell-pa3-20261103';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
@@ -56,7 +57,7 @@ $cognitiveBudgetGovernanceBuild = 'cognitive-budget-governance-v2560-20260923';
 $cognitiveValueRoiBuild = 'cognitive-value-roi-v2570-20260923';
 $cognitiveDecisionCalibrationBuild = 'cognitive-decision-calibration-v2580-20260923';
 $cognitiveCurrentStateBuild = 'cognitive-current-state-v2590-20260923';
-$cognitivePresentationAssetBuild = $cognitivePresentationBuild . '-' . $cognitiveCurrentStateBuild . '-profile-priority-v1341-20261027-everyday-context-v1';
+$cognitivePresentationAssetBuild = $cognitivePresentationBuild . '-' . $cognitiveCurrentStateBuild . '-profile-priority-v1341-20261027-everyday-context-v1-greeting-preview';
 $notificationDrawerAssetBuild = $notificationDrawerBuild . '-' . $cognitiveContextBuild . '-' . $cognitiveTurnBuild . '-' . $cognitiveContinuityBuild . '-' . $cognitiveFollowthroughBuild . '-' . $cognitiveSupervisionBuild . '-' . $cognitiveAutonomyBuild . '-' . $cognitivePortfolioBuild . '-' . $cognitiveForecastBuild . '-' . $cognitiveOptimizationBuild . '-' . $cognitiveResourceBudgetBuild . '-' . $cognitiveReplanningBuild . '-' . $cognitiveCommitmentProtectionBuild . '-' . $cognitiveEconomicsBuild . '-' . $cognitiveBudgetGovernanceBuild . '-' . $cognitiveValueRoiBuild . '-' . $cognitiveDecisionCalibrationBuild . '-' . $cognitiveCurrentStateBuild . '-mission-notices-a5c8-20261011-profile-priority-v1341-20261027-eyes-v1342-activity-v1348r2-longfellow-r3';
 $browserContextBuild = 'browser-context-v2130-20260919';
 $notificationDrawerAssetBuild .= '-pa4b-' . substr(hash('sha256',hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.js').hash_file('sha256',__DIR__.'/chat-notifications-drawer-v240.css')),0,12);
@@ -259,9 +260,11 @@ $chatApiEndpoint = $agentFeatureReady
 if (!$agentFeatureReady) {
     $agentInitialConversationId = (int)$chatInitialConversationId;
 }
+$workingAttentionBinding = vp3_catch_up_page_binding_v1($user);
 
 $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict";var cfg=window.STONEFELLOW_CHAT||{};cfg.endpoint='
     . json_encode($chatApiEndpoint, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    . ';cfg.workingAttentionBinding=' . json_encode($workingAttentionBinding)
     . ';cfg.agentId=' . (int)($activeUserAgent['id'] ?? 0)
     . ';cfg.initialConversationId=' . (int)$agentInitialConversationId . ';window.STONEFELLOW_AGENT_IDENTITY_V236={'
     . 'displayName:' . json_encode($agentDisplayName, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
@@ -279,7 +282,7 @@ $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict
     . ',csrf:' . json_encode(csrf_token(), JSON_UNESCAPED_SLASHES)
     . '};})();</script>';
 
-$voiceBootstrap = '<script data-chat-voice-pre>(function(){"use strict";var cfg=window.STONEFELLOW_CHAT||{};var b=document.getElementById("chatVoiceButton");window.STONEFELLOW_CHAT_VOICE_BOOT={intro:cfg.intro||null,button:b,legacyDormant:true};cfg.intro=null;if(b){b.id="chatVoiceButtonLegacyDormant";b.disabled=false;}})();</script>';
+$voiceBootstrap = '<script data-chat-voice-pre>(function(){"use strict";var b=document.getElementById("chatVoiceButton");window.STONEFELLOW_CHAT_VOICE_BOOT={button:b,legacyDormant:true};if(b){b.id="chatVoiceButtonLegacyDormant";b.disabled=false;}})();</script>';
 $html = preg_replace(
     '~(<script[^>]+src="[^"]*chat\.js\?v=[^"]+"[^>]*></script>)~i',
     $agentChatBootstrap . $voiceBootstrap . '$1',
@@ -287,36 +290,9 @@ $html = preg_replace(
     1
 ) ?? $html;
 
-$introText = trim((string)($chatIntro['greeting'] ?? ''));
-if ($introText === '') {
-    $displayName = trim((string)($user['display_name'] ?? ''));
-    $firstName = $displayName !== '' ? preg_split('/\s+/', $displayName)[0] : 'there';
-    $introText = 'Hello ' . $firstName . '.';
-}
-if ($activeUserAgent && strcasecmp($agentDisplayName, $systemAgentName) !== 0) {
-    $introText = preg_replace_callback(
-        '/\bStonefellow\b/u',
-        static fn(): string => $agentDisplayName,
-        $introText
-    ) ?? $introText;
-}
-
 $debugMarker = '<span id="chatRuntimeDebug" hidden data-chat-build="' . e($controlBuild) . '"></span>';
-$introMessage = $debugMarker
-    . '<div class="message assistant" id="chatWelcome" hidden>'
-    . '<div class="message-avatar" aria-hidden="true">' . e(mb_strtoupper(mb_substr($agentDisplayName, 0, 1))) . '</div>'
-    . '<div class="message-body">'
-    . '<div class="message-role">' . e($agentDisplayName) . '</div>'
-    . '<div class="message-text">' . e($introText) . '</div>'
-    . '</div>'
-    . '</div>';
-
-$html = preg_replace(
-    '~<div class="chat-welcome" id="chatWelcome">.*?</div>\s*</section>~s',
-    $introMessage . "\n    </section>",
-    $html,
-    1
-) ?? $html;
+$welcomeAnchor = '<div id="chatWelcome" hidden></div>';
+$html = str_replace($welcomeAnchor, $debugMarker . $welcomeAnchor, $html);
 
 // Phase 11B.2: Agent Brief moved out of the Chat timeline and into the footer control.
 // The canonical model is reused by Cognitive Presentation v5.10 on demand.
@@ -331,6 +307,7 @@ $cognitiveBriefMarkup = <<<'HTML'
     <div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Loading…</small></div>
   </div>
   <footer class="chat-agent-brief-footer">
+    <button type="button" data-prompt="Catch me up" data-preserve-chat-draft>Catch me up</button>
     <button type="button" data-agent-brief-brain>Agent Brain</button>
     <button type="button" data-agent-brief-history>History</button>
     <button type="button" data-agent-brief-notifications>Notifications</button>
@@ -476,7 +453,9 @@ $cognitiveCardsRuntime = '<link rel="stylesheet" data-cognitive-cards-v520 href=
     . ';</script>'
     . '<script data-cognitive-cards-v520 src="' . e(url('/chat-cognitive-cards-v520.js?v=' . $cognitiveCardsAssetBuild . '-' . $onboardingActivationAssetBuild)) . '"></script>';
 
-$cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-canvas-media-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.css'),0,12))).'">'
+$cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-specialist-rail-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-specialist-rail-v1.css'),0,12))).'">'
+    . '<script src="'.e(url('/chat-specialist-rail-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-specialist-rail-v1.js'),0,12))).'"></script>'
+    . '<link rel="stylesheet" href="'.e(url('/chat-canvas-media-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.css'),0,12))).'">'
     . '<script>window.VP3_CANVAS_MEDIA_V1='.json_encode(['endpoint'=>url('/api/chat-canvas-media-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-canvas-media-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.js'),0,12))).'"></script>';
 $initiativeWorkbenchRuntime = '<link rel="stylesheet" href="'.e(url('/chat-initiative-workbench-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.css'),0,12))).'">'
@@ -523,7 +502,8 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
         'endpoint'=>url('/api/cognitive-presentation-v510.php'),
         'csrf'=>csrf_token(),
         'agentId'=>(int)($activeUserAgent['id'] ?? 0),
-        'workingAttentionBinding'=>vp3_catch_up_page_binding_v1($user),
+        'workingAttentionBinding'=>$workingAttentionBinding,
+        'greetingPreview'=>($_GET['greeting_preview']??'')==='1',
         'pollSeconds'=>30,
         'ownsAttention'=>true,
         'ownsBrainPresentation'=>true,
@@ -531,9 +511,6 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';</script>';
 $cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationAssetBuild)) . '"></script>';
-$chatCatchUpRuntime = '<link rel="stylesheet" href="' . e(url('/chat-catch-up-v1.css?v=1')) . '">'
-    . '<script src="' . e(url('/chat-catch-up-v1.js?v=2')) . '" data-endpoint="'
-    . e(url('/api/agent-catch-up-v1.php')) . '" data-agent-id="' . (int)($activeUserAgent['id'] ?? 0) . '"></script>';
 
 $agentTeamsA3Build = 'agent-teams-' . substr(hash('sha256', (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.js') . (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.css')), 0, 12);
 $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(url('/chat-agent-teams-a3.css?v=' . $agentTeamsA3Build)) . '">'
@@ -640,7 +617,6 @@ $runtime = $headerUiRuntime
          . $cognitiveFeedRuntime
          . $cognitiveOrchestrationRuntime
          . $cognitivePresentationPost
-         . $chatCatchUpRuntime
          . '<script data-team-chat-admin-v109 data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" src="' . e(url('/team-chat-admin-v109.js?v=' . $teamChatAdminBuild)) . '"></script>'
          . $railLayout
          . $rewardTrayRuntime

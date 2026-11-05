@@ -42,4 +42,15 @@ $active=$call(['action'=>'commit','run_id'=>$guardRun,'request_id'=>$guard['requ
 $stoppedBeforeStart=uuid();$call(['action'=>'stop','run_id'=>$stoppedBeforeStart]);rejects(fn()=>$call(['action'=>'start','run_id'=>$stoppedBeforeStart]),'Stop before delayed Start leaves a stopped tombstone',409);
 $oldEpoch=uuid();$call(['action'=>'start','run_id'=>$oldEpoch]);$call(['action'=>'settings','enabled'=>false,'share_screen'=>false]);$call(['action'=>'settings','enabled'=>true,'share_screen'=>true]);rejects(fn()=>$call(['action'=>'start','run_id'=>$oldEpoch]),'run IDs cannot cross capture epochs',409);
 check(!tv_chat_query_v1($pdo,$user,'How does a TV work?')['handled'],'general TV questions stay in ordinary Chat');
+foreach(["I'm watching the movie Willow",'I’m currently watching Willow','Currently watching a movie called A History of Violence','What movie am I watching?'] as $message){
+    check(!tv_chat_query_v1($pdo,$user,$message)['handled']&&tv_brain_context_v1($pdo,$user,$message)===[],'current viewing stays in Chat without reading saved TV history: '.$message);
+}
+foreach(["I’m watching Willow. What was I watching last night?",'What did I watch yesterday?','When did I start watching the movie Willow?'] as $message){
+    $result=tv_chat_query_v1($pdo,$user,$message);
+    check(($result['tool_receipt']['capability']??'')==='tv.history.read','past recall uses saved history: '.$message);
+}
+foreach(['Identify TV now','What is playing on my TV right now?','Enable TV Watching','Stop TV Watching'] as $message){
+    $result=tv_chat_query_v1($pdo,$user,$message);
+    check(($result['tool_receipt']['capability']??'')==='tv.capture.manage'&&!$result['tool_receipt']['changes_applied'],'TV capture remains in the existing Eyes controls: '.$message);
+}
 echo "TV_WATCHING_V1=PASS ($checks cases)\n";

@@ -1,10 +1,15 @@
 (function(){
 'use strict';
 const cfg=window.VP3_CANVAS_MEDIA_V1||{};if(!cfg.endpoint||!cfg.csrf)return;
-const states=new WeakMap(),started=new Set();
+const states=new WeakMap(),started=new Set(),running=new Set();
+const inProgress={queued:'Queued · waiting for Cloud worker',generating:'Generating image…',paused:'Paused'};
+const specialistKey='image-generator';
+let specialistJob=null;
 const make=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=String(text);return e;};
-function scope(){return Number(window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()||window.STONEFELLOW_CHAT?.initialConversationId||0);}
-async function api(action,payload,cid){const r=await fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf_token:cfg.csrf,action,conversation_id:cid,agent_id:Number(cfg.agentId||0),...payload})});let data;try{data=await r.json();}catch(_){throw new Error('Media status was not confirmed. Refresh its status before requesting another image.');}if(!r.ok||!data.ok){const e=new Error(data.error||'Media unavailable.');e.status=r.status;throw e;}return data;}
+const continuity=()=>window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
+function scope(){return Number(continuity()?.conversationId?.()??window.STONEFELLOW_CHAT?.initialConversationId??0);}
+function selectedAgent(){return Number(continuity()?.agentId?.()??cfg.agentId??0);}
+async function api(action,payload,s){const r=await fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf_token:cfg.csrf,action,conversation_id:s.cid,agent_id:s.agentId,...payload})});let data;try{data=await r.json();}catch(_){throw new Error('Media status was not confirmed. Refresh its status before requesting another image.');}if(!r.ok||!data.ok){const e=new Error(data.error||'Media unavailable.');e.status=r.status;throw e;}return data;}
 function ownUrl(value,path){try{const u=new URL(value,location.href);return u.origin===location.origin&&u.pathname.endsWith(path)&&!u.username&&!u.password?u.href:'';}catch(_){return '';}}
 function assetCard(asset){
  const card=make('figure');card.className='vp3-canvas-media-card';card.appendChild(make('figcaption',asset.title||'Saved media'));
@@ -20,42 +25,120 @@ function assetCard(asset){
  }
  const editor=ownUrl(asset.editor_url,'/video-editor.php');if(editor){const edit=make('a','Open in editor');edit.href=editor;controls.appendChild(edit);}card.appendChild(controls);return card;
 }
-function active(s){return s.host.isConnected&&s.cid===scope()&&s.cid>0;}
+function matchesScope(s){return s.cid===scope()&&s.agentId===selectedAgent();}
+function active(s){return s.host.isConnected&&s.cid>0&&matchesScope(s)&&!continuity()?.isRestoring?.();}
+function chatVisible(){return !document.hidden&&document.getElementById('chatThread')?.dataset.view==='chat';}
 function stop(s){clearTimeout(s.timer);s.timer=null;}
-function failure(s,card,error){if(!active(s))return;card.replaceChildren(make('p',error.message||'Media unavailable.'));if([401,403,404,419].includes(error.status)){stop(s);return;}const b=make('button','Refresh status');b.type='button';b.onclick=()=>void poll(s,card,card.dataset.generationId,true);card.appendChild(b);}
-function renderJob(s,card,g){
- if(!active(s))return;card.dataset.state=g.status;card.replaceChildren(make('figcaption',g.title||'Image generation'));
- card.appendChild(make('small',g.status==='queued'?'Queued · waiting for Cloud worker':g.status==='generating'?'Generating image…':g.status.replaceAll('_',' ')));
- card.appendChild(make('small',g.model+' · '+g.size+' · '+g.quality+(g.background==='transparent'?' · transparent background':'')));
- if(g.message)card.appendChild(make('p',g.message));
- if(g.status==='completed'&&g.asset){card.appendChild(assetCard(g.asset));return;}
- if(['queued','generating','paused'].includes(g.status)){
-  const details=make('details'),summary=make('summary','Requested image');details.append(summary,make('p',g.prompt));card.appendChild(details);
-  const cancel=make('button','Cancel image');cancel.type='button';cancel.onclick=async()=>{cancel.disabled=true;try{const d=await api('cancel',{generation_id:g.id,confirmed:true},s.cid);renderJob(s,card,d.generation);}catch(e){failure(s,card,e);}};card.appendChild(cancel);
- }
- if(g.status==='cancelled'&&g.provider_started)card.appendChild(make('p','Cancelled. OpenAI may already have processed the request; no output will be published by this job.'));
+function clearSpecialist(s=specialistJob){
+ if(!s||specialistJob!==s)return;
+ specialistJob=null;
+ window.VP3ChatSpecialists?.remove(specialistKey);
 }
+function showSpecialist(s,card,g){
+ if(!active(s)||!chatVisible()||!Object.hasOwn(inProgress,g.status)){clearSpecialist(s);return;}
+ if(specialistJob&&specialistJob!==s&&active(specialistJob)&&!s.launch)return;
+ const rail=window.VP3ChatSpecialists;if(!rail)return;
+ specialistJob=s;
+ rail.update(specialistKey,{label:'Image Generator',title:g.title||'Requested image',status:inProgress[g.status],
+  detail:[g.model,g.size,g.quality,g.background==='transparent'?'Transparent background':''].filter(Boolean).join(' · '),
+  autoOpen:s.launch,onView:()=>{if(active(s)){card.scrollIntoView({block:'center'});card.focus({preventScroll:true});}}});
+ s.launch=false;
+}
+function failure(s,card,error){
+ if(!active(s))return;
+ stop(s);clearSpecialist(s);s.generation=null;
+ card.dataset.state='unavailable';
+ s.caption.textContent='Image Generator';
+ s.status.textContent=error.message||'Media unavailable.';
+ s.details.replaceChildren();
+ if([401,403,404,419].includes(error.status))return;
+ const b=make('button','Refresh status');b.type='button';b.onclick=()=>void poll(s,card,card.dataset.generationId,true);s.details.appendChild(b);
+}
+function renderJob(s,card,g){
+ if(!active(s))return;
+ if(g?.id!==card.dataset.generationId||typeof g.status!=='string')throw new Error('Image status could not be verified.');
+ if(Object.hasOwn(inProgress,g.status))showSpecialist(s,card,g);else{stop(s);clearSpecialist(s);s.launch=false;}
+ // Keep focused controls and expanded details in place on unchanged polls.
+ const signature=JSON.stringify(g);
+ if(s.generation&&signature===s.generation.signature)return;
+ s.generation={status:g.status,signature};
+ card.dataset.state=g.status;
+ s.caption.textContent=g.title||'Image generation';
+ const hasImage=g.status==='completed'&&g.asset?.available===true&&g.asset.media_type==='photo'&&ownUrl(g.asset.url,'/media-library-file-v86.php');
+ let statusText=Object.hasOwn(inProgress,g.status)?inProgress[g.status]:g.status.replaceAll('_',' ');
+ if(hasImage)statusText='Image Generator finished. Your image is ready.';
+ else if(g.status==='file_unavailable'||g.status==='completed')statusText='The saved image is unavailable.';
+ if(s.status.textContent!==statusText)s.status.textContent=statusText;
+ s.details.replaceChildren(make('small',g.model+' · '+g.size+' · '+g.quality+(g.background==='transparent'?' · transparent background':'')));
+ if(g.message)s.details.appendChild(make('p',g.message));
+ if(hasImage){s.details.appendChild(assetCard(g.asset));return;}
+ if(Object.hasOwn(inProgress,g.status)){
+  const details=make('details'),summary=make('summary','Requested image');details.append(summary,make('p',g.prompt));s.details.appendChild(details);
+  const cancel=make('button','Cancel image');cancel.type='button';cancel.onclick=async()=>{
+   if(!active(s)||s.cancelling)return;
+   s.cancelling=true;cancel.disabled=true;stop(s);++s.ticket;
+   try{const d=await api('cancel',{generation_id:g.id,confirmed:true},s);renderJob(s,card,d.generation);}
+   catch(e){failure(s,card,e);}
+   finally{s.cancelling=false;if(s.generation&&Object.hasOwn(inProgress,s.generation.status))schedule(s,card,g.id);}
+  };s.details.appendChild(cancel);
+ }
+ if(g.status==='cancelled'&&g.provider_started)s.details.appendChild(make('p','Cancelled. OpenAI may already have processed the request; no output will be published by this job.'));
+}
+function schedule(s,card,id){stop(s);s.timer=setTimeout(()=>void poll(s,card,id),2500);}
 async function poll(s,card,id,manual=false){
- if(!active(s)||document.hidden)return;const ticket=++s.ticket;
+ if(!active(s)||document.hidden||s.cancelling)return;
+ stop(s);const ticket=++s.ticket;
  try{
-  const d=await api('get',{generation_id:id},s.cid);if(!active(s)||ticket!==s.ticket)return;renderJob(s,card,d.generation);
-  if(manual&&d.generation.status==='queued'&&!d.generation.provider_started)started.delete(id);
-  if(d.generation.status==='queued'&&!started.has(id)){
-   started.add(id);
+  const d=await api('get',{generation_id:id},s);if(!active(s)||ticket!==s.ticket)return;renderJob(s,card,d.generation);
+  if(manual&&d.generation.status==='queued'&&!d.generation.provider_started&&!running.has(id))started.delete(id);
+  if(d.generation.status==='queued'&&!started.has(id)&&!running.has(id)){
+   started.add(id);running.add(id);
    // Separate request: the ordinary Chat composer remains available.
-   void api('tick',{generation_id:id},s.cid).then(r=>{if(active(s))renderJob(s,card,r.generation);}).catch(e=>failure(s,card,e));
+   void api('tick',{generation_id:id},s).then(r=>{if(active(s)&&ticket===s.ticket)renderJob(s,card,r.generation);})
+    .catch(e=>{if(ticket===s.ticket)failure(s,card,e);}).finally(()=>running.delete(id));
   }
-  if(['queued','generating'].includes(d.generation.status))s.timer=setTimeout(()=>void poll(s,card,id),2500);
- }catch(e){failure(s,card,e);}
+  if(Object.hasOwn(inProgress,d.generation.status))schedule(s,card,id);
+ }catch(e){if(ticket===s.ticket)failure(s,card,e);}
 }
 function mount(host,ref){
- if(states.has(host)||!ref||!host.isConnected)return;const s={host,cid:scope(),timer:null,ticket:0};if(!s.cid)return;states.set(host,s);host.replaceChildren();
+ if(states.has(host)||!ref||!host.isConnected)return;
+ const s={host,cid:scope(),agentId:selectedAgent(),timer:null,ticket:0,launch:host.dataset.specialistLaunch==='true'};
+ if(!active(s))return;states.set(host,s);host.replaceChildren();
  const ids=Array.isArray(ref.asset_ids)?ref.asset_ids.filter(i=>Number.isSafeInteger(i)&&i>0).slice(0,12):[];
- if(ids.length){const pending=make('p','Loading private media…');host.appendChild(pending);void api('assets',{asset_ids:ids},s.cid).then(d=>{if(!active(s))return;pending.remove();for(const asset of d.assets||[])host.appendChild(assetCard(asset));if(!d.assets?.length)host.appendChild(make('p','These media assets are no longer available.'));}).catch(e=>{if(active(s)){pending.textContent=e.message;}});}
+ if(ids.length){const pending=make('p','Loading private media…');host.appendChild(pending);void api('assets',{asset_ids:ids},s).then(d=>{if(!active(s))return;pending.remove();for(const asset of d.assets||[])host.appendChild(assetCard(asset));if(!d.assets?.length)host.appendChild(make('p','These media assets are no longer available.'));}).catch(e=>{if(active(s)){pending.textContent=e.message;}});}
  const jobs=Array.isArray(ref.generation_ids)?ref.generation_ids.filter(i=>typeof i==='string'&&/^[a-f0-9-]{36}$/.test(i)).slice(0,1):[];
- for(const id of jobs){const card=make('figure');card.className='vp3-canvas-media-card';card.dataset.generationId=id;host.appendChild(card);void poll(s,card,id);}
+ for(const id of jobs){
+  const card=make('figure');card.className='vp3-canvas-media-card';card.dataset.generationId=id;card.tabIndex=-1;
+  s.caption=make('figcaption','Image Generator');
+  s.status=make('small','Checking image status…');s.status.className='vp3-image-generation-status';s.status.setAttribute('role','status');
+  s.details=make('div');
+  card.append(s.caption,s.status,s.details);host.appendChild(card);void poll(s,card,id);
+ }
 }
-function scan(){for(const host of document.querySelectorAll('.vp3-canvas-media')){const s=states.get(host);if(s&&!active(s)){stop(s);host.replaceChildren();continue;}mount(host,host._vp3CanvasMediaRef);}}
+function scan(){
+ if(specialistJob&&!active(specialistJob))clearSpecialist();
+ for(const host of document.querySelectorAll('.vp3-canvas-media')){
+  const s=states.get(host);
+  if(s&&!matchesScope(s)){
+   stop(s);
+   if(host.firstChild)host.replaceChildren();
+   continue;
+  }
+  mount(host,host._vp3CanvasMediaRef);
+ }
+}
+function refreshJobs(){
+ if(!chatVisible()){clearSpecialist();return;}
+ for(const host of document.querySelectorAll('.vp3-canvas-media')){
+  const s=states.get(host),card=host.querySelector('[data-generation-id]');
+  if(s&&card&&active(s))void poll(s,card,card.dataset.generationId);
+ }
+}
 window.VP3CanvasMedia={mount};new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)return;for(const host of document.querySelectorAll('.vp3-canvas-media')){const s=states.get(host);const card=host.querySelector('[data-generation-id]');if(s&&card&&active(s)){stop(s);void poll(s,card,card.dataset.generationId);}}});scan();
+window.addEventListener('stonefellow:chat-context-changing',()=>clearSpecialist());
+window.addEventListener('vp3:chat-context-ready',()=>{refreshJobs();scan();});
+window.addEventListener('vp3:chat-canvas-view-changed',refreshJobs);
+document.addEventListener('visibilitychange',refreshJobs);
+window.addEventListener('pagehide',()=>clearSpecialist());
+scan();
 })();

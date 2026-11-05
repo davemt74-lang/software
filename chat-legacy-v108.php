@@ -20,7 +20,6 @@ $teamChatEnabled = team_chat_role_allowed($user);
 $pdo = db();
 $recent = [];
 $chatInitialConversationId = 0;
-$chatIntro = agent_chat_v101_intro($user);
 $chatNotificationCount = notification_unread_count($user);
 $chatNotifications = notification_recent($user, 6);
 $chatTracks = get_tracks();
@@ -1915,18 +1914,7 @@ foreach ($chatPosts as $post) {
         </div>
       </section>
 
-      <div class="chat-welcome" id="chatWelcome">
-        <div class="chat-welcome-mark">S</div>
-        <h1><?= e((string)$chatIntro['greeting']) ?></h1>
-        <p>I’ll keep you connected to your latest conversation, shared tracks, production work, and team notes.</p>
-
-        <div class="chat-starters">
-          <button type="button" data-prompt="What Stonefellow songs are available to me?">What music can I access?</button>
-          <button type="button" data-prompt="What are the upcoming Stonefellow shows?">Upcoming shows</button>
-          <button type="button" data-prompt="Summarize the Stonefellow artist bio.">Artist overview</button>
-          <button type="button" data-prompt="Build me a late-night Stonefellow mood playlist.">Late-night playlist</button>
-        </div>
-      </div>
+      <div id="chatWelcome" hidden></div>
     </section>
 
     <div class="chat-composer-shell" id="chatComposerShell">
@@ -2938,7 +2926,6 @@ window.STONEFELLOW_CHAT = {
   csrf: <?= json_encode(csrf_token()) ?>,
   initialView: <?= json_encode(trim((string)($_GET['view'] ?? 'chat'))) ?>,
   initialConversationId: <?= (int)$chatInitialConversationId ?>,
-  intro: <?= json_encode($chatIntro,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,
   userId: <?= (int)$user['id'] ?>,
   activityPollMs: 3000,
   canStemStudio: <?= (has_permission('tracks.manage', $user) || has_permission('track_notes.manage', $user) || has_permission('producer.access', $user)) ? 'true' : 'false' ?>,
