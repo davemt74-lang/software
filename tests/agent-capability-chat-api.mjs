@@ -589,6 +589,25 @@ try{
  check(wrongAgent.r.status===400&&!wrongAgent.data.ok,'activity rejects a Chat outside the selected Agent');
  const wrongOwner=await post('chat-v236.php','',{action:'activity',conversation_id:selectedChat.conversation_id},{'X-Fixture-User':'2'});
  check(wrongOwner.r.status===400&&!wrongOwner.data.ok,'activity rejects another owner’s Chat');
+ const retryEarlier=await post('chat-v236.php','',{action:'messages_after',conversation_id:selectedChat.conversation_id,
+  after_id:Number.MAX_SAFE_INTEGER,pending_message_ids:[selectedChat.assistant_message_id]});
+ check(retryEarlier.data.ok&&retryEarlier.data.messages.length===1
+  &&retryEarlier.data.messages[0].id===selectedChat.assistant_message_id,
+  'the canonical sync API rereads an exact earlier pending message below the latest cursor');
+ const otherChatRetry=await post('chat-v236.php','',{action:'messages_after',conversation_id:newerChat.conversation_id,
+  after_id:0,pending_message_ids:[selectedChat.assistant_message_id]});
+ check(otherChatRetry.data.ok&&otherChatRetry.data.messages.length===0,
+  'pending-message IDs cannot escape the exact owned conversation');
+ for(const pending of ['1',[0],[-1],[1.5],['1'],[Number.MAX_SAFE_INTEGER+1],Array(41).fill(1)]){
+  const invalid=await post('chat-v236.php','',{action:'messages_after',conversation_id:selectedChat.conversation_id,
+   after_id:0,pending_message_ids:pending});
+  check(invalid.r.status===400&&!invalid.data.ok&&invalid.data.error.startsWith('Invalid pending message'),
+   'sync rejects malformed, noninteger, unsafe, or oversized pending-message batches');
+ }
+ const duplicatePending=await post('chat-v236.php','',{action:'messages_after',conversation_id:selectedChat.conversation_id,
+  after_id:Number.MAX_SAFE_INTEGER,pending_message_ids:[selectedChat.assistant_message_id,selectedChat.assistant_message_id]});
+ check(duplicatePending.data.ok&&duplicatePending.data.messages.length===1,
+  'duplicate pending references still return a saved message only once');
  const contextFixture=base+'/working-context.php?cid='+savedConversation+'&reminder='+savedReminder;
  const offered=await (await fetch(contextFixture)).json();
  check(/^[a-f0-9]{64}$/.test(offered.key)&&offered.title==='Original recording reminder',

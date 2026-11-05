@@ -116,7 +116,8 @@ function vp3_catch_up_profile_call_tasks_v1(PDO $pdo,array $user,array $principa
         }
         $items[]=vp3_catch_up_item_v1('task:'.$id,(string)$row['subject'],$reason,
             'Profile call follow-up','/artist-listening.php?session='.$session,$priority,$time)
-            +['status'=>$meta['task_status'],'source_updated_at'=>$updated===null?null:gmdate(DATE_ATOM,$updated)];
+            +['status'=>$meta['task_status'],'source_updated_at'=>$updated===null?null:gmdate(DATE_ATOM,$updated),
+                '_source_revision'=>hash('sha256',json_encode(array_diff_key($row,['last_seen_at'=>true]),JSON_THROW_ON_ERROR))];
     }
     return [count($rows)>50?'limited':'ready',$items];
 }

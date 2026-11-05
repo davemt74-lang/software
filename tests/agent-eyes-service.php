@@ -7,7 +7,12 @@ function db():PDO{return $GLOBALS['pdo'];}
 function table_exists(string $name):bool{$q=db()->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$name]);return (bool)$q->fetchColumn();}
 function column_exists(string $table,string $column):bool{foreach(db()->query('PRAGMA table_info('.$table.')') as $row)if($row['name']===$column)return true;return false;}
 $memories=[];
-function agent_brain_v122_upsert_system_memory($user,$type,$subject,$text,$metadata,$confidence):void{$GLOBALS['memories'][$user['id'].':'.$subject]=compact('type','text','metadata','confidence');}
+function agent_brain_v122_upsert_system_memory($user,$type,$subject,$text,$metadata,$confidence):void{$scope=vp3_agent_memory_scope_current_v410($user);$GLOBALS['memories'][$user['id'].':'.$subject]=compact('type','text','metadata','confidence','scope');}
+function user_agent_get_v236(PDO $pdo,int $owner,int $id): ?array
+{
+    $q=$pdo->prepare('SELECT * FROM user_agents WHERE id=? AND user_id=?');$q->execute([$id,$owner]);
+    return $q->fetch()?:null;
+}
 $pdo->exec("CREATE TABLE studio_participants(id INTEGER PRIMARY KEY,owner_user_id INTEGER,display_name TEXT,is_active INTEGER,recognition_consent INTEGER);INSERT INTO studio_participants VALUES(7,1,'David',1,1),(8,2,'Other owner',1,1),(9,1,'Revoked',1,0),(10,1,'Inactive',0,1)");
 $pdo->exec("CREATE TABLE agent_event_inbox(id INTEGER PRIMARY KEY AUTOINCREMENT,event_uuid TEXT UNIQUE,owner_user_id INTEGER,source TEXT,event_type TEXT,schema_version INTEGER DEFAULT 1,external_event_id TEXT,dedupe_hash TEXT,verification_status TEXT,verification_key_id TEXT,processing_status TEXT DEFAULT 'accepted',occurred_at TEXT,received_at TEXT DEFAULT CURRENT_TIMESTAMP,processing_started_at TEXT,processed_at TEXT,replay_count INTEGER DEFAULT 0,correlation_id TEXT,causation_id TEXT,payload_json TEXT,linked_run_id INTEGER,last_error_code TEXT DEFAULT '',last_error_message TEXT DEFAULT '',UNIQUE(owner_user_id,dedupe_hash))");
 require dirname(__DIR__).'/includes/agent-event-infrastructure-v1920.php';
@@ -46,3 +51,23 @@ foreach([8,9,10] as $id)check(vp3_voice_speaker_context($pdo,$user,array_replace
 check(vp3_voice_speaker_context($pdo,$user,array_replace($hint,['authentication_authority'=>true]))===null,'voice match cannot acquire account authority');
 foreach(['attribution_corrected','participant_updated','recognition_forgotten'] as $type){$safe=vp3_eyes_event($pdo,$user,array_replace($event,['event_type'=>$type,'identity_source'=>'manual_correction','participant_id'=>9]));check($safe['display_name']==='Revoked'&&$safe['identity_source']==='owner_reported_correction','owner correction event preserves canonical name without recognition consent');}
 echo "VOICE_SPEAKER_CONTEXT=PASS\n";
+
+$pdo->exec("CREATE TABLE user_agents(id INTEGER PRIMARY KEY,user_id INTEGER,is_active INTEGER);
+    INSERT INTO user_agents VALUES(7,1,1),(8,1,0);
+    CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER);
+    INSERT INTO chat_conversations VALUES(42,1,NULL),(43,1,7),(44,2,NULL),(45,1,8)");
+$linked=vp3_eyes_event($pdo,$user,$event+['conversation_id'=>42]);
+check($linked['conversation_id']===42&&$linked['agent_namespace']==='system','explicit owned Chat context derives the System namespace');
+$linked=vp3_eyes_event($pdo,$user,$event+['conversation_id'=>43]);
+check($linked['conversation_id']===43&&$linked['agent_namespace']==='agent:7'&&!$linked['authentication_authority'],'named Chat context is server-derived and never identity authority');
+foreach([0,-1,'invalid',[],44,45] as $id)rejects(fn()=>vp3_eyes_event($pdo,$user,$event+['conversation_id'=>$id]),'invalid, foreign or inactive Chat context is rejected');
+rejects(fn()=>vp3_eyes_event($pdo,$user,$event+['conversation_id'=>43,'agent_namespace'=>'system']),'the client cannot choose a different Agent namespace');
+vp3_agent_memory_scope_set_current_v410(1,0);
+$linkedEvent=array_replace($event,['event_id'=>'44444444-4444-4444-8444-444444444444','conversation_id'=>43]);
+$linked=vp3_eyes_record($pdo,$user,$linkedEvent);
+$memory=array_values($memories)[count($memories)-1];
+check($memory['scope']===7&&$memory['metadata']['conversation_id']===43,'the linked Eyes memory uses the exact named Agent scope');
+check(vp3_agent_memory_scope_current_v410($user)===0,'Eyes memory recording restores the caller scope');
+$replayed=vp3_eyes_record($pdo,$user,array_replace($linkedEvent,['conversation_id'=>42]));
+check($replayed['duplicate']&&$replayed['event']['conversation_id']===43&&$replayed['event']['agent_namespace']==='agent:7','a retried event retains its original validated Chat association');
+echo "AGENT_EYES_CHAT_CONTEXT=PASS\n";

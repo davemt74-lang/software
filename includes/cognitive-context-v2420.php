@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-activity-situations-v1.php';
+
 /**
  * VP3 Cognitive Runtime v24.20 — Unified Context Assembly & Working Memory.
  *
@@ -404,6 +406,9 @@ function vp3_cognitive_context_assemble_v2420(
     $historyIntent=!empty($options['history_intent'])||(function_exists('agent_brain_v99_history_intent')&&agent_brain_v99_history_intent($query));
     $terms=vp3_cognitive_context_terms_v2420($query);
     $items=[];
+
+    try{$activityItem=vp3_activity_situations_context_v1($pdo,$user,$namespace);if($activityItem)$items[]=$activityItem;}
+    catch(Throwable $e){}
 
     if(function_exists('vp3_cognitive_current_state_context_item_v2590')){
         try{$currentStateItem=vp3_cognitive_current_state_context_item_v2590($pdo,$user,$namespace);if($currentStateItem)$items[]=$currentStateItem;}catch(Throwable $e){}

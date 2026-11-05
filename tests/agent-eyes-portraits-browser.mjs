@@ -4,14 +4,18 @@ import http from 'node:http';
 import path from 'node:path';
 import {chromium} from 'playwright';
 let consent=false;const requests=[];
+let confirmEyesReport;
+const firstEyesReport=new Promise(resolve=>{confirmEyesReport=resolve;});
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
  if(url.pathname==='/participants'||url.pathname==='/eyes'){
-  let body='';req.on('data',b=>body+=b);req.on('end',()=>{if(body){const data=JSON.parse(body);requests.push(data);if(data.action==='allow_local_visual_recognition')consent=true;}res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ok:true,profiles:[{id:7,display_name:'David',recognition_consent:consent}]}));});return;
+  let body='';req.on('data',b=>body+=b);req.on('end',()=>{if(body){const data=JSON.parse(body);requests.push(data);if(data.event_type)confirmEyesReport(data);if(data.action==='allow_local_visual_recognition')consent=true;}res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ok:true,profiles:[{id:7,display_name:'David',recognition_consent:consent}]}));});return;
  }
  if(url.pathname.endsWith('.js')||url.pathname.endsWith('.css')){res.setHeader('Content-Type',url.pathname.endsWith('.js')?'text/javascript':'text/css');res.end(fs.readFileSync(path.basename(url.pathname)));return;}
  res.setHeader('Content-Type','text/html');res.end(`<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/agent-orb.css"><form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form><script>
  window.VP3_ORB_CONFIG={ownerKey:'${url.searchParams.get('owner')||'1'}',participantsEndpoint:'/participants',eyesEndpoint:'/eyes',chatUrl:'/chat.php',csrf:'test'};
+ window.STONEFELLOW_CHAT_CONTINUITY_V87={isReady:()=>true,isRestoring:()=>false,conversationId:()=>42};
+ window.STONEFELLOW_CHAT_CONTINUITY={isReady:()=>false};
  window.StonefellowPremiumVoiceV122={};window.STONEFELLOW_NOTIFICATION_CENTER={announceWhen:async(text,current)=>{if(current()){greetings.push(text);return true;}return false;}};
  window.photoStates=[];window.addEventListener('vp3:participant-photo-state',e=>photoStates.push(e.detail));window.greetings=[];window.submissions=[];window.faces=[];window.blockCamera=false;
  document.getElementById('chatForm').addEventListener('submit',e=>{e.preventDefault();submissions.push(document.getElementById('chatInput').value);});
@@ -19,7 +23,7 @@ const server=http.createServer((req,res)=>{
  window.localRecord=async(update)=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('vp3-eyes-local-'+VP3_ORB_CONFIG.ownerKey,1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});try{return await new Promise((resolve,reject)=>{const t=db.transaction('samples',update?'readwrite':'readonly'),s=t.objectStore('samples'),r=s.get('7');let result;r.onsuccess=()=>{result=r.result;if(update){result={...result,...update};s.put(result);}};t.oncomplete=()=>resolve(result);t.onerror=()=>reject(t.error);});}finally{db.close();}};
  </script><script src="/agent-eyes-core.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script><script src="/agent-eyes.js"></script><script src="/agent-voice-guard.js"></script>`);
 });
-await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`,browser=await chromium.launch({headless:true,args:['--no-sandbox']});let checks=0;
+await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`,browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});let checks=0;
 const test=async(name,fn)=>{await fn();console.log('PASS '+name);checks++;};
 const v=Array.from({length:32},(_,i)=>i===0?1:0),face={box:[128,144,128,144],embedding:v};
 try{
@@ -28,6 +32,13 @@ try{
  const open=async(p=page)=>{await p.goto(base);await p.waitForFunction(()=>window.VP3AgentEyes&&window.VP3VoiceGuard);await p.evaluate(face=>{faces=[face];return VP3AgentEyes.start();},face);};
  const age=async(p=page)=>p.evaluate(async()=>{const old=Date.now()-8*24*60*60*1000;await localRecord({portraitUpdatedAt:old,portraits:(await localRecord()).portraits.map(p=>({...p,captured_at:new Date(old).toISOString()}))});});
  await open();await page.waitForFunction(()=>greetings.some(t=>t.includes('What’s your name')));
+ await test('Eyes records the canonical ready Chat while a voice facade is present',async()=>{
+  await firstEyesReport;
+  const reported=requests.filter(row=>row.event_type);
+  assert.ok(reported.length>0);
+  assert.ok(reported.every(row=>row.conversation_id===42));
+  assert.ok(reported.every(row=>!Object.hasOwn(row,'agent_namespace')));
+ });
  await test('plain yes after the visible photo offer captures and commits three real canvas JPEGs',async()=>{
   assert.equal(await page.evaluate(()=>VP3AgentEyes.hear('My name is David')),true);
   const decision=await page.evaluate(()=>VP3VoiceGuard.check('yes'));assert.equal(decision.allowed,true);assert.equal(decision.reason,'invited-introduction');

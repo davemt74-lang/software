@@ -2,6 +2,8 @@
 declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/agent-eyes.php';
+require_once dirname(__DIR__).'/includes/agent-activity-situations-v1.php';
+require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -387,10 +389,12 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
     ] : ($agentId < 1 && $brainAllowed ? agent_activity_v94_snapshot($user, 'chat', []) : [
         'state'=>'idle','surface'=>'chat','task_title'=>'Agent Chat'
     ]);
+    $activityStream=vp3_activity_situations_v1($pdo,$user,$namespace);
     return [
         'ok'=>true,
         'agent_voice_enabled'=>member_agent_voice_enabled($user),
         'agent_namespace'=>$namespace,
+        'activity_stream'=>$activityStream,
         'notifications'=>[
             'unread'=>notification_unread_count($user),
             'items'=>notification_recent($user, 25),
@@ -733,6 +737,10 @@ function chat_notifications_v240_present_attention(PDO $pdo,array $user,array $i
 
 $user = current_user();
 if (!$user) chat_notifications_v240_json(['ok'=>false,'error'=>'login_required'], 401);
+if (isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])
+    && !hash_equals(vp3_catch_up_page_binding_v1($user), (string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])) {
+    chat_notifications_v240_json(['ok'=>false,'code'=>'account_changed','error'=>'Your Chat session changed. Refresh to continue.'], 403);
+}
 $pdo = db();
 if (!$pdo) chat_notifications_v240_json(['ok'=>false,'error'=>'database_unavailable'], 503);
 

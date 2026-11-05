@@ -63,6 +63,7 @@ require_once __DIR__ . '/includes/profile-attention-pa4b.php';
 require_once __DIR__ . '/includes/profile-event-projection-pa4b.php';
 require_once __DIR__ . '/includes/profile-conversation-checkout-pa5.php';
 require_once __DIR__ . '/includes/connected-gelato-v1.php';
+require_once __DIR__ . '/includes/agent-chat-read-v1.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
@@ -274,6 +275,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && table_exists('agent_participant_observers_v1')
         && table_exists('user_agent_voice_preferences')
         && ($schemaConnection ??= db()) instanceof PDO
+        && vp3_chat_read_schema_ready_v1($schemaConnection)
         && vp3_profile_call_activity_schema_ready_pa3c($schemaConnection)
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)
@@ -355,6 +357,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             studio_participants_ensure_schema();
             studio_voice_profile_ensure_schema();
             user_agent_system_ensure_schema_v236();
+            vp3_chat_read_ensure_schema_v1($pdo);
             vp3_phone_ensure_schema_v100($pdo);
             vp3_phone_sms_ensure_schema_v110($pdo);
             vp3_phone_sms_outbound_ensure_schema_v120($pdo);

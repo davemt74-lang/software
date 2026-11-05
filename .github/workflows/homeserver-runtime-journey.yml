@@ -126,6 +126,11 @@ jobs:
           node tests/cognitive-working-attention-browser.mjs
           node tests/chat-live-attention-browser.mjs
           node tests/initiative-closed-chat-browser.mjs
+          php tests/agent-activity-situations-v1.php
+          node tests/activity-situations-browser.mjs
+          php tests/agent-chat-read-v1.php
+          node tests/agent-chat-read-api.mjs
+          node tests/chat-message-unread-browser.mjs
           node tests/chat-listening-continuation-browser.mjs
           node tests/music-file-repair-api.mjs
           node tests/music-file-repair-browser.mjs
@@ -217,6 +222,7 @@ jobs:
         run: |
           php tests/agent-initiative-screen-mysql.php
           php tests/agent-initiative-delivery-mysql.php
+          php tests/agent-chat-read-mysql.php
       - name: Screen edit admission and leases on MySQL
         env:
           MYSQL_PWD: section7-fixture

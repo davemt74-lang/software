@@ -15,7 +15,7 @@ try{$participantUpdatesEnabled=db()?vp3_participant_settings_v1(db(),$orbUser)['
 <script src="<?= e(url('/participant-recovery-v1.js?v=1')) ?>" defer></script>
 <script src="<?= e(url('/agent-participant-continuity.js?v=recognition-reliability-v1')) ?>" defer></script>
 <script src="<?= e(url('/agent-orb.js?v=recognition-reliability-v1')) ?>" defer></script>
-<script src="<?= e(url('/agent-eyes.js?v=recognition-reliability-v1')) ?>" defer></script>
+<script src="<?= e(url('/agent-eyes.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-eyes.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/agent-screen-review-v1.js?v=1')) ?>" defer></script>
 <script src="<?= e(url('/agent-screen-watch-zone.js?v=2')) ?>" defer></script>
 <script src="<?= e(url('/agent-screen-share.js?v=screen-initiative-workbench-v1')) ?>" defer></script>

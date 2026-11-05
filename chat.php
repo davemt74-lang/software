@@ -465,6 +465,11 @@ $initiativeWorkbenchRuntime = '<link rel="stylesheet" href="'.e(url('/chat-initi
         'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
     ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
     . '<script src="'.e(url('/chat-initiative-workbench-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.js'),0,12))).'" defer></script>';
+$initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-message-unread-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-message-unread-v1.css'),0,12))).'">'
+    . '<script>window.VP3_CHAT_MESSAGE_UNREAD_V1='.json_encode([
+        'endpoint'=>url('/api/agent-chat-read-v1.php'),
+    ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<script src="'.e(url('/chat-message-unread-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-message-unread-v1.js'),0,12))).'" defer></script>';
 $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-task-notes-v1.css?v=20261102-shortcut-free')).'">'
     . '<script>window.VP3_TASK_NOTES_V1='.json_encode(['endpoint'=>url('/api/task-notes-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-task-notes-v1.js?v=voice-managed-lists-v2')).'"></script>';
@@ -546,6 +551,8 @@ $notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-draw
         'csrf'=>csrf_token(),
         'build'=>$notificationDrawerBuild,
         'agentId'=>(int)($activeUserAgent['id'] ?? 0),
+        'userId'=>(int)$user['id'],
+        'workingAttentionBinding'=>$workingAttentionBinding,
         'contextBuild'=>$cognitiveContextBuild,
         'turnBuild'=>$cognitiveTurnBuild,
         'continuityBuild'=>$cognitiveContinuityBuild,

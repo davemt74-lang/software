@@ -75,6 +75,7 @@
 
   let conversationId = 0;
   let lastLoadedMessageId = 0;
+  const pendingAssistantMessages = new Map();
   let busy = false;
   let chatRevision = 0, pendingSend = null, restoringConversation = 0, lastParticipantQuestion = null;
   let initialRestorePending = true, contextReady = false;
@@ -130,6 +131,7 @@
   }
   function leaveChat() {
     lastParticipantQuestion=null;
+    pendingAssistantMessages.clear();
     if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId);
     chatRevision++;
     if (pendingSend) { clearTimeout(pendingSend.timer); pendingSend.controller.abort(); pendingSend.typing?.remove(); pendingSend = null; busy = false; send.disabled = false; input.disabled=false; showStop(); }
@@ -879,11 +881,14 @@
         agent_context:{user_agent_id:Number(cfg.agentId || 0)}
       }, controller.signal);
 
-      if(activeConversationId>0&&activeConversationId===conversationId&&Number(data.conversation_id||0)===conversationId&&Number(data.latest_message_id||0)>lastLoadedMessageId){
+      const hasPendingAssistant=pendingAssistantMessageIds().length>0;
+      if(activeConversationId>0&&activeConversationId===conversationId&&Number(data.conversation_id||0)===conversationId
+        &&(Number(data.latest_message_id||0)>lastLoadedMessageId||hasPendingAssistant)){
         pendingConversationSync=conversationId;
       }
       if(pendingConversationSync>0&&!busy&&!restoringConversation&&pendingConversationSync===activeConversationId
-        &&pendingConversationSync===conversationId&&Number(data.conversation_id||0)===conversationId&&Number(data.latest_message_id||0)>lastLoadedMessageId){
+        &&pendingConversationSync===conversationId&&Number(data.conversation_id||0)===conversationId
+        &&(Number(data.latest_message_id||0)>lastLoadedMessageId||hasPendingAssistant)){
         await syncConversationMessagesV101(pendingConversationSync, controller.signal);
         pendingConversationSync=0;
       }
@@ -1623,17 +1628,43 @@
   // A visitor card is attached to a server-created private Chat message. Its
   // marker contains identities only; the current owner projection is fetched
   // separately so reloading old history cannot restore stale reply authority.
-  function bindStoredMessagePa3(element, id, marker = null) {
+  function bindStoredMessagePa3(element, id, marker = null, role = 'assistant') {
     const messageId=Number(id);
     if(!element || !Number.isSafeInteger(messageId) || messageId<1)return;
     element.dataset.chatMessageId=String(messageId);
     element.dataset.chatConversationId=String(conversationId);
+    element.dataset.chatMessageRole=String(role);
+    if(role==='assistant'){
+      window.dispatchEvent(new CustomEvent('vp3:chat-message-persisted',{detail:{element,conversationId,agentId:Number(cfg.agentId||0)}}));
+    }
     if(!marker || marker.contract!=='vp3.profile-handoff.v1' ||
       !['turn_id','revision','conversation_id'].every(key=>Number.isSafeInteger(marker[key])&&marker[key]>0))return;
     element.dataset.profileHandoffTurn=String(marker.turn_id);
     element.dataset.profileHandoffRevision=String(marker.revision);
     element.dataset.profileHandoffConversation=String(marker.conversation_id);
     window.dispatchEvent(new CustomEvent('vp3:profile-handoff-message',{detail:{element}}));
+  }
+
+  function pendingAssistantMessageIds() {
+    const cutoff=Date.now()-600000;
+    for(const [id,seenAt] of pendingAssistantMessages){
+      if(seenAt<cutoff)pendingAssistantMessages.delete(id);
+    }
+    return [...pendingAssistantMessages.keys()];
+  }
+
+  function unconfirmedAssistantMessage(message,context) {
+    const id=Number(message.id);
+    const content=['media','stem_media','actions','cards','system_app_action_card','canvas_media']
+      .some(key=>context[key]&&Object.keys(context[key]).length>0);
+    if(message.role==='assistant'&&!String(message.message||'').trim()&&!content){
+      if(Number.isSafeInteger(id)&&id>0&&!pendingAssistantMessages.has(id)&&pendingAssistantMessages.size<40){
+        pendingAssistantMessages.set(id,Date.now());
+      }
+      return true;
+    }
+    pendingAssistantMessages.delete(id);
+    return false;
   }
 
   function bindProfileCallPa3c(element, marker) {
@@ -3186,6 +3217,11 @@
         } catch (error) {}
       }
 
+      if(unconfirmedAssistantMessage(message,context)){
+        lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
+        return;
+      }
+
       const renderedMessage=addMessage(
         message.role === 'user' ? 'user' : 'assistant',
         message.message,
@@ -3199,7 +3235,7 @@
         context.knowledge_actions_r9 || null,
         context.canvas_media || null
       );
-      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
+      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'));
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
@@ -3221,6 +3257,7 @@
     const revision=chatRevision;
     const targetId=Number(id||0);if(targetId<1||targetId!==conversationId||busy)return;
     const data=await api({action:'messages_after',conversation_id:targetId,after_id:lastLoadedMessageId,
+      pending_message_ids:pendingAssistantMessageIds(),
       agent_context:{user_agent_id:Number(cfg.agentId || 0)}}, signal);
     if(revision!==chatRevision||targetId!==conversationId||busy||!Array.isArray(data.messages))return;
     data.messages.forEach(message=>{
@@ -3229,8 +3266,15 @@
       }
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
+      if(unconfirmedAssistantMessage(message,context)){
+        lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
+        return;
+      }
       const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null);
-      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null);
+      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'));
+      const next=Array.from(thread.querySelectorAll('[data-chat-message-id]')).find(element=>element!==renderedMessage
+        &&Number(element.dataset.chatConversationId)===targetId&&Number(element.dataset.chatMessageId)>Number(message.id));
+      if(next)thread.insertBefore(renderedMessage,next);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
@@ -3311,7 +3355,7 @@
       setVoiceStatus('Thinking…', 'thinking');
     }
 
-    addMessage('user', message.trim());
+    const userMessage=addMessage('user', message.trim());
     input.value = '';
     autoSize();
 
@@ -3369,7 +3413,7 @@
       window.VP3TaskNotes?.consume(data.sticky_notes || []);
       if(lastParticipantQuestion?.message===request.message){lastParticipantQuestion.conversation_id=Number(data.conversation_id);lastParticipantQuestion.at=Date.now();}
       conversationId = Number(data.conversation_id); rememberConversation();
-      lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(data.user_message_id||0),Number(data.assistant_message_id||0));
+      bindStoredMessagePa3(userMessage,data.user_message_id,null,'user');
       typing.remove();
 
       const reply = addMessage(
@@ -3385,6 +3429,7 @@
         data.knowledge_actions_r9 || null,
         data.canvas_media || null
       );
+      bindStoredMessagePa3(reply,data.assistant_message_id);
       if (data.canvas_media?.generation_ids?.length) {
         reply.querySelector('.vp3-canvas-media')?.setAttribute('data-specialist-launch', 'true');
       }
