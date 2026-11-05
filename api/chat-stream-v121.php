@@ -16,6 +16,7 @@ require_once dirname(__DIR__).'/includes/transcript-agent-v1.php';
 require_once dirname(__DIR__).'/includes/user-calendar-v1300.php';
 require_once dirname(__DIR__).'/includes/user-calendar-agent-v1300.php';
 require_once dirname(__DIR__).'/includes/agent-work-control-v173.php';
+require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php';
 header('Content-Type: application/x-ndjson; charset=UTF-8');header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');header('X-Accel-Buffering: no');@ini_set('zlib.output_compression','0');@ini_set('output_buffering','0');@set_time_limit(180);ignore_user_abort(true);
 function chat_v121_emit(array $event): void{if(connection_aborted())return;if(($event['type']??'')==='delta'&&isset($GLOBALS['vp3_working_context_stream_buffer_v1'])){$GLOBALS['vp3_working_context_stream_buffer_v1'][]=$event;return;}if(function_exists('agent_runtime_v125_trace_id')&&!isset($event['trace_id']))$event['trace_id']=agent_runtime_v125_trace_id();echo json_encode($event,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)."\n";if(function_exists('ob_flush'))@ob_flush();flush();}
 function chat_v121_scope_sql(?array $agent,string $alias='c'): array{return vp3_agent_chat_scope_sql_v380($agent,$alias);}
@@ -41,17 +42,120 @@ if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!hash_equals(vp3_catch_up_pa
 }
 $pdo=db();if(!$pdo||!table_exists('chat_conversations')||!table_exists('chat_messages')||!user_agent_system_schema_ready_v236($pdo))throw new RuntimeException('Chat storage is not ready.');$brainAllowed=personal_capability_has_v242('agent_brain.access',$user);
 $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$input=$_POST;$csrf=(string)($input['csrf_token']??'');if($csrf===''||!hash_equals(csrf_token(),$csrf)){http_response_code(401);throw new RuntimeException('Session expired. Refresh the page and try again.');}$query=trim((string)($input['message']??''));if($query==='')throw new RuntimeException('Enter a message.');if(mb_strlen($query)>6000)throw new RuntimeException('That message is too long.');$userId=(int)$user['id'];$conversationId=max(0,(int)($input['conversation_id']??0));$activeAgent=chat_v121_agent($pdo,$user,$input,$conversationId);$principal=vp3_agent_chat_principal_v380($user,$activeAgent);$agentScopeId=vp3_agent_chat_agent_id_v380($activeAgent);
-$input['input_mode']='voice';$participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);
-$idempotencyKey=mb_substr(trim((string)($input['idempotency_key']??'')),0,160);$idempotencyScope='voice-chat:user-'.$userId.':agent-'.$agentScopeId;if($participantActor!==null)$idempotencyScope.=':participant-'.(int)($participantActor['participant_id']??0).':revision-'.vp3_participant_settings_v1($pdo,$user)['revision'];if($idempotencyKey!==''){$claim=agent_runtime_v125_idempotency_claim($idempotencyScope,$idempotencyKey,86400);if(empty($claim['claimed'])){if(($claim['state']??'')==='completed'&&is_array($claim['result']??null)){$replay=$claim['result'];if(isset($input['working_context_ref'])||isset($replay['working_context_ref'])){require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';vp3_working_context_replay_v1($pdo,$user,$principal,$input,$replay);}agent_runtime_v125_trace('chat.idempotency.replay',['user_id'=>$userId,'conversation_id'=>(int)($replay['conversation_id']??0),'agent_id'=>$agentScopeId,'ok'=>!empty($replay['ok'])]);if(empty($replay['ok'])){chat_v121_emit(['type'=>'error','error'=>(string)($replay['error']??'The prior voice turn failed.'),'replayed'=>true]);exit;}chat_v121_emit(['type'=>'start','conversation_id'=>(int)($replay['conversation_id']??0),'user_message_id'=>(int)($replay['user_message_id']??0),'assistant_message_id'=>(int)($replay['assistant_message_id']??0),'agent_id'=>$agentScopeId,'replayed'=>true]);if(trim((string)($replay['answer']??''))!=='')chat_v121_emit(['type'=>'delta','delta'=>(string)$replay['answer'],'replayed'=>true]);chat_v121_emit(['type'=>'done','data'=>$replay+['replayed'=>true]]);exit;}throw new RuntimeException('That voice turn is already processing.');}$idempotencyClaimed=true;}agent_runtime_v125_trace('chat.turn.accepted',['user_id'=>$userId,'conversation_id'=>$conversationId,'agent_id'=>$agentScopeId,'idempotent'=>$idempotencyKey!=='']);
+$initiativeReply=vp3_agent_chat_initiative_reply_v2160($input);
+if($initiativeReply!==null&&$conversationId<1)throw new RuntimeException('A saved owner Chat is required for this reply.',422);
+$input['input_mode']='voice';$participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);if($initiativeReply!==null&&($participantActor!==null||vp3_participant_scope_v1()!==null))throw new RuntimeException('Use the private owner Chat for this reply.',403);
+$initiativeRequest=null;
+if($participantActor===null&&vp3_participant_scope_v1()===null&&$conversationId>0&&($initiativeReply!==null||vp3_initiative_followthrough_referential_v1($query))){
+    try{$initiativeRequest=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$conversationId,$query,
+        static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input),$initiativeReply);}catch(Throwable $preflightError){throw vp3_agent_chat_followthrough_error_v2160($preflightError);}
+}
+$idempotencyKey=mb_substr(trim((string)($input['idempotency_key']??'')),0,160);
+if($initiativeReply!==null&&$idempotencyKey==='')$idempotencyKey='initiative:'.hash('sha256',json_encode([$conversationId,$initiativeReply,$query],JSON_THROW_ON_ERROR));
+$idempotencyScope='voice-chat:user-'.$userId.':agent-'.$agentScopeId;
+if($participantActor!==null)$idempotencyScope.=':participant-'.(int)($participantActor['participant_id']??0).':revision-'.vp3_participant_settings_v1($pdo,$user)['revision'];
+$voiceFollowthroughRequest=($initiativeReply!==null||$initiativeRequest!==null)?[
+    'owner_user_id'=>$userId,'agent_id'=>$agentScopeId,'conversation_id'=>$conversationId,'initiative_reply'=>$initiativeReply,
+    'selected_reply'=>$initiativeReply??$initiativeRequest['initiative_reply'],
+    'explicit'=>$initiativeReply!==null,'query_hash'=>hash('sha256',$query)]:null;
+if($idempotencyKey!==''){
+    if(($initiativeRequest['replay_only']??false)===true){
+        $outer=vp3_agent_chat_followthrough_peek_v2160($idempotencyScope,$idempotencyKey);
+        if($outer!==null){
+            if(($outer['status']??null)==='processing'){
+                if(($outer['initiative_voice_request']??null)!==$voiceFollowthroughRequest)throw new RuntimeException('The voice reply request changed.',409);
+            }elseif(($outer['status']??null)==='completed'&&is_array($outer['result']??null)&&!empty($outer['result']['ok'])){
+                vp3_agent_chat_followthrough_cached_v2160($pdo,$user,$principal,$input,$outer['result'],
+                    static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input));
+            }else throw new RuntimeException('The historical voice reply cache is unavailable.',409);
+        }
+        // The private completed-cache reader below is authoritative. Neither
+        // outer nor private cache is rewritten for a historical projection.
+    }else{
+    $outer=$voiceFollowthroughRequest!==null?vp3_agent_chat_followthrough_peek_v2160($idempotencyScope,$idempotencyKey):null;
+    $claim=is_array($outer)&&($outer['status']??null)==='completed'&&is_array($outer['result']??null)&&!empty($outer['result']['ok'])
+        ?['claimed'=>false,'state'=>'completed','result'=>$outer['result']]
+        :agent_runtime_v125_idempotency_claim($idempotencyScope,$idempotencyKey,86400);
+    if(empty($claim['claimed'])){
+        if(($claim['state']??'')==='processing'&&$voiceFollowthroughRequest!==null){
+            vp3_agent_chat_followthrough_record_v2160($idempotencyScope,$idempotencyKey,static function(array &$row)use($voiceFollowthroughRequest):void{
+                if(($row['status']??null)!=='processing'||($row['initiative_voice_request']??null)!==$voiceFollowthroughRequest)throw new RuntimeException('The voice reply request changed.',409);
+            });
+            // The exact shared private request performs the bounded busy/stale
+            // arbitration; this outer stream cache is not a second worker.
+            $replay=null;
+        }else{
+        if(($claim['state']??'')!=='completed'||!is_array($claim['result']??null))throw new RuntimeException('That voice turn is already processing.',503);
+        $replay=$claim['result'];$failedBinding=$replay['initiative_reply_failure']??null;
+        if(is_array($failedBinding)){
+            $followthroughReplay=true;
+            if(($initiativeReply===null&&$initiativeRequest===null)||($failedBinding['initiative_reply']??null)!==$initiativeReply
+                ||($failedBinding['explicit']??true)!==($initiativeReply!==null)
+                ||($failedBinding['query_hash']??null)!==hash('sha256',$query)||($failedBinding['conversation_id']??null)!==$conversationId
+                ||($failedBinding['agent_id']??null)!==$agentScopeId)throw new RuntimeException('The failed voice reply binding changed.',409);
+            // The shared private owner-request store reclaims this failed reply
+            // exclusively, preserving its saved owner turn and any accepted work.
+        }else{
+            if($initiativeReply!==null||array_key_exists('initiative_followthrough',$replay)){
+                $followthroughReplay=true;
+                $replay=vp3_agent_chat_followthrough_cached_v2160($pdo,$user,$principal,$input,$replay,
+                    static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input));
+            }
+            if(isset($input['working_context_ref'])||isset($replay['working_context_ref'])){
+                require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';vp3_working_context_replay_v1($pdo,$user,$principal,$input,$replay);
+            }
+            if(empty($replay['ok'])){chat_v121_emit(['type'=>'error','error'=>(string)($replay['error']??'The prior voice turn failed.'),'replayed'=>true]);exit;}
+            chat_v121_emit(['type'=>'start','conversation_id'=>(int)($replay['conversation_id']??0),'user_message_id'=>(int)($replay['user_message_id']??0),
+                'assistant_message_id'=>(int)($replay['assistant_message_id']??0),'agent_id'=>$agentScopeId,'replayed'=>true]);
+            if(trim((string)($replay['answer']??''))!=='')chat_v121_emit(['type'=>'delta','delta'=>(string)$replay['answer'],'replayed'=>true]);
+            chat_v121_emit(['type'=>'done','data'=>$replay+['replayed'=>true]]);exit;
+        }
+        }
+    }elseif($voiceFollowthroughRequest!==null){
+        vp3_agent_chat_followthrough_record_v2160($idempotencyScope,$idempotencyKey,static function(array &$row)use($voiceFollowthroughRequest):void{
+            if(($row['status']??null)!=='processing'||isset($row['initiative_voice_request']))throw new RuntimeException('The voice reply request changed.',409);
+            $row['initiative_voice_request']=$voiceFollowthroughRequest;
+        });
+    }
+    $idempotencyClaimed=true;
+    }
+}
+agent_runtime_v125_trace('chat.turn.accepted',['user_id'=>$userId,'conversation_id'=>$conversationId,'agent_id'=>$agentScopeId,'idempotent'=>$idempotencyKey!=='']);
 if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,$query,$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!chat_v121_owned($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
+if($participantActor!==null&&array_key_exists('initiative_reply',$input))throw new RuntimeException('Use the private owner Chat for this reply.',403);
 if($participantActor!==null){
     $done=vp3_participant_chat_send_v1($pdo,$user,$principal,$input,$participantActor,$conversationId);
     if($idempotencyClaimed&&$idempotencyKey!=='')agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$done);
     chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],'assistant_message_id'=>$done['assistant_message_id'],'agent_id'=>$agentScopeId]);
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
+if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null){
+    // Associated replies share the exact typed/legacy pipeline and private
+    // recovery key, including a response lost while changing input surfaces.
+    $input['conversation_id']=$conversationId;
+    $done=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);
+    $assistantMessageId=(int)$done['assistant_message_id'];$done['input_mode']='voice';
+    if($idempotencyClaimed&&$idempotencyKey!=='')agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$done);
+    if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+    chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],
+        'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentScopeId]);
+    chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
+}
 $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$agentScopeId;$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();
-$reminderTool=null;$workingSelection=null;unset($rawAgentContext['working_context_ref']);
+$reminderTool=null;$workingSelection=null;
+unset($rawAgentContext['working_context_ref'],$rawAgentContext['initiative_reply'],$rawAgentContext['initiative_followthrough'],$rawAgentContext['followthrough'],$rawAgentContext['advisory_context'],$rawAgentContext['verified_followthrough'],$rawAgentContext['initiative_reply_anchor_v1'],$rawAgentContext['initiative_reply_recovery'],$rawAgentContext['initiative_request'],$rawAgentContext['initiative_claim'],$rawAgentContext['initiative_voice_request'],$rawAgentContext['initiative_reply_unassociated_v1']);
+$followthroughAuthority=static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
+$followthroughSelection=vp3_initiative_followthrough_reply_v1($pdo,$user,$principal,$conversationId,$userMessageId,$initiativeReply,$query,$followthroughAuthority);
+if(!empty($followthroughSelection['handled'])){
+    $ownerAuthority=static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
+    $done=vp3_agent_chat_followthrough_finish_v2160($pdo,$user,$activeAgent,$principal,$conversationId,$userMessageId,$query,'voice',$followthroughSelection,$ownerAuthority);
+    $assistantMessageId=(int)$done['assistant_message_id'];
+    if($idempotencyClaimed&&$idempotencyKey!=='')agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$done);
+    if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+    chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentScopeId]);
+    chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
+}
+if(array_key_exists('initiative_reply',$input))throw new RuntimeException('That follow-through reply is no longer current.',409);
 if(array_key_exists('working_context_ref',$input)){
     require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';
     $workingContextRef=vp3_working_context_request_v1($query,$input['working_context_ref']);
@@ -150,4 +254,21 @@ $done=['ok'=>true,'canvas_media'=>$messageContext['canvas_media'],'sticky_notes'
     foreach($buffered as $event)chat_v121_emit($event);
 }
 chat_v121_emit(['type'=>'done','data'=>$done]);
-}catch(Throwable $e){if($assistantMessageId>0&&$pdo instanceof PDO){try{$pdo->prepare("DELETE FROM chat_messages WHERE id=? AND conversation_id=? AND message='' ")->execute([$assistantMessageId,$conversationId]);}catch(Throwable $cleanup){}}$publicError=ai_v100_safe_exception($e,'The voice conversation request could not be completed.');if($idempotencyClaimed&&$idempotencyScope!==''&&$idempotencyKey!=='')agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,['ok'=>false,'error'=>$publicError,'conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'trace_id'=>agent_runtime_v125_trace_id()]);agent_runtime_v125_trace('chat.turn.error',['conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'error_class'=>get_class($e)]);chat_v121_emit(['type'=>'error','error'=>$publicError]);}
+}catch(Throwable $e){if($assistantMessageId>0&&$pdo instanceof PDO){try{$pdo->prepare("DELETE FROM chat_messages WHERE id=? AND conversation_id=? AND message='' ")->execute([$assistantMessageId,$conversationId]);}catch(Throwable $cleanup){}}$publicError=ai_v100_safe_exception($e,'The voice conversation request could not be completed.');if($idempotencyClaimed&&$idempotencyScope!==''&&$idempotencyKey!==''){
+    $failedVoice=['ok'=>false,'error'=>$publicError,'conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'trace_id'=>agent_runtime_v125_trace_id()];
+    if(is_array($initiativeReply??null)||is_array($initiativeRequest??null)){
+        $failedVoice['initiative_reply_failure']=['initiative_reply'=>$initiativeReply,'explicit'=>$initiativeReply!==null,
+            'query_hash'=>hash('sha256',$query),'conversation_id'=>$conversationId,'agent_id'=>$agentScopeId];
+        try{
+            $anchor=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$conversationId,$query,null,$initiativeReply);
+            if(is_array($anchor)&&($anchor['user_message_id']??0)>0)$failedVoice['initiative_reply_failure']['request_anchor']=$anchor;
+        }catch(Throwable $anchorError){}
+    }
+    if(is_array($voiceFollowthroughRequest??null)){
+        // A late expired generation cannot replace a successful newer stream
+        // cache with its error. The shared private store retains recovery state.
+        try{vp3_agent_chat_followthrough_record_v2160($idempotencyScope,$idempotencyKey,static function(array &$row)use($voiceFollowthroughRequest,$failedVoice):void{
+            if(($row['status']??null)==='processing'&&($row['initiative_voice_request']??null)===$voiceFollowthroughRequest)$row['initiative_reply_failure']=$failedVoice['initiative_reply_failure']??null;
+        });}catch(Throwable $voiceStorageError){}
+    }else agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$failedVoice);
+}agent_runtime_v125_trace('chat.turn.error',['conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'error_class'=>get_class($e)]);$followthroughError=$e instanceof VP3InitiativeReplyExceptionV2160||array_key_exists('initiative_reply',$input??[])||is_array($initiativeRequest??null)||!empty($followthroughSelection['handled'])||!empty($followthroughReplay);$status=(int)$e->getCode();if($followthroughError){$status=in_array($status,[403,404,409,422,503],true)?$status:503;$publicError=$status===409?'initiative_reply_stale':($status===403?'initiative_reply_forbidden':'initiative_reply_unavailable');}chat_v121_emit(['type'=>'error','error'=>$publicError]+($followthroughError?['status'=>$status,'code'=>$publicError]:[]));}

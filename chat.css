@@ -5804,3 +5804,8 @@ body.chat-create-modal-open{
 .chat-listening-continuation [data-listening-toggle]:hover{background:#f3f4f6}
 .chat-listening-continuation [data-listening-toggle]:focus-visible{outline:2px solid #1d4ed8;outline-offset:2px}
 .chat-listening-continuation [data-listening-resume-audio]{display:none}
+
+.chat-initiative-reply-cue{display:flex;align-items:center;gap:10px;max-width:790px;margin:0 auto 8px;padding:8px 10px;border:1px solid #d7e1ed;border-radius:10px;background:#f5f8fc;color:#344054;font-size:12px}
+.chat-initiative-reply-cue>div{display:grid;gap:3px;min-width:0;flex:1;overflow-wrap:anywhere}.chat-initiative-reply-cue strong{font-size:11px}.chat-initiative-reply-cue span{white-space:normal}
+.chat-initiative-reply-cue>button{flex:none;border:0;background:transparent;color:#475467;font-size:20px;cursor:pointer;padding:4px 8px}.chat-initiative-followthrough-state{align-self:center;color:#667085;font-size:11px}
+.message[data-initiative-reply-selected]{box-shadow:inset 3px 0 #8babc9}.chat-agent-actions>[data-initiative-reply]{margin-top:0}

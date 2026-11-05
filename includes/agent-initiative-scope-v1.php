@@ -57,7 +57,7 @@ function vp3_initiative_failure_reason_v1(Throwable $error): string
 }
 
 /** Bounded owner availability from existing saved activity; never a sensing request. */
-function vp3_initiative_owner_context_v1(PDO $pdo,array $user,array $binding): array
+function vp3_initiative_owner_context_v1(PDO $pdo,array $user,array $binding,bool $includeEngagement=true): array
 {
     $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));$timezone='UTC';
     try{
@@ -66,6 +66,10 @@ function vp3_initiative_owner_context_v1(PDO $pdo,array $user,array $binding): a
     }catch(Throwable $e){$timezone='UTC';$zone=new DateTimeZone('UTC');}
     $context=['source'=>'saved_owner_activity','current_time'=>$now->format(DATE_ATOM),'timezone'=>$timezone,
         'local_time'=>$now->setTimezone($zone)->format(DATE_ATOM),'available'=>false,'state'=>'unknown','interruptible'=>null];
+    if($includeEngagement){
+        require_once __DIR__.'/agent-initiative-engagement-memory-v1.php';
+        $context['engagement']=vp3_initiative_engagement_memory_v1($pdo,$user,$binding);
+    }
     try{
         require_once __DIR__.'/agent-activity-v94.php';
         $snapshot=agent_activity_v94_snapshot($user,'chat');
