@@ -38,51 +38,71 @@ function vp3_initiative_plan_v1(string $answer,array $evidence): array
     return $jobs;
 }
 
-function vp3_initiative_evidence_v1(PDO $pdo,array $user,DateTimeImmutable $now,bool $includeScreen=false,array $screenSessions=[]): array
+function vp3_initiative_evidence_v1(PDO $pdo,array $user,DateTimeImmutable $now,bool $includeScreen=false,array $screenSessions=[],?array &$coverage=null,?array $selectedRefs=null): array
 {
     $principal=vp3_agent_chat_principal_v380($user,null);
-    $sources=[
-        'calendar'=>fn()=>vp3_catch_up_calendar_v1($pdo,$user,$now),
-        'mission'=>fn()=>vp3_catch_up_missions_v1($pdo,$user,$principal,$now,true),
+    $current=vp3_catch_up_candidates_v1($pdo,$user,'all',0,true,$now,true);
+    $coverage=$current['coverage']+['transcripts'=>'ready','screen_followup'=>$includeScreen?'ready':'forbidden'];
+    $selected=$selectedRefs===null?null:array_fill_keys($selectedRefs,true);
+    $kinds=[
+        'calendar'=>'calendar','reminders'=>'reminder','tasks'=>'task','missions'=>'mission',
+        'profile_calls'=>'profile_call','meeting_prep'=>'meeting_prep','orders'=>'order',
+        'campaigns'=>'campaign','rewards'=>'reward',
     ];
-    $evidence=[];
-    foreach($sources as $kind=>$load){
-        try{[$coverage,$items]=$load();}catch(Throwable $e){continue;}
-        foreach(array_slice($items,0,4) as $item){
-            $ref=(string)$item['id'];
-            unset($item['priority']);
-            if(($item['status']??'')==='active')unset($item['time'],$item['source_updated_at']);
-            $evidence[$ref]=['ref'=>$ref,'kind'=>$kind,'title'=>$item['title'],'detail'=>$item['reason'],
-                'url'=>$item['url'],'revision'=>hash('sha256',json_encode($item,JSON_THROW_ON_ERROR))];
-        }
+    $evidence=[];$counts=[];
+    foreach($current['items'] as $item){
+        $ref=(string)$item['id'];
+        if($selected!==null&&!isset($selected[$ref]))continue;
+        $family=$current['source_kinds'][$ref];
+        $counts[$family]=($counts[$family]??0)+1;
+        if($selected===null&&$counts[$family]>4)continue;
+        $evidence[$ref]=['ref'=>$ref,'kind'=>$kinds[$family],'title'=>$item['title'],'detail'=>$item['reason'],
+            'url'=>$item['url'],'revision'=>$current['source_revisions'][$ref]];
     }
     try{
         require_once __DIR__.'/transcript-agent-v1.php';
-        $catalog=vp3_transcript_catalog_v1($pdo,$user,$principal);
-        foreach(array_slice($catalog['sessions'],0,4) as $row){
+        $sessions=[];
+        if($selected===null){
+            $catalog=vp3_transcript_catalog_v1($pdo,$user,$principal);
+            $rows=array_slice($catalog['sessions'],0,4);
+            if(count($catalog['sessions'])>4||($catalog['next_before']??null)!==null)$coverage['transcripts']='limited';
+        }else{
+            $rows=[];
+            foreach($selectedRefs as $ref){
+                if(!preg_match('/^transcript:([1-9][0-9]*)$/D',$ref,$match))continue;
+                try{$session=vp3_transcript_session_v1($pdo,$user,$principal,(int)$match[1]);}
+                catch(RuntimeException $e){if($e->getCode()===404)continue;throw $e;}
+                $sessions[(int)$session['id']]=$session;
+                $row=[];
+                foreach(['id','title','status','conversation_id','started_at','last_activity_at'] as $field)$row[$field]=$session[$field];
+                $rows[]=$row;
+            }
+        }
+        foreach($rows as $row){
             $updated=vp3_catch_up_timestamp_v1($row['last_activity_at']??null,new DateTimeZone('UTC'));
             if($updated===null||$updated<$now->getTimestamp()-7*86400||$updated>$now->getTimestamp())continue;
             $id=(int)$row['id'];
             $ref='transcript:'.$id;
             try{
-                $session=vp3_transcript_session_v1($pdo,$user,$principal,$id);
+                $session=$sessions[$id]??vp3_transcript_session_v1($pdo,$user,$principal,$id);
                 video_meeting_transcription_assert_cloud_ai_v1801($pdo,$user,$session);
                 $analysis=vp3_transcript_intelligence_v1($pdo,$user,$principal,$id,'initiative','actions');
                 $counts=$analysis['review_counts']??[];
                 $actions=$analysis['accepted_actions']??[];
                 if(empty($analysis['fresh'])||(!$actions&&empty($counts['unreviewed'])))continue;
-            }catch(Throwable $e){continue;}
+            }catch(Throwable $e){$coverage['transcripts']=$e->getCode()===403?'forbidden':'unavailable';continue;}
             $evidence[$ref]=['ref'=>$ref,'kind'=>'transcript','title'=>mb_substr((string)$row['title'],0,170),
                 'detail'=>'Transcript action review: '.(int)($counts['unreviewed']??0).' unreviewed suggestions.',
                 'reviewed_actions'=>$actions,
                 'url'=>url('/artist-listening.php?session='.$id),
                 'revision'=>hash('sha256',json_encode([$row,$analysis['source_hash'],$analysis['generated_at'],$counts,$actions],JSON_THROW_ON_ERROR))];
         }
-    }catch(Throwable $e){}
+    }catch(Throwable $e){$coverage['transcripts']=$e->getCode()===403?'forbidden':'unavailable';}
     if($includeScreen){
         require_once __DIR__.'/agent-initiative-screen-v1.php';
         try{$evidence+=vp3_initiative_screen_evidence_v1($pdo,$user,$now,$screenSessions);}
         catch(Throwable $e){
+            $coverage['screen_followup']=$e->getCode()===403?'forbidden':'unavailable';
             if($screenSessions)throw $e;
         }
     }
@@ -184,6 +204,7 @@ function vp3_initiative_sweep_v1(PDO $pdo,int $limit): void
 {
     if(!agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo))return;
     $limit=max(1,min(25,$limit));
+    vp3_initiative_delivery_sweep_v1($pdo,$limit);
     $stmt=$pdo->prepare("SELECT p.user_id FROM agent_memory_items p
         JOIN users u ON u.id=p.user_id AND u.is_active=1
         LEFT JOIN agent_memory_items s ON s.user_id=p.user_id AND s.user_agent_id IS NULL
@@ -342,7 +363,8 @@ function vp3_initiative_foreground_status_v1(PDO $pdo,array $user,int $agentId,i
         $conversation=$jsonValue('r.goal','$.binding.conversation_id');
         $runRevision=$jsonValue('r.goal','$.binding.revision');
         $effect=$jsonValue('a.result_json','$.effect_state');
-        $stmt=$pdo->prepare("SELECT r.goal,r.status,r.lease_expires_at,$effect AS effect_state FROM agent_workflow_runs r
+        $delivery=$jsonValue('a.result_json','$.initiative_delivery');
+        $stmt=$pdo->prepare("SELECT r.goal,r.status,r.lease_expires_at,$effect AS effect_state,$delivery AS initiative_delivery FROM agent_workflow_runs r
             JOIN agent_workflow_actions a ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id
             WHERE r.owner_user_id=? AND r.source_kind='agent_initiative' AND r.agent_id IS NULL
                 AND CAST($conversation AS CHAR)=? AND $runRevision=?
@@ -359,7 +381,8 @@ function vp3_initiative_foreground_status_v1(PDO $pdo,array $user,int $agentId,i
             }
             if($row['status']!=='completed')continue;
             $status['state']='checked';
-            if($row['effect_state']!=='private_draft_ready'||!is_array($goal['sources']??null)||!$goal['sources'])continue;
+            if($row['effect_state']!=='private_draft_ready'||in_array($row['initiative_delivery'],['delivered','withheld'],true)
+                ||!is_array($goal['sources']??null)||!$goal['sources'])continue;
             try{
                 vp3_initiative_current_sources_v1($pdo,$live,$goal['sources'],!empty($policy['screen_enabled']));
                 return ['state'=>'ready']+$status;
@@ -409,27 +432,151 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
 {
     $sessions=[];
     foreach(array_keys($sources) as $ref)if(str_starts_with($ref,'screen-followup:'))$sessions[]=substr($ref,16);
-    $current=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),$includeScreen&&$sessions!==[],$sessions);
+    $coverage=[];
+    $current=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),$includeScreen&&$sessions!==[],$sessions,$coverage,array_keys($sources));
+    $families=['calendar'=>'calendar','calendar-conflict'=>'calendar','reminder'=>'reminders','task'=>'tasks','mission'=>'missions',
+        'profile-call'=>'profile_calls','meeting-prep'=>'meeting_prep','order'=>'orders','campaign'=>'campaigns',
+        'campaign-journey'=>'campaigns',
+        'reward'=>'rewards','transcript'=>'transcripts','screen-followup'=>'screen_followup'];
     foreach($sources as $ref=>$revision){
-        if(($current[$ref]['revision']??null)!==$revision)throw new RuntimeException('Initiative sources changed.',409);
+        if(($current[$ref]['revision']??null)===$revision)continue;
+        $family=$families[explode(':',$ref,2)[0]]??'';
+        if(in_array($coverage[$family]??'', ['unavailable','limited'],true)){
+            throw new RuntimeException('Initiative source verification is unavailable.',503);
+        }
+        throw new RuntimeException('Initiative sources changed.',409);
     }
     return array_intersect_key($current,$sources);
+}
+
+function vp3_initiative_owner_present_v1(PDO $pdo,array $user,int $cid): bool
+{
+    require_once __DIR__.'/agent-activity-v94.php';
+    $activity=agent_activity_v94_snapshot($user,'chat');
+    if(empty($activity['tracking_ready'])||empty($activity['interruptible'])
+        ||($activity['state']??'')==='logged_out'||($activity['surface']??'')!=='chat'
+        ||($activity['context_key']??'')!=='chat:'.$cid||($activity['seconds_since_activity']??PHP_INT_MAX)>90)return false;
+    $stmt=$pdo->prepare('SELECT details_json FROM agent_activity_state WHERE user_id=?');
+    $stmt->execute([(int)$user['id']]);
+    $details=json_decode((string)$stmt->fetchColumn(),true);
+    return is_array($details)&&!empty($details['visible'])&&(int)($details['conversation_id']??0)===$cid;
+}
+
+/** Keep the private preparation receipt and its eventual Chat delivery atomic. */
+function vp3_initiative_delivery_result_v1(PDO $pdo,int $owner,array $row,array $result): void
+{
+    $json=agent_workflow_json_v1400($result);
+    $pdo->prepare("UPDATE agent_workflow_actions SET result_json=?,updated_at=UTC_TIMESTAMP()
+        WHERE id=? AND run_id=? AND owner_user_id=? AND status='completed'")
+        ->execute([$json,(int)$row['action_id'],(int)$row['run_id'],$owner]);
+    $pdo->prepare("UPDATE agent_workflow_receipts SET result_json=?
+        WHERE action_id=? AND run_id=? AND owner_user_id=? AND status='completed'")
+        ->execute([$json,(int)$row['action_id'],(int)$row['run_id'],$owner]);
+}
+
+function vp3_initiative_report_v1(PDO $pdo,array $user,int $cid,string $draft,array $evidence,int $runId): int
+{
+    $links=array_map(static fn(array $row):array=>['source'=>$row['ref'],'title'=>$row['title'],'url'=>$row['url']],array_values($evidence));
+    $context=['source'=>'agent_initiative','skip_brain_archive'=>true,'sources'=>$links,'initiative_run_id'=>$runId];
+    $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json,created_at)
+        VALUES (?,NULL,'assistant',?,?,NOW())")->execute([$cid,$draft,json_encode($context,JSON_THROW_ON_ERROR)]);
+    $messageId=(int)$pdo->lastInsertId();
+    $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')->execute([$cid,(int)$user['id']]);
+    return $messageId;
+}
+
+/** Deliver saved results without inference when their owner returns to the linked Chat. */
+function vp3_initiative_deliver_pending_v1(PDO $pdo,array $user): bool
+{
+    if($pdo->inTransaction()||vp3_agent_memory_scope_current_v410($user)!==0)return false;
+    $policy=vp3_initiative_policy_v1($user);
+    if(empty($policy['enabled']))return false;
+    $live=$user;$owner=(int)$user['id'];$cid=(int)$policy['conversation_id'];
+    $pdo->beginTransaction();
+    try{
+        vp3_initiative_owner_lock_v1($pdo,$live);
+        $revoked=false;
+        try{$live=vp3_initiative_access_v1($pdo,$live,$policy);}
+        catch(RuntimeException $e){if($e->getCode()!==403)throw $e;$revoked=true;}
+        if(!$revoked&&!vp3_agent_chat_conversation_v380($pdo,$cid,$owner,null,true))$revoked=true;
+        $pending="JSON_EXTRACT(CASE WHEN JSON_VALID(a.result_json) THEN a.result_json ELSE '{}' END,'$.initiative_delivery')";
+        if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite')$pending="JSON_UNQUOTE($pending)";
+        $stmt=$pdo->prepare("SELECT r.id AS run_id,a.id AS action_id,r.goal,a.result_json FROM agent_workflow_runs r
+            JOIN agent_workflow_actions a ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id
+            WHERE r.owner_user_id=? AND r.source_kind='agent_initiative' AND r.agent_id IS NULL
+                AND r.status='completed' AND a.status='completed' AND a.capability_key='initiative.prepare'
+                AND $pending='pending' ORDER BY a.id DESC LIMIT 25");
+        $stmt->execute([$owner]);
+        $rows=$stmt->fetchAll(PDO::FETCH_ASSOC);
+        $present=!$revoked&&vp3_initiative_owner_present_v1($pdo,$live,$cid)&&vp3_initiative_can_report_v1($pdo,$live,$cid);
+        $delivered=false;
+        foreach($rows as $row){
+            $goal=json_decode((string)$row['goal'],true);
+            $result=json_decode((string)$row['result_json'],true);
+            if(!is_array($result))$result=[];
+            $draft=$result['initiative_draft']??null;
+            if($revoked||($goal['binding']??null)!==$policy||empty($goal['report'])||!is_array($goal['sources']??null)
+                ||!$goal['sources']||!is_string($draft)||$draft===''||mb_strlen($draft)>490){
+                $result['initiative_delivery']='withheld';
+            }else{
+                try{
+                    $evidence=vp3_initiative_current_sources_v1($pdo,$live,$goal['sources'],!empty($policy['screen_enabled']));
+                    if($present&&!$delivered){
+                        $result['initiative_message_id']=vp3_initiative_report_v1($pdo,$live,$cid,$draft,$evidence,(int)$row['run_id']);
+                        $result['initiative_delivery']='delivered';
+                        $delivered=true;
+                        agent_workflow_event_v1400($pdo,$owner,(int)$row['run_id'],'initiative_reported','completed','completed','system',
+                            'Private preparation delivered to the linked Chat.',['message_id'=>$result['initiative_message_id']]);
+                    }
+                }catch(RuntimeException $e){
+                    if(!in_array($e->getCode(),[403,409,503],true))throw $e;
+                    if($e->getCode()!==503)$result['initiative_delivery']='withheld';
+                }
+            }
+            vp3_initiative_delivery_result_v1($pdo,$owner,$row,$result);
+        }
+        $pdo->commit();
+        return $delivered;
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+}
+
+function vp3_initiative_delivery_sweep_v1(PDO $pdo,int $limit): int
+{
+    $pending="JSON_EXTRACT(CASE WHEN JSON_VALID(a.result_json) THEN a.result_json ELSE '{}' END,'$.initiative_delivery')";
+    if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite')$pending="JSON_UNQUOTE($pending)";
+    $stmt=$pdo->prepare("SELECT r.owner_user_id FROM agent_workflow_runs r
+        JOIN agent_workflow_actions a ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id
+        JOIN users u ON u.id=r.owner_user_id AND u.is_active=1
+        JOIN agent_memory_items p ON p.user_id=r.owner_user_id AND p.user_agent_id IS NULL
+            AND p.memory_type='initiative_policy' AND p.subject='owner-opt-in' AND p.is_active=1
+        WHERE r.source_kind='agent_initiative' AND r.agent_id IS NULL AND r.status='completed'
+            AND a.status='completed' AND a.capability_key='initiative.prepare' AND $pending='pending'
+            AND CAST(JSON_EXTRACT(CASE WHEN JSON_VALID(p.metadata_json) THEN p.metadata_json ELSE '{}' END,'$.enabled') AS CHAR) IN ('true','1')
+        GROUP BY r.owner_user_id ORDER BY MIN(COALESCE(a.updated_at,a.completed_at)),r.owner_user_id LIMIT ".max(1,min(25,$limit)));
+    $stmt->execute();$delivered=0;
+    foreach($stmt->fetchAll(PDO::FETCH_COLUMN) as $owner){
+        $user=agent_cognitive_loop_v310_user((int)$owner);
+        if(!$user)continue;
+        try{if(vp3_initiative_deliver_pending_v1($pdo,$user))$delivered++;}
+        catch(Throwable $e){agent_runtime_v125_trace('initiative.delivery_failed',['user_id'=>(int)$owner,'error_class'=>get_class($e)]);}
+    }
+    return $delivered;
 }
 
 function vp3_initiative_can_report_v1(PDO $pdo,array $user,int $cid): bool
 {
     if(function_exists('agent_activity_v94_snapshot')&&empty(agent_activity_v94_snapshot($user,'chat')['interruptible']))return false;
-    $stmt=$pdo->prepare("SELECT role,message,context_json FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12");
+    $stmt=$pdo->prepare("SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1");
     $stmt->execute([$cid]);
     $latest=$stmt->fetch(PDO::FETCH_ASSOC);
     if($latest&&($latest['role']==='user'||trim((string)$latest['message'])===''))return false;
-    // A new situation can justify another report after the owner next engages.
-    while($latest&&$latest['role']!=='user'){
-        $context=json_decode((string)($latest['context_json']??''),true);
-        if(($context['source']??'')==='agent_initiative')return false;
-        $latest=$stmt->fetch(PDO::FETCH_ASSOC);
-    }
-    return true;
+    $source="JSON_EXTRACT(CASE WHEN JSON_VALID(context_json) THEN context_json ELSE '{}' END,'$.source')";
+    if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite')$source="JSON_UNQUOTE($source)";
+    $stmt=$pdo->prepare("SELECT id FROM chat_messages WHERE conversation_id=? AND role='assistant'
+        AND id>COALESCE((SELECT MAX(id) FROM chat_messages WHERE conversation_id=? AND role='user'),0)
+        AND $source='agent_initiative' LIMIT 1");
+    $stmt->execute([$cid,$cid]);
+    return !$stmt->fetchColumn();
 }
 
 /** Use the existing leased worker and commit the result with its workflow receipt. */
@@ -477,15 +624,13 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
         }else{
             $cid=(int)$binding['conversation_id'];$uid=(int)$live['id'];
             if(!vp3_agent_chat_conversation_v380($pdo,$cid,$uid,null,true))throw new RuntimeException('Initiative conversation changed.',403);
-            if(!empty($payload['report'])&&vp3_initiative_can_report_v1($pdo,$live,$cid)){
-                $links=array_map(static fn(array $row):array=>['source'=>$row['ref'],'title'=>$row['title'],'url'=>$row['url']],array_values($evidence));
-                $context=['source'=>'agent_initiative','skip_brain_archive'=>true,'sources'=>$links];
-                $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json,created_at)
-                    VALUES (?,NULL,'assistant',?,?,NOW())")->execute([$cid,$draft,json_encode($context,JSON_THROW_ON_ERROR)]);
-                $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')->execute([$cid,$uid]);
+            $delivery=empty($payload['report'])?'private':'pending';$messageId=0;
+            if($delivery==='pending'&&vp3_initiative_owner_present_v1($pdo,$live,$cid)&&vp3_initiative_can_report_v1($pdo,$live,$cid)){
+                $messageId=vp3_initiative_report_v1($pdo,$live,$cid,$draft,$evidence,(int)$run['id']);
+                $delivery='delivered';
             }
             $receipt=agent_worker_cloud_result_v1910($pdo,$live,$claim,true,'Private preparation completed.',
-                ['effect_state'=>'private_draft_ready','initiative_draft'=>$draft]);
+                ['effect_state'=>'private_draft_ready','initiative_draft'=>$draft,'initiative_delivery'=>$delivery,'initiative_message_id'=>$messageId]);
         }
         $pdo->commit();
         return ['ok'=>true,'reason'=>'completed','receipt'=>$receipt];

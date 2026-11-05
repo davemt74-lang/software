@@ -58,8 +58,10 @@ const cardFor = generationId => page.locator(`#chatThread .message.assistant .vp
 const tickCount = generationId => calls.filter(call => call.action==='tick' && call.generation_id===generationId).length;
 async function assertInlineOnly(card, progress) {
  await card.getByRole('status').filter({hasText:progress}).waitFor();
- await specialist.waitFor({state:'hidden'});
- await panel.waitFor({state:'hidden'});
+ // Wait for the media-query handler to finish retiring the desktop controls.
+ // CSS alone can hide them before that handler processes the viewport change.
+ await specialist.waitFor({state:'detached'});
+ await panel.waitFor({state:'detached'});
  assert.equal(await card.count(),1);
  assert.equal(await page.getByRole('button',{name:'Image Generator',exact:true}).count(),0);
  assert.equal(await page.locator('#sfOnlineRailV109').isVisible(),false);

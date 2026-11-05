@@ -64,6 +64,7 @@ require_once $root.'/includes/video-meetings-v1800.php';
 require_once $root.'/includes/cognitive-presentation-firewall-v2590.php';
 require_once $root.'/includes/cognitive-presentation-v510.php';
 require_once $root.'/includes/agent-working-context-v1.php';
+require_once $root.'/includes/agent-initiative-v1.php';
 
 $pdo=$GLOBALS['pdo']=new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
@@ -132,6 +133,24 @@ expect(ids($brief)===ids(vp3_agent_catch_up_v1($pdo,$user)),'stable current-sour
 $commerce=vp3_agent_catch_up_v1($pdo,$user,'commerce');
 expect(ids($commerce)===['order:1','order:2','campaign-journey:100'],'Commerce uses owner state, dedupes the same order and groups a production journey');
 expect(!isset($commerce['coverage']['calendar']),'unselected sources are not in coverage');
+$candidates=vp3_catch_up_candidates_v1($pdo,$user,now:$now);
+expect(array_slice(ids($candidates),0,3)===ids($brief)&&count($candidates['items'])>3
+    &&$candidates['source_kinds']['task:1']==='tasks'&&$candidates['source_kinds']['campaign-journey:100']==='campaigns',
+    'Chat and Initiative share current candidates before the Chat presentation budget');
+$initiativeEvidence=vp3_initiative_evidence_v1($pdo,$user,$now);
+expect(!array_diff(['reminder:1','task:1','task:6','order:1','order:2','campaign-journey:100','reward:1'],array_keys($initiativeEvidence))
+    &&$initiativeEvidence['task:1']['kind']==='task'&&$initiativeEvidence['order:1']['kind']==='order'
+    &&$initiativeEvidence['campaign-journey:100']['kind']==='campaign'&&$initiativeEvidence['reward:1']['kind']==='reward',
+    'independent reminder, task, commerce, campaign and reward work remains available below the top three');
+$laterEvidence=vp3_initiative_evidence_v1($pdo,$user,$now->modify('+15 seconds'));
+expect(array_column($initiativeEvidence,'revision','ref')===array_column($laterEvidence,'revision','ref')
+    &&!str_contains(json_encode($initiativeEvidence,JSON_THROW_ON_ERROR),'PRIVATE REFUND TEXT')
+    &&!str_contains(json_encode($initiativeEvidence,JSON_THROW_ON_ERROR),'_source_revision'),
+    'unchanged evidence keeps stable source revisions across polling and excludes private source metadata');
+$otherEvidence=vp3_initiative_evidence_v1($pdo,['id'=>2],$now);
+expect(isset($otherEvidence['reminder:3'],$otherEvidence['task:5'])
+    &&!array_intersect(array_keys($initiativeEvidence),array_keys($otherEvidence)),
+    'shared Initiative collection rechecks the live owner and isolates another account');
 $idle=['last_meaningful_at'=>$now->modify('-31 minutes')->format('Y-m-d H:i:s')];
 $initiative=['state'=>'off'];
 $foreground=vp3_cognitive_presentation_live_context_v510($user,0,50,$idle,$brief,false,$now,$initiative);
@@ -167,6 +186,33 @@ $GLOBALS['participant_scope']=['participant'=>1];
 expect(blocked(fn()=>vp3_agent_catch_up_v1($pdo,$user)),'participant view cannot inherit owner briefing access');
 unset($GLOBALS['participant_scope']);
 expect((int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,'brief reads do not change any source, receipt or delivery record');
+$originalReminder=array_values(array_filter($candidates['items'],static fn(array $row):bool=>$row['id']==='reminder:1'))[0];
+$originalReference=vp3_working_context_key_v1(1,0,50,$originalReminder);
+$pdo->exec('SAVEPOINT source_revisions');
+$pdo->exec('UPDATE agent_reminders_v1 SET revision=revision+1 WHERE id=1');
+$changedCandidates=vp3_catch_up_candidates_v1($pdo,$user,now:$now);
+$changedReminder=array_values(array_filter($changedCandidates['items'],static fn(array $row):bool=>$row['id']==='reminder:1'))[0];
+$changedEvidence=vp3_initiative_evidence_v1($pdo,$user,$now);
+expect($changedReminder['title']===$originalReminder['title']&&$changedReminder['reason']===$originalReminder['reason']
+    &&$changedReminder['source_revision']!==$originalReminder['source_revision']
+    &&vp3_working_context_key_v1(1,0,50,$changedReminder)!==$originalReference
+    &&$changedEvidence['reminder:1']['revision']!==$initiativeEvidence['reminder:1']['revision'],
+    'a reminder revision fences both the offered Chat reference and queued work even when its public summary is unchanged');
+$pdo->exec("UPDATE agent_memory_items SET metadata_json=json_set(metadata_json,'$.task_status','in_progress') WHERE id=1;
+    UPDATE agent_commerce_orders_v800 SET amount_paid_cents=1100 WHERE id=1");
+$changedEvidence=vp3_initiative_evidence_v1($pdo,$user,$now);
+expect($changedEvidence['task:1']['revision']!==$initiativeEvidence['task:1']['revision']
+    &&$changedEvidence['order:1']['revision']!==$initiativeEvidence['order:1']['revision'],
+    'task state and verified payment changes fence preparation even within the same timestamp');
+$reminderInsert=$pdo->prepare('INSERT INTO agent_reminders_v1(id,owner_user_id,title,timezone,start_local,recurrence,delivery,next_at,status,conversation_id,created_at,updated_at) VALUES(?,1,?,\'UTC\',?,\'once\',\'chat\',?,\'active\',50,?,?)');
+for($i=10;$i<16;$i++)$reminderInsert->execute([$i,'Earlier reminder '.$i,$overdue->format('Y-m-d H:i:s'),reminder_utc_v1($now->modify('-3 minutes')),$sqlTime,$sqlTime]);
+$boundedEvidence=vp3_initiative_evidence_v1($pdo,$user,$now);
+$coverage=[];
+$selectedEvidence=vp3_initiative_evidence_v1($pdo,$user,$now,false,[],$coverage,['reminder:1']);
+expect(count(array_filter($boundedEvidence,static fn(array $row):bool=>$row['kind']==='reminder'))===4
+    &&!isset($boundedEvidence['reminder:1'])&&isset($selectedEvidence['reminder:1'])&&$coverage['reminders']==='ready',
+    'planning is bounded per domain while exact source revalidation survives unrelated higher-ranked work');
+$pdo->exec('ROLLBACK TO source_revisions; RELEASE source_revisions');
 $pdo->exec('INSERT INTO chat_conversations VALUES(52,1,7); UPDATE agent_reminders_v1 SET conversation_id=52 WHERE id=1');
 $namedReminders=vp3_catch_up_reminders_v1($pdo,$user,user_agent_principal_v236($user,['id'=>7]),$now)[1];
 expect($namedReminders[0]['url']==='/vp3/chat.php?agent=7&conversation_id=52','named Agent reminder links use the Chat Agent selector');
@@ -242,6 +288,12 @@ expect($brief['items'][1]['status']==='blocked'&&$brief['items'][1]['url']==='/v
     'the blocked Mission points to its exact canonical owner Chat assignment');
 expect($brief['items'][2]['source_label']==='Profile call follow-up'&&$brief['items'][2]['url']==='/vp3/artist-listening.php?session=34'
     &&!str_contains(json_encode($brief,JSON_THROW_ON_ERROR),'private-'),'the reviewed task links to the exact owned recording without private call bindings');
+$workingEvidence=vp3_initiative_evidence_v1($pdo,$user,$now);
+expect(isset($workingEvidence['mission:'.$mission],$workingEvidence['task:101'],$workingEvidence['task:102'])
+    &&$workingEvidence['task:101']['kind']==='profile_call'
+    &&count(array_filter($workingEvidence,static fn(array $row):bool=>$row['ref']==='task:101'))===1
+    &&!str_contains(json_encode($workingEvidence,JSON_THROW_ON_ERROR),'private-'),
+    'the same authorized Mission and reviewed call task reach Initiative with one record per situation and no private call bindings');
 $attention=vp3_cognitive_presentation_working_attention_v510($brief['items'][0]);
 expect(($attention['type']??null)==='working_attention'&&$attention['title']===$brief['items'][0]['title']
     &&$attention['summary']===$brief['items'][0]['reason']&&$attention['href']===$brief['items'][0]['url']
@@ -316,6 +368,18 @@ foreach([
 
 expect((int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,'cross-source context does not acknowledge, schedule or mutate records');
 $pdo->exec('PRAGMA query_only=OFF');
+$pdo->exec('SAVEPOINT active_mission_clock');
+$pdo->prepare("UPDATE agent_workflow_runs SET status='executing',updated_at=? WHERE id=100")
+    ->execute([$now->modify('-30 seconds')->format('Y-m-d H:i:s')]);
+$activeEvidence=vp3_initiative_evidence_v1($pdo,$user,$now);
+$pdo->prepare('UPDATE agent_workflow_runs SET updated_at=? WHERE id=100')
+    ->execute([$now->modify('-15 seconds')->format('Y-m-d H:i:s')]);
+$activeLater=vp3_initiative_evidence_v1($pdo,$user,$now->modify('+15 seconds'));
+expect($activeEvidence['mission:'.$mission]['revision']===$activeLater['mission:'.$mission]['revision']
+    &&$activeLater['mission:'.$mission]['detail']==='A Mission already owns this work.'
+    &&!in_array('mission:'.$mission,ids(vp3_agent_catch_up_v1($pdo,$user)),true),
+    'active Missions remain context for distinct preparation without lease timestamps repeatedly creating new work');
+$pdo->exec('ROLLBACK TO active_mission_clock; RELEASE active_mission_clock');
 $pdo->exec('DROP TABLE profile_calls_pa3c');
 $calendarStart('+10 minutes');
 $brief=vp3_agent_catch_up_v1($pdo,$user,'office');

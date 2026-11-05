@@ -45,7 +45,11 @@ $pdo->exec("ALTER TABLE chat_conversations ADD COLUMN updated_at DATETIME;
         memory_hash TEXT, memory_scope_version INTEGER, source_archive_id INTEGER, confidence REAL, occurrence_count INTEGER,
         first_seen_at TEXT, last_seen_at TEXT, is_active INTEGER, metadata_json TEXT, UNIQUE(user_id,memory_hash)
     );
-    CREATE TABLE initiative_fixture_calendar(owner_id INTEGER PRIMARY KEY,title TEXT,starts_at TEXT)");
+    CREATE TABLE initiative_fixture_calendar(owner_id INTEGER PRIMARY KEY,title TEXT,starts_at TEXT);
+    CREATE TABLE agent_activity_state(user_id INTEGER PRIMARY KEY,surface TEXT,context_key TEXT,activity_state TEXT,
+        last_heartbeat_at TEXT,idle_since_at TEXT,details_json TEXT);
+    CREATE TABLE agent_activity_events(id INTEGER PRIMARY KEY);
+    INSERT INTO agent_activity_state VALUES (1,'chat','chat:42','paused',NOW(),NULL,'{\"visible\":true,\"conversation_id\":42}')");
 
 // Fixture adapters supply schema availability and an owned Calendar projection.
 // Brain memory reads/writes still execute the production queries.
@@ -56,6 +60,7 @@ function vp3_participant_scope_v1(): ?array { return $GLOBALS['initiativeFixture
 function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, DateTimeImmutable $now, int $days, bool $includeHomeServer = true): array
 {
     if ($includeHomeServer) throw new LogicException('Initiative must not query the paired calendar.');
+    if(!empty($GLOBALS['initiative_fixture_calendar_unavailable']))return ['available'=>false];
     $stmt = $pdo->prepare('SELECT title,starts_at FROM initiative_fixture_calendar WHERE owner_id=?');
     $stmt->execute([$user['id']]);
     $row = $stmt->fetch();
@@ -188,8 +193,8 @@ initiative_worker_check(json_decode($receipt[0]['result_json'],true)['initiative
     && !str_contains(json_encode($draftResult['receipt'],JSON_THROW_ON_ERROR),$draftText),
     'the canonical private draft is retained without leaking through the public workflow receipt');
 $readyStatus = vp3_initiative_foreground_status_v1($pdo,$user,0,42);
-initiative_worker_check($readyStatus===['state'=>'ready','last_checked_at'=>$runningStatus['last_checked_at']],
-    'a fresh private draft produces only a ready state and timestamp, with no draft or evidence in the payload');
+initiative_worker_check($readyStatus===['state'=>'checked','last_checked_at'=>$runningStatus['last_checked_at']],
+    'a delivered preparation reports a completed check without offering its private draft again');
 $pdo->exec("UPDATE initiative_fixture_calendar SET title='Changed after preparation' WHERE owner_id=1");
 initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)['state']==='checked',
     'an old draft is never reported ready once its source changes');
@@ -530,5 +535,152 @@ initiative_worker_check($revokedOff['enabled']===false && $finalPolicy['screen_e
     'an owner can turn screen follow-ups off after Brain and Knowledge access are lost');
 initiative_worker_check($settingRecordCounts()===$beforeSettings,
     'structured settings and their shared command update do not create Chats, messages, or jobs');
+
+$GLOBALS['initiative_fixture_conflict']=false;
+$pdo->prepare('INSERT INTO initiative_fixture_calendar VALUES(1,?,?)')->execute(['Deferred preparation fixture',$starts]);
+$pendingResult=static function(int $runId)use($pdo): array {
+    $stmt=$pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');
+    $stmt->execute([$runId]);
+    return json_decode((string)$stmt->fetchColumn(),true,16,JSON_THROW_ON_ERROR);
+};
+$hideOwner=static function()use($pdo): void {
+    $pdo->exec("UPDATE agent_activity_state SET details_json='{\"visible\":false,\"conversation_id\":42}' WHERE user_id=1");
+};
+$showOwner=static function()use($pdo): void {
+    $pdo->exec("UPDATE agent_activity_state SET surface='chat',context_key='chat:42',activity_state='paused',
+        last_heartbeat_at=NOW(),details_json='{\"visible\":true,\"conversation_id\":42}' WHERE user_id=1");
+};
+$engageOwner=static function()use($pdo): void {
+    $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(42,1,'user','Continue our work'),
+        (42,NULL,'assistant','Ready to continue.')");
+};
+$privateReport=static function(string $title)use($pdo,$user,$planModel,$draftModel,$hideOwner): int {
+    $hideOwner();
+    $runId=initiative_worker_new_report($user,$title,$planModel);
+    $result=vp3_initiative_execute_v1($pdo,$user,initiative_worker_claim($user,$runId),$draftModel);
+    if(!$result['ok'])throw new RuntimeException('Pending fixture preparation failed.');
+    return $runId;
+};
+$engageOwner();
+$beforePending=count(initiative_worker_assistant_messages());
+$pendingRun=$privateReport('Useful preparation while Chat is closed');
+initiative_worker_check($pendingResult($pendingRun)['initiative_delivery']==='pending'
+    && count(initiative_worker_assistant_messages())===$beforePending
+    && vp3_initiative_foreground_status_v1($pdo,$user,0,42)['state']==='ready'
+    && !vp3_initiative_deliver_pending_v1($pdo,$user),
+    'closed Chat retains a verified private result for a later visible owner return');
+$pdo->exec("UPDATE initiative_fixture_calendar SET title='Source changed before return' WHERE owner_id=1");
+$showOwner();
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user)
+    && $pendingResult($pendingRun)['initiative_delivery']==='withheld'
+    && json_decode(initiative_worker_receipts($pendingRun)[0]['result_json'],true)['initiative_delivery']==='withheld'
+    && count(initiative_worker_assistant_messages())===$beforePending,
+    'a source changed while preparation waits is withheld in both canonical result records');
+
+$pendingRun=$privateReport('Useful preparation before an unavailable source');
+$showOwner();
+$GLOBALS['initiative_fixture_calendar_unavailable']=true;
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user)
+    && $pendingResult($pendingRun)['initiative_delivery']==='pending'
+    && count(initiative_worker_assistant_messages())===$beforePending,
+    'temporary source unavailability keeps the private result pending without disclosure');
+$GLOBALS['initiative_fixture_calendar_unavailable']=false;
+$pdo->exec("UPDATE agent_activity_state SET activity_state='working' WHERE user_id=1");
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user)
+    && $pendingResult($pendingRun)['initiative_delivery']==='pending',
+    'a working owner keeps deferred preparation out of the Chat timeline');
+$pdo->exec("UPDATE agent_activity_state SET activity_state='paused',context_key='chat:44',
+    details_json='{\"visible\":true,\"conversation_id\":44}' WHERE user_id=1");
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user),
+    'returning to a different owned Chat cannot release a pending result');
+$showOwner();
+$pdo->exec("UPDATE agent_activity_state SET last_heartbeat_at='2000-01-01 00:00:00' WHERE user_id=1");
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user),
+    'an expired heartbeat cannot stand in for a visible owner return');
+$showOwner();
+$pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(42,1,'user','Waiting for the ordinary reply')");
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user),
+    'pending preparation waits until the current ordinary Chat turn has a reply');
+$pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(42,NULL,'assistant','Ordinary reply completed')");
+$pdo->exec("CREATE TRIGGER initiative_deferred_receipt_failure BEFORE UPDATE ON agent_workflow_receipts
+    WHEN NEW.run_id=".$pendingRun." AND JSON_EXTRACT(NEW.result_json,'$.initiative_delivery')='delivered'
+    BEGIN SELECT RAISE(ABORT,'fixture deferred receipt failure'); END");
+$rolledBack=false;
+try{vp3_initiative_deliver_pending_v1($pdo,$user);}catch(PDOException $e){$rolledBack=true;}
+initiative_worker_check($rolledBack&&!$pdo->inTransaction()
+    && $pendingResult($pendingRun)['initiative_delivery']==='pending'
+    && count(initiative_worker_assistant_messages())===$beforePending,
+    'a failed deferred receipt update rolls back both the Chat result and its delivery marker');
+$pdo->exec('DROP TRIGGER initiative_deferred_receipt_failure');
+initiative_worker_check(vp3_initiative_deliver_pending_v1($pdo,$user)
+    && $pendingResult($pendingRun)['initiative_delivery']==='delivered'
+    && (int)$pendingResult($pendingRun)['initiative_message_id']>0
+    && count(initiative_worker_assistant_messages())===$beforePending+1
+    && json_decode(initiative_worker_receipts($pendingRun)[0]['result_json'],true)===$pendingResult($pendingRun),
+    'visible owner return commits exactly one deferred Chat report with matching canonical action and receipt markers');
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user)
+    && count(initiative_worker_assistant_messages())===$beforePending+1,
+    'replaying deferred delivery cannot repeat a confirmed result');
+for($message=0;$message<15;$message++){
+    $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(42,NULL,'assistant','Another ordinary background update')");
+}
+initiative_worker_check(!vp3_initiative_can_report_v1($pdo,$user,42),
+    'unrelated assistant messages cannot hide the existing Initiative report before another owner engagement');
+
+$engageOwner();
+$legacyRun=$privateReport('Older preparation without a delivery marker');
+$pdo->prepare("UPDATE agent_workflow_actions SET result_json=JSON_REMOVE(result_json,'$.initiative_delivery') WHERE run_id=?")
+    ->execute([$legacyRun]);
+$showOwner();
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user)
+    && count(initiative_worker_assistant_messages())===$beforePending+1,
+    'legacy private preparation with no delivery marker is never automatically replayed');
+
+$pendingRun=$privateReport('Preparation before Initiative is turned off');
+vp3_initiative_chat_v1($pdo,$user,$principal,['conversation_id'=>42],'off',null);
+$showOwner();
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user)
+    && count(initiative_worker_assistant_messages())===$beforePending+1,
+    'owner opt-out prevents a previously queued private report from entering Chat');
+vp3_initiative_chat_v1($pdo,$user,$principal,['conversation_id'=>42],'on',null);
+initiative_worker_check(!vp3_initiative_deliver_pending_v1($pdo,$user)
+    && $pendingResult($pendingRun)['initiative_delivery']==='withheld',
+    'a new Initiative policy revision cannot release work bound to the previous opt-in');
+
+$pendingRun=$privateReport('Preparation before Brain access is revoked');
+$showOwner();
+$GLOBALS['initiativeBrainAccess']=false;
+try{$revokedDelivery=vp3_initiative_deliver_pending_v1($pdo,$user);}
+finally{$GLOBALS['initiativeBrainAccess']=true;}
+initiative_worker_check(!$revokedDelivery&&$pendingResult($pendingRun)['initiative_delivery']==='withheld'
+    && count(initiative_worker_assistant_messages())===$beforePending+1,
+    'revoked Brain access withdraws pending work without disclosing the private preparation');
+
+$disabledPending=$privateReport('Preparation from an owner who disables Initiative');
+vp3_initiative_chat_v1($pdo,$user,$principal,['conversation_id'=>42],'off',null);
+$pdo->prepare("UPDATE agent_workflow_actions SET updated_at='2000-01-01 00:00:00' WHERE run_id=?")->execute([$disabledPending]);
+$otherOwner=['id'=>2,'is_active'=>1];
+$otherPrincipal=vp3_agent_chat_principal_v380($otherOwner,null);
+$pdo->prepare('INSERT INTO initiative_fixture_calendar VALUES(2,?,?)')->execute(['Other owner private preparation',$starts]);
+vp3_initiative_chat_v1($pdo,$otherOwner,$otherPrincipal,['conversation_id'=>43],'on',null);
+$otherPolicy=vp3_initiative_policy_v1($otherOwner);
+$otherEvidence=vp3_initiative_evidence_v1($pdo,$otherOwner,new DateTimeImmutable('now',new DateTimeZone('UTC')));
+$otherRef='calendar:event:42';
+$otherGoal=['binding'=>$otherPolicy,'sources'=>[$otherRef=>$otherEvidence[$otherRef]['revision']],
+    'focus'=>'Prepare a private next step','report'=>true];
+vp3_initiative_enqueue_v1($pdo,$otherOwner,'initiative.prepare',$otherGoal,hash('sha256','delivery-other-owner'));
+$otherRun=(int)$pdo->query('SELECT MAX(id) FROM agent_workflow_runs WHERE owner_user_id=2')->fetchColumn();
+$otherPrepared=vp3_initiative_execute_v1($pdo,$otherOwner,initiative_worker_claim($otherOwner,$otherRun),
+    static fn()=>' {"draft":"Another owner’s verified private preparation."}');
+$pdo->exec("INSERT INTO agent_activity_state VALUES(2,'chat','chat:43','paused',NOW(),NULL,
+    '{\"visible\":true,\"conversation_id\":43}')");
+require_once dirname(__DIR__).'/includes/agent-cognitive-loop-v310.php';
+initiative_worker_check($otherPrepared['ok']&&vp3_initiative_delivery_sweep_v1($pdo,1)===1
+    && $pendingResult($disabledPending)['initiative_delivery']==='pending'
+    && $pendingResult($otherRun)['initiative_delivery']==='delivered'
+    && (int)$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id=43 AND role='assistant'")->fetchColumn()===1,
+    'an older disabled owner cannot consume a bounded delivery sweep and starve a visible eligible owner');
+initiative_worker_check(vp3_initiative_delivery_sweep_v1($pdo,1)===0,
+    'a subsequent worker delivery sweep stays quiet after the eligible result is confirmed');
 
 echo "AGENT_INITIATIVE_WORKER_V1=PASS ($checks cases)\n";

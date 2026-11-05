@@ -125,6 +125,7 @@ jobs:
           node tests/chat-initiative-browser.mjs
           node tests/cognitive-working-attention-browser.mjs
           node tests/chat-live-attention-browser.mjs
+          node tests/initiative-closed-chat-browser.mjs
           node tests/chat-listening-continuation-browser.mjs
           node tests/music-file-repair-api.mjs
           node tests/music-file-repair-browser.mjs
@@ -213,7 +214,9 @@ jobs:
         env:
           VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
           VP3_SECTION7_MYSQL_PASSWORD: section7-fixture
-        run: php tests/agent-initiative-screen-mysql.php
+        run: |
+          php tests/agent-initiative-screen-mysql.php
+          php tests/agent-initiative-delivery-mysql.php
       - name: Screen edit admission and leases on MySQL
         env:
           MYSQL_PWD: section7-fixture
