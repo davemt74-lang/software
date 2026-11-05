@@ -3360,6 +3360,9 @@
         data.knowledge_actions_r9 || null,
         data.canvas_media || null
       );
+      if (/^\/initiative (?:on|off|screen on|screen off)$/i.test(request.message.trim())) {
+        window.dispatchEvent(new Event('vp3:initiative-setting-changed'));
+      }
       const autoAction=(data.actions||[]).find(action=>action && action.auto && action.url);
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}
       const autoMediaAction=(data.actions||[]).find(action=>action && action.auto && action.type==='media_capture');

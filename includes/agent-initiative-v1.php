@@ -196,15 +196,74 @@ function vp3_initiative_sweep_v1(PDO $pdo,int $limit): void
     }
 }
 
+/** Both Agent Eyes and Chat commands use the same owner policy and revision. */
+function vp3_initiative_screen_setting_v1(PDO $pdo,array $user,int $cid,?bool $enabled=null,?string $expectedRevision=null,?callable $authority=null): array
+{
+    if($cid<1||vp3_participant_scope_v1()!==null||vp3_agent_memory_scope_current_v410($user)!==0){
+        throw new RuntimeException('Open your private System Agent Chat to change this setting.',403);
+    }
+    $unavailable=['available'=>false,'enabled'=>false,'revision'=>''];
+    $principal=vp3_agent_chat_principal_v380($user,null);
+    try{
+        if($enabled!==null){
+            $pdo->beginTransaction();
+            vp3_initiative_owner_lock_v1($pdo,$user);
+        }
+        $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$cid],$authority);
+        if(!has_permission('account.access',$live)||!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],null,$enabled!==null)){
+            throw new RuntimeException('Conversation access changed.',403);
+        }
+        if(!agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo)){
+            if($enabled!==null)throw new RuntimeException('Initiative storage needs its database upgrades.',503);
+            return $unavailable+['reason'=>'storage_unavailable'];
+        }
+        $policy=vp3_initiative_policy_v1($live);
+        if(empty($policy['enabled'])||$policy['conversation_id']!==$cid){
+            if($enabled!==null)$pdo->rollBack();
+            return $unavailable+['reason'=>empty($policy['enabled'])?'initiative_off':'linked_elsewhere'];
+        }
+        $screenEnabled=!empty($policy['screen_enabled']);
+        $canEnable=personal_capability_has_v242('agent_brain.access',$live)&&personal_knowledge_available($live);
+        if($enabled!==null){
+            if($expectedRevision!==null&&!hash_equals((string)$policy['revision'],$expectedRevision)){
+                throw new RuntimeException('Screen follow-up settings changed. Refresh and try again.',409);
+            }
+            if($enabled&&!$canEnable)throw new RuntimeException('Agent Brain and My Knowledge access are required.',403);
+            if($enabled!==$screenEnabled){
+                $policy['screen_enabled']=$enabled;
+                $policy['revision']=bin2hex(random_bytes(16));
+                if(agent_brain_v122_upsert_system_memory($live,'initiative_policy','owner-opt-in','Owner initiative preference.',$policy)<1){
+                    throw new RuntimeException('Initiative screen setting could not be saved.',503);
+                }
+                $screenEnabled=$enabled;
+            }
+            $pdo->commit();
+        }
+        return ['available'=>$canEnable||$screenEnabled,'enabled'=>$screenEnabled,
+            'revision'=>(string)$policy['revision'],'reason'=>$canEnable?'':'access_unavailable'];
+    }catch(Throwable $e){
+        if($enabled!==null&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
+}
+
 function vp3_initiative_chat_v1(PDO $pdo,array $user,array $principal,array $context,string $command,?callable $authority): array
 {
     $result=['handled'=>true,'actions'=>[],'sources'=>[]];
     $cid=(int)($context['conversation_id']??0);
-    $disabling=in_array($command,['off','screen off'],true);
+    $disabling=$command==='off';
     if(($principal['kind']??'')!=='system'||$cid<1||vp3_participant_scope_v1()!==null){
         return $result+['answer'=>'Use your private system Agent Chat to control initiative.'];
     }
     try{
+        if(in_array($command,['screen on','screen off'],true)){
+            $enableScreen=$command==='screen on';
+            $setting=vp3_initiative_screen_setting_v1($pdo,$user,$cid,$enableScreen,null,$authority);
+            if(in_array($setting['reason'],['initiative_off','linked_elsewhere'],true)){
+                return $result+['answer'=>'Enable Initiative here first, or open the private Chat where it is already enabled.'];
+            }
+            return $result+['answer'=>$enableScreen?'Screen-share follow-ups are on. Initiative can use saved note text and session titles from finished shares with your configured Cloud AI model. Use /initiative screen off to stop.':'Screen-share follow-ups are off.'];
+        }
         $live=vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority);
         if(!has_permission('account.access',$live)||vp3_agent_memory_scope_current_v410($live)!==0
             ||(!$disabling&&!personal_capability_has_v242('agent_brain.access',$live)))throw new RuntimeException('Initiative access denied.',403);
@@ -224,26 +283,6 @@ function vp3_initiative_chat_v1(PDO $pdo,array $user,array $principal,array $con
             throw new RuntimeException('Initiative access denied.',403);
         }
         $policy=vp3_initiative_policy_v1($live);
-        if(in_array($command,['screen on','screen off'],true)){
-            if(empty($policy['enabled'])||$policy['conversation_id']!==$cid){
-                $pdo->rollBack();
-                return $result+['answer'=>'Enable Initiative here first, or open the private Chat where it is already enabled.'];
-            }
-            $enableScreen=$command==='screen on';
-            if($enableScreen){
-                require_once __DIR__.'/agent-screen-sessions-v1.php';
-                screen_sessions_permission_v1($live);
-            }
-            if($enableScreen!==!empty($policy['screen_enabled'])){
-                $policy['screen_enabled']=$enableScreen;
-                $policy['revision']=bin2hex(random_bytes(16));
-                if(agent_brain_v122_upsert_system_memory($live,'initiative_policy','owner-opt-in','Owner initiative preference.',$policy)<1){
-                    throw new RuntimeException('Initiative screen setting could not be saved.');
-                }
-            }
-            $pdo->commit();
-            return $result+['answer'=>$enableScreen?'Screen-share follow-ups are on. Initiative can use saved note text and session titles from finished shares with your configured Cloud AI model. Use /initiative screen off to stop.':'Screen-share follow-ups are off.'];
-        }
         $enable=$command==='on';
         if($enable!==!empty($policy['enabled'])||($enable&&$policy['conversation_id']!==$cid)){
             $policy=['enabled'=>$enable,'conversation_id'=>$cid,'revision'=>bin2hex(random_bytes(16))];

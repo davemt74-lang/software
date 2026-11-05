@@ -420,4 +420,85 @@ foreach (['deletion'=>11,'opt-out'=>12] as $withdrawal=>$number) {
         'screen '.$withdrawal.' during inference fences the private draft and its otherwise eligible Chat report');
 }
 
+$settingRecordCounts = static fn(): array => array_map(
+    static fn(string $table): int => (int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn(),
+    ['chat_conversations','chat_messages','agent_workflow_runs']
+);
+$beforeSettings = $settingRecordCounts();
+$policyBeforeRead = vp3_initiative_policy_v1($user);
+$changesBeforeRead = (int)$pdo->query('SELECT total_changes()')->fetchColumn();
+$off = vp3_initiative_screen_setting_v1($pdo,$user,42);
+initiative_worker_check($off['available']===true && $off['enabled']===false && $off['revision']===$policyBeforeRead['revision']
+    && (int)$pdo->query('SELECT total_changes()')->fetchColumn()===$changesBeforeRead,
+    'structured status reads the exact linked policy without writing');
+$elsewhere = vp3_initiative_screen_setting_v1($pdo,$user,44);
+initiative_worker_check($elsewhere['available']===false && $elsewhere['enabled']===false && $elsewhere['reason']==='linked_elsewhere'
+    && empty($elsewhere['revision']) && !array_diff(array_keys($elsewhere),['available','enabled','revision','reason']),
+    'another owned system Chat sees linked_elsewhere without linked policy details');
+
+$settingRejected = static function (callable $operation, ?int $expectedCode=null): bool {
+    try {
+        $result = $operation();
+        return $expectedCode===null && ($result['available']??true)===false && empty($result['revision']);
+    } catch (RuntimeException $error) {
+        return $error->getCode()===($expectedCode??403);
+    }
+};
+foreach ([43=>'foreign',11=>'named Agent',0=>'missing'] as $conversationId=>$scope) {
+    initiative_worker_check($settingRejected(static fn()=>vp3_initiative_screen_setting_v1($pdo,$user,$conversationId))
+        && $settingRejected(static fn()=>vp3_initiative_screen_setting_v1($pdo,$user,$conversationId,true,$off['revision']))
+        && vp3_initiative_policy_v1($user)===$policyBeforeRead,
+        'structured screen settings reject reads and writes for a '.$scope.' conversation');
+}
+
+$on = vp3_initiative_screen_setting_v1($pdo,$user,42,true,$off['revision']);
+$enabledPolicy = vp3_initiative_policy_v1($user);
+initiative_worker_check($on['available']===true && $on['enabled']===true && $on['revision']!==$off['revision']
+    && $enabledPolicy['screen_enabled']===true && $enabledPolicy['revision']===$on['revision']
+    && $enabledPolicy['enabled']===true && $enabledPolicy['conversation_id']===42,
+    'structured opt-in updates the canonical policy and rotates its worker revision');
+$changesBeforeRepeat = (int)$pdo->query('SELECT total_changes()')->fetchColumn();
+$repeat = vp3_initiative_screen_setting_v1($pdo,$user,42,true,$on['revision']);
+initiative_worker_check($repeat['enabled']===true && $repeat['revision']===$on['revision']
+    && (int)$pdo->query('SELECT total_changes()')->fetchColumn()===$changesBeforeRepeat,
+    'repeating the current setting neither writes nor rotates the revision');
+initiative_worker_check($settingRejected(static fn()=>vp3_initiative_screen_setting_v1($pdo,$user,42,false,$off['revision']),409)
+    && vp3_initiative_policy_v1($user)===$enabledPolicy && !$pdo->inTransaction(),
+    'a stale setting save conflicts without changing policy or leaving a transaction');
+
+$screenCommand('screen off');
+$slashOff = vp3_initiative_screen_setting_v1($pdo,$user,42);
+initiative_worker_check($slashOff['enabled']===false && $slashOff['revision']!==$on['revision'],
+    'the existing slash command updates the same setting the checkbox reads');
+foreach (['initiativeBrainAccess'=>'Brain','initiativeScreenAccess'=>'Knowledge'] as $entitlement=>$label) {
+    $GLOBALS[$entitlement] = false;
+    try {
+        $blocked = $settingRejected(static fn()=>vp3_initiative_screen_setting_v1($pdo,$user,42,true,$slashOff['revision']));
+    } finally {
+        $GLOBALS[$entitlement] = true;
+    }
+    initiative_worker_check($blocked && vp3_initiative_screen_setting_v1($pdo,$user,42)===$slashOff,
+        'structured enable requires current '.$label.' access');
+}
+$screenCommand('screen on');
+$slashOn = vp3_initiative_screen_setting_v1($pdo,$user,42);
+initiative_worker_check($slashOn['enabled']===true && $slashOn['revision']!==$slashOff['revision'],
+    'slash command opt-in is visible to the structured status reader');
+$GLOBALS['initiativeBrainAccess'] = $GLOBALS['initiativeScreenAccess'] = false;
+try {
+    $revokedState = vp3_initiative_screen_setting_v1($pdo,$user,42);
+    initiative_worker_check($revokedState['available']===true && $revokedState['enabled']===true
+        && $revokedState['revision']===$slashOn['revision'] && $revokedState['reason']==='access_unavailable',
+        'revoked access keeps the enabled setting visible so the owner can turn it off');
+    $revokedOff = vp3_initiative_screen_setting_v1($pdo,$user,42,false,$slashOn['revision']);
+} finally {
+    $GLOBALS['initiativeBrainAccess'] = $GLOBALS['initiativeScreenAccess'] = true;
+}
+$finalPolicy = vp3_initiative_policy_v1($user);
+initiative_worker_check($revokedOff['enabled']===false && $finalPolicy['screen_enabled']===false
+    && $finalPolicy['revision']!==$slashOn['revision'] && $finalPolicy['enabled']===true,
+    'an owner can turn screen follow-ups off after Brain and Knowledge access are lost');
+initiative_worker_check($settingRecordCounts()===$beforeSettings,
+    'structured settings and their shared command update do not create Chats, messages, or jobs');
+
 echo "AGENT_INITIATIVE_WORKER_V1=PASS ($checks cases)\n";
