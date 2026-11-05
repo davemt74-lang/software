@@ -1,6 +1,19 @@
 <?php
 declare(strict_types=1);
 
+// Connection arguments belong only to the disposable database fixture. Never
+// include DSNs, usernames, passwords or driver messages in CI diagnostics.
+ini_set('zend.exception_ignore_args','1');
+set_exception_handler(static function(Throwable $error): void{
+    $state=$error instanceof PDOException?(string)($error->errorInfo[0]??''):'';
+    fwrite(STDERR,json_encode(['fixture_failure'=>true,'error_class'=>get_class($error),
+        'public_code'=>is_int($error->getCode())?$error->getCode():0,
+        'sql_state'=>preg_match('/\A[A-Z0-9]{5}\z/D',$state)?$state:'',
+        'driver_code'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):0,
+        'file'=>basename($error->getFile()),'line'=>$error->getLine()],JSON_THROW_ON_ERROR).PHP_EOL);
+    exit(1);
+});
+
 // Explicit disposable MySQL only. Independent PHP processes exercise the real
 // source reader, optimistic proposal revision, canonical queue and final guard.
 $dsn=(string)(getenv('VP3_SECTION7_MYSQL_DSN')?:getenv('VP3_MYSQL_TEST_DSN'));
@@ -36,7 +49,8 @@ function calendar_schedule_awareness_snapshot_v1330(PDO $pdo,array $user,DateTim
 function ai_generate_chat_response(...$args): array{throw new LogicException('No native fixture may call a live inference provider.');}
 function followthrough_mysql_check(bool $ok,string $label): void
 {
-    if(!$ok)throw new RuntimeException($label);$GLOBALS['followthroughMysqlChecks']=($GLOBALS['followthroughMysqlChecks']??0)+1;echo 'PASS '.$label.PHP_EOL;
+    if(!$ok){fwrite(STDERR,'FAIL '.$label.PHP_EOL);throw new RuntimeException('A native fixture assertion failed.');}
+    $GLOBALS['followthroughMysqlChecks']=($GLOBALS['followthroughMysqlChecks']??0)+1;echo 'PASS '.$label.PHP_EOL;
 }
 function followthrough_mysql_wait(callable $ready,string $message): void
 {
@@ -73,8 +87,8 @@ if($worker){
         try{
             $result=vp3_initiative_followthrough_reply_v1($pdo,['id'=>1,'is_active'=>1],followthrough_mysql_principal(),$config['cid'],$config['reply'],$config['reference'],$config['query'],null,$model);
             echo json_encode(['ok'=>true,'outcome'=>$result['initiative_followthrough']],JSON_THROW_ON_ERROR).PHP_EOL;
-        }catch(RuntimeException $error){echo json_encode(['ok'=>false,'code'=>$error->getCode(),'error'=>$error->getMessage(),
-            'error_info'=>$error instanceof PDOException?$error->errorInfo:null],JSON_THROW_ON_ERROR).PHP_EOL;}
+        }catch(RuntimeException $error){echo json_encode(['ok'=>false,'code'=>$error->getCode(),
+            'error_class'=>get_class($error),'driver_code'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):0],JSON_THROW_ON_ERROR).PHP_EOL;}
         exit;
     }
     if($mode==='--deadlock-peer'){
@@ -203,7 +217,7 @@ try{
     $finish=static function(int $index)use(&$children): array{
         $child=$children[$index];$output=stream_get_contents($child['stdout']);$errors=stream_get_contents($child['stderr']);
         fclose($child['stdout']);fclose($child['stderr']);$exit=proc_close($child['process']);unset($children[$index]);
-        if($exit!==0)throw new RuntimeException('Independent native worker failed: '.$errors.$output);
+        if($exit!==0)throw new RuntimeException('An independent native worker failed.');
         return json_decode(trim($output),true,32,JSON_THROW_ON_ERROR);
     };
 
@@ -338,17 +352,48 @@ try{
     }
     $turn=$discuss($seed('lock-timeout-no-retry'));$other->beginTransaction();
     $other->query('SELECT id FROM agent_memory_items WHERE id=100 FOR UPDATE')->fetchColumn();
-    $pdo->exec('SET SESSION innodb_lock_wait_timeout=1');$attempts=0;$driverCode=0;
+    $pdo->exec('SET SESSION innodb_lock_wait_timeout=1');
+    $timeoutState=static function()use($pdo): array{
+        $counts=[];
+        foreach(['agent_workflow_runs','agent_workflow_actions','agent_workflow_receipts','agent_workflow_events','chat_messages','followthrough_native_retry_markers'] as $table){
+            $counts[$table]=(int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn();
+        }
+        $counts['model_calls']=(int)($GLOBALS['followthroughMysqlModelCalls']??0);return $counts;
+    };
+    $beforeTimeout=$timeoutState();
     try{
-        vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$user,$principal,$turn,&$attempts): void{
-            ++$attempts;agent_workflow_event_v1400($pdo,1,$turn['run'],'fixture_timeout_effect','','','system','This effect must roll back.');
-            vp3_initiative_followthrough_current_v1($pdo,$user,$principal,$turn['cid'],$turn['outcome']);
-        });
-    }catch(PDOException $error){$driverCode=(int)($error->errorInfo[1]??0);}
+        $attempts=0;$driverCode=0;
+        try{
+            vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$turn,&$attempts): void{
+                ++$attempts;
+                $pdo->prepare('INSERT INTO followthrough_native_retry_markers(run_id,attempt) VALUES(?,?)')->execute([$turn['run'],$attempts]);
+                agent_workflow_event_v1400($pdo,1,$turn['run'],'fixture_timeout_raw_effect','','','system','This raw timeout effect must roll back.');
+                $pdo->query('SELECT id FROM agent_memory_items WHERE id=100 FOR UPDATE')->fetchColumn();
+            });
+        }catch(PDOException $error){$driverCode=(int)($error->errorInfo[1]??0);}
+        $afterTimeout=$timeoutState();
+        $diagnostic=json_encode(['driver_code'=>$driverCode,'attempts'=>$attempts,
+            'before'=>$beforeTimeout,'after'=>$afterTimeout,'in_transaction'=>$pdo->inTransaction()],JSON_THROW_ON_ERROR);
+        followthrough_mysql_check($driverCode===1205&&$attempts===1&&!$pdo->inTransaction()&&$afterTimeout===$beforeTimeout,
+            'a real InnoDB 1205 lock timeout rolls back its marker and every effect without a deadlock retry; '.$diagnostic);
+
+        $attempts=0;$publicCode=0;$publicClass='';
+        try{
+            vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$user,$principal,$turn,&$attempts): void{
+                ++$attempts;
+                $pdo->prepare('INSERT INTO followthrough_native_retry_markers(run_id,attempt) VALUES(?,?)')->execute([$turn['run'],$attempts]);
+                agent_workflow_event_v1400($pdo,1,$turn['run'],'fixture_timeout_canonical_effect','','','system','This canonical timeout effect must roll back.');
+                vp3_initiative_followthrough_current_v1($pdo,$user,$principal,$turn['cid'],$turn['outcome']);
+            });
+        }catch(RuntimeException $error){$publicCode=$error->getCode();$publicClass=get_class($error);}
+        $afterTimeout=$timeoutState();
+        $diagnostic=json_encode(['public_code'=>$publicCode,'public_class'=>$publicClass,'attempts'=>$attempts,
+            'before'=>$beforeTimeout,'after'=>$afterTimeout,'in_transaction'=>$pdo->inTransaction()],JSON_THROW_ON_ERROR);
+        followthrough_mysql_check($publicCode===503&&$publicClass===RuntimeException::class&&$attempts===1
+            &&!$pdo->inTransaction()&&$afterTimeout===$beforeTimeout,
+            'canonical source verification masks the same held-row timeout as public 503 and rolls back every effect without retry; '.$diagnostic);
+    }
     finally{$other->rollBack();}
-    $q=$pdo->prepare("SELECT COUNT(*) FROM agent_workflow_events WHERE run_id=? AND event_type='fixture_timeout_effect'");$q->execute([$turn['run']]);
-    followthrough_mysql_check($driverCode===1205&&$attempts===1&&(int)$q->fetchColumn()===0,
-        'a real InnoDB 1205 lock timeout rolls back its effect and is never retried as a deadlock');
     echo 'AGENT_INITIATIVE_FOLLOWTHROUGH_MYSQL=PASS ('.$GLOBALS['followthroughMysqlChecks'].' cases)'.PHP_EOL;
 }finally{
     if($pdo->inTransaction())$pdo->rollBack();

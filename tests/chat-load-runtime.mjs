@@ -6,18 +6,24 @@ const source=fs.readFileSync('chat.js','utf8');
 const poll=source.slice(source.indexOf('  async function pollAgentActivity('),source.indexOf('  function startAgentActivityPolling()'));
 const api=source.slice(source.indexOf('  async function api(payload'),source.indexOf('  function writeActivityCursor('));
 const pendingIds=source.slice(source.indexOf('  function pendingAssistantMessageIds()'),source.indexOf('  function unconfirmedAssistantMessage('));
+const binding=source.slice(source.indexOf('  const initiativePage ='),source.indexOf('  const thread ='));
+const initiativeState=source.slice(source.indexOf('  let initiativeReplyTarget ='),source.indexOf('  const recoveryKey ='));
+const initiativeHelpers=source.slice(source.indexOf('  function initiativeIdentityMatchesV1()'),source.indexOf('  function bindInitiativeWorkV1('));
 assert.doesNotMatch(source,/\bliveStatus\b|chatLiveStatus/,'Removed activity status must not be referenced');
 let response,requestCount=0,timer,delay,cleared=0;
 const requestBodies=[],syncedConversations=[];
-const context={AbortController,document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token',agentId:7},
+const context={AbortController,document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token',agentId:7,userId:1,workingAttentionBinding:'fixture-page-binding'},
     window:{setTimeout:(fn,ms)=>{timer=fn;delay=ms;return 1;},clearTimeout:()=>{cleared++;}},
     fetch:async(_url,options)=>{requestCount++;requestBodies.push(JSON.parse(options.body));return response(options.signal);},
     writeActivityCursor:value=>{context.activityCursor=value;},updateNotificationBadge:value=>{context.unread=value;},
     syncConversationMessagesV101:async id=>{syncedConversations.push(id);},activityBusy:false,activityCursor:0,
-    conversationId:1,lastLoadedMessageId:0,pendingConversationSync:0,busy:false,
+    conversationId:1,chatRevision:0,lastLoadedMessageId:0,pendingConversationSync:0,busy:false,
     pendingAssistantMessages:new Map(),
     contextReady:false,initialRestorePending:true,restoringConversation:1};
-vm.createContext(context);vm.runInContext(api+pendingIds+poll+'\nglobalThis.poll=pollAgentActivity;',context);
+context.window.STONEFELLOW_CHAT=context.cfg;
+// Polling shares the actual reply-state/page fence even when no proposal is
+// rendered. Keep that production closure intact in this isolated transport VM.
+vm.createContext(context);vm.runInContext(binding+initiativeState+initiativeHelpers+api+pendingIds+poll+'\nglobalThis.poll=pollAgentActivity;',context);
 response=async()=>({ok:true,json:async()=>({ok:true,latest_id:8,unread_count:2,updates:[],conversation_id:1,latest_message_id:5})});
 await context.poll(true);assert.equal(context.activityCursor,8);assert.equal(context.unread,2);assert.equal(context.activityBusy,false);
 assert.deepEqual(requestBodies[0],{action:'activity',after_id:0,conversation_id:0,agent_context:{user_agent_id:7},csrf_token:'token'});
