@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-chat-boundary-v380.php';
 require_once __DIR__.'/agent-tool-json-v1.php';
 require_once __DIR__.'/agent-catch-up-v1.php';
 
@@ -166,7 +167,12 @@ function vp3_initiative_schedule_v1(PDO $pdo,array $user): void
                 $hash=hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR));
                 vp3_initiative_enqueue_v1($pdo,$live,'initiative.plan',$payload,$hash);
             }
-            if(agent_brain_v122_upsert_system_memory($live,'initiative_sweep','last-review','Initiative source review checked.')<1){
+            $review=[
+                'conversation_id'=>$policy['conversation_id'],
+                'revision'=>$policy['revision'],
+                'checked_at'=>gmdate(DATE_ATOM),
+            ];
+            if(agent_brain_v122_upsert_system_memory($live,'initiative_sweep','last-review','Initiative source review checked.',$review)<1){
                 throw new RuntimeException('Initiative review could not be recorded.');
             }
         }
@@ -295,6 +301,76 @@ function vp3_initiative_chat_v1(PDO $pdo,array $user,array $principal,array $con
     }catch(Throwable $e){
         if($pdo->inTransaction())$pdo->rollBack();
         return $result+['answer'=>'I couldn’t verify or update initiative for this conversation.'];
+    }
+}
+
+/** Project only a verified Initiative state for the current private System Agent Chat. */
+function vp3_initiative_foreground_status_v1(PDO $pdo,array $user,int $agentId,int $cid): array
+{
+    $unavailable=['state'=>'unavailable'];
+    if($agentId!==0||$cid<0||(int)($user['id']??0)<1||vp3_agent_memory_scope_current_v410($user)!==0
+        ||(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)){
+        return $unavailable;
+    }
+    try{
+        $principal=vp3_agent_chat_principal_v380($user,null);
+        $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$cid],null);
+        if(!has_permission('account.access',$live)||!personal_capability_has_v242('agent_brain.access',$live)
+            ||!agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo)){
+            return $unavailable;
+        }
+        $policy=vp3_initiative_policy_v1($live);
+        if(empty($policy['enabled']))return ['state'=>'off'];
+        if($cid<1||($policy['conversation_id']??null)!==$cid)return ['state'=>'linked_elsewhere'];
+        $revision=$policy['revision']??null;
+        if(!is_string($revision)||!preg_match('/\A[a-f0-9]{32}\z/',$revision))return $unavailable;
+
+        $status=['state'=>'waiting_for_review'];
+        $review=agent_brain_v122_memory($live,'initiative_sweep','last-review')['metadata']??[];
+        $utc=new DateTimeZone('UTC');
+        if(($review['conversation_id']??null)===$cid&&($review['revision']??null)===$revision){
+            $checkedAt=vp3_catch_up_timestamp_v1($review['checked_at']??null,$utc);
+            if($checkedAt!==null&&$checkedAt<=time()){
+                $status=['state'=>'checked','last_checked_at'=>gmdate(DATE_ATOM,$checkedAt)];
+            }
+        }
+        $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
+        $jsonValue=static function(string $column,string $path)use($sqlite): string {
+            $value="JSON_EXTRACT(CASE WHEN JSON_VALID($column) THEN $column ELSE '{}' END,'$path')";
+            return $sqlite?$value:"JSON_UNQUOTE($value)";
+        };
+        $conversation=$jsonValue('r.goal','$.binding.conversation_id');
+        $runRevision=$jsonValue('r.goal','$.binding.revision');
+        $effect=$jsonValue('a.result_json','$.effect_state');
+        $stmt=$pdo->prepare("SELECT r.goal,r.status,r.lease_expires_at,$effect AS effect_state FROM agent_workflow_runs r
+            JOIN agent_workflow_actions a ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id
+            WHERE r.owner_user_id=? AND r.source_kind='agent_initiative' AND r.agent_id IS NULL
+                AND CAST($conversation AS CHAR)=? AND $runRevision=?
+            ORDER BY r.id DESC LIMIT 15");
+        $stmt->execute([(int)$live['id'],(string)$cid,$revision]);
+        foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){
+            $goal=json_decode((string)$row['goal'],true);
+            if(($goal['binding']??null)!==$policy)continue;
+            if($row['status']==='failed')return ['state'=>'failed']+$status;
+            if(in_array($row['status'],['approved','queued'],true))return ['state'=>'waiting_for_review']+$status;
+            if($row['status']==='executing'){
+                $lease=vp3_catch_up_timestamp_v1($row['lease_expires_at'],$utc);
+                return ['state'=>$lease!==null&&$lease>=time()?'reviewing':'waiting_for_review']+$status;
+            }
+            if($row['status']!=='completed')continue;
+            $status['state']='checked';
+            if($row['effect_state']!=='private_draft_ready'||!is_array($goal['sources']??null)||!$goal['sources'])continue;
+            try{
+                vp3_initiative_current_sources_v1($pdo,$live,$goal['sources'],!empty($policy['screen_enabled']));
+                return ['state'=>'ready']+$status;
+            }catch(RuntimeException $e){
+                if($e->getCode()!==409)throw $e;
+                return $status;
+            }
+        }
+        return $status;
+    }catch(Throwable $e){
+        return $unavailable;
     }
 }
 

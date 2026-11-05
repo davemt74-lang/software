@@ -3290,6 +3290,7 @@
     if (navigator.onLine === false) { keepDraft(message); recoveryStatus('You are offline. Your message is kept.'); return; }
     recoveryStatus();
 
+    const workingContextRef=window.VP3_COGNITIVE_PRESENTATION?.followUpReference?.(conversationId);
     document.dispatchEvent(new CustomEvent('stonefellow:chat-turn',{detail:{state:'pending',conversationId:Number(conversationId||0)}}));
 
     setChatCanvasView(
@@ -3329,6 +3330,7 @@
         message:message.trim(),
         input_mode:inputMode === 'voice' ? 'voice' : 'text'
       };
+      if(workingContextRef)payload.working_context_ref=workingContextRef;
       const knowledgeScopeRuntime=window.StonefellowKnowledgeScopeV162;
       if(knowledgeScopeRuntime&&typeof knowledgeScopeRuntime.value==='function'){
         payload.knowledge_scope=knowledgeScopeRuntime.value();

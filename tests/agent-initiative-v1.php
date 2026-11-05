@@ -1,7 +1,12 @@
 <?php
 declare(strict_types=1);
 
-require_once dirname(__DIR__).'/includes/agent-initiative-v1.php';
+// Load the same production includes as the Cloud CLI worker, without
+// entering its host database loop or a Chat request that supplies extra modules.
+$includes = dirname(__DIR__).'/includes/';
+foreach (['bootstrap', 'agent-job-worker-v1900', 'agent-worker-cloud-v1910', 'cloud-mission-schedules-v1', 'agent-initiative-v1'] as $module) {
+    require_once $includes.$module.'.php';
+}
 
 function initiative_test_check(bool $passed, string $name): void
 {
@@ -29,6 +34,9 @@ function initiative_test_reject(string $answer, array $evidence, string $name): 
 }
 
 $GLOBALS['initiative_test_checks'] = 0;
+initiative_test_check(function_exists('vp3_agent_chat_principal_v380') && function_exists('vp3_agent_chat_conversation_v380'),
+    'the production Cloud worker includes load the canonical Initiative Chat boundary');
+
 $calendar = 'calendar:event:42';
 $transcript = 'transcript:123';
 $mission = 'mission:123e4567-e89b-42d3-a456-426614174000';

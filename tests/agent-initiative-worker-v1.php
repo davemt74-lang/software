@@ -52,14 +52,14 @@ $pdo->exec("ALTER TABLE chat_conversations ADD COLUMN updated_at DATETIME;
 function agent_brain_schema_ready(): bool { return true; }
 function agent_brain_normalize(string $text): string { return strtolower(trim($text)); }
 function agent_brain_sentences(string $text): array { return [$text]; }
-function vp3_participant_scope_v1(): ?array { return null; }
+function vp3_participant_scope_v1(): ?array { return $GLOBALS['initiativeFixtureParticipant']??null; }
 function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, DateTimeImmutable $now, int $days, bool $includeHomeServer = true): array
 {
     if ($includeHomeServer) throw new LogicException('Initiative must not query the paired calendar.');
     $stmt = $pdo->prepare('SELECT title,starts_at FROM initiative_fixture_calendar WHERE owner_id=?');
     $stmt->execute([$user['id']]);
     $row = $stmt->fetch();
-    $next = $row ? ['ref'=>'event:42', 'title'=>$row['title'], 'start_local'=>$row['starts_at']] : null;
+    $next = $row ? ['ref'=>'event:42', 'kind'=>'event', 'id'=>42, 'title'=>$row['title'], 'start_local'=>$row['starts_at']] : null;
     $upcoming = $next ? [$next] : [];
     $conflicts = [];
     if ($next && $user['id']===1 && !empty($GLOBALS['initiative_fixture_conflict'])) {
@@ -126,8 +126,23 @@ $pdo->prepare('INSERT INTO initiative_fixture_calendar VALUES (1,?,?),(2,?,?)')
     ->execute(['Owner launch review', $starts, 'Foreign calendar entry', $starts]);
 vp3_initiative_schedule_v1($pdo, $user);
 initiative_worker_check(initiative_worker_runs('initiative.plan')===[], 'initiative defaults to no scheduled work');
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,0)===['state'=>'off']
+    && vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'off'],
+    'foreground status is off for a new or existing private System Chat before opt-in');
 $enabled = vp3_initiative_chat_v1($pdo, $user, $principal, ['conversation_id'=>42], 'on', null);
 initiative_worker_check(str_contains($enabled['answer'], 'Initiative is on'), 'owner opt-in binds initiative to the current system Chat');
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'waiting_for_review']
+    && vp3_initiative_foreground_status_v1($pdo,$user,0,0)===['state'=>'linked_elsewhere'],
+    'foreground status distinguishes an opted-in Chat awaiting its first worker from a new Chat');
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,7,11)===['state'=>'unavailable']
+    && vp3_initiative_foreground_status_v1($pdo,$user,0,11)===['state'=>'unavailable']
+    && vp3_initiative_foreground_status_v1($pdo,['id'=>2,'is_active'=>1],0,42)===['state'=>'unavailable']
+    && vp3_initiative_foreground_status_v1($pdo,$user,0,43)===['state'=>'unavailable'],
+    'named Agents and foreign conversations cannot see a System Chat Initiative status');
+$GLOBALS['initiativeFixtureParticipant']=['participant_id'=>8];
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'unavailable'],
+    'a participant scope cannot see owner Initiative status');
+unset($GLOBALS['initiativeFixtureParticipant']);
 
 vp3_initiative_schedule_v1($pdo, $user);
 vp3_initiative_schedule_v1($pdo, $user);
@@ -154,6 +169,9 @@ $draftModel = static function (string $prompt, string $protocol) use ($draftText
 
 $planId = (int) $plans[0]['id'];
 $planClaim = initiative_worker_claim($user, $planId);
+$runningStatus = vp3_initiative_foreground_status_v1($pdo,$user,0,42);
+initiative_worker_check($runningStatus['state']==='reviewing' && isset($runningStatus['last_checked_at']),
+    'a live workflow lease reports reviewing with the confirmed source sweep timestamp');
 $planResult = vp3_initiative_execute_v1($pdo, $user, $planClaim, $planModel);
 $drafts = initiative_worker_runs('initiative.prepare');
 initiative_worker_check($planResult['ok'] && count($drafts)===1 && count(initiative_worker_receipts($planId))===1
@@ -169,6 +187,12 @@ initiative_worker_check($draftResult['ok'] && count($messages)===1 && count($rec
 initiative_worker_check(json_decode($receipt[0]['result_json'],true)['initiative_draft']===$draftText
     && !str_contains(json_encode($draftResult['receipt'],JSON_THROW_ON_ERROR),$draftText),
     'the canonical private draft is retained without leaking through the public workflow receipt');
+$readyStatus = vp3_initiative_foreground_status_v1($pdo,$user,0,42);
+initiative_worker_check($readyStatus===['state'=>'ready','last_checked_at'=>$runningStatus['last_checked_at']],
+    'a fresh private draft produces only a ready state and timestamp, with no draft or evidence in the payload');
+$pdo->exec("UPDATE initiative_fixture_calendar SET title='Changed after preparation' WHERE owner_id=1");
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)['state']==='checked',
+    'an old draft is never reported ready once its source changes');
 $replay = vp3_initiative_execute_v1($pdo, $user, $draftClaim, static fn() => throw new LogicException('A finished lease must not replay inference.'));
 initiative_worker_check(!$replay['ok'] && count(initiative_worker_assistant_messages())===1, 'replaying a consumed lease does not duplicate the report');
 
@@ -195,6 +219,8 @@ $receipt = initiative_worker_receipts($nextDraft);
 initiative_worker_check(!$failed['ok'] && count(initiative_worker_assistant_messages())===1
     && count($receipt)===1 && $receipt[0]['status']==='failed', 'a failed success receipt rolls back the report before recording canonical failure');
 $pdo->exec('DROP TRIGGER initiative_receipt_failure');
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)['state']==='failed',
+    'the foreground displays a confirmed failed review instead of a success');
 
 $stalePlan = initiative_worker_new_review($user,'Calendar before source changes');
 $before = count(initiative_worker_runs('initiative.prepare'));
@@ -218,6 +244,8 @@ initiative_worker_check(!$optedOut['ok'] && vp3_initiative_policy_v1($user)['ena
     && count(initiative_worker_assistant_messages())===1, 'opting out during draft inference fences the report and changes the live policy');
 
 vp3_initiative_chat_v1($pdo,$user,$principal,['conversation_id'=>42],'on',null);
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'waiting_for_review'],
+    'a new opt-in revision cannot inherit a prior sweep timestamp, failure, or private draft');
 $quietPlan = initiative_worker_new_review($user,'Low-value calendar event');
 $before = count(initiative_worker_runs('initiative.prepare'));
 $quiet = vp3_initiative_execute_v1($pdo,$user,initiative_worker_claim($user,$quietPlan),static fn()=>'{"jobs":[]}');
@@ -225,6 +253,8 @@ $quietReceipt = json_decode(initiative_worker_receipts($quietPlan)[0]['result_js
 initiative_worker_check($quiet['ok'] && $quietReceipt['effect_state']==='idle'
     && count(initiative_worker_runs('initiative.prepare'))===$before && count(initiative_worker_assistant_messages())===1,
     'quiet decisions record one idle receipt without creating assignments or Chat messages');
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)['state']==='checked',
+    'a quiet decision reports only a completed check');
 
 $GLOBALS['initiative_fixture_conflict'] = true;
 $multiplePlan = initiative_worker_new_review($user,'Owner launch review alongside independent calendar overlap');

@@ -13,6 +13,7 @@
   const thread = document.getElementById('chatThread');
   const form = document.getElementById('chatForm');
   const input = document.getElementById('chatInput');
+  const liveHost = cfg.liveContext === true ? document.getElementById('chatLiveContext') : null;
   if (!button || !popup || !content || !thread || !form) return;
 
   let state = null;
@@ -26,6 +27,14 @@
   }
   let busy = false;
   let workingAttentionView = 0;
+  let liveView = 0;
+  let liveState = null;
+  let explicitlySelectedReference = null;
+  let liveAgentName = '';
+  let liveMarkup = '';
+  let openingKey = '';
+  const liveSeen = new Set();
+  const liveDismissed = new Set();
   let lastVoiceThrough = 0;
   let activeVoiceThrough = 0;
   let suppressedVoiceThrough = 0;
@@ -58,13 +67,17 @@
     return data;
   }
 
-  async function getState(includeWorkingAttention) {
+  async function getState(includeWorkingAttention, conversationId) {
     const controller = new AbortController();
     readController = controller;
     const timeout = window.setTimeout(() => controller.abort(), 10000);
     const url = endpoint('state');
     url.searchParams.set('include_working_attention', includeWorkingAttention ? '1' : '0');
     if (includeWorkingAttention && cfg.greetingPreview === true) url.searchParams.set('greeting_preview','1');
+    if (conversationId !== null) {
+      url.searchParams.set('include_live_context','1');
+      url.searchParams.set('conversation_id',String(conversationId));
+    }
     try {
       const response = await fetch(url.toString(), {
         credentials:'same-origin',
@@ -109,6 +122,147 @@
     }
     content.querySelectorAll('[data-agent-brief-working-attention],[data-agent-greeting-preview]').forEach(node => node.remove());
   }
+
+
+  function liveConversation() {
+    if (!liveHost || document.hidden || thread.dataset.view !== 'chat') return null;
+    const chat = window.STONEFELLOW_CHAT_CONTINUITY;
+    if (!chat?.isReady?.() || chat.isRestoring?.()) return null;
+    const agent = Number(chat.agentId?.() ?? cfg.agentId ?? 0);
+    const id = Number(chat.conversationId?.());
+    return agent === Number(cfg.agentId || 0) && Number.isSafeInteger(id) && id > 0 ? id : null;
+  }
+
+  function clearLiveContext() {
+    liveView++;
+    liveState = null;
+    openingKey = '';
+    content.querySelector('[data-agent-live-status]')?.remove();
+    if (!liveHost) return;
+    liveMarkup = '';
+    liveHost.hidden = true;
+    liveHost.replaceChildren();
+  }
+
+  const liveMemoryPrefix = 'vp3:live-context:v1:';
+
+  function liveMemory(bucket, seen, key, add = false) {
+    if (add) seen.add(key);
+    if (seen.has(key) && !add) return true;
+    const name = liveMemoryPrefix + bucket;
+    try {
+      const stored = JSON.parse(localStorage.getItem(name) || '[]');
+      const entries = Array.isArray(stored) ? stored.slice(0,32) : [];
+      if (add) localStorage.setItem(name, JSON.stringify([key,...entries.filter(value => value !== key)].slice(0,32)));
+      return add || entries.includes(key);
+    } catch (_error) {
+      return seen.has(key);
+    }
+  }
+
+  function initiativeLabel(initiative) {
+    switch (initiative?.state) {
+      case 'off': return 'Initiative is off.';
+      case 'linked_elsewhere': return 'Initiative is linked to another Chat.';
+      case 'waiting_for_review': return 'Initiative is on · waiting for a review.';
+      case 'reviewing': return 'Initiative is reviewing its sources.';
+      case 'checked': return 'Initiative checked its sources.';
+      case 'failed': return 'Initiative could not verify its last review.';
+      case 'ready': return 'Initiative has a private draft ready.';
+      case 'unavailable': return Number(cfg.agentId || 0) > 0
+        ? 'Initiative uses your System Agent Chat.' : 'Initiative status is unavailable.';
+      default: return '';
+    }
+  }
+
+  function liveSourceLink(item) {
+    const href = String(item?.href || '');
+    if (!href.startsWith('/') || href.startsWith('//') || href.includes('\\') || !item.action_label) return '';
+    try {
+      const url = new URL(href, location.origin);
+      return url.origin === location.origin && !url.username && !url.password
+        ? '<a href="' + esc(url.pathname + url.search + url.hash) + '">' + esc(item.action_label) + '</a>' : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function liveStatusMarkup() {
+    if (!liveState) return '';
+    const initiative = initiativeLabel(liveState.initiative);
+    const message = liveState.state === 'quiet' ? 'Nothing pressing in the sources checked.' :
+      liveState.state === 'unavailable' ? 'Current sources could not be checked.' : '';
+    if (!initiative && !message) return '';
+    const checkedAt = Date.parse(liveState.initiative?.last_checked_at || '');
+    const checked = Number.isFinite(checkedAt) ? ' Sources last checked ' + new Date(checkedAt).toLocaleString() + '.' : '';
+    return '<div class="chat-agent-brief-card" data-agent-live-status><small>Top of mind</small>' +
+      (message ? '<p>' + esc(message) + '</p>' : '') +
+      (initiative ? '<p data-agent-live-initiative>' + esc(initiative + checked) + '</p>' : '') + '</div>';
+  }
+
+  function renderLiveContext(context, agentName = liveAgentName) {
+    if (!liveHost) return;
+    liveState = context || null;
+    liveAgentName = String(agentName || 'Agent');
+    let markup = '';
+    const item = liveState?.attention;
+    const key = String(item?.key || '');
+    const isBusy = window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.() ||
+      ['processing','speaking'].includes(runtimeState());
+    if (item?.title && /^[a-f0-9]{64}$/.test(key) && !liveMemory('dismissed',liveDismissed,key) && !isBusy) {
+      const canOpen = liveState.opening === true && runtimeState() !== 'listening' && !input?.value.trim();
+      if (canOpen && openingKey !== key && !liveMemory('seen',liveSeen,key)) {
+        openingKey = key;
+        liveMemory('seen',liveSeen,key,true);
+      } else if (!canOpen || openingKey !== key) {
+        openingKey = '';
+      }
+      const heading = openingKey === key ? 'Agent check-in' : 'Top of mind';
+      markup = '<article class="message assistant chat-live-context" data-agent-live-attention>' +
+        '<div class="message-avatar" aria-hidden="true">' + esc(liveAgentName.slice(0,1)) + '</div>' +
+        '<div class="message-body"><div class="message-role">' + esc(liveAgentName) + '</div>' +
+        '<div class="message-text chat-live-context-copy"><small data-agent-live-heading>' + heading + '</small>' +
+        '<strong>' + esc(item.title) + '</strong>' + (item.summary ? '<span>' + esc(item.summary) + '</span>' : '') +
+        '</div><div class="chat-live-context-actions">' + liveSourceLink(item) +
+        '<button type="button" data-agent-live-ask>Ask Agent</button>' +
+        '<button type="button" data-agent-live-dismiss aria-label="Dismiss this update">×</button></div></div></article>';
+    } else if (!item) {
+      openingKey = '';
+    }
+    if (markup !== liveMarkup) {
+      const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 64;
+      liveMarkup = markup;
+      liveHost.innerHTML = markup;
+      liveHost.hidden = !markup;
+      if (markup) {
+        thread.append(liveHost);
+        if (nearBottom && !input?.value.trim()) thread.scrollTop = thread.scrollHeight;
+      }
+    }
+  }
+
+  function dismissLiveContext() {
+    const key = String(liveState?.attention?.key || '');
+    if (/^[a-f0-9]{64}$/.test(key)) liveMemory('dismissed',liveDismissed,key,true);
+    renderLiveContext(liveState);
+  }
+
+  liveHost?.addEventListener('click', event => {
+    if (liveConversation() === null || !liveState) return;
+    if (event.target.closest('[data-agent-live-dismiss]')) {
+      dismissLiveContext();
+    }
+    if (event.target.closest('[data-agent-live-ask]') && input && !input.disabled) {
+      if (!input.value.trim()) {
+        input.value = 'Help me with that';
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+        explicitlySelectedReference = liveState.attention?.key;
+        try { form.requestSubmit(); } finally { explicitlySelectedReference = null; }
+      } else {
+        input.focus();
+      }
+    }
+  });
 
   function closePopup() {
     if (!popup.hidden) clearWorkingAttention();
@@ -265,6 +419,7 @@
         '</div></article>';
     }
     if (workingAttention && workingAttention.title) html += workingAttentionMarkup(workingAttention);
+    html += liveStatusMarkup();
     const greeting = cfg.greetingPreview === true ? brief.greeting_preview : null;
     const greetingDecision = greeting?.decision;
     if (greetingDecision === 'would_mention' || greetingDecision === 'quiet') {
@@ -590,6 +745,7 @@
 
   function clearPrivatePresentation() {
     state = null;
+    clearLiveContext();
     currentDigestId = '';
     activeVoiceThrough = 0;
     content.replaceChildren();
@@ -744,28 +900,40 @@
     busy = true;
     const includeWorkingAttention = !popup.hidden && !document.hidden;
     const requestedView = workingAttentionView;
+    const requestedLiveView = liveView;
+    const conversationId = liveConversation();
+    const liveRequestIsCurrent = () => conversationId !== null && conversationId === liveConversation()
+      && requestedLiveView === liveView;
     content.setAttribute('aria-busy','true');
     try {
-      const next = await getState(includeWorkingAttention);
+      const next = await getState(includeWorkingAttention, conversationId);
       if (signal.aborted || document.hidden) return;
       state = next;
       if (state.brief && (!includeWorkingAttention || requestedView !== workingAttentionView)) {
         delete state.brief.working_attention;
         delete state.brief.greeting_preview;
       }
+      if (liveRequestIsCurrent()) renderLiveContext(state.live_context,state.brief?.agent_name);
+      else delete state.live_context;
       renderBrief(state.brief || {});
       renderDigest(state.digest || null);
       renderHomeServerPresence(state.homeserver_presence || null);
       refreshProfileAttention();
       void maybeSpeak(state.voice_candidate || null);
     } catch (error) {
-      if (!signal.aborted) renderBriefError(error);
+      if (!signal.aborted) {
+        renderBriefError(error);
+        if (liveRequestIsCurrent()) renderLiveContext({state:'unavailable'});
+      }
     } finally {
       if (signal === pageController.signal) {
         content.setAttribute('aria-busy','false');
         busy = false;
         // An open or return to the tab can overtake an in-flight background read.
-        if (!signal.aborted && !popup.hidden && !document.hidden && requestedView !== workingAttentionView) void refresh();
+        if (!signal.aborted && !document.hidden && (
+          (!popup.hidden && requestedView !== workingAttentionView) ||
+          (requestedLiveView !== liveView && liveConversation() !== null)
+        )) void refresh();
       }
     }
   }
@@ -860,8 +1028,31 @@
 
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) void refresh();
-    else clearWorkingAttention();
+    else {
+      clearWorkingAttention();
+      clearLiveContext();
+    }
   });
+  if (liveHost) {
+    window.addEventListener('stonefellow:chat-context-changing', clearLiveContext);
+    window.addEventListener('vp3:chat-context-ready', () => {
+      clearLiveContext();
+      if (liveConversation() !== null) void refresh();
+    });
+    window.addEventListener('vp3:chat-canvas-view-changed', () => {
+      clearLiveContext();
+      if (liveConversation() !== null) void refresh();
+    });
+    window.addEventListener('vp3:initiative-setting-changed', () => void refresh());
+    window.addEventListener('storage', event => {
+      if (event.key === liveMemoryPrefix + 'dismissed' && liveState && liveConversation() !== null) {
+        renderLiveContext(liveState);
+      }
+    });
+    document.addEventListener('stonefellow:chat-turn', event => {
+      if (event.detail?.state === 'pending' && liveConversation() !== null) clearLiveContext();
+    });
+  }
   window.addEventListener('focus', () => void refresh());
 
   const observer = new MutationObserver(() => {
@@ -890,6 +1081,16 @@
     void refresh().finally(() => { if (!signal.aborted) schedule(); });
   }
 
-  window.VP3_COGNITIVE_PRESENTATION = {refresh:refresh,openBrief:openPopup,closeBrief:closePopup};
+  window.VP3_COGNITIVE_PRESENTATION = {
+    refresh:refresh,openBrief:openPopup,closeBrief:closePopup,
+    followUpReference(conversationId) {
+      const key = String(liveState?.attention?.key || '');
+      if (pageController.signal.aborted || !liveHost || liveHost.hidden || liveConversation() !== conversationId
+        || !/^[a-f0-9]{64}$/.test(key)) return null;
+      const messages = thread.querySelectorAll('.message');
+      const latestMessage = messages[messages.length - 1];
+      return explicitlySelectedReference === key || liveHost.contains(latestMessage) ? key : null;
+    }
+  };
   startUpdates();
 })();

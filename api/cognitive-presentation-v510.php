@@ -36,13 +36,33 @@ $agentId=max(0,(int)($input['agent_id']??0));
 try{
     $action=trim((string)($input['action']??'state'));
     $readState=$method==='GET'&&$action==='state';
-    $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,$agentId);
+    $liveConversationId=null;
     if($readState){
         // Existing clients that supplied a binding used it to request working attention.
         $includeWorkingAttention=$input['include_working_attention']??'1';
         if(!in_array($includeWorkingAttention,['0','1'],true))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_working_attention']);
+        $includeLiveContext=$input['include_live_context']??'0';
+        if(!in_array($includeLiveContext,['0','1'],true))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_live_context']);
+        if($includeLiveContext==='1'){
+            $conversation=$input['conversation_id']??null;
+            $rawAgent=$input['agent_id']??'0';
+            if(!is_string($conversation)||!preg_match('/^[1-9][0-9]{0,17}$/D',$conversation)
+                ||!is_string($rawAgent)||!preg_match('/^(?:0|[1-9][0-9]{0,17})$/D',$rawAgent)){
+                vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_live_context']);
+            }
+            $liveConversationId=(int)$conversation;
+            try{$agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);}
+            catch(PDOException $e){throw $e;}
+            catch(RuntimeException $e){vp3_cognitive_presentation_api_json_v510(404,['ok'=>false,'error'=>'conversation_not_found']);}
+            if(!vp3_agent_chat_conversation_v380($pdo,$liveConversationId,(int)$user['id'],$agent)){
+                vp3_cognitive_presentation_api_json_v510(404,['ok'=>false,'error'=>'conversation_not_found']);
+            }
+        }
+    }
+    $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,$agentId);
+    if($readState){
         $greetingPreview=$includeWorkingAttention==='1'&&($input['greeting_preview']??'')==='1';
-        vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'state'=>vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$includeWorkingAttention==='1',$greetingPreview)]);
+        vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'state'=>vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$includeWorkingAttention==='1',$greetingPreview,$liveConversationId)]);
     }
     if($method!=='POST')vp3_cognitive_presentation_api_json_v510(405,['ok'=>false,'error'=>'method_not_allowed']);
     if(!hash_equals(csrf_token(),trim((string)($input['csrf_token']??''))))vp3_cognitive_presentation_api_json_v510(419,['ok'=>false,'error'=>'csrf']);
