@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import {request as httpRequest} from 'node:http';
 import {spawn} from 'node:child_process';
 
 // Reuse the real three-controller capability fixture. Only SQLite infrastructure
@@ -40,13 +41,13 @@ function ai_v121_stream_chat_response($query,$history,$context,$user,$onDelta){
  return ['ok'=>true,'answer'=>$answer,'usage'=>[]];
 }`);
 fs.writeFileSync(path.join(tmp,'followthrough-control.php'),`<?php require __DIR__.'/includes/bootstrap.php';followthrough_fixture_control_v1();`);
-const reserve=net.createServer();
-await new Promise(resolve=>reserve.listen(0,'127.0.0.1',resolve));
-const port=reserve.address().port;
-await new Promise(resolve=>reserve.close(resolve));
-// Keep concurrent workers available after the two deliberately killed-process
-// cases at the end of this suite.
+async function availablePort(){
+ const reserve=net.createServer();await new Promise(resolve=>reserve.listen(0,'127.0.0.1',resolve));
+ const port=reserve.address().port;await new Promise(resolve=>reserve.close(resolve));return port;
+}
+const port=await availablePort();
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe'],detached:true,env:{...process.env,PHP_CLI_SERVER_WORKERS:'4'}});
+const crashWorkers=new Set();
 let logs='';child.stderr.on('data',chunk=>logs+=chunk);
 const base=`http://127.0.0.1:${port}`;
 const commonHeaders={'Content-Type':'application/json','Connection':'close','X-Fixture-Brain-Ready':'1'};
@@ -63,10 +64,45 @@ async function control(action='state',query={}){
  const body=await result.text();let state;try{state=JSON.parse(body);}catch{throw new Error(body+'\n'+logs.slice(-4000));}
  assert.ok(result.ok&&state.ok,'Fixture '+action+': '+body+'\n'+logs.slice(-3000));return state;
 }
-async function post(endpoint,message,extra={},headers={},signal){
+// These requests are reserved for the intentional worker-kill probes. A fresh
+// socket cannot reuse the connection that was interrupted by SIGKILL.
+function freshHttp(url,{method='GET',headers=commonHeaders,body,signal}={}){
+ return new Promise((resolve,reject)=>{
+  const request=httpRequest(url,{method,headers,signal,agent:false},response=>{
+   let body='';response.setEncoding('utf8');response.on('data',chunk=>body+=chunk);
+   response.once('error',reject);response.once('end',()=>resolve({result:{status:response.statusCode,ok:response.statusCode>=200&&response.statusCode<300},body}));
+  });
+  request.once('error',reject);request.end(body);
+ });
+}
+async function freshControl(origin=base){
+ const {result,body}=await freshHttp(origin+'/followthrough-control.php?action=state',{signal:AbortSignal.timeout(10000)});
+ const state=JSON.parse(body);
+ assert.ok(result.status===200&&state.ok,'A surviving PHP worker must serve the read-only state probe after SIGKILL.');return state;
+}
+async function startCrashWorker(){
+ const port=await availablePort(),env={...process.env};delete env.PHP_CLI_SERVER_WORKERS;
+ // The CLI supervisor can serve requests too; killing it also kills its forked
+ // workers. Isolate the doomed request while sharing the real DB and cache.
+ const worker=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe'],env});
+ crashWorkers.add(worker);
+ const stopped=new Promise(resolve=>worker.once('exit',()=>{crashWorkers.delete(worker);resolve();}));
+ const listening=new Promise((resolve,reject)=>{
+  const timer=setTimeout(()=>reject(new Error('The dedicated crash worker did not announce its listening server.')),10000);let startup='';
+  worker.once('error',error=>{clearTimeout(timer);reject(error);});
+  worker.once('exit',()=>{clearTimeout(timer);reject(new Error('The dedicated crash worker exited before readiness.'));});
+  worker.stderr.on('data',chunk=>{logs+=chunk;startup+=chunk;if(startup.includes('Development Server')&&startup.includes('started')){clearTimeout(timer);resolve();}});
+ });
+ await listening;const origin=`http://127.0.0.1:${port}`;
+ return {worker,origin,stopped,state:await freshControl(origin)};
+}
+async function post(endpoint,message,extra={},headers={},signal,freshConnection=false,origin=base){
  const route=endpoint==='chat-v236.php'?endpoint+'?agent='+String(extra.agent_context?.user_agent_id??7):endpoint;
- const result=await fetch(base+'/api/'+route,{method:'POST',signal,headers:{...commonHeaders,...headers},body:JSON.stringify({action:'send',message,csrf_token:'fixture',knowledge_scope:'off',...named,...extra})});
- const body=await result.text();let data,events=[];
+ const options={method:'POST',signal,headers:{...commonHeaders,...headers},body:JSON.stringify({action:'send',message,csrf_token:'fixture',knowledge_scope:'off',...named,...extra})};
+ let result,body;
+ if(freshConnection)({result,body}=await freshHttp(origin+'/api/'+route,options));
+ else{result=await fetch(origin+'/api/'+route,options);body=await result.text();}
+ let data,events=[];
  try{events=body.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line));data=endpoint.includes('stream')?(events.find(event=>event.type==='done')?.data??events.find(event=>event.type==='error')):events[0];}
  catch{throw new Error(body+'\n'+logs.slice(-4000));}
  return {result,data,body,events};
@@ -559,9 +595,11 @@ try{
  for(const [endpoint,implicit] of [['chat.php',false],['chat-v236.php',true]]){
   const seed=await control('seed'),source=root(seed),ref=association(source),query='Yes, please advance that proposal across the pre-anchor crash';
   const extra=implicit?{}:{initiative_reply:ref},token='missing-anchor-'+source.id,gate=path.join(tmp,'before-anchor-gate-'+token);
-  const original=post(endpoint,query,extra,{'X-Fixture-Followthrough-Intent':'advance','X-Fixture-Followthrough-Before-Anchor-Gate':token});original.catch(()=>{});
+  const crash=await startCrashWorker();
   let killed=false;
   try{
+   assert.equal(root(crash.state)?.id,source.id,'The doomed worker must share the same real database and Initiative post.');
+   const original=post(endpoint,query,extra,{'X-Fixture-Followthrough-Intent':'advance','X-Fixture-Followthrough-Before-Anchor-Gate':token},undefined,false,crash.origin);original.catch(()=>{});
    await barrier(()=>fs.existsSync(gate+'.entered'),endpoint+' did not reach the actual committed-USER/pre-anchor transaction gap');
    const record=privateProcessingRecord(source.id),before=await control(),owner=before.messages.find(message=>message.role==='user'&&message.message===query);
    check(owner&&record.row.initiative_request?.user_message_id===owner.id&&!context(owner).initiative_reply_anchor_v1&&
@@ -569,18 +607,25 @@ try{
     endpoint+' '+(implicit?'implicit':'explicit')+' crash fixture has a real committed owner turn and matching private-file MID before the DB anchor exists');
    record.row.created_at=Math.floor(Date.now()/1000)-331;fs.writeFileSync(record.file,JSON.stringify(record.row));
    const pid=Number(fs.readFileSync(gate+'.entered','utf8'));assert.ok(Number.isSafeInteger(pid)&&pid>1&&pid!==process.pid);
-   process.kill(pid,'SIGKILL');killed=true;const interrupted=await original.then(()=>false,()=>true);
-   const refused=await post(endpoint,query,extra,{'X-Fixture-Followthrough-Intent':'advance'},AbortSignal.timeout(10000)),after=await control();
+   assert.equal(pid,crash.worker.pid,'Only the dedicated worker serving the actual doomed request may be killed.');
+   assert.notEqual(pid,child.pid,'The primary server must remain available for the recovery request.');
+   process.kill(pid,'SIGKILL');killed=true;await crash.stopped;const interrupted=await original.then(()=>false,()=>true);
+   await freshControl();
+   const cacheDir=path.join(tmp,'runtime-fixture/idempotency');
+   const cacheSnapshot=()=>JSON.stringify(fs.readdirSync(cacheDir).filter(name=>name.endsWith('.json')).sort().map(name=>[name,fs.readFileSync(path.join(cacheDir,name),'utf8')]));
+   const cacheBefore=cacheSnapshot();
+   const refused=await post(endpoint,query,extra,{'X-Fixture-Followthrough-Intent':'advance'},AbortSignal.timeout(10000),true),after=await freshControl();
    check(interrupted&&refused.data?.ok!==true&&(refused.result.status===409||refused.data?.status===409)&&
     !refused.events.some(event=>event.type==='delta')&&!refused.body.includes('verified launch task')&&
     after.messages.length===before.messages.length&&after.calls.length===0&&after.runs.length===before.runs.length&&after.events.length===before.events.length&&
-    !context(after.messages.find(message=>message.id===owner.id)).initiative_reply_anchor_v1,
+    !context(after.messages.find(message=>message.id===owner.id)).initiative_reply_anchor_v1&&cacheSnapshot()===cacheBefore,
     endpoint+' '+(implicit?'implicit':'explicit')+' stale processing without a real DB anchor fails closed after an actual worker kill, with no model, owner turn or child',refused.body);
-  }finally{if(!killed)fs.writeFileSync(gate+'.release','release');}
+  }finally{if(!killed){fs.writeFileSync(gate+'.release','release');crash.worker.kill('SIGTERM');await crash.stopped;}}
  }
 
  console.log(`AGENT_INITIATIVE_FOLLOWTHROUGH_API=PASS (${checks} assertions)`);
 }finally{
+ await Promise.all([...crashWorkers].map(worker=>new Promise(resolve=>{worker.once('exit',resolve);if(!worker.kill('SIGTERM'))resolve();})));
  try{process.kill(-child.pid,'SIGTERM');}catch{child.kill('SIGTERM');}
  if(process.env.VP3_KEEP_FOLLOWTHROUGH_FIXTURE)console.log('Fixture: '+tmp);
  else fs.rmSync(tmp,{recursive:true,force:true});
