@@ -8,7 +8,10 @@ const page=await browser.newPage({viewport:{width:1280,height:850}}),errors=[],w
 page.on('pageerror',error=>errors.push(error.message));
 const now=new Date().toISOString(),mid='11111111-1111-4111-8111-111111111111';
 const eyes=Array.from({length:35},(_,i)=>({event_type:'agent_eyes.arrival',received_at:now,payload:{summary:'Participant '+i+' arrived. Provisional browser observation with a readable timestamp.'}}));
-const data={ok:true,notifications:{unread:1,items:[{id:3,title:'Profile visitor',body:'One saved profile notification',is_read:0,created_at:now}]},brain:{eyes_events:eyes},history:[{role:'assistant',message:'A saved conversation message',created_at:now,conversation_id:42,input_mode:'text'}]};
+const data={ok:true,notifications:{unread:1,items:[{id:3,title:'Profile visitor',body:'One saved profile notification',is_read:0,created_at:now}]},
+  activity_stream:{complete:true,agent_namespace:'system',items:[{id:'a'.repeat(64),state:'needs_attention',title:'Review the completed specialist research',
+    summary:'A saved Mission result is ready for your review.',updated_at:now,source_label:'Mission',source_url:'/missions.php?mission='+mid,action_label:'Open Mission',sources:[]}]},
+  brain:{eyes_events:eyes},history:[{role:'assistant',message:'A saved conversation message',created_at:now,conversation_id:42,input_mode:'text'}]};
 const schedules=[{id:'55555555-5555-4555-8555-555555555555',objective:'Prepare the weekly restaurant inventory research summary',status:'active',frequency:'weekly',weekday:0,hour:9,minute:30,timezone:'America/Phoenix',next_run_at:now,last_run_at:now,updated_at:now,runs:[{status:'started',mission_status:'completed',due_at:now,completed_at:now,mission_id:mid}]}];
 await page.route('http://activity.test/',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div class="chat-topbar-actions"><div id="chatNotificationMenu"><button id="chatNotificationButton">Notifications</button></div><div id="chatProfileMenu">Account</div></div><main>Cloud workspace</main><div id="chatComposerShell"><form id="chatForm"><textarea id="chatInput"></textarea></form></div>'}));
 await page.route('**/api/**',route=>{
@@ -28,6 +31,8 @@ try{
   await page.addScriptTag({content:await source('chat-notifications-drawer-v240.js')});
   await page.waitForFunction(()=>window.STONEFELLOW_NOTIFICATION_CENTER);
   await page.locator('#chatNotificationButton').click();
+  await page.locator('[data-activity-stream]').waitFor();
+  await page.locator('[data-activity-details="missions"]>summary').click();
   await page.waitForSelector('[data-mission-notices] .vp3-mission-notice');
   await test('one Activity Center and notification feed survive repeat loads and refreshes',async()=>{
     await page.addScriptTag({content:await source('chat-notifications-drawer-v240.js')});
@@ -54,7 +59,7 @@ try{
       assert.equal(await page.locator('[data-eyes-timeline]').count(),0,'Conversation History has no duplicate Eyes feed');
     });
     await test(`mission and schedule cards share one scroll surface at ${viewport.width}px`,async()=>{
-      await page.getByRole('tab',{name:/Notifications/}).click();
+      await page.getByRole('tab',{name:/^Activity/}).click();
       assert.equal(await page.locator('[data-mission-notices] .vp3-activity-card-head').count(),1);
       await page.getByRole('tab',{name:'Agent Brain',exact:true}).click();
       await page.waitForSelector('.vp3-schedules-brain .vp3-schedule-row');

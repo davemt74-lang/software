@@ -3,6 +3,9 @@
 
   const cfg = window.STONEFELLOW_NOTIFICATION_DRAWER || {};
   if (!cfg.endpoint || !cfg.csrf || (!cfg.orbOnly && window.VP3_ACTIVITY_CENTER_INITIALIZED)) return;
+  const pageBinding = String(cfg.workingAttentionBinding || '');
+  const pageUserId = Number(cfg.userId || window.STONEFELLOW_CHAT?.userId || 0);
+  const pageNamespace = Number(cfg.agentId || 0) > 0 ? 'agent:' + Number(cfg.agentId) : 'system';
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
@@ -80,8 +83,26 @@
   let mainFeedRefreshTimer = 0;
   let profileAttention = null;
   let activityReadError = '';
+  let activityScopeError = false;
+  const activityDetails = new Set();
+
+  function validateActivityScope(data = null) {
+    const chat = window.STONEFELLOW_CHAT || {};
+    if ((pageUserId && Number(chat.userId || pageUserId) !== pageUserId)
+      || (Object.hasOwn(chat,'agentId') && Number(chat.agentId || 0) !== Number(cfg.agentId || 0))
+      || (pageBinding && String(chat.workingAttentionBinding || cfg.workingAttentionBinding || '') !== pageBinding)
+      || (data?.agent_namespace && data.agent_namespace !== pageNamespace)
+      || (data?.activity_stream?.agent_namespace && data.activity_stream.agent_namespace !== pageNamespace)) {
+      state = null;
+      activityScopeError = true;
+      activityReadError = 'Your Chat session changed. Reload Chat to see current activity.';
+      render();
+      throw Object.assign(new Error('Your Chat session changed. Reload Chat to see current activity.'),{status:403});
+    }
+  }
 
   async function request(action = 'state', payload = null, query = {}) {
+    validateActivityScope();
     const post = payload !== null;
     let url = cfg.endpoint;
     if (!post) {
@@ -91,16 +112,18 @@
       Object.entries(query || {}).forEach(([key,value]) => target.searchParams.set(key, String(value)));
       url = target.toString();
     }
+    const headers = pageBinding ? {'X-VP3-Working-Attention':pageBinding} : {};
     const options = post ? {
       method:'POST',
       credentials:'same-origin',
       cache:'no-store',
-      headers:{'Content-Type':'application/json'},
+      headers:{...headers,'Content-Type':'application/json'},
       body:JSON.stringify({action, csrf_token:cfg.csrf, agent_id:Number(cfg.agentId || 0), ...payload})
-    } : {credentials:'same-origin', cache:'no-store'};
+    } : {credentials:'same-origin', cache:'no-store',headers};
     const response = await fetch(url, options);
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.ok || data.complete === false) throw Object.assign(new Error(data?.error || 'Unable to load notifications.'), {status:response.status});
+    validateActivityScope(data);
     if (action === 'state' && (!data.notifications || !Array.isArray(data.notifications.items) || !Number.isSafeInteger(data.notifications.unread) || data.notifications.unread < 0)) throw new Error('Notification counts could not be verified. Retry to load the current list.');
     return data;
   }
@@ -120,7 +143,7 @@
       badge.hidden = true;
       badge.textContent = '0';
     }
-    button.setAttribute('aria-label', count ? `Notifications, ${count} unread` : 'Notifications');
+    button.setAttribute('aria-label', count ? `Activity Center, ${count} unread notification${count === 1 ? '' : 's'}` : 'Activity Center');
   }
 
   function ownNotificationButton() {
@@ -155,14 +178,14 @@
     drawer.className = 'chat-notification-drawer';
     drawer.id = 'chatNotificationDrawer';
     drawer.hidden = true;
-    drawer.setAttribute('aria-label', 'Notifications and Agent Brain');
+    drawer.setAttribute('aria-label', 'Activity Center');
     drawer.innerHTML = `
       <header class="chat-notification-drawer-head">
         <div><small>Stonefellow</small><strong>Activity Center</strong></div>
         <button type="button" data-notification-drawer-close aria-label="Close Activity Center">×</button>
       </header>
       <nav class="chat-notification-tabs" role="tablist" aria-label="Activity Center sections">
-        <button type="button" data-notification-tab="notifications" class="active">Notifications <em data-notification-tab-count hidden></em></button>
+        <button type="button" data-notification-tab="notifications" class="active">Activity <em data-notification-tab-count hidden></em></button>
         <button type="button" data-notification-tab="brain">Agent Brain</button>
         <button type="button" data-notification-tab="history">History</button>
         <button type="button" data-notification-tab="eyes">Agent Eyes</button>
@@ -173,6 +196,12 @@
     backdrop.addEventListener('click', closeDrawer);
     drawer.querySelector('[data-notification-drawer-close]')?.addEventListener('click', closeDrawer);
     drawer.addEventListener('click', handleDrawerClick);
+    drawer.addEventListener('toggle', event => {
+      const key = event.target.dataset?.activityDetails;
+      if (!key || !event.target.isConnected) return;
+      if (event.target.open) activityDetails.add(key);
+      else activityDetails.delete(key);
+    },true);
     drawer.querySelectorAll('[data-notification-tab]').forEach(tab=>{tab.setAttribute('role','tab');tab.id='chatActivityTab-'+tab.dataset.notificationTab;tab.setAttribute('aria-controls','chatActivityPanel');});
     drawer.querySelector('.chat-notification-tabs').addEventListener('keydown',event=>{
       const tabs=Array.from(drawer.querySelectorAll('[data-notification-tab]')),index=tabs.indexOf(event.target);
@@ -182,14 +211,58 @@
     });
   }
 
+  function activitySourceUrl(value) {
+    const path = String(value || '');
+    if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return '';
+    try {
+      const target = new URL(path, location.origin);
+      return target.origin === location.origin && !target.username && !target.password
+        ? target.pathname + target.search + target.hash : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function activityStreamView() {
+    const stream = state?.activity_stream;
+    if (!stream || !Array.isArray(stream.items)) {
+      return '<section class="chat-activity-section"><div class="chat-activity-empty" role="status">Processed activity is unavailable. Notification details are available below.</div></section>';
+    }
+    const labels = {needs_attention:'Needs attention',working:'Working',resolved:'Resolved',current:'Updated'};
+    const items = stream.items.slice(0,12).filter(item => /^[a-f0-9]{64}$/.test(String(item.id || '')) && item.title);
+    return `<section class="chat-activity-section chat-situation-stream" data-activity-stream>
+      <div class="chat-activity-section-head"><div><strong>What’s happening</strong><span>Current situations and recent outcomes</span></div></div>
+      ${stream.complete === false ? '<p class="chat-activity-stream-status" role="status">Some activity sources could not be checked.</p>' : ''}
+      <div class="chat-situation-list">${items.length ? items.map(item => {
+        const source = activitySourceUrl(item.source_url);
+        const key = 'source:' + item.id;
+        const sources = Array.isArray(item.sources) ? item.sources.slice(0,8) : [];
+        return `<article class="chat-situation-card" data-activity-situation="${esc(item.id)}">
+          <header><span class="chat-situation-state state-${esc(Object.hasOwn(labels,item.state) ? item.state : 'current')}">${esc(labels[item.state] || labels.current)}</span>
+            <time datetime="${esc(item.updated_at || '')}">${esc(relative(item.updated_at))}</time></header>
+          <strong>${esc(item.title)}</strong>${item.summary ? `<p>${esc(item.summary)}</p>` : ''}
+          <footer><span>${esc(item.source_label || 'Saved activity')}</span>${source ? `<a href="${esc(source)}" data-activity-source>${esc(item.action_label || 'Open source')}</a>` : ''}</footer>
+          ${sources.length ? `<details class="chat-situation-sources" data-activity-details="${esc(key)}"${activityDetails.has(key) ? ' open' : ''}>
+            <summary>Source details</summary><ul>${sources.map(row => {
+              const target = activitySourceUrl(row.url);
+              return `<li>${target ? `<a href="${esc(target)}">${esc(row.label || 'Saved source')}</a>` : `<span>${esc(row.label || 'Saved source')}</span>`}
+                ${row.occurred_at ? `<time datetime="${esc(row.occurred_at)}">${esc(relative(row.occurred_at))}</time>` : ''}</li>`;
+            }).join('')}</ul></details>` : ''}
+        </article>`;
+      }).join('') : '<div class="chat-activity-empty">No recent situations in the sources checked.</div>'}</div>
+    </section>`;
+  }
+
   function notificationView() {
     const block = state?.notifications || {};
     const profileIds = new Set((profileAttention?.getState().items || []).map(item => item.notification_id));
     const items = Array.isArray(block.items) ? block.items.filter(item => item.source_type !== 'profile_event' && !profileIds.has(Number(item.id))) : [];
     const unread = Number(block.unread || 0);
     return `
+      ${activityStreamView()}
       ${profileAttention?.view() || '<section class="chat-activity-inline-error">Profile attention is unavailable. Reload to retry.</section>'}
-      <section class="chat-activity-section">
+      <details class="chat-activity-section chat-activity-details" data-activity-details="notifications"${activityDetails.has('notifications') ? ' open' : ''}>
+        <summary>Notification details${unread ? ` · ${unread} unread` : ''}</summary>
         <div class="chat-activity-section-head">
           <div><strong>Notifications</strong><span>${activityReadError ? 'Showing the last confirmed notification count' : unread ? `${unread} unread` : 'No unread notifications in the last complete read'}</span></div>
           ${unread ? '<button type="button" data-notification-mark-all>Mark other notifications read</button>' : ''}
@@ -203,10 +276,13 @@
                 ${item.body ? `<p>${esc(item.body)}</p>` : ''}
                 <small>${esc(relative(item.created_at))}${item.type ? ` · ${esc(String(item.type).replaceAll('_',' '))}` : ''}</small>
               </div>
-              ${item.source_type === 'profile_event' ? '<small>Profile source · review in Profile attention</small>' : item.target_url ? `<a href="${esc(item.target_url)}" data-notification-open>Open</a>` : (!Number(item.is_read || 0) ? '<button type="button" data-notification-read>Read</button>' : '')}
+              ${item.source_type === 'profile_event' ? '<small>Profile source · review in Profile attention</small>' : activitySourceUrl(item.target_url) ? `<a href="${esc(activitySourceUrl(item.target_url))}" data-notification-open>Open</a>` : (!Number(item.is_read || 0) ? '<button type="button" data-notification-read>Read</button>' : '')}
             </article>`).join('') : '<div class="chat-activity-empty">No notifications yet.</div>'}
         </div>
-      </section>`;
+      </details>
+      <details class="chat-activity-section chat-activity-details" data-activity-details="missions"${activityDetails.has('missions') ? ' open' : ''}>
+        <summary>Mission activity</summary><section data-mission-notices></section>
+      </details>`;
   }
 
   function brainMetric(label, value, detail = '') {
@@ -957,7 +1033,7 @@
     if (!body) return;
     body.setAttribute('aria-labelledby','chatActivityTab-'+activeTab);
     if (!state) {
-      body.innerHTML = activityReadError ? `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>${activeTab === 'notifications' ? profileAttention?.view() || '' : ''}` : '<div class="chat-activity-loading">Loading Activity Center…</div>';
+      body.innerHTML = activityReadError ? `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>${!activityScopeError && activeTab === 'notifications' ? profileAttention?.view() || '' : ''}` : '<div class="chat-activity-loading">Loading Activity Center…</div>';
       return;
     }
     body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : activeTab === 'eyes' ? eyesHistoryView() : notificationView();
@@ -967,7 +1043,7 @@
       window.VP3_AGENT_TEAMS_A3_BRAIN(body);
     }
     if (activeTab === 'notifications' && typeof window.VP3_AGENT_MISSION_NOTIFICATIONS === 'function') {
-      const missions=document.createElement('section');missions.className='chat-activity-section';missions.dataset.missionNotices='';body.prepend(missions);window.VP3_AGENT_MISSION_NOTIFICATIONS(missions);
+      const missions=body.querySelector('[data-mission-notices]');if(missions)window.VP3_AGENT_MISSION_NOTIFICATIONS(missions);
     }
     updateUnread();
   }
@@ -977,14 +1053,21 @@
     try {
       if (!await requestState('state')) return;
       activityReadError = '';
+      activityScopeError = false;
       if (Object.prototype.hasOwnProperty.call(state, 'agent_voice_enabled')) {
         agentVoicePreference = state.agent_voice_enabled !== false;
       }
       render();
       syncMainFeedBrainOutcomeControls();
     } catch (error) {
-      activityReadError = 'Activity Center could not refresh. The last confirmed list is retained. Retry to check for updates.';
-      if ([401,403,419].includes(error?.status)) state = null;
+      activityReadError = 'Activity Center could not refresh. Retry to check current activity.';
+      if (state) state = {...state,activity_stream:null};
+      if ([401,403,419].includes(error?.status)) {
+        state = null;
+        activityScopeError = true;
+        activityReadError = 'Your Chat session changed. Reload Chat to see current activity.';
+        cancelSpeech();
+      }
       render();
     }
   }
@@ -1026,6 +1109,14 @@
       render();
       syncMainFeedBrainOutcomeControls();
     } catch (error) {
+      if ([401,403,419].includes(error?.status)) {
+        state = null;
+        activityScopeError = true;
+        activityReadError = 'Your Chat session changed. Reload Chat to see current activity.';
+        cancelSpeech();
+        render();
+        return;
+      }
       const body = drawer?.querySelector('[data-notification-drawer-body]');
       const fallback = action === 'brain_outcome' ? 'Could not record Brain outcome.' : 'Could not update notification.';
       if (body) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error">${esc(error instanceof Error ? error.message : fallback)}</div>`);

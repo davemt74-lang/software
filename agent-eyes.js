@@ -47,7 +47,11 @@
       finally{flushing=false;}
     }
     function log(event){
-      if(!event)return;pending.push(event);if(pending.length>100){pending.shift();say('Some earlier events could not be saved.');}
+      if(!event)return;
+      const chat=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
+      const conversationId=chat?.isReady?.()&&!chat?.isRestoring?.()?Number(chat.conversationId()):0;
+      pending.push(Number.isSafeInteger(conversationId)&&conversationId>0?{...event,conversation_id:conversationId}:event);
+      if(pending.length>100){pending.shift();say('Some earlier events could not be saved.');}
       const item=document.createElement('li');item.textContent=`${new Date().toLocaleTimeString()} · ${event.event_type.replaceAll('_',' ')} · ${event.display_name||'Unidentified participant'}`;history.prepend(item);while(history.children.length>40)history.lastChild.remove();void flush();
     }
     async function loadProfiles(){const token=++profileVersion;const rows=await adapter.loadEyesProfiles();if(token!==profileVersion)return;profiles=rows;const signature=JSON.stringify(rows.map(p=>[String(p.id),p.name]));if(signature===profileSignature)return;profileSignature=signature;const selected=q('[data-eyes-profile]').value;q('[data-eyes-profile]').replaceChildren();const blank=document.createElement('option');blank.value='';blank.textContent='Choose participant';q('[data-eyes-profile]').append(blank);for(const p of profiles){const o=document.createElement('option');o.value=String(p.id);o.textContent=p.name;q('[data-eyes-profile]').append(o);}q('[data-eyes-profile]').value=selected;}

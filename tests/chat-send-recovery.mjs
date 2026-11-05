@@ -7,23 +7,25 @@ import assert from 'node:assert/strict';
 const source=fs.readFileSync('chat.js','utf8');
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert(a>=0&&b>a);return source.slice(a,b);}
 const presenter=section('  function recoveryStatus(', '  function leaveChat(');
+const bindStoredMessage=section('  function bindStoredMessagePa3(', '  function pendingAssistantMessageIds()');
 const sendOwner=section('  async function sendMessage(', "  thread.addEventListener('click'");
 function fixture(){
- const elements=new Map(),messages=[],drafts=new Map(),timers=new Map();let sequence=0,calls=0,reply;
- const node=()=>({hidden:false,textContent:'',children:[],setAttribute(){},appendChild(child){this.children.push(child);if(child.id)elements.set(child.id,child);},focus(){},disabled:false,value:''});
+ const elements=new Map(),messages=[],messageElements=[],drafts=new Map(),timers=new Map();let sequence=0,calls=0,reply;
+ const node=()=>({hidden:false,textContent:'',children:[],dataset:{},querySelector:()=>null,setAttribute(){},appendChild(child){this.children.push(child);if(child.id)elements.set(child.id,child);},focus(){},disabled:false,value:''});
  elements.set('chatComposerShell',node());
  const ctx={console,AbortController,DOMException,Event,CustomEvent:class{constructor(type,init={}){this.type=type;this.detail=init.detail;}},
   document:{getElementById:id=>elements.get(id)||null,createElement:node,dispatchEvent(){}},
   window:{dispatchEvent(){},setTimeout(){}},navigator:{onLine:true},input:node(),send:node(),form:{},
+  cfg:{agentId:0},
   busy:false,contextReady:true,initialRestorePending:false,restoringConversation:0,conversationId:42,chatRevision:0,pendingSend:null,lastLoadedMessageId:0,
   voiceMode:false,voiceSpeaking:false,
   setTimeout(fn,ms){const id=++sequence;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
   keepDraft(text,id=42){if(text)drafts.set(id,text);else drafts.delete(id);},autoSize(){},showStop(){},setChatCanvasView(){},
-  addMessage(role,text){messages.push({role,text});},addTyping(){return {remove(){}};},rememberConversation(){},refreshHistory:async()=>{},
+  addMessage(role,text){messages.push({role,text});const element=node();messageElements.push(element);return element;},addTyping(){return {remove(){}};},rememberConversation(){},refreshHistory:async()=>{},
   api:async(payload,signal)=>{calls++;return reply(payload,signal);},
  };
- vm.createContext(ctx);vm.runInContext(presenter+sendOwner+'\nglobalThis.submit=sendMessage;',ctx);
- return {ctx,elements,messages,drafts,timers,get calls(){return calls;},reply:fn=>{reply=fn;}};
+ vm.createContext(ctx);vm.runInContext(presenter+bindStoredMessage+sendOwner+'\nglobalThis.submit=sendMessage;',ctx);
+ return {ctx,elements,messages,messageElements,drafts,timers,get calls(){return calls;},reply:fn=>{reply=fn;}};
 }
 let checks=0;
 for(const kind of ['server','network','timeout']){
@@ -55,6 +57,11 @@ for(const kind of ['server','network','timeout']){
  assert.equal(f.calls,2);assert.equal(f.ctx.busy,false);assert.equal(f.ctx.input.value,'');
  assert.equal(status.hidden,true);assert.equal(f.drafts.has(42),false);
  assert.deepEqual(f.messages.at(-1),{role:'assistant',text:'A fresh answer.'});checks+=6;
+ const [savedUser,savedReply]=f.messageElements.slice(-2);
+ assert.equal(savedUser.dataset.chatMessageId,'21');assert.equal(savedUser.dataset.chatMessageRole,'user');
+ assert.equal(savedReply.dataset.chatMessageId,'22');assert.equal(savedReply.dataset.chatMessageRole,'assistant');
+ assert.equal(savedUser.dataset.chatConversationId,'42');assert.equal(savedReply.dataset.chatConversationId,'42');checks+=6;
+ assert.equal(f.ctx.lastLoadedMessageId,0,'A direct reply cannot skip unseen posts by advancing the history sync cursor');checks++;
 }
 // A late reply must not modify another conversation, clear its draft, or
 // replace the error/status of a newer request.

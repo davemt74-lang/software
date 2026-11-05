@@ -49,7 +49,25 @@ if($action==='activity'){
     $activeMessageId=0;if($activeConversationId>0){$m=$pdo->prepare('SELECT COALESCE(MAX(id),0) FROM chat_messages WHERE conversation_id=?');$m->execute([$activeConversationId]);$activeMessageId=(int)$m->fetchColumn();}if(!table_exists('notifications')){echo json_encode(['ok'=>true,'updates'=>[],'latest_id'=>0,'unread_count'=>0,'conversation_id'=>$activeConversationId,'latest_message_id'=>$activeMessageId]);exit;}$afterId=max(0,(int)($input['after_id']??0));if($afterId>0){$n=$pdo->prepare("SELECT id,type,title,body,target_url,created_at FROM notifications WHERE user_id=? AND id>? AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action') ORDER BY id ASC LIMIT 30");$n->execute([$userId,$afterId]);$updates=$n->fetchAll();}else{$n=$pdo->prepare("SELECT id,type,title,body,target_url,created_at FROM notifications WHERE user_id=? AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action') AND created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY) ORDER BY id DESC LIMIT 10");$n->execute([$userId]);$updates=array_reverse($n->fetchAll());}$latest=$pdo->prepare("SELECT COALESCE(MAX(id),0) FROM notifications WHERE user_id=? AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action')");$latest->execute([$userId]);echo json_encode(['ok'=>true,'updates'=>$updates,'latest_id'=>(int)$latest->fetchColumn(),'unread_count'=>notification_unread_count($user),'conversation_id'=>$activeConversationId,'latest_message_id'=>$activeMessageId],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
 if($action==='new'){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,'New chat',$workspaceId);echo json_encode(['ok'=>true,'conversation_id'=>(int)$conversation['id']]);exit;}
 if($action==='load'){$conversationId=(int)($input['conversation_id']??0);$conversation=chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent);if(!$conversation)throw new RuntimeException('Conversation not found for this agent.');$stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 300');$stmt->execute([$conversationId]);echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>array_reverse($stmt->fetchAll()),'agent_name'=>(string)$principal['display_name']]);exit;}
-if($action==='messages_after'){$conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');$afterId=max(0,(int)($input['after_id']??0));$stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');$stmt->execute([$conversationId,$afterId]);echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$stmt->fetchAll()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
+if($action==='messages_after'){
+    $conversationId=(int)($input['conversation_id']??0);
+    if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
+    $afterId=max(0,(int)($input['after_id']??0));
+    $pending=$input['pending_message_ids']??[];
+    if(!is_array($pending)||!array_is_list($pending)||count($pending)>40){
+        throw new RuntimeException('Invalid pending message IDs.',422);
+    }
+    foreach($pending as $id){
+        if(!is_int($id)||$id<1||$id>9007199254740991)throw new RuntimeException('Invalid pending message ID.',422);
+    }
+    $pending=array_values(array_unique($pending));
+    $retry=$pending?' OR id IN ('.implode(',',array_fill(0,count($pending),'?')).')':'';
+    $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages
+        WHERE conversation_id=? AND (id>?'.$retry.') ORDER BY id ASC LIMIT '.(80+count($pending)));
+    $stmt->execute([$conversationId,$afterId,...$pending]);
+    echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$stmt->fetchAll()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if($action==='delete'){$conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');homeserver_agent_v018_forget($userId,$conversationId);$pdo->prepare('DELETE FROM chat_conversations WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);echo json_encode(['ok'=>true]);exit;}
 if($action==='send'){
     $payload=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);

@@ -368,6 +368,15 @@ foreach([
 
 expect((int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,'cross-source context does not acknowledge, schedule or mutate records');
 $pdo->exec('PRAGMA query_only=OFF');
+$pdo->exec('SAVEPOINT reviewed_task_housekeeping');
+$originalTask=array_values(array_filter(vp3_catch_up_candidates_v1($pdo,$user,now:$now)['items'],static fn(array $row):bool=>$row['id']==='task:101'))[0];
+$pdo->prepare('UPDATE agent_memory_items SET last_seen_at=? WHERE id=101')->execute([$now->modify('-1 minute')->format('Y-m-d H:i:s')]);
+$seenTask=array_values(array_filter(vp3_catch_up_candidates_v1($pdo,$user,now:$now)['items'],static fn(array $row):bool=>$row['id']==='task:101'))[0];
+expect($seenTask['source_updated_at']!==$originalTask['source_updated_at']
+    &&$seenTask['source_revision']===$originalTask['source_revision']
+    &&vp3_working_context_key_v1(1,0,50,$seenTask)===vp3_working_context_key_v1(1,0,50,$originalTask),
+    'reviewed Profile call task housekeeping updates presentation time without reopening unchanged work or changing its exact reference');
+$pdo->exec('ROLLBACK TO reviewed_task_housekeeping; RELEASE reviewed_task_housekeeping');
 $pdo->exec('SAVEPOINT active_mission_clock');
 $pdo->prepare("UPDATE agent_workflow_runs SET status='executing',updated_at=? WHERE id=100")
     ->execute([$now->modify('-30 seconds')->format('Y-m-d H:i:s')]);

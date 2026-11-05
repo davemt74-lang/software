@@ -116,7 +116,7 @@ function vp3_catch_up_tasks_v1(PDO $pdo,array $user,array $principal,DateTimeImm
     $end=$now->setTimezone($timezone)->setTime(23,59,59)->getTimestamp();
     foreach($rows as $row){
         $meta=json_decode((string)$row['metadata_json'],true);
-        if(!is_array($meta)||!in_array($meta['task_status']??null,['open','in_progress'],true))continue;
+        if(!is_array($meta)||!in_array($meta['task_status']??'open',['open','in_progress'],true))continue;
         $meeting=($meta['source_kind']??'')==='video_meeting_intelligence'&&($meta['review_state']??'')==='approved';
         $assigned=(int)($meta['assigned_user_id']??0);
         if($assigned>0&&$assigned!==(int)$user['id'])continue;
@@ -135,7 +135,7 @@ function vp3_catch_up_tasks_v1(PDO $pdo,array $user,array $principal,DateTimeImm
         $items[]=vp3_catch_up_item_v1('task:'.(int)$row['id'],(string)$row['subject'],
             ($meeting?'An approved meeting follow-up is due ':'This open task is due ').$local->format($dayOnly?'D, M j':'D, M j \a\t g:i A T').'.',
             $meeting?'Meeting follow-up':'Agent Brain tasks',$path,70,$at)
-            +['_source_revision'=>hash('sha256',json_encode($row,JSON_THROW_ON_ERROR))];
+            +['_source_revision'=>hash('sha256',json_encode(array_diff_key($row,['last_seen_at'=>true]),JSON_THROW_ON_ERROR))];
     }
     return [count($rows)>=100?'limited':'ready',$items];
 }
@@ -268,6 +268,7 @@ function vp3_catch_up_candidates_v1(PDO $pdo,array $user,string $scope='all',int
         $revision=$item;
         unset($revision['priority'],$revision['_source_kind']);
         if(($revision['status']??'')==='active')unset($revision['time'],$revision['source_updated_at']);
+        if(str_starts_with($item['id'],'task:')&&isset($revision['_source_revision']))unset($revision['time'],$revision['source_updated_at']);
         $sourceRevisions[$item['id']]=hash('sha256',json_encode($revision,JSON_THROW_ON_ERROR));
         unset($item['priority'],$item['time'],$item['_calendar_event_id'],$item['_source_kind'],$item['_source_revision']);
         $item['source_revision']=$sourceRevisions[$item['id']];

@@ -106,6 +106,8 @@ function vp3_initiative_evidence_v1(PDO $pdo,array $user,DateTimeImmutable $now,
             if($screenSessions)throw $e;
         }
     }
+    require_once __DIR__.'/agent-activity-situations-v1.php';
+    $evidence=vp3_activity_situations_support_v1($pdo,$user,$evidence,$now,$coverage);
     ksort($evidence);
     return $evidence;
 }
@@ -183,7 +185,8 @@ function vp3_initiative_schedule_v1(PDO $pdo,array $user): void
         if(!$last||(strtotime((string)$last['last_seen_at'])?:0)<time()-300){
             $evidence=vp3_initiative_evidence_v1($pdo,$live,new DateTimeImmutable('now',new DateTimeZone('UTC')),!empty($policy['screen_enabled']));
             if($evidence){
-                $payload=['binding'=>$policy,'sources'=>array_column($evidence,'revision','ref')];
+                $canonical=array_map(static fn(array $row):string=>$row['canonical_source_revision']??$row['revision'],$evidence);
+                $payload=['binding'=>$policy,'sources'=>array_column($evidence,'revision','ref'),'canonical_sources'=>$canonical];
                 $hash=hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR));
                 vp3_initiative_enqueue_v1($pdo,$live,'initiative.plan',$payload,$hash);
             }
@@ -384,7 +387,7 @@ function vp3_initiative_foreground_status_v1(PDO $pdo,array $user,int $agentId,i
             if($row['effect_state']!=='private_draft_ready'||in_array($row['initiative_delivery'],['delivered','withheld'],true)
                 ||!is_array($goal['sources']??null)||!$goal['sources'])continue;
             try{
-                vp3_initiative_current_sources_v1($pdo,$live,$goal['sources'],!empty($policy['screen_enabled']));
+                vp3_initiative_current_sources_v1($pdo,$live,$goal['sources'],!empty($policy['screen_enabled']),$goal['canonical_sources']??[]);
                 return ['state'=>'ready']+$status;
             }catch(RuntimeException $e){
                 if($e->getCode()!==409)throw $e;
@@ -406,7 +409,6 @@ function vp3_initiative_status_v1(PDO $pdo,array $user,array $policy,array $resu
     $stmt->execute([(int)$user['id']]);
     $includeScreen=!empty($policy['screen_enabled']);
     $lines=['Initiative is on. Screen-share follow-ups are '.($includeScreen?'on.':'off.')];$sources=[];
-    $current=null;
     foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){
         $goal=json_decode((string)$row['goal'],true);
         if(($goal['binding']??null)!==$policy)continue;
@@ -417,9 +419,13 @@ function vp3_initiative_status_v1(PDO $pdo,array $user,array $policy,array $resu
         }
         $out=json_decode((string)$row['result_json'],true);
         if(($out['effect_state']??'')!=='private_draft_ready')continue;
-        $current??=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),$includeScreen);
-        $matching=array_intersect_key($current,$goal['sources']);
-        if(array_column($matching,'revision','ref')!==$goal['sources'])continue;
+        if(!is_array($goal['sources']??null)||!$goal['sources'])continue;
+        try{$matching=vp3_initiative_current_sources_v1($pdo,$user,$goal['sources'],$includeScreen,$goal['canonical_sources']??[]);}
+        catch(RuntimeException $e){
+            if(!in_array($e->getCode(),[403,409,503],true))throw $e;
+            if($e->getCode()===503)$lines[]='A previous preparation could not be verified right now.';
+            continue;
+        }
         $lines[]=(string)$out['initiative_draft'];
         foreach($matching as $ref=>$item)$sources[$ref]=['source'=>$ref,'title'=>$item['title'],'url'=>$item['url']];
         if(count($lines)>=4)break;
@@ -428,7 +434,7 @@ function vp3_initiative_status_v1(PDO $pdo,array $user,array $policy,array $resu
     return $result+['answer'=>implode("\n\n",array_values(array_unique($lines)))];
 }
 
-function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,bool $includeScreen=false): array
+function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,bool $includeScreen=false,array $canonicalSources=[]): array
 {
     $sessions=[];
     foreach(array_keys($sources) as $ref)if(str_starts_with($ref,'screen-followup:'))$sessions[]=substr($ref,16);
@@ -443,6 +449,10 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         $family=$families[explode(':',$ref,2)[0]]??'';
         if(in_array($coverage[$family]??'', ['unavailable','limited'],true)){
             throw new RuntimeException('Initiative source verification is unavailable.',503);
+        }
+        $base=$current[$ref]['canonical_source_revision']??$current[$ref]['revision']??null;
+        if(isset($canonicalSources[$ref])&&$canonicalSources[$ref]===$base&&($coverage['activity_context']??'')==='unavailable'){
+            throw new RuntimeException('Initiative supporting context verification is unavailable.',503);
         }
         throw new RuntimeException('Initiative sources changed.',409);
     }
@@ -520,7 +530,7 @@ function vp3_initiative_deliver_pending_v1(PDO $pdo,array $user): bool
                 $result['initiative_delivery']='withheld';
             }else{
                 try{
-                    $evidence=vp3_initiative_current_sources_v1($pdo,$live,$goal['sources'],!empty($policy['screen_enabled']));
+                    $evidence=vp3_initiative_current_sources_v1($pdo,$live,$goal['sources'],!empty($policy['screen_enabled']),$goal['canonical_sources']??[]);
                     if($present&&!$delivered){
                         $result['initiative_message_id']=vp3_initiative_report_v1($pdo,$live,$cid,$draft,$evidence,(int)$row['run_id']);
                         $result['initiative_delivery']='delivered';
@@ -588,10 +598,11 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
     try{
         $payload=json_decode((string)$run['goal'],true,16,JSON_THROW_ON_ERROR);
         $binding=$payload['binding'];$sources=$payload['sources'];
+        $canonicalSources=is_array($payload['canonical_sources']??null)?$payload['canonical_sources']:[];
         $live=vp3_initiative_access_v1($pdo,$user,$binding);
         $includeScreen=!empty($binding['screen_enabled']);
-        $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen);
-        $modelEvidence=array_map(static fn(array $row):array=>array_diff_key($row,['url'=>true,'revision'=>true]),array_values($evidence));
+        $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources);
+        $modelEvidence=array_map(static fn(array $row):array=>array_diff_key($row,['url'=>true,'revision'=>true,'canonical_source_revision'=>true]),array_values($evidence));
         $planning=$run['action_capability_key']==='initiative.plan';
         $infer=$model??static fn(string $prompt,string $protocol):string=>vp3_initiative_model_v1($pdo,$live,$prompt,$protocol);
         if($planning){
@@ -610,12 +621,13 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
         $pdo->beginTransaction();
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$binding);
-        $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen);
+        $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources);
         if($planning){
             $admitted=0;
             foreach($jobs as $job){
                 $selected=array_intersect_key($sources,array_flip($job['refs']));
-                $work=['binding'=>$binding,'sources'=>$selected,'focus'=>$job['focus'],'report'=>$job['report']];
+                $work=['binding'=>$binding,'sources'=>$selected,'canonical_sources'=>array_intersect_key($canonicalSources,$selected),
+                    'focus'=>$job['focus'],'report'=>$job['report']];
                 $hash=hash('sha256',json_encode([$binding,$job['primary'],$selected],JSON_THROW_ON_ERROR));
                 if(vp3_initiative_enqueue_v1($pdo,$live,'initiative.prepare',$work,$hash))$admitted++;
             }

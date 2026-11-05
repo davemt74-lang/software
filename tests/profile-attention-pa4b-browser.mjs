@@ -186,7 +186,7 @@ try{
   check((await ids()).length===15&&paging.errors.length===0,'Retry reaches the requested next page with no browser errors');await paging.close();
 
   const seller=await fixture({items:[]});
-  await seller.page.waitForFunction(()=>document.getElementById('chatNotificationButton').getAttribute('aria-label')==='Notifications');
+  await seller.page.waitForFunction(()=>document.getElementById('chatNotificationButton').getAttribute('aria-label')==='Activity Center');
   seller.publishSellerOrder();
   await seller.page.evaluate(()=>STONEFELLOW_NOTIFICATION_CENTER.pollAttention(false,'profile_orders'));
   const orderCanvas=seller.page.locator('#chatThread [data-chat-message-id="801"]');
@@ -195,9 +195,10 @@ try{
   const ordersLink=orderCanvas.getByRole('link',{name:'View Profile orders',exact:true});
   check(await ordersLink.getAttribute('href')===orderNote.target_url,'canvas announcement opens the seller orders surface');
   await seller.page.locator('#chatNotificationButton').click();
+  await seller.page.locator('[data-activity-details="notifications"]>summary').click();
   const orderBell=seller.page.locator('#chatNotificationDrawer [data-notification-id="701"].unread');
   await orderBell.getByText(orderNote.title,{exact:true}).waitFor();
-  check(await seller.page.locator('#chatNotificationButton').getAttribute('aria-label')==='Notifications, 1 unread'&&!seller.issued('mark_read').length,'canvas delivery leaves the order unread in the bell until the seller acts');
+  check(await seller.page.locator('#chatNotificationButton').getAttribute('aria-label')==='Activity Center, 1 unread notification'&&!seller.issued('mark_read').length,'canvas delivery leaves the order unread in the bell until the seller acts');
   check(await seller.page.evaluate(()=>__speechCalls===0&&__mediaCalls===0),'verified order announcement does not narrate or play audio');
   await seller.page.locator('[data-notification-drawer-close]').click();
   await seller.page.evaluate(()=>STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(55));
