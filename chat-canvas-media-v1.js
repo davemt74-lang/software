@@ -19,6 +19,10 @@ function assetCard(asset){
  card.appendChild(media);card.appendChild(make('small',asset.source==='openai_image'?'Generated image · saved privately':'Saved '+kind));
  const controls=make('div');controls.className='vp3-canvas-media-controls';const open=make('a','Open full size');open.href=src;open.target='_blank';open.rel='noopener';controls.appendChild(open);
  const download=make('a','Download');download.href=src;download.download='media-'+Number(asset.id)+(kind==='photo'?({'image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp'}[asset.mime_type]||''):'');controls.appendChild(download);
+ if(kind==='photo'&&['image/jpeg','image/png','image/webp'].includes(asset.mime_type)&&window.VP3InitiativeWorkbench){
+  const draft=make('button','Draft listing');draft.type='button';
+  draft.addEventListener('click',()=>window.VP3InitiativeWorkbench.open('product',String(asset.id)));controls.appendChild(draft);
+ }
  const editor=ownUrl(asset.editor_url,'/video-editor.php');if(editor){const edit=make('a','Open in editor');edit.href=editor;controls.appendChild(edit);}card.appendChild(controls);return card;
 }
 function matchesScope(s){return s.cid===scope()&&s.agentId===selectedAgent();}

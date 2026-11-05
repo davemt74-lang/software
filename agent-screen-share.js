@@ -149,6 +149,10 @@
       const choices=row.kind==='screen'?[['view','View capture'],['analyze','Analyze again']]:[];
       choices.push(['chat','Send to Chat'],['research','Research in Chat'],['brain',Number(row.memory_id)>0?'Update Brain':'Save to Brain']);
       for(const [action,label] of choices){const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.captureAction=action;actions.append(b);}
+      if(row.kind==='screen'&&(!row.review||row.review.state==='active')&&window.VP3InitiativeWorkbench){
+        const edit=document.createElement('button');edit.type='button';edit.textContent='Edit saved image';
+        edit.addEventListener('click',()=>window.VP3InitiativeWorkbench.open('screen',row.capture_id));actions.append(edit);
+      }
       card.append(actions);window.VP3_SCREEN_REVIEW_CAPTURE?.(card,row,{insightsEndpoint:window.VP3_ORB_CONFIG?.screenInsightsEndpoint,ownerKey:owner,csrf:window.VP3_ORB_CONFIG?.csrf,agentId:adapter.conversationRef?.()?.agent||0},()=>refreshHistory());return card;
     }
     async function refreshHistory(id=selectedSession){
@@ -589,6 +593,99 @@
     return source;
   }
 
+  function mountInitiative(bar){
+    if(!adapter.screenHistory)return;
+    const control=document.createElement('section');
+    control.innerHTML='<label><input type="checkbox" data-screen-initiative disabled aria-describedby="vp3-screen-initiative-description"> Follow up on saved screen notes</label><p id="vp3-screen-initiative-description">Initiative can use saved notes and session titles from finished screen shares with your configured Cloud model.</p><p role="status" data-screen-initiative-status></p>';
+    bar.after(control);
+    const checkbox=control.querySelector('[data-screen-initiative]'),status=control.querySelector('[data-screen-initiative-status]');
+    const openChat='Open the private System Agent Chat where Initiative is enabled.';
+    const help={
+      initiative_off:'Send /initiative on in this Chat first.',
+      linked_elsewhere:openChat,
+      access_unavailable:'Screen follow-ups require Agent Brain and My Knowledge access.',
+      storage_unavailable:'Screen follow-up settings are currently unavailable. Try again later.'
+    };
+    let conversation=0,confirmed=null,pending=null,refreshAfterSave=false;
+    function activeConversation(){
+      if(String(window.VP3_ORB_ADAPTER?.ownerKey)!==owner)return 0;
+      const ref=adapter.conversationRef?.(),id=Number(ref?.id);
+      return Number.isSafeInteger(id)&&id>0&&Number(ref.agent??0)===0?id:0;
+    }
+    function render(message=''){
+      checkbox.checked=confirmed?.enabled===true;
+      checkbox.disabled=!!pending||confirmed?.available!==true;
+      status.textContent=message||(confirmed?.reason==='access_unavailable'&&confirmed.enabled
+        ?'Screen follow-ups need Agent Brain and My Knowledge access. You can still turn them off.'
+        :help[confirmed?.reason]||(confirmed?.available?`Screen follow-ups are ${confirmed.enabled?'on':'off'}.`:openChat));
+    }
+    function invalidate(id=0){
+      if(pending){clearTimeout(pending.timeout);pending.controller.abort();}
+      pending=null;confirmed=null;refreshAfterSave=false;conversation=id;
+      render();
+    }
+    function readState(data){
+      const state=data?.initiative;
+      if(typeof state?.available!=='boolean'||typeof state.enabled!=='boolean'||typeof state.revision!=='string'||typeof state.reason!=='string'
+        ||(state.available&&!state.revision))throw Error('Screen follow-up settings could not be verified.');
+      return state;
+    }
+    function begin(id,write,message){
+      const attempt={id,write,controller:new AbortController()};
+      attempt.timeout=setTimeout(()=>attempt.controller.abort(),12000);
+      pending=attempt;render(message);return attempt;
+    }
+    function finish(attempt,state,message=''){
+      clearTimeout(attempt.timeout);
+      if(pending!==attempt)return false;
+      pending=null;
+      if(activeConversation()!==attempt.id){invalidate();return false;}
+      confirmed=state;render(message);return true;
+    }
+    async function refresh(force=false,notice=''){
+      const id=activeConversation();
+      if(conversation!==id)invalidate(id);
+      if(!id)return;
+      if(pending){
+        if(!force)return;
+        if(pending.write){refreshAfterSave=true;return;}
+        pending.controller.abort();
+      }
+      const attempt=begin(id,false,notice||'Checking screen follow-ups…');
+      try{
+        const data=await adapter.screenHistory({action:'initiative_status',conversation_id:id},{read:true,signal:attempt.controller.signal});
+        finish(attempt,readState(data),notice);
+      }catch{
+        finish(attempt,null,'Could not check screen follow-ups. Reopen Agent Eyes to try again.');
+      }
+    }
+    checkbox.addEventListener('change',async()=>{
+      const id=activeConversation();
+      if(conversation!==id){void refresh();return;}
+      if(!id||pending||!confirmed?.available){render();return;}
+      const enabled=checkbox.checked,revision=confirmed.revision;
+      if(enabled===confirmed.enabled)return;
+      const attempt=begin(id,true,'Saving screen follow-ups…');
+      try{
+        const data=await adapter.screenHistory({action:'initiative_set',conversation_id:id,enabled,expected_revision:revision},{signal:attempt.controller.signal});
+        const reload=refreshAfterSave;
+        if(finish(attempt,readState(data))&&reload){refreshAfterSave=false;void refresh();}
+      }catch(error){
+        const notice=error?.status===409?'This setting changed in another tab. Check its current value and try again.':'Could not save screen follow-ups. Check the current setting and try again.';
+        if(finish(attempt,null,notice)){refreshAfterSave=false;void refresh(false,notice);}
+      }
+    });
+    window.addEventListener('stonefellow:chat-context-changing',()=>invalidate());
+    window.addEventListener('vp3:chat-context-ready',()=>void refresh());
+    window.addEventListener('vp3:initiative-setting-changed',()=>void refresh(true));
+    window.addEventListener('focus',()=>void refresh());
+    window.addEventListener('pagehide',()=>invalidate());
+    window.addEventListener('pageshow',event=>{if(event.persisted)void refresh();});
+    const panel=bar.closest('.vp3-eyes-panel');
+    if(panel)new MutationObserver(()=>{if(!panel.hidden)void refresh();}).observe(panel,{attributes:true,attributeFilter:['hidden']});
+    render();void refresh();
+  }
+
   function mountSources(){
     if(embedded)return;
     const host=document.querySelector('.vp3-eyes-content');if(!host)return;
@@ -650,7 +747,7 @@
       setupSelect.value=String(selectedSetupId??'');
       updateLayoutControls();
     }
-    bar.append(tabs,add);host.prepend(bar,actions,panels);
+    bar.append(tabs,add);host.prepend(bar,actions,panels);mountInitiative(bar);
     function select(share){
       if(selected===share)return;
       const previousAudio=audioTarget();

@@ -54,6 +54,8 @@ jobs:
           php tests/agent-catch-up-meeting-prep-v1.php
           php tests/agent-catch-up-profile-calls-v1.php
           node tests/cognitive-presentation-account-binding.mjs
+          php tests/agent-initiative-v1.php
+          php tests/agent-initiative-worker-v1.php
           node tests/calendar-schedule-awareness-v1330-contract.mjs
           php tests/phone-agent-read-v1.php
           php tests/workflow-receipts-v1.php

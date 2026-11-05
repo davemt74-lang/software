@@ -113,7 +113,7 @@ function agent_workflow_json_v1400(mixed $value): string
     return is_string($json)?$json:'{}';
 }
 
-function agent_workflow_public_json_v1400(string $json): array
+function agent_workflow_public_json_v1400(string $json,bool $storeInitiativeDraft=false): array
 {
     $decoded=json_decode($json,true);
     if(!is_array($decoded))return [];
@@ -121,6 +121,7 @@ function agent_workflow_public_json_v1400(string $json): array
     foreach(array_slice($decoded,0,30,true) as $key=>$value){
         $key=agent_workflow_text_v1400($key,80);
         if($key===''||preg_match('/(?:token|secret|password|credential|authorization|cookie|prompt|reasoning)/i',$key))continue;
+        if($key==='initiative_draft'&&!$storeInitiativeDraft)continue;
         if(is_scalar($value)||$value===null)$safe[$key]=agent_workflow_text_v1400($value??'',$key==='mission_output'?16000:500);
     }
     return $safe;
@@ -188,7 +189,7 @@ function agent_workflow_public_run_v1400(PDO $pdo,array $row,bool $includeHistor
     $ownerUserId=(int)($row['owner_user_id']??0);$runId=(int)($row['id']??0);
     $out=[
         'id'=>$runId,'workflow_type'=>(string)($row['workflow_type']??''),'origin'=>(string)($row['origin']??''),'source_kind'=>(string)($row['source_kind']??''),'source_key'=>(string)($row['source_key']??''),
-        'title'=>(string)($row['title']??''),'goal'=>(string)($row['goal']??''),'decision_summary'=>(string)($row['decision_summary']??''),'status'=>(string)($row['status']??''),'risk_level'=>(string)($row['risk_level']??'low'),
+        'title'=>(string)($row['title']??''),'goal'=>($row['source_kind']??'')==='agent_initiative'?'':(string)($row['goal']??''),'decision_summary'=>(string)($row['decision_summary']??''),'status'=>(string)($row['status']??''),'risk_level'=>(string)($row['risk_level']??'low'),
         'requires_approval'=>!empty($row['requires_approval']),'approval_status'=>(string)($row['approval_status']??'not_required'),'execution_target'=>(string)($row['execution_target']??'cloud'),'capability_key'=>(string)($row['capability_key']??''),
         'current_action_id'=>(int)($row['current_action_id']??0),'attempt_count'=>(int)($row['attempt_count']??0),'last_error_class'=>(string)($row['last_error_class']??''),'started_at'=>(string)($row['started_at']??''),'approved_at'=>(string)($row['approved_at']??''),
         'completed_at'=>(string)($row['completed_at']??''),'cancelled_at'=>(string)($row['cancelled_at']??''),'created_at'=>(string)($row['created_at']??''),'updated_at'=>(string)($row['updated_at']??''),

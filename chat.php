@@ -9,7 +9,7 @@ $controlBuild .= '-profile-direct-calls-pa3c-20261104';
 $controlBuild .= '-profile-attention-pa4b-' . substr(hash_file('sha256',__DIR__.'/chat.js'),0,12);
 $controlBuild .= '-canvas-image-generation-v1-listening-continuation-v1-live-player-history-v1-audio-debug-v1-recognition-reliability-v1-participant-conversation-v2-20261102-participant-updates-20261102-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
 $controlBuild .= '-eyes-cross-tab-v1';
-$controlBuild .= '-connected-sites-v1';
+$controlBuild .= '-connected-sites-v1-initiative-workbench-v1';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922-provider-audit1' . '-voice-v1351';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922' . '-voice-v1351-speech-recovery-20261031-mic-startup-20261101';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-response-relevance-20261023-composer-r3' . '-voice-v1351';
@@ -458,6 +458,12 @@ $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-specialis
     . '<link rel="stylesheet" href="'.e(url('/chat-canvas-media-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.css'),0,12))).'">'
     . '<script>window.VP3_CANVAS_MEDIA_V1='.json_encode(['endpoint'=>url('/api/chat-canvas-media-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-canvas-media-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.js'),0,12))).'"></script>';
+$initiativeWorkbenchRuntime = '<link rel="stylesheet" href="'.e(url('/chat-initiative-workbench-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.css'),0,12))).'">'
+    . '<script>window.VP3_INITIATIVE_WORKBENCH='.json_encode([
+        'endpoint'=>url('/api/initiative-workbench-v1.php'),'csrf'=>csrf_token(),
+        'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
+    ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<script src="'.e(url('/chat-initiative-workbench-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.js'),0,12))).'" defer></script>';
 $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-task-notes-v1.css?v=20261102-shortcut-free')).'">'
     . '<script>window.VP3_TASK_NOTES_V1='.json_encode(['endpoint'=>url('/api/task-notes-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-task-notes-v1.js?v=voice-managed-lists-v2')).'"></script>';
@@ -607,6 +613,7 @@ $runtime = $headerUiRuntime
          . $cognitivePresentationPre
          . $notificationDrawerRuntime
          . $cognitiveCardsRuntime
+         . $initiativeWorkbenchRuntime
          . $cognitiveFeedRuntime
          . $cognitiveOrchestrationRuntime
          . $cognitivePresentationPost

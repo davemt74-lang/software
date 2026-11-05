@@ -6,18 +6,96 @@
     if(!adapter?.tvRequest||!host||window.VP3TVWatching)return;
     let settings={enabled:false,share_screen:false},epoch=0,run='',starting=null,manual=null,tracks=[],busy=false,lastScan=0,retryAt=0,rows=[],historyToken=0,settingsEpoch=0,accountBinding='',autoAvailable=true,serverEpoch=0,dirty=false,refreshing=false,stops=0,editing=false;
     const panel=document.createElement('details');panel.className='vp3-tv-watching';
-    panel.innerHTML='<summary>TV Watching and history</summary><label><input type="checkbox" data-tv-enabled> Watch TV with this camera</label><label><input type="checkbox" data-tv-sharing> Allow cropped TV snapshots to my configured Cloud model and public screen-clue searches</label><p>VP3 does not save raw snapshots. Crops go to your configured model provider under its data policy. Timestamped text history is saved in your paired Cloud account and stays available with Eyes off. Automatic titles remain likely until corrected or confirmed.</p><div class="vp3-eyes-actions"><button type="button" data-tv-save>Save TV settings</button><button type="button" data-tv-select>Select TV area</button><button type="button" data-tv-auto>Use automatic TV detection</button><button type="button" data-tv-check>Identify TV now</button><button type="button" data-tv-history>Refresh history</button></div><ul data-tv-interests></ul><p data-tv-status role="status">TV Watching is off. Saved history is available.</p><label>History search<input type="text" data-tv-query maxlength="200" placeholder="Program title"></label><ol data-tv-feed></ol><label>Saved session<select data-tv-session aria-label="TV history session"></select></label><label>Correct program title<input type="text" data-tv-title maxlength="200"></label><label>Episode, if known<input type="text" data-tv-episode maxlength="120"></label><label><input type="checkbox" data-tv-watched> I personally watched this session</label><div class="vp3-eyes-actions"><button type="button" data-tv-correct>Confirm / correct session</button><button type="button" data-tv-forget>Delete selected history</button></div><label>Explicit preference<input type="text" data-tv-preference maxlength="500" placeholder="For example: I enjoy this show"></label><button type="button" data-tv-remember>Save this preference</button>';
+    panel.innerHTML='<summary>TV Watching and history</summary><label><input type="checkbox" data-tv-enabled> Watch TV with this camera</label><label><input type="checkbox" data-tv-sharing> Allow cropped TV snapshots to my configured Cloud model and public screen-clue searches</label><p>Automatic recognition uses temporary crops sent to your configured model provider under its data policy. Timestamped text history is saved in your paired Cloud account and stays available with Eyes off. Automatic titles remain likely until corrected or confirmed.</p><div class="vp3-eyes-actions"><button type="button" data-tv-save>Save TV settings</button><button type="button" data-tv-select>Select TV area</button><button type="button" data-tv-auto>Use automatic TV detection</button><button type="button" data-tv-check>Identify TV now</button><button type="button" data-tv-history>Refresh history</button></div><ul data-tv-interests></ul><p data-tv-status role="status">TV Watching is off. Saved history is available.</p><label>History search<input type="text" data-tv-query maxlength="200" placeholder="Program title"></label><ol data-tv-feed></ol><label>Saved session<select data-tv-session aria-label="TV history session"></select></label><label>Correct program title<input type="text" data-tv-title maxlength="200"></label><label>Episode, if known<input type="text" data-tv-episode maxlength="120"></label><label><input type="checkbox" data-tv-watched> I personally watched this session</label><div class="vp3-eyes-actions"><button type="button" data-tv-correct>Confirm / correct session</button><button type="button" data-tv-forget>Delete selected history</button></div><label>Explicit preference<input type="text" data-tv-preference maxlength="500" placeholder="For example: I enjoy this show"></label><button type="button" data-tv-remember>Save this preference</button>';
     host.append(panel);const q=s=>panel.querySelector(s),status=q('[data-tv-status]'),say=text=>{status.textContent=String(text);};
+    let currentFrame=null,frameSave=null;
+    const saveFrameButton=document.createElement('button'),saveFrameStatus=document.createElement('p');
+    saveFrameButton.type='button';saveFrameButton.textContent='Save TV frame for editing';saveFrameButton.dataset.tvSaveFrame='';
+    saveFrameStatus.dataset.tvSaveFrameStatus='';saveFrameStatus.setAttribute('role','status');
+    if(adapter.isMainChat?.()&&adapter.screenHistory&&adapter.conversationRef){
+      const disclosure=document.createElement('p');
+      disclosure.textContent='Save one crop of the selected TV screen to My Knowledge. Image editing requires a separate review in Chat.';
+      q('[data-tv-history]').parentElement.after(disclosure,saveFrameButton,saveFrameStatus);
+    }
     const request=async(body,options={})=>{const result=await adapter.tvRequest(accountBinding&&body.action!=='status'?{...body,account_binding:accountBinding}:body,options);if(result.account_binding){if(accountBinding&&accountBinding!==result.account_binding){epoch++;historyToken++;settings={enabled:false,share_screen:false};run='';starting=null;busy=false;tracks=[];rows=[];dirty=false;refreshing=false;editorBusy();q('[data-tv-feed]').setAttribute('aria-busy','false');q('[data-tv-feed]').replaceChildren();q('[data-tv-interests]').replaceChildren();q('[data-tv-session]').replaceChildren();q('[data-tv-enabled]').checked=false;q('[data-tv-sharing]').checked=false;drawScreens([]);if(body.action==='start')void adapter.tvRequest({action:'stop',run_id:body.run_id}).catch(()=>{});serverEpoch=Number(result.settings?.epoch)||0;accountBinding=result.account_binding;say('Cloud account changed. Refresh TV settings before capturing more screen images.');throw Error('Cloud account changed.');}accountBinding=result.account_binding;}if(result.settings)serverEpoch=Math.max(serverEpoch,Number(result.settings.epoch)||0);return result;};
     function enabled(){return settings.enabled&&settings.share_screen;}
     function editorBusy(){for(const name of ['correct','forget'])q(`[data-tv-${name}]`).disabled=refreshing||stops>0||editing;}
-    async function stop(){stops++;editorBusy();epoch++;const old=run;run='';starting=null;tracks=[];manual=null;busy=false;lastScan=0;retryAt=0;drawScreens([]);try{if(old)try{await request({action:'stop',run_id:old},{keepalive:true});}catch(_){}if(panel.open)await refresh();}finally{stops--;editorBusy();}}
+    async function stop(){stops++;editorBusy();epoch++;currentFrame=null;cancelFrameSave();const old=run;run='';starting=null;tracks=[];manual=null;busy=false;lastScan=0;retryAt=0;drawScreens([]);try{if(old)try{await request({action:'stop',run_id:old},{keepalive:true});}catch(_){}if(panel.open)await refresh();}finally{stops--;editorBusy();}}
     async function ensureRun(){if(run)return run;if(starting)return starting;const token=epoch,id=crypto.randomUUID();starting=request({action:'start',run_id:id}).then(()=>{if(token!==epoch||!enabled()){void request({action:'stop',run_id:id}).catch(()=>{});throw Error('TV capture stopped.');}run=id;return id;}).finally(()=>{if(token===epoch)starting=null;});return starting;}
     function normalized(box,width,height){if(!Array.isArray(box)||box.length!==4||box.some(v=>!Number.isFinite(v))||!width||!height)return null;const [x,y,w,h]=box;return window.VP3EyesCore.box([Math.max(0,x/width),Math.max(0,y/height),Math.min(w/width,1-Math.max(0,x/width)),Math.min(h/height,1-Math.max(0,y/height))]);}
     function screenBoxes(objects,width,height){if(!enabled())return [];if(manual)return [manual.box];return (objects||[]).filter(o=>o?.label==='tv'&&o.score>=.5).slice(0,4).map(o=>normalized(o.box,width,height)).filter(Boolean);}
     function faceOnScreen(face,boxes,width,height){const b=normalized(face?.box,width,height);return !!b&&boxes.some(s=>b[0]+b[2]/2>=s[0]&&b[0]+b[2]/2<=s[0]+s[2]&&b[1]+b[3]/2>=s[1]&&b[1]+b[3]/2<=s[1]+s[3]);}
     const overlap=(a,b)=>{const intersection=Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));return intersection/(a[2]*a[3]+b[2]*b[3]-intersection||1);};
     function crop(video,box){const [x,y,w,h]=box,width=video.videoWidth*w,height=video.videoHeight*h;if(width<160||height<90)throw Error('TV screen is too small. Move closer or select its screen area.');const scale=Math.min(1,960/width,720/height),canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);canvas.getContext('2d').drawImage(video,x*video.videoWidth,y*video.videoHeight,width,height,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',.78);if(data.length>420000)throw Error('TV crop is too detailed. Select a smaller screen area.');return data;}
+    function cancelFrameSave(){
+      if(frameSave)frameSave.controller.abort();
+    }
+    function selectedFrame(){
+      if(!enabled()||selecting||document.hidden||!window.VP3AgentEyes?.isActive()||!currentFrame?.isCurrent())return null;
+      const {video}=currentFrame;
+      if(video.paused||video.readyState<2||tracks.length!==1||Date.now()-tracks[0].seen>=3500)return null;
+      return {video,track:tracks[0]};
+    }
+    function saveScope(){
+      const ref=adapter.conversationRef(),owner=String(adapter.ownerKey||'');
+      if(!/^[1-9][0-9]*$/.test(owner)||!Number.isSafeInteger(ref?.id)||ref.id<1||!Number.isSafeInteger(ref.agent)||ref.agent<0)return null;
+      return {owner,id:ref.id,agent:ref.agent};
+    }
+    async function saveFrame(){
+      if(frameSave)return;
+      const tell=text=>{saveFrameStatus.textContent=text;};
+      const scope=saveScope();
+      if(!scope||!window.VP3InitiativeWorkbench?.open)return tell('Open an existing Agent Chat to save a TV frame for editing.');
+      const frame=selectedFrame();
+      if(!frame)return tell('Start the camera and select one current TV screen.');
+      let image;
+      try{image=crop(frame.video,frame.track.box);}
+      catch(error){return tell(error.message);}
+      const capturedAt=new Date().toISOString(),sid=crypto.randomUUID(),id=crypto.randomUUID();
+      const captureEpoch=epoch,permissionEpoch=settings.epoch;
+      const controller=new AbortController();
+      frameSave={controller};saveFrameButton.disabled=true;
+      const current=()=>{
+        const now=saveScope(),live=selectedFrame();
+        return !controller.signal.aborted&&epoch===captureEpoch&&settings.epoch===permissionEpoch
+          &&now?.owner===scope.owner&&now.id===scope.id&&now.agent===scope.agent&&live?.track.id===frame.track.id;
+      };
+      let started=false,submitted=false,saved=false;
+      try{
+        tell('Checking permission to save the selected TV frame…');
+        const state=await request({action:'status'});
+        if(!current())return;
+        if(state.account_binding!=='cloud:'+scope.owner||state.settings?.epoch!==permissionEpoch
+          ||!state.settings.enabled||!state.settings.share_screen){
+          return tell('TV settings changed. Refresh them before saving a frame.');
+        }
+        const start=await adapter.screenHistory({action:'start',session_id:sid,conversation_id:scope.id,title:'TV frame for editing'});
+        started=start.session?.session_id===sid;
+        if(!started)throw Error('The private capture session could not be verified.');
+        if(!current())return;
+        submitted=true;
+        const receipt=await adapter.screenHistory({action:'capture',session_id:sid,capture_id:id,image,captured_at:capturedAt,
+          surface:'browser',note:'Selected crop from the Agent Eyes TV camera.'},{signal:controller.signal});
+        saved=receipt.capture?.capture_id===id&&receipt.capture?.session_id===sid;
+        if(!saved)throw Error('The saved TV frame could not be verified.');
+      }catch(error){
+        if(current())tell(error.message||'The TV frame could not be saved.');
+      }finally{
+        if(started){
+          const cleanup=submitted?{action:'end',session_id:sid}:{action:'delete_session',session_id:sid,remove_brain:false};
+          void adapter.screenHistory(cleanup).catch(()=>{});
+        }
+        if(saved&&current()){
+          tell('TV frame saved privately.');
+          window.VP3InitiativeWorkbench.open('screen',id);
+        }else if(controller.signal.aborted||!current()){
+          tell(submitted?'The Chat or camera changed. Check My Knowledge for the submitted frame.':'Frame save stopped.');
+        }
+        frameSave=null;saveFrameButton.disabled=false;
+      }
+    }
+    saveFrameButton.addEventListener('click',()=>void saveFrame());
+    window.addEventListener('stonefellow:chat-context-changing',cancelFrameSave);
     function drawScreens(boxes){const layer=document.querySelector('.vp3-eyes-tv-boxes');if(!layer)return;layer.replaceChildren();const mirrored=document.querySelector('[data-eyes-mirror]')?.checked!==false;for(const box of boxes){const node=document.createElement('div');node.className='vp3-eyes-box vp3-tv-box';const [x,y,w,h]=box;node.style.cssText=`left:${(mirrored?1-x-w:x)*100}%;top:${y*100}%;width:${w*100}%;height:${h*100}%`;const tag=document.createElement('span');tag.textContent=manual?'Selected TV':'TV';node.append(tag);layer.append(node);}}
     async function identify(track,video,isCurrent){
       if(busy||Date.now()<retryAt||!enabled())return;busy=true;const token=epoch,current=()=>token===epoch&&enabled()&&isCurrent()&&tracks.some(t=>t.id===track.id&&Date.now()-t.seen<3500);
@@ -31,7 +109,7 @@
       }catch(error){if(token===epoch){retryAt=Date.now()+60000;if(/expired|fresh TV camera session/.test(String(error.message)))run='';say(String(error.message||'TV recognition is unavailable.'));}}finally{if(token===epoch)busy=false;}
     }
     function observe(objects,video,isCurrent){
-      if(!enabled()){drawScreens([]);return;}const boxes=screenBoxes(objects,video.videoWidth,video.videoHeight),at=Date.now(),old=tracks;
+      if(!enabled()){currentFrame=null;drawScreens([]);return;}currentFrame={video,isCurrent};const boxes=screenBoxes(objects,video.videoWidth,video.videoHeight),at=Date.now(),old=tracks;
       tracks=boxes.map(box=>{if(manual)return {...manual,seen:at};const ranked=old.map(t=>({t,score:overlap(box,t.box)})).filter(p=>p.score>.4).sort((a,b)=>b.score-a.score);const unique=ranked[0]&&(!ranked[1]||ranked[0].score-ranked[1].score>.15)?ranked[0].t:null;return unique?{...unique,box,seen:at}:{id:crypto.randomUUID(),box,seen:at,lastAttempt:0};});
       const duplicate=new Set();for(const t of tracks)if(tracks.filter(v=>v.id===t.id).length>1)duplicate.add(t.id);for(const t of tracks)if(duplicate.has(t.id))t.id=crypto.randomUUID();
       for(const previous of old)if(run&&!tracks.some(t=>t.id===previous.id))void request({action:'screen_end',run_id:run,screen_id:previous.id}).catch(()=>{});

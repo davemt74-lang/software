@@ -560,5 +560,15 @@ try{
   await observationState('tracky',{},true);
   response=await post(endpoint,'Read stored context',context,{...route(planFor('current')),'X-Fixture-Tracky-Mode':'scene_revoked'});check(!JSON.stringify(response.data).includes('cup')&&!response.data.tracky?.active_perception?.attempted,endpoint+' Tracky revoked scene is omitted from canvas and Chat evidence');
  }
+ const selectedChat=(await post('chat-v236.php','Can you create reminders?')).data;
+ const newerChat=(await post('chat-v236.php','',{action:'new'})).data;
+ check(selectedChat.ok&&newerChat.ok&&newerChat.conversation_id>selectedChat.conversation_id,'prepare an older active Chat and a newer Chat');
+ const activity=await post('chat-v236.php','',{action:'activity',after_id:0,conversation_id:selectedChat.conversation_id});
+ check(activity.data.ok&&activity.data.latest_id===0&&activity.data.conversation_id===selectedChat.conversation_id
+  &&activity.data.latest_message_id===selectedChat.assistant_message_id,'zero-cursor activity returns messages for the exact open Chat');
+ const wrongAgent=await post('chat-v236.php?agent=7','',{action:'activity',conversation_id:selectedChat.conversation_id});
+ check(wrongAgent.r.status===400&&!wrongAgent.data.ok,'activity rejects a Chat outside the selected Agent');
+ const wrongOwner=await post('chat-v236.php','',{action:'activity',conversation_id:selectedChat.conversation_id},{'X-Fixture-User':'2'});
+ check(wrongOwner.r.status===400&&!wrongOwner.data.ok,'activity rejects another owner’s Chat');
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

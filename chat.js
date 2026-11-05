@@ -871,16 +871,19 @@
     const timeout = window.setTimeout(() => controller.abort(), 15000);
 
     try {
-      const hadCursor = activityCursor > 0;
+      const activeConversationId = contextReady && !initialRestorePending && !restoringConversation ? conversationId : 0;
       const data = await api({
         action:'activity',
-        after_id:activityCursor
+        after_id:activityCursor,
+        conversation_id:activeConversationId,
+        agent_context:{user_agent_id:Number(cfg.agentId || 0)}
       }, controller.signal);
 
-      if(hadCursor&&Number(data.conversation_id||0)===conversationId&&Number(data.latest_message_id||0)>lastLoadedMessageId){
+      if(activeConversationId>0&&activeConversationId===conversationId&&Number(data.conversation_id||0)===conversationId&&Number(data.latest_message_id||0)>lastLoadedMessageId){
         pendingConversationSync=conversationId;
       }
-      if(pendingConversationSync>0&&!busy&&pendingConversationSync===conversationId&&Number(data.latest_message_id||0)>lastLoadedMessageId){
+      if(pendingConversationSync>0&&!busy&&!restoringConversation&&pendingConversationSync===activeConversationId
+        &&pendingConversationSync===conversationId&&Number(data.conversation_id||0)===conversationId&&Number(data.latest_message_id||0)>lastLoadedMessageId){
         await syncConversationMessagesV101(pendingConversationSync, controller.signal);
         pendingConversationSync=0;
       }
@@ -3217,7 +3220,8 @@
   async function syncConversationMessagesV101(id, signal) {
     const revision=chatRevision;
     const targetId=Number(id||0);if(targetId<1||targetId!==conversationId||busy)return;
-    const data=await api({action:'messages_after',conversation_id:targetId,after_id:lastLoadedMessageId}, signal);
+    const data=await api({action:'messages_after',conversation_id:targetId,after_id:lastLoadedMessageId,
+      agent_context:{user_agent_id:Number(cfg.agentId || 0)}}, signal);
     if(revision!==chatRevision||targetId!==conversationId||busy||!Array.isArray(data.messages))return;
     data.messages.forEach(message=>{
       if(thread.querySelector('[data-chat-message-id="'+Number(message.id||0)+'"]')){
@@ -3381,6 +3385,9 @@
       );
       if (data.canvas_media?.generation_ids?.length) {
         reply.querySelector('.vp3-canvas-media')?.setAttribute('data-specialist-launch', 'true');
+      }
+      if (/^\/initiative (?:on|off|screen on|screen off)$/i.test(request.message.trim())) {
+        window.dispatchEvent(new Event('vp3:initiative-setting-changed'));
       }
       const autoAction=(data.actions||[]).find(action=>action && action.auto && action.url);
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}

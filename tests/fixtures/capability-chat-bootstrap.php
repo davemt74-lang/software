@@ -26,6 +26,7 @@ function db(){static $pdo;if(!$pdo){$pdo=new TranscriptFixturePDO('sqlite:'.__DI
 function table_exists($table){if($table==='user_calendar_events'&&isset($_SERVER['HTTP_X_FIXTURE_CALENDAR_MISSING']))return false;$q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return(bool)$q->fetchColumn();}
 function column_exists($table,$column){foreach(db()->query('PRAGMA table_info('.$table.')') as $r)if($r['name']===$column)return true;return false;}
 function current_user(){if(isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS']))return null;$id=(int)($_SERVER['HTTP_X_FIXTURE_USER']??1);return ['id'=>$id,'is_active'=>1];}
+function player_process_show_reminders(array $user): void {}
 function csrf_token(){return 'fixture';}
 function has_permission($key,$user){return !isset($_SERVER['HTTP_X_FIXTURE_DENIED']);}
 function personal_capability_has_v242($key,...$args){return ($key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']))||($key==='personal_knowledge.access'&&isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']))||($key==='profile_agent.access'&&!isset($_SERVER['HTTP_X_FIXTURE_OBSERVATION_DENIED'])&&(isset($_SERVER['HTTP_X_FIXTURE_RADAR_READY'])||isset($_SERVER['HTTP_X_FIXTURE_ANALYTICS_READY'])||isset($_SERVER['HTTP_X_FIXTURE_PROFILE_READY'])));}

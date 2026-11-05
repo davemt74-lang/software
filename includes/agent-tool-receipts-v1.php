@@ -105,12 +105,15 @@ function vp3_tool_last_receipt_v1(PDO $pdo,array $user,array $context): ?array
 {
     $cid=max(0,(int)($context['conversation_id']??0));$uid=(int)($user['id']??0);$aid=max(0,(int)($context['user_agent_id']??0));
     if($cid<1||$uid<1)return null;
-    $q=$pdo->prepare("SELECT m.id,m.context_json FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id WHERE c.id=? AND c.user_id=? AND ".($aid>0?'c.user_agent_id=?':'c.user_agent_id IS NULL')." AND m.role='assistant' ORDER BY m.id DESC LIMIT 1");
-    $q->execute($aid>0?[$cid,$uid,$aid]:[$cid,$uid]);$row=$q->fetch(PDO::FETCH_ASSOC);
+    $q=$pdo->prepare("SELECT m.id,m.context_json FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id WHERE c.id=? AND c.user_id=? AND ".($aid>0?'c.user_agent_id=?':'c.user_agent_id IS NULL')." AND m.role='assistant' ORDER BY m.id DESC LIMIT 20");
+    $q->execute($aid>0?[$cid,$uid,$aid]:[$cid,$uid]);
+    while($row=$q->fetch(PDO::FETCH_ASSOC)){
+        $data=json_decode((string)$row['context_json'],true,32);
+        if(($data['source']??'')!=='agent_initiative')break;
+    }
     if(!$row)return null;
     $pending=$pdo->prepare("SELECT COUNT(*) FROM chat_messages WHERE conversation_id=? AND role='user' AND id>?");$pending->execute([$cid,(int)$row['id']]);
     if((int)$pending->fetchColumn()>1)return null;
-    try{$data=json_decode((string)$row['context_json'],true,32,JSON_THROW_ON_ERROR);}catch(Throwable $e){return null;}
     $receipt=vp3_tool_receipt_normalize_v1($data['tool_receipt']??null);
     if($receipt&&$receipt['capability']==='profile.webmcp.return.read'&&$receipt['status']==='read_complete'&&!isset($receipt['profile_webmcp_outcome'])){
         $receipt['status']='failed';$receipt['reason']='outcome_unverified';$receipt['count']=0;

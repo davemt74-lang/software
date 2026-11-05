@@ -25,6 +25,19 @@ function screen_insights_card_v1(string $kind,string $key,string $title,string $
     $refs=array_map('screen_insights_ref_v1',$rows);$hash=screen_insights_hash_v1($refs);
     return ['key'=>hash('sha256',$kind.':'.$key),'kind'=>$kind,'title'=>$title,'why'=>$why,'fingerprint'=>screen_insights_hash_v1($semantic),'review_hash'=>$hash,'sources'=>$sources,'refs'=>$refs,'authority'=>'suggestion_only'];
 }
+function screen_insights_intent_card_v1(array $row,string $note): array
+{
+    $sid=$row['session_id'];
+    return screen_insights_card_v1('intent',$sid,'Follow up on your note','You noted: '.mb_substr($note,0,240).'. Viewing alone is not a commitment.',[$row],[$sid,$note]);
+}
+
+function screen_insights_pending_v1(array $card,?array $state,int $now): bool
+{
+    return !$state||!($state['decision']==='never'
+        ||($state['decision']==='later'&&strtotime($state['until_at'])>$now)
+        ||($state['decision']==='dismiss'&&hash_equals($state['fingerprint'],$card['fingerprint'])));
+}
+
 function screen_insights_derive_v1(array $rows,int $now): array
 {
     $groups=[];$sessions=[];$cards=[];
@@ -38,7 +51,7 @@ function screen_insights_derive_v1(array $rows,int $now): array
             if(preg_match('/^(?:playback|song)?\s*(?:position|progress|duration|time|volume|price|player|status|title|artist)$/iu',$label))continue;
             $entity=$kind.':'.mb_strtolower(preg_replace('/\s+/u',' ',$label)??$label);$groups[$entity][]=[$r,$o];
         }
-        if(!isset($cards['intent:'.$r['session_id']])&&trim((string)($r['body']['note']??''))!==''&&$now-(strtotime($r['captured_at'])?:0)<=7*86400)$cards['intent:'.$r['session_id']]=screen_insights_card_v1('intent',$r['session_id'],'Follow up on your note','You noted: '.mb_substr($r['body']['note'],0,240).'. Viewing alone is not a commitment.',[$r],[$r['session_id'],$r['body']['note']]);
+        if(!isset($cards['intent:'.$r['session_id']])&&trim((string)($r['body']['note']??''))!==''&&$now-(strtotime($r['captured_at'])?:0)<=7*86400)$cards['intent:'.$r['session_id']]=screen_insights_intent_card_v1($r,(string)$r['body']['note']);
     }
     foreach($groups as $key=>$pairs){
         $unique=[];$values=[];foreach($pairs as [$r,$o]){$unique[$r['session_id']]??=$r;$values[$o['detail']]=true;}$latest=$pairs[0];$at=strtotime($latest[0]['captured_at'])?:0;if($now-$at>7*86400)continue;
@@ -51,9 +64,9 @@ function screen_insights_derive_v1(array $rows,int $now): array
 }
 function screen_insights_feed_v1(PDO $pdo,array $user,int $aid,bool $hidden=false): array
 {
-    $cards=screen_insights_derive_v1(screen_insights_pool_v1($pdo,$user,$aid),time());if($hidden)return $cards;
+    $now=time();$cards=screen_insights_derive_v1(screen_insights_pool_v1($pdo,$user,$aid),$now);if($hidden)return $cards;
     $q=$pdo->prepare('SELECT * FROM agent_screen_insight_state_v1 WHERE owner_user_id=? AND agent_id=?');$q->execute([(int)$user['id'],$aid]);$states=[];foreach($q->fetchAll(PDO::FETCH_ASSOC) as $s)$states[$s['insight_key']]=$s;
-    return array_values(array_filter($cards,function($c)use($states){$s=$states[$c['key']]??null;return !$s||!($s['decision']==='never'||($s['decision']==='later'&&strtotime($s['until_at'])>time())||($s['decision']==='dismiss'&&hash_equals($s['fingerprint'],$c['fingerprint'])));}));
+    return array_values(array_filter($cards,static fn($card)=>screen_insights_pending_v1($card,$states[$card['key']]??null,$now)));
 }
 function screen_insights_current_v1(PDO $pdo,array $user,int $aid,array $input): array
 {
@@ -63,7 +76,15 @@ function screen_insights_current_v1(PDO $pdo,array $user,int $aid,array $input):
 function screen_insights_decide_v1(PDO $pdo,array $user,int $aid,array $input): array
 {
     $c=screen_insights_current_v1($pdo,$user,$aid,$input);$decision=$input['decision']??'';if(!in_array($decision,['later','dismiss','never'],true))throw new InvalidArgumentException('Choose Later, Dismiss or Don’t suggest again.');
-    $pdo->beginTransaction();try{$pdo->prepare('DELETE FROM agent_screen_insight_state_v1 WHERE owner_user_id=? AND agent_id=? AND insight_key=?')->execute([(int)$user['id'],$aid,$c['key']]);$pdo->prepare('INSERT INTO agent_screen_insight_state_v1(owner_user_id,agent_id,insight_key,fingerprint,decision,until_at) VALUES(?,?,?,?,?,?)')->execute([(int)$user['id'],$aid,$c['key'],$c['fingerprint'],$decision,$decision==='later'?gmdate('Y-m-d\TH:i:s\Z',time()+86400):'']);$pdo->commit();}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}return ['decision'=>$decision];
+    $pdo->beginTransaction();try{
+        if($c['kind']==='intent'){
+            screen_session_v1($pdo,$user,$c['refs'][0]['session_id'],true);
+            $c=screen_insights_current_v1($pdo,$user,$aid,$input);
+        }
+        $pdo->prepare('DELETE FROM agent_screen_insight_state_v1 WHERE owner_user_id=? AND agent_id=? AND insight_key=?')->execute([(int)$user['id'],$aid,$c['key']]);
+        $pdo->prepare('INSERT INTO agent_screen_insight_state_v1(owner_user_id,agent_id,insight_key,fingerprint,decision,until_at) VALUES(?,?,?,?,?,?)')->execute([(int)$user['id'],$aid,$c['key'],$c['fingerprint'],$decision,$decision==='later'?gmdate('Y-m-d\TH:i:s\Z',time()+86400):'']);
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}return ['decision'=>$decision];
 }
 function screen_insights_sources_v1(PDO $pdo,array $user,int $aid,array $refs,bool $lock=false): array
 {
