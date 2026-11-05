@@ -16,7 +16,7 @@ function vp3_initiative_plan_v1(string $answer,array $evidence,array $allowedToo
     if(!$plan instanceof stdClass||array_keys((array)$plan)!==['jobs'])throw new InvalidArgumentException('Invalid initiative plan.');
     $jobs=$plan->jobs;
     if(!is_array($jobs)||!array_is_list($jobs)||count($jobs)>$limits['max_jobs'])throw new InvalidArgumentException('Invalid initiative jobs.');
-    $primaries=[];
+    $primaries=[];$hasCheckIn=false;
     foreach($jobs as &$job){
         $fields=['tool','primary','refs','focus','report'];
         if(!$job instanceof stdClass)throw new InvalidArgumentException('Invalid initiative assignment.');
@@ -26,6 +26,10 @@ function vp3_initiative_plan_v1(string $answer,array $evidence,array $allowedToo
             ||!is_array($job['refs']??null)||!array_is_list($job['refs'])||count($job['refs'])>$limits['max_refs']
             ||!is_string($job['focus']??null)||!is_bool($job['report']??null)){
             throw new InvalidArgumentException('Invalid initiative assignment.');
+        }
+        if($job['tool']==='chat.check_in'){
+            if($hasCheckIn||$job['report']!==true)throw new InvalidArgumentException('Invalid initiative check-in.');
+            $hasCheckIn=true;
         }
         $primary=$job['primary'];$assignment=$job['tool'].'|'.$primary;$refs=[];
         foreach($job['refs'] as $ref){
@@ -129,6 +133,11 @@ function vp3_initiative_evidence_scoped_v1(PDO $pdo,array $user,DateTimeImmutabl
         require_once $readiness;
         $evidence+=vp3_initiative_readiness_evidence_v1($pdo,$user,$principal,$now,$coverage,$selectedRefs);
     }
+    $context=__DIR__.'/agent-initiative-context-v1.php';
+    if(is_file($context)){
+        require_once $context;
+        $evidence+=vp3_initiative_context_evidence_v1($pdo,$user,$principal,$now,$coverage,$selectedRefs);
+    }
     $tools=__DIR__.'/agent-initiative-tools-v1.php';
     if(is_file($tools)){
         require_once $tools;
@@ -152,8 +161,14 @@ function vp3_initiative_policy_v1(array $user,?int $agentId=null): array
     $agentId??=vp3_agent_memory_scope_current_v410($user);
     return vp3_initiative_in_scope_v1($user,$agentId,static function()use($user):array{
         $memory=agent_brain_v122_memory($user,'initiative_policy','owner-opt-in');
-        return array_intersect_key($memory['metadata']??[],array_flip(['enabled','conversation_id','revision','screen_enabled','owner_user_id','agent_id','knowledge_scope']));
+        return vp3_initiative_policy_metadata_v1($memory['metadata']??[]);
     });
+}
+
+/** Internal control metadata is not an authorization to read Brain contents. */
+function vp3_initiative_policy_metadata_v1(array $metadata): array
+{
+    return array_intersect_key($metadata,array_flip(['enabled','conversation_id','revision','screen_enabled','owner_user_id','agent_id','knowledge_scope']));
 }
 
 function vp3_initiative_access_v1(PDO $pdo,array $user,array $binding): array
@@ -166,7 +181,7 @@ function vp3_initiative_access_v1(PDO $pdo,array $user,array $binding): array
     $principal=vp3_initiative_principal_v1($pdo,$user,$agentId);
     $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$cid],null);
     $policy=vp3_initiative_policy_v1($live,$agentId);
-    if($cid<1||!has_permission('account.access',$live)||!personal_capability_has_v242('agent_brain.access',$live)||($policy['enabled']??false)!==true
+    if($cid<1||!has_permission('account.access',$live)||($policy['enabled']??false)!==true
         ||$policy!==$binding||vp3_initiative_binding_agent_v1($policy)!==$agentId){
         throw new RuntimeException('Initiative scope changed.',403);
     }
@@ -358,7 +373,6 @@ function vp3_initiative_chat_scoped_v1(PDO $pdo,array $user,array $principal,arr
 {
     $result=['handled'=>true,'actions'=>[],'sources'=>[]];
     $cid=(int)($context['conversation_id']??0);
-    $disabling=$command==='off';
     if($cid<1||vp3_participant_scope_v1()!==null){
         return $result+['ok'=>false,'answer'=>'Use your private owner Agent Chat to control initiative.'];
     }
@@ -372,21 +386,21 @@ function vp3_initiative_chat_scoped_v1(PDO $pdo,array $user,array $principal,arr
             return $result+['answer'=>$enableScreen?'Screen-share follow-ups are on. Initiative can use saved note text and session titles from finished shares with your configured Cloud AI model. Use /initiative screen off to stop.':'Screen-share follow-ups are off.'];
         }
         $live=vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority);
-        if(!has_permission('account.access',$live)
-            ||(!$disabling&&!personal_capability_has_v242('agent_brain.access',$live)))throw new RuntimeException('Initiative access denied.',403);
+        if(!has_permission('account.access',$live))throw new RuntimeException('Initiative access denied.',403);
         if(!agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo)){
             return $result+['answer'=>'Initiative needs the current Agent Brain and job database upgrades.'];
         }
         if($command==='status'){
             $policy=vp3_initiative_policy_v1($live);
-            if(empty($policy['enabled']))return $result+['answer'=>'Initiative is off.'];
+            if($policy===[])return $result+['answer'=>'Your Agent’s working context starts when this saved Chat is active.'];
+            if(empty($policy['enabled']))return $result+['answer'=>'Initiative is paused. Use /initiative on to resume.'];
             if($policy['conversation_id']!==$cid)return $result+['answer'=>'Initiative is linked to another private conversation.'];
             return vp3_initiative_status_v1($pdo,$live,$policy,$result);
         }
         $pdo->beginTransaction();
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_capability_live_user_v1($pdo,$live,$principal,$context,$authority);
-        if(!has_permission('account.access',$live)||(!$disabling&&!personal_capability_has_v242('agent_brain.access',$live))){
+        if(!has_permission('account.access',$live)){
             throw new RuntimeException('Initiative access denied.',403);
         }
         $policy=vp3_initiative_policy_v1($live);
@@ -399,11 +413,13 @@ function vp3_initiative_chat_scoped_v1(PDO $pdo,array $user,array $principal,arr
         }
         $enable=$command==='on';
         $knowledge=array_key_exists('knowledge_scope',$context)?vp3_initiative_knowledge_scope_v1($context['knowledge_scope']):($policy['knowledge_scope']??['mode'=>'off','folder_id'=>0]);
-        if($enable!==!empty($policy['enabled'])||($enable&&(($policy['conversation_id']??null)!==$cid
+        if($policy===[]||$enable!==!empty($policy['enabled'])||($enable&&(($policy['conversation_id']??null)!==$cid
             ||(array_key_exists('knowledge_scope',$context)&&($policy['knowledge_scope']??null)!==$knowledge)))){
+            $screenEnabled=($policy['screen_enabled']??false)===true;
             $policy=['enabled'=>$enable,'conversation_id'=>$cid,'revision'=>bin2hex(random_bytes(16))];
             if(($agentId=vp3_agent_memory_scope_current_v410($live))>0)$policy+=['owner_user_id'=>(int)$live['id'],'agent_id'=>$agentId];
             $policy['knowledge_scope']=$knowledge;
+            $policy['screen_enabled']=$screenEnabled;
             if(agent_brain_v122_upsert_system_memory($live,'initiative_policy','owner-opt-in','Owner initiative preference.',$policy)<1){
                 throw new RuntimeException('Initiative setting could not be saved.');
             }
@@ -434,12 +450,14 @@ function vp3_initiative_foreground_status_scoped_v1(PDO $pdo,array $user,int $ag
     try{
         $principal=vp3_initiative_principal_v1($pdo,$user,$agentId);
         $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$cid],null);
-        if(!has_permission('account.access',$live)||!personal_capability_has_v242('agent_brain.access',$live)
+        if(!has_permission('account.access',$live)
             ||!agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo)){
             return $unavailable;
         }
         $policy=vp3_initiative_policy_v1($live);
-        if(empty($policy['enabled']))return ['state'=>'off'];
+        if(empty($policy))return ['state'=>'starting'];
+        if(($policy['enabled']??null)===false)return ['state'=>'paused'];
+        if(($policy['enabled']??null)!==true)return $unavailable;
         if($cid<1||($policy['conversation_id']??null)!==$cid)return ['state'=>'linked_elsewhere'];
         $revision=$policy['revision']??null;
         if(!is_string($revision)||!preg_match('/\A[a-f0-9]{32}\z/',$revision))return $unavailable;
@@ -558,7 +576,8 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         'reward'=>'rewards','transcript'=>'transcripts','screen-followup'=>'screen_followup',
         'account-readiness'=>'account_readiness','business-readiness'=>'business_readiness',
         'product-readiness'=>'product_readiness','scheduling-readiness'=>'scheduling_readiness',
-        'workbench-product'=>'workbench_product','workbench-screen'=>'workbench_screen','workbench-mission'=>'workbench_mission'];
+        'workbench-product'=>'workbench_product','workbench-screen'=>'workbench_screen','workbench-mission'=>'workbench_mission',
+        'open-task'=>'open_tasks','activity-situation'=>'activity_situations'];
     foreach($sources as $ref=>$revision){
         if(($current[$ref]['revision']??null)===$revision)continue;
         $family=$families[explode(':',$ref,2)[0]]??'';
@@ -577,7 +596,7 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
 /** A completed tool's retrieved records/artifact must still be current at delivery. */
 function vp3_initiative_result_current_v1(PDO $pdo,array $user,array $binding,array $goal,array $toolResult): void
 {
-    if(!isset($toolResult['output'])&&!isset($toolResult['tool_receipt']))return;
+    if(($goal['tool']??'work.prepare_private')!=='chat.check_in'&&!isset($toolResult['output'])&&!isset($toolResult['tool_receipt']))return;
     require_once __DIR__.'/agent-initiative-tools-v1.php';
     if(!function_exists('vp3_initiative_tools_result_current_v1'))throw new RuntimeException('Initiative result verification is unavailable.',503);
     vp3_initiative_tools_result_current_v1($pdo,$user,$binding,$goal,$toolResult);

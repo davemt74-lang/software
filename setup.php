@@ -14,6 +14,7 @@ require_once __DIR__ . '/includes/profile-attention-pa4b.php';
 require_once __DIR__ . '/includes/profile-event-projection-pa4b.php';
 require_once __DIR__ . '/includes/profile-conversation-checkout-pa5.php';
 require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
+require_once __DIR__ . '/includes/agent-work-control-v173.php';
 require_once __DIR__ . '/includes/agent-chat-read-v1.php';
 
 $pdo = db();
@@ -66,6 +67,7 @@ try {
     vp3_chat_read_ensure_schema_v1($pdo);
     profile_agent_ensure_schema($pdo);
     agent_job_engine_ensure_schema_v1900($pdo);
+    agent_work_control_ensure_schema_v173($pdo);
     vp3_profile_handoff_ensure_schema_pa3($pdo);
     vp3_profile_call_ensure_schema_pa3c($pdo);
     vp3_profile_call_activity_ensure_schema_pa3c($pdo);
@@ -78,6 +80,14 @@ try {
     vp3_agent_memory_scope_ensure_schema_v410($pdo);
     agent_event_ensure_schema_v1920($pdo);
     vp3_live_session_ensure_schema_v2370($pdo);
+    // Fresh installs need the same core Chat foundation as upgrade.php.
+    // Planning precedes orchestration because its durable runs reference plans.
+    vp3_cognitive_ensure_schema_v500($pdo);
+    vp3_cognitive_presentation_ensure_schema_v510($pdo);
+    vp3_cognitive_feed_ensure_schema_v530($pdo);
+    vp3_cognitive_learning_ensure_schema_v540($pdo);
+    vp3_cognitive_planning_ensure_schema_v550($pdo);
+    vp3_cognitive_orchestration_ensure_schema_v560($pdo);
     vp3_cognitive_memory_ensure_schema_v570($pdo);
     vp3_cognitive_memory_promotion_ensure_schema_v2400($pdo);
     vp3_cognitive_attention_ensure_schema_v2410($pdo);

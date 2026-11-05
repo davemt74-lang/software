@@ -70,7 +70,7 @@ function runtime_enable(array $user,int $agentId,int $cid):array
 }
 register_shutdown_function(static fn()=>@unlink($fixtureFile));
 $user=['id'=>1,'is_active'=>1];
-runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['state']==='off','schema readiness alone never turns Initiative on');
+runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['state']==='starting','schema readiness awaits the accepted Chat lifecycle without activating from a read-only request');
 $policy=runtime_enable($user,0,42);
 $before=$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn();
 $health=vp3_initiative_worker_health_v1($pdo,$user,0,42);
@@ -145,7 +145,7 @@ $revoked=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static funct
     vp3_initiative_chat_v1($pdo,$user,vp3_agent_chat_principal_v380($user,null),['conversation_id'=>42],'off',null);
     return '{"jobs":[]}';
 });
-runtime_check(!$revoked['ok']&&$revoked['reason']==='initiative_unconfirmed'&&$revoked['health']['state']==='off',
+runtime_check(!$revoked['ok']&&$revoked['reason']==='initiative_unconfirmed'&&$revoked['health']['state']==='paused',
     'opt-out during inference prevents a late result from advancing or entering Chat');
 runtime_check(preg_match('/^[a-f0-9]{32}$/D',$revoked['health']['policy_revision'])===1
     &&$revoked['health']['policy_revision']===vp3_initiative_policy_v1($user,0)['revision'],
@@ -260,5 +260,5 @@ $revokedRetry=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static 
 });
 $lastReceipt=$pdo->query('SELECT status FROM agent_workflow_receipts ORDER BY id DESC LIMIT 1')->fetchColumn();
 runtime_check(!$revokedRetry['ok']&&$revokedRetry['reason']==='initiative_unconfirmed'&&$lastReceipt==='failed'
-    &&$revokedRetry['health']['state']==='off','a concurrent owner opt-out prevents even a genuine 503 from scheduling another attempt');
+    &&$revokedRetry['health']['state']==='paused','a concurrent owner opt-out prevents even a genuine 503 from scheduling another attempt');
 echo "AGENT_INITIATIVE_RUNTIME_V1=PASS ($checks cases)\n";

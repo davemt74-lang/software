@@ -60,14 +60,15 @@ function vp3_initiative_policy_v1($user,$agent){global $initiativePolicy,$fixtur
 function vp3_initiative_worker_health_v1($pdo,$user,$agent,$cid){
     global $trace;$trace[]='initiative_health';$policy=vp3_initiative_policy_v1($user,$agent);
     return ['state'=>!empty($policy['enabled'])?'waiting':'off','enabled'=>!empty($policy['enabled']),
-        'agent_id'=>$agent,'conversation_id'=>$cid,'policy_revision'=>$policy['revision']??''];
+        'agent_id'=>$agent,'conversation_id'=>$cid,'policy_revision'=>$policy['revision']??'',
+        'knowledge_scope'=>$policy['knowledge_scope']??['mode'=>'off','folder_id'=>0]];
 }
 function vp3_initiative_chat_v1($pdo,$user,$principal,$context,$command,$authority){
     global $trace,$initiativePolicy,$fixture;
     $trace[]=['initiative_setting',$principal,$context,$command];
     if(!empty($fixture['settingDenied']))return ['ok'=>false];
     $initiativePolicy=['enabled'=>$command==='on','conversation_id'=>$context['conversation_id'],
-        'knowledge_scope'=>$context['knowledge_scope'],'revision'=>str_repeat('a',32)];
+        'knowledge_scope'=>$context['knowledge_scope']??($fixture['policy']['knowledge_scope']??['mode'=>'off','folder_id'=>0]),'revision'=>str_repeat('a',32)];
     return ['ok'=>true];
 }
 function vp3_initiative_pump_v1($pdo,$user,$agent,$cid,$revision){
@@ -180,7 +181,9 @@ function vp3_initiative_pump_v1($pdo,$user,$agent,$cid,$revision){
     {conversation_id:43,knowledge_scope:{mode:'folder',folder_id:12},initiative_expected_revision:''},'on'],'initiative_health']);
   assert.equal(configured.response.health.enabled,true);
   const noKnowledge=request({method:'POST',body:{...setting,knowledge_scope:undefined}});
-  assert.deepEqual(noKnowledge.trace[1][2].knowledge_scope,{mode:'off',folder_id:0});
+  assert.equal(Object.hasOwn(noKnowledge.trace[1][2],'knowledge_scope'),false,'omitted scope preserves the existing grant in the canonical setting service');
+  const resume=request({method:'POST',body:{...setting,knowledge_scope:undefined},policy:{knowledge_scope:{mode:'folder',folder_id:12}}});
+  assert.deepEqual(resume.response.health.knowledge_scope,{mode:'folder',folder_id:12});
   assert.equal(request({method:'POST',body:{...setting,enabled:'true'}}).status,422);
   assert.equal(request({method:'POST',body:{...setting,knowledge_scope:'all'}}).status,422);
   assert.equal(request({method:'POST',body:setting,settingDenied:true,policy:{enabled:true,conversation_id:43}}).status,409);

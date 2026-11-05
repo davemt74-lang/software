@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-chat-boundary-v380.php';
 require_once __DIR__.'/agent-tool-receipts-v1.php';
 require_once __DIR__.'/agent-tool-json-v1.php';
+require_once __DIR__.'/agent-initiative-checkin-v1.php';
 if(!function_exists('knowledge_retrieval_v162_normalize_scope'))require_once __DIR__.'/knowledge-retrieval-v162.php';
 
 /** This adapter selects existing executors. The Initiative workflow remains the only queue/receipt. */
@@ -123,6 +124,10 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
     $scope=vp3_initiative_tools_scope_v1($pdo,$user,$binding);
     $catalog=['work.prepare_private'=>['id'=>'work.prepare_private','capability'=>'initiative.prepare','mode'=>'private',
         'ready'=>true,'reason'=>'ready','description'=>'Prepare a substantive private analysis or next step using the verified situation sources. Do not claim an external action was performed.']];
+    $checkinReady=table_exists('chat_messages');
+    $catalog['chat.check_in']=['id'=>'chat.check_in','capability'=>'initiative.prepare','mode'=>'private',
+        'ready'=>$checkinReady,'reason'=>$checkinReady?'ready':'upgrade_required',
+        'description'=>'Optionally prepare one brief natural, source-grounded check-in, suggestion or focused question for this exact saved Chat, using the selected Agent identity and recent owner messages. Choose only when worthwhile, never a forced hello or page-load greeting. At most one per plan; report must be true. Maximum 1200 plain characters.'];
     if(function_exists('vp3_capability_snapshot_v1')){
         try{$snapshot=vp3_capability_snapshot_v1($pdo,$scope['user'],$scope['principal'],['conversation_id'=>$scope['conversation_id']],
             vp3_initiative_tools_knowledge_scope_v1($binding));}
@@ -250,6 +255,10 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
     try{
         $scope=vp3_initiative_tools_scope_v1($pdo,$user,$binding);$output=$toolResult['output']??null;
         if(!is_array($output))throw new RuntimeException('Saved tool evidence is unavailable.',409);
+        if($tool==='chat.check_in'){
+            vp3_initiative_checkin_current_v1($pdo,$scope,$output);
+            return;
+        }
         if(in_array($tool,['brain.read','knowledge.search'],true)){
             if(($output['type']??null)!=='initiative_record_read'||($output['tool']??null)!==$tool
                 ||!in_array($output['status']??null,['read_complete','no_matches'],true)||!is_array($output['source_revisions']??null)
@@ -312,6 +321,13 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
         $catalog=vp3_initiative_tools_catalog_v1($pdo,$scope['user'],$binding,$evidence);$tool=$job['tool'];$entry=$catalog[$tool]??null;
         if(!$entry||empty($entry['ready'])||$tool==='work.prepare_private')throw new RuntimeException('This Initiative tool is not currently available.',403);
         if(isset($entry['source_refs'])&&!in_array($job['primary'],$entry['source_refs'],true))throw new RuntimeException('This tool does not accept the selected source.',409);
+        if($tool==='chat.check_in'){
+            if(($job['report']??null)!==true)throw new InvalidArgumentException('A check-in must report to its saved Chat.');
+            $result=vp3_initiative_checkin_prepare_v1($pdo,$scope,$binding,$job,$evidence,$model);
+            $scope=vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
+            vp3_initiative_checkin_current_v1($pdo,$scope,$result['output']);
+            return $result;
+        }
         if(in_array($tool,['brain.read','knowledge.search'],true)){
             $records=vp3_initiative_tools_records_v1($pdo,$scope,$binding,$tool,$job['focus']);
             $state=$records?'read_complete':'no_matches';

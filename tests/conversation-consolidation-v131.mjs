@@ -53,11 +53,12 @@ assert(browserContext.includes('conversationId')&&browserContext.includes('taskT
 assert(browserContext.includes('proactive')&&browserContext.includes('events'),'shared browser context carries proactive and ecosystem context');
 assert(browserContext.includes("EDITOR_AGENT_ASSET='editor-agent-capabilities-20260903'")&&browserContext.includes('editor_capabilities:editorCapabilities()'),'shared browser context carries the compact cross-surface editor capability catalog');
 assert(browserContext.includes('stonefellow:editor-agent:catalog-updated'),'shared browser context republishes when capability knowledge changes');
-assert(activityBrowser.includes('STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()')
-  &&activityBrowser.includes('const canonical=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;')
+assert(activityBrowser.includes('const canonicalChat=()=>window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;')
+  &&activityBrowser.includes('canonicalChat()?.conversationId?.()??cfg.conversationId')
+  &&activityBrowser.includes('const canonical=canonicalChat();')
   &&activityBrowser.includes('const facade=window.STONEFELLOW_CHAT_CONTINUITY;')
   &&!activityBrowser.includes('STONEFELLOW_CHAT_CONTINUITY_V120')&&!activityBrowser.includes('STONEFELLOW_CHAT_CONTINUITY_V121'),
-  'activity tracking uses canonical Chat identity and readiness with the shared voice busy facade');
+  'activity tracking preserves canonical unsaved Chat identity and readiness with the shared voice busy facade');
 assert(bootstrap.includes('agent-surface-context-v131.php'),'server bootstrap loads the v131 context sanitizer');
 assert(serverContext.includes('agent_surface_v131_sanitize'),'server context has a dedicated sanitizer');
 assert(serverContext.includes("in_array($surface,['chat','stem','video','transcription'],true)"),'server context restricts surface identity while recognizing Transcription');

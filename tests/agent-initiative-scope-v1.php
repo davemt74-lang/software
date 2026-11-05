@@ -174,8 +174,8 @@ scope_check($GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']===$incoming,'evidence reader
 scope_check(str_contains(scope_command($one,0,142,'on')['answer'],'Initiative is on'),'existing System Chat can still opt in');
 $legacy=vp3_initiative_policy_v1($one,0);
 scope_check(!isset($legacy['agent_id'])&&!isset($legacy['owner_user_id'])&&$legacy['conversation_id']===142,'legacy System policy retains its existing binding shape');
-scope_check(vp3_initiative_policy_v1($one,17)===[]&&vp3_initiative_foreground_status_v1($pdo,$one,17,170)['state']==='off',
-    'System opt-in is never inherited by an owned named Agent');
+scope_check(vp3_initiative_policy_v1($one,17)===[]&&vp3_initiative_foreground_status_v1($pdo,$one,17,170)['state']==='starting',
+    'a named Agent without a policy awaits automatic startup instead of inheriting the System binding');
 foreach([[$one,17,170],[$one,18,180],[$two,19,190]] as [$user,$agent,$cid]){
     $initial=scope_control($user,$agent,$cid,'on','');
     scope_check($initial['ok']&&!$pdo->inTransaction()&&str_contains($initial['answer'],'Initiative is on'),
@@ -287,13 +287,18 @@ scope_check(!$revoked['ok']&&count(scope_runs(1,17,'initiative.prepare'))===$bef
 scope_check(vp3_initiative_policy_v1($one,18)['enabled']&&vp3_initiative_policy_v1($two,19)['enabled']
     &&vp3_initiative_policy_v1($one,0)===$legacy,'revoking one named Agent preserves sibling, foreign-owner and legacy System policies');
 
+// Exclude the optional Brain source so this checks core control authority,
+// rather than correctly failing freshness when a selected source is revoked.
+$pdo->exec("INSERT INTO user_agent_data_rules VALUES(17,'knowledge','brain:1002','deny')");
 scope_command($one,17,170,'on');$newPlan=scope_make_plan($one,17,'Source before Brain access revocation');
 $lostAccess=vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$newPlan),static function(string $prompt,string $protocol):string{
     $answer=($GLOBALS['scopeModel'])($prompt,$protocol);$GLOBALS['initiativeBrainAccess']=false;return $answer;
 });
 $GLOBALS['initiativeBrainAccess']=true;
-scope_check(!$lostAccess['ok']&&count(scope_runs(1,17,'initiative.prepare'))===$before&&count(scope_messages())===$deliveredCount,
-    'Brain permission revocation during named inference prevents committing its result');
+$pdo->exec("DELETE FROM user_agent_data_rules WHERE agent_id=17 AND resource_id='brain:1002'");
+scope_check($lostAccess['ok']&&count(scope_runs(1,17,'initiative.prepare'))===$before+1&&count(scope_messages())===$deliveredCount,
+    'optional Brain UI permission revocation does not disable canonical planning over separately authorized calendar evidence');
+$before=count(scope_runs(1,17,'initiative.prepare'));
 
 $newPlan=scope_make_plan($one,17,'Source with a blocked provider route');
 $GLOBALS['scopeRouteBlocked']=true;$inferenceBefore=count($GLOBALS['scopeInference']);

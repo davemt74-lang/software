@@ -22,10 +22,10 @@ function initiative_test_json(array $jobs): string
     return json_encode(['jobs' => $jobs], JSON_THROW_ON_ERROR);
 }
 
-function initiative_test_reject(string $answer, array $evidence, string $name): void
+function initiative_test_reject(string $answer, array $evidence, string $name,array $tools=['work.prepare_private']): void
 {
     try {
-        vp3_initiative_plan_v1($answer, $evidence);
+        vp3_initiative_plan_v1($answer, $evidence,$tools);
     } catch (InvalidArgumentException | JsonException) {
         initiative_test_check(true, $name);
         return;
@@ -166,6 +166,14 @@ try{
 }finally{putenv('VP3_INITIATIVE_MAX_JOBS');}
 initiative_test_check(count(vp3_initiative_plan_v1(initiative_test_json([$meetingJob,array_replace($meetingJob,['tool'=>'knowledge.search'])]),
     $evidence,['work.prepare_private','knowledge.search']))===2,'distinct authorized specialist tools can advance the same primary situation');
+$checkIn=array_replace($meetingJob,['tool'=>'chat.check_in','report'=>true]);
+initiative_test_check(vp3_initiative_plan_v1(initiative_test_json([$checkIn,$missionJob]),$evidence,
+    ['chat.check_in','work.prepare_private'])===[$checkIn,$missionJob],
+    'one authorized conversational check-in can accompany independent private work within the same budget');
+initiative_test_reject(initiative_test_json([array_replace($checkIn,['report'=>false])]),$evidence,
+    'a conversational check-in must be reportable rather than a hidden greeting draft',['chat.check_in']);
+initiative_test_reject(initiative_test_json([$checkIn,array_replace($checkIn,['primary'=>$mission,'refs'=>[$mission]])]),$evidence,
+    'one assessment cannot create multiple conversational interruptions even for different situations',['chat.check_in']);
 foreach ([125, 126] as $sessionId) {
     $ref = 'transcript:'.$sessionId;
     $evidence[$ref] = [
