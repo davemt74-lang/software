@@ -278,7 +278,7 @@
     return await setAgentVoiceMaster(true);
   }
 
-  const ChatRuntime=window.STONEFELLOW_CHAT_CONTINUITY;
+  const ChatRuntime=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
   function activeConversationId(){
     const runtime=ChatRuntime;
     if(typeof runtime?.conversationId==='function')return Math.max(0,Number(runtime.conversationId()||0));
@@ -905,7 +905,9 @@
     return finish;
   }
   window.VP3ConversationControls=Object.freeze({endEnrollmentSession:()=>{enrollmentPcmOnly=false;resetPendingFinal();queuedTranscript='';stopRecognition('voice-enrollment',true);if(voiceOn)scheduleListening(160,'guided-setup-complete');},beginEnrollmentCapture,responseWindow,cancelResponseWindow:finishResponseWindow,stop:()=>disableVoice({persist:true}),isBusy:()=>processing||speaking,isEnabled:()=>voiceOn,listen:()=>enableVoice({start:true}),state:()=>({state:speaking?'speaking':processing?'thinking':recognitionListening?'listening':recognitionStarting?'connecting':voiceOn&&speechRetryAt>Date.now()?(speechRetryQuiet?'connecting':'reconnecting'):'idle'})});
-  const continuity={isBusy:()=>processing||speaking||textBusy||voiceSubmitPending||!!activeRequest||!!pendingFinalTranscript||!!ChatRuntime?.isBusy?.(),isVoice:()=>voiceOn,pendingVoiceSubmit:()=>voiceSubmitPending,participantChanged:()=>{if(processing||speaking||textBusy||activeRequest||voiceSubmitPending){if(!interruptResponse('participant-changed'))cancelActiveRequest();}},conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
+  // Voice decorates the canonical Chat contract; consumers still need its
+  // readiness, exact Agent identity, restore, and conversation operations.
+  const continuity={...ChatRuntime,isBusy:()=>processing||speaking||textBusy||voiceSubmitPending||!!activeRequest||!!pendingFinalTranscript||!!ChatRuntime?.isBusy?.(),isVoice:()=>voiceOn,pendingVoiceSubmit:()=>voiceSubmitPending,participantChanged:()=>{if(processing||speaking||textBusy||activeRequest||voiceSubmitPending){if(!interruptResponse('participant-changed'))cancelActiveRequest();}},conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
 
   syncConversation(lastConversationId);syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else setAgentState('idle');renderDebug();
   window.addEventListener('storage',event=>{if(event.key===AGENT_VOICE_SYNC_KEY&&event.newValue){try{const sync=JSON.parse(event.newValue);if(sync?.enabled===false){agentVoiceMaster=false;if(voiceOn)disableVoice({persist:true});}}catch(error){}return;}if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(!next)disableVoice({persist:false});});
