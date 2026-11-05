@@ -53,7 +53,7 @@ function vp3_initiative_infer_v1(PDO $pdo,array $user,int $agentId,string $promp
 function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string $prompt,string $protocol): string
 {
     $GLOBALS['vp3_initiative_inference_last_v1']=[];
-    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1'],true)
+    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1'],true)
         ||trim($prompt)===''||strlen($prompt)>200000){
         throw new InvalidArgumentException('Invalid initiative inference request.');
     }
@@ -73,6 +73,10 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
             $GLOBALS['vp3_initiative_inference_last_v1']=[
                 'route'=>'homeserver','agent_id'=>$agentId,
                 'execution'=>is_array($run['execution']??null)?$run['execution']:[],
+                'provider'=>is_string($result['provider']??null)?$result['provider']:'homeserver',
+                'model'=>is_string($result['model']??null)?$result['model']:'',
+                'compute_source'=>is_string($result['compute_source']??null)?$result['compute_source']:'homeserver_local',
+                'usage'=>is_array($result['usage']??null)?$result['usage']:[],
             ];
         }catch(Throwable $e){
             $current=vp3_initiative_inference_health_v1($pdo,$user,$agentId);
@@ -95,7 +99,11 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
         ]);
         if(empty($result['ok']))throw vp3_initiative_provider_failure_v1($result);
         $answer=is_string($result['answer']??null)?trim($result['answer']):'';
-        $GLOBALS['vp3_initiative_inference_last_v1']=['route'=>'vp3_cloud','agent_id'=>$agentId];
+        $GLOBALS['vp3_initiative_inference_last_v1']=['route'=>'vp3_cloud','agent_id'=>$agentId,
+            'provider'=>is_string($result['provider']??null)?$result['provider']:'',
+            'model'=>is_string($result['model']??null)?$result['model']:'',
+            'compute_source'=>is_string($result['compute_source']??null)?$result['compute_source']:'vp3_cloud',
+            'usage'=>is_array($result['usage']??null)?$result['usage']:[]];
     }
     if($answer===''||strlen($answer)>65536)throw new RuntimeException('model_unavailable',503);
     return $answer;

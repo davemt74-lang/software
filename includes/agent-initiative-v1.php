@@ -249,7 +249,7 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
         $previous=$last['metadata']??[];
         if(!$last||($previous['conversation_id']??null)!==($policy['conversation_id']??null)
             ||($previous['revision']??null)!==($policy['revision']??null)||(strtotime((string)$last['last_seen_at'])?:0)<time()-300){
-            $availability=vp3_initiative_availability_v1(vp3_initiative_owner_context_v1($pdo,$live,$policy));
+            $availability=vp3_initiative_availability_v1(vp3_initiative_owner_context_v1($pdo,$live,$policy,false));
             $attentionRevision=$previous['attention_revision']??null;
             if(($previous['conversation_id']??null)!==($policy['conversation_id']??null)
                 ||($previous['revision']??null)!==($policy['revision']??null)||($previous['owner_availability']??null)!==$availability
@@ -597,6 +597,10 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
 /** A completed tool's retrieved records/artifact must still be current at delivery. */
 function vp3_initiative_result_current_v1(PDO $pdo,array $user,array $binding,array $goal,array $toolResult): void
 {
+    if(isset($goal['followthrough'])){
+        require_once __DIR__.'/agent-initiative-followthrough-v1.php';
+        vp3_initiative_followthrough_job_current_v1($pdo,$user,$goal);
+    }
     if(($goal['tool']??'work.prepare_private')!=='chat.check_in'&&!isset($toolResult['output'])&&!isset($toolResult['tool_receipt']))return;
     require_once __DIR__.'/agent-initiative-tools-v1.php';
     if(!function_exists('vp3_initiative_tools_result_current_v1'))throw new RuntimeException('Initiative result verification is unavailable.',503);
@@ -664,6 +668,8 @@ function vp3_initiative_report_v1(PDO $pdo,array $user,int $cid,string $draft,ar
     $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json,created_at)
         VALUES (?,NULL,'assistant',?,?,NOW())")->execute([$cid,$draft,json_encode($context,JSON_THROW_ON_ERROR)]);
     $messageId=(int)$pdo->lastInsertId();
+    require_once __DIR__.'/agent-initiative-followthrough-v1.php';
+    vp3_initiative_followthrough_attach_v1($pdo,$user,$agentId,$cid,$runId,$messageId,$draft,$context);
     $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')->execute([$cid,(int)$user['id']]);
     return $messageId;
 }
@@ -683,8 +689,8 @@ function vp3_initiative_deliver_pending_scoped_v1(PDO $pdo,array $user): bool
     $policy=vp3_initiative_policy_v1($user);
     if(empty($policy['enabled']))return false;
     $live=$user;$owner=(int)$user['id'];$cid=(int)$policy['conversation_id'];
-    $pdo->beginTransaction();
-    try{
+    require_once __DIR__.'/agent-initiative-followthrough-v1.php';
+    return vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$live,$owner,$cid,$agent,$agentId,$policy):bool{
         vp3_initiative_owner_lock_v1($pdo,$live);
         $revoked=false;
         try{$live=vp3_initiative_access_v1($pdo,$live,$policy);}
@@ -729,9 +735,8 @@ function vp3_initiative_deliver_pending_scoped_v1(PDO $pdo,array $user): bool
             }
             vp3_initiative_delivery_result_v1($pdo,$owner,$row,$result);
         }
-        $pdo->commit();
         return $delivered;
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    });
 }
 
 function vp3_initiative_delivery_sweep_v1(PDO $pdo,int $limit): int
@@ -800,21 +805,27 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
 
 function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?callable $model,array $run,array $payload): array
 {
-    $toolResult=[];
+    $toolResult=[];$draft='';$jobs=[];
     try{
         $binding=$payload['binding'];$sources=$payload['sources'];
         $agentId=vp3_initiative_binding_agent_v1($binding);
         $canonicalSources=is_array($payload['canonical_sources']??null)?$payload['canonical_sources']:[];
         $live=vp3_initiative_access_v1($pdo,$user,$binding);
+        $continuation=null;
+        if(isset($payload['followthrough'])){
+            require_once __DIR__.'/agent-initiative-followthrough-v1.php';
+            $continuation=vp3_initiative_followthrough_job_current_v1($pdo,$live,$payload,(int)$run['id']);
+        }
         $includeScreen=!empty($binding['screen_enabled']);
         $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources);
         $modelEvidence=array_map(static fn(array $row):array=>array_diff_key($row,['url'=>true,'revision'=>true,'canonical_source_revision'=>true]),array_values($evidence));
         $planning=$run['action_capability_key']==='initiative.plan';
         $provider=$model??static fn(string $prompt,string $protocol):string=>vp3_initiative_model_v1($pdo,$live,$prompt,$protocol,$agentId);
         $modelCalls=0;
-        $infer=static function(string $prompt,string $protocol)use($pdo,&$live,$binding,$claim,$provider,&$modelCalls):string{
+        $infer=static function(string $prompt,string $protocol)use($pdo,&$live,$binding,$payload,$run,$claim,$provider,&$modelCalls):string{
             if($pdo->inTransaction())throw new RuntimeException('Initiative inference cannot hold a database transaction.');
             $live=vp3_initiative_access_v1($pdo,$live,$binding);
+            if(isset($payload['followthrough']))vp3_initiative_followthrough_job_current_v1($pdo,$live,$payload,(int)$run['id']);
             if(!agent_worker_cloud_active_row_v1910($pdo,$live,$claim)
                 ||!agent_job_heartbeat_v1900($pdo,$live,(int)$claim['run_id'],(int)$claim['action']['id'],
                     (string)$claim['lease_token'],min(90,++$modelCalls*10),'Preparing a verified private next step.',240)){
@@ -843,6 +854,10 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             }
             if($tool==='work.prepare_private'){
                 $request=['focus'=>$payload['focus'],'evidence'=>$modelEvidence,'budget'=>$limits];
+                if($continuation!==null)$request['owner_continuation']=['kind'=>'owner_requested_private_continuation',
+                    'proposal_text'=>mb_substr((string)$continuation['message']['message'],0,2400),
+                    'owner_reply'=>mb_substr((string)$continuation['continuation_owner_reply'],0,4000),
+                    'permission'=>'Private preparation with the original current sources only; no domain action or approval.'];
                 $answer=$infer(json_encode($request,JSON_THROW_ON_ERROR),'vp3.initiative-draft.v1');
                 $toolResult=vp3_tool_json_object_v1($answer,['draft'],$limits['max_draft_bytes']);
             }else{
@@ -856,7 +871,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             }
         }
 
-        $pdo->beginTransaction();
+        $commit=static function()use($pdo,$live,$binding,$sources,$includeScreen,$canonicalSources,$planning,$jobs,$claim,$payload,$toolResult,$draft,$run,$agentId):array{
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$binding);
         $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources);
@@ -883,8 +898,12 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             $receipt=agent_worker_cloud_result_v1910($pdo,$live,$claim,true,'Private preparation completed.',
                 ['effect_state'=>'private_draft_ready','initiative_draft'=>$draft,'initiative_tool_result'=>$toolResult,
                     'initiative_delivery'=>$delivery,'initiative_message_id'=>$messageId]);
+            if(isset($payload['followthrough']))vp3_initiative_followthrough_complete_v1($pdo,$live,$payload,(int)$run['id']);
         }
-        $pdo->commit();
+        return $receipt;
+        };
+        if(isset($payload['followthrough']))$receipt=vp3_initiative_followthrough_transaction_v1($pdo,$commit);
+        else{$pdo->beginTransaction();$receipt=$commit();$pdo->commit();}
         return ['ok'=>true,'reason'=>'completed','receipt'=>$receipt];
     }catch(Throwable $e){
         if($pdo->inTransaction())$pdo->rollBack();
@@ -902,6 +921,10 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
         }
         $reason=vp3_initiative_failure_reason_v1($e);
         $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,false,'Initiative work could not be verified.',$withheld,$reason,$retryable);
+        if(isset($payload['followthrough'])){
+            try{vp3_initiative_followthrough_failed_v1($pdo,$user,$payload,(int)$run['id']);}
+            catch(Throwable $ignored){}
+        }
         return ['ok'=>false,'reason'=>$reason,'receipt'=>$receipt];
     }
 }

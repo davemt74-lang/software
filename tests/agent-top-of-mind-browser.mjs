@@ -119,14 +119,35 @@ try{
   const timeoutContext=await browser.newContext({viewport:{width:1100,height:820}}),timeoutPage=await timeoutContext.newPage();
   timeoutPage.setDefaultTimeout(8000);await timeoutPage.clock.install();
   await timeoutPage.addInitScript(()=>{
-    const original=window.fetch;
+    const original=window.fetch,originalTimeout=window.setTimeout;
+    window.fixtureFeedReadSequence=0;window.fixtureFeedDeadlineSequences=[];
     // The deliberately non-cancelling transport proves the independent
     // deadline rather than relying on fetch to honor AbortController.
-    window.fetch=(url,options={})=>original(url,String(url).includes('/api/agent-top-of-mind-v1.php')?{...options,signal:undefined}:options);
+    window.fetch=(url,options={})=>{
+      const feed=String(url).includes('/api/agent-top-of-mind-v1.php');
+      if(feed)window.fixtureFeedReadSequence++;
+      return original(url,feed?{...options,signal:undefined}:options);
+    };
+    window.setTimeout=(callback,delay,...args)=>{
+      if(delay===8000)window.fixtureFeedDeadlineSequences.push(window.fixtureFeedReadSequence);
+      return originalTimeout.call(window,callback,delay,...args);
+    };
   });
-  let releaseHeld,arriveHeld;const heldArrived=new Promise(r=>{arriveHeld=r;}),heldRelease=new Promise(r=>{releaseHeld=r;});let intercepted=0;
+  // Force the initial Brain state to finish after the first feed view. Its
+  // normal rerender replaces that host and correctly cancels its read. Holding
+  // this obsolete initial request was the old test's timing-dependent race.
+  let releaseBrain;const brainRelease=new Promise(resolve=>{releaseBrain=resolve;});
+  await timeoutPage.route('**/api/chat-notifications-brain-v240.php**',async route=>{await brainRelease;await route.continue();});
+  await timeoutPage.goto(base,{waitUntil:'domcontentloaded'});await timeoutPage.locator('.vp3-orb-root').hover();await timeoutPage.locator('[data-orb-brain]').click();
+  const deadlineFeed=timeoutPage.locator('[data-agent-top-of-mind]');
+  await deadlineFeed.getByText('Prepare the saved launch details',{exact:true}).waitFor();
+  releaseBrain();await timeoutPage.getByText('Saved Brain memory is unavailable for this account.',{exact:true}).waitFor();
+  await deadlineFeed.getByText('Prepare the saved launch details',{exact:true}).waitFor();
+  const currentHost=await deadlineFeed.elementHandle();
+  let releaseHeld,arriveHeld;const heldArrived=new Promise(r=>{arriveHeld=r;}),heldRelease=new Promise(r=>{releaseHeld=r;});let intercepted=0,heldSequence=0;
   await timeoutPage.route('**/api/agent-top-of-mind-v1.php**',async route=>{
     if(++intercepted!==1)return route.continue();
+    heldSequence=await timeoutPage.evaluate(()=>window.fixtureFeedReadSequence);
     arriveHeld();await heldRelease;
     const pageBinding=await timeoutPage.evaluate(()=>STONEFELLOW_CHAT.workingAttentionBinding);
     await route.fulfill({json:{ok:true,state:{contract:'vp3.top-of-mind.v1',owner_user_id:1,agent_id:7,conversation_id:11,
@@ -135,9 +156,15 @@ try{
         lease_expires_at:new Date(Date.now()+240000).toISOString(),sources:[],result_url:'',owner_state:''
       }]}}}).catch(()=>{});
   });
-  await timeoutPage.goto(base,{waitUntil:'domcontentloaded'});await timeoutPage.locator('.vp3-orb-root').hover();await timeoutPage.locator('[data-orb-brain]').click();await heldArrived;
+  await timeoutPage.clock.runFor(2600);let heldArrivalTimeout;
+  try{await Promise.race([heldArrived,new Promise((resolve,reject)=>{heldArrivalTimeout=setTimeout(()=>reject(new Error('The current feed poll did not reach the held transport.')),8000);})]);}
+  finally{clearTimeout(heldArrivalTimeout);}
+  await timeoutPage.waitForFunction(sequence=>window.fixtureFeedDeadlineSequences.includes(sequence),heldSequence);
+  assert.equal(await currentHost.evaluate(element=>element.isConnected),true,'the held read must belong to the current, settled Brain host');
   await timeoutPage.clock.fastForward(8100);
-  const deadlineFeed=timeoutPage.locator('[data-agent-top-of-mind]');await deadlineFeed.getByText('The latest work status is unavailable.',{exact:false}).waitFor();
+  await deadlineFeed.getByText('The latest work status is unavailable.',{exact:false}).waitFor();
+  assert.equal(intercepted,1,'a replacement read must not satisfy this deadline proof');
+  assert.equal(await currentHost.evaluate(element=>element.isConnected),true,'the current host must report its own deadline');
   await deadlineFeed.getByRole('button',{name:'Retry',exact:true}).evaluate(button=>button.click());await deadlineFeed.getByText('Prepare the saved launch details',{exact:true}).waitFor();
   releaseHeld();await timeoutPage.waitForTimeout(200);assert.equal(await deadlineFeed.getByText('LATE STALE OBJECTIVE',{exact:true}).count(),0);
   await timeoutPage.unroute('**/api/agent-top-of-mind-v1.php**');

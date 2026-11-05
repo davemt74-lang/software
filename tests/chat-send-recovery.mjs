@@ -9,14 +9,16 @@ function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a
 const presenter=section('  function recoveryStatus(', '  function leaveChat(');
 const bindStoredMessage=section('  function bindStoredMessagePa3(', '  function pendingAssistantMessageIds()');
 const sendOwner=section('  async function sendMessage(', "  thread.addEventListener('click'");
+const initiativeIdentity=section('  const initiativePage =', '  const thread =');
+const initiativeState=section('  let initiativeReplyTarget =', '  const recoveryKey =');
 function fixture(){
  const elements=new Map(),messages=[],messageElements=[],drafts=new Map(),timers=new Map();let sequence=0,calls=0,reply;
- const node=()=>({hidden:false,textContent:'',children:[],dataset:{},querySelector:()=>null,setAttribute(){},appendChild(child){this.children.push(child);if(child.id)elements.set(child.id,child);},focus(){},disabled:false,value:''});
+ const node=()=>({hidden:false,textContent:'',children:[],dataset:{},removed:false,remove(){this.removed=true;},querySelector:()=>null,setAttribute(){},appendChild(child){this.children.push(child);if(child.id)elements.set(child.id,child);},focus(){},disabled:false,value:''});
  elements.set('chatComposerShell',node());
  const ctx={console,AbortController,DOMException,Event,CustomEvent:class{constructor(type,init={}){this.type=type;this.detail=init.detail;}},
   document:{getElementById:id=>elements.get(id)||null,createElement:node,dispatchEvent(){}},
   window:{dispatchEvent(){},setTimeout(){}},navigator:{onLine:true},input:node(),send:node(),form:{},
-  cfg:{agentId:0},
+  cfg:{agentId:0},thread:{querySelector(selector){const id=selector.match(/data-chat-message-id="(\d+)"/)?.[1],cid=selector.match(/data-chat-conversation-id="(\d+)"/)?.[1],role=selector.match(/data-chat-message-role="([a-z]+)"/)?.[1];return messageElements.find(element=>!element.removed&&element.dataset.chatMessageId===id&&element.dataset.chatConversationId===cid&&element.dataset.chatMessageRole===role)||null;}},
   busy:false,contextReady:true,initialRestorePending:false,restoringConversation:0,conversationId:42,chatRevision:0,pendingSend:null,lastLoadedMessageId:0,
   voiceMode:false,voiceSpeaking:false,
   setTimeout(fn,ms){const id=++sequence;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
@@ -24,7 +26,7 @@ function fixture(){
   addMessage(role,text){messages.push({role,text});const element=node();messageElements.push(element);return element;},addTyping(){return {remove(){}};},rememberConversation(){},refreshHistory:async()=>{},
   api:async(payload,signal)=>{calls++;return reply(payload,signal);},
  };
- vm.createContext(ctx);vm.runInContext(presenter+bindStoredMessage+sendOwner+'\nglobalThis.submit=sendMessage;',ctx);
+ vm.createContext(ctx);vm.runInContext(initiativeIdentity+initiativeState+presenter+bindStoredMessage+sendOwner+'\nglobalThis.submit=sendMessage;',ctx);
  return {ctx,elements,messages,messageElements,drafts,timers,get calls(){return calls;},reply:fn=>{reply=fn;}};
 }
 let checks=0;

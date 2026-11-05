@@ -75,6 +75,11 @@ try {
         $activeConversationId = array_key_exists('conversation_id',$input)
             ? vp3_agent_chat_stream_scope_v380($pdo,$user,$input)['conversation_id']
             : agent_chat_v101_latest_conversation_id($pdo,$userId);
+        $initiativeUpdates=[];
+        if(array_key_exists('initiative_message_ids',$input)){
+            $activityScope=vp3_agent_chat_stream_scope_v380($pdo,$user,$input);
+            $initiativeUpdates=vp3_agent_chat_followthrough_updates_v2160($pdo,$user,$activityScope['principal'],$activeConversationId,$input);
+        }
         $activeMessageId = 0;
         if ($activeConversationId > 0) {
             $messageStmt=$pdo->prepare('SELECT COALESCE(MAX(id),0) FROM chat_messages WHERE conversation_id=?');
@@ -90,6 +95,7 @@ try {
                 'unread_count'=>0,
                 'conversation_id'=>$activeConversationId,
                 'latest_message_id'=>$activeMessageId,
+                'initiative_updates'=>$initiativeUpdates,
             ]);
             exit;
         }
@@ -132,6 +138,7 @@ try {
             'ok'=>true,'updates'=>$updates,'latest_id'=>$latestId,
             'unread_count'=>notification_unread_count($user),
             'conversation_id'=>$activeConversationId,'latest_message_id'=>$activeMessageId,
+            'initiative_updates'=>$initiativeUpdates,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -182,6 +189,9 @@ try {
 
     throw new RuntimeException('Unknown chat action.');
 } catch (Throwable $e) {
-    http_response_code(400);
-    echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+    $followthroughError=$e instanceof VP3InitiativeReplyExceptionV2160||array_key_exists('initiative_reply',$input??[])||($action==='activity'&&array_key_exists('initiative_message_ids',$input??[]));
+    $status=$followthroughError&&(in_array((int)$e->getCode(),[403,404,409,422,503],true))?(int)$e->getCode():($followthroughError?503:400);
+    http_response_code($status);
+    $error=$followthroughError?($status===409?'initiative_reply_stale':($status===403?'initiative_reply_forbidden':'initiative_reply_unavailable')):$e->getMessage();
+    echo json_encode(['ok'=>false,'error'=>$error]);
 }
