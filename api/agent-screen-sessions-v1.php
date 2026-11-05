@@ -7,7 +7,7 @@ $claim='';$uid=0;$status=200;$response=[];
 try{
     $user=current_user();if(!$user)throw new RuntimeException('Sign in to use sharing history.',403);
     $method=$_SERVER['REQUEST_METHOD']??'';if(!in_array($method,['GET','POST'],true))throw new RuntimeException('GET or POST required.',405);
-    screen_sessions_permission_v1($user,$method==='POST');$pdo=db();if(!$pdo)throw new RuntimeException('My Knowledge storage is unavailable.',503);$uid=(int)$user['id'];
+    $pdo=db();if(!$pdo)throw new RuntimeException('My Knowledge storage is unavailable.',503);$uid=(int)$user['id'];
     if($method==='POST'){
         $raw=file_get_contents('php://input',false,null,0,450001);if(strlen($raw)>450000)throw new RuntimeException('Capture exceeds its upload budget.',413);
         $input=json_decode($raw,true,16,JSON_THROW_ON_ERROR);if(!is_array($input)||array_is_list($input))throw new InvalidArgumentException('Use a sharing request object.');
@@ -15,6 +15,24 @@ try{
         if((string)($input['owner_key']??'')!==(string)$uid)throw new RuntimeException('Screen account changed. Refresh this page.',409);
     }else{$input=$_GET;if(isset($input['owner_key'])&&(string)$input['owner_key']!==(string)$uid)throw new RuntimeException('Screen account changed. Refresh this page.',409);}
     $action=$input['action']??($method==='GET'?'list':'');
+    if(in_array($action,['initiative_status','initiative_set'],true)){
+        $write=$action==='initiative_set';
+        if($method!==($write?'POST':'GET'))throw new RuntimeException('Invalid method for this screen setting.',405);
+        if((string)($input['owner_key']??'')!==(string)$uid)throw new RuntimeException('Screen account changed. Refresh this page.',409);
+        $cid=filter_var($input['conversation_id']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+        if($cid===false)throw new InvalidArgumentException('Choose an existing System Agent Chat.');
+        if($write&&(!is_bool($input['enabled']??null)||!is_string($input['expected_revision']??null)
+            ||!preg_match('/\A[a-f0-9]{32}\z/',$input['expected_revision']))){
+            throw new InvalidArgumentException('Reload the screen follow-up setting before saving.');
+        }
+        require_once dirname(__DIR__).'/includes/agent-chat-boundary-v380.php';
+        if(!function_exists('vp3_participant_scope_v1'))require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
+        require_once dirname(__DIR__).'/includes/agent-initiative-v1.php';
+        $initiative=vp3_initiative_screen_setting_v1($pdo,$user,$cid,$write?$input['enabled']:null,$write?$input['expected_revision']:null);
+        echo json_encode(['ok'=>true,'owner_key'=>(string)$uid,'initiative'=>$initiative],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    screen_sessions_permission_v1($user,$method==='POST');
     if($method!=='GET'||$action!=='timeline')screen_sessions_schema_v1($pdo);
     if($method==='GET'){
         if($action==='list'){$q=$pdo->prepare("SELECT * FROM agent_screen_sessions_v1 WHERE owner_user_id=? AND status<>'deleted' ORDER BY updated_at DESC,session_id DESC LIMIT 200");$q->execute([$uid]);$response=['sessions'=>array_map(fn($s)=>screen_session_public_v1($pdo,$user,$s),$q->fetchAll(PDO::FETCH_ASSOC))];}

@@ -8,6 +8,9 @@ const server=http.createServer((req,res)=>{
  if(req.url==='/agent-screen-share.js'){res.setHeader('Content-Type','text/javascript; charset=utf-8');res.end(script);return;}
  res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}body{margin:0;background:#152434;color:#fff}.vp3-eyes-content{width:100%;max-width:360px;box-sizing:border-box;padding:8px}</style><div class="vp3-eyes-content"></div><textarea id="chatInput"></textarea><script>
  window.calls=[];window.sessions=[];window.captures=[];window.audioCalls=[];window.cameraCalls=0;window.displayCalls=[];window.displayStreams=[];window.recordedTrackIds=[];window.recorders=[];window.deleted=[];
+ window.fixtureConversation={id:7,agent:0};window.initiativeCalls=[];
+ window.fixtureInitiative={available:true,enabled:false,revision:'a'.repeat(32),reason:''};
+ let initiativeSaves=0;
  const multi=new URLSearchParams(location.search).has('multi');
  if(multi)window.MediaRecorder=class extends MediaRecorder {
   start(...args){recordedTrackIds.push(this.stream.getAudioTracks()[0].id);recorders.push(this);return super.start(...args);}
@@ -15,8 +18,26 @@ const server=http.createServer((req,res)=>{
  const audioResponse=new Promise(resolve=>window.releaseAudioResponse=resolve);
  const obs=()=>({contract:'vp3.screen-observation.v1',owner_key:'1',summary:'Song <img> at 1:20',visible_text:'Song, artist, 1:20 / 4:00',site_hint:'Player',page_title:'Song',observations:[{kind:'music',label:'Position',detail:'1:20 of 4:00 displayed',confidence:'high'}]});
  const realTimeout=window.setTimeout.bind(window);window.setTimeout=(fn,ms,...args)=>realTimeout(fn,ms===15000?(window.fixtureAudioInterval||800):ms,...args);
- window.VP3_ORB_ADAPTER={ownerKey:'1',conversationRef:()=>({id:7}),screenRequest:async()=>({observation:obs()}),screenToChat:text=>{document.querySelector('#chatInput').value=text;return true;},screenHistory:async(body,{signal}={})=>{
- calls.push({...body});if(body.action==='list')return {sessions:sessions.filter(s=>!deleted.includes(s.session_id))};
+ window.VP3_ORB_ADAPTER={ownerKey:'1',conversationRef:()=>fixtureConversation,screenRequest:async()=>({observation:obs()}),screenToChat:text=>{document.querySelector('#chatInput').value=text;return true;},screenHistory:async(body,{signal,read=false}={})=>{
+ calls.push({...body});
+ if(body.action==='initiative_status'||body.action==='initiative_set'){
+  initiativeCalls.push({...body,read});
+  if(body.action==='initiative_status'){
+   const initiative=body.conversation_id===7?{...fixtureInitiative}:{available:false,enabled:false,revision:'',reason:'linked_elsewhere'};
+   if(window.deferNextInitiativeStatus){
+    window.deferNextInitiativeStatus=false;
+    // A late result can still arrive even if the transport tried to abort it.
+    await new Promise(resolve=>window.releaseInitiativeStatus=resolve);
+   }
+   return {initiative};
+  }
+  if(body.conversation_id!==7||body.expected_revision!==fixtureInitiative.revision){
+   const error=Error('The Initiative setting changed. Refresh before trying again.');error.status=409;throw error;
+  }
+  fixtureInitiative={...fixtureInitiative,enabled:body.enabled,revision:String(++initiativeSaves).padStart(32,'0')};
+  return {initiative:{...fixtureInitiative}};
+ }
+ if(body.action==='list')return {sessions:sessions.filter(s=>!deleted.includes(s.session_id))};
  if(body.action==='start'){const s={session_id:body.session_id,title:body.title,status:'active',created_at:new Date().toISOString(),folder_id:12,folder_name:'Music research',knowledge_url:'/knowledge.php?folder=12&screen_session='+body.session_id};sessions.push(s);return {session:s};}
  if(body.action==='end'){const s=sessions.find(s=>s.session_id===body.session_id);if(s)s.status='ended';return {ended:true};}
  if(body.action==='delete_session'){deleted.push(body.session_id);captures=captures.filter(c=>c.session_id!==body.session_id);return {deleted:true};}
@@ -150,6 +171,22 @@ try{
  const multi=await browser.newPage({viewport:{width:390,height:844}}),multiErrors=[];
  multi.on('pageerror',e=>multiErrors.push(e.message));
  await multi.goto('http://127.0.0.1:'+server.address().port+'/?multi=1');
+ const initiative=multi.getByRole('checkbox',{name:'Follow up on saved screen notes',exact:true});
+ const initiativeState=async(checked,disabled=false)=>multi.waitForFunction(({checked,disabled})=>{
+  const input=document.querySelector('[data-screen-initiative]');
+  return input?.checked===checked&&input.disabled===disabled;
+ },{checked,disabled});
+ const initiativeWrites=()=>multi.evaluate(()=>initiativeCalls.filter(call=>!call.read));
+ await check('saved screen Initiative initially reads the owner Chat setting and saves only an explicit choice',async()=>{
+  await initiative.waitFor({state:'visible'});
+  await initiativeState(false);
+  const initial=await multi.evaluate(()=>initiativeCalls);
+  assert.ok(initial.length>=1);
+  for(const call of initial)assert.deepEqual(call,{action:'initiative_status',conversation_id:7,read:true});
+  await initiative.click();
+  await initiativeState(true);
+  assert.deepEqual(await initiativeWrites(),[{action:'initiative_set',conversation_id:7,enabled:true,expected_revision:'a'.repeat(32),read:false}]);
+ });
  const add=multi.locator('[data-screen-add-source]');
  const panels=multi.locator('[data-screen-source-panel]');
  const panelAt=index=>multi.locator('#vp3-screen-source-panel-'+index);
@@ -184,6 +221,7 @@ try{
   assert.equal(new Set(previews).size,3);
   assert.equal(await panels.count(),3);
   assert.equal(await selectors.count(),3);
+  assert.equal(await multi.locator('[data-screen-initiative]').count(),1);
   assert.ok(!await add.isVisible()||await add.isDisabled());
   assert.deepEqual(await multi.evaluate(()=>displayCalls.map(x=>[x.gesture,x.audio])),[[true,true],[true,true],[true,false]]);
   assert.deepEqual(await multi.evaluate(()=>displayStreams.map(s=>s.getVideoTracks()[0].readyState)),['live','live','live']);
@@ -447,6 +485,51 @@ try{
   assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.context()),null);
   assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.isActive()),false);
   assert.ok(await multi.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  assert.deepEqual(multiErrors,[]);
+ });
+ await check('saved setups leave the single Initiative setting under server control',async()=>{
+  await multi.getByRole('button',{name:'Save setup',exact:true}).click();
+  await multi.locator('[data-screen-layout-status]').getByText(/saved in this browser/).waitFor();
+  await multi.evaluate(()=>{
+   fixtureInitiative={...fixtureInitiative,enabled:false,revision:'b'.repeat(32)};
+   window.dispatchEvent(new Event('vp3:initiative-setting-changed'));
+  });
+  await initiativeState(false);
+  await multi.getByRole('button',{name:'Load setup',exact:true}).click();
+  await multi.locator('[data-screen-layout-status]').getByText(/loaded/).waitFor();
+  assert.equal(await panels.count(),3);
+  assert.equal(await multi.locator('[data-screen-initiative]').count(),1);
+  assert.equal(await initiative.isChecked(),false);
+  assert.equal((await initiativeWrites()).length,1);
+ });
+ await check('a stale Initiative revision refreshes the setting before another save',async()=>{
+  const before=await multi.evaluate(()=>initiativeCalls.filter(call=>call.read).length);
+  await multi.evaluate(()=>{fixtureInitiative={...fixtureInitiative,revision:'c'.repeat(32)};});
+  await initiative.click();
+  await multi.waitForFunction(count=>initiativeCalls.filter(call=>call.read).length>count,before);
+  await initiativeState(false);
+  await multi.locator('[data-screen-initiative-status]').getByText(/setting changed in another tab/i).waitFor();
+  assert.deepEqual((await initiativeWrites()).at(-1),{action:'initiative_set',conversation_id:7,enabled:true,expected_revision:'b'.repeat(32),read:false});
+  await initiative.click();
+  await initiativeState(true);
+  assert.deepEqual((await initiativeWrites()).at(-1),{action:'initiative_set',conversation_id:7,enabled:true,expected_revision:'c'.repeat(32),read:false});
+ });
+ await check('a late Initiative response from the previous Chat cannot enable the current Chat control',async()=>{
+  await multi.evaluate(()=>{
+   window.deferNextInitiativeStatus=true;
+   window.dispatchEvent(new Event('vp3:initiative-setting-changed'));
+  });
+  await multi.waitForFunction(()=>typeof window.releaseInitiativeStatus==='function');
+  await multi.evaluate(()=>{
+   window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+   fixtureConversation={id:8,agent:0};
+   window.dispatchEvent(new Event('vp3:chat-context-ready'));
+  });
+  await multi.waitForFunction(()=>initiativeCalls.some(call=>call.read&&call.conversation_id===8));
+  await multi.evaluate(async()=>{window.releaseInitiativeStatus();await new Promise(requestAnimationFrame);});
+  await initiativeState(false,true);
+  await multi.locator('[data-screen-initiative-status]').getByText(/Open the private System Agent Chat/).waitFor();
+  assert.equal((await initiativeWrites()).length,3);
   assert.deepEqual(multiErrors,[]);
  });
  await multi.close();
