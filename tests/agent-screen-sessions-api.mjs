@@ -12,13 +12,22 @@ assert.ok(fs.existsSync(sessionFile),'Agent Eyes session endpoint must exist: '+
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-screen-sessions-'));for(const name of ['includes','api','sessions','budgets'])fs.mkdirSync(path.join(tmp,name));
 for(const file of ['includes/knowledge.php','includes/shared-folders-v161.php','includes/agent-screen-share-v1.php','includes/agent-screen-sessions-v1.php','includes/agent-screen-audio-v1.php',sessionFile,'api/agent-screen-audio-v1.php','includes/agent-screen-insights-v1.php','includes/agent-screen-handoffs-v1.php','api/agent-screen-insights-v1.php'])fs.copyFileSync(file,path.join(tmp,file));
 for(const name of [
- 'agent-initiative-v1','agent-tool-json-v1','agent-chat-boundary-v380',
+ 'agent-initiative-v1','agent-initiative-scope-v1','agent-initiative-errors-v1','agent-tool-json-v1','agent-chat-boundary-v380',
  'agent-catch-up-v1','agent-catch-up-missions-v1','agent-catch-up-profile-calls-v1','agent-catch-up-meeting-prep-v1',
  'profile-calls-pa3c','profile-agent-handoff-pa3','profile-agent-boundary-v390',
  'profile-agent-public-service-v110','profile-call-activity-pa3c','profile-live-text-pa3d'
 ])fs.copyFileSync(`includes/${name}.php`,path.join(tmp,'includes',name+'.php'));
 const unit=fs.readFileSync('tests/agent-screen-sessions-v1.php','utf8');let setup=unit.slice(unit.indexOf('$pdo->exec("CREATE TABLE artist_'),unit.indexOf('screen_sessions_schema_v1($pdo);'));
 setup=setup.replaceAll('CREATE TABLE ','CREATE TABLE IF NOT EXISTS ');
+// Load the actual new owner/conversation resolver without importing unrelated
+// tool implementations into this deliberately small Screen HTTP fixture.
+const controlPrincipal=fs.readFileSync('includes/agent-capability-chat-v1.php','utf8')
+ .match(/function vp3_capability_control_principal_v1\([\s\S]*?\n\}/)?.[0];
+assert.ok(controlPrincipal,'The canonical control-principal resolver must remain available to the Screen fixture');
+const memoryScopeSource=fs.readFileSync('includes/agent-memory-scope-v410.php','utf8');
+const conversationScope=memoryScopeSource.match(/function vp3_agent_memory_scope_conversation_id_v410\([\s\S]*?\n\}/)?.[0];
+const scopeFromConversation=memoryScopeSource.match(/function vp3_agent_memory_scope_from_conversation_v410\([\s\S]*?\n\}/)?.[0];
+assert.ok(conversationScope&&scopeFromConversation,'Screen sessions must use the canonical saved conversation namespace');
 fs.writeFileSync(path.join(tmp,'includes/bootstrap.php'),`<?php
 session_start();require_once __DIR__.'/knowledge.php';require_once __DIR__.'/agent-chat-boundary-v380.php';
 class ScreenSessionFixturePDO extends PDO {
@@ -38,11 +47,18 @@ function personal_capability_has_v242($permission,$user){
 function table_exists($name){$q=db()->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$name]);return (bool)$q->fetchColumn();}
 function column_exists(...$args){return true;}
 function url($path){return $path;}
-function vp3_agent_memory_scope_from_conversation_v410($user,$id,$set=true){if($id!==7||$user['id']!==1)throw new RuntimeException('Wrong conversation.',403);return 4;}
+${conversationScope}
+${scopeFromConversation}
 function vp3_agent_memory_scope_set_current_v410($uid,$aid){$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']=['user_id'=>$uid,'user_agent_id'=>$aid];}
-function vp3_agent_memory_scope_current_v410($user){return isset($_SERVER['HTTP_X_FIXTURE_NAMED'])?4:0;}
+function vp3_agent_memory_scope_current_v410($user){
+    if(isset($_SERVER['HTTP_X_FIXTURE_NAMED']))return 4;
+    $scope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??[];
+    return ($scope['user_id']??null)===$user['id']?(int)($scope['user_agent_id']??0):0;
+}
 function vp3_participant_scope_v1(){return isset($_SERVER['HTTP_X_FIXTURE_PARTICIPANT'])?['fixture'=>true]:null;}
 function user_agent_principal_v236($user,$agent){return ['kind'=>$agent?'user_agent':'system','agent_id'=>$agent['id']??0,'viewer_user_id'=>$user['id']];}
+function vp3_capability_current_v1($user){return null;}
+${controlPrincipal}
 function vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority){
     if($authority)$authority();
     $query=$pdo->prepare('SELECT * FROM users WHERE id=? AND is_active=1');
@@ -68,7 +84,7 @@ function agent_brain_v122_upsert_system_memory($user,$type,$subject,$text,$meta,
         $query->execute([$user['id'],$type,$subject,json_encode($meta,JSON_THROW_ON_ERROR)]);
         return $query->rowCount();
     }
-    db()->prepare('INSERT INTO agent_memory_items(user_id,memory_type,subject,memory_text,agent_id) VALUES(?,?,?,?,?)')->execute([$user['id'],$type,$subject,$text,4]);
+    db()->prepare('INSERT INTO agent_memory_items(user_id,memory_type,subject,memory_text,agent_id) VALUES(?,?,?,?,?)')->execute([$user['id'],$type,$subject,$text,vp3_agent_memory_scope_current_v410($user)]);
     return (int)db()->lastInsertId();
 }
 function user_agent_get_v236($pdo,$uid,$aid){return $uid===1&&$aid===4?['id'=>4]:null;}
@@ -153,7 +169,7 @@ try{
   assert.notEqual(off.data.initiative.revision,state.revision);
   assert.deepEqual((await initiativeStatus()).data.initiative,{...off.data.initiative,available:true,reason:''});
  });
- await check('GET is read only and session creation returns the existing Knowledge folder',async()=>{assert.deepEqual((await get({})).data.sessions,[]);assert.equal((await get({owner_key:'1'},{'X-Fixture-User':'2'})).r.status,409);assert.equal((await get({})).data.owner_key,'1');assert.equal((await get({action:'start',session_id:sid})).r.status,422);const {r,data}=await post({action:'start',session_id:sid,title:'Music study',conversation_id:7});assert.equal(r.status,200);assert.match(data.session.knowledge_url,/knowledge.php\?folder=1/);assert.equal((await post({action:'start',session_id:sid})).data.session.folder_id,1);});
+ await check('GET is read only and session creation returns the existing Knowledge folder',async()=>{assert.deepEqual((await get({})).data.sessions,[]);assert.equal((await get({owner_key:'1'},{'X-Fixture-User':'2'})).r.status,409);assert.equal((await get({})).data.owner_key,'1');assert.equal((await get({action:'start',session_id:sid})).r.status,422);const {r,data}=await post({action:'start',session_id:sid,title:'Music study',conversation_id:9});assert.equal(r.status,200);assert.match(data.session.knowledge_url,/knowledge.php\?folder=1/);assert.equal((await post({action:'start',session_id:sid})).data.session.folder_id,1);});
  await check('capture and analysis persist a server-derived note and owner-only pixels',async()=>{let {r,data}=await post({action:'capture',session_id:sid,capture_id:cid,image:'data:image/jpeg;base64,'+fs.readFileSync('tests/fixtures/tv-frame.b64','utf8').trim(),captured_at:new Date().toISOString(),surface:'browser',note:'Compare this song'});assert.equal(r.status,200);assert.equal(data.capture.knowledge_id>0,true);assert.equal(data.capture.body.image,undefined);({r,data}=await post({action:'analyze',capture_id:cid}));assert.equal(r.status,200);assert.equal(data.capture.body.observation.summary,'A song at 1:20');assert.match((await get({action:'capture',capture_id:cid})).data.capture.body.image,/^data:image\/jpeg/);assert.equal((await get({action:'capture',capture_id:cid},{'X-Fixture-User':'2'})).r.status,404);assert.equal((await get({action:'history',session_id:sid},{'X-Fixture-User':'2'})).r.status,404);});
  await check('timeline is private, paginated and ordered by capture time',async()=>{
   const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
@@ -224,7 +240,7 @@ try{
   assert.equal((await post({action:'brain',capture_id:cid})).r.status,409);
   const current=(await get({action:'capture',capture_id:cid})).data.capture;await send({action:'review_capture',capture_id:cid,revision:Number(current.revision),state:'active',note:'Reviewed'});
   const fresh=(await read({})).data.cards.find(c=>c.kind==='new');assert.notEqual(fresh.review_hash,card.review_hash);
-  const mission=await send({action:'handoff',key:fresh.key,review_hash:fresh.review_hash,kind:'mission',handoff_id:'00000000-0000-4000-8000-000000000009',conversation_id:7});assert.equal(mission.r.status,503);assert.match(mission.data.error,/connected HomeServer/);
+  const mission=await send({action:'handoff',key:fresh.key,review_hash:fresh.review_hash,kind:'mission',handoff_id:'00000000-0000-4000-8000-000000000009',conversation_id:9});assert.equal(mission.r.status,503);assert.match(mission.data.error,/connected HomeServer/);
  });
  await check('saving to Brain and deleting a session use explicit owner actions',async()=>{assert.ok((await post({action:'brain',capture_id:cid})).data.capture.memory_id>0);assert.equal((await post({action:'delete_session',session_id:sid})).r.status,422);assert.equal((await post({action:'delete_session',session_id:sid,remove_brain:true},{'X-Fixture-User':'2'})).r.status,409);const {r,data}=await post({action:'delete_session',session_id:sid,remove_brain:true});assert.equal(r.status,200);assert.equal(data.deleted,true);assert.equal((await get({action:'capture',capture_id:cid})).r.status,404);assert.equal((await post({action:'start',session_id:sid})).r.status,409);assert.deepEqual((await get({})).data.sessions,[]);});
  await check('watched zone bounds are validated and crop pixels stay private across retries',async()=>{

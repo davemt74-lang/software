@@ -18,5 +18,6 @@ try{
   $state=in_array((string)($input['state']??''),['working','paused','idle'],true)?(string)$input['state']:'idle';
   $activity=agent_activity_v94_record($user,$surface,$state,$context,(string)($input['reason']??'heartbeat'));
   agent_runtime_v125_trace('activity.heartbeat',['user_id'=>(int)$user['id'],'surface'=>$surface,'state'=>$state]);
-  echo json_encode(['ok'=>true,'activity'=>$activity,'trace_id'=>agent_runtime_v125_trace_id()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+  echo json_encode(['ok'=>true,'activity'=>$activity,'server_time_ms'=>(int)floor(microtime(true)*1000),
+    'owner_user_id'=>(int)$user['id'],'trace_id'=>agent_runtime_v125_trace_id()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $e){agent_runtime_v125_trace('activity.error',['error_class'=>get_class($e)]);http_response_code(400);echo json_encode(['ok'=>false,'error'=>$e->getMessage(),'trace_id'=>agent_runtime_v125_trace_id()]);}

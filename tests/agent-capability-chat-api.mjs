@@ -10,6 +10,13 @@ fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(pa
 for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php','chat-canvas-media-v1.php','agent-catch-up-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
 for(const name of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
+// Provider transport is controlled; production Chat endpoints, context building,
+// reference checks, tool routing and message persistence still execute.
+fs.writeFileSync(path.join(tmp,'includes/ai-stream-v121.php'),`<?php
+function ai_v121_stream_chat_response($query,$history,$context,$user,$onDelta){
+    $answer=chat_remote_answer($query,$history,$context,$user);$onDelta($answer);
+    return ['ok'=>true,'answer'=>$answer,'usage'=>[]];
+}`);
 fs.copyFileSync('tests/fixtures/phone-agent-schema-v1.php',path.join(tmp,'includes/phone-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/workflow-agent-schema-v1.php',path.join(tmp,'includes/workflow-agent-schema-v1.php'));
 fs.copyFileSync('tests/fixtures/record-agent-schema-v1.php',path.join(tmp,'includes/record-agent-schema-v1.php'));
@@ -26,9 +33,14 @@ fs.writeFileSync(path.join(tmp,'working-context.php'),`<?php
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-working-context-v1.php';
 $pdo=db();$user=['id'=>1,'is_active'=>1];
+foreach(['display_name','email','role','avatar_path'] as $column)if(!column_exists('users',$column))$pdo->exec('ALTER TABLE users ADD COLUMN '.$column.' TEXT');
+if(table_exists('knowledge_items')&&!column_exists('knowledge_items','is_published'))$pdo->exec('ALTER TABLE knowledge_items ADD COLUMN is_published INTEGER NOT NULL DEFAULT 0');
 $cid=(int)$_GET['cid'];$reminder=(int)$_GET['reminder'];
 $title=isset($_GET['changed'])?'Updated recording reminder':'Original recording reminder';
-$pdo->prepare("UPDATE agent_reminders_v1 SET title=?,next_at='2020-01-01T00:00:00Z' WHERE owner_user_id=? AND id=?")
+$pdo->prepare("UPDATE agent_reminders_v1 SET title=?,next_at=CASE WHEN EXISTS (
+    SELECT 1 FROM agent_reminder_occurrences_v1 o WHERE o.reminder_id=agent_reminders_v1.id
+      AND o.owner_user_id=agent_reminders_v1.owner_user_id AND o.scheduled_at='2020-01-01T00:00:00Z'
+    ) THEN next_at ELSE '2020-01-01T00:00:00Z' END WHERE owner_user_id=? AND id=?")
     ->execute([$title,$user['id'],$reminder]);
 $brief=vp3_agent_catch_up_v1($pdo,$user,'all',0);
 foreach($brief['items'] as $item){
@@ -40,6 +52,10 @@ foreach($brief['items'] as $item){
 }
 http_response_code(404);echo '{}';
 `);
+fs.writeFileSync(path.join(tmp,'working-context-state.php'),`<?php
+require __DIR__.'/includes/bootstrap.php';
+$q=db()->prepare('SELECT title FROM agent_reminders_v1 WHERE id=? AND owner_user_id=1');
+$q->execute([(int)$_GET['reminder']]);header('Content-Type: application/json');echo json_encode($q->fetch());`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
 const base=`http://127.0.0.1:${port}`;let checks=0;
@@ -613,19 +629,53 @@ try{
  check(/^[a-f0-9]{64}$/.test(offered.key)&&offered.title==='Original recording reminder',
   'real overdue reminder provides the exact owned foreground reference');
  const contextTurn={conversation_id:savedConversation,working_context_ref:offered.key};
- const contextHeaders={...workingHeaders,'X-Fixture-Model-Fail':'1'};
+ const contextHeaders={...workingHeaders};
  for(const endpoint of ['chat-v236.php','chat-stream-v121.php']){
   const followUp=await post(endpoint,'Help me with that',contextTurn,contextHeaders);
-  check(followUp.data?.ok===true&&followUp.data.answer.includes(offered.title)
-   &&followUp.data.tool_receipt?.capability==='brief.attention.read'&&followUp.data.tool_receipt?.status==='read_complete'
-   &&!followUp.data.tool_receipt.changes_applied&&followUp.data.actions?.length===0
+  check(followUp.data?.ok===true&&followUp.data.answer.startsWith('Reasoned next step from verified context:')
+   &&followUp.data.answer.includes(offered.title)&&followUp.data.actions?.length===0
    &&followUp.data.sources?.some(source=>source.source==='agent-catch-up:reminder:'+savedReminder),
-   'exact working-context follow-up uses the saved reminder without inference through '+endpoint+': '+followUp.body);
+   'exact working-context follow-up enters normal grounded Agent reasoning through '+endpoint+': '+followUp.body);
   const wrongChat=await post(endpoint,'Help me with that',{...contextTurn,conversation_id:newerChat.conversation_id},contextHeaders);
   check(wrongChat.data?.ok===true&&wrongChat.data.tool_receipt?.capability==='brief.attention.read'
    &&wrongChat.data.tool_receipt.status!=='read_complete'&&!wrongChat.data.answer.includes(offered.title),
    'a different owned conversation cannot reuse the offered working context through '+endpoint+': '+wrongChat.body);
  }
+ check(fs.readFileSync(path.join(tmp,'working-context-model.jsonl'),'utf8').trim().split('\n').length===2,
+  'both typed and voice follow-ups reached the normal model with canonical selected-source context');
+ const ordinaryReplayArgs={...contextTurn,idempotency_key:'ordinary-with-incidental-context'};
+ const ordinaryVoice=await post('chat-stream-v121.php','Can you create reminders?',ordinaryReplayArgs,contextHeaders);
+ const ordinaryRetry=await post('chat-stream-v121.php','Can you create reminders?',ordinaryReplayArgs,contextHeaders);
+ check(ordinaryVoice.data?.ok===true&&ordinaryVoice.data.working_context_ref===undefined
+  &&ordinaryRetry.data?.replayed===true&&ordinaryRetry.data.assistant_message_id===ordinaryVoice.data.assistant_message_id,
+  'an incidental current card reference preserves ordinary voice retry recovery');
+ const replayTurn={...contextTurn,idempotency_key:'working-context-verified-replay'};
+ const originalVoice=await post('chat-stream-v121.php','Help me with that',replayTurn,contextHeaders);
+ check(originalVoice.data?.ok===true&&originalVoice.data.working_context_ref===offered.key,
+  'a saved voice response retains its exact contextual reference for replay');
+ const afterOriginalVoice=await state();
+ const replayVoice=await post('chat-stream-v121.php','Help me with that',replayTurn,contextHeaders);
+ check(replayVoice.data?.ok===true&&replayVoice.data.replayed===true
+  &&replayVoice.data.assistant_message_id===originalVoice.data.assistant_message_id
+  &&(await state()).messages===afterOriginalVoice.messages
+  &&fs.readFileSync(path.join(tmp,'working-context-model.jsonl'),'utf8').trim().split('\n').length===3,
+  'an unchanged authorized voice retry replays once without another model call or saved message');
+ const missingReplayRef=await post('chat-stream-v121.php','Help me with that',
+  {conversation_id:savedConversation,idempotency_key:replayTurn.idempotency_key},contextHeaders);
+ check(missingReplayRef.data?.ok!==true&&!missingReplayRef.body.includes('Reasoned next step from verified context:'),
+  'a cached contextual voice response cannot bypass its reference requirement');
+ for(const endpoint of ['chat-v236.php','chat-stream-v121.php']){
+  await fetch(contextFixture);
+  const changedDuringModel=await post(endpoint,'Help me with that',contextTurn,{...contextHeaders,'X-Fixture-Working-Change':'1'});
+  const changedRecord=await (await fetch(base+'/working-context-state.php?reminder='+savedReminder)).json();
+  check(changedRecord.title==='Changed during reasoning',
+   'the actual provider fixture changed the canonical selected record during inference through '+endpoint);
+  check(changedDuringModel.data?.ok!==true&&!changedDuringModel.body.includes('Reasoned next step from verified context:'),
+   'source changes during reasoning prevent a saved reply or streamed stale answer through '+endpoint+': '+changedDuringModel.body);
+ }
+ const staleVoiceReplay=await post('chat-stream-v121.php','Help me with that',replayTurn,contextHeaders);
+ check(staleVoiceReplay.data?.ok!==true&&!staleVoiceReplay.body.includes('Reasoned next step from verified context:'),
+  'a source changed after completion cannot release stale cached voice text or audio');
  const replacement=await (await fetch(contextFixture+'&changed=1')).json();
  check(replacement.title==='Updated recording reminder'&&replacement.key!==offered.key,
   'changing the reminder creates a different available reference');

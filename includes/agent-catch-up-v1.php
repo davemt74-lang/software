@@ -98,7 +98,12 @@ function vp3_catch_up_reminders_v1(PDO $pdo,array $user,array $principal,DateTim
         $items[]=vp3_catch_up_item_v1('reminder:'.$id,(string)$row['title'],
             'This reminder was due '.$local->format('D, M j \a\t g:i A T').'.',
             'Reminders',$path,90,$at)
-            +['_source_revision'=>hash('sha256',json_encode($row,JSON_THROW_ON_ERROR))];
+            // Delivery advances next_at/revision while the same pending occurrence
+            // remains visible. Bind to its meaningful schedule and state, not tick telemetry.
+            +['_source_revision'=>hash('sha256',json_encode(array_intersect_key($row,array_flip([
+                'id','owner_user_id','title','timezone','start_local','recurrence','delivery','status',
+                'conversation_id','list_at','list_timezone',
+            ])),JSON_THROW_ON_ERROR))];
     }
     return [count($rows)>=100?'limited':'ready',$items];
 }

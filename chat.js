@@ -1398,6 +1398,7 @@
       profile_call:raw.profile_call && typeof raw.profile_call==='object' ? raw.profile_call : null,
       profile_speech:raw.profile_speech && typeof raw.profile_speech==='object' ? raw.profile_speech : null,
       profile_attention:raw.profile_attention && typeof raw.profile_attention==='object' ? raw.profile_attention : null,
+      initiative_work:raw.initiative_work && typeof raw.initiative_work==='object' ? raw.initiative_work : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1643,6 +1644,45 @@
     element.dataset.profileHandoffRevision=String(marker.revision);
     element.dataset.profileHandoffConversation=String(marker.conversation_id);
     window.dispatchEvent(new CustomEvent('vp3:profile-handoff-message',{detail:{element}}));
+  }
+
+  function bindInitiativeWorkV1(element, marker) {
+    if (!element || !marker || !Array.isArray(marker.review_actions)
+        || !Number.isSafeInteger(marker.run_id) || marker.run_id < 1
+        || marker.owner_user_id !== Number(cfg.userId) || marker.agent_id !== Number(cfg.agentId || 0)
+        || marker.conversation_id !== conversationId) return;
+    const owner = Number(cfg.userId), agent = Number(cfg.agentId || 0), cid = conversationId;
+    const current = () => element.isConnected && thread.contains(element) && conversationId === cid
+      && Number(window.STONEFELLOW_CHAT?.userId) === owner && Number(window.STONEFELLOW_CHAT?.agentId || 0) === agent
+      && String(window.STONEFELLOW_CHAT?.workingAttentionBinding || '') === String(cfg.workingAttentionBinding || '');
+    const actions = document.createElement('div');
+    actions.className = 'chat-agent-actions';
+    actions.dataset.initiativeReviewActions = String(marker.run_id);
+    const seen = new Set();
+    for (const item of marker.review_actions.slice(0, 8)) {
+      if (!item || !['product', 'screen', 'mission'].includes(item.tool)
+          || typeof item.source_id !== 'string' || typeof item.source_revision !== 'string'
+          || !/^[a-f0-9]{64}$/.test(item.source_revision)) continue;
+      const validId = item.tool === 'product'
+        ? /^[1-9][0-9]*$/.test(item.source_id) && Number.isSafeInteger(Number(item.source_id))
+        : /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(item.source_id);
+      const key = item.tool + ':' + item.source_id;
+      if (!validId || seen.has(key)) continue;
+      seen.add(key);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.initiativeReview = item.tool;
+      button.textContent = {product:'Review listing draft', screen:'Review image edit', mission:'Review decision brief'}[item.tool];
+      button.addEventListener('click', () => {
+        if (!current()) { button.disabled = true; return; }
+        if (typeof window.VP3InitiativeWorkbench?.open !== 'function') {
+          button.textContent = 'Review unavailable'; button.disabled = true; return;
+        }
+        window.VP3InitiativeWorkbench.open(item.tool, item.source_id, item.source_revision);
+      });
+      actions.appendChild(button);
+    }
+    if (actions.children.length) (element.querySelector('.message-body') || element).appendChild(actions);
   }
 
   function pendingAssistantMessageIds() {
@@ -3239,6 +3279,7 @@
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
+      if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
 
@@ -3278,6 +3319,7 @@
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
+      if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory(signal);

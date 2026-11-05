@@ -5,6 +5,9 @@ if(isset($_SERVER['HTTP_X_FIXTURE_PROFILE_READY'])&&session_status()!==PHP_SESSI
 require_once __DIR__.'/cognitive-runtime-v500.php';
 require_once __DIR__.'/agent-chat-runtime-v2160.php';
 require_once __DIR__.'/agent-surface-context-v131.php';
+require_once __DIR__.'/chat-agent-policy-v236.php';
+require_once __DIR__.'/agent-tools-v84.php';
+require_once __DIR__.'/profile-agent.php';
 require_once __DIR__.'/agent-scheduling-tools-v460.php';
 require_once __DIR__.'/agent-brain-v122.php';
 require_once __DIR__.'/phone-agent-schema-v1.php';
@@ -31,19 +34,27 @@ function csrf_token(){return 'fixture';}
 function has_permission($key,$user){return !isset($_SERVER['HTTP_X_FIXTURE_DENIED']);}
 function personal_capability_has_v242($key,...$args){return ($key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']))||($key==='personal_knowledge.access'&&isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']))||($key==='profile_agent.access'&&!isset($_SERVER['HTTP_X_FIXTURE_OBSERVATION_DENIED'])&&(isset($_SERVER['HTTP_X_FIXTURE_RADAR_READY'])||isset($_SERVER['HTTP_X_FIXTURE_ANALYTICS_READY'])||isset($_SERVER['HTTP_X_FIXTURE_PROFILE_READY'])));}
 function artist_workspace_v181_scope_id($user){return 0;}
+function artist_workspace_v181_schema_ready(...$args):bool{return false;}
+function shared_knowledge_index_schema_ready_v236(...$args):bool{return false;}
 function calendar_schedule_awareness_snapshot_v1330(...$args){if(isset($_SERVER['HTTP_X_FIXTURE_OWNER_TRAP']))throw new RuntimeException('OWNER_READ_REACHED');return [];}
 function user_account_types_for_user_id(...$args){return ['member'];}
 function user_has_role(...$args){return false;}
 function vp3_agent_runtime_plan_v420(...$args){return ['route'=>'vp3_cloud','cloud'=>['ready'=>true],'effective_preference'=>'vp3_cloud'];}
 function vp3_agent_runtime_tool_plan_v420(...$args){return ['route'=>'vp3_tool'];}
+function vp3_agent_runtime_capability_route_v420($plan,$execution,...$args){return ['supported'=>true,'ready'=>true,'actual_source'=>$execution['source']??'vp3_cloud'];}
 function vp3_agent_runtime_finalize_v420($plan,$execution,...$args){return $execution;}
 function vp3_agent_runtime_public_plan_v420($plan){return $plan;}
 function ai_usage_accounting_v032_record(...$args){}
 function agent_runtime_v125_trace(...$args){}
 function agent_runtime_v125_trace_id(){return 'fixture-trace';}
 function agent_runtime_v125_span($label,$fn,...$args){return $fn();}
-function agent_runtime_v125_idempotency_claim(...$args){return ['claimed'=>true];}
-function agent_runtime_v125_idempotency_complete(...$args){}
+function agent_runtime_v125_idempotency_claim($scope,$key,...$args){
+    $file=__DIR__.'/../idempotency-'.hash('sha256',$scope.'|'.$key).'.json';
+    return is_file($file)?['claimed'=>false,'state'=>'completed','result'=>json_decode(file_get_contents($file),true)]:['claimed'=>true];
+}
+function agent_runtime_v125_idempotency_complete($scope,$key,$result){
+    file_put_contents(__DIR__.'/../idempotency-'.hash('sha256',$scope.'|'.$key).'.json',json_encode($result,JSON_THROW_ON_ERROR));
+}
 function track_is_playlist_request($q){return false;}
 function track_is_next_request($q){return false;}
 function track_media_from_answer(...$args){return [];}
@@ -52,6 +63,7 @@ function track_merge_media_suggestions(...$args){return [];}
 function url($path){return $path;}
 function member_navigation_menu_links($u){return [['key'=>'contacts','label'=>'Contacts','url'=>'/contacts.php']];}
 if(!isset($_SERVER['HTTP_X_FIXTURE_RELEASE_READY'])){
+function release_v105_schema_ready(...$args):bool{return false;}
 function music_workspace_resources_v330_can_manage_track($pdo,$t,$u){return (int)$t['owner_user_id']===(int)$u['id'];}
 function music_workspace_resources_v330_track_workspace_id($pdo,$t){return 0;}
 }
@@ -77,6 +89,22 @@ function agent_background_v125_enqueue(...$args){}
 function agent_brain_archive_and_parse(...$args){}
 function chat_context_is_internal_source($s){return str_starts_with($s,'runtime:');}
 function ai_v100_safe_exception($e,$fallback='Failed'){return $fallback;}
+function chat_remote_answer(string $query,array $history,array $context,array $user,?array $control=null):?string
+{
+    if($query!=='Help me with that')return 'Fixture model response.';
+    file_put_contents(__DIR__.'/../working-context-model.jsonl',json_encode(['owner'=>$user['id'],'query'=>$query,'context'=>$context])."\n",FILE_APPEND);
+    foreach($context as $item){
+        if(!str_starts_with((string)($item['source']??''),'agent-working-context:'))continue;
+        if(isset($_SERVER['HTTP_X_FIXTURE_WORKING_CHANGE'])){
+            $id=(int)substr($item['source'],strlen('agent-working-context:reminder:'));
+            db()->prepare('UPDATE agent_reminders_v1 SET title=? WHERE id=? AND owner_user_id=?')
+                ->execute(['Changed during reasoning',$id,$user['id']]);
+        }
+        return 'Reasoned next step from verified context: '.$item['text'].' Review its timing with me before changing the reminder.';
+    }
+    throw new RuntimeException('The selected working context did not reach the normal model path.');
+}
+function chat_local_answer(string $query,array $context,array $result=[]):string{return 'Fixture model unavailable.';}
 function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_PARTICIPANT_TASKS_V1')){file_put_contents(__DIR__.'/../participant-prompt.txt',$prompt);return ['ok'=>true,'answer'=>$_SERVER['HTTP_X_FIXTURE_PARTICIPANT_PLAN']??'{"operation":"show","kind":"all","id":0}'];}
     if(!str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')&&str_contains($prompt,'personal reminder commands.')&&str_contains($prompt,'Show reminders'))return ['ok'=>true,'answer'=>'{"operation":"list","view":"open"}'];
@@ -97,6 +125,7 @@ function ai_generate_chat_response($prompt,...$args){
         if(isset($_SERVER['HTTP_X_FIXTURE_PARTICIPANT_OWNER_PLAN']))return ['ok'=>true,'answer'=>$_SERVER['HTTP_X_FIXTURE_PARTICIPANT_OWNER_PLAN']];
         if(isset($_SERVER['HTTP_X_FIXTURE_MODEL_FAIL']))return ['ok'=>false,'error'=>'secret'];
         $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);$q=$json['request'];
+        if($q==='Help me with that')return ['ok'=>true,'answer'=>'{"operation":"continue","ids":[]}'];
         if($q==='Learn my voice')return ['ok'=>true,'answer'=>json_encode(['operation'=>'voice_profile','ids'=>['voice.profiles.enroll'],'action'=>'prepare'])];
         if($q==='Load from the asteroid you saved me')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'open','destination'=>'stem_studio','query'=>'From the asteroid you saved me'])];
         if($q==='Offer to open that track in Stem Studio')return ['ok'=>true,'answer'=>json_encode(['operation'=>'navigate','ids'=>['navigation.open'],'action'=>'prepare','destination'=>'stem_studio','track_id'=>9])];
@@ -147,6 +176,7 @@ function ai_generate_chat_response($prompt,...$args){
         return ['ok'=>true,'answer'=>json_encode(['operation'=>$op,'ids'=>$ids])];
     }
     $json=json_decode(substr($prompt,strrpos($prompt,"\n")+1),true);
+    if(($json['request']??'')==='Help me with that')return ['ok'=>true,'answer'=>'{"operation":"none"}'];
     if(str_contains($json['request']??'','workflow')||($json['request']??'')==='Search my HomeServer files for fixture')return ['ok'=>true,'answer'=>'{"operation":"none"}'];
     if(isset($_SERVER['HTTP_X_FIXTURE_REMINDER_BAD'])&&(!isset($json['previous_invalid_output'])||$_SERVER['HTTP_X_FIXTURE_REMINDER_BAD']==='always'))return ['ok'=>true,'answer'=>'{"operation":"list","reminders":[]}'];
     if(!str_starts_with($json['request']??'','Remind me'))return ['ok'=>true,'answer'=>json_encode(['operation'=>'list','view'=>str_contains($json['request']??'','today')?'today':'open'])];
@@ -222,7 +252,6 @@ function capability_fixture_agents(PDO $pdo): void
         if(function_exists('tracky_agent_fixture_mode_v1'))tracky_agent_fixture_mode_v1($pdo,$_SERVER['HTTP_X_FIXTURE_TRACKY_MODE']??'');
     }
 }
-function agent_tool_log(...$args): void{}
 function agent_scheduling_timezone_v430(string $value,string $fallback='UTC'):string{return user_calendar_timezone_v1300($value,$fallback);}
 
 function ai_provider_api_key($provider): string{return isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY'])?'fixture-image-key':'';}

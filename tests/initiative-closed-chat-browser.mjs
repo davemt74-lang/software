@@ -76,19 +76,24 @@ try{
   const errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.clock.install();
-  const heartbeat=state=>page.waitForResponse(response=>response.url().endsWith('/api/agent-activity-v94.php')
-    &&response.request().postDataJSON()?.state===state);
+  const heartbeat=(state,context=()=>true)=>page.waitForResponse(response=>response.url().endsWith('/api/agent-activity-v94.php')
+    &&response.request().postDataJSON()?.state===state&&context(response.request().postDataJSON()?.context||{}));
   const firstHeartbeat=heartbeat('working');
   await page.goto(origin+'/?conversation_id=42');
   await page.getByText('I will review the available private work.',{exact:true}).waitFor();
   await firstHeartbeat;
+  const drafting=heartbeat('working',context=>context.chat_busy===true&&context.chat_focused===true);
+  await page.locator('#chatInput').fill('Keep this preparation private while I finish my draft.');
+  await drafting;
   assert.equal(driver('deliver').delivered,false);
   assert.equal(driver('state').reports.length,0);
-  console.log('PASS reopening normal Chat records real activity and keeps prepared work private during active interaction');
+  console.log('PASS reopening normal Chat records real activity and keeps prepared work private while the owner has an active draft');
 
-  const paused=heartbeat('paused');
-  await page.clock.fastForward(150000);
-  await paused;
+  const quiet=heartbeat('working',context=>context.chat_busy===false&&context.chat_focused===true);
+  await page.locator('#chatInput').fill('');
+  const quietState=await (await quiet).json();
+  assert.equal(quietState.activity.state,'working');
+  assert.equal(quietState.activity.interruptible,false);
   assert.equal(driver('deliver').delivered,true);
   assert.equal(driver('deliver').delivered,false);
   await page.clock.fastForward(3000);
@@ -99,7 +104,7 @@ try{
   assert.equal(driver('state').reports[0].conversation_id,42);
   assert.equal(await page.getByText('I prepared a private asset review checklist.',{exact:true}).count(),0);
   assert.deepEqual(errors,[]);
-  console.log('PASS a production delivery sweep reports one verified result through the real activity, messages_after and Chat renderer');
+  console.log('PASS clearing the draft permits one silent text result through real activity, messages_after and Chat while general activity remains working');
 
   await page.reload();
   await page.getByText(report,{exact:true}).waitFor();
@@ -132,9 +137,11 @@ try{
   const engaged=await owner.request.post(origin+'/api/chat-v236.php',{data:{action:'send',conversation_id:42,
     message:'Can you create reminders?',csrf_token:'fixture',knowledge_scope:'off'}});
   assert.equal((await engaged.json()).ok,true);
-  const active=await owner.request.post(origin+'/api/agent-activity-v94.php',{data:{action:'heartbeat',csrf_token:'fixture',
-    surface:'chat',state:'working',context:{conversation_id:42,visible:true}}});
-  const activeState=await active.json();
+  await page.bringToFront();
+  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.openConversation(42));
+  const active=heartbeat('working',context=>context.conversation_id===42&&context.chat_busy===true&&context.chat_focused===true);
+  await page.locator('#chatInput').fill('I am reviewing the next follow-up.');
+  const activeState=await (await active).json();
   assert.equal(activeState.ok,true);
   assert.equal(activeState.activity.state,'working');
   assert.equal(activeState.activity.interruptible,false);
@@ -143,9 +150,9 @@ try{
   assert.equal(pending.reports.length,1);
   assert.ok(pending.receipts.some(row=>JSON.parse(row.result_json||'{}').initiative_delivery==='pending'));
   driver('withdraw');
-  const present=await owner.request.post(origin+'/api/agent-activity-v94.php',{data:{action:'heartbeat',csrf_token:'fixture',
-    surface:'chat',state:'paused',context:{conversation_id:42,visible:true}}});
-  assert.equal((await present.json()).ok,true);
+  const present=heartbeat('working',context=>context.conversation_id===42&&context.chat_busy===false&&context.chat_focused===true);
+  await page.locator('#chatInput').fill('');
+  assert.equal((await (await present).json()).ok,true);
   assert.equal(driver('deliver').delivered,false);
   const withdrawn=driver('state');
   assert.equal(withdrawn.reports.length,1);

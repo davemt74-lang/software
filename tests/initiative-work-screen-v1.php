@@ -96,6 +96,12 @@ try{
     check($review['revision']===$visible['revision']&&$visible['details']['image_data']===$frame&&$visible['details']['width']>=160
         &&!isset($review['details']['image_data'])&&$review['details']['sends_capture']===true,'visual review returns only the exact JPEG and does not change confirmation identity');
     check(str_contains($review['details']['summary'],'can change details'),'AI cleanup discloses that details may change');
+    $defaultReview=$preview([...$input,'instruction'=>'']);
+    $changedTreatment=$preview([...$input,'mode'=>'redraw','instruction'=>'Use a clean diagram style.']);
+    check($defaultReview['reference_revision']===$defaultReview['revision']
+        &&$changedTreatment['reference_revision']===$defaultReview['reference_revision']
+        &&$changedTreatment['revision']!==$defaultReview['revision'],
+        'Agent capture identity stays stable across owner edit choices while confirmation remains treatment-specific');
     rejects(fn()=>$approve([...$input,'mode'=>'redraw'],$review),409,'approval of cleanup cannot authorize redraw');
     rejects(fn()=>$approve([...$input,'instruction'=>'Replace the title'],$review),409,'approval cannot be reused for changed direction');
     $queued=$approve($input,$review);
@@ -121,7 +127,9 @@ try{
 
     $redraw=[...$input,'mode'=>'redraw','instruction'=>'Use watercolor.'];
     $queued=$approve($redraw);
+    $oldReference=$preview($redraw)['reference_revision'];
     $pdo->prepare('UPDATE agent_screen_captures_v1 SET revision=revision+1 WHERE capture_id=?')->execute([$uuid(101)]);
+    check($preview($redraw)['reference_revision']!==$oldReference,'a changed saved capture changes the Agent reference even for redraw');
     $failed=$tick($queued,$transport);
     check($failed['status']==='failed'&&str_contains($failed['message'],'capture changed')&&count($calls)===1,
         'stale capture revisions stop before provider dispatch');

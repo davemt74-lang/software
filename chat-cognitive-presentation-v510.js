@@ -41,6 +41,12 @@
   let activeVoiceThrough = 0;
   let suppressedVoiceThrough = 0;
   let currentDigestId = '';
+  let initiativeController = null;
+  let initiativeTimer = 0;
+  let initiativeBusy = false;
+  let initiativeSettingBusy = false;
+  let initiativeLastTick = 0;
+  let initiativeError = '';
   const greetingReasons = {
     agent_busy:'Your Agent is working.',
     source_unavailable:'A source couldn’t be checked.',
@@ -96,6 +102,7 @@
     if (conversationId !== null) {
       url.searchParams.set('include_live_context','1');
       url.searchParams.set('conversation_id',String(conversationId));
+      if (cfg.initiativeRuntime === true) url.searchParams.set('include_initiative_runtime','1');
     }
     try {
       const response = await fetch(url.toString(), {
@@ -115,8 +122,7 @@
     }
   }
 
-  async function post(action, payload) {
-    const signal = pageController.signal;
+  async function post(action, payload, signal = pageController.signal) {
     if (signal.aborted || !requireCurrentConfiguration()) return;
     const response = await fetch(String(cfg.endpoint || '/api/cognitive-presentation-v510.php'), {
       method:'POST',
@@ -152,7 +158,17 @@
     return agent === Number(cfg.agentId || 0) && Number.isSafeInteger(id) && id > 0 ? id : null;
   }
 
+  function initiativeNewChat() {
+    if (cfg.initiativeRuntime !== true || !liveHost || document.hidden || thread.dataset.view !== 'chat'
+      || !requireCurrentConfiguration()) return false;
+    const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+    return chat?.isReady?.() === true && !chat.isRestoring?.() && Number(chat.conversationId?.()) === 0
+      && Number(chat.agentId?.() ?? pageAgent) === pageAgent;
+  }
+
   function clearLiveContext() {
+    initiativeController?.abort();
+    initiativeError = '';
     liveView++;
     liveState = null;
     openingKey = '';
@@ -188,10 +204,82 @@
       case 'checked': return 'Initiative checked its sources.';
       case 'failed': return 'Initiative could not verify its last review.';
       case 'ready': return 'Initiative has a private draft ready.';
-      case 'unavailable': return Number(cfg.agentId || 0) > 0
-        ? 'Initiative uses your System Agent Chat.' : 'Initiative status is unavailable.';
+      case 'unavailable': return 'Initiative status is unavailable.';
       default: return '';
     }
+  }
+
+  function initiativeKnowledgeScope() {
+    let scope;
+    try { scope = window.StonefellowKnowledgeScopeV162?.value?.(); } catch (_error) {}
+    if (scope?.mode === 'all') return {mode:'all',folder_id:0};
+    const folder = Number(scope?.folder_id);
+    if (scope?.mode === 'folder' && Number.isSafeInteger(folder) && folder > 0) return {mode:'folder',folder_id:folder};
+    return {mode:'off',folder_id:0};
+  }
+
+  function initiativeScopeLabel(scope) {
+    if (scope?.mode === 'all') return 'all personal Knowledge';
+    if (scope?.mode === 'folder' && Number.isSafeInteger(Number(scope.folder_id)) && Number(scope.folder_id) > 0) {
+      return 'the selected Knowledge folder';
+    }
+    return 'no personal Knowledge';
+  }
+
+  function initiativeHealth(health = liveState?.initiative?.runtime, conversationId = liveConversation()) {
+    return health && Number(health.agent_id) === pageAgent && Number(health.conversation_id) === conversationId
+      && typeof health.enabled === 'boolean' ? health : null;
+  }
+
+  function initiativeRuntimeLabel(health) {
+    if (initiativeError) return initiativeError;
+    if (initiativeSettingBusy) return 'Saving the background preparation setting.';
+    if (initiativeBusy) return health?.state === 'running'
+      ? 'The Agent is advancing background work.' : 'Checking for permitted background work.';
+    switch (health?.reason) {
+      case 'initiative_off': return 'Background preparation is off for this Agent.';
+      case 'linked_elsewhere': return 'Background preparation is linked to another Chat.';
+      case 'storage_unavailable': return 'Background preparation needs the current database upgrade.';
+      case 'quota_exhausted': return 'Background preparation is paused because the AI allowance is exhausted.';
+      case 'model_unavailable': return 'The configured AI model is unavailable for background preparation.';
+      case 'route_unavailable': return 'The configured AI route cannot run background preparation.';
+      case 'worker_missing': return 'No background worker has been observed. This open Chat can advance permitted work.';
+      case 'worker_stale': return 'The background worker has not checked in recently. This open Chat can advance permitted work.';
+      case 'worker_failed': return 'The last background worker sweep failed. This open Chat can retry permitted work.';
+      case 'review_failed': return 'The last background action could not be verified.';
+      case 'worker_interrupted': return 'Background work was interrupted and is waiting for recovery.';
+      case 'retry_scheduled': return 'The AI service was interrupted. A bounded retry is scheduled.';
+      case 'reviewing': return 'The Agent is reviewing current sources.';
+      case 'checked': return 'The Agent checked the current sources.';
+      default:
+        if (health?.state === 'off') return 'Background preparation is off for this Agent.';
+        if (health?.state === 'running') return 'The Agent is reviewing current sources.';
+        if (health?.state === 'checked') return 'The Agent checked the current sources.';
+        if (health?.state === 'waiting') return 'Background preparation is waiting for its next review.';
+        return 'Background preparation status is unavailable.';
+    }
+  }
+
+  function initiativeRuntimeMarkup() {
+    if (cfg.initiativeRuntime !== true || !liveState) return '';
+    if (liveState.state === 'new_chat') return '<section class="chat-initiative-status" data-agent-initiative-status role="status" aria-label="Background preparation">' +
+      '<span>Background preparation can be enabled after this Chat has been saved.</span></section>';
+    const health = initiativeHealth();
+    const label = initiativeRuntimeLabel(health);
+    const enabled = health?.enabled === true;
+    const linked = health?.reason === 'linked_elsewhere' || health?.state === 'linked_elsewhere';
+    const canChange = health && health.configuration_ready !== false && health.reason !== 'storage_unavailable';
+    const selected = enabled && !linked ? health.knowledge_scope : initiativeKnowledgeScope();
+    const knowledge = !health ? '' : (enabled && !linked ? 'Uses ' : 'When enabled, uses ')
+      + initiativeScopeLabel(selected) + ' for permitted private work.';
+    const verifiedAt = Date.parse(health?.last_execution_at || health?.last_checked_at || '');
+    const verified = Number.isFinite(verifiedAt) ? (health?.last_execution_at ? ' Latest completed step: ' : ' Sources last checked: ')
+      + new Date(verifiedAt).toLocaleString() + '.' : '';
+    const action = enabled && !linked ? 'Pause' : linked ? 'Use this Chat' : 'Enable';
+    return '<section class="chat-initiative-status" data-agent-initiative-status role="status" aria-label="Background preparation">' +
+      '<div><span>' + esc(label) + '</span><small>' + esc(knowledge + verified) + '</small></div>' +
+      (canChange ? '<button type="button" data-agent-initiative-setting="' + (enabled && !linked ? 'off' : 'on') + '"' +
+        (initiativeSettingBusy ? ' disabled' : '') + '>' + action + '</button>' : '') + '</section>';
   }
 
   function liveSourceLink(item) {
@@ -248,6 +336,7 @@
     } else if (!item) {
       openingKey = '';
     }
+    markup += initiativeRuntimeMarkup();
     if (markup !== liveMarkup) {
       const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 64;
       liveMarkup = markup;
@@ -268,6 +357,11 @@
 
   liveHost?.addEventListener('click', event => {
     if (liveConversation() === null || !liveState) return;
+    const initiativeSetting = event.target.closest('[data-agent-initiative-setting]');
+    if (initiativeSetting) {
+      void changeInitiative(initiativeSetting.dataset.agentInitiativeSetting === 'on');
+      return;
+    }
     if (event.target.closest('[data-agent-live-dismiss]')) {
       dismissLiveContext();
     }
@@ -282,6 +376,92 @@
       }
     }
   });
+
+  function initiativeMayRun(conversationId = liveConversation()) {
+    return cfg.initiativeRuntime === true && conversationId !== null && conversationId === liveConversation()
+      && !pageController.signal.aborted && requireCurrentConfiguration() && !document.hidden
+      && !window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.()
+      && !['processing','speaking'].includes(runtimeState()) && !input?.value.trim();
+  }
+
+  async function initiativeRequest(action, payload) {
+    const controller = new AbortController();
+    initiativeController = controller;
+    const signal = pageController.signal;
+    const cancel = () => controller.abort();
+    signal.addEventListener('abort',cancel,{once:true});
+    const timeout = window.setTimeout(cancel,action === 'initiative_tick' ? 150000 : 15000);
+    try { return await post(action,payload,controller.signal); }
+    finally {
+      window.clearTimeout(timeout);
+      signal.removeEventListener('abort',cancel);
+      if (initiativeController === controller) initiativeController = null;
+    }
+  }
+
+  async function changeInitiative(enabled) {
+    const cid = liveConversation();
+    if (initiativeSettingBusy || cid === null || pageController.signal.aborted || !requireCurrentConfiguration()) return;
+    const view = ++liveView;
+    // Pausing must stay available while a tick is in inference. The server
+    // rotates the policy revision before that old job can commit its result.
+    initiativeController?.abort();
+    initiativeSettingBusy = true;
+    initiativeError = '';
+    renderLiveContext(liveState);
+    try {
+      const result = await initiativeRequest('initiative_setting',{
+        conversation_id:cid,enabled,knowledge_scope:initiativeKnowledgeScope(),
+        policy_revision:String(initiativeHealth()?.policy_revision || '')
+      });
+      if (cid !== liveConversation() || view !== liveView || !requireCurrentConfiguration()) return;
+      if (initiativeHealth(result?.health,cid) && liveState) liveState.initiative = {...liveState.initiative,runtime:result.health};
+      initiativeLastTick = 0;
+      window.dispatchEvent(new CustomEvent('vp3:initiative-setting-changed',{detail:{agent_id:pageAgent,conversation_id:cid}}));
+    } catch (error) {
+      if (cid === liveConversation() && view === liveView && error?.name !== 'AbortError') {
+        initiativeError = error?.message === 'initiative_settings_changed'
+          ? 'Background settings changed in another tab. Review the current setting and try again.'
+          : 'The background setting could not be confirmed. Refresh and try again.';
+      }
+    } finally {
+      initiativeSettingBusy = false;
+      if (cid === liveConversation() && view === liveView) renderLiveContext(liveState);
+    }
+    if (cid === liveConversation() && view === liveView) void refresh();
+  }
+
+  async function advanceInitiative() {
+    const cid = liveConversation(), view = liveView, health = initiativeHealth();
+    const revision = String(health?.policy_revision || '');
+    if (initiativeBusy || initiativeSettingBusy || !initiativeMayRun(cid) || health?.enabled !== true || health?.execution_ready !== true
+      || !/^[a-f0-9]{32}$/.test(revision) || Date.now() - initiativeLastTick < 15000) return;
+    initiativeBusy = true;
+    initiativeLastTick = Date.now();
+    initiativeError = '';
+    renderLiveContext(liveState);
+    try {
+      const result = await initiativeRequest('initiative_tick',{conversation_id:cid,policy_revision:revision});
+      if (cid !== liveConversation() || view !== liveView || !requireCurrentConfiguration()) return;
+      if (initiativeHealth(result?.health,cid) && liveState) liveState.initiative = {...liveState.initiative,runtime:result.health};
+      if (result?.ok === false && !['off','blocked','already_running','at_capacity'].includes(result.reason)) {
+        initiativeError = 'The last background action could not be verified.';
+      }
+      // Saved assistant messages use canonical Chat rendering, unread tags and
+      // delivery cursors. This UI never manufactures a message or speaks it.
+      if (result?.ok === true && initiativeMayRun(cid)) {
+        const canonical = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+        await canonical?.syncConversation?.(cid);
+      }
+    } catch (error) {
+      if (cid === liveConversation() && view === liveView && error?.name !== 'AbortError') {
+        initiativeError = 'The background connection was interrupted. The next check will retry.';
+      }
+    } finally {
+      initiativeBusy = false;
+      if (cid === liveConversation() && view === liveView) renderLiveContext(liveState);
+    }
+  }
 
   function closePopup() {
     if (!popup.hidden) clearWorkingAttention();
@@ -757,8 +937,10 @@
   function stopUpdates() {
     pageController.abort();
     readController?.abort();
+    initiativeController?.abort();
     window.clearInterval(timer);
     window.clearInterval(profileAttentionTimer);
+    window.clearInterval(initiativeTimer);
     observer.disconnect();
   }
 
@@ -933,7 +1115,10 @@
         delete state.brief.greeting_preview;
       }
       if (liveRequestIsCurrent()) renderLiveContext(state.live_context,state.brief?.agent_name);
-      else delete state.live_context;
+      else {
+        delete state.live_context;
+        if (initiativeNewChat()) renderLiveContext({state:'new_chat'},state.brief?.agent_name);
+      }
       renderBrief(state.brief || {});
       renderDigest(state.digest || null);
       renderHomeServerPresence(state.homeserver_presence || null);
@@ -953,6 +1138,7 @@
           (!popup.hidden && requestedView !== workingAttentionView) ||
           (requestedLiveView !== liveView && liveConversation() !== null)
         )) void refresh();
+        else if (!signal.aborted && liveRequestIsCurrent()) void advanceInitiative();
       }
     }
   }
@@ -963,6 +1149,8 @@
     timer = window.setInterval(refresh, seconds * 1000);
     if (profileAttentionTimer) window.clearInterval(profileAttentionTimer);
     profileAttentionTimer = window.setInterval(refreshProfileAttention, 5000);
+    if (initiativeTimer) window.clearInterval(initiativeTimer);
+    if (cfg.initiativeRuntime === true) initiativeTimer = window.setInterval(advanceInitiative,15000);
   }
 
   button.addEventListener('click', event => {
@@ -1056,13 +1244,16 @@
     window.addEventListener('stonefellow:chat-context-changing', clearLiveContext);
     window.addEventListener('vp3:chat-context-ready', () => {
       clearLiveContext();
-      if (liveConversation() !== null) void refresh();
+      if (liveConversation() !== null || initiativeNewChat()) void refresh();
     });
     window.addEventListener('vp3:chat-canvas-view-changed', () => {
       clearLiveContext();
-      if (liveConversation() !== null) void refresh();
+      if (liveConversation() !== null || initiativeNewChat()) void refresh();
     });
     window.addEventListener('vp3:initiative-setting-changed', () => void refresh());
+    window.addEventListener('stonefellow:knowledge-scope', () => {
+      if (liveState && liveConversation() !== null) renderLiveContext(liveState);
+    });
     window.addEventListener('storage', event => {
       if (event.key === liveMemoryPrefix + 'dismissed' && liveState && liveConversation() !== null) {
         renderLiveContext(liveState);

@@ -84,7 +84,7 @@ function closed_chat_prepare(string $mode='initial'): array
     vp3_initiative_schedule_v1($pdo,$user);
     $runId=(int)$pdo->query("SELECT MAX(id) FROM agent_workflow_runs WHERE source_kind='agent_initiative' AND capability_key='initiative.plan'")->fetchColumn();
     $plan=vp3_initiative_execute_v1($pdo,$user,closed_chat_claim($user,$runId),static function(string $prompt,string $protocol)use($staleDuringGeneration): string{
-        $rows=json_decode($prompt,true,16,JSON_THROW_ON_ERROR);$refs=array_column($rows,'ref');
+        $rows=json_decode($prompt,true,16,JSON_THROW_ON_ERROR)['evidence'];$refs=array_column($rows,'ref');
         closed_chat_assert($protocol==='vp3.initiative-plan.v1','The canonical planner protocol must be selected.');
         closed_chat_assert(in_array('reminder:100',$refs,true)&&in_array('task:100',$refs,true),'A reminder and a task must reach the same planner.');
         closed_chat_assert(!str_contains($prompt,'SECRET'),'The planner must not receive another owner’s evidence.');

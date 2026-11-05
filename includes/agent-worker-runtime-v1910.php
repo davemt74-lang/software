@@ -23,6 +23,7 @@ require_once __DIR__.'/agent-job-engine-v1900.php';
 require_once __DIR__.'/homeserver-vp3.php';
 require_once __DIR__.'/homeserver-capability-registry-v033.php';
 require_once __DIR__.'/agent-tool-authorization-v400.php';
+require_once __DIR__.'/agent-worker-health-v1.php';
 
 function agent_worker_runtime_slug_v1910(string $value,int $limit=60): string
 {
@@ -153,6 +154,10 @@ function agent_worker_runtime_worker_v1910(PDO $pdo,array $user,string $executor
         $base['active_jobs']=agent_worker_runtime_active_count_v1910($pdo,$uid,'cloud');
         $base['capability_keys']=['canonical_vp3'];$base['capability_count']=1;
         $base['receipts']=agent_worker_runtime_receipt_stats_v1910($pdo,$uid,$base['worker_id']);
+        // `ready` remains the existing claim-capability flag. A schema is not
+        // proof that a runner has been started or completed an Initiative sweep.
+        $base['configuration_ready']=true;
+        $base['runner_health']=agent_worker_health_read_v1();
         return $base;
     }
 
@@ -215,6 +220,8 @@ function agent_worker_runtime_summary_v1910(PDO $pdo,array $user): array
             'max_concurrency'=>max(0,(int)($worker['max_concurrency']??0)),'active_jobs'=>max(0,(int)($worker['active_jobs']??0)),
             'last_seen_at'=>(string)($worker['last_seen_at']??''),'capability_count'=>max(0,(int)($worker['capability_count']??0)),
             'receipts'=>is_array($worker['receipts']??null)?$worker['receipts']:[],
+            'configuration_ready'=>!empty($worker['configuration_ready'])||!empty($worker['ready']),
+            'runner_health'=>is_array($worker['runner_health']??null)?$worker['runner_health']:null,
         ];
     };
     return ['build'=>VP3_AGENT_WORKER_RUNTIME_V1910,'workers'=>[$public($cloud),$public($home)]];

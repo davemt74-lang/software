@@ -121,8 +121,58 @@ function agent_workflow_public_json_v1400(string $json,bool $storeInitiativeDraf
     foreach(array_slice($decoded,0,30,true) as $key=>$value){
         $key=agent_workflow_text_v1400($key,80);
         if($key===''||preg_match('/(?:token|secret|password|credential|authorization|cookie|prompt|reasoning)/i',$key))continue;
-        if($key==='initiative_draft'&&!$storeInitiativeDraft)continue;
+        if($key==='initiative_draft'){
+            if($storeInitiativeDraft&&is_string($value)&&mb_strlen($value)<=8000)$safe[$key]=$value;
+            continue;
+        }
+        if($key==='initiative_tool_result'){
+            if($storeInitiativeDraft&&is_array($value))$safe[$key]=agent_workflow_initiative_result_v1400($value);
+            continue;
+        }
         if(is_scalar($value)||$value===null)$safe[$key]=agent_workflow_text_v1400($value??'',$key==='mission_output'?16000:500);
+    }
+    return $safe;
+}
+
+/** Private worker storage has a bounded schema; ordinary workflow projections omit it. */
+function agent_workflow_initiative_result_v1400(array $value): array
+{
+    $safe=[];
+    if(is_string($value['draft']??null)&&mb_strlen($value['draft'])<=8000)$safe['draft']=$value['draft'];
+    $sources=[];
+    foreach(is_array($value['sources']??null)?array_slice($value['sources'],0,16):[] as $row){
+        if(!is_array($row)||!is_string($row['source']??null)||!is_string($row['title']??null))continue;
+        $source=['source'=>mb_substr($row['source'],0,190),'title'=>mb_substr($row['title'],0,190)];
+        if(is_string($row['url']??null)&&str_starts_with($row['url'],'/')&&!str_starts_with($row['url'],'//')
+            &&!str_contains($row['url'],'\\'))$source['url']=mb_substr($row['url'],0,1900);
+        $sources[]=$source;
+    }
+    if($sources)$safe['sources']=$sources;
+    if(function_exists('vp3_tool_receipt_normalize_v1')&&($receipt=vp3_tool_receipt_normalize_v1($value['tool_receipt']??null))!==null){
+        $safe['tool_receipt']=$receipt;
+    }
+    $output=$value['output']??null;
+    if(!is_array($output))return $safe;
+    if(($output['type']??'')==='initiative_record_read'&&in_array($output['tool']??'', ['brain.read','knowledge.search'],true)
+        &&in_array($output['status']??'', ['read_complete','no_matches'],true)){
+        $revisions=[];
+        foreach(is_array($output['source_revisions']??null)?array_slice($output['source_revisions'],0,16,true):[] as $ref=>$revision){
+            if(is_string($ref)&&strlen($ref)<=190&&is_string($revision)&&preg_match('/\A[a-f0-9]{64}\z/D',$revision))$revisions[$ref]=$revision;
+        }
+        $safe['output']=['type'=>$output['type'],'tool'=>$output['tool'],'status'=>$output['status'],'source_revisions'=>$revisions];
+    }elseif(($output['type']??'')==='initiative_workbench_review'&&($output['status']??'')==='review_required'){
+        $action=$output['review_action']??null;
+        if(is_array($action)&&in_array($action['tool']??'', ['product','screen','mission'],true)
+            &&is_string($action['source_id']??null)&&$action['source_id']!==''&&strlen($action['source_id'])<=190
+            &&is_string($action['source_revision']??null)&&preg_match('/\A[a-f0-9]{64}\z/D',$action['source_revision'])){
+            $safe['output']=['type'=>$output['type'],'status'=>$output['status'],
+                'review_action'=>array_intersect_key($action,array_flip(['tool','source_id','source_revision']))];
+        }
+    }elseif(($output['type']??'')==='initiative_specialist_review'&&($output['status']??'')==='approval_pending'
+        &&is_string($output['mission_id']??null)&&preg_match('/\A[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\z/D',$output['mission_id'])
+        &&is_int($output['job_id']??null)&&$output['job_id']>0){
+        $safe['output']=['type'=>$output['type'],'status'=>$output['status'],'mission_id'=>$output['mission_id'],'job_id'=>$output['job_id'],
+            'review_url'=>'/missions.php?mission='.$output['mission_id']];
     }
     return $safe;
 }

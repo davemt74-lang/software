@@ -109,6 +109,9 @@ function initiative_work_screen_preview_v1(PDO $pdo,int $owner,array $scope,arra
     }
     return ['source_id'=>$capture,'source_title'=>$source['title'],
         'revision'=>initiative_work_screen_confirmation_v1($owner,$scope,$source,$mode,$instruction),
+        // The Agent's suggestion references the capture under the default
+        // treatment. Owner edit choices have their own full confirmation hash.
+        'reference_revision'=>initiative_work_screen_confirmation_v1($owner,$scope,$source,'cleanup',''),
         'details'=>$details];
 }
 

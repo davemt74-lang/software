@@ -13,3 +13,8 @@
   background: #fff;
   cursor: pointer;
 }
+.chat-initiative-status { display:flex; align-items:center; justify-content:space-between; gap:.65rem; max-width:840px; margin:.65rem auto; padding:.45rem .65rem; border:1px solid #e7e9ed; border-radius:.45rem; color:#475467; background:#fbfcfd; font-size:.75rem; }
+.chat-initiative-status>div { display:grid; gap:.15rem; min-width:0; overflow-wrap:anywhere; }
+.chat-initiative-status small { color:#667085; font-size:.68rem; }
+.chat-initiative-status button { flex:none; border:1px solid #d0d5dd; border-radius:.3rem; padding:.25rem .5rem; background:#fff; color:#344054; font:inherit; cursor:pointer; }
+.chat-initiative-status button:disabled { cursor:wait; opacity:.65; }

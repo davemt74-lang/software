@@ -135,6 +135,8 @@ if(function_exists('vp3_live_session_note_action_v2370')){
     ]);}catch(Throwable $e){error_log('VP3 live-session Chat user action failed: '.$e->getMessage());}
 }
 $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];
+unset($rawAgentContext['working_context_ref']);
+$workingSelection=null;
 $browserContext=null;$browserContextRelations=[];
 $rawBrowserContext=is_array($rawAgentContext['browser_context']??null)?$rawAgentContext['browser_context']:[];
 unset($rawAgentContext['browser_context']);
@@ -168,6 +170,11 @@ if($capabilityTool===null&&!$ephemeralProtocol&&isset($input['working_context_re
     $workingReference=vp3_working_context_request_v1($query,$input['working_context_ref']);
     if($workingReference!==null){
         $capabilityTool=vp3_working_context_chat_v1($pdo,$user,$principal,$conversationId,$workingReference,$currentAuthority);
+        if(is_array($capabilityTool['working_context']??null)){
+            $workingSelection=$capabilityTool;
+            $rawAgentContext['working_context_ref']=$workingReference;
+            $capabilityTool=null;
+        }
     }
 }
 if($capabilityTool===null&&!$ephemeralProtocol&&(vp3_catch_up_chat_scope_v1($query)!==null||vp3_initiative_command_v1($query)!==null)){
@@ -261,6 +268,11 @@ if(!empty($toolResult['handled'])){
     $capabilityRoute=vp3_agent_runtime_capability_route_v420($runtimePlan,$execution,$homeAttempted);
 }
 $execution['capability_route']=$capabilityRoute;
+if($workingSelection!==null){
+    $recheck=vp3_working_context_chat_v1($pdo,$user,$principal,$conversationId,
+        (string)$workingSelection['working_context']['reference'],$currentAuthority);
+    if(!isset($recheck['working_context']))throw new RuntimeException('That working context changed while the Agent was responding. Check the latest update and try again.',409);
+}
 if(!empty($knowledgeDraft['execution']))$execution=array_replace($execution,$knowledgeDraft['execution']);
 if(function_exists('homeserver_compute_v232_attach'))$execution=homeserver_compute_v232_attach($userId,$execution,$homeResult,$homeAttempted);
 $localRead=function_exists('homeserver_reads_v231_last')?homeserver_reads_v231_last():['attempted'=>false,'execution'=>null,'domain'=>''];
@@ -278,6 +290,7 @@ if(function_exists('chat_presentation_violation_v2370')&&chat_presentation_viola
 if(!empty($r6Packet['active']))knowledge_r6_recheck($pdo,$user,$r6Namespace,$r6Packet,$query,$activeAgent);
 ai_usage_accounting_v032_record($pdo,$user,$activeAgentId,$conversationId,$execution);
 $publicSources=[];
+if($workingSelection!==null)$publicSources=$workingSelection['sources'];
 if(is_array($browserContext)){
     $publicSources[]=[
         'source'=>'browser-context:ephemeral',
@@ -322,5 +335,5 @@ if(function_exists('vp3_live_session_note_action_v2370')){
         ]);
     }catch(Throwable $e){error_log('VP3 live-session Chat response action failed: '.$e->getMessage());}
 }
-return ['ok'=>true,'canvas_media'=>$messageContext['canvas_media'],'sticky_notes'=>$messageContext['sticky_notes'],'tool_receipt'=>$toolReceipt,'knowledge_actions_r9'=>$knowledgeDraft,'project_knowledge_r6'=>$r6Packet,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'profile_webmcp_plan'=>$messageContext['profile_webmcp_plan'],'profile_webmcp_return'=>$messageContext['profile_webmcp_return'],'system_app_plan'=>$messageContext['system_app_plan'],'system_app_action_card'=>$messageContext['system_app_action_card'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
+return ($workingSelection!==null?['working_context_ref'=>$workingSelection['working_context']['reference']]:[])+['ok'=>true,'canvas_media'=>$messageContext['canvas_media'],'sticky_notes'=>$messageContext['sticky_notes'],'tool_receipt'=>$toolReceipt,'knowledge_actions_r9'=>$knowledgeDraft,'project_knowledge_r6'=>$r6Packet,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'profile_webmcp_plan'=>$messageContext['profile_webmcp_plan'],'profile_webmcp_return'=>$messageContext['profile_webmcp_return'],'system_app_plan'=>$messageContext['system_app_plan'],'system_app_action_card'=>$messageContext['system_app_action_card'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
 }

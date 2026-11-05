@@ -187,6 +187,9 @@ function agent_surface_v131_sanitize(array $raw): array
         'events'=>[],
     ];
     if($screenObservations!==null)$out['screen_observations']=$screenObservations;
+    if($surface==='chat'&&is_string($raw['working_context_ref']??null)&&preg_match('/^[a-f0-9]{64}$/D',$raw['working_context_ref'])){
+        $out['working_context_ref']=$raw['working_context_ref'];
+    }
     if(is_string($raw['timezone']??null)&&strlen($raw['timezone'])<=80){
         try{$out['timezone']=(new DateTimeZone($raw['timezone']))->getName();}catch(Throwable $ignored){}
     }
@@ -473,6 +476,12 @@ function agent_surface_v131_context_items(array $context): array
     }catch(Throwable $e){$safe['transcription']=null;}
     $safe=agent_surface_v131_scope_screen($safe,(int)($user['id']??0));
     $items=agent_surface_v131_comparison_context_items($safe['screen_observations']??null);
+    if(isset($safe['working_context_ref'])&&isset($pdo,$user)&&$pdo&&is_array($user)){
+        require_once __DIR__.'/agent-working-context-v1.php';
+        $workingItem=vp3_working_context_model_item_v1($pdo,$user,(int)$safe['conversation_id'],$safe['working_context_ref']);
+        if($workingItem!==null)$items[]=$workingItem;
+        else unset($safe['working_context_ref']);
+    }
     unset($safe['screen_observations']);
     $browserShareText='';
     $browserShareId=agent_surface_v131_browser_share_id($safe);

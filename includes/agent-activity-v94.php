@@ -38,12 +38,56 @@ function agent_activity_v94_record(array $user,string $surface,string $state,arr
     $taskTitle=agent_activity_v94_task_title($surface,$context);
     $taskKind=preg_replace('/[^a-z0-9_-]/','',strtolower((string)($context['task_kind']??$surface)))?:$surface;
     if(!$pdo||$uid<1||!agent_activity_v94_schema_ready())return ['state'=>$state,'surface'=>$surface,'context_key'=>agent_activity_v94_context_key($surface,$context),'task_title'=>$taskTitle,'tracking_ready'=>false];
-    $prev=null;
-    try{$s=$pdo->prepare('SELECT * FROM agent_activity_state WHERE user_id=? LIMIT 1');$s->execute([$uid]);$prev=$s->fetch()?:null;}catch(Throwable $e){}
+    $ownsTransaction=!$pdo->inTransaction();
+    if($ownsTransaction)$pdo->beginTransaction();
+    try{
+    // The same owner lock used by Initiative serializes observation ordering
+    // with report delivery, including the first activity row for this owner.
+    $ownerLock=$pdo->prepare('SELECT id FROM users WHERE id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'?'':' FOR UPDATE'));
+    $ownerLock->execute([$uid]);
+    if(!$ownerLock->fetchColumn())throw new RuntimeException('Activity owner is unavailable.',403);
+    $s=$pdo->prepare('SELECT * FROM agent_activity_state WHERE user_id=? LIMIT 1');$s->execute([$uid]);$prev=$s->fetch()?:null;
     $prevDetails=json_decode((string)($prev['details_json']??''),true);if(!is_array($prevDetails))$prevDetails=[];
+    $tab=is_string($context['activity_tab']??null)&&preg_match('/\A[a-f0-9]{32}\z/D',$context['activity_tab'])?$context['activity_tab']:'';
+    $focused=is_bool($context['focused']??null)?($context['focused']&&!empty($context['visible'])):null;
+    $observed=$context['activity_observed_at']??null;$sequence=$context['activity_sequence']??null;
+    $newSignal=array_intersect(['activity_tab','activity_observed_at','activity_sequence','focused','chat_busy','chat_focused'],array_keys($context))!==[];
+    $validObservation=is_int($observed)&&abs($observed-(int)floor(microtime(true)*1000))<=90000
+        &&is_int($sequence)&&$sequence>0&&$sequence<=2147483647;
+    $previousHeartbeat=strtotime((string)($prev['last_heartbeat_at']??''))?:0;
+    $sameTab=$tab!==''&&is_string($prevDetails['activity_tab']??null)&&hash_equals($prevDetails['activity_tab'],$tab);
+    $previousFresh=$previousHeartbeat>=time()-90&&$previousHeartbeat<=time()+5;
+    $previousObserved=$prevDetails['activity_observed_at']??null;$previousSequence=$prevDetails['activity_sequence']??null;
+    $stale=$validObservation&&$previousFresh&&is_int($previousObserved)
+        &&($sameTab&&is_int($previousSequence)?$sequence<=$previousSequence:$observed<=$previousObserved);
+    if($state!=='logged_out'&&(($newSignal&&(!$validObservation||$tab===''||$focused===null))||$stale)){
+        if($ownsTransaction)$pdo->commit();
+        return agent_activity_v94_snapshot($user,$surface,$context);
+    }
+    // A different background tab (including an older cached client) cannot
+    // replace a fresh focused tab's busy/identity state. Its heartbeat also
+    // cannot keep that focused tab alive after it disappears.
+    if($state!=='logged_out'&&($prevDetails['focused']??null)===true&&!empty($prevDetails['visible'])
+        &&$previousFresh&&$focused!==true&&!$sameTab){
+        if($ownsTransaction)$pdo->commit();
+        return agent_activity_v94_snapshot($user,$surface,$context);
+    }
     $conversationId=max(0,(int)($context['conversation_id']??0));if($conversationId<1)$conversationId=max(0,(int)($prevDetails['conversation_id']??0));
     $context['conversation_id']=$conversationId;$contextKey=agent_activity_v94_context_key($surface,$context);
     $details=['track_id'=>max(0,(int)($context['track_id']??0)),'project_id'=>max(0,(int)($context['project_id']??0)),'conversation_id'=>$conversationId,'path'=>mb_substr((string)($context['path']??''),0,300),'visible'=>!empty($context['visible'])];
+    if($tab!==''&&$focused!==null){
+        $details['activity_tab']=$tab;$details['focused']=$focused;
+        if($validObservation){$details['activity_observed_at']=$observed;$details['activity_sequence']=$sequence;}
+        if($surface==='chat'&&(array_key_exists('chat_focused',$context)||array_key_exists('chat_busy',$context))){
+            $valid=is_bool($context['chat_focused']??null)&&is_bool($context['chat_busy']??null);
+            $details['chat_focused']=$valid&&$focused&&$context['chat_focused'];
+            $details['chat_busy']=$valid?$context['chat_busy']:true;
+        }
+    }elseif(array_key_exists('chat_focused',$context)||array_key_exists('chat_busy',$context)){
+        // Partial/invalid new signals fail closed instead of regaining the
+        // legacy paused/idle fallback through truthy strings or a missing key.
+        $details['chat_focused']=false;$details['chat_busy']=true;
+    }
     $idleSince=$state==='idle' ? date('Y-m-d H:i:s') : null;
     $lastTask=$state==='working' ? date('Y-m-d H:i:s') : (string)($prev['last_task_at']??date('Y-m-d H:i:s'));
     $sql="INSERT INTO agent_activity_state (user_id,surface,context_key,task_kind,task_title,activity_state,last_input_at,last_task_at,last_heartbeat_at,idle_since_at,details_json,updated_at) VALUES (?,?,?,?,?,?,NOW(),?,NOW(),?,?,NOW()) ON DUPLICATE KEY UPDATE surface=VALUES(surface),context_key=VALUES(context_key),task_kind=VALUES(task_kind),task_title=VALUES(task_title),activity_state=VALUES(activity_state),last_input_at=IF(VALUES(activity_state)='working',NOW(),last_input_at),last_task_at=IF(VALUES(activity_state)='working',NOW(),last_task_at),last_heartbeat_at=NOW(),idle_since_at=IF(VALUES(activity_state)='idle',COALESCE(idle_since_at,NOW()),NULL),details_json=VALUES(details_json),updated_at=NOW()";
@@ -53,7 +97,11 @@ function agent_activity_v94_record(array $user,string $surface,string $state,arr
         $e=$pdo->prepare('INSERT INTO agent_activity_events (user_id,surface,context_key,task_kind,task_title,previous_state,activity_state,reason,details_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,NOW())');
         $e->execute([$uid,$surface,$contextKey,$taskKind,$taskTitle,(string)($prev['activity_state']??''),$state,mb_substr($reason,0,120),json_encode($details,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
     }
-    if(function_exists('vp3_live_session_record_activity_v2370')){
+    if($ownsTransaction)$pdo->commit();
+    }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
+    // The legacy live-session bridge owns its transaction; never let it commit
+    // or roll back a caller's still-active transaction.
+    if(!$pdo->inTransaction()&&function_exists('vp3_live_session_record_activity_v2370')){
         $liveContext=$context;
         $liveContext['task_title']=$taskTitle;
         $liveContext['task_kind']=$taskKind;

@@ -142,10 +142,11 @@ initiative_test_reject(
     $evidence,
     'a primary reference cannot be reused for a second preparation'
 );
-initiative_test_reject(
+initiative_test_check(
+    count(vp3_initiative_plan_v1(
     initiative_test_json([array_replace($meetingJob, ['report' => true]), $missionJob]),
-    $evidence,
-    'a single plan cannot request two reports'
+    $evidence))===2,
+    'independent reportable outcomes share the configured work budget and delivery cooldown'
 );
 $otherTranscript = 'transcript:124';
 $evidence[$otherTranscript] = [
@@ -158,6 +159,13 @@ initiative_test_reject(
     $evidence,
     'four otherwise valid preparations exceed the per-plan limit'
 );
+putenv('VP3_INITIATIVE_MAX_JOBS=4');
+try{
+    initiative_test_check(count(vp3_initiative_plan_v1(initiative_test_json([$meetingJob,$missionJob,$transcriptJob,$fourthJob]),$evidence))===4,
+        'an explicitly configured work budget admits four independent outcomes');
+}finally{putenv('VP3_INITIATIVE_MAX_JOBS');}
+initiative_test_check(count(vp3_initiative_plan_v1(initiative_test_json([$meetingJob,array_replace($meetingJob,['tool'=>'knowledge.search'])]),
+    $evidence,['work.prepare_private','knowledge.search']))===2,'distinct authorized specialist tools can advance the same primary situation');
 foreach ([125, 126] as $sessionId) {
     $ref = 'transcript:'.$sessionId;
     $evidence[$ref] = [

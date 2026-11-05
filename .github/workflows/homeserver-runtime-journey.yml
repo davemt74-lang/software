@@ -147,6 +147,25 @@ jobs:
         run: |
           php tests/agent-voice-preferences.php
           node tests/agent-voice-menu-browser.mjs
+      - name: Connected Initiative in normal Agent Chat
+        run: |
+          php tests/agent-inference-budget-v1.php
+          php tests/agent-initiative-model-v1.php
+          php tests/agent-initiative-v1.php
+          php tests/agent-initiative-worker-v1.php
+          php tests/agent-initiative-scope-v1.php
+          php tests/agent-initiative-owner-context-v1.php
+          php tests/agent-initiative-reassessment-v1.php
+          php tests/agent-initiative-readiness-v1.php
+          php tests/agent-initiative-runtime-v1.php
+          php tests/agent-initiative-tools-v1.php
+          php tests/agent-initiative-tools-pipeline-v1.php
+          php tests/agent-working-context-replay-v1.php
+          node tests/cognitive-presentation-account-binding.mjs
+          node tests/initiative-chat-loop-browser.mjs
+          node tests/initiative-chat-loop-e2e.mjs
+          node tests/initiative-activity-browser.mjs
+          node tests/initiative-review-actions-browser.mjs
       - name: Cloud scheduled specialist controls
         run: node tests/agent-missions-cloud-a5c6-browser.mjs
       - name: Cloud automatic lead routing browser acceptance

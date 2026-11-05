@@ -193,11 +193,18 @@ $pdo->exec('UPDATE agent_reminders_v1 SET revision=revision+1 WHERE id=1');
 $changedCandidates=vp3_catch_up_candidates_v1($pdo,$user,now:$now);
 $changedReminder=array_values(array_filter($changedCandidates['items'],static fn(array $row):bool=>$row['id']==='reminder:1'))[0];
 $changedEvidence=vp3_initiative_evidence_v1($pdo,$user,$now);
+expect($changedReminder['source_revision']===$originalReminder['source_revision']
+    &&vp3_working_context_key_v1(1,0,50,$changedReminder)===$originalReference,
+    'delivery bookkeeping does not invalidate a still-current reminder occurrence');
+$pdo->exec("UPDATE agent_reminders_v1 SET delivery='notification' WHERE id=1");
+$changedCandidates=vp3_catch_up_candidates_v1($pdo,$user,now:$now);
+$changedReminder=array_values(array_filter($changedCandidates['items'],static fn(array $row):bool=>$row['id']==='reminder:1'))[0];
+$changedEvidence=vp3_initiative_evidence_v1($pdo,$user,$now);
 expect($changedReminder['title']===$originalReminder['title']&&$changedReminder['reason']===$originalReminder['reason']
     &&$changedReminder['source_revision']!==$originalReminder['source_revision']
     &&vp3_working_context_key_v1(1,0,50,$changedReminder)!==$originalReference
     &&$changedEvidence['reminder:1']['revision']!==$initiativeEvidence['reminder:1']['revision'],
-    'a reminder revision fences both the offered Chat reference and queued work even when its public summary is unchanged');
+    'a meaningful reminder delivery change fences Chat and queued work even when its summary is unchanged');
 $pdo->exec("UPDATE agent_memory_items SET metadata_json=json_set(metadata_json,'$.task_status','in_progress') WHERE id=1;
     UPDATE agent_commerce_orders_v800 SET amount_paid_cents=1100 WHERE id=1");
 $changedEvidence=vp3_initiative_evidence_v1($pdo,$user,$now);
@@ -346,6 +353,11 @@ expect(vp3_working_context_request_v1('Please help me with that.',$missionRef)==
     &&vp3_working_context_request_v1('Help me with that',[])==='',
     'a reference is used for an explicit contextual follow-up only');
 $follow=vp3_working_context_chat_v1($pdo,$user,$system,50,$callRef);
+expect($follow['handled']===false&&$follow['answer']===''&&$follow['working_context']['reference']===$callRef,
+    'a current working-context follow-up continues to the main Agent rather than returning a title/reason template');
+expect(str_contains((string)vp3_working_context_model_item_v1($pdo,$user,50,$callRef)['text'],$callItem['title'])
+    &&vp3_working_context_model_item_v1($pdo,['id'=>2],50,$callRef)===null,
+    'model context reconstructs only the exact current owner-authorized source');
 expect($follow['tool_receipt']['status']==='read_complete'&&!$follow['tool_receipt']['changes_applied']
     &&array_column($follow['sources'],'source')===['agent-catch-up:'.$callItem['id']]
     &&!str_contains($follow['answer'],$missionItem['title']),

@@ -3,6 +3,12 @@
   const cfg = window.VP3_INITIATIVE_WORKBENCH;
   const tools = document.getElementById('chatToolsContent');
   if (!tools || !cfg?.endpoint || !cfg.csrf || !cfg.ownerKey) return;
+  const initialChat = window.STONEFELLOW_CHAT || null;
+  const account = {
+    owner:String(cfg.ownerKey),agent:Number(cfg.agentId || 0),csrf:String(cfg.csrf),endpoint:String(cfg.endpoint),
+    hasChat:Boolean(initialChat),chatOwner:Number(initialChat?.userId || 0),
+    chatAgent:Number(initialChat?.agentId || 0),binding:String(initialChat?.workingAttentionBinding || '')
+  };
 
   const lanes = {
     product: {label:'Product listing', source:'Saved photo', empty:'Save a photo to your Cloud media library to start.', create:'Create private draft'},
@@ -56,7 +62,7 @@
 
   const actions = make('div');
   actions.className = 'vp3-workbench-actions';
-  const reload = button('Reload sources', () => void loadSources(source.value));
+  const reload = button('Reload sources', () => { requestedSourceRevision = ''; void loadSources(source.value); });
   const review = button('Review source', () => void previewSource());
   const create = button('Create private draft', () => void createResult());
   actions.append(reload, review, create);
@@ -77,9 +83,24 @@
   let pending = null;
   let reviewed = null;
   let returnFocus = null;
+  let requestedSourceRevision = '';
+  let scopeTimer = 0;
+
+  function configurationMatches() {
+    const current = window.VP3_INITIATIVE_WORKBENCH;
+    if (!current || String(current.ownerKey) !== account.owner || Number(current.agentId || 0) !== account.agent
+      || String(current.csrf) !== account.csrf || String(current.endpoint) !== account.endpoint) return false;
+    const chat = window.STONEFELLOW_CHAT;
+    if (!account.hasChat) return !chat;
+    return Boolean(chat) && account.binding !== '' && account.chatOwner === Number(account.owner)
+      && account.chatAgent === account.agent && Number(chat.userId) === account.chatOwner
+      && Number(chat.agentId || 0) === account.chatAgent
+      && String(chat.workingAttentionBinding || '') === account.binding;
+  }
 
   function currentScope() {
-    const chat = window.STONEFELLOW_CHAT_CONTINUITY;
+    if (!configurationMatches()) return null;
+    const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
     const cid = Number(chat?.conversationId?.() || 0);
     const aid = Number(chat?.agentId?.() ?? cfg.agentId ?? 0);
     if (chat?.isRestoring?.() || chat?.isReady?.() === false || !Number.isSafeInteger(cid) || cid < 1
@@ -117,8 +138,11 @@
     sourceLabel.firstChild.textContent = lanes[lane.value].source;
   }
 
-  function open(tool = 'product', sourceId = '') {
+  function open(tool = 'product', sourceId = '', sourceRevision = '') {
+    if (!configurationMatches()) { scopeChanged(); return; }
     if (!Object.hasOwn(lanes, tool)) return;
+    if (sourceRevision && (typeof sourceRevision !== 'string' || !/^[a-f0-9]{64}$/.test(sourceRevision))) return;
+    requestedSourceRevision = sourceRevision;
     stopPending();
     clearReview();
     scope = currentScope();
@@ -129,12 +153,19 @@
     returnFocus = document.activeElement;
     window.dispatchEvent(new Event('vp3:initiative-workbench-open'));
     if (!dialog.open) dialog.showModal();
+    window.clearInterval(scopeTimer);
+    scopeTimer = window.setInterval(() => {
+      if (!configurationMatches() || (scope && !sameScope())) scopeChanged();
+    },200);
     if (scope) void loadSources(String(sourceId));
     else status.textContent = 'Open an existing Agent Chat, or send a message to start one.';
     controls();
   }
 
   function scopeChanged() {
+    window.clearInterval(scopeTimer);
+    scopeTimer = 0;
+    requestedSourceRevision = '';
     stopPending();
     clearReview();
     scope = null;
@@ -148,6 +179,7 @@
   }
 
   async function request(action, fields, onSuccess) {
+    if (!configurationMatches()) { scopeChanged(); return; }
     if (!sameScope() || !dialog.open) return;
     stopPending();
     const attempt = {action, tool:lane.value, scope, controller:new AbortController()};
@@ -160,6 +192,7 @@
         body:JSON.stringify({action, tool:attempt.tool, owner_key:String(cfg.ownerKey), csrf_token:cfg.csrf, ...scope, ...fields})
       });
       const data = await response.json();
+      if (!configurationMatches()) { scopeChanged(); return; }
       if (!validateAttempt(attempt)) return;
       if (!response.ok || !data.ok) {
         const error = new Error(data.error || 'Initiative work is unavailable.');
@@ -239,6 +272,12 @@
     await request('preview', fields, data => {
       if (data.preview?.source_id !== fields.source_id || typeof data.review_token !== 'string') {
         status.textContent = 'The selected source could not be verified.';
+        return;
+      }
+      const referenceRevision = lane.value === 'screen' && typeof data.preview.reference_revision === 'string'
+        ? data.preview.reference_revision : data.preview.revision;
+      if (requestedSourceRevision && referenceRevision !== requestedSourceRevision) {
+        status.textContent = 'This source changed after the Agent prepared its suggestion. Reload the source to review its current version.';
         return;
       }
       reviewed = {fields, token:data.review_token};
@@ -336,6 +375,7 @@
   }
 
   lane.addEventListener('change', () => {
+    requestedSourceRevision = '';
     stopPending();
     mode.value = 'cleanup';
     instructions.value = '';
@@ -347,11 +387,13 @@
     status.textContent = '';
     controls();
   }
-  source.addEventListener('change', editProposal);
+  source.addEventListener('change', () => { requestedSourceRevision = ''; editProposal(); });
   mode.addEventListener('change', editProposal);
   instructions.addEventListener('input', editProposal);
   dialog.addEventListener('close', () => {
     if (dialog.open) return;
+    window.clearInterval(scopeTimer);
+    scopeTimer = 0;
     scope = null;
     stopPending();
     clearReview();
