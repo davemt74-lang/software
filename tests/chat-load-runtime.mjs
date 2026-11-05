@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 const source=fs.readFileSync('chat.js','utf8');
 const poll=source.slice(source.indexOf('  async function pollAgentActivity('),source.indexOf('  function startAgentActivityPolling()'));
 const api=source.slice(source.indexOf('  async function api(payload'),source.indexOf('  function writeActivityCursor('));
+const pendingIds=source.slice(source.indexOf('  function pendingAssistantMessageIds()'),source.indexOf('  function unconfirmedAssistantMessage('));
 assert.doesNotMatch(source,/\bliveStatus\b|chatLiveStatus/,'Removed activity status must not be referenced');
 let response,requestCount=0,timer,delay,cleared=0;
 const requestBodies=[],syncedConversations=[];
@@ -14,8 +15,9 @@ const context={AbortController,document:{hidden:false,getElementById:()=>null},c
     writeActivityCursor:value=>{context.activityCursor=value;},updateNotificationBadge:value=>{context.unread=value;},
     syncConversationMessagesV101:async id=>{syncedConversations.push(id);},activityBusy:false,activityCursor:0,
     conversationId:1,lastLoadedMessageId:0,pendingConversationSync:0,busy:false,
+    pendingAssistantMessages:new Map(),
     contextReady:false,initialRestorePending:true,restoringConversation:1};
-vm.createContext(context);vm.runInContext(api+poll+'\nglobalThis.poll=pollAgentActivity;',context);
+vm.createContext(context);vm.runInContext(api+pendingIds+poll+'\nglobalThis.poll=pollAgentActivity;',context);
 response=async()=>({ok:true,json:async()=>({ok:true,latest_id:8,unread_count:2,updates:[],conversation_id:1,latest_message_id:5})});
 await context.poll(true);assert.equal(context.activityCursor,8);assert.equal(context.unread,2);assert.equal(context.activityBusy,false);
 assert.deepEqual(requestBodies[0],{action:'activity',after_id:0,conversation_id:0,agent_context:{user_agent_id:7},csrf_token:'token'});
@@ -30,6 +32,20 @@ response=async()=>({ok:false,json:async()=>({ok:false,error:'Access revoked'})})
 await context.poll(true);assert.equal(context.activityBusy,false,'Failure permanently blocked polling');
 response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[]})});
 await context.poll(true);assert.equal(context.activityCursor,9,'Polling did not recover');
+context.lastLoadedMessageId=5;
+response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[],conversation_id:1,latest_message_id:5})});
+context.pendingAssistantMessages.set(4,Date.now());
+await context.poll(true);
+assert.deepEqual(syncedConversations,[1],'An unfinished earlier assistant message must be checked even when the latest message ID is unchanged');
+context.pendingAssistantMessages.set(4,Date.now()-600001);
+await context.poll(true);
+assert.equal(context.pendingAssistantMessages.size,0,'Abandoned assistant placeholders must expire after the bounded retry window');
+assert.deepEqual(syncedConversations,[1],'An expired placeholder must not keep unchanged history polling');
+context.pendingAssistantMessages.set(4,Date.now());
+response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[],conversation_id:2,latest_message_id:5})});
+await context.poll(true);
+assert.deepEqual(syncedConversations,[1],'A pending message cannot sync a different conversation returned by activity');
+context.pendingAssistantMessages.clear();
 context.document.hidden=true;const count=requestCount;await context.poll();assert.equal(requestCount,count);await context.poll(true);assert.equal(requestCount,count+1);
 assert.deepEqual(requestBodies.at(-1),{action:'activity',after_id:9,conversation_id:1,agent_context:{user_agent_id:7},csrf_token:'token'});
 assert.equal(cleared,requestCount,'Polling timers leaked');
