@@ -56,7 +56,6 @@ $pdo->exec("ALTER TABLE chat_conversations ADD COLUMN updated_at DATETIME;
 function agent_brain_schema_ready(): bool { return true; }
 function agent_brain_normalize(string $text): string { return strtolower(trim($text)); }
 function agent_brain_sentences(string $text): array { return [$text]; }
-function vp3_participant_scope_v1(): ?array { return $GLOBALS['initiativeFixtureParticipant']??null; }
 function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, DateTimeImmutable $now, int $days, bool $includeHomeServer = true): array
 {
     if ($includeHomeServer) throw new LogicException('Initiative must not query the paired calendar.');
@@ -144,10 +143,10 @@ initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,7,11)===[
     && vp3_initiative_foreground_status_v1($pdo,['id'=>2,'is_active'=>1],0,42)===['state'=>'unavailable']
     && vp3_initiative_foreground_status_v1($pdo,$user,0,43)===['state'=>'unavailable'],
     'a named Agent awaits its own automatic startup while foreign conversations cannot see System Chat Initiative status');
-$GLOBALS['initiativeFixtureParticipant']=['participant_id'=>8];
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>8];
 initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'unavailable'],
     'a participant scope cannot see owner Initiative status');
-unset($GLOBALS['initiativeFixtureParticipant']);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 
 vp3_initiative_schedule_v1($pdo, $user);
 vp3_initiative_schedule_v1($pdo, $user);

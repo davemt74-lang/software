@@ -24,6 +24,11 @@ try{
   $pageBinding=(string)($_SERVER['HTTP_X_VP3_WORKING_ATTENTION']??'');
   if($surface==='chat'&&$pageBinding!==''&&function_exists('vp3_catch_up_page_binding_v1')
       &&hash_equals(vp3_catch_up_page_binding_v1($user),$pageBinding)){
+    $eligibleCore=is_int($context['conversation_id']??null)&&$context['conversation_id']>0
+      &&($context['visible']??null)===true&&($context['focused']??null)===true
+      &&($context['chat_focused']??null)===true&&is_bool($context['chat_busy']??null);
+    $coreFailure=static fn(string $reason):array=>['owner_user_id'=>(int)$user['id'],
+      'conversation_id'=>(int)($context['conversation_id']??0),'working_attention_binding'=>$pageBinding,'reason'=>$reason];
     try{
       $pdo=db();
       if(!$pdo instanceof PDO)throw new RuntimeException('Core storage is unavailable.',503);
@@ -35,11 +40,14 @@ try{
         $core['agent_core_context']=['owner_user_id'=>(int)$user['id'],'agent_id'=>$agentId,
           'conversation_id'=>$conversationId,'working_attention_binding'=>$pageBinding,
           'health'=>vp3_initiative_worker_health_v1($pdo,$user,$agentId,$conversationId)];
+      }elseif($eligibleCore&&in_array($adoption['reason']??'', ['storage_unavailable','context_unavailable'],true)){
+        $core['agent_core_context_error']=$coreFailure($adoption['reason']);
       }
     }catch(Throwable $error){
       // Activity remains usable during an upgrade or route outage. Core health
       // is independently projected; never manufacture an active policy here.
       agent_runtime_v125_trace('agent_core.activation_unavailable',['user_id'=>(int)$user['id'],'error_class'=>get_class($error)]);
+      if($eligibleCore)$core['agent_core_context_error']=$coreFailure('runtime_unavailable');
     }
   }
   echo json_encode(['ok'=>true,'activity'=>$activity,'server_time_ms'=>(int)floor(microtime(true)*1000),

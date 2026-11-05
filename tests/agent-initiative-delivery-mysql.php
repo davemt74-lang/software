@@ -27,7 +27,6 @@ date_default_timezone_set('UTC');
 function agent_brain_schema_ready(): bool{return true;}
 function agent_brain_normalize(string $text): string{return strtolower(trim($text));}
 function agent_brain_sentences(string $text): array{return [$text];}
-function vp3_participant_scope_v1(): ?array{return null;}
 function calendar_schedule_awareness_snapshot_v1330(PDO $pdo,array $user,DateTimeImmutable $now,int $days,bool $includeHomeServer=true): array
 {
     if($includeHomeServer)throw new LogicException('The fixture must use the owner Cloud calendar.');

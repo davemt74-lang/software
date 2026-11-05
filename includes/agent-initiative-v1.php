@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-chat-boundary-v380.php';
+require_once __DIR__.'/participant-updates-v1.php';
 require_once __DIR__.'/agent-tool-json-v1.php';
 require_once __DIR__.'/agent-catch-up-v1.php';
 require_once __DIR__.'/agent-initiative-scope-v1.php';

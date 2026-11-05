@@ -13,6 +13,7 @@ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-screen-sessions-'));for(cons
 for(const file of ['includes/knowledge.php','includes/shared-folders-v161.php','includes/agent-screen-share-v1.php','includes/agent-screen-sessions-v1.php','includes/agent-screen-audio-v1.php',sessionFile,'api/agent-screen-audio-v1.php','includes/agent-screen-insights-v1.php','includes/agent-screen-handoffs-v1.php','api/agent-screen-insights-v1.php'])fs.copyFileSync(file,path.join(tmp,file));
 for(const name of [
  'agent-initiative-v1','agent-initiative-scope-v1','agent-initiative-errors-v1','agent-tool-json-v1','agent-chat-boundary-v380',
+ 'participant-updates-v1','studio-participants','agent-task-lists-v1','agent-reminders-v1','agent-tool-receipts-v1','agent-conversation-intent-v1',
  'agent-catch-up-v1','agent-catch-up-missions-v1','agent-catch-up-profile-calls-v1','agent-catch-up-meeting-prep-v1',
  'profile-calls-pa3c','profile-agent-handoff-pa3','profile-agent-boundary-v390',
  'profile-agent-public-service-v110','profile-call-activity-pa3c','profile-live-text-pa3d'
@@ -55,7 +56,8 @@ function vp3_agent_memory_scope_current_v410($user){
     $scope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??[];
     return ($scope['user_id']??null)===$user['id']?(int)($scope['user_agent_id']??0):0;
 }
-function vp3_participant_scope_v1(){return isset($_SERVER['HTTP_X_FIXTURE_PARTICIPANT'])?['fixture'=>true]:null;}
+if(isset($_SERVER['HTTP_X_FIXTURE_PARTICIPANT']))$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=[
+    'owner'=>(int)($_SERVER['HTTP_X_FIXTURE_USER']??1),'agent'=>0,'participant'=>8,'revision'=>1];
 function user_agent_principal_v236($user,$agent){return ['kind'=>$agent?'user_agent':'system','agent_id'=>$agent['id']??0,'viewer_user_id'=>$user['id']];}
 function vp3_capability_current_v1($user){return null;}
 ${controlPrincipal}

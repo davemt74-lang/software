@@ -67,7 +67,6 @@ $pdo->exec("ALTER TABLE chat_conversations ADD COLUMN updated_at DATETIME;
 function agent_brain_schema_ready(): bool{return true;}
 function agent_brain_normalize(string $text): string{return strtolower(trim($text));}
 function agent_brain_sentences(string $text): array{return [$text];}
-function vp3_participant_scope_v1(): ?array{return $GLOBALS['initiativeScopeParticipant']??null;}
 function user_calendar_default_timezone_v1300(PDO $pdo,array $user): string{return 'UTC';}
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat'): array
 {
@@ -207,11 +206,11 @@ scope_check(vp3_initiative_foreground_status_v1($pdo,$one,17,171)['state']==='li
     && vp3_initiative_foreground_status_v1($pdo,$one,18,170)['state']==='unavailable'
     && vp3_initiative_foreground_status_v1($pdo,$two,19,170)['state']==='unavailable',
     'foreground status separates another bound Chat, another Agent and another owner');
-$GLOBALS['initiativeScopeParticipant']=['participant_id'=>5];
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>5];
 scope_command($one,17,170,'off');
 scope_check(vp3_initiative_policy_v1($one,17)===$before&&vp3_initiative_foreground_status_v1($pdo,$one,17,170)['state']==='unavailable',
     'participant presence cannot change or inspect owner-private Initiative');
-unset($GLOBALS['initiativeScopeParticipant']);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 
 vp3_initiative_sweep_v1($pdo,25);
 foreach([[1,0],[1,17],[1,18],[2,19]] as [$owner,$agent])scope_check(count(scope_runs($owner,$agent,'initiative.plan'))===1,

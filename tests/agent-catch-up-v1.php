@@ -6,8 +6,7 @@ function has_permission(string $permission,array $user): bool{return !in_array($
 function personal_capability_has_v242(string $permission,array $user): bool{return has_permission($permission,$user);}
 function user_agent_get_v236(PDO $pdo,int $owner,int $agent): ?array{return $owner===1&&$agent===7?['id'=>7,'is_active'=>1]:null;}
 function user_agent_principal_v236(array $user,?array $agent): array{return ['owner_user_id'=>$user['id'],'kind'=>$agent?'user_agent':'system','agent_id'=>$agent['id']??0];}
-function vp3_participant_scope_v1(): ?array{return $GLOBALS['participant_scope']??null;}
-function vp3_participant_resource_v1(PDO $pdo,array $user,array $principal,string $kind,int $id): bool{return $kind!=='task'||$id!==77;}
+function user_data_policy_can_use_v236(PDO $pdo,array $principal,int $owner,string $kind,string $id,bool $legacy=false): bool{return $kind!=='knowledge'||$id!=='brain:77';}
 function user_calendar_schema_ready_v1300(PDO $pdo): bool{return true;}
 function user_calendar_default_timezone_v1300(PDO $pdo,array $user): string{return 'America/Phoenix';}
 function user_calendar_timezone_v1300(string $zone,string $fallback): string{return $zone;}
@@ -182,9 +181,9 @@ expect($named['items']===[]&&array_unique(array_values($named['coverage']))===['
 $namedTaskRows=vp3_catch_up_tasks_v1($pdo,$user,user_agent_principal_v236($user,['id'=>7]),$now)[1];
 expect(array_column($namedTaskRows,'id')===['task:2'],'named Agent tasks honor scope and per-record policy');
 expect(blocked(fn()=>vp3_agent_catch_up_v1($pdo,$user,'all',55))&&blocked(fn()=>vp3_agent_catch_up_v1($pdo,['id'=>3])),'foreign Agent and inactive owner fail closed');
-$GLOBALS['participant_scope']=['participant'=>1];
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant'=>1];
 expect(blocked(fn()=>vp3_agent_catch_up_v1($pdo,$user)),'participant view cannot inherit owner briefing access');
-unset($GLOBALS['participant_scope']);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 expect((int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,'brief reads do not change any source, receipt or delivery record');
 $originalReminder=array_values(array_filter($candidates['items'],static fn(array $row):bool=>$row['id']==='reminder:1'))[0];
 $originalReference=vp3_working_context_key_v1(1,0,50,$originalReminder);

@@ -25,11 +25,6 @@ function user_agent_principal_v236(array $user,?array $agent): array
 {
     return ['kind'=>$agent?'user_agent':'system','owner_user_id'=>$user['id'],'viewer_user_id'=>$user['id'],'agent_id'=>$agent['id']??0];
 }
-function vp3_participant_scope_v1(): ?array{return $GLOBALS['situation_participant']??null;}
-function vp3_participant_resource_v1(PDO $pdo,array $user,array $principal,string $kind,int $id): bool
-{
-    return $kind!=='task'||!in_array($id,$GLOBALS['situation_denied_tasks']??[],true);
-}
 function notification_system_sql_predicate(string $alias=''): string{return '1=1';}
 function notification_requires_attention(array $row): bool{return ($row['type']??'')==='action_required';}
 function user_calendar_default_timezone_v1300(PDO $pdo,array $user): string{return 'UTC';}
@@ -146,18 +141,18 @@ situation_check(count($named['items'])===1&&($named['items'][0]['source_counts']
 $foreign=vp3_activity_situations_v1($pdo,['id'=>2,'is_active'=>1],'system',$now);
 situation_check(!str_contains(situation_json($foreign),'Send the agreed quote')&&$foreign['items']===[],
     'another account cannot receive the first owner’s situations');
-$GLOBALS['situation_denied_tasks']=[201];
+$pdo->exec("PRAGMA query_only=OFF; UPDATE agent_memory_items SET is_active=0 WHERE id=201; PRAGMA query_only=ON");
 $restricted=vp3_activity_situations_v1($pdo,$user,'system',$now);
 situation_check(situation_with_source($restricted,'notifications')===null
     &&!str_contains(situation_json($restricted),'Send the agreed quote'),
     'a revoked task record withdraws its linked notification and task evidence');
-unset($GLOBALS['situation_denied_tasks']);
-$GLOBALS['situation_participant']=['participant_id'=>9];
+$pdo->exec("PRAGMA query_only=OFF; UPDATE agent_memory_items SET is_active=1 WHERE id=201; PRAGMA query_only=ON");
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>9];
 $participantDenied=false;
 try{vp3_activity_situations_v1($pdo,$user,'system',$now);}
 catch(RuntimeException $error){$participantDenied=$error->getCode()===403;}
 situation_check($participantDenied,'participant scope cannot inherit the owner’s activity situations');
-unset($GLOBALS['situation_participant']);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 $pdo->exec('PRAGMA query_only=OFF');
 $pdo->exec('SAVEPOINT revise_source');
 $pdo->exec("UPDATE agent_memory_items SET metadata_json=json_set(metadata_json,'$.task_status','in_progress') WHERE id=201");
