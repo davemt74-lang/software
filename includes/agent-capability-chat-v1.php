@@ -241,7 +241,7 @@ function vp3_capability_control_principal_v1(PDO $pdo,array $user,int $conversat
 
 function vp3_initiative_command_v1(string $query): ?string
 {
-    return preg_match('/\A\/initiative (on|off|status)\z/i',trim($query),$matches)?strtolower($matches[1]):null;
+    return preg_match('/\A\/initiative (on|off|status|screen on|screen off)\z/i',trim($query),$matches)?strtolower($matches[1]):null;
 }
 
 function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $query,array $context=[],$scope=null,array $history=[],?callable $model=null,?callable $authority=null): array

@@ -37,7 +37,7 @@ function vp3_initiative_plan_v1(string $answer,array $evidence): array
     return $jobs;
 }
 
-function vp3_initiative_evidence_v1(PDO $pdo,array $user,DateTimeImmutable $now): array
+function vp3_initiative_evidence_v1(PDO $pdo,array $user,DateTimeImmutable $now,bool $includeScreen=false,array $screenSessions=[]): array
 {
     $principal=vp3_agent_chat_principal_v380($user,null);
     $sources=[
@@ -78,6 +78,13 @@ function vp3_initiative_evidence_v1(PDO $pdo,array $user,DateTimeImmutable $now)
                 'revision'=>hash('sha256',json_encode([$row,$analysis['source_hash'],$analysis['generated_at'],$counts,$actions],JSON_THROW_ON_ERROR))];
         }
     }catch(Throwable $e){}
+    if($includeScreen){
+        require_once __DIR__.'/agent-initiative-screen-v1.php';
+        try{$evidence+=vp3_initiative_screen_evidence_v1($pdo,$user,$now,$screenSessions);}
+        catch(Throwable $e){
+            if($screenSessions)throw $e;
+        }
+    }
     ksort($evidence);
     return $evidence;
 }
@@ -85,7 +92,7 @@ function vp3_initiative_evidence_v1(PDO $pdo,array $user,DateTimeImmutable $now)
 function vp3_initiative_policy_v1(array $user): array
 {
     $memory=agent_brain_v122_memory($user,'initiative_policy','owner-opt-in');
-    return array_intersect_key($memory['metadata']??[],array_flip(['enabled','conversation_id','revision']));
+    return array_intersect_key($memory['metadata']??[],array_flip(['enabled','conversation_id','revision','screen_enabled']));
 }
 
 function vp3_initiative_access_v1(PDO $pdo,array $user,array $binding): array
@@ -153,7 +160,7 @@ function vp3_initiative_schedule_v1(PDO $pdo,array $user): void
         $live=vp3_initiative_access_v1($pdo,$live,$policy);
         $last=agent_brain_v122_memory($live,'initiative_sweep','last-review');
         if(!$last||(strtotime((string)$last['last_seen_at'])?:0)<time()-300){
-            $evidence=vp3_initiative_evidence_v1($pdo,$live,new DateTimeImmutable('now',new DateTimeZone('UTC')));
+            $evidence=vp3_initiative_evidence_v1($pdo,$live,new DateTimeImmutable('now',new DateTimeZone('UTC')),!empty($policy['screen_enabled']));
             if($evidence){
                 $payload=['binding'=>$policy,'sources'=>array_column($evidence,'revision','ref')];
                 $hash=hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR));
@@ -193,13 +200,14 @@ function vp3_initiative_chat_v1(PDO $pdo,array $user,array $principal,array $con
 {
     $result=['handled'=>true,'actions'=>[],'sources'=>[]];
     $cid=(int)($context['conversation_id']??0);
+    $disabling=in_array($command,['off','screen off'],true);
     if(($principal['kind']??'')!=='system'||$cid<1||vp3_participant_scope_v1()!==null){
         return $result+['answer'=>'Use your private system Agent Chat to control initiative.'];
     }
     try{
         $live=vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority);
         if(!has_permission('account.access',$live)||vp3_agent_memory_scope_current_v410($live)!==0
-            ||($command!=='off'&&!personal_capability_has_v242('agent_brain.access',$live)))throw new RuntimeException('Initiative access denied.',403);
+            ||(!$disabling&&!personal_capability_has_v242('agent_brain.access',$live)))throw new RuntimeException('Initiative access denied.',403);
         if(!agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo)){
             return $result+['answer'=>'Initiative needs the current Agent Brain and job database upgrades.'];
         }
@@ -212,10 +220,30 @@ function vp3_initiative_chat_v1(PDO $pdo,array $user,array $principal,array $con
         $pdo->beginTransaction();
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_capability_live_user_v1($pdo,$live,$principal,$context,$authority);
-        if(!has_permission('account.access',$live)||($command==='on'&&!personal_capability_has_v242('agent_brain.access',$live))){
+        if(!has_permission('account.access',$live)||(!$disabling&&!personal_capability_has_v242('agent_brain.access',$live))){
             throw new RuntimeException('Initiative access denied.',403);
         }
         $policy=vp3_initiative_policy_v1($live);
+        if(in_array($command,['screen on','screen off'],true)){
+            if(empty($policy['enabled'])||$policy['conversation_id']!==$cid){
+                $pdo->rollBack();
+                return $result+['answer'=>'Enable Initiative here first, or open the private Chat where it is already enabled.'];
+            }
+            $enableScreen=$command==='screen on';
+            if($enableScreen){
+                require_once __DIR__.'/agent-screen-sessions-v1.php';
+                screen_sessions_permission_v1($live);
+            }
+            if($enableScreen!==!empty($policy['screen_enabled'])){
+                $policy['screen_enabled']=$enableScreen;
+                $policy['revision']=bin2hex(random_bytes(16));
+                if(agent_brain_v122_upsert_system_memory($live,'initiative_policy','owner-opt-in','Owner initiative preference.',$policy)<1){
+                    throw new RuntimeException('Initiative screen setting could not be saved.');
+                }
+            }
+            $pdo->commit();
+            return $result+['answer'=>$enableScreen?'Screen-share follow-ups are on. Initiative can use saved note text and session titles from finished shares with your configured Cloud AI model. Use /initiative screen off to stop.':'Screen-share follow-ups are off.'];
+        }
         $enable=$command==='on';
         if($enable!==!empty($policy['enabled'])||($enable&&$policy['conversation_id']!==$cid)){
             $policy=['enabled'=>$enable,'conversation_id'=>$cid,'revision'=>bin2hex(random_bytes(16))];
@@ -224,7 +252,7 @@ function vp3_initiative_chat_v1(PDO $pdo,array $user,array $principal,array $con
             }
         }
         $pdo->commit();
-        return $result+['answer'=>$enable?'Initiative is on for this conversation. With your Cloud AI settings, I can review upcoming calendar events, accepted transcript action notes, and Mission status. I can prepare private next steps and share useful results here. Use /initiative off to stop.':'Initiative is off.'];
+        return $result+['answer'=>$enable?'Initiative is on for this conversation. With your Cloud AI settings, I can review upcoming calendar events, accepted transcript action notes, and Mission status. I can prepare private next steps and share useful results here. Use /initiative screen on to include saved screen-share follow-ups or /initiative off to stop.':'Initiative is off.'];
     }catch(Throwable $e){
         if($pdo->inTransaction())$pdo->rollBack();
         return $result+['answer'=>'I couldn’t verify or update initiative for this conversation.'];
@@ -238,7 +266,8 @@ function vp3_initiative_status_v1(PDO $pdo,array $user,array $policy,array $resu
         WHERE r.owner_user_id=? AND r.source_kind='agent_initiative' AND r.agent_id IS NULL
         ORDER BY r.id DESC LIMIT 15");
     $stmt->execute([(int)$user['id']]);
-    $lines=['Initiative is on.'];$sources=[];
+    $includeScreen=!empty($policy['screen_enabled']);
+    $lines=['Initiative is on. Screen-share follow-ups are '.($includeScreen?'on.':'off.')];$sources=[];
     $current=null;
     foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){
         $goal=json_decode((string)$row['goal'],true);
@@ -250,7 +279,7 @@ function vp3_initiative_status_v1(PDO $pdo,array $user,array $policy,array $resu
         }
         $out=json_decode((string)$row['result_json'],true);
         if(($out['effect_state']??'')!=='private_draft_ready')continue;
-        $current??=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')));
+        $current??=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),$includeScreen);
         $matching=array_intersect_key($current,$goal['sources']);
         if(array_column($matching,'revision','ref')!==$goal['sources'])continue;
         $lines[]=(string)$out['initiative_draft'];
@@ -261,9 +290,11 @@ function vp3_initiative_status_v1(PDO $pdo,array $user,array $policy,array $resu
     return $result+['answer'=>implode("\n\n",array_values(array_unique($lines)))];
 }
 
-function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources): array
+function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,bool $includeScreen=false): array
 {
-    $current=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')));
+    $sessions=[];
+    foreach(array_keys($sources) as $ref)if(str_starts_with($ref,'screen-followup:'))$sessions[]=substr($ref,16);
+    $current=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),$includeScreen&&$sessions!==[],$sessions);
     foreach($sources as $ref=>$revision){
         if(($current[$ref]['revision']??null)!==$revision)throw new RuntimeException('Initiative sources changed.',409);
     }
@@ -296,7 +327,8 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
         $payload=json_decode((string)$run['goal'],true,16,JSON_THROW_ON_ERROR);
         $binding=$payload['binding'];$sources=$payload['sources'];
         $live=vp3_initiative_access_v1($pdo,$user,$binding);
-        $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources);
+        $includeScreen=!empty($binding['screen_enabled']);
+        $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen);
         $modelEvidence=array_map(static fn(array $row):array=>array_diff_key($row,['url'=>true,'revision'=>true]),array_values($evidence));
         $planning=$run['action_capability_key']==='initiative.plan';
         $infer=$model??static fn(string $prompt,string $protocol):string=>vp3_initiative_model_v1($pdo,$live,$prompt,$protocol);
@@ -316,7 +348,7 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
         $pdo->beginTransaction();
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$binding);
-        $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources);
+        $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen);
         if($planning){
             $admitted=0;
             foreach($jobs as $job){

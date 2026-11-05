@@ -10,6 +10,8 @@ require __DIR__.'/fixtures/image-generation-v1.php';
 require_once dirname(__DIR__).'/includes/agent-memory-scope-v410.php';
 require_once dirname(__DIR__).'/includes/agent-brain-v122.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-screen-v1.php';
+require_once dirname(__DIR__).'/includes/knowledge.php';
 $GLOBALS['initiativeBrainAccess']=true;
 register_shutdown_function(static fn() => unlink($fixtureFile));
 
@@ -236,5 +238,186 @@ $multiple = vp3_initiative_execute_v1($pdo,$user,initiative_worker_claim($user,$
 initiative_worker_check($multiple['ok'] && count(initiative_worker_runs('initiative.prepare'))===$before+2
     && count(initiative_worker_receipts($multiplePlan))===1 && count(initiative_worker_assistant_messages())===1,
     'two independently grounded assignments queue separately under one plan receipt');
+
+$GLOBALS['initiativeScreenAccess'] = true;
+$pdo->exec("CREATE TABLE artist_transcript_folders_v177 (id INTEGER PRIMARY KEY,created_by_user_id INTEGER,folder_name TEXT,
+    sort_order INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(created_by_user_id,folder_name));
+    CREATE TABLE knowledge_items (id INTEGER PRIMARY KEY,track_id INTEGER,folder_id INTEGER,title TEXT,description TEXT,
+    file_name TEXT,file_path TEXT,file_type TEXT,mime_type TEXT,file_size INTEGER,content_text TEXT,visibility TEXT,
+    is_published INTEGER,created_by_user_id INTEGER,knowledge_scope TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE knowledge_chunks (id INTEGER PRIMARY KEY,knowledge_id INTEGER,chunk_index INTEGER,chunk_text TEXT);
+    INSERT INTO chat_conversations(id,user_id,user_agent_id) VALUES (44,1,NULL);
+    DELETE FROM initiative_fixture_calendar;");
+screen_sessions_schema_v1($pdo);
+
+function initiative_worker_screen_capture(PDO $pdo, array $user, int $number, string $note, array $options = []): array
+{
+    $sid = sprintf('00000000-0000-4000-8000-%012d', 100 + $number);
+    $cid = sprintf('00000000-0000-4000-8000-%012d', 200 + $number);
+    $session = screen_session_start_v1($pdo, $user, ['session_id'=>$sid,'title'=>'Release screen '.$number,
+        'conversation_id'=>$options['conversation_id']??0]);
+    $at = gmdate('Y-m-d\TH:i:s\Z',time()-($options['age']??0));
+    $body = ['captured_at'=>$at,'surface'=>'browser',
+        'note'=>$note,'image'=>'PRIVATE-PIXELS','transcript'=>'PRIVATE-TRANSCRIPT',
+        'observation'=>['page_title'=>'PRIVATE-PAGE-TITLE','summary'=>'PRIVATE-OBSERVATION','visible_text'=>'PRIVATE-VISIBLE-TEXT']];
+    $capture = screen_capture_store_v1($pdo,$user,$sid,$cid,$body);
+    if (!empty($options['repeat'])) {
+        $capture = screen_capture_store_v1($pdo,$user,$sid,sprintf('00000000-0000-4000-8000-%012d',400+$number),$body);
+    }
+    if ($options['ended']??true) {
+        // This is the same status transition as the screen session API's end action.
+        $pdo->prepare("UPDATE agent_screen_sessions_v1 SET status='ended' WHERE owner_user_id=? AND session_id=? AND status='active'")
+            ->execute([$user['id'],$sid]);
+    }
+    return ['ref'=>'screen-followup:'.$sid,'session'=>$session,'capture'=>$capture];
+}
+
+function initiative_worker_screen_intent(PDO $pdo, array $user, string $sessionId): array
+{
+    foreach (screen_insights_feed_v1($pdo,$user,0) as $card) {
+        if ($card['kind']==='intent' && $card['refs'][0]['session_id']===$sessionId) return $card;
+    }
+    throw new LogicException('Fixture screen note had no current intent insight.');
+}
+
+$screen = initiative_worker_screen_capture($pdo,$user,1,"  Compare the release\n  checklist tomorrow.  ",['repeat'=>true]);
+$earlyScreenEvidence = vp3_initiative_screen_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')));
+initiative_worker_check(array_keys($earlyScreenEvidence)===[$screen['ref']],
+    'the reader finds the saved note before optional screen insight tables exist');
+screen_insights_schema_v1($pdo);
+initiative_worker_screen_capture($pdo,$user,2,'PRIVATE-ACTIVE-NOTE',['ended'=>false]);
+initiative_worker_screen_capture($pdo,['id'=>2],3,'PRIVATE-FOREIGN-NOTE');
+initiative_worker_screen_capture($pdo,$user,4,'PRIVATE-OTHER-AGENT-NOTE',['conversation_id'=>11]);
+initiative_worker_screen_capture($pdo,$user,5,'');
+initiative_worker_screen_capture($pdo,$user,6,'PRIVATE-OLD-NOTE',['age'=>8*86400]);
+$unowned = initiative_worker_screen_capture($pdo,$user,7,'PRIVATE-UNOWNED-FOLDER-NOTE');
+$pdo->prepare('UPDATE artist_transcript_folders_v177 SET created_by_user_id=2 WHERE id=?')->execute([$unowned['session']['folder_id']]);
+$removed = initiative_worker_screen_capture($pdo,$user,8,'PRIVATE-DELETED-KNOWLEDGE-NOTE');
+$pdo->prepare('DELETE FROM knowledge_items WHERE id=?')->execute([$removed['capture']['knowledge_id']]);
+$withdrawn = initiative_worker_screen_capture($pdo,$user,9,'PRIVATE-WITHDRAWN-NOTE');
+$pdo->prepare("INSERT INTO agent_screen_reviews_v1(owner_user_id,capture_id,state,note,updated_at) VALUES (1,?,'irrelevant','',?)")
+    ->execute([$withdrawn['capture']['capture_id'],gmdate('Y-m-d\TH:i:s\Z')]);
+
+$screenEvidence = static fn() => vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),
+    !empty(vp3_initiative_policy_v1($user)['screen_enabled']));
+$screenCommand = static fn(string $command,int $conversationId = 42) => vp3_initiative_chat_v1($pdo,$user,$principal,
+    ['conversation_id'=>$conversationId],$command,null);
+$screenRef = $screen['ref'];
+$screenCommand('off');
+$screenCommand('screen on');
+initiative_worker_check($screenEvidence()===[],'screen follow-up cannot be enabled while base initiative is off');
+$screenCommand('on');
+$screenCommand('screen on',44);
+initiative_worker_check($screenEvidence()===[],'base opt-in and another private Chat do not grant screen evidence');
+$screenCommand('screen on');
+$rows = $screenEvidence();
+initiative_worker_check(array_keys($rows)===[$screenRef] && $rows[$screenRef]['kind']==='screen_followup'
+    && $rows[$screenRef]['detail']==='Compare the release checklist tomorrow.'
+    && $rows[$screenRef]['url']===$screen['session']['knowledge_url'],
+    'screen opt-in folds repeated captures of a recent saved note into one owned, closed system session');
+$GLOBALS['initiativeScreenAccess'] = false;
+initiative_worker_check($screenEvidence()===[],'losing personal Knowledge access withdraws the screen source');
+$GLOBALS['initiativeScreenAccess'] = true;
+$screenCommand('screen off');
+initiative_worker_check($screenEvidence()===[] && !empty(vp3_initiative_policy_v1($user)['enabled']),
+    'turning screen follow-up off withdraws screen evidence while base initiative stays enabled');
+$screenCommand('screen on');
+
+$screenIntent = initiative_worker_screen_intent($pdo,$user,$screen['session']['session_id']);
+$clearScreenDecision = $pdo->prepare('DELETE FROM agent_screen_insight_state_v1 WHERE owner_user_id=1 AND agent_id=0 AND insight_key=?');
+foreach (['later'=>'Later','never'=>'Never'] as $decision=>$label) {
+    screen_insights_decide_v1($pdo,$user,0,['key'=>$screenIntent['key'],'review_hash'=>$screenIntent['review_hash'],'decision'=>$decision]);
+    initiative_worker_check($screenEvidence()===[],$label.' suppresses initiative evidence for the existing intent');
+    $clearScreenDecision->execute([$screenIntent['key']]);
+}
+
+$otherRefs = $screenIntent['refs'];
+$otherRefs[0]['revision']++;
+$handoff = $pdo->prepare("INSERT INTO agent_screen_handoffs_v1(owner_user_id,handoff_id,agent_id,kind,status,refs_json,source_hash,updated_at)
+    VALUES (1,'00000000-0000-4000-8000-000000000310',0,'research','prepared',?,?,?)");
+$handoff->execute([json_encode($otherRefs,JSON_THROW_ON_ERROR),screen_insights_hash_v1($otherRefs),gmdate('Y-m-d\TH:i:s\Z')]);
+initiative_worker_check(array_keys($screenEvidence())===[$screenRef],'a handoff for a different capture revision does not suppress the current note');
+$pdo->prepare('UPDATE agent_screen_handoffs_v1 SET refs_json=?,source_hash=? WHERE owner_user_id=1')
+    ->execute([json_encode($screenIntent['refs'],JSON_THROW_ON_ERROR),$screenIntent['review_hash']]);
+initiative_worker_check($screenEvidence()===[],'an exact prepared handoff suppresses duplicate screen initiative work');
+$pdo->exec('DELETE FROM agent_screen_handoffs_v1 WHERE owner_user_id=1');
+
+$screenPlanModel = static function (string $prompt,string $protocol) use ($screenRef): string {
+    $rows = json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+    initiative_worker_check($protocol==='vp3.initiative-plan.v1' && count($rows)===1 && $rows[0]['ref']===$screenRef
+        && $rows[0]['kind']==='screen_followup' && $rows[0]['detail']==='Compare the release checklist tomorrow.'
+        && isset($rows[0]['saved_at']) && !array_diff(array_keys($rows[0]),['ref','kind','title','detail','saved_at']) && !str_contains($prompt,'PRIVATE-'),
+        'planner receives the normalized explicit screen note without observations, pixels, transcript, URL, or capture metadata');
+    return json_encode(['jobs'=>[['tool'=>'work.prepare_private','primary'=>$screenRef,'refs'=>[$screenRef],
+        'focus'=>'Draft a private checklist follow-up','report'=>true]]],JSON_THROW_ON_ERROR);
+};
+$screenPlanCount = count(initiative_worker_runs('initiative.plan'));
+initiative_worker_expire_review();
+vp3_initiative_schedule_v1($pdo,$user);
+initiative_worker_expire_review();
+vp3_initiative_schedule_v1($pdo,$user);
+$screenPlans = initiative_worker_runs('initiative.plan');
+initiative_worker_check(count($screenPlans)===$screenPlanCount+1,'repeated sweeps deduplicate the same opted-in screen evidence');
+$screenPlan = (int) $screenPlans[array_key_last($screenPlans)]['id'];
+$screenPlanResult = vp3_initiative_execute_v1($pdo,$user,initiative_worker_claim($user,$screenPlan),$screenPlanModel);
+initiative_worker_check($screenPlanResult['ok'],'an eligible screen note can queue private preparation');
+$screenDrafts = initiative_worker_runs('initiative.prepare');
+$screenDraft = (int) $screenDrafts[array_key_last($screenDrafts)]['id'];
+$dismissed = vp3_initiative_execute_v1($pdo,$user,initiative_worker_claim($user,$screenDraft),static function (string $prompt,string $protocol) use ($pdo,$user,$screenIntent,$screenRef): string {
+    $input = json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+    initiative_worker_check($protocol==='vp3.initiative-draft.v1' && array_column($input['evidence'],'ref')===[$screenRef]
+        && !str_contains($prompt,'PRIVATE-'),'private preparation is grounded in only the selected screen note');
+    screen_insights_decide_v1($pdo,$user,0,['key'=>$screenIntent['key'],'review_hash'=>$screenIntent['review_hash'],'decision'=>'dismiss']);
+    return '{"draft":"This draft must be discarded after dismissal."}';
+});
+$receipt = initiative_worker_receipts($screenDraft);
+initiative_worker_check(!$dismissed['ok'] && $screenEvidence()===[] && count(initiative_worker_assistant_messages())===1
+    && count($receipt)===1 && $receipt[0]['status']==='failed' && !str_contains((string)$receipt[0]['result_json'],'discarded after dismissal'),
+    'dismissing a screen insight during inference fences its draft and any Chat report');
+
+$reportScreen = initiative_worker_screen_capture($pdo,$user,10,'Outline the release checklist.');
+$reportScreenRef = $reportScreen['ref'];
+$screenReportDraft = initiative_worker_new_report($user,'',static function (string $prompt) use ($reportScreenRef): string {
+    $rows = json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+    initiative_worker_check(array_column($rows,'ref')===[$reportScreenRef],'a different current screen note can still be prepared after a dismissal');
+    return json_encode(['jobs'=>[['tool'=>'work.prepare_private','primary'=>$reportScreenRef,'refs'=>[$reportScreenRef],
+        'focus'=>'Outline the checklist','report'=>true]]],JSON_THROW_ON_ERROR);
+});
+$reportClaim = initiative_worker_claim($user,$screenReportDraft);
+$reportText = 'Check the export, confirm its owner, and verify the release date.';
+$reported = vp3_initiative_execute_v1($pdo,$user,$reportClaim,static fn()=>json_encode(['draft'=>$reportText],JSON_THROW_ON_ERROR));
+$reportMessages = initiative_worker_assistant_messages();
+$screenReport = $reportMessages[array_key_last($reportMessages)];
+$sources = json_decode($screenReport['context_json'],true,16,JSON_THROW_ON_ERROR)['sources'];
+initiative_worker_check($reported['ok'] && count($reportMessages)===2 && $screenReport['message']===$reportText
+    && (int)$screenReport['conversation_id']===42 && count(initiative_worker_receipts($screenReportDraft))===1
+    && count($sources)===1 && $sources[0]['source']===$reportScreenRef && $sources[0]['url']===$reportScreen['session']['knowledge_url'],
+    'a current screen note can report exactly once to the opted-in Chat with its canonical source link');
+$replayed = vp3_initiative_execute_v1($pdo,$user,$reportClaim,static fn()=>throw new LogicException('A finished screen lease must not replay.'));
+initiative_worker_check(!$replayed['ok'] && count(initiative_worker_assistant_messages())===2,
+    'replaying a finished screen claim does not duplicate its report');
+
+$pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES
+    (42,1,'user','An owner turn makes another report eligible'),(42,NULL,'assistant','Regular Chat reply')");
+foreach (['deletion'=>11,'opt-out'=>12] as $withdrawal=>$number) {
+    $withdrawn = initiative_worker_screen_capture($pdo,$user,$number,'Prepare release follow-up '.$number.'.');
+    $withdrawnRef = $withdrawn['ref'];
+    $runId = initiative_worker_new_report($user,'',static function (string $prompt) use ($withdrawnRef): string {
+        $rows = json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+        if (!in_array($withdrawnRef,array_column($rows,'ref'),true)) throw new LogicException('The fixture source was unavailable before withdrawal.');
+        return json_encode(['jobs'=>[['tool'=>'work.prepare_private','primary'=>$withdrawnRef,'refs'=>[$withdrawnRef],
+            'focus'=>'Prepare release follow-up','report'=>true]]],JSON_THROW_ON_ERROR);
+    });
+    $result = vp3_initiative_execute_v1($pdo,$user,initiative_worker_claim($user,$runId),static function () use ($pdo,$user,$withdrawal,$withdrawn,$screenCommand): string {
+        if ($withdrawal==='deletion') screen_session_delete_v1($pdo,$user,$withdrawn['session']['session_id'],false);
+        else $screenCommand('screen off');
+        return '{"draft":"Never commit this withdrawn screen draft."}';
+    });
+    $receipt = initiative_worker_receipts($runId);
+    initiative_worker_check(!$result['ok'] && !isset($screenEvidence()[$withdrawnRef]) && count(initiative_worker_assistant_messages())===2
+        && count($receipt)===1 && $receipt[0]['status']==='failed' && !str_contains((string)$receipt[0]['result_json'],'withdrawn screen draft'),
+        'screen '.$withdrawal.' during inference fences the private draft and its otherwise eligible Chat report');
+}
 
 echo "AGENT_INITIATIVE_WORKER_V1=PASS ($checks cases)\n";

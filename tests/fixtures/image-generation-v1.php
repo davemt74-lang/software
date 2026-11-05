@@ -17,7 +17,11 @@ function db(): PDO{return $GLOBALS['pdo'];}
 function table_exists($name): bool {$q=db()->prepare(db()->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'?"SELECT name FROM sqlite_master WHERE type='table' AND name=?":"SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?");$q->execute([$name]);return(bool)$q->fetchColumn();}
 function column_exists($table,$column): bool {if(db()->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')return in_array($column,array_column(db()->query('PRAGMA table_info('.$table.')')->fetchAll(),'name'),true);$q=db()->prepare('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?');$q->execute([$table,$column]);return(bool)$q->fetchColumn();}
 function has_permission($key,$u): bool{return empty($GLOBALS['imageDenied'])&&!isset($_SERVER['HTTP_X_FIXTURE_DENIED']);}
-function personal_capability_has_v242(...$args): bool{return ($args[0]??'')==='agent_brain.access'&&!empty($GLOBALS['initiativeBrainAccess']);}
+function personal_capability_has_v242(...$args): bool{return match($args[0]??''){
+    'agent_brain.access'=>!empty($GLOBALS['initiativeBrainAccess']),
+    'personal_knowledge.access','personal_knowledge.manage'=>!empty($GLOBALS['initiativeScreenAccess']),
+    default=>false,
+};}
 function current_user(): ?array{return isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS'])?null:['id'=>(int)($_SERVER['HTTP_X_FIXTURE_USER']??1),'is_active'=>1];}
 function csrf_token(): string{return 'fixture';}
 function user_account_types_for_user_id(...$args): array{return ['member'];}
