@@ -13,7 +13,7 @@ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-screen-sessions-'));for(cons
 for(const file of ['includes/knowledge.php','includes/shared-folders-v161.php','includes/agent-screen-share-v1.php','includes/agent-screen-sessions-v1.php','includes/agent-screen-audio-v1.php',sessionFile,'api/agent-screen-audio-v1.php','includes/agent-screen-insights-v1.php','includes/agent-screen-handoffs-v1.php','api/agent-screen-insights-v1.php'])fs.copyFileSync(file,path.join(tmp,file));
 for(const name of [
  'agent-initiative-v1','agent-tool-json-v1','agent-chat-boundary-v380',
- 'agent-catch-up-v1','agent-catch-up-missions-v1','agent-catch-up-profile-calls-v1',
+ 'agent-catch-up-v1','agent-catch-up-missions-v1','agent-catch-up-profile-calls-v1','agent-catch-up-meeting-prep-v1',
  'profile-calls-pa3c','profile-agent-handoff-pa3','profile-agent-boundary-v390',
  'profile-agent-public-service-v110','profile-call-activity-pa3c','profile-live-text-pa3d'
 ])fs.copyFileSync(`includes/${name}.php`,path.join(tmp,'includes',name+'.php'));
