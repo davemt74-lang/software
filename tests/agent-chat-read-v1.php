@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
+require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 
 require __DIR__.'/fixtures/image-generation-v1.php';
 require_once dirname(__DIR__).'/includes/agent-chat-read-v1.php';
 
-function vp3_participant_scope_v1(): ?array{return $GLOBALS['chatReadParticipant']??null;}
 function read_check(bool $ok,string $message): void
 {
     if(!$ok)throw new RuntimeException($message);
@@ -63,9 +63,9 @@ foreach([[7,7],[0],[-1],[true],[1.1],['7x'],[9007199254740992],array_fill(0,101,
 read_reject(static fn()=>vp3_chat_read_state_v1($pdo,$owner,7,42,[7]),'a named Agent cannot read the System Agent Chat',404);
 read_reject(static fn()=>vp3_chat_read_acknowledge_v1($pdo,$owner,0,11,[9]),'a System Agent cannot acknowledge a named Agent Chat',404);
 read_reject(static fn()=>vp3_chat_read_state_v1($pdo,['id'=>2,'is_active'=>1],0,42,[7]),'another owner cannot read the first owner Chat',404);
-$GLOBALS['chatReadParticipant']=['participant_id'=>3];
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>3];
 read_reject(static fn()=>$ack([7]),'a participant scope cannot acknowledge owner messages',403);
-unset($GLOBALS['chatReadParticipant']);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 $pdo->exec('UPDATE users SET is_active=0 WHERE id=1');
 read_reject(static fn()=>$ack([7]),'a deactivated owner is rechecked before acknowledgement',403);
 $pdo->exec('UPDATE users SET is_active=1 WHERE id=1');

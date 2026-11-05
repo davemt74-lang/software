@@ -45,7 +45,6 @@ $GLOBALS['initiativeBrainAccess']=true;
 function agent_brain_schema_ready():bool{return table_exists('agent_memory_items');}
 function agent_brain_normalize(string $text):string{return strtolower(trim($text));}
 function agent_brain_sentences(string $text):array{return [$text];}
-function vp3_participant_scope_v1():?array{return null;}
 function agent_runtime_v125_trace(string $event,array $data=[]):void{}
 function agent_runtime_v125_trace_id():string{return 'initiative-http-fixture';}
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat'):array
@@ -89,6 +88,14 @@ const VP3_COGNITIVE_PRESENTATION_V510='initiative-http-fixture';
 function vp3_cognitive_presentation_schema_ready_v510(PDO $pdo):bool{return true;}
 function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $namespace,int $agentId,bool $working,bool $preview,?int $cid=null):array
 {
+    $gate=getenv('VP3_INITIATIVE_FIXTURE_GATE')?:'';
+    if($gate!==''&&($_SERVER['HTTP_X_FIXTURE_HOLD_PROJECTION']??'')==='1'){
+        file_put_contents($gate.'.entered','1');$deadline=microtime(true)+10;
+        while(!is_file($gate.'.release')){
+            if(microtime(true)>$deadline)throw new RuntimeException('Fixture projection gate timed out.');
+            usleep(10000);
+        }
+    }
     $state=['brief'=>['agent_name'=>'Fixture Agent','active'=>true,'status_label'=>'Active']];
     if($cid!==null)$state['live_context']=['state'=>'quiet','attention'=>null,
         'initiative'=>vp3_initiative_foreground_status_v1($pdo,$user,$agentId,$cid)];

@@ -69,6 +69,9 @@ try{
     $initiativeMutation=$method==='POST'&&in_array($action,['initiative_tick','initiative_setting'],true);
     $namespace=$initiativeMutation?'':vp3_cognitive_agent_namespace_v500($pdo,$user,$agentId);
     if($readState){
+        // Source projection may take longer than the lightweight lifecycle
+        // heartbeat. Do not hold the account's PHP session lock behind it.
+        if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
         $greetingPreview=$includeWorkingAttention==='1'&&($input['greeting_preview']??'')==='1';
         $state=vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$includeWorkingAttention==='1',$greetingPreview,$liveConversationId);
         if($includeInitiativeRuntime){

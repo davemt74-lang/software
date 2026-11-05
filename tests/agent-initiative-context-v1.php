@@ -25,11 +25,6 @@ function user_agent_principal_v236(array $user,?array $agent): array
 {
     return ['kind'=>$agent?'user_agent':'system','owner_user_id'=>$user['id'],'viewer_user_id'=>$user['id'],'agent_id'=>$agent['id']??0];
 }
-function vp3_participant_scope_v1(): ?array{return $GLOBALS['situation_participant']??null;}
-function vp3_participant_resource_v1(PDO $pdo,array $user,array $principal,string $kind,int $id): bool
-{
-    return $kind!=='task'||!in_array($id,$GLOBALS['situation_denied_tasks']??[],true);
-}
 function notification_system_sql_predicate(string $alias=''): string{return '1=1';}
 function notification_requires_attention(array $row): bool{return ($row['type']??'')==='action_required';}
 function user_calendar_default_timezone_v1300(PDO $pdo,array $user): string{return 'UTC';}
@@ -157,9 +152,9 @@ context_check($foreign===[],'another owner cannot borrow the first account’s t
 $spoofed=false;
 try{context_read(principal:array_replace($namedPrincipal,['owner_user_id'=>2]));}catch(RuntimeException $e){$spoofed=$e->getCode()===403;}
 context_check($spoofed,'a forged named-Agent owner binding fails closed');
-$GLOBALS['situation_participant']=['participant_id'=>4];$denied=false;
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>4];$denied=false;
 try{context_read();}catch(RuntimeException $e){$denied=$e->getCode()===403;}
-unset($GLOBALS['situation_participant']);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 context_check($denied,'participant scope cannot inherit owner-private context admission');
 $GLOBALS['context_denied_permissions']=['agent_brain.access'];
 [$withoutBrain,$withoutBrainCoverage]=context_read();

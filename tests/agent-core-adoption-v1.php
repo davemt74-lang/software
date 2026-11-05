@@ -235,8 +235,8 @@ adoption_declined($one,$expired,'a stale stored heartbeat cannot activate even w
 $crossOwner=adoption_record($one,190);adoption_declined($one,$crossOwner,'an owner cannot adopt another account conversation through an otherwise valid activity observation');
 adoption_declined($two,$crossOwner,'account switching cannot reuse the previous account accepted activity tuple');
 $missingChat=adoption_record($one,99999);adoption_declined($one,$missingChat,'an unsaved or deleted Chat cannot become the automatic Agent binding');
-$private=adoption_record($one,170);$GLOBALS['initiativeScopeParticipant']=['participant_id'=>5];
-adoption_declined($one,$private,'a participant session cannot adopt an owner private Agent policy');unset($GLOBALS['initiativeScopeParticipant']);
+$private=adoption_record($one,170);$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>5];
+adoption_declined($one,$private,'a participant session cannot adopt an owner private Agent policy');unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 $pdo->exec('UPDATE users SET is_active=0 WHERE id=1');
 adoption_declined($one,$private,'a deactivated account cannot retain automatic adoption authority');$pdo->exec('UPDATE users SET is_active=1 WHERE id=1');
 $pdo->exec('UPDATE user_agents SET is_active=0 WHERE id=17');

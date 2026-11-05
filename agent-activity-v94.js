@@ -3,7 +3,7 @@
   const cfg=window.STONEFELLOW_ACTIVITY||{};if(!cfg.endpoint||!cfg.csrf)return;
   let lastMeaningful=Date.now(),hiddenAt=document.hidden?Date.now():0,lastState='',taskTitle=String(cfg.taskTitle||''),taskKey=String(cfg.taskKey||'');
   let timer=0,sending=false,lastSentContext='',closed=false,activitySequence=0,clockOffset=0,clockAnchored=false;
-  let lastCoreContext=null,lastCoreKey='',lastCoreAt=0;
+  let lastCoreContext=null,lastCoreKey='',lastCoreAt=0,heartbeatController=null;
   const pageCsrf=String(cfg.csrf),pageEndpoint=String(cfg.endpoint),pageOwner=Number(window.STONEFELLOW_CHAT?.userId||0);
   const pageAgent=Number(window.STONEFELLOW_CHAT?.agentId||0);
   const pageBinding=String(window.STONEFELLOW_CHAT?.workingAttentionBinding||'');
@@ -59,23 +59,44 @@
     lastCoreContext=core;lastCoreKey=sentKey;lastCoreAt=Date.now();
     window.dispatchEvent(new CustomEvent('vp3:agent-core-context',{detail:core}));
   }
+  function publishCoreError(reason,sentContext,sentKey){
+    const chat=canonicalChat();
+    if(!pageOwner||!pageBinding||closed||!currentBinding()||document.hidden||!document.hasFocus()
+      ||JSON.stringify(context())!==sentKey||!chat?.isReady?.()||chat.isRestoring?.()
+      ||!Number.isSafeInteger(sentContext.conversation_id)||sentContext.conversation_id<1
+      ||Number(chat.conversationId?.())!==sentContext.conversation_id
+      ||Number(chat.agentId?.()??pageAgent)!==pageAgent)return;
+    window.dispatchEvent(new CustomEvent('vp3:agent-core-context-error',{detail:{owner_user_id:pageOwner,
+      agent_id:pageAgent,conversation_id:sentContext.conversation_id,working_attention_binding:pageBinding,reason}}));
+  }
   async function heartbeat(reason='timer',force=false){
     if(closed||!currentBinding())return;
     const state=classify();if(sending)return;if(!force&&state===lastState&&reason!=='timer')return;
     sending=true;const sentContext=context(),sentKey=JSON.stringify(sentContext);lastSentContext=sentKey;
+    const controller=new AbortController();heartbeatController=controller;
+    const requestTimeout=window.setTimeout(()=>controller.abort(),15000);
     try{
       const headers={'Content-Type':'application/json'};
       if(pageBinding)headers['X-VP3-Working-Attention']=pageBinding;
-      const r=await fetch(pageEndpoint,{method:'POST',credentials:'same-origin',headers,
+      const r=await fetch(pageEndpoint,{method:'POST',credentials:'same-origin',headers,signal:controller.signal,
         body:JSON.stringify({action:'heartbeat',csrf_token:pageCsrf,surface:cfg.surface||'chat',state,reason,context:{...sentContext,...observation()}})});
       const d=await r.json().catch(()=>null);
+      if(controller.signal.aborted){publishCoreError('timeout',sentContext,sentKey);return;}
       if(r.ok&&d?.ok&&pageOwner&&Number.isSafeInteger(d.owner_user_id)&&d.owner_user_id!==pageOwner){closed=true;return;}
       if(r.ok&&d?.ok&&currentBinding()){
         acceptClock(d);publishCoreContext(d,sentContext,sentKey);
+        const failed=d.agent_core_context_error;
+        if(failed&&failed.owner_user_id===pageOwner&&failed.conversation_id===sentContext.conversation_id
+          &&failed.working_attention_binding===pageBinding
+          &&['storage_unavailable','context_unavailable','runtime_unavailable'].includes(failed.reason)){
+          publishCoreError('connection_failed',sentContext,sentKey);
+        }
         if(lastState&&lastState!==state)document.dispatchEvent(new CustomEvent('stonefellow:proactive-refresh',{detail:{activity:d.activity}}));
         lastState=state;document.documentElement.dataset.agentActivity=state;
-      }
-    }catch(e){}finally{
+      }else publishCoreError('connection_failed',sentContext,sentKey);
+    }catch(e){publishCoreError(controller.signal.aborted?'timeout':'connection_failed',sentContext,sentKey);}finally{
+      window.clearTimeout(requestTimeout);
+      if(heartbeatController===controller)heartbeatController=null;
       sending=false;
       if(!closed&&currentBinding()&&(JSON.stringify(context())!==sentKey||lastSentContext===''))queueMicrotask(()=>heartbeat('availability_changed',true));
     }
@@ -86,10 +107,11 @@
   document.addEventListener('visibilitychange',()=>{hiddenAt=document.hidden?Date.now():0;heartbeat(document.hidden?'hidden':'visible',true);});
   window.addEventListener('focus',()=>heartbeat('focus',true));
   window.addEventListener('blur',()=>heartbeat('blur',true));
-  window.addEventListener('pagehide',()=>{const valid=!closed&&currentBinding();closed=true;if(!valid)return;lastMeaningful=0;const departed={...context(),...observation(),visible:false,focused:false,chat_focused:false,chat_busy:true};const form=new FormData();form.append('action','heartbeat');form.append('csrf_token',String(cfg.csrf));form.append('surface',String(cfg.surface||'chat'));form.append('state','idle');form.append('reason','pagehide');form.append('context',JSON.stringify(departed));try{navigator.sendBeacon?.(cfg.endpoint,form);}catch(e){}});
+  window.addEventListener('pagehide',()=>{const valid=!closed&&currentBinding();closed=true;heartbeatController?.abort();if(!valid)return;lastMeaningful=0;const departed={...context(),...observation(),visible:false,focused:false,chat_focused:false,chat_busy:true};const form=new FormData();form.append('action','heartbeat');form.append('csrf_token',String(cfg.csrf));form.append('surface',String(cfg.surface||'chat'));form.append('state','idle');form.append('reason','pagehide');form.append('context',JSON.stringify(departed));try{navigator.sendBeacon?.(cfg.endpoint,form);}catch(e){}});
   window.addEventListener('pageshow',()=>{closed=false;void heartbeat('pageshow',true);});
   window.addEventListener('vp3:chat-context-ready',()=>void heartbeat('chat_ready',true));
   window.StonefellowAgentActivity={markTask:(title,key='')=>{taskTitle=String(title||taskTitle);taskKey=String(key||taskKey);meaningful('task_mark');},snapshot:()=>({state:classify(),taskTitle,taskKey}),
+    refreshCoreContext:()=>{lastSentContext='';return heartbeat('retry',true);},
     coreContext:()=>!closed&&currentBinding()&&!document.hidden&&document.hasFocus()
       &&lastCoreContext&&JSON.stringify(context())===lastCoreKey&&Date.now()-lastCoreAt<90000
       ?{...lastCoreContext,health:{...lastCoreContext.health}}:null};

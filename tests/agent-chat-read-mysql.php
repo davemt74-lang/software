@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 
 require_once dirname(__DIR__).'/includes/user-agent-system-v236.php';
 require_once dirname(__DIR__).'/includes/agent-chat-read-v1.php';
@@ -7,7 +8,6 @@ function db(): PDO{return $GLOBALS['pdo'];}
 function has_permission(string $permission,array $user): bool{return true;}
 function setting(string $name,mixed $default=''): mixed{return $default;}
 function url(string $path): string{return $path;}
-function vp3_participant_scope_v1(): ?array{return null;}
 function mysql_read_check(bool $ok,string $message): void
 {
     if(!$ok)throw new RuntimeException($message);

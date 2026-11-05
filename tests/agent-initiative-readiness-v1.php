@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 
 // SQLite executes the production canonical record readers. Permission/plugin
 // availability is fixture-controlled; no AI provider or external service runs.
@@ -7,7 +8,6 @@ function db(): PDO{return $GLOBALS['readiness_pdo'];}
 function url(string $path=''): string{return '/vp3'.$path;}
 function setting(string $key,mixed $fallback=null): mixed{return $fallback;}
 function has_permission(string $permission,array $user): bool{return !in_array($permission,$GLOBALS['readiness_denied'][(int)$user['id']]??[],true);}
-function vp3_participant_scope_v1(): ?array{return $GLOBALS['readiness_participant']??null;}
 function table_exists(string $table): bool
 {
     $q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return $q->fetchColumn()!==false;

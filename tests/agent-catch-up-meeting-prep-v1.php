@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
+require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 
 function url(string $path=''): string{return '/vp3'.$path;}
 function has_permission(string $key,array $user): bool{return !in_array($key,$user['denied']??[],true);}
-function vp3_participant_scope_v1(): ?array{return $GLOBALS['participant_scope']??null;}
 function db(): PDO{return $GLOBALS['pdo'];}
 function table_exists(string $table): bool
 {
@@ -98,9 +98,9 @@ check_meeting_prep(vp3_catch_up_meeting_prep_v1($pdo,$user+['denied'=>['account.
     &&vp3_catch_up_meeting_prep_v1($pdo,['id'=>2],$system,$now)===['forbidden',[]]
     &&vp3_catch_up_meeting_prep_v1($pdo,['id'=>2],user_agent_principal_v236(['id'=>2],null),$now)===['ready',[]],
     'owner permission and account switching stay isolated');
-$GLOBALS['participant_scope']=['viewer_user_id'=>1];
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['viewer_user_id'=>1];
 check_meeting_prep($read()===['forbidden',[]],'participant Chat does not inherit organizer context');
-unset($GLOBALS['participant_scope']);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 $pdo->exec('PRAGMA query_only=OFF');
 
 $omit=static function(string $change,string $name)use($pdo,$read):void{

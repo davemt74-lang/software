@@ -11,7 +11,6 @@ require_once dirname(__DIR__).'/includes/agent-initiative-runtime-v1.php';
 function agent_brain_schema_ready():bool{return true;}
 function agent_brain_normalize(string $text):string{return strtolower(trim($text));}
 function agent_brain_sentences(string $text):array{return [$text];}
-function vp3_participant_scope_v1():?array{return $GLOBALS['runtimeParticipant']??null;}
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat'):array
 {
     $GLOBALS['runtimeRoutes'][]=[$user['id'],$agentId];
@@ -112,9 +111,9 @@ try{vp3_initiative_pump_v1($pdo,$user,0,42,str_repeat('a',32),$model);throw new 
 catch(RuntimeException $e){runtime_check($e->getCode()===409&&$calls===2,'a stale tab cannot start work under a replaced policy revision');}
 runtime_check(vp3_initiative_worker_health_v1($pdo,['id'=>2,'is_active'=>1],0,42)['state']==='unavailable'
     &&vp3_initiative_worker_health_v1($pdo,$user,7,42)['state']==='unavailable','account and Agent switches cannot read another exact conversation health');
-$GLOBALS['runtimeParticipant']=['participant_id'=>8];
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>8];
 runtime_check(!vp3_initiative_worker_health_v1($pdo,$user,0,42)['configuration_ready'],'participant access cannot become owner background authority');
-unset($GLOBALS['runtimeParticipant']);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 $GLOBALS['runtimePlan']=['route'=>'blocked','blocked'=>true,'cloud'=>['ready'=>false,'reason'=>'cloud_balance_exhausted']];
 $quota=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
 runtime_check(!$quota['ok']&&$quota['health']['reason']==='quota_exhausted'&&$calls===2,'exhausted quota blocks foreground preparation before a model call');

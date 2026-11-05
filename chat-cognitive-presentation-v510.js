@@ -47,6 +47,8 @@
   let initiativeSettingBusy = false;
   let initiativeLastTick = 0;
   let initiativeError = '';
+  let initiativeHealthError = '';
+  let initiativeRetry = null;
   const initiativeSupersededRevisions = new Set();
   const greetingReasons = {
     agent_busy:'Your Agent is working.',
@@ -167,9 +169,17 @@
       && Number(chat.agentId?.() ?? pageAgent) === pageAgent;
   }
 
+  function showAwaitingInitiativeHealth() {
+    if (cfg.initiativeRuntime === true && !liveState && liveConversation() !== null) {
+      renderLiveContext({state:'awaiting_runtime'});
+    }
+  }
+
   function clearLiveContext() {
     initiativeController?.abort();
     initiativeError = '';
+    initiativeHealthError = '';
+    initiativeRetry = null;
     liveView++;
     liveState = null;
     openingKey = '';
@@ -218,14 +228,18 @@
     return 'no personal Knowledge';
   }
 
-  function initiativeHealth(health = liveState?.initiative?.runtime, conversationId = liveConversation()) {
+  function initiativeHealth(health, conversationId = liveConversation()) {
+    if (arguments.length === 0) health = liveState?.initiative?.runtime;
     return health && Number(health.agent_id) === pageAgent && Number(health.conversation_id) === conversationId
-      && typeof health.enabled === 'boolean' ? health : null;
+      && typeof health.enabled === 'boolean' && typeof health.state === 'string' && typeof health.reason === 'string'
+      && typeof health.policy_revision === 'string'
+      && (!(health.enabled || health.paused === true || health.state === 'paused') || /^[a-f0-9]{32}$/.test(health.policy_revision))
+      ? health : null;
   }
 
   function rememberInitiativeRevision(previous, next) {
     const prior = String(previous?.policy_revision || ''), current = String(next?.policy_revision || '');
-    if (/^[a-f0-9]{32}$/.test(prior) && prior !== current) {
+    if (/^[a-f0-9]{32}$/.test(prior) && /^[a-f0-9]{32}$/.test(current) && prior !== current) {
       initiativeSupersededRevisions.add(prior);
       if (initiativeSupersededRevisions.size > 64) initiativeSupersededRevisions.delete(initiativeSupersededRevisions.values().next().value);
     }
@@ -233,6 +247,8 @@
 
   function initiativeRuntimeLabel(health) {
     if (initiativeError) return initiativeError;
+    if ((!health || health.state === 'starting') && initiativeHealthError) return initiativeHealthError;
+    if (!health) return 'Waiting for the Agent’s first status check.';
     if (initiativeSettingBusy) return 'Saving the background preparation setting.';
     if (initiativeBusy) return health?.state === 'running'
       ? 'The Agent is advancing background work.' : 'Checking for permitted background work.';
@@ -242,6 +258,8 @@
       case 'initiative_off': return /^[a-f0-9]{32}$/.test(String(health?.policy_revision || ''))
         ? 'Agent background work is paused.' : 'The Agent is connecting this Chat.';
       case 'linked_elsewhere': return 'The Agent is following your active Chat.';
+      case 'context_unavailable': return 'The Agent could not confirm access to this saved Chat.';
+      case 'runtime_unavailable': return 'The Agent’s background runtime could not be checked.';
       case 'storage_unavailable': return 'Background preparation needs the current database upgrade.';
       case 'quota_exhausted': return 'Background preparation is paused because the AI allowance is exhausted.';
       case 'model_unavailable': return 'The configured AI model is unavailable for background preparation.';
@@ -249,6 +267,7 @@
       case 'worker_missing': return 'No background worker has been observed. This open Chat can advance permitted work.';
       case 'worker_stale': return 'The background worker has not checked in recently. This open Chat can advance permitted work.';
       case 'worker_failed': return 'The last background worker sweep failed. This open Chat can retry permitted work.';
+      case 'worker_observation_unavailable': return 'Background worker status could not be read. This open Chat can advance permitted work.';
       case 'review_failed': return 'The last background action could not be verified.';
       case 'worker_interrupted': return 'Background work was interrupted and is waiting for recovery.';
       case 'retry_scheduled': return 'The AI service was interrupted. A bounded retry is scheduled.';
@@ -262,7 +281,7 @@
         if (health?.state === 'running') return 'The Agent is reviewing current sources.';
         if (health?.state === 'checked') return 'The Agent checked the current sources.';
         if (health?.state === 'waiting') return 'Background preparation is waiting for its next review.';
-        return 'Background preparation status is unavailable.';
+        return 'The Agent’s status could not be verified for this Chat.';
     }
   }
 
@@ -284,11 +303,14 @@
     const verifiedAt = Date.parse(health?.last_execution_at || health?.last_checked_at || '');
     const verified = Number.isFinite(verifiedAt) ? (health?.last_execution_at ? ' Latest completed step: ' : ' Sources last checked: ')
       + new Date(verifiedAt).toLocaleString() + '.' : '';
+    const connectionWarning = health && health.state !== 'starting' && initiativeHealthError ? ' ' + initiativeHealthError : '';
     const action = enabled && !linked ? 'Pause' : 'Resume';
+    const canRetry = Boolean(initiativeHealthError) || health?.state === 'unavailable';
     return '<section class="chat-initiative-status" data-agent-initiative-status role="status" aria-label="Agent background work">' +
-      '<div><span>' + esc(label) + '</span><small>' + esc(knowledge + verified) + '</small></div>' +
+      '<div><span>' + esc(label) + '</span><small>' + esc(knowledge + verified + connectionWarning) + '</small></div>' +
       (canChange ? '<button type="button" data-agent-initiative-setting="' + (enabled && !linked ? 'off' : 'on') + '"' +
-        (initiativeSettingBusy ? ' disabled' : '') + '>' + action + '</button>' : '') + '</section>';
+        (initiativeSettingBusy ? ' disabled' : '') + '>' + action + '</button>' : '') +
+      (canRetry ? '<button type="button" data-agent-initiative-retry' + (initiativeRetry ? ' disabled' : '') + '>Retry</button>' : '') + '</section>';
   }
 
   function liveSourceLink(item) {
@@ -366,6 +388,10 @@
 
   liveHost?.addEventListener('click', event => {
     if (liveConversation() === null || !liveState) return;
+    if (event.target.closest('[data-agent-initiative-retry]')) {
+      void retryInitiativeHealth();
+      return;
+    }
     const initiativeSetting = event.target.closest('[data-agent-initiative-setting]');
     if (initiativeSetting) {
       void changeInitiative(initiativeSetting.dataset.agentInitiativeSetting === 'on');
@@ -391,6 +417,25 @@
     // worker separately verifies whether a result can be delivered to Chat.
     return cfg.initiativeRuntime === true && conversationId !== null && conversationId === liveConversation()
       && !pageController.signal.aborted && requireCurrentConfiguration() && !document.hidden && document.hasFocus();
+  }
+
+  async function retryInitiativeHealth() {
+    const cid = liveConversation();
+    if (initiativeRetry || cid === null || pageController.signal.aborted || !requireCurrentConfiguration()) return;
+    const request = {conversationId:cid};
+    initiativeRetry = request;
+    renderLiveContext(liveState);
+    try {
+      await Promise.allSettled([
+        Promise.resolve(window.StonefellowAgentActivity?.refreshCoreContext?.()),
+        refresh(true)
+      ]);
+    } finally {
+      if (initiativeRetry === request) {
+        initiativeRetry = null;
+        if (cid === liveConversation() && requireCurrentConfiguration()) renderLiveContext(liveState);
+      }
+    }
   }
 
   function initiativeMaySync(conversationId = liveConversation()) {
@@ -493,6 +538,7 @@
     const health = initiativeHealth(detail.health,cid);
     if (!health || initiativeSupersededRevisions.has(health.policy_revision)) return;
     const previous = initiativeHealth();
+    initiativeHealthError = '';
     // This accepted foreground activity supersedes any older presentation read.
     // Activity owns automatic attachment; GET polling never enables or rebinds it.
     liveView++;
@@ -505,6 +551,17 @@
     renderLiveContext({...liveState,state:liveState?.state || 'quiet',
       initiative:{...liveState?.initiative,runtime:health}});
     void advanceInitiative();
+  }
+
+  function acceptCoreContextError(event) {
+    const detail = event.detail, cid = liveConversation();
+    if (cfg.initiativeRuntime !== true || cid === null || pageController.signal.aborted || !requireCurrentConfiguration()
+      || !detail || detail.owner_user_id !== pageChatOwner || detail.agent_id !== pageAgent
+      || detail.conversation_id !== cid || detail.working_attention_binding !== pageBinding) return;
+    initiativeHealthError = detail.reason === 'timeout'
+      ? 'The Agent’s connection timed out before its status could be confirmed.'
+      : 'The Agent’s connection could not be confirmed. Retry its status check.';
+    renderLiveContext(liveState || {state:'awaiting_runtime'});
   }
 
   function closePopup() {
@@ -1158,7 +1215,16 @@
         delete state.brief.working_attention;
         delete state.brief.greeting_preview;
       }
-      if (liveRequestIsCurrent()) renderLiveContext(state.live_context,state.brief?.agent_name);
+      if (liveRequestIsCurrent()) {
+        if (cfg.initiativeRuntime === true) {
+          const runtime = state.live_context?.initiative?.runtime;
+          if (initiativeHealth(runtime,conversationId)) {
+            if (runtime.state !== 'starting') initiativeHealthError = '';
+          } else initiativeHealthError = runtime ? 'The Agent returned status that does not match this Chat.'
+            : 'The Agent did not return its status for this Chat.';
+        }
+        renderLiveContext(state.live_context || {state:'unavailable'},state.brief?.agent_name);
+      }
       else {
         delete state.live_context;
         if (initiativeNewChat()) renderLiveContext({state:'new_chat'},state.brief?.agent_name);
@@ -1171,8 +1237,10 @@
     } catch (error) {
       if (!signal.aborted) {
         renderBriefError(error);
-        if (liveRequestIsCurrent()) renderLiveContext({state:'unavailable',
-          initiative:{...liveState?.initiative,runtime:initiativeHealth()}});
+        if (liveRequestIsCurrent()) {
+          if (!initiativeHealth()) initiativeHealthError = 'The Agent’s first status check could not be completed.';
+          renderLiveContext({state:'unavailable',initiative:{...liveState?.initiative,runtime:initiativeHealth()}});
+        }
       }
     } finally {
       if (signal === pageController.signal) {
@@ -1279,7 +1347,7 @@
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) void refresh();
+    if (!document.hidden) { showAwaitingInitiativeHealth(); void refresh(); }
     else {
       clearWorkingAttention();
       clearLiveContext();
@@ -1287,15 +1355,18 @@
   });
   if (liveHost) {
     window.addEventListener('vp3:agent-core-context',acceptCoreContext);
+    window.addEventListener('vp3:agent-core-context-error',acceptCoreContextError);
     const acceptedCoreContext = window.StonefellowAgentActivity?.coreContext?.();
     if (acceptedCoreContext) acceptCoreContext({detail:acceptedCoreContext});
     window.addEventListener('stonefellow:chat-context-changing', clearLiveContext);
     window.addEventListener('vp3:chat-context-ready', () => {
       clearLiveContext();
+      showAwaitingInitiativeHealth();
       if (liveConversation() !== null || initiativeNewChat()) void refresh();
     });
     window.addEventListener('vp3:chat-canvas-view-changed', () => {
       clearLiveContext();
+      showAwaitingInitiativeHealth();
       if (liveConversation() !== null || initiativeNewChat()) void refresh();
     });
     window.addEventListener('vp3:initiative-setting-changed', () => void refresh());
@@ -1335,6 +1406,7 @@
       return;
     }
     observer.observe(document.body,{attributes:true,attributeFilter:['data-stonefellow-agent-state']});
+    showAwaitingInitiativeHealth();
     const signal = pageController.signal;
     void refresh().finally(() => { if (!signal.aborted) schedule(); });
   }

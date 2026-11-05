@@ -14,16 +14,16 @@ function gate(){
   return {arrived:new Promise(resolve=>{arrive=resolve;}),released:new Promise(resolve=>{release=resolve;}),arrive:()=>arrive(),release:()=>release()};
 }
 
-async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false}={}){
+async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false}={}){
   const context=await browser.newContext();
   const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[];
   const histories=new Map([[42,[{id:1,role:'assistant',message:'Restored private conversation'}]],
     [43,[{id:10,role:'assistant',message:'Another private conversation'}]]]);
-  let policy=enabled,exists=enabled||paused,policyRevision=exists?revision:'',policyCid=42,phase=0,failTick=false,holdTick=null,claimActive=false,realWork=0,blockedReason='',ownerBusy=false,pendingReport=false;
-  const health=(cid=42)=>({state:!exists?'starting':policy?(cid!==policyCid?'linked_elsewhere':blockedReason?'blocked':'waiting'):'paused',
-    reason:!exists?'automatic_startup':policy?(cid!==policyCid?'linked_elsewhere':blockedReason||'worker_missing'):'initiative_paused',enabled:policy&&cid===policyCid,
+  let policy=enabled,exists=enabled||paused,policyRevision=exists?revision:'',policyCid=42,phase=0,failTick=false,holdTick=null,holdRead=null,holdActivity=null,claimActive=false,realWork=0,blockedReason='',ownerBusy=false,pendingReport=false;
+  const health=(cid=42)=>({state:runtimeUnavailable?'unavailable':!exists?'starting':policy?(cid!==policyCid?'linked_elsewhere':blockedReason?'blocked':'waiting'):'paused',
+    reason:runtimeUnavailable?'context_unavailable':!exists?'automatic_startup':policy?(cid!==policyCid?'linked_elsewhere':blockedReason||'worker_missing'):'initiative_paused',enabled:!runtimeUnavailable&&policy&&cid===policyCid,
     paused:exists&&!policy,policy_exists:exists,
-    agent_id:agentId,conversation_id:cid,policy_revision:policyRevision,configuration_ready:true,execution_ready:policy&&!blockedReason&&cid===policyCid,
+    agent_id:agentId,conversation_id:cid,policy_revision:runtimeUnavailable?'':policyRevision,configuration_ready:!runtimeUnavailable,execution_ready:!runtimeUnavailable&&policy&&!blockedReason&&cid===policyCid,
     knowledge_scope:{mode:'off',folder_id:0},runner_state:'never_seen'});
   await context.addInitScript(()=>{
     window.speechCalls=0;window.announcementCalls=0;
@@ -60,22 +60,25 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
       activities.push(body);
       const cid=Number(body.context.conversation_id),eligible=body.context.visible===true&&body.context.focused===true
         &&body.context.chat_focused===true&&cid>0;
+      const activityWait=holdActivity;
+      if(activityWait&&(!activityWait.eligibleOnly||eligible)){holdActivity=null;activityWait.arrive();await activityWait.released;}
       if(eligible)ownerBusy=body.context.chat_busy===true;
       if(eligible&&!exists){exists=true;policy=true;policyRevision=revision;policyCid=cid;}
       else if(eligible&&policy&&policyCid!==cid){policyCid=cid;policyRevision=policyRevision==='c'.repeat(32)?'d'.repeat(32):'c'.repeat(32);}
       return route.fulfill({json:{ok:true,activity:{state:body.state},owner_user_id:1,server_time_ms:Date.now(),
-        ...(eligible?{agent_core_context:{owner_user_id:1,agent_id:agentId,conversation_id:cid,working_attention_binding:'owner-a',health:health(cid)}}:{})}});
+        ...(eligible?{agent_core_context:{owner_user_id:1,agent_id:agentId,conversation_id:cid,working_attention_binding:'owner-a',health:health(cid)}}:{})}}).catch(()=>{});
     }
     if(url.pathname==='/api/cognitive-presentation-v510.php'){
       assert.equal(request.headers()['x-vp3-working-attention'],'owner-a');
       if(!body){
+        const readWait=holdRead;holdRead=null;if(readWait){readWait.arrive();await readWait.released;}
         if(presentationUnavailable)return route.fulfill({status:503,json:{ok:false,error:'projection_unavailable'}});
         const id=Number(url.searchParams.get('conversation_id'));
         reads.push({id,runtime:url.searchParams.get('include_initiative_runtime')});
         const state={brief:{agent_name:agentId?'Longfellow':'VP3 Agent',active:true,status_label:'Active'}};
         if(url.searchParams.get('include_live_context')==='1'){
           assert.equal(url.searchParams.get('include_initiative_runtime'),'1');
-          state.live_context={state:'quiet',attention:null,initiative:{state:policy?'waiting_for_review':'off',runtime:health(id)}};
+          state.live_context={state:'quiet',attention:null,initiative:{state:policy?'waiting_for_review':'off',...(omitRuntime?{}:{runtime:health(id)})}};
         }
         return route.fulfill({json:{ok:true,state}});
       }
@@ -120,21 +123,93 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     }
     return route.fulfill({status:404});
   });
-  const open=async()=>{
+  const open=async({waitForHealth=true}={})=>{
     const page=await context.newPage();pages.push(page);page.setDefaultTimeout(8000);
     page.on('pageerror',e=>errors.push(e.message));
     await page.clock.install();
     await page.goto(origin,{waitUntil:'domcontentloaded'});
     await page.locator('[data-agent-initiative-status]').waitFor();
+    if(waitForHealth)await page.waitForFunction(()=>!document.querySelector('[data-agent-initiative-status]')?.textContent.includes('Waiting for the Agent’s first status check.'));
     assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);
     return page;
   };
   return {context,pages,errors,reads,ticks,settings,activities,health,open,
     fail(value){failTick=value;},block(value){blockedReason=value;},
+    unavailable(value){runtimeUnavailable=value;},presentationFails(value){presentationUnavailable=value;},
+    holdRead(){holdRead=gate();return holdRead;},holdActivity(eligibleOnly=false){holdActivity=gate();holdActivity.eligibleOnly=eligibleOnly;return holdActivity;},
     hold(){holdTick=gate();return holdTick;},get realWork(){return realWork;}};
 }
 
 try{
+  const startup=await fixture(17);
+  try{
+    const read=startup.holdRead(),activity=startup.holdActivity();
+    const page=await startup.open({waitForHealth:false}),status=page.locator('[data-agent-initiative-status]');
+    await read.arrived;await activity.arrived;
+    await status.getByText('Waiting for the Agent’s first status check.',{exact:true}).waitFor();
+    assert.equal(await status.getByRole('button',{name:'Retry',exact:true}).count(),0);
+    assert.equal(startup.ticks.length,0);
+    activity.release();
+    await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
+    read.release();
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
+    console.log('PASS first health is pending rather than unavailable; accepted activity repairs it and an older presentation read cannot replace it');
+  }finally{await startup.context.close();}
+
+  const denied=await fixture(17,{runtimeUnavailable:true});
+  try{
+    const page=await denied.open(),status=page.locator('[data-agent-initiative-status]');
+    await status.getByText('The Agent could not confirm access to this saved Chat.',{exact:true}).waitFor();
+    assert.equal(denied.ticks.length,0);
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    const read=denied.holdRead(),activity=denied.holdActivity();
+    await status.getByRole('button',{name:'Retry',exact:true}).click();
+    await read.arrived;await activity.arrived;
+    await status.getByText('The Agent could not confirm access to this saved Chat.',{exact:true}).waitFor();
+    assert.equal(await status.getByText('Waiting for the Agent’s first status check.',{exact:true}).count(),0);
+    denied.unavailable(false);read.release();activity.release();
+    await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    denied.unavailable(true);
+    await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
+    await status.getByText('The Agent could not confirm access to this saved Chat.',{exact:true}).waitFor();
+    denied.unavailable(false);
+    await status.getByRole('button',{name:'Retry',exact:true}).click();
+    await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    denied.presentationFails(true);
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
+    assert.equal(await status.getByRole('button',{name:'Retry',exact:true}).count(),0,'an optional heavy projection failure does not discard verified runtime health');
+    console.log('PASS known unavailable access stays an honest failure through Retry; recovered accepted health remains valid when the heavy presentation GET subsequently fails');
+  }finally{await denied.context.close();}
+
+  const missing=await fixture(17,{omitRuntime:true});
+  try{
+    const activity=missing.holdActivity(),page=await missing.open();
+    await page.getByText('The Agent did not return its status for this Chat.',{exact:true}).waitFor();
+    assert.equal(missing.ticks.length,0);
+    activity.release();
+    console.log('PASS a missing runtime response is a protocol failure rather than an invented first-health or reused current-health success');
+  }finally{await missing.context.close();}
+
+  const stalled=await fixture(17);
+  try{
+    const old=stalled.holdActivity(true),page=await stalled.open(),status=page.locator('[data-agent-initiative-status]');
+    await old.arrived;
+    await page.clock.fastForward(16000);
+    await status.getByText('The Agent’s connection timed out before its status could be confirmed.',{exact:true}).waitFor();
+    assert.equal(stalled.ticks.length,0);
+    await status.getByRole('button',{name:'Retry',exact:true}).click();
+    await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
+    old.release();
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    assert.ok(stalled.ticks.length>=1);assert.equal(stalled.settings.length,0);
+    await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
+    console.log('PASS the actual activity-client deadline reports a stalled connection; Retry obtains accepted bound health, starts the real tick transport and rejects the old aborted response');
+  }finally{await stalled.context.close();}
+
   for(const agentId of [0,17]){
     const f=await fixture(agentId);
     try{
@@ -336,6 +411,7 @@ try{
         window.dispatchEvent(new CustomEvent('vp3:agent-core-context',{detail:{...core,...change,
           health:{...core.health,enabled:false,state:'paused',paused:true,reason:'initiative_paused',policy_revision:'f'.repeat(32)}}}));
       }
+      window.dispatchEvent(new CustomEvent('vp3:agent-core-context',{detail:{...core,health:{...core.health,policy_revision:'invalid'}}}));
     });
     await page.locator('[data-agent-initiative-setting="off"]').waitFor();
     assert.equal(unavailable.ticks.length,1);

@@ -11,7 +11,9 @@ function vp3_initiative_runtime_context_v1(PDO $pdo,array $user,int $agentId,int
     if($agentId<0||$cid<1||(int)($user['id']??0)<1||vp3_participant_scope_v1()!==null){
         throw new RuntimeException('Initiative context is unavailable.',403);
     }
-    $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);
+    try{$agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);}
+    catch(PDOException $e){throw $e;}
+    catch(RuntimeException $e){throw new RuntimeException('Initiative Agent access changed.',403,$e);}
     $principal=vp3_agent_chat_principal_v380($user,$agent);
     $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$cid],null);
     if(!has_permission('account.access',$live)
@@ -74,7 +76,8 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
             if(($policy['conversation_id']??null)!==$cid)return array_replace($health,['state'=>'linked_elsewhere','reason'=>'linked_elsewhere']);
             $live=vp3_initiative_access_v1($pdo,$live,$policy);
             $health['enabled']=true;$health['policy_revision']=(string)$policy['revision'];
-            $runner=agent_worker_health_read_v1();
+            try{$runner=agent_worker_health_read_v1();}
+            catch(Throwable $e){$runner=['state'=>'unknown','last_success_at'=>''];}
             $health['runner_state']=$runner['state'];$health['runner_last_success_at']=$runner['last_success_at'];
             $review=agent_brain_v122_memory($live,'initiative_sweep','last-review')['metadata']??[];
             if(($review['conversation_id']??null)===$cid&&($review['revision']??null)===$policy['revision']){
@@ -84,7 +87,7 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
             $health['state']=$health['last_checked_at']!==''?'checked':'waiting';
             $health['reason']=match($runner['state']){
                 'fresh'=>$health['last_checked_at']!==''?'checked':'waiting_for_review',
-                'stale'=>'worker_stale','failed'=>'worker_failed',default=>'worker_missing'};
+                'stale'=>'worker_stale','failed'=>'worker_failed','unknown'=>'worker_observation_unavailable',default=>'worker_missing'};
             $latest=true;
             foreach(vp3_initiative_runtime_runs_v1($pdo,(int)$live['id'],$agentId,$policy) as $run){
                 $completed=strtotime((string)($run['completed_at']??''))?:0;
@@ -130,7 +133,16 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
             $health['execution_ready']=true;$health['pump_available']=true;
             return $health;
         });
-    }catch(Throwable $e){return array_replace($base,['reason'=>$e->getCode()===503?'storage_unavailable':'context_unavailable']);}
+    }catch(Throwable $e){
+        $code=(int)$e->getCode();
+        $reason=in_array($code,[403,404],true)?'context_unavailable':($code===503?'storage_unavailable':'runtime_unavailable');
+        if($reason==='runtime_unavailable'&&function_exists('agent_runtime_v125_trace')){
+            try{agent_runtime_v125_trace('agent_core.health_unavailable',['user_id'=>(int)($user['id']??0),
+                'agent_id'=>$agentId,'conversation_id'=>$cid,'error_class'=>get_class($e)]);}
+            catch(Throwable $ignored){}
+        }
+        return array_replace($base,['reason'=>$reason]);
+    }
 }
 
 /**

@@ -59,10 +59,10 @@ replay_check(replay_rejected(fn()=>vp3_working_context_replay_v1($pdo,['id'=>2,'
     'fresh account and conversation authority blocks another owner before replay');
 replay_check(replay_rejected(fn()=>vp3_working_context_replay_v1($pdo,$owner+['denied'=>['chat.access']],$system,$input,$cached),403),
     'revoked Chat permission prevents returning a previously cached private answer');
-$GLOBALS['participant_scope']=['participant_id'=>8];
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1,'agent'=>0,'participant'=>8,'revision'=>1];
 replay_check(replay_rejected(fn()=>vp3_working_context_replay_v1($pdo,$owner,$system,$input,$cached),403),
     'participant presence cannot inherit owner-private cached context');
-unset($GLOBALS['participant_scope']);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 
 $named=user_agent_principal_v236($owner,['id'=>7]);
 $namedItem=array_values(array_filter(vp3_agent_catch_up_v1($pdo,$owner,'all',7)['items'],static fn(array $row):bool=>$row['id']==='reminder:900'))[0];

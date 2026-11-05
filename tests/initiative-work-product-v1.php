@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 
 require __DIR__.'/fixtures/commerce-recovery-pa2.php';
 require_once dirname(__DIR__).'/includes/initiative-work-product-v1.php';
@@ -7,7 +8,6 @@ require_once dirname(__DIR__).'/includes/ai-settings.php';
 
 function has_permission(string $capability,array $user): bool {return true;}
 function profile_username_normalize(string $name): string {return strtolower($name);}
-function vp3_participant_scope_v1(): ?array {return $GLOBALS['fixture_participant_scope']??null;}
 
 $fixture=commerce_fixture_config_pa2();
 $pdo=commerce_fixture_connect_pa2($fixture);
@@ -70,9 +70,9 @@ try{
     product_reject(fn()=>initiative_work_product_preview_v1($pdo,1,$scope,['source_id'=>'4']),'non-photo asset is rejected',404);
     product_reject(fn()=>initiative_work_product_preview_v1($pdo,1,$scope,['source_id'=>'5']),'invalid image bytes are rejected',422);
     product_reject(fn()=>initiative_work_product_preview_v1($pdo,1,$scope,['source_id'=>'6']),'declared MIME must match verified photo content',422);
-    $GLOBALS['fixture_participant_scope']=['participant_id'=>3];
+    $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>3];
     product_reject(fn()=>initiative_work_product_preview_v1($pdo,1,$scope,$input),'participant scope cannot use owner draft authority',404);
-    unset($GLOBALS['fixture_participant_scope']);
+    unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 
     $fakeVision=static function(string $prompt,string $image) use ($jpeg): string {
         product_check(str_contains($prompt,'Original blue mug')&&str_contains($prompt,'untrusted')
