@@ -211,7 +211,15 @@ if(cloud){
    leaveChat(){b.context.chatRevision++;},api:(_payload,ownedSignal)=>{signal=ownedSignal;return waiting.promise;},
    rememberConversation(){commits++;},restoreDraft(){},thread:b.element('chatThread'),welcome:null,closeNav(){},setChatCanvasView(){}});
   const ui=source('chat.js'),from=ui.indexOf('  async function loadConversation(id)'),to=ui.indexOf('  async function syncConversationMessagesV101',from);
-  assert(from>=0&&to>from);vm.runInNewContext(ui.slice(from,to)+'\nwindow.loadHistoryForTest=loadConversation;',b.context);
+  const bindingFrom=ui.indexOf('  const cfg = window.STONEFELLOW_CHAT;'),bindingTo=ui.indexOf('  const thread =',bindingFrom);
+  const stateFrom=ui.indexOf('  let initiativeReplyTarget ='),stateTo=ui.indexOf('  const recoveryKey =',stateFrom);
+  const helperFrom=ui.indexOf('  function initiativeIdentityMatchesV1()'),helperTo=ui.indexOf('  function bindInitiativeWorkV1(',helperFrom);
+  assert(from>=0&&to>from&&bindingFrom>=0&&bindingTo>bindingFrom&&stateFrom>=0&&stateTo>stateFrom&&helperFrom>=0&&helperTo>helperFrom);
+  // The actual restore finally owns reply-context recovery too. Include its
+  // production closure state/helpers; the timeout transport stays isolated.
+  b.window.STONEFELLOW_CHAT={userId:1,agentId:0,endpoint:'/api/chat.php',csrf:'fixture',workingAttentionBinding:'fixture-session'};
+  vm.runInNewContext(ui.slice(bindingFrom,bindingTo)+ui.slice(stateFrom,stateTo)+ui.slice(helperFrom,helperTo)
+   +ui.slice(from,to)+'\nwindow.loadHistoryForTest=loadConversation;',b.context);
   const turn=b.window.loadHistoryForTest(7).catch(error=>error);await timer.advance(10000);
   assert.match((await turn).message,/timed out/i);assert.equal(signal.aborted,true);assert.equal(b.context.restoringConversation,0);assert.equal(commits,0);
   waiting.resolve({messages:[]});await flush();assert.equal(b.context.conversationId,1);assert.equal(commits,0);

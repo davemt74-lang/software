@@ -63,6 +63,7 @@ if($worker){
     $config=json_decode((string)file_get_contents($gate.'/config-'.$index.'.json'),true,32,JSON_THROW_ON_ERROR);
     $pdo->exec('SET SESSION innodb_lock_wait_timeout=1');
     if($mode==='--decision'){
+        $pdo->exec('SET SESSION innodb_lock_wait_timeout=10');
         $model=static function(string $prompt,string $protocol)use($gate,$index): string{
             if(db()->inTransaction())throw new LogicException('Decision inference held a transaction.');
             file_put_contents($gate.'/ready-'.$index,'ready');
@@ -72,7 +73,8 @@ if($worker){
         try{
             $result=vp3_initiative_followthrough_reply_v1($pdo,['id'=>1,'is_active'=>1],followthrough_mysql_principal(),$config['cid'],$config['reply'],$config['reference'],$config['query'],null,$model);
             echo json_encode(['ok'=>true,'outcome'=>$result['initiative_followthrough']],JSON_THROW_ON_ERROR).PHP_EOL;
-        }catch(RuntimeException $error){echo json_encode(['ok'=>false,'code'=>$error->getCode(),'error'=>$error->getMessage()],JSON_THROW_ON_ERROR).PHP_EOL;}
+        }catch(RuntimeException $error){echo json_encode(['ok'=>false,'code'=>$error->getCode(),'error'=>$error->getMessage(),
+            'error_info'=>$error instanceof PDOException?$error->errorInfo:null],JSON_THROW_ON_ERROR).PHP_EOL;}
         exit;
     }
     if($mode==='--deadlock-peer'){
@@ -206,13 +208,38 @@ try{
     };
 
     $turn=$reply($seed('double-decision'),'Please prepare this private next step');
+    $beforeRunIds=array_map('intval',$pdo->query('SELECT id FROM agent_workflow_runs ORDER BY id')->fetchAll(PDO::FETCH_COLUMN));
     $first=$start('--decision',$turn);$second=$start('--decision',$turn);
     followthrough_mysql_wait(static fn()=>is_file($gate.'/ready-'.$first)&&is_file($gate.'/ready-'.$second),'Both intent models did not reach the concurrent barrier.');
     file_put_contents($gate.'/go-'.$first,'go');file_put_contents($gate.'/go-'.$second,'go');
     $decisions=[$finish($first),$finish($second)];$accepted=array_values(array_filter($decisions,static fn(array $row):bool=>$row['ok']));$rejected=array_values(array_filter($decisions,static fn(array $row):bool=>!$row['ok']));
     $q=$pdo->prepare("SELECT COUNT(*) FROM agent_workflow_runs WHERE source_kind='agent_initiative' AND JSON_EXTRACT(goal,'$.followthrough.message_id')=?");$q->execute([$turn['message']]);
-    followthrough_mysql_check(count($accepted)===1&&count($rejected)===1&&$rejected[0]['code']===409&&(int)$q->fetchColumn()===1,
-        'two independent current-revision decisions commit exactly one canonical private child');
+    $rawJsonCount=(int)$q->fetchColumn();
+    $newRuns=array_values(array_filter($pdo->query('SELECT id,owner_user_id,agent_id,source_kind,capability_key,status FROM agent_workflow_runs ORDER BY id')->fetchAll(),
+        static fn(array $row):bool=>!in_array((int)$row['id'],$beforeRunIds,true)));
+    $q=$pdo->prepare("SELECT id,status,goal FROM agent_workflow_runs WHERE owner_user_id=? AND agent_id=? AND source_kind=? AND capability_key=? ORDER BY id");
+    $q->execute([1,7,'agent_initiative','initiative.prepare']);$childrenForRoot=[];
+    foreach($q->fetchAll() as $row){
+        $goal=json_decode($row['goal'],true,32,JSON_THROW_ON_ERROR);$relation=$goal['followthrough']??null;
+        if(is_array($relation)&&($relation['message_id']??null)===$turn['message']&&($relation['root_run_id']??null)===$turn['run']){
+            $childrenForRoot[]=['id'=>(int)$row['id'],'status'=>$row['status'],'followthrough'=>$relation,'binding'=>$goal['binding']??null];
+        }
+    }
+    $acceptedOutcome=$accepted[0]['outcome']??[];$child=$childrenForRoot[0]??[];$relation=$child['followthrough']??[];
+    $diagnostic=json_encode(['raw_json_count'=>$rawJsonCount,'strict_decoded_count'=>count($childrenForRoot),
+        'decisions'=>$decisions,'new_runs'=>$newRuns,'decoded_children'=>$childrenForRoot],JSON_THROW_ON_ERROR);
+    echo 'INFO double-decision '.$diagnostic.PHP_EOL;
+    followthrough_mysql_check(count($accepted)===1&&count($rejected)===1&&$rejected[0]['code']===409
+        &&count($newRuns)===1&&count($childrenForRoot)===1&&(int)$newRuns[0]['id']===$child['id']
+        &&($acceptedOutcome['continuation_run_id']??null)===$child['id']&&($acceptedOutcome['state']??null)==='queued'
+        &&($acceptedOutcome['owner_user_id']??null)===1&&($acceptedOutcome['agent_id']??null)===7
+        &&($acceptedOutcome['conversation_id']??null)===$turn['cid']&&($acceptedOutcome['message_id']??null)===$turn['message']
+        &&($acceptedOutcome['run_id']??null)===$turn['run']&&($acceptedOutcome['reply_message_id']??null)===$turn['reply']
+        &&($acceptedOutcome['reply_ref']??null)===$turn['reference']['reply_ref']&&($acceptedOutcome['revision']??null)===$turn['reference']['revision']+1
+        &&($relation['reply_message_id']??null)===$turn['reply']&&($relation['reply_ref']??null)===$turn['reference']['reply_ref']
+        &&($relation['revision']??null)===$acceptedOutcome['revision']&&($relation['reply_hash']??null)===hash('sha256',$turn['query'])
+        &&($child['binding']['conversation_id']??null)===$turn['cid'],
+        'two independent current-revision decisions commit exactly one canonical private child; '.$diagnostic);
     $q=$pdo->prepare("SELECT COUNT(*) FROM agent_workflow_events WHERE run_id=? AND event_type='initiative_owner_decision'");$q->execute([$turn['run']]);
     followthrough_mysql_check((int)$q->fetchColumn()===1,'the losing decision writes no duplicate owner event');
 

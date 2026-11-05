@@ -14,6 +14,7 @@ let routeDelay = 0, failRoute = false, routeGate = null, sendGate = null, failSe
 let streamState = 'success';
 let recentPlayback=[];
 let loadGate = null;
+let nextMessageId = 1000;
 const messages = new Map([[42,[]],[43,[{id:101,role:'assistant',message:'The other conversation'}]]]);
 const html = `<!doctype html><html lang="en-US"><head><meta charset="UTF-8"></head><body>
 <div class="chat-app"><aside class="chat-sidebar"><strong>VP3</strong><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside>
@@ -26,7 +27,7 @@ await page.route('**/api/**', async route => {
   calls.push({...payload, path:new URL(route.request().url()).pathname});
   if(new URL(route.request().url()).pathname==='/api/chat-stream-v121.php'){
     if(sendGate)await sendGate;
-    const event=streamState==='success'?{type:'done',data:{ok:true,conversation_id:42,answer:'Completed streamed reply',assistant_message_id:74}}:streamState==='auth'?{type:'error',error:'Sign in required'}:{type:'delta',delta:'Unconfirmed partial reply'};
+    const event=streamState==='success'?{type:'done',data:{ok:true,conversation_id:42,answer:'Completed streamed reply',user_message_id:nextMessageId++,assistant_message_id:nextMessageId++}}:streamState==='auth'?{type:'error',error:'Sign in required'}:{type:'delta',delta:'Unconfirmed partial reply'};
     return route.fulfill({status:streamState==='auth'?401:200,contentType:'application/x-ndjson',body:JSON.stringify(event)+'\n'});
   }
   if(new URL(route.request().url()).pathname==='/api/research')return route.fulfill({json:{ok:true,contract:'vp3.chat-browser-research.v1',requests:[],runtimes:[],projects:[]}});
@@ -39,7 +40,7 @@ await page.route('**/api/**', async route => {
   if (payload.action === 'send') {
     if(sendGate)await sendGate;
     if(failSend)return route.fulfill({status:503,json:{ok:false,error:'Provider unavailable'}});
-    return route.fulfill({json:{ok:true,conversation_id:payload.conversation_id||42,answer:'I heard you.',assistant_message_id:73,media:payload.message==='Show Studio handoff link'?[{id:9,title:'From the asteroid you saved me',album:'Studio',audio:'/media.php?track=9&type=audio',cover:'',detail:'/track.php?id=9'}]:[]}});
+    return route.fulfill({json:{ok:true,conversation_id:payload.conversation_id||42,answer:'I heard you.',user_message_id:nextMessageId++,assistant_message_id:nextMessageId++,media:payload.message==='Show Studio handoff link'?[{id:9,title:'From the asteroid you saved me',album:'Studio',audio:'/media.php?track=9&type=audio',cover:'',detail:'/track.php?id=9'}]:[]}});
   }
   if(payload.action==='load'){
     if(loadGate)await loadGate;
