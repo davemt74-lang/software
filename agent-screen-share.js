@@ -149,6 +149,10 @@
       const choices=row.kind==='screen'?[['view','View capture'],['analyze','Analyze again']]:[];
       choices.push(['chat','Send to Chat'],['research','Research in Chat'],['brain',Number(row.memory_id)>0?'Update Brain':'Save to Brain']);
       for(const [action,label] of choices){const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.captureAction=action;actions.append(b);}
+      if(row.kind==='screen'&&(!row.review||row.review.state==='active')&&window.VP3InitiativeWorkbench){
+        const edit=document.createElement('button');edit.type='button';edit.textContent='Edit saved image';
+        edit.addEventListener('click',()=>window.VP3InitiativeWorkbench.open('screen',row.capture_id));actions.append(edit);
+      }
       card.append(actions);window.VP3_SCREEN_REVIEW_CAPTURE?.(card,row,{insightsEndpoint:window.VP3_ORB_CONFIG?.screenInsightsEndpoint,ownerKey:owner,csrf:window.VP3_ORB_CONFIG?.csrf,agentId:adapter.conversationRef?.()?.agent||0},()=>refreshHistory());return card;
     }
     async function refreshHistory(id=selectedSession){

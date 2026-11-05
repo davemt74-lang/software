@@ -18,11 +18,11 @@ try{$participantUpdatesEnabled=db()?vp3_participant_settings_v1(db(),$orbUser)['
 <script src="<?= e(url('/agent-eyes.js?v=recognition-reliability-v1')) ?>" defer></script>
 <script src="<?= e(url('/agent-screen-review-v1.js?v=1')) ?>" defer></script>
 <script src="<?= e(url('/agent-screen-watch-zone.js?v=2')) ?>" defer></script>
-<script src="<?= e(url('/agent-screen-share.js?v=screen-initiative-v1')) ?>" defer></script>
+<script src="<?= e(url('/agent-screen-share.js?v=screen-initiative-workbench-v1')) ?>" defer></script>
 <script src="<?= e(url('/agent-trained-voice.js?v=voice-learning-v1')) ?>" defer></script>
 <script src="<?= e(url('/agent-voice-guard.js?v=recognition-reliability-v1')) ?>" defer></script>
 
-<script src="<?= e(url('/agent-tv-watching.js?v=eyes-v1348r1')) ?>" defer></script>
+<script src="<?= e(url('/agent-tv-watching.js?v=eyes-workbench-frame-v1')) ?>" defer></script>
 
 <script src="<?= e(url('/agent-orb-motion.js?v=voice-v1351')) ?>" defer></script>
 <script src="<?= e(url('/agent-welcome.js?v=voice-v1351')) ?>" defer></script>

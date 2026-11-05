@@ -590,10 +590,19 @@ function ai_openai_response(string $query,array $history,array $context,?array $
     return $last;
 }
 
+function ai_anthropic_inline_image(string $image): array
+{
+    [$header,$data]=array_pad(explode(',',$image,2),2,'');
+    if(!preg_match('~\Adata:(image/(?:jpeg|png|webp));base64\z~',$header,$match)||$data===''){
+        throw new InvalidArgumentException('Unsupported inline vision image.');
+    }
+    return ['type'=>'image','source'=>['type'=>'base64','media_type'=>$match[1],'data'=>$data]];
+}
+
 function ai_anthropic_response(string $query,array $history,array $context,?array $user=null,?array $turnControl=null,?array $own=null,array $visionImages=[]): array
 {
     $apiKey=$own!==null?(string)($own['api_key']??''):ai_provider_api_key('anthropic');if($apiKey==='')return ['ok'=>false,'error'=>'Claude / Anthropic is not fully configured.'];
-    $complexity=ai_v100_complexity($query,$context);$messages=ai_history_messages($history);$current=ai_v100_current_message($query,$context);$content=$visionImages?array_merge(array_map(static fn(string $image):array=>['type'=>'image','source'=>['type'=>'base64','media_type'=>'image/jpeg','data'=>substr($image,23)]],$visionImages),[['type'=>'text','text'=>$current]]):$current;$messages[]=['role'=>'user','content'=>$content];$budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);if(($turnControl['surface']??'')==='profile_agent'&&isset($turnControl['profile_max_output_tokens']))$budget=min($budget,max(64,(int)$turnControl['profile_max_output_tokens']));$last=['ok'=>false,'error'=>'Claude did not return a usable response.'];
+    $complexity=ai_v100_complexity($query,$context);$messages=ai_history_messages($history);$current=ai_v100_current_message($query,$context);$content=$visionImages?array_merge(array_map('ai_anthropic_inline_image',$visionImages),[['type'=>'text','text'=>$current]]):$current;$messages[]=['role'=>'user','content'=>$content];$budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);if(($turnControl['surface']??'')==='profile_agent'&&isset($turnControl['profile_max_output_tokens']))$budget=min($budget,max(64,(int)$turnControl['profile_max_output_tokens']));$last=['ok'=>false,'error'=>'Claude did not return a usable response.'];
     foreach($own!==null?[(string)$own['model']]:($visionImages?[ai_provider_model('anthropic')]:ai_v100_model_candidates('anthropic',$complexity)) as $model){$started=microtime(true);$result=ai_curl_json('https://api.anthropic.com/v1/messages',['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],['model'=>$model,'max_tokens'=>$budget,'system'=>ai_system_prompt($context,$user,$turnControl),'messages'=>$messages],$complexity==='deep'?75:55);if(!$result['ok']){$last=$result;ai_v100_telemetry(['scope'=>'chat','user_id'=>(int)($user['id']??0),'provider'=>'anthropic','model'=>$model,'status'=>'failed','http_status'=>(int)($result['status']??0),'duration_ms'=>(int)round((microtime(true)-$started)*1000),'input_chars'=>mb_strlen($current),'complexity'=>$complexity,'attempts'=>(int)($result['attempts']??1)]);continue;}$decoded=$result['data'];$parts=[];foreach(($decoded['content']??[]) as $content)if(is_array($content)&&($content['type']??'')==='text'&&is_string($content['text']??null))$parts[]=$content['text'];$text=trim(implode("\n",$parts));$usage=ai_v100_usage('anthropic',$decoded);ai_v100_telemetry(['scope'=>'chat','user_id'=>(int)($user['id']??0),'provider'=>'anthropic','model'=>$model,'status'=>$text!==''?'success':'empty','duration_ms'=>(int)round((microtime(true)-$started)*1000),'input_chars'=>mb_strlen($current),'output_chars'=>mb_strlen($text),'complexity'=>$complexity]+$usage);if($text!=='')return ['ok'=>true,'answer'=>$text,'model'=>$model,'complexity'=>$complexity,'usage'=>$usage];$last=['ok'=>false,'error'=>'Claude returned an empty response.'];}
     return $last;
 }
