@@ -461,7 +461,7 @@
   function brainView() {
     const brain = state?.brain || {};
     if (brain.enabled === false) {
-      return '<section class="chat-activity-section"><div class="chat-activity-empty">Personal Agent Brain is not enabled for this account type.</div></section>';
+      return '<section class="chat-activity-section"><div class="chat-activity-empty">Saved Brain memory is unavailable for this account.</div></section>';
     }
     const activity = brain.activity || {};
     const priorities = Array.isArray(brain.priorities) ? brain.priorities : [];
@@ -1031,12 +1031,18 @@
     }
     const body = drawer.querySelector('[data-notification-drawer-body]');
     if (!body) return;
+    const topOfMind = activeTab === 'brain' ? '<section class="agent-top-of-mind" data-agent-top-of-mind aria-label="Top of Mind"></section>' : '';
+    const publishWorkView = () => window.dispatchEvent(new CustomEvent('vp3:activity-center-view',{detail:{
+      tab:activeTab,open:!drawer.hidden && document.body.classList.contains('chat-notification-drawer-open'),
+      topOfMindHost:body.querySelector('[data-agent-top-of-mind]')
+    }}));
     body.setAttribute('aria-labelledby','chatActivityTab-'+activeTab);
     if (!state) {
-      body.innerHTML = activityReadError ? `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>${!activityScopeError && activeTab === 'notifications' ? profileAttention?.view() || '' : ''}` : '<div class="chat-activity-loading">Loading Activity Center…</div>';
+      body.innerHTML = topOfMind + (activityReadError ? `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>${!activityScopeError && activeTab === 'notifications' ? profileAttention?.view() || '' : ''}` : '<div class="chat-activity-loading">Loading Activity Center…</div>');
+      publishWorkView();
       return;
     }
-    body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : activeTab === 'eyes' ? eyesHistoryView() : notificationView();
+    body.innerHTML = topOfMind + (activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : activeTab === 'eyes' ? eyesHistoryView() : notificationView());
     if (activityReadError) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>`);
     if(activeTab==='brain'){window.VP3ChatDiagnostics?.renderBrain(body);window.VP3ProjectKnowledgeR6?.renderBrain(body);window.VP3ProjectKnowledgeR7?.renderBrain(body);window.VP3KnowledgeActionsR8?.renderBrain(body);}
     if (activeTab === 'brain' && typeof window.VP3_AGENT_TEAMS_A3_BRAIN === 'function') {
@@ -1046,6 +1052,7 @@
       const missions=body.querySelector('[data-mission-notices]');if(missions)window.VP3_AGENT_MISSION_NOTIFICATIONS(missions);
     }
     updateUnread();
+    publishWorkView();
   }
 
   async function refresh(showError = false) {
@@ -1093,6 +1100,7 @@
     backdrop.classList.remove('open');
     button?.setAttribute('aria-expanded', 'false');
     document.body.classList.remove('chat-notification-drawer-open');
+    window.dispatchEvent(new CustomEvent('vp3:activity-center-view',{detail:{tab:activeTab,open:false,topOfMindHost:null}}));
     window.setTimeout(() => {
       if (!drawer?.classList.contains('open')) {
         drawer.hidden = true;
@@ -1473,8 +1481,11 @@
   }
 
   if(cfg.orbOnly){
-    // Reuse the existing voice path on pages without an Activity Center bell.
-    window.STONEFELLOW_NOTIFICATION_CENTER={announceWhen:(text,canSpeak)=>queueSpeech(String(text||''),canSpeak),cancelSpeech};
+    // The floating Agent opens the same Brain view without needing a header
+    // bell. Opening it remains an explicit view action, never inference.
+    window.STONEFELLOW_NOTIFICATION_CENTER={
+      openBrain:()=>{activeTab='brain';openDrawer();render();},close:closeDrawer,
+      announceWhen:(text,canSpeak)=>queueSpeech(String(text||''),canSpeak),cancelSpeech};
     window.addEventListener('stonefellow:agent-voice',event=>{agentVoicePreference=event.detail?.enabled!==false;if(!agentVoicePreference)cancelSpeech();});
     window.addEventListener('pagehide',cancelSpeech,{once:true});
     return;

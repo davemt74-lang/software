@@ -5,13 +5,14 @@
   window.addEventListener('stonefellow:agent-proactive-speech',event=>{audible=event.detail?.state==='start';});
   const loadScript=url=>new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=reject;document.head.append(s);});
   if(window.STONEFELLOW_NOTIFICATION_DRAWER)window.STONEFELLOW_NOTIFICATION_DRAWER.agentEndpoint=cfg.chatEndpoint;
-  const voiceReady=(async()=>{
-    if(!window.StonefellowPremiumVoiceV122)await loadScript(cfg.voiceScript);
+  const drawerReady=(async()=>{
     if(!window.STONEFELLOW_NOTIFICATION_CENTER){
-      window.STONEFELLOW_NOTIFICATION_DRAWER={endpoint:cfg.notificationsEndpoint,csrf:cfg.csrf,agentVoiceEnabled:cfg.agentVoiceEnabled,agentEndpoint:cfg.chatEndpoint,orbOnly:true};
+      window.STONEFELLOW_NOTIFICATION_DRAWER={endpoint:cfg.notificationsEndpoint,csrf:cfg.csrf,agentVoiceEnabled:cfg.agentVoiceEnabled,agentEndpoint:cfg.chatEndpoint,orbOnly:true,
+        userId:Number(cfg.ownerKey||0),agentId:Number(cfg.agentId||0),workingAttentionBinding:cfg.workingAttentionBinding||'',topOfMindEndpoint:cfg.topOfMindEndpoint||''};
       await loadScript(cfg.drawerScript);
     }
   })().catch(()=>{});
+  const voiceReady=(async()=>{if(!window.StonefellowPremiumVoiceV122)await loadScript(cfg.voiceScript);await drawerReady;})().catch(()=>{});
 
   async function api(url,body,keepalive=false){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',keepalive,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify({...body,csrf_token:cfg.csrf}):undefined});const data=await r.json();if(!r.ok||data.ok===false)throw Error(data.error||'Agent request failed.');return data;}
   async function samples(mode,id,value,isCurrent=()=>true){
@@ -39,6 +40,7 @@
   const recording=()=>Boolean(document.querySelector('[data-recording="true"],.is-recording,.chat-media-studio button.recording,[data-agent-state="recording"]'));
   const state=()=>{const current=window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState;return {state:audible||current==='speaking'?'speaking':preparing?'thinking':current||($('sendChatButton')?.disabled?'thinking':'idle'),recording:recording()};};
   const adapter={tvRequest:(body,{keepalive=false}={})=>api(cfg.tvEndpoint,body,keepalive),
+    openBrain:async()=>{await drawerReady;window.STONEFELLOW_NOTIFICATION_CENTER?.openBrain?.();},
     screenRequest:async(body,{signal}={})=>{const response=await fetch(cfg.screenEndpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,owner_key:String(cfg.ownerKey),csrf_token:cfg.csrf})});const data=await response.json();if(!response.ok||!data.ok){const error=Error(data.error||'Screen analysis unavailable.');error.status=response.status;throw error;}return data;},
     screenHistory:async(body={}, {signal,read=false}={})=>{const endpoint=cfg.screenSessionsEndpoint;const query=read?'?'+new URLSearchParams({...body,owner_key:String(cfg.ownerKey)}):'';const r=await fetch(endpoint+query,{method:read?'GET':'POST',credentials:'same-origin',cache:'no-store',signal,headers:read?{}:{'Content-Type':'application/json'},body:read?undefined:JSON.stringify({...body,owner_key:String(cfg.ownerKey),csrf_token:cfg.csrf})});const data=await r.json();if(!r.ok||!data.ok||String(data.owner_key)!==String(cfg.ownerKey)){const e=Error(data.error||'Sharing history account changed. Refresh this page.');e.status=r.ok?409:r.status;throw e;}return data;},
     screenAudio:async(blob,body,{signal}={})=>{const form=new FormData();form.append('audio',blob,'tab-audio.wav');for(const [key,value] of Object.entries({...body,owner_key:String(cfg.ownerKey),csrf_token:cfg.csrf}))form.append(key,String(value));const r=await fetch(cfg.screenAudioEndpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,body:form});const data=await r.json();if(!r.ok||!data.ok){const e=Error(data.error||'Tab transcription unavailable.');e.status=r.status;throw e;}return data;},

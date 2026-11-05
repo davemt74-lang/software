@@ -544,7 +544,10 @@ $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(u
 $browserContextRuntime = '<link rel="stylesheet" data-browser-context-v2130 href="' . e(url('/chat-browser-context-v2130.css?v=' . $browserContextBuild)) . '">'
     . '<script data-browser-context-v2130 src="' . e(url('/chat-browser-context-v2130.js?v=' . $browserContextBuild)) . '"></script>';
 
-$notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-drawer href="' . e(url('/chat-notifications-drawer-v240.css?v=' . $notificationDrawerAssetBuild)) . '">'
+$topOfMindBuild=substr(hash('sha256',hash_file('sha256',__DIR__.'/agent-top-of-mind-v1.js').hash_file('sha256',__DIR__.'/agent-top-of-mind-v1.css')),0,12);
+$notificationDrawerRuntime = '<link rel="stylesheet" href="' . e(url('/agent-top-of-mind-v1.css?v='.$topOfMindBuild)) . '">'
+    . '<script src="' . e(url('/agent-top-of-mind-v1.js?v='.$topOfMindBuild)) . '" defer></script>'
+    . '<link rel="stylesheet" data-chat-notification-drawer href="' . e(url('/chat-notifications-drawer-v240.css?v=' . $notificationDrawerAssetBuild)) . '">'
     . '<link rel="stylesheet" data-profile-attention-pa4b href="' . e(url('/profile-attention-pa4b.css?v=' . substr(hash_file('sha256',__DIR__.'/profile-attention-pa4b.css'),0,12))) . '">'
     . '<link rel="stylesheet" data-brain-learning-history-v317 href="' . e(url('/chat-brain-learning-history-v317.css?v=' . $brainLearningBuild)) . '">'
     . '<script>window.PROFILE_ATTENTION_PA4B_CONFIG=' . json_encode([
@@ -555,6 +558,7 @@ $notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-draw
     . '<script data-chat-notification-drawer-config>window.STONEFELLOW_NOTIFICATION_DRAWER='
     . json_encode([
         'endpoint'=>url('/api/chat-notifications-brain-v240.php'),
+        'topOfMindEndpoint'=>url('/api/agent-top-of-mind-v1.php'),
         'csrf'=>csrf_token(),
         'build'=>$notificationDrawerBuild,
         'agentId'=>(int)($activeUserAgent['id'] ?? 0),

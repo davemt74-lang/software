@@ -52,7 +52,7 @@
       return;
     }
     const root=document.createElement('aside');root.className='vp3-orb-root';root.dataset.state='idle';
-    root.innerHTML='<div class="vp3-orb-bubble" role="status" hidden></div><button type="button" class="vp3-orb-ball" aria-label="Open Agent Chat"></button><span class="vp3-orb-state">Ready</span><div class="vp3-orb-controls"><button type="button" data-orb-stop>Stop</button><button type="button" data-orb-eyes>Eyes</button><button type="button" data-orb-size aria-label="Minimize agent">−</button></div>';
+    root.innerHTML='<div class="vp3-orb-bubble" role="status" hidden></div><button type="button" class="vp3-orb-ball" aria-label="Open Agent Chat"></button><span class="vp3-orb-state">Ready</span><div class="vp3-orb-controls"><button type="button" data-orb-stop>Stop</button><button type="button" data-orb-eyes>Eyes</button><button type="button" data-orb-brain>Brain</button><button type="button" data-orb-size aria-label="Minimize agent">−</button></div>';
     document.body.append(root);
     const panel=document.createElement('section');panel.className='vp3-orb-panel';panel.id='vp3AgentChatPopup';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Agent Chat');
     panel.innerHTML='<header><strong>Agent Chat</strong><a>Full chat ↗</a><button type="button" aria-label="Close Agent Chat">×</button></header><div class="vp3-orb-chat-host"></div>';panel.querySelector('a').href=adapter.chatUrl;document.body.append(panel);
@@ -78,6 +78,7 @@
     panel.querySelector('button').addEventListener('click',close);ball.addEventListener('click',event=>{if(!dragged)toggle();});
     root.querySelector('[data-orb-stop]').addEventListener('click',()=>{pendingReplyWindow=false;command('response-window-cancel');command('stop');});
     root.querySelector('[data-orb-eyes]').addEventListener('click',()=>window.VP3AgentEyes?.toggle());
+    root.querySelector('[data-orb-brain]').addEventListener('click',()=>void adapter.openBrain?.());
     const sizeButton=root.querySelector('[data-orb-size]');
     function sizeLabel(){sizeButton.textContent=root.dataset.small==='true'?'+':'−';sizeButton.setAttribute('aria-label',root.dataset.small==='true'?'Expand agent':'Minimize agent');}
     sizeButton.addEventListener('click',()=>{root.dataset.small=root.dataset.small==='true'?'false':'true';sizeLabel();save();});

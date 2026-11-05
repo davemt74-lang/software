@@ -765,6 +765,11 @@ try {
         chat_notifications_v240_json($result);
     }
     if ($method === 'GET' && $action === 'state') {
+        // The existing large Brain projection must not hold the session ahead
+        // of the independent live work feed. Allocate any missing CSRF token
+        // before closing; projection below does not write session state.
+        csrf_token();
+        if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
         chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
     if ($method === 'GET' && $action === 'attention') {
