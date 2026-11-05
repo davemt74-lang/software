@@ -97,7 +97,8 @@ function vp3_catch_up_reminders_v1(PDO $pdo,array $user,array $principal,DateTim
         }
         $items[]=vp3_catch_up_item_v1('reminder:'.$id,(string)$row['title'],
             'This reminder was due '.$local->format('D, M j \a\t g:i A T').'.',
-            'Reminders',$path,90,$at);
+            'Reminders',$path,90,$at)
+            +['_source_revision'=>hash('sha256',json_encode($row,JSON_THROW_ON_ERROR))];
     }
     return [count($rows)>=100?'limited':'ready',$items];
 }
@@ -108,7 +109,7 @@ function vp3_catch_up_tasks_v1(PDO $pdo,array $user,array $principal,DateTimeImm
     if(!vp3_agent_memory_scope_schema_ready_v410($pdo))return ['unavailable',[]];
     vp3_task_list_authorize_v1($pdo,$user,$principal,0);
     [$where,$params]=vp3_agent_memory_scope_sql_v410((int)$principal['agent_id']);
-    $q=$pdo->prepare("SELECT id,subject,metadata_json FROM agent_memory_items WHERE user_id=? AND {$where} AND is_active=1 AND memory_type IN ('task','commitment') ORDER BY last_seen_at DESC,id DESC LIMIT 100");
+    $q=$pdo->prepare("SELECT id,subject,metadata_json,last_seen_at FROM agent_memory_items WHERE user_id=? AND {$where} AND is_active=1 AND memory_type IN ('task','commitment') ORDER BY last_seen_at DESC,id DESC LIMIT 100");
     $q->execute([(int)$user['id'],...$params]);
     $rows=$q->fetchAll(PDO::FETCH_ASSOC);$items=[];
     $timezone=new DateTimeZone(reminder_zone_v1(user_calendar_default_timezone_v1300($pdo,$user)));
@@ -133,7 +134,8 @@ function vp3_catch_up_tasks_v1(PDO $pdo,array $user,array $principal,DateTimeImm
         }
         $items[]=vp3_catch_up_item_v1('task:'.(int)$row['id'],(string)$row['subject'],
             ($meeting?'An approved meeting follow-up is due ':'This open task is due ').$local->format($dayOnly?'D, M j':'D, M j \a\t g:i A T').'.',
-            $meeting?'Meeting follow-up':'Agent Brain tasks',$path,70,$at);
+            $meeting?'Meeting follow-up':'Agent Brain tasks',$path,70,$at)
+            +['_source_revision'=>hash('sha256',json_encode($row,JSON_THROW_ON_ERROR))];
     }
     return [count($rows)>=100?'limited':'ready',$items];
 }
@@ -155,7 +157,8 @@ function vp3_catch_up_orders_v1(PDO $pdo,array $user): array
         $time=vp3_catch_up_timestamp_v1($pendingRefund?$refund['requested_at']:$order['updated_at'],new DateTimeZone('UTC'))??PHP_INT_MAX;
         $items[]=vp3_catch_up_item_v1('order:'.(int)$order['id'],'Order '.(string)$order['order_number'],
             $pendingRefund?'A customer refund request is waiting for your review.':'Verified payment is waiting for a seller review before fulfillment.',
-            'Profile Commerce',$pendingRefund?'/profile-commerce-refund-requests.php':'/profile-commerce-products.php#orders',$pendingRefund?88:85,$time);
+            'Profile Commerce',$pendingRefund?'/profile-commerce-refund-requests.php':'/profile-commerce-products.php#orders',$pendingRefund?88:85,$time)
+            +['_source_revision'=>hash('sha256',json_encode($order,JSON_THROW_ON_ERROR))];
     }
     return [count($rows)>=100?'limited':'ready',$items];
 }
@@ -215,7 +218,8 @@ function vp3_catch_up_rewards_v1(PDO $pdo,array $user,DateTimeImmutable $now): a
     return [count($rows)>=20?'limited':'ready',$items];
 }
 
-function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $agentId=0,bool $includeWorkingSources=true): array
+/** Collect authorized current records before each surface applies its presentation budget. */
+function vp3_catch_up_candidates_v1(PDO $pdo,array $user,string $scope='all',int $agentId=0,bool $includeWorkingSources=true,?DateTimeImmutable $now=null,bool $includeActiveMissions=false): array
 {
     if(!in_array($scope,['all','office','commerce'],true)||$agentId<0)throw new InvalidArgumentException('Invalid catch-up scope.');
     if((int)($user['id']??0)<1||!has_permission('chat.access',$user)||!has_permission('account.access',$user)
@@ -226,14 +230,14 @@ function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $age
     $principal=vp3_agent_chat_principal_v380($user,$agent);
     $user=vp3_capability_live_user_v1($pdo,$user,$principal,[],null);
     if(!has_permission('account.access',$user))throw new RuntimeException('Catch-up access is unavailable.',403);
-    $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+    $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));
     $office=[
         'calendar'=>fn()=>vp3_catch_up_calendar_v1($pdo,$user,$now),
         'reminders'=>fn()=>vp3_catch_up_reminders_v1($pdo,$user,$principal,$now),
         'tasks'=>fn()=>vp3_catch_up_tasks_v1($pdo,$user,$principal,$now),
     ];
     if($includeWorkingSources){
-        $office['missions']=fn()=>vp3_catch_up_missions_v1($pdo,$user,$principal,$now);
+        $office['missions']=fn()=>vp3_catch_up_missions_v1($pdo,$user,$principal,$now,$includeActiveMissions);
         $office['profile_calls']=fn()=>vp3_catch_up_profile_calls_v1($pdo,$user,$principal,$now);
         $office['meeting_prep']=fn()=>vp3_catch_up_meeting_prep_v1($pdo,$user,$principal,$now);
     }
@@ -247,7 +251,8 @@ function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $age
     foreach($sources as $key=>$read){
         if($agentId>0&&isset($commerce[$key])){$coverage[$key]='forbidden';continue;}
         try{
-            [$coverage[$key],$found]=$read();$items=[...$items,...$found];
+            [$coverage[$key],$found]=$read();
+            foreach($found as $item)$items[]=$item+['_source_kind'=>$key];
             if($key==='meeting_prep'){
                 foreach($found as $item)$preparedStarts[$item['_calendar_event_id']][$item['time']]=true;
             }
@@ -255,13 +260,25 @@ function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $age
         catch(Throwable $e){$coverage[$key]=$e->getCode()===403?'forbidden':'unavailable';}
     }
     usort($items,static fn(array $a,array $b):int=>($b['priority']<=>$a['priority'])?:($a['time']<=>$b['time'])?:strcmp($a['id'],$b['id']));
-    $selected=[];
+    $selected=[];$sourceKinds=[];$sourceRevisions=[];
     foreach($items as $item){
         if(isset($selected[$item['id']])||(str_starts_with($item['id'],'calendar:')
             &&isset($preparedStarts[$item['_calendar_event_id']][$item['time']])))continue;
-        unset($item['priority'],$item['time'],$item['_calendar_event_id']);
+        $sourceKinds[$item['id']]=$item['_source_kind'];
+        $revision=$item;
+        unset($revision['priority'],$revision['_source_kind']);
+        if(($revision['status']??'')==='active')unset($revision['time'],$revision['source_updated_at']);
+        $sourceRevisions[$item['id']]=hash('sha256',json_encode($revision,JSON_THROW_ON_ERROR));
+        unset($item['priority'],$item['time'],$item['_calendar_event_id'],$item['_source_kind'],$item['_source_revision']);
+        $item['source_revision']=$sourceRevisions[$item['id']];
         $selected[$item['id']]=$item;
-        if(count($selected)===3)break;
     }
-    return ['items'=>array_values($selected),'as_of'=>$now->format(DATE_ATOM),'coverage'=>$coverage];
+    return ['items'=>array_values($selected),'source_kinds'=>$sourceKinds,'source_revisions'=>$sourceRevisions,
+        'as_of'=>$now->format(DATE_ATOM),'coverage'=>$coverage];
+}
+
+function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $agentId=0,bool $includeWorkingSources=true): array
+{
+    $current=vp3_catch_up_candidates_v1($pdo,$user,$scope,$agentId,$includeWorkingSources);
+    return ['items'=>array_slice($current['items'],0,3),'as_of'=>$current['as_of'],'coverage'=>$current['coverage']];
 }

@@ -9,7 +9,7 @@ function vp3_working_context_key_v1(int $owner,int $agent,int $conversationId,ar
     return hash('sha256',json_encode([
         'working-context-v1',$owner,$agent,$conversationId,
         $item['id']??null,$item['title']??null,$item['reason']??null,$item['url']??null,
-        $item['status']??null,$item['starts_at']??null,$item['source_updated_at']??null,
+        $item['status']??null,$item['starts_at']??null,$item['source_updated_at']??null,$item['source_revision']??null,
     ],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE));
 }
 
