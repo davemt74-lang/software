@@ -153,7 +153,14 @@ function agent_workflow_initiative_result_v1400(array $value): array
     }
     $output=$value['output']??null;
     if(!is_array($output))return $safe;
-    if(($output['type']??'')==='initiative_record_read'&&in_array($output['tool']??'', ['brain.read','knowledge.search'],true)
+    if(($output['type']??'')==='initiative_chat_check_in'&&($output['status']??'')==='draft_ready'
+        &&is_int($output['conversation_id']??null)&&$output['conversation_id']>0
+        &&is_int($output['agent_id']??null)&&$output['agent_id']>=0
+        &&is_string($output['conversation_revision']??null)&&preg_match('/\A[a-f0-9]{64}\z/D',$output['conversation_revision'])
+        &&is_array($output['message_ids']??null)&&array_is_list($output['message_ids'])&&count($output['message_ids'])<=24
+        &&!array_filter($output['message_ids'],static fn(mixed $id):bool=>!is_int($id)||$id<1)){
+        $safe['output']=array_intersect_key($output,array_flip(['type','status','conversation_id','agent_id','conversation_revision','message_ids']));
+    }elseif(($output['type']??'')==='initiative_record_read'&&in_array($output['tool']??'', ['brain.read','knowledge.search'],true)
         &&in_array($output['status']??'', ['read_complete','no_matches'],true)){
         $revisions=[];
         foreach(is_array($output['source_revisions']??null)?array_slice($output['source_revisions'],0,16,true):[] as $ref=>$revision){

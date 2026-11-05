@@ -14,7 +14,7 @@ function vp3_initiative_runtime_context_v1(PDO $pdo,array $user,int $agentId,int
     $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);
     $principal=vp3_agent_chat_principal_v380($user,$agent);
     $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$cid],null);
-    if(!has_permission('account.access',$live)||!personal_capability_has_v242('agent_brain.access',$live)
+    if(!has_permission('account.access',$live)
         ||!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent)){
         throw new RuntimeException('Initiative context is unavailable.',403);
     }
@@ -51,7 +51,8 @@ function vp3_initiative_runtime_runs_v1(PDO $pdo,int $uid,int $agentId,array $po
 function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $cid): array
 {
     $base=['state'=>'unavailable','reason'=>'context_unavailable','enabled'=>false,'agent_id'=>$agentId,
-        'conversation_id'=>$cid,'policy_revision'=>'','knowledge_scope'=>['mode'=>'off','folder_id'=>0],'configuration_ready'=>false,
+        'conversation_id'=>$cid,'policy_revision'=>'','paused'=>false,'policy_exists'=>false,
+        'knowledge_scope'=>['mode'=>'off','folder_id'=>0],'configuration_ready'=>false,
         'execution_ready'=>false,'pump_available'=>false,'runner_state'=>'never_seen',
         'runner_observation_scope'=>'server','runner_last_success_at'=>'','last_checked_at'=>'','last_execution_at'=>'','retry_due_at'=>'','route'=>''];
     try{
@@ -59,17 +60,20 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
             $context=vp3_initiative_runtime_context_v1($pdo,$user,$agentId,$cid);
             $live=$context['user'];$policy=$context['policy'];
             $health=$base;$health['configuration_ready']=true;
+            $health['policy_exists']=$policy!==[];
             $revision=$policy['revision']??'';
             if(is_string($revision)&&preg_match('/^[a-f0-9]{32}$/D',$revision))$health['policy_revision']=$revision;
-            if(empty($policy['enabled']))return array_replace($health,['state'=>'off','reason'=>'initiative_off']);
-            if(($policy['conversation_id']??null)!==$cid)return array_replace($health,['state'=>'linked_elsewhere','reason'=>'linked_elsewhere']);
-            $live=vp3_initiative_access_v1($pdo,$live,$policy);
-            $health['enabled']=true;$health['policy_revision']=(string)$policy['revision'];
             $knowledge=$policy['knowledge_scope']??[];
             if(is_array($knowledge)&&in_array($knowledge['mode']??'', ['off','all','folder'],true)){
                 $health['knowledge_scope']=['mode'=>$knowledge['mode'],
                     'folder_id'=>$knowledge['mode']==='folder'?max(0,(int)($knowledge['folder_id']??0)):0];
             }
+            if($policy===[])return array_replace($health,['state'=>'starting','reason'=>'automatic_startup']);
+            if(($policy['enabled']??null)===false)return array_replace($health,['state'=>'paused','reason'=>'initiative_paused','paused'=>true]);
+            if(($policy['enabled']??null)!==true)return array_replace($health,['state'=>'unavailable','reason'=>'context_unavailable']);
+            if(($policy['conversation_id']??null)!==$cid)return array_replace($health,['state'=>'linked_elsewhere','reason'=>'linked_elsewhere']);
+            $live=vp3_initiative_access_v1($pdo,$live,$policy);
+            $health['enabled']=true;$health['policy_revision']=(string)$policy['revision'];
             $runner=agent_worker_health_read_v1();
             $health['runner_state']=$runner['state'];$health['runner_last_success_at']=$runner['last_success_at'];
             $review=agent_brain_v122_memory($live,'initiative_sweep','last-review')['metadata']??[];

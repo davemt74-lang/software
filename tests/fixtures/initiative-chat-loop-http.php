@@ -30,6 +30,10 @@ class InitiativeHttpPDO extends ImageFixturePDO
             $sql.='ON CONFLICT(user_id,memory_hash) DO UPDATE SET memory_text=excluded.memory_text,confidence=excluded.confidence,
                 last_seen_at=NOW(),is_active=1,metadata_json=excluded.metadata_json,memory_scope_version=410';
         }
+        if(str_contains($sql,'INSERT INTO agent_activity_state')&&str_contains($sql,'ON DUPLICATE KEY UPDATE')){
+            $sql=str_replace('ON DUPLICATE KEY UPDATE','ON CONFLICT(user_id) DO UPDATE SET',$sql);
+            $sql=preg_replace('/VALUES\((\w+)\)/','excluded.$1',$sql);
+        }
         return parent::prepare($sql,$options);
     }
 }
@@ -42,6 +46,8 @@ function agent_brain_schema_ready():bool{return table_exists('agent_memory_items
 function agent_brain_normalize(string $text):string{return strtolower(trim($text));}
 function agent_brain_sentences(string $text):array{return [$text];}
 function vp3_participant_scope_v1():?array{return null;}
+function agent_runtime_v125_trace(string $event,array $data=[]):void{}
+function agent_runtime_v125_trace_id():string{return 'initiative-http-fixture';}
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat'):array
 {
     return ['route'=>'vp3_cloud','blocked'=>false,'cloud'=>['ready'=>true],'effective_preference'=>'vp3_cloud'];
@@ -57,16 +63,22 @@ function ai_generate_chat_response(string $prompt,array $history,array $context,
     db()->prepare('INSERT INTO fixture_model_calls(protocol,prompt) VALUES(?,?)')->execute([$protocol,$prompt]);
     if(str_contains($prompt,'SYSTEM SECRET')||str_contains($prompt,'FOREIGN SECRET'))throw new RuntimeException('Private fixture evidence crossed the principal boundary.');
     $input=json_decode($prompt,true,32,JSON_THROW_ON_ERROR);
+    $checkIn=db()->query('SELECT scenario FROM fixture_controls WHERE id=1')->fetchColumn()==='check_in';
     if($protocol==='vp3.initiative-plan.v1'){
         $tools=array_column($input['tools'],'ready','id');
         if(empty($tools['brain.read'])||!in_array('task:100',array_column($input['evidence'],'ref'),true)){
             throw new RuntimeException('Real Brain capability and task evidence are required: '.json_encode($input['tools']));
         }
-        $answer=['jobs'=>[['tool'=>'brain.read','primary'=>'task:100','refs'=>['task:100'],'focus'=>'launch','report'=>true]]];
+        $answer=['jobs'=>[['tool'=>$checkIn?'chat.check_in':'brain.read','primary'=>'task:100','refs'=>['task:100'],'focus'=>'launch','report'=>true]]];
     }elseif($protocol==='vp3.initiative-draft.v1'){
-        $records=$input['tool_result']['records']??[];
-        if(count($records)!==1||$records[0]['source']!=='brain:100')throw new RuntimeException('The real named-Agent Brain tool must retrieve its exact stored record.');
-        $answer=['draft'=>'Verified background Brain analysis. '.str_repeat('The launch needs a product image and a reviewed promotion plan before it is ready. ',9)];
+        if($checkIn){
+            if(($input['response_kind']??'')!=='chat.check_in'||empty($input['recent_user_messages']))throw new RuntimeException('The actual check-in must use exact saved owner continuity.');
+            $answer=['draft'=>'A check-in based on the earlier owner conversation.'];
+        }else{
+            $records=$input['tool_result']['records']??[];
+            if(count($records)!==1||$records[0]['source']!=='brain:100')throw new RuntimeException('The real named-Agent Brain tool must retrieve its exact stored record.');
+            $answer=['draft'=>'Verified background Brain analysis. '.str_repeat('The launch needs a product image and a reviewed promotion plan before it is ready. ',9)];
+        }
     }else throw new RuntimeException('Unexpected model protocol.');
     return ['ok'=>true,'answer'=>json_encode($answer,JSON_THROW_ON_ERROR)];
 }
@@ -88,6 +100,8 @@ if(!table_exists('fixture_model_calls')){
     $pdo->exec("ALTER TABLE chat_conversations ADD COLUMN title TEXT;
         ALTER TABLE chat_conversations ADD COLUMN updated_at TEXT;
         CREATE TABLE fixture_model_calls(id INTEGER PRIMARY KEY,protocol TEXT,prompt TEXT);
+        CREATE TABLE fixture_controls(id INTEGER PRIMARY KEY,scenario TEXT);
+        INSERT INTO fixture_controls VALUES(1,'brain');
         CREATE TABLE agent_memory_items(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER,memory_type TEXT,subject TEXT,
             memory_text TEXT,memory_hash TEXT,memory_scope_version INTEGER,source_archive_id INTEGER,confidence REAL,occurrence_count INTEGER,
             first_seen_at TEXT,last_seen_at TEXT,is_active INTEGER,metadata_json TEXT,UNIQUE(user_id,memory_hash));
@@ -128,6 +142,14 @@ function initiative_http_chat_v1():never
         http_response_code(404);echo '{"ok":false,"error":"conversation_not_found"}';exit;
     }
     $messages=[];
+    if(($body['action']??'')==='send'){
+        $q=db()->prepare('INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(?,?,?,?)');
+        $q->execute([$cid,(int)$user['id'],'user',(string)$body['message']]);$userMessage=(int)db()->lastInsertId();
+        $answer='I have saved your new direction.';
+        $q->execute([$cid,null,'assistant',$answer]);
+        echo json_encode(['ok'=>true,'conversation_id'=>$cid,'answer'=>$answer,'user_message_id'=>$userMessage,
+            'assistant_message_id'=>(int)db()->lastInsertId()]);exit;
+    }
     if(in_array($body['action']??'', ['load','messages_after'],true)){
         $q=db()->prepare('SELECT * FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id');
         $q->execute([$cid,($body['action']??'')==='messages_after'?(int)($body['after_id']??0):0]);$messages=$q->fetchAll();
@@ -150,6 +172,16 @@ function initiative_http_state_v1():never
         'reports'=>db()->query("SELECT * FROM chat_messages WHERE role='assistant' AND context_json IS NOT NULL")->fetchAll(),
         'runs'=>db()->query('SELECT id,agent_id,status,goal FROM agent_workflow_runs ORDER BY id')->fetchAll(),
         'receipts'=>db()->query('SELECT * FROM agent_workflow_receipts ORDER BY id')->fetchAll(),
+        'actions'=>db()->query('SELECT id,result_json FROM agent_workflow_actions ORDER BY id')->fetchAll(),
         'model_calls'=>db()->query('SELECT * FROM fixture_model_calls ORDER BY id')->fetchAll()];
     echo json_encode($state,JSON_THROW_ON_ERROR);exit;
+}
+
+function initiative_http_checkin_scenario_v1():never
+{
+    $body=json_decode((string)file_get_contents('php://input'),true,16,JSON_THROW_ON_ERROR);
+    if($_SERVER['REQUEST_METHOD']!=='POST'||!hash_equals(csrf_token(),(string)($body['csrf_token']??''))){http_response_code(419);exit;}
+    db()->exec("UPDATE fixture_controls SET scenario='check_in' WHERE id=1;
+        UPDATE agent_memory_items SET memory_text='The launch now needs an owner decision about the promotion plan.' WHERE id=100");
+    header('Content-Type:application/json');echo '{"ok":true}';exit;
 }

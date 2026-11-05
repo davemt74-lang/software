@@ -131,19 +131,19 @@ $pdo->prepare('INSERT INTO initiative_fixture_calendar VALUES (1,?,?),(2,?,?)')
     ->execute(['Owner launch review', $starts, 'Foreign calendar entry', $starts]);
 vp3_initiative_schedule_v1($pdo, $user);
 initiative_worker_check(initiative_worker_runs('initiative.plan')===[], 'initiative defaults to no scheduled work');
-initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,0)===['state'=>'off']
-    && vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'off'],
-    'foreground status is off for a new or existing private System Chat before opt-in');
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,0)===['state'=>'starting']
+    && vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'starting'],
+    'read-only foreground status awaits automatic startup for a new or existing private System Chat');
 $enabled = vp3_initiative_chat_v1($pdo, $user, $principal, ['conversation_id'=>42], 'on', null);
 initiative_worker_check(str_contains($enabled['answer'], 'Initiative is on'), 'owner opt-in binds initiative to the current system Chat');
 initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'waiting_for_review']
     && vp3_initiative_foreground_status_v1($pdo,$user,0,0)===['state'=>'linked_elsewhere'],
     'foreground status distinguishes an opted-in Chat awaiting its first worker from a new Chat');
-initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,7,11)===['state'=>'off']
+initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,7,11)===['state'=>'starting']
     && vp3_initiative_foreground_status_v1($pdo,$user,0,11)===['state'=>'unavailable']
     && vp3_initiative_foreground_status_v1($pdo,['id'=>2,'is_active'=>1],0,42)===['state'=>'unavailable']
     && vp3_initiative_foreground_status_v1($pdo,$user,0,43)===['state'=>'unavailable'],
-    'a named Agent has its own off policy while foreign conversations cannot see System Chat Initiative status');
+    'a named Agent awaits its own automatic startup while foreign conversations cannot see System Chat Initiative status');
 $GLOBALS['initiativeFixtureParticipant']=['participant_id'=>8];
 initiative_worker_check(vp3_initiative_foreground_status_v1($pdo,$user,0,42)===['state'=>'unavailable'],
     'a participant scope cannot see owner Initiative status');
@@ -656,9 +656,10 @@ $showOwner();
 $GLOBALS['initiativeBrainAccess']=false;
 try{$revokedDelivery=vp3_initiative_deliver_pending_v1($pdo,$user);}
 finally{$GLOBALS['initiativeBrainAccess']=true;}
-initiative_worker_check(!$revokedDelivery&&$pendingResult($pendingRun)['initiative_delivery']==='withheld'
-    && count(initiative_worker_assistant_messages())===$beforePending+1,
-    'revoked Brain access withdraws pending work without disclosing the private preparation');
+initiative_worker_check($revokedDelivery&&$pendingResult($pendingRun)['initiative_delivery']==='delivered'
+    && count(initiative_worker_assistant_messages())===$beforePending+2,
+    'optional Brain UI access revocation leaves delivery of separately authorized calendar preparation available');
+++ $beforePending;
 
 $disabledPending=$privateReport('Preparation from an owner who disables Initiative');
 vp3_initiative_chat_v1($pdo,$user,$principal,['conversation_id'=>42],'off',null);

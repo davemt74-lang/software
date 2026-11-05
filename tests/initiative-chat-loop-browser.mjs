@@ -4,7 +4,7 @@ import {chromium} from 'playwright';
 
 // Real shipped client scripts; HTTP, provider output and lifecycle signals are
 // controlled fixtures. Canonical claim/authority tests exercise the PHP worker.
-const files=['chat.js','chat-voice.js','chat-cognitive-presentation-v510.js','chat-message-unread-v1.js'];
+const files=['chat.js','chat-voice.js','agent-activity-v94.js','chat-cognitive-presentation-v510.js','chat-message-unread-v1.js'];
 const sources=Object.fromEntries(await Promise.all(files.map(async name=>[name,await fs.readFile(new URL('../'+name,import.meta.url),'utf8')])));
 const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});
 const origin='https://initiative-chat-loop.test';
@@ -14,16 +14,17 @@ function gate(){
   return {arrived:new Promise(resolve=>{arrive=resolve;}),released:new Promise(resolve=>{release=resolve;}),arrive:()=>arrive(),release:()=>release()};
 }
 
-async function fixture(agentId,{enabled=false,twoTabs=false,initialConversationId=42}={}){
+async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false}={}){
   const context=await browser.newContext();
-  const pages=[],errors=[],reads=[],ticks=[],settings=[];
+  const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[];
   const histories=new Map([[42,[{id:1,role:'assistant',message:'Restored private conversation'}]],
     [43,[{id:10,role:'assistant',message:'Another private conversation'}]]]);
-  let policy=enabled,phase=0,failTick=false,holdTick=null,claimActive=false,realWork=0,blockedReason='';
-  const health=(cid=42)=>({state:policy?(cid!==42?'linked_elsewhere':blockedReason?'blocked':'waiting'):'off',
-    reason:policy?(cid!==42?'linked_elsewhere':blockedReason||'worker_missing'):'initiative_off',enabled:policy&&cid===42,
-    agent_id:agentId,conversation_id:cid,policy_revision:policy&&cid===42?revision:'',configuration_ready:true,execution_ready:policy&&!blockedReason&&cid===42,
-    knowledge_scope:{mode:'folder',folder_id:12},runner_state:'never_seen'});
+  let policy=enabled,exists=enabled||paused,policyRevision=exists?revision:'',policyCid=42,phase=0,failTick=false,holdTick=null,claimActive=false,realWork=0,blockedReason='',ownerBusy=false,pendingReport=false;
+  const health=(cid=42)=>({state:!exists?'starting':policy?(cid!==policyCid?'linked_elsewhere':blockedReason?'blocked':'waiting'):'paused',
+    reason:!exists?'automatic_startup':policy?(cid!==policyCid?'linked_elsewhere':blockedReason||'worker_missing'):'initiative_paused',enabled:policy&&cid===policyCid,
+    paused:exists&&!policy,policy_exists:exists,
+    agent_id:agentId,conversation_id:cid,policy_revision:policyRevision,configuration_ready:true,execution_ready:policy&&!blockedReason&&cid===policyCid,
+    knowledge_scope:{mode:'off',folder_id:0},runner_state:'never_seen'});
   await context.addInitScript(()=>{
     window.speechCalls=0;window.announcementCalls=0;
     window.SpeechRecognition=undefined;window.webkitSpeechRecognition=undefined;
@@ -44,17 +45,31 @@ async function fixture(agentId,{enabled=false,twoTabs=false,initialConversationI
         '<button id="newChatButton">New Chat</button><div id="chatHistory"></div>',
         '<button id="chatAgentBriefButton">Agent Brief</button><aside id="chatAgentBriefPopover" hidden><div data-agent-brief-content></div><footer></footer></aside>',
         '<section id="chatThread" data-view="chat"><div id="chatWelcome" hidden></div><section id="chatLiveContext" hidden></section></section>',
-        '<form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button><button id="chatVoiceButton" type="button">Voice</button></form><div id="chatVoiceStatus"></div>',
+        '<form id="chatForm"><textarea id="chatInput">'+(initialDraft?'My unfinished thought':'')+'</textarea><button id="sendChatButton">Send</button><button id="chatVoiceButton" type="button">Voice</button></form><div id="chatVoiceStatus"></div>',
         '<script>window.STONEFELLOW_CHAT='+JSON.stringify(chat)+';window.VP3_COGNITIVE_PRESENTATION_V510='+JSON.stringify(config)+';',
-        'window.VP3_CHAT_MESSAGE_UNREAD_V1={endpoint:"/api/agent-chat-read-v1.php"};</script>',
+        'window.VP3_CHAT_MESSAGE_UNREAD_V1={endpoint:"/api/agent-chat-read-v1.php"};',
+        'window.STONEFELLOW_ACTIVITY={endpoint:"/api/agent-activity-v94.php",csrf:"fixture",surface:"chat",conversationId:'+initialConversationId+'};',
+        (initialDraft?'sessionStorage.setItem("vp3:chat:drafts:1:'+agentId+'",JSON.stringify({"'+initialConversationId+'":{text:"My unfinished thought",at:Date.now()}}));':''),
+        '</script>',
         ...files.map(name=>'<script src="/'+name+'"></script>')
       ].join('')});
     }
     if(sources[url.pathname.slice(1)])return route.fulfill({contentType:'text/javascript',body:sources[url.pathname.slice(1)]});
     const body=request.method()==='POST'?request.postDataJSON():null;
+    if(url.pathname==='/api/agent-activity-v94.php'){
+      activities.push(body);
+      const cid=Number(body.context.conversation_id),eligible=body.context.visible===true&&body.context.focused===true
+        &&body.context.chat_focused===true&&cid>0;
+      if(eligible)ownerBusy=body.context.chat_busy===true;
+      if(eligible&&!exists){exists=true;policy=true;policyRevision=revision;policyCid=cid;}
+      else if(eligible&&policy&&policyCid!==cid){policyCid=cid;policyRevision=policyRevision==='c'.repeat(32)?'d'.repeat(32):'c'.repeat(32);}
+      return route.fulfill({json:{ok:true,activity:{state:body.state},owner_user_id:1,server_time_ms:Date.now(),
+        ...(eligible?{agent_core_context:{owner_user_id:1,agent_id:agentId,conversation_id:cid,working_attention_binding:'owner-a',health:health(cid)}}:{})}});
+    }
     if(url.pathname==='/api/cognitive-presentation-v510.php'){
       assert.equal(request.headers()['x-vp3-working-attention'],'owner-a');
       if(!body){
+        if(presentationUnavailable)return route.fulfill({status:503,json:{ok:false,error:'projection_unavailable'}});
         const id=Number(url.searchParams.get('conversation_id'));
         reads.push({id,runtime:url.searchParams.get('include_initiative_runtime')});
         const state={brief:{agent_name:agentId?'Longfellow':'VP3 Agent',active:true,status_label:'Active'}};
@@ -67,11 +82,11 @@ async function fixture(agentId,{enabled=false,twoTabs=false,initialConversationI
       assert.equal(body.agent_id,agentId);
       assert.equal(body.csrf_token,'fixture');
       if(body.action==='initiative_setting'){
-        settings.push(body);policy=body.enabled;
-        return route.fulfill({json:{ok:true,health:health()}});
+        settings.push(body);policy=body.enabled;exists=true;policyRevision=policyRevision==='b'.repeat(32)?'e'.repeat(32):'b'.repeat(32);policyCid=body.conversation_id;
+        return route.fulfill({json:{ok:true,health:health(policyCid)}});
       }
       if(body.action==='initiative_tick'){
-        ticks.push(body);assert.equal(body.conversation_id,42);assert.equal(body.policy_revision,revision);
+        ticks.push(body);assert.equal(body.conversation_id,policyCid);assert.equal(body.policy_revision,policyRevision);
         if(failTick)return route.abort('internetdisconnected');
         if(claimActive)return route.fulfill({json:{ok:true,reason:'already_running',health:health()}});
         const wait=holdTick;holdTick=null;
@@ -79,6 +94,10 @@ async function fixture(agentId,{enabled=false,twoTabs=false,initialConversationI
         if(!policy)return route.fulfill({json:{ok:true,reason:'off',health:health()}}).catch(()=>{});
         if((twoTabs||phase++===1)&&realWork===0){
           realWork++;
+          pendingReport=true;
+        }
+        if(pendingReport&&!ownerBusy){
+          pendingReport=false;
           histories.get(42).push({id:2,role:'assistant',message:'I reviewed the transcript follow-ups and prepared the next steps.',
             context_json:JSON.stringify({source:'agent_initiative',initiative_run_id:91})});
         }
@@ -110,7 +129,7 @@ async function fixture(agentId,{enabled=false,twoTabs=false,initialConversationI
     assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);
     return page;
   };
-  return {context,pages,errors,reads,ticks,settings,health,open,
+  return {context,pages,errors,reads,ticks,settings,activities,health,open,
     fail(value){failTick=value;},block(value){blockedReason=value;},
     hold(){holdTick=gate();return holdTick;},get realWork(){return realWork;}};
 }
@@ -120,15 +139,12 @@ try{
     const f=await fixture(agentId);
     try{
       const page=await f.open(),status=page.locator('[data-agent-initiative-status]');
-      await status.getByText('Background preparation is off for this Agent.',{exact:true}).waitFor();
-      assert.equal(f.ticks.length,0);
-      const firstTick=page.waitForRequest(request=>request.method()==='POST'&&request.url().includes('/api/cognitive-presentation-v510.php')&&request.postDataJSON().action==='initiative_tick');
-      await status.getByRole('button',{name:'Enable',exact:true}).click();
-      await firstTick;
+      assert.equal(await status.getByRole('button',{name:'Enable',exact:true}).count(),0);
+      await page.clock.fastForward(300);
       await page.waitForFunction(()=>document.querySelector('[data-agent-initiative-setting="off"]'));
-      assert.equal(f.settings.length,1);
-      assert.deepEqual(f.settings[0].knowledge_scope,{mode:'folder',folder_id:12});
-      assert.equal(f.settings[0].conversation_id,42);
+      assert.equal(f.settings.length,0);
+      assert.equal(f.activities.at(-1).context.conversation_id,42);
+      assert.deepEqual(f.health().knowledge_scope,{mode:'off',folder_id:0});
       await page.waitForFunction(()=>!document.querySelector('[data-agent-initiative-status] button')?.disabled);
       assert.equal(f.ticks.length,1);
       await page.clock.fastForward(15001);
@@ -140,17 +156,18 @@ try{
       assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);
       assert.equal(f.realWork,1);
 
-      // Typed work and speech have priority over another foreground tick.
+      // Private work keeps advancing while typing or speaking; its delivery
+      // remains governed separately by current canonical owner availability.
       await page.locator('#chatInput').fill('My unfinished thought');
       let count=f.ticks.length;
       await page.clock.fastForward(16000);
       await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
-      assert.equal(f.ticks.length,count);
+      assert.ok(f.ticks.length>count);count=f.ticks.length;
       await page.locator('#chatInput').fill('');
       await page.evaluate(()=>document.body.dataset.stonefellowAgentState='speaking');
       await page.clock.fastForward(16000);
       await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
-      assert.equal(f.ticks.length,count);
+      assert.ok(f.ticks.length>count);count=f.ticks.length;
       await page.evaluate(()=>document.body.dataset.stonefellowAgentState='idle');
 
       f.block('quota_exhausted');
@@ -168,13 +185,23 @@ try{
       const pausing=f.hold();
       await page.clock.fastForward(16000);await pausing.arrived;
       await status.getByRole('button',{name:'Pause',exact:true}).click();
-      await status.getByText('Background preparation is off for this Agent.',{exact:true}).waitFor();
+      await status.getByText('Agent background work is paused.',{exact:true}).waitFor();
       pausing.release();
       count=f.ticks.length;
       await page.clock.fastForward(16000);
       assert.equal(f.ticks.length,count);
-      await status.getByRole('button',{name:'Enable',exact:true}).click();
+      assert.equal(Object.hasOwn(f.settings.at(-1),'knowledge_scope'),false,'Pause does not change Knowledge permission');
+      // A delayed pre-pause heartbeat must not restore the active UI or work.
+      await page.evaluate(({agentId,revision})=>window.dispatchEvent(new CustomEvent('vp3:agent-core-context',{detail:{
+        owner_user_id:1,agent_id:agentId,conversation_id:42,working_attention_binding:'owner-a',
+        health:{enabled:true,agent_id:agentId,conversation_id:42,policy_revision:revision,state:'waiting',reason:'worker_missing',
+          configuration_ready:true,execution_ready:true,knowledge_scope:{mode:'off',folder_id:0}}
+      }})),{agentId,revision});
+      await status.getByRole('button',{name:'Resume',exact:true}).waitFor();
+      assert.equal(f.ticks.length,count);
+      await status.getByRole('button',{name:'Resume',exact:true}).click();
       await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
+      assert.equal(Object.hasOwn(f.settings.at(-1),'knowledge_scope'),false,'Resume does not grant the foreground Knowledge selection');
       await page.waitForFunction(()=>!document.querySelector('[data-agent-initiative-status] button')?.disabled);
 
       // A late old-Chat response cannot change the newly selected Chat.
@@ -185,19 +212,67 @@ try{
       await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===43);
       assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
       assert.deepEqual(f.errors,[]);
-      console.log('PASS foreground Initiative in '+(agentId?'named':'System')+' Chat: explicit opt-in/scope, canonical saved New result, silent text, busy guards, blocked quota, network retry, pause during inference and conversation fence');
+      console.log('PASS automatic core in '+(agentId?'named':'System')+' Chat: actual activity client, no Enable prerequisite or Knowledge inheritance, canonical New result, silent text, busy guards, quota/network recovery, Pause/Resume and stale-heartbeat/conversation fences');
     }finally{await f.context.close();}
   }
 
   const blank=await fixture(17,{initialConversationId:0});
   try{
     const page=await blank.open();
-    await page.getByText('Background preparation can be enabled after this Chat has been saved.',{exact:true}).waitFor();
+    await page.getByText('The Agent can continue useful work after your first message saves this Chat.',{exact:true}).waitFor();
+    await page.clock.fastForward(35000);
     assert.equal(await page.locator('[data-agent-initiative-setting]').count(),0);
     assert.equal(blank.ticks.length,0);assert.equal(blank.settings.length,0);
     assert.equal(blank.reads.some(read=>read.runtime==='1'),false);
-    console.log('PASS a new unsaved Chat explains activation without creating a conversation, model work or an inherited opt-in');
+    console.log('PASS a new unsaved Chat does not create a conversation, activate work or spend model calls');
   }finally{await blank.context.close();}
+
+  const busyOwner=await fixture(17,{initialDraft:true});
+  try{
+    const page=await busyOwner.open();
+    await page.clock.fastForward(16000);
+    await page.waitForFunction(()=>document.querySelector('[data-agent-initiative-setting="off"]'));
+    assert.equal(busyOwner.realWork,1,'private preparation finishes while the owner has a draft');
+    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
+    const checked=page.locator('[data-agent-initiative-status]').getByText('No background worker has been observed. This open Chat can advance permitted work.',{exact:true});
+    await checked.waitFor();
+    let count=busyOwner.ticks.length;
+    await page.evaluate(()=>document.body.dataset.stonefellowAgentState='processing');
+    await page.locator('#chatInput').fill('');
+    const processingTick=page.waitForResponse(response=>response.request().method()==='POST'
+      &&response.url().includes('/api/cognitive-presentation-v510.php')&&response.request().postDataJSON().action==='initiative_tick');
+    await page.clock.fastForward(31000);await processingTick;
+    await checked.waitFor();
+    assert.ok(busyOwner.ticks.length>count);count=busyOwner.ticks.length;
+    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
+    await page.evaluate(()=>document.body.dataset.stonefellowAgentState='speaking');
+    const speakingTick=page.waitForResponse(response=>response.request().method()==='POST'
+      &&response.url().includes('/api/cognitive-presentation-v510.php')&&response.request().postDataJSON().action==='initiative_tick');
+    await page.clock.fastForward(31000);await speakingTick;
+    await checked.waitFor();
+    assert.ok(busyOwner.ticks.length>count);
+    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
+    assert.deepEqual(await page.evaluate(()=>({speech:window.speechCalls,announcements:window.announcementCalls})),{speech:0,announcements:0});
+    await page.evaluate(()=>document.body.dataset.stonefellowAgentState='idle');
+    await page.clock.fastForward(31000);
+    await page.locator('[data-chat-message-id="2"] [data-chat-message-new]').waitFor();
+    assert.equal(busyOwner.realWork,1);
+    console.log('PASS private preparation advances through composer drafts, main Agent processing and speech; canonical report appears only after quiet, without synthesized speech');
+  }finally{await busyOwner.context.close();}
+
+  const newAfterSaved=await fixture(17,{enabled:true});
+  try{
+    const page=await newAfterSaved.open();
+    await page.waitForFunction(()=>!document.querySelector('[data-agent-initiative-status] button')?.disabled);
+    const before=newAfterSaved.ticks.length;
+    await page.getByRole('button',{name:'New Chat',exact:true}).click();
+    await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===0);
+    await page.clock.fastForward(35000);
+    assert.equal(newAfterSaved.activities.at(-1).context.conversation_id,0,'New Chat must not reuse the rendered old saved conversation');
+    assert.equal(newAfterSaved.ticks.length,before);
+    assert.equal(await page.locator('[data-agent-initiative-setting]').count(),0);
+    console.log('PASS opening New Chat after a saved Chat does not adopt or pump the old conversation');
+  }finally{await newAfterSaved.context.close();}
 
   const f=await fixture(17,{enabled:true,twoTabs:true});
   try{
@@ -230,4 +305,41 @@ try{
     assert.deepEqual(f.errors,[]);
     console.log('PASS two Chat tabs tolerate a canonical in-flight claim and render one saved result each; account replacement fences late responses and stops further ticks');
   }finally{await f.context.close();}
+
+  const paused=await fixture(17,{paused:true});
+  try{
+    const page=await paused.open(),status=page.locator('[data-agent-initiative-status]');
+    await page.clock.fastForward(35000);
+    await status.getByRole('button',{name:'Resume',exact:true}).waitFor();
+    await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43));
+    await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===43);
+    await page.clock.fastForward(35000);
+    await status.getByRole('button',{name:'Resume',exact:true}).waitFor();
+    await page.reload({waitUntil:'domcontentloaded'});
+    await page.clock.fastForward(35000);
+    await status.getByRole('button',{name:'Resume',exact:true}).waitFor();
+    assert.equal(paused.ticks.length,0);assert.equal(paused.settings.length,0);
+    assert.ok(paused.activities.length>1);
+    console.log('PASS explicit Pause survives automatic lifecycle heartbeats and reload without an Enable gate');
+  }finally{await paused.context.close();}
+
+  const unavailable=await fixture(17,{presentationUnavailable:true});
+  try{
+    const page=await unavailable.context.newPage();page.setDefaultTimeout(8000);
+    await page.clock.install();await page.goto(origin,{waitUntil:'domcontentloaded'});
+    await page.clock.fastForward(300);
+    await page.locator('[data-agent-initiative-setting="off"]').waitFor();
+    assert.equal(unavailable.ticks.length,1);assert.equal(unavailable.settings.length,0);
+    await page.evaluate(()=>{
+      const core=window.StonefellowAgentActivity.coreContext();
+      for(const change of [{owner_user_id:2},{agent_id:99},{conversation_id:99},{working_attention_binding:'other-session'}]){
+        window.dispatchEvent(new CustomEvent('vp3:agent-core-context',{detail:{...core,...change,
+          health:{...core.health,enabled:false,state:'paused',paused:true,reason:'initiative_paused',policy_revision:'f'.repeat(32)}}}));
+      }
+    });
+    await page.locator('[data-agent-initiative-setting="off"]').waitFor();
+    assert.equal(unavailable.ticks.length,1);
+    assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);
+    console.log('PASS accepted activity starts the core loop despite Brief/status projection failure and rejects mismatched owner, Agent, conversation and session events');
+  }finally{await unavailable.context.close();}
 }finally{await browser.close();}

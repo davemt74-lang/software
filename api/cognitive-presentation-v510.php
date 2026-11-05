@@ -105,11 +105,13 @@ try{
             if(!is_string($revision)||($revision!==''&&!preg_match('/^[a-f0-9]{32}$/D',$revision))){
                 vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_initiative_revision']);
             }
-            $scope=$input['knowledge_scope']??['mode'=>'off','folder_id'=>0];
-            if(!is_array($scope))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_knowledge_scope']);
+            $settingContext=['conversation_id'=>$conversationId,'initiative_expected_revision'=>$revision];
+            if(array_key_exists('knowledge_scope',$input)){
+                if(!is_array($input['knowledge_scope']))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_knowledge_scope']);
+                $settingContext['knowledge_scope']=$input['knowledge_scope'];
+            }
             $principal=vp3_agent_chat_principal_v380($user,$agent);
-            $setting=vp3_initiative_chat_v1($pdo,$user,$principal,['conversation_id'=>$conversationId,'knowledge_scope'=>$scope,
-                'initiative_expected_revision'=>$revision],$input['enabled']?'on':'off',null);
+            $setting=vp3_initiative_chat_v1($pdo,$user,$principal,$settingContext,$input['enabled']?'on':'off',null);
             if(($setting['reason']??'')==='settings_changed'){
                 vp3_cognitive_presentation_api_json_v510(409,['ok'=>false,'error'=>'initiative_settings_changed']);
             }
