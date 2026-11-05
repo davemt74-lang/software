@@ -29,9 +29,23 @@ try{
 declare(strict_types=1);
 define('PROOF_ROOT',${quote(root)});
 class ActivityProofPDO extends PDO {
+ public function exec(string $sql):int|false {
+  // Dialect adaptation only: the canonical durable-job installers define
+  // every workflow column, index and foreign-key dependency used below.
+  $sql=preg_replace('/\\b(?:BIGINT|INT)\\s+UNSIGNED\\s+(?:NOT NULL\\s+)?AUTO_INCREMENT\\b/i','INTEGER',$sql);
+  $sql=preg_replace('/\\s+UNSIGNED\\b|\\s+ON UPDATE CURRENT_TIMESTAMP|\\s+AFTER\\s+[a-z_0-9]+/i','',$sql);
+  $sql=preg_replace('/UNIQUE KEY\\s+[a-z_0-9]+\\s*\\(/i','UNIQUE (',$sql);
+  $sql=preg_replace('/,\\s*(?:INDEX|KEY)\\s+[a-z_0-9]+\\s*\\([^)]*\\)/i','',$sql);
+  $sql=preg_replace('/\\s+ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci\\s*$/i','',$sql);
+  return parent::exec($sql);
+ }
  public function prepare(string $sql,array $options=[]):PDOStatement|false {
   $sql=str_replace(' FOR UPDATE','',$sql);
-  if(str_contains($sql,'ON DUPLICATE KEY UPDATE')){
+  $sql=preg_replace('/SHOW INDEX FROM \\x60?([a-z_0-9]+)\\x60? WHERE Key_name=\\?/i',"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='$1' AND name=?",$sql);
+  if(str_contains($sql,'INSERT INTO agent_memory_items')&&str_contains($sql,'ON DUPLICATE KEY UPDATE')){
+   [$sql]=explode('ON DUPLICATE KEY UPDATE',$sql,2);
+   $sql.='ON CONFLICT(user_id,memory_hash) DO UPDATE SET memory_text=excluded.memory_text,confidence=excluded.confidence,last_seen_at=NOW(),is_active=1,metadata_json=excluded.metadata_json,memory_scope_version=410';
+  }elseif(str_contains($sql,'ON DUPLICATE KEY UPDATE')){
    $sql=str_replace('ON DUPLICATE KEY UPDATE','ON CONFLICT(user_id) DO UPDATE SET',$sql);
    $sql=preg_replace('/VALUES\\((\\w+)\\)/','excluded.$1',$sql);
   }
@@ -40,6 +54,7 @@ class ActivityProofPDO extends PDO {
 }
 $pdo=new ActivityProofPDO('sqlite:'.__DIR__.'/state.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
 $pdo->sqliteCreateFunction('NOW',static fn()=>gmdate('Y-m-d H:i:s'));
+$pdo->sqliteCreateFunction('UTC_TIMESTAMP',static fn()=>gmdate('Y-m-d H:i:s'));
 $pdo->sqliteCreateFunction('IF',static fn($condition,$yes,$no)=>$condition?$yes:$no);
  $pdo->exec("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER);INSERT OR IGNORE INTO users VALUES(1,1);
  CREATE TABLE IF NOT EXISTS agent_activity_state(user_id INTEGER PRIMARY KEY,surface TEXT,context_key TEXT,task_kind TEXT,task_title TEXT,activity_state TEXT,last_input_at TEXT,last_task_at TEXT,last_heartbeat_at TEXT,idle_since_at TEXT,details_json TEXT,updated_at TEXT);
@@ -50,16 +65,35 @@ $pdo->sqliteCreateFunction('IF',static fn($condition,$yes,$no)=>$condition?$yes:
  INSERT OR IGNORE INTO chat_messages(id,conversation_id,user_id,role,message) VALUES(1,42,NULL,'assistant','Restored private conversation')");
 function db():PDO{return $GLOBALS['pdo'];}
 function table_exists(string $name):bool{$q=db()->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$name]);return(bool)$q->fetchColumn();}
+function column_exists(string $table,string $column):bool{return in_array($column,array_column(db()->query('PRAGMA table_info('.$table.')')->fetchAll(),'name'),true);}
 function current_user():array{return ['id'=>1,'is_active'=>1];}
 function has_permission($key,$user):bool{return true;}
+function setting(string $key,mixed $default=null):mixed{return $default;}
 function csrf_token():string{return 'activity-fixture';}
 function agent_runtime_v125_trace($event,$data):void{}
 function agent_runtime_v125_trace_id():string{return 'activity-proof';}
 function vp3_live_session_record_activity_v2370(...$args):array{$GLOBALS['activityBridgeCalls']=($GLOBALS['activityBridgeCalls']??0)+1;if(db()->inTransaction())throw new RuntimeException('The activity bridge must not own the caller transaction.');return [];}
 function ai_generate_chat_response():never{throw new RuntimeException('Activity and text delivery must not invoke inference.');}
+function agent_brain_schema_ready():bool{return table_exists('agent_memory_items');}
+function agent_brain_normalize(string $text):string{return strtolower(trim($text));}
+function agent_brain_sentences(string $text):array{return array_values(array_filter(preg_split('/(?<=[.!?])\\s+|\\R+/u',trim($text))?:[],static fn(string $part):bool=>mb_strlen(trim($part))>=4));}
 require_once PROOF_ROOT.'/includes/agent-memory-scope-v410.php';
 require_once PROOF_ROOT.'/includes/agent-activity-v94.php';
 require_once PROOF_ROOT.'/includes/agent-initiative-v1.php';
+function activity_proof_prepare_report_v1():void{
+ require_once PROOF_ROOT.'/includes/agent-brain-v122.php';
+ require_once PROOF_ROOT.'/includes/agent-worker-cloud-v1910.php';
+ require_once PROOF_ROOT.'/includes/agent-capability-chat-v1.php';
+ require_once PROOF_ROOT.'/includes/user-agent-system-v236.php';
+ $pdo=db();
+ if(!table_exists('agent_workflow_runs'))agent_job_engine_ensure_schema_v1900($pdo);
+ $pdo->exec('CREATE TABLE IF NOT EXISTS agent_memory_items(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER,memory_type TEXT,subject TEXT,memory_text TEXT,
+  memory_hash TEXT,memory_scope_version INTEGER,source_archive_id INTEGER,confidence REAL,occurrence_count INTEGER,first_seen_at TEXT,last_seen_at TEXT,is_active INTEGER,metadata_json TEXT,UNIQUE(user_id,memory_hash))');
+ if(!agent_brain_v122_memory(current_user(),'initiative_policy','owner-opt-in')){
+  agent_brain_v122_upsert_system_memory(current_user(),'initiative_policy','owner-opt-in','Activity delivery fixture permission.',
+   ['enabled'=>true,'conversation_id'=>42,'revision'=>str_repeat('a',32),'knowledge_scope'=>['mode'=>'off','folder_id'=>0],'screen_enabled'=>false]);
+ }
+}
 `);
   await fs.writeFile(path.join(temp,'router.php'),`<?php
 $path=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH);
@@ -94,7 +128,21 @@ if($path==='/probe'||$path==='/emit'||$path==='/transaction-proof'){
  if($path==='/emit'){
   $body=json_decode(file_get_contents('php://input'),true);
   if($_SERVER['REQUEST_METHOD']!=='POST'||($body['csrf_token']??'')!==csrf_token()){http_response_code(419);exit;}
-  $result['message_id']=$present&&$allowed?vp3_initiative_report_v1(db(),current_user(),42,'Verified useful result delivered quietly.',[],123):0;
+  $result['message_id']=0;
+  if($present&&$allowed){
+   activity_proof_prepare_report_v1();
+   $binding=vp3_initiative_policy_v1(current_user());
+   $goal=['binding'=>$binding,'sources'=>[],'tool'=>'work.prepare_private','focus'=>'Exercise quiet prepared-result delivery without inference.','report'=>true];
+   $hash=hash('sha256','activity-fixture-report');db()->beginTransaction();
+   vp3_initiative_enqueue_v1(db(),current_user(),'initiative.prepare',$goal,$hash);
+   $q=db()->prepare('SELECT id,owner_user_id,agent_id,goal FROM agent_workflow_runs WHERE owner_user_id=? AND dedupe_key=?');
+   $q->execute([1,hash('sha256','initiative.prepare|'.$hash)]);$run=$q->fetch();
+   if(!$run)throw new RuntimeException('The real bound preparation run was not queued.');
+   $result['message_id']=vp3_initiative_report_v1(db(),current_user(),42,'Verified useful result delivered quietly.',[],(int)$run['id']);
+   db()->commit();$result['run_id']=(int)$run['id'];$result['run_goal']=json_decode($run['goal'],true);$result['run_goal_hash']=hash('sha256',$run['goal']);
+   $q=db()->prepare('SELECT context_json FROM chat_messages WHERE id=?');$q->execute([$result['message_id']]);
+   $result['message_context']=json_decode($q->fetchColumn(),true);$result['report_count']=(int)db()->query("SELECT COUNT(*) FROM chat_messages WHERE json_extract(context_json,'$.source')='agent_initiative'")->fetchColumn();
+  }
  }
  echo json_encode($result);exit;
 }
@@ -264,13 +312,25 @@ echo '<!doctype html><html lang="en"><meta charset="utf-8"><style>[hidden]{displ
   console.log('PASS a delayed previously-focused packet from another document cannot take over a newer foreground observation');
   await setFocus(first,false);state=await probe(second);
   assert.equal(state.details.activity_tab,secondTab);assert.equal(state.details.chat_busy,false);
-  await first.close();
+  // CDP target-close is not a document navigation and need not run pagehide.
+  // Depart through Chromium's native lifecycle. DevTools can omit request
+  // events for detached-document beacons, so use the real HTTP journal as the
+  // receipt barrier, then check the controller's committed foreground state.
+  await first.goto('about:blank');
+  let departedPacket;
   for(let attempt=0;attempt<15;attempt++){
     const requests=await (await second.request.get(origin+'/requests')).json();
-    if(requests.some(item=>item.reason==='pagehide'&&(typeof item.context==='string'?JSON.parse(item.context):item.context)?.activity_tab===firstTab))break;
-    if(attempt===14)assert.fail('The departed tab did not send its real pagehide beacon');
+    departedPacket=requests.find(item=>item.reason==='pagehide'
+      &&(typeof item.context==='string'?JSON.parse(item.context):item.context)?.activity_tab===firstTab);
+    if(departedPacket)break;
+    if(attempt===14)assert.fail('The departed document did not send its real bound pagehide beacon');
     await new Promise(resolve=>setTimeout(resolve,50));
   }
+  assert.equal(departedPacket.action,'heartbeat');assert.equal(typeof departedPacket.context,'string');
+  const departedContext=JSON.parse(departedPacket.context);
+  assert.equal(departedContext.conversation_id,42);assert.equal(departedContext.visible,false);
+  assert.equal(departedContext.focused,false);assert.equal(departedContext.chat_busy,true);
+  await first.close();
   state=await probe(second);assert.equal(state.details.activity_tab,secondTab);assert.equal(state.text_allowed,true);
   console.log('PASS a late pagehide beacon from another document cannot overwrite the newly focused Chat');
   await setFocus(second,false);
@@ -281,7 +341,15 @@ echo '<!doctype html><html lang="en"><meta charset="utf-8"><style>[hidden]{displ
   assert.equal(transaction.outer_preserved,true);assert.equal(transaction.rollback_preserved,true);
   console.log('PASS activity ordering and writes preserve an existing caller transaction and its rollback boundary');
   const response=await second.request.post(origin+'/emit',{data:{csrf_token:'activity-fixture'}});
-  const emitted=await response.json();assert.ok(emitted.message_id>1);
+  const emitBody=await response.text();let emitted;
+  try{emitted=JSON.parse(emitBody);}catch{assert.fail('The canonical report fixture returned invalid JSON: '+emitBody);}
+  assert.ok(response.ok(),'The canonical report fixture failed: '+emitBody);assert.ok(emitted.message_id>1);
+  assert.ok(emitted.run_id>0);assert.equal(emitted.message_context.initiative_run_id,emitted.run_id);
+  assert.equal(emitted.message_context.initiative_work.owner_user_id,1);assert.equal(emitted.message_context.initiative_work.agent_id,0);
+  assert.equal(emitted.message_context.initiative_work.conversation_id,42);assert.equal(emitted.message_context.initiative_work.run_id,emitted.run_id);
+  assert.equal(emitted.run_goal.binding.conversation_id,42);assert.equal(emitted.report_count,1);
+  assert.equal(emitted.message_context.initiative_followthrough_state.goal_hash,emitted.run_goal_hash);
+  assert.match(emitted.message_context.initiative_work.followthrough.reply_ref,/^[a-f0-9]{64}$/);
   state=await probe(second);assert.equal(state.text_allowed,false);
   assert.equal(await second.evaluate(()=>window.spoken),0);
   assert.deepEqual(pageErrors,[]);
