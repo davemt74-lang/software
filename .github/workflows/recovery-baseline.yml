@@ -49,6 +49,7 @@ jobs:
       - name: Current capability awareness and permission isolation
         run: |
           php tests/agent-capability-awareness-v1.php
+          php tests/agent-capability-contract-v1.php
           php tests/agent-capability-chat-v1.php
           php tests/agent-catch-up-v1.php
           php tests/agent-catch-up-meeting-prep-v1.php

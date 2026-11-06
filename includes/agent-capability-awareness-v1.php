@@ -16,6 +16,7 @@ require_once __DIR__.'/agent-analytics-read-v1.php';
 require_once __DIR__.'/agent-release-tools-v1.php';
 require_once __DIR__.'/agent-profile-webmcp-read-v1.php';
 require_once __DIR__.'/agent-catch-up-v1.php';
+require_once __DIR__.'/agent-capability-contract-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -161,7 +162,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         }
     }
     unset($row);
-    return $base;
+    return vp3_capability_contract_snapshot_v1($base);
 }
 
 function vp3_capability_begin_v1(PDO $pdo,array $user,array $principal,array $context=[],$scope=null): array

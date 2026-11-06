@@ -81,12 +81,24 @@ function vp3_initiative_followthrough_sources_v1(PDO $pdo,array $user,array $pri
     $agent=(int)$principal['agent_id'];$old=$goal['binding'];$policy=vp3_initiative_policy_v1($user,$agent);
     $scope=['user'=>$user,'principal'=>$principal,'agent_id'=>$agent,'conversation_id'=>$old['conversation_id']];
     $screen=!empty($old['screen_enabled'])&&!empty($policy['screen_enabled'])&&$agent===0;
-    $basic=[];$reviews=[];
+    require_once __DIR__.'/agent-initiative-capabilities-v1.php';
+    $basic=[];$reviews=[];$capabilitySources=[];
+    $capabilityMap=vp3_initiative_capability_saved_source_map_v1($goal);
     foreach($goal['sources'] as $ref=>$revision){
         if(!is_string($ref)||!is_string($revision)||!preg_match('/\A[a-f0-9]{64}\z/D',$revision))throw new RuntimeException('Proposal sources changed.',409);
-        if(str_starts_with($ref,'workbench-'))$reviews[$ref]=$revision;else $basic[$ref]=$revision;
+        if(str_starts_with($ref,'workbench-'))$reviews[$ref]=$revision;
+        elseif(isset($capabilityMap[$ref]))$capabilitySources[$ref]=$revision;
+        else $basic[$ref]=$revision;
     }
     $evidence=$basic?vp3_initiative_current_sources_v1($pdo,$user,$basic,$screen,$goal['canonical_sources']??[],$agent):[];
+    if($capabilitySources){
+        $readonly=[...$scope,'verification_only'=>true];$coverage=[];
+        $current=vp3_initiative_capabilities_evidence_v1($pdo,$readonly,$old,new DateTimeImmutable('now',new DateTimeZone('UTC')),array_keys($capabilitySources),$coverage);
+        foreach($capabilitySources as $ref=>$revision){
+            if(($current[$ref]['revision']??null)!==$revision)throw new RuntimeException('Proposal capability source changed.',409);
+            $evidence[$ref]=$current[$ref];
+        }
+    }
     require_once __DIR__.'/agent-initiative-tools-v1.php';
     foreach($reviews as $ref=>$revision){
         if(!preg_match('/\Aworkbench-(product|screen|mission):(.+)\z/D',$ref,$match))throw new RuntimeException('Proposal source changed.',409);
@@ -102,9 +114,11 @@ function vp3_initiative_followthrough_sources_v1(PDO $pdo,array $user,array $pri
     }
     $tool=$goal['tool']??'work.prepare_private';$saved=$result['initiative_tool_result']??[];
     $output=$saved['output']??null;
-    if(!in_array($tool,['work.prepare_private','chat.check_in','brain.read','knowledge.search','missions.prepare',
+    if(!vp3_initiative_capability_definition_v1((string)$tool)&&!in_array($tool,['work.prepare_private','chat.check_in','brain.read','knowledge.search','missions.prepare',
         'workbench.product.review','workbench.screen.review','workbench.mission.review'],true))throw new RuntimeException('Proposal tool evidence is unavailable.',503);
-    if(in_array($tool,['brain.read','knowledge.search'],true)){
+    if(vp3_initiative_capability_definition_v1((string)$tool)){
+        vp3_initiative_capability_result_current_v1($pdo,[...$scope,'verification_only'=>true],$old,$goal,$saved);
+    }elseif(in_array($tool,['brain.read','knowledge.search'],true)){
         if(!is_array($output)||($output['type']??'')!=='initiative_record_read'||($output['tool']??'')!==$tool
             ||!is_array($output['source_revisions']??null))throw new RuntimeException('Proposal read evidence changed.',409);
         if($tool==='knowledge.search'&&vp3_initiative_knowledge_scope_v1($old['knowledge_scope']??[])!==vp3_initiative_knowledge_scope_v1($policy['knowledge_scope']??[])){
@@ -210,7 +224,7 @@ function vp3_initiative_followthrough_load_v1(PDO $pdo,array $user,array $princi
                 ||($relation['revision']??null)!==($state['continuation_revision']??null)||($relation['reply_message_id']??null)!==($state['continuation_reply_message_id']??null)
                 ||($relation['reply_hash']??null)!==($state['continuation_reply_hash']??null)
                 ||($relation['root_run_id']??null)!==(int)$run['id']||($childGoal['sources']??null)!==$goal['sources']
-                ||($childGoal['tool']??null)!=='work.prepare_private'||($childGoal['binding']['conversation_id']??null)!==$cid){
+                ||($childGoal['tool']??null)!==vp3_initiative_followthrough_continuation_tool_v1($goal)||($childGoal['binding']['conversation_id']??null)!==$cid){
                 throw new RuntimeException('Private continuation binding changed.',409);
             }
             if($child['status']==='failed'){
@@ -632,6 +646,14 @@ function vp3_initiative_followthrough_anchor_store_v1(PDO $pdo,array $loaded,arr
 
 /** Resolve a real saved owner turn. A decision grants only private discussion or
  * the existing bounded preparation capability, never domain confirmation. */
+/** A private continuation may repeat only its original declared readonly adapter. */
+function vp3_initiative_followthrough_continuation_tool_v1(array $goal): string
+{
+    require_once __DIR__.'/agent-initiative-capabilities-v1.php';
+    $tool=$goal['tool']??'work.prepare_private';
+    return is_string($tool)&&vp3_initiative_capability_definition_v1($tool)?$tool:'work.prepare_private';
+}
+
 function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $principal,int $cid,int $userMessageId,mixed $initiativeReply,string $query,?callable $authority=null,?callable $model=null): array
 {
     if($pdo->inTransaction())throw new RuntimeException('Proposal inference cannot hold a transaction.',409);
@@ -668,6 +690,11 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
         vp3_initiative_model_v1($pdo,$loaded['user'],json_encode($prompt,JSON_THROW_ON_ERROR),'vp3.initiative-reply.v1',$loaded['agent_id']);
     $decision=vp3_tool_json_object_v1($answer,['intent','focus'],2400);
     if(!in_array($decision['intent']??'', $prompt['allowed_intents'],true)||!is_string($decision['focus']??null)||mb_strlen($decision['focus'])>300){throw new InvalidArgumentException('Proposal decision is invalid.');}
+    if(vp3_initiative_capability_sources_present_v1($loaded['goal']['sources']??[])){
+        // Refresh source-specific remote privacy evidence after a slow model
+        // turn, before either short decision/anchor-cleanup transaction.
+        $loaded=vp3_initiative_followthrough_selected_v1($pdo,$user,$principal,$cid,$ref,$acknowledgment);
+    }
     $intent=$decision['intent'];$focus=trim($decision['focus']);
     if($intent==='none'&&!$explicit&&!vp3_initiative_followthrough_short_v1($query)){
         vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$loaded,$principal,$cid,$userMessageId,$anchor,$authority):void{
@@ -703,7 +730,8 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
                 vp3_initiative_access_v1($pdo,$loaded['user'],$policy);
                 $state['continuation_revision']=$state['revision'];$state['continuation_reply_message_id']=$userMessageId;$state['continuation_reply_hash']=hash('sha256',$query);
                 $work=['binding'=>$policy,'sources'=>$loaded['goal']['sources'],'canonical_sources'=>$loaded['goal']['canonical_sources']??[],
-                    'tool'=>'work.prepare_private','primary'=>$loaded['goal']['primary']??array_key_first($loaded['goal']['sources']),
+                    'capability_sources'=>vp3_initiative_capability_saved_source_map_v1($loaded['goal']),
+                    'tool'=>vp3_initiative_followthrough_continuation_tool_v1($loaded['goal']),'primary'=>$loaded['goal']['primary']??array_key_first($loaded['goal']['sources']),
                     'focus'=>$focus!==''?$focus:'Advance the owner-selected private next step using the verified proposal sources.','report'=>true,
                     'followthrough'=>['message_id'=>$ref['message_id'],'reply_ref'=>$ref['reply_ref'],'revision'=>$state['revision'],
                         'reply_message_id'=>$userMessageId,'reply_hash'=>$state['continuation_reply_hash'],'root_run_id'=>(int)$loaded['run']['id']]];

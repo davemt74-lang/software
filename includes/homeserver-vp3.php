@@ -102,23 +102,27 @@ function homeserver_vp3_private_dir(): string
     return $dir;
 }
 
-function homeserver_vp3_credential_key(): string
+function homeserver_vp3_credential_key(bool $readOnly=false): string
 {
     if (!function_exists('openssl_encrypt') || !function_exists('openssl_decrypt')) {
-        throw new RuntimeException('OpenSSL is required to protect HomeServer credentials.');
+        throw new RuntimeException('OpenSSL is required to protect HomeServer credentials.',$readOnly?503:0);
     }
     $privateDir = STONEFELLOW_ROOT . '/private';
+    if($readOnly&&!is_dir($privateDir))throw new RuntimeException('HomeServer credential protection is unavailable.',503);
     if (!is_dir($privateDir) && !mkdir($privateDir, 0750, true) && !is_dir($privateDir)) {
         throw new RuntimeException('Could not create private credential storage.');
     }
     $path = $privateDir . '/homeserver-vp3.key';
     if (is_file($path)) {
-        $decoded = base64_decode(trim((string)file_get_contents($path)), true);
+        $bytes=$readOnly?@file_get_contents($path):file_get_contents($path);
+        $decoded = base64_decode(trim((string)$bytes), true);
         if (is_string($decoded) && strlen($decoded) === 32) {
             return $decoded;
         }
-        throw new RuntimeException('HomeServer credential key is invalid.');
+        throw new RuntimeException('HomeServer credential key is invalid.',$readOnly?503:0);
     }
+
+    if($readOnly)throw new RuntimeException('HomeServer credential protection is unavailable.',503);
 
     $key = random_bytes(32);
     $encoded = base64_encode($key) . "\n";
@@ -158,25 +162,25 @@ function homeserver_vp3_encrypt(string $plaintext): string
     return 'v1:' . base64_encode($iv . $tag . $ciphertext);
 }
 
-function homeserver_vp3_decrypt(?string $encoded): string
+function homeserver_vp3_decrypt(?string $encoded,bool $readOnly=false): string
 {
     $encoded = (string)$encoded;
     if ($encoded === '') {
         return '';
     }
     if (!str_starts_with($encoded, 'v1:')) {
-        throw new RuntimeException('Unsupported HomeServer credential format.');
+        throw new RuntimeException('Unsupported HomeServer credential format.',$readOnly?503:0);
     }
     $raw = base64_decode(substr($encoded, 3), true);
     if (!is_string($raw) || strlen($raw) < 29) {
-        throw new RuntimeException('HomeServer credential is invalid.');
+        throw new RuntimeException('HomeServer credential is invalid.',$readOnly?503:0);
     }
     $iv = substr($raw, 0, 12);
     $tag = substr($raw, 12, 16);
     $ciphertext = substr($raw, 28);
-    $plaintext = openssl_decrypt($ciphertext, 'aes-256-gcm', homeserver_vp3_credential_key(), OPENSSL_RAW_DATA, $iv, $tag);
+    $plaintext = openssl_decrypt($ciphertext, 'aes-256-gcm', homeserver_vp3_credential_key($readOnly), OPENSSL_RAW_DATA, $iv, $tag);
     if (!is_string($plaintext)) {
-        throw new RuntimeException('Could not decrypt HomeServer credential.');
+        throw new RuntimeException('Could not decrypt HomeServer credential.',$readOnly?503:0);
     }
     return $plaintext;
 }
@@ -252,8 +256,38 @@ function homeserver_vp3_remote_operation(string $relayToken, string $operation, 
     return is_array($result) ? $result : [];
 }
 
-function homeserver_vp3_remote_operation_for_user(int $userId,string $operation,array $payload=[],string $homeServerToken=''): array
+function homeserver_vp3_remote_operation_for_user(int $userId,string $operation,array $payload=[],string $homeServerToken='',bool $readOnly=false,?PDO $pdo=null): array
 {
+    if($readOnly){
+        $pdo??=db();
+        if(!$pdo||$pdo->inTransaction()||$userId<1||$operation!=='tools.list'||$payload!==[]){
+            throw new RuntimeException('HomeServer scope transport is unavailable.',503);
+        }
+        // Existing HTTPS queue/wait bookkeeping uses the application connection.
+        // A different supplied PDO must never redirect those effects elsewhere.
+        if($pdo!==db())throw new RuntimeException('HomeServer transport connection changed.',503);
+        try{
+            if(function_exists('homeserver_https_v1300_status')){
+                $https=homeserver_https_v1300_status($userId);
+                if(is_array($https)){
+                    if(($https['paired']??null)!==true||($https['connected']??null)!==true
+                        ||!function_exists('homeserver_https_v1300_queue')||!function_exists('homeserver_https_v1300_wait')){
+                        throw new RuntimeException('HomeServer HTTPS scope transport is unavailable.',503);
+                    }
+                    return homeserver_https_v1300_wait(homeserver_https_v1300_queue($userId,$operation,$payload));
+                }
+            }
+            $row=homeserver_vp3_connection($userId,true,$pdo);
+            if(!$row)throw new RuntimeException('HomeServer is not paired.',503);
+            $relay=homeserver_vp3_decrypt((string)($row['relay_token_enc']??''),true);
+            if(strlen($relay)<20)throw new RuntimeException('HomeServer relay authorization is unavailable.',503);
+            if($homeServerToken==='')$homeServerToken=homeserver_vp3_decrypt((string)($row['homeserver_token_enc']??''),true);
+            if(strlen($homeServerToken)<20)throw new RuntimeException('HomeServer authorization is unavailable.',503);
+            return homeserver_vp3_remote_operation($relay,$operation,$payload,$homeServerToken);
+        }catch(Throwable $error){
+            throw new RuntimeException('HomeServer scope transport is unavailable.',503,$error);
+        }
+    }
     if(function_exists('homeserver_https_v1300_status')){
         $https=homeserver_https_v1300_status($userId);
         if(is_array($https)&&!empty($https['paired'])){
@@ -268,17 +302,29 @@ function homeserver_vp3_remote_operation_for_user(int $userId,string $operation,
     return homeserver_vp3_remote_operation($relay,$operation,$payload,$homeServerToken);
 }
 
-function homeserver_vp3_connection(int $userId,bool $readOnly=false): ?array
+function homeserver_vp3_connection(int $userId,bool $readOnly=false,?PDO $pdo=null): ?array
 {
+    if($readOnly){
+        try{
+            $pdo??=db();
+            if($userId<1||!$pdo)throw new RuntimeException('HomeServer connection metadata is unavailable.',503);
+            // A successful empty SELECT proves absence. Metadata helpers can
+            // conflate an unreadable schema with no connection and perform DDL.
+            $query=$pdo->prepare('SELECT * FROM homeserver_connections WHERE user_id=? LIMIT 1');
+            $query->execute([$userId]);$row=$query->fetch(PDO::FETCH_ASSOC);
+            return $row?:null;
+        }catch(Throwable $error){
+            throw new RuntimeException('HomeServer connection metadata is unavailable.',503,$error);
+        }
+    }
     if ($userId < 1) {
         return null;
     }
-    $pdo = db();
+    $pdo ??= db();
     if (!$pdo) {
         return null;
     }
-    if($readOnly){if(!table_exists('homeserver_connections'))throw new RuntimeException('HomeServer connection storage requires upgrade.',409);}
-    else homeserver_vp3_ensure_schema($pdo);
+    homeserver_vp3_ensure_schema($pdo);
     $stmt = $pdo->prepare('SELECT * FROM homeserver_connections WHERE user_id=? LIMIT 1');
     $stmt->execute([$userId]);
     $row = $stmt->fetch();

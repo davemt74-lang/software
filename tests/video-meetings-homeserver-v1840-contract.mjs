@@ -31,7 +31,9 @@ assert.ok(home.includes("$state['route']='blocked';$state['status']='required_un
 assert.ok(home.includes("'policy_resolved'=>false,'requested_compute'=>'auto','cloud_processing_allowed'=>false"));
 assert.ok(home.includes("'cloud_block_reason'=>'policy_unavailable'"));
 assert.ok(home.includes("if($cloudAllowed)"));
-assert.ok(legacyHome.includes("video_meeting_transcription_ai_policy_v1801($pdo,$user,$session,true)"));
+assert.ok(legacyHome.includes("video_meeting_transcription_ai_policy_v1801($pdo,$user,$session,true,true,$processingScope)"));
+assert.ok(legacyHome.includes('function video_meeting_processing_scope_readonly_v1801'));
+assert.ok(legacyHome.includes('function video_meeting_transcription_readonly_binding_v1801'));
 assert.ok(legacyHome.includes('VP3 Cloud AI Summary is disabled for this transcript.'));
 
 // Terminal meeting states never advertise a new processing route.

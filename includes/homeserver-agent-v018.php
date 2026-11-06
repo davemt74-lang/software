@@ -77,8 +77,44 @@ function homeserver_agent_v018_forget(int $userId,int $conversationId): void
     }
 }
 
-function homeserver_agent_v018_credentials(int $userId): ?array
+function homeserver_agent_v018_credentials(int $userId,bool $readOnly=false,?PDO $pdo=null): ?array
 {
+    if($readOnly){
+        try{
+            $pdo??=db();
+            if(!$pdo||$userId<1)throw new RuntimeException('HomeServer credentials are unavailable.',503);
+            $row=homeserver_vp3_connection($userId,true,$pdo);
+            if(!$row)return null;
+            $homeEncoded=(string)($row['homeserver_token_enc']??'');
+            $relayEncoded=(string)($row['relay_token_enc']??'');
+            if(($row['status']??'')==='unpaired'&&$homeEncoded===''&&$relayEncoded==='')return null;
+            if($homeEncoded===''||in_array($row['status']??'', ['unpaired','revoked'],true))throw new RuntimeException('HomeServer credentials are unavailable.',503);
+            $home=homeserver_vp3_decrypt($homeEncoded,true);
+            if(strlen($home)<20)throw new RuntimeException('HomeServer credentials are unavailable.',503);
+            $https=null;
+            if(function_exists('homeserver_https_v1300_status')){
+                try{
+                    // The optional transport is inspected through this exact
+                    // PDO; its legacy status helper reads the global db().
+                    $query=$pdo->prepare('SELECT status FROM homeserver_https_sessions WHERE user_id=? LIMIT 1');
+                    $query->execute([$userId]);$https=$query->fetch(PDO::FETCH_ASSOC)?:null;
+                }catch(PDOException $error){
+                    $info=$error->errorInfo??[];$driver=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+                    $missing=$driver==='mysql'&&($info[0]??null)==='42S02'&&(int)($info[1]??0)===1146;
+                    if($driver==='sqlite'&&(int)($info[1]??0)===1
+                        &&($info[2]??'')==='no such table: homeserver_https_sessions')$missing=true;
+                    if(!$missing)throw $error;
+                }
+            }
+            if(($https['status']??null)==='active')return ['transport'=>'vp3_https','relay'=>'','home'=>$home,'user_id'=>$userId];
+            if($https!==null)throw new RuntimeException('HomeServer HTTPS pairing is unavailable.',503);
+            $relay=homeserver_vp3_decrypt($relayEncoded,true);
+            if(strlen($relay)<20)throw new RuntimeException('HomeServer relay credentials are unavailable.',503);
+            return ['transport'=>'custom_websocket','relay'=>$relay,'home'=>$home,'user_id'=>$userId];
+        }catch(Throwable $error){
+            throw new RuntimeException('HomeServer credentials are unavailable.',503,$error);
+        }
+    }
     if($userId<1)return null;
     try{
         $row=homeserver_vp3_connection($userId);
