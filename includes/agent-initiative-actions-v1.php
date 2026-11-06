@@ -5,6 +5,7 @@ require_once __DIR__.'/agent-initiative-v1.php';
 require_once __DIR__.'/agent-initiative-office-actions-v1.php';
 require_once __DIR__.'/agent-initiative-schedule-actions-v1.php';
 require_once __DIR__.'/personal-capabilities-strict-v1.php';
+require_once __DIR__.'/agent-initiative-followup-actions-v1.php';
 
 /** Shared live authority. A proposal, model response or family name grants nothing. */
 function vp3_initiative_action_scope_v1(PDO $pdo,array $user,array $principal,array $binding): array
@@ -31,13 +32,15 @@ function vp3_initiative_action_binding_v1(array $loaded,int $ownerMessageId,stri
 {
     return ['owner_user_id'=>(int)$loaded['user']['id'],'agent_id'=>$loaded['agent_id'],'conversation_id'=>$loaded['conversation_id'],
         'proposal_message_id'=>(int)$loaded['message']['id'],'reply_ref'=>$loaded['state']['reply_ref'],
-        'proposal_revision'=>$loaded['state']['revision'],'owner_message_id'=>$ownerMessageId,'owner_message_hash'=>hash('sha256',$query),
+        'proposal_revision'=>$loaded['state']['revision'],'proposal_goal_hash'=>$loaded['state']['goal_hash'],
+        'source_origin'=>$loaded['goal']['followup']['source_origin']??['owner_user_id'=>(int)$loaded['user']['id'],'agent_id'=>$loaded['agent_id'],'conversation_id'=>$loaded['conversation_id'],'message_id'=>(int)$loaded['message']['id'],'goal_hash'=>$loaded['state']['goal_hash']],
+        'proposal_source_refs'=>array_keys($loaded['goal']['sources']),'followup_reminder_id'=>$loaded['state']['followup_reminder_id']??0,'review_slot'=>'action_run_id','owner_message_id'=>$ownerMessageId,'owner_message_hash'=>hash('sha256',$query),
         'policy_revision'=>vp3_initiative_policy_v1($loaded['user'],$loaded['agent_id'])['revision']??''];
 }
 
 function vp3_initiative_action_family_v1(string $adapter): string
 {
-    return match(strtok($adapter,'.')){'task','task_list'=>'office','reminder','calendar'=>'schedule',
+    return match(strtok($adapter,'.')){'task','task_list'=>'office','reminder','calendar'=>'schedule','proposal'=>'followup',
         default=>throw new InvalidArgumentException('Action adapter is unavailable.')};
 }
 
@@ -65,13 +68,13 @@ function vp3_initiative_action_resources_v1(PDO $pdo,array $loaded,array $bindin
         }
     }
     $schedule=vp3_initiative_schedule_action_resources_v1($pdo,$scope['user'],$scope['principal'],$binding,array_keys($loaded['goal']['sources']));
-    return array_replace($out,$schedule);
+    return array_replace($out,$schedule,vp3_initiative_followup_action_resources_v1($pdo,$loaded,$binding));
 }
 
 function vp3_initiative_action_catalog_v1(PDO $pdo,array $loaded,array $binding): array
 {
     vp3_initiative_action_scope_v1($pdo,$loaded['user'],$loaded['principal'],$binding);$out=[];
-    foreach(['office','schedule'] as $family){
+    foreach(['office','schedule','followup'] as $family){
         try{$entries=('vp3_initiative_'.$family.'_action_catalog_v1')($pdo,$loaded['user'],$loaded['principal'],$binding);}
         catch(RuntimeException $error){if($error instanceof PDOException)throw $error;if(!in_array((int)$error->getCode(),[403,503],true))throw $error;continue;}
         foreach($entries as $entry)$out[$entry['adapter']]=$entry;
@@ -199,7 +202,9 @@ function vp3_initiative_action_prepare_v1(PDO $pdo,array &$loaded,array &$state,
     $id=(int)$pdo->lastInsertId();
     $pdo->prepare("INSERT INTO agent_workflow_actions(run_id,owner_user_id,sequence_no,action_key,action_type,label,status,requires_approval,execution_target,capability_key)
         VALUES(?,?,1,?,'execute','Review proposed Agent action','approval_pending',1,'cloud','initiative.action')")->execute([$id,$uid,$key]);
-    $state['action_run_id']=$id;$state['state']='discussed';
+    $slot=$binding['review_slot']??'action_run_id';
+    if(!in_array($slot,['action_run_id','followup_run_id'],true))throw new LogicException('Unknown server review slot.');
+    $state[$slot]=$id;$state['active_review_slot']=$slot;$state['state']='discussed';
     agent_workflow_event_v1400($pdo,$uid,$id,'initiative_action_review','','approval_pending','owner','An exact private action is ready for owner review.',['proposal_message_id'=>$binding['proposal_message_id'],'owner_message_id'=>$binding['owner_message_id'],'plan_hash'=>$hash]);
     return ['run_id'=>$id,'status'=>'approval_pending','plan_hash'=>$hash,'adapter'=>$plan['adapter'],'arguments'=>$plan['arguments'],'effect_class'=>'private_record','review_required'=>true,'receipt_id'=>0];
 }
@@ -211,11 +216,14 @@ function vp3_initiative_action_apply_v1(PDO $pdo,array &$loaded,array &$state,ar
     $uid=(int)$loaded['user']['id'];$runId=(int)$action['run']['id'];$actionId=(int)$action['action']['id'];
     if($authority)$authority();
     require_once __DIR__.'/agent-initiative-action-sources-v1.php';
-    $witness=vp3_initiative_action_sources_prepare_v1($pdo,$loaded,$action['goal']['plan']);
+    $followup=vp3_initiative_action_family_v1($action['goal']['plan']['adapter'])==='followup';
+    if($followup)require_once __DIR__.'/agent-initiative-followup-origin-v1.php';
+    $witness=$followup?vp3_initiative_followup_sources_prepare_v1($pdo,$loaded):vp3_initiative_action_sources_prepare_v1($pdo,$loaded,$action['goal']['plan']);
     $result=vp3_initiative_action_call_v1('apply',$action['goal']['plan']['adapter'],[$pdo,$loaded['user'],$loaded['principal'],$binding,$action['goal']['plan'],'initiative-action:'.$actionId]);
     if(($result['verified']??null)!==true)throw new RuntimeException('Action result is unverified.',503);
     require_once __DIR__.'/agent-initiative-action-sources-v1.php';
-    $transition=vp3_initiative_action_sources_capture_v1($pdo,$loaded,$action['goal']['plan'],$result,$witness);
+    $transition=$followup?vp3_initiative_followup_sources_capture_v1($pdo,$loaded,$action['goal']['plan'],$result,$witness):vp3_initiative_action_sources_capture_v1($pdo,$loaded,$action['goal']['plan'],$result,$witness);
+    if($followup)$state['followup_reminder_id']=$result['record_id'];
     if($authority)$authority();
     $proof=['version'=>1,'action_id'=>$actionId,'plan_hash'=>$action['goal']['plan_hash'],
         'approval_message_id'=>$ownerMessageId,'approval_message_hash'=>hash('sha256',$query),'domain_result'=>$result,'source_transition'=>$transition];

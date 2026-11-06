@@ -114,7 +114,7 @@ function vp3_agent_chat_followthrough_response_v2160(PDO $pdo,array $user,array 
         $route==='homeserver'?'connected':'not_used',false,'none',is_array($observed['usage']??null)?$observed['usage']:[]);
     $execution['actual_route']=$route;$execution['inference_only']=empty($advisory['domain_result']);
     return ['answer'=>trim($draft),'execution'=>$execution,'initiative_action'=>$advisory['verified_action']??null,
-        'tool_receipt'=>$advisory['domain_result']['tool_receipt']??null,'sticky_notes'=>$advisory['domain_result']['sticky_notes']??[],
+        'followup_clarification_pending'=>!empty($advisory['followup_clarification']),'tool_receipt'=>$advisory['domain_result']['tool_receipt']??null,'sticky_notes'=>$advisory['domain_result']['sticky_notes']??[],
         'context'=>[['source'=>'agent-context:initiative-followthrough','title'=>'Verified Initiative follow-through',
             'text'=>json_encode($advisory,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)]]];
     }
@@ -136,6 +136,7 @@ function vp3_agent_chat_followthrough_finish_v2160(PDO $pdo,array $user,?array $
                 'agent'=>['id'=>(int)$principal['agent_id'],'name'=>(string)$principal['display_name'],'kind'=>(string)$principal['kind']],
                 'execution'=>$execution];
             if(is_array($outcome))$messageContext['initiative_followthrough']=$outcome;
+            if(!empty($reply['followup_clarification_pending']))$messageContext['initiative_followup_clarification']=true;
             if(is_array($reply['initiative_action']??null))$messageContext['initiative_action']=$reply['initiative_action'];
             if(is_array($reply['tool_receipt']??null))$messageContext['tool_receipt']=$reply['tool_receipt'];
             ai_usage_accounting_v032_record($pdo,$user,(int)$principal['agent_id'],$cid,$execution);

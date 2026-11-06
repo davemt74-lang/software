@@ -1,0 +1,116 @@
+<?php
+declare(strict_types=1);
+require __DIR__.'/agent-initiative-actions-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-followup-origin-v1.php';
+$actionFixtureAgent=7;$actionFixtureCid=10;$principal=vp3_initiative_principal_v1($pdo,$user,7);
+reminder_schema_v1($pdo);
+$pdo->exec('CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY,user_id INTEGER,source_type TEXT,source_id INTEGER,is_read INTEGER)');
+$followupChecks=0;
+function revisit_check(bool $ok,string $label):void{if(!$ok)throw new RuntimeException($label);$GLOBALS['followupChecks']++;echo 'PASS '.$label.PHP_EOL;}
+$source=initiative_action_task('Verify product launch assets');$root=initiative_action_seed('task:'.$source,'Review launch assets again at an explicit time');
+$when=(new DateTimeImmutable('now',new DateTimeZone('UTC')))->modify('+1 hour')->format('Y-m-d\TH:i:s');
+$review=initiative_action_reply($root,['action'=>['adapter'=>'proposal.revisit.create','arguments'=>['focus'=>'Recheck the launch assets','start_local'=>$when,'timezone'=>'UTC']]],'Revisit this in one hour, in UTC.');
+revisit_check($review['advisory_context']['verified_action']['adapter']==='proposal.revisit.create'&&(int)$pdo->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn()===0,'explicit revisit prepares an exact review before any schedule exists');
+initiative_action_ack($review);$pending=initiative_action_load($root);
+$done=initiative_action_reply($pending,['action_decision'=>'approve'],'Yes, schedule those exact details.');
+$id=(int)$done['advisory_context']['domain_result']['record_id'];$saved=$pdo->query('SELECT * FROM agent_reminders_v1 WHERE id='.$id)->fetch(PDO::FETCH_ASSOC);
+revisit_check($id>0&&(int)$saved['followup_action_id']>0&&$saved['start_local']===$when&&$saved['recurrence']==='none','approval atomically saves a canonical one-time reminder and its creating action backlink');
+$linked=vp3_initiative_followup_origin_v1($pdo,$user,$principal,$id);
+revisit_check((int)$linked['origin']['message']['id']===(int)$root['message']['id']&&$linked['creating_action']['result']['domain_result']['record_id']===$id,'bidirectional origin verification proves the exact original proposal, approval and native reminder');
+$originalHash=$linked['origin_hash'];
+$pdo->prepare('UPDATE agent_reminders_v1 SET revision=revision+1,next_at=NULL WHERE id=?')->execute([$id]);
+$linked=vp3_initiative_followup_origin_v1($pdo,$user,$principal,$id);
+revisit_check($linked['origin_hash']===$originalHash,'scheduler progress does not rewrite or invalidate immutable creation provenance');
+initiative_action_ack($done);$current=initiative_action_load($root);
+$cancel=initiative_action_reply($current,['action'=>['adapter'=>'proposal.revisit.cancel','arguments'=>['followup_id'=>$id]]],'Cancel that scheduled revisit.');
+initiative_action_ack($cancel);$current=initiative_action_load($root);
+$cancelled=initiative_action_reply($current,['action_decision'=>'approve'],'Yes, cancel that exact revisit.');
+$linked=vp3_initiative_followup_origin_v1($pdo,$user,$principal,$id);
+revisit_check($linked['reminder']['status']==='cancelled'&&$linked['origin_hash']===$originalHash&&$cancelled['advisory_context']['domain_result']['tool_receipt']['operation']==='cancel','cancellation uses the same native reminder and retains its original creation receipt');
+$source=initiative_action_task('An unscheduled idea');$other=initiative_action_seed('task:'.$source,'Discuss a later idea');$count=(int)$pdo->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn();
+$deferred=initiative_action_reply($other,['intent'=>'defer'],'Later, not now.');
+revisit_check($deferred['advisory_context']['deferred_without_schedule']&&(int)$pdo->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn()===$count,'plain deferral remains explicitly unscheduled');
+// The existing scheduler and worker execute with no browser/HTTP pump.
+$source=initiative_action_task('Follow up on launch progress');$wakeRoot=initiative_action_seed('task:'.$source,'Reassess the launch progress');
+$review=initiative_action_reply($wakeRoot,['action'=>['adapter'=>'proposal.revisit.create','arguments'=>['focus'=>'Reassess launch progress','start_local'=>$when,'timezone'=>'UTC']]],'Revisit this at the exact UTC time.');
+initiative_action_ack($review);$approved=initiative_action_reply(initiative_action_load($wakeRoot),['action_decision'=>'approve'],'Yes, schedule the revisit.');initiative_action_ack($approved);
+$wakeId=$approved['advisory_context']['domain_result']['record_id'];
+$pdo->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE role='assistant'");
+$beforeMessages=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();
+reminder_tick_v1($pdo,1,(new DateTimeImmutable($when,new DateTimeZone('UTC')))->modify('+1 second'));
+revisit_check(($GLOBALS['VP3_FOLLOWUP_TICK_V1']['queued']??0)===1&&(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$beforeMessages,'due tick queues one existing workflow without generic reminder text or Chat duplicates');
+$q=$pdo->prepare("SELECT * FROM agent_workflow_runs WHERE capability_key='initiative.prepare' AND goal LIKE ? ORDER BY id DESC LIMIT 1");$q->execute(['%"reminder_id":'.$wakeId.',%']);$wakeRun=$q->fetch(PDO::FETCH_ASSOC);
+revisit_check($wakeRun!==false,'scheduled revisit is durable in the canonical workflow ledger');
+$claim=agent_job_claim_run_v1900($pdo,$user,(int)$wakeRun['id'],'cloud',agent_worker_cloud_worker_id_v1910(1));
+$executed=vp3_initiative_execute_v1($pdo,$user,$claim,static function(string $prompt,string $protocol):string{
+    if(db()->inTransaction())throw new LogicException('A scheduled revisit cannot infer under SQL locks.');
+    $data=json_decode($prompt,true,64,JSON_THROW_ON_ERROR);
+    revisit_check(($data['owner_followup']['current_context']['records'][0]['status']??null)==='open','wake inference receives freshly read canonical task state, not historical proposal prose');
+    return json_encode(['draft'=>'The launch task is still open. We can review the current assets next.'],JSON_THROW_ON_ERROR);
+});
+revisit_check(!empty($executed['ok']),'closed-browser scheduled reassessment executes through the real canonical worker');
+$q=$pdo->prepare('SELECT * FROM agent_reminder_occurrences_v1 WHERE reminder_id=?');$q->execute([$wakeId]);$occurrence=$q->fetch(PDO::FETCH_ASSOC);
+revisit_check((int)$occurrence['message_id']>0&&$occurrence['notified_at']!==null&&$occurrence['presented_at']!==null,'one actual natural Chat post atomically owns the reminder occurrence delivery');
+$count=(int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn();reminder_tick_v1($pdo,1,new DateTimeImmutable('2099-01-01T00:00:00Z'));
+revisit_check((int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn()===$count,'replayed ticker does not enqueue or deliver the completed occurrence again');
+revisit_check(reminder_present_v1($pdo,1,['action'=>'claim'])['item']===null,'linked follow-up cannot enter generic reminder speech/presentation');
+revisit_check(!in_array($wakeId,array_map('intval',array_column(reminder_list_rows_v1($pdo,1,'open','UTC',new DateTimeImmutable('2099-01-01T00:00:00Z')),'id')),true),'a fulfilled revisit stops occupying overdue/open attention without deleting its receipt');
+// Fill the real native limit: completed history must not consume open slots.
+for($i=0;$i<100;$i++)reminder_execute_v1($pdo,1,'capacity','capacity-reminder-'.sprintf('%03d',$i),'Create capacity reminder '.$i,['operation'=>'create','schedule'=>['title'=>'Capacity item '.$i,'start_local'=>$when,'timezone'=>'UTC','recurrence'=>'none','delivery'=>'chat']],reminder_rows_v1($pdo,1),10);
+revisit_check(reminder_open_commitment_count_v1($pdo,1)===100&&(int)$pdo->query("SELECT COUNT(*) FROM agent_reminders_v1 WHERE status='active'")->fetchColumn()===101,'a real delivered revisit retains history while allowing all 100 native open reminder slots');
+$full=false;try{reminder_execute_v1($pdo,1,'capacity','capacity-overflow-123','Create beyond the native limit',['operation'=>'create','schedule'=>['title'=>'Capacity overflow','start_local'=>$when,'timezone'=>'UTC','recurrence'=>'none','delivery'=>'chat']],reminder_rows_v1($pdo,1),10);}catch(RuntimeException $error){$full=$error->getCode()===429;}
+revisit_check($full,'fulfilled-history accounting preserves the actual 100-open-reminder safety limit');
+$pdo->exec("DELETE FROM agent_reminders_v1 WHERE title LIKE 'Capacity item %'");
+// Revisit chains retain the original item rather than following an old timer.
+$newPost=vp3_initiative_followthrough_load_v1($pdo,$user,$principal,10,(int)$occurrence['message_id']);
+$chainWhen=(new DateTimeImmutable($when,new DateTimeZone('UTC')))->modify('+2 days')->format('Y-m-d\TH:i:s');
+$review=initiative_action_reply($newPost,['action'=>['adapter'=>'proposal.revisit.create','arguments'=>['focus'=>'Reassess that same launch item again','start_local'=>$chainWhen,'timezone'=>'UTC']]],'Revisit this same item again at the later time.');initiative_action_ack($review);
+$chain=initiative_action_reply(initiative_action_load($newPost),['action_decision'=>'approve'],'Yes, schedule that later reassessment.');$chainId=$chain['advisory_context']['domain_result']['record_id'];
+reminder_execute_v1($pdo,1,'unit-old-timer','delete-old-timer-123','Owner removes the old completed timer',['operation'=>'delete','id'=>$wakeId],reminder_rows_v1($pdo,1),10);
+$chainOrigin=vp3_initiative_followup_origin_v1($pdo,$user,$principal,$chainId);
+revisit_check((int)$chainOrigin['source_origin_loaded']['message']['id']===(int)$wakeRoot['message']['id'],'a later revisit keeps the original canonical item after an earlier timer is removed');
+$chainContext=vp3_initiative_followup_refresh_v1($pdo,$chainOrigin);
+revisit_check(($chainContext['current_context']['records'][0]['ref']??null)==='task:'.$source,'chained follow-up reads the original task instead of summarizing the old reminder');
+$source=initiative_action_task('A rescheduled revisit');$r=initiative_action_seed('task:'.$source,'Revisit at the chosen time');
+$review=initiative_action_reply($r,['action'=>['adapter'=>'proposal.revisit.create','arguments'=>['focus'=>'Review current launch status','start_local'=>$when,'timezone'=>'UTC']]],'Schedule a revisit of this task.');initiative_action_ack($review);
+$approved=initiative_action_reply(initiative_action_load($r),['action_decision'=>'approve'],'Yes, schedule it.');initiative_action_ack($approved);$id=$approved['advisory_context']['domain_result']['record_id'];
+$origin=vp3_initiative_followup_origin_v1($pdo,$user,$principal,$id);$later=(new DateTimeImmutable($when,new DateTimeZone('UTC')))->modify('+1 day')->format('Y-m-d\TH:i:s');
+$review=initiative_action_reply(initiative_action_load($r),['action'=>['adapter'=>'proposal.revisit.update','arguments'=>['followup_id'=>$id,'focus'=>'Review the updated launch status','start_local'=>$later,'timezone'=>'UTC']]],'Move that exact revisit to the later time.');initiative_action_ack($review);
+$changed=initiative_action_reply(initiative_action_load($r),['action_decision'=>'approve'],'Yes, move that same revisit.');$updated=vp3_initiative_followup_origin_v1($pdo,$user,$principal,$id);
+revisit_check($updated['origin_hash']===$origin['origin_hash']&&$updated['reminder']['start_local']===$later&&$changed['advisory_context']['domain_result']['record_id']===$id,'rescheduling changes the same canonical reminder while retaining the original immutable provenance');
+revisit_check(!vp3_initiative_followup_durable_refs_v1(['proposal_source_refs'=>['live:microphone:1']])&&!vp3_initiative_followup_durable_refs_v1(['proposal_source_refs'=>['chat:current']]),'live observations and transient conversation attention cannot become a durable capture grant');
+$system=vp3_initiative_principal_v1($pdo,$user,0);
+revisit_check(!reminder_initiative_agent_visible_v1($pdo,$updated['reminder'],$system),'a linked private revisit is not visible to a different Agent discovery reader');
+$denied=false;try{vp3_initiative_followup_origin_v1($pdo,$user,$system,$id);}catch(RuntimeException $e){$denied=$e->getCode()===403;}
+revisit_check($denied,'a different Agent cannot use the historical follow-up origin');
+$before=(int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn();$messages=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();
+$pdo->exec("DELETE FROM role_permissions WHERE permission_key='agent_brain.access'");
+$at=(new DateTimeImmutable($updated['reminder']['next_at']))->modify('+1 second');reminder_tick_v1($pdo,1,$at);
+revisit_check(($GLOBALS['VP3_FOLLOWUP_TICK_V1']['blocked']??0)>0&&(int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn()===$before&&(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$messages,'revocation before wake withholds private work and reports limited status rather than a generic reminder');
+$pdo->exec("INSERT INTO role_permissions(role,permission_key) VALUES('artist','agent_brain.access')");reminder_tick_v1($pdo,1,$at->modify('+61 seconds'));
+revisit_check(($GLOBALS['VP3_FOLLOWUP_TICK_V1']['queued']??0)===1,'restored actual permission can reassess the still-pending occurrence without recreating a reminder');
+$actionFixtureAgent=0;$actionFixtureCid=14;$principal=vp3_initiative_principal_v1($pdo,$user,0);
+$systemTask=initiative_action_task('System scheduled follow-up');$systemRoot=initiative_action_seed('task:'.$systemTask,'Reassess the System item');
+$review=initiative_action_reply($systemRoot,['action'=>['adapter'=>'proposal.revisit.create','arguments'=>['focus'=>'Reassess the System item','start_local'=>$when,'timezone'=>'UTC']]],'Revisit this System item at the exact time.');initiative_action_ack($review);
+$approved=initiative_action_reply(initiative_action_load($systemRoot),['action_decision'=>'approve'],'Yes, schedule the System revisit.');$sysId=$approved['advisory_context']['domain_result']['record_id'];
+$sysOrigin=vp3_initiative_followup_origin_v1($pdo,$user,$principal,$sysId);
+revisit_check($principal['owner_user_id']===0&&$sysOrigin['agent_id']===0&&$sysOrigin['origin']['conversation_id']===14,'System Agent uses the same canonical follow-up path with its real zero principal and exact Chat');
+$context=vp3_initiative_followup_refresh_v1($pdo,$sysOrigin);
+revisit_check(($context['current_context']['records'][0]['ref']??null)==='task:'.$systemTask,'System follow-up refresh stays in canonical NULL Brain scope');
+$q->closeCursor(); // Finish the inspected occurrence before SQLite schema DDL.
+$pdo->exec('DROP INDEX agent_reminders_v1_followup_action');
+revisit_check(!vp3_initiative_followup_action_ready_v1($pdo),'a partial upgrade without the unique canonical backlink index cannot advertise scheduling');
+reminder_schema_v1($pdo);revisit_check(vp3_initiative_followup_action_ready_v1($pdo),'canonical database upgrade completes the required follow-up schema idempotently');
+// A denied oldest revisit yields the next bounded tick slot to ordinary work.
+$pdo->exec("UPDATE agent_reminders_v1 SET status='cancelled' WHERE status='active'");
+$pdo->exec("UPDATE agent_reminder_occurrences_v1 SET status='dismissed' WHERE status='pending'");
+$source=initiative_action_task('Blocked source must not starve other reminders');$r=initiative_action_seed('task:'.$source,'Reassess this source');
+$review=initiative_action_reply($r,['action'=>['adapter'=>'proposal.revisit.create','arguments'=>['focus'=>'Check the source again','start_local'=>$when,'timezone'=>'UTC']]],'Revisit this source at the exact time.');initiative_action_ack($review);
+$approved=initiative_action_reply(initiative_action_load($r),['action_decision'=>'approve'],'Yes, schedule it.');
+$pdo->exec("DELETE FROM role_permissions WHERE permission_key='agent_brain.access'");
+$at=(new DateTimeImmutable($when,new DateTimeZone('UTC')))->modify('+1 second');
+reminder_tick_v1($pdo,1,$at,1);
+$ordinary=reminder_execute_v1($pdo,1,'fairness','ordinary-fairness-123','Create an ordinary due reminder',['operation'=>'create','schedule'=>['title'=>'Ordinary reminder still reaches Chat','start_local'=>$when,'timezone'=>'UTC','recurrence'=>'none','delivery'=>'chat']],reminder_rows_v1($pdo,1),14);
+$before=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();reminder_tick_v1($pdo,1,$at,1);
+revisit_check((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$before+1,'a blocked oldest follow-up yields bounded scheduler capacity to other due reminders');
+echo 'INITIATIVE_FOLLOWUPS=PASS ('.$followupChecks.' focused checks)'.PHP_EOL;

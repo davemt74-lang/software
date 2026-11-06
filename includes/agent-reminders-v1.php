@@ -10,11 +10,15 @@ function reminder_schema_v1(PDO $pdo): void
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
     $id=$sqlite?'INTEGER PRIMARY KEY AUTOINCREMENT':'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
     $tail=$sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_reminders_v1 (id $id, owner_user_id INT UNSIGNED NOT NULL, title VARCHAR(240) NOT NULL, timezone VARCHAR(80) NOT NULL, start_local VARCHAR(19) NOT NULL, recurrence VARCHAR(16) NOT NULL, delivery VARCHAR(16) NOT NULL, next_at VARCHAR(20) NULL, status VARCHAR(16) NOT NULL DEFAULT 'active', conversation_id BIGINT NOT NULL DEFAULT 0, revision INT NOT NULL DEFAULT 1, created_at VARCHAR(20) NOT NULL, updated_at VARCHAR(20) NOT NULL, FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE CASCADE)$tail");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_reminders_v1 (id $id, owner_user_id INT UNSIGNED NOT NULL, title VARCHAR(240) NOT NULL, timezone VARCHAR(80) NOT NULL, start_local VARCHAR(19) NOT NULL, recurrence VARCHAR(16) NOT NULL, delivery VARCHAR(16) NOT NULL, next_at VARCHAR(20) NULL, status VARCHAR(16) NOT NULL DEFAULT 'active', conversation_id BIGINT NOT NULL DEFAULT 0, followup_action_id BIGINT UNSIGNED NULL, revision INT NOT NULL DEFAULT 1, created_at VARCHAR(20) NOT NULL, updated_at VARCHAR(20) NOT NULL, FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE CASCADE)$tail");
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_reminder_occurrences_v1 (id $id, reminder_id BIGINT UNSIGNED NOT NULL, owner_user_id INT UNSIGNED NOT NULL, scheduled_at VARCHAR(20) NOT NULL, wake_at VARCHAR(20) NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'pending', notified_at VARCHAR(20) NULL, presented_at VARCHAR(20) NULL, lease_token VARCHAR(32) NOT NULL DEFAULT '', lease_until VARCHAR(20) NULL, notification_id BIGINT NULL, message_id BIGINT NULL, UNIQUE(reminder_id,scheduled_at), FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY(reminder_id) REFERENCES agent_reminders_v1(id) ON DELETE CASCADE)$tail");
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_reminder_turns_v1 (owner_user_id INT UNSIGNED NOT NULL, thread_key VARCHAR(160) NOT NULL, request_key VARCHAR(100) NOT NULL, payload_hash VARCHAR(64) NOT NULL, result_json TEXT NOT NULL, created_at VARCHAR(20) NOT NULL, PRIMARY KEY(owner_user_id,thread_key,request_key), FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE CASCADE)$tail");
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_reminder_context_v1 (owner_user_id INT UNSIGNED NOT NULL, thread_key VARCHAR(160) NOT NULL, state_json TEXT NOT NULL, updated_at VARCHAR(20) NOT NULL, PRIMARY KEY(owner_user_id,thread_key), FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE CASCADE)$tail");
     // Only installed by upgrade/CLI. Never run DDL while delivering a reminder.
+    try{$pdo->query('SELECT followup_action_id FROM agent_reminders_v1 WHERE 1=0');}
+    catch(PDOException $error){$pdo->exec('ALTER TABLE agent_reminders_v1 ADD COLUMN followup_action_id BIGINT UNSIGNED NULL');}
+    if($sqlite)$pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS agent_reminders_v1_followup_action ON agent_reminders_v1(followup_action_id)');
+    else{$q=$pdo->query("SHOW INDEX FROM agent_reminders_v1 WHERE Key_name='agent_reminders_v1_followup_action'");if(!$q->fetch())$pdo->exec('CREATE UNIQUE INDEX agent_reminders_v1_followup_action ON agent_reminders_v1(followup_action_id)');}
     foreach(['agent_reminders_v1'=>'status,next_at,owner_user_id','agent_reminder_occurrences_v1'=>'owner_user_id,status,wake_at'] as $table=>$columns){
         $name=$table.'_due';
         if($sqlite)$pdo->exec("CREATE INDEX IF NOT EXISTS $name ON $table ($columns)");
@@ -70,6 +74,38 @@ function reminder_next_v1(array $row,DateTimeImmutable $after): ?string
     throw new RuntimeException('Could not advance reminder schedule.',500);
 }
 function reminder_lock_v1(PDO $pdo): string{return $pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':'';}
+/** All reminder writers lock owner, reminder, then occurrence. This also fences
+ * account deactivation while a saved delivery or cancellation commits. */
+function reminder_owner_lock_v1(PDO $pdo,int $uid): bool
+{
+    if(!$pdo->inTransaction())throw new LogicException('Reminder ownership requires a transaction.');
+    $q=$pdo->prepare('SELECT is_active FROM users WHERE id=?'.reminder_lock_v1($pdo));$q->execute([$uid]);
+    return (int)$q->fetchColumn()===1;
+}
+/** A linked revisit belongs to its creating private Agent, even though ordinary
+ * account reminders retain their existing owner-wide behavior. */
+function reminder_initiative_agent_visible_v1(PDO $pdo,array $reminder,array $principal): bool
+{
+    if(empty($reminder['followup_action_id']))return true;
+    $q=$pdo->prepare('SELECT r.agent_id FROM agent_workflow_actions a JOIN agent_workflow_runs r ON r.id=a.run_id AND r.owner_user_id=a.owner_user_id WHERE a.id=? AND a.owner_user_id=? AND a.capability_key=? AND r.source_kind=?');
+    $q->execute([(int)$reminder['followup_action_id'],(int)$reminder['owner_user_id'],'initiative.action','agent_initiative_action']);$r=$q->fetch(PDO::FETCH_ASSOC);
+    return $r!==false&&(int)($r['agent_id']??0)===(int)($principal['agent_id']??0);
+}
+/** Delivery is already authoritative in the canonical occurrence. Hide a
+ * fulfilled one-time revisit from open attention without changing its history. */
+function reminder_followup_delivered_v1(PDO $pdo,array $reminder): bool
+{
+    if(empty($reminder['followup_action_id'])||$reminder['next_at']!==null)return false;
+    $q=$pdo->prepare('SELECT 1 FROM agent_reminder_occurrences_v1 WHERE reminder_id=? AND owner_user_id=? AND message_id IS NOT NULL AND notified_at IS NOT NULL AND presented_at IS NOT NULL LIMIT 1');
+    $q->execute([(int)$reminder['id'],(int)$reminder['owner_user_id']]);return(bool)$q->fetchColumn();
+}
+/** Fulfilled linked revisits retain history without consuming active capacity. */
+function reminder_open_commitment_count_v1(PDO $pdo,int $uid): int
+{
+    $linked=function_exists('column_exists')&&column_exists('agent_reminders_v1','followup_action_id');
+    $filter=$linked?" AND (followup_action_id IS NULL OR next_at IS NOT NULL OR NOT EXISTS (SELECT 1 FROM agent_reminder_occurrences_v1 o WHERE o.reminder_id=agent_reminders_v1.id AND o.owner_user_id=agent_reminders_v1.owner_user_id AND o.message_id IS NOT NULL AND o.notified_at IS NOT NULL AND o.presented_at IS NOT NULL))":'';
+    $q=$pdo->prepare("SELECT COUNT(*) FROM agent_reminders_v1 WHERE owner_user_id=? AND status='active'".$filter);$q->execute([$uid]);return(int)$q->fetchColumn();
+}
 function reminder_rows_v1(PDO $pdo,int $uid): array
 {
     $q=$pdo->prepare("SELECT * FROM agent_reminders_v1 WHERE owner_user_id=? ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,next_at,id DESC LIMIT 100");$q->execute([$uid]);return $q->fetchAll(PDO::FETCH_ASSOC);
@@ -88,11 +124,14 @@ function reminder_list_rows_v1(PDO $pdo,int $uid,string $view,string $timezone,D
     $out=[];
     foreach(reminder_rows_v1($pdo,$uid) as $r){
         if(in_array($view,['open','overdue'],true)&&$r['status']!=='active')continue;
+        $delivered=reminder_followup_delivered_v1($pdo,$r);
+        if($delivered&&in_array($view,['open','overdue'],true))continue;
         $o=$occurrences[(int)$r['id']]??null;$next=$r['next_at']??null;
         if($view==='today'&&!$o&&!($next!==null&&$next>=$from&&$next<$to))continue;
         if($view==='overdue'&&!$o)continue;
         if($o){$r['list_at']=$o['wake_at'];$r['list_state']=$o['status']==='pending'?($o['wake_at']<$stamp?'overdue':'pending'):$o['status'];}
         elseif($next!==null){$r['list_at']=$next;$r['list_state']=$r['status'];}
+        if($delivered)$r['list_state']='revisited';
         $r['list_timezone']=$timezone;$out[]=$r;
     }
     return $out;
@@ -113,10 +152,12 @@ function reminder_notice_text_v1(array $row): string{return 'Reminder #'.$row['i
 function reminder_tick_v1(PDO $pdo,?int $owner=null,?DateTimeImmutable $now=null,int $limit=50): int
 {
     $now??=reminder_now_v1();$stamp=reminder_utc_v1($now);$count=0;$limit=max(1,min(200,$limit));
-    $sql="SELECT id FROM agent_reminders_v1 WHERE status='active' AND next_at<=? AND EXISTS (SELECT 1 FROM users u WHERE u.id=agent_reminders_v1.owner_user_id AND u.is_active=1)".($owner!==null?' AND owner_user_id=?':'').' ORDER BY next_at,id LIMIT '.$limit;
+    $GLOBALS['VP3_FOLLOWUP_TICK_V1']=['queued'=>0,'blocked'=>0];
+    $sql="SELECT id,owner_user_id FROM agent_reminders_v1 WHERE status='active' AND next_at<=? AND EXISTS (SELECT 1 FROM users u WHERE u.id=agent_reminders_v1.owner_user_id AND u.is_active=1)".($owner!==null?' AND owner_user_id=?':'').' ORDER BY next_at,id LIMIT '.$limit;
     $q=$pdo->prepare($sql);$q->execute($owner!==null?[$stamp,$owner]:[$stamp]);
-    foreach($q->fetchAll(PDO::FETCH_COLUMN) as $id){
-        $pdo->beginTransaction();try{
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $candidate){
+        $id=(int)$candidate['id'];$pdo->beginTransaction();try{
+            if(!reminder_owner_lock_v1($pdo,(int)$candidate['owner_user_id'])){$pdo->commit();continue;}
             $q=$pdo->prepare('SELECT * FROM agent_reminders_v1 WHERE id=?'.reminder_lock_v1($pdo));$q->execute([$id]);$r=$q->fetch(PDO::FETCH_ASSOC);
             if(!$r||$r['status']!=='active'||!$r['next_at']||$r['next_at']>$stamp){$pdo->commit();continue;}
             $pdo->prepare('INSERT INTO agent_reminder_occurrences_v1(reminder_id,owner_user_id,scheduled_at,wake_at) VALUES(?,?,?,?)')->execute([$id,$r['owner_user_id'],$r['next_at'],$r['next_at']]);
@@ -125,12 +166,25 @@ function reminder_tick_v1(PDO $pdo,?int $owner=null,?DateTimeImmutable $now=null
             $pdo->commit();
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
     }
-    $q=$pdo->prepare("SELECT id FROM agent_reminder_occurrences_v1 WHERE status='pending' AND notified_at IS NULL AND wake_at<=? AND EXISTS (SELECT 1 FROM users u WHERE u.id=agent_reminder_occurrences_v1.owner_user_id AND u.is_active=1)".($owner!==null?' AND owner_user_id=?':'').' ORDER BY wake_at,id LIMIT '.$limit);$q->execute($owner!==null?[$stamp,$owner]:[$stamp]);
-    foreach($q->fetchAll(PDO::FETCH_COLUMN) as $oid){
-        $pdo->beginTransaction();try{
-            $q=$pdo->prepare('SELECT * FROM agent_reminder_occurrences_v1 WHERE id=?'.reminder_lock_v1($pdo));$q->execute([$oid]);$o=$q->fetch(PDO::FETCH_ASSOC);
-            $q=$pdo->prepare('SELECT * FROM agent_reminders_v1 WHERE id=?'.reminder_lock_v1($pdo));$q->execute([$o['reminder_id']]);$r=$q->fetch(PDO::FETCH_ASSOC);
-            if($o['status']!=='pending'||$o['notified_at']!==null||$o['wake_at']>$stamp||!$r||$r['status']!=='active'){$pdo->commit();continue;}
+    $q=$pdo->prepare("SELECT id,owner_user_id,reminder_id FROM agent_reminder_occurrences_v1 WHERE status='pending' AND notified_at IS NULL AND wake_at<=? AND (lease_until IS NULL OR lease_until<=?) AND EXISTS (SELECT 1 FROM users u WHERE u.id=agent_reminder_occurrences_v1.owner_user_id AND u.is_active=1)".($owner!==null?' AND owner_user_id=?':'').' ORDER BY wake_at,id LIMIT '.$limit);$q->execute($owner!==null?[$stamp,$stamp,$owner]:[$stamp,$stamp]);
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $candidate){
+        $oid=(int)$candidate['id'];$pdo->beginTransaction();try{
+            if(!reminder_owner_lock_v1($pdo,(int)$candidate['owner_user_id'])){$pdo->commit();continue;}
+            $q=$pdo->prepare('SELECT * FROM agent_reminders_v1 WHERE id=? AND owner_user_id=?'.reminder_lock_v1($pdo));$q->execute([$candidate['reminder_id'],$candidate['owner_user_id']]);$r=$q->fetch(PDO::FETCH_ASSOC);
+            $q=$pdo->prepare('SELECT * FROM agent_reminder_occurrences_v1 WHERE id=? AND reminder_id=? AND owner_user_id=?'.reminder_lock_v1($pdo));$q->execute([$oid,$candidate['reminder_id'],$candidate['owner_user_id']]);$o=$q->fetch(PDO::FETCH_ASSOC);
+            if(!$o||!$r){$pdo->commit();continue;}
+            if($o['status']!=='pending'||$o['notified_at']!==null||$o['wake_at']>$stamp||($o['lease_until']!==null&&$o['lease_until']>$stamp)||!$r||$r['status']!=='active'){$pdo->commit();continue;}
+            if(!empty($r['followup_action_id'])){
+                require_once __DIR__.'/agent-initiative-followups-v1.php';
+                try{if(vp3_initiative_followup_due_v1($pdo,$r,$o))$GLOBALS['VP3_FOLLOWUP_TICK_V1']['queued']++;}
+                catch(RuntimeException $error){if($error instanceof PDOException||!in_array((int)$error->getCode(),[403,409,503],true))throw $error;$GLOBALS['VP3_FOLLOWUP_TICK_V1']['blocked']++;}
+                // Reuse the occurrence's existing lease as a bounded poll delay.
+                // Blocked or preparing revisits must not occupy every global
+                // tick slot and starve other owners' due work.
+                $pdo->prepare('UPDATE agent_reminder_occurrences_v1 SET lease_until=? WHERE id=? AND notified_at IS NULL')
+                    ->execute([reminder_utc_v1($now->modify('+60 seconds')),$oid]);
+                $pdo->commit();continue;
+            }
             $text=reminder_notice_text_v1($r);$nid=null;$mid=null;
             if(in_array($r['delivery'],['notification','both'],true)){
                 $pdo->prepare('INSERT INTO notifications(user_id,type,title,body,target_url,source_type,source_id,created_at) VALUES(?,?,?,?,?,?,?,?)')->execute([$r['owner_user_id'],'personal_reminder','Reminder: '.mb_substr($r['title'],0,175),mb_substr($text,0,500),url('/chat.php'),'personal_reminder',(int)$oid,$now->format('Y-m-d H:i:s')]);$nid=(int)$pdo->lastInsertId();
@@ -176,6 +230,7 @@ function reminder_execute_locked_v1(PDO $pdo,int $uid,string $thread,string $key
     if(!$pdo->inTransaction())throw new LogicException('Reminder mutation requires an owner transaction.');
     $now??=reminder_now_v1();$stamp=reminder_utc_v1($now);$hash=hash('sha256',$query);$op=$plan['operation']??'';
     if(!in_array($op,['none','clarify','create','list','update','complete','snooze','dismiss','cancel','delete'],true))throw new InvalidArgumentException('Invalid reminder operation.');
+    if(!reminder_owner_lock_v1($pdo,$uid))throw new RuntimeException('Reminder account is unavailable.',403);
         if(function_exists('vp3_participant_reminder_authorize_v1'))vp3_participant_reminder_authorize_v1($pdo,$uid,$plan);
         $q=$pdo->prepare('SELECT result_json,payload_hash FROM agent_reminder_turns_v1 WHERE owner_user_id=? AND thread_key=? AND request_key=?'.reminder_lock_v1($pdo));$q->execute([$uid,$thread,$key]);$receipt=$q->fetch(PDO::FETCH_ASSOC);
         if($receipt){if(!hash_equals($receipt['payload_hash'],$hash))throw new RuntimeException('Reminder request changed. Send a new request.',409);return json_decode($receipt['result_json'],true,32,JSON_THROW_ON_ERROR);}
@@ -184,7 +239,7 @@ function reminder_execute_locked_v1(PDO $pdo,int $uid,string $thread,string $key
         elseif($op==='list'){$view=(string)($plan['view']??'open');$rows=reminder_list_rows_v1($pdo,$uid,$view,$timezone,$now);$result['answer']=$rows?($view==='today'?"Your reminders for today (".$timezone."):\n":"Your reminders:\n").implode("\n",array_map('reminder_list_label_v1',$rows)):($view==='today'?'You have no reminders scheduled for today in '.$timezone.'.':($view==='overdue'?'You have no overdue reminders.':'You have no '.($view==='open'?'open ':'saved ').'reminders.'));}
         elseif($op==='create'){
             $s=reminder_schedule_v1((array)($plan['schedule']??[]),$now);
-            $q=$pdo->prepare("SELECT COUNT(*) FROM agent_reminders_v1 WHERE owner_user_id=? AND status='active'");$q->execute([$uid]);if((int)$q->fetchColumn()>=100)throw new RuntimeException('You have 100 active reminders. Remove one before adding another.',429);
+            if(reminder_open_commitment_count_v1($pdo,$uid)>=100)throw new RuntimeException('You have 100 active reminders. Remove one before adding another.',429);
             $pdo->prepare('INSERT INTO agent_reminders_v1(owner_user_id,title,timezone,start_local,recurrence,delivery,next_at,conversation_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)')->execute([$uid,$s['title'],$s['timezone'],$s['start_local'],$s['recurrence'],$s['delivery'],$s['next_at'],$conversation,$stamp,$stamp]);$focus=(int)$pdo->lastInsertId();
             $result['answer']='Saved reminder '.reminder_label_v1([...$s,'id'=>$focus,'status'=>'active']).'.';
         }elseif($op!=='none'){
@@ -201,6 +256,7 @@ function reminder_execute_locked_v1(PDO $pdo,int $uid,string $thread,string $key
                 $result['answer']='Deleted reminder #'.$id.' “'.$r['title'].'”. Existing Chat messages remain in the conversation history.';$focus=0;
             }elseif(in_array($op,['update','cancel'],true)){
                 $s=$op==='update'?reminder_schedule_v1((array)($plan['schedule']??[]),$now):$r;
+                if($op==='update'&&!empty($r['followup_action_id'])&&($s['recurrence']!=='none'||$s['delivery']!=='chat'))throw new InvalidArgumentException('A linked proposal revisit is one-time in main Chat. Use an ordinary reminder for another delivery or recurrence.');
                 $pdo->prepare('UPDATE agent_reminders_v1 SET title=?,timezone=?,start_local=?,recurrence=?,delivery=?,next_at=?,status=?,revision=revision+1,updated_at=? WHERE id=? AND owner_user_id=?')->execute([$s['title'],$s['timezone'],$s['start_local'],$s['recurrence'],$s['delivery'],$op==='cancel'?null:$s['next_at'],$op==='cancel'?'cancelled':'active',$stamp,$id,$uid]);
                 reminder_close_occurrences_v1($pdo,$uid,$id);
                 $result['answer']=$op==='cancel'?'Cancelled reminder #'.$id.' and its future repeats.':'Updated reminder '.reminder_label_v1([...$s,'id'=>$id,'status'=>'active']).'.';
@@ -293,8 +349,12 @@ function reminder_present_v1(PDO $pdo,int $uid,array $input,?DateTimeImmutable $
     if($op!=='claim')throw new InvalidArgumentException('Invalid reminder delivery action.');
     reminder_tick_v1($pdo,$uid,$now);
     $pdo->beginTransaction();try{
-        $q=$pdo->prepare("SELECT o.*,r.title,r.id AS reminder_id,r.conversation_id FROM agent_reminder_occurrences_v1 o JOIN agent_reminders_v1 r ON r.id=o.reminder_id WHERE o.owner_user_id=? AND o.status='pending' AND o.notified_at IS NOT NULL AND o.presented_at IS NULL AND o.wake_at<=? AND (o.lease_until IS NULL OR o.lease_until<?) AND r.status='active' ORDER BY o.wake_at,o.id LIMIT 1".reminder_lock_v1($pdo));$q->execute([$uid,$stamp,$stamp]);$o=$q->fetch(PDO::FETCH_ASSOC);
+        if(!reminder_owner_lock_v1($pdo,$uid))throw new RuntimeException('Reminder account is unavailable.',403);
+        $linkedFilter=function_exists('column_exists')&&column_exists('agent_reminders_v1','followup_action_id')?' AND r.followup_action_id IS NULL':'';
+        $q=$pdo->prepare("SELECT o.*,r.title,r.id AS reminder_id,r.conversation_id FROM agent_reminder_occurrences_v1 o JOIN agent_reminders_v1 r ON r.id=o.reminder_id WHERE o.owner_user_id=? AND o.status='pending' AND o.notified_at IS NOT NULL AND o.presented_at IS NULL AND o.wake_at<=? AND (o.lease_until IS NULL OR o.lease_until<?) AND r.status='active' $linkedFilter ORDER BY o.wake_at,o.id LIMIT 1".reminder_lock_v1($pdo));$q->execute([$uid,$stamp,$stamp]);$o=$q->fetch(PDO::FETCH_ASSOC);
         if(!$o){$pdo->commit();return ['ok'=>true,'item'=>null];}
+        $q=$pdo->prepare('SELECT * FROM agent_reminders_v1 WHERE id=? AND owner_user_id=?');$q->execute([$o['reminder_id'],$uid]);$current=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$current||!empty($current['followup_action_id'])){$pdo->commit();return ['ok'=>true,'item'=>null];}
         $token=bin2hex(random_bytes(16));$until=reminder_utc_v1($now->modify('+90 seconds'));
         $q=$pdo->prepare("UPDATE agent_reminder_occurrences_v1 SET lease_token=?,lease_until=? WHERE id=? AND presented_at IS NULL AND (lease_until IS NULL OR lease_until<?)");$q->execute([$token,$until,$o['id'],$stamp]);
         if($q->rowCount()!==1){$pdo->commit();return ['ok'=>true,'item'=>null];}

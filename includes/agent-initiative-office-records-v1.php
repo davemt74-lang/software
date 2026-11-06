@@ -110,6 +110,7 @@ function vp3_initiative_office_reminder_state_v1(PDO $pdo,array $scope,int $id):
     $q=$pdo->prepare("SELECT * FROM agent_reminders_v1 WHERE id=? AND owner_user_id=? AND status='active' LIMIT 1");
     $q->execute([$id,$owner]);$row=$q->fetch(PDO::FETCH_ASSOC);
     if(!$row||(function_exists('vp3_participant_resource_v1')&&!vp3_participant_resource_v1($pdo,$scope['user'],$scope['principal'],'reminder',$id)))return null;
+    if(!empty($row['followup_action_id'])){if(!function_exists('reminder_initiative_agent_visible_v1'))throw new RuntimeException('Follow-up scope verification is unavailable.',503);if(!reminder_initiative_agent_visible_v1($pdo,$row,$scope['principal']))return null;}
     $q=$pdo->prepare("SELECT id,scheduled_at,wake_at,status FROM agent_reminder_occurrences_v1 WHERE reminder_id=? AND owner_user_id=? AND status='pending' ORDER BY wake_at,id LIMIT 2");
     $q->execute([$id,$owner]);$occurrences=[];
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $o)$occurrences[]=['id'=>(int)$o['id'],
@@ -237,6 +238,10 @@ function vp3_initiative_office_capabilities_evidence_v1(PDO $pdo,array $scope,ar
                     $limited=true;continue;
                 }
                 if(!$state)continue;
+                if($selectedRefs===null&&$family==='reminder'){
+                    $q=$pdo->prepare('SELECT * FROM agent_reminders_v1 WHERE id=? AND owner_user_id=?');$q->execute([$selector['id'],(int)$scope['user']['id']]);$record=$q->fetch(PDO::FETCH_ASSOC);
+                    if($record&&!empty($record['followup_action_id'])){if(!function_exists('reminder_followup_delivered_v1'))throw new RuntimeException('Follow-up delivery verification is unavailable.',503);if(reminder_followup_delivered_v1($pdo,$record))continue;}
+                }
                 if($selectedRefs===null&&$found>=4){$limited=true;break;}
                 $familyRows[$ref]=vp3_initiative_office_entry_v1($ref,$selector,$state);$found++;
             }
