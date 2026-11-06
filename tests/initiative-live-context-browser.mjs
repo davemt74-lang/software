@@ -26,6 +26,13 @@ fs.writeFileSync(path.join(temp,'includes/agent-runtime-routing-v420.php'),routi
 let remote=fs.readFileSync(path.join(source,'includes/homeserver-scope-v026.php'),'utf8');
 remote=remote.replace('function homeserver_scope_v026_fetch(', 'function capability_unused_homeserver_scope_v026_fetch(');
 fs.writeFileSync(path.join(temp,'includes/homeserver-scope-v026.php'),remote);
+// Observe the original exception before the production Chat boundary sanitizes
+// it to503. This adds telemetry only to the copied fixture, not a catch/retry.
+let chatRuntime=fs.readFileSync(path.join(source,'includes/agent-chat-runtime-v2160.php'),'utf8');
+const errorBoundary=/function vp3_agent_chat_followthrough_error_v2160\(Throwable \$error\): VP3InitiativeReplyExceptionV2160\s*\{/;
+assert.match(chatRuntime,errorBoundary);
+chatRuntime=chatRuntime.replace(errorBoundary,match=>match+'\n    live_browser_exception_v1($error);');
+fs.writeFileSync(path.join(temp,'includes/agent-chat-runtime-v2160.php'),chatRuntime);
 // The optional dashboard projection is controlled HTTP transport, while its
 // actual Initiative work status projection, mutations and voice UI stay real.
 let presentation=fs.readFileSync(path.join(source,'includes/cognitive-presentation-v510.php'),'utf8');
@@ -201,9 +208,19 @@ function noRawDurable(state){
 }
 try{
   for(let attempt=0;;attempt++){try{if((await fetch(base+'/health')).ok)break;}catch{}if(attempt>80)throw new Error('PHP live fixture failed to start.');await delay(50);}
+  const transport=(await control('buffer_contract')).transport;
+  assert.equal(transport.mode,'wal');assert.equal(transport.original,'"original"');assert.equal(transport.current,'"changed"');assert.equal(transport.transaction,true);
+  assert.deepEqual(transport.assoc,{id:1,optional:null,label:'value'});assert.deepEqual(transport.numeric,[2,0,'next']);
+  assert.equal(transport.exhausted,false);assert.equal(transport.null,null);assert.deepEqual(transport.remaining,[2]);
+  assert.deepEqual(transport.iteration,[[1,null,'value'],[2,0,'next']]);assert.equal(transport.both.optional,null);assert.equal(transport.both[2],'value');
+  assert.deepEqual(transport.object,{id:2,optional:0,label:'next'});assert.deepEqual(transport.columns,['value','next']);
+  assert.equal(transport.closed,false);assert.deepEqual(transport.pairs,{'1':'value','2':'next'});
+  assert.equal(transport.native_modes_match,true,JSON.stringify(transport));
+  console.log('PASS actual SQLite buffering preserves fetch modes, nulls, iteration and re-execution; another WAL connection commits before the original connection begins its real owner transaction');
   browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined,args:['--autoplay-policy=no-user-gesture-required']});
   if(!onlyVoice){
-  for(const mobile of [false,true]){
+  const repeatMobile=Math.max(1,Math.min(20,Number(process.env.VP3_LIVE_BROWSER_REPEAT_MOBILE)||1));
+  for(const mobile of [false,...Array(repeatMobile).fill(true)]){
     await control('seed',{mode:mobile?'list':'live'});const context=await makeContext(mobile);const page=await openPage(context);
     try{
       const {packet}=await startShare(page);
@@ -240,10 +257,22 @@ try{
       // The exact canonical post, not an unrelated general-chat engine, owns
       // the continuation. Actual Chat transport and idempotency stay enabled.
       await page.locator('[data-initiative-reply="'+post.id+'"]').click();
-      await page.locator('#chatInput').fill('Help me think through that comparison.');await page.locator('#chatInput').press('Enter');await idle(page);
+      await page.locator('#chatInput').fill('Help me think through that comparison.');
+      if(process.env.VP3_LIVE_BROWSER_HEARTBEAT_STRESS==='1')await page.evaluate(()=>{
+        window.followthroughHeartbeatStress=setInterval(()=>window.StonefellowAgentActivity.refreshCoreContext(),40);
+      });
+      const sending=page.waitForResponse(response=>response.url().includes('/api/chat-v236.php')
+        &&response.request().method()==='POST'&&response.request().postDataJSON()?.action==='send');
+      await page.locator('#chatInput').press('Enter');
+      const response=await sending,body=await response.json();await idle(page);
+      if(process.env.VP3_LIVE_BROWSER_HEARTBEAT_STRESS==='1')await page.evaluate(()=>clearInterval(window.followthroughHeartbeatStress));
       state=await control();const marker=contextOf(post).initiative_work.followthrough;
+      const diagnostics={status:response.status(),body,activity:state.activity_rows,goals:state.runs.map(row=>({id:row.id,goal:row.goal})),
+        phases:modelCalls(state).map(row=>({protocol:row.protocol,in_transaction:row.in_transaction})),
+        exceptions:fs.existsSync(gate+'.exceptions.jsonl')?fs.readFileSync(gate+'.exceptions.jsonl','utf8'):''};
+      assert.equal(response.status(),200,JSON.stringify(diagnostics));assert.equal(body.ok,true,JSON.stringify(diagnostics));
       assert.deepEqual(page.sends[0].initiative_reply,{message_id:Number(post.id),reply_ref:marker.reply_ref,revision:marker.revision});
-      const ack=state.messages.filter(row=>contextOf(row).initiative_followthrough).at(-1);assert.ok(ack);
+      const ack=state.messages.filter(row=>contextOf(row).initiative_followthrough).at(-1);assert.ok(ack,JSON.stringify(diagnostics));
       assert.equal(contextOf(ack).initiative_followthrough.state,'discussed');assert.equal(state.calls.some(row=>row.kind==='ordinary_agent_chat'),false);
       if(!mobile){
         // Exercise the production cognitive presentation -> notification center

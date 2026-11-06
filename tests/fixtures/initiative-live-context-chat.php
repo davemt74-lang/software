@@ -10,6 +10,147 @@ require_once __DIR__.'/agent-initiative-task-lists-v1.php';
 require_once __DIR__.'/schema-metadata.php';
 require_once __DIR__.'/chat-settings-v237.php';
 
+/** MySQL PDO buffers SELECT results by default. Materialize the actual SQLite
+ * rows once as well, so a fetched statement cannot retain an implicit stale
+ * read snapshot across another HTTP worker's write and a later owner lock.
+ * No query is repeated and no domain value or transaction boundary changes. */
+class LiveBrowserBufferedStatementV1 extends PDOStatement
+{
+    private ?array $buffer=null;
+    private array $names=[];
+    private int $position=0;
+    private int $defaultMode=PDO::FETCH_ASSOC;
+    private array $defaultArgs=[];
+    protected function __construct(){}
+    public function execute(?array $params=null): bool
+    {
+        $this->buffer=null;$this->names=[];$this->position=0;
+        return parent::execute($params);
+    }
+    private function materialize(): void
+    {
+        if($this->buffer!==null)return;
+        for($index=0,$count=$this->columnCount();$index<$count;$index++){
+            $metadata=parent::getColumnMeta($index);
+            if(!is_array($metadata)||!is_string($metadata['name']??null))throw new LogicException('Fixture column metadata is unavailable.');
+            $this->names[]=$metadata['name'];
+        }
+        $this->buffer=parent::fetchAll(PDO::FETCH_NUM);parent::closeCursor();
+    }
+    private function format(array $row,int $mode,array $args=[]): mixed
+    {
+        $mode=$mode===PDO::FETCH_DEFAULT?$this->defaultMode:$mode;
+        if($mode===PDO::FETCH_NUM)return $row;
+        if($mode===PDO::FETCH_COLUMN){
+            $column=(int)($args[0]??0);
+            if(!array_key_exists($column,$row))throw new ValueError('Column index is out of range.');
+            return $row[$column];
+        }
+        $result=[];
+        if(!in_array($mode,[PDO::FETCH_ASSOC,PDO::FETCH_BOTH,PDO::FETCH_OBJ],true))throw new LogicException('Unsupported fixture fetch mode: '.$mode);
+        foreach($row as $index=>$value){$result[$this->names[$index]]=$value;if($mode===PDO::FETCH_BOTH)$result[$index]=$value;}
+        return $mode===PDO::FETCH_OBJ?(object)$result:$result;
+    }
+    public function fetch(int $mode=PDO::FETCH_DEFAULT,int $cursorOrientation=PDO::FETCH_ORI_NEXT,int $cursorOffset=0): mixed
+    {
+        if($cursorOrientation!==PDO::FETCH_ORI_NEXT||$cursorOffset!==0)throw new LogicException('Fixture statements are forward-only.');
+        $this->materialize();
+        return isset($this->buffer[$this->position])?$this->format($this->buffer[$this->position++],$mode,$this->defaultArgs):false;
+    }
+    public function fetchColumn(int $column=0): mixed
+    {
+        if($column<0)throw new ValueError('Column index must be nonnegative.');
+        $this->materialize();
+        if(!isset($this->buffer[$this->position]))return false;
+        $row=$this->buffer[$this->position++];
+        if(!array_key_exists($column,$row))throw new ValueError('Column index is out of range.');
+        return $row[$column];
+    }
+    public function fetchAll(int $mode=PDO::FETCH_DEFAULT,mixed ...$args): array
+    {
+        $this->materialize();$out=[];
+        while(isset($this->buffer[$this->position])){
+            $row=$this->buffer[$this->position++];
+            if($mode===PDO::FETCH_KEY_PAIR){
+                if(count($row)!==2)throw new LogicException('Fixture key pairs require exactly two columns.');
+                $out[$row[0]]=$row[1];
+            }else $out[]=$this->format($row,$mode,$args?:$this->defaultArgs);
+        }
+        return $out;
+    }
+    public function setFetchMode(int $mode,mixed ...$args): bool
+    {
+        $ok=parent::setFetchMode($mode,...$args);$this->defaultMode=$mode;$this->defaultArgs=$args;return $ok;
+    }
+    public function closeCursor(): bool
+    {
+        $this->buffer=[];$this->position=0;return parent::closeCursor();
+    }
+    public function getIterator(): Iterator
+    {
+        while(($row=$this->fetch())!==false)yield $row;
+    }
+}
+db()->setAttribute(PDO::ATTR_STATEMENT_CLASS,[LiveBrowserBufferedStatementV1::class]);
+
+function live_browser_fetch_contract_v1(PDO $pdo): array
+{
+    $q=$pdo->prepare("SELECT 1 AS id,NULL AS optional,'value' AS label UNION ALL SELECT 2,0,'next'");
+    $q->execute();$default=$q->fetch();$remaining=$q->fetchAll(PDO::FETCH_NUM);$empty=$q->fetch();
+    $q->execute();$both=$q->fetchAll(PDO::FETCH_BOTH);
+    $q->execute();$columns=$q->fetchAll(PDO::FETCH_COLUMN,1);
+    $q->execute();$object=get_object_vars($q->fetch(PDO::FETCH_OBJ));$q->closeCursor();$closed=$q->fetch();
+    $q->setFetchMode(PDO::FETCH_NUM);$q->execute();$iteration=iterator_to_array($q);
+    $q->execute();$column=$q->fetchColumn(1);$tail=$q->fetchAll(PDO::FETCH_ASSOC);
+    return compact('default','remaining','empty','both','columns','object','closed','iteration','column','tail');
+}
+
+function live_browser_buffer_contract_v1(): array
+{
+    $pdo=db();$mode=(string)$pdo->query('PRAGMA journal_mode')->fetchColumn();
+    capabilities_browser_value_v1('buffer_contract','original',true);
+    $q=$pdo->prepare("SELECT value FROM capabilities_browser_state WHERE key='buffer_contract'");$q->execute();
+    $original=$q->fetchColumn();
+    $writer=new PDO('sqlite:'.dirname(__DIR__).'/state.sqlite');$writer->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
+    $writer->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);
+    $writer->exec('PRAGMA busy_timeout=2000');
+    $writer->prepare("UPDATE capabilities_browser_state SET value=? WHERE key='buffer_contract'")->execute(['"changed"']);
+    $pdo->beginTransaction();
+    try{
+        $current=$pdo->query("SELECT value FROM capabilities_browser_state WHERE key='buffer_contract'")->fetchColumn();
+        $transaction=$pdo->inTransaction();$pdo->rollBack();
+    }catch(Throwable $error){if($pdo->inTransaction())$pdo->rollBack();throw $error;}
+    $rows=$pdo->prepare("SELECT 1 AS id,NULL AS optional,'value' AS label UNION ALL SELECT 2,0,'next'");$rows->execute();
+    $assoc=$rows->fetch(PDO::FETCH_ASSOC);$numeric=$rows->fetch(PDO::FETCH_NUM);$exhausted=$rows->fetch();
+    $rows->execute();$null=$rows->fetchColumn(1);$remaining=$rows->fetchAll(PDO::FETCH_COLUMN,0);
+    $rows->execute();$rows->setFetchMode(PDO::FETCH_NUM);$iteration=iterator_to_array($rows);
+    $rows->execute();$both=$rows->fetch(PDO::FETCH_BOTH);$object=$rows->fetch(PDO::FETCH_OBJ);
+    $rows->execute();$columns=$rows->fetchAll(PDO::FETCH_COLUMN,2);
+    $rows->execute();$rows->closeCursor();$closed=$rows->fetch();
+    $pairs=$pdo->query("SELECT 1 AS id,'value' AS label UNION ALL SELECT 2,'next'")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $buffered_modes=live_browser_fetch_contract_v1($pdo);$native_modes=live_browser_fetch_contract_v1($writer);
+    $native_modes_match=$buffered_modes===$native_modes;
+    return compact('mode','original','current','transaction','assoc','numeric','exhausted','null','remaining','iteration','both','object','columns','closed','pairs',
+        'native_modes_match','buffered_modes','native_modes');
+}
+
+/** Fixture-only exception telemetry; no arguments, media, credentials or model
+ * prompts. Production error translation and every authority check stay intact. */
+function live_browser_exception_v1(Throwable $error): void
+{
+    $chain=[];
+    for($item=$error;$item!==null;$item=$item->getPrevious()){
+        $row=['class'=>get_class($item),'code'=>$item->getCode(),'message'=>$item->getMessage(),
+            'at'=>basename($item->getFile()).':'.$item->getLine()];
+        if($item instanceof PDOException)$row['sqlstate']=['state'=>$item->errorInfo[0]??null,'driver_code'=>$item->errorInfo[1]??null];
+        $chain[]=$row;
+    }
+    $frames=array_map(static fn(array $frame):array=>['file'=>basename($frame['file']??''),'line'=>$frame['line']??0,
+        'function'=>$frame['function']??''],array_slice($error->getTrace(),0,14));
+    $path=(string)getenv('VP3_LIVE_BROWSER_GATE').'.exceptions.jsonl';
+    file_put_contents($path,json_encode(['at'=>gmdate('c'),'chain'=>$chain,'frames'=>$frames],JSON_THROW_ON_ERROR)."\n",FILE_APPEND|LOCK_EX);
+}
+
 function live_browser_model_v1(string $prompt,string $protocol): ?array
 {
     if(!capabilities_browser_value_v1('live_mode'))return null;
@@ -20,6 +161,10 @@ function live_browser_model_v1(string $prompt,string $protocol): ?array
         if(str_contains($prompt,$secret))throw new RuntimeException('Live inference crossed an account or Agent boundary.');
     }
     followthrough_fixture_log_v1('live_model',['protocol'=>$protocol,'prompt'=>$prompt,'in_transaction'=>false]);
+    if($protocol==='vp3.initiative-reply.v1'||($input['response_kind']??'')==='followthrough_reply'){
+        $delay=max(0,min(2000,(int)getenv('VP3_LIVE_BROWSER_REPLY_DELAY_MS')));
+        if($delay>0)usleep($delay*1000);
+    }
     if($protocol==='vp3.initiative-reply.v1'){
         return ['ok'=>true,'answer'=>json_encode(['intent'=>'discuss','focus'=>'Discuss the verified current scene and saved list.'],JSON_THROW_ON_ERROR)];
     }
@@ -166,7 +311,8 @@ function live_browser_control_v1(): never
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     try{
         $pdo=db();$action=(string)($_GET['action']??'state');$extra=[];
-        if($action==='seed')$state=live_browser_seed_v1((string)($_GET['mode']??'live'));
+        if($action==='buffer_contract'){$extra['transport']=live_browser_buffer_contract_v1();$state=[];}
+        elseif($action==='seed')$state=live_browser_seed_v1((string)($_GET['mode']??'live'));
         elseif($action==='plan'){
             $before=(int)$pdo->query("SELECT COALESCE(MAX(id),0) FROM agent_workflow_runs WHERE capability_key='initiative.plan'")->fetchColumn();
             vp3_initiative_schedule_v1($pdo,['id'=>1,'is_active'=>1],7);
