@@ -88,14 +88,25 @@ function agent_activity_v94_record(array $user,string $surface,string $state,arr
         // legacy paused/idle fallback through truthy strings or a missing key.
         $details['chat_focused']=false;$details['chat_busy']=true;
     }
+    if($state!=='logged_out'&&$surface==='chat'&&is_array($context['_vp3_live_binding']??null)
+        &&($context['_vp3_live_binding']['owner_user_id']??null)===$uid
+        &&($context['_vp3_live_binding']['conversation_id']??null)===$conversationId
+        &&is_array($context['live_context']??null)){
+        require_once __DIR__.'/agent-live-context-v1.php';
+        $packet=vp3_live_context_sanitize_v1($context['live_context'],$context['_vp3_live_binding']);
+        if($packet!==null)$details['live_context']=$packet;
+    }
     $idleSince=$state==='idle' ? date('Y-m-d H:i:s') : null;
     $lastTask=$state==='working' ? date('Y-m-d H:i:s') : (string)($prev['last_task_at']??date('Y-m-d H:i:s'));
     $sql="INSERT INTO agent_activity_state (user_id,surface,context_key,task_kind,task_title,activity_state,last_input_at,last_task_at,last_heartbeat_at,idle_since_at,details_json,updated_at) VALUES (?,?,?,?,?,?,NOW(),?,NOW(),?,?,NOW()) ON DUPLICATE KEY UPDATE surface=VALUES(surface),context_key=VALUES(context_key),task_kind=VALUES(task_kind),task_title=VALUES(task_title),activity_state=VALUES(activity_state),last_input_at=IF(VALUES(activity_state)='working',NOW(),last_input_at),last_task_at=IF(VALUES(activity_state)='working',NOW(),last_task_at),last_heartbeat_at=NOW(),idle_since_at=IF(VALUES(activity_state)='idle',COALESCE(idle_since_at,NOW()),NULL),details_json=VALUES(details_json),updated_at=NOW()";
     $s=$pdo->prepare($sql);$s->execute([$uid,$surface,$contextKey,$taskKind,$taskTitle,$state,$lastTask?:date('Y-m-d H:i:s'),$idleSince,json_encode($details,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
     $changed=!$prev||(string)$prev['activity_state']!==$state||(string)$prev['context_key']!==$contextKey||(string)$prev['task_title']!==$taskTitle;
     if($changed){
+        // Live observations belong only to the bounded current-context cache.
+        // Activity history records navigation/state, never a sensory packet.
+        $historyDetails=$details;unset($historyDetails['live_context']);
         $e=$pdo->prepare('INSERT INTO agent_activity_events (user_id,surface,context_key,task_kind,task_title,previous_state,activity_state,reason,details_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,NOW())');
-        $e->execute([$uid,$surface,$contextKey,$taskKind,$taskTitle,(string)($prev['activity_state']??''),$state,mb_substr($reason,0,120),json_encode($details,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
+        $e->execute([$uid,$surface,$contextKey,$taskKind,$taskTitle,(string)($prev['activity_state']??''),$state,mb_substr($reason,0,120),json_encode($historyDetails,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
     }
     if($ownsTransaction)$pdo->commit();
     }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
@@ -103,6 +114,7 @@ function agent_activity_v94_record(array $user,string $surface,string $state,arr
     // or roll back a caller's still-active transaction.
     if(!$pdo->inTransaction()&&function_exists('vp3_live_session_record_activity_v2370')){
         $liveContext=$context;
+        unset($liveContext['live_context'],$liveContext['_vp3_live_binding']);
         $liveContext['task_title']=$taskTitle;
         $liveContext['task_kind']=$taskKind;
         try{vp3_live_session_record_activity_v2370($user,$surface,$state,$liveContext,$reason,$changed);}catch(Throwable $e){error_log('VP3 live session bridge failed: '.$e->getMessage());}

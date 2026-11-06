@@ -189,30 +189,40 @@ function homeserver_execution_v230_recent(int $userId,int $limit=20): array
 }
 
 function homeserver_execution_v230_execute(
-    int $userId,string $operation,array $payload=[],?callable $fallback=null
+    int $userId,string $operation,array $payload=[],?callable $fallback=null,bool $transientContext=false
 ): array {
     if($userId<1)throw new RuntimeException('Authentication required.');
     $policy=homeserver_execution_v230_policy($operation,$payload);
+    if($transientContext&&$policy['operation']!=='agent.infer.local')throw new RuntimeException('Transient context requires agent.infer.local.');
     $requestId=bin2hex(random_bytes(16));
     $started=microtime(true);
 
     try{
+        if($transientContext&&(!function_exists('homeserver_execution_v220_can_route')
+            ||!function_exists('homeserver_https_v1300_transient_ready')
+            ||!function_exists('homeserver_https_v1300_wait_transient')
+            ||!function_exists('db')||!(($transientPdo=db()) instanceof PDO)
+            ||!homeserver_https_v1300_transient_ready($transientPdo))){
+            throw new RuntimeException('Transient HomeServer inference is unavailable.');
+        }
         if(function_exists('homeserver_execution_v220_can_route')&&!homeserver_execution_v220_can_route($userId,(string)$policy['operation'])){
             throw new RuntimeException('The requested HomeServer capability is unavailable.');
         }
         if(!function_exists('homeserver_https_v1300_remote_operation'))throw new RuntimeException('HomeServer relay is unavailable.');
-        $result=homeserver_https_v1300_remote_operation($userId,(string)$policy['operation'],$payload);
+        $result=$transientContext
+            ?homeserver_https_v1300_remote_operation($userId,(string)$policy['operation'],$payload,true)
+            :homeserver_https_v1300_remote_operation($userId,(string)$policy['operation'],$payload);
         if(!is_array($result))$result=['value'=>$result];
         $duration=max(0,(int)round((microtime(true)-$started)*1000));
         $receipt=homeserver_execution_v230_receipt(
           $userId,$requestId,$policy,'homeserver','completed',false,'none',$duration,
-          homeserver_execution_v230_result_meta($result)
+          $transientContext?['transient_context'=>true]:homeserver_execution_v230_result_meta($result)
         );
         return ['ok'=>true,'result'=>$result,'execution'=>$receipt];
     }catch(Throwable $e){
         $duration=max(0,(int)round((microtime(true)-$started)*1000));
         $failure=homeserver_execution_v230_failure_class($e);
-        if($fallback&&$policy['fallback_allowed']&&$failure!=='authorization'){
+        if(!$transientContext&&$fallback&&$policy['fallback_allowed']&&$failure!=='authorization'){
             $fallbackStarted=microtime(true);
             $result=$fallback($e,$policy);
             if(!is_array($result))$result=['value'=>$result];

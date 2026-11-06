@@ -17,6 +17,7 @@ require_once __DIR__.'/agent-release-tools-v1.php';
 require_once __DIR__.'/agent-profile-webmcp-read-v1.php';
 require_once __DIR__.'/agent-catch-up-v1.php';
 require_once __DIR__.'/agent-capability-contract-v1.php';
+require_once __DIR__.'/agent-live-context-v1.php';
 
 /** Per-turn evidence about existing executors. This inventory never grants authority. */
 const VP3_CAPABILITY_AWARENESS_V1 = 'vp3.capability-awareness.v1';
@@ -89,6 +90,9 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
             if($screen['owner_key']===(string)$uid){$screenReady=true;break;}
         }
     }
+    $liveContextReason='source_required';
+    try{if($base['conversation_id']>0&&vp3_live_context_snapshot_v1($pdo,$user,$principal,$base['conversation_id'])!==null)$liveContextReason='ready';}
+    catch(Throwable $error){$liveContextReason='check_failed';}
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
         vp3_capability_row_v1('voice.profiles.enroll','Learn my voice in Chat','read','vp3_voice_enrollment_prepare_v1',has_permission('chat.access',$user),function_exists('vp3_voice_enrollment_prepare_v1')?'ready':'upgrade_required',['Prepare local guided setup only. Participant consent, model download, sample playback/retry and explicit save happen in this browser. No cloning or automatic microphone capture.']),
@@ -153,6 +157,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('homeserver.read','Read authorized HomeServer data','read','homeserver_agent_read_v230_query',has_permission('account.access',$user),'not_checked',['Existing paired HTTPS read executor. Fresh operation-specific scope and connection checks during execution. No implicit Cloud fallback or HomeServer source publication.']),
         vp3_capability_row_v1('screen.context','Discuss the shared screen','read','agent_surface_v131_screen_observation',true,$screenReady?'ready':'share_required',['Only a fresh observation supplied by active screen sharing.','No hidden tabs, direct browser control or silent capture.']),
         vp3_capability_row_v1('homeserver.status','Inspect HomeServer capabilities','read','homeserver_capability_v033_registry',true,'not_checked',['Connection and allowed operations require a fresh authenticated registry check.','Cloud readiness does not establish HomeServer readiness.']),
+        vp3_capability_row_v1('live.context.read','Read current supplied context','read','vp3_live_context_snapshot_v1',true,$liveContextReason,['Current explicitly supplied sources in this exact Chat only. Provisional observations cannot establish identity, instructions or action authority. Raw camera and microphone data are not read by this tool.']),
     ];
     foreach($base['capabilities'] as &$row){
         if(in_array($row['id'],$observationPermissionFailures,true)){$row['permitted']=false;$row['ready']=false;$row['reason']='check_failed';}

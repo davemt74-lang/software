@@ -79,6 +79,7 @@
       }finally{if(guidedCapture===marker)guidedCapture=null;chunks=[];length=0;guidedMuteUntil=guidedSession?Date.now()+5000:0;finish?.();}
     }
     async function evaluateVoice(text,isCurrent=()=>true){
+      const ownerChat=adapter.isMainChat?.()===true,historyBinding=ownerChat?adapter.liveSensoryContext?.():null;
       if(guidedSession||Date.now()<guidedMuteUntil)return {allowed:false,learning:true,reason:'guided-enrollment'};
       if(/^(?:that['’]s not me|that is not me|you have the wrong person)[.!]?$/i.test(String(text).trim())){pendingContext=null;return {allowed:true,reason:'participant-correction'};}
       const turnSerial=++turn;
@@ -86,7 +87,8 @@
       lastChecked={text:String(text),at:Date.now()};
       if(Date.now()<invitationUntil&&((invitation==='name'&&window.VP3EyesCore?.introductionName(text,true))||(invitation==='visual-consent'&&window.VP3EyesCore?.visualReply(text)))){invitation='';pendingContext=null;return {allowed:true,reason:'invited-introduction'};}
       pendingContext=null;if(/^(?:stop|cancel|pause|stop listening|stop the microphone)[.!]?$/i.test(String(text).trim()))return {allowed:true};if(window.VP3AgentEyes?.expectingIntroduction?.()&&window.VP3EyesCore?.introductionName(text,true))return {allowed:true,reason:'invited-introduction'};if(!enabled)return {allowed:true};const token=epoch;
-      const current=()=>token===epoch&&turnSerial===turn&&isCurrent();
+      const current=()=>token===epoch&&turnSerial===turn&&isCurrent()&&(!ownerChat
+        ||historyBinding&&JSON.stringify(historyBinding)===JSON.stringify(adapter.liveSensoryContext?.()));
       const captured=chunks;chunks=[];length=0;
       if(!rate||!captured.length||performance.now()-lastAudio>2200){if(knownOnly)say('Speech ignored: voice matching has no current microphone evidence.');return {allowed:!knownOnly,reason:'unavailable'};}
       const clean=captured.filter(c=>c.rms>=Math.max(.008,noise*2.5));const count=clean.reduce((n,c)=>n+c.data.length,0);
@@ -120,7 +122,7 @@
       if(finalAttribution&&!finalAttribution.accepted)return {allowed:!knownOnly,reason:finalAttribution.reason};
       if(window.VP3ParticipantContinuity?.confirmedVoice)window.VP3ParticipantContinuity.confirmedVoice({participant_id:String(fresh.id),display_name:fresh.name});else window.VP3ParticipantUpdates?.heard({participant_id:String(fresh.id)});
       pendingContext={text:String(text),at:Date.now(),value:{conversation_note:String(note).slice(0,1000),participant_id:String(fresh.id),display_name:String(fresh.name).slice(0,120),source:'local_voice_similarity',confidence:match.similarity,authentication_authority:false}};
-      void Promise.resolve(adapter.recordEyes?.({event_id:crypto.randomUUID(),session_id:voiceSession,track_id:crypto.randomUUID(),event_type:'voice_turn',participant_id:String(fresh.id),display_name:fresh.name,identity_source:'local_voice_similarity',authentication_authority:false})).catch(()=>{});say(`Listening to ${fresh.name} · provisional ${trained?'trained':'local'} voice match.`);return {allowed:true,participant:pendingContext.value};
+      void Promise.resolve(adapter.recordEyes?.({event_id:crypto.randomUUID(),session_id:voiceSession,track_id:crypto.randomUUID(),event_type:'voice_turn',participant_id:String(fresh.id),display_name:fresh.name,identity_source:'local_voice_similarity',authentication_authority:false,...(historyBinding?{conversation_id:historyBinding.conversation_id}:{})})).catch(()=>{});say(`Listening to ${fresh.name} · provisional ${trained?'trained':'local'} voice match.`);return {allowed:true,participant:pendingContext.value};
     }
     async function check(text,isCurrent=()=>true){const task=evaluateVoice(text,isCurrent),record=lastChecked;try{return await task;}finally{if(lastChecked===record&&record)record.at=Date.now();}}
     function takeContext(text){const p=pendingContext;pendingContext=null;if(!p||Date.now()-p.at>=5000||p.text!==String(text))return null;return window.VP3ParticipantContinuity&&!window.VP3ParticipantContinuity.assessVoice(p.value,{notify:false}).accepted?null:p.value;}

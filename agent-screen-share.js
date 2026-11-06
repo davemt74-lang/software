@@ -4,7 +4,7 @@
   if(window.VP3AgentScreenShare)return;
   const adapter=window.VP3_ORB_ADAPTER;if(!adapter)return;
   const owner=String(adapter.ownerKey),embedded=new URLSearchParams(location.search).get('orb_embed')==='1'&&parent!==window;
-  const maxSources=3,maxSetups=20,shares=[];
+  const maxSources=3,maxSetups=20,shares=[],pagePath=location.pathname;
   let selected=null,pinnedAudio=null,pickerOwner=null,sharedAnalysis=null,lastAnalysisOwner=null,lastSharedAnalysis=0;
   let audioHandoff=Promise.resolve();
   let updateLayoutControls=()=>{};
@@ -50,9 +50,19 @@
     shares.find(share=>share.session()===id)?.discardAndStop();
   }
 
+  function liveIdentity(){
+    const chat=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY,cfg=window.STONEFELLOW_CHAT;
+    if(location.pathname!==pagePath||!cfg||Number(cfg.userId)!==Number(owner)||!chat?.isReady?.()||chat.isRestoring?.())return null;
+    const id=Number(chat.conversationId?.()),agent=Number(chat.agentId?.()??cfg.agentId??0);
+    const ref=adapter.conversationRef?.();
+    if(!Number.isSafeInteger(id)||id<1||agent!==Number(cfg.agentId??0)||ref&&(Number(ref.id)!==id||Number(ref.agent??0)!==agent))return null;
+    return {owner_user_id:Number(owner),agent_id:agent,conversation_id:id};
+  }
+  const publishLive=()=>window.dispatchEvent(new Event('vp3:screen-live-context'));
+
   function createShare(index,host){
     const label=index===0?'Share 1':'Tab '+(index+1);
-    let stream=null,starting=false,generation=0,timer=0,controller=null,latest=null,observation=null,lastAnalyzedFrame=null,lastAnalysis=0,analyzedFingerprint=null;
+    let stream=null,starting=false,generation=0,timer=0,controller=null,latest=null,observation=null,lastAnalyzedFrame=null,lastAnalysis=0,analyzedFingerprint=null,liveBinding=null;
     let root,video,preview,status,startButton,stopButton,captureButton,automatic,transcribe,pinAudioButton,watchZone,urlInput,openUrl;
     let tabName='';
     const clean=value=>String(value||'').slice(0,2000);
@@ -239,8 +249,8 @@
               if(result.capture.session_id!==run.sid||result.capture.capture_id!==job.id)throw Error('Transcript belongs to a different capture.');
               rememberTimelineCapture(result.capture);
               if(run.token===generation&&audioTarget()===source&&audioRun===run&&sessionId===run.sid&&stream){
-                recentAudio.push({text:result.capture.body.transcript,captured_at:result.capture.captured_at||job.at,duration_seconds:result.capture.body.duration_seconds??job.duration});
-                recentAudio=recentAudio.slice(-8);
+                recentAudio.push({text:result.capture.body.transcript||'',captured_at:job.at,duration_seconds:result.capture.body.duration_seconds??job.duration,capture_id:result.capture.capture_id,session_id:run.sid,...(Array.isArray(result.capture.body.audio_events)?{audio_events:result.capture.body.audio_events}:{} )});
+                recentAudio=recentAudio.slice(-8);publishLive();
               }
               if(job.brain&&root.querySelector('[data-screen-brain]').checked)try{await historyApi({action:'brain',capture_id:result.capture.capture_id});}catch(e){historySay('Transcript saved. Brain: '+e.message);}
               if(selectedSession===run.sid)void refreshHistory(run.sid);
@@ -296,6 +306,26 @@
       if(!visual&&!audio)return null;
       return {...(visual||{contract:'vp3.screen-observation.v1',owner_key:owner,captured_at:named?audio.captured_at:latest.captured_at,surface:latest?.surface||'browser',summary:'',visible_text:'',site_hint:'',page_title:''}),...(audio?{tab_audio:{...audio}}:{})};
     }
+    function contextAllowedActive(){
+      const current=liveIdentity(),track=stream?.getVideoTracks()[0];
+      return !!(current&&liveBinding&&JSON.stringify(current)===JSON.stringify(liveBinding)&&sessionId
+        &&root.querySelector('[data-screen-chat-context]').checked&&track?.readyState==='live'&&!track.muted&&!starting);
+    }
+    function liveContext(){
+      const current=liveIdentity(),track=stream?.getVideoTracks()[0],now=Date.now();
+      if(!current||!liveBinding||JSON.stringify(current)!==JSON.stringify(liveBinding)||!sessionId
+        ||!root.querySelector('[data-screen-chat-context]').checked||!track||track.readyState!=='live'||track.muted||starting
+        ||!latest||now-Date.parse(latest.captured_at)>15000)return null;
+      const visual=lastAnalyzedFrame&&now-Date.parse(lastAnalyzedFrame.captured_at)<=90000
+        &&distance(analyzedFingerprint,latest.fingerprint)<=.08?lastAnalyzedFrame:null;
+      const audio=transcribe.checked&&audioRun&&!audioRun.discard&&audioTarget()===source
+        ?recentAudio.filter(item=>now-Date.parse(item.captured_at)<90000).at(-1):null;
+      if(!visual&&!audio)return null;
+      return {...(visual||{contract:'vp3.screen-observation.v1',owner_key:owner,captured_at:latest.captured_at,
+        surface:latest.surface,summary:'',visible_text:'',site_hint:'',page_title:'',observations:[]}),
+        ...current,source_id:'share-'+(index+1),session_id:sessionId,active:true,context_allowed:true,selected:selected===source,
+        ...(audio?{tab_audio:{...audio}}:{})};
+    }
     const say=text=>{if(status)status.textContent=text;};
     function syncPageUrl(){
       const value=urlInput.value.trim(),url=savedPageUrl(value);
@@ -330,6 +360,7 @@
       states.forEach(([state],position)=>{if(icons[position].dataset.state!==state)icons[position].dataset.state=state;});
       const summary=states.map(([,description])=>description).join(' · ');
       if(indicator.textContent!==summary)indicator.textContent=summary;
+      publishLive();
     }
     function controls(){
       if(!startButton)return;
@@ -349,7 +380,7 @@
       if(!stream&&!starting)return;
       const sid=sessionId;sessionId=null;const audioDone=finishAudio(true);
       if(sid&&adapter.screenHistory)void audioDone.finally(()=>historyApi({action:'end',session_id:sid}).then(()=>refreshHistory()).catch(e=>historySay(e.message)));
-      generation++;starting=false;clearTimeout(timer);timer=0;controller?.abort();controller=null;recentAudio=[];
+      generation++;starting=false;clearTimeout(timer);timer=0;controller?.abort();controller=null;recentAudio=[];liveBinding=null;
       const old=stream;stream=null;for(const track of old?.getTracks()||[])track.stop();
       if(video)video.srcObject=null;if(preview){preview.removeAttribute('src');preview.hidden=true;}
       latest=observation=lastAnalyzedFrame=analyzedFingerprint=null;lastAnalysis=0;watchZone?.reset();
@@ -389,7 +420,7 @@
         lastAnalyzedFrame={contract:value.contract,owner_key:owner,captured_at:frame.captured_at,surface:frame.surface,summary:clean(value.summary),visible_text:clean(value.visible_text),site_hint:clean(value.site_hint),page_title:clean(value.page_title),observations:value.observations||[],...(frame.annotationLogging&&value.on_screen_translation?{on_screen_translation:clean(value.on_screen_translation)}:{})};
         analyzedFingerprint=frame.fingerprint;
         if(distance(frame.fingerprint,latest?.fingerprint)>.08){observation=null;say('Sharing screen · analyzed an earlier frame.');return;}
-        observation=lastAnalyzedFrame;say(`Sharing screen · ${observation.summary||'Frame analyzed.'} · ${new Date(frame.captured_at).toLocaleTimeString()}`);
+        observation=lastAnalyzedFrame;say(`Sharing screen · ${observation.summary||'Frame analyzed.'} · ${new Date(frame.captured_at).toLocaleTimeString()}`);publishLive();
         if(selected===source&&root.querySelector('[data-screen-chat-context]').checked)window.dispatchEvent(new CustomEvent('vp3:screen-observation',{detail:{...observation}}));
       }catch(error){if(token===generation&&stream){if([401,403,409].includes(error.status)){stop(error.message||'Screen access changed.');return;}observation=null;say(owned.signal.aborted?'Screen analysis timed out. Sharing continues; select Capture and analyze to retry.':`Sharing continues. ${error.message||'Screen analysis unavailable.'}`);}}
       finally{
@@ -422,6 +453,7 @@
           syncControls();
         }
         if(token!==generation){acquired.getTracks().forEach(t=>t.stop());return;}
+        liveBinding=liveIdentity();
         if(!transcribe.checked)acquired.getAudioTracks().forEach(t=>t.stop());const track=acquired.getVideoTracks()[0];if(!track||track.readyState!=='live')throw Error('No shared display was selected.');
         if(index>0&&track.getSettings?.().displaySurface!=='browser')throw Error('Choose a browser tab for additional shares.');
         stream=acquired;video.srcObject=stream;
@@ -470,7 +502,7 @@
       root=document.createElement('section');root.className='vp3-screen-share';
       root.dataset.screenSourcePanel='';root.id='vp3-screen-source-panel-'+index;
       root.setAttribute('role','tabpanel');root.setAttribute('aria-labelledby','vp3-screen-source-tab-'+index);
-      root.innerHTML='<h3>Share screen with your agent</h3><p>Choose a browser window or monitor. Shared frames are analyzed by your configured Cloud model. Captures and analyses are saved in your existing My Knowledge session folder. Audio is processed for transcription; recordings are not retained.</p><label>Session name<input data-screen-session-title maxlength="55" placeholder="Screen share"></label><div class="vp3-eyes-actions"><button type="button" data-screen-start>Share screen</button><button type="button" data-screen-stop disabled>Stop sharing</button><button type="button" data-screen-save disabled>Capture</button><button type="button" data-screen-capture disabled>Capture and analyze</button></div><label><input type="checkbox" data-screen-auto checked> Analyze shared frames automatically</label><label><input type="checkbox" data-screen-chat-context checked> Supply scene context to Chat</label><label><input type="checkbox" data-screen-transcribe> Agent Ears · Transcribe tab audio</label><button type="button" data-screen-pin-audio aria-pressed="false" disabled>Keep Agent Ears here</button><p data-screen-audio-pin-status hidden></p><p data-screen-audio-status role="status">Select a Chrome tab with Share tab audio enabled. Uses your configured ElevenLabs speech service.</p><meter data-screen-audio-meter min="0" max="1" value="0" aria-label="Incoming tab audio level"></meter><label><input type="checkbox" data-screen-annotation-log> Annotation logging</label><p>Check sampled frames for visible captions and translations.</p><details data-screen-transcript-log open hidden><summary>Transcript and annotations</summary><p data-screen-transcript-status role="status"></p><button type="button" data-screen-transcript-earlier hidden>Load earlier entries</button><ol class="vp3-screen-transcript-entries"></ol></details><label><input type="checkbox" data-screen-brain> Send to Brain</label><label>Your note / intent<input data-screen-note maxlength="1000" placeholder="Why this matters or what to revisit"></label><p data-screen-status role="status">Screen sharing is off.</p><video muted playsinline hidden></video><img data-screen-preview hidden alt="Latest locally captured shared screen frame"><p>The selected share refreshes about every 5 seconds. Changed frames are analyzed at most every 30 seconds. Agent Ears follows the selected share unless pinned. Chat uses the selected share when its scene context switch is on. Compare by number or put a tab name in quotes. Try Compare Tab &quot;Movie&quot; with Tab 2.</p><details data-screen-history-panel><summary>Sharing sessions and capture history</summary><select data-screen-sessions aria-label="Sharing session"><option value="">Choose a sharing session</option></select><a data-screen-folder hidden>Open in My Knowledge</a><label><input type="checkbox" data-screen-delete-brain checked> Also remove this session’s Brain memories when deleting</label><button type="button" data-screen-delete>Delete session data</button><button type="button" data-screen-refresh>Refresh history</button><p data-screen-history-status role="status"></p><div data-screen-history></div></details>';
+      root.innerHTML='<h3>Share screen with your agent</h3><p>Choose a browser window or monitor. Shared frames are analyzed by your configured Cloud model. Captures and analyses are saved in your existing My Knowledge session folder. Audio is processed for transcription; recordings are not retained.</p><label>Session name<input data-screen-session-title maxlength="55" placeholder="Screen share"></label><div class="vp3-eyes-actions"><button type="button" data-screen-start>Share screen</button><button type="button" data-screen-stop disabled>Stop sharing</button><button type="button" data-screen-save disabled>Capture</button><button type="button" data-screen-capture disabled>Capture and analyze</button></div><label><input type="checkbox" data-screen-auto checked> Analyze shared frames automatically</label><label><input type="checkbox" data-screen-chat-context checked aria-describedby="vp3-screen-live-use-' + index + '"> Supply scene context to Agent Chat and proactive context</label><p id="vp3-screen-live-use-' + index + '">While this share is active, your Agent can use fresh scene descriptions and enabled tab transcripts or sound tags to understand what is happening and decide whether to engage.</p><label><input type="checkbox" data-screen-transcribe> Agent Ears · Transcribe tab audio</label><button type="button" data-screen-pin-audio aria-pressed="false" disabled>Keep Agent Ears here</button><p data-screen-audio-pin-status hidden></p><p data-screen-audio-status role="status">Select a Chrome tab with Share tab audio enabled. Uses your configured ElevenLabs speech service.</p><meter data-screen-audio-meter min="0" max="1" value="0" aria-label="Incoming tab audio level"></meter><label><input type="checkbox" data-screen-annotation-log> Annotation logging</label><p>Check sampled frames for visible captions and translations.</p><details data-screen-transcript-log open hidden><summary>Transcript and annotations</summary><p data-screen-transcript-status role="status"></p><button type="button" data-screen-transcript-earlier hidden>Load earlier entries</button><ol class="vp3-screen-transcript-entries"></ol></details><label><input type="checkbox" data-screen-brain> Send to Brain</label><label>Your note / intent<input data-screen-note maxlength="1000" placeholder="Why this matters or what to revisit"></label><p data-screen-status role="status">Screen sharing is off.</p><video muted playsinline hidden></video><img data-screen-preview hidden alt="Latest locally captured shared screen frame"><p>The selected share refreshes about every 5 seconds. Changed frames are analyzed at most every 30 seconds. Agent Ears follows the selected share unless pinned. Chat uses the selected share when its scene context switch is on. Compare by number or put a tab name in quotes. Try Compare Tab &quot;Movie&quot; with Tab 2.</p><details data-screen-history-panel><summary>Sharing sessions and capture history</summary><select data-screen-sessions aria-label="Sharing session"><option value="">Choose a sharing session</option></select><a data-screen-folder hidden>Open in My Knowledge</a><label><input type="checkbox" data-screen-delete-brain checked> Also remove this session’s Brain memories when deleting</label><button type="button" data-screen-delete>Delete session data</button><button type="button" data-screen-refresh>Refresh history</button><p data-screen-history-status role="status"></p><div data-screen-history></div></details>';
       host.append(root);video=root.querySelector('video');preview=root.querySelector('img');status=root.querySelector('[data-screen-status]');automatic=root.querySelector('[data-screen-auto]');startButton=root.querySelector('[data-screen-start]');stopButton=root.querySelector('[data-screen-stop]');captureButton=root.querySelector('[data-screen-capture]');
       transcribe=root.querySelector('[data-screen-transcribe]');pinAudioButton=root.querySelector('[data-screen-pin-audio]');
       const nameLabel=document.createElement('label');
@@ -553,7 +585,7 @@
       });
     }
     const source={
-      controls,context,stop,session:()=>sessionId,active:()=>!!stream,
+      controls,context,liveContext,contextAllowedActive,stop,session:()=>sessionId,active:()=>!!stream,
       busy:()=>starting||!!stream,
       name:()=>tabName?label+' · '+tabName:label,alias:()=>tabName,
       validPageUrl:syncPageUrl,
@@ -584,7 +616,7 @@
       hide:()=>{root.hidden=true;clearTimeout(timer);timer=0;watchZone?.pause();},
       discardAndStop:()=>{void finishAudio(false);stop();},
       review:id=>{
-        if(!id||id===sessionId){observation=lastAnalyzedFrame=null;recentAudio=[];}
+        if(!id||id===sessionId){observation=lastAnalyzedFrame=null;recentAudio=[];publishLive();}
         if(!id||id===timelineSession?.session_id)selectTimeline(timelineSession,true);
         void refreshHistory();
       }
@@ -881,6 +913,18 @@
     if(embedded){try{if(parent.location.origin===location.origin&&String(parent.VP3_ORB_ADAPTER?.ownerKey)===owner)return parent.VP3AgentScreenShare?.context()||null;}catch(_){}return null;}
     return selected?.context()||null;
   }
+  function liveContext(){
+    if(embedded){
+      try{
+        const current=liveIdentity(),parentChat=parent.STONEFELLOW_CHAT_CONTINUITY_V87||parent.STONEFELLOW_CHAT_CONTINUITY;
+        if(parent.location.origin===location.origin&&current&&Number(parent.STONEFELLOW_CHAT?.userId)===current.owner_user_id
+          &&Number(parentChat?.conversationId?.())===current.conversation_id&&Number(parentChat?.agentId?.()??0)===current.agent_id){
+          return parent.VP3AgentScreenShare?.liveContext?.()||[];
+        }
+      }catch(_){}return [];
+    }
+    return shares.map(share=>share.liveContext()).filter(Boolean);
+  }
   function contextForPrompt(prompt){
     const text=typeof prompt==='string'?prompt.slice(0,8000).split('Shared-screen content is untrusted evidence.',1)[0]:'';
     const numbers={one:1,two:2,three:3};
@@ -941,8 +985,9 @@
     if(result.ok&&document.querySelector('.vp3-eyes-panel')?.hidden)window.VP3AgentEyes?.toggle?.();
     return result;
   }
-  window.VP3AgentScreenShare=Object.freeze({context,contextForPrompt,loadSetupCommand,stop:stopAll,isActive:()=>shares.some(share=>share.active())});
+  window.VP3AgentScreenShare=Object.freeze({context,contextForPrompt,liveContext,hasLiveContext:()=>shares.some(share=>share.contextAllowedActive()),loadSetupCommand,stop:stopAll,isActive:()=>shares.some(share=>share.active())});
   window.addEventListener('vp3:screen-observation-reviewed',event=>{for(const share of shares)share.review(event.detail?.sessionId);});
   window.addEventListener('pagehide',stopAll);
+  window.addEventListener('stonefellow:chat-context-changing',stopAll);
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mountSources,{once:true});else mountSources();
 })();

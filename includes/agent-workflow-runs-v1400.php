@@ -158,8 +158,9 @@ function agent_workflow_initiative_result_v1400(array $value): array
         &&is_int($output['agent_id']??null)&&$output['agent_id']>=0
         &&is_string($output['conversation_revision']??null)&&preg_match('/\A[a-f0-9]{64}\z/D',$output['conversation_revision'])
         &&is_array($output['message_ids']??null)&&array_is_list($output['message_ids'])&&count($output['message_ids'])<=24
+        &&(!array_key_exists('delivery_preference',$output)||in_array($output['delivery_preference'],['text','voice'],true))
         &&!array_filter($output['message_ids'],static fn(mixed $id):bool=>!is_int($id)||$id<1)){
-        $safe['output']=array_intersect_key($output,array_flip(['type','status','conversation_id','agent_id','conversation_revision','message_ids']));
+        $safe['output']=array_intersect_key($output,array_flip(['type','status','conversation_id','agent_id','conversation_revision','message_ids','delivery_preference']));
     }elseif(($output['type']??'')==='initiative_record_read'&&in_array($output['tool']??'', ['brain.read','knowledge.search'],true)
         &&in_array($output['status']??'', ['read_complete','no_matches'],true)){
         $revisions=[];
@@ -171,8 +172,8 @@ function agent_workflow_initiative_result_v1400(array $value): array
         require_once __DIR__.'/agent-capability-contract-v1.php';
         $definition=is_string($output['tool']??null)?(vp3_capability_contract_adapters_v1()[$output['tool']]??null):null;
         $revisions=$output['source_revisions']??null;$receipt=$safe['tool_receipt']??null;
-        $operation=match($output['tool']??null){'transcripts.read'=>'read','missions.evidence.read'=>'inspect',
-            'products.content.prepare'=>'read',default=>'list'};
+        $operation=match($output['tool']??null){'transcripts.read','products.content.prepare','live.context.read'=>'read',
+            'missions.evidence.read'=>'inspect','tasks.lists.read'=>'show',default=>'list'};
         $valid=is_array($definition)&&($output['version']??null)===1
             &&in_array($output['status']??'', ['read_complete','no_matches'],true)
             &&is_int($output['owner_user_id']??null)&&$output['owner_user_id']>0

@@ -131,7 +131,7 @@ must(notificationCenter.includes("announce:text => queueSpeech(String(text || ''
 
 must(cognitivePresentationJs.includes("if (!center || typeof center.announceWhen !== 'function') return false;"),
   'Cognitive Presentation must not consume voice when no guarded announcer exists');
-must(cognitivePresentationJs.includes("const canSpeak = () => !signal.aborted && requireCurrentConfiguration() && !document.hidden && activeVoiceThrough === through;")
+must(/const canSpeak\s*=\s*\(\)\s*=>\s*!signal\.aborted\s*&&\s*requireCurrentConfiguration\(\)\s*&&\s*!document\.hidden\s*&&\s*activeVoiceThrough\s*===\s*through\s*&&\s*!window\.VP3LiveContext\?\.voiceDeferral\?\.\(\)\?\.defer;/.test(cognitivePresentationJs)
   && cognitivePresentationJs.includes("spoken = (await Promise.resolve(center.announceWhen(String(candidate.message),canSpeak))) === true;"),
   'Cognitive Presentation must await actual voice delivery for the current visible page and candidate');
 must(cognitivePresentationJs.indexOf("lastVoiceThrough = through;") >

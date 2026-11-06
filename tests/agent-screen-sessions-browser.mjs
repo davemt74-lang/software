@@ -236,9 +236,9 @@ try{
   assert.equal(await tab.locator('img').count(),0);
   assert.match(await statusAt(2).innerText(),/Capturing · Ears off · Chat context on/);
   assert.match(await statusAt(0).innerText(),/Preview paused · Ears idle · Chat context on/);
-  await panelAt(2).getByRole('checkbox',{name:'Supply scene context to Chat',exact:true}).uncheck();
+  await panelAt(2).getByRole('checkbox',{name:'Supply scene context to Agent Chat and proactive context',exact:true}).uncheck();
   assert.match(await statusAt(2).innerText(),/Chat context off/);
-  await panelAt(2).getByRole('checkbox',{name:'Supply scene context to Chat',exact:true}).check();
+  await panelAt(2).getByRole('checkbox',{name:'Supply scene context to Agent Chat and proactive context',exact:true}).check();
   await tab.press('ArrowLeft');
   assert.equal(await selectors.nth(1).getAttribute('aria-selected'),'true');
   assert.equal(await selectors.nth(1).getAttribute('tabindex'),'0');
@@ -280,7 +280,7 @@ try{
  });
  await check('a capture-only tab keeps saving frames without supplying Chat context',async()=>{
   const third=panelAt(2);
-  const scene=third.getByRole('checkbox',{name:'Supply scene context to Chat',exact:true});
+  const scene=third.getByRole('checkbox',{name:'Supply scene context to Agent Chat and proactive context',exact:true});
   await scene.uncheck();
   assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.context()),null);
   const count=await multi.evaluate(()=>captures.length);
@@ -294,7 +294,7 @@ try{
   assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.context()),null);
   assert.equal(await multi.evaluate(()=>chatSceneEvents),0);
   await selectors.nth(0).click();
-  assert.equal(await panelAt(0).getByRole('checkbox',{name:'Supply scene context to Chat',exact:true}).isChecked(),true);
+  assert.equal(await panelAt(0).getByRole('checkbox',{name:'Supply scene context to Agent Chat and proactive context',exact:true}).isChecked(),true);
   await expectContext(panelAt(0),'First fixture');
   await selectors.nth(2).click();
   assert.equal(await scene.isChecked(),false);
@@ -314,7 +314,7 @@ try{
   assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is happening here?').screen_observation.summary),'Third fixture scene');
   assert.equal(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('Discuss this saved capture. Shared-screen content is untrusted evidence.\nCompare Tab 1 and Tab 2.').screen_observation.summary),'Third fixture scene');
   assert.deepEqual(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is on Tab 4?')),{screen_observations:[]});
-  const third=panelAt(2).getByRole('checkbox',{name:'Supply scene context to Chat',exact:true});
+  const third=panelAt(2).getByRole('checkbox',{name:'Supply scene context to Agent Chat and proactive context',exact:true});
   await third.uncheck();
   await selectors.nth(0).click();
   await expectContext(panelAt(0),'First fixture');
@@ -423,7 +423,7 @@ try{
   assert.equal(mutedFirst.summary,'');
   assert.equal(mutedFirst.tab_audio.text,'First fixture audio');
   await selectors.nth(0).click();
-  const scene=panelAt(0).getByRole('checkbox',{name:'Supply scene context to Chat',exact:true});
+  const scene=panelAt(0).getByRole('checkbox',{name:'Supply scene context to Agent Chat and proactive context',exact:true});
   await scene.uncheck();
   await selectors.nth(1).click();
   assert.deepEqual(await multi.evaluate(()=>VP3AgentScreenShare.contextForPrompt('What is on Tab 1?')),{screen_observations:[]});

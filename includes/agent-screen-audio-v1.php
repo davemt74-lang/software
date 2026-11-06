@@ -21,6 +21,35 @@ function screen_audio_file_v1(array $file): array
     if(substr($head,4,4)==='ftyp')return ['path'=>$path,'mime'=>'audio/mp4','name'=>'tab.m4a'];
     throw new InvalidArgumentException('Unsupported tab audio container.');
 }
+/** Provider labels describe the shared tab's audio, not the owner or their intent. */
+function screen_audio_event_label_v1(mixed $value): string
+{
+    if(!is_string($value)||strlen($value)>240)return '';
+    $label=trim($value," \t\r\n()[]");
+    return preg_match('/^[\p{L}\p{N}][\p{L}\p{N} ,_-]{0,79}$/u',$label)?$label:'';
+}
+function screen_audio_events_v1(mixed $words,float $duration): array
+{
+    if(!is_array($words)||!array_is_list($words)||count($words)>1024||!is_finite($duration)||$duration<=0)return [];
+    $events=[];
+    foreach($words as $word){
+        if(!is_array($word)||($word['type']??null)!=='audio_event')continue;
+        $label=screen_audio_event_label_v1($word['text']??null);$start=$word['start']??null;$end=$word['end']??null;
+        if($label===''||(!is_int($start)&&!is_float($start))||(!is_int($end)&&!is_float($end))
+            ||!is_finite($start)||!is_finite($end)||$start<0||$end<$start||$end>$duration+.25)continue;
+        $end=min($end,$duration);if($start>$end)continue;
+        $events[]=['label'=>$label,'start_seconds'=>$start,'end_seconds'=>$end,
+            'provider'=>'elevenlabs','model'=>'scribe_v2','source'=>'shared_tab_audio','classification'=>'provider_label'];
+        if(count($events)>=8)break;
+    }
+    return $events;
+}
+function screen_audio_request_options_v1(): array
+{
+    // The existing authorized shared-tab request also returns provider sound tags.
+    // https://elevenlabs.io/docs/api-reference/speech-to-text/convert
+    return ['model_id'=>'scribe_v2','timestamps_granularity'=>'word','diarize'=>'false','tag_audio_events'=>'true'];
+}
 function screen_audio_cues_v1(mixed $words,string $transcript,float $duration): array
 {
     if($transcript===''||!is_array($words)||!array_is_list($words)||count($words)>1024)return [];
@@ -38,7 +67,8 @@ function screen_audio_cues_v1(mixed $words,string $transcript,float $duration): 
         }
 
         $start=$word['start']??null;$end=$word['end']??null;
-        if(($word['type']??null)!=='word'||trim($text)===''||
+        $type=$word['type']??null;
+        if(!in_array($type,['word','audio_event'],true)||($type==='audio_event'&&screen_audio_event_label_v1($text)==='')||trim($text)===''||
             (!is_int($start)&&!is_float($start))||(!is_int($end)&&!is_float($end)))return [];
         if(!is_finite($start)||!is_finite($end)||$start<$previousEnd||$end<$start||$end>$duration+.25)return [];
         $end=min($end,$duration);
@@ -66,15 +96,17 @@ function screen_audio_transcribe_v1(array $file,array $user,float $duration,?cal
     if(function_exists('subscription_has_entitlement')&&!subscription_has_entitlement($user,'main_ai.access'))throw new RuntimeException('AI access is unavailable for this account.',403);
     [$key,$state]=ai_elevenlabs_credential();if($key==='')throw new RuntimeException('Configure the ElevenLabs speech service in AI settings to transcribe tab audio.',503);
     $file=screen_audio_file_v1($file);
-    if($transport)$data=$transport($file,'scribe_v2');
+    $options=screen_audio_request_options_v1();
+    if($transport)$data=$transport($file,'scribe_v2',$options);
     else{
         if(!function_exists('curl_init'))throw new RuntimeException('Speech transport is unavailable.',503);
         $curl=curl_init('https://api.elevenlabs.io/v1/speech-to-text');
-        curl_setopt_array($curl,[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_TIMEOUT=>75,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_HTTPHEADER=>['xi-api-key: '.$key,'Accept: application/json'],CURLOPT_POSTFIELDS=>['model_id'=>'scribe_v2','timestamps_granularity'=>'word','diarize'=>'false','tag_audio_events'=>'false','file'=>new CURLFile($file['path'],$file['mime'],$file['name'])]]);
+        curl_setopt_array($curl,[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_TIMEOUT=>75,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_HTTPHEADER=>['xi-api-key: '.$key,'Accept: application/json'],CURLOPT_POSTFIELDS=>$options+['file'=>new CURLFile($file['path'],$file['mime'],$file['name'])]]);
         $raw=curl_exec($curl);$status=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);curl_close($curl);$data=is_string($raw)?json_decode($raw,true):null;
         if($status<200||$status>=300||!is_array($data))throw new RuntimeException($status===401||$status===403?'The speech service rejected its saved credential or permission.':'Tab transcription failed. Check the speech service and retry.',503);
     }
     $transcript=screen_text_v1($data['text']??'',12000);
     $cues=screen_audio_cues_v1($data['words']??null,$transcript,$duration);
-    return ['transcript'=>$transcript]+($cues?['cues'=>$cues]:[]);
+    $events=screen_audio_events_v1($data['words']??null,$duration);
+    return ['transcript'=>$transcript]+($cues?['cues'=>$cues]:[])+($events?['audio_events'=>$events]:[]);
 }

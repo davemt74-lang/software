@@ -15,13 +15,40 @@ try{
     echo json_encode(['ok'=>true,'accepted'=>'voice_health','health'=>$health,'runtime'=>'phase5-v125'],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
   }
   if($action!=='heartbeat')throw new RuntimeException('Unknown activity action.');
+  // Validate a document's account binding before any activity write, including
+  // stop/pagehide beacons. A previous account's CSRF token may still be valid.
+  unset($context['_vp3_live_binding']);
+  $pageBinding=(string)($_SERVER['HTTP_X_VP3_WORKING_ATTENTION']??($input['working_attention_binding']??''));
+  if(array_key_exists('owner_user_id',$context)
+      &&(!is_int($context['owner_user_id'])||$context['owner_user_id']!==(int)$user['id'])){
+    throw new RuntimeException('Activity account changed. Refresh this page.',409);
+  }
+  if($pageBinding!==''&&(!function_exists('vp3_catch_up_page_binding_v1')
+      ||!hash_equals(vp3_catch_up_page_binding_v1($user),$pageBinding))){
+    throw new RuntimeException('Activity page changed. Refresh this page.',409);
+  }
+  if(array_key_exists('live_context',$context)){
+    if($pageBinding===''||($context['owner_user_id']??null)!==(int)$user['id']
+        ||!is_int($context['agent_id']??null)||$context['agent_id']<0
+        ||!is_int($context['conversation_id']??null)||$context['conversation_id']<1){
+      throw new RuntimeException('Live context binding is unavailable.',403);
+    }
+    require_once dirname(__DIR__).'/includes/agent-live-context-v1.php';
+    if(!function_exists('vp3_agent_chat_resolve_agent_v380'))require_once dirname(__DIR__).'/includes/agent-chat-boundary-v380.php';
+    $pdo=db();if(!$pdo instanceof PDO)throw new RuntimeException('Live context storage is unavailable.',503);
+    $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$context['agent_id']);
+    $principal=vp3_agent_chat_principal_v380($user,$agent);
+    $scope=vp3_live_context_scope_v1($pdo,$user,$principal,$context['conversation_id']);
+    $context['_vp3_live_binding']=['owner_user_id'=>(int)$scope['user']['id'],'agent_id'=>$scope['agent_id'],
+      'conversation_id'=>$scope['conversation_id'],'activity_tab'=>$context['activity_tab']??null,
+      'visible'=>$context['visible']??null,'focused'=>$context['focused']??null];
+  }
   $state=in_array((string)($input['state']??''),['working','paused','idle'],true)?(string)$input['state']:'idle';
   $activity=agent_activity_v94_record($user,$surface,$state,$context,(string)($input['reason']??'heartbeat'));
   agent_runtime_v125_trace('activity.heartbeat',['user_id'=>(int)$user['id'],'surface'=>$surface,'state'=>$state]);
   $core=[];
   // Normal saved Chat entry activates the core loop through this existing
   // authenticated observation. Reads and background-tab polls never opt in.
-  $pageBinding=(string)($_SERVER['HTTP_X_VP3_WORKING_ATTENTION']??'');
   if($surface==='chat'&&$pageBinding!==''&&function_exists('vp3_catch_up_page_binding_v1')
       &&hash_equals(vp3_catch_up_page_binding_v1($user),$pageBinding)){
     $eligibleCore=is_int($context['conversation_id']??null)&&$context['conversation_id']>0
@@ -52,4 +79,4 @@ try{
   }
   echo json_encode(['ok'=>true,'activity'=>$activity,'server_time_ms'=>(int)floor(microtime(true)*1000),
     'owner_user_id'=>(int)$user['id'],'trace_id'=>agent_runtime_v125_trace_id()]+$core,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-}catch(Throwable $e){agent_runtime_v125_trace('activity.error',['error_class'=>get_class($e)]);http_response_code(400);echo json_encode(['ok'=>false,'error'=>$e->getMessage(),'trace_id'=>agent_runtime_v125_trace_id()]);}
+}catch(Throwable $e){agent_runtime_v125_trace('activity.error',['error_class'=>get_class($e)]);http_response_code(in_array($e->getCode(),[403,409,503],true)?$e->getCode():400);echo json_encode(['ok'=>false,'error'=>$e->getMessage(),'trace_id'=>agent_runtime_v125_trace_id()]);}

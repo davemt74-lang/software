@@ -28,6 +28,7 @@
   if(button.id!=='chatVoiceButton')button.id='chatVoiceButton';
   button.disabled=typeof SpeechRecognitionCtor!=='function';
   button.title=button.disabled?'Live speech recognition is not supported by this browser.':'Start or stop voice conversation with Stonefellow';
+  button.setAttribute('aria-description','While you enable listening, coarse local sound activity and silence help the Agent time its replies. These activity signals contain no microphone audio, transcript or classified sounds.');
 
   const userId=Number(cfg.userId||0);
   const MODE_KEY=`stonefellow:voice-mode:${userId}`;
@@ -84,6 +85,8 @@
   let inputMonitorFrame=0;
   let inputNoiseFloor=.012;
   let lastNearFieldAt=0;
+  const microphonePageAgent=Number(cfg.agentId||0);
+  let microphoneSequence=0,microphoneBinding=null,microphoneCaptureBinding=null,microphoneQuietSince=0,microphoneLastEmit=0,microphoneLastActivity='',microphoneWindowStarted=0;
 
   let bargeRecognition=null;
   let bargeStarting=false,bargeFailures=0,bargeStartTimer=0;
@@ -420,9 +423,45 @@
     return performance.now()-lastNearFieldAt<=Math.max(200,Number(windowMs)||NEAR_FIELD_WINDOW_MS);
   }
 
+  function microphoneContext(){
+    const live=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY,current=window.STONEFELLOW_CHAT;
+    if(document.hidden||!document.hasFocus()||!current||Number(current.userId)!==userId
+      ||Number(current.agentId||0)!==microphonePageAgent||live?.isReady?.()!==true||live?.isRestoring?.()!==false)return null;
+    const conversation=Number(live.conversationId?.()),agent=Number(live.agentId?.());
+    if(!Number.isSafeInteger(userId)||userId<1||!Number.isSafeInteger(conversation)||conversation<1
+      ||!Number.isSafeInteger(agent)||agent<0||agent!==microphonePageAgent)return null;
+    return {owner_user_id:userId,agent_id:agent,conversation_id:conversation};
+  }
+
+  function clearMicrophoneActivity(){
+    const context=microphoneBinding;microphoneBinding=null;microphoneQuietSince=0;microphoneLastEmit=0;microphoneLastActivity='';microphoneWindowStarted=0;
+    if(context)window.dispatchEvent(new CustomEvent('vp3:microphone-activity',{detail:{active:false,context_allowed:false,activity:'uncertain',quiet_duration_ms:0,observed_window_ms:0,observed_at:new Date().toISOString(),sequence:++microphoneSequence,capture_generation:micGeneration,context}}));
+  }
+
+  function observeMicrophoneActivity(rms,threshold,quiet){
+    const context=microphoneContext(),track=inputTrack;
+    if(!voiceOn||responseWindowOwned||!track||track.readyState!=='live'||track.muted||track.enabled===false||!context||!microphoneCaptureBinding){clearMicrophoneActivity();return;}
+    if(JSON.stringify(microphoneCaptureBinding)!==JSON.stringify(context)){
+      // A capture started for one conversation cannot silently migrate to another.
+      clearMicrophoneActivity();disableVoice({persist:false});return;
+    }
+    microphoneBinding=context;
+    const now=performance.now();if(!microphoneWindowStarted)microphoneWindowStarted=now;
+    // Energy is deliberately not speech or a classified sound. Agent playback
+    // and enrollment make this evidence uncertain, never an owner-intent signal.
+    const uncertain=speaking||externalSpeechEpoch>0||enrollmentPcmOnly||window.VP3VoiceGuard?.enrolling?.()===true||!Number.isFinite(rms);
+    const activity=uncertain?'uncertain':rms>=threshold?'energy':quiet?'quiet':'uncertain';
+    if(activity==='quiet'){if(!microphoneQuietSince)microphoneQuietSince=now;}else microphoneQuietSince=0;
+    if(activity===microphoneLastActivity&&now-microphoneLastEmit<5000)return;
+    if(now-microphoneLastEmit<500&&microphoneLastActivity)return;
+    window.dispatchEvent(new CustomEvent('vp3:microphone-activity',{detail:{active:true,context_allowed:true,activity,quiet_duration_ms:activity==='quiet'?Math.min(300000,Math.max(0,Math.round(now-microphoneQuietSince))):0,observed_window_ms:Math.min(30000,Math.max(0,Math.round(now-microphoneWindowStarted))),observed_at:new Date().toISOString(),sequence:++microphoneSequence,capture_generation:micGeneration,context}}));
+    microphoneLastEmit=now;microphoneLastActivity=activity;
+  }
+
   function startInputMonitor(stream){
     if(inputMonitorFrame||!stream||typeof (window.AudioContext||window.webkitAudioContext)!=='function')return;
     try{
+      microphoneCaptureBinding=microphoneContext();
       const Context=window.AudioContext||window.webkitAudioContext;
       inputContext=new Context();
       window.VP3VoiceGuard?.attach(stream,inputContext);
@@ -439,6 +478,8 @@
         if(quiet)inputNoiseFloor=(inputNoiseFloor*.94)+(Math.max(.004,rms)*.06);
         const threshold=Math.max(.018,inputNoiseFloor*2.65+.004);
         if(rms>=threshold){lastNearFieldAt=performance.now();proof.nearFieldSignals+=1;}
+        observeMicrophoneActivity(rms,threshold,quiet);
+        if(!inputAnalyser||!inputStream){inputMonitorFrame=0;return;}
         inputMonitorFrame=requestAnimationFrame(tick);
       };
       inputMonitorFrame=requestAnimationFrame(tick);
@@ -447,6 +488,8 @@
   }
 
   function releaseProcessedMic(reason='release'){
+    clearMicrophoneActivity();
+    microphoneCaptureBinding=null;
     window.VP3VoiceGuard?.detach();
     micGeneration+=1;
     const stream=inputStream;inputStream=null;inputTrack=null;inputTrackMode='default';proof.processedMicReady=false;proof.micMonitorReady=false;lastNearFieldAt=0;
@@ -471,6 +514,7 @@
         const track=stream.getAudioTracks?.()[0]||null;if(!track||track.readyState!=='live')throw new Error('Processed microphone track is not live.');
         try{track.contentHint='speech-recognition';}catch(error){try{track.contentHint='speech';}catch(ignore){}}
         inputStream=stream;inputTrack=track;inputTrackMode='monitor';proof.processedMicReady=true;startInputMonitor(stream);log('MIC_TRACK_READY',{label:String(track.label||''),settings:track.getSettings?.()||{},constraints:track.getConstraints?.()||{}});
+        track.addEventListener?.('mute',()=>{if(inputTrack===track)clearMicrophoneActivity();});
         track.addEventListener?.('ended',()=>{if(inputTrack!==track)return;disableVoice({persist:false});proof.lastError='The microphone input ended. Select the microphone to reconnect.';setAgentState('error',proof.lastError);log('MIC_INPUT_ENDED',{});},{once:true});return track;
       }catch(error){for(const track of stream?.getTracks?.()||[]){try{track.stop();}catch(ignore){}}if(!current())return null;proof.micErrors+=1;proof.processedMicReady=false;inputTrackMode='default';log('MIC_TRACK_ERROR',{message:String(error?.message||error||'Microphone processing failed'),count:proof.micErrors});return null;}
     })();inputTrackPromise=acquisition;acquisition.finally(()=>{if(inputTrackPromise===acquisition)inputTrackPromise=null;});return acquisition;
@@ -913,6 +957,8 @@
   window.addEventListener('storage',event=>{if(event.key===AGENT_VOICE_SYNC_KEY&&event.newValue){try{const sync=JSON.parse(event.newValue);if(sync?.enabled===false){agentVoiceMaster=false;if(voiceOn)disableVoice({persist:true});}}catch(error){}return;}if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(!next)disableVoice({persist:false});});
   window.addEventListener('stonefellow:voice-lease-lost',()=>{if(voiceOn)disableVoice({persist:false});});
   window.addEventListener('stonefellow:chat-context-changing',()=>{queuedTranscript='';disableVoice({persist:true});});
+  window.addEventListener('blur',clearMicrophoneActivity);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)clearMicrophoneActivity();});
   window.addEventListener('stonefellow:agent-voice',event=>{const enabled=event.detail?.enabled!==false;agentVoiceMaster=enabled;if(!enabled&&voiceOn)disableVoice({persist:true});});
   window.addEventListener('stonefellow:agent-proactive-speech',event=>{
     const state=String(event.detail?.state||'');

@@ -15,9 +15,9 @@ function homeserver_execution_v220_registry(int $owner):array
             'local_only'=>true,'caller_supplied_context_only'=>true,'tools_enabled'=>false],
     ]]];
 }
-function homeserver_execution_v230_execute(int $owner,string $operation,array $payload):array
+function homeserver_execution_v230_execute(int $owner,string $operation,array $payload,?callable $fallback=null,bool $transientContext=false):array
 {
-    $GLOBALS['homeCalls'][]=[$owner,$operation,$payload];
+    $GLOBALS['homeCalls'][]=[$owner,$operation,$payload,$transientContext];
     if(isset($GLOBALS['homeFailure'])){
         if(isset($GLOBALS['replacePlan']))$GLOBALS['plan']=$GLOBALS['replacePlan'];
         throw new RuntimeException('HomeServer interrupted.');
@@ -106,3 +106,33 @@ foreach([
     catch(RuntimeException $e){check_model(($e instanceof Vp3InitiativeTransientInferenceV1)===$retryable,
         $label.' has the correct server-derived bounded retry classification');}
 }
+$GLOBALS['cloudResult']=['ok'=>true,'answer'=>'{"jobs":[]}'];
+unset($GLOBALS['homeFailure'],$GLOBALS['replacePlan']);
+$GLOBALS['homeCalls']=$GLOBALS['cloudCalls']=[];
+$GLOBALS['plan']=$home;
+vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-plan.v1',true,static fn()=>null);
+check_model(($GLOBALS['homeCalls'][0][3]??null)===true,'actual live inference opts into transient HomeServer transport');
+$GLOBALS['homeCalls']=$GLOBALS['cloudCalls']=[];
+$deny=static function():void{throw new RuntimeException('Current source changed.',409);};
+rejects_model(fn()=>vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-plan.v1',true,$deny),
+    'a stopped live source cannot start HomeServer inference');
+check_model($GLOBALS['homeCalls']===[]&&$GLOBALS['cloudCalls']===[],'revoked live evidence performs no model call');
+$GLOBALS['plan']=$cloud;
+rejects_model(fn()=>vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-plan.v1',true,$deny),
+    'a stopped live source cannot start Cloud inference');
+check_model($GLOBALS['cloudCalls']===[],'Cloud source refusal occurs before provider invocation');
+$GLOBALS['plan']=array_replace_recursive($home,['effective_preference'=>'auto','allow_vp3_fallback'=>true,
+    'homeserver_cloud_allowed'=>true,'cloud'=>['ready'=>true]]);
+$GLOBALS['homeFailure']=true;$guardCalls=0;
+$guard=static function()use(&$guardCalls):void{if(++$guardCalls>1)throw new RuntimeException('Source stopped during local inference.',409);};
+rejects_model(fn()=>vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-plan.v1',true,$guard),
+    'source revocation during local work blocks a permitted later Cloud fallback');
+check_model($guardCalls===2&&count($GLOBALS['homeCalls'])===1&&$GLOBALS['cloudCalls']===[],
+    'each inference attempt rechecks the actual live source without silently reusing old context');
+unset($GLOBALS['homeFailure']);
+$GLOBALS['homeCalls']=$GLOBALS['cloudCalls']=[];$GLOBALS['plan']=$cloud;
+$changePolicy=static function()use($home):void{$GLOBALS['plan']=$home;};
+rejects_model(fn()=>vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-plan.v1',true,$changePolicy),
+    'a newly strict healthy HomeServer-only policy blocks an earlier Cloud selection');
+check_model($GLOBALS['homeCalls']===[]&&$GLOBALS['cloudCalls']===[],
+    'transport policy is fresh after source preflight and no unselected provider is substituted');

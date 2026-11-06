@@ -15,7 +15,7 @@ try{
     $at=$capturedAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z');
     $duration=filter_var($_POST['duration_seconds']??null,FILTER_VALIDATE_FLOAT);if($duration===false||$duration<.5||$duration>35)throw new InvalidArgumentException('Use audio segments up to 35 seconds.');
     $file=$_FILES['audio']??[];screen_audio_file_v1($file);$claim=screen_audio_budget_v1($uid);session_write_close();$transcription=screen_audio_transcribe_v1($file,$user,$duration);
-    if($transcription['transcript']==='')$response=['ok'=>true,'capture'=>null,'message'=>'No speech detected.'];
+    if($transcription['transcript']===''&&empty($transcription['audio_events']))$response=['ok'=>true,'capture'=>null,'message'=>'No speech or labelled sounds detected.'];
     else{$r=screen_capture_store_v1($pdo,$user,$sid,$id,$transcription+['captured_at'=>$at,'surface'=>'browser','duration_seconds'=>$duration,'provider'=>'elevenlabs','model'=>'scribe_v2'],'tab_audio');$response=['ok'=>true,'capture'=>screen_capture_public_v1($r)];}
 }catch(Throwable $e){$code=(int)$e->getCode();$status=in_array($code,[403,404,405,409,413,419,429,502,503],true)?$code:422;$response=['ok'=>false,'error'=>$e instanceof PDOException?'Tab audio storage is unavailable.':$e->getMessage()];}
 finally{if($claim!=='')try{screen_audio_budget_v1($uid,$claim);}catch(Throwable $ignored){}}

@@ -66,7 +66,8 @@ try{
             }
         }
     }
-    $initiativeMutation=$method==='POST'&&in_array($action,['initiative_tick','initiative_setting'],true);
+    $initiativeActions=['initiative_tick','initiative_setting','voice_candidates','voice_claim','voice_finish'];
+    $initiativeMutation=$method==='POST'&&in_array($action,$initiativeActions,true);
     $namespace=$initiativeMutation?'':vp3_cognitive_agent_namespace_v500($pdo,$user,$agentId);
     if($readState){
         // Source projection may take longer than the lightweight lifecycle
@@ -85,7 +86,7 @@ try{
     if($method!=='POST')vp3_cognitive_presentation_api_json_v510(405,['ok'=>false,'error'=>'method_not_allowed']);
     if(!hash_equals(csrf_token(),trim((string)($input['csrf_token']??''))))vp3_cognitive_presentation_api_json_v510(419,['ok'=>false,'error'=>'csrf']);
 
-    if(in_array($action,['initiative_tick','initiative_setting'],true)){
+    if(in_array($action,$initiativeActions,true)){
         $rawAgent=$input['agent_id']??0;
         $rawConversation=$input['conversation_id']??null;
         $validId=static fn(mixed $id,bool $zero):bool=>(is_int($id)||is_string($id))
@@ -102,6 +103,12 @@ try{
             vp3_cognitive_presentation_api_json_v510(404,['ok'=>false,'error'=>'conversation_not_found']);
         }
         require_once dirname(__DIR__).'/includes/agent-initiative-runtime-v1.php';
+        if(in_array($action,['voice_candidates','voice_claim','voice_finish'],true)){
+            require_once dirname(__DIR__).'/includes/agent-initiative-voice-v1.php';
+            if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+            $voice=vp3_initiative_voice_v1($pdo,$user,$agentId,$conversationId,$action,$input);
+            vp3_cognitive_presentation_api_json_v510(200,$voice);
+        }
         if($action==='initiative_setting'){
             if(!is_bool($input['enabled']??null))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_initiative_setting']);
             $revision=$input['policy_revision']??null;
@@ -160,7 +167,7 @@ try{
 }catch(DomainException|InvalidArgumentException $e){
     vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>$e->getMessage()]);
 }catch(Throwable $e){
-    if(in_array($action??'',['initiative_tick','initiative_setting'],true)&&in_array($e->getCode(),[403,404,409,503],true)){
+    if(in_array($action??'',['initiative_tick','initiative_setting','voice_candidates','voice_claim','voice_finish'],true)&&in_array($e->getCode(),[403,404,409,503],true)){
         $reason=$e->getCode()===409?'initiative_settings_changed':($e->getCode()===503?'initiative_unavailable':'initiative_context_changed');
         vp3_cognitive_presentation_api_json_v510($e->getCode(),['ok'=>false,'error'=>$reason]);
     }
