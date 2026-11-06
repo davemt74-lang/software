@@ -111,8 +111,32 @@ function homeserver_capability_v024_string_list(mixed $value): array
     return array_keys($out);
 }
 
-function homeserver_capability_v024_raw(int $userId): array
+function homeserver_capability_v024_raw(int $userId,bool $readOnly=false,?PDO $pdo=null): array
 {
+    if($readOnly){
+        try{
+            if($userId<1||!function_exists('homeserver_vp3_connection'))throw new RuntimeException('HomeServer capability metadata is unavailable.',503);
+            $row=homeserver_vp3_connection($userId,true,$pdo);
+            if(!$row)return [];
+            $json=$row['capabilities_json']??null;
+            if(!is_string($json)||trim($json)==='')throw new RuntimeException('HomeServer capability metadata is unavailable.',503);
+            $object=json_decode($json,false,64,JSON_THROW_ON_ERROR);
+            if(!$object instanceof stdClass||!isset($object->features)||!is_array($object->features)){
+                throw new RuntimeException('HomeServer capability metadata is unavailable.',503);
+            }
+            $decoded=json_decode($json,true,64,JSON_THROW_ON_ERROR);
+            if(!is_array($decoded)||!isset($decoded['features'])||!is_array($decoded['features'])
+                ||!array_is_list($decoded['features'])||count($decoded['features'])>256){
+                throw new RuntimeException('HomeServer feature metadata is unavailable.',503);
+            }
+            foreach($decoded['features'] as $feature){
+                if(!is_string($feature)||trim($feature)===''||strlen($feature)>160)throw new RuntimeException('HomeServer feature metadata is unavailable.',503);
+            }
+            return $decoded;
+        }catch(Throwable $error){
+            throw new RuntimeException('HomeServer capability metadata is unavailable.',503,$error);
+        }
+    }
     if ($userId < 1 || !function_exists('homeserver_vp3_connection')) return [];
     try {
         $row = homeserver_vp3_connection($userId);

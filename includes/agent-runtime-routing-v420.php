@@ -20,6 +20,39 @@ function vp3_agent_runtime_preference_v420(PDO $pdo,int $userId,int $agentId): a
     return agent_compute_v023_policy_from_values($account,$override);
 }
 
+/** Existing compute semantics without installer DDL or a network operation. */
+function vp3_agent_runtime_preference_readonly_v420(PDO $pdo,int $userId,int $agentId): array
+{
+    if($userId<1||$agentId<0)throw new RuntimeException('Agent compute policy is unavailable.',403);
+    require_once __DIR__.'/agent-compute-v020.php';
+    require_once __DIR__.'/agent-compute-v023.php';
+    try{
+        $driver=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        if(!in_array($driver,['sqlite','mysql'],true))throw new RuntimeException('Agent compute policy is unavailable.',503);
+        $read=static function(string $table,string $sql,array $arguments)use($pdo,$driver):mixed{
+            if($driver==='sqlite'){
+                $q=$pdo->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?");
+                $q->execute([$table]);if($q->fetchColumn()===false)return null;
+            }
+            try{$q=$pdo->prepare($sql);$q->execute($arguments);return $q->fetchColumn();}
+            catch(PDOException $error){
+                // Metadata visibility alone does not prove absence on MySQL.
+                // Only its exact missing-table result permits the legacy default.
+                if($driver==='mysql'&&($error->errorInfo[0]??null)==='42S02'&&(int)($error->errorInfo[1]??0)===1146)return null;
+                throw $error;
+            }
+        };
+        $value=$read('agent_compute_preferences','SELECT preference FROM agent_compute_preferences WHERE user_id=? LIMIT 1',[$userId]);
+        $account=is_string($value)&&agent_compute_v020_valid_preference($value)?$value:'auto';
+        $value=$read('agent_compute_overrides','SELECT preference FROM agent_compute_overrides WHERE user_id=? AND agent_id=? LIMIT 1',[$userId,$agentId]);
+        $override=is_string($value)&&agent_compute_v023_valid_override($value)?$value:'inherit';
+        return agent_compute_v023_policy_from_values($account,$override);
+    }catch(Throwable $error){
+        // An unreadable table/schema is not proof that no privacy preference exists.
+        throw new RuntimeException('Agent compute policy is unavailable.',503,$error);
+    }
+}
+
 function vp3_agent_runtime_cloud_state_v420(array $user): array
 {
     $state=['ready'=>false,'entitled'=>false,'unlimited'=>false,'remaining'=>0,'reason'=>'cloud_unavailable'];

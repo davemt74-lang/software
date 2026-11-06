@@ -21,7 +21,7 @@ Purpose: connect a saved proactive post to the owner's natural reply, a durable 
 9. Recent authorized engagement decisions/outcomes reach planning and check-ins, without treating silence as disinterest or generating new work from the Agent's own repeated reports.
 10. Real endpoint, browser and native database race tests pass; exact-head PR and post-merge checks are officially green; the original deploy ZIP matches the merged tree and manifest.
 
-Status: implementation in progress. Score is pending acceptance evidence. Installed-site behavior beyond the owner's observed status is not claimed verified.
+Status: released through PR #727 and corrective PR #728, verified main merge `67e9392dbb0eaf9bd696842056701f2b36cd0f37`. The defined section passed its exact-head and post-merge gates and original production package verification. Installed-site behavior beyond the owner's observed status is not claimed verified.
 
 The flow uses ordinary Chat's automatic Agent core and the existing composer. Explicit Pause and individual source permissions remain authoritative. A private continuation prepares work using its verified original sources; domain actions retain their own permission and confirmation contracts.
 
@@ -30,6 +30,8 @@ Interrupted-request recovery requires a trusted saved request anchor. A process 
 The **Top of Mind** feed introduced in PR #726 adds live work status inside the floating Agent's existing Brain view. It reads canonical work records and shows authorized objectives, actual progress, waiting states and verified outcomes. Its acceptance criteria and evidence limits are documented in `docs/agent-top-of-mind-release.md`. Optional Brain memory permissions remain separate from the core work feed. Conversational follow-through continues in this section and was not included in the feed-only revision. The follow-through release also corrects the feed deadline acceptance fixture: the held request must belong to the current Brain view after its initial projection settles; an obsolete view is correctly cancelled. Final certification uses the corrected exact-head and post-merge checks.
 
 ## Section 2: shared capability adapters
+
+Implementation and acceptance are specified in `docs/agent-shared-capabilities-v1.md`. The six initial leaves reuse the canonical Initiative workflow and existing domain readers. Release certification remains pending the exact-head official checks and verified merged production artifact.
 
 Connect existing foreground executors to the same planner through a declared capability hierarchy. Each adapter defines source selection, read/private preparation/review/action class, authorization, compute, cost and retention requirements, current-source revalidation, canonical execution receipt, and the next owner decision. Start with bounded reads and useful private preparation; consequential actions retain their current confirmation contracts. Calendar and Mission context already participate and should not be rebuilt as isolated engagement engines.
 

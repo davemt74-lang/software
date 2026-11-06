@@ -33,10 +33,11 @@ function homeserver_scope_v026_normalize(mixed $value): array
     ];
 }
 
-function homeserver_scope_v026_supported(int $userId): bool
+function homeserver_scope_v026_supported(int $userId,bool $readOnly=false,?PDO $pdo=null): bool
 {
+    if($readOnly&&($userId<1||!function_exists('homeserver_capability_v024_raw')))throw new RuntimeException('HomeServer scope metadata is unavailable.',503);
     if ($userId < 1 || !function_exists('homeserver_capability_v024_raw')) return false;
-    $raw = homeserver_capability_v024_raw($userId);
+    $raw = $readOnly?homeserver_capability_v024_raw($userId,true,$pdo):homeserver_capability_v024_raw($userId);
     $features = function_exists('homeserver_capability_v024_string_list')
         ? homeserver_capability_v024_string_list($raw['features'] ?? [])
         : homeserver_scope_v026_string_list($raw['features'] ?? []);
@@ -64,9 +65,48 @@ function homeserver_scope_v026_last_cloud_block(int $userId): bool
         && !empty($_SESSION['homeserver_scope_v026'][$userId]['cloud_blocked']);
 }
 
-function homeserver_scope_v026_fetch(int $userId, bool $forceRefresh = false): array
+function homeserver_scope_v026_fetch(int $userId, bool $forceRefresh = false,bool $readOnly=false,?PDO $pdo=null): array
 {
     static $cache = [];
+    static $readOnlyCache=null;
+    if($readOnly){
+        $pdo??=db();
+        if(!$pdo||$userId<1||$pdo->inTransaction())throw new RuntimeException('HomeServer scope refresh is unavailable.',503);
+        $readOnlyCache??=new WeakMap();
+        $cached=$readOnlyCache[$pdo]??[];
+        if(!$forceRefresh&&isset($cached[$userId]))return $cached[$userId];
+        $save=static function(array $state)use(&$readOnlyCache,$pdo,$userId):array{
+            $saved=$readOnlyCache[$pdo]??[];$saved[$userId]=$state;$readOnlyCache[$pdo]=$saved;return $state;
+        };
+        $lastBlocked=isset($cached[$userId])?homeserver_scope_v026_blocks_cloud($cached[$userId])
+            :homeserver_scope_v026_last_cloud_block($userId);
+        $state=['version'=>'v0.26','supported'=>false,'available'=>false,'reason'=>'scope_not_supported',
+            'scope'=>null,'last_known_cloud_blocked'=>$lastBlocked];
+        // Only a successful strict metadata read can establish legacy absence.
+        // Errors are not converted into an apparently unsupported capability.
+        if(!homeserver_scope_v026_supported($userId,true,$pdo))return $save($state);
+        $state['supported']=true;
+        if(!function_exists('homeserver_agent_v018_credentials')||!function_exists('homeserver_vp3_remote_operation_for_user')){
+            throw new RuntimeException('HomeServer scope transport is unavailable.',503);
+        }
+        $credentials=homeserver_agent_v018_credentials($userId,true,$pdo);
+        if(!$credentials){$state['reason']='homeserver_not_paired';return $save($state);}
+        try{
+            $result=homeserver_vp3_remote_operation_for_user($userId,'tools.list',[],(string)$credentials['home'],true,$pdo);
+            $scope=$result['app_scope']??($result['payload']['app_scope']??null);
+            if(!is_array($scope)){$state['reason']='scope_not_reported';return $save($state);}
+            // Missing or coercible privacy fields do not establish permission.
+            if(!array_key_exists('cloud_allowed',$scope)||!is_bool($scope['cloud_allowed'])){
+                $state['reason']='scope_invalid';return $save($state);
+            }
+            $state['available']=true;$state['reason']='scope_ready';
+            $state['scope']=homeserver_scope_v026_normalize($scope);
+            $state['last_known_cloud_blocked']=false;
+            return $save($state);
+        }catch(Throwable $error){
+            $state['reason']='homeserver_unavailable';return $save($state);
+        }
+    }
     if (!$forceRefresh && isset($cache[$userId])) return $cache[$userId];
 
     $state = [
@@ -82,7 +122,8 @@ function homeserver_scope_v026_fetch(int $userId, bool $forceRefresh = false): a
         return $cache[$userId] = $state;
     }
     $state['supported'] = true;
-    if (!function_exists('homeserver_agent_v018_credentials') || !function_exists('homeserver_vp3_remote_operation')) {
+    if (!function_exists('homeserver_agent_v018_credentials')
+        ||(!function_exists('homeserver_vp3_remote_operation_for_user')&&!function_exists('homeserver_vp3_remote_operation'))) {
         $state['reason'] = 'homeserver_unavailable';
         $state['last_known_cloud_blocked'] = homeserver_scope_v026_last_cloud_block($userId);
         return $cache[$userId] = $state;
@@ -95,17 +136,28 @@ function homeserver_scope_v026_fetch(int $userId, bool $forceRefresh = false): a
             homeserver_scope_v026_set_last_cloud_block($userId, false);
             return $cache[$userId] = $state;
         }
-        $result = homeserver_vp3_remote_operation(
-            (string)($credentials['relay'] ?? ''),
-            'tools.list',
-            [],
-            (string)($credentials['home'] ?? '')
-        );
+        if(function_exists('homeserver_vp3_remote_operation_for_user')){
+            // HTTPS pairing has no legacy relay token. Keep capability reads
+            // on the same canonical owner-aware transport as Agent requests.
+            $result=homeserver_vp3_remote_operation_for_user($userId,'tools.list',[],(string)($credentials['home']??''));
+        }else{
+            // Compatibility only for installations without the owner-aware
+            // transport. An owner-aware failure must never try another route.
+            if(($credentials['transport']??'')==='vp3_https'||trim((string)($credentials['relay']??''))===''){
+                throw new RuntimeException('HomeServer scope transport is unavailable.',503);
+            }
+            $result=homeserver_vp3_remote_operation((string)$credentials['relay'],'tools.list',[],(string)($credentials['home']??''));
+        }
         $scope = $result['app_scope'] ?? ($result['payload']['app_scope'] ?? null);
         if (!is_array($scope)) {
             $state['reason'] = 'scope_not_reported';
             $state['last_known_cloud_blocked'] = homeserver_scope_v026_last_cloud_block($userId);
             return $cache[$userId] = $state;
+        }
+        if(!array_key_exists('cloud_allowed',$scope)||!is_bool($scope['cloud_allowed'])){
+            $state['reason']='scope_invalid';
+            $state['last_known_cloud_blocked']=homeserver_scope_v026_last_cloud_block($userId);
+            return $cache[$userId]=$state;
         }
         $state['available'] = true;
         $state['reason'] = 'scope_ready';

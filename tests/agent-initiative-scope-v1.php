@@ -67,7 +67,8 @@ $pdo->exec("ALTER TABLE chat_conversations ADD COLUMN updated_at DATETIME;
 function agent_brain_schema_ready(): bool{return true;}
 function agent_brain_normalize(string $text): string{return strtolower(trim($text));}
 function agent_brain_sentences(string $text): array{return [$text];}
-function user_calendar_default_timezone_v1300(PDO $pdo,array $user): string{return 'UTC';}
+require_once dirname(__DIR__).'/includes/agent-scheduling-v430.php';
+require_once dirname(__DIR__).'/includes/user-calendar-v1300.php';
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat'): array
 {
     $GLOBALS['scopeRoutes'][]=[(int)$user['id'],$agentId,$surface];

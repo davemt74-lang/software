@@ -167,6 +167,35 @@ function agent_workflow_initiative_result_v1400(array $value): array
             if(is_string($ref)&&strlen($ref)<=190&&is_string($revision)&&preg_match('/\A[a-f0-9]{64}\z/D',$revision))$revisions[$ref]=$revision;
         }
         $safe['output']=['type'=>$output['type'],'tool'=>$output['tool'],'status'=>$output['status'],'source_revisions'=>$revisions];
+    }elseif(($output['type']??'')==='initiative_capability_read'){
+        require_once __DIR__.'/agent-capability-contract-v1.php';
+        $definition=is_string($output['tool']??null)?(vp3_capability_contract_adapters_v1()[$output['tool']]??null):null;
+        $revisions=$output['source_revisions']??null;$receipt=$safe['tool_receipt']??null;
+        $operation=match($output['tool']??null){'transcripts.read'=>'read','missions.evidence.read'=>'inspect',
+            'products.content.prepare'=>'read',default=>'list'};
+        $valid=is_array($definition)&&($output['version']??null)===1
+            &&in_array($output['status']??'', ['read_complete','no_matches'],true)
+            &&is_int($output['owner_user_id']??null)&&$output['owner_user_id']>0
+            &&is_int($output['agent_id']??null)&&$output['agent_id']>=0
+            &&is_int($output['conversation_id']??null)&&$output['conversation_id']>0
+            &&is_string($output['primary']??null)&&strlen($output['primary'])<=190
+            &&preg_match($definition['source_pattern'],$output['primary'])===1
+            &&is_array($revisions)&&count($revisions)>0&&count($revisions)<=5&&isset($revisions[$output['primary']])
+            &&is_string($output['read_fingerprint']??null)&&preg_match('/\A[a-f0-9]{64}\z/D',$output['read_fingerprint'])
+            &&is_string($output['coverage_fingerprint']??null)&&preg_match('/\A[a-f0-9]{64}\z/D',$output['coverage_fingerprint'])
+            &&in_array($output['coverage_state']??'', ['ready','limited','bounded'],true)
+            &&is_int($output['record_count']??null)&&$output['record_count']>=0&&$output['record_count']<=20
+            &&is_array($receipt)&&$receipt['capability']===$definition['foreground_capability']
+            &&$receipt['operation']===$operation&&$receipt['record_id']===0
+            &&$receipt['status']===$output['status']&&$receipt['count']===$output['record_count']
+            &&($output['status']==='no_matches'?($output['record_count']===0):($output['record_count']>0));
+        if($valid)foreach($revisions as $ref=>$revision){
+            if(!is_string($ref)||$ref===''||strlen($ref)>190||!is_string($revision)||!preg_match('/\A[a-f0-9]{64}\z/D',$revision)){$valid=false;break;}
+        }
+        if($valid){
+            $safe['output']=array_intersect_key($output,array_flip(['type','version','tool','status','owner_user_id','agent_id',
+                'conversation_id','primary','source_revisions','read_fingerprint','record_count','coverage_fingerprint','coverage_state']));
+        }
     }elseif(($output['type']??'')==='initiative_workbench_review'&&($output['status']??'')==='review_required'){
         $action=$output['review_action']??null;
         if(is_array($action)&&in_array($action['tool']??'', ['product','screen','mission'],true)
