@@ -57,7 +57,15 @@ try{
   assert.deepEqual(screenRequests.slice(before).map(r=>r.action),['start','delete_session']);
   assert.equal(await page.evaluate(()=>workbenchOpens.length),1);
  });
- await test('Stop releases camera and TV overlays',async()=>{await page.locator('[data-eyes-stop]').click();await page.waitForFunction(()=>tvStream.getTracks().every(t=>t.readyState==='ended'));await page.waitForFunction(()=>document.querySelectorAll('.vp3-tv-box').length===0);});
+ await test('the Chat switch releases camera and TV overlays without reopening capture',async()=>{
+  // A main Chat capture belongs to its original conversation. The preceding
+  // context switch now stops it automatically, before the held session reply.
+  await page.waitForFunction(()=>!VP3AgentEyes.isActive()&&tvStream.getTracks().every(t=>t.readyState==='ended'));
+  assert.equal(await page.locator('.vp3-tv-box').count(),0);
+  assert.equal(await page.locator('[data-eyes-stop]').isDisabled(),true);
+  assert.equal(await page.locator('[data-eyes-start]').isEnabled(),true);
+  assert.equal(await page.evaluate(()=>captures.length),1);
+ });
  await test('saved history reads with Eyes off',async()=>{await page.locator('[data-tv-history]').click();await page.waitForFunction(()=>document.querySelector('[data-tv-feed]').textContent.includes('Cheers'));assert.equal(await page.evaluate(()=>captures.length),1);assert.equal(await page.evaluate(()=>VP3AgentEyes.isActive()),false);const count=screenRequests.length;await page.getByRole('button',{name:'Save TV frame for editing'}).click();assert.match(await page.locator('[data-tv-save-frame-status]').innerText(),/one current TV/);assert.equal(screenRequests.length,count);});
  await test('What was I watching retrieves saved timestamp and evidence with Eyes off',async()=>{const before=await page.evaluate(()=>captures.length);const result=await page.evaluate(async()=>{const response=await fetch('/tv',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'chat',query:'What was I watching?'})});return response.json();});assert.equal(result.handled,true);assert.match(result.answer,/Cheers.*likely/);assert.match(result.answer,/\d{4}-\d{2}-\d{2}T.*UTC/);assert.match(result.answer,/Saved screen clue.*Cheers/);assert.match(result.answer,/personal viewing unconfirmed/);assert.equal(result.sources[0].url,'https://www.imdb.com/title/tt0083399/');assert.equal(result.tv_watching.camera_required,false);assert.equal(await page.evaluate(()=>captures.length),before);assert.equal(await page.evaluate(()=>VP3AgentEyes.isActive()),false);});
  await test('a viewing statement does not read history and a live TV question opens no camera', async () => {
@@ -81,7 +89,29 @@ try{
  await test('a delayed history refresh preserves the owner correction draft',async()=>{holdHistory=true;await page.locator('[data-tv-history]').click();for(let n=0;n<100&&!heldHistory;n++)await page.waitForTimeout(20);assert.ok(heldHistory);await page.locator('[data-tv-title]').fill('Cheers');await page.locator('[data-tv-episode]').fill('Season 1, Episode 1');await page.locator('[data-tv-watched]').check();const refreshed=page.waitForResponse(r=>r.url().endsWith('/tv')&&JSON.parse(r.request().postData()||'{}').action==='history');heldHistory();heldHistory=null;await (await refreshed).finished();await page.waitForTimeout(50);assert.equal(await page.locator('[data-tv-episode]').inputValue(),'Season 1, Episode 1');assert.equal(await page.locator('[data-tv-watched]').isChecked(),true);await page.locator('[data-tv-correct]').click();await page.waitForFunction(()=>document.querySelector('[data-tv-feed]').textContent.includes('you confirmed watching'));assert.match(await page.locator('[data-tv-interests]').innerText(),/confirmed sessions/);});
  await test('explicit preferences can be forgotten independently',async()=>{await page.locator('[data-tv-preference]').fill('I enjoy this comedy');await page.locator('[data-tv-remember]').click();await page.waitForFunction(()=>document.querySelector('[data-tv-interests]').textContent.includes('I enjoy'));await page.locator('[data-tv-interests] button').click();await page.waitForFunction(()=>!document.querySelector('[data-tv-interests]').textContent.includes('I enjoy'));});
  await test('deletion clears feed and derived patterns',async()=>{await page.locator('[data-tv-forget]').click();await page.waitForFunction(()=>document.querySelector('[data-tv-feed]').children.length===0);assert.equal((await page.locator('[data-tv-interests]').innerText()).trim(),'');});
- await test('Stop fences a pending analyzed response',async()=>{holdAnalysis=true;await page.locator('[data-eyes-start]').click();await page.waitForFunction(()=>VP3AgentEyes.isActive());for(let n=0;n<100&&!held;n++)await page.waitForTimeout(50);assert.ok(held);const commits=requests.filter(r=>r.action==='commit').length;await page.locator('[data-eyes-stop]').click();held();held=null;await page.waitForTimeout(200);assert.equal(requests.filter(r=>r.action==='commit').length,commits);await page.locator('[data-tv-history]').click();await page.waitForTimeout(80);assert.equal(await page.locator('[data-tv-feed] li').count(),0);});
+ await test('explicit camera restart and Stop release tracks, clear overlays and fence a pending analyzed response',async()=>{
+  const cameras=await page.evaluate(()=>captures.length);
+  holdAnalysis=true;
+  await page.locator('[data-eyes-start]').click();
+  await page.waitForFunction(()=>VP3AgentEyes.isActive());
+  assert.equal(await page.evaluate(()=>captures.length),cameras+1);
+  assert.equal(await page.evaluate(()=>captures.at(-1).audio),false);
+  for(let n=0;n<100&&!held;n++)await page.waitForTimeout(50);
+  assert.ok(held);
+  assert.ok(await page.locator('.vp3-tv-box').count()>0);
+  const commits=requests.filter(r=>r.action==='commit').length;
+  await page.locator('[data-eyes-stop]').click();
+  await page.waitForFunction(()=>!VP3AgentEyes.isActive()&&tvStream.getTracks().every(t=>t.readyState==='ended'));
+  assert.equal(await page.locator('.vp3-tv-box').count(),0);
+  assert.equal(await page.locator('[data-eyes-stop]').isDisabled(),true);
+  assert.equal(await page.locator('[data-eyes-start]').isEnabled(),true);
+  held();held=null;
+  await page.waitForTimeout(200);
+  assert.equal(requests.filter(r=>r.action==='commit').length,commits);
+  await page.locator('[data-tv-history]').click();
+  await page.waitForTimeout(80);
+  assert.equal(await page.locator('[data-tv-feed] li').count(),0);
+ });
  await test('another account has separate settings and history',async()=>{await page.goto(base+'/?owner=8');await page.waitForFunction(()=>window.VP3TVWatching);await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-eyes]').click();await page.locator('.vp3-tv-watching summary').click();assert.equal(await page.evaluate(()=>VP3TVWatching.enabled()),false);assert.equal(await page.locator('[data-tv-feed] li').count(),0);assert.equal(await page.evaluate(()=>captures.length),0);});
  await test('optional detector failure preserves participant camera',async()=>{await page.locator('[data-tv-enabled]').check();await page.locator('[data-tv-sharing]').check();await page.locator('[data-tv-save]').click();await page.waitForFunction(()=>VP3TVWatching.enabled());await page.evaluate(()=>window.throwObject=true);await page.locator('[data-eyes-start]').click();await page.waitForFunction(()=>!VP3TVWatching.needsDetection());assert.equal(await page.evaluate(()=>VP3AgentEyes.isActive()),true);assert.match(await page.locator('[data-tv-status]').innerText(),/manually/);});
  await test('manual screen selection recognizes without detector',async()=>{await page.locator('[data-tv-select]').click();const r=await page.locator('.vp3-eyes-camera').boundingBox();await page.mouse.move(r.x+r.width*.27,r.y+r.height*.23);await page.mouse.down();await page.mouse.move(r.x+r.width*.73,r.y+r.height*.55);await page.mouse.up();await page.waitForFunction(()=>document.querySelector('[data-tv-feed]').textContent.includes('Cheers'));assert.equal(await page.locator('.vp3-tv-box').count(),1);assert.equal(await page.locator('.vp3-eyes-boxes .vp3-eyes-box').count(),1);});

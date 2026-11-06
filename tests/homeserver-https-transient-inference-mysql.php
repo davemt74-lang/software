@@ -4,13 +4,15 @@ declare(strict_types=1);
 // Explicit MySQL only: every run creates and drops its own random database.
 // Never print connection arguments, credentials, raw driver errors or context.
 ini_set('zend.exception_ignore_args','1');
+$GLOBALS['nativePhase']='startup';$GLOBALS['nativeBarrierEvidence']=[];
 set_exception_handler(static function(Throwable $error): void{
     $state=$error instanceof PDOException?(string)($error->errorInfo[0]??''):'';
     fwrite(STDERR,json_encode(['fixture_failure'=>true,'error_class'=>get_class($error),
         'public_code'=>is_int($error->getCode())?$error->getCode():0,
         'sql_state'=>preg_match('/\A[A-Z0-9]{5}\z/D',$state)?$state:'',
         'driver_code'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):0,
-        'file'=>basename($error->getFile()),'line'=>$error->getLine()],JSON_THROW_ON_ERROR).PHP_EOL);
+        'file'=>basename($error->getFile()),'line'=>$error->getLine(),
+        'phase'=>$GLOBALS['nativePhase']??'unknown','evidence'=>$GLOBALS['nativeBarrierEvidence']??[]],JSON_THROW_ON_ERROR).PHP_EOL);
     exit(1);
 });
 $dsn=(string)(getenv('VP3_TRANSIENT_MYSQL_DSN')?:getenv('VP3_MYSQL_TEST_DSN'));
@@ -48,10 +50,57 @@ function htnCheck(bool $ok,string $label): void
     if(!$ok){fwrite(STDERR,'FAIL '.$label.PHP_EOL);throw new RuntimeException('A native relay assertion failed.');}
     $GLOBALS['nativeChecks']=($GLOBALS['nativeChecks']??0)+1;echo 'PASS '.$label.PHP_EOL;
 }
-function htnWait(callable $ready): void
+function htnPhase(string $phase): void
 {
+    if(preg_match('/\A[a-z0-9._-]{1,100}\z/D',$phase)!==1)throw new LogicException('Invalid native relay phase.');
+    $GLOBALS['nativePhase']=$phase;
+    if(isset($GLOBALS['nativePhaseFile']))file_put_contents($GLOBALS['nativePhaseFile'],$phase);
+}
+function htnChildEvidence(array $child,string $phaseFile): array
+{
+    $status=proc_get_status($child['process']);$phase=is_file($phaseFile)?(string)file_get_contents($phaseFile):'not_started';
+    $evidence=['running'=>(bool)$status['running'],'exit_code'=>(int)$status['exitcode'],
+        'child_phase'=>preg_match('/\A[a-z0-9._-]{1,100}\z/D',$phase)?$phase:'unknown'];
+    if(!$status['running']){
+        foreach(['stdout','stderr'] as $pipe){
+            $value=json_decode(trim((string)stream_get_contents($child[$pipe])),true);
+            if(!is_array($value))continue;$safe=[];
+            foreach(['accepted','fixture_failure'] as $key)if(is_bool($value[$key]??null))$safe[$key]=$value[$key];
+            foreach(['public_code','driver_code','line'] as $key)if(is_int($value[$key]??null))$safe[$key]=$value[$key];
+            foreach(['error_class','sql_state','phase'] as $key)if(is_string($value[$key]??null)
+                &&preg_match('/\A[a-zA-Z0-9._\\\\-]{1,100}\z/D',$value[$key]))$safe[$key]=$value[$key];
+            if($safe)$evidence[$pipe]=$safe;
+        }
+    }
+    return $evidence;
+}
+function htnOwnerLockWaiting(PDO $observer,int $waiter,int $blocker,string $database): bool
+{
+    // Observe the live wait edge itself. INNODB_TRX is a transaction snapshot;
+    // this proof requires this child's primary users(1) record request to be
+    // blocked by this exact parent connection, not merely a running process.
+    $q=$observer->prepare("SELECT 1 FROM performance_schema.data_lock_waits w
+        JOIN performance_schema.threads requester ON requester.THREAD_ID=w.REQUESTING_THREAD_ID
+        JOIN performance_schema.threads blocker ON blocker.THREAD_ID=w.BLOCKING_THREAD_ID
+        JOIN performance_schema.data_locks requested ON requested.ENGINE=w.ENGINE
+            AND requested.ENGINE_LOCK_ID=w.REQUESTING_ENGINE_LOCK_ID
+        WHERE requester.PROCESSLIST_ID=? AND blocker.PROCESSLIST_ID=?
+            AND requested.OBJECT_SCHEMA=? AND requested.OBJECT_NAME='users'
+            AND requested.INDEX_NAME='PRIMARY' AND requested.LOCK_TYPE='RECORD'
+            AND requested.LOCK_STATUS='WAITING' AND requested.LOCK_DATA='1' LIMIT 1");
+    $q->execute([$waiter,$blocker,$database]);return $q->fetchColumn()!==false;
+}
+function htnWait(callable $ready,string $phase,?callable $evidence=null): void
+{
+    htnPhase($phase);
     $deadline=microtime(true)+20;
-    while(!$ready()){if(microtime(true)>$deadline)throw new RuntimeException('A native relay barrier timed out.');usleep(10000);}
+    while(!$ready()){
+        $details=$evidence===null?[]:$evidence();
+        if(($details['running']??true)===false||microtime(true)>$deadline){
+            $GLOBALS['nativeBarrierEvidence']=$details;throw new RuntimeException('A native relay barrier failed.');
+        }
+        usleep(10000);
+    }
 }
 function htnRow(string $id): ?array
 {
@@ -82,19 +131,21 @@ try{
     if($worker){
         $gate=(string)($argv[3]??'');$index=(string)($argv[4]??'');
         if(!is_dir($gate)||!preg_match('/\A[1-9][0-9]*\z/D',$index))throw new RuntimeException('Invalid native relay process barrier.');
+        $GLOBALS['nativePhaseFile']=$gate.'/phase-'.$index;htnPhase('worker.snapshot');
         $config=json_decode((string)file_get_contents($gate.'/config-'.$index.'.json'),true,16,JSON_THROW_ON_ERROR);
         $snapshot=homeserver_https_v1300_session(1);
         file_put_contents($gate.'/ready-'.$index,json_encode(['connection_id'=>(int)$pdo->query('SELECT CONNECTION_ID()')->fetchColumn()],JSON_THROW_ON_ERROR));
-        htnWait(static fn()=>is_file($gate.'/go-'.$index));
+        htnWait(static fn()=>is_file($gate.'/go-'.$index),'worker.go');
         if($mode==='--complete'){
             $requests=[];
             htnWait(static function()use($snapshot,&$requests): bool{
                 $requests=homeserver_https_v1300_poll($snapshot,[])['requests'];return count($requests)>0;
-            });
+            },'worker.queued_request');
             if(count($requests)!==1||$requests[0]['payload']!==$GLOBALS['payload'])throw new RuntimeException('Native relay completion received unexpected context.');
             htnComplete($snapshot,$requests[0]['request_id'],['reply'=>$sentinel,'provider'=>$sentinel,'model'=>$sentinel]);
             echo json_encode(['completed'=>true],JSON_THROW_ON_ERROR).PHP_EOL;exit;
         }
+        htnPhase('worker.'.substr($mode,2));
         try{
             if($mode==='--enqueue')homeserver_https_v1300_queue(1,'agent.infer.local',$payload,true,$snapshot);
             elseif($mode==='--poll')htnComplete($snapshot,(string)$config['request_id'],['reply'=>$sentinel]);
@@ -199,12 +250,14 @@ try{
         $pipes=[];$process=proc_open([PHP_BINARY,__FILE__,$mode,$database,$gate,(string)$id],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
         if(!is_resource($process))throw new RuntimeException('An independent native relay process could not start.');
         fclose($pipes[0]);$children[$id]=['process'=>$process,'stdout'=>$pipes[1],'stderr'=>$pipes[2]];
-        htnWait(static fn()=>is_file($gate.'/ready-'.$id));
+        htnWait(static fn()=>is_file($gate.'/ready-'.$id),($GLOBALS['nativeCase']??'canonical').'.child_ready',
+            static fn()=>htnChildEvidence($children[$id],$gate.'/phase-'.$id));
         return [$id,json_decode((string)file_get_contents($gate.'/ready-'.$id),true,16,JSON_THROW_ON_ERROR)];
     };
-    $finish=static function(int $id)use(&$children):array{
+    $finish=static function(int $id)use(&$children,$gate):array{
         $child=$children[$id];$status=[];
-        htnWait(static function()use($child,&$status):bool{$status=proc_get_status($child['process']);return !$status['running'];});
+        htnWait(static function()use($child,&$status):bool{$status=proc_get_status($child['process']);return !$status['running'];},
+            ($GLOBALS['nativeCase']??'canonical').'.child_finish');
         $stdout=stream_get_contents($child['stdout']);$stderr=stream_get_contents($child['stderr']);
         fclose($child['stdout']);fclose($child['stderr']);$closed=proc_close($child['process']);unset($children[$id]);
         $exit=(int)($status['exitcode']??$closed);if($exit<0)$exit=$closed;
@@ -221,6 +274,7 @@ try{
 
     foreach(['inactive','revoked'] as $change){
         foreach(['--enqueue','--poll','--wait'] as $workerMode){
+            $GLOBALS['nativeCase']=$change.'.'.substr($workerMode,2);htnPhase($GLOBALS['nativeCase'].'.reset');
             $session=htnReset();$requestId='';
             if($workerMode!=='--enqueue'){
                 $requestId=homeserver_https_v1300_queue(1,'agent.infer.local',$payload,true,$session);
@@ -229,14 +283,13 @@ try{
             // The child captures active session authority before the competing
             // transaction changes the account or revokes that exact session.
             [$child,$ready]=$start($workerMode,['request_id'=>$requestId]);
+            $blocker=(int)$pdo->query('SELECT CONNECTION_ID()')->fetchColumn();
             $pdo->beginTransaction();$pdo->query('SELECT id FROM users WHERE id=1 FOR UPDATE')->fetch();
             if($change==='inactive')$pdo->exec('UPDATE users SET is_active=0 WHERE id=1');
             else homeserver_https_v1300_revoke(1);
             file_put_contents($gate.'/go-'.$child,'go');
-            htnWait(static function()use($admin,$ready):bool{
-                $q=$admin->prepare("SELECT 1 FROM information_schema.INNODB_TRX WHERE trx_mysql_thread_id=? AND trx_state='LOCK WAIT'");
-                $q->execute([$ready['connection_id']]);return $q->fetchColumn()!==false;
-            });
+            htnWait(static fn()=>htnOwnerLockWaiting($admin,(int)$ready['connection_id'],$blocker,$database),
+                $GLOBALS['nativeCase'].'.owner_lock',static fn()=>htnChildEvidence($children[$child],$gate.'/phase-'.$child));
             htnCheck(proc_get_status($children[$child]['process'])['running'],'native '.$workerMode.' waits on the shared owner lock before '.$change.' authorization changes commit');
             $pdo->commit();$outcome=$finish($child);
             $expectedCode=$workerMode==='--poll'&&$change==='revoked'?410:403;

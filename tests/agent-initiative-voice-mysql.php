@@ -4,13 +4,15 @@ declare(strict_types=1);
 // Native MySQL only. Each invocation owns one randomly named disposable DB.
 // Diagnostics must never expose connection data, provider text or claim tokens.
 ini_set('zend.exception_ignore_args','1');umask(0077);date_default_timezone_set('UTC');
+$GLOBALS['voiceNativePhase']='startup';$GLOBALS['voiceNativeBarrierEvidence']=[];
 set_exception_handler(static function(Throwable $error):void{
     $state=$error instanceof PDOException?(string)($error->errorInfo[0]??''):'';
     fwrite(STDERR,json_encode(['fixture_failure'=>true,'error_class'=>get_class($error),
         'public_code'=>is_int($error->getCode())?$error->getCode():0,
         'sql_state'=>preg_match('/\A[A-Z0-9]{5}\z/D',$state)?$state:'',
         'driver_code'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):0,
-        'file'=>basename($error->getFile()),'line'=>$error->getLine()],JSON_THROW_ON_ERROR).PHP_EOL);exit(1);
+        'file'=>basename($error->getFile()),'line'=>$error->getLine(),
+        'phase'=>$GLOBALS['voiceNativePhase']??'unknown','evidence'=>$GLOBALS['voiceNativeBarrierEvidence']??[]],JSON_THROW_ON_ERROR).PHP_EOL);exit(1);
 });
 $dsn=(string)(getenv('VP3_INITIATIVE_VOICE_MYSQL_DSN')?:getenv('VP3_MYSQL_TEST_DSN'));
 if(!str_starts_with($dsn,'mysql:'))throw new RuntimeException('An explicit disposable MySQL voice fixture DSN is required.');
@@ -43,10 +45,50 @@ function voice_mysql_check(bool $ok,string $label):void
     if(!$ok){fwrite(STDERR,'FAIL '.$label.PHP_EOL);throw new RuntimeException('A native voice assertion failed.');}
     $GLOBALS['voiceNativeChecks']=($GLOBALS['voiceNativeChecks']??0)+1;echo 'PASS '.$label.PHP_EOL;
 }
-function voice_mysql_wait(callable $ready):void
+function voice_mysql_phase(string $phase):void
 {
+    if(preg_match('/\A[a-z0-9._-]{1,100}\z/D',$phase)!==1)throw new LogicException('Invalid native voice phase.');
+    $GLOBALS['voiceNativePhase']=$phase;
+    if(isset($GLOBALS['voiceNativePhaseFile']))file_put_contents($GLOBALS['voiceNativePhaseFile'],$phase);
+}
+function voice_mysql_child_evidence(array $child,string $gate,int $id):array
+{
+    $status=proc_get_status($child['process']);$phase=is_file($gate.'/phase-'.$id)?(string)file_get_contents($gate.'/phase-'.$id):'not_started';
+    $safe=['running'=>(bool)$status['running'],'exit_code'=>(int)$status['exitcode'],
+        'child_phase'=>preg_match('/\A[a-z0-9._-]{1,100}\z/D',$phase)?$phase:'unknown'];
+    if(!$status['running']&&is_file($gate.'/result-'.$id.'.json')){
+        $value=json_decode((string)file_get_contents($gate.'/result-'.$id.'.json'),true);
+        foreach(['ok','in_transaction'] as $key)if(is_bool($value[$key]??null))$safe[$key]=$value[$key];
+        foreach(['code','model_calls'] as $key)if(is_int($value[$key]??null))$safe[$key]=$value[$key];
+    }
+    return $safe;
+}
+function voice_mysql_owner_wait(PDO $observer,int $waiter,int $blocker,string $database):bool
+{
+    // Require the actual live edge on users(1), with both connection identities.
+    // A transaction snapshot or a still-running process is not lock evidence.
+    $q=$observer->prepare("SELECT 1 FROM performance_schema.data_lock_waits w
+        JOIN performance_schema.threads requester ON requester.THREAD_ID=w.REQUESTING_THREAD_ID
+        JOIN performance_schema.threads blocker ON blocker.THREAD_ID=w.BLOCKING_THREAD_ID
+        JOIN performance_schema.data_locks requested ON requested.ENGINE=w.ENGINE
+            AND requested.ENGINE_LOCK_ID=w.REQUESTING_ENGINE_LOCK_ID
+        WHERE requester.PROCESSLIST_ID=? AND blocker.PROCESSLIST_ID=?
+            AND requested.OBJECT_SCHEMA=? AND requested.OBJECT_NAME='users'
+            AND requested.INDEX_NAME='PRIMARY' AND requested.LOCK_TYPE='RECORD'
+            AND requested.LOCK_STATUS='WAITING' AND requested.LOCK_DATA='1' LIMIT 1");
+    $q->execute([$waiter,$blocker,$database]);return $q->fetchColumn()!==false;
+}
+function voice_mysql_wait(callable $ready,string $phase,?callable $evidence=null):void
+{
+    voice_mysql_phase($phase);
     $deadline=microtime(true)+20;
-    while(!$ready()){if(microtime(true)>$deadline)throw new RuntimeException('A native voice barrier timed out.');usleep(10000);}
+    while(!$ready()){
+        $details=$evidence===null?[]:$evidence();
+        if(($details['running']??true)===false||microtime(true)>$deadline){
+            $GLOBALS['voiceNativeBarrierEvidence']=$details;throw new RuntimeException('A native voice barrier failed.');
+        }
+        usleep(10000);
+    }
 }
 function voice_mysql_model(string $prompt,string $protocol):string
 {
@@ -146,9 +188,10 @@ try{
     if($worker){
         $gate=(string)($argv[3]??'');$index=(string)($argv[4]??'');
         if(!is_dir($gate)||!preg_match('/\A[1-9][0-9]*\z/D',$index))throw new RuntimeException('Invalid native voice process barrier.');
+        $GLOBALS['voiceNativePhaseFile']=$gate.'/phase-'.$index;
         $config=json_decode((string)file_get_contents($gate.'/config-'.$index.'.json'),true,32,JSON_THROW_ON_ERROR);
         file_put_contents($gate.'/ready-'.$index,json_encode(['connection_id'=>(int)$pdo->query('SELECT CONNECTION_ID()')->fetchColumn()],JSON_THROW_ON_ERROR));
-        voice_mysql_wait(static fn()=>is_file($gate.'/go-'.$index));
+        voice_mysql_wait(static fn()=>is_file($gate.'/go-'.$index),'worker.go');voice_mysql_phase('worker.claim');
         try{$result=['ok'=>true,'response'=>voice_mysql_call('voice_claim',$config)];}
         catch(RuntimeException $error){$result=['ok'=>false,'code'=>(int)$error->getCode()];}
         $result['in_transaction']=$pdo->inTransaction();$result['model_calls']=$GLOBALS['voiceNativeModelCalls']??0;
@@ -184,12 +227,14 @@ try{
         $pipes=[];$process=proc_open([PHP_BINARY,__FILE__,'--claim',$database,$gate,(string)$id],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
         if(!is_resource($process))throw new RuntimeException('An independent native voice process could not start.');
         fclose($pipes[0]);$children[$id]=['process'=>$process,'stdout'=>$pipes[1],'stderr'=>$pipes[2]];
-        voice_mysql_wait(static fn()=>is_file($gate.'/ready-'.$id));
+        voice_mysql_wait(static fn()=>is_file($gate.'/ready-'.$id),($GLOBALS['voiceNativeCase']??'concurrent').'.child_ready',
+            static fn()=>voice_mysql_child_evidence($children[$id],$gate,$id));
         return [$id,json_decode((string)file_get_contents($gate.'/ready-'.$id),true,16,JSON_THROW_ON_ERROR)];
     };
     $finish=static function(int $id)use(&$children,$gate):array{
         $child=$children[$id];$status=[];
-        voice_mysql_wait(static function()use($child,&$status):bool{$status=proc_get_status($child['process']);return !$status['running'];});
+        voice_mysql_wait(static function()use($child,&$status):bool{$status=proc_get_status($child['process']);return !$status['running'];},
+            ($GLOBALS['voiceNativeCase']??'concurrent').'.child_finish');
         $stdout=stream_get_contents($child['stdout']);$stderr=stream_get_contents($child['stderr']);
         fclose($child['stdout']);fclose($child['stderr']);$closed=proc_close($child['process']);unset($children[$id]);
         $exit=(int)($status['exitcode']??$closed);if($exit<0)$exit=$closed;
@@ -197,9 +242,9 @@ try{
             throw new RuntimeException('An independent native voice process failed.');
         return json_decode((string)file_get_contents($gate.'/result-'.$id.'.json'),true,32,JSON_THROW_ON_ERROR);
     };
-    $locked=static function(array $ready)use($admin):bool{
-        $q=$admin->prepare("SELECT 1 FROM information_schema.INNODB_TRX WHERE trx_mysql_thread_id=? AND trx_state='LOCK WAIT'");
-        $q->execute([$ready['connection_id']]);return $q->fetchColumn()!==false;
+    $blocker=(int)$pdo->query('SELECT CONNECTION_ID()')->fetchColumn();
+    $locked=static function(array $ready)use($admin,$blocker,$database):bool{
+        return voice_mysql_owner_wait($admin,(int)$ready['connection_id'],$blocker,$database);
     };
 
     $config=voice_mysql_seed('concurrent-claims');$run=$config['input']['run_id'];$before=voice_mysql_saved($run);
@@ -213,7 +258,8 @@ try{
     [$second,$secondReady]=$start($secondConfig);
     $pdo->beginTransaction();$pdo->query('SELECT id FROM users WHERE id=1 FOR UPDATE')->fetch();
     file_put_contents($gate.'/go-'.$first,'go');file_put_contents($gate.'/go-'.$second,'go');
-    voice_mysql_wait(static fn()=>$locked($firstReady)&&$locked($secondReady));
+    voice_mysql_wait(static fn()=>$locked($firstReady)&&$locked($secondReady),'concurrent.owner_lock',
+        static fn()=>voice_mysql_child_evidence($children[$first],$gate,$first));
     voice_mysql_check(voice_mysql_saved($run)['json']===$before['json'],'two independent claimants both wait on the actual canonical owner lock before any voice write');
     $pdo->commit();$outcomes=[$finish($first),$finish($second)];
     $accepted=array_values(array_filter($outcomes,static fn(array $row):bool=>$row['ok']));
@@ -240,6 +286,7 @@ try{
         &&voice_mysql_saved($run)['result']['initiative_voice']['status']==='spoken','native completion is terminal and idempotent in the same canonical action and receipt');
 
     foreach(['voice_master','source','account','tab'] as $change){
+        $GLOBALS['voiceNativeCase']=$change;voice_mysql_phase($change.'.seed');
         $config=voice_mysql_seed('blocked-'.$change);$run=$config['input']['run_id'];$before=voice_mysql_saved($run);
         [$child,$ready]=$start($config);
         $pdo->beginTransaction();$pdo->query('SELECT id FROM users WHERE id=1 FOR UPDATE')->fetch();
@@ -249,7 +296,8 @@ try{
         elseif($change==='source')$pdo->exec('UPDATE agent_memory_items SET is_active=0 WHERE id=100');
         elseif($change==='account')$pdo->exec('UPDATE users SET is_active=0 WHERE id=1');
         else voice_mysql_presence($config['cid'],str_repeat('b',32));
-        file_put_contents($gate.'/go-'.$child,'go');voice_mysql_wait(static fn()=>$locked($ready));
+        file_put_contents($gate.'/go-'.$child,'go');voice_mysql_wait(static fn()=>$locked($ready),$change.'.owner_lock',
+            static fn()=>voice_mysql_child_evidence($children[$child],$gate,$child));
         voice_mysql_check(voice_mysql_saved($run)['json']===$before['json'],'native '.$change.' revocation holds the claimant on the observed owner lock with no premature grant');
         $pdo->commit();$rejected=$finish($child);$after=voice_mysql_saved($run);
         voice_mysql_check(!$rejected['ok']&&$rejected['code']===($change==='account'?403:409)
