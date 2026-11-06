@@ -75,12 +75,19 @@ try{
   page.setDefaultTimeout(8000);
   const errors=[];
   page.on('pageerror',error=>errors.push(error.message));
-  await page.clock.install();
+  // Pause before loading application code. Freeze Date only during setup so
+  // protocol latency cannot make pauseAt's target an already elapsed time.
+  const clockStart=new Date();
+  await page.clock.install({time:clockStart});
+  await page.clock.setFixedTime(clockStart);
+  await page.clock.pauseAt(clockStart);
+  await page.clock.setSystemTime(clockStart);
   const heartbeat=(state,context=()=>true)=>page.waitForResponse(response=>response.url().endsWith('/api/agent-activity-v94.php')
     &&response.request().postDataJSON()?.state===state&&context(response.request().postDataJSON()?.context||{}));
   const firstHeartbeat=heartbeat('working');
   await page.goto(origin+'/?conversation_id=42');
   await page.getByText('I will review the available private work.',{exact:true}).waitFor();
+  await page.clock.runFor(300);
   await firstHeartbeat;
   const drafting=heartbeat('working',context=>context.chat_busy===true&&context.chat_focused===true);
   await page.locator('#chatInput').fill('Keep this preparation private while I finish my draft.');
@@ -108,6 +115,9 @@ try{
 
   await page.reload();
   await page.getByText(report,{exact:true}).waitFor();
+  // Run the new document's 250ms initial heartbeat at a newer observation time
+  // than the departing document's pagehide beacon.
+  await page.clock.runFor(300);
   assert.equal(await page.getByText(report,{exact:true}).count(),1);
   assert.equal(driver('state').reports.length,1);
   assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.openConversation(44)),true);
@@ -131,8 +141,8 @@ try{
   assert.equal(driver('deliver').delivered,false);
   console.log('PASS changing a source during inference prevents its draft, success receipt and Chat report');
 
-  // Settle the visible page's periodic heartbeat before the explicit busy/return sequence below.
-  await page.clock.pauseAt(new Date(await page.evaluate(()=>Date.now())));
+  // The clock has stayed paused except for the explicit heartbeat/poll advances
+  // above. Settle HTTP before the explicit busy/return sequence below.
   await page.waitForLoadState('networkidle');
   const engaged=await owner.request.post(origin+'/api/chat-v236.php',{data:{action:'send',conversation_id:42,
     message:'Can you create reminders?',csrf_token:'fixture',knowledge_scope:'off'}});

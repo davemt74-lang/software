@@ -28,8 +28,8 @@ if(in_array('--blocked-poll',$argv,true)){
     catch(HomeServerHttpsSessionError $e){check($e->getCode()===410,'Revocation after lock must produce 410');echo 'revoked-after-lock';exit;}
 }
 foreach(['homeserver_https_requests','homeserver_https_sessions','homeserver_connections','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
-$pdo->exec($mysql?'CREATE TABLE users(id INT UNSIGNED PRIMARY KEY) ENGINE=InnoDB':'CREATE TABLE users(id INTEGER PRIMARY KEY)');
-$pdo->exec('INSERT INTO users VALUES(1),(2)');
+$pdo->exec($mysql?'CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,is_active TINYINT NOT NULL DEFAULT 1) ENGINE=InnoDB':'CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER NOT NULL DEFAULT 1)');
+$pdo->exec('INSERT INTO users(id) VALUES(1),(2)');
 $pdo->exec('CREATE TABLE homeserver_connections(user_id INTEGER PRIMARY KEY,status VARCHAR(20),homeserver_token_enc TEXT,installed_version VARCHAR(64),last_seen_at DATETIME,last_checked_at DATETIME,last_error TEXT,capabilities_json TEXT)');
 if($mysql)homeserver_https_v1300_ensure_schema($pdo);
 else{

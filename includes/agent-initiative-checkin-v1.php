@@ -53,6 +53,7 @@ function vp3_initiative_checkin_current_v1(PDO $pdo,array $scope,array $output):
         ||($output['conversation_id']??null)!==$scope['conversation_id']||($output['agent_id']??null)!==$scope['agent_id']
         ||!is_string($output['conversation_revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$output['conversation_revision'])
         ||!is_array($output['message_ids']??null)||!array_is_list($output['message_ids'])||count($output['message_ids'])>24
+        ||(isset($output['delivery_preference'])&&!in_array($output['delivery_preference'],['text','voice'],true))
         ||array_filter($output['message_ids'],static fn(mixed $id):bool=>!is_int($id)||$id<1)){
         throw new RuntimeException('Saved check-in binding changed.',409);
     }
@@ -77,11 +78,15 @@ function vp3_initiative_checkin_prepare_v1(PDO $pdo,array $scope,array $binding,
     vp3_initiative_checkin_current_v1($pdo,$scope,$output);
     $prompt=json_encode($request,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
     $answer=$model?$model($prompt,'vp3.initiative-draft.v1'):vp3_initiative_model_v1($pdo,$scope['user'],$prompt,'vp3.initiative-draft.v1',$scope['agent_id']);
-    $parsed=vp3_tool_json_object_v1($answer,['draft'],6000);$draft=$parsed['draft']??null;
+    $parsed=vp3_tool_json_object_v1($answer,['draft','delivery'],6000);$draft=$parsed['draft']??null;
+    if(array_key_exists('delivery',$parsed)&&!in_array($parsed['delivery'],['text','voice'],true)){
+        throw new InvalidArgumentException('Check-in delivery choice could not be verified.');
+    }
     if(!is_string($draft)||trim($draft)===''||mb_strlen($draft)>VP3_INITIATIVE_CHECKIN_MAX_CHARS_V1
         ||preg_match('/https?:\/\/|\bwww\.|[<>]|[\x00-\x08\x0b-\x1f\x7f]/i',$draft)){
         throw new InvalidArgumentException('Check-in draft could not be verified.');
     }
+    if(isset($parsed['delivery']))$output['delivery_preference']=$parsed['delivery']==='voice'&&mb_strlen(trim($draft))<=320?'voice':'text';
     vp3_initiative_checkin_current_v1($pdo,$scope,$output);
     return ['draft'=>trim($draft),'output'=>$output];
 }

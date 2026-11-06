@@ -22,6 +22,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'apps.shares.read'=>['list'],
         'feeds.vrss.read'=>['list'],
         'tracky.context.read'=>['list'],
+        'live.context.read'=>['read'],
         'tracky.perception.request'=>['request'],
         'radar.read'=>['list'],
         'radar.gateway.manage'=>['set_policy'],

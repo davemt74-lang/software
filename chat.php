@@ -524,7 +524,8 @@ $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-
         'build'=>$cognitivePresentationBuild,
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';</script>';
-$cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationAssetBuild)) . '"></script>';
+$cognitivePresentationPost = '<script data-initiative-voice-v1 src="' . e(url('/chat-initiative-voice-v1.js?v=' . substr(hash_file('sha256',__DIR__.'/chat-initiative-voice-v1.js'),0,12))) . '"></script>'
+    . '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationAssetBuild)) . '"></script>';
 
 $agentTeamsA3Build = 'agent-teams-' . substr(hash('sha256', (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.js') . (string)hash_file('sha256', __DIR__.'/chat-agent-teams-a3.css')), 0, 12);
 $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(url('/chat-agent-teams-a3.css?v=' . $agentTeamsA3Build)) . '">'

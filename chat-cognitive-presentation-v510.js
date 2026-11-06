@@ -419,6 +419,14 @@
       && !pageController.signal.aborted && requireCurrentConfiguration() && !document.hidden && document.hasFocus();
   }
 
+  function advanceInitiativeVoice() {
+    const cid=liveConversation(),voice=window.VP3InitiativeVoice;
+    if(!voice?.advance||cid===null||!initiativeMayAdvance(cid)||!Number.isSafeInteger(pageChatOwner)||pageChatOwner<1)return;
+    void Promise.resolve(voice.advance({endpoint:cfg.endpoint,csrf:cfg.csrf,userId:pageChatOwner,
+      agentId:pageAgent,conversationId:cid,workingAttentionBinding:pageBinding,
+      activityTab:window.StonefellowAgentActivity?.activityTab?.()||''})).catch(()=>{});
+  }
+
   async function retryInitiativeHealth() {
     const cid = liveConversation();
     if (initiativeRetry || cid === null || pageController.signal.aborted || !requireCurrentConfiguration()) return;
@@ -495,6 +503,7 @@
   }
 
   async function advanceInitiative() {
+    advanceInitiativeVoice();
     const cid = liveConversation(), health = initiativeHealth();
     const revision = String(health?.policy_revision || '');
     if (initiativeBusy || initiativeSettingBusy || !initiativeMayAdvance(cid) || health?.enabled !== true || health?.execution_ready !== true
@@ -525,6 +534,7 @@
       }
     } finally {
       initiativeBusy = false;
+      advanceInitiativeVoice();
       if (cid === liveConversation() && initiativeHealth()?.policy_revision === revision) renderLiveContext(liveState);
       else if (!pageController.signal.aborted) void advanceInitiative();
     }
@@ -1175,7 +1185,8 @@
     let spoken = false;
     activeVoiceThrough = through;
     try {
-      const canSpeak = () => !signal.aborted && requireCurrentConfiguration() && !document.hidden && activeVoiceThrough === through;
+      const canSpeak = () => !signal.aborted && requireCurrentConfiguration() && !document.hidden
+        && activeVoiceThrough === through && !window.VP3LiveContext?.voiceDeferral?.()?.defer;
       spoken = (await Promise.resolve(center.announceWhen(String(candidate.message),canSpeak))) === true;
     } catch (_error) {
       spoken = false;
@@ -1234,6 +1245,7 @@
       renderHomeServerPresence(state.homeserver_presence || null);
       refreshProfileAttention();
       void maybeSpeak(state.voice_candidate || null);
+      advanceInitiativeVoice();
     } catch (error) {
       if (!signal.aborted) {
         renderBriefError(error);

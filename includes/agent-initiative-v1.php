@@ -18,7 +18,7 @@ function vp3_initiative_plan_v1(string $answer,array $evidence,array $allowedToo
     if(!$plan instanceof stdClass||array_keys((array)$plan)!==['jobs'])throw new InvalidArgumentException('Invalid initiative plan.');
     $jobs=$plan->jobs;
     if(!is_array($jobs)||!array_is_list($jobs)||count($jobs)>$limits['max_jobs'])throw new InvalidArgumentException('Invalid initiative jobs.');
-    $primaries=[];$hasCheckIn=false;
+    $primaries=[];$taskPrimaries=[];$hasCheckIn=false;
     foreach($jobs as &$job){
         $fields=['tool','primary','refs','focus','report'];
         if(!$job instanceof stdClass)throw new InvalidArgumentException('Invalid initiative assignment.');
@@ -34,6 +34,13 @@ function vp3_initiative_plan_v1(string $answer,array $evidence,array $allowedToo
             $hasCheckIn=true;
         }
         $primary=$job['primary'];$assignment=$job['tool'].'|'.$primary;$refs=[];
+        if(preg_match('/\A(?:open-task|task):([1-9][0-9]*)\z/D',$primary,$taskMatch)){
+            // Historical aliases may still verify old reports, but cannot
+            // become competing new assignments for one canonical task.
+            $id=$taskMatch[1];
+            if(isset($taskPrimaries[$id]))throw new InvalidArgumentException('Duplicate canonical task assignment.');
+            $taskPrimaries[$id]=$primary;
+        }
         foreach($job['refs'] as $ref){
             if(!is_string($ref)||!isset($evidence[$ref])||isset($refs[$ref]))throw new InvalidArgumentException('Unknown or duplicate initiative source.');
             $refs[$ref]=true;
@@ -115,6 +122,12 @@ function vp3_initiative_evidence_scoped_v1(PDO $pdo,array $user,DateTimeImmutabl
             }
         }
     }
+    if($selectedRefs===null){
+        foreach(array_keys($evidence) as $ref){
+            if(preg_match('/\Aopen-task:([1-9][0-9]*)\z/D',$ref,$match)
+                &&($evidence['task:'.$match[1]]['capability_tool']??null)==='tasks.read')unset($evidence[$ref]);
+        }
+    }
     ksort($evidence);
     return $evidence;
 }
@@ -151,11 +164,11 @@ function vp3_initiative_access_v1(PDO $pdo,array $user,array $binding): array
     return $live;
 }
 
-function vp3_initiative_model_v1(PDO $pdo,array $user,string $prompt,string $protocol,?int $agentId=null): string
+function vp3_initiative_model_v1(PDO $pdo,array $user,string $prompt,string $protocol,?int $agentId=null,bool $transientContext=false,?callable $beforeInference=null): string
 {
     $agentId??=vp3_agent_memory_scope_current_v410($user);
     require_once __DIR__.'/agent-initiative-model-v1.php';
-    return vp3_initiative_infer_v1($pdo,$user,$agentId,$prompt,$protocol);
+    return vp3_initiative_infer_v1($pdo,$user,$agentId,$prompt,$protocol,$transientContext,$beforeInference);
 }
 
 function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array $payload,string $hash): bool
@@ -198,7 +211,7 @@ function vp3_initiative_schedule_v1(PDO $pdo,array $user,?int $agentId=null): vo
 }
 
 /** Compare SQL timestamps against the same database clock, never PHP's local timezone. */
-function vp3_initiative_review_recent_v1(PDO $pdo,?array $last,array $policy): bool
+function vp3_initiative_review_recent_v1(PDO $pdo,?array $last,array $policy,?string $liveRevision=null): bool
 {
     $previous=$last['metadata']??[];
     if(!$last||($previous['conversation_id']??null)!==($policy['conversation_id']??null)
@@ -210,6 +223,11 @@ function vp3_initiative_review_recent_v1(PDO $pdo,?array $last,array $policy): b
     $databaseNow=$parse((string)$pdo->query('SELECT CURRENT_TIMESTAMP')->fetchColumn());
     $seen=$parse((string)($last['last_seen_at']??''));
     if($databaseNow===null||$seen===null||$databaseNow-$seen<0||$databaseNow-$seen>=300)return false;
+    // The normal cadence remains five minutes. A genuinely changed current
+    // moment can wake the same assessment after a bounded 30-second cooldown.
+    // Renewed timestamps and packet heartbeats do not change this revision.
+    if($liveRevision!==null&&($previous['live_context_revision']??'')!==$liveRevision
+        &&$databaseNow-$seen>=30)return false;
     if(isset($previous['checked_at'])){
         try{$checked=new DateTimeImmutable((string)$previous['checked_at'],new DateTimeZone('UTC'));}
         catch(Throwable $error){return false;}
@@ -218,15 +236,32 @@ function vp3_initiative_review_recent_v1(PDO $pdo,?array $last,array $policy): b
     return true;
 }
 
+function vp3_initiative_live_revision_v1(PDO $pdo,array $user,array $policy): string
+{
+    if(!table_exists('agent_activity_state'))return '';
+    require_once __DIR__.'/agent-live-context-v1.php';
+    $principal=vp3_initiative_principal_v1($pdo,$user,vp3_initiative_binding_agent_v1($policy));
+    $snapshot=vp3_live_context_snapshot_v1($pdo,$user,$principal,(int)($policy['conversation_id']??0));
+    return $snapshot['revision']??'';
+}
+
 function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
 {
     if($pdo->inTransaction())return;
+    require_once __DIR__.'/agent-live-context-v1.php';
+    try{vp3_live_context_expire_v1($pdo,$user);}
+    catch(Throwable $error){if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('live_context.cleanup_unavailable',['user_id'=>(int)$user['id'],'error_class'=>get_class($error)]);}
+    if(function_exists('homeserver_https_v1300_scrub_transient')){
+        try{homeserver_https_v1300_scrub_transient($pdo,20,(int)$user['id']);}
+        catch(Throwable $error){if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('transient_inference.cleanup_unavailable',['user_id'=>(int)$user['id'],'error_class'=>get_class($error)]);}
+    }
     if(!agent_job_engine_schema_ready_v1900($pdo))return;
     $policy=vp3_initiative_policy_v1($user);
     if(empty($policy['enabled']))return;
     $live=vp3_initiative_access_v1($pdo,$user,$policy);
+    $liveRevision=vp3_initiative_live_revision_v1($pdo,$live,$policy);
     $last=agent_brain_v122_memory($live,'initiative_sweep','last-review');$previous=$last['metadata']??[];
-    if(vp3_initiative_review_recent_v1($pdo,$last,$policy))return;
+    if(vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision))return;
     // A due assessment primes bounded transcript privacy proofs before owner
     // locks. The locked assessment repeats the actual source/identity reads.
     if(table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172')){
@@ -243,7 +278,8 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
         $live=vp3_initiative_access_v1($pdo,$live,$policy);
         $last=agent_brain_v122_memory($live,'initiative_sweep','last-review');
         $previous=$last['metadata']??[];
-        if(!vp3_initiative_review_recent_v1($pdo,$last,$policy)){
+        $liveRevision=vp3_initiative_live_revision_v1($pdo,$live,$policy);
+        if(!vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision)){
             $availability=vp3_initiative_availability_v1(vp3_initiative_owner_context_v1($pdo,$live,$policy,false));
             $attentionRevision=$previous['attention_revision']??null;
             if(($previous['conversation_id']??null)!==($policy['conversation_id']??null)
@@ -264,6 +300,7 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
                 'conversation_id'=>$policy['conversation_id'],
                 'revision'=>$policy['revision'],
                 'owner_availability'=>$availability,'attention_revision'=>$attentionRevision,
+                'live_context_revision'=>$liveRevision,
                 'checked_at'=>gmdate(DATE_ATOM),
             ];
             if(agent_brain_v122_upsert_system_memory($live,'initiative_sweep','last-review','Initiative source review checked.',$review)<1){
@@ -276,6 +313,15 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
 
 function vp3_initiative_sweep_v1(PDO $pdo,int $limit): void
 {
+    // Cache cleanup is independent of an owner's enabled Initiative policy.
+    // A crashed client or disabled policy must not keep a sensory packet.
+    require_once __DIR__.'/agent-live-context-v1.php';
+    try{vp3_live_context_expire_all_v1($pdo,max(1,min(100,$limit)));}
+    catch(Throwable $error){if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('live_context.cleanup_unavailable',['error_class'=>get_class($error)]);}
+    if(function_exists('homeserver_https_v1300_scrub_transient')){
+        try{homeserver_https_v1300_scrub_transient($pdo,max(1,min(100,$limit)));}
+        catch(Throwable $error){if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('transient_inference.cleanup_unavailable',['error_class'=>get_class($error)]);}
+    }
     if(!agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo))return;
     $limit=max(1,min(25,$limit));
     vp3_initiative_delivery_sweep_v1($pdo,$limit);
@@ -575,7 +621,8 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         'product-readiness'=>'product_readiness','scheduling-readiness'=>'scheduling_readiness',
         'workbench-product'=>'workbench_product','workbench-screen'=>'workbench_screen','workbench-mission'=>'workbench_mission',
         'open-task'=>'open_tasks','activity-situation'=>'activity_situations',
-        'mission-evidence'=>'mission_evidence','product-context'=>'product_context'];
+        'mission-evidence'=>'mission_evidence','product-context'=>'product_context',
+        'task-list'=>'task_lists','live-context'=>'live_context'];
     foreach($sources as $ref=>$revision){
         if(($current[$ref]['revision']??null)===$revision)continue;
         $family=$families[explode(':',$ref,2)[0]]??'';
@@ -860,7 +907,12 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
         $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
         $modelEvidence=array_map(static fn(array $row):array=>array_diff_key($row,['url'=>true,'revision'=>true,'canonical_source_revision'=>true]),array_values($evidence));
         $planning=$run['action_capability_key']==='initiative.plan';
-        $provider=$model??static fn(string $prompt,string $protocol):string=>vp3_initiative_model_v1($pdo,$live,$prompt,$protocol,$agentId);
+        $transientContext=(bool)array_filter($evidence,static fn(array $row):bool=>($row['kind']??'')==='live_context');
+        $beforeInference=$transientContext?static function()use($pdo,$live,$binding,$sources,$includeScreen,$canonicalSources,$agentId,$payload):void{
+            $currentUser=vp3_initiative_access_v1($pdo,$live,$binding);
+            vp3_initiative_current_sources_v1($pdo,$currentUser,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
+        }:null;
+        $provider=$model??static fn(string $prompt,string $protocol):string=>vp3_initiative_model_v1($pdo,$live,$prompt,$protocol,$agentId,$transientContext,$beforeInference);
         $modelCalls=0;
         $infer=static function(string $prompt,string $protocol)use($pdo,&$live,$binding,$payload,$run,$claim,$provider,&$modelCalls):string{
             if($pdo->inTransaction())throw new RuntimeException('Initiative inference cannot hold a database transaction.');

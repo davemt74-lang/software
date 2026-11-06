@@ -100,8 +100,8 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         $counts['profile_speech']=agent_worker_profile_speech_maintenance_v1910($pdo,$ownerLimit);
         $counts['profile_attention']=agent_worker_profile_attention_maintenance_v1910($pdo,$ownerLimit);
         try{
+            vp3_initiative_sweep_v1($pdo,$ownerLimit);
             if(agent_brain_schema_ready()&&agent_job_engine_schema_ready_v1900($pdo)){
-                vp3_initiative_sweep_v1($pdo,$ownerLimit);
                 agent_worker_health_observe_v1(true);
             }
         }catch(Throwable $e){agent_worker_health_observe_v1(false);agent_runtime_v125_trace('initiative.sweep_failed',['error_class'=>get_class($e)]);}
@@ -148,6 +148,10 @@ if(!$lock){fwrite(STDOUT,json_encode(['ok'=>true,'reason'=>'runner_already_activ
 
 $pdo=db();
 if(!$pdo||!agent_job_engine_schema_ready_v1900($pdo)){
+    if($pdo instanceof PDO){
+        try{vp3_initiative_sweep_v1($pdo,$ownerLimit);}
+        catch(Throwable $e){agent_runtime_v125_trace('live_context.cleanup_unavailable',['error_class'=>get_class($e)]);}
+    }
     flock($lock,LOCK_UN);fclose($lock);
     fwrite(STDERR,"Phase 19.0 durable job schema is not ready.\n");
     exit(3);

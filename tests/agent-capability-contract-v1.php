@@ -81,9 +81,10 @@ contract_check(!isset(vp3_capability_contract_snapshot_v1(['capability_contract'
 $adapters=vp3_capability_contract_adapters_v1();
 $validSources=['transcripts.read'=>['transcript:1'],'missions.evidence.read'=>['mission-evidence:01234567-89ab-cdef-0123-456789abcdef'],
     'products.content.prepare'=>['product-context:9'],'tasks.read'=>['task:12'],
-    'calendar.read'=>['calendar:event:3','calendar:event:3@20261106T123456Z'],'reminders.read'=>['reminder:4']];
-contract_check(array_keys($adapters)===['transcripts.read','missions.evidence.read','products.content.prepare','tasks.read','calendar.read','reminders.read'],
-    'only six explicitly implemented background children are declared');
+    'calendar.read'=>['calendar:event:3','calendar:event:3@20261106T123456Z'],'reminders.read'=>['reminder:4'],
+    'tasks.lists.read'=>['task-list:7'],'live.context.read'=>['live-context:01234567-89ab-cdef-0123-456789abcdef']];
+contract_check(array_keys($adapters)===['transcripts.read','missions.evidence.read','products.content.prepare','tasks.read','calendar.read','reminders.read','tasks.lists.read','live.context.read'],
+    'only eight explicitly implemented background children are declared');
 foreach($adapters as $id=>$adapter){
     foreach($validSources[$id] as $ref)contract_check(preg_match($adapter['source_pattern'],$ref)===1,
         'source pattern admits a canonical exact source: '.$ref);
@@ -103,8 +104,8 @@ foreach($adapters as $id=>$adapter){
         'adapter declares scoped source revalidation, retention and canonical verification: '.$id);
     contract_check($adapter['confirmation']==='existing_domain_confirmation_unchanged'&&$adapter['next_decision']!=='',
         'adapter preserves domain confirmations and names the next owner decision: '.$id);
-    contract_check($adapter['allowed_effects']===['bounded_saved_record_read','private_preparation']
-        &&preg_match('/^vp3_initiative_[a-z]+_capabilities_read_v1$/D',$adapter['executor'])===1
+    contract_check($adapter['allowed_effects']===[($id==='live.context.read'?'bounded_current_context_read':'bounded_saved_record_read'),'private_preparation']
+        &&preg_match('/^vp3_initiative_[a-z_]+_capabilities_read_v1$/D',$adapter['executor'])===1
         &&preg_match('/^agent-initiative-[a-z-]+-v1\.php$/D',$adapter['module'])===1,
         'adapter selects a fixed bounded reader instead of arbitrary execution: '.$id);
 }

@@ -7,6 +7,7 @@ require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
 require_once __DIR__ . '/includes/homeserver-scheduling-connector-v620.php';
 require_once __DIR__ . '/includes/homeserver-commerce-agent-v1000.php';
 require_once __DIR__ . '/includes/homeserver-https-relay-v1300.php';
+require_once __DIR__ . '/includes/homeserver-transient-schema-v1.php';
 require_once __DIR__ . '/includes/homeserver-shared-agent-v210.php';
 require_once __DIR__ . '/includes/browser-memory-v2170.php';
 require_once __DIR__ . '/includes/browser-execution-v2180.php';
@@ -275,6 +276,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && table_exists('agent_participant_observers_v1')
         && table_exists('user_agent_voice_preferences')
         && ($schemaConnection ??= db()) instanceof PDO
+        && homeserver_https_v1300_transient_ready($schemaConnection)
         && vp3_chat_read_schema_ready_v1($schemaConnection)
         && vp3_profile_call_activity_schema_ready_pa3c($schemaConnection)
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
@@ -408,6 +410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             homeserver_scheduling_v620_ensure_schema($pdo);
             homeserver_commerce_agent_v1000_ensure_schema($pdo);
             homeserver_https_v1300_ensure_schema($pdo);
+            homeserver_transient_schema_ensure_v1($pdo);
             homeserver_shared_v210_ensure_schema($pdo);
             homeserver_federated_v240_ensure_schema($pdo);
             homeserver_reconciliation_v246_ensure_schema($pdo);

@@ -46,6 +46,8 @@ function vp3_initiative_capability_domains_v1(): array
         'mission'=>['file'=>'agent-initiative-mission-evidence-v1.php','family'=>'mission_evidence','tables'=>['agent_cloud_missions_v1','agent_workflow_runs','agent_workflow_actions','agent_workflow_receipts']],
         'product'=>['file'=>'agent-initiative-product-context-v1.php','family'=>'product_context','tables'=>['agent_commerce_products_v800','agent_commerce_product_bindings_v800']],
         'office'=>['file'=>'agent-initiative-office-records-v1.php','family'=>'office_records','tables'=>[]],
+        'task_list'=>['file'=>'agent-initiative-task-lists-v1.php','family'=>'task_lists','tables'=>[]],
+        'live'=>['file'=>'agent-initiative-live-context-v1.php','family'=>'live_context','tables'=>[]],
     ];
 }
 
@@ -101,7 +103,7 @@ function vp3_initiative_capabilities_evidence_v1(PDO $pdo,array $scope,array $bi
             foreach($availability as $family=>$state)$coverage[$family]=$state;
             if(count($rows)>($selectedRefs===null?20:160))throw new RuntimeException('Capability source bounds changed.',503);
             foreach($rows as $ref=>$row){
-                $tool=$row['office_tool']??match($domain){
+                $tool=$row['capability_tool']??$row['office_tool']??match($domain){
                     'transcript'=>'transcripts.read','mission'=>'missions.evidence.read',
                     'product'=>'products.content.prepare',default=>'',
                 };
@@ -215,7 +217,8 @@ function vp3_initiative_capability_execute_v1(PDO $pdo,array $scope,array $bindi
     $fresh=vp3_initiative_capability_snapshot_v1($pdo,$scope,$binding,$tool,$job,$evidence);
     if(!hash_equals($fingerprint,vp3_initiative_capability_fingerprint_v1($fresh)))throw new RuntimeException('Capability records changed during preparation.',409);
     $definition=vp3_initiative_capability_definition_v1($tool);
-    $operation=match($tool){'transcripts.read'=>'read','missions.evidence.read'=>'inspect','products.content.prepare'=>'read',default=>'list'};
+    $operation=match($tool){'transcripts.read','products.content.prepare','live.context.read'=>'read',
+        'missions.evidence.read'=>'inspect','tasks.lists.read'=>'show',default=>'list'};
     $state=$read['records']?'read_complete':'no_matches';
     $revisions=[];foreach($job['refs'] as $ref)$revisions[$ref]=$evidence[$ref]['revision'];ksort($revisions);
     $result=['draft'=>$draft,'sources'=>$read['sources'],

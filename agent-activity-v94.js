@@ -3,7 +3,7 @@
   const cfg=window.STONEFELLOW_ACTIVITY||{};if(!cfg.endpoint||!cfg.csrf)return;
   let lastMeaningful=Date.now(),hiddenAt=document.hidden?Date.now():0,lastState='',taskTitle=String(cfg.taskTitle||''),taskKey=String(cfg.taskKey||'');
   let timer=0,sending=false,lastSentContext='',closed=false,activitySequence=0,clockOffset=0,clockAnchored=false;
-  let lastCoreContext=null,lastCoreKey='',lastCoreAt=0,heartbeatController=null;
+  let lastCoreContext=null,lastCoreKey='',lastCoreAt=0,heartbeatController=null,lastSentAvailability='',liveTimer=0,lastLiveAt=0;
   const pageCsrf=String(cfg.csrf),pageEndpoint=String(cfg.endpoint),pageOwner=Number(window.STONEFELLOW_CHAT?.userId||0);
   const pageAgent=Number(window.STONEFELLOW_CHAT?.agentId||0);
   const pageBinding=String(window.STONEFELLOW_CHAT?.workingAttentionBinding||'');
@@ -27,6 +27,14 @@
   }
   const canonicalChat=()=>window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
   const linkedConversation=()=>Number(canonicalChat()?.conversationId?.()??cfg.conversationId??new URLSearchParams(location.search).get('conversation_id')??0);
+  const contextKey=value=>JSON.stringify({...value,live_context:value.live_context
+    ?window.VP3LiveContext?.semantic?.(value.live_context)||null:null});
+  const availabilityKey=value=>JSON.stringify({...value,live_context:null});
+  function scheduleLive(){
+    if(closed||!currentBinding())return;
+    clearTimeout(liveTimer);
+    liveTimer=setTimeout(()=>{liveTimer=0;lastLiveAt=Date.now();if(contextKey(context())!==lastSentContext)void heartbeat('live_context_changed',true);},Math.max(100,2000-(Date.now()-lastLiveAt)));
+  }
   function context(){
     const focused=!document.hidden&&document.hasFocus();
     const value={track_id:Number(cfg.trackId||0),project_id:Number(cfg.projectId||0),conversation_id:linkedConversation(),task_title:taskTitle,task_kind:cfg.surface||'chat',task_key:taskKey,path:location.pathname+location.search,visible:!document.hidden};
@@ -42,6 +50,13 @@
       value.chat_busy=!ready||!!canonical.isBusy?.()||!!facade?.isBusy?.()
         ||String(input.value||'').trim()!==''||['thinking','processing','speaking'].includes(voiceState);
     }
+    if((cfg.surface||'chat')==='chat'&&activityTab&&pageOwner&&pageBinding&&currentBinding()&&canonical?.isReady?.()&&!canonical.isRestoring?.()
+      &&value.conversation_id>0&&Number(canonical.agentId?.()??pageAgent)===pageAgent){
+      window.VP3LiveContext?.bindActivity?.(activityTab,clockOffset);
+      const live=window.VP3LiveContext?.snapshot?.()||null;
+      value.owner_user_id=pageOwner;value.agent_id=pageAgent;
+      value.live_context=value.chat_focused===true&&clockAnchored?live:null;
+    }
     return value;
   }
   const activeMedia=()=>{if(!['stem','video'].includes(String(cfg.surface||'')))return false;return [...document.querySelectorAll('audio,video')].some(el=>!el.paused&&!el.ended&&el.readyState>1&&!el.closest('.chat-media-studio'));};
@@ -50,7 +65,7 @@
   function publishCoreContext(data,sentContext,sentKey){
     const core=data?.agent_core_context,chat=canonicalChat();
     if(!core||!pageOwner||!pageBinding||!currentBinding()||closed||document.hidden||!document.hasFocus()
-      ||JSON.stringify(context())!==sentKey||!chat?.isReady?.()||chat.isRestoring?.()
+      ||contextKey(context())!==sentKey||!chat?.isReady?.()||chat.isRestoring?.()
       ||core.owner_user_id!==pageOwner||core.agent_id!==pageAgent
       ||core.working_attention_binding!==pageBinding||core.conversation_id!==sentContext.conversation_id
       ||Number(chat.conversationId?.())!==core.conversation_id
@@ -62,7 +77,7 @@
   function publishCoreError(reason,sentContext,sentKey){
     const chat=canonicalChat();
     if(!pageOwner||!pageBinding||closed||!currentBinding()||document.hidden||!document.hasFocus()
-      ||JSON.stringify(context())!==sentKey||!chat?.isReady?.()||chat.isRestoring?.()
+      ||contextKey(context())!==sentKey||!chat?.isReady?.()||chat.isRestoring?.()
       ||!Number.isSafeInteger(sentContext.conversation_id)||sentContext.conversation_id<1
       ||Number(chat.conversationId?.())!==sentContext.conversation_id
       ||Number(chat.agentId?.()??pageAgent)!==pageAgent)return;
@@ -72,7 +87,7 @@
   async function heartbeat(reason='timer',force=false){
     if(closed||!currentBinding())return;
     const state=classify();if(sending)return;if(!force&&state===lastState&&reason!=='timer')return;
-    sending=true;const sentContext=context(),sentKey=JSON.stringify(sentContext);lastSentContext=sentKey;
+    sending=true;const sentContext=context(),sentKey=contextKey(sentContext),sentAvailability=availabilityKey(sentContext);lastSentContext=sentKey;lastSentAvailability=sentAvailability;
     const controller=new AbortController();heartbeatController=controller;
     const requestTimeout=window.setTimeout(()=>controller.abort(),15000);
     try{
@@ -98,7 +113,10 @@
       window.clearTimeout(requestTimeout);
       if(heartbeatController===controller)heartbeatController=null;
       sending=false;
-      if(!closed&&currentBinding()&&(JSON.stringify(context())!==sentKey||lastSentContext===''))queueMicrotask(()=>heartbeat('availability_changed',true));
+      if(!closed&&currentBinding()){
+        if(availabilityKey(context())!==sentAvailability||lastSentContext==='')queueMicrotask(()=>heartbeat('availability_changed',true));
+        else if(contextKey(context())!==sentKey)scheduleLive();
+      }
     }
   }
   function meaningful(reason='interaction'){lastMeaningful=Date.now();if(document.hidden)return;const prior=lastState;lastState='';heartbeat(reason,true);if(prior==='idle'||prior==='paused')document.dispatchEvent(new CustomEvent('stonefellow:proactive-refresh'));}
@@ -107,16 +125,18 @@
   document.addEventListener('visibilitychange',()=>{hiddenAt=document.hidden?Date.now():0;heartbeat(document.hidden?'hidden':'visible',true);});
   window.addEventListener('focus',()=>heartbeat('focus',true));
   window.addEventListener('blur',()=>heartbeat('blur',true));
-  window.addEventListener('pagehide',()=>{const valid=!closed&&currentBinding();closed=true;heartbeatController?.abort();if(!valid)return;lastMeaningful=0;const departed={...context(),...observation(),visible:false,focused:false,chat_focused:false,chat_busy:true};const form=new FormData();form.append('action','heartbeat');form.append('csrf_token',String(cfg.csrf));form.append('surface',String(cfg.surface||'chat'));form.append('state','idle');form.append('reason','pagehide');form.append('context',JSON.stringify(departed));try{navigator.sendBeacon?.(cfg.endpoint,form);}catch(e){}});
+  window.addEventListener('pagehide',()=>{const valid=!closed&&currentBinding();closed=true;clearTimeout(liveTimer);heartbeatController?.abort();if(!valid)return;lastMeaningful=0;const priorContext=context(),departed={...priorContext,...observation(),visible:false,focused:false,chat_focused:false,chat_busy:true,...(Object.hasOwn(priorContext,'live_context')?{live_context:null}:{})};const form=new FormData();form.append('action','heartbeat');form.append('csrf_token',String(cfg.csrf));form.append('surface',String(cfg.surface||'chat'));form.append('state','idle');form.append('reason','pagehide');form.append('context',JSON.stringify(departed));if(pageBinding)form.append('working_attention_binding',pageBinding);try{navigator.sendBeacon?.(cfg.endpoint,form);}catch(e){}});
   window.addEventListener('pageshow',()=>{closed=false;void heartbeat('pageshow',true);});
   window.addEventListener('vp3:chat-context-ready',()=>void heartbeat('chat_ready',true));
-  window.StonefellowAgentActivity={markTask:(title,key='')=>{taskTitle=String(title||taskTitle);taskKey=String(key||taskKey);meaningful('task_mark');},snapshot:()=>({state:classify(),taskTitle,taskKey}),
+  window.addEventListener('vp3:live-context-changed',scheduleLive);
+  window.addEventListener('vp3:live-context-ready',()=>{window.VP3LiveContext?.bindActivity?.(activityTab,clockOffset);scheduleLive();});
+  window.StonefellowAgentActivity={activityTab:()=>activityTab,markTask:(title,key='')=>{taskTitle=String(title||taskTitle);taskKey=String(key||taskKey);meaningful('task_mark');},snapshot:()=>({state:classify(),taskTitle,taskKey}),
     refreshCoreContext:()=>{lastSentContext='';return heartbeat('retry',true);},
     coreContext:()=>!closed&&currentBinding()&&!document.hidden&&document.hasFocus()
-      &&lastCoreContext&&JSON.stringify(context())===lastCoreKey&&Date.now()-lastCoreAt<90000
+      &&lastCoreContext&&contextKey(context())===lastCoreKey&&Date.now()-lastCoreAt<90000
       ?{...lastCoreContext,health:{...lastCoreContext.health}}:null};
   timer=setInterval(()=>heartbeat('timer',true),30000);setTimeout(()=>heartbeat('load',true),250);
   // Only semantic availability changes produce an extra request; this is not
   // another inference loop and does not turn mouse movement into Chat activity.
-  if((cfg.surface||'chat')==='chat')setInterval(()=>{if(JSON.stringify(context())!==lastSentContext)void heartbeat('availability_changed',true);},1000);
+  if((cfg.surface||'chat')==='chat')setInterval(()=>{if(availabilityKey(context())!==lastSentAvailability)void heartbeat('availability_changed',true);},1000);
 })();

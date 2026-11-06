@@ -46,6 +46,7 @@ function chat_notifications_v240_activity_events(PDO $pdo, int $userId, int $lim
         $stmt->execute([$userId]);
         return array_map(static function(array $row): array {
             $details = json_decode((string)($row['details_json'] ?? ''), true);
+            if(is_array($details))unset($details['live_context'],$details['_vp3_live_binding']);
             return [
                 'id'=>(int)$row['id'],
                 'surface'=>(string)$row['surface'],

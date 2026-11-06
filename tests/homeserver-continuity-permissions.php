@@ -42,7 +42,7 @@ require dirname(__DIR__).'/includes/homeserver-reconciliation-v246.php';
 require dirname(__DIR__).'/includes/homeserver-shared-agent-v210.php';
 
 foreach(['homeserver_agent_events','homeserver_agent_state','homeserver_reconciliation_runs_v246','homeserver_reconciliation_state_v246','homeserver_federated_cursors','homeserver_federated_records'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
-if(!table_exists('users'))$pdo->exec($mysql?'CREATE TABLE users(id INT UNSIGNED PRIMARY KEY) ENGINE=InnoDB':'CREATE TABLE users(id INTEGER PRIMARY KEY)');
+if(!table_exists('users'))$pdo->exec($mysql?'CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,is_active TINYINT NOT NULL DEFAULT 1) ENGINE=InnoDB':'CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER NOT NULL DEFAULT 1)');
 $pdo->exec('INSERT INTO users(id) VALUES(91)');
 if(!$mysql){
     $pdo->exec("CREATE TABLE homeserver_federated_records(user_id INTEGER,authority_source TEXT,dataset TEXT,authority_key TEXT,canonical_id TEXT,observed_source TEXT,record_hash TEXT,source_updated_at TEXT,tombstoned INTEGER,last_seen_at TEXT,UNIQUE(user_id,authority_source,dataset,authority_key,observed_source))");

@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const cfg=window.VP3_ORB_CONFIG;if(!cfg)return;
+  const sensoryPageOwner=Number(cfg.ownerKey),sensoryPageAgent=window.STONEFELLOW_CHAT?Number(window.STONEFELLOW_CHAT.agentId||0):null;
   const $=id=>document.getElementById(id);let audible=false,preparing=false,voiceEpoch=0;
   window.addEventListener('stonefellow:agent-proactive-speech',event=>{audible=event.detail?.state==='start';});
   const loadScript=url=>new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=reject;document.head.append(s);});
@@ -39,13 +40,24 @@
   }
   const recording=()=>Boolean(document.querySelector('[data-recording="true"],.is-recording,.chat-media-studio button.recording,[data-agent-state="recording"]'));
   const state=()=>{const current=window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState;return {state:audible||current==='speaking'?'speaking':preparing?'thinking':current||($('sendChatButton')?.disabled?'thinking':'idle'),recording:recording()};};
+  // Recognition is local. Only a ready, focused owner Chat can export coarse
+  // sensor observations to its existing proactive loop.
+  function liveSensoryContext(){
+    const chat=window.STONEFELLOW_CHAT,live=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
+    if(!$('chatForm')||document.hidden||!document.hasFocus()||!chat||Number(chat.userId)!==sensoryPageOwner||sensoryPageAgent===null
+      ||live?.isReady?.()!==true||live?.isRestoring?.()!==false)return null;
+    const owner=Number(chat.userId),agent=Number(chat.agentId||0),cid=Number(live.conversationId?.()),runtimeAgent=Number(live.agentId?.());
+    if(!Number.isSafeInteger(owner)||owner<1||!Number.isSafeInteger(agent)||agent<0
+      ||!Number.isSafeInteger(cid)||cid<1||runtimeAgent!==agent||agent!==sensoryPageAgent)return null;
+    return {owner_user_id:owner,agent_id:agent,conversation_id:cid};
+  }
   const adapter={tvRequest:(body,{keepalive=false}={})=>api(cfg.tvEndpoint,body,keepalive),
     openBrain:async()=>{await drawerReady;window.STONEFELLOW_NOTIFICATION_CENTER?.openBrain?.();},
     screenRequest:async(body,{signal}={})=>{const response=await fetch(cfg.screenEndpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,owner_key:String(cfg.ownerKey),csrf_token:cfg.csrf})});const data=await response.json();if(!response.ok||!data.ok){const error=Error(data.error||'Screen analysis unavailable.');error.status=response.status;throw error;}return data;},
     screenHistory:async(body={}, {signal,read=false}={})=>{const endpoint=cfg.screenSessionsEndpoint;const query=read?'?'+new URLSearchParams({...body,owner_key:String(cfg.ownerKey)}):'';const r=await fetch(endpoint+query,{method:read?'GET':'POST',credentials:'same-origin',cache:'no-store',signal,headers:read?{}:{'Content-Type':'application/json'},body:read?undefined:JSON.stringify({...body,owner_key:String(cfg.ownerKey),csrf_token:cfg.csrf})});const data=await r.json();if(!r.ok||!data.ok||String(data.owner_key)!==String(cfg.ownerKey)){const e=Error(data.error||'Sharing history account changed. Refresh this page.');e.status=r.ok?409:r.status;throw e;}return data;},
     screenAudio:async(blob,body,{signal}={})=>{const form=new FormData();form.append('audio',blob,'tab-audio.wav');for(const [key,value] of Object.entries({...body,owner_key:String(cfg.ownerKey),csrf_token:cfg.csrf}))form.append(key,String(value));const r=await fetch(cfg.screenAudioEndpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,body:form});const data=await r.json();if(!r.ok||!data.ok){const e=Error(data.error||'Tab transcription unavailable.');e.status=r.status;throw e;}return data;},
     screenToChat:text=>{const input=$('chatInput');if(!input){location.href=cfg.chatUrl;return false;}input.value=text;input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();return true;},
-    ownerKey:cfg.ownerKey,chatUrl:cfg.chatUrl,state,voiceFeatureUrl:cfg.voiceFeatureUrl,
+    ownerKey:cfg.ownerKey,chatUrl:cfg.chatUrl,state,liveSensoryContext,voiceFeatureUrl:cfg.voiceFeatureUrl,
     trainedVoiceUrl:cfg.trainedVoiceUrl,trainedVoiceSource:'cloud',
     conversationRef:()=>window.STONEFELLOW_CHAT_CONTINUITY?.isRestoring?.()||window.STONEFELLOW_CHAT_CONTINUITY?.isReady?.()===false?null:({id:window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()||0,agent:Number(window.STONEFELLOW_CHAT?.agentId||0)}),
     conversationUrl:ref=>{const u=new URL(cfg.chatUrl,location.href);if(Number.isSafeInteger(Number(ref?.id))&&Number(ref.id)>0){u.searchParams.set('conversation_id',String(ref.id));u.searchParams.set('agent',Number(ref.agent)>0?String(Number(ref.agent)):'system');}return u.href;},

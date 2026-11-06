@@ -45,12 +45,22 @@ function vp3_initiative_inference_health_v1(PDO $pdo,array $user,int $agentId): 
 }
 
 /** Execute through the same owner routing and governed inference boundaries as Chat. */
-function vp3_initiative_infer_v1(PDO $pdo,array $user,int $agentId,string $prompt,string $protocol): string
+function vp3_initiative_infer_v1(PDO $pdo,array $user,int $agentId,string $prompt,string $protocol,bool $transientContext=false,?callable $beforeInference=null): string
 {
-    return vp3_ai_with_budget_v1(55,static fn()=>vp3_initiative_infer_scoped_v1($pdo,$user,$agentId,$prompt,$protocol));
+    return vp3_ai_with_budget_v1(55,static fn()=>vp3_initiative_infer_scoped_v1($pdo,$user,$agentId,$prompt,$protocol,$transientContext,$beforeInference));
 }
 
-function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string $prompt,string $protocol): string
+/** Recheck the actual selected transport after a live-source preflight. */
+function vp3_initiative_transient_route_current_v1(PDO $pdo,array $user,int $agentId,string $target): void
+{
+    $current=vp3_initiative_inference_health_v1($pdo,$user,$agentId);
+    $allowed=($current['ready']??false)===true&&(
+        $target==='homeserver'?($current['route']??'')==='homeserver'
+            :(($current['route']??'')==='vp3_cloud'||($current['cloud_fallback_allowed']??false)===true));
+    if(!$allowed)throw new RuntimeException('route_unavailable',503);
+}
+
+function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string $prompt,string $protocol,bool $transientContext=false,?callable $beforeInference=null): string
 {
     $GLOBALS['vp3_initiative_inference_last_v1']=[];
     if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1'],true)
@@ -61,12 +71,14 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
     if(empty($route['ready']))throw new RuntimeException((string)$route['reason'],503);
     if($route['route']==='homeserver'){
         try{
+            if($beforeInference!==null)$beforeInference();
+            if($transientContext)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver');
             $run=homeserver_execution_v230_execute((int)$user['id'],'agent.infer.local',[
                 'messages'=>[
                     ['role'=>'system','content'=>vp3_tool_json_contract_v1($protocol)],
                     ['role'=>'user','content'=>$prompt],
                 ],
-            ]);
+            ],null,$transientContext);
             $result=is_array($run['result']??null)?$run['result']:[];
             $answer=is_string($result['reply']??null)?trim($result['reply']):'';
             if($answer==='')throw new RuntimeException('model_unavailable',503);
@@ -94,6 +106,10 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
         }
     }
     if($route['route']==='vp3_cloud'){
+        // A permitted fallback is another inference attempt. A stopped or
+        // revoked live source cannot travel to it on an old request snapshot.
+        if($beforeInference!==null)$beforeInference();
+        if($transientContext)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'vp3_cloud');
         $result=ai_generate_chat_response($prompt,[],[],$user,'main_ai',[
             'surface'=>'tool_json','protocol'=>$protocol,
         ]);
