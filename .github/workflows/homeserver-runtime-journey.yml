@@ -322,6 +322,7 @@ jobs:
           php tests/agent-initiative-actions-mysql.php
           php tests/agent-initiative-schedule-actions-mysql.php
           php tests/agent-initiative-followups-mysql.php
+          php tests/agent-initiative-followup-conditions-mysql.php
           php tests/agent-initiative-capabilities-mysql.php
           php tests/homeserver-https-transient-inference-mysql.php
           php tests/agent-initiative-voice-mysql.php

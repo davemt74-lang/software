@@ -24,6 +24,7 @@ const companion=fs.readFileSync(path.join(source,'tests/fixtures/initiative-foll
 fs.writeFileSync(path.join(temp,'includes/initiative-followthrough-chat-fixture.php'),companion);
 let bootstrap=fs.readFileSync(path.join(source,'tests/fixtures/capability-chat-bootstrap.php'),'utf8');
 for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete'])bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+bootstrap=bootstrap.replace("$sql=str_replace(' FOR UPDATE','',$sql);","$sql=str_replace([' FOR UPDATE','INSERT IGNORE'],['','INSERT OR IGNORE'],$sql);");
 bootstrap=bootstrap.replace('declare(strict_types=1);','declare(strict_types=1); session_start();');
 const runtimeSource=fs.readFileSync(path.join(source,'includes/agent-runtime-v125.php'),'utf8');
 const primitiveStart=runtimeSource.indexOf('function agent_runtime_v125_idempotency_path('),primitiveEnd=runtimeSource.indexOf('function agent_background_v125_jobs_dir(',primitiveStart);
@@ -119,7 +120,30 @@ try{
       check(state.calls.filter(call=>call.kind==='followup_model').length===1,'the same main Chat receives one fresh model reassessment');
     }finally{await context.close();}
   }
-  console.log(checks+' real scheduled follow-up browser checks passed');
+  for(const mobile of [false,true]){
+    let state=await control('seed');const proposal=rootPost(state);state=await control('condition_seed');const target=state.condition_target;
+    const plan={adapter:'proposal.revisit.create',arguments:{focus:'Review the launch after this Mission completes',condition:{milestone:'mission_completed',target_ref:target}}};
+    const context=await browser.newContext({viewport:{width:mobile?390:1280,height:850},extraHTTPHeaders:actionHeaders(plan)});
+    const page=await context.newPage();page.setDefaultTimeout(15000);
+    try{
+      await page.goto(base);await ready(page);await choose(page,proposal.id);await send(page,'Revisit this once that exact Mission completes.');
+      state=await control();const review=contextOf(latestAck(state)).initiative_action;
+      check(review?.arguments.condition.target_ref===target&&state.reminders.length===0,'condition review binds the supplied target without saving or inventing a time');
+      const card=page.locator('[data-initiative-action-run="'+review.run_id+'"]');await card.waitFor();
+      check((await card.textContent()).includes('Mission completed')&&(await card.textContent()).includes(target),'the actual Chat card displays the exact milestone and prerequisite before approval');
+      check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'conditional review fits desktop and mobile');
+      await context.setExtraHTTPHeaders(actionHeaders());await card.getByRole('button',{name:'Reply',exact:true}).click();await send(page,'Yes, save that exact conditional revisit.');
+      state=await control();const reminder=state.reminders[0];
+      check(reminder.start_local===''&&reminder.next_at===null&&JSON.parse(reminder.followup_condition_json).target_ref===target,'conditional approval persists the canonical no-deadline commitment');
+      await page.reload();await ready(page);check(await page.locator('[data-initiative-action-reply]').count()===0,'reload cannot reapprove a completed conditional commitment');
+      const before=state.messages.length;state=await control('tick',{id:reminder.id});check(state.messages.length===before&&!state.calls.some(x=>x.kind==='followup_model'),'a waiting Mission triggers no inference or generic reminder Chat');
+      await control('condition_complete',{mission_id:target.slice(8)});await control('tick',{id:reminder.id});state=await control('run',{id:reminder.id});
+      check(Number(state.occurrences[0].message_id)>0,'actual Mission completion reaches one natural Chat response through the existing worker');
+      const model=state.calls.filter(x=>x.kind==='followup_model').at(-1),prompt=JSON.parse(model.payload);
+      check(prompt.owner_followup.current_context.condition_completion.proof.native_completion.length===2,'conditional browser journey receives both real Mission worker receipts');
+    }finally{await context.close();}
+  }
+  console.log(checks+' real scheduled and conditional follow-up browser checks passed');
 }catch(error){console.error(logs.slice(-14000));throw error;}
 finally{
   if(browser)await browser.close();

@@ -32,6 +32,9 @@ function vp3_initiative_followup_origin_v1(PDO $pdo,array $user,array $principal
         ||!is_array($saved)||($saved['record_id']??null)!==$reminderId||($saved['action_id']??null)!=='initiative-action:'.$actionId
         ||($saved['followup_origin']??null)!==($creating['goal']['plan']['origin']??null)
         ||($creating['goal']['proposal_goal_hash']??null)!==$origin['state']['goal_hash'])throw new RuntimeException('Follow-up creation receipt changed.',409);
+    $condition=$creating['goal']['plan']['condition']??null;
+    $stored=$reminder['followup_condition_json']??null;
+    if(($condition===null)!==($stored===null)||($condition!==null&&json_decode((string)$stored,true,16,JSON_THROW_ON_ERROR)!==$condition))throw new RuntimeException('Follow-up condition commitment changed.',409);
     $sourceOrigin=$creating['goal']['plan']['source_origin']??null;
     if(!is_array($sourceOrigin)||($sourceOrigin['owner_user_id']??null)!==(int)$user['id']||($sourceOrigin['agent_id']??null)!==$origin['agent_id']
         ||!is_int($sourceOrigin['conversation_id']??null)||!is_int($sourceOrigin['message_id']??null)||!is_string($sourceOrigin['goal_hash']??null))throw new RuntimeException('Follow-up canonical source origin changed.',409);
@@ -83,7 +86,12 @@ function vp3_initiative_followup_refresh_v1(PDO $pdo,array $linked): array
             if(!isset($evidence[$ref]))throw new RuntimeException('A follow-up source is no longer available.',409);
             $row=$evidence[$ref];$revisions[$ref]=$row['revision'];$records[]=['ref'=>$ref,'kind'=>$row['kind'],'title'=>$row['title'],'detail'=>$row['detail']??''];
         }
-        $context=['records'=>$records,'source_revisions'=>$revisions,'coverage'=>'exact_original_sources','permission'=>'Fresh private reassessment only. No previous action approval is reused.'];
+        $condition=$linked['creating_action']['goal']['plan']['condition']??null;$completion=null;
+        if($condition!==null){
+            $completion=vp3_initiative_followup_condition_check_v1($pdo,$scope,$condition);
+            if($completion===null)throw new RuntimeException('Follow-up is still waiting for its reviewed condition.',409);
+        }
+        $context=['condition_completion'=>$completion,'records'=>$records,'source_revisions'=>$revisions,'coverage'=>'exact_original_sources','permission'=>'Fresh private reassessment only. No previous action approval is reused.'];
         if(strlen(json_encode($context,JSON_THROW_ON_ERROR))>65536)throw new RuntimeException('Follow-up context exceeds its verified read bound.',503);
         return ['user'=>$live,'principal'=>$principal,'binding'=>$policy,'current_context'=>$context,
             'context_hash'=>vp3_initiative_followup_hash_v1($context),'origin_hash'=>$linked['origin_hash'],

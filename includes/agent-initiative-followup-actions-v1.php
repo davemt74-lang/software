@@ -2,11 +2,12 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-initiative-schedule-actions-v1.php';
+require_once __DIR__.'/agent-initiative-followup-conditions-v1.php';
 if(!function_exists('reminder_ready_v1'))require_once __DIR__.'/agent-reminders-v1.php';
 
 function vp3_initiative_followup_action_ready_v1(PDO $pdo): bool
 {
-    if(!function_exists('reminder_execute_locked_v1')||!function_exists('reminder_schedule_v1')||!reminder_ready_v1($pdo)||!column_exists('agent_reminders_v1','followup_action_id'))return false;
+    if(!function_exists('reminder_execute_locked_v1')||!function_exists('reminder_schedule_v1')||!reminder_ready_v1($pdo)||!column_exists('agent_reminders_v1','followup_action_id')||!column_exists('agent_reminders_v1','followup_condition_json'))return false;
     try{
         if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){
             $indexes=$pdo->query('PRAGMA index_list(agent_reminders_v1)')->fetchAll(PDO::FETCH_ASSOC);
@@ -58,7 +59,9 @@ function vp3_initiative_followup_action_catalog_v1(PDO $pdo,array $user,array $p
     $out=[];
     foreach(['create','update','cancel'] as $op)$out[]=['adapter'=>'proposal.revisit.'.$op,'capability'=>'reminders.manage',
         'operation'=>$op,'effect_class'=>'private_record','review_required'=>true,
-        'description'=>'Explicitly '.$op.' a one-time main Chat revisit of this exact saved proposal. A plain later/defer is unscheduled. Review exact local date, time, timezone and focus. A revisit only reassesses current sources; it never approves the original action.',
+        'description'=>'Explicitly '.$op.' a one-time main Chat revisit of this exact saved proposal. A plain later/defer is unscheduled. For a timed revisit review exact local date, time, timezone and focus. For a conditional create use only focus and condition from conditional_alternative; do not invent a date. Select an exact supplied condition target or clarify. Conditional revisits must be cancelled before replacement. A revisit only reassesses current sources; it never approves the original action.',
+        'conditional_alternative'=>$op==='create'?['focus'=>'plain text, 1–240 characters','condition'=>['milestone'=>'one declared milestone','target_ref'=>'exact supplied condition target reference']]:null,
+        'condition_milestones'=>$op==='create'?vp3_initiative_followup_condition_contract_v1():[],
         'arguments'=>$op==='cancel'?['followup_id'=>'exact supplied followup ID']:
             ($op==='update'?['followup_id'=>'exact supplied followup ID']:[])+['focus'=>'plain text, 1–240 characters','start_local'=>'YYYY-MM-DDTHH:MM:SS','timezone'=>'explicit or configured IANA timezone']];
     return $out;
@@ -66,13 +69,14 @@ function vp3_initiative_followup_action_catalog_v1(PDO $pdo,array $user,array $p
 
 function vp3_initiative_followup_action_resources_v1(PDO $pdo,array $loaded,array $binding): array
 {
-    if(!vp3_initiative_followup_action_ready_v1($pdo))return ['followups'=>[]];
-    $id=$loaded['state']['followup_reminder_id']??0;if(!is_int($id)||$id<1)return ['followups'=>[]];
+    if(!vp3_initiative_followup_action_ready_v1($pdo))return ['followups'=>[],'condition_targets'=>[]];
+    $targets=vp3_initiative_followup_condition_resources_v1($pdo,$loaded['user'],$loaded['principal'],$binding);
+    $id=$loaded['state']['followup_reminder_id']??0;if(!is_int($id)||$id<1)return ['followups'=>[],'condition_targets'=>$targets];
     require_once __DIR__.'/agent-initiative-followup-origin-v1.php';
     $linked=vp3_initiative_followup_origin_v1($pdo,$loaded['user'],$loaded['principal'],$id);
     if((int)$linked['origin']['message']['id']!==(int)$loaded['message']['id'])throw new RuntimeException('Follow-up proposal changed.',409);
     $r=$linked['reminder'];
-    return ['followups'=>[['id'=>$id,'ref'=>'reminder:'.$id,'title'=>(string)$r['title'],'status'=>(string)$r['status'],
+    return ['condition_targets'=>$targets,'followups'=>[['id'=>$id,'ref'=>'reminder:'.$id,'title'=>(string)$r['title'],'status'=>(string)$r['status'],
         'revision'=>(int)$r['revision'],'origin_action_id'=>(int)$r['followup_action_id']]]];
 }
 
@@ -89,7 +93,8 @@ function vp3_initiative_followup_action_normalize_v1(PDO $pdo,array $user,array 
         $q=$pdo->prepare('SELECT status FROM agent_reminders_v1 WHERE id=? AND owner_user_id=?');$q->execute([$binding['followup_reminder_id'],(int)$scope['user']['id']]);
         if($q->fetchColumn()==='active')throw new RuntimeException('Update or cancel the existing scheduled revisit first.',409);
     }
-    $keys=$op==='cancel'?['followup_id']:($op==='update'?['followup_id','focus','start_local','timezone']:['focus','start_local','timezone']);
+    $conditional=$op==='create'&&array_key_exists('condition',$args);
+    $keys=$conditional?['focus','condition']:($op==='cancel'?['followup_id']:($op==='update'?['followup_id','focus','start_local','timezone']:['focus','start_local','timezone']));
     vp3_initiative_schedule_action_fields_v1($args,$keys);
     if(count($args)!==count($keys))throw new InvalidArgumentException('Complete follow-up details are required.');
     $origin=array_intersect_key($binding,array_flip(['owner_user_id','agent_id','conversation_id','proposal_message_id','reply_ref','proposal_revision','owner_message_id','owner_message_hash','proposal_goal_hash']));
@@ -112,13 +117,18 @@ function vp3_initiative_followup_action_normalize_v1(PDO $pdo,array $user,array 
     }
     if($op!=='cancel'){
         if(!is_string($args['focus'])||trim($args['focus'])===''||mb_strlen($args['focus'])>240||preg_match('/[\x00-\x1f\x7f]/',$args['focus']))throw new InvalidArgumentException('Choose a short follow-up focus.');
-        $normalized+=['focus'=>trim($args['focus']),'start_local'=>$args['start_local'],'timezone'=>$args['timezone']];
-        $nativeArgs['schedule']=['title'=>$normalized['focus'],'start_local'=>$args['start_local'],'timezone'=>$args['timezone'],'recurrence'=>'none','delivery'=>'chat'];
+        if($conditional){
+            $condition=vp3_initiative_followup_condition_normalize_v1($pdo,$scope,$args['condition'],$allowed['condition_targets']??[]);
+            $normalized=['focus'=>trim($args['focus']),'condition'=>array_intersect_key($condition,array_flip(['milestone','target_ref']))];
+        }else $normalized+=['focus'=>trim($args['focus']),'start_local'=>$args['start_local'],'timezone'=>$args['timezone']];
+        if(!$conditional)$nativeArgs['schedule']=['title'=>$normalized['focus'],'start_local'=>$args['start_local'],'timezone'=>$args['timezone'],'recurrence'=>'none','delivery'=>'chat'];
     }
-    $native=vp3_initiative_schedule_action_normalize_v1($pdo,$scope['user'],$scope['principal'],$binding,['adapter'=>'reminder.'.$op,'arguments'=>$nativeArgs],$resources);
-    if($op!=='cancel'){$normalized['start_local']=$native['arguments']['schedule']['start_local'];$normalized['timezone']=$native['arguments']['schedule']['timezone'];}
+    if($conditional)$native=['adapter'=>'reminder.create','arguments'=>['condition'=>$condition,'schedule'=>['title'=>$normalized['focus'],'timezone'=>'UTC','start_local'=>'','recurrence'=>'none','delivery'=>'chat']],
+        'capability'=>'reminders.manage','operation'=>'create','effect_class'=>'private_record','review_required'=>true,'target_refs'=>[],'expected'=>[]];
+    else $native=vp3_initiative_schedule_action_normalize_v1($pdo,$scope['user'],$scope['principal'],$binding,['adapter'=>'reminder.'.$op,'arguments'=>$nativeArgs],$resources);
+    if($op!=='cancel'&&!$conditional){$normalized['start_local']=$native['arguments']['schedule']['start_local'];$normalized['timezone']=$native['arguments']['schedule']['timezone'];}
     return ['adapter'=>$adapter,'arguments'=>$normalized,'capability'=>'reminders.manage','operation'=>$op,'effect_class'=>'private_record',
-        'review_required'=>true,'target_refs'=>$native['target_refs'],'expected'=>$expected,'origin'=>$origin,'source_origin'=>$sourceOrigin,'native_plan'=>$native];
+        'review_required'=>true,'target_refs'=>$native['target_refs'],'expected'=>$expected,'origin'=>$origin,'source_origin'=>$sourceOrigin,'native_plan'=>$native]+($conditional?['condition'=>$condition]:[]);
 }
 
 function vp3_initiative_followup_action_apply_v1(PDO $pdo,array $user,array $principal,array $binding,array $plan,string $actionId): array
@@ -126,9 +136,11 @@ function vp3_initiative_followup_action_apply_v1(PDO $pdo,array $user,array $pri
     if(!$pdo->inTransaction()||!preg_match('/\Ainitiative-action:([1-9][0-9]*)\z/D',$actionId,$match))throw new RuntimeException('Follow-up action requires the canonical owner transaction.',409);
     $scope=vp3_initiative_action_scope_v1($pdo,$user,$principal,$binding);$op=$plan['operation'];$allowed=['followups'=>[]];
     if($op!=='create')$allowed['followups'][]=$plan['expected'];
+    if(isset($plan['condition']))$allowed['condition_targets']=[['ref'=>$plan['condition']['target_ref'],'identity_hash'=>$plan['condition']['identity_hash']]];
     $current=vp3_initiative_followup_action_normalize_v1($pdo,$scope['user'],$scope['principal'],$binding,['adapter'=>$plan['adapter'],'arguments'=>$plan['arguments']],$allowed);
     if($current!==$plan)throw new RuntimeException('Reviewed follow-up changed.',409);
-    $native=vp3_initiative_schedule_action_apply_v1($pdo,$scope['user'],$scope['principal'],$binding,$plan['native_plan'],$actionId);$id=$native['record_id'];
+    if(isset($plan['condition']))$native=vp3_initiative_followup_condition_apply_v1($pdo,$scope,$plan,$actionId);
+    else $native=vp3_initiative_schedule_action_apply_v1($pdo,$scope['user'],$scope['principal'],$binding,$plan['native_plan'],$actionId);$id=$native['record_id'];
     if($op==='create'){
         $q=$pdo->prepare('UPDATE agent_reminders_v1 SET followup_action_id=? WHERE id=? AND owner_user_id=? AND conversation_id=? AND followup_action_id IS NULL');
         $q->execute([(int)$match[1],$id,(int)$scope['user']['id'],$scope['conversation_id']]);if($q->rowCount()!==1)throw new RuntimeException('Follow-up origin was not linked.',409);
