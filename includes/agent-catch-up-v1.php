@@ -86,6 +86,7 @@ function vp3_catch_up_reminders_v1(PDO $pdo,array $user,array $principal,DateTim
     foreach($rows as $row){
         $id=(int)$row['id'];
         if(!vp3_participant_resource_v1($pdo,$user,$principal,'reminder',$id))continue;
+        if(!empty($row['followup_action_id'])){if(!function_exists('reminder_initiative_agent_visible_v1'))throw new RuntimeException('Follow-up scope verification is unavailable.',503);if(!reminder_initiative_agent_visible_v1($pdo,$row,$principal))continue;}
         $at=vp3_catch_up_timestamp_v1($row['list_at']??null,new DateTimeZone('UTC'));
         if($at===null||$at>$now->getTimestamp())continue;
         $local=(new DateTimeImmutable('@'.$at))->setTimezone($zone);

@@ -99,6 +99,8 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.profile_calls.failed',['error_class'=>get_class($e)]);}
         $counts['profile_speech']=agent_worker_profile_speech_maintenance_v1910($pdo,$ownerLimit);
         $counts['profile_attention']=agent_worker_profile_attention_maintenance_v1910($pdo,$ownerLimit);
+        require_once __DIR__.'/includes/agent-initiative-followups-v1.php';
+        $counts['scheduled_followups']=vp3_initiative_followup_worker_maintenance_v1($pdo,$ownerLimit);
         try{
             vp3_initiative_sweep_v1($pdo,$ownerLimit);
             if(agent_brain_schema_ready()&&agent_job_engine_schema_ready_v1900($pdo)){

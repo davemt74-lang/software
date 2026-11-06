@@ -212,6 +212,8 @@ jobs:
           php tests/agent-initiative-actions-long-message-v1.php
           node tests/initiative-action-review-browser.mjs
           node tests/initiative-actions-e2e.mjs
+          php tests/agent-initiative-followups-v1.php
+          node tests/initiative-followups-e2e.mjs
       - name: Agent conversation follow-through
         run: |
           php tests/agent-initiative-followthrough-v1.php
@@ -319,6 +321,7 @@ jobs:
           php tests/agent-initiative-followthrough-mysql.php
           php tests/agent-initiative-actions-mysql.php
           php tests/agent-initiative-schedule-actions-mysql.php
+          php tests/agent-initiative-followups-mysql.php
           php tests/agent-initiative-capabilities-mysql.php
           php tests/homeserver-https-transient-inference-mysql.php
           php tests/agent-initiative-voice-mysql.php

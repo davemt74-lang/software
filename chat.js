@@ -1895,13 +1895,14 @@
     const names={'task.create':'Create task','task.set_status':'Update task status','task_list.create':'Create list','task_list.add':'Add to list',
       'reminder.create':'Create reminder','reminder.update':'Update reminder','reminder.complete':'Complete reminder occurrence',
       'reminder.snooze':'Snooze reminder occurrence','reminder.dismiss':'Dismiss reminder occurrence','reminder.cancel':'Cancel reminder series','reminder.delete':'Delete reminder',
+      'proposal.revisit.create':'Schedule one-time revisit','proposal.revisit.update':'Reschedule revisit','proposal.revisit.cancel':'Cancel scheduled revisit',
       'calendar.create':'Create calendar event','calendar.update':'Update calendar event','calendar.cancel':'Cancel calendar event'};
     if(!Object.hasOwn(names,action.adapter))return;
     const targets=action.targets??[];
     if(!Array.isArray(targets)||targets.length>8||targets.some(target=>!target||typeof target.ref!=='string'
       ||!/^(?:task|task-list|reminder|calendar:event):[1-9][0-9]*(?:@[0-9]{8}T[0-9]{6}Z)?$/.test(target.ref)
       ||typeof target.title!=='string'||target.title.length>1000))return;
-    const labels={title:'Title',name:'List',task_id:'Task',list_id:'List',status:'Status',target_ref:'Record',minutes:'Minutes',
+    const labels={focus:'Revisit focus',followup_id:'Follow-up reminder',title:'Title',name:'List',task_id:'Task',list_id:'List',status:'Status',target_ref:'Record',minutes:'Minutes',
       schedule:'Schedule',event:'Event',description:'Description',location:'Location',timezone:'Time zone',date:'Date',start_local:'Local time',
       start_time:'Start time',end_time:'End time',end_date:'End date',all_day:'All day',recurrence:'Repeat',delivery:'Delivery',agent_notifications:'Agent updates',
       frequency:'Frequency',interval:'Interval',weekdays:'Days',until:'Until',count:'Occurrences',mode:'Mode',text:'Text',voice:'Voice',days:'Days',type:'Type'};
@@ -1922,6 +1923,12 @@
       return true;
     };
     if(!collect(action.arguments)||!entries.length)return;
+    // Only one pending review exists for a proposal. A replacement cannot
+    // leave an older card offering approval for a different frozen action.
+    for(const prior of thread.querySelectorAll('[data-initiative-action-proposal="'+outcome.message_id+'"]')){
+      if(prior.dataset.initiativeActionRun===String(action.run_id)||prior.dataset.initiativeActionStatus!=='approval_pending')continue;
+      prior.dataset.initiativeActionStatus='cancelled';prior.querySelector('[data-initiative-action-status]').textContent='Replaced by a newer review';prior.querySelector('[data-initiative-action-reply]')?.remove();
+    }
     // A later verified completion retires earlier views of this exact review.
     if(action.status!=='approval_pending')for(const prior of thread.querySelectorAll('[data-initiative-action-run="'+action.run_id+'"]')){
       if(prior.dataset.initiativeActionPlan!==action.plan_hash)continue;
@@ -1931,7 +1938,7 @@
     }
     if(element.querySelector('[data-initiative-action-run]'))return;
     const review=document.createElement('section');review.className='chat-initiative-action-review';review.dataset.initiativeActionRun=String(action.run_id);
-    review.dataset.initiativeActionPlan=action.plan_hash;review.dataset.initiativeActionStatus=action.status;review.setAttribute('aria-label',names[action.adapter]);
+    review.dataset.initiativeActionProposal=String(outcome.message_id);review.dataset.initiativeActionPlan=action.plan_hash;review.dataset.initiativeActionStatus=action.status;review.setAttribute('aria-label',names[action.adapter]);
     const heading=document.createElement('strong');heading.textContent=names[action.adapter];
     const status=document.createElement('small');status.dataset.initiativeActionStatus='';
     status.textContent=action.status==='approval_pending'?'Review before saving':action.status==='completed'?'Completed · verified receipt #'+action.receipt_id:'Cancelled';
