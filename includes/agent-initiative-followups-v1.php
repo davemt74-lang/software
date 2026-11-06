@@ -21,6 +21,11 @@ function vp3_initiative_followup_due_v1(PDO $pdo,array $reminder,array $occurren
     if(!$agent)throw new RuntimeException('Follow-up creating action is unavailable.',409);
     $aid=(int)($agent['agent_id']??0);$principal=vp3_initiative_principal_v1($pdo,$user,$aid);
     $linked=vp3_initiative_followup_origin_v1($pdo,$user,$principal,(int)$reminder['id']);
+    $condition=$linked['creating_action']['goal']['plan']['condition']??null;
+    if($condition!==null){
+        $scope=['user'=>$linked['user'],'principal'=>$linked['principal'],'agent_id'=>$aid,'conversation_id'=>$linked['origin']['conversation_id']];
+        if(vp3_initiative_followup_condition_check_v1($pdo,$scope,$condition)===null){$GLOBALS['VP3_FOLLOWUP_TICK_V1']['waiting']=($GLOBALS['VP3_FOLLOWUP_TICK_V1']['waiting']??0)+1;return false;}
+    }
     $fresh=vp3_initiative_followup_refresh_v1($pdo,$linked);$binding=$fresh['binding'];
     $scope=['user'=>$fresh['user'],'principal'=>$fresh['principal'],'agent_id'=>$aid,'conversation_id'=>$binding['conversation_id'],'verification_only'=>true];
     $ref='reminder:'.(int)$reminder['id'];$coverage=[];

@@ -116,13 +116,16 @@ function vp3_initiative_office_reminder_state_v1(PDO $pdo,array $scope,int $id):
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $o)$occurrences[]=['id'=>(int)$o['id'],
         'scheduled_at'=>(string)$o['scheduled_at'],'wake_at'=>(string)$o['wake_at'],'status'=>(string)$o['status']];
     // The same pending occurrence remains current when the scheduler advances next_at.
-    $next=$occurrences?$occurrences[0]['wake_at']:($row['next_at']??null);
+    $condition=empty($row['followup_condition_json'])?null:json_decode((string)$row['followup_condition_json'],true,16,JSON_THROW_ON_ERROR);
+    $next=$condition!==null?null:($occurrences?$occurrences[0]['wake_at']:($row['next_at']??null));
+    if($condition!==null)$occurrences=[]; // Polling telemetry is not an owner deadline.
     return ['owner_user_id'=>$owner,'id'=>$id,'title'=>vp3_initiative_office_text_v1($row['title'],1000),
         'timezone'=>vp3_initiative_office_text_v1($row['timezone'],100),
         'start_local'=>vp3_initiative_office_text_v1($row['start_local'],40),
         'recurrence'=>vp3_initiative_office_text_v1($row['recurrence'],20),
         'delivery'=>vp3_initiative_office_text_v1($row['delivery'],20),'status'=>(string)$row['status'],
         'conversation_id'=>(int)$row['conversation_id'],'next_delivery_at'=>$next,
+        'condition'=>$condition,'waiting_for_condition'=>$condition!==null,
         'pending_occurrences'=>$occurrences,'pending_coverage'=>count($occurrences)>=2?'limited':'ready'];
 }
 

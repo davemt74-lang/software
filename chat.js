@@ -1902,7 +1902,7 @@
     if(!Array.isArray(targets)||targets.length>8||targets.some(target=>!target||typeof target.ref!=='string'
       ||!/^(?:task|task-list|reminder|calendar:event):[1-9][0-9]*(?:@[0-9]{8}T[0-9]{6}Z)?$/.test(target.ref)
       ||typeof target.title!=='string'||target.title.length>1000))return;
-    const labels={focus:'Revisit focus',followup_id:'Follow-up reminder',title:'Title',name:'List',task_id:'Task',list_id:'List',status:'Status',target_ref:'Record',minutes:'Minutes',
+    const labels={condition:'Condition',milestone:'Milestone',focus:'Revisit focus',followup_id:'Follow-up reminder',title:'Title',name:'List',task_id:'Task',list_id:'List',status:'Status',target_ref:'Record',minutes:'Minutes',
       schedule:'Schedule',event:'Event',description:'Description',location:'Location',timezone:'Time zone',date:'Date',start_local:'Local time',
       start_time:'Start time',end_time:'End time',end_date:'End date',all_day:'All day',recurrence:'Repeat',delivery:'Delivery',agent_notifications:'Agent updates',
       frequency:'Frequency',interval:'Interval',weekdays:'Days',until:'Until',count:'Occurrences',mode:'Mode',text:'Text',voice:'Voice',days:'Days',type:'Type'};
@@ -1916,7 +1916,8 @@
         else{
           const scalar=item=>item===null||typeof item==='boolean'||typeof item==='string'&&item.length<=10000||typeof item==='number'&&Number.isSafeInteger(item);
           if(Array.isArray(value)?value.length>14||!value.every(scalar):!scalar(value))return false;
-          const format=item=>item===null?'None':item===true?'Yes':item===false?'No':String(item);
+          const milestoneNames={mission_completed:'Mission completed'};
+          const format=item=>key==='milestone'&&Object.hasOwn(milestoneNames,item)?milestoneNames[item]:item===null?'None':item===true?'Yes':item===false?'No':String(item);
           entries.push([label,Array.isArray(value)?value.map(format).join(', '):format(value)]);
         }
       }

@@ -90,8 +90,8 @@ function vp3_initiative_action_prompt_resources_v1(array $resources): array
     foreach($resources as $family=>$rows){
         if(!is_array($rows)||!array_is_list($rows))throw new RuntimeException('Action resource discovery changed.',503);
         $sample=array_slice($rows,0,80);
-        $out[$family]=['coverage'=>count($rows)>count($sample)?'limited':'complete','total'=>count($rows),
-            'records'=>array_map(static fn(array $row):array=>array_intersect_key($row,array_flip(['id','ref','title','name','status','occurrence_id'])),$sample)];
+        $out[$family]=['coverage'=>$family==='condition_targets'||count($rows)>count($sample)?'limited':'complete','total'=>count($rows),
+            'records'=>array_map(static fn(array $row):array=>array_intersect_key($row,array_flip(['id','ref','title','name','status','occurrence_id','milestones'])),$sample)];
     }
     return $out;
 }
