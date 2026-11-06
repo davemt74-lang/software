@@ -198,6 +198,20 @@ jobs:
           node tests/agent-live-context-browser.mjs
           node tests/agent-live-sensory-producers-browser.mjs
           node tests/initiative-live-context-browser.mjs
+      - name: Reviewed Agent actions and native receipts
+        run: |
+          php tests/personal-capabilities-strict-v1.php
+          php tests/agent-initiative-action-clock-v1.php
+          php tests/agent-initiative-office-actions-v1.php
+          php tests/agent-initiative-schedule-kernels-v1.php
+          php tests/agent-initiative-schedule-actions-v1.php
+          php tests/agent-initiative-action-sources-v1.php
+          php tests/agent-initiative-action-schedule-sources-v1.php
+          php tests/agent-initiative-action-source-scope-v1.php
+          php tests/agent-initiative-actions-v1.php
+          php tests/agent-initiative-actions-long-message-v1.php
+          node tests/initiative-action-review-browser.mjs
+          node tests/initiative-actions-e2e.mjs
       - name: Agent conversation follow-through
         run: |
           php tests/agent-initiative-followthrough-v1.php
@@ -303,6 +317,8 @@ jobs:
           VP3_MYSQL_TEST_PASSWORD: section7-fixture
         run: |
           php tests/agent-initiative-followthrough-mysql.php
+          php tests/agent-initiative-actions-mysql.php
+          php tests/agent-initiative-schedule-actions-mysql.php
           php tests/agent-initiative-capabilities-mysql.php
           php tests/homeserver-https-transient-inference-mysql.php
           php tests/agent-initiative-voice-mysql.php

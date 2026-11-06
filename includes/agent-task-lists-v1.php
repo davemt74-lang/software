@@ -48,6 +48,19 @@ function vp3_task_list_find_v1(PDO $pdo,array $u,array $p,string $name): ?array
 {
     $q=$pdo->prepare('SELECT * FROM agent_task_lists_v1 WHERE owner_user_id=? AND agent_scope_id=? AND name_key=?');$q->execute([(int)$u['id'],vp3_task_list_agent_v1($p),vp3_task_list_key_v1($name)]);$row=$q->fetch(PDO::FETCH_ASSOC)?:null;return $row&&(!function_exists('vp3_participant_resource_v1')||vp3_participant_resource_v1($pdo,$u,$p,'task_list',(int)$row['id']))?$row:null;
 }
+/** Canonical mutation kernels; caller retains its existing owner transaction. */
+function vp3_task_list_create_v1(PDO $pdo,array $u,array $p,string $name): array
+{
+    $pdo->prepare('INSERT INTO agent_task_lists_v1(owner_user_id,agent_scope_id,name,name_key,created_at) VALUES(?,?,?,?,?)')->execute([(int)$u['id'],vp3_task_list_agent_v1($p),$name,vp3_task_list_key_v1($name),gmdate('Y-m-d\TH:i:s\Z')]);
+    $list=vp3_task_list_find_v1($pdo,$u,$p,$name);if(!$list)throw new RuntimeException('List save was not verified.');return $list;
+}
+function vp3_task_list_attach_task_v1(PDO $pdo,array $u,array $p,array $list,int $id,string $title): void
+{
+    vp3_task_list_existing_task_v1($pdo,$u,$p,$id);
+    $pdo->prepare('INSERT INTO agent_task_list_items_v1(list_id,task_id,item_key,created_at) VALUES(?,?,?,?)')->execute([(int)$list['id'],$id,vp3_task_list_key_v1($title),gmdate('Y-m-d\TH:i:s\Z')]);
+    $q=$pdo->prepare('SELECT task_id FROM agent_task_list_items_v1 WHERE list_id=? AND task_id=?');$q->execute([(int)$list['id'],$id]);
+    if((int)$q->fetchColumn()!==$id)throw new RuntimeException('List membership was not verified.');
+}
 function vp3_task_list_task_allowed_v1(PDO $pdo,array $u,array $p,int $id): bool
 {
     if(function_exists('vp3_participant_resource_v1')&&!vp3_participant_resource_v1($pdo,$u,$p,'task',$id))return false;
@@ -136,9 +149,9 @@ function vp3_task_list_execute_v1(PDO $pdo,array $u,array $p,array $plan,array $
             if(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null){if(!$list)throw new RuntimeException('Ask the account owner to create and share this list first.',403);vp3_participant_require_resource_v1($pdo,$u,$p,'task_list',(int)$list['id'],true);}
             if(!$list&&!$pending){$r=vp3_task_list_prepare_v1($pdo,$u,$p,$cid,['action'=>$op,'list_name'=>$name,'title'=>$title,'task_id'=>$existingId]);$pdo->commit();return $r;}
             $created=false;
-            if(!$list){$pdo->prepare('INSERT INTO agent_task_lists_v1(owner_user_id,agent_scope_id,name,name_key,created_at) VALUES(?,?,?,?,?)')->execute([$uid,$aid,$name,vp3_task_list_key_v1($name),gmdate('Y-m-d\TH:i:s\Z')]);$list=vp3_task_list_find_v1($pdo,$u,$p,$name);if(!$list)throw new RuntimeException('List save was not verified.');$created=true;}
+            if(!$list){$list=vp3_task_list_create_v1($pdo,$u,$p,$name);$created=true;}
             $id=0;$duplicate=false;
-            if($title!==''){$q=$pdo->prepare('SELECT task_id FROM agent_task_list_items_v1 WHERE list_id=? AND item_key=?');$q->execute([(int)$list['id'],vp3_task_list_key_v1($title)]);$duplicate=(bool)$q->fetchColumn();if($existingId&&!$duplicate){vp3_task_list_existing_task_v1($pdo,$u,$p,$existingId);$pdo->prepare('INSERT INTO agent_task_list_items_v1(list_id,task_id,item_key,created_at) VALUES(?,?,?,?)')->execute([(int)$list['id'],$existingId,vp3_task_list_key_v1($title),gmdate('Y-m-d\TH:i:s\Z')]);$id=$existingId;}else $id=vp3_task_list_save_task_v1($pdo,$u,$p,$title,$list,$pending['token']??bin2hex(random_bytes(16)),$cid);}
+            if($title!==''){$q=$pdo->prepare('SELECT task_id FROM agent_task_list_items_v1 WHERE list_id=? AND item_key=?');$q->execute([(int)$list['id'],vp3_task_list_key_v1($title)]);$duplicate=(bool)$q->fetchColumn();if($existingId&&!$duplicate){vp3_task_list_attach_task_v1($pdo,$u,$p,$list,$existingId,$title);$id=$existingId;}else $id=vp3_task_list_save_task_v1($pdo,$u,$p,$title,$list,$pending['token']??bin2hex(random_bytes(16)),$cid);}
             $text=($created?'Created “'.$list['name'].'”. ':'').($title!==''?($duplicate?'“'.$title.'” is already in “'.$list['name'].'”.':'Added “'.$title.'” to “'.$list['name'].'”.'):'The list is ready.');
             $r=vp3_task_list_result_v1($text,($duplicate||(!$created&&$title===''))?'show':$op,($duplicate||(!$created&&$title===''))?'read_complete':'completed',(int)$list['id'],$id?1:0);$r['sticky_notes']=[['kind'=>'task_list','id'=>(int)$list['id']]];
         }
