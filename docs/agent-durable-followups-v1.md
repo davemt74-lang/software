@@ -13,7 +13,7 @@ Section 2A connects an explicit scheduled revisit to its original saved proposal
 - The cloud worker ticks reminders before selecting owners, so a closed browser does not prevent preparation. Concurrent tickers converge on one existing workflow per current occurrence/context. The existing occurrence lease bounds reassessment polling to once per minute so blocked/preparing items yield worker capacity to other due work.
 - At wake, the original item IDs are re-read under current authority. Closed tasks can be recognized as completed. Changed records cause a fresh assessment; removed/revoked records withhold old content. Live camera/microphone observations cannot silently become durable capture grants.
 - Preparation uses structured current facts and a natural Agent response. Scheduling never approves the original business action.
-- The existing Chat delivery/presence controls present the result when appropriate. One committed Chat message owns the occurrence; generic reminder text, notification and speech paths exclude it.
+- The existing Chat delivery/presence controls present the result when appropriate. One committed Chat message owns the occurrence; generic reminder text, notification and speech paths exclude it. Fulfilled revisits remain in history without occupying open attention or the active reminder capacity limit.
 - Cancel/reschedule, policy/Agent/account changes and stale source results are checked again before inference and delivery. Failed or unavailable follow-ups remain visible as limited worker status and canonical workflow history; they are not reported as successful.
 
 ## Acceptance criteria

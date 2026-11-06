@@ -99,6 +99,13 @@ function reminder_followup_delivered_v1(PDO $pdo,array $reminder): bool
     $q=$pdo->prepare('SELECT 1 FROM agent_reminder_occurrences_v1 WHERE reminder_id=? AND owner_user_id=? AND message_id IS NOT NULL AND notified_at IS NOT NULL AND presented_at IS NOT NULL LIMIT 1');
     $q->execute([(int)$reminder['id'],(int)$reminder['owner_user_id']]);return(bool)$q->fetchColumn();
 }
+/** Fulfilled linked revisits retain history without consuming active capacity. */
+function reminder_open_commitment_count_v1(PDO $pdo,int $uid): int
+{
+    $linked=function_exists('column_exists')&&column_exists('agent_reminders_v1','followup_action_id');
+    $filter=$linked?" AND (followup_action_id IS NULL OR next_at IS NOT NULL OR NOT EXISTS (SELECT 1 FROM agent_reminder_occurrences_v1 o WHERE o.reminder_id=agent_reminders_v1.id AND o.owner_user_id=agent_reminders_v1.owner_user_id AND o.message_id IS NOT NULL AND o.notified_at IS NOT NULL AND o.presented_at IS NOT NULL))":'';
+    $q=$pdo->prepare("SELECT COUNT(*) FROM agent_reminders_v1 WHERE owner_user_id=? AND status='active'".$filter);$q->execute([$uid]);return(int)$q->fetchColumn();
+}
 function reminder_rows_v1(PDO $pdo,int $uid): array
 {
     $q=$pdo->prepare("SELECT * FROM agent_reminders_v1 WHERE owner_user_id=? ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,next_at,id DESC LIMIT 100");$q->execute([$uid]);return $q->fetchAll(PDO::FETCH_ASSOC);
@@ -232,7 +239,7 @@ function reminder_execute_locked_v1(PDO $pdo,int $uid,string $thread,string $key
         elseif($op==='list'){$view=(string)($plan['view']??'open');$rows=reminder_list_rows_v1($pdo,$uid,$view,$timezone,$now);$result['answer']=$rows?($view==='today'?"Your reminders for today (".$timezone."):\n":"Your reminders:\n").implode("\n",array_map('reminder_list_label_v1',$rows)):($view==='today'?'You have no reminders scheduled for today in '.$timezone.'.':($view==='overdue'?'You have no overdue reminders.':'You have no '.($view==='open'?'open ':'saved ').'reminders.'));}
         elseif($op==='create'){
             $s=reminder_schedule_v1((array)($plan['schedule']??[]),$now);
-            $q=$pdo->prepare("SELECT COUNT(*) FROM agent_reminders_v1 WHERE owner_user_id=? AND status='active'");$q->execute([$uid]);if((int)$q->fetchColumn()>=100)throw new RuntimeException('You have 100 active reminders. Remove one before adding another.',429);
+            if(reminder_open_commitment_count_v1($pdo,$uid)>=100)throw new RuntimeException('You have 100 active reminders. Remove one before adding another.',429);
             $pdo->prepare('INSERT INTO agent_reminders_v1(owner_user_id,title,timezone,start_local,recurrence,delivery,next_at,conversation_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)')->execute([$uid,$s['title'],$s['timezone'],$s['start_local'],$s['recurrence'],$s['delivery'],$s['next_at'],$conversation,$stamp,$stamp]);$focus=(int)$pdo->lastInsertId();
             $result['answer']='Saved reminder '.reminder_label_v1([...$s,'id'=>$focus,'status'=>'active']).'.';
         }elseif($op!=='none'){

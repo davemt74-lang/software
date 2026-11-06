@@ -55,6 +55,12 @@ $count=(int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn
 revisit_check((int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn()===$count,'replayed ticker does not enqueue or deliver the completed occurrence again');
 revisit_check(reminder_present_v1($pdo,1,['action'=>'claim'])['item']===null,'linked follow-up cannot enter generic reminder speech/presentation');
 revisit_check(!in_array($wakeId,array_map('intval',array_column(reminder_list_rows_v1($pdo,1,'open','UTC',new DateTimeImmutable('2099-01-01T00:00:00Z')),'id')),true),'a fulfilled revisit stops occupying overdue/open attention without deleting its receipt');
+// Fill the real native limit: completed history must not consume open slots.
+for($i=0;$i<100;$i++)reminder_execute_v1($pdo,1,'capacity','capacity-reminder-'.sprintf('%03d',$i),'Create capacity reminder '.$i,['operation'=>'create','schedule'=>['title'=>'Capacity item '.$i,'start_local'=>$when,'timezone'=>'UTC','recurrence'=>'none','delivery'=>'chat']],reminder_rows_v1($pdo,1),10);
+revisit_check(reminder_open_commitment_count_v1($pdo,1)===100&&(int)$pdo->query("SELECT COUNT(*) FROM agent_reminders_v1 WHERE status='active'")->fetchColumn()===101,'a real delivered revisit retains history while allowing all 100 native open reminder slots');
+$full=false;try{reminder_execute_v1($pdo,1,'capacity','capacity-overflow-123','Create beyond the native limit',['operation'=>'create','schedule'=>['title'=>'Capacity overflow','start_local'=>$when,'timezone'=>'UTC','recurrence'=>'none','delivery'=>'chat']],reminder_rows_v1($pdo,1),10);}catch(RuntimeException $error){$full=$error->getCode()===429;}
+revisit_check($full,'fulfilled-history accounting preserves the actual 100-open-reminder safety limit');
+$pdo->exec("DELETE FROM agent_reminders_v1 WHERE title LIKE 'Capacity item %'");
 // Revisit chains retain the original item rather than following an old timer.
 $newPost=vp3_initiative_followthrough_load_v1($pdo,$user,$principal,10,(int)$occurrence['message_id']);
 $chainWhen=(new DateTimeImmutable($when,new DateTimeZone('UTC')))->modify('+2 days')->format('Y-m-d\TH:i:s');
