@@ -276,7 +276,7 @@ function agent_workflow_public_run_v1400(PDO $pdo,array $row,bool $includeHistor
     $ownerUserId=(int)($row['owner_user_id']??0);$runId=(int)($row['id']??0);
     $out=[
         'id'=>$runId,'workflow_type'=>(string)($row['workflow_type']??''),'origin'=>(string)($row['origin']??''),'source_kind'=>(string)($row['source_kind']??''),'source_key'=>(string)($row['source_key']??''),
-        'title'=>(string)($row['title']??''),'goal'=>($row['source_kind']??'')==='agent_initiative'?'':(string)($row['goal']??''),'decision_summary'=>(string)($row['decision_summary']??''),'status'=>(string)($row['status']??''),'risk_level'=>(string)($row['risk_level']??'low'),
+        'title'=>(string)($row['title']??''),'goal'=>in_array($row['source_kind']??'',['agent_initiative','agent_initiative_action'],true)?'':(string)($row['goal']??''),'decision_summary'=>(string)($row['decision_summary']??''),'status'=>(string)($row['status']??''),'risk_level'=>(string)($row['risk_level']??'low'),
         'requires_approval'=>!empty($row['requires_approval']),'approval_status'=>(string)($row['approval_status']??'not_required'),'execution_target'=>(string)($row['execution_target']??'cloud'),'capability_key'=>(string)($row['capability_key']??''),
         'current_action_id'=>(int)($row['current_action_id']??0),'attempt_count'=>(int)($row['attempt_count']??0),'last_error_class'=>(string)($row['last_error_class']??''),'started_at'=>(string)($row['started_at']??''),'approved_at'=>(string)($row['approved_at']??''),
         'completed_at'=>(string)($row['completed_at']??''),'cancelled_at'=>(string)($row['cancelled_at']??''),'created_at'=>(string)($row['created_at']??''),'updated_at'=>(string)($row['updated_at']??''),
@@ -361,7 +361,7 @@ function agent_workflow_create_from_priority_v1400(PDO $pdo,array $user,array $p
 function agent_workflow_approve_v1400(PDO $pdo,array $user,int $runId,string $actorKind='user'): array
 {
     $ownerUserId=(int)($user['id']??0);if($ownerUserId<1)throw new RuntimeException('A signed-in account is required.');
-    $ownsTransaction=!$pdo->inTransaction();try{if($ownsTransaction)$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');if((string)$row['status']!=='approval_pending')throw new RuntimeException('This workflow is not waiting for approval.');
+    $ownsTransaction=!$pdo->inTransaction();try{if($ownsTransaction)$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');if(($row['capability_key']??'')==='initiative.action')throw new RuntimeException('Review this action in its original owner Chat.',409);if((string)$row['status']!=='approval_pending')throw new RuntimeException('This workflow is not waiting for approval.');
         $pdo->prepare("UPDATE agent_workflow_runs SET status='approved',approval_status='approved',approved_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status='approval_pending'")->execute([$runId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_actions SET status='queued' WHERE run_id=? AND owner_user_id=? AND status='approval_pending'")->execute([$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'approved','approval_pending','approved',$actorKind,$actorKind==='scheduler'?'Scheduled plan approved under the owner’s recurring grant.':'User explicitly approved the workflow plan.');if($ownsTransaction)$pdo->commit();
     }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
     $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);return agent_workflow_public_run_v1400($pdo,$row?:[],true);
@@ -392,7 +392,7 @@ function agent_workflow_claim_next_action_v1400(PDO $pdo,array $user,int $runId,
     $ownerUserId=(int)($user['id']??0);if($ownerUserId<1||!in_array($executor,['cloud','homeserver'],true))return null;
     try{
         $pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);
-        if(!$run||!in_array((string)$run['status'],['approved','executing'],true)){if($pdo->inTransaction())$pdo->rollBack();return null;}
+        if(!$run||($run['capability_key']??'')==='initiative.action'||!in_array((string)$run['status'],['approved','executing'],true)){if($pdo->inTransaction())$pdo->rollBack();return null;}
         // The locked run row is the single-executor gate. A second caller must wait until the active action reports a result.
         if((string)$run['status']==='executing'&&(int)($run['current_action_id']??0)>0){$pdo->commit();return null;}
         // Global sequence wins over runtime affinity: neither Cloud nor HomeServer may skip an earlier queued step.

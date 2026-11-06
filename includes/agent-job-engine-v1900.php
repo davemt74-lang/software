@@ -111,7 +111,7 @@ function agent_job_claim_run_v1900(PDO $pdo,array $user,int $runId,string $execu
             // durable work; leases/approvals/dependencies still gate execution.
         }
     }
-    try{$pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$uid,$runId,true);if(!$run||!in_array((string)$run['status'],['approved','executing'],true)||(int)($run['current_action_id']??0)>0){$pdo->rollBack();return null;}
+    try{$pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$uid,$runId,true);if(!$run||($run['capability_key']??'')==='initiative.action'||!in_array((string)$run['status'],['approved','executing'],true)||(int)($run['current_action_id']??0)>0){$pdo->rollBack();return null;}
         if(agent_job_control_ready_v1900($pdo)&&agent_job_pause_requested_v1900($run)){$pdo->rollBack();return null;}
         if(!agent_work_dependencies_satisfied_v174($pdo,$uid,$runId)){$pdo->rollBack();return null;}
         if((strtotime((string)($run['lease_expires_at']??''))?:0)>time()||(strtotime((string)($run['next_attempt_at']??''))?:0)>time()){$pdo->rollBack();return null;}

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-initiative-v1.php';
+require_once __DIR__.'/agent-initiative-actions-v1.php';
 
 /** One transaction only: canonical plain source reads hold shared locks until
  * the saved decision/answer commits, including legacy source writers. */
@@ -255,9 +256,15 @@ function vp3_initiative_followthrough_load_v1(PDO $pdo,array $user,array $princi
                     ||($childResult['effect_state']??'')!=='private_draft_ready')throw new RuntimeException('Private continuation receipt changed.',409);
             }
         }
-        $evidence=vp3_initiative_followthrough_sources_v1($pdo,$live,$principal,$goal,$result);
-        return ['user'=>$live,'principal'=>$principal,'agent_id'=>$agent,'conversation_id'=>$cid,'message'=>$message,'context'=>$context,
-            'run'=>$run,'goal'=>$goal,'action'=>$action,'result'=>$result,'state'=>$state,'evidence'=>$evidence,'continuation'=>$child,'continuation_result'=>$childResult];
+        $loaded=['user'=>$live,'principal'=>$principal,'agent_id'=>$agent,'conversation_id'=>$cid,'message'=>$message,'context'=>$context,
+            'run'=>$run,'goal'=>$goal,'action'=>$action,'result'=>$result,'state'=>$state,'continuation'=>$child,'continuation_result'=>$childResult];
+        $domainAction=vp3_initiative_action_load_v1($pdo,$loaded);
+        if($domainAction!==null&&$domainAction['result']!==null){
+            require_once __DIR__.'/agent-initiative-action-sources-v1.php';
+            $evidence=vp3_initiative_action_sources_current_v1($pdo,$loaded,$domainAction['goal']['plan'],
+                $domainAction['result']['domain_result'],$domainAction['result']['source_transition']);
+        }else $evidence=vp3_initiative_followthrough_sources_v1($pdo,$live,$principal,$goal,$result);
+        return $loaded+['evidence'=>$evidence,'domain_action'=>$domainAction];
     });
 }
 
@@ -335,7 +342,10 @@ function vp3_initiative_followthrough_current_v1(PDO $pdo,array $user,array $pri
             if($row['role']!=='assistant'||($context['initiative_followthrough']??null)!==$outcome)throw new RuntimeException('The conversation advanced after this proposal reply.',409);
         }
     }
+    $domainAction=$loaded['domain_action']??null;
     return ['kind'=>'initiative_followthrough','proposal'=>$current,
+        'verified_action'=>$domainAction!==null?vp3_initiative_action_preview_v1($domainAction):null,
+        'domain_result'=>$domainAction['result']['domain_result']??null,
         'proposal_text'=>mb_substr((string)$loaded['message']['message'],0,2400),
         'verified_sources'=>array_map(static fn(array $row):array=>['ref'=>$row['ref'],'title'=>mb_substr((string)$row['title'],0,170),
             'detail'=>mb_substr((string)($row['detail']??''),0,400)],array_values($loaded['evidence'])),
@@ -346,7 +356,7 @@ function vp3_initiative_followthrough_current_v1(PDO $pdo,array $user,array $pri
             'draft'=>mb_substr((string)($loaded['continuation_result']['initiative_draft']??''),0,1600)]:null,
         'continuation_blocked'=>$loaded['state']['last_intent']==='advance'&&$current['continuation_run_id']===0?'initiative_paused_or_not_current':'',
         'deferred_without_schedule'=>$current['state']==='deferred',
-        'focus'=>$loaded['state']['focus'],'private_work_only'=>true,'requires_domain_review'=>true,
+        'focus'=>$loaded['state']['focus'],'private_work_only'=>$domainAction===null||$domainAction['result']===null,'requires_domain_review'=>$domainAction===null||$domainAction['run']['status']==='approval_pending',
         'verified_private_completion'=>$loaded['continuation_result']!==null,'owner_reported_resolution'=>$current['state']==='owner_resolved'];
 }
 
@@ -657,6 +667,7 @@ function vp3_initiative_followthrough_continuation_tool_v1(array $goal): string
 function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $principal,int $cid,int $userMessageId,mixed $initiativeReply,string $query,?callable $authority=null,?callable $model=null): array
 {
     if($pdo->inTransaction())throw new RuntimeException('Proposal inference cannot hold a transaction.',409);
+    if(mb_strlen($query)>6000)throw new RuntimeException('That message is too long.',422);
     if($authority)$authority();
     $explicit=$initiativeReply!==null;$ref=null;$acknowledgment=null;
     $q=$pdo->prepare("SELECT * FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");$q->execute([$userMessageId,$cid,(int)$user['id']]);$reply=$q->fetch(PDO::FETCH_ASSOC);
@@ -680,7 +691,20 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
     }
     $loaded=vp3_initiative_followthrough_selected_v1($pdo,$user,$principal,$cid,$ref,$acknowledgment);
     $anchor=vp3_initiative_followthrough_anchor_store_v1($pdo,$loaded,$principal,$userMessageId,$query,$ref,$explicit,$authority);
-    $prompt=['response_kind'=>'initiative_followthrough','owner_message'=>['message_id'=>$userMessageId,'text'=>mb_substr($query,0,4000)],
+    $actionBinding=vp3_initiative_action_binding_v1($loaded,$userMessageId,$query);$actionCatalog=[];$actionResources=[];
+    try{
+        $actionCatalog=vp3_initiative_action_catalog_v1($pdo,$loaded,$actionBinding);
+        if($actionCatalog)$actionResources=vp3_initiative_action_resources_v1($pdo,$loaded,$actionBinding);
+    }catch(RuntimeException $error){
+        // An unavailable action domain cannot disable ordinary proposal discussion.
+        // Selecting an action still fails closed against the live registry below.
+        if(!in_array((int)$error->getCode(),[403,409,503],true))throw $error;
+        $actionCatalog=[];$actionResources=[];
+    }
+    $pendingAction=$loaded['domain_action']??null;
+    $prompt=['response_kind'=>'initiative_followthrough','clock'=>vp3_initiative_action_clock_v1($pdo,$loaded['user']),'action_catalog'=>array_values($actionCatalog),
+        'action_resources'=>vp3_initiative_action_prompt_resources_v1($actionResources),'pending_action_review'=>$pendingAction!==null?vp3_initiative_action_preview_v1($pendingAction):null,
+        'owner_message'=>['message_id'=>$userMessageId,'text'=>$query],
         'proposal'=>['message_id'=>$ref['message_id'],'run_id'=>(int)$loaded['run']['id'],'state'=>$loaded['state']['state'],
             'revision'=>$ref['revision'],'text'=>mb_substr((string)$loaded['message']['message'],0,2400),
             'source_summaries'=>array_map(static fn(array $row):array=>['ref'=>$row['ref'],'title'=>$row['title']],array_values($loaded['evidence']))],
@@ -688,14 +712,19 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     $answer=$model?$model(json_encode($prompt,JSON_THROW_ON_ERROR),'vp3.initiative-reply.v1'):
         vp3_initiative_model_v1($pdo,$loaded['user'],json_encode($prompt,JSON_THROW_ON_ERROR),'vp3.initiative-reply.v1',$loaded['agent_id']);
-    $decision=vp3_tool_json_object_v1($answer,['intent','focus'],2400);
+    $decision=vp3_tool_json_object_v1($answer,['intent','focus','action','action_decision'],16000);
     if(!in_array($decision['intent']??'', $prompt['allowed_intents'],true)||!is_string($decision['focus']??null)||mb_strlen($decision['focus'])>300){throw new InvalidArgumentException('Proposal decision is invalid.');}
     if(vp3_initiative_capability_sources_present_v1($loaded['goal']['sources']??[])){
         // Refresh source-specific remote privacy evidence after a slow model
         // turn, before either short decision/anchor-cleanup transaction.
         $loaded=vp3_initiative_followthrough_selected_v1($pdo,$user,$principal,$cid,$ref,$acknowledgment);
     }
-    $intent=$decision['intent'];$focus=trim($decision['focus']);
+    $intent=$decision['intent'];$focus=trim($decision['focus']);$rawAction=$decision['action']??null;$actionDecision=$decision['action_decision']??'none';
+    if(($rawAction!==null&&(!is_array($rawAction)||!is_string($rawAction['adapter']??null)||!isset($actionCatalog[$rawAction['adapter']])))
+        ||!in_array($actionDecision,['none','approve','cancel','revise'],true)||($rawAction!==null&&$intent!=='advance')
+        ||($actionDecision==='approve'&&($intent!=='advance'||$rawAction!==null))
+        ||($actionDecision==='revise'&&($intent!=='advance'||$rawAction===null))
+        ||($rawAction!==null&&!in_array($actionDecision,['none','revise'],true)))throw new InvalidArgumentException('Action decision is invalid.');
     if($intent==='none'&&!$explicit&&!vp3_initiative_followthrough_short_v1($query)){
         vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$loaded,$principal,$cid,$userMessageId,$anchor,$authority):void{
             vp3_initiative_owner_lock_v1($pdo,$loaded['user']);if($authority)$authority();
@@ -709,7 +738,7 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
         });
         return ['handled'=>false];
     }
-    [$loaded,$outcome,$blocked]=vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$loaded,$principal,$cid,$ref,$userMessageId,$query,$intent,$focus,$user,$explicit,$authority):array{
+    [$loaded,$outcome,$blocked]=vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$loaded,$principal,$cid,$ref,$userMessageId,$query,$intent,$focus,$user,$explicit,$authority,$rawAction,$actionDecision,$actionResources,$actionBinding):array{
         vp3_initiative_owner_lock_v1($pdo,$loaded['user']);
         if($authority)$authority();
         $loaded=vp3_initiative_followthrough_load_v1($pdo,$loaded['user'],$principal,$cid,$ref['message_id'],true);
@@ -722,7 +751,31 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
             default=>in_array($loaded['state']['state'],['queued','completed'],true)?$loaded['state']['state']:'discussed'};
         if($intent!=='advance'&&$state['state']==='queued'&&in_array($loaded['continuation']['status']??'', ['failed','cancelled'],true))$state['state']='stale';
         $blocked='';
-        if($intent==='advance'){
+        $domainAction=$loaded['domain_action']??null;$handledAction=false;
+        if($domainAction!==null&&$domainAction['run']['status']==='approval_pending'){
+            $handledAction=true;
+            if(!in_array($intent,['decline','resolve','defer'],true))$state['state']='discussed';
+            if($actionDecision==='revise'){
+                vp3_initiative_action_cancel_v1($pdo,$loaded,$domainAction);
+                vp3_initiative_action_prepare_v1($pdo,$loaded,$state,$actionBinding,$rawAction,$actionResources);
+            }elseif($rawAction!==null)throw new RuntimeException('Amend this pending review before confirming it.',409);
+            elseif($actionDecision==='approve'){
+                vp3_initiative_action_reviewed_v1($pdo,$loaded,$domainAction,$userMessageId);
+                vp3_initiative_action_apply_v1($pdo,$loaded,$state,$domainAction,$userMessageId,$query,$authority);
+            }elseif($actionDecision==='cancel'||in_array($intent,['decline','resolve'],true)){
+                vp3_initiative_action_cancel_v1($pdo,$loaded,$domainAction);
+            }
+        }elseif($domainAction!==null&&$domainAction['run']['status']==='completed'){
+            // A new assessment owns subsequent work. Never reuse an old proposal's
+            // pre-action source revisions or replace its committed receipt.
+            $handledAction=true;$state['state']='discussed';
+            if($rawAction!==null||$actionDecision!=='none')throw new RuntimeException('This proposal already has a completed action.',409);
+        }elseif($rawAction!==null){
+            if($actionDecision!=='none')throw new RuntimeException('That action review is no longer pending.',409);
+            $handledAction=true;
+            vp3_initiative_action_prepare_v1($pdo,$loaded,$state,$actionBinding,$rawAction,$actionResources);
+        }elseif($actionDecision!=='none')throw new RuntimeException('That action review is no longer pending.',409);
+        if($intent==='advance'&&!$handledAction){
             if($loaded['state']['state']==='queued'&&!in_array($loaded['continuation']['status']??'', ['failed','cancelled'],true))throw new RuntimeException('This private continuation is already queued.',409);
             $policy=vp3_initiative_policy_v1($loaded['user'],$loaded['agent_id']);
             if(($policy['enabled']??null)!==true||($policy['conversation_id']??null)!==$cid){$blocked='initiative_paused_or_not_current';$state['state']='discussed';}

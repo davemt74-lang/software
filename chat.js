@@ -1451,6 +1451,7 @@
       profile_attention:raw.profile_attention && typeof raw.profile_attention==='object' ? raw.profile_attention : null,
       initiative_work:raw.initiative_work && typeof raw.initiative_work==='object' ? raw.initiative_work : null,
       initiative_followthrough:raw.initiative_followthrough && typeof raw.initiative_followthrough==='object' ? raw.initiative_followthrough : null,
+      initiative_action:raw.initiative_action && typeof raw.initiative_action==='object' ? raw.initiative_action : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1880,6 +1881,75 @@
       const outcome=initiativeOutcomes.get(messageId);if(outcome)applyInitiativeFollowthroughV1(outcome);
     }
     if (actions.children.length) (element.querySelector('.message-body') || element).appendChild(actions);
+  }
+
+  /** Render the server's frozen action, alongside the Agent's natural reply.
+   * This is a review projection, never a client-side executor or approval. */
+  function bindInitiativeActionV1(element, action, outcome) {
+    if(!element||!initiativeIdentityMatchesV1()||!validInitiativeReplyV1(outcome)
+      ||outcome.owner_user_id!==initiativePage.owner||outcome.agent_id!==initiativePage.agent||outcome.conversation_id!==conversationId
+      ||!action||!Number.isSafeInteger(action.run_id)||action.run_id<1||typeof action.plan_hash!=='string'||!/^[a-f0-9]{64}$/.test(action.plan_hash)
+      ||action.effect_class!=='private_record'||action.review_required!==true||!['approval_pending','completed','cancelled'].includes(action.status)
+      ||!Number.isSafeInteger(action.receipt_id)||action.receipt_id<0||action.status==='completed'&&action.receipt_id<1
+      ||!action.arguments||typeof action.arguments!=='object'||Array.isArray(action.arguments))return;
+    const names={'task.create':'Create task','task.set_status':'Update task status','task_list.create':'Create list','task_list.add':'Add to list',
+      'reminder.create':'Create reminder','reminder.update':'Update reminder','reminder.complete':'Complete reminder occurrence',
+      'reminder.snooze':'Snooze reminder occurrence','reminder.dismiss':'Dismiss reminder occurrence','reminder.cancel':'Cancel reminder series','reminder.delete':'Delete reminder',
+      'calendar.create':'Create calendar event','calendar.update':'Update calendar event','calendar.cancel':'Cancel calendar event'};
+    if(!Object.hasOwn(names,action.adapter))return;
+    const targets=action.targets??[];
+    if(!Array.isArray(targets)||targets.length>8||targets.some(target=>!target||typeof target.ref!=='string'
+      ||!/^(?:task|task-list|reminder|calendar:event):[1-9][0-9]*(?:@[0-9]{8}T[0-9]{6}Z)?$/.test(target.ref)
+      ||typeof target.title!=='string'||target.title.length>1000))return;
+    const labels={title:'Title',name:'List',task_id:'Task',list_id:'List',status:'Status',target_ref:'Record',minutes:'Minutes',
+      schedule:'Schedule',event:'Event',description:'Description',location:'Location',timezone:'Time zone',date:'Date',start_local:'Local time',
+      start_time:'Start time',end_time:'End time',end_date:'End date',all_day:'All day',recurrence:'Repeat',delivery:'Delivery',agent_notifications:'Agent updates',
+      frequency:'Frequency',interval:'Interval',weekdays:'Days',until:'Until',count:'Occurrences',mode:'Mode',text:'Text',voice:'Voice',days:'Days',type:'Type'};
+    const entries=[];
+    const collect=(object,prefix='',depth=0)=>{
+      if(depth>3||!object||typeof object!=='object'||Array.isArray(object))return false;
+      for(const [key,value] of Object.entries(object)){
+        if(!Object.hasOwn(labels,key)||entries.length>=35)return false;
+        const label=prefix?prefix+' · '+labels[key]:labels[key];
+        if(value&&typeof value==='object'&&!Array.isArray(value)){if(!collect(value,label,depth+1))return false;}
+        else{
+          const scalar=item=>item===null||typeof item==='boolean'||typeof item==='string'&&item.length<=10000||typeof item==='number'&&Number.isSafeInteger(item);
+          if(Array.isArray(value)?value.length>14||!value.every(scalar):!scalar(value))return false;
+          const format=item=>item===null?'None':item===true?'Yes':item===false?'No':String(item);
+          entries.push([label,Array.isArray(value)?value.map(format).join(', '):format(value)]);
+        }
+      }
+      return true;
+    };
+    if(!collect(action.arguments)||!entries.length)return;
+    // A later verified completion retires earlier views of this exact review.
+    if(action.status!=='approval_pending')for(const prior of thread.querySelectorAll('[data-initiative-action-run="'+action.run_id+'"]')){
+      if(prior.dataset.initiativeActionPlan!==action.plan_hash)continue;
+      prior.dataset.initiativeActionStatus=action.status;
+      prior.querySelector('[data-initiative-action-status]').textContent=action.status==='completed'?'Completed · verified receipt #'+action.receipt_id:'Cancelled';
+      prior.querySelector('[data-initiative-action-reply]')?.remove();
+    }
+    if(element.querySelector('[data-initiative-action-run]'))return;
+    const review=document.createElement('section');review.className='chat-initiative-action-review';review.dataset.initiativeActionRun=String(action.run_id);
+    review.dataset.initiativeActionPlan=action.plan_hash;review.dataset.initiativeActionStatus=action.status;review.setAttribute('aria-label',names[action.adapter]);
+    const heading=document.createElement('strong');heading.textContent=names[action.adapter];
+    const status=document.createElement('small');status.dataset.initiativeActionStatus='';
+    status.textContent=action.status==='approval_pending'?'Review before saving':action.status==='completed'?'Completed · verified receipt #'+action.receipt_id:'Cancelled';
+    const details=document.createElement('dl');
+    for(const target of targets){const row=document.createElement('div'),term=document.createElement('dt'),description=document.createElement('dd');term.textContent='For';description.textContent=target.title+' · '+target.ref;row.append(term,description);details.append(row);}
+    for(const [label,value] of entries){const row=document.createElement('div'),term=document.createElement('dt'),description=document.createElement('dd');term.textContent=label;description.textContent=value;row.append(term,description);details.append(row);}
+    review.append(heading,status,details);
+    if(action.status==='approval_pending'){
+      const hint=document.createElement('p');hint.textContent='Reply to confirm these details, change them, or cancel.';review.append(hint);
+      const button=document.createElement('button');button.type='button';button.className='chat-agent-action';button.dataset.initiativeActionReply=String(action.run_id);button.textContent='Reply';
+      button.addEventListener('click',()=>{
+        const post=initiativePosts.get(outcome.message_id);
+        if(!initiativeIdentityMatchesV1()||!review.isConnected||!thread.contains(review)||review.dataset.initiativeActionStatus!=='approval_pending'
+          ||!post||post.reply_ref!==outcome.reply_ref||post.revision!==outcome.revision){button.disabled=true;return;}
+        chooseInitiativeReplyV1(post);
+      });review.append(button);
+    }
+    (element.querySelector('.message-body')||element).append(review);
   }
 
   function pendingAssistantMessageIds() {
@@ -3478,6 +3548,7 @@
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
       if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work,context.source);
       if(message.role==='assistant')applyInitiativeFollowthroughV1(context.initiative_followthrough);
+      if(message.role==='assistant')bindInitiativeActionV1(renderedMessage,context.initiative_action,context.initiative_followthrough);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
 
@@ -3519,6 +3590,7 @@
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
       if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work,context.source);
       if(message.role==='assistant')applyInitiativeFollowthroughV1(context.initiative_followthrough);
+      if(message.role==='assistant')bindInitiativeActionV1(renderedMessage,context.initiative_action,context.initiative_followthrough);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory(signal);
@@ -3712,6 +3784,7 @@
       );
       if(!existingReply)bindStoredMessagePa3(reply,data.assistant_message_id);
       applyInitiativeFollowthroughV1(data.initiative_followthrough);
+      bindInitiativeActionV1(reply,data.initiative_action,data.initiative_followthrough);
       if (data.canvas_media?.generation_ids?.length) {
         reply.querySelector('.vp3-canvas-media')?.setAttribute('data-specialist-launch', 'true');
       }

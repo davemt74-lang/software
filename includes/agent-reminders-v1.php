@@ -163,12 +163,22 @@ function reminder_save_state_v1(PDO $pdo,int $uid,string $thread,array $state,st
 /** LLM interprets language. This executor validates IDs, schedules, ownership and current revisions. */
 function reminder_execute_v1(PDO $pdo,int $uid,string $thread,string $key,string $query,array $plan,array $snapshot,int $conversation=0,?DateTimeImmutable $now=null,string $timezone='UTC'): array
 {
+    $pdo->beginTransaction();
+    try{
+        $result=reminder_execute_locked_v1($pdo,$uid,$thread,$key,$query,$plan,$snapshot,$conversation,$now,$timezone);
+        $pdo->commit();return $result;
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+}
+
+/** Canonical mutation kernel for an already owner-locked transaction; never commits its caller's work. */
+function reminder_execute_locked_v1(PDO $pdo,int $uid,string $thread,string $key,string $query,array $plan,array $snapshot,int $conversation=0,?DateTimeImmutable $now=null,string $timezone='UTC'): array
+{
+    if(!$pdo->inTransaction())throw new LogicException('Reminder mutation requires an owner transaction.');
     $now??=reminder_now_v1();$stamp=reminder_utc_v1($now);$hash=hash('sha256',$query);$op=$plan['operation']??'';
     if(!in_array($op,['none','clarify','create','list','update','complete','snooze','dismiss','cancel','delete'],true))throw new InvalidArgumentException('Invalid reminder operation.');
-    $pdo->beginTransaction();try{
         if(function_exists('vp3_participant_reminder_authorize_v1'))vp3_participant_reminder_authorize_v1($pdo,$uid,$plan);
         $q=$pdo->prepare('SELECT result_json,payload_hash FROM agent_reminder_turns_v1 WHERE owner_user_id=? AND thread_key=? AND request_key=?'.reminder_lock_v1($pdo));$q->execute([$uid,$thread,$key]);$receipt=$q->fetch(PDO::FETCH_ASSOC);
-        if($receipt){if(!hash_equals($receipt['payload_hash'],$hash))throw new RuntimeException('Reminder request changed. Send a new request.',409);$pdo->commit();return json_decode($receipt['result_json'],true,32,JSON_THROW_ON_ERROR);}
+        if($receipt){if(!hash_equals($receipt['payload_hash'],$hash))throw new RuntimeException('Reminder request changed. Send a new request.',409);return json_decode($receipt['result_json'],true,32,JSON_THROW_ON_ERROR);}
         $result=['handled'=>$op!=='none','answer'=>'','actions'=>[],'sources'=>[],'reminder_pending'=>$op==='clarify'];$focus=0;$pending=[];
         if($op==='clarify'){$result['answer']=reminder_text_v1($plan['question']??null,500);if($result['answer']==='')throw new InvalidArgumentException('Reminder question is missing.');$old=reminder_state_v1($pdo,$uid,$thread);$pending=array_slice(array_merge($old['pending']??[],[$query]),-4);}
         elseif($op==='list'){$view=(string)($plan['view']??'open');$rows=reminder_list_rows_v1($pdo,$uid,$view,$timezone,$now);$result['answer']=$rows?($view==='today'?"Your reminders for today (".$timezone."):\n":"Your reminders:\n").implode("\n",array_map('reminder_list_label_v1',$rows)):($view==='today'?'You have no reminders scheduled for today in '.$timezone.'.':($view==='overdue'?'You have no overdue reminders.':'You have no '.($view==='open'?'open ':'saved ').'reminders.'));}
@@ -217,8 +227,7 @@ function reminder_execute_v1(PDO $pdo,int $uid,string $thread,string $key,string
         if($op==='list')$result['sticky_notes']=[['kind'=>'reminders','id'=>0,'view'=>$view,'timezone'=>$timezone]];
         reminder_save_state_v1($pdo,$uid,$thread,['focus'=>$focus,'pending'=>$pending],$stamp);
         $pdo->prepare('INSERT INTO agent_reminder_turns_v1(owner_user_id,thread_key,request_key,payload_hash,result_json,created_at) VALUES(?,?,?,?,?,?)')->execute([$uid,$thread,$key,$hash,json_encode($result,JSON_THROW_ON_ERROR),$stamp]);
-        $pdo->commit();return $result;
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+        return $result;
 }
 function reminder_close_occurrences_v1(PDO $pdo,int $uid,int $id): void
 {

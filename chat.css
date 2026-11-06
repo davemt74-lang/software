@@ -5809,3 +5809,9 @@ body.chat-create-modal-open{
 .chat-initiative-reply-cue>div{display:grid;gap:3px;min-width:0;flex:1;overflow-wrap:anywhere}.chat-initiative-reply-cue strong{font-size:11px}.chat-initiative-reply-cue span{white-space:normal}
 .chat-initiative-reply-cue>button{flex:none;border:0;background:transparent;color:#475467;font-size:20px;cursor:pointer;padding:4px 8px}.chat-initiative-followthrough-state{align-self:center;color:#667085;font-size:11px}
 .message[data-initiative-reply-selected]{box-shadow:inset 3px 0 #8babc9}.chat-agent-actions>[data-initiative-reply]{margin-top:0}
+.chat-initiative-action-review{margin-top:12px;padding:12px 14px;border:1px solid #dce3eb;border-radius:10px;background:#fff;max-width:100%;overflow-wrap:anywhere}
+.chat-initiative-action-review>strong{display:block;font-size:13px}.chat-initiative-action-review>small{display:block;margin-top:3px;color:#667085;font-size:11px}
+.chat-initiative-action-review dl{margin:12px 0;font-size:12px}.chat-initiative-action-review dl>div{display:grid;grid-template-columns:minmax(80px,140px) minmax(0,1fr);gap:10px;margin:6px 0}
+.chat-initiative-action-review dt{color:#667085}.chat-initiative-action-review dd{margin:0;white-space:pre-wrap;min-width:0}.chat-initiative-action-review>p{font-size:11px;color:#667085;margin:8px 0}
+.chat-initiative-action-review[data-initiative-action-status="completed"]{border-color:#cddfd4}.chat-initiative-action-review[data-initiative-action-status="cancelled"]{opacity:.7}
+@media(max-width:520px){.chat-initiative-action-review{padding:10px}.chat-initiative-action-review dl>div{grid-template-columns:1fr;gap:2px}}
