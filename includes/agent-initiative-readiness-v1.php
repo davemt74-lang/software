@@ -100,7 +100,7 @@ function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $princi
     }
     $evidence=[];
     foreach($rows as $id=>$row){
-        $meta=profile_commerce_metadata_v900($row);$draft=($meta['listing_draft']??null)==='product_photo_v1';
+        $meta=profile_commerce_metadata_v900($row);$draft=profile_commerce_private_listing_draft_v900($row);
         if(empty($row['is_active'])&&!$draft)continue;
         $missing=[];
         if(trim((string)($row['description']??''))==='')$missing[]='description';
@@ -123,7 +123,7 @@ function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $princi
             'product_media_link'=>$photo?'owned_photo_record':($photoId>0?'record_missing':'not_assessed'),
             'promotion_state'=>'not_assessed','requires_owner_review'=>true,
             'canonical_revision'=>hash('sha256',json_encode($row,JSON_THROW_ON_ERROR))];
-        $detail=$draft?'A private photo-based listing awaits owner review and its commercial terms.':
+        $detail=$draft?'A private listing awaits owner review and its commercial terms.':
             ($missing?'This existing listing has unfinished recorded fields.':
                 ($visibility==='hidden'?'This active listing is hidden; publication is an owner decision.':'This public listing can be considered for a private promotion or content proposal.'));
         $detail.=' No inference is made that a campaign, gallery or image is absent outside these records. Publishing, prices and spending require their existing approvals.';

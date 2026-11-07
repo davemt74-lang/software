@@ -110,6 +110,7 @@ function vp3_initiative_product_capabilities_snapshot_v1(PDO $pdo,array $scope,i
         'deposit_cents'=>max(0,(int)($row['deposit_cents']??0)),
         'currency'=>vp3_initiative_product_capabilities_text_v1($row['currency']??'',3),
         'is_active'=>!empty($row['is_active']),'profile_visibility'=>profile_commerce_visibility_v900($row),
+        'private_listing_draft'=>profile_commerce_private_listing_draft_v900($row),
         'private_photo_listing_draft'=>($meta['listing_draft']??null)==='product_photo_v1',
         'recorded_fulfillment_bindings'=>$bindings,'binding_coverage'=>$limited?'limited':'complete'];
     $coverage=['media'=>$mediaState,'association'=>$association,'gallery'=>'not_assessed','promotion'=>'not_assessed',

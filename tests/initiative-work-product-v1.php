@@ -133,6 +133,33 @@ try{
         product_check(ai_anthropic_inline_image('data:'.$mime.';base64,YWJj')['source']===[
             'type'=>'base64','media_type'=>$mime,'data'=>'YWJj'],"the vision transport preserves the verified $mime format");
     }
+    $pdo->exec('INSERT INTO chat_conversations VALUES (7,1,NULL)');
+    $textInput = ['source_id'=>'description', 'product_description'=>'A handmade cotton tote with two handles.',
+        'request_id'=>str_repeat('e',64)];
+    $beforeText = $productCount();
+    $textPreview = initiative_work_product_preview_v1($pdo,1,$scope,$textInput);
+    product_check($textPreview['details']['summary']===$textInput['product_description']
+        && !isset($textPreview['details']['image_url']) && $productCount()===$beforeText,
+        'description preview shows the exact source without writing a product');
+    $modelCalls = 0;
+    $textModel = static function(string $prompt, ?string $image) use (&$modelCalls): string {
+        $modelCalls++;
+        product_check($image===null && str_contains($prompt,'handmade cotton tote'),
+            'description drafting sends the seller text without an image');
+        return '{"title":"Handmade cotton tote","description":"A cotton tote with two handles."}';
+    };
+    product_reject(fn()=>initiative_work_product_create_v1($pdo,1,$scope,
+        array_replace($textInput,['product_description'=>'A different product']),$textPreview,$textModel),
+        'changing the description invalidates the reviewed source',409);
+    $textResult = initiative_work_product_create_v1($pdo,1,$scope,$textInput,$textPreview,$textModel);
+    $textReplay = initiative_work_product_create_v1($pdo,1,$scope,$textInput,$textPreview,$textModel);
+    $textRow = agent_commerce_product_v800($pdo,$textResult['product_id'],1);
+    product_check($textResult===$textReplay && $modelCalls===1 && $productCount()===$beforeText+1
+        && profile_commerce_private_listing_draft_v900($textRow) && empty($textRow['is_active'])
+        && $textResult['missing_fields']===['price','fulfillment','payment_provider'],
+        'description approval and replay produce one private draft and preserve missing commercial terms');
+    product_reject(fn()=>profile_commerce_publish_v900($pdo,1,$textResult['product_id'],['profile_visibility'=>'public']),
+        'publication refuses a private description draft');
     echo "INITIATIVE_WORK_PRODUCT_V1=PASS ($checks cases)\n";
 }finally{
     foreach($paths as $path)if(is_file($path))unlink($path);

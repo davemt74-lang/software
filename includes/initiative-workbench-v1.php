@@ -8,6 +8,9 @@ function initiative_workbench_input_v1(array $body): array
         throw new DomainException('Choose an exact saved source.', 422);
     }
     $input = ['source_id' => $source];
+    if ($body['tool'] === 'product' && $source === 'description') {
+        $input['product_description'] = initiative_work_product_text_v1($body['product_description'] ?? null, 600, true);
+    }
     if ($body['tool'] === 'screen') {
         $mode = $body['mode'] ?? '';
         $instruction = $body['instruction'] ?? '';

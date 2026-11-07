@@ -66,10 +66,10 @@ $connections=agent_commerce_connections_v800($pdo,$uid,true);$username=profile_u
 ?>
 <section class="pc-card" id="product-listing-draft">
     <span class="pc-eyebrow">Private draft</span><h2>Review your product listing</h2>
-    <p class="pc-muted">Review the suggested wording against the original photo. Price, fulfillment and payment provider still need to be set.</p>
+    <p class="pc-muted">Review the suggested wording. Price, fulfillment and payment provider still need to be set.</p>
     <?php if($listingPhoto):?>
         <figure style="margin:14px 0"><img src="<?=e(media_studio_asset_url((int)$listingPhoto['id']))?>" alt="<?=e((string)$listingMeta['source_title'])?>" style="width:min(100%,320px);max-height:320px;object-fit:contain;object-position:left"><figcaption><?=e((string)$listingMeta['source_title'])?></figcaption></figure>
-    <?php else:?><p class="pc-muted">The original photo is no longer available.</p><?php endif;?>
+    <?php elseif(isset($listingMeta['source_asset_id'])):?><p class="pc-muted">The original photo is no longer available.</p><?php endif;?>
     <form method="post" class="pc-form">
         <?=csrf_field()?><input type="hidden" name="action" value="save_initiative_draft">
         <input type="hidden" name="product_id" value="<?=(int)$listingDraft['id']?>">
