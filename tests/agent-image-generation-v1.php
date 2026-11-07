@@ -80,7 +80,33 @@ try{
         $pdo->exec($sql);$v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');$pdo->exec('DROP TRIGGER image_atomic_fixture');
         check($v['status']==='failed'&&imageCount()===$before&&count(glob(media_studio_user_root(1).'/*.png')?:[])===count($files),'a failed '.$failure.' commit rolls back the asset, output binding and completion receipt and removes its new file');
     }
-    if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
+    $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
+    if($mysql)$pdo->exec('ALTER TABLE agent_image_generations_v1 MODIFY user_message_id BIGINT NOT NULL');
+    $request=bin2hex(random_bytes(16));$before=count($calls);
+    $conversations=(int)$pdo->query('SELECT COUNT(*) FROM chat_conversations')->fetchColumn();
+    $messages=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();
+    $g=vp3_image_queue_workspace_v1($pdo,$u,$plan,$request);
+    $row=vp3_image_row_v1($pdo,$u,$g['id']);$run=vp3_image_run_v1($pdo,$u,$row);
+    check(vp3_image_workspace_row_v1($row)&&$run['origin']==='media_library'&&$g['status']==='queued'&&count($calls)===$before,'Media Library queues a canonical image job under its own owner scope');
+    check((int)$pdo->query('SELECT COUNT(*) FROM chat_conversations')->fetchColumn()===$conversations&&(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$messages,'Media Library generation creates no synthetic Chat conversation or message');
+    if($mysql)check($pdo->query("SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_image_generations_v1' AND COLUMN_NAME='user_message_id'")->fetchColumn()==='YES','workspace admission is compatible with the original non-null Chat image schema');
+    check(vp3_image_queue_workspace_v1($pdo,$u,$plan,$request)['id']===$g['id'],'retrying the same Media Library request recovers the exact job');
+    reject(fn()=>vp3_image_queue_workspace_v1($pdo,$u,[...$plan,'prompt'=>'A different subject'],$request),'a Media Library review key cannot become a different request');
+    reject(fn()=>queueImage(),'Media Library and Chat share the one-active-image-per-owner limit');
+    reject(fn()=>vp3_image_view_v1($pdo,['id'=>2],$row),'a Media Library record cannot be viewed by another owner');
+    $count=imageCount();$v=vp3_image_tick_v1($pdo,$u,$row,'transportImage');
+    check($v['status']==='completed'&&$v['asset']['available']&&imageCount()===$count+1&&count($calls)===$before+1&&end($calls)[0]==='https://api.openai.com/v1/images/generations','the Media Library worker saves one private image via text-to-image generation and verified provider usage');
+    check(vp3_image_queue_workspace_v1($pdo,$u,$plan,$request)['asset']['id']===$v['asset']['id'],'a confirmed Media Library save returns the original private asset on retry');
+    $g=vp3_image_queue_workspace_v1($pdo,$u,$plan,bin2hex(random_bytes(16)));$before=count($calls);
+    agent_job_cancel_v1900($pdo,$u,$g['job_id']);
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='cancelled'&&count($calls)===$before,'cancelled Media Library work makes no paid provider call');
+    $g=vp3_image_queue_workspace_v1($pdo,$u,$plan,bin2hex(random_bytes(16)));
+    $GLOBALS['noImageEntitlement']=true;
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='failed'&&count($calls)===$before,'the Media Library worker rechecks AI entitlement before using the provider');
+    $GLOBALS['noImageEntitlement']=false;
+    if($mysql){
         $running=[];for($i=0;$i<2;$i++){$p=proc_open([PHP_BINARY,__FILE__,'--race'],[1=>['pipe','w'],2=>['pipe','w']],$pipes);$running[]=[$p,$pipes];}
         $results=[];foreach($running as [$p,$pipes]){$results[]=trim(stream_get_contents($pipes[1]));$err=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);if(proc_close($p)!==0)throw new RuntimeException($err);}
         sort($results);check($results===['BLOCKED','QUEUED'],'concurrent MySQL admission permits exactly one active image per owner');

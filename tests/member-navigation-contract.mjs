@@ -33,6 +33,7 @@ for (const [label, route] of [
   ['Messages', '/messages.php'],
   ['Profile Agent', '/profile-agent.php'],
   ['My Knowledge', '/knowledge.php'],
+  ['Media Library', '/media-library.php'],
   ['My Transcriptions', '/artist-listening.php'],
   ['Voice Profile', '/voice-profile.php'],
   ['My Team', '/team.php'],
@@ -48,6 +49,9 @@ for (const [label, route] of [
 }
 
 assert.ok(nav.includes("personal_capability_has_v242('personal_knowledge.access'"), 'My Knowledge must use the personal Knowledge access permission');
+const sidebar = read('includes/main-sidebar.php');
+assert.ok(sidebar.includes("'knowledge','media_library'") && sidebar.includes("'media_library'=>'Workspace'"), 'Media Library follows Knowledge in the primary Workspace sidebar');
+assert.ok(nav.includes("'media-library.php'=>'media_library'") && nav.includes("if(has_permission('chat.access',$user))$add($links,'media_library'"), 'Media Library route and navigation use the private media permission');
 assert.ok(nav.includes("personal_capability_has_v242('profile_agent.access'"), 'Profile Agent navigation must use its personal capability permission');
 assert.ok(nav.includes("personal_capability_has_v242('voice_profile.access'"), 'Voice Profile navigation must use its personal capability permission');
 assert.ok(nav.includes("has_permission('artist_listening.access'"), 'My Transcriptions must remain permission gated');

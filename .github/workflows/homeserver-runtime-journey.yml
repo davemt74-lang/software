@@ -81,6 +81,8 @@ jobs:
           php tests/agent-image-transport-v1.php
           node tests/chat-canvas-media-api.mjs
           node tests/chat-canvas-media-browser.mjs
+          node tests/media-library-workspace-api.mjs
+          node tests/media-library-workspace-browser.mjs
           php tests/initiative-work-mission-v1.php
           php tests/initiative-work-product-v1.php
           php tests/initiative-work-screen-v1.php
