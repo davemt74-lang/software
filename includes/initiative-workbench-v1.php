@@ -11,6 +11,11 @@ function initiative_workbench_input_v1(array $body): array
     if ($body['tool'] === 'product' && $source === 'description') {
         $input['product_description'] = initiative_work_product_text_v1($body['product_description'] ?? null, 600, true);
     }
+    if ($body['tool'] === 'marketing') {
+        $productId = $body['product_id'] ?? null;
+        if (!is_int($productId) || $productId < 1) throw new DomainException('Choose an owned product.',422);
+        $input['product_id'] = $productId;
+    }
     if ($body['tool'] === 'screen') {
         $mode = $body['mode'] ?? '';
         $instruction = $body['instruction'] ?? '';

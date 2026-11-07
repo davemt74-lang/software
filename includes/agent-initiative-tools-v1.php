@@ -37,6 +37,7 @@ function vp3_initiative_tools_workbench_v1(string $tool): string
 {
     return match($tool){
         'workbench.product.review'=>'product',
+        'workbench.marketing.review'=>'marketing',
         'workbench.screen.review'=>'screen',
         'workbench.mission.review'=>'mission',
         default=>throw new InvalidArgumentException('Unknown reviewed work tool.'),
@@ -78,6 +79,7 @@ function vp3_initiative_tools_evidence_v1(PDO $pdo,array $user,array $binding,?a
     $evidence=[];
     $families=[
         'product'=>['user_media_assets','agent_commerce_products_v800'],
+        'marketing'=>['user_media_assets','agent_commerce_products_v800','agent_commerce_marketing_drafts_v1'],
         'screen'=>['agent_screen_sessions_v1','agent_screen_captures_v1','artist_transcript_folders_v177','knowledge_items'],
         'mission'=>['agent_cloud_missions_v1','agent_workflow_receipts'],
     ];
@@ -95,24 +97,42 @@ function vp3_initiative_tools_evidence_v1(PDO $pdo,array $user,array $binding,?a
             if($tool==='screen'){
                 $ids=vp3_initiative_tools_screen_ids_v1($pdo,$scope,$selectedRefs===null?null:$ids);
                 $coverage[$family]=count($ids)>=4?'limited':'ready';
+            }elseif($tool==='marketing'&&$selectedRefs===null){
+                $query=$pdo->prepare('SELECT id,metadata_json FROM agent_commerce_products_v800 WHERE owner_user_id=? ORDER BY id DESC LIMIT 20');
+                $query->execute([$owner]);
+                foreach($query->fetchAll(PDO::FETCH_ASSOC) as $product){
+                    $meta=profile_commerce_metadata_v900($product);
+                    $asset=(string)($meta['source_asset_id']??'');
+                    if(preg_match('/\A[1-9][0-9]{0,18}\z/D',$asset))$ids[]=$product['id'].'-'.$asset;
+                }
+                $coverage[$family]='limited';
+                $ids=array_slice($ids,0,4);
             }elseif($selectedRefs===null){
                 $sources=($handler.'_sources_v1')($pdo,$owner,$scope);
+                if($tool==='product')$sources=array_values(array_filter($sources,static fn(array $source):bool=>$source['source_id']!=='description'));
                 $coverage[$family]=count($sources)>4?'limited':'ready';
                 $ids=array_column(array_slice($sources,0,4),'source_id');
             }else $coverage[$family]='ready';
             foreach($ids as $id){
                 $input=['source_id'=>(string)$id]+($tool==='screen'?['mode'=>'cleanup','instruction'=>'']:[]);
+                if($tool==='marketing'){
+                    if(!preg_match('/\A([1-9][0-9]{0,18})-([1-9][0-9]{0,18})\z/D',(string)$id,$pair)||(string)(int)$pair[1]!==$pair[1])continue;
+                    $input=['source_id'=>$pair[2],'product_id'=>(int)$pair[1]];
+                }
                 try{$preview=($handler.'_preview_v1')($pdo,$owner,$scope,$input);}
                 catch(DomainException $e){if(in_array($e->getCode(),[404,409,422],true))continue;throw $e;}
-                $ref=$prefix.$preview['source_id'];
+                if($tool==='marketing'&&empty($preview['details']['linked_product_image']))continue;
+                $sourceId=$tool==='marketing'?(string)$id:(string)$preview['source_id'];
+                $ref=$prefix.$sourceId;
                 $detail=match($tool){
                     'product'=>'A saved photo is available for owner review of a new private listing. Creation uses Cloud vision and still requires exact source confirmation. This does not edit an existing product.',
+                    'marketing'=>'An owned product and its linked image are available for a private marketing draft review.',
                     'screen'=>'A saved capture is available for owner review of image cleanup or redraw. Pixels are not shared or edited by this assessment.',
                     'mission'=>'A completed Mission has saved, currently authorized excerpts that can be reviewed for a source-quoted decision brief.',
                 };
                 $evidence[$ref]=['ref'=>$ref,'kind'=>'workbench_review','title'=>$preview['source_title'],'detail'=>$detail,
                     'url'=>url('/chat.php?agent='.$scope['agent_id'].'&conversation_id='.$scope['conversation_id']),
-                    'revision'=>$preview['revision'],'review_tool'=>$tool,'source_id'=>(string)$preview['source_id']];
+                    'revision'=>$preview['revision'],'review_tool'=>$tool,'source_id'=>$sourceId];
             }
         }catch(Throwable $e){$coverage[$family]=in_array($e->getCode(),[403,404],true)?'forbidden':'unavailable';}
     }
@@ -155,15 +175,16 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
     $catalog['missions.prepare']=['id'=>'missions.prepare','capability'=>'missions.analyze','mode'=>'review',
         'ready'=>$ready,'reason'=>$ready?'ready':$missionReason,
         'description'=>'Save an exact source-grounded specialist/research Mission for owner assignment review. Creates a real pending-review Mission; does not start research, grant tools or claim completed work.'];
-    foreach(['product','screen','mission'] as $tool){
+    foreach(['product','screen','mission','marketing'] as $tool){
         $refs=[];
         foreach($evidence as $ref=>$row)if(($row['kind']??'')==='workbench_review'&&($row['review_tool']??'')===$tool)$refs[]=$ref;
         if(!$refs)continue;
         $id='workbench.'.$tool.'.review';
-        $catalog[$id]=['id'=>$id,'capability'=>match($tool){'product'=>'products.draft','screen'=>'images.generate','mission'=>'missions.decision_brief'},
+        $catalog[$id]=['id'=>$id,'capability'=>match($tool){'product'=>'products.draft','marketing'=>'products.draft','screen'=>'images.generate','mission'=>'missions.decision_brief'},
             'mode'=>'review','ready'=>true,'reason'=>'ready','source_refs'=>$refs,
             'description'=>match($tool){
                 'product'=>'Present an exact saved-photo listing review to the owner. The existing Workbench must confirm source use before any vision inference or Commerce draft creation.',
+                'marketing'=>'Present the exact linked product and image for a private marketing draft. The Workbench requires owner confirmation before generation or saving.',
                 'screen'=>'Present an exact saved capture for cleanup/redraw review. The existing Workbench must confirm before any pixels leave the account or an image job is queued.',
                 'mission'=>'Present an exact completed Mission for a source-quoted brief review. The existing Workbench must confirm before generating and saving the brief.',
             }];

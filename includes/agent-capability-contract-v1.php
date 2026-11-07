@@ -288,13 +288,13 @@ function vp3_capability_contract_initiative_metadata_v1(string $id): ?array
     if($adapter!==null)return $adapter;
     $parents=['work.prepare_private'=>'agent.initiative','chat.check_in'=>'agent.initiative',
         'knowledge.search'=>'knowledge.personal','brain.read'=>'knowledge.brain',
-        'missions.prepare'=>'missions.workflows','workbench.product.review'=>'commerce.products',
+        'missions.prepare'=>'missions.workflows','workbench.product.review'=>'commerce.products','workbench.marketing.review'=>'commerce.products',
         'workbench.screen.review'=>'media.images','workbench.mission.review'=>'missions.workflows'];
     $parent=$parents[$id]??null;
     if($parent===null)return null;
     $path=vp3_capability_contract_path_v1($parent);
     $actionClass=in_array($id,['knowledge.search','brain.read'],true)?'read_existing'
-        :(in_array($id,['missions.prepare','workbench.product.review','workbench.screen.review','workbench.mission.review'],true)
+        :(in_array($id,['missions.prepare','workbench.product.review','workbench.marketing.review','workbench.screen.review','workbench.mission.review'],true)
             ?'prepare_review':'private_preparation');
     return ['contract'=>VP3_CAPABILITY_CONTRACT_V1,'authority'=>false,'id'=>$id,'family'=>$path['path'][0],
         'parent'=>$parent,'skill'=>$parent,...$path,'execution'=>'existing_initiative_executor_unchanged',

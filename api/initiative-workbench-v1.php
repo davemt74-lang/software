@@ -37,7 +37,7 @@ try {
     $tool = $body['tool'] ?? '';
     $action = $body['action'] ?? '';
     if (!is_int($agentId) || $agentId < 0 || !is_int($conversationId) || $conversationId < 1
-        || !in_array($tool, ['product', 'screen', 'mission'], true)
+        || !in_array($tool, ['product', 'screen', 'mission', 'marketing'], true)
         || !in_array($action, ['sources', 'preview', 'create'], true)) {
         throw new DomainException('Choose a tool in the current saved Agent Chat.', 422);
     }
@@ -65,6 +65,7 @@ try {
     $handler = 'initiative_work_' . $tool;
     if ($action === 'sources') {
         $response['sources'] = ($handler . '_sources_v1')($pdo, $owner, $scope);
+        if ($tool === 'marketing') $response['products'] = initiative_work_marketing_products_v1($pdo, $owner, $scope);
     } else {
         $input = initiative_workbench_input_v1($body);
         $preview = ($handler . '_preview_v1')($pdo, $owner, $scope, $input + ['show_image' => $action === 'preview']);

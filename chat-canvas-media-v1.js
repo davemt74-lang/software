@@ -22,6 +22,8 @@ function assetCard(asset){
  if(kind==='photo'&&['image/jpeg','image/png','image/webp'].includes(asset.mime_type)&&window.VP3InitiativeWorkbench){
   const draft=make('button','Draft listing');draft.type='button';
   draft.addEventListener('click',()=>window.VP3InitiativeWorkbench.open('product',String(asset.id)));controls.appendChild(draft);
+  const marketing=make('button','Draft marketing');marketing.type='button';
+  marketing.addEventListener('click',()=>window.VP3InitiativeWorkbench.open('marketing',String(asset.id)));controls.appendChild(marketing);
  }
  const editor=ownUrl(asset.editor_url,'/video-editor.php');if(editor){const edit=make('a','Open in editor');edit.href=editor;controls.appendChild(edit);}card.appendChild(controls);return card;
 }

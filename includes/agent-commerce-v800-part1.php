@@ -91,6 +91,16 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
       CONSTRAINT fk_commerce_product_connection FOREIGN KEY (fixed_connection_id) REFERENCES agent_commerce_provider_connections_v800(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_commerce_marketing_drafts_v1 (
+      product_id BIGINT UNSIGNED NOT NULL,
+      owner_user_id INT UNSIGNED NOT NULL,
+      request_key CHAR(64) NOT NULL,
+      draft_json TEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (product_id,request_key),
+      CONSTRAINT fk_commerce_marketing_product FOREIGN KEY (product_id) REFERENCES agent_commerce_products_v800(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_commerce_product_bindings_v800 (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       product_id BIGINT UNSIGNED NOT NULL,

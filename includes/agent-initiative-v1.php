@@ -117,7 +117,7 @@ function vp3_initiative_evidence_scoped_v1(PDO $pdo,array $user,DateTimeImmutabl
                 $evidence=array_replace($evidence,vp3_initiative_tools_evidence_v1($pdo,$user,$binding,$selectedRefs,$coverage,$now));
             }
         }catch(Throwable $e){
-            foreach(['workbench_product','workbench_screen','workbench_mission'] as $family){
+            foreach(['workbench_product','workbench_screen','workbench_mission','workbench_marketing'] as $family){
                 $coverage[$family]=in_array($e->getCode(),[403,404],true)?'forbidden':'unavailable';
             }
         }
@@ -619,7 +619,7 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         'reward'=>'rewards','transcript'=>'transcripts','screen-followup'=>'screen_followup',
         'account-readiness'=>'account_readiness','business-readiness'=>'business_readiness',
         'product-readiness'=>'product_readiness','scheduling-readiness'=>'scheduling_readiness',
-        'workbench-product'=>'workbench_product','workbench-screen'=>'workbench_screen','workbench-mission'=>'workbench_mission',
+        'workbench-product'=>'workbench_product','workbench-marketing'=>'workbench_marketing','workbench-screen'=>'workbench_screen','workbench-mission'=>'workbench_mission',
         'open-task'=>'open_tasks','activity-situation'=>'activity_situations',
         'mission-evidence'=>'mission_evidence','product-context'=>'product_context',
         'task-list'=>'task_lists','live-context'=>'live_context'];
@@ -703,7 +703,7 @@ function vp3_initiative_report_v1(PDO $pdo,array $user,int $cid,string $draft,ar
     $actions=$toolResult['output']['review_actions']??(isset($toolResult['output']['review_action'])?[$toolResult['output']['review_action']]:[]);
     $reviews=[];
     foreach(is_array($actions)?array_slice($actions,0,8):[] as $action){
-        if(!is_array($action)||!in_array($action['tool']??'', ['product','screen','mission'],true)
+        if(!is_array($action)||!in_array($action['tool']??'', ['product','screen','mission','marketing'],true)
             ||!is_string($action['source_id']??null)||$action['source_id']===''||strlen($action['source_id'])>190
             ||!is_string($action['source_revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$action['source_revision']))continue;
         $reviews[]=['tool'=>$action['tool'],'source_id'=>$action['source_id'],'source_revision'=>$action['source_revision']];

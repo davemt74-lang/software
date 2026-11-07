@@ -199,7 +199,7 @@ function agent_workflow_initiative_result_v1400(array $value): array
         }
     }elseif(($output['type']??'')==='initiative_workbench_review'&&($output['status']??'')==='review_required'){
         $action=$output['review_action']??null;
-        if(is_array($action)&&in_array($action['tool']??'', ['product','screen','mission'],true)
+        if(is_array($action)&&in_array($action['tool']??'', ['product','screen','mission','marketing'],true)
             &&is_string($action['source_id']??null)&&$action['source_id']!==''&&strlen($action['source_id'])<=190
             &&is_string($action['source_revision']??null)&&preg_match('/\A[a-f0-9]{64}\z/D',$action['source_revision'])){
             $safe['output']=['type'=>$output['type'],'status'=>$output['status'],

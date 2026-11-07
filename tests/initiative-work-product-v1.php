@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 
 require __DIR__.'/fixtures/commerce-recovery-pa2.php';
-require_once dirname(__DIR__).'/includes/initiative-work-product-v1.php';
+require_once dirname(__DIR__).'/includes/initiative-work-marketing-v1.php';
 require_once dirname(__DIR__).'/includes/ai-settings.php';
 
 function has_permission(string $capability,array $user): bool {return true;}
@@ -160,6 +160,28 @@ try{
         'description approval and replay produce one private draft and preserve missing commercial terms');
     product_reject(fn()=>profile_commerce_publish_v900($pdo,1,$textResult['product_id'],['profile_visibility'=>'public']),
         'publication refuses a private description draft');
+    $marketingInput = ['source_id'=>'1','product_id'=>$textResult['product_id'],'request_id'=>str_repeat('f',64)];
+    $marketingPreview = initiative_work_marketing_preview_v1($pdo,1,$scope,$marketingInput);
+    $marketingCalls = 0;
+    $marketingModel = static function(string $prompt) use (&$marketingCalls): string {
+        $marketingCalls++;
+        $data = json_decode($prompt,true,8,JSON_THROW_ON_ERROR);
+        product_check($data['product']['title']==='Handmade cotton tote' && isset($data['image_title'])
+            && !isset($data['bytes']), 'marketing receives exact product facts and image metadata');
+        return '{"headline":"A handmade cotton tote","copy":"A cotton tote with two handles.","campaign_idea":"Introduce the tote in a product spotlight."}';
+    };
+    $marketing = initiative_work_marketing_create_v1($pdo,1,$scope,$marketingInput,$marketingPreview,$marketingModel);
+    $replay = initiative_work_marketing_create_v1($pdo,1,$scope,$marketingInput,$marketingPreview,$marketingModel);
+    $saved = agent_commerce_product_v800($pdo,$textResult['product_id'],1);
+    product_check($marketing===$replay && $marketingCalls===1 && $marketing['asset_id']===1
+        && $marketing['product_id']===$textResult['product_id'] && empty($saved['is_active'])
+        && initiative_work_marketing_drafts_v1($pdo,1,$textResult['product_id'])[$marketingInput['request_id']]===$marketing,
+        'marketing and replay retain one private draft with the exact product and image');
+    product_reject(fn()=>initiative_work_marketing_preview_v1($pdo,1,$scope,array_replace($marketingInput,['source_id'=>'2'])),
+        'marketing refuses a foreign media asset',404);
+    $pdo->prepare('UPDATE agent_commerce_products_v800 SET title=? WHERE id=?')->execute(['Revised product',$textResult['product_id']]);
+    product_reject(fn()=>initiative_work_marketing_create_v1($pdo,1,$scope,$marketingInput,$marketingPreview,$marketingModel),
+        'product changes invalidate the approved marketing input',409);
     echo "INITIATIVE_WORK_PRODUCT_V1=PASS ($checks cases)\n";
 }finally{
     foreach($paths as $path)if(is_file($path))unlink($path);
