@@ -103,14 +103,26 @@ function vp3_initiative_followthrough_sources_v1(PDO $pdo,array $user,array $pri
     }
     require_once __DIR__.'/agent-initiative-tools-v1.php';
     foreach($reviews as $ref=>$revision){
-        if(!preg_match('/\Aworkbench-(product|screen|mission):(.+)\z/D',$ref,$match))throw new RuntimeException('Proposal source changed.',409);
+        if(!preg_match('/\Aworkbench-(product|screen|mission|marketing):(.+)\z/D',$ref,$match))throw new RuntimeException('Proposal source changed.',409);
         $lane=$match[1];$id=$match[2];
         if($lane==='screen'&&!$screen)throw new RuntimeException('Screen source permission changed.',403);
         require_once __DIR__.'/initiative-work-'.$lane.'-v1.php';
         if($lane==='screen'&&!in_array($id,vp3_initiative_tools_screen_ids_v1($pdo,$scope,[$id]),true))throw new RuntimeException('Screen source changed.',409);
-        $preview=('initiative_work_'.$lane.'_preview_v1')($pdo,(int)$user['id'],$scope,
-            ['source_id'=>$id]+($lane==='screen'?['mode'=>'cleanup','instruction'=>'']:[]));
-        if(!hash_equals($revision,(string)$preview['revision']))throw new RuntimeException('Proposal source changed.',409);
+        $input=['source_id'=>$id]+($lane==='screen'?['mode'=>'cleanup','instruction'=>'']:[]);
+        if($lane==='marketing'){
+            if(!preg_match('/\A([1-9][0-9]{0,18})-([1-9][0-9]{0,18})\z/D',$id,$pair)
+                ||($productId=vp3_initiative_followthrough_id_v1($pair[1]))<1)throw new RuntimeException('Proposal source changed.',409);
+            $input=['source_id'=>$pair[2],'product_id'=>$productId];
+        }
+        try{$preview=('initiative_work_'.$lane.'_preview_v1')($pdo,(int)$user['id'],$scope,$input);}
+        catch(DomainException $error){
+            if($lane!=='marketing')throw $error;
+            if($error->getCode()===503)throw new RuntimeException('Proposal source verification is unavailable.',503,$error);
+            throw new RuntimeException('Proposal source changed.',409,$error);
+        }
+        if(!hash_equals($revision,(string)$preview['revision'])||($lane==='marketing'&&empty($preview['details']['linked_product_image']))){
+            throw new RuntimeException('Proposal source changed.',409);
+        }
         $evidence[$ref]=['ref'=>$ref,'revision'=>$revision,'kind'=>'workbench_review','title'=>$preview['source_title'],
             'detail'=>'An existing source awaits its original explicit review.','url'=>'/chat.php?agent='.$agent.'&conversation_id='.$old['conversation_id']];
     }

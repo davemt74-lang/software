@@ -257,6 +257,8 @@ function initiative_work_product_prepare_v1(PDO $pdo,int $owner,array $scope,arr
             $stmt->execute([$owner,$key,$title,$description,json_encode($meta,JSON_THROW_ON_ERROR)]);
             $row=agent_commerce_product_v800($pdo,(int)$pdo->lastInsertId(),$owner);
             if(!$row)throw new DomainException('The private Commerce draft could not be saved.',503);
+            require_once __DIR__.'/initiative-product-launch-v1.php';
+            initiative_product_launch_track_v1($pdo,$owner,$scope,(int)$row['id']);
         }
         $pdo->commit();
         return initiative_work_product_output_v1($row);

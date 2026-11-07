@@ -22,7 +22,7 @@ function followthrough_owner_turn_v1(string $query,int $cid=170,int $owner=1):in
     db()->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(?,?,'user',?)")->execute([$cid,$owner,$query]);
     return (int)db()->lastInsertId();
 }
-function followthrough_seed_v1(string $title='Private next step',int $agent=17,int $cid=170):array
+function followthrough_seed_v1(string $title='Private next step',int $agent=17,int $cid=170,?string $marketingRef=null):array
 {
     static $serial=0;++$serial;$user=['id'=>1,'is_active'=>1];
     scope_command($user,$agent,$cid,'on');
@@ -33,10 +33,11 @@ function followthrough_seed_v1(string $title='Private next step',int $agent=17,i
     $binding=vp3_initiative_policy_v1($user,$agent);$coverage=[];
     $evidence=vp3_initiative_evidence_v1(db(),$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),false,[],$coverage,null,$agent);
     $refs=array_values(array_filter(array_keys($evidence),static fn(string $ref):bool=>str_starts_with($ref,'calendar:')));
-    if(!$refs)throw new RuntimeException('Canonical fixture calendar source is required.');
-    $ref=$refs[0];$goal=['binding'=>$binding,'sources'=>[$ref=>$evidence[$ref]['revision']],
+    $ref=$marketingRef??($refs[0]??null);
+    if($ref===null||!isset($evidence[$ref]))throw new RuntimeException('Canonical fixture source is required.');
+    $goal=['binding'=>$binding,'sources'=>[$ref=>$evidence[$ref]['revision']],
         'canonical_sources'=>[$ref=>$evidence[$ref]['canonical_source_revision']??$evidence[$ref]['revision']],
-        'tool'=>'work.prepare_private','primary'=>$ref,'focus'=>$title,'report'=>true];
+        'tool'=>$marketingRef===null?'work.prepare_private':'workbench.marketing.review','primary'=>$ref,'focus'=>$title,'report'=>true];
     vp3_initiative_enqueue_v1(db(),$user,'initiative.prepare',$goal,hash('sha256','followthrough-fixture-'.$serial));
     $run=(int)db()->lastInsertId();
     $q=db()->prepare("SELECT id FROM agent_workflow_runs WHERE owner_user_id=1 AND dedupe_key=?");$q->execute([hash('sha256','initiative.prepare|'.hash('sha256','followthrough-fixture-'.$serial))]);$run=(int)$q->fetchColumn();
@@ -412,6 +413,68 @@ foreach([false,true] as $explicitReplay){
     followthrough_reject(fn()=>vp3_initiative_followthrough_replay_refresh_v1(db(),$one,scope_principal($one,17),$input,$cached),409,
         'historical completion replay still revalidates current private source revisions');
     db()->prepare('UPDATE initiative_scope_calendar SET title=? WHERE owner_id=1')->execute([$priorTitle]);
+}
+
+$marketingRoot=sys_get_temp_dir().'/vp3-followthrough-marketing-'.bin2hex(random_bytes(8));
+define('STONEFELLOW_ROOT',$marketingRoot);
+mkdir($marketingRoot.'/private/user-media/1',0700,true);
+$photoPath='private/user-media/1/product.png';
+$original=base64_decode(image_fixture_response_v1('32x32')['data'][0]['b64_json'],true);
+file_put_contents($marketingRoot.'/'.$photoPath,$original);
+try{
+    $pdo->exec('CREATE TABLE agent_commerce_products_v800 (id INTEGER PRIMARY KEY,owner_user_id INTEGER,title TEXT,description TEXT,metadata_json TEXT);
+        CREATE TABLE agent_commerce_product_bindings_v800 (product_id INTEGER,binding_type TEXT,binding_id INTEGER);
+        CREATE TABLE agent_commerce_marketing_drafts_v1 (product_id INTEGER,owner_user_id INTEGER,request_key TEXT,draft_json TEXT,created_at TEXT)');
+    $pdo->prepare("INSERT INTO user_media_assets(id,user_id,media_type,title,mime_type,file_path,source)
+        VALUES(51,1,'photo','Product photo','image/png',?,'upload')")->execute([$photoPath]);
+    $productMetadata=json_encode(['source_asset_id'=>'51','source_content_sha256'=>hash('sha256',$original)],JSON_THROW_ON_ERROR);
+    $pdo->prepare("INSERT INTO agent_commerce_products_v800 VALUES(41,1,'Blue mug','Ceramic mug',?)")->execute([$productMetadata]);
+
+    $ref='workbench-marketing:41-51';
+    $root=followthrough_seed_v1('Review the private Blue mug marketing draft',17,170,$ref);
+    followthrough_check($root['goal']['tool']==='workbench.marketing.review'&&isset($root['evidence'][$ref])
+        &&$root['context']['initiative_work']['review_actions'][0]['source_id']==='41-51',
+        'a canonical marketing proposal loads its exact linked product and photo in the originating Chat');
+    followthrough_reject(fn()=>vp3_initiative_followthrough_load_v1($pdo,$two,scope_principal($two,19),190,(int)$root['message']['id']),409,
+        'another owner cannot load the marketing proposal in their Chat');
+
+    file_put_contents($marketingRoot.'/'.$photoPath,base64_decode(image_fixture_response_v1('48x32')['data'][0]['b64_json'],true));
+    followthrough_reject(fn()=>vp3_initiative_followthrough_load_v1($pdo,$one,$root['principal'],170,(int)$root['message']['id']),409,
+        'the marketing proposal rejects changed image bytes even if the photo record is unchanged');
+    file_put_contents($marketingRoot.'/'.$photoPath,$original);
+    $pdo->exec("UPDATE agent_commerce_products_v800 SET metadata_json='{}' WHERE id=41");
+    followthrough_reject(fn()=>vp3_initiative_followthrough_load_v1($pdo,$one,$root['principal'],170,(int)$root['message']['id']),409,
+        'the marketing proposal rejects a removed product-to-photo link');
+    $pdo->prepare('UPDATE agent_commerce_products_v800 SET metadata_json=? WHERE id=41')->execute([$productMetadata]);
+    $pdo->exec("UPDATE agent_commerce_products_v800 SET title='Edited mug' WHERE id=41");
+    followthrough_reject(fn()=>vp3_initiative_followthrough_load_v1($pdo,$one,$root['principal'],170,(int)$root['message']['id']),409,
+        'the marketing proposal rejects changed product wording');
+    $pdo->exec("UPDATE agent_commerce_products_v800 SET title='Blue mug' WHERE id=41");
+    $pdo->exec('UPDATE user_media_assets SET user_id=2 WHERE id=51');
+    followthrough_reject(fn()=>vp3_initiative_followthrough_load_v1($pdo,$one,$root['principal'],170,(int)$root['message']['id']),409,
+        'the marketing proposal treats a photo that left the owner library as stale');
+    $pdo->exec('UPDATE user_media_assets SET user_id=1 WHERE id=51');
+    $pdo->exec('UPDATE agent_commerce_products_v800 SET owner_user_id=2 WHERE id=41');
+    followthrough_reject(fn()=>vp3_initiative_followthrough_load_v1($pdo,$one,$root['principal'],170,(int)$root['message']['id']),409,
+        'the marketing proposal treats a product that left the owner catalog as stale');
+    $pdo->exec('UPDATE agent_commerce_products_v800 SET owner_user_id=1 WHERE id=41');
+
+    $decision=followthrough_decide_v1($root,'advance','Yes, develop the private marketing idea for that mug.');
+    $outcome=$decision['initiative_followthrough'];
+    $child=agent_workflow_row_v1400($pdo,1,$outcome['continuation_run_id']);
+    $childGoal=json_decode((string)$child['goal'],true,32,JSON_THROW_ON_ERROR);
+    followthrough_check($outcome['state']==='queued'&&$childGoal['tool']==='work.prepare_private'
+        &&$childGoal['sources']===$root['goal']['sources']&&(int)$pdo->query('SELECT COUNT(*) FROM agent_commerce_marketing_drafts_v1')->fetchColumn()===0,
+        'a natural reply advances the exact marketing proposal as private preparation without creating a draft');
+    $result=vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$outcome['continuation_run_id']),
+        static fn()=>'{"draft":"A private marketing idea for the verified blue mug and its product photo."}');
+    $completed=vp3_initiative_followthrough_load_v1($pdo,$one,$root['principal'],170,(int)$root['message']['id']);
+    followthrough_check(!empty($result['ok'])&&$completed['state']['state']==='completed'
+        &&(int)$pdo->query('SELECT COUNT(*) FROM agent_commerce_marketing_drafts_v1')->fetchColumn()===0,
+        'the canonical worker completes the marketing continuation privately with no Commerce draft write');
+}finally{
+    unlink($marketingRoot.'/'.$photoPath);
+    foreach(['/private/user-media/1','/private/user-media','/private',''] as $path)rmdir($marketingRoot.$path);
 }
 
 followthrough_check(!$pdo->inTransaction(),'all model, success and denial paths release transaction ownership');

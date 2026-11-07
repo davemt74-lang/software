@@ -126,6 +126,9 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
       CONSTRAINT fk_commerce_promotion_draft FOREIGN KEY (product_id,draft_key) REFERENCES agent_commerce_marketing_drafts_v1(product_id,request_key) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    require_once __DIR__.'/initiative-product-launch-v1.php';
+    initiative_product_launch_schema_v1($pdo);
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_commerce_product_bindings_v800 (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       product_id BIGINT UNSIGNED NOT NULL,

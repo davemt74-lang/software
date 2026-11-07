@@ -154,6 +154,8 @@ function initiative_work_marketing_save_v1(PDO $pdo, int $owner, array $scope, a
             $query = $pdo->prepare('INSERT INTO agent_commerce_marketing_drafts_v1
                 (product_id,owner_user_id,request_key,draft_json) VALUES (?,?,?,?)');
             $query->execute([$input['product_id'],$owner,$request,json_encode($output,JSON_THROW_ON_ERROR)]);
+            require_once __DIR__.'/initiative-product-launch-v1.php';
+            initiative_product_launch_track_v1($pdo,$owner,$scope,$input['product_id'],$request);
         }
         $pdo->commit();
         return $output;

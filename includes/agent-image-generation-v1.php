@@ -209,6 +209,12 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         $pdo->prepare("INSERT INTO user_media_assets(user_id,media_type,title,mime_type,file_path,file_size,duration_seconds,source,metadata_json,created_at,updated_at) VALUES(?,'photo',?,'image/png',?,?,0,'openai_image',?,UTC_TIMESTAMP(),UTC_TIMESTAMP())")->execute([(int)$user['id'],$config['title'],$relative,strlen($output['bytes']),json_encode($meta,JSON_THROW_ON_ERROR)]);$asset=(int)$pdo->lastInsertId();
         $pdo->prepare('UPDATE agent_image_generations_v1 SET asset_id=?,error_code=\'\' WHERE generation_id=? AND owner_user_id=?')->execute([$asset,$row['generation_id'],(int)$user['id']]);
         $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,true,'Requested image saved in the private media library.',['asset_id'=>$asset,'generation_id'=>$row['generation_id'],'effect_state'=>'image_saved'],'',false);$pdo->commit();$committed=true;
+        if($marketing){
+            try{
+                require_once __DIR__.'/initiative-product-launch-v1.php';
+                initiative_product_launch_wake_v1($pdo,(int)$user['id'],(int)$config['marketing']['product_id'],$config['marketing']['id']);
+            }catch(Throwable $ignored){} // The persisted launch remains eligible for the regular sweep.
+        }
         $priorScope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??null;
         try{
             if(function_exists('vp3_agent_memory_scope_set_current_v410'))vp3_agent_memory_scope_set_current_v410((int)$user['id'],(int)$row['agent_id']);

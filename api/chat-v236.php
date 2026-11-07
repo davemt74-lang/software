@@ -13,6 +13,7 @@ require_once dirname(__DIR__) . '/includes/browser-context-v2130.php';
 require_once dirname(__DIR__) . '/includes/video-meetings-memory-v18120.php';
 require_once dirname(__DIR__) . '/includes/video-meetings-commitment-command-v18230-chat.php';
 require_once dirname(__DIR__) . '/includes/agent-chat-runtime-v2160.php';
+require_once dirname(__DIR__) . '/includes/initiative-product-launch-v1.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 $user=current_user();if(!$user||!has_permission('chat.access',$user)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'Chat access is not available for this account.']);exit;}
 if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!hash_equals(vp3_catch_up_page_binding_v1($user),(string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])){
@@ -46,10 +47,20 @@ if($action==='activity'){
         $activeConversationId=(int)$stmt->fetchColumn();
     }
     $initiativeUpdates=vp3_agent_chat_followthrough_updates_v2160($pdo,$user,$principal,$activeConversationId,$input);
+    initiative_product_launch_chat_v1($pdo,$userId,(int)$principal['agent_id'],$activeConversationId);
     player_process_show_reminders($user);
     $activeMessageId=0;if($activeConversationId>0){$m=$pdo->prepare('SELECT COALESCE(MAX(id),0) FROM chat_messages WHERE conversation_id=?');$m->execute([$activeConversationId]);$activeMessageId=(int)$m->fetchColumn();}if(!table_exists('notifications')){echo json_encode(['ok'=>true,'updates'=>[],'latest_id'=>0,'unread_count'=>0,'conversation_id'=>$activeConversationId,'latest_message_id'=>$activeMessageId,'initiative_updates'=>$initiativeUpdates]);exit;}$afterId=max(0,(int)($input['after_id']??0));if($afterId>0){$n=$pdo->prepare("SELECT id,type,title,body,target_url,created_at FROM notifications WHERE user_id=? AND id>? AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action') ORDER BY id ASC LIMIT 30");$n->execute([$userId,$afterId]);$updates=$n->fetchAll();}else{$n=$pdo->prepare("SELECT id,type,title,body,target_url,created_at FROM notifications WHERE user_id=? AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action') AND created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY) ORDER BY id DESC LIMIT 10");$n->execute([$userId]);$updates=array_reverse($n->fetchAll());}$latest=$pdo->prepare("SELECT COALESCE(MAX(id),0) FROM notifications WHERE user_id=? AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action')");$latest->execute([$userId]);echo json_encode(['ok'=>true,'updates'=>$updates,'latest_id'=>(int)$latest->fetchColumn(),'unread_count'=>notification_unread_count($user),'conversation_id'=>$activeConversationId,'latest_message_id'=>$activeMessageId,'initiative_updates'=>$initiativeUpdates],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
 if($action==='new'){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,'New chat',$workspaceId);echo json_encode(['ok'=>true,'conversation_id'=>(int)$conversation['id']]);exit;}
-if($action==='load'){$conversationId=(int)($input['conversation_id']??0);$conversation=chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent);if(!$conversation)throw new RuntimeException('Conversation not found for this agent.');$stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 300');$stmt->execute([$conversationId]);echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>array_reverse($stmt->fetchAll()),'agent_name'=>(string)$principal['display_name']]);exit;}
+if($action==='load'){
+    $conversationId=(int)($input['conversation_id']??0);
+    $conversation=chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent);
+    if(!$conversation)throw new RuntimeException('Conversation not found for this agent.');
+    initiative_product_launch_chat_v1($pdo,$userId,(int)$principal['agent_id'],$conversationId);
+    $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 300');
+    $stmt->execute([$conversationId]);
+    echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>array_reverse($stmt->fetchAll()),'agent_name'=>(string)$principal['display_name']]);
+    exit;
+}
 if($action==='messages_after'){
     $conversationId=(int)($input['conversation_id']??0);
     if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
