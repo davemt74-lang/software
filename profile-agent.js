@@ -291,10 +291,40 @@
     div.append(speaker,body);
     return div;
   }
-  function appendMessage(type,text,id=0){
+  function promotionNode(promotion){
+    if(!promotion||!/^[a-f0-9]{32}$/.test(promotion.key||'')
+       ||typeof promotion.headline!=='string'||promotion.headline.length>240
+       ||typeof promotion.copy!=='string'||promotion.copy.length>1200
+       ||typeof promotion.cta!=='string'||!promotion.cta.trim()||promotion.cta.length>80)return null;
+    const imageUrl=safeActionUrl(promotion.image_url,{local:true}),productUrl=safeActionUrl(promotion.product_url,{local:true});
+    if(!imageUrl||!productUrl)return null;
+    const imageTarget=new URL(imageUrl),productTarget=new URL(productUrl);
+    const slug=productTarget.pathname.split('/').pop();
+    if(!imageTarget.pathname.endsWith('/profile-promotion-image.php')
+       ||imageTarget.hash||[...imageTarget.searchParams].length!==1||imageTarget.searchParams.get('key')!==promotion.key
+       ||!slug||!/^[a-z0-9-]{1,80}$/.test(slug)
+       ||!productTarget.pathname.endsWith(`/${encodeURIComponent(cfg.username)}/product/${slug}`)
+       ||productTarget.search||productTarget.hash)return null;
+    const card=document.createElement('article');card.className='profile-product-promotion';card.dataset.profileProductPromotion=promotion.key;
+    const image=document.createElement('img');image.alt=(promotion.headline+'. '+promotion.copy).trim();image.loading='lazy';
+    image.addEventListener('error',()=>card.remove(),{once:true});image.src=imageUrl;
+    const link=document.createElement('a');link.href=productUrl;link.textContent=promotion.cta+' →';
+    card.append(image,link);
+    return card;
+  }
+  function refreshPromotionCards(keys){
+    if(!Array.isArray(keys))return;
+    const active=new Set(keys);
+    thread.querySelectorAll('[data-profile-product-promotion]').forEach(card=>{
+      if(!active.has(card.dataset.profileProductPromotion))card.remove();
+    });
+  }
+  function appendMessage(type,text,id=0,promotion=null){
     if(!String(text||'').trim())return;
     if(id>0&&thread.querySelector(`[data-message-id="${id}"]`)){lastMessageId=Math.max(lastMessageId,id);return;}
     const node=messageNode(type,text,id);
+    const card=type==='agent'?promotionNode(promotion):null;
+    if(card)node.append(card);
     const host=checkoutHost?.parentNode===thread?checkoutHost:callHost?.parentNode===thread?callHost:null;
     if(host)thread.insertBefore(node,host);else thread.appendChild(node);
     if(id>lastMessageId)lastMessageId=id;thread.scrollTop=thread.scrollHeight;
@@ -306,7 +336,7 @@
     if(callHost?.parentNode===thread)callHost.remove();
     if(checkoutHost?.parentNode===thread)checkoutHost.remove();
     thread.innerHTML='';lastMessageId=0;
-    (messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0)));
+    (messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion));
     if(!messages?.length&&cfg.greeting)appendMessage('agent',cfg.greeting);
     if(checkoutHost)thread.appendChild(checkoutHost);
     if(callHost)thread.appendChild(callHost);
@@ -468,7 +498,7 @@
       data??=await request('state',{},'GET');
       if(data.agent?.name)cfg.agentName=data.agent.name;
       if(Object.prototype.hasOwnProperty.call(data.agent||{},'greeting'))cfg.greeting=data.agent.greeting||'';
-      renderMessages(data.messages||[]);applyConversationState(data.conversation||null,data.handoff,data.chat);
+      renderMessages(data.messages||[]);refreshPromotionCards(data.active_promotion_keys);applyConversationState(data.conversation||null,data.handoff,data.chat);
       if(conversationId){startPolling();void checkoutSurface?.refresh();}
       if(pendingSend&&!sessionChanged)void sendSaved(pendingSend);
       else void dispatchIfDue();
@@ -484,7 +514,8 @@
     pollBusy=true;
     try{
       const data=await request('poll',{after_id:lastMessageId},'GET');
-      (data.messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0)));
+      (data.messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion));
+      refreshPromotionCards(data.active_promotion_keys);
       applyConversationState(data.conversation||null,data.handoff,data.chat);
       void dispatchIfDue();
     }catch(error){

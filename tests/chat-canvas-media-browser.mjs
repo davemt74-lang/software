@@ -7,6 +7,7 @@ const browser=await chromium.launch({headless:true,args:['--no-sandbox'],...(exe
 page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
 let id='11111111-1111-4111-8111-111111111111',status='queued',denied=false,tickRelease,tickGate=new Promise(r=>tickRelease=r),mode='generation';
 const specialistPrompt = 'Create a paper lighthouse at sunset';
+const marketingPrefill = {level:7,prompt:'put it on a café counter'};
 let specialistMessages = [];
 const asset={id:1,title:'Desert <img src=x onerror=alert(1)>',media_type:'photo',mime_type:'image/png',source:'openai_image',available:true,url:'/media-library-file-v86.php?id=1',editor_url:'/video-editor.php?asset=1'};
 const generation=()=>({id,title:'Desert artwork',prompt:'Cinematic desert <img src=x>',model:'gpt-image-2.5-flare',size:'1024x1024',quality:'medium',background:'opaque',status,message:status==='failed'?'The provider result was not confirmed. No automatic retry.':'',provider_started:status!=='queued',asset:status==='completed'?asset:null});
@@ -25,7 +26,7 @@ await page.route('**/api/**',async r=>{
  }
  if(p.action==='load')return ok({messages:mode==='specialist'
    ? (p.conversation_id===42 ? specialistMessages : [])
-   : [{id:10,role:'assistant',message:'Your requested media.',context_json:JSON.stringify({canvas_media:mode==='generation'?{asset_ids:[],generation_ids:[id]}:{asset_ids:[1],generation_ids:[]}})}]});
+   : [{id:10,role:'assistant',message:'Your requested media.',context_json:JSON.stringify({canvas_media:mode==='generation'?{asset_ids:[],generation_ids:[id]}:{asset_ids:[1],generation_ids:[],...(mode==='marketing'?{marketing_prefill:marketingPrefill}:{})}})}]});
  if(p.action==='send'&&p.message===specialistPrompt){
   const answer = 'Your image request is queued.';
   const canvas_media = {asset_ids:[],generation_ids:[id]};
@@ -42,6 +43,7 @@ async function boot(){
  await page.evaluate(()=>{
   window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat.php',csrf:'fixture',initialView:'chat',initialConversationId:42};
   window.VP3_CANVAS_MEDIA_V1={endpoint:'/api/chat-canvas-media-v1.php',csrf:'fixture',agentId:7};
+  window.VP3InitiativeWorkbench={open:(...args)=>{window.marketingWorkbenchArgs=args;}};
  });
  for (const file of ['chat.css','team-chat-v109.css','chat-specialist-rail-v1.css','chat-canvas-media-v1.css']) {
   await page.addStyleTag({content:await source(file)});
@@ -107,6 +109,17 @@ try{
  denied=true;await boot();await page.getByText('Media access changed.',{exact:true}).waitFor();await check('revoked media access clears displayed private content',async()=>{assert.equal(await page.locator('.vp3-canvas-media img').count(),0);});denied=false;
  for(const next of ['missing','hostile']){mode=next;await boot();await page.getByText('Saved media file is unavailable.',{exact:true}).waitFor();assert.equal(await page.locator('.vp3-canvas-media img').count(),0);}
  await check('missing files and foreign-origin media URLs cannot become image previews',async()=>{assert.deepEqual(errors,[]);});
+ await check('restored marketing intent opens the exact saved photo and private Canvas prefill without starting a job',async()=>{
+  mode='marketing';
+  const before=calls.filter(c=>c.action==='tick').length;
+  await boot();
+  const handoff=page.locator('.vp3-canvas-media').getByRole('button',{name:'Design promotion',exact:true});
+  await handoff.waitFor();
+  assert.equal(await page.evaluate(()=>window.marketingWorkbenchArgs),undefined);
+  await handoff.click();
+  assert.deepEqual(await page.evaluate(()=>window.marketingWorkbenchArgs),['marketing','1',{marketingPrefill}]);
+  assert.equal(calls.filter(c=>c.action==='tick').length,before);
+ });
  const mobileCard = await startNewImage('66666666-6666-4666-8666-666666666666',{desktop:false});
  await check('a fresh mobile request keeps image progress in its originating reply while ordinary Chat continues', async () => {
   await assertInlineOnly(mobileCard,'Generating image…');

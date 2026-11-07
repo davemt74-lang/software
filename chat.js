@@ -4015,6 +4015,7 @@
   }, true);
 
   const canonicalChatContinuity = {
+    showChatView:() => setChatCanvasView('chat'),
     pendingParticipantQuestion:()=>pendingSend?{message:pendingSend.message,conversation_id:pendingSend.conversationId,submitted:true}:lastParticipantQuestion&&Date.now()-lastParticipantQuestion.at<120000&&lastParticipantQuestion.conversation_id===Number(conversationId||0)?{...lastParticipantQuestion}:null,
     isVoice:() => Boolean(voiceMode),
     conversationId:() => Number(conversationId || 0),

@@ -3,6 +3,7 @@ declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/profile-commerce-ops-v900.php';
 require_once __DIR__.'/includes/initiative-work-marketing-v1.php';
+require_once __DIR__.'/includes/initiative-work-marketing-promotion-v1.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));if(!agent_commerce_schema_ready_v800($pdo))redirect(url('/upgrade.php'));
 $uid=(int)$user['id'];$profile=profile_for_user($pdo,$uid,true);$error='';$notice=trim((string)($_GET['saved']??''));
@@ -11,6 +12,12 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!verify_csrf())$error='Session expired. Please try again.';
     else try{
         $action=(string)($_POST['action']??'');
+        if($action==='pause_promotion'){
+            if(($_POST['confirm_pause']??null)!=='1')throw new RuntimeException('Confirm pausing this promotion.');
+            $promotion=initiative_work_marketing_promotion_pause_v1($pdo,$uid,(string)($_POST['promotion_id']??''));
+            redirect(url('/profile-commerce-products.php?workspace_product='.(int)$promotion['product_id']
+                .'&saved='.rawurlencode('Product promotion paused.').'#product-marketing-drafts'));
+        }
         if($action==='save_initiative_draft'){
             $draftId=(int)($_POST['product_id']??0);
             initiative_work_product_update_v1($pdo,$uid,$draftId,(string)($_POST['revision']??''),$_POST['title']??null,$_POST['description']??null);
@@ -46,11 +53,17 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         throw new RuntimeException('Unknown Profile Commerce action.');
     }catch(Throwable $e){$error=$e->getMessage();}
 }
-$products=agent_commerce_products_for_owner_v800($pdo,$uid,200);$workspaceProduct=max(0,(int)($_GET['workspace_product']??0));$listingDraft=null;$marketingDrafts=[];
+$products=agent_commerce_products_for_owner_v800($pdo,$uid,200);$workspaceProduct=max(0,(int)($_GET['workspace_product']??0));$listingDraft=null;$marketingDrafts=[];$promotions=[];
 if($workspaceProduct>0){
     $focused=agent_commerce_product_v800($pdo,$workspaceProduct,$uid);
     if($focused){
         $marketingDrafts=initiative_work_marketing_drafts_v1($pdo,$uid,$workspaceProduct);
+        if(table_exists('agent_commerce_promotions_v1')){
+            $find=$pdo->prepare("SELECT id,draft_key,agent_id,conversation_id,source_asset_id,status,public_key FROM agent_commerce_promotions_v1
+                WHERE owner_user_id=? AND product_id=? ORDER BY CASE WHEN status='published' THEN 0 ELSE 1 END,updated_at DESC LIMIT 24");
+            $find->execute([$uid,$workspaceProduct]);
+            foreach($find->fetchAll(PDO::FETCH_ASSOC) as $promotion)$promotions[$promotion['draft_key']]??=$promotion;
+        }
         $products=array_values(array_filter($products,static fn($p)=>(int)$p['id']!==$workspaceProduct));array_unshift($products,$focused);
         if(initiative_work_product_draft_v1($focused)&&empty($focused['is_active'])&&profile_commerce_visibility_v900($focused)==='hidden')$listingDraft=$focused;
     }
@@ -84,12 +97,25 @@ $connections=agent_commerce_connections_v800($pdo,$uid,true);$username=profile_u
 <?php if($marketingDrafts):?>
 <section class="pc-card" id="product-marketing-drafts">
     <h2>Private marketing drafts</h2>
-    <?php foreach($marketingDrafts as $draft):?>
+    <?php foreach($marketingDrafts as $draft): $promotion=$promotions[$draft['draft_id']]??null;
+        $chatParams=['marketing_product'=>$workspaceProduct,'marketing_source'=>(int)$draft['asset_id'],'marketing_draft'=>$draft['draft_id']];
+        if($promotion)$chatParams+=['conversation_id'=>(int)$promotion['conversation_id'],
+            'agent'=>(int)$promotion['agent_id']?:'system'];
+    ?>
     <article class="pc-row">
         <h3><?=e($draft['title'])?></h3>
         <p><?=e($draft['description'])?></p>
         <p><?=e($draft['campaign_idea'])?></p>
         <p class="pc-muted">Selected image #<?=(int)$draft['asset_id']?> · <?=e($draft['asset_source']==='openai_image'?'AI-generated':'Saved media')?></p>
+        <?php if(has_permission('chat.access',$user)): ?><a class="pc-btn" href="<?=e(url('/chat.php?'.http_build_query($chatParams)))?>">Open in Agent Chat Canvas</a><?php endif; ?>
+        <?php if(($promotion['status']??'')==='published'):?>
+        <form method="post" class="pc-order-actions">
+            <?=csrf_field()?><input type="hidden" name="action" value="pause_promotion">
+            <input type="hidden" name="promotion_id" value="<?=e($promotion['id'])?>">
+            <label><input type="checkbox" name="confirm_pause" value="1" required> Confirm pausing the public promotion</label>
+            <button class="pc-btn" type="submit">Pause promotion</button>
+        </form>
+        <?php endif; ?>
     </article>
     <?php endforeach;?>
 </section>

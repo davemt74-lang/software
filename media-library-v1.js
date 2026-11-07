@@ -64,7 +64,7 @@
     }
     const body = element('div');
     body.className = 'vp3-media-card-body';
-    const source = ({openai_image: 'Generated', image_editor: 'Edited copy', upload: 'Upload'})[asset.source] || 'Saved media';
+    const source = ({openai_image: 'Generated', image_editor: 'Edited copy', promotion_design: 'Marketing design', upload: 'Upload'})[asset.source] || 'Saved media';
     body.append(element('h3', asset.title), element('small', source));
     if (url) {
       const actions = element('div');

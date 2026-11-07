@@ -14,6 +14,35 @@ function reject($fn,$label){try{$fn();}catch(Throwable $e){check(true,$label);re
 function queueImage($extra=[]): array{return vp3_image_queue_v1(db(),$GLOBALS['u'],$GLOBALS['principal'],array_replace($GLOBALS['plan'],$extra),image_fixture_turn_v1());}
 function transportImage($url,$body,$key): array{$GLOBALS['calls'][]=[$url,$body,$key];return image_fixture_response_v1($body['size']);}
 function imageCount(): int{return(int)db()->query('SELECT COUNT(*) FROM user_media_assets')->fetchColumn();}
+function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $aid,string $surface): array
+{
+    return empty($GLOBALS['imageMarketingLocalOnly'])
+        ? ['route'=>'vp3_cloud','cloud'=>['ready'=>true],'blocked'=>false]
+        : ['route'=>'homeserver','cloud'=>['ready'=>true],'blocked'=>false];
+}
+function initiative_work_marketing_promotion_row_v1(PDO $pdo,int $owner,string $id,bool $lock=false): array
+{
+    $row=$GLOBALS['imageMarketingVariants'][$id]??null;
+    if(!$row||$owner!==1)throw new DomainException('Fixture variant unavailable.',404);
+    return $row;
+}
+function imageFixtureMarketingVariant(int $level,int $asset,string $digest): array
+{
+    $id=bin2hex(random_bytes(16));
+    return $GLOBALS['imageMarketingVariants'][$id]=[
+        'id'=>$id,'product_id'=>71,'draft_key'=>str_repeat('d',64),'source_asset_id'=>$asset,
+        'source_sha256'=>$digest,'agent_id'=>7,'conversation_id'=>11,'generation_id'=>'',
+        'settings'=>['level'=>$level,'headline'=>'Exact blue mug','copy'=>'A ceramic mug for daily coffee.',
+            'prompt'=>'Put it on a café counter.','style'=>'clean','remove_background'=>true,'tolerance'=>24],
+    ];
+}
+function queueMarketingFixture(array &$variant): array
+{
+    $generation=initiative_marketing_creative_queue_v1(db(),1,['agent_id'=>7,'conversation_id'=>11],$variant);
+    $variant['generation_id']=$generation['id'];
+    $GLOBALS['imageMarketingVariants'][$variant['id']]=$variant;
+    return $generation;
+}
 try{
     $ctx=image_fixture_turn_v1();$g=vp3_image_queue_v1($pdo,$u,$principal,$plan,$ctx);
     check($g['status']==='queued'&&count($calls)===0&&imageCount()===0,'Chat queues a canonical image job without blocking on the provider');
@@ -106,6 +135,72 @@ try{
     $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
     check($v['status']==='failed'&&count($calls)===$before,'the Media Library worker rechecks AI entitlement before using the provider');
     $GLOBALS['noImageEntitlement']=false;
+    require_once dirname(__DIR__).'/includes/initiative-marketing-creative-v1.php';
+    $pdo->exec('ALTER TABLE agent_commerce_products_v800 ADD COLUMN id INTEGER');
+    $pdo->exec('UPDATE agent_commerce_products_v800 SET id=71 WHERE owner_user_id=1');
+    $pdo->exec('CREATE TABLE agent_commerce_marketing_drafts_v1 (owner_user_id INTEGER,product_id INTEGER,request_key VARCHAR(64),draft_json TEXT)');
+    $assetId=$finished['asset']['id'];
+    $path=initiative_work_product_file_v1(1,media_studio_asset($assetId,$u)['file_path']);
+    $original=file_get_contents($path);
+    $digest=hash('sha256',$original);
+    $pdo->prepare('INSERT INTO agent_commerce_marketing_drafts_v1 VALUES (1,71,?,?)')
+        ->execute([str_repeat('d',64),json_encode(['asset_id'=>$assetId,'asset_sha256'=>$digest],JSON_THROW_ON_ERROR)]);
+    $scope=['agent_id'=>7,'conversation_id'=>11];
+    $variant=imageFixtureMarketingVariant(1,$assetId,$digest);
+    $before=count($calls);
+    reject(fn()=>initiative_marketing_creative_queue_v1($pdo,1,$scope,$variant),'level one does not admit a paid marketing image job');
+    check(count($calls)===$before,'the original-photo treatment does not call the image provider');
+    $variant=imageFixtureMarketingVariant(7,$assetId,$digest);
+    $g=queueMarketingFixture($variant);
+    check($g['status']==='queued'&&$g['mode']==='marketing_scene'&&queueMarketingFixture($variant)['id']===$g['id'],'the exact background request queues once and retries recover the same generation');
+    reject(fn()=>initiative_marketing_creative_generation_v1($pdo,1,['agent_id'=>8,'conversation_id'=>12],$variant),'a different Agent Chat cannot open the marketing generation');
+    $other=imageFixtureMarketingVariant(7,$assetId,$digest);$other['generation_id']=$g['id'];$GLOBALS['imageMarketingVariants'][$other['id']]=$other;
+    reject(fn()=>initiative_marketing_creative_generation_v1($pdo,1,$scope,$other),'a generation from a different variant cannot be substituted');
+    $v=initiative_marketing_creative_generation_v1($pdo,1,$scope,$variant,true,'transportImage');
+    $wire=end($calls);
+    check($v['status']==='completed'&&$wire[0]==='https://api.openai.com/v1/images/generations'&&!isset($wire[1]['images'])
+        &&str_contains($wire[1]['prompt'],'environment only')&&str_contains($wire[1]['prompt'],'café counter'),'a level seven background goes through the shared queue without sending the product photo');
+    $variant=imageFixtureMarketingVariant(10,$assetId,$digest);
+    $before=count($calls);
+    check(initiative_marketing_creative_recover_v1($pdo,1,$scope,$variant)===null&&count($calls)===$before,
+        'status does not queue a marketing generation when its admission never committed');
+    $g=initiative_marketing_creative_queue_v1($pdo,1,$scope,$variant);
+    check(initiative_marketing_creative_recover_v1($pdo,1,$scope,$variant)===$g['id']&&count($calls)===$before,
+        'status recovers exactly the committed unattached generation without another provider call');
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    $wire=end($calls);
+    check($v['status']==='completed'&&$wire[0]==='https://api.openai.com/v1/images/edits'
+        &&$wire[1]['images']===[['image_url'=>'data:image/png;base64,'.base64_encode($original)]],
+        'the canonical worker uses the exact reviewed product reference even when it claims just before the variant attaches the job');
+    $variant['generation_id']=$g['id'];$GLOBALS['imageMarketingVariants'][$variant['id']]=$variant;
+    check(initiative_marketing_creative_generation_v1($pdo,1,$scope,$variant)['asset']['id']===$v['asset']['id']&&file_get_contents($path)===$original,
+        'the approved reference job exposes its own private candidate and leaves the original file intact');
+    $variant=imageFixtureMarketingVariant(8,$assetId,$digest);$g=queueMarketingFixture($variant);
+    file_put_contents($path,base64_decode(image_fixture_response_v1('32x32')['data'][0]['b64_json']));
+    $before=count($calls);
+    $v=initiative_marketing_creative_generation_v1($pdo,1,$scope,$variant,true,'transportImage');
+    file_put_contents($path,$original);
+    check($v['status']==='failed'&&count($calls)===$before&&str_contains($v['message'],'product photo changed'),
+        'a modified original fails closed before any paid reference request');
+    $variant=imageFixtureMarketingVariant(10,$assetId,$digest);$g=queueMarketingFixture($variant);
+    $count=imageCount();$usage=count($GLOBALS['imageUsage']);
+    $v=initiative_marketing_creative_generation_v1($pdo,1,$scope,$variant,true,static function($url,$body,$key)use($variant){
+        $GLOBALS['imageMarketingVariants'][$variant['id']]['settings']['tolerance']=30;
+        return transportImage($url,$body,$key);
+    });
+    check($v['status']==='failed'&&imageCount()===$count&&count($GLOBALS['imageUsage'])===$usage+1,
+        'a late variant change saves no candidate and still records actual provider usage');
+    $variant=imageFixtureMarketingVariant(9,$assetId,$digest);$g=queueMarketingFixture($variant);
+    $GLOBALS['imageMarketingLocalOnly']=true;$before=count($calls);
+    $v=initiative_marketing_creative_generation_v1($pdo,1,$scope,$variant,true,'transportImage');
+    check($v['status']==='failed'&&count($calls)===$before,'a live local-only policy blocks an already queued marketing photo upload');
+    $variant=imageFixtureMarketingVariant(9,$assetId,$digest);
+    reject(fn()=>initiative_marketing_creative_queue_v1($pdo,1,$scope,$variant),'local-only Chat cannot admit a marketing photo upload');
+    $GLOBALS['imageMarketingLocalOnly']=false;
+    $variant=imageFixtureMarketingVariant(5,$assetId,$digest);$g=queueMarketingFixture($variant);
+    agent_job_cancel_v1900($pdo,$u,$g['job_id']);$before=count($calls);
+    $v=initiative_marketing_creative_generation_v1($pdo,1,$scope,$variant,true,'transportImage');
+    check($v['status']==='cancelled'&&count($calls)===$before,'standard Job Control cancels reviewed marketing work before a provider call');
     if($mysql){
         $running=[];for($i=0;$i<2;$i++){$p=proc_open([PHP_BINARY,__FILE__,'--race'],[1=>['pipe','w'],2=>['pipe','w']],$pipes);$running[]=[$p,$pipes];}
         $results=[];foreach($running as [$p,$pipes]){$results[]=trim(stream_get_contents($pipes[1]));$err=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);if(proc_close($p)!==0)throw new RuntimeException($err);}

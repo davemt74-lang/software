@@ -132,6 +132,11 @@ function vp3_profile_agent_accepted_generate_pa3(PDO $pdo,array $turn,array $cla
     if(mb_strlen($answer)>20000)vp3_profile_agent_public_unavailable_v1();
     $sources=[];foreach($context as $item){if(!in_array((string)$item['source'],['profile:identity','profile:rules'],true))$sources[]=['source'=>(string)$item['source'],'title'=>(string)($item['title']??'')];}
     $messageContext=['sources'=>$sources,'source_dependencies'=>$sourceDependencies,'answer_mode'=>$mode,'handoff_turn_id'=>(int)$turn['id'],'visitor_message_id'=>(int)$turn['visitor_message_id']];
+    if(!$needsOwner&&$mode!=='configured_greeting'){
+        require_once __DIR__.'/profile-product-promotion-v1.php';
+        $promotionKey=profile_product_promotion_match_v1($pdo,$profile,$query,$context);
+        if($promotionKey!==null)$messageContext['product_promotion_key']=$promotionKey;
+    }
     if(!empty($profileHome['attempted']))$messageContext['homeserver_compute']=[
         'success'=>!empty($profileHome['success']),'failure_class'=>mb_strimwidth(trim((string)($profileHome['failure_class']??'none')),0,80,''),
         'provider'=>mb_strimwidth(trim((string)($profileHome['provider']??'')),0,80,''),'model'=>mb_strimwidth(trim((string)($profileHome['model']??'')),0,160,''),

@@ -121,3 +121,9 @@
 .profile-checkout-actions {display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .profile-checkout-actions a {display:inline-flex;align-items:center;text-decoration:none}
 .profile-checkout-actions small,.profile-checkout-notice {color:var(--profile-muted)}
+
+.profile-product-promotions {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;margin-bottom:18px}
+.profile-product-promotion {display:grid;gap:8px;min-width:0;max-width:460px;padding:12px;border:1px solid #dedfd9;border-radius:14px;background:#fff;color:#171816}
+.profile-product-promotion img {display:block;width:100%;height:auto;border-radius:9px}
+.profile-product-promotion a {justify-self:start;display:inline-flex;align-items:center;min-height:36px;padding:0 12px;border-radius:9px;background:#171816;color:#fff;text-decoration:none;font-size:13px;font-weight:700}
+.profile-agent-message .profile-product-promotion {margin-top:9px}

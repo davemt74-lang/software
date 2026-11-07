@@ -11,7 +11,7 @@ function scope(){return Number(continuity()?.conversationId?.()??window.STONEFEL
 function selectedAgent(){return Number(continuity()?.agentId?.()??cfg.agentId??0);}
 async function api(action,payload,s){const r=await fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf_token:cfg.csrf,action,conversation_id:s.cid,agent_id:s.agentId,...payload})});let data;try{data=await r.json();}catch(_){throw new Error('Media status was not confirmed. Refresh its status before requesting another image.');}if(!r.ok||!data.ok){const e=new Error(data.error||'Media unavailable.');e.status=r.status;throw e;}return data;}
 function ownUrl(value,path){try{const u=new URL(value,location.href);return u.origin===location.origin&&u.pathname.endsWith(path)&&!u.username&&!u.password?u.href:'';}catch(_){return '';}}
-function assetCard(asset){
+function assetCard(asset,s,marketingPrefill=null){
  const card=make('figure');card.className='vp3-canvas-media-card';card.appendChild(make('figcaption',asset.title||'Saved media'));
  const kind=asset.media_type,src=ownUrl(asset.url,'/media-library-file-v86.php');
  if(asset.available!==true||!src||!['photo','video','audio'].includes(kind)){card.appendChild(make('p','Saved media file is unavailable.'));return card;}
@@ -21,9 +21,13 @@ function assetCard(asset){
  const download=make('a','Download');download.href=src;download.download='media-'+Number(asset.id)+(kind==='photo'?({'image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp'}[asset.mime_type]||''):'');controls.appendChild(download);
  if(kind==='photo'&&['image/jpeg','image/png','image/webp'].includes(asset.mime_type)&&window.VP3InitiativeWorkbench){
   const draft=make('button','Draft listing');draft.type='button';
-  draft.addEventListener('click',()=>window.VP3InitiativeWorkbench.open('product',String(asset.id)));controls.appendChild(draft);
-  const marketing=make('button','Draft marketing');marketing.type='button';
-  marketing.addEventListener('click',()=>window.VP3InitiativeWorkbench.open('marketing',String(asset.id)));controls.appendChild(marketing);
+  draft.addEventListener('click',()=>{if(active(s))window.VP3InitiativeWorkbench.open('product',String(asset.id));});controls.appendChild(draft);
+  const marketing=make('button',marketingPrefill?'Design promotion':'Draft marketing');marketing.type='button';
+  marketing.addEventListener('click',()=>{
+   if(!active(s))return;
+   if(marketingPrefill)window.VP3InitiativeWorkbench.open('marketing',String(asset.id),{marketingPrefill});
+   else window.VP3InitiativeWorkbench.open('marketing',String(asset.id));
+  });controls.appendChild(marketing);
  }
  const editor=ownUrl(asset.editor_url,'/video-editor.php');if(editor){const edit=make('a','Open in editor');edit.href=editor;controls.appendChild(edit);}card.appendChild(controls);return card;
 }
@@ -73,7 +77,7 @@ function renderJob(s,card,g){
  if(s.status.textContent!==statusText)s.status.textContent=statusText;
  s.details.replaceChildren(make('small',g.model+' · '+g.size+' · '+g.quality+(g.background==='transparent'?' · transparent background':'')));
  if(g.message)s.details.appendChild(make('p',g.message));
- if(hasImage){s.details.appendChild(assetCard(g.asset));return;}
+ if(hasImage){s.details.appendChild(assetCard(g.asset,s));return;}
  if(Object.hasOwn(inProgress,g.status)){
   const details=make('details'),summary=make('summary','Requested image');details.append(summary,make('p',g.prompt));s.details.appendChild(details);
   const cancel=make('button','Cancel image');cancel.type='button';cancel.onclick=async()=>{
@@ -107,7 +111,12 @@ function mount(host,ref){
  const s={host,cid:scope(),agentId:selectedAgent(),timer:null,ticket:0,launch:host.dataset.specialistLaunch==='true'};
  if(!active(s))return;states.set(host,s);host.replaceChildren();
  const ids=Array.isArray(ref.asset_ids)?ref.asset_ids.filter(i=>Number.isSafeInteger(i)&&i>0).slice(0,12):[];
- if(ids.length){const pending=make('p','Loading private media…');host.appendChild(pending);void api('assets',{asset_ids:ids},s).then(d=>{if(!active(s))return;pending.remove();for(const asset of d.assets||[])host.appendChild(assetCard(asset));if(!d.assets?.length)host.appendChild(make('p','These media assets are no longer available.'));}).catch(e=>{if(active(s)){pending.textContent=e.message;}});}
+ const prefill=ref.marketing_prefill;
+ const marketingPrefill=Number.isInteger(prefill?.level)&&prefill.level>=1&&prefill.level<=10
+  &&typeof prefill.prompt==='string'&&Array.from(prefill.prompt).length<=600
+  &&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(prefill.prompt)
+  ? {level:prefill.level,prompt:prefill.prompt}:null;
+ if(ids.length){const pending=make('p','Loading private media…');host.appendChild(pending);void api('assets',{asset_ids:ids},s).then(d=>{if(!active(s))return;pending.remove();for(const asset of d.assets||[])host.appendChild(assetCard(asset,s,marketingPrefill));if(!d.assets?.length)host.appendChild(make('p','These media assets are no longer available.'));}).catch(e=>{if(active(s)){pending.textContent=e.message;}});}
  const jobs=Array.isArray(ref.generation_ids)?ref.generation_ids.filter(i=>typeof i==='string'&&/^[a-f0-9-]{36}$/.test(i)).slice(0,1):[];
  for(const id of jobs){
   const card=make('figure');card.className='vp3-canvas-media-card';card.dataset.generationId=id;card.tabIndex=-1;

@@ -3,6 +3,7 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/profile-public-media-v174.php';
 require_once __DIR__ . '/includes/profile-commerce-v900.php';
+require_once __DIR__ . '/includes/profile-product-promotion-v1.php';
 require_once __DIR__ . '/includes/agent-scheduling-public-v450.php';
 require_once __DIR__ . '/includes/profile-webmcp-v100.php';
 require_once __DIR__ . '/includes/profile-webmcp-continuity-v194.php';
@@ -85,6 +86,11 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
 $commerceProducts=[];
 try { $commerceProducts=profile_commerce_products_for_profile_v900($pdo,$profile,true,40); }
 catch (Throwable $e) { vp3_profile_optional_failure('commerce',$e,$username); }
+$productPromotions=[];
+if(!$preview){
+    try { $productPromotions=profile_product_promotions_public_v1($pdo,$profile); }
+    catch (Throwable $e) { vp3_profile_optional_failure('product-promotions',$e,$username); }
+}
 $checkoutAvailable=false;
 foreach($commerceProducts as $product){
     if($product['payment_mode']==='full'&&$product['binding_type']!=='appointment_event_type'&&$product['fulfillment_type']!=='physical'){
@@ -128,7 +134,7 @@ if($bio!==''||$links)$profileTabs['about']='About';
 if($shows)$profileTabs['calendar']='Calendar';
 if($bookingTypes)$profileTabs['booking']='Booking';
 if($campaigns)$profileTabs['campaigns']='Campaigns';
-if($commerceProducts)$profileTabs['products']='Products';
+if($commerceProducts||$productPromotions)$profileTabs['products']='Products';
 if($tracks||$albums)$profileTabs['music']='Music';
 if($photos)$profileTabs['photos']='Photos';
 if($posts)$profileTabs['posts']='Posts';
@@ -155,6 +161,7 @@ if($webmcpResumeRequested){
     header('Referrer-Policy: no-referrer');
     header('Cache-Control: private, no-store');
 }
+if($productPromotions)header('Cache-Control: private, no-store');
 ?>
 <!doctype html>
 <html lang="en">
@@ -249,6 +256,16 @@ if($webmcpResumeRequested){
     <?php if(isset($profileTabs['products'])): ?>
       <section class="profile-card profile-panel" data-profile-panel="products"<?= $activeTab==='products'?'':' hidden' ?>>
         <div class="profile-panel-heading"><h2>Products & services</h2><?php if($isOwner): ?><a class="profile-tab-manage" href="<?= e(url('/profile-commerce-products.php')) ?>">Manage products</a><?php endif; ?></div>
+        <?php if($productPromotions): ?>
+          <section class="profile-product-promotions" aria-label="Product promotions">
+            <?php foreach($productPromotions as $promotion): ?>
+              <article class="profile-product-promotion" id="product-promotion-<?= e($promotion['key']) ?>" data-profile-product-promotion="<?= e($promotion['key']) ?>">
+                <img src="<?= e($promotion['image_url']) ?>" alt="<?= e(trim($promotion['headline'].'. '.$promotion['copy'])) ?>" loading="lazy">
+                <a href="<?= e($promotion['product_url']) ?>"><?= e($promotion['cta']) ?> →</a>
+              </article>
+            <?php endforeach; ?>
+          </section>
+        <?php endif; ?>
         <div class="profile-products-list">
           <?php foreach($commerceProducts as $product): ?>
             <article class="profile-product-item<?= !empty($product['featured'])?' featured':'' ?>"><div class="profile-product-tags"><span><?= e(ucfirst((string)$product['product_type'])) ?></span><span><?= e(ucfirst((string)$product['fulfillment_type'])) ?></span></div><h3><?= e((string)$product['title']) ?></h3><?php if(trim((string)$product['description'])!==''): ?><p><?= e(mb_strimwidth((string)$product['description'],0,260,'…')) ?></p><?php endif; ?><strong class="profile-product-price"><?= e((string)$product['price_label']) ?></strong><a href="<?= e((string)$product['product_url']) ?>"><?= e((string)$product['cta']) ?> →</a></article>
@@ -309,6 +326,16 @@ window.STONEFELLOW_PROFILE_AGENT.checkoutEndpoint=<?= json_encode(url('/api/prof
 window.STONEFELLOW_PROFILE_AGENT.checkoutAvailable=<?= json_encode($checkoutAvailable) ?>;
 <?php endif; ?>
 for(const tab of document.querySelectorAll('[data-profile-tab]'))tab.addEventListener('click',()=>{const key=tab.dataset.profileTab;document.querySelectorAll('[data-profile-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===tab)));document.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==key);});
+const promotionAnchor=/^#product-promotion-[a-f0-9]{32}$/.test(window.location.hash)?document.getElementById(window.location.hash.slice(1)):null;
+if(promotionAnchor){
+  document.querySelector('[data-profile-tab="products"]')?.click();
+  requestAnimationFrame(()=>promotionAnchor.scrollIntoView({block:'nearest'}));
+}
+for(const image of document.querySelectorAll('.profile-product-promotions img')){
+  const remove=()=>image.closest('[data-profile-product-promotion]')?.remove();
+  image.addEventListener('error',remove,{once:true});
+  if(image.complete&&!image.naturalWidth)remove();
+}
 const profileAgentShell=document.getElementById('profileAgentShell');
 const profileAgentLauncher=document.querySelector('[data-open-profile-agent]');
 const profileAgentClose=document.querySelector('[data-close-profile-agent]');

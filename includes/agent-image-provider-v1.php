@@ -39,7 +39,11 @@ function vp3_image_provider_v1(array $config,array $user,?callable $transport=nu
     $body=['model'=>$config['model'],'prompt'=>$config['prompt'],'n'=>1,'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'output_format'=>'png','moderation'=>'auto','safety_identifier'=>hash('sha256','vp3-image-user:'.(int)$user['id'])];
     $endpoint='https://api.openai.com/v1/images/generations';
     if($sourceImage!==null){
-        if(strlen($sourceImage)>420000||!preg_match('~^data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}$~D',$sourceImage))throw new RuntimeException('image_source_changed');
+        $marketing=($config['mode']??'')==='marketing_reference';
+        // Marketing references use the owned product-photo limit plus Base64 overhead.
+        $max=$marketing?5_600_000:420_000;
+        $mime=$marketing?'(?:jpeg|png|webp)':'jpeg';
+        if(strlen($sourceImage)>$max||!preg_match('~^data:image/'.$mime.';base64,[A-Za-z0-9+/]+={0,2}$~D',$sourceImage))throw new RuntimeException($marketing?'marketing_source_changed':'image_source_changed');
         $endpoint='https://api.openai.com/v1/images/edits';
         $body['images']=[['image_url'=>$sourceImage]];
     }
