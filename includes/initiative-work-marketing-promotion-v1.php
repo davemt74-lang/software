@@ -282,6 +282,7 @@ function initiative_work_marketing_promotion_save_v1(PDO $pdo, int $owner, array
             $pdo->prepare("UPDATE agent_commerce_promotions_v1 SET status='saved',asset_id=?,asset_sha256=?,updated_at=CURRENT_TIMESTAMP
                 WHERE id=? AND owner_user_id=?")->execute([$assetId,$digest,$row['id'],$owner]);
             require_once __DIR__.'/initiative-product-launch-v1.php';
+            initiative_product_launch_track_v1($pdo,$owner,$scope,$row['product_id'],$row['draft_key'],$row['id'],enrollOnly:true);
             initiative_product_launch_wake_v1($pdo,$owner,$row['product_id'],$row['id']);
         } elseif ((int)$row['asset_id'] !== $assetId) {
             throw new DomainException('This version already has a saved graphic. Create another variant to change it.',409);

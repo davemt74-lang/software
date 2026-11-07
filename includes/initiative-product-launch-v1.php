@@ -44,7 +44,14 @@ function initiative_product_launch_track_v1(PDO $pdo, int $owner, array $scope, 
             ->execute([$productId,$owner,$agent,$chat,$draftId,$creativeId,$now]);
         return;
     }
-    if ($enrollOnly || (int)$row['owner_user_id'] !== $owner || (int)$row['agent_id'] !== $agent || (int)$row['conversation_id'] !== $chat) return;
+    if ((int)$row['owner_user_id'] !== $owner || (int)$row['agent_id'] !== $agent || (int)$row['conversation_id'] !== $chat) return;
+    if ($enrollOnly) {
+        // A repeated confirmation may rearm its own design without changing the selection.
+        if ($creativeId !== null && $row['creative_id'] === $creativeId && $row['last_stage'] === '' && $row['next_check_at'] === null) {
+            initiative_product_launch_wake_v1($pdo,$owner,$productId,$creativeId);
+        }
+        return;
+    }
     $pdo->prepare("UPDATE agent_product_launches_v1 SET draft_key=?,creative_id=?,last_stage='',next_check_at=? WHERE product_id=?")
         ->execute([$draftId ?? $row['draft_key'],$draftId === null ? $row['creative_id'] : $creativeId,$now,$productId]);
 }

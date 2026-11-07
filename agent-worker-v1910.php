@@ -133,9 +133,11 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
             }catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.homeserver.failed',['user_id'=>$uid,'error_class'=>get_class($e)]);}
         }
     }
-    if($executor==='all'||$executor==='cloud'){
-        require_once __DIR__.'/includes/initiative-product-launch-v1.php';
-        try{$counts['product_launch_updates']=initiative_product_launch_sweep_v1($pdo,$ownerLimit);}
+    if(($executor==='all'||$executor==='cloud')&&table_exists('agent_product_launches_v1')){
+        try{
+            require_once __DIR__.'/includes/initiative-product-launch-v1.php';
+            $counts['product_launch_updates']=initiative_product_launch_sweep_v1($pdo,$ownerLimit);
+        }
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.product_launch.sweep_failed',['error_class'=>get_class($e)]);}
     }
     $counts['completed_at']=gmdate('c');

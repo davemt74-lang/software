@@ -251,7 +251,11 @@ try {
     unset($GLOBALS['launch_denied']);
     launch_check_v1($notices()===$failedBytes,'a revoked Chat permission prevents private completion delivery');
 
-    $retry();
+    $freshReview = $action('creative_prepare',$design);
+    $sameDesign = $action('creative_generate',$design+['review_token'=>$freshReview['review_token'],'confirmed'=>true])['creative'];
+    launch_check_v1($sameDesign['id']===$creativeId && $sameDesign['status']==='ready' && $calls===1,
+        'an exact re-review after restored access rearms the existing design without a provider replay');
+    $sweep();
     $delivered = $notices();
     $resume = end($delivered);
     launch_check_v1(count($delivered)===count($failedBytes)+1 && $resume['conversation_id']===11 && $resume['stage']==='creative_ready'
