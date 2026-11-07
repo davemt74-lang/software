@@ -27,7 +27,7 @@ const asset = {
 const productTitle = 'Glazed serving bowl';
 const unsafeTitle = '<img src=x onerror=alert(1)> Glazed bowl photo';
 const sources = {
-  product: [{ source_id: '31', source_title: unsafeTitle }, { source_id: '32', source_title: 'Other product photo' }],
+  product: [{ source_id: 'description', source_title: 'Describe a product' }, { source_id: '31', source_title: unsafeTitle }, { source_id: '32', source_title: 'Other product photo' }],
   screen: [
     { source_id: capture, source_title: 'Saved screen capture', captured_at: capturedAt },
     { source_id: otherCapture, source_title: 'Saved screen capture', captured_at: '2026-11-01T13:00:00Z' }
@@ -53,7 +53,7 @@ const review = (body, source, screenshot) => ({
     mode: body.mode, captured_at: source.captured_at, provider: 'OpenAI', sends_capture: true, image_data: screenshot,
     summary: body.mode === 'cleanup' ? 'AI cleanup aims to keep the original layout and text. It can change details.'
       : 'AI redraw creates a new visual interpretation of the selected capture.'
-  } : reviewDetails[body.tool]
+  } : body.source_id === 'description' ? {summary: body.product_description} : reviewDetails[body.tool]
 });
 const generation = status => ({
   id: image, title: asset.title, prompt: 'Redraw selected capture', model: 'gpt-image-1',
@@ -80,7 +80,7 @@ const outputs = {
 const workbenchScript = fileURLToPath(new URL('../chat-initiative-workbench-v1.js', import.meta.url));
 const workbenchStyle = fileURLToPath(new URL('../chat-initiative-workbench-v1.css', import.meta.url));
 const script = name => fileURLToPath(new URL(`../${name}.js`, import.meta.url));
-const token = body => `fixture-${body.tool}-${body.source_id}-${body.mode || ''}-${body.instruction || ''}`;
+const token = body => `fixture-${body.tool}-${body.source_id}-${body.mode || ''}-${body.instruction || ''}-${body.product_description || ''}`;
 const html = `<!doctype html><html><head><meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1"></head><body>
   <main><section id="chatThread" data-view="chat"><p>Earlier ordinary Agent Chat</p></section>
@@ -217,6 +217,22 @@ try {
   assert.equal(productCreate.conversation_id, conversation);
   assert.equal(await control('result').locator('a[href*="workspace_product=105"]').count(), 1);
   pass('An exact reviewed photo creates a private listing draft with the native Commerce review link');
+
+  await control('source').selectOption('description');
+  const productDescription = control('product-description');
+  await productDescription.fill('A serving bowl with a wide rim.');
+  await button('Review source').click();
+  await control('review').getByText('A serving bowl with a wide rim.', {exact:true}).waitFor();
+  await productDescription.fill('A glazed serving bowl with a wide rim.');
+  assert.equal(await button('Create private draft').isVisible(), false);
+  await button('Review source').click();
+  await button('Create private draft').click();
+  await control('result').getByText(productTitle, {exact:true}).waitFor();
+  const textCreate = calls.find(call => call.action === 'create' && call.source_id === 'description');
+  assert.equal(textCreate.product_description, 'A glazed serving bowl with a wide rim.');
+  assert.equal(textCreate.review_token, token(textCreate));
+  pass('Editing a product description requires a new review before the approved text can be sent');
+
 
   await control('tool').selectOption('screen');
   await control('source').locator(`option[value="${capture}"]`).waitFor({ state: 'attached' });

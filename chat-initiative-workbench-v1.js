@@ -11,7 +11,7 @@
   };
 
   const lanes = {
-    product: {label:'Product listing', source:'Saved photo', empty:'Save a photo to your Cloud media library to start.', create:'Create private draft'},
+    product: {label:'Product listing', source:'Product source', empty:'Product draft storage is unavailable.', create:'Create private draft'},
     screen: {label:'Screen image', source:'Saved screen capture', empty:'Save a screen capture from Agent Eyes in this Chat scope.', create:'Create edited image'},
     mission: {label:'Mission decision brief', source:'Completed Cloud Mission', empty:'Complete a Cloud Mission with readable saved web evidence in this Chat.', create:'Create private brief'}
   };
@@ -60,6 +60,13 @@
   screenOptions.className = 'vp3-workbench-options';
   screenOptions.append(label('Image treatment', mode), label('Directions (optional)', instructions));
 
+  const productDescription = make('textarea');
+  productDescription.maxLength = 600;
+  productDescription.rows = 3;
+  productDescription.dataset.workbenchProductDescription = '';
+  const productDescriptionLabel = label('Describe the product', productDescription);
+  productDescriptionLabel.hidden = true;
+
   const actions = make('div');
   actions.className = 'vp3-workbench-actions';
   const reload = button('Reload sources', () => { requestedSourceRevision = ''; void loadSources(source.value); });
@@ -73,7 +80,7 @@
   const result = make('div');
   result.dataset.workbenchResult = '';
   result.setAttribute('aria-live', 'polite');
-  dialog.append(header, intro, label('Work to create', lane), sourceLabel, screenOptions, status, reviewPanel, actions, result);
+  dialog.append(header, intro, label('Work to create', lane), sourceLabel, productDescriptionLabel, screenOptions, status, reviewPanel, actions, result);
   document.body.append(dialog);
 
   const launch = button('Initiative workbench', () => open());
@@ -130,7 +137,10 @@
     source.disabled = !active || !!pending || !source.options.length;
     mode.disabled = instructions.disabled = !active || pending?.action === 'create';
     reload.disabled = !active || !!pending;
-    review.disabled = !active || !!pending || !source.value;
+    const fromDescription = lane.value === 'product' && source.value === 'description';
+    productDescriptionLabel.hidden = !fromDescription;
+    productDescription.disabled = !active || !!pending;
+    review.disabled = !active || !!pending || !source.value || (fromDescription && !productDescription.value.trim());
     create.hidden = !reviewed;
     create.disabled = !active || !!pending || !reviewed;
     create.textContent = lanes[lane.value].create;
@@ -150,6 +160,7 @@
     source.replaceChildren();
     mode.value = 'cleanup';
     instructions.value = '';
+    productDescription.value = '';
     returnFocus = document.activeElement;
     window.dispatchEvent(new Event('vp3:initiative-workbench-open'));
     if (!dialog.open) dialog.showModal();
@@ -249,6 +260,7 @@
   function proposal() {
     return {
       source_id: source.value,
+      ...(lane.value === 'product' && source.value === 'description' ? {product_description:productDescription.value.trim()} : {}),
       ...(lane.value === 'screen' ? {mode:mode.value, instruction:instructions.value.trim()} : {})
     };
   }
@@ -285,7 +297,7 @@
       const details = preview.details || {};
       const captured = dateLabel(details.captured_at);
       const sourceTitle = preview.source_title + (captured ? ' · ' + captured : '');
-      source.selectedOptions[0].text = sourceTitle;
+      if (fields.source_id !== 'description') source.selectedOptions[0].text = sourceTitle;
       reviewPanel.append(make('h3', sourceTitle));
       let imageUrl = safeUrl(details.image_url, '/media-library-file-v86.php');
       if (lane.value === 'screen' && typeof details.image_data === 'string' && details.image_data.length <= 420000
@@ -379,6 +391,7 @@
     stopPending();
     mode.value = 'cleanup';
     instructions.value = '';
+    productDescription.value = '';
     void loadSources();
   });
   function editProposal() {
@@ -390,6 +403,7 @@
   source.addEventListener('change', () => { requestedSourceRevision = ''; editProposal(); });
   mode.addEventListener('change', editProposal);
   instructions.addEventListener('input', editProposal);
+  productDescription.addEventListener('input', editProposal);
   dialog.addEventListener('close', () => {
     if (dialog.open) return;
     window.clearInterval(scopeTimer);
