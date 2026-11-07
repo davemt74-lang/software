@@ -243,6 +243,12 @@ function initiative_work_product_publication_confirm_v1(PDO $pdo,int $owner,int 
         if(!$row||!hash_equals($receipt['listing_digest'],initiative_work_product_publication_listing_digest_v1($row))){
             throw new DomainException('The published listing did not match the approved review.',409);
         }
-        return initiative_work_product_publication_result_v1($pdo,$plan['profile'],$row,$receipt,$plan['review']['source_photo'],false);
+        $result=initiative_work_product_publication_result_v1($pdo,$plan['profile'],$row,$receipt,$plan['review']['source_photo'],false);
+        if (is_int($metadata['agent_id']??null) && $metadata['agent_id']>=0
+            && is_int($metadata['conversation_id']??null) && $metadata['conversation_id']>0) {
+            require_once __DIR__.'/initiative-product-launch-v1.php';
+            initiative_product_launch_track_v1($pdo,$owner,$metadata,$id);
+        }
+        return $result;
     });
 }

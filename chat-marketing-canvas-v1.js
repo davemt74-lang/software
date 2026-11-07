@@ -389,10 +389,15 @@
 
   async function loadDraft(state) {
     await work(state, 'Opening the private marketing draft…', async () => {
-      const data = await request(state, 'creative_open', state.reference);
+      const data = await request(state, 'creative_open', state.creativeId
+        ? {...state.reference, creative_id:state.creativeId} : state.reference);
       const {draft, creative, promotion} = data;
       if (!draft || draft.draft_id !== state.reference.draft_id || draft.product_id !== state.reference.product_id
         || String(draft.asset_id) !== state.reference.source_id) throw new Error('The selected marketing draft changed.');
+      if (state.creativeId && (creative?.id !== state.creativeId || creative.draft_id !== state.reference.draft_id
+        || creative.product_id !== state.reference.product_id || !Object.hasOwn(stateLabels, creative.status))) {
+        throw new Error('The selected promotion design could not be verified.');
+      }
       state.draft = draft;
       state.promotion = promotion || (creative?.status === 'published' ? creative : null);
       const hints = state.prefill;
@@ -628,7 +633,7 @@
     });
   }
 
-  function open(reference, connection, prefill) {
+  function open(reference, connection, prefill, creativeId = '') {
     const thread = document.getElementById('chatThread');
     const endpoint = localUrl(connection.endpoint, '/api/initiative-workbench-v1.php');
     const mediaEndpoint = localUrl(connection.mediaEndpoint, '/api/media-library-v86.php');
@@ -639,7 +644,7 @@
       if (thread.dataset.view !== 'chat') return false;
     }
     close(false);
-    const state = {reference, connection:{...connection, endpoint, mediaEndpoint}, prefill,
+    const state = {reference, connection:{...connection, endpoint, mediaEndpoint}, prefill, creativeId,
       opener:document.activeElement, controller:new AbortController(), variants:new Map()};
     state.elements = elements(state);
     current = state;

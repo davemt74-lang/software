@@ -108,6 +108,7 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
   const errors = [];
   let nextCreate;
   let nextPreview;
+  let nextCreativeOpen;
   let imageStatus = 'queued';
   let promotion;
   let originalPng;
@@ -168,7 +169,9 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
       assert.equal(body.product_id,105);
       assert.equal(body.source_id,'31');
       const variants = [...designs.values()].reverse();
-      return ok({draft:{...outputs.marketing,product_url:productUrl,cta:'Shop the bowl'},creative:variants[0] || null,variants,promotion});
+      const creative = nextCreativeOpen ? nextCreativeOpen(variants) : body.creative_id ? designs.get(body.creative_id) : variants[0];
+      nextCreativeOpen = undefined;
+      return ok({draft:{...outputs.marketing,product_url:productUrl,cta:'Shop the bowl'},creative:creative || null,variants,promotion});
     }
     if (body.action === 'creative_prepare' || body.action === 'creative_generate') {
       assert.equal(body.draft_id,draftId);
@@ -176,7 +179,7 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
       assert.equal(body.source_id,'31');
       assert.match(body.nonce,/^[a-f0-9]{32}$/);
       const {level,headline,copy,prompt,style,remove_background,tolerance} = body;
-      const creative = {id:body.nonce,level,headline,copy,prompt,style,remove_background,tolerance,
+      const creative = {id:body.nonce,draft_id:body.draft_id,product_id:body.product_id,level,headline,copy,prompt,style,remove_background,tolerance,
         status:body.action==='creative_prepare'?'review':level<5?'ready':'queued',
         source_image_url:originalUrl,product_url:productUrl,cta:'Shop the bowl'};
       if (body.action === 'creative_prepare') return ok({creative,review_token:'review-'+body.nonce});
@@ -280,7 +283,8 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
   const flush = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   return { calls, mediaCalls, uploads, errors, dialog, button, control, waitForAction, flush, screenshots,
     onPreview: handler => { nextPreview = handler; },
-    onCreate: handler => { nextCreate = handler; } };
+    onCreate: handler => { nextCreate = handler; },
+    onCreativeOpen: handler => { nextCreativeOpen = handler; } };
 }
 
 let cases = 0;
@@ -692,6 +696,32 @@ try {
   assert.equal(sceneDesign.level,7);
   assert.equal(sceneDesign.prompt,'Place the bowl on a café counter.');
   pass('A level 7 Chat hint survives the saved-draft handoff, requires provider confirmation, and uses the exact completed scene');
+
+  await canvasButton('Close promotion').click();
+  const launch = {owner_user_id:Number(owner),agent_id:agent,conversation_id:conversation,product_id:105,source_id:'31',
+    draft_id:draftId,creative_id:selectedDesign.nonce,stage:'publication_review'};
+  const beforeResume = promotionFixture.calls.length;
+  assert.equal(await promotionPage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch({...marker,conversation_id:99}),launch),false);
+  assert.equal(await promotionPage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch({...marker,owner_user_id:99}),launch),false);
+  assert.equal(await promotionPage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch(marker),launch),true);
+  await canvasButton('Review publication').waitFor();
+  assert.equal(await canvas.getByLabel('Recent designs').inputValue(),selectedDesign.nonce);
+  assert.equal(await canvas.locator('[data-marketing-headline]').inputValue(),selectedDesign.headline);
+  assert.equal(await canvasButton('Approve and publish').isVisible(),false);
+  assert.deepEqual(promotionFixture.calls.slice(beforeResume).map(call => [call.action,call.creative_id]),[['creative_open',selectedDesign.nonce]]);
+  pass('Launch progress opens the exact older creative, even with a newer scene available, and leaves publication to explicit review');
+
+  await canvasButton('Close promotion').click();
+  promotionFixture.onCreativeOpen(variants => variants[0]);
+  assert.equal(await promotionPage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch(marker),launch),true);
+  await canvas.getByText('The selected promotion design could not be verified.',{exact:true}).waitFor();
+  assert.equal(await canvasButton('Review publication').isVisible(),false);
+  assert.equal(await canvasButton('Review graphic settings').isVisible(),false);
+  await canvasButton('Retry opening draft').click();
+  await canvasButton('Review publication').waitFor();
+  assert.equal(await canvas.getByLabel('Recent designs').inputValue(),selectedDesign.nonce);
+  pass('A stale or mismatched Canvas response cannot display a replacement creative or offer approval');
+
   await promotionPage.evaluate(() => {
     window.fixtureChatId = 999;
     window.dispatchEvent(new Event('vp3:chat-conversation-changed'));
@@ -699,6 +729,47 @@ try {
   await canvas.waitFor({state:'detached'});
   assert.deepEqual(promotionFixture.errors,[]);
   pass('A different Chat removes the private promotion Canvas and its image');
+
+  const photoGatePage = await browser.newPage();
+  const photoGateFixture = await fixture(photoGatePage,{marketingDrafts:[],linkedProductImage:false});
+  const photoNeeded = {owner_user_id:Number(owner),agent_id:agent,conversation_id:conversation,product_id:105,stage:'photo_needed'};
+  assert.equal(await photoGatePage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch(marker),photoNeeded),true);
+  await photoGateFixture.control('source').locator('option[value="31"]').waitFor({state:'attached'});
+  assert.equal(await photoGateFixture.control('product').inputValue(),'105');
+  assert.equal(await photoGateFixture.control('source').inputValue(),'');
+  assert.equal(await photoGateFixture.button('Review source').isDisabled(),true);
+  assert.deepEqual(photoGateFixture.calls.map(call => call.action),['sources']);
+  await photoGateFixture.control('source').selectOption('31');
+  assert.deepEqual(photoGateFixture.calls.map(call => call.action),['sources']);
+  await photoGateFixture.button('Review source').click();
+  await photoGateFixture.button('Save private marketing draft').waitFor();
+  assert.deepEqual(photoGateFixture.calls.map(call => call.action),['sources','preview']);
+  assert.equal(photoGateFixture.calls.at(-1).product_id,105);
+  assert.equal(photoGateFixture.calls.at(-1).source_id,'31');
+  pass('A listing without an original photo opens marketing for the exact product and requires choosing and reviewing a photo');
+
+  const launchGatePage = await browser.newPage();
+  const launchGateFixture = await fixture(launchGatePage,{marketingDrafts:[]});
+  assert.equal(await launchGatePage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch({
+    ...marker,stage:'marketing_review',draft_id:undefined,creative_id:undefined
+  }),launch),true);
+  await launchGateFixture.button('Save private marketing draft').waitFor();
+  assert.deepEqual(launchGateFixture.calls.map(call => call.action),['sources','preview']);
+  assert.equal(launchGateFixture.calls.at(-1).source_id,'31');
+  assert.equal(launchGateFixture.calls.at(-1).product_id,105);
+  await launchGateFixture.button('Close').click();
+  assert.equal(await launchGatePage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch({
+    ...marker,stage:'design_review',creative_id:undefined
+  }),launch),true);
+  await launchGatePage.locator('[data-marketing-canvas]').getByRole('button',{name:'Review graphic settings'}).waitFor();
+  assert.deepEqual(launchGateFixture.calls.map(call => call.action),['sources','preview','creative_open']);
+  assert.equal(launchGateFixture.calls.at(-1).draft_id,draftId);
+  await launchGatePage.route(`${root}/profile-commerce-products.php?workspace_product=105`,route => route.fulfill({body:'Commerce review'}));
+  await launchGatePage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch({
+    ...marker,stage:'listing_review',source_id:undefined,draft_id:undefined,creative_id:undefined
+  }),launch);
+  await launchGatePage.waitForURL(`${root}/profile-commerce-products.php?workspace_product=105`);
+  pass('Launch gates open the exact product listing, linked-photo review or saved marketing draft with no implicit approval');
 
   const resumePage = await browser.newPage();
   const resumeQuery = `?conversation_id=${conversation}&agent=${agent}&marketing_product=105&marketing_source=31&marketing_draft=${draftId}`;

@@ -59,7 +59,7 @@ try{
     commerce_fixture_schema_pa2($pdo);
     $pdo->exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
     $pdo->exec('CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,user_agent_id INTEGER)');
-    $pdo->exec('INSERT INTO chat_conversations VALUES(7,1,NULL),(8,2,NULL),(9,1,3)');
+    $pdo->exec('INSERT INTO chat_conversations VALUES(7,1,NULL),(8,2,NULL),(9,1,3),(10,1,NULL)');
     $pdo->exec('CREATE TABLE user_media_assets(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,media_type VARCHAR(12),title VARCHAR(190),mime_type VARCHAR(120),file_path VARCHAR(250),file_size INTEGER,duration_seconds INTEGER,source VARCHAR(80),metadata_json TEXT,created_at VARCHAR(40),updated_at VARCHAR(40))');
     $pdo->exec("INSERT INTO user_media_assets VALUES(301,1,'Owner catalog photo','photo','image/png','private/SECRET-OWNER-PATH.png',512,0,'upload','{\"private_token\":\"SECRET-MEDIA-METADATA\"}','2026-11-01','2026-11-01'),(302,2,'SECRET-FOREIGN-PHOTO','photo','image/jpeg','private/SECRET-FOREIGN-PATH.jpg',1024,0,'upload','{}','2026-11-01','2026-11-01')");
     $insert=$pdo->prepare('INSERT INTO agent_commerce_products_v800(id,owner_user_id,workspace_owner_user_id,product_key,title,description,product_type,fulfillment_type,payment_mode,price_cents,currency,is_active,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)');
@@ -87,6 +87,30 @@ try{
     $legacyRead=product_context_read($legacy,null,null,$legacyBinding);
     product_context_check($legacy===['product-context:101'=>$all['product-context:101']]&&$legacyRead===$result,
         'the canonical legacy System policy without agent_id admits the same exact owned source and real content read');
+    $launchInsert=$pdo->prepare('INSERT INTO agent_product_launches_v1
+        (product_id,owner_user_id,agent_id,conversation_id,draft_key,creative_id,last_stage) VALUES(101,1,0,7,?,?,?)');
+    $launchInsert->execute([str_repeat('a',64),str_repeat('b',32),'creative_ready']);
+    [$tracked]=product_context_evidence(['product-context:101']);
+    $trackedData=json_decode(product_context_read($tracked)['records'][0]['text'],true,16,JSON_THROW_ON_ERROR);
+    product_context_check($tracked['product-context:101']['context_state']['last_verified_launch_stage']==='creative_ready'
+        &&$trackedData['coverage']['last_verified_launch_stage']==='creative_ready'
+        &&$trackedData['coverage']['pixels']==='not_read'&&$trackedData['coverage']['promotion']==='not_assessed',
+        'planner and exact product read see the same last verified launch stage without reading pixels or general promotion state');
+    $trackJson=json_encode([$tracked,$trackedData],JSON_THROW_ON_ERROR);
+    product_context_check(!str_contains($trackJson,str_repeat('a',64))&&!str_contains($trackJson,str_repeat('b',32)),
+        'checkpoint draft and creative IDs are excluded from model-facing product context');
+    [$otherChat]=product_context_evidence(['product-context:101'],[...$scope,'conversation_id'=>10],[...$binding,'conversation_id'=>10]);
+    product_context_check($otherChat['product-context:101']===$all['product-context:101'],
+        'the same owner’s other System Chat receives catalog context without this launch checkpoint');
+    $pdo->prepare('UPDATE agent_product_launches_v1 SET creative_id=? WHERE product_id=101')->execute([str_repeat('c',32)]);
+    [$otherCreative]=product_context_evidence(['product-context:101']);
+    product_context_check($otherCreative['product-context:101']['revision']!==$tracked['product-context:101']['revision'],
+        'the exact source revision changes when the verified launch points to a different creative');
+    product_context_reject(fn()=>product_context_read($tracked),'a superseded tracked creative cannot feed saved product context',409);
+    $pdo->exec("UPDATE agent_product_launches_v1 SET last_stage='invalid' WHERE product_id=101");
+    [$invalidLaunch]=product_context_evidence(['product-context:101']);
+    product_context_check($invalidLaunch['product-context:101']===$all['product-context:101'],
+        'an invalid launch checkpoint leaves ordinary catalog context available');
     foreach([null,'0',1] as $invalidAgent){
         product_context_reject(fn()=>product_context_evidence(null,null,[...$binding,'agent_id'=>$invalidAgent]),
             'an explicit malformed or non-System binding Agent is rejected instead of defaulted to System',403);

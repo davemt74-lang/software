@@ -1452,6 +1452,7 @@
       initiative_work:raw.initiative_work && typeof raw.initiative_work==='object' ? raw.initiative_work : null,
       initiative_followthrough:raw.initiative_followthrough && typeof raw.initiative_followthrough==='object' ? raw.initiative_followthrough : null,
       initiative_action:raw.initiative_action && typeof raw.initiative_action==='object' ? raw.initiative_action : null,
+      product_launch:raw.source==='agent_product_launch' ? raw.product_launch : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1883,6 +1884,49 @@
       const outcome=initiativeOutcomes.get(messageId);if(outcome)applyInitiativeFollowthroughV1(outcome);
     }
     if (actions.children.length) (element.querySelector('.message-body') || element).appendChild(actions);
+  }
+
+  const productLaunchActions = {
+    listing_review:['Review product listing','product'],
+    listing_unavailable:['Review listing setup','product'],
+    photo_needed:['Choose a photo for marketing','product'],
+    marketing_review:['Review product marketing','photo'],
+    design_review:['Design promotion in Canvas','draft'],
+    image_pending:['View image progress','creative'],
+    creative_ready:['Review creative in Canvas','creative'],
+    creative_failed:['Review image job in Canvas','creative'],
+    publication_review:['Review promotion in Canvas','creative'],
+    published:['Open published promotion in Canvas','creative'],
+    paused:['Open paused promotion in Canvas','creative']
+  };
+
+  function bindProductLaunchV1(element, marker) {
+    if (!element || !marker || !initiativeIdentityMatchesV1() || marker.owner_user_id !== initiativePage.owner
+      || marker.agent_id !== initiativePage.agent || marker.conversation_id !== conversationId
+      || !Number.isSafeInteger(marker.product_id) || marker.product_id < 1
+      || typeof marker.stage !== 'string' || !Object.hasOwn(productLaunchActions, marker.stage)) return;
+    const [label, target] = productLaunchActions[marker.stage];
+    if (target !== 'product' && (typeof marker.source_id !== 'string' || !/^[1-9][0-9]*$/.test(marker.source_id)
+      || !Number.isSafeInteger(Number(marker.source_id)))) return;
+    if (['draft','creative'].includes(target) && (typeof marker.draft_id !== 'string' || !/^[a-f0-9]{64}$/.test(marker.draft_id))) return;
+    if (target === 'creative' && (typeof marker.creative_id !== 'string' || !/^[a-f0-9]{32}$/.test(marker.creative_id))) return;
+    const actions = document.createElement('div');
+    actions.className = 'chat-agent-actions';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.productLaunch = marker.stage;
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      if (!element.isConnected || !thread.contains(element) || conversationId !== marker.conversation_id
+        || !initiativeIdentityMatchesV1()) { button.disabled = true; return; }
+      if (initialRestorePending || restoringConversation || !contextReady) return;
+      if (window.VP3InitiativeWorkbench?.openProductLaunch?.(marker) !== true) {
+        button.textContent = 'Launch review unavailable';
+        button.disabled = true;
+      }
+    });
+    actions.appendChild(button);
+    (element.querySelector('.message-body') || element).appendChild(actions);
   }
 
   /** Render the server's frozen action, alongside the Agent's natural reply.
@@ -3559,6 +3603,7 @@
       if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work,context.source);
       if(message.role==='assistant')applyInitiativeFollowthroughV1(context.initiative_followthrough);
       if(message.role==='assistant')bindInitiativeActionV1(renderedMessage,context.initiative_action,context.initiative_followthrough);
+      if(message.role==='assistant')bindProductLaunchV1(renderedMessage,context.product_launch);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
 
@@ -3601,6 +3646,7 @@
       if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work,context.source);
       if(message.role==='assistant')applyInitiativeFollowthroughV1(context.initiative_followthrough);
       if(message.role==='assistant')bindInitiativeActionV1(renderedMessage,context.initiative_action,context.initiative_followthrough);
+      if(message.role==='assistant')bindProductLaunchV1(renderedMessage,context.product_launch);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory(signal);

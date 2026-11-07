@@ -22,6 +22,8 @@ final class PA2CommercePDO extends PDO
         if ($this->failSql!=='' && str_contains($sql,$this->failSql)) throw new PDOException('SECRET injected Commerce database diagnostic');
         if ($this->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite') return $sql;
         // SQLite is only a fast behavioral fixture. CI runs unmodified SQL on MySQL 8.
+        $sql=preg_replace('/\ASHOW INDEX FROM `?(\w+)`? WHERE Key_name=\?\z/i',
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='$1' AND name=?",$sql);
         $sql=preg_replace('/\s+FOR UPDATE\b/i','',$sql);
         $sql=preg_replace('/\bINSERT IGNORE\b/i','INSERT OR IGNORE',$sql);
         $sql=preg_replace("/DATE_SUB\((?:UTC_TIMESTAMP|NOW)\(\),\s*INTERVAL (\d+) (DAY|HOUR|MINUTE|SECOND)\)/i","datetime('now','-$1 $2')",$sql);
@@ -33,6 +35,7 @@ final class PA2CommercePDO extends PDO
             $sql=preg_replace('/\s+UNSIGNED\b/i','',$sql);
             $sql=preg_replace('/\bUNIQUE KEY\s+\w+\s*/i','UNIQUE ',$sql);
             $sql=preg_replace('/^\s*(?:INDEX|KEY)\s+\w+\s*\([^\n]+\),?\s*$/mi','',$sql);
+            $sql=preg_replace('/,\s*(?:INDEX|KEY)\s+\w+\s*\([^)]*\)/i','',$sql);
             $sql=preg_replace('/,\s*\)/',')',$sql);
             $sql=preg_replace('/\s+AFTER\s+`?\w+`?\s*$/i','',$sql);
         }

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php';
+require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -72,12 +73,12 @@ try {
             $_SESSION['vp3_agent_crm_watch_refresh'][$userId]=time();
             try{vp3_agent_crm_watchlist_refresh($pdo,$user,7);}catch(Throwable $e){error_log('Agent CRM watchlist refresh failed: '.$e->getMessage());}
         }
-        $activeConversationId = array_key_exists('conversation_id',$input)
-            ? vp3_agent_chat_stream_scope_v380($pdo,$user,$input)['conversation_id']
-            : agent_chat_v101_latest_conversation_id($pdo,$userId);
+        $activityScope = array_key_exists('conversation_id',$input) ? vp3_agent_chat_stream_scope_v380($pdo,$user,$input) : null;
+        $activeConversationId = $activityScope['conversation_id'] ?? agent_chat_v101_latest_conversation_id($pdo,$userId);
+        if ($activityScope) initiative_product_launch_chat_v1($pdo,$userId,$activityScope['agent_id'],$activeConversationId);
         $initiativeUpdates=[];
         if(array_key_exists('initiative_message_ids',$input)){
-            $activityScope=vp3_agent_chat_stream_scope_v380($pdo,$user,$input);
+            $activityScope??=vp3_agent_chat_stream_scope_v380($pdo,$user,$input);
             $initiativeUpdates=vp3_agent_chat_followthrough_updates_v2160($pdo,$user,$activityScope['principal'],$activeConversationId,$input);
         }
         $activeMessageId = 0;
@@ -155,6 +156,7 @@ try {
         $conversationId = (int)($input['conversation_id'] ?? 0);
         $conversation = chat_conversation_owned($pdo, $conversationId, $userId);
         if (!$conversation) throw new RuntimeException('Conversation not found.');
+        initiative_product_launch_chat_v1($pdo,$userId,(int)($conversation['user_agent_id']??0),$conversationId);
         $stmt = $pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 300');
         $stmt->execute([$conversationId]);
         echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>array_reverse($stmt->fetchAll())]);

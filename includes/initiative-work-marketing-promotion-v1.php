@@ -122,6 +122,10 @@ function initiative_work_marketing_promotion_bind_v1(PDO $pdo, int $owner, array
 {
     $bind = $pdo->prepare('UPDATE agent_commerce_promotions_v1 SET generation_id=? WHERE id=? AND owner_user_id=? AND generation_id IS NULL');
     $bind->execute([$generationId,$row['id'],$owner]);
+    if ($bind->rowCount()===1) {
+        require_once __DIR__.'/initiative-product-launch-v1.php';
+        initiative_product_launch_wake_v1($pdo,$owner,$row['product_id'],$row['id']);
+    }
     return initiative_work_marketing_promotion_row_v1($pdo,$owner,$row['id']);
 }
 
@@ -133,7 +137,7 @@ function initiative_work_marketing_promotion_recover_v1(PDO $pdo, int $owner, ar
     return $generationId ? initiative_work_marketing_promotion_bind_v1($pdo,$owner,$row,$generationId) : $row;
 }
 
-function initiative_work_marketing_promotion_view_v1(PDO $pdo, int $owner, array $scope, array $row, bool $tick=false): array
+function initiative_work_marketing_promotion_view_v1(PDO $pdo, int $owner, array $scope, array $row, bool $tick=false, bool $verifyCompleted=false): array
 {
     $settings = $row['settings'];
     $status = $row['status'];
@@ -148,6 +152,13 @@ function initiative_work_marketing_promotion_view_v1(PDO $pdo, int $owner, array
         } else {
             require_once __DIR__.'/initiative-marketing-creative-v1.php';
             $result = initiative_marketing_creative_generation_v1($pdo, $owner, $scope, $row, $tick);
+            if ($verifyCompleted && $result['status'] === 'completed') {
+                require_once __DIR__.'/initiative-product-launch-state-v1.php';
+                if (!initiative_product_launch_image_proof_v1($pdo,['id'=>$owner],$row['id'],$result['id'],
+                    $result['job_id'],(int)($result['asset']['id'] ?? 0))) {
+                    $result = ['status'=>'failed','message'=>'The saved image could not be verified. Review a new design.'];
+                }
+            }
             $status = match ($result['status']) {
                 'completed' => 'ready',
                 'paused' => 'paused_job',
@@ -176,24 +187,40 @@ function initiative_work_marketing_promotion_open_v1(PDO $pdo, int $owner, array
 {
     [$draft] = initiative_work_marketing_promotion_source_v1($pdo,$owner,$scope,$body);
     $productId = (int)$draft['product_id'];
+    $requested = null;
+    if (array_key_exists('creative_id', $body)) {
+        if (!is_string($body['creative_id'])) throw new DomainException('Choose an exact promotion design.',422);
+        $requested = initiative_work_marketing_promotion_row_v1($pdo,$owner,$body['creative_id']);
+        initiative_work_marketing_promotion_scope_v1($requested,$scope);
+        if ($requested['product_id'] !== $productId || $requested['source_asset_id'] !== (int)$draft['asset_id']
+            || $requested['draft_key'] !== $draft['draft_id'] || $requested['source_sha256'] !== $draft['asset_sha256']) {
+            throw new DomainException('The selected promotion design does not match this draft and photo.',404);
+        }
+    }
     $target = initiative_work_marketing_promotion_target_v1($pdo,$owner,$productId);
     $draft += ['product_url'=>$target['product_url'] ?? '', 'cta'=>$target['cta'] ?? 'View product',
         'management_url'=>initiative_work_marketing_promotion_management_v1($productId)];
     $find = $pdo->prepare('SELECT * FROM agent_commerce_promotions_v1 WHERE owner_user_id=? AND product_id=?
-        AND agent_id=? AND conversation_id=? AND draft_key=? AND source_sha256=?
+        AND agent_id=? AND conversation_id=? AND draft_key=? AND source_asset_id=? AND source_sha256=?
         ORDER BY created_at DESC,id DESC LIMIT 12');
-    $find->execute([$owner,$productId,$scope['agent_id'],$scope['conversation_id'],$draft['draft_id'],$draft['asset_sha256']]);
+    $find->execute([$owner,$productId,$scope['agent_id'],$scope['conversation_id'],$draft['draft_id'],$draft['asset_id'],$draft['asset_sha256']]);
     $variants = [];
     foreach ($find->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $row = initiative_work_marketing_promotion_decode_v1($row);
         $row = initiative_work_marketing_promotion_recover_v1($pdo,$owner,$scope,$row);
-        $variants[] = initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,$row);
+        $variants[$row['id']] = initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,$row,
+            verifyCompleted:$row['id'] === ($requested['id'] ?? null));
+    }
+    if ($requested && !isset($variants[$requested['id']])) {
+        $requested = initiative_work_marketing_promotion_recover_v1($pdo,$owner,$scope,$requested);
+        $variants[$requested['id']] = initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,$requested,verifyCompleted:true);
     }
     $active = $pdo->prepare("SELECT * FROM agent_commerce_promotions_v1 WHERE owner_user_id=? AND product_id=?
         AND agent_id=? AND conversation_id=? AND status='published' ORDER BY updated_at DESC LIMIT 1");
     $active->execute([$owner,$productId,$scope['agent_id'],$scope['conversation_id']]);
     $row = $active->fetch(PDO::FETCH_ASSOC);
-    return ['draft'=>$draft,'creative'=>$variants[0] ?? null,'variants'=>$variants,'promotion'=>$row
+    $creative = $requested ? $variants[$requested['id']] : (reset($variants) ?: null);
+    return ['draft'=>$draft,'creative'=>$creative,'variants'=>array_values($variants),'promotion'=>$row
         ? initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,initiative_work_marketing_promotion_decode_v1($row)) : null];
 }
 
@@ -215,6 +242,8 @@ function initiative_work_marketing_promotion_start_v1(PDO $pdo, int $owner, arra
             $insert->execute([$row['id'],$row['product_id'],$owner,$row['draft_key'],$scope['agent_id'],
                 $scope['conversation_id'],$row['source_asset_id'],$row['source_sha256'],json_encode($row['settings'],JSON_THROW_ON_ERROR)]);
         }
+        require_once __DIR__.'/initiative-product-launch-v1.php';
+        initiative_product_launch_track_v1($pdo,$owner,$scope,$row['product_id'],$row['draft_key'],$row['id'],enrollOnly:(bool)$existing);
         $pdo->commit();
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -242,8 +271,9 @@ function initiative_work_marketing_promotion_save_v1(PDO $pdo, int $owner, array
         if ($row['status'] === 'designing') {
             $source = initiative_work_product_source_v1($pdo,$owner,$scope,['source_id'=>(string)$row['source_asset_id']],true);
             if (!hash_equals($row['source_sha256'],$source['digest'])) throw new DomainException('The original image changed. Review a new design.',409);
-            $view = initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,$row);
-            if ($view['status'] !== 'ready') throw new DomainException('Finish the selected design before saving it.',409);
+            require_once __DIR__.'/initiative-product-launch-state-v1.php';
+            $image = initiative_product_launch_image_state_v1($pdo,$user,$scope,$row);
+            if ($image['stage'] !== 'creative_ready') throw new DomainException('Finish the selected design before saving it.',409);
             $asset = media_studio_asset($assetId,$user);
             $metadata = json_decode((string)($asset['metadata_json'] ?? ''), true);
             $digest = $asset && ($asset['source'] ?? '') === 'promotion_design'
@@ -251,6 +281,9 @@ function initiative_work_marketing_promotion_save_v1(PDO $pdo, int $owner, array
             if (!$digest) throw new DomainException('The saved graphic is unavailable for this design.',422);
             $pdo->prepare("UPDATE agent_commerce_promotions_v1 SET status='saved',asset_id=?,asset_sha256=?,updated_at=CURRENT_TIMESTAMP
                 WHERE id=? AND owner_user_id=?")->execute([$assetId,$digest,$row['id'],$owner]);
+            require_once __DIR__.'/initiative-product-launch-v1.php';
+            initiative_product_launch_track_v1($pdo,$owner,$scope,$row['product_id'],$row['draft_key'],$row['id'],enrollOnly:true);
+            initiative_product_launch_wake_v1($pdo,$owner,$row['product_id'],$row['id']);
         } elseif ((int)$row['asset_id'] !== $assetId) {
             throw new DomainException('This version already has a saved graphic. Create another variant to change it.',409);
         }
@@ -316,6 +349,8 @@ function initiative_work_marketing_promotion_publish_v1(PDO $pdo, int $owner, ar
             $pdo->prepare("UPDATE agent_commerce_promotions_v1 SET status='published',public_key=?,public_product_url=?,
                 public_cta=?,updated_at=CURRENT_TIMESTAMP WHERE owner_user_id=? AND id=?")
                 ->execute([$publicKey,$target['product_url'],$target['cta'],$owner,$row['id']]);
+            require_once __DIR__.'/initiative-product-launch-v1.php';
+            initiative_product_launch_track_v1($pdo,$owner,$scope,$row['product_id'],$row['draft_key'],$row['id']);
         }
         $public = profile_product_promotion_public_v1($pdo,$target['profile'],$publicKey);
         if (!$public || $public['product_url'] !== $target['product_url'] || profile_product_promotion_image_v1($pdo,$publicKey) === null) {
@@ -338,8 +373,12 @@ function initiative_work_marketing_promotion_pause_v1(PDO $pdo, int $owner, stri
         $row = initiative_work_marketing_promotion_row_v1($pdo,$owner,$id,true);
         if ($scope) initiative_work_marketing_promotion_scope_v1($row,$scope);
         if (!in_array($row['status'],['published','paused'],true)) throw new DomainException('Only an active promotion can be paused.',409);
-        $pdo->prepare("UPDATE agent_commerce_promotions_v1 SET status='paused',publication_revision=publication_revision+1,
-            updated_at=CURRENT_TIMESTAMP WHERE owner_user_id=? AND id=? AND status='published'")->execute([$owner,$id]);
+        if ($row['status']==='published') {
+            $pdo->prepare("UPDATE agent_commerce_promotions_v1 SET status='paused',publication_revision=publication_revision+1,
+                updated_at=CURRENT_TIMESTAMP WHERE owner_user_id=? AND id=? AND status='published'")->execute([$owner,$id]);
+            require_once __DIR__.'/initiative-product-launch-v1.php';
+            initiative_product_launch_wake_v1($pdo,$owner,$row['product_id'],$row['id']);
+        }
         $pdo->commit();
         return initiative_work_marketing_promotion_row_v1($pdo,$owner,$id);
     } catch (Throwable $error) {
@@ -361,7 +400,7 @@ function initiative_work_marketing_promotion_action_v1(PDO $pdo, int $owner, arr
     }
     if ($action === 'creative_generate') {
         $row = initiative_work_marketing_promotion_start_v1($pdo,$owner,$scope,$body,$key);
-        return ['creative'=>initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,$row)];
+        return ['creative'=>initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,$row,verifyCompleted:true)];
     }
     $id = $body['creative_id'] ?? null;
     if (!is_string($id)) throw new DomainException('Choose an exact promotion design.',422);
@@ -393,5 +432,6 @@ function initiative_work_marketing_promotion_action_v1(PDO $pdo, int $owner, arr
             agent_job_cancel_v1900($pdo,$scope['user'],(int)$generation['job_id']);
         }
     }
-    return ['creative'=>initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,$row,$action === 'creative_tick')];
+    return ['creative'=>initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,$row,
+        tick:$action === 'creative_tick',verifyCompleted:true)];
 }

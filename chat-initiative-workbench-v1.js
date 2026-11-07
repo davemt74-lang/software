@@ -170,7 +170,9 @@
     }
     if (sourceRevision && (typeof sourceRevision !== 'string' || !/^[a-f0-9]{64}$/.test(sourceRevision))) return;
     const pair = tool === 'marketing' && typeof sourceId === 'string' ? sourceId.match(/^([1-9][0-9]*)-([1-9][0-9]*)$/) : null;
-    const productId = pair ? pair[1] : '';
+    const marketingProductId = tool === 'marketing' && Number.isSafeInteger(options?.productId) && options.productId > 0
+      ? String(options.productId) : '';
+    const productId = pair?.[1] ?? marketingProductId;
     if (pair) sourceId = pair[2];
     listingHandoff = Boolean(pair && options?.listingHandoff === true);
     requestedSourceRevision = sourceRevision;
@@ -423,9 +425,10 @@
     if (output.coverage) card.append(make('small', `${output.coverage.read_sources} readable excerpts from ${output.coverage.captured_sources} collected sources`));
   }
 
-  function openMarketingDraft(draftId, productId, sourceId, bound = sameScope() ? {...scope} : null) {
-    if (!bound || !window.VP3MarketingCanvas || !/^[a-f0-9]{64}$/.test(draftId)
-      || !Number.isSafeInteger(productId) || productId < 1 || !/^[1-9][0-9]*$/.test(sourceId)) return false;
+  function openMarketingDraft(draftId, productId, sourceId, bound = sameScope() ? {...scope} : null, creativeId = '') {
+    if (!bound || !window.VP3MarketingCanvas || typeof draftId !== 'string' || !/^[a-f0-9]{64}$/.test(draftId)
+      || !Number.isSafeInteger(productId) || productId < 1 || typeof sourceId !== 'string' || !/^[1-9][0-9]*$/.test(sourceId)
+      || (creativeId && !/^[a-f0-9]{32}$/.test(creativeId))) return false;
     const isCurrent = () => {
       const active = currentScope();
       return active?.conversation_id === bound.conversation_id && active.agent_id === bound.agent_id;
@@ -433,7 +436,8 @@
     const opened = window.VP3MarketingCanvas.open(
       {draft_id:draftId, product_id:productId, source_id:sourceId},
       {endpoint:account.endpoint, mediaEndpoint:account.mediaEndpoint, ownerKey:account.owner, csrf:account.csrf, scope:bound, isCurrent},
-      requestedMarketingPrefill
+      sameScope() && !creativeId ? requestedMarketingPrefill : null,
+      creativeId
     );
     if (opened && dialog.open) {
       movingToCanvas = true;
@@ -442,6 +446,34 @@
       status.textContent = 'Open Agent Chat to review this promotion.';
     }
     return opened;
+  }
+
+  function openProductLaunch(marker) {
+    const bound = currentScope();
+    if (!bound || String(marker?.owner_user_id) !== account.owner || marker.agent_id !== bound.agent_id
+      || marker.conversation_id !== bound.conversation_id || !Number.isSafeInteger(marker.product_id) || marker.product_id < 1) return false;
+    if (['listing_review','listing_unavailable'].includes(marker.stage)) {
+      const endpoint = safeUrl(account.endpoint, '/api/initiative-workbench-v1.php');
+      if (!endpoint) return false;
+      const url = new URL('../profile-commerce-products.php', endpoint);
+      url.searchParams.set('workspace_product', String(marker.product_id));
+      location.assign(url.href);
+      return true;
+    }
+    if (marker.stage === 'photo_needed') {
+      open('marketing', '', {productId:marker.product_id});
+      return true;
+    }
+    if (typeof marker.source_id !== 'string' || !/^[1-9][0-9]*$/.test(marker.source_id)
+      || !Number.isSafeInteger(Number(marker.source_id))) return false;
+    if (marker.stage === 'marketing_review') {
+      open('marketing', `${marker.product_id}-${marker.source_id}`, {listingHandoff:true});
+      return true;
+    }
+    if (marker.stage === 'design_review') return openMarketingDraft(marker.draft_id, marker.product_id, marker.source_id, bound);
+    if (!['image_pending','creative_ready','creative_failed','publication_review','published','paused'].includes(marker.stage)
+      || typeof marker.creative_id !== 'string' || !/^[a-f0-9]{32}$/.test(marker.creative_id)) return false;
+    return openMarketingDraft(marker.draft_id, marker.product_id, marker.source_id, bound, marker.creative_id);
   }
 
   function showResult(output) {
@@ -573,5 +605,5 @@
     window.addEventListener('vp3:chat-context-ready', resume);
     resume();
   }
-  window.VP3InitiativeWorkbench = Object.freeze({open});
+  window.VP3InitiativeWorkbench = Object.freeze({open,openProductLaunch});
 })();

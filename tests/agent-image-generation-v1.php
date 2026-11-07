@@ -136,6 +136,7 @@ try{
     check($v['status']==='failed'&&count($calls)===$before,'the Media Library worker rechecks AI entitlement before using the provider');
     $GLOBALS['noImageEntitlement']=false;
     require_once dirname(__DIR__).'/includes/initiative-marketing-creative-v1.php';
+    require_once dirname(__DIR__).'/includes/initiative-product-launch-state-v1.php';
     $pdo->exec('ALTER TABLE agent_commerce_products_v800 ADD COLUMN id INTEGER');
     $pdo->exec('UPDATE agent_commerce_products_v800 SET id=71 WHERE owner_user_id=1');
     $pdo->exec('CREATE TABLE agent_commerce_marketing_drafts_v1 (owner_user_id INTEGER,product_id INTEGER,request_key VARCHAR(64),draft_json TEXT)');
@@ -150,9 +151,13 @@ try{
     $before=count($calls);
     reject(fn()=>initiative_marketing_creative_queue_v1($pdo,1,$scope,$variant),'level one does not admit a paid marketing image job');
     check(count($calls)===$before,'the original-photo treatment does not call the image provider');
+    check(initiative_product_launch_image_state_v1($pdo,$u,$scope,$variant)===['stage'=>'creative_ready'],
+        'original-photo creative readiness needs no image job or provider call');
     $variant=imageFixtureMarketingVariant(7,$assetId,$digest);
     $g=queueMarketingFixture($variant);
     check($g['status']==='queued'&&$g['mode']==='marketing_scene'&&queueMarketingFixture($variant)['id']===$g['id'],'the exact background request queues once and retries recover the same generation');
+    check(initiative_product_launch_image_state_v1($pdo,$u,$scope,$variant)['stage']==='image_pending',
+        'admission alone cannot become a launch creative completion');
     reject(fn()=>initiative_marketing_creative_generation_v1($pdo,1,['agent_id'=>8,'conversation_id'=>12],$variant),'a different Agent Chat cannot open the marketing generation');
     $other=imageFixtureMarketingVariant(7,$assetId,$digest);$other['generation_id']=$g['id'];$GLOBALS['imageMarketingVariants'][$other['id']]=$other;
     reject(fn()=>initiative_marketing_creative_generation_v1($pdo,1,$scope,$other),'a generation from a different variant cannot be substituted');
@@ -160,6 +165,36 @@ try{
     $wire=end($calls);
     check($v['status']==='completed'&&$wire[0]==='https://api.openai.com/v1/images/generations'&&!isset($wire[1]['images'])
         &&str_contains($wire[1]['prompt'],'environment only')&&str_contains($wire[1]['prompt'],'café counter'),'a level seven background goes through the shared queue without sending the product photo');
+    $imageState=initiative_product_launch_image_state_v1($pdo,$u,$scope,$variant);
+    check($imageState===['generation_id'=>$g['id'],'stage'=>'creative_ready','generated_asset_id'=>$v['asset']['id']],
+        'a real completion receipt and exact private asset prove the launch creative is ready');
+    reject(fn()=>initiative_product_launch_image_state_v1($pdo,$u,['agent_id'=>8,'conversation_id'=>12],$variant),
+        'another Chat cannot read the launch creative proof');
+    reject(fn()=>initiative_product_launch_image_state_v1($pdo,$u,$scope,$other),
+        'another creative cannot reuse the launch image completion proof');
+    $receiptQuery=$pdo->prepare('SELECT result_json FROM agent_workflow_receipts WHERE run_id=?');
+    $receiptQuery->execute([$g['job_id']]);
+    $receiptJson=$receiptQuery->fetchColumn();
+    $receiptQuery->closeCursor();
+    $updateReceipt=$pdo->prepare('UPDATE agent_workflow_receipts SET result_json=? WHERE run_id=?');
+    $updateReceipt->execute(['{}',$g['job_id']]);
+    check(initiative_product_launch_image_state_v1($pdo,$u,$scope,$variant)['stage']==='creative_failed',
+        'a completed run with a changed receipt cannot announce a ready creative');
+    $updateReceipt->execute([$receiptJson,$g['job_id']]);
+    $creativeFile=initiative_work_product_file_v1(1,media_studio_asset($v['asset']['id'],$u)['file_path']);
+    $creativeBytes=file_get_contents($creativeFile);
+    $changed=$creativeBytes;
+    $changed[0]="\0";
+    $before=count($calls);
+    try {
+        file_put_contents($creativeFile,$changed);
+        check(initiative_product_launch_image_state_v1($pdo,$u,$scope,$variant)['stage']==='creative_failed',
+            'changed creative bytes cannot qualify as the saved worker output');
+    } finally {
+        file_put_contents($creativeFile,$creativeBytes);
+    }
+    check(initiative_product_launch_image_state_v1($pdo,$u,$scope,$variant)===$imageState&&count($calls)===$before,
+        'rechecking the launch proof reads the same result without another provider call');
     $variant=imageFixtureMarketingVariant(10,$assetId,$digest);
     $before=count($calls);
     check(initiative_marketing_creative_recover_v1($pdo,1,$scope,$variant)===null&&count($calls)===$before,
@@ -172,6 +207,10 @@ try{
     check($v['status']==='completed'&&$wire[0]==='https://api.openai.com/v1/images/edits'
         &&$wire[1]['images']===[['image_url'=>'data:image/png;base64,'.base64_encode($original)]],
         'the canonical worker uses the exact reviewed product reference even when it claims just before the variant attaches the job');
+    check(initiative_product_launch_image_state_v1($pdo,$u,$scope,$variant)===['stage'=>'image_starting'],
+        'the launch waits for the exact attachment even when the worker committed early');
+    check(initiative_product_launch_image_state_v1($pdo,$u,$scope,$variant+['created_at'=>'2026-01-01 00:00:00'])===['stage'=>'creative_failed'],
+        'an unattached design that has exceeded the attachment window needs owner attention');
     $variant['generation_id']=$g['id'];$GLOBALS['imageMarketingVariants'][$variant['id']]=$variant;
     check(initiative_marketing_creative_generation_v1($pdo,1,$scope,$variant)['asset']['id']===$v['asset']['id']&&file_get_contents($path)===$original,
         'the approved reference job exposes its own private candidate and leaves the original file intact');
