@@ -62,6 +62,7 @@ function member_navigation_active_key(?string $scriptName = null): string
         'profile-agent.php'=>'profile_agent',
         'messages.php'=>'messages',
         'knowledge.php'=>'knowledge',
+        'media-library.php'=>'media_library',
         'local-knowledge.php'=>'local_knowledge',
         'memory.php'=>'memory',
         'artist-listening.php'=>'transcriptions',
@@ -107,7 +108,7 @@ function member_navigation_section_label(string $key): string
 {
     return match($key){
         'home','chat','profile_agent','voice_profile'=>'Agent',
-        'messages','contacts','knowledge','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
+        'messages','contacts','knowledge','media_library','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
         'meetings','scheduling','appointment_lifecycle','commerce','campaigns','rewards','claim_terminal','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
         'team','team_scheduling','team_workspaces'=>'Team',
         'music_workspace','music_library','music_releases','music_player'=>'Music',
@@ -167,6 +168,7 @@ function member_navigation_menu_links(?array $user = null): array
         if(function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800())$add($links,'meetings','Meetings',url('/meetings.php'),'agent');
     }
     if(member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'knowledge','My Knowledge',url('/knowledge.php'),'identity');
+    if(has_permission('chat.access',$user))$add($links,'media_library','Media Library',url('/media-library.php'),'identity');
     if($accountAllowed&&member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'local_knowledge','Local Knowledge',url('/local-knowledge.php'),'identity');
     if(member_navigation_package_permission($user,'chat.access',has_permission('chat.access',$user)))$add($links,'memory','My Memory',url('/memory.php'),'identity');
     if(member_navigation_entitled($user,'profile_agent.access',personal_capability_has_v242('profile_agent.access',$user)))$add($links,'profile_agent','Profile Agent',url('/profile-agent.php'),'identity');

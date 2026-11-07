@@ -86,9 +86,50 @@ function media_v86_write_meta(int $userId, string $token, array $meta): void
 try {
     $action = (string)($_POST['action'] ?? $_GET['action'] ?? 'list');
     $userId = (int)$user['id'];
+    $workspaceOwner = $_SERVER['HTTP_X_VP3_MEDIA_OWNER'] ?? null;
+    if (($action === 'browse' || $workspaceOwner !== null) && $workspaceOwner !== (string)$userId) {
+        media_v86_json(false, ['error'=>'Account changed. Reopen Media Library before continuing.'], 403);
+    }
 
     if ($action === 'list') {
         media_v86_json(true, ['assets'=>media_studio_assets($user, 250)]);
+    }
+
+    if ($action === 'browse') {
+        $type = (string)($_GET['type'] ?? '');
+        $source = (string)($_GET['source'] ?? '');
+        $query = mb_strtolower(mb_substr(trim((string)($_GET['q'] ?? '')), 0, 190));
+        $before = max(0, (int)($_GET['before'] ?? 0));
+        $where = ['user_id=?'];
+        $params = [$userId];
+        if (in_array($type, ['photo','video','audio'], true)) {
+            $where[] = 'media_type=?';
+            $params[] = $type;
+        }
+        $sourceFilter = match ($source) {
+            'generated' => "source='openai_image'",
+            'edited' => "source='image_editor'",
+            'uploaded' => "COALESCE(source,'') NOT IN ('openai_image','image_editor')",
+            default => '',
+        };
+        if ($sourceFilter !== '') $where[] = $sourceFilter;
+        if ($query !== '') {
+            $where[] = "LOWER(title) LIKE ? ESCAPE '!'";
+            $params[] = '%' . strtr($query, ['!'=>'!!','%'=>'!%','_'=>'!_']) . '%';
+        }
+        if ($before > 0) {
+            $where[] = 'id<?';
+            $params[] = $before;
+        }
+        $stmt = db()->prepare('SELECT id,user_id,media_type,title,mime_type,file_path,file_size,duration_seconds,source,created_at
+            FROM user_media_assets WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT 25');
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $nextBefore = count($rows) > 24 ? (int)$rows[23]['id'] : null;
+        media_v86_json(true, [
+            'assets'=>array_map('media_studio_asset_payload', array_slice($rows, 0, 24)),
+            'next_before'=>$nextBefore,
+        ]);
     }
 
     media_v86_csrf();
@@ -98,6 +139,11 @@ try {
         $mime = media_studio_normalize_mime((string)($_POST['mime_type'] ?? ''));
         $title = trim((string)($_POST['title'] ?? ''));
         $source = trim((string)($_POST['source'] ?? 'capture'));
+        $source = match (strtolower($source)) {
+            'openai_image' => 'upload',
+            'image_editor' => 'image_editor',
+            default => $source,
+        };
         $originalName = trim((string)($_POST['original_name'] ?? ''));
 
         if (!in_array($type, ['photo','video','audio'], true) || !media_studio_mime_allowed($type, $mime)) {
@@ -198,6 +244,19 @@ try {
         $size = is_file($part) ? (int)filesize($part) : 0;
         if ($size < 1 || $size !== (int)($meta['total_size'] ?? 0)) {
             throw new RuntimeException('The uploaded media file is incomplete.');
+        }
+
+        if ($meta['source'] === 'image_editor') {
+            $sourceId = filter_var($metadata['source_asset_id'] ?? null, FILTER_VALIDATE_INT);
+            $sourceAsset = $sourceId > 0 ? media_studio_asset($sourceId, $user) : null;
+            if (!$sourceAsset || $sourceAsset['media_type'] !== 'photo' || !media_studio_asset_payload($sourceAsset)['available']) {
+                throw new RuntimeException('The original image is unavailable in your Media Library.');
+            }
+            $image = @getimagesize($part);
+            if ($meta['media_type'] !== 'photo' || $meta['mime_type'] !== 'image/png' || ($image['mime'] ?? '') !== 'image/png') {
+                throw new RuntimeException('Edited copies must be saved as PNG images.');
+            }
+            $metadata = ['source_asset_id'=>$sourceId, 'width'=>$image[0], 'height'=>$image[1]];
         }
 
         $extension = media_studio_extension_for_mime((string)$meta['mime_type']);

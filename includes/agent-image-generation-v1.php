@@ -25,8 +25,24 @@ function vp3_image_row_v1(PDO $pdo,array $user,string $id): array
 }
 function vp3_image_authority_v1(PDO $pdo,array $user,array $row): array
 {
+    if((int)$row['owner_user_id']!==(int)$user['id'])throw new RuntimeException('Image request not found.',404);
+    if(vp3_image_workspace_row_v1($row))return vp3_image_workspace_owner_v1($pdo,$user);
     $principal=['kind'=>(int)$row['agent_id']>0?'user_agent':'system','owner_user_id'=>(int)$user['id'],'agent_id'=>(int)$row['agent_id']];
     return vp3_image_scope_v1($pdo,$user,$principal,['conversation_id'=>(int)$row['conversation_id']]);
+}
+function vp3_image_workspace_row_v1(array $row): bool
+{
+    return (int)$row['conversation_id']===0&&(int)$row['agent_id']===0&&$row['user_message_id']===null;
+}
+function vp3_image_workspace_owner_v1(PDO $pdo,array $user): array
+{
+    return vp3_capability_live_user_v1($pdo,$user,['kind'=>'system'],[],null);
+}
+function vp3_image_text_plan_v1(array $plan): array
+{
+    $prompt=$plan['prompt']??'';$title=$plan['title']??'';$size=$plan['size']??'1024x1024';$quality=$plan['quality']??'medium';$background=$plan['background']??'opaque';
+    if(!is_string($prompt)||mb_strlen(trim($prompt))<3||mb_strlen($prompt)>4000||!is_string($title)||mb_strlen($title)>190||!in_array($size,['1024x1024','1536x1024','1024x1536'],true)||!in_array($quality,['low','medium','high'],true)||!in_array($background,['opaque','transparent'],true))throw new InvalidArgumentException('Use a prompt of 3 to 4,000 characters, an optional title of up to 190 characters, and one of the available image settings.');
+    return ['prompt'=>trim($prompt),'title'=>trim($title),'size'=>$size,'quality'=>$quality,'background'=>$background];
 }
 function vp3_image_lock_conversation_v1(PDO $pdo,int $uid,int $cid,int $aid): void
 {
@@ -38,7 +54,8 @@ function vp3_image_run_v1(PDO $pdo,array $user,array $row,bool $lock=false): arr
 {
     require_once __DIR__.'/agent-worker-cloud-v1910.php';
     $run=agent_workflow_row_v1400($pdo,(int)$user['id'],(int)$row['run_id'],$lock);
-    if(!$run||$run['source_kind']!=='image_generation'||$run['source_key']!==$row['generation_id']||(int)($run['agent_id']??0)!==(int)$row['agent_id']||$run['execution_target']!=='cloud'||$run['capability_key']!=='images.generate')throw new RuntimeException('Image job binding is unavailable.',409);
+    $origin=vp3_image_workspace_row_v1($row)?'media_library':'chat';
+    if(!$run||$run['origin']!==$origin||$run['source_kind']!=='image_generation'||$run['source_key']!==$row['generation_id']||(int)($run['agent_id']??0)!==(int)$row['agent_id']||$run['execution_target']!=='cloud'||$run['capability_key']!=='images.generate')throw new RuntimeException('Image job binding is unavailable.',409);
     return $run;
 }
 function vp3_image_view_v1(PDO $pdo,array $user,array $row): array
@@ -79,29 +96,43 @@ function vp3_image_queue_work_v1(PDO $pdo,array $user,array $principal,array $co
         hash('sha256','image:workbench:'.$user['id'].':'.$request),$configure);
 }
 
+function vp3_image_queue_workspace_v1(PDO $pdo,array $user,array $plan,string $request): array
+{
+    if(!preg_match('/\A[a-f0-9]{32}\z/',$request))throw new InvalidArgumentException('Review this image request again.');
+    $user=vp3_image_workspace_owner_v1($pdo,$user);
+    vp3_image_queue_ready_v1($pdo,$user);
+    $plan=vp3_image_text_plan_v1($plan);
+    $plan['title']=mb_substr($plan['title']!==''?$plan['title']:$plan['prompt'],0,190);
+    return vp3_image_admit_v1($pdo,$user,0,0,null,hash('sha256','image:media-library:'.$user['id'].':'.$request),
+        static fn(string $model):array=>[...$plan,'model'=>$model,'mode'=>'workspace']);
+}
+
 function vp3_image_admit_v1(PDO $pdo,array $user,int $cid,int $aid,?int $turn,string $key,callable $configure): array
 {
     $uid=(int)$user['id'];$id=substr($key,0,8).'-'.substr($key,8,4).'-'.substr($key,12,4).'-'.substr($key,16,4).'-'.substr($key,20,12);
+    $workspace=$cid===0&&$aid===0&&$turn===null;
+    $edit=$turn===null&&!$workspace;
     vp3_image_schema_v1($pdo,$turn===null);$pdo->beginTransaction();try{
         // One owner lock serializes concurrent admission without a separate queue.
         $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$lock->execute([$uid]);$lock->fetchColumn();
-        if($turn===null)vp3_image_lock_conversation_v1($pdo,$uid,$cid,$aid);
+        if($workspace)vp3_image_workspace_owner_v1($pdo,$user);
+        elseif($edit)vp3_image_lock_conversation_v1($pdo,$uid,$cid,$aid);
         $q=$pdo->prepare('SELECT * FROM agent_image_generations_v1 WHERE owner_user_id=? AND '.($turn===null?'generation_id=?':'user_message_id=?'));
         $q->execute([$uid,$turn??$id]);$old=$q->fetch(PDO::FETCH_ASSOC);
         $model=$turn===null&&$old?json_decode($old['config_json'],true,16,JSON_THROW_ON_ERROR)['model']:vp3_image_settings_v1()['model'];
         $config=$configure($model);
         $hash=hash('sha256',json_encode([$cid,$aid,$config],JSON_THROW_ON_ERROR));
         if($old){if(!hash_equals($old['request_hash'],$hash))throw new RuntimeException($turn===null?'This approval already has a different image request.':'This user turn already has a different image request.',409);$pdo->commit();return vp3_image_view_v1($pdo,$user,$old);}
-        $edit=$turn===null;
         $q=$pdo->prepare("SELECT COUNT(*) FROM agent_image_generations_v1 g JOIN agent_workflow_runs r ON r.id=g.run_id AND r.owner_user_id=g.owner_user_id WHERE g.owner_user_id=? AND r.status IN ('approved','executing','paused')");$q->execute([$uid]);
         if((int)$q->fetchColumn()>0){
             $message='An image request is already active. Finish or cancel it before creating another.';
             throw $edit?new DomainException($message,409):new RuntimeException($message,409);
         }
-        $pdo->prepare("INSERT INTO agent_workflow_runs(owner_user_id,agent_id,workflow_type,origin,source_kind,source_key,source_hash,dedupe_key,title,goal,decision_summary,status,risk_level,requires_approval,approval_status,execution_target,capability_key,max_attempts,retry_backoff_seconds,timeout_seconds,current_action_id) VALUES(?,?,'image_generation','chat','image_generation',?,?,?,?,?,?,'approved','low',0,'not_required','cloud','images.generate',1,60,300,NULL)")->execute([$uid,$aid?:null,$id,sha1($config['prompt']),$key,mb_substr(($edit?'Edit capture: ':'Generate image: ').$config['title'],0,190),$config['title'],'Explicit owner image request. One provider call; no automatic replay.']);$run=(int)$pdo->lastInsertId();
+        $pdo->prepare("INSERT INTO agent_workflow_runs(owner_user_id,agent_id,workflow_type,origin,source_kind,source_key,source_hash,dedupe_key,title,goal,decision_summary,status,risk_level,requires_approval,approval_status,execution_target,capability_key,max_attempts,retry_backoff_seconds,timeout_seconds,current_action_id) VALUES(?,?,'image_generation',?,'image_generation',?,?,?,?,?,?,'approved','low',0,'not_required','cloud','images.generate',1,60,300,NULL)")->execute([$uid,$aid?:null,$workspace?'media_library':'chat',$id,sha1($config['prompt']),$key,mb_substr(($edit?'Edit capture: ':'Generate image: ').$config['title'],0,190),$config['title'],'Explicit owner image request. One provider call; no automatic replay.']);$run=(int)$pdo->lastInsertId();
         $pdo->prepare("INSERT INTO agent_workflow_actions(run_id,owner_user_id,sequence_no,action_key,action_type,label,summary,status,requires_approval,execution_target,capability_key,max_attempts,timeout_seconds) VALUES(?,?,1,?,'execute',?,?,'queued',0,'cloud','images.generate',1,300)")->execute([$run,$uid,$id,$edit?'Edit selected screen capture':'Generate requested image',$edit?'Edit one reviewed capture with the frozen owner instruction.':'Create one image from the frozen owner prompt.']);
         $pdo->prepare('INSERT INTO agent_image_generations_v1(generation_id,owner_user_id,agent_id,conversation_id,user_message_id,request_hash,run_id,config_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)')->execute([$id,$uid,$aid,$cid,$turn,$hash,$run,json_encode($config,JSON_THROW_ON_ERROR),gmdate('Y-m-d H:i:s')]);
-        agent_workflow_event_v1400($pdo,$uid,$run,'image_requested','','approved','user',$edit?'Image edit queued from the current owner Workbench approval.':'Image request queued from the current owner Chat turn.',['generation_id'=>$id]);$pdo->commit();return vp3_image_view_v1($pdo,$user,vp3_image_row_v1($pdo,$user,$id));
+        $summary=match(true){$workspace=>'Image request approved in the owner Media Library.',$edit=>'Image edit queued from the current owner Workbench approval.',default=>'Image request queued from the current owner Chat turn.'};
+        agent_workflow_event_v1400($pdo,$uid,$run,'image_requested','','approved','user',$summary,['generation_id'=>$id]);$pdo->commit();return vp3_image_view_v1($pdo,$user,vp3_image_row_v1($pdo,$user,$id));
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 
@@ -110,7 +141,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
     require_once __DIR__.'/agent-worker-cloud-v1910.php';
     $run=agent_worker_cloud_active_row_v1910($pdo,$user,$claim);if(!$run||$run['action_capability_key']!=='images.generate'||$run['source_kind']!=='image_generation')throw new RuntimeException('Image execution lease is unavailable.',409);
     $row=vp3_image_row_v1($pdo,$user,$run['source_key']);$bound=vp3_image_run_v1($pdo,$user,$row);if((int)$bound['id']!==(int)$run['id']||$run['action_key']!==$row['generation_id'])throw new RuntimeException('Image action binding changed.',409);$reservation=0;$file='';$createdFile=false;$committed=false;$sent=false;
-    $edit=$row['user_message_id']===null;$sourceImage=null;
+    $edit=$row['user_message_id']===null&&!vp3_image_workspace_row_v1($row);$sourceImage=null;
     try{
         $user=vp3_image_authority_v1($pdo,$user,$row);if(!subscription_has_entitlement($user,'main_ai.access'))throw new RuntimeException('subscription_required');
         if(!vp3_image_provider_ready_v1())throw new RuntimeException('provider_unavailable');

@@ -108,9 +108,8 @@ function vp3_capability_plan_v1(string $text,array $snapshot): array
         return ['operation'=>$op,'ids'=>$ids,'query'=>trim($query),'media_type'=>$type,'view'=>$view];
     }
     if($op==='image_generate'){
-        $prompt=$plan['prompt']??'';$title=$plan['title']??'';$size=$plan['size']??'1024x1024';$quality=$plan['quality']??'medium';$background=$plan['background']??'opaque';
-        if($ids!==['images.generate']||array_diff(array_keys($plan),['operation','ids','prompt','title','size','quality','background'])||!is_string($prompt)||mb_strlen(trim($prompt))<3||mb_strlen($prompt)>4000||!is_string($title)||mb_strlen($title)>190||!in_array($size,['1024x1024','1536x1024','1024x1536'],true)||!in_array($quality,['low','medium','high'],true)||!in_array($background,['opaque','transparent'],true))throw new InvalidArgumentException('Invalid image request.');
-        return ['operation'=>$op,'ids'=>$ids,'prompt'=>trim($prompt),'title'=>trim($title),'size'=>$size,'quality'=>$quality,'background'=>$background];
+        if($ids!==['images.generate']||array_diff(array_keys($plan),['operation','ids','prompt','title','size','quality','background']))throw new InvalidArgumentException('Invalid image request.');
+        return ['operation'=>$op,'ids'=>$ids]+vp3_image_text_plan_v1($plan);
     }
     if($op==='photo_media_read'){
         $cap=$ids[0]??'';$query=$plan['query']??'';$view=$plan['view']??($cap==='photos.library.read'?'search':'list');
