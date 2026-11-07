@@ -76,7 +76,7 @@
 
   const actions = make('div');
   actions.className = 'vp3-workbench-actions';
-  const reload = button('Reload sources', () => { requestedSourceRevision = ''; void loadSources(source.value); });
+  const reload = button('Reload sources', () => { requestedSourceRevision = ''; void loadSources(source.value, product.value); });
   const review = button('Review source', () => void previewSource());
   const create = button('Create private draft', () => void createResult());
   actions.append(reload, review, create);
@@ -99,6 +99,7 @@
   let returnFocus = null;
   let requestedSourceRevision = '';
   let requestedMarketingPrefill = null;
+  let listingHandoff = false;
   let movingToCanvas = false;
   let scopeTimer = 0;
 
@@ -171,6 +172,7 @@
     const pair = tool === 'marketing' && typeof sourceId === 'string' ? sourceId.match(/^([1-9][0-9]*)-([1-9][0-9]*)$/) : null;
     const productId = pair ? pair[1] : '';
     if (pair) sourceId = pair[2];
+    listingHandoff = Boolean(pair && options?.listingHandoff === true);
     requestedSourceRevision = sourceRevision;
     const hints = tool === 'marketing' ? options?.marketingPrefill : null;
     requestedMarketingPrefill = hints && Number.isInteger(hints.level) && hints.level >= 1 && hints.level <= 10
@@ -200,6 +202,7 @@
     scopeTimer = 0;
     requestedSourceRevision = '';
     requestedMarketingPrefill = null;
+    listingHandoff = false;
     stopPending();
     clearReview();
     scope = null;
@@ -263,6 +266,8 @@
   }
 
   async function loadSources(preselect = '', productId = '') {
+    const openedScope = scope;
+    let loaded = false;
     clearReview();
     source.replaceChildren();
     product.replaceChildren();
@@ -286,7 +291,10 @@
       }
       source.value = preselect;
       status.textContent = source.options.length > 1 ? '' : lanes[lane.value].empty;
+      loaded = true;
     });
+    if (loaded && listingHandoff && dialog.open && scope === openedScope && sameScope()
+        && source.value === preselect && product.value === productId) await previewSource();
   }
 
   function proposal() {
@@ -325,9 +333,24 @@
         status.textContent = 'This source changed after the Agent prepared its suggestion. Reload the source to review its current version.';
         return;
       }
-      reviewed = {fields, token:data.review_token};
       const preview = data.preview;
       const details = preview.details || {};
+      if (listingHandoff) {
+        if (details.linked_product_image !== true) {
+          status.textContent = 'The linked listing photo changed. Reopen the listing from Profile Commerce.';
+          return;
+        }
+        const draft = Array.isArray(details.drafts) && details.drafts.find(item =>
+          /^[a-f0-9]{64}$/.test(item?.draft_id || '') && item.product_id === fields.product_id
+          && String(item.asset_id) === fields.source_id);
+        if (draft) {
+          if (!openMarketingDraft(draft.draft_id, fields.product_id, fields.source_id)) {
+            status.textContent = 'Your marketing draft is saved. Reload Agent Chat to open it in Canvas.';
+          }
+          return;
+        }
+      }
+      reviewed = {fields, token:data.review_token, openCanvas:listingHandoff};
       const captured = dateLabel(details.captured_at);
       const sourceTitle = preview.source_title + (captured ? ' · ' + captured : '');
       if (fields.source_id !== 'description') source.selectedOptions[0].text = sourceTitle;
@@ -463,16 +486,27 @@
 
   async function createResult() {
     if (!reviewed) return;
+    const {fields, token, openCanvas} = reviewed;
     status.textContent = 'Creating your private result…';
-    await request('create', {...reviewed.fields, review_token:reviewed.token, confirmed:true}, data => {
-      if (data.output) showResult(data.output);
+    await request('create', {...fields, review_token:token, confirmed:true}, data => {
+      const output = data.output;
       reviewed = null;
+      if (openCanvas) {
+        if (output?.kind !== 'product_marketing_draft' || output.product_id !== fields.product_id
+            || String(output.asset_id) !== fields.source_id) {
+          status.textContent = 'The saved draft could not be verified for this listing.';
+          return;
+        }
+        if (openMarketingDraft(output.draft_id, fields.product_id, fields.source_id)) return;
+      }
+      if (output) showResult(output);
     });
   }
 
   lane.addEventListener('change', () => {
     requestedSourceRevision = '';
     requestedMarketingPrefill = null;
+    listingHandoff = false;
     stopPending();
     mode.value = 'cleanup';
     instructions.value = '';
@@ -485,16 +519,22 @@
     status.textContent = '';
     controls();
   }
-  source.addEventListener('change', () => { requestedSourceRevision = ''; editProposal(); });
+  function changeSource() {
+    requestedSourceRevision = '';
+    listingHandoff = false;
+    editProposal();
+  }
+  source.addEventListener('change', changeSource);
   mode.addEventListener('change', editProposal);
   instructions.addEventListener('input', editProposal);
   productDescription.addEventListener('input', editProposal);
-  product.addEventListener('change', () => { requestedSourceRevision = ''; editProposal(); });
+  product.addEventListener('change', changeSource);
   dialog.addEventListener('close', () => {
     if (dialog.open) return;
     window.clearInterval(scopeTimer);
     scopeTimer = 0;
     scope = null;
+    listingHandoff = false;
     stopPending();
     clearReview();
     source.replaceChildren();
@@ -511,17 +551,23 @@
   window.addEventListener('vp3:chat-conversation-changed', scopeChanged);
   window.addEventListener('pagehide', scopeChanged);
   const resumeUrl = new URL(location.href);
-  const resumeDraft = resumeUrl.searchParams.get('marketing_draft') || '';
-  if (/^[a-f0-9]{64}$/.test(resumeDraft)) {
-    const productId = Number(resumeUrl.searchParams.get('marketing_product') || 0);
-    const sourceId = resumeUrl.searchParams.get('marketing_source') || '';
-    const conversationId = Number(resumeUrl.searchParams.get('conversation_id') || 0);
-    const selector = resumeUrl.searchParams.get('agent') || '';
-    const agentId = selector === 'system' ? 0 : /^[1-9][0-9]*$/.test(selector) ? Number(selector) : -1;
+  const resumeDraft = resumeUrl.searchParams.get('marketing_draft');
+  const positiveId = value => /^[1-9][0-9]*$/.test(value || '') && Number.isSafeInteger(Number(value)) ? Number(value) : 0;
+  const productId = positiveId(resumeUrl.searchParams.get('marketing_product'));
+  const sourceId = resumeUrl.searchParams.get('marketing_source') || '';
+  const conversationId = positiveId(resumeUrl.searchParams.get('conversation_id'));
+  const selector = resumeUrl.searchParams.get('agent');
+  const agentId = selector === 'system' ? 0 : positiveId(selector) || -1;
+  if (productId && /^[1-9][0-9]*$/.test(sourceId) && conversationId && agentId >= 0
+      && (resumeDraft === null || /^[a-f0-9]{64}$/.test(resumeDraft))) {
     const resume = () => {
       const bound = currentScope();
-      if (!bound || bound.conversation_id !== conversationId || bound.agent_id !== agentId
-        || !openMarketingDraft(resumeDraft, productId, sourceId, bound)) return;
+      if (!bound || bound.conversation_id !== conversationId || bound.agent_id !== agentId) return;
+      if (resumeDraft) {
+        if (!openMarketingDraft(resumeDraft, productId, sourceId, bound)) return;
+      } else {
+        open('marketing', `${productId}-${sourceId}`, {listingHandoff:true});
+      }
       window.removeEventListener('vp3:chat-context-ready', resume);
     };
     window.addEventListener('vp3:chat-context-ready', resume);

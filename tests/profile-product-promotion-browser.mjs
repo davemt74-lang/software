@@ -13,20 +13,22 @@ const php = process.env.VP3_PHP_BINARY || 'php';
 const key = 'a'.repeat(32);
 const imagePath = '/profile-promotion-image.php?key=' + key;
 const productPath = '/fixture-owner/product/blue-mug';
+const listingPhotoPath = '/profile-product-photo.php?username=fixture-owner&product=blue-mug&listing=31';
 const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 const artwork = path.join(tmp, 'private/user-media/1/promotion.png');
-const original = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY1sAAAAASUVORK5CYII=', 'base64');
+const originalPath = path.join(path.dirname(artwork), 'original.png');
+const original = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGUlEQVR4nGMwSFjwnxLMMGrAqAGjBgwXAwBoAi8f/niiOAAAAABJRU5ErkJggg==', 'base64');
 const env = {...process.env, VP3_PA3_ROOT:root, VP3_PA3_CONFIG:path.join(tmp, 'config.json')};
 
 fs.mkdirSync(path.dirname(artwork), {recursive:true});
 fs.writeFileSync(artwork, image);
-fs.writeFileSync(path.join(path.dirname(artwork), 'original.png'), original);
+fs.writeFileSync(originalPath, original);
 fs.mkdirSync(path.join(tmp, 'includes'));
 fs.mkdirSync(path.join(tmp, 'api'));
 for (const file of fs.readdirSync('includes')) {
   if (file !== 'bootstrap.php') fs.symlinkSync(path.resolve('includes', file), path.join(tmp, 'includes', file));
 }
-for (const file of ['profile.php','profile-commerce-product.php','profile-promotion-image.php','media-library-file-v86.php']) {
+for (const file of ['profile.php','profile-commerce-product.php','profile-promotion-image.php','profile-product-photo.php','media-library-file-v86.php']) {
   fs.copyFileSync(file, path.join(tmp, file));
 }
 for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-agent.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js']) {
@@ -64,9 +66,9 @@ if($command==='init'){
     agent_commerce_ensure_schema_v800($pdo);
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_commerce_promotions_v1 (id CHAR(32) PRIMARY KEY, owner_user_id INT, product_id BIGINT, draft_key CHAR(64), agent_id BIGINT, conversation_id BIGINT, source_asset_id BIGINT, source_sha256 CHAR(64), settings_json TEXT, asset_id BIGINT, asset_sha256 CHAR(64), public_key CHAR(32), public_product_url VARCHAR(500), public_cta VARCHAR(40), status VARCHAR(20), updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $pdo->exec("CREATE TABLE user_media_assets (id INT PRIMARY KEY,user_id INT,media_type VARCHAR(10),title VARCHAR(80),mime_type VARCHAR(40),file_path VARCHAR(300),file_size INT,duration_seconds INT,source VARCHAR(40),metadata_json TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
-    $pdo->prepare("INSERT INTO agent_commerce_products_v800 (id,owner_user_id,product_key,title,description,metadata_json) VALUES(31,1,'blue-mug','Blue mug workshop','A hand-finished blue mug demonstration.',?)")->execute([json_encode(['profile_visibility'=>'public','profile_slug'=>'blue-mug'])]);
     $size=filesize(__DIR__.'/private/user-media/1/promotion.png');
     $source=__DIR__.'/private/user-media/1/original.png';
+    $pdo->prepare("INSERT INTO agent_commerce_products_v800 (id,owner_user_id,product_key,title,description,metadata_json) VALUES(31,1,'blue-mug','Blue mug workshop','A hand-finished blue mug demonstration.',?)")->execute([json_encode(['profile_visibility'=>'public','profile_slug'=>'blue-mug','source_asset_id'=>'51','source_content_sha256'=>hash_file('sha256',$source),'public_listing_photo'=>true])]);
     $pdo->prepare("INSERT INTO user_media_assets(id,user_id,media_type,title,mime_type,file_path,file_size,source) VALUES (51,1,'photo','Private original','image/png','private/user-media/1/original.png',?,'upload'),(52,1,'photo','Exact design','image/png','private/user-media/1/promotion.png',?,'promotion_design')")->execute([filesize($source),$size]);
     $pdo->prepare("INSERT INTO agent_commerce_promotions_v1(id,owner_user_id,product_id,draft_key,agent_id,conversation_id,source_asset_id,source_sha256,settings_json,asset_id,asset_sha256,public_key,public_product_url,public_cta,status)
         VALUES(?,1,31,?,7,11,51,?,?,52,?,?,?,'View workshop','published')")->execute([
@@ -75,8 +77,15 @@ if($command==='init'){
         ]);
     exit;
 }
-if($command==='hide-listing'||$command==='show-listing'){
-    $pdo->prepare('UPDATE agent_commerce_products_v800 SET metadata_json=? WHERE id=31')->execute([json_encode(['profile_visibility'=>$command==='hide-listing'?'hidden':'public','profile_slug'=>'blue-mug'])]);
+if(in_array($command,['hide-listing','show-listing','hide-photo','show-photo'],true)){
+    $meta=json_decode((string)$pdo->query('SELECT metadata_json FROM agent_commerce_products_v800 WHERE id=31')->fetchColumn(),true,16,JSON_THROW_ON_ERROR);
+    if(str_ends_with($command,'-listing'))$meta['profile_visibility']=$command==='hide-listing'?'hidden':'public';
+    else $meta['public_listing_photo']=$command==='show-photo';
+    $pdo->prepare('UPDATE agent_commerce_products_v800 SET metadata_json=? WHERE id=31')->execute([json_encode($meta)]);
+    exit;
+}
+if($command==='foreign-photo'||$command==='owned-photo'){
+    $pdo->prepare('UPDATE user_media_assets SET user_id=? WHERE id=51')->execute([$command==='owned-photo'?1:2]);
     exit;
 }
 if($command==='pause'){
@@ -122,12 +131,36 @@ try {
   assert.equal((await fetch(base + '/media-library-file-v86.php?id=52')).status, 403);
   console.log('PASS anonymous visitor gets approved PNG bytes through the public key only');
 
+  const listingPhoto = await fetch(base + listingPhotoPath);
+  assert.equal(listingPhoto.status, 200);
+  assert.deepEqual(Buffer.from(await listingPhoto.arrayBuffer()), original);
+  assert.equal(listingPhoto.headers.get('content-type'), 'image/png');
+  assert.match(listingPhoto.headers.get('cache-control'), /no-store/);
+  assert.equal((await fetch(base + listingPhotoPath,{method:'HEAD'})).headers.get('content-length'), String(original.length));
+  assert.equal((await fetch(base + listingPhotoPath,{method:'POST'})).status, 405);
+  assert.equal((await fetch(base + listingPhotoPath.replace('listing=31','listing=51'))).status, 404);
+  invoke('hide-photo');
+  assert.equal((await fetch(base + listingPhotoPath)).status, 404);
+  assert.ok(!(await (await fetch(base + productPath)).text()).includes('pcp-photo"><img'));
+  invoke('show-photo');
+  invoke('foreign-photo');
+  assert.equal((await fetch(base + listingPhotoPath)).status, 404);
+  invoke('owned-photo');
+  const tamperedOriginal = Buffer.from(original);
+  tamperedOriginal[tamperedOriginal.length-1] ^= 1;
+  fs.writeFileSync(originalPath, tamperedOriginal);
+  assert.equal((await fetch(base + listingPhotoPath)).status, 404);
+  fs.writeFileSync(originalPath, original);
+  console.log('PASS listing photo requires explicit approval, current ownership and exact original bytes');
+
   invoke('hide-listing');
   assert.equal((await fetch(base + imagePath)).status, 404);
+  assert.equal((await fetch(base + listingPhotoPath)).status, 404);
   assert.equal((await fetch(base + productPath)).status, 404);
   invoke('show-listing');
   invoke('hide-profile');
   assert.equal((await fetch(base + imagePath)).status, 404);
+  assert.equal((await fetch(base + listingPhotoPath)).status, 404);
   assert.equal((await fetch(base + '/fixture-owner')).status, 404);
   invoke('show-profile');
   const tampered = Buffer.from(image);
@@ -165,6 +198,8 @@ try {
   await agentCard.getByRole('link',{name:/View workshop/}).click();
   await page.waitForURL(base + productPath);
   await page.getByRole('heading',{name:'Blue mug workshop'}).waitFor();
+  assert.equal(await page.getByRole('img',{name:'Blue mug workshop'}).getAttribute('src'), listingPhotoPath);
+  await page.waitForFunction(() => document.querySelector('.pcp-photo img').naturalWidth === 16);
   console.log('PASS the Profile Agent card opens the canonical public product listing');
 
   await page.goto(base + '/fixture-owner');
@@ -172,6 +207,9 @@ try {
   await agentCard.waitFor();
   invoke('pause');
   assert.equal((await fetch(base + imagePath)).status, 404);
+  const retainedPhoto = await fetch(base + listingPhotoPath);
+  assert.equal(retainedPhoto.status, 200);
+  assert.deepEqual(Buffer.from(await retainedPhoto.arrayBuffer()), original);
   await agentCard.waitFor({state:'detached',timeout:15000});
   await page.reload();
   await page.getByRole('tab',{name:'Products'}).click();

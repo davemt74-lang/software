@@ -3,9 +3,12 @@ declare(strict_types=1);
 
 require __DIR__.'/fixtures/commerce-recovery-pa2.php';
 require_once dirname(__DIR__).'/includes/profile-agent.php';
+require_once dirname(__DIR__).'/includes/profile-conversation-checkout-pa5.php';
 require_once dirname(__DIR__).'/includes/initiative-workbench-v1.php';
+require_once dirname(__DIR__).'/includes/initiative-work-product-publication-v1.php';
 require_once dirname(__DIR__).'/includes/initiative-work-marketing-promotion-v1.php';
 require_once dirname(__DIR__).'/includes/profile-product-promotion-v1.php';
+require_once dirname(__DIR__).'/includes/profile-product-photo-v1.php';
 
 function has_permission(string $capability, array $user): bool
 {
@@ -46,6 +49,7 @@ $checks = 0;
 $files = [];
 try {
     commerce_fixture_schema_pa2($pdo);
+    vp3_profile_checkout_ensure_schema_pa5($pdo);
     $pdo->exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
     $pdo->exec("ALTER TABLE users ADD COLUMN display_name VARCHAR(80) NOT NULL DEFAULT 'Seller'");
     $pdo->exec("ALTER TABLE users ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'user'");
@@ -76,27 +80,174 @@ try {
     $addAsset(2,1,$original,'upload');
     $addAsset(3,2,$original,'upload');
 
-    $product = commerce_fixture_insert_pa2($pdo,'agent_commerce_products_v800',[
-        'owner_user_id'=>1,'product_key'=>'blue-mug','title'=>'Blue mug','description'=>'A ceramic blue mug.',
-        'payment_mode'=>'full','price_cents'=>2000,
-        'metadata_json'=>'{"profile_visibility":"public","profile_slug":"blue-mug","profile_cta":"See the mug"}',
-    ]);
     $scope = ['agent_id'=>0,'conversation_id'=>11,'user'=>['id'=>1]];
     $secondChat = array_replace($scope,['conversation_id'=>12]);
     $otherOwner = ['agent_id'=>0,'conversation_id'=>21,'user'=>['id'=>2]];
     $sessionKey = str_repeat('1',64);
+    $ownerProfile = static fn(): array => profile_for_user($pdo,1);
+    $productInput = ['source_id'=>'1','request_id'=>str_repeat('f',64)];
+    $draftReview = initiative_work_product_preview_v1($pdo,1,$scope,$productInput);
+    $draftProduct = initiative_work_product_create_v1($pdo,1,$scope,$productInput,$draftReview,
+        static function(string $prompt,?string $photo) use ($original): string {
+            promotion_check_v1($photo==='data:image/png;base64,'.base64_encode($original),
+                'photo drafting receives the exact saved original');
+            return '{"title":"Blue mug","description":"A ceramic blue mug."}';
+        });
+    $product = $draftProduct['product_id'];
+    $draftRow = profile_commerce_owner_product_v900($pdo,1,$product);
+    $lineage = profile_commerce_metadata_v900($draftRow);
+    promotion_check_v1($draftProduct['source_id']==='1' && $lineage['conversation_id']===11 && $lineage['agent_id']===0
+        && $lineage['source_content_sha256']===hash('sha256',$original)
+        && empty($draftRow['is_active']) && (int)$draftRow['price_cents']===0
+        && profile_commerce_public_product_v900($pdo,$ownerProfile(),'blue-mug')===null
+        && profile_product_photo_image_v1($pdo,'seller','blue-mug',$product)===null,
+        'the photo-created draft is private, with its exact source and originating Chat');
+
+    $details = ['revision'=>initiative_work_product_edit_revision_v1($draftRow),
+        'price'=>'20.00','currency'=>'USD','product_type'=>'physical','fulfillment_type'=>'local_pickup',
+        'provider_mode'=>'guest_choice','profile_slug'=>'blue-mug','profile_cta'=>'See the mug','show_listing_photo'=>'1'];
+    $previewListing = static fn(array $input,int $owner=1): array =>
+        initiative_work_product_publication_preview_v1($pdo,$owner,$product,$input,$sessionKey);
+    $confirmListing = static fn(array $review,?string $key=null): array =>
+        initiative_work_product_publication_confirm_v1($pdo,1,$product,$review['input'],$review['review_token'],$key??$sessionKey);
+    promotion_reject_v1(fn()=> $previewListing($details,2),404,'another owner cannot review the private listing');
+    promotion_reject_v1(fn()=> $previewListing($details),409,'the listing cannot be reviewed without a connected provider');
+    $foreignProvider = commerce_fixture_insert_pa2($pdo,'agent_commerce_provider_connections_v800',[
+        'owner_user_id'=>2,'provider'=>'stripe','external_account_id'=>'acct_fixture_other','status'=>'connected',
+    ]);
+    $connection = commerce_fixture_insert_pa2($pdo,'agent_commerce_provider_connections_v800',[
+        'owner_user_id'=>1,'provider'=>'stripe','external_account_id'=>'acct_fixture_mug','account_label'=>'Mug shop',
+        'status'=>'connected','capabilities_json'=>'{"checkout":true,"refunds":true}',
+    ]);
+    promotion_reject_v1(fn()=> $previewListing(array_replace($details,[
+        'provider_mode'=>'fixed','fixed_connection_id'=>(string)$foreignProvider,
+    ])),409,'the fixed provider must belong to the seller');
+    $details['provider_mode']='fixed';
+    $details['fixed_connection_id']=(string)$connection;
+    putenv('VP3_COMMERCE_STRIPE_SECRET_KEY');
+    try {
+        promotion_reject_v1(fn()=> $previewListing($details),409,
+            'a connected account without checkout configuration cannot make the listing sellable');
+    } finally {
+        putenv('VP3_COMMERCE_STRIPE_SECRET_KEY=fixture-stripe-key');
+    }
+    promotion_reject_v1(fn()=> $previewListing(array_replace($details,['price'=>'0.00'])),422,
+        'a paid listing needs an explicit positive price');
+    promotion_reject_v1(fn()=> $previewListing(array_replace($details,['price'=>'1000000.00'])),422,
+        'a listing price cannot exceed the supported checkout amount');
+    promotion_reject_v1(fn()=> $previewListing(array_replace($details,['currency'=>'JPY'])),422,
+        'a currency must be compatible with the two-decimal checkout amounts');
+    promotion_reject_v1(fn()=> $previewListing(array_replace($details,['fulfillment_type'=>'physical'])),422,
+        'a draft cannot bypass the existing shipping restriction');
+    $listingReview = $previewListing($details);
+    promotion_check_v1($listingReview['product']['id']===$product
+        && $listingReview['product']['product_url']==='/seller/product/blue-mug'
+        && $listingReview['product']['price_cents']===2000 && $listingReview['product']['fulfillment_type']==='local_pickup'
+        && (int)$listingReview['source_photo']['id']===1
+        && array_map('intval',array_column($listingReview['providers'],'id'))===[$connection]
+        && profile_commerce_owner_product_v900($pdo,1,$product)===$draftRow,
+        'the review shows the exact price, fulfillment, provider, original photo and destination without changing the draft');
+    promotion_reject_v1(fn()=> $confirmListing($listingReview,str_repeat('2',64)),409,
+        'another session cannot approve the listing');
+    $changedReview = $listingReview;
+    $changedReview['input']['price']='20.01';
+    promotion_reject_v1(fn()=> $confirmListing($changedReview),409,
+        'approval cannot change a reviewed commercial term');
+    $pdo->exec('UPDATE user_profiles SET is_public=0 WHERE user_id=1');
+    promotion_reject_v1(fn()=> $confirmListing($listingReview),409,'making the profile private invalidates listing approval');
+    $pdo->exec('UPDATE user_profiles SET is_public=1 WHERE user_id=1');
+    $listingReview = $previewListing($details);
+    $collision = commerce_fixture_insert_pa2($pdo,'agent_commerce_products_v800',[
+        'owner_user_id'=>1,'product_key'=>'slug-collision','title'=>'Another product',
+        'metadata_json'=>'{"profile_visibility":"public","profile_slug":"blue-mug"}',
+    ]);
+    promotion_reject_v1(fn()=> $confirmListing($listingReview),409,'a new listing cannot take over the reviewed visitor URL');
+    $pdo->prepare('DELETE FROM agent_commerce_products_v800 WHERE id=?')->execute([$collision]);
+    $listingReview = $previewListing($details);
+    $providerStatus = $pdo->prepare('UPDATE agent_commerce_provider_connections_v800 SET status=? WHERE id=?');
+    $providerStatus->execute(['disconnected',$connection]);
+    promotion_reject_v1(fn()=> $confirmListing($listingReview),409,'disconnecting the reviewed payment provider blocks activation');
+    $providerStatus->execute(['connected',$connection]);
+    $listingReview = $previewListing($details);
+    $merchantAccount = $pdo->prepare('UPDATE agent_commerce_provider_connections_v800 SET external_account_id=? WHERE id=?');
+    $merchantAccount->execute(['acct_fixture_changed',$connection]);
+    promotion_reject_v1(fn()=> $confirmListing($listingReview),409,'the same connection ID cannot authorize a changed merchant account');
+    $merchantAccount->execute(['acct_fixture_mug',$connection]);
+    $listingReview = $previewListing($details);
+    file_put_contents($originalFile,$rendered);
+    promotion_reject_v1(fn()=> $confirmListing($listingReview),409,'changing the original photo invalidates listing approval');
+    file_put_contents($originalFile,$original);
+    $listingReview = $previewListing($details);
+    initiative_work_product_update_v1($pdo,1,$product,$details['revision'],'Blue mug','A ceramic blue mug, ready for local pickup.');
+    promotion_reject_v1(fn()=> $confirmListing($listingReview),409,'editing the private draft requires a new listing review');
+    $details['revision'] = initiative_work_product_edit_revision_v1(profile_commerce_owner_product_v900($pdo,1,$product));
+    $listingReview = $previewListing($details);
+    $beforeApproval = profile_commerce_owner_product_v900($pdo,1,$product);
+    $pdo->afterSql = static function(string $sql): void {
+        if (preg_match('/\A\s*UPDATE agent_commerce_products_v800\b/i',$sql)) {
+            throw new PDOException('Fixture interruption after writing the listing.');
+        }
+    };
+    try {
+        $confirmListing($listingReview);
+        throw new RuntimeException('Expected an interrupted listing publication.');
+    } catch (PDOException) {
+        promotion_check_v1(!$pdo->inTransaction()
+            && profile_commerce_owner_product_v900($pdo,1,$product)===$beforeApproval
+            && profile_commerce_public_product_v900($pdo,$ownerProfile(),'blue-mug')===null,
+            'an interrupted approval rolls back the in-place activation and leaves the draft private');
+    } finally {
+        $pdo->afterSql = null;
+    }
+    $listing = $confirmListing($listingReview);
+    $activated = profile_commerce_owner_product_v900($pdo,1,$product);
+    $activatedMeta = profile_commerce_metadata_v900($activated);
+    $replayed = $confirmListing($listingReview);
+    $publicListing = profile_commerce_public_product_v900($pdo,$ownerProfile(),'blue-mug');
+    $visitorCatalog = vp3_profile_checkout_catalog_pa5($pdo,$ownerProfile());
+    promotion_check_v1($listing['product']['id']===$product && $publicListing['id']===$product
+        && $activated['product_key']===$draftRow['product_key'] && !initiative_work_product_draft_v1($activated)
+        && $activatedMeta['source_asset_id']===$lineage['source_asset_id']
+        && $activatedMeta['source_content_sha256']===$lineage['source_content_sha256']
+        && $activatedMeta['agent_id']===0 && $activatedMeta['conversation_id']===11
+        && file_get_contents($originalFile)===$original
+        && (int)$pdo->query('SELECT COUNT(*) FROM agent_commerce_products_v800')->fetchColumn()===1,
+        'approval activates the same Commerce ID and preserves the exact source, Chat and listing key');
+    promotion_check_v1($publicListing['price_cents']===2000 && $publicListing['description']==='A ceramic blue mug, ready for local pickup.'
+        && $publicListing['checkout_url']==='/seller/product/blue-mug/checkout'
+        && $visitorCatalog['products'][0]['product_id']===$product
+        && $visitorCatalog['products'][0]['payment_providers']===[
+            ['connection_id'=>$connection,'provider'=>'stripe','provider_label'=>'Stripe'],
+        ]
+        && profile_product_photo_image_v1($pdo,'seller','blue-mug',$product)===['bytes'=>$original,'mime'=>'image/png']
+        && !$listing['replayed'] && $replayed['replayed'] && $replayed['product']===$listing['product']
+        && $GLOBALS['pa2_http_calls']===[],
+        'the listing resolves the approved checkout and provider, and a retry has no duplicate or provider side effect');
+    $providerStatus->execute(['disconnected',$connection]);
+    promotion_reject_v1(fn()=> $confirmListing($listingReview),409,
+        'a publication replay requires a currently eligible payment provider');
+    promotion_check_v1(profile_commerce_owner_product_v900($pdo,1,$product)===$activated
+        && profile_commerce_public_product_v900($pdo,$ownerProfile(),'blue-mug')===$publicListing,
+        'a payment disconnect does not rewrite the listing during a publication replay');
+    $providerStatus->execute(['connected',$connection]);
+
     $action = static fn(string $operation, array $body=[], int $owner=1, ?array $chat=null, ?string $key=null): array =>
         initiative_work_marketing_promotion_action_v1($pdo,$owner,$chat ?? $scope,$body+['action'=>$operation],$key ?? $sessionKey);
-    $ownerProfile = static fn(): array => profile_for_user($pdo,1);
-    $targetMetadata = static fn(string $slug, string $visibility='public'): string =>
-        json_encode(['profile_visibility'=>$visibility,'profile_slug'=>$slug,'profile_cta'=>'See the mug'],JSON_THROW_ON_ERROR);
-    $setTarget = static fn(string $slug, string $visibility='public'): bool =>
-        $pdo->prepare('UPDATE agent_commerce_products_v800 SET metadata_json=? WHERE id=?')
-            ->execute([$targetMetadata($slug,$visibility),$product]);
+    $setTarget = static fn(string $slug, string $visibility='public'): array =>
+        profile_commerce_publish_v900($pdo,1,$product,[
+            'profile_visibility'=>$visibility,'profile_slug'=>$slug,'profile_cta'=>'See the mug',
+        ]);
 
     $draftKey = str_repeat('d',64);
     $draftBody = ['source_id'=>'1','product_id'=>$product,'request_id'=>$draftKey];
     $draftPreview = initiative_work_marketing_preview_v1($pdo,1,$scope,$draftBody);
+    promotion_check_v1(($draftPreview['details']['linked_product_image']??null)===true,
+        'the marketing review recognizes the exact source photo of the activated product');
+    file_put_contents($originalFile,$rendered);
+    $substitutedPreview = initiative_work_marketing_preview_v1($pdo,1,$scope,$draftBody);
+    promotion_check_v1(($substitutedPreview['details']['linked_product_image']??null)===false,
+        'the same saved media ID cannot claim the product link after its original bytes change');
+    file_put_contents($originalFile,$original);
     $draft = initiative_work_marketing_create_v1($pdo,1,$scope,$draftBody,$draftPreview,static fn(): string =>
         '{"headline":"Blue mug","copy":"A ceramic blue mug.","campaign_idea":"Feature the mug on the seller profile."}');
     $selection = ['draft_id'=>$draftKey,'source_id'=>'1','product_id'=>$product];
@@ -177,6 +328,9 @@ try {
     promotion_reject_v1(fn()=> $action('creative_publish',$approval),409,'a changed product URL invalidates approval');
     $setTarget('blue-mug','hidden');
     promotion_reject_v1(fn()=> $action('creative_publish',$approval),409,'a hidden product blocks publication');
+    promotion_reject_v1(fn()=> $confirmListing($listingReview),409,'a consumed listing review cannot undo a later decision to hide the product');
+    promotion_check_v1(profile_commerce_public_product_v900($pdo,$ownerProfile(),'blue-mug')===null,
+        'the listing stays hidden until the seller deliberately changes visibility again');
     $setTarget('blue-mug');
     file_put_contents($graphicFile,$rendered.'x');
     promotion_reject_v1(fn()=> $action('creative_publish',$approval),409,'a changed artwork file invalidates approval');
@@ -185,12 +339,16 @@ try {
     $published = $action('creative_publish',$approval)['creative'];
     $publicKey = initiative_work_marketing_promotion_row_v1($pdo,1,$creativeId)['public_key'];
     $card = profile_product_promotion_public_v1($pdo,$ownerProfile(),$publicKey);
+    $visitorQuery = 'Can I buy the blue mug?';
+    $visitorContext = profile_commerce_agent_context_v900($pdo,$ownerProfile(),$visitorQuery);
     promotion_check_v1($published['status']==='published' && $published['public_url']==='/seller#product-promotion-'.$publicKey
         && $card===['key'=>$publicKey,'product_id'=>$product,'headline'=>$settings['headline'],'copy'=>$settings['copy'],
             'cta'=>'See the mug','product_url'=>'/seller/product/blue-mug','image_url'=>'/profile-promotion-image.php?key='.$publicKey]
         && profile_product_promotion_image_v1($pdo,$publicKey)===$rendered
+        && profile_product_promotion_match_v1($pdo,$ownerProfile(),$visitorQuery,$visitorContext)===$publicKey
+        && $card['product_url']===$publicListing['product_url']
         && $action('creative_publish',$approval)['creative']===$published,
-        'explicit approval publishes the exact graphic and CTA, and retry preserves the public key');
+        'the Profile Agent can show the exact approved graphic and link to the same activated product');
     promotion_check_v1(profile_product_promotion_public_v1($pdo,profile_for_user($pdo,2),$publicKey)===null,
         'the approval cannot project artwork onto another profile');
     $tampered = substr($rendered,0,-1).chr(ord(substr($rendered,-1)) ^ 1);
@@ -210,7 +368,12 @@ try {
     $paused = $action('creative_pause',$variant+['confirmed'=>true])['creative'];
     promotion_check_v1($paused['status']==='paused' && $paused['public_url']===''
         && profile_product_promotions_public_v1($pdo,$ownerProfile())===[]
-        && profile_product_promotion_image_v1($pdo,$publicKey)===null,'pausing immediately removes the card and its approved public image');
+        && profile_product_promotion_image_v1($pdo,$publicKey)===null
+        && profile_product_promotion_match_v1($pdo,$ownerProfile(),$visitorQuery,$visitorContext)===null
+        && profile_commerce_public_product_v900($pdo,$ownerProfile(),'blue-mug')===$publicListing
+        && vp3_profile_checkout_catalog_pa5($pdo,$ownerProfile())===$visitorCatalog
+        && profile_product_photo_image_v1($pdo,'seller','blue-mug',$product)===['bytes'=>$original,'mime'=>'image/png'],
+        'pausing removes the approved graphic and Agent card while the exact sellable listing stays public');
     promotion_reject_v1(fn()=> $action('creative_publish',$approval),409,'an older publish approval cannot replay after a pause');
     $freshApproval = $action('creative_publish_preview',$variant);
     $action('creative_publish',$variant+['confirmed'=>true,'review_token'=>$freshApproval['review_token']]);
@@ -250,6 +413,26 @@ try {
         && profile_product_promotion_image_v1($pdo,$newPublicKey)===null
         && profile_product_promotion_image_v1($pdo,$cards[0]['key'])===$rendered,
         'approving a replacement publishes only the selected variant and revokes the previous artwork');
+
+    $textInput = ['source_id'=>'description','product_description'=>'A digital guide to ceramic glazing.',
+        'request_id'=>str_repeat('e',64)];
+    $textDraft = initiative_work_product_create_v1($pdo,1,$scope,$textInput,
+        initiative_work_product_preview_v1($pdo,1,$scope,$textInput),
+        static function(string $prompt,?string $photo): string {
+            promotion_check_v1($photo===null,'the existing description draft path has no photo to disclose');
+            return '{"title":"Glazing guide","description":"A digital guide to ceramic glazing."}';
+        });
+    $textId = $textDraft['product_id'];
+    $textRow = profile_commerce_owner_product_v900($pdo,1,$textId);
+    $textTerms = array_replace($details,['revision'=>initiative_work_product_edit_revision_v1($textRow),
+        'product_type'=>'digital','fulfillment_type'=>'digital','profile_slug'=>'glazing-guide','show_listing_photo'=>'0']);
+    $textReview = initiative_work_product_publication_preview_v1($pdo,1,$textId,$textTerms,$sessionKey);
+    $textListing = initiative_work_product_publication_confirm_v1($pdo,1,$textId,$textReview['input'],
+        $textReview['review_token'],$sessionKey);
+    promotion_check_v1($textListing['product']['id']===$textId && $textListing['source_photo']===null
+        && profile_commerce_public_product_v900($pdo,$ownerProfile(),'glazing-guide')['id']===$textId
+        && profile_product_photo_image_v1($pdo,'seller','glazing-guide',$textId)===null,
+        'existing text-only drafts can activate without inventing or releasing a photo');
     echo "INITIATIVE_MARKETING_PROMOTION_V1=PASS ($checks cases, {$fixture['driver']})\n";
 } finally {
     foreach ($files as $file) if (is_file($file)) unlink($file);
