@@ -183,9 +183,51 @@ function vp3_cloud_media_read_v1(PDO $pdo,array $user,array $principal,array $pl
     $where='user_id=?';$params=[(int)$user['id']];if($plan['media_type']!==''){$where.=' AND media_type=?';$params[]=$plan['media_type'];}
     if(($plan['view']??'all')==='generated')$where.=" AND source='openai_image'";
     elseif(($plan['view']??'all')==='uploaded')$where.=" AND COALESCE(source,'')<>'openai_image'";
-    if($plan['query']!==''){$where.=" AND LOWER(title) LIKE ? ESCAPE '!'";$params[]='%'.str_replace(['!','%','_'],['!!','!%','!_'],mb_strtolower($plan['query'])).'%';}
-    $q=$pdo->prepare('SELECT * FROM user_media_assets WHERE '.$where.' ORDER BY created_at DESC,id DESC LIMIT 13');$q->execute($params);$rows=$q->fetchAll(PDO::FETCH_ASSOC);$more=count($rows)>12;$rows=array_slice($rows,0,12);vp3_image_scope_v1($pdo,$user,$principal,$context);
-    $lines=array_map(static fn($r)=>mb_substr($r['title'],0,190).' · '.$r['media_type'],$rows);
-    return ['handled'=>true,'answer'=>$rows?"Your private media library — saved titles, not visual analysis:\n".implode("\n",$lines).($more?"\nMore results exist; narrow the search.":''):'The private media search completed with no matching saved assets.','actions'=>[],'sources'=>[['source'=>'cloud:private-media','title'=>'Your private media library']],'canvas_media'=>['asset_ids'=>array_map(static fn($r)=>(int)$r['id'],$rows),'generation_ids'=>[]],'tool_receipt'=>vp3_tool_receipt_v1('media.assets.read','search',$rows?'read_complete':'no_matches','',0,count($rows))];
+    $fields = ['title'=>'title'];
+    $json = "CASE WHEN JSON_VALID(metadata_json) THEN metadata_json ELSE '{}' END";
+    foreach (['caption'=>'caption','tags'=>'tags','generation prompt'=>'prompt','original filename'=>'original_name'] as $label=>$key) {
+        $fields[$label] = "JSON_EXTRACT(($json), '$.$key')";
+    }
+    $query = mb_strtolower($plan['query']);
+    if ($query !== '') {
+        $pattern = '%'.str_replace(['!','%','_'],['!!','!%','!_'],$query).'%';
+        $clauses = array_fill(0,count($fields),$pattern);
+        $matches = array_map(static fn(string $field): string => "LOWER($field) LIKE ? ESCAPE '!'", $fields);
+        if (table_exists('agent_commerce_products_v800')) {
+            $matches[] = "EXISTS (SELECT 1 FROM agent_commerce_products_v800 p
+                WHERE p.owner_user_id=user_media_assets.user_id
+                AND CAST(JSON_EXTRACT(CASE WHEN JSON_VALID(p.metadata_json) THEN p.metadata_json ELSE '{}' END,'$.source_asset_id') AS CHAR)
+                    IN (CAST(user_media_assets.id AS CHAR),JSON_QUOTE(CAST(user_media_assets.id AS CHAR)))
+                AND LOWER(p.title) LIKE ? ESCAPE '!')";
+            $clauses[] = $pattern;
+        }
+        $where .= ' AND ('.implode(' OR ',$matches).')';
+        $params = [...$params,...$clauses];
+    }
+    $q=$pdo->prepare('SELECT id,title,media_type,source,metadata_json FROM user_media_assets WHERE '.$where.' ORDER BY created_at DESC,id DESC LIMIT 13');$q->execute($params);$rows=$q->fetchAll(PDO::FETCH_ASSOC);$more=count($rows)>12;$rows=array_slice($rows,0,12);vp3_image_scope_v1($pdo,$user,$principal,$context);
+    $lines = array_map(static function(array $row) use ($query): string {
+        $provenance = match($row['source']) {
+            'openai_image'=>'AI-generated',
+            'upload'=>'uploaded',
+            default=>'saved media',
+        };
+        $reason = '';
+        if ($query !== '') {
+            $meta = json_decode((string)$row['metadata_json'],true);
+            $reason = 'linked product title';
+            $values = ['title'=>$row['title'],'caption'=>$meta['caption']??null,'tags'=>$meta['tags']??null,
+                'generation prompt'=>$meta['prompt']??null,'original filename'=>$meta['original_name']??null];
+            foreach ($values as $label=>$value) {
+                $value = is_array($value) ? json_encode($value,JSON_UNESCAPED_UNICODE) : $value;
+                if (is_string($value) && str_contains(mb_strtolower($value),$query)) {
+                    $reason = $label;
+                    break;
+                }
+            }
+            $reason = ' · matched '.$reason;
+        }
+        return '#'.$row['id'].' '.mb_substr($row['title'],0,190).' · '.$row['media_type'].' · '.$provenance.$reason;
+    },$rows);
+    return ['handled'=>true,'answer'=>$rows?"Your private media library results (saved metadata):\n".implode("\n",$lines).($more?"\nMore results exist; narrow the search.":''):'The private media search completed with no matching saved assets.','actions'=>[],'sources'=>[['source'=>'cloud:private-media','title'=>'Your private media library']],'canvas_media'=>['asset_ids'=>array_map(static fn($r)=>(int)$r['id'],$rows),'generation_ids'=>[]],'tool_receipt'=>vp3_tool_receipt_v1('media.assets.read','search',$rows?'read_complete':'no_matches','',0,count($rows))];
     }catch(Throwable $e){$denied=$e->getCode()===403;return ['handled'=>true,'answer'=>$denied?'This conversation no longer permits the private media read.':'The private media search could not be verified. This is not an empty library result.','actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1('media.assets.read','search',$denied?'blocked':'failed',$denied?'permission_denied':'execution_failed')];}
 }

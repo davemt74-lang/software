@@ -33,6 +33,16 @@ try{
     $pdo->exec("INSERT INTO user_media_assets(user_id,media_type,title,source) VALUES(1,'photo','Uploaded capture','upload')");$uploaded=(int)$pdo->lastInsertId();
     $generated=vp3_cloud_media_read_v1($pdo,$u,$principal,['query'=>'','media_type'=>'photo','view'=>'generated'],['conversation_id'=>11]);check($generated['canvas_media']['asset_ids']===[$finished['asset']['id']],'generated-only searches filter provenance before the result limit');
     $uploads=vp3_cloud_media_read_v1($pdo,$u,$principal,['query'=>'','media_type'=>'photo','view'=>'uploaded'],['conversation_id'=>11]);check($uploads['canvas_media']['asset_ids']===[$uploaded],'uploaded-only searches do not mix in generated images');
+    $pdo->prepare('UPDATE user_media_assets SET metadata_json=? WHERE id=?')->execute([json_encode(['caption'=>'Original blue mug','tags'=>['ceramic']]),$uploaded]);
+    $caption=vp3_cloud_media_read_v1($pdo,$u,$principal,['query'=>'blue mug','media_type'=>'photo','view'=>'uploaded'],['conversation_id'=>11]);
+    check($caption['canvas_media']['asset_ids']===[$uploaded]&&str_contains($caption['answer'],'matched caption'),'uploaded original can be recalled by caption with an exact asset ID and match reason');
+    $tag=vp3_cloud_media_read_v1($pdo,$u,$principal,['query'=>'ceramic','media_type'=>'photo','view'=>'all'],['conversation_id'=>11]);
+    check($tag['canvas_media']['asset_ids']===[$uploaded]&&str_contains($tag['answer'],'matched tags'),'saved media tags support exact recall');
+    $pdo->exec('CREATE TABLE agent_commerce_products_v800 (owner_user_id INTEGER,title TEXT,metadata_json TEXT)');
+    $pdo->prepare('INSERT INTO agent_commerce_products_v800 VALUES (?,?,?)')
+        ->execute([1,'Ceramic catalog listing',json_encode(['source_asset_id'=>(string)$uploaded])]);
+    $linked=vp3_cloud_media_read_v1($pdo,$u,$principal,['query'=>'catalog listing','media_type'=>'photo','view'=>'uploaded'],['conversation_id'=>11]);
+    check($linked['canvas_media']['asset_ids']===[$uploaded]&&str_contains($linked['answer'],'matched linked product title'),'the owned product link can recall the exact uploaded image');
     $pdo->prepare("INSERT INTO user_media_assets(user_id,media_type,title,mime_type,file_path,file_size,source) VALUES(2,'photo','SECRET foreign image','image/png','foreign.png',1,'upload')")->execute();
     $result=vp3_cloud_media_read_v1($pdo,$u,$principal,['query'=>'SECRET','media_type'=>'photo'],['conversation_id'=>11]);check($result['tool_receipt']['status']==='no_matches'&&!str_contains(json_encode($result),'SECRET foreign'),'private media search cannot retrieve another owner assets');
     $result=vp3_cloud_media_read_v1($pdo,$u,$principal,['query'=>'%','media_type'=>'photo'],['conversation_id'=>11]);check($result['tool_receipt']['status']==='no_matches','percent and underscore search characters are literal, not wildcard scope expansion');

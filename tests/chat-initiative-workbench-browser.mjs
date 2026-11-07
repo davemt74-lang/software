@@ -28,6 +28,7 @@ const productTitle = 'Glazed serving bowl';
 const unsafeTitle = '<img src=x onerror=alert(1)> Glazed bowl photo';
 const sources = {
   product: [{ source_id: 'description', source_title: 'Describe a product' }, { source_id: '31', source_title: unsafeTitle }, { source_id: '32', source_title: 'Other product photo' }],
+  marketing: [{ source_id: '31', source_title: unsafeTitle }],
   screen: [
     { source_id: capture, source_title: 'Saved screen capture', captured_at: capturedAt },
     { source_id: otherCapture, source_title: 'Saved screen capture', captured_at: '2026-11-01T13:00:00Z' }
@@ -42,6 +43,7 @@ const reviewDetails = {
     owner_review: 'Review the photo and wording, then set the price, fulfillment and payment provider separately.',
     image_url: '/media-library-file-v86.php?id=31'
   },
+  marketing: { image_url:'/media-library-file-v86.php?id=31', summary:'Product: Glazed serving bowl' },
   mission: { coverage: { captured_sources: 2, read_sources: 1 } }
 };
 const review = (body, source, screenshot) => ({
@@ -67,6 +69,9 @@ const outputs = {
     missing_fields: ['price', 'fulfillment', 'payment_provider']
   },
   screen: { generation: generation('queued'), canvas_media: { asset_ids: [], generation_ids: [image] } },
+  marketing: {kind:'product_marketing_draft', product_id:105, asset_id:31, title:'A bowl for the table',
+    description:'Glazed serving bowl with a wide rim.', campaign_idea:'Product spotlight.',
+    image_url:'/media-library-file-v86.php?id=31', review_url:'/profile-commerce-products.php?workspace_product=105#product-marketing-drafts'},
   mission: {
     type: 'mission_decision_brief', source_id: mission, source_title: 'Service capacity Mission',
     source_revision: 'a'.repeat(64), title: 'Service capacity brief',
@@ -80,7 +85,7 @@ const outputs = {
 const workbenchScript = fileURLToPath(new URL('../chat-initiative-workbench-v1.js', import.meta.url));
 const workbenchStyle = fileURLToPath(new URL('../chat-initiative-workbench-v1.css', import.meta.url));
 const script = name => fileURLToPath(new URL(`../${name}.js`, import.meta.url));
-const token = body => `fixture-${body.tool}-${body.source_id}-${body.mode || ''}-${body.instruction || ''}-${body.product_description || ''}`;
+const token = body => `fixture-${body.tool}-${body.source_id}-${body.mode || ''}-${body.instruction || ''}-${body.product_description || ''}-${body.product_id || ''}`;
 const html = `<!doctype html><html><head><meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1"></head><body>
   <main><section id="chatThread" data-view="chat"><p>Earlier ordinary Agent Chat</p></section>
@@ -119,7 +124,7 @@ async function fixture(page, {chatConfig = true} = {}) {
     };
     const ok = data => route.fulfill({ json: { ...envelope, ...data } });
     const fail = (status, error) => route.fulfill({ status, json: { ...envelope, ok: false, error } });
-    if (body.action === 'sources') return ok({ sources: sources[body.tool] || [] });
+    if (body.action === 'sources') return ok({ sources: sources[body.tool] || [], ...(body.tool==='marketing'?{products:[{id:105,title:productTitle}]}:{}) });
     const selected = sources[body.tool]?.find(source => source.source_id === body.source_id);
     if (!selected) return fail(404, 'That private source is unavailable.');
     if (body.action === 'preview') {
@@ -233,6 +238,21 @@ try {
   assert.equal(textCreate.review_token, token(textCreate));
   pass('Editing a product description requires a new review before the approved text can be sent');
 
+
+  await button('Close').click();
+  await page.locator('#chatThread').getByRole('button', {name:'Draft marketing',exact:true}).click();
+  await control('product').locator('option[value="105"]').waitFor({state:'attached'});
+  assert.equal(await control('source').inputValue(),'31');
+  await control('product').selectOption('105');
+  await button('Review source').click();
+  await control('review').locator('img[src*="id=31"]').waitFor();
+  await button('Save private marketing draft').click();
+  await control('result').getByText('A bowl for the table',{exact:true}).waitFor();
+  const marketing = calls.find(call => call.action==='create' && call.tool==='marketing');
+  assert.equal(marketing.product_id,105);
+  assert.equal(marketing.source_id,'31');
+  assert.equal(marketing.review_token,token(marketing));
+  pass('A Chat image card opens a reviewed marketing draft for the exact asset and chosen product');
 
   await control('tool').selectOption('screen');
   await control('source').locator(`option[value="${capture}"]`).waitFor({ state: 'attached' });

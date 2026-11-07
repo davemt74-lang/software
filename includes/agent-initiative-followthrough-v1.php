@@ -117,7 +117,7 @@ function vp3_initiative_followthrough_sources_v1(PDO $pdo,array $user,array $pri
     $tool=$goal['tool']??'work.prepare_private';$saved=$result['initiative_tool_result']??[];
     $output=$saved['output']??null;
     if(!vp3_initiative_capability_definition_v1((string)$tool)&&!in_array($tool,['work.prepare_private','chat.check_in','brain.read','knowledge.search','missions.prepare',
-        'workbench.product.review','workbench.screen.review','workbench.mission.review'],true))throw new RuntimeException('Proposal tool evidence is unavailable.',503);
+        'workbench.product.review','workbench.marketing.review','workbench.screen.review','workbench.mission.review'],true))throw new RuntimeException('Proposal tool evidence is unavailable.',503);
     if(vp3_initiative_capability_definition_v1((string)$tool)){
         vp3_initiative_capability_result_current_v1($pdo,[...$scope,'verification_only'=>true],$old,$goal,$saved);
     }elseif(in_array($tool,['brain.read','knowledge.search'],true)){

@@ -1849,19 +1849,21 @@
     actions.dataset.initiativeReviewActions = String(marker.run_id);
     const seen = new Set();
     for (const item of (Array.isArray(marker.review_actions)?marker.review_actions:[]).slice(0, 8)) {
-      if (!item || !['product', 'screen', 'mission'].includes(item.tool)
+      if (!item || !['product', 'screen', 'mission', 'marketing'].includes(item.tool)
           || typeof item.source_id !== 'string' || typeof item.source_revision !== 'string'
           || !/^[a-f0-9]{64}$/.test(item.source_revision)) continue;
       const validId = item.tool === 'product'
         ? /^[1-9][0-9]*$/.test(item.source_id) && Number.isSafeInteger(Number(item.source_id))
-        : /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(item.source_id);
+        : item.tool === 'marketing'
+          ? /^[1-9][0-9]*-[1-9][0-9]*$/.test(item.source_id) && item.source_id.split('-').every(id => Number.isSafeInteger(Number(id)))
+          : /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(item.source_id);
       const key = item.tool + ':' + item.source_id;
       if (!validId || seen.has(key)) continue;
       seen.add(key);
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.initiativeReview = item.tool;
-      button.textContent = {product:'Review listing draft', screen:'Review image edit', mission:'Review decision brief'}[item.tool];
+      button.textContent = {product:'Review listing draft', marketing:'Review marketing draft', screen:'Review image edit', mission:'Review decision brief'}[item.tool];
       button.addEventListener('click', () => {
         if (!current()) { button.disabled = true; return; }
         if (typeof window.VP3InitiativeWorkbench?.open !== 'function') {

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/profile-commerce-ops-v900.php';
-require_once __DIR__.'/includes/initiative-work-product-v1.php';
+require_once __DIR__.'/includes/initiative-work-marketing-v1.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));if(!agent_commerce_schema_ready_v800($pdo))redirect(url('/upgrade.php'));
 $uid=(int)$user['id'];$profile=profile_for_user($pdo,$uid,true);$error='';$notice=trim((string)($_GET['saved']??''));
@@ -46,10 +46,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         throw new RuntimeException('Unknown Profile Commerce action.');
     }catch(Throwable $e){$error=$e->getMessage();}
 }
-$products=agent_commerce_products_for_owner_v800($pdo,$uid,200);$workspaceProduct=max(0,(int)($_GET['workspace_product']??0));$listingDraft=null;
+$products=agent_commerce_products_for_owner_v800($pdo,$uid,200);$workspaceProduct=max(0,(int)($_GET['workspace_product']??0));$listingDraft=null;$marketingDrafts=[];
 if($workspaceProduct>0){
     $focused=agent_commerce_product_v800($pdo,$workspaceProduct,$uid);
     if($focused){
+        $marketingDrafts=initiative_work_marketing_drafts_v1($pdo,$uid,$workspaceProduct);
         $products=array_values(array_filter($products,static fn($p)=>(int)$p['id']!==$workspaceProduct));array_unshift($products,$focused);
         if(initiative_work_product_draft_v1($focused)&&empty($focused['is_active'])&&profile_commerce_visibility_v900($focused)==='hidden')$listingDraft=$focused;
     }
@@ -78,6 +79,19 @@ $connections=agent_commerce_connections_v800($pdo,$uid,true);$username=profile_u
         <label class="wide">Description<textarea name="description" rows="4" maxlength="1000"><?=e((string)$listingDraft['description'])?></textarea></label>
         <div class="wide"><button class="pc-btn primary" type="submit">Save private draft</button></div>
     </form>
+</section>
+<?php endif;?>
+<?php if($marketingDrafts):?>
+<section class="pc-card" id="product-marketing-drafts">
+    <h2>Private marketing drafts</h2>
+    <?php foreach($marketingDrafts as $draft):?>
+    <article class="pc-row">
+        <h3><?=e($draft['title'])?></h3>
+        <p><?=e($draft['description'])?></p>
+        <p><?=e($draft['campaign_idea'])?></p>
+        <p class="pc-muted">Selected image #<?=(int)$draft['asset_id']?> · <?=e($draft['asset_source']==='openai_image'?'AI-generated':'Saved media')?></p>
+    </article>
+    <?php endforeach;?>
 </section>
 <?php endif;?>
 <div class="pc-grid"><section class="pc-card"><span class="pc-eyebrow">Create generic product</span><h2>New profile product</h2><p class="pc-muted">Use this for full-payment services, digital products, memberships, events, gifts or local-pickup products. Shipped physical products and generic deposits stay disabled until their fulfillment/balance-payment adapters are installed. Appointment deposits remain managed by Scheduling.</p><form method="post" class="pc-form"><?=csrf_field()?><input type="hidden" name="action" value="save_generic"><input type="hidden" name="payment_mode" value="full"><input type="hidden" name="deposit" value="0"><input type="hidden" name="refund_before_hours" value="0"><input type="hidden" name="cancellation_fee" value="0"><label>Title<input name="title" maxlength="190" required></label><label>Type<select name="product_type"><option value="service">Service</option><option value="digital">Digital</option><option value="membership">Membership</option><option value="event">Event</option><option value="gift">Gift</option><option value="physical">Physical / pickup</option><option value="other">Other</option></select></label><label>Fulfillment<select name="fulfillment_type"><option value="virtual">Virtual/service</option><option value="digital">Digital</option><option value="membership">Membership</option><option value="event">Event</option><option value="gift">Gift</option><option value="local_pickup">Local pickup</option><option value="other">Other/manual</option><option value="physical" disabled>Shipping — coming later</option></select></label><label>Visibility<select name="profile_visibility"><option value="hidden">Hidden</option><option value="public">Public profile</option></select></label><label class="wide">Description<textarea name="description" rows="3" maxlength="1000"></textarea></label><label>Payment<input value="Full payment" disabled></label><label>Price<input type="number" name="price" min="0.01" step="0.01" required></label><label>Currency<input name="currency" maxlength="3" value="USD"></label><label>Provider<select name="provider_mode"><option value="guest_choice">Customer choice</option><option value="fixed">Fixed provider</option></select></label><label>Fixed provider<select name="fixed_connection_id"><option value="0">None</option><?php foreach($connections as $connection):?><option value="<?=(int)$connection['id']?>"><?=e(agent_commerce_provider_label_v800((string)$connection['provider']).' · '.(string)($connection['account_label']?:$connection['external_account_id']))?></option><?php endforeach;?></select></label><label>URL slug<input name="profile_slug" maxlength="80" placeholder="consultation-package"></label><label>Button label<input name="profile_cta" maxlength="40" value="Buy"></label><label>Sort<input type="number" name="profile_sort" min="0" max="9999" value="100"></label><label><span>Featured</span><span><input type="checkbox" name="profile_featured" value="1"> Show first</span></label><label>Payment hold minutes<input type="number" name="hold_minutes" min="30" max="120" value="30"></label><label class="wide">Seller cancellation / refund policy<textarea name="cancellation_policy" rows="2" maxlength="1000" placeholder="Optional terms shown to the buyer before checkout"></textarea></label><div class="wide"><button class="pc-btn primary" type="submit">Create product</button></div></form></section>

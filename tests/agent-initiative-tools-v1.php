@@ -201,4 +201,30 @@ vp3_initiative_tools_result_current_v1($pdo,$user,$binding,['tool'=>'workbench.m
 $pdo->prepare("UPDATE agent_workflow_receipts SET result_json='{}' WHERE run_id=?")->execute([$seed['job_id']]);
 tool_reject(fn()=>vp3_initiative_tools_result_current_v1($pdo,$user,$binding,['tool'=>'workbench.mission.review','primary'=>$ref],$review),409,
     'withdrawn completed-Mission evidence removes a delayed Workbench review action');
+$mediaRoot = sys_get_temp_dir().'/vp3-marketing-evidence-'.bin2hex(random_bytes(6));
+define('STONEFELLOW_ROOT',$mediaRoot);
+mkdir($mediaRoot.'/private/user-media/1',0700,true);
+$imagePath = $mediaRoot.'/private/user-media/1/original.jpg';
+file_put_contents($imagePath,base64_decode(trim(file_get_contents(__DIR__.'/fixtures/tv-frame.b64')),true));
+try {
+    $pdo->exec('CREATE TABLE agent_commerce_products_v800 (id INTEGER PRIMARY KEY, owner_user_id INTEGER, title VARCHAR(190), description TEXT, metadata_json TEXT)');
+    $pdo->exec('CREATE TABLE agent_commerce_product_bindings_v800 (product_id INTEGER, binding_type VARCHAR(32), binding_id INTEGER)');
+    $pdo->exec('CREATE TABLE agent_commerce_marketing_drafts_v1 (product_id INTEGER, owner_user_id INTEGER, request_key CHAR(64), draft_json TEXT, created_at DATETIME)');
+    $pdo->exec('CREATE TABLE user_media_assets (id INTEGER PRIMARY KEY, user_id INTEGER, media_type VARCHAR(16), title VARCHAR(190), mime_type VARCHAR(32), file_path VARCHAR(190), source VARCHAR(32), updated_at VARCHAR(32))');
+    $pdo->prepare('INSERT INTO agent_commerce_products_v800 VALUES(41,1,?,?,?)')->execute(['Blue mug','Ceramic mug','{"source_asset_id":"51"}']);
+    $pdo->prepare('INSERT INTO user_media_assets VALUES(51,1,?,?,?,?,?,?)')->execute(['photo','Blue mug original','image/jpeg','private/user-media/1/original.jpg','upload','2026-11-07']);
+    $ref='workbench-marketing:41-51';
+    $reviews=vp3_initiative_tools_evidence_v1($pdo,$user,$binding,[$ref],$coverage);
+    $job=['tool'=>'workbench.marketing.review','primary'=>$ref,'refs'=>[$ref],'focus'=>'Review a product spotlight','report'=>true];
+    $review=vp3_initiative_tool_execute_v1($pdo,$user,$binding,$job,$reviews,hash('sha256','marketing-review'),$report);
+    tool_check($review['output']['review_action']===['tool'=>'marketing','source_id'=>'41-51','source_revision'=>$reviews[$ref]['revision']]
+        && (int)$pdo->query('SELECT COUNT(*) FROM agent_commerce_marketing_drafts_v1')->fetchColumn()===0,
+        'Initiative proposes the exact linked product and image for review without saving marketing');
+    $pdo->prepare('UPDATE agent_commerce_products_v800 SET metadata_json=? WHERE id=41')->execute(['{}']);
+    tool_reject(fn()=>vp3_initiative_tools_result_current_v1($pdo,$user,$binding,$job,$review),409,
+        'removing the saved product image link invalidates the proposed marketing review');
+} finally {
+    unlink($imagePath);
+    foreach (['/private/user-media/1','/private/user-media','/private',''] as $path) rmdir($mediaRoot.$path);
+}
 echo "AGENT_INITIATIVE_TOOLS_V1=PASS\n";
