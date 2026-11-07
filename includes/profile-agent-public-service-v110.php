@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 const VP3_PROFILE_AGENT_PUBLIC_SERVICE_V110='vp3-profile-agent-public-service-v110-20260928';
 require_once __DIR__.'/profile-agent-handoff-pa3.php';
-require_once __DIR__.'/profile-product-promotion-v1.php';
 
 final class VP3ProfileAgentPublicException extends RuntimeException
 {
@@ -266,6 +265,7 @@ function vp3_profile_agent_public_agent_projection_v110(array $ctx): array
 
 function vp3_profile_agent_public_state_service_v110(PDO $pdo,array $ctx,int $conversationId=0): array
 {
+    require_once __DIR__.'/profile-product-promotion-v1.php';
     $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx);
     $messages=[];$conversationState=null;
     if($conversationId>0){
@@ -397,6 +397,7 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         }
     }
 
+    require_once __DIR__.'/profile-product-promotion-v1.php';
     $promotionKey=!$needsOwner&&$answerMode!=='configured_greeting'
         ?profile_product_promotion_match_v1($pdo,$profile,$query,$context):null;
     $pdo->beginTransaction();
@@ -454,6 +455,7 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
 
 function vp3_profile_agent_public_poll_service_v110(PDO $pdo,array $ctx,int $conversationId,int $afterId=0): array
 {
+    require_once __DIR__.'/profile-product-promotion-v1.php';
     if($conversationId<1){
         throw new VP3ProfileAgentPublicException('VALIDATION_FAILED','conversation_id is required.',422);
     }

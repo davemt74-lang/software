@@ -133,6 +133,7 @@ function vp3_profile_agent_accepted_generate_pa3(PDO $pdo,array $turn,array $cla
     $sources=[];foreach($context as $item){if(!in_array((string)$item['source'],['profile:identity','profile:rules'],true))$sources[]=['source'=>(string)$item['source'],'title'=>(string)($item['title']??'')];}
     $messageContext=['sources'=>$sources,'source_dependencies'=>$sourceDependencies,'answer_mode'=>$mode,'handoff_turn_id'=>(int)$turn['id'],'visitor_message_id'=>(int)$turn['visitor_message_id']];
     if(!$needsOwner&&$mode!=='configured_greeting'){
+        require_once __DIR__.'/profile-product-promotion-v1.php';
         $promotionKey=profile_product_promotion_match_v1($pdo,$profile,$query,$context);
         if($promotionKey!==null)$messageContext['product_promotion_key']=$promotionKey;
     }
