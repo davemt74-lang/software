@@ -11,7 +11,7 @@ require_once __DIR__.'/profile-agent-public-service-v110.php';
 
 const VP3_PROFILE_CHECKOUT_TTL_PA5=600;
 const VP3_PROFILE_CHECKOUT_MAX_QUANTITY_PA5=99;
-const VP3_PROFILE_CHECKOUT_MAX_TOTAL_PA5=99999999;
+const VP3_PROFILE_CHECKOUT_MAX_TOTAL_PA5=VP3_PROFILE_COMMERCE_CHECKOUT_MAX_TOTAL_V900;
 
 final class VP3ProfileCheckoutException extends RuntimeException
 {
@@ -90,30 +90,12 @@ function vp3_profile_checkout_authorize_pa5(PDO $pdo,array $profile,array $ctx,i
 
 function vp3_profile_checkout_product_eligible_pa5(array $product): bool
 {
-    // The canonical price and payment request use two-decimal minor units.
-    return !empty($product['is_active'])&&profile_commerce_visibility_v900($product)==='public'
-        &&(string)($product['binding_type']??'')===''
-        &&(int)($product['workspace_owner_user_id']??0)===0
-        &&$product['payment_mode']==='full'&&in_array($product['provider_mode'],['guest_choice','fixed'],true)
-        &&(int)$product['price_cents']>0&&(int)$product['price_cents']<=VP3_PROFILE_CHECKOUT_MAX_TOTAL_PA5
-        &&in_array(strtolower((string)$product['currency']),['usd','cad','eur','gbp','aud','nzd','chf'],true)
-        &&in_array($product['fulfillment_type'],['digital','virtual','membership','event','gift','local_pickup','other'],true);
+    return profile_commerce_checkout_product_eligible_v900($product);
 }
 
 function vp3_profile_checkout_connection_eligible_pa5(array $connection,array $product): bool
 {
-    $provider=(string)$connection['provider'];
-    if((int)$connection['owner_user_id']!==(int)$product['owner_user_id']
-        ||$connection['status']!=='connected'||(string)$connection['external_account_id']===''
-        ||!agent_commerce_provider_ready_v800($provider)){
-        return false;
-    }
-    if($provider!=='square')return true;
-    $caps=agent_commerce_capabilities_v800($connection);
-    $config=agent_commerce_config_v800();
-    $currency=strtolower((string)($caps['currency']??''));
-    return (string)($caps['location_id']??'')!==''&&($currency===''||$currency===strtolower((string)$product['currency']))
-        &&($config['square']['environment']==='production'||$config['platform_fee_bps']===0);
+    return profile_commerce_checkout_connection_eligible_v900($connection,$product);
 }
 
 function vp3_profile_checkout_provider_pa5(array $connection): array

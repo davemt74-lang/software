@@ -48,8 +48,8 @@ const reviewDetails = {
     owner_review: 'Review the photo and wording, then set the price, fulfillment and payment provider separately.',
     image_url: '/media-library-file-v86.php?id=31'
   },
-  marketing: { image_url:originalUrl, summary:'Product: Glazed serving bowl',
-    drafts:[{draft_id:draftId,title:'A bowl for the table'}] },
+  marketing: { image_url:originalUrl, summary:'Product: Glazed serving bowl', linked_product_image:true,
+    drafts:[{draft_id:draftId,product_id:105,asset_id:31,title:'A bowl for the table'}] },
   mission: { coverage: { captured_sources: 2, read_sources: 1 } }
 };
 const review = (body, source, screenshot) => ({
@@ -98,7 +98,8 @@ const html = `<!doctype html><html><head><meta charset="utf-8">
   <div id="chatComposerShell"><form id="chatForm"><textarea id="chatInput" aria-label="Chat message"></textarea>
   <button id="sendChatButton">Send</button></form></div></main></body></html>`;
 
-async function fixture(page, {chatConfig = true, query = ''} = {}) {
+async function fixture(page, {chatConfig = true, query = '', activeAgent = agent, ready = true,
+  marketingDrafts = reviewDetails.marketing.drafts, linkedProductImage = true, canvasAvailable = true} = {}) {
   page.setDefaultTimeout(8000);
   const calls = [];
   const mediaCalls = [];
@@ -219,6 +220,8 @@ async function fixture(page, {chatConfig = true, query = ''} = {}) {
       const handlePreview = nextPreview;
       nextPreview = undefined;
       const preview = review(body, selected, screenshots[body.source_id]);
+      if (body.tool === 'marketing') preview.details = {...preview.details, drafts:marketingDrafts,
+        linked_product_image:linkedProductImage};
       if (handlePreview) return handlePreview({route,body,ok,fail,preview});
       return ok({ preview, review_token: token(body) });
     }
@@ -231,10 +234,12 @@ async function fixture(page, {chatConfig = true, query = ''} = {}) {
     return ok({ output: outputs[body.tool] });
   });
   await page.goto(`${root}/${query}`);
-  screenshots = await page.evaluate(({ endpoint, mediaEndpoint, uploadEndpoint, owner, agent, conversation, capture, otherCapture, chatConfig }) => {
+  screenshots = await page.evaluate(({ endpoint, mediaEndpoint, uploadEndpoint, owner, agent, conversation, capture, otherCapture, chatConfig, ready }) => {
     window.fixtureChatId = conversation;
+    window.fixtureChatReady = ready;
     window.STONEFELLOW_CHAT_CONTINUITY = {
       conversationId: () => window.fixtureChatId,
+      isReady: () => window.fixtureChatReady,
       showChatView: () => { document.getElementById('chatThread').dataset.view = 'chat'; }
     };
     window.VP3_CANVAS_MEDIA_V1 = { endpoint: mediaEndpoint, csrf: 'fixture', userId: Number(owner), agentId: agent };
@@ -255,13 +260,13 @@ async function fixture(page, {chatConfig = true, query = ''} = {}) {
     paint.fillStyle = '#2868a0';
     paint.fillRect(30, 10, 36, 44);
     return { [capture]: picture('#f59f64'), [otherCapture]: picture('#234c9f'), png:canvas.toDataURL('image/png').split(',')[1] };
-  }, { endpoint, mediaEndpoint, uploadEndpoint, owner, agent, conversation, capture, otherCapture, chatConfig });
+  }, { endpoint, mediaEndpoint, uploadEndpoint, owner, agent:activeAgent, conversation, capture, otherCapture, chatConfig, ready });
   originalPng = Buffer.from(screenshots.png,'base64');
   await page.addStyleTag({ path: workbenchStyle });
   await page.addScriptTag({ path: script('chat-tools') });
   await page.addScriptTag({ path: script('chat-canvas-media-v1') });
   await page.addScriptTag({ path: script('chat-marketing-creative-render-v1') });
-  await page.addScriptTag({ path: script('chat-marketing-canvas-v1') });
+  if (canvasAvailable) await page.addScriptTag({ path: script('chat-marketing-canvas-v1') });
   await page.addScriptTag({ path: workbenchScript });
 
   const dialog = page.locator('#vp3InitiativeWorkbench');
@@ -709,6 +714,58 @@ try {
   await foreignResumeFixture.flush();
   assert.equal(foreignResumeFixture.calls.some(call => call.action==='creative_open'),false);
   pass('A Commerce resume link opens the same saved draft only after its owning Agent and Chat match');
+
+  const listingQuery = `?conversation_id=${conversation}&agent=${agent}&marketing_product=105&marketing_source=31`;
+  const listingResumePage = await browser.newPage();
+  const listingResume = await fixture(listingResumePage,{query:listingQuery,ready:false,
+    marketingDrafts:[{draft_id:'c'.repeat(64),product_id:105,asset_id:32,title:'Different image'},
+      ...reviewDetails.marketing.drafts]});
+  await listingResume.flush();
+  assert.deepEqual(listingResume.calls,[]);
+  await listingResumePage.evaluate(() => {
+    window.fixtureChatReady = true;
+    window.dispatchEvent(new Event('vp3:chat-context-ready'));
+  });
+  await listingResumePage.locator('[data-marketing-canvas]').getByRole('button',{name:'Review graphic settings'}).waitFor();
+  assert.deepEqual(listingResume.calls.map(call => call.action),['sources','preview','creative_open']);
+  assert.equal(listingResume.calls.at(-1).draft_id,draftId);
+  assert.equal(listingResume.calls.at(-1).source_id,'31');
+  assert.equal(listingResume.calls.at(-1).product_id,105);
+  pass('An approved listing reopens its exact existing marketing draft after Chat restores, without creating another draft');
+
+  const unavailableCanvasPage = await browser.newPage();
+  const unavailableCanvas = await fixture(unavailableCanvasPage,{query:listingQuery,canvasAvailable:false});
+  await unavailableCanvas.dialog.getByRole('status').getByText('Your marketing draft is saved.',{exact:false}).waitFor();
+  assert.deepEqual(unavailableCanvas.calls.map(call => call.action),['sources','preview']);
+  assert.equal(await unavailableCanvas.button('Save private marketing draft').isVisible(),false);
+  pass('A saved marketing draft does not become a new draft if Canvas is unavailable');
+
+  const newListingPage = await browser.newPage();
+  const newListing = await fixture(newListingPage,{query:listingQuery.replace('agent='+agent,'agent=system'),
+    activeAgent:0,marketingDrafts:[]});
+  await newListing.button('Save private marketing draft').waitFor();
+  assert.equal(await newListing.control('product').inputValue(),'105');
+  assert.equal(await newListing.control('source').inputValue(),'31');
+  assert.deepEqual(newListing.calls.map(call => call.action),['sources','preview']);
+  await newListing.button('Save private marketing draft').click();
+  await newListingPage.locator('[data-marketing-canvas]').getByRole('button',{name:'Review graphic settings'}).waitFor();
+  assert.deepEqual(newListing.calls.map(call => call.action),['sources','preview','create','creative_open']);
+  assert.ok(newListing.calls.every(call => call.agent_id===0 && call.conversation_id===conversation));
+  assert.equal(newListing.calls.at(-2).confirmed,true);
+  assert.equal(newListing.calls.at(-1).source_id,'31');
+  assert.equal(newListing.calls.at(-1).product_id,105);
+  pass('A listing from system Agent Chat preselects the exact product and photo, then opens Canvas only after draft approval');
+
+  const changedListingPage = await browser.newPage();
+  const changedListing = await fixture(changedListingPage,{query:listingQuery,linkedProductImage:false});
+  await changedListing.dialog.getByRole('status').getByText('The linked listing photo changed.',{exact:false}).waitFor();
+  assert.deepEqual(changedListing.calls.map(call => call.action),['sources','preview']);
+  assert.equal(await changedListing.button('Save private marketing draft').isVisible(),false);
+  const wrongListingPage = await browser.newPage();
+  const wrongListing = await fixture(wrongListingPage,{query:listingQuery.replace('conversation_id='+conversation,'conversation_id=99')});
+  await wrongListing.flush();
+  assert.deepEqual(wrongListing.calls,[]);
+  pass('A changed listing photo or wrong conversation cannot continue into the promotion');
 
   console.log(`CHAT_INITIATIVE_WORKBENCH_BROWSER=PASS (${cases} cases; real renderer and canonical image card, controlled API)`);
 } finally {

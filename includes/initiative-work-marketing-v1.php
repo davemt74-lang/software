@@ -56,8 +56,11 @@ function initiative_work_marketing_context_v1(PDO $pdo, int $owner, array $scope
     $provenance = $query->fetchColumn();
     if ($provenance === false) throw new DomainException('The selected image is unavailable.', 404);
     $facts = ['title'=>(string)$product['title'], 'description'=>(string)$product['description']];
-    $linkedAsset = profile_commerce_metadata_v900($product)['source_asset_id'] ?? null;
-    $linked = (is_int($linkedAsset) || is_string($linkedAsset)) && (string)$linkedAsset === $sourceId;
+    $productMetadata = profile_commerce_metadata_v900($product);
+    $linkedAsset = $productMetadata['source_asset_id'] ?? null;
+    $linkedDigest = $productMetadata['source_content_sha256'] ?? null;
+    $linked = (is_int($linkedAsset) || is_string($linkedAsset)) && (string)$linkedAsset === $sourceId
+        && ($linkedDigest === null || (is_string($linkedDigest) && hash_equals($linkedDigest, $asset['digest'])));
     $revision = hash('sha256', json_encode([$productId, $facts, $asset['revision'], $provenance, $linked], JSON_THROW_ON_ERROR));
     return compact('asset','product','facts','provenance','revision','linked');
 }

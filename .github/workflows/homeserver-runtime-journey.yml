@@ -91,6 +91,7 @@ jobs:
           node tests/chat-initiative-workbench-browser.mjs
           node tests/chat-marketing-creative-render-browser.mjs
           node tests/profile-product-promotion-browser.mjs
+          node tests/profile-commerce-publication-browser.mjs
           php tests/cloud-missions-v1.php
           node tests/cloud-missions-api.mjs
           node tests/cloud-missions-browser.mjs
