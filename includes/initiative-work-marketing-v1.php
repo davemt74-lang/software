@@ -30,7 +30,8 @@ function initiative_work_marketing_drafts_v1(PDO $pdo, int $owner, int $productI
     $query->execute([$owner,$productId]);
     $drafts = [];
     foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $drafts[$row['request_key']] = json_decode($row['draft_json'],true,16,JSON_THROW_ON_ERROR);
+        $drafts[$row['request_key']] = array_replace(json_decode($row['draft_json'],true,16,JSON_THROW_ON_ERROR),
+            ['draft_id'=>$row['request_key']]);
     }
     return $drafts;
 }
@@ -65,10 +66,14 @@ function initiative_work_marketing_preview_v1(PDO $pdo, int $owner, array $scope
 {
     $current = initiative_work_marketing_context_v1($pdo, $owner, $scope, $input);
     $asset = $current['asset'];
+    $drafts = array_values(array_filter(initiative_work_marketing_drafts_v1($pdo, $owner, $input['product_id']),
+        static fn(array $draft): bool => (int)$draft['asset_id'] === (int)$asset['id']
+            && ($draft['asset_sha256'] ?? '') === $asset['digest']));
     return ['source_id'=>$asset['id'], 'source_title'=>$asset['title'], 'revision'=>$current['revision'], 'details'=>[
         'image_url'=>media_studio_asset_url((int)$asset['id']),
         'linked_product_image'=>$current['linked'],
         'summary'=>'Product: '.$current['facts']['title'],
+        'drafts'=>$drafts,
         'effect'=>$current['provenance']==='openai_image' ? 'Use a generated image for this draft.' : 'Use this saved image for the draft.',
         'owner_review'=>'Save private copy and a campaign idea with the selected image. Cloud AI receives the product wording and image title.',
     ]];
@@ -131,7 +136,7 @@ function initiative_work_marketing_save_v1(PDO $pdo, int $owner, array $scope, a
     if (preg_match('~https?://|www\.|(?:[$€£]|\b(?:USD|EUR|GBP)\s*)\d~iu',"$headline $body $campaign")) {
         throw new DomainException('Unexpected offer details or links in the marketing draft.',422);
     }
-    $output = ['kind'=>'product_marketing_draft','product_id'=>$input['product_id'],'title'=>$headline,
+    $output = ['kind'=>'product_marketing_draft','draft_id'=>$request,'product_id'=>$input['product_id'],'title'=>$headline,
         'description'=>$body,'campaign_idea'=>$campaign,'asset_id'=>(int)$asset['id'],
         'asset_sha256'=>$asset['digest'],'asset_source'=>$current['provenance'],'image_url'=>media_studio_asset_url((int)$asset['id']),
         'review_url'=>url('/profile-commerce-products.php?workspace_product='.$input['product_id'].'#product-marketing-drafts')];

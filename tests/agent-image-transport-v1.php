@@ -24,6 +24,13 @@ if($network!==2||$target!=='https://api.openai.com/v1/images/edits'||$body['imag
     ||$options[CURLOPT_FOLLOWLOCATION]!==false||$options[CURLOPT_PROTOCOLS]!==CURLPROTO_HTTPS)throw new RuntimeException('Screen edit transport contract mismatch.');
 try{vp3_image_provider_v1($config,['id'=>1],null,'https://example.test/frame.jpg');throw new LogicException('External source accepted.');}
 catch(RuntimeException $e){if($e->getMessage()!=='image_source_changed'||$network!==2)throw $e;}
+$reference='data:image/png;base64,'.base64_encode($png);
+$marketing=$config+['mode'=>'marketing_reference'];
+vp3_image_provider_v1($marketing,['id'=>1],null,$reference);
+$body=json_decode($options[CURLOPT_POSTFIELDS],true);
+if($network!==3||$target!=='https://api.openai.com/v1/images/edits'||$body['images']!==[['image_url'=>$reference]])throw new RuntimeException('Marketing reference transport contract mismatch.');
+try{vp3_image_provider_v1($marketing,['id'=>1],null,'https://example.test/product.png');throw new LogicException('External product reference accepted.');}
+catch(RuntimeException $e){if($e->getMessage()!=='marketing_source_changed'||$network!==3)throw $e;}
 foreach([401=>'provider_access_denied',403=>'provider_access_denied',429=>'provider_rate_limited',302=>'provider_outcome_unconfirmed',503=>'provider_outcome_unconfirmed'] as $code=>$reason){$status=$code;$before=$network;try{vp3_image_provider_v1($config,['id'=>1]);throw new LogicException('Unsuccessful provider response accepted.');}catch(RuntimeException $e){if($e->getMessage()!==$reason||$network!==$before+1)throw $e;}}
 $status=200;$failed=true;$before=$network;try{vp3_image_provider_v1($config,['id'=>1]);throw new LogicException('Timeout accepted.');}catch(RuntimeException $e){if($e->getMessage()!=='provider_outcome_unconfirmed'||$network!==$before+1)throw $e;}
 $failed=false;$wire=str_repeat('x',36*1024*1024+1);try{vp3_image_provider_v1($config,['id'=>1]);throw new LogicException('Oversized response accepted.');}catch(RuntimeException $e){if($e->getMessage()!=='provider_outcome_unconfirmed')throw $e;}

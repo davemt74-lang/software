@@ -13,8 +13,8 @@ try {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
         throw new DomainException('Use POST for Initiative work.', 405);
     }
-    $raw = file_get_contents('php://input', false, null, 0, 4097);
-    if ($raw === false || strlen($raw) > 4096) {
+    $raw = file_get_contents('php://input', false, null, 0, 8193);
+    if ($raw === false || strlen($raw) > 8192) {
         throw new DomainException('Initiative request is too large.', 413);
     }
     $body = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
@@ -36,9 +36,12 @@ try {
     $conversationId = $body['conversation_id'] ?? null;
     $tool = $body['tool'] ?? '';
     $action = $body['action'] ?? '';
+    $creativeAction = $tool === 'marketing' && in_array($action, ['creative_open','creative_prepare','creative_generate',
+        'creative_status','creative_tick','creative_cancel','creative_save','creative_publish_preview','creative_publish','creative_pause'],true);
+    if (!$creativeAction && strlen($raw) > 4096) throw new DomainException('Initiative request is too large.',413);
     if (!is_int($agentId) || $agentId < 0 || !is_int($conversationId) || $conversationId < 1
         || !in_array($tool, ['product', 'screen', 'mission', 'marketing'], true)
-        || !in_array($action, ['sources', 'preview', 'create'], true)) {
+        || (!$creativeAction && !in_array($action, ['sources', 'preview', 'create'], true))) {
         throw new DomainException('Choose a tool in the current saved Agent Chat.', 422);
     }
     $pdo = db();
@@ -63,7 +66,10 @@ try {
     $response = ['ok' => true, 'owner_key' => (string)$owner, 'tool' => $tool,
         'agent_id' => $agentId, 'conversation_id' => $conversationId];
     $handler = 'initiative_work_' . $tool;
-    if ($action === 'sources') {
+    if ($creativeAction) {
+        require_once dirname(__DIR__).'/includes/initiative-work-marketing-promotion-v1.php';
+        $response += initiative_work_marketing_promotion_action_v1($pdo,$owner,$scope,$body,$key);
+    } elseif ($action === 'sources') {
         $response['sources'] = ($handler . '_sources_v1')($pdo, $owner, $scope);
         if ($tool === 'marketing') $response['products'] = initiative_work_marketing_products_v1($pdo, $owner, $scope);
     } else {

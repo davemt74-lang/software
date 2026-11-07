@@ -403,7 +403,19 @@ try{
   const mediaHeaders={'X-Fixture-Images-Ready':'1','X-Fixture-Participant-Owner-Plan':JSON.stringify({operation:'cloud_media_read',ids:['media.assets.read'],media_type:'photo'})};
   let response=await post(endpoint,'Show my photos',context,mediaHeaders);
   check(response.data?.canvas_media?.asset_ids?.includes(1)&&!response.data.canvas_media.asset_ids.includes(2),endpoint+' Cloud photo search returns only the owner canvas references');
+  const promoRequest='Use the uploaded sunset photo at level 7, put it on a café counter, and show me the promotion in Canvas.';
+  const promoPlan={operation:'cloud_media_read',ids:['media.assets.read'],media_type:'photo',query:'uploaded sunset',creative_level:6,creative_prompt:'put it on a café counter'};
+  const promoHeaders={...mediaHeaders,'X-Fixture-Participant-Owner-Plan':JSON.stringify(promoPlan).replace('é','\\u00e9')};
+  response=await post(endpoint,promoRequest,context,promoHeaders);
+  const promo=response.data?.canvas_media;
+  check(JSON.stringify(promo?.asset_ids)==='[1]'&&promo.generation_ids.length===0&&promo.marketing_prefill?.level===7&&promo.marketing_prefill.prompt===promoPlan.creative_prompt&&response.data.tool_receipt?.changes_applied===false,
+   endpoint+' marketing Chat returns the exact private photo and literal level and scene as a read-only Canvas handoff: '+response.body);
+  const promoHistory=await fetch(base+'/api/'+(endpoint.includes('v236')?'chat-v236.php?agent=7':'chat.php'),{method:'POST',headers:{'Content-Type':'application/json',...mediaHeaders},body:JSON.stringify({csrf_token:'fixture',action:'load',conversation_id:response.data.conversation_id})});
+  const promoSaved=await promoHistory.json();
+  check(promoSaved.messages.some(m=>m.role==='assistant'&&JSON.parse(m.context_json||'{}').canvas_media?.marketing_prefill?.prompt===promoPlan.creative_prompt),endpoint+' the marketing Canvas prefill survives a history reload');
   const generationHeaders={...mediaHeaders,'X-Fixture-Participant-Owner-Plan':JSON.stringify({operation:'image_generate',ids:['images.generate'],prompt:'A cinematic Arizona desert sunset',title:'Desert artwork'})};
+  response=await post(endpoint,promoRequest,context,generationHeaders);
+  check(response.data?.tool_receipt?.reason==='invalid_plan'&&!response.data.canvas_media?.generation_ids?.length,endpoint+' a marketing request with a saved photo cannot bypass Canvas review through ordinary image generation');
   response=await post(endpoint,'Create a desert image',context,generationHeaders);
   check(response.data?.tool_receipt?.capability==='images.generate'&&response.data.tool_receipt.status==='completed'&&response.data.canvas_media?.generation_ids?.length===1,endpoint+' concrete image command queues a canonical job and returns its canvas card: '+response.body);
   const cid=response.data.conversation_id,id=response.data.canvas_media.generation_ids[0];

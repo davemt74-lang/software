@@ -85,9 +85,12 @@ jobs:
           node tests/media-library-workspace-browser.mjs
           php tests/initiative-work-mission-v1.php
           php tests/initiative-work-product-v1.php
+          php tests/initiative-marketing-promotion-v1.php
           php tests/initiative-work-screen-v1.php
           node tests/initiative-workbench-api.mjs
           node tests/chat-initiative-workbench-browser.mjs
+          node tests/chat-marketing-creative-render-browser.mjs
+          node tests/profile-product-promotion-browser.mjs
           php tests/cloud-missions-v1.php
           node tests/cloud-missions-api.mjs
           node tests/cloud-missions-browser.mjs
@@ -341,7 +344,9 @@ jobs:
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
           VP3_TEST_MYSQL_PASS: section7-fixture
-        run: php tests/initiative-work-product-v1.php
+        run: |
+          php tests/initiative-work-product-v1.php
+          php tests/initiative-marketing-promotion-v1.php
   connection-mysql:
     needs: transfer-scope
     if: needs.transfer-scope.outputs.connection == 'true'

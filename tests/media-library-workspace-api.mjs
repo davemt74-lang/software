@@ -39,7 +39,7 @@ const edited = png(3, 2, [37, 97, 179, 100]);
 
 fs.mkdirSync(path.join(root, 'api'));
 fs.mkdirSync(path.join(root, 'includes'));
-for (const file of ['api/media-library-v86.php', 'includes/media-studio-v86.php', 'media-library-file-v86.php', 'media-library.php']) {
+for (const file of ['api/media-library-v86.php', 'includes/media-studio-v86.php', 'includes/agent-image-provider-v1.php', 'media-library-file-v86.php', 'media-library.php']) {
   fs.copyFileSync(file, path.join(root, file));
 }
 for (const file of ['main-sidebar.php', 'member-header.php']) {
@@ -233,6 +233,21 @@ echo $row['metadata_json'];
   assert.equal(list.data.ok, true);
   assert.equal(list.data.assets.length, 36);
   assert.ok(!ids(list).includes(40));
+  execFileSync(php, ['-r', `require $argv[1];
+db()->exec("CREATE TABLE agent_commerce_promotions_v1 (id TEXT PRIMARY KEY, owner_user_id INTEGER, status TEXT)");
+$q=db()->prepare("INSERT INTO agent_commerce_promotions_v1 VALUES(?,?,?)");
+$q->execute([str_repeat('a',32),1,'designing']);
+$q->execute([str_repeat('b',32),2,'designing']);
+$q->execute([str_repeat('c',32),1,'published']);`, bootstrap]);
+  for (const creative_id of ['b'.repeat(32), 'c'.repeat(32), 'not-a-variant']) {
+    assert.equal((await upload('Unapproved promotion upload', edited, 'promotion_design', {creative_id})).response.status, 400);
+  }
+  assert.equal((await upload('Truncated promotion', edited.subarray(0,33), 'promotion_design',
+    {creative_id:'a'.repeat(32)})).response.status, 400);
+  const design = await upload('Promotion artwork', edited, 'promotion_design', {creative_id:'a'.repeat(32)});
+  assert.equal(design.data.asset.source, 'promotion_design');
+  assert.deepEqual(await ownedBytes(design.data.asset), edited);
+  assert.equal((await fetch(base + design.data.asset.url, {headers:foreign})).status, 404);
   console.log('MEDIA_LIBRARY_WORKSPACE_API=PASS (page authorization, owner scope, literal filters, paging, private bytes, edited-copy lineage, upload validation)');
 } catch (error) {
   console.error(logs.slice(-3000));

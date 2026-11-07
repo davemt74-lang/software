@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 const VP3_PROFILE_AGENT_PUBLIC_SERVICE_V110='vp3-profile-agent-public-service-v110-20260928';
 require_once __DIR__.'/profile-agent-handoff-pa3.php';
+require_once __DIR__.'/profile-product-promotion-v1.php';
 
 final class VP3ProfileAgentPublicException extends RuntimeException
 {
@@ -276,11 +277,11 @@ function vp3_profile_agent_public_state_service_v110(PDO $pdo,array $ctx,int $co
     $handoff=$conversationId>0?vp3_profile_agent_public_handoff_pa3($pdo,$ctx,$conversationId):null;
     $chat=vp3_profile_handoff_chat_pa3d($pdo,(int)$ctx['owner_user_id'],$conversationId);
     if($conversationId>0)$conversationState=vp3_profile_agent_public_state_v390(vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId));
+    $cards=profile_product_promotion_chat_cards_v1($pdo,$ctx['profile'],$conversationId,$messages);
     vp3_profile_agent_public_live_v1($pdo,$ctx);
-    return [
+    return $cards+[
         'agent'=>vp3_profile_agent_public_agent_projection_v110($ctx),
         'conversation'=>$conversationState,
-        'messages'=>$messages,
         'handoff'=>$handoff,
         'chat'=>$chat,
     ];
@@ -396,6 +397,8 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         }
     }
 
+    $promotionKey=!$needsOwner&&$answerMode!=='configured_greeting'
+        ?profile_product_promotion_match_v1($pdo,$profile,$query,$context):null;
     $pdo->beginTransaction();
     try{
         vp3_profile_agent_public_live_v1($pdo,$ctx,true);
@@ -416,6 +419,7 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         }
         if($needsOwner)profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);
         $messageContext=['sources'=>$sources,'source_dependencies'=>$sourceDependencies,'answer_mode'=>$answerMode];
+        if($promotionKey!==null)$messageContext['product_promotion_key']=$promotionKey;
         if(!empty($profileHome['attempted'])){
             $messageContext['homeserver_compute']=[
                 'success'=>!empty($profileHome['success']),
@@ -462,8 +466,9 @@ function vp3_profile_agent_public_poll_service_v110(PDO $pdo,array $ctx,int $con
     $handoff=vp3_profile_agent_public_handoff_pa3($pdo,$ctx,$conversationId);
     $chat=vp3_profile_handoff_chat_pa3d($pdo,(int)$ctx['owner_user_id'],$conversationId);
     $conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId);
+    $cards=profile_product_promotion_chat_cards_v1($pdo,$ctx['profile'],$conversationId,$messages);
     vp3_profile_agent_public_live_v1($pdo,$ctx);
-    return ['messages'=>$messages,'conversation'=>vp3_profile_agent_public_state_v390($conversation),'handoff'=>$handoff,'chat'=>$chat];
+    return $cards+['conversation'=>vp3_profile_agent_public_state_v390($conversation),'handoff'=>$handoff,'chat'=>$chat];
 }
 
 /** A projection read never advances a deadline, claims work or calls a model. */

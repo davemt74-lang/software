@@ -258,6 +258,30 @@ try {
             }
             $metadata = ['source_asset_id'=>$sourceId, 'width'=>$image[0], 'height'=>$image[1]];
         }
+        if ($meta['source'] === 'promotion_design') {
+            $creativeId = $metadata['creative_id'] ?? null;
+            $image = @getimagesize($part);
+            if (!is_string($creativeId) || !preg_match('/\A[a-f0-9]{32}\z/',$creativeId)
+                || $meta['media_type'] !== 'photo' || $meta['mime_type'] !== 'image/png'
+                || ($image['mime'] ?? '') !== 'image/png' || $size > 16*1024*1024
+                || min($image[0],$image[1]) < 1 || max($image[0],$image[1]) > 4096
+                || !table_exists('agent_commerce_promotions_v1')) {
+                throw new RuntimeException('Choose an exact promotion design and save it as a PNG.');
+            }
+            $creative = db()->prepare("SELECT id FROM agent_commerce_promotions_v1 WHERE owner_user_id=? AND id=? AND status='designing'");
+            $creative->execute([$userId,$creativeId]);
+            if (!$creative->fetchColumn()) throw new RuntimeException('The promotion design is unavailable.');
+            require_once dirname(__DIR__).'/includes/agent-image-provider-v1.php';
+            $bytes = @file_get_contents($part,false,null,0,16*1024*1024+1);
+            if (!is_string($bytes) || strlen($bytes) !== $size) throw new RuntimeException('The PNG upload is incomplete.');
+            try {
+                vp3_image_png_check_v1($bytes);
+            } catch (RuntimeException) {
+                throw new RuntimeException('The promotion artwork must be a complete PNG.');
+            }
+            unset($bytes);
+            $metadata = ['creative_id'=>$creativeId,'width'=>$image[0],'height'=>$image[1]];
+        }
 
         $extension = media_studio_extension_for_mime((string)$meta['mime_type']);
         if ($extension === 'bin') {

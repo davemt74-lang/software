@@ -101,6 +101,31 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
       CONSTRAINT fk_commerce_marketing_product FOREIGN KEY (product_id) REFERENCES agent_commerce_products_v800(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_commerce_promotions_v1 (
+      id CHAR(32) NOT NULL PRIMARY KEY,
+      product_id BIGINT UNSIGNED NOT NULL,
+      owner_user_id INT UNSIGNED NOT NULL,
+      draft_key CHAR(64) NOT NULL,
+      agent_id BIGINT UNSIGNED NOT NULL,
+      conversation_id BIGINT UNSIGNED NOT NULL,
+      source_asset_id BIGINT UNSIGNED NOT NULL,
+      source_sha256 CHAR(64) NOT NULL,
+      settings_json TEXT NOT NULL,
+      generation_id CHAR(36) NULL,
+      asset_id BIGINT UNSIGNED NULL,
+      asset_sha256 CHAR(64) NULL,
+      public_key CHAR(32) NULL,
+      public_product_url VARCHAR(500) NOT NULL DEFAULT '',
+      public_cta VARCHAR(40) NOT NULL DEFAULT '',
+      publication_revision INT UNSIGNED NOT NULL DEFAULT 0,
+      status VARCHAR(20) NOT NULL DEFAULT 'designing',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_commerce_promotion_public (public_key),
+      INDEX idx_commerce_promotion_product (owner_user_id,product_id,status,created_at),
+      CONSTRAINT fk_commerce_promotion_draft FOREIGN KEY (product_id,draft_key) REFERENCES agent_commerce_marketing_drafts_v1(product_id,request_key) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_commerce_product_bindings_v800 (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       product_id BIGINT UNSIGNED NOT NULL,

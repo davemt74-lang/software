@@ -6,6 +6,7 @@
   const initialChat = window.STONEFELLOW_CHAT || null;
   const account = {
     owner:String(cfg.ownerKey),agent:Number(cfg.agentId || 0),csrf:String(cfg.csrf),endpoint:String(cfg.endpoint),
+    mediaEndpoint:String(cfg.mediaEndpoint || ''),
     hasChat:Boolean(initialChat),chatOwner:Number(initialChat?.userId || 0),
     chatAgent:Number(initialChat?.agentId || 0),binding:String(initialChat?.workingAttentionBinding || '')
   };
@@ -97,12 +98,15 @@
   let reviewed = null;
   let returnFocus = null;
   let requestedSourceRevision = '';
+  let requestedMarketingPrefill = null;
+  let movingToCanvas = false;
   let scopeTimer = 0;
 
   function configurationMatches() {
     const current = window.VP3_INITIATIVE_WORKBENCH;
     if (!current || String(current.ownerKey) !== account.owner || Number(current.agentId || 0) !== account.agent
-      || String(current.csrf) !== account.csrf || String(current.endpoint) !== account.endpoint) return false;
+      || String(current.csrf) !== account.csrf || String(current.endpoint) !== account.endpoint
+      || String(current.mediaEndpoint || '') !== account.mediaEndpoint) return false;
     const chat = window.STONEFELLOW_CHAT;
     if (!account.hasChat) return !chat;
     return Boolean(chat) && account.binding !== '' && account.chatOwner === Number(account.owner)
@@ -156,14 +160,21 @@
     sourceLabel.firstChild.textContent = lanes[lane.value].source;
   }
 
-  function open(tool = 'product', sourceId = '', sourceRevision = '') {
+  function open(tool = 'product', sourceId = '', sourceRevision = '', options = {}) {
     if (!configurationMatches()) { scopeChanged(); return; }
     if (!Object.hasOwn(lanes, tool)) return;
+    if (sourceRevision && typeof sourceRevision === 'object') {
+      options = sourceRevision;
+      sourceRevision = '';
+    }
     if (sourceRevision && (typeof sourceRevision !== 'string' || !/^[a-f0-9]{64}$/.test(sourceRevision))) return;
     const pair = tool === 'marketing' && typeof sourceId === 'string' ? sourceId.match(/^([1-9][0-9]*)-([1-9][0-9]*)$/) : null;
     const productId = pair ? pair[1] : '';
     if (pair) sourceId = pair[2];
     requestedSourceRevision = sourceRevision;
+    const hints = tool === 'marketing' ? options?.marketingPrefill : null;
+    requestedMarketingPrefill = hints && Number.isInteger(hints.level) && hints.level >= 1 && hints.level <= 10
+      ? {level:hints.level, prompt:typeof hints.prompt === 'string' ? hints.prompt.slice(0,600) : ''} : null;
     stopPending();
     clearReview();
     scope = currentScope();
@@ -188,6 +199,7 @@
     window.clearInterval(scopeTimer);
     scopeTimer = 0;
     requestedSourceRevision = '';
+    requestedMarketingPrefill = null;
     stopPending();
     clearReview();
     scope = null;
@@ -338,6 +350,15 @@
       if (lane.value === 'screen') {
         reviewPanel.append(make('p', 'Creating this edit sends the selected saved frame to OpenAI. AI edits can change details. Your saved capture stays in Agent Eyes.'));
       }
+      if (lane.value === 'marketing' && Array.isArray(details.drafts) && window.VP3MarketingCanvas) {
+        const savedDrafts = make('div');
+        savedDrafts.className = 'vp3-workbench-actions';
+        for (const draft of details.drafts) {
+          if (typeof draft?.draft_id !== 'string' || typeof draft.title !== 'string') continue;
+          savedDrafts.append(button('Design promotion · ' + draft.title, () => openMarketingDraft(draft.draft_id, fields.product_id, fields.source_id)));
+        }
+        if (savedDrafts.childElementCount) reviewPanel.append(savedDrafts);
+      }
       status.textContent = 'Source ready for your review.';
     });
   }
@@ -379,6 +400,27 @@
     if (output.coverage) card.append(make('small', `${output.coverage.read_sources} readable excerpts from ${output.coverage.captured_sources} collected sources`));
   }
 
+  function openMarketingDraft(draftId, productId, sourceId, bound = sameScope() ? {...scope} : null) {
+    if (!bound || !window.VP3MarketingCanvas || !/^[a-f0-9]{64}$/.test(draftId)
+      || !Number.isSafeInteger(productId) || productId < 1 || !/^[1-9][0-9]*$/.test(sourceId)) return false;
+    const isCurrent = () => {
+      const active = currentScope();
+      return active?.conversation_id === bound.conversation_id && active.agent_id === bound.agent_id;
+    };
+    const opened = window.VP3MarketingCanvas.open(
+      {draft_id:draftId, product_id:productId, source_id:sourceId},
+      {endpoint:account.endpoint, mediaEndpoint:account.mediaEndpoint, ownerKey:account.owner, csrf:account.csrf, scope:bound, isCurrent},
+      requestedMarketingPrefill
+    );
+    if (opened && dialog.open) {
+      movingToCanvas = true;
+      dialog.close();
+    } else if (!opened && dialog.open) {
+      status.textContent = 'Open Agent Chat to review this promotion.';
+    }
+    return opened;
+  }
+
   function showResult(output) {
     result.replaceChildren();
     const card = make('article');
@@ -400,6 +442,11 @@
         const link = make('a', 'Open saved marketing draft');
         link.href = reviewUrl;
         card.append(link);
+      }
+      if (typeof output.draft_id === 'string' && window.VP3MarketingCanvas) {
+        const design = button('Design promotion in Canvas', () => openMarketingDraft(output.draft_id, output.product_id, String(output.asset_id)));
+        design.className = 'vp3-workbench-design-launch';
+        card.append(design);
       }
       status.textContent = 'Private marketing draft saved.';
     } else if (output.type === 'mission_decision_brief') {
@@ -425,6 +472,7 @@
 
   lane.addEventListener('change', () => {
     requestedSourceRevision = '';
+    requestedMarketingPrefill = null;
     stopPending();
     mode.value = 'cleanup';
     instructions.value = '';
@@ -452,11 +500,32 @@
     source.replaceChildren();
     const opener = returnFocus;
     returnFocus = null;
+    if (movingToCanvas) {
+      movingToCanvas = false;
+      return;
+    }
     if (opener?.isConnected && opener.getClientRects().length) opener.focus();
     else document.getElementById('chatToolsButton')?.focus();
   });
   window.addEventListener('stonefellow:chat-context-changing', scopeChanged);
   window.addEventListener('vp3:chat-conversation-changed', scopeChanged);
   window.addEventListener('pagehide', scopeChanged);
+  const resumeUrl = new URL(location.href);
+  const resumeDraft = resumeUrl.searchParams.get('marketing_draft') || '';
+  if (/^[a-f0-9]{64}$/.test(resumeDraft)) {
+    const productId = Number(resumeUrl.searchParams.get('marketing_product') || 0);
+    const sourceId = resumeUrl.searchParams.get('marketing_source') || '';
+    const conversationId = Number(resumeUrl.searchParams.get('conversation_id') || 0);
+    const selector = resumeUrl.searchParams.get('agent') || '';
+    const agentId = selector === 'system' ? 0 : /^[1-9][0-9]*$/.test(selector) ? Number(selector) : -1;
+    const resume = () => {
+      const bound = currentScope();
+      if (!bound || bound.conversation_id !== conversationId || bound.agent_id !== agentId
+        || !openMarketingDraft(resumeDraft, productId, sourceId, bound)) return;
+      window.removeEventListener('vp3:chat-context-ready', resume);
+    };
+    window.addEventListener('vp3:chat-context-ready', resume);
+    resume();
+  }
   window.VP3InitiativeWorkbench = Object.freeze({open});
 })();
