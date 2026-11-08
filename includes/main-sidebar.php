@@ -255,6 +255,6 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
 <script src="<?= e(url('/homeserver-vp3.js?v=homeserver-v1305-final-20260924')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260913-sidebar-footer')) ?>" defer></script>
 <?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1-visitor-settings')) ?>" defer></script><?php endif; ?>
-<?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=agent-voice-menu-20260913-voice-v1349-phone-ph2-' . substr(hash_file('sha256', dirname(__DIR__) . '/member-agent-voice-menu.js'),0,12))) ?>" defer></script><?php endif; ?>
+<?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=agent-voice-menu-chat-greeting-v1')) ?>" defer></script><?php endif; ?>
 
 <?php require __DIR__.'/agent-orb.php'; ?>
