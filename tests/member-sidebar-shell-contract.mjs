@@ -16,13 +16,14 @@ assert.doesNotMatch(legacyWrapper, /Stem Studio|Video Editor|workspace-main-side
 
 // Primary navigation is rendered from canonical keyed destinations. Keep the source
 // contract aligned with the consolidated shell rather than expecting duplicated anchors.
-assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','media_library','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'\]/, 'canonical Agent sidebar must retain the primary destination order');
+assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'\]/, 'canonical Agent sidebar must retain the primary destination order');
 for (const [key, label] of [
   ['home', 'Home'],
   ['chat', 'Agent Chat'],
   ['profile_agent', 'Profile Agent'],
   ['messages', 'Messages'],
   ['contacts', 'Contacts'],
+  ['connections', 'Connections'],
   ['knowledge', 'Knowledge'],
   ['transcriptions', 'Transcriptions'],
   ['calendar', 'Calendar'],
@@ -69,6 +70,7 @@ for (const label of ['Profile Agent', 'My Knowledge', 'My Memory', 'My Transcrip
   assert.ok(memberNavigation.includes(`'${label}'`), `canonical member navigation must retain ${label}`);
 }
 assert.ok(memberNavigation.includes("'messages','Messages'"), 'canonical member navigation must retain Messages');
+assert.ok(memberNavigation.includes("'connections','Connections',url('/connections.php')"), 'canonical member navigation must route Connections to its account page');
 assert.ok(memberNavigation.includes("'calendar','My Calendar'"), 'canonical member navigation must retain My Calendar');
 assert.ok(memberNavigation.includes("'transcriptions','My Transcriptions',url('/artist-listening.php')"), 'canonical member navigation must route Transcriptions to Artist Listening');
 assert.ok(memberNavigation.includes("personal_capability_has_v242('personal_knowledge.access'"), 'My Knowledge must remain permission-aware in canonical navigation');

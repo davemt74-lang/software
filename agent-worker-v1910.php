@@ -147,6 +147,13 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         }
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.promotion_outcome.sweep_failed',['error_class'=>get_class($e)]);}
     }
+    if(($executor==='all'||$executor==='cloud')&&table_exists('agent_connection_email_followups_v1')){
+        try{
+            require_once __DIR__.'/includes/agent-connection-email-followup-v1.php';
+            $counts['email_followups']=agent_connection_email_followup_sweep_v1($pdo,$ownerLimit);
+        }
+        catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.email_followup.sweep_failed',['error_class'=>get_class($e)]);}
+    }
     $counts['completed_at']=gmdate('c');
     return $counts;
 }

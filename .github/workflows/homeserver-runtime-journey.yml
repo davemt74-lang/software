@@ -35,7 +35,8 @@ jobs:
           initiative = r'^(?:(?:includes|api)/agent-initiative(?:-[a-z0-9-]+)?-v1\.php|(?:includes|api)/agent-top-of-mind-v1\.php|agent-top-of-mind-v1\.(?:js|css)|includes/(?:agent-screen-insights-v1|agent-tool-json-v1|agent-worker-health-v1|agent-capability-contract-v1|agent-capability-awareness-v1|agent-runtime-routing-v420|video-meetings-homeserver-v1801|agent-workflow-runs-v1400|homeserver-scope-v026|homeserver-capabilities-v024|homeserver-agent-v018|homeserver-vp3)\.php|tests/(?:agent-initiative[^/]*|agent-worker-health-v1|agent-top-of-mind[^/]*)\.(?:php|mjs)|tests/initiative-(?:followthrough-(?:browser|e2e)|capabilities-browser)\.mjs|tests/agent-capability-contract-v1\.php|tests/agent-core-(?:(?:adoption|install-parity)-v1\.php|startup-http\.mjs)|api/(?:chat|chat-v236|chat-stream-v121|chat-notifications-brain-v240)\.php|includes/(?:agent-chat-runtime-v2160|member-header)\.php|tests/fixtures/initiative-(?:chat-loop-http|followthrough-chat|capabilities-chat)\.php|setup\.php|(?:(?:api|includes)/)?agent-activity-v94\.(?:php|js)|chat-cognitive-presentation-v510\.(?:js|css)|api/cognitive-presentation-v510\.php)$'
           workbench = r'^(?:chat-initiative-workbench-v1\.(?:js|css)|(?:api|includes)/initiative-work[^/]+\.php|tests/(?:chat-initiative-workbench-browser|initiative-workbench-api)\.mjs|tests/initiative-work-[^/]+\.php|(?:includes|tests)/initiative-product-launch(?:-state)?-v1\.php|(?:includes|tests)/(?:initiative-promotion-outcomes|profile-promotion-(?:attribution|click))-v1\.php|profile-promotion-click\.php)$'
           live = r'^(?:(?:agent-live-context-v1|chat-initiative-voice-v1)\.js|agent-worker-v1910\.php|includes/(?:agent-live-context-v1|homeserver-transient-schema-v1|agent-record-tools-v1|agent-capability-chat-v1)\.php|(?:api|includes)/agent-screen-audio-v1\.php|tests/(?:agent-live-[^/]+|agent-screen-audio-events-v1|homeserver-https-transient-inference(?:-mysql)?)\.(?:php|mjs)|tests/initiative-live-context-browser\.mjs|tests/fixtures/initiative-live-context-chat\.php|upgrade-homeserver-transient-inference-v1\.sql)$'
-          changed = diff.returncode != 0 or any(re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) for p in diff.stdout.splitlines())
+          connections = r'^(?:(?:admin/)?connections\.php|connection-oauth\.php|connections-v1\.css|(?:api/)?chat-email-v1\.(?:php|js|css)|(?:api|includes|tests)/agent-connections?[^/]*\.(?:php|mjs))$'
+          changed = diff.returncode != 0 or any(re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
               connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions|homeserver-https-transient-inference(?:-mysql)?)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
@@ -62,6 +63,8 @@ jobs:
       - run: node tests/transfer-section7.mjs
       - name: Fresh installation Agent core foundations
         run: php tests/agent-core-install-parity-v1.php
+      - name: Gmail OAuth and provider transport
+        run: php tests/agent-connection-gmail-v1.php
       - name: Floating Agent and Agent Eyes browser acceptance
         run: |
           php tests/agent-reminders-v1.php
@@ -290,6 +293,11 @@ jobs:
           VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
           VP3_SECTION7_MYSQL_PASSWORD: section7-fixture
         run: php tests/agent-core-install-parity-v1.php
+      - name: Gmail Connections authority and reply delivery on MySQL
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
+          VP3_TEST_MYSQL_PASS: section7-fixture
+        run: php tests/agent-connections-gmail-v1.php
       - name: Chat research upgrade and concurrent canonical ownership
         env:
           VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4

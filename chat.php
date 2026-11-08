@@ -474,6 +474,13 @@ $initiativeWorkbenchRuntime = '<link rel="stylesheet" href="'.e(url('/chat-initi
     . '<script src="'.e(url('/chat-marketing-creative-render-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-creative-render-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-marketing-canvas-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-canvas-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-initiative-workbench-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.js'),0,12))).'" defer></script>';
+$initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-email-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-email-v1.css'),0,12))).'">'
+    . '<script>window.VP3_CHAT_EMAIL_V1='.json_encode([
+        'endpoint'=>url('/api/chat-email-v1.php'),'csrf'=>csrf_token(),
+        'connectionsUrl'=>url('/connections.php'),
+        'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
+    ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<script src="'.e(url('/chat-email-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-email-v1.js'),0,12))).'" defer></script>';
 $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-message-unread-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-message-unread-v1.css'),0,12))).'">'
     . '<script>window.VP3_CHAT_MESSAGE_UNREAD_V1='.json_encode([
         'endpoint'=>url('/api/agent-chat-read-v1.php'),

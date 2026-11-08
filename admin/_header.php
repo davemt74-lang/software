@@ -90,6 +90,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
       <section class="admin-nav-group" data-admin-nav-group="ai-platform" data-admin-nav-default="open">
         <button class="admin-nav-group-toggle" type="button" aria-expanded="true" aria-controls="admin-nav-ai-platform"><span>AI &amp; Platform</span><span class="admin-nav-group-chevron">⌄</span></button>
         <div class="admin-nav-group-links" id="admin-nav-ai-platform">
+          <?php if (in_array('admin', $user['roles'] ?? [], true)): ?><a class="<?= $adminActive === 'connections' ? 'active' : '' ?>" href="<?= e(url('/admin/connections.php')) ?>"><span>Connections</span></a><?php endif; ?>
           <?php if (has_permission('ai.manage')): ?>
             <a class="<?= $adminActive === 'ai' ? 'active' : '' ?>" href="<?= e(url('/admin/ai.php')) ?>"><span>AI / API</span></a>
             <a class="<?= $adminActive === 'profile-speech' ? 'active' : '' ?>" href="<?= e(url('/admin/profile-speech.php')) ?>"><span>Profile speech</span></a>

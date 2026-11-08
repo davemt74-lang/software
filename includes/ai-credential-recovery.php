@@ -27,21 +27,25 @@ function ai_recovery_dependent_secrets(PDO $pdo): array
     $secrets = [];
     // These credentials cannot be reconstructed by re-entering current AI keys:
     // historical call cleanup may target an older project and secret.
-    $calls=$pdo->prepare('SELECT setting_value FROM settings WHERE setting_key=?');
-    $calls->execute(['profile_calls_livekit_config_pa3c']);
-    $savedCalls=$calls->fetchColumn();
-    if(is_string($savedCalls)&&trim($savedCalls)!=='')$secrets[]=$savedCalls;
+    $settings = $pdo->prepare('SELECT setting_value FROM settings WHERE setting_key IN (?,?)');
+    $settings->execute(['profile_calls_livekit_config_pa3c','connections_gmail_client_secret']);
+    foreach ($settings->fetchAll(PDO::FETCH_COLUMN) as $secret) {
+        if (trim((string)$secret) !== '') $secrets[] = (string)$secret;
+    }
     // These are the other production callers of ai_encrypt_secret().
-    foreach (['user_llm_credentials'=>'encrypted_key', 'cloud_hosting_custom_domains'=>'verification_token_enc','profile_calls_pa3c'=>'provider_snapshot'] as $table=>$column) {
+    foreach (['user_llm_credentials'=>'encrypted_key', 'cloud_hosting_custom_domains'=>'verification_token_enc','profile_calls_pa3c'=>'provider_snapshot','agent_connections_v1'=>'access_token_enc,refresh_token_enc','agent_connection_email_drafts_v1'=>'message_enc'] as $table=>$columns) {
         try {
-            $rows = $pdo->query('SELECT '.$column.' FROM '.$table)->fetchAll(PDO::FETCH_COLUMN);
-            foreach ($rows as $secret) if (trim((string)$secret) !== '') $secrets[] = (string)$secret;
+            $stmt = $pdo->query('SELECT '.$columns.' FROM '.$table);
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+                foreach ($row as $secret) if (trim((string)$secret) !== '') $secrets[] = (string)$secret;
+            }
         } catch (PDOException $e) {
             // Older installations may predate either feature; other DB errors
             // must fail closed rather than hiding unknown dependent secrets.
             if (($e->errorInfo[0] ?? '') === '42S02'
                 || ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite' && str_contains($e->getMessage(), 'no such table: '.$table))) continue;
             if($table==='profile_calls_pa3c')throw new RuntimeException('Saved calling credentials could not be verified. No encryption key was changed.',0,$e);
+            if(in_array($table,['agent_connections_v1','agent_connection_email_drafts_v1'],true))throw new RuntimeException('Saved Connections data could not be verified. No encryption key was changed.',0,$e);
             throw $e;
         }
     }
@@ -158,7 +162,7 @@ function ai_recovery_reconnect(PDO $pdo, array $input, bool $confirmed): void
         if (ai_recovery_finish_pending($pdo)) return;
         if (!function_exists('link')) throw new RuntimeException('The server needs PHP link support for credential recovery. No saved credentials were changed.');
         if (file_exists(ai_master_key_file()) || is_link(ai_master_key_file())) throw new RuntimeException('Reconnection is available only when the installation encryption file is missing.');
-        if (ai_recovery_dependent_secrets($pdo)) throw new RuntimeException('Saved account, hosted-domain or calling credentials also use the missing file. Restore the original file to preserve those credentials; site reconnection has not changed anything.');
+        if (ai_recovery_dependent_secrets($pdo)) throw new RuntimeException('Saved account, hosted-domain, calling or Connections credentials also use the missing file. Restore the original file to preserve those credentials.');
         $saved = ai_recovery_saved($pdo);
         if (!$saved) throw new RuntimeException('No saved credentials require recovery.');
         $key = random_bytes(32); $replacement = [];

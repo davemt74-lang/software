@@ -59,6 +59,7 @@ function member_navigation_active_key(?string $scriptName = null): string
         'home.php'=>'home',
         'chat.php'=>'chat',
         'contacts.php'=>'contacts',
+        'connections.php'=>'connections',
         'profile-agent.php'=>'profile_agent',
         'messages.php'=>'messages',
         'knowledge.php'=>'knowledge',
@@ -108,7 +109,7 @@ function member_navigation_section_label(string $key): string
 {
     return match($key){
         'home','chat','profile_agent','voice_profile'=>'Agent',
-        'messages','contacts','knowledge','media_library','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
+        'messages','contacts','connections','knowledge','media_library','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
         'meetings','scheduling','appointment_lifecycle','commerce','campaigns','rewards','claim_terminal','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
         'team','team_scheduling','team_workspaces'=>'Team',
         'music_workspace','music_library','music_releases','music_player'=>'Music',
@@ -164,6 +165,7 @@ function member_navigation_menu_links(?array $user = null): array
         if(function_exists('token_pack_schema_ready')&&token_pack_schema_ready())$add($links,'token_packs','Buy AI Tokens',url('/token-packs.php'),'identity');
         if($chatAllowed)$add($links,'ai_usage','AI Usage History',url('/ai-usage.php'),'identity');
         $add($links,'contacts','My Contacts',url('/contacts.php'),'identity');
+        if(has_permission('account.access',$user))$add($links,'connections','Connections',url('/connections.php'),'identity');
         $add($links,'calendar','My Calendar',url('/calendar.php'),'agent');
         if(function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800())$add($links,'meetings','Meetings',url('/meetings.php'),'agent');
     }
