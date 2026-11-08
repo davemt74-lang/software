@@ -605,8 +605,20 @@ if($rawBrowserContext){
         $browserContext=null;$browserContextRelations=[];
     }
 }
-$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$historyStmt->closeCursor();$userMessageId=0;if(!$ephemeralProtocol){if($initiativeProgress!==null){$userMessageId=vp3_agent_chat_followthrough_save_user_v2160($pdo,$user,$activeAgent,$principal,$conversationId,$query,$currentAuthority,$initiativeProgress['implicit_reply']??null);}else{$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();}$initiativeProgress=['user_message_id'=>$userMessageId];}
-$emailRequest=$allowConnectedSites&&!$ephemeralProtocol&&agent_connection_email_chat_plan_v1($query)!==null;
+$emailRequest=$allowConnectedSites&&!$ephemeralProtocol&&vp3_participant_scope_v1()===null
+    &&knowledge_retrieval_v162_owner_session($user,$principal)&&agent_connection_email_chat_plan_v1($query)!==null;
+$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');
+$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$historyStmt->closeCursor();$userMessageId=0;
+if(!$ephemeralProtocol){
+    if($initiativeProgress!==null){
+        $userMessageId=vp3_agent_chat_followthrough_save_user_v2160($pdo,$user,$activeAgent,$principal,$conversationId,$query,$currentAuthority,$initiativeProgress['implicit_reply']??null);
+    }else{
+        $stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,?,?,?,?)');
+        $stmt->execute([$conversationId,$userId,'user',$query,$emailRequest?'{"skip_brain_archive":true}':null]);
+        $userMessageId=(int)$pdo->lastInsertId();
+    }
+    $initiativeProgress=['user_message_id'=>$userMessageId];
+}
 $youtubeQuery=$allowConnectedSites&&!$ephemeralProtocol?agent_connection_youtube_chat_plan_v1($query):null;
 if(!$ephemeralProtocol&&!$emailRequest&&$youtubeQuery===null){
     $priorAuthority=$currentAuthority;

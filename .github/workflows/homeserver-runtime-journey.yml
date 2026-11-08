@@ -67,6 +67,7 @@ jobs:
         run: |
           php tests/agent-connection-gmail-v1.php
           php tests/agent-connection-gmail-popup-v1.php
+          php tests/agent-connection-notice-v1.php
       - name: YouTube provider, owner Chat routing and shared quota
         run: |
           php tests/agent-connection-youtube-v1.php
@@ -133,6 +134,8 @@ jobs:
           node tests/trained-voice-real-browser.mjs
       - name: Agent Teams A3 real browser and Brain drawer acceptance
         run: node tests/agent-missions-cloud-a3-browser.mjs
+      - name: Gmail specialist watches in desktop and compact Chat
+        run: node tests/chat-email-specialist-browser.mjs
       - name: A5C2 reviewed specialist assignments browser acceptance
         run: node tests/agent-missions-cloud-a5c2-browser.mjs
       - name: A5C3 exact specialist change review
@@ -162,6 +165,7 @@ jobs:
           node tests/chat-speech-recovery.mjs
           node tests/player-history-api.mjs
           node tests/chat-canvas-voice-browser.mjs
+          node tests/agent-chat-greeting-browser.mjs
           node tests/transcript-tools-browser.mjs
           node tests/task-notes-browser.mjs
           node tests/agent-eyes-listening-handoff-browser.mjs

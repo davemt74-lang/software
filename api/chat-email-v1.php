@@ -30,6 +30,16 @@ try {
     }
     $pdo = db();
     if (!$pdo) throw new DomainException('Email review storage is unavailable.',503);
+    if (($input['action']??null) === 'specialist_status') {
+        if (array_diff(array_keys($input),['action','owner_key','agent_id','conversation_id','csrf_token'])) {
+            throw new DomainException('Choose a valid Gmail status request.',422);
+        }
+        require_once dirname(__DIR__).'/includes/agent-connection-email-followup-v1.php';
+        session_write_close();
+        $specialist = agent_connection_email_followup_specialist_v1($pdo,(int)$user['id'],$agent,$conversation);
+        echo json_encode(['ok'=>true,'specialist'=>$specialist], JSON_THROW_ON_ERROR);
+        exit;
+    }
     $key = $_SESSION['agent_connection_email_review_v1'] ??= bin2hex(random_bytes(32));
     $activeAgent = vp3_agent_chat_resolve_agent_v380($pdo,$user,$agent);
     $principal = vp3_agent_chat_principal_v380($user,$activeAgent);

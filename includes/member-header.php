@@ -85,7 +85,7 @@ if (!$memberHeaderRuntimeRendered):
 <?php if ($memberHeaderRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=' . $memberAgentVoiceMenuBuild)) ?>"><?php endif; ?>
 <script data-vp3-authenticated-runtime-bridge src="<?= e(url('/vp3-authenticated-runtime-bridge.js?v=' . $memberRuntimeBridgeBuild)) ?>"></script>
 <script data-member-shell-runtime src="<?= e(url('/member-shell-v77.js?v=authenticated-shell-phase2-20260914')) ?>" defer></script>
-<?php if ($memberHeaderRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=' . $memberAgentVoiceMenuBuild)) ?>" defer></script><?php endif; ?>
+<?php if ($memberHeaderRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=agent-voice-menu-chat-greeting-v1')) ?>" defer></script><?php endif; ?>
 <?php if ($memberHeaderCanChat): ?>
 <link rel="stylesheet" data-chat-notification-drawer href="<?= e(url('/chat-notifications-drawer-v240.css?v=' . $memberHeaderNotificationBuild)) ?>">
 <script data-chat-notification-drawer-config>window.VP3_NOTIFICATION_DRAWER=<?= json_encode([

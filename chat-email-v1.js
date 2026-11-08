@@ -34,6 +34,15 @@
 
   let selected = null;
   let pending = null;
+  let specialistRequest = null;
+  let specialistTimer = 0;
+  let specialistActive = false;
+  const thread = document.getElementById('chatThread');
+  const compactStatus = element('p');
+  compactStatus.className = 'vp3-chat-email-specialist-status';
+  compactStatus.setAttribute('role', 'status');
+  compactStatus.hidden = true;
+  document.getElementById('chatComposerShell')?.prepend(compactStatus);
 
   function currentScope() {
     const config = window.STONEFELLOW_CHAT;
@@ -49,6 +58,98 @@
     const scope = currentScope();
     return dialog.open && selected === selection && scope?.conversation_id === selection.conversation_id
       && scope.agent_id === selection.agent_id;
+  }
+
+  function specialistScope() {
+    return !document.hidden && thread?.dataset.view === 'chat' ? currentScope() : null;
+  }
+
+  function showSpecialist(status, scope) {
+    specialistActive = status?.state === 'watching' || status?.state === 'paused';
+    if (!specialistActive) {
+      compactStatus.hidden = true;
+      compactStatus.textContent = '';
+      window.VP3ChatSpecialists?.remove('email');
+      return;
+    }
+    const state = status.state === 'watching' ? 'Watching Gmail for new mail' : 'Gmail watch paused';
+    const caption = 'Email Specialist · ' + state;
+    if (compactStatus.textContent !== caption) compactStatus.textContent = caption;
+    compactStatus.hidden = false;
+
+    const id = status.origin_message_id;
+    const target = Number.isSafeInteger(id) && id > 0 && thread.querySelector(
+      `[data-chat-message-id="${id}"][data-chat-conversation-id="${scope.conversation_id}"][data-chat-message-role="user"]`
+    );
+    window.VP3ChatSpecialists?.update('email', {
+      label:'Email Specialist', title:'Gmail follow-up', status:state,
+      detail:status.state === 'watching'
+        ? 'VP3 checks Gmail in the background and posts the first match in this Chat.'
+        : 'This watch is waiting for Gmail to become available again.',
+      onView:target ? () => {
+        if (specialistScope()?.conversation_id !== scope.conversation_id || !target.isConnected) return;
+        target.tabIndex = -1;
+        target.scrollIntoView({block:'center'});
+        target.focus({preventScroll:true});
+      } : null,
+    });
+  }
+
+  function clearSpecialist() {
+    clearTimeout(specialistTimer);
+    specialistRequest?.abort();
+    specialistRequest = null;
+    showSpecialist(null);
+  }
+
+  function refreshSpecialistSoon(delay = 0) {
+    clearTimeout(specialistTimer);
+    if (!specialistScope()) {
+      clearSpecialist();
+      return;
+    }
+    specialistTimer = setTimeout(() => void refreshSpecialist(), delay);
+  }
+
+  async function refreshSpecialist() {
+    const scope = specialistScope();
+    if (!scope) { clearSpecialist(); return; }
+    const endpoint = new URL(cfg.endpoint, location.href);
+    if (endpoint.origin !== location.origin) { clearSpecialist(); return; }
+
+    specialistRequest?.abort();
+    const controller = new AbortController();
+    specialistRequest = controller;
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const wasActive = specialistActive;
+    let retry = 0;
+    const current = () => specialistRequest === controller && specialistScope()?.conversation_id === scope.conversation_id;
+    try {
+      const response = await fetch(endpoint, {
+        method:'POST', credentials:'same-origin', cache:'no-store', signal:controller.signal,
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({...scope, action:'specialist_status', owner_key:cfg.ownerKey, csrf_token:cfg.csrf}),
+      });
+      const data = await response.json();
+      if (!current()) return;
+      if (response.ok && data.ok === true) {
+        showSpecialist(data.specialist, scope);
+        if (specialistActive) retry = 15000;
+      } else {
+        showSpecialist(null);
+        if (wasActive && response.status >= 500) retry = 30000;
+      }
+    } catch (_error) {
+      if (!current()) return;
+      showSpecialist(null);
+      if (wasActive) retry = 30000;
+    } finally {
+      clearTimeout(timeout);
+      if (specialistRequest === controller) {
+        specialistRequest = null;
+        if (retry) refreshSpecialistSoon(retry);
+      }
+    }
   }
 
   function labelField(text, field) {
@@ -82,6 +183,7 @@
         throw new Error(data?.error || 'The email review could not be verified.');
       }
       render(data.draft);
+      if (action === 'confirm' && data.draft.watch_registered) refreshSpecialistSoon();
       if (action === 'revise') status.textContent = 'Changes saved. Review the updated email before sending.';
     } catch (error) {
       if (!valid(selection) || error.name === 'AbortError') return;
@@ -193,17 +295,31 @@
     actions.replaceChildren();
     status.textContent = '';
   });
-  window.addEventListener('stonefellow:chat-context-changing', () => { if (dialog.open) dialog.close(); });
+  window.addEventListener('stonefellow:chat-context-changing', () => {
+    if (dialog.open) dialog.close();
+    clearSpecialist();
+  });
   window.addEventListener('vp3:chat-conversation-changed', () => {
     if (selected && !valid(selected)) dialog.close();
   });
+  window.addEventListener('vp3:chat-context-ready', () => refreshSpecialistSoon());
+  window.addEventListener('vp3:chat-canvas-view-changed', () => refreshSpecialistSoon());
+  window.addEventListener('focus', () => refreshSpecialistSoon());
+  document.addEventListener('visibilitychange', () => refreshSpecialistSoon());
+  window.addEventListener('pagehide', clearSpecialist);
+  window.addEventListener('pageshow', () => refreshSpecialistSoon());
+  window.addEventListener('vp3:chat-email-watch-changed', () => refreshSpecialistSoon());
+  refreshSpecialistSoon();
 
   const tools = document.getElementById('chatToolsContent');
   if (tools) {
     const help = element('details');
     const link = element('a','Open Connections');
     link.href = cfg.connectionsUrl;
-    help.append(element('summary','Gmail'), element('p','Ask “Draft an email to buyer@example.com about our launch” or “Search Gmail for is:unread invoices.”'), link);
+    help.append(element('summary','Gmail'),
+      element('p','Try “Show emails from buyer@example.com” or “Draft an email to buyer@example.com about our launch.”'),
+      element('p','To get one notification in this Chat, ask “Notify me when I get an email from buyer@example.com.” To end the watch, ask “Stop watching for emails from buyer@example.com.”'),
+      link);
     tools.append(help);
   }
 })();

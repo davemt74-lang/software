@@ -93,7 +93,7 @@ function chat_notifications_v240_history(PDO $pdo, int $userId, int $limit = 50)
 
 function chat_notifications_v240_brain_operations(array $user, int $limit = 60): array
 {
-    if (function_exists('vp3_agent_memory_scope_current_v410') && vp3_agent_memory_scope_current_v410($user) > 0) return [];
+    $agentId = function_exists('vp3_agent_memory_scope_current_v410') ? vp3_agent_memory_scope_current_v410($user) : 0;
     return array_map(static fn(array $row): array => [
         'id'=>(int)($row['id'] ?? 0),
         'type'=>(string)($row['type'] ?? ''),
@@ -103,7 +103,7 @@ function chat_notifications_v240_brain_operations(array $user, int $limit = 60):
         'source_type'=>(string)($row['source_type'] ?? ''),
         'source_id'=>max(0, (int)($row['source_id'] ?? 0)),
         'created_at'=>(string)($row['created_at'] ?? ''),
-    ], notification_agent_brain_activity_after($user, 0, $limit));
+    ], notification_agent_brain_activity_after($user, 0, $limit, $agentId));
 }
 
 /**
@@ -539,6 +539,11 @@ function chat_notifications_v240_present_attention_locked(PDO $pdo, array $user,
     $stmt->execute([$notificationId, $userId]);
     $notification = $stmt->fetch();
     if (!$notification) throw new DomainException('Notification was not found.');
+    if (($notification['source_type'] ?? '') === 'agent_connection_activation') {
+        require_once dirname(__DIR__).'/includes/agent-connection-notice-v1.php';
+        $agent = chat_notifications_v240_agent($pdo,$userId,max(0,(int)($input['agent_id'] ?? 0)));
+        return agent_connection_notice_present_v1($pdo,$user,$notification,max(0,(int)($input['conversation_id'] ?? 0)),(int)($agent['id'] ?? 0));
+    }
     if(notification_is_profile_order_pa5($notification)){
         require_once dirname(__DIR__).'/includes/profile-order-announcement-pa5.php';
         $agent=chat_notifications_v240_agent($pdo,$userId,max(0,(int)($input['agent_id']??0)));
@@ -774,6 +779,10 @@ try {
         chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
     if ($method === 'GET' && $action === 'attention') {
+        if (($input['scope'] ?? null) === 'connection_activations') {
+            require_once dirname(__DIR__).'/includes/agent-connection-notice-v1.php';
+            chat_notifications_v240_json(agent_connection_notice_after_v1($pdo,$user,max(0,(int)($input['after_id'] ?? 0))));
+        }
         if(($input['scope']??null)==='profile_orders'){
             chat_notifications_v240_json(notification_profile_orders_after_pa5($pdo,(int)$user['id'],max(0,(int)($input['after_id']??0))));
         }

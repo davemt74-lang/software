@@ -28,12 +28,21 @@ function agent_connection_email_followup_install_v1(PDO $pdo): void
         expires_at DATETIME NOT NULL,
         reply_message_id VARCHAR(190) NULL,
         reply_chat_message_id BIGINT UNSIGNED NULL,
+        sender_after_ms BIGINT UNSIGNED NULL,
         PRIMARY KEY (owner_user_id,operation_key)".($sqlite ? ')' : ",
         INDEX idx_agent_email_followups_due (status,next_check_at),
         FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin"));
     if ($sqlite) $pdo->exec('CREATE INDEX IF NOT EXISTS idx_agent_email_followups_due ON agent_connection_email_followups_v1 (status,next_check_at)');
+    if (!agent_connection_email_sender_watch_ready_v1($pdo)) {
+        $pdo->exec('ALTER TABLE agent_connection_email_followups_v1 ADD COLUMN sender_after_ms BIGINT UNSIGNED NULL');
+    }
+}
+
+function agent_connection_email_sender_watch_ready_v1(PDO $pdo): bool
+{
+    return agent_commerce_recovery_column_pa2($pdo,'agent_connection_email_followups_v1','sender_after_ms');
 }
 
 function agent_connection_email_followup_ready_v1(PDO $pdo): bool
@@ -44,15 +53,6 @@ function agent_connection_email_followup_ready_v1(PDO $pdo): bool
     } catch (PDOException) {
         return false;
     }
-}
-
-/** Return one mailbox from a bare address or a single RFC 5322 display name and address. */
-function agent_connection_email_followup_address_v1(mixed $header): string
-{
-    if (!is_string($header) || strpbrk($header,"\r\n") !== false) return '';
-    $value = trim($header);
-    if (preg_match('/\A[^<>]*<([^<>]+)>\z/D',$value,$matches)) $value = trim($matches[1]);
-    return strlen($value)<=254 && filter_var($value,FILTER_VALIDATE_EMAIL) ? strtolower($value) : '';
 }
 
 function agent_connection_email_followup_origin_v1(PDO $pdo, array $watch, bool $lock=false): bool
@@ -76,16 +76,109 @@ function agent_connection_email_followup_grant_v1(array $watch, ?array $record):
 {
     return $record && ($record['provider']??'') === 'gmail' && ($record['status']??'') === 'connected'
         && hash_equals((string)$watch['authorization_key'],(string)($record['authorization_key']??''))
-        && agent_connection_email_followup_address_v1($record['account_email']??null) === $watch['account_email']
+        && agent_connection_gmail_address_v1($record['account_email']??null) === $watch['account_email']
         && !empty($record['permissions']['read']) && !empty($record['permissions']['followups']);
+}
+
+/** A saved, explicit owner command authorizes one future match in this Chat. */
+function agent_connection_email_sender_watch_register_v1(PDO $pdo, int $owner, int $agent, int $conversation, int $message, int $connectionId, string $grant, string $sender): bool
+{
+    if ($message < 1 || agent_connection_gmail_sender_v1($sender) !== $sender || $sender === '') {
+        throw new DomainException('Use a saved private Chat and provide one exact sender address.',422);
+    }
+    return agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$owner,$agent,$conversation,$message,$connectionId,$grant,$sender): bool {
+        $connection = agent_connections_require_grant_v1($pdo,$owner,$connectionId,'followups',$grant);
+        $account = agent_connection_gmail_address_v1($connection['account_email']);
+        $origin = ['owner_user_id'=>$owner,'agent_id'=>$agent,'conversation_id'=>$conversation,'origin_user_message_id'=>$message];
+        if ($account === '' || !agent_connection_email_followup_origin_v1($pdo,$origin,true)) {
+            throw new DomainException('This private Gmail watch is unavailable.',404);
+        }
+        $now = agent_commerce_time_pa2();
+        $key = 'sender_watch:'.$message;
+        $lookup = $pdo->prepare('SELECT * FROM agent_connection_email_followups_v1 WHERE owner_user_id=? AND operation_key=?'
+            .agent_commerce_lock_pa2($pdo));
+        $lookup->execute([$owner,$key]);
+        if ($prior = $lookup->fetch(PDO::FETCH_ASSOC)) {
+            return $prior['status'] === 'waiting' && $prior['expires_at'] > $now
+                && $prior['authorization_key'] === $grant && (int)$prior['connection_id'] === $connectionId
+                && (int)$prior['agent_id'] === $agent && (int)$prior['conversation_id'] === $conversation
+                && $prior['recipient_email'] === $sender && $prior['sender_after_ms'] !== null;
+        }
+        $duplicate = $pdo->prepare("SELECT 1 FROM agent_connection_email_followups_v1
+            WHERE owner_user_id=? AND connection_id=? AND authorization_key=? AND agent_id=? AND conversation_id=?
+                AND recipient_email=? AND sender_after_ms IS NOT NULL AND status='waiting' AND expires_at>? LIMIT 1"
+            .agent_commerce_lock_pa2($pdo));
+        $duplicate->execute([$owner,$connectionId,$grant,$agent,$conversation,$sender,$now]);
+        if ($duplicate->fetchColumn() !== false) return true;
+        $active = $pdo->prepare("SELECT COUNT(*) FROM agent_connection_email_followups_v1 WHERE owner_user_id=? AND connection_id=?
+            AND authorization_key=? AND sender_after_ms IS NOT NULL AND status='waiting' AND expires_at>?");
+        $active->execute([$owner,$connectionId,$grant,$now]);
+        if ((int)$active->fetchColumn() >= 10) throw new DomainException('You have ten active Gmail sender watches. Stop one before adding another.',422);
+        $pdo->prepare("INSERT INTO agent_connection_email_followups_v1
+            (owner_user_id,operation_key,connection_id,authorization_key,agent_id,conversation_id,origin_user_message_id,
+             account_email,recipient_email,sent_message_id,thread_id,status,next_check_at,expires_at,sender_after_ms)
+            VALUES (?,?,?,?,?,?,?,?,?,'','','waiting',?,?,?)")
+            ->execute([$owner,$key,$connectionId,$grant,$agent,$conversation,$message,$account,$sender,
+                $now,gmdate('Y-m-d H:i:s',time()+30*86400),(int)floor(microtime(true)*1000)]);
+        return true;
+    });
+}
+
+function agent_connection_email_sender_watch_stop_v1(PDO $pdo, int $owner, int $agent, int $conversation, int $message, string $sender): int
+{
+    $origin = ['owner_user_id'=>$owner,'agent_id'=>$agent,'conversation_id'=>$conversation,'origin_user_message_id'=>$message];
+    return agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$owner,$agent,$conversation,$message,$sender,$origin): int {
+        if ($message < 1 || !agent_connection_email_followup_origin_v1($pdo,$origin,true)) {
+            throw new DomainException('Use the private Chat where this Gmail watch was started.',404);
+        }
+        $stop = $pdo->prepare("UPDATE agent_connection_email_followups_v1 SET status='stopped',claim_key=NULL,next_check_at=NULL
+            WHERE owner_user_id=? AND agent_id=? AND conversation_id=? AND recipient_email=? AND sender_after_ms IS NOT NULL
+                AND status='waiting' AND expires_at>?");
+        $stop->execute([$owner,$agent,$conversation,$sender,agent_commerce_time_pa2()]);
+        return $stop->rowCount();
+    });
+}
+
+/** Project live background work for the private Chat without revealing mailbox data. */
+function agent_connection_email_followup_specialist_v1(PDO $pdo, int $owner, int $agent, int $conversation): array
+{
+    initiative_work_product_scope_v1($pdo,$owner,['agent_id'=>$agent,'conversation_id'=>$conversation]);
+    $idle = ['state'=>'idle','origin_message_id'=>null];
+    if (!agent_connection_email_followup_ready_v1($pdo)) return $idle;
+
+    $connection = agent_connections_find_v1($pdo,$owner,'gmail');
+    if (!$connection || $connection['status'] !== 'connected' || !agent_connections_permissions_v1($connection)['followups']) return $idle;
+
+    $stmt = $pdo->prepare("SELECT f.origin_user_message_id FROM agent_connection_email_followups_v1 f
+        WHERE f.owner_user_id=? AND f.agent_id=? AND f.conversation_id=? AND f.connection_id=? AND f.authorization_key=?
+            AND f.account_email=? AND f.status='waiting' AND f.expires_at>? AND f.next_check_at IS NOT NULL
+            AND (f.origin_user_message_id IS NULL OR EXISTS (SELECT 1 FROM chat_messages m
+                WHERE m.id=f.origin_user_message_id AND m.conversation_id=f.conversation_id AND m.user_id=f.owner_user_id AND m.role='user'))
+        ORDER BY f.origin_user_message_id DESC, f.operation_key LIMIT 1");
+    $stmt->execute([$owner,$agent,$conversation,(int)$connection['id'],$connection['authorization_key'],
+        agent_connection_gmail_address_v1($connection['account_email']),agent_commerce_time_pa2()]);
+    $watch = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$watch) return $idle;
+
+    $ready = agent_connection_gmail_ready_v1();
+    if ($ready) {
+        try {
+            if (!hash_equals($connection['client_fingerprint'],agent_connections_client_fingerprint_v1())) return $idle;
+        } catch (AgentConnectionExceptionV1 $error) {
+            if ($error->getCode() !== 403) throw $error;
+            $ready = false;
+        }
+    }
+    return ['state'=>$ready?'watching':'paused',
+        'origin_message_id'=>$watch['origin_user_message_id'] === null ? null : (int)$watch['origin_user_message_id']];
 }
 
 /** The caller supplies the durable verified result from an explicitly reviewed send. */
 function agent_connection_email_followup_register_v1(PDO $pdo, int $ownerId, int $agentId, int $conversationId, array $verifiedSend, ?array $initiative=null): bool
 {
     if (!agent_connection_email_followup_ready_v1($pdo)) return false;
-    $from = agent_connection_email_followup_address_v1($verifiedSend['from']??null);
-    $to = agent_connection_email_followup_address_v1($verifiedSend['to']??null);
+    $from = agent_connection_gmail_address_v1($verifiedSend['from']??null);
+    $to = agent_connection_gmail_address_v1($verifiedSend['to']??null);
     $connectionId = (int)($verifiedSend['connection_id']??0);
     $sentAt = (int)($verifiedSend['sent_at']??0);
     if ($from === '' || $to === '' || $from === $to || $connectionId<1 || $sentAt<1) return false;
@@ -133,16 +226,16 @@ function agent_connection_email_followup_match_v1(array $watch, array $messages)
         }
     }
     if (!$anchor || !in_array('SENT',$anchor['labels'],true) || array_intersect(['DRAFT','TRASH','SPAM'],$anchor['labels'])
-        || agent_connection_email_followup_address_v1($anchor['from']) !== $watch['account_email']
-        || agent_connection_email_followup_address_v1($anchor['to']) !== $watch['recipient_email']
+        || agent_connection_gmail_address_v1($anchor['from']) !== $watch['account_email']
+        || agent_connection_gmail_address_v1($anchor['to']) !== $watch['recipient_email']
         || (int)$anchor['received_at_ms']<1 || !preg_match('/\A<[^<>\s]+@[^<>\s]+>\z/D',trim($anchor['rfc_message_id']))) return null;
 
     $reply = null;
     foreach ($messages as $candidate) {
         if ($candidate['thread_id'] !== $watch['thread_id'] || $candidate['message_id'] === $anchor['message_id']
             || $candidate['received_at_ms'] <= $anchor['received_at_ms'] || array_intersect(['SENT','DRAFT','TRASH','SPAM'],$candidate['labels'])
-            || agent_connection_email_followup_address_v1($candidate['from']) !== $watch['recipient_email']
-            || agent_connection_email_followup_address_v1($candidate['to']) !== $watch['account_email']) continue;
+            || agent_connection_gmail_address_v1($candidate['from']) !== $watch['recipient_email']
+            || agent_connection_gmail_address_v1($candidate['to']) !== $watch['account_email']) continue;
         $auth = $candidate['authentication_results']??'';
         if (preg_match('/\Amx\.google\.com\s*;/i',$auth) && preg_match('/;\s*dmarc\s*=\s*fail\b/i',$auth)) continue;
         $parentId = trim($candidate['in_reply_to']);
@@ -168,13 +261,19 @@ function agent_connection_email_followup_deliver_v1(PDO $pdo, array $watch, stri
     return agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$watch,$claim,$reply): bool {
         $owner = (int)$watch['owner_user_id'];
         // The verified-send callback holds the connection first, then the original Chat.
-        if (!agent_connection_email_followup_grant_v1($watch,agent_connections_record_v1($owner,(int)$watch['connection_id'],true))
+        $connection = agent_connections_find_v1($pdo,$owner,(int)$watch['connection_id'],true);
+        $record = $connection ? agent_connections_view_v1($connection) + ['authorization_key'=>$connection['authorization_key']] : null;
+        if (!agent_connection_email_followup_grant_v1($watch,$record)
             || !agent_connection_email_followup_origin_v1($pdo,$watch,true)) {
             agent_connection_email_followup_reschedule_v1($pdo,$watch,$claim,null);
             return false;
         }
         if (!agent_connection_gmail_ready_v1()) {
             agent_connection_email_followup_reschedule_v1($pdo,$watch,$claim,900);
+            return false;
+        }
+        if (!hash_equals($connection['client_fingerprint'],agent_connections_client_fingerprint_v1())) {
+            agent_connection_email_followup_reschedule_v1($pdo,$watch,$claim,null);
             return false;
         }
         $now = agent_commerce_time_pa2();
@@ -187,10 +286,18 @@ function agent_connection_email_followup_deliver_v1(PDO $pdo, array $watch, stri
             'origin_user_message_id'=>$watch['origin_user_message_id'] === null ? null : (int)$watch['origin_user_message_id'],
             'received_at'=>gmdate(DATE_ATOM,intdiv((int)$reply['received_at_ms'],1000)),
         ]],JSON_THROW_ON_ERROR);
+        $senderWatch = ($watch['sender_after_ms']??null) !== null;
+        $text = $senderWatch
+            ? 'New Gmail message from '.$watch['recipient_email'].'. Open Gmail to read it. This sender watch is complete.'
+            : 'Gmail found a reply from '.$watch['recipient_email'].' in the thread you asked me to watch. Open Gmail to read it.';
         $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at) VALUES (?,NULL,'assistant',?,?,?)")
-            ->execute([$watch['conversation_id'],'Gmail found a reply from '.$watch['recipient_email']." in the thread you asked me to watch. Open Gmail to read it.",$context,$now]);
+            ->execute([$watch['conversation_id'],$text,$context,$now]);
         $messageId = (int)$pdo->lastInsertId();
         $pdo->prepare('UPDATE chat_conversations SET updated_at=? WHERE id=? AND user_id=?')->execute([$now,$watch['conversation_id'],$owner]);
+        notification_create_locked($owner,'agent_email_followup',$senderWatch ? 'New Gmail message' : 'Gmail reply received',
+            'Open your private Agent Chat to see the Gmail watch update.',
+            url('/chat.php?agent='.((int)$watch['agent_id'] ?: 'system').'&conversation_id='.(int)$watch['conversation_id']),
+            'agent_connection_email_followup',$messageId);
         $pdo->prepare("UPDATE agent_connection_email_followups_v1 SET status='delivered',claim_key=NULL,next_check_at=NULL,reply_message_id=?,reply_chat_message_id=?
             WHERE owner_user_id=? AND operation_key=? AND claim_key=?")
             ->execute([$reply['message_id'],$messageId,$owner,$watch['operation_key'],$claim]);
@@ -211,7 +318,10 @@ function agent_connection_email_followup_sweep_v1(PDO $pdo, int $limit=5, ?calla
     foreach ($due->fetchAll(PDO::FETCH_ASSOC) as $watch) {
         $now = agent_commerce_time_pa2();
         $claim = bin2hex(random_bytes(16));
-        $reserve->execute([$claim,gmdate('Y-m-d H:i:s',time()+120),$watch['owner_user_id'],$watch['operation_key'],$now]);
+        $after = (int)($watch['sender_after_ms']??0);
+        // A sender poll may list messages and then fetch up to ten metadata records.
+        $leaseSeconds = $after > 0 ? 180 : 120;
+        $reserve->execute([$claim,gmdate('Y-m-d H:i:s',time()+$leaseSeconds),$watch['owner_user_id'],$watch['operation_key'],$now]);
         if ($reserve->rowCount() !== 1) continue;
         $counts['processed']++;
         $owner = (int)$watch['owner_user_id'];
@@ -227,8 +337,13 @@ function agent_connection_email_followup_sweep_v1(PDO $pdo, int $limit=5, ?calla
                 agent_connection_email_followup_reschedule_v1($pdo,$watch,$claim,null);
                 continue;
             }
-            $messages = agent_connection_gmail_thread_v1($grant['access_token'],$watch['thread_id'],$http);
-            $reply = agent_connection_email_followup_match_v1($watch,$messages);
+            if ($after > 0) {
+                $messages = agent_connection_gmail_search_sender_v1($grant['access_token'],$watch['recipient_email'],10,$http,$after);
+                $reply = $messages[0] ?? null;
+            } else {
+                $messages = agent_connection_gmail_thread_v1($grant['access_token'],$watch['thread_id'],$http);
+                $reply = agent_connection_email_followup_match_v1($watch,$messages);
+            }
             if ($reply === null) {
                 agent_connection_email_followup_reschedule_v1($pdo,$watch,$claim,300);
             } elseif (agent_connection_email_followup_deliver_v1($pdo,$watch,$claim,$reply)) {

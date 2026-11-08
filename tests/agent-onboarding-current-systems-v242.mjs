@@ -17,6 +17,8 @@ const memberVoice=read('member-agent-voice-menu.js');
 const memberMenu=read('includes/member-user-menu.php');
 const notificationSettings=read('notification-settings.php');
 const chatVoice=read('chat-voice.js');
+const chatGreeting=read('agent-welcome.js');
+const responseWindow=read('agent-response-window.js');
 const notificationVoice=read('chat-notifications-drawer-v240.js');
 const cognitive=read('includes/cognitive-presentation-v510.php');
 const extensionVoice=read('includes/extension-notifications-v2140.php');
@@ -90,7 +92,10 @@ assert.doesNotMatch(notificationVoice,/setVoiceMode\(true\)[\s\S]{0,240}response
 
 assert.match(settingsUi,/Agent Voice is controlled by the upper switch in your account menu/);
 assert.match(notificationSettings,/name="agent_voice_enabled"/,'Notification Settings must expose the canonical Agent Voice master');
-assert.match(notificationSettings,/does not turn on your microphone/,'Notification Settings must distinguish speech from microphone listening');
+assert.match(notificationSettings,/After a Chat greeting, the Agent listens for up to 15 seconds if this browser already allows microphone access/,'Notification Settings must disclose the bounded, permission-gated greeting response');
+assert.match(chatGreeting,/if\(completed&&current\(\)\)await window\.VP3AgentResponseWindow\?\.listen/,'a greeting opens listening only after successful playback in the same active Chat');
+assert.match(responseWindow,/navigator\.permissions\.query\(\{name:'microphone'\}\)[\s\S]*?permission\?\.state!=='granted'[\s\S]*?return false;[\s\S]*?\.responseWindow\?\.\(\{greetingText\}\)/,'the reply window requires an already-granted browser permission');
+assert.doesNotMatch(responseWindow,/getUserMedia/,'checking permission for a greeting must not prompt for access');
 assert.match(notificationSettings,/chat_settings_save_agent_voice_v237/,'Notification Settings must save through the canonical voice authority');
 assert.doesNotMatch(memberVoice,/<label class="vp3-agent-voice-toggle-row"/,'member dashboard must not duplicate the upper master switch');
 assert.match(ui,/Turn on Agent Voice/);

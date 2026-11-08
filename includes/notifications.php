@@ -118,36 +118,46 @@ function notification_recent(?array $user = null, int $limit = 8): array
  * Brain tab. Authoritative subsystem ledgers are reconciled first; notification
  * rows are only the existing deduplicated delivery/index carrier.
  */
-function notification_agent_brain_activity_after(?array $user, int $afterId = 0, int $limit = 50): array
+function notification_agent_brain_activity_after(?array $user, int $afterId = 0, int $limit = 50, int $agentId = 0): array
 {
     $user ??= current_user();
     $pdo = db();
     if (!$user || !$pdo || !table_exists('notifications')) return [];
 
-    if (function_exists('agent_chat_activity_reconcile')) {
+    if ($agentId < 1 && function_exists('agent_chat_activity_reconcile')) {
         agent_chat_activity_reconcile($user);
     }
 
+    // These account-level events also belong in Notifications. Reuse their
+    // safe summaries without changing bell read state or creating another row.
+    $followupScope = $agentId > 0 ? " AND EXISTS (
+        SELECT 1 FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id
+        WHERE m.id=n.source_id AND c.user_id=n.user_id AND c.user_agent_id=?
+    )" : '';
+    $connections = "((n.source_type='agent_connection_activation' AND n.type IN ('gmail_connected','youtube_enabled'))
+        OR (n.source_type='agent_connection_email_followup' AND n.type='agent_email_followup'{$followupScope}))";
+    $predicate = $agentId > 0 ? $connections : '(' . notification_agent_brain_sql_predicate('n') . " OR {$connections})";
+    $scopeParams = $agentId > 0 ? [$agentId] : [];
     $limit = max(1, min(100, $limit));
     try {
         if ($afterId > 0) {
             $stmt = $pdo->prepare(
                 "SELECT n.* FROM notifications n
-                 WHERE n.user_id=? AND n.id>? AND " . notification_agent_brain_sql_predicate('n') . "
+                 WHERE n.user_id=? AND n.id>? AND {$predicate}
                  ORDER BY n.id ASC LIMIT {$limit}"
             );
-            $stmt->execute([(int)$user['id'], $afterId]);
+            $stmt->execute([(int)$user['id'], $afterId, ...$scopeParams]);
             return $stmt->fetchAll() ?: [];
         }
 
         $stmt = $pdo->prepare(
             "SELECT n.* FROM notifications n
              WHERE n.user_id=?
-               AND " . notification_agent_brain_sql_predicate('n') . "
+               AND {$predicate}
                AND n.created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
              ORDER BY n.created_at DESC,n.id DESC LIMIT {$limit}"
         );
-        $stmt->execute([(int)$user['id']]);
+        $stmt->execute([(int)$user['id'], ...$scopeParams]);
         return $stmt->fetchAll() ?: [];
     } catch (Throwable $e) {
         return [];
@@ -190,6 +200,9 @@ function notification_requires_attention(array $notification): bool
     if ($type === 'client_release_update') return true;
 
     $informational = [
+        'gmail_connected',
+        'youtube_enabled',
+        'agent_email_followup',
         'vrss_new_posts',
         'vrss_new_follower',
         'vrss_new_like',

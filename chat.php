@@ -574,6 +574,7 @@ $notificationDrawerRuntime = '<link rel="stylesheet" href="' . e(url('/agent-top
         'topOfMindEndpoint'=>url('/api/agent-top-of-mind-v1.php'),
         'csrf'=>csrf_token(),
         'build'=>$notificationDrawerBuild,
+        'agentVoiceEnabled'=>member_agent_voice_enabled($user),
         'agentId'=>(int)($activeUserAgent['id'] ?? 0),
         'userId'=>(int)$user['id'],
         'workingAttentionBinding'=>$workingAttentionBinding,

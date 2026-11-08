@@ -33,3 +33,19 @@
 #vp3ChatEmailReview button:disabled { opacity: .56; cursor: default; }
 #vp3ChatEmailReview .vp3-chat-email-primary { background: #172a50; color: #fff; }
 #vp3ChatEmailReview [hidden] { display: none; }
+
+.vp3-chat-email-specialist-status {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto .3rem;
+  padding: .3rem .65rem;
+  border: 1px solid #c8cfdb;
+  border-radius: .45rem;
+  color: #24334a;
+  background: #fff;
+  font-size: .8rem;
+}
+.vp3-chat-email-specialist-status[hidden] { display: none; }
+@media (min-width: 761px) {
+  body:has(#sfOnlineRailV109:not([hidden])) .vp3-chat-email-specialist-status { display: none; }
+}

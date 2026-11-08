@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-connection-gmail-v1.php';
+require_once __DIR__.'/agent-connection-notice-v1.php';
 require_once __DIR__.'/ai-settings.php';
 
 final class AgentConnectionExceptionV1 extends RuntimeException {}
@@ -167,6 +168,9 @@ function agent_connections_store_gmail_v1(int $ownerId, array $token, array $pol
     }
     $pdo->beginTransaction();
     try {
+        $owner = $pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');
+        $owner->execute([$ownerId]);
+        if (!$owner->fetchColumn()) throw new AgentConnectionExceptionV1('The connection owner is unavailable.', 403);
         $pdo->query("SELECT setting_key FROM settings WHERE setting_key IN ('connections_gmail_client_id','connections_gmail_client_secret','connections_gmail_redirect_uri','connections_gmail_enabled') FOR UPDATE")->fetchAll();
         if (!hash_equals(agent_connections_client_fingerprint_v1(),$fingerprint)
             || ($callback !== null && $callback !== agent_connections_callback_v1())) {
@@ -193,6 +197,7 @@ function agent_connections_store_gmail_v1(int $ownerId, array $token, array $pol
             $stmt = $pdo->prepare("INSERT INTO agent_connections_v1 (external_account_id,account_email,authorization_key,client_fingerprint,access_token_enc,refresh_token_enc,access_expires_at,read_enabled,send_enabled,followups_enabled,owner_user_id,provider,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'gmail','connected')");
             $stmt->execute([...$values,$ownerId]);
         }
+        agent_connection_notice_record_v1($ownerId, 'gmail');
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -204,12 +209,22 @@ function agent_connections_update_policy_v1(int $ownerId, int $connectionId, arr
 {
     $pdo = db();
     if (!$pdo) return false;
-    $stmt = $pdo->prepare("UPDATE agent_connections_v1 SET read_enabled=?,send_enabled=?,followups_enabled=? WHERE owner_user_id=? AND id=? AND provider='gmail' AND status='connected' AND authorization_key=?");
-    $stmt->execute([(int)$policy['read'],(int)$policy['send'],(int)($policy['read'] && $policy['followups']),$ownerId,$connectionId,$expectedKey]);
-    if ($stmt->rowCount() > 0) return true;
-    $row = agent_connections_find_v1($pdo, $ownerId, $connectionId);
-    return $row && $row['provider'] === 'gmail' && $row['status'] === 'connected'
-        && hash_equals($row['authorization_key'],$expectedKey) && agent_connections_permissions_v1($row) === $policy;
+    require_once __DIR__.'/agent-connection-email-followup-v1.php';
+    return agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$ownerId,$connectionId,$policy,$expectedKey): bool {
+        $row = agent_connections_find_v1($pdo,$ownerId,$connectionId,true);
+        if (!$row || $row['provider'] !== 'gmail' || $row['status'] !== 'connected'
+            || !hash_equals($row['authorization_key'],$expectedKey)) return false;
+        $allowFollowups = $policy['read'] && $policy['followups'];
+        $pdo->prepare('UPDATE agent_connections_v1 SET read_enabled=?,send_enabled=?,followups_enabled=? WHERE owner_user_id=? AND id=?')
+            ->execute([(int)$policy['read'],(int)$policy['send'],(int)$allowFollowups,$ownerId,$connectionId]);
+        // An explicit revocation stops pending work immediately, even if the owner re-enables the permission before the next worker run.
+        if (!$allowFollowups && agent_connection_email_followup_ready_v1($pdo)) {
+            $pdo->prepare("UPDATE agent_connection_email_followups_v1 SET status='stopped',claim_key=NULL,next_check_at=NULL
+                WHERE owner_user_id=? AND connection_id=? AND authorization_key=? AND status='waiting'")
+                ->execute([$ownerId,$connectionId,$expectedKey]);
+        }
+        return true;
+    });
 }
 
 function agent_connections_disconnect_v1(int $ownerId, int $connectionId, string $provider = 'gmail', ?string $expectedKey = null): bool

@@ -113,6 +113,7 @@ function vp3_capability_contract_bindings_v1(): array
         'phone.sms.send'=>['communication.phone','write','vp3_phone_sms_authorize_send_v120'],
         'email.read'=>['communication.gmail','read','agent_connection_email_chat_v1'],
         'email.send'=>['communication.gmail','write','agent_connection_email_chat_action_v1'],
+        'email.followups'=>['communication.gmail','write','agent_connection_email_chat_v1'],
         'calendar.read'=>['office.calendar','read','user_calendar_agent_query_v1300'],
         'calendar.manage'=>['office.calendar','write','user_calendar_agent_query_v1300'],
         'workflows.read'=>['missions.workflows','read','agent_work_control_chat_v173'],
