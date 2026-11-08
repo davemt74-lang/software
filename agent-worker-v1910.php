@@ -154,6 +154,19 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         }
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.email_followup.sweep_failed',['error_class'=>get_class($e)]);}
     }
+    if($executor==='all'||$executor==='cloud'){
+        try{
+            if(table_exists('agent_connection_youtube_results_v1')){
+                require_once __DIR__.'/includes/agent-connection-youtube-chat-v1.php';
+                $counts['youtube_expired_results']=agent_connection_youtube_results_cleanup_v1($pdo);
+            }
+            if(table_exists('agent_connection_youtube_usage_v1')){
+                require_once __DIR__.'/includes/agent-connection-youtube-quota-v1.php';
+                $counts['youtube_expired_usage']=agent_connection_youtube_quota_cleanup_v1($pdo);
+            }
+        }
+        catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.youtube.retention_failed',['error_class'=>get_class($e)]);}
+    }
     $counts['completed_at']=gmdate('c');
     return $counts;
 }

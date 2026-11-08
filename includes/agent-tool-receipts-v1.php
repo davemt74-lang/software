@@ -67,6 +67,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'phone.sms.read'=>['list','read'],
         'email.read'=>['search','read'],
         'email.send'=>['prepare','send'],
+        'youtube.search'=>['search'],
         'transcripts.highlight'=>['highlight','review_item','item_action'],
         'transcripts.analyze'=>['run_analysis','run_research'],
         'transcripts.read'=>['list','read','search','clarify','interpret','read_analysis','read_research','attach','detach','summarize','discuss','continue'],

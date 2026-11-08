@@ -289,9 +289,11 @@ $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict
     . '};})();</script>';
 
 $voiceBootstrap = '<script data-chat-voice-pre>(function(){"use strict";var b=document.getElementById("chatVoiceButton");window.STONEFELLOW_CHAT_VOICE_BOOT={button:b,legacyDormant:true};if(b){b.id="chatVoiceButtonLegacyDormant";b.disabled=false;}})();</script>';
+$youtubeChatRuntime = '<link rel="stylesheet" href="'.e(url('/chat-youtube-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-youtube-v1.css'),0,12))).'">'
+    . '<script src="'.e(url('/chat-youtube-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-youtube-v1.js'),0,12))).'"></script>';
 $html = preg_replace(
     '~(<script[^>]+src="[^"]*chat\.js\?v=[^"]+"[^>]*></script>)~i',
-    $agentChatBootstrap . $voiceBootstrap . '$1',
+    $agentChatBootstrap . $voiceBootstrap . $youtubeChatRuntime . '$1',
     $html,
     1
 ) ?? $html;

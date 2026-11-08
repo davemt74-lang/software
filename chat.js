@@ -1445,6 +1445,7 @@
       system_app_action_card:raw.system_app_action_card && typeof raw.system_app_action_card === 'object' ? raw.system_app_action_card : null,
       knowledge_actions_r9:raw.knowledge_actions_r9 || null,
       canvas_media:raw.canvas_media && typeof raw.canvas_media==='object' ? raw.canvas_media : null,
+      youtube_results:raw.youtube_results && typeof raw.youtube_results==='object' ? raw.youtube_results : null,
       profile_handoff:raw.profile_handoff && typeof raw.profile_handoff==='object' ? raw.profile_handoff : null,
       profile_call:raw.profile_call && typeof raw.profile_call==='object' ? raw.profile_call : null,
       profile_speech:raw.profile_speech && typeof raw.profile_speech==='object' ? raw.profile_speech : null,
@@ -1604,7 +1605,7 @@
     return links.length ? `<div class="message-sources" aria-label="Priority sources">${links.join('')}</div>` : '';
   }
 
-  function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, canvasMedia = null) {
+  function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, canvasMedia = null, youtubeResults = null) {
     const wrapper = document.createElement('article');
     wrapper.className = `message ${role}`;
 
@@ -1640,6 +1641,7 @@
 
     wrapper.querySelector('.message-text').textContent = text;
     if(canvasMedia){const host=document.createElement('section');host.className='vp3-canvas-media';host.setAttribute('aria-label','Chat media');host._vp3CanvasMediaRef=canvasMedia;wrapper.querySelector('.message-text').after(host);}
+    if (role === 'assistant' && youtubeResults) window.VP3_CHAT_YOUTUBE_V1?.attach(wrapper, youtubeResults);
     if (cards.length) {
       const cardHost = wrapper.querySelector('[data-cognitive-card-host]');
       if (cardHost) {
@@ -1651,9 +1653,9 @@
     return wrapper;
   }
 
-  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, knowledgeDraft = null, canvasMedia = null) {
+  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, knowledgeDraft = null, canvasMedia = null, youtubeResults = null) {
     if (welcome) welcome.hidden = true;
-    const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards, systemAppActionCard, canvasMedia);
+    const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards, systemAppActionCard, canvasMedia, youtubeResults);
     const listening=thread.querySelector('.chat-listening-continuation');
     if(listening)thread.insertBefore(el,listening);else thread.appendChild(el);
     window.VP3KnowledgeActionsR9?.show(knowledgeDraft,el.querySelector('.message-body')||el);
@@ -3599,7 +3601,8 @@
         context.cards || [],
         context.system_app_action_card || null,
         context.knowledge_actions_r9 || null,
-        context.canvas_media || null
+        context.canvas_media || null,
+        context.youtube_results || null
       );
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'));
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
@@ -3640,7 +3643,7 @@
         lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
         return;
       }
-      const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null);
+      const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null,context.youtube_results||null);
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'));
       const next=Array.from(thread.querySelectorAll('[data-chat-message-id]')).find(element=>element!==renderedMessage
         &&Number(element.dataset.chatConversationId)===targetId&&Number(element.dataset.chatMessageId)>Number(message.id));
@@ -3841,7 +3844,8 @@
         data.cards || data.cognitive_cards || [],
         data.system_app_action_card || null,
         data.knowledge_actions_r9 || null,
-        data.canvas_media || null
+        data.canvas_media || null,
+        data.youtube_results || null
       );
       if(!existingReply)bindStoredMessagePa3(reply,data.assistant_message_id);
       applyInitiativeFollowthroughV1(data.initiative_followthrough);

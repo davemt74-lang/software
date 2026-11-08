@@ -100,7 +100,7 @@ must(api.includes('Do not invent or add domains.'),'Agent source planner expansi
 must(runtime.includes('isset($allowedSet[$domain])'),'Agent source plan must be sanitized against approved domains');
 must(api.includes("'ephemeral_protocol'=>true"),'Research planning/extraction must use non-persistent protocol turns');
 must(chat.includes("$ephemeralProtocol=!empty($input['ephemeral_protocol']);"),'Agent Chat ephemeral protocol switch missing');
-must(chat.includes('if(!$ephemeralProtocol){$stmt=$pdo->prepare'),'Agent Chat normal persistence must be conditionally skipped for protocol turns');
+must(/if\s*\(\s*!\$ephemeralProtocol\s*\)\s*\{\s*\$stmt\s*=\s*\$pdo->prepare\('INSERT INTO chat_messages \(conversation_id,user_id,role,message,context_json\)/.test(chat),'Agent Chat assistant persistence must be conditionally skipped for protocol turns');
 must(api.includes("'browser_context'=>["),'ephemeral browser_context payload missing');
 must(api.includes('Temporary Browser Research extraction context'),'ephemeral extraction prompt missing');
 must(chat.includes("unset($persistedAgentContext['browser_context'])"),'Agent Chat must strip Browser Context before durable context persistence');

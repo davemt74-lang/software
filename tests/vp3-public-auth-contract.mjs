@@ -113,10 +113,12 @@ assert.match(about, /Capture[\s\S]*Understand[\s\S]*Take action/i, 'About must e
 assert.match(contact, /Account \/ Support/, 'Contact must support VP3 account inquiries');
 assert.doesNotMatch(contact, /stonefellow74@gmail\.com/, 'VP3 public Contact must not retain the legacy contact fallback');
 assert.doesNotMatch(contact, /mailto:<\?=/, 'VP3 public Contact must not expose a legacy-branded configured email address');
-assert.match(privacy, /Last updated September 6, 2026/, 'privacy revision date must reflect the VP3 rewrite');
+assert.match(privacy, /Last updated November 8, 2026/, 'privacy revision date must reflect the YouTube integration');
+assert.match(privacy, /YouTube API Services[\s\S]*policies\.google\.com\/privacy/, 'privacy must disclose YouTube API use and link Google privacy');
 assert.match(privacy, /We do not sell your personal information/, 'privacy no-sale commitment must be preserved');
 assert.match(privacy, /VP3 contact page/, 'privacy requests must route through the VP3 public contact surface');
-assert.match(terms, /Last updated September 6, 2026/, 'terms revision date must reflect the VP3 rewrite');
+assert.match(terms, /Last updated November 8, 2026/, 'terms revision date must reflect the YouTube integration');
+assert.match(terms, /youtube\.com\/t\/terms/, 'terms must link the YouTube Terms of Service');
 assert.match(terms, /You retain ownership of content you submit to VP3/, 'terms must preserve user content ownership');
 assert.match(terms, /VP3 contact page/, 'terms questions must route through the VP3 public contact surface');
 for (const capability of ['Browser Companion + Annotations','Meetings + Transcription + AI Summary','Calendar + Booking','Ecommerce + Agent Analytics','HomeServer + private AI']) {

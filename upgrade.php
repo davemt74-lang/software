@@ -66,6 +66,9 @@ require_once __DIR__ . '/includes/profile-conversation-checkout-pa5.php';
 require_once __DIR__ . '/includes/connected-gelato-v1.php';
 require_once __DIR__ . '/includes/agent-chat-read-v1.php';
 require_once __DIR__ . '/includes/agent-connections-v1.php';
+require_once __DIR__ . '/includes/agent-connection-health-v1.php';
+require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
+require_once __DIR__ . '/includes/agent-connection-youtube-chat-v1.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
@@ -284,6 +287,10 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && homeserver_https_v1300_transient_ready($schemaConnection)
         && vp3_chat_read_schema_ready_v1($schemaConnection)
         && agent_connections_schema_ready_v1($schemaConnection)
+        && agent_connection_health_schema_ready_v1($schemaConnection)
+        && agent_connection_youtube_consent_ready_v1($schemaConnection)
+        && agent_connection_youtube_quota_ready_v1($schemaConnection)
+        && agent_connection_youtube_results_ready_v1($schemaConnection)
         && vp3_profile_call_activity_schema_ready_pa3c($schemaConnection)
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)
@@ -367,6 +374,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             user_agent_system_ensure_schema_v236();
             vp3_chat_read_ensure_schema_v1($pdo);
             agent_connections_install_v1($pdo);
+            agent_connection_health_install_v1($pdo);
+            agent_connection_youtube_consent_schema_v1($pdo);
+            agent_connection_youtube_quota_schema_v1($pdo);
+            agent_connection_youtube_results_schema_v1($pdo);
             vp3_phone_ensure_schema_v100($pdo);
             vp3_phone_sms_ensure_schema_v110($pdo);
             vp3_phone_sms_outbound_ensure_schema_v120($pdo);

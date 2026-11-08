@@ -4,7 +4,7 @@ declare(strict_types=1);
 // Fresh PHP processes exercise filesystem recovery and real transactional SQL.
 if (count($argv) === 1) {
     $total = 0;
-    foreach (['restore','reconnect','accounts','domains','call_settings','call_snapshots','call_inventory_failure','connections_settings','connections_tokens','connections_drafts','rollback','ambiguous','publish','uncommitted','crash'] as $case) {
+    foreach (['restore','reconnect','accounts','domains','call_settings','call_snapshots','call_inventory_failure','connections_settings','connections_youtube_key','connections_tokens','connections_drafts','rollback','ambiguous','publish','uncommitted','crash'] as $case) {
         $root = sys_get_temp_dir().'/vp3-credential-'.bin2hex(random_bytes(6));
         mkdir($root, 0700);
         try {
@@ -132,12 +132,14 @@ switch ($case) {
         check(!is_file(ai_master_key_file()),'Failed inventory leaves the key absent');
         break;
     case 'connections_settings':
+    case 'connections_youtube_key':
     case 'connections_tokens':
     case 'connections_drafts':
         $pdo->exec('DELETE FROM settings');
         $secret=ai_encrypt_secret_with_key('fixture-connections-secret',$old);
-        if ($case === 'connections_settings') {
-            $pdo->prepare('INSERT INTO settings VALUES(?,?)')->execute(['connections_gmail_client_secret',$secret]);
+        if ($case === 'connections_settings' || $case === 'connections_youtube_key') {
+            $settingKey = $case === 'connections_youtube_key' ? 'connections_youtube_api_key' : 'connections_gmail_client_secret';
+            $pdo->prepare('INSERT INTO settings VALUES(?,?)')->execute([$settingKey,$secret]);
         } elseif ($case === 'connections_tokens') {
             $pdo->exec('CREATE TABLE agent_connections_v1(access_token_enc TEXT,refresh_token_enc TEXT)');
             $pdo->prepare('INSERT INTO agent_connections_v1 VALUES(?,?)')->execute(['',$secret]);

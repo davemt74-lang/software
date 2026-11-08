@@ -64,7 +64,7 @@ function ai_saved_encrypted_credentials_exist(): bool
     if (!function_exists('setting')) {
         return false;
     }
-    foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key','hosting_cpanel_api_token','profile_calls_livekit_config_pa3c','connections_gmail_client_secret'] as $settingKey) {
+    foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key','hosting_cpanel_api_token','profile_calls_livekit_config_pa3c','connections_gmail_client_secret','connections_youtube_api_key'] as $settingKey) {
         if (trim((string)setting($settingKey, '')) !== '') {
             return true;
         }

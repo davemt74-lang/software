@@ -108,6 +108,9 @@ return [
             'client_secret' => '', // VP3_GMAIL_CLIENT_SECRET
             'redirect_uri' => '',   // VP3_GMAIL_REDIRECT_URI · https://vp3.example.com/connection-oauth.php
         ],
+        'youtube' => [
+            'api_key' => '', // VP3_YOUTUBE_API_KEY · restrict to YouTube Data API v3
+        ],
     ],
 
     // Phase 18 VP3 Video Meetings. The LiveKit API secret and meeting-worker
