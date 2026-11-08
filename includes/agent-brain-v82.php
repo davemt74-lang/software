@@ -408,7 +408,7 @@ function agent_brain_backfill_user(array $user, int $limit = 500): int
     }
 
     $limit = max(1, min(2000, $limit));
-    $sql = "SELECT m.id,m.conversation_id,m.role,m.message,m.created_at
+    $sql = "SELECT m.id,m.conversation_id,m.role,m.message,m.context_json,m.created_at
             FROM chat_messages m
             JOIN chat_conversations c ON c.id=m.conversation_id
             WHERE c.user_id=?
@@ -419,6 +419,8 @@ function agent_brain_backfill_user(array $user, int $limit = 500): int
     $rows = array_reverse($stmt->fetchAll());
     $count = 0;
     foreach ($rows as $row) {
+        $context = json_decode((string)($row['context_json'] ?? ''), true);
+        if (is_array($context) && !empty($context['skip_brain_archive'])) continue;
         $id = agent_brain_archive_and_parse(
             $user,
             (int)$row['conversation_id'],

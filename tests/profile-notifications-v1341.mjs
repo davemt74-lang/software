@@ -27,6 +27,33 @@ await assert.rejects(canvas.presentAttention({id:5}));check(reads===0&&speech===
 surfaced=true;await canvas.presentAttention({id:5,source_type:'radar_event'});check(reads===1&&speech===1,'Confirmed non-Profile Radar turn retains existing acknowledgement and voice transport');
 duplicate=true;await canvas.presentAttention({id:5});check(reads===2&&speech===1,'A duplicate durable turn is not announced twice');
 await canvas.presentAttention({id:6,source_type:'profile_event'});check(typed===1&&reads===2&&speech===1,'Exact Profile sources delegate before legacy read or speech');
+let connectionDraft='',connectionId=0,connectionAgent=7,connectionMode='listening',connectionRequests=0,connectionReads=0;
+const connectionSpeech=[];
+const connectionDoc={hidden:false,body:{dataset:{stonefellowAgentState:'listening'}},getElementById:id=>id==='chatThread'?{dataset:{view:'chat'}}:{value:connectionDraft}};
+const connection=vm.createContext({window:{VP3_COGNITIVE_PRESENTATION_V510:{ownsAttention:true}},document:connectionDoc,
+  chatCanvasAvailable:()=>true,continuity:()=>({isReady:()=>true,isBusy:()=>false,ensureConversation:async()=>{connectionId=44;}}),
+  activeConversationId:()=>connectionId,activeAgentId:()=>connectionAgent,showAttentionConversation:async(id,msg)=>id===44&&msg>100,
+  request:async(action,payload,query)=>{
+    connectionRequests++;
+    if(action==='attention')return {items:query.after_id===0?[{id:8,source_type:'agent_connection_activation'},{id:9,source_type:'agent_connection_activation'}]:[],latest_id:9};
+    check(payload.conversation_id===44&&payload.agent_id===7,'a connection notice uses the exact active private Chat');
+    return {handled:true,conversation_id:44,message_id:100+payload.notification_id,voice_allowed:true,preserve_unread:true,speech:`Activation ${payload.notification_id}`};
+  },queueSpeech:(text,eligible,options)=>connectionSpeech.push({text,eligible,ready:options.readyToSpeak}),requestState:async()=>connectionReads++,refresh:()=>{}});
+vm.runInContext('let attentionBusy=false,connectionActivationCursor=0;'+present+poll+';globalThis.poll=pollAttention;',connection);
+await connection.poll(false,'connection_activations');
+check(connectionRequests===0&&connectionId===0,'automatic listening defers connection presentation without opening another Chat');
+connectionDoc.body.dataset.stonefellowAgentState='idle';
+await connection.poll(false,'connection_activations');
+check(connectionId===44&&connectionSpeech.map(entry=>entry.text).join(',')==='Activation 8,Activation 9'&&connectionReads===0,
+  'both connected apps surface in the first empty Chat, and the bell remains unread');
+connectionDoc.body.dataset.stonefellowAgentState=connectionMode;
+check(connectionSpeech[0].eligible()&&!connectionSpeech[0].ready(),'listening delays queued speech while preserving eligibility');
+connectionDoc.body.dataset.stonefellowAgentState='idle';
+check(connectionSpeech[0].ready(),'queued speech can start when the Agent returns to idle');
+connectionAgent=8;
+check(!connectionSpeech[0].eligible(),'a queued connection announcement cannot cross an Agent switch');
+connectionAgent=7;connectionDraft='Keep this draft';
+check(!connectionSpeech[0].eligible()&&!connectionSpeech[0].ready(),'a queued notice does not interrupt a user drafting a message');
 const mount=drawer.slice(drawer.indexOf('  async function showAttentionConversation('),drawer.indexOf('  function voiceButton('));
 let cid=10,agent=7,opened=0,syncs=0,found='';const binding=vm.createContext({continuity:()=>({conversationId:()=>cid,syncConversation:async()=>{syncs++;},openConversation:async()=>opened++}),activeConversationId:()=>cid,activeAgentId:()=>agent,document:{getElementById:()=>({value:''}),querySelector:selector=>{found=selector;return {};}}});
 vm.runInContext(mount+';globalThis.mount=showAttentionConversation;',binding);

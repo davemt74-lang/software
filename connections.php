@@ -25,9 +25,9 @@ $permissions = $gmailLinked
     : ['read' => true, 'send' => true, 'followups' => false];
 $action = $connected ? 'update_policy' : 'start';
 $labels = [
-    'read' => ['Search and read Gmail', 'The Agent can look up relevant messages for work you ask it to do.'],
+    'read' => ['Search and read Gmail', 'In typed Agent Chat, try “Find emails from sender@example.com” to search your inbox.'],
     'send' => ['Send after my approval', 'Review each message in Agent Chat before the Agent sends it from this account.'],
-    'followups' => ['Watch for replies in the background', 'Requires Gmail read access. A reply can bring the Agent back to the original initiative while your browser is closed.'],
+    'followups' => ['Watch for senders and replies in the background', 'Requires Gmail read access and a specific request. Try “Notify me when I get an email from sender@example.com.” Watches can run while your browser is closed.'],
 ];
 $notices = [
     'connected' => ['success', 'Gmail connected.'],
@@ -203,7 +203,7 @@ header('Cache-Control: private, no-store');
                                 <?php endif; ?>
                                 <fieldset class="connections-permissions" aria-describedby="connections-policy-note">
                                   <legend>Agent permissions</legend>
-                                  <p class="connections-muted" id="connections-policy-note">Google asks you to authorize read and send access. These settings control when your Agent may use that access in VP3.</p>
+                                  <p class="connections-muted" id="connections-policy-note">Google asks you to authorize your Google account identity and email address, plus Gmail read and send access. These settings control when your Agent may use that access in VP3.</p>
                                   <?php foreach ($labels as $permission => [$label, $description]): ?>
                                     <label class="connections-permission">
                                       <input type="checkbox" name="allow_<?= e($permission) ?>" value="1"<?= !empty($permissions[$permission]) ? ' checked' : '' ?>>
@@ -235,7 +235,7 @@ header('Cache-Control: private, no-store');
                                   <input type="hidden" name="action" value="disconnect">
                                   <input type="hidden" name="connection_id" value="<?= (int)$connection['id'] ?>">
                                   <input type="hidden" name="revision" value="<?= e($connection['revision']) ?>">
-                                  <p class="connections-muted">Disconnecting stops new Gmail actions and reply checks for this connection.</p>
+                                  <p class="connections-muted">Disconnecting stops new Gmail actions and sender or reply checks for this connection.</p>
                                   <button class="connections-button connections-danger" type="submit">Confirm disconnect</button>
                                 </form>
                               </details>

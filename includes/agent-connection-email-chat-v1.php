@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-connections-v1.php';
+require_once __DIR__.'/agent-connection-email-followup-v1.php';
+require_once __DIR__.'/agent-worker-health-v1.php';
 require_once __DIR__.'/agent-tool-receipts-v1.php';
 require_once __DIR__.'/initiative-workbench-v1.php';
 
@@ -31,14 +33,34 @@ function agent_connection_email_draft_schema_v1(PDO $pdo): void
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci' : ')'));
 }
 
-function agent_connection_email_chat_plan_v1(string $query): ?array
+function agent_connection_email_chat_sender_v1(string $input, bool $spoken): string
+{
+    if ($spoken && !str_contains($input,'@') && preg_match('/\A(.+) at (.+)\z/iu',$input,$parts)) {
+        $input = preg_replace('/\s+dot\s+/iu','.',$parts[1].'@'.$parts[2]) ?? $input;
+    }
+    return agent_connection_gmail_sender_v1($input);
+}
+
+function agent_connection_email_chat_plan_v1(string $query, bool $spoken=false): ?array
 {
     $query = trim($query);
     $query = preg_replace('/\A(?:please\s+|(?:can|could|would) you\s+)+/iu', '', $query) ?? $query;
+    $command = rtrim($query,'.?!');
+    if (preg_match('/\A(?:stop (?:watching|tracking)(?: (?:my )?gmail)?(?: for)?|cancel (?:my )?gmail (?:sender )?watch(?: for)?) (?:e-?mails? )?from\s+(.+)\z/iu',$command,$match)) {
+        return ['operation'=>'stop_sender_watch','sender'=>agent_connection_email_chat_sender_v1($match[1],$spoken)];
+    }
+    if (preg_match('/\A(?:(?:notify|alert|tell) me|let me know) (?:when|if) (?:i (?:get|receive)|there(?: is|\x{2019}s|\x27s))\s+(?:(?:a|an|the) )?(?:new )?(?:(?:gmail )?e-?mail|gmail message) from\s+(.+)\z/iu',$command,$match)
+        || preg_match('/\A(?:(?:notify|alert|tell) me|let me know) (?:when|if) (?:a |an |the next )?(?:new )?(?:(?:gmail )?e-?mail|gmail message) arrives from\s+(.+)\z/iu',$command,$match)
+        || preg_match('/\A(?:watch|monitor) (?:my )?gmail for\s+(?:(?:the next|a|an) )?(?:new )?(?:e-?mail|message)s? from\s+(.+)\z/iu',$command,$match)) {
+        return ['operation'=>'watch_sender','sender'=>agent_connection_email_chat_sender_v1($match[1],$spoken)];
+    }
+    if (preg_match('/\A(?:find|show|search|filter)\s+(?:(?:me|my)\s+)?(?:gmail(?: inbox)?(?:\s+for)?(?:\s+(?:e-?mails?|messages?))?|(?:inbound )?e-?mails?)\s+from\s+(.+)\z/iu',$command,$match)) {
+        return ['operation'=>'search','sender'=>agent_connection_gmail_sender_v1($match[1])];
+    }
     if (preg_match('/\A(?:gmail search\s*:\s*|search (?:my )?gmail(?: inbox)?(?: for)?\s+)(.{1,500})\z/isu', $query, $match)) {
         return ['operation'=>'search','query'=>trim($match[1])];
     }
-    if (preg_match('/\A(?:show|check|open|read) (?:my )?gmail inbox[.?!]?\z/iu', $query)) {
+    if (preg_match('/\A(?:(?:show|check|read) (?:my )?gmail(?: inbox)?|open (?:my )?gmail inbox)[.?!]?\z/iu', $query)) {
         return ['operation'=>'search','query'=>'in:inbox'];
     }
     if (preg_match('/\A(?:read|show|open) (?:my )?gmail message\s+([a-z0-9_-]{1,128})[.?!]?\z/iu', $query, $match)) {
@@ -126,13 +148,14 @@ function agent_connection_email_chat_view_v1(array $result, string $answer, arra
     return ['A private Gmail result was displayed for this turn.', $context];
 }
 
-function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, int $userMessageId, ?callable $authority=null, bool $voice=false): ?array
+function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, int $userMessageId, ?callable $authority=null, bool $voice=false, ?callable $http=null): ?array
 {
-    $plan = agent_connection_email_chat_plan_v1($query);
+    $plan = agent_connection_email_chat_plan_v1($query,$voice);
     if ($plan === null || !knowledge_retrieval_v162_owner_session($user, $principal) || vp3_participant_scope_v1() !== null) return null;
     $result = ['handled'=>true,'actions'=>[],'sources'=>[]];
     $operation = $plan['operation'];
-    $capability = $operation === 'draft' ? 'email.send' : 'email.read';
+    $senderWatch = in_array($operation,['watch_sender','stop_sender_watch'],true);
+    $capability = $senderWatch ? 'email.followups' : ($operation === 'draft' ? 'email.send' : 'email.read');
     $receiptOperation = $operation === 'draft' ? 'prepare' : $operation;
     $receipt = static fn(string $status, string $reason='', int $count=0): array =>
         vp3_tool_receipt_v1($capability, $receiptOperation, $status, $reason, 0, $count);
@@ -140,8 +163,19 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
         $live = agent_connection_email_chat_authority_v1($pdo, $user, $principal, $conversationId, $authority);
         $owner = (int)$live['id'];
         $agent = (int)($principal['agent_id']??0);
-        if ($voice && $operation !== 'draft') {
+        if ($voice && $capability === 'email.read') {
             return $result + ['answer'=>'Enter that Gmail read in typed Chat to display the private result.','tool_receipt'=>$receipt('blocked','scope_restricted')];
+        }
+        if (isset($plan['sender']) && $plan['sender'] === '') {
+            return $result + ['answer'=>'Give me one exact sender email address, such as sender@example.com.','tool_receipt'=>$receipt('clarification_required')];
+        }
+        if ($senderWatch && !agent_connection_email_sender_watch_ready_v1($pdo)) {
+            return $result + ['answer'=>'Run Database Upgrade to manage Gmail sender watches.','tool_receipt'=>$receipt('blocked','upgrade_required')];
+        }
+        if ($operation === 'stop_sender_watch') {
+            $stopped = agent_connection_email_sender_watch_stop_v1($pdo,$owner,$agent,$conversationId,$userMessageId,$plan['sender']);
+            return $result + ['answer'=>$stopped ? 'I stopped the Gmail sender watch in this Chat.' : 'There is no active Gmail watch for that sender in this Chat.',
+                'tool_receipt'=>$receipt($stopped ? 'completed' : 'no_matches','',$stopped)];
         }
         $summary = agent_connections_summary_v1($owner);
         if (empty($summary['schema_ready'])) {
@@ -151,10 +185,11 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
             return $result + ['answer'=>'Gmail is unavailable on this site. Check Connections for its current status.','tool_receipt'=>$receipt('blocked','provider_unavailable')];
         }
         $connection = $summary['connection']??null;
-        $permission = $operation === 'draft' ? 'send' : 'read';
+        $permission = $senderWatch ? 'followups' : ($operation === 'draft' ? 'send' : 'read');
         if (!$connection || empty($connection['permissions'][$permission]) || ($connection['status']??'') !== 'connected') {
+            $needed = match ($permission) {'send'=>'reviewed send','followups'=>'mail reading and background watches',default=>'mail reading'};
             return array_replace($result, [
-                'answer'=>'Open Connections and connect Gmail with '.($permission === 'send' ? 'reviewed send' : 'mail reading').' enabled.',
+                'answer'=>'Open Connections and connect Gmail with '.$needed.' enabled.',
                 'actions'=>[['type'=>'open_url','url'=>url('/connections.php'),'label'=>'Open Connections']],
                 'tool_receipt'=>$receipt('blocked', 'setup_required'),
             ]);
@@ -162,10 +197,23 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
         $connectionId = (int)$connection['id'];
         $connection = agent_connection_email_chat_record_v1($owner, $connectionId, $permission);
         $grant = $connection['authorization_key'];
+        if ($senderWatch) {
+            $active = agent_connection_email_sender_watch_register_v1($pdo,$owner,$agent,$conversationId,$userMessageId,$connectionId,$grant,$plan['sender']);
+            $answer = 'This Gmail sender watch already ended. Ask again to start a new watch.';
+            if ($active) {
+                $answer = 'I saved a 30-day watch for the next new Gmail message from that sender. The VP3 Cloud worker checks for a match and alerts you here and in Notifications.';
+                if ((agent_worker_health_read_v1()['state']??'') !== 'fresh') $answer .= ' This site hasn’t reported a recent worker run.';
+                $answer .= ' To cancel, say “Stop watching Gmail for emails from” followed by the address.';
+            }
+            return $result + ['answer'=>$answer,
+                'tool_receipt'=>$receipt($active ? 'completed' : 'no_matches','',$active ? 1 : 0)];
+        }
         if ($operation !== 'draft') {
-            $access = agent_connections_access_v1($owner, $connectionId, 'read');
+            $access = agent_connections_access_v1($owner, $connectionId, 'read', $http);
             if ($operation === 'search') {
-                $messages = agent_connection_gmail_search_v1($access['access_token'], $plan['query'], 5);
+                $messages = isset($plan['sender'])
+                    ? agent_connection_gmail_search_sender_v1($access['access_token'],$plan['sender'],5,$http)
+                    : agent_connection_gmail_search_v1($access['access_token'],$plan['query'],5,$http);
                 $lines = [];
                 foreach ($messages as $mail) {
                     $lines[] = trim(($mail['subject']?:'(No subject)')."\n".'From: '.$mail['from']."\n".'Gmail message ID: '.$mail['message_id']);
@@ -173,7 +221,7 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
                 $answer = $lines ? implode("\n\n", $lines)."\n\nTo open a result here, ask ‘Read Gmail message’ followed by its ID." : 'Gmail returned no messages for that search.';
                 $count = count($lines);
             } else {
-                $mail = agent_connection_gmail_read_v1($access['access_token'], $plan['message_id']);
+                $mail = agent_connection_gmail_read_v1($access['access_token'], $plan['message_id'], $http);
                 $answer = trim(($mail['subject']?:'(No subject)')."\n".'From: '.$mail['from']."\n\n".mb_substr($mail['body'], 0, 6000));
                 $count = 1;
             }

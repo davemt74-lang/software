@@ -485,7 +485,7 @@
         renderAgentVoice(data.chat?.agent_voice_enabled !== false);
         publishState();
         publishAgentVoice(agentVoiceEnabled);
-        window.dispatchEvent(new CustomEvent('stonefellow:agent-voice', {detail:{enabled:data.chat?.agent_voice_enabled !== false}}));
+        window.dispatchEvent(new CustomEvent('stonefellow:agent-voice', {detail:{enabled:agentVoiceEnabled,source:'account-menu'}}));
         if (requested) await refreshTtsState(true);
         else { ttsState = null; renderVoice(); setStatus('Agent Voice is off.', 'success'); }
       } catch (error) {

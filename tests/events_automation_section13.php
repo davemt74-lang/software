@@ -1,7 +1,10 @@
 <?php
 declare(strict_types=1);
 final class Section13PDO extends PDO {
-    public function prepare(string $query,array $options=[]): PDOStatement|false {return parent::prepare(str_replace(' FOR UPDATE','',$query),$options);}
+    public function prepare(string $query,array $options=[]): PDOStatement|false {
+        $query = str_replace([' FOR UPDATE','DATE_SUB(NOW(),INTERVAL 14 DAY)'],['',"datetime('now','-14 days')"],$query);
+        return parent::prepare($query,$options);
+    }
 }
 $pdo=new Section13PDO('sqlite::memory:');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('UTC_TIMESTAMP',static fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('NOW',static fn()=>gmdate('Y-m-d H:i:s'));
 function db(): PDO{return $GLOBALS['pdo'];}
@@ -32,5 +35,26 @@ foreach([false,true] as $lateError){
 $type=str_repeat('t',65);$source=str_repeat('s',100);create_notification(1,$type,'One','','',$source,10);create_notification(1,$type,'Two','','',$source,10);check13((int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn()===1,'Normalized carrier duplicated');
 create_notification(1,'homeserver_connection_update','Connected','','','homeserver',11);create_notification(1,'homeserver_needs_attention','Review','','','homeserver',12);create_notification(1,'user_notice','Notice','','','user',13);
 $brainRows=$pdo->query('SELECT * FROM notifications WHERE '.notification_agent_brain_sql_predicate())->fetchAll();check13(count($brainRows)===2,'Brain SQL classification mismatch');foreach($brainRows as $r)check13(notification_is_agent_brain_activity($r)&&!notification_requires_attention($r),'Brain carrier entered owner attention');check13(notification_unread_count(['id'=>1])===2,'Operational carriers inflated user unread count');
+$cursor = (int)$pdo->query('SELECT MAX(id) FROM notifications')->fetchColumn();
+$pdo->exec('CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER);
+    CREATE TABLE chat_messages(id INTEGER PRIMARY KEY,conversation_id INTEGER);
+    INSERT INTO chat_conversations VALUES (7,1,3);
+    INSERT INTO chat_messages VALUES (22,7)');
+create_notification(1,'gmail_connected','Gmail connected','Reviewed sending requires approval.','/connections.php','agent_connection_activation',20);
+create_notification(1,'youtube_enabled','YouTube enabled','Public video search in Chat.','/connections.php','agent_connection_activation',21);
+create_notification(1,'agent_email_followup','Gmail watch matched','Open the original Chat.','/chat.php','agent_connection_email_followup',22);
+create_notification(1,'gmail_connected','Other source','','','fixture',23);
+create_notification(2,'gmail_connected','Other member','','','agent_connection_activation',20);
+$connectionTypes = ['gmail_connected','youtube_enabled','agent_email_followup'];
+$connectionRows = notification_agent_brain_activity_after(['id'=>1],$cursor,50,3);
+check13(array_column($connectionRows,'type') === $connectionTypes,'Named Agent Brain must surface only owner connection events from verified sources');
+check13(array_column(notification_agent_brain_activity_after(['id'=>1],$cursor,50,4),'type') === ['gmail_connected','youtube_enabled'],
+    'A sibling Agent sees account connection changes without another Agent’s Gmail watch outcome');
+check13(notification_unread_count(['id'=>1]) === 6,'Brain connection projection must preserve Notifications unread counts');
+foreach($connectionRows as $row)check13(!notification_requires_attention($row),'Dedicated connection delivery must not duplicate generic Chat attention');
+$pdo->exec("UPDATE notifications SET is_read=1 WHERE user_id=1 AND source_type='agent_connection_activation'");
+$initial = notification_agent_brain_activity_after(['id'=>1]);
+check13(array_column($initial,'type') === [...array_reverse($connectionTypes),'homeserver_needs_attention','homeserver_connection_update'],
+    'Brain must retain the same connection events after bell acknowledgement alongside legacy activity');
 $pdo->beginTransaction();$pdo->exec('INSERT INTO users VALUES (3)');$pdo->exec("CREATE TRIGGER fail_notification BEFORE INSERT ON notifications WHEN NEW.source_id=999 BEGIN SELECT RAISE(ABORT,'forced carrier failure'); END;");$before=(int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn();create_notification(1,'fixture','Fail','','','fixture',999);check13($pdo->inTransaction()&&(int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn()===$before,'Failed carrier broke parent transaction');check13((int)$pdo->query('SELECT COUNT(*) FROM users WHERE id=3')->fetchColumn()===1,'Carrier rollback erased parent mutation');create_notification(1,'fixture','Valid','','','fixture',1000);$pdo->commit();check13((int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn()===$before+1,'Optional projection failure discarded carrier');
 echo "SECTION13_CLOUD_EVENTS_NOTIFICATIONS=PASS\n";

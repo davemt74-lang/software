@@ -1,10 +1,87 @@
 (() => {
   'use strict';
+  const cooldown=30*60*1000;
+
+  function bootChat(adapter) {
+    const identity=window.STONEFELLOW_AGENT_IDENTITY_V236;
+    const chat=window.STONEFELLOW_CHAT_CONTINUITY_V87;
+    const thread=document.getElementById('chatThread');
+    if(!identity||!thread||typeof chat?.mountAgentGreeting!=='function')return;
+    const key=`vp3:chat-voice-greeting:${adapter.ownerKey}`;
+    let enabled=identity.agentVoiceEnabled===true, pending=enabled, explicit=false, claiming=false, active=null;
+    const inChat=()=>!document.hidden&&document.hasFocus()&&thread.dataset.view==='chat';
+    const available=()=>enabled&&inChat()&&chat.isReady()&&!chat.isRestoring()&&!chat.isBusy()
+      &&!window.VP3ConversationControls?.isEnabled?.()&&!window.VP3ConversationControls?.isReplyCapturePending?.()
+      &&!window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.()
+      &&!String(document.getElementById('chatInput')?.value||'').trim()&&!adapter.state?.()?.recording;
+    const recentlyGreeted=()=>{try{const at=Number(localStorage.getItem(key)||0);return at>0&&Date.now()-at<cooldown;}catch(_){return false;}};
+    function cancel() {
+      pending=false;
+      const record=active;active=null;
+      record?.controller?.abort();
+      record?.retry?.remove();
+    }
+    async function play(record) {
+      if(active!==record||!available()||chat.conversationId()!==record.conversationId)return;
+      record.retry?.remove();
+      const controller=record.controller=new AbortController();
+      const current=()=>active===record&&!controller.signal.aborted&&available()&&chat.conversationId()===record.conversationId;
+      const complete=async completed=>{
+        if(completed&&current())await window.VP3AgentResponseWindow?.listen({quiet:true,canListen:current,greetingText:record.text});
+        if(active===record)active=null;
+      };
+      const started=await window.STONEFELLOW_NOTIFICATION_CENTER.announceWhen(record.text,current,{signal:controller.signal,onComplete:complete,autoReply:false});
+      if(started||!current()||!record.element.isConnected)return;
+      const retry=document.createElement('button');
+      retry.type='button';retry.className='chat-action-link';retry.textContent='Hear greeting';
+      record.retry=retry;
+      retry.addEventListener('click',()=>void play(record));
+      (record.element.querySelector('.message-body')||record.element).append(retry);
+    }
+    function refresh() {
+      if(!pending||claiming||!available()||typeof window.STONEFELLOW_NOTIFICATION_CENTER?.announceWhen!=='function')return;
+      const greet=()=>{
+        if(!pending||!available())return;
+        pending=false;
+        if(!explicit&&recentlyGreeted())return;
+        explicit=false;
+        const name=String(window.STONEFELLOW_AGENT_IDENTITY_V236?.displayName||'your agent').trim().slice(0,120);
+        const message=String(window.STONEFELLOW_CHAT?.intro?.greeting||'').trim()||`Hi, I’m ${name||'your agent'}. I’m here if you’d like to talk.`;
+        const element=chat.mountAgentGreeting(message);
+        if(!element)return;
+        try{localStorage.setItem(key,String(Date.now()));}catch(_){}
+        const record=active={text:message,element,conversationId:chat.conversationId()};
+        void play(record);
+      };
+      if(!navigator.locks?.request){greet();return;}
+      claiming=true;
+      void navigator.locks.request(key,greet).catch(greet).finally(()=>{claiming=false;});
+    }
+    window.addEventListener('stonefellow:agent-voice',event=>{
+      enabled=event.detail?.enabled===true;
+      if(!enabled){cancel();return;}
+      if(event.detail?.source==='account-menu'){cancel();pending=true;explicit=true;}
+      refresh();
+    });
+    window.addEventListener('vp3:chat-context-ready',()=>queueMicrotask(refresh));
+    window.addEventListener('vp3:chat-canvas-view-changed',()=>{if(thread.dataset.view!=='chat')cancel();});
+    window.addEventListener('stonefellow:chat-context-changing',()=>{if(active||chat.isReady())cancel();});
+    window.addEventListener('focus',refresh);
+    window.addEventListener('blur',()=>{if(active)cancel();});
+    window.addEventListener('pagehide',cancel,{once:true});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden){if(active)cancel();}else refresh();});
+    document.addEventListener('click',event=>{if(event.target.closest?.('[data-orb-stop],#chatVoiceButton'))cancel();},true);
+    document.addEventListener('input',event=>{if(event.isTrusted&&event.target.id==='chatInput')cancel();});
+    document.getElementById('chatForm')?.addEventListener('submit',cancel,true);
+    window.VP3AgentWelcome={refresh};refresh();
+  }
+
   const boot=async()=>{
     const adapter=window.VP3_ORB_ADAPTER;
-    if(!adapter||adapter.isMainChat?.()||window.VP3AgentWelcome||new URLSearchParams(location.search).get('orb_embed')==='1')return;
+    if(!adapter||window.VP3AgentWelcome||new URLSearchParams(location.search).get('orb_embed')==='1')return;
+    if(adapter.isMainChat?.()){bootChat(adapter);return;}
     let preference=window.VP3_AGENT_PREFERENCE_STATE||null,permission=null,busy=false,disposed=false,generation=0,attempted=false;
-    const key=`vp3:agent-welcome:${adapter.ownerKey}`,cooldown=30*60*1000;
+    const key=`vp3:agent-welcome:${adapter.ownerKey}`;
     const notice=document.createElement('aside');notice.className='vp3-agent-setup-notice';notice.hidden=true;
     notice.innerHTML='<span role="status"></span><button type="button"></button>';
     document.body.append(notice);

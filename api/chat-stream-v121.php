@@ -46,7 +46,9 @@ $initiativeReply=vp3_agent_chat_initiative_reply_v2160($input);
 if($initiativeReply!==null&&$conversationId<1)throw new RuntimeException('A saved owner Chat is required for this reply.',422);
 $input['input_mode']='voice';$participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);if($initiativeReply!==null&&($participantActor!==null||vp3_participant_scope_v1()!==null))throw new RuntimeException('Use the private owner Chat for this reply.',403);
 $initiativeRequest=null;
-$emailRequest=$initiativeReply===null&&agent_connection_email_chat_plan_v1($query)!==null;
+$emailRequest=$initiativeReply===null&&$participantActor===null&&vp3_participant_scope_v1()===null
+    &&empty($input['ephemeral_protocol'])&&knowledge_retrieval_v162_owner_session($user,$principal)
+    &&agent_connection_email_chat_plan_v1($query)!==null;
 $youtubeRequest=$initiativeReply===null&&!$emailRequest&&$participantActor===null
     &&empty($input['ephemeral_protocol'])&&agent_connection_youtube_chat_plan_v1($query)!==null;
 if(!$emailRequest&&!$youtubeRequest&&$participantActor===null&&vp3_participant_scope_v1()===null&&$conversationId>0&&($initiativeReply!==null||vp3_initiative_followthrough_referential_v1($query))){
@@ -164,7 +166,10 @@ if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$yout
         'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentScopeId]);
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
-$rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$agentScopeId;$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();
+$rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$agentScopeId;$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());
+$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,?,?,?,?)');
+$stmt->execute([$conversationId,$userId,'user',$query,$emailRequest?'{"skip_brain_archive":true}':null]);
+$userMessageId=(int)$pdo->lastInsertId();
 $reminderTool=null;$workingSelection=null;
 unset($rawAgentContext['working_context_ref'],$rawAgentContext['initiative_reply'],$rawAgentContext['initiative_followthrough'],$rawAgentContext['followthrough'],$rawAgentContext['advisory_context'],$rawAgentContext['verified_followthrough'],$rawAgentContext['initiative_reply_anchor_v1'],$rawAgentContext['initiative_reply_recovery'],$rawAgentContext['initiative_request'],$rawAgentContext['initiative_claim'],$rawAgentContext['initiative_voice_request'],$rawAgentContext['initiative_reply_unassociated_v1']);
 $followthroughAuthority=static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);

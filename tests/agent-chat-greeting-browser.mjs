@@ -1,0 +1,151 @@
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {readFile} from 'node:fs/promises';
+import {createRequire} from 'node:module';
+
+const {chromium} = createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE || 'playwright');
+const asset = name => readFile(new URL('../' + name,import.meta.url),'utf8');
+const menu = execFileSync(process.env.VP3_PHP_BINARY || 'php',['tests/member-agent-voice-fixture.php'],{encoding:'utf8'});
+const scripts = ['chat.js','voice-lease-v122.js','chat-voice.js','chat-notifications-drawer-v240.js','member-agent-voice-menu.js','agent-response-window.js','agent-welcome.js'];
+const sources = new Map(await Promise.all(scripts.map(async name => [name,await asset(name)])));
+const origin = 'http://localhost';
+const browser = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined});
+const errors = [];
+
+async function fixture({enabled=true,permission='granted',blockPlayback=false,legacy=false}={}) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  page.setDefaultTimeout(8000);
+  page.on('pageerror',error => errors.push(error.message));
+  await page.route(`${origin}/**`,async route => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    if (path === '/chat.php') return route.fulfill({contentType:'text/html',body:`<!doctype html><meta charset="utf-8"><main class="chat-main">
+      <header class="chat-topbar-actions"><div id="chatNotificationMenu"><button id="chatNotificationButton">Activity Center</button></div>${menu}</header>
+      <button id="newChatButton">New Chat</button><div id="chatHistory"></div>
+      <section id="chatThread"><div id="chatWelcome" hidden></div></section>
+      <form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button><button type="button" id="chatVoiceButton">Listen</button></form><div id="chatVoiceStatus"></div>
+      </main><script>
+      window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:42,initialView:'chat',csrf:'fixture',endpoint:'/api/chat-v236.php',${legacy?'intro:{token:"legacy-greeting",greeting:"Welcome back. What shall we work on?",updates:[{title:"An optional update"}]},':''}};
+      window.STONEFELLOW_AGENT_IDENTITY_V236={displayName:'Longfellow',agentId:7,agentVoiceEnabled:${enabled}};
+      window.STONEFELLOW_NOTIFICATION_DRAWER={endpoint:'/api/notifications',csrf:'fixture',agentId:7,userId:1,agentVoiceEnabled:${enabled}};
+      window.VP3_ORB_ADAPTER={ownerKey:'1',isMainChat:()=>true,state:()=>({recording:false})};
+      window.micPermission=${JSON.stringify(permission)};window.blockPlayback=${blockPlayback};window.utterances=[];window.playing=null;
+      window.permissionReads=0;window.micAcquisitions=0;window.nativeStarts=0;window.nativeLive=0;
+      Object.defineProperty(navigator,'permissions',{value:{query:async()=>{permissionReads++;if(window.delayPermission)await new Promise(resolve=>window.releasePermission=resolve);if(micPermission==='unknown')throw Error('Unsupported');return {state:micPermission};}}});
+      Object.defineProperty(navigator,'mediaDevices',{value:{getUserMedia:async()=>{micAcquisitions++;const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(){}};window.track=track;return {getTracks:()=>[track],getAudioTracks:()=>[track]};}}});
+      window.SpeechRecognition=class {
+        start(){if(window.playing)throw Error('Capture during playback');this.live=true;nativeStarts++;nativeLive++;queueMicrotask(()=>this.onstart?.());}
+        stop(){this.abort();}
+        abort(){if(!this.live)return;this.live=false;setTimeout(()=>{nativeLive--;this.onend?.();},180);}
+      };
+      window.SpeechSynthesisUtterance=class {constructor(text){this.text=text;}};
+      Object.defineProperty(window,'speechSynthesis',{value:{speak(utterance){if(nativeLive)throw Error('Playback during capture');if(blockPlayback){queueMicrotask(()=>utterance.onerror?.());return;}utterances.push(utterance.text);playing=utterance;queueMicrotask(()=>utterance.onstart?.());},cancel(){const utterance=playing;playing=null;utterance?.onerror?.();}}});
+      window.finishSpeech=()=>{const utterance=playing;playing=null;utterance?.onend?.();};
+      window.addEventListener('vp3:reply-window',event=>{window.replyDuration=event.detail.active?event.detail.durationMs:0;});
+      </script>${scripts.map(name=>`<script src="/${name}"></script>`).join('')}`});
+    if (sources.has(path.slice(1))) return route.fulfill({contentType:'text/javascript',body:sources.get(path.slice(1))});
+    const body = request.postDataJSON() || {};
+    if (path.includes('chat-settings')) {
+      if (body.action === 'save_agent_voice') enabled=body.agent_voice_enabled;
+      return route.fulfill({json:{ok:true,agent_voice_allowed:true,chat:{agent_voice_enabled:enabled}}});
+    }
+    if (path.includes('user-agent-system')) return route.fulfill({json:{ok:true,state:{agents:[{id:7,display_name:'Longfellow',is_default:1,is_active:1}],system_voice:{}}}});
+    if (path.includes('chat-v236')) return route.fulfill({json:{ok:true,conversation_id:body.conversation_id||42,messages:[],conversations:[{id:42,title:'First conversation'},{id:43,title:'Second conversation'}]}});
+    return route.fulfill({json:{ok:true,agent_voice_enabled:enabled,ready:true,verified:true}});
+  });
+  await page.goto(`${origin}/chat.php`);
+  await page.waitForFunction(() => window.VP3AgentWelcome && window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady());
+  return {context,page};
+}
+
+const greeting = '[data-agent-voice-greeting]';
+try {
+  {
+    const {context,page} = await fixture();
+    await page.waitForFunction(() => utterances.length===1);
+    assert.equal(await page.locator(`${greeting} .message-text`).innerText(),await page.evaluate(() => utterances[0]));
+    assert.equal(await page.evaluate(() => nativeStarts+micAcquisitions+permissionReads),0);
+    await page.clock.install();
+    await page.evaluate(() => {
+      localStorage.setItem('stonefellow:voice-mode:1','0');
+      window.nextSpeech=STONEFELLOW_NOTIFICATION_CENTER.announceWhen('Gmail is connected. What would you like to try?',()=>true,{autoReply:false});
+      finishSpeech();
+    });
+    await page.waitForFunction(() => nativeLive===1 && replyDuration===15000);
+    await page.clock.runFor(14700);
+    assert.deepEqual(await page.evaluate(() => [nativeLive,utterances.length]),[1,1]);
+    await page.clock.runFor(500);
+    await page.waitForFunction(() => utterances.length===2);
+    assert.deepEqual(await page.evaluate(() => [nativeLive,micAcquisitions,track.readyState,localStorage.getItem('stonefellow:voice-mode:1')]),[0,1,'ended','0']);
+    await page.evaluate(() => finishSpeech());
+    assert.equal(await page.evaluate(() => nativeStarts),1);
+    await page.reload();
+    await page.waitForFunction(() => window.VP3AgentWelcome && STONEFELLOW_CHAT_CONTINUITY_V87.isReady());
+    await page.evaluate(() => STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43));
+    await page.clock.runFor(200);
+    assert.equal(await page.locator(greeting).count(),0);
+    assert.equal(await page.evaluate(() => nativeStarts+utterances.length),0);
+    await context.close();
+    console.log('PASS Chat greets once, listens for 15 seconds, then speaks the queued connection notice without reopening capture');
+  }
+  {
+    const {context,page} = await fixture({enabled:false});
+    assert.equal(await page.locator(greeting).count(),0);
+    assert.equal(await page.evaluate(() => STONEFELLOW_NOTIFICATION_CENTER.announce('Muted connection notice.')),false);
+    await page.evaluate(() => localStorage.setItem('vp3:chat-voice-greeting:1',String(Date.now())));
+    await page.locator('#chatProfileButton').click();
+    await page.locator('[data-vp3-global-agent-voice]').check();
+    await page.waitForFunction(() => utterances.length===1);
+    await page.evaluate(() => finishSpeech());
+    await page.waitForFunction(() => nativeLive===1);
+    await page.locator('[data-vp3-global-agent-voice]').uncheck();
+    await page.waitForFunction(() => nativeLive===0 && track.readyState==='ended');
+    await context.close();
+    console.log('PASS the real account toggle speaks on activation despite cooldown and turning it off releases capture');
+  }
+  for (const permission of ['prompt','denied','unknown']) {
+    const {context,page} = await fixture({permission});
+    await page.waitForFunction(() => utterances.length===1);
+    await page.evaluate(() => finishSpeech());
+    await page.waitForFunction(() => permissionReads===1);
+    assert.equal(await page.evaluate(() => nativeStarts+micAcquisitions),0);
+    await context.close();
+  }
+  console.log('PASS prompt, denied and unknown permissions still allow the greeting without prompting or capture');
+  {
+    const {context,page} = await fixture({blockPlayback:true,legacy:true});
+    const retry = page.getByRole('button',{name:'Hear greeting'});
+    await retry.waitFor();
+    assert.equal(await page.locator(greeting).count(),1);
+    assert.match(await page.locator(greeting).innerText(),/An optional update/);
+    assert.equal(await page.evaluate(() => permissionReads+nativeStarts),0);
+    await page.evaluate(() => { blockPlayback=false;delayPermission=true; });
+    await retry.click();
+    assert.deepEqual(await page.evaluate(() => utterances),['Welcome back. What shall we work on?']);
+    await page.evaluate(() => finishSpeech());
+    await page.waitForFunction(() => typeof releasePermission==='function');
+    await page.locator('#chatInput').fill('Unsent draft');
+    await page.evaluate(() => releasePermission());
+    await page.clock.install();
+    await page.clock.runFor(200);
+    assert.equal(await page.evaluate(() => nativeStarts+micAcquisitions),0);
+    assert.equal(await page.locator('#chatInput').inputValue(),'Unsent draft');
+    await context.close();
+    console.log('PASS blocked autoplay offers a retry for the exact canvas greeting and typing during permission verification cancels capture');
+  }
+  {
+    const {context,page} = await fixture();
+    await page.waitForFunction(() => utterances.length===1);
+    await page.evaluate(() => finishSpeech());
+    await page.waitForFunction(() => nativeLive===1);
+    await page.evaluate(() => {
+      Object.defineProperty(document,'hidden',{value:true});
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForFunction(() => nativeLive===0 && track.readyState==='ended');
+    await context.close();
+    console.log('PASS hiding the canvas stops and releases the greeting capture');
+  }
+  assert.deepEqual(errors,[]);
+  console.log('AGENT_CHAT_GREETING_BROWSER=PASS');
+} finally { await browser.close(); }

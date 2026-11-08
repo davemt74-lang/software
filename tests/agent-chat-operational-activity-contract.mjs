@@ -46,7 +46,7 @@ assert.match(notifications, /function mark_all_notifications_read[\s\S]*notifica
 assert.match(notifications, /\?string \$createdAt = null/, 'carrier rows must preserve authoritative source timestamps');
 
 assert.match(activityApi, /function chat_notifications_v240_brain_operations/, 'Activity Center API must expose Agent Brain operational rows');
-assert.match(activityApi, /notification_agent_brain_activity_after\(\$user, 0, \$limit\)/, 'Activity Center must read the canonical Brain operational feed');
+assert.match(activityApi, /notification_agent_brain_activity_after\(\$user, 0, \$limit, \$agentId\)/, 'Activity Center must read the canonical Brain operational feed for the selected Agent');
 assert.match(activityApi, /'operations'=>\$brainAllowed \? chat_notifications_v240_brain_operations/, 'Agent Brain state payload must include operational activity');
 assert.match(activityApi, /if \(!notification_requires_attention\(\$notification\)\)/, 'present_attention must recheck the canonical attention boundary server-side');
 assert.doesNotMatch(activityApi, /Open Stem Editor|Open Transcription|Open My Knowledge/, 'operational source-specific actions must no longer be implemented in Agent Chat attention');
@@ -57,7 +57,7 @@ assert.match(activityJs, /data-notification-tab="history"/, 'Activity Center mus
 assert.match(activityJs, /const operations = Array\.isArray\(brain\.operations\)/, 'Agent Brain UI must consume operational rows');
 assert.match(activityJs, /<strong>Operational Activity<\/strong>/, 'Agent Brain UI must render an explicit operational section');
 assert.match(activityJs, /brainSourceLabel\(item\.source_type\)/, 'operational rows must show their human-readable source');
-assert.match(activityJs, /Only genuine user-attention notifications reach this path/, 'Chat polling must document the new attention boundary');
+assert.match(activityJs, /const connectionScope = scope === 'connection_activations'/, 'Connection activations must use a dedicated Chat presentation scope');
 assert.match(activityJs, /async function presentAttention\(item, speak = true\)/, 'genuine actionable notifications must retain Chat presentation and optional speech');
 
 // Agent Activity is an activity heartbeat only. Header/device/nav presentation

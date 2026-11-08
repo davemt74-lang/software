@@ -332,6 +332,47 @@ function agent_connection_gmail_search_v1(string $accessToken, string $query, in
     return $messages;
 }
 
+/** A bare mailbox that can be placed safely inside a quoted Gmail search term. */
+function agent_connection_gmail_sender_v1(string $input): string
+{
+    $sender = strtolower(trim($input));
+    return strlen($sender) <= 254 && strpbrk($sender,"\"\\ \t\n\r") === false
+        && filter_var($sender,FILTER_VALIDATE_EMAIL) ? $sender : '';
+}
+
+/** Return one mailbox from a bare address or a single RFC 5322 display name and address. */
+function agent_connection_gmail_address_v1(mixed $header): string
+{
+    if (!is_string($header) || strpbrk($header,"\r\n") !== false) return '';
+    $value = trim($header);
+    if (preg_match('/\A[^<>]*<([^<>]+)>\z/D',$value,$matches)) $value = trim($matches[1]);
+    return strlen($value)<=254 && filter_var($value,FILTER_VALIDATE_EMAIL) ? strtolower($value) : '';
+}
+
+function agent_connection_gmail_search_sender_v1(string $accessToken, string $sender, int $limit=5, ?callable $http=null, int $afterMs=0): array
+{
+    if ($sender === '' || agent_connection_gmail_sender_v1($sender) !== $sender) {
+        throw new AgentConnectionGmailExceptionV1('Enter one exact sender email address.',400);
+    }
+    $query = 'from:"'.$sender.'" -in:sent -in:drafts';
+    // Gmail filters dates in whole seconds. Verify the exact millisecond cutoff locally.
+    if ($afterMs > 0) $query .= ' after:'.max(1,intdiv($afterMs,1000)-1);
+    $matches = array_filter(agent_connection_gmail_search_v1($accessToken,$query,10,$http),
+        static function (array $message) use ($sender,$afterMs): bool {
+            if (agent_connection_gmail_address_v1($message['from']) !== $sender
+                || array_intersect(['SENT','DRAFT','TRASH','SPAM'],$message['labels'])) return false;
+            if ($afterMs === 0) return true;
+            $auth = $message['authentication_results'];
+            return $message['received_at_ms'] > $afterMs && $message['received_at_ms'] <= (int)floor(microtime(true)*1000)
+                && !(preg_match('/\Amx\.google\.com\s*;/i',$auth) && preg_match('/;\s*dmarc\s*=\s*fail\b/i',$auth));
+        });
+    if ($afterMs > 0) {
+        usort($matches,static fn(array $a,array $b): int =>
+            [$a['received_at_ms'],$a['message_id']] <=> [$b['received_at_ms'],$b['message_id']]);
+    }
+    return array_slice($matches,0,max(1,min(10,$limit)));
+}
+
 function agent_connection_gmail_body_parts_v1(array $part, array &$plain, array &$html, int $depth = 0): void
 {
     $mime = strtolower((string)($part['mimeType'] ?? ''));

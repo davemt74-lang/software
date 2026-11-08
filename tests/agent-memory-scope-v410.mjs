@@ -47,6 +47,8 @@ assert.match(upgrade, /vp3_agent_memory_scope_schema_ready_v410\(\)/);
 assert.match(upgrade, /vp3_agent_memory_scope_ensure_schema_v410\((?:\$pdo)?\)/);
 
 assert.match(brain, /vp3_agent_memory_scope_from_conversation_v410\(\$user,\s*\$conversationId,\s*true\)/);
+assert.match(brain, /function agent_brain_backfill_user[\s\S]*m\.context_json[\s\S]*!empty\(\$context\['skip_brain_archive'\]\)\) continue;/,
+  'Backfilling old Chat history must honor its private archive marker');
 assert.match(brain, /INSERT INTO agent_chat_archive[\s\S]*?\(user_id,user_agent_id,conversation_id,/);
 assert.match(brain, /user_agent_id=VALUES\(user_agent_id\)/);
 assert.match(brain, /INSERT INTO agent_memory_items[\s\S]*?\(user_id,user_agent_id,/);

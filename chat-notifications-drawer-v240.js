@@ -30,6 +30,8 @@
     transcript_analysis:'Transcription',
     agent_memory_item:'Agent Brain memory',
     personal_knowledge_item:'My Knowledge',
+    agent_connection_activation:'Connected apps',
+    agent_connection_email_followup:'Gmail follow-up',
     agent_proactive_event:'Agent opportunity'
   }[String(value || '')] || 'Agent activity');
   const brainOutcomeLabel = value => ({
@@ -71,6 +73,7 @@
   let attentionCursor = 0;
   let profileAttentionCursor = 0;
   let profileOrderCursor = 0;
+  let connectionActivationCursor = 0;
   let attentionTimer = 0;
   let attentionBusy = false;
   let speechQueue = Promise.resolve();
@@ -1222,12 +1225,13 @@
     return agentVoicePreference !== false;
   }
 
-  function waitForAgentIdle(timeoutMs = 30000) {
+  function waitForAgentIdle(canSpeak,readyToSpeak,timeoutMs = 30000) {
     const deadline = Date.now() + timeoutMs;
     return new Promise(resolve => {
       const tick = () => {
         const mode = String(document.body.dataset.stonefellowAgentState || 'idle');
-        if (!continuity().isBusy?.() && !window.STONEFELLOW_CHAT_CONTINUITY?.pendingVoiceSubmit?.() && !window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.() && !['processing','speaking'].includes(mode)) {
+        if (!canSpeak()) { resolve(false); return; }
+        if (readyToSpeak() && !continuity().isBusy?.() && !window.STONEFELLOW_CHAT_CONTINUITY?.pendingVoiceSubmit?.() && !window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.() && !window.VP3ConversationControls?.isReplyCapturePending?.() && !['processing','speaking'].includes(mode)) {
           resolve(true);
           return;
         }
@@ -1238,10 +1242,10 @@
     });
   }
 
-  function announceSpeechState(state, text = '', completed=false) {
+  function announceSpeechState(state, text = '', completed=false, autoReply=true) {
     try {
       window.dispatchEvent(new CustomEvent('stonefellow:agent-proactive-speech',{
-        detail:{state:String(state||''),text:String(text||''),completed:completed===true}
+        detail:{state:String(state||''),text:String(text||''),completed:completed===true,autoReply}
       }));
     } catch (_error) {}
   }
@@ -1256,67 +1260,71 @@
     return true;
   }
 
-  function browserSpeak(text, generation, canSpeak=()=>true) {
+  function playAnnouncement(message, generation, canSpeak, {start, stop, onStarted, onComplete, signal, autoReply, timeout=0}) {
     return new Promise(resolve => {
-      const message = String(text || '').trim();
-      if (!canSpeak() || !message || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) {
-        resolve(false);
-        return;
-      }
-      const utterance = new window.SpeechSynthesisUtterance(message);
       let started = false;
-      let settled = false;
       let closed = false;
-      const settle = ok => {
-        if (settled) return;
-        settled = true;
-        resolve(ok);
-      };
+      let watchdog = 0;
       const close = (completed=false) => {
         if (closed) return;
         closed = true;
+        clearTimeout(watchdog);
+        signal?.removeEventListener('abort',cancel);
         if (activeSpeechCancel === cancel) activeSpeechCancel = null;
-        announceSpeechState('end', message, completed);
+        if (!started) { resolve(false); return; }
+        announceSpeechState('end',message,completed,autoReply);
+        Promise.resolve().then(() => onComplete?.(completed)).catch(() => {}).finally(() => resolve(true));
       };
       const cancel = () => {
-        try { window.speechSynthesis.cancel(); } catch (_error) {}
         close();
-        if (!started) settle(false);
+        try { stop(); } catch (_error) {}
       };
       activeSpeechCancel = cancel;
-      utterance.onstart = () => {
-        if (!canSpeak() || generation !== speechGeneration) {
-          cancel();
-          return;
-        }
+      const onStart = () => {
+        if (closed || started) return;
+        if (!canSpeak() || generation !== speechGeneration) { cancel(); return; }
         started = true;
-        announceSpeechState('start', message);
-        settle(true);
+        announceSpeechState('start',message,false,autoReply);
+        onStarted(true);
       };
-      utterance.onend = () => close(true);
-      utterance.onerror = () => {
-        close();
-        if (!started) settle(false);
-      };
+      signal?.addEventListener('abort',cancel,{once:true});
+      if (signal?.aborted) { cancel(); return; }
+      if (timeout) watchdog = setTimeout(cancel,timeout);
       try {
+        Promise.resolve(start({onStart,onEnd:() => close(true),onError:() => close()})).then(result => {
+          if (result === true) onStart();
+          if (result === false && !started) close();
+        }).catch(() => close());
+      } catch (_error) { close(); }
+    });
+  }
+
+  function browserSpeak(message,generation,canSpeak,options) {
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return false;
+    return playAnnouncement(message,generation,canSpeak,{
+      ...options,timeout:Math.min(180000,Math.max(15000,message.length*100+5000)),
+      stop:() => window.speechSynthesis.cancel(),
+      start:({onStart,onEnd,onError}) => {
+        const utterance = new window.SpeechSynthesisUtterance(message);
+        utterance.onstart = onStart;
+        utterance.onend = onEnd;
+        utterance.onerror = onError;
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
-      } catch (_error) {
-        close();
-        settle(false);
       }
     });
   }
 
-  async function speakWithExistingVoice(text, generation, canSpeak=()=>true) {
+  async function speakWithExistingVoice(text, generation, canSpeak=()=>true, options={onStarted:()=>{}}) {
     if (!agentVoiceEnabled() || generation !== speechGeneration) return false;
     if (!canSpeak()) return false;
     const message = String(text || '').trim();
     if (!message) return false;
-    if (!await waitForAgentIdle()) return false;
+    const readyToSpeak = options.readyToSpeak || (() => true);
+    if (!await waitForAgentIdle(canSpeak,readyToSpeak)) return false;
     if (!canSpeak() || generation !== speechGeneration) return false;
 
-    const allowed=canSpeak;canSpeak=()=>allowed()&&!continuity().isBusy?.();
+    const allowed=canSpeak;canSpeak=()=>allowed()&&readyToSpeak()&&!continuity().isBusy?.();
     if (!canSpeak()) return false;
     let spoken = false;
     const PremiumVoice = window.StonefellowPremiumVoiceV122;
@@ -1326,74 +1334,38 @@
           agentEndpoint:(()=>{const u=new URL(String(window.STONEFELLOW_CHAT?.endpoint || cfg.agentEndpoint || '/api/chat-v236.php'),location.href);const id=activeAgentId();if(id>0)u.searchParams.set('agent',String(id));return u.href;})(),
           csrf:String(cfg.csrf || '')
         });
-        spoken = await new Promise(resolve => {
-          let started = false;
-          let settled = false;
-          let closed = false;
-          const settle = ok => {
-            if (settled) return;
-            settled = true;
-            resolve(ok);
-          };
-          const close = (completed=false) => {
-            if (closed) return;
-            closed = true;
-            if (activeSpeechCancel === cancel) activeSpeechCancel = null;
-            announceSpeechState('end', message, completed);
-          };
-          const cancel = () => {
-            try { premium.stop?.(); } catch (_error) {}
-            close();
-            if (!started) settle(false);
-          };
-          activeSpeechCancel = cancel;
-          Promise.resolve(premium.speak(message, {
-            onStart:() => {
-              if (!canSpeak() || generation !== speechGeneration) {
-                cancel();
-                return;
-              }
-              started = true;
-              announceSpeechState('start', message);
-              settle(true);
-            },
-            onEnd:() => close(true),
-            onError:() => {
-              close();
-              if (!started) settle(false);
-            }
-          })).then(ok => {
-            if (ok === true && !started && canSpeak() && generation === speechGeneration) {
-              started = true;
-              announceSpeechState('start', message);
-              settle(true);
-            }
-          }).catch(() => {
-            close();
-            if (!started) settle(false);
-          });
+        spoken = await playAnnouncement(message,generation,canSpeak,{
+          ...options,start:callbacks => premium.speak(message,callbacks),stop:() => premium.stop?.()
         });
       } catch (_error) {
         spoken = false;
       }
     }
-    if (!spoken && canSpeak() && generation === speechGeneration) spoken = await browserSpeak(message, generation, canSpeak);
+    if (!spoken && canSpeak() && generation === speechGeneration) spoken = await browserSpeak(message,generation,canSpeak,options);
     return spoken === true;
   }
 
-  function queueSpeech(text,canSpeak=()=>true) {
+  function queueSpeech(text,canSpeak=()=>true,options={}) {
     const generation = speechGeneration;
-    const queued = speechQueue
-      .then(() => generation === speechGeneration && canSpeak() ? speakWithExistingVoice(text, generation, canSpeak) : false)
-      .catch(() => false);
-    speechQueue = queued.then(() => undefined, () => undefined);
-    return queued;
+    const allowed = () => !options.signal?.aborted && agentVoiceEnabled() && canSpeak();
+    let onStarted;
+    const started = new Promise(resolve => { onStarted=resolve; });
+    speechQueue = speechQueue
+      .then(() => generation === speechGeneration && allowed() ? speakWithExistingVoice(text,generation,allowed,{...options,onStarted}) : false)
+      .then(onStarted,() => onStarted(false));
+    return started;
   }
 
   async function presentAttention(item, speak = true) {
     const notificationId = Number(item?.id || 0);
     if (notificationId < 1) return true;
     if (item?.source_type === 'profile_event') { await profileAttention?.refresh(); return true; }
+    const connectionNotice = item?.source_type === 'agent_connection_activation';
+    if (connectionNotice) {
+      if (!canPresentConnectionNotice()) return false;
+      if (activeConversationId() < 1) await continuity().ensureConversation?.();
+      if (!canPresentConnectionNotice()) return false;
+    }
     const capturedConversation = activeConversationId(), capturedAgent = activeAgentId();
     if (capturedConversation < 1 || String(document.getElementById('chatInput')?.value || '').trim()) return false;
     const data = await request('present_attention', {
@@ -1418,7 +1390,13 @@
       throw new Error('Actionable notification could not be surfaced in Agent Chat.');
     }
 
-    if (speak && !data.duplicate && data.voice_allowed !== false) queueSpeech(String(data.message || ''));
+    if (speak && !data.duplicate && data.voice_allowed !== false) {
+      if (connectionNotice) {
+        queueSpeech(String(data.speech || ''), () => connectionNoticeContextReady()
+          && capturedConversation === activeConversationId() && capturedAgent === activeAgentId(),
+        {readyToSpeak:canPresentConnectionNotice,autoReply:false});
+      } else queueSpeech(String(data.message || ''));
+    }
     if (data.preserve_unread === true) return true;
     // Legacy non-Profile integrations (including Radar) retain their delivery
     // acknowledgement. Profile lifecycle reads use the explicit PA4B action.
@@ -1428,11 +1406,25 @@
     return true;
   }
 
+  function connectionNoticeContextReady() {
+    return !document.hidden && continuity().isReady?.() === true
+      && document.getElementById('chatThread')?.dataset.view === 'chat'
+      && !String(document.getElementById('chatInput')?.value || '').trim();
+  }
+
+  function canPresentConnectionNotice() {
+    const mode = String(document.body?.dataset.stonefellowAgentState || '');
+    return connectionNoticeContextReady() && !continuity().isBusy?.()
+      && !['processing','speaking','recording','listening'].includes(mode);
+  }
+
   async function pollAttention(bootstrap = false, scope = '') {
     const orderScope = scope === 'profile_orders';
+    const connectionScope = scope === 'connection_activations';
     if (scope === 'profile' && !document.hidden) await profileAttention?.refresh();
-    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention && scope !== 'profile' && !orderScope) return;
+    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention && scope !== 'profile' && !orderScope && !connectionScope) return;
     if (!chatCanvasAvailable()) return;
+    if (connectionScope && !canPresentConnectionNotice()) return;
     if (scope === 'profile' || orderScope) {
       const chat = continuity();
       if (chat.isRestoring?.() || chat.isReady?.() === false || String(document.getElementById?.('chatInput')?.value || '').trim()) return;
@@ -1440,20 +1432,20 @@
     }
     if (attentionBusy || (document.hidden && !bootstrap)) return;
     attentionBusy = true;
-    let orderActivity = false;
+    let noticeActivity = false;
     try {
-      const cursor = orderScope ? profileOrderCursor : scope === 'profile' ? profileAttentionCursor : attentionCursor;
+      const cursor = connectionScope ? connectionActivationCursor
+        : orderScope ? profileOrderCursor : scope === 'profile' ? profileAttentionCursor : attentionCursor;
       if (scope === 'profile') bootstrap = cursor === 0;
       const data = await request('attention', null, {after_id:bootstrap ? 0 : cursor, ...(scope ? {scope} : {})});
       const items = Array.isArray(data.items) ? data.items : [];
-      orderActivity = orderScope && items.length > 0;
+      noticeActivity = (orderScope || connectionScope) && items.length > 0;
       for (let index = 0; index < items.length; index += 1) {
-        // Only genuine user-attention notifications reach this path. Agent
-        // Brain operational activity is rendered in the Brain tab instead.
         const speak = !bootstrap || index === items.length - 1;
         if (await presentAttention(items[index], speak) === false) throw new Error('Notification presentation was deferred.');
       }
-      if (orderScope) profileOrderCursor = Math.max(profileOrderCursor, Number(data.latest_id || 0));
+      if (connectionScope) connectionActivationCursor = Math.max(connectionActivationCursor, Number(data.latest_id || 0));
+      else if (orderScope) profileOrderCursor = Math.max(profileOrderCursor, Number(data.latest_id || 0));
       else if (scope === 'profile') profileAttentionCursor = Math.max(profileAttentionCursor, Number(data.latest_id || 0));
       else attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
     } catch (_error) {
@@ -1461,17 +1453,18 @@
       // instead of silently consuming an actionable notification.
     } finally {
       attentionBusy = false;
-      if (orderActivity) void refresh(false);
+      if (noticeActivity) void refresh(false);
     }
   }
 
   function startAttentionPolling() {
     if (!chatCanvasAvailable()) return;
     const cognitiveOwnsAttention = window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention;
-    void pollAttention(false, 'profile').then(() => pollAttention(false, 'profile_orders'));
+    void pollAttention(false, 'profile').then(() => pollAttention(false, 'connection_activations')).then(() => pollAttention(false, 'profile_orders'));
     if (!cognitiveOwnsAttention) void pollAttention(true);
     if (attentionTimer) window.clearInterval(attentionTimer);
     attentionTimer = window.setInterval(async () => {
+      await pollAttention(false, 'connection_activations');
       await pollAttention(false, 'profile_orders');
       if (!cognitiveOwnsAttention) {
         await pollAttention(false);
@@ -1485,7 +1478,7 @@
     // bell. Opening it remains an explicit view action, never inference.
     window.STONEFELLOW_NOTIFICATION_CENTER={
       openBrain:()=>{activeTab='brain';openDrawer();render();},close:closeDrawer,
-      announceWhen:(text,canSpeak)=>queueSpeech(String(text||''),canSpeak),cancelSpeech};
+      announceWhen:(text,canSpeak,options)=>queueSpeech(String(text||''),canSpeak,options),cancelSpeech};
     window.addEventListener('stonefellow:agent-voice',event=>{agentVoicePreference=event.detail?.enabled!==false;if(!agentVoicePreference)cancelSpeech();});
     window.addEventListener('pagehide',cancelSpeech,{once:true});
     return;
@@ -1505,11 +1498,16 @@
   });
   window.addEventListener('stonefellow:agent-voice', event => {
     agentVoicePreference = event.detail?.enabled !== false;
+    if (!agentVoicePreference) cancelSpeech();
   });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && chatCanvasAvailable()) {void pollAttention(false);void pollAttention(false,'profile');}
+    if (!document.hidden && chatCanvasAvailable()) {
+      void pollAttention(false,'connection_activations').then(() => pollAttention(false)).then(() => pollAttention(false,'profile'));
+    }
   });
-  window.addEventListener('vp3:chat-context-ready',()=>{if(!document.hidden)void pollAttention(false,'profile');});
+  window.addEventListener('vp3:chat-context-ready',()=>{
+    if(!document.hidden)void pollAttention(false,'connection_activations').then(() => pollAttention(false,'profile'));
+  });
   window.addEventListener('pagehide', () => {
     if (attentionTimer) window.clearInterval(attentionTimer);
     attentionTimer = 0;
@@ -1531,7 +1529,7 @@
     pollAttention,
     pollProfileAttention:() => pollAttention(false, 'profile'),
     announce:text => queueSpeech(String(text || '')),
-    announceWhen:(text,canSpeak) => queueSpeech(String(text || ''),canSpeak),
+    announceWhen:(text,canSpeak,options) => queueSpeech(String(text || ''),canSpeak,options),
     cancelSpeech,
     syncMainFeedOutcomes:syncMainFeedBrainOutcomeControls
   };

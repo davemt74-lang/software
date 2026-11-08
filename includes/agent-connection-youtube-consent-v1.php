@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-connection-notice-v1.php';
+require_once __DIR__.'/agent-commerce-recovery-pa2.php';
+
 const VP3_YOUTUBE_CONSENT_POLICY_V1 = '2026-11-08';
 
 function agent_connection_youtube_consent_schema_v1(PDO $pdo): void
@@ -38,15 +41,21 @@ function agent_connection_youtube_consent_v1(PDO $pdo, int $ownerId): bool
 function agent_connection_youtube_set_consent_v1(PDO $pdo, int $ownerId, bool $enabled): void
 {
     if ($ownerId < 1) throw new InvalidArgumentException('A VP3 account is required.');
-    if (!$enabled) {
-        $stmt = $pdo->prepare('DELETE FROM agent_connection_youtube_consent_v1 WHERE owner_user_id=?');
-        $stmt->execute([$ownerId]);
-        return;
-    }
+    agent_commerce_atomic_pa2($pdo, static function () use ($pdo, $ownerId, $enabled): void {
+        $owner = $pdo->prepare('SELECT id FROM users WHERE id=?'.agent_commerce_lock_pa2($pdo));
+        $owner->execute([$ownerId]);
+        if (!$owner->fetchColumn()) throw new InvalidArgumentException('A VP3 account is required.');
+        if (!$enabled) {
+            $pdo->prepare('DELETE FROM agent_connection_youtube_consent_v1 WHERE owner_user_id=?')->execute([$ownerId]);
+            return;
+        }
+        if (agent_connection_youtube_consent_v1($pdo, $ownerId)) return;
 
-    $update = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite'
-        ? ' ON CONFLICT(owner_user_id) DO UPDATE SET policy_version=excluded.policy_version, accepted_at=excluded.accepted_at'
-        : ' ON DUPLICATE KEY UPDATE policy_version=VALUES(policy_version), accepted_at=VALUES(accepted_at)';
-    $stmt = $pdo->prepare('INSERT INTO agent_connection_youtube_consent_v1 (owner_user_id,policy_version,accepted_at) VALUES (?,?,?)'.$update);
-    $stmt->execute([$ownerId, VP3_YOUTUBE_CONSENT_POLICY_V1, time()]);
+        $update = agent_commerce_sqlite_pa2($pdo)
+            ? ' ON CONFLICT(owner_user_id) DO UPDATE SET policy_version=excluded.policy_version, accepted_at=excluded.accepted_at'
+            : ' ON DUPLICATE KEY UPDATE policy_version=VALUES(policy_version), accepted_at=VALUES(accepted_at)';
+        $stmt = $pdo->prepare('INSERT INTO agent_connection_youtube_consent_v1 (owner_user_id,policy_version,accepted_at) VALUES (?,?,?)'.$update);
+        $stmt->execute([$ownerId, VP3_YOUTUBE_CONSENT_POLICY_V1, time()]);
+        agent_connection_notice_record_v1($ownerId, 'youtube');
+    });
 }

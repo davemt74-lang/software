@@ -13,6 +13,7 @@ require_once $root.'/includes/agent-chat-boundary-v380.php';
 require_once $root.'/includes/user-agent-system-v236.php';
 require_once $root.'/includes/knowledge-retrieval-v162.php';
 require_once $root.'/includes/participant-updates-v1.php';
+require_once $root.'/includes/notifications.php';
 
 function db(): PDO { return $GLOBALS['pdo']; }
 function setting(string $key, mixed $fallback=''): mixed { return $fallback; }
@@ -60,6 +61,10 @@ function gmail_connection_fixture_schema_v1(PDO $pdo): void
     $pdo->exec('INSERT INTO chat_conversations (id,user_id,user_agent_id) VALUES (11,1,7),(12,1,7),(13,1,8),(21,2,9)');
     $pdo->exec('CREATE TABLE chat_messages (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, conversation_id BIGINT UNSIGNED NOT NULL,
         user_id INT UNSIGNED NULL, role VARCHAR(20), message TEXT, context_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)');
+    $pdo->exec("CREATE TABLE notifications (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, user_id INT UNSIGNED NOT NULL,
+        type VARCHAR(50) NOT NULL, title VARCHAR(190) NOT NULL, body VARCHAR(500) NOT NULL, target_url VARCHAR(500) NOT NULL,
+        source_type VARCHAR(80) NOT NULL, source_id BIGINT UNSIGNED NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        is_read TINYINT NOT NULL DEFAULT 0, read_at DATETIME NULL)");
 }
 
 function gmail_connection_fixture_message_v1(string $id, int $time, string $from, string $to, string $rfcId,
@@ -107,6 +112,11 @@ try {
     $pdo->exec('DROP TABLE agent_connection_email_followups_v1');
     gmail_connection_check_v1(!agent_connections_schema_ready_v1($pdo), 'partial installation cannot advertise a working Connections module');
     agent_connections_install_v1($pdo);
+    $pdo->exec('ALTER TABLE agent_connection_email_followups_v1 DROP COLUMN sender_after_ms');
+    gmail_connection_check_v1(agent_connections_schema_ready_v1($pdo) && !agent_connection_email_sender_watch_ready_v1($pdo),
+        'legacy Gmail remains available while sender watches await Database Upgrade');
+    agent_connections_install_v1($pdo);
+    gmail_connection_check_v1(agent_connection_email_sender_watch_ready_v1($pdo), 'the shared installer upgrades legacy Gmail follow-up storage');
 
     $owner = ['id'=>1,'is_active'=>1];
     $other = ['id'=>2,'is_active'=>1];
@@ -167,6 +177,12 @@ try {
         'external_account_id'=>'fixture-google-other','account_email'=>'other@example.test',
         'access_token'=>'fixture-other-access','refresh_token'=>'fixture-other-refresh',
     ]), ['read'=>true,'send'=>false,'followups'=>false], '', $grant);
+    $activationRows = $pdo->query("SELECT id,user_id,body FROM notifications WHERE source_type='agent_connection_activation' AND type='gmail_connected' ORDER BY id")->fetchAll();
+    $pendingActivation = agent_connection_notice_after_v1($pdo,['id'=>1,'is_active'=>1],0)['items'];
+    gmail_connection_check_v1(count($activationRows) === 3 && array_map('intval',array_column($activationRows,'user_id')) === [1,1,2]
+        && count($pendingActivation) === 1 && (int)$activationRows[1]['id'] === $pendingActivation[0]['id']
+        && !str_contains(json_encode($activationRows,JSON_THROW_ON_ERROR),$mailbox),
+        'only committed owner-specific Gmail grants create a canonical notice, and reconnection supersedes pending old access');
     $summary = agent_connections_summary_v1(1);
     $connectionId = $summary['connection']['id'];
     $otherId = agent_connections_summary_v1(2)['connection']['id'];
@@ -271,6 +287,9 @@ try {
         && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_sends_v1')->fetchColumn() === 0
         && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_email_followups_v1')->fetchColumn() === 0,
         'Agent Chat prepares a private draft and performs no provider send or background watch');
+    $idleSpecialist = ['state'=>'idle','origin_message_id'=>null];
+    gmail_connection_check_v1(agent_connection_email_followup_specialist_v1($pdo,1,7,11) === $idleSpecialist,
+        'a connected mailbox and a draft awaiting approval do not create an Email Specialist');
     $key = str_repeat('c',64);
     $reviewInput = ['action'=>'review','draft_id'=>$draftId];
     $review = agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,$reviewInput,$key);
@@ -322,6 +341,23 @@ try {
         && $verified['provider_thread_id'] === 'fixture_thread' && $watch['sent_message_id'] === 'fixture_sent'
         && (int)$watch['origin_user_message_id'] === $originId && $watch['draft_id'] === $draftId && $sendCalls === 1,
         'explicit approval commits the Gmail receipt and a watch tied to the originating Chat request');
+    gmail_connection_check_v1(agent_connection_email_followup_specialist_v1($pdo,1,7,11) === ['state'=>'watching','origin_message_id'=>$originId]
+        && agent_connection_email_followup_specialist_v1($pdo,1,7,12) === $idleSpecialist
+        && agent_connection_email_followup_specialist_v1($pdo,2,9,21) === $idleSpecialist,
+        'the Email Specialist reports real work in the originating Chat and omits Gmail contents and addresses');
+    gmail_connection_reject_v1(static fn()=>agent_connection_email_followup_specialist_v1($pdo,1,8,11),404,
+        'an alternate Agent cannot inspect the originating Chat specialist status');
+    gmail_connection_reject_v1(static fn()=>agent_connection_email_followup_specialist_v1($pdo,2,9,11),404,
+        'another owner cannot inspect the originating Chat specialist status');
+    $pdo->exec("INSERT INTO settings VALUES ('connections_gmail_enabled','0')");
+    gmail_connection_check_v1(agent_connection_email_followup_specialist_v1($pdo,1,7,11) === ['state'=>'paused','origin_message_id'=>$originId],
+        'a site-wide Gmail pause is reflected for a current watch');
+    $pdo->exec("DELETE FROM settings WHERE setting_key='connections_gmail_enabled'");
+    $setWatchExpiration = $pdo->prepare('UPDATE agent_connection_email_followups_v1 SET expires_at=? WHERE owner_user_id=1 AND operation_key=?');
+    $setWatchExpiration->execute(['2000-01-01 00:00:00',$watch['operation_key']]);
+    gmail_connection_check_v1(agent_connection_email_followup_specialist_v1($pdo,1,7,11) === $idleSpecialist,
+        'an expired watch retires the Email Specialist before the worker sweeps');
+    $setWatchExpiration->execute([$watch['expires_at'],$watch['operation_key']]);
     gmail_connection_check_v1($run($confirm)['status'] === 'sent' && $sendCalls === 1
         && (int)$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE role='assistant'")->fetchColumn() === 1,
         'replaying approval returns the verified receipt without sending or notifying twice');
@@ -363,9 +399,120 @@ try {
         && $reply['reply_message_id'] === 'fixture_reply' && $context['email_followup']['draft_id'] === $draftId
         && $context['skip_brain_archive'] && !str_contains($notice['message'].$notice['context_json'],'Fixture private reply'),
         'reply delivery returns to the exact private Chat with source linkage and no inbox subject or snippet');
+    gmail_connection_check_v1(agent_connection_email_followup_specialist_v1($pdo,1,7,11) === $idleSpecialist,
+        'completed background work retires the Email Specialist');
     $due();
     gmail_connection_check_v1(agent_connection_email_followup_sweep_v1($pdo,5,$poll) === ['processed'=>0,'delivered'=>0]
         && $threadCalls === 2, 'repeated worker sweeps neither re-read nor re-deliver a completed watch');
+
+    $sender = 'updates@example.test';
+    $senderPrompt = 'Notify me when I get an email from '.$sender;
+    $stopPrompt = 'Stop watching Gmail for emails from '.$sender;
+    $searchPrompt = 'Find inbound emails from '.strtoupper($sender).'.';
+    $privateGmailTurn = static function(string $request,int $chat=11,int $user=1) use ($pdo): int {
+        $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,'user',?)")->execute([$chat,$user,$request]);
+        return (int)$pdo->lastInsertId();
+    };
+    $searchCalls = 0;
+    $senderMessages = [];
+    $search = static function(string $method,string $url,array $headers,?array $payload,bool $form) use (&$searchCalls,&$senderMessages,$sender): array {
+        if ($method !== 'GET' || $payload !== null || $form || !in_array('Authorization: Bearer fixture-owner-access',$headers,true)) {
+            throw new LogicException('Sender search did not use the correct private Gmail read grant.');
+        }
+        if (str_starts_with($url,VP3_GMAIL_API_V1.'/messages?')) {
+            parse_str((string)parse_url($url,PHP_URL_QUERY),$filters);
+            if ($filters['q'] === 'in:inbox') return ['status'=>200,'json'=>[]];
+            if (!str_starts_with($filters['q'],'from:"'.$sender.'" -in:sent -in:drafts')) throw new LogicException('Incorrect exact sender query.');
+            $searchCalls++;
+            return ['status'=>200,'json'=>['messages'=>array_map(static fn(array $mail): array => ['id'=>$mail['id']],$senderMessages)]];
+        }
+        foreach ($senderMessages as $mail) {
+            if (str_starts_with($url,VP3_GMAIL_API_V1.'/messages/'.$mail['id'].'?format=metadata')) return ['status'=>200,'json'=>$mail];
+        }
+        throw new LogicException('Sender search fetched a nonmatching provider endpoint.');
+    };
+    $senderMessages = [
+        gmail_connection_fixture_message_v1('lookalike',$now,'updates2@example.test',$mailbox,'<similar@example.test>'),
+        gmail_connection_fixture_message_v1('sent',$now,$sender,$mailbox,'<sent@example.test>','',['SENT']),
+        gmail_connection_fixture_message_v1('existing',$now,'Sender <'.$sender.'>',$mailbox,'<existing@example.test>'),
+    ];
+    $readInbox = agent_connection_email_chat_v1($pdo,$owner,$principal,'Show my Gmail',11,0,null,false,$search);
+    $readSender = agent_connection_email_chat_v1($pdo,$owner,$principal,$searchPrompt,11,0,null,false,$search);
+    $voiceRead = agent_connection_email_chat_v1($pdo,$owner,$principal,$searchPrompt,11,0,null,true,$search);
+    $ambiguousWatch = agent_connection_email_chat_v1($pdo,$owner,$principal,$senderPrompt.' and other@example.test',11,0);
+    gmail_connection_check_v1($readInbox['tool_receipt']['status'] === 'no_matches' && $readInbox['email_private_read_v1']
+        && $readSender['tool_receipt']['count'] === 1 && $readSender['email_private_read_v1'] && str_contains($readSender['answer'],'ID: existing')
+        && $voiceRead['tool_receipt']['reason'] === 'scope_restricted' && $searchCalls === 1
+        && agent_connection_email_chat_plan_v1('Find messages from Alex') === null
+        && agent_connection_email_chat_plan_v1('Notify me when I get a message from Alex') === null
+        && $ambiguousWatch['tool_receipt']['status'] === 'clarification_required',
+        'Gmail routes inbox and exact sender queries, preserves private typed results, and asks for an unambiguous watch address');
+    $watchSender = static fn(int $message, bool $voice=false): array => agent_connection_email_chat_v1($pdo,$owner,$principal,$senderPrompt,11,$message,null,$voice);
+    $spoken = 'Notify me when a new email arrives from updates at example dot test.';
+    $watchOrigin = $privateGmailTurn($spoken);
+    $watchResult = agent_connection_email_chat_v1($pdo,$owner,$principal,$spoken,11,$watchOrigin,null,true);
+    gmail_connection_check_v1($watchResult['tool_receipt']['status'] === 'completed' && !str_contains($watchResult['answer'],$sender)
+        && agent_connection_email_chat_plan_v1($spoken)['sender'] === ''
+        && agent_connection_email_chat_plan_v1($spoken.' and other at example dot test',true)['sender'] === ''
+        && $watchSender($watchOrigin)['tool_receipt']['status'] === 'completed'
+        && $watchSender($privateGmailTurn($senderPrompt))['tool_receipt']['status'] === 'completed'
+        && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_email_followups_v1 WHERE sender_after_ms IS NOT NULL')->fetchColumn() === 1,
+        'explicit typed and voice watches deduplicate per Chat and never speak the private sender address');
+    $senderCutoff = (int)$pdo->query('SELECT sender_after_ms FROM agent_connection_email_followups_v1 WHERE origin_user_message_id='.$watchOrigin)->fetchColumn();
+    $senderMessages[] = gmail_connection_fixture_message_v1('old_equal',$senderCutoff,$sender,$mailbox,'<old@example.test>');
+    usleep(5000);
+    $senderMessages[] = gmail_connection_fixture_message_v1('future_spoof',$senderCutoff+1,$sender,$mailbox,'<spoof@example.test>','',['INBOX'],
+        'mx.google.com; dmarc=fail header.from=example.test');
+    gmail_connection_check_v1(agent_connection_email_followup_sweep_v1($pdo,5,$search) === ['processed'=>1,'delivered'=>0],
+        'the worker rejects historical and exact-cutoff mail and a newer failed-authentication sender match');
+    $senderMessages[] = gmail_connection_fixture_message_v1('sender_new',$senderCutoff+2,$sender,$mailbox,'<new@example.test>');
+    $due();
+    gmail_connection_check_v1(agent_connection_email_followup_sweep_v1($pdo,5,$search) === ['processed'=>1,'delivered'=>1],
+        'the next new matching sender message completes the watch in the background');
+    $senderWatch = $pdo->query('SELECT reply_message_id,reply_chat_message_id FROM agent_connection_email_followups_v1 WHERE origin_user_message_id='.$watchOrigin)->fetch();
+    $noticeQuery->execute([$senderWatch['reply_chat_message_id']]);
+    $senderNotice = $noticeQuery->fetch();
+    $bell = $pdo->query("SELECT * FROM notifications WHERE source_type='agent_connection_email_followup' AND source_id=".(int)$senderWatch['reply_chat_message_id'])->fetch();
+    gmail_connection_check_v1($senderWatch['reply_message_id'] === 'sender_new' && (int)$senderNotice['conversation_id'] === 11
+        && str_contains($senderNotice['message'],$sender) && !str_contains($senderNotice['message'].$senderNotice['context_json'],'Fixture private')
+        && json_decode($senderNotice['context_json'],true)['skip_brain_archive'] === true
+        && (int)$bell['user_id'] === 1 && str_contains($bell['target_url'],'conversation_id=11') && !str_contains(json_encode($bell),$sender)
+        && agent_connection_email_followup_sweep_v1($pdo,5,$search) === ['processed'=>0,'delivered'=>0]
+        && $watchSender($watchOrigin)['tool_receipt']['status'] === 'no_matches',
+        'one private Chat notice and one generic owner notification survive replay without exposing Gmail metadata');
+
+    $nextWatch = $privateGmailTurn($senderPrompt);
+    $watchSender($nextWatch);
+    $stopElsewhere = agent_connection_email_chat_v1($pdo,$owner,$principal,$stopPrompt,12,$privateGmailTurn($stopPrompt,12),null,true);
+    $stopHere = agent_connection_email_chat_v1($pdo,$owner,$principal,$stopPrompt,11,$privateGmailTurn($stopPrompt),null,true);
+    gmail_connection_check_v1($stopElsewhere['tool_receipt']['status'] === 'no_matches' && $stopHere['tool_receipt']['status'] === 'completed'
+        && agent_connection_email_followup_sweep_v1($pdo,5,$search) === ['processed'=>0,'delivered'=>0],
+        'a stop request is restricted to the originating Agent Chat and prevents further polling');
+    $watchSender($privateGmailTurn($senderPrompt));
+    $authorization = agent_connections_find_v1($pdo,1,$connectionId)['authorization_key'];
+    agent_connections_update_policy_v1(1,$connectionId,array_replace($policy,['followups'=>false]),$authorization);
+    $blocked = $watchSender($privateGmailTurn($senderPrompt));
+    agent_connections_update_policy_v1(1,$connectionId,$policy,$authorization);
+    gmail_connection_check_v1($blocked['tool_receipt']['reason'] === 'setup_required'
+        && agent_connection_email_followup_sweep_v1($pdo,5,$search) === ['processed'=>0,'delivered'=>0],
+        'owner revocation blocks activation and cancels already scheduled watches even after permission is restored');
+
+    $raceOrigin = $privateGmailTurn($senderPrompt);
+    $watchSender($raceOrigin);
+    $raceCutoff = (int)$pdo->query('SELECT sender_after_ms FROM agent_connection_email_followups_v1 WHERE origin_user_message_id='.$raceOrigin)->fetchColumn();
+    usleep(5000);
+    $senderMessages = [gmail_connection_fixture_message_v1('racing_message',$raceCutoff+1,$sender,$mailbox,'<racing@example.test>')];
+    $cancelledInFlight = false;
+    $race = static function(string $method,string $url,array $headers,?array $payload,bool $form)
+        use ($pdo,$owner,$principal,$search,$stopPrompt,$privateGmailTurn,&$cancelledInFlight): array {
+        if (str_contains($url,'/messages/racing_message?')) {
+            $stopped = agent_connection_email_chat_v1($pdo,$owner,$principal,$stopPrompt,11,$privateGmailTurn($stopPrompt),null,true);
+            $cancelledInFlight = $stopped['tool_receipt']['status'] === 'completed';
+        }
+        return $search($method,$url,$headers,$payload,$form);
+    };
+    gmail_connection_check_v1(agent_connection_email_followup_sweep_v1($pdo,5,$race) === ['processed'=>1,'delivered'=>0]
+        && $cancelledInFlight, 'delivery rechecks the watch claim after a cancellation during the provider request');
 
     $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (11,1,'user',?)")->execute([$prompt]);
     $secondOrigin = (int)$pdo->lastInsertId();
@@ -429,6 +576,8 @@ try {
         && !agent_connections_update_policy_v1(1,$connectionId,['read'=>false,'send'=>false,'followups'=>false],$saved['authorization_key'])
         && !agent_connections_disconnect_v1(1,$connectionId,'gmail',$saved['authorization_key']),
         'a stale Connections page cannot change or unlink the replacement OAuth grant');
+    gmail_connection_check_v1(agent_connection_email_followup_specialist_v1($pdo,1,7,11) === $idleSpecialist,
+        'a replacement Gmail grant never inherits the previous watch or its rail presence');
     $due();
     gmail_connection_check_v1(agent_connection_email_followup_sweep_v1($pdo,5,$poll) === ['processed'=>1,'delivered'=>0]
         && $threadCalls === 2, 'reconnecting does not carry old reply watches into the replacement grant');

@@ -95,12 +95,12 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     catch(Throwable $error){$liveContextReason='check_failed';}
     $connectedAppAccess = has_permission('account.access',$user)
         && function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() === null;
-    $gmailRead = $gmailSend = $youtube = 'permission_denied';
+    $gmailRead = $gmailSend = $gmailFollowups = $youtube = 'permission_denied';
     if ($connectedAppAccess) {
         try {
             $gmail = function_exists('agent_connections_summary_v1') ? agent_connections_summary_v1($uid) : null;
             $grant = $gmail['connection'] ?? null;
-            $gmailRead = $gmailSend = match (true) {
+            $gmailRead = $gmailSend = $gmailFollowups = match (true) {
                 $gmail === null => 'not_installed',
                 !$gmail['schema_ready'] => 'upgrade_required',
                 !$gmail['provider_ready'] => 'provider_setup_required',
@@ -109,8 +109,15 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
             };
             if ($gmailRead === 'ready' && empty($grant['permissions']['read'])) $gmailRead = 'connection_permission_required';
             if ($gmailSend === 'ready' && empty($grant['permissions']['send'])) $gmailSend = 'connection_permission_required';
+            if ($gmailFollowups === 'ready') {
+                $gmailFollowups = match (true) {
+                    !agent_connection_email_sender_watch_ready_v1($pdo) => 'upgrade_required',
+                    empty($grant['permissions']['followups']) => 'connection_permission_required',
+                    default => 'ready',
+                };
+            }
         } catch (Throwable) {
-            $gmailRead = $gmailSend = 'check_failed';
+            $gmailRead = $gmailSend = $gmailFollowups = 'check_failed';
         }
         try {
             $youtube = match (true) {
@@ -171,8 +178,9 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('phone.numbers.read','Read assigned phone numbers','read','vp3_phone_agent_read_v1',has_permission('account.access',$user),$phone['numbers'],['Current owner and named-Agent assignment only. No carrier call, purchase or number registration.']),
         vp3_capability_row_v1('phone.sms.read','Read SMS inbox','read','vp3_phone_agent_read_v1',has_permission('account.access',$user),$phone['sms'],['Explicit read only; active owner/Agent scope. Reading sends no message and does not mark it read.']),
         vp3_capability_row_v1('phone.sms.send','Send SMS through existing approval screen','write','vp3_phone_sms_authorize_send_v120',has_permission('account.access',$user),$phone['send'],['Chat does not send SMS. Open Phone inbox for exact recipient/body review and existing explicit SEND approval, admin activation, opt-out and quota checks.']),
-        vp3_capability_row_v1('email.read','Search and read connected Gmail','read','agent_connection_email_chat_v1',$connectedAppAccess,$gmailRead,['Explicit typed search or read in private Chat. Requires the member’s current Gmail grant and read permission.']),
+        vp3_capability_row_v1('email.read','Search and read connected Gmail','read','agent_connection_email_chat_v1',$connectedAppAccess,$gmailRead,['Explicit typed search or read in private Chat, including filtering incoming messages by exact sender address. Requires the member’s current Gmail grant and read permission.']),
         vp3_capability_row_v1('email.send','Draft and send Gmail after review','write','agent_connection_email_chat_action_v1',$connectedAppAccess,$gmailSend,['The member approves the exact message in private Chat. An optional reply watch uses the originating Chat and the member’s enabled Gmail permissions.']),
+        vp3_capability_row_v1('email.followups','Watch for the next Gmail message from a sender','write','agent_connection_email_chat_v1',$connectedAppAccess,$gmailFollowups,['Explicit typed or voice request in private Chat for one exact sender address. Requires Gmail read and background watches. The next new match alerts in Chat and Notifications. Watches expire after 30 days and can be stopped from the original Chat.']),
         vp3_capability_row_v1('calendar.read','Read personal calendar','read','user_calendar_agent_query_v1300',true,$calendar,['Own calendar; actual records must be retrieved before answering.']),
         vp3_capability_row_v1('calendar.manage','Change personal calendar','write','user_calendar_agent_query_v1300',true,$calendar,['Existing event confirmation and revision checks still apply. Linked meetings use their existing editor.']),
         vp3_capability_row_v1('workflows.read','Inspect owner workflow records','read','agent_work_control_chat_v173',has_permission('account.access',$user),$work,['Explicit workflow number. Owner queue scope, including the owner’s other Agents; not arbitrary private tasks.']),

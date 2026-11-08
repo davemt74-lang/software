@@ -3848,6 +3848,10 @@
         data.youtube_results || null
       );
       if(!existingReply)bindStoredMessagePa3(reply,data.assistant_message_id);
+      if (data.tool_receipt?.capability === 'email.followups' && data.tool_receipt.status === 'completed'
+        && ['watch_sender','stop_sender_watch'].includes(data.tool_receipt.operation)) {
+        window.dispatchEvent(new Event('vp3:chat-email-watch-changed'));
+      }
       applyInitiativeFollowthroughV1(data.initiative_followthrough);
       bindInitiativeActionV1(reply,data.initiative_action,data.initiative_followthrough);
       if (data.canvas_media?.generation_ids?.length) {
@@ -4071,6 +4075,18 @@
 
   const canonicalChatContinuity = {
     showChatView:() => setChatCanvasView('chat'),
+    mountAgentGreeting:text => {
+      if (thread.dataset.view !== 'chat' || !contextReady || initialRestorePending || restoringConversation) return null;
+      const previous = thread.querySelector('[data-agent-voice-greeting]');
+      if (previous?.dataset.agentVoiceGreeting === text) return previous;
+      previous?.remove();
+      const element = messageElement('assistant',text);
+      element.dataset.agentVoiceGreeting = text;
+      const listening = thread.querySelector('.chat-listening-continuation');
+      thread.insertBefore(element,listening);
+      thread.scrollTop = thread.scrollHeight;
+      return element;
+    },
     pendingParticipantQuestion:()=>pendingSend?{message:pendingSend.message,conversation_id:pendingSend.conversationId,submitted:true}:lastParticipantQuestion&&Date.now()-lastParticipantQuestion.at<120000&&lastParticipantQuestion.conversation_id===Number(conversationId||0)?{...lastParticipantQuestion}:null,
     isVoice:() => Boolean(voiceMode),
     conversationId:() => Number(conversationId || 0),
@@ -4118,8 +4134,9 @@
     const detail = updates.map(update => `• ${String(update.title || 'Update')}${update.body ? ` — ${String(update.body)}` : ''}`).join('\n');
     const text = `${String(intro.greeting)}${detail ? `\n\nHere’s what changed:\n${detail}` : ''}`;
     const actions = updates.filter(update => String(update.target_url || '').trim()).slice(0,4).map(update => ({label:`Open ${String(update.title || 'update')}`.slice(0,90),url:String(update.target_url)}));
-    addMessage('assistant',text,[],[],'',[],actions);
+    const element=addMessage('assistant',text,[],[],'',[],actions);
     if (token) { try { localStorage.setItem(storageKey,token); } catch (error) {} }
+    if(window.STONEFELLOW_AGENT_IDENTITY_V236){element.dataset.agentVoiceGreeting=String(intro.greeting).trim();return;}
     window.setTimeout(() => speakIntroV101(String(intro.greeting)),450);
   }
 
