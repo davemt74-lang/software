@@ -9,7 +9,8 @@ $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_ac
     'profile_call_assistance_pa3c','profile_call_research_pa3c',
     'profile_visitor_voices_pa4a','profile_speech_items_pa4a','profile_speech_attempts_pa4a',
     'profile_attention_operations_pa4b','profile_attention_deliveries_pa4b','profile_event_projections_pa4b',
-    'profile_conversation_checkouts_pa5','agent_product_launches_v1'];
+    'profile_conversation_checkouts_pa5','agent_product_launches_v1',
+    'agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1'];
 $partialSpeech=[
     'partial-conversation-checkout-review'=>['profile_conversation_checkouts_pa5','product_snapshot_hash'],
     'partial-speech-voice'=>['profile_visitor_voices_pa4a','assignment_revision'],
@@ -47,11 +48,14 @@ require dirname(__DIR__).'/includes/profile-attention-pa4b.php';
 require dirname(__DIR__).'/includes/profile-event-projection-pa4b.php';
 require_once dirname(__DIR__).'/includes/agent-commerce-recovery-pa2.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
+require_once dirname(__DIR__).'/includes/profile-promotion-attribution-v1.php';
 $fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');
 $fixture->exec('CREATE TABLE agent_commerce_products_v800(id INTEGER PRIMARY KEY)');
+$fixture->exec('CREATE TABLE agent_commerce_orders_v800(id INTEGER PRIMARY KEY)');
 function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
 {
     initiative_product_launch_schema_v1($pdo??$GLOBALS['fixture']);
+    profile_promotion_attribution_schema_v1($pdo??$GLOBALS['fixture']);
     $GLOBALS['calls'][]=__FUNCTION__;
 }
 // Older Profile migrations are isolated dependencies in this page fixture. Keep
@@ -75,7 +79,10 @@ if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_');
 $modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get'],true)||$missingTable||isset($partialSpeech[$mode]);
 if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);}
-if($modern)initiative_product_launch_schema_v1($fixture);
+if($modern){
+    initiative_product_launch_schema_v1($fixture);
+    profile_promotion_attribution_schema_v1($fixture);
+}
 if($missingTable){$missing=substr($mode,8);if(!in_array($missing,$newTables,true))throw new RuntimeException('Invalid missing table fixture.');$fixture->exec('DROP TABLE '.$missing);}
 if(isset($partialSpeech[$mode])){[$table,$column]=$partialSpeech[$mode];$fixture->exec('ALTER TABLE '.$table.' RENAME COLUMN '.$column.' TO removed_'.$column);}
 if (in_array($mode,['already-ready','tv-only'],true)) tv_schema_v1($fixture);

@@ -119,6 +119,7 @@ function profile_commerce_set_fulfillment_v900(PDO $pdo,int $ownerUserId,int $or
         $pdo->prepare('UPDATE agent_commerce_orders_v800 SET order_status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$orderId,$ownerUserId]);
         $event=$reviewRequired?'profile_payment_review_released':'profile_fulfillment_'.$status;
         agent_commerce_audit_v800($pdo,$orderId,$ownerUserId,(int)($order['workspace_owner_user_id']??0)?:null,'user',$ownerUserId,null,$event,$from,$status,0,['source'=>'profile_commerce_v900']);
+        if($reviewRequired)profile_promotion_attribution_touch_order_v1($pdo,$order);
     });
     return profile_commerce_order_for_owner_v900($pdo,$ownerUserId,$orderId)?:throw new RuntimeException('Profile Commerce order could not be reloaded.');
 }

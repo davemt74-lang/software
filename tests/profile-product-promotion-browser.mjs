@@ -28,7 +28,7 @@ fs.mkdirSync(path.join(tmp, 'api'));
 for (const file of fs.readdirSync('includes')) {
   if (file !== 'bootstrap.php') fs.symlinkSync(path.resolve('includes', file), path.join(tmp, 'includes', file));
 }
-for (const file of ['profile.php','profile-commerce-product.php','profile-promotion-image.php','profile-product-photo.php','media-library-file-v86.php']) {
+for (const file of ['profile.php','profile-commerce-product.php','profile-promotion-image.php','profile-promotion-click.php','profile-product-photo.php','media-library-file-v86.php']) {
   fs.copyFileSync(file, path.join(tmp, file));
 }
 for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-agent.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js']) {
@@ -64,6 +64,8 @@ if($command==='cleanup'){
 if($command==='init'){
     pa3_reset();
     agent_commerce_ensure_schema_v800($pdo);
+    require_once __DIR__.'/includes/profile-promotion-attribution-v1.php';
+    profile_promotion_attribution_schema_v1($pdo);
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_commerce_promotions_v1 (id CHAR(32) PRIMARY KEY, owner_user_id INT, product_id BIGINT, draft_key CHAR(64), agent_id BIGINT, conversation_id BIGINT, source_asset_id BIGINT, source_sha256 CHAR(64), settings_json TEXT, asset_id BIGINT, asset_sha256 CHAR(64), public_key CHAR(32), public_product_url VARCHAR(500), public_cta VARCHAR(40), status VARCHAR(20), updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $pdo->exec("CREATE TABLE user_media_assets (id INT PRIMARY KEY,user_id INT,media_type VARCHAR(10),title VARCHAR(80),mime_type VARCHAR(40),file_path VARCHAR(300),file_size INT,duration_seconds INT,source VARCHAR(40),metadata_json TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $size=filesize(__DIR__.'/private/user-media/1/promotion.png');
@@ -75,6 +77,10 @@ if($command==='init'){
           str_repeat('b',32),str_repeat('c',64),hash_file('sha256',$source),json_encode(['headline'=>'Mug Morning','copy'=>'Learn how the blue glaze comes together.','prompt'=>'PRIVATE_PROMPT']),
           hash_file('sha256',__DIR__.'/private/user-media/1/promotion.png'),str_repeat('a',32),'/fixture-owner/product/blue-mug'
         ]);
+    exit;
+}
+if($command==='clicks'){
+    echo json_encode($pdo->query('SELECT click_id,publication_id,placement FROM agent_promotion_clicks_v1 ORDER BY placement')->fetchAll(),JSON_THROW_ON_ERROR);
     exit;
 }
 if(in_array($command,['hide-listing','show-listing','hide-photo','show-photo'],true)){
@@ -101,6 +107,7 @@ throw new RuntimeException('Unknown test command');
 const invoke = action => {
   const result = spawnSync(php, [path.join(tmp, 'fixture.php'), action], {env, encoding:'utf8'});
   assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result.stdout;
 };
 const reservation = net.createServer();
 await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
@@ -178,9 +185,36 @@ try {
   assert.equal(await page.getByRole('tab',{name:'Products'}).getAttribute('aria-selected'), 'true');
   const profileCard = page.locator('.profile-product-promotions [data-profile-product-promotion]');
   await profileCard.getByRole('img',{name:/Mug Morning/}).waitFor();
-  assert.equal(await profileCard.getByRole('link',{name:/View workshop/}).getAttribute('href'), productPath);
+  const nativeLink = new URL(await profileCard.getByRole('link',{name:/View workshop/}).getAttribute('href'), base);
+  assert.equal(nativeLink.pathname, '/profile-promotion-click.php');
+  assert.equal(nativeLink.searchParams.get('key'), key);
+  assert.equal(nativeLink.searchParams.get('placement'), 'profile');
+  assert.equal(nativeLink.searchParams.get('conversation'), '0');
   assert.equal(await profileCard.locator('img').getAttribute('src'), imagePath);
   assert.ok(await page.waitForFunction(() => document.querySelector('.profile-product-promotions img').naturalWidth > 0));
+  const unbound = await fetch(nativeLink,{redirect:'manual'});
+  assert.equal(unbound.status,303);
+  assert.equal(unbound.headers.get('location'),productPath);
+  const forgedLink = new URL(nativeLink);
+  forgedLink.searchParams.set('placement','profile_agent');
+  forgedLink.searchParams.set('conversation','1');
+  for (const [link,options] of [[forgedLink,{}],[nativeLink,{method:'HEAD'}],[nativeLink,{headers:{'Sec-Purpose':'prefetch'}}]]) {
+    const response = await page.request.fetch(String(link),{maxRedirects:0,...options});
+    assert.equal(response.status(),303);
+    assert.equal(response.headers()['location'],productPath);
+  }
+  assert.deepEqual(JSON.parse(invoke('clicks')),[]);
+  const nativeClick = await page.request.get(String(nativeLink),{maxRedirects:0});
+  assert.equal(nativeClick.status(),303);
+  assert.match(nativeClick.headers()['cache-control'],/no-store/);
+  const nativeDestination = new URL(nativeClick.headers()['location'],base);
+  assert.equal(nativeDestination.pathname,productPath);
+  assert.match(nativeDestination.searchParams.get('promotion_click'),/^[a-f0-9]{32}$/);
+  const repeated = await page.request.get(String(nativeLink),{maxRedirects:0});
+  assert.equal(repeated.headers()['location'],nativeClick.headers()['location']);
+  const nativeClickId = nativeDestination.searchParams.get('promotion_click');
+  assert.deepEqual(JSON.parse(invoke('clicks')),[{click_id:nativeClickId,publication_id:key,placement:'profile'}]);
+  console.log('PASS Profile CTA records an exact replay-safe click, with untracked redirects for another session, forged placement and prefetch');
   await page.locator('[data-open-profile-agent]').click();
   const visitorForm = page.getByRole('textbox',{name:'Message Profile Agent'});
   const agentCard = page.locator('[data-profile-agent-thread] .profile-agent-message.agent [data-profile-product-promotion]');
@@ -192,11 +226,20 @@ try {
   await visitorForm.fill('Can you tell me about the blue mug workshop?');
   await page.getByRole('button',{name:'Send',exact:true}).click();
   await agentCard.getByRole('link',{name:/View workshop/}).waitFor({timeout:18000});
+  const agentLink = new URL(await agentCard.getByRole('link',{name:/View workshop/}).getAttribute('href'),base);
+  assert.equal(agentLink.pathname,'/profile-promotion-click.php');
+  assert.equal(agentLink.searchParams.get('placement'),'profile_agent');
+  assert.match(agentLink.searchParams.get('conversation'),/^[1-9]\d*$/);
   assert.equal(await agentCard.locator('img').getAttribute('src'), base + imagePath);
   assert.ok(!(await page.content()).includes('PRIVATE_PROMPT'));
   console.log('PASS actual mobile profile and durable Profile Agent turn present the same promotion');
   await agentCard.getByRole('link',{name:/View workshop/}).click();
-  await page.waitForURL(base + productPath);
+  await page.waitForURL(u => u.pathname===productPath && /^[a-f0-9]{32}$/.test(u.searchParams.get('promotion_click')||''));
+  const agentClickId = new URL(page.url()).searchParams.get('promotion_click');
+  assert.notEqual(agentClickId,nativeClickId);
+  const clicks = [{click_id:nativeClickId,publication_id:key,placement:'profile'},
+    {click_id:agentClickId,publication_id:key,placement:'profile_agent'}];
+  assert.deepEqual(JSON.parse(invoke('clicks')),clicks);
   await page.getByRole('heading',{name:'Blue mug workshop'}).waitFor();
   assert.equal(await page.getByRole('img',{name:'Blue mug workshop'}).getAttribute('src'), listingPhotoPath);
   await page.waitForFunction(() => document.querySelector('.pcp-photo img').naturalWidth === 16);
@@ -207,6 +250,9 @@ try {
   await agentCard.waitFor();
   invoke('pause');
   assert.equal((await fetch(base + imagePath)).status, 404);
+  assert.equal((await page.request.get(String(nativeLink))).status(),404);
+  assert.equal((await page.request.get(String(agentLink))).status(),404);
+  assert.deepEqual(JSON.parse(invoke('clicks')),clicks);
   const retainedPhoto = await fetch(base + listingPhotoPath);
   assert.equal(retainedPhoto.status, 200);
   assert.deepEqual(Buffer.from(await retainedPhoto.arrayBuffer()), original);

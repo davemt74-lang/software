@@ -217,4 +217,84 @@ $releaseAudit=db()->prepare("SELECT COUNT(*) FROM agent_commerce_audit_v800 WHER
 $releaseAudit->execute([$lateId]);
 pa5_check((int)$releaseAudit->fetchColumn()===1&&count(pa5_seller_alerts())===2,'approval retry preserves one explicit audit and the original seller alert');
 pa5_check(!str_contains(json_encode(db()->query('SELECT context_json FROM profile_agent_messages')->fetchAll()),'buyer@example.test'),'checkout data remains outside ordinary conversation messages');
+
+// Exercise the two checkout boundaries with visits the public redirect has
+// already accepted. The public-card suite verifies the redirect itself.
+profile_promotion_attribution_schema_v1(db());
+$pubA=str_repeat('1',32);
+$pubB=str_repeat('2',32);
+foreach([$pubA,$pubB] as $publicationId){
+    agent_commerce_atomic_pa2(db(),static fn()=>profile_promotion_attribution_register_v1(db(),[
+        'public_key'=>$publicationId,'id'=>substr(hash('sha256',$publicationId),0,32),'owner_user_id'=>1,'product_id'=>$productId,
+        'agent_id'=>7,'conversation_id'=>11,'source_asset_id'=>1,'draft_key'=>str_repeat('a',64),'status'=>'published',
+    ]));
+}
+$putVisit=static function(string $clickId,string $publicationId,int $conversation,string $placement)use($productId): void{
+    db()->prepare('INSERT INTO agent_promotion_clicks_v1 (click_id,publication_id,placement,created_at) VALUES (?,?,?,?)')
+        ->execute([$clickId,$publicationId,$placement,agent_commerce_time_pa2()]);
+    profile_product_promotion_click_remember_v1($clickId,1,$productId,$conversation);
+};
+$boundClick=static function(array $order): string|false{
+    $q=db()->prepare('SELECT click_id FROM agent_promotion_orders_v1 WHERE order_id=?');
+    $q->execute([(int)$order['id']]);
+    return $q->fetchColumn();
+};
+$visitA=str_repeat('a',32);
+$visitB=str_repeat('b',32);
+$putVisit($visitA,$pubA,0,'profile');
+$putVisit($visitB,$pubB,0,'profile');
+$nonceA=profile_commerce_checkout_nonce_v900(1,$productId,profile_product_promotion_attribution_click_v1(1,$productId,$visitA));
+$nonceB=profile_commerce_checkout_nonce_v900(1,$productId,profile_product_promotion_attribution_click_v1(1,$productId,$visitB));
+$product=profile_commerce_public_product_v900(db(),$seller,'field-guide');
+$terms=profile_commerce_terms_digest_v900(profile_commerce_owner_product_v900(db(),1,$productId));
+$native=static fn(string $nonce,bool $accepted=true)=>profile_commerce_create_checkout_idempotent_v900(
+    db(),$seller,$product,$fixtures['seller'],'buyer@example.test',$nonce,$terms,$accepted);
+pa5_reject(fn()=>$native($nonceA,false),'an attributed product-page checkout still requires buyer acceptance');
+$nativeB=$native($nonceB);
+$nativeA=$native($nonceA);
+$orderClick=static fn(array $order):?string=>profile_commerce_order_metadata_v900($order)['product_promotion_click_v1']??null;
+$itemA=agent_commerce_order_items_v800(db(),(int)$nativeA['order']['id'])[0];
+pa5_check($orderClick($nativeA['order'])===$visitA&&$orderClick($nativeB['order'])===$visitB&&$orderClick($itemA)===$visitA
+    &&$boundClick($nativeA['order'])===$visitA&&$boundClick($nativeB['order'])===$visitB,
+    'two product-page tabs freeze their exact visits into the canonical order and item');
+$retried=$native($nonceA);
+pa5_check($retried['order']['id']===$nativeA['order']['id']&&$retried['attempt']['id']===$nativeA['attempt']['id']
+    &&$orderClick($retried['order'])===$visitA,'retrying the same product-page checkout preserves its original visit');
+$otherProductVisit=str_repeat('c',32);
+profile_product_promotion_click_remember_v1($otherProductVisit,1,$productId+1,0);
+$unattributed=profile_product_promotion_attribution_click_v1(1,$productId,$otherProductVisit);
+$direct=$native(profile_commerce_checkout_nonce_v900(1,$productId,$unattributed));
+pa5_check($unattributed===null&&$orderClick($direct['order'])===null&&profile_product_promotion_attribution_click_v1(1,$productId)===null,
+    'a forged or absent product-page visit leaves checkout available and unattributed');
+$failedVisit=str_repeat('f',32);
+$putVisit($failedVisit,$pubA,0,'profile');
+$retryNonce=profile_commerce_checkout_nonce_v900(1,$productId,$failedVisit);
+$pdo->failSql='INSERT INTO agent_promotion_orders_v1';
+try{$stillUsable=$native($retryNonce);}
+finally{$pdo->failSql='';}
+pa5_check($stillUsable['attempt']['status']==='open'&&$boundClick($stillUsable['order'])===false
+    &&$orderClick($stillUsable['order'])===$failedVisit,'a metric storage interruption preserves checkout and the frozen order evidence');
+$requests=count($GLOBALS['pa5ProviderRequests']);
+$recovered=$native($retryNonce);
+pa5_check($recovered['order']['id']===$stillUsable['order']['id']&&$boundClick($recovered['order'])===$failedVisit
+    &&count($GLOBALS['pa5ProviderRequests'])===$requests,'a checkout retry repairs attribution from the same order without calling the provider again');
+
+$chatVisitA=str_repeat('d',32);
+$chatVisitB=str_repeat('e',32);
+$putVisit($chatVisitA,$pubA,$cid,'profile_agent');
+$requestId=bin2hex(random_bytes(16));
+$chatReview=pa5_prepare($cid,['request_id'=>$requestId,'promotion_click'=>$chatVisitB])['review'];
+$putVisit($chatVisitB,$pubB,$cid,'profile_agent');
+$repeatedReview=pa5_prepare($cid,['request_id'=>$requestId,'promotion_click'=>$chatVisitB])['review'];
+$otherReview=pa5_prepare($otherCid,['promotion_click'=>$chatVisitA])['review'];
+$reviewQuery=db()->prepare('SELECT * FROM profile_conversation_checkouts_pa5 WHERE review_id=?');
+$reviewQuery->execute([$otherReview['review_id']]);
+pa5_check(!isset(vp3_profile_checkout_secret_pa5($reviewQuery->fetch())['product_promotion_click_v1']),
+    'the same buyer in another Profile Agent conversation cannot inherit a promotion visit');
+$chatConfirm=pa5_confirm($cid,$chatReview['review_id'],true,['promotion_click'=>$chatVisitB]);
+$reviewQuery->execute([$chatReview['review_id']]);
+$stored=agent_commerce_order_v800(db(),(int)$reviewQuery->fetch()['order_id']);
+pa5_check($repeatedReview['review_id']===$chatReview['review_id']&&$stored&&$orderClick($stored)===$chatVisitA&&$boundClick($stored)===$chatVisitA
+    &&!str_contains(json_encode([$chatReview,$chatConfirm]),$chatVisitA),
+    'Profile Agent checkout freezes its original visit privately before a later click or retry');
 echo 'PROFILE_CONVERSATION_CHECKOUT_PA5=PASS ('.$checks.' checks; '.db()->getAttribute(PDO::ATTR_DRIVER_NAME).")\n";

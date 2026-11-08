@@ -185,4 +185,13 @@ function initiative_product_launch_chat_v1(PDO $pdo, int $owner, int $agentId, i
             agent_runtime_v125_trace('chat.product_launch.catchup_failed',['error_class'=>get_class($error)]);
         }
     }
+    if (!table_exists('agent_promotion_publications_v1')) return;
+    try {
+        require_once __DIR__.'/initiative-promotion-outcomes-v1.php';
+        initiative_promotion_outcome_sweep_v1($pdo,3,$owner,$agentId,$conversationId);
+    } catch (Throwable $error) {
+        if (function_exists('agent_runtime_v125_trace')) {
+            agent_runtime_v125_trace('chat.promotion_outcome.catchup_failed',['error_class'=>get_class($error)]);
+        }
+    }
 }

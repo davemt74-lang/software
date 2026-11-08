@@ -93,8 +93,8 @@ function profile_product_promotion_public_v1(PDO $pdo, array $profile, string $k
     return profile_product_promotion_records_v1($pdo, $profile, [$key])[$key]['card'] ?? null;
 }
 
-/** Resolve only the reviewed artwork, never the source product photo or other private assets. */
-function profile_product_promotion_image_v1(PDO $pdo, string $key): ?string
+/** Find the public owner and verified listing destination from one live key. */
+function profile_product_promotion_key_record_v1(PDO $pdo, string $key): ?array
 {
     if (!profile_product_promotion_key_v1($key) || !table_exists('agent_commerce_promotions_v1')) return null;
     $query = $pdo->prepare("SELECT owner_user_id FROM agent_commerce_promotions_v1 WHERE public_key=? AND status='published' LIMIT 1");
@@ -103,13 +103,20 @@ function profile_product_promotion_image_v1(PDO $pdo, string $key): ?string
     $profile = $owner > 0 ? profile_for_user($pdo, $owner, false) : null;
     if (!$profile) return null;
     $record = profile_product_promotion_records_v1($pdo, $profile, [$key])[$key] ?? null;
+    return $record ? $record+['profile'=>$profile] : null;
+}
+
+/** Resolve only the reviewed artwork, never the source product photo or other private assets. */
+function profile_product_promotion_image_v1(PDO $pdo, string $key): ?string
+{
+    $record = profile_product_promotion_key_record_v1($pdo, $key);
     if (!$record) return null;
     $bytes = @file_get_contents($record['path'], false, null, 0, $record['size']+1);
     if (!is_string($bytes) || strlen($bytes) !== $record['size'] || !str_starts_with($bytes, "\x89PNG\r\n\x1a\n")
         || !hash_equals($record['sha256'], hash('sha256', $bytes))) return null;
     // Recheck authority after the file read so a simultaneous pause, replacement
     // or profile/product visibility change does not disclose the earlier bytes.
-    $current = profile_product_promotion_records_v1($pdo, $profile, [$key])[$key] ?? null;
+    $current = profile_product_promotion_records_v1($pdo, $record['profile'], [$key])[$key] ?? null;
     return $current && hash_equals($current['sha256'], $record['sha256']) ? $bytes : null;
 }
 
@@ -155,6 +162,7 @@ function profile_product_promotion_match_v1(PDO $pdo, array $profile, string $qu
 function profile_product_promotion_chat_cards_v1(PDO $pdo, array $profile, int $conversationId, array $messages): array
 {
     $bindings = $records = [];
+    $trackClicks = false;
     try {
         if ($conversationId > 0 && table_exists('agent_commerce_promotions_v1')) {
             $query = $pdo->prepare("SELECT id,SUBSTR(context_json,1,65537) context_json FROM (
@@ -167,13 +175,22 @@ function profile_product_promotion_chat_cards_v1(PDO $pdo, array $profile, int $
                 if (profile_product_promotion_key_v1($key)) $bindings[(int)$row['id']] = $key;
             }
             if ($bindings) $records = profile_product_promotion_records_v1($pdo, $profile, array_values($bindings));
+            if ($records) {
+                require_once __DIR__.'/profile-promotion-attribution-v1.php';
+                require_once __DIR__.'/profile-promotion-click-v1.php';
+                $trackClicks = profile_promotion_attribution_ready_v1($pdo);
+            }
         }
     } catch (Throwable $error) {
         error_log('VP3 public promotion message cards unavailable: '.$error->getMessage());
     }
     foreach ($messages as &$message) {
         $key = $bindings[(int)($message['id'] ?? 0)] ?? null;
-        if ($key !== null && isset($records[$key])) $message['promotion'] = $records[$key]['card'];
+        if ($key !== null && isset($records[$key])) {
+            $message['promotion'] = $records[$key]['card'];
+            $click = $trackClicks ? profile_product_promotion_click_url_v1($message['promotion'],'profile_agent',$conversationId) : null;
+            if ($click!==null) $message['promotion']['click_url'] = $click;
+        }
     }
     unset($message);
     return ['messages'=>$messages,'active_promotion_keys'=>array_keys($records)];

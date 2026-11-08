@@ -171,7 +171,8 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
       const variants = [...designs.values()].reverse();
       const creative = nextCreativeOpen ? nextCreativeOpen(variants) : body.creative_id ? designs.get(body.creative_id) : variants[0];
       nextCreativeOpen = undefined;
-      return ok({draft:{...outputs.marketing,product_url:productUrl,cta:'Shop the bowl'},creative:creative || null,variants,promotion});
+      return ok({draft:{...outputs.marketing,product_url:productUrl,cta:'Shop the bowl'},creative:creative || null,variants,promotion,
+        campaigns:[{id:17,name:'Summer table',merchant_name:'Shop'},{id:23,name:'Autumn table',merchant_name:'Shop'}]});
     }
     if (body.action === 'creative_prepare' || body.action === 'creative_generate') {
       assert.equal(body.draft_id,draftId);
@@ -199,11 +200,13 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
         creative.status = 'saved';
         creative.image_url = graphicUrl;
       } else if (body.action === 'creative_publish_preview') {
-        return ok({creative,review_token:'publish-'+creative.id});
+        const campaign = body.campaign_id === 17 ? {id:17,name:'Summer table'} : body.campaign_id === 23 ? {id:23,name:'Autumn table'} : null;
+        return ok({creative,campaign,review_token:`publish-${creative.id}-${body.campaign_id ?? 0}`});
       } else if (body.action === 'creative_publish') {
         assert.equal(body.confirmed,true);
-        assert.equal(body.review_token,'publish-'+creative.id);
+        assert.equal(body.review_token,`publish-${creative.id}-${body.campaign_id ?? 0}`);
         creative.status = 'published';
+        creative.campaign_id = body.campaign_id ?? null;
         creative.public_url = '/dave#product-promotion-fixture';
         promotion = creative;
       } else if (body.action === 'creative_pause') {
@@ -660,22 +663,38 @@ try {
   await canvasButton('Review publication').waitFor();
   assert.deepEqual(promotionFixture.uploads,['begin','chunk','finish']);
   assert.equal(await canvas.locator('[data-marketing-visitor] img').getAttribute('src'),root+graphicUrl);
+  const campaignChoice = canvas.getByLabel('Campaign (optional)');
+  await campaignChoice.selectOption('17');
   await canvasButton('Review publication').click();
   await canvasButton('Approve and publish').waitFor();
+  assert.match(await canvas.locator('[data-marketing-confirmation]').innerText(),/credited to Summer table/);
   assert.equal(promotionFixture.calls.some(call => call.action==='creative_publish'),false);
   await canvas.locator('[data-marketing-copy]').fill('A different, unreviewed caption');
   assert.equal(await canvasButton('Approve and publish').isVisible(),false);
   await canvas.getByLabel('Recent designs').selectOption(selectedDesign.nonce);
+  await campaignChoice.selectOption('17');
   await canvasButton('Review publication').click();
   await canvasButton('Approve and publish').click();
   const publicPromotion = canvas.getByRole('link',{name:'View public promotion'});
   await publicPromotion.waitFor();
   assert.equal(await publicPromotion.getAttribute('href'),root+'/dave#product-promotion-fixture');
   assert.equal(promotionFixture.calls.find(call => call.action==='creative_publish').creative_id,selectedDesign.nonce);
+  assert.equal(promotionFixture.calls.find(call => call.action==='creative_publish').campaign_id,17);
+  assert.equal(await campaignChoice.inputValue(),'17');
+  assert.equal(await canvasButton('Review publication').isVisible(),false);
+  await campaignChoice.selectOption('23');
+  await canvasButton('Review publication').click();
+  await canvasButton('Approve and publish').waitFor();
+  assert.match(await canvas.locator('[data-marketing-confirmation]').innerText(),/credited to Autumn table/);
+  assert.equal(promotionFixture.calls.filter(call => call.action==='creative_publish').length,1);
+  await canvasButton('Approve and publish').click();
+  await canvasButton('Approve and publish').waitFor({state:'hidden'});
+  assert.equal(promotionFixture.calls.filter(call => call.action==='creative_publish').at(-1).campaign_id,23);
+  assert.equal(await campaignChoice.inputValue(),'23');
   await canvasButton('Pause promotion').click();
   await publicPromotion.waitFor({state:'hidden'});
   assert.equal(promotionFixture.calls.find(call => call.action==='creative_pause').creative_id,selectedDesign.nonce);
-  pass('The PNG saved in Media Library is the exact reviewed version for publication and pause, with edits invalidating approval');
+  pass('Publication freezes the exact PNG and optional campaign, and a live campaign change requires a fresh owner review');
 
   await canvasButton('Close promotion').click();
   await promotionPage.evaluate(() => window.VP3InitiativeWorkbench.open('marketing','105-31',{
@@ -699,7 +718,7 @@ try {
 
   await canvasButton('Close promotion').click();
   const launch = {owner_user_id:Number(owner),agent_id:agent,conversation_id:conversation,product_id:105,source_id:'31',
-    draft_id:draftId,creative_id:selectedDesign.nonce,stage:'publication_review'};
+    draft_id:draftId,creative_id:selectedDesign.nonce,publication_id:'1'.repeat(32),stage:'promotion_outcomes'};
   const beforeResume = promotionFixture.calls.length;
   assert.equal(await promotionPage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch({...marker,conversation_id:99}),launch),false);
   assert.equal(await promotionPage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch({...marker,owner_user_id:99}),launch),false);
@@ -709,7 +728,7 @@ try {
   assert.equal(await canvas.locator('[data-marketing-headline]').inputValue(),selectedDesign.headline);
   assert.equal(await canvasButton('Approve and publish').isVisible(),false);
   assert.deepEqual(promotionFixture.calls.slice(beforeResume).map(call => [call.action,call.creative_id]),[['creative_open',selectedDesign.nonce]]);
-  pass('Launch progress opens the exact older creative, even with a newer scene available, and leaves publication to explicit review');
+  pass('Promotion results reopen the exact older creative despite a newer scene and leave publication to explicit review');
 
   await canvasButton('Close promotion').click();
   promotionFixture.onCreativeOpen(variants => variants[0]);

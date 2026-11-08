@@ -15,6 +15,11 @@ function has_permission(string $capability, array $user): bool
     return !empty($user['is_active']) && in_array($capability, ['chat.access','account.access'], true);
 }
 
+function vp3_plugin_effective_state_v360(PDO $pdo, array $user, string $key): array
+{
+    return ['enabled'=>$key==='campaigns_rewards' && ($GLOBALS['fixture_campaign_plugin_enabled'] ?? false)];
+}
+
 function promotion_fixture_png_v1(string $pixel): string
 {
     $chunk = static fn(string $type, string $data): string => pack('N',strlen($data)).$type.$data.pack('N',crc32($type.$data));
@@ -51,6 +56,7 @@ try {
     commerce_fixture_schema_pa2($pdo);
     vp3_profile_checkout_ensure_schema_pa5($pdo);
     $pdo->exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
+    $pdo->exec("ALTER TABLE users ADD COLUMN email VARCHAR(190) NOT NULL DEFAULT ''");
     $pdo->exec("ALTER TABLE users ADD COLUMN display_name VARCHAR(80) NOT NULL DEFAULT 'Seller'");
     $pdo->exec("ALTER TABLE users ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'user'");
     $pdo->exec("ALTER TABLE users ADD COLUMN avatar_path VARCHAR(150) NOT NULL DEFAULT ''");
@@ -433,6 +439,85 @@ try {
         && profile_commerce_public_product_v900($pdo,$ownerProfile(),'glazing-guide')['id']===$textId
         && profile_product_photo_image_v1($pdo,'seller','glazing-guide',$textId)===null,
         'existing text-only drafts can activate without inventing or releasing a photo');
+
+    // Exercise the canonical Campaigns entitlement, merchant membership and Campaign readers.
+    require_once dirname(__DIR__).'/includes/campaigns-rewards-platform-v100.php';
+    require_once dirname(__DIR__).'/includes/campaigns-rewards-domain-v100.php';
+    require_once dirname(__DIR__).'/includes/campaigns-rewards-v100.php';
+    $GLOBALS['fixture_campaign_plugin_enabled'] = true;
+    $pdo->exec('CREATE TABLE merchant_accounts(id INTEGER PRIMARY KEY,owner_user_id INTEGER,public_id VARCHAR(36),name VARCHAR(190),status VARCHAR(20),sandbox_mode INTEGER)');
+    $pdo->exec('CREATE TABLE merchant_roles(id INTEGER PRIMARY KEY,role_key VARCHAR(30),name VARCHAR(80))');
+    $pdo->exec('CREATE TABLE merchant_members(id INTEGER PRIMARY KEY,merchant_id INTEGER,user_id INTEGER,role_id INTEGER,status VARCHAR(20),is_owner INTEGER)');
+    $pdo->exec('CREATE TABLE campaign_types(id INTEGER PRIMARY KEY,type_key VARCHAR(80),name VARCHAR(80),supports_public_signup INTEGER,supports_cases INTEGER)');
+    $pdo->exec('CREATE TABLE campaigns(id INTEGER PRIMARY KEY,public_id VARCHAR(36),merchant_id INTEGER,campaign_type_id INTEGER,
+        name VARCHAR(190),status VARCHAR(20),environment VARCHAR(12),starts_at DATETIME,ends_at DATETIME,current_version_no INTEGER)');
+    $pdo->exec('CREATE TABLE crm_contacts(id INTEGER PRIMARY KEY,public_id VARCHAR(36),owner_user_id INTEGER,vp3_user_id INTEGER,
+        status VARCHAR(20),lifecycle_stage VARCHAR(20),marketing_status VARCHAR(20),metadata_json TEXT)');
+    $pdo->exec('CREATE TABLE reward_claims(id INTEGER PRIMARY KEY,holder_user_id INTEGER,holder_contact_id INTEGER)');
+    foreach ([...campaigns_rewards_platform_required_tables_v100(),'workspace_team_access_v1','workspace_team_invitation_scopes_v1'] as $name) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `$name` (id INTEGER PRIMARY KEY)");
+    }
+    $pdo->exec("INSERT INTO merchant_accounts VALUES(1,1,'seller-merchant','Seller shop','active',0),
+        (2,2,'other-merchant','Other shop','active',0),(3,1,'restricted-merchant','Restricted shop','active',0),
+        (4,1,'sandbox-merchant','Sandbox shop','active',1)");
+    $pdo->exec("INSERT INTO merchant_roles VALUES(1,'owner','Owner')");
+    $pdo->exec("INSERT INTO merchant_members VALUES(1,1,1,1,'active',1),(2,2,2,1,'active',1),
+        (3,3,1,1,'suspended',1),(4,4,1,1,'active',1)");
+    $pdo->exec("INSERT INTO campaign_types VALUES(1,'post_purchase','Post-purchase',0,0)");
+    $pdo->exec("INSERT INTO campaigns VALUES(11,'summer-campaign',1,1,'Summer table','active','production',NULL,NULL,3),
+        (12,'winter-campaign',1,1,'Winter table','active','production',NULL,NULL,2),
+        (21,'other-campaign',2,1,'Another shop','active','production',NULL,NULL,1),
+        (31,'restricted-campaign',3,1,'Restricted campaign','active','production',NULL,NULL,1),
+        (41,'sandbox-campaign',4,1,'Sandbox merchant','active','production',NULL,NULL,1),
+        (51,'paused-campaign',1,1,'Paused campaign','paused','production',NULL,NULL,1),
+        (61,'test-campaign',1,1,'Sandbox campaign','active','sandbox',NULL,NULL,1),
+        (71,'future-campaign',1,1,'Future campaign','active','production','2099-01-01 00:00:00',NULL,1)");
+    $choices = $action('creative_open',$selection+['creative_id'=>$replacementId])['campaigns'];
+    promotion_check_v1(array_column($choices,'id')===[11,12],'campaign picker lists only eligible owned production campaigns');
+    foreach ([21,31,41,51,61,71] as $ineligible) {
+        promotion_reject_v1(fn()=> $action('creative_publish_preview',$replacementChoice+['campaign_id'=>$ineligible]),409,
+            'another owner, denied access, sandbox, inactive and future campaigns cannot be selected');
+    }
+    $unlinked = $cards[0]['key'];
+    $linkChoice = $replacementChoice+['campaign_id'=>11];
+    $linkReview = $action('creative_publish_preview',$linkChoice);
+    promotion_check_v1($linkReview['campaign']===['id'=>11,'name'=>'Summer table']
+        && profile_promotion_attribution_campaign_v1($pdo,1,$unlinked)===null,
+        'the campaign preview is private and does not change the live publication');
+    $linkConfirmation = ['confirmed'=>true,'review_token'=>$linkReview['review_token']];
+    promotion_reject_v1(fn()=> $action('creative_publish',$replacementChoice+['campaign_id'=>12]+$linkConfirmation),409,
+        'the reviewed campaign cannot be substituted at confirmation');
+    $pdo->exec('UPDATE campaigns SET current_version_no=4 WHERE id=11');
+    promotion_reject_v1(fn()=> $action('creative_publish',$linkChoice+$linkConfirmation),409,
+        'a changed Campaign version requires another promotion review');
+    $linkReview = $action('creative_publish_preview',$linkChoice);
+    $linkConfirmation['review_token'] = $linkReview['review_token'];
+    $linked = $action('creative_publish',$linkChoice+$linkConfirmation)['creative'];
+    $linkedKey = initiative_work_marketing_promotion_row_v1($pdo,1,$replacementId)['public_key'];
+    promotion_check_v1($linked['campaign_id']===11 && $unlinked!==$linkedKey
+        && profile_promotion_attribution_campaign_v1($pdo,1,$linkedKey)===11
+        && profile_promotion_attribution_campaign_v1($pdo,2,$linkedKey)===null
+        && profile_product_promotion_public_v1($pdo,$ownerProfile(),$unlinked)===null
+        && $action('creative_publish',$linkChoice+$linkConfirmation)['creative']===$linked,
+        'the exact confirmation replaces the public key and retries return the same scoped Campaign publication');
+    promotion_reject_v1(fn()=> $action('creative_publish',$replacementApproval),409,
+        'an older unlinked approval cannot revert the current Campaign publication');
+    $secondChoice = $replacementChoice+['campaign_id'=>12];
+    $secondReview = $action('creative_publish_preview',$secondChoice);
+    $secondConfirm = ['confirmed'=>true,'review_token'=>$secondReview['review_token']];
+    $pdo->exec("UPDATE merchant_members SET status='suspended' WHERE id=1");
+    promotion_reject_v1(fn()=> $action('creative_publish',$secondChoice+$secondConfirm),409,
+        'Campaign access is checked again before confirming publication');
+    $pdo->exec("UPDATE merchant_members SET status='active' WHERE id=1");
+    $GLOBALS['fixture_campaign_plugin_enabled'] = false;
+    promotion_reject_v1(fn()=> $action('creative_publish',$secondChoice+$secondConfirm),409,
+        'disabled Campaigns cannot accept a previously reviewed association');
+    $unlinkChoice = $replacementChoice+['campaign_id'=>null];
+    $unlinkReview = $action('creative_publish_preview',$unlinkChoice);
+    $unlinkedAgain = $action('creative_publish',$unlinkChoice+['confirmed'=>true,'review_token'=>$unlinkReview['review_token']])['creative'];
+    promotion_check_v1($unlinkedAgain['campaign_id']===null && profile_promotion_attribution_campaign_v1($pdo,1,$linkedKey)===11
+        && profile_product_promotion_public_v1($pdo,$ownerProfile(),$linkedKey)===null,
+        'an explicitly unlinked replacement leaves the prior publication attributed to its original campaign');
     echo "INITIATIVE_MARKETING_PROMOTION_V1=PASS ($checks cases, {$fixture['driver']})\n";
 } finally {
     foreach ($files as $file) if (is_file($file)) unlink($file);

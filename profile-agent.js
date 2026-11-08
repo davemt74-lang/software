@@ -309,6 +309,14 @@
     const image=document.createElement('img');image.alt=(promotion.headline+'. '+promotion.copy).trim();image.loading='lazy';
     image.addEventListener('error',()=>card.remove(),{once:true});image.src=imageUrl;
     const link=document.createElement('a');link.href=productUrl;link.textContent=promotion.cta+' →';
+    const clickUrl=safeActionUrl(promotion.click_url,{local:true});
+    if(clickUrl){
+      const target=new URL(clickUrl),params=target.searchParams;
+      const clickPath=imageTarget.pathname.replace(/profile-promotion-image\.php$/,'profile-promotion-click.php');
+      if(target.pathname===clickPath&&!target.hash&&[...params].length===5&&params.get('key')===promotion.key
+         &&params.get('placement')==='profile_agent'&&params.get('conversation')===String(conversationId)
+         &&/^\d{1,12}$/.test(params.get('expires')||'')&&/^[a-f0-9]{64}$/.test(params.get('proof')||''))link.href=clickUrl;
+    }
     card.append(image,link);
     return card;
   }

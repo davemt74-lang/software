@@ -471,7 +471,7 @@
       return true;
     }
     if (marker.stage === 'design_review') return openMarketingDraft(marker.draft_id, marker.product_id, marker.source_id, bound);
-    if (!['image_pending','creative_ready','creative_failed','publication_review','published','paused'].includes(marker.stage)
+    if (!['image_pending','creative_ready','creative_failed','publication_review','published','paused','promotion_outcomes'].includes(marker.stage)
       || typeof marker.creative_id !== 'string' || !/^[a-f0-9]{32}$/.test(marker.creative_id)) return false;
     return openMarketingDraft(marker.draft_id, marker.product_id, marker.source_id, bound, marker.creative_id);
   }

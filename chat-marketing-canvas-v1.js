@@ -205,6 +205,13 @@
     const cancel = action('Cancel image generation', () => void cancelGeneration(state));
     const retryRender = action('Retry graphic preview', () => void work(state, 'Rendering your graphic…', () => receiveVariant(state, state.variant)));
     const save = action('Save to Media Library', () => void saveGraphic(state));
+    const campaign = node('select');
+    campaign.add(new Option('No campaign', ''));
+    const campaignLabel = field('Campaign (optional)', campaign);
+    campaign.addEventListener('change', () => {
+      if (state.approval?.action === 'publish') state.approval = null;
+      paint(state);
+    });
     const publishReview = action('Review publication', () => void reviewPublication(state));
     const management = node('a', 'Manage product listing');
     management.target = '_blank';
@@ -214,7 +221,7 @@
     mediaLibrary.rel = 'noopener noreferrer';
     const controls = node('div');
     controls.className = 'vp3-marketing-controls';
-    controls.append(prepare, retry, refresh, cancel, retryRender, save, publishReview, mediaLibrary, management);
+    controls.append(prepare, retry, refresh, cancel, retryRender, save, campaignLabel, publishReview, mediaLibrary, management);
 
     const live = node('div');
     live.className = 'vp3-marketing-live';
@@ -228,7 +235,7 @@
     return {panel, heading, status, drafts, draftsLabel, settings, level, levelHelp, headline, copy, prompt,
       promptLabel, style, removeBackground, cutout, tolerance, toleranceLabel, sourceImage, visitorImage,
       productLink, placeholder, listingHint, confirmation, confirmationText, generate,
-      publish, back, prepare, retry, refresh, cancel, retryRender, save, publishReview, management, mediaLibrary, live,
+      publish, back, prepare, retry, refresh, cancel, retryRender, save, campaign, campaignLabel, publishReview, management, mediaLibrary, live,
       liveStatus, publicLink, pause};
   }
 
@@ -283,7 +290,11 @@
     ui.save.hidden = !state.rendered || stored;
     ui.retryRender.hidden = busy || Boolean(state.rendered) || variant?.status !== 'ready';
     ui.save.disabled = busy;
-    ui.publishReview.hidden = !stored || variant?.status === 'published' || Boolean(approval);
+    const campaignId = Number(ui.campaign.value) || null;
+    ui.campaignLabel.hidden = !stored || (!state.campaigns.size && !variant?.campaign_id) || Boolean(approval);
+    ui.campaign.disabled = busy;
+    ui.publishReview.hidden = !stored || Boolean(approval)
+      || (variant?.status === 'published' && campaignId === (variant.campaign_id ?? null));
     ui.publishReview.disabled = busy;
     ui.mediaLibrary.hidden = !stored;
     ui.confirmation.hidden = !approval;
@@ -294,6 +305,7 @@
     ui.back.disabled = busy;
     ui.confirmationText.textContent = confirmPublish
       ? 'Approve this exact graphic, copy, and product link for your public profile and Profile Agent. This replaces any promotion currently active for this product.'
+        + (approval.campaignName ? ` Activity from this publication will be credited to ${approval.campaignName}.` : '')
       : level >= 8
         ? 'Generating this composition sends the reviewed product photo and scene directions to OpenAI. Check the product details in the result.'
         : level >= 5
@@ -312,7 +324,8 @@
     setLink(ui.management, draft?.management_url, '/profile-commerce-products.php');
     ui.mediaLibrary.href = new URL('../media-library.php', state.connection.endpoint).href;
     ui.live.hidden = !promotion;
-    ui.liveStatus.textContent = promotion?.public_url ? 'Live on your public profile'
+    const liveCampaign = state.campaigns.get(promotion?.campaign_id);
+    ui.liveStatus.textContent = promotion?.public_url ? `Live on your public profile${liveCampaign ? ` · ${liveCampaign.name}` : ''}`
       : promotion ? 'Published design is currently unavailable to visitors.' : '';
     setLink(ui.publicLink, promotion?.public_url);
     ui.pause.disabled = busy;
@@ -399,6 +412,16 @@
         throw new Error('The selected promotion design could not be verified.');
       }
       state.draft = draft;
+      state.campaigns.clear();
+      state.campaignVariant = null;
+      state.elements.campaign.replaceChildren(new Option('No campaign', ''));
+      const choices = Array.isArray(data.campaigns) ? data.campaigns : [];
+      for (const item of choices) {
+        if (!Number.isSafeInteger(item?.id) || item.id < 1 || typeof item.name !== 'string' || state.campaigns.has(item.id)) continue;
+        state.campaigns.set(item.id,item);
+        const label = typeof item.merchant_name === 'string' && item.merchant_name ? `${item.name} · ${item.merchant_name}` : item.name;
+        state.elements.campaign.add(new Option(label,String(item.id)));
+      }
       state.promotion = promotion || (creative?.status === 'published' ? creative : null);
       const hints = state.prefill;
       state.variant = !hints || working.has(creative?.status) ? creative : null;
@@ -461,6 +484,11 @@
 
   async function receiveVariant(state, variant) {
     if (!active(state) || !variant || !Object.hasOwn(stateLabels, variant.status)) return;
+    const campaignId = variant.campaign_id ?? null;
+    if (state.campaignVariant?.id !== variant.id || state.campaignVariant?.campaignId !== campaignId) {
+      state.campaignVariant = {id:variant.id, campaignId};
+      state.elements.campaign.value = state.campaigns.has(campaignId) ? String(campaignId) : '';
+    }
     state.variant = variant;
     rememberVariant(state, variant);
     if (variant.status === 'published') state.promotion = variant;
@@ -589,13 +617,15 @@
   async function reviewPublication(state) {
     const id = state.variant?.id;
     if (!id || !saved.has(state.variant.status)) return;
+    const campaignId = Number(state.elements.campaign.value) || null;
     await work(state, 'Verifying the visitor preview…', async () => {
-      const {creative, review_token: token} = await request(state, 'creative_publish_preview', {creative_id:id});
+      const {creative, campaign, review_token: token} = await request(state, 'creative_publish_preview', {creative_id:id, campaign_id:campaignId});
       if (creative?.id !== id || !saved.has(creative.status) || typeof token !== 'string'
+        || (campaign?.id ?? null) !== campaignId || (campaignId !== null && typeof campaign?.name !== 'string')
         || !localUrl(creative.image_url, '/media-library-file-v86.php') || !localUrl(creative.product_url)) {
         throw new Error('The graphic and product link could not be verified.');
       }
-      state.approval = {action:'publish', id, token};
+      state.approval = {action:'publish', id, token, campaignId, campaignName:campaign?.name};
       await receiveVariant(state, creative);
       status(state, 'Check the visitor preview before you publish.');
       requestAnimationFrame(() => active(state) && state.elements.publish.focus());
@@ -607,9 +637,11 @@
     if (approval?.action !== 'publish') return;
     await work(state, 'Publishing this exact promotion…', async () => {
       const {creative} = await request(state, 'creative_publish', {
-        creative_id:approval.id, confirmed:true, review_token:approval.token
+        creative_id:approval.id, confirmed:true, review_token:approval.token, campaign_id:approval.campaignId
       });
-      if (creative?.id !== approval.id || creative.status !== 'published') throw new Error('Publication could not be verified.');
+      if (creative?.id !== approval.id || creative.status !== 'published' || (creative.campaign_id ?? null) !== approval.campaignId) {
+        throw new Error('Publication could not be verified.');
+      }
       if (state.promotion?.id !== approval.id && state.variants.has(state.promotion?.id)) {
         rememberVariant(state, {...state.promotion, status:'paused', public_url:''});
       }
@@ -645,7 +677,7 @@
     }
     close(false);
     const state = {reference, connection:{...connection, endpoint, mediaEndpoint}, prefill, creativeId,
-      opener:document.activeElement, controller:new AbortController(), variants:new Map()};
+      opener:document.activeElement, controller:new AbortController(), variants:new Map(), campaigns:new Map()};
     state.elements = elements(state);
     current = state;
     thread.append(state.elements.panel);
