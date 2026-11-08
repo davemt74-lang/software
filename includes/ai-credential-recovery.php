@@ -27,8 +27,8 @@ function ai_recovery_dependent_secrets(PDO $pdo): array
     $secrets = [];
     // These credentials cannot be reconstructed by re-entering current AI keys:
     // historical call cleanup may target an older project and secret.
-    $settings = $pdo->prepare('SELECT setting_value FROM settings WHERE setting_key IN (?,?)');
-    $settings->execute(['profile_calls_livekit_config_pa3c','connections_gmail_client_secret']);
+    $settings = $pdo->prepare('SELECT setting_value FROM settings WHERE setting_key IN (?,?,?)');
+    $settings->execute(['profile_calls_livekit_config_pa3c','connections_gmail_client_secret','connections_youtube_api_key']);
     foreach ($settings->fetchAll(PDO::FETCH_COLUMN) as $secret) {
         if (trim((string)$secret) !== '') $secrets[] = (string)$secret;
     }

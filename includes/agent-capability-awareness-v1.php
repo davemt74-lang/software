@@ -93,6 +93,40 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $liveContextReason='source_required';
     try{if($base['conversation_id']>0&&vp3_live_context_snapshot_v1($pdo,$user,$principal,$base['conversation_id'])!==null)$liveContextReason='ready';}
     catch(Throwable $error){$liveContextReason='check_failed';}
+    $connectedAppAccess = has_permission('account.access',$user) && vp3_participant_scope_v1() === null;
+    $gmailRead = $gmailSend = $youtube = 'permission_denied';
+    if ($connectedAppAccess) {
+        require_once __DIR__.'/agent-connections-v1.php';
+        require_once __DIR__.'/agent-connection-youtube-quota-v1.php';
+        require_once __DIR__.'/agent-connection-youtube-consent-v1.php';
+        try {
+            $gmail = agent_connections_summary_v1($uid);
+            $grant = $gmail['connection'];
+            $gmailRead = $gmailSend = match (true) {
+                !$gmail['schema_ready'] => 'upgrade_required',
+                !$gmail['provider_ready'] => 'provider_setup_required',
+                ($grant['status'] ?? '') !== 'connected' => 'connection_required',
+                default => 'ready',
+            };
+            if ($gmailRead === 'ready' && empty($grant['permissions']['read'])) $gmailRead = 'connection_permission_required';
+            if ($gmailSend === 'ready' && empty($grant['permissions']['send'])) $gmailSend = 'connection_permission_required';
+        } catch (Throwable) {
+            $gmailRead = $gmailSend = 'check_failed';
+        }
+        try {
+            $youtube = match (true) {
+                !agent_connection_youtube_quota_ready_v1($pdo),
+                !agent_connection_youtube_consent_ready_v1($pdo),
+                !function_exists('agent_connection_youtube_results_ready_v1'),
+                !agent_connection_youtube_results_ready_v1($pdo) => 'upgrade_required',
+                !agent_connection_youtube_ready_v1() => 'provider_setup_required',
+                !agent_connection_youtube_consent_v1($pdo,$uid) => 'skill_enable_required',
+                default => 'ready',
+            };
+        } catch (Throwable) {
+            $youtube = 'check_failed';
+        }
+    }
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
         vp3_capability_row_v1('voice.profiles.enroll','Learn my voice in Chat','read','vp3_voice_enrollment_prepare_v1',has_permission('chat.access',$user),function_exists('vp3_voice_enrollment_prepare_v1')?'ready':'upgrade_required',['Prepare local guided setup only. Participant consent, model download, sample playback/retry and explicit save happen in this browser. No cloning or automatic microphone capture.']),
@@ -120,6 +154,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('downloads.jobs.read','Read HomeServer download jobs','read','vp3_download_manager_agent_query_v320',has_permission('account.access',$user),'not_checked',['Reported status and bounded job list; queued is not completed. No download control, source URLs or paths.']),
         vp3_capability_row_v1('media.processing.read','Read HomeServer media processing jobs','read','vp3_media_processor_agent_query_v330',has_permission('account.access',$user),'not_checked',['Reported jobs/output readiness only. No FFmpeg invocation, render, source or output paths.']),
         vp3_capability_row_v1('video.projects.read','Read HomeServer Video Editor projects','read','vp3_video_editor_agent_query_v280',has_permission('account.access',$user),'not_checked',['Project metadata only; no action-manifest control claim, project changes or rendering.']),
+        vp3_capability_row_v1('youtube.search','Search YouTube and play a selected video in Chat','read','agent_connection_youtube_chat_v1',$connectedAppAccess,$youtube,['Explicit typed or voice search in private Chat. Public embeddable video results. The member selects playback. Search quota is checked at execution.']),
         vp3_capability_row_v1('tracky.context.read','Read saved Tracky and Agent Eyes observations','read','tracky_agent_tools_query_v271',$trackyAccess,$tracky,['Current owner/Agent/conversation and plugin access; exact owned site and entity selection. Governed stored observations retain their observation time, freshness and continuity state. A stored read does not activate sensing or refresh data.']),
         vp3_capability_row_v1('tracky.perception.request','Request an explicit governed Tracky observation','write','tracky_agent_tools_query_v271',$trackyAccess,$tracky==='ready'?'not_checked':$tracky,['Explicit current sensing request only through the existing HomeServer route, opt-in and privacy controls. A request receipt does not by itself verify a fresh observation. Capability questions do not capture or refresh.']),
         vp3_capability_row_v1('radar.read','Read Agent Radar evidence and saved Gateway policies','read','vp3_radar_chat_tool',$profileAccess,$radar,['Owner-scoped recent/high-risk contacts, contact policies, scoped rules and access-profile state. Current Profile Agent access and conversation authority; bounded literal evidence, no policy mutation or message sending.']),
@@ -137,6 +172,8 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('phone.numbers.read','Read assigned phone numbers','read','vp3_phone_agent_read_v1',has_permission('account.access',$user),$phone['numbers'],['Current owner and named-Agent assignment only. No carrier call, purchase or number registration.']),
         vp3_capability_row_v1('phone.sms.read','Read SMS inbox','read','vp3_phone_agent_read_v1',has_permission('account.access',$user),$phone['sms'],['Explicit read only; active owner/Agent scope. Reading sends no message and does not mark it read.']),
         vp3_capability_row_v1('phone.sms.send','Send SMS through existing approval screen','write','vp3_phone_sms_authorize_send_v120',has_permission('account.access',$user),$phone['send'],['Chat does not send SMS. Open Phone inbox for exact recipient/body review and existing explicit SEND approval, admin activation, opt-out and quota checks.']),
+        vp3_capability_row_v1('email.read','Search and read connected Gmail','read','agent_connection_email_chat_v1',$connectedAppAccess,$gmailRead,['Explicit typed search or read in private Chat. Requires the member’s current Gmail grant and read permission.']),
+        vp3_capability_row_v1('email.send','Draft and send Gmail after review','write','agent_connection_email_chat_action_v1',$connectedAppAccess,$gmailSend,['The member approves the exact message in private Chat. An optional reply watch uses the originating Chat and the member’s enabled Gmail permissions.']),
         vp3_capability_row_v1('calendar.read','Read personal calendar','read','user_calendar_agent_query_v1300',true,$calendar,['Own calendar; actual records must be retrieved before answering.']),
         vp3_capability_row_v1('calendar.manage','Change personal calendar','write','user_calendar_agent_query_v1300',true,$calendar,['Existing event confirmation and revision checks still apply. Linked meetings use their existing editor.']),
         vp3_capability_row_v1('workflows.read','Inspect owner workflow records','read','agent_work_control_chat_v173',has_permission('account.access',$user),$work,['Explicit workflow number. Owner queue scope, including the owner’s other Agents; not arbitrary private tasks.']),

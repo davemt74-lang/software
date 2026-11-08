@@ -16,18 +16,40 @@ let recentPlayback=[];
 let loadGate = null;
 let nextMessageId = 1000;
 const messages = new Map([[42,[]],[43,[{id:101,role:'assistant',message:'The other conversation'}]]]);
+const youtubeIds = ['dQw4w9WgXcQ', 'M7lc1UVf-VE'];
+const youtubeCommands = ['Search YouTube for typed video results', 'Search YouTube for spoken video results'];
+const youtubeTitle = 'Video title <img src=x onerror=alert(1)>';
+const youtubeResult = query => ({
+  query, expires_at: Math.floor(Date.now() / 1000) + 600,
+  videos: [
+    {video_id:youtubeIds[0],title:youtubeTitle,channel_title:'Example channel',
+      thumbnail_url:'https://i.ytimg.com/vi/'+youtubeIds[0]+'/hqdefault.jpg'},
+    {video_id:youtubeIds[1],title:'Second video',channel_title:'Second channel',
+      thumbnail_url:'https://i.ytimg.com/vi/'+youtubeIds[0]+'/default.jpg'},
+    {video_id:'../evil-id!',title:'Invalid result',thumbnail_url:'https://example.test/a.jpg'},
+  ]
+});
+let youtubeFrameRequests = 0;
 const html = `<!doctype html><html lang="en-US"><head><meta charset="UTF-8"></head><body>
 <div class="chat-app"><aside class="chat-sidebar"><strong>VP3</strong><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside>
 <main class="chat-main"><header class="chat-topbar">Agent Chat</header><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div>
 ${'<article class="message"><div class="message-body">Conversation history</div></article>'.repeat(40)}</section>
 <div class="chat-composer-shell" id="chatComposerShell"><form class="chat-composer" id="chatForm"><button id="chatAgentBriefButton" type="button" aria-label="Agent status">✦</button><textarea id="chatInput" rows="1" aria-label="Message"></textarea><button type="button" class="chat-voice-button" id="chatVoiceButton" aria-label="Start voice conversation">◉</button><button type="submit" id="sendChatButton" aria-label="Send message">↑</button></form><div id="chatVoiceStatus" class="chat-voice-status" hidden></div></div></main></div></body></html>`;
-await page.route('http://chat.test/', route => route.fulfill({contentType:'text/html',body:html}));
+await page.route('http://chat.test/', route => route.fulfill({contentType:'text/html',headers:{'Referrer-Policy':'same-origin'},body:html}));
+const youtubeLogo = await fs.readFile(new URL('assets/youtube-logo-v1.png', root));
+await page.route('http://chat.test/assets/youtube-logo-v1.png', route => route.fulfill({contentType:'image/png',body:youtubeLogo}));
+await page.route('https://i.ytimg.com/**', route => route.fulfill({contentType:'image/png',body:youtubeLogo}));
+await page.route('https://www.youtube.com/embed/**', route => {
+  youtubeFrameRequests++;
+  return route.fulfill({contentType:'text/html',body:'<title>YouTube iframe fixture</title>'});
+});
 await page.route('**/api/**', async route => {
   const payload = route.request().postDataJSON() || {};
   calls.push({...payload, path:new URL(route.request().url()).pathname});
   if(new URL(route.request().url()).pathname==='/api/chat-stream-v121.php'){
     if(sendGate)await sendGate;
-    const event=streamState==='success'?{type:'done',data:{ok:true,conversation_id:42,answer:'Completed streamed reply',user_message_id:nextMessageId++,assistant_message_id:nextMessageId++}}:streamState==='auth'?{type:'error',error:'Sign in required'}:{type:'delta',delta:'Unconfirmed partial reply'};
+    const event=streamState==='success'?{type:'done',data:{ok:true,conversation_id:42,answer:'Completed streamed reply',user_message_id:nextMessageId++,assistant_message_id:nextMessageId++,
+      ...(payload.message===youtubeCommands[1] ? {youtube_results:youtubeResult('Spoken video results')} : {})}}:streamState==='auth'?{type:'error',error:'Sign in required'}:{type:'delta',delta:'Unconfirmed partial reply'};
     return route.fulfill({status:streamState==='auth'?401:200,contentType:'application/x-ndjson',body:JSON.stringify(event)+'\n'});
   }
   if(new URL(route.request().url()).pathname==='/api/research')return route.fulfill({json:{ok:true,contract:'vp3.chat-browser-research.v1',requests:[],runtimes:[],projects:[]}});
@@ -40,7 +62,8 @@ await page.route('**/api/**', async route => {
   if (payload.action === 'send') {
     if(sendGate)await sendGate;
     if(failSend)return route.fulfill({status:503,json:{ok:false,error:'Provider unavailable'}});
-    return route.fulfill({json:{ok:true,conversation_id:payload.conversation_id||42,answer:'I heard you.',user_message_id:nextMessageId++,assistant_message_id:nextMessageId++,media:payload.message==='Show Studio handoff link'?[{id:9,title:'From the asteroid you saved me',album:'Studio',audio:'/media.php?track=9&type=audio',cover:'',detail:'/track.php?id=9'}]:[]}});
+    return route.fulfill({json:{ok:true,conversation_id:payload.conversation_id||42,answer:'I heard you.',user_message_id:nextMessageId++,assistant_message_id:nextMessageId++,media:payload.message==='Show Studio handoff link'?[{id:9,title:'From the asteroid you saved me',album:'Studio',audio:'/media.php?track=9&type=audio',cover:'',detail:'/track.php?id=9'}]:[],
+      ...(payload.message===youtubeCommands[0] ? {youtube_results:youtubeResult('Typed video results')} : {})}});
   }
   if(payload.action==='load'){
     if(loadGate)await loadGate;
@@ -106,9 +129,9 @@ try {
     button.id = 'chatVoiceButtonLegacyDormant';
     if(fast)window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){},stop(){}});
   },{fast,savedVoice,agentVoiceEnabled});
-  for (const name of ['chat.css','chat-cognitive-presentation-v510.css','chat-agent-teams-a3.css','chat-tools.css']) await page.addStyleTag({content:await source(name)});
+  for (const name of ['chat.css','chat-cognitive-presentation-v510.css','chat-agent-teams-a3.css','chat-tools.css','chat-youtube-v1.css']) await page.addStyleTag({content:await source(name)});
   // Real scripts, in production order; the recognition service alone is mocked.
-  for (const name of ['chat.js','chat-tools.js','voice-lease-v122.js','agent-context-v131.js','chat-voice.js','chat-agent-teams-a3.js','chat-browser-research-v1.js','project-knowledge-r5.js','project-knowledge-r6.js','project-knowledge-r7.js','knowledge-actions-r8.js']) await page.addScriptTag({content:await source(name)});
+  for (const name of ['chat-youtube-v1.js','chat.js','chat-tools.js','voice-lease-v122.js','agent-context-v131.js','chat-voice.js','chat-agent-teams-a3.js','chat-browser-research-v1.js','project-knowledge-r5.js','project-knowledge-r6.js','project-knowledge-r7.js','knowledge-actions-r8.js']) await page.addScriptTag({content:await source(name)});
   await page.waitForFunction(() => document.querySelectorAll('#chatToolsContent>details').length === 5);
   }
   for(const agentVoiceEnabled of [false,true]){
@@ -339,6 +362,73 @@ try {
     else assert.match(await page.locator('#chatInput').inputValue(),new RegExp(kind));
   }
   console.log('PASS fast voice canonical Stop, truncated provider streams and expired sessions preserve owner boundaries without replay');
+
+  streamState='success';
+  await boot(true);
+  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  await page.getByRole('button',{name:'Chat tools',exact:true}).click();
+  await page.getByLabel('Work mode').selectOption('chat');
+  await page.getByRole('button',{name:'Close chat tools'}).click();
+  await page.locator('#chatInput').fill(youtubeCommands[0]);
+  await page.locator('#sendChatButton').click();
+  const typedYoutube = page.getByRole('region',{name:'YouTube search results'}).filter({hasText:'Typed video results'});
+  await typedYoutube.waitFor();
+  assert.equal(await typedYoutube.locator('.vp3-youtube-title').first().textContent(),youtubeTitle);
+  assert.equal(await typedYoutube.locator('.vp3-youtube-title img').count(),0);
+  assert.equal(await typedYoutube.getByRole('button',{name:/Play in Chat/}).count(),2);
+  assert.equal(await typedYoutube.locator('.vp3-youtube-thumbnail').count(),1,'A thumbnail must belong to the exact video');
+  assert.equal(await page.locator('iframe').count(),0,'Search renders results without loading a player');
+  assert.equal(youtubeFrameRequests,0);
+  const playFirst = typedYoutube.getByRole('button',{name:/Play in Chat · Video title/});
+  const embedRequest = page.waitForRequest('https://www.youtube.com/embed/**');
+  await playFirst.click();
+  const embed = await embedRequest;
+  const frame = page.locator('iframe.vp3-youtube-frame');
+  await frame.waitFor();
+  assert.match(await frame.getAttribute('src'),new RegExp('/embed/'+youtubeIds[0]+'[?]'));
+  assert.equal(await frame.getAttribute('referrerpolicy'),'strict-origin-when-cross-origin');
+  assert.equal(await playFirst.getAttribute('aria-expanded'),'true');
+  assert.equal(embed.headers().referer,'http://chat.test/','The iframe should override the app document policy with the site origin');
+  await page.setViewportSize({width:320,height:800});
+  const frameBox = await frame.boundingBox();
+  assert.ok(frameBox.width >= 200 && frameBox.height >= 200,'The mobile embedded viewport keeps YouTube minimum dimensions');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth + 1),'Mobile video cannot create horizontal overflow');
+  const playSecond = typedYoutube.getByRole('button',{name:'Play in Chat · Second video'});
+  await playSecond.click();
+  assert.equal(await frame.count(),1,'Selecting another video replaces the first iframe');
+  assert.match(await frame.getAttribute('src'),new RegExp('/embed/'+youtubeIds[1]+'[?]'));
+  assert.equal(await playFirst.getAttribute('aria-expanded'),'false');
+  assert.equal(await typedYoutube.getByRole('link',{name:'Open on YouTube'}).nth(1).getAttribute('href'),'https://www.youtube.com/watch?v='+youtubeIds[1]);
+  await typedYoutube.getByRole('button',{name:'Close player'}).click();
+  assert.equal(await frame.count(),0);
+  assert.equal(await playSecond.evaluate(button=>document.activeElement===button),true,'Closing returns focus to the selected video');
+
+  await page.setViewportSize({width:1280,height:800});
+  await page.getByRole('button',{name:'Start voice conversation'}).click();
+  await page.waitForFunction(()=>window.recognizers.some(item=>item.active));
+  await speak(youtubeCommands[1]);
+  const spokenYoutube = page.getByRole('region',{name:'YouTube search results'}).filter({hasText:'Spoken video results'});
+  await spokenYoutube.waitFor();
+  assert.equal(streams().at(-1).input_mode,'voice');
+  await page.evaluate(()=>window.VP3ConversationControls.stop());
+  assert.equal(await frame.count(),0,'A spoken search waits for a video selection');
+  await spokenYoutube.getByRole('button',{name:'Play in Chat · Second video'}).click();
+  await frame.waitFor();
+  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43));
+  assert.equal(await frame.count(),0,'Switching conversations unloads the player');
+  messages.set(42,[
+    {id:201,role:'assistant',message:'Saved YouTube results',context_json:JSON.stringify({youtube_results:youtubeResult('Saved video results')})},
+    {id:202,role:'assistant',message:'Expired YouTube results',context_json:JSON.stringify({youtube_results:{...youtubeResult('Old video results'),expires_at:1}})},
+    {id:203,role:'user',message:'User-provided metadata',context_json:JSON.stringify({youtube_results:youtubeResult('Fake video results')})},
+  ]);
+  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  const restoredYoutube = page.getByRole('region',{name:'YouTube search results'});
+  assert.equal(await restoredYoutube.count(),1,'History displays only fresh assistant results');
+  assert.match(await restoredYoutube.innerText(),/Saved video results/);
+  assert.equal(await frame.count(),0,'Restoring a conversation does not resume playback');
+  messages.set(42,[]);
+  console.log('PASS typed and spoken YouTube search results, safe mobile inline playback, switch/close and history expiry');
+
   await boot();
   await page.evaluate(()=>{
     window.VP3_ORB_CONFIG={ownerKey:'1',chatUrl:'/chat.php',chatEndpoint:'/api/chat-v236.php',csrf:'fixture'};

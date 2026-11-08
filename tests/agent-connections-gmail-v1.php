@@ -5,6 +5,7 @@ declare(strict_types=1);
 // injected Gmail transport keeps this fixture independent of external accounts.
 $root = dirname(__DIR__);
 require_once $root.'/includes/agent-connections-v1.php';
+require_once $root.'/includes/agent-connection-health-v1.php';
 require_once $root.'/includes/agent-connection-email-chat-v1.php';
 require_once $root.'/includes/agent-connection-email-followup-v1.php';
 require_once $root.'/includes/agent-capability-chat-v1.php';
@@ -142,6 +143,78 @@ try {
     agent_connections_install_v1($pdo);
     gmail_connection_check_v1($pdo->query('SELECT * FROM agent_connections_v1 WHERE owner_user_id=1')->fetch() === $saved,
         'repeating installation preserves the exact granted account');
+
+    gmail_connection_check_v1(!agent_connection_health_schema_ready_v1($pdo)
+        && agent_connection_health_platform_v1($pdo,'gmail')['status'] === 'unavailable',
+        'health reads tolerate a pending migration without affecting existing Connections');
+    agent_connection_health_install_v1($pdo);
+    agent_connection_health_install_v1($pdo);
+    gmail_connection_check_v1(agent_connection_health_schema_ready_v1($pdo)
+        && agent_connection_health_gmail_counts_v1($pdo) === ['healthy'=>0,'needs_attention'=>0,'unchecked'=>2,'available'=>true],
+        'idempotent health migration starts both linked Gmail accounts unchecked');
+
+    $platformCalls = 0;
+    $setupProbe = static function (string $method, string $url, array $headers, ?array $body, bool $form) use (&$platformCalls): array {
+        $platformCalls++;
+        gmail_connection_check_v1($method === 'GET' && $url === 'https://accounts.google.com/.well-known/openid-configuration'
+            && $headers === ['Accept: application/json'] && $body === null && !$form,
+            'administrator Gmail setup probe sends no credentials or mailbox data');
+        return ['status'=>200,'json'=>['issuer'=>'https://accounts.google.com',
+            'authorization_endpoint'=>'https://accounts.google.com/o/oauth2/v2/auth','token_endpoint'=>'https://oauth2.googleapis.com/token']];
+    };
+    $gmailSetup = agent_connection_health_test_platform_v1($pdo,'gmail',$setupProbe);
+    gmail_connection_check_v1($gmailSetup['status'] === 'setup_ready' && $gmailSetup['checked_at'] !== null
+        && agent_connection_health_platform_v1($pdo,'gmail') === $gmailSetup,
+        'Gmail setup reachability is persisted separately from verified mailbox health');
+    gmail_connection_check_v1(agent_connection_health_test_platform_v1($pdo,'gmail',$setupProbe)['status'] === 'rate_limited'
+        && $platformCalls === 1 && agent_connection_health_platform_v1($pdo,'gmail') === $gmailSetup,
+        'test cooldown skips remote calls and preserves the most recent completed check');
+
+    $revision = $summary['connection']['revision'];
+    $profileProbe = static function (string $method, string $url, array $headers) use ($mailbox): array {
+        gmail_connection_check_v1($method === 'GET' && $url === VP3_GMAIL_API_V1.'/profile?fields=emailAddress'
+            && $headers === ['Accept: application/json','Authorization: Bearer fixture-owner-access'],
+            'member check verifies the mailbox through the profile endpoint only');
+        return ['status'=>200,'json'=>['emailAddress'=>$mailbox]];
+    };
+    $unexpectedProbe = static function (): array { throw new LogicException('Unauthorized health probe attempted network access.'); };
+    gmail_connection_reject_v1(static fn()=>agent_connection_health_test_member_v1($pdo,2,$connectionId,$revision,$unexpectedProbe),409,
+        'health checks reject another owner before network access');
+    gmail_connection_reject_v1(static fn()=>agent_connection_health_test_member_v1($pdo,1,$connectionId,str_repeat('0',64),$unexpectedProbe),409,
+        'health checks reject stale grant revisions before network access');
+    $mailboxCheck = agent_connection_health_test_member_v1($pdo,1,$connectionId,$revision,$profileProbe);
+    gmail_connection_check_v1($mailboxCheck['status'] === 'healthy'
+        && agent_connection_health_member_v1($pdo,1,$connectionId) === $mailboxCheck
+        && agent_connection_health_member_v1($pdo,2,$connectionId)['status'] === 'unchecked',
+        'only the connection owner can retrieve a verified mailbox check');
+    $otherSummary = agent_connections_summary_v1(2)['connection'];
+    $otherGrant = agent_connections_record_v1(2,$otherId)['authorization_key'];
+    agent_connections_update_policy_v1(2,$otherId,['read'=>false,'send'=>false,'followups'=>false],$otherGrant);
+    $failedProfile = static function (string $method, string $url, array $headers): array {
+        gmail_connection_check_v1($headers === ['Accept: application/json','Authorization: Bearer fixture-other-access'],
+            'owner can explicitly test their own grant with Agent mailbox reading disabled');
+        return ['status'=>403,'json'=>['error'=>['message'=>'private provider error']]];
+    };
+    $failedCheck = agent_connection_health_test_member_v1($pdo,2,$otherId,$otherSummary['revision'],$failedProfile);
+    agent_connections_update_policy_v1(2,$otherId,$otherSummary['permissions'],$otherGrant);
+    gmail_connection_check_v1($failedCheck['status'] === 'needs_attention' && !str_contains($failedCheck['message'],'private provider error')
+        && agent_connection_health_gmail_counts_v1($pdo) === ['healthy'=>1,'needs_attention'=>1,'unchecked'=>0,'available'=>true],
+        'health counts reflect current checked grants without exposing a provider error body');
+
+    putenv('VP3_YOUTUBE_API_KEY=AIza_fixture_key_0123456789abcdef');
+    $youtubeProbe = static function (string $url, array $headers): array {
+        gmail_connection_check_v1(str_starts_with($url,VP3_YOUTUBE_HEALTH_ENDPOINT_V1.'?') && !str_contains($url,'AIza_fixture_key')
+            && in_array('X-Goog-Api-Key: AIza_fixture_key_0123456789abcdef',$headers,true),
+            'YouTube health uses a non-search endpoint and puts the credential in a server header');
+        return ['status'=>200,'json'=>['items'=>[['snippet'=>['gl'=>'US']]]]];
+    };
+    $youtubeCheck = agent_connection_health_test_platform_v1($pdo,'youtube',$youtubeProbe);
+    gmail_connection_check_v1($youtubeCheck['status'] === 'healthy' && agent_connection_health_platform_v1($pdo,'youtube') === $youtubeCheck,
+        'YouTube records successful key verification without consuming search quota');
+    putenv('VP3_YOUTUBE_API_KEY=AIza_fixture_key_rotated_0123456789');
+    gmail_connection_check_v1(agent_connection_health_platform_v1($pdo,'youtube')['status'] === 'unchecked',
+        'a changed provider credential cannot inherit a previous key health result');
+    putenv('VP3_YOUTUBE_API_KEY');
 
     $subject = 'Fixture order follow-up';
     $body = 'Can you confirm the order for Tuesday?';

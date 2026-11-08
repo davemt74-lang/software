@@ -1,0 +1,111 @@
+.vp3-youtube-results {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: clamp(8px, 2vw, 14px);
+  border: 1px solid #dce2eb;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #152137;
+}
+.vp3-youtube-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.vp3-youtube-brand {
+  display: inline-flex;
+  flex: none;
+  padding: 2px 4px;
+  border-radius: 5px;
+  background: #fff;
+}
+.vp3-youtube-logo {
+  display: block;
+  width: 120px;
+  height: auto;
+}
+.vp3-youtube-query, .vp3-youtube-title, .vp3-youtube-channel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.vp3-youtube-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vp3-youtube-result {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+.vp3-youtube-play {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vp3-youtube-play:hover, .vp3-youtube-play[aria-expanded="true"] {
+  background: #eef4ff;
+}
+.vp3-youtube-thumbnail {
+  display: block;
+  flex: none;
+  width: clamp(64px, 17vw, 116px);
+  aspect-ratio: 16 / 9;
+  border-radius: 5px;
+  background: #e2e8f0;
+  object-fit: contain;
+}
+.vp3-youtube-details {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.vp3-youtube-title { font-size: .9rem; }
+.vp3-youtube-channel, .vp3-youtube-watch { color: #43546e; font-size: .78rem; }
+.vp3-youtube-play-label { color: #17408a; font-size: .78rem; font-weight: 700; }
+.vp3-youtube-watch { justify-self: start; padding: 3px 4px; }
+.vp3-youtube-player { display: grid; gap: 8px; }
+.vp3-youtube-frame {
+  display: block;
+  width: 100%;
+  min-height: 200px;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 6px;
+  background: #111827;
+}
+.vp3-youtube-close {
+  justify-self: end;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #b8c4d5;
+  border-radius: 6px;
+  background: #fff;
+  color: #152137;
+  font: inherit;
+  cursor: pointer;
+}
+.vp3-youtube-results :is(button, a):focus-visible {
+  outline: 2px solid #17408a;
+  outline-offset: 2px;
+}
+.vp3-youtube-expired { margin: 0; }

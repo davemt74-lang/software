@@ -47,7 +47,9 @@ if($initiativeReply!==null&&$conversationId<1)throw new RuntimeException('A save
 $input['input_mode']='voice';$participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);if($initiativeReply!==null&&($participantActor!==null||vp3_participant_scope_v1()!==null))throw new RuntimeException('Use the private owner Chat for this reply.',403);
 $initiativeRequest=null;
 $emailRequest=$initiativeReply===null&&agent_connection_email_chat_plan_v1($query)!==null;
-if(!$emailRequest&&$participantActor===null&&vp3_participant_scope_v1()===null&&$conversationId>0&&($initiativeReply!==null||vp3_initiative_followthrough_referential_v1($query))){
+$youtubeRequest=$initiativeReply===null&&!$emailRequest&&$participantActor===null
+    &&empty($input['ephemeral_protocol'])&&agent_connection_youtube_chat_plan_v1($query)!==null;
+if(!$emailRequest&&!$youtubeRequest&&$participantActor===null&&vp3_participant_scope_v1()===null&&$conversationId>0&&($initiativeReply!==null||vp3_initiative_followthrough_referential_v1($query))){
     try{$initiativeRequest=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$conversationId,$query,
         static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input),$initiativeReply);}catch(Throwable $preflightError){throw vp3_agent_chat_followthrough_error_v2160($preflightError);}
 }
@@ -106,6 +108,20 @@ if($idempotencyKey!==''){
                 require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';vp3_working_context_replay_v1($pdo,$user,$principal,$input,$replay);
             }
             if(empty($replay['ok'])){chat_v121_emit(['type'=>'error','error'=>(string)($replay['error']??'The prior voice turn failed.'),'replayed'=>true]);exit;}
+            if($youtubeRequest||isset($replay['youtube_query_hash'])){
+                $replayConversationId=(int)($replay['conversation_id']??0);
+                if(!$youtubeRequest||($conversationId>0&&$conversationId!==$replayConversationId)
+                    ||!hash_equals((string)($replay['youtube_query_hash']??''),hash('sha256',$query))){
+                    throw new RuntimeException('That YouTube search request changed.',409);
+                }
+                agent_connection_youtube_chat_authority_v1($pdo,$user,$principal,$replayConversationId,
+                    static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input));
+                $replayMessageId=(int)($replay['assistant_message_id']??0);
+                $videoResults=agent_connection_youtube_results_read_v1($pdo,$userId,$replayConversationId,[$replayMessageId]);
+                if(isset($videoResults[$replayMessageId]))$replay['youtube_results']=$videoResults[$replayMessageId];
+                elseif(($replay['tool_receipt']['status']??null)==='read_complete')$replay['answer']='The saved YouTube results are unavailable. You can search again from Chat.';
+                unset($replay['youtube_query_hash']);
+            }
             chat_v121_emit(['type'=>'start','conversation_id'=>(int)($replay['conversation_id']??0),'user_message_id'=>(int)($replay['user_message_id']??0),
                 'assistant_message_id'=>(int)($replay['assistant_message_id']??0),'agent_id'=>$agentScopeId,'replayed'=>true]);
             if(trim((string)($replay['answer']??''))!=='')chat_v121_emit(['type'=>'delta','delta'=>(string)$replay['answer'],'replayed'=>true]);
@@ -130,13 +146,19 @@ if($participantActor!==null){
     chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],'assistant_message_id'=>$done['assistant_message_id'],'agent_id'=>$agentScopeId]);
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
-if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null){
-    // Associated replies share the exact typed/legacy pipeline and private
-    // recovery key, including a response lost while changing input surfaces.
+if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest){
+    // Use the same owner-scoped executor for these voice and typed turns.
     $input['conversation_id']=$conversationId;
     $done=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);
     $assistantMessageId=(int)$done['assistant_message_id'];$done['input_mode']='voice';
-    if($idempotencyClaimed&&$idempotencyKey!=='')agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$done);
+    if($idempotencyClaimed&&$idempotencyKey!==''){
+        $replay=$done;
+        if($youtubeRequest){
+            unset($replay['youtube_results']);
+            $replay['youtube_query_hash']=hash('sha256',$query);
+        }
+        agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$replay);
+    }
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],
         'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentScopeId]);
