@@ -93,16 +93,15 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     $liveContextReason='source_required';
     try{if($base['conversation_id']>0&&vp3_live_context_snapshot_v1($pdo,$user,$principal,$base['conversation_id'])!==null)$liveContextReason='ready';}
     catch(Throwable $error){$liveContextReason='check_failed';}
-    $connectedAppAccess = has_permission('account.access',$user) && vp3_participant_scope_v1() === null;
+    $connectedAppAccess = has_permission('account.access',$user)
+        && function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() === null;
     $gmailRead = $gmailSend = $youtube = 'permission_denied';
     if ($connectedAppAccess) {
-        require_once __DIR__.'/agent-connections-v1.php';
-        require_once __DIR__.'/agent-connection-youtube-quota-v1.php';
-        require_once __DIR__.'/agent-connection-youtube-consent-v1.php';
         try {
-            $gmail = agent_connections_summary_v1($uid);
-            $grant = $gmail['connection'];
+            $gmail = function_exists('agent_connections_summary_v1') ? agent_connections_summary_v1($uid) : null;
+            $grant = $gmail['connection'] ?? null;
             $gmailRead = $gmailSend = match (true) {
+                $gmail === null => 'not_installed',
                 !$gmail['schema_ready'] => 'upgrade_required',
                 !$gmail['provider_ready'] => 'provider_setup_required',
                 ($grant['status'] ?? '') !== 'connected' => 'connection_required',
@@ -115,9 +114,9 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         }
         try {
             $youtube = match (true) {
+                !function_exists('agent_connection_youtube_results_ready_v1') => 'not_installed',
                 !agent_connection_youtube_quota_ready_v1($pdo),
                 !agent_connection_youtube_consent_ready_v1($pdo),
-                !function_exists('agent_connection_youtube_results_ready_v1'),
                 !agent_connection_youtube_results_ready_v1($pdo) => 'upgrade_required',
                 !agent_connection_youtube_ready_v1() => 'provider_setup_required',
                 !agent_connection_youtube_consent_v1($pdo,$uid) => 'skill_enable_required',
