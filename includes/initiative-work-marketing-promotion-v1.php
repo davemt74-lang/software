@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/initiative-work-marketing-v1.php';
 require_once __DIR__.'/agent-image-provider-v1.php';
+require_once __DIR__.'/initiative-work-marketing-campaign-v1.php';
 
 function initiative_work_marketing_promotion_ready_v1(): void
 {
@@ -37,6 +38,11 @@ function initiative_work_marketing_promotion_scope_v1(array $row, array $scope):
     if ((int)$row['agent_id'] !== $scope['agent_id'] || (int)$row['conversation_id'] !== $scope['conversation_id']) {
         throw new DomainException('Open the Chat where this promotion was designed.', 404);
     }
+}
+
+function initiative_work_marketing_promotion_campaign_id_v1(PDO $pdo, int $owner, array $row): ?int
+{
+    return is_string($row['public_key'] ?? null) ? profile_promotion_attribution_campaign_v1($pdo,$owner,$row['public_key']) : null;
 }
 
 /** The exact photo from the stored draft is the original for every variant. */
@@ -179,6 +185,7 @@ function initiative_work_marketing_promotion_view_v1(PDO $pdo, int $owner, array
         'generated_url'=>$generatedUrl,'image_url'=>$imageUrl,
         'product_url'=>$target['product_url'] ?? '', 'cta'=>$published ? $row['public_cta'] : ($target['cta'] ?? 'View product'),
         'public_url'=>$published ? profile_public_url($target['profile']['username']).'#product-promotion-'.$row['public_key'] : '',
+        'campaign_id'=>initiative_work_marketing_promotion_campaign_id_v1($pdo,$owner,$row),
         'management_url'=>initiative_work_marketing_promotion_management_v1((int)$row['product_id']),
         'message'=>$message] + $settings;
 }
@@ -220,7 +227,8 @@ function initiative_work_marketing_promotion_open_v1(PDO $pdo, int $owner, array
     $active->execute([$owner,$productId,$scope['agent_id'],$scope['conversation_id']]);
     $row = $active->fetch(PDO::FETCH_ASSOC);
     $creative = $requested ? $variants[$requested['id']] : (reset($variants) ?: null);
-    return ['draft'=>$draft,'creative'=>$creative,'variants'=>array_values($variants),'promotion'=>$row
+    return ['draft'=>$draft,'creative'=>$creative,'variants'=>array_values($variants),
+        'campaigns'=>initiative_work_marketing_campaign_choices_v1($pdo,$owner),'promotion'=>$row
         ? initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,initiative_work_marketing_promotion_decode_v1($row)) : null];
 }
 
@@ -312,7 +320,7 @@ function initiative_work_marketing_promotion_digest_v1(array $asset): ?string
     return hash('sha256',$bytes);
 }
 
-function initiative_work_marketing_promotion_publication_v1(PDO $pdo, int $owner, array $row, bool $lock=false): array
+function initiative_work_marketing_promotion_publication_v1(PDO $pdo, int $owner, array $row, bool $lock=false, ?array $campaign=null): array
 {
     if (!in_array($row['status'],['saved','published','paused'],true)) {
         throw new DomainException('Save the reviewed graphic before publishing.',409);
@@ -325,7 +333,7 @@ function initiative_work_marketing_promotion_publication_v1(PDO $pdo, int $owner
         throw new DomainException('The reviewed graphic changed or is unavailable.',409);
     }
     $request = hash('sha256',json_encode(['promotion-publish',$owner,$row['id'],$row['agent_id'],$row['conversation_id'],
-        $row['settings'],$row['publication_revision'],$row['asset_id'],$digest,$target['product_url'],$target['cta']],JSON_THROW_ON_ERROR));
+        $row['settings'],$row['publication_revision'],$row['asset_id'],$digest,$target['product_url'],$target['cta'],$campaign],JSON_THROW_ON_ERROR));
     return [$request,$target];
 }
 
@@ -337,18 +345,35 @@ function initiative_work_marketing_promotion_publish_v1(PDO $pdo, int $owner, ar
         initiative_work_product_scope_v1($pdo,$owner,$scope,agent_commerce_lock_pa2($pdo));
         $row = initiative_work_marketing_promotion_row_v1($pdo,$owner,$row['id'],true);
         initiative_work_marketing_promotion_scope_v1($row,$scope);
-        [$request,$target] = initiative_work_marketing_promotion_publication_v1($pdo,$owner,$row,true);
-        initiative_workbench_confirm_v1($body,$key,$request,time());
+        $currentCampaignId = initiative_work_marketing_promotion_campaign_id_v1($pdo,$owner,$row);
+        $campaign = initiative_work_marketing_campaign_select_v1($pdo,$owner,$body,$currentCampaignId,true);
+        $campaignId = $campaign['id'] ?? null;
+        [$request,$target] = initiative_work_marketing_promotion_publication_v1($pdo,$owner,$row,true,$campaign);
         $publicKey = $row['public_key'];
-        if ($row['status'] !== 'published' || $row['public_product_url'] !== $target['product_url']
-            || $row['public_cta'] !== $target['cta']) {
+        $samePublication = $row['status'] === 'published' && $row['public_product_url'] === $target['product_url']
+            && $row['public_cta'] === $target['cta'] && $campaignId === $currentCampaignId;
+        try {
+            initiative_workbench_confirm_v1($body,$key,$request,time());
+        } catch (DomainException $error) {
+            // A live replacement advances its revision. Only that publication's recorded
+            // approval may replay, and only while the published selection still matches.
+            if ($error->getCode() !== 409 || !$samePublication || !is_string($publicKey) || $row['publication_revision'] < 1) throw $error;
+            $recorded = profile_promotion_attribution_review_v1($pdo,$owner,$publicKey);
+            $prior = array_replace($row,['publication_revision'=>$row['publication_revision']-1]);
+            [$priorRequest] = initiative_work_marketing_promotion_publication_v1($pdo,$owner,$prior,true,$campaign);
+            if ($recorded === null || !hash_equals($recorded,$priorRequest)) throw $error;
+            initiative_workbench_confirm_v1($body,$key,$priorRequest,time());
+        }
+        if (!$samePublication) {
             $pdo->prepare("UPDATE agent_commerce_promotions_v1 SET status='paused',publication_revision=publication_revision+1,
                 updated_at=CURRENT_TIMESTAMP WHERE owner_user_id=? AND product_id=? AND status='published' AND id<>?")
                 ->execute([$owner,$row['product_id'],$row['id']]);
             $publicKey = bin2hex(random_bytes(16));
             $pdo->prepare("UPDATE agent_commerce_promotions_v1 SET status='published',public_key=?,public_product_url=?,
-                public_cta=?,updated_at=CURRENT_TIMESTAMP WHERE owner_user_id=? AND id=?")
-                ->execute([$publicKey,$target['product_url'],$target['cta'],$owner,$row['id']]);
+                public_cta=?,publication_revision=publication_revision+?,updated_at=CURRENT_TIMESTAMP WHERE owner_user_id=? AND id=?")
+                ->execute([$publicKey,$target['product_url'],$target['cta'],$row['status']==='published' ? 1 : 0,$owner,$row['id']]);
+            $publication = initiative_work_marketing_promotion_row_v1($pdo,$owner,$row['id'],true);
+            profile_promotion_attribution_register_v1($pdo,$publication,$campaignId,$request);
             require_once __DIR__.'/initiative-product-launch-v1.php';
             initiative_product_launch_track_v1($pdo,$owner,$scope,$row['product_id'],$row['draft_key'],$row['id']);
         }
@@ -410,9 +435,12 @@ function initiative_work_marketing_promotion_action_v1(PDO $pdo, int $owner, arr
         $row = initiative_work_marketing_promotion_recover_v1($pdo,$owner,$scope,$row);
     }
     if ($action === 'creative_publish_preview') {
-        [$request,$target] = initiative_work_marketing_promotion_publication_v1($pdo,$owner,$row);
+        $current = initiative_work_marketing_promotion_campaign_id_v1($pdo,$owner,$row);
+        $campaign = initiative_work_marketing_campaign_select_v1($pdo,$owner,$body,$current);
+        [$request,$target] = initiative_work_marketing_promotion_publication_v1($pdo,$owner,$row,false,$campaign);
         $view = initiative_work_marketing_promotion_view_v1($pdo,$owner,$scope,$row);
         return ['creative'=>array_replace($view, ['product_url'=>$target['product_url'],'cta'=>$target['cta']]),
+            'campaign'=>$campaign === null ? null : ['id'=>$campaign['id'],'name'=>$campaign['name']],
             'review_token'=>initiative_workbench_review_token_v1($key,$request,time()+600)];
     }
     if ($action === 'creative_save') {

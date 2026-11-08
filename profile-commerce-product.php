@@ -10,13 +10,23 @@ $profile=profile_by_username($pdo,$username);if(!$profile||empty($profile['is_ac
 $product=profile_commerce_public_product_v900($pdo,$profile,$slug);if(!$product){http_response_code(404);exit('Product not found.');}
 $productRow=profile_commerce_owner_product_v900($pdo,(int)$profile['user_id'],(int)$product['id']);if(!$productRow){http_response_code(404);exit('Product not found.');}
 $productPhotoUrl=profile_product_photo_url_v1($username,$productRow);
-if($_SERVER['REQUEST_METHOD']==='GET')profile_conversion_activity_v177_record($pdo,$profile,'product_intent',['id'=>(int)$product['id'],'slug'=>(string)$product['slug'],'title'=>(string)$product['title'],'url'=>(string)$product['product_url']]);
+$promotionClick=null;
+if(array_key_exists('promotion_click',$_GET)){
+    header('Cache-Control: private, no-store');
+    header('Referrer-Policy: same-origin');
+}
+if($_SERVER['REQUEST_METHOD']==='GET'){
+    $promotionClick=profile_product_promotion_attribution_click_v1((int)$profile['user_id'],(int)$product['id'],$_GET['promotion_click']??null);
+    profile_conversion_activity_v177_record($pdo,$profile,'product_intent',['id'=>(int)$product['id'],'slug'=>(string)$product['slug'],'title'=>(string)$product['title'],'url'=>(string)$product['product_url']]);
+}
 $displayName=trim((string)$profile['display_name'])?:$username;$connections=profile_commerce_checkout_connections_v900($pdo,$productRow);$error='';
-$token=profile_commerce_token_v900((int)$profile['user_id']);$checkoutNonce=profile_commerce_checkout_nonce_v900((int)$profile['user_id'],(int)$product['id']);$termsDigest=profile_commerce_terms_digest_v900($productRow);$sellerPolicy=trim((string)($productRow['cancellation_policy']??''));
+$token=profile_commerce_token_v900((int)$profile['user_id']);$checkoutNonce='';$termsDigest=profile_commerce_terms_digest_v900($productRow);$sellerPolicy=trim((string)($productRow['cancellation_policy']??''));
 if($_SERVER['REQUEST_METHOD']==='POST'){
     try{
         if(!profile_commerce_token_valid_v900((int)$profile['user_id'],(string)($_POST['commerce_token']??'')))throw new RuntimeException('Checkout session expired. Refresh and try again.');
-        $postedNonce=trim((string)($_POST['checkout_nonce']??''));profile_commerce_checkout_intent_v900((int)$profile['user_id'],(int)$product['id'],$postedNonce);
+        $postedNonce=trim((string)($_POST['checkout_nonce']??''));
+        profile_commerce_checkout_intent_v900((int)$profile['user_id'],(int)$product['id'],$postedNonce);
+        $checkoutNonce=$postedNonce;
         if($product['binding_type']==='appointment_event_type')redirect(url('/'.rawurlencode($username).'/book'));
         if($product['payment_mode']==='free')throw new RuntimeException('This offer does not require checkout. Ask the Profile Agent for next steps.');
         $connectionId=(int)($_POST['connection_id']??0);if($connectionId<1&&count($connections)===1)$connectionId=(int)$connections[0]['id'];
@@ -36,6 +46,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $checkoutUrl=trim((string)($checkout['checkout_url']??''));if($checkoutUrl===''||!filter_var($checkoutUrl,FILTER_VALIDATE_URL))throw new RuntimeException('Secure checkout could not be created.');redirect($checkoutUrl);
     }catch(Throwable $e){$error=$e->getMessage();}
 }
+if($checkoutNonce==='')$checkoutNonce=profile_commerce_checkout_nonce_v900((int)$profile['user_id'],(int)$product['id'],$promotionClick);
 $avatar='';if(!empty($profile['avatar_path'])&&str_starts_with((string)$profile['avatar_path'],'/uploads/'))$avatar=url((string)$profile['avatar_path']);
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f6f5f2"><link rel="canonical" href="<?=e($product['product_url'])?>"><title><?=e($product['title'])?> · <?=e($displayName)?></title><style>
 *{box-sizing:border-box}body{margin:0;background:#f6f5f2;color:#171816;font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.pcp-top{height:64px;border-bottom:1px solid #dedfd9;background:rgba(246,245,242,.95);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0}.pcp-top a{color:#171816;text-decoration:none}.pcp-shell{max-width:980px;margin:0 auto;padding:48px 24px}.pcp-back{display:inline-flex;margin-bottom:24px;color:#5f625c;text-decoration:none}.pcp-card{background:#fff;border:1px solid #e0e2dc;border-radius:28px;padding:32px;display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr);gap:32px;box-shadow:0 18px 50px rgba(20,22,18,.05)}.pcp-kicker{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:#747771}.pcp-title{font-size:38px;line-height:1.05;margin:8px 0 14px}.pcp-photo{margin:0 0 18px;border-radius:14px;overflow:hidden;background:#f6f5f2}.pcp-photo img{display:block;width:100%;max-height:440px;object-fit:contain}.pcp-description{font-size:17px;color:#555851;white-space:pre-line}.pcp-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.pcp-pill{padding:6px 10px;border-radius:999px;background:#f0f1ed;font-size:12px}.pcp-buy{border-left:1px solid #ecece7;padding-left:28px}.pcp-price{font-size:25px;font-weight:750;margin:6px 0 18px}.pcp-form{display:grid;gap:12px}.pcp-form label{display:grid;gap:5px;font-size:13px}.pcp-form input,.pcp-form select{width:100%;padding:12px;border:1px solid #d5d7d0;border-radius:11px;background:#fff;font:inherit}.pcp-form .pcp-accept{display:flex;grid-template-columns:auto 1fr;align-items:flex-start;gap:8px}.pcp-form .pcp-accept input{width:auto;margin-top:4px}.pcp-btn{display:inline-flex;justify-content:center;align-items:center;padding:12px 16px;border:0;border-radius:11px;background:#151614;color:#fff;text-decoration:none;font-weight:700;cursor:pointer}.pcp-note{font-size:12px;color:#747771}.pcp-terms{padding:12px;border:1px solid #e1e2dd;border-radius:12px;background:#fafaf8;margin-bottom:12px;font-size:12px;color:#5f625c}.pcp-terms strong{display:block;color:#171816;margin-bottom:4px}.pcp-error{padding:11px 12px;background:#fff0ee;color:#84251f;border-radius:10px;margin-bottom:12px}.pcp-owner{display:flex;align-items:center;gap:10px}.pcp-avatar{width:34px;height:34px;border-radius:50%;background:#e8e9e4;overflow:hidden;display:grid;place-items:center;font-weight:700}.pcp-avatar img{width:100%;height:100%;object-fit:cover}@media(max-width:760px){.pcp-card{grid-template-columns:1fr;padding:22px}.pcp-buy{border-left:0;border-top:1px solid #ecece7;padding:22px 0 0}.pcp-title{font-size:32px}.pcp-shell{padding:30px 16px}}

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-commerce-recovery-pa2.php';
+require_once __DIR__.'/profile-promotion-attribution-v1.php';
 
 function agent_commerce_dispatch_fulfillment_v800(PDO $pdo,array $order,string $event): void
 {
@@ -15,6 +16,7 @@ function agent_commerce_project_paid_pa2(PDO $pdo,array $order): void
 {
     if($pdo->inTransaction())throw new RuntimeException('Commerce projections require a committed receipt.',503);
     if((string)($order['order_status']??'')==='payment_review')throw new RuntimeException('Commerce payment projection requires review.',409);
+    profile_promotion_attribution_touch_order_v1($pdo,$order);
     foreach(['profile_conversion_commerce_order_v179','vp3_profile_webmcp_commerce_record_purchase_v160'] as $fn){
         if(function_exists($fn))$fn($pdo,$order);
     }
@@ -82,6 +84,7 @@ function agent_commerce_mark_paid_v800(PDO $pdo,int $orderId,string $provider,st
         $event=(int)$order['amount_paid_cents']===0?'paid':($remaining===0?'paid_in_full':'payment_updated');
         agent_commerce_fulfillment_enqueue_pa2($pdo,$fresh,$event,$paymentId,$review);
         if($elapsed&&$from==='awaiting_payment')agent_commerce_fulfillment_enqueue_pa2($pdo,$fresh,'expired');
+        profile_promotion_attribution_touch_order_v1($pdo,$fresh);
         return $fresh;
     });
     if(!$pdo->inTransaction())agent_commerce_projection_repair_pa2($pdo,(int)$order['id']);return $order;
@@ -184,7 +187,9 @@ function agent_commerce_refresh_refund_totals_v800(PDO $pdo,int $orderId): array
     $stmt->execute([$orderId]);$completed=(int)$stmt->fetchColumn();$completed=min((int)$order['amount_paid_cents'],max(0,$completed));
     $newStatus=$completed>0?($completed>=(int)$order['amount_paid_cents']?'refunded':'partially_refunded'):(string)$order['payment_status'];
     if($completed>0){$pdo->prepare("UPDATE agent_commerce_orders_v800 SET amount_refunded_cents=?,payment_status=?,order_status=?,refunded_at=IF(?='refunded',COALESCE(refunded_at,NOW()),refunded_at),updated_at=NOW() WHERE id=?")->execute([$completed,$newStatus,$newStatus,$newStatus,$orderId]);}
-    return agent_commerce_order_v800($pdo,$orderId)?:$order;
+    $fresh=agent_commerce_order_v800($pdo,$orderId)?:$order;
+    if($completed>0)profile_promotion_attribution_touch_order_v1($pdo,$fresh);
+    return $fresh;
 }
 function agent_commerce_payment_refund_reserved_v800(PDO $pdo,int $paymentId): int
 {

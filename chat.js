@@ -1452,7 +1452,8 @@
       initiative_work:raw.initiative_work && typeof raw.initiative_work==='object' ? raw.initiative_work : null,
       initiative_followthrough:raw.initiative_followthrough && typeof raw.initiative_followthrough==='object' ? raw.initiative_followthrough : null,
       initiative_action:raw.initiative_action && typeof raw.initiative_action==='object' ? raw.initiative_action : null,
-      product_launch:raw.source==='agent_product_launch' ? raw.product_launch : null,
+      product_launch:raw.source===(raw.product_launch?.stage==='promotion_outcomes' ? 'agent_promotion_outcome' : 'agent_product_launch')
+        ? raw.product_launch : null,
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1897,7 +1898,8 @@
     creative_failed:['Review image job in Canvas','creative'],
     publication_review:['Review promotion in Canvas','creative'],
     published:['Open published promotion in Canvas','creative'],
-    paused:['Open paused promotion in Canvas','creative']
+    paused:['Open paused promotion in Canvas','creative'],
+    promotion_outcomes:['Review this creative in Canvas','creative']
   };
 
   function bindProductLaunchV1(element, marker) {

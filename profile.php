@@ -88,7 +88,19 @@ try { $commerceProducts=profile_commerce_products_for_profile_v900($pdo,$profile
 catch (Throwable $e) { vp3_profile_optional_failure('commerce',$e,$username); }
 $productPromotions=[];
 if(!$preview){
-    try { $productPromotions=profile_product_promotions_public_v1($pdo,$profile); }
+    try {
+        $productPromotions=profile_product_promotions_public_v1($pdo,$profile);
+        if($productPromotions&&!$isOwner){
+            require_once __DIR__.'/includes/profile-promotion-attribution-v1.php';
+            require_once __DIR__.'/includes/profile-promotion-click-v1.php';
+            if(profile_promotion_attribution_ready_v1($pdo)){
+                foreach($productPromotions as &$promotion){
+                    $promotion['click_url']=profile_product_promotion_click_url_v1($promotion,'profile');
+                }
+                unset($promotion);
+            }
+        }
+    }
     catch (Throwable $e) { vp3_profile_optional_failure('product-promotions',$e,$username); }
 }
 $checkoutAvailable=false;
@@ -261,7 +273,7 @@ if($productPromotions)header('Cache-Control: private, no-store');
             <?php foreach($productPromotions as $promotion): ?>
               <article class="profile-product-promotion" id="product-promotion-<?= e($promotion['key']) ?>" data-profile-product-promotion="<?= e($promotion['key']) ?>">
                 <img src="<?= e($promotion['image_url']) ?>" alt="<?= e(trim($promotion['headline'].'. '.$promotion['copy'])) ?>" loading="lazy">
-                <a href="<?= e($promotion['product_url']) ?>"><?= e($promotion['cta']) ?> →</a>
+                <a href="<?= e($promotion['click_url']??$promotion['product_url']) ?>"><?= e($promotion['cta']) ?> →</a>
               </article>
             <?php endforeach; ?>
           </section>

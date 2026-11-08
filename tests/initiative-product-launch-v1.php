@@ -11,6 +11,7 @@ require_once dirname(__DIR__).'/includes/initiative-workbench-v1.php';
 require_once dirname(__DIR__).'/includes/initiative-work-product-publication-v1.php';
 require_once dirname(__DIR__).'/includes/initiative-work-marketing-promotion-v1.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
+require_once dirname(__DIR__).'/includes/initiative-promotion-outcomes-v1.php';
 require_once dirname(__DIR__).'/includes/profile-agent.php';
 require_once dirname(__DIR__).'/includes/profile-conversation-checkout-pa5.php';
 require_once dirname(__DIR__).'/includes/profile-product-promotion-v1.php';
@@ -314,12 +315,78 @@ try {
         && $cards[0]['product_url']===$listing['product_url'] && $calls===1 && $GLOBALS['pa2_http_calls']===[]
         && end($publishedNotices)['stage']==='published',
         'only the explicit promotion approval exposes the exact graphic and its same-product listing');
+    $publicationId = $cards[0]['key'];
+    $outcomes = static function() use ($pdo): array {
+        $messages = $pdo->query('SELECT conversation_id,role,message,context_json FROM chat_messages ORDER BY id')->fetchAll();
+        $reports = [];
+        foreach ($messages as $message) {
+            $context = json_decode((string)$message['context_json'],true,16,JSON_THROW_ON_ERROR);
+            if (($context['source']??null)==='agent_promotion_outcome') $reports[] = ['message'=>$message,'context'=>$context];
+        }
+        return $reports;
+    };
+    $outcomeDue = $pdo->prepare('UPDATE agent_promotion_publications_v1 SET next_review_at=? WHERE publication_id=?');
+    $makeOutcomeDue = static fn(string $id): bool => $outcomeDue->execute(['2000-01-01 00:00:00',$id]);
+    $click = static fn(string $id, string $placement, string $clickId): bool =>
+        profile_promotion_attribution_record_click_v1($pdo,1,$id,$placement,str_repeat($clickId,32));
+    launch_check_v1($click($publicationId,'profile','a') && initiative_promotion_outcome_sweep_v1($pdo,5)===0 && !$outcomes(),
+        'the first real click schedules a coalesced report without interrupting the Chat');
     $action('creative_pause',['creative_id'=>$creativeId,'confirmed'=>true]);
     $sweep();
     $pausedNotices = $notices();
     launch_check_v1(profile_product_promotions_public_v1($pdo,$profile)===[]
         && profile_commerce_public_product_v900($pdo,$profile,'blue-mug')===$listing && end($pausedNotices)['stage']==='paused',
         'pausing the completed launch removes the promotion while the verified listing remains live');
+    $replacementId = sprintf('%032x',13);
+    [$replacementGraphic] = $addAsset($photo,'promotion_design',['creative_id'=>$replacementId]);
+    $action('creative_save',['creative_id'=>$replacementId,'asset_id'=>$replacementGraphic]);
+    $replacementReview = $action('creative_publish_preview',['creative_id'=>$replacementId]);
+    $action('creative_publish',['creative_id'=>$replacementId,'review_token'=>$replacementReview['review_token'],'confirmed'=>true]);
+    $replacementPublication = profile_product_promotions_public_v1($pdo,$profile)[0]['key'];
+    launch_check_v1($replacementPublication!==$publicationId && $click($replacementPublication,'profile_agent','b'),
+        'a second creative of the same product earns its own Profile Agent evidence');
+
+    $makeOutcomeDue($publicationId);
+    foreach ([$sameAgentOtherChat,$otherAgent,$otherOwner] as $wrongScope) {
+        initiative_product_launch_chat_v1($pdo,$wrongScope['user']['id'],$wrongScope['agent_id'],$wrongScope['conversation_id']);
+    }
+    launch_check_v1(!$outcomes(),'a foreign Chat, Agent or owner cannot catch up an outcome');
+    $pdo->afterSql = static function(string $sql): void {
+        if (str_starts_with($sql,'INSERT INTO chat_messages')) throw new PDOException('Fixture interrupted the report write.');
+    };
+    initiative_promotion_outcome_sweep_v1($pdo,5);
+    $pdo->afterSql = null;
+    launch_check_v1(!$outcomes() && profile_promotion_attribution_publication_v1($pdo,1,$publicationId)['last_review_fingerprint']==='',
+        'a failed Chat write leaves the report fingerprint and Chat unchanged');
+    $makeOutcomeDue($publicationId);
+    initiative_product_launch_chat_v1($pdo,1,7,11);
+    $reports = $outcomes();
+    $firstReport = $reports[0]??[];
+    $firstContext = $firstReport['context']??[];
+    $firstEvidence = $firstContext['promotion_outcome']??[];
+    launch_check_v1(count($reports)===1 && (int)$firstReport['message']['conversation_id']===11
+        && $firstReport['message']['role']==='assistant' && $firstContext['skip_brain_archive']===true
+        && $firstContext['product_launch']['creative_id']===$creativeId && $firstContext['product_launch']['draft_id']===$draftId
+        && $firstContext['product_launch']['stage']==='promotion_outcomes' && $firstEvidence['publication_id']===$publicationId
+        && $firstEvidence['placements']['profile']['clicks']===1 && ($firstEvidence['placements']['profile_agent']['clicks']??0)===0,
+        'the original Chat opens the older creative from its own verified counts after replacement');
+    $makeOutcomeDue($publicationId);
+    launch_check_v1(initiative_promotion_outcome_sweep_v1($pdo,5)===0 && $outcomes()===$reports,
+        'the same evidence fingerprint cannot duplicate a report');
+
+    $makeOutcomeDue($replacementPublication);
+    $GLOBALS['launch_denied'] = ['chat.access'];
+    $denied = initiative_promotion_outcome_sweep_v1($pdo,5);
+    unset($GLOBALS['launch_denied']);
+    launch_check_v1($denied===0 && $outcomes()===$reports,'current Chat permission is required to deliver a private report');
+    $makeOutcomeDue($replacementPublication);
+    launch_check_v1(initiative_promotion_outcome_sweep_v1($pdo,5)===1 && count($outcomes())===2
+        && $outcomes()[1]['context']['product_launch']['creative_id']===$replacementId
+        && $outcomes()[1]['context']['promotion_outcome']['placements']['profile_agent']['clicks']===1
+        && ($outcomes()[1]['context']['promotion_outcome']['placements']['profile']['clicks']??0)===0
+        && $GLOBALS['pa2_http_calls']===[],
+        'the newer creative receives its own report without any external action');
+    $action('creative_pause',['creative_id'=>$replacementId,'confirmed'=>true]);
 
     $textInput = ['source_id'=>'description','product_description'=>'A digital ceramics guide.','request_id'=>str_repeat('b',64)];
     $textDraft = initiative_work_product_create_v1($pdo,1,$scope,$textInput,

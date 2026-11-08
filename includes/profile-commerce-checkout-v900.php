@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__.'/profile-commerce-v900.php';
 require_once __DIR__.'/profile-commerce-receipt-v1100.php';
+require_once __DIR__.'/profile-promotion-click-v1.php';
+require_once __DIR__.'/profile-promotion-attribution-v1.php';
 
 /**
  * Browser retry/idempotency guard for Profile Commerce checkout.
@@ -12,7 +14,7 @@ require_once __DIR__.'/profile-commerce-receipt-v1100.php';
  * begins. A retry therefore reuses that order and Phase 8's existing open
  * checkout attempt instead of creating a second purchase.
  */
-function profile_commerce_checkout_nonce_v900(int $ownerUserId,int $productId): string
+function profile_commerce_checkout_nonce_v900(int $ownerUserId,int $productId,?string $promotionClick=null): string
 {
     if($ownerUserId<1||$productId<1)throw new RuntimeException('Checkout product is unavailable.');
     if(!isset($_SESSION['profile_commerce_checkout_intents'])||!is_array($_SESSION['profile_commerce_checkout_intents']))$_SESSION['profile_commerce_checkout_intents']=[];
@@ -20,7 +22,10 @@ function profile_commerce_checkout_nonce_v900(int $ownerUserId,int $productId): 
     foreach($_SESSION['profile_commerce_checkout_intents'] as $nonce=>$row){if(!is_array($row)||(int)($row['expires_at']??0)<$now)unset($_SESSION['profile_commerce_checkout_intents'][$nonce]);}
     if(count($_SESSION['profile_commerce_checkout_intents'])>40){uasort($_SESSION['profile_commerce_checkout_intents'],static fn($a,$b):int=>((int)($a['created_at']??0))<=>((int)($b['created_at']??0)));while(count($_SESSION['profile_commerce_checkout_intents'])>30)array_shift($_SESSION['profile_commerce_checkout_intents']);}
     $nonce=bin2hex(random_bytes(24));
-    $_SESSION['profile_commerce_checkout_intents'][$nonce]=['owner_user_id'=>$ownerUserId,'product_id'=>$productId,'order_id'=>0,'connection_id'=>0,'receipt_token'=>profile_commerce_receipt_token_v1100(),'created_at'=>$now,'expires_at'=>$now+7200];
+    $intent=['owner_user_id'=>$ownerUserId,'product_id'=>$productId,'order_id'=>0,'connection_id'=>0,
+        'receipt_token'=>profile_commerce_receipt_token_v1100(),'created_at'=>$now,'expires_at'=>$now+7200];
+    if($promotionClick!==null)$intent['product_promotion_click_v1']=$promotionClick;
+    $_SESSION['profile_commerce_checkout_intents'][$nonce]=$intent;
     return $nonce;
 }
 function profile_commerce_checkout_intent_v900(int $ownerUserId,int $productId,string $nonce): array
@@ -41,6 +46,24 @@ function profile_commerce_terms_digest_v900(array $product): string
 {
     $terms=agent_commerce_product_terms_v800($product);return hash('sha256',(string)json_encode($terms,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
 }
+
+/** Carry only the server-frozen visit into the canonical order and item. */
+function profile_commerce_create_promoted_order_v1(PDO $pdo,array $product,array $input,mixed $clickId): array
+{
+    if(!profile_promotion_attribution_id_v1($clickId))return agent_commerce_create_order_v800($pdo,$product,$input);
+    return agent_commerce_atomic_pa2($pdo,static function()use($pdo,$product,$input,$clickId):array{
+        $input['metadata']['product_promotion_click_v1']=$clickId;
+        $order=agent_commerce_create_order_v800($pdo,$product,$input);
+        try{
+            profile_promotion_attribution_bind_order_v1($pdo,(int)$order['id'],$clickId);
+        }catch(PDOException $error){
+            // The attributed order remains canonical even if metrics storage needs recovery.
+            if(!$pdo->inTransaction())throw $error;
+        }
+        return $order;
+    });
+}
+
 function profile_commerce_create_checkout_idempotent_v900(PDO $pdo,array $profile,array $projectedProduct,int $connectionId,string $payerEmail,string $nonce,string $termsDigest,bool $termsAccepted): array
 {
     $owner=(int)($profile['user_id']??0);$productId=(int)($projectedProduct['id']??0);$product=profile_commerce_owner_product_v900($pdo,$owner,$productId);
@@ -59,7 +82,14 @@ function profile_commerce_create_checkout_idempotent_v900(PDO $pdo,array $profil
         $meta=profile_commerce_order_metadata_v900($order);$storedReceiptHash=strtolower(trim((string)($meta['receipt_token_sha256']??'')));if($storedReceiptHash!==''&&($receiptToken===''||!hash_equals($storedReceiptHash,profile_commerce_receipt_token_hash_v1100($receiptToken))))throw new RuntimeException('Checkout receipt lineage could not be resumed safely.');
     }else{
         if($receiptToken===''){$receiptToken=profile_commerce_receipt_token_v1100();$intent['receipt_token']=$receiptToken;profile_commerce_checkout_intent_save_v900($nonce,$intent);}
-        $order=agent_commerce_create_order_v800($pdo,$product,['connection_id'=>(int)$selected['id'],'payer_email'=>$payerEmail,'metadata'=>['source'=>'profile_commerce_v900','profile_username'=>(string)$profile['username'],'profile_product_slug'=>(string)$projectedProduct['slug'],'checkout_nonce_sha256'=>hash('sha256',$nonce),'receipt_token_sha256'=>profile_commerce_receipt_token_hash_v1100($receiptToken),'terms_accepted_at'=>gmdate('c'),'terms_snapshot_sha256'=>$currentTermsDigest]]);
+        $order=profile_commerce_create_promoted_order_v1($pdo,$product,[
+            'connection_id'=>(int)$selected['id'],'payer_email'=>$payerEmail,'metadata'=>[
+                'source'=>'profile_commerce_v900','profile_username'=>(string)$profile['username'],
+                'profile_product_slug'=>(string)$projectedProduct['slug'],'checkout_nonce_sha256'=>hash('sha256',$nonce),
+                'receipt_token_sha256'=>profile_commerce_receipt_token_hash_v1100($receiptToken),
+                'terms_accepted_at'=>gmdate('c'),'terms_snapshot_sha256'=>$currentTermsDigest,
+            ],
+        ],$intent['product_promotion_click_v1']??null);
         $intent['order_id']=(int)$order['id'];$intent['connection_id']=(int)$selected['id'];profile_commerce_checkout_intent_save_v900($nonce,$intent);
     }
     $return=agent_commerce_absolute_url_v800('/profile-commerce-return.php?username='.rawurlencode((string)$profile['username']).'&order='.(int)$order['id'].'&intent='.rawurlencode($nonce));

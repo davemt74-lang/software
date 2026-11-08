@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/profile-promotion-attribution-v1.php';
+
 function agent_commerce_oauth_state_v800(array $user,string $provider): string
 {
     $provider=strtolower(trim($provider));if(!in_array($provider,['stripe','square'],true))throw new RuntimeException('That provider does not use this connection flow.');$token=bin2hex(random_bytes(24));$_SESSION['vp3_commerce_oauth'][$token]=['user_id'=>(int)$user['id'],'provider'=>$provider,'expires_at'=>time()+900];return $token;
@@ -135,7 +137,10 @@ function agent_commerce_create_checkout_v800(PDO $pdo,array $order,int $connecti
         $q=$pdo->prepare("SELECT * FROM agent_commerce_checkout_attempts_v800 WHERE order_id=? AND connection_id=? AND status IN ('creating','open') ORDER BY id DESC LIMIT 1".agent_commerce_lock_pa2($pdo));$q->execute([(int)$live['id'],$connectionId]);$a=$q->fetch(PDO::FETCH_ASSOC);
         if($a){
             if((int)$a['amount_cents']!==(int)$live['amount_due_cents']||strtolower((string)$a['currency'])!==strtolower((string)$live['currency'])||!hash_equals((string)$a['provider_account_id'],(string)$connection['external_account_id']))throw new RuntimeException('Checkout terms or provider identity changed. Review the order again.',409);
-            if((string)$a['status']==='open')return ['state'=>'open','attempt'=>$a];
+            if((string)$a['status']==='open'){
+                profile_promotion_attribution_touch_order_v1($pdo,$live);
+                return ['state'=>'open','attempt'=>$a];
+            }
             if(agent_commerce_date_pa2($a['creation_lease_expires_at'])>time())throw new RuntimeException('That checkout is already in progress. Retry with the same idempotency key.',503);
             $request=agent_commerce_recovery_json_pa2($a['creation_request_json'],32768);
         }else{
@@ -183,6 +188,7 @@ function agent_commerce_create_checkout_v800(PDO $pdo,array $order,int $connecti
             $pdo->prepare("UPDATE agent_commerce_checkout_attempts_v800 SET external_session_id=?,provider_order_id=?,checkout_url=?,status=?,creation_lease_token='',creation_lease_expires_at=NULL,last_error_class=?,updated_at=? WHERE id=? AND creation_lease_token=?")
                 ->execute([$session,$providerOrder,$url,$status,$reason,$now,(int)$a['id'],(string)$claim['token']]);
             agent_commerce_audit_v800($pdo,(int)$order['id'],(int)$order['owner_user_id'],(int)($order['workspace_owner_user_id']??0)?:null,'guest',null,null,'checkout_created',(string)$order['payment_status'],(string)$order['payment_status'],(int)$live['amount_cents'],['provider'=>(string)$live['provider'],'attempt_id'=>(int)$live['id']]);
+            if($status==='open')profile_promotion_attribution_touch_order_v1($pdo,$order);
             return agent_commerce_checkout_attempt_v800($pdo,(int)$live['id'])?:throw new RuntimeException('Checkout attempt could not be reloaded.');
         });
         if((string)($result['last_error_class']??'')==='checkout_terms_changed')throw new RuntimeException('Checkout terms changed. Prepare checkout again.',409);

@@ -312,6 +312,8 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
       CONSTRAINT fk_commerce_audit_agent FOREIGN KEY (actor_agent_id) REFERENCES user_agents(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     agent_commerce_recovery_ensure_schema_pa2($pdo);
+    require_once __DIR__.'/profile-promotion-attribution-v1.php';
+    profile_promotion_attribution_schema_v1($pdo);
 }
 
 function agent_commerce_config_v800(): array

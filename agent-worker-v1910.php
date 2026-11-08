@@ -140,6 +140,13 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         }
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.product_launch.sweep_failed',['error_class'=>get_class($e)]);}
     }
+    if(($executor==='all'||$executor==='cloud')&&table_exists('agent_promotion_publications_v1')){
+        try{
+            require_once __DIR__.'/includes/initiative-promotion-outcomes-v1.php';
+            $counts['promotion_outcome_updates']=initiative_promotion_outcome_sweep_v1($pdo,$ownerLimit);
+        }
+        catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.promotion_outcome.sweep_failed',['error_class'=>get_class($e)]);}
+    }
     $counts['completed_at']=gmdate('c');
     return $counts;
 }

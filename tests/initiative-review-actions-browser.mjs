@@ -36,7 +36,13 @@ try {
       launchMessage(26,launch,'assistant'), launchMessage(27,launch,'agent_product_launch','user'),
       launchMessage(28,{...launch,source_id:'031'}), launchMessage(29,photoNeeded));
     const publication = {...launch,stage:'publication_review'};
-    const pollMessage = launchMessage(40,publication);
+    const outcome = {...launch,creative_id:'b'.repeat(32),stage:'promotion_outcomes'};
+    messages.push(launchMessage(30,{...outcome,owner_user_id:2},'agent_promotion_outcome'),
+      launchMessage(31,{...outcome,agent_id:agent+1},'agent_promotion_outcome'),
+      launchMessage(32,{...outcome,conversation_id:43},'agent_promotion_outcome'),
+      launchMessage(33,{...outcome,stage:'published'},'agent_promotion_outcome'),
+      launchMessage(34,outcome,'agent_promotion_outcome','user'), launchMessage(35,outcome));
+    const pollMessages = [launchMessage(40,publication),launchMessage(41,outcome,'agent_promotion_outcome')];
     await page.route('https://initiative-review.test/**',async route => {
       const url = new URL(route.request().url());
       if (url.pathname === '/') return route.fulfill({contentType:'text/html',body:`<!doctype html><meta charset="utf-8">
@@ -50,9 +56,10 @@ try {
         <script src="/chat.js"></script>`});
       if (url.pathname === '/chat.js') return route.fulfill({contentType:'text/javascript',body:script});
       const body = route.request().postDataJSON();
-      const polled = body.action==='messages_after' && body.conversation_id===42 && body.after_id<pollMessage.id;
-      if (polled && !messages.includes(pollMessage)) messages.push(pollMessage);
-      return route.fulfill({json:{ok:true,messages:body.action==='load'?messages:polled?[pollMessage]:[],conversations:[],
+      const polled = body.action==='messages_after' && body.conversation_id===42
+        ? pollMessages.filter(message => body.after_id < message.id) : [];
+      messages.push(...polled.filter(message => !messages.includes(message)));
+      return route.fulfill({json:{ok:true,messages:body.action==='load'?messages:polled,conversations:[],
         conversation_id:body.conversation_id,latest_id:0,unread_count:0,updates:[]}});
     });
     await page.goto('https://initiative-review.test/');
@@ -65,12 +72,13 @@ try {
     assert.deepEqual(await page.evaluate(() => window.launchCalls),[photoNeeded,launch]);
     await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.syncConversation(42));
     await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.syncConversation(42));
-    assert.equal(await page.locator('[data-product-launch]').count(),3);
+    assert.equal(await page.locator('[data-product-launch]').count(),4);
     await page.getByRole('button',{name:'Review promotion in Canvas',exact:true}).click();
-    assert.deepEqual(await page.evaluate(() => window.launchCalls),[photoNeeded,launch,publication]);
+    await page.getByRole('button',{name:'Review this creative in Canvas',exact:true}).click();
+    assert.deepEqual(await page.evaluate(() => window.launchCalls),[photoNeeded,launch,publication,outcome]);
     await page.reload();
-    await page.locator('[data-product-launch="publication_review"]').waitFor();
-    assert.equal(await page.locator('[data-product-launch]').count(),3);
+    await page.locator('[data-product-launch="promotion_outcomes"]').waitFor();
+    assert.equal(await page.locator('[data-product-launch]').count(),4);
     assert.deepEqual(await page.evaluate(() => window.launchCalls),[]);
     await page.getByRole('button',{name:'Review listing draft',exact:true}).click();
     assert.deepEqual(await page.evaluate(() => window.reviewCalls),[['product','31',revision]]);
@@ -100,6 +108,7 @@ try {
     assert.deepEqual(errors,[]);
     console.log(`PASS ${agent?'named mobile':'System desktop'} saved reviews: enum/schema, owner/Agent/Chat binding, dedupe, account/session changes and removed-message fence`);
     console.log(`PASS ${agent?'named mobile':'System desktop'} launch reviews: exact durable marker on sync and reload, explicit open, and owner/Agent/Chat fence`);
+    console.log(`PASS ${agent?'named mobile':'System desktop'} promotion outcomes: exact creative, source scope and reloaded review action`);
     await context.close();
   }
 } finally { await browser.close(); }

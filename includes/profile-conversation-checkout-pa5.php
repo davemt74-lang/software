@@ -255,7 +255,10 @@ function vp3_profile_checkout_prepare_pa5(PDO $pdo,array $profile,array $ctx,int
                 'cancellation_policy'=>(string)$terms['cancellation_policy']],
         ];
         $reviewId=bin2hex(random_bytes(16));
-        $buyerSecret=agent_commerce_encrypt_v800(json_encode(['email'=>$email,'receipt'=>profile_commerce_receipt_token_v1100()],JSON_THROW_ON_ERROR));
+        $secret=['email'=>$email,'receipt'=>profile_commerce_receipt_token_v1100()];
+        $promotionClick=profile_product_promotion_attribution_click_v1((int)$ctx['owner_user_id'],(int)$product['id'],null,$cid);
+        if($promotionClick!==null)$secret['product_promotion_click_v1']=$promotionClick;
+        $buyerSecret=agent_commerce_encrypt_v800(json_encode($secret,JSON_THROW_ON_ERROR));
         $pdo->prepare('INSERT INTO profile_conversation_checkouts_pa5
             (owner_user_id,credential_hash,profile_agent_id,profile_session_id,visitor_user_id,conversation_id,request_id,request_hash,
             review_id,product_id,product_snapshot_hash,connection_id,merchant_fingerprint,review_json,buyer_ciphertext,expires_at_unix,created_at_unix)
@@ -379,7 +382,7 @@ function vp3_profile_checkout_confirm_pa5(PDO $pdo,array $profile,array $ctx,int
             throw new VP3ProfileCheckoutException('PROFILE_CHECKOUT_PROVIDER_CHANGED','The selected payment provider changed. Review the current offer again.');
         }
         $secret=vp3_profile_checkout_secret_pa5($row);
-        $order=agent_commerce_create_order_v800($pdo,$product,[
+        $order=profile_commerce_create_promoted_order_v1($pdo,$product,[
             'connection_id'=>(int)$row['connection_id'],'payer_email'=>$secret['email'],'quantity'=>(int)$review['quantity'],
             'metadata'=>[
                 'source'=>'profile_commerce_v900','profile_username'=>(string)$profile['username'],
@@ -391,7 +394,7 @@ function vp3_profile_checkout_confirm_pa5(PDO $pdo,array $profile,array $ctx,int
                 'receipt_token_sha256'=>profile_commerce_receipt_token_hash_v1100($secret['receipt']),
                 'terms_accepted_at'=>gmdate('c'),'terms_snapshot_sha256'=>profile_commerce_terms_digest_v900($product),
             ],
-        ]);
+        ],$secret['product_promotion_click_v1']??null);
         $q=$pdo->prepare('UPDATE profile_conversation_checkouts_pa5 SET order_id=? WHERE id=? AND order_id IS NULL');
         $q->execute([(int)$order['id'],(int)$row['id']]);
         if($q->rowCount()!==1)throw new RuntimeException('Profile checkout confirmation lost its order claim.');

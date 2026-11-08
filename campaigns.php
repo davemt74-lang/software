@@ -290,6 +290,11 @@ if($merchant){
 }
 
 $editCampaignId=max(0,(int)($_GET['edit_campaign']??0));$editCampaign=null;foreach($campaigns as $row)if((int)$row['id']===$editCampaignId)$editCampaign=$row;
+$productPromotionPerformance=[];
+if($editCampaign&&$canAnalytics){
+    require_once __DIR__.'/includes/profile-promotion-attribution-v1.php';
+    $productPromotionPerformance=profile_promotion_attribution_campaign_summary_v1($pdo,(int)$merchant['owner_user_id'],(int)$editCampaign['id']);
+}
 if($editCampaign&&function_exists('campaigns_rewards_campaign_reward_ids_v118'))$editCampaignRewardIds=campaigns_rewards_campaign_reward_ids_v118($pdo,(int)$editCampaign['id']);
 $editRuleId=max(0,(int)($_GET['edit_rule']??0));$editRule=null;
 foreach($automationRules as $ruleRow)if((int)$ruleRow['id']===$editRuleId&&(!$editCampaign||(int)$ruleRow['campaign_id']===(int)$editCampaign['id'])){$editRule=$ruleRow;break;}
@@ -479,6 +484,21 @@ $memberHeaderActions=implode(' ',$actions);
 <article><span>Claimed</span><strong><?= number_format((int)$editFunnel['claimed']) ?></strong><small><?= e((string)$editFunnel['claim_rate']) ?>%</small></article>
 </div>
 <div class="cr-ops-strip"><span>Outstanding liability <strong><?= e(number_format(((int)$editFunnel['outstanding_liability_minor'])/100,2)) ?></strong></span><span>Tracked inventory remaining <strong><?= number_format((int)$editFunnel['inventory_remaining']) ?></strong></span></div>
+<?php endif;?>
+
+<?php if($productPromotionPerformance):?>
+<section class="cr-subpanel" aria-label="Product promotion results">
+<h3>Product promotion results</h3>
+<div class="cr-list">
+<?php foreach($productPromotionPerformance as $source=>$totals):
+    $placement=match($source){'profile'=>'Profile','profile_agent'=>'Profile Agent',default=>ucwords(str_replace(['_','-'],' ',$source))};?>
+<article><div><strong><?= e($placement) ?></strong><small>
+<?= number_format((int)$totals['clicks']) ?> clicks · <?= number_format((int)$totals['checkout_starts']) ?> checkout starts ·
+<?= number_format((int)$totals['paid_orders']) ?> verified paid orders · <?= number_format((int)$totals['refunded_orders']) ?> refunded orders
+</small></div></article>
+<?php endforeach;?>
+</div>
+</section>
 <?php endif;?>
 
 <?php if($editInsights):?><div class="cr-insights"><?php foreach($editInsights as $insight):?><article><strong><?= e((string)$insight['title']) ?></strong><span><?= e((string)$insight['detail']) ?></span></article><?php endforeach;?></div><?php endif;?>

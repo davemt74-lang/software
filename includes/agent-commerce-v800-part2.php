@@ -89,6 +89,10 @@ function agent_commerce_create_order_v800(PDO $pdo,array $product,array $input):
     $payer=mb_strimwidth(strtolower(trim((string)($input['payer_email']??''))),0,190,'');
     $workspace=(int)($product['workspace_owner_user_id']??0)?:null;
     $metadata=is_array($input['metadata']??null)?$input['metadata']:[];
+    if(isset($metadata['product_promotion_click_v1'])){
+        // The attribution window uses UTC even if the database session timestamps use local time.
+        $metadata['product_promotion_order_utc_v1']=agent_commerce_time_pa2();
+    }
     $metadataJson=$metadata?json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE):null;
     $owns=!$pdo->inTransaction();
     if($owns)$pdo->beginTransaction();
