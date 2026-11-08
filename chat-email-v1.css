@@ -1,0 +1,35 @@
+#vp3ChatEmailReview {
+  width: min(40rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 1rem;
+  border: 1px solid #c8cfdb;
+  border-radius: .75rem;
+  color: #172032;
+  background: #fff;
+  overflow: auto;
+}
+#vp3ChatEmailReview::backdrop { background: #11182780; }
+#vp3ChatEmailReview header,
+#vp3ChatEmailReview .vp3-chat-email-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+#vp3ChatEmailReview header { justify-content: space-between; }
+#vp3ChatEmailReview h2 { margin: 0; font-size: 1.15rem; }
+#vp3ChatEmailReview dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .35rem .7rem; }
+#vp3ChatEmailReview dt { font-weight: 700; }
+#vp3ChatEmailReview dd { margin: 0; overflow-wrap: anywhere; }
+#vp3ChatEmailReview label { display: grid; gap: .25rem; margin: .7rem 0; }
+#vp3ChatEmailReview .vp3-chat-email-watch { display: flex; align-items: center; gap: .5rem; }
+#vp3ChatEmailReview input[type=text], #vp3ChatEmailReview textarea, #vp3ChatEmailReview button {
+  box-sizing: border-box;
+  border: 1px solid #aab6ca;
+  border-radius: .4rem;
+  padding: .55rem;
+  color: inherit;
+  background: #fff;
+  font: inherit;
+}
+#vp3ChatEmailReview textarea { resize: vertical; width: 100%; }
+#vp3ChatEmailReview input[type=text] { width: 100%; }
+#vp3ChatEmailReview button { cursor: pointer; }
+#vp3ChatEmailReview button:disabled { opacity: .56; cursor: default; }
+#vp3ChatEmailReview .vp3-chat-email-primary { background: #172a50; color: #fff; }
+#vp3ChatEmailReview [hidden] { display: none; }

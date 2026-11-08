@@ -1574,6 +1574,9 @@
 
   function agentActionHtml(action) {
     if (!action) return '';
+    if (action.type === 'email_review' && /^[a-f0-9]{32}$/.test(String(action.id || '')) && Number.isSafeInteger(action.conversation_id) && action.conversation_id > 0) {
+      return '<button class="chat-agent-action-button" type="button" data-chat-email-review="'+escapeHtml(action.id)+'" data-chat-email-conversation="'+action.conversation_id+'">Review email</button>';
+    }
     if(action.type==='participant_setup'&&/^[a-f0-9]{32}$/.test(String(action.token||''))&&Number.isInteger(action.conversation_id)&&action.conversation_id>0)return '<button class="chat-agent-action-button" type="button" data-participant-setup-token="'+escapeHtml(action.token)+'" data-participant-setup-conversation="'+action.conversation_id+'">Review participant setup</button>';
     if (action.type === 'voice_enrollment') return '<button class="chat-agent-action-button" type="button" data-voice-enrollment-open>Learn my voice</button>';
     if (action.type === 'media_capture') {
@@ -3855,7 +3858,7 @@
       if(autoMediaAction){window.setTimeout(()=>{window.StonefellowMediaStudio?.open(autoMediaAction.mode||'camera',Number(autoMediaAction.camera_index||0));},260);}
 
       void refreshHistory().catch(() => {});
-      if (inputMode === 'voice' && voiceMode && !existingReply) {
+      if (inputMode === 'voice' && voiceMode && !existingReply && !data.private_email_read) {
         await speakAgentResponse(data.answer);
       }
     } catch (error) {

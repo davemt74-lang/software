@@ -4,7 +4,7 @@ declare(strict_types=1);
 // Fresh PHP processes exercise filesystem recovery and real transactional SQL.
 if (count($argv) === 1) {
     $total = 0;
-    foreach (['restore','reconnect','accounts','domains','call_settings','call_snapshots','call_inventory_failure','rollback','ambiguous','publish','uncommitted','crash'] as $case) {
+    foreach (['restore','reconnect','accounts','domains','call_settings','call_snapshots','call_inventory_failure','connections_settings','connections_tokens','connections_drafts','rollback','ambiguous','publish','uncommitted','crash'] as $case) {
         $root = sys_get_temp_dir().'/vp3-credential-'.bin2hex(random_bytes(6));
         mkdir($root, 0700);
         try {
@@ -130,6 +130,28 @@ switch ($case) {
         try{ai_recovery_restore($pdo,$backup);throw new LogicException('Expected inventory failure');}
         catch(RuntimeException $e){check(!str_contains($e->getMessage(),'SECRET_CALL'),'Calling inventory diagnostics do not enter the recovery error');}
         check(!is_file(ai_master_key_file()),'Failed inventory leaves the key absent');
+        break;
+    case 'connections_settings':
+    case 'connections_tokens':
+    case 'connections_drafts':
+        $pdo->exec('DELETE FROM settings');
+        $secret=ai_encrypt_secret_with_key('fixture-connections-secret',$old);
+        if ($case === 'connections_settings') {
+            $pdo->prepare('INSERT INTO settings VALUES(?,?)')->execute(['connections_gmail_client_secret',$secret]);
+        } elseif ($case === 'connections_tokens') {
+            $pdo->exec('CREATE TABLE agent_connections_v1(access_token_enc TEXT,refresh_token_enc TEXT)');
+            $pdo->prepare('INSERT INTO agent_connections_v1 VALUES(?,?)')->execute(['',$secret]);
+        } else {
+            $pdo->exec('CREATE TABLE agent_connection_email_drafts_v1(message_enc TEXT)');
+            $pdo->prepare('INSERT INTO agent_connection_email_drafts_v1 VALUES(?)')->execute([$secret]);
+        }
+        check(ai_saved_encrypted_credentials_exist(),'Connections-only installations protect the existing key');
+        rejects(fn()=>ai_master_key(true),'Ordinary writes cannot replace the Connections encryption key');
+        rejects(fn()=>ai_recovery_reconnect($pdo,$plain,true),'AI key reconnection cannot strand Connections credentials');
+        check(!is_file(ai_master_key_file()),'Connections protection creates no replacement key');
+        ai_recovery_restore($pdo,$backup);
+        check(ai_decrypt_secret($secret)==='fixture-connections-secret','Original key restores Connections credentials');
+        check(ai_recovery_dependent_secrets($pdo)===[$secret],'Recovery preserves original Connections ciphertext');
         break;
     case 'rollback':
         $pdo->exec("CREATE TRIGGER fail_update BEFORE UPDATE ON settings WHEN NEW.setting_key='ai_elevenlabs_api_key' BEGIN SELECT RAISE(ABORT,'fixture transaction failure'); END");

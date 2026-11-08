@@ -100,6 +100,16 @@ return [
         ],
     ],
 
+    // Connections provider credentials are server-only. Register the exact
+    // HTTPS redirect URI with Google, including base_path when applicable.
+    'connections' => [
+        'gmail' => [
+            'client_id' => '',     // VP3_GMAIL_CLIENT_ID
+            'client_secret' => '', // VP3_GMAIL_CLIENT_SECRET
+            'redirect_uri' => '',   // VP3_GMAIL_REDIRECT_URI · https://vp3.example.com/connection-oauth.php
+        ],
+    ],
+
     // Phase 18 VP3 Video Meetings. The LiveKit API secret and meeting-worker
     // callback secret are server-only and must never be exposed to the browser.
     // Environment variables are preferred in production.

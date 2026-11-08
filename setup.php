@@ -16,6 +16,7 @@ require_once __DIR__ . '/includes/profile-conversation-checkout-pa5.php';
 require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
 require_once __DIR__ . '/includes/agent-work-control-v173.php';
 require_once __DIR__ . '/includes/agent-chat-read-v1.php';
+require_once __DIR__ . '/includes/agent-connections-v1.php';
 
 $pdo = db();
 if (!$pdo) {
@@ -65,6 +66,7 @@ try {
     password_reset_ensure_schema();
     user_agent_system_ensure_schema_v236($pdo);
     vp3_chat_read_ensure_schema_v1($pdo);
+    agent_connections_install_v1($pdo);
     profile_agent_ensure_schema($pdo);
     agent_job_engine_ensure_schema_v1900($pdo);
     agent_work_control_ensure_schema_v173($pdo);

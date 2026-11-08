@@ -46,7 +46,8 @@ $initiativeReply=vp3_agent_chat_initiative_reply_v2160($input);
 if($initiativeReply!==null&&$conversationId<1)throw new RuntimeException('A saved owner Chat is required for this reply.',422);
 $input['input_mode']='voice';$participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);if($initiativeReply!==null&&($participantActor!==null||vp3_participant_scope_v1()!==null))throw new RuntimeException('Use the private owner Chat for this reply.',403);
 $initiativeRequest=null;
-if($participantActor===null&&vp3_participant_scope_v1()===null&&$conversationId>0&&($initiativeReply!==null||vp3_initiative_followthrough_referential_v1($query))){
+$emailRequest=$initiativeReply===null&&agent_connection_email_chat_plan_v1($query)!==null;
+if(!$emailRequest&&$participantActor===null&&vp3_participant_scope_v1()===null&&$conversationId>0&&($initiativeReply!==null||vp3_initiative_followthrough_referential_v1($query))){
     try{$initiativeRequest=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$conversationId,$query,
         static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input),$initiativeReply);}catch(Throwable $preflightError){throw vp3_agent_chat_followthrough_error_v2160($preflightError);}
 }
@@ -145,7 +146,7 @@ $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']
 $reminderTool=null;$workingSelection=null;
 unset($rawAgentContext['working_context_ref'],$rawAgentContext['initiative_reply'],$rawAgentContext['initiative_followthrough'],$rawAgentContext['followthrough'],$rawAgentContext['advisory_context'],$rawAgentContext['verified_followthrough'],$rawAgentContext['initiative_reply_anchor_v1'],$rawAgentContext['initiative_reply_recovery'],$rawAgentContext['initiative_request'],$rawAgentContext['initiative_claim'],$rawAgentContext['initiative_voice_request'],$rawAgentContext['initiative_reply_unassociated_v1']);
 $followthroughAuthority=static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
-$followthroughSelection=vp3_initiative_followthrough_reply_v1($pdo,$user,$principal,$conversationId,$userMessageId,$initiativeReply,$query,$followthroughAuthority);
+$followthroughSelection=$emailRequest?null:vp3_initiative_followthrough_reply_v1($pdo,$user,$principal,$conversationId,$userMessageId,$initiativeReply,$query,$followthroughAuthority);
 if(!empty($followthroughSelection['handled'])){
     $ownerAuthority=static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
     $done=vp3_agent_chat_followthrough_finish_v2160($pdo,$user,$activeAgent,$principal,$conversationId,$userMessageId,$query,'voice',$followthroughSelection,$ownerAuthority);
@@ -167,6 +168,7 @@ if(array_key_exists('working_context_ref',$input)){
         }
     }
 }
+if($reminderTool===null&&$emailRequest)$reminderTool=agent_connection_email_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId,$followthroughAuthority,true);
 if($reminderTool===null)$reminderTool=vp3_connected_sites_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId);
 if($reminderTool===null&&vp3_catch_up_chat_scope_v1($query)!==null){
     $reminderTool=vp3_capability_chat_v1($pdo,$user,$principal,$query,

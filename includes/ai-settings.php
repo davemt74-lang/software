@@ -64,12 +64,12 @@ function ai_saved_encrypted_credentials_exist(): bool
     if (!function_exists('setting')) {
         return false;
     }
-    foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key','hosting_cpanel_api_token','profile_calls_livekit_config_pa3c'] as $settingKey) {
+    foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key','hosting_cpanel_api_token','profile_calls_livekit_config_pa3c','connections_gmail_client_secret'] as $settingKey) {
         if (trim((string)setting($settingKey, '')) !== '') {
             return true;
         }
     }
-    // Account BYOK and connected Gelato credentials use this installation master key.
+    // Account BYOK and connected provider credentials use this installation master key.
     // A missing key must not be silently replaced while encrypted rows exist.
     if(function_exists('db')){
         try{
@@ -80,7 +80,7 @@ function ai_saved_encrypted_credentials_exist(): bool
             $settings=$pdo->prepare("SELECT 1 FROM settings WHERE setting_key=? AND setting_value<>'' LIMIT 1");
             $settings->execute(['profile_calls_livekit_config_pa3c']);
             if($settings->fetchColumn())return true;
-            foreach(['user_llm_credentials','profile_calls_pa3c','vp3_gelato_connections_v1'] as $table){
+            foreach(['user_llm_credentials','profile_calls_pa3c','vp3_gelato_connections_v1','agent_connections_v1','agent_connection_email_drafts_v1'] as $table){
                 $stmt=$pdo->prepare($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
                     ?"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?"
                     :'SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');
@@ -90,6 +90,8 @@ function ai_saved_encrypted_credentials_exist(): bool
                         'user_llm_credentials'=>'SELECT 1 FROM user_llm_credentials LIMIT 1',
                         'profile_calls_pa3c'=>"SELECT 1 FROM profile_calls_pa3c WHERE provider_snapshot<>'' LIMIT 1",
                         'vp3_gelato_connections_v1'=>"SELECT 1 FROM vp3_gelato_connections_v1 WHERE token_ciphertext<>'' LIMIT 1",
+                        'agent_connections_v1'=>"SELECT 1 FROM agent_connections_v1 WHERE access_token_enc<>'' OR refresh_token_enc<>'' LIMIT 1",
+                        'agent_connection_email_drafts_v1'=>"SELECT 1 FROM agent_connection_email_drafts_v1 WHERE message_enc<>'' LIMIT 1",
                     });
                     if($encrypted&&$encrypted->fetchColumn())return true;
                 }
