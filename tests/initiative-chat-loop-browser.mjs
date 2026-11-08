@@ -4,7 +4,7 @@ import {chromium} from 'playwright';
 
 // Real shipped client scripts; HTTP, provider output and lifecycle signals are
 // controlled fixtures. Canonical claim/authority tests exercise the PHP worker.
-const files=['chat.js','chat-voice.js','agent-activity-v94.js','chat-cognitive-presentation-v510.js','chat-message-unread-v1.js'];
+const files=['chat.js','chat-voice.js','agent-activity-v94.js','agent-eyes-core.js','agent-orb.js','chat-cognitive-presentation-v510.js','chat-message-unread-v1.js'];
 const sources=Object.fromEntries(await Promise.all(files.map(async name=>[name,await fs.readFile(new URL('../'+name,import.meta.url),'utf8')])));
 const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});
 const origin='https://initiative-chat-loop.test';
@@ -33,6 +33,7 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     window.STONEFELLOW_NOTIFICATION_CENTER={cancelSpeech(){},announceWhen(){window.announcementCalls++;return false;}};
     window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,stop(){},createStream(){}});
     window.StonefellowKnowledgeScopeV162={value:()=>({mode:'folder',folder_id:12})};
+    window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',isMainChat:()=>true,state:()=>({state:document.body.dataset.stonefellowAgentState||'idle'})};
   });
   await context.route(origin+'/**',async route=>{
     const request=route.request(),url=new URL(request.url());
@@ -214,6 +215,8 @@ try{
     const f=await fixture(agentId);
     try{
       const page=await f.open(),status=page.locator('[data-agent-initiative-status]');
+      assert.equal(await page.locator('#chatThread [data-agent-initiative-status]').count(),0);
+      assert.equal(await page.locator('.vp3-orb-root [data-agent-initiative-status]').count(),1);
       assert.equal(await status.getByRole('button',{name:'Enable',exact:true}).count(),0);
       await page.clock.fastForward(300);
       await page.waitForFunction(()=>document.querySelector('[data-agent-initiative-setting="off"]'));

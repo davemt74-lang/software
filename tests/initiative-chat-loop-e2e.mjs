@@ -30,7 +30,7 @@ writeFileSync(router,[
   '<?php $path=parse_url($_SERVER["REQUEST_URI"],PHP_URL_PATH);',
   'if($path==="/health"){echo "ready";return;}',
   '$source='+JSON.stringify(source)+';',
-  'if(in_array($path,["/chat.js","/chat-voice.js","/agent-activity-v94.js","/chat-cognitive-presentation-v510.js","/chat-message-unread-v1.js","/chat-cognitive-presentation-v510.css"],true)){header("Content-Type: ".(str_ends_with($path,".css")?"text/css":"text/javascript"));readfile($source.ltrim($path,"/"));return;}',
+  'if(in_array($path,["/chat.js","/chat-voice.js","/agent-activity-v94.js","/agent-eyes-core.js","/agent-orb.js","/chat-cognitive-presentation-v510.js","/chat-message-unread-v1.js","/chat-cognitive-presentation-v510.css"],true)){header("Content-Type: ".(str_ends_with($path,".css")?"text/css":"text/javascript"));readfile($source.ltrim($path,"/"));return;}',
   'if(in_array($path,["/api/cognitive-presentation-v510.php","/api/agent-chat-read-v1.php","/api/agent-activity-v94.php"],true)){require __DIR__.$path;return;}',
   'require __DIR__."/includes/bootstrap.php";',
   'if($path==="/api/chat-v236.php")initiative_http_chat_v1();',
@@ -45,7 +45,7 @@ writeFileSync(router,[
   'if(isset($_GET["busy"]))echo \'<script>sessionStorage.setItem("vp3:chat:drafts:1:7",JSON.stringify({"11":{text:"My unfinished thought",at:Date.now()}}));</script>\';',
   'echo \'<script src="/chat.js"></script><script src="/chat-voice.js"></script>\';',
   'if(isset($_GET["busy"]))echo \'<script>document.body.dataset.stonefellowAgentState="processing";</script>\';',
-  'echo \'<script src="/agent-activity-v94.js"></script><script src="/chat-cognitive-presentation-v510.js"></script><script src="/chat-message-unread-v1.js"></script>\';'
+  'echo \'<script src="/agent-activity-v94.js"></script><script src="/agent-eyes-core.js"></script><script src="/agent-orb.js"></script><script src="/chat-cognitive-presentation-v510.js"></script><script src="/chat-message-unread-v1.js"></script>\';'
 ].join('\n'));
 let logs='';
 const server=spawn(php,['-S','127.0.0.1:'+port,'-t',temp,router],{
@@ -81,6 +81,7 @@ try{
     window.STONEFELLOW_NOTIFICATION_CENTER={cancelSpeech(){},announceWhen(){window.announcementCalls++;return false;}};
     window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,stop(){},createStream(){}});
     window.StonefellowKnowledgeScopeV162={value:()=>({mode:'off',folder_id:0})};
+    window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',isMainChat:()=>true,state:()=>({state:document.body.dataset.stonefellowAgentState||'idle'})};
   });
   await page.clock.install();
   const unopened=await page.request.get(base),markup=await unopened.text();
@@ -98,6 +99,8 @@ try{
     &&response.request().postDataJSON().action==='initiative_tick');
   await page.goto(base+'/?busy=1',{waitUntil:'domcontentloaded'});
   const status=page.locator('[data-agent-initiative-status]');
+  assert.equal(await page.locator('#chatThread [data-agent-initiative-status]').count(),0);
+  assert.equal(await page.locator('.vp3-orb-root [data-agent-initiative-status]').count(),1);
   assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);
   assert.equal(await status.getByRole('button',{name:'Enable',exact:true}).count(),0);
   await page.clock.fastForward(300);

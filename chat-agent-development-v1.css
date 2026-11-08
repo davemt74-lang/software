@@ -1,0 +1,29 @@
+.vp3-chat-development-hint,
+.vp3-chat-development-compact,
+.vp3-chat-development-notice,
+.vp3-chat-development-result {
+  width: fit-content;
+  max-width: 100%;
+  padding: .25rem .65rem;
+  margin: 0 auto .3rem;
+  font-size: .8rem;
+  overflow-wrap: anywhere;
+}
+.vp3-chat-development-hint a { color: inherit; }
+.vp3-chat-development-compact,
+.vp3-chat-development-result {
+  color: #24334a;
+  background: #fff;
+  border: 1px solid #c8cfdb;
+  border-radius: .45rem;
+}
+.vp3-chat-development-notice { color: inherit; }
+.vp3-chat-development-result { margin: .55rem auto; }
+.vp3-chat-development-compact a,
+.vp3-chat-development-result a { color: #164477; margin-inline-start: .55rem; }
+.vp3-chat-development-hint[hidden],
+.vp3-chat-development-compact[hidden],
+.vp3-chat-development-notice[hidden] { display: none; }
+@media (min-width: 761px) {
+  body:has(#sfOnlineRailV109:not([hidden])) .vp3-chat-development-compact { display: none; }
+}

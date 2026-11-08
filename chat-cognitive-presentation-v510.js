@@ -183,6 +183,7 @@
     liveView++;
     liveState = null;
     openingKey = '';
+    updateOrbInitiativeStatus();
     content.querySelector('[data-agent-live-status]')?.remove();
     if (!liveHost) return;
     liveMarkup = '';
@@ -285,10 +286,11 @@
     }
   }
 
-  function initiativeRuntimeMarkup() {
-    if (cfg.initiativeRuntime !== true || !liveState) return '';
-    if (liveState.state === 'new_chat') return '<section class="chat-initiative-status" data-agent-initiative-status role="status" aria-label="Agent background work">' +
-      '<span>The Agent can continue useful work after your first message saves this Chat.</span></section>';
+  function initiativeRuntimeStatus() {
+    if (cfg.initiativeRuntime !== true || !liveState) return null;
+    if (liveState.state === 'new_chat') {
+      return {label:'The Agent can continue useful work after your first message saves this Chat.'};
+    }
     const health = initiativeHealth();
     const label = initiativeRuntimeLabel(health);
     const enabled = health?.enabled === true;
@@ -304,13 +306,24 @@
     const verified = Number.isFinite(verifiedAt) ? (health?.last_execution_at ? ' Latest completed step: ' : ' Sources last checked: ')
       + new Date(verifiedAt).toLocaleString() + '.' : '';
     const connectionWarning = health && health.state !== 'starting' && initiativeHealthError ? ' ' + initiativeHealthError : '';
-    const action = enabled && !linked ? 'Pause' : 'Resume';
-    const canRetry = Boolean(initiativeHealthError) || health?.state === 'unavailable';
-    return '<section class="chat-initiative-status" data-agent-initiative-status role="status" aria-label="Agent background work">' +
-      '<div><span>' + esc(label) + '</span><small>' + esc(knowledge + verified + connectionWarning) + '</small></div>' +
-      (canChange ? '<button type="button" data-agent-initiative-setting="' + (enabled && !linked ? 'off' : 'on') + '"' +
-        (initiativeSettingBusy ? ' disabled' : '') + '>' + action + '</button>' : '') +
-      (canRetry ? '<button type="button" data-agent-initiative-retry' + (initiativeRetry ? ' disabled' : '') + '>Retry</button>' : '') + '</section>';
+    return {
+      label, detail:(knowledge + verified + connectionWarning).trim(),
+      setting:canChange ? (enabled && !linked ? 'off' : 'on') : '',
+      settingBusy:initiativeSettingBusy,
+      retry:Boolean(initiativeHealthError) || health?.state === 'unavailable',
+      retryBusy:Boolean(initiativeRetry)
+    };
+  }
+
+  function useOrbInitiativeAction(action) {
+    if (liveConversation() === null || !liveState) return;
+    const view = initiativeRuntimeStatus();
+    if (action === 'retry' && view?.retry) void retryInitiativeHealth();
+    else if (['on','off'].includes(action) && view?.setting === action) void changeInitiative(action === 'on');
+  }
+
+  function updateOrbInitiativeStatus() {
+    window.VP3AgentOrb?.setInitiativeStatus?.(initiativeRuntimeStatus(), useOrbInitiativeAction);
   }
 
   function liveSourceLink(item) {
@@ -342,6 +355,7 @@
     if (!liveHost) return;
     liveState = context || null;
     liveAgentName = String(agentName || 'Agent');
+    updateOrbInitiativeStatus();
     let markup = '';
     const item = liveState?.attention;
     const key = String(item?.key || '');
@@ -367,7 +381,6 @@
     } else if (!item) {
       openingKey = '';
     }
-    markup += initiativeRuntimeMarkup();
     if (markup !== liveMarkup) {
       const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 64;
       liveMarkup = markup;
@@ -388,15 +401,6 @@
 
   liveHost?.addEventListener('click', event => {
     if (liveConversation() === null || !liveState) return;
-    if (event.target.closest('[data-agent-initiative-retry]')) {
-      void retryInitiativeHealth();
-      return;
-    }
-    const initiativeSetting = event.target.closest('[data-agent-initiative-setting]');
-    if (initiativeSetting) {
-      void changeInitiative(initiativeSetting.dataset.agentInitiativeSetting === 'on');
-      return;
-    }
     if (event.target.closest('[data-agent-live-dismiss]')) {
       dismissLiveContext();
     }
@@ -1366,6 +1370,7 @@
     }
   });
   if (liveHost) {
+    window.addEventListener('vp3:agent-orb-ready',updateOrbInitiativeStatus);
     window.addEventListener('vp3:agent-core-context',acceptCoreContext);
     window.addEventListener('vp3:agent-core-context-error',acceptCoreContextError);
     const acceptedCoreContext = window.StonefellowAgentActivity?.coreContext?.();
