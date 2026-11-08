@@ -172,15 +172,27 @@ function agent_connection_gmail_valid_token_v1(string $token): bool
 /** Exchange a code and verify the Google subject and the mailbox belong to that grant. */
 function agent_connection_gmail_exchange_v1(string $redirectUri, string $code, string $verifier, ?callable $http = null): array
 {
-    $token = agent_connection_gmail_request_v1('POST', 'https://oauth2.googleapis.com/token', '', agent_connection_gmail_client_v1() + [
-        'code' => $code, 'code_verifier' => $verifier, 'redirect_uri' => $redirectUri, 'grant_type' => 'authorization_code',
-    ], true, $http);
+    return agent_connection_gmail_code_grant_v1($redirectUri, $code, $verifier, $http);
+}
+
+/** GIS popup authorization uses the page origin for the server-side code exchange. */
+function agent_connection_gmail_exchange_popup_v1(string $origin, string $code, ?callable $http = null): array
+{
+    return agent_connection_gmail_code_grant_v1($origin, $code, null, $http);
+}
+
+function agent_connection_gmail_code_grant_v1(string $redirectUri, string $code, ?string $verifier, ?callable $http): array
+{
+    $parameters = agent_connection_gmail_client_v1() + ['code' => $code];
+    if ($verifier !== null) $parameters['code_verifier'] = $verifier;
+    $parameters += ['redirect_uri' => $redirectUri, 'grant_type' => 'authorization_code'];
+    $token = agent_connection_gmail_request_v1('POST', 'https://oauth2.googleapis.com/token', '', $parameters, true, $http);
     $grant = agent_connection_gmail_grant_v1($token);
     if (!in_array(VP3_GMAIL_READ_SCOPE_V1, $grant['scopes'], true)
         || !in_array(VP3_GMAIL_SEND_SCOPE_V1, $grant['scopes'], true)) {
         throw new AgentConnectionGmailExceptionV1('Approve Gmail read and send access to connect this mailbox.');
     }
-    if ($grant['refresh_token'] === '') {
+    if ($verifier !== null && $grant['refresh_token'] === '') {
         throw new AgentConnectionGmailExceptionV1('Google did not grant offline Gmail access. Reconnect and approve access.');
     }
     $identity = agent_connection_gmail_request_v1('GET', 'https://openidconnect.googleapis.com/v1/userinfo', $grant['access_token'], null, false, $http);

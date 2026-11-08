@@ -79,6 +79,13 @@ function agent_connections_callback_v1(?string $override = null): string
     return $uri;
 }
 
+function agent_connections_gmail_popup_origin_v1(?string $callback = null): string
+{
+    $parts = parse_url(agent_connections_callback_v1($callback));
+    $port = $parts['port'] ?? 443;
+    return 'https://'.strtolower($parts['host']).($port === 443 ? '' : ':'.$port);
+}
+
 function agent_connections_permissions_v1(array $row): array
 {
     $read = (bool)($row['read_enabled'] ?? false);
@@ -145,7 +152,7 @@ function agent_connections_client_fingerprint_v1(): string
     return hash('sha256', $client['client_id']);
 }
 
-function agent_connections_store_gmail_v1(int $ownerId, array $token, array $policy, string $expectedKey, string $fingerprint, ?string $callback = null): void
+function agent_connections_store_gmail_v1(int $ownerId, array $token, array $policy, string $expectedKey, string $fingerprint, ?string $callback = null, bool $allowExistingRefresh = false): void
 {
     $pdo = db();
     if (!$pdo) throw new AgentConnectionExceptionV1('Connections are unavailable.', 503);
@@ -155,7 +162,7 @@ function agent_connections_store_gmail_v1(int $ownerId, array $token, array $pol
         time() + (int)$token['expires_in'],
         (int)$policy['read'], (int)$policy['send'], (int)($policy['read'] && $policy['followups']),
     ];
-    if ($values[0] === '' || $values[1] === '' || $values[4] === '' || $values[5] === '') {
+    if ($values[0] === '' || $values[1] === '' || $values[4] === '' || ($values[5] === '' && !$allowExistingRefresh)) {
         throw new AgentConnectionExceptionV1('Google did not provide a usable mailbox grant.', 400);
     }
     $pdo->beginTransaction();
@@ -168,6 +175,16 @@ function agent_connections_store_gmail_v1(int $ownerId, array $token, array $pol
         $row = agent_connections_find_v1($pdo, $ownerId, 'gmail', true);
         if (!hash_equals((string)($row['authorization_key'] ?? ''), $expectedKey)) {
             throw new AgentConnectionExceptionV1('This connection changed during authorization.', 409);
+        }
+        if ($values[5] === '') {
+            // Google may omit a refresh token when the same account has previously consented.
+            if (!$row || $row['status'] !== 'connected' || !hash_equals($row['client_fingerprint'], $fingerprint)
+                || !hash_equals($row['external_account_id'], $values[0])
+                || strcasecmp($row['account_email'], $values[1]) !== 0
+                || !agent_connection_gmail_valid_token_v1(ai_decrypt_secret($row['refresh_token_enc']))) {
+                throw new AgentConnectionExceptionV1('Google did not provide offline Gmail access for this connection.', 428);
+            }
+            $values[5] = $row['refresh_token_enc'];
         }
         if ($row) {
             $stmt = $pdo->prepare("UPDATE agent_connections_v1 SET external_account_id=?,account_email=?,authorization_key=?,client_fingerprint=?,access_token_enc=?,refresh_token_enc=?,access_expires_at=?,read_enabled=?,send_enabled=?,followups_enabled=?,status='connected' WHERE owner_user_id=? AND id=?");

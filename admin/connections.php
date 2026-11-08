@@ -155,8 +155,10 @@ $credentialsReady = $clientId !== '' && !empty($oauthConfig['client_secret']);
 unset($oauthConfig);
 $savedCallback = (string)setting('connections_gmail_redirect_uri', '');
 $callback = '';
+$popupOrigin = '';
 try {
     $callback = agent_connections_callback_v1();
+    $popupOrigin = agent_connections_gmail_popup_origin_v1($callback);
 } catch (InvalidArgumentException|RuntimeException $e) {
     // Configuration can be completed on this page even when the callback is unset.
 }
@@ -277,6 +279,7 @@ require __DIR__.'/_header.php';
       <dt>OAuth client</dt><dd><?= e($maskedClient) ?></dd>
       <dt>Client secret</dt><dd><?= $credentialsReady ? 'Configured' : 'Missing or unreadable' ?></dd>
       <dt>Authorized redirect URI</dt><dd><?= $callback === '' ? 'Set an HTTPS callback below.' : '<code>'.e($callback).'</code>' ?></dd>
+      <dt>Authorized JavaScript origins</dt><dd><?= $popupOrigin === '' ? 'Set an HTTPS callback below to see the popup origin.' : '<code>'.e($popupOrigin).'</code>' ?></dd>
       <dt>Google permissions</dt><dd>Account identity, Gmail read, and Gmail send. Each user controls their Agent’s access in VP3.</dd>
       <?php if ($gmailHealth): ?>
       <dt>Latest setup test</dt>
@@ -286,6 +289,7 @@ require __DIR__.'/_header.php';
       <?php endif; ?>
     </dl>
     <p>Enable the Gmail API in Google Cloud. Create a web application OAuth client and add the exact redirect URI above to its authorized redirects.</p>
+    <p>For the Google popup, add the origin above under <strong>Authorized JavaScript origins</strong> on the same OAuth client. Keep the existing <strong>Authorized redirect URI</strong> for the standard connection flow.</p>
     <p>Use approved Google test users during setup. Public rollout with restricted Gmail read access requires Google OAuth verification and a security assessment when the server handles restricted data. <a href="https://developers.google.com/workspace/gmail/api/auth/scopes">Google’s Gmail scope requirements</a></p>
     <form method="post" action="<?= e($adminPath) ?>" class="admin-form" autocomplete="off">
       <?= csrf_field() ?><input type="hidden" name="action" value="save_gmail">
