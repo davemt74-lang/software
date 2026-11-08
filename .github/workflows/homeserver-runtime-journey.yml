@@ -36,7 +36,8 @@ jobs:
           workbench = r'^(?:chat-initiative-workbench-v1\.(?:js|css)|(?:api|includes)/initiative-work[^/]+\.php|tests/(?:chat-initiative-workbench-browser|initiative-workbench-api)\.mjs|tests/initiative-work-[^/]+\.php|(?:includes|tests)/initiative-product-launch(?:-state)?-v1\.php|(?:includes|tests)/(?:initiative-promotion-outcomes|profile-promotion-(?:attribution|click))-v1\.php|profile-promotion-click\.php)$'
           live = r'^(?:(?:agent-live-context-v1|chat-initiative-voice-v1)\.js|agent-worker-v1910\.php|includes/(?:agent-live-context-v1|homeserver-transient-schema-v1|agent-record-tools-v1|agent-capability-chat-v1)\.php|(?:api|includes)/agent-screen-audio-v1\.php|tests/(?:agent-live-[^/]+|agent-screen-audio-events-v1|homeserver-https-transient-inference(?:-mysql)?)\.(?:php|mjs)|tests/initiative-live-context-browser\.mjs|tests/fixtures/initiative-live-context-chat\.php|upgrade-homeserver-transient-inference-v1\.sql)$'
           connections = r'^(?:(?:admin/)?connections\.php|(?:connection-oauth|connection-test|connection-gmail-popup|youtube-connection-v1)\.php|connections-v1\.css|(?:api/)?chat-email-v1\.(?:php|js|css)|(?:chat-youtube-v1|gmail-popup-v1)\.(?:css|js)|assets/youtube-logo-v1\.png|(?:api|includes|tests)/agent-connections?[^/]*\.(?:php|mjs))$'
-          changed = diff.returncode != 0 or any(re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) for p in diff.stdout.splitlines())
+          development = r'^(?:(?:admin|api|includes|tests|workers)/agent-development[^/]*\.(?:php|mjs|py)|(?:tests/)?chat-agent-development[^/]*\.(?:mjs|js|css))$'
+          changed = diff.returncode != 0 or any(re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
               connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions|homeserver-https-transient-inference(?:-mysql)?)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
@@ -136,6 +137,13 @@ jobs:
         run: node tests/agent-missions-cloud-a3-browser.mjs
       - name: Gmail specialist watches in desktop and compact Chat
         run: node tests/chat-email-specialist-browser.mjs
+      - name: Admin development authority, preview worker, and specialist rail
+        run: |
+          php tests/agent-development-v1.php
+          python3 -B tests/agent-development-runner-v1.py
+          node tests/agent-development-runner-api-v1.mjs
+          node tests/agent-development-chat-api-v1.mjs
+          node tests/chat-agent-development-browser.mjs
       - name: A5C2 reviewed specialist assignments browser acceptance
         run: node tests/agent-missions-cloud-a5c2-browser.mjs
       - name: A5C3 exact specialist change review
@@ -315,6 +323,11 @@ jobs:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
           VP3_TEST_MYSQL_PASS: section7-fixture
         run: php tests/agent-connection-youtube-quota-v1.php
+      - name: Admin development revisions and staging on MySQL
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
+          VP3_TEST_MYSQL_PASS: section7-fixture
+        run: php tests/agent-development-v1.php
       - name: Chat research upgrade and concurrent canonical ownership
         env:
           VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4

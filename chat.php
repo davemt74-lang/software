@@ -483,6 +483,15 @@ $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-emai
         'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
     ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
     . '<script src="'.e(url('/chat-email-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-email-v1.js'),0,12))).'" defer></script>';
+if (user_has_role('admin',$user)) {
+    $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-agent-development-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-agent-development-v1.css'),0,12))).'">'
+        . '<script>window.VP3_CHAT_DEVELOPMENT_V1='.json_encode([
+            'endpoint'=>url('/api/agent-development-chat-v1.php'), 'csrf'=>csrf_token(),
+            'ownerKey'=>(string)$user['id'], 'agentId'=>(int)($activeUserAgent['id']??0),
+            'revisionsUrl'=>url('/admin/agent-development.php'),
+        ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+        . '<script src="'.e(url('/chat-agent-development-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-agent-development-v1.js'),0,12))).'" defer></script>';
+}
 $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-message-unread-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-message-unread-v1.css'),0,12))).'">'
     . '<script>window.VP3_CHAT_MESSAGE_UNREAD_V1='.json_encode([
         'endpoint'=>url('/api/agent-chat-read-v1.php'),

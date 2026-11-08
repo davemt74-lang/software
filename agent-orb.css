@@ -114,3 +114,76 @@ html[data-vp3-orb-embed] .sidebar,html[data-vp3-orb-embed] .topbar,html[data-vp3
 
 .vp3-eyes-portraits{display:flex;flex-wrap:wrap;gap:8px}.vp3-eyes-portraits figure{margin:0;width:84px}.vp3-eyes-portraits img{object-fit:cover;border-radius:8px}.vp3-eyes-portraits figcaption{font-size:10px;line-height:1.3;overflow-wrap:anywhere}
 .vp3-screen-share label:has(input[type=text]),.vp3-screen-share label:has(input:not([type])){display:block}.vp3-screen-share input:not([type=checkbox]),.vp3-screen-share select{width:100%;min-width:0;box-sizing:border-box;background:#142331;color:inherit;border:1px solid #627889;border-radius:6px;padding:8px}.vp3-screen-share meter{width:100%;height:14px}.vp3-screen-share details{margin-top:12px}.vp3-screen-share [data-screen-folder]{display:block;margin:10px 0}.vp3-screen-share [data-screen-folder][hidden]{display:none}.vp3-screen-capture{border-top:1px solid #627889;padding:12px 0;min-width:0}.vp3-screen-capture strong,.vp3-screen-capture p{overflow-wrap:anywhere}.vp3-screen-capture button{white-space:normal;text-align:left}.vp3-screen-share [hidden]{display:none!important}
+
+/* Mesh core and pulse ring from the Stoneward Admin Agent. */
+.vp3-orb-root .vp3-orb-ball {
+  background:radial-gradient(circle at 35% 24%,#6a73b9,#35376c 42%,#141a3c 77%,#090e20) !important;
+  box-shadow:inset 6px 7px 14px #bebeff24,inset -9px -12px 19px #000a,0 0 22px color-mix(in srgb,var(--orb),transparent 62%);
+}
+.vp3-orb-ball > .vp3-orb-points {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  border-radius:50%;
+  pointer-events:none;
+}
+.vp3-orb-ball > .vp3-orb-ring {
+  position:absolute;
+  inset:-7px;
+  border:1px solid color-mix(in srgb,var(--orb),transparent 24%);
+  border-radius:50%;
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--orb),transparent 94%),0 0 20px color-mix(in srgb,var(--orb),transparent 65%);
+  pointer-events:none;
+  animation:vp3-orb-mesh-breathe 3.6s ease-in-out infinite;
+}
+.vp3-orb-root[data-state=listening] .vp3-orb-ring { animation-duration:1.4s; }
+.vp3-orb-root[data-recording=true] .vp3-orb-ring { visibility:hidden; }
+.vp3-orb-root .vp3-orb-ball:focus-visible { outline:2px solid var(--orb);outline-offset:10px; }
+@keyframes vp3-orb-mesh-breathe {
+  0%,100% { transform:scale(1);opacity:.84; }
+  50% { transform:scale(1.10);opacity:.45; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .vp3-orb-ball > .vp3-orb-ring { animation:none; }
+}
+.vp3-orb-initiative {
+  position:absolute;
+  z-index:5;
+  top:100%;
+  left:var(--vp3-initiative-left,0);
+  width:min(308px,calc(100vw - 24px));
+  max-height:var(--vp3-initiative-room,220px);
+  box-sizing:border-box;
+  overflow:auto;
+  overflow-wrap:anywhere;
+  display:grid;
+  gap:8px;
+  padding:11px 13px;
+  border:1px solid #8ad4ff70;
+  border-radius:12px;
+  color:#edf7ff;
+  background:#101c33f5;
+  box-shadow:0 8px 25px #00082b85;
+  font:13px/1.4 system-ui,sans-serif;
+  touch-action:pan-y;
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transition:opacity .16s ease;
+}
+.vp3-orb-root[data-initiative-above=true] .vp3-orb-initiative { top:auto;bottom:100%; }
+.vp3-orb-root:not([data-initiative-dismissed=true]):not([data-dragging=true]):is(:hover,:focus-within,[data-controls-open=true]) .vp3-orb-initiative {
+  opacity:1;visibility:visible;pointer-events:auto;
+}
+.vp3-orb-initiative strong { display:block;font-weight:650; }
+.vp3-orb-initiative small { display:block;margin-top:4px;color:#bed5e9;font-size:.85em; }
+.vp3-orb-initiative [hidden],.vp3-orb-initiative[hidden],.vp3-orb-initiative-actions:not(:has(button:not([hidden]))) { display:none!important; }
+.vp3-orb-initiative-actions { display:flex;gap:6px; }
+.vp3-orb-initiative-actions button { min-height:32px;padding:3px 10px;font-size:12px; }
+.vp3-orb-initiative-actions button:disabled { opacity:.65;cursor:wait; }
+.vp3-orb-root[data-state=idle]:not([data-recording=true]):not([data-eyes-active=true]):not(:hover):not(:focus-within):not([data-controls-open=true]) .vp3-orb-state {
+  visibility:hidden;
+}
+@media(pointer:coarse) { .vp3-orb-initiative-actions button { min-height:44px; } }
+@media(prefers-reduced-motion:reduce) { .vp3-orb-initiative { transition:none; } }

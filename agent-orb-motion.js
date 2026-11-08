@@ -23,7 +23,7 @@
       if(disposed)return;
       const dt=Math.min(.05,(now-(last||now))/1000);last=now;
       const r=root.getBoundingClientRect(),near=pointer&&pointer.x>r.left-100&&pointer.x<r.right+100&&pointer.y>r.top-100&&pointer.y<r.bottom+100;
-      const paused=!enabled||reduced.matches||document.hidden||now<restUntil||near||root.matches(':hover,:focus-within')||root.dataset.following==='true'||root.dataset.popupOpen==='true'||root.dataset.small==='true'||root.dataset.recording==='true';
+      const paused=!enabled||reduced.matches||document.hidden||now<restUntil||near||root.matches(':hover,:focus-within')||root.dataset.controlsOpen==='true'||root.dataset.following==='true'||root.dataset.popupOpen==='true'||root.dataset.small==='true'||root.dataset.recording==='true';
       if(!paused){
         const margin=14,minY=74,maxX=Math.max(margin,innerWidth-r.width-margin);
         let maxY=innerHeight-r.height-96;

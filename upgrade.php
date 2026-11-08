@@ -66,6 +66,7 @@ require_once __DIR__ . '/includes/profile-conversation-checkout-pa5.php';
 require_once __DIR__ . '/includes/connected-gelato-v1.php';
 require_once __DIR__ . '/includes/agent-chat-read-v1.php';
 require_once __DIR__ . '/includes/agent-connections-v1.php';
+require_once __DIR__ . '/includes/agent-development-v1.php';
 require_once __DIR__ . '/includes/agent-connection-email-followup-v1.php';
 require_once __DIR__ . '/includes/agent-connection-health-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
@@ -288,6 +289,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && homeserver_https_v1300_transient_ready($schemaConnection)
         && vp3_chat_read_schema_ready_v1($schemaConnection)
         && agent_connections_schema_ready_v1($schemaConnection)
+        && vp3_dev_schema_ready_v1($schemaConnection)
         && agent_connection_email_sender_watch_ready_v1($schemaConnection)
         && agent_connection_health_schema_ready_v1($schemaConnection)
         && agent_connection_youtube_consent_ready_v1($schemaConnection)
@@ -376,6 +378,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             user_agent_system_ensure_schema_v236();
             vp3_chat_read_ensure_schema_v1($pdo);
             agent_connections_install_v1($pdo);
+            vp3_dev_install_v1($pdo);
             agent_connection_health_install_v1($pdo);
             agent_connection_youtube_consent_schema_v1($pdo);
             agent_connection_youtube_quota_schema_v1($pdo);
