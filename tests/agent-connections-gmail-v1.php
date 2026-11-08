@@ -118,7 +118,51 @@ try {
     $token = ['external_account_id'=>'fixture-google-owner','account_email'=>$mailbox,'expires_in'=>3600,
         'access_token'=>'fixture-owner-access','refresh_token'=>'fixture-owner-refresh'];
     $policy = ['read'=>true,'send'=>true,'followups'=>true];
-    agent_connections_store_gmail_v1(1, $token, $policy, '', $grant);
+    $callback = agent_connections_callback_v1();
+    $popupToken = array_replace($token, ['refresh_token'=>'']);
+    gmail_connection_check_v1(agent_connections_gmail_popup_origin_v1() === 'https://fixture.example.test'
+        && agent_connections_gmail_popup_origin_v1('https://Fixture.Example.Test:443/connection-oauth.php') === 'https://fixture.example.test'
+        && agent_connections_gmail_popup_origin_v1('https://Fixture.Example.Test:8443/connection-oauth.php') === 'https://fixture.example.test:8443',
+        'popup origin comes from the configured callback and matches browser normalization');
+    gmail_connection_reject_v1(static fn()=>agent_connections_gmail_popup_origin_v1('https://fixture.example.test/not-a-callback.php'),503,
+        'popup origin validation still requires the configured callback path');
+    gmail_connection_reject_v1(static fn()=>agent_connections_store_gmail_v1(1,$popupToken,$policy,'',$grant,$callback,true),428,
+        'the first popup connection requires offline access');
+    agent_connections_store_gmail_v1(1, $token, $policy, '', $grant, $callback, true);
+    $beforePopup = agent_connections_find_v1($pdo,1,'gmail');
+    $expectedKey = $beforePopup['authorization_key'];
+    gmail_connection_reject_v1(static fn()=>agent_connections_store_gmail_v1(1,$popupToken,$policy,$expectedKey,$grant,$callback),400,
+        'the legacy redirect still requires a new refresh token');
+    gmail_connection_reject_v1(static fn()=>agent_connections_store_gmail_v1(1,
+        array_replace($popupToken,['external_account_id'=>'fixture-switched-account']),$policy,$expectedKey,$grant,$callback,true),428,
+        'a popup cannot reuse a refresh token for another Google subject');
+    gmail_connection_reject_v1(static fn()=>agent_connections_store_gmail_v1(1,
+        array_replace($popupToken,['account_email'=>'other@example.test']),$policy,$expectedKey,$grant,$callback,true),428,
+        'a popup cannot reuse a refresh token for another verified mailbox address');
+    putenv('VP3_GMAIL_CLIENT_ID=alternate-fixture.apps.googleusercontent.com');
+    try {
+        $otherClient = agent_connections_client_fingerprint_v1();
+        gmail_connection_reject_v1(static fn()=>agent_connections_store_gmail_v1(1,$popupToken,$policy,$expectedKey,$otherClient,$callback,true),428,
+            'a popup cannot reuse a refresh token for another OAuth client');
+    } finally {
+        putenv('VP3_GMAIL_CLIENT_ID=vp3-fixture.apps.googleusercontent.com');
+    }
+    gmail_connection_reject_v1(static fn()=>agent_connections_store_gmail_v1(1,$popupToken,$policy,$expectedKey,$grant,
+        'https://changed.example.test/connection-oauth.php',true),409,'a popup rechecks the exact callback inside the grant write');
+    $pdo->prepare('UPDATE agent_connections_v1 SET refresh_token_enc=? WHERE id=?')->execute(['unreadable-fixture',$beforePopup['id']]);
+    gmail_connection_reject_v1(static fn()=>agent_connections_store_gmail_v1(1,$popupToken,$policy,$expectedKey,$grant,$callback,true),428,
+        'a popup cannot reuse a refresh token that the installation cannot decrypt');
+    $pdo->prepare('UPDATE agent_connections_v1 SET refresh_token_enc=? WHERE id=?')->execute([$beforePopup['refresh_token_enc'],$beforePopup['id']]);
+    gmail_connection_check_v1(agent_connections_find_v1($pdo,1,'gmail')['authorization_key'] === $expectedKey,
+        'rejected popup attempts preserve the current grant revision');
+    agent_connections_store_gmail_v1(1,$popupToken,$policy,$expectedKey,$grant,$callback,true);
+    $afterPopup = agent_connections_find_v1($pdo,1,'gmail');
+    gmail_connection_check_v1($afterPopup['authorization_key'] !== $expectedKey
+        && $afterPopup['access_token_enc'] !== $beforePopup['access_token_enc']
+        && $afterPopup['refresh_token_enc'] === $beforePopup['refresh_token_enc'],
+        'same-owner popup reconnect rotates the grant and safely preserves the existing encrypted refresh token');
+    gmail_connection_reject_v1(static fn()=>agent_connections_store_gmail_v1(1,$popupToken,$policy,$expectedKey,$grant,$callback,true),409,
+        'a stale popup cannot overwrite the latest grant revision');
     agent_connections_store_gmail_v1(2, array_replace($token,[
         'external_account_id'=>'fixture-google-other','account_email'=>'other@example.test',
         'access_token'=>'fixture-other-access','refresh_token'=>'fixture-other-refresh',

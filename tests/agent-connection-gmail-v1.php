@@ -81,6 +81,43 @@ $account = agent_connection_gmail_exchange_v1($redirect, 'fixture-code', str_rep
 check($account['external_account_id'] === 'immutable-fixture-account' && $account['account_email'] === 'owner@example.test',
     'Verified mailbox identity was not returned.');
 
+$origin = 'https://vp3.example';
+$popupTransport = static function (string $mailbox, string $scopes) use ($origin): callable {
+    return static function ($method, $url, $headers, $body, $form) use ($origin, $mailbox, $scopes): array {
+        if ($url === 'https://oauth2.googleapis.com/token') {
+            check($method === 'POST' && $form && $headers === ['Accept: application/json']
+                && $body === ['client_id'=>'fixture-id','client_secret'=>'fixture-secret','code'=>'fixture-popup-code',
+                    'redirect_uri'=>$origin,'grant_type'=>'authorization_code'],
+                'Popup code exchange must use the calling origin and Google’s code grant parameters.');
+            $json = ['access_token'=>'fixture-popup-access','expires_in'=>3600,'scope'=>$scopes];
+        } else {
+            check($method === 'GET' && $body === null && in_array('Authorization: Bearer fixture-popup-access', $headers, true),
+                'Popup identity lookup must use its exchanged access token.');
+            $json = match ($url) {
+                'https://openidconnect.googleapis.com/v1/userinfo' => [
+                    'sub'=>'immutable-fixture-account','email'=>'owner@example.test','email_verified'=>true,
+                ],
+                VP3_GMAIL_API_V1.'/profile' => ['emailAddress'=>$mailbox],
+                default => throw new RuntimeException('Unexpected popup identity endpoint.'),
+            };
+        }
+        return ['status'=>200,'json'=>$json];
+    };
+};
+$requiredScopes = VP3_GMAIL_READ_SCOPE_V1.' '.VP3_GMAIL_SEND_SCOPE_V1;
+$popup = agent_connection_gmail_exchange_popup_v1($origin, 'fixture-popup-code', $popupTransport('owner@example.test', $requiredScopes));
+check($popup['refresh_token'] === '' && $popup['external_account_id'] === $account['external_account_id']
+    && $popup['account_email'] === $account['account_email'], 'The popup exchange must verify the mailbox even when Google omits refresh.');
+provider_error(static fn()=>agent_connection_gmail_exchange_popup_v1($origin, 'fixture-popup-code',
+    $popupTransport('other@example.test', $requiredScopes)), 0);
+provider_error(static fn()=>agent_connection_gmail_exchange_popup_v1($origin, 'fixture-popup-code',
+    $popupTransport('owner@example.test', VP3_GMAIL_READ_SCOPE_V1)), 0);
+provider_error(static fn()=>agent_connection_gmail_exchange_v1($redirect, 'fixture-code', str_repeat('b', 43),
+    static function ($method, $url) use ($requiredScopes): array {
+        check($method === 'POST' && $url === 'https://oauth2.googleapis.com/token', 'Legacy exchange requires a new refresh token before profile lookup.');
+        return ['status'=>200,'json'=>['access_token'=>'fixture-access','expires_in'=>3600,'scope'=>$requiredScopes]];
+    }), 0);
+
 $refresh = agent_connection_gmail_refresh_v1('fixture-refresh',
     static function ($method, $url, $headers, $body, $form): array {
         check($method === 'POST' && $form && $url === 'https://oauth2.googleapis.com/token'

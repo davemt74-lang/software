@@ -37,6 +37,7 @@ $notices = [
     'invalid' => ['error', 'The connection request expired or was invalid. Review your settings and try again.'],
     'failed' => ['error', 'The Gmail request could not be completed. Try again in a moment.'],
     'denied' => ['error', 'Gmail authorization was declined or the required permissions were unavailable.'],
+    'offline' => ['error', 'Google did not grant offline Gmail access. Remove the VP3 Gmail connection under your Google Account’s third-party connections, then use the popup again.'],
     'conflict' => ['error', 'The connection changed while you were working. Review its current state and try again.'],
     'tested' => ['info', 'Connection check complete. See the result under Gmail.'],
     'test_invalid' => ['error', 'The connection changed or the test request expired. Open Gmail and try again.'],
@@ -61,6 +62,7 @@ $health = [
     'youtube' => $pdo ? agent_connection_health_platform_v1($pdo, 'youtube') : null,
 ];
 $gmailNeedsAttention = ($health['gmail']['status'] ?? null) === 'needs_attention';
+$gmailPopupAvailable = $providerReady && (!$connected || $gmailNeedsAttention);
 $youtubeNeedsAttention = ($health['youtube']['status'] ?? null) === 'needs_attention';
 $apps = [
     'gmail' => [
@@ -195,7 +197,7 @@ header('Cache-Control: private, no-store');
                               <form method="post" action="<?= e($endpoint) ?>">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="provider" value="gmail">
-                                <?php if ($connected): ?>
+                                <?php if ($gmailLinked): ?>
                                   <input type="hidden" name="connection_id" value="<?= (int)$connection['id'] ?>">
                                   <input type="hidden" name="revision" value="<?= e($connection['revision']) ?>">
                                 <?php endif; ?>
@@ -214,7 +216,13 @@ header('Cache-Control: private, no-store');
                                   <?php if ($connected && $providerReady && $gmailNeedsAttention): ?>
                                     <button class="connections-button connections-secondary" type="submit" name="action" value="start">Reconnect Gmail</button>
                                   <?php endif; ?>
+                                  <?php if ($gmailPopupAvailable): ?>
+                                    <button class="connections-button connections-secondary" type="submit" name="action" value="prepare" formaction="<?= e(url('/connection-gmail-popup.php')) ?>" aria-describedby="connections-gmail-popup-note">Use Google popup</button>
+                                  <?php endif; ?>
                                 </div>
+                                <?php if ($gmailPopupAvailable): ?>
+                                  <p class="connections-muted" id="connections-gmail-popup-note">Use the popup if your hosting provider blocks Google’s return page.</p>
+                                <?php endif; ?>
                               </form>
                             <?php endif; ?>
 

@@ -1,0 +1,19 @@
+.gmail-popup-page {
+  margin: 0;
+  color: #17212e;
+  background: #f5f7fa;
+  font-family: system-ui, sans-serif;
+}
+.gmail-popup-content { max-width: 36rem; }
+.gmail-popup-back {
+  display: inline-block;
+  padding: .65rem 0;
+  margin-bottom: .75rem;
+  color: #173e71;
+  text-decoration: underline;
+}
+.gmail-popup-card { padding: clamp(1rem, 4vw, 2rem); }
+.gmail-popup-card .connections-button:disabled { opacity: .65; cursor: default; }
+.gmail-popup-card .gmail-popup-status { margin: .85rem 0 0; }
+.gmail-popup-card .gmail-popup-status:empty { display: none; }
+.gmail-popup-card .connections-notice { margin: .85rem 0 0; }
