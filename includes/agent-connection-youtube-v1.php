@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 const VP3_YOUTUBE_SEARCH_ENDPOINT_V1 = 'https://www.googleapis.com/youtube/v3/search';
+const VP3_YOUTUBE_STATUS_ENDPOINT_V1 = 'https://www.googleapis.com/youtube/v3/videos';
 const VP3_YOUTUBE_HEALTH_ENDPOINT_V1 = 'https://www.googleapis.com/youtube/v3/i18nRegions';
 const VP3_YOUTUBE_MAX_RESULTS_V1 = 8;
 
@@ -138,7 +139,7 @@ function agent_connection_youtube_text_v1(mixed $value, int $limit): string
 
 function agent_connection_youtube_request_v1(string $endpoint, array $params, string $kind, ?callable $http): array
 {
-    if (!in_array($endpoint, [VP3_YOUTUBE_SEARCH_ENDPOINT_V1, VP3_YOUTUBE_HEALTH_ENDPOINT_V1], true)) {
+    if (!in_array($endpoint, [VP3_YOUTUBE_SEARCH_ENDPOINT_V1, VP3_YOUTUBE_HEALTH_ENDPOINT_V1, VP3_YOUTUBE_STATUS_ENDPOINT_V1], true)) {
         throw new LogicException('Unexpected YouTube endpoint.');
     }
     $key = agent_connection_youtube_config_v1()['api_key'];
@@ -212,4 +213,27 @@ function agent_connection_youtube_search_v1(string $query, int $limit = 6, ?call
         ];
     }
     return array_values($results);
+}
+
+/** Check each public result before it can be embedded or recorded in VP3 history. */
+function agent_connection_youtube_video_status_v1(array $videos, ?callable $http): array
+{
+    if (!$videos) return [];
+    try {
+        $items = agent_connection_youtube_request_v1(VP3_YOUTUBE_STATUS_ENDPOINT_V1, [
+            'part'=>'status', 'id'=>implode(',', array_column($videos, 'video_id')),
+            'fields'=>'kind,items(id,status(embeddable,madeForKids))',
+        ], 'youtube#videoListResponse', $http);
+    } catch (AgentConnectionYoutubeExceptionV1) {
+        return $videos; // Search results can still be opened on YouTube.
+    }
+    $statuses = array_column($items, 'status', 'id');
+    foreach ($videos as &$video) {
+        $status = $statuses[$video['video_id']] ?? [];
+        if (($status['embeddable'] ?? null) === true && is_bool($status['madeForKids'] ?? null)) {
+            $video['made_for_kids'] = $status['madeForKids'];
+        }
+    }
+    unset($video);
+    return $videos;
 }

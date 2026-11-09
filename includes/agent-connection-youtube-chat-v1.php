@@ -139,7 +139,7 @@ function agent_connection_youtube_chat_v1(PDO $pdo, array $user, array $principa
         }
         agent_connection_youtube_results_cleanup_v1($pdo);
         $day = agent_connection_youtube_reserve_v1($pdo, $ownerId);
-        $videos = agent_connection_youtube_search_v1($query, 6, $http);
+        $videos = agent_connection_youtube_video_status_v1(agent_connection_youtube_search_v1($query, 6, $http), $http);
         agent_connection_youtube_record_success_v1($pdo, $ownerId, $day);
         agent_connection_youtube_chat_authority_v1($pdo, $live, $principal, $conversationId, $authority);
         if (!agent_connection_youtube_ready_v1()) {

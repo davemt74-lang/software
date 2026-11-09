@@ -49,7 +49,8 @@ require dirname(__DIR__).'/includes/profile-event-projection-pa4b.php';
 require_once dirname(__DIR__).'/includes/agent-commerce-recovery-pa2.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
 require_once dirname(__DIR__).'/includes/profile-promotion-attribution-v1.php';
-$fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');
+require_once dirname(__DIR__).'/includes/agent-connection-youtube-playback-v1.php';
+$fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER); CREATE TABLE chat_messages(id INTEGER PRIMARY KEY)');
 $fixture->exec('CREATE TABLE agent_commerce_products_v800(id INTEGER PRIMARY KEY)');
 $fixture->exec('CREATE TABLE agent_commerce_orders_v800(id INTEGER PRIMARY KEY)');
 function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
@@ -82,6 +83,10 @@ if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='part
 if($modern){
     initiative_product_launch_schema_v1($fixture);
     profile_promotion_attribution_schema_v1($fixture);
+    agent_connection_youtube_consent_schema_v1($fixture);
+    agent_connection_youtube_quota_schema_v1($fixture);
+    agent_connection_youtube_results_schema_v1($fixture);
+    vp3_youtube_playback_install_v1($fixture);
 }
 if($missingTable){$missing=substr($mode,8);if(!in_array($missing,$newTables,true))throw new RuntimeException('Invalid missing table fixture.');$fixture->exec('DROP TABLE '.$missing);}
 if(isset($partialSpeech[$mode])){[$table,$column]=$partialSpeech[$mode];$fixture->exec('ALTER TABLE '.$table.' RENAME COLUMN '.$column.' TO removed_'.$column);}
@@ -139,6 +144,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     foreach (['social_feed_schema_v1', 'knowledge_r6_ensure_schema', 'knowledge_r7_ensure_schema', 'knowledge_r8_ensure_schema', 'workspace_native_schema_v1', 'artist_music_v185_ensure_schema'] as $name) check(in_array($name, $calls, true), 'Upgrade did not reach '.$name);
     check(table_exists('tv_watching_state_v1') && table_exists('tv_watching_records_v1') && reminder_ready_v1($fixture) && $complete, 'Upgrade skipped TV/reminder storage');
     foreach($newTables as $table)check(table_exists($table),'Upgrade skipped required table '.$table);
+    check(vp3_youtube_playback_ready_v1($fixture), 'Upgrade skipped the YouTube playback history schema');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'complete-get') {
     check($complete&&$dbCalls===1&&$calls===[],'Complete GET must inspect speech columns read-only and report ready');

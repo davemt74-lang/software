@@ -18,14 +18,16 @@ let nextMessageId = 1000;
 const messages = new Map([[42,[]],[43,[{id:101,role:'assistant',message:'The other conversation'}]]]);
 const youtubeIds = ['dQw4w9WgXcQ', 'M7lc1UVf-VE'];
 const youtubeCommands = ['Search YouTube for typed video results', 'Search YouTube for spoken video results'];
+let playedInVp3 = [];
 const youtubeTitle = 'Video title <img src=x onerror=alert(1)>';
 const youtubeResult = query => ({
   query, expires_at: Math.floor(Date.now() / 1000) + 600,
   videos: [
-    {video_id:youtubeIds[0],title:youtubeTitle,channel_title:'Example channel',
+    {video_id:youtubeIds[0],made_for_kids:false,title:youtubeTitle,channel_title:'Example channel',
       thumbnail_url:'https://i.ytimg.com/vi/'+youtubeIds[0]+'/hqdefault.jpg'},
-    {video_id:youtubeIds[1],title:'Second video',channel_title:'Second channel',
+    {video_id:youtubeIds[1],made_for_kids:true,title:'Second video',channel_title:'Second channel',
       thumbnail_url:'https://i.ytimg.com/vi/'+youtubeIds[0]+'/default.jpg'},
+    {video_id:'abcDEF123-_',title:'Unverified embed'},
     {video_id:'../evil-id!',title:'Invalid result',thumbnail_url:'https://example.test/a.jpg'},
   ]
 });
@@ -43,7 +45,39 @@ await page.route('https://www.youtube.com/embed/**', route => {
   youtubeFrameRequests++;
   return route.fulfill({contentType:'text/html',body:'<title>YouTube iframe fixture</title>'});
 });
+await page.route('https://www.youtube.com/iframe_api', route => route.fulfill({contentType:'text/javascript',body:`
+  window.YT = {PlayerState:{PLAYING:1}, Player:class {
+    constructor(frame, config) {
+      window.youtubeFixture = this;
+      this.frame = frame;
+      this.events = config.events;
+      this.state = -1;
+      queueMicrotask(() => this.events.onReady({target:this}));
+    }
+    getPlayerState() { return this.state; }
+    change(state) { this.state=state; this.events.onStateChange({target:this,data:state}); }
+    pauseVideo() { this.change(2); }
+    destroy() {}
+  }};
+  window.onYouTubeIframeAPIReady();
+`}));
 await page.route('**/api/**', async route => {
+  if (new URL(route.request().url()).pathname === '/api/youtube-playback') {
+    const data = Object.fromEntries(new URLSearchParams(route.request().postData()));
+    assert.equal(data.csrf_token, 'fixture');
+    if (data.action === 'record') {
+      assert.equal(data.video_id, youtubeIds[0]);
+      assert.match(data.message_id, /^[1-9][0-9]*$/);
+      playedInVp3.push({...youtubeResult('').videos[0], played_at:Math.floor(Date.now()/1000),
+        expires_at:Math.floor(Date.now()/1000)+600, message_id:Number(data.message_id), play_id:data.play_id});
+      return route.fulfill({json:{ok:true,recorded:true}});
+    }
+    if (data.action === 'remove') {
+      playedInVp3 = playedInVp3.filter(item => item.play_id !== data.play_id);
+      return route.fulfill({json:{ok:true,capture_key:'fixture-next'}});
+    }
+    return route.fulfill({json:{ok:true,enabled:true,history:playedInVp3}});
+  }
   const payload = route.request().postDataJSON() || {};
   calls.push({...payload, path:new URL(route.request().url()).pathname});
   if(new URL(route.request().url()).pathname==='/api/chat-stream-v121.php'){
@@ -103,6 +137,7 @@ try {
   if(reload)await page.reload();
   else await page.goto('http://chat.test/');
   await page.evaluate(({fast,savedVoice,agentVoiceEnabled}) => {
+    window.VP3_YOUTUBE_PLAYBACK_V1 = {endpoint:'/api/youtube-playback',csrf:'fixture',captureKey:'fixture-key'};
     window.STONEFELLOW_CHAT = {userId:1,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',workingAttentionBinding:'fixture-working-attention'};
     localStorage.setItem('stonefellow:voice-mode:1',savedVoice);
     window.STONEFELLOW_AGENT_CONTEXT = {userId:1,surface:'chat',csrf:'fixture',proactiveEndpoint:'/api/context'};
@@ -376,6 +411,7 @@ try {
   assert.equal(await typedYoutube.locator('.vp3-youtube-title').first().textContent(),youtubeTitle);
   assert.equal(await typedYoutube.locator('.vp3-youtube-title img').count(),0);
   assert.equal(await typedYoutube.getByRole('button',{name:/Play in Chat/}).count(),2);
+  assert.equal(await typedYoutube.getByRole('link',{name:'Open on YouTube'}).count(),3,'Unverified results link out without an embed');
   assert.equal(await typedYoutube.locator('.vp3-youtube-thumbnail').count(),1,'A thumbnail must belong to the exact video');
   assert.equal(await page.locator('iframe').count(),0,'Search renders results without loading a player');
   assert.equal(youtubeFrameRequests,0);
@@ -388,6 +424,12 @@ try {
   assert.match(await frame.getAttribute('src'),new RegExp('/embed/'+youtubeIds[0]+'[?]'));
   assert.equal(await frame.getAttribute('referrerpolicy'),'strict-origin-when-cross-origin');
   assert.equal(await playFirst.getAttribute('aria-expanded'),'true');
+  await page.waitForFunction(() => Boolean(window.youtubeFixture));
+  assert.equal(playedInVp3.length,0,'Loading a player is not playback');
+  const playbackRecorded = page.waitForResponse(response => response.url().endsWith('/api/youtube-playback'));
+  await page.evaluate(() => {window.youtubeFixture.change(3); window.youtubeFixture.change(1); window.youtubeFixture.change(1);});
+  await playbackRecorded;
+  assert.equal(playedInVp3.length,1,'Repeated playing events for one player are recorded once');
   assert.equal(embed.headers().referer,'http://chat.test/','The iframe should override the app document policy with the site origin');
   await page.setViewportSize({width:320,height:800});
   const frameBox = await frame.boundingBox();
@@ -410,8 +452,24 @@ try {
   const spokenYoutube = page.getByRole('region',{name:'YouTube search results'}).filter({hasText:'Spoken video results'});
   await spokenYoutube.waitFor();
   assert.equal(streams().at(-1).input_mode,'voice');
-  await page.evaluate(()=>window.VP3ConversationControls.stop());
   assert.equal(await frame.count(),0,'A spoken search waits for a video selection');
+  await spokenYoutube.getByRole('button',{name:'Play in Chat · Second video'}).click();
+  await frame.waitFor();
+  await page.waitForFunction(() => window.youtubeFixture?.frame === document.querySelector('iframe.vp3-youtube-frame') && window.youtubeFixture.state === -1);
+  await page.evaluate(() => window.youtubeFixture.change(1));
+  await page.waitForFunction(()=>window.recognizers.some(item=>item.active));
+  await speak('Pause YouTube');
+  await page.waitForFunction(()=>window.youtubeFixture?.state === 2);
+  await page.waitForFunction(()=>window.recognizers.some(item=>item.active));
+  await speak('Stop playing YouTube');
+  await frame.waitFor({state:'detached'});
+  await page.waitForFunction(()=>window.recognizers.some(item=>item.active));
+  await speak('What was that song I played earlier?');
+  const played = page.getByRole('region',{name:'Played in VP3'});
+  await played.waitFor();
+  assert.equal(await played.locator('.vp3-youtube-title').textContent(),youtubeTitle);
+  assert.equal(playedInVp3.length,1,'A Made for Kids player never creates a history entry');
+  await page.evaluate(()=>window.VP3ConversationControls.stop());
   await spokenYoutube.getByRole('button',{name:'Play in Chat · Second video'}).click();
   await frame.waitFor();
   await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43));
@@ -426,6 +484,16 @@ try {
   assert.equal(await restoredYoutube.count(),1,'History displays only fresh assistant results');
   assert.match(await restoredYoutube.innerText(),/Saved video results/);
   assert.equal(await frame.count(),0,'Restoring a conversation does not resume playback');
+  await boot(true,{reload:true});
+  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  await page.locator('#chatInput').fill('What did I play on YouTube earlier?');
+  await page.locator('#sendChatButton').click();
+  await played.waitFor();
+  assert.equal(await played.locator('.vp3-youtube-title').textContent(),youtubeTitle);
+  await played.getByRole('button',{name:'Remove from history'}).click();
+  await played.getByRole('button',{name:'Remove from history'}).waitFor({state:'detached'});
+  assert.equal(playedInVp3.length,0,'Removal updates history and the rendered card');
+  console.log('PASS verified YouTube playback, voice pause/stop, private history after reload and removal');
   messages.set(42,[]);
   console.log('PASS typed and spoken YouTube search results, safe mobile inline playback, switch/close and history expiry');
 
