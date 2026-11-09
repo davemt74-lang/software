@@ -2,6 +2,10 @@
 
 **Outline and propose** uses the model configured in VP3. **Full code & stage for launch** uses a separate development worker. The worker verifies the proposed commit, the staging ZIP, a private smoke-test receipt, and the actual preview page. The VP3 admin approves the exact staged commit and ZIP for launch review.
 
+## Draft a development request from Chat
+
+In private platform-admin Agent Chat, enable a development level and choose **Draft /develop** on the reply that shows the problem. The draft uses the saved request and reply for that exchange. If the reply has no recorded link, choose the original user message from the list. Review the observed behavior, remove any sensitive details, and edit the expected behavior and checks in the composer. Press **Send** to create the revision at the level you reviewed. If the level changed, draft from the reply again under the new level. Drafting itself leaves the revision queue untouched.
+
 ## Configure VP3 on HostGator
 
 Run **Database Upgrade**, then open **Admin → Agent Development**. Set these server environment values. A hosting account that cannot set environment variables can use the corresponding keys in its existing private `config.php` under `site`.

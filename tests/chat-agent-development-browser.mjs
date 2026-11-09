@@ -17,6 +17,15 @@ let status = '';
 let previewReady = false;
 let stale = false;
 let delayStatus;
+let delayDraft;
+const storedTurns = [
+  {id:101,role:'user',message:'How many new emails did I get today?'},
+  {id:102,role:'assistant',message:'The Gmail search did not return results today.'},
+  {id:103,role:'user',message:'Stop playing YouTube'},
+  {id:104,role:'assistant',message:'I cannot stop the YouTube player from here.'},
+];
+const youtubeObjective = 'Fix the Agent Chat behavior.\n\nUser request: Stop playing YouTube\nObserved reply: I cannot stop the YouTube player from here.';
+
 let newChats = 0;
 
 page.on('pageerror',error => errors.push(error.message));
@@ -36,6 +45,26 @@ await page.route('**/api/**',async route => {
     requests.push(payload);
     const revision = () => ({id:mode === 'outline' ? outlineId : buildId, status, mode, preview_ready:previewReady});
     const base = {ok:true,mode,epoch,owner_key:'1',agent_id:7,conversation_id:payload.conversation_id};
+    if (payload.action === 'draft') {
+      assert.equal(payload.conversation_id,42);
+      assert.equal(Object.hasOwn(payload,'request'),false);
+      if (payload.assistant_message_id === 102 && !Object.hasOwn(payload,'user_message_id')) {
+        return route.fulfill({json:{...base,legacy_prompts:[
+          {id:101,text:'How many new emails did I get today?'},
+          {id:99,text:'An earlier question'},
+        ]}});
+      }
+      if (payload.assistant_message_id === 102) assert.equal(payload.user_message_id,101);
+      const objective = payload.assistant_message_id === 104 ? youtubeObjective : 'Fix the Gmail count flow.';
+      if (delayDraft) {
+        const delayed = delayDraft;
+        delayDraft = null;
+        delayed.started();
+        await delayed.release;
+      }
+      try { await route.fulfill({json:{...base,draft:objective}}); } catch (_error) {}
+      return;
+    }
     if (payload.action === 'create') {
       assert.equal(payload.expected_epoch,epoch);
       if (stale) return route.fulfill({status:409,json:{ok:false,error:'The automation level changed. Review it before trying again.'}});
@@ -55,6 +84,9 @@ await page.route('**/api/**',async route => {
       return;
     }
     return route.fulfill({json:{...base,revisions}});
+  }
+  if (payload.action === 'load') {
+    return route.fulfill({json:{ok:true,messages:payload.conversation_id === 42 ? storedTurns : []}});
   }
   if (payload.action === 'send') {
     normalTurns.push(payload.message);
@@ -83,8 +115,9 @@ const send = async message => { await input.fill(message); await button.click();
 const open = id => page.evaluate(id => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(id),id);
 const waitForText = (locator,text) => locator.getByText(text,{exact:true}).waitFor();
 
-try {
-  await page.goto(origin+'/');
+async function boot(reload = false) {
+  if (reload) await page.reload();
+  else await page.goto(origin+'/');
   await page.evaluate(() => {
     window.STONEFELLOW_CHAT = {userId:1,agentId:7,endpoint:'/api/chat.php',csrf:'fixture',initialView:'chat',initialConversationId:42};
     window.VP3_CHAT_DEVELOPMENT_V1 = {endpoint:'/api/agent-development-chat-v1.php',revisionsUrl:'/admin/agent-development.php',ownerKey:'1',csrf:'fixture',agentId:7};
@@ -96,6 +129,10 @@ try {
     await page.addScriptTag({content:await source(file)});
   }
   await page.waitForFunction(() => window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady());
+}
+
+try {
+  await boot();
   await send('Outline a coding fix in ordinary Chat.');
   await page.getByText('Ordinary Agent Chat reply.',{exact:true}).waitFor();
   assert.equal(created().length,0);
@@ -112,16 +149,71 @@ try {
   epoch = 1;
   await focus();
   await hint.getByText(/Outline and propose/).waitFor();
-  await send('/develop fix the navigation');
+  const draftFor = id => page.locator(`[data-chat-message-id="${id}"][data-chat-message-role="assistant"]`)
+    .getByRole('button',{name:'Draft /develop',exact:true});
+  await draftFor(104).click();
+  await page.waitForFunction(objective => document.getElementById('chatInput').value === '/develop '+objective,youtubeObjective);
+  assert.equal(created().length,0,'Drafting never queues a revision');
+  assert.equal(requests.filter(row => row.action === 'draft').at(-1).assistant_message_id,104);
+  await input.fill('A different draft I am writing');
+  await draftFor(102).click();
+  const useSelected = page.getByRole('button',{name:'Use selected message',exact:true});
+  await useSelected.waitFor();
+  assert.equal(await useSelected.isDisabled(),true);
+  assert.equal(created().length,0);
+  await page.getByRole('radio',{name:'How many new emails did I get today?',exact:true}).check();
+  await useSelected.click();
+  assert.equal(requests.filter(row => row.action === 'draft').at(-1).user_message_id,101);
+  await page.getByRole('button',{name:'Use in composer',exact:true}).waitFor();
+  assert.equal(await input.inputValue(),'A different draft I am writing');
+  await page.getByRole('button',{name:'Dismiss draft',exact:true}).click();
+  await input.fill('');
+  let startedDraft;
+  let releaseDraft;
+  const draftInFlight = new Promise(resolve => { startedDraft = resolve; });
+  delayDraft = {started:startedDraft,release:new Promise(resolve => { releaseDraft = resolve; })};
+  await draftFor(104).click();
+  await draftInFlight;
+  await open(12);
+  releaseDraft();
+  await page.waitForTimeout(100);
+  assert.equal(await input.inputValue(),'');
+  assert.equal(await page.getByRole('button',{name:'Use in composer',exact:true}).count(),0);
+  await open(42);
+  await draftFor(104).click();
+  await page.waitForFunction(objective => document.getElementById('chatInput').value === '/develop '+objective,youtubeObjective);
+  const reviewedObjective = youtubeObjective+'\nVerify the browser player closes.';
+  await input.fill('/develop '+reviewedObjective);
+  mode = 'code_stage';
+  epoch = 2;
+  await boot(true);
+  await input.waitFor();
+  assert.equal(await input.inputValue(),'/develop '+reviewedObjective,'The edited draft survives reload');
+  await button.click();
+  await notice.getByText(/Outline and propose.*Full code & stage for launch/i).waitFor();
+  assert.equal(created().length,0,'The older Outline draft cannot become a code job');
+  assert.equal(await input.inputValue(),'/develop '+reviewedObjective);
+  mode = 'outline';
+  epoch = 3;
+  await focus();
+  await hint.getByText(/Outline and propose/).waitFor();
+  await button.click();
+  await notice.getByText(/Draft again from the reply before sending/i).waitFor();
+  assert.equal(created().length,0,'A mode round trip still requires fresh review');
+  await input.fill('');
+  await draftFor(104).click();
+  await page.waitForFunction(objective => document.getElementById('chatInput').value === '/develop '+objective,youtubeObjective);
+  await input.fill('/develop '+reviewedObjective);
+  await button.click();
   await planner.waitFor();
   await waitForText(receipt,'Development revision saved.');
   assert.equal(await input.inputValue(),'');
   await planner.click();
   await waitForText(panel,'Preparing outline');
   await panel.getByRole('button',{name:'Open revision'}).waitFor();
-  assert.doesNotMatch(await panel.innerText(),/fix the navigation/);
+  assert.doesNotMatch(await panel.innerText(),/Stop playing YouTube/);
   assert.equal(created().length,1);
-  assert.deepEqual(created()[0].request,'fix the navigation');
+  assert.equal(created()[0].request,reviewedObjective);
   status = 'proposed';
   await focus();
   await planner.waitFor({state:'detached'});
@@ -129,7 +221,7 @@ try {
   assert.equal(await receipt.getByRole('link',{name:'Open revision'}).getAttribute('href'),`${origin}/admin/agent-development.php?revision=${outlineId}`);
 
   mode = 'code_stage';
-  epoch = 2;
+  epoch = 4;
   status = '';
   await focus();
   await hint.getByText(/Full code & stage for launch/).waitFor();
@@ -200,7 +292,7 @@ try {
   assert.equal(created().at(-1).conversation_id,55);
   assert.equal(await input.inputValue(),'');
   assert.deepEqual(errors,[]);
-  console.log('CHAT_AGENT_DEVELOPMENT_BROWSER=PASS (explicit typed routing, levels, scoped rails, compact fallback, mode conflict, participant and voice boundaries)');
+  console.log('CHAT_AGENT_DEVELOPMENT_BROWSER=PASS (explicit typed routing, confirmed legacy pairs, reviewed mode across reload, levels, scoped rails, compact fallback, mode conflict, participant and voice boundaries)');
 } finally {
   await browser.close();
 }

@@ -16,12 +16,55 @@ for (const name of ['image-generation-v1.php','workflow-agent-schema-v1.php']) {
 fs.writeFileSync(path.join(root,'includes/bootstrap.php'),`<?php
 require __DIR__.'/image-generation-v1.php';
 function vp3_participant_scope_v1(): ?array { return isset($_SERVER['HTTP_X_FIXTURE_PARTICIPANT']) ? ['participant_id'=>3] : null; }
+$messages = [
+    [101,11,1,'user','How many new emails did I get today?',null],
+    [102,11,null,'assistant','The Gmail search did not return results today for member@example.com.',null],
+    [103,11,1,'user','Stop playing YouTube',null],
+    [104,11,null,'assistant','I cannot stop the YouTube player from here.','{"chat_user_message_id":103}'],
+    [105,11,1,'user','Earlier unrelated request',null],
+    [106,11,1,'user','Later unrelated request',null],
+    [107,11,null,'assistant','This legacy reply has no clear request.',null],
+    [108,11,1,'user','Pause the current video',null],
+    [109,11,null,'assistant','I am still checking.','{"chat_user_message_id":108,"stream_partial":true}'],
+    [110,12,1,'user','Other Agent private question',null],
+    [111,12,null,'assistant','Other Agent private answer',null],
+    [112,11,1,'user','Why did the access key fail?',null],
+    [113,11,null,'assistant','The value was ghp_fixture_secret_do_not_copy.','{"chat_user_message_id":112}'],
+    [114,11,1,'user','A question with two overlapping requests',null],
+    [115,11,1,'user','Another question sent before it answered',null],
+    [116,11,null,'assistant','Answer bound to the first concurrent question.','{"chat_user_message_id":114}'],
+    [117,11,1,'user','Count today’s Gmail messages.',null],
+    [118,11,null,'assistant','A private Gmail result was displayed for this turn.','{"chat_user_message_id":117,"skip_brain_archive":true,"metadata":"Do not include internal evidence"}'],
+    [119,11,1,'user','An attributed participant request',null],
+    [120,11,null,'assistant','The participant answer.','{"chat_user_message_id":119,"agent_context":{"voice_speaker":{"participant_id":3}}}'],
+    [121,11,1,'user','Read the private content',null],
+    [122,11,null,'assistant','Unrelated private reply.','{"chat_user_message_id":121,"skip_brain_archive":true}'],
+    [130,11,1,'user','First overlapping question.',null],
+    [131,11,1,'user','Second overlapping question.',null],
+    [132,11,null,'assistant','The reply to the second question.',null],
+    [133,11,1,'user','Third overlapping question.',null],
+    [134,11,null,'assistant','The late reply to the first question.',null],
+    [135,11,null,'assistant','The reply to the third question.',null],
+    [136,11,1,'user','Check member@example.com without copying credentials.',null],
+    [137,11,1,'user','A credential ghp_fixture_secret_do_not_list.',null],
+    [138,11,null,'assistant','A saved reply with several possible prompts.',null],
+    [139,11,null,'assistant','A reply with an invalid explicit link.','{"chat_user_message_id":null}'],
+
+];
+$insert = db()->prepare('INSERT INTO chat_messages(id,conversation_id,user_id,role,message,context_json) VALUES(?,?,?,?,?,?)');
+foreach ($messages as $message) $insert->execute($message);
+
 `);
-// Exercise the real controller and Agent/Chat binding independently of the development ledger.
+// Exercise the real controller and draft formatter independently of the development ledger.
+const developmentSource = fs.readFileSync('includes/agent-development-v1.php','utf8');
+const sanitizer = developmentSource.slice(developmentSource.indexOf('function vp3_dev_text_v1('),
+  developmentSource.indexOf('function vp3_dev_lines_v1('));
+assert.match(sanitizer,/function vp3_dev_text_v1/);
 fs.writeFileSync(path.join(root,'includes/agent-development-v1.php'),`<?php
+${sanitizer}
 function vp3_dev_is_admin_v1(array $user): bool { return !isset($_SERVER['HTTP_X_FIXTURE_NOT_ADMIN']); }
 function vp3_dev_schema_ready_v1(PDO $pdo): bool { return !isset($_SERVER['HTTP_X_FIXTURE_UPGRADE']); }
-function vp3_dev_control_v1(PDO $pdo,int $owner): array { return ['mode'=>'code_stage','epoch'=>2]; }
+function vp3_dev_control_v1(PDO $pdo,int $owner): array { return ['mode'=>isset($_SERVER['HTTP_X_FIXTURE_OFF'])?'off':'code_stage','epoch'=>2]; }
 function vp3_dev_stage_current_v1(array $row): bool { return true; }
 function vp3_dev_list_v1(PDO $pdo,int $owner,?int $conversationId=null): array {
     if ($owner !== 1 || $conversationId !== 11) throw new RuntimeException('unexpected_scope');
@@ -87,6 +130,71 @@ try {
   assert.equal((await request({}, {}, 'POST',' '.repeat(16385))).status,413);
   assert.equal((await request({}, {'X-Fixture-Upgrade':'1'})).status,503);
 
+  const draft = id => ({action:'draft',assistant_message_id:id});
+  const gmailChoices = await request(draft(102));
+  assert.equal(gmailChoices.status,200);
+  assert.deepEqual(gmailChoices.data.legacy_prompts,[{id:101,text:'How many new emails did I get today?'}]);
+  assert.equal(Object.hasOwn(gmailChoices.data,'draft'),false);
+  assert.equal(Object.hasOwn(gmailChoices.data,'revision'),false);
+  const gmail = await request({...draft(102),user_message_id:101});
+  assert.equal(gmail.status,200);
+  assert.match(gmail.data.draft,/How many new emails did I get today/);
+  assert.match(gmail.data.draft,/Gmail search did not return results/);
+  assert.doesNotMatch(gmail.text,/member@example\.com|YouTube|Earlier unrelated/);
+  assert.equal(Object.hasOwn(gmail.data,'revision'),false);
+  assert.ok(gmail.data.draft.length <= 1500);
+  const youtube = await request(draft(104));
+  assert.equal(youtube.status,200);
+  assert.match(youtube.data.draft,/Stop playing YouTube/);
+  assert.match(youtube.data.draft,/cannot stop the YouTube player/);
+  assert.doesNotMatch(youtube.data.draft,/Gmail/);
+  const concurrent = await request(draft(116));
+  assert.equal(concurrent.status,200);
+  assert.match(concurrent.data.draft,/A question with two overlapping requests/);
+  assert.doesNotMatch(concurrent.data.draft,/Another question sent/);
+  assert.notEqual((await request(draft(103))).status,200,'A user message cannot be used as an assistant reply');
+  const ambiguous = await request(draft(107));
+  assert.equal(ambiguous.status,200);
+  assert.deepEqual(ambiguous.data.legacy_prompts.map(row => row.id),[106,105,103,101]);
+  assert.equal(Object.hasOwn(ambiguous.data,'draft'),false);
+  const overlap = await request(draft(134));
+  assert.equal(overlap.status,200);
+  assert.deepEqual(overlap.data.legacy_prompts.slice(0,3).map(row => row.id),[133,131,130]);
+  assert.ok(overlap.data.legacy_prompts.length <= 8);
+  assert.equal(Object.hasOwn(overlap.data,'draft'),false,'The late legacy reply must not silently select the immediately prior prompt');
+  const chosen = await request({...draft(134),user_message_id:130});
+  assert.equal(chosen.status,200);
+  assert.match(chosen.data.draft,/First overlapping question/);
+  assert.match(chosen.data.draft,/late reply to the first question/);
+  assert.doesNotMatch(chosen.data.draft,/Third overlapping question/);
+  for (const rejected of [101,110,132,136]) {
+    assert.notEqual((await request({...draft(134),user_message_id:rejected})).status,200);
+  }
+  const guarded = await request(draft(138));
+  assert.equal(guarded.status,200);
+  assert.ok(guarded.data.legacy_prompts.some(row => row.id === 136));
+  assert.doesNotMatch(guarded.text,/member@example\.com|ghp_fixture_secret/);
+  assert.notEqual((await request({...draft(138),user_message_id:137})).status,200);
+  assert.notEqual((await request(draft(139))).status,200);
+  assert.notEqual((await request({...draft(104),user_message_id:101})).status,200,'An exact linked reply cannot be paired to another prompt');
+  assert.equal((await request({...draft(104),user_message_id:'103'})).status,422);
+  assert.notEqual((await request(draft(109))).status,200,'Partial replies are ineligible');
+  assert.notEqual((await request(draft(111))).status,200,'A different Agent Chat cannot supply evidence');
+  assert.notEqual((await request(draft(113))).status,200,'A credential cannot become draft text');
+  const privateGmail = await request(draft(118));
+  assert.equal(privateGmail.status,200);
+  assert.match(privateGmail.data.draft,/placeholder.*private Gmail result/);
+  assert.doesNotMatch(privateGmail.text,/Do not include internal evidence/);
+  assert.notEqual((await request(draft(120))).status,200,'An attributed participant response is excluded');
+  assert.notEqual((await request(draft(122))).status,200,'Arbitrary private results are excluded');
+  assert.equal((await request(draft(104),{'X-Fixture-Off':'1'})).status,409);
+
+  assert.equal((await request(draft('104'))).status,422);
+  assert.equal((await request({...draft(104),request:'Untrusted client text'})).status,422);
+  assert.equal((await request({...draft(104),csrf_token:'bad'})).status,419);
+  assert.equal((await request(draft(104),{'X-Fixture-Participant':'1'})).status,403);
+  assert.equal((await request(draft(104),{'X-Fixture-Not-Admin':'1'})).status,403);
+
   const create = {action:'create',request:'Explicit request',expected_epoch:2};
   assert.equal((await request({...create,expected_epoch:1})).status,409);
   assert.equal((await request({...create,conversation_id:0})).status,422);
@@ -95,7 +203,7 @@ try {
   assert.equal(created.status,200);
   assert.deepEqual(created.data.revision,{id:'b'.repeat(32),status:'queued',mode:'code_stage',preview_ready:false});
   assert.doesNotMatch(created.text,/PRIVATE/);
-  console.log('AGENT_DEVELOPMENT_CHAT_API_V1=PASS (real HTTP authority, scoped Chat, CSRF, typed request shape, stale mode and minimal receipt)');
+  console.log('AGENT_DEVELOPMENT_CHAT_API_V1=PASS (real HTTP authority, scoped Chat, CSRF, typed request shape, stale mode, confirmed legacy pairing, isolated draft evidence and minimal receipt)');
 } finally {
   server.kill();
   await new Promise(resolve => server.once('close',resolve));

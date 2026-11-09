@@ -33,6 +33,35 @@
   compact.append(compactText,compactLink);
   const notice = node('div','vp3-chat-development-notice');
   notice.setAttribute('role','status');
+  const draftReview = node('section','vp3-chat-development-draft-review');
+  draftReview.hidden = true;
+  const legacyPrompts = node('fieldset','vp3-chat-development-legacy-prompts');
+  legacyPrompts.hidden = true;
+  const legacyLegend = node('legend');
+  legacyLegend.textContent = 'Choose the original message';
+  const legacyOptions = node('div','vp3-chat-development-legacy-options');
+  legacyPrompts.append(legacyLegend,legacyOptions);
+  const draftLabel = node('label');
+  draftLabel.textContent = 'Review development draft';
+  const draftInput = node('textarea');
+  draftInput.rows = 4;
+  draftInput.spellcheck = false;
+  draftLabel.append(draftInput);
+  const draftHelp = node('p');
+  draftHelp.textContent = 'Your Chat text is kept. When the composer is empty, move this draft into it and review before sending.';
+  const draftActions = node('div','vp3-chat-development-draft-actions');
+  const useDraft = node('button');
+  useDraft.type = 'button';
+  useDraft.textContent = 'Use in composer';
+  const useLegacyPrompt = node('button');
+  useLegacyPrompt.type = 'button';
+  useLegacyPrompt.textContent = 'Use selected message';
+  useLegacyPrompt.hidden = true;
+  const dismissDraft = node('button');
+  dismissDraft.type = 'button';
+  dismissDraft.textContent = 'Dismiss draft';
+  draftActions.append(useDraft,useLegacyPrompt,dismissDraft);
+  draftReview.append(legacyPrompts,draftLabel,draftHelp,draftActions);
   const result = node('section','vp3-chat-development-result');
   const resultText = node('span');
   const resultLink = node('a');
@@ -40,7 +69,7 @@
   resultLink.textContent = 'Open revision';
   result.append(resultText,resultLink);
   hint.append(hintLink);
-  composer.prepend(hint,compact,notice);
+  composer.prepend(hint,compact,notice,draftReview);
 
   let generation = 0;
   let control = null;
@@ -49,6 +78,10 @@
   let timer = 0;
   let submission = null;
   let tracking = false;
+  let draftRequest = null;
+  let reviewSource = null;
+  let composerEdits = 0;
+  const composerBindings = new Map();
 
   function scope() {
     const context = window.STONEFELLOW_CHAT;
@@ -62,6 +95,38 @@
 
   function validScope(current,version) {
     return generation === version && scope()?.conversation_id === current.conversation_id;
+  }
+
+  function composerBindingKey(current) {
+    return `vp3:chat:development-draft:${cfg.ownerKey}:${current.agent_id}:${current.conversation_id}`;
+  }
+
+  function composerBinding(current) {
+    const key = composerBindingKey(current);
+    let value;
+    try { value = sessionStorage.getItem(key); } catch (_) {}
+    if (value === null || value === undefined) return composerBindings.get(key) || null;
+    try {
+      const binding = JSON.parse(value);
+      if (Object.hasOwn(modeLabels,binding?.mode) && Number.isSafeInteger(binding.epoch) && binding.epoch >= 0) return binding;
+    } catch (_) {}
+    return {mode:'',epoch:-1};
+  }
+
+  function bindComposer(current,mode,epoch) {
+    const key = composerBindingKey(current);
+    const binding = {mode,epoch};
+    try { sessionStorage.setItem(key,JSON.stringify(binding)); }
+    catch (_) { return false; }
+    composerBindings.set(key,binding);
+    return true;
+  }
+
+  function clearEmptyComposerBinding(current = scope()) {
+    if (!current?.conversation_id || input.value !== '') return;
+    const key = composerBindingKey(current);
+    try { sessionStorage.removeItem(key); } catch (_) {}
+    composerBindings.delete(key);
   }
 
   function revisionUrl(id) {
@@ -86,11 +151,219 @@
   }
 
   function showControl(data) {
+    const previous = control;
     control = data && Number.isSafeInteger(data.epoch) && data.epoch >= 0
       && (data.mode === 'off' || Object.hasOwn(modeLabels,data.mode)) ? {mode:data.mode,epoch:data.epoch} : null;
+    if (previous?.epoch !== control?.epoch || previous?.mode !== control?.mode) {
+      cancelDraftRequest();
+      clearDraftReview();
+    }
     hint.hidden = !control || control.mode === 'off';
-    if (!hint.hidden) hintLink.textContent = `Agent Development · ${modeLabels[control.mode]} · Type /develop to start`;
+    if (!hint.hidden) hintLink.textContent = `Agent Development · ${modeLabels[control.mode]} · Draft from a reply or type /develop`;
+    syncDraftActions();
   }
+
+  const savedReply = '.message[data-chat-message-role="assistant"][data-chat-message-id]';
+
+  function eligibleReply(row,current) {
+    if (!current?.conversation_id || !row?.matches(savedReply) || !thread.contains(row)
+        || Number(row.dataset.chatConversationId) !== current.conversation_id
+        || !row.querySelector('.message-text')?.textContent.trim()
+        || row.matches('[data-profile-handoff-turn],[data-profile-call-id],[data-profile-speech-item],[data-profile-attention-delivery]')
+        || row.querySelector('[data-initiative-followthrough-state]')) return null;
+    const assistantId = Number(row.dataset.chatMessageId);
+    return Number.isSafeInteger(assistantId) && assistantId > 0 ? {assistantId} : null;
+  }
+
+  function syncDraftActions() {
+    const current = control && control.mode !== 'off' ? scope() : null;
+    for (const row of thread.querySelectorAll(savedReply)) {
+      const existing = row.querySelector('[data-vp3-development-draft]');
+      if (!eligibleReply(row,current)) {
+        existing?.remove();
+        continue;
+      }
+      if (existing) continue;
+      const host = row.querySelector('.message-body');
+      if (!host) continue;
+      const button = node('button','vp3-chat-development-draft-trigger');
+      button.type = 'button';
+      button.textContent = 'Draft /develop';
+      button.dataset.vp3DevelopmentDraft = '';
+      button.addEventListener('click',() => void prepareDraft(row,button));
+      host.append(button);
+    }
+  }
+
+  function clearDraftReview() {
+    reviewSource = null;
+    draftInput.value = '';
+    legacyOptions.replaceChildren();
+    legacyPrompts.hidden = true;
+    useLegacyPrompt.hidden = true;
+    useLegacyPrompt.disabled = true;
+    draftReview.hidden = true;
+  }
+
+  function cancelDraftRequest() {
+    if (!draftRequest) return;
+    draftRequest.controller.abort();
+    draftRequest.button.disabled = false;
+    draftRequest = null;
+  }
+
+  function validDraftSource(source) {
+    if (!source || !validScope(source.current,source.version)
+        || control?.epoch !== source.epoch || control?.mode !== source.mode) return false;
+    const reply = eligibleReply(source.row,source.current);
+    return reply?.assistantId === source.assistantId;
+  }
+
+  function typedComposerReady() {
+    const live = window.STONEFELLOW_CHAT_CONTINUITY;
+    return !submission && !chat.isBusy() && !live?.isBusy?.() && !live?.isVoice?.()
+      && !live?.pendingVoiceSubmit?.() && !input.disabled && !send.disabled;
+  }
+
+  function validObjective(objective) {
+    return typeof objective === 'string' && objective.trim() !== '' && [...objective].length <= 1500;
+  }
+
+  function fillDraft(objective,source) {
+    if (!bindComposer(source.current,source.mode,source.epoch)) return false;
+    clearDraftReview();
+    input.value = '/develop ' + objective.trim();
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    input.focus();
+    showNotice(`Draft ready for ${modeLabels[source.mode]}. Review it before sending.`);
+    return true;
+  }
+
+  function renderDraftReview(objective,source) {
+    reviewSource = source;
+    draftLabel.hidden = false;
+    useDraft.hidden = false;
+    draftInput.value = objective;
+    draftHelp.textContent = `Prepared for ${modeLabels[source.mode]}. Move it into the empty composer to review and send.`;
+    draftReview.hidden = false;
+  }
+
+  function renderLegacyPrompts(prompts,source) {
+    if (!Array.isArray(prompts) || prompts.length < 1 || prompts.length > 8
+        || prompts.some(prompt => !Number.isSafeInteger(prompt?.id) || prompt.id < 1 || prompt.id >= source.assistantId
+          || typeof prompt.text !== 'string' || !prompt.text.trim() || [...prompt.text].length > 360)) {
+      throw new Error('No original message could be verified. Type /develop followed by a description of the issue.');
+    }
+    reviewSource = source;
+    draftLabel.hidden = true;
+    useDraft.hidden = true;
+    for (const prompt of prompts) {
+      const label = node('label');
+      const choice = node('input');
+      choice.type = 'radio';
+      choice.name = 'vp3-development-original-message';
+      choice.value = String(prompt.id);
+      label.append(choice,document.createTextNode(prompt.text));
+      legacyOptions.append(label);
+    }
+    draftHelp.textContent = 'This older reply has no saved link to its request. Select the message that it answered.';
+    legacyPrompts.hidden = false;
+    useLegacyPrompt.hidden = false;
+    useLegacyPrompt.disabled = true;
+    draftReview.hidden = false;
+  }
+
+  async function prepareDraft(row,button,legacySource = null,userMessageId = null) {
+    const current = scope();
+    const reply = eligibleReply(row,current);
+    if (!reply || !control || control.mode === 'off' || !typedComposerReady()) {
+      showNotice('Use the private typed Admin Chat when the Agent is ready.');
+      return;
+    }
+    if (legacySource && !validDraftSource(legacySource)) {
+      clearDraftReview();
+      showNotice('This exchange is no longer available. Choose a saved reply again.');
+      return;
+    }
+    cancelDraftRequest();
+    clearDraftReview();
+    const request = draftRequest = {
+      ...reply,row,button,current,version:generation,epoch:control.epoch,mode:control.mode,
+      controller:new AbortController(),composerEdits:legacySource?.composerEdits ?? composerEdits,
+      composerWasEmpty:legacySource?.composerWasEmpty ?? (input.value === ''),
+    };
+    const deadline = setTimeout(() => request.controller.abort(),10000);
+    button.disabled = true;
+    showNotice('Preparing development draft…');
+    try {
+      const fields = {assistant_message_id:reply.assistantId};
+      if (userMessageId !== null) fields.user_message_id = userMessageId;
+      const data = await call('draft',current,request.controller,fields);
+      if (draftRequest !== request || !validScope(current,request.version)) return;
+      if (!validDraftSource(request)) {
+        showNotice('This exchange changed. Choose a saved reply again.');
+        return;
+      }
+      if (data.mode !== request.mode || data.epoch !== request.epoch) {
+        schedule();
+        throw new Error('The automation level changed. Choose the reply again to prepare a draft.');
+      }
+      if (userMessageId === null && Object.hasOwn(data,'legacy_prompts')) {
+        renderLegacyPrompts(data.legacy_prompts,request);
+        showNotice('Choose which message the Agent was answering.');
+        return;
+      }
+      if (!validObjective(data.draft)) throw new Error('This exchange did not produce a usable development draft.');
+      if (request.composerWasEmpty && input.value === '' && composerEdits === request.composerEdits && typedComposerReady()) {
+        if (fillDraft(data.draft,request)) return;
+        renderDraftReview(data.draft,request);
+        showNotice('Chat could not save the draft’s automation level in this tab. Your draft remains here.');
+      } else {
+        renderDraftReview(data.draft,request);
+        showNotice('Development draft ready for review.');
+      }
+    } catch (error) {
+      if (draftRequest !== request || !validScope(current,request.version)) return;
+      showNotice(error.name === 'AbortError' || error instanceof TypeError || error instanceof SyntaxError
+        ? 'The draft could not be prepared. Choose the reply again to retry.' : error.message);
+    } finally {
+      clearTimeout(deadline);
+      if (draftRequest === request) {
+        draftRequest = null;
+        button.disabled = false;
+      }
+    }
+  }
+
+  useDraft.addEventListener('click',() => {
+    if (!validDraftSource(reviewSource)) {
+      clearDraftReview();
+      showNotice('This exchange is no longer available. Choose a saved reply again.');
+    } else if (input.value !== '' || !typedComposerReady()) {
+      showNotice('Your current Chat text is kept. Use the draft when the typed composer is empty.');
+    } else if (!validObjective(draftInput.value)) {
+      showNotice('Enter a development request of up to 1,500 characters.');
+    } else if (!fillDraft(draftInput.value,reviewSource)) {
+      showNotice('Chat could not save the draft’s automation level in this tab. Your draft remains here.');
+    }
+  });
+
+  legacyOptions.addEventListener('change',() => {
+    useLegacyPrompt.disabled = !legacyOptions.querySelector('input:checked');
+  });
+
+  useLegacyPrompt.addEventListener('click',() => {
+    const choice = legacyOptions.querySelector('input:checked');
+    if (!choice || !reviewSource) return;
+    void prepareDraft(reviewSource.row,reviewSource.button,reviewSource,Number(choice.value));
+  });
+
+  dismissDraft.addEventListener('click',() => {
+    const trigger = reviewSource?.button;
+    clearDraftReview();
+    showNotice();
+    if (trigger?.isConnected) trigger.focus();
+  });
 
   function showSpecialist(row, current = null, version = generation) {
     compact.hidden = !row;
@@ -133,6 +406,8 @@
     clearTimeout(timer);
     poll?.abort();
     poll = null;
+    cancelDraftRequest();
+    clearDraftReview();
     if (submission) {
       submission.controller.abort();
       unlock(submission);
@@ -220,6 +495,9 @@
     }
     const version = generation;
     const original = input.value;
+    const reviewed = composerBinding(initial);
+    cancelDraftRequest();
+    clearDraftReview();
     const request = submission = {controller:new AbortController()};
     const deadline = setTimeout(() => request.controller.abort(),90000);
     input.disabled = true;
@@ -229,8 +507,13 @@
       const currentControl = await call('status',initial,request.controller);
       if (submission !== request || !validScope(initial,version)) return;
       showControl(currentControl);
+      if (reviewed && (reviewed.mode !== control?.mode || reviewed.epoch !== control?.epoch)) {
+        const before = modeLabels[reviewed.mode] || 'an unverified level';
+        const now = control?.mode === 'off' ? 'Off' : modeLabels[control?.mode] || 'unavailable';
+        throw new Error(`This draft was prepared for ${before}. The current level is ${now}. Draft again from the reply before sending.`);
+      }
       if (!control || control.mode === 'off') throw new Error('Choose an automation level in Admin → Agent Development first.');
-      const expectedEpoch = control.epoch;
+      const expectedEpoch = reviewed?.epoch ?? control.epoch;
       const conversation = initial.conversation_id || await chat.ensureConversation();
       if (!conversation && validScope(initial,version)) throw new Error('Open a private Chat before starting development work.');
       const current = {agent_id:initial.agent_id,conversation_id:conversation};
@@ -272,13 +555,19 @@
 
   window.addEventListener('stonefellow:chat-context-changing',reset);
   window.addEventListener('vp3:participant-task-context',() => { reset(); schedule(); });
-  window.addEventListener('vp3:chat-context-ready',() => schedule());
+  window.addEventListener('vp3:chat-context-ready',() => { clearEmptyComposerBinding(); schedule(); });
+  window.addEventListener('vp3:chat-message-persisted',() => queueMicrotask(syncDraftActions));
   window.addEventListener('vp3:chat-canvas-view-changed',() => { if (thread.dataset.view !== 'chat') reset(); else schedule(); });
   window.addEventListener('focus',() => schedule());
   window.addEventListener('pagehide',reset);
   window.addEventListener('pageshow',() => schedule());
   document.addEventListener('visibilitychange',() => { if (document.hidden) reset(); else schedule(); });
-  input.addEventListener('input',() => showNotice());
+  document.addEventListener('stonefellow:chat-turn',event => {
+    if (event.detail?.state !== 'pending') return;
+    const current = scope(), version = generation;
+    queueMicrotask(() => { if (current && validScope(current,version)) clearEmptyComposerBinding(current); });
+  });
+  input.addEventListener('input',() => { composerEdits++; clearEmptyComposerBinding(); showNotice(); });
   reset();
   schedule();
 })();

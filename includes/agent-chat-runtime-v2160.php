@@ -817,6 +817,7 @@ if($youtubeResults!==null){
     $storedAnswer='YouTube search results were shown in this Chat.';
 }
 if($knowledgeDraft){$r9Recheck();foreach($knowledgeDraft['drafts'] as $r9Draft)knowledge_r9_validate($pdo,$user,'cloud:'.$conversationId,$r6Namespace,$r9Draft);}
+$messageContext['chat_user_message_id']=$userMessageId;
 $contextJson=json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 $assistantMessageId=0;
 if(!$ephemeralProtocol){
