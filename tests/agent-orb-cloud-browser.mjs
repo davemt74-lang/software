@@ -14,6 +14,24 @@ const server=http.createServer((req,res)=>{
 });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}`;
 const browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});let checks=0;
 const check=async(name,fn)=>{await fn();checks++;console.log('PASS '+name);};
+async function checkPopupLayout(page, viewport) {
+  const popup = page.locator('#vp3AgentChatPopup');
+  const orb = page.locator('.vp3-orb-ball');
+  const work = orb.locator('.vp3-public-orb-work-tracks');
+  await work.waitFor();
+  const [box, ball, tracks] = await Promise.all([popup.boundingBox(), orb.boundingBox(), work.boundingBox()]);
+  assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height);
+  assert.ok(Math.abs(box.x + box.width / 2 - viewport.width / 2) < 1, 'popup is horizontally centered');
+  assert.ok(Math.abs(box.y + box.height / 2 - viewport.height / 2) < 1, 'popup is vertically centered');
+  assert.ok(tracks.x >= 0 && tracks.y >= 0 && tracks.x + tracks.width <= viewport.width && tracks.y + tracks.height <= viewport.height);
+  if (viewport.width > 740) {
+    assert.ok(ball.x >= box.x + box.width && tracks.x >= box.x + box.width, 'orb and work tracks stay to the right');
+  } else {
+    assert.ok(ball.y + ball.height <= box.y && tracks.y + tracks.height <= box.y, 'orb and work tracks stay above');
+  }
+  assert.equal(await orb.evaluate(node => node.closest('.vp3-orb-root').nextElementSibling?.id), 'vp3AgentChatPopup');
+  assert.equal(await orb.getAttribute('aria-expanded'), 'true');
+}
 try{
   const context=await browser.newContext();const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(url);await page.waitForFunction(()=>!!window.STONEFELLOW_NOTIFICATION_CENTER);
   await check('admin page reuses existing voice path without adding a header bell or opening chat',async()=>{assert.equal(await page.locator('iframe').count(),0);assert.equal(await page.locator('.chat-notification-drawer').count(),0);});
@@ -115,7 +133,29 @@ try{
   });
   for(const viewport of [{width:1280,height:850},{width:390,height:844}]){
     const main=await context.newPage();await main.setViewportSize(viewport);main.on('pageerror',e=>errors.push(e.message));await main.goto(url+'?main=1');await main.waitForFunction(()=>window.VP3AgentOrb?.open);
-    await check(`Cloud Chat footer opens live conversation at ${viewport.width}px without duplicating composer or voice`,async()=>{await main.locator('#chatInput').fill('Keep this draft');await main.locator('[data-orb-chat]').click();await main.locator('#vp3AgentChatPopup').waitFor({state:'visible'});const box=await main.locator('#vp3AgentChatPopup').boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=viewport.width&&box.y+box.height<=viewport.height);assert.equal(await main.locator('#vp3AgentChatPopup #chatThread .message').innerText(),'Existing conversation');assert.equal(await main.locator('#chatThread').getAttribute('data-view'),'chat');assert.equal(await main.locator('iframe').count(),0);assert.equal(await main.locator('#chatForm').count(),1);assert.equal(await main.locator('#chatVoiceButton').count(),1);assert.equal(await main.locator('#chatInput').inputValue(),'Keep this draft');assert.equal(await main.evaluate(()=>document.getElementById('chatInput')===originalInput&&document.getElementById('chatThread')===originalThread&&sent===0),true);});
+    await check(`Cloud Chat opens a centered live canvas with the orb outside at ${viewport.width}px`,async()=>{
+      await main.locator('#chatInput').fill('Keep this draft');
+      await main.evaluate(() => VP3AgentOrb.setJobs('mission', [{id:'mission:layout', expiresAt:Date.now() + 10000}]));
+      await main.locator('[data-orb-chat]').click();
+      await main.locator('#vp3AgentChatPopup').waitFor({state:'visible'});
+      await checkPopupLayout(main, viewport);
+      assert.equal(await main.locator('#vp3AgentChatPopup #chatThread .message').innerText(),'Existing conversation');
+      assert.equal(await main.locator('#chatThread').getAttribute('data-view'),'chat');
+      assert.equal(await main.locator('iframe').count(),0);
+      assert.equal(await main.locator('#chatForm').count(),1);
+      assert.equal(await main.locator('#chatVoiceButton').count(),1);
+      assert.equal(await main.locator('#chatInput').inputValue(),'Keep this draft');
+      assert.equal(await main.evaluate(()=>document.getElementById('chatInput')===originalInput&&document.getElementById('chatThread')===originalThread&&sent===0),true);
+      await main.locator('#chatComposerShell').evaluate(node => { node.style.minHeight = '140px'; });
+      await main.waitForFunction(() => {
+        const popup = document.getElementById('vp3AgentChatPopup').getBoundingClientRect();
+        const footer = document.getElementById('chatComposerShell').getBoundingClientRect();
+        return popup.bottom <= footer.top - 7;
+      });
+      await checkPopupLayout(main, viewport);
+      await main.locator('#chatComposerShell').evaluate(node => { node.style.minHeight = ''; });
+      await main.evaluate(() => VP3AgentOrb.setJobs('mission', []));
+    });
     await check(`live reply and Escape preserve current conversation and workspace at ${viewport.width}px`,async()=>{await main.evaluate(()=>document.getElementById('chatForm').requestSubmit());assert.equal(await main.locator('#vp3AgentChatPopup .message').last().innerText(),'New reply 1');await main.keyboard.press('Escape');assert.equal(await main.locator('#vp3AgentChatPopup').isVisible(),false);assert.equal(await main.locator('.chat-main > #chatThread').count(),1);assert.equal(await main.locator('#chatThread').getAttribute('data-view'),'player');assert.equal(await main.locator('[data-chat-view="player"]').isVisible(),true);assert.equal(await main.locator('#chatInput').inputValue(),'Keep this draft');await main.locator('[data-orb-chat]').click();assert.equal(await main.locator('#vp3AgentChatPopup .message').count(),2);await main.getByRole('button',{name:'Close Agent Chat',exact:true}).click();assert.equal(await main.evaluate(()=>sent),1);assert.equal(await main.locator('[data-orb-chat]').getAttribute('aria-expanded'),'false');});
     await check(`background status stays in the animated orb at ${viewport.width}px and supports hover, focus and Escape`,async()=>{
       const orb=main.locator('.vp3-orb-ball'),status=main.locator('.vp3-orb-initiative');
@@ -152,9 +192,11 @@ try{
       await touch.goto(url+'?main=1');
       const status=touch.locator('.vp3-orb-initiative');
       await touch.evaluate(()=>window.VP3AgentOrb.setInitiativeStatus({label:'Touch background status',detail:'Sources last checked: Today.'}));
+      await touch.evaluate(() => VP3AgentOrb.setJobs('mission', [{id:'mission:layout', expiresAt:Date.now() + 10000}]));
       assert.equal(await status.isVisible(),false);
       await touch.locator('.vp3-orb-ball').tap();
       await status.waitFor({state:'visible'});
+      await checkPopupLayout(touch, {width:320,height:600});
       const bounds=await status.boundingBox();
       assert.ok(bounds.x>=0&&bounds.x+bounds.width<=320&&bounds.y>=0&&bounds.y+bounds.height<=600);
     }finally{await mobile.close();}
