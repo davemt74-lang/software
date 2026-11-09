@@ -42,9 +42,18 @@ function vp3_initiative_engagement_memory_v1(PDO $pdo,array $user,array $binding
             if(!is_int($replyId)||$replyId<0)continue;
             $item=['message_id'=>(int)$row['id'],'state'=>$phase,
                 'agent_post'=>vp3_initiative_engagement_text_v1($message['message']??'',min(380,$remaining))];
+            $refs=[];
+            foreach($post['evidence']??[] as $ref=>$source){
+                $refs[$ref]=true;
+                if(is_string($source['interest_ref']??null)&&preg_match('/\A(?:artist|topic)-interest:[a-f0-9]{64}\z/D',$source['interest_ref'])){
+                    $refs[$source['interest_ref']]=true;
+                }
+            }
+            if($refs)$item['source_refs']=array_keys($refs);
             $remaining-=mb_strlen($item['agent_post']);
             $intent=$state['last_intent']??'';
             if(is_string($intent)&&in_array($intent,['discuss','advance','defer','decline','resolve'],true))$item['owner_decision']=$intent;
+            if(isset($state['interest_confirmed']))$item['interest_confirmed']=$state['interest_confirmed'];
             if($replyId>0&&$remaining>0){
                 $reply=$pdo->prepare("SELECT message FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user' LIMIT 1");
                 $reply->execute([$replyId,$cid,(int)$live['id']]);$text=$reply->fetchColumn();

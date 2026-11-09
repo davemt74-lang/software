@@ -56,7 +56,9 @@ $youtubeRequest=$initiativeReply===null&&!$emailRequest&&$participantActor===nul
     &&empty($input['ephemeral_protocol'])&&($youtubeHistoryRequest||$youtubeFollowup!==null||agent_connection_youtube_chat_plan_v1($query)!==null);
 $publicResearchRequest=$initiativeReply===null&&!$emailRequest&&$participantActor===null
     &&empty($input['ephemeral_protocol'])&&vp3_public_research_plan_v1($query)!==null;
-if(!$emailRequest&&!$youtubeRequest&&!$publicResearchRequest&&$participantActor===null&&vp3_participant_scope_v1()===null&&$conversationId>0&&($initiativeReply!==null||vp3_initiative_followthrough_referential_v1($query))){
+if(!$emailRequest&&!$youtubeRequest&&!$publicResearchRequest&&$participantActor===null&&vp3_participant_scope_v1()===null
+    &&empty($input['ephemeral_protocol'])&&$conversationId>0
+    &&($initiativeReply!==null||vp3_initiative_followthrough_possible_v1($pdo,$userId,$agentScopeId,$conversationId,$query))){
     try{$initiativeRequest=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$conversationId,$query,
         static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input),$initiativeReply);}catch(Throwable $preflightError){throw vp3_agent_chat_followthrough_error_v2160($preflightError);}
 }

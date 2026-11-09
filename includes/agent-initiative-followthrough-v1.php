@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-initiative-v1.php';
 require_once __DIR__.'/agent-initiative-actions-v1.php';
+require_once __DIR__.'/agent-initiative-engagement-feedback-v1.php';
 
 /** One transaction only: canonical plain source reads hold shared locks until
  * the saved decision/answer commits, including legacy source writers. */
@@ -196,6 +197,7 @@ function vp3_initiative_followthrough_origin_load_v1(PDO $pdo,array $user,array 
             ||(isset($state['followup_reminder_id'])&&(!is_int($state['followup_reminder_id'])||$state['followup_reminder_id']<0))
             ||(isset($state['followup_clarification'])&&(!is_string($state['followup_clarification'])||mb_strlen($state['followup_clarification'])>500))
             ||!is_bool($state['last_reply_explicit']??null)||!in_array($state['last_intent']??null,['','none','discuss','advance','defer','decline','resolve'],true)
+            ||(isset($state['interest_confirmed'])&&!is_bool($state['interest_confirmed']))
             ||!is_string($state['focus']??null)||mb_strlen($state['focus'])>300
             ||!is_int($state['continuation_run_id']??null)||$state['continuation_run_id']<0
             ||!is_int($state['continuation_revision']??null)||$state['continuation_revision']<0
@@ -398,10 +400,13 @@ function vp3_initiative_followthrough_current_v1(PDO $pdo,array $user,array $pri
         'child_execution_state'=>$loaded['continuation']['status']??'',
         'private_completion'=>$loaded['continuation_result']!==null?['kind'=>'private_preparation',
             'draft'=>mb_substr((string)($loaded['continuation_result']['initiative_draft']??''),0,1600)]:null,
-        'continuation_blocked'=>$loaded['state']['last_intent']==='advance'&&$current['continuation_run_id']===0?'initiative_paused_or_not_current':'',
+        'continuation_blocked'=>$loaded['state']['last_intent']==='advance'&&$current['continuation_run_id']===0
+            &&!array_key_exists('interest_confirmed',$loaded['state'])?'initiative_paused_or_not_current':'',
         'deferred_without_schedule'=>$current['state']==='deferred',
         'focus'=>$loaded['state']['focus'],'private_work_only'=>$domainAction===null||$domainAction['result']===null,'requires_domain_review'=>$domainAction===null||$domainAction['run']['status']==='approval_pending',
-        'verified_private_completion'=>$loaded['continuation_result']!==null,'owner_reported_resolution'=>$current['state']==='owner_resolved'];
+        'verified_private_completion'=>$loaded['continuation_result']!==null,'owner_reported_resolution'=>$current['state']==='owner_resolved']
+        +(array_key_exists('interest_confirmed',$loaded['state'])?['interest_feedback'=>[
+            'confirmed'=>$loaded['state']['interest_confirmed'],'work_started'=>false]]:[]);
 }
 
 /** Only a receipt-verified completion of this identical owner decision may
@@ -448,16 +453,54 @@ function vp3_initiative_followthrough_referential_v1(string $query): bool
         ||preg_match('/\b(?:that|this suggestion|these suggestions|your (?:idea|suggestion|proposal)|the proposal|you (?:mentioned|suggested)|tell me more|what do you mean|follow[ -]?up)\b|\A\s*(?:yes|yeah|yep|sure|okay|go ahead)\b/iu',$query)===1;
 }
 
+function vp3_initiative_followthrough_checkin_marker_v1(?array $context): bool
+{
+    return ($context['source']??null)==='agent_initiative'
+        &&($context['initiative_output']['type']??null)==='initiative_chat_check_in'
+        &&is_array($context['initiative_work']['followthrough']??null);
+}
+
+/** Cheap eligibility hint for the existing authenticated and verified request preflight. */
+function vp3_initiative_followthrough_possible_v1(PDO $pdo,int $owner,int $agentId,int $cid,string $query): bool
+{
+    if(vp3_initiative_followthrough_referential_v1($query))return true;
+    if($owner<1||$agentId<0||$cid<1||trim($query)==='')return false;
+    [$agentScope,$agentParams]=vp3_agent_chat_scope_sql_v380($agentId>0?['id'=>$agentId]:null,'c');
+    try{
+        $q=$pdo->prepare("SELECT m.role,m.message,m.context_json FROM chat_messages m
+            JOIN chat_conversations c ON c.id=m.conversation_id
+            WHERE c.id=? AND c.user_id=? AND $agentScope ORDER BY m.id DESC LIMIT 2");
+        $q->execute(array_merge([$cid,$owner],$agentParams));$rows=$q->fetchAll(PDO::FETCH_ASSOC);
+    }catch(PDOException $error){return false;}
+    $first=$rows[0]??[];$second=$rows[1]??[];
+    $firstContext=json_decode((string)($first['context_json']??''),true);
+    $secondContext=json_decode((string)($second['context_json']??''),true);
+    $firstContext=is_array($firstContext)?$firstContext:null;$secondContext=is_array($secondContext)?$secondContext:null;
+    if(($first['role']??'')==='assistant'){
+        if(vp3_initiative_followthrough_checkin_marker_v1($firstContext))return true;
+        return is_array($firstContext['initiative_followthrough']??null)&&($second['role']??'')==='user'
+            &&($second['message']??null)===$query&&is_array($secondContext['initiative_reply_anchor_v1']??null);
+    }
+    return ($first['role']??'')==='user'&&($first['message']??null)===$query
+        &&(is_array($firstContext['initiative_reply_anchor_v1']??null)||(($second['role']??'')==='assistant'
+            &&vp3_initiative_followthrough_checkin_marker_v1($secondContext)));
+}
+
 /** Resolve only canonical adjacency, without interpreting source prose. This
  * is shared by request idempotency preflight and the saved-turn resolver. */
 function vp3_initiative_followthrough_candidate_v1(PDO $pdo,array $user,array $principal,int $cid,int $beforeId,string $query): ?array
 {
+    $naturalCheckIn=false;
     if(!vp3_initiative_followthrough_referential_v1($query)){
         $q=$pdo->prepare('SELECT role,context_json FROM chat_messages WHERE conversation_id=?'.($beforeId>0?' AND id<?':'').' ORDER BY id DESC LIMIT 1');$q->execute($beforeId>0?[$cid,$beforeId]:[$cid]);$last=$q->fetch(PDO::FETCH_ASSOC);
         $context=$last?json_decode((string)$last['context_json'],true):null;
-        if(($last['role']??null)!=='assistant'||($context['initiative_followup_clarification']??null)!==true)return null;
+        if(($last['role']??null)!=='assistant')return null;
+        if(($context['initiative_followup_clarification']??null)!==true){
+            if(!vp3_initiative_followthrough_checkin_marker_v1(is_array($context)?$context:null))return null;
+            $naturalCheckIn=true;
+        }
     }
-    $sql='SELECT id,role,context_json FROM chat_messages WHERE conversation_id=?'.($beforeId>0?' AND id<?':'').' ORDER BY id DESC LIMIT 20';
+    $sql='SELECT id,role,context_json,created_at FROM chat_messages WHERE conversation_id=?'.($beforeId>0?' AND id<?':'').' ORDER BY id DESC LIMIT 20';
     $q=$pdo->prepare($sql);$q->execute($beforeId>0?[$cid,$beforeId]:[$cid]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);
     $first=$rows[0]??[];$ctx=json_decode((string)($first['context_json']??''),true);$marker=$ctx['initiative_work']['followthrough']??null;
     if(($first['role']??'')!=='assistant')return null;
@@ -479,8 +522,19 @@ function vp3_initiative_followthrough_candidate_v1(PDO $pdo,array $user,array $p
         }
         break;
     }
-    if($acknowledgment===null&&($adjacent>1||$ambiguous))return vp3_initiative_followthrough_short_v1($query)?['clarification_required'=>true]:null;
     if($ref===null)$ref=['message_id'=>(int)$first['id'],'reply_ref'=>$marker['reply_ref']??'','revision'=>$marker['revision']??0];
+    $checkIn=vp3_initiative_followthrough_checkin_marker_v1(is_array($ctx)?$ctx:null);
+    if($naturalCheckIn&&!$checkIn)return null;
+    if($checkIn){
+        $posted=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',(string)($first['created_at']??''),new DateTimeZone('UTC'));
+        if(!$posted||$posted->format('Y-m-d H:i:s')!==$first['created_at'])return null;
+        $age=time()-$posted->getTimestamp();
+        if($age<0||$age>86400)return null;
+        try{$loaded=vp3_initiative_followthrough_selected_v1($pdo,$user,$principal,$cid,$ref,null);}
+        catch(Throwable $error){return null;}
+        if(($loaded['goal']['tool']??null)!=='chat.check_in'||($naturalCheckIn&&($loaded['state']['state']??null)!=='open'))return null;
+    }
+    if($acknowledgment===null&&($adjacent>1||$ambiguous))return vp3_initiative_followthrough_short_v1($query)?['clarification_required'=>true]:null;
     return ['initiative_reply'=>$ref,'acknowledgment'=>$acknowledgment];
 }
 
@@ -750,6 +804,10 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
         $actionCatalog=[];$actionResources=[];
     }
     $pendingAction=($loaded['state']['active_review_slot']??'action_run_id')==='followup_run_id'?($loaded['followup_action']??null):($loaded['domain_action']??null);
+    $primary=$loaded['goal']['primary']??'';
+    $interestRef=($loaded['goal']['tool']??null)==='chat.check_in'&&is_string($primary)
+        ?vp3_initiative_youtube_interest_ref_v1($primary):null;
+    if($interestRef!==null&&($loaded['evidence'][$primary]['interest_ref']??null)!==$interestRef)$interestRef=null;
     $prompt=['response_kind'=>'initiative_followthrough','clock'=>vp3_initiative_action_clock_v1($pdo,$loaded['user']),'action_catalog'=>array_values($actionCatalog),
         'action_resources'=>vp3_initiative_action_prompt_resources_v1($actionResources),'pending_action_review'=>$pendingAction!==null?vp3_initiative_action_preview_v1($pendingAction):null,
         'prior_owner_replies'=>vp3_initiative_followup_prior_replies_v1($pdo,$loaded,$userMessageId),
@@ -759,10 +817,11 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
             'revision'=>$ref['revision'],'text'=>mb_substr((string)$loaded['message']['message'],0,2400),
             'source_summaries'=>array_map(static fn(array $row):array=>['ref'=>$row['ref'],'title'=>$row['title']],array_values($loaded['evidence']))],
         'allowed_intents'=>['none','discuss','advance','defer','decline','resolve']];
+    if($interestRef!==null)$prompt['interest_check_in']=['source_ref'=>$interestRef,'title'=>$loaded['evidence'][$primary]['title']];
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     $answer=$model?$model(json_encode($prompt,JSON_THROW_ON_ERROR),'vp3.initiative-reply.v1'):
         vp3_initiative_model_v1($pdo,$loaded['user'],json_encode($prompt,JSON_THROW_ON_ERROR),'vp3.initiative-reply.v1',$loaded['agent_id']);
-    $decision=vp3_tool_json_object_v1($answer,['intent','focus','action','action_decision','clarification'],16000);
+    $decision=vp3_tool_json_object_v1($answer,['intent','focus','action','action_decision','clarification','interest_confirmed'],16000);
     if(!in_array($decision['intent']??'', $prompt['allowed_intents'],true)||!is_string($decision['focus']??null)||mb_strlen($decision['focus'])>300){throw new InvalidArgumentException('Proposal decision is invalid.');}
     if(vp3_initiative_capability_sources_present_v1($loaded['goal']['sources']??[])){
         // Refresh source-specific remote privacy evidence after a slow model
@@ -772,6 +831,9 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
     $clarification=$decision['clarification']??'';
     if(!is_string($clarification)||mb_strlen($clarification)>500||($clarification!==''&&(($decision['intent']??null)!=='discuss'||($decision['action']??null)!==null)))throw new InvalidArgumentException('Invalid follow-up clarification.');
     $intent=$decision['intent'];$focus=trim($decision['focus']);$rawAction=$decision['action']??null;$actionDecision=$decision['action_decision']??'none';
+    $interestConfirmed=$decision['interest_confirmed']??false;
+    if(array_key_exists('interest_confirmed',$decision)&&($interestRef===null||!is_bool($decision['interest_confirmed'])
+        ||($interestConfirmed&&!in_array($intent,['discuss','advance'],true))))throw new InvalidArgumentException('Interest feedback is invalid.');
     if(($rawAction!==null&&(!is_array($rawAction)||!is_string($rawAction['adapter']??null)||!isset($actionCatalog[$rawAction['adapter']])))
         ||!in_array($actionDecision,['none','approve','cancel','revise'],true)||($rawAction!==null&&$intent!=='advance')
         ||($actionDecision==='approve'&&($intent!=='advance'||$rawAction!==null))
@@ -790,7 +852,7 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
         });
         return ['handled'=>false];
     }
-    [$loaded,$outcome,$blocked]=vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$loaded,$principal,$cid,$ref,$userMessageId,$query,$intent,$focus,$user,$explicit,$authority,$rawAction,$actionDecision,$actionResources,$actionBinding,$clarification):array{
+    [$loaded,$outcome,$blocked]=vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$loaded,$principal,$cid,$ref,$userMessageId,$query,$intent,$focus,$user,$explicit,$authority,$rawAction,$actionDecision,$actionResources,$actionBinding,$clarification,$interestRef,$interestConfirmed):array{
         vp3_initiative_owner_lock_v1($pdo,$loaded['user']);
         if($authority)$authority();
         $loaded=vp3_initiative_followthrough_load_v1($pdo,$loaded['user'],$principal,$cid,$ref['message_id'],true);
@@ -799,6 +861,7 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
         $q=$pdo->prepare("SELECT id FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1".$lock);$q->execute([$cid]);
         if((int)$q->fetchColumn()!==$userMessageId)throw new RuntimeException('The conversation advanced during this reply.',409);
         $state=$loaded['state'];$state['followup_clarification']=$clarification;$state['revision']++;$state['last_reply_message_id']=$userMessageId;$state['last_reply_hash']=hash('sha256',$query);$state['last_reply_explicit']=$explicit;$state['last_intent']=$intent;$state['focus']=$focus;$state['updated_at']=gmdate(DATE_ATOM);
+        if($interestRef!==null)$state['interest_confirmed']=$interestConfirmed;
         $state['state']=match($intent){'advance'=>'queued','defer'=>'deferred','decline'=>'declined','resolve'=>'owner_resolved',
             default=>in_array($loaded['state']['state'],['queued','completed'],true)?$loaded['state']['state']:'discussed'};
         if($intent!=='advance'&&$state['state']==='queued'&&in_array($loaded['continuation']['status']??'', ['failed','cancelled'],true))$state['state']='stale';
@@ -833,7 +896,10 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
             $handledAction=true;
             vp3_initiative_action_prepare_v1($pdo,$loaded,$state,$actionBinding,$rawAction,$actionResources);
         }elseif($actionDecision!=='none')throw new RuntimeException('That action review is no longer pending.',409);
-        if($intent==='advance'&&!$handledAction){
+        if($intent==='advance'&&!$handledAction&&$interestRef!==null){
+            // An exploratory reply changes the next assessment, without launching competing private work.
+            $state['state']='discussed';
+        }elseif($intent==='advance'&&!$handledAction){
             if($loaded['state']['state']==='queued'&&!in_array($loaded['continuation']['status']??'', ['failed','cancelled'],true))throw new RuntimeException('This private continuation is already queued.',409);
             $policy=vp3_initiative_policy_v1($loaded['user'],$loaded['agent_id']);
             if(($policy['enabled']??null)!==true||($policy['conversation_id']??null)!==$cid){$blocked='initiative_paused_or_not_current';$state['state']='discussed';}
@@ -855,7 +921,8 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
         }
         $outcome=vp3_initiative_followthrough_store_v1($pdo,$loaded,$state);
         agent_workflow_event_v1400($pdo,(int)$user['id'],(int)$loaded['run']['id'],'initiative_owner_decision',$ref['revision']==1?'open':'discussed',$state['state'],'owner','Owner responded to a saved Initiative proposal.',
-            ['message_id'=>$ref['message_id'],'reply_message_id'=>$userMessageId,'revision'=>$state['revision'],'intent'=>$intent,'continuation_run_id'=>$state['continuation_run_id']]);
+            ['message_id'=>$ref['message_id'],'reply_message_id'=>$userMessageId,'revision'=>$state['revision'],'intent'=>$intent,
+                'continuation_run_id'=>$state['continuation_run_id']]+($interestRef!==null?['interest_confirmed'=>$interestConfirmed]:[]));
         return [$loaded,$outcome,$blocked];
     });
     $advisory=vp3_initiative_followthrough_current_v1($pdo,$loaded['user'],$principal,$cid,$outcome);

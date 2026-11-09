@@ -172,6 +172,21 @@ $topicJob=['tool'=>'topic.research','primary'=>$topicRef,'refs'=>[$topicRef,$cal
 initiative_test_check(vp3_initiative_plan_v1(initiative_test_json([$topicJob]),$evidence+[$topicRef=>['ref'=>$topicRef]],
     ['topic.research'])===[array_replace($topicJob,['refs'=>[$topicRef]])],
     'General research normalizes assignments to their primary topic so unrelated sources cannot create duplicate work');
+$weakRef='youtube-interest-checkin:topic:'.hash('sha256','wood-fired oven heat management');
+$weakEvidence=$evidence+[$weakRef=>['ref'=>$weakRef,'kind'=>'youtube_interest_checkin','interest_ref'=>$topicRef]];
+$weakCheckIn=['tool'=>'chat.check_in','primary'=>$weakRef,'refs'=>[$weakRef],
+    'focus'=>'Ask whether the owner is trying to solve a practical oven temperature issue','report'=>true];
+initiative_test_check(vp3_initiative_plan_v1(initiative_test_json([$weakCheckIn]),$weakEvidence,['chat.check_in'])===[$weakCheckIn],
+    'Tentative viewing evidence can ground its own conversational check-in');
+initiative_test_reject(initiative_test_json([array_replace($weakCheckIn,['tool'=>'topic.research'])]),$weakEvidence,
+    'Tentative evidence cannot authorize public research',['topic.research']);
+initiative_test_reject(initiative_test_json([array_replace($meetingJob,['refs'=>[$calendar,$weakRef]])]),$weakEvidence,
+    'Tentative viewing evidence cannot expand private work on an unrelated source',['work.prepare_private']);
+$fullInterest=$weakEvidence+[$topicRef=>['ref'=>$topicRef,'kind'=>'topic_interest','interest_ref'=>$topicRef]];
+initiative_test_reject(initiative_test_json([array_replace($weakCheckIn,['primary'=>$topicRef,'refs'=>[$topicRef]])]),$fullInterest,
+    'An eligible topic still requires its dedicated conversational reference to check in',['chat.check_in']);
+initiative_test_reject(initiative_test_json([$weakCheckIn,$topicJob]),$fullInterest,
+    'A single assessment cannot both ask about and research one canonical interest',['chat.check_in','topic.research']);
 $checkIn=array_replace($meetingJob,['tool'=>'chat.check_in','report'=>true]);
 initiative_test_check(vp3_initiative_plan_v1(initiative_test_json([$checkIn,$missionJob]),$evidence,
     ['chat.check_in','work.prepare_private'])===[$checkIn,$missionJob],

@@ -11,9 +11,14 @@ function vp3_youtube_artist_research_enabled_v1(PDO $pdo, int $ownerId): bool
     return vp3_youtube_research_enabled_v1($pdo,$ownerId,'artist');
 }
 
+function vp3_youtube_watch_research_enabled_v1(PDO $pdo, int $ownerId): bool
+{
+    return vp3_youtube_research_enabled_v1($pdo,$ownerId,'watch');
+}
+
 function vp3_youtube_research_enabled_v1(PDO $pdo, int $ownerId, string $kind): bool
 {
-    if ($ownerId < 1 || !in_array($kind,['artist','topic'],true)) return false;
+    if ($ownerId < 1 || !in_array($kind,['artist','topic','watch'],true)) return false;
     try {
         $stmt = $pdo->prepare('SELECT setting_value FROM settings WHERE setting_key=?');
         $stmt->execute(['youtube_'.$kind.'_research_owner_'.$ownerId]);
@@ -30,7 +35,7 @@ function vp3_youtube_artist_research_save_v1(PDO $pdo, int $ownerId, bool $enabl
 
 function vp3_youtube_research_save_v1(PDO $pdo, int $ownerId, string $kind, bool $enabled): void
 {
-    if ($ownerId < 1 || !in_array($kind,['artist','topic'],true)) throw new InvalidArgumentException('Invalid research preference.');
+    if ($ownerId < 1 || !in_array($kind,['artist','topic','watch'],true)) throw new InvalidArgumentException('Invalid research preference.');
     agent_commerce_atomic_pa2($pdo, static function () use ($pdo, $ownerId, $kind, $enabled): void {
         $owner = $pdo->prepare('SELECT id FROM users WHERE id=?'.agent_commerce_lock_pa2($pdo));
         $owner->execute([$ownerId]);
@@ -38,6 +43,11 @@ function vp3_youtube_research_save_v1(PDO $pdo, int $ownerId, string $kind, bool
             throw new DomainException('Enable the YouTube skill first.');
         }
         $key = 'youtube_'.$kind.'_research_owner_'.$ownerId;
+        if ($kind === 'watch') {
+            require_once __DIR__.'/agent-connection-youtube-playback-v1.php';
+            if ($enabled && !vp3_youtube_watch_ready_v1($pdo)) throw new DomainException('Watch-time history requires a database upgrade.');
+            if (!$enabled && vp3_youtube_watch_research_enabled_v1($pdo,$ownerId)) vp3_youtube_watch_clear_v1($pdo,$ownerId);
+        }
         if (!$enabled) {
             $pdo->prepare('DELETE FROM settings WHERE setting_key=?')->execute([$key]);
             return;
@@ -90,8 +100,8 @@ function agent_connection_youtube_set_consent_v1(PDO $pdo, int $ownerId, bool $e
         if (!$owner->fetchColumn()) throw new InvalidArgumentException('A VP3 account is required.');
         if (!$enabled) {
             $pdo->prepare('DELETE FROM agent_connection_youtube_consent_v1 WHERE owner_user_id=?')->execute([$ownerId]);
-            $pdo->prepare('DELETE FROM settings WHERE setting_key IN (?,?)')
-                ->execute(['youtube_artist_research_owner_'.$ownerId,'youtube_topic_research_owner_'.$ownerId]);
+            $pdo->prepare('DELETE FROM settings WHERE setting_key IN (?,?,?)')
+                ->execute(['youtube_artist_research_owner_'.$ownerId,'youtube_topic_research_owner_'.$ownerId,'youtube_watch_research_owner_'.$ownerId]);
             return;
         }
         if (agent_connection_youtube_consent_v1($pdo, $ownerId)) return;

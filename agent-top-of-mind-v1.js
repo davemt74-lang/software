@@ -57,9 +57,8 @@
     </section>`;
   }
   function renderYoutube(current,search,artist,topic){
-    const sameSource=search&&[artist,topic].some(research=>research?.source_message_id===search.message_id);
     let markup='';
-    if(search&&typeof search.query==='string'&&!sameSource){
+    if(search&&typeof search.query==='string'){
       const kind=search.kind==='playlist'?'YouTube playlist draft':'YouTube search';
       markup+=`<section class="agent-top-of-mind-context" aria-label="Recent YouTube results">
         <strong>${kind}</strong><p>${esc(search.query)}</p><small>Returned in this Chat · ${esc(search.result_count)} results</small>
@@ -68,20 +67,29 @@
     for(const [kind,research] of [['artist',artist],['topic',topic]]){
       if(typeof research?.[kind]!=='string')continue;
       const label=kind==='artist'?'Artist research':'Topic research';
-      const available=kind==='artist'?'You looked up similar artists in this Chat.':'You searched YouTube for this topic in this Chat.';
-      const status={available,ready:'Research is ready to review.',waiting_owner:'Specialist plan is ready for review.',mission_ready:'The specialist Mission is available.',no_matches:'The last research found no verified results.',unavailable:'The last research could not finish.'}[research.status];
+      const status={ready:'Research is ready to review.',waiting_owner:'Specialist plan is ready for review.',mission_ready:'The specialist Mission is available.',no_matches:'The last research found no verified results.',unavailable:'The last research could not finish.'}[research.status];
       if(!status)continue;
       markup+=`<section class="agent-top-of-mind-context" aria-label="${label}">
         <strong>${label}</strong><p>${esc(research[kind])}</p><small>${status}</small>
-        ${sourceLink(current,research,research.status==='available'?'Review YouTube results':'Review in Chat')}`;
-      const request=kind==='artist'?'requestArtistResearch':'requestTopicResearch';
-      if(current.hasChat&&typeof window.STONEFELLOW_CHAT_CONTINUITY_V87?.[request]==='function'
-        &&['available','no_matches','unavailable'].includes(research.status)){
-        markup+=`<button type="button" data-top-of-mind-research="${kind}">Research ${kind}</button><button type="button" data-top-of-mind-research="${kind}" data-delegate>Prepare specialist plan</button><small data-top-of-mind-research-status role="status"></small>`;
-      }
-      markup+='</section>';
+        ${sourceLink(current,research,'Review in Chat')}</section>`;
     }
     return markup;
+  }
+  function renderYoutubeInterest(interest){
+    if(!interest)return '';
+    const positive=value=>Number.isSafeInteger(value)&&value>0?value:0;
+    const searches=positive(interest.search_count),related=positive(interest.related_search_count);
+    const sessions=positive(interest.watch_sessions),seconds=positive(interest.watch_seconds);
+    const facts=[];
+    if(related>1)facts.push(`${related} related YouTube searches`);
+    else if(searches>1)facts.push(`${searches} searches for this topic on YouTube`);
+    else if(searches===1)facts.push('A YouTube search');
+    if(seconds>0){
+      const duration=seconds<60?`${seconds} sec`:`about ${Math.round(seconds/60)} min`;
+      facts.push(`${duration} watched${sessions>1?` across ${sessions} sessions`:''}`);
+    }
+    if(interest.owner_reply===true)facts.push('Your reply to the check-in');
+    return facts.length?`<small>Why this came up · ${esc(facts.join(' · '))}</small>`:'';
   }
   function render(){
     if(!host?.isConnected)return;
@@ -126,6 +134,7 @@
         markup+='<li data-top-of-mind-run="'+item.run_id+'" data-work-state="'+esc(stale?'stale':status)+'"><div><strong>'+esc(item.objective)+'</strong><span>'+esc((stale?'Last observed: ':'')+(labels[status]||'Status unknown'))+'</span></div>';
         if(!stale&&!expired&&status==='working')markup+='<p>'+esc(item.step)+'</p><progress max="100" value="'+Math.max(0,Math.min(99,Number(item.progress)||0))+'" aria-label="Reported work progress"></progress>';
         if(item.sources?.length)markup+='<small>'+item.sources.map(x=>esc(x.title)).join(' · ')+'</small>';
+        if(currentContext)markup+=renderYoutubeInterest(item.youtube_interest);
         if(item.owner_state)markup+='<small>'+esc({open:'Available to continue',discussed:'Discussed with you',queued:'Private follow-through queued',deferred:'Deferred by you',declined:'Declined by you',owner_resolved:'Marked resolved by you',completed:'Follow-through preparation completed',stale:'Follow-through needs fresh sources'}[item.owner_state]||'')+'</small>';
         if(url)markup+='<a href="'+esc(url)+'">Open Chat</a>';
         markup+='</li>';
@@ -200,21 +209,6 @@
         chat?.showChatView?.();
         window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();
         row.scrollIntoView({block:'center'});
-      }
-      return;
-    }
-    const research=event.target.closest('[data-top-of-mind-research]');
-    if(research){
-      const kind=research.dataset.topOfMindResearch;
-      const delegate=research.hasAttribute('data-delegate');
-      const started=kind==='artist'?chat?.requestArtistResearch?.(snapshot.artist_research?.artist,delegate)
-        :chat?.requestTopicResearch?.(snapshot.topic_research?.topic,delegate);
-      if(started){
-        chat.showChatView?.();
-        window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();
-      }else{
-        const status=research.closest('section')?.querySelector('[data-top-of-mind-research-status]');
-        if(status)status.textContent=`Finish the current Chat turn or draft before starting ${kind} research.`;
       }
       return;
     }

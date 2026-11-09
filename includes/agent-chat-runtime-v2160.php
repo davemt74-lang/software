@@ -365,8 +365,8 @@ function vp3_agent_chat_send_v2160(PDO $pdo,array $user,?array $activeAgent,arra
                 ||agent_connection_youtube_history_request_v1($input['message'])
                 ||agent_connection_youtube_followup_plan_v1($input['message'])!==null
                 ||agent_connection_youtube_chat_plan_v1($input['message'])!==null))
-            ||!vp3_initiative_followthrough_referential_v1(trim($input['message']))
-            ||vp3_participant_chat_actor_v1($pdo,$user,$input)!==null||vp3_participant_scope_v1()!==null){
+            ||vp3_participant_chat_actor_v1($pdo,$user,$input)!==null||vp3_participant_scope_v1()!==null
+            ||!vp3_initiative_followthrough_possible_v1($pdo,(int)$user['id'],vp3_agent_chat_agent_id_v380($activeAgent),$cid,trim($input['message']))){
             return vp3_agent_chat_send_inner_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,$currentAuthority,$allowConnectedSites);
         }
         try{$request=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$cid,trim($input['message']),$currentAuthority);}

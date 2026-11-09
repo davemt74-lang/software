@@ -183,32 +183,52 @@ feed_check($expired['music']===null&&$expired['youtube_search']===null,'expired 
 $olderSearch=$mediaSeed(42,'Older provider title','older000001','Yesterday’s unrelated query');
 $pdo->prepare('UPDATE chat_messages SET created_at=? WHERE id=?')->execute([gmdate('Y-m-d H:i:s',time()-86401),$olderSearch]);
 feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['youtube_search']===null,'Top of Mind leaves older cached results in History');
+$mediaSeed(42,'Provider repair clip','repair00001','Acoustic guitar bridge repair');
+$mediaSeed(46,'Provider replacement clip','repair00002','Acoustic guitar bridge replacement');
 $topicSource=$mediaSeed(42,'Provider oven tutorial title','topic000001','Wood-fired oven heat management');
 $artistSource=$mediaSeed(42,'A public provider title','artist00001','Music artists similar to The Test Artist',
     ['suggestion_kind'=>'similar','taste_topic'=>'The Test Artist']);
-$artist=vp3_top_of_mind_v1($pdo,$user,0,42)['artist_research'];
-feed_check($artist['artist']==='The Test Artist'&&$artist['status']==='available'&&$artist['source_message_id']===$artistSource,
-    'a recent explicitly named artist keeps its exact source and offers an owner action');
+$observation=vp3_top_of_mind_v1($pdo,$user,0,42);
+feed_check($observation['artist_research']===null&&$observation['topic_research']===null
+    &&$observation['youtube_search']['message_id']===$artistSource,
+    'a search remains an observed result with its exact source and never becomes a research prompt');
+vp3_youtube_research_save_v1($pdo,1,'topic',true);
+$interestEvidence=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),false,[],$coverage,null,0);
+$interestRows=array_filter($interestEvidence,static fn(array $row):bool=>$row['kind']==='topic_interest');
+$interestRef=array_key_first($interestRows);$interestSource=$interestRows[$interestRef]??[];
+feed_check(count($interestRows)===1&&($interestSource['interest']['related_search_count']??0)===2,
+    'the exact Agent’s related searches across Chats yield one verified research source');
+$interestGoal=['binding'=>$policy,'sources'=>[$interestRef=>$interestSource['revision']],
+    'canonical_sources'=>[$interestRef=>$interestSource['revision']],'tool'=>'topic.research','primary'=>$interestRef,
+    'focus'=>'Find verified bridge repair methods','report'=>true];
+vp3_initiative_enqueue_v1($pdo,$user,'initiative.prepare',$interestGoal,hash('sha256','feed-verified-interest'));
+$q->execute([hash('sha256','initiative.prepare|'.hash('sha256','feed-verified-interest'))]);$interestRun=(int)$q->fetchColumn();
+$interestItem=feed_item(vp3_top_of_mind_v1($pdo,$user,0,42),$interestRun);
+feed_check(($interestItem['youtube_interest']??null)===['search_count'=>2,'related_search_count'=>2]
+    &&!str_contains(json_encode($interestItem),'Provider repair clip'),
+    'work explains its current source through verified activity facts without exposing provider text or raw evidence');
+vp3_youtube_research_save_v1($pdo,1,'topic',false);
+feed_check(feed_item(vp3_top_of_mind_v1($pdo,$user,0,42),$interestRun)===null,
+    'revoking research permission withdraws the thought and its evidence from the live feed');
 $marker=['artist'=>'The Test Artist','mode'=>'read','status'=>'read_complete','checked_at'=>gmdate(DATE_ATOM)];
 $receipt=vp3_tool_receipt_v1('artist.research','search','read_complete');
 $pdo->prepare("INSERT INTO chat_messages(conversation_id,role,message,context_json) VALUES(42,'assistant','Research',?)")
     ->execute([json_encode(['artist_research_v1'=>$marker,'tool_receipt'=>$receipt],JSON_THROW_ON_ERROR)]);
 $reportId=(int)$pdo->lastInsertId();
 $artist=vp3_top_of_mind_v1($pdo,$user,0,42)['artist_research'];
-feed_check($artist['status']==='ready'&&$artist['message_id']===$reportId&&$artist['source_message_id']===$artistSource,
-    'verified research updates the same artist thread to link to its exact report');
+feed_check($artist['artist']==='The Test Artist'&&$artist['status']==='ready'&&$artist['message_id']===$reportId,
+    'verified artist research links to its exact saved report');
 $topic=vp3_top_of_mind_v1($pdo,$user,0,42)['topic_research'];
-feed_check($topic['topic']==='Wood-fired oven heat management'&&$topic['status']==='available'
-    &&$topic['source_message_id']===$topicSource&&!str_contains(json_encode($topic),'Provider oven tutorial title'),
-    'an owner’s general YouTube query has a manual research option alongside artist research');
+feed_check($topic===null,'a one-off topic search has no research result even when another report is present');
 $marker=['topic'=>'Wood-fired oven heat management','mode'=>'direct','status'=>'read_complete','checked_at'=>gmdate(DATE_ATOM)];
 $receipt=vp3_tool_receipt_v1('topic.research','search','read_complete');
 $pdo->prepare("INSERT INTO chat_messages(conversation_id,role,message,context_json) VALUES(42,'assistant','Research',?)")
     ->execute([json_encode(['topic_research_v1'=>$marker,'tool_receipt'=>$receipt],JSON_THROW_ON_ERROR)]);
 $topicReport=(int)$pdo->lastInsertId();
 $topic=vp3_top_of_mind_v1($pdo,$user,0,42)['topic_research'];
-feed_check($topic['status']==='ready'&&$topic['message_id']===$topicReport&&$topic['source_message_id']===$topicSource,
-    'the topic card links its exact verified report after completion');
+feed_check($topic['topic']==='Wood-fired oven heat management'&&$topic['status']==='ready'&&$topic['message_id']===$topicReport
+    &&$topic['message_id']!==$topicSource,
+    'a different recent search leaves the exact verified topic report available');
 vp3_initiative_chat_v1($pdo,$user,vp3_agent_chat_principal_v380($user,null),['conversation_id'=>42],'off',null);
 $paused=vp3_top_of_mind_v1($pdo,$user,0,42);
 feed_check($paused['state']==='paused'&&$paused['items']===[]&&$paused['youtube_search']['message_id']===$artistSource,

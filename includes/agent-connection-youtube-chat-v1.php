@@ -318,6 +318,7 @@ function agent_connection_youtube_chat_v1(PDO $pdo, array $user, array $principa
         }
         $reason = '';
         if ($suggestion) {
+            $ownerTopic=$query;
             $taste = vp3_youtube_picks_ready_v1($pdo) ? vp3_youtube_picks_settings_v1($pdo, $ownerId)['taste'] : '';
             $reason = $query !== '' ? 'Based on the music you asked for.' : ($taste !== '' ? 'Based on the music taste you saved in VP3.' : 'A few picks to explore. You can save a music taste in Connections.');
             $query = $query !== '' ? $query : ($taste !== '' ? $taste : 'music discovery');
@@ -363,7 +364,7 @@ function agent_connection_youtube_chat_v1(PDO $pdo, array $user, array $principa
             };
             return $result($answer, 'read_complete', '',
                 ['query'=>$query,'videos'=>$videos,'expires_at'=>time()+7*86400,'suggestion_reason'=>$reason,
-                    'suggestion_kind'=>$suggestion,'taste_topic'=>$tasteTopic]);
+                    'suggestion_kind'=>$suggestion,'taste_topic'=>$tasteTopic,'owner_topic'=>$ownerTopic]);
         }
         return $result('Choose a YouTube result to play it here in Chat.', 'read_complete', '',
             ['query'=>$query,'videos'=>$videos,'expires_at'=>time()+7*86400]);

@@ -127,6 +127,57 @@ checkin_reject(fn()=>vp3_initiative_tools_result_current_v1(db(),$user,array_rep
 checkin_check(vp3_initiative_plan_v1('{"jobs":[]}',[],['chat.check_in'])===[],
     'advertising check-in still permits the model to select zero jobs');
 
+$principal=scope_principal($user,17);$binding=$done['payload']['binding'];
+$natural='A practical agenda would help me on Friday.';
+checkin_check(!vp3_initiative_followthrough_referential_v1($natural)
+    &&vp3_initiative_followthrough_possible_v1(db(),1,17,170,$natural)
+    &&!vp3_initiative_followthrough_possible_v1(db(),1,18,170,$natural)
+    &&!vp3_initiative_followthrough_possible_v1(db(),2,17,170,$natural)
+    &&!vp3_initiative_followthrough_possible_v1(new PDO('sqlite::memory:'),1,17,170,$natural),
+    'a natural check-in reply hint is exact-owner and exact-Agent and a failed hint read falls back to normal Chat');
+$request=vp3_initiative_followthrough_request_v1(db(),$user,$principal,170,$natural);
+checkin_check(($request['initiative_reply']['message_id']??0)===(int)$result['initiative_message_id']&&!$request['explicit'],
+    'the existing private preflight binds a natural adjacent answer to the canonical delivered check-in');
+$priorPlans=scope_runs(1,17,'initiative.plan');$priorGoal=json_decode((string)end($priorPlans)['goal'],true,24,JSON_THROW_ON_ERROR);
+$priorFeedback=vp3_initiative_engagement_revision_v1(db(),$user,$binding);
+$replyInsert=db()->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(170,1,'user',?)");
+$replyInsert->execute([$natural]);$naturalId=(int)db()->lastInsertId();
+$decision=vp3_initiative_followthrough_reply_v1(db(),$user,$principal,170,$naturalId,null,$natural,null,
+    static fn()=>'{"intent":"discuss","focus":"A practical agenda for Friday."}');
+$engagement=vp3_initiative_engagement_memory_v1(db(),$user,$binding);
+$item=array_values(array_filter($engagement['items'],static fn(array $row):bool=>$row['message_id']===(int)$result['initiative_message_id']))[0]??[];
+checkin_check(($decision['initiative_followthrough']['state']??null)==='discussed'
+    &&($item['owner_reply']??null)===$natural&&($item['source_refs']??null)===['calendar:event:1']
+    &&vp3_initiative_engagement_revision_v1(db(),$user,$binding)!==$priorFeedback,
+    'the saved natural reply is verified as discussion and linked to the exact original evidence in planner feedback');
+vp3_initiative_schedule_v1(db(),$user,17);
+checkin_check(count(scope_runs(1,17,'initiative.plan'))===count($priorPlans),'new feedback respects the existing review cooldown');
+$reviewAge=db()->prepare("UPDATE agent_memory_items SET last_seen_at=? WHERE user_id=1 AND user_agent_id=17 AND memory_type='initiative_sweep'");
+$reviewAge->execute([gmdate('Y-m-d H:i:s',time()-31)]);
+vp3_initiative_schedule_v1(db(),$user,17);vp3_initiative_schedule_v1(db(),$user,17);
+$plans=scope_runs(1,17,'initiative.plan');$nextPlan=end($plans);$goal=json_decode((string)$nextPlan['goal'],true,24,JSON_THROW_ON_ERROR);
+checkin_check(count($plans)===count($priorPlans)+1&&$goal['sources']===$priorGoal['sources']
+    &&($goal['engagement_revision']??'')===vp3_initiative_engagement_revision_v1(db(),$user,$binding),
+    'one genuine owner decision wakes one reassessment even when the original sources are unchanged');
+
+checkin_reset();$current=checkin_execute();$currentPost=(int)$current['result']['initiative_message_id'];
+$unrelated='Give me a weather forecast for tomorrow.';
+db()->prepare("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE id=?")->execute([$currentPost]);
+checkin_check(vp3_initiative_followthrough_request_v1(db(),$user,$principal,170,$unrelated)===null
+    &&vp3_initiative_followthrough_request_v1(db(),$user,$principal,170,'Yes, please.')===null,
+    'an old adjacent check-in cannot take over a new natural message');
+db()->prepare('UPDATE chat_messages SET created_at=NOW() WHERE id=?')->execute([$currentPost]);
+$priorFeedback=vp3_initiative_engagement_revision_v1(db(),$user,$current['payload']['binding']);
+$replyInsert->execute([$unrelated]);$unrelatedId=(int)db()->lastInsertId();
+$unassociated=vp3_initiative_followthrough_reply_v1(db(),$user,$principal,170,$unrelatedId,null,$unrelated,null,
+    static fn()=>'{"intent":"none","focus":""}');
+$readContext=db()->prepare('SELECT context_json FROM chat_messages WHERE id=?');$readContext->execute([$unrelatedId]);
+$unrelatedContext=json_decode((string)$readContext->fetchColumn(),true,24,JSON_THROW_ON_ERROR);
+checkin_check($unassociated===['handled'=>false]&&isset($unrelatedContext['initiative_reply_unassociated_v1'])
+    &&!isset($unrelatedContext['initiative_reply_anchor_v1'])
+    &&vp3_initiative_engagement_revision_v1(db(),$user,$current['payload']['binding'])===$priorFeedback,
+    'unrelated adjacent text returns to normal Chat and never becomes a saved Initiative decision');
+
 foreach(['user','assistant','edit','delete'] as $kind){
     checkin_reset();
     $changed=checkin_execute(static function()use($kind):string{checkin_change($kind);return '{"draft":"A now stale check-in."}';});

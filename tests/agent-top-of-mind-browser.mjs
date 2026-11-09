@@ -48,11 +48,17 @@ writeFileSync(join(temp,'router.php'),[
   'if(!vp3_youtube_history_record_v1(db(),1,$message,"song0000001","10000000-0000-4000-8000-000000000001",vp3_youtube_capture_key_v1(db(),1)))throw new RuntimeException("Fixture playback was rejected.");',
   'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube artist results\')");$artistMessage=(int)db()->lastInsertId();',
   'agent_connection_youtube_results_save_v1(db(),1,11,$artistMessage,["query"=>"Artists similar to Fixture Artist","taste_topic"=>"Fixture Artist","suggestion_kind"=>"similar","expires_at"=>time()+3600,"videos"=>[["video_id"=>"song0000002","title"=>"Provider artist title"]]]);',
+  '$artistResult=["artist_research_v1"=>["artist"=>"Fixture Artist","mode"=>"read","status"=>"read_complete"],"tool_receipt"=>vp3_tool_receipt_v1("artist.research","search","read_complete")];db()->prepare("INSERT INTO chat_messages(conversation_id,role,message,context_json) VALUES(11,\'assistant\',\'Verified artist report\',?)")->execute([json_encode($artistResult)]);$artistReport=(int)db()->lastInsertId();',
+  'foreach(["Acoustic guitar bridge repair","Acoustic guitar bridge replacement"] as $index=>$query){db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube interest results\')");agent_connection_youtube_results_save_v1(db(),1,11,(int)db()->lastInsertId(),["query"=>$query,"expires_at"=>time()+3600,"videos"=>[["video_id"=>"repair0000".$index,"title"=>"Provider repair clip"]]]);}',
   'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube topic results\')");$topicMessage=(int)db()->lastInsertId();',
   'agent_connection_youtube_results_save_v1(db(),1,11,$topicMessage,["query"=>"Wood-fired oven heat management","expires_at"=>time()+3600,"videos"=>[["video_id"=>"oven0000001","title"=>"Oven tutorial provider title"]]]);',
+  'vp3_youtube_research_save_v1(db(),1,"topic",true);$interests=vp3_initiative_evidence_v1(db(),$u,new DateTimeImmutable("now",new DateTimeZone("UTC")),false,[],$coverage,null,7);',
+  '$interest=array_values(array_filter($interests,static fn(array $row):bool=>$row["kind"]==="topic_interest"))[0];$ref=$interest["ref"];',
+  '$interestGoal=["binding"=>$policy,"sources"=>[$ref=>$interest["revision"]],"canonical_sources"=>[$ref=>$interest["revision"]],"tool"=>"topic.research","primary"=>$ref,"focus"=>"Find verified bridge repair methods","report"=>true];',
+  'vp3_initiative_enqueue_v1(db(),$u,"initiative.prepare",$interestGoal,hash("sha256","top-of-mind-http-interest"));$interestRun=(int)db()->query("SELECT MAX(id) FROM agent_workflow_runs")->fetchColumn();',
   'db()->exec("CREATE TABLE user_calendar_events(id INTEGER PRIMARY KEY,owner_user_id INTEGER,title TEXT,status TEXT,all_day INTEGER,start_at_utc TEXT,end_at_utc TEXT,timezone TEXT,source TEXT,source_reference TEXT,description TEXT,location TEXT)");',
   'db()->prepare("INSERT INTO user_calendar_events VALUES(4,1,\'Fixture planning session\',\'active\',1,?,?,\'UTC\',\'user\',\'\',\'\',\'https://example.com/meeting\')")->execute([gmdate("Y-m-d 00:00:00"),gmdate("Y-m-d 00:00:00",time()+86400)]);',
-  'header("Content-Type:application/json");echo json_encode(["run_id"=>(int)$r]);return;}',
+  'header("Content-Type:application/json");echo json_encode(["run_id"=>(int)$r,"interest_run_id"=>$interestRun,"artist_report_id"=>$artistReport,"topic_message_id"=>$topicMessage]);return;}',
   'if($path==="/api/chat-notifications-brain-v240.php"){header("Content-Type:application/json");echo json_encode(["ok"=>true,"complete"=>true,"agent_namespace"=>"agent:7","notifications"=>["items"=>[],"unread"=>0],"brain"=>["enabled"=>false],"activity_stream"=>["complete"=>true,"agent_namespace"=>"agent:7","items"=>[]]]);return;}',
   'if($path!=="/"&&$path!=="/outside"){http_response_code(404);return;}',
   '$binding=vp3_catch_up_page_binding_v1(current_user());$outside=$path==="/outside";',
@@ -60,7 +66,7 @@ writeFileSync(join(temp,'router.php'),[
   'if(!$outside)echo \'<div class="chat-topbar-actions"><div id="chatNotificationMenu"><button id="chatNotificationButton">Activity Center</button></div><div id="chatProfileMenu">Account</div></div>\';',
   '$orb=["ownerKey"=>"1","agentId"=>7,"chatUrl"=>"/chat.php","workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php","notificationsEndpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","voiceScript"=>"/deliberately-unavailable-voice.js","drawerScript"=>"/chat-notifications-drawer-v240.js"];',
   'echo "<script>window.VP3_ORB_CONFIG=".json_encode($orb).";</script>";',
-  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.fixturePicks=0;window.fixtureResearch=[];window.fixtureTopics=[];window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11,requestYoutubePicks:()=>{window.fixturePicks++;return true},requestArtistResearch:(artist,delegate)=>{if(window.fixtureDraft)return false;window.fixtureResearch.push([artist,delegate]);return true},requestTopicResearch:(topic,delegate)=>{window.fixtureTopics.push([topic,delegate]);return true}};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
+  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.fixturePicks=0;window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11,requestYoutubePicks:()=>{window.fixturePicks++;return true}};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
   'echo \'<script src="/agent-eyes-core.js"></script><script src="/agent-top-of-mind-v1.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script>\';'
 ].join('\n'));
 assert.match(execFileSync(process.env.VP3_PHP_BINARY||'php',['-l',join(temp,'router.php')],{encoding:'utf8'}),/No syntax errors detected/);
@@ -72,7 +78,8 @@ try{
   const session=await fetch(base+'/session');assert.ok(session.headers.get('set-cookie'),'session bootstrap: '+session.status+' '+await session.clone().text());
   const cookie=session.headers.get('set-cookie').split(';')[0],binding=(await session.json()).binding;
   const headers={'Cookie':cookie,'X-VP3-Working-Attention':binding};
-  const seed=await fetch(base+'/seed',{method:'POST',headers:{...headers,'X-Fixture-CSRF':'fixture'}});assert.equal(seed.status,200,await seed.clone().text());const runId=(await seed.json()).run_id;
+  const seed=await fetch(base+'/seed',{method:'POST',headers:{...headers,'X-Fixture-CSRF':'fixture'}});assert.equal(seed.status,200,await seed.clone().text());
+  const {run_id:runId,interest_run_id:interestRunId,artist_report_id:artistReportId,topic_message_id:topicMessageId}=await seed.json();
   const endpoint=base+'/api/agent-top-of-mind-v1.php?agent_id=7&conversation_id=11';
   const before=await fetch(base+'/counts').then(r=>r.json());
   for(let i=0;i<3;i++){
@@ -80,8 +87,10 @@ try{
     const data=await r.json();assert.equal(data.state.owner_user_id,1);assert.equal(data.state.agent_id,7);assert.equal(data.state.conversation_id,11);assert.equal(data.state.working_attention_binding,binding);
     assert.equal(data.state.items.find(x=>x.run_id===runId).state,'working');assert.equal(data.state.items.find(x=>x.run_id===runId).progress,42);
     assert.equal(data.state.music.title,'Confirmed fixture playback');assert.match(data.state.music.chat_url,/agent=7&conversation_id=11$/);
-    assert.equal(data.state.artist_research.artist,'Fixture Artist');assert.equal(data.state.artist_research.status,'available');
-    assert.equal(data.state.topic_research.topic,'Wood-fired oven heat management');
+    assert.equal(data.state.artist_research.artist,'Fixture Artist');assert.equal(data.state.artist_research.status,'ready');
+    assert.equal(data.state.artist_research.message_id,artistReportId);
+    assert.equal(data.state.topic_research,null);assert.equal(data.state.youtube_search.message_id,topicMessageId);
+    assert.deepEqual(data.state.items.find(x=>x.run_id===interestRunId).youtube_interest,{search_count:2,related_search_count:2});
     assert.equal(data.state.calendar[0].title,'Fixture planning session');assert.equal(data.state.calendar[0].agenda_status,'unknown');
     assert.equal(data.state.calendar[0].meeting_url,'https://example.com/meeting');
     assert.ok(!JSON.stringify(data).includes('FOREIGN SECRET'));assert.ok(!JSON.stringify(data).includes('lease_token'));
@@ -113,11 +122,13 @@ try{
     await music.getByText('Confirmed fixture playback',{exact:true}).waitFor();
     const artist=feed.getByRole('region',{name:'Artist research'});
     await artist.getByText('Fixture Artist',{exact:true}).waitFor();
-    assert.match(await artist.getByRole('link',{name:'Review YouTube results'}).getAttribute('href'),/agent=7&conversation_id=11$/);
-    assert.equal(await feed.getByRole('region',{name:'Recent YouTube results'}).count(),0,'one card per result thread');
-    const topic=feed.getByRole('region',{name:'Topic research'});
-    await topic.getByText('Wood-fired oven heat management',{exact:true}).waitFor();
-    assert.match(await topic.getByRole('link',{name:'Review YouTube results'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+    assert.match(await artist.getByRole('link',{name:'Review in Chat'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+    const search=feed.getByRole('region',{name:'Recent YouTube results'});
+    await search.getByText('Wood-fired oven heat management',{exact:true}).waitFor();
+    assert.match(await search.getByRole('link',{name:'Review these results'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+    assert.equal(await feed.getByRole('region',{name:'Topic research'}).count(),0,'a single search remains observed activity');
+    assert.equal(await search.getByRole('button').count(),0);assert.equal(await artist.getByRole('button').count(),0);
+    await feed.locator(`[data-top-of-mind-run="${interestRunId}"]`).getByText('Why this came up · 2 related YouTube searches',{exact:true}).waitFor();
     const calendar=feed.getByRole('region',{name:'Calendar preparation'});
     await calendar.getByText('Fixture planning session',{exact:true}).waitFor();
     assert.equal(await calendar.getByRole('link',{name:'Open meeting'}).getAttribute('href'),'https://example.com/meeting');
@@ -125,27 +136,12 @@ try{
     await calendar.getByText('Saved agenda details are unavailable.',{exact:true}).waitFor();
     if(outside){
       assert.match(await music.getByRole('link',{name:'Open this Chat'}).getAttribute('href'),/agent=7&conversation_id=11$/);
-      assert.equal(await topic.getByRole('button').count(),0);
-      assert.equal(await artist.getByRole('button').count(),0,'research is only submitted from the exact Chat');
     }else{
       assert.equal(await page.evaluate(()=>window.fixturePicks),0);
-      assert.deepEqual(await page.evaluate(()=>window.fixtureResearch),[],'viewing context does not start research');
       await page.evaluate(()=>{window.fixtureParticipant={id:2};window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
       await music.waitFor({state:'hidden'});
-      await topic.waitFor({state:'hidden'});await artist.waitFor({state:'hidden'});await calendar.waitFor({state:'hidden'});
+      await search.waitFor({state:'hidden'});await artist.waitFor({state:'hidden'});await calendar.waitFor({state:'hidden'});
       await page.evaluate(()=>{window.fixtureParticipant=null;window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
-      await page.evaluate(()=>{window.fixtureDraft=true;});
-      await artist.getByRole('button',{name:'Research artist',exact:true}).click();
-      await artist.getByText('Finish the current Chat turn or draft before starting artist research.',{exact:true}).waitFor();
-      assert.deepEqual(await page.evaluate(()=>window.fixtureResearch),[]);
-      await page.evaluate(()=>{window.fixtureDraft=false;});
-      await artist.getByRole('button',{name:'Prepare specialist plan',exact:true}).click();
-      assert.deepEqual(await page.evaluate(()=>window.fixtureResearch),[['Fixture Artist',true]]);
-      await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
-      assert.deepEqual(await page.evaluate(()=>window.fixtureTopics),[]);
-      await topic.getByRole('button',{name:'Research topic',exact:true}).click();
-      assert.deepEqual(await page.evaluate(()=>window.fixtureTopics),[['Wood-fired oven heat management',false]]);
-      await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
       await music.getByRole('button',{name:'Ask for YouTube music picks'}).click();
       assert.equal(await page.evaluate(()=>window.fixturePicks),1);
       await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
@@ -169,7 +165,9 @@ try{
     const outage=route=>route.abort('failed');await page.route('**/api/agent-top-of-mind-v1.php**',outage);
     await feed.getByText('The latest work status is unavailable.',{exact:false}).waitFor();
     await music.waitFor({state:'hidden'});
-    assert.equal(await feed.locator('[data-work-state="working"]').count(),0);await feed.locator('[data-work-state="stale"]').waitFor();
+    assert.equal(await feed.locator('[data-work-state="working"]').count(),0);
+    await feed.locator(`[data-top-of-mind-run="${runId}"][data-work-state="stale"]`).waitFor();
+    assert.equal(await feed.getByText('Why this came up', {exact:false}).count(),0,'stale data does not display current interest evidence');
     await page.unroute('**/api/agent-top-of-mind-v1.php**',outage);await feed.getByRole('button',{name:'Retry',exact:true}).click();await feed.getByText('Working',{exact:true}).waitFor();
     await page.evaluate(()=>{window.fixtureHidden=true;Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.fixtureHidden});document.dispatchEvent(new Event('visibilitychange'));});
     const hiddenCount=reads.length;await page.waitForTimeout(2800);assert.equal(reads.length,hiddenCount,'a hidden page must not poll');

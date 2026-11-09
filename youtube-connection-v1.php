@@ -31,10 +31,14 @@ if ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && $action
         $result = 'youtube_unavailable';
     }
 } elseif ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf()
-    && in_array($action, ['save_artist_research','save_topic_research'], true)) {
+    && in_array($action, ['save_artist_research','save_topic_research','save_watch_research'], true)) {
     try {
         if (!$pdo || !has_permission('chat.access', $user)) throw new DomainException('Research preference unavailable.');
-        $kind = $action === 'save_artist_research' ? 'artist' : 'topic';
+        $kind = match ($action) {
+            'save_artist_research' => 'artist',
+            'save_topic_research' => 'topic',
+            'save_watch_research' => 'watch',
+        };
         vp3_youtube_research_save_v1($pdo, (int)$user['id'], $kind, ($_POST[$kind.'_research'] ?? null) === '1');
         $result = 'youtube_'.$kind.'_research_saved';
     } catch (Throwable) {

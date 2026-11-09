@@ -176,6 +176,34 @@ youtube_chat_check(vp3_youtube_history_record_v1($pdo, 1, 301, 'abcdefghijk', $p
     && vp3_youtube_history_record_v1($pdo, 1, 301, 'abcdefghijk', $playId, $captureKey)
     && count(vp3_youtube_history_recent_v1($pdo, 1)) === 1
     && !vp3_youtube_history_recent_v1($pdo, 2), 'Retried receipts are idempotent and private');
+$pdo->exec('DROP TABLE vp3_youtube_watch_v1');
+youtube_chat_check(!vp3_youtube_watch_ready_v1($pdo) && vp3_youtube_playback_ready_v1($pdo)
+    && vp3_youtube_history_recent_v1($pdo, 1)[0]['watch_seconds'] === 0,
+    'Legacy playback receipts stay readable before the watch-time upgrade');
+vp3_youtube_playback_install_v1($pdo);
+$pdo->prepare('UPDATE vp3_youtube_playback_v1 SET played_at=? WHERE owner_user_id=1')->execute([time()-60]);
+$watch = static fn(int $seconds, string $key, int $member=1, int $message=301): bool =>
+    vp3_youtube_watch_record_v1($pdo, $member, $message, 'abcdefghijk', $playId, $key, $seconds);
+youtube_chat_check(vp3_youtube_watch_ready_v1($pdo) && !$watch(20, $captureKey),
+    'Watch duration requires its own explicit preference');
+vp3_youtube_research_save_v1($pdo, 1, 'watch', true);
+youtube_chat_check(!$watch(120, $captureKey) && !$watch(20, $captureKey, 1, 302)
+    && !$watch(20, vp3_youtube_capture_key_v1($pdo, 2), 2),
+    'Watch duration is bounded by elapsed time and exact owner and result');
+youtube_chat_check($watch(20, $captureKey) && $watch(20, $captureKey) && $watch(18, $captureKey)
+    && vp3_youtube_history_recent_v1($pdo, 1, 0)[0]['watch_seconds'] === 20
+    && !vp3_youtube_history_recent_v1($pdo, 1, 7),
+    'Duplicate and out-of-order progress never increase watch time, and reads stay Agent scoped');
+youtube_chat_check($watch(35, $captureKey)
+    && vp3_youtube_history_recent_v1($pdo, 1)[0]['watch_seconds'] === 35
+    && vp3_youtube_history_recent_v1($pdo, 1)[0]['last_watched_at'] > 0,
+    'A later cumulative report updates the same confirmed play');
+vp3_youtube_research_save_v1($pdo, 1, 'watch', false);
+vp3_youtube_research_save_v1($pdo, 1, 'watch', true);
+youtube_chat_check(vp3_youtube_history_recent_v1($pdo, 1)[0]['watch_seconds'] === 0
+    && !$watch(35, $captureKey) && (int)$pdo->query('SELECT COUNT(*) FROM vp3_youtube_watch_v1')->fetchColumn() === 0,
+    'Disabling watch-time deletes duration while preserving the start and rejecting late reports after re-enable');
+$captureKey = vp3_youtube_capture_key_v1($pdo, 1);
 $historyReply = agent_connection_youtube_history_chat_v1($pdo, $owner, $principal, 11);
 youtube_chat_check($historyReply['tool_receipt']['capability'] === 'youtube.history'
     && $historyReply['tool_receipt']['status'] === 'read_complete' && $historyReply['tool_receipt']['count'] === 1
@@ -221,12 +249,16 @@ agent_connection_youtube_set_consent_v1($pdo, 1, true);
 vp3_youtube_history_change_v1($pdo, 1, 'enable_history');
 $captureKey = vp3_youtube_capture_key_v1($pdo, 1);
 youtube_chat_check(vp3_youtube_history_record_v1($pdo, 1, 301, 'abcdefghijk', $playId, $captureKey), 'A new opt-in can record playback');
+vp3_youtube_research_save_v1($pdo, 1, 'watch', true);
+$pdo->prepare('UPDATE vp3_youtube_playback_v1 SET played_at=? WHERE owner_user_id=1')->execute([time()-60]);
+youtube_chat_check($watch(35, $captureKey), 'Re-enabling watch-time permits fresh duration on a new play');
 $pdo->exec('UPDATE agent_connection_youtube_results_v1 SET expires_at=0');
 youtube_chat_check(agent_connection_youtube_history_v1($pdo, 1, 0, 11, $messages) === $messages
     && vp3_youtube_history_recent_v1($pdo, 1) === []
     && agent_connection_youtube_results_cleanup_v1($pdo) === 1
-    && (int)$pdo->query('SELECT COUNT(*) FROM vp3_youtube_playback_v1')->fetchColumn() === 0,
-    'Expired results and their playback history are hidden and removed from storage');
+    && (int)$pdo->query('SELECT COUNT(*) FROM vp3_youtube_playback_v1')->fetchColumn() === 0
+    && (int)$pdo->query('SELECT COUNT(*) FROM vp3_youtube_watch_v1')->fetchColumn() === 0,
+    'Expired results and their playback history and duration are hidden and removed from storage');
 agent_connection_youtube_results_save_v1($pdo, 1, 11, 301, $payload);
 $pdo->exec('DELETE FROM chat_messages WHERE id=301');
 youtube_chat_check((int)$pdo->query('SELECT COUNT(*) FROM agent_connection_youtube_results_v1')->fetchColumn() === 0,
