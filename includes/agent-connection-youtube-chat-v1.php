@@ -45,7 +45,8 @@ function agent_connection_youtube_followup_plan_v1(string $message): ?array
     $playlist = preg_match('/\b(?:you\s*tube (?:music )?playlist|(?:the|that|your|last|previous|earlier) playlist)\b/iu', $phrase) === 1;
     $search = preg_match('/\b(?:you\s*tube (?:search(?: results?)?|results?)|(?:the|those|your|last|previous|earlier) search results?)\b/iu', $phrase) === 1;
     if (!$playlist && !$search) return null;
-    $day = preg_match('/\b(?:from|on) (\d{4}-\d{2}-\d{2})\b/u', $phrase, $date) ? $date[1] : '';
+    $day = preg_match('/(?:^|\s)(?:from|on)\s+([0-9]{4}-[0-9]{2}-[0-9]{2})(?=[\s.,!?]|$)/iu', $phrase, $date) === 1
+        ? $date[1] : '';
     $chatTitle = preg_match('/\b(?:in|from) (?:the )?(?:chat|conversation) (?:called |named |titled )?["“]([^"”]{1,190})["”]/iu', $phrase, $chat) ? trim($chat[1]) : '';
     $title = preg_match('/\b(?:playlist|search results?) (?:called |named |titled )?["“]([^"”]{1,200})["”]/iu', $phrase, $named) ? trim($named[1]) : '';
     $thisChat = preg_match('/\b(?:in|from) (?:this|the current) (?:chat|conversation)\b/iu', $phrase) === 1;

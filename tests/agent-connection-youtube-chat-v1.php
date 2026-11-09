@@ -268,16 +268,16 @@ $playlist = agent_connection_youtube_chat_v1($pdo,$owner,$principal,'quiet jazz'
 youtube_chat_check(($playlist['youtube_results']['suggestion_kind'] ?? '') === 'playlist' && !empty($playlist['youtube_results']['videos'])
     && str_contains($playlist['answer'],'playlist draft'), 'A playlist request creates a playable private Chat draft through read-only search');
 
-$pdo->exec("INSERT INTO chat_messages (id,conversation_id,role,context_json,created_at) VALUES
-    (401,11,'assistant','{\"youtube_search_results_v1\":true}','2026-11-07 02:30:00'),
-    (402,11,'assistant','{\"youtube_search_results_v1\":true}','2026-11-08 09:00:00'),
-    (403,12,'assistant','{\"youtube_search_results_v1\":true}','2026-11-08 12:00:00'),
-    (404,21,'assistant','{\"youtube_search_results_v1\":true}','2026-11-08 13:00:00'),
-    (405,11,'assistant','{\"youtube_results_ref_v1\":404}',CURRENT_TIMESTAMP),
-    (406,11,'assistant','{\"youtube_results_ref_v1\":403}',CURRENT_TIMESTAMP),
-    (407,11,'assistant','{\"youtube_results_ref_v1\":401}',CURRENT_TIMESTAMP),
-    (408,13,'assistant','{\"youtube_search_results_v1\":true}','2026-11-08 14:00:00'),
-    (409,11,'assistant','{\"youtube_results_ref_v1\":408}',CURRENT_TIMESTAMP)");
+$fixtureClock = new DateTimeImmutable('now',new DateTimeZone('UTC'));
+$originalSearchAt = $fixtureClock->modify('-2 days')->setTime(2,30);
+$newerSearchAt = $originalSearchAt->modify('+1 day')->setTime(12,0);
+$insertFixture = $pdo->prepare('INSERT INTO chat_messages (id,conversation_id,role,context_json,created_at) VALUES (?,?,?,?,?)');
+foreach ([401=>[11,0,$originalSearchAt],402=>[11,0,$newerSearchAt],403=>[12,0,$newerSearchAt],
+    404=>[21,0,$newerSearchAt],405=>[11,404,$fixtureClock],406=>[11,403,$fixtureClock],
+    407=>[11,401,$fixtureClock],408=>[13,0,$newerSearchAt],409=>[11,408,$fixtureClock]] as $id=>[$chatId,$ref,$at]) {
+    $context = $ref > 0 ? ['youtube_results_ref_v1'=>$ref] : ['youtube_search_results_v1'=>true];
+    $insertFixture->execute([$id,$chatId,'assistant',json_encode($context,JSON_THROW_ON_ERROR),$at->format('Y-m-d H:i:s')]);
+}
 $originalPlaylist = $playlist['youtube_results'];
 $otherPlaylist = array_replace($originalPlaylist,['query'=>'Other music','taste_topic'=>'Other music']);
 agent_connection_youtube_results_save_v1($pdo,1,11,401,$originalPlaylist);
@@ -303,18 +303,36 @@ $scoped = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$same
 youtube_chat_check($recentSearch['youtube_source_message_id'] === 403
     && $scoped['youtube_source_message_id'] === 401 && $scoped['youtube_results'] === $originalPlaylist + ['source_message_id'=>401],
     'Only an explicit current Chat reference restricts the search to that Chat');
+$searchDates = array_column(agent_connection_youtube_result_records_v1($pdo,1,0,null,2,[401,403]),'created_at_epoch','message_id');
+youtube_chat_check(($searchDates[401] ?? null) === $originalSearchAt->getTimestamp()
+    && ($searchDates[403] ?? null) === $newerSearchAt->getTimestamp(),
+    'Recall reads the two fixture timestamps from the ledger: '.json_encode($searchDates,JSON_THROW_ON_ERROR));
 foreach (['Show the YouTube playlist called "quiet jazz" you returned.',
-    'Show the YouTube playlist you returned on 2026-11-07.',
     'Show the YouTube playlist you returned in the chat "Current music".'] as $specific) {
     $specificPlan = agent_connection_youtube_followup_plan_v1($specific);
     $specificResult = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$specificPlan,11);
     youtube_chat_check(($specificResult['youtube_source_message_id'] ?? null) === 401,
         'An explicit selector narrows History before recency for '.$specific.' Selected '.($specificResult['youtube_source_message_id'] ?? 'none'));
 }
+$originalUtcDay = $originalSearchAt->format('Y-m-d');
+$datePlan = agent_connection_youtube_followup_plan_v1('Show the YouTube playlist you returned on '.$originalUtcDay.'.');
+youtube_chat_check(($datePlan['day'] ?? null) === $originalUtcDay,
+    'Recall parses the explicit date selector '.$originalUtcDay.' as '.($datePlan['day'] ?? 'none'));
+$dateResult = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$datePlan,11);
+$utcDays = array_map(static fn(int $timestamp): string => gmdate('Y-m-d',$timestamp),$searchDates);
+youtube_chat_check(($dateResult['youtube_source_message_id'] ?? null) === 401,
+    'An explicit date narrows History before recency for '.$originalUtcDay.' Selected '.($dateResult['youtube_source_message_id'] ?? 'none')
+    .' from UTC days '.json_encode($utcDays,JSON_THROW_ON_ERROR));
 $GLOBALS['youtubeFixtureTimezone'] = 'America/Phoenix';
-$priorLocalDay = agent_connection_youtube_followup_plan_v1('Show the YouTube playlist you returned on 2026-11-06.');
-youtube_chat_check((agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$priorLocalDay,11)['youtube_source_message_id'] ?? null) === 401,
-    'An explicit date follows the configured account timezone across UTC midnight');
+$phoenix = new DateTimeZone('America/Phoenix');
+$originalLocalDay = $originalSearchAt->setTimezone($phoenix)->format('Y-m-d');
+$priorLocalDay = agent_connection_youtube_followup_plan_v1('Show the YouTube playlist you returned on '.$originalLocalDay.'.');
+$phoenixResult = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$priorLocalDay,11);
+$phoenixDays = array_map(static fn(int $timestamp): string => (new DateTimeImmutable('@'.$timestamp))->setTimezone($phoenix)->format('Y-m-d'),$searchDates);
+youtube_chat_check(($priorLocalDay['day'] ?? null) === $originalLocalDay && ($phoenixResult['youtube_source_message_id'] ?? null) === 401,
+    'An explicit date follows the configured account timezone across UTC midnight on '.$originalLocalDay
+    .' Parsed '.($priorLocalDay['day'] ?? 'none').' Selected '.($phoenixResult['youtube_source_message_id'] ?? 'none')
+    .' from Phoenix days '.json_encode($phoenixDays,JSON_THROW_ON_ERROR));
 unset($GLOBALS['youtubeFixtureTimezone']);
 $exact = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$searchPlan,11,null,401);
 youtube_chat_check($exact['youtube_source_message_id'] === 401 && $exact['youtube_results'] === $scoped['youtube_results'],
