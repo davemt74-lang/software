@@ -104,4 +104,4 @@ if (!$memberHeaderRuntimeRendered):
 <?php endif; ?>
 <?php endif;
 
-require __DIR__.'/agent-orb.php';
+if ($memberHeaderShowAgentOrb ?? true) require __DIR__.'/agent-orb.php';

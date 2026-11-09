@@ -14,6 +14,8 @@ require_once $root.'/includes/user-agent-system-v236.php';
 require_once $root.'/includes/knowledge-retrieval-v162.php';
 require_once $root.'/includes/participant-updates-v1.php';
 require_once $root.'/includes/notifications.php';
+require_once $root.'/includes/cognitive-runtime-v500.php';
+require_once $root.'/includes/cognitive-presentation-v510.php';
 
 function db(): PDO { return $GLOBALS['pdo']; }
 function setting(string $key, mixed $fallback=''): mixed { return $fallback; }
@@ -362,6 +364,9 @@ try {
         && (int)$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE role='assistant'")->fetchColumn() === 1,
         'replaying approval returns the verified receipt without sending or notifying twice');
 
+    vp3_cognitive_presentation_ensure_schema_v510($pdo);
+    $digestState = vp3_cognitive_presentation_state_row_v510($pdo,$owner,'agent:7');
+    $otherDigestState = vp3_cognitive_presentation_state_row_v510($pdo,$other,'agent:9');
     $now = time()*1000;
     $messages = [
         gmail_connection_fixture_message_v1('fixture_sent',$now,$mailbox,$buyer,$outgoingRfcId,'',['SENT']),
@@ -480,6 +485,25 @@ try {
         && agent_connection_email_followup_sweep_v1($pdo,5,$search) === ['processed'=>0,'delivered'=>0]
         && $watchSender($watchOrigin)['tool_receipt']['status'] === 'no_matches',
         'one private Chat notice and one generic owner notification survive replay without exposing Gmail metadata');
+
+    $digestState['last_meaningful_at'] = date('Y-m-d H:i:s',time()-45*60);
+    gmail_connection_check_v1(vp3_cognitive_presentation_digest_v510($pdo,$owner,'agent:7',$digestState) === null,
+        'Gmail watch notices follow the informational return window');
+    $digestState['last_meaningful_at'] = date('Y-m-d H:i:s',time()-65*60);
+    $gmailCallsBeforeDigest = [$threadCalls,$searchCalls];
+    $awayDigest = vp3_cognitive_presentation_digest_v510($pdo,$owner,'agent:7',$digestState);
+    $awayItems = $awayDigest['items'] ?? [];
+    $awayJson = json_encode($awayItems,JSON_THROW_ON_ERROR);
+    $otherDigestState['last_meaningful_at'] = $digestState['last_meaningful_at'];
+    gmail_connection_check_v1(array_column($awayItems,'title') === ['New Gmail message','Gmail reply received']
+        && array_column($awayItems,'type') === ['agent_email_followup','agent_email_followup']
+        && array_column($awayItems,'source_id') === [(int)$senderWatch['reply_chat_message_id'],(int)$reply['reply_chat_message_id']]
+        && array_column($awayItems,'target_url') === array_fill(0,2,'/chat.php?agent=7&conversation_id=11')
+        && !str_contains($awayJson,$sender) && !str_contains($awayJson,$buyer) && !str_contains($awayJson,'Fixture private')
+        && !vp3_cognitive_presentation_voice_allowed_type_v510($bell)
+        && vp3_cognitive_presentation_digest_v510($pdo,$other,'agent:9',$otherDigestState) === null
+        && [$threadCalls,$searchCalls] === $gmailCallsBeforeDigest,
+        'While you were away shows both verified Gmail watch notices as private links to the originating Chat');
 
     $nextWatch = $privateGmailTurn($senderPrompt);
     $watchSender($nextWatch);

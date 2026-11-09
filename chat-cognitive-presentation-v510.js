@@ -41,6 +41,7 @@
   let activeVoiceThrough = 0;
   let suppressedVoiceThrough = 0;
   let currentDigestId = '';
+  let handledDigestId = '';
   let initiativeController = null;
   let initiativeTimer = 0;
   let initiativeBusy = false;
@@ -1107,7 +1108,7 @@
         (item.body ? '<span>' + esc(item.body) + '</span>' : '') +
         '</div>' + flag + '</' + tag + '>';
     });
-    return '<section class="vp3-return-digest" data-vp3-return-digest="' + esc(digest.id || '') + '">' +
+    return '<section class="vp3-return-digest" aria-label="While you were away" data-vp3-return-digest="' + esc(digest.id || '') + '">' +
       '<div class="vp3-return-digest-head"><div><small>While you were away</small><strong>' +
       esc(digest.summary || 'There are updates to review.') +
       '</strong></div><div class="vp3-return-digest-actions">' +
@@ -1143,24 +1144,53 @@
     thread.scrollTop = thread.scrollHeight;
   }
 
-  function renderDigest(digest) {
-    document.querySelectorAll('[data-vp3-return-digest]').forEach(node => {
-      if (!digest || node.dataset.vp3ReturnDigest !== String(digest.id || '')) node.remove();
-    });
-    if (!digest || !digest.id) {
-      currentDigestId = '';
+  function digestTime(value) {
+    if (typeof value !== 'string') return NaN;
+    return Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+      ? value.replace(' ','T') + 'Z' : value);
+  }
+
+  function positionDigest(node, digest) {
+    const createdAt = digestTime(digest.created_at);
+    let next = null, previous = null;
+    if (Number.isFinite(createdAt)) {
+      for (const row of thread.querySelectorAll(':scope > [data-chat-created-at]')) {
+        const rowTime = digestTime(row.dataset.chatCreatedAt);
+        if (!Number.isFinite(rowTime)) continue;
+        if (rowTime > createdAt) { next = row; break; }
+        previous = row;
+      }
+    }
+    if (node.parentNode === thread) {
+      const focused = node.contains(document.activeElement) ? document.activeElement : null;
+      if (next && (next.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) thread.insertBefore(node,next);
+      else if (previous && (node.compareDocumentPosition(previous) & Node.DOCUMENT_POSITION_FOLLOWING)) previous.after(node);
+      if (focused && document.activeElement !== focused) focused.focus({preventScroll:true});
       return;
     }
-    currentDigestId = String(digest.id);
+    const followTail = !next && thread.scrollHeight - thread.scrollTop - thread.clientHeight < 64;
+    thread.insertBefore(node,next || thread.querySelector(':scope > .chat-listening-continuation'));
+    if (followTail) thread.scrollTop = thread.scrollHeight;
+  }
+
+  function renderDigest(digest) {
+    const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+    const id = String(digest?.id || '');
+    const inChat = (!thread.dataset.view || thread.dataset.view === 'chat')
+      && !pageController.signal.aborted && configurationMatches();
+    currentDigestId = inChat && !chat?.isRestoring?.() && chat?.isReady?.() !== false && id !== handledDigestId ? id : '';
+    thread.querySelectorAll('[data-vp3-return-digest]').forEach(node => {
+      if (node.dataset.vp3ReturnDigest !== currentDigestId) node.remove();
+    });
+    if (!currentDigestId) return;
     const selector = '[data-vp3-return-digest="' + CSS.escape(currentDigestId) + '"]';
-    if (document.querySelector(selector)) return;
+    const existing = thread.querySelector(selector);
+    if (existing) { positionDigest(existing,digest); return; }
     const holder = document.createElement('div');
     holder.innerHTML = digestMarkup(digest);
     const node = holder.firstElementChild;
     if (!node) return;
-    const welcome = document.getElementById('chatWelcome');
-    if (welcome && welcome.parentNode === thread) thread.insertBefore(node,welcome);
-    else thread.appendChild(node);
+    positionDigest(node,digest);
     const requests = (Array.isArray(digest.items) ? digest.items : [])
       .map(item => item && item.card_request ? item.card_request : null)
       .filter(Boolean);
@@ -1344,11 +1374,10 @@
     action.disabled = true;
     try {
       await post('digest_ack',{digest_id:digestId,status:String(action.dataset.digestAction || 'acknowledged')});
-      if (signal.aborted || digestId !== currentDigestId) return;
-      const selector = '[data-vp3-return-digest="' + CSS.escape(digestId) + '"]';
-      const node = document.querySelector(selector);
-      if (node) node.remove();
-      currentDigestId = '';
+      if (signal.aborted) return;
+      handledDigestId = digestId;
+      if (state?.digest?.id === digestId) state.digest = null;
+      if (digestId === currentDigestId) renderDigest(null);
     } catch (_error) {
       action.disabled = false;
     }
@@ -1413,11 +1442,18 @@
       if (event.detail?.state === 'pending' && liveConversation() !== null) clearLiveContext();
     });
   }
+  window.addEventListener('stonefellow:chat-context-changing', () => renderDigest(null));
+  for (const event of ['vp3:chat-context-ready','vp3:chat-history-updated']) {
+    window.addEventListener(event, () => renderDigest(state?.digest));
+  }
   window.addEventListener('focus', () => void refresh());
 
-  const observer = new MutationObserver(() => {
-    button.dataset.runtimeState = runtimeState();
-    if (state && state.brief) renderStatus(state.brief);
+  const observer = new MutationObserver(records => {
+    if (records.some(record => record.target === thread)) renderDigest(state?.digest);
+    if (records.some(record => record.target === document.body)) {
+      button.dataset.runtimeState = runtimeState();
+      if (state && state.brief) renderStatus(state.brief);
+    }
   });
   window.addEventListener('pagehide', () => {
     closePopup();
@@ -1437,6 +1473,7 @@
       return;
     }
     observer.observe(document.body,{attributes:true,attributeFilter:['data-stonefellow-agent-state']});
+    observer.observe(thread,{attributes:true,attributeFilter:['data-view']});
     showAwaitingInitiativeHealth();
     const signal = pageController.signal;
     void refresh().finally(() => { if (!signal.aborted) schedule(); });
