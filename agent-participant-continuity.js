@@ -211,11 +211,11 @@
               at: Date.now(),
             }
           : null;
-      if (
-        !remote &&
-        JSON.stringify(previous) !== JSON.stringify(selectedContext())
-      )
-        signal('selection', selectedContext());
+      const current = selectedContext();
+      if (JSON.stringify(previous) !== JSON.stringify(current)) {
+        window.dispatchEvent(new Event('vp3:participant-selection-changed'));
+        if (!remote) signal('selection', current);
+      }
     }
     function clearSelection() {
       setSelection(null);

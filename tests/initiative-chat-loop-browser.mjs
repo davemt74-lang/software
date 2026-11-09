@@ -16,7 +16,8 @@ function gate(){
 
 async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,activeJobs=[],returnDigest=null}={}){
   const context=await browser.newContext();
-  const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[],digestActions=[];
+  const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[],digestActions=[],githubClaims=[];
+  let githubVoice=null;
   const histories=new Map([[42,[{id:1,role:'assistant',message:'Restored private conversation',created_at:'2026-10-30 14:00:00'}]],
     [43,[{id:10,role:'assistant',message:'Another private conversation',created_at:'2026-10-30 14:00:30'}]]]);
   let policy=enabled,exists=enabled||paused,policyRevision=exists?revision:'',policyCid=42,phase=0,failTick=false,holdTick=null,holdRead=null,holdActivity=null,claimActive=false,realWork=0,blockedReason='',ownerBusy=false,pendingReport=false;
@@ -90,11 +91,18 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
         if(url.searchParams.get('include_live_context')==='1'){
           assert.equal(url.searchParams.get('include_initiative_runtime'),'1');
           state.live_context={state:'quiet',attention:null,initiative:{state:policy?'waiting_for_review':'off',...(omitRuntime?{}:{runtime:health(id)})}};
+          if(githubVoice)state.github_voice={generation:githubVoice.generation,through_id:githubVoice.through_id};
         }
         return route.fulfill({json:{ok:true,state}});
       }
       assert.equal(body.agent_id,agentId);
       assert.equal(body.csrf_token,'fixture');
+      if(body.action==='github_voice_claim'){
+        githubClaims.push(body);
+        const claim=githubVoice;
+        githubVoice=null;
+        return route.fulfill({json:{ok:true,claim}});
+      }
       if(body.action==='digest_ack'){
         assert.equal(body.digest_id,returnDigest?.id);
         digestActions.push(body.status);
@@ -150,9 +158,10 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);
     return page;
   };
-  return {context,pages,errors,reads,ticks,settings,activities,digestActions,health,open,
+  return {context,pages,errors,reads,ticks,settings,activities,digestActions,githubClaims,health,open,
     addMessage(conversation,message){histories.get(conversation).push(message);},
     setDigest(digest){returnDigest=digest;},
+    setGitHubVoice(voice){githubVoice=voice;},
     fail(value){failTick=value;},block(value){blockedReason=value;},
     unavailable(value){runtimeUnavailable=value;},presentationFails(value){presentationUnavailable=value;},
     holdRead(){holdRead=gate();return holdRead;},holdActivity(eligibleOnly=false){holdActivity=gate();holdActivity.eligibleOnly=eligibleOnly;return holdActivity;},
@@ -160,6 +169,34 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
 }
 
 try{
+  const github=await fixture(17,{paused:true});
+  try{
+    const page=await github.open();
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    await page.evaluate(()=>{window.STONEFELLOW_NOTIFICATION_CENTER.announceWhen=(text,canSpeak,options)=>{
+      window.githubSpeech={text,allowed:canSpeak(),autoReply:options.autoReply};return true;
+    };});
+    const composer=page.locator('#chatInput');
+    await composer.fill('An unfinished draft');
+    github.setGitHubVoice({generation:42,through_id:8,message:'GitHub Actions reports 1 run failed and 2 runs succeeded.'});
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    assert.equal(github.githubClaims.length,0);
+    await composer.fill('');
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('stonefellow:agent-voice',{detail:{enabled:false}})));
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    assert.equal(github.githubClaims.length,0);
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('stonefellow:agent-voice',{detail:{enabled:true}})));
+    await page.waitForFunction(()=>window.githubSpeech);
+    assert.deepEqual(await page.evaluate(()=>window.githubSpeech),{
+      text:'GitHub Actions reports 1 run failed and 2 runs succeeded.',allowed:true,autoReply:false
+    });
+    assert.equal(github.githubClaims.length,1);
+    assert.equal(github.githubClaims[0].conversation_id,42);
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    assert.equal(github.githubClaims.length,1);
+    console.log('PASS GitHub Actions speech defers during a draft or disabled Agent Voice and uses one canonical announcement');
+  }finally{await github.context.close();}
+
   const watchItem={title:'Gmail reply received',target_url:'/chat.php?conversation_id=42'};
   const digest={id:'away-report-1',created_at:'2026-10-30 14:01:00',summary:'Two updates came in.',items:[
     {title:'Gmail inbox review',body:'Reviewed 3 new Gmail messages.',target_url:'/connections.php?app=gmail#gmail-inbox-review'},watchItem

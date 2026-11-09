@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-connection-gmail-v1.php';
 require_once __DIR__.'/agent-connection-gmail-inbox-settings-v1.php';
+require_once __DIR__.'/agent-connection-gmail-github-settings-v1.php';
 require_once __DIR__.'/agent-connection-notice-v1.php';
 require_once __DIR__.'/ai-settings.php';
 
@@ -49,10 +50,22 @@ function agent_connections_install_v1(PDO $pdo): void
     require_once __DIR__.'/agent-connection-email-chat-v1.php';
     require_once __DIR__.'/agent-connection-email-followup-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-v1.php';
+    require_once __DIR__.'/agent-connection-gmail-github-v1.php';
+    require_once __DIR__.'/agent-connection-gmail-github-notice-v1.php';
     agent_connection_email_draft_schema_v1($pdo);
     agent_connection_email_followup_install_v1($pdo);
     agent_connection_gmail_inbox_install_v1($pdo);
     agent_connection_gmail_inbox_receipts_install_v1($pdo);
+    agent_connection_gmail_github_install_v1($pdo);
+    agent_connection_gmail_github_receipts_install_v1($pdo);
+    agent_connection_gmail_github_actions_voice_install_v1($pdo);
+}
+
+/** These two independently enabled readers share the same Gmail read grant. */
+function agent_connections_revoke_mail_intake_v1(PDO $pdo, int $owner, int $connection, string $grant): void
+{
+    agent_connection_gmail_inbox_revoke_v1($pdo,$owner,$connection,$grant);
+    agent_connection_gmail_github_revoke_v1($pdo,$owner,$connection,$grant);
 }
 
 function agent_connections_schema_ready_v1(PDO $pdo): bool
@@ -197,7 +210,7 @@ function agent_connections_store_gmail_v1(int $ownerId, array $token, array $pol
         if ($row) {
             $stmt = $pdo->prepare("UPDATE agent_connections_v1 SET external_account_id=?,account_email=?,authorization_key=?,client_fingerprint=?,access_token_enc=?,refresh_token_enc=?,access_expires_at=?,read_enabled=?,send_enabled=?,followups_enabled=?,status='connected' WHERE owner_user_id=? AND id=?");
             $stmt->execute([...$values,$ownerId,(int)$row['id']]);
-            agent_connection_gmail_inbox_revoke_v1($pdo,$ownerId,(int)$row['id'],$row['authorization_key']);
+            agent_connections_revoke_mail_intake_v1($pdo,$ownerId,(int)$row['id'],$row['authorization_key']);
         } else {
             $stmt = $pdo->prepare("INSERT INTO agent_connections_v1 (external_account_id,account_email,authorization_key,client_fingerprint,access_token_enc,refresh_token_enc,access_expires_at,read_enabled,send_enabled,followups_enabled,owner_user_id,provider,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'gmail','connected')");
             $stmt->execute([...$values,$ownerId]);
@@ -222,7 +235,7 @@ function agent_connections_update_policy_v1(int $ownerId, int $connectionId, arr
         $allowFollowups = $policy['read'] && $policy['followups'];
         $pdo->prepare('UPDATE agent_connections_v1 SET read_enabled=?,send_enabled=?,followups_enabled=? WHERE owner_user_id=? AND id=?')
             ->execute([(int)$policy['read'],(int)$policy['send'],(int)$allowFollowups,$ownerId,$connectionId]);
-        if (!$policy['read']) agent_connection_gmail_inbox_revoke_v1($pdo,$ownerId,$connectionId,$expectedKey);
+        if (!$policy['read']) agent_connections_revoke_mail_intake_v1($pdo,$ownerId,$connectionId,$expectedKey);
         // An explicit revocation stops pending work immediately, even if the owner re-enables the permission before the next worker run.
         if (!$allowFollowups && agent_connection_email_followup_ready_v1($pdo)) {
             $pdo->prepare("UPDATE agent_connection_email_followups_v1 SET status='stopped',claim_key=NULL,next_check_at=NULL
@@ -244,7 +257,7 @@ function agent_connections_disconnect_v1(int $ownerId, int $connectionId, string
             || ($expectedKey !== null && !hash_equals($row['authorization_key'],$expectedKey))) return false;
         $stmt = $pdo->prepare("UPDATE agent_connections_v1 SET status='disconnected',authorization_key=?,client_fingerprint='',external_account_id='',account_email='',access_token_enc='',refresh_token_enc='',access_expires_at=0,read_enabled=0,send_enabled=0,followups_enabled=0 WHERE owner_user_id=? AND id=?");
         $stmt->execute([bin2hex(random_bytes(32)),$ownerId,$connectionId]);
-        if ($provider === 'gmail') agent_connection_gmail_inbox_revoke_v1($pdo,$ownerId,$connectionId,$row['authorization_key']);
+        if ($provider === 'gmail') agent_connections_revoke_mail_intake_v1($pdo,$ownerId,$connectionId,$row['authorization_key']);
         return $stmt->rowCount() === 1;
     });
 }
@@ -280,7 +293,7 @@ function agent_connections_token_v1(PDO $pdo, array $row, ?callable $http = null
         if ($e->providerError !== 'invalid_grant') throw $e;
         $stmt = $pdo->prepare("UPDATE agent_connections_v1 SET status='reauthorize',access_token_enc='',refresh_token_enc='',access_expires_at=0 WHERE id=?");
         $stmt->execute([(int)$row['id']]);
-        agent_connection_gmail_inbox_revoke_v1($pdo,(int)$row['owner_user_id'],(int)$row['id'],$row['authorization_key']);
+        agent_connections_revoke_mail_intake_v1($pdo,(int)$row['owner_user_id'],(int)$row['id'],$row['authorization_key']);
         throw new AgentConnectionExceptionV1('Google removed access. Reconnect Gmail to continue.', 401, $e);
     }
     $stmt = $pdo->prepare('UPDATE agent_connections_v1 SET access_token_enc=?,refresh_token_enc=?,access_expires_at=? WHERE id=?');

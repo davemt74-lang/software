@@ -39,6 +39,9 @@
   const liveDismissed = new Set();
   let lastVoiceThrough = 0;
   let activeVoiceThrough = 0;
+  let githubVoiceBusy = false;
+  let githubVoiceEpoch = 0;
+  let githubVoiceEnabled = window.STONEFELLOW_CHAT?.agentVoiceEnabled !== false;
   let suppressedVoiceThrough = 0;
   let currentDigestId = '';
   let handledDigestId = '';
@@ -1265,6 +1268,33 @@
     }
   }
 
+  async function maybeSpeakGitHub(offer, conversationId) {
+    if (githubVoiceBusy || activeVoiceThrough || !Number.isSafeInteger(offer?.generation) || offer.generation < 1
+      || !Number.isSafeInteger(offer?.through_id) || offer.through_id < 1 || conversationId === null) return;
+    const center = window.STONEFELLOW_NOTIFICATION_CENTER;
+    if (typeof center?.announceWhen !== 'function') return;
+    const epoch = githubVoiceEpoch;
+    const signal = pageController.signal;
+    const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+    const canSpeak = () => githubVoiceEnabled && epoch === githubVoiceEpoch && !signal.aborted && document.hasFocus()
+      && liveConversation() === conversationId && !input?.value.trim() && !window.VP3LiveContext?.voiceDeferral?.()?.defer;
+    const idle = () => canSpeak() && !chat?.isBusy?.() && !chat?.pendingVoiceSubmit?.()
+      && !window.VP3ConversationControls?.isReplyCapturePending?.()
+      && !['thinking','processing','speaking','listening'].includes(runtimeState());
+    if (!idle()) return;
+    githubVoiceBusy = true;
+    try {
+      const result = await post('github_voice_claim',{conversation_id:conversationId,
+        generation:offer.generation,through_id:offer.through_id},signal);
+      const claim = result?.claim;
+      if (claim?.generation !== offer.generation || claim.through_id !== offer.through_id || !canSpeak()) return;
+      const message = String(claim.message || '');
+      if (message) await center.announceWhen(message,canSpeak,{signal,readyToSpeak:idle,autoReply:false});
+    } catch (_error) {
+      // The durable notice remains available if the voice attempt is interrupted.
+    } finally { githubVoiceBusy = false; }
+  }
+
   async function refresh(force = false) {
     const signal = pageController.signal;
     if (signal.aborted || !requireCurrentConfiguration() || busy || (document.hidden && !force)) return;
@@ -1303,6 +1333,7 @@
       renderHomeServerPresence(state.homeserver_presence || null);
       refreshProfileAttention();
       void maybeSpeak(state.voice_candidate || null);
+      if (liveRequestIsCurrent()) void maybeSpeakGitHub(state.github_voice,conversationId);
       advanceInitiativeVoice();
     } catch (error) {
       if (!signal.aborted) {
@@ -1407,6 +1438,7 @@
   });
 
   window.addEventListener('stonefellow:agent-stop', () => {
+    githubVoiceEpoch++;
     const center = window.STONEFELLOW_NOTIFICATION_CENTER;
     try { center?.cancelSpeech?.(); } catch (_error) {}
     const through = Math.max(0, Number(activeVoiceThrough || 0));
@@ -1455,7 +1487,15 @@
       if (event.detail?.state === 'pending' && liveConversation() !== null) clearLiveContext();
     });
   }
-  window.addEventListener('stonefellow:chat-context-changing', () => renderDigest(null));
+  window.addEventListener('stonefellow:chat-context-changing', () => {
+    githubVoiceEpoch++;
+    renderDigest(null);
+  });
+  window.addEventListener('stonefellow:agent-voice', event => {
+    githubVoiceEnabled = event.detail?.enabled !== false;
+    if (!githubVoiceEnabled) githubVoiceEpoch++;
+    else void refresh();
+  });
   for (const event of ['vp3:chat-context-ready','vp3:chat-history-updated']) {
     window.addEventListener(event, () => renderDigest(state?.digest));
   }

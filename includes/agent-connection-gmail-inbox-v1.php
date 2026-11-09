@@ -76,7 +76,29 @@ function agent_connection_gmail_inbox_history_v1(string $access, string $cursor,
 /** Load only headers needed for the owner's private review and deterministic filters. */
 function agent_connection_gmail_inbox_message_v1(string $access, string $id, int $enabledAt, ?callable $http): ?array
 {
-    $path = '/messages/'.$id.'?format=metadata&metadataHeaders=From&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=In-Reply-To'
+    $metadata = agent_connection_gmail_inbox_metadata_v1($access,$id,$enabledAt,['From','Cc','Subject','In-Reply-To'],$http);
+    if ($metadata === null) return null;
+    $headers = [];
+    foreach ($metadata['headers'] as $header) {
+        if (!is_array($header) || !is_string($header['name']??null) || !is_string($header['value']??null)) continue;
+        $name = strtolower($header['name']);
+        if (!in_array($name,['from','cc','subject','in-reply-to'],true)) continue;
+        $headers[$name] ??= $header['value'];
+    }
+    $from = agent_connection_gmail_inbox_mailboxes_v1($headers['from']??null);
+    if (count($from) !== 1) return null;
+    return [
+        'from'=>$from[0],
+        'cc'=>$headers['cc']??'',
+        'subject'=>trim(preg_replace('/[\x00-\x1f\x7f]+/',' ',$headers['subject']??'')??''),
+        'important'=>in_array('IMPORTANT',$metadata['labels'],true),
+        'reply'=>preg_match('/(?:^|\s)<[^<>\s@]+@[^<>\s@]+>(?:\s|$)/',$headers['in-reply-to']??'')===1,
+    ];
+}
+
+function agent_connection_gmail_inbox_metadata_v1(string $access, string $id, int $enabledAt, array $names, ?callable $http): ?array
+{
+    $path = '/messages/'.$id.'?format=metadata&metadataHeaders='.implode('&metadataHeaders=',array_map('rawurlencode',$names))
         .'&fields=id%2CinternalDate%2ClabelIds%2Cpayload%28headers%29';
     try {
         $message = agent_connection_gmail_api_v1($access,$path,null,$http);
@@ -93,22 +115,7 @@ function agent_connection_gmail_inbox_message_v1(string $access, string $id, int
     }
     if (str_starts_with($receivedAt,'-') || agent_connection_gmail_inbox_compare_cursor_v1($receivedAt,(string)$enabledAt)<=0
         || !in_array('INBOX',$labels,true) || array_intersect(['SENT','DRAFT','TRASH','SPAM'],$labels)) return null;
-    $headers = [];
-    foreach ((array)($message['payload']['headers']??[]) as $header) {
-        if (!is_array($header) || !is_string($header['name']??null) || !is_string($header['value']??null)) continue;
-        $name = strtolower($header['name']);
-        if (!in_array($name,['from','cc','subject','in-reply-to'],true)) continue;
-        $headers[$name] ??= $header['value'];
-    }
-    $from = agent_connection_gmail_inbox_mailboxes_v1($headers['from']??null);
-    if (count($from) !== 1) return null;
-    return [
-        'from'=>$from[0],
-        'cc'=>$headers['cc']??'',
-        'subject'=>trim(preg_replace('/[\x00-\x1f\x7f]+/',' ',$headers['subject']??'')??''),
-        'important'=>in_array('IMPORTANT',$labels,true),
-        'reply'=>preg_match('/(?:^|\s)<[^<>\s@]+@[^<>\s@]+>(?:\s|$)/',$headers['in-reply-to']??'')===1,
-    ];
+    return ['received_at_ms'=>$receivedAt,'labels'=>$labels,'headers'=>(array)($message['payload']['headers']??[])];
 }
 
 function agent_connection_gmail_inbox_key_v1(array $policy, string $value): string
@@ -117,9 +124,10 @@ function agent_connection_gmail_inbox_key_v1(array $policy, string $value): stri
 }
 
 /** A stale worker stops making provider calls as soon as it observes a revoked claim. */
-function agent_connection_gmail_inbox_claim_current_v1(PDO $pdo, array $policy, string $claim): bool
+function agent_connection_gmail_inbox_claim_current_v1(PDO $pdo, array $policy, string $claim, bool $github=false): bool
 {
-    $query = $pdo->prepare("SELECT 1 FROM agent_connection_gmail_inbox_v1 p
+    $table = $github ? 'agent_connection_gmail_github_v1' : 'agent_connection_gmail_inbox_v1';
+    $query = $pdo->prepare("SELECT 1 FROM {$table} p
         INNER JOIN agent_connections_v1 c ON c.id=p.connection_id AND c.owner_user_id=p.owner_user_id
             AND c.authorization_key=p.authorization_key AND c.provider='gmail' AND c.status='connected' AND c.read_enabled=1
         INNER JOIN users u ON u.id=p.owner_user_id AND u.is_active=1
@@ -131,6 +139,20 @@ function agent_connection_gmail_inbox_claim_current_v1(PDO $pdo, array $policy, 
 
 function agent_connection_gmail_inbox_scan_v1(PDO $pdo, array $policy, string $claim, string $access, ?callable $http): array
 {
+    $seen = $pdo->prepare('SELECT 1 FROM agent_connection_gmail_inbox_receipts_v1 WHERE owner_user_id=? AND message_key=?');
+    return agent_connection_gmail_inbox_scan_checkpoint_v1($policy,$access,$http,
+        static fn(): bool => agent_connection_gmail_inbox_claim_current_v1($pdo,$policy,$claim),
+        static function(string $key) use ($seen,$policy): bool {
+            $seen->execute([$policy['owner_user_id'],$key]);
+            return $seen->fetchColumn() !== false;
+        },
+        static fn(string $id): ?array => agent_connection_gmail_inbox_message_v1($access,$id,(int)$policy['enabled_at_ms'],$http),10);
+}
+
+function agent_connection_gmail_inbox_scan_checkpoint_v1(
+    array $policy, string $access, ?callable $http, callable $claimCurrent, callable $alreadySeen, callable $read, int $budget
+): array
+{
     $cursor = (string)$policy['history_id'];
     $page = (string)($policy['history_page_token']??'');
     $pending = (string)$policy['pending_event_id'];
@@ -138,7 +160,7 @@ function agent_connection_gmail_inbox_scan_v1(PDO $pdo, array $policy, string $c
     $offset = (int)$policy['pending_offset'];
     $out = ['cursor'=>$cursor,'page'=>$page,'pending'=>$pending,'fingerprint'=>$fingerprint,'offset'=>$offset,'messages'=>[],'more'=>false];
     if ($cursor === '') return $out + ['status'=>'restart_required'];
-    if (!agent_connection_gmail_inbox_claim_current_v1($pdo,$policy,$claim)) return $out + ['status'=>'retrying'];
+    if (!$claimCurrent()) return $out + ['status'=>'retrying'];
     try {
         $history = agent_connection_gmail_inbox_history_v1($access,$cursor,$page,$http);
     } catch (AgentConnectionGmailExceptionV1 $error) {
@@ -159,8 +181,7 @@ function agent_connection_gmail_inbox_scan_v1(PDO $pdo, array $policy, string $c
     $out['pending'] = '';
     $out['fingerprint'] = '';
     $out['offset'] = 0;
-    $seen = $pdo->prepare('SELECT 1 FROM agent_connection_gmail_inbox_receipts_v1 WHERE owner_user_id=? AND message_key=?');
-    $remaining = 10;
+    $remaining = $budget;
     foreach ($history['events'] as $event) {
         $ids = $event['messages'];
         $signature = agent_connection_gmail_inbox_key_v1($policy,'event:'.implode(',', $ids));
@@ -170,13 +191,9 @@ function agent_connection_gmail_inbox_scan_v1(PDO $pdo, array $policy, string $c
         for (; $position<count($ids) && $remaining>0; $position++, $remaining--) {
             $id = $ids[$position];
             $key = agent_connection_gmail_inbox_key_v1($policy,'message:'.$id);
-            if (array_key_exists($key,$out['messages'])) continue;
-            $seen->execute([$policy['owner_user_id'],$key]);
-            if ($seen->fetchColumn() !== false) continue;
-            if (!agent_connection_gmail_inbox_claim_current_v1($pdo,$policy,$claim)) {
-                return ['status'=>'retrying'];
-            }
-            $out['messages'][$key] = agent_connection_gmail_inbox_message_v1($access,$id,(int)$policy['enabled_at_ms'],$http);
+            if (array_key_exists($key,$out['messages']) || $alreadySeen($key)) continue;
+            if (!$claimCurrent()) return ['status'=>'retrying'];
+            $out['messages'][$key] = $read($id);
         }
         if ($position<count($ids)) {
             $out['pending'] = $event['id'];

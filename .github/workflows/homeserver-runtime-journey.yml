@@ -35,7 +35,7 @@ jobs:
           initiative = r'^(?:(?:includes|api)/agent-initiative(?:-[a-z0-9-]+)?-v1\.php|(?:includes|api)/agent-top-of-mind-v1\.php|agent-top-of-mind-v1\.(?:js|css)|includes/(?:agent-screen-insights-v1|agent-tool-json-v1|agent-worker-health-v1|agent-capability-contract-v1|agent-capability-awareness-v1|agent-runtime-routing-v420|video-meetings-homeserver-v1801|agent-workflow-runs-v1400|homeserver-scope-v026|homeserver-capabilities-v024|homeserver-agent-v018|homeserver-vp3)\.php|tests/(?:agent-initiative[^/]*|agent-worker-health-v1|agent-top-of-mind[^/]*)\.(?:php|mjs)|tests/initiative-(?:followthrough-(?:browser|e2e)|capabilities-browser)\.mjs|tests/agent-capability-contract-v1\.php|tests/agent-core-(?:(?:adoption|install-parity)-v1\.php|startup-http\.mjs)|api/(?:chat|chat-v236|chat-stream-v121|chat-notifications-brain-v240)\.php|includes/(?:agent-chat-runtime-v2160|member-header)\.php|tests/fixtures/initiative-(?:chat-loop-http|followthrough-chat|capabilities-chat)\.php|setup\.php|(?:(?:api|includes)/)?agent-activity-v94\.(?:php|js)|chat-cognitive-presentation-v510\.(?:js|css)|api/cognitive-presentation-v510\.php)$'
           workbench = r'^(?:chat-initiative-workbench-v1\.(?:js|css)|(?:api|includes)/initiative-work[^/]+\.php|tests/(?:chat-initiative-workbench-browser|initiative-workbench-api)\.mjs|tests/initiative-work-[^/]+\.php|(?:includes|tests)/initiative-product-launch(?:-state)?-v1\.php|(?:includes|tests)/(?:initiative-promotion-outcomes|profile-promotion-(?:attribution|click))-v1\.php|profile-promotion-click\.php)$'
           live = r'^(?:(?:agent-live-context-v1|chat-initiative-voice-v1)\.js|agent-worker-v1910\.php|includes/(?:agent-live-context-v1|homeserver-transient-schema-v1|agent-record-tools-v1|agent-capability-chat-v1)\.php|(?:api|includes)/agent-screen-audio-v1\.php|tests/(?:agent-live-[^/]+|agent-screen-audio-events-v1|homeserver-https-transient-inference(?:-mysql)?)\.(?:php|mjs)|tests/initiative-live-context-browser\.mjs|tests/fixtures/initiative-live-context-chat\.php|upgrade-homeserver-transient-inference-v1\.sql)$'
-          connections = r'^(?:(?:admin/)?connections\.php|(?:connection-oauth|connection-test|connection-gmail-popup|connection-gmail-inbox|youtube-connection-v1)\.php|connections-v1\.css|(?:api/)?chat-email-v1\.(?:php|js|css)|(?:chat-youtube-v1|gmail-popup-v1)\.(?:css|js)|assets/youtube-logo-v1\.png|(?:api|includes|tests)/agent-connections?[^/]*\.(?:php|mjs))$'
+          connections = r'^(?:(?:admin/)?connections\.php|(?:connection-oauth|connection-test|connection-gmail-popup|connection-gmail-inbox|connection-gmail-github|youtube-connection-v1)\.php|connections-v1\.css|(?:api/)?chat-email-v1\.(?:php|js|css)|(?:chat-youtube-v1|gmail-popup-v1)\.(?:css|js)|assets/youtube-logo-v1\.png|(?:api|includes|tests)/agent-connections?[^/]*\.(?:php|mjs))$'
           development = r'^(?:(?:admin|api|includes|tests|workers)/agent-development[^/]*\.(?:php|mjs|py)|(?:tests/)?chat-agent-development[^/]*\.(?:mjs|js|css))$'
           changed = diff.returncode != 0 or any(re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
@@ -70,6 +70,8 @@ jobs:
           php tests/agent-connection-gmail-popup-v1.php
           php tests/agent-connection-notice-v1.php
           php tests/agent-connection-gmail-inbox-settings-v1.php
+          php tests/agent-connection-gmail-github-settings-v1.php
+          php tests/agent-connection-gmail-github-knowledge-v1.php
       - name: YouTube provider, owner Chat routing and shared quota
         run: |
           php tests/agent-connection-youtube-v1.php
@@ -314,13 +316,14 @@ jobs:
           VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
           VP3_SECTION7_MYSQL_PASSWORD: section7-fixture
         run: php tests/agent-core-install-parity-v1.php
-      - name: Gmail Connections, watches, and inbox review on MySQL
+      - name: Gmail Connections, watches, inbox review, and GitHub workflow review on MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
           VP3_TEST_MYSQL_PASS: section7-fixture
         run: |
           php tests/agent-connections-gmail-v1.php
           php tests/agent-connection-gmail-inbox-v1.php
+          php tests/agent-connection-gmail-github-v1.php
       - name: YouTube atomic quota and usage analytics on MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4

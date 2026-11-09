@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-connection-gmail-inbox-notice-v1.php';
+require_once __DIR__.'/agent-connection-gmail-github-notice-v1.php';
 
 /**
  * Operational Agent activity uses the existing notifications table as a durable,
@@ -50,14 +51,26 @@ function notification_is_gmail_inbox_review_v1(array $row): bool
         || ($row['source_type'] ?? '') === 'agent_connection_gmail_inbox';
 }
 
+function notification_is_gmail_github_actions_v1(array $row): bool
+{
+    return ($row['type'] ?? '') === 'agent_email_github_actions'
+        || ($row['source_type'] ?? '') === 'agent_connection_gmail_github';
+}
+
 function notification_gmail_inbox_scope_sql_v1(PDO $pdo, array $user, string $alias = ''): string
 {
     $prefix = $alias === '' ? '' : $alias.'.';
     $generation = agent_connection_gmail_inbox_notice_current_v1($pdo,$user);
     $other = "(COALESCE({$prefix}type,'')<>'agent_email_inbox_review'
         AND COALESCE({$prefix}source_type,'')<>'agent_connection_gmail_inbox')";
-    return $generation === null ? $other : "({$other} OR ({$prefix}type='agent_email_inbox_review'
+    $inbox = $generation === null ? $other : "({$other} OR ({$prefix}type='agent_email_inbox_review'
         AND {$prefix}source_type='agent_connection_gmail_inbox' AND {$prefix}source_id={$generation}))";
+    $github = agent_connection_gmail_github_actions_notice_current_v1($pdo,$user);
+    $other = "(COALESCE({$prefix}type,'')<>'agent_email_github_actions'
+        AND COALESCE({$prefix}source_type,'')<>'agent_connection_gmail_github')";
+    $githubScope = $github === null ? $other : "({$other} OR ({$prefix}type='agent_email_github_actions'
+        AND {$prefix}source_type='agent_connection_gmail_github' AND {$prefix}source_id={$github}))";
+    return $inbox.' AND '.$githubScope;
 }
 
 /** Known legacy Profile rows require saved native source proof before display. */
@@ -156,8 +169,11 @@ function notification_agent_brain_activity_after(?array $user, int $afterId = 0,
     $inbox = agent_connection_gmail_inbox_notice_current_v1($pdo,$user);
     $inboxScope = $inbox === null ? '' : " OR (n.source_type='agent_connection_gmail_inbox'
         AND n.type='agent_email_inbox_review' AND n.source_id={$inbox})";
+    $github = agent_connection_gmail_github_actions_notice_current_v1($pdo,$user);
+    $githubScope = $github === null ? '' : " OR (n.source_type='agent_connection_gmail_github'
+        AND n.type='agent_email_github_actions' AND n.source_id={$github})";
     $connections = "((n.source_type='agent_connection_activation' AND n.type IN ('gmail_connected','youtube_enabled'))
-        OR (n.source_type='agent_connection_email_followup' AND n.type='agent_email_followup'{$followupScope}){$inboxScope})";
+        OR (n.source_type='agent_connection_email_followup' AND n.type='agent_email_followup'{$followupScope}){$inboxScope}{$githubScope})";
     $predicate = $agentId > 0 ? $connections : '(' . notification_agent_brain_sql_predicate('n') . " OR {$connections})";
     $scopeParams = $agentId > 0 ? [$agentId] : [];
     $limit = max(1, min(100, $limit));
@@ -195,7 +211,7 @@ function notification_requires_attention(array $notification): bool
 {
     // The dedicated reminder ledger already owns Chat delivery and spoken presentation.
     if (($notification['type'] ?? '') === 'personal_reminder') return false;
-    if (notification_is_gmail_inbox_review_v1($notification)) return false;
+    if (notification_is_gmail_inbox_review_v1($notification) || notification_is_gmail_github_actions_v1($notification)) return false;
     if (notification_is_agent_brain_activity($notification)) return false;
 
     if (array_key_exists('requires_attention', $notification)) {
