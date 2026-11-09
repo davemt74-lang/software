@@ -39,6 +39,17 @@ $messages = [
     [120,11,null,'assistant','The participant answer.','{"chat_user_message_id":119,"agent_context":{"voice_speaker":{"participant_id":3}}}'],
     [121,11,1,'user','Read the private content',null],
     [122,11,null,'assistant','Unrelated private reply.','{"chat_user_message_id":121,"skip_brain_archive":true}'],
+    [130,11,1,'user','First overlapping question.',null],
+    [131,11,1,'user','Second overlapping question.',null],
+    [132,11,null,'assistant','The reply to the second question.',null],
+    [133,11,1,'user','Third overlapping question.',null],
+    [134,11,null,'assistant','The late reply to the first question.',null],
+    [135,11,null,'assistant','The reply to the third question.',null],
+    [136,11,1,'user','Check member@example.com without copying credentials.',null],
+    [137,11,1,'user','A credential ghp_fixture_secret_do_not_list.',null],
+    [138,11,null,'assistant','A saved reply with several possible prompts.',null],
+    [139,11,null,'assistant','A reply with an invalid explicit link.','{"chat_user_message_id":null}'],
+
 ];
 $insert = db()->prepare('INSERT INTO chat_messages(id,conversation_id,user_id,role,message,context_json) VALUES(?,?,?,?,?,?)');
 foreach ($messages as $message) $insert->execute($message);
@@ -120,7 +131,12 @@ try {
   assert.equal((await request({}, {'X-Fixture-Upgrade':'1'})).status,503);
 
   const draft = id => ({action:'draft',assistant_message_id:id});
-  const gmail = await request(draft(102));
+  const gmailChoices = await request(draft(102));
+  assert.equal(gmailChoices.status,200);
+  assert.deepEqual(gmailChoices.data.legacy_prompts,[{id:101,text:'How many new emails did I get today?'}]);
+  assert.equal(Object.hasOwn(gmailChoices.data,'draft'),false);
+  assert.equal(Object.hasOwn(gmailChoices.data,'revision'),false);
+  const gmail = await request({...draft(102),user_message_id:101});
   assert.equal(gmail.status,200);
   assert.match(gmail.data.draft,/How many new emails did I get today/);
   assert.match(gmail.data.draft,/Gmail search did not return results/);
@@ -137,7 +153,31 @@ try {
   assert.match(concurrent.data.draft,/A question with two overlapping requests/);
   assert.doesNotMatch(concurrent.data.draft,/Another question sent/);
   assert.notEqual((await request(draft(103))).status,200,'A user message cannot be used as an assistant reply');
-  assert.notEqual((await request(draft(107))).status,200,'Ambiguous legacy replies require a manual command');
+  const ambiguous = await request(draft(107));
+  assert.equal(ambiguous.status,200);
+  assert.deepEqual(ambiguous.data.legacy_prompts.map(row => row.id),[106,105,103,101]);
+  assert.equal(Object.hasOwn(ambiguous.data,'draft'),false);
+  const overlap = await request(draft(134));
+  assert.equal(overlap.status,200);
+  assert.deepEqual(overlap.data.legacy_prompts.slice(0,3).map(row => row.id),[133,131,130]);
+  assert.ok(overlap.data.legacy_prompts.length <= 8);
+  assert.equal(Object.hasOwn(overlap.data,'draft'),false,'The late legacy reply must not silently select the immediately prior prompt');
+  const chosen = await request({...draft(134),user_message_id:130});
+  assert.equal(chosen.status,200);
+  assert.match(chosen.data.draft,/First overlapping question/);
+  assert.match(chosen.data.draft,/late reply to the first question/);
+  assert.doesNotMatch(chosen.data.draft,/Third overlapping question/);
+  for (const rejected of [101,110,132,136]) {
+    assert.notEqual((await request({...draft(134),user_message_id:rejected})).status,200);
+  }
+  const guarded = await request(draft(138));
+  assert.equal(guarded.status,200);
+  assert.ok(guarded.data.legacy_prompts.some(row => row.id === 136));
+  assert.doesNotMatch(guarded.text,/member@example\.com|ghp_fixture_secret/);
+  assert.notEqual((await request({...draft(138),user_message_id:137})).status,200);
+  assert.notEqual((await request(draft(139))).status,200);
+  assert.notEqual((await request({...draft(104),user_message_id:101})).status,200,'An exact linked reply cannot be paired to another prompt');
+  assert.equal((await request({...draft(104),user_message_id:'103'})).status,422);
   assert.notEqual((await request(draft(109))).status,200,'Partial replies are ineligible');
   assert.notEqual((await request(draft(111))).status,200,'A different Agent Chat cannot supply evidence');
   assert.notEqual((await request(draft(113))).status,200,'A credential cannot become draft text');
@@ -163,7 +203,7 @@ try {
   assert.equal(created.status,200);
   assert.deepEqual(created.data.revision,{id:'b'.repeat(32),status:'queued',mode:'code_stage',preview_ready:false});
   assert.doesNotMatch(created.text,/PRIVATE/);
-  console.log('AGENT_DEVELOPMENT_CHAT_API_V1=PASS (real HTTP authority, scoped Chat, CSRF, typed request shape, stale mode, isolated draft evidence and minimal receipt)');
+  console.log('AGENT_DEVELOPMENT_CHAT_API_V1=PASS (real HTTP authority, scoped Chat, CSRF, typed request shape, stale mode, confirmed legacy pairing, isolated draft evidence and minimal receipt)');
 } finally {
   server.kill();
   await new Promise(resolve => server.once('close',resolve));

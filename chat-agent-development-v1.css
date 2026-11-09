@@ -62,6 +62,25 @@
 }
 .vp3-chat-development-draft-review p { margin: .35rem 0; }
 .vp3-chat-development-draft-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.vp3-chat-development-draft-review [hidden] { display: none; }
+.vp3-chat-development-draft-actions button:disabled { opacity: .6; cursor: default; }
+.vp3-chat-development-legacy-prompts {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.vp3-chat-development-legacy-options {
+  max-height: min(14rem, 35vh);
+  overflow-y: auto;
+}
+.vp3-chat-development-legacy-options label {
+  display: flex;
+  align-items: baseline;
+  gap: .4rem;
+  padding: .25rem 0;
+  overflow-wrap: anywhere;
+}
 @media (min-width: 761px) {
   body:has(#sfOnlineRailV109:not([hidden])) .vp3-chat-development-compact { display: none; }
 }

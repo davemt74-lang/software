@@ -30,7 +30,7 @@ try {
     $action = $body['action'] ?? null;
     $fields = ['action','owner_key','csrf_token','agent_id','conversation_id'];
     if ($action === 'create') $fields = [...$fields,'request','expected_epoch'];
-    if ($action === 'draft') $fields[] = 'assistant_message_id';
+    if ($action === 'draft') $fields = [...$fields,'assistant_message_id','user_message_id'];
     if (!is_array($body) || array_is_list($body) || !in_array($action,['status','create','draft'],true)
         || array_diff(array_keys($body),$fields)) {
         throw new DomainException('Choose a valid development request.',422);
@@ -52,6 +52,10 @@ try {
         $assistantMessageId = $body['assistant_message_id'] ?? null;
         if (!is_int($assistantMessageId)) throw new DomainException('Choose a saved Agent reply.',422);
         vp3_chat_read_id_v1($assistantMessageId);
+        if (array_key_exists('user_message_id',$body)) {
+            if (!is_int($body['user_message_id'])) throw new DomainException('Choose a saved owner request.',422);
+            vp3_chat_read_id_v1($body['user_message_id']);
+        }
     }
 
     $pdo = db();
@@ -78,7 +82,7 @@ try {
     } elseif ($action === 'draft') {
         $control = vp3_dev_control_v1($pdo,$owner);
         if ($control['mode'] === 'off') throw new DomainException('Enable an automation level in Agent Development.',409);
-        $data['draft'] = vp3_dev_chat_draft_v1($pdo,$user,$agentId,$conversationId,$assistantMessageId);
+        $data += vp3_dev_chat_draft_v1($pdo,$user,$agentId,$conversationId,$assistantMessageId,$body['user_message_id'] ?? null);
     } elseif ($conversationId > 0) {
         $data['revisions'] = array_map('vp3_dev_chat_status_v1',vp3_dev_list_v1($pdo,$owner,$conversationId));
     } else {
