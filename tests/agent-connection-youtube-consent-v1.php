@@ -23,10 +23,15 @@ agent_connection_youtube_set_consent_v1($pdo, 1, true);
 agent_connection_youtube_set_consent_v1($pdo, 1, true);
 youtube_consent_check(agent_connection_youtube_consent_v1($pdo, 1) && !agent_connection_youtube_consent_v1($pdo, 2),
     'Consent must be idempotent and scoped to a single member.');
-youtube_consent_check(!vp3_youtube_artist_research_enabled_v1($pdo,1), 'YouTube consent leaves background artist research off.');
+youtube_consent_check(!vp3_youtube_artist_research_enabled_v1($pdo,1)&&!vp3_youtube_research_enabled_v1($pdo,1,'topic'),
+    'YouTube consent leaves background research off.');
 vp3_youtube_artist_research_save_v1($pdo,1,true);
-youtube_consent_check(vp3_youtube_artist_research_enabled_v1($pdo,1)&&!vp3_youtube_artist_research_enabled_v1($pdo,2),
-    'Background artist research is an independent member preference.');
+youtube_consent_check(vp3_youtube_artist_research_enabled_v1($pdo,1)&&!vp3_youtube_artist_research_enabled_v1($pdo,2)
+    &&!vp3_youtube_research_enabled_v1($pdo,1,'topic'),
+    'Background artist research does not grant topic research.');
+vp3_youtube_research_save_v1($pdo,1,'topic',true);
+youtube_consent_check(vp3_youtube_research_enabled_v1($pdo,1,'topic')&&!vp3_youtube_research_enabled_v1($pdo,2,'topic'),
+    'Background topic research belongs to the consenting member.');
 $pdo->exec("UPDATE agent_connection_youtube_consent_v1 SET policy_version='old-version' WHERE owner_user_id=1");
 youtube_consent_check(!agent_connection_youtube_consent_v1($pdo, 1), 'Consent to an earlier policy cannot activate the skill.');
 agent_connection_youtube_set_consent_v1($pdo, 1, true);
@@ -35,7 +40,8 @@ agent_connection_youtube_set_consent_v1($pdo, 1, false);
 agent_connection_youtube_set_consent_v1($pdo, 1, false);
 youtube_consent_check(!agent_connection_youtube_consent_v1($pdo, 1) && agent_connection_youtube_consent_v1($pdo, 2),
     'Disabling must remove consent for only that member.');
-youtube_consent_check(!vp3_youtube_artist_research_enabled_v1($pdo,1), 'Disabling YouTube also revokes background artist research.');
+youtube_consent_check(!vp3_youtube_artist_research_enabled_v1($pdo,1)&&!vp3_youtube_research_enabled_v1($pdo,1,'topic'),
+    'Disabling YouTube also revokes both background research preferences.');
 $pdo->exec('DELETE FROM users WHERE id=2');
 youtube_consent_check(!agent_connection_youtube_consent_v1($pdo, 2), 'Deleting an account must remove its consent.');
 

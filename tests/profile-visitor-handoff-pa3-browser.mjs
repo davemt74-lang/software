@@ -19,7 +19,7 @@ async function fixture({loseFirst=false,owner=false}={}){
   await page.route('**/api/profile-agent.php*',async route=>{
     const request=route.request(),body=request.method()==='GET'?Object.fromEntries(new URL(request.url()).searchParams):request.postDataJSON();requests.push({method:request.method(),body});
     const send=(payload,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify({ok:true,...payload})});
-    if(state.switched){await send({ok:false,code:'PROFILE_SESSION_CHANGED',error:'Refresh the profile.'},409);return;}
+    if(state.switched){await send({ok:false,code:state.switched,error:'Refresh the profile.'},state.switched==='OWNER_VISITOR_PREVIEW_REQUIRED'?403:409);return;}
     if(body.action==='state'||body.action==='poll'){
       await send({agent:{greeting:''},conversation:state.conversation,messages:messages.filter(message=>message.id>Number(body.after_id||0)),handoff:state.handoff&&{...state.handoff,server_now_ms:Date.now()}});return;
     }
@@ -57,11 +57,12 @@ try{
     check(f.requests.filter(request=>request.body.action==='poll').every(request=>request.method==='GET')&&f.requests.filter(request=>request.body.action==='dispatch').every(request=>request.method==='POST'),'browser separates state reads from execution POSTs');
     check(await f.page.locator('#chatInput').inputValue()==='PRIVATE_OWNER_DRAFT'&&!JSON.stringify(f.requests).includes('PRIVATE_OWNER_DRAFT'),'owner private draft remains local and unchanged');await f.close();
   }
-  {
-    const f=await fixture({loseFirst:true});await f.send('Visitor A pending request');await f.page.getByRole('button',{name:'Retry message'}).waitFor();f.state.switched=true;
-    await f.page.getByRole('button',{name:'Retry message'}).click();await f.page.getByText('Your visitor session changed. Refresh this profile before continuing.',{exact:true}).waitFor();
+  for(const code of ['PROFILE_SESSION_CHANGED','OWNER_VISITOR_PREVIEW_REQUIRED']){
+    const f=await fixture({loseFirst:true});await f.send('Visitor A pending request');await f.page.getByRole('button',{name:'Retry message'}).waitFor();f.state.switched=code;
+    await f.page.getByRole('button',{name:'Retry message'}).click();await f.page.getByRole('button',{name:'Reload chat',exact:true}).waitFor();
+    check(await f.page.locator('[data-profile-agent-status] .profile-agent-visually-hidden').textContent()==='Your visitor session changed.','a changed session explains its recovery action to assistive technology');
     check(await f.page.getByRole('textbox',{name:'Visitor message'}).isDisabled()&&await f.page.locator('.profile-agent-message').count()===0,'changed account clears history and disables further sends until refreshed');
-    check(f.requests.every(request=>request.body.conversation_namespace==='a'.repeat(64)),'all native browser requests bind the original principal namespace');await f.close();
+    check(f.requests.every(request=>request.body.conversation_namespace==='a'.repeat(64)),'all native browser requests bind the original principal namespace after '+code);await f.close();
   }
   {
     const f=await fixture({owner:true});await f.send('Please speak with the owner');await f.page.getByText('The profile owner has joined this conversation.',{exact:true}).waitFor();

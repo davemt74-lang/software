@@ -54,9 +54,9 @@ if($youtubeHistoryRequest&&$participantActor!==null)throw new RuntimeException('
 $youtubeFollowup=$initiativeReply===null&&empty($input['ephemeral_protocol'])?agent_connection_youtube_followup_plan_v1($query):null;
 $youtubeRequest=$initiativeReply===null&&!$emailRequest&&$participantActor===null
     &&empty($input['ephemeral_protocol'])&&($youtubeHistoryRequest||$youtubeFollowup!==null||agent_connection_youtube_chat_plan_v1($query)!==null);
-$artistResearchRequest=$initiativeReply===null&&!$emailRequest&&$participantActor===null
-    &&empty($input['ephemeral_protocol'])&&vp3_artist_research_plan_v1($query)!==null;
-if(!$emailRequest&&!$youtubeRequest&&!$artistResearchRequest&&$participantActor===null&&vp3_participant_scope_v1()===null&&$conversationId>0&&($initiativeReply!==null||vp3_initiative_followthrough_referential_v1($query))){
+$publicResearchRequest=$initiativeReply===null&&!$emailRequest&&$participantActor===null
+    &&empty($input['ephemeral_protocol'])&&vp3_public_research_plan_v1($query)!==null;
+if(!$emailRequest&&!$youtubeRequest&&!$publicResearchRequest&&$participantActor===null&&vp3_participant_scope_v1()===null&&$conversationId>0&&($initiativeReply!==null||vp3_initiative_followthrough_referential_v1($query))){
     try{$initiativeRequest=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$conversationId,$query,
         static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input),$initiativeReply);}catch(Throwable $preflightError){throw vp3_agent_chat_followthrough_error_v2160($preflightError);}
 }
@@ -115,16 +115,17 @@ if($idempotencyKey!==''){
                 require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';vp3_working_context_replay_v1($pdo,$user,$principal,$input,$replay);
             }
             if(empty($replay['ok'])){chat_v121_emit(['type'=>'error','error'=>(string)($replay['error']??'The prior voice turn failed.'),'replayed'=>true]);exit;}
-            if($artistResearchRequest||isset($replay['artist_research_query_hash'])){
+            $researchHash=$replay['public_research_query_hash']??$replay['artist_research_query_hash']??null;
+            if($publicResearchRequest||$researchHash!==null){
                 $replayConversationId=(int)($replay['conversation_id']??0);
-                if(!$artistResearchRequest||($conversationId>0&&$conversationId!==$replayConversationId)
-                    ||!hash_equals((string)($replay['artist_research_query_hash']??''),hash('sha256',$query))){
-                    throw new RuntimeException('That artist research request changed.',409);
+                if(!$publicResearchRequest||($conversationId>0&&$conversationId!==$replayConversationId)
+                    ||!hash_equals((string)$researchHash,hash('sha256',$query))){
+                    throw new RuntimeException('That research request changed.',409);
                 }
                 vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
                 $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$replayConversationId],null);
-                if(!has_permission('account.access',$live))throw new RuntimeException('Artist research access changed.',403);
-                unset($replay['artist_research_query_hash']);
+                if(!has_permission('account.access',$live))throw new RuntimeException('Research access changed.',403);
+                unset($replay['public_research_query_hash'],$replay['artist_research_query_hash']);
             }
             if($youtubeRequest||isset($replay['youtube_query_hash'])){
                 $replayConversationId=(int)($replay['conversation_id']??0);
@@ -174,14 +175,14 @@ if($participantActor!==null){
     chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],'assistant_message_id'=>$done['assistant_message_id'],'agent_id'=>$agentScopeId]);
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
-if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$artistResearchRequest){
+if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$publicResearchRequest){
     // Use the same owner-scoped executor for these voice and typed turns.
     $input['conversation_id']=$conversationId;
     $done=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);
     $assistantMessageId=(int)$done['assistant_message_id'];$done['input_mode']='voice';
     if($idempotencyClaimed&&$idempotencyKey!==''){
         $replay=$done;
-        if($artistResearchRequest)$replay['artist_research_query_hash']=hash('sha256',$query);
+        if($publicResearchRequest)$replay['public_research_query_hash']=hash('sha256',$query);
         if($youtubeRequest){
             unset($replay['youtube_results']);
             $replay['youtube_query_hash']=hash('sha256',$query);

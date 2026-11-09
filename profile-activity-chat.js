@@ -45,7 +45,11 @@ function renderThread(binding,c,m){
   const heading=`<strong>${esc(c.visitor_label||'Visitor')}</strong><small>${esc(identityLine(c))} · ${esc(String(c.status||'open').replace('_',' '))}</small>`;
   if(identity.innerHTML!==heading)identity.innerHTML=heading;
   const messages=body.querySelector('[data-profile-thread-messages]');
-  const html=m.map(x=>`<div class="profile-activity-message ${esc(x.sender_type)}"><small>${x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':'Profile Agent'}</small><p>${esc(x.message)}</p></div>`).join('')||'<div class="profile-activity-empty">No messages yet.</div>';
+  const html=m.map(x=>{
+    const file=x.attachment?.name&&conversationId(x.id)
+      ? `<a href="${esc(endpoint)}?action=owner_attachment&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}" download>Download ${esc(x.attachment.name)}</a>`:'';
+    return `<div class="profile-activity-message ${esc(x.sender_type)}"><small>${x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':'Profile Agent'}</small><p>${esc(x.message)}</p>${file}</div>`;
+  }).join('')||'<div class="profile-activity-empty">No messages yet.</div>';
   if(messages.innerHTML!==html){const top=body.scrollTop,atEnd=body.scrollHeight-body.scrollTop-body.clientHeight<40;messages.innerHTML=html;body.scrollTop=atEnd?body.scrollHeight:top;}
   updateThreadControls(binding);
 }

@@ -226,6 +226,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && user_data_usage_schema_ready_v236()
         && shared_knowledge_index_schema_ready_v236()
         && profile_agent_schema_ready()
+        && table_exists('profile_chat_attachments_v1')
         && table_exists('profile_agent_handoff_owners_pa3')
         && table_exists('profile_agent_handoff_presence_pa3')
         && column_exists('profile_agent_handoff_presence_pa3','presence_sequence')

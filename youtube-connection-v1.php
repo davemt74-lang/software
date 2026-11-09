@@ -30,11 +30,13 @@ if ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && $action
     } catch (Throwable) {
         $result = 'youtube_unavailable';
     }
-} elseif ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && $action === 'save_artist_research') {
+} elseif ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf()
+    && in_array($action, ['save_artist_research','save_topic_research'], true)) {
     try {
-        if (!$pdo || !has_permission('chat.access', $user)) throw new DomainException('Artist research preference unavailable.');
-        vp3_youtube_artist_research_save_v1($pdo, (int)$user['id'], ($_POST['artist_research'] ?? null) === '1');
-        $result = 'youtube_artist_research_saved';
+        if (!$pdo || !has_permission('chat.access', $user)) throw new DomainException('Research preference unavailable.');
+        $kind = $action === 'save_artist_research' ? 'artist' : 'topic';
+        vp3_youtube_research_save_v1($pdo, (int)$user['id'], $kind, ($_POST[$kind.'_research'] ?? null) === '1');
+        $result = 'youtube_'.$kind.'_research_saved';
     } catch (Throwable) {
         $result = 'youtube_unavailable';
     }

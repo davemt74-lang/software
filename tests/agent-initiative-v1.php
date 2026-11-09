@@ -166,6 +166,12 @@ try{
 }finally{putenv('VP3_INITIATIVE_MAX_JOBS');}
 initiative_test_check(count(vp3_initiative_plan_v1(initiative_test_json([$meetingJob,array_replace($meetingJob,['tool'=>'knowledge.search'])]),
     $evidence,['work.prepare_private','knowledge.search']))===2,'distinct authorized specialist tools can advance the same primary situation');
+$topicRef='topic-interest:'.hash('sha256','wood-fired oven heat management');
+$topicJob=['tool'=>'topic.research','primary'=>$topicRef,'refs'=>[$topicRef,$calendar],
+    'focus'=>'Find a reliable oven temperature guide','report'=>true];
+initiative_test_check(vp3_initiative_plan_v1(initiative_test_json([$topicJob]),$evidence+[$topicRef=>['ref'=>$topicRef]],
+    ['topic.research'])===[array_replace($topicJob,['refs'=>[$topicRef]])],
+    'General research normalizes assignments to their primary topic so unrelated sources cannot create duplicate work');
 $checkIn=array_replace($meetingJob,['tool'=>'chat.check_in','report'=>true]);
 initiative_test_check(vp3_initiative_plan_v1(initiative_test_json([$checkIn,$missionJob]),$evidence,
     ['chat.check_in','work.prepare_private'])===[$checkIn,$missionJob],

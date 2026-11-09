@@ -64,10 +64,10 @@ function vp3_youtube_history_change_v1(PDO $pdo, int $owner, string $action, str
     });
 }
 
-function vp3_youtube_history_video_v1(string $payload, string $id): ?array
+function vp3_youtube_history_video_v1(array|string $payload, string $id): ?array
 {
-    $data = json_decode($payload, true);
-    foreach ($data['videos'] ?? [] as $video) {
+    if (is_string($payload)) $payload = (array)json_decode($payload, true);
+    foreach ($payload['videos'] ?? [] as $video) {
         if (($video['video_id'] ?? null) === $id && ($video['made_for_kids'] ?? null) === false) return $video;
     }
     return null;
@@ -121,9 +121,11 @@ function vp3_youtube_history_recent_v1(PDO $pdo, int $owner, ?int $agentId = nul
     $stmt->execute($params);
     $history = [];
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $video = vp3_youtube_history_video_v1($row['payload_json'], $row['video_id']);
+        $payload = (array)json_decode($row['payload_json'], true);
+        $video = vp3_youtube_history_video_v1($payload, $row['video_id']);
         if ($video) $history[] = $video + ['play_id'=>$row['play_id'], 'message_id'=>(int)$row['message_id'],
             'played_at'=>(int)$row['played_at'], 'expires_at'=>(int)$row['expires_at'],
+            'music_suggestion'=>in_array($payload['suggestion_kind']??null,['music','artists','similar'],true),
             'conversation_id'=>(int)$row['conversation_id']];
     }
     return $history;

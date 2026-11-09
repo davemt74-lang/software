@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 // Execute the production upgrade page with isolated migration dependencies.
 // Real PDO/SQLite and the production TV schema exercise the connection and readiness path.
-$newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_actions_v1','agent_participant_settings_v1','agent_participant_grants_v1','agent_participant_presence_v1','agent_participant_observers_v1',
+$newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_actions_v1','agent_participant_settings_v1','agent_participant_grants_v1','agent_participant_presence_v1','agent_participant_observers_v1','profile_chat_attachments_v1',
     'profile_agent_handoff_owners_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3',
     'profile_calls_pa3c','profile_call_slots_pa3c','profile_call_operations_pa3c','profile_call_deliveries_pa3c',
     'profile_call_assistance_pa3c','profile_call_research_pa3c',
@@ -43,6 +43,7 @@ require dirname(__DIR__).'/includes/tv-watching-v1.php';
 require dirname(__DIR__).'/includes/agent-reminders-v1.php';
 require dirname(__DIR__).'/includes/chat-settings-v237.php';
 require dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
+require_once dirname(__DIR__).'/includes/profile-chat-attachments-v1.php';
 require dirname(__DIR__).'/includes/profile-calls-pa3c.php';
 require_once dirname(__DIR__).'/includes/profile-call-activity-pa3c.php';
 require dirname(__DIR__).'/includes/profile-visitor-speech-pa4a.php';
@@ -76,6 +77,8 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
 function profile_agent_ensure_schema(?PDO $connection=null): void
 {
     $p=$connection??$GLOBALS['fixture'];
+    $p->exec('CREATE TABLE IF NOT EXISTS profile_agent_messages (id INTEGER PRIMARY KEY)');
+    vp3_profile_chat_attachment_install_v1($p);
     $p->exec("CREATE TABLE IF NOT EXISTS agent_attention_items(id INTEGER PRIMARY KEY,owner_user_id INTEGER,source_event_id INTEGER UNIQUE,source_conversation_id INTEGER,profile_agent_id INTEGER,visitor_user_id INTEGER,attention_type VARCHAR(50),priority INTEGER,status VARCHAR(20) DEFAULT 'pending',headline VARCHAR(255),summary TEXT,assessment TEXT,recommended_response TEXT,actions_json TEXT,context_json TEXT,snoozed_until DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $p->exec("CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY,user_id INTEGER,type VARCHAR(80),title VARCHAR(255),body TEXT,target_url TEXT,source_type VARCHAR(80),source_id INTEGER,is_read INTEGER DEFAULT 0,read_at DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
 }
