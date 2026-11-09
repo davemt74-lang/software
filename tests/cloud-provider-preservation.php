@@ -8,7 +8,7 @@ namespace ProviderRegression;
 // are the actual application code; no real provider call is made.
 $root=sys_get_temp_dir().'/vp3-provider-'.bin2hex(random_bytes(6));
 \define('STONEFELLOW_ROOT',$root);
-$settings=[];$requests=[];$replyStatus=200;$checks=0;$own=['route'=>'system'];$wrongTestReply=false;$streamReplyStatus=null;$providerStatuses=[];
+$settings=[];$requests=[];$replyStatus=200;$checks=0;$own=['route'=>'system'];$wrongTestReply=false;$streamReplyStatus=null;$providerStatuses=[];$preflightCalls=0;
 function db(): \PDO {
     static $pdo;
     if($pdo instanceof \PDO)return $pdo;
@@ -21,6 +21,7 @@ function db(): \PDO {
 }
 function vp3_user_llm_v1_effective(\PDO $pdo,array $user): array {return $GLOBALS['own'];}
 function subscription_ai_preflight(?array $user,string $scope,int $input,int $output): array {
+    $GLOBALS['preflightCalls']++;
     return ['reservation_id'=>0,'max_output_tokens'=>$output,'unlimited'=>true];
 }
 function subscription_ai_commit_usage(...$args): void {}
@@ -228,6 +229,33 @@ try {
     $vision=ai_v100_with_service_context($context,static fn()=>ai_generate_chat_response($query,[],[],$user,null,null,[$image]));
     check(!empty($vision['ok'])&&count($requests)===1&&end($requests)['payload']['input'][0]['content'][1]['image_url']===$image,
         'Metering estimates inline vision separately and preserves the image sent to the provider');
+
+    $customModel='fixture-openai-chat-v1';
+    vp3_ai_service_save_model_v1($pdo,'openai',$customModel,'Fixture Chat model',['conversation']);
+    $customRoute=['provider'=>'openai','model'=>$customModel,'funding'=>'own_key'];
+    vp3_ai_service_save_route_v1($pdo,'conversation',$customRoute,null);
+    $own=['route'=>'own_key','provider'=>'openai','model'=>'gpt-5.4-mini','api_key'=>'fixture-custom-personal'];
+    $requests=[];
+    check(($typed()['failure_code']??'')==='personal_route_unavailable'
+        &&($voice()['failure_code']??'')==='personal_route_unavailable'&&$requests===[],
+        'A registered personal route cannot override the account model selection');
+    $own['model']=$customModel;
+    $previousPreflights=$preflightCalls;
+    foreach([true,false] as $configured){
+        if(!$configured)vp3_ai_service_save_route_v1($pdo,'conversation',null,null);
+        $requests=[];
+        $textResponse=$typed();$voiceResponse=$voice();
+        check(!empty($textResponse['ok'])&&!empty($voiceResponse['ok'])&&count($requests)===2
+            &&array_column(array_column($requests,'payload'),'model')===[$customModel,$customModel],
+            ($configured?'Configured':'Legacy').' Conversation sends the registered personal model in text and SSE');
+        check($textResponse['compute_source']==='user_provider'&&$voiceResponse['compute_source']==='user_provider'
+            &&$textResponse['cloud_tokens_charged']===0&&$voiceResponse['cloud_tokens_charged']===0
+            &&$preflightCalls===$previousPreflights
+            &&in_array('Authorization: Bearer fixture-custom-personal',$requests[0]['headers'],true)
+            &&in_array('Authorization: Bearer fixture-custom-personal',$requests[1]['headers'],true),
+            'Both adapters use the selected personal key without charging the system allowance');
+    }
+
     $requests=[];
     $personal=['provider'=>'openai','model'=>'gpt-5.4-mini','funding'=>'own_key'];
     $initiative=static fn()=>ai_v100_with_service_context(['service'=>'initiative','background'=>true,'run_id'=>31,'agent_id'=>11,'conversation_id'=>18],

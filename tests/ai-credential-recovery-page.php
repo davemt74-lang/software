@@ -12,8 +12,8 @@ $pdo=new PDO('sqlite:'.$root.'/fixture.db',null,null,[PDO::ATTR_ERRMODE=>PDO::ER
 $pdo->exec('CREATE TABLE settings(setting_key TEXT PRIMARY KEY,setting_value TEXT NOT NULL)');
 $pdo->exec("CREATE TABLE subscription_packages(id INTEGER PRIMARY KEY,name TEXT NOT NULL);
  CREATE TABLE users(id INTEGER PRIMARY KEY,display_name TEXT NOT NULL);
- CREATE TABLE user_llm_credentials(user_id INT,provider TEXT,model TEXT,encrypted_key TEXT,PRIMARY KEY(user_id,provider));
- CREATE TABLE user_llm_preferences(user_id INT PRIMARY KEY,route TEXT,provider TEXT);
+ CREATE TABLE user_llm_credentials(user_id INT,provider TEXT,model TEXT,encrypted_key TEXT,updated_at TEXT,PRIMARY KEY(user_id,provider));
+ CREATE TABLE user_llm_preferences(user_id INT PRIMARY KEY,route TEXT,provider TEXT,updated_at TEXT);
  INSERT INTO subscription_packages VALUES (9,'Fixture Package');
  INSERT INTO users VALUES (10,'Fixture Member'),(11,'Other Member');");
 $keys=['ai_anthropic_api_key'=>'fixture-claude-reconnected','ai_elevenlabs_api_key'=>'fixture-eleven-reconnected'];
@@ -38,6 +38,10 @@ $config=['site'=>['base_path'=>'']];
 class FixturePDO extends PDO {
  public function prepare(string $query,array $options=[]): PDOStatement|false {
   $query=str_replace('ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)','ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value',$query);
+  $query=str_replace('ON DUPLICATE KEY UPDATE encrypted_key=VALUES(encrypted_key),model=VALUES(model),updated_at=CURRENT_TIMESTAMP',
+   'ON CONFLICT(user_id,provider) DO UPDATE SET encrypted_key=excluded.encrypted_key,model=excluded.model,updated_at=CURRENT_TIMESTAMP',$query);
+  $query=str_replace('ON DUPLICATE KEY UPDATE route=VALUES(route),provider=VALUES(provider),updated_at=CURRENT_TIMESTAMP',
+   'ON CONFLICT(user_id) DO UPDATE SET route=excluded.route,provider=excluded.provider,updated_at=CURRENT_TIMESTAMP',$query);
   return parent::prepare($query,$options);
  }
 }
@@ -204,7 +208,7 @@ try{
  [$status]=request('/admin/ai.php',$memberRoute);
  check($status===302,'Admin can configure the exact personal Initiative route.');
  $memberKey='fixture-personal-key-for-initiative';
- $credential=$pdo->prepare('INSERT INTO user_llm_credentials VALUES (?,?,?,?)');
+ $credential=$pdo->prepare('INSERT INTO user_llm_credentials (user_id,provider,model,encrypted_key) VALUES (?,?,?,?)');
  $credential->execute([10,'anthropic','claude-haiku-4-5',ai_encrypt_secret($memberKey)]);
  $credential->execute([11,'anthropic','claude-haiku-4-5',ai_encrypt_secret('fixture-second-personal-key')]);
  $memberApi='/api/user-llm-v1.php';
@@ -237,6 +241,17 @@ try{
  $routes=array_column(json_decode($json,true)['state']['service_permissions']??[] ,null,'service');
  check($status===200&&($routes['image_generation']['model']??null)==='gpt-image-1.5'
     &&($routes['image_generation']['can_approve']??null)===true,'The member API resolves the built-in image catalog separately from the saved Chat model.');
+ [$status,$html]=request('/settings-ai-providers.php',null,false,'member');
+ check($status===200&&str_contains($html,'<option value="fixture-model:2026">Fixture &lt;Model&gt;</option>')
+    &&!str_contains($html,'<option value="gpt-image-1.5">'),'The personal Conversation picker includes registered eligible models.');
+ $saveModel=['action'=>'save','csrf_token'=>$csrf,'provider'=>'anthropic','model'=>'fixture-model:2026','api_key'=>$memberKey];
+ [$status,$json]=request($memberApi,$saveModel,true,'member');
+ check($status===200&&(json_decode($json,true)['state']['providers']['anthropic']['model']??null)==='fixture-model:2026'
+    &&!str_contains($json,$memberKey),'Member can save an exact registered Conversation model with a personal key.');
+ [$status]=request($memberApi,array_replace($saveModel,['model'=>'never-registered']),true,'member');
+ check($status===400,'A personal Conversation key cannot select an unregistered model.');
+ [$status,$json]=request($memberApi,['action'=>'select','route'=>'own_key','provider'=>'anthropic','csrf_token'=>$csrf],true,'member');
+ check($status===200&&(json_decode($json,true)['state']['route']??null)==='own_key','The registered model can be the member’s selected personal Conversation route.');
  echo 'AI_CREDENTIAL_RECOVERY_PAGE=PASS ('.$checks." assertions; actual production page/API over HTTP)\n";
 }finally{
  proc_terminate($process);proc_close($process);

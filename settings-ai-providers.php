@@ -2,10 +2,12 @@
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/ai-settings.php';
+require_once __DIR__.'/includes/user-llm-v1.php';
 require_permission('account.access');
 $user=current_user();
 if(!$user)redirect(url('/login.php'));
-$models=ai_model_catalog();
+$pdo=db();
+$models=$pdo instanceof PDO?vp3_user_llm_v1_models($pdo):ai_model_catalog();
 ?>
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -42,7 +44,7 @@ $models=ai_model_catalog();
 <article class="llm-card" data-llm-provider="<?=e($provider)?>"><h2><?=e($label)?></h2><p class="llm-status" data-key-status>Checking…</p>
 <form class="llm-provider-form" data-provider="<?=e($provider)?>">
 <div class="llm-row"><label>Private API key<input type="password" name="api_key" autocomplete="off" required maxlength="4000" placeholder="Key is never displayed after saving"></label>
-<label>Model<select name="model"><?php foreach($models[$provider] as $id=>$name): ?><option value="<?=e($id)?>"><?=e($name)?></option><?php endforeach; ?></select></label></div>
+<label>Conversation model<select name="model"><?php foreach($models[$provider] as $id=>$name): ?><option value="<?=e($id)?>"><?=e($name)?></option><?php endforeach; ?></select></label></div>
 <button type="submit">Save encrypted key</button> <button type="button" class="secondary" data-remove="<?=e($provider)?>">Remove key</button>
 </form></article>
 <?php endforeach; ?>
