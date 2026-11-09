@@ -479,6 +479,10 @@ function chat_local_answer(string $query, array $context, ?array $failure = null
     if($code==='credential_empty')return 'The selected cloud AI provider has no saved API credential on the server. The site administrator needs to check AI / API Settings.';
     if(in_array($code,['credential_missing_key','credential_unreadable_key','credential_invalid_key','credential_crypto_unavailable','credential_unsupported_format','credential_key_mismatch'],true))return 'The server cannot read its saved AI credential. The site administrator needs to restore credential access in AI / API Settings.';
     if($code==='transport_unavailable')return 'The server’s AI connection component is unavailable. The site administrator needs to restore PHP cURL support.';
+    if($code==='service_disabled')return 'This AI service is unavailable under your current account policy.';
+    if(in_array($code,['service_route_unavailable','personal_route_unavailable','system_route_not_selected'],true)){
+        return 'No configured provider and model are available for this account. Check your AI service settings.';
+    }
     if(in_array((int)($failure['status']??0),[401,403],true))return 'The AI provider rejected this request’s authentication or access. Check the provider connection in AI / API Settings.';
     $error = (string)($failure['error'] ?? '');
     if (preg_match('/not (?:fully )?configured|credentials|saved provider key|disabled|transport is unavailable/i', $error) || in_array((int)($failure['status'] ?? 0), [401,403], true)) {
@@ -522,7 +526,7 @@ function chat_remote_answer(string $query, array $history, array $context, array
     $answer = trim((string)($result['answer'] ?? ''));
     if($answer!==''&&chat_presentation_violation_v2370($answer)){
         error_log('VP3 v23.70 presentation firewall discarded an internal-context echo.');
-        chat_ai_response_outcome(['ok'=>false,'error'=>'Response presentation rejected.']);
+        chat_ai_response_outcome(array_replace($result,['ok'=>false,'answer'=>'','error'=>'Response presentation rejected.']));
         return null;
     }
     return $answer !== '' ? $answer : null;

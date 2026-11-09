@@ -89,6 +89,8 @@ function agent_background_v125_enqueue(...$args){}
 function agent_brain_archive_and_parse(...$args){}
 function chat_context_is_internal_source($s){return str_starts_with($s,'runtime:');}
 function ai_v100_safe_exception($e,$fallback='Failed'){return $fallback;}
+function ai_v100_with_service_context(array $context,callable $call): mixed{return $call();}
+function chat_ai_response_outcome(?array $result=null): array{return ['ok'=>true,'provider'=>'openai','model'=>'fixture-conversation'];}
 function chat_remote_answer(string $query,array $history,array $context,array $user,?array $control=null):?string
 {
     if($query!=='Help me with that')return 'Fixture model response.';

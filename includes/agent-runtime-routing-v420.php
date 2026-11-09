@@ -53,7 +53,7 @@ function vp3_agent_runtime_preference_readonly_v420(PDO $pdo,int $userId,int $ag
     }
 }
 
-function vp3_agent_runtime_cloud_state_v420(array $user): array
+function vp3_agent_runtime_cloud_state_v420(array $user, ?PDO $pdo = null, array $serviceContext = []): array
 {
     $state=['ready'=>false,'entitled'=>false,'unlimited'=>false,'remaining'=>0,'reason'=>'cloud_unavailable'];
     if((int)($user['id']??0)<1)return $state;
@@ -62,10 +62,31 @@ function vp3_agent_runtime_cloud_state_v420(array $user): array
             ?subscription_has_entitlement($user,'main_ai.access')
             :true;
         if(!$state['entitled']){$state['reason']='cloud_not_entitled';return $state;}
+        $policy=$pdo!==null&&function_exists('ai_v100_service_policy')?ai_v100_service_policy($pdo,$user,$serviceContext):null;
+        if($policy!==null){
+            $state['service_controlled']=!empty($policy['configured'])||empty($policy['enabled'])
+                ||($policy['allowed_models']??null)!==null||($policy['allowed_funding']??null)!==null;
+            foreach(['job_tokens','daily_tokens','monthly_tokens','background_daily_tokens','background_monthly_tokens'] as $limit){
+                if(!empty($policy[$limit]))$state['service_controlled']=true;
+            }
+            if(empty($policy['enabled'])){$state['reason']='cloud_service_disabled';return $state;}
+        }
         // Personal Cloud keys use the owner's provider bill, not VP3's tokens.
         // The same account entitlement and request-rate limits still apply.
-        if(function_exists('vp3_user_llm_v1_effective')&&function_exists('db')&&db()){
-            $own=vp3_user_llm_v1_effective(db(),$user);
+        $own=['route'=>'system'];
+        $connection=$pdo??(function_exists('db')?db():null);
+        if(function_exists('vp3_user_llm_v1_effective')&&$connection instanceof PDO){
+            $own=vp3_user_llm_v1_effective($connection,$user);
+        }
+        if(!empty($policy['configured'])){
+            $available=null;
+            foreach(ai_v100_service_targets($policy,$own,'',[]) as $target){
+                if(!isset(ai_v100_service_target_credential($target,$own,$policy,$user,$connection)['failure'])){$available=$target;break;}
+            }
+            if($available===null){$state['reason']='cloud_service_route_unavailable';return $state;}
+            $own['route']=$available['funding'];
+        }
+        if($own){
             if(($own['route']??'system')==='own_key'){
                 $state['ready']=true;$state['reason']='user_key_ready';
                 $state['billing_source']='user_provider';$state['remaining']=null;
@@ -102,7 +123,7 @@ function vp3_agent_runtime_tool_plan_v420(int $userId,int $agentId,string $surfa
     ];
 }
 
-function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat'): array
+function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat',array $serviceContext=[]): array
 {
     $userId=(int)($user['id']??0);$agentId=max(0,$agentId);
     if($userId<1)throw new RuntimeException('A signed-in VP3 user is required for Agent runtime routing.');
@@ -110,7 +131,7 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
 
     $rawPolicy=vp3_agent_runtime_preference_v420($pdo,$userId,$agentId);
     $requested=(string)($rawPolicy['effective_preference']??'auto');
-    $cloud=vp3_agent_runtime_cloud_state_v420($user);
+    $cloud=vp3_agent_runtime_cloud_state_v420($user,$pdo,$serviceContext);
     $policy=$rawPolicy;
     $home=['paired'=>false,'supported'=>false,'ready'=>false,'cloud_allowed'=>true,'scope_checked'=>false];
     $brainCapability=['supported'=>false,'ready'=>false,'reason'=>'not_checked'];
@@ -146,7 +167,8 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
     // provider only and therefore receives cloud_allowed=false.
     $homeCloudAllowed=$effective==='auto'
         && !empty($home['cloud_allowed'])
-        && !empty($cloud['ready']);
+        && !empty($cloud['ready'])
+        && empty($cloud['service_controlled']);
 
     $gateway=ai_gateway_v031_plan([
         'surface'=>$surface,
@@ -207,6 +229,8 @@ function vp3_agent_runtime_public_plan_v420(array $plan): array
 
 function vp3_agent_runtime_block_message_v420(array $plan): string
 {
+    if(($plan['cloud']['reason']??'')==='cloud_service_disabled')return 'This AI service is unavailable under your current account policy.';
+    if(($plan['cloud']['reason']??'')==='cloud_service_route_unavailable')return 'No configured provider and model are available for this account. Check your AI service settings.';
     $reason=(string)($plan['route_reason']??'no_route_ready');
     return match($reason){
         'homeserver_required_unpaired'=>'HomeServer-only compute is selected for this Agent, but this account is not connected to HomeServer. Connect HomeServer or change this Agent’s compute policy in My Account.',

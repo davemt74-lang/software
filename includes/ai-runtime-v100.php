@@ -9,6 +9,175 @@ function ai_v100_telemetry(array $event): void{try{$allowed=['trace_id','scope',
 function ai_v100_usage(string $provider,array $decoded): array{$u=is_array($decoded['usage']??null)?$decoded['usage']:[];$in=(int)($u['input_tokens']??0);$out=(int)($u['output_tokens']??0);return ['input_tokens'=>$in,'output_tokens'=>$out,'total_tokens'=>(int)($u['total_tokens']??($in+$out))];}
 function ai_v100_complexity(string $query,array $context=[]): string{$q=mb_strtolower(trim($query));$words=preg_split('/\s+/u',$q)?:[];foreach(['deep dive','full review','review everything','analyze everything','analyse everything','full history','all recent','compare versions','root cause','architecture','security review','complete plan'] as $n)if(str_contains($q,$n))return 'deep';if(count($words)>=42)return 'deep';$hits=0;foreach(['analyze','analyse','review','compare','recommend','strategy','plan','multiple','several','history','patterns','optimize','optimise','debug'] as $n)if(str_contains($q,$n))$hits++;if($hits>=2||count($words)>=18||count($context)>=18)return 'complex';return 'routine';}
 function ai_v100_model_candidates(string $provider,string $complexity): array{$configured=ai_provider_model($provider);$preferred='';if($provider==='openai')$preferred=$complexity==='deep'?'gpt-5.6-sol':($complexity==='complex'?'gpt-5.6-terra':$configured);elseif($provider==='anthropic')$preferred=$configured;$out=[];foreach([$preferred,$configured] as $m){$m=trim((string)$m);if($m!==''&&ai_valid_model($provider,$m)&&!in_array($m,$out,true))$out[]=$m;}return $out;}
+
+/** Server-owned attribution for the canonical Chat and Initiative entry points. */
+function ai_v100_service_context(?array $context = null): array
+{
+    static $current = [];
+    if ($context !== null) $current = $context;
+    return $current;
+}
+
+function ai_v100_with_service_context(array $context, callable $call): mixed
+{
+    $previous = ai_v100_service_context();
+    ai_v100_service_context($context);
+    try { return $call(); }
+    finally { ai_v100_service_context($previous); }
+}
+
+function ai_v100_service_policy(PDO $pdo, array $user, array $context): ?array
+{
+    $service = (string)($context['service'] ?? '');
+    if (!in_array($service, ['conversation', 'initiative'], true)) return null;
+    $module = __DIR__ . '/ai-service-policy-v1.php';
+    if (!function_exists('vp3_ai_service_policy_v1') && is_file($module)) require_once $module;
+    if (!function_exists('vp3_ai_service_policy_v1')) return null;
+    return vp3_ai_service_policy_v1($pdo, $user, $service, !empty($context['background']));
+}
+
+function ai_v100_service_setup(?array $user, string $scope, string $stage, array $context): array
+{
+    $pdo = function_exists('db') && $user && isset($context['service']) ? db() : null;
+    if (!$pdo instanceof PDO) return [null, null];
+    $policy = ai_v100_service_policy($pdo, $user, $context);
+    if ($policy === null) return [null, null];
+    if (empty($policy['enabled'])) return [$policy, null];
+    $context += ['stage'=>$stage, 'job_key'=>bin2hex(random_bytes(16))];
+    return [$policy, new AiV100ServiceMeter($pdo, $user, $context, $policy, $scope)];
+}
+
+function ai_v100_service_failure(string $message, string $code = 'service_route_unavailable'): array
+{
+    return ['ok'=>false, 'error'=>$message, 'failure_code'=>$code, 'stop_service_fallback'=>true];
+}
+
+/** A saved personal key remains opt-in and tied to its owner's selected provider. */
+function ai_v100_service_target_credential(array $target, array $own, ?array $policy = null, ?array $user = null, ?PDO $pdo = null): array
+{
+    if (($target['funding'] ?? '') === 'own_key') {
+        $initiative = ($policy['service'] ?? '') === 'initiative';
+        if ($initiative) {
+            $module = __DIR__ . '/ai-service-own-key-v1.php';
+            if (!function_exists('vp3_ai_service_own_key_v1') && is_file($module)) require_once $module;
+            $key = $pdo !== null && function_exists('vp3_ai_service_own_key_v1')
+                ? vp3_ai_service_own_key_v1($pdo, (int)($user['id'] ?? 0), 'initiative', $target['provider'], $target['model']) : '';
+            return $key !== ''
+                ? ['own'=>['provider'=>$target['provider'],'model'=>$target['model'],'api_key'=>$key]]
+                : ['failure'=>ai_v100_service_failure('Approve this Initiative provider and model in your account before using a personal key.', 'personal_service_grant_required')];
+        }
+        if (($own['route'] ?? '') !== 'own_key' || ($own['provider'] ?? '') !== ($target['provider'] ?? '')
+            || ($own['model'] ?? '') !== ($target['model'] ?? '') || empty($own['api_key'])) {
+            return ['failure'=>ai_v100_service_failure('The personal provider and model must match the Chat service settings.', 'personal_route_unavailable')];
+        }
+        return ['own'=>$own];
+    }
+    if (($policy['service'] ?? '') !== 'initiative' && ($own['route'] ?? '') !== 'system') {
+        return ['failure'=>ai_v100_service_failure('The Chat service is set to use VP3 inference. Select VP3 system inference in your account to use it.', 'system_route_not_selected')];
+    }
+    $failure = ai_provider_configuration_failure((string)$target['provider']);
+    return $failure === null ? ['own'=>null] : ['failure'=>$failure];
+}
+
+/** Select only actual, authorized candidates. The configured service pins each model. */
+function ai_v100_service_targets(?array $policy, array $own, string $provider, array $models): array
+{
+    if ($policy !== null && empty($policy['enabled'])) return [];
+    $funding = ($own['route'] ?? '') === 'own_key' ? 'own_key' : 'system';
+    $targets = !empty($policy['configured'])
+        ? array_filter([$policy['primary'] ?? null, $policy['fallback'] ?? null], 'is_array')
+        : array_map(static fn(string $model): array=>['provider'=>$provider,'model'=>$model,'funding'=>$funding], $models);
+    return array_values(array_filter($targets, static fn(array $target): bool =>
+        $policy === null || vp3_ai_service_target_allowed_v1($policy, $target)));
+}
+
+/** A logical Chat invocation may make more than one physical provider attempt. */
+final class AiV100ServiceMeter
+{
+    private array $ids = [];
+    private int $charged = 0;
+    private readonly bool $configured;
+    private array $options;
+    public readonly bool $active;
+
+    public function __construct(private PDO $pdo, private array $user, array $context, ?array $policy, string $scope)
+    {
+        $module = __DIR__ . '/ai-service-usage-v1.php';
+        if (!function_exists('vp3_ai_service_usage_ready_v1') && is_file($module)) require_once $module;
+        $this->options = $context + ['billing_scope'=>$scope];
+        $this->configured = !empty($policy['configured']);
+        $required = $this->configured;
+        foreach (['job_tokens','daily_tokens','monthly_tokens','background_daily_tokens','background_monthly_tokens'] as $limit) {
+            $this->options[$limit] = $policy[$limit] ?? null;
+            $required = $required || $this->options[$limit] !== null;
+        }
+        $this->options['required'] = $required;
+        $this->active = $required || (function_exists('vp3_ai_service_usage_ready_v1') && vp3_ai_service_usage_ready_v1($pdo));
+    }
+
+    public function begin(array $target, array $payload, string $outputField): array
+    {
+        if (!$this->active) return [];
+        if (!function_exists('vp3_ai_service_usage_begin_v1')) throw new RuntimeException('AI service usage is unavailable. Run Database Upgrade.', 503);
+        $messageField = $target['provider'] === 'openai' ? 'input' : 'messages';
+        $images = 0;
+        foreach ($payload[$messageField] ?? [] as $messageIndex => $message) {
+            if (!is_array($message['content'] ?? null)) continue;
+            foreach ($message['content'] as $partIndex => $part) {
+                if (($part['type'] ?? '') === 'input_image') {
+                    $payload[$messageField][$messageIndex]['content'][$partIndex]['image_url'] = '';
+                    $images++;
+                } elseif (($part['type'] ?? '') === 'image' && ($part['source']['type'] ?? '') === 'base64') {
+                    $payload[$messageField][$messageIndex]['content'][$partIndex]['source']['data'] = '';
+                    $images++;
+                }
+            }
+        }
+        $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $chars = is_string($encoded) ? mb_strlen($encoded) : 0;
+        $input = function_exists('subscription_estimate_tokens_from_chars')
+            ? subscription_estimate_tokens_from_chars($chars) : max(1, (int)ceil($chars / 3.5));
+        $ticket = vp3_ai_service_usage_begin_v1($this->pdo, $this->user, (string)$this->options['service'],
+            $target['provider'], $target['model'], $target['funding'], $input + $images * 4096, (int)$payload[$outputField], $this->options);
+        if (($ticket['id'] ?? 0) > 0) $this->ids[] = (int)$ticket['id'];
+        return $ticket;
+    }
+
+    public function finish(array $ticket, array $usage, string $status, array $details = []): void
+    {
+        if (empty($ticket['metered'])) return;
+        $result = vp3_ai_service_usage_finish_v1($this->pdo, $ticket, $usage, $status, $details);
+        $this->charged += max(0, (int)($result['cloud_tokens_charged'] ?? 0));
+    }
+
+    public function initiative_key_is_current(array $target, string $authorization): bool
+    {
+        if (!$this->configured || $this->options['service'] !== 'initiative' || $target['funding'] !== 'own_key'
+            || !function_exists('vp3_ai_service_own_key_v1')) return true;
+        $key = vp3_ai_service_own_key_v1($this->pdo, (int)$this->user['id'], 'initiative', $target['provider'], $target['model']);
+        return $key !== '' && hash_equals($authorization, ($target['provider'] === 'openai' ? 'Authorization: Bearer ' : 'x-api-key: ') . $key);
+    }
+
+    public function attach(array $result): array
+    {
+        if ($this->ids) {
+            $result['service_attempt_ids'] = $this->ids;
+            $result['cloud_tokens_charged'] = $this->charged;
+        }
+        return $result;
+    }
+}
+
+function ai_v100_service_budget_failure(Throwable $error): array
+{
+    if ($error->getCode() === 402 || str_contains($error->getMessage(), 'token balance is exhausted')) {
+        return ai_v100_service_failure('The account has reached its AI token allowance.', 'service_quota_exhausted') + ['quota_exhausted'=>true];
+    }
+    if ($error->getCode() === 403 || str_contains($error->getMessage(), 'AI access is not included')) {
+        return ai_v100_service_failure('This AI service is unavailable under your current account policy.', 'service_disabled');
+    }
+    return ai_v100_service_failure('AI service usage is unavailable. Check the database upgrade and try again.', 'service_usage_unavailable');
+}
 function ai_v148_response_discipline(): string{return "RESPONSE DISCIPLINE — Answer the user's current request directly and only use background context when it is necessary to answer that request. Agent Brain memories, live-session timing/state, conversation summaries, prior work, activity history, tasks, proactive opportunities, ecosystem events, editor state and tool history are silent reference context, not a checklist to repeat. Never expose internal context packets, raw JSON, retrieval labels, confidence records, build identifiers or system/runtime instructions as the answer. Synthesize them into normal user-facing language. Do not volunteer, recap or enumerate unrelated background information. Do not repeat facts already established unless they are needed for the answer. If the user asks one main question, answer that main question first and keep the response focused.\n\n";}
 
 function ai_v236_identity_literal(string $value): string

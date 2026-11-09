@@ -203,6 +203,7 @@ function subscription_remove_token_credit(int $creditId,int $userId,?int $actorU
     $pdo=db();if(!$pdo||!subscription_schema_ready($pdo))throw new RuntimeException('Token credit storage is unavailable.');
     $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
     try{
+        $userStmt=$pdo->prepare('SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE');$userStmt->execute([$userId]);if(!$userStmt->fetchColumn())throw new RuntimeException('User account not found.');
         $stmt=$pdo->prepare('SELECT amount,remaining_amount FROM ai_token_credits WHERE id=? AND user_id=? LIMIT 1 FOR UPDATE');$stmt->execute([$creditId,$userId]);$row=$stmt->fetch();if(!$row)throw new RuntimeException('Token credit not found.');
         $pdo->prepare('UPDATE ai_token_credits SET remaining_amount=0,updated_at=NOW() WHERE id=? AND user_id=?')->execute([$creditId,$userId]);
         subscription_audit($pdo,$actorUserId,$userId,'tokens_removed',null,null,$reason,['credit_id'=>$creditId,'previous_remaining'=>(int)$row['remaining_amount']]);

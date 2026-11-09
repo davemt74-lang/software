@@ -554,7 +554,7 @@ function ai_history_messages(array $history): array
     return $messages;
 }
 
-function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45): array
+function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null): array
 {
     if(!function_exists('curl_init'))return ['ok'=>false,'error'=>'AI transport is unavailable.'];
     $parts=parse_url($endpoint);$host=strtolower((string)($parts['host']??''));
@@ -573,20 +573,56 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
     for($attempt=1;$attempt<=($isPhone?1:3);$attempt++){
         $remaining=function_exists('vp3_ai_budget_remaining_v1')?vp3_ai_budget_remaining_v1():null;
         if($remaining!==null&&$remaining<=0.005)return $budgetError($attempt-1);
-        $options=[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>$isPhone?min(4,$phoneRemaining):10,CURLOPT_TIMEOUT=>$isPhone?min(10,$phoneRemaining):max(5,min(90,$timeout)),CURLOPT_HTTPHEADER=>$headers,CURLOPT_POSTFIELDS=>$encoded,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2];
+        $ticket=[];
+        $body=$encoded;
+        if($meter?->active && $target!==null){
+            $outputField=$host==='api.openai.com'?'max_output_tokens':'max_tokens';
+            try{
+                if(!$meter->initiative_key_is_current($target,$headers[0]??'')){
+                    return ai_v100_service_failure('Approve this Initiative provider and model in your account before using a personal key.','personal_service_grant_required');
+                }
+                $ticket=$meter->begin($target,$payload,$outputField);
+            }
+            catch(Throwable $error){return ai_v100_service_budget_failure($error);}
+            $limited=$payload;
+            $limited[$outputField]=min($payload[$outputField],(int)($ticket['max_output_tokens']??$payload[$outputField]));
+            $body=json_encode($limited,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+        }
+        $options=[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>$isPhone?min(4,$phoneRemaining):10,CURLOPT_TIMEOUT=>$isPhone?min(10,$phoneRemaining):max(5,min(90,$timeout)),CURLOPT_HTTPHEADER=>$headers,CURLOPT_POSTFIELDS=>$body,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2];
         if($remaining!==null){
             $milliseconds=max(1,(int)floor(min((float)$options[CURLOPT_TIMEOUT],$remaining)*1000));
             $connect=max(1,min((int)$options[CURLOPT_CONNECTTIMEOUT]*1000,$milliseconds));
             unset($options[CURLOPT_TIMEOUT],$options[CURLOPT_CONNECTTIMEOUT]);
             $options[CURLOPT_TIMEOUT_MS]=$milliseconds;$options[CURLOPT_CONNECTTIMEOUT_MS]=$connect;
         }
-        $curl=curl_init($endpoint);curl_setopt_array($curl,$options);
+        $curl=curl_init($endpoint);
+        if($curl===false){
+            $meter?->finish($ticket,[],'aborted');
+            return ['ok'=>false,'error'=>'AI transport is unavailable.'];
+        }
+        curl_setopt_array($curl,$options);
         if(defined('CURLOPT_PROTOCOLS')&&defined('CURLPROTO_HTTPS'))curl_setopt($curl,CURLOPT_PROTOCOLS,CURLPROTO_HTTPS);
         $started=microtime(true);$response=curl_exec($curl);$status=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);$error=curl_error($curl);curl_close($curl);
+        $decoded=is_string($response)&&strlen($response)<=2*1024*1024?json_decode($response,true):null;
+        $success=$status>=200&&$status<300&&is_array($decoded);
+        if($meter?->active){
+            $reported=is_array($decoded['usage']??null)?$decoded['usage']:[];
+            $known=vp3_ai_service_usage_tokens_v1($reported)!==null;
+            $rejected=!$success&&!$known&&in_array($status,[400,401,403,404,422,429],true);
+            $uncertain=!$known&&!$rejected;
+            $details=['latency_ms'=>(int)round((microtime(true)-$started)*1000),
+                'provider_request_id'=>is_string($decoded['id']??null)?$decoded['id']:'',
+                'confirmed_no_charge'=>$rejected];
+            try{$meter->finish($ticket,$reported,$uncertain?'unknown':($success?'completed':'failed'),$details);}
+            catch(Throwable $failure){return ai_v100_service_budget_failure($failure);}
+            if(!$success&&!$rejected){
+                return ai_v100_service_failure('The provider attempt could not be confirmed.','provider_attempt_unconfirmed')
+                    + ['status'=>$status,'attempts'=>$attempt];
+            }
+        }
         if(!is_string($response)){$last=['ok'=>false,'error'=>'The AI provider connection failed.','status'=>$status,'attempts'=>$attempt];error_log('Stonefellow AI transport '.$host.' status='.$status.' error='.mb_strimwidth($error,0,240,'…'));if($attempt<3){$pause=200000*(2**($attempt-1))+random_int(0,120000);if(function_exists('vp3_ai_budget_pause_v1')){if(!vp3_ai_budget_pause_v1($pause))return $budgetError($attempt);}else usleep($pause);continue;}return $last;}
         if(strlen($response)>2*1024*1024)return ['ok'=>false,'error'=>'The AI provider returned an oversized response.','status'=>$status,'attempts'=>$attempt];
-        $decoded=json_decode($response,true);
-        if($status>=200&&$status<300&&is_array($decoded))return ['ok'=>true,'data'=>$decoded,'status'=>$status,'attempts'=>$attempt,'duration_ms'=>(int)round((microtime(true)-$started)*1000)];
+        if($success)return ['ok'=>true,'data'=>$decoded,'status'=>$status,'attempts'=>$attempt,'duration_ms'=>(int)round((microtime(true)-$started)*1000)];
         $providerError=is_array($decoded)?($decoded['error']['message']??$decoded['error']['type']??$decoded['message']??''):'';error_log('Stonefellow AI provider '.$host.' status='.$status.' detail='.mb_strimwidth((string)$providerError,0,300,'…'));
         $public=in_array($status,[401,403],true)?'AI provider authentication failed. Check the saved credentials.':($status===429?'The AI provider is temporarily rate-limited.':($status>=500?'The AI provider is temporarily unavailable.':'The AI provider rejected the request.'));
         $last=['ok'=>false,'error'=>$public,'status'=>$status,'attempts'=>$attempt];if(in_array($status,$transient,true)&&$attempt<3){$pause=200000*(2**($attempt-1))+random_int(0,120000);if(function_exists('vp3_ai_budget_pause_v1')){if(!vp3_ai_budget_pause_v1($pause))return $budgetError($attempt);}else usleep($pause);continue;}return $last;
@@ -594,12 +630,9 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
     return $last;
 }
 
-function ai_openai_response(string $query,array $history,array $context,?array $user=null,?array $turnControl=null,?array $own=null,array $visionImages=[]): array
+function ai_openai_response(string $query,array $history,array $context,?array $user=null,?array $turnControl=null,?array $own=null,array $visionImages=[],?AiV100ServiceMeter $meter=null,?array $target=null): array
 {
-    $apiKey=$own!==null?(string)($own['api_key']??''):ai_provider_api_key('openai');if($apiKey==='')return ['ok'=>false,'error'=>'OpenAI is not fully configured.'];
-    $complexity=ai_v100_complexity($query,$context);$input=ai_history_messages($history);$current=ai_v100_current_message($query,$context);$content=$visionImages?array_merge([['type'=>'input_text','text'=>$current]],array_map(static fn(string $image):array=>['type'=>'input_image','image_url'=>$image],$visionImages)):$current;$input[]=['role'=>'user','content'=>$content];$budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);if(($turnControl['surface']??'')==='profile_agent'&&isset($turnControl['profile_max_output_tokens']))$budget=min($budget,max(64,(int)$turnControl['profile_max_output_tokens']));$last=['ok'=>false,'error'=>'OpenAI did not return a usable response.'];
-    foreach($own!==null?[(string)$own['model']]:($visionImages?[ai_provider_model('openai')]:ai_v100_model_candidates('openai',$complexity)) as $model){if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null&&$remaining<=0.005)return ['ok'=>false,'error'=>'The inference time budget was exhausted.','error_code'=>'inference_budget_exhausted'];$started=microtime(true);$result=ai_curl_json('https://api.openai.com/v1/responses',['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],['model'=>$model,'instructions'=>ai_system_prompt($context,$user,$turnControl),'input'=>$input,'max_output_tokens'=>$budget],$complexity==='deep'?75:55);if(!$result['ok']){$last=$result;ai_v100_telemetry(['scope'=>'chat','user_id'=>(int)($user['id']??0),'provider'=>'openai','model'=>$model,'status'=>'failed','http_status'=>(int)($result['status']??0),'duration_ms'=>(int)round((microtime(true)-$started)*1000),'input_chars'=>mb_strlen($current),'complexity'=>$complexity,'attempts'=>(int)($result['attempts']??1)]);continue;}$decoded=$result['data'];$text='';if(isset($decoded['output_text'])&&is_string($decoded['output_text']))$text=trim($decoded['output_text']);if($text===''&&is_array($decoded['output']??null)){$parts=[];foreach($decoded['output'] as $item){if(!is_array($item))continue;foreach(($item['content']??[]) as $content)if(is_array($content)&&($content['type']??'')==='output_text'&&is_string($content['text']??null))$parts[]=$content['text'];}$text=trim(implode("\n",$parts));}$usage=ai_v100_usage('openai',$decoded);ai_v100_telemetry(['scope'=>'chat','user_id'=>(int)($user['id']??0),'provider'=>'openai','model'=>$model,'status'=>$text!==''?'success':'empty','duration_ms'=>(int)round((microtime(true)-$started)*1000),'input_chars'=>mb_strlen($current),'output_chars'=>mb_strlen($text),'complexity'=>$complexity]+$usage);if($text!=='')return ['ok'=>true,'answer'=>$text,'model'=>$model,'complexity'=>$complexity,'usage'=>$usage];$last=['ok'=>false,'error'=>'OpenAI returned an empty response.'];}
-    return $last;
+    return ai_hosted_chat_response('openai',$query,$history,$context,$user,$turnControl,$own,$visionImages,$meter,$target);
 }
 
 function ai_anthropic_inline_image(string $image): array
@@ -611,11 +644,88 @@ function ai_anthropic_inline_image(string $image): array
     return ['type'=>'image','source'=>['type'=>'base64','media_type'=>$match[1],'data'=>$data]];
 }
 
-function ai_anthropic_response(string $query,array $history,array $context,?array $user=null,?array $turnControl=null,?array $own=null,array $visionImages=[]): array
+function ai_anthropic_response(string $query,array $history,array $context,?array $user=null,?array $turnControl=null,?array $own=null,array $visionImages=[],?AiV100ServiceMeter $meter=null,?array $target=null): array
 {
-    $apiKey=$own!==null?(string)($own['api_key']??''):ai_provider_api_key('anthropic');if($apiKey==='')return ['ok'=>false,'error'=>'Claude / Anthropic is not fully configured.'];
-    $complexity=ai_v100_complexity($query,$context);$messages=ai_history_messages($history);$current=ai_v100_current_message($query,$context);$content=$visionImages?array_merge(array_map('ai_anthropic_inline_image',$visionImages),[['type'=>'text','text'=>$current]]):$current;$messages[]=['role'=>'user','content'=>$content];$budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);if(($turnControl['surface']??'')==='profile_agent'&&isset($turnControl['profile_max_output_tokens']))$budget=min($budget,max(64,(int)$turnControl['profile_max_output_tokens']));$last=['ok'=>false,'error'=>'Claude did not return a usable response.'];
-    foreach($own!==null?[(string)$own['model']]:($visionImages?[ai_provider_model('anthropic')]:ai_v100_model_candidates('anthropic',$complexity)) as $model){if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null&&$remaining<=0.005)return ['ok'=>false,'error'=>'The inference time budget was exhausted.','error_code'=>'inference_budget_exhausted'];$started=microtime(true);$result=ai_curl_json('https://api.anthropic.com/v1/messages',['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],['model'=>$model,'max_tokens'=>$budget,'system'=>ai_system_prompt($context,$user,$turnControl),'messages'=>$messages],$complexity==='deep'?75:55);if(!$result['ok']){$last=$result;ai_v100_telemetry(['scope'=>'chat','user_id'=>(int)($user['id']??0),'provider'=>'anthropic','model'=>$model,'status'=>'failed','http_status'=>(int)($result['status']??0),'duration_ms'=>(int)round((microtime(true)-$started)*1000),'input_chars'=>mb_strlen($current),'complexity'=>$complexity,'attempts'=>(int)($result['attempts']??1)]);continue;}$decoded=$result['data'];$parts=[];foreach(($decoded['content']??[]) as $content)if(is_array($content)&&($content['type']??'')==='text'&&is_string($content['text']??null))$parts[]=$content['text'];$text=trim(implode("\n",$parts));$usage=ai_v100_usage('anthropic',$decoded);ai_v100_telemetry(['scope'=>'chat','user_id'=>(int)($user['id']??0),'provider'=>'anthropic','model'=>$model,'status'=>$text!==''?'success':'empty','duration_ms'=>(int)round((microtime(true)-$started)*1000),'input_chars'=>mb_strlen($current),'output_chars'=>mb_strlen($text),'complexity'=>$complexity]+$usage);if($text!=='')return ['ok'=>true,'answer'=>$text,'model'=>$model,'complexity'=>$complexity,'usage'=>$usage];$last=['ok'=>false,'error'=>'Claude returned an empty response.'];}
+    return ai_hosted_chat_response('anthropic',$query,$history,$context,$user,$turnControl,$own,$visionImages,$meter,$target);
+}
+
+function ai_hosted_chat_response(string $provider,string $query,array $history,array $context,?array $user,?array $turnControl,?array $own,array $visionImages,?AiV100ServiceMeter $meter,?array $target): array
+{
+    $apiKey=$own!==null?(string)($own['api_key']??''):ai_provider_api_key($provider);
+    $openai=$provider==='openai';
+    $name=$openai?'OpenAI':'Claude';
+    if($apiKey==='')return ['ok'=>false,'error'=>$name.' is not fully configured.'];
+    $complexity=ai_v100_complexity($query,$context);
+    $current=ai_v100_current_message($query,$context);
+    $content=$current;
+    if($visionImages){
+        $content=$openai
+            ?array_merge([['type'=>'input_text','text'=>$current]],array_map(static fn(string $image):array=>['type'=>'input_image','image_url'=>$image],$visionImages))
+            :array_merge(array_map('ai_anthropic_inline_image',$visionImages),[['type'=>'text','text'=>$current]]);
+    }
+    $messages=ai_history_messages($history);
+    $messages[]=['role'=>'user','content'=>$content];
+    $budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);
+    if(($turnControl['surface']??'')==='profile_agent'&&isset($turnControl['profile_max_output_tokens'])){
+        $budget=min($budget,max(64,(int)$turnControl['profile_max_output_tokens']));
+    }
+    $prompt=ai_system_prompt($context,$user,$turnControl);
+    $last=['ok'=>false,'error'=>$name.' did not return a usable response.'];
+    $models=$target!==null?[(string)$target['model']]
+        :($own!==null?[(string)$own['model']]:($visionImages?[ai_provider_model($provider)]:ai_v100_model_candidates($provider,$complexity)));
+    foreach($models as $model){
+        if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null&&$remaining<=0.005){
+            return ['ok'=>false,'error'=>'The inference time budget was exhausted.','error_code'=>'inference_budget_exhausted','stop_service_fallback'=>true];
+        }
+        $started=microtime(true);
+        if($openai){
+            $result=ai_curl_json('https://api.openai.com/v1/responses',
+                ['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],
+                ['model'=>$model,'instructions'=>$prompt,'input'=>$messages,'max_output_tokens'=>$budget],
+                $complexity==='deep'?75:55,$meter,$target);
+        }else{
+            $result=ai_curl_json('https://api.anthropic.com/v1/messages',
+                ['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],
+                ['model'=>$model,'max_tokens'=>$budget,'system'=>$prompt,'messages'=>$messages],
+                $complexity==='deep'?75:55,$meter,$target);
+        }
+        $usage=[];$answer='';
+        if(!empty($result['ok'])){
+            $decoded=$result['data'];
+            $parts=[];
+            if($openai){
+                $answer=is_string($decoded['output_text']??null)?trim($decoded['output_text']):'';
+                if($answer===''){
+                    foreach(($decoded['output']??[]) as $item){
+                        if(!is_array($item))continue;
+                        foreach(($item['content']??[]) as $part){
+                            if(is_array($part)&&($part['type']??'')==='output_text'&&is_string($part['text']??null))$parts[]=$part['text'];
+                        }
+                    }
+                }
+            }else{
+                foreach(($decoded['content']??[]) as $part){
+                    if(is_array($part)&&($part['type']??'')==='text'&&is_string($part['text']??null))$parts[]=$part['text'];
+                }
+            }
+            if($answer==='')$answer=trim(implode("\n",$parts));
+            $usage=is_array($decoded['usage']??null)?ai_v100_usage($provider,$decoded):[];
+        }
+        ai_v100_telemetry([
+            'scope'=>'chat','user_id'=>(int)($user['id']??0),'provider'=>$provider,'model'=>$model,
+            'status'=>$answer!==''?'success':(!empty($result['ok'])?'empty':'failed'),
+            'http_status'=>(int)($result['status']??0),'duration_ms'=>(int)round((microtime(true)-$started)*1000),
+            'input_chars'=>mb_strlen($current),'output_chars'=>mb_strlen($answer),'complexity'=>$complexity,
+            'attempts'=>(int)($result['attempts']??1),
+        ]+$usage);
+        if($answer!==''){
+            return ['ok'=>true,'answer'=>$answer,'model'=>$model,'complexity'=>$complexity,'usage'=>$usage,
+                'duration_ms'=>(int)($result['duration_ms']??0)];
+        }
+        $last=empty($result['ok'])?$result:['ok'=>false,'error'=>$name.' returned an empty response.','usage'=>$usage,
+            'stop_service_fallback'=>$meter?->active??false];
+        if(!empty($last['stop_service_fallback']))return $last;
+    }
     return $last;
 }
 
@@ -662,19 +772,33 @@ function ai_generate_chat_response(
         && !$visionImages&&function_exists('chat_response_context'))$context=chat_response_context($query,$context);
     $provider = ai_active_provider();
     $user??=function_exists('current_user')?current_user():null;
+    $scope=trim((string)$usageScope)!==''?mb_strimwidth(trim((string)$usageScope),0,60,''):ai_subscription_scope_from_request();
+    $policy=null;$meter=null;
+    if(function_exists('ai_v100_service_context')&&($serviceContext=ai_v100_service_context())){
+        try{[$policy,$meter]=ai_v100_service_setup($user,$scope,'text',$serviceContext);}
+        catch(Throwable $error){return ai_v100_service_budget_failure($error);}
+    }
+    if($policy!==null&&empty($policy['enabled'])){
+        return ai_v100_service_failure('This AI service is unavailable under your current account policy.','service_disabled');
+    }
     $own=($user&&function_exists('vp3_user_llm_v1_effective')&&function_exists('db')&&db())
         ?vp3_user_llm_v1_effective(db(),$user):['route'=>'system'];
-    if(($own['route']??'system')==='unavailable')
+    $explicitInitiative=!empty($policy['configured'])&&($policy['service']??'')==='initiative';
+    if(($own['route']??'system')==='unavailable'&&!$explicitInitiative)
         return ['ok'=>false,'provider'=>'own_key','error'=>'Your saved provider key is unavailable. Re-enter it or select VP3 system inference.'];
     $isOwn=($own['route']??'system')==='own_key';
-    if($isOwn){
+    if($isOwn&&!$explicitInitiative){
         if(function_exists('subscription_has_entitlement')&&!subscription_has_entitlement($user,'main_ai.access'))
             return ['ok'=>false,'provider'=>'own_key','error'=>'AI access is not included for this account.'];
         $provider=(string)$own['provider'];
     }
+    if($explicitInitiative&&function_exists('subscription_has_entitlement')&&!subscription_has_entitlement($user,'main_ai.access')){
+        return ai_v100_service_failure('AI access is not included for this account.','service_disabled');
+    }
     try { ai_v100_rate_limit('chat',$user); } catch (Throwable $e) { return ['ok'=>false,'provider'=>$provider,'error'=>ai_v100_safe_exception($e)]; }
 
-    if ($provider === 'local') {
+    $explicit=!empty($policy['configured']);
+    if ($provider === 'local' && !$explicit) {
         return [
             'ok' => false,
             'provider' => 'local',
@@ -682,14 +806,13 @@ function ai_generate_chat_response(
         ];
     }
 
-    if (!$isOwn) {
+    if (!$isOwn && !$explicit) {
         $configurationFailure=ai_provider_configuration_failure($provider);
         if ($configurationFailure !== null) return $configurationFailure;
     }
 
-    $scope=trim((string)$usageScope)!==''?mb_strimwidth(trim((string)$usageScope),0,60,''):ai_subscription_scope_from_request();
     $reservationId=0;
-    if(!$isOwn&&$user&&function_exists('subscription_ai_preflight')){
+    if(!$meter?->active&&!$isOwn&&$user&&function_exists('subscription_ai_preflight')){
         try{
             $preflight=subscription_ai_preflight($user,$scope,ai_subscription_estimated_input_tokens($query,$history,$context,$user,$turnControl)+count($visionImages)*4096,3200);
             $reservationId=(int)($preflight['reservation_id']??0);
@@ -700,16 +823,34 @@ function ai_generate_chat_response(
     }
 
     try{
-        $result = $provider === 'openai'
-            ? ai_openai_response($query, $history, $context, $user, $turnControl, $isOwn?$own:null,$visionImages)
-            : ai_anthropic_response($query, $history, $context, $user, $turnControl, $isOwn?$own:null,$visionImages);
-        if($isOwn){
-            $result['compute_source']='user_provider';
-            $result['system_tokens_charged']=false;
+        $targets=[null];
+        if($policy!==null){
+            $models=$isOwn?[(string)$own['model']]
+                :($visionImages?[ai_provider_model($provider)]:ai_v100_model_candidates($provider,ai_v100_complexity($query,$context)));
+            $targets=ai_v100_service_targets($policy,$own,$provider,$models);
+        }
+        $result=['ok'=>false,'error'=>'No allowed provider and model are available for this AI service.','failure_code'=>'service_route_unavailable'];
+        foreach($targets as $target){
+            $candidateProvider=(string)($target['provider']??$provider);
+            $candidateOwn=$isOwn?$own:null;
+            if($explicit){
+                $credential=ai_v100_service_target_credential($target,$own,$policy,$user,db());
+                if(isset($credential['failure'])){
+                    $result=$credential['failure'];
+                    continue;
+                }
+                $candidateOwn=$credential['own'];
+            }
+            $result=ai_hosted_chat_response($candidateProvider,$query,$history,$context,$user,$turnControl,$candidateOwn,$visionImages,$meter,$target);
+            $result['provider']=$candidateProvider;
+            if($candidateOwn!==null){
+                $result['compute_source']='user_provider';
+                $result['system_tokens_charged']=false;
+            }
+            if(!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
         }
 
-        $result['provider'] = $provider;
-        if(!$isOwn&&!empty($result['ok'])&&function_exists('subscription_ai_commit_usage')){
+        if(!$meter?->active&&!$isOwn&&!empty($result['ok'])&&function_exists('subscription_ai_commit_usage')){
             $trace=function_exists('agent_runtime_v125_trace_id')?(string)agent_runtime_v125_trace_id():'';
             $requestKey=$trace!==''?'nonstream:'.$scope.':'.$trace:'';
             // The long-lived worker shares a trace across independent provider calls.
@@ -717,7 +858,7 @@ function ai_generate_chat_response(
             subscription_ai_commit_usage($reservationId,$user,$scope,$provider,(string)($result['model']??ai_provider_model($provider)),is_array($result['usage']??null)?$result['usage']:[],$requestKey);
             $reservationId=0;
         }
-        return $result;
+        return $meter?->attach($result)??$result;
     }finally{
         if($reservationId>0&&function_exists('subscription_ai_release_reservation'))subscription_ai_release_reservation($reservationId);
     }
@@ -758,8 +899,10 @@ function ai_test_chat_connection(array $user): array
     $keySource = 'installation';
     try {
         ai_v100_rate_limit('test', $user);
+        $serviceContext=['service'=>'conversation','stage'=>'connection_test','job_key'=>'connection-test:'.bin2hex(random_bytes(12))];
         $challenge = 'VP3 connection test ' . bin2hex(random_bytes(8));
-        $text = ai_generate_chat_response('Reply with exactly: ' . $challenge, [], [], $user, 'chat');
+        $call=static fn()=>ai_generate_chat_response('Reply with exactly: ' . $challenge, [], [], $user, 'chat');
+        $text=function_exists('ai_v100_with_service_context')?ai_v100_with_service_context($serviceContext,$call):$call();
         $provider = (string)($text['provider'] ?? '');
         $keySource = ($text['compute_source'] ?? '') === 'user_provider' || $provider === 'own_key' ? 'account' : 'installation';
         if (empty($text['ok'])) {
@@ -776,7 +919,7 @@ function ai_test_chat_connection(array $user): array
         $challenge = 'VP3 connection test ' . bin2hex(random_bytes(8));
         $received = '';
         $voice = ai_v121_stream_chat_response('Reply with exactly: ' . $challenge, [], [], $user,
-            static function (string $delta) use (&$received): void { $received .= $delta; });
+            static function (string $delta) use (&$received): void { $received .= $delta; },$serviceContext);
         if (empty($voice['ok'])) {
             return ['ok'=>false,'connected'=>true,'stage'=>$stage,'provider'=>$provider,'credential_source'=>$keySource]
                 + array_intersect_key($voice, array_flip(['error','failure_code','status']));

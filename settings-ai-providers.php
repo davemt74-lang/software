@@ -35,7 +35,7 @@ $models=ai_model_catalog();
 <section class="llm-cards">
 <article class="llm-card"><h2>Compute source</h2>
 <p class="llm-note">VP3 system providers use your account's existing subscription and token limits. Your own key is billed directly by its provider; account access and request-rate limits still apply.</p>
-<div class="llm-row"><label for="llmRoute">Cloud inference source
+<div class="llm-row"><label for="llmRoute">Cloud Conversation source
 <select id="llmRoute"><option value="system">VP3 system LLM (subscription tokens)</option><option value="openai">My OpenAI API key</option><option value="anthropic">My Anthropic API key</option></select></label><button id="llmSaveRoute" type="button">Save source</button></div>
 </article>
 <?php foreach(['openai'=>'OpenAI','anthropic'=>'Anthropic'] as $provider=>$label): ?>
@@ -46,6 +46,10 @@ $models=ai_model_catalog();
 <button type="submit">Save encrypted key</button> <button type="button" class="secondary" data-remove="<?=e($provider)?>">Remove key</button>
 </form></article>
 <?php endforeach; ?>
+<article class="llm-card"><h2>Personal key permissions by service</h2>
+<p class="llm-note">Approve each service and model you want to bill to your provider account. Initiative can use its approved key in the background. Replacing or removing a key clears its approvals.</p>
+<div id="llmServicePermissions">Checking available services…</div>
+</article>
 <article class="llm-card"><h2>HomeServer provider keys</h2>
 <p>Manage Ollama, OpenAI, Anthropic and OpenRouter in your local HomeServer's Agent Brain settings. Cloud uses paired capability status but never transfers local keys or sends Cloud personal keys to HomeServer.</p>
 <p id="llmHomeStatus" role="status" aria-live="polite">Reading paired HomeServer status…</p>
@@ -70,6 +74,28 @@ function render(next){
  for(const form of document.querySelectorAll('[data-provider]')){
   const provider=form.dataset.provider;const info=next.providers?.[provider];form.querySelector('[data-key-status]').textContent=info?.configured?'Saved key ending '+info.suffix:'No Cloud key saved';
   if(info?.model)form.querySelector('[name=model]').value=info.model;
+ }
+ const permissions=byId('llmServicePermissions');
+ permissions.replaceChildren();
+ const routes=next.service_permissions||[];
+ if(!routes.length)permissions.textContent='Your account has no personal key service routes available.';
+ for(const route of routes){
+  const row=document.createElement('div');
+  row.className='llm-row';
+  const detail=document.createElement('span');
+  const provider=route.provider==='openai'?'OpenAI':'Anthropic';
+  detail.textContent=route.label+' · '+provider+' · '+route.model;
+  const button=document.createElement('button');
+  button.type='button';
+  button.textContent=route.approved?'Revoke approval':route.can_approve?'Approve personal key':'Save a provider key first';
+  button.disabled=!route.approved&&!route.can_approve;
+  button.addEventListener('click',async()=>{
+   button.disabled=true;
+   const saved=await run(()=>request({action:route.approved?'revoke_service':'grant_service',service:route.service,provider:route.provider,model:route.model}));
+   if(!saved)button.disabled=false;
+  });
+  row.append(detail,button);
+  permissions.append(row);
  }
 }
 async function run(fn){

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/ai-service-usage-v1.php';
 require_once __DIR__.'/includes/social-feed-v1.php';
 require_once __DIR__ . '/includes/cognitive-memory-v570.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
@@ -286,6 +287,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && table_exists('agent_participant_observers_v1')
         && table_exists('user_agent_voice_preferences')
         && ($schemaConnection ??= db()) instanceof PDO
+        && vp3_ai_service_usage_ready_v1($schemaConnection)
         && chat_settings_schema_ready_v237($schemaConnection)
         && chat_settings_agent_orb_shape_schema_ready_v237($schemaConnection)
         && chat_settings_agent_auto_greet_schema_ready_v237($schemaConnection)

@@ -9,9 +9,9 @@ header('Content-Type: text/csv; charset=UTF-8');
 header('Content-Disposition: attachment; filename="vp3-ai-usage-'.date('Y-m-d').'.csv"');
 header('Cache-Control: no-store');
 $out=fopen('php://output','wb');
-fputcsv($out,['when','execution_source','provider','model','input_tokens','output_tokens','total_tokens','vp3_tokens_charged','estimated_cost_usd','cost_rate_source','agent_id','conversation_id','homeserver_state','fallback_used','failure_class','latency_ms','run_id']);
+fputcsv($out,['when','execution_source','provider','model','input_tokens','output_tokens','total_tokens','vp3_tokens_charged','estimated_cost_usd','cost_rate_source','agent_id','conversation_id','homeserver_state','fallback_used','failure_class','latency_ms','run_id',...ai_usage_accounting_v032_service_csv_columns()]);
 foreach($rows as $row){
     $cost=$row['estimated_cost_micros']===null?'':number_format(((int)$row['estimated_cost_micros'])/1000000,6,'.','');
-    fputcsv($out,[(string)$row['created_at'],(string)$row['source'],(string)$row['provider'],(string)$row['model'],(int)$row['input_tokens'],(int)$row['output_tokens'],(int)$row['total_tokens'],(int)$row['cloud_tokens_charged'],$cost,(string)$row['cost_rate_source'],(int)($row['agent_id']??0),(int)($row['conversation_id']??0),(string)$row['homeserver_state'],(int)$row['fallback_used'],(string)$row['failure_class'],(int)$row['latency_ms'],(int)($row['run_id']??0)]);
+    fputcsv($out,[(string)$row['created_at'],(string)$row['source'],(string)$row['provider'],(string)$row['model'],...ai_usage_accounting_v032_token_csv($row),(int)$row['cloud_tokens_charged'],$cost,(string)$row['cost_rate_source'],(int)($row['agent_id']??0),(int)($row['conversation_id']??0),(string)$row['homeserver_state'],(int)$row['fallback_used'],(string)$row['failure_class'],(int)$row['latency_ms'],(int)($row['run_id']??0),...ai_usage_accounting_v032_service_csv($row)]);
 }
 fclose($out);

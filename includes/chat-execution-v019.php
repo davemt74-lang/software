@@ -167,6 +167,36 @@ function chat_execution_v019_fallback(array $user,bool $homePaired,bool $homeAtt
     );
 }
 
+/** Attribute the answer to its actual response. A debit alone cannot establish which model answered. */
+function chat_execution_v019_provider_outcome(array $user,array $result,bool $homeAttempted=false,bool $homePaired=false): array
+{
+    $ids=is_array($result['service_attempt_ids']??null)?$result['service_attempt_ids']:[];
+    if(!$result){
+        return $homeAttempted?chat_execution_v019_fallback($user,$homePaired):chat_execution_v019_vp3_direct($user);
+    }
+    $personal=($result['compute_source']??'')==='user_provider';
+    $answered=!empty($result['ok'])||!empty($result['partial']);
+    $provider=$answered?(string)($result['provider']??''):'local';
+    $model=$answered?(string)($result['model']??''):'';
+    $source=$answered?($personal?'user_provider':'vp3_cloud'):'vp3_retrieval';
+    $label=$answered?($personal?'Cloud user provider':'VP3 Cloud'):'VP3 Retrieval';
+    $home=$homeAttempted?($homePaired?'unavailable':'not_paired'):'not_used';
+    $reason=$homeAttempted?($homePaired?'homeserver_unavailable':'homeserver_not_paired'):($answered?'none':'local_retrieval');
+    $charge=max(0,(int)($result['cloud_tokens_charged']??0));
+    if(!$ids&&$answered&&!$personal){
+        $ledger=chat_execution_v019_cloud_ledger($user);
+        if(($ledger['provider']??null)===$provider&&($ledger['model']??null)===$model){
+            $charge=max(0,(int)($ledger['total_tokens']??0));
+        }
+    }
+    $balance=chat_execution_v019_cloud_balance($user);
+    $execution=chat_execution_v019_base($source,$label,$provider,$model,$home,$homeAttempted,$reason,
+        $answered&&is_array($result['usage']??null)?$result['usage']:[],0,$charge,
+        max(0,(int)($result['duration_ms']??0)),'none',$balance['remaining'],!empty($balance['unlimited']));
+    if($ids)$execution['service_attempt_ids']=$ids;
+    return $execution;
+}
+
 function chat_execution_v019_tool(): array
 {
     return chat_execution_v019_base('vp3_tool','VP3 Tool','vp3','','not_used',false,'none',[]);

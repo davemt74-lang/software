@@ -31,10 +31,10 @@ function ai_v121_stream_provider(
     $encoded=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     if(!is_string($encoded))return ['ok'=>false,'answer'=>'','error'=>'Could not encode the AI request.'];
 
-    $answer='';$lineBuffer='';$eventData=[];$usage=['input_tokens'=>0,'output_tokens'=>0,'total_tokens'=>0];
-    $providerError='';$sawTerminal=false;
+    $answer='';$lineBuffer='';$eventData=[];$usage=[];
+    $providerError='';$sawTerminal=false;$incomplete=false;
 
-    $processEvent=static function() use ($provider,$onDelta,&$answer,&$eventData,&$usage,&$providerError,&$sawTerminal): void {
+    $processEvent=static function() use ($provider,$onDelta,&$answer,&$eventData,&$usage,&$providerError,&$sawTerminal,&$incomplete): void {
         if(!$eventData)return;
         $raw=implode("\n",$eventData);$eventData=[];
         if($raw===''||$raw==='[DONE]')return;
@@ -43,18 +43,23 @@ function ai_v121_stream_provider(
 
         if($provider==='openai'){
             if($type==='response.output_text.delta'&&is_string($data['delta']??null))$delta=(string)$data['delta'];
-            if($type==='response.completed'){
+            if(in_array($type,['response.completed','response.incomplete','response.failed'],true)){
                 $sawTerminal=true;$u=is_array($data['response']['usage']??null)?$data['response']['usage']:[];
-                $usage['input_tokens']=(int)($u['input_tokens']??0);$usage['output_tokens']=(int)($u['output_tokens']??0);
+                foreach(['input_tokens','output_tokens'] as $key)if(isset($u[$key]))$usage[$key]=$u[$key];
+                $incomplete=$type==='response.incomplete';
+                if($type==='response.failed')$providerError='OpenAI streaming error.';
             }
             if($type==='error')$providerError=(string)($data['error']['message']??$data['message']??'OpenAI streaming error.');
         }else{
             if($type==='content_block_delta'&&($data['delta']['type']??'')==='text_delta'&&is_string($data['delta']['text']??null))$delta=(string)$data['delta']['text'];
             if($type==='message_start'){
-                $u=is_array($data['message']['usage']??null)?$data['message']['usage']:[];$usage['input_tokens']=(int)($u['input_tokens']??0);
+                $u=is_array($data['message']['usage']??null)?$data['message']['usage']:[];
+                if(isset($u['input_tokens']))$usage['input_tokens']=$u['input_tokens'];
             }
             if($type==='message_delta'){
-                $u=is_array($data['usage']??null)?$data['usage']:[];$usage['output_tokens']=(int)($u['output_tokens']??$usage['output_tokens']);
+                $u=is_array($data['usage']??null)?$data['usage']:[];
+                if(isset($u['output_tokens']))$usage['output_tokens']=$u['output_tokens'];
+                if(($data['delta']['stop_reason']??'')==='max_tokens')$incomplete=true;
             }
             if($type==='message_stop')$sawTerminal=true;
             if($type==='error')$providerError=(string)($data['error']['message']??$data['message']??'Anthropic streaming error.');
@@ -93,7 +98,10 @@ function ai_v121_stream_provider(
         $line=rtrim($lineBuffer,"\r\n");if(str_starts_with($line,'data:'))$eventData[]=ltrim(substr($line,5));
     }
     $processEvent();
-    $usage['total_tokens']=$usage['input_tokens']+$usage['output_tokens'];
+    if(is_int($usage['input_tokens']??null)&&is_int($usage['output_tokens']??null)
+        &&$usage['input_tokens']>=0&&$usage['output_tokens']>=0){
+        $usage['total_tokens']=$usage['input_tokens']+$usage['output_tokens'];
+    }
     $duration=(int)round((microtime(true)-$started)*1000);
 
     if($result===false||$status<200||$status>=300||$providerError!==''){
@@ -102,6 +110,7 @@ function ai_v121_stream_provider(
     }
     $answer=trim($answer);
     if($answer==='')return ['ok'=>false,'answer'=>'','error'=>'The AI provider returned an empty response.','status'=>$status,'duration_ms'=>$duration,'usage'=>$usage,'terminal'=>$sawTerminal];
+    if(!$sawTerminal||$incomplete)return ['ok'=>false,'answer'=>$answer,'partial'=>true,'status'=>$status,'duration_ms'=>$duration,'usage'=>$usage,'terminal'=>$sawTerminal];
     return ['ok'=>true,'answer'=>$answer,'status'=>$status,'duration_ms'=>$duration,'usage'=>$usage,'terminal'=>$sawTerminal];
 }
 
@@ -109,7 +118,7 @@ function ai_v125_retryable_stream_result(mixed $result,?Throwable $error,int $at
 {
     if(connection_aborted())return false;
     if($error)return $attempt<2;
-    if(!is_array($result)||!empty($result['ok'])||!empty($result['partial']))return false;
+    if(!is_array($result)||!empty($result['ok'])||!empty($result['partial'])||!empty($result['stop_service_fallback']))return false;
     $status=(int)($result['status']??0);
     return $attempt<2&&($status===0||in_array($status,[408,425,429],true)||$status>=500);
 }
@@ -119,9 +128,18 @@ function ai_v121_stream_chat_response(
     array $history,
     array $context,
     array $user,
-    callable $onDelta
+    callable $onDelta,
+    array $serviceContext = []
 ): array {
     if(function_exists('chat_response_context'))$context=chat_response_context($query,$context);
+    $policy=null;$meter=null;
+    if($serviceContext){
+        try{[$policy,$meter]=ai_v100_service_setup($user,'chat','stream',$serviceContext);}
+        catch(Throwable $error){return ai_v100_service_budget_failure($error)+['answer'=>''];}
+    }
+    if($policy!==null&&empty($policy['enabled'])){
+        return ai_v100_service_failure('This AI service is unavailable under your current account policy.','service_disabled')+['answer'=>''];
+    }
     $own=(function_exists('vp3_user_llm_v1_effective')&&function_exists('db')&&db())
         ?vp3_user_llm_v1_effective(db(),$user):['route'=>'system'];
     if(($own['route']??'system')==='unavailable')
@@ -131,17 +149,31 @@ function ai_v121_stream_chat_response(
         return ['ok'=>false,'provider'=>'own_key','answer'=>'','error'=>'AI access is not included for this account.'];
     $provider=$isOwn?(string)$own['provider']:ai_active_provider();
     try{ai_v100_rate_limit('chat',$user);}catch(Throwable $e){return ['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>ai_v100_safe_exception($e)];}
-    if($provider==='local')return ['ok'=>false,'provider'=>'local','answer'=>'','error'=>'Local retrieval mode is active.'];
-    if(!$isOwn){
+    $explicit=!empty($policy['configured']);
+    if($provider==='local'&&!$explicit)return ['ok'=>false,'provider'=>'local','answer'=>'','error'=>'Local retrieval mode is active.'];
+    if(!$isOwn&&!$explicit){
         $configurationFailure=ai_provider_configuration_failure($provider);
         if($configurationFailure!==null)return $configurationFailure+['answer'=>''];
     }
 
     $complexity=ai_v100_complexity($query,$context);$budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);
     $current=ai_v100_current_message($query,$context);$models=$isOwn?[(string)$own['model']]:ai_v100_model_candidates($provider,$complexity);
-    $last=['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>'The AI provider did not return a usable response.'];
+    $last=['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>'No allowed provider and model are available for this AI service.'];
 
-    foreach($models as $model){
+    $targets=$policy===null
+        ?array_map(static fn(string $model):array=>['provider'=>$provider,'model'=>$model],$models)
+        :ai_v100_service_targets($policy,$own,$provider,$models);
+    foreach($targets as $target){
+        $provider=$target['provider'];$model=$target['model'];
+        $candidateOwn=$isOwn?$own:null;
+        if($explicit){
+            $credential=ai_v100_service_target_credential($target,$own,$policy,$user,db());
+            if(isset($credential['failure'])){
+                $last=$credential['failure']+['answer'=>'','provider'=>$provider];
+                continue;
+            }
+            $candidateOwn=$credential['own'];
+        }
         if($provider==='openai'){
             $input=ai_history_messages($history);$input[]=['role'=>'user','content'=>$current];
             $payload=['model'=>$model,'instructions'=>ai_system_prompt($context,$user),'input'=>$input,'max_output_tokens'=>$budget];
@@ -151,7 +183,7 @@ function ai_v121_stream_chat_response(
         }
 
         $quota=['reservation_id'=>0,'max_output_tokens'=>$budget,'unlimited'=>true];
-        if(!$isOwn&&function_exists('subscription_ai_preflight')){
+        if(!$meter?->active&&$candidateOwn===null&&function_exists('subscription_ai_preflight')){
             $encodedForEstimate=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
             $estimatedInput=function_exists('subscription_estimate_tokens_from_chars')
                 ? subscription_estimate_tokens_from_chars(is_string($encodedForEstimate)?mb_strlen($encodedForEstimate):mb_strlen($current))
@@ -166,19 +198,49 @@ function ai_v121_stream_chat_response(
         }
 
         $service='ai-stream-'.$provider.'-'.$model;
+        $call=static function(int $attempt)use($provider,$model,$payload,$onDelta,$complexity,$candidateOwn,$meter,$target):array{
+            $ticket=[];
+            $outputField=$provider==='openai'?'max_output_tokens':'max_tokens';
+            if($meter?->active){
+                if(connection_aborted())return ai_v100_service_failure('The stream was interrupted.','stream_interrupted');
+                try{$ticket=$meter->begin($target,$payload,$outputField);}
+                catch(Throwable $error){return ai_v100_service_budget_failure($error);}
+                $payload[$outputField]=min($payload[$outputField],(int)($ticket['max_output_tokens']??$payload[$outputField]));
+            }
+            $credential=$candidateOwn!==null?(string)$candidateOwn['api_key']:null;
+            try{
+                $row=ai_v121_stream_provider($provider,$model,$payload,$onDelta,$complexity==='deep'?95:70,$credential);
+            }catch(Throwable $error){
+                if(!$meter?->active)throw $error;
+                try{$meter->finish($ticket,[],'unknown');}
+                catch(Throwable $failure){return ai_v100_service_budget_failure($failure);}
+                return ai_v100_service_failure('The provider attempt could not be confirmed.','provider_attempt_unconfirmed');
+            }
+            $row['attempts']=$attempt;
+            if($meter?->active){
+                $usage=$row['usage']??[];
+                $status=(int)($row['status']??0);
+                $known=!empty($row['terminal'])&&vp3_ai_service_usage_tokens_v1($usage)!==null;
+                $rejected=in_array($status,[400,401,403,404,422,429],true)&&empty($row['partial'])&&!$usage;
+                $state=$known?(!empty($row['ok'])?'completed':'failed'):($rejected?'failed':'unknown');
+                $details=['latency_ms'=>(int)($row['duration_ms']??0),'confirmed_no_charge'=>$rejected];
+                try{$meter->finish($ticket,$known?$usage:[],$state,$details);}
+                catch(Throwable $failure){return array_replace($row,ai_v100_service_budget_failure($failure));}
+                if(!$rejected)$row['stop_service_fallback']=true;
+            }
+            return $row;
+        };
         try{
             if(function_exists('agent_runtime_v125_resilient_call')){
                 $result=agent_runtime_v125_resilient_call(
                     $service,
-                    static function(int $attempt) use($provider,$model,$payload,$onDelta,$complexity,$isOwn,$own): array {
-                        $row=ai_v121_stream_provider($provider,$model,$payload,$onDelta,$complexity==='deep'?95:70,$isOwn?(string)$own['api_key']:null);$row['attempts']=$attempt;return $row;
-                    },
+                    $call,
                     'ai_v125_retryable_stream_result',
                     2,
                     160
                 );
             }else{
-                $result=ai_v121_stream_provider($provider,$model,$payload,$onDelta,$complexity==='deep'?95:70,$isOwn?(string)$own['api_key']:null);$result['attempts']=1;
+                $result=$call(1);
             }
         }catch(Throwable $e){
             $result=['ok'=>false,'answer'=>'','error'=>ai_v100_safe_exception($e),'status'=>0,'duration_ms'=>0,'usage'=>[],'attempts'=>1,'error_class'=>get_class($e)];
@@ -193,7 +255,7 @@ function ai_v121_stream_chat_response(
             'attempts'=>(int)($result['attempts']??1),'error_class'=>(string)($result['error_class']??'')
         ]+$usage);
 
-        if(!$isOwn&&function_exists('subscription_ai_commit_usage')){
+        if(!$meter?->active&&$candidateOwn===null&&function_exists('subscription_ai_commit_usage')){
             $total=max(0,(int)($usage['total_tokens']??((int)($usage['input_tokens']??0)+(int)($usage['output_tokens']??0))));
             if($total>0){
                 $requestKey='stream:'.(function_exists('agent_runtime_v125_trace_id')?(string)agent_runtime_v125_trace_id():bin2hex(random_bytes(8))).':'.$model.':'.(int)($result['attempts']??1);
@@ -203,10 +265,10 @@ function ai_v121_stream_chat_response(
             }
         }
 
-        if($isOwn){$result['compute_source']='user_provider';$result['system_tokens_charged']=false;}
+        if($candidateOwn!==null){$result['compute_source']='user_provider';$result['system_tokens_charged']=false;}
         $result['provider']=$provider;$result['model']=$model;$result['complexity']=$complexity;$result['trace_id']=function_exists('agent_runtime_v125_trace_id')?agent_runtime_v125_trace_id():'';
-        if(!empty($result['ok'])||!empty($result['partial']))return $result;
+        if(!empty($result['ok'])||!empty($result['partial'])||!empty($result['stop_service_fallback']))return $meter?->attach($result)??$result;
         $last=$result;
     }
-    return $last;
+    return $meter?->attach($last)??$last;
 }

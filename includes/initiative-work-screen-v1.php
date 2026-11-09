@@ -25,7 +25,7 @@ function initiative_work_screen_authority_v1(PDO $pdo,int $owner,array $scope,bo
     if($cloud){
         $route=vp3_agent_runtime_plan_v420($pdo,$user,$aid,'chat');
         if(($route['route']??null)!=='vp3_cloud'||empty($route['cloud']['ready'])||!empty($route['blocked'])
-            ||!subscription_has_entitlement($user,'main_ai.access')||!vp3_image_provider_ready_v1()){
+            ||!subscription_has_entitlement($user,'main_ai.access')||!vp3_image_account_provider_ready_v1($pdo,$user)){
             throw new DomainException('OpenAI image editing is unavailable under this Agent’s current Cloud settings.',503);
         }
     }
