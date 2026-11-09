@@ -14,17 +14,19 @@ function gate(){
   return {arrived:new Promise(resolve=>{arrive=resolve;}),released:new Promise(resolve=>{release=resolve;}),arrive:()=>arrive(),release:()=>release()};
 }
 
-async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,failedTickReason=''}={}){
+async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,failedTickReason='',activeJobs=[],returnDigest=null}={}){
   const context=await browser.newContext();
-  const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[];
-  const histories=new Map([[42,[{id:1,role:'assistant',message:'Restored private conversation'}]],
-    [43,[{id:10,role:'assistant',message:'Another private conversation'}]]]);
+  const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[],digestActions=[],githubClaims=[];
+  let githubVoice=null;
+  const histories=new Map([[42,[{id:1,role:'assistant',message:'Restored private conversation',created_at:'2026-10-30 14:00:00'}]],
+    [43,[{id:10,role:'assistant',message:'Another private conversation',created_at:'2026-10-30 14:00:30'}]]]);
   let policy=enabled,exists=enabled||paused,policyRevision=exists?revision:'',policyCid=42,phase=0,failTick=false,holdTick=null,holdRead=null,holdActivity=null,claimActive=false,realWork=0,blockedReason='',ownerBusy=false,pendingReport=false;
   const health=(cid=42)=>({state:runtimeUnavailable?'unavailable':!exists?'starting':policy?(cid!==policyCid?'linked_elsewhere':blockedReason?'blocked':'waiting'):'paused',
     reason:runtimeUnavailable?'context_unavailable':!exists?'automatic_startup':policy?(cid!==policyCid?'linked_elsewhere':blockedReason||'worker_missing'):'initiative_paused',enabled:!runtimeUnavailable&&policy&&cid===policyCid,
     paused:exists&&!policy,policy_exists:exists,
     agent_id:agentId,conversation_id:cid,policy_revision:runtimeUnavailable?'':policyRevision,configuration_ready:!runtimeUnavailable,execution_ready:!runtimeUnavailable&&policy&&!blockedReason&&cid===policyCid,
-    knowledge_scope:{mode:'off',folder_id:0},runner_state:'never_seen'});
+    knowledge_scope:{mode:'off',folder_id:0},runner_state:'never_seen',
+    active_jobs:!runtimeUnavailable&&policy&&cid===policyCid?activeJobs:[]});
   await context.addInitScript(()=>{
     window.speechCalls=0;window.announcementCalls=0;
     window.SpeechRecognition=undefined;window.webkitSpeechRecognition=undefined;
@@ -34,6 +36,14 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,stop(){},createStream(){}});
     window.StonefellowKnowledgeScopeV162={value:()=>({mode:'folder',folder_id:12})};
     window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',isMainChat:()=>true,state:()=>({state:document.body.dataset.stonefellowAgentState||'idle'})};
+    window.addEventListener('vp3:agent-orb-ready',()=>{
+      const orb=window.VP3AgentOrb;
+      const setJobs=orb.setJobs;
+      orb.setJobs=(source,jobs)=>{
+        if(source==='initiative')window.initiativeOrbJobs=jobs;
+        setJobs?.call(orb,source,jobs);
+      };
+    },{once:true});
   });
   await context.route(origin+'/**',async route=>{
     const request=route.request(),url=new URL(request.url());
@@ -72,19 +82,33 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     if(url.pathname==='/api/cognitive-presentation-v510.php'){
       assert.equal(request.headers()['x-vp3-working-attention'],'owner-a');
       if(!body){
+        const digest=returnDigest;
         const readWait=holdRead;holdRead=null;if(readWait){readWait.arrive();await readWait.released;}
         if(presentationUnavailable)return route.fulfill({status:503,json:{ok:false,error:'projection_unavailable'}});
         const id=Number(url.searchParams.get('conversation_id'));
         reads.push({id,runtime:url.searchParams.get('include_initiative_runtime')});
-        const state={brief:{agent_name:agentId?'Longfellow':'VP3 Agent',active:true,status_label:'Active'}};
+        const state={brief:{agent_name:agentId?'Longfellow':'VP3 Agent',active:true,status_label:'Active'},digest};
         if(url.searchParams.get('include_live_context')==='1'){
           assert.equal(url.searchParams.get('include_initiative_runtime'),'1');
           state.live_context={state:'quiet',attention:null,initiative:{state:policy?'waiting_for_review':'off',...(omitRuntime?{}:{runtime:health(id)})}};
+          if(githubVoice)state.github_voice={generation:githubVoice.generation,through_id:githubVoice.through_id};
         }
         return route.fulfill({json:{ok:true,state}});
       }
       assert.equal(body.agent_id,agentId);
       assert.equal(body.csrf_token,'fixture');
+      if(body.action==='github_voice_claim'){
+        githubClaims.push(body);
+        const claim=githubVoice;
+        githubVoice=null;
+        return route.fulfill({json:{ok:true,claim}});
+      }
+      if(body.action==='digest_ack'){
+        assert.equal(body.digest_id,returnDigest?.id);
+        digestActions.push(body.status);
+        returnDigest=null;
+        return route.fulfill({json:{ok:true}});
+      }
       if(body.action==='initiative_setting'){
         settings.push(body);policy=body.enabled;exists=true;policyRevision=policyRevision==='b'.repeat(32)?'e'.repeat(32):'b'.repeat(32);policyCid=body.conversation_id;
         return route.fulfill({json:{ok:true,health:health(policyCid)}});
@@ -138,7 +162,10 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);
     return page;
   };
-  return {context,pages,errors,reads,ticks,settings,activities,health,open,
+  return {context,pages,errors,reads,ticks,settings,activities,digestActions,githubClaims,health,open,
+    addMessage(conversation,message){histories.get(conversation).push(message);},
+    setDigest(digest){returnDigest=digest;},
+    setGitHubVoice(voice){githubVoice=voice;},
     fail(value){failTick=value;},block(value){blockedReason=value;},
     unavailable(value){runtimeUnavailable=value;},presentationFails(value){presentationUnavailable=value;},
     holdRead(){holdRead=gate();return holdRead;},holdActivity(eligibleOnly=false){holdActivity=gate();holdActivity.eligibleOnly=eligibleOnly;return holdActivity;},
@@ -146,6 +173,112 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
 }
 
 try{
+  const github=await fixture(17,{paused:true});
+  try{
+    const page=await github.open();
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    await page.evaluate(()=>{window.STONEFELLOW_NOTIFICATION_CENTER.announceWhen=(text,canSpeak,options)=>{
+      window.githubSpeech={text,allowed:canSpeak(),autoReply:options.autoReply};return true;
+    };});
+    const composer=page.locator('#chatInput');
+    await composer.fill('An unfinished draft');
+    github.setGitHubVoice({generation:42,through_id:8,message:'GitHub Actions reports 1 run failed and 2 runs succeeded.'});
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    assert.equal(github.githubClaims.length,0);
+    await composer.fill('');
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('stonefellow:agent-voice',{detail:{enabled:false}})));
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    assert.equal(github.githubClaims.length,0);
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('stonefellow:agent-voice',{detail:{enabled:true}})));
+    await page.waitForFunction(()=>window.githubSpeech);
+    assert.deepEqual(await page.evaluate(()=>window.githubSpeech),{
+      text:'GitHub Actions reports 1 run failed and 2 runs succeeded.',allowed:true,autoReply:false
+    });
+    assert.equal(github.githubClaims.length,1);
+    assert.equal(github.githubClaims[0].conversation_id,42);
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    assert.equal(github.githubClaims.length,1);
+    console.log('PASS GitHub Actions speech defers during a draft or disabled Agent Voice and uses one canonical announcement');
+  }finally{await github.context.close();}
+
+  const watchItem={title:'Gmail reply received',target_url:'/chat.php?conversation_id=42'};
+  const digest={id:'away-report-1',created_at:'2026-10-30 14:01:00',summary:'Two updates came in.',items:[
+    {title:'Gmail inbox review',body:'Reviewed 3 new Gmail messages.',target_url:'/connections.php?app=gmail#gmail-inbox-review'},watchItem
+  ]};
+  const away=await fixture(17,{paused:true,returnDigest:digest});
+  try{
+    const page=await away.open();
+    const report=page.getByRole('region',{name:'While you were away'});
+    const sequence=()=>page.locator('#chatThread > :is([data-chat-message-id],[data-vp3-return-digest])')
+      .evaluateAll(rows=>rows.map(row=>row.dataset.chatMessageId || row.dataset.vp3ReturnDigest));
+    await report.waitFor();
+    assert.deepEqual(await sequence(),['1',digest.id]);
+    away.addMessage(42,{id:21,role:'user',message:'An earlier saved message',created_at:'2026-10-30 14:00:50'});
+    await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.syncConversation(42));
+    assert.deepEqual(await sequence(),['1','21',digest.id]);
+    away.addMessage(42,{id:22,role:'assistant',message:'A later saved reply',created_at:'2026-10-30 14:02:00'});
+    await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.syncConversation(42));
+    assert.deepEqual(await sequence(),['1','21',digest.id,'22']);
+
+    await page.reload({waitUntil:'domcontentloaded'});
+    await report.waitFor();
+    assert.deepEqual(await sequence(),['1','21',digest.id,'22']);
+    assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43)),true);
+    await report.waitFor();
+    assert.deepEqual(await sequence(),['10',digest.id]);
+    assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42)),true);
+    await report.waitFor();
+    assert.deepEqual(await sequence(),['1','21',digest.id,'22']);
+
+    await page.locator('#chatThread').evaluate(thread=>thread.dataset.view='player');
+    await report.waitFor({state:'detached'});
+    assert.equal(await page.locator('#chatThread').evaluate(async thread=>{
+      const config=window.VP3_COGNITIVE_PRESENTATION_V510;
+      const binding=config.workingAttentionBinding;
+      config.workingAttentionBinding='different-session';
+      thread.dataset.view='chat';
+      await Promise.resolve();
+      const visible=Boolean(thread.querySelector('[data-vp3-return-digest]'));
+      config.workingAttentionBinding=binding;
+      return visible;
+    }),false);
+    await page.locator('#chatThread').evaluate(thread=>{
+      thread.dataset.view='player';
+      thread.dataset.view='chat';
+    });
+    await report.waitFor();
+    assert.deepEqual(await sequence(),['1','21',digest.id,'22']);
+
+    const acknowledge=report.getByRole('button',{name:'Acknowledge'});
+    await acknowledge.focus();
+    away.setDigest({...digest,summary:'One update came in.',items:[watchItem]});
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    assert.equal(await report.getByText('Gmail inbox review',{exact:true}).count(),0);
+    assert.equal(await report.getByRole('link',{name:'Gmail reply received'}).count(),1);
+    assert.equal(await acknowledge.evaluate(button=>button===document.activeElement),true);
+    assert.deepEqual(await sequence(),['1','21',digest.id,'22']);
+
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    const staleRead=away.holdRead();
+    const refresh=page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    await staleRead.arrived;
+    await report.getByRole('button',{name:'Acknowledge'}).click();
+    await report.waitFor({state:'detached'});
+    staleRead.release();
+    await refresh;
+    assert.deepEqual(await sequence(),['1','21','22']);
+
+    away.setDigest({...digest,id:'away-report-2',created_at:null});
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    await report.waitFor();
+    assert.deepEqual(await sequence(),['1','21','22','away-report-2']);
+    await report.getByRole('button',{name:'Dismiss'}).click();
+    await report.waitFor({state:'detached'});
+    assert.deepEqual(away.digestActions,['acknowledged','dismissed']);
+    assert.deepEqual(away.errors,[]);
+    console.log('PASS the away report follows saved Chat chronology through sync, reload and switch, respects popup scope, and supports acknowledge and dismiss');
+  }finally{await away.context.close();}
+
   const startup=await fixture(17);
   try{
     const read=startup.holdRead(),activity=startup.holdActivity();
@@ -176,6 +309,37 @@ try{
     }finally{await review.context.close();}
   }
   console.log('PASS an authenticated HTTP 200 failed assessment renders its actual verified status');
+
+  const expiresAt=Date.now()+240000;
+  const running=await fixture(17,{enabled:true,activeJobs:[
+    {id:'workflow:71',expiresAt,private_detail:'Never send this to the orb'},
+    {id:'workflow:72',expiresAt}, {id:'workflow:73',expiresAt:1}, {id:'bad:74',expiresAt}
+  ]});
+  try{
+    const page=await running.open();
+    const status=page.locator('[data-agent-initiative-status]');
+    await page.waitForFunction(()=>window.initiativeOrbJobs?.length===2);
+    assert.deepEqual(await page.evaluate(()=>window.initiativeOrbJobs),[
+      {id:'workflow:71',expiresAt},{id:'workflow:72',expiresAt}
+    ]);
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    running.presentationFails(true);
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    await page.waitForFunction(()=>window.initiativeOrbJobs?.length===0);
+    running.presentationFails(false);
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    await page.waitForFunction(()=>window.initiativeOrbJobs?.length===2);
+    await status.getByRole('button',{name:'Pause',exact:true}).click();
+    await status.getByRole('button',{name:'Resume',exact:true}).waitFor();
+    assert.deepEqual(await page.evaluate(()=>window.initiativeOrbJobs),[]);
+    await status.getByRole('button',{name:'Resume',exact:true}).click();
+    await page.waitForFunction(()=>window.initiativeOrbJobs?.length===2);
+    assert.deepEqual(await page.evaluate(()=>{
+      window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+      return window.initiativeOrbJobs;
+    }),[]);
+    console.log('PASS only live, scoped Initiative leases reach the orb; failed reads, pauses and Chat changes clear them');
+  }finally{await running.context.close();}
 
   const denied=await fixture(17,{runtimeUnavailable:true});
   try{

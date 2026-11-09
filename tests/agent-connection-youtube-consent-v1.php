@@ -33,4 +33,29 @@ youtube_consent_check(!agent_connection_youtube_consent_v1($pdo, 1) && agent_con
 $pdo->exec('DELETE FROM users WHERE id=2');
 youtube_consent_check(!agent_connection_youtube_consent_v1($pdo, 2), 'Deleting an account must remove its consent.');
 
+require_once dirname(__DIR__).'/includes/agent-connection-youtube-playback-v1.php';
+$pdo->exec('CREATE TABLE chat_messages (id INTEGER PRIMARY KEY)');
+$pdo->exec('INSERT INTO users (id) VALUES (2)');
+agent_connection_youtube_results_schema_v1($pdo);
+vp3_youtube_playback_install_v1($pdo);
+agent_connection_youtube_set_consent_v1($pdo,1,true,true);
+$capture = vp3_youtube_capture_key_v1($pdo,1);
+youtube_consent_check(strlen($capture)===32 && vp3_youtube_capture_key_v1($pdo,2)==='',
+    'The default selection enables playback recording atomically for the enabling member.');
+agent_connection_youtube_set_consent_v1($pdo,2,true,false);
+youtube_consent_check(agent_connection_youtube_consent_v1($pdo,2) && vp3_youtube_capture_key_v1($pdo,2)==='',
+    'Unchecking the default still enables the search skill without recording.');
+vp3_youtube_history_change_v1($pdo,1,'pause_history');
+agent_connection_youtube_set_consent_v1($pdo,1,true,true);
+youtube_consent_check(vp3_youtube_capture_key_v1($pdo,1)==='',
+    'A repeated activation must not override a member’s pause.');
+agent_connection_youtube_set_consent_v1($pdo,1,false);
+$pdo->exec('DROP TABLE vp3_youtube_history_settings_v1');
+try {
+    agent_connection_youtube_set_consent_v1($pdo,1,true,true);
+    throw new RuntimeException('Missing capture storage must fail the selected activation.');
+} catch (DomainException) {
+    youtube_consent_check(!agent_connection_youtube_consent_v1($pdo,1), 'A failed capture selection rolls back consent.');
+}
+
 echo "AGENT_CONNECTION_YOUTUBE_CONSENT_V1=PASS\n";

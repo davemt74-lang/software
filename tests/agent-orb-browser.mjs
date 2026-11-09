@@ -56,7 +56,28 @@ try{
   await check('Stop reaches the existing child voice owner',async()=>{await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-stop]').click();await page.waitForFunction(()=>document.querySelector('iframe').contentWindow.stops===1);});
   await check('a hidden popup keeps one embedded conversation',async()=>{await page.locator('[data-orb-chat]').click();assert.equal(await page.locator('iframe').count(),1);await page.locator('#vp3AgentChatPopup header button').click();});
   await check('voice enrollment waits for the existing popup guard and cancellation cannot replay it',async()=>{await page.evaluate(()=>{VP3AgentOrb.startVoiceEnrollment('cancelled');VP3AgentOrb.cancelVoiceEnrollment();});await page.waitForTimeout(50);await page.frameLocator('iframe').locator('body').evaluate(()=>{window.VP3VoiceGuard={beginEnrollment:id=>window.enrolledVoice=id,cancelEnrollment:()=>window.enrolledVoice='',inviteIntroduction:()=>{}};window.dispatchEvent(new Event('vp3:voice-guard-ready'));});assert.equal(await page.evaluate(()=>document.querySelector('iframe').contentWindow.enrolledVoice||''),'');await page.evaluate(()=>VP3AgentOrb.startVoiceEnrollment('participant-7'));await page.waitForFunction(()=>document.querySelector('iframe').contentWindow.enrolledVoice==='participant-7');assert.equal(await page.locator('iframe').count(),1);await page.locator('#vp3AgentChatPopup header button').click();});
-  await check('dragging moves orb without opening chat',async()=>{const b=await page.locator('.vp3-orb-ball').boundingBox();await page.mouse.move(b.x+30,b.y+30);await page.mouse.down();await page.mouse.move(b.x-170,b.y-90,{steps:8});await page.mouse.up();assert.equal(await page.locator('#vp3AgentChatPopup').isVisible(),false);assert.ok((await page.locator('.vp3-orb-ball').boundingBox()).x<b.x-100);});
+  await check('dragging keeps Chat closed and docked Chat restores the saved floating position',async()=>{
+    const orb = page.locator('.vp3-orb-ball');
+    const root = page.locator('.vp3-orb-root');
+    const popup = page.locator('#vp3AgentChatPopup');
+    const initial = await orb.boundingBox();
+    await page.mouse.move(initial.x + 30, initial.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(initial.x - 170, initial.y - 90, {steps:8});
+    await page.mouse.up();
+    assert.equal(await popup.isVisible(), false);
+    assert.ok((await orb.boundingBox()).x < initial.x - 100);
+    const saved = await root.boundingBox();
+    await page.locator('[data-orb-chat]').click();
+    await popup.waitFor();
+    assert.equal(await orb.getAttribute('aria-expanded'), 'true');
+    await orb.focus();
+    await page.keyboard.press('Enter');
+    await popup.waitFor({state:'hidden'});
+    assert.equal(await orb.getAttribute('aria-expanded'), 'false');
+    const restored = await root.boundingBox();
+    assert.deepEqual([restored.x, restored.y], [saved.x, saved.y]);
+  });
   // Use a fresh page for camera lifecycle so the popup cannot obscure the controls.
   await page.goto(url+'/camera');await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-eyes]').click();
   const face={box:[128,144,128,144],embedding:Array(32).fill(0).map((_,i)=>i===0?1:0)};

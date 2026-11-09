@@ -49,3 +49,30 @@
 @media (min-width: 761px) {
   body:has(#sfOnlineRailV109:not([hidden])) .vp3-chat-email-specialist-status { display: none; }
 }
+
+.vp3-chat-github-workflow {
+  margin: .75rem 0;
+  padding: .7rem .75rem;
+  border: 1px solid #d1d5db;
+  border-radius: .55rem;
+  background: #f8fafc;
+}
+.vp3-chat-github-workflow p { margin: .4rem 0; color: #4b5563; }
+.vp3-chat-github-workflow p:empty { display: none; }
+.vp3-chat-github-toggle { display: flex; align-items: center; gap: .5rem; min-height: 2.25rem; }
+.vp3-chat-github-toggle input { margin: 0; accent-color: #1e3a5f; }
+.vp3-chat-github-folder { display: grid; gap: .25rem; margin: .7rem 0; }
+.vp3-chat-github-folder small { color: #4b5563; }
+.vp3-chat-github-workflow :is(input[type="text"], button) {
+  min-height: 2.25rem;
+  padding: .35rem .6rem;
+  border: 1px solid #9ca3af;
+  border-radius: .4rem;
+  color: #172a50;
+  background: #fff;
+  font: inherit;
+}
+.vp3-chat-github-folder input { width: 100%; min-width: 0; box-sizing: border-box; }
+.vp3-chat-github-controls { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .55rem; }
+.vp3-chat-github-controls button:disabled { opacity: .58; }
+.vp3-chat-github-workflow[hidden], .vp3-chat-github-workflow [hidden] { display: none; }

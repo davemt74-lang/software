@@ -311,6 +311,182 @@
   window.addEventListener('vp3:chat-email-watch-changed', () => refreshSpecialistSoon());
   refreshSpecialistSoon();
 
+  function installGithubWorkflowReview(gmail) {
+    if (!cfg.githubWorkflow?.endpoint) return;
+    const toolsPanel = gmail.closest('#chatToolsPanel');
+    const form = element('form');
+    form.className = 'vp3-chat-github-workflow';
+    const toggle = element('input');
+    toggle.type = 'checkbox';
+    toggle.setAttribute('aria-describedby', 'vp3GithubWorkflowHelp');
+    const toggleLabel = element('label');
+    toggleLabel.className = 'vp3-chat-github-toggle';
+    toggleLabel.append(toggle, element('strong', 'GitHub Workflow Review'));
+    const description = element('p', 'Review new GitHub Actions notifications in your Gmail inbox and save findings in your private Knowledge. Announcements follow your Agent Voice setting.');
+    description.id = 'vp3GithubWorkflowHelp';
+    const destination = element('label');
+    destination.className = 'vp3-chat-github-folder';
+    const folder = element('input');
+    folder.type = 'text';
+    folder.name = 'folder_name';
+    folder.maxLength = 160;
+    folder.autocomplete = 'off';
+    folder.placeholder = 'e.g. Workflow reviews';
+    const folders = element('datalist');
+    folders.id = 'vp3GithubWorkflowFolders';
+    folder.setAttribute('list', folders.id);
+    destination.append(element('span', 'Private Knowledge folder name'), folder,
+      element('small', 'Choose the name of a root folder. VP3 will use your existing folder or create it for you.'));
+    const status = element('p');
+    status.setAttribute('role', 'status');
+    const save = element('button', 'Save workflow review');
+    save.type = 'submit';
+    const restart = button('Restart workflow review', () => void send('restart'));
+    const retry = button('Retry loading settings', () => void send('state'));
+    const controls = element('div');
+    controls.className = 'vp3-chat-github-controls';
+    controls.append(save, restart, retry);
+    form.append(toggleLabel, description, destination, folders, controls, status);
+    gmail.append(form);
+
+    let state = null;
+    let request = null;
+    let loadFailed = false;
+    const hasOwnerScope = () => String(window.STONEFELLOW_CHAT?.userId) === cfg.ownerKey
+      && !window.VP3ParticipantContinuity?.selectedContext?.();
+    const visible = () => hasOwnerScope() && gmail.open && !toolsPanel?.hidden && !document.hidden;
+    const messages = {
+      disabled:'Workflow review is off.',
+      waiting:'Waiting for the next background check.',
+      checked:'Workflow review is on.',
+      retrying:'The last check could not finish. Workflow review will try again.',
+      restart_required:'Gmail’s review position expired. Restart to review new arrivals from now on.',
+      destination_unavailable:'Choose a private Knowledge folder to resume workflow review.',
+      gmail_required:'Connect Gmail and enable read access to use workflow review.',
+      permission_required:'Workflow review requires Gmail read access and permission to manage private Knowledge.',
+      unavailable:'Workflow review is currently unavailable.',
+    };
+
+    function renderControls() {
+      const available = state?.available === true;
+      const canDisable = state?.can_disable === true;
+      const enabled = toggle.checked;
+      const folderName = folder.value.trim();
+      toggle.disabled = Boolean(request) || (!available && !canDisable);
+      destination.hidden = !enabled;
+      folder.disabled = Boolean(request) || !enabled || !available;
+      folder.required = enabled;
+      save.disabled = Boolean(request) || (enabled
+        ? !available || !folderName || (state?.enabled && state.folder_name === folderName && state.status !== 'destination_unavailable')
+        : !canDisable);
+      restart.hidden = !(available && state?.enabled && state.status === 'restart_required');
+      restart.disabled = Boolean(request);
+      retry.hidden = !loadFailed;
+      retry.disabled = Boolean(request);
+    }
+
+    function setState(next) {
+      state = next;
+      toggle.checked = next?.enabled === true;
+      folder.value = typeof next?.folder_name === 'string' ? next.folder_name : '';
+      folders.replaceChildren();
+      for (const entry of Array.isArray(next?.folders) ? next.folders : []) {
+        if (typeof entry?.name !== 'string') continue;
+        const option = element('option');
+        option.value = entry.name;
+        folders.append(option);
+      }
+      status.textContent = next ? messages[next.status] || '' : '';
+      renderControls();
+    }
+
+    function clear() {
+      request?.abort();
+      request = null;
+      loadFailed = false;
+      setState(null);
+    }
+
+    async function send(action) {
+      if (request || !visible()) return;
+      const payload = {action, owner_key:cfg.ownerKey, csrf_token:cfg.csrf};
+      if (action !== 'state') {
+        if (!state) return;
+        Object.assign(payload, {connection_id:state.connection_id, connection_revision:state.connection_revision, github_revision:state.revision});
+      }
+      if (action === 'enable') {
+        const name = folder.value.trim();
+        if (!name || Array.from(name).length > 80) {
+          status.textContent = 'Enter a folder name of up to 80 characters.';
+          folder.focus();
+          return;
+        }
+        payload.folder_name = name;
+      }
+      const current = new AbortController();
+      request = current;
+      const timeout = setTimeout(() => current.abort(), 10000);
+      let failure = action === 'state' ? 'Could not load workflow review settings.' : 'Could not save workflow review settings.';
+      status.textContent = action === 'state' ? 'Loading workflow review settings…' : 'Saving workflow review settings…';
+      renderControls();
+      try {
+        const response = await fetch(cfg.githubWorkflow.endpoint, {
+          method:'POST', credentials:'same-origin', cache:'no-store', signal:current.signal,
+          headers:{'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (request !== current || !visible()) return;
+        if (!response.ok || result?.ok !== true) {
+          if ([401,403,409,419].includes(response.status)) setState(null);
+          if (response.status === 409) failure = 'Workflow review settings changed. Close and reopen Gmail to refresh them.';
+          if (response.status === 422) failure = 'Check the Knowledge folder name and try again.';
+          throw new Error(failure);
+        }
+        if (result.owner_key !== cfg.ownerKey || !result.state) {
+          setState(null);
+          throw new Error(failure);
+        }
+        loadFailed = false;
+        setState(result.state);
+      } catch (_error) {
+        if (request !== current || !visible()) return;
+        loadFailed = action === 'state' || !state;
+        status.textContent = failure;
+      } finally {
+        clearTimeout(timeout);
+        if (request === current) {
+          request = null;
+          renderControls();
+        }
+      }
+    }
+
+    function sync() {
+      form.hidden = !hasOwnerScope();
+      if (!visible()) clear();
+      else if (!state && !request && !loadFailed) void send('state');
+    }
+
+    toggle.addEventListener('change', renderControls);
+    folder.addEventListener('input', renderControls);
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      if (!save.disabled) void send(toggle.checked ? 'enable' : 'disable');
+    });
+    gmail.addEventListener('toggle', sync);
+    const observer = toolsPanel && new MutationObserver(sync);
+    observer?.observe(toolsPanel, {attributeFilter:['hidden']});
+    window.addEventListener('vp3:participant-selection-changed', sync);
+    window.addEventListener('stonefellow:chat-context-changing', sync);
+    window.addEventListener('vp3:chat-context-ready', sync);
+    window.addEventListener('focus', sync);
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('pagehide', clear);
+    window.addEventListener('pageshow', sync);
+    renderControls();
+    sync();
+  }
+
   const tools = document.getElementById('chatToolsContent');
   if (tools) {
     const help = element('details');
@@ -318,8 +494,9 @@
     link.href = cfg.connectionsUrl;
     help.append(element('summary','Gmail'),
       element('p','Try “Show emails from buyer@example.com” or “Draft an email to buyer@example.com about our launch.”'),
-      element('p','To get one notification in this Chat, ask “Notify me when I get an email from buyer@example.com.” To end the watch, ask “Stop watching for emails from buyer@example.com.”'),
-      link);
+      element('p','To get one notification in this Chat, ask “Notify me when I get an email from buyer@example.com.” To end the watch, ask “Stop watching for emails from buyer@example.com.”'));
     tools.append(help);
+    installGithubWorkflowReview(help);
+    help.append(link);
   }
 })();

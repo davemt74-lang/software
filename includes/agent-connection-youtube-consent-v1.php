@@ -38,10 +38,10 @@ function agent_connection_youtube_consent_v1(PDO $pdo, int $ownerId): bool
 }
 
 /** Only the authenticated member action may enable the skill for their account. */
-function agent_connection_youtube_set_consent_v1(PDO $pdo, int $ownerId, bool $enabled): void
+function agent_connection_youtube_set_consent_v1(PDO $pdo, int $ownerId, bool $enabled, bool $recordPlayback = false): void
 {
     if ($ownerId < 1) throw new InvalidArgumentException('A VP3 account is required.');
-    agent_commerce_atomic_pa2($pdo, static function () use ($pdo, $ownerId, $enabled): void {
+    agent_commerce_atomic_pa2($pdo, static function () use ($pdo, $ownerId, $enabled, $recordPlayback): void {
         $owner = $pdo->prepare('SELECT id FROM users WHERE id=?'.agent_commerce_lock_pa2($pdo));
         $owner->execute([$ownerId]);
         if (!$owner->fetchColumn()) throw new InvalidArgumentException('A VP3 account is required.');
@@ -56,6 +56,11 @@ function agent_connection_youtube_set_consent_v1(PDO $pdo, int $ownerId, bool $e
             : ' ON DUPLICATE KEY UPDATE policy_version=VALUES(policy_version), accepted_at=VALUES(accepted_at)';
         $stmt = $pdo->prepare('INSERT INTO agent_connection_youtube_consent_v1 (owner_user_id,policy_version,accepted_at) VALUES (?,?,?)'.$update);
         $stmt->execute([$ownerId, VP3_YOUTUBE_CONSENT_POLICY_V1, time()]);
+        if ($recordPlayback) {
+            require_once __DIR__.'/agent-connection-youtube-playback-v1.php';
+            if (!vp3_youtube_playback_ready_v1($pdo)) throw new DomainException('Playback history unavailable.');
+            vp3_youtube_history_change_v1($pdo,$ownerId,'enable_history');
+        }
         agent_connection_notice_record_v1($ownerId, 'youtube');
     });
 }

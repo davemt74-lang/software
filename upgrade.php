@@ -292,6 +292,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && agent_connections_schema_ready_v1($schemaConnection)
         && vp3_dev_schema_ready_v1($schemaConnection)
         && agent_connection_email_sender_watch_ready_v1($schemaConnection)
+        && agent_connection_gmail_inbox_storage_ready_v1($schemaConnection)
+        && agent_connection_gmail_github_storage_ready_v1($schemaConnection)
         && agent_connection_health_schema_ready_v1($schemaConnection)
         && agent_connection_youtube_consent_ready_v1($schemaConnection)
         && vp3_youtube_playback_ready_v1($schemaConnection)

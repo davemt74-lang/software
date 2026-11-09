@@ -114,6 +114,8 @@ const created = () => requests.filter(row => row.action === 'create');
 const send = async message => { await input.fill(message); await button.click(); };
 const open = id => page.evaluate(id => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(id),id);
 const waitForText = (locator,text) => locator.getByText(text,{exact:true}).waitFor();
+const expectOrbJobs = (...ids) => page.waitForFunction(ids => window.orbJobs.length===ids.length
+  && ids.every(id => window.orbJobs.some(job => job.id===`development:${id}`&&job.expiresAt>Date.now()&&job.expiresAt<=Date.now()+12000)),ids);
 
 async function boot(reload = false) {
   if (reload) await page.reload();
@@ -121,6 +123,8 @@ async function boot(reload = false) {
   await page.evaluate(() => {
     window.STONEFELLOW_CHAT = {userId:1,agentId:7,endpoint:'/api/chat.php',csrf:'fixture',initialView:'chat',initialConversationId:42};
     window.VP3_CHAT_DEVELOPMENT_V1 = {endpoint:'/api/agent-development-chat-v1.php',revisionsUrl:'/admin/agent-development.php',ownerKey:'1',csrf:'fixture',agentId:7};
+    window.orbJobs = [];
+    window.VP3AgentOrb = {setJobs:(source,jobs) => {if(source==='development')window.orbJobs=jobs;}};
   });
   for (const file of ['chat.css','team-chat-v109.css','chat-specialist-rail-v1.css','chat-agent-development-v1.css']) {
     await page.addStyleTag({content:await source(file)});
@@ -154,6 +158,7 @@ try {
   await draftFor(104).click();
   await page.waitForFunction(objective => document.getElementById('chatInput').value === '/develop '+objective,youtubeObjective);
   assert.equal(created().length,0,'Drafting never queues a revision');
+  await expectOrbJobs();
   assert.equal(requests.filter(row => row.action === 'draft').at(-1).assistant_message_id,104);
   await input.fill('A different draft I am writing');
   await draftFor(102).click();
@@ -210,6 +215,7 @@ try {
   assert.equal(await input.inputValue(),'');
   await planner.click();
   await waitForText(panel,'Preparing outline');
+  await expectOrbJobs(outlineId);
   await panel.getByRole('button',{name:'Open revision'}).waitFor();
   assert.doesNotMatch(await panel.innerText(),/Stop playing YouTube/);
   assert.equal(created().length,1);
@@ -218,6 +224,7 @@ try {
   await focus();
   await planner.waitFor({state:'detached'});
   await waitForText(receipt,'Outline ready for review');
+  await expectOrbJobs();
   assert.equal(await receipt.getByRole('link',{name:'Open revision'}).getAttribute('href'),`${origin}/admin/agent-development.php?revision=${outlineId}`);
 
   mode = 'code_stage';
@@ -230,6 +237,7 @@ try {
   assert.equal(await compact.isVisible(),false);
   await coder.click();
   await waitForText(panel,'Waiting for coding worker');
+  await expectOrbJobs();
   assert.equal(created().length,2);
   assert.equal(normalTurns.length,1);
 
@@ -252,16 +260,19 @@ try {
   release();
   await coder.waitFor({state:'detached'});
   await receipt.waitFor({state:'detached'});
+  await expectOrbJobs();
   assert.ok(requests.some(row => row.conversation_id === 12));
   await open(42);
   await coder.waitFor();
   await coder.click();
   await waitForText(panel,'Building and testing candidate');
+  await expectOrbJobs(buildId);
 
   status = 'staged';
   previewReady = true;
   await focus();
   await coder.waitFor({state:'detached'});
+  await expectOrbJobs();
   assert.equal(await receipt.count(),0);
 
   stale = true;

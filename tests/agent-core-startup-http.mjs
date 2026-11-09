@@ -19,7 +19,7 @@ const base='http://127.0.0.1:'+port,gate=join(temp,'projection');
 mkdirSync(join(temp,'api'));mkdirSync(join(temp,'includes'));
 for(const name of ['cognitive-presentation-v510.php','agent-activity-v94.php'])copyFileSync(join(source,'api',name),join(temp,'api',name));
 writeFileSync(join(temp,'includes','bootstrap.php'),'<?php session_start(); require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';');
-for(const name of ['agent-initiative-runtime-v1.php','agent-initiative-lifecycle-v1.php']){
+for(const name of ['agent-initiative-runtime-v1.php','agent-initiative-lifecycle-v1.php','agent-connection-gmail-github-notice-v1.php']){
   writeFileSync(join(temp,'includes',name),'<?php require_once '+JSON.stringify(join(source,'includes',name))+';');
 }
 const router=join(temp,'router.php');

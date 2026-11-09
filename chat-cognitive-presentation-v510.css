@@ -13,3 +13,7 @@
   background: #fff;
   cursor: pointer;
 }
+
+#chatThread[data-view]:not([data-view="chat"]) > .vp3-return-digest {
+  display: none;
+}

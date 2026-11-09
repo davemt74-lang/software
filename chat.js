@@ -1697,12 +1697,13 @@
   // A visitor card is attached to a server-created private Chat message. Its
   // marker contains identities only; the current owner projection is fetched
   // separately so reloading old history cannot restore stale reply authority.
-  function bindStoredMessagePa3(element, id, marker = null, role = 'assistant') {
+  function bindStoredMessagePa3(element, id, marker = null, role = 'assistant', createdAt = '') {
     const messageId=Number(id);
     if(!element || !Number.isSafeInteger(messageId) || messageId<1)return;
     element.dataset.chatMessageId=String(messageId);
     element.dataset.chatConversationId=String(conversationId);
     element.dataset.chatMessageRole=String(role);
+    if (typeof createdAt === 'string' && createdAt) element.dataset.chatCreatedAt = createdAt;
     if(role==='assistant'){
       window.dispatchEvent(new CustomEvent('vp3:chat-message-persisted',{detail:{element,conversationId,agentId:Number(cfg.agentId||0)}}));
     }
@@ -3612,7 +3613,7 @@
         context.canvas_media || null,
         context.youtube_results || null
       );
-      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'));
+      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
@@ -3642,7 +3643,9 @@
       agent_context:{user_agent_id:Number(cfg.agentId || 0)}}, signal);
     if(revision!==chatRevision||targetId!==conversationId||busy||!Array.isArray(data.messages))return;
     data.messages.forEach(message=>{
-      if(thread.querySelector('[data-chat-message-id="'+Number(message.id||0)+'"]')){
+      const stored=thread.querySelector('[data-chat-message-id="'+Number(message.id||0)+'"]');
+      if(stored){
+        if(typeof message.created_at==='string'&&message.created_at)stored.dataset.chatCreatedAt=message.created_at;
         lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));return;
       }
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
@@ -3652,7 +3655,7 @@
         return;
       }
       const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null,context.youtube_results||null);
-      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'));
+      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       const next=Array.from(thread.querySelectorAll('[data-chat-message-id]')).find(element=>element!==renderedMessage
         &&Number(element.dataset.chatConversationId)===targetId&&Number(element.dataset.chatMessageId)>Number(message.id));
       if(next)thread.insertBefore(renderedMessage,next);
@@ -3665,7 +3668,10 @@
       if(message.role==='assistant')bindProductLaunchV1(renderedMessage,context.product_launch);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
-    if(data.messages.length)await refreshHistory(signal);
+    if(data.messages.length){
+      window.dispatchEvent(new Event('vp3:chat-history-updated'));
+      await refreshHistory(signal);
+    }
   }
 
   history.addEventListener('click', event => {

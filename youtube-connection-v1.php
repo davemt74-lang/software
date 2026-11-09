@@ -50,7 +50,8 @@ if ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && $action
         $result = 'youtube_unavailable';
     } else {
         try {
-            agent_connection_youtube_set_consent_v1($pdo, (int)$user['id'], $action === 'enable');
+            agent_connection_youtube_set_consent_v1($pdo, (int)$user['id'], $action === 'enable',
+                $action === 'enable' && ($_POST['record_vp3_playback'] ?? null) === '1');
             $result = $action === 'enable' ? 'youtube_enabled' : 'youtube_disabled';
         } catch (Throwable $e) {
             $result = 'youtube_unavailable';

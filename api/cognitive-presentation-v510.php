@@ -81,10 +81,34 @@ try{
             require_once dirname(__DIR__).'/includes/agent-initiative-runtime-v1.php';
             $state['live_context']['initiative']['runtime']=vp3_initiative_worker_health_v1($pdo,$user,$agentId,$liveConversationId);
         }
+        if($liveConversationId!==null&&(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null)){
+            require_once dirname(__DIR__).'/includes/agent-connection-gmail-github-notice-v1.php';
+            try{$state['github_voice']=agent_connection_gmail_github_actions_voice_offer_v1($pdo,$user);}
+            catch(Throwable $e){$state['github_voice']=null;}
+        }
         vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'state'=>$state]);
     }
     if($method!=='POST')vp3_cognitive_presentation_api_json_v510(405,['ok'=>false,'error'=>'method_not_allowed']);
     if(!hash_equals(csrf_token(),trim((string)($input['csrf_token']??''))))vp3_cognitive_presentation_api_json_v510(419,['ok'=>false,'error'=>'csrf']);
+
+    if($action==='github_voice_claim'){
+        $conversationId=$input['conversation_id']??null;
+        $generation=$input['generation']??null;
+        $through=$input['through_id']??null;
+        if(!is_int($rawAgentId)||$rawAgentId<0||!is_int($conversationId)||$conversationId<1
+            ||!is_int($generation)||$generation<1||!is_int($through)||$through<1){
+            vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_github_voice_context']);
+        }
+        if(vp3_participant_scope_v1()!==null)vp3_cognitive_presentation_api_json_v510(403,['ok'=>false,'error'=>'forbidden']);
+        $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);
+        if(!vp3_agent_chat_conversation_v380($pdo,$conversationId,(int)$user['id'],$agent)){
+            vp3_cognitive_presentation_api_json_v510(404,['ok'=>false,'error'=>'conversation_not_found']);
+        }
+        require_once dirname(__DIR__).'/includes/agent-connection-gmail-github-notice-v1.php';
+        if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+        $claim=agent_connection_gmail_github_actions_voice_claim_v1($pdo,$user,$namespace,$generation,$through);
+        vp3_cognitive_presentation_api_json_v510(200,['ok'=>true,'claim'=>$claim]);
+    }
 
     if(in_array($action,$initiativeActions,true)){
         $rawAgent=$input['agent_id']??0;

@@ -74,13 +74,16 @@ $policy=runtime_enable($user,0,42);
 $before=$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn();
 $health=vp3_initiative_worker_health_v1($pdo,$user,0,42);
 runtime_check($health['configuration_ready']&&$health['execution_ready']&&$health['pump_available']
-    &&$health['last_checked_at']===''&&$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn()===$before,
+    &&$health['last_checked_at']===''&&$health['active_jobs']===[]&&$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn()===$before,
     'read-only health distinguishes available execution from an actual source review');
 $calls=0;$duplicate=null;
 $model=static function(string $prompt,string $protocol)use(&$calls,&$duplicate,$pdo,$user,$policy):string{
     if($pdo->inTransaction())throw new RuntimeException('Inference must not hold a database transaction.');
-    $lease=$pdo->query("SELECT lease_expires_at FROM agent_workflow_runs WHERE source_kind='agent_initiative' AND status='executing' ORDER BY id DESC LIMIT 1")->fetchColumn();
-    if((strtotime((string)$lease)?:0)<time()+235)throw new RuntimeException('Inference requires the canonical refreshed lease.');
+    $lease=$pdo->query("SELECT id,lease_expires_at FROM agent_workflow_runs WHERE source_kind='agent_initiative' AND status='executing' ORDER BY id DESC LIMIT 1")->fetch();
+    $expiresAt=strtotime($lease['lease_expires_at'].' UTC');
+    if($expiresAt<time()+235)throw new RuntimeException('Inference requires the canonical refreshed lease.');
+    runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['active_jobs']===
+        [['id'=>'workflow:'.$lease['id'],'expiresAt'=>$expiresAt*1000]],'read-only status projects the exact active workflow lease');
     $calls++;
     if($protocol==='vp3.initiative-plan.v1'){
         $duplicate=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static function(){throw new RuntimeException('Duplicate model call');});
@@ -100,7 +103,8 @@ $prepared=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
 runtime_check($prepared['ok']&&$calls===2&&(int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_receipts')->fetchColumn()===2,
     'the next bounded pump executes the queued preparation through canonical receipts');
 $quiet=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
-runtime_check($quiet['reason']==='no_work'&&$calls===2,'repeated active Chat polls do not repeat inference for unchanged sources');
+runtime_check($quiet['reason']==='no_work'&&$quiet['health']['active_jobs']===[]&&$calls===2,
+    'completed leases disappear and repeated active Chat polls do not repeat inference for unchanged sources');
 $pdo->exec("INSERT INTO agent_workflow_runs(owner_user_id,agent_id,source_kind,execution_target,capability_key,status)
     VALUES(1,NULL,'image_generation','cloud','images.generate','approved')");
 $imageRun=(int)$pdo->lastInsertId();
@@ -109,8 +113,10 @@ runtime_check(vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model)
     'the browser pump cannot claim unrelated paid image or public conversation work');
 try{vp3_initiative_pump_v1($pdo,$user,0,42,str_repeat('a',32),$model);throw new LogicException('Stale revision accepted');}
 catch(RuntimeException $e){runtime_check($e->getCode()===409&&$calls===2,'a stale tab cannot start work under a replaced policy revision');}
-runtime_check(vp3_initiative_worker_health_v1($pdo,['id'=>2,'is_active'=>1],0,42)['state']==='unavailable'
-    &&vp3_initiative_worker_health_v1($pdo,$user,7,42)['state']==='unavailable','account and Agent switches cannot read another exact conversation health');
+$otherOwner=vp3_initiative_worker_health_v1($pdo,['id'=>2,'is_active'=>1],0,42);
+$otherAgent=vp3_initiative_worker_health_v1($pdo,$user,7,42);
+runtime_check($otherOwner['state']==='unavailable'&&$otherOwner['active_jobs']===[]
+    &&$otherAgent['state']==='unavailable'&&$otherAgent['active_jobs']===[],'account and Agent switches cannot read another exact conversation health');
 $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>8];
 runtime_check(!vp3_initiative_worker_health_v1($pdo,$user,0,42)['configuration_ready'],'participant access cannot become owner background authority');
 unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
@@ -131,6 +137,10 @@ vp3_initiative_schedule_v1($pdo,$user,0);
 $pending=vp3_initiative_runtime_runs_v1($pdo,1,0,$policy,true);
 $lost=agent_job_claim_run_v1900($pdo,$user,(int)$pending[0]['id'],'cloud',agent_worker_cloud_worker_id_v1910(1));
 $pdo->prepare("UPDATE agent_workflow_runs SET lease_expires_at='2000-01-01 00:00:00' WHERE id=?")->execute([$lost['run_id']]);
+$pdo->prepare("UPDATE agent_workflow_runs SET status='executing',lease_expires_at=? WHERE id=?")
+    ->execute([gmdate('Y-m-d H:i:s',time()+240),$imageRun]);
+runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['active_jobs']===[],
+    'status omits both an expired Initiative lease and a live unrelated image lease');
 $pdo->prepare("UPDATE agent_workflow_runs SET status='executing',lease_expires_at='2000-01-01 00:00:00' WHERE id=?")->execute([$imageRun]);
 $recovered=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
 runtime_check($recovered['health']['state']==='waiting'&&$recovered['health']['reason']==='retry_scheduled'
@@ -144,7 +154,8 @@ $revoked=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static funct
     vp3_initiative_chat_v1($pdo,$user,vp3_agent_chat_principal_v380($user,null),['conversation_id'=>42],'off',null);
     return '{"jobs":[]}';
 });
-runtime_check(!$revoked['ok']&&$revoked['reason']==='initiative_unconfirmed'&&$revoked['health']['state']==='paused',
+runtime_check(!$revoked['ok']&&$revoked['reason']==='initiative_unconfirmed'&&$revoked['health']['state']==='paused'
+    &&$revoked['health']['active_jobs']===[],
     'opt-out during inference prevents a late result from advancing or entering Chat');
 runtime_check(preg_match('/^[a-f0-9]{32}$/D',$revoked['health']['policy_revision'])===1
     &&$revoked['health']['policy_revision']===vp3_initiative_policy_v1($user,0)['revision'],

@@ -5,6 +5,8 @@ require_once __DIR__ . '/includes/agent-connections-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-v1.php';
 require_once __DIR__ . '/includes/agent-connection-health-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-playback-v1.php';
+require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
+require_once __DIR__ . '/includes/agent-connection-gmail-inbox-settings-v1.php';
 require_permission('account.access');
 
 $user = current_user();
@@ -27,6 +29,26 @@ $canChat = has_permission('chat.access', $user);
 $permissions = $gmailLinked
     ? $connection['permissions']
     : ['read' => true, 'send' => true, 'followups' => false];
+$inboxReady = $connected && $pdo && agent_connection_gmail_inbox_storage_ready_v1($pdo);
+$inboxPolicy = $inboxReady ? agent_connection_gmail_inbox_policy_v1($pdo, (int)$user['id']) : null;
+$inboxRules = $inboxPolicy['rules'] ?? [];
+$inboxGrantChanged = $inboxPolicy && ((int)$inboxPolicy['connection_id'] !== (int)$connection['id']
+    || !hash_equals($connection['revision'], hash('sha256', $inboxPolicy['authorization_key'])));
+if ($inboxGrantChanged) {
+    $inboxPolicy = null;
+}
+$inboxCanEnable = $inboxReady && $providerReady && agent_connection_gmail_inbox_authority_v1($user, $connection);
+$inboxEnabled = !empty($inboxPolicy['enabled']);
+$inboxActive = $inboxCanEnable && $inboxEnabled;
+$inboxStatus = $inboxActive ? ($inboxPolicy['last_status'] ?? '') : '';
+$inboxCheckedAt = $inboxActive ? ($inboxPolicy['last_checked_at'] ?? '') : '';
+$inboxReview = $inboxActive ? json_decode((string)($inboxPolicy['last_review_json'] ?? ''), true) : null;
+$inboxRuleFields = [
+    'senders' => ['Sender addresses', 'person@example.com'],
+    'domains' => ['Sender domains', 'example.com'],
+    'subjects' => ['Subject phrases', 'Build completed'],
+];
+$inboxCategories = ['reply' => 'May need a reply', 'important' => 'Important', 'new' => 'New'];
 $action = $connected ? 'update_policy' : 'start';
 $labels = [
     'read' => ['Search and read Gmail', 'In typed Agent Chat, try “Find emails from sender@example.com” to search your inbox.'],
@@ -49,6 +71,14 @@ $notices = [
     'test_limited' => ['info', 'Gmail was checked recently. Wait a moment and try again.'],
     'youtube_picks_saved' => ['success', 'Your YouTube music preferences were saved.'],
     'youtube_history_saved' => ['success', 'Your VP3 playback history settings were updated.'],
+    'inbox_saved' => ['success', 'Inbox review settings saved.'],
+    'inbox_restarted' => ['success', 'Inbox review restarted for new arrivals.'],
+    'inbox_disabled' => ['success', 'Inbox review is off. Your ignore list was saved.'],
+    'inbox_invalid' => ['error', 'The request or an ignore list entry was invalid. Check your entries and try again.'],
+    'inbox_conflict' => ['error', 'Gmail or these settings changed while you were working. Review the current settings and try again.'],
+    'inbox_unavailable' => ['error', 'Inbox review is currently unavailable.'],
+    'inbox_failed' => ['error', 'Inbox review settings could not be saved. Try again in a moment.'],
+    'inbox_reconnect' => ['error', 'Reconnect Gmail before enabling Inbox review.'],
     'youtube_enabled' => ['success', 'YouTube is enabled for your VP3 account.'],
     'youtube_disabled' => ['success', 'YouTube is disabled for your VP3 account.'],
     'youtube_accept_required' => ['error', 'Review and accept the terms to enable YouTube.'],
@@ -57,6 +87,7 @@ $notices = [
 ];
 $result = $_GET['result'] ?? '';
 $notice = is_string($result) ? ($notices[$result] ?? null) : null;
+$inboxNotice = $connected && is_string($result) && str_starts_with($result, 'inbox_') ? $notice : null;
 $noticeProvider = is_string($result) && str_starts_with($result, 'youtube_') ? 'youtube' : 'gmail';
 $selectedApp = $_GET['app'] ?? '';
 $openApp = $notice && !in_array($result, ['disconnected', 'youtube_disabled'], true)
@@ -122,7 +153,7 @@ header('Cache-Control: private, no-store');
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Connections | <?= e(system_agent_name()) ?></title>
   <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-  <link rel="stylesheet" href="<?= e(url('/connections-v1.css?v=2')) ?>">
+  <link rel="stylesheet" href="<?= e(url('/connections-v1.css?v=' . substr(hash_file('sha256', __DIR__ . '/connections-v1.css'), 0, 12))) ?>">
 </head>
 <body>
 <div class="chat-app">
@@ -140,7 +171,7 @@ header('Cache-Control: private, no-store');
         <h1>Connections</h1>
         <p class="connections-muted">Manage your connected apps and see what your Agent can use.</p>
 
-        <?php if ($notice): ?>
+        <?php if ($notice && !$inboxNotice): ?>
           <p class="connections-notice connections-<?= e($notice[0]) ?>" role="<?= $notice[0] === 'error' ? 'alert' : 'status' ?>"><?= e($notice[1]) ?></p>
         <?php endif; ?>
 
@@ -232,6 +263,96 @@ header('Cache-Control: private, no-store');
                               </form>
                             <?php endif; ?>
 
+                            <?php if ($connected): ?>
+                              <section class="connections-inbox" id="gmail-inbox-review" aria-labelledby="gmail-inbox-review-title">
+                                <h3 id="gmail-inbox-review-title">Inbox review</h3>
+                                <p class="connections-muted">When enabled, your Agent reviews new arrivals in the background using the sender, subject and Gmail labels. This page shows the latest batch, and While you were away can include a summary. Sender and reply watches run separately.</p>
+                                <?php if ($inboxNotice): ?>
+                                  <p class="connections-notice connections-<?= e($inboxNotice[0]) ?>" role="<?= $inboxNotice[0] === 'error' ? 'alert' : 'status' ?>"><?= e($inboxNotice[1]) ?></p>
+                                <?php endif; ?>
+                                <?php if (!$inboxReady): ?>
+                                  <p class="connections-notice">Inbox review will be available after an administrator runs Database Upgrade.</p>
+                                <?php else: ?>
+                                  <?php if (!$inboxCanEnable): ?>
+                                    <p class="connections-notice">Inbox review requires a working Gmail connection, permission to search and read Gmail, and access to Agent Chat.</p>
+                                  <?php elseif ($inboxGrantChanged): ?>
+                                    <p class="connections-notice">Inbox review is off for this Gmail connection. Your ignore list is still available below.</p>
+                                  <?php elseif ($inboxStatus === 'restart_required'): ?>
+                                    <form class="connections-notice" method="post" action="<?= e(url('/connection-gmail-inbox.php')) ?>">
+                                      <?= csrf_field() ?>
+                                      <input type="hidden" name="connection_id" value="<?= (int)$connection['id'] ?>">
+                                      <input type="hidden" name="connection_revision" value="<?= e($connection['revision']) ?>">
+                                      <input type="hidden" name="inbox_revision" value="<?= e($inboxPolicy['revision']) ?>">
+                                      <p>Gmail’s review position expired. Restart to review messages that arrive from now on.</p>
+                                      <button class="connections-button connections-secondary" type="submit" name="action" value="restart">Restart Inbox review</button>
+                                    </form>
+                                  <?php elseif ($inboxStatus === 'retrying'): ?>
+                                    <p class="connections-notice">The last background check could not finish. Inbox review will try again.</p>
+                                  <?php elseif ($inboxActive && !$inboxCheckedAt): ?>
+                                    <p class="connections-notice">Waiting for the first background check.</p>
+                                  <?php elseif ($inboxStatus === 'checked' && !is_array($inboxReview)): ?>
+                                    <p class="connections-muted">No new inbox messages found yet.</p>
+                                  <?php endif; ?>
+                                  <?php if ($inboxCheckedAt): ?>
+                                    <p class="connections-muted connections-inbox-time">Last checked <time datetime="<?= e(str_replace(' ', 'T', $inboxCheckedAt) . 'Z') ?>"><?= e($inboxCheckedAt) ?> UTC</time></p>
+                                  <?php endif; ?>
+                                  <?php if (is_array($inboxReview)): ?>
+                                    <section class="connections-inbox-latest" aria-labelledby="gmail-inbox-latest-title">
+                                      <h4 id="gmail-inbox-latest-title">Latest completed review</h4>
+                                      <?php if (!empty($inboxReview['at'])): ?>
+                                        <time class="connections-muted connections-inbox-time" datetime="<?= e(str_replace(' ', 'T', $inboxReview['at']) . 'Z') ?>"><?= e($inboxReview['at']) ?> UTC</time>
+                                      <?php endif; ?>
+                                      <dl class="connections-inbox-counts">
+                                        <div><dt>New messages</dt><dd><?= (int)($inboxReview['total'] ?? 0) ?></dd></div>
+                                        <div><dt>Important</dt><dd><?= (int)($inboxReview['important'] ?? 0) ?></dd></div>
+                                        <div><dt>May need a reply</dt><dd><?= (int)($inboxReview['replies'] ?? 0) ?></dd></div>
+                                        <div><dt>Ignored</dt><dd><?= (int)($inboxReview['filtered'] ?? 0) ?></dd></div>
+                                      </dl>
+                                      <?php if (!empty($inboxReview['items'])): ?>
+                                        <ul class="connections-inbox-messages" role="list">
+                                          <?php foreach ($inboxReview['items'] as $item): ?>
+                                            <?php if (!is_array($item)) continue; ?>
+                                            <li>
+                                              <strong><?= e(($item['subject'] ?? '') ?: '(No subject)') ?></strong>
+                                              <span class="connections-muted"><?= e($item['from'] ?? '') ?></span>
+                                              <span class="connections-badge"><?= e($inboxCategories[$item['category'] ?? ''] ?? 'New') ?></span>
+                                            </li>
+                                          <?php endforeach; ?>
+                                        </ul>
+                                      <?php endif; ?>
+                                    </section>
+                                  <?php endif; ?>
+                                  <form class="connections-inbox-form" method="post" action="<?= e(url('/connection-gmail-inbox.php')) ?>">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="connection_id" value="<?= (int)$connection['id'] ?>">
+                                    <input type="hidden" name="connection_revision" value="<?= e($connection['revision']) ?>">
+                                    <input type="hidden" name="inbox_revision" value="<?= e($inboxPolicy['revision'] ?? '') ?>">
+                                    <label class="connections-permission">
+                                      <input type="checkbox" name="enabled" value="1"<?= $inboxEnabled ? ' checked' : '' ?><?= !$inboxCanEnable && !$inboxEnabled ? ' disabled' : '' ?>>
+                                      <span><strong>Review new Gmail messages</strong><small>Review starts with messages that arrive after you enable it.</small></span>
+                                    </label>
+                                    <fieldset class="connections-permissions" aria-describedby="gmail-inbox-ignore-note">
+                                      <legend>Ignore list</legend>
+                                      <p class="connections-muted" id="gmail-inbox-ignore-note">These rules apply to Inbox review. Enter up to 20 entries in each field, one per line. Sender addresses and domains match exactly. A subject matches if it contains a listed phrase, regardless of case.</p>
+                                      <div class="connections-inbox-fields">
+                                        <?php foreach ($inboxRuleFields as $kind => [$label, $placeholder]): ?>
+                                          <label>
+                                            <span><?= e($label) ?></span>
+                                            <textarea name="ignore_<?= e($kind) ?>" rows="3" placeholder="<?= e($placeholder) ?>"><?= e(implode("\n", $inboxRules[$kind] ?? [])) ?></textarea>
+                                          </label>
+                                        <?php endforeach; ?>
+                                      </div>
+                                      <label class="connections-permission">
+                                        <input type="checkbox" name="ignore_github_actions" value="1"<?= !empty($inboxRules['github_actions']) ? ' checked' : '' ?>>
+                                        <span><strong>Ignore GitHub Actions workflow emails</strong><small>Other GitHub notifications remain eligible for review.</small></span>
+                                      </label>
+                                    </fieldset>
+                                    <button class="connections-button" type="submit" name="action" value="save">Save Inbox review</button>
+                                  </form>
+                                <?php endif; ?>
+                              </section>
+                            <?php endif; ?>
+
                             <?php if ($gmailLinked): ?>
                               <details class="connections-disconnect">
                                 <summary>Disconnect Gmail</summary>
@@ -303,6 +424,12 @@ header('Cache-Control: private, no-store');
                                 <input type="checkbox" name="accept_youtube_terms" value="1" required>
                                 <span>I agree to the YouTube Terms of Service and the VP3 Terms of Service.</span>
                               </label>
+                              <?php if ($youtubeHistoryReady): ?>
+                                <label class="connections-permission">
+                                  <input type="checkbox" name="record_vp3_playback" value="1" checked>
+                                  <span>Played in VP3. Keep a private record of eligible videos that start in VP3 for up to seven days. You can pause or clear it here.</span>
+                                </label>
+                              <?php endif; ?>
                               <button class="connections-button" type="submit">Enable YouTube</button>
                             </form>
                           <?php elseif ($youtubeReady && $youtubeConsentReady): ?>
