@@ -23,10 +23,10 @@ const server=http.createServer((req,res)=>{
     return;
   }
   if(url.pathname==='/premium.js'){res.setHeader('Content-Type','text/javascript');res.end(`window.StonefellowPremiumVoiceV122=cfg=>{window.voiceConfig=cfg;return {stop:()=>window.cancelled=true,speak:(text,callbacks)=>{window.spoken=text;window.finishSpeech=callbacks.onEnd;callbacks.onStart();return Promise.resolve(true)}}};`);return;}
-  if(['/agent-eyes-core.js','/agent-orb-adapter.js','/agent-orb.js','/agent-orb-particles.js','/chat-notifications-drawer-v240.js','/agent-orb.css','/agent-orb-particles.css','/voice-trained-core.js'].includes(url.pathname)){res.setHeader('Content-Type',url.pathname.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');res.end(fs.readFileSync(path.basename(url.pathname)));return;}
+  if(['/agent-eyes-core.js','/agent-orb-adapter.js','/agent-participant-continuity.js','/agent-orb.js','/agent-orb-particles.js','/chat-notifications-drawer-v240.js','/agent-orb.css','/agent-orb-particles.css','/voice-trained-core.js'].includes(url.pathname)){res.setHeader('Content-Type',url.pathname.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');res.end(fs.readFileSync(path.basename(url.pathname)));return;}
   const main=url.searchParams.has('main')?`<main class="chat-main"><h1>Cloud Chat</h1><section class="chat-thread" id="chatThread" data-view="player"><section data-chat-view="player"><button data-chat-view-target="player">Player view</button></section><article class="message">Existing conversation</article></section><div id="chatComposerShell"><form id="chatForm"><textarea id="chatInput"></textarea><button id="chatVoiceButton" type="button">Voice</button><button id="sendChatButton">Send</button></form></div></main><script>window.originalThread=document.getElementById('chatThread');window.originalInput=document.getElementById('chatInput');window.sent=0;document.getElementById('chatForm').addEventListener('submit',e=>{e.preventDefault();window.sent++;const reply=document.createElement('article');reply.className='message';reply.textContent='New reply '+window.sent;originalThread.append(reply);});</script>`:'<main><h1>Admin settings</h1></main>';
   const owner=url.searchParams.get('owner')==='2'?'2':'1';
-  res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/agent-orb.css"><link rel="stylesheet" href="/agent-orb-particles.css"><style>body{margin:0}#chatComposerShell{position:fixed;bottom:0;left:0;right:0;padding:8px;background:white}#chatForm{display:flex;gap:8px}#chatInput{flex:1;min-width:0}.chat-thread{height:220px;overflow:auto}.message{padding:12px}</style>${main}<script>window.VP3_ORB_CONFIG={trainedVoiceUrl:'/voice-trained-client.js',ownerKey:'${owner}',csrf:'test',chatUrl:'/sub/chat.php',chatEndpoint:'/sub/api/chat.php',settingsEndpoint:'/sub/api/chat-settings-v237.php?owner=${owner}',orbShapeReady:true,shape:${JSON.stringify(orbStyles.get(owner)||'orbit')},participantsEndpoint:'/sub/api/participants.php',notificationsEndpoint:'/sub/api/notifications.php',eyesEndpoint:'/sub/api/eyes.php',agentVoiceEnabled:true,voiceScript:'/premium.js',drawerScript:'/chat-notifications-drawer-v240.js'};</script><script src="/agent-eyes-core.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script><script src="/agent-orb-particles.js"></script>`);
+  res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/agent-orb.css"><link rel="stylesheet" href="/agent-orb-particles.css"><style>body{margin:0}#chatComposerShell{position:fixed;bottom:0;left:0;right:0;padding:8px;background:white}#chatForm{display:flex;gap:8px}#chatInput{flex:1;min-width:0}.chat-thread{height:220px;overflow:auto}.message{padding:12px}</style>${main}<script>window.VP3_ORB_CONFIG={trainedVoiceUrl:'/voice-trained-client.js',ownerKey:'${owner}',csrf:'test',chatUrl:'/sub/chat.php',chatEndpoint:'/sub/api/chat.php',settingsEndpoint:'/sub/api/chat-settings-v237.php?owner=${owner}',orbShapeReady:true,shape:${JSON.stringify(orbStyles.get(owner)||'orbit')},participantsEndpoint:'/sub/api/participants.php',notificationsEndpoint:'/sub/api/notifications.php',eyesEndpoint:'/sub/api/eyes.php',agentVoiceEnabled:true,voiceScript:'/premium.js',drawerScript:'/chat-notifications-drawer-v240.js'};</script><script src="/agent-eyes-core.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-participant-continuity.js"></script><script src="/agent-orb.js"></script><script src="/agent-orb-particles.js"></script>`);
 });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}`;
 const browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});let checks=0;
 const check=async(name,fn)=>{await fn();checks++;console.log('PASS '+name);};
@@ -110,7 +110,7 @@ try{
     assert.equal(await rings.evaluate(node=>node===document.activeElement),true);
     await page.keyboard.press('Escape');
     await dialog.waitFor({state:'hidden'});
-    assert.equal(await edit.evaluate(node=>node===document.activeElement),true);
+    await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-controls')==='vp3OrbAppearance');
     assert.equal(orbWrites.length,0);
     await edit.click();
     await face.check();
@@ -133,12 +133,14 @@ try{
     await save.click();
     await page.locator('.vp3-orb-ball [data-orb-shape="orbit"]').waitFor();
   });
-  await check('the orb appearance dialog stays usable on touch and hides for a participant session',async()=>{
+  await check('the orb appearance dialog works on touch and Edit returns when participant selection expires',async()=>{
     const touch=await browser.newContext({hasTouch:true,viewport:{width:390,height:844}});
     try{
       const mobile=await touch.newPage();
+      await mobile.clock.install();
       await mobile.goto(url);
-      await mobile.locator('.vp3-orb-ball').tap();
+      const orb=mobile.locator('.vp3-orb-ball');
+      await orb.tap();
       const edit=mobile.getByRole('button',{name:'Edit Agent orb'}),dialog=mobile.getByRole('dialog',{name:'Edit Agent orb'});
       await edit.tap();
       await dialog.waitFor();
@@ -147,10 +149,15 @@ try{
       await dialog.getByRole('button',{name:'Cancel'}).tap();
       assert.equal(await mobile.locator('#vp3AgentChatPopup').isVisible(),true);
       await mobile.evaluate(()=>{
-        window.VP3ParticipantContinuity={selectedContext:()=>({participant_id:7})};
-        window.dispatchEvent(new Event('vp3:participant-selection-changed'));
+        window.VP3ParticipantContinuity.setSelection({
+          participant_id:'7', display_name:'David', source:'manual_selection', authentication_authority:false,
+        });
       });
       assert.equal(await edit.isVisible(),false);
+      await mobile.clock.fastForward(1_801_000);
+      assert.equal(await mobile.evaluate(()=>window.VP3ParticipantContinuity.selectedContext()),null);
+      await orb.focus();
+      assert.equal(await edit.isVisible(),true);
     }finally{await touch.close();}
   });
   await check('the floating orb shows distinct current jobs and bounds the number of visible tracks',async()=>{

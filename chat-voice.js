@@ -40,12 +40,12 @@
   const premium=typeof PremiumVoice==='function'?PremiumVoice({agentEndpoint:String(cfg.endpoint||'/api/chat.php'),csrf:String(cfg.csrf||'')}):null;
 
   let agentVoiceMaster=identityCfg.agentVoiceEnabled!==false;
-  // Saved continuous mode never opens capture on a new page. A completed
-  // greeting can open a bounded reply window after a separate permission check.
+  // Saved continuous mode never opens capture on a new page. Auto Greet can
+  // open a bounded reply window after a separate permission check.
   let voiceOn=false;
   let responseWindowOwned=false,responseWindowClosing=false,responseWindowTimer=0,responseCleanupTimer=0,responseWindowUntil=0;
   let greetingResponseWindow=false;
-  let autoGreet=cfg.autoGreetEnabled===true,greetingListenText='';
+  let autoGreet=cfg.autoGreetEnabled===true,greetingListenText=null;
 
   const activeRecognizers=new Set();
   const releaseTimers=new Map();let releaseBlocked=false;
@@ -914,8 +914,8 @@
   function renderDebug(){if(!new URLSearchParams(location.search).has('voice_debug'))return;let panel=document.getElementById('stonefellowVoiceDebug');if(!panel){panel=document.createElement('aside');panel.id='stonefellowVoiceDebug';panel.style.cssText='position:fixed;right:12px;bottom:12px;width:min(460px,calc(100vw - 24px));max-height:52vh;overflow:auto;z-index:99999;background:#111;color:#ddd;border:1px solid #444;border-radius:10px;padding:10px;font:11px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;box-shadow:0 10px 35px rgba(0,0,0,.35)';document.body.appendChild(panel);}const premiumProof=window.STONEFELLOW_PREMIUM_VOICE_V122||{};const latest=events.slice(-34).map(item=>`${item.at.slice(11,19)} ${item.type} ${JSON.stringify(item.detail)}`).join('\n');panel.textContent=`Stonefellow Voice Debug ${BUILD}\n\nvoice=${voiceOn?'ON':'OFF'} listening=${recognitionListening?'yes':'no'} processing=${processing?'yes':'no'} speaking=${speaking?'yes':'no'}\npause window=${TURN_END_PAUSE_MS}ms extensions=${proof.pauseExtensions} pending=${pendingFinalTranscript||'-'}\nnormal starts=${proof.starts} finals=${proof.finals} submits=${proof.submits}\nbarge starts=${proof.bargeStarts} results=${proof.bargeResults} captures=${proof.bargeSubmits} errors=${proof.bargeErrors}\nbarge candidates=${proof.bargeCandidates} fastCuts=${proof.bargeFastCuts} timeouts=${proof.bargeCaptureTimeouts}\necho rejects=${proof.echoRejects} bargeEcho=${proof.bargeEchoRejects} postSpeechEcho=${proof.postSpeechEchoRejects} commandOverrides=${proof.echoCommandOverrides}\nelevenLabs ready=${proof.premiumReady?'yes':'no'} credential=${premiumProof.credentialState||'unknown'} unlocked=${premiumProof.audioUnlocked?'yes':'no'} unlocks=${premiumProof.unlockSuccesses||0}/${premiumProof.unlockAttempts||0} playback=${premiumProof.lastPlaybackError||'ok'}\ninterruptions=${proof.interruptions} stopControls=${proof.stopControls} api=${proof.apiSuccess}/${proof.apiTurns} apiErrors=${proof.apiErrors}\nlast transcript=${proof.lastTranscript||'-'}\nlast barge=${proof.lastBargeTranscript||'-'}\nlast error=${proof.lastError||'-'}\n\n${latest}`;}
 
   button.addEventListener('click',event=>{
-    if(greetingListenText){
-      event.preventDefault();event.stopImmediatePropagation();openResponseWindow(greetingListenText);return;
+    if(greetingListenText!==null){
+      event.preventDefault();event.stopImmediatePropagation();openResponseWindow(greetingListenText,true);return;
     }
     if(voiceOn&&(speaking||processing)){event.preventDefault();event.stopImmediatePropagation();interruptResponse('button');return;}
     if(!voiceOn)void requestPremiumUnlock('listen-button');
@@ -952,24 +952,24 @@
       disableVoice({persist:false});
     };settle();
   }
-  function responseWindow({greetingText=''}={}){
-    if(!greetingText)return openResponseWindow('');
+  function responseWindow({automatic=false,greetingText=''}={}){
+    if(!automatic)return openResponseWindow();
     if(!autoGreet||!agentVoiceMaster||voiceOn||button.disabled||!button.isConnected||document.hidden||!document.hasFocus()
       ||document.getElementById('chatThread')?.dataset.view!=='chat'||window.VP3ParticipantContinuity?.selectedContext?.())return false;
     // A greeting reuses Listen without the ordinary click's persistent mode,
     // permission prompt, or cross-tab takeover confirmation.
     greetingListenText=greetingText;
     try{button.click();return greetingResponseWindow&&voiceOn;}
-    finally{greetingListenText='';}
+    finally{greetingListenText=null;}
   }
-  function openResponseWindow(greetingText){
+  function openResponseWindow(greetingText='',automatic=false){
     if(greetingResponseWindow)return true;
     if(responseWindowOwned&&!responseWindowClosing){responseWindowUntil=Date.now()+15000;clearTimeout(responseWindowTimer);responseWindowTimer=setTimeout(finishResponseWindow,15000);return true;}
     if(voiceOn)return true;
     if(!agentVoiceMaster||document.hidden||input.value.trim()||processing||speaking||textBusy)return false;
     responseWindowOwned=true;responseWindowClosing=false;responseWindowUntil=0;
-    greetingResponseWindow=Boolean(greetingText);
-    if(greetingResponseWindow){lastSpokenText=greetingText;lastSpeechEndedAt=Date.now();}
+    greetingResponseWindow=automatic;
+    if(greetingText){lastSpokenText=greetingText;lastSpeechEndedAt=Date.now();}
     if(!enableVoice({persist:false,start:true})||!voiceOn){responseWindowOwned=false;greetingResponseWindow=false;return false;}
     responseWindowTimer=setTimeout(finishResponseWindow,15000);return true;
   }

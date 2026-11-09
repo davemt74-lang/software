@@ -38,6 +38,7 @@
   let agentVoiceEnabled = false;
   let autoGreetAllowed = false;
   let autoGreetEnabled = false;
+  let autoGreetRequested = null;
   let selectedAgentId = 0;
   let busy = false;
   let catalogLoaded = false;
@@ -326,8 +327,8 @@
   function renderAutoGreet(enabled) {
     autoGreetEnabled = autoGreetAllowed && enabled === true;
     if (!el.autoGreet) return;
-    el.autoGreet.disabled = !autoGreetAllowed;
-    el.autoGreet.checked = autoGreetEnabled;
+    el.autoGreet.disabled = !autoGreetAllowed || autoGreetRequested !== null;
+    el.autoGreet.checked = autoGreetRequested ?? autoGreetEnabled;
   }
 
   function applyAutoGreetSettings(data) {
@@ -345,12 +346,12 @@
       try { localStorage.setItem(autoGreetSyncKey, JSON.stringify({enabled:autoGreetEnabled, at:Date.now()})); } catch (_error) {}
     }
     if (autoGreetAllowed) publishState();
-    notifyAutoGreet('account-menu', fromStorage);
+    notifyAutoGreet(autoGreetEnabled, 'account-menu', fromStorage);
   }
 
-  function notifyAutoGreet(source, fromStorage = false) {
-    if (!autoGreetEnabled && window.STONEFELLOW_CHAT) window.STONEFELLOW_CHAT.autoGreetEnabled = false;
-    window.dispatchEvent(new CustomEvent('vp3:agent-auto-greet', {detail:{enabled:autoGreetEnabled,source,fromStorage}}));
+  function notifyAutoGreet(enabled, source, fromStorage = false) {
+    if (!enabled && window.STONEFELLOW_CHAT) window.STONEFELLOW_CHAT.autoGreetEnabled = false;
+    window.dispatchEvent(new CustomEvent('vp3:agent-auto-greet', {detail:{enabled,source,fromStorage}}));
   }
 
   function render() {
@@ -415,7 +416,7 @@
         publishAgentVoice(enabled);
         applyAutoGreetSettings(data);
         if (autoGreetAllowed && data.chat?.auto_greet_enabled === false && window.STONEFELLOW_CHAT?.autoGreetEnabled === true) {
-          notifyAutoGreet('settings-read');
+          notifyAutoGreet(false, 'settings-read');
         }
       }).catch(() => { agentVoiceAllowed=false; renderAgentVoice(false); publishAgentVoice(false); })
     ];
@@ -546,16 +547,23 @@
   el.autoGreet?.addEventListener('change', async event => {
     event.stopPropagation();
     if (!autoGreetAllowed) { renderAutoGreet(false); return; }
+    if (autoGreetRequested !== null) return;
     const requested = el.autoGreet.checked;
-    el.autoGreet.disabled = true;
+    autoGreetRequested = requested;
+    renderAutoGreet(autoGreetEnabled);
+    // Honor this page's opt-out immediately and broadcast only saved changes.
+    if (!requested) notifyAutoGreet(false, 'account-menu');
     try {
       const data = await post(cfg.chatSettingsEndpoint, 'save_auto_greet', {auto_greet_enabled:requested});
+      autoGreetRequested = null;
       applyAutoGreetSettings(data);
       publishAutoGreet();
       setStatus(autoGreetEnabled ? 'Auto Greet will use Listen the next time Agent Chat opens.' : 'Auto Greet is off.', 'success');
     } catch (error) {
+      autoGreetRequested = null;
       renderAutoGreet(autoGreetEnabled);
-      setStatus(error instanceof Error ? error.message : 'Auto Greet could not be saved.', 'error');
+      const message = error instanceof Error ? error.message : 'Auto Greet could not be saved.';
+      setStatus(!requested && autoGreetEnabled ? `${message} Auto Greet is paused for this page.` : message, 'error');
     }
   });
 
