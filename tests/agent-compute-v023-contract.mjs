@@ -44,12 +44,11 @@ assert.match(runtime,/agent_compute_v023_override\(\$pdo,\$userId,max\(0,\$agent
 assert.match(runtime,/agent_compute_v023_policy_from_values\(\$account,\$override\)/);
 assert.match(runtime,/agent_compute_v023_assert_owned_agent\(\$pdo,\$userId,\$agentId\)/);
 assert.match(runtime,/agent_compute_v023_public_policy\(\$policy,\$agentId\)/);
-assert.match(chat,/vp3_agent_runtime_plan_v420\(\$pdo,\$user,\$activeAgentId,'chat'\)/);
+assert.match(chat,/vp3_agent_runtime_plan_v420\(\$pdo,\$user,\$activeAgentId,'chat',\$serviceContext\)/);
 assert.match(chat,/effective_preference/);
 assert.doesNotMatch(chat,/agent_compute_v023_effective\(/);
 assert.doesNotMatch(chat,/agent_compute_v023_public_policy\(/);
-assert.match(chat,/chat_execution_v019_vp3_direct\(\$user\)/);
-assert.match(chat,/chat_execution_v019_fallback\(\$user,!empty\(\$runtimePlan\['home'\]\['paired'\]\),true\)/);
+assert.match(chat,/chat_execution_v019_provider_outcome\(\$user,chat_ai_response_outcome\(\),\$homeAttempted,!empty\(\$runtimePlan\['home'\]\['paired'\]\)\)/);
 assert.ok(chat.includes("homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all'&&($r6Packet['state']['scope']['mode']??'all')!=='off'"));
 assert.match(delegation,/homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/);
 const toolIndex=chat.indexOf("vp3_agent_chat_tool_query_v1");

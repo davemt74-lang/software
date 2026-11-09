@@ -405,7 +405,9 @@ jobs:
       - name: v24.20 unified context assembly and working memory
         run: node tests/cognitive-context-v2420.mjs
       - name: v24.30 cognitive turn orchestration
-        run: node tests/cognitive-turn-v2430.mjs
+        run: |
+          node tests/cognitive-turn-v2430.mjs
+          php tests/cloud-provider-preservation.php
       - name: v24.40 goal and task continuity
         run: node tests/cognitive-continuity-v2440.mjs
       - name: v24.50 proactive follow-through and cross-surface handoff

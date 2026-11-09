@@ -6,6 +6,7 @@ const v018=read('includes/homeserver-agent-v018.php');
 const v025=read('includes/homeserver-agent-v025.php');
 const routing=read('includes/agent-runtime-routing-v420.php');
 const stream=read('api/chat-stream-v121.php');
+const execution=read('includes/chat-execution-v019.php');
 const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
 
 const checks=[
@@ -24,7 +25,9 @@ const checks=[
  ['Agent runtime preserves compute attribution and attaches sanitized HomeServer execution provenance',
   /homeserver_execution/.test(routing)&&/request_id/.test(routing)&&/domain/.test(routing)&&/operation/.test(routing)&&/duration_ms/.test(routing)],
  ['existing automatic Cloud fallback remains after a failed HomeServer attempt',
-  /chat_execution_v019_fallback\(\$user,!empty\(\$runtimePlan\['home'\]\['paired'\]\),true\)/.test(stream)&&/allow_vp3_fallback/.test(stream)],
+  /chat_execution_v019_provider_outcome\(\$user,\$streamResult,\$homeAttempted,!empty\(\$runtimePlan\['home'\]\['paired'\]\)\)/.test(stream)
+  &&/allow_vp3_fallback/.test(stream)
+  &&/\$homeAttempted\s+\?chat_execution_v019_home_attempt\(\$homePaired,true\)/.test(execution)],
  ['HomeServer-only preference remains fail closed rather than falling back',
   /effective_preference.*homeserver_only/.test(stream)&&/vp3_agent_runtime_block_message_v420/.test(stream)],
  ['runtime journey gates Section 3 contract and unit tests',
