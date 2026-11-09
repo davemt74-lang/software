@@ -84,7 +84,7 @@ function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $
     try{
         $records=agent_connection_youtube_result_records_v1($pdo,(int)$user['id'],$agentId,$conversationId);
         foreach($records as $record){
-            $searchedAt=strtotime((string)$record['created_at'].' UTC');
+            $searchedAt=$record['created_at_epoch'];
             $results=$record['results'];
             $query=vp3_top_of_mind_text_v1($results['query']??'',180);
             if(!$searchedAt||$searchedAt<$now-86400||$searchedAt>$now||$query==='')continue;

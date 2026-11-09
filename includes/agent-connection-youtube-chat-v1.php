@@ -176,7 +176,10 @@ function agent_connection_youtube_result_records_v1(PDO $pdo, int $ownerId, int 
     // History caps display at eight. Recall can search the full seven-day cache,
     // whose per-member daily quota fits in this bound. Loads bind exact IDs.
     $limit = max(1,min($messageIds ? 300 : 120,$limit));
-    $stmt = $pdo->prepare("SELECT c.id AS conversation_id,c.title AS conversation_title,m.id AS message_id,m.created_at,r.expires_at,r.payload_json
+    $createdAtEpoch = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
+        ? 'UNIX_TIMESTAMP(m.created_at)' : "strftime('%s',m.created_at)";
+    $stmt = $pdo->prepare("SELECT c.id AS conversation_id,c.title AS conversation_title,m.id AS message_id,m.created_at,
+        {$createdAtEpoch} AS created_at_epoch,r.expires_at,r.payload_json
         FROM agent_connection_youtube_results_v1 r
         JOIN chat_messages m ON m.id=r.message_id AND m.role='assistant'
         JOIN chat_conversations c ON c.id=m.conversation_id
@@ -190,7 +193,8 @@ function agent_connection_youtube_result_records_v1(PDO $pdo, int $ownerId, int 
         if ($expiresAt <= $now) continue;
         $results['expires_at'] = $expiresAt;
         $records[] = ['conversation_id'=>(int)$row['conversation_id'],'conversation_title'=>(string)$row['conversation_title'],
-            'message_id'=>(int)$row['message_id'],'created_at'=>(string)$row['created_at'],'expires_at'=>$expiresAt,'results'=>$results];
+            'message_id'=>(int)$row['message_id'],'created_at'=>(string)$row['created_at'],'created_at_epoch'=>(int)$row['created_at_epoch'],
+            'expires_at'=>$expiresAt,'results'=>$results];
     }
     return $records;
 }
@@ -234,7 +238,8 @@ function agent_connection_youtube_followup_chat_v1(PDO $pdo, array $user, array 
             + ($results === null ? [] : ['youtube_source_message_id'=>$results['source_message_id']]);
     };
     try {
-        $owner = (int)agent_connection_youtube_chat_authority_v1($pdo,$user,$principal,$conversationId,$authority)['id'];
+        $live = agent_connection_youtube_chat_authority_v1($pdo,$user,$principal,$conversationId,$authority);
+        $owner = (int)$live['id'];
         if (!agent_connection_youtube_consent_ready_v1($pdo) || !agent_connection_youtube_results_ready_v1($pdo)) {
             return $reply('Earlier YouTube results need a VP3 database upgrade.', 'blocked', 'upgrade_required');
         }
@@ -248,12 +253,16 @@ function agent_connection_youtube_followup_chat_v1(PDO $pdo, array $user, array 
             $sourceMessageId > 0 => agent_connection_youtube_result_records_v1($pdo,$owner,$agentId,$scope,1,[$sourceMessageId]),
             default => [],
         };
+        $dayZone = $sourceMessageId === null && $plan['day'] !== ''
+            ? new DateTimeZone(function_exists('user_calendar_default_timezone_v1300')
+                ? user_calendar_default_timezone_v1300($pdo,$live) : 'UTC') : null;
         $selected = null;
         foreach ($records as $record) {
             $candidate = $record['results'];
             if ($sourceMessageId === null) {
                 if ($plan['chat_title'] !== '' && mb_strtolower($record['conversation_title']) !== mb_strtolower($plan['chat_title'])) continue;
-                if ($plan['day'] !== '' && substr($record['created_at'],0,10) !== $plan['day']) continue;
+                if ($dayZone !== null && ($record['created_at_epoch'] < 1
+                    || (new DateTimeImmutable('@'.$record['created_at_epoch']))->setTimezone($dayZone)->format('Y-m-d') !== $plan['day'])) continue;
                 if ($plan['title'] !== '' && !in_array(mb_strtolower($plan['title']),[
                     mb_strtolower((string)($candidate['query'] ?? '')), mb_strtolower((string)($candidate['taste_topic'] ?? '')),
                 ],true)) continue;

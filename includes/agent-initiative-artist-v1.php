@@ -32,8 +32,8 @@ function vp3_initiative_artist_evidence_v1(PDO $pdo, array $scope, DateTimeImmut
             $artist = trim(is_string($payload['taste_topic'] ?? null) ? $payload['taste_topic'] : '');
             if (($payload['suggestion_kind'] ?? null) !== 'similar' || $artist === '' || mb_strlen($artist) > 100
                 || preg_match('~https?://|[<>]|\p{C}~iu', $artist)) continue;
-            $recorded = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', (string)$record['created_at'], new DateTimeZone('UTC'));
-            $age = $recorded ? $now->getTimestamp() - $recorded->getTimestamp() : PHP_INT_MAX;
+            $recorded = $record['created_at_epoch'];
+            $age = $now->getTimestamp() - $recorded;
             if ($age < 0 || $age >= 86400) continue;
 
             $topic = hash('sha256', mb_strtolower($artist));
@@ -43,7 +43,7 @@ function vp3_initiative_artist_evidence_v1(PDO $pdo, array $scope, DateTimeImmut
                 'ref'=>$ref, 'kind'=>'artist_interest', 'title'=>$artist,
                 'detail'=>'The owner recently asked for YouTube artists similar to this artist.',
                 'url'=>url('/chat.php?agent='.($agent ?: 'system').'&conversation_id='.(int)$record['conversation_id']),
-                'revision'=>hash('sha256', implode('|', [$owner, $agent, $topic, $recorded->format('Y-m-d')])),
+                'revision'=>hash('sha256', implode('|', [$owner, $agent, $topic, gmdate('Y-m-d',$recorded)])),
             ];
             if ($selectedRefs === null && count($evidence) >= 3) break;
         }

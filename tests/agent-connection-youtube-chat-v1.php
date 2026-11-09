@@ -10,6 +10,7 @@ require_once $root.'/includes/participant-updates-v1.php';
 
 function db(): PDO { return $GLOBALS['pdo']; }
 function url(string $path): string { return $path; }
+function user_calendar_default_timezone_v1300(PDO $pdo, array $user): string { return $GLOBALS['youtubeFixtureTimezone'] ?? 'UTC'; }
 function has_permission(string $permission, array $user): bool
 {
     return !empty($user['is_active']) && in_array($permission, ['account.access','chat.access'], true);
@@ -36,6 +37,7 @@ if ($dsn === '') {
     $server->exec('CREATE DATABASE `'.$name.'` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
     register_shutdown_function(static fn() => $server->exec('DROP DATABASE IF EXISTS `'.$name.'`'));
     $pdo = new PDO(rtrim($dsn, ';').';dbname='.$name, $login, $password, $options + [PDO::ATTR_EMULATE_PREPARES=>false]);
+    $pdo->exec("SET time_zone='+00:00'");
 }
 $pdo->exec('CREATE TABLE settings (setting_key VARCHAR(128) PRIMARY KEY, setting_value TEXT)');
 $pdo->exec('CREATE TABLE users (id INT UNSIGNED PRIMARY KEY, is_active INTEGER)');
@@ -266,16 +268,16 @@ $playlist = agent_connection_youtube_chat_v1($pdo,$owner,$principal,'quiet jazz'
 youtube_chat_check(($playlist['youtube_results']['suggestion_kind'] ?? '') === 'playlist' && !empty($playlist['youtube_results']['videos'])
     && str_contains($playlist['answer'],'playlist draft'), 'A playlist request creates a playable private Chat draft through read-only search');
 
-$pdo->exec("INSERT INTO chat_messages (id,conversation_id,role,context_json) VALUES
-    (401,11,'assistant','{\"youtube_search_results_v1\":true}'),
-    (402,11,'assistant','{\"youtube_search_results_v1\":true}'),
-    (403,12,'assistant','{\"youtube_search_results_v1\":true}'),
-    (404,21,'assistant','{\"youtube_search_results_v1\":true}'),
-    (405,11,'assistant','{\"youtube_results_ref_v1\":404}'),
-    (406,11,'assistant','{\"youtube_results_ref_v1\":403}'),
-    (407,11,'assistant','{\"youtube_results_ref_v1\":401}'),
-    (408,13,'assistant','{\"youtube_search_results_v1\":true}'),
-    (409,11,'assistant','{\"youtube_results_ref_v1\":408}')");
+$pdo->exec("INSERT INTO chat_messages (id,conversation_id,role,context_json,created_at) VALUES
+    (401,11,'assistant','{\"youtube_search_results_v1\":true}','2026-11-07 02:30:00'),
+    (402,11,'assistant','{\"youtube_search_results_v1\":true}','2026-11-08 09:00:00'),
+    (403,12,'assistant','{\"youtube_search_results_v1\":true}','2026-11-08 12:00:00'),
+    (404,21,'assistant','{\"youtube_search_results_v1\":true}','2026-11-08 13:00:00'),
+    (405,11,'assistant','{\"youtube_results_ref_v1\":404}',CURRENT_TIMESTAMP),
+    (406,11,'assistant','{\"youtube_results_ref_v1\":403}',CURRENT_TIMESTAMP),
+    (407,11,'assistant','{\"youtube_results_ref_v1\":401}',CURRENT_TIMESTAMP),
+    (408,13,'assistant','{\"youtube_search_results_v1\":true}','2026-11-08 14:00:00'),
+    (409,11,'assistant','{\"youtube_results_ref_v1\":408}',CURRENT_TIMESTAMP)");
 $originalPlaylist = $playlist['youtube_results'];
 $otherPlaylist = array_replace($originalPlaylist,['query'=>'Other music','taste_topic'=>'Other music']);
 agent_connection_youtube_results_save_v1($pdo,1,11,401,$originalPlaylist);
@@ -283,8 +285,6 @@ agent_connection_youtube_results_save_v1($pdo,1,11,402,$payload);
 agent_connection_youtube_results_save_v1($pdo,1,12,403,$otherPlaylist);
 agent_connection_youtube_results_save_v1($pdo,2,21,404,$originalPlaylist);
 agent_connection_youtube_results_save_v1($pdo,1,13,408,$originalPlaylist);
-$pdo->prepare('UPDATE chat_messages SET created_at=? WHERE id=401')->execute(['2026-11-07 12:00:00']);
-$pdo->prepare('UPDATE chat_messages SET created_at=? WHERE id=403')->execute(['2026-11-08 12:00:00']);
 $priorUsage = agent_connection_youtube_usage_v1($pdo);
 $priorCalls = $calls;
 putenv('VP3_YOUTUBE_API_KEY');
@@ -308,8 +308,14 @@ foreach (['Show the YouTube playlist called "quiet jazz" you returned.',
     'Show the YouTube playlist you returned in the chat "Current music".'] as $specific) {
     $specificPlan = agent_connection_youtube_followup_plan_v1($specific);
     $specificResult = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$specificPlan,11);
-    youtube_chat_check($specificResult['youtube_source_message_id'] === 401, 'An explicit title, date, or Chat name narrows History before recency');
+    youtube_chat_check(($specificResult['youtube_source_message_id'] ?? null) === 401,
+        'An explicit selector narrows History before recency for '.$specific.' Selected '.($specificResult['youtube_source_message_id'] ?? 'none'));
 }
+$GLOBALS['youtubeFixtureTimezone'] = 'America/Phoenix';
+$priorLocalDay = agent_connection_youtube_followup_plan_v1('Show the YouTube playlist you returned on 2026-11-06.');
+youtube_chat_check((agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$priorLocalDay,11)['youtube_source_message_id'] ?? null) === 401,
+    'An explicit date follows the configured account timezone across UTC midnight');
+unset($GLOBALS['youtubeFixtureTimezone']);
 $exact = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$searchPlan,11,null,401);
 youtube_chat_check($exact['youtube_source_message_id'] === 401 && $exact['youtube_results'] === $scoped['youtube_results'],
     'Exact replay keeps its original source instead of moving to newer results');

@@ -1,7 +1,6 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__.'/agent-chat-boundary-v380.php';
 require_once __DIR__.'/agent-tool-receipts-v1.php';
 
 function vp3_calendar_prep_text_v1(mixed $value, int $limit): string
@@ -143,6 +142,7 @@ function vp3_calendar_prep_today_v1(PDO $pdo, array $user, int $agentId, int $co
         || (function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() !== null)) {
         throw new RuntimeException('Calendar prep is available in private Agent Chat.', 403);
     }
+    require_once __DIR__.'/agent-chat-boundary-v380.php';
     $agent = vp3_agent_chat_resolve_agent_v380($pdo, $user, $agentId);
     $principal = vp3_agent_chat_principal_v380($user, $agent);
     $user = vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$conversationId],$authority);
