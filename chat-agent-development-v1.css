@@ -24,6 +24,44 @@
 .vp3-chat-development-hint[hidden],
 .vp3-chat-development-compact[hidden],
 .vp3-chat-development-notice[hidden] { display: none; }
+.vp3-chat-development-draft-trigger,
+.vp3-chat-development-draft-actions button {
+  padding: .4rem .65rem;
+  color: #164477;
+  background: #fff;
+  border: 1px solid #c8cfdb;
+  border-radius: .45rem;
+  font: inherit;
+  font-size: .8rem;
+  cursor: pointer;
+}
+.vp3-chat-development-draft-trigger { margin-top: .45rem; }
+.vp3-chat-development-draft-trigger:disabled { opacity: .6; cursor: wait; }
+.vp3-chat-development-draft-review {
+  width: min(100%, 48rem);
+  pointer-events: auto;
+  margin: 0 auto .45rem;
+  padding: .6rem .75rem;
+  color: #24334a;
+  background: #fff;
+  border: 1px solid #c8cfdb;
+  border-radius: .45rem;
+  font-size: .8rem;
+}
+.vp3-chat-development-draft-review[hidden] { display: none; }
+.vp3-chat-development-draft-review textarea {
+  display: block;
+  width: 100%;
+  margin-top: .25rem;
+  padding: .4rem;
+  color: inherit;
+  border: 1px solid #c8cfdb;
+  border-radius: .3rem;
+  resize: vertical;
+  font: inherit;
+}
+.vp3-chat-development-draft-review p { margin: .35rem 0; }
+.vp3-chat-development-draft-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
 @media (min-width: 761px) {
   body:has(#sfOnlineRailV109:not([hidden])) .vp3-chat-development-compact { display: none; }
 }
