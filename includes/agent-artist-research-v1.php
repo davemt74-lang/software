@@ -154,6 +154,37 @@ function vp3_artist_research_result_valid_v1(array $result): bool
     return vp3_public_research_result_valid_v1($result,'artist');
 }
 
+/** Preserve verified research evidence in private workflow storage for later delivery. */
+function vp3_initiative_research_tool_result_v1(array $value): ?array
+{
+    $output=$value['output']??null;
+    $kind=match($output['type']??null){
+        'initiative_artist_research'=>'artist',
+        'initiative_topic_research'=>'topic',
+        default=>null,
+    };
+    if($kind===null||!in_array($output['status']??null,['read_complete','no_matches'],true)
+        ||!is_string($output['source_ref']??null)||!preg_match('/\A'.$kind.'-interest:[a-f0-9]{64}\z/D',$output['source_ref'])
+        ||!is_string($output['source_revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$output['source_revision']))return null;
+    $receipt=vp3_tool_receipt_normalize_v1($value['tool_receipt']??null);
+    $sources=$value['sources']??null;
+    $draft=$value['draft']??null;
+    if($receipt===null||$receipt['capability']!==$kind.'.research'||$receipt['operation']!=='search'
+        ||$receipt['status']!==$output['status']||$receipt['record_id']!==0||!is_array($sources)||$receipt['count']!==count($sources)
+        ||!vp3_public_research_result_valid_v1([
+            'status'=>$output['status'],'reason'=>$output['reason']??null,'answer'=>$draft,
+            'checked_at'=>$output['checked_at']??null,'sources'=>$sources,
+        ],$kind))return null;
+    return [
+        'draft'=>$draft,
+        'sources'=>array_map(static fn(array $source): array=>array_intersect_key($source,array_flip([
+            'source','title','url','coverage','checked_at','evidence_hash',
+        ])),$sources),
+        'tool_receipt'=>$receipt,
+        'output'=>array_intersect_key($output,array_flip(['type','status','reason','checked_at','source_ref','source_revision'])),
+    ];
+}
+
 /** Run a direct private Chat research turn or prepare an existing specialist review. */
 function vp3_public_research_chat_v1(PDO $pdo,array $user,array $principal,array $plan,int $conversationId,int $userMessageId,?callable $authority=null,?array $transport=null): array
 {

@@ -38,7 +38,8 @@ jobs:
           connections = r'^(?:api/chat-youtube-playback-v1\.php|(?:admin/)?connections\.php|(?:connection-oauth|connection-test|connection-gmail-popup|connection-gmail-inbox|connection-gmail-github|youtube-connection-v1)\.php|connections-v1\.css|(?:api/)?chat-email-v1\.(?:php|js|css)|(?:chat-youtube-v1|gmail-popup-v1)\.(?:css|js)|assets/youtube-logo-v1\.png|(?:api|includes|tests)/agent-connections?[^/]*\.(?:php|mjs))$'
           development = r'^(?:(?:admin|api|includes|tests|workers)/agent-development[^/]*\.(?:php|mjs|py)|(?:tests/)?chat-agent-development[^/]*\.(?:mjs|js|css))$'
           ai_service = r'^(?:includes/(?:ai-service-[^/]+|ai-usage-accounting-v032|subscription-quota)|tests/ai-service-[^/]+)\.php$'
-          changed = diff.returncode != 0 or any(re.match(ai_service, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
+          research = r'^(?:chat-(?:research-specialist-v1|specialist-rail-v1)\.(?:js|css)|api/initiative-research-status-v1\.php|tests/chat-research-(?:canvas|specialist)-browser\.mjs)$'
+          changed = diff.returncode != 0 or any(re.match(ai_service, p) or re.match(research, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
               connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions|homeserver-https-transient-inference(?:-mysql)?)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
@@ -213,6 +214,8 @@ jobs:
           node tests/initiative-chat-loop-e2e.mjs
           node tests/initiative-activity-browser.mjs
           node tests/initiative-review-actions-browser.mjs
+          node tests/chat-research-specialist-browser.mjs
+          node tests/chat-research-canvas-browser.mjs
       - name: Shared Agent capability adapters and actual work results
         run: |
           php tests/agent-capability-contract-v1.php

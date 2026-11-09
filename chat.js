@@ -1459,6 +1459,7 @@
       profile_speech:raw.profile_speech && typeof raw.profile_speech==='object' ? raw.profile_speech : null,
       profile_attention:raw.profile_attention && typeof raw.profile_attention==='object' ? raw.profile_attention : null,
       initiative_work:raw.initiative_work && typeof raw.initiative_work==='object' ? raw.initiative_work : null,
+      research_canvas_v1:raw.source==='agent_initiative' ? raw.research_canvas_v1 : null,
       initiative_followthrough:raw.initiative_followthrough && typeof raw.initiative_followthrough==='object' ? raw.initiative_followthrough : null,
       initiative_action:raw.initiative_action && typeof raw.initiative_action==='object' ? raw.initiative_action : null,
       product_launch:raw.source===(raw.product_launch?.stage==='promotion_outcomes' ? 'agent_promotion_outcome' : 'agent_product_launch')
@@ -1613,22 +1614,61 @@
     return links.length ? `<div class="message-sources" aria-label="Priority sources">${links.join('')}</div>` : '';
   }
 
-  function publicResearchSourceLinks(sources) {
+  function publicResearchSourceLinks(sources, kind = '') {
     if (!Array.isArray(sources)) return '';
     const links = [];
     let topic = false;
     for (const source of sources) {
-      if (!/^(artist|topic)-web:[a-f0-9]{64}$/.test(source?.source || '') || typeof source.url !== 'string' ||
+      if (typeof source?.source !== 'string' || !/^(artist|topic)-web:[a-f0-9]{64}$/.test(source.source) || typeof source.url !== 'string' ||
+          (kind && !source.source.startsWith(kind + '-web:')) ||
           !['page_excerpt', 'search_match'].includes(source.coverage)) continue;
       let url;
       try { url = new URL(source.url); } catch (_) { continue; }
       if (url.protocol !== 'https:' || url.username || url.password) continue;
       topic ||= source.source.startsWith('topic-web:');
-      const coverage = source.coverage === 'page_excerpt' ? 'Page read' : 'Search lead';
-      links.push(`<a class="message-source" href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title || 'Open source')} · ${coverage}</a>`);
+      const coverage = source.coverage === 'page_excerpt' ? (kind ? 'Page excerpt' : 'Page read') : 'Search lead';
+      const title = typeof source.title === 'string' && source.title.trim() ? source.title : 'Open source';
+      links.push(`<a class="message-source" href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)} · ${coverage}</a>`);
       if (links.length === 6) break;
     }
-    return links.length ? `<div class="message-sources" role="group" aria-label="${topic ? 'Topic' : 'Artist'} research sources">${links.join('')}</div>` : '';
+    return links.length ? `<div class="message-sources" data-public-research-sources role="group" aria-label="${topic ? 'Topic' : 'Artist'} research sources">${links.join('')}</div>` : '';
+  }
+
+  function bindResearchCanvasV1(element, report) {
+    if (!report || !Number.isSafeInteger(report.owner_user_id) || report.owner_user_id < 1
+      || report.owner_user_id !== Number(cfg.userId) || report.agent_id !== Number(cfg.agentId || 0)
+      || report.conversation_id !== conversationId || !Number.isSafeInteger(report.run_id) || report.run_id < 1
+      || !['topic', 'artist'].includes(report.kind) || !['read_complete', 'no_matches'].includes(report.status)
+      || typeof report.title !== 'string' || !report.title.trim() || report.title.length > 240
+      || typeof report.checked_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(report.checked_at)
+      || !Array.isArray(report.sources) || report.sources.length > 6) return;
+
+    const checked = new Date(report.checked_at);
+    const hasSources = report.status === 'read_complete';
+    const sources = publicResearchSourceLinks(report.sources, report.kind);
+    if (Number.isNaN(checked.getTime()) || hasSources !== Boolean(sources) || (!hasSources && report.sources.length)) return;
+
+    const body = element.querySelector('.message-body');
+    const summary = body?.querySelector('.message-text');
+    if (!summary || !summary.textContent.trim() || body.querySelector('[data-research-canvas-run-id]')) return;
+
+    const canvas = document.createElement('section');
+    canvas.className = 'vp3-research-canvas';
+    canvas.dataset.researchCanvasRunId = String(report.run_id);
+    canvas.tabIndex = -1;
+    canvas.setAttribute('aria-label', 'Research Canvas');
+    canvas.innerHTML = '<header><div><small>Research Canvas</small><h3></h3></div><p></p></header>';
+    canvas.querySelector('h3').textContent = report.title;
+    const details = canvas.querySelector('header p');
+    if (!hasSources) details.append('No eligible sources · ');
+    const date = document.createElement('time');
+    date.dateTime = report.checked_at;
+    date.textContent = new Intl.DateTimeFormat(undefined, {dateStyle:'medium', timeStyle:'short'}).format(checked);
+    details.append('Checked ', date);
+    summary.before(canvas);
+    canvas.append(summary);
+    body.querySelector(':scope > [data-public-research-sources]')?.remove();
+    if (hasSources) canvas.insertAdjacentHTML('beforeend', sources);
   }
 
   function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, canvasMedia = null, youtubeResults = null) {
@@ -3631,6 +3671,7 @@
         context.canvas_media || null,
         context.youtube_results || null
       );
+      if(message.role==='assistant')bindResearchCanvasV1(renderedMessage,context.research_canvas_v1);
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
@@ -3673,6 +3714,7 @@
         return;
       }
       const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null,context.youtube_results||null);
+      if(message.role==='assistant')bindResearchCanvasV1(renderedMessage,context.research_canvas_v1);
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       const next=Array.from(thread.querySelectorAll('[data-chat-message-id]')).find(element=>element!==renderedMessage
         &&Number(element.dataset.chatConversationId)===targetId&&Number(element.dataset.chatMessageId)>Number(message.id));

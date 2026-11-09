@@ -352,6 +352,11 @@ jobs:
           test -f _deploy/includes/ai-service-usage-v1.php
           test -f _deploy/includes/user-llm-v1.php
           test -f _deploy/includes/ai-direct-account-v1.php
+          test -f _deploy/includes/agent-initiative-research-canvas-v1.php
+          test -f _deploy/includes/agent-initiative-research-status-v1.php
+          test -f _deploy/api/initiative-research-status-v1.php
+          test -f _deploy/chat-research-specialist-v1.js
+          test -f _deploy/chat-research-specialist-v1.css
           test -f _deploy/includes/ai-service-model-test-v1.php
           test -f _deploy/admin/ai-service-rules.php
           test -f _deploy/admin/_ai-service-controls-v1.php

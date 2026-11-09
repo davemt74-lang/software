@@ -484,6 +484,19 @@ $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-specialis
     . '<link rel="stylesheet" href="'.e(url('/chat-canvas-media-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.css'),0,12))).'">'
     . '<script>window.VP3_CANVAS_MEDIA_V1='.json_encode(['endpoint'=>url('/api/chat-canvas-media-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-canvas-media-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.js'),0,12))).'"></script>';
+if ($youtubePdo && agent_connection_youtube_enabled_v1()
+    && agent_connection_youtube_consent_v1($youtubePdo,(int)$user['id'])
+    && (vp3_youtube_research_enabled_v1($youtubePdo,(int)$user['id'],'topic')
+        || vp3_youtube_research_enabled_v1($youtubePdo,(int)$user['id'],'artist'))
+    && personal_capability_has_v242('agent_brain.access',$user) && personal_knowledge_available($user)) {
+    $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-research-specialist-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-research-specialist-v1.css'),0,12))).'">'
+        . '<script>window.VP3_CHAT_RESEARCH_SPECIALIST_V1='.json_encode([
+            'endpoint'=>url('/api/initiative-research-status-v1.php'),
+            'ownerKey'=>(string)$user['id'],
+            'agentId'=>(int)($activeUserAgent['id']??0),
+        ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
+        . '<script src="'.e(url('/chat-research-specialist-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-research-specialist-v1.js'),0,12))).'" defer></script>';
+}
 $initiativeWorkbenchRuntime = '<link rel="stylesheet" href="'.e(url('/chat-initiative-workbench-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.css'),0,12))).'">'
     . '<script>window.VP3_INITIATIVE_WORKBENCH='.json_encode([
         'endpoint'=>url('/api/initiative-workbench-v1.php'),'csrf'=>csrf_token(),

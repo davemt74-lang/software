@@ -64,6 +64,7 @@ jobs:
           node tests/cognitive-presentation-account-binding.mjs
           php tests/agent-initiative-v1.php
           php tests/agent-initiative-worker-v1.php
+          php tests/agent-initiative-research-status-v1.php
           node tests/calendar-schedule-awareness-v1330-contract.mjs
           php tests/phone-agent-read-v1.php
           php tests/workflow-receipts-v1.php
