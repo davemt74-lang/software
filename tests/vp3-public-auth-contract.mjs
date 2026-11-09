@@ -113,8 +113,9 @@ assert.match(about, /Capture[\s\S]*Understand[\s\S]*Take action/i, 'About must e
 assert.match(contact, /Account \/ Support/, 'Contact must support VP3 account inquiries');
 assert.doesNotMatch(contact, /stonefellow74@gmail\.com/, 'VP3 public Contact must not retain the legacy contact fallback');
 assert.doesNotMatch(contact, /mailto:<\?=/, 'VP3 public Contact must not expose a legacy-branded configured email address');
-assert.match(privacy, /Last updated November 8, 2026/, 'privacy revision date must reflect the YouTube integration');
+assert.match(privacy, /Last updated November 9, 2026/, 'privacy revision date must reflect the artist research preference');
 assert.match(privacy, /YouTube API Services[\s\S]*policies\.google\.com\/privacy/, 'privacy must disclose YouTube API use and link Google privacy');
+assert.match(privacy, /enable background artist research in Connections[\s\S]*?public web search[\s\S]*?configured AI/, 'privacy must disclose enabled background artist research and its processing');
 assert.match(privacy, /We do not sell your personal information/, 'privacy no-sale commitment must be preserved');
 assert.match(privacy, /VP3 contact page/, 'privacy requests must route through the VP3 public contact surface');
 assert.match(terms, /Last updated November 8, 2026/, 'terms revision date must reflect the YouTube integration');

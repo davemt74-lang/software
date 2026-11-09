@@ -152,6 +152,9 @@ function vp3_initiative_office_calendar_state_v1(PDO $pdo,array $scope,int $id,?
         'end_at_utc'=>(string)$row['end_at_utc'],'timezone'=>(string)$row['timezone'],
         'recurrence'=>(string)($row['recurrence']??'none'),'all_day'=>!empty($row['all_day']),
         'agent_notifications'=>!empty($row['agent_notifications']),'source'=>(string)$row['source']];
+    require_once __DIR__.'/agent-calendar-prep-v1.php';
+    $prep=vp3_calendar_prep_details_v1($pdo,$scope['user'],$scope['principal'],$event);
+    $hasPrep=$prep['meeting_url']!==''||$prep['agenda_status']!=='unknown'||$prep['open_items']||$prep['completed_items']||$prep['unknown_items']||$prep['items_truncated'];
     return ['owner_user_id'=>$owner,'id'=>$id,'title'=>vp3_initiative_office_text_v1($full['title'],500),
         'description'=>vp3_initiative_office_text_v1($full['description'],3000),
         'location'=>vp3_initiative_office_text_v1($full['location'],500),
@@ -160,8 +163,9 @@ function vp3_initiative_office_calendar_state_v1(PDO $pdo,array $scope,int $id,?
         'series_start_at_utc'=>$full['start_at_utc'],'series_end_at_utc'=>$full['end_at_utc'],
         'recurrence'=>$full['recurrence'],'all_day'=>$full['all_day'],'agent_notifications'=>$full['agent_notifications'],
         'source'=>vp3_initiative_office_text_v1($full['source'],100),
-        'content_truncated'=>strlen($full['description'])>3000||strlen($full['location'])>500,
-        'source_hash'=>hash('sha256',json_encode([$owner,$id,$full,$event['start_at_utc'],$event['end_at_utc'],$occurrence],JSON_THROW_ON_ERROR))];
+        'content_truncated'=>strlen($full['description'])>3000||strlen($full['location'])>500||$prep['items_truncated'],
+        'source_hash'=>hash('sha256',json_encode([$owner,$id,$full,$event['start_at_utc'],$event['end_at_utc'],$occurrence],JSON_THROW_ON_ERROR))]
+        +($hasPrep?['prep'=>$prep]:[]);
 }
 
 function vp3_initiative_office_state_v1(PDO $pdo,array $scope,array $selector): ?array
@@ -182,9 +186,10 @@ function vp3_initiative_office_entry_v1(string $ref,array $selector,array $state
         'reminder'=>'Saved active reminder with '.count($state['pending_occurrences']).' bounded pending occurrence records. Schedule and occurrence reads do not deliver, snooze or complete it.',
         'calendar'=>'Saved active Cloud calendar '.($state['recurrence']==='weekly'?'occurrence':'event').' starting '.$state['start_at_utc'].' UTC. '.mb_substr($state['description'],0,320).' Reading details changes no event or meeting-readiness state.',
     };
+    if(isset($state['prep']))$detail.=' Linked agenda '.$state['prep']['agenda_status'].'. '.count($state['prep']['open_items']).' open and '.count($state['prep']['completed_items']).' completed linked items in the bounded view. Unverified completion remains unknown.';
     return ['ref'=>$ref,'kind'=>$selector['family']==='calendar'?'calendar':$selector['family'],
         'title'=>$title,'detail'=>$detail,'office_tool'=>$tool,'record_id'=>$selector['id'],
-        'url'=>url($selector['family']==='calendar'?'/calendar.php':'/chat.php'),
+        'url'=>$selector['family']==='calendar'?($state['prep']['review_url']??url('/calendar.php')):url('/chat.php'),
         'revision'=>hash('sha256',json_encode(['office-records-v1',$ref,$state],JSON_THROW_ON_ERROR))];
 }
 

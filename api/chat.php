@@ -159,17 +159,18 @@ try {
         initiative_product_launch_chat_v1($pdo,$userId,(int)($conversation['user_agent_id']??0),$conversationId);
         $stmt = $pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 300');
         $stmt->execute([$conversationId]);
-        echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,$conversationId,array_reverse($stmt->fetchAll()))]);
+        echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,(int)($conversation['user_agent_id']??0),$conversationId,array_reverse($stmt->fetchAll()))]);
         exit;
     }
 
     if ($action === 'messages_after') {
-        $conversationId=vp3_agent_chat_stream_scope_v380($pdo,$user,$input)['conversation_id'];
+        $scope=vp3_agent_chat_stream_scope_v380($pdo,$user,$input);
+        $conversationId=$scope['conversation_id'];
         if($conversationId<1)throw new RuntimeException('Conversation not found.');
         $afterId=max(0,(int)($input['after_id']??0));
         $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');
         $stmt->execute([$conversationId,$afterId]);
-        echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,$conversationId,$stmt->fetchAll())],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,$scope['agent_id'],$conversationId,$stmt->fetchAll())],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         exit;
     }
 

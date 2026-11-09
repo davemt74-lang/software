@@ -58,7 +58,7 @@ if($action==='load'){
     initiative_product_launch_chat_v1($pdo,$userId,(int)$principal['agent_id'],$conversationId);
     $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 300');
     $stmt->execute([$conversationId]);
-    echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,$conversationId,array_reverse($stmt->fetchAll())),'agent_name'=>(string)$principal['display_name']]);
+    echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,(int)$principal['agent_id'],$conversationId,array_reverse($stmt->fetchAll())),'agent_name'=>(string)$principal['display_name']]);
     exit;
 }
 if($action==='messages_after'){
@@ -77,7 +77,7 @@ if($action==='messages_after'){
     $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages
         WHERE conversation_id=? AND (id>?'.$retry.') ORDER BY id ASC LIMIT '.(80+count($pending)));
     $stmt->execute([$conversationId,$afterId,...$pending]);
-    echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,$conversationId,$stmt->fetchAll())],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,(int)$principal['agent_id'],$conversationId,$stmt->fetchAll())],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     exit;
 }
 if($action==='delete'){$conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');homeserver_agent_v018_forget($userId,$conversationId);$pdo->prepare('DELETE FROM chat_conversations WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);echo json_encode(['ok'=>true]);exit;}

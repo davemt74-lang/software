@@ -11,6 +11,7 @@ require_once __DIR__.'/agent-photo-media-v1.php';
 require_once __DIR__.'/agent-image-generation-v1.php';
 require_once __DIR__.'/agent-conversation-intent-v1.php';
 require_once __DIR__.'/agent-catch-up-chat-v1.php';
+require_once __DIR__.'/agent-calendar-prep-v1.php';
 
 /** The model selects a bounded discovery/record plan; it cannot submit executable code. */
 function vp3_capability_plan_v1(string $text,array $snapshot): array
@@ -275,6 +276,9 @@ function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $qu
     if(($initiative=vp3_initiative_command_v1($query))!==null){
         require_once __DIR__.'/agent-initiative-v1.php';
         return vp3_initiative_chat_v1($pdo,$user,$principal,$context,$initiative,$authority);
+    }
+    if(vp3_calendar_prep_chat_intent_v1($query)){
+        return vp3_calendar_prep_chat_v1($pdo,$user,$context['user_agent_id'],(int)($context['conversation_id']??0),$authority);
     }
     if(($briefRequest=vp3_catch_up_chat_request_v1($query))!==null){
         try{

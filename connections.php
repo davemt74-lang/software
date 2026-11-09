@@ -25,6 +25,7 @@ $youtubeHistoryEnabled = $youtubeHistoryReady && vp3_youtube_capture_key_v1($pdo
 $youtubePicksReady = $pdo && vp3_youtube_picks_ready_v1($pdo);
 $youtubePicks = $youtubePicksReady ? vp3_youtube_picks_settings_v1($pdo, (int)$user['id']) : [];
 $youtubeEnabled = $youtubeConsentReady && agent_connection_youtube_consent_v1($pdo, (int)$user['id']);
+$youtubeArtistResearch = $youtubeEnabled && vp3_youtube_artist_research_enabled_v1($pdo, (int)$user['id']);
 $canChat = has_permission('chat.access', $user);
 $permissions = $gmailLinked
     ? $connection['permissions']
@@ -81,6 +82,7 @@ $notices = [
     'inbox_reconnect' => ['error', 'Reconnect Gmail before enabling Inbox review.'],
     'youtube_enabled' => ['success', 'YouTube is enabled for your VP3 account.'],
     'youtube_disabled' => ['success', 'YouTube is disabled for your VP3 account.'],
+    'youtube_artist_research_saved' => ['success', 'Background artist research preference saved.'],
     'youtube_accept_required' => ['error', 'Review and accept the terms to enable YouTube.'],
     'youtube_unavailable' => ['error', 'YouTube is currently unavailable on this installation.'],
     'youtube_invalid' => ['error', 'The YouTube request expired or was invalid. Review the terms and try again.'],
@@ -398,6 +400,17 @@ header('Cache-Control: private, no-store');
                                   <span>When Initiative is on, offer more picks after a suggested track ends in Chat.</span>
                                 </label>
                                 <button class="connections-button connections-secondary" type="submit">Save music preferences</button>
+                              </form>
+                            <?php endif; ?>
+                            <?php if ($canChat): ?>
+                              <form method="post" action="<?= e(url('/youtube-connection-v1.php')) ?>">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="save_artist_research">
+                                <label class="connections-permission">
+                                  <input type="checkbox" name="artist_research" value="1" <?= $youtubeArtistResearch ? 'checked' : '' ?>>
+                                  <span>Let Initiative research artists from my recent similar-artist requests using public web search and my configured AI.</span>
+                                </label>
+                                <button class="connections-button connections-secondary" type="submit">Save artist research preference</button>
                               </form>
                             <?php endif; ?>
                             <?php if ($youtubeHistoryReady && $canChat): ?>

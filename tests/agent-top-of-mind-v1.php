@@ -132,23 +132,31 @@ feed_check($backlogCalls===26&&!in_array($middleId,$oldWindow)&&!in_array($middl
     'an executing job hidden from both bounded oldest-pending and newest-history windows remains visible through the canonical executing-only selector');
 
 $pdo->exec('CREATE TABLE IF NOT EXISTS settings (setting_key VARCHAR(190) PRIMARY KEY,setting_value TEXT);
-    INSERT INTO chat_conversations VALUES(46,1,NULL,NULL)');
+    INSERT INTO chat_conversations VALUES(46,1,NULL,NULL);
+    ALTER TABLE chat_conversations ADD COLUMN title TEXT');
 agent_connection_youtube_results_schema_v1($pdo);
 agent_connection_youtube_consent_schema_v1($pdo);
 vp3_youtube_playback_install_v1($pdo);
 agent_connection_youtube_set_consent_v1($pdo,1,true);
 vp3_youtube_history_change_v1($pdo,1,'enable_history');
 $capture=vp3_youtube_capture_key_v1($pdo,1);
-$mediaSeed=static function(int $conversation,string $title,string $video)use($pdo):int {
+$mediaSeed=static function(int $conversation,string $title,string $video,string $query,array $extra=[])use($pdo):int {
     $pdo->prepare("INSERT INTO chat_messages(conversation_id,role,message) VALUES(?,'assistant','YouTube search')")->execute([$conversation]);
     $id=(int)$pdo->lastInsertId();
-    agent_connection_youtube_results_save_v1($pdo,1,$conversation,$id,['query'=>'test','expires_at'=>time()+60,
-        'videos'=>[['video_id'=>$video,'title'=>$title,'channel_title'=>'Test channel','made_for_kids'=>false]]]);
+    agent_connection_youtube_results_save_v1($pdo,1,$conversation,$id,['query'=>$query,'expires_at'=>time()+60,
+        'videos'=>[['video_id'=>$video,'title'=>$title,'channel_title'=>'Test channel','made_for_kids'=>false]]]+$extra);
     return $id;
 };
-$localMedia=$mediaSeed(42,'Recent eligible YouTube playback','local000001');
-$otherMedia=$mediaSeed(46,'Other private conversation playback','other000001');
-feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['music']===null,'unplayed search results do not become a Top of Mind playback observation');
+$localMedia=$mediaSeed(42,'Recent eligible YouTube playback','local000001','Quiet session music',['suggestion_kind'=>'playlist']);
+$otherMedia=$mediaSeed(46,'Other private conversation playback','other000001','Other private search');
+$beforePlay=vp3_top_of_mind_v1($pdo,$user,0,42);
+feed_check($beforePlay['music']===null&&($beforePlay['youtube_search']['message_id']??0)===$localMedia
+    &&$beforePlay['youtube_search']['kind']==='playlist'&&$beforePlay['youtube_search']['result_count']===1
+    &&!str_contains(json_encode($beforePlay['youtube_search']),'local000001'),
+    'the current Chat’s returned playlist is available separately from verified playback, without video identifiers');
+$otherChat=vp3_top_of_mind_v1($pdo,$user,0,46);
+feed_check($otherChat['state']==='linked_elsewhere'&&$otherChat['items']===[]&&($otherChat['youtube_search']['message_id']??0)===$otherMedia,
+    'a manually opened Chat sees its own search context without inheriting another Chat’s work or search');
 $localPlay='10000000-0000-4000-8000-000000000001';$otherPlay='10000000-0000-4000-8000-000000000002';
 feed_check(vp3_youtube_history_record_v1($pdo,1,$localMedia,'local000001',$localPlay,$capture)
     &&vp3_youtube_history_record_v1($pdo,1,$otherMedia,'other000001',$otherPlay,$capture),
@@ -165,13 +173,35 @@ $context=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new D
 feed_check(!str_contains(json_encode($context),'Recent eligible YouTube playback'),
     'this playback card does not expose YouTube titles to planning or configured AI');
 vp3_youtube_history_change_v1($pdo,1,'pause_history');
-feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['music']===null,'pausing playback capture immediately removes its Top of Mind observation');
+$capturePaused=vp3_top_of_mind_v1($pdo,$user,0,42);
+feed_check($capturePaused['music']===null&&$capturePaused['youtube_search']['message_id']===$localMedia,
+    'pausing playback capture immediately removes its observation while preserving returned search context');
 vp3_youtube_history_change_v1($pdo,1,'enable_history');
 $pdo->prepare('UPDATE agent_connection_youtube_results_v1 SET expires_at=? WHERE message_id=?')->execute([time()-1,$localMedia]);
-feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['music']===null,'expired media data is omitted even when a playback record survives cleanup');
+$expired=vp3_top_of_mind_v1($pdo,$user,0,42);
+feed_check($expired['music']===null&&$expired['youtube_search']===null,'expired media data is omitted even when a playback record survives cleanup');
+$olderSearch=$mediaSeed(42,'Older provider title','older000001','Yesterday’s unrelated query');
+$pdo->prepare('UPDATE chat_messages SET created_at=? WHERE id=?')->execute([gmdate('Y-m-d H:i:s',time()-86401),$olderSearch]);
+feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['youtube_search']===null,'Top of Mind leaves older cached results in History');
+$artistSource=$mediaSeed(42,'A public provider title','artist00001','Music artists similar to The Test Artist',
+    ['suggestion_kind'=>'similar','taste_topic'=>'The Test Artist']);
+$artist=vp3_top_of_mind_v1($pdo,$user,0,42)['artist_research'];
+feed_check($artist['artist']==='The Test Artist'&&$artist['status']==='available'&&$artist['source_message_id']===$artistSource,
+    'a recent explicitly named artist keeps its exact source and offers an owner action');
+$marker=['artist'=>'The Test Artist','mode'=>'read','status'=>'read_complete','checked_at'=>gmdate(DATE_ATOM)];
+$receipt=vp3_tool_receipt_v1('artist.research','search','read_complete');
+$pdo->prepare("INSERT INTO chat_messages(conversation_id,role,message,context_json) VALUES(42,'assistant','Research',?)")
+    ->execute([json_encode(['artist_research_v1'=>$marker,'tool_receipt'=>$receipt],JSON_THROW_ON_ERROR)]);
+$reportId=(int)$pdo->lastInsertId();
+$artist=vp3_top_of_mind_v1($pdo,$user,0,42)['artist_research'];
+feed_check($artist['status']==='ready'&&$artist['message_id']===$reportId&&$artist['source_message_id']===$artistSource,
+    'verified research updates the same artist thread to link to its exact report');
 vp3_initiative_chat_v1($pdo,$user,vp3_agent_chat_principal_v380($user,null),['conversation_id'=>42],'off',null);
 $paused=vp3_top_of_mind_v1($pdo,$user,0,42);
-feed_check($paused['state']==='paused'&&$paused['items']===[],'an explicit Pause is displayed without activating or reading obsolete work');
+feed_check($paused['state']==='paused'&&$paused['items']===[]&&$paused['youtube_search']['message_id']===$artistSource,
+    'an explicit Pause stops work projection while manual source context remains available');
+agent_connection_youtube_set_consent_v1($pdo,1,false);
+feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['youtube_search']===null,'revoking YouTube consent immediately hides its cached Top of Mind search');
 feed_check(count($queued['items'])<=6&&!str_contains(json_encode($queued),'lease_token')&&!str_contains(json_encode($queued),'initiative_draft'),
     'bounded feed output excludes leases, raw prompts, model drafts and hidden reasoning');
 $originalTimezone=date_default_timezone_get();

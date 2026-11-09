@@ -652,7 +652,7 @@ function ai_generate_chat_response(
     if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null&&$remaining<=0.005){
         return ['ok'=>false,'error'=>'The inference time budget was exhausted.','error_code'=>'inference_budget_exhausted'];
     }
-    $initiative=in_array($turnControl['protocol']??'',['vp3.initiative-plan.v1','vp3.initiative-draft.v1'],true);
+    $initiative=in_array($turnControl['protocol']??'',['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.artist-research.v1'],true);
     $developmentOutline=($turnControl['surface']??'')==='tool_json'&&($turnControl['protocol']??'')==='vp3.agent-development-outline.v1';
     // Phone callers have no owner-session authority. Never run private Chat
     // context enrichment for this surface, including on a retry.
