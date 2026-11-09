@@ -87,6 +87,7 @@ if($modern){
     agent_connection_youtube_quota_schema_v1($fixture);
     agent_connection_youtube_results_schema_v1($fixture);
     vp3_youtube_playback_install_v1($fixture);
+    vp3_youtube_picks_install_v1($fixture);
 }
 if($missingTable){$missing=substr($mode,8);if(!in_array($missing,$newTables,true))throw new RuntimeException('Invalid missing table fixture.');$fixture->exec('DROP TABLE '.$missing);}
 if(isset($partialSpeech[$mode])){[$table,$column]=$partialSpeech[$mode];$fixture->exec('ALTER TABLE '.$table.' RENAME COLUMN '.$column.' TO removed_'.$column);}

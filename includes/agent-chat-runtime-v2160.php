@@ -646,7 +646,7 @@ $capabilityTool=$emailRequest
     ?agent_connection_email_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId,$connectionAuthority,$inputMode==='voice'):null;
 if($capabilityTool===null&&$youtubeQuery!==null){
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
-    $capabilityTool=agent_connection_youtube_chat_v1($pdo,$user,$principal,$youtubeQuery,$conversationId,$connectionAuthority);
+    $capabilityTool=agent_connection_youtube_chat_v1($pdo,$user,$principal,$youtubeQuery,$conversationId,$connectionAuthority,null,vp3_youtube_suggestion_topic_v1($query)!==null);
 }
 if($capabilityTool===null&&$allowConnectedSites&&!$ephemeralProtocol){
     $capabilityTool=vp3_connected_sites_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId);

@@ -4131,6 +4131,12 @@
 
   const canonicalChatContinuity = {
     runYoutubeLocalTurn,
+    requestYoutubePicks:() => {
+      if (input.value.trim() || busy || !contextReady || initialRestorePending || restoringConversation
+          || initiativeReplyTarget || window.VP3ParticipantContinuity?.selectedContext()) return false;
+      void sendMessage('/youtube picks');
+      return true;
+    },
     showChatView:() => setChatCanvasView('chat'),
     mountAgentGreeting:text => {
       if (thread.dataset.view !== 'chat' || !contextReady || initialRestorePending || restoringConversation) return null;

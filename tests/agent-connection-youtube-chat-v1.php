@@ -174,4 +174,28 @@ $pdo->exec('DELETE FROM chat_messages WHERE id=301');
 youtube_chat_check((int)$pdo->query('SELECT COUNT(*) FROM agent_connection_youtube_results_v1')->fetchColumn() === 0,
     'Deleting the source message cascades the temporary result data');
 
+vp3_youtube_picks_install_v1($pdo);
+youtube_chat_check(vp3_youtube_suggestion_topic_v1('Recommend three mellow songs on YouTube') === 'mellow'
+    && vp3_youtube_suggestion_topic_v1('Recommend a camera on YouTube') === null
+    && agent_connection_youtube_chat_plan_v1('/youtube picks') === '', 'Song suggestions route without taking unrelated requests');
+vp3_youtube_picks_save_v1($pdo,1,'ambient jazz',true);
+vp3_youtube_picks_save_v1($pdo,1,'quiet jazz',null);
+youtube_chat_check((bool)vp3_youtube_picks_settings_v1($pdo,1)['proactive']
+    && vp3_youtube_picks_settings_v1($pdo,2)['taste'] === '', 'Saving taste preserves opt-in and stays member-private');
+$clock = time();
+youtube_chat_check(!vp3_youtube_reserve_offer_v1($pdo,2,$clock)
+    && vp3_youtube_reserve_offer_v1($pdo,1,$clock)
+    && !vp3_youtube_reserve_offer_v1($pdo,1,$clock+1), 'Offers require an opt-in and reserve one account-wide cooldown');
+$seenQuery = '';
+$picks = agent_connection_youtube_chat_v1($pdo,$owner,$principal,'',11,null,
+    static function (string $url, array $headers) use ($http, &$seenQuery): array {
+        if (str_starts_with($url, VP3_YOUTUBE_SEARCH_ENDPOINT_V1.'?')) {
+            parse_str((string)parse_url($url,PHP_URL_QUERY), $params);
+            $seenQuery = $params['q'];
+            $url = VP3_YOUTUBE_SEARCH_ENDPOINT_V1.'?'.http_build_query(['q'=>'café dough']);
+        }
+        return $http($url,$headers);
+    },true);
+youtube_chat_check($seenQuery === 'quiet jazz music' && ($picks['youtube_results']['suggestion_reason'] ?? '') !== ''
+    && !str_contains($picks['answer'], 'quiet jazz'), 'Generic suggestions use explicit taste and keep it out of the assistant transcript');
 echo 'AGENT_CONNECTION_YOUTUBE_CHAT_V1=PASS'.PHP_EOL;

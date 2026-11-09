@@ -19,6 +19,7 @@ const messages = new Map([[42,[]],[43,[{id:101,role:'assistant',message:'The oth
 const youtubeIds = ['dQw4w9WgXcQ', 'M7lc1UVf-VE'];
 const youtubeCommands = ['Search YouTube for typed video results', 'Search YouTube for spoken video results'];
 let playedInVp3 = [];
+let youtubeOfferRequests = 0;
 const youtubeTitle = 'Video title <img src=x onerror=alert(1)>';
 const youtubeResult = query => ({
   query, expires_at: Math.floor(Date.now() / 1000) + 600,
@@ -46,7 +47,7 @@ await page.route('https://www.youtube.com/embed/**', route => {
   return route.fulfill({contentType:'text/html',body:'<title>YouTube iframe fixture</title>'});
 });
 await page.route('https://www.youtube.com/iframe_api', route => route.fulfill({contentType:'text/javascript',body:`
-  window.YT = {PlayerState:{PLAYING:1}, Player:class {
+  window.YT = {PlayerState:{PLAYING:1,ENDED:0}, Player:class {
     constructor(frame, config) {
       window.youtubeFixture = this;
       this.frame = frame;
@@ -65,6 +66,11 @@ await page.route('**/api/**', async route => {
   if (new URL(route.request().url()).pathname === '/api/youtube-playback') {
     const data = Object.fromEntries(new URLSearchParams(route.request().postData()));
     assert.equal(data.csrf_token, 'fixture');
+    if (data.action === 'offer') {
+      youtubeOfferRequests++;
+      return route.fulfill({json:{ok:true,offer:true}});
+    }
+    if (data.action === 'snooze' || data.action === 'save_taste') return route.fulfill({json:{ok:true}});
     if (data.action === 'record') {
       assert.equal(data.video_id, youtubeIds[0]);
       assert.match(data.message_id, /^[1-9][0-9]*$/);
@@ -97,7 +103,9 @@ await page.route('**/api/**', async route => {
     if(sendGate)await sendGate;
     if(failSend)return route.fulfill({status:503,json:{ok:false,error:'Provider unavailable'}});
     return route.fulfill({json:{ok:true,conversation_id:payload.conversation_id||42,answer:'I heard you.',user_message_id:nextMessageId++,assistant_message_id:nextMessageId++,media:payload.message==='Show Studio handoff link'?[{id:9,title:'From the asteroid you saved me',album:'Studio',audio:'/media.php?track=9&type=audio',cover:'',detail:'/track.php?id=9'}]:[],
-      ...(payload.message===youtubeCommands[0] ? {youtube_results:youtubeResult('Typed video results')} : {})}});
+      ...(payload.message===youtubeCommands[0] ? {youtube_results:youtubeResult('Typed video results')} : {}),
+      ...(payload.message==='/youtube picks' ? {youtube_results:{...youtubeResult('mellow music'),
+        suggestion_reason:'Matches the music you asked for.',taste_topic:'mellow'}} : {})}});
   }
   if(payload.action==='load'){
     if(loadGate)await loadGate;
@@ -137,7 +145,7 @@ try {
   if(reload)await page.reload();
   else await page.goto('http://chat.test/');
   await page.evaluate(({fast,savedVoice,agentVoiceEnabled}) => {
-    window.VP3_YOUTUBE_PLAYBACK_V1 = {endpoint:'/api/youtube-playback',csrf:'fixture',captureKey:'fixture-key'};
+    window.VP3_YOUTUBE_PLAYBACK_V1 = {endpoint:'/api/youtube-playback',csrf:'fixture',captureKey:'fixture-key',proactive:true};
     window.STONEFELLOW_CHAT = {userId:1,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',workingAttentionBinding:'fixture-working-attention'};
     localStorage.setItem('stonefellow:voice-mode:1',savedVoice);
     window.STONEFELLOW_AGENT_CONTEXT = {userId:1,surface:'chat',csrf:'fixture',proactiveEndpoint:'/api/context'};
@@ -494,6 +502,24 @@ try {
   await played.getByRole('button',{name:'Remove from history'}).waitFor({state:'detached'});
   assert.equal(playedInVp3.length,0,'Removal updates history and the rendered card');
   console.log('PASS verified YouTube playback, voice pause/stop, private history after reload and removal');
+  await page.locator('#chatInput').fill('/youtube picks');
+  await page.locator('#sendChatButton').click();
+  const picks = page.getByRole('region',{name:'YouTube search results'}).filter({hasText:'mellow music'});
+  await picks.waitFor();
+  await picks.getByRole('button',{name:'Save this music taste'}).click();
+  await picks.getByRole('button',{name:'Music taste saved'}).waitFor();
+  await picks.getByRole('button',{name:/Play in Chat · Video title/}).click();
+  await page.waitForFunction(() => window.youtubeFixture?.frame === document.querySelector('iframe.vp3-youtube-frame'));
+  await page.evaluate(() => window.youtubeFixture.change(0));
+  assert.equal(youtubeOfferRequests,0,'A track ending cannot offer picks while Initiative is off');
+  await page.evaluate(() => {
+    window.VP3_COGNITIVE_PRESENTATION={allowsMusicOffer:()=>true};
+    window.youtubeFixture.change(0);
+  });
+  await picks.getByRole('button',{name:'Snooze for a day'}).click();
+  await picks.getByRole('button',{name:'Snooze for a day'}).waitFor({state:'detached'});
+  assert.equal(youtubeOfferRequests,1);
+  console.log('PASS explicit music picks, save taste, Initiative gate and snooze');
   messages.set(42,[]);
   console.log('PASS typed and spoken YouTube search results, safe mobile inline playback, switch/close and history expiry');
 

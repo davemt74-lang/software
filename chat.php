@@ -295,6 +295,8 @@ $youtubeConfig = [
     'endpoint'=>url('/api/chat-youtube-playback-v1.php'),
     'connections'=>url('/connections.php?app=youtube#connections-app-youtube'),
     'csrf'=>csrf_token(),
+    'proactive'=>$youtubePdo && vp3_youtube_picks_ready_v1($youtubePdo)
+        && (bool)vp3_youtube_picks_settings_v1($youtubePdo, (int)$user['id'])['proactive'],
     'captureKey'=>$youtubePdo && vp3_youtube_playback_ready_v1($youtubePdo)
         ? vp3_youtube_capture_key_v1($youtubePdo, (int)$user['id']) : '',
 ];

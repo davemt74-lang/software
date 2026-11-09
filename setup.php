@@ -77,6 +77,7 @@ try {
     agent_connection_youtube_quota_schema_v1($pdo);
     agent_connection_youtube_results_schema_v1($pdo);
     vp3_youtube_playback_install_v1($pdo);
+    vp3_youtube_picks_install_v1($pdo);
     profile_agent_ensure_schema($pdo);
     agent_job_engine_ensure_schema_v1900($pdo);
     agent_work_control_ensure_schema_v173($pdo);

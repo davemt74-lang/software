@@ -1430,6 +1430,7 @@
 
   window.VP3_COGNITIVE_PRESENTATION = {
     refresh:refresh,openBrief:openPopup,closeBrief:closePopup,
+    allowsMusicOffer:() => initiativeMayAdvance() && initiativeHealth()?.enabled === true,
     followUpReference(conversationId) {
       const key = String(liveState?.attention?.key || '');
       if (pageController.signal.aborted || !liveHost || liveHost.hidden || liveConversation() !== conversationId

@@ -18,7 +18,19 @@ $user = current_user();
 $pdo = db();
 $action = $_POST['action'] ?? '';
 $result = 'youtube_invalid';
-if ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf()
+if ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && $action === 'save_picks') {
+    try {
+        $owner = (int)$user['id'];
+        if (!$pdo || !has_permission('chat.access', $user) || !vp3_youtube_picks_ready_v1($pdo)
+            || !agent_connection_youtube_consent_v1($pdo,$owner) || !is_string($_POST['taste'] ?? null)) {
+            throw new DomainException('Music preferences unavailable.');
+        }
+        vp3_youtube_picks_save_v1($pdo,$owner,$_POST['taste'],($_POST['proactive'] ?? '') === '1');
+        $result = 'youtube_picks_saved';
+    } catch (Throwable) {
+        $result = 'youtube_unavailable';
+    }
+} elseif ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf()
     && in_array($action, ['enable_history','pause_history','clear_history'], true)) {
     try {
         if (!$pdo || !vp3_youtube_playback_ready_v1($pdo) || !has_permission('chat.access', $user)

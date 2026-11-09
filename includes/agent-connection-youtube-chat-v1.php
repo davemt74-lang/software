@@ -5,9 +5,12 @@ require_once __DIR__.'/agent-connection-youtube-v1.php';
 require_once __DIR__.'/agent-connection-youtube-quota-v1.php';
 require_once __DIR__.'/agent-connection-youtube-consent-v1.php';
 require_once __DIR__.'/agent-tool-receipts-v1.php';
+require_once __DIR__.'/agent-connection-youtube-picks-v1.php';
 
 function agent_connection_youtube_chat_plan_v1(string $message): ?string
 {
+    $topic = vp3_youtube_suggestion_topic_v1($message);
+    if ($topic !== null) return $topic;
     $message = trim($message);
     $message = preg_replace('/\A(?:please[,\s]+|(?:can|could|would) you\s+)+/iu', '', $message) ?? $message;
     if (preg_match('/\A(?:\/youtube\b|youtube\s*[:\-]|youtube\s+search\b|(?:search(?:\s+for)?|find|show|look\s+up)(?:\s+me)?\s+(?:an?\s+)?(?:(?:videos?\s+)?on\s+)?you\s*tube(?:\s+videos?)?\b)(?:\s*:\s*|\s+(?:for|about|of)\s+|\s*)(.*)\z/isu', $message, $match)
@@ -111,7 +114,7 @@ function agent_connection_youtube_history_v1(PDO $pdo, int $ownerId, int $conver
     return $messages;
 }
 
-function agent_connection_youtube_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, ?callable $authority=null, ?callable $http=null): array
+function agent_connection_youtube_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, ?callable $authority=null, ?callable $http=null, bool $suggestion=false): array
 {
     $result = static function(string $answer, string $status, string $reason='', ?array $results=null): array {
         return ['handled'=>true,'answer'=>$answer,'actions'=>[],'sources'=>[],'youtube_results'=>$results,
@@ -119,7 +122,7 @@ function agent_connection_youtube_chat_v1(PDO $pdo, array $user, array $principa
     };
     try {
         $live = agent_connection_youtube_chat_authority_v1($pdo, $user, $principal, $conversationId, $authority);
-        $query = agent_connection_youtube_query_v1($query);
+        if (!$suggestion || $query !== '') $query = agent_connection_youtube_query_v1($query);
         if (!agent_connection_youtube_ready_v1()) {
             $answer = agent_connection_youtube_enabled_v1()
                 ? 'YouTube search needs to be configured by a VP3 administrator in Connections.'
@@ -137,6 +140,14 @@ function agent_connection_youtube_chat_v1(PDO $pdo, array $user, array $principa
             $blocked['actions'] = [['type'=>'open_url','url'=>url('/connections.php?app=youtube#connections-app-youtube'),'label'=>'Open YouTube in Connections']];
             return $blocked;
         }
+        $reason = '';
+        if ($suggestion) {
+            $taste = vp3_youtube_picks_ready_v1($pdo) ? vp3_youtube_picks_settings_v1($pdo, $ownerId)['taste'] : '';
+            $reason = $query !== '' ? 'Matches the music you asked for.' : ($taste !== '' ? 'Based on the music taste you saved in VP3.' : 'A few picks to explore. You can save a music taste in Connections.');
+            $query = $query !== '' ? $query : ($taste !== '' ? $taste : 'music discovery');
+            $tasteTopic = mb_substr($query,0,120);
+            $query = agent_connection_youtube_query_v1(mb_substr($query,0,175).' music');
+        }
         agent_connection_youtube_results_cleanup_v1($pdo);
         $day = agent_connection_youtube_reserve_v1($pdo, $ownerId);
         $videos = agent_connection_youtube_video_status_v1(agent_connection_youtube_search_v1($query, 6, $http), $http);
@@ -149,6 +160,23 @@ function agent_connection_youtube_chat_v1(PDO $pdo, array $user, array $principa
             return $result('The YouTube skill is disabled for this account.', 'blocked', 'scope_restricted');
         }
         if (!$videos) return $result('I couldn’t find a playable YouTube video for that search. Try a different title or topic.', 'no_matches');
+        if ($suggestion) {
+            // Rotate the current search results using only recent, owner-scoped cache entries.
+            $recent = $pdo->prepare('SELECT r.payload_json FROM agent_connection_youtube_results_v1 r
+                JOIN chat_messages m ON m.id=r.message_id JOIN chat_conversations c ON c.id=m.conversation_id
+                WHERE c.user_id=? AND r.expires_at>? ORDER BY r.message_id DESC LIMIT 12');
+            $recent->execute([$ownerId,time()]);
+            $seen = [];
+            foreach ($recent->fetchAll(PDO::FETCH_COLUMN) as $raw) {
+                $prior = json_decode($raw,true);
+                if (empty($prior['suggestion_reason'])) continue;
+                foreach ($prior['videos'] ?? [] as $video) $seen[$video['video_id']] = true;
+            }
+            $fresh = array_values(array_filter($videos, static fn(array $video): bool => !isset($seen[$video['video_id']])));
+            $videos = array_slice($fresh ?: $videos,0,3);
+            return $result('Here are some YouTube music picks.', 'read_complete', '',
+                ['query'=>$query,'videos'=>$videos,'expires_at'=>time()+7*86400,'suggestion_reason'=>$reason,'taste_topic'=>$tasteTopic]);
+        }
         return $result('Choose a YouTube result to play it here in Chat.', 'read_complete', '',
             ['query'=>$query,'videos'=>$videos,'expires_at'=>time()+7*86400]);
     } catch (AgentConnectionYoutubeExceptionV1 $error) {

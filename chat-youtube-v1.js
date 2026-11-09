@@ -98,7 +98,7 @@
     return link;
   }
 
-  function playVideo(row, button, video, title, messageId) {
+  function playVideo(row, button, video, title, messageId, suggestion) {
     const videoId = video.video_id;
     if (activePlayer?.button === button) return;
     stopPlayer();
@@ -117,7 +117,7 @@
     panel.append(frame, close);
     row.append(panel);
     button.setAttribute('aria-expanded', 'true');
-    const active = {panel, button, video, messageId, captureKey, playId:window.crypto?.randomUUID?.()};
+    const active = {panel, button, video, messageId, captureKey, playId:window.crypto?.randomUUID?.(), suggestion};
     activePlayer = active;
     loadPlayerApi().then(api => {
       if (activePlayer !== active || !frame.isConnected) return;
@@ -128,10 +128,50 @@
           if (event.target.getPlayerState() === api.PlayerState.PLAYING) capturePlayback(active);
         },
         onStateChange(event) {
-          if (event.data === api.PlayerState.PLAYING) capturePlayback(active);
+          if (event.data === api.PlayerState.PLAYING) {
+            active.offer?.remove();
+            capturePlayback(active);
+          } else if (event.data === api.PlayerState.ENDED) {
+            void offerMorePicks(active);
+          }
         }
       }});
     }).catch(() => {}); // The native iframe controls remain available.
+  }
+
+  async function offerMorePicks(active) {
+    const allowed = () => active === activePlayer && active.panel.isConnected && !document.hidden
+      && window.VP3_COGNITIVE_PRESENTATION?.allowsMusicOffer?.()
+      && !window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.()
+      && !window.VP3ParticipantContinuity?.selectedContext();
+    if (!config.proactive || !active.suggestion || active.video.made_for_kids !== false
+        || !active.messageId || active.offerRequested || !allowed()) return;
+    active.offerRequested = true;
+    try {
+      const data = await historyRequest('offer', {message_id:active.messageId, video_id:active.video.video_id});
+      if (!data.offer || !allowed() || active.player.getPlayerState() !== window.YT.PlayerState.ENDED) return;
+      const offer = element('div', 'vp3-youtube-player');
+      offer.setAttribute('aria-label', 'Agent music suggestion');
+      offer.append(element('p', 'vp3-youtube-channel', 'Want another set of YouTube music picks?'));
+      for (const [label, action] of [['Show music picks','picks'],['Snooze for a day','snooze'],['Dismiss','dismiss']]) {
+        const button = element('button', 'vp3-youtube-close', label);
+        button.type = 'button';
+        button.addEventListener('click', async () => {
+          if (!allowed()) { offer.remove(); return; }
+          if (action === 'picks') {
+            const accepted = window.STONEFELLOW_CHAT_CONTINUITY_V87?.requestYoutubePicks?.();
+            if (!accepted) return;
+          } else if (action === 'snooze') {
+            try { await historyRequest('snooze'); }
+            catch { button.textContent = 'Retry snooze'; return; }
+          }
+          offer.remove();
+        });
+        offer.append(button);
+      }
+      active.offer = offer;
+      active.panel.append(offer);
+    } catch {} // An unavailable offer must never interrupt playback.
   }
 
   function attach(message, result) {
@@ -157,6 +197,23 @@
       recent.addEventListener('click', () => window.dispatchEvent(new Event('vp3:youtube-recent')));
       header.append(recent);
     }
+    if (!history && result.suggestion_reason) {
+      section.append(header, element('p', 'vp3-youtube-channel', String(result.suggestion_reason).slice(0,200)));
+      const save = element('button', 'vp3-youtube-close', 'Save this music taste');
+      save.type = 'button';
+      save.addEventListener('click', async () => {
+        if (window.VP3ParticipantContinuity?.selectedContext()) return;
+        save.disabled = true;
+        try {
+          await historyRequest('save_taste', {message_id:message.dataset.chatMessageId || ''});
+          save.textContent = 'Music taste saved';
+        } catch {
+          save.textContent = 'Retry saving music taste';
+          save.disabled = false;
+        }
+      });
+      if (config.endpoint && result.taste_topic && result.taste_topic !== 'music discovery') section.append(save);
+    }
     const list = element('ul', 'vp3-youtube-list');
     const seen = new Set();
     for (const video of result.videos.slice(0, history ? 12 : 6)) {
@@ -179,7 +236,7 @@
             section.replaceChildren(element('p', 'vp3-youtube-expired', 'These results expired. Search YouTube again.'));
             return;
           }
-          playVideo(row, button, video, title || 'YouTube video', history ? video.message_id : message.dataset.chatMessageId);
+          playVideo(row, button, video, title || 'YouTube video', history ? video.message_id : message.dataset.chatMessageId, Boolean(result.suggestion_reason));
         });
       }
       const thumbnail = thumbnailUrl(video.thumbnail_url, videoId);
@@ -225,7 +282,8 @@
       list.append(row);
     }
     if (!list.childElementCount) return;
-    section.append(header, list);
+    if (!header.parentNode) section.append(header);
+    section.append(list);
     messageText.after(section);
   }
 
