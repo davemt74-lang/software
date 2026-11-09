@@ -382,7 +382,8 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
 }
 
 /** The outer canonical workflow owns completion and Chat delivery; tools return verifiable effects only. */
-function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,array $job,array $evidence,string $dedupe,?callable $model=null): array
+function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,array $job,array $evidence,string $dedupe,
+    ?callable $model=null,?callable $checkLease=null,?array $researchTransport=null): array
 {
     if(!preg_match('/\A[a-f0-9]{64}\z/D',$dedupe)||!is_string($job['tool']??null)||!is_string($job['focus']??null)
         ||trim($job['focus'])===''||mb_strlen($job['focus'])>1000||!is_string($job['primary']??null)||!isset($evidence[$job['primary']])){
@@ -411,9 +412,15 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
             $plan=['mode'=>'direct',$kind=>$source['title']];
             if($kind==='artist')$plan+=['location'=>'',
                 'focus'=>in_array($focus,['news','shows','merch','videos'],true)?$focus:'overview'];
-            $authorize=static fn()=>vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
+            $authorize=static function()use($pdo,$user,$binding,$evidence,$checkLease):void{
+                if($checkLease!==null)$checkLease();
+                vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
+            };
+            // Synthesis stays with the leased Initiative inference path, including its funding and budget.
+            $transport=$model?['model'=>$model]:[];
+            $transport+=array_intersect_key($researchTransport??[],['search'=>true,'request'=>true]);
             $research=vp3_public_research_collect_v1($pdo,$scope['user'],$scope['agent_id'],$plan,$authorize,
-                $model?['model'=>$model]:null);
+                $transport);
             $authorize();
             if(!in_array($research['status']??null,['read_complete','no_matches'],true)||!vp3_public_research_result_valid_v1($research,$kind)){
                 throw new RuntimeException('Public research could not be verified.',503);

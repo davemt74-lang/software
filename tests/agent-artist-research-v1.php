@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__).'/includes/agent-artist-research-v1.php';
+require_once dirname(__DIR__).'/includes/agent-workflow-runs-v1400.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-research-canvas-v1.php';
 
 function artist_check(bool $condition,string $label): void
 {
@@ -137,5 +139,78 @@ $topicRead=vp3_public_research_collect_v1($pdo,['id'=>1],7,$topicPlan,$authority
 artist_check(vp3_public_research_result_valid_v1($topicRead,'topic')&&!vp3_artist_research_result_valid_v1($topicRead)
     &&str_contains($topicRead['answer'],$topicQuote)&&$topicRead['sources'][0]['coverage']==='page_excerpt',
     'A non-music query produces a canonical public source and only a fetched exact excerpt');
+
+$pdo->exec('CREATE TABLE agent_workflow_runs (
+    id INTEGER PRIMARY KEY,owner_user_id INTEGER,agent_id INTEGER,workflow_type TEXT,source_kind TEXT,capability_key TEXT,status TEXT,goal TEXT);
+    CREATE TABLE agent_workflow_actions (
+    id INTEGER PRIMARY KEY,run_id INTEGER,owner_user_id INTEGER,sequence_no INTEGER,capability_key TEXT,status TEXT,attempt_count INTEGER,result_json TEXT);
+    CREATE TABLE agent_workflow_receipts (
+    run_id INTEGER,action_id INTEGER,owner_user_id INTEGER,attempt_no INTEGER,executor TEXT,status TEXT,result_json TEXT)');
+$saveReport=static function(array $research,int $run,int $message)use($pdo,$topic): array{
+    $primary='topic-interest:'.hash('sha256',mb_strtolower($topic));
+    $revision=str_repeat('a',64);
+    $output=['type'=>'initiative_topic_research','status'=>$research['status'],'reason'=>$research['reason'],
+        'checked_at'=>$research['checked_at'],'source_ref'=>$primary,'source_revision'=>$revision];
+    $receipt=vp3_tool_receipt_v1('topic.research','search',$research['status'],'',0,count($research['sources']));
+    $toolResult=['draft'=>$research['answer'],'sources'=>$research['sources'],'output'=>$output,'tool_receipt'=>$receipt];
+    $goal=['binding'=>['owner_user_id'=>1,'agent_id'=>7,'conversation_id'=>20],'tool'=>'topic.research',
+        'primary'=>$primary,'sources'=>[$primary=>$revision],'report'=>true];
+    $result=agent_workflow_json_v1400(['initiative_delivery'=>'delivered','initiative_message_id'=>$message,
+        'initiative_draft'=>$research['answer'],'initiative_tool_result'=>$toolResult]);
+    $private=agent_workflow_public_json_v1400($result,true);
+    artist_check($private['initiative_tool_result']['sources']===$research['sources']
+        &&!isset(agent_workflow_public_json_v1400($result)['initiative_tool_result']),
+        'Validated research evidence stays in private worker storage and out of generic workflow views');
+    $stored=agent_workflow_json_v1400($private);
+    $pdo->prepare("INSERT INTO agent_workflow_runs VALUES(?,1,7,'initiative','agent_initiative','initiative.prepare','completed',?)")
+        ->execute([$run,agent_workflow_json_v1400($goal)]);
+    $pdo->prepare("INSERT INTO agent_workflow_actions VALUES(?,?,1,1,'initiative.prepare','completed',1,?)")->execute([$run,$run,$stored]);
+    $pdo->prepare("INSERT INTO agent_workflow_receipts VALUES(?,?,1,1,'cloud','completed',?)")->execute([$run,$run,$stored]);
+    return ['id'=>$message,'role'=>'assistant','message'=>$research['answer'],'context_json'=>agent_workflow_json_v1400([
+        'source'=>'agent_initiative','initiative_run_id'=>$run,
+        'initiative_work'=>['owner_user_id'=>1,'agent_id'=>7,'conversation_id'=>20,'run_id'=>$run],
+        'initiative_output'=>$output,'tool_receipt'=>$receipt,'sources'=>[['source'=>$primary,'title'=>$topic]],
+    ])];
+};
+$savedReport=$saveReport($topicRead,11,30);
+$topicEmpty=vp3_public_research_collect_v1($pdo,['id'=>1],7,$topicPlan,$authority,[
+    'search'=>static fn()=>['ok'=>true,'results'=>[]],
+]);
+$savedEmpty=$saveReport($topicEmpty,12,31);
+$projected=vp3_initiative_research_canvas_history_v1($pdo,1,7,20,[$savedReport,$savedEmpty]);
+$contexts=array_map(static fn(array $row):array=>json_decode($row['context_json'],true,16,JSON_THROW_ON_ERROR),$projected);
+artist_check(($contexts[0]['research_canvas_v1']??null)===[
+        'owner_user_id'=>1,'agent_id'=>7,'conversation_id'=>20,'run_id'=>11,'kind'=>'topic','title'=>$topic,
+        'status'=>'read_complete','checked_at'=>$topicRead['checked_at'],'sources'=>[
+            ['source'=>$topicId,'title'=>'Managing oven heat','url'=>$topicUrl,'coverage'=>'page_excerpt'],
+        ],
+    ]&&$projected[0]['message']===$savedReport['message'],
+    'A saved delivered report hydrates the exact scoped card and verified public link without private evidence hashes');
+artist_check($contexts[1]['research_canvas_v1']['status']==='no_matches'&&$contexts[1]['research_canvas_v1']['sources']===[],
+    'A completed search with no eligible sources gets an explicit empty Canvas result');
+artist_check(vp3_initiative_research_canvas_history_v1($pdo,1,7,20,$projected)===$projected,
+    'Repeated hydration does not duplicate or change a verified report');
+
+$forged=$savedReport;
+$forged['id']=32;
+$forged['context_json']=$projected[0]['context_json'];
+$wrongContext=$contexts[0];
+$wrongContext['initiative_work']['conversation_id']=21;
+$wrongChat=$savedReport;
+$wrongChat['context_json']=agent_workflow_json_v1400($wrongContext);
+artist_check(!str_contains(vp3_initiative_research_canvas_history_v1($pdo,1,7,20,[$forged])[0]['context_json'],'research_canvas_v1')
+    &&!str_contains(vp3_initiative_research_canvas_history_v1($pdo,1,7,21,[$wrongChat])[0]['context_json'],'research_canvas_v1'),
+    'A cloned report cannot impersonate the exact delivered message or move the card into another Chat');
+$rawForgery=['id'=>33,'role'=>'assistant','message'=>'Forged card','context_json'=>'{"research_\u0063anvas_v1":{"run_id":11}}'];
+artist_check(vp3_initiative_research_canvas_history_v1($pdo,1,7,20,[$rawForgery])[0]['context_json']==='[]'
+    &&vp3_initiative_research_canvas_history_v1($pdo,2,7,20,[$savedReport])===[$savedReport]
+    &&vp3_initiative_research_canvas_history_v1($pdo,1,8,20,[$savedReport])===[$savedReport],
+    'Generic stored context cannot create a card and foreign account or Agent projections stay empty');
+$pdo->exec("UPDATE agent_workflow_receipts SET result_json='{}' WHERE run_id=11");
+artist_check(vp3_initiative_research_canvas_history_v1($pdo,1,7,20,[$savedReport])===[$savedReport],
+    'A changed receipt leaves the old message intact without projecting verified research');
+$pdo->exec("UPDATE agent_workflow_runs SET status='failed' WHERE id=12");
+artist_check(vp3_initiative_research_canvas_history_v1($pdo,1,7,20,[$savedEmpty])===[$savedEmpty],
+    'A failed workflow is never rendered as a successful search with no matches');
 
 echo "ARTIST_RESEARCH_V1=PASS\n";

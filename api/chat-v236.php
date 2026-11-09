@@ -14,6 +14,7 @@ require_once dirname(__DIR__) . '/includes/video-meetings-memory-v18120.php';
 require_once dirname(__DIR__) . '/includes/video-meetings-commitment-command-v18230-chat.php';
 require_once dirname(__DIR__) . '/includes/agent-chat-runtime-v2160.php';
 require_once dirname(__DIR__) . '/includes/initiative-product-launch-v1.php';
+require_once dirname(__DIR__) . '/includes/agent-initiative-research-canvas-v1.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 $user=current_user();if(!$user||!has_permission('chat.access',$user)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'Chat access is not available for this account.']);exit;}
 if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!hash_equals(vp3_catch_up_page_binding_v1($user),(string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])){
@@ -58,7 +59,9 @@ if($action==='load'){
     initiative_product_launch_chat_v1($pdo,$userId,(int)$principal['agent_id'],$conversationId);
     $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 300');
     $stmt->execute([$conversationId]);
-    echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,(int)$principal['agent_id'],$conversationId,array_reverse($stmt->fetchAll())),'agent_name'=>(string)$principal['display_name']]);
+    $agentId=(int)$principal['agent_id'];
+    $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,array_reverse($stmt->fetchAll()));
+    echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages),'agent_name'=>(string)$principal['display_name']]);
     exit;
 }
 if($action==='messages_after'){
@@ -77,7 +80,9 @@ if($action==='messages_after'){
     $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages
         WHERE conversation_id=? AND (id>?'.$retry.') ORDER BY id ASC LIMIT '.(80+count($pending)));
     $stmt->execute([$conversationId,$afterId,...$pending]);
-    echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>agent_connection_youtube_history_v1($pdo,$userId,(int)$principal['agent_id'],$conversationId,$stmt->fetchAll())],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    $agentId=(int)$principal['agent_id'];
+    $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,$stmt->fetchAll());
+    echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     exit;
 }
 if($action==='delete'){$conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');homeserver_agent_v018_forget($userId,$conversationId);$pdo->prepare('DELETE FROM chat_conversations WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);echo json_encode(['ok'=>true]);exit;}

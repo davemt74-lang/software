@@ -895,7 +895,7 @@ function vp3_initiative_can_report_v1(PDO $pdo,array $user,int $cid): bool
 }
 
 /** Use the existing leased worker and commit the result with its workflow receipt. */
-function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $model=null): array
+function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $model=null,?array $researchTransport=null): array
 {
     $run=agent_worker_cloud_active_row_v1910($pdo,$user,$claim);
     if(!$run||$run['source_kind']!=='agent_initiative'||!in_array($run['action_capability_key'],['initiative.plan','initiative.prepare'],true)){
@@ -906,7 +906,7 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
         if(!is_array($payload)||!is_array($payload['binding']??null)||!is_array($payload['sources']??null))throw new RuntimeException('Initiative binding changed.',403);
         $agentId=vp3_initiative_binding_agent_v1($payload['binding']);
         if(($run['agent_id']===null?0:(int)$run['agent_id'])!==$agentId)throw new RuntimeException('Initiative Agent changed.',403);
-        return vp3_initiative_in_scope_v1($user,$agentId,static fn()=>vp3_initiative_execute_scoped_v1($pdo,$user,$claim,$model,$run,$payload));
+        return vp3_initiative_in_scope_v1($user,$agentId,static fn()=>vp3_initiative_execute_scoped_v1($pdo,$user,$claim,$model,$run,$payload,$researchTransport));
     }catch(Throwable $e){
         if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim))return ['ok'=>false,'reason'=>'execution_no_longer_active','receipt'=>null];
         $reason=vp3_initiative_failure_reason_v1($e);
@@ -915,7 +915,7 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
     }
 }
 
-function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?callable $model,array $run,array $payload): array
+function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?callable $model,array $run,array $payload,?array $researchTransport=null): array
 {
     $toolResult=[];$draft='';$jobs=[];
     $planning=$run['action_capability_key']==='initiative.plan';
@@ -942,14 +942,17 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
         $provider=$model??static function(string $prompt,string $protocol)use($pdo,&$live,$agentId,$transientContext,$beforeInference,$job):string{
             return vp3_initiative_model_v1($pdo,$live,$prompt,$protocol,$agentId,$transientContext,$beforeInference,$job);
         };
+        $checkLease=static function()use($pdo,&$live,$claim):void{
+            if(!agent_worker_cloud_active_row_v1910($pdo,$live,$claim))throw new RuntimeException('Initiative lease changed.',409);
+        };
         $modelCalls=0;
-        $infer=static function(string $prompt,string $protocol)use($pdo,&$live,$binding,$payload,$run,$claim,$provider,&$modelCalls):string{
+        $infer=static function(string $prompt,string $protocol)use($pdo,&$live,$binding,$payload,$run,$claim,$provider,$checkLease,&$modelCalls):string{
             if($pdo->inTransaction())throw new RuntimeException('Initiative inference cannot hold a database transaction.');
             $live=vp3_initiative_access_v1($pdo,$live,$binding);
             if(isset($payload['followthrough']))vp3_initiative_followthrough_job_current_v1($pdo,$live,$payload,(int)$run['id']);
             if(isset($payload['followup']))vp3_initiative_followup_job_current_v1($pdo,$live,$payload,(int)$run['id']);
-            if(!agent_worker_cloud_active_row_v1910($pdo,$live,$claim)
-                ||!agent_job_heartbeat_v1900($pdo,$live,(int)$claim['run_id'],(int)$claim['action']['id'],
+            $checkLease();
+            if(!agent_job_heartbeat_v1900($pdo,$live,(int)$claim['run_id'],(int)$claim['action']['id'],
                     (string)$claim['lease_token'],min(90,++$modelCalls*10),'Preparing a verified private next step.',240)){
                 throw new RuntimeException('Initiative lease changed.',409);
             }
@@ -999,7 +1002,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                     'proposal_text'=>mb_substr((string)$continuation['message']['message'],0,2400),
                     'owner_reply'=>mb_substr((string)$continuation['continuation_owner_reply'],0,4000),
                     'permission'=>'The original readonly adapter and current sources only; private preparation, no domain action or approval.'];
-                $toolResult=vp3_initiative_tool_execute_v1($pdo,$live,$binding,$job,$evidence,(string)$run['dedupe_key'],$infer);
+                $toolResult=vp3_initiative_tool_execute_v1($pdo,$live,$binding,$job,$evidence,(string)$run['dedupe_key'],$infer,$checkLease,$researchTransport);
             }
             $draft=is_string($toolResult['draft']??null)?trim($toolResult['draft']):'';
             if($draft===''||mb_strlen($draft)>$limits['max_draft_chars']||preg_match('/https?:\/\/|\bwww\.|[<>]|[\x00-\x08\x0b-\x1f\x7f]/i',$draft)){

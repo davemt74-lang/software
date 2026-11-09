@@ -4,6 +4,7 @@ declare(strict_types=1);
 // Reuse the validated, disposable named-Agent fixture and its production policy/lease setup.
 require __DIR__.'/agent-initiative-scope-v1.php';
 require_once dirname(__DIR__).'/includes/agent-brain-owner-context-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-research-canvas-v1.php';
 
 function pipeline_check(bool $ok,string $label): void {if(!$ok)throw new RuntimeException($label);echo "PASS $label\n";}
 function pipeline_reset(array $user): void {
@@ -146,7 +147,7 @@ pipeline_check($withheld['initiative_delivery']==='withheld'&&json_decode($recei
     &&count($GLOBALS['scopeInference'])===$beforeInference,'withholding is atomic in the actual action and receipt, with no inference replay');
 db()->exec('UPDATE agent_memory_items SET is_active=1 WHERE id=1002');
 
-// Exercise the actual worker and saved Chat association up to the public research queue.
+// Exercise the saved check-in, canonical public research worker and delayed delivery.
 pipeline_reset($user);
 $pdo->exec('DELETE FROM chat_messages WHERE conversation_id=170');
 $pdo->exec('CREATE TABLE IF NOT EXISTS settings(setting_key TEXT PRIMARY KEY,setting_value TEXT)');
@@ -211,13 +212,75 @@ $researchPlan=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,(int)end($p
         pipeline_check($protocol==='vp3.initiative-plan.v1'&&($input['tools']['topic.research']['source_refs']??null)===[$researchRef],
             'reassessment exposes the exact confirmed topic as a current research source');
         return json_encode(['jobs'=>[['tool'=>'topic.research','primary'=>$researchRef,'refs'=>[$researchRef],
-            'focus'=>'Compare heat recovery for a private Friday rehearsal','report'=>false]]],JSON_THROW_ON_ERROR);
+            'focus'=>'Compare heat recovery for a private Friday rehearsal','report'=>true]]],JSON_THROW_ON_ERROR);
     });
 $researchRuns=scope_runs(1,17,'initiative.prepare');
 pipeline_check($researchPlan['ok']&&count($researchRuns)===$preparedBefore+1,'the actual planner queues one scoped topic research job');
 $researchGoal=json_decode((string)end($researchRuns)['goal'],true,24,JSON_THROW_ON_ERROR);
 pipeline_check($researchGoal['tool']==='topic.research'&&$researchGoal['primary']===$researchRef
     &&array_keys($researchGoal['sources'])===[$researchRef], 'research binds the one authorized topic source in the canonical queue');
+$researchRunId=(int)end($researchRuns)['id'];
+$publicUrl='https://oven.example/heat-recovery';
+$leadUrl='https://baking.example/oven-guide';
+$quote='A well insulated oven recovers heat faster after the door closes.';
+$hits=['ok'=>true,'results'=>[['url'=>$publicUrl,'title'=>'Oven heat recovery'],['url'=>$leadUrl,'title'=>'Oven temperature guide']]];
+$beforeReports=count(scope_messages());
+$afterExpiryCalls=0;
+$interrupted=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$researchRunId),
+    static function()use(&$afterExpiryCalls):never{++$afterExpiryCalls;throw new LogicException('Unexpected synthesis.');},[
+        'search'=>static function(string $query)use($pdo,$topic,$researchRunId,$hits):array{
+            pipeline_check($query===$topic,'the web search receives only the public topic from viewing history');
+            $pdo->prepare("UPDATE agent_workflow_runs SET lease_expires_at='2000-01-01 00:00:00' WHERE id=?")->execute([$researchRunId]);
+            return $hits;
+        },
+        'request'=>static function()use(&$afterExpiryCalls):never{++$afterExpiryCalls;throw new LogicException('Unexpected page request.');},
+    ]);
+pipeline_check(($interrupted['reason']??null)==='execution_no_longer_active'&&$afterExpiryCalls===0&&count(scope_messages())===$beforeReports,
+    'a lease lost during search stops the next provider step and cannot post results');
+pipeline_check(agent_job_recover_expired_v1900($pdo,$user,1,$researchRunId)['recovered']===1,
+    'the durable worker recovers the same research job after its lease expires');
+$pdo->prepare("UPDATE agent_workflow_runs SET next_attempt_at='2000-01-01 00:00:00' WHERE id=?")->execute([$researchRunId]);
+$pdo->prepare("UPDATE agent_workflow_actions SET available_at='2000-01-01 00:00:00' WHERE run_id=?")->execute([$researchRunId]);
+$pdo->exec("UPDATE agent_activity_state SET details_json='{\"visible\":false,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
+$completed=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$researchRunId),
+    static function(string $prompt,string $protocol)use($topic,$publicUrl,$quote):string{
+        $input=json_decode($prompt,true,24,JSON_THROW_ON_ERROR);
+        $source='topic-web:'.hash('sha256',$publicUrl);
+        pipeline_check($protocol==='vp3.topic-research.v1'&&($input['topic']??null)===$topic
+            &&array_column($input['sources'],'source')===[$source]&&!str_contains($prompt,'private Friday'),
+            'synthesis receives the public excerpt and topic without the private check-in reply or focus');
+        return json_encode(['findings'=>[['source'=>$source,'quote'=>$quote]]],JSON_THROW_ON_ERROR);
+    },[
+        'search'=>static function(string $query)use($topic,$hits):array{
+            pipeline_check($query===$topic,'the retried canonical job still searches the exact authorized topic');
+            return $hits;
+        },
+        'request'=>static fn(string $url):array=>$url===$publicUrl
+            ?['status'=>200,'content_type'=>'text/plain','body'=>$quote.' Opening a hot oven door exchanges warm air for cooler air.']
+            :['status'=>503,'content_type'=>'text/plain','body'=>'Temporarily unavailable'],
+    ]);
+$q=$pdo->prepare("SELECT result_json FROM agent_workflow_actions WHERE run_id=? AND status='completed'");
+$q->execute([$researchRunId]);$savedResearch=json_decode((string)$q->fetchColumn(),true,24,JSON_THROW_ON_ERROR);
+pipeline_check(($completed['ok']??false)&&$savedResearch['initiative_delivery']==='pending'
+    &&count(scope_messages())===$beforeReports,'completed research saves a verified receipt while its owner is away');
+$turn->execute([170,null,'assistant','We can work from your oven heat recovery question.',gmdate('Y-m-d H:i:s')]);
+$pdo->exec("UPDATE agent_activity_state SET details_json='{\"visible\":true,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
+pipeline_check(vp3_initiative_deliver_pending_v1($pdo,$user,17),'the owner returning to the exact Chat receives the saved report');
+$q->execute([$researchRunId]);$deliveredResearch=json_decode((string)$q->fetchColumn(),true,24,JSON_THROW_ON_ERROR);
+$messageQuery=$pdo->prepare("SELECT id,role,message,context_json FROM chat_messages WHERE id=? AND conversation_id=170 AND role='assistant'");
+$messageQuery->execute([$deliveredResearch['initiative_message_id']]);
+$researchMessage=$messageQuery->fetch();$researchContext=json_decode($researchMessage['context_json'],true,24,JSON_THROW_ON_ERROR);
+pipeline_check($deliveredResearch['initiative_delivery']==='delivered'&&str_contains($researchMessage['message'],$quote)
+    &&$researchContext['initiative_run_id']===$researchRunId
+    &&array_column(array_filter($researchContext['sources'],static fn(array $source):bool=>isset($source['coverage'])),'coverage')===['page_excerpt','search_match'],
+    'the report retains the exact research run, verified quotation and honest source coverage');
+$projected=vp3_initiative_research_canvas_history_v1($pdo,1,17,170,[$researchMessage]);
+$canvas=json_decode($projected[0]['context_json'],true,24,JSON_THROW_ON_ERROR)['research_canvas_v1']??[];
+pipeline_check(($canvas['kind']??null)==='topic'&&($canvas['title']??null)===$topic&&($canvas['run_id']??null)===$researchRunId
+    &&array_column($canvas['sources'],'url')===[$publicUrl,$leadUrl]
+    &&array_column($canvas['sources'],'coverage')===['page_excerpt','search_match'],
+    'the existing authorized Chat history projects a sourced Canvas from the completed specialist report');
+pipeline_check(!vp3_initiative_deliver_pending_v1($pdo,$user,17),'the delivery sweep does not post the research twice');
 $ageReview->execute([gmdate('Y-m-d H:i:s',time()-301)]);
 vp3_initiative_schedule_v1($pdo,$user,17);
 pipeline_check(count(scope_runs(1,17,'initiative.plan'))===$beforePlans+1,

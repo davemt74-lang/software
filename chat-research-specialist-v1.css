@@ -1,0 +1,19 @@
+.vp3-chat-research-specialist-status {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto .3rem;
+  padding: .3rem .65rem;
+  border: 1px solid #c8cfdb;
+  border-radius: .45rem;
+  color: #24334a;
+  background: #fff;
+  font-size: .8rem;
+  overflow-wrap: anywhere;
+}
+.vp3-chat-research-specialist-status[hidden] { display: none; }
+@media (min-width: 761px) {
+  body:has(#sfOnlineRailV109:not([hidden]) [data-chat-specialist="research"]) .vp3-chat-research-specialist-status {
+    display: none;
+  }
+}

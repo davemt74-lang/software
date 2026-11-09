@@ -17,7 +17,8 @@ const port=probe.address().port;await new Promise(resolve=>probe.close(resolve))
 const base='http://127.0.0.1:'+port;
 mkdirSync(join(temp,'api'));mkdirSync(join(temp,'includes'));
 copyFileSync(join(source,'api/agent-top-of-mind-v1.php'),join(temp,'api/agent-top-of-mind-v1.php'));
-for(const name of ['agent-top-of-mind-v1','agent-eyes','agent-activity-situations-v1','agent-catch-up-v1']){
+copyFileSync(join(source,'api/initiative-research-status-v1.php'),join(temp,'api/initiative-research-status-v1.php'));
+for(const name of ['agent-top-of-mind-v1','agent-eyes','agent-activity-situations-v1','agent-catch-up-v1','agent-initiative-research-status-v1']){
   writeFileSync(join(temp,'includes',name+'.php'),'<?php require_once '+JSON.stringify(join(source,'includes',name+'.php'))+';');
 }
 writeFileSync(join(temp,'includes/bootstrap.php'),'<?php session_start(); require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';');
@@ -44,7 +45,7 @@ writeFileSync(join(temp,'api/chat-notifications-brain-v240.php'),api);
 writeFileSync(join(temp,'router.php'),[
   '<?php $path=parse_url($_SERVER["REQUEST_URI"],PHP_URL_PATH);',
   'if($path==="/health"){echo "ready";return;}',
-  'if(in_array($path,["/api/chat-notifications-brain-v240.php","/api/agent-top-of-mind-v1.php"],true)){require __DIR__.$path;return;}',
+  'if(in_array($path,["/api/chat-notifications-brain-v240.php","/api/agent-top-of-mind-v1.php","/api/initiative-research-status-v1.php"],true)){require __DIR__.$path;return;}',
   'require __DIR__."/includes/bootstrap.php";header("Content-Type:application/json");',
   'if($path==="/session"){echo json_encode(["binding"=>vp3_catch_up_page_binding_v1(current_user())]);return;}',
   'if($path==="/counts"){echo json_encode(["models"=>(int)db()->query("SELECT COUNT(*) FROM fixture_model_calls")->fetchColumn(),"runs"=>(int)db()->query("SELECT COUNT(*) FROM agent_workflow_runs")->fetchColumn()]);return;}',
@@ -82,13 +83,29 @@ try{
   assert.ok(Date.now()-started<2000);assert.equal(existsSync(gate+'.release'),false);
   assert.equal(state.ok,true);assert.equal(state.state.owner_user_id,1);assert.equal(state.state.agent_id,7);
   assert.equal(state.state.conversation_id,11);assert.equal(state.state.working_attention_binding,session.binding);
+  const researchPath='/api/initiative-research-status-v1.php';
+  const exactResearch=base+researchPath+'?agent_id=7&conversation_id=11';
+  const research=await fetch(exactResearch,{headers,signal:AbortSignal.timeout(2000)});
+  assert.equal(research.status,200);assert.equal(research.headers.get('cache-control'),'no-store');
+  assert.deepEqual(await research.json(),{ok:true,working_attention_binding:session.binding,
+    owner_user_id:1,agent_id:7,conversation_id:11,specialist:null});
+  assert.equal(existsSync(gate+'.release'),false);
   writeFileSync(gate+'.release','1');
   const brain=await held;held=null;assert.equal(brain.status,200);
   assert.equal((await brain.json()).fixture_session_active,false);
+  assert.equal((await fetch(exactResearch,{method:'POST',headers})).status,405);
+  assert.equal((await fetch(exactResearch,{headers:{'X-Fixture-Anonymous':'1'}})).status,403);
+  assert.equal((await fetch(exactResearch,{headers:{...headers,'X-VP3-Working-Attention':'wrong-session'}})).status,403);
+  assert.equal((await fetch(base+researchPath+'?conversation_id=11',{headers})).status,422);
+  assert.equal((await fetch(base+researchPath+'?agent_id=8&conversation_id=11',{headers})).status,403);
+  const otherSession=await fetch(base+'/session',{headers:{Cookie:cookie,'X-Fixture-User':'2'}}).then(response=>response.json());
+  assert.equal((await fetch(exactResearch,{headers:{Cookie:cookie,'X-Fixture-User':'2',
+    'X-VP3-Working-Attention':otherSession.binding}})).status,403);
   const counts=await fetch(base+'/counts',{headers}).then(r=>r.json());
   assert.deepEqual(counts,{models:0,runs:0});
   console.log('PASS actual authenticated Brain GET releases its session before held projection; same-session actual Top of Mind API responds from a second PHP worker with exact owner/Agent/Chat binding');
-  console.log('PASS invalid page binding cannot reach the held projection; both GETs perform zero inference and create no work');
+  console.log('PASS invalid page binding cannot reach the held projection; the GETs perform zero inference and create no work');
+  console.log('PASS actual research status GET is private, uncached and rejects wrong method, session, Agent and owner');
 }catch(error){console.error(logs.slice(-7000));throw error;}
 finally{
   writeFileSync(gate+'.release','1');if(held)await held.catch(()=>{});

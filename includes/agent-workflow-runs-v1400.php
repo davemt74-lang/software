@@ -137,6 +137,11 @@ function agent_workflow_public_json_v1400(string $json,bool $storeInitiativeDraf
 /** Private worker storage has a bounded schema; ordinary workflow projections omit it. */
 function agent_workflow_initiative_result_v1400(array $value): array
 {
+    $output=$value['output']??null;
+    if(in_array($output['type']??null,['initiative_artist_research','initiative_topic_research'],true)){
+        require_once __DIR__.'/agent-artist-research-v1.php';
+        return vp3_initiative_research_tool_result_v1($value)??[];
+    }
     $safe=[];
     if(is_string($value['draft']??null)&&mb_strlen($value['draft'])<=8000)$safe['draft']=$value['draft'];
     $sources=[];
@@ -151,7 +156,6 @@ function agent_workflow_initiative_result_v1400(array $value): array
     if(function_exists('vp3_tool_receipt_normalize_v1')&&($receipt=vp3_tool_receipt_normalize_v1($value['tool_receipt']??null))!==null){
         $safe['tool_receipt']=$receipt;
     }
-    $output=$value['output']??null;
     if(!is_array($output))return $safe;
     if(($output['type']??'')==='initiative_chat_check_in'&&($output['status']??'')==='draft_ready'
         &&is_int($output['conversation_id']??null)&&$output['conversation_id']>0

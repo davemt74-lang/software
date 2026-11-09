@@ -8,6 +8,7 @@
     'image-generator':'M4 4h16v16H4z M4 16l5-5 4 4 2-2 5 5 M15 8h.01',
     'email':'M3 6h18v12H3z M3 7l9 6 9-6',
     'development':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',
+    'research':'M10 3a7 7 0 1 0 0 14 7 7 0 1 0 0-14 M15 15l5 5',
     generic:'M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M5.6 18.4l2.1-2.1 M16.3 7.7l2.1-2.1'
   };
   let opened = null;
