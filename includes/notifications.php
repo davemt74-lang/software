@@ -1,9 +1,6 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__.'/agent-connection-gmail-inbox-notice-v1.php';
-require_once __DIR__.'/agent-connection-gmail-github-notice-v1.php';
-
 /**
  * Operational Agent activity uses the existing notifications table as a durable,
  * deduplicated carrier, but it belongs to the Agent Brain tab rather than the
@@ -57,15 +54,24 @@ function notification_is_gmail_github_actions_v1(array $row): bool
         || ($row['source_type'] ?? '') === 'agent_connection_gmail_github';
 }
 
+function notification_gmail_review_generation_v1(PDO $pdo, array $user, bool $github): ?int
+{
+    $notice = __DIR__.($github ? '/agent-connection-gmail-github-notice-v1.php' : '/agent-connection-gmail-inbox-notice-v1.php');
+    if (!is_file($notice)) return null;
+    require_once $notice;
+    return $github ? agent_connection_gmail_github_actions_notice_current_v1($pdo,$user)
+        : agent_connection_gmail_inbox_notice_current_v1($pdo,$user);
+}
+
 function notification_gmail_inbox_scope_sql_v1(PDO $pdo, array $user, string $alias = ''): string
 {
     $prefix = $alias === '' ? '' : $alias.'.';
-    $generation = agent_connection_gmail_inbox_notice_current_v1($pdo,$user);
+    $generation = notification_gmail_review_generation_v1($pdo,$user,false);
     $other = "(COALESCE({$prefix}type,'')<>'agent_email_inbox_review'
         AND COALESCE({$prefix}source_type,'')<>'agent_connection_gmail_inbox')";
     $inbox = $generation === null ? $other : "({$other} OR ({$prefix}type='agent_email_inbox_review'
         AND {$prefix}source_type='agent_connection_gmail_inbox' AND {$prefix}source_id={$generation}))";
-    $github = agent_connection_gmail_github_actions_notice_current_v1($pdo,$user);
+    $github = notification_gmail_review_generation_v1($pdo,$user,true);
     $other = "(COALESCE({$prefix}type,'')<>'agent_email_github_actions'
         AND COALESCE({$prefix}source_type,'')<>'agent_connection_gmail_github')";
     $githubScope = $github === null ? $other : "({$other} OR ({$prefix}type='agent_email_github_actions'
@@ -166,10 +172,10 @@ function notification_agent_brain_activity_after(?array $user, int $afterId = 0,
         SELECT 1 FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id
         WHERE m.id=n.source_id AND c.user_id=n.user_id AND c.user_agent_id=?
     )" : '';
-    $inbox = agent_connection_gmail_inbox_notice_current_v1($pdo,$user);
+    $inbox = notification_gmail_review_generation_v1($pdo,$user,false);
     $inboxScope = $inbox === null ? '' : " OR (n.source_type='agent_connection_gmail_inbox'
         AND n.type='agent_email_inbox_review' AND n.source_id={$inbox})";
-    $github = agent_connection_gmail_github_actions_notice_current_v1($pdo,$user);
+    $github = notification_gmail_review_generation_v1($pdo,$user,true);
     $githubScope = $github === null ? '' : " OR (n.source_type='agent_connection_gmail_github'
         AND n.type='agent_email_github_actions' AND n.source_id={$github})";
     $connections = "((n.source_type='agent_connection_activation' AND n.type IN ('gmail_connected','youtube_enabled'))

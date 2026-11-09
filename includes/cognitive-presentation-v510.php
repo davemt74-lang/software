@@ -192,8 +192,7 @@ function vp3_cognitive_presentation_open_digest_v510(PDO $pdo,array $user,string
         if(!is_array($item))return false;
         if(!vp3_cognitive_presentation_gmail_private_v510($item))return true;
         if(!$currentNotice)return false;
-        $generation=notification_is_gmail_github_actions_v1($item)?agent_connection_gmail_github_actions_notice_current_v1($pdo,$user)
-            :agent_connection_gmail_inbox_notice_current_v1($pdo,$user);
+        $generation=notification_gmail_review_generation_v1($pdo,$user,notification_is_gmail_github_actions_v1($item));
         if($generation===null||(int)($item['source_id']??0)!==$generation)return false;
         $currentNotice->execute([(int)($item['id']??0),(int)$user['id'],$item['type']??'',$item['source_type']??'',$generation]);
         return $currentNotice->fetchColumn()!==false;
