@@ -78,15 +78,16 @@ function cloud_mission_web_public_ip_v1(string $ip): bool
     return true;
 }
 /** One cookie-free HTTPS GET, pinned to a checked public DNS address. Redirects are handled explicitly by the caller. */
-function cloud_mission_web_request_v1(string $url,array $domains,callable $charge,?callable $resolver=null): array
+function cloud_mission_web_request_v1(string $url,array $domains,callable $charge,?callable $resolver=null,int $timeout=8): array
 {
+    $timeout=max(1,min(8,$timeout));
     $url=cloud_mission_web_url_v1($url,$domains);$host=parse_url($url,PHP_URL_HOST);
     $addresses=$resolver?$resolver($host):array_values(array_filter(array_map(fn($r)=>$r['ip']??$r['ipv6']??'',@dns_get_record($host,DNS_A|DNS_AAAA)?:[])));
     if(!$addresses||array_filter($addresses,fn($ip)=>!is_string($ip)||!cloud_mission_web_public_ip_v1($ip)))throw new RuntimeException('public_dns_unavailable');
     $charge();$body='';$headers=[];$tooLarge=false;$ch=curl_init($url);$ip=$addresses[0];
     curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>false,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,
         CURLOPT_PROXY=>'',CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_NETRC=>CURL_NETRC_IGNORED,
-        CURLOPT_CONNECTTIMEOUT=>3,CURLOPT_TIMEOUT=>8,CURLOPT_RESOLVE=>[$host.':443:'.(str_contains($ip,':')?'['.$ip.']':$ip)],
+        CURLOPT_CONNECTTIMEOUT=>min(3,$timeout),CURLOPT_TIMEOUT=>$timeout,CURLOPT_RESOLVE=>[$host.':443:'.(str_contains($ip,':')?'['.$ip.']':$ip)],
         CURLOPT_USERAGENT=>'VP3MissionResearch/1.0',CURLOPT_HTTPHEADER=>['Accept: text/html,application/xhtml+xml,text/plain'],CURLOPT_ENCODING=>'',
         CURLOPT_WRITEFUNCTION=>static function($c,string $chunk)use(&$body,&$tooLarge):int{if(strlen($body)+strlen($chunk)>512000){$tooLarge=true;return 0;}$body.=$chunk;return strlen($chunk);},
         CURLOPT_HEADERFUNCTION=>static function($c,string $line)use(&$headers):int{if(str_contains($line,':')){[$key,$value]=explode(':',$line,2);$key=strtolower(trim($key));if(in_array($key,['location','content-type'],true))$headers[$key]=substr(trim($value),0,2000);}return strlen($line);},

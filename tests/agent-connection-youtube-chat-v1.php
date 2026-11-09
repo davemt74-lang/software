@@ -40,10 +40,10 @@ if ($dsn === '') {
 $pdo->exec('CREATE TABLE settings (setting_key VARCHAR(128) PRIMARY KEY, setting_value TEXT)');
 $pdo->exec('CREATE TABLE users (id INT UNSIGNED PRIMARY KEY, is_active INTEGER)');
 $pdo->exec('INSERT INTO users VALUES (1,1),(2,1)');
-$pdo->exec('CREATE TABLE chat_conversations (id INTEGER PRIMARY KEY, user_id INTEGER, user_agent_id INTEGER)');
-$pdo->exec('INSERT INTO chat_conversations VALUES (11,1,NULL),(12,1,NULL),(13,1,7),(21,2,NULL)');
-$pdo->exec('CREATE TABLE chat_messages (id BIGINT UNSIGNED PRIMARY KEY, conversation_id INTEGER, role TEXT, context_json TEXT)');
-$pdo->exec("INSERT INTO chat_messages VALUES (301,11,'assistant','{\"youtube_search_results_v1\":true}'),
+$pdo->exec('CREATE TABLE chat_conversations (id INTEGER PRIMARY KEY, user_id INTEGER, user_agent_id INTEGER, title TEXT)');
+$pdo->exec("INSERT INTO chat_conversations VALUES (11,1,NULL,'Current music'),(12,1,NULL,'Earlier music'),(13,1,7,'Another Agent'),(21,2,NULL,'Another owner')");
+$pdo->exec('CREATE TABLE chat_messages (id BIGINT UNSIGNED PRIMARY KEY, conversation_id INTEGER, role TEXT, context_json TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)');
+$pdo->exec("INSERT INTO chat_messages (id,conversation_id,role,context_json) VALUES (301,11,'assistant','{\"youtube_search_results_v1\":true}'),
     (302,11,'user','{}'),(303,21,'assistant','{\"youtube_search_results_v1\":true}')");
 $owner = ['id'=>1,'is_active'=>1];
 $principal = ['kind'=>'system','viewer_user_id'=>1];
@@ -92,6 +92,24 @@ foreach ([
 foreach (['What have I listened to on Stonefellow?', 'Search YouTube for the history of pizza', 'Write an email asking what I watched on YouTube'] as $message) {
     youtube_chat_check(!agent_connection_youtube_history_request_v1($message), 'Unrelated turn retains its route for '.$message);
 }
+foreach ([
+    'It was a song in the YouTube playlist you returned in search results'=>'playlist',
+    'What was the third song in the YouTube playlist?'=>'playlist',
+    'Which songs were in the YouTube playlist?'=>'playlist',
+    'What was that song in the playlist you showed me on YouTube?'=>'playlist',
+    'Could you pull up those YouTube search results again?'=>'search',
+    'Show me the earlier YouTube results.'=>'search',
+] as $message=>$expected) {
+    youtube_chat_check((agent_connection_youtube_followup_plan_v1($message)['kind'] ?? null) === $expected
+        && agent_connection_youtube_chat_plan_v1($message) === null, 'Earlier results route to cached follow-up for '.$message);
+}
+foreach ([
+    'Search YouTube for the latest playlist by Abba', 'Create a YouTube playlist for the drive',
+    'Show me a YouTube playlist for last year', 'Write an email about the YouTube playlist you sent',
+    'What did I play on YouTube earlier?', 'Which songs were in the Spotify playlist you shared?',
+] as $message) {
+    youtube_chat_check(agent_connection_youtube_followup_plan_v1($message) === null, 'Earlier results do not intercept '.$message);
+}
 
 $blocked = agent_connection_youtube_chat_v1($pdo, $owner, $principal, 'café dough', 11, null, $http);
 youtube_chat_check($blocked['tool_receipt']['reason'] === 'upgrade_required' && $calls === 0, 'Missing storage blocks provider use');
@@ -131,12 +149,12 @@ youtube_chat_check(agent_connection_youtube_usage_v1($pdo)['searches_today'] ===
 agent_connection_youtube_results_save_v1($pdo, 1, 11, 301, $payload);
 agent_connection_youtube_results_save_v1($pdo, 1, 21, 303, $payload);
 agent_connection_youtube_results_save_v1($pdo, 1, 11, 302, $payload);
-youtube_chat_check(agent_connection_youtube_results_read_v1($pdo, 1, 11, [301,302,303]) === [301=>$payload]
-    && agent_connection_youtube_results_read_v1($pdo, 2, 11, [301]) === []
-    && agent_connection_youtube_results_read_v1($pdo, 1, 12, [301]) === [],
+youtube_chat_check(agent_connection_youtube_results_read_v1($pdo, 1, 0, 11, [301,302,303]) === [301=>$payload]
+    && agent_connection_youtube_results_read_v1($pdo, 2, 0, 11, [301]) === []
+    && agent_connection_youtube_results_read_v1($pdo, 1, 0, 12, [301]) === [],
     'Cached API data belongs to the exact owner and assistant message in its Chat');
 $messages = $pdo->query('SELECT id, role, context_json FROM chat_messages WHERE conversation_id=11 ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
-$hydrated = agent_connection_youtube_history_v1($pdo, 1, 11, $messages);
+$hydrated = agent_connection_youtube_history_v1($pdo, 1, 0, 11, $messages);
 youtube_chat_check(json_decode($hydrated[0]['context_json'], true)['youtube_results'] === $payload
     && !str_contains($messages[0]['context_json'], 'Provider fixture title'), 'History restores a live cache entry while the transcript stores only a marker');
 $playId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -195,14 +213,14 @@ youtube_chat_check(vp3_youtube_history_record_v1($pdo, 1, 301, 'abcdefghijk', $p
 agent_connection_youtube_set_consent_v1($pdo, 1, false);
 youtube_chat_check(!vp3_youtube_history_recent_v1($pdo, 1) && vp3_youtube_capture_key_v1($pdo, 1) === '',
     'Disabling the skill removes history and capture consent');
-youtube_chat_check(agent_connection_youtube_history_v1($pdo, 1, 11, $messages) === $messages,
+youtube_chat_check(agent_connection_youtube_history_v1($pdo, 1, 0, 11, $messages) === $messages,
     'Turning off the member skill hides cached results');
 agent_connection_youtube_set_consent_v1($pdo, 1, true);
 vp3_youtube_history_change_v1($pdo, 1, 'enable_history');
 $captureKey = vp3_youtube_capture_key_v1($pdo, 1);
 youtube_chat_check(vp3_youtube_history_record_v1($pdo, 1, 301, 'abcdefghijk', $playId, $captureKey), 'A new opt-in can record playback');
 $pdo->exec('UPDATE agent_connection_youtube_results_v1 SET expires_at=0');
-youtube_chat_check(agent_connection_youtube_history_v1($pdo, 1, 11, $messages) === $messages
+youtube_chat_check(agent_connection_youtube_history_v1($pdo, 1, 0, 11, $messages) === $messages
     && vp3_youtube_history_recent_v1($pdo, 1) === []
     && agent_connection_youtube_results_cleanup_v1($pdo) === 1
     && (int)$pdo->query('SELECT COUNT(*) FROM vp3_youtube_playback_v1')->fetchColumn() === 0,
@@ -247,4 +265,91 @@ youtube_chat_check($seenQuery === 'music artists similar to Stonefellow' && ($si
 $playlist = agent_connection_youtube_chat_v1($pdo,$owner,$principal,'quiet jazz',11,null,$musicHttp,'playlist');
 youtube_chat_check(($playlist['youtube_results']['suggestion_kind'] ?? '') === 'playlist' && !empty($playlist['youtube_results']['videos'])
     && str_contains($playlist['answer'],'playlist draft'), 'A playlist request creates a playable private Chat draft through read-only search');
+
+$pdo->exec("INSERT INTO chat_messages (id,conversation_id,role,context_json) VALUES
+    (401,11,'assistant','{\"youtube_search_results_v1\":true}'),
+    (402,11,'assistant','{\"youtube_search_results_v1\":true}'),
+    (403,12,'assistant','{\"youtube_search_results_v1\":true}'),
+    (404,21,'assistant','{\"youtube_search_results_v1\":true}'),
+    (405,11,'assistant','{\"youtube_results_ref_v1\":404}'),
+    (406,11,'assistant','{\"youtube_results_ref_v1\":403}'),
+    (407,11,'assistant','{\"youtube_results_ref_v1\":401}'),
+    (408,13,'assistant','{\"youtube_search_results_v1\":true}'),
+    (409,11,'assistant','{\"youtube_results_ref_v1\":408}')");
+$originalPlaylist = $playlist['youtube_results'];
+$otherPlaylist = array_replace($originalPlaylist,['query'=>'Other music','taste_topic'=>'Other music']);
+agent_connection_youtube_results_save_v1($pdo,1,11,401,$originalPlaylist);
+agent_connection_youtube_results_save_v1($pdo,1,11,402,$payload);
+agent_connection_youtube_results_save_v1($pdo,1,12,403,$otherPlaylist);
+agent_connection_youtube_results_save_v1($pdo,2,21,404,$originalPlaylist);
+agent_connection_youtube_results_save_v1($pdo,1,13,408,$originalPlaylist);
+$pdo->prepare('UPDATE chat_messages SET created_at=? WHERE id=401')->execute(['2026-11-07 12:00:00']);
+$pdo->prepare('UPDATE chat_messages SET created_at=? WHERE id=403')->execute(['2026-11-08 12:00:00']);
+$priorUsage = agent_connection_youtube_usage_v1($pdo);
+$priorCalls = $calls;
+putenv('VP3_YOUTUBE_API_KEY');
+
+$playlistPlan = agent_connection_youtube_followup_plan_v1('It was a song in the YouTube playlist you returned in search results');
+$searchPlan = agent_connection_youtube_followup_plan_v1('Show me the earlier YouTube results.');
+$sameChat = agent_connection_youtube_followup_plan_v1('Show me the earlier YouTube playlist in this chat.');
+$recalled = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$playlistPlan,11);
+youtube_chat_check($recalled['tool_receipt']['capability'] === 'youtube.results'
+    && $recalled['tool_receipt']['status'] === 'read_complete' && $recalled['youtube_source_message_id'] === 403
+    && $recalled['youtube_results'] === $otherPlaylist + ['source_message_id'=>403]
+    && str_contains($recalled['answer'],'Which song') && !str_contains($recalled['answer'],'Provider fixture title'),
+    'A vague song follow-up reuses the most recent matching playlist across that Agent’s private chats');
+$recentSearch = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$searchPlan,11);
+$scoped = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$sameChat,11);
+youtube_chat_check($recentSearch['youtube_source_message_id'] === 403
+    && $scoped['youtube_source_message_id'] === 401 && $scoped['youtube_results'] === $originalPlaylist + ['source_message_id'=>401],
+    'Only an explicit current Chat reference restricts the search to that Chat');
+foreach (['Show the YouTube playlist called "quiet jazz" you returned.',
+    'Show the YouTube playlist you returned on 2026-11-07.',
+    'Show the YouTube playlist you returned in the chat "Current music".'] as $specific) {
+    $specificPlan = agent_connection_youtube_followup_plan_v1($specific);
+    $specificResult = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$specificPlan,11);
+    youtube_chat_check($specificResult['youtube_source_message_id'] === 401, 'An explicit title, date, or Chat name narrows History before recency');
+}
+$exact = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$searchPlan,11,null,401);
+youtube_chat_check($exact['youtube_source_message_id'] === 401 && $exact['youtube_results'] === $scoped['youtube_results'],
+    'Exact replay keeps its original source instead of moving to newer results');
+foreach ([0,404,408] as $wrongSource) {
+    $missing = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$playlistPlan,11,null,$wrongSource);
+    youtube_chat_check($missing['youtube_results'] === null && $missing['tool_receipt']['status'] === 'no_matches',
+        'Exact replay does not substitute a result for an absent or foreign source');
+}
+youtube_chat_check(agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$sameChat,11,null,403)['youtube_results'] === null,
+    'Exact replay respects an explicit current-Chat restriction');
+foreach ([13,21] as $wrongChat) {
+    $missing = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$playlistPlan,$wrongChat);
+    youtube_chat_check($missing['youtube_results'] === null && $missing['tool_receipt']['reason'] === 'permission_denied',
+        'Earlier search results remain scoped to the signed-in owner and selected Agent');
+}
+$references = $pdo->query('SELECT id,role,context_json FROM chat_messages WHERE conversation_id=11 AND id BETWEEN 405 AND 409 ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+$restored = agent_connection_youtube_history_v1($pdo,1,0,11,$references);
+youtube_chat_check($restored[0] === $references[0]
+    && json_decode($restored[1]['context_json'],true)['youtube_results'] === $recalled['youtube_results']
+    && json_decode($restored[2]['context_json'],true)['youtube_results'] === $scoped['youtube_results']
+    && $restored[3] === $references[3],
+    'Reload restores same-Agent cross-Chat references and rejects another owner or Agent');
+
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1'] = ['participant_id'=>8];
+$blockedFollowup = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$playlistPlan,11);
+$blockedRestore = agent_connection_youtube_history_v1($pdo,1,0,11,$references);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+youtube_chat_check($blockedFollowup['tool_receipt']['reason'] === 'permission_denied' && $blockedRestore === $references,
+    'Participant scope cannot use an owner follow-up or restore its cached videos');
+
+$pdo->prepare('UPDATE agent_connection_youtube_results_v1 SET expires_at=? WHERE message_id IN (401,403)')->execute([time()-1]);
+$expired = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$playlistPlan,11,null,403);
+$fallback = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$playlistPlan,11);
+youtube_chat_check($expired['youtube_results'] === null && $fallback['youtube_source_message_id'] === 402
+    && agent_connection_youtube_history_v1($pdo,1,0,11,$references) === $references,
+    'An expired reference remains expired, while a new vague follow-up can use an earlier ordinary search');
+agent_connection_youtube_set_consent_v1($pdo,1,false);
+$disabledFollowup = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$searchPlan,11);
+youtube_chat_check($disabledFollowup['tool_receipt']['reason'] === 'setup_required' && $disabledFollowup['youtube_results'] === null,
+    'Saved search follow-up honors YouTube opt-out');
+youtube_chat_check($calls === $priorCalls && agent_connection_youtube_usage_v1($pdo) === $priorUsage,
+    'Recalling results does not spend provider quota or create a search');
 echo 'AGENT_CONNECTION_YOUTUBE_CHAT_V1=PASS'.PHP_EOL;

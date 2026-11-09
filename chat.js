@@ -1613,6 +1613,22 @@
     return links.length ? `<div class="message-sources" aria-label="Priority sources">${links.join('')}</div>` : '';
   }
 
+  function artistResearchSourceLinks(sources) {
+    if (!Array.isArray(sources)) return '';
+    const links = [];
+    for (const source of sources) {
+      if (!/^artist-web:[a-f0-9]{64}$/.test(source?.source || '') || typeof source.url !== 'string' ||
+          !['page_excerpt', 'search_match'].includes(source.coverage)) continue;
+      let url;
+      try { url = new URL(source.url); } catch (_) { continue; }
+      if (url.protocol !== 'https:' || url.username || url.password) continue;
+      const coverage = source.coverage === 'page_excerpt' ? 'Page read' : 'Search lead';
+      links.push(`<a class="message-source" href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title || 'Open source')} · ${coverage}</a>`);
+      if (links.length === 6) break;
+    }
+    return links.length ? `<div class="message-sources" role="group" aria-label="Artist research sources">${links.join('')}</div>` : '';
+  }
+
   function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, canvasMedia = null, youtubeResults = null) {
     const wrapper = document.createElement('article');
     wrapper.className = `message ${role}`;
@@ -1622,7 +1638,7 @@
       <div class="message-body">
         <div class="message-role">${role === 'user' ? 'You' : 'Stonefellow'}</div>
         <div class="message-text"></div>
-        ${role === 'assistant' ? catchUpSourceLinks(sources) : ''}
+        ${role === 'assistant' ? catchUpSourceLinks(sources) + artistResearchSourceLinks(sources) : ''}
         ${media.length ? `
           <section class="chat-listening-canvas">
             <div class="chat-listening-head">
@@ -4139,13 +4155,20 @@
     } catch (error) {}
   }, true);
 
+  function requestTopOfMindTurn(message) {
+    if (input.value.trim() || busy || !contextReady || initialRestorePending || restoringConversation
+        || initiativeReplyTarget || window.VP3ParticipantContinuity?.selectedContext()) return false;
+    void sendMessage(message);
+    return true;
+  }
+
   const canonicalChatContinuity = {
     runYoutubeLocalTurn: (message, action) => runYoutubeLocalTurn(message, action),
-    requestYoutubePicks:() => {
-      if (input.value.trim() || busy || !contextReady || initialRestorePending || restoringConversation
-          || initiativeReplyTarget || window.VP3ParticipantContinuity?.selectedContext()) return false;
-      void sendMessage('/youtube picks');
-      return true;
+    requestYoutubePicks:() => requestTopOfMindTurn('/youtube picks'),
+    requestArtistResearch:(artist, delegate = false) => {
+      if (typeof artist !== 'string' || !artist.trim() || artist.length > 120 || /[\r\n]/.test(artist)) return false;
+      const command = delegate ? 'Have a specialist research artist ' : 'Research artist ';
+      return requestTopOfMindTurn(command + artist.trim());
     },
     showChatView:() => setChatCanvasView('chat'),
     mountAgentGreeting:text => {

@@ -91,4 +91,25 @@ check($claim&&$workers[0]['id']===$claim['action']['action_key']&&$workers[0]['a
 $pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?')->execute([gmdate('Y-m-d H:i:s',time()-1),$signal['job_id']]);
 $workers=cloud_mission_view_v1($pdo,$u,$signalRow)['tasks'];
 check($workers[0]['status']==='running'&&!isset($workers[0]['active_lease_expires_at']),'expired worker lease removes the activity signal without changing Mission status');
+
+require_once dirname(__DIR__).'/includes/agent-artist-research-v1.php';
+require_once dirname(__DIR__).'/includes/agent-chat-boundary-v380.php';
+require_once dirname(__DIR__).'/includes/agent-capability-chat-v1.php';
+require_once dirname(__DIR__).'/includes/knowledge-retrieval-v162.php';
+require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
+$pdo->exec('CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER); INSERT INTO chat_conversations VALUES(11,1,7),(12,2,7)');
+$research=vp3_artist_research_plan_v1('Have a specialist research artist Neko Case near Phoenix');
+$prepared=vp3_artist_research_chat_v1($pdo,$u,$named,$research,11,101);
+$reused=vp3_artist_research_chat_v1($pdo,$u,$named,$research,11,102);
+$artistMissionId=$prepared['artist_research_v1']['mission_id'];
+check($prepared['tool_receipt']['capability']==='artist.research'&&$prepared['tool_receipt']['status']==='clarification_required'
+    &&$artistMissionId===$reused['artist_research_v1']['mission_id']
+    &&$prepared['actions'][0]['url']==='/vp3/chat.php?agent=7&conversation_id=11&mission='.$artistMissionId,
+    'Artist delegation prepares one exact reviewed specialist Mission and returns its Chat link');
+$artistMission=cloud_mission_row_v1($pdo,$u,$artistMissionId);
+$artistRun=cloud_mission_run_v1($pdo,$u,$artistMission);
+check($artistRun['status']==='approval_pending'&&str_contains($artistRun['goal'],'near Phoenix')
+    &&array_column(cloud_mission_tools_v1($artistMission)['assignments']['assignments'],'tools')===[[],[]],
+    'Artist delegation preserves the approved web assignment boundary');
+rejects(fn()=>vp3_artist_research_chat_v1($pdo,$u,$named,$research,12,103),'Artist delegation rejects another owner’s Chat',403);
 echo "CLOUD_MISSIONS_V1=PASS ($checks cases)\n";

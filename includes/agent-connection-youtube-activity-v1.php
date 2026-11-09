@@ -12,22 +12,11 @@ function vp3_youtube_activity_v1(PDO $pdo, array $user, int $agentId): ?array
         || !agent_connection_youtube_enabled_v1() || !agent_connection_youtube_consent_v1($pdo, $owner)
         || !agent_connection_youtube_results_ready_v1($pdo)) return null;
 
-    $scope = $agentId > 0 ? 'c.user_agent_id=?' : 'c.user_agent_id IS NULL';
-    $params = [$owner, time()];
-    if ($agentId > 0) $params[] = $agentId;
     $chatUrl = static fn(int $id): string => url('/chat.php?agent='.($agentId ?: 'system').'&conversation_id='.$id);
     try {
-        $stmt = $pdo->prepare("SELECT c.id AS conversation_id,m.id AS message_id,m.created_at,r.expires_at,r.payload_json
-            FROM agent_connection_youtube_results_v1 r
-            JOIN chat_messages m ON m.id=r.message_id AND m.role='assistant'
-            JOIN chat_conversations c ON c.id=m.conversation_id
-            WHERE c.user_id=? AND r.expires_at>? AND {$scope}
-            ORDER BY m.id DESC LIMIT 8");
-        $stmt->execute($params);
         $searches = [];
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $payload = json_decode((string)$row['payload_json'], true);
-            if (!is_array($payload['videos'] ?? null)) continue;
+        foreach (agent_connection_youtube_result_records_v1($pdo,$owner,$agentId) as $row) {
+            $payload = $row['results'];
             $videos = [];
             foreach (array_slice($payload['videos'], 0, 6) as $video) {
                 $title = agent_connection_youtube_text_v1($video['title'] ?? null, 200);

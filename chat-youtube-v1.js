@@ -183,6 +183,9 @@
         !Array.isArray(result.videos)) return;
 
     const history = result.history === true;
+    const sourceMessageId = Number.isSafeInteger(result.source_message_id) && result.source_message_id > 0
+      ? result.source_message_id : null;
+    const resultMessageId = () => sourceMessageId ?? message.dataset.chatMessageId;
     if (history) {
       if (window.VP3ParticipantContinuity?.selectedContext()) return;
       message.dataset.vp3YoutubePrivate = '1';
@@ -214,7 +217,7 @@
         if (window.VP3ParticipantContinuity?.selectedContext()) return;
         save.disabled = true;
         try {
-          await historyRequest('save_taste', {message_id:message.dataset.chatMessageId || ''});
+          await historyRequest('save_taste', {message_id:resultMessageId() || ''});
           save.textContent = 'Music taste saved';
         } catch {
           save.textContent = 'Retry saving music taste';
@@ -245,7 +248,7 @@
             section.replaceChildren(element('p', 'vp3-youtube-expired', 'These results expired. Search YouTube again.'));
             return;
           }
-          playVideo(row, button, video, title || 'YouTube video', history ? video.message_id : message.dataset.chatMessageId, Boolean(result.suggestion_reason));
+          playVideo(row, button, video, title || 'YouTube video', history ? video.message_id : resultMessageId(), Boolean(result.suggestion_reason));
         });
       }
       const thumbnail = thumbnailUrl(video.thumbnail_url, videoId);

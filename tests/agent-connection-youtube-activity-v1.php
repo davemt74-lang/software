@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__).'/includes/agent-connection-youtube-activity-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-artist-v1.php';
 require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 
 function db(): PDO { return $GLOBALS['pdo']; }
@@ -22,8 +23,8 @@ $pdo->exec('PRAGMA foreign_keys=ON');
 $pdo->exec('CREATE TABLE settings (setting_key VARCHAR(128) PRIMARY KEY, setting_value TEXT)');
 $pdo->exec('CREATE TABLE users (id INT UNSIGNED PRIMARY KEY, is_active INT NOT NULL)');
 $pdo->exec('INSERT INTO users VALUES (1,1),(2,1)');
-$pdo->exec('CREATE TABLE chat_conversations (id INTEGER PRIMARY KEY, user_id INTEGER, user_agent_id INTEGER)');
-$pdo->exec('INSERT INTO chat_conversations VALUES (11,1,NULL),(12,1,7),(13,1,7),(14,1,8),(21,2,7)');
+$pdo->exec('CREATE TABLE chat_conversations (id INTEGER PRIMARY KEY, user_id INTEGER, user_agent_id INTEGER, title TEXT)');
+$pdo->exec('INSERT INTO chat_conversations (id,user_id,user_agent_id) VALUES (11,1,NULL),(12,1,7),(13,1,7),(14,1,8),(21,2,7)');
 $pdo->exec('CREATE TABLE chat_messages (id INTEGER PRIMARY KEY, conversation_id INTEGER, role TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)');
 $pdo->exec("INSERT INTO chat_messages (id,conversation_id,role) VALUES
     (101,11,'assistant'),(102,12,'assistant'),(103,13,'assistant'),(104,14,'assistant'),(105,21,'assistant'),
@@ -63,6 +64,43 @@ youtube_activity_check(array_column(vp3_youtube_activity_v1($pdo, $owner, 0)['se
     && array_column(vp3_youtube_activity_v1($pdo, $owner, 8)['searches'], 'query') === ['Another Agent search']
     && array_column(vp3_youtube_activity_v1($pdo, $other, 7)['searches'], 'query') === ['Another owner search'],
     'System, named Agent, and owner scopes stay separate');
+
+$pdo->beginTransaction();
+try {
+    $source = $pdo->prepare("INSERT INTO chat_messages (id,conversation_id,role,created_at) VALUES (?,?,'assistant',?)");
+    foreach ([108=>[12,1,'Similar',0],109=>[13,1,'Similar',0],110=>[14,1,'Other Agent',0],
+        111=>[21,2,'Other owner',0],112=>[12,1,'Old',86401]] as $id=>[$cid,$uid,$artist,$age]) {
+        $source->execute([$id,$cid,gmdate('Y-m-d H:i:s',$now-$age)]);
+        agent_connection_youtube_results_save_v1($pdo,$uid,$cid,$id,[
+            'query'=>'Artists similar to '.$artist,'suggestion_kind'=>'similar','taste_topic'=>$artist,'expires_at'=>$now+3600,
+            'videos'=>[['title'=>'Provider metadata','video_id'=>$videoId]],
+        ]);
+    }
+    $scope=['user'=>$owner,'agent_id'=>7];
+    $at=new DateTimeImmutable('@'.$now);
+    $coverage=[];
+    youtube_activity_check(vp3_initiative_artist_evidence_v1($pdo,$scope,$at,null,$coverage)===[],
+        'YouTube history becomes background research evidence only after a separate opt-in');
+    vp3_youtube_artist_research_save_v1($pdo,1,true);
+    $interest=vp3_initiative_artist_evidence_v1($pdo,$scope,$at,null,$coverage);
+    $ref=array_key_first($interest);
+    youtube_activity_check($coverage['artist_research']==='ready'&&array_column($interest,'title')===['Similar']
+        &&$interest[$ref]['url']==='/chat.php?agent=7&conversation_id=13'
+        &&!str_contains(json_encode($interest,JSON_THROW_ON_ERROR),'Provider metadata'),
+        'Initiative reads only recent owner-entered artist interests and collapses repeated searches across that Agent’s Chats');
+    youtube_activity_check(vp3_initiative_artist_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===$interest
+        &&vp3_initiative_artist_evidence_v1($pdo,$scope,$at,['calendar:1'],$coverage)===[],
+        'Selected artist evidence rechecks the exact interest and skips unrelated capability reads');
+    $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>3];
+    youtube_activity_check(vp3_initiative_artist_evidence_v1($pdo,$scope,$at,null,$coverage)===[],
+        'Participant scope cannot turn private artist history into background research');
+    unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+    $pdo->exec('DELETE FROM agent_connection_youtube_consent_v1 WHERE owner_user_id=1');
+    youtube_activity_check(vp3_initiative_artist_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===[],
+        'Revoking the YouTube skill removes its Initiative research evidence');
+} finally {
+    $pdo->rollBack();
+}
 
 vp3_youtube_playback_install_v1($pdo);
 $history = vp3_youtube_activity_v1($pdo, $owner, 7);

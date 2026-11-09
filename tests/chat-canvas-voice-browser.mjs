@@ -18,6 +18,9 @@ let nextMessageId = 1000;
 const messages = new Map([[42,[]],[43,[{id:101,role:'assistant',message:'The other conversation'}]]]);
 const youtubeIds = ['dQw4w9WgXcQ', 'M7lc1UVf-VE'];
 const youtubeCommands = ['Search YouTube for typed video results', 'Search YouTube for spoken video results'];
+const artistResearchCommand = 'Research artist Neko Case near Phoenix for shows';
+const youtubeRecallCommand = 'It was a song in the YouTube playlist you returned in search results';
+const youtubeRecallSource = 201;
 let playedInVp3 = [];
 let youtubeOfferRequests = 0;
 const youtubeTitle = 'Video title <img src=x onerror=alert(1)>';
@@ -32,6 +35,8 @@ const youtubeResult = query => ({
     {video_id:'../evil-id!',title:'Invalid result',thumbnail_url:'https://example.test/a.jpg'},
   ]
 });
+const youtubeRecallResult = () => ({...youtubeResult('quiet jazz music'), suggestion_kind:'playlist',
+  suggestion_reason:'A playlist already returned in this chat.', taste_topic:'quiet jazz', source_message_id:youtubeRecallSource});
 let youtubeFrameRequests = 0;
 const html = `<!doctype html><html lang="en-US"><head><meta charset="UTF-8"></head><body>
 <div class="chat-app"><aside class="chat-sidebar"><strong>VP3</strong><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside>
@@ -104,6 +109,12 @@ await page.route('**/api/**', async route => {
     if(failSend)return route.fulfill({status:503,json:{ok:false,error:'Provider unavailable'}});
     return route.fulfill({json:{ok:true,conversation_id:payload.conversation_id||42,answer:'I heard you.',user_message_id:nextMessageId++,assistant_message_id:nextMessageId++,media:payload.message==='Show Studio handoff link'?[{id:9,title:'From the asteroid you saved me',album:'Studio',audio:'/media.php?track=9&type=audio',cover:'',detail:'/track.php?id=9'}]:[],
       ...(payload.message===youtubeCommands[0] ? {youtube_results:youtubeResult('Typed video results')} : {}),
+      ...(payload.message===artistResearchCommand ? {sources:[
+        {source:'artist-web:'+'a'.repeat(64),title:'Venue <details>',url:'https://venue.example/show',coverage:'page_excerpt'},
+        {source:'artist-web:'+'b'.repeat(64),title:'Another listing',url:'https://other.example/show',coverage:'search_match'},
+        {source:'artist-web:'+'c'.repeat(64),title:'Unsafe source',url:'javascript:alert(1)',coverage:'page_excerpt'},
+      ]} : {}),
+      ...(payload.message===youtubeRecallCommand ? {youtube_results:youtubeRecallResult()} : {}),
       ...(payload.message==='/youtube picks' ? {youtube_results:{...youtubeResult('mellow music'),
         suggestion_reason:'Matches the music you asked for.',taste_topic:'mellow'}} : {}),
       ...(payload.message==='Create a YouTube playlist of quiet jazz' ? {youtube_results:{...youtubeResult('quiet jazz music'),
@@ -414,6 +425,12 @@ try {
   await page.getByRole('button',{name:'Chat tools',exact:true}).click();
   await page.getByLabel('Work mode').selectOption('chat');
   await page.getByRole('button',{name:'Close chat tools'}).click();
+  await page.locator('#chatInput').fill(artistResearchCommand);
+  await page.locator('#sendChatButton').click();
+  const artistSources=page.getByRole('group',{name:'Artist research sources'});
+  await artistSources.getByRole('link',{name:'Venue <details> · Page read'}).waitFor();
+  assert.equal(await artistSources.getByRole('link').count(),2,'Research renders verified reads and search leads, excluding unsafe links');
+  assert.equal(await artistSources.getByRole('link',{name:'Another listing · Search lead'}).getAttribute('rel'),'noopener noreferrer');
   await page.locator('#chatInput').fill(youtubeCommands[0]);
   await page.locator('#sendChatButton').click();
   const typedYoutube = page.getByRole('region',{name:'YouTube search results'}).filter({hasText:'Typed video results'});
@@ -537,6 +554,31 @@ try {
   assert.equal(await playlist.getByRole('button',{name:/Play in Chat/}).count(),2);
   assert.equal(youtubeFrameRequests,framesBeforeDraft,'A playable playlist draft waits for a selected video');
   console.log('PASS playable YouTube playlist draft is identified in Chat and waits for selection');
+
+  await page.locator('#chatInput').fill(youtubeRecallCommand);
+  await page.locator('#sendChatButton').click();
+  const recalled = page.getByRole('region',{name:'YouTube playlist draft'}).filter({hasText:'A playlist already returned in this chat.'});
+  await recalled.waitFor();
+  const youtubeActionRequest = action => page.waitForRequest(request => request.url().endsWith('/api/youtube-playback')
+    && new URLSearchParams(request.postData()).get('action') === action);
+  const savedTaste = youtubeActionRequest('save_taste');
+  await recalled.getByRole('button',{name:'Save this music taste'}).click();
+  assert.equal(new URLSearchParams((await savedTaste).postData()).get('message_id'),String(youtubeRecallSource));
+  await recalled.getByRole('button',{name:'Music taste saved'}).waitFor();
+
+  messages.set(42,[{id:204,role:'assistant',message:'Here is that playlist',context_json:JSON.stringify({youtube_results:youtubeRecallResult()})}]);
+  await boot(true,{reload:true});
+  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  await recalled.waitFor();
+  assert.equal(await frame.count(),0,'Reopening a recalled playlist waits for a user selection');
+  await recalled.getByRole('button',{name:/Play in Chat · Video title/}).click();
+  await page.waitForFunction(() => window.youtubeFixture?.frame === document.querySelector('iframe.vp3-youtube-frame'));
+  const recordedRecall = youtubeActionRequest('record');
+  await page.evaluate(() => window.youtubeFixture.change(1));
+  assert.equal(new URLSearchParams((await recordedRecall).postData()).get('message_id'),String(youtubeRecallSource));
+  await recalled.getByRole('button',{name:'Close player'}).click();
+  console.log('PASS recalled playlist uses the original YouTube result for taste and restored playback');
+
   messages.set(42,[]);
   console.log('PASS typed and spoken YouTube search results, safe mobile inline playback, switch/close and history expiry');
 

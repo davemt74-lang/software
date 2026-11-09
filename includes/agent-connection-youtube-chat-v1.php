@@ -19,7 +19,7 @@ function agent_connection_youtube_history_request_v1(string $message): bool
 
 function agent_connection_youtube_chat_plan_v1(string $message): ?string
 {
-    if (agent_connection_youtube_history_request_v1($message)) return null;
+    if (agent_connection_youtube_history_request_v1($message) || agent_connection_youtube_followup_plan_v1($message) !== null) return null;
     $topic = vp3_youtube_suggestion_plan_v1($message)['topic'] ?? null;
     if ($topic !== null) return $topic;
     $message = trim($message);
@@ -30,6 +30,34 @@ function agent_connection_youtube_chat_plan_v1(string $message): ?string
         return trim(preg_replace('/\s+/u', ' ', $query) ?? $query);
     }
     return null;
+}
+
+/** Recognize a reference to results already returned, independently of fresh search and playback history. */
+function agent_connection_youtube_followup_plan_v1(string $message): ?array
+{
+    $phrase = preg_replace('/\s+/u', ' ', trim($message)) ?? '';
+    $phrase = preg_replace('/\A(?:(?:please|ok(?:ay)?|so|well|hey|(?:can|could|would) you)[,\s]+)+/iu', '', $phrase) ?? '';
+    if (!preg_match('/\byou\s*tube\b/iu', $phrase)
+        || !preg_match('/\A(?:what|which|where|who|show|list|open|pull up|remind|tell me|find (?:the|that)|(?:it|that) (?:is|was)|i (?:mean|meant))\b/iu', $phrase)) {
+        return null;
+    }
+
+    $playlist = preg_match('/\b(?:you\s*tube (?:music )?playlist|(?:the|that|your|last|previous|earlier) playlist)\b/iu', $phrase) === 1;
+    $search = preg_match('/\b(?:you\s*tube (?:search(?: results?)?|results?)|(?:the|those|your|last|previous|earlier) search results?)\b/iu', $phrase) === 1;
+    if (!$playlist && !$search) return null;
+    $day = preg_match('/\b(?:from|on) (\d{4}-\d{2}-\d{2})\b/u', $phrase, $date) ? $date[1] : '';
+    $chatTitle = preg_match('/\b(?:in|from) (?:the )?(?:chat|conversation) (?:called |named |titled )?["“]([^"”]{1,190})["”]/iu', $phrase, $chat) ? trim($chat[1]) : '';
+    $title = preg_match('/\b(?:playlist|search results?) (?:called |named |titled )?["“]([^"”]{1,200})["”]/iu', $phrase, $named) ? trim($named[1]) : '';
+    $thisChat = preg_match('/\b(?:in|from) (?:this|the current) (?:chat|conversation)\b/iu', $phrase) === 1;
+    if (!preg_match('/\b(?:you (?:returned|found|showed|sent|gave|made|created|shared|suggested|listed)|from before|(?:previous|earlier|last|original) (?:you\s*tube )?(?:playlist|(?:search )?results?)|(?:playlist|results?) (?:from )?(?:earlier|above))\b/iu', $phrase)
+        && !preg_match('/\b(?:that|those|your) (?:you\s*tube )?(?:playlist|(?:search )?results?)\b/iu', $phrase)
+        && !preg_match('/\A(?:(?:what|which|who)\b.{0,90}\b(?:was|were)|(?:it|that) (?:is|was))\b.{0,90}\b(?:in|from|on) the you\s*tube (?:playlist|(?:search )?results?)\b/iu', $phrase)
+        && !(($thisChat || $day !== '' || $chatTitle !== '' || $title !== '')
+            && preg_match('/\A(?:show|list|open|pull up|remind|tell me)\b.{0,90}\bthe you\s*tube (?:playlist|(?:search )?results?)\b/iu', $phrase))) {
+        return null;
+    }
+    return ['kind'=>$playlist ? 'playlist' : 'search','this_chat'=>$thisChat,
+        'title'=>$title,'day'=>$day,'chat_title'=>$chatTitle];
 }
 
 function agent_connection_youtube_chat_authority_v1(PDO $pdo, array $user, array $principal, int $conversationId, ?callable $authority): array
@@ -118,42 +146,135 @@ function agent_connection_youtube_results_save_v1(PDO $pdo, int $ownerId, int $c
     ]);
 }
 
-function agent_connection_youtube_results_read_v1(PDO $pdo, int $ownerId, int $conversationId, array $messageIds): array
+function agent_connection_youtube_results_read_v1(PDO $pdo, int $ownerId, int $agentId, int $conversationId, array $messageIds): array
 {
-    if ($ownerId < 1 || $conversationId < 1 || !$messageIds || !agent_connection_youtube_results_ready_v1($pdo)
-        || !agent_connection_youtube_enabled_v1() || !agent_connection_youtube_consent_v1($pdo, $ownerId)) return [];
-    $placeholders = implode(',', array_fill(0, count($messageIds), '?'));
-    $stmt = $pdo->prepare("SELECT r.message_id,r.payload_json FROM agent_connection_youtube_results_v1 r
-        JOIN chat_messages m ON m.id=r.message_id
-        JOIN chat_conversations c ON c.id=m.conversation_id
-        WHERE c.id=? AND c.user_id=? AND r.expires_at>? AND r.message_id IN ($placeholders)");
-    $stmt->execute([$conversationId, $ownerId, time(), ...$messageIds]);
-    $results = [];
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $payload = json_decode((string)$row['payload_json'], true);
-        if (is_array($payload)) $results[(int)$row['message_id']] = $payload;
-    }
-    return $results;
+    if (!$messageIds) return [];
+    return array_column(agent_connection_youtube_result_records_v1($pdo,$ownerId,$agentId,$conversationId,count($messageIds),$messageIds),'results','message_id');
 }
 
-function agent_connection_youtube_history_v1(PDO $pdo, int $ownerId, int $conversationId, array $messages): array
+/** Read the same private result ledger used by Agent History. Callers first authorize the Agent. */
+function agent_connection_youtube_result_records_v1(PDO $pdo, int $ownerId, int $agentId, ?int $conversationId = null, int $limit = 8, array $messageIds = []): array
 {
+    if ($ownerId < 1 || $agentId < 0 || ($conversationId !== null && $conversationId < 1)
+        || (function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() !== null)
+        || !agent_connection_youtube_enabled_v1() || !agent_connection_youtube_consent_v1($pdo,$ownerId)
+        || !agent_connection_youtube_results_ready_v1($pdo)) return [];
+
+    $now = time();
+    $params = [$ownerId,$now];
+    $scope = $agentId > 0 ? ' AND c.user_agent_id=?' : ' AND c.user_agent_id IS NULL';
+    if ($agentId > 0) $params[] = $agentId;
+    if ($conversationId !== null) {
+        $scope .= ' AND c.id=?';
+        $params[] = $conversationId;
+    }
+    if ($messageIds) {
+        $ids = array_values(array_unique(array_map('intval',$messageIds)));
+        $scope .= ' AND m.id IN ('.implode(',',array_fill(0,count($ids),'?')).')';
+        $params = array_merge($params,$ids);
+    }
+    // History caps display at eight. Recall can search the full seven-day cache,
+    // whose per-member daily quota fits in this bound. Loads bind exact IDs.
+    $limit = max(1,min($messageIds ? 300 : 120,$limit));
+    $stmt = $pdo->prepare("SELECT c.id AS conversation_id,c.title AS conversation_title,m.id AS message_id,m.created_at,r.expires_at,r.payload_json
+        FROM agent_connection_youtube_results_v1 r
+        JOIN chat_messages m ON m.id=r.message_id AND m.role='assistant'
+        JOIN chat_conversations c ON c.id=m.conversation_id
+        WHERE c.user_id=? AND r.expires_at>?{$scope} ORDER BY m.id DESC LIMIT {$limit}");
+    $stmt->execute($params);
+    $records = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $results = json_decode((string)$row['payload_json'],true);
+        if (!is_array($results) || !is_array($results['videos'] ?? null) || !$results['videos'] || ($results['history'] ?? false) === true) continue;
+        $expiresAt = min((int)$row['expires_at'],(int)($results['expires_at'] ?? $row['expires_at']));
+        if ($expiresAt <= $now) continue;
+        $results['expires_at'] = $expiresAt;
+        $records[] = ['conversation_id'=>(int)$row['conversation_id'],'conversation_title'=>(string)$row['conversation_title'],
+            'message_id'=>(int)$row['message_id'],'created_at'=>(string)$row['created_at'],'expires_at'=>$expiresAt,'results'=>$results];
+    }
+    return $records;
+}
+
+function agent_connection_youtube_history_v1(PDO $pdo, int $ownerId, int $agentId, int $conversationId, array $messages): array
+{
+    if (function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() !== null) return $messages;
     $positions = [];
-    $contexts = [];
     foreach ($messages as $index=>$message) {
         $raw = $message['context_json'] ?? '';
-        if (($message['role'] ?? '') !== 'assistant' || !is_string($raw) || !str_contains($raw, '"youtube_search_results_v1"')) continue;
+        if (($message['role'] ?? '') !== 'assistant' || !is_string($raw)
+            || (!str_contains($raw, '"youtube_search_results_v1"') && !str_contains($raw, '"youtube_results_ref_v1"'))) continue;
         $context = json_decode($raw, true);
-        if (($context['youtube_search_results_v1'] ?? false) !== true) continue;
         $id = (int)$message['id'];
-        $positions[$id] = $index;
-        $contexts[$id] = $context;
+        $ref = $context['youtube_results_ref_v1'] ?? null;
+        if (($context['youtube_search_results_v1'] ?? false) === true) {
+            $positions[$index] = [$id, $context, false];
+        } elseif (is_int($ref) && $ref > 0 && $ref < $id) {
+            $positions[$index] = [$ref, $context, true];
+        }
     }
-    foreach (agent_connection_youtube_results_read_v1($pdo, $ownerId, $conversationId, array_keys($positions)) as $id=>$results) {
-        $contexts[$id]['youtube_results'] = $results;
-        $messages[$positions[$id]]['context_json'] = json_encode($contexts[$id], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE);
+    if (!$positions) return $messages;
+    $ids = array_values(array_unique(array_column($positions,0)));
+    $records = array_column(agent_connection_youtube_result_records_v1($pdo,$ownerId,$agentId,null,count($ids),$ids),null,'message_id');
+    foreach ($positions as $index=>[$sourceId, $context, $isReference]) {
+        $record = $records[$sourceId] ?? null;
+        if ($record === null || (!$isReference && $record['conversation_id'] !== $conversationId)) continue;
+        $context['youtube_results'] = $record['results'];
+        if ($isReference) $context['youtube_results']['source_message_id'] = $sourceId;
+        $messages[$index]['context_json'] = json_encode($context, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE);
     }
     return $messages;
+}
+
+/** Recall a saved result in the current Agent namespace. Replay stays bound to its original result. */
+function agent_connection_youtube_followup_chat_v1(PDO $pdo, array $user, array $principal, array $plan, int $conversationId, ?callable $authority = null, ?int $sourceMessageId = null): array
+{
+    $reply = static function(string $answer, string $status, string $reason = '', ?array $results = null): array {
+        return ['handled'=>true, 'answer'=>$answer, 'actions'=>[], 'sources'=>[], 'youtube_results'=>$results,
+            'tool_receipt'=>vp3_tool_receipt_v1('youtube.results','read',$status,$reason,0,count($results['videos'] ?? []))]
+            + ($results === null ? [] : ['youtube_source_message_id'=>$results['source_message_id']]);
+    };
+    try {
+        $owner = (int)agent_connection_youtube_chat_authority_v1($pdo,$user,$principal,$conversationId,$authority)['id'];
+        if (!agent_connection_youtube_consent_ready_v1($pdo) || !agent_connection_youtube_results_ready_v1($pdo)) {
+            return $reply('Earlier YouTube results need a VP3 database upgrade.', 'blocked', 'upgrade_required');
+        }
+        if (!agent_connection_youtube_enabled_v1() || !agent_connection_youtube_consent_v1($pdo,$owner)) {
+            return $reply('Earlier YouTube results are unavailable. Check the YouTube skill in Connections.', 'blocked', 'setup_required');
+        }
+        $agentId = (int)($principal['agent_id'] ?? 0);
+        $scope = $plan['this_chat'] ? $conversationId : null;
+        $records = match (true) {
+            $sourceMessageId === null => agent_connection_youtube_result_records_v1($pdo,$owner,$agentId,$scope,120),
+            $sourceMessageId > 0 => agent_connection_youtube_result_records_v1($pdo,$owner,$agentId,$scope,1,[$sourceMessageId]),
+            default => [],
+        };
+        $selected = null;
+        foreach ($records as $record) {
+            $candidate = $record['results'];
+            if ($sourceMessageId === null) {
+                if ($plan['chat_title'] !== '' && mb_strtolower($record['conversation_title']) !== mb_strtolower($plan['chat_title'])) continue;
+                if ($plan['day'] !== '' && substr($record['created_at'],0,10) !== $plan['day']) continue;
+                if ($plan['title'] !== '' && !in_array(mb_strtolower($plan['title']),[
+                    mb_strtolower((string)($candidate['query'] ?? '')), mb_strtolower((string)($candidate['taste_topic'] ?? '')),
+                ],true)) continue;
+            }
+            $candidate['source_message_id'] = $record['message_id'];
+            $selected ??= $candidate;
+            if ($plan['kind'] !== 'playlist' || ($candidate['suggestion_kind'] ?? null) === 'playlist') {
+                $selected = $candidate;
+                break;
+            }
+        }
+        if ($selected === null) {
+            return $reply('I couldn’t find matching YouTube results in '.($scope === null ? 'my saved History' : 'this Chat').'. You can search YouTube again.', 'no_matches');
+        }
+        $name = ($selected['suggestion_kind'] ?? null) === 'playlist' ? 'YouTube playlist' : 'YouTube search results';
+        return $reply('Here’s the most recent matching '.$name.'. Which song did you mean?', 'read_complete', '', $selected);
+    } catch (Throwable $error) {
+        return in_array((int)$error->getCode(),[403,404,409],true)
+            ? $reply('Use your private Agent Chat to see its earlier YouTube results.', 'blocked', 'permission_denied')
+            : $reply('The earlier YouTube results could not be loaded. Try again in a moment.', 'failed', 'execution_failed');
+    }
 }
 
 function agent_connection_youtube_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, ?callable $authority=null, ?callable $http=null, ?string $suggestion=null): array

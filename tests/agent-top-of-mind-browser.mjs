@@ -46,6 +46,10 @@ writeFileSync(join(temp,'router.php'),[
   'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube search\')");$message=(int)db()->lastInsertId();',
   'agent_connection_youtube_results_save_v1(db(),1,11,$message,["expires_at"=>time()+3600,"videos"=>[["video_id"=>"song0000001","title"=>"Confirmed fixture playback","channel_title"=>"Fixture channel","made_for_kids"=>false]]]);',
   'if(!vp3_youtube_history_record_v1(db(),1,$message,"song0000001","10000000-0000-4000-8000-000000000001",vp3_youtube_capture_key_v1(db(),1)))throw new RuntimeException("Fixture playback was rejected.");',
+  'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube artist results\')");$artistMessage=(int)db()->lastInsertId();',
+  'agent_connection_youtube_results_save_v1(db(),1,11,$artistMessage,["query"=>"Artists similar to Fixture Artist","taste_topic"=>"Fixture Artist","suggestion_kind"=>"similar","expires_at"=>time()+3600,"videos"=>[["video_id"=>"song0000002","title"=>"Provider artist title"]]]);',
+  'db()->exec("CREATE TABLE user_calendar_events(id INTEGER PRIMARY KEY,owner_user_id INTEGER,title TEXT,status TEXT,all_day INTEGER,start_at_utc TEXT,end_at_utc TEXT,timezone TEXT,source TEXT,source_reference TEXT,description TEXT,location TEXT)");',
+  'db()->prepare("INSERT INTO user_calendar_events VALUES(4,1,\'Fixture planning session\',\'active\',1,?,?,\'UTC\',\'user\',\'\',\'\',\'https://example.com/meeting\')")->execute([gmdate("Y-m-d 00:00:00"),gmdate("Y-m-d 00:00:00",time()+86400)]);',
   'header("Content-Type:application/json");echo json_encode(["run_id"=>(int)$r]);return;}',
   'if($path==="/api/chat-notifications-brain-v240.php"){header("Content-Type:application/json");echo json_encode(["ok"=>true,"complete"=>true,"agent_namespace"=>"agent:7","notifications"=>["items"=>[],"unread"=>0],"brain"=>["enabled"=>false],"activity_stream"=>["complete"=>true,"agent_namespace"=>"agent:7","items"=>[]]]);return;}',
   'if($path!=="/"&&$path!=="/outside"){http_response_code(404);return;}',
@@ -54,11 +58,11 @@ writeFileSync(join(temp,'router.php'),[
   'if(!$outside)echo \'<div class="chat-topbar-actions"><div id="chatNotificationMenu"><button id="chatNotificationButton">Activity Center</button></div><div id="chatProfileMenu">Account</div></div>\';',
   '$orb=["ownerKey"=>"1","agentId"=>7,"chatUrl"=>"/chat.php","workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php","notificationsEndpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","voiceScript"=>"/deliberately-unavailable-voice.js","drawerScript"=>"/chat-notifications-drawer-v240.js"];',
   'echo "<script>window.VP3_ORB_CONFIG=".json_encode($orb).";</script>";',
-  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.fixturePicks=0;window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11,requestYoutubePicks:()=>{window.fixturePicks++;return true}};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
+  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.fixturePicks=0;window.fixtureResearch=[];window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11,requestYoutubePicks:()=>{window.fixturePicks++;return true},requestArtistResearch:(artist,delegate)=>{if(window.fixtureDraft)return false;window.fixtureResearch.push([artist,delegate]);return true}};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
   'echo \'<script src="/agent-eyes-core.js"></script><script src="/agent-top-of-mind-v1.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script>\';'
 ].join('\n'));
 assert.match(execFileSync(process.env.VP3_PHP_BINARY||'php',['-l',join(temp,'router.php')],{encoding:'utf8'}),/No syntax errors detected/);
-let logs='';const server=spawn(process.env.VP3_PHP_BINARY||'php',['-S','127.0.0.1:'+port,'-t',temp,join(temp,'router.php')],{env:{...process.env,VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'state.sqlite')},stdio:['ignore','pipe','pipe']});
+let logs='';const server=spawn(process.env.VP3_PHP_BINARY||'php',['-d','session.save_path='+temp,'-S','127.0.0.1:'+port,'-t',temp,join(temp,'router.php')],{env:{...process.env,VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'state.sqlite')},stdio:['ignore','pipe','pipe']});
 server.stdout.on('data',x=>{logs+=x;});server.stderr.on('data',x=>{logs+=x;});
 let browser;
 try{
@@ -74,6 +78,9 @@ try{
     const data=await r.json();assert.equal(data.state.owner_user_id,1);assert.equal(data.state.agent_id,7);assert.equal(data.state.conversation_id,11);assert.equal(data.state.working_attention_binding,binding);
     assert.equal(data.state.items.find(x=>x.run_id===runId).state,'working');assert.equal(data.state.items.find(x=>x.run_id===runId).progress,42);
     assert.equal(data.state.music.title,'Confirmed fixture playback');assert.match(data.state.music.chat_url,/agent=7&conversation_id=11$/);
+    assert.equal(data.state.artist_research.artist,'Fixture Artist');assert.equal(data.state.artist_research.status,'available');
+    assert.equal(data.state.calendar[0].title,'Fixture planning session');assert.equal(data.state.calendar[0].agenda_status,'unknown');
+    assert.equal(data.state.calendar[0].meeting_url,'https://example.com/meeting');
     assert.ok(!JSON.stringify(data).includes('FOREIGN SECRET'));assert.ok(!JSON.stringify(data).includes('lease_token'));
   }
   assert.deepEqual(await fetch(base+'/counts').then(r=>r.json()),before);
@@ -101,13 +108,33 @@ try{
     assert.ok(await page.getByText('Saved Brain memory is unavailable for this account.',{exact:true}).isVisible());
     const music=feed.getByRole('region',{name:'Music and entertainment'});
     await music.getByText('Confirmed fixture playback',{exact:true}).waitFor();
+    const artist=feed.getByRole('region',{name:'Artist research'});
+    await artist.getByText('Fixture Artist',{exact:true}).waitFor();
+    assert.match(await artist.getByRole('link',{name:'Review YouTube results'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+    assert.equal(await feed.getByRole('region',{name:'Recent YouTube results'}).count(),0,'one card per result thread');
+    const calendar=feed.getByRole('region',{name:'Calendar preparation'});
+    await calendar.getByText('Fixture planning session',{exact:true}).waitFor();
+    assert.equal(await calendar.getByRole('link',{name:'Open meeting'}).getAttribute('href'),'https://example.com/meeting');
+    await calendar.getByText('Agenda and preparation',{exact:true}).click();
+    await calendar.getByText('Saved agenda details are unavailable.',{exact:true}).waitFor();
     if(outside){
       assert.match(await music.getByRole('link',{name:'Open this Chat for music picks'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+      assert.equal(await artist.getByRole('button').count(),0,'research is only submitted from the exact Chat');
     }else{
       assert.equal(await page.evaluate(()=>window.fixturePicks),0);
+      assert.deepEqual(await page.evaluate(()=>window.fixtureResearch),[],'viewing context does not start research');
       await page.evaluate(()=>{window.fixtureParticipant={id:2};window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
       await music.waitFor({state:'hidden'});
+      await artist.waitFor({state:'hidden'});await calendar.waitFor({state:'hidden'});
       await page.evaluate(()=>{window.fixtureParticipant=null;window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
+      await page.evaluate(()=>{window.fixtureDraft=true;});
+      await artist.getByRole('button',{name:'Research artist',exact:true}).click();
+      await artist.getByText('Finish the current Chat turn or draft before starting artist research.',{exact:true}).waitFor();
+      assert.deepEqual(await page.evaluate(()=>window.fixtureResearch),[]);
+      await page.evaluate(()=>{window.fixtureDraft=false;});
+      await artist.getByRole('button',{name:'Prepare specialist plan',exact:true}).click();
+      assert.deepEqual(await page.evaluate(()=>window.fixtureResearch),[['Fixture Artist',true]]);
+      await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
       await music.getByRole('button',{name:'Ask for YouTube music picks'}).click();
       assert.equal(await page.evaluate(()=>window.fixturePicks),1);
       await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
@@ -125,6 +152,7 @@ try{
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     if(process.env.VP3_TOP_OF_MIND_SCREENSHOT_DIR){mkdirSync(process.env.VP3_TOP_OF_MIND_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:join(process.env.VP3_TOP_OF_MIND_SCREENSHOT_DIR,outside?'top-of-mind-mobile.png':'top-of-mind-desktop.png')});}
     const count=reads.length;await page.waitForTimeout(2800);assert.ok(reads.length>count,'active work must refresh without reopening Brain');
+    if(outside)assert.equal(await calendar.getByText('Saved agenda details are unavailable.',{exact:true}).isVisible(),true,'an expanded agenda survives polling');
     await page.evaluate(()=>{document.body.dataset.stonefellowAgentState='processing';});
     if(!outside)await feed.getByText('The main Agent is preparing a response.',{exact:true}).waitFor();
     const outage=route=>route.abort('failed');await page.route('**/api/agent-top-of-mind-v1.php**',outage);

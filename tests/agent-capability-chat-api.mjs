@@ -29,6 +29,13 @@ fs.copyFileSync('tests/fixtures/vrss-agent-v1.php',path.join(tmp,'includes/vrss-
 for(const name of ['analytics-agent-v1.php','radar-agent-v1.php','tracky-agent-v1.php'])fs.copyFileSync('tests/fixtures/'+name,path.join(tmp,'includes',name));
 fs.copyFileSync('tests/fixtures/observation-api-state-v1.php',path.join(tmp,'observation-state.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'conversations'=>(int)db()->query('SELECT COUNT(*) FROM chat_conversations')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
+fs.writeFileSync(path.join(tmp,'calendar-prep-fixture.php'),`<?php
+require __DIR__.'/includes/bootstrap.php';
+$pdo=db();
+if(isset($_GET['remove'])){$pdo->exec('DELETE FROM user_calendar_events WHERE id=7001 AND owner_user_id=1');exit;}
+$q=$pdo->prepare("INSERT INTO user_calendar_events(id,owner_user_id,title,description,location,start_at_utc,end_at_utc,timezone,all_day,recurrence,source,status) VALUES(7001,1,'Fixture today prep','','',?,?,'UTC',1,'none','user','active')");
+$q->execute([gmdate('Y-m-d 00:00:00'),gmdate('Y-m-d 00:00:00',time()+86400)]);
+`);
 fs.writeFileSync(path.join(tmp,'working-context.php'),`<?php
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-working-context-v1.php';
@@ -56,6 +63,28 @@ fs.writeFileSync(path.join(tmp,'working-context-state.php'),`<?php
 require __DIR__.'/includes/bootstrap.php';
 $q=db()->prepare('SELECT title FROM agent_reminders_v1 WHERE id=? AND owner_user_id=1');
 $q->execute([(int)$_GET['reminder']]);header('Content-Type: application/json');echo json_encode($q->fetch());`);
+fs.writeFileSync(path.join(tmp,'youtube-recall-fixture.php'),`<?php
+require __DIR__.'/includes/bootstrap.php';
+require_once __DIR__.'/includes/agent-connection-youtube-chat-v1.php';
+$pdo=db();
+header('Content-Type: application/json');
+if (isset($_GET['expire'])) {
+    $pdo->prepare('UPDATE agent_connection_youtube_results_v1 SET expires_at=? WHERE message_id=?')->execute([time()-1,(int)$_GET['expire']]);
+    echo '{}';
+    exit;
+}
+$conversationId=(int)$_GET['conversation'];
+$title=(string)$_GET['title'];
+$pdo->exec('CREATE TABLE IF NOT EXISTS settings (setting_key TEXT PRIMARY KEY, setting_value TEXT)');
+agent_connection_youtube_consent_schema_v1($pdo);
+agent_connection_youtube_results_schema_v1($pdo);
+$pdo->prepare('INSERT OR IGNORE INTO agent_connection_youtube_consent_v1 VALUES (1,?,?)')->execute([VP3_YOUTUBE_CONSENT_POLICY_V1,time()]);
+$pdo->prepare('INSERT INTO chat_messages (conversation_id,role,message,context_json) VALUES (?,?,?,?)')
+    ->execute([$conversationId,'assistant','YouTube search results were shown in this Chat.',json_encode(['youtube_search_results_v1'=>true])]);
+$messageId=(int)$pdo->lastInsertId();
+agent_connection_youtube_results_save_v1($pdo,1,$conversationId,$messageId,['query'=>$title,'suggestion_kind'=>'playlist',
+    'expires_at'=>time()+600,'videos'=>[['video_id'=>'abcdefghijk','title'=>$title,'made_for_kids'=>false]]]);
+echo json_encode(['message_id'=>$messageId]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
 const base=`http://127.0.0.1:${port}`;let checks=0;
@@ -149,6 +178,18 @@ try{
   check(response.data.tool_receipt?.capability==='calendar.read','calendar read returns verified execution evidence through '+endpoint);
   response=await post(endpoint,'Did that work?',{...named,conversation_id:longfellowConversation});
   check(response.data?.ok===true&&response.data.answer.includes('the read completed'),'named-Agent diagnosis reads its own receipt through '+endpoint+': '+response.body);
+ }
+ check((await fetch(base+'/calendar-prep-fixture.php')).ok,'install the owner’s dated calendar prep fixture');
+ try {
+  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+   response=await post(endpoint,"What have I done and what's left for today's event?",{...named,conversation_id:longfellowConversation},{'X-Fixture-Model-Fail':'1'});
+   check(response.data?.tool_receipt?.capability==='calendar.read'&&response.data.tool_receipt.status==='read_complete'
+    &&response.data.answer.includes('Fixture today prep')&&response.data.answer.includes('couldn’t verify a linked agenda')&&!response.data.answer.includes('SECRET')
+    &&response.data.actions.some(action=>action.url.endsWith('/calendar-event.php?id=7001')),
+    'today’s prep resolves verified owner records, acknowledges unknown agenda, and links the exact event through '+endpoint+': '+response.body);
+  }
+ } finally {
+  await fetch(base+'/calendar-prep-fixture.php?remove=1');
  }
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
   response=await post(endpoint,'Read the selected transcript',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,transcript_session_id:21}});
@@ -698,5 +739,49 @@ try{
    &&!stale.data.answer.includes(offered.title)&&!stale.data.answer.includes(replacement.title),
    'stale follow-up stays read-only without substituting newer evidence or falling through to inference through '+endpoint+': '+stale.body);
  }
+ const youtubeEndpoint='chat-v236.php?agent=7';
+ const sourceChat=(await post(youtubeEndpoint,'',{action:'new'})).data.conversation_id;
+ const recallChat=(await post(youtubeEndpoint,'',{action:'new'})).data.conversation_id;
+ const youtubeFixture=base+'/youtube-recall-fixture.php';
+ const seedPlaylist=async title=>(await (await fetch(youtubeFixture+'?'+new URLSearchParams({conversation:sourceChat,title}))).json()).message_id;
+ const sourceMessage=await seedPlaylist('Original cross-Chat playlist');
+ const recall='It was a song in the YouTube playlist you returned in search results';
+ const typedRecall=await post(youtubeEndpoint,recall,{conversation_id:recallChat});
+ check(typedRecall.data?.tool_receipt?.capability==='youtube.results'&&typedRecall.data.youtube_results?.source_message_id===sourceMessage
+  &&typedRecall.data.youtube_results.videos[0].title==='Original cross-Chat playlist',
+  'production typed Chat recalls the latest matching playlist from another Chat of the same Agent: '+typedRecall.body);
+ const reloaded=await post(youtubeEndpoint,'',{action:'load',conversation_id:recallChat});
+ const recalledMessage=reloaded.data?.messages?.find(message=>Number(message.id)===typedRecall.data.assistant_message_id);
+ check(JSON.parse(recalledMessage?.context_json??'{}').youtube_results?.source_message_id===sourceMessage,
+  'production Chat load restores the original cross-Chat source reference');
+ const voiceOptions={conversation_id:recallChat,idempotency_key:'youtube-history-cross-chat-replay'};
+ const voiceRecall=await post('chat-stream-v121.php',recall,voiceOptions);
+ check(voiceRecall.data?.youtube_results?.source_message_id===sourceMessage,
+  'production streaming Chat resolves the same cross-Chat History record: '+voiceRecall.body);
+ await seedPlaylist('A newer playlist');
+ const voiceRetry=await post('chat-stream-v121.php',recall,voiceOptions);
+ check(voiceRetry.data?.replayed===true&&voiceRetry.data.youtube_results?.source_message_id===sourceMessage
+  &&voiceRetry.data.assistant_message_id===voiceRecall.data.assistant_message_id,
+  'voice retry rereads the original source even after a newer matching playlist arrives');
+ await fetch(youtubeFixture+'?expire='+sourceMessage);
+ const expiredRetry=await post('chat-stream-v121.php',recall,voiceOptions);
+ check(expiredRetry.data?.replayed===true&&expiredRetry.data.tool_receipt?.status==='no_matches'
+  &&expiredRetry.data.youtube_results==null&&!expiredRetry.body.includes('Original cross-Chat playlist'),
+  'voice retry drops an expired original without serving stale data or switching sources');
+ const artistRequest='Research artist https://example.org';
+ const artistTyped=await post(youtubeEndpoint,artistRequest,{conversation_id:recallChat});
+ check(artistTyped.data?.tool_receipt?.capability==='artist.research'
+  &&artistTyped.data.tool_receipt.status==='clarification_required',
+  'production typed Chat validates the artist before public research: '+artistTyped.body);
+ const artistVoiceOptions={conversation_id:recallChat,idempotency_key:'artist-research-exact-voice-replay'};
+ const artistVoice=await post('chat-stream-v121.php',artistRequest,artistVoiceOptions);
+ check(artistVoice.data?.tool_receipt?.capability==='artist.research'
+  &&artistVoice.data.tool_receipt.status==='clarification_required',
+  'production streaming Chat uses the same artist route: '+artistVoice.body);
+ const artistRetry=await post('chat-stream-v121.php',artistRequest,artistVoiceOptions);
+ const changedArtistRetry=await post('chat-stream-v121.php','Research artist https://other.example',artistVoiceOptions);
+ check(artistRetry.data?.replayed===true&&artistRetry.data.assistant_message_id===artistVoice.data.assistant_message_id
+  &&changedArtistRetry.data?.type==='error'&&changedArtistRetry.data?.tool_receipt==null,
+  'voice retry binds the exact artist request and canonical Chat');
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

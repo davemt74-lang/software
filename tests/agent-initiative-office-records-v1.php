@@ -35,6 +35,7 @@ require_once dirname(__DIR__).'/includes/knowledge-retrieval-v162.php';
 require_once dirname(__DIR__).'/includes/agent-memory-scope-v410.php';
 require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 require_once dirname(__DIR__).'/includes/user-calendar-v1300.php';
+require_once dirname(__DIR__).'/includes/agent-scheduling-v430.php';
 require_once dirname(__DIR__).'/includes/agent-chat-boundary-v380.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-office-records-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-scope-v1.php';
@@ -186,4 +187,63 @@ office_check(count(array_filter($partial,static fn(array $row):bool=>$row['offic
 [$corrupt,$corruptCoverage]=office_evidence($scope,['task:1109']);
 office_check($corrupt===[]&&$corruptCoverage['office_tasks']==='unavailable','exact selected malformed metadata is unavailable rather than a successful empty read');
 office_throws(fn()=>office_read($scope,'tasks.read','task:1109',[$bounded['task:1109']['ref']=>$bounded['task:1109']]),503,'a saved exact task proof cannot return malformed source metadata');
+
+$pdo->exec("UPDATE user_calendar_events SET status='active' WHERE id=101;
+INSERT INTO user_calendar_events VALUES(105,1,'All-day note','','','2026-11-06 00:00:00','2026-11-07 00:00:00','UTC',1,'none',0,'user','','active',NULL,'2026-11-05');
+CREATE TABLE video_meetings(id INTEGER PRIMARY KEY,owner_user_id INTEGER,booking_id INTEGER,calendar_event_id INTEGER,public_id TEXT,room_name TEXT,agent_mode TEXT,start_at_utc TEXT,status TEXT);
+CREATE TABLE video_meeting_participants(id INTEGER,invite_token TEXT);
+CREATE TABLE video_meeting_transcript_segments(id INTEGER);
+CREATE TABLE video_meeting_artifacts(id INTEGER);
+INSERT INTO video_meetings VALUES(901,1,NULL,101,'0123456789abcdef0123456789abcdef','','notes','2026-11-06 14:00:00','scheduled'),
+    (902,2,NULL,103,'abcdef0123456789abcdef0123456789','','notes','2026-11-06 14:00:00','scheduled');
+CREATE TABLE video_meeting_agenda_items(id INTEGER PRIMARY KEY,meeting_id INTEGER,owner_user_id INTEGER,item_text TEXT,item_type TEXT,source_kind TEXT,
+    source_meeting_id INTEGER,source_hash TEXT,source_index_hash TEXT,source_review_path TEXT,status TEXT,priority TEXT,action_kind TEXT,
+    approval_state TEXT,sort_order INTEGER,fingerprint TEXT,created_at TEXT,updated_at TEXT);
+CREATE TABLE video_meeting_action_executions(id INTEGER PRIMARY KEY,agenda_item_id INTEGER,meeting_id INTEGER,owner_user_id INTEGER,action_kind TEXT,status TEXT,
+    draft_json TEXT,draft_hash TEXT,idempotency_key TEXT,workflow_run_id INTEGER,calendar_event_id INTEGER,crm_activity_id INTEGER,crm_lead_id INTEGER,email_recipient TEXT,error_class TEXT,result_json TEXT,executed_at TEXT);
+CREATE TABLE video_meeting_action_events(id INTEGER);");
+$agenda=$pdo->prepare("INSERT INTO video_meeting_agenda_items(id,meeting_id,owner_user_id,item_text,item_type,status,action_kind,sort_order) VALUES(?,?,?,?,?,?,?,?)");
+$agenda->execute([1,901,1,'Review the launch order','discussion','open','',10]);
+$agenda->execute([2,901,1,'Send the agenda','follow_up','follow_up','email',20]);
+$agenda->execute([3,901,1,'Confirm delivery with the vendor','follow_up','follow_up','email',30]);
+$agenda->execute([4,901,2,'Foreign agenda item','discussion','open','',40]);
+$agenda->execute([5,902,2,'Foreign meeting plan','discussion','open','',50]);
+$agenda->execute([6,901,1,'Send the venue directions','follow_up','follow_up','email',60]);
+$pdo->exec("INSERT INTO video_meeting_action_executions(id,agenda_item_id,meeting_id,owner_user_id,action_kind,status) VALUES
+    (1,2,901,1,'email','completed'),(2,3,901,1,'email','failed');");
+$pdo->prepare("INSERT INTO video_meeting_action_executions(id,agenda_item_id,meeting_id,owner_user_id,action_kind,status,result_json,executed_at)
+    VALUES(3,6,901,1,'email','executed',?,'2026-11-06 11:00:00')")->execute(['{"delivery":"accepted_by_mail_transport"}']);
+$meetingTask=['source_kind'=>'video_meeting_intelligence','video_meeting_id'=>901,'review_state'=>'approved','task_status'=>'open'];
+$task->execute([2000,1,null,410,'task','Review the slide deck','',json_encode($meetingTask),1,'prep-open',.8,1,'2026-11-05 12:00:00']);
+$task->execute([2001,1,null,410,'task','Draft the handout','',json_encode(array_replace($meetingTask,['task_status'=>'completed'])),1,'prep-done',.8,1,'2026-11-05 12:00:00']);
+$task->execute([2002,1,11,410,'task','Different Agent prep','',json_encode($meetingTask),1,'prep-other',.8,1,'2026-11-05 12:00:00']);
+$now=new DateTimeImmutable('2026-11-06T12:00:00Z');
+$before=(int)$pdo->query('SELECT total_changes()')->fetchColumn();$pdo->exec('PRAGMA query_only=ON');
+$today=array_column(vp3_calendar_prep_today_v1($pdo,$scope['user'],0,10,$now),null,'id');
+$prep=$today[101];
+office_check($prep['agenda_status']==='available'&&$prep['meeting_url']==='/vp3/meeting.php?meeting=0123456789abcdef0123456789abcdef',
+    'today’s prep locates the exact owned meeting and its saved review link');
+office_check($prep['open_items']===['Agenda · Review the launch order','Review the slide deck']
+    &&$prep['completed_items']===['Send the agenda','Send the venue directions (mail transport accepted)','Draft the handout']&&$prep['unknown_items']===['Confirm delivery with the vendor'],
+    'prep distinguishes open agenda and linked tasks, recorded completion, and uncertain delivery');
+office_check(!reset($today)['all_day']&&!isset($today[105]),'the next timed events lead the bounded current-day prep list');
+office_check($today[103]['agenda_status']==='unknown'&&$today[103]['meeting_url']===''&&!str_contains(json_encode($today),'Foreign'),
+    'recurring occurrences cannot inherit an unrelated or foreign meeting agenda');
+office_check((int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,'calendar prep works in query-only mode without completing or reconciling tasks');
+$pdo->exec('PRAGMA query_only=OFF');
+office_throws(fn()=>vp3_calendar_prep_today_v1($pdo,$scope['user'],0,20,$now),403,'calendar prep refuses a different owner’s conversation');
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1,'agent'=>0,'participant'=>9];
+office_throws(fn()=>vp3_calendar_prep_today_v1($pdo,$scope['user'],0,10,$now),403,'calendar prep refuses a participant context');
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+[$prepared]=office_evidence($scope,['calendar:event:101'],$now);
+$preparedRead=office_read($scope,'calendar.read','calendar:event:101',$prepared);
+office_check(str_contains($preparedRead['records'][0]['text'],'Draft the handout')&&$preparedRead['sources'][0]['url']===$prep['meeting_url'],
+    'the existing Initiative calendar executor receives the same verified prep and an exact source link');
+$pdo->exec("UPDATE agent_memory_items SET metadata_json=JSON_SET(metadata_json,'$.task_status','completed') WHERE id=2000");
+office_throws(fn()=>office_read($scope,'calendar.read','calendar:event:101',$prepared),409,'a real linked prep completion invalidates prior Initiative source evidence');
+office_check(vp3_calendar_prep_chat_intent_v1("What have I done and what's left for today's event?")
+    &&vp3_calendar_prep_chat_intent_v1('What do I need to do for my meeting today?')
+    &&!vp3_calendar_prep_chat_intent_v1('Add an event to my calendar today')
+    &&!vp3_calendar_prep_chat_intent_v1('What is left to prepare for tomorrow’s event?'),
+    'the prep intent accepts today’s questions and leaves mutations and other dates with their own tools');
 echo 'AGENT_INITIATIVE_OFFICE_RECORDS_V1=PASS ('.$checks.' cases)'.PHP_EOL;

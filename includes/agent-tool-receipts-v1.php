@@ -70,6 +70,8 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'email.followups'=>['watch_sender','stop_sender_watch'],
         'youtube.search'=>['search'],
         'youtube.history'=>['read'],
+        'artist.research'=>['search','prepare'],
+        'youtube.results'=>['read'],
         'transcripts.highlight'=>['highlight','review_item','item_action'],
         'transcripts.analyze'=>['run_analysis','run_research'],
         'transcripts.read'=>['list','read','search','clarify','interpret','read_analysis','read_research','attach','detach','summarize','discuss','continue'],

@@ -305,16 +305,17 @@ function booking_agent_web_search(string $query, int $limit = 8): array
 }
 
 /** Structured status for collectors that must distinguish a provider failure from no matches. */
-function booking_agent_web_search_response(string $query,int $limit=8): array
+function booking_agent_web_search_response(string $query,int $limit=8,int $timeout=9): array
 {
     if (!function_exists('curl_init')) return ['ok'=>false,'provider'=>'DuckDuckGo','results'=>[]];
+    $timeout=max(1,min(9,$timeout));
     $url = 'https://html.duckduckgo.com/html/?q=' . rawurlencode($query);
     $curl = curl_init($url);$html='';
     curl_setopt_array($curl,[
         CURLOPT_RETURNTRANSFER=>false,
         CURLOPT_WRITEFUNCTION=>static function($ch,string $chunk)use(&$html):int{if(strlen($html)+strlen($chunk)>2000000)return 0;$html.=$chunk;return strlen($chunk);},
-        CURLOPT_CONNECTTIMEOUT=>4,
-        CURLOPT_TIMEOUT=>9,
+        CURLOPT_CONNECTTIMEOUT=>min(4,$timeout),
+        CURLOPT_TIMEOUT=>$timeout,
         CURLOPT_FOLLOWLOCATION=>false,
         CURLOPT_MAXREDIRS=>3,
         CURLOPT_USERAGENT=>'StonefellowBookingAgent/1.0 (+https://stonefellow.com)',

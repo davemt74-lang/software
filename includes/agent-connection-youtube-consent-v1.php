@@ -6,6 +6,39 @@ require_once __DIR__.'/agent-commerce-recovery-pa2.php';
 
 const VP3_YOUTUBE_CONSENT_POLICY_V1 = '2026-11-08';
 
+function vp3_youtube_artist_research_enabled_v1(PDO $pdo, int $ownerId): bool
+{
+    if ($ownerId < 1) return false;
+    try {
+        $stmt = $pdo->prepare('SELECT setting_value FROM settings WHERE setting_key=?');
+        $stmt->execute(['youtube_artist_research_owner_'.$ownerId]);
+        return $stmt->fetchColumn() === '1';
+    } catch (PDOException $error) {
+        return false;
+    }
+}
+
+function vp3_youtube_artist_research_save_v1(PDO $pdo, int $ownerId, bool $enabled): void
+{
+    if ($ownerId < 1) throw new InvalidArgumentException('A VP3 account is required.');
+    agent_commerce_atomic_pa2($pdo, static function () use ($pdo, $ownerId, $enabled): void {
+        $owner = $pdo->prepare('SELECT id FROM users WHERE id=?'.agent_commerce_lock_pa2($pdo));
+        $owner->execute([$ownerId]);
+        if (!$owner->fetchColumn() || !agent_connection_youtube_consent_v1($pdo,$ownerId)) {
+            throw new DomainException('Enable the YouTube skill first.');
+        }
+        $key = 'youtube_artist_research_owner_'.$ownerId;
+        if (!$enabled) {
+            $pdo->prepare('DELETE FROM settings WHERE setting_key=?')->execute([$key]);
+            return;
+        }
+        $upsert = agent_commerce_sqlite_pa2($pdo)
+            ? 'ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value'
+            : 'ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)';
+        $pdo->prepare("INSERT INTO settings (setting_key,setting_value) VALUES (?,'1') {$upsert}")->execute([$key]);
+    });
+}
+
 function agent_connection_youtube_consent_schema_v1(PDO $pdo): void
 {
     $mysql = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
@@ -47,6 +80,7 @@ function agent_connection_youtube_set_consent_v1(PDO $pdo, int $ownerId, bool $e
         if (!$owner->fetchColumn()) throw new InvalidArgumentException('A VP3 account is required.');
         if (!$enabled) {
             $pdo->prepare('DELETE FROM agent_connection_youtube_consent_v1 WHERE owner_user_id=?')->execute([$ownerId]);
+            $pdo->prepare('DELETE FROM settings WHERE setting_key=?')->execute(['youtube_artist_research_owner_'.$ownerId]);
             return;
         }
         if (agent_connection_youtube_consent_v1($pdo, $ownerId)) return;
