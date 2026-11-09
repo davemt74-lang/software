@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/chat-settings-v237.php';
 require_once __DIR__ . '/includes/profile-public-media-v174.php';
 require_once __DIR__ . '/includes/profile-commerce-v900.php';
 require_once __DIR__ . '/includes/profile-product-promotion-v1.php';
@@ -59,6 +60,7 @@ $links=['Website'=>(string)($profile['website_url']??''),'Instagram'=>(string)($
 if($workspace){foreach(['Website'=>'website_url','Instagram'=>'instagram_url','TikTok'=>'tiktok_url','YouTube'=>'youtube_url','Spotify'=>'spotify_url','Apple Music'=>'apple_music_url'] as $label=>$field)if($links[$label]==='')$links[$label]=(string)($workspace[$field]??'');}
 $links=array_filter($links,static fn(string $v):bool=>(bool)filter_var($v,FILTER_VALIDATE_URL)&&in_array(strtolower((string)parse_url($v,PHP_URL_SCHEME)),['http','https'],true));
 $roleLabel=function_exists('role_label')?role_label((string)($profile['role']??'')):ucfirst((string)($profile['role']??''));
+$profileOrbShape=$agent?chat_settings_agent_orb_shape_v237($pdo,(int)$profile['user_id']):'orbit';
 $agentGreeting=$agent?(trim((string)($profile['profile_agent_greeting']??''))?:'Hi — I’m '.(string)$agent['display_name'].', '.$displayName.'’s AI representative. What would you like to know?'):'';
 $profileToken='';$conversationNamespace='';
 if($agent&&!$preview){
@@ -186,6 +188,9 @@ if($productPromotions)header('Cache-Control: private, no-store');
 <title><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-live-text-pa3d-'.substr(hash_file('sha256',__DIR__.'/profile.css'),0,12))) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-cleanup-v174.css?v=profile-cleanup-v174-20260913')) ?>">
+<?php if($agent&&(!$viewer||!has_permission('chat.access',$viewer))): ?>
+<link rel="stylesheet" href="<?= e(url('/agent-orb-particles.css?v='.substr(hash_file('sha256',__DIR__.'/agent-orb-particles.css'),0,12))) ?>">
+<?php endif; ?>
 </head>
 <body class="profile-page">
 <?php if($viewer): ?>
@@ -319,7 +324,7 @@ if($productPromotions)header('Cache-Control: private, no-store');
 <?php if($agent): ?>
 <div class="profile-agent-widget-root" data-profile-agent-widget>
   <section class="profile-agent-widget" id="profileAgentShell" hidden aria-label="Chat with <?= e((string)$agent['display_name']) ?>">
-    <header class="profile-agent-widget-head"><span class="profile-agent-avatar"><?= e(mb_strtoupper(mb_substr((string)$agent['display_name'],0,1))) ?></span><div><strong><?= e((string)$agent['display_name']) ?></strong><small><?= e($displayName) ?>’s Profile Agent · powered by <?= e(system_agent_name()) ?></small></div><button type="button" class="profile-agent-widget-close" data-close-profile-agent aria-label="Close Profile Agent">×</button></header>
+    <header class="profile-agent-widget-head"><span class="vp3-public-orb" data-vp3-public-orb data-orb-shape="<?= e($profileOrbShape) ?>"<?= $isOwner ? ' data-vp3-orb-personal' : '' ?> aria-hidden="true"></span><div><strong><?= e((string)$agent['display_name']) ?></strong><small><?= e($displayName) ?>’s Profile Agent · powered by <?= e(system_agent_name()) ?></small></div><button type="button" class="profile-agent-widget-close" data-close-profile-agent aria-label="Close Profile Agent">×</button></header>
     <div class="profile-agent-disclosure" data-profile-agent-disclosure>AI representative — not the profile owner live. Answers use only information this profile has approved. A separately accepted live call connects you directly to the owner.</div>
     <?php if(!$preview): ?><div class="profile-agent-live-choice" data-profile-live-choice>
       <label><input type="checkbox" data-profile-live-chat disabled><span>Request live text chat with <strong data-profile-owner-name><?= e($displayName) ?></strong></span></label>
@@ -328,7 +333,7 @@ if($productPromotions)header('Cache-Control: private, no-store');
     </div><?php endif; ?>
     <?php if($preview): ?><div class="profile-agent-preview"><p><?= e($agentGreeting) ?></p><strong>Visitor preview</strong><span>Conversation sending is disabled here so your own preview cannot create visitor events, notifications, or attention items.</span></div><?php else: ?><div class="profile-agent-thread" data-profile-agent-thread aria-live="polite"></div><form class="profile-agent-compose"><textarea maxlength="2000" placeholder="Ask about this profile…" aria-label="Message Profile Agent"></textarea><button type="submit">Send</button><div class="profile-agent-status" data-profile-agent-status role="status" aria-live="polite"></div></form><?php endif; ?>
   </section>
-  <button type="button" class="profile-agent-launcher" data-open-profile-agent aria-controls="profileAgentShell" aria-expanded="false"><span class="profile-agent-launcher-mark"><?= e(mb_strtoupper(mb_substr((string)$agent['display_name'],0,1))) ?></span><span>Ask <?= e((string)$agent['display_name']) ?></span></button>
+  <button type="button" class="profile-agent-launcher" data-open-profile-agent aria-controls="profileAgentShell" aria-expanded="false"><span class="vp3-public-orb" data-vp3-public-orb data-orb-shape="<?= e($profileOrbShape) ?>"<?= $isOwner ? ' data-vp3-orb-personal' : '' ?> aria-hidden="true"></span><span>Ask <?= e((string)$agent['display_name']) ?></span></button>
 </div>
 <?php endif; ?>
 <script>
@@ -400,6 +405,9 @@ window.VP3_PROFILE_WEBMCP={
 <script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-checkout-pa2-20261103')) ?>"></script>
 <?php endif; ?>
 <?php if($viewer): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
+<?php if($agent&&empty($GLOBALS['VP3_AGENT_ORB_RENDERED'])): ?>
+<script src="<?= e(url('/agent-orb-particles.js?v='.substr(hash_file('sha256',__DIR__.'/agent-orb-particles.js'),0,12))) ?>" defer></script>
+<?php endif; ?>
 <?php if($agent&&!$preview): $profileCallsBuild='profile-calls-pa3c-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-calls-pa3c.js').hash_file('sha256',__DIR__.'/profile-calls-pa3c.css')),0,12); ?>
 <link rel="stylesheet" href="<?= e(url('/profile-calls-pa3c.css?v='.$profileCallsBuild)) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-speech-pa4a.css?v='.substr(hash_file('sha256',__DIR__.'/profile-speech-pa4a.css'),0,12))) ?>">

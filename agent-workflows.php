@@ -127,7 +127,9 @@ if($notice===''&&isset($_GET['notice']))$notice=mb_strimwidth(trim((string)$_GET
 $brain=function_exists('agent_cognitive_loop_v310_state')?agent_cognitive_loop_v310_state($user):['priorities'=>[]];
 $priorities=array_values(array_filter((array)($brain['priorities']??[]),'is_array'));
 $runs=agent_workflow_recent_v1400($pdo,$user,30);
-$detail=null;$detailId=max(0,(int)($_GET['id']??0));
+$detail=null;
+$detailParam=$_GET['id']??$_GET['run']??'';
+$detailId=is_string($detailParam)&&ctype_digit($detailParam)?(int)$detailParam:0;
 if($detailId>0){$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId);if($row)$detail=$durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true);}
 $browserRuntime=$detail&&vp3_browser_runtime_schema_ready_v2200($pdo)?vp3_browser_runtime_for_workflow_v2200($pdo,(int)$user['id'],$detailId):null;
 $browserWeb=$detail&&vp3_browser_web_schema_ready_v2210($pdo)?vp3_browser_web_for_workflow_v2210($pdo,(int)$user['id'],$detailId):['count'=>0,'verified'=>0,'failed'=>0,'checkpointed'=>0,'interactions'=>[]];

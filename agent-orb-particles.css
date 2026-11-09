@@ -1,0 +1,115 @@
+/* Stoneward's public Ember visual. Rings are separate from the host controls. */
+.vp3-public-orb {
+  --vp3-orbit-ember: 255,214,153;
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--vp3-public-orb-size, 100%);
+  aspect-ratio: 1;
+  isolation: isolate;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.vp3-public-orb:not(.vp3-public-orb-rendered)::before {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border: 1px solid rgba(var(--vp3-orbit-ember), .45);
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffbd7988 .6px, transparent 1px) 0 0 / 4px 4px,
+    radial-gradient(circle, #2a1b17a0, #20161524 70%, transparent);
+  box-shadow: 0 0 12px #ffb56e43;
+}
+.vp3-public-orb:not([data-vp3-public-orb-mounted])::after {
+  content: "";
+  position: absolute;
+  inset: -5%;
+  border: 1px solid rgba(var(--vp3-orbit-ember), .34);
+  border-radius: 50%;
+  transform: rotate(-28deg) scaleY(.61);
+}
+.vp3-public-orb-aura,
+.vp3-public-orb-cloud,
+.vp3-public-orb-points,
+.vp3-public-orb-ring {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+.vp3-public-orb-aura {
+  inset: -34%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--vp3-orbit-ember), .21),
+    rgba(var(--vp3-orbit-ember), .10) 39%, transparent 73%);
+  animation: vp3-public-orb-aura 3s ease-in-out infinite;
+}
+.vp3-public-orb-cloud {
+  inset: -55%;
+  width: 210%;
+  height: 210%;
+  filter: drop-shadow(0 0 2px rgba(var(--vp3-orbit-ember), .45));
+}
+.vp3-public-orb-points {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+.vp3-public-orb-ring {
+  border: 1px solid rgba(var(--vp3-orbit-ember), .40);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(var(--vp3-orbit-ember), .19);
+}
+.vp3-public-orb-ring[data-orb-ring="pulse"] {
+  inset: -7%;
+  border-color: rgba(var(--vp3-orbit-ember), .37);
+  animation: vp3-public-orb-pulse 2.7s ease-in-out infinite;
+}
+.vp3-public-orb-ring[data-orb-ring="primary"] {
+  inset: -17%;
+  transform: rotate(-28deg) scaleY(.56);
+  animation: vp3-public-orb-orbit 13s linear infinite;
+}
+.vp3-public-orb-ring[data-orb-ring="secondary"] {
+  inset: -27%;
+  border-color: rgba(var(--vp3-orbit-ember), .26);
+  transform: rotate(53deg) scaleY(.64);
+  animation: vp3-public-orb-reverse 17s linear infinite;
+}
+.vp3-public-orb-ring:is([data-orb-ring="primary"], [data-orb-ring="secondary"])::after {
+  content: "";
+  position: absolute;
+  left: 7%;
+  top: 24%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ffe8ba;
+  box-shadow: 0 0 6px rgba(var(--vp3-orbit-ember), .8);
+}
+.vp3-public-orb[data-orb-shape="particle_face"] {
+  background: radial-gradient(circle at 35% 24%, #6a73b9, #35376c 42%, #141a3c 77%, #090e20);
+  box-shadow: inset 6px 7px 14px #bebeff24, inset -9px -12px 19px #000a, 0 0 15px #8791cf48;
+}
+.vp3-public-orb[data-orb-shape="particle_face"] :is(.vp3-public-orb-aura, .vp3-public-orb-cloud,
+  [data-orb-ring="primary"], [data-orb-ring="secondary"]) { display: none; }
+.vp3-public-orb[data-orb-shape="particle_face"] [data-orb-ring="pulse"] {
+  border-color: color-mix(in srgb, var(--orb, #a7b5fb), transparent 24%);
+  box-shadow: 0 0 0 5px #a7b5fb0f, 0 0 20px #a7b5fb59;
+  animation-duration: 3.6s;
+}
+.vp3-orb-root[data-state="listening"] [data-orb-shape="particle_face"] [data-orb-ring="pulse"] { animation-duration: 1.4s; }
+.vp3-orb-root[data-recording="true"] [data-orb-shape="particle_face"] [data-orb-ring="pulse"] { visibility: hidden; }
+.vp3-public-orb[data-orb-shape="particle_face"]:not(.vp3-public-orb-rendered)::before {
+  background: radial-gradient(ellipse at 34% 44%, #d9ebff 0 7%, transparent 9%),
+    radial-gradient(ellipse at 66% 44%, #d9ebff 0 7%, transparent 9%),
+    radial-gradient(circle, #a7b5fb80 .6px, transparent 1px) 0 0 / 4px 4px;
+  border-color: #a7b5fb80;
+}
+@keyframes vp3-public-orb-aura { 50% { transform: scale(1.14); opacity: .67; } }
+@keyframes vp3-public-orb-pulse { 50% { transform: scale(1.13); opacity: .45; } }
+@keyframes vp3-public-orb-orbit { to { transform: rotate(332deg) scaleY(.56); } }
+@keyframes vp3-public-orb-reverse { to { transform: rotate(-307deg) scaleY(.64); } }
+@media (prefers-reduced-motion: reduce) {
+  .vp3-public-orb-aura, .vp3-public-orb-ring { animation: none !important; }
+}

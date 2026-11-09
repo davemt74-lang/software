@@ -31,7 +31,7 @@ for (const file of fs.readdirSync('includes')) {
 for (const file of ['profile.php','profile-commerce-product.php','profile-promotion-image.php','profile-promotion-click.php','profile-product-photo.php','media-library-file-v86.php']) {
   fs.copyFileSync(file, path.join(tmp, file));
 }
-for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-agent.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js']) {
+for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-agent.js','agent-orb-particles.css','agent-orb-particles.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js']) {
   fs.symlinkSync(path.resolve(file), path.join(tmp, file));
 }
 fs.copyFileSync('api/profile-agent.php', path.join(tmp, 'api/profile-agent.php'));
@@ -77,6 +77,11 @@ if($command==='init'){
           str_repeat('b',32),str_repeat('c',64),hash_file('sha256',$source),json_encode(['headline'=>'Mug Morning','copy'=>'Learn how the blue glaze comes together.','prompt'=>'PRIVATE_PROMPT']),
           hash_file('sha256',__DIR__.'/private/user-media/1/promotion.png'),str_repeat('a',32),'/fixture-owner/product/blue-mug'
         ]);
+    exit;
+}
+if($command==='owner-face'){
+    $pdo->exec("ALTER TABLE team_user_presence ADD COLUMN agent_orb_shape VARCHAR(20) NOT NULL DEFAULT 'orbit'");
+    $pdo->exec("INSERT INTO team_user_presence (user_id, agent_orb_shape) VALUES (1,'particle_face'),(2,'orbit')");
     exit;
 }
 if($command==='clicks'){
@@ -215,7 +220,16 @@ try {
   const nativeClickId = nativeDestination.searchParams.get('promotion_click');
   assert.deepEqual(JSON.parse(invoke('clicks')),[{click_id:nativeClickId,publication_id:key,placement:'profile'}]);
   console.log('PASS Profile CTA records an exact replay-safe click, with untracked redirects for another session, forged placement and prefetch');
-  await page.locator('[data-open-profile-agent]').click();
+  const launcher = page.locator('[data-open-profile-agent]');
+  const launcherOrb = launcher.locator('.vp3-public-orb-rendered');
+  await launcherOrb.waitFor();
+  assert.deepEqual(await launcherOrb.locator('[data-orb-ring]').evaluateAll(nodes=>nodes.map(node=>node.dataset.orbRing)),['pulse','primary','secondary']);
+  assert.equal(await launcherOrb.locator('.vp3-public-orb-cloud').isVisible(),true);
+  assert.equal(await launcherOrb.locator('a, button').count(),0);
+  await launcher.click();
+  const chatOrb = page.locator('.profile-agent-widget-head .vp3-public-orb-rendered');
+  await chatOrb.waitFor();
+  assert.equal(await chatOrb.locator('.vp3-public-orb-points').isVisible(),true);
   const visitorForm = page.getByRole('textbox',{name:'Message Profile Agent'});
   const agentCard = page.locator('[data-profile-agent-thread] .profile-agent-message.agent [data-profile-product-promotion]');
   await visitorForm.fill('Could you share your public hours?');
@@ -245,8 +259,19 @@ try {
   await page.waitForFunction(() => document.querySelector('.pcp-photo img').naturalWidth === 16);
   console.log('PASS the Profile Agent card opens the canonical public product listing');
 
+  invoke('owner-face');
   await page.goto(base + '/fixture-owner');
-  await page.locator('[data-open-profile-agent]').click();
+  const guestFace = launcherOrb.locator('[data-orb-ring="pulse"]');
+  await guestFace.waitFor();
+  assert.equal(await launcherOrb.getAttribute('data-orb-shape'), 'particle_face');
+  assert.equal(await launcherOrb.locator('[data-orb-ring="primary"]').isVisible(), false);
+  assert.equal(await launcherOrb.locator('[data-orb-ring="secondary"]').isVisible(), false);
+  await launcher.click();
+  await chatOrb.waitFor();
+  assert.equal(await chatOrb.getAttribute('data-orb-shape'), 'particle_face');
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('vp3:agent-orb-shape',{detail:{shape:'orbit'}})));
+  assert.equal(await chatOrb.getAttribute('data-orb-shape'), 'particle_face');
+  console.log('PASS guest Profile Agent uses the profile owner’s saved face in the launcher and Chat');
   await agentCard.waitFor();
   invoke('pause');
   assert.equal((await fetch(base + imagePath)).status, 404);

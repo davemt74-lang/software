@@ -39,6 +39,7 @@ function chat_settings_defaults_v237(): array
         'sound_enabled' => true,
         'agent_voice_enabled' => true,
         'agent_assisted_phone_chat_enabled' => false,
+        'agent_orb_shape' => 'orbit',
     ];
 }
 
@@ -66,6 +67,29 @@ function chat_settings_agent_assisted_phone_chat_schema_ready_v237(?PDO $pdo = n
     if (!$pdo) return false;
     require_once __DIR__.'/schema-metadata.php';
     return schema_metadata_column_exists($pdo, 'team_user_presence', 'agent_assisted_phone_chat_enabled');
+}
+
+function chat_settings_agent_orb_shape_schema_ready_v237(?PDO $pdo = null): bool
+{
+    $pdo ??= db();
+    if (!$pdo) return false;
+    require_once __DIR__.'/schema-metadata.php';
+    return schema_metadata_column_exists($pdo, 'team_user_presence', 'agent_orb_shape');
+}
+
+/** Public profile rendering only needs the owner's visual preference. */
+function chat_settings_agent_orb_shape_v237(?PDO $pdo, int $userId): string
+{
+    if (!$pdo || $userId < 1 || !chat_settings_agent_orb_shape_schema_ready_v237($pdo)) {
+        return 'orbit';
+    }
+    try {
+        $stmt = $pdo->prepare('SELECT agent_orb_shape FROM team_user_presence WHERE user_id=? LIMIT 1');
+        $stmt->execute([$userId]);
+        return $stmt->fetchColumn() === 'particle_face' ? 'particle_face' : 'orbit';
+    } catch (Throwable $error) {
+        return 'orbit';
+    }
 }
 
 /** Read only the stored opt-in. Call authority and disclosure are checked separately. */
@@ -121,6 +145,9 @@ function chat_settings_ensure_schema_v237(?PDO $pdo = null): void
     if (!chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo)) {
         $pdo->exec('ALTER TABLE team_user_presence ADD COLUMN agent_assisted_phone_chat_enabled TINYINT(1) NOT NULL DEFAULT 0');
     }
+    if (!chat_settings_agent_orb_shape_schema_ready_v237($pdo)) {
+        $pdo->exec("ALTER TABLE team_user_presence ADD COLUMN agent_orb_shape VARCHAR(16) NOT NULL DEFAULT 'orbit'");
+    }
 }
 
 function chat_settings_get_v237(PDO $pdo, int $userId): array
@@ -132,9 +159,11 @@ function chat_settings_get_v237(PDO $pdo, int $userId): array
 
     $voiceReady = chat_settings_agent_voice_schema_ready_v237($pdo);
     $assistedPhoneReady = chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo);
+    $orbShapeReady = chat_settings_agent_orb_shape_schema_ready_v237($pdo);
     $columns = 'presence_mode,social_chat_enabled,sound_enabled'
         . ($voiceReady ? ',agent_voice_enabled' : '')
-        . ($assistedPhoneReady ? ',agent_assisted_phone_chat_enabled' : '');
+        . ($assistedPhoneReady ? ',agent_assisted_phone_chat_enabled' : '')
+        . ($orbShapeReady ? ',agent_orb_shape' : '');
     $stmt = $pdo->prepare(
         'SELECT ' . $columns . '
          FROM team_user_presence
@@ -160,6 +189,7 @@ function chat_settings_get_v237(PDO $pdo, int $userId): array
             ? (bool)($row['agent_voice_enabled'] ?? true)
             : true,
         'agent_assisted_phone_chat_enabled' => in_array($row['agent_assisted_phone_chat_enabled'] ?? null, [1, '1', true], true),
+        'agent_orb_shape' => ($row['agent_orb_shape'] ?? null) === 'particle_face' ? 'particle_face' : 'orbit',
     ];
 }
 
@@ -182,6 +212,17 @@ function chat_settings_save_v237(PDO $pdo, array $user, array $input): array
         }
         if (!chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo)) {
             throw new RuntimeException('Agent-assisted phone chat is not ready. Run /upgrade.php.');
+        }
+    }
+
+    $orbShape = null;
+    if (array_key_exists('agent_orb_shape', $input)) {
+        $orbShape = $input['agent_orb_shape'];
+        if (!in_array($orbShape, ['orbit', 'particle_face'], true)) {
+            throw new RuntimeException('Choose Orb with rings or Original particle face.');
+        }
+        if (!chat_settings_agent_orb_shape_schema_ready_v237($pdo)) {
+            throw new RuntimeException('Agent appearance settings are not ready. Run /upgrade.php.');
         }
     }
 
@@ -211,7 +252,7 @@ function chat_settings_save_v237(PDO $pdo, array $user, array $input): array
             : (!empty($current['agent_voice_enabled']) ? 1 : 0))
         : 0;
 
-    // Old clients and the account menu's Agent Voice control must not write this opt-in.
+    // Leave optional preferences out of the upsert when a caller omits them.
     $settings = [
         'presence_mode'=>$mode,
         'social_chat_enabled'=>$socialEnabled,
@@ -219,6 +260,7 @@ function chat_settings_save_v237(PDO $pdo, array $user, array $input): array
         'agent_voice_enabled'=>$agentVoiceEnabled,
     ];
     if ($assistedPhoneEnabled !== null) $settings['agent_assisted_phone_chat_enabled'] = $assistedPhoneEnabled;
+    if ($orbShape !== null) $settings['agent_orb_shape'] = $orbShape;
     $names = array_keys($settings);
     $marks = implode(',', array_fill(0, count($settings), '?'));
     $sqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';

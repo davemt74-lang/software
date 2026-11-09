@@ -29,6 +29,7 @@ $profileActivityBuild = 'profile-activity-safety-pa1-20261103';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 $chatSettingsBuild = 'chat-settings-v239-canonical-20260905' . '-voice-v1352-chat-settings-v237-pa3c-assisted-phone-visitor-availability';
+$chatSettingsBuild .= '-' . substr(hash_file('sha256', __DIR__ . '/chat-settings-v237.js'), 0, 12);
 $notificationDrawerBuild = 'chat-notifications-recovery-20261016' . '-voice-v1351';
 $notificationDrawerBuild .= '-profile-doorbell-pa3-20261103';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';

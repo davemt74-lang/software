@@ -24,7 +24,7 @@ $partialSpeech=[
     'partial-assistance-research'=>['profile_call_research_pa3c','result_json'],
 ];
 if (!isset($argv[1])) {
-    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech));
+    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech));
     foreach ($modes as $mode) {
         $command = escapeshellarg(PHP_BINARY).(php_ini_loaded_file() ? ' -c '.escapeshellarg(php_ini_loaded_file()) : '').' '.escapeshellarg(__FILE__).' '.escapeshellarg($mode);
         passthru($command, $status);
@@ -40,6 +40,7 @@ $fixture->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $fixture->exec("CREATE TABLE existing_content (value TEXT); INSERT INTO existing_content VALUES ('preserve me')");
 require dirname(__DIR__).'/includes/tv-watching-v1.php';
 require dirname(__DIR__).'/includes/agent-reminders-v1.php';
+require dirname(__DIR__).'/includes/chat-settings-v237.php';
 require dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
 require dirname(__DIR__).'/includes/profile-calls-pa3c.php';
 require_once dirname(__DIR__).'/includes/profile-call-activity-pa3c.php';
@@ -50,6 +51,12 @@ require_once dirname(__DIR__).'/includes/agent-commerce-recovery-pa2.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
 require_once dirname(__DIR__).'/includes/profile-promotion-attribution-v1.php';
 $fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');
+$fixture->exec('CREATE TABLE team_user_presence(user_id INTEGER PRIMARY KEY, presence_mode TEXT, social_chat_enabled INTEGER, sound_enabled INTEGER, agent_voice_enabled INTEGER, agent_assisted_phone_chat_enabled INTEGER)');
+$fixture->exec('INSERT INTO team_user_presence (user_id) VALUES (1)');
+if (!in_array($mode,['post','missing-orb-shape'],true)) {
+    $fixture->exec("ALTER TABLE team_user_presence ADD COLUMN agent_orb_shape VARCHAR(16) NOT NULL DEFAULT 'orbit'");
+    $fixture->exec("UPDATE team_user_presence SET agent_orb_shape='particle_face' WHERE user_id=1");
+}
 $fixture->exec('CREATE TABLE agent_commerce_products_v800(id INTEGER PRIMARY KEY)');
 $fixture->exec('CREATE TABLE agent_commerce_orders_v800(id INTEGER PRIMARY KEY)');
 function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
@@ -77,7 +84,7 @@ eval(substr($checkoutDdl,$checkoutStart,$checkoutEnd-$checkoutStart));
 if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_');
-$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get'],true)||$missingTable||isset($partialSpeech[$mode]);
+$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape'],true)||$missingTable||isset($partialSpeech[$mode]);
 if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);}
 if($modern){
     initiative_product_launch_schema_v1($fixture);
@@ -128,7 +135,7 @@ foreach ($functions as $name => $typed) {
     else eval('function '.$name.'(...$args) { return migration_dependency(__FUNCTION__, $args); }');
 }
 
-$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
+$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
 // Reproduce the reported deployment: bootstrap does not supply a page-local PDO.
 $pdo = null;
 ob_start(); eval(preg_replace('/^<\?php\s*/', '', $source)); $html = ob_get_clean();
@@ -139,10 +146,15 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     foreach (['social_feed_schema_v1', 'knowledge_r6_ensure_schema', 'knowledge_r7_ensure_schema', 'knowledge_r8_ensure_schema', 'workspace_native_schema_v1', 'artist_music_v185_ensure_schema'] as $name) check(in_array($name, $calls, true), 'Upgrade did not reach '.$name);
     check(table_exists('tv_watching_state_v1') && table_exists('tv_watching_records_v1') && reminder_ready_v1($fixture) && $complete, 'Upgrade skipped TV/reminder storage');
     foreach($newTables as $table)check(table_exists($table),'Upgrade skipped required table '.$table);
+    check(chat_settings_agent_orb_shape_schema_ready_v237($fixture), 'Upgrade skipped the Agent shape preference');
+    check(chat_settings_agent_orb_shape_v237($fixture, 1) === ($mode === 'post' ? 'orbit' : 'particle_face'), 'Upgrade did not preserve the default or saved Agent shape');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'complete-get') {
     check($complete&&$dbCalls===1&&$calls===[],'Complete GET must inspect speech columns read-only and report ready');
     check(!str_contains($html,'Run Upgrade')&&str_contains($html,'installed and ready'),'Complete schema must not prompt another upgrade');
+} elseif ($mode === 'missing-orb-shape') {
+    check(!$complete && $dbCalls===1 && $calls===[], 'Missing Agent shape preference must leave the upgrade available without writing on GET');
+    check(!chat_settings_agent_orb_shape_schema_ready_v237($fixture) && str_contains($html,'Run Upgrade'), 'Missing Agent shape column was added or upgrade control was hidden on GET');
 } elseif ($mode === 'missing-db') {
     check($error === 'Database connection is unavailable.' && $calls === [], 'Unavailable database must stop before all migrations');
     check(str_contains($html, $error) && $flashes === [] && $redirects === [], 'Database failure was hidden or marked complete');
