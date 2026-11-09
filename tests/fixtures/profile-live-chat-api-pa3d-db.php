@@ -14,7 +14,10 @@ if($action==='settings'){
     exit;
 }
 if($action==='age'){$pdo->exec("UPDATE profile_agent_messages SET created_at='2001-01-01 00:00:00'");exit;}
-if($action==='attachments'){vp3_profile_chat_attachment_install_v1($pdo);exit;}
+if($action==='attachments'){
+    require_once dirname(__DIR__,2).'/includes/profile-chat-attachments-v1.php';
+    vp3_profile_chat_attachment_install_v1($pdo);exit;
+}
 foreach(['settings'=>'team_user_presence','handoff'=>'profile_agent_handoff_deliveries_pa3'] as $name=>$table){
     if($action==='hide_'.$name){$pdo->exec('ALTER TABLE '.$table.' RENAME TO '.$table.'_pa3d_hidden');exit;}
     if($action==='restore_'.$name){$pdo->exec('ALTER TABLE '.$table.'_pa3d_hidden RENAME TO '.$table);exit;}

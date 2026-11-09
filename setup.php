@@ -79,7 +79,6 @@ try {
     vp3_youtube_playback_install_v1($pdo);
     vp3_youtube_picks_install_v1($pdo);
     profile_agent_ensure_schema($pdo);
-    vp3_profile_chat_attachment_install_v1($pdo);
     agent_job_engine_ensure_schema_v1900($pdo);
     agent_work_control_ensure_schema_v173($pdo);
     vp3_profile_handoff_ensure_schema_pa3($pdo);

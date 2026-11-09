@@ -3,6 +3,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-transcription-context.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-public-service-v110.php';
+require_once dirname(__DIR__) . '/includes/profile-chat-attachments-v1.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, private');
 

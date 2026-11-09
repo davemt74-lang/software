@@ -146,6 +146,9 @@ function profile_agent_ensure_schema(?PDO $pdo = null): void
       CONSTRAINT fk_attention_agent FOREIGN KEY (profile_agent_id) REFERENCES user_agents(id) ON DELETE SET NULL,
       CONSTRAINT fk_attention_visitor FOREIGN KEY (visitor_user_id) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    require_once __DIR__.'/profile-chat-attachments-v1.php';
+    vp3_profile_chat_attachment_install_v1($pdo);
 }
 
 function profile_username_normalize(string $value): string

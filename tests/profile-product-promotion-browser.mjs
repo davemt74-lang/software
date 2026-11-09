@@ -236,8 +236,12 @@ try {
   assert.deepEqual(await launcherOrb.locator('[data-orb-ring]').evaluateAll(nodes=>nodes.map(node=>node.dataset.orbRing)),['pulse','primary','secondary']);
   assert.equal(await launcherOrb.locator('.vp3-public-orb-cloud').isVisible(),true);
   assert.equal(await launcherOrb.locator('a, button').count(),0);
-  for (const [memberId,query] of [['2',''],['1','?preview=1']]) {
+  for (const [memberId,query] of [['2',''],['1',''],['1','?preview=1']]) {
     const member = await browser.newPage({viewport:{width:390,height:740},extraHTTPHeaders:{'X-VP3-Fixture-Member':memberId}});
+    const chatRequests=[];
+    member.on('request',request=>{
+      if(new URL(request.url()).pathname==='/api/profile-agent.php')chatRequests.push(request.url());
+    });
     try {
       const response = await member.goto(base + '/fixture-owner' + query);
       assert.equal(response.status(),200);
@@ -246,8 +250,17 @@ try {
       assert.equal(await member.locator('.vp3-orb-root,.vp3-orb-bar,script[src^="/agent-orb.js"]').count(),0);
       assert.equal(await member.evaluate(()=>Boolean(window.VP3_ORB_CONFIG)),false);
       await member.getByRole('button',{name:'Ask Fixture Public Guide'}).click();
-      if (query) await member.locator('.profile-agent-widget .profile-agent-preview').waitFor();
-      else await member.getByRole('textbox',{name:'Message Profile Agent'}).waitFor();
+      const composer=member.getByRole('textbox',{name:'Message Profile Agent'});
+      await composer.waitFor();
+      if(memberId==='1'){
+        assert.equal(await member.locator('[data-profile-agent-presence]').textContent(),'Owner preview');
+        assert.equal(await composer.isDisabled(),true);
+        assert.equal(await member.getByRole('button',{name:'Send',exact:true}).isDisabled(),true);
+        await member.getByRole('button',{name:'Chat settings'}).click();
+        assert.equal(await member.getByRole('link',{name:'Manage Profile Agent'}).getAttribute('href'),'/profile-agent.php');
+        assert.equal(await member.locator('.profile-product-promotions a[href*="profile-promotion-click.php"]').count(),0);
+        assert.deepEqual(chatRequests,[]);
+      }else assert.equal(await composer.isEnabled(),true);
     } finally { await member.close(); }
   }
   console.log('PASS signed-in visitors and owner preview see the Profile Agent without the personal orb or bottom chat bar');

@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 const VP3_PROFILE_AGENT_PUBLIC_SERVICE_V110='vp3-profile-agent-public-service-v110-20260928';
 require_once __DIR__.'/profile-agent-handoff-pa3.php';
-require_once __DIR__.'/profile-chat-attachments-v1.php';
 
 final class VP3ProfileAgentPublicException extends RuntimeException
 {
@@ -494,6 +493,7 @@ function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,i
     if(!is_bool($continueLive)||($continueLive&&$chatMode!=='live'))vp3_profile_handoff_error_pa3('HANDOFF_INVALID',422);
     $attachment=$delivery['attachment']??null;
     if($attachment!==null){
+        require_once __DIR__.'/profile-chat-attachments-v1.php';
         if($conversationId<1||$query!==VP3_PROFILE_CHAT_ATTACHMENT_MESSAGE_V1)vp3_profile_chat_attachment_owner_required_v1();
         $ctx['profile_attachment_fingerprint']=$attachment['fingerprint'];
     }

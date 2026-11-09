@@ -6,8 +6,8 @@ const VP3_PROFILE_HANDOFF_PA3='vp3.profile-handoff.v1';
 const VP3_PROFILE_HANDOFF_PICKUP_MS_PA3=15000;
 const VP3_PROFILE_HANDOFF_DELIVERY_MS_PA3=5000;
 const VP3_PROFILE_HANDOFF_PRESENCE_MS_PA3=45000;
+const VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1='{"profile_chat_private_attachment":true}';
 require_once __DIR__.'/profile-live-text-pa3d.php';
-require_once __DIR__.'/profile-chat-attachments-v1.php';
 
 final class VP3ProfileHandoffException extends RuntimeException
 {
@@ -309,11 +309,16 @@ function vp3_profile_handoff_owner_card_pa3(PDO $pdo,array $turn,int $chatCid=0,
     $q=$pdo->prepare('SELECT display_name FROM user_agents WHERE id=? AND owner_user_id=?');$q->execute([(int)$turn['profile_agent_id'],$owner]);$agent=$q->fetchColumn();
     $out['visitor_label']=!empty($session['identity_disclosed'])&&is_string($session['display_name']??null)?mb_substr(trim($session['display_name']),0,100):'Visitor';
     if($out['visitor_label']==='')$out['visitor_label']='Visitor';$out['visitor_message']=mb_substr($message,0,4000);$out['agent_name']=is_string($agent)?mb_substr($agent,0,100):'Profile Agent';
-    $q=$pdo->prepare("SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND sender_type IN ('visitor','owner','agent') ORDER BY id DESC LIMIT 20");$q->execute([$cid]);$out['history']=array_reverse(array_map(static fn(array $m):array=>['id'=>(int)$m['id'],'sender_type'=>(string)$m['sender_type'],'message'=>mb_substr((string)$m['message'],0,8000),'created_at'=>(string)$m['created_at']],$q->fetchAll(PDO::FETCH_ASSOC)));
-    $out['history']=vp3_profile_chat_attachment_messages_v1($pdo,$out['history']);
-    foreach($out['history'] as $row){
-        if($row['id']!==$out['visitor_message_id']||!isset($row['attachment']))continue;
-        $out['visitor_attachment']=$row['attachment'];$out['visitor_message']=$row['message'];break;
+    $q=$pdo->prepare("SELECT id,sender_type,message,created_at,CASE WHEN context_json=? THEN 1 ELSE 0 END private_attachment FROM profile_agent_messages WHERE conversation_id=? AND sender_type IN ('visitor','owner','agent') ORDER BY id DESC LIMIT 20");
+    $q->execute([VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1,$cid]);$history=$q->fetchAll(PDO::FETCH_ASSOC);
+    $out['history']=array_reverse(array_map(static fn(array $m):array=>['id'=>(int)$m['id'],'sender_type'=>(string)$m['sender_type'],'message'=>mb_substr((string)$m['message'],0,8000),'created_at'=>(string)$m['created_at']],$history));
+    if(array_filter(array_column($history,'private_attachment'))){
+        require_once __DIR__.'/profile-chat-attachments-v1.php';
+        $out['history']=vp3_profile_chat_attachment_messages_v1($pdo,$out['history']);
+        foreach($out['history'] as $row){
+            if($row['id']!==$out['visitor_message_id']||!isset($row['attachment']))continue;
+            $out['visitor_attachment']=$row['attachment'];$out['visitor_message']=$row['message'];break;
+        }
     }
     return $out;
 }

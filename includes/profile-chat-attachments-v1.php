@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 const VP3_PROFILE_CHAT_ATTACHMENT_MAX_V1 = 2097152;
 const VP3_PROFILE_CHAT_ATTACHMENT_MESSAGE_V1 = 'Shared a private attachment with the profile owner.';
-const VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1 = '{"profile_chat_private_attachment":true}';
 
 function vp3_profile_chat_attachment_install_v1(PDO $pdo): void
 {

@@ -465,7 +465,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             user_data_usage_ensure_schema_v236();
             shared_knowledge_index_ensure_schema_v236();
             profile_agent_ensure_schema();
-            vp3_profile_chat_attachment_install_v1($pdo);
             vp3_profile_handoff_ensure_schema_pa3($pdo);
             vp3_profile_call_ensure_schema_pa3c($pdo);
             vp3_profile_call_activity_ensure_schema_pa3c($pdo);

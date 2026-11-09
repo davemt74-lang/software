@@ -78,6 +78,7 @@ function profile_agent_ensure_schema(?PDO $connection=null): void
 {
     $p=$connection??$GLOBALS['fixture'];
     $p->exec('CREATE TABLE IF NOT EXISTS profile_agent_messages (id INTEGER PRIMARY KEY)');
+    vp3_profile_chat_attachment_install_v1($p);
     $p->exec("CREATE TABLE IF NOT EXISTS agent_attention_items(id INTEGER PRIMARY KEY,owner_user_id INTEGER,source_event_id INTEGER UNIQUE,source_conversation_id INTEGER,profile_agent_id INTEGER,visitor_user_id INTEGER,attention_type VARCHAR(50),priority INTEGER,status VARCHAR(20) DEFAULT 'pending',headline VARCHAR(255),summary TEXT,assessment TEXT,recommended_response TEXT,actions_json TEXT,context_json TEXT,snoozed_until DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $p->exec("CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY,user_id INTEGER,type VARCHAR(80),title VARCHAR(255),body TEXT,target_url TEXT,source_type VARCHAR(80),source_id INTEGER,is_read INTEGER DEFAULT 0,read_at DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
 }
@@ -95,7 +96,6 @@ $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'mi
 $modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape'],true)||$missingTable||isset($partialSpeech[$mode]);
 if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);}
 if($modern){
-    vp3_profile_chat_attachment_install_v1($fixture);
     initiative_product_launch_schema_v1($fixture);
     profile_promotion_attribution_schema_v1($fixture);
     agent_connection_youtube_consent_schema_v1($fixture);
