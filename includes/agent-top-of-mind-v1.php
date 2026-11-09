@@ -25,7 +25,10 @@ function vp3_top_of_mind_state_v1(array $run,array $action,?array $receipt,array
         return vp3_top_of_mind_lease_time_v1($run['lease_expires_at']??null)>=$now
             &&($action['status']??'')==='executing'&&(int)($run['current_action_id']??0)===(int)($action['id']??0)?'working':'interrupted';
     }
-    if(($run['status']??'')==='failed')return 'failed';
+    if(($run['status']??'')==='failed'){
+        return ($run['capability_key']??'')==='initiative.plan'&&($run['last_error_class']??'')==='assessment_sources_changed'
+            ?'superseded':'failed';
+    }
     if(($run['status']??'')==='cancelled')return 'cancelled';
     if(($run['status']??'')==='paused')return 'paused';
     if(in_array($run['status']??'', ['queued','approved'],true))return 'queued';
@@ -42,6 +45,28 @@ function vp3_top_of_mind_state_v1(array $run,array $action,?array $receipt,array
     if(in_array($output['status']??'', ['approval_pending','review_required'],true))return 'waiting_owner';
     if(($result['initiative_delivery']??'')==='pending')return 'ready_to_report';
     return 'completed';
+}
+
+/** A current owner-only playback observation for this Chat, not an Initiative inference source. */
+function vp3_top_of_mind_music_v1(PDO $pdo,array $user,int $agentId,int $conversationId,int $now): ?array
+{
+    require_once __DIR__.'/agent-connection-youtube-playback-v1.php';
+    $owner=(int)$user['id'];
+    if(!vp3_youtube_playback_ready_v1($pdo)||!agent_connection_youtube_enabled_v1()
+        ||!agent_connection_youtube_consent_v1($pdo,$owner))return null;
+    $captureKey=vp3_youtube_capture_key_v1($pdo,$owner);
+    if($captureKey==='')return null;
+    foreach(vp3_youtube_history_recent_v1($pdo,$owner,$agentId,$conversationId) as $video){
+        $playedAt=$video['played_at'];
+        if($playedAt<$now-86400||$playedAt>$now)continue;
+        $title=vp3_top_of_mind_text_v1($video['title']??'',180);
+        if($title==='')continue;
+        if(!hash_equals($captureKey,vp3_youtube_capture_key_v1($pdo,$owner))
+            ||!agent_connection_youtube_consent_v1($pdo,$owner)||!agent_connection_youtube_enabled_v1())return null;
+        return ['title'=>$title,'channel_title'=>vp3_top_of_mind_text_v1($video['channel_title']??'',140),
+            'played_at'=>gmdate(DATE_ATOM,$playedAt),'chat_url'=>url('/chat.php?agent='.($agentId?:'system').'&conversation_id='.$conversationId)];
+    }
+    return null;
 }
 
 /** Exact requested Agent, current saved policy and authorized sources only. */
@@ -78,7 +103,9 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
             ?(vp3_top_of_mind_lease_time_v1($run['lease_expires_at']??'')>=$now?0:1)
             :(in_array($run['status']??'', ['approved','queued'],true)?2:3);
         usort($runs,static fn(array $a,array $b):int=>($workRank($a)<=>$workRank($b))?:((int)$b['id']<=>(int)$a['id']));
-        $runs=array_slice($runs,0,6);
+        $visible=[];
+        foreach($runs as $run)$visible[($run['capability_key']??'')==='initiative.plan'?'assessment':(int)$run['id']]??=$run;
+        $runs=array_slice($visible,0,6);
         $selected=[];$sessions=[];
         foreach($runs as $run){
             if(($run['capability_key']??'')==='initiative.plan')continue;
@@ -174,6 +201,8 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
             return true;
         },ARRAY_FILTER_USE_BOTH));
         if(count($out['items'])!==$before)$out['coverage']['initiative']='limited';
+        try{$out['music']=vp3_top_of_mind_music_v1($pdo,$fresh['user'],$agentId,$cid,$now);}
+        catch(PDOException $error){$out['music']=null;}
         return $out;
     });
 }

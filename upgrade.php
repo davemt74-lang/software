@@ -70,7 +70,7 @@ require_once __DIR__ . '/includes/agent-development-v1.php';
 require_once __DIR__ . '/includes/agent-connection-email-followup-v1.php';
 require_once __DIR__ . '/includes/agent-connection-health-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
-require_once __DIR__ . '/includes/agent-connection-youtube-chat-v1.php';
+require_once __DIR__ . '/includes/agent-connection-youtube-playback-v1.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
@@ -294,6 +294,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && agent_connection_email_sender_watch_ready_v1($schemaConnection)
         && agent_connection_health_schema_ready_v1($schemaConnection)
         && agent_connection_youtube_consent_ready_v1($schemaConnection)
+        && vp3_youtube_playback_ready_v1($schemaConnection)
+        && vp3_youtube_picks_ready_v1($schemaConnection)
         && agent_connection_youtube_quota_ready_v1($schemaConnection)
         && agent_connection_youtube_results_ready_v1($schemaConnection)
         && vp3_profile_call_activity_schema_ready_pa3c($schemaConnection)
@@ -384,6 +386,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             agent_connection_youtube_consent_schema_v1($pdo);
             agent_connection_youtube_quota_schema_v1($pdo);
             agent_connection_youtube_results_schema_v1($pdo);
+            vp3_youtube_playback_install_v1($pdo);
+            vp3_youtube_picks_install_v1($pdo);
             vp3_phone_ensure_schema_v100($pdo);
             vp3_phone_sms_ensure_schema_v110($pdo);
             vp3_phone_sms_outbound_ensure_schema_v120($pdo);

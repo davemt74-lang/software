@@ -85,13 +85,14 @@
     return false;
   }
 
-  async function presentationResponse(response, signal) {
+  async function presentationResponse(response, signal, allowTickOutcome = false) {
     const data = await response.json().catch(() => ({}));
     if (signal.aborted) throw new DOMException('Agent status request cancelled.', 'AbortError');
     if (!requireCurrentConfiguration()) throw new Error('account_changed');
     const error = new Error(data.error || 'Cognitive presentation is unavailable.');
     if (response.status === 401 || response.status === 403 || error.message === 'account_changed') invalidateAccount(error);
-    if (!response.ok || !data.ok) throw error;
+    const tickOutcome = allowTickOutcome && data.ok === false && typeof data.reason === 'string' && data.health;
+    if (!response.ok || (!data.ok && !tickOutcome)) throw error;
     return data;
   }
 
@@ -139,7 +140,7 @@
         csrf_token:String(cfg.csrf || '')
       }, payload || {}))
     });
-    return presentationResponse(response, signal);
+    return presentationResponse(response, signal, action === 'initiative_tick');
   }
 
   function clearWorkingAttention() {
@@ -269,6 +270,8 @@
       case 'worker_stale': return 'The background worker has not checked in recently. This open Chat can advance permitted work.';
       case 'worker_failed': return 'The last background worker sweep failed. This open Chat can retry permitted work.';
       case 'worker_observation_unavailable': return 'Background worker status could not be read. This open Chat can advance permitted work.';
+      case 'assessment_sources_changed': return 'Sources changed during the assessment. The Agent will check again in its next review.';
+      case 'assessment_unverified': return 'The last assessment did not produce a verified plan.';
       case 'review_failed': return 'The last background action could not be verified.';
       case 'worker_interrupted': return 'Background work was interrupted and is waiting for recovery.';
       case 'retry_scheduled': return 'The AI service was interrupted. A bounded retry is scheduled.';
@@ -519,11 +522,13 @@
     try {
       const result = await initiativeRequest('initiative_tick',{conversation_id:cid,policy_revision:revision});
       if (cid !== liveConversation() || initiativeHealth()?.policy_revision !== revision || !requireCurrentConfiguration()) return;
-      if (initiativeHealth(result?.health,cid) && liveState) {
-        rememberInitiativeRevision(initiativeHealth(),result.health);
-        liveState.initiative = {...liveState.initiative,runtime:result.health};
+      const health = initiativeHealth(result?.health,cid);
+      if (health && liveState) {
+        rememberInitiativeRevision(initiativeHealth(),health);
+        liveState.initiative = {...liveState.initiative,runtime:health};
       }
-      if (result?.ok === false && !['off','blocked','already_running','at_capacity'].includes(result.reason)) {
+      if (result?.ok === false && !['off','blocked','already_running','at_capacity','assessment_sources_changed'].includes(result.reason)
+        && health?.reason !== result.reason) {
         initiativeError = 'The last background action could not be verified.';
       }
       // Saved assistant messages use canonical Chat rendering, unread tags and
@@ -1430,6 +1435,7 @@
 
   window.VP3_COGNITIVE_PRESENTATION = {
     refresh:refresh,openBrief:openPopup,closeBrief:closePopup,
+    allowsMusicOffer:() => initiativeMayAdvance() && initiativeHealth()?.enabled === true,
     followUpReference(conversationId) {
       const key = String(liveState?.attention?.key || '');
       if (pageController.signal.aborted || !liveHost || liveHost.hidden || liveConversation() !== conversationId

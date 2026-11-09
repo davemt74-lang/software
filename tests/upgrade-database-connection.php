@@ -50,7 +50,8 @@ require dirname(__DIR__).'/includes/profile-event-projection-pa4b.php';
 require_once dirname(__DIR__).'/includes/agent-commerce-recovery-pa2.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
 require_once dirname(__DIR__).'/includes/profile-promotion-attribution-v1.php';
-$fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER)');
+require_once dirname(__DIR__).'/includes/agent-connection-youtube-playback-v1.php';
+$fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER); CREATE TABLE chat_messages(id INTEGER PRIMARY KEY)');
 $fixture->exec('CREATE TABLE team_user_presence(user_id INTEGER PRIMARY KEY, presence_mode TEXT, social_chat_enabled INTEGER, sound_enabled INTEGER, agent_voice_enabled INTEGER, agent_assisted_phone_chat_enabled INTEGER)');
 $fixture->exec('INSERT INTO team_user_presence (user_id) VALUES (1)');
 if (!in_array($mode,['post','missing-orb-shape'],true)) {
@@ -89,6 +90,11 @@ if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='part
 if($modern){
     initiative_product_launch_schema_v1($fixture);
     profile_promotion_attribution_schema_v1($fixture);
+    agent_connection_youtube_consent_schema_v1($fixture);
+    agent_connection_youtube_quota_schema_v1($fixture);
+    agent_connection_youtube_results_schema_v1($fixture);
+    vp3_youtube_playback_install_v1($fixture);
+    vp3_youtube_picks_install_v1($fixture);
 }
 if($missingTable){$missing=substr($mode,8);if(!in_array($missing,$newTables,true))throw new RuntimeException('Invalid missing table fixture.');$fixture->exec('DROP TABLE '.$missing);}
 if(isset($partialSpeech[$mode])){[$table,$column]=$partialSpeech[$mode];$fixture->exec('ALTER TABLE '.$table.' RENAME COLUMN '.$column.' TO removed_'.$column);}
@@ -148,6 +154,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     foreach($newTables as $table)check(table_exists($table),'Upgrade skipped required table '.$table);
     check(chat_settings_agent_orb_shape_schema_ready_v237($fixture), 'Upgrade skipped the Agent shape preference');
     check(chat_settings_agent_orb_shape_v237($fixture, 1) === ($mode === 'post' ? 'orbit' : 'particle_face'), 'Upgrade did not preserve the default or saved Agent shape');
+    check(vp3_youtube_playback_ready_v1($fixture), 'Upgrade skipped the YouTube playback history schema');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'complete-get') {
     check($complete&&$dbCalls===1&&$calls===[],'Complete GET must inspect speech columns read-only and report ready');

@@ -98,10 +98,13 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
                     $health['state']='running';$health['reason']='reviewing';
                 }
                 if($latest&&$run['status']==='failed'){
-                    $health['state']='failed';
                     $failure=(string)($run['last_error_class']??'');
-                    $health['reason']=in_array($failure,['model_unavailable','quota_exhausted','route_unavailable'],true)?$failure:
-                        ($failure==='lease_expired'?'worker_interrupted':'review_failed');
+                    $health['state']=$failure==='assessment_sources_changed'?'waiting':'failed';
+                    $health['reason']=match($failure){
+                        'model_unavailable','quota_exhausted','route_unavailable','assessment_sources_changed','assessment_unverified'=>$failure,
+                        'lease_expired'=>'worker_interrupted',
+                        default=>'review_failed',
+                    };
                 }
                 if($latest&&$run['status']==='approved'&&in_array($run['last_error_class']??'', ['model_unavailable','lease_expired'],true)){
                     $due=strtotime((string)($run['next_attempt_at']??''))?:0;

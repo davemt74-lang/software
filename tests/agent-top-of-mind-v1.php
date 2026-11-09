@@ -84,6 +84,22 @@ $assessed=vp3_initiative_execute_v1($pdo,$user,$planClaim,static fn():string=>'{
 $assessmentDone=feed_item(vp3_top_of_mind_v1($pdo,$user,0,42),$planRun);
 feed_check($assessed['ok']&&$assessmentDone['state']==='assessed'&&$assessmentDone['result_url']==='',
     'a verified completed assessment never masquerades as completed private preparation or an artifact');
+$assessmentAttempts=[];
+for($i=0;$i<3;$i++){
+    $hash=hash('sha256','feed-repeat-assessment-'.$i);
+    vp3_initiative_enqueue_v1($pdo,$user,'initiative.plan',$planGoal,$hash);
+    $q->execute([hash('sha256','initiative.plan|'.$hash)]);$assessmentAttempts[]=(int)$q->fetchColumn();
+}
+$pdo->prepare("UPDATE agent_workflow_runs SET status='failed',last_error_class='initiative_unconfirmed' WHERE id=?")->execute([$assessmentAttempts[0]]);
+$pdo->prepare("UPDATE agent_workflow_runs SET status='failed',last_error_class='assessment_sources_changed' WHERE id=?")->execute([$assessmentAttempts[1]]);
+$assessments=static fn():array=>array_values(array_filter(vp3_top_of_mind_v1($pdo,$user,0,42)['items'],static fn(array $item):bool=>$item['kind']==='assessment'));
+$current=$assessments();
+feed_check(count($current)===1&&$current[0]['run_id']===$assessmentAttempts[2]&&$current[0]['state']==='queued',
+    'one current assessment represents repeated attempts while preparations keep their own rows');
+$pdo->prepare("UPDATE agent_workflow_runs SET status='failed',last_error_class='assessment_sources_changed' WHERE id=?")->execute([$assessmentAttempts[2]]);
+$current=$assessments();
+feed_check(count($current)===1&&$current[0]['state']==='superseded',
+    'a replaced assessment shows a source refresh, while older repair rows are omitted');
 $liveRef=array_key_first($many);
 $olderGoal=['binding'=>$policy,'sources'=>[$liveRef=>$many[$liveRef]['revision']],
     'canonical_sources'=>[$liveRef=>$many[$liveRef]['revision']],'tool'=>'work.prepare_private','primary'=>$liveRef,
@@ -114,6 +130,45 @@ $backlog=vp3_top_of_mind_v1($pdo,$user,0,42);
 feed_check($backlogCalls===26&&!in_array($middleId,$oldWindow)&&!in_array($middleId,$recentWindow)
     &&$backlog['items'][0]['run_id']===$middleId&&$backlog['items'][0]['state']==='working',
     'an executing job hidden from both bounded oldest-pending and newest-history windows remains visible through the canonical executing-only selector');
+
+$pdo->exec('CREATE TABLE IF NOT EXISTS settings (setting_key VARCHAR(190) PRIMARY KEY,setting_value TEXT);
+    INSERT INTO chat_conversations VALUES(46,1,NULL,NULL)');
+agent_connection_youtube_results_schema_v1($pdo);
+agent_connection_youtube_consent_schema_v1($pdo);
+vp3_youtube_playback_install_v1($pdo);
+agent_connection_youtube_set_consent_v1($pdo,1,true);
+vp3_youtube_history_change_v1($pdo,1,'enable_history');
+$capture=vp3_youtube_capture_key_v1($pdo,1);
+$mediaSeed=static function(int $conversation,string $title,string $video)use($pdo):int {
+    $pdo->prepare("INSERT INTO chat_messages(conversation_id,role,message) VALUES(?,'assistant','YouTube search')")->execute([$conversation]);
+    $id=(int)$pdo->lastInsertId();
+    agent_connection_youtube_results_save_v1($pdo,1,$conversation,$id,['query'=>'test','expires_at'=>time()+60,
+        'videos'=>[['video_id'=>$video,'title'=>$title,'channel_title'=>'Test channel','made_for_kids'=>false]]]);
+    return $id;
+};
+$localMedia=$mediaSeed(42,'Recent eligible YouTube playback','local000001');
+$otherMedia=$mediaSeed(46,'Other private conversation playback','other000001');
+feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['music']===null,'unplayed search results do not become a Top of Mind playback observation');
+$localPlay='10000000-0000-4000-8000-000000000001';$otherPlay='10000000-0000-4000-8000-000000000002';
+feed_check(vp3_youtube_history_record_v1($pdo,1,$localMedia,'local000001',$localPlay,$capture)
+    &&vp3_youtube_history_record_v1($pdo,1,$otherMedia,'other000001',$otherPlay,$capture),
+    'the real capture path creates one approved play in each exact saved Chat');
+$before=(int)$pdo->query('SELECT total_changes()')->fetchColumn();$pdo->exec('PRAGMA query_only=ON');
+$music=vp3_top_of_mind_v1($pdo,$user,0,42)['music'];
+feed_check($music['title']==='Recent eligible YouTube playback'&&$music['channel_title']==='Test channel'
+    &&str_contains($music['chat_url'],'agent=system&conversation_id=42')&&!str_contains(json_encode($music),$capture)
+    &&!str_contains(json_encode($music),$localPlay)&&(int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,
+    'the read-only Music card reports verified playback only from its exact Chat and releases no capture or playback identifiers');
+$pdo->exec('PRAGMA query_only=OFF');
+$coverage=[];
+$context=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),false,[],$coverage,null,0);
+feed_check(!str_contains(json_encode($context),'Recent eligible YouTube playback'),
+    'this playback card does not expose YouTube titles to planning or configured AI');
+vp3_youtube_history_change_v1($pdo,1,'pause_history');
+feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['music']===null,'pausing playback capture immediately removes its Top of Mind observation');
+vp3_youtube_history_change_v1($pdo,1,'enable_history');
+$pdo->prepare('UPDATE agent_connection_youtube_results_v1 SET expires_at=? WHERE message_id=?')->execute([time()-1,$localMedia]);
+feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['music']===null,'expired media data is omitted even when a playback record survives cleanup');
 vp3_initiative_chat_v1($pdo,$user,vp3_agent_chat_principal_v380($user,null),['conversation_id'=>42],'off',null);
 $paused=vp3_top_of_mind_v1($pdo,$user,0,42);
 feed_check($paused['state']==='paused'&&$paused['items']===[],'an explicit Pause is displayed without activating or reading obsolete work');

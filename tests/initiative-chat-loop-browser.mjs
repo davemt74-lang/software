@@ -14,7 +14,7 @@ function gate(){
   return {arrived:new Promise(resolve=>{arrive=resolve;}),released:new Promise(resolve=>{release=resolve;}),arrive:()=>arrive(),release:()=>release()};
 }
 
-async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false}={}){
+async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,failedTickReason=''}={}){
   const context=await browser.newContext();
   const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[];
   const histories=new Map([[42,[{id:1,role:'assistant',message:'Restored private conversation'}]],
@@ -96,6 +96,10 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
         const wait=holdTick;holdTick=null;
         if(wait){claimActive=true;wait.arrive();await wait.released;claimActive=false;}
         if(!policy)return route.fulfill({json:{ok:true,reason:'off',health:health()}}).catch(()=>{});
+        if(failedTickReason){
+          const state=failedTickReason==='assessment_sources_changed'?'waiting':'failed';
+          return route.fulfill({json:{ok:false,reason:failedTickReason,health:{...health(),state,reason:failedTickReason}}});
+        }
         if((twoTabs||phase++===1)&&realWork===0){
           realWork++;
           pendingReport=true;
@@ -157,6 +161,21 @@ try{
     await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
     console.log('PASS first health is pending rather than unavailable; accepted activity repairs it and an older presentation read cannot replace it');
   }finally{await startup.context.close();}
+
+  for(const [reason,label] of [
+    ['assessment_sources_changed','Sources changed during the assessment. The Agent will check again in its next review.'],
+    ['assessment_unverified','The last assessment did not produce a verified plan.'],
+  ]){
+    const review=await fixture(17,{enabled:true,failedTickReason:reason});
+    try{
+      const page=await review.open(),status=page.locator('[data-agent-initiative-status]');
+      await status.getByText(label,{exact:true}).waitFor();
+      assert.ok(review.ticks.length>0);
+      assert.doesNotMatch(await status.textContent(),/connection was interrupted/);
+      assert.deepEqual(review.errors,[]);
+    }finally{await review.context.close();}
+  }
+  console.log('PASS an authenticated HTTP 200 failed assessment renders its actual verified status');
 
   const denied=await fixture(17,{runtimeUnavailable:true});
   try{

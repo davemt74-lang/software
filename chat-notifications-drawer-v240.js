@@ -47,14 +47,14 @@
   let stateGeneration = 0;
   let stateWrites = Promise.resolve();
   let pendingStateWrites = 0;
-  async function requestState(action, payload) {
+  async function requestState(action, payload = null, query = {}) {
     const generation = ++stateGeneration;
     const writing = action !== 'state';
     if (writing) pendingStateWrites++;
     try {
       const next = writing
         ? await (stateWrites = stateWrites.catch(() => {}).then(() => request(action, payload)))
-        : await request(action, payload);
+        : await request(action, payload, query);
       if (generation !== stateGeneration) return false;
       state = next;
       return true;
@@ -210,7 +210,8 @@
       const tabs=Array.from(drawer.querySelectorAll('[data-notification-tab]')),index=tabs.indexOf(event.target);
       if(index<0||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
       event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
-      activeTab=tabs[next].dataset.notificationTab;render();tabs[next].focus();
+      selectActivityTab(tabs[next].dataset.notificationTab);
+      tabs[next].focus();
     });
   }
 
@@ -1005,10 +1006,66 @@
     </section>`;
   }
 
+  const youtubeHistoryOpen = () => activeTab === 'history'
+    && document.body.classList.contains('chat-notification-drawer-open')
+    && !window.VP3ParticipantContinuity?.selectedContext?.();
+
+  function clearYoutubeHistory() {
+    if (state) state.youtube_history = null;
+  }
+
+  function selectActivityTab(tab) {
+    activeTab = tab;
+    clearYoutubeHistory();
+    render();
+    if (youtubeHistoryOpen()) void refresh();
+  }
+
+  function youtubeHistoryView() {
+    const history = youtubeHistoryOpen() ? state?.youtube_history : null;
+    if (!history) return '';
+    const current = row => Number(row?.expires_at) > Date.now() / 1000;
+    const plays = Array.isArray(history.plays) ? history.plays.filter(current) : [];
+    const searches = Array.isArray(history.searches) ? history.searches.filter(current) : [];
+    const chatLink = row => {
+      const source = activitySourceUrl(row.chat_url);
+      return source ? `<a href="${esc(source)}">Open Chat</a>` : '';
+    };
+    const connections = activitySourceUrl(history.connections_url);
+    return `
+      <section class="chat-activity-section" data-youtube-play-history aria-label="Played in VP3">
+        <div class="chat-activity-section-head"><div><strong>Played in VP3</strong><span>Confirmed starts in the YouTube player for this Agent</span></div></div>
+        <div class="chat-youtube-history">
+          ${plays.length ? plays.map(row => {
+            const date = new Date(Number(row.played_at) * 1000);
+            const at = Number.isNaN(date.getTime()) ? '' : date.toISOString();
+            return `<article><strong>${esc(row.title || 'YouTube video')}</strong><p>${esc(row.channel)}</p><footer><time datetime="${esc(at)}">${esc(relative(at))}</time>${chatLink(row)}</footer></article>`;
+          }).join('') : `<p>${!history.playback_ready ? 'Playback history needs a VP3 database upgrade.'
+            : history.capture_enabled ? 'No recent YouTube playback for this Agent.'
+            : 'Turn on Played in VP3 in Connections to start saving playback.'}
+            ${history.playback_ready && !history.capture_enabled && connections ? `<a href="${esc(connections)}">Open Connections</a>` : ''}</p>`}
+        </div>
+      </section>
+      <section class="chat-activity-section" data-youtube-search-history aria-label="YouTube search results">
+        <div class="chat-activity-section-head"><div><strong>YouTube search results</strong><span>Recent results returned to Chat for this Agent</span></div></div>
+        <div class="chat-youtube-history">
+          ${searches.length ? searches.map(row => {
+            const videos = Array.isArray(row.videos) ? row.videos : [];
+            const key = 'youtube-search:' + Number(row.message_id);
+            return `<details data-activity-details="${esc(key)}"${activityDetails.has(key) ? ' open' : ''}>
+              <summary>${esc(row.query || 'YouTube search')} · ${videos.length} result${videos.length === 1 ? '' : 's'}</summary>
+              <ul>${videos.map(video => `<li>${esc(video.title)}${video.channel ? ' · ' + esc(video.channel) : ''}</li>`).join('')}</ul>
+              <footer><time datetime="${esc(row.searched_at)}">${esc(relative(row.searched_at))}</time>${chatLink(row)}</footer>
+            </details>`;
+          }).join('') : '<p>No recent YouTube search results for this Agent.</p>'}
+        </div>
+      </section>`;
+  }
+
   function historyView() {
     const rows = Array.isArray(state?.history) ? state.history : [];
     let lastDay = '';
-    return `
+    return youtubeHistoryView() + `
       <section class="chat-activity-section">
         <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Authorized conversation archive for the selected Agent identity</span></div></div>
         <div class="chat-brain-history">
@@ -1061,7 +1118,8 @@
   async function refresh(showError = false) {
     if (busy || mainFeedOutcomeBusy || attentionBusy || pendingStateWrites) return;
     try {
-      if (!await requestState('state')) return;
+      if (!await requestState('state', null, youtubeHistoryOpen() ? {youtube_history:1} : {})) return;
+      if (!youtubeHistoryOpen()) clearYoutubeHistory();
       activityReadError = '';
       activityScopeError = false;
       if (Object.prototype.hasOwnProperty.call(state, 'agent_voice_enabled')) {
@@ -1071,7 +1129,7 @@
       syncMainFeedBrainOutcomeControls();
     } catch (error) {
       activityReadError = 'Activity Center could not refresh. Retry to check current activity.';
-      if (state) state = {...state,activity_stream:null};
+      if (state) state = {...state,activity_stream:null,youtube_history:null};
       if ([401,403,419].includes(error?.status)) {
         state = null;
         activityScopeError = true;
@@ -1099,6 +1157,7 @@
 
   function closeDrawer() {
     if (!drawer) return;
+    clearYoutubeHistory();
     drawer.classList.remove('open');
     backdrop.classList.remove('open');
     button?.setAttribute('aria-expanded', 'false');
@@ -1141,8 +1200,7 @@
     if (event.target.closest('[data-notification-retry]')) { void refresh(true); void profileAttention?.refresh({present:false}); return; }
     const tab = event.target.closest('[data-notification-tab]');
     if (tab) {
-      activeTab = tab.dataset.notificationTab || 'notifications';
-      render();
+      selectActivityTab(tab.dataset.notificationTab || 'notifications');
       return;
     }
     const outcomeButton = event.target.closest('[data-brain-outcome]');
@@ -1507,6 +1565,14 @@
   });
   window.addEventListener('vp3:chat-context-ready',()=>{
     if(!document.hidden)void pollAttention(false,'connection_activations').then(() => pollAttention(false,'profile'));
+  });
+  window.addEventListener('vp3:participant-selection-changed', () => {
+    clearYoutubeHistory();
+    if (activeTab === 'history') render();
+    if (youtubeHistoryOpen()) void refresh();
+  });
+  window.addEventListener('vp3:youtube-history-changed', () => {
+    if (youtubeHistoryOpen()) void refresh();
   });
   window.addEventListener('pagehide', () => {
     if (attentionTimer) window.clearInterval(attentionTimer);

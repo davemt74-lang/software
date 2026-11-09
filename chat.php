@@ -290,7 +290,20 @@ $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict
     . '};})();</script>';
 
 $voiceBootstrap = '<script data-chat-voice-pre>(function(){"use strict";var b=document.getElementById("chatVoiceButton");window.STONEFELLOW_CHAT_VOICE_BOOT={button:b,legacyDormant:true};if(b){b.id="chatVoiceButtonLegacyDormant";b.disabled=false;}})();</script>';
-$youtubeChatRuntime = '<link rel="stylesheet" href="'.e(url('/chat-youtube-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-youtube-v1.css'),0,12))).'">'
+require_once __DIR__.'/includes/agent-connection-youtube-playback-v1.php';
+$youtubePdo = db();
+$youtubeConfig = [
+    'endpoint'=>url('/api/chat-youtube-playback-v1.php'),
+    'connections'=>url('/connections.php?app=youtube#connections-app-youtube'),
+    'csrf'=>csrf_token(),
+    'proactive'=>$youtubePdo && vp3_youtube_picks_ready_v1($youtubePdo)
+        && (bool)vp3_youtube_picks_settings_v1($youtubePdo, (int)$user['id'])['proactive'],
+    'captureKey'=>$youtubePdo && vp3_youtube_playback_ready_v1($youtubePdo)
+        ? vp3_youtube_capture_key_v1($youtubePdo, (int)$user['id']) : '',
+];
+$youtubeChatRuntime = '<script>window.VP3_YOUTUBE_PLAYBACK_V1='
+    .json_encode($youtubeConfig, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<link rel="stylesheet" href="'.e(url('/chat-youtube-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-youtube-v1.css'),0,12))).'">'
     . '<script src="'.e(url('/chat-youtube-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-youtube-v1.js'),0,12))).'"></script>';
 $html = preg_replace(
     '~(<script[^>]+src="[^"]*chat\.js\?v=[^"]+"[^>]*></script>)~i',

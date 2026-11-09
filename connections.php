@@ -4,7 +4,7 @@ require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/agent-connections-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-v1.php';
 require_once __DIR__ . '/includes/agent-connection-health-v1.php';
-require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
+require_once __DIR__ . '/includes/agent-connection-youtube-playback-v1.php';
 require_permission('account.access');
 
 $user = current_user();
@@ -18,6 +18,10 @@ $providerReady = !empty($summary['provider_ready']);
 $youtubeReady = agent_connection_youtube_ready_v1();
 $pdo = db();
 $youtubeConsentReady = $pdo && agent_connection_youtube_consent_ready_v1($pdo);
+$youtubeHistoryReady = $pdo && vp3_youtube_playback_ready_v1($pdo);
+$youtubeHistoryEnabled = $youtubeHistoryReady && vp3_youtube_capture_key_v1($pdo, (int)$user['id']) !== '';
+$youtubePicksReady = $pdo && vp3_youtube_picks_ready_v1($pdo);
+$youtubePicks = $youtubePicksReady ? vp3_youtube_picks_settings_v1($pdo, (int)$user['id']) : [];
 $youtubeEnabled = $youtubeConsentReady && agent_connection_youtube_consent_v1($pdo, (int)$user['id']);
 $canChat = has_permission('chat.access', $user);
 $permissions = $gmailLinked
@@ -43,6 +47,8 @@ $notices = [
     'test_invalid' => ['error', 'The connection changed or the test request expired. Open Gmail and try again.'],
     'test_unavailable' => ['error', 'Gmail connection testing is currently unavailable.'],
     'test_limited' => ['info', 'Gmail was checked recently. Wait a moment and try again.'],
+    'youtube_picks_saved' => ['success', 'Your YouTube music preferences were saved.'],
+    'youtube_history_saved' => ['success', 'Your VP3 playback history settings were updated.'],
     'youtube_enabled' => ['success', 'YouTube is enabled for your VP3 account.'],
     'youtube_disabled' => ['success', 'YouTube is disabled for your VP3 account.'],
     'youtube_accept_required' => ['error', 'Review and accept the terms to enable YouTube.'],
@@ -259,6 +265,36 @@ header('Cache-Control: private, no-store');
                                 <button class="connections-button connections-secondary" type="submit">Disable YouTube</button>
                               </form>
                             </div>
+                            <?php if ($youtubePicksReady && $canChat): ?>
+                              <form method="post" action="<?= e(url('/youtube-connection-v1.php')) ?>">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="save_picks">
+                                <p><strong>YouTube music picks</strong></p>
+                                <p>Ask Agent Chat for <q>Recommend mellow songs on YouTube</q>.</p>
+                                <label>Music taste <input name="taste" maxlength="120" value="<?= e($youtubePicks['taste']) ?>" placeholder="Genres, moods, or artists"></label>
+                                <label class="connections-permission">
+                                  <input type="checkbox" name="proactive" value="1" <?= $youtubePicks['proactive'] ? 'checked' : '' ?>>
+                                  <span>When Initiative is on, offer more picks after a suggested track ends in Chat.</span>
+                                </label>
+                                <button class="connections-button connections-secondary" type="submit">Save music preferences</button>
+                              </form>
+                            <?php endif; ?>
+                            <?php if ($youtubeHistoryReady && $canChat): ?>
+                              <p><strong>Played in VP3</strong></p>
+                              <p class="connections-muted">Keep a private record of eligible videos that start playing in VP3. Entries expire with the cached result within seven days. Pausing keeps existing entries until they expire. Clearing affects VP3 only.</p>
+                              <div class="connections-actions">
+                                <form method="post" action="<?= e(url('/youtube-connection-v1.php')) ?>">
+                                  <?= csrf_field() ?>
+                                  <input type="hidden" name="action" value="<?= $youtubeHistoryEnabled ? 'pause_history' : 'enable_history' ?>">
+                                  <button class="connections-button connections-secondary" type="submit"><?= $youtubeHistoryEnabled ? 'Pause VP3 playback history' : 'Enable VP3 playback history' ?></button>
+                                </form>
+                                <form method="post" action="<?= e(url('/youtube-connection-v1.php')) ?>">
+                                  <?= csrf_field() ?>
+                                  <input type="hidden" name="action" value="clear_history">
+                                  <button class="connections-button connections-secondary" type="submit">Clear VP3 playback history</button>
+                                </form>
+                              </div>
+                            <?php endif; ?>
                           <?php elseif ($youtubeReady && $youtubeConsentReady && $canChat): ?>
                             <form method="post" action="<?= e(url('/youtube-connection-v1.php')) ?>">
                               <?= csrf_field() ?>

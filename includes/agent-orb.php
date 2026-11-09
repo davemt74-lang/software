@@ -28,7 +28,7 @@ try{$participantUpdatesEnabled=db()?vp3_participant_settings_v1(db(),$orbUser)['
 <link rel="stylesheet" href="<?= e(url('/participant-updates-v1.css?v=3')) ?>">
 <script src="<?= e(url('/participant-updates-v1.js?v=2')) ?>" defer></script>
 <script src="<?= e(url('/participant-recovery-v1.js?v=1')) ?>" defer></script>
-<script src="<?= e(url('/agent-participant-continuity.js?v=recognition-reliability-v1')) ?>" defer></script>
+<script src="<?= e(url('/agent-participant-continuity.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-participant-continuity.js'),0,12))) ?>" defer></script>
 <script src="<?= e(url('/agent-orb.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-orb.js'),0,12))) ?>" defer></script>
 <script src="<?= e(url('/agent-orb-particles.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-orb-particles.js'),0,12))) ?>" defer></script>
 <script src="<?= e(url('/agent-eyes.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-eyes.js'), 0, 12))) ?>" defer></script>

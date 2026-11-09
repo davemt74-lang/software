@@ -877,6 +877,18 @@
       if(current())applyTabSetupCommand(transcript,setupTarget);
       return;
     }
+    const youtubeAction = window.VP3_CHAT_YOUTUBE_V1?.command(transcript);
+    if (youtubeAction && ChatRuntime?.runYoutubeLocalTurn && !decision.participant
+        && (!window.VP3VoiceGuard?.isEnabled?.() || !decision.reason)) {
+      processing = true;
+      if (responseWindowOwned) finishResponseWindow();
+      setAgentState('processing','Thinking…');
+      const answer = await ChatRuntime.runYoutubeLocalTurn(transcript, youtubeAction);
+      if (!voiceOn || filterGeneration !== voiceDispatchGeneration) return;
+      if (answer) speakAnswer(answer);
+      else { processing = false; scheduleListening(160,'youtube-context-changed'); }
+      return;
+    }
     proof.submits+=1;voiceSubmitPending=true;processing=true;if(responseWindowOwned)finishResponseWindow();
     updateComposer(transcript);setAgentState('processing','Thinking…');log('TRANSCRIPT_SUBMIT',{text:transcript,count:proof.submits});
     clearTimeout(voiceSubmitTimer);

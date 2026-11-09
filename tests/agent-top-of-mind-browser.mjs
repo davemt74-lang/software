@@ -38,7 +38,15 @@ writeFileSync(join(temp,'router.php'),[
   '$e=vp3_initiative_evidence_v1(db(),$u,new DateTimeImmutable("now",new DateTimeZone("UTC")),false,[],$coverage,["task:100"],7);$row=$e["task:100"];',
   '$goal=["binding"=>$policy,"sources"=>["task:100"=>$row["revision"]],"canonical_sources"=>["task:100"=>$row["canonical_source_revision"]??$row["revision"]],"tool"=>"work.prepare_private","primary"=>"task:100","focus"=>"Prepare the saved launch details","report"=>true];',
   'vp3_initiative_enqueue_v1(db(),$u,"initiative.prepare",$goal,hash("sha256","top-of-mind-http"));$r=db()->query("SELECT id FROM agent_workflow_runs ORDER BY id DESC LIMIT 1")->fetchColumn();$claim=agent_job_claim_run_v1900(db(),$u,(int)$r,"cloud",agent_worker_cloud_worker_id_v1910(1),180);',
-  'agent_job_heartbeat_v1900(db(),$u,(int)$r,(int)$claim["action"]["id"],$claim["lease_token"],42,"Reading verified launch sources",240);header("Content-Type:application/json");echo json_encode(["run_id"=>(int)$r]);return;}',
+  'agent_job_heartbeat_v1900(db(),$u,(int)$r,(int)$claim["action"]["id"],$claim["lease_token"],42,"Reading verified launch sources",240);',
+  'require_once $source."/includes/agent-connection-youtube-playback-v1.php";',
+  'db()->exec("CREATE TABLE IF NOT EXISTS settings (setting_key VARCHAR(190) PRIMARY KEY,setting_value TEXT)");',
+  'agent_connection_youtube_results_schema_v1(db());agent_connection_youtube_consent_schema_v1(db());vp3_youtube_playback_install_v1(db());',
+  'agent_connection_youtube_set_consent_v1(db(),1,true);vp3_youtube_history_change_v1(db(),1,"enable_history");',
+  'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube search\')");$message=(int)db()->lastInsertId();',
+  'agent_connection_youtube_results_save_v1(db(),1,11,$message,["expires_at"=>time()+3600,"videos"=>[["video_id"=>"song0000001","title"=>"Confirmed fixture playback","channel_title"=>"Fixture channel","made_for_kids"=>false]]]);',
+  'if(!vp3_youtube_history_record_v1(db(),1,$message,"song0000001","10000000-0000-4000-8000-000000000001",vp3_youtube_capture_key_v1(db(),1)))throw new RuntimeException("Fixture playback was rejected.");',
+  'header("Content-Type:application/json");echo json_encode(["run_id"=>(int)$r]);return;}',
   'if($path==="/api/chat-notifications-brain-v240.php"){header("Content-Type:application/json");echo json_encode(["ok"=>true,"complete"=>true,"agent_namespace"=>"agent:7","notifications"=>["items"=>[],"unread"=>0],"brain"=>["enabled"=>false],"activity_stream"=>["complete"=>true,"agent_namespace"=>"agent:7","items"=>[]]]);return;}',
   'if($path!=="/"&&$path!=="/outside"){http_response_code(404);return;}',
   '$binding=vp3_catch_up_page_binding_v1(current_user());$outside=$path==="/outside";',
@@ -46,7 +54,7 @@ writeFileSync(join(temp,'router.php'),[
   'if(!$outside)echo \'<div class="chat-topbar-actions"><div id="chatNotificationMenu"><button id="chatNotificationButton">Activity Center</button></div><div id="chatProfileMenu">Account</div></div>\';',
   '$orb=["ownerKey"=>"1","agentId"=>7,"chatUrl"=>"/chat.php","workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php","notificationsEndpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","voiceScript"=>"/deliberately-unavailable-voice.js","drawerScript"=>"/chat-notifications-drawer-v240.js"];',
   'echo "<script>window.VP3_ORB_CONFIG=".json_encode($orb).";</script>";',
-  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
+  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.fixturePicks=0;window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11,requestYoutubePicks:()=>{window.fixturePicks++;return true}};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
   'echo \'<script src="/agent-eyes-core.js"></script><script src="/agent-top-of-mind-v1.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script>\';'
 ].join('\n'));
 assert.match(execFileSync(process.env.VP3_PHP_BINARY||'php',['-l',join(temp,'router.php')],{encoding:'utf8'}),/No syntax errors detected/);
@@ -65,6 +73,7 @@ try{
     const r=await fetch(endpoint,{headers});assert.equal(r.status,200,await r.clone().text());assert.match(r.headers.get('cache-control'),/no-store/);
     const data=await r.json();assert.equal(data.state.owner_user_id,1);assert.equal(data.state.agent_id,7);assert.equal(data.state.conversation_id,11);assert.equal(data.state.working_attention_binding,binding);
     assert.equal(data.state.items.find(x=>x.run_id===runId).state,'working');assert.equal(data.state.items.find(x=>x.run_id===runId).progress,42);
+    assert.equal(data.state.music.title,'Confirmed fixture playback');assert.match(data.state.music.chat_url,/agent=7&conversation_id=11$/);
     assert.ok(!JSON.stringify(data).includes('FOREIGN SECRET'));assert.ok(!JSON.stringify(data).includes('lease_token'));
   }
   assert.deepEqual(await fetch(base+'/counts').then(r=>r.json()),before);
@@ -90,6 +99,20 @@ try{
     const feed=page.locator('[data-agent-top-of-mind]');await feed.getByText('Prepare the saved launch details',{exact:true}).waitFor();
     assert.equal(await page.locator('#chatNotificationDrawer').count(),1);await feed.getByText('Working',{exact:true}).waitFor();
     assert.ok(await page.getByText('Saved Brain memory is unavailable for this account.',{exact:true}).isVisible());
+    const music=feed.getByRole('region',{name:'Music and entertainment'});
+    await music.getByText('Confirmed fixture playback',{exact:true}).waitFor();
+    if(outside){
+      assert.match(await music.getByRole('link',{name:'Open this Chat for music picks'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+    }else{
+      assert.equal(await page.evaluate(()=>window.fixturePicks),0);
+      await page.evaluate(()=>{window.fixtureParticipant={id:2};window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
+      await music.waitFor({state:'hidden'});
+      await page.evaluate(()=>{window.fixtureParticipant=null;window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
+      await music.getByRole('button',{name:'Ask for YouTube music picks'}).click();
+      assert.equal(await page.evaluate(()=>window.fixturePicks),1);
+      await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
+      await music.waitFor();
+    }
     // Fast status IO can finish while the actual drawer is still sliding in.
     // Measure its settled open geometry, not a fractional transform frame.
     await page.locator('#chatNotificationDrawer').evaluate(async element=>{
@@ -106,6 +129,7 @@ try{
     if(!outside)await feed.getByText('The main Agent is preparing a response.',{exact:true}).waitFor();
     const outage=route=>route.abort('failed');await page.route('**/api/agent-top-of-mind-v1.php**',outage);
     await feed.getByText('The latest work status is unavailable.',{exact:false}).waitFor();
+    await music.waitFor({state:'hidden'});
     assert.equal(await feed.locator('[data-work-state="working"]').count(),0);await feed.locator('[data-work-state="stale"]').waitFor();
     await page.unroute('**/api/agent-top-of-mind-v1.php**',outage);await feed.getByRole('button',{name:'Retry',exact:true}).click();await feed.getByText('Working',{exact:true}).waitFor();
     await page.evaluate(()=>{window.fixtureHidden=true;Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.fixtureHidden});document.dispatchEvent(new Event('visibilitychange'));});

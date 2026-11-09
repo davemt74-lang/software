@@ -49,9 +49,11 @@ function vp3_initiative_knowledge_scope_v1(mixed $scope): array
     return ['mode'=>$scope['mode'],'folder_id'=>0];
 }
 
-/** Only public reason codes from the governed inference adapter may escape. */
-function vp3_initiative_failure_reason_v1(Throwable $error): string
+/** Only safe reason codes from the governed assessment and inference paths may escape. */
+function vp3_initiative_failure_reason_v1(Throwable $error,bool $assessment=false): string
 {
+    if($assessment&&$error instanceof Vp3InitiativeSourcesChangedV1)return 'assessment_sources_changed';
+    if($assessment&&$error instanceof Vp3InitiativeInvalidAssessmentV1)return 'assessment_unverified';
     return in_array($error->getMessage(),['model_unavailable','quota_exhausted','route_unavailable'],true)
         ?$error->getMessage():'initiative_unconfirmed';
 }

@@ -635,7 +635,7 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         if(isset($canonicalSources[$ref])&&$canonicalSources[$ref]===$base&&($coverage['activity_context']??'')==='unavailable'){
             throw new RuntimeException('Initiative supporting context verification is unavailable.',503);
         }
-        throw new RuntimeException('Initiative sources changed.',409);
+        throw new Vp3InitiativeSourcesChangedV1();
     }
     return array_intersect_key($current,$sources);
 }
@@ -896,6 +896,7 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
 function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?callable $model,array $run,array $payload): array
 {
     $toolResult=[];$draft='';$jobs=[];
+    $planning=$run['action_capability_key']==='initiative.plan';
     try{
         $binding=$payload['binding'];$sources=$payload['sources'];
         $agentId=vp3_initiative_binding_agent_v1($binding);
@@ -910,7 +911,6 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
         $includeScreen=!empty($binding['screen_enabled']);
         $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
         $modelEvidence=array_map(static fn(array $row):array=>array_diff_key($row,['url'=>true,'revision'=>true,'canonical_source_revision'=>true]),array_values($evidence));
-        $planning=$run['action_capability_key']==='initiative.plan';
         $transientContext=(bool)array_filter($evidence,static fn(array $row):bool=>($row['kind']??'')==='live_context');
         $beforeInference=$transientContext?static function()use($pdo,$live,$binding,$sources,$includeScreen,$canonicalSources,$agentId,$payload):void{
             $currentUser=vp3_initiative_access_v1($pdo,$live,$binding);
@@ -943,11 +943,15 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 'owner_context'=>vp3_initiative_owner_context_v1($pdo,$live,$binding)],JSON_THROW_ON_ERROR),'vp3.initiative-plan.v1');
             $allowed=['work.prepare_private'];
             foreach($tools as $id=>$entry)if(!empty($entry['ready']))$allowed[]=$id;
-            $jobs=vp3_initiative_plan_v1($answer,$evidence,array_values(array_unique($allowed)));
-            foreach($jobs as $job){
-                if(isset($tools[$job['tool']]['source_refs'])&&!in_array($job['primary'],$tools[$job['tool']]['source_refs'],true)){
-                    throw new InvalidArgumentException('The selected tool does not accept this situation source.');
+            try{
+                $jobs=vp3_initiative_plan_v1($answer,$evidence,array_values(array_unique($allowed)));
+                foreach($jobs as $job){
+                    if(isset($tools[$job['tool']]['source_refs'])&&!in_array($job['primary'],$tools[$job['tool']]['source_refs'],true)){
+                        throw new InvalidArgumentException('The selected tool does not accept this situation source.');
+                    }
                 }
+            }catch(InvalidArgumentException|JsonException $error){
+                throw new Vp3InitiativeInvalidAssessmentV1($error);
             }
         }else{
             $tool=$payload['tool']??'work.prepare_private';
@@ -1038,8 +1042,9 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 vp3_initiative_current_sources_v1($pdo,$retryUser,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
             }catch(Throwable $scopeError){$retryable=false;$e=$scopeError;}
         }
-        $reason=vp3_initiative_failure_reason_v1($e);
-        $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,false,'Initiative work could not be verified.',$withheld,$reason,$retryable);
+        $reason=vp3_initiative_failure_reason_v1($e,$planning);
+        $summary=$reason==='assessment_sources_changed'?'The sources changed during assessment.':'Initiative work could not be verified.';
+        $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,false,$summary,$withheld,$reason,$retryable);
         if(isset($payload['followthrough'])){
             try{vp3_initiative_followthrough_failed_v1($pdo,$user,$payload,(int)$run['id']);}
             catch(Throwable $ignored){}

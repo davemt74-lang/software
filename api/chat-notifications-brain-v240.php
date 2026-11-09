@@ -301,7 +301,7 @@ function chat_notifications_v313_record_brain_outcome(PDO $pdo, array $user, arr
     return $state;
 }
 
-function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): array
+function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0, bool $includeYoutubeHistory=false): array
 {
     if (function_exists('agent_chat_activity_reconcile')) {
         agent_chat_activity_reconcile($user);
@@ -391,6 +391,11 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
         'state'=>'idle','surface'=>'chat','task_title'=>'Agent Chat'
     ]);
     $activityStream=vp3_activity_situations_v1($pdo,$user,$namespace);
+    $youtubeHistory=null;
+    if ($includeYoutubeHistory && $brainAllowed) {
+        require_once dirname(__DIR__).'/includes/agent-connection-youtube-activity-v1.php';
+        $youtubeHistory=vp3_youtube_activity_v1($pdo,$user,$agentId);
+    }
     return [
         'ok'=>true,
         'agent_voice_enabled'=>member_agent_voice_enabled($user),
@@ -450,6 +455,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
         'history'=>$brainAllowed && function_exists('vp3_cognitive_context_history_rows_v2420')
             ? vp3_cognitive_context_history_rows_v2420($pdo, $user, $namespace, 60)
             : [],
+        'youtube_history'=>$youtubeHistory,
     ];
 }
 
@@ -776,7 +782,8 @@ try {
         // before closing; projection below does not write session state.
         csrf_token();
         if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
-        chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
+        chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0)),
+            ($input['youtube_history']??null)==='1'));
     }
     if ($method === 'GET' && $action === 'attention') {
         if (($input['scope'] ?? null) === 'connection_activations') {
