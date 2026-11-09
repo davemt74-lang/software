@@ -72,6 +72,7 @@ function vp3_initiative_youtube_interest_feedback_v1(PDO $pdo,array $user,int $a
     try{$principal=vp3_initiative_principal_v1($pdo,$user,$agentId);}
     catch(Throwable $error){return [];}
     $seen=[];$feedback=[];
+    $replyEpoch=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?'UNIX_TIMESTAMP(created_at)':"strftime('%s',created_at)";
     foreach($events as $event){
         $goal=json_decode((string)$event['goal'],true);
         $source=$goal['primary']??null;
@@ -91,20 +92,16 @@ function vp3_initiative_youtube_interest_feedback_v1(PDO $pdo,array $user,int $a
                 ||($state['last_intent']??null)!==$intent
                 ||($post['context']['initiative_output']['type']??null)!=='initiative_chat_check_in'
                 ||($state['interest_confirmed']??false)!==($metadata['interest_confirmed']??false))continue;
-            $q=$pdo->prepare("SELECT message,created_at FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");
+            $q=$pdo->prepare("SELECT message,$replyEpoch AS created_at_epoch FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");
             $q->execute([$replyId,$cid,$owner]);$reply=$q->fetch(PDO::FETCH_ASSOC);
             if(!is_string($reply['message']??null)||!hash_equals($state['last_reply_hash'],hash('sha256',$reply['message'])))continue;
         }catch(Throwable $error){continue;}
         $seen[$interestRef]=true;
         if(in_array($intent,['discuss','advance'],true)&&($state['interest_confirmed']??false)===true)$feedback[$interestRef]='positive';
         elseif(in_array($intent,['defer','decline','resolve'],true))$feedback[$interestRef]='suppress';
-        if($decisions!==null&&isset($feedback[$interestRef])){
-            $savedAt=(string)($reply['created_at']??'');
-            if(!preg_match('/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\z/D',$savedAt))continue;
-            $when=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$savedAt,new DateTimeZone('UTC'));
-            if($when&&$when->format('Y-m-d H:i:s')===$savedAt&&$when->getTimestamp()<=$at){
-                $decisions[$interestRef]=['intent'=>$intent,'at'=>$when->getTimestamp()];
-            }
+        $savedAt=(int)($reply['created_at_epoch']??0);
+        if($decisions!==null&&isset($feedback[$interestRef])&&$savedAt>0&&$savedAt<=$at){
+            $decisions[$interestRef]=['intent'=>$intent,'at'=>$savedAt];
         }
     }
     return $feedback;
