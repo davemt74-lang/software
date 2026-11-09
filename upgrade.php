@@ -299,6 +299,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && agent_connection_health_schema_ready_v1($schemaConnection)
         && agent_connection_youtube_consent_ready_v1($schemaConnection)
         && vp3_youtube_playback_ready_v1($schemaConnection)
+        && vp3_youtube_watch_ready_v1($schemaConnection)
         && vp3_youtube_picks_ready_v1($schemaConnection)
         && agent_connection_youtube_quota_ready_v1($schemaConnection)
         && agent_connection_youtube_results_ready_v1($schemaConnection)

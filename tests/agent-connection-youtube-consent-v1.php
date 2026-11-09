@@ -23,8 +23,8 @@ agent_connection_youtube_set_consent_v1($pdo, 1, true);
 agent_connection_youtube_set_consent_v1($pdo, 1, true);
 youtube_consent_check(agent_connection_youtube_consent_v1($pdo, 1) && !agent_connection_youtube_consent_v1($pdo, 2),
     'Consent must be idempotent and scoped to a single member.');
-youtube_consent_check(!vp3_youtube_artist_research_enabled_v1($pdo,1)&&!vp3_youtube_research_enabled_v1($pdo,1,'topic'),
-    'YouTube consent leaves background research off.');
+youtube_consent_check(!vp3_youtube_artist_research_enabled_v1($pdo,1)&&!vp3_youtube_research_enabled_v1($pdo,1,'topic')
+    &&!vp3_youtube_watch_research_enabled_v1($pdo,1), 'YouTube consent leaves background research and watch time off.');
 vp3_youtube_artist_research_save_v1($pdo,1,true);
 youtube_consent_check(vp3_youtube_artist_research_enabled_v1($pdo,1)&&!vp3_youtube_artist_research_enabled_v1($pdo,2)
     &&!vp3_youtube_research_enabled_v1($pdo,1,'topic'),
@@ -54,6 +54,15 @@ agent_connection_youtube_set_consent_v1($pdo,1,true,true);
 $capture = vp3_youtube_capture_key_v1($pdo,1);
 youtube_consent_check(strlen($capture)===32 && vp3_youtube_capture_key_v1($pdo,2)==='',
     'The default selection enables playback recording atomically for the enabling member.');
+vp3_youtube_research_save_v1($pdo,1,'watch',true);
+youtube_consent_check(vp3_youtube_watch_research_enabled_v1($pdo,1)&&!vp3_youtube_watch_research_enabled_v1($pdo,2)
+    &&!vp3_youtube_research_enabled_v1($pdo,1,'topic')&&!vp3_youtube_artist_research_enabled_v1($pdo,1),
+    'Watch time is a separate owner preference and grants neither public research capability.');
+vp3_youtube_research_save_v1($pdo,1,'watch',false);
+$rotated=vp3_youtube_capture_key_v1($pdo,1);
+vp3_youtube_research_save_v1($pdo,1,'watch',false);
+youtube_consent_check(!vp3_youtube_watch_research_enabled_v1($pdo,1)&&strlen($rotated)===32&&$rotated!==$capture
+    &&vp3_youtube_capture_key_v1($pdo,1)===$rotated, 'Watch opt-out invalidates stale watch reports and leaves start capture enabled.');
 agent_connection_youtube_set_consent_v1($pdo,2,true,false);
 youtube_consent_check(agent_connection_youtube_consent_v1($pdo,2) && vp3_youtube_capture_key_v1($pdo,2)==='',
     'Unchecking the default still enables the search skill without recording.');
@@ -61,7 +70,9 @@ vp3_youtube_history_change_v1($pdo,1,'pause_history');
 agent_connection_youtube_set_consent_v1($pdo,1,true,true);
 youtube_consent_check(vp3_youtube_capture_key_v1($pdo,1)==='',
     'A repeated activation must not override a member’s pause.');
+vp3_youtube_research_save_v1($pdo,1,'watch',true);
 agent_connection_youtube_set_consent_v1($pdo,1,false);
+youtube_consent_check(!vp3_youtube_watch_research_enabled_v1($pdo,1), 'Disabling the YouTube skill also revokes watch consent.');
 $pdo->exec('DROP TABLE vp3_youtube_history_settings_v1');
 try {
     agent_connection_youtube_set_consent_v1($pdo,1,true,true);

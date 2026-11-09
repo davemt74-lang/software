@@ -65,11 +65,12 @@ youtube_activity_check(array_column(vp3_youtube_activity_v1($pdo, $owner, 0)['se
     && array_column(vp3_youtube_activity_v1($pdo, $other, 7)['searches'], 'query') === ['Another owner search'],
     'System, named Agent, and owner scopes stay separate');
 
+vp3_youtube_playback_install_v1($pdo);
 $pdo->beginTransaction();
 try {
     $source = $pdo->prepare("INSERT INTO chat_messages (id,conversation_id,role,created_at) VALUES (?,?,'assistant',?)");
-    foreach ([108=>[12,1,'Similar',0],109=>[13,1,'Similar',0],110=>[14,1,'Other Agent',0],
-        111=>[21,2,'Other owner',0],112=>[12,1,'Old',86401]] as $id=>[$cid,$uid,$artist,$age]) {
+    foreach ([108=>[12,1,'Similar',3600],109=>[13,1,'Similar',0],110=>[14,1,'Other Agent',0],
+        111=>[21,2,'Other owner',0],112=>[12,1,'Old',86401],118=>[12,1,'Similar',1800]] as $id=>[$cid,$uid,$artist,$age]) {
         $source->execute([$id,$cid,gmdate('Y-m-d H:i:s',$now-$age)]);
         agent_connection_youtube_results_save_v1($pdo,$uid,$cid,$id,[
             'query'=>'Artists similar to '.$artist,'suggestion_kind'=>'similar','taste_topic'=>$artist,'expires_at'=>$now+3600,
@@ -83,20 +84,23 @@ try {
         'YouTube history becomes background research evidence only after a separate opt-in');
     vp3_youtube_artist_research_save_v1($pdo,1,true);
     $interest=vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage);
-    $ref=array_key_first($interest);
-    youtube_activity_check($coverage['artist_research']==='ready'&&array_column($interest,'title')===['Similar']
+    $artistEvidence=array_filter($interest,static fn(array $row): bool=>$row['kind']==='artist_interest');
+    $ref=array_key_first($artistEvidence);
+    youtube_activity_check($coverage['artist_research']==='ready'&&array_column($artistEvidence,'title')===['Similar']
         &&$interest[$ref]['url']==='/chat.php?agent=7&conversation_id=13'
+        &&$interest[$ref]['interest']['search_count']===3
         &&!str_contains(json_encode($interest,JSON_THROW_ON_ERROR),'Provider metadata'),
-        'Initiative reads only recent owner-entered artist interests and collapses repeated searches across that Agent’s Chats');
-    youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===$interest
+        'Independent repeats in the same Agent’s Chats establish a pattern around an owner-entered artist');
+    youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===$artistEvidence
         &&vp3_initiative_research_evidence_v1($pdo,$scope,$at,['calendar:1'],$coverage)===[],
         'Selected artist evidence rechecks the exact interest and skips unrelated capability reads');
-    foreach([113=>[12,1,'Wood-fired oven heat management'],114=>[13,1,'Wood-fired oven heat management'],
+    foreach([113=>[12,1,'Wood-fired oven heat management'],114=>[13,1,'Wood-fired oven heat control'],
         115=>[14,1,'Unrelated agent topic'],116=>[21,2,'Unrelated owner topic'],
-        117=>[12,1,'email owner@example.com']] as $id=>[$cid,$uid,$query]){
-        $source->execute([$id,$cid,gmdate('Y-m-d H:i:s',$now)]);
+        117=>[12,1,'email owner@example.com'],119=>[12,1,'Laptop hinge replacement'],120=>[13,1,'Laptop hinge replacement'],
+        121=>[12,1,'Low-light wildlife camera settings']] as $id=>[$cid,$uid,$query]){
+        $source->execute([$id,$cid,gmdate('Y-m-d H:i:s',$id===121?$now-6000:$now)]);
         agent_connection_youtube_results_save_v1($pdo,$uid,$cid,$id,[
-            'query'=>$query,'expires_at'=>$now+3600,'videos'=>[['title'=>'Provider metadata','video_id'=>$videoId]],
+            'query'=>$query,'expires_at'=>$now+3600,'videos'=>[['title'=>'Provider metadata','video_id'=>$videoId,'made_for_kids'=>false]],
         ]);
     }
     youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage)===$interest,
@@ -105,14 +109,60 @@ try {
     $research=vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage);
     $topicRef='topic-interest:'.hash('sha256','wood-fired oven heat management');
     $topicEvidence=array_filter($research,static fn(array $row):bool=>$row['kind']==='topic_interest');
-    youtube_activity_check(array_column($topicEvidence,'title')===['Wood-fired oven heat management','Same Agent elsewhere search','Chosen Agent search']
+    youtube_activity_check(array_column($topicEvidence,'title')===['Wood-fired oven heat management']
         &&($research[$topicRef]['kind']??null)==='topic_interest'
+        &&$research[$topicRef]['interest']['related_search_count']===2
         &&$research[$topicRef]['url']==='/chat.php?agent=7&conversation_id=13'&&$coverage['topic_research']==='ready'
         &&vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$topicRef],$coverage)===[$topicRef=>$research[$topicRef]],
-        'Topic opt-in yields one exact owner query across the same Agent’s Chats and excludes contact data');
+        'Related searches across the same Agent’s Chats yield one exact anchor query while isolated and contact queries stay out');
+    $weakRef='youtube-interest-checkin:topic:'.hash('sha256','laptop hinge replacement');
+    youtube_activity_check(($research[$weakRef]['kind']??null)==='youtube_interest_checkin'
+        &&$research[$weakRef]['interest_ref']==='topic-interest:'.hash('sha256','laptop hinge replacement')
+        &&$research[$weakRef]['interest']['basis']==='clarify',
+        'Two independent identical searches allow clarification without authorizing public research');
+
+    vp3_youtube_history_change_v1($pdo,1,'enable_history');
+    $key=vp3_youtube_capture_key_v1($pdo,1);
+    $cameraRef='topic-interest:'.hash('sha256','low-light wildlife camera settings');
+    $cameraCheckIn='youtube-interest-checkin:topic:'.hash('sha256','low-light wildlife camera settings');
+    $writeWatch=$pdo->prepare('INSERT INTO vp3_youtube_watch_v1 (owner_user_id,play_id,watch_seconds,last_watched_at) VALUES (?,?,?,?)');
+    $writePlay=$pdo->prepare('UPDATE vp3_youtube_playback_v1 SET played_at=? WHERE owner_user_id=1 AND play_id=?');
+    $watch=static function(int $sequence,int $start,int $seconds) use ($pdo,$writePlay,$writeWatch,$videoId,$key): void{
+        $play=sprintf('00000000-0000-4000-8000-%012d',$sequence);
+        if(!vp3_youtube_history_record_v1($pdo,1,121,$videoId,$play,$key))throw new RuntimeException('Could not save watch fixture.');
+        $writePlay->execute([$start,$play]);
+        $writeWatch->execute([1,$play,$seconds,$start+$seconds]);
+    };
+    $watch(1,$now-2500,40);
+    $watch(2,$now-2300,45);
+    youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$cameraRef,$cameraCheckIn],$coverage)===[],
+        'Captured viewing cannot be used for research without separate watch-time consent');
+    vp3_youtube_research_save_v1($pdo,1,'watch',true);
+    $camera=vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$cameraRef,$cameraCheckIn],$coverage);
+    youtube_activity_check(array_keys($camera)===[$cameraCheckIn]&&$camera[$cameraCheckIn]['interest']['watch_sessions']===1
+        &&$camera[$cameraCheckIn]['interest']['watch_seconds']===45,
+        'Quick reopens of one video count as one meaningful session, taking the longest measured time');
+    $watch(3,$now-200,55);
+    $camera=vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$cameraRef,$cameraCheckIn],$coverage);
+    $cameraRevision=$camera[$cameraRef]['revision'];
+    youtube_activity_check($camera[$cameraRef]['interest']['watch_sessions']===2&&$camera[$cameraRef]['interest']['watch_seconds']===100
+        &&$camera[$cameraRef]['interest']['basis']==='viewing'&&isset($camera[$cameraCheckIn]),
+        'Separated meaningful watches create a research opportunity while an exact earlier check-in remains verifiable');
+    $pdo->exec("UPDATE vp3_youtube_watch_v1 SET watch_seconds=65,last_watched_at=".($now-135)." WHERE play_id='00000000-0000-4000-8000-000000000003'");
+    $camera=vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$cameraRef],$coverage);
+    youtube_activity_check($camera[$cameraRef]['revision']===$cameraRevision&&$camera[$cameraRef]['interest']['watch_seconds']===110,
+        'New watch time updates the strength of the same interest without reopening the research assignment');
+    $pdo->exec("UPDATE vp3_youtube_watch_v1 SET last_watched_at=".($now-90)." WHERE play_id='00000000-0000-4000-8000-000000000001'");
+    $fresh=vp3_initiative_youtube_pattern_stats_v1([],vp3_youtube_history_recent_v1($pdo,1,7),$now-2400);
+    youtube_activity_check($fresh['watch_sessions']===1&&$fresh['watch_seconds']===65&&!$fresh['view_pattern'],
+        'A late heartbeat and a quick reopen of the same pre-decision viewing episode cannot reopen the interest');
+    vp3_youtube_research_save_v1($pdo,1,'watch',false);
+    $remaining=vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$cameraRef,$topicRef],$coverage);
+    youtube_activity_check(array_keys($remaining)===[$topicRef]&&$remaining[$topicRef]['revision']===$research[$topicRef]['revision'],
+        'Revoking viewing removes viewing-dependent research without invalidating a search-only pattern');
     vp3_youtube_research_save_v1($pdo,1,'topic',false);
     youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$topicRef],$coverage)===[]
-        &&vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===$interest,
+        &&vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===$artistEvidence,
         'Turning off topic research revokes its evidence and preserves the artist preference');
     $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>3];
     youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage)===[],

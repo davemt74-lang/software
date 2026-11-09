@@ -184,8 +184,8 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
         $catalog[$id]=['id'=>$id,'capability'=>$id,'mode'=>'read',
             'ready'=>true,'reason'=>'ready','source_refs'=>$refs,
             'description'=>$kind==='artist'
-                ?'Research the named artist in current public sources and prepare a private, sourced result. Choose only when useful. Set focus to overview, news, shows, merch, or videos.'
-                :'Research the exact topic from the owner’s YouTube search using public sources. Use only that source ref. Choose it only when a reliable explanation, practical next step, or new development would help. Do not assume a lasting preference from one search.'];
+                ?'Use the exact named artist from this verified interest pattern to prepare a private, sourced result. Choose only when research would add value. Set focus to overview, news, shows, merch, or videos.'
+                :'Use the exact owner-entered topic from this verified interest pattern to prepare a private, sourced result. Choose only when a reliable explanation, practical next step, or new development would help. Treat activity as tentative evidence of interest.'];
     }
     foreach(['product','screen','mission','marketing'] as $tool){
         $refs=[];

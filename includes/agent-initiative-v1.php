@@ -34,6 +34,12 @@ function vp3_initiative_plan_v1(string $answer,array $evidence,array $allowedToo
             $hasCheckIn=true;
         }
         $primary=$job['primary'];$assignment=$job['tool'].'|'.$primary;$refs=[];
+        $primaryKind=$evidence[$primary]['kind']??null;
+        if($job['tool']==='chat.check_in'&&in_array($primaryKind,['artist_interest','topic_interest'],true)){
+            throw new InvalidArgumentException('YouTube check-ins require their dedicated conversation source.');
+        }
+        $interestRef=$evidence[$primary]['interest_ref']??null;
+        if(is_string($interestRef)&&preg_match('/\A(?:artist|topic)-interest:[a-f0-9]{64}\z/D',$interestRef))$assignment='youtube-interest|'.$interestRef;
         if(preg_match('/\A(?:open-task|task):([1-9][0-9]*)\z/D',$primary,$taskMatch)){
             // Historical aliases may still verify old reports, but cannot
             // become competing new assignments for one canonical task.
@@ -43,13 +49,16 @@ function vp3_initiative_plan_v1(string $answer,array $evidence,array $allowedToo
         }
         foreach($job['refs'] as $ref){
             if(!is_string($ref)||!isset($evidence[$ref])||isset($refs[$ref]))throw new InvalidArgumentException('Unknown or duplicate initiative source.');
+            if(($evidence[$ref]['kind']??'')==='youtube_interest_checkin'&&($job['tool']!=='chat.check_in'||$ref!==$primary)){
+                throw new InvalidArgumentException('A tentative YouTube interest can only ground its own conversational check-in.');
+            }
             $refs[$ref]=true;
         }
         $job['focus']=trim($job['focus']);
         if(!isset($refs[$primary])||isset($primaries[$assignment])||$job['focus']===''||mb_strlen($job['focus'])>300){
             throw new InvalidArgumentException('Invalid initiative assignment scope.');
         }
-        if($job['tool']==='topic.research')$job['refs']=[$primary];
+        if(in_array($job['tool'],['artist.research','topic.research'],true))$job['refs']=[$primary];
         $primaries[$assignment]=true;
     }
     unset($job);
@@ -212,7 +221,7 @@ function vp3_initiative_schedule_v1(PDO $pdo,array $user,?int $agentId=null): vo
 }
 
 /** Compare SQL timestamps against the same database clock, never PHP's local timezone. */
-function vp3_initiative_review_recent_v1(PDO $pdo,?array $last,array $policy,?string $liveRevision=null): bool
+function vp3_initiative_review_recent_v1(PDO $pdo,?array $last,array $policy,?string $liveRevision=null,?string $engagementRevision=null): bool
 {
     $previous=$last['metadata']??[];
     if(!$last||($previous['conversation_id']??null)!==($policy['conversation_id']??null)
@@ -224,11 +233,10 @@ function vp3_initiative_review_recent_v1(PDO $pdo,?array $last,array $policy,?st
     $databaseNow=$parse((string)$pdo->query('SELECT CURRENT_TIMESTAMP')->fetchColumn());
     $seen=$parse((string)($last['last_seen_at']??''));
     if($databaseNow===null||$seen===null||$databaseNow-$seen<0||$databaseNow-$seen>=300)return false;
-    // The normal cadence remains five minutes. A genuinely changed current
-    // moment can wake the same assessment after a bounded 30-second cooldown.
-    // Renewed timestamps and packet heartbeats do not change this revision.
-    if($liveRevision!==null&&($previous['live_context_revision']??'')!==$liveRevision
-        &&$databaseNow-$seen>=30)return false;
+    // A changed current moment or saved owner decision can wake the same
+    // assessment after 30 seconds. Heartbeats alone keep the normal cadence.
+    if($databaseNow-$seen>=30&&(($liveRevision!==null&&($previous['live_context_revision']??'')!==$liveRevision)
+        ||($engagementRevision!==null&&($previous['engagement_revision']??'')!==$engagementRevision)))return false;
     if(isset($previous['checked_at'])){
         try{$checked=new DateTimeImmutable((string)$previous['checked_at'],new DateTimeZone('UTC'));}
         catch(Throwable $error){return false;}
@@ -260,9 +268,11 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
     $policy=vp3_initiative_policy_v1($user);
     if(empty($policy['enabled']))return;
     $live=vp3_initiative_access_v1($pdo,$user,$policy);
+    require_once __DIR__.'/agent-initiative-engagement-feedback-v1.php';
     $liveRevision=vp3_initiative_live_revision_v1($pdo,$live,$policy);
+    $engagementRevision=vp3_initiative_engagement_revision_v1($pdo,$live,$policy);
     $last=agent_brain_v122_memory($live,'initiative_sweep','last-review');$previous=$last['metadata']??[];
-    if(vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision))return;
+    if(vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision,$engagementRevision))return;
     // A due assessment primes bounded transcript privacy proofs before owner
     // locks. The locked assessment repeats the actual source/identity reads.
     if(table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172')){
@@ -280,7 +290,8 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
         $last=agent_brain_v122_memory($live,'initiative_sweep','last-review');
         $previous=$last['metadata']??[];
         $liveRevision=vp3_initiative_live_revision_v1($pdo,$live,$policy);
-        if(!vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision)){
+        $engagementRevision=vp3_initiative_engagement_revision_v1($pdo,$live,$policy);
+        if(!vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision,$engagementRevision)){
             $availability=vp3_initiative_availability_v1(vp3_initiative_owner_context_v1($pdo,$live,$policy,false));
             $attentionRevision=$previous['attention_revision']??null;
             if(($previous['conversation_id']??null)!==($policy['conversation_id']??null)
@@ -294,6 +305,7 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
                 $payload=['binding'=>$policy,'sources'=>array_column($evidence,'revision','ref'),'canonical_sources'=>$canonical,
                     'capability_sources'=>vp3_initiative_capability_source_map_v1($evidence,array_keys($evidence)),
                     'owner_availability'=>$availability,'attention_revision'=>$attentionRevision];
+                if($engagementRevision!=='')$payload['engagement_revision']=$engagementRevision;
                 $hash=hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR));
                 vp3_initiative_enqueue_v1($pdo,$live,'initiative.plan',$payload,$hash);
             }
@@ -302,6 +314,7 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
                 'revision'=>$policy['revision'],
                 'owner_availability'=>$availability,'attention_revision'=>$attentionRevision,
                 'live_context_revision'=>$liveRevision,
+                'engagement_revision'=>$engagementRevision,
                 'checked_at'=>gmdate(DATE_ATOM),
             ];
             if(agent_brain_v122_upsert_system_memory($live,'initiative_sweep','last-review','Initiative source review checked.',$review)<1){
@@ -627,6 +640,7 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
     foreach($sources as $ref=>$revision){
         if(($current[$ref]['revision']??null)===$revision)continue;
         $family=$families[explode(':',$ref,2)[0]]??'';
+        if(preg_match('/\Ayoutube-interest-checkin:(artist|topic):[a-f0-9]{64}\z/D',$ref,$matches))$family=$matches[1].'_research';
         $office=['task'=>'office_tasks','reminder'=>'office_reminders','calendar'=>'office_calendar'][explode(':',$ref,2)[0]]??null;
         if(isset($capabilitySources[$ref])&&$office!==null&&isset($coverage[$office]))$family=$office;
         if(in_array($coverage[$family]??'', ['unavailable','limited'],true)){

@@ -301,6 +301,8 @@ $youtubeConfig = [
         && (bool)vp3_youtube_picks_settings_v1($youtubePdo, (int)$user['id'])['proactive'],
     'captureKey'=>$youtubePdo && vp3_youtube_playback_ready_v1($youtubePdo)
         ? vp3_youtube_capture_key_v1($youtubePdo, (int)$user['id']) : '',
+    'watchCapture'=>$youtubePdo && vp3_youtube_watch_ready_v1($youtubePdo)
+        && vp3_youtube_watch_research_enabled_v1($youtubePdo, (int)$user['id']),
 ];
 $youtubeChatRuntime = '<script>window.VP3_YOUTUBE_PLAYBACK_V1='
     .json_encode($youtubeConfig, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'

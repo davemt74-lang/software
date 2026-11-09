@@ -59,6 +59,13 @@ try {
             $messageId = filter_var($field('message_id'), FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
             $recorded = $messageId && vp3_youtube_history_record_v1($pdo, $owner, $messageId, $field('video_id'), $field('play_id'), $field('capture_key'));
             vp3_youtube_playback_reply_v1(200, ['ok'=>true, 'recorded'=>(bool)$recorded]);
+        case 'watch':
+            if (!vp3_youtube_watch_ready_v1($pdo)) vp3_youtube_playback_reply_v1(503, ['ok'=>false]);
+            $messageId = filter_var($field('message_id'), FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+            $seconds = filter_var($field('watch_seconds'), FILTER_VALIDATE_INT, ['options'=>['min_range'=>1,'max_range'=>VP3_YOUTUBE_MAX_WATCH_SECONDS_V1]]);
+            if ($messageId === false || $seconds === false) vp3_youtube_playback_reply_v1(422, ['ok'=>false]);
+            $recorded = vp3_youtube_watch_record_v1($pdo, $owner, $messageId, $field('video_id'), $field('play_id'), $field('capture_key'), $seconds);
+            vp3_youtube_playback_reply_v1(200, ['ok'=>true, 'recorded'=>$recorded]);
         case 'remove':
             $id = $field('play_id');
             if (!preg_match('/\A[a-f0-9-]{36}\z/', $id)) vp3_youtube_playback_reply_v1(422, ['ok'=>false]);

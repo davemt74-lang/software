@@ -22,11 +22,13 @@ $pdo = db();
 $youtubeConsentReady = $pdo && agent_connection_youtube_consent_ready_v1($pdo);
 $youtubeHistoryReady = $pdo && vp3_youtube_playback_ready_v1($pdo);
 $youtubeHistoryEnabled = $youtubeHistoryReady && vp3_youtube_capture_key_v1($pdo, (int)$user['id']) !== '';
+$youtubeWatchReady = $youtubeHistoryReady && vp3_youtube_watch_ready_v1($pdo);
 $youtubePicksReady = $pdo && vp3_youtube_picks_ready_v1($pdo);
 $youtubePicks = $youtubePicksReady ? vp3_youtube_picks_settings_v1($pdo, (int)$user['id']) : [];
 $youtubeEnabled = $youtubeConsentReady && agent_connection_youtube_consent_v1($pdo, (int)$user['id']);
 $youtubeArtistResearch = $youtubeEnabled && vp3_youtube_artist_research_enabled_v1($pdo, (int)$user['id']);
 $youtubeTopicResearch = $youtubeEnabled && vp3_youtube_research_enabled_v1($pdo, (int)$user['id'], 'topic');
+$youtubeWatchResearch = $youtubeEnabled && vp3_youtube_watch_research_enabled_v1($pdo, (int)$user['id']);
 $canChat = has_permission('chat.access', $user);
 $permissions = $gmailLinked
     ? $connection['permissions']
@@ -85,6 +87,7 @@ $notices = [
     'youtube_disabled' => ['success', 'YouTube is disabled for your VP3 account.'],
     'youtube_artist_research_saved' => ['success', 'Background artist research preference saved.'],
     'youtube_topic_research_saved' => ['success', 'Background topic research preference saved.'],
+    'youtube_watch_research_saved' => ['success', 'Watch-time preference saved.'],
     'youtube_accept_required' => ['error', 'Review and accept the terms to enable YouTube.'],
     'youtube_unavailable' => ['error', 'YouTube is currently unavailable on this installation.'],
     'youtube_invalid' => ['error', 'The YouTube request expired or was invalid. Review the terms and try again.'],
@@ -410,7 +413,7 @@ header('Cache-Control: private, no-store');
                                 <input type="hidden" name="action" value="save_artist_research">
                                 <label class="connections-permission">
                                   <input type="checkbox" name="artist_research" value="1" <?= $youtubeArtistResearch ? 'checked' : '' ?>>
-                                  <span>Let Initiative research artists from my recent similar-artist requests using public web search and my configured AI.</span>
+                                  <span>Let Initiative research artists when my YouTube activity suggests an interest, using public web search and my configured AI.</span>
                                 </label>
                                 <button class="connections-button connections-secondary" type="submit">Save artist research preference</button>
                               </form>
@@ -419,7 +422,7 @@ header('Cache-Control: private, no-store');
                                 <input type="hidden" name="action" value="save_topic_research">
                                 <label class="connections-permission">
                                   <input type="checkbox" name="topic_research" value="1" <?= $youtubeTopicResearch ? 'checked' : '' ?>>
-                                  <span>Let Initiative send topics I search for on YouTube to public web search and use my configured AI to prepare private research.</span>
+                                  <span>Let Initiative research patterns in topics I search for on YouTube. It can send the search topic to public web search and prepare a private result with my configured AI.</span>
                                 </label>
                                 <button class="connections-button connections-secondary" type="submit">Save topic research preference</button>
                               </form>
@@ -439,6 +442,17 @@ header('Cache-Control: private, no-store');
                                   <button class="connections-button connections-secondary" type="submit">Clear VP3 playback history</button>
                                 </form>
                               </div>
+                              <?php if ($youtubeWatchReady): ?>
+                                <form method="post" action="<?= e(url('/youtube-connection-v1.php')) ?>">
+                                  <?= csrf_field() ?>
+                                  <input type="hidden" name="action" value="save_watch_research">
+                                  <label class="connections-permission">
+                                    <input type="checkbox" name="watch_research" value="1" <?= $youtubeWatchResearch ? 'checked' : '' ?>>
+                                    <span>Record watch time while Played in VP3 is enabled. Let Initiative use watch time and repeat views to judge what may be worth following up.</span>
+                                  </label>
+                                  <button class="connections-button connections-secondary" type="submit">Save watch-time preference</button>
+                                </form>
+                              <?php endif; ?>
                             <?php endif; ?>
                           <?php elseif ($youtubeReady && $youtubeConsentReady && $canChat): ?>
                             <form method="post" action="<?= e(url('/youtube-connection-v1.php')) ?>">

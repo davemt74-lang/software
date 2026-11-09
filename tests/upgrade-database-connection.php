@@ -10,7 +10,7 @@ $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_ac
     'profile_visitor_voices_pa4a','profile_speech_items_pa4a','profile_speech_attempts_pa4a',
     'profile_attention_operations_pa4b','profile_attention_deliveries_pa4b','profile_event_projections_pa4b',
     'profile_conversation_checkouts_pa5','agent_product_launches_v1',
-    'agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1'];
+    'agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1','vp3_youtube_watch_v1'];
 $partialSpeech=[
     'partial-auto-greet'=>['team_user_presence','auto_greet_enabled'],
     'partial-conversation-checkout-review'=>['profile_conversation_checkouts_pa5','product_snapshot_hash'],
@@ -92,7 +92,7 @@ $checkoutEnd=strpos($checkoutDdl,'function '.'vp3_profile_checkout_require_pa5('
 eval(substr($checkoutDdl,$checkoutStart,$checkoutEnd-$checkoutStart));
 if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
-$missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_');
+$missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$mode==='missing-vp3_youtube_watch_v1';
 $modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape'],true)||$missingTable||isset($partialSpeech[$mode]);
 if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);}
 if($modern){
@@ -165,6 +165,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     check(chat_settings_agent_auto_greet_schema_ready_v237($fixture), 'Upgrade skipped Auto Greet storage');
     check(chat_settings_get_v237($fixture,1)['auto_greet_enabled'] === ($mode !== 'post'), 'Upgrade did not preserve the default or saved Auto Greet preference');
     check(vp3_youtube_playback_ready_v1($fixture), 'Upgrade skipped the YouTube playback history schema');
+    check(vp3_youtube_watch_ready_v1($fixture), 'Upgrade skipped the YouTube watch time schema');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'complete-get') {
     check($complete&&$dbCalls===1&&$calls===[],'Complete GET must inspect speech columns read-only and report ready');
@@ -178,7 +179,8 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
 } elseif ($mode === 'csrf') {
     check($error === 'Session expired. Please try again.' && $dbCalls === 0 && $calls === [], 'CSRF rejection allowed upgrade work');
 } else {
-    check(!$complete && $dbCalls === (isset($partialSpeech[$mode])?1:0) && $calls === [], 'Missing required storage was marked ready or GET performed migrations');
+    $needsConnection = isset($partialSpeech[$mode]) || $mode === 'missing-vp3_youtube_watch_v1';
+    check(!$complete && $dbCalls === ($needsConnection?1:0) && $calls === [], 'Missing required storage was marked ready or GET performed migrations');
     check(str_contains($html, 'Run Upgrade'), 'Missing required storage must expose the upgrade control');
 }
 check($fixture->query('SELECT value FROM existing_content')->fetchColumn() === 'preserve me', 'Upgrade changed existing content');

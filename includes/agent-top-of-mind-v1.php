@@ -47,7 +47,7 @@ function vp3_top_of_mind_state_v1(array $run,array $action,?array $receipt,array
     return 'completed';
 }
 
-/** A current owner-only playback observation for this Chat, not an Initiative inference source. */
+/** A current owner-only playback observation for this Chat. */
 function vp3_top_of_mind_music_v1(PDO $pdo,array $user,int $agentId,int $conversationId,int $now): ?array
 {
     require_once __DIR__.'/agent-connection-youtube-playback-v1.php';
@@ -75,7 +75,6 @@ function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $
 {
     require_once __DIR__.'/agent-calendar-prep-v1.php';
     require_once __DIR__.'/agent-connection-youtube-chat-v1.php';
-    require_once __DIR__.'/agent-public-research-plan-v1.php';
     $context=['calendar'=>[],'youtube_search'=>null,'artist_research'=>null,'topic_research'=>null];
     $chatUrl=url('/chat.php?agent='.($agentId?:'system').'&conversation_id='.$conversationId);
     try{
@@ -90,39 +89,26 @@ function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $
             $results=$record['results'];
             $query=vp3_top_of_mind_text_v1($results['query']??'',180);
             if(!$searchedAt||$searchedAt<$now-86400||$searchedAt>$now||$query==='')continue;
-            $context['youtube_search']??=[
+            $context['youtube_search']=[
                 'message_id'=>$record['message_id'],'query'=>$query,
                 'kind'=>($results['suggestion_kind']??null)==='playlist'?'playlist':'search',
                 'result_count'=>count(array_slice($results['videos'],0,6)),
                 'searched_at'=>gmdate(DATE_ATOM,$searchedAt),'chat_url'=>$chatUrl,
             ];
-            if(($results['suggestion_kind']??null)==='similar'){
-                $topic=$results['taste_topic']??null;
-                $artist=is_string($topic)?trim($topic):'';
-                if($artist!==''&&mb_strlen($artist)<=100&&!preg_match('~https?://|[<>]|\p{C}~iu',$artist)){
-                    $context['artist_research']??=['artist'=>$artist,'status'=>'available','message_id'=>$record['message_id'],
-                        'source_message_id'=>$record['message_id'],'chat_url'=>$chatUrl];
-                }
-            }
-            $topic=vp3_topic_research_youtube_subject_v1($results);
-            if($topic!==''){
-                $context['topic_research']??=['topic'=>$topic,'status'=>'available','message_id'=>$record['message_id'],
-                    'source_message_id'=>$record['message_id'],'chat_url'=>$chatUrl];
-            }
-            if($context['artist_research']!==null&&$context['topic_research']!==null)break;
+            break;
         }
     }catch(PDOException $error){}
     foreach(['artist','topic'] as $kind){
         $key=$kind.'_research';
         try{
-            $context[$key]=vp3_top_of_mind_research_result_v1($pdo,(int)$user['id'],$conversationId,$now,$chatUrl,$kind,$context[$key]);
+            $context[$key]=vp3_top_of_mind_research_result_v1($pdo,(int)$user['id'],$conversationId,$now,$chatUrl,$kind);
         }catch(PDOException $error){}
     }
     return $context;
 }
 
 /** Reuse the latest verified public research response in this owner Chat. */
-function vp3_top_of_mind_research_result_v1(PDO $pdo,int $ownerId,int $conversationId,int $now,string $chatUrl,string $kind,?array $interest): ?array
+function vp3_top_of_mind_research_result_v1(PDO $pdo,int $ownerId,int $conversationId,int $now,string $chatUrl,string $kind): ?array
 {
     $key=$kind.'_research_v1';
     $stmt=$pdo->prepare("SELECT m.id,m.context_json FROM chat_messages m
@@ -136,18 +122,31 @@ function vp3_top_of_mind_research_result_v1(PDO $pdo,int $ownerId,int $conversat
         $receipt=vp3_tool_receipt_normalize_v1($context['tool_receipt']??null);
         if(!is_array($research)||($receipt['capability']??null)!==$kind.'.research'||($receipt['status']??null)!==($research['status']??null))continue;
         $subject=vp3_top_of_mind_text_v1($research[$kind]??'',120);
-        if($subject===''||($interest!==null&&mb_strtolower($subject)!==mb_strtolower($interest[$kind])))continue;
+        if($subject==='')continue;
         $status=match($research['status']){
             'read_complete'=>($research['mode']??null)==='delegate'?'mission_ready':'ready',
-            'clarification_required'=>($research['mode']??null)==='delegate'&&!empty($research['mission_id'])?'waiting_owner':'available',
+            'clarification_required'=>($research['mode']??null)==='delegate'&&!empty($research['mission_id'])?'waiting_owner':null,
             'no_matches'=>'no_matches',
             'blocked','failed'=>'unavailable',
-            default=>'available',
+            default=>null,
         };
-        return [$kind=>$subject,'status'=>$status,'message_id'=>(int)$row['id'],
-            'source_message_id'=>$interest['source_message_id']??0,'chat_url'=>$chatUrl];
+        if($status!==null)return [$kind=>$subject,'status'=>$status,'message_id'=>(int)$row['id'],'chat_url'=>$chatUrl];
     }
-    return $interest;
+    return null;
+}
+
+/** Explain the selected thought using current source facts only. */
+function vp3_top_of_mind_interest_v1(array $source): array
+{
+    $interest=$source['interest']??null;
+    if(!is_array($interest)||!in_array($source['kind']??null,['artist_interest','topic_interest','youtube_interest_checkin'],true))return [];
+    $facts=[];
+    foreach(['search_count','related_search_count','watch_sessions','watch_seconds'] as $key){
+        $value=$interest[$key]??0;
+        if(is_int($value)&&$value>0)$facts[$key]=$value;
+    }
+    if(($interest['basis']??null)==='clarified')$facts['owner_reply']=true;
+    return $facts;
 }
 
 /** Exact requested Agent, current saved policy and authorized sources only. */
@@ -284,25 +283,17 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
             catch(Throwable $error){return false;}
             return true;
         },ARRAY_FILTER_USE_BOTH);
-        $out['items']=array_values($visibleItems);
+        $out['items']=[];
+        foreach($visibleItems as $index=>$item){
+            $goal=$verified[$index]['goal'];
+            $primary=$goal['primary']??'';
+            $interest=is_string($primary)?vp3_top_of_mind_interest_v1($final[$primary]??[]):[];
+            if($interest)$item['youtube_interest']=$interest;
+            $out['items'][]=$item;
+        }
         if(count($out['items'])!==$before)$out['coverage']['initiative']='limited';
         try{$out['music']=vp3_top_of_mind_music_v1($pdo,$fresh['user'],$agentId,$cid,$now);}
         catch(PDOException $error){$out['music']=null;}
-        $chatContext=vp3_top_of_mind_chat_context_v1($pdo,$fresh['user'],$agentId,$cid,$now);
-        foreach(['artist','topic'] as $kind){
-            $key=$kind.'_research';
-            $research=$chatContext[$key];
-            if(($research['status']??null)!=='available')continue;
-            $ref=$kind.'-interest:'.hash('sha256',mb_strtolower($research[$kind]));
-            foreach($visibleItems as $index=>$item){
-                $goal=$verified[$index]['goal'];
-                if(($goal['tool']??null)!==$kind.'.research'||($goal['primary']??null)!==$ref
-                    ||!in_array($item['state'],['queued','working','waiting_owner','ready_to_report','completed'],true))continue;
-                $chatContext[$key]=null;
-                if(($chatContext['youtube_search']['message_id']??null)===$research['source_message_id'])$chatContext['youtube_search']=null;
-                break;
-            }
-        }
-        return $out+$chatContext;
+        return $out+vp3_top_of_mind_chat_context_v1($pdo,$fresh['user'],$agentId,$cid,$now);
     });
 }

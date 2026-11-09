@@ -4,18 +4,21 @@
   const videoIdPattern = /^[A-Za-z0-9_-]{11}$/;
   const brandLogo = new URL('assets/youtube-logo-v1.png', document.currentScript?.src || document.baseURI).href;
   const config = window.VP3_YOUTUBE_PLAYBACK_V1 || {};
+  const watchSampleMs = 4000;
+  const watchReportSeconds = 12;
+  const maxWatchSeconds = 14400;
   let captureKey = config.captureKey || '';
   let activePlayer = null;
   let playerApi;
   let pendingRecord = Promise.resolve();
   let lastRecordedPlayback = 0;
 
-  async function historyRequest(action, fields = {}) {
+  async function historyRequest(action, fields = {}, keepalive = false) {
     if (!config.endpoint || !config.csrf) throw new Error('History unavailable');
     const response = await fetch(config.endpoint, {
       method: 'POST', credentials: 'same-origin', cache: 'no-store',
       body: new URLSearchParams({action, csrf_token: config.csrf, ...fields}),
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(8000), keepalive
     });
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error('History unavailable');
@@ -47,19 +50,109 @@
     return playerApi;
   }
 
+  function newPlay(active) {
+    return {
+      fields:{message_id:active.messageId, video_id:active.video.video_id,
+        play_id:window.crypto?.randomUUID?.(), capture_key:captureKey},
+      recorded:false, recording:false, recordAttemptAt:-Infinity, watchedMs:0, sentSeconds:0,
+      watchAttemptAt:-Infinity, sending:false, flushPending:false
+    };
+  }
+
+  function canCapture(active, play) {
+    return active.video.made_for_kids === false && play.fields.capture_key
+      && play.fields.capture_key === captureKey && play.fields.play_id && active.messageId
+      && !window.VP3ParticipantContinuity?.selectedContext();
+  }
+
+  function rememberHistoryWrite(write) {
+    pendingRecord = Promise.all([pendingRecord, write]).then(() => undefined);
+  }
+
   function capturePlayback(active) {
-    if (active !== activePlayer || active.captured || !active.panel.isConnected || document.hidden
-        || active.video.made_for_kids !== false || !active.captureKey || !active.playId || !active.messageId) return;
-    active.captured = true;
-    const fields = {message_id:active.messageId, video_id:active.video.video_id,
-      play_id:active.playId, capture_key:active.captureKey};
-    const record = historyRequest('record', fields).then(data => {
+    const play = active.play;
+    const now = performance.now();
+    if (active !== activePlayer || play.recorded || play.recording || !active.panel.isConnected || document.hidden
+        || !canCapture(active, play) || now - play.recordAttemptAt < 10000) return;
+    play.recording = true;
+    play.recordAttemptAt = now;
+    rememberHistoryWrite(historyRequest('record', play.fields).then(data => {
       if (data.recorded) {
+        play.recorded = true;
         lastRecordedPlayback = Date.now();
         window.dispatchEvent(new Event('vp3:youtube-history-changed'));
       }
-    }).catch(() => {});
-    pendingRecord = Promise.all([pendingRecord, record]).then(() => undefined);
+    }).catch(() => {}).finally(() => { play.recording = false; }));
+  }
+
+  function reportWatch(active, play, flush = false) {
+    if (!play.recorded || play.watchRejected || !canCapture(active, play)) return;
+    const seconds = Math.min(maxWatchSeconds, Math.floor(play.watchedMs / 1000));
+    if (seconds <= play.sentSeconds) return;
+    if (play.sending) { if (flush) play.flushPending = true; return; }
+    const now = performance.now();
+    if (!flush && (seconds - play.sentSeconds < watchReportSeconds || now - play.watchAttemptAt < watchReportSeconds * 1000)) return;
+    play.watchAttemptAt = now;
+    play.sending = true;
+    rememberHistoryWrite(historyRequest('watch', {...play.fields, watch_seconds:seconds}, true).then(data => {
+      if (data.recorded) play.sentSeconds = seconds;
+      else play.watchRejected = true;
+    }).catch(() => {}).finally(() => {
+      play.sending = false;
+      if (play.flushPending) {
+        play.flushPending = false;
+        reportWatch(active, play, true);
+      }
+    }));
+  }
+
+  function expectedVideo(active) {
+    try { return new URL(active.player.getVideoUrl()).searchParams.get('v') === active.video.video_id; }
+    catch { return false; }
+  }
+
+  function sampleWatch(active, final = false) {
+    const previous = active.watchSample;
+    active.watchSample = null;
+    if (document.hidden || !active.panel.isConnected || !canCapture(active, active.play) || !expectedVideo(active)) return;
+    try {
+      if (!final && active.player.getPlayerState() !== window.YT.PlayerState.PLAYING) return;
+      const current = {at:performance.now(), position:active.player.getCurrentTime(), rate:active.player.getPlaybackRate()};
+      if (![current.position, current.rate].every(Number.isFinite) || current.position < 0 || current.rate <= 0) return;
+      active.watchSample = current;
+      if (!previous || !active.play.recorded || previous.rate !== current.rate) return;
+      const elapsed = (current.at - previous.at) / 1000;
+      const advanced = (current.position - previous.position) / current.rate;
+      // Count advancing wall time. Ignore seek jumps, stalled samples and long timer gaps.
+      if (elapsed > 0 && elapsed * 1000 <= watchSampleMs * 2 && advanced > 0
+          && Math.abs(advanced - elapsed) <= Math.max(0.5, elapsed * 0.15)) {
+        active.play.watchedMs += Math.min(advanced, elapsed) * 1000;
+      }
+    } catch {} // Playback stays available if the iframe cannot expose progress.
+  }
+
+  function startWatching(active) {
+    capturePlayback(active);
+    if (!config.watchCapture || active.watchTimer || !canCapture(active, active.play)) return;
+    sampleWatch(active);
+    active.watchTimer = window.setInterval(() => {
+      if (!active.panel.isConnected || !canCapture(active, active.play) || active.play.watchRejected) {
+        stopWatching(active);
+        return;
+      }
+      capturePlayback(active);
+      sampleWatch(active);
+      reportWatch(active, active.play);
+    }, watchSampleMs);
+  }
+
+  function stopWatching(active) {
+    if (!active.watchTimer) return;
+    window.clearInterval(active.watchTimer);
+    active.watchTimer = 0;
+    sampleWatch(active, true);
+    active.watchSample = null;
+    reportWatch(active, active.play, true);
   }
 
   function element(tag, className, text) {
@@ -71,6 +164,7 @@
 
   function stopPlayer(restoreFocus = false) {
     if (!activePlayer) return;
+    stopWatching(activePlayer);
     const { panel, button, player } = activePlayer;
     activePlayer = null;
     try { player?.destroy(); } catch {}
@@ -120,22 +214,34 @@
     panel.append(frame, close);
     row.append(panel);
     button.setAttribute('aria-expanded', 'true');
-    const active = {panel, button, video, messageId, captureKey, playId:window.crypto?.randomUUID?.(), suggestion};
+    const active = {panel, button, video, messageId, suggestion};
+    active.play = newPlay(active);
     activePlayer = active;
     loadPlayerApi().then(api => {
       if (activePlayer !== active || !frame.isConnected) return;
       active.player = new api.Player(frame, {events: {
         onReady(event) {
           if (activePlayer !== active) return;
+          active.player = event.target;
           active.ready = true;
-          if (event.target.getPlayerState() === api.PlayerState.PLAYING) capturePlayback(active);
+          if (event.target.getPlayerState() === api.PlayerState.PLAYING) startWatching(active);
         },
         onStateChange(event) {
+          if (activePlayer !== active) return;
           if (event.data === api.PlayerState.PLAYING) {
             active.offer?.remove();
-            capturePlayback(active);
-          } else if (event.data === api.PlayerState.ENDED) {
-            void offerMorePicks(active);
+            if (active.ended) {
+              if (!expectedVideo(active)) return;
+              active.ended = false;
+              active.play = newPlay(active);
+            }
+            startWatching(active);
+          } else {
+            stopWatching(active);
+            if (event.data === api.PlayerState.ENDED) {
+              active.ended = true;
+              void offerMorePicks(active);
+            }
           }
         }
       }});

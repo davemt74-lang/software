@@ -51,22 +51,28 @@ await page.route('https://www.youtube.com/embed/**', route => {
   youtubeFrameRequests++;
   return route.fulfill({contentType:'text/html',body:'<title>YouTube iframe fixture</title>'});
 });
-await page.route('https://www.youtube.com/iframe_api', route => route.fulfill({contentType:'text/javascript',body:`
+const youtubeApi = `
   window.YT = {PlayerState:{PLAYING:1,ENDED:0}, Player:class {
     constructor(frame, config) {
       window.youtubeFixture = this;
       this.frame = frame;
       this.events = config.events;
       this.state = -1;
-      queueMicrotask(() => this.events.onReady({target:this}));
+      this.position = 0;
+      this.videoId = new URL(frame.src).pathname.split('/').pop();
+      queueMicrotask(() => {this.events.onReady({target:this});window.watchFixtureReady?.();});
     }
     getPlayerState() { return this.state; }
+    getCurrentTime() { return this.position; }
+    getPlaybackRate() { return 1; }
+    getVideoUrl() { return 'https://www.youtube.com/watch?v='+this.videoId; }
     change(state) { this.state=state; this.events.onStateChange({target:this,data:state}); }
     pauseVideo() { this.change(2); }
     destroy() {}
   }};
   window.onYouTubeIframeAPIReady();
-`}));
+`;
+await page.route('https://www.youtube.com/iframe_api', route => route.fulfill({contentType:'text/javascript',body:youtubeApi}));
 await page.route('**/api/**', async route => {
   if (new URL(route.request().url()).pathname === '/api/youtube-playback') {
     const data = Object.fromEntries(new URLSearchParams(route.request().postData()));
@@ -581,6 +587,78 @@ try {
 
   messages.set(42,[]);
   console.log('PASS typed and spoken YouTube search results, safe mobile inline playback, switch/close and history expiry');
+
+  const watchPage = await browser.newPage();
+  const watchReports = [];
+  await watchPage.route('http://watch.test/**', route => route.fulfill(route.request().url().endsWith('/')
+    ? {contentType:'text/html',body:'<article data-chat-message-id="3201"><div class="message-text">YouTube result</div></article>'}
+    : {contentType:'image/png',body:youtubeLogo}));
+  await watchPage.route('https://i.ytimg.com/**', route => route.fulfill({contentType:'image/png',body:youtubeLogo}));
+  await watchPage.route('https://www.youtube.com/embed/**', route => route.fulfill({contentType:'text/html',body:'<title>Watch fixture</title>'}));
+  await watchPage.route('https://www.youtube.com/iframe_api', route => route.fulfill({contentType:'text/javascript',body:youtubeApi}));
+  await watchPage.route('http://watch.test/playback', route => {
+    watchReports.push(Object.fromEntries(new URLSearchParams(route.request().postData())));
+    return route.fulfill({json:{ok:true,recorded:true}});
+  });
+  await watchPage.clock.install({time:new Date('2026-01-01T00:00:00Z')});
+  await watchPage.clock.pauseAt(new Date('2026-01-01T00:00:10Z'));
+  await watchPage.goto('http://watch.test/');
+  await watchPage.evaluate(() => {
+    let playCounter = 0;
+    Object.defineProperty(window.crypto,'randomUUID',{value:()=> '44444444-4444-4444-8444-'+String(++playCounter).padStart(12,'0')});
+    window.VP3_YOUTUBE_PLAYBACK_V1 = {endpoint:'/playback',csrf:'fixture',captureKey:'fixture-key',watchCapture:true};
+    window.watchPlayerReady = new Promise(resolve=>{window.watchFixtureReady=resolve;});
+    window.firstWatchRecorded = new Promise(resolve=>window.addEventListener('vp3:youtube-history-changed',resolve,{once:true}));
+  });
+  await watchPage.addScriptTag({content:await source('chat-youtube-v1.js')});
+  await watchPage.evaluate(result => window.VP3_CHAT_YOUTUBE_V1.attach(document.querySelector('article'),result),youtubeResult('watch fixture'));
+  await watchPage.getByRole('button',{name:/Play in Chat · Video title/}).evaluate(button=>button.click());
+  await watchPage.evaluate(async () => {
+    await window.watchPlayerReady;
+    window.youtubeFixture.change(1);
+    await window.firstWatchRecorded;
+  });
+  const advanceWatch = async position => {
+    await watchPage.evaluate(position => {window.youtubeFixture.position=position;},position);
+    await watchPage.clock.fastForward(4000);
+  };
+  const waitForWatch = action => watchPage.waitForResponse(response => response.url()==='http://watch.test/playback'
+    && new URLSearchParams(response.request().postData()).get('action')===action);
+  await advanceWatch(4);
+  await advanceWatch(100);
+  let watchSaved = waitForWatch('watch');
+  await watchPage.evaluate(() => window.youtubeFixture.change(2));
+  await watchSaved;
+  assert.equal(watchReports[1].watch_seconds,'4','A seek does not add watch time, and Pause flushes the watched interval');
+  await watchPage.clock.fastForward(60000);
+  assert.equal(watchReports.length,2,'Paused time adds no watch evidence');
+  await watchPage.evaluate(() => window.youtubeFixture.change(1));
+  await advanceWatch(104);
+  watchSaved = waitForWatch('watch');
+  await watchPage.evaluate(() => window.youtubeFixture.change(0));
+  await watchSaved;
+  assert.equal(watchReports[2].watch_seconds,'8','Resuming accumulates visible time on the same receipt');
+  assert.equal(watchReports[2].play_id,watchReports[0].play_id);
+  assert.equal(watchReports[2].message_id,'3201');
+  const replaySaved = waitForWatch('record');
+  await watchPage.evaluate(async () => {
+    const recorded = new Promise(resolve=>window.addEventListener('vp3:youtube-history-changed',resolve,{once:true}));
+    window.youtubeFixture.position=0;
+    window.youtubeFixture.change(1);
+    await recorded;
+  });
+  await replaySaved;
+  assert.notEqual(watchReports[3].play_id,watchReports[0].play_id,'Replaying a finished video starts a distinct watch session');
+  watchSaved = waitForWatch('watch');
+  for (const position of [4,8,12]) await advanceWatch(position);
+  await watchSaved;
+  assert.equal(watchReports[4].watch_seconds,'12','Ongoing playback sends a bounded cumulative report before the player closes');
+  await watchPage.evaluate(id => {window.youtubeFixture.videoId=id;},youtubeIds[1]);
+  await advanceWatch(16);
+  await watchPage.evaluate(() => window.youtubeFixture.change(2));
+  assert.equal(watchReports.length,5,'An unrelated video playing in the iframe does not increase the selected video’s watch time');
+  await watchPage.close();
+  console.log('PASS visible advancing YouTube watch time, seek/pause exclusion, and distinct replay receipt');
 
   await boot();
   await page.evaluate(()=>{
