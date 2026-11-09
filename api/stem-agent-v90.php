@@ -55,5 +55,5 @@ try{
     $s=$pdo->prepare('INSERT INTO agent_studio_history (session_id,user_id,role,message_text,command_json,status,created_at) VALUES (?,?,\'assistant\',?,?,\'pending\',NOW())');$s->execute([$sessionId,$userId,$answer,json_encode(['commands'=>$commands,'model'=>$model,'complexity'=>$complexity],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);$historyId=(int)$pdo->lastInsertId();
     agent_tool_log($user,'stem_studio.agent_plan',$message,'queued',['track_id'=>$trackId,'commands'=>$commands,'model'=>$model,'complexity'=>$complexity],max(0,(int)($input['conversation_id']??0))?:null);
     $pdo->prepare('UPDATE agent_studio_sessions SET last_activity_at=NOW() WHERE id=?')->execute([$sessionId]);
-    stem_agent_v90_json(true,['session_id'=>$sessionId,'history_id'=>$historyId,'answer'=>$answer,'commands'=>$commands,'model'=>$model,'provider'=>$model==='deterministic'||str_starts_with($model,'deterministic_')?'local':ai_active_provider(),'complexity'=>$complexity]);
+    stem_agent_v90_json(true,['session_id'=>$sessionId,'history_id'=>$historyId,'answer'=>$answer,'commands'=>$commands,'model'=>$model,'provider'=>$model==='deterministic'||str_starts_with($model,'deterministic_')?'local':(string)($plan['provider']??''),'complexity'=>$complexity]);
 }catch(Throwable $e){stem_agent_v90_json(false,['error'=>$e->getMessage()],400);}

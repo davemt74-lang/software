@@ -49,9 +49,9 @@ jobs:
       - name: AI provider routing, usage and owner authorization
         run: |
           php tests/ai-service-policy-v1.php
-          php tests/ai-service-own-key-v1.php
           php tests/ai-credential-recovery-page.php
           php tests/cloud-provider-preservation.php
+          php tests/ai-direct-account-v1.php
 
       - name: Current capability awareness and permission isolation
         run: |

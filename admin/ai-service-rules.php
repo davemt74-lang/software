@@ -56,13 +56,6 @@ $limitFields = [
 if ($service === 'initiative') {
     $limitFields += ['background_daily_tokens' => 'Background tokens per day', 'background_monthly_tokens' => 'Background tokens per month'];
 }
-$fundingChoices = [
-    'inherit' => 'Inherit',
-    'system' => 'Installation key only',
-    'own_key' => 'Account key only',
-    'both' => 'Allow either key',
-    'none' => 'Block both keys',
-];
 $rule = vp3_ai_service_read_rule_v1($pdo, $scope, $scopeId, $service);
 $models = vp3_ai_service_models_v1($pdo, $service);
 // Retain rules for previously registered models until an admin changes the selection.
@@ -106,14 +99,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $rule['allowed_models'] = $selected;
         } else throw new InvalidArgumentException('Choose a model access rule.');
 
-        $funding = vp3_admin_ai_service_post_string_v1('funding');
-        if (!isset($fundingChoices[$funding])) throw new InvalidArgumentException('Choose a credential rule.');
-        if ($funding === 'inherit') unset($rule['allowed_funding']);
-        else $rule['allowed_funding'] = match ($funding) {
-            'both' => ['system', 'own_key'],
-            'none' => [],
-            default => [$funding],
-        };
         vp3_ai_service_save_rule_v1($pdo, $scope, $scopeId, $service, $rule, (int)current_user()['id']);
         flash('notice', 'AI service rules saved.');
     } catch (InvalidArgumentException $error) {
@@ -124,11 +109,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect($formUrl);
 }
 
-$funding = match (count($rule['allowed_funding'] ?? [])) {
-    0 => isset($rule['allowed_funding']) ? 'none' : 'inherit',
-    1 => $rule['allowed_funding'][0],
-    default => 'both',
-};
 $adminTitle = 'AI service rules';
 $adminActive = match ($scope) { 'package' => 'packages', 'user' => 'users', default => 'ai' };
 require __DIR__.'/_header.php';
@@ -137,7 +117,7 @@ require __DIR__.'/_header.php';
   <div>
     <span class="eyebrow"><?= e($scopeLabel) ?></span>
     <h2>AI service rules</h2>
-    <p>Site, package and account rules combine. Every applicable restriction is enforced and the lowest token limit applies. The package's overall AI allowance also applies.</p>
+    <p>Site, package and account rules combine. Every applicable restriction is enforced and the lowest token limit applies. VP3 Cloud usage also counts toward the package's AI allowance.</p>
   </div>
   <a class="btn" href="<?= e($back) ?>">Back to <?= $scope === 'package' ? 'package' : ($scope === 'user' ? 'account' : 'AI settings') ?></a>
 </section>
@@ -161,13 +141,6 @@ require __DIR__.'/_header.php';
         </select>
       </label>
     <?php endforeach; ?>
-    <label class="field">Allowed credential sources
-      <select name="funding">
-        <?php foreach ($fundingChoices as $value => $label): ?>
-          <option value="<?= e($value) ?>" <?= $funding === $value ? 'selected' : '' ?>><?= e($label) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </label>
     <label class="field">Model access
       <select name="model_rule">
         <option value="inherit" <?= isset($rule['allowed_models']) ? '' : 'selected' ?>>Inherit</option>

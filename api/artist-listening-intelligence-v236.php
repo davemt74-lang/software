@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/artist-listening.php';
+require_once dirname(__DIR__) . '/includes/ai-direct-account-v1.php';
 
 const STONEFELLOW_ARTIST_LISTENING_INTELLIGENCE_V236 = 'artist-listening-intelligence-v236-20260902';
 const STONEFELLOW_ARTIST_LISTENING_AI_MIN_WORDS_V236 = 120;
@@ -129,35 +130,22 @@ function artist_listening_v236_extract_openai_text(array $decoded): string
 
 function artist_listening_v236_summary_ai(string $prompt, array $user): array
 {
-    $provider = ai_active_provider();
-    if (!in_array($provider, ['openai','anthropic'], true) || !ai_provider_ready($provider)) {
-        return ['ok'=>false,'provider'=>$provider,'model'=>'','error'=>'Enable and configure OpenAI or Claude before using live transcript analysis.'];
-    }
+    $provider = $model = '';
     try {
+        $route = vp3_ai_direct_account_route_v1($user);
+        $provider = $route['provider'];
+        $model = $route['model'];
         ai_v100_rate_limit('chat', $user);
-        $model = ai_provider_model($provider);
         $started = microtime(true);
         if ($provider === 'openai') {
-            $key = ai_provider_api_key('openai');
-            $result = ai_curl_json(
-                'https://api.openai.com/v1/responses',
-                ['Authorization: Bearer ' . $key, 'Content-Type: application/json'],
-                ['model'=>$model,'input'=>$prompt,'max_output_tokens'=>1600],
-                45
-            );
+            $result = vp3_ai_direct_request_v1($user,$route,'transcription',['input'=>$prompt,'max_output_tokens'=>1600],45);
             if (empty($result['ok']) || !is_array($result['data'] ?? null)) {
                 return ['ok'=>false,'provider'=>$provider,'model'=>$model,'error'=>(string)($result['error'] ?? 'OpenAI transcript analysis was unavailable.')];
             }
             $answer = artist_listening_v236_extract_openai_text($result['data']);
             $usage = ai_v100_usage('openai', $result['data']);
         } else {
-            $key = ai_provider_api_key('anthropic');
-            $result = ai_curl_json(
-                'https://api.anthropic.com/v1/messages',
-                ['x-api-key: ' . $key, 'anthropic-version: 2023-06-01', 'Content-Type: application/json'],
-                ['model'=>$model,'max_tokens'=>1600,'messages'=>[['role'=>'user','content'=>$prompt]]],
-                45
-            );
+            $result = vp3_ai_direct_request_v1($user,$route,'transcription',['max_tokens'=>1600,'messages'=>[['role'=>'user','content'=>$prompt]]],45);
             if (empty($result['ok']) || !is_array($result['data'] ?? null)) {
                 return ['ok'=>false,'provider'=>$provider,'model'=>$model,'error'=>(string)($result['error'] ?? 'Claude transcript analysis was unavailable.')];
             }
@@ -177,7 +165,7 @@ function artist_listening_v236_summary_ai(string $prompt, array $user): array
         if ($answer === '') return ['ok'=>false,'provider'=>$provider,'model'=>$model,'error'=>'The AI provider returned an empty transcript analysis.'];
         return ['ok'=>true,'provider'=>$provider,'model'=>$model,'answer'=>$answer,'usage'=>$usage];
     } catch (Throwable $error) {
-        return ['ok'=>false,'provider'=>$provider,'model'=>ai_provider_model($provider),'error'=>ai_v100_safe_exception($error, 'Live transcript analysis was unavailable.')];
+        return ['ok'=>false,'provider'=>$provider,'model'=>$model,'error'=>ai_v100_safe_exception($error, 'Live transcript analysis was unavailable.')];
     }
 }
 
@@ -227,21 +215,14 @@ function artist_listening_v236_web_research(array $queries, array $user): array
 {
     $queries = artist_listening_v236_clean_list($queries, 2, 220);
     if (!$queries) return ['text'=>'','sources'=>[],'provider'=>'','model'=>'','error'=>''];
-    $provider = ai_active_provider();
-    if (!in_array($provider, ['openai','anthropic'], true) || !ai_provider_ready($provider)) {
-        return ['text'=>'','sources'=>[],'provider'=>$provider,'model'=>'','error'=>'Web research requires an enabled OpenAI or Claude provider.'];
-    }
-    $model = ai_provider_model($provider);
+    $provider = $model = '';
     $prompt = "Research the following items that were flagged as important in a live meeting/transcript analysis. Use current web sources only where useful. Keep the result concise and factual. Do not infer facts that sources do not establish.\n\nTOPICS:\n- " . implode("\n- ", $queries);
     try {
+        $route = vp3_ai_direct_account_route_v1($user);
+        $provider = $route['provider'];
+        $model = $route['model'];
         if ($provider === 'openai') {
-            $key = ai_provider_api_key('openai');
-            $result = ai_curl_json(
-                'https://api.openai.com/v1/responses',
-                ['Authorization: Bearer ' . $key, 'Content-Type: application/json'],
-                ['model'=>$model,'tools'=>[['type'=>'web_search']],'tool_choice'=>'auto','input'=>$prompt,'max_output_tokens'=>1200],
-                55
-            );
+            $result = vp3_ai_direct_request_v1($user,$route,'transcription',['tools'=>[['type'=>'web_search']],'tool_choice'=>'auto','input'=>$prompt,'max_output_tokens'=>1200],55);
             if (empty($result['ok']) || !is_array($result['data'] ?? null)) {
                 return ['text'=>'','sources'=>[],'provider'=>$provider,'model'=>$model,'error'=>(string)($result['error'] ?? 'Web research was unavailable.')];
             }
@@ -253,12 +234,8 @@ function artist_listening_v236_web_research(array $queries, array $user): array
                 'error'=>'',
             ];
         }
-        $key = ai_provider_api_key('anthropic');
-        $result = ai_curl_json(
-            'https://api.anthropic.com/v1/messages',
-            ['x-api-key: ' . $key, 'anthropic-version: 2023-06-01', 'Content-Type: application/json'],
+        $result = vp3_ai_direct_request_v1($user,$route,'transcription',
             [
-                'model'=>$model,
                 'max_tokens'=>1200,
                 'messages'=>[['role'=>'user','content'=>$prompt]],
                 'tools'=>[['type'=>'web_search_20260318','name'=>'web_search','max_uses'=>3,'allowed_callers'=>['direct']]],
@@ -385,7 +362,8 @@ try {
     $current = is_array($metadata['intelligence_v236'] ?? null) ? $metadata['intelligence_v236'] : [];
 
     if ($method === 'GET' && $action === 'status') {
-        $provider = ai_active_provider();
+        try {$provider = vp3_ai_direct_account_route_v1($user)['provider'];}
+        catch (RuntimeException $error) {$provider = '';}
         artist_listening_v236_json(true, [
             'session_id'=>$sessionId,
             'word_count'=>$transcript['word_count'],
@@ -394,7 +372,7 @@ try {
             'participants'=>$participants,
             'intelligence'=>$current,
             'provider'=>$provider,
-            'provider_ready'=>in_array($provider, ['openai','anthropic'], true) && ai_provider_ready($provider),
+            'provider_ready'=>$provider!=='',
         ]);
     }
 
@@ -451,7 +429,7 @@ try {
     $query = "You are the real-time intelligence layer for a live private transcript. Analyze only what the participants actually said. Do not invent decisions, identities, facts, or commitments. Keep the rolling summary concise and useful while preserving important changes from earlier context. Identify claims or topics that would materially benefit from current web verification in research_queries. If nothing needs current research, return an empty research_queries array.\n\nReturn ONLY valid JSON with exactly these keys: summary (string), key_points (array of strings), decisions (array), action_items (array), open_questions (array), participant_notes (array), research_queries (array, maximum 3). Participant notes may describe what a labeled participant contributed, but must never guess a real person's identity.\n\nPARTICIPANT LABELS:\n" . json_encode($participants, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) . "\n\nPREVIOUS ANALYSIS:\n" . json_encode($previous, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) . "\n\nLIVE TRANSCRIPT:\n" . $contextText;
     $result = artist_listening_v236_summary_ai($query, $user);
     if (empty($result['ok'])) {
-        artist_listening_v236_json(false, ['error'=>(string)($result['error'] ?? 'AI analysis is unavailable.'),'provider'=>(string)($result['provider'] ?? ai_active_provider())], 503);
+        artist_listening_v236_json(false, ['error'=>(string)($result['error'] ?? 'AI analysis is unavailable.'),'provider'=>(string)($result['provider'] ?? '')], 503);
     }
     $analysis = artist_listening_v236_parse_json((string)($result['answer'] ?? ''));
     $research = is_array($current['research'] ?? null) ? $current['research'] : [];
@@ -465,7 +443,7 @@ try {
     $current = [
         'word_count'=>$wordCount,
         'generated_at'=>gmdate('c'),
-        'provider'=>(string)($result['provider'] ?? ai_active_provider()),
+        'provider'=>(string)($result['provider'] ?? ''),
         'model'=>(string)($result['model'] ?? ''),
         'analysis'=>$analysis,
         'research'=>$research,

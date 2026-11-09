@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-image-provider-v1.php';
 require_once __DIR__.'/ai-service-policy-v1.php';
 require_once __DIR__.'/ai-service-usage-v1.php';
+require_once __DIR__.'/user-llm-v1.php';
 
 /** Only the exact model and funding are persisted with a job. Credentials are read at execution. */
 function vp3_image_route_v1(PDO $pdo,array $user,?array $config=null): array
@@ -11,22 +12,30 @@ function vp3_image_route_v1(PDO $pdo,array $user,?array $config=null): array
     if(!$settings['enabled']||!function_exists('curl_init'))throw new RuntimeException('provider_unavailable',503);
     $policy=vp3_ai_service_policy_v1($pdo,$user,'image_generation');
     if(!$policy['enabled'])throw new RuntimeException($policy['reason']==='service_budget_exhausted'?'service_budget_exceeded':'service_policy_denied',503);
-    if($policy['configured']&&!vp3_ai_service_usage_ready_v1($pdo))throw new RuntimeException('service_usage_unavailable',503);
-    if(isset($config['provider_route'])&&!$policy['configured'])throw new RuntimeException('provider_route_changed',503);
+    $funding=vp3_user_llm_v1_funding($pdo,$user);
+    $frozen=null;
+    if($config!==null){
+        $saved=$config['provider_route']??null;
+        // Older queued jobs implicitly used site funding, except for explicit per-service grants.
+        $admittedFunding=$config['funding_source']??$saved['funding']??'system';
+        $oldPersonal=!isset($config['funding_source'])&&$admittedFunding==='own_key';
+        if($oldPersonal||$admittedFunding!==$funding||($saved!==null&&(!$policy['configured']||($saved['model']??null)!==$config['model']))){
+            throw new RuntimeException('provider_route_changed',503);
+        }
+        $frozen=['provider'=>$saved['provider']??'openai','model'=>$config['model']];
+    }
+    if(($policy['configured']||$funding==='own_key')&&!vp3_ai_service_usage_ready_v1($pdo))throw new RuntimeException('service_usage_unavailable',503);
 
-    $legacy=['provider'=>'openai','model'=>$config['model']??$settings['model'],'funding'=>'system'];
-    $targets=$policy['configured']?[$policy['primary'],$policy['fallback']]:[$legacy];
-    $frozen=$config===null?null:($config['provider_route']??$legacy);
+    $targets=$policy['configured']?[$policy['primary'],$policy['fallback']]:[['provider'=>'openai','model'=>$settings['model']]];
     foreach($targets as $target){
         if($target===null||$target['provider']!=='openai'||!vp3_ai_service_target_allowed_v1($policy,$target))continue;
-        if($frozen!==null&&($target!==$frozen||$target['model']!==$config['model']))continue;
-        if($target['funding']==='own_key'){
-            require_once __DIR__.'/ai-service-own-key-v1.php';
-            $key=vp3_ai_service_own_key_v1($pdo,(int)$user['id'],'image_generation','openai',$target['model']);
-        }else{
-            $key=ai_provider_enabled('openai')?ai_provider_api_key('openai'):'';
-        }
-        if($key!=='')return ['target'=>$target,'api_key'=>$key,'policy'=>$policy];
+        if($frozen!==null&&$target!==$frozen)continue;
+        $key=$funding==='own_key'
+            ?vp3_user_llm_v1_saved_key($pdo,(int)$user['id'],'openai')
+            :(ai_provider_enabled('openai')?ai_provider_api_key('openai'):'');
+        if($key!=='')return ['target'=>$target,'funding'=>$funding,'api_key'=>$key,'policy'=>$policy];
+        if($frozen===null&&$funding==='own_key')throw new RuntimeException('personal_image_key_unavailable',503);
+        break;
     }
     throw new RuntimeException($frozen===null?'provider_unavailable':'provider_route_changed',503);
 }
@@ -45,6 +54,7 @@ function vp3_image_admission_route_v1(PDO $pdo,array $user): array
             'service_usage_unavailable'=>'Run Database Upgrade to enable image-generation usage tracking.',
             'service_policy_denied'=>'Image generation is unavailable under the current account policy.',
             'service_budget_exceeded'=>'The account’s image-generation token limit was reached.',
+            'personal_image_key_unavailable'=>'Save an OpenAI key in AI Providers to generate images with your own keys.',
             default=>'Image generation needs an available route in Admin → AI.',
         };
         throw new RuntimeException($message,503,$e);
@@ -203,10 +213,12 @@ function vp3_image_admit_v1(PDO $pdo,array $user,int $cid,int $aid,?int $turn,st
             $saved=json_decode($old['config_json'],true,16,JSON_THROW_ON_ERROR);
             $config=$configure($saved['model']);
             if(isset($saved['provider_route']))$config['provider_route']=$saved['provider_route'];
+            if(isset($saved['funding_source']))$config['funding_source']=$saved['funding_source'];
         }else{
             $route=vp3_image_admission_route_v1($pdo,$user);
             $config=$configure($route['target']['model']);
             if($route['policy']['configured'])$config['provider_route']=$route['target'];
+            $config['funding_source']=$route['funding'];
         }
         $marketing=in_array($config['mode']??null,['marketing_scene','marketing_reference'],true);
         $hash=hash('sha256',json_encode([$cid,$aid,$config],JSON_THROW_ON_ERROR));
@@ -233,8 +245,8 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
     $run=agent_worker_cloud_active_row_v1910($pdo,$user,$claim);if(!$run||$run['action_capability_key']!=='images.generate'||$run['source_kind']!=='image_generation')throw new RuntimeException('Image execution lease is unavailable.',409);
     $row=vp3_image_row_v1($pdo,$user,$run['source_key']);$bound=vp3_image_run_v1($pdo,$user,$row);if((int)$bound['id']!==(int)$run['id']||$run['action_key']!==$row['generation_id'])throw new RuntimeException('Image action binding changed.',409);$reservation=0;$file='';$createdFile=false;$committed=false;$sent=false;
     $edit=$row['user_message_id']===null&&!vp3_image_workspace_row_v1($row);$sourceImage=null;$marketing=false;
-    $ticket=[];$reportedUsage=[];$usageSettled=false;$startedAt=null;$target=[];
-    $settleUsage=static function(string $status,bool $confirmedNoCharge=false)use($pdo,$row,&$user,&$target,&$ticket,&$reservation,&$reportedUsage,&$usageSettled,&$startedAt):void{
+    $ticket=[];$reportedUsage=[];$usageSettled=false;$startedAt=null;$target=[];$funding='';
+    $settleUsage=static function(string $status,bool $confirmedNoCharge=false)use($pdo,$row,&$user,&$target,&$funding,&$ticket,&$reservation,&$reportedUsage,&$usageSettled,&$startedAt):void{
         if($usageSettled)return;
         if(!empty($ticket['metered'])){
             $options=($reportedUsage['output_tokens']??0)>0?['units'=>1,'unit'=>'image']:[];
@@ -242,7 +254,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
             if($startedAt!==null)$options['latency_ms']=(int)round((microtime(true)-$startedAt)*1000);
             $settled=vp3_ai_service_usage_finish_v1($pdo,$ticket,$reportedUsage,$status,$options);
             if($status!=='aborted'&&(int)($settled['id']??0)!==(int)$ticket['id'])throw new RuntimeException('service_usage_unavailable');
-        }elseif($reportedUsage!==[]){
+        }elseif($reportedUsage!==[]&&$funding==='system'){
             subscription_ai_commit_usage($reservation,$user,'image_generation',$target['provider'],$target['model'],$reportedUsage,'image:'.$row['generation_id']);
             $reservation=0;
         }
@@ -254,7 +266,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
     try{
         $user=vp3_image_authority_v1($pdo,$user,$row);if(!subscription_has_entitlement($user,'main_ai.access'))throw new RuntimeException('subscription_required');
         $config=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);
-        $route=vp3_image_route_v1($pdo,$user,$config);$target=$route['target'];$policy=$route['policy'];
+        $route=vp3_image_route_v1($pdo,$user,$config);$target=$route['target'];$funding=$route['funding'];$policy=$route['policy'];
         if($edit){
             $marketing=in_array($config['mode']??null,['marketing_scene','marketing_reference'],true);
             if($marketing){
@@ -268,11 +280,11 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         }
         $inputTokens=max(1,(int)ceil(mb_strlen($config['prompt'])/3.5))+($edit&&($config['mode']??'')!=='marketing_scene'?4096:0);
         try{
-            $ticket=vp3_ai_service_usage_begin_v1($pdo,$user,'image_generation',$target['provider'],$target['model'],$target['funding'],$inputTokens,16000,[
+            $ticket=vp3_ai_service_usage_begin_v1($pdo,$user,'image_generation',$target['provider'],$target['model'],$funding,$inputTokens,16000,[
                 'agent_id'=>(int)$row['agent_id'],'conversation_id'=>(int)$row['conversation_id'],'run_id'=>(int)$row['run_id'],
                 'stage'=>$edit&&($config['mode']??'')!=='marketing_scene'?'edit':'generate','attempt_key'=>'image:'.$row['generation_id'],
                 'job_tokens'=>$policy['job_tokens'],'daily_tokens'=>$policy['daily_tokens'],'monthly_tokens'=>$policy['monthly_tokens'],
-                'billing_scope'=>'image_generation','required'=>$policy['configured'],
+                'billing_scope'=>'image_generation','required'=>$policy['configured']||$funding==='own_key',
             ]);
         }catch(RuntimeException $e){
             throw new RuntimeException(match($e->getCode()){402=>'service_budget_exceeded',403=>'service_policy_denied',409=>'provider_outcome_unconfirmed',503=>'service_usage_unavailable',default=>'quota_preflight_failed'},0,$e);
@@ -280,21 +292,24 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         // The image endpoint has no request parameter to apply a reduced token allowance.
         if(!empty($ticket['metered'])){
             if((int)$ticket['max_output_tokens']<16000)throw new RuntimeException('service_budget_exceeded');
-        }else{
+        }elseif($funding==='system'){
             $quota=subscription_ai_preflight($user,'image_generation',$inputTokens,16000);$reservation=(int)$quota['reservation_id'];if((int)$quota['max_output_tokens']<16000)throw new RuntimeException('subscription_required');
+        }else{
+            throw new RuntimeException('service_usage_unavailable');
         }
         $user=vp3_image_authority_v1($pdo,$user,$row);if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim))throw new RuntimeException('execution_cancelled');
-        $route=vp3_image_route_v1($pdo,$user,$config);
+        // Commit the dispatch marker while account funding and credentials are stable.
+        $pdo->beginTransaction();
+        vp3_ai_service_usage_lock_owner_v1($pdo,(int)$user['id']);
         if($edit){
-            $pdo->beginTransaction();
-            if($marketing)vp3_image_lock_owner_v1($pdo,(int)$user['id']);
             vp3_image_run_v1($pdo,$user,$row,true);
             vp3_image_lock_conversation_v1($pdo,(int)$user['id'],(int)$row['conversation_id'],(int)$row['agent_id']);
             $sourceImage=$resolveSource($pdo,$user,$row,$config,true,true);
-            if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim,true))throw new RuntimeException('execution_cancelled');
         }
+        if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim,true))throw new RuntimeException('execution_cancelled');
+        $route=vp3_image_route_v1($pdo,$user,$config);
         $q=$pdo->prepare("UPDATE agent_image_generations_v1 SET provider_started_at=? WHERE generation_id=? AND owner_user_id=? AND provider_started_at=''");$q->execute([gmdate('Y-m-d H:i:s'),$row['generation_id'],(int)$user['id']]);if($q->rowCount()!==1)throw new RuntimeException('provider_outcome_unconfirmed');
-        if($edit)$pdo->commit();
+        $pdo->commit();
         $sent=true;$startedAt=microtime(true);
         $output=vp3_image_provider_v1($config,$user,$transport,$sourceImage,$route['api_key'],static function(array $usage)use(&$reportedUsage):void{$reportedUsage=$usage;});
         // Record actual paid usage even if the owner cancels while the provider runs.
@@ -311,7 +326,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
             vp3_image_lock_conversation_v1($pdo,(int)$user['id'],(int)$row['conversation_id'],(int)$row['agent_id']);
             $resolveSource($pdo,$user,$row,$config,true);
         }
-        $meta=['generation_id'=>$row['generation_id'],'model'=>$target['model'],'provider'=>$target['provider'],'funding'=>$target['funding'],'prompt'=>$config['prompt'],'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'sha256'=>$output['sha256'],'width'=>$output['width'],'height'=>$output['height'],'usage'=>$output['usage']];
+        $meta=['generation_id'=>$row['generation_id'],'model'=>$target['model'],'provider'=>$target['provider'],'funding'=>$funding,'prompt'=>$config['prompt'],'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'sha256'=>$output['sha256'],'width'=>$output['width'],'height'=>$output['height'],'usage'=>$output['usage']];
         if($edit)$meta['edit_mode']=$config['mode'];
         if($marketing)$meta['marketing_variant_id']=$config['marketing']['id'];
         $relative='private/user-media/'.(int)$user['id'].'/'.basename($file);

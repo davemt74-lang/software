@@ -498,7 +498,7 @@ function vp3_profile_call_research_pa3c(PDO $pdo,array $user,string $id,string $
     // Agent context, identifiers or credentials are attached to that query.
     try {
         require_once __DIR__.'/artist-listening-transcript.php';
-        $result=artist_listening_v237_research([$query],$user);
+        $result=artist_listening_v237_research([$query],$user,publicProfile:true);
         $sources=[];
         foreach ((array)($result['sources']??[]) as $source) {
             $href=(string)($source['url']??'');

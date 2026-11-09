@@ -52,31 +52,49 @@ function subscription_lifecycle_backfill_snapshots(?PDO $pdo=null,int $limit=500
 function subscription_lifecycle_refresh_user_period(int $userId,?PDO $pdo=null): bool
 {
     $pdo??=db();if(!$pdo||$userId<1||!subscription_schema_ready($pdo))return false;
-    subscription_lifecycle_ensure_schema($pdo);
     $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
     try{
-        $stmt=$pdo->prepare("SELECT s.id,s.package_id,s.status,s.ends_at,s.current_period_start,s.current_period_end,s.period_sequence,p.is_trial
-          FROM user_subscriptions s INNER JOIN subscription_packages p ON p.id=s.package_id
-          WHERE s.user_id=? AND s.status IN ('active','complimentary') AND s.starts_at<=NOW() AND (s.ends_at IS NULL OR s.ends_at>NOW())
-          ORDER BY s.id DESC LIMIT 1 FOR UPDATE");
-        $stmt->execute([$userId]);$row=$stmt->fetch();
-        if(!$row||!empty($row['is_trial'])){if($ownsTransaction)$pdo->commit();return false;}
-        $endRaw=trim((string)($row['current_period_end']??''));
-        if($endRaw===''){if($ownsTransaction)$pdo->commit();return false;}
-        $now=new DateTimeImmutable('now');$periodEnd=new DateTimeImmutable($endRaw);
-        if($periodEnd>$now){if($ownsTransaction)$pdo->commit();return false;}
-        $periodStart=$periodEnd;$sequence=(int)($row['period_sequence']??0);
-        do{$periodEnd=$periodEnd->modify('+1 month');$sequence++;}while($periodEnd<=$now);
-        $subscriptionEnd=trim((string)($row['ends_at']??''));
-        if($subscriptionEnd!==''){
-            $hardEnd=new DateTimeImmutable($subscriptionEnd);
-            if($periodEnd>$hardEnd)$periodEnd=$hardEnd;
+        vp3_ai_service_usage_lock_owner_v1($pdo,$userId);
+        $row=subscription_current_for_user_id($userId,$pdo,true);
+        $now=gmdate('Y-m-d H:i:s');
+        if(!$row||!subscription_lifecycle_local_period_due($row,$now)){
+            if($ownsTransaction)$pdo->commit();
+            return false;
         }
-        $update=$pdo->prepare('UPDATE user_subscriptions SET current_period_start=?,current_period_end=?,period_sequence=?,updated_at=NOW() WHERE id=?');
-        $update->execute([$periodStart->format('Y-m-d H:i:s'),$periodEnd->format('Y-m-d H:i:s'),$sequence,(int)$row['id']]);
-        subscription_lifecycle_snapshot_subscription((int)$row['id'],$pdo);
+        $utc=new DateTimeZone('UTC');
+        $periodEnd=new DateTimeImmutable($row['current_period_end'],$utc);
+        $anchorDay=(int)(new DateTimeImmutable($row['starts_at'],$utc))->format('j');
+        $sequence=(int)($row['period_sequence']??0);
+        do{
+            $periodStart=$periodEnd;
+            $nextMonth=$periodEnd->modify('first day of next month');
+            $periodEnd=$nextMonth->setDate((int)$nextMonth->format('Y'),(int)$nextMonth->format('n'),min($anchorDay,(int)$nextMonth->format('t')));
+            $sequence++;
+        }while($periodEnd->format('Y-m-d H:i:s')<=$now);
+        $end=$periodEnd->format('Y-m-d H:i:s');
+        if(!empty($row['ends_at']))$end=min($end,$row['ends_at']);
+        $hasSequence=array_key_exists('period_sequence',$row);
+        $update=$pdo->prepare('UPDATE user_subscriptions SET current_period_start=?,current_period_end=?'.($hasSequence?',period_sequence=?':'').',updated_at=NOW() WHERE id=?');
+        $params=[$periodStart->format('Y-m-d H:i:s'),$end];
+        if($hasSequence)$params[]=$sequence;
+        $update->execute([...$params,(int)$row['id']]);
         if($ownsTransaction)$pdo->commit();return true;
-    }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();error_log('VP3 subscription period refresh failed: '.$e->getMessage());return false;}
+    }catch(Throwable $e){
+        if(!$ownsTransaction)throw $e;
+        if($pdo->inTransaction())$pdo->rollBack();
+        error_log('VP3 subscription period refresh failed: '.$e->getMessage());
+        return false;
+    }
+}
+
+function subscription_lifecycle_local_period_due(array $subscription,string $now): bool
+{
+    return ($subscription['assignment_source']??'')!=='stripe'
+        && in_array($subscription['status']??'',['active','complimentary'],true)
+        && empty($subscription['is_trial'])
+        && !empty($subscription['current_period_end'])
+        && $subscription['current_period_end']<=$now
+        && (empty($subscription['ends_at'])||$subscription['ends_at']>$now);
 }
 
 function subscription_lifecycle_after_assignment(int $subscriptionId,int $userId): void

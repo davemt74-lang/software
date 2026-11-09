@@ -3,7 +3,6 @@ declare(strict_types=1);
 require_once dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/ai-settings.php';
 require_once dirname(__DIR__).'/includes/user-llm-v1.php';
-require_once dirname(__DIR__).'/includes/ai-service-own-key-v1.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, private');
 header('X-Content-Type-Options: nosniff');
@@ -17,7 +16,6 @@ try {
     // Schema is created by setup/upgrade, not by an ordinary user GET.
     if($_SERVER['REQUEST_METHOD']==='GET'){
         $state=vp3_user_llm_v1_read($pdo,(int)$user['id']);
-        $state['service_permissions']=vp3_ai_service_own_key_state_v1($pdo,$user,$state['providers']);
         vp3_llm_json(['ok'=>true,'state'=>$state,
             'homeserver_credentials'=>'local_only',
             'system_funded_tokens'=>'subscription_gated',
@@ -36,14 +34,7 @@ try {
         $state=vp3_user_llm_v1_select($pdo,$user,(string)($data['route']??''),$provider);
     }elseif($action==='remove'){
         $state=vp3_user_llm_v1_remove($pdo,$user,$provider);
-    }elseif($action==='grant_service'||$action==='revoke_service'){
-        $service=$data['service']??null;
-        $model=$data['model']??null;
-        if(!is_string($service)||!is_string($model))vp3_llm_json(['ok'=>false,'error'=>'Invalid service or model.'],400);
-        vp3_ai_service_own_key_update_v1($pdo,$user,$service,$provider,$model,$action==='grant_service');
-        $state=vp3_user_llm_v1_read($pdo,(int)$user['id']);
     }else vp3_llm_json(['ok'=>false,'error'=>'unknown_action'],400);
-    $state['service_permissions']=vp3_ai_service_own_key_state_v1($pdo,$user,$state['providers']);
     vp3_llm_json(['ok'=>true,'state'=>$state]);
 }catch(Throwable $e){
     error_log('VP3 user LLM settings: '.get_class($e));

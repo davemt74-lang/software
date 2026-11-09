@@ -52,43 +52,28 @@ function ai_v100_service_failure(string $message, string $code = 'service_route_
     return ['ok'=>false, 'error'=>$message, 'failure_code'=>$code, 'stop_service_fallback'=>true];
 }
 
-/** A saved personal key remains opt-in and tied to its owner's selected provider. */
-function ai_v100_service_target_credential(array $target, array $own, ?array $policy = null, ?array $user = null, ?PDO $pdo = null): array
+/** A configured service chooses the model. The Cloud account chooses who pays. */
+function ai_v100_service_target_credential(array $target, array $user, PDO $pdo): array
 {
     if (($target['funding'] ?? '') === 'own_key') {
-        $initiative = ($policy['service'] ?? '') === 'initiative';
-        if ($initiative) {
-            $module = __DIR__ . '/ai-service-own-key-v1.php';
-            if (!function_exists('vp3_ai_service_own_key_v1') && is_file($module)) require_once $module;
-            $key = $pdo !== null && function_exists('vp3_ai_service_own_key_v1')
-                ? vp3_ai_service_own_key_v1($pdo, (int)($user['id'] ?? 0), 'initiative', $target['provider'], $target['model']) : '';
-            return $key !== ''
-                ? ['own'=>['provider'=>$target['provider'],'model'=>$target['model'],'api_key'=>$key]]
-                : ['failure'=>ai_v100_service_failure('Approve this Initiative provider and model in your account before using a personal key.', 'personal_service_grant_required')];
-        }
-        if (($own['route'] ?? '') !== 'own_key' || ($own['provider'] ?? '') !== ($target['provider'] ?? '')
-            || ($own['model'] ?? '') !== ($target['model'] ?? '') || empty($own['api_key'])) {
-            return ['failure'=>ai_v100_service_failure('The personal provider and model must match the Chat service settings.', 'personal_route_unavailable')];
-        }
-        return ['own'=>$own];
-    }
-    if (($policy['service'] ?? '') !== 'initiative' && ($own['route'] ?? '') !== 'system') {
-        return ['failure'=>ai_v100_service_failure('The Chat service is set to use VP3 inference. Select VP3 system inference in your account to use it.', 'system_route_not_selected')];
+        $key = vp3_user_llm_v1_saved_key($pdo, (int)$user['id'], $target['provider']);
+        return $key !== ''
+            ? ['own'=>['provider'=>$target['provider'],'model'=>$target['model'],'api_key'=>$key]]
+            : ['failure'=>ai_v100_service_failure('A personal key for the configured provider is unavailable. Check your AI provider settings.', 'personal_route_unavailable')];
     }
     $failure = ai_provider_configuration_failure((string)$target['provider']);
     return $failure === null ? ['own'=>null] : ['failure'=>$failure];
 }
 
 /** Select only actual, authorized candidates. The configured service pins each model. */
-function ai_v100_service_targets(?array $policy, array $own, string $provider, array $models): array
+function ai_v100_service_targets(array $policy, string $funding, string $provider, array $models): array
 {
-    if ($policy !== null && empty($policy['enabled'])) return [];
-    $funding = ($own['route'] ?? '') === 'own_key' ? 'own_key' : 'system';
+    if (empty($policy['enabled'])) return [];
     $targets = !empty($policy['configured'])
         ? array_filter([$policy['primary'] ?? null, $policy['fallback'] ?? null], 'is_array')
-        : array_map(static fn(string $model): array=>['provider'=>$provider,'model'=>$model,'funding'=>$funding], $models);
-    return array_values(array_filter($targets, static fn(array $target): bool =>
-        $policy === null || vp3_ai_service_target_allowed_v1($policy, $target)));
+        : array_map(static fn(string $model): array=>['provider'=>$provider,'model'=>$model], $models);
+    $allowed = array_filter($targets, static fn(array $target): bool=>vp3_ai_service_target_allowed_v1($policy, $target));
+    return array_values(array_map(static fn(array $target): array=>array_replace($target,['funding'=>$funding]), $allowed));
 }
 
 /** A logical Chat invocation may make more than one physical provider attempt. */
@@ -117,7 +102,12 @@ final class AiV100ServiceMeter
 
     public function begin(array $target, array $payload, string $outputField): array
     {
-        if (!$this->active) return [];
+        if (!$this->active) {
+            if (function_exists('vp3_ai_service_usage_assert_funding_v1')) {
+                vp3_ai_service_usage_assert_funding_v1($this->pdo, $this->user, $target['funding']);
+            }
+            return [];
+        }
         if (!function_exists('vp3_ai_service_usage_begin_v1')) throw new RuntimeException('AI service usage is unavailable. Run Database Upgrade.', 503);
         $messageField = $target['provider'] === 'openai' ? 'input' : 'messages';
         $images = 0;
@@ -150,12 +140,19 @@ final class AiV100ServiceMeter
         $this->charged += max(0, (int)($result['cloud_tokens_charged'] ?? 0));
     }
 
-    public function initiative_key_is_current(array $target, string $authorization): bool
+    public function personal_key_is_current(array $target, ?string $credential): bool
     {
-        if (!$this->configured || $this->options['service'] !== 'initiative' || $target['funding'] !== 'own_key'
-            || !function_exists('vp3_ai_service_own_key_v1')) return true;
-        $key = vp3_ai_service_own_key_v1($this->pdo, (int)$this->user['id'], 'initiative', $target['provider'], $target['model']);
-        return $key !== '' && hash_equals($authorization, ($target['provider'] === 'openai' ? 'Authorization: Bearer ' : 'x-api-key: ') . $key);
+        if ($target['funding'] !== 'own_key') return true;
+        if ($credential === null) return false;
+        if ($this->configured) {
+            $key = vp3_user_llm_v1_saved_key($this->pdo, (int)$this->user['id'], $target['provider']);
+        } else {
+            $own = vp3_user_llm_v1_effective($this->pdo, $this->user);
+            if (($own['route'] ?? '') !== 'own_key' || ($own['provider'] ?? '') !== $target['provider']
+                || ($own['model'] ?? '') !== $target['model']) return false;
+            $key = (string)($own['api_key'] ?? '');
+        }
+        return $key !== '' && hash_equals($key, $credential);
     }
 
     public function attach(array $result): array

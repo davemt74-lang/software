@@ -480,7 +480,7 @@ function chat_local_answer(string $query, array $context, ?array $failure = null
     if(in_array($code,['credential_missing_key','credential_unreadable_key','credential_invalid_key','credential_crypto_unavailable','credential_unsupported_format','credential_key_mismatch'],true))return 'The server cannot read its saved AI credential. The site administrator needs to restore credential access in AI / API Settings.';
     if($code==='transport_unavailable')return 'The server’s AI connection component is unavailable. The site administrator needs to restore PHP cURL support.';
     if($code==='service_disabled')return 'This AI service is unavailable under your current account policy.';
-    if(in_array($code,['service_route_unavailable','personal_route_unavailable','system_route_not_selected'],true)){
+    if(in_array($code,['service_route_unavailable','personal_route_unavailable'],true)){
         return 'No configured provider and model are available for this account. Check your AI service settings.';
     }
     if(in_array((int)($failure['status']??0),[401,403],true))return 'The AI provider rejected this request’s authentication or access. Check the provider connection in AI / API Settings.';

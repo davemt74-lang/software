@@ -47,10 +47,10 @@ $user = ['id' => 1, 'package_id' => 20];
 $second = ['id' => 2];
 $expired = ['id' => 3];
 $service = 'conversation';
-$primary = ['provider' => 'openai', 'model' => 'ft:private-conversation', 'funding' => 'system'];
-$fallback = ['provider' => 'anthropic', 'model' => 'custom-conversation', 'funding' => 'own_key'];
-$image = ['provider' => 'openai', 'model' => 'private-image', 'funding' => 'own_key'];
-$legacy = ['provider' => 'openai', 'model' => 'gpt-5.4-mini', 'funding' => 'system'];
+$primary = ['provider' => 'openai', 'model' => 'ft:private-conversation'];
+$fallback = ['provider' => 'anthropic', 'model' => 'custom-conversation'];
+$image = ['provider' => 'openai', 'model' => 'private-image'];
+$legacy = ['provider' => 'openai', 'model' => 'gpt-5.4-mini'];
 
 $policy = vp3_ai_service_policy_v1($pdo, $user, $service);
 policy_same([$policy['configured'], $policy['enabled'], $policy['primary']], [false, true, null], 'No service setup preserves legacy routing.');
@@ -70,10 +70,20 @@ policy_rejects(fn() => vp3_ai_service_save_route_v1($pdo, $service, $image, null
 policy_rejects(fn() => vp3_ai_service_save_route_v1($pdo, $service, null, $fallback), 'Fallback without primary accepted.');
 policy_rejects(fn() => vp3_ai_service_save_route_v1($pdo, $service, $primary, $primary), 'Identical targets accepted.');
 policy_rejects(fn() => vp3_ai_service_save_route_v1($pdo, $service, $primary + ['api_key' => 'secret'], null), 'A credential was accepted in a model route.');
+policy_rejects(fn() => vp3_ai_service_save_route_v1($pdo, $service, $primary + ['funding' => 'own_key'], null), 'A per-service credential source was accepted in a new route.');
 vp3_ai_service_save_route_v1($pdo, $service, $primary, $fallback);
 vp3_ai_service_save_route_v1($pdo, 'image_generation', $image, null);
-policy_same(vp3_ai_service_read_route_v1($pdo, $service), compact('primary', 'fallback'), 'Route round trips with the exact provider, model and credential source.');
-policy_same(vp3_ai_service_policy_v1($pdo, $user, 'image_generation')['primary'], $image, 'Personal funding is selectable for compatible image routes.');
+policy_same(vp3_ai_service_read_route_v1($pdo, $service), compact('primary', 'fallback'), 'Route round trips with the exact provider and model.');
+$config = vp3_ai_service_config_v1($pdo);
+$config['routes'][$service]['primary']['funding'] = 'system';
+$config['routes'][$service]['fallback']['funding'] = ['invalid historical value'];
+$config['routes']['image_generation'] = ['primary' => $image + ['funding' => 'own_key'], 'fallback' => $image + ['funding' => 'system']];
+vp3_ai_service_write_setting_v1($pdo, VP3_AI_SERVICE_CONFIG_KEY_V1, $config);
+policy_same(vp3_ai_service_read_route_v1($pdo, $service), compact('primary', 'fallback'), 'Stored funding fields are ignored independently of their value.');
+$imagePolicy = vp3_ai_service_policy_v1($pdo, $user, 'image_generation');
+policy_same([$imagePolicy['primary'], $imagePolicy['fallback']], [$image, null], 'Legacy routes differing only by funding collapse to one model target.');
+policy_same(vp3_ai_service_target_allowed_v1($imagePolicy, $image + ['funding' => 'system']), true, 'Funding does not affect model eligibility.');
+policy_same(vp3_ai_service_target_allowed_v1($imagePolicy, $image + ['funding' => 'own_key']), true, 'The same model is eligible under either account funding mode.');
 policy_same(vp3_ai_service_target_allowed_v1(vp3_ai_service_policy_v1($pdo, $user, 'image_generation'), $fallback), false, 'Image policy excludes incompatible providers.');
 policy_rejects(fn() => vp3_ai_service_remove_model_v1($pdo, 'anthropic', $fallback['model']), 'Referenced fallback was removed.');
 policy_rejects(fn() => vp3_ai_service_save_model_v1($pdo, 'openai', $primary['model'], 'Still used', ['initiative']), 'Referenced model lost compatibility.');
@@ -81,25 +91,38 @@ policy_rejects(fn() => vp3_ai_service_save_model_v1($pdo, 'openai', $primary['mo
 $primaryId = $primary['provider'].':'.$primary['model'];
 $fallbackId = $fallback['provider'].':'.$fallback['model'];
 vp3_ai_service_save_rule_v1($pdo, 'site', 0, $service, [
-    'enabled' => true, 'allowed_models' => [$primaryId, $fallbackId], 'allowed_funding' => ['system', 'own_key'],
+    'enabled' => true, 'allowed_models' => [$primaryId, $fallbackId],
     'monthly_tokens' => 8000, 'daily_tokens' => 2000, 'job_tokens' => 400, 'background_monthly_tokens' => 1000,
 ], 9);
 vp3_ai_service_save_rule_v1($pdo, 'package', 10, $service, [
-    'allowed_models' => [$fallbackId], 'allowed_funding' => ['own_key'], 'monthly_tokens' => 6000,
+    'allowed_models' => [$fallbackId], 'monthly_tokens' => 6000,
     'background_daily_tokens' => 100, 'job_tokens' => 250,
 ], 9);
 vp3_ai_service_save_rule_v1($pdo, 'user', 1, $service, [
-    'allowed_models' => [$primaryId, $fallbackId], 'allowed_funding' => ['system', 'own_key'],
+    'allowed_models' => [$primaryId, $fallbackId],
     'monthly_tokens' => 9000, 'daily_tokens' => 1500, 'job_tokens' => 300, 'background_monthly_tokens' => 500,
 ], 9);
+policy_rejects(fn() => vp3_ai_service_save_rule_v1($pdo, 'site', 0, $service, ['allowed_funding' => []]), 'A new credential allowlist was accepted.');
+foreach ([['site', 0, ['system']], ['package', 10, ['own_key']], ['user', 1, 'invalid']] as [$scope, $id, $funding]) {
+    $key = vp3_ai_service_rule_key_v1($scope, $id, $service);
+    $record = vp3_ai_service_read_setting_v1($pdo, $key);
+    $record['rule']['allowed_funding'] = $funding;
+    vp3_ai_service_write_setting_v1($pdo, $key, $record);
+    policy_same(array_key_exists('allowed_funding', vp3_ai_service_read_rule_v1($pdo, $scope, $id, $service)), false, 'Stored credential allowlists no longer apply.');
+}
 $policy = vp3_ai_service_policy_v1($pdo, $user, $service, true);
-policy_same([$policy['configured'], $policy['enabled'], $policy['primary'], $policy['fallback']], [true, true, null, $fallback], 'Account rules cannot broaden the canonical active package model or credential source.');
+policy_same([$policy['configured'], $policy['enabled'], $policy['primary'], $policy['fallback']], [true, true, null, $fallback], 'Account rules cannot broaden the canonical active package model restrictions.');
+policy_same(array_key_exists('allowed_funding', $policy), false, 'Effective service rules have no funding restrictions.');
 policy_same([$policy['monthly_tokens'], $policy['daily_tokens'], $policy['job_tokens'], $policy['background_monthly_tokens'], $policy['background_daily_tokens']], [6000, 1500, 250, 500, 100], 'Effective caps take the most restrictive applicable value.');
 policy_same(vp3_ai_service_target_allowed_v1($policy, $primary), false, 'The primary target remains disallowed.');
 policy_same(vp3_ai_service_target_allowed_v1($policy, $fallback), true, 'The permitted fallback remains available.');
 policy_same(vp3_ai_service_policy_v1($pdo, $second, $service)['monthly_tokens'], 8000, 'Other accounts do not inherit the account rule.');
 policy_same(vp3_ai_service_policy_v1($pdo, $expired, $service)['monthly_tokens'], 8000, 'Expired subscriptions do not supply package rules.');
 policy_same(vp3_ai_service_read_setting_v1($pdo, vp3_ai_service_rule_key_v1('user', 1, $service))['actor_id'], 9, 'Rule stores its administrative actor.');
+
+$imageRuleKey = vp3_ai_service_rule_key_v1('site', 0, 'image_generation');
+vp3_ai_service_write_setting_v1($pdo, $imageRuleKey, ['rule' => ['allowed_funding' => []]]);
+policy_same(vp3_ai_service_policy_v1($pdo, $user, 'image_generation')['reason'], 'service_disabled', 'A legacy block on both sources remains a service block.');
 
 vp3_ai_service_save_rule_v1($pdo, 'site', 0, 'initiative', ['background_enabled' => false]);
 vp3_ai_service_save_rule_v1($pdo, 'user', 1, 'initiative', ['background_enabled' => true]);
@@ -110,7 +133,7 @@ policy_same(vp3_ai_service_policy_v1($pdo, $user, 'initiative', true)['reason'],
 policy_same(vp3_ai_service_policy_v1($pdo, $user, 'initiative')['enabled'], true, 'Zero background caps do not disable foreground usage.');
 vp3_ai_service_save_rule_v1($pdo, 'site', 0, 'initiative', ['monthly_tokens' => 0]);
 policy_same(vp3_ai_service_policy_v1($pdo, $user, 'initiative')['reason'], 'service_budget_exhausted', 'Zero foreground cap is a hard limit.');
-vp3_ai_service_save_rule_v1($pdo, 'site', 0, 'initiative', ['allowed_funding' => []]);
+vp3_ai_service_save_rule_v1($pdo, 'site', 0, 'initiative', ['allowed_models' => []]);
 policy_same(vp3_ai_service_policy_v1($pdo, $user, 'initiative')['reason'], 'service_model_forbidden', 'An empty allowlist denies legacy routes as well.');
 vp3_ai_service_save_rule_v1($pdo, 'site', 0, $service, ['enabled' => false]);
 vp3_ai_service_save_rule_v1($pdo, 'user', 1, $service, ['enabled' => true]);

@@ -8,7 +8,7 @@ namespace ProviderRegression;
 // are the actual application code; no real provider call is made.
 $root=sys_get_temp_dir().'/vp3-provider-'.bin2hex(random_bytes(6));
 \define('STONEFELLOW_ROOT',$root);
-$settings=[];$requests=[];$replyStatus=200;$checks=0;$own=['route'=>'system'];$wrongTestReply=false;$streamReplyStatus=null;$providerStatuses=[];$preflightCalls=0;
+$settings=[];$requests=[];$replyStatus=200;$checks=0;$wrongTestReply=false;$streamReplyStatus=null;$providerStatuses=[];$preflightCalls=0;$onProviderRequest=null;
 function db(): \PDO {
     static $pdo;
     if($pdo instanceof \PDO)return $pdo;
@@ -17,9 +17,18 @@ function db(): \PDO {
     // Profile call settings/snapshots exist before creating the fixture key.
     $pdo->exec('CREATE TABLE settings(setting_key TEXT PRIMARY KEY,setting_value TEXT NOT NULL)');
     $pdo->exec('CREATE TABLE profile_calls_pa3c(id INTEGER PRIMARY KEY,provider_snapshot TEXT NOT NULL)');
+    $pdo->exec('CREATE TABLE user_llm_preferences(user_id INT PRIMARY KEY,route TEXT,provider TEXT);
+        CREATE TABLE user_llm_credentials(user_id INT,provider TEXT,encrypted_key TEXT,model TEXT,PRIMARY KEY(user_id,provider))');
     return $pdo;
 }
-function vp3_user_llm_v1_effective(\PDO $pdo,array $user): array {return $GLOBALS['own'];}
+function fixture_funding(string $route='system',string $provider=''): void
+{
+    db()->prepare('INSERT OR REPLACE INTO user_llm_preferences VALUES (7,?,?)')->execute([$route,$provider]);
+}
+function fixture_key(string $provider,string $model,string $key): void
+{
+    db()->prepare('INSERT OR REPLACE INTO user_llm_credentials VALUES (7,?,?,?)')->execute([$provider,ai_encrypt_secret($key),$model]);
+}
 function subscription_ai_preflight(?array $user,string $scope,int $input,int $output): array {
     $GLOBALS['preflightCalls']++;
     return ['reservation_id'=>0,'max_output_tokens'=>$output,'unlimited'=>true];
@@ -52,6 +61,7 @@ function curl_close(object $handle): void {}
 function curl_exec(object $handle): string|bool {
     $payload=json_decode($handle->options[CURLOPT_POSTFIELDS],true);
     $GLOBALS['requests'][]=['endpoint'=>$handle->endpoint,'headers'=>$handle->options[CURLOPT_HTTPHEADER],'payload'=>$payload];
+    if(is_callable($GLOBALS['onProviderRequest']))($GLOBALS['onProviderRequest'])();
     $provider=str_contains($handle->endpoint,'openai.com')?'openai':'anthropic';
     $handle->status=$GLOBALS['providerStatuses'][$provider]??(!empty($payload['stream'])&&$GLOBALS['streamReplyStatus']!==null?$GLOBALS['streamReplyStatus']:$GLOBALS['replyStatus']);
     if($handle->status!==200)return json_encode(['error'=>['message'=>'authentication failed']]);
@@ -68,9 +78,10 @@ function curl_exec(object $handle): string|bool {
     return true;
 }
 foreach(['ai-settings.php','ai-runtime-v100.php','ai-stream-v121.php','recommendations.php','agent-brain-context-v99.php','chat-engine.php','chat-execution-v019.php','cognitive-turn-v2430.php',
-    'ai-service-policy-v1.php','ai-service-usage-v1.php','ai-usage-accounting-v032.php','ai-service-own-key-v1.php'] as $file){
+    'ai-service-policy-v1.php','ai-service-usage-v1.php','ai-usage-accounting-v032.php','user-llm-v1.php','agent-runtime-routing-v420.php'] as $file){
     $source=file_get_contents(dirname(__DIR__).'/includes/'.$file);
     $source=preg_replace('/^require_once __DIR__[^\n]*\n/m','',$source);
+    $source=str_replace('__DIR__',var_export(dirname(__DIR__).'/includes',true),$source);
     eval('namespace '.__NAMESPACE__.'; use \\Throwable; use \\RuntimeException; use \\PDO; use \\PDOException; use \\JsonException; use \\UnexpectedValueException; use \\InvalidArgumentException;'.substr($source,strpos($source,'declare(strict_types=1);')+strlen('declare(strict_types=1);')));
 }
 try {
@@ -84,7 +95,7 @@ try {
             $provider.' receives turn control as a system directive separate from user messages');
     };
     foreach(['openai'=>'gpt-5.4-mini','anthropic'=>'claude-haiku-4-5'] as $provider=>$model){
-        $settings=[];$requests=[];$own=['route'=>'system'];
+        $settings=[];$requests=[];fixture_funding();
         $key='fixture-'.$provider.'-not-a-real-provider-key';
         $cipher=ai_encrypt_secret($key);
         $settings=['ai_test_requests_per_minute'=>'120','ai_chat_requests_per_minute'=>'120','ai_active_provider'=>$provider,'ai_'.$provider.'_enabled'=>'1','ai_'.$provider.'_model'=>$model,'ai_'.$provider.'_api_key'=>$cipher,
@@ -137,11 +148,12 @@ try {
         check(empty($badReply['ok'])&&!empty($badReply['connected'])&&$badReply['failure_code']==='unexpected_test_reply','A generated reply with the wrong test phrase is distinguished from a connection failure');
         $streamReplyStatus=401;$badStream=ai_test_chat_connection($user);$streamReplyStatus=null;
         check(empty($badStream['ok'])&&!empty($badStream['connected'])&&$badStream['stage']==='voice stream'&&$badStream['status']===401,'A working text connection cannot hide a failed voice-stream authentication');
-        $own=['route'=>'own_key','provider'=>$provider,'model'=>$model,'api_key'=>'fixture-personal-key'];$requests=[];
+        fixture_key($provider,$model,'fixture-personal-key');
+        fixture_funding('own_key',$provider);$requests=[];
         $personal=ai_test_chat_connection($user);
         check(!empty($personal['ok'])&&$personal['credential_source']==='account','Cloud Chat test follows the account provider selection');
         foreach($requests as $request)check(in_array(($provider==='openai'?'Authorization: Bearer ':'x-api-key: ').'fixture-personal-key',$request['headers'],true),'Personal-key Chat test cannot silently test the system key');
-        $own=['route'=>'system'];
+        fixture_funding();
         check(file_get_contents(ai_master_key_file())===$keyFile&&$settings['ai_'.$provider.'_api_key']===$cipher,'Tests preserve the saved key and encryption file');
         $requests=[];$replyStatus=401;
         $failed=ai_generate_chat_response('Hello',[],[],$user);
@@ -175,7 +187,6 @@ try {
     $pdo=db();
     $pdo->exec("CREATE TABLE users(id INTEGER PRIMARY KEY);
         INSERT INTO users VALUES (7);
-        CREATE TABLE user_llm_credentials(user_id INT,provider TEXT,encrypted_key TEXT,PRIMARY KEY(user_id,provider));
         CREATE TABLE ai_execution_ledger(id INTEGER PRIMARY KEY,user_id INT,agent_id INT,conversation_id INT,
             trace_id TEXT,source TEXT,provider TEXT,model TEXT,run_id INT,created_at TEXT,cost_rate_source TEXT,
             input_tokens INT,output_tokens INT,total_tokens INT,latency_ms INT,estimated_cost_micros INT,
@@ -184,8 +195,8 @@ try {
     $settings['ai_openai_api_key']=ai_encrypt_secret('fixture-routed-openai');
     $settings['ai_anthropic_api_key']=ai_encrypt_secret('fixture-routed-claude');
     $settings['ai_active_provider']='local';
-    $primary=['provider'=>'openai','model'=>'gpt-5.4-mini','funding'=>'system'];
-    $fallback=['provider'=>'anthropic','model'=>'claude-haiku-4-5','funding'=>'system'];
+    $primary=['provider'=>'openai','model'=>'gpt-5.4-mini'];
+    $fallback=['provider'=>'anthropic','model'=>'claude-haiku-4-5'];
     vp3_ai_service_save_route_v1($pdo,'conversation',$primary,$fallback);
     $context=['service'=>'conversation','agent_id'=>11,'conversation_id'=>18,'job_key'=>'chat:27'];
     $query='Deep dive and compare the alternatives.';
@@ -232,17 +243,19 @@ try {
 
     $customModel='fixture-openai-chat-v1';
     vp3_ai_service_save_model_v1($pdo,'openai',$customModel,'Fixture Chat model',['conversation']);
-    $customRoute=['provider'=>'openai','model'=>$customModel,'funding'=>'own_key'];
-    vp3_ai_service_save_route_v1($pdo,'conversation',$customRoute,null);
-    $own=['route'=>'own_key','provider'=>'openai','model'=>'gpt-5.4-mini','api_key'=>'fixture-custom-personal'];
+    $customRoute=['provider'=>'openai','model'=>$customModel];
+    vp3_ai_service_save_route_v1($pdo,'conversation',$customRoute,$fallback);
+    fixture_key('openai','gpt-5.4-mini','fixture-custom-personal');
+    fixture_key('anthropic','claude-haiku-4-5','fixture-claude-personal');
+    fixture_funding('own_key','anthropic');
     $requests=[];
-    check(($typed()['failure_code']??'')==='personal_route_unavailable'
-        &&($voice()['failure_code']??'')==='personal_route_unavailable'&&$requests===[],
-        'A registered personal route cannot override the account model selection');
-    $own['model']=$customModel;
     $previousPreflights=$preflightCalls;
     foreach([true,false] as $configured){
-        if(!$configured)vp3_ai_service_save_route_v1($pdo,'conversation',null,null);
+        if(!$configured){
+            vp3_ai_service_save_route_v1($pdo,'conversation',null,null);
+            fixture_key('openai',$customModel,'fixture-custom-personal');
+            fixture_funding('own_key','openai');
+        }
         $requests=[];
         $textResponse=$typed();$voiceResponse=$voice();
         check(!empty($textResponse['ok'])&&!empty($voiceResponse['ok'])&&count($requests)===2
@@ -256,27 +269,90 @@ try {
             'Both adapters use the selected personal key without charging the system allowance');
     }
 
+    $settings['ai_active_provider']='anthropic';
     $requests=[];
-    $personal=['provider'=>'openai','model'=>'gpt-5.4-mini','funding'=>'own_key'];
+    $shared=ai_generate_chat_response($query,[],[],$user,'main_ai',['surface'=>'cloud_mission']);
+    check(!empty($shared['ok'])&&$shared['model']===$customModel&&$preflightCalls===$previousPreflights
+        &&in_array('Authorization: Bearer fixture-custom-personal',$requests[0]['headers'],true),
+        'Private shared inference outside Conversation uses the account personal default without system preflight');
+    fixture_funding();
+    $requests=[];
+    $shared=ai_generate_chat_response($query,[],[],$user,'main_ai',['surface'=>'cloud_mission']);
+    check(!empty($shared['ok'])&&$shared['provider']==='anthropic'&&$preflightCalls===$previousPreflights+1
+        &&in_array('x-api-key: fixture-routed-claude',$requests[0]['headers'],true),
+        'Private shared inference with account VP3 funding retains subscription quota preflight');
+    $previousPreflights=$preflightCalls;
+    $settings['ai_active_provider']='local';
+
+    vp3_ai_service_save_route_v1($pdo,'conversation',$customRoute,$fallback);
+    $providerStatuses=['openai'=>401];
+    foreach([$typed,$voice] as $respond){
+        fixture_funding('own_key','openai');
+        $requests=[];
+        $onProviderRequest=static function():void {
+            fixture_funding();
+            $GLOBALS['onProviderRequest']=null;
+        };
+        check(empty($respond()['ok'])&&count($requests)===1&&$preflightCalls===$previousPreflights,
+            'Changing account funding during a request blocks further provider attempts');
+    }
+    $providerStatuses=[];
+    fixture_funding('own_key','openai');
+    $pdo->exec("DELETE FROM user_llm_credentials WHERE user_id=7 AND provider='openai'");
+    $requests=[];
+    $textResponse=$typed();$voiceResponse=$voice();
+    check(!empty($textResponse['ok'])&&!empty($voiceResponse['ok'])&&count($requests)===2
+        &&array_column(array_column($requests,'payload'),'model')===['claude-haiku-4-5','claude-haiku-4-5']
+        &&in_array('x-api-key: fixture-claude-personal',$requests[0]['headers'],true)
+        &&in_array('x-api-key: fixture-claude-personal',$requests[1]['headers'],true)
+        &&$preflightCalls===$previousPreflights,
+        'A missing primary personal key uses the configured fallback with the same account funding');
+    $pdo->exec('DELETE FROM user_llm_credentials WHERE user_id=7');
+    $requests=[];
+    check(($typed()['failure_code']??'')==='personal_route_unavailable'
+        &&($voice()['failure_code']??'')==='personal_route_unavailable'&&$requests===[],
+        'No available personal keys means no provider dispatch even when site keys exist');
+    $cloud=vp3_agent_runtime_cloud_state_v420($user,$pdo,$context);
+    check(!$cloud['ready']&&$cloud['reason']==='cloud_service_route_unavailable',
+        'Configured Cloud readiness remains blocked when only site keys are available to a personal-funded account');
+    vp3_ai_service_save_route_v1($pdo,'conversation',null,null);
+    check(empty($typed()['ok'])&&empty($voice()['ok'])&&$requests===[],'Legacy personal default without a key fails closed');
+
+    fixture_key('openai',$customModel,'fixture-before-rotation');
+    $providerStatuses=['openai'=>429];
+    $onProviderRequest=static function()use($customModel):void{
+        fixture_key('openai',$customModel,'fixture-after-rotation');
+        $GLOBALS['onProviderRequest']=null;
+    };
+    check(($typed()['failure_code']??'')==='personal_route_unavailable'&&count($requests)===1,
+        'Legacy Conversation rechecks the selected key before a retry');
+    $providerStatuses=[];
+
+    $requests=[];
+    $personal=['provider'=>'openai','model'=>'gpt-5.4-mini'];
     $initiative=static fn()=>ai_v100_with_service_context(['service'=>'initiative','background'=>true,'run_id'=>31,'agent_id'=>11,'conversation_id'=>18],
         static fn()=>ai_generate_chat_response($query,[],[],$user,'main_ai'));
-    $own=['route'=>'own_key','provider'=>'openai','model'=>'gpt-5.4-mini','api_key'=>'fixture-legacy-initiative'];
+    fixture_key('openai','gpt-5.4-mini','fixture-legacy-initiative');
     check(!empty($initiative()['ok'])&&count($requests)===1&&in_array('Authorization: Bearer fixture-legacy-initiative',$requests[0]['headers'],true),
         'Unconfigured Initiative retains legacy personal routing after service metering is enabled');
-    $own=['route'=>'system'];$requests=[];
+    $requests=[];
     vp3_ai_service_save_route_v1($pdo,'initiative',$personal,null);
-    $pdo->prepare("INSERT INTO user_llm_credentials VALUES (7,'openai',?)")->execute([ai_encrypt_secret('fixture-initiative-personal')]);
-    check(($initiative()['failure_code']??'')==='personal_service_grant_required'&&$requests===[],'A saved personal key requires explicit Initiative approval before dispatch');
-    vp3_ai_service_own_key_update_v1($pdo,$user,'initiative','openai','gpt-5.4-mini',true);
+    fixture_key('openai',$customModel,'fixture-initiative-personal');
     $initiativeResult=$initiative();
     check(!empty($initiativeResult['ok'])&&$initiativeResult['compute_source']==='user_provider'&&count($requests)===1
-        &&in_array('Authorization: Bearer fixture-initiative-personal',$requests[0]['headers'],true),
-        'Approved Initiative work uses the exact personal key independently of the account Conversation choice');
+        &&in_array('Authorization: Bearer fixture-initiative-personal',$requests[0]['headers'],true)
+        &&$requests[0]['payload']['model']==='gpt-5.4-mini',
+        'Configured background Initiative uses the account funding choice and configured model');
     $row=$pdo->query('SELECT service_key,credential_source,is_background,run_id FROM ai_execution_ledger ORDER BY id DESC LIMIT 1')->fetch(\PDO::FETCH_ASSOC);
     check($row===['service_key'=>'initiative','credential_source'=>'own_key','is_background'=>1,'run_id'=>31],'Initiative metering carries the worker run and background identity');
-    vp3_ai_service_own_key_update_v1($pdo,$user,'initiative','openai','gpt-5.4-mini',false);
+    $pdo->exec('DELETE FROM user_llm_credentials WHERE user_id=7');
     $requests=[];
-    check(($initiative()['failure_code']??'')==='personal_service_grant_required'&&$requests===[],'Revocation blocks later paid Initiative work');
+    check(($initiative()['failure_code']??'')==='personal_route_unavailable'&&$requests===[],
+        'A missing personal key stops background Initiative without charging the site');
+    fixture_funding();
+    check(!empty($initiative()['ok'])&&count($requests)===1
+        &&in_array('Authorization: Bearer fixture-routed-openai',$requests[0]['headers'],true),
+        'Changing the account to VP3 funding gives Initiative the configured site provider');
     echo 'CLOUD_PROVIDER_PRESERVATION=PASS ('.$checks." assertions; HTTP mocked)\n";
 } finally {
     $paths=is_dir($root)?new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root,\FilesystemIterator::SKIP_DOTS),\RecursiveIteratorIterator::CHILD_FIRST):[];

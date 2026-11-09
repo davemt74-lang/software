@@ -19,7 +19,7 @@ $models=$pdo instanceof PDO?vp3_user_llm_v1_models($pdo):ai_model_catalog();
 .llm-help{line-height:1.6;color:#576174}.llm-cards{display:grid;gap:18px;margin-top:22px}
 .llm-card{background:#fff;color:#1b2736;border:1px solid #dce3ea;border-radius:15px;padding:22px}
 .llm-card h2{font-size:19px}.llm-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:14px 0}
-.llm-row>*{flex:1;min-width:160px} .llm-row label{display:grid;gap:7px;font-size:13px}
+.llm-row>*{flex:1;min-width:160px} .llm-row label{display:grid;gap:7px;font-size:13px}.llm-row label[hidden]{display:none}
 .llm-row input,.llm-row select{padding:12px;border-radius:8px;border:1px solid #b9c6d5;max-width:100%;box-sizing:border-box}
 .llm-card button{padding:11px 15px;border:0;border-radius:8px;background:#263e62;color:#fff;cursor:pointer}
 .llm-card button:disabled{opacity:.5;cursor:default}.llm-card button.secondary{background:#e3e9ef;color:#233349}
@@ -32,26 +32,26 @@ $models=$pdo instanceof PDO?vp3_user_llm_v1_models($pdo):ai_model_catalog();
 <main class="llm-shell" aria-label="Cloud AI provider settings">
 <a href="<?=e(url('/settings-homeserver.php'))?>">← HomeServer connection</a>
 <h1>AI providers and compute</h1>
-<p class="llm-help">Choose VP3's subscription-funded AI or use your own provider key for Cloud inference. HomeServer keeps its own private keys locally. Your keys are never sent through the HomeServer relay.</p>
+<p class="llm-help">VP3 Cloud uses your subscription tokens by default. Choose one funding source for your Cloud account.</p>
 <p id="llmStatus" role="status" aria-live="polite"></p>
 <section class="llm-cards">
-<article class="llm-card"><h2>Compute source</h2>
-<p class="llm-note">VP3 system providers use your account's existing subscription and token limits. Your own key is billed directly by its provider; account access and request-rate limits still apply.</p>
-<div class="llm-row"><label for="llmRoute">Cloud Conversation source
-<select id="llmRoute"><option value="system">VP3 system LLM (subscription tokens)</option><option value="openai">My OpenAI API key</option><option value="anthropic">My Anthropic API key</option></select></label><button id="llmSaveRoute" type="button">Save source</button></div>
+<article class="llm-card"><h2>Cloud API funding</h2>
+<p class="llm-note">VP3 uses its keys and your package allowance. If you switch to personal keys, your providers bill you directly for Cloud Agent requests.</p>
+<div class="llm-row"><label for="llmRoute">Funding source
+<select id="llmRoute"><option value="system">VP3 keys and subscription tokens</option><option value="own_key">My API keys</option></select></label>
+<label for="llmProvider" id="llmDefaultProvider" hidden>Default personal provider
+<select id="llmProvider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select></label>
+<button id="llmSaveRoute" type="button">Save source</button></div>
+<p class="llm-note" id="llmPersonalHelp" hidden>Save a key for each provider your Cloud Agent uses. A request that needs a missing key will pause until that key is saved or you switch to VP3 funding.</p>
 </article>
 <?php foreach(['openai'=>'OpenAI','anthropic'=>'Anthropic'] as $provider=>$label): ?>
 <article class="llm-card" data-llm-provider="<?=e($provider)?>"><h2><?=e($label)?></h2><p class="llm-status" data-key-status>Checking…</p>
 <form class="llm-provider-form" data-provider="<?=e($provider)?>">
 <div class="llm-row"><label>Private API key<input type="password" name="api_key" autocomplete="off" required maxlength="4000" placeholder="Key is never displayed after saving"></label>
-<label>Conversation model<select name="model"><?php foreach($models[$provider] as $id=>$name): ?><option value="<?=e($id)?>"><?=e($name)?></option><?php endforeach; ?></select></label></div>
+<label>Default model<select name="model"><?php foreach($models[$provider] as $id=>$name): ?><option value="<?=e($id)?>"><?=e($name)?></option><?php endforeach; ?></select></label></div>
 <button type="submit">Save encrypted key</button> <button type="button" class="secondary" data-remove="<?=e($provider)?>">Remove key</button>
 </form></article>
 <?php endforeach; ?>
-<article class="llm-card"><h2>Personal key permissions by service</h2>
-<p class="llm-note">Approve each service and model you want to bill to your provider account. Initiative can use its approved key in the background. Replacing or removing a key clears its approvals.</p>
-<div id="llmServicePermissions">Checking available services…</div>
-</article>
 <article class="llm-card"><h2>HomeServer provider keys</h2>
 <p>Manage Ollama, OpenAI, Anthropic and OpenRouter in your local HomeServer's Agent Brain settings. Cloud uses paired capability status but never transfers local keys or sends Cloud personal keys to HomeServer.</p>
 <p id="llmHomeStatus" role="status" aria-live="polite">Reading paired HomeServer status…</p>
@@ -63,7 +63,6 @@ $models=$pdo instanceof PDO?vp3_user_llm_v1_models($pdo):ai_model_catalog();
 const endpoint=<?=json_encode(url('/api/user-llm-v1.php'))?>;
 const csrf=<?=json_encode(csrf_token())?>;
 const byId=id=>document.getElementById(id);
-let state=null;
 const status=(message,error=false)=>{const n=byId('llmStatus');n.textContent=message;n.style.color=error?'#a32929':'#1a6550';};
 async function request(payload){
  const response=await fetch(endpoint,payload?{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,csrf_token:csrf})}:{credentials:'same-origin',cache:'no-store'});
@@ -71,33 +70,19 @@ async function request(payload){
  if(!response.ok||!result.ok)throw new Error(result.error||'Provider settings could not be saved.');
  return result.state;
 }
+function showFundingFields(){
+ const personal=byId('llmRoute').value==='own_key';
+ byId('llmDefaultProvider').hidden=!personal;
+ byId('llmPersonalHelp').hidden=!personal;
+}
 function render(next){
- state=next;byId('llmRoute').value=next.route==='own_key'?next.provider:'system';
+ byId('llmRoute').value=next.route==='own_key'?'own_key':'system';
+ byId('llmProvider').value=next.provider||'openai';
+ showFundingFields();
  for(const form of document.querySelectorAll('[data-provider]')){
-  const provider=form.dataset.provider;const info=next.providers?.[provider];form.querySelector('[data-key-status]').textContent=info?.configured?'Saved key ending '+info.suffix:'No Cloud key saved';
+  const info=next.providers?.[form.dataset.provider];
+  form.closest('[data-llm-provider]').querySelector('[data-key-status]').textContent=info?.configured?'Saved key ending '+info.suffix:'No Cloud key saved';
   if(info?.model)form.querySelector('[name=model]').value=info.model;
- }
- const permissions=byId('llmServicePermissions');
- permissions.replaceChildren();
- const routes=next.service_permissions||[];
- if(!routes.length)permissions.textContent='Your account has no personal key service routes available.';
- for(const route of routes){
-  const row=document.createElement('div');
-  row.className='llm-row';
-  const detail=document.createElement('span');
-  const provider=route.provider==='openai'?'OpenAI':'Anthropic';
-  detail.textContent=route.label+' · '+provider+' · '+route.model;
-  const button=document.createElement('button');
-  button.type='button';
-  button.textContent=route.approved?'Revoke approval':route.can_approve?'Approve personal key':'Save a provider key first';
-  button.disabled=!route.approved&&!route.can_approve;
-  button.addEventListener('click',async()=>{
-   button.disabled=true;
-   const saved=await run(()=>request({action:route.approved?'revoke_service':'grant_service',service:route.service,provider:route.provider,model:route.model}));
-   if(!saved)button.disabled=false;
-  });
-  row.append(detail,button);
-  permissions.append(row);
  }
 }
 async function run(fn){
@@ -110,12 +95,14 @@ document.querySelectorAll('form[data-provider]').forEach(form=>form.addEventList
  run(()=>request({action:'save',provider,api_key:key.value,model:model.value})).then(saved=>{if(saved)key.value='';});
 }));
 document.querySelectorAll('[data-remove]').forEach(button=>button.addEventListener('click',()=>{
- if(!confirm('Remove this Cloud API key?'))return;
+ if(!confirm('Remove this Cloud API key? Requests that use it will pause while personal funding is selected.'))return;
  run(()=>request({action:'remove',provider:button.dataset.remove}));
 }));
+byId('llmRoute').addEventListener('change',showFundingFields);
 byId('llmSaveRoute').addEventListener('click',()=>run(()=>{
- const value=byId('llmRoute').value;
- return request({action:'select',route:value==='system'?'system':'own_key',provider:value==='system'?'':value});
+ const route=byId('llmRoute').value;
+ const provider=route==='own_key'?byId('llmProvider').value:'';
+ return request({action:'select',route,provider});
 }));
 request().then(render).catch(e=>status(e.message,true));
 fetch(<?=json_encode(url('/api/homeserver-connection-v1200.php'))?>,{credentials:'same-origin',cache:'no-store'})

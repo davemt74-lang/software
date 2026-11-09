@@ -554,7 +554,7 @@ function ai_history_messages(array $history): array
     return $messages;
 }
 
-function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null): array
+function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null,?string $personalKey=null): array
 {
     if(!function_exists('curl_init'))return ['ok'=>false,'error'=>'AI transport is unavailable.'];
     $parts=parse_url($endpoint);$host=strtolower((string)($parts['host']??''));
@@ -575,18 +575,19 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
         if($remaining!==null&&$remaining<=0.005)return $budgetError($attempt-1);
         $ticket=[];
         $body=$encoded;
-        if($meter?->active && $target!==null){
+        if($meter!==null && $target!==null){
             $outputField=$host==='api.openai.com'?'max_output_tokens':'max_tokens';
             try{
-                if(!$meter->initiative_key_is_current($target,$headers[0]??'')){
-                    return ai_v100_service_failure('Approve this Initiative provider and model in your account before using a personal key.','personal_service_grant_required');
+                if(!$meter->personal_key_is_current($target,$personalKey)){
+                    return ai_v100_service_failure('The personal provider credential changed. Check your AI provider settings.','personal_route_unavailable');
                 }
                 $ticket=$meter->begin($target,$payload,$outputField);
+            }catch(Throwable $error){return ai_v100_service_budget_failure($error);}
+            if($ticket){
+                $limited=$payload;
+                $limited[$outputField]=min($payload[$outputField],(int)($ticket['max_output_tokens']??$payload[$outputField]));
+                $body=json_encode($limited,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
             }
-            catch(Throwable $error){return ai_v100_service_budget_failure($error);}
-            $limited=$payload;
-            $limited[$outputField]=min($payload[$outputField],(int)($ticket['max_output_tokens']??$payload[$outputField]));
-            $body=json_encode($limited,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         }
         $options=[CURLOPT_POST=>true,CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>$isPhone?min(4,$phoneRemaining):10,CURLOPT_TIMEOUT=>$isPhone?min(10,$phoneRemaining):max(5,min(90,$timeout)),CURLOPT_HTTPHEADER=>$headers,CURLOPT_POSTFIELDS=>$body,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2];
         if($remaining!==null){
@@ -682,12 +683,12 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             $result=ai_curl_json('https://api.openai.com/v1/responses',
                 ['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],
                 ['model'=>$model,'instructions'=>$prompt,'input'=>$messages,'max_output_tokens'=>$budget],
-                $complexity==='deep'?75:55,$meter,$target);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null);
         }else{
             $result=ai_curl_json('https://api.anthropic.com/v1/messages',
                 ['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],
                 ['model'=>$model,'max_tokens'=>$budget,'system'=>$prompt,'messages'=>$messages],
-                $complexity==='deep'?75:55,$meter,$target);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null);
         }
         $usage=[];$answer='';
         if(!empty($result['ok'])){
@@ -750,6 +751,16 @@ function ai_subscription_estimated_input_tokens(string $query,array $history,arr
     return subscription_estimate_tokens_from_chars($chars);
 }
 
+/** An explicit service route uses the funding choice even if the default personal key is unavailable. */
+function ai_cloud_account_route(?PDO $pdo, ?array $user, bool $configured): array
+{
+    if ($pdo === null || !$user) return ['route'=>'system'];
+    if ($configured) {
+        return ['route'=>function_exists('vp3_user_llm_v1_funding') ? vp3_user_llm_v1_funding($pdo,$user) : 'unavailable'];
+    }
+    return function_exists('vp3_user_llm_v1_effective') ? vp3_user_llm_v1_effective($pdo,$user) : ['route'=>'system'];
+}
+
 function ai_generate_chat_response(
     string $query,
     array $history,
@@ -781,23 +792,21 @@ function ai_generate_chat_response(
     if($policy!==null&&empty($policy['enabled'])){
         return ai_v100_service_failure('This AI service is unavailable under your current account policy.','service_disabled');
     }
-    $own=($user&&function_exists('vp3_user_llm_v1_effective')&&function_exists('db')&&db())
-        ?vp3_user_llm_v1_effective(db(),$user):['route'=>'system'];
-    $explicitInitiative=!empty($policy['configured'])&&($policy['service']??'')==='initiative';
-    if(($own['route']??'system')==='unavailable'&&!$explicitInitiative)
+    $explicit=!empty($policy['configured']);
+    $connection=$user&&function_exists('db')?db():null;
+    $pdo=$connection instanceof PDO?$connection:null;
+    try{$own=ai_cloud_account_route($pdo,$user,$explicit);}
+    catch(Throwable $error){return ai_v100_service_budget_failure($error);}
+    if(($own['route']??'system')==='unavailable')
         return ['ok'=>false,'provider'=>'own_key','error'=>'Your saved provider key is unavailable. Re-enter it or select VP3 system inference.'];
     $isOwn=($own['route']??'system')==='own_key';
-    if($isOwn&&!$explicitInitiative){
+    if($isOwn){
         if(function_exists('subscription_has_entitlement')&&!subscription_has_entitlement($user,'main_ai.access'))
             return ['ok'=>false,'provider'=>'own_key','error'=>'AI access is not included for this account.'];
-        $provider=(string)$own['provider'];
-    }
-    if($explicitInitiative&&function_exists('subscription_has_entitlement')&&!subscription_has_entitlement($user,'main_ai.access')){
-        return ai_v100_service_failure('AI access is not included for this account.','service_disabled');
+        if(!$explicit)$provider=(string)$own['provider'];
     }
     try { ai_v100_rate_limit('chat',$user); } catch (Throwable $e) { return ['ok'=>false,'provider'=>$provider,'error'=>ai_v100_safe_exception($e)]; }
 
-    $explicit=!empty($policy['configured']);
     if ($provider === 'local' && !$explicit) {
         return [
             'ok' => false,
@@ -825,18 +834,19 @@ function ai_generate_chat_response(
     try{
         $targets=[null];
         if($policy!==null){
-            $models=$isOwn?[(string)$own['model']]
-                :($visionImages?[ai_provider_model($provider)]:ai_v100_model_candidates($provider,ai_v100_complexity($query,$context)));
-            $targets=ai_v100_service_targets($policy,$own,$provider,$models);
+            $models=$explicit?[]:($isOwn?[(string)$own['model']]
+                :($visionImages?[ai_provider_model($provider)]:ai_v100_model_candidates($provider,ai_v100_complexity($query,$context))));
+            $targets=ai_v100_service_targets($policy,$own['route'],$provider,$models);
         }
         $result=['ok'=>false,'error'=>'No allowed provider and model are available for this AI service.','failure_code'=>'service_route_unavailable'];
         foreach($targets as $target){
             $candidateProvider=(string)($target['provider']??$provider);
             $candidateOwn=$isOwn?$own:null;
             if($explicit){
-                $credential=ai_v100_service_target_credential($target,$own,$policy,$user,db());
+                $credential=ai_v100_service_target_credential($target,$user,$pdo);
                 if(isset($credential['failure'])){
-                    $result=$credential['failure'];
+                    $result=$credential['failure']+['provider'=>$candidateProvider];
+                    if($isOwn)$result['compute_source']='user_provider';
                     continue;
                 }
                 $candidateOwn=$credential['own'];

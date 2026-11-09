@@ -13,7 +13,7 @@ function vp3_admin_ai_service_route_choice_v1(string $position): ?array
     $selected = vp3_admin_ai_service_post_string_v1($position.'_model');
     if ($selected === '') return null;
     [$provider, $model] = array_pad(explode(':', $selected, 2), 2, '');
-    return ['provider' => $provider, 'model' => $model, 'funding' => vp3_admin_ai_service_post_string_v1($position.'_funding')];
+    return ['provider' => $provider, 'model' => $model];
 }
 
 function vp3_admin_ai_service_provider_registry_v1(PDO $pdo, string $provider): void
@@ -94,8 +94,8 @@ function vp3_admin_ai_service_routes_v1(PDO $pdo): void
     ?>
     <section id="ai-service-routes" class="panel" aria-labelledby="ai-service-routes-title">
       <h2 id="ai-service-routes-title">AI service routes</h2>
-      <p class="muted">Choose the exact model and credential source for each available service. A route can inherit the existing setup.</p>
-      <p class="muted">An account key requires the member's matching saved provider and key. Initiative and Image Generation also require the member to approve the exact provider and model in AI Providers.</p>
+      <p class="muted">Choose the primary and fallback models for each available service. A route can inherit the existing setup.</p>
+      <p class="muted">Primary and fallback models use the same account funding source. VP3 Cloud is the default. Members who choose My API keys in AI Providers need a saved key for each provider their routes use.</p>
       <?php foreach ($catalog as $id => $service):
           if (!$service['wired']) continue;
           $route = vp3_ai_service_read_route_v1($pdo, $id);
@@ -115,12 +115,6 @@ function vp3_admin_ai_service_routes_v1(PDO $pdo): void
                 <select name="<?= e($key.'_model') ?>">
                   <option value=""><?= $key === 'primary' ? 'Use existing setup' : 'No fallback' ?></option>
                   <?php vp3_admin_ai_service_model_options_v1($models, $selected); ?>
-                </select>
-              </label>
-              <label class="field"><?= e($label) ?> credential
-                <select name="<?= e($key.'_funding') ?>">
-                  <option value="system" <?= ($choice['funding'] ?? 'system') === 'system' ? 'selected' : '' ?>>Installation key</option>
-                  <option value="own_key" <?= ($choice['funding'] ?? '') === 'own_key' ? 'selected' : '' ?>>Account's own key</option>
                 </select>
               </label>
             <?php endforeach; ?>
