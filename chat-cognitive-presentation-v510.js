@@ -1185,11 +1185,24 @@
     if (!currentDigestId) return;
     const selector = '[data-vp3-return-digest="' + CSS.escape(currentDigestId) + '"]';
     const existing = thread.querySelector(selector);
-    if (existing) { positionDigest(existing,digest); return; }
+    const contentKey = JSON.stringify([digest.summary,digest.items]);
+    if (existing?._vp3DigestContent === contentKey) { positionDigest(existing,digest); return; }
     const holder = document.createElement('div');
     holder.innerHTML = digestMarkup(digest);
     const node = holder.firstElementChild;
     if (!node) return;
+    node._vp3DigestContent = contentKey;
+    if (existing) {
+      const active = existing.contains(document.activeElement) ? document.activeElement : null;
+      existing.replaceWith(node);
+      if (active) {
+        const controls = Array.from(node.querySelectorAll('[data-digest-action],a[href]'));
+        const replacement = controls.find(control => active.dataset.digestAction
+          ? control.dataset.digestAction === active.dataset.digestAction
+          : control.getAttribute('href') === active.getAttribute('href'));
+        (replacement || controls[0])?.focus({preventScroll:true});
+      }
+    }
     positionDigest(node,digest);
     const requests = (Array.isArray(digest.items) ? digest.items : [])
       .map(item => item && item.card_request ? item.card_request : null)

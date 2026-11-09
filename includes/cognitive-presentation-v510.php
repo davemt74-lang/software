@@ -106,6 +106,7 @@ function vp3_cognitive_presentation_notification_rows_v510(PDO $pdo,array $user,
     if($uid<1||!table_exists('notifications'))return [];
     try{
         $predicate=function_exists('notification_system_sql_predicate')?notification_system_sql_predicate('n'):'1=1';
+        if(function_exists('notification_gmail_inbox_scope_sql_v1'))$predicate.=' AND '.notification_gmail_inbox_scope_sql_v1($pdo,$user,'n');
         $s=$pdo->prepare("SELECT n.* FROM notifications n WHERE n.user_id=? AND n.id>? AND n.is_read=0 AND {$predicate} ORDER BY n.id ASC LIMIT {$limit}");
         $s->execute([$uid,max(0,$afterId)]);
         return $s->fetchAll()?:[];
@@ -181,7 +182,27 @@ function vp3_cognitive_presentation_open_digest_v510(PDO $pdo,array $user,string
 {
     $s=$pdo->prepare("SELECT * FROM cognitive_return_digests_v510 WHERE owner_user_id=? AND agent_namespace=? AND status='presented' ORDER BY id DESC LIMIT 1");
     $s->execute([(int)$user['id'],$namespace]);$row=$s->fetch();
-    return is_array($row)?vp3_cognitive_presentation_digest_public_v510($row):null;
+    if(!is_array($row))return null;
+    $digest=vp3_cognitive_presentation_digest_public_v510($row);
+    if(!function_exists('notification_is_gmail_inbox_review_v1')
+        || !array_filter($digest['items'],static fn($item):bool=>is_array($item)&&notification_is_gmail_inbox_review_v1($item)))return $digest;
+
+    $generation=agent_connection_gmail_inbox_notice_current_v1($pdo,$user);
+    $currentNotice=$generation!==null&&table_exists('notifications')?$pdo->prepare("SELECT 1 FROM notifications WHERE id=? AND user_id=?
+        AND type='agent_email_inbox_review' AND source_type='agent_connection_gmail_inbox' AND source_id=?"):null;
+    $items=array_values(array_filter($digest['items'],static function($item)use($user,$generation,$currentNotice):bool{
+        if(!is_array($item))return false;
+        if(!notification_is_gmail_inbox_review_v1($item))return true;
+        if(!$currentNotice||(int)($item['source_id']??0)!==$generation)return false;
+        $currentNotice->execute([(int)($item['id']??0),(int)$user['id'],$generation]);
+        return $currentNotice->fetchColumn()!==false;
+    }));
+    if(!$items)return null;
+    if(count($items)!==count($digest['items'])){
+        $digest['items']=$items;
+        $digest['summary']=vp3_cognitive_presentation_digest_summary_v510($items);
+    }
+    return $digest;
 }
 
 function vp3_cognitive_presentation_digest_v510(PDO $pdo,array $user,string $namespace,array $state): ?array
@@ -258,6 +279,7 @@ function vp3_cognitive_presentation_voice_sensitive_v510(array $row): bool
 
 function vp3_cognitive_presentation_voice_allowed_type_v510(array $row): bool
 {
+    if(function_exists('notification_is_gmail_inbox_review_v1')&&notification_is_gmail_inbox_review_v1($row))return false;
     if(vp3_cognitive_presentation_voice_sensitive_v510($row))return false;
     if(strtolower(trim((string)($row['source_type']??'')))==='tracky_event'&&function_exists('tracky_v272_notification_voice_allowed')){
         return tracky_v272_notification_voice_allowed($row);
@@ -319,6 +341,9 @@ function vp3_cognitive_presentation_voice_candidate_v510(PDO $pdo,array $user,ar
         if(empty($attention['voice'])){
             return ['skip_through_id'=>$maxId,'attention_reason'=>(string)($attention['reason_code']??'attention_policy')];
         }
+        // Inbox review counts are visual only, even alongside a voice-eligible update.
+        if($digest&&function_exists('notification_is_gmail_inbox_review_v1')
+            &&array_filter($digest['items']??[],static fn($item):bool=>is_array($item)&&notification_is_gmail_inbox_review_v1($item)))$digest=null;
         $message=$digest&&(int)($digest['idle_minutes']??0)>=VP3_COGNITIVE_DIGEST_ATTENTION_IDLE_MINUTES_V510
             ?vp3_cognitive_text_v500($digest['summary']??'',360)
             :vp3_cognitive_presentation_voice_text_v510($user,$eligible[0],count($eligible));

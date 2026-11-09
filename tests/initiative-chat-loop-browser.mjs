@@ -160,7 +160,10 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
 }
 
 try{
-  const digest={id:'away-report-1',created_at:'2026-10-30 14:01:00',summary:'One update came in.',items:[]};
+  const watchItem={title:'Gmail reply received',target_url:'/chat.php?conversation_id=42'};
+  const digest={id:'away-report-1',created_at:'2026-10-30 14:01:00',summary:'Two updates came in.',items:[
+    {title:'Gmail inbox review',body:'Reviewed 3 new Gmail messages.',target_url:'/connections.php?app=gmail#gmail-inbox-review'},watchItem
+  ]};
   const away=await fixture(17,{paused:true,returnDigest:digest});
   try{
     const page=await away.open();
@@ -203,6 +206,15 @@ try{
       thread.dataset.view='chat';
     });
     await report.waitFor();
+    assert.deepEqual(await sequence(),['1','21',digest.id,'22']);
+
+    const acknowledge=report.getByRole('button',{name:'Acknowledge'});
+    await acknowledge.focus();
+    away.setDigest({...digest,summary:'One update came in.',items:[watchItem]});
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    assert.equal(await report.getByText('Gmail inbox review',{exact:true}).count(),0);
+    assert.equal(await report.getByRole('link',{name:'Gmail reply received'}).count(),1);
+    assert.equal(await acknowledge.evaluate(button=>button===document.activeElement),true);
     assert.deepEqual(await sequence(),['1','21',digest.id,'22']);
 
     await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');

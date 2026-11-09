@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-connection-gmail-inbox-notice-v1.php';
+
 /**
  * Operational Agent activity uses the existing notifications table as a durable,
  * deduplicated carrier, but it belongs to the Agent Brain tab rather than the
@@ -42,6 +44,22 @@ function notification_system_sql_predicate(string $alias = ''): string
     return 'NOT ' . notification_agent_brain_sql_predicate($alias);
 }
 
+function notification_is_gmail_inbox_review_v1(array $row): bool
+{
+    return ($row['type'] ?? '') === 'agent_email_inbox_review'
+        || ($row['source_type'] ?? '') === 'agent_connection_gmail_inbox';
+}
+
+function notification_gmail_inbox_scope_sql_v1(PDO $pdo, array $user, string $alias = ''): string
+{
+    $prefix = $alias === '' ? '' : $alias.'.';
+    $generation = agent_connection_gmail_inbox_notice_current_v1($pdo,$user);
+    $other = "(COALESCE({$prefix}type,'')<>'agent_email_inbox_review'
+        AND COALESCE({$prefix}source_type,'')<>'agent_connection_gmail_inbox')";
+    return $generation === null ? $other : "({$other} OR ({$prefix}type='agent_email_inbox_review'
+        AND {$prefix}source_type='agent_connection_gmail_inbox' AND {$prefix}source_id={$generation}))";
+}
+
 /** Known legacy Profile rows require saved native source proof before display. */
 function notification_is_profile_source_pa4b(array $row): bool
 {
@@ -78,6 +96,7 @@ function notification_unread_count(?array $user = null): int
     try {
         $stmt = $pdo->prepare(
             'SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0 AND ' . notification_system_sql_predicate()
+                . ' AND ' . notification_gmail_inbox_scope_sql_v1($pdo,$user)
         );
         $stmt->execute([(int)$user['id']]);
         return (int)$stmt->fetchColumn();
@@ -102,7 +121,7 @@ function notification_recent(?array $user = null, int $limit = 8): array
     try {
         $stmt = $pdo->prepare(
             'SELECT * FROM notifications
-             WHERE user_id=? AND ' . notification_system_sql_predicate() . '
+             WHERE user_id=? AND ' . notification_system_sql_predicate() . ' AND ' . notification_gmail_inbox_scope_sql_v1($pdo,$user) . '
              ORDER BY created_at DESC,id DESC
              LIMIT ' . max(1, min(200, $limit))
         );
@@ -134,8 +153,11 @@ function notification_agent_brain_activity_after(?array $user, int $afterId = 0,
         SELECT 1 FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id
         WHERE m.id=n.source_id AND c.user_id=n.user_id AND c.user_agent_id=?
     )" : '';
+    $inbox = agent_connection_gmail_inbox_notice_current_v1($pdo,$user);
+    $inboxScope = $inbox === null ? '' : " OR (n.source_type='agent_connection_gmail_inbox'
+        AND n.type='agent_email_inbox_review' AND n.source_id={$inbox})";
     $connections = "((n.source_type='agent_connection_activation' AND n.type IN ('gmail_connected','youtube_enabled'))
-        OR (n.source_type='agent_connection_email_followup' AND n.type='agent_email_followup'{$followupScope}))";
+        OR (n.source_type='agent_connection_email_followup' AND n.type='agent_email_followup'{$followupScope}){$inboxScope})";
     $predicate = $agentId > 0 ? $connections : '(' . notification_agent_brain_sql_predicate('n') . " OR {$connections})";
     $scopeParams = $agentId > 0 ? [$agentId] : [];
     $limit = max(1, min(100, $limit));
@@ -173,6 +195,7 @@ function notification_requires_attention(array $notification): bool
 {
     // The dedicated reminder ledger already owns Chat delivery and spoken presentation.
     if (($notification['type'] ?? '') === 'personal_reminder') return false;
+    if (notification_is_gmail_inbox_review_v1($notification)) return false;
     if (notification_is_agent_brain_activity($notification)) return false;
 
     if (array_key_exists('requires_attention', $notification)) {

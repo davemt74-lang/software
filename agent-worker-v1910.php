@@ -154,6 +154,13 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         }
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.email_followup.sweep_failed',['error_class'=>get_class($e)]);}
     }
+    if(($executor==='all'||$executor==='cloud')&&table_exists('agent_connection_gmail_inbox_v1')){
+        try{
+            require_once __DIR__.'/includes/agent-connection-gmail-inbox-v1.php';
+            $counts['gmail_inbox_review']=agent_connection_gmail_inbox_sweep_v1($pdo,$ownerLimit);
+        }
+        catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.gmail_inbox.sweep_failed',['error_class'=>get_class($e)]);}
+    }
     if($executor==='all'||$executor==='cloud'){
         try{
             if(table_exists('agent_connection_youtube_results_v1')){
