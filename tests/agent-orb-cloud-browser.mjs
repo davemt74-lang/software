@@ -64,6 +64,55 @@ try{
     await page.locator('.vp3-orb-ball [data-orb-shape="orbit"]').waitFor();
     await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();
   });
+  await check('the floating orb shows distinct current jobs and bounds the number of visible tracks',async()=>{
+    const work=page.locator('.vp3-public-orb-work-tracks');
+    const status=page.locator('#vp3OrbJobsStatus');
+    assert.equal(await work.count(),0);
+    await page.evaluate(()=>{
+      const expiresAt=Date.now()+10000;
+      VP3AgentOrb.setJobs('initiative',[{id:'workflow:10',expiresAt},{id:'workflow:10',expiresAt}]);
+      VP3AgentOrb.setJobs('mission',[1,2,3,4,5].map(id=>({id:`mission:abc:${id}`,expiresAt})));
+      VP3AgentOrb.setJobs('image',[{id:'image:stale',expiresAt:1},{id:'workflow:foreign',expiresAt}]);
+    });
+    await page.locator('[data-orb-work-tracks="4"]').waitFor();
+    assert.equal(await status.textContent(),'6 jobs running');
+    assert.equal(await status.isVisible(),true);
+    assert.equal(await page.locator('.vp3-orb-ball').getAttribute('aria-describedby'),'vp3OrbJobsStatus');
+    const image=await work.evaluate(node=>node.toDataURL());
+    await page.waitForFunction(previous=>document.querySelector('.vp3-public-orb-work-tracks').toDataURL()!==previous,image);
+    await page.evaluate(()=>VP3AgentOrb.setJobs('mission',[]));
+    await page.locator('[data-orb-work-tracks="1"]').waitFor();
+    assert.equal(await status.textContent(),'1 job running');
+    await page.evaluate(()=>VP3AgentOrb.setJobs('initiative',[]));
+    await work.waitFor({state:'detached'});
+    assert.equal(await status.textContent(),'');
+  });
+  await check('same-account embedded job updates persist while the popup is closed and expire when stale',async()=>{
+    await page.locator('[data-orb-chat]').click();
+    const frame=await page.locator('iframe').elementHandle().then(node=>node.contentFrame());
+    await frame.waitForFunction(()=>document.documentElement.dataset.vp3OrbEmbed==='1');
+    const work=page.locator('.vp3-public-orb-work-tracks');
+    await frame.evaluate(()=>parent.postMessage({channel:'vp3-orb',kind:'jobs',ownerKey:'other',source:'image',jobs:[{id:'image:other',expiresAt:Date.now()+5000}]},location.origin));
+    await frame.evaluate(()=>VP3AgentOrb.setJobs('development',[{id:'development:local',expiresAt:Date.now()+1300}]));
+    await page.locator('[data-orb-work-tracks="1"]').waitFor();
+    await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();
+    assert.equal(await work.count(),1);
+    await work.waitFor({state:'detached'});
+  });
+  await check('job rings in reduced motion are static in either appearance',async()=>{
+    const still=await browser.newPage({reducedMotion:'reduce'});
+    try{
+      await still.goto(url);
+      await still.evaluate(()=>VP3AgentOrb.setJobs('initiative',[{id:'workflow:15',expiresAt:Date.now()+5000}]));
+      const work=still.locator('[data-orb-work-tracks="1"]');
+      await work.waitFor();
+      const before=await work.evaluate(node=>node.toDataURL());
+      await still.evaluate(()=>window.dispatchEvent(new CustomEvent('vp3:agent-orb-shape',{detail:{shape:'particle_face'}})));
+      await still.waitForTimeout(110);
+      assert.equal(await still.locator('[data-vp3-orb-work]').getAttribute('data-orb-shape'),'particle_face');
+      assert.equal(await work.evaluate(node=>node.toDataURL()),before);
+    }finally{await still.close();}
+  });
   for(const viewport of [{width:1280,height:850},{width:390,height:844}]){
     const main=await context.newPage();await main.setViewportSize(viewport);main.on('pageerror',e=>errors.push(e.message));await main.goto(url+'?main=1');await main.waitForFunction(()=>window.VP3AgentOrb?.open);
     await check(`Cloud Chat footer opens live conversation at ${viewport.width}px without duplicating composer or voice`,async()=>{await main.locator('#chatInput').fill('Keep this draft');await main.locator('[data-orb-chat]').click();await main.locator('#vp3AgentChatPopup').waitFor({state:'visible'});const box=await main.locator('#vp3AgentChatPopup').boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=viewport.width&&box.y+box.height<=viewport.height);assert.equal(await main.locator('#vp3AgentChatPopup #chatThread .message').innerText(),'Existing conversation');assert.equal(await main.locator('#chatThread').getAttribute('data-view'),'chat');assert.equal(await main.locator('iframe').count(),0);assert.equal(await main.locator('#chatForm').count(),1);assert.equal(await main.locator('#chatVoiceButton').count(),1);assert.equal(await main.locator('#chatInput').inputValue(),'Keep this draft');assert.equal(await main.evaluate(()=>document.getElementById('chatInput')===originalInput&&document.getElementById('chatThread')===originalThread&&sent===0),true);});

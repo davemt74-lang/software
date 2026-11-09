@@ -14,7 +14,7 @@ function gate(){
   return {arrived:new Promise(resolve=>{arrive=resolve;}),released:new Promise(resolve=>{release=resolve;}),arrive:()=>arrive(),release:()=>release()};
 }
 
-async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false}={}){
+async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,activeJobs=[]}={}){
   const context=await browser.newContext();
   const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[];
   const histories=new Map([[42,[{id:1,role:'assistant',message:'Restored private conversation'}]],
@@ -24,7 +24,8 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     reason:runtimeUnavailable?'context_unavailable':!exists?'automatic_startup':policy?(cid!==policyCid?'linked_elsewhere':blockedReason||'worker_missing'):'initiative_paused',enabled:!runtimeUnavailable&&policy&&cid===policyCid,
     paused:exists&&!policy,policy_exists:exists,
     agent_id:agentId,conversation_id:cid,policy_revision:runtimeUnavailable?'':policyRevision,configuration_ready:!runtimeUnavailable,execution_ready:!runtimeUnavailable&&policy&&!blockedReason&&cid===policyCid,
-    knowledge_scope:{mode:'off',folder_id:0},runner_state:'never_seen'});
+    knowledge_scope:{mode:'off',folder_id:0},runner_state:'never_seen',
+    active_jobs:!runtimeUnavailable&&policy&&cid===policyCid?activeJobs:[]});
   await context.addInitScript(()=>{
     window.speechCalls=0;window.announcementCalls=0;
     window.SpeechRecognition=undefined;window.webkitSpeechRecognition=undefined;
@@ -34,6 +35,14 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,stop(){},createStream(){}});
     window.StonefellowKnowledgeScopeV162={value:()=>({mode:'folder',folder_id:12})};
     window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',isMainChat:()=>true,state:()=>({state:document.body.dataset.stonefellowAgentState||'idle'})};
+    window.addEventListener('vp3:agent-orb-ready',()=>{
+      const orb=window.VP3AgentOrb;
+      const setJobs=orb.setJobs;
+      orb.setJobs=(source,jobs)=>{
+        if(source==='initiative')window.initiativeOrbJobs=jobs;
+        setJobs?.call(orb,source,jobs);
+      };
+    },{once:true});
   });
   await context.route(origin+'/**',async route=>{
     const request=route.request(),url=new URL(request.url());
@@ -157,6 +166,37 @@ try{
     await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
     console.log('PASS first health is pending rather than unavailable; accepted activity repairs it and an older presentation read cannot replace it');
   }finally{await startup.context.close();}
+
+  const expiresAt=Date.now()+240000;
+  const running=await fixture(17,{enabled:true,activeJobs:[
+    {id:'workflow:71',expiresAt,private_detail:'Never send this to the orb'},
+    {id:'workflow:72',expiresAt}, {id:'workflow:73',expiresAt:1}, {id:'bad:74',expiresAt}
+  ]});
+  try{
+    const page=await running.open();
+    const status=page.locator('[data-agent-initiative-status]');
+    await page.waitForFunction(()=>window.initiativeOrbJobs?.length===2);
+    assert.deepEqual(await page.evaluate(()=>window.initiativeOrbJobs),[
+      {id:'workflow:71',expiresAt},{id:'workflow:72',expiresAt}
+    ]);
+    await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+    running.presentationFails(true);
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    await page.waitForFunction(()=>window.initiativeOrbJobs?.length===0);
+    running.presentationFails(false);
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+    await page.waitForFunction(()=>window.initiativeOrbJobs?.length===2);
+    await status.getByRole('button',{name:'Pause',exact:true}).click();
+    await status.getByRole('button',{name:'Resume',exact:true}).waitFor();
+    assert.deepEqual(await page.evaluate(()=>window.initiativeOrbJobs),[]);
+    await status.getByRole('button',{name:'Resume',exact:true}).click();
+    await page.waitForFunction(()=>window.initiativeOrbJobs?.length===2);
+    assert.deepEqual(await page.evaluate(()=>{
+      window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+      return window.initiativeOrbJobs;
+    }),[]);
+    console.log('PASS only live, scoped Initiative leases reach the orb; failed reads, pauses and Chat changes clear them');
+  }finally{await running.context.close();}
 
   const denied=await fixture(17,{runtimeUnavailable:true});
   try{

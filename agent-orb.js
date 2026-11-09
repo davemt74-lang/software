@@ -1,5 +1,16 @@
 (function(){
   'use strict';
+  const jobPrefixes={initiative:'workflow:',image:'image:',development:'development:',mission:'mission:'};
+  function normalizeJobs(source,jobs){
+    if(typeof source!=='string'||!Object.hasOwn(jobPrefixes,source)||!Array.isArray(jobs))return null;
+    const now=Date.now(),prefix=jobPrefixes[source];
+    return jobs.slice(0,64).flatMap(job=>{
+      const {id,expiresAt}=job||{};
+      if(typeof id!=='string'||!id.startsWith(prefix)||id.length===prefix.length||!/^[a-z0-9:-]{1,120}$/.test(id)
+        ||!Number.isSafeInteger(expiresAt)||expiresAt<=now)return [];
+      return [{id,expiresAt:Math.min(expiresAt,now+120000)}];
+    });
+  }
   const boot=()=>{
     const adapter=window.VP3_ORB_ADAPTER;if(!adapter||window.VP3AgentOrb)return;
     const $=id=>document.getElementById(id),embed=new URLSearchParams(location.search).get('orb_embed')==='1'&&parent!==window;
@@ -55,6 +66,10 @@
       window.VP3AgentOrb={
         openEyesGallery:()=>parent.postMessage({channel:'vp3-orb',kind:'open-eyes-gallery'},origin),
         participantSignal:(kind,value)=>{if(['speaker','task-heard','attribution-start','reject','selection'].includes(kind))parent.postMessage({channel:'vp3-orb',kind:'participant-'+kind,value},origin);},
+        setJobs(source,jobs){
+          const active=normalizeJobs(source,jobs);
+          if(active)parent.postMessage({channel:'vp3-orb',kind:'jobs',ownerKey:adapter.ownerKey,source,jobs:active},origin);
+        },
         setInitiativeStatus(view,onAction){
           initiativeAction=view&&typeof onAction==='function'?onAction:null;
           parent.postMessage({channel:'vp3-orb',kind:'initiative-status',ownerKey:adapter.ownerKey,view},origin);
@@ -67,19 +82,59 @@
     }
     const root=document.createElement('aside');root.className='vp3-orb-root';root.dataset.state='idle';
     root.innerHTML='<div class="vp3-orb-bubble" role="status" hidden></div>'
-      +'<button type="button" class="vp3-orb-ball" aria-label="Open Agent Chat"><span class="vp3-public-orb" data-vp3-public-orb data-vp3-orb-personal aria-hidden="true"></span></button>'
-      +'<span class="vp3-orb-state">Ready</span><div class="vp3-orb-controls"><button type="button" data-orb-stop>Stop</button><button type="button" data-orb-eyes>Eyes</button><button type="button" data-orb-brain>Brain</button><button type="button" data-orb-size aria-label="Minimize agent">−</button></div>'
+      +'<button type="button" class="vp3-orb-ball" aria-label="Open Agent Chat"><span class="vp3-public-orb" data-vp3-public-orb data-vp3-orb-personal data-vp3-orb-work aria-hidden="true"></span></button>'
+      +'<span class="vp3-orb-state"><span data-orb-voice-state>Ready</span><span id="vp3OrbJobsStatus" role="status"></span></span><div class="vp3-orb-controls"><button type="button" data-orb-stop>Stop</button><button type="button" data-orb-eyes>Eyes</button><button type="button" data-orb-brain>Brain</button><button type="button" data-orb-size aria-label="Minimize agent">−</button></div>'
       +'<section class="vp3-orb-initiative" data-agent-initiative-status aria-label="Agent background work" hidden>'
       +'<div id="vp3OrbInitiativeDetails"><strong></strong><small hidden></small></div>'
       +'<div class="vp3-orb-initiative-actions"><button type="button" hidden></button><button type="button" data-agent-initiative-retry hidden>Retry</button></div></section>';
-    root.querySelector('[data-vp3-public-orb]').dataset.orbShape=window.VP3_ORB_CONFIG?.shape==='particle_face'?'particle_face':'orbit';
+    const orbVisual=root.querySelector('[data-vp3-orb-work]');
+    orbVisual.dataset.orbShape=window.VP3_ORB_CONFIG?.shape==='particle_face'?'particle_face':'orbit';
     document.body.append(root);
     const panel=document.createElement('section');panel.className='vp3-orb-panel';panel.id='vp3AgentChatPopup';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Agent Chat');
     panel.innerHTML='<header><strong>Agent Chat</strong><a>Full chat ↗</a><button type="button" aria-label="Close Agent Chat">×</button></header><div class="vp3-orb-chat-host"></div>';panel.querySelector('a').href=adapter.chatUrl;document.body.append(panel);
-    const host=panel.querySelector('.vp3-orb-chat-host'),ball=root.querySelector('.vp3-orb-ball'),label=root.querySelector('.vp3-orb-state');
+    const host=panel.querySelector('.vp3-orb-chat-host'),ball=root.querySelector('.vp3-orb-ball'),label=root.querySelector('[data-orb-voice-state]');
     const initiative=root.querySelector('.vp3-orb-initiative'),initiativeLabel=initiative.querySelector('strong'),initiativeDetail=initiative.querySelector('small');
     const [initiativeSetting,initiativeRetry]=initiative.querySelectorAll('button');
+    const jobStatus=root.querySelector('#vp3OrbJobsStatus'),jobSnapshots=new Map();
+    let jobExpiryTimer=0;
     let initiativeAction=null;
+    function describeOrb(){
+      const descriptions=[];
+      if(!initiative.hidden)descriptions.push('vp3OrbInitiativeDetails');
+      if(jobStatus.textContent)descriptions.push(jobStatus.id);
+      if(descriptions.length)ball.setAttribute('aria-describedby',descriptions.join(' '));
+      else ball.removeAttribute('aria-describedby');
+    }
+    function refreshJobs(){
+      clearTimeout(jobExpiryTimer);
+      const now=Date.now(),ids=new Set();
+      let nextExpiry=Infinity;
+      for(const [source,jobs] of jobSnapshots){
+        const active=jobs.filter(job=>job.expiresAt>now);
+        if(active.length)jobSnapshots.set(source,active);
+        else jobSnapshots.delete(source);
+        for(const job of active){ids.add(job.id);nextExpiry=Math.min(nextExpiry,job.expiresAt);}
+      }
+      const visible=Array.from(ids).sort().slice(0,4).join(',');
+      if(visible!==orbVisual.dataset.orbJobIds){
+        if(visible)orbVisual.dataset.orbJobIds=visible;
+        else delete orbVisual.dataset.orbJobIds;
+      }
+      const summary=ids.size ? `${ids.size} ${ids.size===1?'job':'jobs'} running` : '';
+      if(summary!==jobStatus.textContent){
+        jobStatus.textContent=summary;
+        root.toggleAttribute('data-orb-jobs-active',!!summary);
+        describeOrb();
+        if(!initiative.hidden&&(root.matches(':hover,:focus-within')||root.dataset.controlsOpen==='true'))positionInitiative();
+      }
+      if(Number.isFinite(nextExpiry))jobExpiryTimer=setTimeout(refreshJobs,Math.max(1,nextExpiry-now));
+    }
+    function setJobs(source,jobs){
+      const active=normalizeJobs(source,jobs);
+      if(!active||disposed)return;
+      jobSnapshots.set(source,active);
+      refreshJobs();
+    }
     function positionInitiative(){
       if(initiative.hidden)return;
       const bounds=root.getBoundingClientRect(),width=Math.min(308,Math.max(1,innerWidth-24));
@@ -96,7 +151,7 @@
         initiativeLabel.textContent='';initiativeDetail.textContent='';
         initiativeSetting.hidden=true;delete initiativeSetting.dataset.agentInitiativeSetting;
         initiativeRetry.hidden=true;
-        ball.removeAttribute('aria-describedby');
+        describeOrb();
         return;
       }
       initiativeAction=typeof onAction==='function'?onAction:null;
@@ -110,7 +165,7 @@
       initiativeSetting.textContent=setting==='off'?'Pause':'Resume';
       initiativeRetry.hidden=!initiativeAction||view.retry!==true;initiativeRetry.disabled=view.retryBusy===true;
       initiative.hidden=false;
-      ball.setAttribute('aria-describedby','vp3OrbInitiativeDetails');
+      describeOrb();
       if(root.matches(':hover,:focus-within')||root.dataset.controlsOpen==='true')positionInitiative();
     }
     initiativeSetting.addEventListener('click',()=>initiativeAction?.(initiativeSetting.dataset.agentInitiativeSetting));
@@ -163,6 +218,7 @@
       const data=event.data;if(data.kind==='ready'){ready=true;if(pendingListen){pendingListen=false;command('listen');}if(pendingReplyWindow){pendingReplyWindow=false;command('response-window');}if(pendingText)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'compose',text:pendingText},origin);if(pendingVoiceEnrollment){frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id:pendingVoiceEnrollment},origin);pendingVoiceEnrollment='';}}
       if(data.kind==='agent-orb-shape'&&String(data.ownerKey)===String(adapter.ownerKey)
         &&(data.shape==='orbit'||data.shape==='particle_face'))window.dispatchEvent(new CustomEvent('vp3:agent-orb-shape',{detail:{shape:data.shape}}));
+      if(data.kind==='jobs'&&String(data.ownerKey)===String(adapter.ownerKey))setJobs(data.source,data.jobs);
       if(data.kind==='voice-filter-status')window.dispatchEvent(new CustomEvent('vp3:voice-filter-remote-status',{detail:{message:String(data.message||'').slice(0,300)}}));
       if(data.kind==='open-eyes-gallery'){const panel=document.querySelector('.vp3-eyes-panel');if(panel?.hidden)window.VP3AgentEyes?.toggle?.();document.querySelector('.vp3-eyes-portraits')?.scrollIntoView({block:'nearest'});}
       if(data.kind==='user-turn')void Promise.resolve(window.VP3AgentEyes?.hear?.(String(data.text||'').slice(0,240),{voice:data.voice===true,known_voice:data.known_voice===true})).finally(()=>{if(typeof data.photoRoute==='string'&&data.photoRoute.length<=64)frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'photo-reply-complete',id:data.photoRoute},origin);}).catch(()=>{});
@@ -182,7 +238,13 @@
       if(data.kind==='draft-accepted'){const input=bar?.querySelector('input');if(input&&input.value===pendingText){input.value='';try{sessionStorage.removeItem(draftKey);}catch(_){}}pendingText='';}
       if(data.kind==='draft-blocked'){pendingText='';bubble('Your existing draft is in the chat popup. Your chatbar message is still here.');}
     }
-    function render(raw){const s=window.VP3EyesCore.visualState(raw);root.dataset.state=s.state;root.dataset.recording=String(s.recording);label.textContent=(s.recording?'Recording · ':'')+({idle:'Ready',listening:'Listening',thinking:'Thinking',speaking:'Speaking',connecting:'Connecting',error:'Needs attention'}[s.state]||'Ready');ball.setAttribute('aria-label',`Agent: ${label.textContent}. Open chat`);}
+    function render(raw){
+      const s=window.VP3EyesCore.visualState(raw),recording=String(s.recording);
+      if(root.dataset.state===s.state&&root.dataset.recording===recording)return;
+      root.dataset.state=s.state;root.dataset.recording=recording;
+      label.textContent=(s.recording?'Recording · ':'')+({idle:'Ready',listening:'Listening',thinking:'Thinking',speaking:'Speaking',connecting:'Connecting',error:'Needs attention'}[s.state]||'Ready');
+      ball.setAttribute('aria-label',`Agent: ${label.textContent}. Open chat`);
+    }
     function bubble(text){const node=root.querySelector('.vp3-orb-bubble');node.textContent=String(text).slice(0,600);node.hidden=false;clearTimeout(bubbleTimer);bubbleTimer=setTimeout(()=>{node.hidden=true;},14000);}
     let bubbleTimer=0,drag=null,dragged=false,motionFrame=0,followTarget=null,manualUntil=0;
     const reduced=matchMedia('(prefers-reduced-motion: reduce)');
@@ -223,9 +285,9 @@
     window.addEventListener('message',message);window.addEventListener('resize',resize);document.addEventListener('keydown',escape);
     timer=setInterval(()=>{if(!frame){const ref=adapter.conversationRef?.();if(ref)rememberRef(ref);const next=state(),json=JSON.stringify(next);if(json!==lastState){render(next);lastState=json;}}},200);
     window.addEventListener('vp3:participant-photo-state',event=>{const d=event.detail||{};if(['waiting','capturing','saving','saved','failed','deferred'].includes(d.state)&&typeof d.message==='string')frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'participant-photo-state',value:{state:d.state,message:d.message.slice(0,500)}},origin);});
-    window.VP3AgentOrb={open,close,toggle,bubble,state,follow,setInitiativeStatus,listenForResponse:()=>{const voice=window.VP3ConversationControls||(document.getElementById('chatForm')&&window.HomeServerConversationVoice);if(voice)return voice.responseWindow?.();open();if(ready)command('response-window');else pendingReplyWindow=true;return true;},cancelResponseWindow:()=>{pendingReplyWindow=false;if(frame)command('response-window-cancel');else window.VP3ConversationControls?.cancelResponseWindow?.();},participantSignal:(kind,value)=>{if(['presence','reject','invalidate','selection'].includes(kind))frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'participant-'+kind,value},origin);},setIntroductionMode:mode=>{introductionMode=mode;window.VP3VoiceGuard?.inviteIntroduction(mode);frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'introduction-window',mode},origin);},startVoiceEnrollment:id=>{if(adapter.attachChat||adapter.isMainChat?.())return false;open();if(ready)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id},origin);else pendingVoiceEnrollment=id;return true;},cancelVoiceEnrollment:()=>{pendingVoiceEnrollment='';frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'voice-enroll-cancel'},origin);},stop:()=>command('stop')};
+    window.VP3AgentOrb={open,close,toggle,bubble,state,follow,setInitiativeStatus,setJobs,listenForResponse:()=>{const voice=window.VP3ConversationControls||(document.getElementById('chatForm')&&window.HomeServerConversationVoice);if(voice)return voice.responseWindow?.();open();if(ready)command('response-window');else pendingReplyWindow=true;return true;},cancelResponseWindow:()=>{pendingReplyWindow=false;if(frame)command('response-window-cancel');else window.VP3ConversationControls?.cancelResponseWindow?.();},participantSignal:(kind,value)=>{if(['presence','reject','invalidate','selection'].includes(kind))frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'participant-'+kind,value},origin);},setIntroductionMode:mode=>{introductionMode=mode;window.VP3VoiceGuard?.inviteIntroduction(mode);frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'introduction-window',mode},origin);},startVoiceEnrollment:id=>{if(adapter.attachChat||adapter.isMainChat?.())return false;open();if(ready)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id},origin);else pendingVoiceEnrollment=id;return true;},cancelVoiceEnrollment:()=>{pendingVoiceEnrollment='';frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'voice-enroll-cancel'},origin);},stop:()=>command('stop')};
     window.dispatchEvent(new Event('vp3:agent-orb-ready'));
-    window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);clearTimeout(bubbleTimer);cancelAnimationFrame(motionFrame);document.removeEventListener('pointerdown',touchControls);window.removeEventListener('message',message);window.removeEventListener('resize',resize);document.removeEventListener('keydown',escape);adapter.stop?.();},{once:true});
+    window.addEventListener('pagehide',()=>{disposed=true;jobSnapshots.clear();refreshJobs();clearInterval(timer);clearTimeout(bubbleTimer);cancelAnimationFrame(motionFrame);document.removeEventListener('pointerdown',touchControls);window.removeEventListener('message',message);window.removeEventListener('resize',resize);document.removeEventListener('keydown',escape);adapter.stop?.();},{once:true});
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

@@ -68,10 +68,15 @@ function vp3_image_view_v1(PDO $pdo,array $user,array $row): array
 {
     vp3_image_authority_v1($pdo,$user,$row);$run=vp3_image_run_v1($pdo,$user,$row);
     $config=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);$status=match($run['status']){'approved','queued'=>'queued','executing'=>'generating',default=>$run['status']};
+    $activeLeaseExpiresAt=null;
+    if($run['status']==='executing'&&(int)($run['current_action_id']??0)>0&&!empty($run['lease_token'])){
+        $expires=strtotime((string)($run['lease_expires_at']??'').' UTC');
+        if($expires!==false&&$expires>time())$activeLeaseExpiresAt=$expires*1000;
+    }
     $asset=null;if($status==='completed'&&(int)$row['asset_id']>0){$saved=media_studio_asset((int)$row['asset_id'],$user);if($saved)$asset=media_studio_asset_payload($saved);if(!$asset||!$asset['available'])$status='file_unavailable';}
     $messages=['provider_access_denied'=>'OpenAI denied this image request. Check image-model access for the saved API key.','provider_rate_limited'=>'OpenAI rate-limited the image request. It was not automatically retried.','provider_request_rejected'=>'OpenAI rejected the image request. Revise the prompt or check the image settings.','subscription_required'=>'The account needs sufficient AI quota before generating an image.','provider_unavailable'=>'Image generation is disabled or the saved OpenAI key is unavailable.','provider_usage_unconfirmed'=>'OpenAI did not return verifiable usage. The request was not automatically retried.','quota_preflight_failed'=>'The AI quota check did not complete. No image request was sent to OpenAI.','image_storage_unavailable'=>'The generated image could not be saved in private storage. The request was not automatically retried.','image_source_changed'=>'The selected screen capture changed or was removed. No edited image was saved.','marketing_source_changed'=>'The reviewed marketing variant or product photo changed. No image was saved.'];
     $error=$row['error_code'];$message=$error!==''?($messages[$error]??'The image result could not be confirmed. The provider may already have processed the request; it was not automatically retried.'):($status==='failed'?'The image job stopped without a confirmed result. It was not automatically retried.':'');
-    return ['id'=>$row['generation_id'],'title'=>$config['title'],'prompt'=>$config['prompt'],'model'=>$config['model'],'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'status'=>$status,'message'=>$message,'asset'=>$asset,'job_id'=>(int)$row['run_id'],'provider_started'=>$row['provider_started_at']!=='','created_at'=>$row['created_at'],
+    return ['id'=>$row['generation_id'],'title'=>$config['title'],'prompt'=>$config['prompt'],'model'=>$config['model'],'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'status'=>$status,'message'=>$message,'asset'=>$asset,'job_id'=>(int)$row['run_id'],'provider_started'=>$row['provider_started_at']!=='','created_at'=>$row['created_at'],'active_lease_expires_at'=>$activeLeaseExpiresAt,
         ...(isset($config['mode'])?['mode'=>$config['mode']]:[])];
 }
 

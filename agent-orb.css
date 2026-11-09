@@ -152,8 +152,9 @@ html[data-vp3-orb-embed] .sidebar,html[data-vp3-orb-embed] .topbar,html[data-vp3
 .vp3-orb-initiative-actions { display:flex;gap:6px; }
 .vp3-orb-initiative-actions button { min-height:32px;padding:3px 10px;font-size:12px; }
 .vp3-orb-initiative-actions button:disabled { opacity:.65;cursor:wait; }
-.vp3-orb-root[data-state=idle]:not([data-recording=true]):not([data-eyes-active=true]):not(:hover):not(:focus-within):not([data-controls-open=true]) .vp3-orb-state {
+.vp3-orb-root[data-state=idle]:not([data-recording=true]):not([data-eyes-active=true]):not([data-orb-jobs-active]):not(:hover):not(:focus-within):not([data-controls-open=true]) .vp3-orb-state {
   visibility:hidden;
 }
+#vp3OrbJobsStatus:not(:empty)::before { content:' · '; }
 @media(pointer:coarse) { .vp3-orb-initiative-actions button { min-height:44px; } }
 @media(prefers-reduced-motion:reduce) { .vp3-orb-initiative { transition:none; } }

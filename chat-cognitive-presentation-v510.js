@@ -323,7 +323,18 @@
   }
 
   function updateOrbInitiativeStatus() {
-    window.VP3AgentOrb?.setInitiativeStatus?.(initiativeRuntimeStatus(), useOrbInitiativeAction);
+    const orb = window.VP3AgentOrb;
+    orb?.setInitiativeStatus?.(initiativeRuntimeStatus(), useOrbInitiativeAction);
+    if (!orb?.setJobs) return;
+    const health = cfg.initiativeRuntime === true && liveState && !initiativeHealthError && !initiativeSettingBusy
+      && !window.VP3ParticipantContinuity?.selectedContext?.()
+      ? initiativeHealth() : null;
+    const now = Date.now();
+    const jobs = health?.enabled === true && Array.isArray(health.active_jobs) ? health.active_jobs.slice(0,25)
+      .filter(job => typeof job?.id === 'string' && /^workflow:[1-9]\d{0,19}$/.test(job.id)
+        && Number.isSafeInteger(job.expiresAt) && job.expiresAt > now)
+      .map(({id,expiresAt}) => ({id,expiresAt})) : [];
+    orb.setJobs('initiative', jobs);
   }
 
   function liveSourceLink(item) {
@@ -1254,8 +1265,10 @@
       if (!signal.aborted) {
         renderBriefError(error);
         if (liveRequestIsCurrent()) {
-          if (!initiativeHealth()) initiativeHealthError = 'The Agent’s first status check could not be completed.';
-          renderLiveContext({state:'unavailable',initiative:{...liveState?.initiative,runtime:initiativeHealth()}});
+          const health = initiativeHealth();
+          if (!health) initiativeHealthError = 'The Agent’s first status check could not be completed.';
+          renderLiveContext({state:'unavailable',initiative:{...liveState?.initiative,
+            runtime:health && {...health,active_jobs:[]}}});
         }
       }
     } finally {
@@ -1371,6 +1384,7 @@
   });
   if (liveHost) {
     window.addEventListener('vp3:agent-orb-ready',updateOrbInitiativeStatus);
+    window.addEventListener('vp3:participant-task-context',updateOrbInitiativeStatus);
     window.addEventListener('vp3:agent-core-context',acceptCoreContext);
     window.addEventListener('vp3:agent-core-context-error',acceptCoreContextError);
     const acceptedCoreContext = window.StonefellowAgentActivity?.coreContext?.();
