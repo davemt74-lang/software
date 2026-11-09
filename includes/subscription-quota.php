@@ -20,8 +20,8 @@ function subscription_package_allowance(array $subscription): int
 function subscription_quota_current(int $userId,PDO $pdo,bool $forUpdate,string $now): ?array
 {
     $subscription=subscription_current_for_user_id($userId,$pdo,$forUpdate);
-    if($subscription&&subscription_lifecycle_local_period_due($subscription,$now)
-        && subscription_lifecycle_refresh_user_period($userId,$pdo)){
+    if($subscription&&subscription_lifecycle_local_period_due($subscription,$now)){
+        subscription_lifecycle_refresh_user_period($userId,$pdo);
         return subscription_current_for_user_id($userId,$pdo,$forUpdate);
     }
     return $subscription;
