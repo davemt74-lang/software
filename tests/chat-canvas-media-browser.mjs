@@ -9,8 +9,9 @@ let id='11111111-1111-4111-8111-111111111111',status='queued',denied=false,tickR
 const specialistPrompt = 'Create a paper lighthouse at sunset';
 const marketingPrefill = {level:7,prompt:'put it on a café counter'};
 let specialistMessages = [];
+const orbStatuses=new Map();
 const asset={id:1,title:'Desert <img src=x onerror=alert(1)>',media_type:'photo',mime_type:'image/png',source:'openai_image',available:true,url:'/media-library-file-v86.php?id=1',editor_url:'/video-editor.php?asset=1'};
-const generation=()=>({id,title:'Desert artwork',prompt:'Cinematic desert <img src=x>',model:'gpt-image-2.5-flare',size:'1024x1024',quality:'medium',background:'opaque',status,message:status==='failed'?'The provider result was not confirmed. No automatic retry.':'',provider_started:status!=='queued',asset:status==='completed'?asset:null});
+const generation=(jobId=id,jobStatus=status)=>({id:jobId,title:'Desert artwork',prompt:'Cinematic desert <img src=x>',model:'gpt-image-2.5-flare',size:'1024x1024',quality:'medium',background:'opaque',status:jobStatus==='expired'?'generating':jobStatus,message:jobStatus==='failed'?'The provider result was not confirmed. No automatic retry.':'',provider_started:jobStatus!=='queued',asset:jobStatus==='completed'?asset:null,active_lease_expires_at:jobStatus==='generating'?Date.now()+30000:jobStatus==='expired'?Date.now()-1000:null});
 const html='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="chat-app"><aside class="chat-sidebar"><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside><main class="chat-main"><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section><div class="chat-composer-shell" id="chatComposerShell"><form class="chat-composer" id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form></div></main></div><aside class="sf-online-rail-v109" id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside></body></html>';
 await page.route('https://images.test/',r=>r.fulfill({contentType:'text/html',body:html}));
 await page.route('**/media-library-file-v86.php?**',r=>r.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64')}));
@@ -19,11 +20,19 @@ await page.route('**/api/**',async r=>{
  const ok=x=>r.fulfill({json:{ok:true,...x}});
  if(path==='/api/chat-canvas-media-v1.php'){
   if(denied)return r.fulfill({status:403,json:{ok:false,error:'Media access changed.'}});
+  if(mode==='orb-jobs'){
+   const jobStatus=orbStatuses.get(p.generation_id);
+   if(jobStatus==='error')return r.fulfill({status:503,json:{ok:false,error:'Image status unavailable.'}});
+   return ok({generation:generation(p.generation_id,jobStatus)});
+  }
   if(p.action==='assets')return ok({assets:mode==='hostile'?[{...asset,url:'https://foreign.test/secret.png'}]:[{...asset,available:mode!=='missing'}]});
   if(p.action==='tick'){if(status==='queued'&&mode!=='specialist')status='generating';await tickGate;return ok({generation:generation()});}
   if(p.action==='cancel')status='cancelled';
   return ok({generation:generation()});
  }
+ if(p.action==='load'&&mode==='orb-jobs')return ok({messages:p.conversation_id===42?Array.from(orbStatuses.keys(),(jobId,index)=>({
+  id:30+index,role:'assistant',message:'Your requested media.',context_json:JSON.stringify({canvas_media:{generation_ids:[jobId]}})
+ })):[]});
  if(p.action==='load')return ok({messages:mode==='specialist'
    ? (p.conversation_id===42 ? specialistMessages : [])
    : [{id:10,role:'assistant',message:'Your requested media.',context_json:JSON.stringify({canvas_media:mode==='generation'?{asset_ids:[],generation_ids:[id]}:{asset_ids:[1],generation_ids:[],...(mode==='marketing'?{marketing_prefill:marketingPrefill}:{})}})}]});
@@ -38,13 +47,16 @@ await page.route('**/api/**',async r=>{
  return ok({conversations:[],items:[],tracks:[],updates:[]});
 });
 await page.route('**/*.js?**',r=>r.fulfill({contentType:'text/javascript',body:''}));
-async function boot(){
+async function boot(withOrb=true){
  await page.goto('https://images.test/');
- await page.evaluate(()=>{
+ await page.evaluate(withOrb=>{
   window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat.php',csrf:'fixture',initialView:'chat',initialConversationId:42};
-  window.VP3_CANVAS_MEDIA_V1={endpoint:'/api/chat-canvas-media-v1.php',csrf:'fixture',agentId:7};
+  window.VP3_CANVAS_MEDIA_V1={endpoint:'/api/chat-canvas-media-v1.php',csrf:'fixture',userId:1,agentId:7};
   window.VP3InitiativeWorkbench={open:(...args)=>{window.marketingWorkbenchArgs=args;}};
- });
+  window.orbJobs=[];
+  window.mountFixtureOrb=()=>{window.VP3AgentOrb={setJobs:(source,jobs)=>{if(source==='image')window.orbJobs=jobs;}};};
+  if(withOrb)window.mountFixtureOrb();
+ },withOrb);
  for (const file of ['chat.css','team-chat-v109.css','chat-specialist-rail-v1.css','chat-canvas-media-v1.css']) {
   await page.addStyleTag({content:await source(file)});
  }
@@ -58,6 +70,8 @@ const panel = page.locator('[data-chat-specialist-panel="image-generator"]');
 const readyMessage = page.getByText('Image Generator finished. Your image is ready.', {exact:true});
 const cardFor = generationId => page.locator(`#chatThread .message.assistant .vp3-canvas-media-card[data-generation-id="${generationId}"]`);
 const tickCount = generationId => calls.filter(call => call.action==='tick' && call.generation_id===generationId).length;
+const expectOrbJobs = (...ids) => page.waitForFunction(ids => window.orbJobs.length===ids.length
+ && ids.every(id => window.orbJobs.some(job => job.id===`image:${id}`&&job.expiresAt>Date.now()&&job.expiresAt<=Date.now()+7500)),ids);
 async function assertInlineOnly(card, progress) {
  await card.getByRole('status').filter({hasText:progress}).waitFor();
  // Wait for the media-query handler to finish retiring the desktop controls.
@@ -85,6 +99,7 @@ async function startNewImage(generationId, {desktop=true} = {}) {
   await panel.waitFor();
   await panel.getByText(/queued/i).waitFor();
  } else await assertInlineOnly(card,/queued/i);
+ await expectOrbJobs();
  status='generating';
  await card.getByText('Generating image…',{exact:true}).waitFor();
  return card;
@@ -217,7 +232,30 @@ try{
   assert.equal(await readyMessage.count(),0);
   assert.equal(await specialist.isVisible(),false);
   assert.equal(await panel.isVisible(),false);
+  await expectOrbJobs();
   assert.deepEqual(errors,[]);
+ });
+ await check('the orb receives a complete private image snapshot and clears expired, completed, and unverified jobs', async () => {
+  mode='orb-jobs';
+  const first='77777777-7777-4777-8777-777777777777', second='88888888-8888-4888-8888-888888888888';
+  orbStatuses.set(first,'generating');orbStatuses.set(second,'generating');
+  await boot(false);
+  await page.waitForFunction(() => window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady());
+  await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  await cardFor(first).getByText('Generating image…',{exact:true}).waitFor();
+  await cardFor(second).getByText('Generating image…',{exact:true}).waitFor();
+  assert.deepEqual(await page.evaluate(()=>window.orbJobs),[]);
+  await page.evaluate(()=>{window.mountFixtureOrb();window.dispatchEvent(new Event('vp3:agent-orb-ready'));});
+  await expectOrbJobs(first,second);
+  orbStatuses.set(second,'expired');
+  await expectOrbJobs(first);
+  assert.equal(await cardFor(second).getByText('Generating image…',{exact:true}).count(),1);
+  orbStatuses.set(first,'completed');orbStatuses.set(second,'generating');
+  await expectOrbJobs(second);
+  orbStatuses.set(second,'error');
+  await cardFor(second).getByText('Image status unavailable.',{exact:true}).waitFor();
+  await expectOrbJobs();
+  assert.equal(tickCount(first)+tickCount(second),0);
  });
  console.log(`CHAT_CANVAS_MEDIA_BROWSER=PASS (${checks} cases; real Chat renderer and specialist, desktop and mobile)`);
 }finally{await browser.close();}

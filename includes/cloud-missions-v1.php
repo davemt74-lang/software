@@ -65,7 +65,17 @@ function cloud_mission_result_authority_v1(PDO $pdo,array $user,array $m,array $
 function cloud_mission_view_v1(PDO $pdo,array $user,array $m): array
 {
     $run=cloud_mission_run_v1($pdo,$user,$m);$rows=agent_workflow_actions_v1400($pdo,(int)$user['id'],(int)$run['id']);$authority=true;try{cloud_mission_authority_v1($pdo,$user,$m);foreach($rows as $a){$result=json_decode((string)($a['result_json']??''),true)?:[];if(!empty($result['mission_output']))cloud_mission_result_authority_v1($pdo,$user,$m,$result);}}catch(Throwable $e){$authority=false;}
-    $tasks=[];$combined='';foreach($rows as $a){$result=json_decode((string)($a['result_json']??''),true)?:[];$status=match($a['status']){'executing'=>'running','approval_pending'=>'queued',default=>$a['status']};$text=$authority?(string)($result['mission_output']??''):'';if($text!=='')$combined=$text;$tasks[]=['id'=>$a['action_key'],'title'=>$a['label'],'role'=>$a['sequence_no']==1?'investigator':'reviewer','status'=>$status,'result'=>$text,'error'=>$a['status']==='failed'?(string)($a['result_summary']??$a['error_class']??''):'','read_calls_used'=>(int)($result['read_calls']??0),'started_at'=>$a['started_at']??'','completed_at'=>$a['completed_at']??'','activity'=>['stage'=>$status,'last_activity_at'=>$a['heartbeat_at']??$a['completed_at']??$run['updated_at']]];}
+    $leasedActionId=0;$leaseExpiresAt=0;
+    if($authority&&$run['status']==='executing'&&!empty($run['lease_owner'])&&!empty($run['lease_token'])&&!empty($run['lease_expires_at'])){
+        $expires=strtotime($run['lease_expires_at'].' UTC');
+        if($expires>time()){$leasedActionId=(int)($run['current_action_id']??0);$leaseExpiresAt=$expires*1000;}
+    }
+    $tasks=[];$combined='';foreach($rows as $a){
+        $result=json_decode((string)($a['result_json']??''),true)?:[];$status=match($a['status']){'executing'=>'running','approval_pending'=>'queued',default=>$a['status']};$text=$authority?(string)($result['mission_output']??''):'';if($text!=='')$combined=$text;
+        $task=['id'=>$a['action_key'],'title'=>$a['label'],'role'=>$a['sequence_no']==1?'investigator':'reviewer','status'=>$status,'result'=>$text,'error'=>$a['status']==='failed'?(string)($a['result_summary']??$a['error_class']??''):'','read_calls_used'=>(int)($result['read_calls']??0),'started_at'=>$a['started_at']??'','completed_at'=>$a['completed_at']??'','activity'=>['stage'=>$status,'last_activity_at'=>$a['heartbeat_at']??$a['completed_at']??$run['updated_at']]];
+        if($leasedActionId>0&&$leasedActionId===(int)$a['id']&&$a['status']==='executing')$task['active_lease_expires_at']=$leaseExpiresAt;
+        $tasks[]=$task;
+    }
     $status=match($run['status']){'approval_pending','queued'=>'planned','approved','executing'=>'running','paused'=>'waiting_review',default=>$run['status']};$tools=cloud_mission_tools_v1($m);$config=json_decode($m['config_json'],true);$provider=function_exists('ai_active_provider')?ai_active_provider():'configured';
     $recurrence=function_exists('cloud_mission_schedule_link_v1')?cloud_mission_schedule_link_v1($pdo,$m['mission_id']):null;
     $progressState=$authority?$status:'blocked';

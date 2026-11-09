@@ -117,6 +117,13 @@ $deny=static function():void{throw new RuntimeException('Current source changed.
 rejects_model(fn()=>vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-plan.v1',true,$deny),
     'a stopped live source cannot start HomeServer inference');
 check_model($GLOBALS['homeCalls']===[]&&$GLOBALS['cloudCalls']===[],'revoked live evidence performs no model call');
+try{
+    vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-plan.v1',true,static fn()=>throw new Vp3InitiativeSourcesChangedV1());
+    throw new LogicException('The stale live source was accepted.');
+}catch(Vp3InitiativeSourcesChangedV1 $error){
+    check_model($GLOBALS['homeCalls']===[]&&$GLOBALS['cloudCalls']===[],
+        'HomeServer source preflight preserves the superseded assessment outcome without treating it as a transport failure');
+}
 $GLOBALS['plan']=$cloud;
 rejects_model(fn()=>vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-plan.v1',true,$deny),
     'a stopped live source cannot start Cloud inference');

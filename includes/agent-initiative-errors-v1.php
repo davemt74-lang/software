@@ -10,6 +10,24 @@ final class Vp3InitiativeTransientInferenceV1 extends RuntimeException
     }
 }
 
+/** The saved snapshot is no longer the current source of truth. */
+final class Vp3InitiativeSourcesChangedV1 extends RuntimeException
+{
+    public function __construct()
+    {
+        parent::__construct('Initiative sources changed.',409);
+    }
+}
+
+/** The assessment output failed the closed planner contract. */
+final class Vp3InitiativeInvalidAssessmentV1 extends RuntimeException
+{
+    public function __construct(Throwable $previous)
+    {
+        parent::__construct('Initiative assessment was not verified.',0,$previous);
+    }
+}
+
 /** Preserve the public reason while admitting only factual transient transport failures. */
 function vp3_initiative_provider_failure_v1(array $result): RuntimeException
 {

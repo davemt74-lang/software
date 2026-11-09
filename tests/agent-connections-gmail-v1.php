@@ -14,6 +14,8 @@ require_once $root.'/includes/user-agent-system-v236.php';
 require_once $root.'/includes/knowledge-retrieval-v162.php';
 require_once $root.'/includes/participant-updates-v1.php';
 require_once $root.'/includes/notifications.php';
+require_once $root.'/includes/cognitive-runtime-v500.php';
+require_once $root.'/includes/cognitive-presentation-v510.php';
 
 function db(): PDO { return $GLOBALS['pdo']; }
 function setting(string $key, mixed $fallback=''): mixed { return $fallback; }
@@ -28,6 +30,18 @@ function has_permission(string $permission, array $user): bool
 {
     return !empty($user['is_active']) && in_array($permission, ['account.access','chat.access'], true);
 }
+function chat_settings_agent_voice_enabled_v237(PDO $pdo,array $user): bool { return $GLOBALS['fixtureAgentVoice']??true; }
+function personal_capability_has_v242(string $capability,array $user): bool
+{
+    return in_array($capability,['personal_knowledge.access','personal_knowledge.manage'],true)
+        && empty($GLOBALS['fixtureKnowledgeRevoked']);
+}
+function vp3_cognitive_attention_notification_row_signal_v2410(array $user,array $row,int $count): array { return []; }
+function vp3_cognitive_attention_arbitrate_v2410(PDO $pdo,array $user,string $namespace,array $signal,array $context): array
+{
+    return ['voice'=>empty($GLOBALS['fixtureVoiceDeferred'])];
+}
+function vp3_cognitive_attention_mark_delivered_v2410(PDO $pdo,array $user,string $namespace,string $key): void {}
 
 function gmail_connection_check_v1(bool $passed, string $label): void
 {
@@ -362,6 +376,9 @@ try {
         && (int)$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE role='assistant'")->fetchColumn() === 1,
         'replaying approval returns the verified receipt without sending or notifying twice');
 
+    vp3_cognitive_presentation_ensure_schema_v510($pdo);
+    $digestState = vp3_cognitive_presentation_state_row_v510($pdo,$owner,'agent:7');
+    $otherDigestState = vp3_cognitive_presentation_state_row_v510($pdo,$other,'agent:9');
     $now = time()*1000;
     $messages = [
         gmail_connection_fixture_message_v1('fixture_sent',$now,$mailbox,$buyer,$outgoingRfcId,'',['SENT']),
@@ -481,6 +498,144 @@ try {
         && $watchSender($watchOrigin)['tool_receipt']['status'] === 'no_matches',
         'one private Chat notice and one generic owner notification survive replay without exposing Gmail metadata');
 
+    $digestState['last_meaningful_at'] = date('Y-m-d H:i:s',time()-45*60);
+    gmail_connection_check_v1(vp3_cognitive_presentation_digest_v510($pdo,$owner,'agent:7',$digestState) === null,
+        'Gmail watch notices follow the informational return window');
+    $digestState['last_meaningful_at'] = date('Y-m-d H:i:s',time()-65*60);
+    $gmailCallsBeforeDigest = [$threadCalls,$searchCalls];
+    $awayDigest = vp3_cognitive_presentation_digest_v510($pdo,$owner,'agent:7',$digestState);
+    $awayItems = $awayDigest['items'] ?? [];
+    $awayJson = json_encode($awayItems,JSON_THROW_ON_ERROR);
+    $otherDigestState['last_meaningful_at'] = $digestState['last_meaningful_at'];
+    gmail_connection_check_v1(array_column($awayItems,'title') === ['New Gmail message','Gmail reply received']
+        && array_column($awayItems,'type') === ['agent_email_followup','agent_email_followup']
+        && array_column($awayItems,'source_id') === [(int)$senderWatch['reply_chat_message_id'],(int)$reply['reply_chat_message_id']]
+        && array_column($awayItems,'target_url') === array_fill(0,2,'/chat.php?agent=7&conversation_id=11')
+        && !str_contains($awayJson,$sender) && !str_contains($awayJson,$buyer) && !str_contains($awayJson,'Fixture private')
+        && !vp3_cognitive_presentation_voice_allowed_type_v510($bell)
+        && vp3_cognitive_presentation_digest_v510($pdo,$other,'agent:9',$otherDigestState) === null
+        && [$threadCalls,$searchCalls] === $gmailCallsBeforeDigest,
+        'While you were away shows both verified Gmail watch notices as private links to the originating Chat');
+
+    $inboxGrant = agent_connections_find_v1($pdo,1,$connectionId)['authorization_key'];
+    $pdo->prepare("INSERT INTO agent_connection_gmail_inbox_v1
+        (owner_user_id,connection_id,authorization_key,enabled,rules_json,revision,history_id,enabled_at_ms)
+        VALUES (1,?,?,1,'{}',?,'910',?)")->execute([$connectionId,$inboxGrant,str_repeat('a',32),time()*1000]);
+    $inboxPolicy = agent_connection_gmail_inbox_policy_v1($pdo,1);
+    $inboxReview = ['at'=>gmdate(DATE_ATOM),'total'=>3,'important'=>2,'replies'=>1,'filtered'=>9,
+        'items'=>[['from'=>'private-inbox@example.test','subject'=>'PRIVATE_INBOX_SUBJECT','body'=>'PRIVATE_INBOX_BODY']]];
+    $noticeCursor = notification_latest_id($owner);
+    $unreadBeforeReview = notification_unread_count($owner);
+    $pdo->beginTransaction();
+    agent_connection_gmail_inbox_notify_v1($pdo,1,$inboxReview,$inboxPolicy);
+    $pdo->rollBack();
+    gmail_connection_check_v1(notification_latest_id($owner) === $noticeCursor,
+        'an Inbox Review notice rolls back with an uncommitted cursor');
+
+    $pdo->beginTransaction();
+    agent_connection_gmail_inbox_notify_v1($pdo,1,array_replace($inboxReview,['total'=>0]),$inboxPolicy);
+    agent_connection_gmail_inbox_notify_v1($pdo,1,$inboxReview,$inboxPolicy);
+    $pdo->commit();
+    $pdo->beginTransaction();
+    agent_connection_gmail_inbox_notify_v1($pdo,1,array_replace($inboxReview,['total'=>4,'replies'=>2]),$inboxPolicy);
+    $pdo->commit();
+    $inboxNotices = notification_agent_brain_activity_after($owner,$noticeCursor,50,7);
+    $noticeJson = json_encode($inboxNotices,JSON_THROW_ON_ERROR);
+    gmail_connection_check_v1(array_column($inboxNotices,'type') === ['agent_email_inbox_review','agent_email_inbox_review']
+        && array_column($inboxNotices,'target_url') === array_fill(0,2,'/connections.php?app=gmail#gmail-inbox-review')
+        && array_column($inboxNotices,'body') === ['Reviewed 3 new Gmail messages. 2 marked important, 1 reply.',
+            'Reviewed 4 new Gmail messages. 2 marked important, 2 replies.']
+        && !str_contains($noticeJson,'PRIVATE_INBOX') && !str_contains($noticeJson,'private-inbox@example.test')
+        && !str_contains($noticeJson,$inboxGrant) && !notification_requires_attention($inboxNotices[0]+['requires_attention'=>1])
+        && !vp3_cognitive_presentation_voice_allowed_type_v510($inboxNotices[0])
+        && notification_unread_count($owner) === $unreadBeforeReview+2
+        && notification_agent_brain_activity_after($other,$noticeCursor,50,9) === [],
+        'Inbox Review sends only generic, silent counts and an owner-only link for each verified retained batch');
+
+    vp3_cognitive_presentation_digest_ack_v510($pdo,$owner,'agent:7',$awayDigest['id'],'acknowledged');
+    create_notification(1,'calendar_update','Calendar fixture','Calendar event is ready.','/calendar.php');
+    $mixedDigest = vp3_cognitive_presentation_digest_v510($pdo,$owner,'agent:7',$digestState);
+    $mixedItems = $mixedDigest['items'] ?? [];
+    $groupedInbox = array_values(array_filter($mixedItems,'notification_is_gmail_inbox_review_v1'));
+    $mixedVoice = vp3_cognitive_presentation_voice_candidate_v510($pdo,$owner,$digestState,$mixedDigest);
+    gmail_connection_check_v1(count($groupedInbox) === 1 && $groupedInbox[0]['count'] === 2
+        && $groupedInbox[0]['body'] === $inboxNotices[1]['body']
+        && count(array_filter($mixedItems,static fn(array $item):bool=>$item['type']==='agent_email_followup')) === 2
+        && $mixedVoice['kind'] === 'notification' && $mixedVoice['message'] === 'Calendar fixture. Calendar event is ready.',
+        'the digest groups Inbox Review batches separately from watched mail and keeps Inbox Review out of mixed speech');
+
+    $pdo->exec("INSERT INTO settings VALUES ('connections_gmail_enabled','0')");
+    $pausedDigest = vp3_cognitive_presentation_open_digest_v510($pdo,$owner,'agent:7');
+    gmail_connection_check_v1($pausedDigest['id'] === $mixedDigest['id']
+        && array_column($pausedDigest['items'],'title') === ['Calendar fixture','New Gmail message','Gmail reply received']
+        && !array_filter(notification_recent($owner,20),'notification_is_gmail_inbox_review_v1'),
+        'a provider pause hides only Inbox Review counts from the already presented digest and Notifications');
+    $pdo->exec("DELETE FROM settings WHERE setting_key='connections_gmail_enabled'");
+    putenv('VP3_GMAIL_CLIENT_ID=reconfigured-fixture.apps.googleusercontent.com');
+    try {
+        gmail_connection_check_v1(!array_filter(notification_agent_brain_activity_after($owner,$noticeCursor,50,7),'notification_is_gmail_inbox_review_v1'),
+            'a replaced OAuth client hides Inbox Review counts from Brain before any provider access');
+    } finally {
+        putenv('VP3_GMAIL_CLIENT_ID=vp3-fixture.apps.googleusercontent.com');
+    }
+    $pdo->beginTransaction();
+    agent_connection_gmail_inbox_revoke_v1($pdo,1,$connectionId,$inboxGrant);
+    $pdo->commit();
+    $revokedDigest = vp3_cognitive_presentation_open_digest_v510($pdo,$owner,'agent:7');
+    gmail_connection_check_v1($revokedDigest['id'] === $mixedDigest['id']
+        && array_column($revokedDigest['items'],'title') === ['Calendar fixture','New Gmail message','Gmail reply received']
+        && (int)$pdo->query("SELECT COUNT(*) FROM notifications WHERE user_id=1 AND type='agent_email_inbox_review'")->fetchColumn() === 0
+        && [$threadCalls,$searchCalls] === $gmailCallsBeforeDigest,
+        'revocation purges Inbox Review while preserving watched mail, other digest items and read-only provider boundaries');
+    $pdo->exec('DELETE FROM agent_connection_gmail_inbox_v1 WHERE owner_user_id=1');
+
+    $pdo->exec('CREATE TABLE artist_transcript_folders_v177 (id BIGINT PRIMARY KEY,created_by_user_id INT NOT NULL,folder_name VARCHAR(80) NOT NULL)');
+    $pdo->exec("INSERT INTO artist_transcript_folders_v177 VALUES (61,1,'Private workflow notes'),(62,2,'Other private workflow notes')");
+    $pdo->prepare("INSERT INTO agent_connection_gmail_github_v1
+        (owner_user_id,connection_id,authorization_key,folder_id,enabled,revision,history_id,enabled_at_ms)
+        VALUES (1,?,?,61,1,?,'915',?)")->execute([$connectionId,$inboxGrant,str_repeat('b',32),time()*1000]);
+    $githubPolicy = agent_connection_gmail_github_policy_v1($pdo,1);
+    $githubCursor = notification_latest_id($owner);
+    $pdo->beginTransaction();
+    agent_connection_gmail_github_actions_notify_v1($pdo,1,$githubPolicy,1,0);
+    $pdo->rollBack();
+    gmail_connection_check_v1(agent_connection_gmail_github_actions_voice_offer_v1($pdo,$owner) === null
+        && notification_latest_id($owner) === $githubCursor,'uncommitted GitHub workflow results have neither a notice nor speech');
+    foreach ([[2,0],[0,1]] as [$successes,$failures]) {
+        $pdo->beginTransaction();
+        agent_connection_gmail_github_actions_notify_v1($pdo,1,$githubPolicy,$successes,$failures);
+        $pdo->commit();
+    }
+    $githubOffer = agent_connection_gmail_github_actions_voice_offer_v1($pdo,$owner);
+    $githubNotices = notification_agent_brain_activity_after($owner,$githubCursor,10,7);
+    gmail_connection_check_v1(array_keys($githubOffer) === ['generation','through_id']
+        && array_column($githubNotices,'target_url') === ['/knowledge.php?folder=61','/knowledge.php?folder=61']
+        && array_column($githubNotices,'body') === ['GitHub Actions reports 2 runs succeeded.','GitHub Actions reports 1 run failed.']
+        && agent_connection_gmail_github_actions_voice_offer_v1($pdo,$other) === null
+        && !vp3_cognitive_presentation_voice_allowed_type_v510($githubNotices[0]),'owner notices link to private Knowledge and only offer speech metadata through Chat');
+    $claimGithub = static fn(string $namespace='agent:7'):?array => agent_connection_gmail_github_actions_voice_claim_v1(
+        $pdo,$owner,$namespace,$githubOffer['generation'],$githubOffer['through_id']);
+    $GLOBALS['fixtureAgentVoice'] = false;
+    gmail_connection_check_v1($claimGithub() === null,'Agent Voice disabled leaves GitHub updates silent');
+    $GLOBALS['fixtureAgentVoice'] = true;
+    $GLOBALS['fixtureVoiceDeferred'] = true;
+    gmail_connection_check_v1($claimGithub() === null && agent_connection_gmail_github_actions_voice_offer_v1($pdo,$owner)===$githubOffer,
+        'the canonical attention policy defers a GitHub batch without consuming it');
+    unset($GLOBALS['fixtureVoiceDeferred']);
+    $GLOBALS['fixtureKnowledgeRevoked'] = true;
+    gmail_connection_check_v1($claimGithub() === null && notification_agent_brain_activity_after($owner,$githubCursor,10,7) === [],
+        'live Knowledge permission is required for GitHub notices and voice claims');
+    unset($GLOBALS['fixtureKnowledgeRevoked']);
+    $spokenGithub = $claimGithub();
+    gmail_connection_check_v1($spokenGithub === $githubOffer+['message'=>'GitHub Actions reports 1 run failed and 2 runs succeeded.']
+        && $claimGithub('agent:8') === null && agent_connection_gmail_github_actions_voice_offer_v1($pdo,$owner) === null,
+        'one owner-wide claim coalesces verified counts, puts failures first and cannot replay in another Agent');
+    $pdo->beginTransaction();
+    agent_connection_gmail_github_revoke_v1($pdo,1,$connectionId,$inboxGrant);
+    $pdo->commit();
+    gmail_connection_check_v1(notification_agent_brain_activity_after($owner,$githubCursor,10,7) === [],
+        'revoking GitHub Workflow Review purges its generic notices');
+
     $nextWatch = $privateGmailTurn($senderPrompt);
     $watchSender($nextWatch);
     $stopElsewhere = agent_connection_email_chat_v1($pdo,$owner,$principal,$stopPrompt,12,$privateGmailTurn($stopPrompt,12),null,true);
@@ -570,6 +725,36 @@ try {
         && $recovered['watch_registered'] && $ambiguousPosts === 1 && $lookupCalls === 2,
         'retry reconciles the exact Gmail Sent receipt and never sends a second POST');
 
+    $seedInboxReview = $pdo->prepare("INSERT INTO agent_connection_gmail_inbox_v1
+        (owner_user_id,connection_id,authorization_key,enabled,rules_json,revision,history_id,enabled_at_ms,claim_key,next_check_at,last_status,last_review_json)
+        VALUES (?,?,?,1,?,?,'991',?,? ,UTC_TIMESTAMP(),'ready',?)
+        ON DUPLICATE KEY UPDATE authorization_key=VALUES(authorization_key),enabled=1,revision=VALUES(revision),history_id='991',
+        enabled_at_ms=VALUES(enabled_at_ms),claim_key=VALUES(claim_key),next_check_at=UTC_TIMESTAMP(),last_review_json=VALUES(last_review_json)");
+    $seedGithubReview = $pdo->prepare("INSERT INTO agent_connection_gmail_github_v1
+        (owner_user_id,connection_id,authorization_key,folder_id,enabled,revision,history_id,enabled_at_ms,claim_key,next_check_at,last_status)
+        VALUES (?,?,?,?,1,?,'992',?,?,UTC_TIMESTAMP(),'ready')
+        ON DUPLICATE KEY UPDATE authorization_key=VALUES(authorization_key),enabled=1,revision=VALUES(revision),history_id='992',
+            enabled_at_ms=VALUES(enabled_at_ms),claim_key=VALUES(claim_key),next_check_at=UTC_TIMESTAMP(),last_status='ready'");
+    $startFixtureReview = static function(int $id, int $connection, string $key) use ($seedInboxReview,$seedGithubReview): void {
+        $seedInboxReview->execute([$id,$connection,$key,json_encode(['senders'=>['workflow@example.test'],'domains'=>[],'subjects'=>[],'github_actions'=>true],JSON_THROW_ON_ERROR),
+            bin2hex(random_bytes(16)),time()*1000,bin2hex(random_bytes(16)),json_encode(['items'=>[['subject'=>'PRIVATE_INBOX_FIXTURE']]],JSON_THROW_ON_ERROR)]);
+        $seedGithubReview->execute([$id,$connection,$key,60+$id,bin2hex(random_bytes(16)),time()*1000,bin2hex(random_bytes(16))]);
+    };
+    $reviewCleared = static function(int $id) use ($pdo): bool {
+        $row = agent_connection_gmail_inbox_policy_v1($pdo,$id);
+        $github = agent_connection_gmail_github_policy_v1($pdo,$id);
+        return is_array($row) && (int)$row['enabled'] === 0 && (string)$row['history_id'] === ''
+            && (string)$row['claim_key'] === '' && $row['next_check_at'] === null
+            && !str_contains((string)$row['last_review_json'],'PRIVATE_INBOX_FIXTURE')
+            && str_contains((string)$row['rules_json'],'workflow@example.test')
+            && is_array($github) && (int)$github['enabled'] === 0 && (string)$github['history_id'] === ''
+            && (string)$github['claim_key'] === '' && $github['next_check_at'] === null;
+    };
+    $startFixtureReview(2,$otherId,$otherGrant);
+    gmail_connection_check_v1(agent_connections_update_policy_v1(2,$otherId,['read'=>false,'send'=>false,'followups'=>false],$otherGrant)
+        && agent_connections_update_policy_v1(2,$otherId,$otherSummary['permissions'],$otherGrant) && $reviewCleared(2),
+        'Gmail read revocation clears both background readers even if read is immediately restored');
+    $startFixtureReview(1,$connectionId,$saved['authorization_key']);
     agent_connections_store_gmail_v1(1,$token,$policy,$saved['authorization_key'],$grant);
     $newGrant = agent_connections_record_v1(1,$connectionId);
     gmail_connection_check_v1($newGrant['revision'] !== $summary['connection']['revision']
@@ -578,19 +763,31 @@ try {
         'a stale Connections page cannot change or unlink the replacement OAuth grant');
     gmail_connection_check_v1(agent_connection_email_followup_specialist_v1($pdo,1,7,11) === $idleSpecialist,
         'a replacement Gmail grant never inherits the previous watch or its rail presence');
+    gmail_connection_check_v1($reviewCleared(1),'OAuth replacement retires both background readers’ cursors and claims');
+    gmail_connection_reject_v1(static fn()=>agent_connections_access_v1(1,$connectionId,'read',
+        static fn()=>throw new LogicException('A stale grant must not refresh a replacement mailbox.'),$saved['authorization_key']),409,
+        'an exact grant read rejects a replaced authorization before provider access');
     $due();
     gmail_connection_check_v1(agent_connection_email_followup_sweep_v1($pdo,5,$poll) === ['processed'=>1,'delivered'=>0]
         && $threadCalls === 2, 'reconnecting does not carry old reply watches into the replacement grant');
+    $startFixtureReview(1,$connectionId,$newGrant['authorization_key']);
     gmail_connection_check_v1(agent_connections_disconnect_v1(1,$connectionId,'gmail',$newGrant['authorization_key'])
         && agent_connections_summary_v1(1)['connection']['status'] === 'disconnected'
-        && agent_connections_summary_v1(2)['connection']['status'] === 'connected',
-        'disconnect clears the correct owner grant and preserves the other connection');
+        && agent_connections_summary_v1(2)['connection']['status'] === 'connected' && $reviewCleared(1),
+        'disconnect clears both background readers for the correct owner and preserves the other connection');
     $unlinked = $pdo->query('SELECT * FROM agent_connections_v1 WHERE owner_user_id=1')->fetch();
     gmail_connection_check_v1($unlinked['access_token_enc'] === '' && $unlinked['refresh_token_enc'] === ''
         && !hash_equals($newGrant['authorization_key'],$unlinked['authorization_key']),
         'disconnect destroys stored credentials and invalidates previous review grants');
     gmail_connection_reject_v1(static fn()=>agent_connections_access_v1(1,$connectionId,'read'),401,
         'a disconnected account cannot be read by the Agent');
+    $startFixtureReview(2,$otherId,$otherGrant);
+    $pdo->prepare('UPDATE agent_connections_v1 SET access_expires_at=0 WHERE id=?')->execute([$otherId]);
+    $revokedRefresh = static fn(): array => ['status'=>400,'json'=>['error'=>'invalid_grant']];
+    gmail_connection_reject_v1(static fn()=>agent_connections_access_v1(2,$otherId,'read',$revokedRefresh,$otherGrant),401,
+        'a confirmed Gmail refresh revocation closes access');
+    gmail_connection_check_v1(agent_connections_summary_v1(2)['connection']['status'] === 'reauthorize' && $reviewCleared(2),
+        'provider-side revocation clears both background readers before requiring reconnection');
     echo 'AGENT_CONNECTIONS_GMAIL=PASS ('.$gmail_connection_checks.' checks; native MySQL)'.PHP_EOL;
 } finally {
     $server->exec('DROP DATABASE IF EXISTS `'.$database.'`');

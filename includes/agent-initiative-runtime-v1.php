@@ -55,7 +55,7 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
     $base=['state'=>'unavailable','reason'=>'context_unavailable','enabled'=>false,'agent_id'=>$agentId,
         'conversation_id'=>$cid,'policy_revision'=>'','paused'=>false,'policy_exists'=>false,
         'knowledge_scope'=>['mode'=>'off','folder_id'=>0],'configuration_ready'=>false,
-        'execution_ready'=>false,'pump_available'=>false,'runner_state'=>'never_seen',
+        'execution_ready'=>false,'pump_available'=>false,'runner_state'=>'never_seen','active_jobs'=>[],
         'runner_observation_scope'=>'server','runner_last_success_at'=>'','last_checked_at'=>'','last_execution_at'=>'','retry_due_at'=>'','route'=>''];
     try{
         return vp3_initiative_in_scope_v1($user,$agentId,static function()use($pdo,$user,$agentId,$cid,$base):array{
@@ -94,14 +94,21 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
                 if($run['status']==='completed'&&$completed>0&&$completed<=time()&&$health['last_execution_at']===''){
                     $health['last_execution_at']=gmdate(DATE_ATOM,$completed);
                 }
-                if($run['status']==='executing'&&(strtotime((string)($run['lease_expires_at']??''))?:0)>=time()){
-                    $health['state']='running';$health['reason']='reviewing';
+                if($run['status']==='executing'&&!empty($run['lease_expires_at'])){
+                    $expiresAt=strtotime($run['lease_expires_at'].' UTC');
+                    if($expiresAt>time()){
+                        $health['state']='running';$health['reason']='reviewing';
+                        $health['active_jobs'][]=['id'=>'workflow:'.$run['id'],'expiresAt'=>$expiresAt*1000];
+                    }
                 }
                 if($latest&&$run['status']==='failed'){
-                    $health['state']='failed';
                     $failure=(string)($run['last_error_class']??'');
-                    $health['reason']=in_array($failure,['model_unavailable','quota_exhausted','route_unavailable'],true)?$failure:
-                        ($failure==='lease_expired'?'worker_interrupted':'review_failed');
+                    $health['state']=$failure==='assessment_sources_changed'?'waiting':'failed';
+                    $health['reason']=match($failure){
+                        'model_unavailable','quota_exhausted','route_unavailable','assessment_sources_changed','assessment_unverified'=>$failure,
+                        'lease_expired'=>'worker_interrupted',
+                        default=>'review_failed',
+                    };
                 }
                 if($latest&&$run['status']==='approved'&&in_array($run['last_error_class']??'', ['model_unavailable','lease_expired'],true)){
                     $due=strtotime((string)($run['next_attempt_at']??''))?:0;

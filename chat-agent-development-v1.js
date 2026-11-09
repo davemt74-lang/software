@@ -20,6 +20,8 @@
     cancelled:'Development request cancelled', failed:'Development request needs attention',
   };
   const active = new Set(['outlining','queued','building']);
+  const orbActive = new Set(['outlining','building']);
+  const orbJobs = new Map();
   const key = 'development';
   const node = (tag,cls = '') => Object.assign(document.createElement(tag),{className:cls});
   const hint = node('div','vp3-chat-development-hint');
@@ -78,6 +80,7 @@
   let timer = 0;
   let submission = null;
   let tracking = false;
+  let orbConversationId = 0;
   let draftRequest = null;
   let reviewSource = null;
   let composerEdits = 0;
@@ -95,6 +98,29 @@
 
   function validScope(current,version) {
     return generation === version && scope()?.conversation_id === current.conversation_id;
+  }
+
+  function syncOrbJobs() {
+    const current = scope(), now = Date.now();
+    if (!current?.conversation_id || current.conversation_id !== orbConversationId) orbJobs.clear();
+    for (const [id,expiresAt] of orbJobs) if (expiresAt <= now) orbJobs.delete(id);
+    window.VP3AgentOrb?.setJobs?.(key,Array.from(orbJobs,([id,expiresAt])=>({id,expiresAt})));
+  }
+
+  function clearOrbJobs() {
+    orbJobs.clear();
+    syncOrbJobs();
+  }
+
+  function updateOrbJobs(rows,current) {
+    orbJobs.clear();
+    orbConversationId = current.conversation_id;
+    const expiresAt = Date.now()+12000;
+    for (const row of rows) {
+      const id = `development:${row.id}`;
+      if (row.mode === control?.mode && orbActive.has(row.status)) orbJobs.set(id,expiresAt);
+    }
+    syncOrbJobs();
   }
 
   function composerBindingKey(current) {
@@ -157,6 +183,7 @@
     if (previous?.epoch !== control?.epoch || previous?.mode !== control?.mode) {
       cancelDraftRequest();
       clearDraftReview();
+      if (orbJobs.size) clearOrbJobs();
     }
     hint.hidden = !control || control.mode === 'off';
     if (!hint.hidden) hintLink.textContent = `Agent Development · ${modeLabels[control.mode]} · Draft from a reply or type /develop`;
@@ -415,6 +442,7 @@
     shownId = '';
     tracking = false;
     showControl(null);
+    clearOrbJobs();
     showSpecialist(null);
     showNotice();
     result.remove();
@@ -440,7 +468,10 @@
 
   async function refresh() {
     const current = scope();
-    if (!current) return;
+    if (!current) {
+      if (orbJobs.size) clearOrbJobs();
+      return;
+    }
     const version = generation;
     poll?.abort();
     const controller = poll = new AbortController();
@@ -451,6 +482,7 @@
       if (poll !== controller || !validScope(current,version)) return;
       showControl(data);
       const rows = Array.isArray(data.revisions) ? data.revisions.filter(validRevision) : [];
+      updateOrbJobs(rows,current);
       const pending = control && control.mode !== 'off' ? rows.find(row => row.mode === control.mode && active.has(row.status)) : null;
       tracking = Boolean(pending);
       showSpecialist(pending,current,version);
@@ -523,6 +555,7 @@
       if (submission !== request || !validScope(current,version)) return;
       if (!validRevision(data.revision)) throw new Error('The revision could not be verified. Check Admin Revisions before trying again.');
       showControl(data);
+      if (!orbActive.has(data.revision.status) && orbJobs.delete(`development:${data.revision.id}`)) syncOrbJobs();
       shownId = data.revision.id;
       showReceipt(data.revision);
       if (active.has(data.revision.status) && control?.mode === data.revision.mode) showSpecialist(data.revision,current,version);
@@ -532,6 +565,7 @@
       }
     } catch (error) {
       if (generation !== version || submission !== request) return;
+      if (orbJobs.size) clearOrbJobs();
       showNotice(error.name === 'AbortError' || error instanceof TypeError || error instanceof SyntaxError
         ? 'The request could not be verified. Check Admin Revisions before trying again.' : error.message);
     } finally {
@@ -556,6 +590,7 @@
   window.addEventListener('stonefellow:chat-context-changing',reset);
   window.addEventListener('vp3:participant-task-context',() => { reset(); schedule(); });
   window.addEventListener('vp3:chat-context-ready',() => { clearEmptyComposerBinding(); schedule(); });
+  window.addEventListener('vp3:agent-orb-ready',syncOrbJobs);
   window.addEventListener('vp3:chat-message-persisted',() => queueMicrotask(syncDraftActions));
   window.addEventListener('vp3:chat-canvas-view-changed',() => { if (thread.dataset.view !== 'chat') reset(); else schedule(); });
   window.addEventListener('focus',() => schedule());

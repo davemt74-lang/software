@@ -31,7 +31,8 @@ for (const file of fs.readdirSync('includes')) {
 for (const file of ['profile.php','profile-commerce-product.php','profile-promotion-image.php','profile-promotion-click.php','profile-product-photo.php','media-library-file-v86.php']) {
   fs.copyFileSync(file, path.join(tmp, file));
 }
-for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-agent.js','agent-orb-particles.css','agent-orb-particles.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js']) {
+for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-agent.js','agent-orb-particles.css','agent-orb-particles.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js',
+  'chat-notifications-drawer-v240.js','chat-notifications-drawer-v240.css','chat-header-ui.css','member-page-scroll.css','member-agent-voice-menu.css','member-agent-voice-menu.js','vp3-authenticated-runtime-bridge.js','member-shell-v77.js']) {
   fs.symlinkSync(path.resolve(file), path.join(tmp, file));
 }
 fs.copyFileSync('api/profile-agent.php', path.join(tmp, 'api/profile-agent.php'));
@@ -40,9 +41,18 @@ define('STONEFELLOW_ROOT',dirname(__DIR__));
 require getenv('VP3_PA3_ROOT').'/tests/fixtures/profile-handoff-pa3.php';
 require_once getenv('VP3_PA3_ROOT').'/includes/agent-commerce-v800.php';
 require_once getenv('VP3_PA3_ROOT').'/includes/media-studio-v86.php';
-if(PHP_SAPI!=='cli')session_start();
+require_once getenv('VP3_PA3_ROOT').'/includes/member-navigation.php';
+if(PHP_SAPI!=='cli'){
+    session_start();
+    $fixtureMember=$_SERVER['HTTP_X_VP3_FIXTURE_MEMBER']??'';
+    if(in_array($fixtureMember,['1','2'],true))pa3_login((int)$fixtureMember);
+}
 function e(mixed $value):string{return htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function agent_brain_schema_ready():bool{return false;}
+function user_avatar_url(?array $user=null):string{return '';}
+function user_initials(?array $user=null):string{return 'VA';}
+function user_role_labels(?array $user=null):array{return ['Member'];}
+function user_has_role(string $role,?array $user=null):bool{return $role===($user['role']??'');}
 `);
 fs.writeFileSync(path.join(tmp, 'router.php'), `<?php
 $route=parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -226,6 +236,21 @@ try {
   assert.deepEqual(await launcherOrb.locator('[data-orb-ring]').evaluateAll(nodes=>nodes.map(node=>node.dataset.orbRing)),['pulse','primary','secondary']);
   assert.equal(await launcherOrb.locator('.vp3-public-orb-cloud').isVisible(),true);
   assert.equal(await launcherOrb.locator('a, button').count(),0);
+  for (const [memberId,query] of [['2',''],['1','?preview=1']]) {
+    const member = await browser.newPage({viewport:{width:390,height:740},extraHTTPHeaders:{'X-VP3-Fixture-Member':memberId}});
+    try {
+      const response = await member.goto(base + '/fixture-owner' + query);
+      assert.equal(response.status(),200);
+      await member.locator('[data-member-header]').waitFor();
+      await member.locator('[data-open-profile-agent] .vp3-public-orb-rendered').waitFor();
+      assert.equal(await member.locator('.vp3-orb-root,.vp3-orb-bar,script[src^="/agent-orb.js"]').count(),0);
+      assert.equal(await member.evaluate(()=>Boolean(window.VP3_ORB_CONFIG)),false);
+      await member.getByRole('button',{name:'Ask Fixture Public Guide'}).click();
+      if (query) await member.locator('.profile-agent-widget .profile-agent-preview').waitFor();
+      else await member.getByRole('textbox',{name:'Message Profile Agent'}).waitFor();
+    } finally { await member.close(); }
+  }
+  console.log('PASS signed-in visitors and owner preview see the Profile Agent without the personal orb or bottom chat bar');
   await launcher.click();
   const chatOrb = page.locator('.profile-agent-widget-head .vp3-public-orb-rendered');
   await chatOrb.waitFor();

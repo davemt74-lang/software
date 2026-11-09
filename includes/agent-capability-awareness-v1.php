@@ -95,7 +95,7 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
     catch(Throwable $error){$liveContextReason='check_failed';}
     $connectedAppAccess = has_permission('account.access',$user)
         && function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() === null;
-    $gmailRead = $gmailSend = $gmailFollowups = $youtube = 'permission_denied';
+    $gmailRead = $gmailSend = $gmailFollowups = $youtube = $youtubeHistory = 'permission_denied';
     if ($connectedAppAccess) {
         try {
             $gmail = function_exists('agent_connections_summary_v1') ? agent_connections_summary_v1($uid) : null;
@@ -132,6 +132,21 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         } catch (Throwable) {
             $youtube = 'check_failed';
         }
+        try {
+            if (function_exists('agent_connection_youtube_history_chat_v1')) {
+                require_once __DIR__.'/agent-connection-youtube-playback-v1.php';
+                $youtubeHistory = match (true) {
+                    !agent_connection_youtube_consent_ready_v1($pdo),
+                    !agent_connection_youtube_results_ready_v1($pdo),
+                    !vp3_youtube_playback_ready_v1($pdo) => 'upgrade_required',
+                    !agent_connection_youtube_enabled_v1() => 'provider_setup_required',
+                    !agent_connection_youtube_consent_v1($pdo,$uid) => 'skill_enable_required',
+                    default => 'ready',
+                };
+            }
+        } catch (Throwable) {
+            $youtubeHistory = 'check_failed';
+        }
     }
     $base['capabilities']=[
         vp3_capability_row_v1('capabilities.inspect','Explain current capabilities','read','vp3_capability_snapshot_v1',true,'ready',['Current conversation only; inventory does not execute actions.']),
@@ -160,7 +175,8 @@ function vp3_capability_snapshot_v1(PDO $pdo,array $user,array $principal,array 
         vp3_capability_row_v1('downloads.jobs.read','Read HomeServer download jobs','read','vp3_download_manager_agent_query_v320',has_permission('account.access',$user),'not_checked',['Reported status and bounded job list; queued is not completed. No download control, source URLs or paths.']),
         vp3_capability_row_v1('media.processing.read','Read HomeServer media processing jobs','read','vp3_media_processor_agent_query_v330',has_permission('account.access',$user),'not_checked',['Reported jobs/output readiness only. No FFmpeg invocation, render, source or output paths.']),
         vp3_capability_row_v1('video.projects.read','Read HomeServer Video Editor projects','read','vp3_video_editor_agent_query_v280',has_permission('account.access',$user),'not_checked',['Project metadata only; no action-manifest control claim, project changes or rendering.']),
-        vp3_capability_row_v1('youtube.search','Search YouTube and play a selected video in Chat','read','agent_connection_youtube_chat_v1',$connectedAppAccess,$youtube,['Explicit typed or voice search in private Chat. Public embeddable video results. The member selects playback. Search quota is checked at execution.']),
+        vp3_capability_row_v1('youtube.search','Search YouTube and play a selected video in Chat','read','agent_connection_youtube_chat_v1',$connectedAppAccess,$youtube,['Explicit typed or voice search in private Chat. Public embeddable videos for songs, artist discovery and playable playlist drafts in Chat. The member selects playback. Search quota is checked at execution.']),
+        vp3_capability_row_v1('youtube.history','Recall recent YouTube plays in VP3','read','agent_connection_youtube_history_chat_v1',$connectedAppAccess,$youtubeHistory,['Private Played in VP3 history. Recording requires an active playback history setting and a confirmed start in the VP3 player. Results are distinct from plays. History from the YouTube website or app is outside VP3.']),
         vp3_capability_row_v1('tracky.context.read','Read saved Tracky and Agent Eyes observations','read','tracky_agent_tools_query_v271',$trackyAccess,$tracky,['Current owner/Agent/conversation and plugin access; exact owned site and entity selection. Governed stored observations retain their observation time, freshness and continuity state. A stored read does not activate sensing or refresh data.']),
         vp3_capability_row_v1('tracky.perception.request','Request an explicit governed Tracky observation','write','tracky_agent_tools_query_v271',$trackyAccess,$tracky==='ready'?'not_checked':$tracky,['Explicit current sensing request only through the existing HomeServer route, opt-in and privacy controls. A request receipt does not by itself verify a fresh observation. Capability questions do not capture or refresh.']),
         vp3_capability_row_v1('radar.read','Read Agent Radar evidence and saved Gateway policies','read','vp3_radar_chat_tool',$profileAccess,$radar,['Owner-scoped recent/high-risk contacts, contact policies, scoped rules and access-profile state. Current Profile Agent access and conversation authority; bounded literal evidence, no policy mutation or message sending.']),

@@ -150,6 +150,57 @@
 }
 .connections-service-links a { color: #173e71; text-decoration: underline; }
 .connections-test { grid-column: 1 / -1; margin-top: .4rem; }
+.connections-inbox {
+  margin-top: 1.15rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e3e8ef;
+  scroll-margin-top: 1rem;
+}
+.connections-inbox h3 { margin: 0 0 .4rem; font-size: 1.08rem; }
+.connections-inbox h4 { margin: 0 0 .3rem; font-size: 1rem; }
+.connections-inbox .connections-notice { margin-bottom: .85rem; }
+.connections-inbox-time { font-size: .85rem; }
+.connections-inbox-form > .connections-permission { margin-bottom: .7rem; }
+.connections-inbox-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  gap: .65rem;
+  margin-bottom: .7rem;
+}
+.connections-inbox-fields label { display: grid; gap: .3rem; min-width: 0; font-size: .875rem; font-weight: 650; }
+.connections-inbox-fields textarea {
+  width: 100%;
+  min-height: 5.25rem;
+  padding: .55rem;
+  resize: vertical;
+  border: 1px solid #b8c4d2;
+  border-radius: .45rem;
+  color: #17212e;
+  font: inherit;
+  font-weight: 400;
+}
+.connections-inbox-latest {
+  margin-bottom: 1rem;
+  padding: .75rem .85rem;
+  border: 1px solid #dce2ea;
+  border-radius: .55rem;
+  background: #f8fafd;
+}
+.connections-inbox-counts { display: flex; flex-wrap: wrap; gap: .55rem 1.15rem; margin: .65rem 0 0; }
+.connections-inbox-counts div { display: flex; gap: .35rem; align-items: baseline; font-size: .875rem; }
+.connections-inbox-counts dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.connections-inbox-messages { display: grid; gap: .55rem; margin: .65rem 0 0; padding: 0; list-style: none; }
+.connections-inbox-messages li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: .18rem .6rem;
+  padding-top: .55rem;
+  border-top: 1px solid #e3e8ef;
+  overflow-wrap: anywhere;
+}
+.connections-inbox-messages li .connections-muted { grid-row: 2; font-size: .85rem; }
+.connections-inbox-messages li .connections-badge { grid-column: 2; grid-row: 1 / span 2; }
 .connections-disconnect { margin-top: 1rem; padding-top: .7rem; border-top: 1px solid #e3e8ef; }
 .connections-disconnect summary { width: fit-content; padding: .45rem 0; color: #852535; cursor: pointer; }
 .connections-disconnect form { margin-top: .5rem; }

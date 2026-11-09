@@ -94,6 +94,7 @@ function vp3_capability_contract_bindings_v1(): array
         'media.processing.read'=>['media.processing','read','vp3_media_processor_agent_query_v330'],
         'video.projects.read'=>['media.video','read','vp3_video_editor_agent_query_v280'],
         'youtube.search'=>['media.youtube','read','agent_connection_youtube_chat_v1'],
+        'youtube.history'=>['media.youtube','read','agent_connection_youtube_history_chat_v1'],
         'tracky.context.read'=>['observation.tracky','read','tracky_agent_tools_query_v271'],
         'tracky.perception.request'=>['observation.tracky','write','tracky_agent_tools_query_v271'],
         'radar.read'=>['observation.radar','read','vp3_radar_chat_tool'],

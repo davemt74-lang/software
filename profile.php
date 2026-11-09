@@ -188,7 +188,7 @@ if($productPromotions)header('Cache-Control: private, no-store');
 <title><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-live-text-pa3d-'.substr(hash_file('sha256',__DIR__.'/profile.css'),0,12))) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-cleanup-v174.css?v=profile-cleanup-v174-20260913')) ?>">
-<?php if($agent&&(!$viewer||!has_permission('chat.access',$viewer))): ?>
+<?php if($agent): ?>
 <link rel="stylesheet" href="<?= e(url('/agent-orb-particles.css?v='.substr(hash_file('sha256',__DIR__.'/agent-orb-particles.css'),0,12))) ?>">
 <?php endif; ?>
 </head>
@@ -200,6 +200,7 @@ if($productPromotions)header('Cache-Control: private, no-store');
     $memberHeaderSubtitle='@'.$username;
     $memberHeaderClass='';
     $memberHeaderShowSidebarToggle=false;
+    $memberHeaderShowAgentOrb=false;
     $memberHeaderActions='';
     require __DIR__.'/includes/member-header.php';
   ?>
@@ -405,7 +406,7 @@ window.VP3_PROFILE_WEBMCP={
 <script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-checkout-pa2-20261103')) ?>"></script>
 <?php endif; ?>
 <?php if($viewer): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
-<?php if($agent&&empty($GLOBALS['VP3_AGENT_ORB_RENDERED'])): ?>
+<?php if($agent): ?>
 <script src="<?= e(url('/agent-orb-particles.js?v='.substr(hash_file('sha256',__DIR__.'/agent-orb-particles.js'),0,12))) ?>" defer></script>
 <?php endif; ?>
 <?php if($agent&&!$preview): $profileCallsBuild='profile-calls-pa3c-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-calls-pa3c.js').hash_file('sha256',__DIR__.'/profile-calls-pa3c.css')),0,12); ?>

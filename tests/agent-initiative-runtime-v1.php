@@ -74,13 +74,16 @@ $policy=runtime_enable($user,0,42);
 $before=$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn();
 $health=vp3_initiative_worker_health_v1($pdo,$user,0,42);
 runtime_check($health['configuration_ready']&&$health['execution_ready']&&$health['pump_available']
-    &&$health['last_checked_at']===''&&$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn()===$before,
+    &&$health['last_checked_at']===''&&$health['active_jobs']===[]&&$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn()===$before,
     'read-only health distinguishes available execution from an actual source review');
 $calls=0;$duplicate=null;
 $model=static function(string $prompt,string $protocol)use(&$calls,&$duplicate,$pdo,$user,$policy):string{
     if($pdo->inTransaction())throw new RuntimeException('Inference must not hold a database transaction.');
-    $lease=$pdo->query("SELECT lease_expires_at FROM agent_workflow_runs WHERE source_kind='agent_initiative' AND status='executing' ORDER BY id DESC LIMIT 1")->fetchColumn();
-    if((strtotime((string)$lease)?:0)<time()+235)throw new RuntimeException('Inference requires the canonical refreshed lease.');
+    $lease=$pdo->query("SELECT id,lease_expires_at FROM agent_workflow_runs WHERE source_kind='agent_initiative' AND status='executing' ORDER BY id DESC LIMIT 1")->fetch();
+    $expiresAt=strtotime($lease['lease_expires_at'].' UTC');
+    if($expiresAt<time()+235)throw new RuntimeException('Inference requires the canonical refreshed lease.');
+    runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['active_jobs']===
+        [['id'=>'workflow:'.$lease['id'],'expiresAt'=>$expiresAt*1000]],'read-only status projects the exact active workflow lease');
     $calls++;
     if($protocol==='vp3.initiative-plan.v1'){
         $duplicate=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static function(){throw new RuntimeException('Duplicate model call');});
@@ -100,7 +103,8 @@ $prepared=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
 runtime_check($prepared['ok']&&$calls===2&&(int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_receipts')->fetchColumn()===2,
     'the next bounded pump executes the queued preparation through canonical receipts');
 $quiet=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
-runtime_check($quiet['reason']==='no_work'&&$calls===2,'repeated active Chat polls do not repeat inference for unchanged sources');
+runtime_check($quiet['reason']==='no_work'&&$quiet['health']['active_jobs']===[]&&$calls===2,
+    'completed leases disappear and repeated active Chat polls do not repeat inference for unchanged sources');
 $pdo->exec("INSERT INTO agent_workflow_runs(owner_user_id,agent_id,source_kind,execution_target,capability_key,status)
     VALUES(1,NULL,'image_generation','cloud','images.generate','approved')");
 $imageRun=(int)$pdo->lastInsertId();
@@ -109,8 +113,10 @@ runtime_check(vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model)
     'the browser pump cannot claim unrelated paid image or public conversation work');
 try{vp3_initiative_pump_v1($pdo,$user,0,42,str_repeat('a',32),$model);throw new LogicException('Stale revision accepted');}
 catch(RuntimeException $e){runtime_check($e->getCode()===409&&$calls===2,'a stale tab cannot start work under a replaced policy revision');}
-runtime_check(vp3_initiative_worker_health_v1($pdo,['id'=>2,'is_active'=>1],0,42)['state']==='unavailable'
-    &&vp3_initiative_worker_health_v1($pdo,$user,7,42)['state']==='unavailable','account and Agent switches cannot read another exact conversation health');
+$otherOwner=vp3_initiative_worker_health_v1($pdo,['id'=>2,'is_active'=>1],0,42);
+$otherAgent=vp3_initiative_worker_health_v1($pdo,$user,7,42);
+runtime_check($otherOwner['state']==='unavailable'&&$otherOwner['active_jobs']===[]
+    &&$otherAgent['state']==='unavailable'&&$otherAgent['active_jobs']===[],'account and Agent switches cannot read another exact conversation health');
 $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>8];
 runtime_check(!vp3_initiative_worker_health_v1($pdo,$user,0,42)['configuration_ready'],'participant access cannot become owner background authority');
 unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
@@ -131,6 +137,10 @@ vp3_initiative_schedule_v1($pdo,$user,0);
 $pending=vp3_initiative_runtime_runs_v1($pdo,1,0,$policy,true);
 $lost=agent_job_claim_run_v1900($pdo,$user,(int)$pending[0]['id'],'cloud',agent_worker_cloud_worker_id_v1910(1));
 $pdo->prepare("UPDATE agent_workflow_runs SET lease_expires_at='2000-01-01 00:00:00' WHERE id=?")->execute([$lost['run_id']]);
+$pdo->prepare("UPDATE agent_workflow_runs SET status='executing',lease_expires_at=? WHERE id=?")
+    ->execute([gmdate('Y-m-d H:i:s',time()+240),$imageRun]);
+runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['active_jobs']===[],
+    'status omits both an expired Initiative lease and a live unrelated image lease');
 $pdo->prepare("UPDATE agent_workflow_runs SET status='executing',lease_expires_at='2000-01-01 00:00:00' WHERE id=?")->execute([$imageRun]);
 $recovered=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
 runtime_check($recovered['health']['state']==='waiting'&&$recovered['health']['reason']==='retry_scheduled'
@@ -144,7 +154,8 @@ $revoked=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static funct
     vp3_initiative_chat_v1($pdo,$user,vp3_agent_chat_principal_v380($user,null),['conversation_id'=>42],'off',null);
     return '{"jobs":[]}';
 });
-runtime_check(!$revoked['ok']&&$revoked['reason']==='initiative_unconfirmed'&&$revoked['health']['state']==='paused',
+runtime_check(!$revoked['ok']&&$revoked['reason']==='initiative_unconfirmed'&&$revoked['health']['state']==='paused'
+    &&$revoked['health']['active_jobs']===[],
     'opt-out during inference prevents a late result from advancing or entering Chat');
 runtime_check(preg_match('/^[a-f0-9]{32}$/D',$revoked['health']['policy_revision'])===1
     &&$revoked['health']['policy_revision']===vp3_initiative_policy_v1($user,0)['revision'],
@@ -154,7 +165,16 @@ $stale=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static functio
     $GLOBALS['runtimeCalendarTitle']='Changed while the model was generating';
     return '{"jobs":[]}';
 });
-runtime_check(!$stale['ok']&&$stale['reason']==='initiative_unconfirmed','source changes during generation prevent committing an obsolete result');
+runtime_check(!$stale['ok']&&$stale['reason']==='assessment_sources_changed'
+    &&$stale['health']['state']==='waiting'&&$stale['health']['reason']==='assessment_sources_changed'
+    &&$stale['health']['retry_due_at']==='',
+    'source changes withdraw the stale assessment and await a fresh scheduled review');
+$pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
+$fresh=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static function(string $prompt):string{
+    if(!str_contains($prompt,'Changed while the model was generating'))throw new LogicException('The review read the obsolete source.');
+    return '{"jobs":[]}';
+});
+runtime_check($fresh['ok']&&$fresh['reason']==='completed','the next due review assesses the new source without replaying the stale run');
 
 $GLOBALS['runtimeCalendarTitle']='Review with a provider outage';
 $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
@@ -165,6 +185,13 @@ runtime_check(!$providerFailure['ok']&&$providerFailure['reason']==='model_unava
     &&$providerFailure['health']['reason']==='model_unavailable'
     &&$providerFailure['health']['execution_ready']&&$providerFailure['health']['state']==='failed',
     'provider authentication failure remains explicit and terminal even when the configured route is otherwise ready');
+
+$GLOBALS['runtimeCalendarTitle']='Assessment with malformed output';
+$pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
+$invalid=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static fn():string=>'PRIVATE_BAD_PLAN');
+runtime_check(!$invalid['ok']&&$invalid['reason']==='assessment_unverified'&&$invalid['health']['state']==='failed'
+    &&$invalid['health']['reason']==='assessment_unverified'&&!str_contains(json_encode($invalid),'PRIVATE_BAD_PLAN'),
+    'malformed planner output is reported as unverified without exposing the model text');
 
 $namedPolicy=runtime_enable($user,7,11);
 $named=vp3_initiative_worker_health_v1($pdo,$user,7,11);
@@ -260,4 +287,35 @@ $revokedRetry=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static 
 $lastReceipt=$pdo->query('SELECT status FROM agent_workflow_receipts ORDER BY id DESC LIMIT 1')->fetchColumn();
 runtime_check(!$revokedRetry['ok']&&$revokedRetry['reason']==='initiative_unconfirmed'&&$lastReceipt==='failed'
     &&$revokedRetry['health']['state']==='paused','a concurrent owner opt-out prevents even a genuine 503 from scheduling another attempt');
+require_once dirname(__DIR__).'/includes/cognitive-runtime-v500.php';
+require_once dirname(__DIR__).'/includes/cognitive-continuity-v2440.php';
+require_once dirname(__DIR__).'/includes/cognitive-supervision-v2460.php';
+$secret='PRIVATE_INTERNAL_BINDING';
+$raw=json_encode(['binding'=>['revision'=>$secret],'sources'=>['open-task:1'=>str_repeat('a',64)]],JSON_THROW_ON_ERROR);
+$workflow=$pdo->prepare('INSERT INTO agent_workflow_runs(owner_user_id,agent_id,source_kind,capability_key,title,goal,decision_summary,status,updated_at)
+    VALUES(1,NULL,?,?,?,?,?,?,?)');
+$workflow->execute(['owner_request','workflow.execute','User-requested task','Keep the user task summary.',null,'failed','2026-01-01 00:00:00']);
+$ownerFailure='workflow:'.$pdo->lastInsertId();
+$workflow->execute(['agent_initiative','initiative.prepare','Private preparation',$raw,null,'failed','2026-01-01 00:00:00']);
+$preparation='workflow:'.$pdo->lastInsertId();
+$workflow->execute(['agent_initiative_action','initiative.action','Proposed Agent action',$raw,$raw,'approval_pending','2026-01-01 00:00:00']);
+$approval='workflow:'.$pdo->lastInsertId();
+$workflow->execute(['agent_initiative','initiative.plan','Assess useful next steps',$raw,null,'executing','2026-01-01 00:00:00']);
+$active='workflow:'.$pdo->lastInsertId();
+$attempts=[];
+for($i=0;$i<16;$i++){
+    $workflow->execute(['agent_initiative','initiative.plan','Assess useful next steps',$raw,null,'failed','2026-01-02 00:00:00']);
+    $attempts[]='workflow:'.$pdo->lastInsertId();
+}
+$pdo->exec('PRAGMA query_only=ON');
+$work=array_column(vp3_cognitive_continuity_workflows_v2440($pdo,$user,'system'),null,'ref');
+$issues=array_column(vp3_cognitive_supervision_assess_items_v2460($pdo,$user,'system',array_values($work)),null,'continuity_ref');
+$pdo->exec('PRAGMA query_only=OFF');
+runtime_check(!array_intersect($attempts,array_keys($work))&&!array_intersect($attempts,array_keys($issues))
+    &&isset($work[$active])&&(int)$pdo->query("SELECT COUNT(*) FROM agent_workflow_runs WHERE updated_at='2026-01-02 00:00:00'")->fetchColumn()===16,
+    'past automatic assessments remain recorded while Open Work retains current assessment activity without repeated repair cards');
+runtime_check($work[$ownerFailure]['summary']==='Keep the user task summary.'&&$issues[$ownerFailure]['health_state']==='terminal_failure'
+    &&$work[$preparation]['state']==='repair_needed'&&$issues[$preparation]['health_state']==='terminal_failure'
+    &&$work[$approval]['state']==='needs_approval'&&!str_contains(json_encode([$work,$issues]),$secret),
+    'Open Work preserves genuine failures and approvals while never exposing Initiative binding JSON');
 echo "AGENT_INITIATIVE_RUNTIME_V1=PASS ($checks cases)\n";

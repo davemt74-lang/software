@@ -147,14 +147,15 @@ function personal_knowledge_folders(PDO $pdo, array $user): array
     return $stmt->fetchAll() ?: [];
 }
 
-function personal_knowledge_folder(PDO $pdo, array $user, int $folderId): ?array
+function personal_knowledge_folder(PDO $pdo, array $user, int $folderId, bool $forUpdate = false): ?array
 {
     $userId = max(0, (int)($user['id'] ?? 0));
     if ($userId < 1 || $folderId < 1 || !table_exists('artist_transcript_folders_v177')) return null;
+    $lock = $forUpdate && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' FOR UPDATE' : '';
     $stmt = $pdo->prepare(
         'SELECT id,folder_name,sort_order,created_at,updated_at
          FROM artist_transcript_folders_v177
-         WHERE id=? AND created_by_user_id=? LIMIT 1'
+         WHERE id=? AND created_by_user_id=? LIMIT 1'.$lock
     );
     $stmt->execute([$folderId, $userId]);
     $row = $stmt->fetch();
@@ -192,6 +193,24 @@ function personal_knowledge_resolve_folder_id(PDO $pdo, array $user, int $folder
     return $folderId;
 }
 
+function personal_knowledge_note_marker(string $key): string
+{
+    return 'personal-'.sha1(trim($key)).'.txt';
+}
+
+function personal_knowledge_note_by_key(PDO $pdo, array $user, string $key, bool $withFolder = false): ?array
+{
+    $columns = $withFolder ? 'id,folder_id' : 'id';
+    $find = $pdo->prepare(
+        "SELECT $columns FROM knowledge_items
+         WHERE created_by_user_id=? AND knowledge_scope='personal' AND file_type='personal_note' AND file_name=?
+         LIMIT 1"
+    );
+    $find->execute([(int)($user['id'] ?? 0), personal_knowledge_note_marker($key)]);
+    $row = $find->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
 /** Store deterministic internal/user-agent knowledge under the current owner. */
 function personal_knowledge_store(
     array $user,
@@ -220,16 +239,10 @@ function personal_knowledge_store(
 
     $title = mb_strimwidth($title, 0, 190, '…');
     $description = mb_strimwidth($description, 0, 2000, '…');
-    $marker = 'personal-' . sha1($key) . '.txt';
+    $marker = personal_knowledge_note_marker($key);
     $resolvedFolderId = $folderId === null ? null : personal_knowledge_resolve_folder_id($pdo, $user, max(0, $folderId));
 
-    $find = $pdo->prepare(
-        "SELECT id FROM knowledge_items
-         WHERE created_by_user_id=? AND knowledge_scope='personal' AND file_type='personal_note' AND file_name=?
-         LIMIT 1"
-    );
-    $find->execute([$userId, $marker]);
-    $knowledgeId = (int)$find->fetchColumn();
+    $knowledgeId = (int)(personal_knowledge_note_by_key($pdo, $user, $key)['id'] ?? 0);
     $knowledgeCreated = $knowledgeId < 1;
 
     if ($knowledgeId > 0) {

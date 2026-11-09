@@ -305,6 +305,7 @@ async function scheduleOperation(action,id){
 
 // A5C8: one durable feed updates Chat, Brain and notification surfaces.
 let missionNotices={items:[],unread:0},progressInflight=false,progressConnected=false,progressReceived=0;
+let missionOrbGeneration=0,missionOrbPageActive=true;
 const noticeHost=el('section','vp3-mission-notifications');noticeHost.setAttribute('aria-label','Mission notifications');
 root.querySelector('.vp3-teams-body').insertBefore(noticeHost,list);
 const liveSummary=el('section','vp3-mission-live-summary');liveSummary.setAttribute('aria-label','Live mission progress');liveSummary.setAttribute('aria-live','polite');
@@ -318,6 +319,33 @@ function missionProgress(m){return progressLabels[progressState(m)]||progressSta
 function workerProgress(t){
  const a=t.activity;
  return (a?.stage||t.status||'queued')+' · Last activity '+fmt(a?.last_activity_at||t.completed_at||t.started_at);
+}
+function clearMissionOrbJobs(){
+ missionOrbGeneration++;
+ window.VP3AgentOrb?.setJobs?.('mission',[]);
+}
+function publishMissionOrbJobs(response){
+ if(window.VP3ParticipantContinuity?.selectedContext?.()){clearMissionOrbJobs();return;}
+ const jobs=new Map(),now=Date.now(),snapshotExpiresAt=now+12000;
+ const idPart=value=>typeof value==='string'&&/^[a-z0-9-]{1,48}$/i.test(value)?value.toLowerCase():'';
+ const homeUnavailable=response.homeserver_updates_unavailable||response.runtimes?.homeserver===false;
+ for(const mission of response.items){
+  if(mission?.authority_current!==true||mission.private||mission.status!=='running'||mission.progress?.state!=='running'||mission.continuity?.successor_id)continue;
+  if(homeUnavailable&&mission.execution_target!=='cloud')continue;
+  const missionId=idPart(mission.id);
+  if(!missionId||!Array.isArray(mission.tasks))continue;
+  for(const worker of mission.tasks){
+   if(worker?.status!=='running')continue;
+   const workerId=idPart(worker.id);
+   if(!workerId)continue;
+   const leaseExpiresAt=worker.active_lease_expires_at;
+   if(mission.execution_target==='cloud'&&(!Number.isSafeInteger(leaseExpiresAt)||leaseExpiresAt<=now))continue;
+   const expiresAt=mission.execution_target==='cloud'?Math.min(snapshotExpiresAt,leaseExpiresAt):snapshotExpiresAt;
+   const id='mission:'+missionId+':'+workerId;
+   jobs.set(id,{id,expiresAt});
+  }
+ }
+ window.VP3AgentOrb?.setJobs?.('mission',[...jobs.values()]);
 }
 function renderLiveSummary(){
  liveSummary.replaceChildren();
@@ -356,6 +384,7 @@ function publishProgress(){
 window.VP3_AGENT_MISSION_NOTIFICATIONS=renderNotices;
 function clearPrivateMissionState(){
  authorityGeneration++;viewGeneration++;
+ clearMissionOrbJobs();
  items=[];missionNotices={items:[],unread:0};selected='';progressConnected=false;
  detail.replaceChildren();detail.hidden=true;const diagnostic=root.querySelector('.vp3-integration-diagnostic');if(diagnostic){diagnostic.replaceChildren();diagnostic.hidden=true;}
  for(const cache of [toolsByMission,toolDrafts,changesByMission,staffingByMission,webEvidenceByMission,liveByWorker,browserByWorker,pendingOperations])cache.clear();
@@ -375,16 +404,18 @@ async function markMissionNotice(id){
 }
 async function pollProgress(){
  if(progressInflight||busy||document.hidden)return;
- progressInflight=true;const generation=viewGeneration,context=JSON.stringify(taskContext());
+ progressInflight=true;const generation=viewGeneration,context=JSON.stringify(taskContext()),orbGeneration=missionOrbGeneration;
  const controller=new AbortController(),timer=window.setTimeout(()=>controller.abort(),26000);
  try{
   const response=await api('progress.feed',{},controller.signal);
   if(busy||generation!==viewGeneration||context!==JSON.stringify(taskContext()))return;
   if(!Array.isArray(response.items)||!response.notifications||!Array.isArray(response.notifications.items))throw new Error('The Mission runtime did not return live progress.');
   items=response.items;missionNotices=response.notifications;progressReceived=Date.now();progressConnected=true;lastRefresh=Date.now();
+  if(orbGeneration===missionOrbGeneration&&missionOrbPageActive&&!document.hidden&&navigator.onLine!==false)publishMissionOrbJobs(response);
   for(const m of items){if(m.private||m.authority_current===false){toolsByMission.delete(m.id);toolDrafts.delete(m.id);changesByMission.delete(m.id);webEvidenceByMission.delete(m.id);for(const key of liveByWorker.keys()){if(key.startsWith(m.id+'|')){liveByWorker.delete(key);browserByWorker.delete(key);}}}}
   showList();const current=items.find(m=>m.id===selected);if(current&&(current.private||current.authority_current===false||!detail.contains(document.activeElement)))showMission(current);publishProgress();
  }catch(e){
+  if(orbGeneration===missionOrbGeneration)clearMissionOrbJobs();
   if(!busy&&generation===viewGeneration){progressConnected=false;if([401,403,419].includes(e.status))clearPrivateMissionState();publishProgress();say('Mission updates disconnected. Last received status is shown; no work is replayed.');}
  }finally{window.clearTimeout(timer);progressInflight=false;}
 }
@@ -407,7 +438,11 @@ async function tickCloudSchedules(){
 }
 window.setInterval(()=>void tickCloudSchedules(),30000);
 window.setInterval(pollProgress,5000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)void pollProgress();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)clearMissionOrbJobs();else void pollProgress();});
+for(const event of ['stonefellow:chat-context-changing','vp3:chat-conversation-changed','vp3:participant-task-context','offline'])window.addEventListener(event,clearMissionOrbJobs);
+runtimeSelect.addEventListener('change',clearMissionOrbJobs);
+window.addEventListener('pagehide',()=>{missionOrbPageActive=false;clearMissionOrbJobs();});
+window.addEventListener('pageshow',()=>{missionOrbPageActive=true;});
 window.addEventListener('online',()=>void pollProgress());
 if(!linkedMission)void pollProgress();
 

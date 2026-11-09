@@ -45,14 +45,14 @@ function queueMarketingFixture(array &$variant): array
 }
 try{
     $ctx=image_fixture_turn_v1();$g=vp3_image_queue_v1($pdo,$u,$principal,$plan,$ctx);
-    check($g['status']==='queued'&&count($calls)===0&&imageCount()===0,'Chat queues a canonical image job without blocking on the provider');
+    check($g['status']==='queued'&&$g['active_lease_expires_at']===null&&count($calls)===0&&imageCount()===0,'Chat queues a canonical image job without blocking on the provider or projecting active work');
     check(vp3_image_queue_v1($pdo,$u,$principal,$plan,$ctx)['id']===$g['id'],'same saved user turn recovers the same image request');
     reject(fn()=>vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'prompt'=>'Different image'],$ctx),'a consumed turn cannot silently become a different image');
     reject(fn()=>queueImage(),'one owner cannot accidentally admit a second active image request');
     reject(fn()=>vp3_image_row_v1($pdo,['id'=>2],$g['id']),'another owner cannot read the generation record');
     reject(fn()=>vp3_image_queue_v1($pdo,$u,$principal,$plan,['conversation_id'=>12,'chat_user_message_id'=>$ctx['chat_user_message_id']]),'an Agent cannot queue into another Agent conversation');
     $finished=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
-    check($finished['status']==='completed'&&imageCount()===1&&count($calls)===1,'one leased worker calls OpenAI and saves one actual PNG');
+    check($finished['status']==='completed'&&$finished['active_lease_expires_at']===null&&imageCount()===1&&count($calls)===1,'one leased worker calls OpenAI, saves one actual PNG and clears its lease projection');
     check($finished['asset']['available']&&$finished['asset']['source']==='openai_image'&&str_contains($finished['asset']['url'],'media-library-file'),'the completed card references the existing private media route');
     $asset=media_studio_asset($finished['asset']['id'],$u);$meta=json_decode($asset['metadata_json'],true);check($meta['prompt']===$plan['prompt']&&$meta['usage']['total_tokens']===220&&$meta['width']===1024,'the private asset retains source prompt, model, dimensions and real usage');
     check(count($GLOBALS['imageUsage'])===1&&$GLOBALS['imageUsage'][0][5]['total_tokens']===220,'actual image-token usage reaches the existing quota accounting path');
@@ -97,7 +97,14 @@ try{
     $GLOBALS['noImageKey']=true;reject(fn()=>queueImage(),'a missing saved key prevents job admission');$GLOBALS['noImageKey']=false;
     $GLOBALS['noImageEntitlement']=true;reject(fn()=>queueImage(),'missing AI entitlement prevents paid job admission');$GLOBALS['noImageEntitlement']=false;
     $g=queueImage();$claim=agent_job_claim_run_v1900($pdo,$u,$g['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);$pdo->prepare('UPDATE agent_image_generations_v1 SET provider_started_at=? WHERE generation_id=?')->execute([gmdate('Y-m-d H:i:s'),$g['id']]);$before=count($calls);vp3_image_execute_v1($pdo,$u,$claim,'transportImage');check(count($calls)===$before,'a consumed provider attempt cannot be replayed through a new worker claim');
-    $g=queueImage();$claim=agent_job_claim_run_v1900($pdo,$u,$g['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);$pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?')->execute(['2001-01-01 00:00:00',$g['job_id']]);$before=count($calls);$v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');check($v['status']==='failed'&&count($calls)===$before,'abandoned single-attempt jobs recover as failed without reissuing a paid POST');
+    $g=queueImage();$claim=agent_job_claim_run_v1900($pdo,$u,$g['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);
+    $v=vp3_image_view_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']));
+    check($v['status']==='generating'&&$v['active_lease_expires_at']===strtotime($claim['lease_expires_at'].' UTC')*1000
+        &&!str_contains(json_encode($v),$claim['lease_token']),'an executing image projects only the active lease expiry');
+    $pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?')->execute(['2001-01-01 00:00:00',$g['job_id']]);
+    $v=vp3_image_view_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']));
+    check($v['status']==='generating'&&$v['active_lease_expires_at']===null,'an expired lease clears the private work signal before ordinary recovery');
+    $before=count($calls);$v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');check($v['status']==='failed'&&count($calls)===$before,'abandoned single-attempt jobs recover as failed without reissuing a paid POST');
     $g=queueImage();$claim=agent_job_claim_run_v1900($pdo,$u,$g['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);$pdo->beginTransaction();agent_worker_cloud_result_v1910($pdo,$u,$claim,true,'Nested receipt fixture',['asset_id'=>123],'',false);$pdo->rollBack();check(agent_workflow_row_v1400($pdo,1,$g['job_id'])['status']==='executing','canonical result joins a caller transaction and rolls back with asset persistence');agent_job_cancel_v1900($pdo,$u,$g['job_id']);
     $g=queueImage();$pdo->prepare('UPDATE agent_workflow_runs SET agent_id=8 WHERE id=?')->execute([$g['job_id']]);$before=count($calls);reject(fn()=>vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage'),'a reassigned canonical job cannot execute its old image binding');check(count($calls)===$before,'a mismatched job binding never reaches the provider');$pdo->prepare('UPDATE agent_workflow_runs SET agent_id=7 WHERE id=?')->execute([$g['job_id']]);agent_job_cancel_v1900($pdo,$u,$g['job_id']);
     $snapshot=['capabilities'=>[['id'=>'images.generate'],['id'=>'media.assets.read']]];

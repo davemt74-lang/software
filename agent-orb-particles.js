@@ -3,9 +3,10 @@
 (() => {
   'use strict';
 
-  const ember = '255,183,110';
+  const silver = '220,220,220';
   const tau = Math.PI * 2;
   const goldenAngle = 2.399963229728653;
+  const workFieldScale = 1.68;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const mounted = new WeakSet();
   let pointer = null;
@@ -54,10 +55,10 @@
     const radius = size * .427;
     context.clearRect(0, 0, size, size);
     const glow = context.createRadialGradient(center, center, radius * .12, center, center, radius * 1.19);
-    glow.addColorStop(0, 'rgba(255,183,110,.075)');
-    glow.addColorStop(.56, 'rgba(255,183,110,.045)');
-    glow.addColorStop(.86, 'rgba(255,183,110,.12)');
-    glow.addColorStop(1, 'rgba(255,183,110,0)');
+    glow.addColorStop(0, 'rgba(40,40,40,.38)');
+    glow.addColorStop(.64, 'rgba(33,33,33,.30)');
+    glow.addColorStop(.84, 'rgba(23,23,23,.22)');
+    glow.addColorStop(1, 'rgba(23,23,23,0)');
     context.fillStyle = glow;
     context.fillRect(0, 0, size, size);
 
@@ -80,14 +81,14 @@
       const alpha = Math.min(.99, .12 + front * .68 + shimmer * .18 + emphasis);
       const dot = (.45 + front * .93 + (shimmer > .98 ? .7 : 0)) * dotScale;
       const distance = radius * perspective * breath;
-      context.fillStyle = 'rgba(' + ember + ',' + alpha.toFixed(3) + ')';
+      context.fillStyle = 'rgba(' + silver + ',' + alpha.toFixed(3) + ')';
       context.fillRect(center + x * distance - dot / 2, center + y * distance - dot / 2, dot, dot);
     }
 
     context.lineWidth = Math.max(.55, size / 320);
     for (let i = 0; i < 3; i++) {
       const wobble = time * (.11 + i * .065);
-      context.strokeStyle = 'rgba(' + ember + ',' + (.12 + i * .042) + ')';
+      context.strokeStyle = 'rgba(' + silver + ',' + (.12 + i * .042) + ')';
       context.beginPath();
       context.ellipse(center, center, radius * (1.13 + i * .04), radius * (.33 + i * .055), wobble + i * .86, 0, tau);
       context.stroke();
@@ -152,11 +153,51 @@
       const x = center + Math.cos(angle) * distance;
       const y = center + Math.sin(angle) * distance * .72;
       const alpha = .43 + .24 * Math.sin(time * 1.7 + phase);
-      context.fillStyle = 'rgba(' + ember + ',' + alpha.toFixed(3) + ')';
+      context.fillStyle = 'rgba(' + silver + ',' + alpha.toFixed(3) + ')';
       context.beginPath();
       context.arc(x, y, Math.max(.55, size / 108) * (i % 4 === 0 ? 1.2 : .85), 0, tau);
       context.fill();
     }
+  }
+
+  function workPhases(value) {
+    const phases = [];
+    const seen = new Set();
+    for (const id of value.split(',')) {
+      if (!/^[a-z0-9][a-z0-9:_-]{0,127}$/i.test(id) || seen.has(id)) continue;
+      seen.add(id);
+      let phase = 0;
+      for (const character of id) phase = (phase * 31 + character.charCodeAt(0)) >>> 0;
+      phases.push((phase % 4096) / 4096 * tau);
+      if (phases.length === 4) break;
+    }
+    return phases;
+  }
+
+  function drawWorkTracks(context, size, fieldSize, phases, time) {
+    const center = fieldSize / 2;
+    context.clearRect(0, 0, fieldSize, fieldSize);
+    phases.forEach((phase, index) => {
+      const radius = size * (.55 + index * .068);
+      context.beginPath();
+      context.arc(center, center, radius, 0, tau);
+      context.strokeStyle = 'rgba(20,20,20,.52)';
+      context.lineWidth = 1.6;
+      context.stroke();
+      context.strokeStyle = 'rgba(242,242,242,.66)';
+      context.lineWidth = .65;
+      context.stroke();
+
+      const angle = phase + index * goldenAngle + time * (.9 + index * .12);
+      context.beginPath();
+      context.arc(center + Math.cos(angle) * radius, center + Math.sin(angle) * radius,
+        Math.max(1.8, size * .031), 0, tau);
+      context.fillStyle = '#f7f7f7';
+      context.fill();
+      context.strokeStyle = '#252525';
+      context.lineWidth = .9;
+      context.stroke();
+    });
   }
 
   function mount(host) {
@@ -177,8 +218,27 @@
     if (!fieldContext || !sphereContext) return;
 
     const orbRoot = host.closest('.vp3-orb-root');
+    const tracksWork = orbRoot && host.hasAttribute('data-vp3-orb-work');
     const gaze = {x:0,y:0};
     let frame = 0, lastFrame = -Infinity, lastSize = 0, visible = true, samples = [];
+    let workCanvas, workContext, phases = [];
+
+    function syncWorkTracks() {
+      phases = workPhases(host.dataset.orbJobIds || '');
+      if (!phases.length) {
+        workCanvas?.remove();
+        workCanvas = null;
+        workContext = null;
+        return;
+      }
+      if (!workCanvas) {
+        workCanvas = layer('canvas', 'vp3-public-orb-work-tracks');
+        workContext = workCanvas.getContext('2d');
+      }
+      if (!workContext) return;
+      workCanvas.dataset.orbWorkTracks = String(phases.length);
+      if (!workCanvas.parentNode) host.append(workCanvas);
+    }
 
     function paint(now) {
       const size = host.clientWidth;
@@ -206,6 +266,11 @@
       } else {
         drawCloud(fieldContext, size, time, state);
         drawSphere(sphereContext, size, samples, time, state);
+      }
+      if (phases.length && workContext) {
+        const fieldSize = size * workFieldScale;
+        fit(workCanvas, workContext, fieldSize, dpr);
+        drawWorkTracks(workContext, size, fieldSize, phases, time);
       }
       host.classList.add('vp3-public-orb-rendered');
     }
@@ -238,9 +303,13 @@
     if ('ResizeObserver' in window) new ResizeObserver(refresh).observe(host);
     reduced.addEventListener?.('change', refresh);
     document.addEventListener('visibilitychange', refresh);
-    const appearance = new MutationObserver(refresh);
-    appearance.observe(host, {attributeFilter:['data-orb-shape']});
+    const appearance = new MutationObserver(records => {
+      if (tracksWork && records.some(record => record.attributeName === 'data-orb-job-ids')) syncWorkTracks();
+      refresh();
+    });
+    appearance.observe(host, {attributeFilter:tracksWork ? ['data-orb-shape','data-orb-job-ids'] : ['data-orb-shape']});
     if (orbRoot) appearance.observe(orbRoot, {attributeFilter:['data-state','data-recording']});
+    if (tracksWork) syncWorkTracks();
     refresh();
   }
 

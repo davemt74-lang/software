@@ -106,6 +106,7 @@ function vp3_cognitive_presentation_notification_rows_v510(PDO $pdo,array $user,
     if($uid<1||!table_exists('notifications'))return [];
     try{
         $predicate=function_exists('notification_system_sql_predicate')?notification_system_sql_predicate('n'):'1=1';
+        if(function_exists('notification_gmail_inbox_scope_sql_v1'))$predicate.=' AND '.notification_gmail_inbox_scope_sql_v1($pdo,$user,'n');
         $s=$pdo->prepare("SELECT n.* FROM notifications n WHERE n.user_id=? AND n.id>? AND n.is_read=0 AND {$predicate} ORDER BY n.id ASC LIMIT {$limit}");
         $s->execute([$uid,max(0,$afterId)]);
         return $s->fetchAll()?:[];
@@ -181,7 +182,27 @@ function vp3_cognitive_presentation_open_digest_v510(PDO $pdo,array $user,string
 {
     $s=$pdo->prepare("SELECT * FROM cognitive_return_digests_v510 WHERE owner_user_id=? AND agent_namespace=? AND status='presented' ORDER BY id DESC LIMIT 1");
     $s->execute([(int)$user['id'],$namespace]);$row=$s->fetch();
-    return is_array($row)?vp3_cognitive_presentation_digest_public_v510($row):null;
+    if(!is_array($row))return null;
+    $digest=vp3_cognitive_presentation_digest_public_v510($row);
+    if(!array_filter($digest['items'],static fn($item):bool=>is_array($item)&&vp3_cognitive_presentation_gmail_private_v510($item)))return $digest;
+
+    $currentNotice=table_exists('notifications')?$pdo->prepare('SELECT 1 FROM notifications WHERE id=? AND user_id=?
+        AND type=? AND source_type=? AND source_id=?'):null;
+    $items=array_values(array_filter($digest['items'],static function($item)use($pdo,$user,$currentNotice):bool{
+        if(!is_array($item))return false;
+        if(!vp3_cognitive_presentation_gmail_private_v510($item))return true;
+        if(!$currentNotice)return false;
+        $generation=notification_gmail_review_generation_v1($pdo,$user,notification_is_gmail_github_actions_v1($item));
+        if($generation===null||(int)($item['source_id']??0)!==$generation)return false;
+        $currentNotice->execute([(int)($item['id']??0),(int)$user['id'],$item['type']??'',$item['source_type']??'',$generation]);
+        return $currentNotice->fetchColumn()!==false;
+    }));
+    if(!$items)return null;
+    if(count($items)!==count($digest['items'])){
+        $digest['items']=$items;
+        $digest['summary']=vp3_cognitive_presentation_digest_summary_v510($items);
+    }
+    return $digest;
 }
 
 function vp3_cognitive_presentation_digest_v510(PDO $pdo,array $user,string $namespace,array $state): ?array
@@ -258,6 +279,7 @@ function vp3_cognitive_presentation_voice_sensitive_v510(array $row): bool
 
 function vp3_cognitive_presentation_voice_allowed_type_v510(array $row): bool
 {
+    if(vp3_cognitive_presentation_gmail_private_v510($row))return false;
     if(vp3_cognitive_presentation_voice_sensitive_v510($row))return false;
     if(strtolower(trim((string)($row['source_type']??'')))==='tracky_event'&&function_exists('tracky_v272_notification_voice_allowed')){
         return tracky_v272_notification_voice_allowed($row);
@@ -267,6 +289,12 @@ function vp3_cognitive_presentation_voice_allowed_type_v510(array $row): bool
     if($type==='homeserver_connection_update')return true;
     if($source==='profile_event'&&str_starts_with($type,'profile_'))return true;
     return (bool)preg_match('/(?:meeting|appointment|booking|calendar|profile|order|message|approval|workflow|failed|failure)/',$type);
+}
+
+function vp3_cognitive_presentation_gmail_private_v510(array $row): bool
+{
+    return (function_exists('notification_is_gmail_inbox_review_v1') && notification_is_gmail_inbox_review_v1($row))
+        || (function_exists('notification_is_gmail_github_actions_v1') && notification_is_gmail_github_actions_v1($row));
 }
 
 function vp3_cognitive_presentation_voice_text_v510(array $user,array $row,int $count=1): string
@@ -319,6 +347,8 @@ function vp3_cognitive_presentation_voice_candidate_v510(PDO $pdo,array $user,ar
         if(empty($attention['voice'])){
             return ['skip_through_id'=>$maxId,'attention_reason'=>(string)($attention['reason_code']??'attention_policy')];
         }
+        // Gmail review rows do not enter this generic digest speech path.
+        if($digest&&array_filter($digest['items']??[],static fn($item):bool=>is_array($item)&&vp3_cognitive_presentation_gmail_private_v510($item)))$digest=null;
         $message=$digest&&(int)($digest['idle_minutes']??0)>=VP3_COGNITIVE_DIGEST_ATTENTION_IDLE_MINUTES_V510
             ?vp3_cognitive_text_v500($digest['summary']??'',360)
             :vp3_cognitive_presentation_voice_text_v510($user,$eligible[0],count($eligible));

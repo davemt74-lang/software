@@ -6,7 +6,8 @@
   const initialAgent=Number(window.STONEFELLOW_CHAT?.agentId??window.STONEFELLOW_NOTIFICATION_DRAWER?.agentId??window.VP3_ORB_CONFIG?.agentId??0);
   const initialBinding=String(window.STONEFELLOW_CHAT?.workingAttentionBinding||window.STONEFELLOW_NOTIFICATION_DRAWER?.workingAttentionBinding||window.VP3_ORB_CONFIG?.workingAttentionBinding||'');
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const labels={working:'Working',queued:'Queued',interrupted:'Interrupted — worker lease expired',failed:'Failed',cancelled:'Cancelled',paused:'Paused',unknown:'Status unknown',unverified:'Completion not verified',withheld:'Withheld — source or conversation changed',waiting_owner:'Waiting for your review',ready_to_report:'Prepared — waiting to report',completed:'Completed private preparation',assessed:'Assessment complete'};
+  const labels={working:'Working',queued:'Queued',interrupted:'Interrupted — worker lease expired',failed:'Failed',superseded:'Sources changed. Waiting for the next review.',cancelled:'Cancelled',paused:'Paused',unknown:'Status unknown',unverified:'Completion not verified',withheld:'Withheld — source or conversation changed',waiting_owner:'Waiting for your review',ready_to_report:'Prepared — waiting to report',completed:'Completed private preparation',assessed:'Assessment complete'};
+  const participantSelected=()=>!!window.VP3ParticipantContinuity?.selectedContext?.();
   function scope(){
     const cfg=window.STONEFELLOW_NOTIFICATION_DRAWER||{},chat=window.STONEFELLOW_CHAT;
     const owner=Number(chat?.userId||cfg.userId||window.VP3_ORB_CONFIG?.ownerKey||0),agent=Number(chat?.agentId??cfg.agentId??window.VP3_ORB_CONFIG?.agentId??0);
@@ -39,6 +40,17 @@
     else if(snapshot){
       const state=snapshot.state;
       if(state!=='ready')markup+='<p>'+esc({no_chat:'No saved work is attached to this Agent yet.',starting:'This Chat is connecting to the Agent loop.',paused:'Agent background work is paused.',linked_elsewhere:'The Agent is following another saved Chat.'}[state]||'Work status could not be verified.')+'</p>';
+      const music=state==='ready'&&!staleSnapshot&&!participantSelected()?snapshot.music:null;
+      if(music&&typeof music.title==='string'){
+        const chatUrl=safeUrl(music.chat_url);
+        const source='Played in this VP3 Chat'+(music.channel_title?' · '+music.channel_title:'');
+        markup+=`<section class="agent-top-of-mind-music" aria-label="Music and entertainment">
+          <strong>Music and entertainment</strong><p>${esc(music.title)}</p><small>${esc(source)}</small>`;
+        if(current.hasChat&&typeof window.STONEFELLOW_CHAT_CONTINUITY_V87?.requestYoutubePicks==='function'){
+          markup+='<button type="button" data-top-of-mind-picks>Ask for YouTube music picks</button><small data-top-of-mind-music-status role="status"></small>';
+        }else if(chatUrl)markup+='<a href="'+esc(chatUrl)+'">Open this Chat for music picks</a>';
+        markup+='</section>';
+      }
       if(state==='ready'&&!snapshot.items.length)markup+='<p>No active or recently verified work in this Chat’s current sources.</p>';
       markup+='<ol>';
       for(const item of snapshot.items){
@@ -59,7 +71,7 @@
   }
   function schedule(){window.clearTimeout(timer);timer=0;const active=snapshot?.items?.some(x=>['working','queued'].includes(x.state));const delay=failures?Math.min(30000,2500*2**Math.min(failures,4)):(active?2500:8000);if(visible())timer=window.setTimeout(()=>void refresh(),delay);}
   async function refresh(){
-    if(!visible()||controller)return;
+    if(!visible()||controller||participantSelected())return;
     const sent=scope();
     if(!sent){stop();snapshot=null;render();return;}
     if(!sent.endpoint||sent.hasChat&&sent.cid<1){snapshot=null;render();return;}
@@ -71,7 +83,7 @@
       const deadline=new Promise((resolve,reject)=>{timeout=window.setTimeout(()=>{request.abort();reject(new Error('Status deadline expired.'));},8000);});
       const {response,data}=await Promise.race([read,deadline]);
       if(request.signal.aborted)throw new Error('Status deadline expired.');
-      if(!visible()||mine!==generation||sentKey!==key(scope()))return;
+      if(!visible()||mine!==generation||sentKey!==key(scope())||participantSelected())return;
       if(!response.ok||data?.ok!==true)throw Object.assign(new Error('Work status could not be refreshed.'),{status:response.status});
       const next=data.state;
       if(!next||next.contract!=='vp3.top-of-mind.v1'||next.owner_user_id!==sent.owner||next.agent_id!==sent.agent
@@ -102,7 +114,23 @@
   window.addEventListener('pagehide',()=>{closed=true;stop();});
   window.addEventListener('pageshow',()=>{closed=false;if(visible())void refresh();});
   for(const name of ['stonefellow:chat-context-changing','vp3:chat-context-ready'])window.addEventListener(name,()=>{stop();snapshot=null;error='';render();if(name==='vp3:chat-context-ready'&&visible())void refresh();});
-  document.addEventListener('click',event=>{if(event.target.closest('[data-top-of-mind-retry]')&&host?.contains(event.target)){error='';stop();render();void refresh();}});
+  for(const name of ['vp3:participant-selection-changed','vp3:youtube-history-changed'])window.addEventListener(name,()=>{
+    stop();snapshot=null;error='';render();if(visible())void refresh();
+  });
+  document.addEventListener('click',event=>{
+    if(!host?.contains(event.target))return;
+    if(event.target.closest('[data-top-of-mind-retry]')){error='';stop();render();void refresh();return;}
+    if(!event.target.closest('[data-top-of-mind-picks]')||!visible()||participantSelected()
+      ||!snapshot?.music||scope()?.cid!==snapshot.conversation_id)return;
+    const chat=window.STONEFELLOW_CHAT_CONTINUITY_V87;
+    if(chat?.requestYoutubePicks?.()){
+      chat.showChatView?.();
+      window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();
+    }else{
+      const status=host.querySelector('[data-top-of-mind-music-status]');
+      if(status)status.textContent='Finish the current Chat turn before asking for music picks.';
+    }
+  });
   new MutationObserver(()=>{if(visible())render();}).observe(document.body,{attributes:true,attributeFilter:['data-stonefellow-agent-state']});
   window.VP3TopOfMindFeedV1={mount};
   const existing=document.querySelector('#chatNotificationDrawer [data-agent-top-of-mind]');

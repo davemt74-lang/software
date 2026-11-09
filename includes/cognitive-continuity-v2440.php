@@ -113,6 +113,7 @@ function vp3_cognitive_continuity_workflows_v2440(PDO $pdo,array $user,string $n
             "SELECT * FROM agent_workflow_runs
              WHERE owner_user_id=? AND {$where}
                AND status NOT IN ('completed','cancelled')
+               AND NOT (status='failed' AND COALESCE(source_kind,'')='agent_initiative' AND COALESCE(capability_key,'')='initiative.plan')
              ORDER BY updated_at DESC,id DESC LIMIT 12"
         );
         $stmt->execute($params);$rows=$stmt->fetchAll()?:[];
@@ -140,7 +141,15 @@ function vp3_cognitive_continuity_workflows_v2440(PDO $pdo,array $user,string $n
             $status==='approved'=>'ready',
             default=>'planned',
         };
-        $summary=vp3_cognitive_text_v500($row['decision_summary']??$row['goal']??'',700);
+        // Initiative goals are internal bindings and source proofs. Recurring
+        // assessment failures are reported by current Initiative health.
+        $summary=match($row['source_kind']??''){
+            'agent_initiative'=>($row['capability_key']??'')==='initiative.plan'
+                ?'Background assessment of sources available to the Agent.'
+                :($state==='repair_needed'?'The Agent could not verify this private preparation.':'Private preparation based on sources available to the Agent.'),
+            'agent_initiative_action'=>'Review the proposed action in its originating Chat.',
+            default=>vp3_cognitive_text_v500($row['decision_summary']??$row['goal']??'',700),
+        };
         $resume=match($state){
             'needs_approval'=>'Review and explicitly approve or reject the existing workflow.',
             'repair_needed'=>'Review the failure and use the existing retry/replan path.',

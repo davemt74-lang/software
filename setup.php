@@ -20,7 +20,7 @@ require_once __DIR__ . '/includes/agent-connections-v1.php';
 require_once __DIR__ . '/includes/agent-development-v1.php';
 require_once __DIR__ . '/includes/agent-connection-health-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
-require_once __DIR__ . '/includes/agent-connection-youtube-chat-v1.php';
+require_once __DIR__ . '/includes/agent-connection-youtube-playback-v1.php';
 
 $pdo = db();
 if (!$pdo) {
@@ -76,6 +76,8 @@ try {
     agent_connection_youtube_consent_schema_v1($pdo);
     agent_connection_youtube_quota_schema_v1($pdo);
     agent_connection_youtube_results_schema_v1($pdo);
+    vp3_youtube_playback_install_v1($pdo);
+    vp3_youtube_picks_install_v1($pdo);
     profile_agent_ensure_schema($pdo);
     agent_job_engine_ensure_schema_v1900($pdo);
     agent_work_control_ensure_schema_v173($pdo);

@@ -70,9 +70,9 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
     $route=vp3_initiative_inference_health_v1($pdo,$user,$agentId);
     if(empty($route['ready']))throw new RuntimeException((string)$route['reason'],503);
     if($route['route']==='homeserver'){
+        if($beforeInference!==null)$beforeInference();
+        if($transientContext)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver');
         try{
-            if($beforeInference!==null)$beforeInference();
-            if($transientContext)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver');
             $run=homeserver_execution_v230_execute((int)$user['id'],'agent.infer.local',[
                 'messages'=>[
                     ['role'=>'system','content'=>vp3_tool_json_contract_v1($protocol)],

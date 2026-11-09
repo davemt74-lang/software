@@ -18,6 +18,8 @@ try {
   mkdirSync(join(temp,'includes'));
   copyFileSync(new URL('../api/cognitive-presentation-v510.php',import.meta.url),join(temp,'api','cognitive-presentation-v510.php'));
   copyFileSync(new URL('../includes/agent-chat-boundary-v380.php',import.meta.url),join(temp,'includes','agent-chat-boundary-v380.php'));
+  writeFileSync(join(temp,'includes','agent-connection-gmail-github-notice-v1.php'),`<?php
+function agent_connection_gmail_github_actions_voice_offer_v1($pdo,$user){return null;}`);
   writeFileSync(runner,`<?php
 $fixture=json_decode($argv[1],true);
 $trace=[];
@@ -106,9 +108,9 @@ function vp3_initiative_pump_v1($pdo,$user,$agent,$cid,$revision){
   assertRejected(request({binding:null,query:live}));
   assertRejected(request({owner:2,session:'owner-b',query:live}));
   assert.deepEqual(request({query:live}).response.state,
-    {owner:1,namespace:'system',working:false,preview:false,live_conversation:42});
+    {owner:1,namespace:'system',working:false,preview:false,live_conversation:42,github_voice:null});
   assert.deepEqual(request({query:{...live,agent_id:'7',conversation_id:'43'}}).response.state,
-    {owner:1,namespace:'agent:7',working:false,preview:false,live_conversation:43});
+    {owner:1,namespace:'agent:7',working:false,preview:false,live_conversation:43,github_voice:null});
   for (const query of [{...live,agent_id:'7'},{...live,conversation_id:'43'},
     {...live,agent_id:'8',conversation_id:'45'},{...live,agent_id:'99'},{...live,conversation_id:'999'}]) {
     const denied=request({query});

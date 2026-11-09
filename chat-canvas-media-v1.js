@@ -2,6 +2,7 @@
 'use strict';
 const cfg=window.VP3_CANVAS_MEDIA_V1||{};if(!cfg.endpoint||!cfg.csrf)return;
 const states=new WeakMap(),started=new Set(),running=new Set();
+const orbJobs=new Map();
 const inProgress={queued:'Queued · waiting for Cloud worker',generating:'Generating image…',paused:'Paused'};
 const specialistKey='image-generator';
 let specialistJob=null;
@@ -34,6 +35,16 @@ function assetCard(asset,s,marketingPrefill=null){
 function matchesScope(s){return s.cid===scope()&&s.agentId===selectedAgent();}
 function active(s){return s.host.isConnected&&s.cid>0&&matchesScope(s)&&!continuity()?.isRestoring?.();}
 function chatVisible(){return !document.hidden&&document.getElementById('chatThread')?.dataset.view==='chat';}
+function syncOrbJobs(force=false){
+ const now=Date.now(),owner=window.STONEFELLOW_CHAT?.userId;
+ const visible=chatVisible()&&!window.VP3ParticipantContinuity?.selectedContext?.()
+  &&(cfg.userId===undefined||Number(owner)===Number(cfg.userId));
+ for(const [id,job] of orbJobs){
+  if(!visible||!active(job.state)||job.expiresAt<=now){orbJobs.delete(id);force=true;}
+ }
+ if(force)window.VP3AgentOrb?.setJobs?.('image',Array.from(orbJobs,([id,{expiresAt}])=>({id,expiresAt})));
+}
+function clearOrbJobs(){orbJobs.clear();syncOrbJobs(true);}
 function stop(s){clearTimeout(s.timer);s.timer=null;}
 function clearSpecialist(s=specialistJob){
  if(!s||specialistJob!==s)return;
@@ -51,6 +62,9 @@ function showSpecialist(s,card,g){
  s.launch=false;
 }
 function failure(s,card,error){
+ const id='image:'+card.dataset.generationId;
+ if(error.status===401||error.status===419)clearOrbJobs();
+ else if(orbJobs.get(id)?.state===s){orbJobs.delete(id);syncOrbJobs(true);}
  if(!active(s))return;
  stop(s);clearSpecialist(s);s.generation=null;
  card.dataset.state='unavailable';
@@ -63,9 +77,17 @@ function failure(s,card,error){
 function renderJob(s,card,g){
  if(!active(s))return;
  if(g?.id!==card.dataset.generationId||typeof g.status!=='string')throw new Error('Image status could not be verified.');
+ const {active_lease_expires_at:lease,...cardData}=g;
+ if(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(g.id)){
+  const id='image:'+g.id,now=Date.now();
+  if(g.status==='generating'&&Number.isSafeInteger(lease)&&lease>now){
+   orbJobs.set(id,{state:s,expiresAt:Math.min(lease,now+7500)});syncOrbJobs(true);
+  }
+  else if(orbJobs.delete(id))syncOrbJobs(true);
+ }
  if(Object.hasOwn(inProgress,g.status))showSpecialist(s,card,g);else{stop(s);clearSpecialist(s);s.launch=false;}
  // Keep focused controls and expanded details in place on unchanged polls.
- const signature=JSON.stringify(g);
+ const signature=JSON.stringify(cardData);
  if(s.generation&&signature===s.generation.signature)return;
  s.generation={status:g.status,signature};
  card.dataset.state=g.status;
@@ -127,6 +149,7 @@ function mount(host,ref){
  }
 }
 function scan(){
+ syncOrbJobs();
  if(specialistJob&&!active(specialistJob))clearSpecialist();
  for(const host of document.querySelectorAll('.vp3-canvas-media')){
   const s=states.get(host);
@@ -139,17 +162,20 @@ function scan(){
  }
 }
 function refreshJobs(){
- if(!chatVisible()){clearSpecialist();return;}
+ if(!chatVisible()){clearSpecialist();clearOrbJobs();return;}
+ syncOrbJobs();
  for(const host of document.querySelectorAll('.vp3-canvas-media')){
   const s=states.get(host),card=host.querySelector('[data-generation-id]');
   if(s&&card&&active(s))void poll(s,card,card.dataset.generationId);
  }
 }
 window.VP3CanvasMedia={mount};new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true});
-window.addEventListener('stonefellow:chat-context-changing',()=>clearSpecialist());
+window.addEventListener('stonefellow:chat-context-changing',()=>{clearSpecialist();clearOrbJobs();});
+window.addEventListener('vp3:participant-task-context',clearOrbJobs);
+window.addEventListener('vp3:agent-orb-ready',()=>syncOrbJobs(true));
 window.addEventListener('vp3:chat-context-ready',()=>{refreshJobs();scan();});
 window.addEventListener('vp3:chat-canvas-view-changed',refreshJobs);
 document.addEventListener('visibilitychange',refreshJobs);
-window.addEventListener('pagehide',()=>clearSpecialist());
+window.addEventListener('pagehide',()=>{clearSpecialist();clearOrbJobs();});
 scan();
 })();

@@ -80,6 +80,7 @@
   const pendingAssistantMessages = new Map();
   let busy = false;
   let chatRevision = 0, pendingSend = null, restoringConversation = 0, lastParticipantQuestion = null;
+  let youtubeLocalTurn = null;
   let initialRestorePending = true, contextReady = false;
   let initiativeReplyTarget = null, initiativeReplyCandidate = null, initiativeReplyFenceTimer = 0;
   let initiativeVisualRetry = null;
@@ -152,11 +153,18 @@
     if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId);
     if(!options.preserveInitiativeReply){clearInitiativeReplyV1();initiativeReplyCandidate=null;initiativePosts.clear();initiativeOutcomes.clear();}
     chatRevision++;
+    cancelYoutubeLocalTurn();
     if (pendingSend) { clearTimeout(pendingSend.timer); pendingSend.controller.abort(); pendingSend.typing?.remove(); pendingSend = null; busy = false; send.disabled = false; input.disabled=false; showStop(); }
     window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
     recoveryStatus();
   }
+  function clearPrivateYoutubeHistory() {
+    cancelYoutubeLocalTurn();
+    thread.querySelectorAll('[data-vp3-youtube-private]').forEach(row => row.remove());
+  }
+  window.addEventListener('vp3:participant-selection-changed',clearPrivateYoutubeHistory);
   window.addEventListener('vp3:participant-task-context',()=>{
+    clearPrivateYoutubeHistory();
     if(initiativeReplyTarget){clearInitiativeReplyV1();keepDraft(input.value);recoveryStatus('The participant changed. Choose the Agent update again before replying.');}
     if(!pendingSend)return;
     const request=pendingSend;keepDraft(request.message,request.conversationId);chatRevision++;
@@ -1689,12 +1697,13 @@
   // A visitor card is attached to a server-created private Chat message. Its
   // marker contains identities only; the current owner projection is fetched
   // separately so reloading old history cannot restore stale reply authority.
-  function bindStoredMessagePa3(element, id, marker = null, role = 'assistant') {
+  function bindStoredMessagePa3(element, id, marker = null, role = 'assistant', createdAt = '') {
     const messageId=Number(id);
     if(!element || !Number.isSafeInteger(messageId) || messageId<1)return;
     element.dataset.chatMessageId=String(messageId);
     element.dataset.chatConversationId=String(conversationId);
     element.dataset.chatMessageRole=String(role);
+    if (typeof createdAt === 'string' && createdAt) element.dataset.chatCreatedAt = createdAt;
     if(role==='assistant'){
       window.dispatchEvent(new CustomEvent('vp3:chat-message-persisted',{detail:{element,conversationId,agentId:Number(cfg.agentId||0)}}));
     }
@@ -3604,7 +3613,7 @@
         context.canvas_media || null,
         context.youtube_results || null
       );
-      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'));
+      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
@@ -3634,7 +3643,9 @@
       agent_context:{user_agent_id:Number(cfg.agentId || 0)}}, signal);
     if(revision!==chatRevision||targetId!==conversationId||busy||!Array.isArray(data.messages))return;
     data.messages.forEach(message=>{
-      if(thread.querySelector('[data-chat-message-id="'+Number(message.id||0)+'"]')){
+      const stored=thread.querySelector('[data-chat-message-id="'+Number(message.id||0)+'"]');
+      if(stored){
+        if(typeof message.created_at==='string'&&message.created_at)stored.dataset.chatCreatedAt=message.created_at;
         lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));return;
       }
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
@@ -3644,7 +3655,7 @@
         return;
       }
       const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null,context.youtube_results||null);
-      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'));
+      bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       const next=Array.from(thread.querySelectorAll('[data-chat-message-id]')).find(element=>element!==renderedMessage
         &&Number(element.dataset.chatConversationId)===targetId&&Number(element.dataset.chatMessageId)>Number(message.id));
       if(next)thread.insertBefore(renderedMessage,next);
@@ -3657,7 +3668,10 @@
       if(message.role==='assistant')bindProductLaunchV1(renderedMessage,context.product_launch);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
-    if(data.messages.length)await refreshHistory(signal);
+    if(data.messages.length){
+      window.dispatchEvent(new Event('vp3:chat-history-updated'));
+      await refreshHistory(signal);
+    }
   }
 
   history.addEventListener('click', event => {
@@ -3706,10 +3720,62 @@
     beginNewChat
   );
 
+  function cancelYoutubeLocalTurn() {
+    if (!youtubeLocalTurn) return;
+    youtubeLocalTurn = null;
+    busy = false;
+    send.disabled = false;
+    input.disabled = false;
+  }
+
+  async function runYoutubeLocalTurn(message, action) {
+    const youtube = window.VP3_CHAT_YOUTUBE_V1;
+    if (!youtube || !action || busy || !contextReady || initialRestorePending || restoringConversation
+        || initiativeReplyTarget || window.VP3ParticipantContinuity?.selectedContext()) return null;
+    const turn = {};
+    youtubeLocalTurn = turn;
+    busy = true;
+    send.disabled = true;
+    input.disabled = true;
+    input.value = '';
+    autoSize();
+    keepDraft('');
+    setChatCanvasView('chat', {newChat:conversationId < 1});
+    addMessage('user', message.trim());
+    try {
+      const response = await youtube.runCommand(action);
+      if (youtubeLocalTurn !== turn) return null;
+      const actions = response.settings && youtube.settingsUrl
+        ? [{type:'open_url', url:youtube.settingsUrl, label:'YouTube settings'}] : [];
+      const reply = addMessage('assistant', response.answer, [], [], '', [], actions, [], null, null, null, response.results);
+      if (action === 'recent') reply.dataset.vp3YoutubePrivate = '1';
+      return response.answer;
+    } finally {
+      if (youtubeLocalTurn === turn) {
+        cancelYoutubeLocalTurn();
+        input.focus();
+      }
+    }
+  }
+
+  window.addEventListener('vp3:youtube-recent', () => {
+    if (!input.value.trim()) void runYoutubeLocalTurn('/youtube history', 'recent');
+  });
+
   async function sendMessage(message, inputMode = 'text') {
     if (busy || !contextReady || initialRestorePending || restoringConversation || !message.trim()) return;
     if(initiativePosts.size&&!initiativeIdentityMatchesV1()){
       clearInitiativeReplyV1(true);recoveryStatus('The account or session changed. Refresh Chat before replying to an Agent update.');return;
+    }
+    const youtubeAction = window.VP3_CHAT_YOUTUBE_V1?.command(message);
+    if (youtubeAction && !initiativeReplyTarget && !window.VP3ParticipantContinuity?.selectedContext()) {
+      if (inputMode === 'voice') stopVoiceRecognition();
+      const answer = await runYoutubeLocalTurn(message, youtubeAction);
+      if (answer && inputMode === 'voice' && voiceMode) {
+        await speakAgentResponse(answer);
+        if (!voiceSpeaking) window.setTimeout(startVoiceRecognition, 220);
+      }
+      return;
     }
     const initiativeReply=initiativeReplyForSendV1(message);
     if(initiativeReply===false)return;
@@ -4074,6 +4140,13 @@
   }, true);
 
   const canonicalChatContinuity = {
+    runYoutubeLocalTurn: (message, action) => runYoutubeLocalTurn(message, action),
+    requestYoutubePicks:() => {
+      if (input.value.trim() || busy || !contextReady || initialRestorePending || restoringConversation
+          || initiativeReplyTarget || window.VP3ParticipantContinuity?.selectedContext()) return false;
+      void sendMessage('/youtube picks');
+      return true;
+    },
     showChatView:() => setChatCanvasView('chat'),
     mountAgentGreeting:text => {
       if (thread.dataset.view !== 'chat' || !contextReady || initialRestorePending || restoringConversation) return null;
