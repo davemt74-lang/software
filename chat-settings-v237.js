@@ -8,6 +8,9 @@
   let busy = false;
   let voiceBusy = false;
   let lastFocus = null;
+  let stateLoadVersion = 0;
+
+  const agentOrbShapes = new Set(['orbit','particle_face']);
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
@@ -57,7 +60,7 @@
       <button class="chat-settings-backdrop" type="button" data-close-chat-settings tabindex="-1" aria-label="Close Chat Settings"></button>
       <section class="chat-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="chatSettingsTitle">
         <header class="chat-settings-head">
-          <div><h2 id="chatSettingsTitle">Chat Settings</h2><p>Availability, direct messages and Profile Agent chat.</p></div>
+          <div><h2 id="chatSettingsTitle">Chat Settings</h2><p>Availability, direct messages, Agent appearance and Profile Agent chat.</p></div>
           <button class="chat-settings-close" type="button" data-close-chat-settings aria-label="Close Chat Settings">×</button>
         </header>
         <form id="chatSettingsForm">
@@ -76,6 +79,11 @@
               <label class="chat-settings-toggle"><span><strong>Allow user-to-user chat</strong><small>Allow eligible users to message you and Profile visitors to request a live text chat. You choose whether to accept each visitor request.</small></span><input type="checkbox" name="social_chat_enabled"></label>
               <label class="chat-settings-toggle"><span><strong>Incoming message sound</strong><small>Play one notification sound when a new direct message arrives.</small></span><input type="checkbox" name="sound_enabled"></label>
               <p>Agent Voice is controlled by the upper switch in your account menu.</p>
+            </section>
+            <section class="chat-settings-section">
+              <div class="chat-settings-section-title"><strong>Agent appearance</strong><span>Choose the shape of your Agent orb.</span></div>
+              <label class="chat-settings-field"><span>Agent shape</span><select name="agent_orb_shape" aria-describedby="chatSettingsAgentShapeStatus" disabled><option value="orbit">Orb with rings</option><option value="particle_face">Original particle face</option></select></label>
+              <small class="chat-settings-field-note" id="chatSettingsAgentShapeStatus" hidden></small>
             </section>
             <section class="chat-settings-section" id="chatSettingsProfileAgentSection">
               <div class="chat-settings-section-title"><strong>Profile Agent Chat</strong><span>Use the same public Profile Agent controls already owned by your profile.</span></div>
@@ -166,6 +174,11 @@
     return active;
   }
 
+  function applyAgentOrbShape(chat) {
+    const shape = chat?.agent_orb_shape;
+    if (agentOrbShapes.has(shape)) window.dispatchEvent(new CustomEvent('vp3:agent-orb-shape', { detail:{shape} }));
+  }
+
   function applyRuntimeSettings(chat) {
     const settings = chat || { presence_mode:'online', social_chat_enabled:true, sound_enabled:true, agent_voice_enabled:true };
     const online = String(settings.presence_mode || 'online') === 'online';
@@ -209,6 +222,7 @@
       const sound = form.elements.namedItem('sound_enabled');
       const voice = form.elements.namedItem('agent_voice_enabled');
       const assistedPhone = form.elements.namedItem('agent_assisted_phone_chat_enabled');
+      const shape = form.elements.namedItem('agent_orb_shape');
       if (mode) mode.value = String(chat.presence_mode || 'online');
       if (social) social.checked = chat.social_chat_enabled !== false;
       if (sound) sound.checked = chat.sound_enabled !== false;
@@ -218,19 +232,31 @@
         assistedPhone.disabled = state?.agent_assisted_phone_chat_ready !== true || (state?.agent_assisted_phone_chat_allowed !== true && !assistedPhone.checked);
         document.getElementById('chatSettingsAgentAssistedPhone').hidden = assistedPhone.disabled;
       }
+      if (shape) {
+        shape.value = agentOrbShapes.has(chat.agent_orb_shape) ? chat.agent_orb_shape : 'orbit';
+        shape.disabled = state?.agent_orb_shape_ready !== true || !agentOrbShapes.has(chat.agent_orb_shape);
+        const shapeStatus = document.getElementById('chatSettingsAgentShapeStatus');
+        if (shapeStatus) {
+          shapeStatus.textContent = shape.disabled ? 'Agent appearance settings require a database upgrade.' : '';
+          shapeStatus.hidden = !shape.disabled;
+        }
+      }
     }
     renderProfileAgent(state?.profile_agent || null);
     applyRuntimeSettings({...chat, agent_voice_enabled:voiceAllowed && chat.agent_voice_enabled !== false});
   }
 
   async function syncState(showError = false) {
+    const version = ++stateLoadVersion;
     try {
       const data = await request('state');
+      if (version !== stateLoadVersion) return null;
       state = data;
+      applyAgentOrbShape(data.chat);
       renderState();
       return data;
     } catch (error) {
-      if (showError) setStatus(error instanceof Error ? error.message : 'Could not load Chat settings.', 'error');
+      if (showError && version === stateLoadVersion) setStatus(error instanceof Error ? error.message : 'Could not load Chat settings.', 'error');
       return null;
     }
   }
@@ -260,6 +286,7 @@
     event.preventDefault();
     if (busy || !form) return;
     busy = true;
+    stateLoadVersion++;
     const settingsBody = form.querySelector('.chat-settings-body');
     settingsBody?.setAttribute('inert', '');
     saveButton.disabled = true;
@@ -270,6 +297,7 @@
     const social = form.elements.namedItem('social_chat_enabled');
     const sound = form.elements.namedItem('sound_enabled');
     const assistedPhone = form.elements.namedItem('agent_assisted_phone_chat_enabled');
+    const shape = form.elements.namedItem('agent_orb_shape');
 
     try {
       const chatResponse = await request('save_chat', {
@@ -278,8 +306,13 @@
         sound_enabled:Boolean(sound?.checked),
         ...(assistedPhone && !assistedPhone.disabled && assistedPhone.checked !== (state?.chat?.agent_assisted_phone_chat_enabled === true)
           ? {agent_assisted_phone_chat_enabled:assistedPhone.checked}
+          : {}),
+        ...(shape && !shape.disabled && agentOrbShapes.has(shape.value) && shape.value !== state?.chat?.agent_orb_shape
+          ? {agent_orb_shape:shape.value}
           : {})
       });
+      state = { ...state, ok:true, agent_voice_allowed:chatResponse.agent_voice_allowed ?? state?.agent_voice_allowed ?? false, chat:chatResponse.chat };
+      applyAgentOrbShape(chatResponse.chat);
 
       let profileAgent = state?.profile_agent || null;
       const agentId = form.elements.namedItem('profile_agent_id');
@@ -296,7 +329,7 @@
         profileAgent = profileResponse.profile_agent || profileAgent;
       }
 
-      state = { ...state, ok:true, agent_voice_allowed:chatResponse.agent_voice_allowed ?? state?.agent_voice_allowed ?? false, chat:chatResponse.chat, profile_agent:profileAgent };
+      state = { ...state, profile_agent:profileAgent };
       await window.VP3_PROFILE_DOORBELL_PA3_RUNTIME?.saveAvailability?.();
       renderState();
       setStatus('Chat settings saved.', 'success');

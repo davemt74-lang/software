@@ -16,6 +16,7 @@ const presentationJs=read('chat-cognitive-presentation-v510.js');
 const drawerApi=read('api/chat-notifications-brain-v240.php');
 const drawerJs=read('chat-notifications-drawer-v240.js');
 const chat=read('chat.php');
+const workflowPage=read('agent-workflows.php');
 const workflow=read('.github/workflows/cognitive-loop-release-v2360.yml');
 const recovery=read('tools/run_recovery_baseline.py');
 const packageWorkflow=read('.github/workflows/production-deploy-package.yml');
@@ -76,6 +77,13 @@ const checks=[
     /brief\['followthrough'\]/.test(presentation)
     &&/While you were away/.test(presentationJs)
     &&/Follow-through/.test(presentationJs)],
+  ['Workflow review opens the exact owned run with explicit retry on failure',
+    follow.includes("return '/agent-workflows.php?id='.(int)$m[1]")
+    &&presentationJs.includes('esc(followthrough.target_url)')
+    &&workflowPage.includes("$detailParam=$_GET['id']??$_GET['run']??'';")
+    &&workflowPage.includes('is_string($detailParam)&&ctype_digit($detailParam)')
+    &&workflowPage.includes("agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId)")
+    &&/\$detail\['status'\]==='failed'[^\n]+method="post"[^\n]+csrf_field\(\)[^\n]+name="action" value="retry"/.test(workflowPage)],
   ['Proactive Now reuses v24.50 projection',
     /vp3_cognitive_followthrough_activity_projection_v2450/.test(proactive)
     &&/'followthrough'=>/.test(proactive)],

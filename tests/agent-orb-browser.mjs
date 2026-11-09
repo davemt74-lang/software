@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
 const source=fs.existsSync('agent-orb.js')?'':'ui/';
-const fixture=(main=false)=>`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/agent-orb.css"><style>body{margin:0;font:15px system-ui;background:#e9edf2}main{padding:35px}#chatForm{display:flex;gap:10px;padding:12px}#chatInput{flex:1;min-width:0}#chatThread{height:220px;background:white}.chat-panel{background:white;height:100%;display:flex;flex-direction:column}</style></head><body><main><h1>Calendar workspace</h1><p>Your existing page stays open while chatting.</p>${main?'<article class="chat-panel"><div id="chatThread"></div><form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form><button id="chatVoiceButton">Listen</button></article>':''}</main><script>
+const fixture=(main=false)=>`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/agent-orb.css"><link rel="stylesheet" href="/agent-orb-particles.css"><style>body{margin:0;font:15px system-ui;background:#e9edf2}main{padding:35px}#chatForm{display:flex;gap:10px;padding:12px}#chatInput{flex:1;min-width:0}#chatThread{height:220px;background:white}.chat-panel{background:white;height:100%;display:flex;flex-direction:column}</style></head><body><main><h1>Calendar workspace</h1><p>Your existing page stays open while chatting.</p>${main?'<article class="chat-panel"><div id="chatThread"></div><form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form><button id="chatVoiceButton">Listen</button></article>':''}</main><script>
 window.testState={state:'idle',recording:false};window.events=[];window.greetings=[];window.stops=0;window.captureRequests=0;window.mockFaces=[];window.profiles=[];window.saved=[];
 window.VP3_ORB_ADAPTER={ownerKey:'fixture-owner',chatUrl:'/chat.php',state:()=>window.testState,isMainChat:()=>false,busy:()=>false,stop:()=>window.stops++,listen:()=>window.listened=true,greet:text=>{window.greetings.push(text);return true},cameraAllowed:async({allowHidden=false}={})=>window.cameraAllowed!==false&&(allowHidden||!document.hidden),
 loadEyesProfiles:async()=>window.profiles,introduceEyes:async({name,isCurrent})=>{if(window.deferIntroduction)await new Promise(r=>window.releaseIntroduction=r);if(!isCurrent())throw Error('stopped');const p=window.profiles.find(p=>p.name===name)||{id:'introduced-1',name,embeddings:[],recognitionEnabled:false};if(!window.profiles.includes(p))window.profiles.push(p);return p;},enrollEyes:async data=>{window.saved.push(data);let p=window.profiles.find(p=>p.id===data.id);if(!p){p={id:'saved-1',name:data.name};window.profiles.push(p);}p.embeddings=data.embeddings;p.portraits=data.portraits;p.portraitRefreshEnabled=data.portraitRefreshEnabled;p.recognitionEnabled=true;return {id:p.id};},forgetEyes:async id=>{window.profiles=[]},recordEyes:async event=>{if(window.failHistory)throw Error('offline');window.events.push(event)}};
@@ -15,7 +15,7 @@ Object.defineProperty(navigator,'mediaDevices',{value:{getUserMedia:async()=>{wi
 const server=http.createServer((req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/chat.php'){res.setHeader('Content-Type','text/html');res.end(fixture(true));return;}
-  const file=path.basename(url.pathname);if(['participant-recovery-v1.js','agent-orb.js','agent-orb-particles.js','agent-eyes-core.js','agent-orb.css','agent-eyes.js'].includes(file)){res.setHeader('Content-Type',file.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');res.end(fs.readFileSync(source+file));return;}
+  const file=path.basename(url.pathname);if(['participant-recovery-v1.js','agent-orb.js','agent-orb-particles.js','agent-eyes-core.js','agent-orb.css','agent-orb-particles.css','agent-eyes.js'].includes(file)){res.setHeader('Content-Type',file.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');res.end(fs.readFileSync(source+file));return;}
   res.setHeader('Content-Type','text/html');res.end(fixture());
 });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}`;
 const browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});let checks=0;
@@ -25,21 +25,28 @@ try{
   await page.route('https://cdn.jsdelivr.net/**',route=>route.fulfill({contentType:'text/javascript',body:'export class Human {async load(){if(window.deferModel)await new Promise(r=>window.releaseModel=r)} async detect(){return {face:window.mockFaces}}}'}));
   await page.goto(url);await page.waitForSelector('.vp3-orb-ball');
   await check('page load does not open camera or popup',async()=>{assert.equal(await page.evaluate(()=>captureRequests),0);assert.equal(await page.locator('#vp3AgentChatPopup').isVisible(),false);});
-  await check('Stoneward orb animates its mesh and suspends painting when hidden',async()=>{
-    const pixels=()=>document.querySelector('.vp3-orb-points').toDataURL();
-    await page.waitForFunction(()=>document.querySelector('.vp3-orb-points').width!==300);
+  await check('public Stoneward orb animates its particles and three rings and suspends painting when hidden',async()=>{
+    const orb=page.locator('.vp3-orb-ball .vp3-public-orb');
+    const rings=orb.locator('[data-orb-ring]');
+    await orb.locator('.vp3-public-orb-points').waitFor();
+    assert.deepEqual(await rings.evaluateAll(nodes=>nodes.map(node=>node.dataset.orbRing)),['pulse','primary','secondary']);
+    assert.ok(await rings.evaluateAll(nodes=>nodes.every(node=>getComputedStyle(node).display!=='none')));
+    assert.deepEqual(await rings.evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).animationName)),
+      ['vp3-public-orb-pulse','vp3-public-orb-orbit','vp3-public-orb-reverse']);
+    const pixels=()=>Array.from(document.querySelectorAll('.vp3-orb-ball canvas'),canvas=>canvas.toDataURL());
+    assert.equal(await orb.locator('.vp3-public-orb-cloud').count(),1);
     const first=await page.evaluate(pixels);
-    await page.waitForFunction(previous=>document.querySelector('.vp3-orb-points').toDataURL()!==previous,first);
-    assert.equal(await page.locator('.vp3-orb-ring').evaluate(el=>getComputedStyle(el).animationName),'vp3-orb-mesh-breathe');
-    const hidden=await page.evaluate(()=>{
+    assert.equal(first.length,2);
+    await page.waitForFunction(previous=>Array.from(document.querySelectorAll('.vp3-orb-ball canvas')).every((canvas,index)=>canvas.toDataURL()!==previous[index]),first);
+    await page.evaluate(()=>{
       Object.defineProperty(document,'hidden',{configurable:true,value:true});
       document.dispatchEvent(new Event('visibilitychange'));
-      return document.querySelector('.vp3-orb-points').toDataURL();
     });
+    const hidden=await page.evaluate(pixels);
     await page.waitForTimeout(120);
-    assert.equal(await page.evaluate(pixels),hidden);
+    assert.deepEqual(await page.evaluate(pixels),hidden);
     await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
-    await page.waitForFunction(previous=>document.querySelector('.vp3-orb-points').toDataURL()!==previous,hidden);
+    await page.waitForFunction(previous=>Array.from(document.querySelectorAll('.vp3-orb-ball canvas')).every((canvas,index)=>canvas.toDataURL()!==previous[index]),hidden);
   });
   await check('chatbar button opens existing canvas lazily',async()=>{assert.equal(await page.locator('iframe').count(),0);await page.locator('[data-orb-chat]').click();await page.frameLocator('iframe').locator('#chatInput').waitFor();assert.equal(await page.locator('iframe').count(),1);});
   await check('chatbar message enters canonical form once',async()=>{await page.locator('.vp3-orb-bar input').fill('Calendar question');await page.locator('.vp3-orb-bar button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('iframe').contentWindow.submissions?.length===1);assert.deepEqual(await page.evaluate(()=>document.querySelector('iframe').contentWindow.submissions),['Calendar question']);assert.equal(await page.locator('.vp3-orb-bar input').inputValue(),'');});
@@ -78,16 +85,50 @@ try{
   });
   await check('stopped model startup cannot open camera later',async()=>{await page.reload();await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-eyes]').click();await page.evaluate(()=>window.deferModel=true);await page.locator('[data-eyes-start]').click();await page.waitForFunction(()=>typeof window.releaseModel==='function');await page.locator('[data-eyes-stop]').click();await page.evaluate(()=>window.releaseModel());await page.waitForTimeout(80);assert.equal(await page.evaluate(()=>captureRequests),0);});
   await check('mobile orb and popup stay inside viewport',async()=>{await page.setViewportSize({width:390,height:740});await page.locator('[data-eyes-close]').click();await page.locator('[data-orb-chat]').click();const r=await page.locator('#vp3AgentChatPopup').boundingBox();assert.ok(r.x>=0&&r.x+r.width<=391&&r.y>=0&&r.y+r.height<=741);});
-  await check('reduced motion stops the pulse ring and keeps the particle face static',async()=>{
-    await page.emulateMedia({reducedMotion:'reduce'});
-    await page.evaluate(()=>document.querySelector('.vp3-orb-root').dataset.state='speaking');
-    for(const selector of ['.vp3-orb-ball','.vp3-orb-ring'])assert.equal(await page.locator(selector).evaluate(el=>getComputedStyle(el).animationName),'none');
-    const canvas=page.locator('.vp3-orb-points');
-    const image=await canvas.evaluate(el=>el.toDataURL());
-    await page.waitForTimeout(120);
-    assert.equal(await canvas.evaluate(el=>el.toDataURL()),image);
+  await check('reduced motion keeps the orbit static and the personal orb can switch shapes',async()=>{
+    const motionPage=await context.newPage();
+    motionPage.on('pageerror',error=>errors.push(error.message));
+    await motionPage.emulateMedia({reducedMotion:'reduce'});
+    await motionPage.goto(url+'/orb-appearance');
+    const orb=motionPage.locator('.vp3-orb-ball .vp3-public-orb-rendered');
+    await orb.waitFor();
+    const rings=orb.locator('[data-orb-ring]');
+    const points=orb.locator('.vp3-public-orb-points');
+    const cloud=orb.locator('.vp3-public-orb-cloud');
+    await motionPage.evaluate(()=>window.testState={state:'speaking',recording:false});
+    await motionPage.waitForFunction(()=>document.querySelector('.vp3-orb-root').dataset.state==='speaking');
+    assert.equal(await motionPage.locator('.vp3-orb-ball').evaluate(node=>getComputedStyle(node).animationName),'none');
+    assert.deepEqual(await rings.evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).animationName)),['none','none','none']);
+    const setShape=shape=>motionPage.evaluate(shape=>window.dispatchEvent(new CustomEvent('vp3:agent-orb-shape',{detail:{shape}})),shape);
+    const pixels=canvas=>canvas.evaluate(node=>node.toDataURL());
+    const orbitImage=await pixels(points);
+    const ambientImage=await pixels(cloud);
+    await motionPage.waitForTimeout(120);
+    assert.ok(await pixels(points)===orbitImage,'Reduced-motion sphere stays static');
+    assert.ok(await pixels(cloud)===ambientImage,'Reduced-motion ambient particles stay static');
+
+    await setShape('particle_face');
+    const pulse=orb.locator('[data-orb-ring="pulse"]');
+    const primary=orb.locator('[data-orb-ring="primary"]');
+    const secondary=orb.locator('[data-orb-ring="secondary"]');
+    await primary.waitFor({state:'hidden'});
+    assert.equal(await secondary.isVisible(),false);
+    assert.equal(await pulse.isVisible(),true);
+    assert.equal(await cloud.isVisible(),false);
+    const faceImage=await pixels(points);
+    assert.ok(faceImage!==orbitImage,'The face uses a different particle drawing');
+    await motionPage.waitForTimeout(120);
+    assert.ok(await pixels(points)===faceImage,'Reduced-motion face stays static');
+
+    await setShape('orbit');
+    await primary.waitFor({state:'visible'});
+    assert.equal(await secondary.isVisible(),true);
+    assert.equal(await cloud.isVisible(),true);
+    assert.ok(await pixels(points)===orbitImage,'Returning to the orbit restores the sphere');
+    assert.ok(await pixels(cloud)===ambientImage,'Returning to the orbit restores the ambient particles');
+    await motionPage.close();
   });
-  await page.emulateMedia({reducedMotion:'no-preference'});await page.setViewportSize({width:1280,height:850});await page.goto(url+'/engagement');await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-eyes]').click();await page.evaluate(face=>window.mockFaces=[face],face);await page.locator('[data-eyes-start]').click();await page.waitForFunction(()=>window.greetings.length===1);
+  await page.setViewportSize({width:1280,height:850});await page.goto(url+'/engagement');await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-eyes]').click();await page.evaluate(face=>window.mockFaces=[face],face);await page.locator('[data-eyes-start]').click();await page.waitForFunction(()=>window.greetings.length===1);
   await check('popup chat introduction saves a canonical name and labels the current participant without silent visual consent',async()=>{
     await page.locator('[data-eyes-close]').click();await page.locator('[data-orb-chat]').click();const child=page.frameLocator('iframe');await child.locator('#chatInput').fill('Are you listening?');await child.locator('#sendChatButton').click();await page.waitForTimeout(80);assert.equal(await page.evaluate(()=>profiles.length),0);
     await child.locator('#chatInput').fill('My name is David Evans.');await child.locator('#sendChatButton').click();await page.waitForFunction(()=>window.profiles.length===1);await page.waitForFunction(()=>document.querySelector('[data-eyes-people]').textContent.includes('David Evans'));assert.equal(await page.evaluate(()=>profiles[0].recognitionEnabled),false);assert.equal(await page.evaluate(()=>saved.length),0);assert.ok((await page.evaluate(()=>events)).some(e=>e.identity_source==='self_introduction'&&e.display_name==='David Evans'));

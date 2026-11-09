@@ -63,7 +63,7 @@ function vp3_cognitive_followthrough_target_url_v2450(array $item): string
     $ref=(string)($item['ref']??'');
     $kind=(string)($item['kind']??'');
     $metadata=is_array($item['metadata']??null)?$item['metadata']:[];
-    if($kind==='workflow'&&preg_match('/^workflow:(\d+)$/',$ref,$m))return '/agent-workflows.php?run='.(int)$m[1];
+    if($kind==='workflow'&&preg_match('/^workflow:(\d+)$/',$ref,$m))return '/agent-workflows.php?id='.(int)$m[1];
     if($kind==='meeting_commitment'){
         $url=trim((string)($metadata['review_path']??''));
         if($url!==''&&str_starts_with($url,'/')&&!str_starts_with($url,'//'))return $url;

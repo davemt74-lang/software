@@ -47,6 +47,10 @@
         if(event.data.kind==='introduction-window'){queuedIntroduction=['name','visual-consent'].includes(event.data.mode)?event.data.mode:'';introductionMode=queuedIntroduction;window.VP3VoiceGuard?.inviteIntroduction(queuedIntroduction);}
       };
       window.addEventListener('message',commands);timer=setInterval(announce,250);
+      window.addEventListener('vp3:agent-orb-shape',event=>{
+        const shape=event.detail?.shape;
+        if(shape==='orbit'||shape==='particle_face')parent.postMessage({channel:'vp3-orb',kind:'agent-orb-shape',ownerKey:adapter.ownerKey,shape},origin);
+      });
       window.addEventListener('vp3:voice-filter-status',event=>parent.postMessage({channel:'vp3-orb',kind:'voice-filter-status',message:String(event.detail?.message||'').slice(0,300)},origin));
       window.VP3AgentOrb={
         openEyesGallery:()=>parent.postMessage({channel:'vp3-orb',kind:'open-eyes-gallery'},origin),
@@ -63,11 +67,12 @@
     }
     const root=document.createElement('aside');root.className='vp3-orb-root';root.dataset.state='idle';
     root.innerHTML='<div class="vp3-orb-bubble" role="status" hidden></div>'
-      +'<button type="button" class="vp3-orb-ball" aria-label="Open Agent Chat"><span class="vp3-orb-ring" aria-hidden="true"></span><canvas class="vp3-orb-points" aria-hidden="true"></canvas></button>'
+      +'<button type="button" class="vp3-orb-ball" aria-label="Open Agent Chat"><span class="vp3-public-orb" data-vp3-public-orb data-vp3-orb-personal aria-hidden="true"></span></button>'
       +'<span class="vp3-orb-state">Ready</span><div class="vp3-orb-controls"><button type="button" data-orb-stop>Stop</button><button type="button" data-orb-eyes>Eyes</button><button type="button" data-orb-brain>Brain</button><button type="button" data-orb-size aria-label="Minimize agent">−</button></div>'
       +'<section class="vp3-orb-initiative" data-agent-initiative-status aria-label="Agent background work" hidden>'
       +'<div id="vp3OrbInitiativeDetails"><strong></strong><small hidden></small></div>'
       +'<div class="vp3-orb-initiative-actions"><button type="button" hidden></button><button type="button" data-agent-initiative-retry hidden>Retry</button></div></section>';
+    root.querySelector('[data-vp3-public-orb]').dataset.orbShape=window.VP3_ORB_CONFIG?.shape==='particle_face'?'particle_face':'orbit';
     document.body.append(root);
     const panel=document.createElement('section');panel.className='vp3-orb-panel';panel.id='vp3AgentChatPopup';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Agent Chat');
     panel.innerHTML='<header><strong>Agent Chat</strong><a>Full chat ↗</a><button type="button" aria-label="Close Agent Chat">×</button></header><div class="vp3-orb-chat-host"></div>';panel.querySelector('a').href=adapter.chatUrl;document.body.append(panel);
@@ -156,6 +161,8 @@
     function message(event){
       if(event.origin!==origin||event.source!==frame?.contentWindow||event.data?.channel!=='vp3-orb')return;
       const data=event.data;if(data.kind==='ready'){ready=true;if(pendingListen){pendingListen=false;command('listen');}if(pendingReplyWindow){pendingReplyWindow=false;command('response-window');}if(pendingText)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'compose',text:pendingText},origin);if(pendingVoiceEnrollment){frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id:pendingVoiceEnrollment},origin);pendingVoiceEnrollment='';}}
+      if(data.kind==='agent-orb-shape'&&String(data.ownerKey)===String(adapter.ownerKey)
+        &&(data.shape==='orbit'||data.shape==='particle_face'))window.dispatchEvent(new CustomEvent('vp3:agent-orb-shape',{detail:{shape:data.shape}}));
       if(data.kind==='voice-filter-status')window.dispatchEvent(new CustomEvent('vp3:voice-filter-remote-status',{detail:{message:String(data.message||'').slice(0,300)}}));
       if(data.kind==='open-eyes-gallery'){const panel=document.querySelector('.vp3-eyes-panel');if(panel?.hidden)window.VP3AgentEyes?.toggle?.();document.querySelector('.vp3-eyes-portraits')?.scrollIntoView({block:'nearest'});}
       if(data.kind==='user-turn')void Promise.resolve(window.VP3AgentEyes?.hear?.(String(data.text||'').slice(0,240),{voice:data.voice===true,known_voice:data.known_voice===true})).finally(()=>{if(typeof data.photoRoute==='string'&&data.photoRoute.length<=64)frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'photo-reply-complete',id:data.photoRoute},origin);}).catch(()=>{});

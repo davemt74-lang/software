@@ -128,7 +128,6 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_browser_continuity_schema_ready_v2260()
         && vp3_browser_intelligence_schema_ready_v2270()
         && vp3_browser_control_schema_ready_v2280()
-        && chat_settings_schema_ready_v237()
         && permission_v105_playlist_permission_ready()
         && personal_capability_seeded_v242()
         && personal_capability_schema_ready_v242()
@@ -286,6 +285,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && table_exists('agent_participant_observers_v1')
         && table_exists('user_agent_voice_preferences')
         && ($schemaConnection ??= db()) instanceof PDO
+        && chat_settings_schema_ready_v237($schemaConnection)
+        && chat_settings_agent_orb_shape_schema_ready_v237($schemaConnection)
         && homeserver_https_v1300_transient_ready($schemaConnection)
         && vp3_chat_read_schema_ready_v1($schemaConnection)
         && agent_connections_schema_ready_v1($schemaConnection)
@@ -339,7 +340,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_browser_runtime_ensure_schema_v2200();
             vp3_browser_web_ensure_schema_v2210();
             vp3_browser_multisite_ensure_schema_v2220();
-            chat_settings_ensure_schema_v237();
+            chat_settings_ensure_schema_v237($pdo);
             permission_v105_seed_playlist_permission();
             personal_capability_seed_v242();
             vp3_plugin_ensure_schema_v320();

@@ -64,6 +64,7 @@ try {
             'agent_voice_allowed' => chat_settings_agent_voice_allowed_v237($user),
             'agent_assisted_phone_chat_ready' => chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo),
             'agent_assisted_phone_chat_allowed' => chat_settings_agent_assisted_phone_chat_allowed_v237($pdo, $user),
+            'agent_orb_shape_ready' => chat_settings_agent_orb_shape_schema_ready_v237($pdo),
             'chat' => chat_settings_get_v237($pdo, (int)$user['id']),
             'profile_agent' => chat_settings_profile_payload_v237($pdo, $user),
         ]);
