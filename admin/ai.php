@@ -294,11 +294,11 @@ require __DIR__ . '/_header.php';
     <div>
       <span class="status">Stonefellow Chat</span>
       <h2>System Agent & AI Provider</h2>
-      <p class="muted">Set the universal system agent identity and choose which model generates Agent Chat responses. Database and knowledge-base permissions are filtered before context is sent to the provider.</p>
+      <p class="muted">Set the system agent identity, manage VP3 Cloud provider keys, and configure service models. Database and knowledge-base permissions are filtered before context is sent to the provider.</p>
     </div>
 
     <div class="ai-provider-status">
-      <span>Active</span>
+      <span>Default Chat provider</span>
       <strong><?= e(ai_provider_labels()[$activeProvider] ?? 'Local Retrieval Only') ?></strong>
     </div>
   </div>
@@ -314,13 +314,13 @@ require __DIR__ . '/_header.php';
     </div>
 
     <div class="field full">
-      <label for="active_provider">Active Chat Provider</label>
+      <label for="active_provider">Default VP3 Cloud Chat Provider</label>
       <select id="active_provider" name="active_provider">
         <?php foreach (ai_provider_labels() as $value => $label): ?>
           <option value="<?= e($value) ?>" <?= $activeProvider === $value ? 'selected' : '' ?>><?= e($label) ?></option>
         <?php endforeach; ?>
       </select>
-      <small>Default installation provider for Conversation when its route inherits the existing setup.</small>
+      <small>Used for VP3 Cloud Conversation when its service route inherits the default setup.</small>
     </div>
 
     <section class="ai-provider-card field full">
@@ -360,7 +360,7 @@ require __DIR__ . '/_header.php';
       <div class="ai-provider-fields">
         <label class="admin-inline-check"><input type="checkbox" name="image_enabled" value="1" <?= vp3_image_settings_v1()['enabled'] ? 'checked' : '' ?>> Enable image generation in Chat</label>
         <label class="field">Default image model<select name="image_model"><?php foreach(vp3_image_models_v1() as $key=>$label): ?><option value="<?= e($key) ?>" <?= vp3_image_settings_v1()['model']===$key?'selected':'' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
-        <p>The default route uses the saved installation OpenAI key and the account's AI quota. Image requests appear on the private Chat canvas.</p>
+        <p>VP3 Cloud image generation uses the saved installation OpenAI key and the account's AI allowance. Image requests appear on the private Chat canvas.</p>
       </div>
 
       <?php if (ai_provider_has_saved_key('openai')): ?>

@@ -26,7 +26,7 @@ foreach ([
  'admin/ai.php', 'admin/ai-service-rules.php', 'admin/_ai-service-controls-v1.php', 'api/admin-elevenlabs-v102.php',
  'includes/ai-credential-recovery.php', 'includes/agent-image-provider-v1.php', 'includes/ai-service-policy-v1.php',
  'includes/ai-service-model-test-v1.php', 'includes/ai-runtime-v100.php', 'includes/ai-service-usage-v1.php',
- 'includes/ai-settings.php', 'includes/user-llm-v1.php', 'includes/ai-service-own-key-v1.php',
+ 'includes/ai-settings.php', 'includes/user-llm-v1.php',
  'api/user-llm-v1.php', 'settings-ai-providers.php',
 ] as $file) copy($repo.'/'.$file,$root.'/'.$file);
 $bootstrap= <<<'PHP'
@@ -153,11 +153,14 @@ try{
  check(!str_contains($html,'name="service" value="code_build"')&&str_contains($html,'Planned services'),'Planned services appear without active route controls');
  check(array_values(array_filter(rows(),static fn(array $row):bool=>$row['setting_key']!=='vp3_ai_service_configuration_v1'))===$baseline,'Model registration leaves the saved key and defaults intact');
 
- $route=['action'=>'save_service_route','csrf_token'=>$csrf,'service'=>'conversation','primary_model'=>'anthropic:fixture-model:2026','primary_funding'=>'system'];
+ $route=['action'=>'save_service_route','csrf_token'=>$csrf,'service'=>'conversation','primary_model'=>'anthropic:fixture-model:2026','primary_funding'=>'own_key'];
  [$status,,$headers]=request('/admin/ai.php',$route);
  check($status===302&&in_array('Location: /admin/ai.php?route=conversation#ai-service-route-conversation',$headers,true),'Conversation route save returns to its selected service');
  [, $html]=request('/admin/ai.php?route=conversation');
  check(str_contains($html,'value="anthropic:fixture-model:2026" selected'),'Route keeps the exact model ID including the colon');
+ check(!str_contains($html,'name="primary_funding"')&&!str_contains($html,'name="fallback_funding"'),'Admin service routes expose model controls without per-service funding');
+ $savedConfig=json_decode((string)$pdo->query("SELECT setting_value FROM settings WHERE setting_key='vp3_ai_service_configuration_v1'")->fetchColumn(),true);
+ check(($savedConfig['routes']['conversation']['primary']??null)===['provider'=>'anthropic','model'=>'fixture-model:2026'],'A stale funding POST cannot override the account funding source');
  $afterRoute=rows();
  [$status]=request('/admin/ai.php',array_replace($route,['service'=>'initiative']));
  check($status===302&&rows()===$afterRoute,'A model can only be routed to its eligible services');
@@ -175,83 +178,87 @@ try{
 
  $packagePath='/admin/ai-service-rules.php?scope=package&id=9&service=initiative';
  $userPath='/admin/ai-service-rules.php?scope=user&id=10&service=conversation';
+ $insert->execute(['vp3_ai_rule_v1_package_9_initiative','{"rule":{"allowed_funding":["own_key"]}}']);
+ $beforeRules=rows();
  [$status,$html]=request($packagePath);
  check($status===200&&str_contains($html,'Fixture Package')&&str_contains($html,'Background tokens per day'),'Package Initiative editor shows the verified target and background budgets');
+ check(!str_contains($html,'name="funding"'),'Legacy service funding rules no longer render a funding control');
  [$status,$html]=request($userPath);
  check($status===200&&str_contains($html,'Fixture Member')&&!str_contains($html,'Background tokens per day'),'Account Conversation editor shows only its applicable settings');
  [$status]=request('/admin/ai-service-rules.php?scope=site',null,false,'ai_only');
  check($status===200,'Site rules require AI permission only');
- $rule=['csrf_token'=>$csrf,'enabled'=>'inherit','background_enabled'=>'block','model_rule'=>'selected','allowed_models'=>['anthropic:fixture-model:2026'],'funding'=>'system','daily_tokens'=>'0'];
+ $rule=['csrf_token'=>$csrf,'enabled'=>'inherit','background_enabled'=>'block','model_rule'=>'selected','allowed_models'=>['anthropic:fixture-model:2026'],'funding'=>'none','daily_tokens'=>'0'];
  [$status]=request($userPath,$rule,false,'ai_only');
- check($status===403&&rows()===$afterRoute,'Account rules also require user-management permission');
+ check($status===403&&rows()===$beforeRules,'Account rules also require user-management permission');
  [$status]=request($packagePath,$rule,false,'users_only');
- check($status===403&&rows()===$afterRoute,'Package rules also require AI settings permission');
+ check($status===403&&rows()===$beforeRules,'Package rules also require AI settings permission');
  [$status]=request($packagePath,array_replace($rule,['csrf_token'=>'invalid']));
- check($status===302&&rows()===$afterRoute,'Package rules require CSRF');
+ check($status===302&&rows()===$beforeRules,'Package rules require CSRF');
  [$status]=request($packagePath,$rule);
- check($status===302&&rows()===$afterRoute,'Rule form rejects a model outside the service inventory');
+ check($status===302&&rows()===$beforeRules,'Rule form rejects a model outside the service inventory');
  $rule['allowed_models']=[];
  [$status]=request($packagePath,$rule);
  $saved=json_decode((string)$pdo->query("SELECT setting_value FROM settings WHERE setting_key='vp3_ai_rule_v1_package_9_initiative'")->fetchColumn(),true);
- check($status===302&&($saved['rule']??null)===['background_enabled'=>false,'daily_tokens'=>0,'allowed_models'=>[],'allowed_funding'=>['system']]&&($saved['actor_id']??null)===7,'Rule POST preserves block, zero and empty allowlist while auditing the actor');
+ check($status===302&&($saved['rule']??null)===['background_enabled'=>false,'daily_tokens'=>0,'allowed_models'=>[]]&&($saved['actor_id']??null)===7,'Rule POST preserves access and caps while dropping retired funding rules');
  [$status,$html]=request($packagePath);
  check($status===200&&str_contains($html,'AI service rules saved.')&&str_contains($html,'name="daily_tokens" min="0" max="1000000000" step="1" value="0"'),'Rule editor shows the saved zero cap');
  $rule['daily_tokens']='';
  $rule['background_enabled']='inherit';
  $rule['model_rule']='inherit';
- $rule['funding']='inherit';
  [$status]=request($packagePath,$rule);
  $saved=json_decode((string)$pdo->query("SELECT setting_value FROM settings WHERE setting_key='vp3_ai_rule_v1_package_9_initiative'")->fetchColumn(),true);
  check($status===302&&($saved['rule']??null)===[],'Inherit clears service restrictions without granting wider access');
- $memberRoute=['action'=>'save_service_route','csrf_token'=>$csrf,'service'=>'initiative',
-  'primary_model'=>'anthropic:claude-haiku-4-5','primary_funding'=>'own_key'];
- [$status]=request('/admin/ai.php',$memberRoute);
- check($status===302,'Admin can configure the exact personal Initiative route.');
- $memberKey='fixture-personal-key-for-initiative';
+ $initiativeRoute=['action'=>'save_service_route','csrf_token'=>$csrf,'service'=>'initiative','primary_model'=>'anthropic:claude-haiku-4-5'];
+ [$status,,$headers]=request('/admin/ai.php',$initiativeRoute);
+ check($status===302&&in_array('Location: /admin/ai.php?route=initiative#ai-service-route-initiative',$headers,true),'Admin can configure the Initiative model independently of funding');
+ $imageRoute=array_replace($initiativeRoute,['service'=>'image_generation','primary_model'=>'openai:gpt-image-1.5']);
+ [$status,,$headers]=request('/admin/ai.php',$imageRoute);
+ check($status===302&&in_array('Location: /admin/ai.php?route=image_generation#ai-service-route-image_generation',$headers,true),'Admin can configure an eligible image model');
+ $memberKey='fixture-account-personal-key';
+ $otherKey='fixture-other-member-secret';
  $credential=$pdo->prepare('INSERT INTO user_llm_credentials (user_id,provider,model,encrypted_key) VALUES (?,?,?,?)');
  $credential->execute([10,'anthropic','claude-haiku-4-5',ai_encrypt_secret($memberKey)]);
- $credential->execute([11,'anthropic','claude-haiku-4-5',ai_encrypt_secret('fixture-second-personal-key')]);
+ $credential->execute([11,'anthropic','claude-haiku-4-5',ai_encrypt_secret($otherKey)]);
  $memberApi='/api/user-llm-v1.php';
  [$status,$html]=request('/settings-ai-providers.php',null,false,'member');
- check($status===200&&str_contains($html,'Personal key permissions by service'),'The member page renders the personal approvals control.');
+ check($status===200&&str_contains($html,'Cloud API funding')&&str_contains($html,'VP3 keys and subscription tokens')
+    &&str_contains($html,'My API keys')&&!str_contains($html,'llmServicePermissions'),'The member page renders one account-wide funding control');
  [$status,$json,$headers]=request($memberApi,null,false,'member');
  $memberState=json_decode($json,true)['state']??[];
  check($status===200&&in_array('Cache-Control: no-store, private',$headers,true)
-    &&($memberState['service_permissions'][0]['can_approve']??null)===true
-    &&($memberState['service_permissions'][0]['approved']??null)===false,'The current route is available for explicit approval in a private response.');
+    &&($memberState['route']??null)==='system'&&!array_key_exists('service_permissions',$memberState)
+    &&!str_contains($json,$memberKey)&&!str_contains($json,$otherKey),'Saved keys leave funding at the VP3 Cloud default and stay private');
+ $select=['action'=>'select','route'=>'own_key','provider'=>'anthropic','csrf_token'=>$csrf];
+ [$status]=request($memberApi,$select,true,'viewer');
+ check($status===403,'An account without access cannot change funding');
+ [$status]=request($memberApi,array_replace($select,['csrf_token'=>'invalid']),true,'member');
+ check($status===419,'Changing account funding requires CSRF');
  $grant=['action'=>'grant_service','csrf_token'=>$csrf,'service'=>'initiative','provider'=>'anthropic','model'=>'claude-haiku-4-5'];
- [$status]=request($memberApi,$grant,true,'viewer');
- check($status===403,'An account without access cannot grant a personal key.');
- [$status]=request($memberApi,array_replace($grant,['csrf_token'=>'invalid']),true,'member');
- check($status===419,'The approval mutation requires CSRF.');
- [$status,$json]=request($memberApi,$grant,true,'member');
- $memberState=json_decode($json,true)['state']??[];
- check($status===200&&($memberState['service_permissions'][0]['approved']??null)===true
-    &&($memberState['route']??null)==='system'&&!str_contains($json,$memberKey)
-    &&!str_contains($json,'revision'),'Approval leaves Conversation funding independent and never returns grant credentials.');
- [$status,$json]=request($memberApi,null,false,'other_member');
- check($status===200&&(json_decode($json,true)['state']['service_permissions'][0]['approved']??null)===false,'A different member sees only their own approvals.');
- [$status,$json]=request($memberApi,array_replace($grant,['action'=>'revoke_service']),true,'member');
- check($status===200&&(json_decode($json,true)['state']['service_permissions'][0]['approved']??null)===false,'The exact service grant can be revoked.');
- $imageRoute=array_replace($memberRoute,['service'=>'image_generation','primary_model'=>'openai:gpt-image-1.5']);
- [$status]=request('/admin/ai.php',$imageRoute);
- check($status===302,'Admin can configure an existing image model for personal funding.');
- $credential->execute([10,'openai','gpt-5.4-mini',ai_encrypt_secret('fixture-personal-key-for-images')]);
- [$status,$json]=request($memberApi,null,false,'member');
- $routes=array_column(json_decode($json,true)['state']['service_permissions']??[] ,null,'service');
- check($status===200&&($routes['image_generation']['model']??null)==='gpt-image-1.5'
-    &&($routes['image_generation']['can_approve']??null)===true,'The member API resolves the built-in image catalog separately from the saved Chat model.');
- [$status,$html]=request('/settings-ai-providers.php',null,false,'member');
- check($status===200&&str_contains($html,'<option value="fixture-model:2026">Fixture &lt;Model&gt;</option>')
-    &&!str_contains($html,'<option value="gpt-image-1.5">'),'The personal Conversation picker includes registered eligible models.');
+ [$status]=request($memberApi,$grant,true,'member');
+ check($status===400&&(int)$pdo->query('SELECT COUNT(*) FROM user_llm_preferences')->fetchColumn()===0,'Retired feature grants cannot change funding');
+ check(str_contains($html,'<option value="fixture-model:2026">Fixture &lt;Model&gt;</option>')
+    &&!str_contains($html,'<option value="gpt-image-1.5">'),'The default personal text model picker includes registered eligible models');
  $saveModel=['action'=>'save','csrf_token'=>$csrf,'provider'=>'anthropic','model'=>'fixture-model:2026','api_key'=>$memberKey];
  [$status,$json]=request($memberApi,$saveModel,true,'member');
  check($status===200&&(json_decode($json,true)['state']['providers']['anthropic']['model']??null)==='fixture-model:2026'
-    &&!str_contains($json,$memberKey),'Member can save an exact registered Conversation model with a personal key.');
+    &&(json_decode($json,true)['state']['route']??null)==='system'
+    &&!str_contains($json,$memberKey),'Saving an eligible custom model and key preserves the funding choice');
  [$status]=request($memberApi,array_replace($saveModel,['model'=>'never-registered']),true,'member');
- check($status===400,'A personal Conversation key cannot select an unregistered model.');
- [$status,$json]=request($memberApi,['action'=>'select','route'=>'own_key','provider'=>'anthropic','csrf_token'=>$csrf],true,'member');
- check($status===200&&(json_decode($json,true)['state']['route']??null)==='own_key','The registered model can be the member’s selected personal Conversation route.');
+ check($status===400,'A personal key cannot select an unregistered text model');
+ [$status,$json]=request($memberApi,$select+['user_id'=>11,'service'=>'initiative'],true,'member');
+ $memberState=json_decode($json,true)['state']??[];
+ check($status===200&&($memberState['route']??null)==='own_key'&&($memberState['provider']??null)==='anthropic'
+    &&!array_key_exists('service_permissions',$memberState),'The account source applies across services');
+ [$status,$json]=request($memberApi,null,false,'other_member');
+ $otherState=json_decode($json,true)['state']??[];
+ check($status===200&&($otherState['route']??null)==='system'
+    &&($otherState['providers']['anthropic']['suffix']??null)===substr($otherKey,-4)
+    &&!str_contains($json,$memberKey),'The source switch and key remain isolated to the signed-in account');
+ [$status,$json]=request($memberApi,['action'=>'remove','provider'=>'anthropic','csrf_token'=>$csrf],true,'member');
+ $memberState=json_decode($json,true)['state']??[];
+ check($status===200&&($memberState['route']??null)==='own_key'&&empty($memberState['providers']['anthropic']['configured']),'Removing the key preserves the account funding choice');
+ [$status,$json]=request($memberApi,array_replace($select,['route'=>'system','provider'=>'']),true,'member');
+ check($status===200&&(json_decode($json,true)['state']['route']??null)==='system','The member can explicitly switch all Cloud AI back to VP3 keys');
  echo 'AI_CREDENTIAL_RECOVERY_PAGE=PASS ('.$checks." assertions; actual production page/API over HTTP)\n";
 }finally{
  proc_terminate($process);proc_close($process);

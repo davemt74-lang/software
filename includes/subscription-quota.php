@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/ai-service-usage-v1.php';
+require_once __DIR__.'/subscription-lifecycle.php';
 
 function subscription_period(?array $subscription): array
 {
@@ -16,15 +17,34 @@ function subscription_package_allowance(array $subscription): int
     return max(0,(int)($subscription['ai_tokens_monthly']??0));
 }
 
+function subscription_quota_current(int $userId,PDO $pdo,bool $forUpdate,string $now): ?array
+{
+    $subscription=subscription_current_for_user_id($userId,$pdo,$forUpdate);
+    if($subscription&&subscription_lifecycle_local_period_due($subscription,$now)
+        && subscription_lifecycle_refresh_user_period($userId,$pdo)){
+        return subscription_current_for_user_id($userId,$pdo,$forUpdate);
+    }
+    return $subscription;
+}
+
+function subscription_quota_period_open(array $subscription,array $period,string $now): bool
+{
+    // The Stripe webhook/verified reconciliation is the only source of new paid periods.
+    if(($subscription['assignment_source']??'')==='stripe'&&empty($subscription['current_period_end']))return false;
+    return (empty($period['start'])||$period['start']<=$now)&&(empty($period['end'])||$period['end']>$now);
+}
+
 function subscription_ai_balance(?array $user=null,?PDO $pdo=null,bool $forUpdate=false): array
 {
     $user??=function_exists('current_user')?current_user():null;$uid=(int)($user['id']??0);
     if($uid<1)return ['available'=>0,'remaining'=>0,'used'=>0,'package_allowance'=>0,'package_remaining'=>0,'credits_remaining'=>0,'reserved'=>0,'unlimited'=>false,'subscription'=>null];
     if(subscription_is_internal_admin($user))return ['available'=>PHP_INT_MAX,'remaining'=>PHP_INT_MAX,'used'=>0,'package_allowance'=>0,'package_remaining'=>PHP_INT_MAX,'credits_remaining'=>0,'reserved'=>0,'unlimited'=>true,'subscription'=>null];
     $pdo??=db();if(!$pdo||!subscription_schema_ready($pdo))return ['available'=>PHP_INT_MAX,'remaining'=>PHP_INT_MAX,'used'=>0,'package_allowance'=>0,'package_remaining'=>PHP_INT_MAX,'credits_remaining'=>0,'reserved'=>0,'unlimited'=>true,'subscription'=>null,'compatibility'=>true];
-    $sub=subscription_current_for_user_id($uid,$pdo,$forUpdate);if(!$sub)return ['available'=>0,'remaining'=>0,'used'=>0,'package_allowance'=>0,'package_remaining'=>0,'credits_remaining'=>0,'reserved'=>0,'unlimited'=>false,'subscription'=>null];
-    if(subscription_has_entitlement($user,'ai.unlimited'))return ['available'=>PHP_INT_MAX,'remaining'=>PHP_INT_MAX,'used'=>0,'package_allowance'=>0,'package_remaining'=>PHP_INT_MAX,'credits_remaining'=>0,'reserved'=>0,'unlimited'=>true,'subscription'=>$sub];
-    $allowance=subscription_package_allowance($sub);$period=subscription_period($sub);
+    $now=gmdate('Y-m-d H:i:s');
+    $sub=subscription_quota_current($uid,$pdo,$forUpdate,$now);if(!$sub)return ['available'=>0,'remaining'=>0,'used'=>0,'package_allowance'=>0,'package_remaining'=>0,'credits_remaining'=>0,'reserved'=>0,'unlimited'=>false,'subscription'=>null];
+    $period=subscription_period($sub);$periodOpen=subscription_quota_period_open($sub,$period,$now);
+    if($periodOpen&&subscription_has_entitlement($user,'ai.unlimited'))return ['available'=>PHP_INT_MAX,'remaining'=>PHP_INT_MAX,'used'=>0,'package_allowance'=>0,'package_remaining'=>PHP_INT_MAX,'credits_remaining'=>0,'reserved'=>0,'unlimited'=>true,'subscription'=>$sub];
+    $allowance=$periodOpen?subscription_package_allowance($sub):0;
     $sql='SELECT COALESCE(SUM(package_tokens_used),0) FROM ai_usage_ledger WHERE user_id=? AND subscription_id=?';$params=[$uid,(int)$sub['id']];
     if(!empty($period['start'])){$sql.=' AND created_at>=?';$params[]=$period['start'];}
     if(!empty($period['end'])){$sql.=' AND created_at<?';$params[]=$period['end'];}
@@ -100,20 +120,24 @@ function subscription_ai_commit_usage(int $reservationId,?array $user,string $sc
     if($ownsTransaction)$pdo->beginTransaction();
     try{
         vp3_ai_service_usage_lock_owner_v1($pdo,$uid);
-        $sub=subscription_current_for_user_id($uid,$pdo,true);$creditUsed=0;$remaining=$total;
+        $now=gmdate('Y-m-d H:i:s');
+        $sub=subscription_quota_current($uid,$pdo,true,$now);$creditUsed=0;$remaining=$total;
         // Consume the included monthly allowance before purchased/admin token
         // credits. Credits are additive capacity and should not be burned while
         // the package still has included tokens available.
         $packageUsed=0;
         if($sub){
-            $allowance=subscription_package_allowance($sub);$period=subscription_period($sub);
-            $usedSql='SELECT COALESCE(SUM(package_tokens_used),0) FROM ai_usage_ledger WHERE user_id=? AND subscription_id=?';
-            $usedParams=[$uid,(int)$sub['id']];
-            if(!empty($period['start'])){$usedSql.=' AND created_at>=?';$usedParams[]=$period['start'];}
-            if(!empty($period['end'])){$usedSql.=' AND created_at<?';$usedParams[]=$period['end'];}
-            $usedStmt=$pdo->prepare($usedSql);$usedStmt->execute($usedParams);$alreadyUsed=(int)$usedStmt->fetchColumn();
-            $packageAvailable=max(0,$allowance-$alreadyUsed);
-            $packageUsed=min($packageAvailable,$remaining);$remaining-=$packageUsed;
+            $period=subscription_period($sub);
+            if(subscription_quota_period_open($sub,$period,$now)){
+                $allowance=subscription_package_allowance($sub);
+                $usedSql='SELECT COALESCE(SUM(package_tokens_used),0) FROM ai_usage_ledger WHERE user_id=? AND subscription_id=?';
+                $usedParams=[$uid,(int)$sub['id']];
+                if(!empty($period['start'])){$usedSql.=' AND created_at>=?';$usedParams[]=$period['start'];}
+                if(!empty($period['end'])){$usedSql.=' AND created_at<?';$usedParams[]=$period['end'];}
+                $usedStmt=$pdo->prepare($usedSql);$usedStmt->execute($usedParams);$alreadyUsed=(int)$usedStmt->fetchColumn();
+                $packageAvailable=max(0,$allowance-$alreadyUsed);
+                $packageUsed=min($packageAvailable,$remaining);$remaining-=$packageUsed;
+            }
         }
         $credits=$pdo->prepare("SELECT id,remaining_amount FROM ai_token_credits WHERE user_id=? AND remaining_amount>0 AND (expires_at IS NULL OR expires_at>NOW()) ORDER BY CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END ASC,expires_at ASC,id ASC FOR UPDATE");
         $credits->execute([$uid]);
@@ -128,8 +152,8 @@ function subscription_ai_commit_usage(int $reservationId,?array $user,string $sc
         if($remaining>0){$packageUsed+=$remaining;$remaining=0;}
         $trace=function_exists('agent_runtime_v125_trace_id')?(string)agent_runtime_v125_trace_id():'';
         $requestKey=trim($requestKey);if($requestKey==='')$requestKey=null;
-        $stmt=$pdo->prepare('INSERT INTO ai_usage_ledger (user_id,subscription_id,scope,provider,model,input_tokens,output_tokens,total_tokens,credit_tokens_used,package_tokens_used,trace_id,request_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
-        $stmt->execute([$uid,(int)($sub['id']??0)?:null,mb_strimwidth($scope,0,60,''),mb_strimwidth($provider,0,40,''),mb_strimwidth($model,0,120,''),max(0,(int)($usage['input_tokens']??0)),max(0,(int)($usage['output_tokens']??0)),$total,$creditUsed,$packageUsed,mb_strimwidth($trace,0,120,''),$requestKey]);
+        $stmt=$pdo->prepare('INSERT INTO ai_usage_ledger (user_id,subscription_id,scope,provider,model,input_tokens,output_tokens,total_tokens,credit_tokens_used,package_tokens_used,trace_id,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+        $stmt->execute([$uid,(int)($sub['id']??0)?:null,mb_strimwidth($scope,0,60,''),mb_strimwidth($provider,0,40,''),mb_strimwidth($model,0,120,''),max(0,(int)($usage['input_tokens']??0)),max(0,(int)($usage['output_tokens']??0)),$total,$creditUsed,$packageUsed,mb_strimwidth($trace,0,120,''),$requestKey,$now]);
         if($reservationId>0)$pdo->prepare('DELETE FROM ai_token_reservations WHERE id=? AND user_id=?')->execute([$reservationId,$uid]);
         if($ownsTransaction)$pdo->commit();
     }catch(Throwable $e){

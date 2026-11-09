@@ -72,6 +72,14 @@ function vp3_ai_service_usage_limit_v1(mixed $limit): ?int
     return $limit;
 }
 
+function vp3_ai_service_usage_assert_funding_v1(PDO $pdo,array $user,string $credential): void
+{
+    if(!function_exists('vp3_user_llm_v1_funding'))throw new RuntimeException('AI account funding is unavailable.',503);
+    if(vp3_user_llm_v1_funding($pdo,$user)!==$credential){
+        throw new RuntimeException('The account funding choice has changed. Retry with the selected funding source.',403);
+    }
+}
+
 /** Reserve against the effective service/account limits before a provider can receive a request. */
 function vp3_ai_service_usage_begin_v1(PDO $pdo,array $user,string $service,string $provider,string $model,string $credential,int $inputEstimate,int $outputLimit,array $options=[]): array
 {
@@ -89,6 +97,7 @@ function vp3_ai_service_usage_begin_v1(PDO $pdo,array $user,string $service,stri
         if(!empty($options['required'])||array_filter($limits,static fn(?int $limit):bool=>$limit!==null)){
             throw new RuntimeException('Upgrade the database to enforce AI service rules.',503);
         }
+        vp3_ai_service_usage_assert_funding_v1($pdo,$user,$credential);
         return ['metered'=>false,'id'=>0,'max_output_tokens'=>$outputLimit,'request_key'=>''];
     }
     if($pdo->inTransaction())throw new LogicException('Reserve AI service usage before opening an execution transaction.');
@@ -104,6 +113,7 @@ function vp3_ai_service_usage_begin_v1(PDO $pdo,array $user,string $service,stri
     $pdo->beginTransaction();
     try {
         vp3_ai_service_usage_lock_owner_v1($pdo,$owner);
+        vp3_ai_service_usage_assert_funding_v1($pdo,$user,$credential);
         $query=$pdo->prepare('SELECT id FROM ai_execution_ledger WHERE service_attempt_key=?');
         $query->execute([$attemptKey]);
         if($query->fetchColumn()!==false)throw new RuntimeException('This AI service attempt has already been recorded.',409);
@@ -114,7 +124,7 @@ function vp3_ai_service_usage_begin_v1(PDO $pdo,array $user,string $service,stri
                 $code=match($policy['reason']??''){'service_budget_exhausted'=>402,'service_policy_unavailable'=>503,default=>403};
                 throw new RuntimeException('This AI service is unavailable for the account.',$code);
             }
-            $target=['provider'=>$provider,'model'=>$model,'funding'=>$credential];
+            $target=['provider'=>$provider,'model'=>$model];
             if(!vp3_ai_service_target_allowed_v1($policy,$target)
                 ||(!empty($policy['configured'])&&!in_array($target,[$policy['primary'],$policy['fallback']],true))){
                 throw new RuntimeException('This provider and model are unavailable for the AI service.',403);

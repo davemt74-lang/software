@@ -339,7 +339,9 @@ jobs:
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
           VP3_TEST_MYSQL_PASS: section7-fixture
-        run: php tests/ai-service-usage-v1.php
+        run: |
+          php tests/ai-service-usage-v1.php
+          php tests/subscription-token-period-mysql.php
       - name: Admin development revisions and staging on MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4

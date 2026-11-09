@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/ai-direct-account-v1.php';
+
 const STONEFELLOW_ARTIST_LISTENING_TRANSCRIPT = 'artist-listening-long-v237-20260902';
 const STONEFELLOW_ARTIST_LISTENING_PAGE_WORDS_V237 = 2500;
 
@@ -421,24 +423,18 @@ function artist_listening_v237_extract_openai_text(array $decoded): string
 
 function artist_listening_v237_ai(string $prompt, array $user, int $maxTokens = 1800): array
 {
-    $provider = ai_active_provider();
-    if (!in_array($provider, ['openai','anthropic'], true) || !ai_provider_ready($provider)) {
-        throw new RuntimeException('Enable and configure OpenAI or Claude before using transcript analysis.');
-    }
+    $route = vp3_ai_direct_account_route_v1($user);
+    $provider = $route['provider'];
+    $model = $route['model'];
     ai_v100_rate_limit('chat', $user);
-    $model = ai_provider_model($provider);
     $started = microtime(true);
     if ($provider === 'openai') {
-        $result = ai_curl_json('https://api.openai.com/v1/responses', [
-            'Authorization: Bearer ' . ai_provider_api_key('openai'),'Content-Type: application/json'
-        ], ['model'=>$model,'input'=>$prompt,'max_output_tokens'=>$maxTokens], 55);
+        $result = vp3_ai_direct_request_v1($user,$route,'transcription',['input'=>$prompt,'max_output_tokens'=>$maxTokens],55);
         if (empty($result['ok']) || !is_array($result['data'] ?? null)) throw new RuntimeException((string)($result['error'] ?? 'OpenAI transcript analysis was unavailable.'));
         $answer = artist_listening_v237_extract_openai_text($result['data']);
         $usage = ai_v100_usage('openai', $result['data']);
     } else {
-        $result = ai_curl_json('https://api.anthropic.com/v1/messages', [
-            'x-api-key: ' . ai_provider_api_key('anthropic'),'anthropic-version: 2023-06-01','Content-Type: application/json'
-        ], ['model'=>$model,'max_tokens'=>$maxTokens,'messages'=>[['role'=>'user','content'=>$prompt]]], 55);
+        $result = vp3_ai_direct_request_v1($user,$route,'transcription',['max_tokens'=>$maxTokens,'messages'=>[['role'=>'user','content'=>$prompt]]],55);
         if (empty($result['ok']) || !is_array($result['data'] ?? null)) throw new RuntimeException((string)($result['error'] ?? 'Claude transcript analysis was unavailable.'));
         $parts = [];
         foreach (($result['data']['content'] ?? []) as $block) if (is_array($block) && ($block['type'] ?? '') === 'text' && is_string($block['text'] ?? null)) $parts[] = $block['text'];
@@ -496,17 +492,16 @@ function artist_listening_v237_analyze_page(PDO $pdo, array $user, int $sessionI
     return ['cached'=>false,'page_number'=>$pageNumber,'source_hash'=>(string)$page['source_hash'],'analysis'=>$analysis,'provider'=>(string)$ai['provider'],'model'=>(string)$ai['model'],'generated_at'=>gmdate('c')];
 }
 
-function artist_listening_v237_research(array $queries, array $user): array
+function artist_listening_v237_research(array $queries, array $user, bool $publicProfile = false): array
 {
     $queries = array_slice(array_values(array_filter(array_map(static fn($v): string => artist_listening_v237_clean_text((string)$v), $queries))), 0, 3);
     if (!$queries) return ['text'=>'','sources'=>[],'error'=>''];
-    $provider = ai_active_provider();
-    if (!in_array($provider, ['openai','anthropic'], true) || !ai_provider_ready($provider)) return ['text'=>'','sources'=>[],'error'=>'Research provider is not configured.'];
-    $model = ai_provider_model($provider);
     $prompt = "Research these important items from a long transcript. Use current web sources where relevant, separate verified facts from uncertainty, and stay concise.\n\n- " . implode("\n- ", $queries);
     try {
-        if ($provider === 'openai') {
-            $result = ai_curl_json('https://api.openai.com/v1/responses', ['Authorization: Bearer ' . ai_provider_api_key('openai'),'Content-Type: application/json'], ['model'=>$model,'tools'=>[['type'=>'web_search']],'tool_choice'=>'auto','input'=>$prompt,'max_output_tokens'=>1400], 60);
+        $route = $publicProfile ? vp3_ai_direct_system_route_v1() : vp3_ai_direct_account_route_v1($user);
+        $scope = $publicProfile ? 'profile_call_public' : 'transcription';
+        if ($route['provider'] === 'openai') {
+            $result = vp3_ai_direct_request_v1($user,$route,$scope,['tools'=>[['type'=>'web_search']],'tool_choice'=>'auto','input'=>$prompt,'max_output_tokens'=>1400],60);
             if (empty($result['ok']) || !is_array($result['data'] ?? null)) return ['text'=>'','sources'=>[],'error'=>(string)($result['error'] ?? 'Research unavailable.')];
             $sources = [];
             foreach (($result['data']['output'] ?? []) as $item) foreach (($item['content'] ?? []) as $content) foreach (($content['annotations'] ?? []) as $annotation) {
@@ -517,7 +512,7 @@ function artist_listening_v237_research(array $queries, array $user): array
             }
             return ['text'=>mb_strimwidth(artist_listening_v237_extract_openai_text($result['data']),0,6000,'…'),'sources'=>array_slice(array_values($sources),0,10),'error'=>''];
         }
-        $result = ai_curl_json('https://api.anthropic.com/v1/messages', ['x-api-key: ' . ai_provider_api_key('anthropic'),'anthropic-version: 2023-06-01','Content-Type: application/json'], ['model'=>$model,'max_tokens'=>1400,'messages'=>[['role'=>'user','content'=>$prompt]],'tools'=>[['type'=>'web_search_20260318','name'=>'web_search','max_uses'=>3,'allowed_callers'=>['direct']]]], 60);
+        $result = vp3_ai_direct_request_v1($user,$route,$scope,['max_tokens'=>1400,'messages'=>[['role'=>'user','content'=>$prompt]],'tools'=>[['type'=>'web_search_20260318','name'=>'web_search','max_uses'=>3,'allowed_callers'=>['direct']]]],60);
         if (empty($result['ok']) || !is_array($result['data'] ?? null)) return ['text'=>'','sources'=>[],'error'=>(string)($result['error'] ?? 'Research unavailable.')];
         $parts = []; $sources = [];
         foreach (($result['data']['content'] ?? []) as $block) {

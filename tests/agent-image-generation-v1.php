@@ -254,10 +254,21 @@ try{
         sort($results);check($results===['BLOCKED','QUEUED'],'concurrent MySQL admission permits exactly one active image per owner');
         $q=$pdo->query("SELECT g.run_id FROM agent_image_generations_v1 g JOIN agent_workflow_runs r ON r.id=g.run_id WHERE r.status='approved'");foreach($q->fetchAll() as $r)agent_job_cancel_v1900($pdo,$u,(int)$r['run_id']);
     }
+    $replaceConfig=static function(array $row,array $config)use($pdo):void{
+        $hash=hash('sha256',json_encode([(int)$row['conversation_id'],(int)$row['agent_id'],$config],JSON_THROW_ON_ERROR));
+        $pdo->prepare('UPDATE agent_image_generations_v1 SET config_json=?,request_hash=? WHERE generation_id=?')
+            ->execute([json_encode($config,JSON_THROW_ON_ERROR),$hash,$row['generation_id']]);
+    };
+    $ctx=image_fixture_turn_v1();$g=vp3_image_queue_v1($pdo,$u,$principal,$plan,$ctx);
+    $row=vp3_image_row_v1($pdo,$u,$g['id']);$oldConfig=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);
+    unset($oldConfig['funding_source']);$replaceConfig($row,$oldConfig);
+    check(vp3_image_queue_v1($pdo,$u,$principal,$plan,$ctx)['id']===$g['id'],'a queued pre-upgrade legacy request retains its original idempotency hash');
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='completed'&&end($calls)[2]==='fixture-image-secret','a pre-upgrade legacy image can still dispatch with the same site funding and model');
     $pdo->exec('CREATE TABLE settings (setting_key VARCHAR(190) PRIMARY KEY,setting_value TEXT)');
     vp3_ai_service_save_model_v1($pdo,'openai','gpt-image-fixture-exact','Fixture image model',['image_generation']);
-    $primary=['provider'=>'openai','model'=>'gpt-image-fixture-exact','funding'=>'system'];
-    $fallback=['provider'=>'openai','model'=>'gpt-image-1-mini','funding'=>'system'];
+    $primary=['provider'=>'openai','model'=>'gpt-image-fixture-exact'];
+    $fallback=['provider'=>'openai','model'=>'gpt-image-1-mini'];
     vp3_ai_service_save_route_v1($pdo,'image_generation',$primary,$fallback);
     $before=count($calls);
     reject(fn()=>queueImage(),'configured image routes require the service usage database upgrade');
@@ -286,6 +297,11 @@ try{
         &&(int)$entry['conversation_id']===11&&(int)$entry['total_tokens']===220&&(int)$entry['usage_units']===1
         &&$entry['credential_source']==='system'&&count($GLOBALS['imageUsage'])===$usageCount+1,
         'one image attempt records owner, Agent, Chat, exact funding, verified tokens and one subscription settlement');
+    $g=queueImage();$row=vp3_image_row_v1($pdo,$u,$g['id']);$oldConfig=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);
+    unset($oldConfig['funding_source']);$oldConfig['provider_route']['funding']='system';$replaceConfig($row,$oldConfig);
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='completed'&&end($calls)[1]['model']===$primary['model']&&end($calls)[2]==='fixture-image-secret',
+        'a pre-upgrade configured site job can still dispatch with the same exact route and funding');
     vp3_ai_service_save_rule_v1($pdo,'user',1,'image_generation',['allowed_models'=>['openai:'.$fallback['model']]]);
     $g=queueImage();
     $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
@@ -328,31 +344,66 @@ try{
     $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
     check($v['status']==='failed'&&$v['provider_started']&&$entry['service_status']==='rejected'&&(int)$entry['service_budget_tokens']===0,
         'a definitive provider refusal keeps an attempt record and frees the reserved service allowance');
-    require_once dirname(__DIR__).'/includes/ai-service-own-key-v1.php';
-    $pdo->exec('CREATE TABLE user_llm_credentials (user_id INTEGER,provider VARCHAR(32),encrypted_key TEXT,PRIMARY KEY(user_id,provider))');
-    $keys=$pdo->prepare('INSERT INTO user_llm_credentials VALUES (?,?,?)');
-    $keys->execute([1,'openai','fixture-cipher:fixture-owner-personal-key']);
-    $keys->execute([2,'openai','fixture-cipher:fixture-foreign-personal-key']);
-    $personal=array_replace($primary,['funding'=>'own_key']);
-    vp3_ai_service_save_route_v1($pdo,'image_generation',$personal,$fallback);
-    vp3_ai_service_own_key_update_v1($pdo,['id'=>2],'image_generation','openai',$personal['model'],true);
-    $g=queueImage();$v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
-    check($v['status']==='completed'&&end($calls)[1]['model']===$fallback['model']&&end($calls)[2]==='fixture-image-secret',
-        'a saved personal key and another owner’s grant cannot authorize personal funding for this owner');
-    vp3_ai_service_own_key_update_v1($pdo,$u,'image_generation','openai',$personal['model'],true);
+    $pdo->exec('CREATE TABLE user_llm_credentials (user_id INTEGER,provider VARCHAR(32),encrypted_key TEXT,model VARCHAR(160),PRIMARY KEY(user_id,provider))');
+    $pdo->exec('CREATE TABLE user_llm_preferences (user_id INTEGER PRIMARY KEY,route VARCHAR(24),provider VARCHAR(32))');
+    $pdo->exec("INSERT INTO user_llm_preferences VALUES (1,'own_key','anthropic')");
+    $keys=$pdo->prepare('INSERT INTO user_llm_credentials VALUES (?,?,?,?)');
+    $keys->execute([1,'anthropic','fixture-cipher:fixture-owner-anthropic-key','claude-haiku-5-5']);
+    $keys->execute([2,'openai','fixture-cipher:fixture-foreign-personal-key','gpt-5.6-luna']);
+    vp3_ai_service_save_route_v1($pdo,'image_generation',$primary,$fallback);
     $usageCount=count($GLOBALS['imageUsage']);$preflightCount=count($GLOBALS['imagePreflight']);
+    $before=count($calls);
+    reject(fn()=>queueImage(),'personal funding requires the current owner’s OpenAI key even with a configured fallback');
+    check(count($calls)===$before&&count($GLOBALS['imagePreflight'])===$preflightCount,
+        'a missing personal key does not fall back to a site key or use another owner’s key');
+    $keys->execute([1,'openai','fixture-cipher:fixture-owner-personal-key','gpt-5.6-luna']);
     $g=queueImage();$row=vp3_image_row_v1($pdo,$u,$g['id']);$v=vp3_image_tick_v1($pdo,$u,$row,'transportImage');
     $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
-    check($v['status']==='completed'&&end($calls)[1]['model']===$personal['model']&&end($calls)[2]==='fixture-owner-personal-key'
+    check($v['status']==='completed'&&end($calls)[1]['model']===$primary['model']&&end($calls)[2]==='fixture-owner-personal-key'
         &&$entry['credential_source']==='own_key'&&(int)$entry['total_tokens']===220
         &&count($GLOBALS['imagePreflight'])===$preflightCount&&count($GLOBALS['imageUsage'])===$usageCount
         &&!str_contains($row['config_json'],'fixture-owner-personal-key'),
-        'explicit personal image approval uses the owner key and exact model, meters usage and leaves site quota untouched');
-    $g=queueImage();$before=count($calls);
-    vp3_ai_service_own_key_update_v1($pdo,$u,'image_generation','openai',$personal['model'],false);
+        'account-wide personal funding uses the saved OpenAI key and exact model, meters usage and leaves site quota untouched');
+    $g=queueImage();$before=count($calls);$row=vp3_image_row_v1($pdo,$u,$g['id']);
+    $oldConfig=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);
+    unset($oldConfig['funding_source']);$oldConfig['provider_route']['funding']='own_key';$replaceConfig($row,$oldConfig);
     $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
     check($v['status']==='failed'&&!$v['provider_started']&&count($calls)===$before,
-        'revoking personal image consent before dispatch stops the approved job without switching funding');
+        'old per-service personal grants do not dispatch jobs under the new account-wide consent');
+    $g=queueImage();$before=count($calls);
+    $pdo->exec("UPDATE user_llm_preferences SET route='system' WHERE user_id=1");
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='failed'&&!$v['provider_started']&&count($calls)===$before,
+        'switching an account to site funding stops its queued personal image without changing funding');
+    $g=queueImage();$before=count($calls);
+    $pdo->exec("UPDATE user_llm_preferences SET route='own_key' WHERE user_id=1");
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='failed'&&!$v['provider_started']&&count($calls)===$before&&count($GLOBALS['imagePreflight'])===$preflightCount,
+        'switching an account to personal funding stops its queued site image before quota or dispatch');
+    vp3_ai_service_save_route_v1($pdo,'image_generation',null,null);
+    $GLOBALS['noImageProvider']=true;
+    $g=vp3_image_queue_workspace_v1($pdo,$u,$plan,bin2hex(random_bytes(16)));
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
+    check($v['status']==='completed'&&end($calls)[1]['model']===vp3_image_settings_v1()['model']&&end($calls)[2]==='fixture-owner-personal-key'
+        &&$entry['credential_source']==='own_key'&&(int)$entry['total_tokens']===220
+        &&count($GLOBALS['imagePreflight'])===$preflightCount&&count($GLOBALS['imageUsage'])===$usageCount,
+        'Media Library uses the account’s personal key and tracks usage even with the default image model and site key disabled');
+    $GLOBALS['noImageProvider']=false;
+    $g=queueImage();$before=count($calls);
+    $pdo->exec("DELETE FROM user_llm_credentials WHERE user_id=1 AND provider='openai'");
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='failed'&&!$v['provider_started']&&count($calls)===$before&&count($GLOBALS['imagePreflight'])===$preflightCount,
+        'removing the saved OpenAI key stops a queued personal image without charging the site');
+    $pdo->exec("UPDATE user_llm_preferences SET route='system' WHERE user_id=1");
+    $g=queueImage();$before=count($calls);
+    $update="UPDATE user_llm_preferences SET route='own_key' WHERE user_id=NEW.user_id";
+    $pdo->exec('CREATE TRIGGER image_funding_change AFTER INSERT ON ai_execution_ledger '.($mysql?'FOR EACH ROW '.$update:'BEGIN '.$update.'; END'));
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    $pdo->exec('DROP TRIGGER image_funding_change');
+    $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
+    check($v['status']==='failed'&&!$v['provider_started']&&count($calls)===$before&&$entry===false&&count($GLOBALS['imageUsage'])===$usageCount,
+        'a funding change after reservation is detected at dispatch and releases the unused allowance');
     echo 'IMAGE_GENERATION_V1=PASS ('.$checks.' cases; '.$pdo->getAttribute(PDO::ATTR_DRIVER_NAME).")\n";
 }finally{
     if(is_dir(STONEFELLOW_ROOT)){foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(STONEFELLOW_ROOT,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST) as $p){if($p->isDir())rmdir($p->getPathname());else unlink($p->getPathname());}rmdir(STONEFELLOW_ROOT);}

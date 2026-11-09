@@ -65,7 +65,7 @@ function vp3_agent_runtime_cloud_state_v420(array $user, ?PDO $pdo = null, array
         $policy=$pdo!==null&&function_exists('ai_v100_service_policy')?ai_v100_service_policy($pdo,$user,$serviceContext):null;
         if($policy!==null){
             $state['service_controlled']=!empty($policy['configured'])||empty($policy['enabled'])
-                ||($policy['allowed_models']??null)!==null||($policy['allowed_funding']??null)!==null;
+                ||($policy['allowed_models']??null)!==null;
             foreach(['job_tokens','daily_tokens','monthly_tokens','background_daily_tokens','background_monthly_tokens'] as $limit){
                 if(!empty($policy[$limit]))$state['service_controlled']=true;
             }
@@ -73,28 +73,26 @@ function vp3_agent_runtime_cloud_state_v420(array $user, ?PDO $pdo = null, array
         }
         // Personal Cloud keys use the owner's provider bill, not VP3's tokens.
         // The same account entitlement and request-rate limits still apply.
-        $own=['route'=>'system'];
         $connection=$pdo??(function_exists('db')?db():null);
-        if(function_exists('vp3_user_llm_v1_effective')&&$connection instanceof PDO){
-            $own=vp3_user_llm_v1_effective($connection,$user);
+        $explicit=!empty($policy['configured']);
+        $own=function_exists('ai_cloud_account_route')
+            ?ai_cloud_account_route($connection instanceof PDO?$connection:null,$user,$explicit)
+            :['route'=>'system'];
+        $funding=$own['route']??'system';
+        if($funding==='unavailable'){
+            $state['reason']='user_key_unavailable';return $state;
         }
-        if(!empty($policy['configured'])){
-            $available=null;
-            foreach(ai_v100_service_targets($policy,$own,'',[]) as $target){
-                if(!isset(ai_v100_service_target_credential($target,$own,$policy,$user,$connection)['failure'])){$available=$target;break;}
+        if($explicit){
+            $available=false;
+            foreach(ai_v100_service_targets($policy,$funding,'',[]) as $target){
+                if(!isset(ai_v100_service_target_credential($target,$user,$connection)['failure'])){$available=true;break;}
             }
-            if($available===null){$state['reason']='cloud_service_route_unavailable';return $state;}
-            $own['route']=$available['funding'];
+            if(!$available){$state['reason']='cloud_service_route_unavailable';return $state;}
         }
-        if($own){
-            if(($own['route']??'system')==='own_key'){
-                $state['ready']=true;$state['reason']='user_key_ready';
-                $state['billing_source']='user_provider';$state['remaining']=null;
-                return $state;
-            }
-            if(($own['route']??'system')==='unavailable'){
-                $state['reason']='user_key_unavailable';return $state;
-            }
+        if($funding==='own_key'){
+            $state['ready']=true;$state['reason']='user_key_ready';
+            $state['billing_source']='user_provider';$state['remaining']=null;
+            return $state;
         }
         if(!function_exists('subscription_ai_balance')){
             $state['ready']=true;$state['reason']='compatibility';return $state;
@@ -168,7 +166,8 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
     $homeCloudAllowed=$effective==='auto'
         && !empty($home['cloud_allowed'])
         && !empty($cloud['ready'])
-        && empty($cloud['service_controlled']);
+        && empty($cloud['service_controlled'])
+        && ($cloud['billing_source']??'')!=='user_provider';
 
     $gateway=ai_gateway_v031_plan([
         'surface'=>$surface,

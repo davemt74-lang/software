@@ -172,17 +172,35 @@ function vp3_ai_service_target_v1(array $target): array
 {
     $provider = $target['provider'] ?? null;
     $model = $target['model'] ?? null;
-    $funding = $target['funding'] ?? null;
-    if (count($target) !== 3 || !in_array($provider, ['openai', 'anthropic'], true)
-        || !vp3_ai_service_model_id_v1($model) || !in_array($funding, ['system', 'own_key'], true)) {
-        throw new InvalidArgumentException('Select a provider, exact model, and credential source.');
+    if (count($target) !== 2 || !in_array($provider, ['openai', 'anthropic'], true)
+        || !vp3_ai_service_model_id_v1($model)) {
+        throw new InvalidArgumentException('Select a provider and exact model.');
     }
-    return compact('provider', 'model', 'funding');
+    return compact('provider', 'model');
+}
+
+function vp3_ai_service_stored_route_v1(mixed $route): array
+{
+    if (!is_array($route) || !is_array($route['primary'] ?? null)) throw new UnexpectedValueException('Stored AI service route is invalid.');
+    $normalized = ['primary' => null, 'fallback' => null];
+    foreach (['primary', 'fallback'] as $slot) {
+        $target = $route[$slot] ?? null;
+        if ($target === null) continue;
+        if (!is_array($target)) throw new UnexpectedValueException('Stored AI service route is invalid.');
+        // A previously saved credential choice no longer determines service routing.
+        unset($target['funding']);
+        $normalized[$slot] = vp3_ai_service_target_v1($target);
+    }
+    if ($normalized['fallback'] === $normalized['primary']) $normalized['fallback'] = null;
+    return $normalized;
 }
 
 function vp3_ai_service_read_route_v1(PDO $pdo, string $service): array
 {
-    return vp3_ai_service_config_v1($pdo)['routes'][$service] ?? ['primary' => null, 'fallback' => null];
+    $routes = vp3_ai_service_config_v1($pdo)['routes'];
+    return array_key_exists($service, $routes)
+        ? vp3_ai_service_stored_route_v1($routes[$service])
+        : ['primary' => null, 'fallback' => null];
 }
 
 function vp3_ai_service_save_route_v1(PDO $pdo, string $service, ?array $primary, ?array $fallback): void
@@ -226,17 +244,13 @@ function vp3_ai_service_rule_v1(array $input): array
             $rule[$key] = $value;
         } elseif (in_array($key, VP3_AI_SERVICE_TOKEN_LIMITS_V1, true) && is_int($value) && $value >= 0 && $value <= 1_000_000_000) {
             $rule[$key] = $value;
-        } elseif (in_array($key, ['allowed_models', 'allowed_funding'], true) && is_array($value)
+        } elseif ($key === 'allowed_models' && is_array($value)
             && array_is_list($value) && count($value) <= 100) {
             foreach ($value as $entry) {
                 if (!is_string($entry)) throw new InvalidArgumentException('An AI service allowlist entry is invalid.');
-                if ($key === 'allowed_funding') {
-                    if (!in_array($entry, ['system', 'own_key'], true)) throw new InvalidArgumentException('A credential source is invalid.');
-                } else {
-                    [$provider, $model] = array_pad(explode(':', $entry, 2), 2, '');
-                    if (!in_array($provider, ['openai', 'anthropic'], true) || !vp3_ai_service_model_id_v1($model)) {
-                        throw new InvalidArgumentException('A model allowlist entry is invalid.');
-                    }
+                [$provider, $model] = array_pad(explode(':', $entry, 2), 2, '');
+                if (!in_array($provider, ['openai', 'anthropic'], true) || !vp3_ai_service_model_id_v1($model)) {
+                    throw new InvalidArgumentException('A model allowlist entry is invalid.');
                 }
             }
             $rule[$key] = array_values(array_unique($value));
@@ -252,6 +266,8 @@ function vp3_ai_service_read_rule_v1(PDO $pdo, string $scope, int $id, string $s
     $value = vp3_ai_service_read_setting_v1($pdo, vp3_ai_service_rule_key_v1($scope, $id, $service));
     if ($value === null) return [];
     if (!is_array($value['rule'] ?? null)) throw new UnexpectedValueException('Stored AI service rules are invalid.');
+    if (($value['rule']['allowed_funding'] ?? null) === []) $value['rule']['enabled'] = false;
+    unset($value['rule']['allowed_funding']);
     return vp3_ai_service_rule_v1($value['rule']);
 }
 
@@ -273,6 +289,7 @@ function vp3_ai_service_save_rule_v1(PDO $pdo, string $scope, int $id, string $s
 function vp3_ai_service_target_allowed_v1(array $policy, array $target): bool
 {
     if (($policy['enabled'] ?? null) !== true) return false;
+    unset($target['funding']);
     try {
         $target = vp3_ai_service_target_v1($target);
     } catch (InvalidArgumentException) {
@@ -280,9 +297,7 @@ function vp3_ai_service_target_allowed_v1(array $policy, array $target): bool
     }
     if (!in_array($target['provider'], vp3_ai_service_catalog_v1()[$policy['service'] ?? '']['providers'] ?? [], true)) return false;
     $models = $policy['allowed_models'] ?? null;
-    $funding = $policy['allowed_funding'] ?? null;
-    return ($models === null || in_array($target['provider'] . ':' . $target['model'], $models, true))
-        && ($funding === null || in_array($target['funding'], $funding, true));
+    return $models === null || in_array($target['provider'] . ':' . $target['model'], $models, true);
 }
 
 /** Site and package restrictions remain upper bounds for account overrides. */
@@ -291,7 +306,7 @@ function vp3_ai_service_policy_v1(PDO $pdo, ?array $user, string $service, bool 
     $policy = [
         'service' => $service, 'configured' => false, 'enabled' => true, 'reason' => '',
         'primary' => null, 'fallback' => null, 'background_enabled' => true,
-        'allowed_models' => null, 'allowed_funding' => null,
+        'allowed_models' => null,
     ] + array_fill_keys(VP3_AI_SERVICE_TOKEN_LIMITS_V1, null);
     if (!isset(vp3_ai_service_catalog_v1()[$service])) {
         return array_replace($policy, ['enabled' => false, 'reason' => 'service_unsupported']);
@@ -329,18 +344,15 @@ function vp3_ai_service_policy_v1(PDO $pdo, ?array $user, string $service, bool 
                 return array_replace($policy, ['enabled' => false, 'reason' => 'service_budget_exhausted']);
             }
         }
-        if ($policy['allowed_models'] === [] || $policy['allowed_funding'] === []) {
+        if ($policy['allowed_models'] === []) {
             return array_replace($policy, ['enabled' => false, 'reason' => 'service_model_forbidden']);
         }
         if ($policy['configured']) {
-            $route = $config['routes'][$service];
-            if (!is_array($route['primary'] ?? null)) throw new UnexpectedValueException('Stored AI service route is invalid.');
+            $route = vp3_ai_service_stored_route_v1($config['routes'][$service]);
             $models = vp3_ai_service_models_from_config_v1($config, $service);
-            foreach (['primary', 'fallback'] as $slot) {
-                if (($route[$slot] ?? null) === null) continue;
-                if (!is_array($route[$slot])) throw new UnexpectedValueException('Stored AI service route is invalid.');
-                $target = vp3_ai_service_target_v1($route[$slot]);
-                if (isset($models[$target['provider']][$target['model']]) && vp3_ai_service_target_allowed_v1($policy, $target)) {
+            foreach ($route as $slot => $target) {
+                if ($target !== null && isset($models[$target['provider']][$target['model']])
+                    && vp3_ai_service_target_allowed_v1($policy, $target)) {
                     $policy[$slot] = $target;
                 }
             }

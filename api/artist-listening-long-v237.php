@@ -109,13 +109,14 @@ try {
     if ($method === 'GET' && $action === 'analysis') {
         $session = artist_listening_v172_session($pdo, $user, $sessionId);
         $map = artist_listening_transcript_page_map(artist_listening_v172_segments($pdo, $sessionId));
-        $provider = ai_active_provider();
+        try {$provider = vp3_ai_direct_account_route_v1($user)['provider'];}
+        catch (RuntimeException $error) {$provider = '';}
         $meetingPolicy=function_exists('video_meeting_transcription_ai_policy_v1801')?video_meeting_transcription_ai_policy_v1801($pdo,$user,$session):null;
         artist_listening_v237_json(true, [
             'analysis'=>artist_listening_v237_analysis_status($pdo, $sessionId, $map),
             'schema_ready'=>artist_listening_v237_schema_ready(),
             'provider'=>$provider,
-            'provider_ready'=>in_array($provider, ['openai','anthropic'], true) && ai_provider_ready($provider),
+            'provider_ready'=>$provider!=='',
             'participants'=>artist_listening_v237_participants($session),
             'meeting_processing_policy'=>$meetingPolicy===null?null:[
                 'cloud_ai_allowed'=>!empty($meetingPolicy['cloud_ai_allowed']),

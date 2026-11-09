@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/ai-direct-account-v1.php';
+
 /**
  * Stonefellow v90 — AI-native editor planning.
  *
@@ -91,13 +93,45 @@ function agent_v90_decode_json(string $text): ?array
     $decoded=json_decode($text,true);if(!is_array($decoded))return null;if(isset($decoded['commands'])&&!is_array($decoded['commands']))return null;if(isset($decoded['answer'])&&!is_scalar($decoded['answer']))return null;if(is_array($decoded['commands']??null)&&count($decoded['commands'])>64)return null;return $decoded;
 }
 
-function agent_v90_llm_json(string $query,string $instructions,string $complexity='complex'): array
+function agent_v90_llm_json(string $query,string $instructions,string $complexity,array $user,string $scope): array
 {
-    $provider=ai_active_provider();if(!in_array($provider,['openai','anthropic'],true)||!ai_provider_ready($provider))return ['ok'=>false,'error'=>'No remote AI provider is configured.','provider'=>$provider,'model'=>''];
-    try{ai_v100_rate_limit('planner',function_exists('current_user')?current_user():null);}catch(Throwable $e){return ['ok'=>false,'error'=>ai_v100_safe_exception($e),'provider'=>$provider,'model'=>''];}
+    $provider='';
+    try{
+        $route=vp3_ai_direct_account_route_v1($user);
+        $provider=$route['provider'];
+        ai_v100_rate_limit('planner',$user);
+    }catch(Throwable $e){
+        return ['ok'=>false,'error'=>ai_v100_safe_exception($e),'provider'=>$provider,'model'=>''];
+    }
     if(strlen($query)>220000)return ['ok'=>false,'error'=>'The editor state is too large for one AI planning request.','provider'=>$provider,'model'=>''];
-    $apiKey=ai_provider_api_key($provider);$budget=$complexity==='deep'?3600:($complexity==='complex'?2400:1400);$last='No compatible model returned a valid plan.';
-    foreach(agent_v90_model_candidates($provider,$complexity) as $model){$started=microtime(true);if($provider==='openai')$response=ai_curl_json('https://api.openai.com/v1/responses',['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],['model'=>$model,'instructions'=>$instructions,'input'=>[['role'=>'user','content'=>$query]],'max_output_tokens'=>$budget],70);else $response=ai_curl_json('https://api.anthropic.com/v1/messages',['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],['model'=>$model,'max_tokens'=>$budget,'system'=>$instructions,'messages'=>[['role'=>'user','content'=>$query]]],70);if(!($response['ok']??false)){$last=(string)($response['error']??$last);ai_v100_telemetry(['scope'=>'planner','user_id'=>(int)(current_user()['id']??0),'provider'=>$provider,'model'=>$model,'status'=>'failed','http_status'=>(int)($response['status']??0),'duration_ms'=>(int)round((microtime(true)-$started)*1000),'input_chars'=>strlen($query),'complexity'=>$complexity,'attempts'=>(int)($response['attempts']??1)]);continue;}$text=agent_v90_extract_provider_text($provider,(array)$response['data']);$json=agent_v90_decode_json($text);$usage=ai_v100_usage($provider,(array)$response['data']);ai_v100_telemetry(['scope'=>'planner','user_id'=>(int)(current_user()['id']??0),'provider'=>$provider,'model'=>$model,'status'=>is_array($json)?'success':'invalid_json','duration_ms'=>(int)round((microtime(true)-$started)*1000),'input_chars'=>strlen($query),'output_chars'=>strlen($text),'complexity'=>$complexity]+$usage);if(is_array($json))return ['ok'=>true,'data'=>$json,'provider'=>$provider,'model'=>$model,'complexity'=>$complexity];$last='The AI model did not return a valid JSON edit plan.';}
+
+    $models=$route['funding']==='own_key'?[$route['model']]:agent_v90_model_candidates($provider,$complexity);
+    $budget=$complexity==='deep'?3600:($complexity==='complex'?2400:1400);
+    $last='No compatible model returned a valid plan.';
+    foreach($models as $model){
+        $started=microtime(true);
+        $payload=$provider==='openai'
+            ?['instructions'=>$instructions,'input'=>[['role'=>'user','content'=>$query]],'max_output_tokens'=>$budget]
+            :['system'=>$instructions,'messages'=>[['role'=>'user','content'=>$query]],'max_tokens'=>$budget];
+        try{
+            $response=vp3_ai_direct_request_v1($user,['model'=>$model]+$route,$scope,$payload,70);
+        }catch(Throwable $e){
+            return ['ok'=>false,'error'=>ai_v100_safe_exception($e),'provider'=>$provider,'model'=>''];
+        }
+        $telemetry=['scope'=>'planner','user_id'=>(int)$user['id'],'provider'=>$provider,'model'=>$model,
+            'duration_ms'=>(int)round((microtime(true)-$started)*1000),'input_chars'=>strlen($query),'complexity'=>$complexity];
+        if(!($response['ok']??false)){
+            $last=(string)($response['error']??$last);
+            ai_v100_telemetry($telemetry+['status'=>'failed','http_status'=>(int)($response['status']??0),'attempts'=>(int)($response['attempts']??1)]);
+            continue;
+        }
+        $text=agent_v90_extract_provider_text($provider,(array)$response['data']);
+        $json=agent_v90_decode_json($text);
+        ai_v100_telemetry($telemetry+['status'=>is_array($json)?'success':'invalid_json','output_chars'=>strlen($text)]
+            +ai_v100_usage($provider,(array)$response['data']));
+        if(is_array($json))return ['ok'=>true,'data'=>$json,'provider'=>$provider,'model'=>$model,'complexity'=>$complexity];
+        $last='The AI model did not return a valid JSON edit plan.';
+    }
     return ['ok'=>false,'error'=>$last,'provider'=>$provider,'model'=>''];
 }
 
@@ -275,7 +309,7 @@ function agent_v90_plan_video(string $query, array $rawState, array $user, int $
         ."You may ONLY use these command types: play, pause, seek, split, duplicate, delete, move, trim, set_volume, set_mute, set_opacity, set_fade, set_lane, add_asset, add_track, save, zoom, snap.\n"
         ."Use only clip IDs, asset IDs and track IDs present in current state. Never invent IDs. Never output code, URLs, shell commands, SQL, or arbitrary JavaScript.\n"
         ."For ambiguous references use selected_id. Preserve user intent and prefer non-destructive edits. Maximum 20 commands. If the user asks for analysis, review, explanation or a suggestion, commands may be empty and answer should directly address current state. Return JSON only: {\"answer\":\"grounded response\",\"commands\":[{\"type\":\"...\"}]}.";
-    $planned=agent_v90_llm_json(ai_v100_planner_context($user,$query,$state),$instructions,$complexity);
+    $planned=agent_v90_llm_json(ai_v100_planner_context($user,$query,$state),$instructions,$complexity,$user,'video_editor');
     if($planned['ok']??false){
         $data=(array)$planned['data']; $commands=agent_v90_sanitize_video_commands(is_array($data['commands']??null)?$data['commands']:[],$state);
         if($commands){
@@ -384,10 +418,10 @@ function agent_v90_plan_stem(string $query,array $rawState,array $track,array $u
         ."Allowed command types only: play, pause, save, save_as, tempo, reset_tempo, library, select, inspector, automation, mute, unmute, solo, unsolo, volume, pan, arm, monitor, record, live_mix_on, live_mix_off, live_track_on, live_track_off, plugin_picker, track_trim, send, route, plugin_param, plugin_bypass, master_volume, bus_volume, bus_mute, automation_point. For plugin_param use plugin_type plus param/value. For automation_point use stem_id, parameter (volume/pan/auxA/auxB), time seconds, value.\n"
         ."Use only stem IDs present in CURRENT STATE. plugin_picker plugin may be eq, eq5, compressor, delay, reverb, limiter. Never output code, URLs, shell commands, SQL or arbitrary JavaScript. Recording requires user confirmation. Maximum 20 commands.\n"
         ."Return JSON only: {\"answer\":\"brief confirmation\",\"commands\":[{\"type\":\"...\"}]}.\n\nCURRENT STATE:\n".json_encode($state,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-    $planned=agent_v90_llm_json($query,$instructions,$complexity);
+    $planned=agent_v90_llm_json($query,$instructions,$complexity,$user,'stem_editor');
     if($planned['ok']??false){
         $data=(array)$planned['data'];$commands=agent_v90_sanitize_stem_commands(is_array($data['commands']??null)?$data['commands']:[],$state);
-        if($commands){$answer=trim((string)($data['answer']??''));if($answer==='')$answer='I prepared the requested Stem Studio changes.';return ['commands'=>$commands,'answer'=>$answer,'model'=>(string)$planned['model'],'complexity'=>$complexity];}
+        if($commands){$answer=trim((string)($data['answer']??''));if($answer==='')$answer='I prepared the requested Stem Studio changes.';return ['commands'=>$commands,'answer'=>$answer,'model'=>(string)$planned['model'],'provider'=>(string)$planned['provider'],'complexity'=>$complexity];}
     }
     return ['commands'=>$fallback,'answer'=>$fallback?'I mapped the safe parts of that request to Studio controls.':'I could not map that request to safe Studio controls yet.','model'=>$fallback?'deterministic_fallback':'','complexity'=>$complexity];
 }

@@ -119,7 +119,7 @@ try{
         'answer'=>$answer,
         'commands'=>$commands,
         'model'=>$model,
-        'provider'=>$model==='deterministic'||str_starts_with($model,'deterministic_')?'local':ai_active_provider(),
+        'provider'=>$model==='deterministic'||str_starts_with($model,'deterministic_')?'local':(string)($plan['provider']??''),
         'complexity'=>$complexity,
     ]);
 }catch(Throwable $e){video_agent_v90_json(false,['error'=>$e->getMessage()],400);}

@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 require_once __DIR__.'/../includes/ai-usage-accounting-v032.php';
 require_once __DIR__.'/../includes/subscription-quota.php';
+require_once __DIR__.'/../includes/ai-settings.php';
+require_once __DIR__.'/../includes/ai-service-policy-v1.php';
+require_once __DIR__.'/../includes/user-llm-v1.php';
 
 function usage_check(bool $condition,string $message): void
 {
@@ -65,7 +68,10 @@ $pdo->exec('CREATE DATABASE '.$database);
 try{
     $pdo->exec('USE '.$database);
     $pdo->exec("CREATE TABLE users(id INT PRIMARY KEY);
-        INSERT INTO users VALUES (1),(2);
+        INSERT INTO users VALUES (1),(2),(3);
+        CREATE TABLE settings(setting_key VARCHAR(100) PRIMARY KEY,setting_value TEXT NOT NULL);
+        CREATE TABLE user_llm_preferences(user_id INT PRIMARY KEY,route VARCHAR(24),provider VARCHAR(32));
+        INSERT INTO user_llm_preferences VALUES (1,'own_key','openai'),(2,'own_key','openai');
         CREATE TABLE ai_usage_ledger(id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,user_id INT NOT NULL,subscription_id BIGINT,
             scope VARCHAR(60),provider VARCHAR(40),model VARCHAR(120),input_tokens BIGINT,output_tokens BIGINT,total_tokens BIGINT,
             credit_tokens_used BIGINT,package_tokens_used BIGINT,trace_id VARCHAR(120),request_key VARCHAR(160) UNIQUE,
@@ -80,6 +86,7 @@ try{
         $pdo,$user,'initiative','openai','gpt-5.4-mini','own_key',20,100,$options
     );
     usage_check(!$begin()['metered'],'Legacy execution should be available before upgrade.');
+    usage_rejects(403,fn()=>$begin([],['id'=>3]));
     usage_rejects(503,fn()=>$begin(['required'=>true]));
     usage_rejects(503,fn()=>$begin(['daily_tokens'=>0]));
     ai_usage_accounting_v032_ensure_schema($pdo);
@@ -129,6 +136,14 @@ try{
 
     $system=static fn(string $key)=>vp3_ai_service_usage_begin_v1($pdo,$owner,'conversation','openai','gpt-5.4-mini','system',20,100,
         ['attempt_key'=>$key,'billing_scope'=>'chat']);
+    $personalBeforeSwitch=$begin();
+    usage_rejects(403,fn()=>$system('funding-mismatch'));
+    $pdo->exec("UPDATE user_llm_preferences SET route='system',provider='' WHERE user_id=1");
+    usage_rejects(403,fn()=>$begin());
+    $settled=vp3_ai_service_usage_finish_v1($pdo,$personalBeforeSwitch,['input_tokens'=>20,'output_tokens'=>30]);
+    usage_check($settled['cloud_tokens_charged']===0,'An in-flight personal call keeps its original funding after a switch.');
+    vp3_ai_service_save_route_v1($pdo,'conversation',['provider'=>'openai','model'=>'gpt-5.4-mini'],null);
+    usage_rejects(403,fn()=>vp3_ai_service_usage_begin_v1($pdo,$owner,'conversation','openai','gpt-5.6-luna','system',20,100));
     $firstSystem=$system('chat-first');
     $secondSystem=$system('chat-second');
     usage_check((int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===2,'Canonical quota reservations should be created.');

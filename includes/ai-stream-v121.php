@@ -140,16 +140,18 @@ function ai_v121_stream_chat_response(
     if($policy!==null&&empty($policy['enabled'])){
         return ai_v100_service_failure('This AI service is unavailable under your current account policy.','service_disabled')+['answer'=>''];
     }
-    $own=(function_exists('vp3_user_llm_v1_effective')&&function_exists('db')&&db())
-        ?vp3_user_llm_v1_effective(db(),$user):['route'=>'system'];
+    $explicit=!empty($policy['configured']);
+    $connection=function_exists('db')?db():null;
+    $pdo=$connection instanceof PDO?$connection:null;
+    try{$own=ai_cloud_account_route($pdo,$user,$explicit);}
+    catch(Throwable $error){return ai_v100_service_budget_failure($error)+['answer'=>''];}
     if(($own['route']??'system')==='unavailable')
         return ['ok'=>false,'provider'=>'own_key','answer'=>'','error'=>'Saved personal provider credentials are unavailable.'];
     $isOwn=($own['route']??'system')==='own_key';
     if($isOwn&&function_exists('subscription_has_entitlement')&&!subscription_has_entitlement($user,'main_ai.access'))
         return ['ok'=>false,'provider'=>'own_key','answer'=>'','error'=>'AI access is not included for this account.'];
-    $provider=$isOwn?(string)$own['provider']:ai_active_provider();
+    $provider=$isOwn&&!$explicit?(string)$own['provider']:ai_active_provider();
     try{ai_v100_rate_limit('chat',$user);}catch(Throwable $e){return ['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>ai_v100_safe_exception($e)];}
-    $explicit=!empty($policy['configured']);
     if($provider==='local'&&!$explicit)return ['ok'=>false,'provider'=>'local','answer'=>'','error'=>'Local retrieval mode is active.'];
     if(!$isOwn&&!$explicit){
         $configurationFailure=ai_provider_configuration_failure($provider);
@@ -157,19 +159,21 @@ function ai_v121_stream_chat_response(
     }
 
     $complexity=ai_v100_complexity($query,$context);$budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);
-    $current=ai_v100_current_message($query,$context);$models=$isOwn?[(string)$own['model']]:ai_v100_model_candidates($provider,$complexity);
+    $current=ai_v100_current_message($query,$context);
+    $models=$explicit?[]:($isOwn?[(string)$own['model']]:ai_v100_model_candidates($provider,$complexity));
     $last=['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>'No allowed provider and model are available for this AI service.'];
 
     $targets=$policy===null
         ?array_map(static fn(string $model):array=>['provider'=>$provider,'model'=>$model],$models)
-        :ai_v100_service_targets($policy,$own,$provider,$models);
+        :ai_v100_service_targets($policy,$own['route'],$provider,$models);
     foreach($targets as $target){
         $provider=$target['provider'];$model=$target['model'];
         $candidateOwn=$isOwn?$own:null;
         if($explicit){
-            $credential=ai_v100_service_target_credential($target,$own,$policy,$user,db());
+            $credential=ai_v100_service_target_credential($target,$user,$pdo);
             if(isset($credential['failure'])){
                 $last=$credential['failure']+['answer'=>'','provider'=>$provider];
+                if($isOwn)$last['compute_source']='user_provider';
                 continue;
             }
             $candidateOwn=$credential['own'];
@@ -200,14 +204,18 @@ function ai_v121_stream_chat_response(
         $service='ai-stream-'.$provider.'-'.$model;
         $call=static function(int $attempt)use($provider,$model,$payload,$onDelta,$complexity,$candidateOwn,$meter,$target):array{
             $ticket=[];
+            $credential=$candidateOwn!==null?(string)$candidateOwn['api_key']:null;
             $outputField=$provider==='openai'?'max_output_tokens':'max_tokens';
-            if($meter?->active){
+            if($meter!==null){
                 if(connection_aborted())return ai_v100_service_failure('The stream was interrupted.','stream_interrupted');
-                try{$ticket=$meter->begin($target,$payload,$outputField);}
-                catch(Throwable $error){return ai_v100_service_budget_failure($error);}
+                try{
+                    if(!$meter->personal_key_is_current($target,$credential)){
+                        return ai_v100_service_failure('The personal provider credential changed. Check your AI provider settings.','personal_route_unavailable');
+                    }
+                    $ticket=$meter->begin($target,$payload,$outputField);
+                }catch(Throwable $error){return ai_v100_service_budget_failure($error);}
                 $payload[$outputField]=min($payload[$outputField],(int)($ticket['max_output_tokens']??$payload[$outputField]));
             }
-            $credential=$candidateOwn!==null?(string)$candidateOwn['api_key']:null;
             try{
                 $row=ai_v121_stream_provider($provider,$model,$payload,$onDelta,$complexity==='deep'?95:70,$credential);
             }catch(Throwable $error){

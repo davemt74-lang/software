@@ -1,6 +1,12 @@
 <?php
 declare(strict_types=1);
-const STONEFELLOW_ROOT=__DIR__.'/fixtures/cloud-user-llm-runtime';
+define('STONEFELLOW_ROOT',sys_get_temp_dir().'/vp3-user-llm-'.bin2hex(random_bytes(8)));
+register_shutdown_function(static function(): void{
+    @unlink(STONEFELLOW_ROOT.'/private/ai-key.php');
+    @unlink(STONEFELLOW_ROOT.'/private/ai-key.php.lock');
+    @rmdir(STONEFELLOW_ROOT.'/private');
+    @rmdir(STONEFELLOW_ROOT);
+});
 function setting(string $name,string $fallback=''): string {return $fallback;}
 require dirname(__DIR__).'/includes/ai-settings.php';
 require dirname(__DIR__).'/includes/user-llm-v1.php';
@@ -13,6 +19,7 @@ vp3_user_llm_v1_schema($pdo);
 $a=['id'=>1001];$b=['id'=>1002];
 $initial=vp3_user_llm_v1_read($pdo,1001);
 assert($initial['route']==='system'&&$initial['providers']===[]);
+assert(vp3_user_llm_v1_funding($pdo,$a)==='system');
 $key1='sk-user-one-test-only';
 $key2='sk-user-two-test-only';
 $save=vp3_user_llm_v1_save($pdo,$a,'openai',$key1,'gpt-5.4-mini');
@@ -35,7 +42,13 @@ $pdo->exec("UPDATE user_llm_credentials SET encrypted_key='gcm1:broken' WHERE us
 assert(vp3_user_llm_v1_effective($pdo,$a)['route']==='unavailable','Missing or corrupt own key must fail closed');
 vp3_user_llm_v1_save($pdo,$a,'openai',$key1,'gpt-5.4-mini');
 $removed=vp3_user_llm_v1_remove($pdo,$a,'openai');
-assert($removed['route']==='system');
+assert($removed['route']==='own_key');
+assert(vp3_user_llm_v1_funding($pdo,$a)==='own_key');
+assert(vp3_user_llm_v1_saved_key($pdo,1001,'openai')==='');
+assert(vp3_user_llm_v1_saved_key($pdo,1002,'openai')===$key2);
+assert(vp3_user_llm_v1_effective($pdo,$a)['route']==='unavailable');
+vp3_user_llm_v1_select($pdo,$a,'system');
+assert(vp3_user_llm_v1_funding($pdo,$a)==='system');
 assert(vp3_user_llm_v1_effective($pdo,$b)['route']==='system');
 vp3_user_llm_v1_select($pdo,$b,'own_key','openai');
 assert(vp3_user_llm_v1_effective($pdo,$b)['api_key']===$key2);
