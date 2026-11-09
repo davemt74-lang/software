@@ -31,6 +31,24 @@ function chat_settings_agent_voice_enabled_v237(PDO $pdo,array $user): bool
     return !empty($settings['agent_voice_enabled']);
 }
 
+function chat_settings_agent_auto_greet_allowed_v237(array $user): bool
+{
+    return has_permission('account.access', $user)
+        && has_permission('chat.access', $user)
+        && (!function_exists('vp3_participant_scope_v1') || vp3_participant_scope_v1() === null)
+        && chat_settings_agent_voice_allowed_v237($user);
+}
+
+function chat_settings_agent_auto_greet_enabled_v237(?PDO $pdo, array $user): bool
+{
+    if (!$pdo || !chat_settings_agent_auto_greet_allowed_v237($user)) return false;
+    try {
+        return chat_settings_get_v237($pdo, (int)$user['id'])['auto_greet_enabled'];
+    } catch (PDOException $error) {
+        return false;
+    }
+}
+
 function chat_settings_defaults_v237(): array
 {
     return [
@@ -38,6 +56,7 @@ function chat_settings_defaults_v237(): array
         'social_chat_enabled' => true,
         'sound_enabled' => true,
         'agent_voice_enabled' => true,
+        'auto_greet_enabled' => false,
         'agent_assisted_phone_chat_enabled' => false,
         'agent_orb_shape' => 'orbit',
     ];
@@ -59,6 +78,14 @@ function chat_settings_agent_voice_schema_ready_v237(?PDO $pdo = null): bool
     return (bool)$pdo
         && table_exists('team_user_presence')
         && column_exists('team_user_presence', 'agent_voice_enabled');
+}
+
+function chat_settings_agent_auto_greet_schema_ready_v237(?PDO $pdo = null): bool
+{
+    $pdo ??= db();
+    if (!$pdo) return false;
+    require_once __DIR__.'/schema-metadata.php';
+    return schema_metadata_column_exists($pdo, 'team_user_presence', 'auto_greet_enabled');
 }
 
 function chat_settings_agent_assisted_phone_chat_schema_ready_v237(?PDO $pdo = null): bool
@@ -142,6 +169,9 @@ function chat_settings_ensure_schema_v237(?PDO $pdo = null): void
     if (!column_exists('team_user_presence', 'agent_voice_enabled')) {
         $pdo->exec("ALTER TABLE team_user_presence ADD COLUMN agent_voice_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER sound_enabled");
     }
+    if (!chat_settings_agent_auto_greet_schema_ready_v237($pdo)) {
+        $pdo->exec('ALTER TABLE team_user_presence ADD COLUMN auto_greet_enabled TINYINT(1) NOT NULL DEFAULT 0');
+    }
     if (!chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo)) {
         $pdo->exec('ALTER TABLE team_user_presence ADD COLUMN agent_assisted_phone_chat_enabled TINYINT(1) NOT NULL DEFAULT 0');
     }
@@ -158,10 +188,12 @@ function chat_settings_get_v237(PDO $pdo, int $userId): array
     }
 
     $voiceReady = chat_settings_agent_voice_schema_ready_v237($pdo);
+    $autoGreetReady = chat_settings_agent_auto_greet_schema_ready_v237($pdo);
     $assistedPhoneReady = chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo);
     $orbShapeReady = chat_settings_agent_orb_shape_schema_ready_v237($pdo);
     $columns = 'presence_mode,social_chat_enabled,sound_enabled'
         . ($voiceReady ? ',agent_voice_enabled' : '')
+        . ($autoGreetReady ? ',auto_greet_enabled' : '')
         . ($assistedPhoneReady ? ',agent_assisted_phone_chat_enabled' : '')
         . ($orbShapeReady ? ',agent_orb_shape' : '');
     $stmt = $pdo->prepare(
@@ -188,6 +220,7 @@ function chat_settings_get_v237(PDO $pdo, int $userId): array
         'agent_voice_enabled' => $voiceReady
             ? (bool)($row['agent_voice_enabled'] ?? true)
             : true,
+        'auto_greet_enabled' => in_array($row['auto_greet_enabled'] ?? null, [1, '1', true], true),
         'agent_assisted_phone_chat_enabled' => in_array($row['agent_assisted_phone_chat_enabled'] ?? null, [1, '1', true], true),
         'agent_orb_shape' => ($row['agent_orb_shape'] ?? null) === 'particle_face' ? 'particle_face' : 'orbit',
     ];
@@ -283,4 +316,45 @@ function chat_settings_save_agent_voice_v237(PDO $pdo, array $user, bool $enable
         'sound_enabled' => !empty($current['sound_enabled']),
         'agent_voice_enabled' => $enabled,
     ]);
+}
+
+function chat_settings_save_auto_greet_v237(PDO $pdo, array $user, bool $enabled): array
+{
+    if (!chat_settings_agent_auto_greet_allowed_v237($user)) {
+        throw new RuntimeException('Auto Greet is unavailable for this account.');
+    }
+    if (!chat_settings_agent_auto_greet_schema_ready_v237($pdo)) {
+        throw new RuntimeException('Auto Greet requires Database Upgrade.');
+    }
+    return chat_settings_write_optional_preference_v237($pdo, (int)$user['id'], 'auto_greet_enabled', (int)$enabled);
+}
+
+function chat_settings_save_agent_orb_shape_v237(PDO $pdo, array $user, string $shape): array
+{
+    if ((int)($user['id'] ?? 0) < 1 || !has_permission('chat.access', $user)
+        || (function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() !== null)) {
+        throw new RuntimeException('Agent appearance is unavailable for this account.');
+    }
+    if (!in_array($shape, ['orbit', 'particle_face'], true)) {
+        throw new RuntimeException('Choose an available Agent orb style.');
+    }
+    if (!chat_settings_agent_orb_shape_schema_ready_v237($pdo)) {
+        throw new RuntimeException('Agent appearance requires Database Upgrade.');
+    }
+    return chat_settings_write_optional_preference_v237($pdo, (int)$user['id'], 'agent_orb_shape', $shape);
+}
+
+/** Update a single preference so simultaneous settings changes stay independent. */
+function chat_settings_write_optional_preference_v237(PDO $pdo, int $userId, string $field, int|string $value): array
+{
+    if (!in_array($field, ['auto_greet_enabled', 'agent_orb_shape'], true)) {
+        throw new InvalidArgumentException('Unknown Chat preference.');
+    }
+    $update = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite'
+        ? "ON CONFLICT(user_id) DO UPDATE SET {$field}=excluded.{$field}"
+        : "ON DUPLICATE KEY UPDATE {$field}=VALUES({$field})";
+    $pdo->prepare("INSERT INTO team_user_presence (user_id,{$field},last_seen_at) "
+        .'VALUES (?,?,CURRENT_TIMESTAMP) '.$update.',updated_at=CURRENT_TIMESTAMP')
+        ->execute([$userId, $value]);
+    return chat_settings_get_v237($pdo, $userId);
 }

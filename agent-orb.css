@@ -100,6 +100,22 @@ html[data-vp3-orb-embed] .sidebar,html[data-vp3-orb-embed] .topbar,html[data-vp3
 .vp3-orb-root:hover .vp3-orb-controls,.vp3-orb-root:focus-within .vp3-orb-controls,.vp3-orb-root[data-controls-open=true] .vp3-orb-controls{opacity:1;visibility:visible;pointer-events:auto}
 @media(prefers-reduced-motion:reduce){.vp3-orb-controls{transition:none}}
 
+.vp3-orb-appearance{box-sizing:border-box;width:min(400px,calc(100% - 32px));max-height:calc(100dvh - 32px);padding:20px;overflow:auto;background:#101b29;color:#ecf4ff;border:1px solid #435569;border-radius:16px;box-shadow:0 22px 70px #0008;font:14px/1.5 system-ui,sans-serif}
+.vp3-orb-appearance::backdrop{background:#07111acc}
+.vp3-orb-appearance form,.vp3-orb-appearance fieldset{display:grid;gap:10px;min-width:0}
+.vp3-orb-appearance h2{font-size:20px;margin:0}
+.vp3-orb-appearance fieldset{border:0;padding:0;margin:0}
+.vp3-orb-appearance legend{padding:0 0 5px;color:#bac9dd}
+.vp3-orb-appearance label{display:flex;align-items:center;gap:10px;min-height:42px;box-sizing:border-box;padding:7px 10px;border:1px solid #435569;border-radius:8px;cursor:pointer}
+.vp3-orb-appearance label:has(input:checked){background:#1e3953;border-color:#8ab8e2}
+.vp3-orb-appearance input{margin:0;accent-color:#a8d8ff}
+.vp3-orb-appearance [role=status]{margin:0;color:#d3e3f4}
+.vp3-orb-appearance [role=status]:empty{display:none}
+.vp3-orb-appearance-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.vp3-orb-appearance-actions button{min-height:40px;padding:6px 12px;font:inherit;color:inherit;background:#1a293a;border:1px solid #526981;border-radius:8px;cursor:pointer}
+.vp3-orb-appearance-actions button[type=submit]{background:#e0efff;color:#10263a}
+.vp3-orb-appearance-actions button:disabled{opacity:.6;cursor:default}
+
 .vp3-eyes-portraits{display:flex;gap:8px;flex-wrap:wrap}.vp3-eyes-portraits:empty{display:none}.vp3-eyes-portraits img{width:80px;height:80px;border-radius:8px;object-fit:cover;border:1px solid #536b85}
 
 .vp3-screen-share{border:1px solid #476073;border-radius:10px;padding:12px;margin:0 0 16px;min-width:0;background:rgba(255,255,255,.04)}

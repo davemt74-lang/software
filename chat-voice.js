@@ -40,11 +40,12 @@
   const premium=typeof PremiumVoice==='function'?PremiumVoice({agentEndpoint:String(cfg.endpoint||'/api/chat.php'),csrf:String(cfg.csrf||'')}):null;
 
   let agentVoiceMaster=identityCfg.agentVoiceEnabled!==false;
-  // Saved continuous mode never opens capture on a new page. A completed
-  // greeting can open a bounded reply window after a separate permission check.
+  // Saved continuous mode never opens capture on a new page. Auto Greet can
+  // open a bounded reply window after a separate permission check.
   let voiceOn=false;
   let responseWindowOwned=false,responseWindowClosing=false,responseWindowTimer=0,responseCleanupTimer=0,responseWindowUntil=0;
   let greetingResponseWindow=false;
+  let autoGreet=cfg.autoGreetEnabled===true,greetingListenText=null;
 
   const activeRecognizers=new Set();
   const releaseTimers=new Map();let releaseBlocked=false;
@@ -560,6 +561,11 @@
     log('SR_RECONNECT_WAIT',{reason,attempt,delayMs:delay,offline:speechOffline,quiet:speechRetryQuiet});return delay;
   }
   function recoverRecognition(message,reason){
+    if(greetingResponseWindow&&!responseWindowUntil){
+      disableVoice({persist:false});
+      setAgentState('error','Select Listen to start the voice conversation.');
+      return;
+    }
     const now=Date.now();const transient=reason==='browser-interruption'||reason==='error:network';
     if(!transient&&now-lastRecognitionFailureAt>30000)recognitionFailures=0;
     lastRecognitionFailureAt=now;recognitionFailures+=1;proof.lastError=message;
@@ -592,12 +598,17 @@
         if(voiceOn&&!processing&&!speaking)recoverRecognition('The browser speech connection was interrupted.','browser-interruption');return;
       }
       clearStartWatchdog();awaitNativeEnd(current);recognitionStarting=false;recognitionListening=false;proof.errors+=1;proof.lastError=kind;log('SR_ERROR',{error:kind,message:String(event?.message||'')});
-      if(kind==='not-allowed'||kind==='service-not-allowed'){disableVoice({persist:true});setAgentState('error','Microphone permission is blocked.');return;}
+      if(kind==='not-allowed'||kind==='service-not-allowed'){
+        const automatic=greetingResponseWindow;
+        disableVoice({persist:!automatic});
+        setAgentState('error',automatic?'Select Listen to allow microphone access.':'Microphone permission is blocked.');
+        return;
+      }
       if(kind==='audio-capture'){disableVoice({persist:false});setAgentState('error','No usable microphone input is available.');return;}
       recognition=null;
       if(speaking&&bargeArmPending){bargeArmPending=false;clearBargeArmTimer();setTimeout(()=>startBarge(),0);return;}
       if(voiceOn&&!processing&&!speaking&&!bargeCapturing){
-        if(kind==='no-speech')scheduleListening(100,'error:no-speech');
+        if(kind==='no-speech'&&(!greetingResponseWindow||responseWindowUntil))scheduleListening(100,'error:no-speech');
         else recoverRecognition(kind==='network'?'Speech recognition could not connect. Check your connection.':'Speech recognition failed ('+kind+').',`error:${kind}`);
       }
     };
@@ -902,7 +913,14 @@
 
   function renderDebug(){if(!new URLSearchParams(location.search).has('voice_debug'))return;let panel=document.getElementById('stonefellowVoiceDebug');if(!panel){panel=document.createElement('aside');panel.id='stonefellowVoiceDebug';panel.style.cssText='position:fixed;right:12px;bottom:12px;width:min(460px,calc(100vw - 24px));max-height:52vh;overflow:auto;z-index:99999;background:#111;color:#ddd;border:1px solid #444;border-radius:10px;padding:10px;font:11px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;box-shadow:0 10px 35px rgba(0,0,0,.35)';document.body.appendChild(panel);}const premiumProof=window.STONEFELLOW_PREMIUM_VOICE_V122||{};const latest=events.slice(-34).map(item=>`${item.at.slice(11,19)} ${item.type} ${JSON.stringify(item.detail)}`).join('\n');panel.textContent=`Stonefellow Voice Debug ${BUILD}\n\nvoice=${voiceOn?'ON':'OFF'} listening=${recognitionListening?'yes':'no'} processing=${processing?'yes':'no'} speaking=${speaking?'yes':'no'}\npause window=${TURN_END_PAUSE_MS}ms extensions=${proof.pauseExtensions} pending=${pendingFinalTranscript||'-'}\nnormal starts=${proof.starts} finals=${proof.finals} submits=${proof.submits}\nbarge starts=${proof.bargeStarts} results=${proof.bargeResults} captures=${proof.bargeSubmits} errors=${proof.bargeErrors}\nbarge candidates=${proof.bargeCandidates} fastCuts=${proof.bargeFastCuts} timeouts=${proof.bargeCaptureTimeouts}\necho rejects=${proof.echoRejects} bargeEcho=${proof.bargeEchoRejects} postSpeechEcho=${proof.postSpeechEchoRejects} commandOverrides=${proof.echoCommandOverrides}\nelevenLabs ready=${proof.premiumReady?'yes':'no'} credential=${premiumProof.credentialState||'unknown'} unlocked=${premiumProof.audioUnlocked?'yes':'no'} unlocks=${premiumProof.unlockSuccesses||0}/${premiumProof.unlockAttempts||0} playback=${premiumProof.lastPlaybackError||'ok'}\ninterruptions=${proof.interruptions} stopControls=${proof.stopControls} api=${proof.apiSuccess}/${proof.apiTurns} apiErrors=${proof.apiErrors}\nlast transcript=${proof.lastTranscript||'-'}\nlast barge=${proof.lastBargeTranscript||'-'}\nlast error=${proof.lastError||'-'}\n\n${latest}`;}
 
-  button.addEventListener('click',event=>{if(voiceOn&&(speaking||processing)){event.preventDefault();event.stopImmediatePropagation();interruptResponse('button');return;}if(!voiceOn)void requestPremiumUnlock('listen-button');void toggleVoice();},true);
+  button.addEventListener('click',event=>{
+    if(greetingListenText!==null){
+      event.preventDefault();event.stopImmediatePropagation();openResponseWindow(greetingListenText,true);return;
+    }
+    if(voiceOn&&(speaking||processing)){event.preventDefault();event.stopImmediatePropagation();interruptResponse('button');return;}
+    if(!voiceOn)void requestPremiumUnlock('listen-button');
+    void toggleVoice();
+  },true);
   const unlockFromGesture=event=>{if(event?.type==='keydown'&&event.repeat)return;void requestPremiumUnlock(event?.type||'user-gesture');};document.addEventListener('pointerdown',unlockFromGesture,{capture:true,once:true,passive:true});document.addEventListener('keydown',unlockFromGesture,{capture:true,once:true});
   document.addEventListener('click',event=>{const link=event.target.closest?.('a[href*="/admin/stems.php"],a[href*="/video-editor.php"]');if(!link)return;try{const target=new URL(link.href,location.href);if(target.origin!==location.origin)return;if(voiceOn)target.searchParams.set('voice','1');const cid=activeConversationId();if(cid>0)target.searchParams.set('conversation_id',String(cid));link.href=target.toString();}catch(error){}},true);
 
@@ -934,16 +952,25 @@
       disableVoice({persist:false});
     };settle();
   }
-  function responseWindow({greetingText=''}={}){
-    if(greetingText&&(voiceOn||!document.hasFocus()||document.getElementById('chatThread')?.dataset.view!=='chat'))return false;
+  function responseWindow({automatic=false,greetingText=''}={}){
+    if(!automatic)return openResponseWindow();
+    if(!autoGreet||!agentVoiceMaster||voiceOn||button.disabled||!button.isConnected||document.hidden||!document.hasFocus()
+      ||document.getElementById('chatThread')?.dataset.view!=='chat'||window.VP3ParticipantContinuity?.selectedContext?.())return false;
+    // A greeting reuses Listen without the ordinary click's persistent mode,
+    // permission prompt, or cross-tab takeover confirmation.
+    greetingListenText=greetingText;
+    try{button.click();return greetingResponseWindow&&voiceOn;}
+    finally{greetingListenText=null;}
+  }
+  function openResponseWindow(greetingText='',automatic=false){
     if(greetingResponseWindow)return true;
     if(responseWindowOwned&&!responseWindowClosing){responseWindowUntil=Date.now()+15000;clearTimeout(responseWindowTimer);responseWindowTimer=setTimeout(finishResponseWindow,15000);return true;}
     if(voiceOn)return true;
     if(!agentVoiceMaster||document.hidden||input.value.trim()||processing||speaking||textBusy)return false;
     responseWindowOwned=true;responseWindowClosing=false;responseWindowUntil=0;
-    greetingResponseWindow=Boolean(greetingText);
-    if(greetingResponseWindow){lastSpokenText=greetingText;lastSpeechEndedAt=Date.now();}
-    if(!enableVoice({persist:false,start:true})){responseWindowOwned=false;greetingResponseWindow=false;return false;}
+    greetingResponseWindow=automatic;
+    if(greetingText){lastSpokenText=greetingText;lastSpeechEndedAt=Date.now();}
+    if(!enableVoice({persist:false,start:true})||!voiceOn){responseWindowOwned=false;greetingResponseWindow=false;return false;}
     responseWindowTimer=setTimeout(finishResponseWindow,15000);return true;
   }
   function beginEnrollmentCapture({pcmOnly=false,signal}={}){
@@ -976,6 +1003,8 @@
   window.addEventListener('stonefellow:chat-context-changing',()=>{queuedTranscript='';disableVoice({persist:true});});
   window.addEventListener('blur',clearMicrophoneActivity);
   const stopGreetingCapture=()=>{if(greetingResponseWindow)finishResponseWindow();};
+  window.addEventListener('vp3:agent-auto-greet',event=>{if(event.detail?.enabled===false){autoGreet=false;stopGreetingCapture();}});
+  window.addEventListener('vp3:participant-selection-changed',stopGreetingCapture);
   document.addEventListener('visibilitychange',()=>{if(document.hidden){clearMicrophoneActivity();stopGreetingCapture();}});
   window.addEventListener('blur',stopGreetingCapture);
   window.addEventListener('vp3:chat-canvas-view-changed',()=>{if(document.getElementById('chatThread')?.dataset.view!=='chat')stopGreetingCapture();});

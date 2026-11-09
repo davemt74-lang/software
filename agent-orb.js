@@ -11,6 +11,79 @@
       return [{id,expiresAt:Math.min(expiresAt,now+120000)}];
     });
   }
+  function installOrbAppearance(root,orbVisual,adapter){
+    if(typeof adapter.saveOrbShape!=='function'||typeof HTMLDialogElement!=='function')return null;
+    const dialog=document.createElement('dialog');
+    dialog.id='vp3OrbAppearance';
+    dialog.className='vp3-orb-appearance';
+    dialog.setAttribute('aria-labelledby','vp3OrbAppearanceTitle');
+    dialog.innerHTML=`<form>
+      <h2 id="vp3OrbAppearanceTitle">Edit Agent orb</h2>
+      <fieldset>
+        <legend>Orb style</legend>
+        <label><input type="radio" name="orb_shape" value="orbit">Orb with rings</label>
+        <label><input type="radio" name="orb_shape" value="particle_face">Original particle face</label>
+      </fieldset>
+      <p role="status"></p>
+      <div class="vp3-orb-appearance-actions">
+        <button type="button">Cancel</button><button type="submit">Save style</button>
+      </div>
+    </form>`;
+    document.body.append(dialog);
+    const edit=document.createElement('button');
+    edit.type='button';
+    edit.textContent='Edit';
+    edit.setAttribute('aria-label','Edit Agent orb');
+    edit.setAttribute('aria-haspopup','dialog');
+    edit.setAttribute('aria-controls',dialog.id);
+    root.querySelector('.vp3-orb-controls').insertBefore(edit,root.querySelector('[data-orb-size]'));
+
+    const form=dialog.querySelector('form'),choices=form.elements.namedItem('orb_shape');
+    const styles=dialog.querySelector('fieldset'),status=dialog.querySelector('[role="status"]');
+    const cancel=dialog.querySelector('button[type="button"]'),save=dialog.querySelector('button[type="submit"]');
+    const isOwner=()=>!window.VP3ParticipantContinuity?.selectedContext?.();
+    let saving=false;
+    function syncContext(){
+      edit.hidden=!isOwner();
+      if(edit.hidden&&dialog.open)dialog.close();
+    }
+    syncContext();
+    window.addEventListener('vp3:participant-selection-changed',syncContext);
+    edit.addEventListener('click',()=>{
+      if(!isOwner()||saving||dialog.open)return;
+      choices.value=orbVisual.dataset.orbShape==='particle_face'?'particle_face':'orbit';
+      styles.disabled=save.disabled=!adapter.orbShapeReady;
+      status.textContent=adapter.orbShapeReady?'':'Run Database Upgrade to edit the Agent orb.';
+      dialog.showModal();
+      if(!styles.disabled)form.querySelector('input:checked')?.focus();
+    });
+    cancel.addEventListener('click',()=>dialog.close());
+    dialog.addEventListener('keydown',event=>{if(event.key==='Escape')event.stopPropagation();});
+    dialog.addEventListener('cancel',event=>{if(saving)event.preventDefault();});
+    dialog.addEventListener('close',()=>{(edit.hidden?root.querySelector('.vp3-orb-ball'):edit).focus();});
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();
+      const shape=choices.value;
+      if(saving||!adapter.orbShapeReady||!isOwner()||!['orbit','particle_face'].includes(shape))return;
+      if(shape===orbVisual.dataset.orbShape){dialog.close();return;}
+      saving=styles.disabled=cancel.disabled=save.disabled=true;
+      status.textContent='Saving style…';
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),12000);
+      try{
+        const savedShape=await adapter.saveOrbShape(shape,controller.signal);
+        if(savedShape!==shape)throw Error('The saved orb style could not be confirmed.');
+        window.dispatchEvent(new CustomEvent('vp3:agent-orb-shape',{detail:{shape:savedShape}}));
+        if(dialog.open)dialog.close();
+      }catch(error){
+        status.textContent=error?.name==='AbortError'?'The save timed out. Try again.':error?.message||'Could not save the orb style.';
+      }finally{
+        clearTimeout(timeout);
+        saving=styles.disabled=cancel.disabled=save.disabled=false;
+      }
+    });
+    return dialog;
+  }
   const boot=()=>{
     const adapter=window.VP3_ORB_ADAPTER;if(!adapter||window.VP3AgentOrb)return;
     const $=id=>document.getElementById(id),embed=new URLSearchParams(location.search).get('orb_embed')==='1'&&parent!==window;
@@ -92,6 +165,7 @@
     document.body.append(root);
     const panel=document.createElement('section');panel.className='vp3-orb-panel';panel.id='vp3AgentChatPopup';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Agent Chat');
     panel.innerHTML='<header><strong>Agent Chat</strong><a>Full chat ↗</a><button type="button" aria-label="Close Agent Chat">×</button></header><div class="vp3-orb-chat-host"></div>';panel.querySelector('a').href=adapter.chatUrl;document.body.append(panel);
+    const appearanceDialog=installOrbAppearance(root,orbVisual,adapter);
     const host=panel.querySelector('.vp3-orb-chat-host'),ball=root.querySelector('.vp3-orb-ball'),label=root.querySelector('[data-orb-voice-state]');
     const initiative=root.querySelector('.vp3-orb-initiative'),initiativeLabel=initiative.querySelector('strong'),initiativeDetail=initiative.querySelector('small');
     const [initiativeSetting,initiativeRetry]=initiative.querySelectorAll('button');
@@ -296,7 +370,7 @@
     document.addEventListener('pointerdown',touchControls,{passive:true});
     const resize=()=>{reservePopupFooter();const r=root.getBoundingClientRect();if(panel.hidden&&(r.left>innerWidth-80||r.top>innerHeight-140)){root.style.left='auto';root.style.top='auto';root.style.right='12px';root.style.bottom='94px';}positionInitiative();};
     const escape=event=>{
-      if(event.key!=='Escape')return;
+      if(event.key!=='Escape'||appearanceDialog?.open)return;
       if(!initiative.hidden&&root.dataset.initiativeDismissed!=='true'&&(root.matches(':hover,:focus-within')||root.dataset.controlsOpen==='true')){
         if(initiative.contains(document.activeElement))ball.focus();
         root.dataset.initiativeDismissed='true';

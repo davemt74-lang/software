@@ -15,7 +15,7 @@
   })().catch(()=>{});
   const voiceReady=(async()=>{if(!window.StonefellowPremiumVoiceV122)await loadScript(cfg.voiceScript);await drawerReady;})().catch(()=>{});
 
-  async function api(url,body,keepalive=false){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',keepalive,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify({...body,csrf_token:cfg.csrf}):undefined});const data=await r.json();if(!r.ok||data.ok===false)throw Error(data.error||'Agent request failed.');return data;}
+  async function api(url,body,keepalive=false,signal){const r=await fetch(url,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',keepalive,signal,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify({...body,csrf_token:cfg.csrf}):undefined});const data=await r.json();if(!r.ok||data.ok===false)throw Error(data.error||'Agent request failed.');return data;}
   async function samples(mode,id,value,isCurrent=()=>true){
     const db=await new Promise((resolve,reject)=>{const request=indexedDB.open(`vp3-eyes-local-${cfg.ownerKey}`,1);request.onupgradeneeded=()=>request.result.createObjectStore('samples',{keyPath:'id'});request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
     try{return await new Promise((resolve,reject)=>{
@@ -52,6 +52,11 @@
     return {owner_user_id:owner,agent_id:agent,conversation_id:cid};
   }
   const adapter={tvRequest:(body,{keepalive=false}={})=>api(cfg.tvEndpoint,body,keepalive),
+    orbShapeReady:cfg.orbShapeReady===true,
+    saveOrbShape:cfg.settingsEndpoint?async(shape,signal)=>{
+      const data=await api(cfg.settingsEndpoint,{action:'save_agent_orb_shape',agent_orb_shape:shape},false,signal);
+      return data.chat?.agent_orb_shape;
+    }:null,
     openBrain:async()=>{await drawerReady;window.STONEFELLOW_NOTIFICATION_CENTER?.openBrain?.();},
     screenRequest:async(body,{signal}={})=>{const response=await fetch(cfg.screenEndpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,owner_key:String(cfg.ownerKey),csrf_token:cfg.csrf})});const data=await response.json();if(!response.ok||!data.ok){const error=Error(data.error||'Screen analysis unavailable.');error.status=response.status;throw error;}return data;},
     screenHistory:async(body={}, {signal,read=false}={})=>{const endpoint=cfg.screenSessionsEndpoint;const query=read?'?'+new URLSearchParams({...body,owner_key:String(cfg.ownerKey)}):'';const r=await fetch(endpoint+query,{method:read?'GET':'POST',credentials:'same-origin',cache:'no-store',signal,headers:read?{}:{'Content-Type':'application/json'},body:read?undefined:JSON.stringify({...body,owner_key:String(cfg.ownerKey),csrf_token:cfg.csrf})});const data=await r.json();if(!r.ok||!data.ok||String(data.owner_key)!==String(cfg.ownerKey)){const e=Error(data.error||'Sharing history account changed. Refresh this page.');e.status=r.ok?409:r.status;throw e;}return data;},

@@ -3,7 +3,7 @@
   if(window.VP3AgentResponseWindow)return;
   let generation=0,pending=null;
   const enabled=()=> (window.VP3_AGENT_PREFERENCE_STATE?.enabled??window.STONEFELLOW_AGENT_IDENTITY_V236?.agentVoiceEnabled)===true;
-  async function listen({quiet=false,canListen=()=>true,greetingText=''}={}){
+  async function listen({quiet=false,canListen=()=>true,greetingText='',automatic=false}={}){
     if(!enabled()||document.hidden||!canListen())return false;
     const token=++generation;
     let deadline;
@@ -17,7 +17,7 @@
       }
     }catch(_){if(!quiet&&token===generation&&enabled()&&!document.hidden)window.VP3AgentOrb?.bubble('Select Listen to reply to your agent.');return false;}
     finally{clearTimeout(deadline);}
-    if(greetingText)return window.VP3ConversationControls?.responseWindow?.({greetingText})===true;
+    if(automatic)return window.VP3ConversationControls?.responseWindow?.({automatic,greetingText})===true;
     return window.VP3_ORB_ADAPTER?.responseWindow?.()===true;
   }
   window.addEventListener('stonefellow:agent-proactive-speech',event=>{

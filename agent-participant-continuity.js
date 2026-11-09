@@ -197,6 +197,7 @@
     function setSelection(value, remote = false) {
       window.VP3ParticipantUpdates?.selected(value);
       const previous = selectedContext();
+      const expired = selectedParticipant !== null && previous === null;
       selectedParticipant =
         value?.source === 'manual_selection' &&
         value.authentication_authority === false
@@ -212,7 +213,7 @@
             }
           : null;
       const current = selectedContext();
-      if (JSON.stringify(previous) !== JSON.stringify(current)) {
+      if (expired || JSON.stringify(previous) !== JSON.stringify(current)) {
         window.dispatchEvent(new Event('vp3:participant-selection-changed'));
         if (!remote) signal('selection', current);
       }

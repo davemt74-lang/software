@@ -273,6 +273,7 @@ $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict
     . json_encode($chatApiEndpoint, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';cfg.workingAttentionBinding=' . json_encode($workingAttentionBinding)
     . ';cfg.agentId=' . (int)($activeUserAgent['id'] ?? 0)
+    . ';cfg.autoGreetEnabled=' . (chat_settings_agent_auto_greet_enabled_v237($pdoForAgent, $user) ? 'true' : 'false')
     . ';cfg.initialConversationId=' . (int)$agentInitialConversationId . ';window.STONEFELLOW_AGENT_IDENTITY_V236={'
     . 'displayName:' . json_encode($agentDisplayName, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ',systemName:' . json_encode($systemAgentName, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)

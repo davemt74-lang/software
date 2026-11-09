@@ -170,6 +170,33 @@
   .vp3-agent-voice-head,.vp3-agent-voice-body{padding-left:12px;padding-right:12px}
 }
 
-.vp3-agent-voice-menu .chat-profile-summary>.member-agent-voice-toggle{grid-column:1/-1;justify-self:start;margin-top:8px}
+.vp3-agent-voice-menu .chat-profile-summary>.member-agent-voice-toggle{grid-column:1/-1;justify-self:start;margin-left:0}
+.member-agent-voice-toggles{
+  grid-column:1/-1;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  align-items:center;
+}
+.member-agent-voice-toggles[hidden]{display:none}
+.member-agent-voice-toggles .member-agent-voice-toggle{
+  position:relative;
+  justify-content:space-between;
+  min-height:44px;
+  margin:0;
+  white-space:normal;
+}
+.member-agent-voice-toggles .member-agent-voice-label{font-size:.68rem}
+.member-agent-voice-toggles .member-agent-voice-toggle input{
+  inset:0;
+  width:100%;
+  height:100%;
+  margin:0;
+  pointer-events:auto;
+  cursor:inherit;
+  z-index:1;
+}
+.member-agent-voice-toggles input:disabled{cursor:default}
+.member-agent-voice-toggles input:disabled+.member-agent-voice-switch{opacity:.55}
 .vp3-agent-voice-field>small{font-size:11px;line-height:1.4;color:#64748b;overflow-wrap:anywhere}
 .vp3-agent-voice-menu .member-agent-voice-toggle input:focus-visible+.member-agent-voice-switch{outline:2px solid #111827;outline-offset:3px}

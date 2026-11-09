@@ -3,14 +3,19 @@
   const cooldown=30*60*1000;
 
   function bootChat(adapter) {
+    const cfg=window.STONEFELLOW_CHAT;
     const identity=window.STONEFELLOW_AGENT_IDENTITY_V236;
     const chat=window.STONEFELLOW_CHAT_CONTINUITY_V87;
     const thread=document.getElementById('chatThread');
-    if(!identity||!thread||typeof chat?.mountAgentGreeting!=='function')return;
+    if(window.top!==window||!identity||!thread||!Number.isSafeInteger(Number(cfg?.userId))
+      ||Number(cfg.userId)<1||String(cfg.userId)!==String(adapter.ownerKey)
+      ||typeof chat?.mountAgentGreeting!=='function')return;
     const key=`vp3:chat-voice-greeting:${adapter.ownerKey}`;
-    let enabled=identity.agentVoiceEnabled===true, pending=enabled, explicit=false, claiming=false, active=null;
-    const inChat=()=>!document.hidden&&document.hasFocus()&&thread.dataset.view==='chat';
-    const available=()=>enabled&&inChat()&&chat.isReady()&&!chat.isRestoring()&&!chat.isBusy()
+    let autoGreet=cfg.autoGreetEnabled===true, enabled=identity.agentVoiceEnabled===true;
+    let pending=autoGreet&&enabled, explicit=false, claiming=false, active=null;
+    const inChat=()=>!document.hidden&&document.hasFocus()&&!thread.hidden&&thread.dataset.view==='chat';
+    const available=()=>autoGreet&&enabled&&inChat()&&chat.isReady()&&!chat.isRestoring()&&!chat.isBusy()
+      &&!window.VP3ParticipantContinuity?.selectedContext?.()
       &&!window.VP3ConversationControls?.isEnabled?.()&&!window.VP3ConversationControls?.isReplyCapturePending?.()
       &&!window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.()
       &&!String(document.getElementById('chatInput')?.value||'').trim()&&!adapter.state?.()?.recording;
@@ -21,13 +26,22 @@
       record?.controller?.abort();
       record?.retry?.remove();
     }
+    const isCurrent=record=>active===record&&available()&&chat.conversationId()===record.conversationId;
+    async function listen(record,greetingText='') {
+      try {
+        await window.VP3AgentResponseWindow?.listen({quiet:true,automatic:true,greetingText,
+          canListen:()=>isCurrent(record)&&adapter.state?.()?.state!=='speaking'});
+      } finally {
+        if(active===record)active=null;
+      }
+    }
     async function play(record) {
-      if(active!==record||!available()||chat.conversationId()!==record.conversationId)return;
+      if(!isCurrent(record))return;
       record.retry?.remove();
       const controller=record.controller=new AbortController();
-      const current=()=>active===record&&!controller.signal.aborted&&available()&&chat.conversationId()===record.conversationId;
-      const complete=async completed=>{
-        if(completed&&current())await window.VP3AgentResponseWindow?.listen({quiet:true,canListen:current,greetingText:record.text});
+      const current=()=>!controller.signal.aborted&&isCurrent(record);
+      const complete=completed=>{
+        if(completed&&current())return listen(record,record.text);
         if(active===record)active=null;
       };
       const started=await window.STONEFELLOW_NOTIFICATION_CENTER.announceWhen(record.text,current,{signal:controller.signal,onComplete:complete,autoReply:false});
@@ -43,14 +57,16 @@
       const greet=()=>{
         if(!pending||!available())return;
         pending=false;
-        if(!explicit&&recentlyGreeted())return;
+        const skipGreeting=!explicit&&recentlyGreeted();
         explicit=false;
+        const conversationId=chat.conversationId();
+        if(skipGreeting){void listen(active={conversationId});return;}
         const name=String(window.STONEFELLOW_AGENT_IDENTITY_V236?.displayName||'your agent').trim().slice(0,120);
         const message=String(window.STONEFELLOW_CHAT?.intro?.greeting||'').trim()||`Hi, I’m ${name||'your agent'}. I’m here if you’d like to talk.`;
         const element=chat.mountAgentGreeting(message);
         if(!element)return;
         try{localStorage.setItem(key,String(Date.now()));}catch(_){}
-        const record=active={text:message,element,conversationId:chat.conversationId()};
+        const record=active={text:message,element,conversationId};
         void play(record);
       };
       if(!navigator.locks?.request){greet();return;}
@@ -60,9 +76,11 @@
     window.addEventListener('stonefellow:agent-voice',event=>{
       enabled=event.detail?.enabled===true;
       if(!enabled){cancel();return;}
-      if(event.detail?.source==='account-menu'){cancel();pending=true;explicit=true;}
+      if(autoGreet&&event.detail?.source==='account-menu'){cancel();pending=true;explicit=true;}
       refresh();
     });
+    window.addEventListener('vp3:agent-auto-greet',event=>{if(event.detail?.enabled===false){autoGreet=false;cancel();}});
+    window.addEventListener('vp3:participant-selection-changed',cancel);
     window.addEventListener('vp3:chat-context-ready',()=>queueMicrotask(refresh));
     window.addEventListener('vp3:chat-canvas-view-changed',()=>{if(thread.dataset.view!=='chat')cancel();});
     window.addEventListener('stonefellow:chat-context-changing',()=>{if(active||chat.isReady())cancel();});

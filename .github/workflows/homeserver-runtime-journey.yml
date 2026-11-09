@@ -184,6 +184,7 @@ jobs:
       - name: Shared Agent Voice menu, greeting and movement
         run: |
           php tests/agent-voice-preferences.php
+          php tests/chat-auto-greet-settings-v1.php
           node tests/agent-voice-menu-browser.mjs
       - name: Connected Initiative in normal Agent Chat
         run: |
