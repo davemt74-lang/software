@@ -5,6 +5,16 @@ $memberMenuUser = $memberMenuUser ?? current_user();
 if (!$memberMenuUser) return;
 
 $memberMenuRoleSummary = implode(' · ', user_role_labels($memberMenuUser));
+$memberMenuVoiceToggle = member_agent_voice_toggle_html($memberMenuUser);
+$memberMenuAutoGreetAllowed = $memberMenuVoiceToggle !== '' && function_exists('chat_settings_agent_auto_greet_allowed_v237')
+    && chat_settings_agent_auto_greet_allowed_v237($memberMenuUser);
+$memberMenuVoicePdo = $memberMenuAutoGreetAllowed ? db() : null;
+$memberMenuAutoGreetReady = $memberMenuVoicePdo && function_exists('chat_settings_agent_auto_greet_schema_ready_v237')
+    && chat_settings_agent_auto_greet_schema_ready_v237($memberMenuVoicePdo);
+$memberMenuAutoGreetEnabled = $memberMenuAutoGreetReady
+    && chat_settings_agent_auto_greet_enabled_v237($memberMenuVoicePdo, $memberMenuUser);
+$memberMenuAutoGreetHelp = !$memberMenuAutoGreetAllowed ? 'Auto Greet is not available for this account'
+    : ($memberMenuAutoGreetReady ? 'Start Listen when private Agent Chat opens, with Agent Voice on and microphone access already granted.' : 'Run Database Upgrade to use Auto Greet');
 ?>
 <div
   class="chat-top-menu member-profile-menu"
@@ -55,8 +65,17 @@ $memberMenuRoleSummary = implode(' · ', user_role_labels($memberMenuUser));
         <strong><?= e((string)($memberMenuUser['display_name'] ?? '')) ?></strong>
         <?php if ($memberMenuRoleSummary !== ''): ?><small><?= e($memberMenuRoleSummary) ?></small><?php endif; ?>
       </div>
-      <?php /* data-vp3-global-agent-voice: one canonical upper toggle */ ?>
-      <?= member_agent_voice_toggle_html($memberMenuUser) ?>
+      <div class="member-agent-voice-toggles" role="group" aria-label="Agent voice preferences"<?= $memberMenuVoiceToggle === '' ? ' hidden' : '' ?>>
+        <?php /* data-vp3-global-agent-voice: one canonical upper toggle */ ?>
+        <?= $memberMenuVoiceToggle ?>
+        <?php if ($memberMenuVoiceToggle !== ''): ?>
+          <label class="member-agent-voice-toggle" title="<?= e($memberMenuAutoGreetHelp) ?>">
+            <span class="member-agent-voice-label">Auto Greet</span>
+            <input type="checkbox" data-vp3-agent-auto-greet aria-label="Auto Greet"<?= $memberMenuAutoGreetEnabled ? ' checked' : '' ?><?= $memberMenuAutoGreetReady ? '' : ' disabled' ?>>
+            <span class="member-agent-voice-switch" aria-hidden="true"><span></span></span>
+          </label>
+        <?php endif; ?>
+      </div>
     </div>
 
     <section class="vp3-agent-voice-dashboard" data-vp3-agent-voice-dashboard aria-label="Agent and voice controls">

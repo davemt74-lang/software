@@ -287,6 +287,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && ($schemaConnection ??= db()) instanceof PDO
         && chat_settings_schema_ready_v237($schemaConnection)
         && chat_settings_agent_orb_shape_schema_ready_v237($schemaConnection)
+        && chat_settings_agent_auto_greet_schema_ready_v237($schemaConnection)
         && homeserver_https_v1300_transient_ready($schemaConnection)
         && vp3_chat_read_schema_ready_v1($schemaConnection)
         && agent_connections_schema_ready_v1($schemaConnection)

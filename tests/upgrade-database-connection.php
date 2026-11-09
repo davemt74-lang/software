@@ -12,6 +12,7 @@ $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_ac
     'profile_conversation_checkouts_pa5','agent_product_launches_v1',
     'agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1'];
 $partialSpeech=[
+    'partial-auto-greet'=>['team_user_presence','auto_greet_enabled'],
     'partial-conversation-checkout-review'=>['profile_conversation_checkouts_pa5','product_snapshot_hash'],
     'partial-speech-voice'=>['profile_visitor_voices_pa4a','assignment_revision'],
     'partial-speech-source'=>['profile_speech_items_pa4a','source_hash'],
@@ -54,6 +55,10 @@ require_once dirname(__DIR__).'/includes/agent-connection-youtube-playback-v1.ph
 $fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER); CREATE TABLE chat_messages(id INTEGER PRIMARY KEY)');
 $fixture->exec('CREATE TABLE team_user_presence(user_id INTEGER PRIMARY KEY, presence_mode TEXT, social_chat_enabled INTEGER, sound_enabled INTEGER, agent_voice_enabled INTEGER, agent_assisted_phone_chat_enabled INTEGER)');
 $fixture->exec('INSERT INTO team_user_presence (user_id) VALUES (1)');
+if ($mode !== 'post') {
+    $fixture->exec('ALTER TABLE team_user_presence ADD COLUMN auto_greet_enabled TINYINT(1) NOT NULL DEFAULT 0');
+    $fixture->exec('UPDATE team_user_presence SET auto_greet_enabled=1 WHERE user_id=1');
+}
 if (!in_array($mode,['post','missing-orb-shape'],true)) {
     $fixture->exec("ALTER TABLE team_user_presence ADD COLUMN agent_orb_shape VARCHAR(16) NOT NULL DEFAULT 'orbit'");
     $fixture->exec("UPDATE team_user_presence SET agent_orb_shape='particle_face' WHERE user_id=1");
@@ -154,6 +159,8 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     foreach($newTables as $table)check(table_exists($table),'Upgrade skipped required table '.$table);
     check(chat_settings_agent_orb_shape_schema_ready_v237($fixture), 'Upgrade skipped the Agent shape preference');
     check(chat_settings_agent_orb_shape_v237($fixture, 1) === ($mode === 'post' ? 'orbit' : 'particle_face'), 'Upgrade did not preserve the default or saved Agent shape');
+    check(chat_settings_agent_auto_greet_schema_ready_v237($fixture), 'Upgrade skipped Auto Greet storage');
+    check(chat_settings_get_v237($fixture,1)['auto_greet_enabled'] === ($mode !== 'post'), 'Upgrade did not preserve the default or saved Auto Greet preference');
     check(vp3_youtube_playback_ready_v1($fixture), 'Upgrade skipped the YouTube playback history schema');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'complete-get') {

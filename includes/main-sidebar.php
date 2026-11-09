@@ -119,6 +119,10 @@ foreach (array_reverse(['campaigns','rewards']) as $dualKey) {
 $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($mainSidebarUser)) : '';
 $mainSidebarRenderAgentVoiceAssets = empty($GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED']);
 if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED'] = true;
+$mainSidebarAgentVoiceMenuBuild = 'agent-voice-menu-v244-20260922-voice-v1352-phone-ph2';
+if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.substr(hash('sha256',
+    hash_file('sha256',dirname(__DIR__).'/member-agent-voice-menu.css')
+    .hash_file('sha256',dirname(__DIR__).'/member-agent-voice-menu.js')),0,12);
 ?>
 <link rel="stylesheet" data-workspace-header-ui href="<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
@@ -127,7 +131,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
 <link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=authenticated-shell-phase2-20260914')) ?>">
 <?php if ($mainSidebarIsChat): ?><link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>"><?php endif; ?>
 <link rel="stylesheet" href="<?= e(url('/profile-commerce-products-shell-v1310.css?v=1310')) ?>">
-<?php if ($mainSidebarRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=agent-voice-menu-20260913-voice-v1349-phone-ph2')) ?>"><?php endif; ?>
+<?php if ($mainSidebarRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=' . $mainSidebarAgentVoiceMenuBuild)) ?>"><?php endif; ?>
 <aside
   class="chat-sidebar workspace-main-sidebar"
   id="chatSidebar"
@@ -255,6 +259,6 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
 <script src="<?= e(url('/homeserver-vp3.js?v=homeserver-v1305-final-20260924')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260913-sidebar-footer')) ?>" defer></script>
 <?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1-visitor-settings')) ?>" defer></script><?php endif; ?>
-<?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=agent-voice-menu-chat-greeting-v1')) ?>" defer></script><?php endif; ?>
+<?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=' . $mainSidebarAgentVoiceMenuBuild)) ?>" defer></script><?php endif; ?>
 
 <?php require __DIR__.'/agent-orb.php'; ?>

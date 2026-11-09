@@ -62,6 +62,8 @@ try {
         chat_settings_json_v237([
             'ok' => true,
             'agent_voice_allowed' => chat_settings_agent_voice_allowed_v237($user),
+            'agent_auto_greet_allowed' => chat_settings_agent_auto_greet_allowed_v237($user),
+            'agent_auto_greet_ready' => chat_settings_agent_auto_greet_schema_ready_v237($pdo),
             'agent_assisted_phone_chat_ready' => chat_settings_agent_assisted_phone_chat_schema_ready_v237($pdo),
             'agent_assisted_phone_chat_allowed' => chat_settings_agent_assisted_phone_chat_allowed_v237($pdo, $user),
             'agent_orb_shape_ready' => chat_settings_agent_orb_shape_schema_ready_v237($pdo),
@@ -85,6 +87,35 @@ try {
         $enabled = !empty($input['agent_voice_enabled']);
         $settings = chat_settings_save_agent_voice_v237($pdo, $user, $enabled);
         chat_settings_json_v237(['ok'=>true,'agent_voice_allowed'=>chat_settings_agent_voice_allowed_v237($user),'chat'=>$settings]);
+    }
+
+    if ($action === 'save_auto_greet') {
+        if (!is_bool($input['auto_greet_enabled'] ?? null)) {
+            chat_settings_json_v237(['ok'=>false,'error'=>'Choose whether to enable Auto Greet.'], 422);
+        }
+        if (!chat_settings_agent_auto_greet_allowed_v237($user)) {
+            chat_settings_json_v237(['ok'=>false,'error'=>'Auto Greet is unavailable for this account.'], 403);
+        }
+        if (!chat_settings_agent_auto_greet_schema_ready_v237($pdo)) {
+            chat_settings_json_v237(['ok'=>false,'error'=>'Auto Greet requires Database Upgrade.'], 503);
+        }
+        $settings = chat_settings_save_auto_greet_v237($pdo, $user, $input['auto_greet_enabled']);
+        chat_settings_json_v237(['ok'=>true,'agent_auto_greet_allowed'=>true,'agent_auto_greet_ready'=>true,'chat'=>$settings]);
+    }
+
+    if ($action === 'save_agent_orb_shape') {
+        $shape = $input['agent_orb_shape'] ?? null;
+        if (!is_string($shape) || !in_array($shape, ['orbit', 'particle_face'], true)) {
+            chat_settings_json_v237(['ok'=>false,'error'=>'Choose an available Agent orb style.'], 422);
+        }
+        if (function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() !== null) {
+            chat_settings_json_v237(['ok'=>false,'error'=>'Agent appearance is unavailable for this account.'], 403);
+        }
+        if (!chat_settings_agent_orb_shape_schema_ready_v237($pdo)) {
+            chat_settings_json_v237(['ok'=>false,'error'=>'Agent appearance requires Database Upgrade.'], 503);
+        }
+        $settings = chat_settings_save_agent_orb_shape_v237($pdo, $user, $shape);
+        chat_settings_json_v237(['ok'=>true,'chat'=>$settings]);
     }
 
     if ($action === 'save_profile_agent') {

@@ -3,6 +3,9 @@ declare(strict_types=1);
 function current_user(): array { return ['id'=>1,'display_name'=>'Dave']; }
 function db(): ?PDO { return new PDO('sqlite::memory:'); }
 function chat_settings_agent_voice_enabled_v237(...$args): bool { return true; }
+function chat_settings_agent_auto_greet_allowed_v237(...$args): bool { return true; }
+function chat_settings_agent_auto_greet_schema_ready_v237(...$args): bool { return true; }
+function chat_settings_agent_auto_greet_enabled_v237(...$args): bool { return false; }
 function has_permission(...$args): bool { return true; }
 function user_has_role(...$args): bool { return true; }
 function user_role_labels(...$args): array { return ['Admin']; }

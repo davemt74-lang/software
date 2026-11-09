@@ -28,12 +28,16 @@
   };
 
   const agentVoiceSyncKey = `vp3:agent-voice-sync:${cfg.userId || 0}`;
+  const autoGreetSyncKey = `vp3:auto-greet-sync:${cfg.userId || 0}`;
+  const autoGreetHelp = 'Start Listen when private Agent Chat opens, with Agent Voice on and microphone access already granted.';
 
   let agentState = null;
   let voiceState = null;
   let ttsState = null;
   let agentVoiceAllowed = true;
   let agentVoiceEnabled = false;
+  let autoGreetAllowed = false;
+  let autoGreetEnabled = false;
   let selectedAgentId = 0;
   let busy = false;
   let catalogLoaded = false;
@@ -117,15 +121,18 @@
     menu.classList.add('vp3-agent-voice-menu');
     menu.querySelector('.chat-profile-links')?.remove();
     const summary = menu.querySelector('.chat-profile-summary');
+    const controls = summary?.querySelector('.member-agent-voice-toggles');
     // Adopt legacy server markup or an early Chat control instead of adding a second owner.
     let toggle=summary?.querySelector('[data-agent-voice-toggle]')||menu.querySelector('[data-agent-voice-toggle]');
-    if(summary&&!toggle){
+    if(summary&&!controls&&!toggle){
       summary.insertAdjacentHTML('beforeend','<label class="member-agent-voice-toggle"><span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle data-vp3-global-agent-voice aria-label="Agent Voice"><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span></label>');
       toggle=summary.querySelector('[data-agent-voice-toggle]');
     }
     if(toggle){
       toggle.setAttribute('data-vp3-global-agent-voice','');
-      const row=toggle.closest('.member-agent-voice-toggle');if(summary&&row&&row.parentNode!==summary)summary.append(row);
+      const row=toggle.closest('.member-agent-voice-toggle');
+      const target=controls||summary;
+      if(target&&row&&row.parentNode!==target)target.prepend(row);
     }
     const removeExtras=()=>{
       menu.querySelectorAll('[data-agent-voice-toggle]').forEach(input=>{
@@ -168,10 +175,12 @@
     systemVoice: dashboard.querySelector('[data-vp3-system-voice]'),
     systemVoiceStatus: dashboard.querySelector('[data-vp3-system-voice-status]'),
     agentVoice: menu.querySelector('[data-vp3-global-agent-voice]'),
+    autoGreet: menu.querySelector('[data-vp3-agent-auto-greet]'),
     phoneLabel: dashboard.querySelector('[data-vp3-agent-phone-label]'),
     phoneDetail: dashboard.querySelector('[data-vp3-agent-phone-detail]'),
     phoneLink: dashboard.querySelector('[data-vp3-agent-phone-link]')
   };
+  if (el.autoGreet) el.autoGreet.disabled = true;
 
   function setStatus(message = '', kind = '') {
     if (!el.status) return;
@@ -314,6 +323,36 @@
     } catch (_error) {}
   }
 
+  function renderAutoGreet(enabled) {
+    autoGreetEnabled = autoGreetAllowed && enabled === true;
+    if (!el.autoGreet) return;
+    el.autoGreet.disabled = !autoGreetAllowed;
+    el.autoGreet.checked = autoGreetEnabled;
+  }
+
+  function applyAutoGreetSettings(data) {
+    const ready = data.agent_auto_greet_ready === true;
+    const allowed = data.agent_auto_greet_allowed === true;
+    autoGreetAllowed = ready && allowed;
+    renderAutoGreet(data.chat?.auto_greet_enabled);
+    const label = el.autoGreet?.closest('label');
+    if (label) label.title = !allowed ? 'Auto Greet is not available for this account'
+      : (!ready ? 'Run Database Upgrade to use Auto Greet' : autoGreetHelp);
+  }
+
+  function publishAutoGreet(fromStorage = false) {
+    if (!fromStorage && cfg.userId > 0) {
+      try { localStorage.setItem(autoGreetSyncKey, JSON.stringify({enabled:autoGreetEnabled, at:Date.now()})); } catch (_error) {}
+    }
+    if (autoGreetAllowed) publishState();
+    notifyAutoGreet('account-menu', fromStorage);
+  }
+
+  function notifyAutoGreet(source, fromStorage = false) {
+    if (!autoGreetEnabled && window.STONEFELLOW_CHAT) window.STONEFELLOW_CHAT.autoGreetEnabled = false;
+    window.dispatchEvent(new CustomEvent('vp3:agent-auto-greet', {detail:{enabled:autoGreetEnabled,source,fromStorage}}));
+  }
+
   function render() {
     renderAgents();
     renderVoice();
@@ -369,7 +408,16 @@
     const tasks = [
       json(cfg.agentEndpoint).then(data => { agentState = data.state || {}; }),
       json(`${cfg.voiceEndpoint}?action=state`).then(data => { voiceState = data.state || {}; }).catch(() => { voiceState = null; }),
-      json(`${cfg.chatSettingsEndpoint}?action=state`).then(data => { agentVoiceAllowed=data.agent_voice_allowed!==false; const enabled=agentVoiceAllowed&&data.chat?.agent_voice_enabled!==false; renderAgentVoice(enabled); publishAgentVoice(enabled); }).catch(() => { agentVoiceAllowed=false; renderAgentVoice(false); publishAgentVoice(false); })
+      json(`${cfg.chatSettingsEndpoint}?action=state`).then(data => {
+        agentVoiceAllowed=data.agent_voice_allowed!==false;
+        const enabled=agentVoiceAllowed&&data.chat?.agent_voice_enabled!==false;
+        renderAgentVoice(enabled);
+        publishAgentVoice(enabled);
+        applyAutoGreetSettings(data);
+        if (autoGreetAllowed && data.chat?.auto_greet_enabled === false && window.STONEFELLOW_CHAT?.autoGreetEnabled === true) {
+          notifyAutoGreet('settings-read');
+        }
+      }).catch(() => { agentVoiceAllowed=false; renderAgentVoice(false); publishAgentVoice(false); })
     ];
     try {
       await Promise.all(tasks);
@@ -406,7 +454,7 @@
 
   function publishState() {
     const agent=activeAgents().find(row=>Number(row.is_default)===1)||null;
-    window.VP3_AGENT_PREFERENCE_STATE={ownerKey:String(cfg.userId),enabled:agentVoiceEnabled,allowed:agentVoiceAllowed,agent:agent?{id:Number(agent.id),name:String(agent.display_name)}:null};
+    window.VP3_AGENT_PREFERENCE_STATE={ownerKey:String(cfg.userId),enabled:agentVoiceEnabled,allowed:agentVoiceAllowed,autoGreetEnabled,autoGreetAllowed,agent:agent?{id:Number(agent.id),name:String(agent.display_name)}:null};
     window.dispatchEvent(new CustomEvent('vp3:agent-preferences',{detail:window.VP3_AGENT_PREFERENCE_STATE}));
   }
 
@@ -495,8 +543,35 @@
     })();
   });
 
+  el.autoGreet?.addEventListener('change', async event => {
+    event.stopPropagation();
+    if (!autoGreetAllowed) { renderAutoGreet(false); return; }
+    const requested = el.autoGreet.checked;
+    el.autoGreet.disabled = true;
+    try {
+      const data = await post(cfg.chatSettingsEndpoint, 'save_auto_greet', {auto_greet_enabled:requested});
+      applyAutoGreetSettings(data);
+      publishAutoGreet();
+      setStatus(autoGreetEnabled ? 'Auto Greet will use Listen the next time Agent Chat opens.' : 'Auto Greet is off.', 'success');
+    } catch (error) {
+      renderAutoGreet(autoGreetEnabled);
+      setStatus(error instanceof Error ? error.message : 'Auto Greet could not be saved.', 'error');
+    }
+  });
+
   window.addEventListener('stonefellow:agent-voice', event => { const enabled=event.detail?.enabled !== false; renderAgentVoice(enabled); if(!event.detail?.fromStorage)publishAgentVoice(enabled); publishState(); });
   window.addEventListener('storage', event => {
+    if (event.key === autoGreetSyncKey && event.newValue) {
+      try {
+        const enabled = JSON.parse(event.newValue)?.enabled;
+        // A saved opt-out also cancels pending page-load capture before the settings read returns.
+        if (enabled === false || (autoGreetAllowed && enabled === true)) {
+          renderAutoGreet(enabled);
+          publishAutoGreet(true);
+        }
+      } catch (_error) {}
+      return;
+    }
     if (event.key !== agentVoiceSyncKey || !event.newValue) return;
     try { const sync=JSON.parse(event.newValue); renderAgentVoice(sync?.enabled !== false); publishState(); if(sync?.enabled===false)window.dispatchEvent(new CustomEvent('stonefellow:agent-voice',{detail:{enabled:false,fromStorage:true}})); } catch (_error) {}
   });

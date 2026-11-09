@@ -12,7 +12,7 @@ const origin = 'http://localhost';
 const browser = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined});
 const errors = [];
 
-async function fixture({enabled=true,permission='granted',blockPlayback=false,legacy=false}={}) {
+async function fixture({enabled=true,autoGreet=true,permission='granted',blockPlayback=false,blockRecognition=false,selectedParticipant=false,legacy=false}={}) {
   const context = await browser.newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
@@ -25,16 +25,20 @@ async function fixture({enabled=true,permission='granted',blockPlayback=false,le
       <section id="chatThread"><div id="chatWelcome" hidden></div></section>
       <form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button><button type="button" id="chatVoiceButton">Listen</button></form><div id="chatVoiceStatus"></div>
       </main><script>
-      window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:42,initialView:'chat',csrf:'fixture',endpoint:'/api/chat-v236.php',${legacy?'intro:{token:"legacy-greeting",greeting:"Welcome back. What shall we work on?",updates:[{title:"An optional update"}]},':''}};
+      window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:42,initialView:'chat',csrf:'fixture',endpoint:'/api/chat-v236.php',${autoGreet===null?'':`autoGreetEnabled:${autoGreet},`}${legacy?'intro:{token:"legacy-greeting",greeting:"Welcome back. What shall we work on?",updates:[{title:"An optional update"}]},':''}};
       window.STONEFELLOW_AGENT_IDENTITY_V236={displayName:'Longfellow',agentId:7,agentVoiceEnabled:${enabled}};
       window.STONEFELLOW_NOTIFICATION_DRAWER={endpoint:'/api/notifications',csrf:'fixture',agentId:7,userId:1,agentVoiceEnabled:${enabled}};
       window.VP3_ORB_ADAPTER={ownerKey:'1',isMainChat:()=>true,state:()=>({recording:false})};
-      window.micPermission=${JSON.stringify(permission)};window.blockPlayback=${blockPlayback};window.utterances=[];window.playing=null;
-      window.permissionReads=0;window.micAcquisitions=0;window.nativeStarts=0;window.nativeLive=0;
+      if (${selectedParticipant}) window.VP3ParticipantContinuity={selectedContext:()=>({id:8})};
+      window.micPermission=${JSON.stringify(permission)};window.blockPlayback=${blockPlayback};window.blockRecognition=${blockRecognition};window.utterances=[];window.playing=null;
+      window.permissionReads=0;window.micAcquisitions=0;window.nativeAttempts=0;window.nativeStarts=0;window.nativeLive=0;window.autoListenClicks=0;
+      const listen=document.getElementById('chatVoiceButton');
+      listen.addEventListener('click',event=>{if(!event.isTrusted)autoListenClicks++;},true);
+      window.STONEFELLOW_CHAT_VOICE_BOOT={button:listen,legacyDormant:true};listen.id='chatVoiceButtonLegacyDormant';
       Object.defineProperty(navigator,'permissions',{value:{query:async()=>{permissionReads++;if(window.delayPermission)await new Promise(resolve=>window.releasePermission=resolve);if(micPermission==='unknown')throw Error('Unsupported');return {state:micPermission};}}});
       Object.defineProperty(navigator,'mediaDevices',{value:{getUserMedia:async()=>{micAcquisitions++;const track={readyState:'live',stop(){this.readyState='ended';},addEventListener(){}};window.track=track;return {getTracks:()=>[track],getAudioTracks:()=>[track]};}}});
       window.SpeechRecognition=class {
-        start(){if(window.playing)throw Error('Capture during playback');this.live=true;nativeStarts++;nativeLive++;queueMicrotask(()=>this.onstart?.());}
+        start(){nativeAttempts++;if(window.playing)throw Error('Capture during playback');if(blockRecognition)throw new DOMException('Click Listen first','NotAllowedError');this.live=true;nativeStarts++;nativeLive++;queueMicrotask(()=>this.onstart?.());}
         stop(){this.abort();}
         abort(){if(!this.live)return;this.live=false;setTimeout(()=>{nativeLive--;this.onend?.();},180);}
       };
@@ -72,6 +76,7 @@ try {
       finishSpeech();
     });
     await page.waitForFunction(() => nativeLive===1 && replyDuration===15000);
+    assert.equal(await page.evaluate(() => autoListenClicks),1);
     await page.clock.runFor(14700);
     assert.deepEqual(await page.evaluate(() => [nativeLive,utterances.length]),[1,1]);
     await page.clock.runFor(500);
@@ -87,6 +92,28 @@ try {
     assert.equal(await page.evaluate(() => nativeStarts+utterances.length),0);
     await context.close();
     console.log('PASS Chat greets once, listens for 15 seconds, then speaks the queued connection notice without reopening capture');
+  }
+  for (const autoGreet of [null,false]) {
+    const {context,page} = await fixture({autoGreet});
+    await page.clock.install();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:agent-auto-greet',{detail:{enabled:true}})));
+    await page.clock.runFor(300);
+    assert.equal(await page.locator(greeting).count(),0);
+    assert.equal(await page.evaluate(() => permissionReads+autoListenClicks+nativeAttempts+utterances.length),0);
+    await page.locator('#chatVoiceButton').click();
+    await page.waitForFunction(() => nativeLive===1);
+    assert.equal(await page.evaluate(() => autoListenClicks),0);
+    await context.close();
+  }
+  console.log('PASS Auto Greet is opt-in on page load and manual Listen is available while it is off');
+  {
+    const {context,page} = await fixture({selectedParticipant:true});
+    await page.clock.install();
+    await page.clock.runFor(300);
+    assert.equal(await page.locator(greeting).count(),0);
+    assert.equal(await page.evaluate(() => permissionReads+autoListenClicks+nativeAttempts+utterances.length),0);
+    await context.close();
+    console.log('PASS a selected participant cannot trigger the owner’s automatic greeting or Listen');
   }
   {
     const {context,page} = await fixture({enabled:false});
@@ -108,8 +135,38 @@ try {
     await page.waitForFunction(() => utterances.length===1);
     await page.evaluate(() => finishSpeech());
     await page.waitForFunction(() => permissionReads===1);
-    assert.equal(await page.evaluate(() => nativeStarts+micAcquisitions),0);
+    assert.equal(await page.evaluate(() => autoListenClicks+nativeStarts+micAcquisitions),0);
     await context.close();
+  }
+  {
+    const {context,page} = await fixture({blockRecognition:true});
+    await page.waitForFunction(() => utterances.length===1);
+    await page.clock.install();
+    await page.evaluate(() => {
+      localStorage.setItem('stonefellow:voice-mode:1','0');
+      finishSpeech();
+    });
+    await page.waitForFunction(() => nativeAttempts===1);
+    await page.clock.runFor(17000);
+    assert.equal(await page.evaluate(() => autoListenClicks),1);
+    assert.equal(await page.evaluate(() => nativeAttempts),1);
+    assert.match(await page.locator('#chatVoiceStatus').innerText(),/Select Listen/);
+    assert.equal(await page.evaluate(() => localStorage.getItem('stonefellow:voice-mode:1')),'0');
+    await page.evaluate(() => { blockRecognition=false; });
+    await page.locator('#chatVoiceButton').click();
+    await page.waitForFunction(() => nativeLive===1);
+    await context.close();
+    console.log('PASS a blocked automatic Listen attempt leaves manual startup available and does not retry');
+  }
+  {
+    const {context,page} = await fixture();
+    await page.waitForFunction(() => utterances.length===1);
+    await page.evaluate(() => finishSpeech());
+    await page.waitForFunction(() => nativeLive===1);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:agent-auto-greet',{detail:{enabled:false}})));
+    await page.waitForFunction(() => nativeLive===0 && track.readyState==='ended');
+    await context.close();
+    console.log('PASS disabling Auto Greet immediately releases its bounded microphone capture');
   }
   console.log('PASS prompt, denied and unknown permissions still allow the greeting without prompting or capture');
   {
