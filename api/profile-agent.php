@@ -4,7 +4,7 @@ require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-transcription-context.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-public-service-v110.php';
 header('Content-Type: application/json; charset=UTF-8');
-header('Cache-Control: no-store');
+header('Cache-Control: no-store, private');
 
 function profile_agent_json(bool $ok,array $payload=[],int $status=200): never{http_response_code($status);echo json_encode(array_merge(['ok'=>$ok],$payload),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
 function profile_agent_require_csrf(array $input): void{$token=$input['csrf_token']??null;if(!is_string($token)||$token===''||!hash_equals(csrf_token(),$token))profile_agent_json(false,['error'=>'Session expired. Refresh and try again.'],419);}
@@ -90,9 +90,14 @@ function profile_agent_owner_handoff_pa3(PDO $pdo,array $user,array $conversatio
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 if(!in_array($method,['GET','POST'],true))profile_agent_method_required('GET, POST');
 $input=$method==='POST'?json_decode((string)file_get_contents('php://input'),true):$_GET;if(!is_array($input))$input=$_POST;
+$attachmentUpload=$method==='POST'&&array_key_exists('attachment_payload',$_POST);
+if($attachmentUpload){
+    $input=is_string($_POST['attachment_payload'])?json_decode($_POST['attachment_payload'],true):null;
+    if(!is_array($input)||($input['action']??null)!=='message')profile_agent_json(false,['error'=>'The attachment request is invalid.','code'=>'PROFILE_ATTACHMENT_INVALID'],422);
+}
 $action=$input['action']??'state';if(!is_string($action))profile_agent_json(false,['error'=>'Choose a Profile Agent action.','code'=>'VALIDATION_FAILED'],422);$action=trim($action);
-$ownerActions=['owner_state','save_profile','save_profile_media','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply','doorbell_claim','doorbell_reply','doorbell_delegate','doorbell_resolve'];
-$ownerReads=['owner_state','conversation_messages'];
+$ownerActions=['owner_state','save_profile','save_profile_media','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply','owner_attachment','doorbell_claim','doorbell_reply','doorbell_delegate','doorbell_resolve'];
+$ownerReads=['owner_state','conversation_messages','owner_attachment'];
 // A URL, preload, HEAD request or cross-site navigation must never send an
 // owner reply or change Profile settings, attention or conversation status.
 if($method!=='POST'&&in_array($action,$ownerActions,true)&&!in_array($action,$ownerReads,true))profile_agent_method_required('POST');
@@ -142,7 +147,15 @@ if(in_array($action,$ownerActions,true)){
         $cid=max(0,(int)($input['conversation_id']??0));
         if(!vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid))profile_agent_json(false,['error'=>'Conversation not found.'],404);
         $conversation=profile_runtime_conversation_owner($pdo,$cid,$uid)?:throw new RuntimeException('Conversation not found.');
-        profile_agent_json(true,['conversation'=>$conversation,'messages'=>profile_agent_messages($pdo,$cid)]);
+        $messages=profile_agent_messages($pdo,$cid);
+        if(personal_capability_has_v242('profile_chat.access',$user))$messages=vp3_profile_chat_attachment_messages_v1($pdo,$messages);
+        profile_agent_json(true,['conversation'=>$conversation,'messages'=>$messages]);
+    }
+    if($action==='owner_attachment'){
+        $cid=(int)($input['conversation_id']??0);
+        if($method!=='GET')profile_agent_method_required('GET');
+        if(!personal_capability_has_v242('profile_chat.access',$user)||!vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid))profile_agent_json(false,['error'=>'Attachment not found.'],404);
+        vp3_profile_chat_attachment_output_v1($pdo,$uid,$cid,(int)($input['message_id']??0),($input['preview']??null)==='1');
     }
     if($action==='conversation_status'){
         $cid=max(0,(int)($input['conversation_id']??0));$status=(string)($input['status']??'');if(!in_array($status,['open','owner_joined','resolved'],true))throw new VP3ProfileAgentPublicException('VALIDATION_FAILED','Unknown conversation status.',422);
@@ -179,16 +192,25 @@ if(in_array($action,$ownerActions,true)){
             }
             $pdo->commit();
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-        profile_agent_json(true,['conversation_id'=>$cid,'state'=>profile_agent_owner_state_v242($pdo,$user),'messages'=>profile_agent_messages($pdo,$cid)]);
+        $messages=profile_agent_messages($pdo,$cid);
+        if(personal_capability_has_v242('profile_chat.access',$user))$messages=vp3_profile_chat_attachment_messages_v1($pdo,$messages);
+        profile_agent_json(true,['conversation_id'=>$cid,'state'=>profile_agent_owner_state_v242($pdo,$user),'messages'=>$messages]);
     }
 }
 
 $username=profile_username_normalize((string)($input['username']??''));$profile=profile_by_username($pdo,$username);
 if(!$profile||empty($profile['is_active'])||empty($profile['is_public']))profile_agent_json(false,['error'=>'That profile is not available.'],404);
-$publicCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$user,$action==='poll');$owner=(int)$publicCtx['owner_user_id'];
+if($action==='visitor_session'){
+    if($method!=='GET')profile_agent_method_required('GET');
+    if(array_diff(array_keys($input),['action','username']))profile_agent_json(false,['error'=>'Choose a profile to refresh its visitor session.','code'=>'VALIDATION_FAILED'],422);
+}
+$publicCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$user,in_array($action,['poll','attachment'],true));$owner=(int)$publicCtx['owner_user_id'];
+$expected=hash('sha256','profile-widget-v1|'.(string)$publicCtx['conversation_authority']['credential_hash']);
+if($action==='visitor_session'){
+    profile_agent_json(true,['conversation_namespace'=>$expected,'profile_token'=>profile_chat_token($owner)]);
+}
 if(array_key_exists('conversation_namespace',$input)){
     $namespace=$input['conversation_namespace'];
-    $expected=hash('sha256','profile-widget-v1|'.(string)$publicCtx['conversation_authority']['credential_hash']);
     if(!is_string($namespace)||!preg_match('/^[a-f0-9]{64}$/D',$namespace)||!hash_equals($expected,$namespace)){
         throw new VP3ProfileAgentPublicException('PROFILE_SESSION_CHANGED','Your visitor session changed. Refresh this profile before continuing.',409);
     }
@@ -197,11 +219,23 @@ if($method==='POST'&&!profile_chat_token_valid($owner,(string)($input['profile_t
 
 if($action==='state'){
     $cid=max(0,(int)($input['conversation_id']??0));
-    profile_agent_json(true,vp3_profile_agent_public_state_service_v110($pdo,$publicCtx,$cid));
+    $result=vp3_profile_agent_public_state_service_v110($pdo,$publicCtx,$cid);
+    $result['attachment_max_bytes']=vp3_profile_chat_attachment_ready_v1($pdo)?VP3_PROFILE_CHAT_ATTACHMENT_MAX_V1:0;
+    $result['messages']=vp3_profile_chat_attachment_messages_v1($pdo,$result['messages']);
+    profile_agent_json(true,$result);
 }
 if($action==='poll'){
     $cid=max(0,(int)($input['conversation_id']??0));$after=max(0,(int)($input['after_id']??0));
-    profile_agent_json(true,vp3_profile_agent_public_poll_service_v110($pdo,$publicCtx,$cid,$after));
+    $result=vp3_profile_agent_public_poll_service_v110($pdo,$publicCtx,$cid,$after);
+    $result['messages']=vp3_profile_chat_attachment_messages_v1($pdo,$result['messages']);
+    profile_agent_json(true,$result);
+}
+if($action==='attachment'){
+    if($method!=='GET')profile_agent_method_required('GET');
+    $cid=(int)($input['conversation_id']??0);
+    if($cid<1||!isset($input['conversation_namespace']))profile_agent_json(false,['error'=>'Attachment not found.'],404);
+    vp3_profile_agent_public_bound_conversation_v1($pdo,$publicCtx,$cid);
+    vp3_profile_chat_attachment_output_v1($pdo,$owner,$cid,(int)($input['message_id']??0),($input['preview']??null)==='1');
 }
 if($method!=='POST')profile_agent_method_required('POST');
 if($action==='message'){
@@ -210,6 +244,10 @@ if($action==='message'){
     if(array_key_exists('chat_mode',$input))$delivery['chat_mode']=$input['chat_mode'];
     if(array_key_exists('continue_live',$input))$delivery['continue_live']=$input['continue_live'];
     $message=(string)($input['message']??'');
+    if($attachmentUpload){
+        $delivery['attachment']=vp3_profile_chat_attachment_upload_v1($_FILES['profile_attachment']??[],trim($message));
+        profile_agent_json(true,vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,VP3_PROFILE_CHAT_ATTACHMENT_MESSAGE_V1,$cid,$delivery));
+    }
     $result=vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,$message,$cid,$delivery);
     $products=profile_agent_checkout_products_pa5($pdo,$publicCtx['profile'],$message);
     if($products)$result['checkout_products']=$products;

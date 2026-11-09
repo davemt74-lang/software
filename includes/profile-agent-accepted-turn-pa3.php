@@ -75,10 +75,12 @@ function vp3_profile_agent_accepted_context_pa3(PDO $pdo,array $turn,bool $lock=
     $authority=['contract'=>'vp3.profile-conversation-authority.v1','transport'=>'native','owner_user_id'=>$owner,'visitor_user_id'=>$visitorId,'credential_hash'=>$fresh['credential_hash']];
     $conversation=vp3_profile_agent_public_conversation_v390($pdo,(int)$fresh['conversation_id'],$owner,$agentId,(int)$fresh['profile_session_id'],$lock,$authority);
     if(!$conversation||!vp3_profile_agent_agent_may_reply_v390($conversation))vp3_profile_agent_public_unavailable_v1();
-    $q=$pdo->prepare("SELECT id,conversation_id,sender_type,sender_user_id,message FROM profile_agent_messages WHERE id=? AND conversation_id=? LIMIT 1".$suffix);
+    $q=$pdo->prepare("SELECT id,conversation_id,sender_type,sender_user_id,message,context_json FROM profile_agent_messages WHERE id=? AND conversation_id=? LIMIT 1".$suffix);
     $q->execute([(int)$fresh['visitor_message_id'],(int)$fresh['conversation_id']]);$message=$q->fetch(PDO::FETCH_ASSOC);
     if(!$message||$message['sender_type']!=='visitor'||(int)($message['sender_user_id']??0)!==$visitorId
        ||!is_string($message['message'])||!hash_equals($snapshot['message_sha256'],hash('sha256',$message['message'])))vp3_profile_agent_public_unavailable_v1();
+    if($message['context_json']===VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1)vp3_profile_agent_public_unavailable_v1();
+    unset($message['context_json']);
     $ctx=['owner_user_id'=>$owner,'owner_user'=>$ownerUser,'profile'=>$profile,'agent'=>$agent,'agent_id'=>$agentId,
         'visitor'=>$visitor,'session'=>$session,'session_id'=>(int)$fresh['profile_session_id'],'conversation_authority'=>$authority,
         'accepted_visitor_auth_revision'=>$visitorRevision,'accepted_message_sha256'=>$snapshot['message_sha256'],

@@ -140,7 +140,7 @@ function vp3_initiative_tools_evidence_v1(PDO $pdo,array $user,array $binding,?a
     $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));
     $current=vp3_initiative_capabilities_evidence_v1($pdo,$scope,$binding,$now,$selectedRefs,$coverage);
     require_once __DIR__.'/agent-initiative-artist-v1.php';
-    return array_replace($evidence,$current,vp3_initiative_artist_evidence_v1($pdo,$scope,$now,$selectedRefs,$coverage));
+    return array_replace($evidence,$current,vp3_initiative_research_evidence_v1($pdo,$scope,$now,$selectedRefs,$coverage));
 }
 
 /** Tool IDs and readiness come from the same authenticated capability inventory used by Chat. */
@@ -177,11 +177,15 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
     $catalog['missions.prepare']=['id'=>'missions.prepare','capability'=>'missions.analyze','mode'=>'review',
         'ready'=>$ready,'reason'=>$ready?'ready':$missionReason,
         'description'=>'Save an exact source-grounded specialist/research Mission for owner assignment review. Creates a real pending-review Mission; does not start research, grant tools or claim completed work.'];
-    $artistRefs=array_keys(array_filter($evidence,static fn(array $row):bool=>($row['kind']??'')==='artist_interest'));
-    if($artistRefs){
-        $catalog['artist.research']=['id'=>'artist.research','capability'=>'artist.research','mode'=>'read',
-            'ready'=>true,'reason'=>'ready','source_refs'=>$artistRefs,
-            'description'=>'Research the named artist in current public sources and prepare a private, sourced result. Choose only when useful. Set focus to overview, news, shows, merch, or videos.'];
+    foreach(['artist','topic'] as $kind){
+        $refs=array_keys(array_filter($evidence,static fn(array $row):bool=>($row['kind']??'')===$kind.'_interest'));
+        if(!$refs)continue;
+        $id=$kind.'.research';
+        $catalog[$id]=['id'=>$id,'capability'=>$id,'mode'=>'read',
+            'ready'=>true,'reason'=>'ready','source_refs'=>$refs,
+            'description'=>$kind==='artist'
+                ?'Research the named artist in current public sources and prepare a private, sourced result. Choose only when useful. Set focus to overview, news, shows, merch, or videos.'
+                :'Research the exact topic from the owner’s YouTube search using public sources. Use only that source ref. Choose it only when a reliable explanation, practical next step, or new development would help. Do not assume a lasting preference from one search.'];
     }
     foreach(['product','screen','mission','marketing'] as $tool){
         $refs=[];
@@ -309,22 +313,23 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
             vp3_initiative_checkin_current_v1($pdo,$scope,$output);
             return;
         }
-        if($tool==='artist.research'){
+        if(in_array($tool,['artist.research','topic.research'],true)){
             require_once __DIR__.'/agent-initiative-artist-v1.php';
             require_once __DIR__.'/agent-artist-research-v1.php';
+            $kind=$tool==='artist.research'?'artist':'topic';
             $owner=(int)$scope['user']['id'];
             if(!agent_connection_youtube_enabled_v1()||!agent_connection_youtube_consent_v1($pdo,$owner)
-                ||!vp3_youtube_artist_research_enabled_v1($pdo,$owner)){
-                throw new RuntimeException('Background artist research was turned off.',403);
+                ||!vp3_youtube_research_enabled_v1($pdo,$owner,$kind)){
+                throw new RuntimeException('Background '.$kind.' research was turned off.',403);
             }
             $primary=$goal['primary']??'';
             $now=time();
             $checkedAt=strtotime((string)($output['checked_at']??''));
-            if(($output['type']??null)!=='initiative_artist_research'||($output['source_ref']??null)!==$primary
+            if(($output['type']??null)!=='initiative_'.$kind.'_research'||($output['source_ref']??null)!==$primary
                 ||($output['source_revision']??null)!==($goal['sources'][$primary]??null)
                 ||$checkedAt===false||$checkedAt>$now||$checkedAt<=$now-86400
-                ||!vp3_artist_research_result_valid_v1(vp3_initiative_artist_result_v1($toolResult))){
-                throw new RuntimeException('Artist research evidence changed.',409);
+                ||!vp3_public_research_result_valid_v1(vp3_initiative_research_result_v1($toolResult),$kind)){
+                throw new RuntimeException('Public research evidence changed.',409);
             }
             return;
         }
@@ -399,21 +404,23 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
             vp3_initiative_checkin_current_v1($pdo,$scope,$result['output']);
             return $result;
         }
-        if($tool==='artist.research'){
+        if(in_array($tool,['artist.research','topic.research'],true)){
             require_once __DIR__.'/agent-artist-research-v1.php';
+            $kind=$tool==='artist.research'?'artist':'topic';
             $primary=$job['primary'];$source=$evidence[$primary];$focus=trim($job['focus']);
-            $plan=['mode'=>'direct','artist'=>$source['title'],'location'=>'',
+            $plan=['mode'=>'direct',$kind=>$source['title']];
+            if($kind==='artist')$plan+=['location'=>'',
                 'focus'=>in_array($focus,['news','shows','merch','videos'],true)?$focus:'overview'];
             $authorize=static fn()=>vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
-            $research=vp3_artist_research_collect_v1($pdo,$scope['user'],$scope['agent_id'],$plan,$authorize,
+            $research=vp3_public_research_collect_v1($pdo,$scope['user'],$scope['agent_id'],$plan,$authorize,
                 $model?['model'=>$model]:null);
             $authorize();
-            if(!in_array($research['status']??null,['read_complete','no_matches'],true)||!vp3_artist_research_result_valid_v1($research)){
-                throw new RuntimeException('Public artist research could not be verified.',503);
+            if(!in_array($research['status']??null,['read_complete','no_matches'],true)||!vp3_public_research_result_valid_v1($research,$kind)){
+                throw new RuntimeException('Public research could not be verified.',503);
             }
             return ['draft'=>$research['answer'],'sources'=>$research['sources'],
-                'tool_receipt'=>vp3_tool_receipt_v1('artist.research','search',$research['status'],'',0,count($research['sources'])),
-                'output'=>['type'=>'initiative_artist_research','status'=>$research['status'],'reason'=>$research['reason'],
+                'tool_receipt'=>vp3_tool_receipt_v1($tool,'search',$research['status'],'',0,count($research['sources'])),
+                'output'=>['type'=>'initiative_'.$kind.'_research','status'=>$research['status'],'reason'=>$research['reason'],
                     'checked_at'=>$research['checked_at'],'source_ref'=>$primary,'source_revision'=>$source['revision']]];
         }
         if(in_array($tool,['brain.read','knowledge.search'],true)){

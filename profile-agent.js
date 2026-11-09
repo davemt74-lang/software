@@ -13,8 +13,44 @@
   const ownerLabel=shell.querySelector('[data-profile-owner-name]');
   const endLiveButton=shell.querySelector('[data-profile-end-live]');
   const disclosure=shell.querySelector('[data-profile-agent-disclosure]');
-  const storageKey=`stonefellow-profile-agent:v1:${cfg.username}:${String(cfg.conversationNamespace||'unbound')}`;
+  const addImage=shell.querySelector('[data-profile-chat-add-image]');
+  const addFile=shell.querySelector('[data-profile-chat-add-file]');
+  const attachmentHost=shell.querySelector('[data-profile-chat-attachments]');
+  let attachmentMaxBytes=0,queuedAttachment=null;
+  const presence=shell.querySelector('[data-profile-agent-presence]');
+  const contactStatus=shell.querySelector('[data-profile-chat-contact-status]');
+  const settings={panel:shell.querySelector('[data-profile-chat-settings]'),button:shell.querySelector('[data-profile-chat-settings-toggle]')};
+  const chatOptions={panel:shell.querySelector('[data-profile-chat-options]'),button:shell.querySelector('[data-profile-chat-options-toggle]')};
+  let openPanel=null;
+  function showPanel(next,focus=true){
+    const previous=openPanel;
+    if(next===previous)return;
+    openPanel=next;
+    for(const entry of [settings,chatOptions]){
+      if(entry.panel)entry.panel.hidden=entry!==next;
+      entry.button?.setAttribute('aria-expanded',String(entry===next));
+    }
+    if(thread){thread.hidden=Boolean(next);if(!next)thread.scrollTop=thread.scrollHeight;}
+    if(focus){if(next)next.panel.querySelector('h2')?.focus();else previous?.button?.focus();}
+  }
+  for(const entry of [settings,chatOptions]){
+    if(entry.panel)entry.button?.addEventListener('click',()=>showPanel(openPanel===entry?null:entry));
+  }
+  shell.querySelector('[data-profile-chat-settings-jump]')?.addEventListener('click',()=>{
+    showPanel(settings);if(liveChoice&&!liveChoice.disabled)liveChoice.focus();
+  });
+  if(settings.panel){
+    shell.addEventListener('keydown',event=>{
+      if(event.key!=='Escape'||!openPanel)return;
+      event.stopPropagation();showPanel(null);
+    });
+    window.addEventListener('vp3:profile-agent-visibility',event=>{if(!event.detail?.open)showPanel(null,false);});
+  }
+  if(!thread||!form||!textarea||!submit||!status||shell.querySelector('[data-profile-chat-preview]'))return;
+  const conversationStorageKey=()=>`stonefellow-profile-agent:v1:${cfg.username}:${String(cfg.conversationNamespace||'unbound')}`;
+  let storageKey=conversationStorageKey();
   let conversationId=cfg.conversationNamespace?Math.max(0,Number(localStorage.getItem(storageKey)||0)):0;
+  const hadConversationAtStartup=conversationId>0;
   let conversationStatus='open';
   let lastMessageId=0;
   let pollTimer=0,presenceTimer=0,choiceTimer=0,countdownTimer=0;
@@ -24,8 +60,15 @@
   let checkoutSurface=null,checkoutHost=null,checkoutCreating=false,checkoutTimer=0;
   let speechPreference=null,speechChoice=null,speechNotice=null,speechBusy=false,speechSequence=0,speechAttempt=null;
   let chat=null,choiceTouched=false,endBusy=false,presenceBusy=false,uncertainEnd=null;
-  const retryStorageKey=storageKey+':pending';
-  const originalSubmitLabel=submit?.textContent||'Send';
+  let retryStorageKey=storageKey+':pending';
+  let initialStatePending=true,sessionRefreshing=false,checkoutReturnSeen=false;
+  const submitLabel=submit.querySelector('[data-profile-send-label]')||submit;
+  const originalSubmitLabel=submitLabel.textContent||'Send';
+  function labelSubmit(label){submitLabel.textContent=label;if(submitLabel!==submit)submit.title=label;}
+  function setNotice(message,quiet=false){
+    status.dataset.quiet=String(quiet);
+    if(status.textContent!==message)status.textContent=message;
+  }
   let pendingSend=null;
   try{
     const saved=JSON.parse(sessionStorage.getItem(retryStorageKey)||'null');
@@ -34,7 +77,7 @@
        &&(saved.chat_mode===undefined||['auto','agent','live'].includes(saved.chat_mode))
        &&(saved.continue_live===undefined||(typeof saved.continue_live==='boolean'&&(!saved.continue_live||saved.chat_mode==='live'))))pendingSend=saved;
   }catch(_error){}
-  if(pendingSend&&textarea&&submit){textarea.value=pendingSend.message;submit.textContent='Retry message';}
+  if(pendingSend){textarea.value=pendingSend.message;labelSubmit('Retry message');}
 
   // Preserve the native scheduling CTA contract, but expose it only when the
   // canonical Profile renderer has a Booking tab backed by public event types.
@@ -282,13 +325,30 @@
   document.addEventListener('vp3:webmcp-confirmation-started',event=>confirmationStarted(event.detail));
   document.addEventListener('vp3:webmcp-confirmation-result',event=>confirmationResult(event.detail));
 
-  function messageNode(type,text,id=0){
+  function attachmentLink(file,id){
+    if(!file||typeof file.name!=='string'||!file.name||!Number.isSafeInteger(id)||id<1||!conversationId||!cfg.conversationNamespace)return null;
+    const url=new URL(cfg.endpoint,window.location.href);
+    if(url.origin!==window.location.origin)return null;
+    url.search=new URLSearchParams({action:'attachment',username:cfg.username,conversation_id:conversationId,conversation_namespace:cfg.conversationNamespace,message_id:id});
+    const link=document.createElement('a');link.className='profile-agent-message-attachment';
+    link.href=url.href;link.download=file.name;link.textContent='Download '+file.name;
+    if(['image/jpeg','image/png','image/webp','image/gif'].includes(file.mime)){
+      const image=document.createElement('img');image.alt='';image.loading='lazy';
+      url.searchParams.set('preview','1');image.src=url.href;
+      image.addEventListener('error',()=>image.remove(),{once:true});
+      link.prepend(image);
+    }
+    return link;
+  }
+  function messageNode(type,text,id=0,attachment=null){
     const div=document.createElement('div');div.className=`profile-agent-message ${type}`;div.dataset.messageId=String(id||0);
     const speaker=document.createElement('strong');speaker.className='profile-agent-message-speaker';
     speaker.textContent=type==='visitor'?'You':type==='owner'?(chat?.owner_name||cfg.ownerName||'Profile owner'):(cfg.agentName||'Profile Agent');
     const body=document.createElement('span');body.className='profile-agent-message-body';
     if(type==='agent'||type==='owner')appendSafeLinkedText(body,text);else body.textContent=String(text||'');
     div.append(speaker,body);
+    const link=type==='visitor'?attachmentLink(attachment,id):null;
+    if(link)div.appendChild(link);
     return div;
   }
   function promotionNode(promotion){
@@ -327,10 +387,10 @@
       if(!active.has(card.dataset.profileProductPromotion))card.remove();
     });
   }
-  function appendMessage(type,text,id=0,promotion=null){
-    if(!String(text||'').trim())return;
+  function appendMessage(type,text,id=0,promotion=null,attachment=null){
+    if(!String(text||'').trim()&&!attachment)return;
     if(id>0&&thread.querySelector(`[data-message-id="${id}"]`)){lastMessageId=Math.max(lastMessageId,id);return;}
-    const node=messageNode(type,text,id);
+    const node=messageNode(type,text,id,attachment);
     const card=type==='agent'?promotionNode(promotion):null;
     if(card)node.append(card);
     const host=checkoutHost?.parentNode===thread?checkoutHost:callHost?.parentNode===thread?callHost:null;
@@ -344,13 +404,57 @@
     if(callHost?.parentNode===thread)callHost.remove();
     if(checkoutHost?.parentNode===thread)checkoutHost.remove();
     thread.innerHTML='';lastMessageId=0;
-    (messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion));
+    (messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion,m.attachment));
     if(!messages?.length&&cfg.greeting)appendMessage('agent',cfg.greeting);
     if(checkoutHost)thread.appendChild(checkoutHost);
     if(callHost)thread.appendChild(callHost);
   }
   function activeHandoff(){return chat?.media_call_active===true||Boolean(chat&&['waiting','accepted'].includes(chat.live_status))||Boolean(handoff&&['awaiting_delivery','awaiting_owner','agent_ready','agent_running'].includes(String(handoff.dispatch_state||handoff.state||'')));}
   function dispatchPaused(){return handoff?.dispatch_execution_paused===true||(handoff?.dispatch_execution_paused===undefined&&Number(handoff?.dispatch_turn_id||handoff?.turn_id||0)===Number(handoff?.turn_id||0)&&handoff?.execution_paused===true);}
+  function ownerAttachmentAvailable(){
+    return attachmentMaxBytes>0&&conversationId>0&&(
+      chat?.media_call_active===true||
+      (chat?.live_status==='accepted'&&chat?.live_text_available===true)||
+      (conversationStatus==='owner_joined'&&chat?.mode==='auto'&&liveChoice?.checked!==false)
+    );
+  }
+  function setQueuedAttachment(file){
+    queuedAttachment=file;
+    if(!attachmentHost)return;
+    attachmentHost.replaceChildren();
+    attachmentHost.hidden=!file;
+    if(!file)return;
+    const label=document.createElement('span');label.textContent=file.name;
+    const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';
+    remove.setAttribute('aria-label','Remove '+file.name);
+    remove.addEventListener('click',()=>setQueuedAttachment(null));
+    attachmentHost.append(label,remove);
+    updateAttachmentControls();
+  }
+  function updateAttachmentControls(){
+    const available=ownerAttachmentAvailable()&&alive&&!sessionChanged;
+    for(const [button,label] of [[addImage,'Add image'],[addFile,'Add file']]){
+      if(!button)continue;
+      button.disabled=!available||sending||endBusy||Boolean(pendingSend);
+      button.title=available?label:'Available when you’re chatting with the profile owner';
+    }
+    const remove=attachmentHost?.querySelector('button');
+    if(remove)remove.disabled=sending||Boolean(pendingSend);
+  }
+  function chooseAttachment(accept){
+    if(!ownerAttachmentAvailable()||sending||pendingSend||sessionChanged)return;
+    const selectedConversation=conversationId;
+    const input=document.createElement('input');input.type='file';input.accept=accept;
+    input.addEventListener('change',()=>{
+      const file=input.files?.[0];
+      if(!file||!alive||sessionChanged||conversationId!==selectedConversation||!ownerAttachmentAvailable()||sending||pendingSend)return;
+      if(file.size<1||file.size>attachmentMaxBytes){setNotice('Choose a file between 1 byte and 2 MB.');return;}
+      formNotice='';setQueuedAttachment(file);setNotice('');
+    },{once:true});
+    input.click();
+  }
+  addImage?.addEventListener('click',()=>chooseAttachment('.jpg,.jpeg,.png,.webp,.gif'));
+  addFile?.addEventListener('click',()=>chooseAttachment('.pdf,.txt,.csv'));
   function normalizeChat(value){
     if(!value||value.contract!=='vp3.profile-chat-choice.v1'||typeof value.owner_name!=='string'||value.owner_name.length>240
        ||!['auto','agent','live'].includes(value.mode)||!['none','waiting','accepted','declined','expired','unavailable','ended'].includes(value.live_status)
@@ -372,21 +476,38 @@
       else if(!ownerContinuation&&!chat?.live_text_available)liveChoice.checked=false;
       liveChoice.disabled=!alive||sessionChanged||sending||endBusy||Boolean(pendingSend)||activeMedia||activeLive||(!ownerContinuation&&chat?.live_text_available!==true);
     }
-    if(liveAvailability){
-      if(activeMedia)liveAvailability.textContent=`Your direct call with ${owner} has been accepted. Use the call controls to end it.`;
-      else if(ownerContinuation)liveAvailability.textContent=liveChoice?.checked===false?'Your next message will go to the Profile Agent.':`You’re continuing with ${owner}. Uncheck live chat before sending to choose the Profile Agent.`;
-      else if(activeLive)liveAvailability.textContent=chat.live_status==='accepted'?`Live text chat with ${owner}. Automatic Agent replies are paused.`:`Live chat requested from ${owner}. You can cancel while waiting.`;
-      else liveAvailability.textContent=chat?.live_text_available?`${owner} is available. Select live chat, then send a message to request it.`:chat?`${owner} is unavailable for live chat. You can chat with the Agent.`:'Checking live chat availability…';
+    if(presence){
+      const joined=chat?.live_status==='accepted'||conversationStatus==='owner_joined';
+      const online=activeMedia||joined||chat?.live_text_available;
+      let label='Checking live availability…';
+      if(sessionChanged)label='Session expired';
+      else if(activeMedia)label=`On a call with ${owner}`;
+      else if(ownerContinuation&&liveChoice?.checked===false)label='Next message goes to the Profile Agent';
+      else if(joined)label=`Live with ${owner}`;
+      else if(chat?.live_status==='waiting')label=`Waiting for ${owner}`;
+      else if(liveChoice?.checked)label=`Next message requests ${owner}`;
+      else if(chat)label=online?`${owner} online for live chat`:`${owner} unavailable for live chat`;
+      presence.dataset.state=sessionChanged?'unknown':online?'online':chat?'offline':'unknown';
+      if(presence.textContent!==label)presence.textContent=label;
     }
+    let availability='Checking live chat availability…';
+    if(sessionChanged)availability='Refresh this profile to check live chat availability.';
+    else if(activeMedia)availability=`Your direct call with ${owner} has been accepted. Use the call controls to end it.`;
+    else if(ownerContinuation)availability=liveChoice?.checked===false?'Your next message will go to the Profile Agent.':`You’re continuing with ${owner}. Uncheck live chat before sending to choose the Profile Agent.`;
+    else if(activeLive)availability=chat.live_status==='accepted'?`Live text chat with ${owner}. Automatic Agent replies are paused.`:`Live chat requested from ${owner}. You can cancel while waiting.`;
+    else if(liveChoice?.checked)availability=`Your next message will request a live chat with ${owner}.`;
+    else if(chat)availability=chat.live_text_available?`${owner} is available. Select live chat, then send a message to request it.`:`${owner} is unavailable for live chat. You can chat with the Agent.`;
+    for(const item of [liveAvailability,contactStatus])if(item&&item.textContent!==availability)item.textContent=availability;
     if(endLiveButton){
       endLiveButton.hidden=activeMedia||!chat?.can_end_live_chat||!activeLive;
       endLiveButton.disabled=activeMedia||!alive||sessionChanged||sending||endBusy||Boolean(pendingSend);
       endLiveButton.textContent=endBusy?'Returning to Agent…':chat?.live_status==='waiting'?'Cancel live request':'End live chat · return to Agent';
     }
-    if(disclosure)disclosure.textContent=activeMedia?`This conversation is reserved for your direct call with ${owner}. The Profile Agent is paused.`:chat?.live_status==='accepted'||conversationStatus==='owner_joined'?`You are chatting with ${owner}. The Profile Agent is paused.`:'AI representative — answers use only information this profile has approved. The owner joins after accepting a live chat or taking over.';
+    if(disclosure)disclosure.textContent=activeMedia?`This conversation is reserved for your direct call with ${owner}. The Profile Agent is paused.`:chat?.live_status==='accepted'||conversationStatus==='owner_joined'?`You are chatting with ${owner}. The Profile Agent is paused.`:'Profile Agent replies use information approved for this profile. The owner can accept a request to chat directly.';
     for(const message of thread.querySelectorAll('.profile-agent-message.owner')){
       const label=message.querySelector('.profile-agent-message-speaker');if(label)label.textContent=owner;
     }
+    updateAttachmentControls();
   }
   function applyChat(value){
     if(value===undefined)return;
@@ -402,24 +523,24 @@
   function showHandoffStatus(){
     if(sessionChanged||sending)return;
     updateChatChoice();
-    if(formNotice){status.textContent=formNotice;return;}
-    if(pendingSend){status.textContent='Your message may already be saved. Retry this same message to check its result.';return;}
+    if(formNotice){setNotice(formNotice);return;}
+    if(pendingSend){setNotice('Your message may already be saved. Retry this same message to check its result.');return;}
     const state=String(handoff?.state||'');
-    if(chat?.media_call_active===true){status.textContent=`The Profile Agent is paused for your direct call. You can keep messaging ${chat.owner_name} here.`;return;}
-    if(chat?.live_status==='accepted'){status.textContent=`You’re chatting live with ${chat.owner_name}.`;return;}
-    if(conversationStatus==='resolved')status.textContent='This conversation was resolved. Your next message will reopen it.';
-    else if(state==='owner_claimed'||conversationStatus==='owner_joined')status.textContent='The profile owner has joined this conversation.';
-    else if(state==='awaiting_delivery')status.textContent='Checking whether the profile owner is available…';
+    if(chat?.media_call_active===true){setNotice(`The Profile Agent is paused for your direct call. You can keep messaging ${chat.owner_name} here.`,true);return;}
+    if(chat?.live_status==='accepted'){setNotice(`You’re chatting live with ${chat.owner_name}.`,true);return;}
+    if(conversationStatus==='resolved')setNotice('This conversation was resolved. Your next message will reopen it.',true);
+    else if(state==='owner_claimed'||conversationStatus==='owner_joined')setNotice('The profile owner has joined this conversation.',true);
+    else if(state==='awaiting_delivery')setNotice('Checking whether the profile owner is available…',true);
     else if(state==='awaiting_owner'){
       const deadline=Number(handoff.pickup_deadline_ms||handoff.deadline_ms||0);
       const remaining=Math.max(0,Math.ceil((deadline-(Date.now()+clockOffset))/1000));
-      status.textContent=remaining>0?`Waiting for the profile owner · ${remaining} seconds`:'The Profile Agent will respond shortly…';
+      setNotice(remaining>0?`Waiting for the profile owner · ${remaining} seconds`:'The Profile Agent will respond shortly…',true);
     }else if(state==='agent_ready'||state==='agent_running'){
       const outcome=({declined:'The owner declined the live chat. ',expired:'The live request timed out. ',unavailable:'Live chat is unavailable. ',ended:'The live chat ended. '})[chat?.live_status]||'';
-      status.textContent=outcome+(handoff.execution_paused===true||dispatchPaused()?`${cfg.agentName||'Profile Agent'} is paused. Waiting for the profile owner to resume.`:`${cfg.agentName||'Profile Agent'} is preparing a reply…`);
+      setNotice(outcome+(handoff.execution_paused===true||dispatchPaused()?`${cfg.agentName||'Profile Agent'} is paused. Waiting for the profile owner to resume.`:`${cfg.agentName||'Profile Agent'} is preparing a reply…`),true);
     }
-    else if(state==='blocked')status.textContent='The Profile Agent could not complete this reply. The profile owner can review the conversation.';
-    else if(!pendingSend)status.textContent=({declined:'The owner declined the live chat. You can continue with the Agent.',expired:'The live request timed out. You can continue with the Agent.',unavailable:'Live chat is unavailable. You can continue with the Agent.',ended:'The live chat ended. You can continue with the Agent.'})[chat?.live_status]||'';
+    else if(state==='blocked')setNotice('The Profile Agent could not complete this reply. The profile owner can review the conversation.');
+    else setNotice(({declined:'The owner declined the live chat. You can continue with the Agent.',expired:'The live request timed out. You can continue with the Agent.',unavailable:'Live chat is unavailable. You can continue with the Agent.',ended:'The live chat ended. You can continue with the Agent.'})[chat?.live_status]||'',true);
   }
   function applyConversationState(conversation,nextHandoff=undefined,nextChat=undefined){
     if(handoff&&nextHandoff!==undefined){
@@ -439,24 +560,58 @@
     showHandoffStatus();
   }
   function resetConversation(){
+    if(queuedAttachment||pendingSend?.upload)textarea.value='';
+    setQueuedAttachment(null);
     callSurface?.invalidate('The visitor conversation changed.');checkoutSurface?.reset();callContextEpoch++;
     requestEpoch++;conversationId=0;conversationStatus='open';lastMessageId=0;handoff=null;chat=null;choiceTouched=false;uncertainEnd=null;localStorage.removeItem(storageKey);clearTimeout(pollTimer);pollTimer=0;updateChatChoice();
   }
-  function stopChangedSession(){
-    sessionChanged=true;pendingSend=null;try{sessionStorage.removeItem(retryStorageKey);}catch(_error){}
-    resetConversation();renderMessages([]);textarea.disabled=true;submit.disabled=true;
-    if(speechChoice)speechChoice.disabled=true;
-    status.textContent='Your visitor session changed. Refresh this profile before continuing.';
+  function invalidVisitorSession(error){
+    return error.status===419||['PROFILE_SESSION_CHANGED','OWNER_VISITOR_PREVIEW_REQUIRED'].includes(error.code);
   }
-  async function request(action,payload={},method='POST',endpoint=cfg.endpoint){
+  function stopChangedSession(){
+    if(sessionChanged)return;
+    sessionChanged=true;pendingSend=null;try{sessionStorage.removeItem(retryStorageKey);}catch(_error){}
+    resetConversation();renderMessages([]);textarea.value='';textarea.disabled=true;submit.disabled=true;
+    if(speechChoice)speechChoice.disabled=true;
+    setNotice('');
+    const notice=document.createElement('span');
+    notice.className='profile-agent-visually-hidden';notice.textContent='Your visitor session changed.';
+    const reload=document.createElement('button');
+    reload.type='button';reload.textContent='Reload chat';
+    reload.addEventListener('click',()=>window.location.reload());
+    status.append(notice,reload);
+  }
+  function canRefreshInitialSession(){
+    if(!initialStatePending||!alive||sessionChanged||hadConversationAtStartup||conversationId||pendingSend||sending||textarea.value||checkoutReturnSeen)return false;
+    try{return !sessionStorage.getItem(storageKey+':checkout-prepare');}catch(_error){return false;}
+  }
+  async function refreshInitialSession(){
+    // A stale page can rebind only before it has any visitor content to carry across identities.
+    if(sessionRefreshing||!canRefreshInitialSession())return false;
+    sessionRefreshing=true;
+    textarea.disabled=true;submit.disabled=true;
+    const binding=await request('visitor_session',{},'GET');
+    if(!canRefreshInitialSession()||!/^[a-f0-9]{64}$/.test(binding.conversation_namespace||'')||!/^[a-f0-9]{48}$/.test(binding.profile_token||''))return false;
+    requestEpoch++;callContextEpoch++;
+    cfg.conversationNamespace=binding.conversation_namespace;
+    cfg.profileToken=binding.profile_token;
+    storageKey=conversationStorageKey();
+    retryStorageKey=storageKey+':pending';
+    return true;
+  }
+  async function request(action,payload={},method='POST',endpoint=cfg.endpoint,upload=null){
     const independentRequest=Boolean((cfg.callEndpoint&&endpoint===cfg.callEndpoint)||(cfg.speechEndpoint&&endpoint===cfg.speechEndpoint)||(cfg.checkoutEndpoint&&endpoint===cfg.checkoutEndpoint));
     const epoch=independentRequest?callContextEpoch:requestEpoch;
     const identity=`${cfg.username}|${cfg.conversationNamespace||''}|${cfg.profileToken||''}`;
     const options={method,credentials:'same-origin',cache:'no-store'};
     let url=endpoint;
-    const body={action,username:cfg.username,conversation_id:conversationId,...(cfg.conversationNamespace?{conversation_namespace:cfg.conversationNamespace}:{}),...payload};
+    const body=action==='visitor_session'?{action,username:cfg.username}:{action,username:cfg.username,conversation_id:conversationId,...(cfg.conversationNamespace?{conversation_namespace:cfg.conversationNamespace}:{}),...payload};
     if(method==='GET'){
       const q=new URLSearchParams(body);url+=`?${q}`;
+    }else if(upload){
+      options.body=new FormData();
+      options.body.append('attachment_payload',JSON.stringify({...body,profile_token:cfg.profileToken}));
+      options.body.append('profile_attachment',upload,upload.name);
     }else{
       options.headers={'Content-Type':'application/json'};
       options.body=JSON.stringify({...body,profile_token:cfg.profileToken});
@@ -469,7 +624,7 @@
     const read=async()=>{const response=await fetch(url,options);return [response,await response.json().catch(()=>null)];};
     try{
       [r,data]=typeof window.setTimeout==='function'?await Promise.race([read(),new Promise((_,reject)=>{
-        timer=window.setTimeout(()=>{controller?.abort();reject(new Error('Profile chat connection timed out.'));},12000);
+        timer=window.setTimeout(()=>{controller?.abort();reject(new Error('Profile chat connection timed out.'));},upload?45000:12000);
       })]):await read();
     }finally{if(timer)clearTimeout(timer);}
     if(alive&&identity!==`${cfg.username}|${cfg.conversationNamespace||''}|${cfg.profileToken||''}`)stopChangedSession();
@@ -484,6 +639,7 @@
         const profileUrl=new URL(window.location.href);
         const returnIds=profileUrl.searchParams.getAll('profile_checkout');
         if(returnIds.length){
+          checkoutReturnSeen=true;
           profileUrl.searchParams.delete('profile_checkout');
           window.history.replaceState(window.history.state,'',profileUrl);
           const returned=Number(returnIds[0]);
@@ -493,28 +649,34 @@
               if(candidate.conversation?.conversation_id===returned){
                 if(conversationId!==returned)checkoutSurface.reset();
                 if(pendingSend&&pendingSend.conversation_id!==returned){
-                  savePending(null);submit.textContent=originalSubmitLabel;
+                  savePending(null);labelSubmit(originalSubmitLabel);
                   formNotice='Review your previous draft before sending it in this conversation.';
                 }
                 conversationId=returned;localStorage.setItem(storageKey,String(returned));data=candidate;
                 if(shell.hidden)document.querySelector('[data-open-profile-agent]')?.click();
               }
-            }catch(error){if(error.stale||error.code==='PROFILE_SESSION_CHANGED'||error.status===419)throw error;}
+            }catch(error){if(error.stale||invalidVisitorSession(error))throw error;}
           }
         }
       }
       data??=await request('state',{},'GET');
       if(data.agent?.name)cfg.agentName=data.agent.name;
       if(Object.prototype.hasOwnProperty.call(data.agent||{},'greeting'))cfg.greeting=data.agent.greeting||'';
+      attachmentMaxBytes=Number.isSafeInteger(data.attachment_max_bytes)?Math.max(0,data.attachment_max_bytes):0;
       renderMessages(data.messages||[]);refreshPromotionCards(data.active_promotion_keys);applyConversationState(data.conversation||null,data.handoff,data.chat);
       if(conversationId){startPolling();void checkoutSurface?.refresh();}
       if(pendingSend&&!sessionChanged)void sendSaved(pendingSend);
       else void dispatchIfDue();
     }catch(error){
       if(error.stale)return;
-      if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419){stopChangedSession();return;}
-    if(conversationId&&error.status===404){resetConversation();renderMessages([]);status.textContent='';return loadState();}
-      formNotice=error.message;status.textContent=formNotice;
+      if(invalidVisitorSession(error)){
+        if(error.code!=='OWNER_VISITOR_PREVIEW_REQUIRED'){
+          try{if(await refreshInitialSession())return loadState();}catch(refreshError){if(refreshError.stale)return;}
+        }
+        stopChangedSession();return;
+      }
+      if(conversationId&&error.status===404){resetConversation();renderMessages([]);setNotice('');return loadState();}
+      formNotice=error.message;setNotice(formNotice);
     }
   }
   async function poll(){
@@ -522,12 +684,12 @@
     pollBusy=true;
     try{
       const data=await request('poll',{after_id:lastMessageId},'GET');
-      (data.messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion));
+      (data.messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion,m.attachment));
       refreshPromotionCards(data.active_promotion_keys);
       applyConversationState(data.conversation||null,data.handoff,data.chat);
       void dispatchIfDue();
     }catch(error){
-      if(!error.stale&&(error.code==='PROFILE_SESSION_CHANGED'||error.status===419)){stopChangedSession();return;}
+      if(!error.stale&&invalidVisitorSession(error)){stopChangedSession();return;}
       if(!error.stale&&error.status===404){pendingSend=null;try{sessionStorage.removeItem(retryStorageKey);}catch(_error){}resetConversation();renderMessages([]);formNotice='The Profile Agent changed. Start a new conversation after refreshing this profile.';status.textContent=formNotice;}
     }finally{pollBusy=false;if(alive&&!sessionChanged&&conversationId)startPolling();}
   }
@@ -543,44 +705,50 @@
     if(lastDispatchTurn===turnId&&Date.now()-lastDispatchAt<1200)return;
     const cid=conversationId;dispatchBusy=true;lastDispatchAt=Date.now();lastDispatchTurn=turnId;
     try{await request('dispatch',{conversation_id:cid,turn_id:turnId});}
-    catch(error){if(!error.stale&&(error.code==='PROFILE_SESSION_CHANGED'||error.status===419))stopChangedSession();}
+    catch(error){if(!error.stale&&invalidVisitorSession(error))stopChangedSession();}
     finally{dispatchBusy=false;if(alive&&!sessionChanged&&cid===conversationId)void poll();}
   }
   async function heartbeat(){
-    if(document.visibilityState!=='visible'||sessionChanged||sending||endBusy||presenceBusy||!alive)return;
+    if(initialStatePending||document.visibilityState!=='visible'||sessionChanged||sending||endBusy||presenceBusy||!alive)return;
     presenceBusy=true;
     try{const data=await request('state',{},'GET');applyConversationState(data.conversation||null,data.handoff,data.chat);void dispatchIfDue();}
-    catch(error){if(!error.stale&&(error.code==='PROFILE_SESSION_CHANGED'||error.status===419))stopChangedSession();}
+    catch(error){if(!error.stale&&invalidVisitorSession(error))stopChangedSession();}
     finally{presenceBusy=false;}
   }
-  function savePending(value){pendingSend=value;try{if(value)sessionStorage.setItem(retryStorageKey,JSON.stringify(value));else sessionStorage.removeItem(retryStorageKey);}catch(_error){}}
+  function savePending(value){pendingSend=value;try{if(value&&!value.upload)sessionStorage.setItem(retryStorageKey,JSON.stringify(value));else sessionStorage.removeItem(retryStorageKey);}catch(_error){}}
   function messageRequestId(){const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');}
   async function sendSaved(saved){
     if(sending||checkoutCreating||sessionChanged||!alive)return;
-    requestEpoch++;sending=true;formNotice='';uncertainEnd=null;savePending(saved);updateChatChoice();let accepted=false;
+    showPanel(null,false);requestEpoch++;sending=true;formNotice='';uncertainEnd=null;savePending(saved);updateChatChoice();let accepted=false;
     let optimistic=thread.querySelector(`[data-client-request-id="${saved.client_request_id}"]`);
-    if(!optimistic){optimistic=appendMessage('visitor',saved.message);if(optimistic)optimistic.dataset.clientRequestId=saved.client_request_id;}
-    textarea.value='';textarea.disabled=true;submit.disabled=true;status.textContent='Saving your message…';
+    if(!optimistic&&!saved.upload){optimistic=appendMessage('visitor',saved.message);if(optimistic)optimistic.dataset.clientRequestId=saved.client_request_id;}
+    textarea.value='';textarea.disabled=true;submit.disabled=true;setNotice('Saving your message…',true);
     try{
-      const data=await request('message',saved);
+      const {upload,...intent}=saved;
+      const data=await request('message',intent,'POST',cfg.endpoint,upload);
       if(data.client_request_id!==saved.client_request_id||!Number.isSafeInteger(Number(data.visitor_message_id))||Number(data.visitor_message_id)<1)throw new Error('The saved message could not be verified. Retry the same message.');
+      if(upload&&!data.attachment)throw new Error('The saved attachment could not be verified. Retry the same message.');
       conversationId=Number(data.conversation_id||0);if(conversationId)localStorage.setItem(storageKey,String(conversationId));
       const existing=thread.querySelector(`[data-message-id="${Number(data.visitor_message_id)}"]`);
       if(optimistic){if(existing&&existing!==optimistic)optimistic.remove();else optimistic.dataset.messageId=String(data.visitor_message_id);}
+      if(upload){
+        appendMessage('visitor',saved.message,Number(data.visitor_message_id),null,data.attachment);
+        setQueuedAttachment(null);
+      }
       savePending(null);accepted=true;applyConversationState(data.conversation||null,data.handoff,data.chat);startPolling();
       checkoutSurface?.showOffers(data.checkout_products);
       if(saved.conversation_id===0)void checkoutSurface?.refresh();
     }catch(error){
       if(error.stale)return;
-      if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419){stopChangedSession();return;}
-      if(error.status===404){savePending(null);resetConversation();renderMessages([]);formNotice='The Profile Agent changed. Start a new conversation after refreshing this profile.';status.textContent=formNotice;}
+      if(invalidVisitorSession(error)){stopChangedSession();return;}
+      if(error.status===404){savePending(null);resetConversation();renderMessages([]);formNotice='The Profile Agent changed. Start a new conversation after refreshing this profile.';setNotice(formNotice);}
       else if([409,422,429].includes(error.status)){
-        savePending(null);optimistic?.remove();textarea.value=saved.message;formNotice=error.message;status.textContent=formNotice;
-      }else{textarea.value=saved.message;status.textContent='Your message may already be saved. Retry this same message to check its result.';}
+        savePending(null);optimistic?.remove();textarea.value=saved.message;formNotice=error.message;setNotice(formNotice);
+      }else{textarea.value=saved.message;setNotice('Your message may already be saved. Retry this same message to check its result.');}
     }
     finally{
       sending=false;
-      if(alive&&!sessionChanged){textarea.disabled=false;submit.disabled=false;submit.textContent=pendingSend?'Retry message':originalSubmitLabel;updateChatChoice();textarea.focus();if(accepted){showHandoffStatus();void poll();void dispatchIfDue();}}
+      if(alive&&!sessionChanged){textarea.disabled=false;submit.disabled=false;labelSubmit(pendingSend?'Retry message':originalSubmitLabel);updateChatChoice();if(!openPanel)textarea.focus();if(accepted){showHandoffStatus();void poll();void dispatchIfDue();}}
     }
   }
   async function endLiveChat(){
@@ -596,10 +764,10 @@
       startPolling();void dispatchIfDue();
     }catch(error){
       if(error.stale)return;
-      if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419){stopChangedSession();return;}
+      if(invalidVisitorSession(error)){stopChangedSession();return;}
       formNotice=error.status===409?'This live chat changed. Checking the current conversation…':'The live chat result could not be confirmed. Check the current status or try ending it again.';
       if(![400,403,404,409,419,422].includes(error.status))uncertainEnd={conversation_id:cid,turn_id:turnId,revision,notice:formNotice};
-      status.textContent=formNotice;
+      setNotice(formNotice);
       if(error.status===409){formNotice='';void poll();}
     }finally{
       endBusy=false;if(alive&&!sessionChanged){textarea.disabled=false;submit.disabled=false;updateChatChoice();showHandoffStatus();}
@@ -607,18 +775,18 @@
   }
   liveChoice?.addEventListener('change',()=>{
     if(liveChoice.disabled){updateChatChoice();return;}
-    choiceTouched=true;formNotice='';
-    status.textContent=liveChoice.checked?(conversationStatus==='owner_joined'&&chat?.mode==='auto'?`Your next message will continue with ${chat.owner_name}.`:`Your next message will request a live chat with ${chat?.owner_name||cfg.ownerName||'the owner'}.`):'Your next message will go to the Profile Agent.';
+    choiceTouched=true;formNotice='';updateChatChoice();
   });
   endLiveButton?.addEventListener('click',()=>void endLiveChat());
   form?.addEventListener('submit',event=>{
-    event.preventDefault();const message=String(textarea.value||'').trim();if(!message||sending||checkoutCreating||endBusy||sessionChanged)return;
-    if(pendingSend){if(message!==pendingSend.message){status.textContent='Retry the saved message first so it is not sent twice.';return;}void sendSaved(pendingSend);return;}
+    event.preventDefault();const message=String(textarea.value||'').trim();if((!message&&!queuedAttachment&&!pendingSend?.upload)||sessionRefreshing||sending||checkoutCreating||endBusy||sessionChanged)return;
+    if(pendingSend){if(message!==pendingSend.message){setNotice('Retry the saved message first so it is not sent twice.');return;}void sendSaved(pendingSend);return;}
+    if(queuedAttachment&&!ownerAttachmentAvailable()){formNotice='The profile owner must be in the chat to receive this attachment. You can remove it to send text.';showHandoffStatus();return;}
     const activeMedia=chat?.media_call_active===true;
     const ownerContinuation=conversationStatus==='owner_joined'&&chat?.mode==='auto'&&liveChoice?.checked!==false;
     const continuing=!activeMedia&&!ownerContinuation&&Boolean(chat&&['waiting','accepted'].includes(chat.live_status));
     const mode=activeMedia||ownerContinuation?'auto':continuing||liveChoice?.checked&&chat?.live_text_available?'live':'agent';
-    void sendSaved({message,conversation_id:conversationId,client_request_id:messageRequestId(),chat_mode:mode,...(continuing?{continue_live:true}:{})});
+    void sendSaved({message,conversation_id:conversationId,client_request_id:messageRequestId(),chat_mode:mode,...(continuing?{continue_live:true}:{}),...(queuedAttachment?{upload:queuedAttachment}:{})});
   });
   textarea?.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit();}});
   function speechProjection(value){
@@ -635,10 +803,10 @@
     speechNotice.textContent=value.ready?'Optional. This selects a reading voice, not your identity.':'Visitor speech is unavailable. Your messages and text chat still work.';
   }
   async function loadSpeechPreference(){
-    if(!cfg.speechEndpoint||!speechChoice||!alive||sessionChanged||speechBusy)return;
+    if(initialStatePending||!cfg.speechEndpoint||!speechChoice||!alive||sessionChanged||speechBusy)return;
     const sequence=++speechSequence,cid=conversationId;
     try{const value=speechProjection(await request('visitor_state',{},'GET',cfg.speechEndpoint));if(!value)throw new Error('Voice preference unavailable.');if(sequence===speechSequence&&cid===conversationId)renderSpeechPreference(value);}
-    catch(error){if(!error.stale&&sequence===speechSequence){speechChoice.disabled=true;speechNotice.textContent='Voice preference is unavailable. You can keep chatting in text.';if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419)stopChangedSession();}}
+    catch(error){if(!error.stale&&sequence===speechSequence){speechChoice.disabled=true;speechNotice.textContent='Voice preference is unavailable. You can keep chatting in text.';if(invalidVisitorSession(error))stopChangedSession();}}
   }
   async function saveSpeechPreference(){
     if(speechBusy||!speechPreference?.ready||sessionChanged||!alive)return;
@@ -648,7 +816,7 @@
     if(!speechAttempt||speechAttempt.key!==key)speechAttempt={key,payload,request_id:messageRequestId()};const attempt=speechAttempt,cid=conversationId,sequence=++speechSequence;
     let refreshSaved=false;speechBusy=true;speechChoice.disabled=true;speechNotice.textContent='Saving your voice preference…';
     try{const value=speechProjection(await request('visitor_preference',{...attempt.payload,request_id:attempt.request_id},'POST',cfg.speechEndpoint));if(!value)throw new Error('Voice preference was not confirmed.');if(sequence===speechSequence&&cid===conversationId){speechAttempt=null;renderSpeechPreference(value);speechNotice.textContent='Voice preference saved. Your messages stay available as text.';}}
-    catch(error){if(!error.stale&&sequence===speechSequence){speechNotice.textContent='Checking the current saved voice preference…';refreshSaved=true;if([400,403,404,409,419,422].includes(error.status))speechAttempt=null;if(error.code==='PROFILE_SESSION_CHANGED'||error.status===419)stopChangedSession();}}
+    catch(error){if(!error.stale&&sequence===speechSequence){speechNotice.textContent='Checking the current saved voice preference…';refreshSaved=true;if([400,403,404,409,419,422].includes(error.status))speechAttempt=null;if(invalidVisitorSession(error))stopChangedSession();}}
     finally{speechBusy=false;if(alive&&!sessionChanged){speechChoice.disabled=!speechPreference?.ready;if(refreshSaved&&cid===conversationId)void loadSpeechPreference();}}
   }
   if(cfg.speechEndpoint&&form){
@@ -657,18 +825,21 @@
     speechChoice=document.createElement('select');speechChoice.id='profileVisitorSpeechPreference';speechChoice.disabled=true;speechChoice.setAttribute('aria-label','Voice used when the owner listens to your typed messages');
     const description=document.createElement('p');description.textContent='Voice used when the owner listens to your typed messages.';
     speechNotice=document.createElement('p');speechNotice.setAttribute('role','status');speechNotice.textContent='Checking available reading voices…';
-    box.append(label,speechChoice,description,speechNotice);form.parentElement.insertBefore(box,form);speechChoice.addEventListener('change',()=>void saveSpeechPreference());void loadSpeechPreference();
+    box.append(label,speechChoice,description,speechNotice);
+    const voiceSettings=shell.querySelector('[data-profile-chat-voice-settings]');
+    if(voiceSettings)voiceSettings.append(box);else form.parentElement.insertBefore(box,form);
+    speechChoice.addEventListener('change',()=>void saveSpeechPreference());
     window.addEventListener('vp3:profile-agent-open',()=>void loadSpeechPreference());
   }
   if(cfg.checkoutEndpoint&&window.VP3ProfileCheckoutPa5&&thread){
     checkoutHost=document.createElement('div');checkoutHost.className='profile-checkout-host';checkoutHost.dataset.profileCheckoutHost='';thread.appendChild(checkoutHost);
     checkoutSurface=window.VP3ProfileCheckoutPa5.mount({
       host:checkoutHost,username:cfg.username,browseAvailable:cfg.checkoutAvailable!==false,
-      attemptStorageKey:storageKey+':checkout-prepare',
-      context:()=>({key:[cfg.username,cfg.conversationNamespace,cfg.profileToken,conversationId,callContextEpoch].join('|'),id:conversationId,active:alive&&!sessionChanged&&!shell.hidden}),
+      attemptStorageKey:()=>storageKey+':checkout-prepare',
+      context:()=>({key:[cfg.username,cfg.conversationNamespace,cfg.profileToken,conversationId,callContextEpoch].join('|'),id:conversationId,active:alive&&!initialStatePending&&!sessionChanged&&!shell.hidden}),
       request:async(action,payload)=>{
         try{return await request(action,payload,'POST',cfg.checkoutEndpoint);}
-        catch(error){if(!error.stale&&(error.code==='PROFILE_SESSION_CHANGED'||error.status===419))stopChangedSession();throw error;}
+        catch(error){if(!error.stale&&invalidVisitorSession(error))stopChangedSession();throw error;}
       },
       adopt:cid=>{
         if(conversationId||!checkoutCreating||!alive||sessionChanged)throw new Error('The visitor conversation changed.');
@@ -676,7 +847,7 @@
       },
       beginPrepare:()=>{
         if(conversationId)return true;
-        if(sending||pendingSend||endBusy||callSurface?.offerBusy)return false;
+        if(initialStatePending||sending||pendingSend||endBusy||callSurface?.offerBusy)return false;
         checkoutCreating=true;
         if(submit)submit.disabled=true;
         return true;
@@ -696,8 +867,8 @@
     let observedCallState='';
     callHost=document.createElement('div');callHost.className='profile-call-visitor-host';callHost.dataset.profileCallVisitorHost='1';thread.appendChild(callHost);
     callSurface=window.VP3ProfileCallsPa3c.mountVisitor({
-      host:callHost,peerLabel:String(cfg.callOwnerName||'Profile owner'),
-      context:()=>({key:[cfg.username,cfg.conversationNamespace,cfg.profileToken,conversationId,callContextEpoch].join('|'),binding:{conversation_id:conversationId},active:alive&&!sessionChanged&&!shell.hidden}),
+      host:callHost,offerHost:shell.querySelector('[data-profile-chat-call-offers]'),peerLabel:String(cfg.callOwnerName||'Profile owner'),
+      context:()=>({key:[cfg.username,cfg.conversationNamespace,cfg.profileToken,conversationId,callContextEpoch].join('|'),binding:{conversation_id:conversationId},active:alive&&!initialStatePending&&!sessionChanged&&!shell.hidden}),
       request:async(action,payload,method)=>{
         const data=await request(action,payload,method,cfg.callEndpoint);
         // A call transition prompts a fresh canonical text projection; call
@@ -707,19 +878,27 @@
         if(next!==observedCallState){observedCallState=next;if(conversationId)void poll();}
         return data;
       },
-      allowOffer:()=>!sending&&!pendingSend&&!endBusy&&!checkoutCreating,
+      allowOffer:()=>!initialStatePending&&!sending&&!pendingSend&&!endBusy&&!checkoutCreating,
       adopt:result=>{
         const cid=result.conversation_id;
         if(!Number.isSafeInteger(cid)||cid<1||(conversationId>0&&conversationId!==cid)||sessionChanged||!alive)throw new Error('The visitor conversation changed.');
-        conversationId=cid;localStorage.setItem(storageKey,String(cid));startPolling();void checkoutSurface?.refresh();
+        conversationId=cid;localStorage.setItem(storageKey,String(cid));if(openPanel===chatOptions)showPanel(null);startPolling();void checkoutSurface?.refresh();
       },
       returnedToAgent:()=>{void poll();}
     });
     window.addEventListener('vp3:profile-agent-visibility',event=>{if(event.detail?.open)void callSurface.refresh();else callSurface.invalidate('You closed the live call view.');});
   }
   window.addEventListener('pagehide',()=>{callSurface?.stop('You left the profile.');checkoutSurface?.reset(true);alive=false;callContextEpoch++;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(choiceTimer);clearInterval(countdownTimer);clearInterval(checkoutTimer);},{once:true});
-  window.addEventListener('vp3:profile-agent-open',()=>{if(conversationId)void poll();else void heartbeat();});
-  updateChatChoice();loadState();presenceTimer=window.setInterval(heartbeat,60000);
+  window.addEventListener('vp3:profile-agent-open',()=>{if(initialStatePending)return;if(conversationId)void poll();else void heartbeat();});
+  updateChatChoice();
+  void loadState().finally(()=>{
+    initialStatePending=false;
+    if(!alive||sessionChanged)return;
+    if(sessionRefreshing){sessionRefreshing=false;textarea.disabled=false;submit.disabled=false;}
+    void loadSpeechPreference();void checkoutSurface?.refresh();
+    if(!shell.hidden)void callSurface?.refresh();
+  });
+  presenceTimer=window.setInterval(heartbeat,60000);
   choiceTimer=window.setInterval(()=>{if(!conversationId&&shell.hidden!==true)void heartbeat();},10000);
   countdownTimer=window.setInterval(showHandoffStatus,1000);
 })();

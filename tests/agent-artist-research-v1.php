@@ -106,4 +106,36 @@ try{
     artist_check($e->getCode()===403&&$reads===0,'Revoked authority stops work before any public page or inference call');
 }
 
+$topic='Wood-fired oven heat management';
+$topicPlan=vp3_public_research_plan_v1('Could you research the topic '.$topic.'?');
+artist_check($topicPlan===['mode'=>'direct','topic'=>$topic]
+    &&vp3_public_research_plan_v1('Have a specialist research topic '.$topic)===['mode'=>'delegate','topic'=>$topic]
+    &&vp3_public_research_plan_v1('YouTube search for '.$topic)===null,
+    'General research and delegation are explicit and leave video search on its normal path');
+artist_check(vp3_topic_research_youtube_subject_v1(['query'=>$topic])===$topic
+    &&vp3_topic_research_youtube_subject_v1(['query'=>$topic,'suggestion_kind'=>'music'])===''
+    &&vp3_topic_research_youtube_subject_v1(['query'=>'help for owner@example.com'])===''
+    &&!vp3_public_research_plan_valid_v1(['mode'=>'direct','topic'=>'open https://example.org/private']),
+    'Topic research accepts owner-entered topics and excludes music picks and contact details');
+
+$topicUrl='https://woodoven.example/heat-management';
+$topicId='topic-web:'.hash('sha256',$topicUrl);
+$topicQuote='Heat stored in the oven floor is gradually transferred to the base of the pizza.';
+$topicRead=vp3_public_research_collect_v1($pdo,['id'=>1],7,$topicPlan,$authority,[
+    'search'=>static fn(string $query): array=>$query===$topic
+        ?['ok'=>true,'results'=>[['url'=>$topicUrl,'title'=>'Managing oven heat']]]
+        :['ok'=>false],
+    'request'=>static fn()=>['status'=>200,'content_type'=>'text/plain',
+        'body'=>$topicQuote.' Floor temperature and recovery time vary with construction and firing.'],
+    'model'=>static function(string $prompt,string $protocol)use($topic,$topicId,$topicQuote): string {
+        $request=json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+        if($protocol!=='vp3.topic-research.v1'||($request['topic']??null)!==$topic
+            ||array_column($request['sources'],'source')!==[$topicId])return '{}';
+        return json_encode(['findings'=>[['source'=>$topicId,'quote'=>$topicQuote]]],JSON_THROW_ON_ERROR);
+    },
+]);
+artist_check(vp3_public_research_result_valid_v1($topicRead,'topic')&&!vp3_artist_research_result_valid_v1($topicRead)
+    &&str_contains($topicRead['answer'],$topicQuote)&&$topicRead['sources'][0]['coverage']==='page_excerpt',
+    'A non-music query produces a canonical public source and only a fetched exact excerpt');
+
 echo "ARTIST_RESEARCH_V1=PASS\n";

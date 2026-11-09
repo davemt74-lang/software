@@ -226,6 +226,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && user_data_usage_schema_ready_v236()
         && shared_knowledge_index_schema_ready_v236()
         && profile_agent_schema_ready()
+        && table_exists('profile_chat_attachments_v1')
         && table_exists('profile_agent_handoff_owners_pa3')
         && table_exists('profile_agent_handoff_presence_pa3')
         && column_exists('profile_agent_handoff_presence_pa3','presence_sequence')
@@ -464,6 +465,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             user_data_usage_ensure_schema_v236();
             shared_knowledge_index_ensure_schema_v236();
             profile_agent_ensure_schema();
+            vp3_profile_chat_attachment_install_v1($pdo);
             vp3_profile_handoff_ensure_schema_pa3($pdo);
             vp3_profile_call_ensure_schema_pa3c($pdo);
             vp3_profile_call_activity_ensure_schema_pa3c($pdo);

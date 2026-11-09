@@ -112,4 +112,15 @@ check($artistRun['status']==='approval_pending'&&str_contains($artistRun['goal']
     &&array_column(cloud_mission_tools_v1($artistMission)['assignments']['assignments'],'tools')===[[],[]],
     'Artist delegation preserves the approved web assignment boundary');
 rejects(fn()=>vp3_artist_research_chat_v1($pdo,$u,$named,$research,12,103),'Artist delegation rejects another owner’s Chat',403);
+$topicResearch=vp3_public_research_plan_v1('Have a specialist research topic Wood-fired oven heat management');
+$topicPrepared=vp3_public_research_chat_v1($pdo,$u,$named,$topicResearch,11,104);
+$topicId=$topicPrepared['topic_research_v1']['mission_id'];
+$topicMission=cloud_mission_row_v1($pdo,$u,$topicId);
+$topicRun=cloud_mission_run_v1($pdo,$u,$topicMission);
+check($topicPrepared['tool_receipt']['capability']==='topic.research'
+    &&$topicPrepared['tool_receipt']['status']==='clarification_required'&&$topicRun['status']==='approval_pending'
+    &&str_contains($topicRun['goal'],'Wood-fired oven heat management')
+    &&array_column(cloud_mission_tools_v1($topicMission)['assignments']['assignments'],'tools')===[[],[]],
+    'General topic delegation prepares a reviewed Mission with no web assignments granted');
+rejects(fn()=>vp3_public_research_chat_v1($pdo,$u,$named,$topicResearch,12,105),'Topic delegation rejects another owner’s Chat',403);
 echo "CLOUD_MISSIONS_V1=PASS ($checks cases)\n";

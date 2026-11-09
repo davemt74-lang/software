@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 const VP3_PROFILE_AGENT_PUBLIC_SERVICE_V110='vp3-profile-agent-public-service-v110-20260928';
 require_once __DIR__.'/profile-agent-handoff-pa3.php';
+require_once __DIR__.'/profile-chat-attachments-v1.php';
 
 final class VP3ProfileAgentPublicException extends RuntimeException
 {
@@ -154,6 +155,7 @@ function vp3_profile_agent_public_history_v1(PDO $pdo,array $ctx,int $conversati
     $q=$pdo->prepare("SELECT sender_type,message,SUBSTR(context_json,1,65537) context_json FROM profile_agent_messages WHERE conversation_id=? AND sender_type IN ('visitor','agent','owner')".$through." ORDER BY id DESC LIMIT 14");
     $q->execute($throughMessageId>0?[$conversationId,$throughMessageId]:[$conversationId]);$history=[];$sourceSets=[];
     foreach(array_reverse($q->fetchAll(PDO::FETCH_ASSOC)) as $row){
+        if($row['sender_type']==='visitor'&&$row['context_json']===VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1)continue;
         if($row['sender_type']==='agent'){
             if(strlen((string)$row['context_json'])>65536)continue;
             $metadata=json_decode((string)$row['context_json'],true);$sources=$metadata['source_dependencies']??$metadata['sources']??null;
@@ -490,6 +492,11 @@ function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,i
     $chatMode=vp3_profile_handoff_chat_mode_pa3d(array_key_exists('chat_mode',$delivery)?$delivery['chat_mode']:'auto');
     $continueLive=array_key_exists('continue_live',$delivery)?$delivery['continue_live']:false;
     if(!is_bool($continueLive)||($continueLive&&$chatMode!=='live'))vp3_profile_handoff_error_pa3('HANDOFF_INVALID',422);
+    $attachment=$delivery['attachment']??null;
+    if($attachment!==null){
+        if($conversationId<1||$query!==VP3_PROFILE_CHAT_ATTACHMENT_MESSAGE_V1)vp3_profile_chat_attachment_owner_required_v1();
+        $ctx['profile_attachment_fingerprint']=$attachment['fingerprint'];
+    }
     $requestId=$delivery['client_request_id']??'';
     if(!is_string($requestId)||($requestId!==''&&!preg_match('/^[a-f0-9]{32}$/D',$requestId)))throw new VP3ProfileAgentPublicException('VALIDATION_FAILED','The message retry identifier is invalid.',422);
     if($requestId==='')$requestId=bin2hex(random_bytes(16));
@@ -507,19 +514,22 @@ function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,i
             if($cid>0&&$cid!==(int)$turn['conversation_id'])throw new VP3ProfileAgentPublicException('HANDOFF_CONFLICT','This retry belongs to another conversation.',409);
             $cid=(int)$turn['conversation_id'];$conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$cid,true);$duplicate=true;
         }else{
+            if($attachment!==null)vp3_profile_chat_attachment_admit_v1($pdo,$conversation,$chatMode,$continueLive);
             vp3_profile_agent_public_admit_v1($pdo,$ctx);
             if($cid<1){$conversation=vp3_profile_agent_public_create_bound_v1($pdo,$ctx);$cid=(int)$conversation['id'];}
             $conversation=vp3_profile_agent_prepare_visitor_turn_v390($pdo,$conversation);
             $owner=(int)$ctx['owner_user_id'];$sessionId=(int)$ctx['session_id'];$agentId=(int)$ctx['agent_id'];
-            $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'visitor',?,?)")
-                ->execute([$cid,(int)($ctx['visitor']['id']??0)?:null,$query]);
+            $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'visitor',?,?,?)")
+                ->execute([$cid,(int)($ctx['visitor']['id']??0)?:null,$query,$attachment===null?null:VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1]);
             $visitorMessageId=(int)$pdo->lastInsertId();
+            if($attachment!==null)vp3_profile_chat_attachment_save_v1($pdo,$owner,$visitorMessageId,$attachment);
             $pdo->prepare('UPDATE profile_visit_sessions SET last_message_at=NOW(),last_seen_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$sessionId,$owner]);
             $pdo->prepare('UPDATE profile_agent_conversations SET last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')
                 ->execute([mb_strimwidth($query,0,900,'…'),$cid,$owner,$agentId,$sessionId]);
             profile_agent_message_received_v1341($pdo,$ctx['profile'],$ctx['agent'],vp3_profile_agent_public_event_session_v1($ctx),$conversation,$visitorMessageId,$query);
             $ctx['accepted_message_sha256']=hash('sha256',$query);
             $turn=vp3_profile_handoff_admit_pa3($pdo,$ctx,$conversation,$visitorMessageId,$requestId,vp3_profile_agent_accepted_snapshot_pa3($ctx),$chatMode,$continueLive);
+            if($attachment!==null&&$turn['state']!=='owner_claimed')vp3_profile_chat_attachment_owner_required_v1();
             // Admission supersedes any older synchronous request on this thread.
             vp3_profile_agent_response_token_v1($pdo,$cid,true);
         }
@@ -531,7 +541,7 @@ function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,i
     return ['conversation_id'=>$cid,'visitor_message_id'=>(int)$turn['visitor_message_id'],'client_request_id'=>$requestId,
         'answer'=>'','accepted'=>true,'duplicate'=>$duplicate,'awaiting_owner'=>vp3_profile_agent_status_v390($conversation)==='owner_joined',
         'conversation'=>vp3_profile_agent_public_state_v390($conversation),'agent'=>vp3_profile_agent_public_agent_projection_v110($ctx),
-        'handoff'=>$handoff,'chat'=>$chat];
+        'handoff'=>$handoff,'chat'=>$chat]+($attachment!==null?['attachment'=>['name'=>$attachment['name'],'mime'=>$attachment['mime'],'bytes'=>$attachment['bytes']]]:[]);
 }
 
 /** Exact-turn POST assistance uses the same durable claim as the Cloud runner. */

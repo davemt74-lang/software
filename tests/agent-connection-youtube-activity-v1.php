@@ -79,24 +79,47 @@ try {
     $scope=['user'=>$owner,'agent_id'=>7];
     $at=new DateTimeImmutable('@'.$now);
     $coverage=[];
-    youtube_activity_check(vp3_initiative_artist_evidence_v1($pdo,$scope,$at,null,$coverage)===[],
+    youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage)===[],
         'YouTube history becomes background research evidence only after a separate opt-in');
     vp3_youtube_artist_research_save_v1($pdo,1,true);
-    $interest=vp3_initiative_artist_evidence_v1($pdo,$scope,$at,null,$coverage);
+    $interest=vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage);
     $ref=array_key_first($interest);
     youtube_activity_check($coverage['artist_research']==='ready'&&array_column($interest,'title')===['Similar']
         &&$interest[$ref]['url']==='/chat.php?agent=7&conversation_id=13'
         &&!str_contains(json_encode($interest,JSON_THROW_ON_ERROR),'Provider metadata'),
         'Initiative reads only recent owner-entered artist interests and collapses repeated searches across that Agent’s Chats');
-    youtube_activity_check(vp3_initiative_artist_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===$interest
-        &&vp3_initiative_artist_evidence_v1($pdo,$scope,$at,['calendar:1'],$coverage)===[],
+    youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===$interest
+        &&vp3_initiative_research_evidence_v1($pdo,$scope,$at,['calendar:1'],$coverage)===[],
         'Selected artist evidence rechecks the exact interest and skips unrelated capability reads');
+    foreach([113=>[12,1,'Wood-fired oven heat management'],114=>[13,1,'Wood-fired oven heat management'],
+        115=>[14,1,'Unrelated agent topic'],116=>[21,2,'Unrelated owner topic'],
+        117=>[12,1,'email owner@example.com']] as $id=>[$cid,$uid,$query]){
+        $source->execute([$id,$cid,gmdate('Y-m-d H:i:s',$now)]);
+        agent_connection_youtube_results_save_v1($pdo,$uid,$cid,$id,[
+            'query'=>$query,'expires_at'=>$now+3600,'videos'=>[['title'=>'Provider metadata','video_id'=>$videoId]],
+        ]);
+    }
+    youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage)===$interest,
+        'An existing artist opt-in does not authorize ordinary search terms for public research');
+    vp3_youtube_research_save_v1($pdo,1,'topic',true);
+    $research=vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage);
+    $topicRef='topic-interest:'.hash('sha256','wood-fired oven heat management');
+    $topicEvidence=array_filter($research,static fn(array $row):bool=>$row['kind']==='topic_interest');
+    youtube_activity_check(array_column($topicEvidence,'title')===['Wood-fired oven heat management','Same Agent elsewhere search','Chosen Agent search']
+        &&($research[$topicRef]['kind']??null)==='topic_interest'
+        &&$research[$topicRef]['url']==='/chat.php?agent=7&conversation_id=13'&&$coverage['topic_research']==='ready'
+        &&vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$topicRef],$coverage)===[$topicRef=>$research[$topicRef]],
+        'Topic opt-in yields one exact owner query across the same Agent’s Chats and excludes contact data');
+    vp3_youtube_research_save_v1($pdo,1,'topic',false);
+    youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$topicRef],$coverage)===[]
+        &&vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===$interest,
+        'Turning off topic research revokes its evidence and preserves the artist preference');
     $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>3];
-    youtube_activity_check(vp3_initiative_artist_evidence_v1($pdo,$scope,$at,null,$coverage)===[],
+    youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage)===[],
         'Participant scope cannot turn private artist history into background research');
     unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
     $pdo->exec('DELETE FROM agent_connection_youtube_consent_v1 WHERE owner_user_id=1');
-    youtube_activity_check(vp3_initiative_artist_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===[],
+    youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===[],
         'Revoking the YouTube skill removes its Initiative research evidence');
 } finally {
     $pdo->rollBack();

@@ -56,8 +56,8 @@
       ${meeting?`<a href="${esc(meeting)}"${meeting.startsWith('https:')?' target="_blank" rel="noopener noreferrer"':''}>Open meeting</a>`:''}
     </section>`;
   }
-  function renderYoutube(current,search,research){
-    const sameSource=research&&search&&research.source_message_id===search.message_id;
+  function renderYoutube(current,search,artist,topic){
+    const sameSource=search&&[artist,topic].some(research=>research?.source_message_id===search.message_id);
     let markup='';
     if(search&&typeof search.query==='string'&&!sameSource){
       const kind=search.kind==='playlist'?'YouTube playlist draft':'YouTube search';
@@ -65,15 +65,19 @@
         <strong>${kind}</strong><p>${esc(search.query)}</p><small>Returned in this Chat · ${esc(search.result_count)} results</small>
         ${sourceLink(current,search,'Review these results')}</section>`;
     }
-    if(research&&typeof research.artist==='string'){
-      const status={available:'You looked up similar artists in this Chat.',ready:'Research is ready to review.',waiting_owner:'Specialist plan is ready for review.',mission_ready:'The specialist Mission is available.',no_matches:'The last research found no verified results.',unavailable:'The last research could not finish.'}[research.status];
-      if(!status)return markup;
-      markup+=`<section class="agent-top-of-mind-context" aria-label="Artist research">
-        <strong>Artist research</strong><p>${esc(research.artist)}</p><small>${status}</small>
+    for(const [kind,research] of [['artist',artist],['topic',topic]]){
+      if(typeof research?.[kind]!=='string')continue;
+      const label=kind==='artist'?'Artist research':'Topic research';
+      const available=kind==='artist'?'You looked up similar artists in this Chat.':'You searched YouTube for this topic in this Chat.';
+      const status={available,ready:'Research is ready to review.',waiting_owner:'Specialist plan is ready for review.',mission_ready:'The specialist Mission is available.',no_matches:'The last research found no verified results.',unavailable:'The last research could not finish.'}[research.status];
+      if(!status)continue;
+      markup+=`<section class="agent-top-of-mind-context" aria-label="${label}">
+        <strong>${label}</strong><p>${esc(research[kind])}</p><small>${status}</small>
         ${sourceLink(current,research,research.status==='available'?'Review YouTube results':'Review in Chat')}`;
-      if(current.hasChat&&typeof window.STONEFELLOW_CHAT_CONTINUITY_V87?.requestArtistResearch==='function'
+      const request=kind==='artist'?'requestArtistResearch':'requestTopicResearch';
+      if(current.hasChat&&typeof window.STONEFELLOW_CHAT_CONTINUITY_V87?.[request]==='function'
         &&['available','no_matches','unavailable'].includes(research.status)){
-        markup+='<button type="button" data-top-of-mind-artist="research">Research artist</button><button type="button" data-top-of-mind-artist="delegate">Prepare specialist plan</button><small data-top-of-mind-artist-status role="status"></small>';
+        markup+=`<button type="button" data-top-of-mind-research="${kind}">Research ${kind}</button><button type="button" data-top-of-mind-research="${kind}" data-delegate>Prepare specialist plan</button><small data-top-of-mind-research-status role="status"></small>`;
       }
       markup+='</section>';
     }
@@ -101,17 +105,17 @@
       if(currentContext){
         const openAgenda=host.querySelector('[data-top-of-mind-agenda][open]')?.dataset.topOfMindAgenda;
         markup+=renderCalendar(snapshot.calendar?.[0],openAgenda);
-        markup+=renderYoutube(current,snapshot.youtube_search,snapshot.artist_research);
+        markup+=renderYoutube(current,snapshot.youtube_search,snapshot.artist_research,snapshot.topic_research);
       }
       const music=state==='ready'&&currentContext?snapshot.music:null;
       if(music&&typeof music.title==='string'){
         const chatUrl=safeUrl(music.chat_url);
         const source='Played in this VP3 Chat'+(music.channel_title?' · '+music.channel_title:'');
-        markup+=`<section class="agent-top-of-mind-music" aria-label="Music and entertainment">
-          <strong>Music and entertainment</strong><p>${esc(music.title)}</p><small>${esc(source)}</small>`;
-        if(current.hasChat&&typeof window.STONEFELLOW_CHAT_CONTINUITY_V87?.requestYoutubePicks==='function'){
+        markup+=`<section class="agent-top-of-mind-music" aria-label="YouTube playback">
+          <strong>YouTube playback</strong><p>${esc(music.title)}</p><small>${esc(source)}</small>`;
+        if(music.music_suggestion&&current.hasChat&&typeof window.STONEFELLOW_CHAT_CONTINUITY_V87?.requestYoutubePicks==='function'){
           markup+='<button type="button" data-top-of-mind-picks>Ask for YouTube music picks</button><small data-top-of-mind-music-status role="status"></small>';
-        }else if(chatUrl)markup+='<a href="'+esc(chatUrl)+'">Open this Chat for music picks</a>';
+        }else if(chatUrl&&!current.hasChat)markup+='<a href="'+esc(chatUrl)+'">Open this Chat</a>';
         markup+='</section>';
       }
       if(state==='ready'&&!snapshot.items.length)markup+='<p>No active or recently verified work in this Chat’s current sources.</p>';
@@ -199,18 +203,22 @@
       }
       return;
     }
-    const research=event.target.closest('[data-top-of-mind-artist]');
+    const research=event.target.closest('[data-top-of-mind-research]');
     if(research){
-      if(chat?.requestArtistResearch?.(snapshot.artist_research?.artist,research.dataset.topOfMindArtist==='delegate')){
+      const kind=research.dataset.topOfMindResearch;
+      const delegate=research.hasAttribute('data-delegate');
+      const started=kind==='artist'?chat?.requestArtistResearch?.(snapshot.artist_research?.artist,delegate)
+        :chat?.requestTopicResearch?.(snapshot.topic_research?.topic,delegate);
+      if(started){
         chat.showChatView?.();
         window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();
       }else{
-        const status=host.querySelector('[data-top-of-mind-artist-status]');
-        if(status)status.textContent='Finish the current Chat turn or draft before starting artist research.';
+        const status=research.closest('section')?.querySelector('[data-top-of-mind-research-status]');
+        if(status)status.textContent=`Finish the current Chat turn or draft before starting ${kind} research.`;
       }
       return;
     }
-    if(!event.target.closest('[data-top-of-mind-picks]')||!snapshot.music)return;
+    if(!event.target.closest('[data-top-of-mind-picks]')||!snapshot.music?.music_suggestion)return;
     if(chat?.requestYoutubePicks?.()){
       chat.showChatView?.();
       window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();

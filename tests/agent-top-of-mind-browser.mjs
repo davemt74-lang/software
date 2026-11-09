@@ -44,10 +44,12 @@ writeFileSync(join(temp,'router.php'),[
   'agent_connection_youtube_results_schema_v1(db());agent_connection_youtube_consent_schema_v1(db());vp3_youtube_playback_install_v1(db());',
   'agent_connection_youtube_set_consent_v1(db(),1,true);vp3_youtube_history_change_v1(db(),1,"enable_history");',
   'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube search\')");$message=(int)db()->lastInsertId();',
-  'agent_connection_youtube_results_save_v1(db(),1,11,$message,["expires_at"=>time()+3600,"videos"=>[["video_id"=>"song0000001","title"=>"Confirmed fixture playback","channel_title"=>"Fixture channel","made_for_kids"=>false]]]);',
+  'agent_connection_youtube_results_save_v1(db(),1,11,$message,["suggestion_kind"=>"music","expires_at"=>time()+3600,"videos"=>[["video_id"=>"song0000001","title"=>"Confirmed fixture playback","channel_title"=>"Fixture channel","made_for_kids"=>false]]]);',
   'if(!vp3_youtube_history_record_v1(db(),1,$message,"song0000001","10000000-0000-4000-8000-000000000001",vp3_youtube_capture_key_v1(db(),1)))throw new RuntimeException("Fixture playback was rejected.");',
   'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube artist results\')");$artistMessage=(int)db()->lastInsertId();',
   'agent_connection_youtube_results_save_v1(db(),1,11,$artistMessage,["query"=>"Artists similar to Fixture Artist","taste_topic"=>"Fixture Artist","suggestion_kind"=>"similar","expires_at"=>time()+3600,"videos"=>[["video_id"=>"song0000002","title"=>"Provider artist title"]]]);',
+  'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube topic results\')");$topicMessage=(int)db()->lastInsertId();',
+  'agent_connection_youtube_results_save_v1(db(),1,11,$topicMessage,["query"=>"Wood-fired oven heat management","expires_at"=>time()+3600,"videos"=>[["video_id"=>"oven0000001","title"=>"Oven tutorial provider title"]]]);',
   'db()->exec("CREATE TABLE user_calendar_events(id INTEGER PRIMARY KEY,owner_user_id INTEGER,title TEXT,status TEXT,all_day INTEGER,start_at_utc TEXT,end_at_utc TEXT,timezone TEXT,source TEXT,source_reference TEXT,description TEXT,location TEXT)");',
   'db()->prepare("INSERT INTO user_calendar_events VALUES(4,1,\'Fixture planning session\',\'active\',1,?,?,\'UTC\',\'user\',\'\',\'\',\'https://example.com/meeting\')")->execute([gmdate("Y-m-d 00:00:00"),gmdate("Y-m-d 00:00:00",time()+86400)]);',
   'header("Content-Type:application/json");echo json_encode(["run_id"=>(int)$r]);return;}',
@@ -58,7 +60,7 @@ writeFileSync(join(temp,'router.php'),[
   'if(!$outside)echo \'<div class="chat-topbar-actions"><div id="chatNotificationMenu"><button id="chatNotificationButton">Activity Center</button></div><div id="chatProfileMenu">Account</div></div>\';',
   '$orb=["ownerKey"=>"1","agentId"=>7,"chatUrl"=>"/chat.php","workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php","notificationsEndpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","voiceScript"=>"/deliberately-unavailable-voice.js","drawerScript"=>"/chat-notifications-drawer-v240.js"];',
   'echo "<script>window.VP3_ORB_CONFIG=".json_encode($orb).";</script>";',
-  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.fixturePicks=0;window.fixtureResearch=[];window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11,requestYoutubePicks:()=>{window.fixturePicks++;return true},requestArtistResearch:(artist,delegate)=>{if(window.fixtureDraft)return false;window.fixtureResearch.push([artist,delegate]);return true}};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
+  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.fixturePicks=0;window.fixtureResearch=[];window.fixtureTopics=[];window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11,requestYoutubePicks:()=>{window.fixturePicks++;return true},requestArtistResearch:(artist,delegate)=>{if(window.fixtureDraft)return false;window.fixtureResearch.push([artist,delegate]);return true},requestTopicResearch:(topic,delegate)=>{window.fixtureTopics.push([topic,delegate]);return true}};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
   'echo \'<script src="/agent-eyes-core.js"></script><script src="/agent-top-of-mind-v1.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script>\';'
 ].join('\n'));
 assert.match(execFileSync(process.env.VP3_PHP_BINARY||'php',['-l',join(temp,'router.php')],{encoding:'utf8'}),/No syntax errors detected/);
@@ -79,6 +81,7 @@ try{
     assert.equal(data.state.items.find(x=>x.run_id===runId).state,'working');assert.equal(data.state.items.find(x=>x.run_id===runId).progress,42);
     assert.equal(data.state.music.title,'Confirmed fixture playback');assert.match(data.state.music.chat_url,/agent=7&conversation_id=11$/);
     assert.equal(data.state.artist_research.artist,'Fixture Artist');assert.equal(data.state.artist_research.status,'available');
+    assert.equal(data.state.topic_research.topic,'Wood-fired oven heat management');
     assert.equal(data.state.calendar[0].title,'Fixture planning session');assert.equal(data.state.calendar[0].agenda_status,'unknown');
     assert.equal(data.state.calendar[0].meeting_url,'https://example.com/meeting');
     assert.ok(!JSON.stringify(data).includes('FOREIGN SECRET'));assert.ok(!JSON.stringify(data).includes('lease_token'));
@@ -106,26 +109,30 @@ try{
     const feed=page.locator('[data-agent-top-of-mind]');await feed.getByText('Prepare the saved launch details',{exact:true}).waitFor();
     assert.equal(await page.locator('#chatNotificationDrawer').count(),1);await feed.getByText('Working',{exact:true}).waitFor();
     assert.ok(await page.getByText('Saved Brain memory is unavailable for this account.',{exact:true}).isVisible());
-    const music=feed.getByRole('region',{name:'Music and entertainment'});
+    const music=feed.getByRole('region',{name:'YouTube playback'});
     await music.getByText('Confirmed fixture playback',{exact:true}).waitFor();
     const artist=feed.getByRole('region',{name:'Artist research'});
     await artist.getByText('Fixture Artist',{exact:true}).waitFor();
     assert.match(await artist.getByRole('link',{name:'Review YouTube results'}).getAttribute('href'),/agent=7&conversation_id=11$/);
     assert.equal(await feed.getByRole('region',{name:'Recent YouTube results'}).count(),0,'one card per result thread');
+    const topic=feed.getByRole('region',{name:'Topic research'});
+    await topic.getByText('Wood-fired oven heat management',{exact:true}).waitFor();
+    assert.match(await topic.getByRole('link',{name:'Review YouTube results'}).getAttribute('href'),/agent=7&conversation_id=11$/);
     const calendar=feed.getByRole('region',{name:'Calendar preparation'});
     await calendar.getByText('Fixture planning session',{exact:true}).waitFor();
     assert.equal(await calendar.getByRole('link',{name:'Open meeting'}).getAttribute('href'),'https://example.com/meeting');
     await calendar.getByText('Agenda and preparation',{exact:true}).click();
     await calendar.getByText('Saved agenda details are unavailable.',{exact:true}).waitFor();
     if(outside){
-      assert.match(await music.getByRole('link',{name:'Open this Chat for music picks'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+      assert.match(await music.getByRole('link',{name:'Open this Chat'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+      assert.equal(await topic.getByRole('button').count(),0);
       assert.equal(await artist.getByRole('button').count(),0,'research is only submitted from the exact Chat');
     }else{
       assert.equal(await page.evaluate(()=>window.fixturePicks),0);
       assert.deepEqual(await page.evaluate(()=>window.fixtureResearch),[],'viewing context does not start research');
       await page.evaluate(()=>{window.fixtureParticipant={id:2};window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
       await music.waitFor({state:'hidden'});
-      await artist.waitFor({state:'hidden'});await calendar.waitFor({state:'hidden'});
+      await topic.waitFor({state:'hidden'});await artist.waitFor({state:'hidden'});await calendar.waitFor({state:'hidden'});
       await page.evaluate(()=>{window.fixtureParticipant=null;window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
       await page.evaluate(()=>{window.fixtureDraft=true;});
       await artist.getByRole('button',{name:'Research artist',exact:true}).click();
@@ -134,6 +141,10 @@ try{
       await page.evaluate(()=>{window.fixtureDraft=false;});
       await artist.getByRole('button',{name:'Prepare specialist plan',exact:true}).click();
       assert.deepEqual(await page.evaluate(()=>window.fixtureResearch),[['Fixture Artist',true]]);
+      await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
+      assert.deepEqual(await page.evaluate(()=>window.fixtureTopics),[]);
+      await topic.getByRole('button',{name:'Research topic',exact:true}).click();
+      assert.deepEqual(await page.evaluate(()=>window.fixtureTopics),[['Wood-fired oven heat management',false]]);
       await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
       await music.getByRole('button',{name:'Ask for YouTube music picks'}).click();
       assert.equal(await page.evaluate(()=>window.fixturePicks),1);

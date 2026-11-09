@@ -47,6 +47,39 @@
 .profile-agent-message-body{display:block;overflow-wrap:anywhere}
 @media(max-width:600px){.profile-agent-live-choice{padding:9px 12px}.profile-agent-live-choice label{min-height:28px}.profile-agent-live-choice button{min-height:44px}.profile-agent-compose textarea{font-size:16px}}
 
+/* The public chat uses one scroll region at a time, with a fixed composer. */
+.profile-agent-widget .profile-agent-widget-head,.profile-agent-widget .profile-agent-footer{flex:none}
+.profile-agent-widget .profile-agent-identity-label{margin-left:4px;color:var(--profile-muted);font-size:10px;font-weight:650}
+.profile-agent-widget .profile-agent-presence{font-size:11px}
+.profile-agent-presence::before{content:"";display:inline-block;width:7px;height:7px;margin:0 6px 1px 0;border-radius:50%;background:#737d87}
+.profile-agent-presence[data-state="online"]::before{background:#238354}
+.profile-agent-widget .profile-agent-thread,.profile-agent-widget .profile-agent-panel{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+.profile-agent-widget .profile-agent-thread[hidden],.profile-agent-widget .profile-agent-panel[hidden],.profile-agent-widget [data-profile-call-visitor-host]:empty{display:none}
+.profile-agent-widget .profile-agent-panel{padding:14px 16px;overflow-wrap:anywhere}
+.profile-agent-panel h2{margin:0 0 12px;font-size:15px}
+.profile-agent-panel p{margin:0 0 10px;color:var(--profile-muted);font-size:12px}
+.profile-agent-panel .profile-agent-live-choice{padding:0 0 10px}
+.profile-agent-panel .profile-agent-panel-action{display:inline-grid;place-items:center;min-height:44px;padding:8px 12px;border:1px solid var(--profile-line);border-radius:8px;background:#fff;color:var(--profile-text);font:inherit;text-decoration:none;cursor:pointer}
+.profile-agent-widget .profile-agent-footer .profile-agent-compose{display:flex;flex-direction:column;gap:6px;margin:0;padding:9px 12px 8px}
+.profile-agent-footer .profile-agent-compose textarea{width:100%;padding:8px 10px;font-size:16px}
+.profile-agent-footer .profile-agent-toolbar{display:flex;gap:4px;align-items:center;min-width:0}
+.profile-agent-toolbar button{display:grid;place-items:center;width:44px;min-height:44px;padding:0;border:1px solid transparent;border-radius:10px;background:#fff;color:var(--profile-text)}
+.profile-agent-toolbar button:hover,.profile-agent-toolbar button[aria-expanded="true"]{border-color:var(--profile-line);background:var(--profile-soft)}
+.profile-agent-toolbar button:disabled{opacity:.45;cursor:default}
+.profile-agent-toolbar button svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.profile-agent-toolbar button.profile-agent-send{margin-inline-start:auto;background:var(--profile-dark);color:#fff}
+.profile-agent-toolbar button.profile-agent-send:hover{background:#35312e}
+.profile-agent-toolbar button:focus-visible,.profile-agent-panel :focus-visible{outline:2px solid var(--profile-dark);outline-offset:2px}
+.profile-agent-visually-hidden,.profile-agent-footer .profile-agent-status[data-quiet="true"]{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.profile-agent-footer .profile-agent-status{min-height:0;font-size:11px;overflow-wrap:anywhere}
+.profile-agent-footer .profile-agent-status button{min-height:36px;padding:6px 10px}
+.profile-agent-footer .profile-agent-status:empty,.profile-agent-attachments:empty,.profile-agent-attachments[hidden]{display:none}
+.profile-agent-attachments{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding:4px 6px 4px 9px;border-radius:8px;background:var(--profile-soft);font-size:12px}
+.profile-agent-attachments span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-agent-attachments button{min-height:36px;padding:4px 8px}
+.profile-agent-message-attachment{display:block;margin-top:5px;color:inherit;overflow-wrap:anywhere}
+.profile-agent-message-attachment img{display:block;max-width:100%;max-height:160px;margin-bottom:4px;border-radius:8px;object-fit:contain}
+
 /* Public Profile conversation checkout */
 .profile-checkout-host,.profile-checkout-list,.profile-checkout-card {
   display:grid;

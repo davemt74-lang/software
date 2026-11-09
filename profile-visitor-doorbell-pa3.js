@@ -65,7 +65,7 @@
     if(!Array.isArray(value.history)||value.history.length>20||value.history.some(row=>!row||!positive(row.id)||!['visitor','owner','agent'].includes(row.sender_type)||typeof row.message!=='string'||row.message.length>32000||typeof row.created_at!=='string'||row.created_at.length>40))return null;
     const chat=value.chat;
     if(chat!==undefined&&(!chat||chat.contract!==chatContract||typeof chat.owner_name!=='string'||chat.owner_name.length>240||!['auto','agent','live'].includes(chat.mode)||!liveStates.has(chat.live_status)||typeof chat.live_text_available!=='boolean'||typeof chat.can_end_live_chat!=='boolean'||(chat.media_call_active!==undefined&&typeof chat.media_call_active!=='boolean')))return null;
-    return {...value,...(chat?{chat:{...chat}}:{}),execution_paused:value.execution_paused===true,dispatch_execution_paused:value.dispatch_execution_paused===true,history:value.history.map(row=>({id:row.id,sender_type:row.sender_type,message:row.message,created_at:row.created_at}))};
+    return {...value,...(chat?{chat:{...chat}}:{}),execution_paused:value.execution_paused===true,dispatch_execution_paused:value.dispatch_execution_paused===true,history:value.history.map(row=>({id:row.id,sender_type:row.sender_type,message:row.message,created_at:row.created_at,attachment:row.attachment}))};
   }
   function updatePresence(){
     if(!availabilityField||!availabilityNode||!presenceText)return;
@@ -166,11 +166,29 @@
     record.countdown.hidden=record.data.state!=='awaiting_owner';
     record.countdown.textContent=seconds>0?seconds+'s to pick up':seconds===0?'Checking the current responder…':'';
   }
+  function attachmentLink(file,cid,mid){
+    if(!file||typeof file.name!=='string'||!file.name||!positive(cid)||!positive(mid))return null;
+    const url=new URL(cfg.ownerEndpoint,window.location.href);
+    if(url.origin!==window.location.origin)return null;
+    url.search=new URLSearchParams({action:'owner_attachment',conversation_id:cid,message_id:mid});
+    const link=node('a','','Download '+file.name);link.href=url.href;link.download=file.name;return link;
+  }
+  function renderQuestion(record){
+    const {data,question}=record;
+    question.textContent=data.visitor_message;
+    const link=attachmentLink(data.visitor_attachment,data.conversation_id,data.visitor_message_id);
+    if(link)question.append(node('br'),link);
+  }
   function renderHistory(record){
     const signature=JSON.stringify(record.data.history);
     if(signature===record.historySignature)return;
     record.historySignature=signature;record.history.replaceChildren();
-    for(const row of record.data.history){const item=node('li','profile-doorbell-history-'+row.sender_type),who=node('strong','',row.sender_type==='visitor'?'Visitor':row.sender_type==='owner'?'You':record.data.agent_name||'Profile Agent');item.append(who,node('p','',row.message));record.history.appendChild(item);}
+    for(const row of record.data.history){
+      const item=node('li','profile-doorbell-history-'+row.sender_type),who=node('strong','',row.sender_type==='visitor'?'Visitor':row.sender_type==='owner'?'You':record.data.agent_name||'Profile Agent');
+      item.append(who,node('p','',row.message));
+      const link=attachmentLink(row.attachment,record.data.conversation_id,row.id);if(link)item.appendChild(link);
+      record.history.appendChild(item);
+    }
   }
   function createCard(data,element,binding){
     const body=element.querySelector('.message-body')||element;
@@ -192,7 +210,7 @@
     for(const operation of ['claim','delegate','resolve'])buttons[operation].addEventListener('click',()=>void perform(record,operation));
     form.addEventListener('submit',event=>{event.preventDefault();event.stopPropagation();void perform(record,'reply');});
     body.appendChild(card);const placeholder=element.querySelector('.message-text');if(placeholder)placeholder.hidden=true;
-    cards.set(data.turn_id,record);renderHistory(record);refreshControls(record);
+    cards.set(data.turn_id,record);renderQuestion(record);renderHistory(record);refreshControls(record);
     window.VP3ProfileCallsPa3c?.attachOwnerThread(controls,{binding:()=>writable(record)?{
       conversation_id:record.data.conversation_id,chat_conversation_id:record.binding.chat_conversation_id,chat_agent_id:record.binding.chat_agent_id
     }:null});
@@ -221,7 +239,7 @@
   function updateCard(record,data,binding){
     if(data.revision<record.data.revision)return record;
     if(data.conversation_id!==record.data.conversation_id||data.visitor_message_id!==record.data.visitor_message_id)return record;
-    record.data=data;record.binding=binding;record.epoch=epoch;record.blocked=false;record.node.hidden=record.superseded;record.clockServer=data.server_now_ms;record.clockLocal=now();record.question.textContent=data.visitor_message;
+    record.data=data;record.binding=binding;record.epoch=epoch;record.blocked=false;record.node.hidden=record.superseded;record.clockServer=data.server_now_ms;record.clockLocal=now();renderQuestion(record);
     renderHistory(record);refreshControls(record);return record;
   }
   function applyProjection(value,binding=null,element=null){

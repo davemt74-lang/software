@@ -783,5 +783,19 @@ try{
  check(artistRetry.data?.replayed===true&&artistRetry.data.assistant_message_id===artistVoice.data.assistant_message_id
   &&changedArtistRetry.data?.type==='error'&&changedArtistRetry.data?.tool_receipt==null,
   'voice retry binds the exact artist request and canonical Chat');
+ const topicRequest='Research topic https://example.org/private';
+ const topicTyped=await post(youtubeEndpoint,topicRequest,{conversation_id:recallChat});
+ check(topicTyped.data?.tool_receipt?.capability==='topic.research'
+  &&topicTyped.data.tool_receipt.status==='clarification_required',
+  'production typed Chat validates a general topic before public research: '+topicTyped.body);
+ const topicVoiceOptions={conversation_id:recallChat,idempotency_key:'topic-research-exact-voice-replay'};
+ const topicVoice=await post('chat-stream-v121.php',topicRequest,topicVoiceOptions);
+ const topicRetry=await post('chat-stream-v121.php',topicRequest,topicVoiceOptions);
+ const changedTopicRetry=await post('chat-stream-v121.php','Research topic https://other.example',topicVoiceOptions);
+ check(topicVoice.data?.tool_receipt?.capability==='topic.research'
+  &&topicVoice.data.tool_receipt.status==='clarification_required'
+  &&topicRetry.data?.replayed===true&&topicRetry.data.assistant_message_id===topicVoice.data.assistant_message_id
+  &&changedTopicRetry.data?.type==='error'&&changedTopicRetry.data?.tool_receipt==null,
+  'production streaming Chat validates general research and binds retries to the exact request');
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

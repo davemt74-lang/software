@@ -30,7 +30,10 @@ try {
 }
 $isOwner=$profile&&$viewer&&(int)$viewer['id']===(int)$profile['user_id'];
 $preview=$isOwner&&!empty($_GET['preview']);
+$chatPreview=$isOwner;
 if(!$profile||empty($profile['is_active'])||(!$preview&&empty($profile['is_public']))){http_response_code(404);exit('Profile not found.');}
+header('Cache-Control: private, no-store');
+header('Vary: Cookie');
 if(!$preview){
     try { profile_runtime_record_view($pdo,$profile,$viewer); }
     catch (Throwable $e) { vp3_profile_optional_failure('view-telemetry',$e,$username); }
@@ -63,7 +66,7 @@ $roleLabel=function_exists('role_label')?role_label((string)($profile['role']??'
 $profileOrbShape=$agent?chat_settings_agent_orb_shape_v237($pdo,(int)$profile['user_id']):'orbit';
 $agentGreeting=$agent?(trim((string)($profile['profile_agent_greeting']??''))?:'Hi — I’m '.(string)$agent['display_name'].', '.$displayName.'’s AI representative. What would you like to know?'):'';
 $profileToken='';$conversationNamespace='';
-if($agent&&!$preview){
+if($agent&&!$chatPreview){
     try { $profileToken=profile_chat_token((int)$profile['user_id']);$conversationNamespace=profile_conversation_browser_namespace_v1((int)$profile['user_id'],(int)($viewer['id']??0)); }
     catch (Throwable $e) {
         vp3_profile_optional_failure('profile-agent-token',$e,$username);
@@ -167,15 +170,9 @@ if(!$preview){
         $webmcpManifest=[];$webmcpSessionProof='';
     }
 }
-if($webmcpManifest&&$webmcpSessionProof){
-    header('Cache-Control: private, no-store');
-    header('Vary: Cookie');
-}
 if($webmcpResumeRequested){
     header('Referrer-Policy: no-referrer');
-    header('Cache-Control: private, no-store');
 }
-if($productPromotions)header('Cache-Control: private, no-store');
 ?>
 <!doctype html>
 <html lang="en">
@@ -325,21 +322,58 @@ if($productPromotions)header('Cache-Control: private, no-store');
 <?php if($agent): ?>
 <div class="profile-agent-widget-root" data-profile-agent-widget>
   <section class="profile-agent-widget" id="profileAgentShell" hidden aria-label="Chat with <?= e((string)$agent['display_name']) ?>">
-    <header class="profile-agent-widget-head"><span class="vp3-public-orb" data-vp3-public-orb data-orb-shape="<?= e($profileOrbShape) ?>"<?= $isOwner ? ' data-vp3-orb-personal' : '' ?> aria-hidden="true"></span><div><strong><?= e((string)$agent['display_name']) ?></strong><small><?= e($displayName) ?>’s Profile Agent · powered by <?= e(system_agent_name()) ?></small></div><button type="button" class="profile-agent-widget-close" data-close-profile-agent aria-label="Close Profile Agent">×</button></header>
-    <div class="profile-agent-disclosure" data-profile-agent-disclosure>AI representative — not the profile owner live. Answers use only information this profile has approved. A separately accepted live call connects you directly to the owner.</div>
-    <?php if(!$preview): ?><div class="profile-agent-live-choice" data-profile-live-choice>
-      <label><input type="checkbox" data-profile-live-chat disabled><span>Request live text chat with <strong data-profile-owner-name><?= e($displayName) ?></strong></span></label>
-      <small data-profile-live-availability role="status">Checking live chat availability…</small>
-      <button type="button" data-profile-end-live hidden>Return to Agent chat</button>
-    </div><?php endif; ?>
-    <?php if($preview): ?><div class="profile-agent-preview"><p><?= e($agentGreeting) ?></p><strong>Visitor preview</strong><span>Conversation sending is disabled here so your own preview cannot create visitor events, notifications, or attention items.</span></div><?php else: ?><div class="profile-agent-thread" data-profile-agent-thread aria-live="polite"></div><form class="profile-agent-compose"><textarea maxlength="2000" placeholder="Ask about this profile…" aria-label="Message Profile Agent"></textarea><button type="submit">Send</button><div class="profile-agent-status" data-profile-agent-status role="status" aria-live="polite"></div></form><?php endif; ?>
+    <header class="profile-agent-widget-head">
+      <span class="vp3-public-orb" data-vp3-public-orb data-orb-shape="<?= e($profileOrbShape) ?>"<?= $isOwner ? ' data-vp3-orb-personal' : '' ?> aria-hidden="true"></span>
+      <div><strong><?= e((string)$agent['display_name']) ?> <span class="profile-agent-identity-label">Profile Agent</span></strong><small class="profile-agent-presence" data-profile-agent-presence aria-live="polite"><?= $chatPreview ? 'Owner preview' : 'Checking live availability…' ?></small></div>
+      <button type="button" class="profile-agent-widget-close" data-close-profile-agent aria-label="Close Profile Agent">×</button>
+    </header>
+    <div class="profile-agent-thread" data-profile-agent-thread role="log" aria-label="Messages">
+      <?php if($chatPreview): ?><div class="profile-agent-message agent"><strong class="profile-agent-message-speaker"><?= e((string)$agent['display_name']) ?></strong><span class="profile-agent-message-body"><?= e($agentGreeting) ?></span></div><?php endif; ?>
+    </div>
+    <?php if(!$chatPreview): ?>
+      <section class="profile-agent-panel" id="profileChatOptions" data-profile-chat-options aria-labelledby="profileChatOptionsTitle" hidden>
+        <h2 id="profileChatOptionsTitle" tabindex="-1">Chat options</h2>
+        <p data-profile-chat-contact-status></p>
+        <button type="button" class="profile-agent-panel-action" data-profile-chat-settings-jump>Live text chat</button>
+        <div data-profile-chat-call-offers></div>
+      </section>
+    <?php endif; ?>
+    <section class="profile-agent-panel" id="profileChatSettings" data-profile-chat-settings aria-labelledby="profileChatSettingsTitle" hidden>
+      <h2 id="profileChatSettingsTitle" tabindex="-1">Chat settings</h2>
+      <?php if($chatPreview): ?>
+        <p>Preview the greeting visitors see on your profile. Manage visitor chat and access from your Profile Agent dashboard.</p>
+        <a class="profile-agent-panel-action" href="<?= e(url('/profile-agent.php')) ?>">Manage Profile Agent</a>
+      <?php else: ?>
+        <div class="profile-agent-live-choice" data-profile-live-choice>
+          <label><input type="checkbox" data-profile-live-chat disabled><span>Request live text chat with <strong data-profile-owner-name><?= e($displayName) ?></strong></span></label>
+          <small data-profile-live-availability role="status">Checking live chat availability…</small>
+          <button type="button" data-profile-end-live hidden>Return to Agent chat</button>
+        </div>
+        <div data-profile-chat-voice-settings></div>
+        <p data-profile-agent-disclosure>Profile Agent replies use information approved for this profile. The owner can accept a request to chat directly.</p>
+      <?php endif; ?>
+    </section>
+    <footer class="profile-agent-footer">
+      <form class="profile-agent-compose"<?= $chatPreview ? ' data-profile-chat-preview' : '' ?>>
+        <textarea maxlength="2000" rows="2" placeholder="<?= $chatPreview ? 'Visitor message preview' : 'Message…' ?>" aria-label="Message Profile Agent"<?= $chatPreview ? ' disabled' : '' ?>></textarea>
+        <div class="profile-agent-attachments" data-profile-chat-attachments></div>
+        <div class="profile-agent-toolbar" role="group" aria-label="Chat actions">
+          <button type="button" data-profile-chat-add-image aria-label="Add image" title="Images can be shared in a conversation with the profile owner" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="15.5" cy="8.5" r="1"/></svg></button>
+          <button type="button" data-profile-chat-add-file aria-label="Add file" title="Files can be shared in a conversation with the profile owner" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8 8a5 5 0 0 1-7-7l8-8a3 3 0 0 1 4 4l-8 8a1 1 0 0 1-2-2l7-7"/></svg></button>
+          <button type="button" data-profile-chat-options-toggle aria-label="Chat options" title="Chat options"<?= $chatPreview ? ' disabled' : ' aria-controls="profileChatOptions" aria-expanded="false"' ?>><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l1.7-3.7A8.5 8.5 0 1 1 21 11.5Z"/><path d="M9 12h6"/></svg></button>
+          <button type="submit" class="profile-agent-send" title="Send"<?= $chatPreview ? ' disabled' : '' ?>><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13"/></svg><span class="profile-agent-visually-hidden" data-profile-send-label>Send</span></button>
+          <button type="button" data-profile-chat-settings-toggle aria-label="Chat settings" title="Chat settings" aria-controls="profileChatSettings" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.5 2.4-2 .9-2-.9-2 3.4 1.6 1.7v2.4L2.5 14l2 3.5 2.1-.7 2 .9.4 2.3h4l.4-2.3 2-.9 2.2.7 2-3.5-1.7-1.1v-2.4l1.6-1.7-2-3.4-2 .9-2-.9L13 3Z"/><circle cx="11" cy="11.5" r="3"/></svg></button>
+        </div>
+        <div class="profile-agent-status" data-profile-agent-status role="status"></div>
+      </form>
+    </footer>
   </section>
   <button type="button" class="profile-agent-launcher" data-open-profile-agent aria-controls="profileAgentShell" aria-expanded="false"><span class="vp3-public-orb" data-vp3-public-orb data-orb-shape="<?= e($profileOrbShape) ?>"<?= $isOwner ? ' data-vp3-orb-personal' : '' ?> aria-hidden="true"></span><span>Ask <?= e((string)$agent['display_name']) ?></span></button>
 </div>
 <?php endif; ?>
 <script>
 window.STONEFELLOW_PROFILE_AGENT={username:<?= json_encode($username,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,endpoint:<?= json_encode(url('/api/profile-agent.php'),JSON_UNESCAPED_SLASHES) ?>,callEndpoint:<?= json_encode(url('/api/profile-calls-pa3c.php'),JSON_UNESCAPED_SLASHES) ?>,speechEndpoint:<?= json_encode(url('/api/profile-speech-pa4a.php'),JSON_UNESCAPED_SLASHES) ?>,callOwnerName:<?= json_encode($displayName,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,profileToken:<?= json_encode($profileToken,JSON_UNESCAPED_SLASHES) ?>,conversationNamespace:<?= json_encode($conversationNamespace,JSON_UNESCAPED_SLASHES) ?>,agentName:<?= json_encode((string)($agent['display_name']??''),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,ownerName:<?= json_encode($displayName,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,greeting:<?= json_encode($agentGreeting,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>};
-<?php if($agent&&!$preview): ?>
+<?php if($agent&&!$chatPreview): ?>
 window.STONEFELLOW_PROFILE_AGENT.checkoutEndpoint=<?= json_encode(url('/api/profile-conversation-checkout-pa5.php'),JSON_UNESCAPED_SLASHES) ?>;
 window.STONEFELLOW_PROFILE_AGENT.checkoutAvailable=<?= json_encode($checkoutAvailable) ?>;
 <?php endif; ?>
@@ -357,7 +391,7 @@ for(const image of document.querySelectorAll('.profile-product-promotions img'))
 const profileAgentShell=document.getElementById('profileAgentShell');
 const profileAgentLauncher=document.querySelector('[data-open-profile-agent]');
 const profileAgentClose=document.querySelector('[data-close-profile-agent]');
-function setProfileAgentOpen(open){if(!profileAgentShell||!profileAgentLauncher)return;profileAgentShell.hidden=!open;profileAgentLauncher.setAttribute('aria-expanded',String(open));window.dispatchEvent(new CustomEvent('vp3:profile-agent-visibility',{detail:{open}}));if(open){(profileAgentShell.querySelector('textarea')||profileAgentClose)?.focus();window.dispatchEvent(new CustomEvent('vp3:profile-agent-open'));}else{profileAgentLauncher.focus();}}
+function setProfileAgentOpen(open){if(!profileAgentShell||!profileAgentLauncher)return;profileAgentShell.hidden=!open;profileAgentLauncher.setAttribute('aria-expanded',String(open));window.dispatchEvent(new CustomEvent('vp3:profile-agent-visibility',{detail:{open}}));if(open){(profileAgentShell.querySelector('textarea:not(:disabled)')||profileAgentClose)?.focus();window.dispatchEvent(new CustomEvent('vp3:profile-agent-open'));}else{profileAgentLauncher.focus();}}
 profileAgentLauncher?.addEventListener('click',()=>setProfileAgentOpen(profileAgentShell?.hidden!==false));
 profileAgentClose?.addEventListener('click',()=>setProfileAgentOpen(false));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgentShell&&!profileAgentShell.hidden)setProfileAgentOpen(false);});
@@ -409,12 +443,14 @@ window.VP3_PROFILE_WEBMCP={
 <?php if($agent): ?>
 <script src="<?= e(url('/agent-orb-particles.js?v='.substr(hash_file('sha256',__DIR__.'/agent-orb-particles.js'),0,12))) ?>" defer></script>
 <?php endif; ?>
-<?php if($agent&&!$preview): $profileCallsBuild='profile-calls-pa3c-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-calls-pa3c.js').hash_file('sha256',__DIR__.'/profile-calls-pa3c.css')),0,12); ?>
+<?php if($agent&&!$chatPreview): $profileCallsBuild='profile-calls-pa3c-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-calls-pa3c.js').hash_file('sha256',__DIR__.'/profile-calls-pa3c.css')),0,12); ?>
 <link rel="stylesheet" href="<?= e(url('/profile-calls-pa3c.css?v='.$profileCallsBuild)) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-speech-pa4a.css?v='.substr(hash_file('sha256',__DIR__.'/profile-speech-pa4a.css'),0,12))) ?>">
 <script data-voice-capture-scope="<?= e($viewer?(string)(int)$viewer['id']:'guest') ?>" src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-native-receiver-20261023')) ?>"></script>
 <script src="<?= e(url('/profile-calls-pa3c.js?v='.$profileCallsBuild)) ?>"></script>
 <script src="<?= e(url('/profile-conversation-checkout-pa5.js?v='.substr(hash_file('sha256',__DIR__.'/profile-conversation-checkout-pa5.js'),0,12))) ?>"></script>
+<?php endif; ?>
+<?php if($agent): ?>
 <script src="<?= e(url('/profile-agent.js?v=profile-direct-calls-pa3c-'.substr(hash_file('sha256',__DIR__.'/profile-agent.js'),0,12))) ?>"></script>
 <?php endif; ?>
 </body>

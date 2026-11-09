@@ -93,8 +93,9 @@
     const cards=new Map(),invalidated=new Set();
     let productsKey='',catalogOpen=false,catalogBusy=false,mutationBusy=false,statusBusy=false,generation=0;
     let prepareAttempt=null;
+    const currentAttemptStorageKey=()=>typeof attemptStorageKey==='function'?attemptStorageKey():attemptStorageKey;
     try{
-      const saved=JSON.parse(sessionStorage.getItem(attemptStorageKey)||'null');
+      const saved=JSON.parse(sessionStorage.getItem(currentAttemptStorageKey())||'null');
       if(id(saved?.request_id)&&text(saved?.selection,220)&&whole(saved?.cid,0)
         &&whole(saved?.savedAt,Date.now()-10*60*1000,Date.now()))prepareAttempt=saved;
     }catch(_error){}
@@ -105,8 +106,8 @@
         if(value){
           // Keep the opaque retry identity, with no buyer email or receipt data.
           const {request_id,selection,cid,savedAt}=value;
-          sessionStorage.setItem(attemptStorageKey,JSON.stringify({request_id,selection,cid,savedAt}));
-        }else sessionStorage.removeItem(attemptStorageKey);
+          sessionStorage.setItem(currentAttemptStorageKey(),JSON.stringify({request_id,selection,cid,savedAt}));
+        }else sessionStorage.removeItem(currentAttemptStorageKey());
       }catch(_error){}
     }
     const atContext=({key})=>context().key===key;

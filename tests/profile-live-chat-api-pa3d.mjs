@@ -62,6 +62,16 @@ try{
   invoke('settings','online',1);
   r=await presence();check(r.status===200&&r.data.reachable,'actual Chat heartbeat establishes fresh exact owner presence');
   r=await profile('GET',{...publicBase,action:'state'});check(projection(r.data,'auto','none'),'existing Online and social settings expose live text availability');
+  const beforeSessionRefresh=snapshot();
+  r=await profile('GET',{username:'fixture-owner',action:'visitor_session'});
+  check(r.status===200&&r.data.conversation_namespace===publicBase.conversation_namespace&&r.data.profile_token===publicBase.profile_token&&Object.keys(r.data).length===3,'session recovery returns only the current native browser binding');
+  r=await profile('GET',{username:'fixture-owner',action:'visitor_session',conversation_id:31},foreign);
+  check(r.status===422&&r.data.code==='VALIDATION_FAILED','session recovery cannot inspect or adopt a supplied conversation');
+  r=await profile('POST',{username:'fixture-owner',action:'visitor_session'});
+  check(r.status===405,'session recovery accepts only a read');
+  r=await profile('GET',{username:'fixture-owner',action:'visitor_session'},owner);
+  check(r.status===403&&r.data.code==='OWNER_VISITOR_PREVIEW_REQUIRED','owner cannot use session recovery to start a visitor conversation with their own profile');
+  check(JSON.stringify(snapshot())===JSON.stringify(beforeSessionRefresh)&&modelCalls()===0,'session recovery creates no messages, owner attention, jobs or conversations');
   const invalidBefore=snapshot();
   for(const mode of ['', 'LIVE', 'invalid', null,1,true,[],{}]){
     r=await send(mode,'Invalid mode must never save a turn');
@@ -205,6 +215,57 @@ try{
   check(r.status===500&&r.data.ok===false&&r.data.code==='PROFILE_AGENT_REQUEST_FAILED'&&safe(r.raw),'production admission SQL failure returns a safe unsuccessful HTTP response');
   check(JSON.stringify(snapshot())===JSON.stringify(faultBefore)&&modelCalls()===0,'failed live admission rolls back the message, attention, turn, cards and job atomically');
   check(beforeFault.rows.profile_agent_messages.length===0,'fault scenario begins with a clean independent SQL fixture');
+
+  await reset();await presence();invoke('attachments');
+  const image=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
+  const fileCaption='Caption for the profile owner alone';
+  async function upload(cid,requestId=key(),name='photo.png',contents=image,fields={}){
+    const form=new FormData();
+    form.set('attachment_payload',JSON.stringify({...publicBase,action:'message',conversation_id:cid,client_request_id:requestId,message:fileCaption,chat_mode:'live',continue_live:true,...fields}));
+    form.set('profile_attachment',new Blob([contents],{type:'image/png'}),name);
+    const wire=headers(visitor);delete wire['Content-Type'];
+    const response=await fetch(base+'/api/profile-agent.php',{method:'POST',headers:wire,body:form});
+    return {status:response.status,data:await response.json()};
+  }
+  const emptyState=await profile('GET',{...publicBase,action:'state'});
+  check(emptyState.data.attachment_max_bytes===2097152,'installed attachment storage reports its exact upload limit');
+  r=await upload(0);
+  check(r.status===409&&r.data.code==='PROFILE_ATTACHMENT_OWNER_REQUIRED'&&rows('profile_agent_messages').length===0,'a file cannot create a public Profile Agent conversation');
+  const initial=(await send('live','Accept this live chat before receiving a file')).data, attachmentCid=initial.conversation_id;
+  invoke('age');r=await upload(attachmentCid);
+  check(r.status===409&&r.data.code==='PROFILE_ATTACHMENT_OWNER_REQUIRED','a waiting human chat cannot receive an attachment yet');
+  await ownerAction('claim',initial);
+  r=await upload(attachmentCid,key(),'unsafe.html',Buffer.from('<script>alert(1)</script>'));
+  check(r.status===422&&r.data.code==='PROFILE_ATTACHMENT_INVALID','an executable document is rejected regardless of browser MIME');
+  r=await upload(attachmentCid,key(),'pretending.png',Buffer.from('<script>alert(1)</script>'));
+  check(r.status===422&&r.data.code==='PROFILE_ATTACHMENT_INVALID','an image extension cannot bypass content validation');
+  const attachmentKey=key();r=await upload(attachmentCid,attachmentKey);const attachment=r.data;
+  check(r.status===200&&attachment.handoff.state==='owner_claimed'&&attachment.attachment?.name==='photo.png'&&modelCalls()===0,'a validated attachment saves into the accepted owner turn');
+  r=await upload(attachmentCid,attachmentKey);
+  check(r.status===200&&r.data.duplicate&&r.data.visitor_message_id===attachment.visitor_message_id,'retry preserves the exact attachment without duplicate messages');
+  r=await upload(attachmentCid,attachmentKey,'renamed.png');
+  check(r.status===409&&r.data.code==='HANDOFF_REPLAY_CONFLICT','a retry cannot replace the saved attachment metadata');
+  const download={action:'attachment',username:publicBase.username,conversation_namespace:publicBase.conversation_namespace,conversation_id:attachmentCid,message_id:attachment.visitor_message_id};
+  const transfer=(params,who=visitor)=>fetch(base+'/api/profile-agent.php?'+new URLSearchParams(params),{headers:headers(who)});
+  const preview=await transfer({...download,preview:1});
+  check(preview.ok&&preview.headers.get('content-type')==='image/png'&&preview.headers.get('cache-control')==='private, no-store'&&Buffer.from(await preview.arrayBuffer()).equals(image),'only the authorized native visitor can preview the original image');
+  const ownerDownload={action:'owner_attachment',conversation_id:attachmentCid,message_id:attachment.visitor_message_id};
+  const file=await transfer(ownerDownload,owner);
+  check(file.ok&&file.headers.get('content-type')==='application/octet-stream'&&file.headers.get('content-disposition')?.includes('attachment')&&Buffer.from(await file.arrayBuffer()).equals(image),'the authorized owner downloads the same bytes as a file');
+  check(!(await transfer(ownerDownload,otherOwner)).ok&&!(await transfer({...download,conversation_namespace:foreignBase.conversation_namespace},foreign)).ok
+    &&!(await transfer({...download,conversation_id:attachmentCid+10})).ok,'another profile owner, visitor, or conversation cannot download the attachment');
+  const received=await profile('POST',{action:'conversation_messages',conversation_id:attachmentCid,csrf_token:csrf},owner);
+  check(received.data.messages.find(m=>m.id===attachment.visitor_message_id)?.attachment?.name==='photo.png'
+    &&(await poll(attachmentCid)).data.messages.find(m=>m.id===attachment.visitor_message_id)?.message===fileCaption
+    &&!rows('profile_agent_messages').some(m=>m.message.includes(fileCaption)),'owner and visitor recover the caption and attachment metadata from the same private thread');
+  const cards=await chat('POST',{action:'doorbell_list',csrf_token:csrf,chat_conversation_id:11,chat_agent_id:7});
+  check(cards.data.turns[0]?.visitor_attachment?.name==='photo.png','owner Main Chat card carries its private attachment link metadata');
+  r=await profile('POST',endFields(attachment));
+  check(r.status===200&&turn(attachment).state==='cancelled','ending live chat never delegates the private attachment to the public Agent');
+  await dispatch(attachment);
+  check(modelCalls()===0,'private attachment has no public inference job after the owner leaves');
+  invoke('age');r=await upload(attachmentCid);
+  check(r.status===409&&r.data.code==='PROFILE_ATTACHMENT_OWNER_REQUIRED','stale live session cannot fall back to a public attachment send');
   console.log(`PROFILE_LIVE_CHAT_API_PA3D=PASS (${checks} checks; ${driver})`);
 }finally{
   if(child.exitCode===null&&child.signalCode===null&&child.pid){

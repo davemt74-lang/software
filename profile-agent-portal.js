@@ -199,7 +199,11 @@ function renderThread(binding,c,m){
   const heading=`<strong>${esc(c.visitor_label||'Visitor')}</strong><small>${esc(String(c.status||'open').replace('_',' '))} · last message ${esc(relative(c.last_message_at))}</small>`;
   if(identity.innerHTML!==heading)identity.innerHTML=heading;
   const messages=threadHost.querySelector('.profile-agent-thread-messages');
-  const html=m.map(x=>`<div class="profile-agent-message ${esc(x.sender_type)}"><small>${esc(x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':'Profile Agent')}</small>${esc(x.message)}</div>`).join('')||'<div class="profile-agent-empty">No messages yet.</div>';
+  const html=m.map(x=>{
+    const file=x.attachment?.name&&conversationId(x.id)
+      ? `<br><a href="${esc(cfg.endpoint)}?action=owner_attachment&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}" download>Download ${esc(x.attachment.name)}</a>`:'';
+    return `<div class="profile-agent-message ${esc(x.sender_type)}"><small>${esc(x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':'Profile Agent')}</small>${esc(x.message)}${file}</div>`;
+  }).join('')||'<div class="profile-agent-empty">No messages yet.</div>';
   if(messages.innerHTML!==html){const top=messages.scrollTop,atEnd=messages.scrollHeight-messages.scrollTop-messages.clientHeight<40;messages.innerHTML=html;messages.scrollTop=atEnd?messages.scrollHeight:top;}
   updateThreadControls(binding);
 }

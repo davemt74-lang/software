@@ -49,6 +49,7 @@ function vp3_initiative_plan_v1(string $answer,array $evidence,array $allowedToo
         if(!isset($refs[$primary])||isset($primaries[$assignment])||$job['focus']===''||mb_strlen($job['focus'])>300){
             throw new InvalidArgumentException('Invalid initiative assignment scope.');
         }
+        if($job['tool']==='topic.research')$job['refs']=[$primary];
         $primaries[$assignment]=true;
     }
     unset($job);
@@ -622,7 +623,7 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         'workbench-product'=>'workbench_product','workbench-marketing'=>'workbench_marketing','workbench-screen'=>'workbench_screen','workbench-mission'=>'workbench_mission',
         'open-task'=>'open_tasks','activity-situation'=>'activity_situations',
         'mission-evidence'=>'mission_evidence','product-context'=>'product_context',
-        'task-list'=>'task_lists','live-context'=>'live_context','artist-interest'=>'artist_research'];
+        'task-list'=>'task_lists','live-context'=>'live_context','artist-interest'=>'artist_research','topic-interest'=>'topic_research'];
     foreach($sources as $ref=>$revision){
         if(($current[$ref]['revision']??null)===$revision)continue;
         $family=$families[explode(':',$ref,2)[0]]??'';
@@ -693,7 +694,8 @@ function vp3_initiative_report_v1(PDO $pdo,array $user,int $cid,string $draft,ar
         $link=['source'=>mb_substr($source['source'],0,190),'title'=>mb_substr($source['title'],0,190)];
         if(is_string($source['url']??null)&&str_starts_with($source['url'],'/')&&!str_starts_with($source['url'],'//')
             &&!str_contains($source['url'],'\\'))$link['url']=mb_substr($source['url'],0,1900);
-        if(($toolResult['output']['type']??null)==='initiative_artist_research'&&is_string($source['url']??null)
+        if(in_array($toolResult['output']['type']??null,['initiative_artist_research','initiative_topic_research'],true)
+            &&is_string($source['url']??null)
             &&strlen($source['url'])<=1900&&str_starts_with($source['url'],'https://')
             &&in_array($source['coverage']??null,['page_excerpt','search_match'],true)){
             $link['url']=$source['url'];

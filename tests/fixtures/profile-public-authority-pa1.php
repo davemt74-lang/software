@@ -6,6 +6,7 @@ function profile_public_authority_fixture_pa1(PDO $pdo): void
 {
     $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
     $auto=$mysql?'INTEGER PRIMARY KEY AUTO_INCREMENT':'INTEGER PRIMARY KEY AUTOINCREMENT';
+    $messageId=$mysql?'BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT':$auto;
     $long=$mysql?'LONGTEXT':'TEXT';
     $schemas=[
         'users'=>"id INTEGER PRIMARY KEY,display_name VARCHAR(190),email VARCHAR(190),role VARCHAR(40),is_active INTEGER,avatar_path VARCHAR(255),password_hash VARCHAR(255),last_login_at DATETIME",
@@ -13,7 +14,7 @@ function profile_public_authority_fixture_pa1(PDO $pdo): void
         'user_profiles'=>"user_id INTEGER PRIMARY KEY,username VARCHAR(80),bio TEXT,is_public INTEGER,profile_agent_enabled INTEGER,profile_agent_id INTEGER,profile_agent_greeting TEXT,profile_agent_instructions TEXT,share_visit_identity INTEGER",
         'profile_visit_sessions'=>"id $auto,owner_user_id INTEGER,visitor_user_id INTEGER,session_key VARCHAR(64),identity_disclosed INTEGER DEFAULT 0,view_count INTEGER DEFAULT 0,first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,last_message_at DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(owner_user_id,session_key)",
         'profile_agent_conversations'=>"id $auto,owner_user_id INTEGER,profile_agent_id INTEGER,profile_session_id INTEGER,visitor_user_id INTEGER,status VARCHAR(30) DEFAULT 'open',last_summary VARCHAR(1000) DEFAULT '',started_at DATETIME DEFAULT CURRENT_TIMESTAMP,last_message_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
-        'profile_agent_messages'=>"id $auto,conversation_id INTEGER,sender_type VARCHAR(20),sender_user_id INTEGER,message TEXT,context_json $long,created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+        'profile_agent_messages'=>"id $messageId,conversation_id INTEGER,sender_type VARCHAR(20),sender_user_id INTEGER,message TEXT,context_json $long,created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
         'profile_events'=>"id $auto,owner_user_id INTEGER,profile_session_id INTEGER,visitor_user_id INTEGER,profile_agent_id INTEGER,event_type VARCHAR(50),priority INTEGER,dedupe_key VARCHAR(64) UNIQUE,metadata_json $long,created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
         'agent_attention_items'=>"id $auto,owner_user_id INTEGER,source_event_id INTEGER UNIQUE,source_conversation_id INTEGER,profile_agent_id INTEGER,visitor_user_id INTEGER,attention_type VARCHAR(50),priority INTEGER,headline VARCHAR(190),summary TEXT,assessment TEXT,recommended_response TEXT,actions_json $long,context_json $long,status VARCHAR(20) DEFAULT 'pending',snoozed_until DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
         'notifications'=>"id $auto,user_id INTEGER,type VARCHAR(80),title VARCHAR(190),body TEXT,target_url VARCHAR(500),source_type VARCHAR(80),source_id INTEGER,is_read INTEGER DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP",

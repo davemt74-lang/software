@@ -7,6 +7,7 @@ const VP3_PROFILE_HANDOFF_PICKUP_MS_PA3=15000;
 const VP3_PROFILE_HANDOFF_DELIVERY_MS_PA3=5000;
 const VP3_PROFILE_HANDOFF_PRESENCE_MS_PA3=45000;
 require_once __DIR__.'/profile-live-text-pa3d.php';
+require_once __DIR__.'/profile-chat-attachments-v1.php';
 
 final class VP3ProfileHandoffException extends RuntimeException
 {
@@ -171,6 +172,7 @@ function vp3_profile_handoff_request_hash_pa3(array $ctx,string $query,string $c
     // Keep the original byte-for-byte retry binding for saved legacy intents.
     if($chatMode!=='auto')$binding[]=$chatMode;
     if($continueLive)$binding[]='continue_live';
+    if(isset($ctx['profile_attachment_fingerprint']))$binding[]=$ctx['profile_attachment_fingerprint'];
     return hash('sha256',json_encode($binding,JSON_THROW_ON_ERROR));
 }
 function vp3_profile_handoff_retry_pa3(PDO $pdo,array $ctx,string $requestId,string $query,string $chatMode='auto',bool $continueLive=false): ?array
@@ -244,7 +246,7 @@ function vp3_profile_handoff_admit_pa3(PDO $pdo,array $ctx,array $conversation,i
     $pdo->prepare('UPDATE profile_agent_handoff_turns_pa3 SET run_id=?,action_id=?,notification_id=? WHERE id=?')->execute([$runId,$actionId,$notification?:null,$turnId]);
     vp3_profile_handoff_schedule_pa3($pdo,$uid,$cid);
     $savedTurn=vp3_profile_handoff_row_pa3($pdo,$turnId)??throw new RuntimeException('Visitor turn was not saved.');
-    if(function_exists('vp3_profile_speech_message_pa4a')){
+    if(!isset($ctx['profile_attachment_fingerprint'])&&function_exists('vp3_profile_speech_message_pa4a')){
         // Optional narration never grants or changes the public responder.
         try{vp3_profile_speech_message_pa4a($pdo,$ctx,$savedTurn);}catch(VP3ProfileSpeechException $e){if($e->httpStatus!==403)throw $e;}
     }
@@ -308,6 +310,11 @@ function vp3_profile_handoff_owner_card_pa3(PDO $pdo,array $turn,int $chatCid=0,
     $out['visitor_label']=!empty($session['identity_disclosed'])&&is_string($session['display_name']??null)?mb_substr(trim($session['display_name']),0,100):'Visitor';
     if($out['visitor_label']==='')$out['visitor_label']='Visitor';$out['visitor_message']=mb_substr($message,0,4000);$out['agent_name']=is_string($agent)?mb_substr($agent,0,100):'Profile Agent';
     $q=$pdo->prepare("SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND sender_type IN ('visitor','owner','agent') ORDER BY id DESC LIMIT 20");$q->execute([$cid]);$out['history']=array_reverse(array_map(static fn(array $m):array=>['id'=>(int)$m['id'],'sender_type'=>(string)$m['sender_type'],'message'=>mb_substr((string)$m['message'],0,8000),'created_at'=>(string)$m['created_at']],$q->fetchAll(PDO::FETCH_ASSOC)));
+    $out['history']=vp3_profile_chat_attachment_messages_v1($pdo,$out['history']);
+    foreach($out['history'] as $row){
+        if($row['id']!==$out['visitor_message_id']||!isset($row['attachment']))continue;
+        $out['visitor_attachment']=$row['attachment'];$out['visitor_message']=$row['message'];break;
+    }
     return $out;
 }
 function vp3_profile_handoff_owner_list_pa3(PDO $pdo,array $user,array $input=[]): array
@@ -414,10 +421,11 @@ function vp3_profile_handoff_mode_pa3(PDO $pdo,int $owner,int $cid,string $mode,
     if(!in_array($liveStatus,['none','waiting','accepted','declined','expired','unavailable','ended'],true))throw new RuntimeException('Visitor live status is invalid.');
     $deliveryUntil=$mode==='pending'?$now+VP3_PROFILE_HANDOFF_DELIVERY_MS_PA3:null;
     $pdo->prepare('UPDATE profile_agent_handoff_conversations_pa3 SET mode=?,requested_mode=?,live_status=?,epoch=?,delivery_until_ms=?,acknowledged_at_ms=NULL,pickup_deadline_ms=NULL,updated_at_ms=? WHERE conversation_id=? AND owner_user_id=?')->execute([$mode,$requestedMode,$liveStatus,$epoch,$deliveryUntil,$now,$cid,$owner]);
-    $q=$pdo->prepare("SELECT id,run_id,action_id FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND conversation_id=? AND state IN ('awaiting_delivery','awaiting_owner','agent_ready','agent_running','owner_claimed') ORDER BY id".vp3_profile_handoff_lock_pa3($pdo));$q->execute([$owner,$cid]);$turns=$q->fetchAll(PDO::FETCH_ASSOC);
+    $q=$pdo->prepare("SELECT t.id,t.run_id,t.action_id,CASE WHEN m.context_json=? THEN 1 ELSE 0 END private_attachment FROM profile_agent_handoff_turns_pa3 t LEFT JOIN profile_agent_messages m ON m.id=t.visitor_message_id WHERE t.owner_user_id=? AND t.conversation_id=? AND t.state IN ('awaiting_delivery','awaiting_owner','agent_ready','agent_running','owner_claimed') ORDER BY t.id".vp3_profile_handoff_lock_pa3($pdo));$q->execute([VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1,$owner,$cid]);$turns=$q->fetchAll(PDO::FETCH_ASSOC);
     foreach($turns as $turn){
-        $pdo->prepare('UPDATE profile_agent_handoff_turns_pa3 SET state=?,version=version+1,conversation_epoch=?,execution_lease_token=\'\',delivery_until_ms=?,acknowledged_at_ms=NULL,pickup_deadline_ms=NULL,last_error_class=?,updated_at=? WHERE id=? AND owner_user_id=?')->execute([$state,$epoch,$deliveryUntil,$mode==='resolved'?'owner_resolved':'',vp3_profile_handoff_date_pa3($now),(int)$turn['id'],$owner]);
-        $jobState=$mode==='resolved'?'cancelled':'paused';$actionState=$mode==='resolved'?'cancelled':'queued';
+        $cancelled=$mode==='resolved'||($mode!=='owner'&&(int)$turn['private_attachment']===1);
+        $pdo->prepare('UPDATE profile_agent_handoff_turns_pa3 SET state=?,version=version+1,conversation_epoch=?,execution_lease_token=\'\',delivery_until_ms=?,acknowledged_at_ms=NULL,pickup_deadline_ms=NULL,last_error_class=?,updated_at=? WHERE id=? AND owner_user_id=?')->execute([$cancelled?'cancelled':$state,$epoch,$cancelled?null:$deliveryUntil,$mode==='resolved'?'owner_resolved':'',vp3_profile_handoff_date_pa3($now),(int)$turn['id'],$owner]);
+        $jobState=$cancelled?'cancelled':'paused';$actionState=$cancelled?'cancelled':'queued';
         $pdo->prepare("UPDATE agent_workflow_runs SET status=?,lease_owner='',lease_token='',lease_expires_at=NULL,heartbeat_at=NULL,current_action_id=NULL,next_attempt_at=NULL,progress_message=? WHERE id=? AND owner_user_id=? AND status NOT IN ('completed','failed','cancelled')")->execute([$jobState,$mode==='resolved'?'Visitor conversation resolved':'Visitor responder changed',(int)$turn['run_id'],$owner]);
         $pdo->prepare("UPDATE agent_workflow_actions SET status=?,available_at=NULL,heartbeat_at=NULL,progress_message=? WHERE id=? AND run_id=? AND owner_user_id=? AND status NOT IN ('completed','failed','cancelled')")->execute([$actionState,'Visitor responder changed',(int)$turn['action_id'],(int)$turn['run_id'],$owner]);
     }
