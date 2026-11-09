@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__).'/includes/bootstrap.php';
 require_login();
 require_permission('users.manage');
+require_once dirname(__DIR__).'/includes/ai-service-policy-v1.php';
 
 $pdo=db();
 if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
@@ -69,12 +70,18 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             if($action==='duplicate'){
                 $source=subscription_package($editId);if(!$source)throw new RuntimeException('Package not found.');
                 $slug=admin_package_slug((string)$source['slug'].'-copy-'.date('His'));
+                $pdo->beginTransaction();
                 $stmt=$pdo->prepare('INSERT INTO subscription_packages (slug,name,description,monthly_price_cents,annual_price_cents,ai_tokens_monthly,trial_days,trial_tokens,is_trial,is_default,is_public,is_active,sort_order) VALUES (?,?,?,?,?,?,?,?,?,0,0,1,?)');
                 $stmt->execute([$slug,(string)$source['name'].' Copy',(string)$source['description'],(int)$source['monthly_price_cents'],(int)$source['annual_price_cents'],(int)$source['ai_tokens_monthly'],(int)$source['trial_days'],(int)$source['trial_tokens'],(int)$source['is_trial'],(int)$source['sort_order']+1]);
                 $newId=(int)$pdo->lastInsertId();
                 $pdo->prepare("INSERT INTO package_entitlements (package_id,capability_key,is_enabled,limit_value,metadata_json)
                     SELECT ?,capability_key,is_enabled,limit_value,metadata_json FROM package_entitlements
                     WHERE package_id=? AND capability_key NOT LIKE 'permission.%' AND capability_key<>'legacy.permissions'")->execute([$newId,$editId]);
+                foreach (array_keys(vp3_ai_service_catalog_v1()) as $service) {
+                    $rule = vp3_ai_service_read_rule_v1($pdo, 'package', $editId, $service);
+                    if ($rule !== []) vp3_ai_service_save_rule_v1($pdo, 'package', $newId, $service, $rule, (int)current_user()['id']);
+                }
+                $pdo->commit();
                 flash('notice','Package duplicated.');redirect(url('/admin/packages.php?edit='.$newId));
             }
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();$error=$e->getMessage();}
@@ -102,7 +109,10 @@ $adminTitle='Packages';$adminActive='packages';require __DIR__.'/_header.php';
       <td><?php if((int)$row['monthly_price_cents']>0): ?>$<?= number_format((int)$row['monthly_price_cents']/100,2) ?>/mo<?php else: ?>Free<?php endif; ?><br><small><?php if((int)$row['annual_price_cents']>0): ?>$<?= number_format((int)$row['annual_price_cents']/100,2) ?>/yr<?php else: ?>No annual price<?php endif; ?></small></td>
       <td><?= (int)$row['is_trial']===1?number_format((int)$row['trial_tokens']).' trial':number_format((int)$row['ai_tokens_monthly']).' / month' ?></td>
       <td><?= (int)$row['is_active']===1?'Active':'Inactive' ?><?= (int)$row['is_public']===1?' · Public':' · Hidden' ?></td>
-      <td><a class="button button-small" href="<?= e(url('/admin/packages.php?edit='.(int)$row['id'])) ?>">Edit</a></td>
+      <td>
+        <a class="button button-small" href="<?= e(url('/admin/packages.php?edit='.(int)$row['id'])) ?>">Edit</a>
+        <?php if (has_permission('ai.manage')): ?><a class="button button-small" href="<?= e(url('/admin/ai-service-rules.php?scope=package&id='.(int)$row['id'])) ?>">AI service rules</a><?php endif; ?>
+      </td>
     </tr><?php endforeach; ?>
     <?php if(!$packages): ?><tr><td colspan="5">No packages configured.</td></tr><?php endif; ?>
   </tbody></table></div>
@@ -133,6 +143,7 @@ $adminTitle='Packages';$adminActive='packages';require __DIR__.'/_header.php';
     </div>
     <div class="admin-modal-foot">
       <?php if($package): ?><form method="post" style="margin-right:auto"><?= csrf_field() ?><input type="hidden" name="action" value="duplicate"><input type="hidden" name="package_id" value="<?= (int)$editId ?>"><button class="button" type="submit">Duplicate</button></form><?php endif; ?>
+      <?php if ($package && has_permission('ai.manage')): ?><a class="button" href="<?= e(url('/admin/ai-service-rules.php?scope=package&id='.(int)$editId)) ?>">AI service rules</a><?php endif; ?>
       <a class="button" href="<?= e(url('/admin/packages.php')) ?>" data-admin-modal-close>Cancel</a><button class="button primary" type="submit" form="packageForm">Save package</button>
     </div>
   </div>

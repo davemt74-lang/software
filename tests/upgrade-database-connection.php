@@ -25,7 +25,7 @@ $partialSpeech=[
     'partial-assistance-research'=>['profile_call_research_pa3c','result_json'],
 ];
 if (!isset($argv[1])) {
-    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech));
+    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech));
     foreach ($modes as $mode) {
         $command = escapeshellarg(PHP_BINARY).(php_ini_loaded_file() ? ' -c '.escapeshellarg(php_ini_loaded_file()) : '').' '.escapeshellarg(__FILE__).' '.escapeshellarg($mode);
         passthru($command, $status);
@@ -93,7 +93,20 @@ eval(substr($checkoutDdl,$checkoutStart,$checkoutEnd-$checkoutStart));
 if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$mode==='missing-vp3_youtube_watch_v1';
-$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape'],true)||$missingTable||isset($partialSpeech[$mode]);
+$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage'],true)||$missingTable||isset($partialSpeech[$mode]);
+$fixture->exec('CREATE TABLE ai_execution_ledger(id INTEGER PRIMARY KEY)');
+if($modern&&$mode!=='missing-ai-service-usage')$fixture->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
+function vp3_ai_service_usage_ready_v1(PDO $pdo): bool
+{
+    try{return $pdo->query('SELECT service_attempt_key FROM ai_execution_ledger WHERE 1=0')!==false;}
+    catch(PDOException){return false;}
+}
+function ai_usage_accounting_v032_ensure_schema(?PDO $pdo=null): void
+{
+    $pdo??=$GLOBALS['fixture'];
+    if(!vp3_ai_service_usage_ready_v1($pdo))$pdo->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
+    $GLOBALS['calls'][]=__FUNCTION__;
+}
 if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);}
 if($modern){
     initiative_product_launch_schema_v1($fixture);
@@ -149,7 +162,7 @@ foreach ($functions as $name => $typed) {
     else eval('function '.$name.'(...$args) { return migration_dependency(__FUNCTION__, $args); }');
 }
 
-$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
+$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
 // Reproduce the reported deployment: bootstrap does not supply a page-local PDO.
 $pdo = null;
 ob_start(); eval(preg_replace('/^<\?php\s*/', '', $source)); $html = ob_get_clean();
@@ -166,6 +179,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     check(chat_settings_get_v237($fixture,1)['auto_greet_enabled'] === ($mode !== 'post'), 'Upgrade did not preserve the default or saved Auto Greet preference');
     check(vp3_youtube_playback_ready_v1($fixture), 'Upgrade skipped the YouTube playback history schema');
     check(vp3_youtube_watch_ready_v1($fixture), 'Upgrade skipped the YouTube watch time schema');
+    check(vp3_ai_service_usage_ready_v1($fixture) && in_array('ai_usage_accounting_v032_ensure_schema',$calls,true), 'Upgrade skipped AI service usage storage');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'complete-get') {
     check($complete&&$dbCalls===1&&$calls===[],'Complete GET must inspect speech columns read-only and report ready');
@@ -179,7 +193,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
 } elseif ($mode === 'csrf') {
     check($error === 'Session expired. Please try again.' && $dbCalls === 0 && $calls === [], 'CSRF rejection allowed upgrade work');
 } else {
-    $needsConnection = isset($partialSpeech[$mode]) || $mode === 'missing-vp3_youtube_watch_v1';
+    $needsConnection = isset($partialSpeech[$mode]) || in_array($mode,['missing-vp3_youtube_watch_v1','missing-ai-service-usage'],true);
     check(!$complete && $dbCalls === ($needsConnection?1:0) && $calls === [], 'Missing required storage was marked ready or GET performed migrations');
     check(str_contains($html, 'Run Upgrade'), 'Missing required storage must expose the upgrade control');
 }

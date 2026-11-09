@@ -138,10 +138,8 @@ function chat_execution_v019_vp3_direct(array $user): array
     );
 }
 
-function chat_execution_v019_fallback(array $user,bool $homePaired,bool $homeAttempted=true): array
+function chat_execution_v019_home_attempt(bool $homePaired,bool $homeAttempted): array
 {
-    $ledger=chat_execution_v019_cloud_ledger($user);
-    $balance=chat_execution_v019_cloud_balance($user);
     $homeState=$homePaired?($homeAttempted?'unavailable':'not_used'):'not_paired';
     $fallbackReason=$homePaired?($homeAttempted?'homeserver_unavailable':'none'):'homeserver_not_paired';
     $attempt=function_exists('homeserver_agent_v018_last_attempt')?homeserver_agent_v018_last_attempt():[];
@@ -149,6 +147,14 @@ function chat_execution_v019_fallback(array $user,bool $homePaired,bool $homeAtt
     if($homePaired&&$homeAttempted&&($failureClass===''||$failureClass==='none'))$failureClass='homeserver_unavailable';
     if(!$homeAttempted)$failureClass='none';
     $latency=$homeAttempted?max(0,(int)($attempt['latency_ms']??0)):0;
+    return [$homeState,$fallbackReason,$failureClass,$latency];
+}
+
+function chat_execution_v019_fallback(array $user,bool $homePaired,bool $homeAttempted=true): array
+{
+    $ledger=chat_execution_v019_cloud_ledger($user);
+    $balance=chat_execution_v019_cloud_balance($user);
+    [$homeState,$fallbackReason,$failureClass,$latency]=chat_execution_v019_home_attempt($homePaired,$homeAttempted);
     if($ledger){
         $total=max(0,(int)($ledger['total_tokens']??0));
         return chat_execution_v019_base(
@@ -165,6 +171,37 @@ function chat_execution_v019_fallback(array $user,bool $homePaired,bool $homeAtt
         'vp3_retrieval','VP3 Retrieval','local','',$homeState,true,
         $fallbackReason==='none'?'local_retrieval':$fallbackReason,[],0,0,$latency,$failureClass,$balance['remaining'],!empty($balance['unlimited'])
     );
+}
+
+/** Attribute the answer to its actual response. A debit alone cannot establish which model answered. */
+function chat_execution_v019_provider_outcome(array $user,array $result,bool $homeAttempted=false,bool $homePaired=false): array
+{
+    $ids=is_array($result['service_attempt_ids']??null)?$result['service_attempt_ids']:[];
+    if(!$result){
+        return $homeAttempted?chat_execution_v019_fallback($user,$homePaired):chat_execution_v019_vp3_direct($user);
+    }
+    $personal=($result['compute_source']??'')==='user_provider';
+    $answered=!empty($result['ok'])||!empty($result['partial']);
+    $provider=$answered?(string)($result['provider']??''):'local';
+    $model=$answered?(string)($result['model']??''):'';
+    $source=$answered?($personal?'user_provider':'vp3_cloud'):'vp3_retrieval';
+    $label=$answered?($personal?'Cloud user provider':'VP3 Cloud'):'VP3 Retrieval';
+    [$home,$reason,$failureClass,$latency]=$homeAttempted
+        ?chat_execution_v019_home_attempt($homePaired,true)
+        :['not_used',$answered?'none':'local_retrieval','none',max(0,(int)($result['duration_ms']??0))];
+    $charge=max(0,(int)($result['cloud_tokens_charged']??0));
+    if(!$ids&&$answered&&!$personal){
+        $ledger=chat_execution_v019_cloud_ledger($user);
+        if(($ledger['provider']??null)===$provider&&($ledger['model']??null)===$model){
+            $charge=max(0,(int)($ledger['total_tokens']??0));
+        }
+    }
+    $balance=chat_execution_v019_cloud_balance($user);
+    $execution=chat_execution_v019_base($source,$label,$provider,$model,$home,$homeAttempted,$reason,
+        $answered&&is_array($result['usage']??null)?$result['usage']:[],0,$charge,
+        $latency,$failureClass,$balance['remaining'],!empty($balance['unlimited']));
+    if($ids)$execution['service_attempt_ids']=$ids;
+    return $execution;
 }
 
 function chat_execution_v019_tool(): array
@@ -240,7 +277,7 @@ function chat_execution_v019_source(array $execution): array
     elseif($model!=='')$parts[]=$model;
     elseif($provider!=='')$parts[]=$provider;
     $latency=(int)$safe['latency_ms'];
-    if($latency>0)$parts[]=number_format($latency).' ms HomeServer';
+    if($latency>0)$parts[]=number_format($latency).($safe['homeserver']==='not_used'?' ms provider':' ms HomeServer');
     $tokens=(int)($safe['usage']['total_tokens']??0);
     $cloudDebit=(int)$safe['cloud_tokens_debited'];
     // Preserve v0.19's generic model-token visibility, then add the distinct

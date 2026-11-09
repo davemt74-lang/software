@@ -4,6 +4,9 @@ require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_permission('ai.manage');
 require_once dirname(__DIR__).'/includes/agent-image-provider-v1.php';
 require_once dirname(__DIR__).'/includes/ai-credential-recovery.php';
+require_once dirname(__DIR__).'/includes/ai-service-policy-v1.php';
+require_once dirname(__DIR__).'/includes/ai-service-model-test-v1.php';
+require_once __DIR__.'/_ai-service-controls-v1.php';
 header('Cache-Control: no-store');
 
 $pdo = db();
@@ -42,11 +45,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('notice', 'Saved services reconnected. Original encrypted database values were retained for recovery. Test Chat and voice.');
             redirect(url('/admin/ai.php'));
         }
-        if ($action === 'save') {
-            if ($credentialRecoveryRequired) {
-                flash('error', 'Reconnect the saved services using the recovery form. Your credentials and settings have not been changed.');
-                redirect(url('/admin/ai.php').'#credential-recovery');
+        if ($credentialRecoveryRequired && in_array($action, ['save', 'save_provider_model', 'provider_model_command', 'save_service_route'], true)) {
+            flash('error', 'Reconnect the saved services using the recovery form. Your credentials and settings have not been changed.');
+            redirect(url('/admin/ai.php').'#credential-recovery');
+        }
+        if ($action === 'save_provider_model') {
+            $provider = vp3_admin_ai_service_post_string_v1('provider');
+            $services = $_POST['services'] ?? [];
+            if (!is_array($services)) throw new InvalidArgumentException('Select the services this model supports.');
+            vp3_ai_service_save_model_v1(
+                $pdo,
+                $provider,
+                vp3_admin_ai_service_post_string_v1('model'),
+                vp3_admin_ai_service_post_string_v1('label'),
+                $services
+            );
+            flash('notice', 'Provider model saved.');
+            redirect(url('/admin/ai.php?models='.$provider).'#provider-models-'.$provider);
+        }
+        if ($action === 'provider_model_command') {
+            $provider = vp3_admin_ai_service_post_string_v1('provider');
+            if (!in_array($provider, ['openai', 'anthropic'], true)) throw new InvalidArgumentException('Select a valid provider.');
+            $testModel = vp3_admin_ai_service_post_string_v1('test_model');
+            $removeModel = vp3_admin_ai_service_post_string_v1('remove_model');
+            if (($testModel === '') === ($removeModel === '')) throw new InvalidArgumentException('Select a model action.');
+            if ($removeModel !== '') {
+                vp3_ai_service_remove_model_v1($pdo, $provider, $removeModel);
+                flash('notice', 'Model registration removed.');
+            } else {
+                $result = vp3_ai_service_test_model_v1($pdo, current_user(), $provider, $testModel);
+                if ($result['ok']) {
+                    $resolvedModel = $result['resolved_model'] ?? $testModel;
+                    $detail = $resolvedModel === $testModel ? '' : ' The provider returned '.$resolvedModel.'.';
+                    flash('notice', 'The installation key can retrieve '.$testModel.'.'.$detail);
+                } else {
+                    $status = empty($result['status']) ? '' : ' (HTTP '.(int)$result['status'].')';
+                    flash('error', $result['error'].$status);
+                }
             }
+            redirect(url('/admin/ai.php?models='.$provider).'#provider-models-'.$provider);
+        }
+        if ($action === 'save_service_route') {
+            $service = vp3_admin_ai_service_post_string_v1('service');
+            if (empty(vp3_ai_service_catalog_v1()[$service]['wired'])) throw new InvalidArgumentException('Select an available service.');
+            vp3_ai_service_save_route_v1($pdo, $service, vp3_admin_ai_service_route_choice_v1('primary'), vp3_admin_ai_service_route_choice_v1('fallback'));
+            flash('notice', 'AI service route saved.');
+            redirect(url('/admin/ai.php?route='.$service).'#ai-service-route-'.$service);
+        }
+        if ($action === 'save') {
             $systemAgentName = trim(preg_replace('/\s+/u', ' ', (string)($_POST['system_agent_name'] ?? '')) ?? '');
             if ($systemAgentName === '') {
                 throw new RuntimeException('Enter a system agent name.');
@@ -274,7 +320,7 @@ require __DIR__ . '/_header.php';
           <option value="<?= e($value) ?>" <?= $activeProvider === $value ? 'selected' : '' ?>><?= e($label) ?></option>
         <?php endforeach; ?>
       </select>
-      <small>Agent Chat uses this provider for system inference. If it fails, Chat reports the failure. Application upgrades preserve your saved provider and model selections.</small>
+      <small>Default installation provider for Conversation when its route inherits the existing setup.</small>
     </div>
 
     <section class="ai-provider-card field full">
@@ -296,7 +342,7 @@ require __DIR__ . '/_header.php';
 
       <div class="ai-provider-fields">
         <div class="field">
-          <label for="openai_model">Model</label>
+          <label for="openai_model">Default chat model</label>
           <select id="openai_model" name="openai_model">
             <?php foreach ($catalog['openai'] as $model => $label): ?>
               <option value="<?= e($model) ?>" <?= ai_provider_model('openai') === $model ? 'selected' : '' ?>><?= e($label) ?></option>
@@ -313,13 +359,15 @@ require __DIR__ . '/_header.php';
 
       <div class="ai-provider-fields">
         <label class="admin-inline-check"><input type="checkbox" name="image_enabled" value="1" <?= vp3_image_settings_v1()['enabled'] ? 'checked' : '' ?>> Enable image generation in Chat</label>
-        <label class="field">Image model<select name="image_model"><?php foreach(vp3_image_models_v1() as $key=>$label): ?><option value="<?= e($key) ?>" <?= vp3_image_settings_v1()['model']===$key?'selected':'' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
-        <p>Uses this saved OpenAI key independently of the active Chat provider. Explicit image requests create one private image at a time, with progress and saved results on the Chat canvas. Image API usage uses the account AI quota.</p>
+        <label class="field">Default image model<select name="image_model"><?php foreach(vp3_image_models_v1() as $key=>$label): ?><option value="<?= e($key) ?>" <?= vp3_image_settings_v1()['model']===$key?'selected':'' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
+        <p>The default route uses the saved installation OpenAI key and the account's AI quota. Image requests appear on the private Chat canvas.</p>
       </div>
 
       <?php if (ai_provider_has_saved_key('openai')): ?>
         <label class="admin-inline-check ai-remove-key"><input type="checkbox" name="remove_openai_key" value="1"> Remove saved OpenAI key</label>
       <?php endif; ?>
+
+      <?php vp3_admin_ai_service_provider_registry_v1($pdo, 'openai'); ?>
 
       <div class="ai-provider-actions">
         <span class="ai-ready-state <?= ai_provider_ready('openai') ? 'ready' : '' ?>">
@@ -347,7 +395,7 @@ require __DIR__ . '/_header.php';
 
       <div class="ai-provider-fields">
         <div class="field">
-          <label for="anthropic_model">Model</label>
+          <label for="anthropic_model">Default chat model</label>
           <select id="anthropic_model" name="anthropic_model">
             <?php foreach ($catalog['anthropic'] as $model => $label): ?>
               <option value="<?= e($model) ?>" <?= ai_provider_model('anthropic') === $model ? 'selected' : '' ?>><?= e($label) ?></option>
@@ -365,6 +413,8 @@ require __DIR__ . '/_header.php';
       <?php if (ai_provider_has_saved_key('anthropic')): ?>
         <label class="admin-inline-check ai-remove-key"><input type="checkbox" name="remove_anthropic_key" value="1"> Remove saved Claude / Anthropic key</label>
       <?php endif; ?>
+
+      <?php vp3_admin_ai_service_provider_registry_v1($pdo, 'anthropic'); ?>
 
       <div class="ai-provider-actions">
         <span class="ai-ready-state <?= ai_provider_ready('anthropic') ? 'ready' : '' ?>">
@@ -433,6 +483,20 @@ require __DIR__ . '/_header.php';
     </div>
   </form>
 </div>
+
+<?php foreach (['openai', 'anthropic'] as $provider): ?>
+  <form id="ai-model-save-<?= e($provider) ?>" method="post" hidden>
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="save_provider_model">
+    <input type="hidden" name="provider" value="<?= e($provider) ?>">
+  </form>
+  <form id="ai-model-command-<?= e($provider) ?>" method="post" hidden>
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="provider_model_command">
+    <input type="hidden" name="provider" value="<?= e($provider) ?>">
+  </form>
+<?php endforeach; ?>
+<?php vp3_admin_ai_service_routes_v1($pdo); ?>
 
 <?php endif; ?>
 <div class="panel" id="connection-tests">

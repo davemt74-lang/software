@@ -11,7 +11,8 @@ const chat = fs.readFileSync(new URL('chat.js', root), 'utf8');
 assert.match(api, /chat-execution-v019\.php/);
 // v0.25 remains the HomeServer delegation compatibility path. Section 10 owns
 // the live route decision and supplies its cloud permission to that adapter.
-assert.match(api, /vp3_agent_runtime_plan_v420\(\$pdo,\$user,\$activeAgentId,'chat'\)/);
+assert.match(api, /\$serviceContext=\['service'=>'conversation','agent_id'=>\$activeAgentId,'conversation_id'=>\$conversationId/);
+assert.match(api, /vp3_agent_runtime_plan_v420\(\$pdo,\$user,\$activeAgentId,'chat',\$serviceContext\)/);
 assert.ok(api.includes("homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all'&&($r6Packet['state']['scope']['mode']??'all')!=='off'"));
 assert.ok(api.includes("'state_revision'=>$r6Packet['state']['revision'],'attachments'=>$r6Packet['attachments'],'query'=>$query,'fingerprint'=>$r6Packet['fingerprint']"));
 assert.match(delegation, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/);
@@ -20,8 +21,8 @@ assert.match(delegation, /homeserver_agent_v018_chat\(\$user,\$query,\$conversat
 // while v4.20 normalizes actual route and persists the richer route provenance.
 assert.match(api, /vp3_agent_runtime_homeserver_execution_v420\(\$homeResult\)/);
 assert.match(runtime, /chat_execution_v019_homeserver\(\$result\)/);
-assert.match(api, /chat_execution_v019_fallback\(\$user,!empty\(\$runtimePlan\['home'\]\['paired'\]\),true\)/);
-assert.match(api, /chat_execution_v019_vp3_direct\(\$user\)/);
+assert.match(api, /chat_execution_v019_provider_outcome\(\$user,chat_ai_response_outcome\(\),\$homeAttempted,!empty\(\$runtimePlan\['home'\]\['paired'\]\)\)/);
+assert.match(execution, /chat_execution_v019_fallback\(\$user,\$homePaired\):chat_execution_v019_vp3_direct\(\$user\)/);
 assert.match(api, /chat_execution_v019_tool\(\)/);
 assert.match(api, /vp3_agent_runtime_finalize_v420/);
 assert.match(api, /chat_execution_v019_source\(\$execution\)/);

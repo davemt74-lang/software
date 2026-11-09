@@ -6,6 +6,21 @@ const VP3_USER_LLM_V1='vp3.cloud.user-llm.v1';
 
 function vp3_user_llm_v1_providers(): array { return ['openai','anthropic']; }
 
+function vp3_user_llm_v1_models(PDO $pdo): array
+{
+    require_once __DIR__.'/ai-service-policy-v1.php';
+    $builtIn = ai_model_catalog();
+    try {
+        $registered = vp3_ai_service_models_v1($pdo, 'conversation');
+    } catch (PDOException | UnexpectedValueException) {
+        return $builtIn;
+    }
+    foreach (vp3_user_llm_v1_providers() as $provider) {
+        $builtIn[$provider] = ($registered[$provider] ?? []) + $builtIn[$provider];
+    }
+    return $builtIn;
+}
+
 function vp3_user_llm_v1_schema(PDO $pdo): void
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS user_llm_credentials (
@@ -64,8 +79,9 @@ function vp3_user_llm_v1_effective(PDO $pdo,array $user): array
     $stmt->execute([$uid,$name]);$row=$stmt->fetch(PDO::FETCH_ASSOC);
     if(!is_array($row))return ['route'=>'unavailable'];
     $key=ai_decrypt_secret((string)$row['encrypted_key']);
-    if($key===''||!ai_valid_model($name,(string)$row['model']))return ['route'=>'unavailable'];
-    return ['route'=>'own_key','provider'=>$name,'model'=>(string)$row['model'],'api_key'=>$key];
+    $model=(string)$row['model'];
+    if($key===''||(!ai_valid_model($name,$model)&&!isset(vp3_user_llm_v1_models($pdo)[$name][$model])))return ['route'=>'unavailable'];
+    return ['route'=>'own_key','provider'=>$name,'model'=>$model,'api_key'=>$key];
 }
 
 function vp3_user_llm_v1_save(PDO $pdo,array $user,string $provider,string $apiKey,string $model): array
@@ -73,7 +89,7 @@ function vp3_user_llm_v1_save(PDO $pdo,array $user,string $provider,string $apiK
     $uid=(int)($user['id']??0);
     if($uid<1)throw new RuntimeException('Sign in before saving provider keys.');
     if(!in_array($provider,vp3_user_llm_v1_providers(),true))throw new RuntimeException('Unsupported provider.');
-    if(!ai_valid_model($provider,$model))throw new RuntimeException('Choose a supported provider model.');
+    if(!ai_valid_model($provider,$model)&&!isset(vp3_user_llm_v1_models($pdo)[$provider][$model]))throw new RuntimeException('Choose a supported provider model.');
     $key=trim($apiKey);
     if($key===''||strlen($key)>4000||preg_match('/[\x00-\x20\x7f]/',$key))throw new RuntimeException('Enter a valid provider API key.');
     // Reuse Cloud's existing encrypted credential key. No plaintext database column.

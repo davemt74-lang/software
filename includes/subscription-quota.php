@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/ai-service-usage-v1.php';
+
 function subscription_period(?array $subscription): array
 {
     if(!$subscription)return ['start'=>null,'end'=>null];
@@ -28,7 +30,7 @@ function subscription_ai_balance(?array $user=null,?PDO $pdo=null,bool $forUpdat
     if(!empty($period['end'])){$sql.=' AND created_at<?';$params[]=$period['end'];}
     $stmt=$pdo->prepare($sql);$stmt->execute($params);$used=(int)$stmt->fetchColumn();
     $creditsStmt=$pdo->prepare('SELECT COALESCE(SUM(remaining_amount),0) FROM ai_token_credits WHERE user_id=? AND remaining_amount>0 AND (expires_at IS NULL OR expires_at>NOW())');$creditsStmt->execute([$uid]);$credits=(int)$creditsStmt->fetchColumn();
-    $pdo->prepare('DELETE FROM ai_token_reservations WHERE expires_at<=NOW()')->execute();
+    if($forUpdate)$pdo->prepare('DELETE FROM ai_token_reservations WHERE user_id=? AND expires_at<=NOW()')->execute([$uid]);
     $resStmt=$pdo->prepare('SELECT COALESCE(SUM(reserved_tokens),0) FROM ai_token_reservations WHERE user_id=? AND expires_at>NOW()');$resStmt->execute([$uid]);$reserved=(int)$resStmt->fetchColumn();
     $packageRemaining=max(0,$allowance-$used);$available=max(0,$packageRemaining+$credits);$remaining=max(0,$available-$reserved);
     return ['available'=>$available,'remaining'=>$remaining,'used'=>$used,'package_allowance'=>$allowance,'package_remaining'=>$packageRemaining,'credits_remaining'=>$credits,'reserved'=>$reserved,'unlimited'=>false,'subscription'=>$sub,'period'=>$period];
@@ -39,14 +41,14 @@ function subscription_estimate_tokens_from_chars(int $chars): int
     return max(1,(int)ceil(max(0,$chars)/3.5));
 }
 
-function subscription_ai_preflight(?array $user,string $scope,int $estimatedInputTokens,int $requestedOutputTokens): array
+function subscription_ai_preflight(?array $user,string $scope,int $estimatedInputTokens,int $requestedOutputTokens,?PDO $connection=null): array
 {
     $user??=function_exists('current_user')?current_user():null;$uid=(int)($user['id']??0);
     if($uid<1)throw new RuntimeException('Sign in to use AI features.');
     if(!subscription_has_entitlement($user,'main_ai.access'))throw new RuntimeException('AI access is not included in your current package.');
     if(subscription_is_internal_admin($user))return ['reservation_id'=>0,'max_output_tokens'=>max(64,$requestedOutputTokens),'remaining_before'=>PHP_INT_MAX,'unlimited'=>true];
 
-    $pdo=db();
+    $pdo=$connection??db();
     if(!$pdo||!subscription_schema_ready($pdo)){
         $balance=subscription_ai_balance($user,$pdo,false);
         if(!empty($balance['unlimited']))return ['reservation_id'=>0,'max_output_tokens'=>max(64,$requestedOutputTokens),'remaining_before'=>PHP_INT_MAX,'unlimited'=>true];
@@ -56,6 +58,7 @@ function subscription_ai_preflight(?array $user,string $scope,int $estimatedInpu
     $ownsTransaction=!$pdo->inTransaction();
     if($ownsTransaction)$pdo->beginTransaction();
     try{
+        vp3_ai_service_usage_lock_owner_v1($pdo,$uid);
         // Lock the active subscription row while balance + outstanding reservations
         // are calculated and the new reservation is inserted. This prevents two
         // simultaneous requests from reserving the same remaining monthly tokens.
@@ -87,14 +90,16 @@ function subscription_ai_release_reservation(int $reservationId): void
     $pdo->prepare('DELETE FROM ai_token_reservations WHERE id=?')->execute([$reservationId]);
 }
 
-function subscription_ai_commit_usage(int $reservationId,?array $user,string $scope,string $provider,string $model,array $usage,string $requestKey=''): void
+function subscription_ai_commit_usage(int $reservationId,?array $user,string $scope,string $provider,string $model,array $usage,string $requestKey='',?PDO $connection=null): void
 {
     $user??=function_exists('current_user')?current_user():null;$uid=(int)($user['id']??0);if($uid<1)return;
     $total=max(0,(int)($usage['total_tokens']??((int)($usage['input_tokens']??0)+(int)($usage['output_tokens']??0))));
     if($total<1){subscription_ai_release_reservation($reservationId);return;}
-    $pdo=db();if(!$pdo||!subscription_schema_ready($pdo)||subscription_is_internal_admin($user)){subscription_ai_release_reservation($reservationId);return;}
-    $pdo->beginTransaction();
+    $pdo=$connection??db();if(!$pdo||!subscription_schema_ready($pdo)||subscription_is_internal_admin($user)){subscription_ai_release_reservation($reservationId);return;}
+    $ownsTransaction=$connection===null||!$pdo->inTransaction();
+    if($ownsTransaction)$pdo->beginTransaction();
     try{
+        vp3_ai_service_usage_lock_owner_v1($pdo,$uid);
         $sub=subscription_current_for_user_id($uid,$pdo,true);$creditUsed=0;$remaining=$total;
         // Consume the included monthly allowance before purchased/admin token
         // credits. Credits are additive capacity and should not be burned while
@@ -126,8 +131,13 @@ function subscription_ai_commit_usage(int $reservationId,?array $user,string $sc
         $stmt=$pdo->prepare('INSERT INTO ai_usage_ledger (user_id,subscription_id,scope,provider,model,input_tokens,output_tokens,total_tokens,credit_tokens_used,package_tokens_used,trace_id,request_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
         $stmt->execute([$uid,(int)($sub['id']??0)?:null,mb_strimwidth($scope,0,60,''),mb_strimwidth($provider,0,40,''),mb_strimwidth($model,0,120,''),max(0,(int)($usage['input_tokens']??0)),max(0,(int)($usage['output_tokens']??0)),$total,$creditUsed,$packageUsed,mb_strimwidth($trace,0,120,''),$requestKey]);
         if($reservationId>0)$pdo->prepare('DELETE FROM ai_token_reservations WHERE id=? AND user_id=?')->execute([$reservationId,$uid]);
-        $pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();subscription_ai_release_reservation($reservationId);error_log('VP3 AI usage ledger failed: '.$e->getMessage());}
+        if($ownsTransaction)$pdo->commit();
+    }catch(Throwable $e){
+        if(!$ownsTransaction)throw $e;
+        if($pdo->inTransaction())$pdo->rollBack();
+        subscription_ai_release_reservation($reservationId);
+        error_log('VP3 AI usage ledger failed: '.$e->getMessage());
+    }
 }
 
 function subscription_usage_by_scope(int $userId,int $limit=20): array

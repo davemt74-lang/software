@@ -43,7 +43,7 @@ assert.match(runtime, /function vp3_agent_runtime_plan_v420/);
 assert.match(runtime, /agent_compute_v020_preference\(\$pdo,\$userId\)/);
 assert.match(runtime, /agent_compute_v023_override\(\$pdo,\$userId,max\(0,\$agentId\)\)/);
 assert.match(runtime, /ai_gateway_v031_plan/);
-assert.match(chat, /vp3_agent_runtime_plan_v420\(\$pdo,\$user,\$activeAgentId,'chat'\)/);
+assert.match(chat, /vp3_agent_runtime_plan_v420\(\$pdo,\$user,\$activeAgentId,'chat',\$serviceContext\)/);
 assert.match(chat, /vp3_agent_runtime_tool_plan_v420\(\$userId,\$activeAgentId,'chat'\)/);
 assert.doesNotMatch(chat, /agent_compute_v023_effective\(/);
 assert.doesNotMatch(chat, /agent_compute_v020_route_plan\(/);
@@ -54,7 +54,7 @@ assert.match(delegation, /homeserver_agent_v018_chat\(\$user,\$query,\$conversat
 // Direct VP3 Cloud is now isolated by the v4.20 planner and finalizer while
 // preserving the v0.19 execution helper used for source/billing visibility.
 assert.match(runtime, /if\(\$requested!==\'vp3_cloud\'\)/);
-assert.match(chat, /chat_execution_v019_vp3_direct\(\$user\)/);
+assert.match(chat, /chat_execution_v019_provider_outcome\(\$user,chat_ai_response_outcome\(\),\$homeAttempted,/);
 assert.match(chat, /vp3_agent_runtime_finalize_v420/);
 assert.match(chat, /vp3_agent_runtime_block_message_v420/);
 assert.doesNotMatch(chat, /homeserver_agent_v018_write_cloud_usage\(/);

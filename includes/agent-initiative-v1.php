@@ -174,11 +174,11 @@ function vp3_initiative_access_v1(PDO $pdo,array $user,array $binding): array
     return $live;
 }
 
-function vp3_initiative_model_v1(PDO $pdo,array $user,string $prompt,string $protocol,?int $agentId=null,bool $transientContext=false,?callable $beforeInference=null): string
+function vp3_initiative_model_v1(PDO $pdo,array $user,string $prompt,string $protocol,?int $agentId=null,bool $transientContext=false,?callable $beforeInference=null,array $job=[]): string
 {
     $agentId??=vp3_agent_memory_scope_current_v410($user);
     require_once __DIR__.'/agent-initiative-model-v1.php';
-    return vp3_initiative_infer_v1($pdo,$user,$agentId,$prompt,$protocol,$transientContext,$beforeInference);
+    return vp3_initiative_infer_v1($pdo,$user,$agentId,$prompt,$protocol,$transientContext,$beforeInference,$job);
 }
 
 function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array $payload,string $hash): bool
@@ -938,7 +938,10 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             $currentUser=vp3_initiative_access_v1($pdo,$live,$binding);
             vp3_initiative_current_sources_v1($pdo,$currentUser,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
         }:null;
-        $provider=$model??static fn(string $prompt,string $protocol):string=>vp3_initiative_model_v1($pdo,$live,$prompt,$protocol,$agentId,$transientContext,$beforeInference);
+        $job=['background'=>true,'run_id'=>(int)$run['id'],'conversation_id'=>(int)$binding['conversation_id']];
+        $provider=$model??static function(string $prompt,string $protocol)use($pdo,&$live,$agentId,$transientContext,$beforeInference,$job):string{
+            return vp3_initiative_model_v1($pdo,$live,$prompt,$protocol,$agentId,$transientContext,$beforeInference,$job);
+        };
         $modelCalls=0;
         $infer=static function(string $prompt,string $protocol)use($pdo,&$live,$binding,$payload,$run,$claim,$provider,&$modelCalls):string{
             if($pdo->inTransaction())throw new RuntimeException('Initiative inference cannot hold a database transaction.');

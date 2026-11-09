@@ -33,9 +33,9 @@ function vp3_image_png_check_v1(string $bytes): void
 }
 
 /** Exactly one paid POST. Unknown outcomes never trigger a transport retry. */
-function vp3_image_provider_v1(array $config,array $user,?callable $transport=null,?string $sourceImage=null): array
+function vp3_image_provider_v1(array $config,array $user,?callable $transport=null,?string $sourceImage=null,?string $apiKey=null,?callable $recordUsage=null): array
 {
-    $key=ai_provider_api_key('openai');if($key==='')throw new RuntimeException('provider_unavailable');
+    $key=$apiKey??ai_provider_api_key('openai');if($key==='')throw new RuntimeException('provider_unavailable');
     $body=['model'=>$config['model'],'prompt'=>$config['prompt'],'n'=>1,'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'output_format'=>'png','moderation'=>'auto','safety_identifier'=>hash('sha256','vp3-image-user:'.(int)$user['id'])];
     $endpoint='https://api.openai.com/v1/images/generations';
     if($sourceImage!==null){
@@ -54,10 +54,21 @@ function vp3_image_provider_v1(array $config,array $user,?callable $transport=nu
         if(defined('CURLOPT_PROTOCOLS'))curl_setopt($curl,CURLOPT_PROTOCOLS,CURLPROTO_HTTPS);
         $ok=curl_exec($curl);$status=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);curl_close($curl);
         if($ok===false)throw new RuntimeException('provider_outcome_unconfirmed');
-        if($status<200||$status>=300)throw new RuntimeException(match($status){401,403=>'provider_access_denied',429=>'provider_rate_limited',400=>'provider_request_rejected',default=>'provider_outcome_unconfirmed'});
+        if($status<200||$status>=300)throw new RuntimeException(match($status){401,403=>'provider_access_denied',429=>'provider_rate_limited',400,404,422=>'provider_request_rejected',default=>'provider_outcome_unconfirmed'});
         $result=json_decode($received,true,32,JSON_THROW_ON_ERROR);unset($received);
     }
-    if(!is_array($result)||!is_array($result['data']??null)||count($result['data'])!==1||!is_string($result['data'][0]['b64_json']??null))throw new RuntimeException('provider_image_unconfirmed');
+    if(!is_array($result))throw new RuntimeException('provider_image_unconfirmed');
+    $usage=is_array($result['usage']??null)?$result['usage']:null;
+    foreach(['input_tokens','output_tokens','total_tokens'] as $field){
+        if(!is_int($usage[$field]??null)||$usage[$field]<0||$usage[$field]>2_000_000_000){$usage=null;break;}
+    }
+    if($usage!==null&&$usage['total_tokens']!==$usage['input_tokens']+$usage['output_tokens'])$usage=null;
+    if($usage!==null){
+        $usage=array_intersect_key($usage,array_flip(['input_tokens','output_tokens','total_tokens']));
+        // A verified provider charge can exist even if the returned image fails validation.
+        if($recordUsage!==null)$recordUsage($usage);
+    }
+    if(!is_array($result['data']??null)||count($result['data'])!==1||!is_string($result['data'][0]['b64_json']??null))throw new RuntimeException('provider_image_unconfirmed');
     $encoded=$result['data'][0]['b64_json'];if(strlen($encoded)>34*1024*1024)throw new RuntimeException('image_too_large');
     $bytes=base64_decode($encoded,true);unset($encoded);if(!is_string($bytes)||strlen($bytes)<24||strlen($bytes)>25*1024*1024)throw new RuntimeException('provider_image_unconfirmed');
     vp3_image_png_check_v1($bytes);
@@ -65,8 +76,6 @@ function vp3_image_provider_v1(array $config,array $user,?callable $transport=nu
     if(!$image||($image['mime']??'')!=='image/png'||$image[0]<1||$image[1]<1||$image[0]>4096||$image[1]>4096||$image[0]*$image[1]>16777216)throw new RuntimeException('provider_image_unconfirmed');
     [$expectedWidth,$expectedHeight]=array_map('intval',explode('x',$config['size']));
     if($image[0]!==$expectedWidth||$image[1]!==$expectedHeight)throw new RuntimeException('provider_image_unconfirmed');
-    $usage=$result['usage']??null;
-    foreach(['input_tokens','output_tokens','total_tokens'] as $field)if(!is_int($usage[$field]??null)||$usage[$field]<0)throw new RuntimeException('provider_usage_unconfirmed');
-    if($usage['total_tokens']!==$usage['input_tokens']+$usage['output_tokens']||$usage['output_tokens']<1)throw new RuntimeException('provider_usage_unconfirmed');
-    return ['bytes'=>$bytes,'width'=>$image[0],'height'=>$image[1],'sha256'=>hash('sha256',$bytes),'usage'=>array_intersect_key($usage,array_flip(['input_tokens','output_tokens','total_tokens']))];
+    if($usage===null||$usage['output_tokens']<1)throw new RuntimeException('provider_usage_unconfirmed');
+    return ['bytes'=>$bytes,'width'=>$image[0],'height'=>$image[1],'sha256'=>hash('sha256',$bytes),'usage'=>$usage];
 }

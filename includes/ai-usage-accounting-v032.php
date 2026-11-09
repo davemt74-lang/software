@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/ai-service-usage-v1.php';
+
 const VP3_AI_USAGE_ACCOUNTING_V032='ai-usage-accounting-v032-20260909';
 
 function ai_usage_accounting_v032_schema_ready(?PDO $pdo=null): bool
@@ -69,6 +71,7 @@ function ai_usage_accounting_v032_ensure_schema(?PDO $pdo=null): void
         'fallback_reason'=>"ALTER TABLE ai_execution_ledger ADD COLUMN fallback_reason VARCHAR(80) NOT NULL DEFAULT '' AFTER route_reason",
     ];
     foreach($adds as $column=>$ddl)if(function_exists('column_exists')&&!column_exists('ai_execution_ledger',$column))$pdo->exec($ddl);
+    vp3_ai_service_usage_ensure_schema_v1($pdo);
 }
 
 function ai_usage_accounting_v032_rate_catalog(): array
@@ -109,7 +112,10 @@ function ai_usage_accounting_v032_cost(array $execution): array
 function ai_usage_accounting_v032_cloud_ledger(PDO $pdo,int $userId,string $traceId): ?array
 {
     if($userId<1||$traceId===''||!table_exists('ai_usage_ledger'))return null;
-    try{$stmt=$pdo->prepare('SELECT id,credit_tokens_used,package_tokens_used,total_tokens FROM ai_usage_ledger WHERE user_id=? AND trace_id=? ORDER BY id DESC LIMIT 1');$stmt->execute([$userId,$traceId]);return $stmt->fetch()?:null;}catch(Throwable $e){return null;}
+    try{
+        $legacy=vp3_ai_service_usage_ready_v1($pdo)?" AND (request_key IS NULL OR request_key NOT LIKE 'service:%')":'';
+        $stmt=$pdo->prepare('SELECT id,credit_tokens_used,package_tokens_used,total_tokens FROM ai_usage_ledger WHERE user_id=? AND trace_id=?'.$legacy.' ORDER BY id DESC LIMIT 1');$stmt->execute([$userId,$traceId]);return $stmt->fetch()?:null;
+    }catch(Throwable $e){return null;}
 }
 
 function ai_usage_accounting_v032_record(PDO $pdo,array $user,int $agentId,int $conversationId,array $execution): void
@@ -117,6 +123,7 @@ function ai_usage_accounting_v032_record(PDO $pdo,array $user,int $agentId,int $
     $userId=max(0,(int)($user['id']??0));if($userId<1)return;
     try{
         if(!ai_usage_accounting_v032_schema_ready($pdo))return;
+        if(vp3_ai_service_usage_attach_v1($pdo,$userId,$agentId,$conversationId,$execution))return;
         $source=(string)($execution['source']??'vp3_retrieval');$allowed=['homeserver_local','user_provider','vp3_cloud','vp3_retrieval','vp3_tool'];if(!in_array($source,$allowed,true))$source='vp3_retrieval';
         $usage=is_array($execution['usage']??null)?$execution['usage']:[];$input=max(0,(int)($usage['prompt_tokens']??$usage['input_tokens']??0));$output=max(0,(int)($usage['completion_tokens']??$usage['output_tokens']??0));$total=max(0,(int)($usage['total_tokens']??($input+$output)));
         $trace=function_exists('agent_runtime_v125_trace_id')?trim((string)agent_runtime_v125_trace_id()):'';$cloud=ai_usage_accounting_v032_cloud_ledger($pdo,$userId,$trace);$cloudLedgerId=$cloud?(int)$cloud['id']:null;
@@ -141,6 +148,52 @@ function ai_usage_accounting_v032_format_cost(?int $micros): string
 function ai_usage_accounting_v032_format_aggregate_cost(int $micros,int $unknown): string
 {
     if($micros<=0&&$unknown>0)return '—';$label=ai_usage_accounting_v032_format_cost(max(0,$micros));return $unknown>0?$label.' + unknown':$label;
+}
+
+function ai_usage_accounting_v032_token_label(array $row): string
+{
+    if(empty($row['usage_known'])&&array_key_exists('usage_known',$row)){
+        return match($row['service_status']??''){
+            'pending'=>'Awaiting provider usage',
+            'rejected'=>'Provider rejected',
+            default=>'Usage unreported',
+        };
+    }
+    $input=(int)($row['input_tokens']??0);$output=(int)($row['output_tokens']??0);$total=(int)($row['total_tokens']??0);
+    if((int)($row['usage_split_known']??1)===0||$input+$output!==$total)return number_format($total).' total';
+    return number_format($input).' in / '.number_format($output).' out';
+}
+
+function ai_usage_accounting_v032_service_label(array $row): string
+{
+    $service=trim((string)($row['service_key']??''));
+    if($service==='')return '';
+    $stage=trim((string)($row['service_stage']??''));
+    $label=ucwords(str_replace('_',' ',$service));
+    if($stage!==''&&$stage!==$service)$label.=' · '.ucwords(str_replace('_',' ',$stage));
+    if(!empty($row['is_background']))$label.=' · Background';
+    if((int)($row['run_id']??0)>0)$label.=' · Job #'.(int)$row['run_id'];
+    return $label;
+}
+
+function ai_usage_accounting_v032_token_csv(array $row): array
+{
+    if((int)($row['usage_known']??1)===0)return ['','',''];
+    if((int)($row['usage_split_known']??1)===0)return ['','',(int)$row['total_tokens']];
+    return [(int)$row['input_tokens'],(int)$row['output_tokens'],(int)$row['total_tokens']];
+}
+
+function ai_usage_accounting_v032_service_csv_columns(): array
+{
+    return ['service','stage','credential_source','service_status','usage_known','usage_units','usage_unit','background','provider_request_id'];
+}
+
+function ai_usage_accounting_v032_service_csv(array $row): array
+{
+    return [(string)($row['service_key']??''),(string)($row['service_stage']??''),(string)($row['credential_source']??''),
+        (string)($row['service_status']??'legacy'),array_key_exists('usage_known',$row)?(int)$row['usage_known']:'',
+        $row['usage_units']??'',(string)($row['usage_unit']??''),(int)($row['is_background']??0),
+        (string)($row['provider_request_id']??'')];
 }
 
 function ai_usage_accounting_v032_user_state(PDO $pdo,int $userId,int $limit=100): array

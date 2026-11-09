@@ -14,6 +14,7 @@ function reject($fn,$label){try{$fn();}catch(Throwable $e){check(true,$label);re
 function queueImage($extra=[]): array{return vp3_image_queue_v1(db(),$GLOBALS['u'],$GLOBALS['principal'],array_replace($GLOBALS['plan'],$extra),image_fixture_turn_v1());}
 function transportImage($url,$body,$key): array{$GLOBALS['calls'][]=[$url,$body,$key];return image_fixture_response_v1($body['size']);}
 function imageCount(): int{return(int)db()->query('SELECT COUNT(*) FROM user_media_assets')->fetchColumn();}
+function ai_decrypt_secret(string $encrypted): string{return str_starts_with($encrypted,'fixture-cipher:')?substr($encrypted,15):'';}
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $aid,string $surface): array
 {
     return empty($GLOBALS['imageMarketingLocalOnly'])
@@ -253,6 +254,105 @@ try{
         sort($results);check($results===['BLOCKED','QUEUED'],'concurrent MySQL admission permits exactly one active image per owner');
         $q=$pdo->query("SELECT g.run_id FROM agent_image_generations_v1 g JOIN agent_workflow_runs r ON r.id=g.run_id WHERE r.status='approved'");foreach($q->fetchAll() as $r)agent_job_cancel_v1900($pdo,$u,(int)$r['run_id']);
     }
+    $pdo->exec('CREATE TABLE settings (setting_key VARCHAR(190) PRIMARY KEY,setting_value TEXT)');
+    vp3_ai_service_save_model_v1($pdo,'openai','gpt-image-fixture-exact','Fixture image model',['image_generation']);
+    $primary=['provider'=>'openai','model'=>'gpt-image-fixture-exact','funding'=>'system'];
+    $fallback=['provider'=>'openai','model'=>'gpt-image-1-mini','funding'=>'system'];
+    vp3_ai_service_save_route_v1($pdo,'image_generation',$primary,$fallback);
+    $before=count($calls);
+    reject(fn()=>queueImage(),'configured image routes require the service usage database upgrade');
+    check(count($calls)===$before,'a missing service ledger cannot bypass image metering');
+    if($mysql){
+        require_once dirname(__DIR__).'/includes/ai-usage-accounting-v032.php';
+        ai_usage_accounting_v032_ensure_schema($pdo);
+    }else{
+        $pdo->exec("CREATE TABLE ai_execution_ledger (
+            id INTEGER PRIMARY KEY, user_id INTEGER, agent_id INTEGER, conversation_id INTEGER, run_id INTEGER,
+            trace_id TEXT, source TEXT, provider TEXT, model TEXT, created_at TEXT,
+            input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER, latency_ms INTEGER,
+            estimated_cost_micros INTEGER, cost_rate_source TEXT, cloud_ledger_id INTEGER, cloud_tokens_charged INTEGER DEFAULT 0, failure_class TEXT
+        )");
+    }
+    $pdo->exec('CREATE TABLE ai_token_reservations (id INTEGER PRIMARY KEY,user_id INTEGER)');
+    vp3_ai_service_usage_ensure_schema_v1($pdo);
+    $meter=$pdo->prepare('SELECT * FROM ai_execution_ledger WHERE service_key=\'image_generation\' AND run_id=?');
+    $usageCount=count($GLOBALS['imageUsage']);
+    $g=queueImage();
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
+    check($v['status']==='completed'&&end($calls)[1]['model']===$primary['model']&&end($calls)[2]==='fixture-image-secret',
+        'Chat image work dispatches the registered exact service model with the approved site key');
+    check($entry['service_status']==='completed'&&(int)$entry['user_id']===1&&(int)$entry['agent_id']===7
+        &&(int)$entry['conversation_id']===11&&(int)$entry['total_tokens']===220&&(int)$entry['usage_units']===1
+        &&$entry['credential_source']==='system'&&count($GLOBALS['imageUsage'])===$usageCount+1,
+        'one image attempt records owner, Agent, Chat, exact funding, verified tokens and one subscription settlement');
+    vp3_ai_service_save_rule_v1($pdo,'user',1,'image_generation',['allowed_models'=>['openai:'.$fallback['model']]]);
+    $g=queueImage();
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='completed'&&end($calls)[1]['model']===$fallback['model'],
+        'an explicitly configured eligible fallback can be selected before image dispatch');
+    vp3_ai_service_save_rule_v1($pdo,'user',1,'image_generation',[]);
+    $ctx=image_fixture_turn_v1();$g=vp3_image_queue_v1($pdo,$u,$principal,$plan,$ctx);$before=count($calls);
+    vp3_ai_service_save_route_v1($pdo,'image_generation',$fallback,null);
+    check(vp3_image_queue_v1($pdo,$u,$principal,$plan,$ctx)['id']===$g['id'],'a saved Chat turn retains its original job after the admin changes routes');
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='failed'&&!$v['provider_started']&&count($calls)===$before,'a queued image cannot silently switch to a different model or funding route');
+    $g=queueImage();
+    vp3_ai_service_save_route_v1($pdo,'image_generation',null,null);
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='failed'&&!$v['provider_started']&&count($calls)===$before,'clearing a configured route stops a job admitted under that route');
+    vp3_ai_service_save_route_v1($pdo,'image_generation',$fallback,null);
+    vp3_ai_service_save_rule_v1($pdo,'user',1,'image_generation',['job_tokens'=>500]);
+    $g=queueImage();$v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
+    check($v['status']==='failed'&&!$v['provider_started']&&count($calls)===$before&&$entry===false,
+        'a per-job token ceiling below the image allowance blocks dispatch and releases the unused reservation');
+    vp3_ai_service_save_rule_v1($pdo,'user',1,'image_generation',[]);
+    $g=queueImage();$assetCount=imageCount();
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),static function($url,$body,$key){
+        $response=transportImage($url,$body,$key);$response['data'][0]['b64_json']='invalid';return $response;
+    });
+    $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
+    check($v['status']==='failed'&&imageCount()===$assetCount&&$entry['service_status']==='failed'&&(int)$entry['total_tokens']===220,
+        'invalid image bytes stay unpublished while verifiable paid usage is recorded');
+    $g=queueImage();$before=count($calls);
+    $timeout=static function($url,$body,$key){$GLOBALS['calls'][]=[$url,$body,$key];throw new RuntimeException('provider_outcome_unconfirmed');};
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),$timeout);
+    vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),$timeout);
+    $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
+    check($v['status']==='failed'&&$v['provider_started']&&count($calls)===$before+1&&$entry['service_status']==='unknown'
+        &&(int)$entry['usage_known']===0&&$entry['usage_units']===null&&(int)$entry['service_budget_tokens']>=16000,
+        'unknown image outcomes keep the conservative budget and never fabricate usage or replay the paid call');
+    $g=queueImage();
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),static function(){throw new RuntimeException('provider_access_denied');});
+    $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
+    check($v['status']==='failed'&&$v['provider_started']&&$entry['service_status']==='rejected'&&(int)$entry['service_budget_tokens']===0,
+        'a definitive provider refusal keeps an attempt record and frees the reserved service allowance');
+    require_once dirname(__DIR__).'/includes/ai-service-own-key-v1.php';
+    $pdo->exec('CREATE TABLE user_llm_credentials (user_id INTEGER,provider VARCHAR(32),encrypted_key TEXT,PRIMARY KEY(user_id,provider))');
+    $keys=$pdo->prepare('INSERT INTO user_llm_credentials VALUES (?,?,?)');
+    $keys->execute([1,'openai','fixture-cipher:fixture-owner-personal-key']);
+    $keys->execute([2,'openai','fixture-cipher:fixture-foreign-personal-key']);
+    $personal=array_replace($primary,['funding'=>'own_key']);
+    vp3_ai_service_save_route_v1($pdo,'image_generation',$personal,$fallback);
+    vp3_ai_service_own_key_update_v1($pdo,['id'=>2],'image_generation','openai',$personal['model'],true);
+    $g=queueImage();$v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='completed'&&end($calls)[1]['model']===$fallback['model']&&end($calls)[2]==='fixture-image-secret',
+        'a saved personal key and another owner’s grant cannot authorize personal funding for this owner');
+    vp3_ai_service_own_key_update_v1($pdo,$u,'image_generation','openai',$personal['model'],true);
+    $usageCount=count($GLOBALS['imageUsage']);$preflightCount=count($GLOBALS['imagePreflight']);
+    $g=queueImage();$row=vp3_image_row_v1($pdo,$u,$g['id']);$v=vp3_image_tick_v1($pdo,$u,$row,'transportImage');
+    $meter->execute([$g['job_id']]);$entry=$meter->fetch();$meter->closeCursor();
+    check($v['status']==='completed'&&end($calls)[1]['model']===$personal['model']&&end($calls)[2]==='fixture-owner-personal-key'
+        &&$entry['credential_source']==='own_key'&&(int)$entry['total_tokens']===220
+        &&count($GLOBALS['imagePreflight'])===$preflightCount&&count($GLOBALS['imageUsage'])===$usageCount
+        &&!str_contains($row['config_json'],'fixture-owner-personal-key'),
+        'explicit personal image approval uses the owner key and exact model, meters usage and leaves site quota untouched');
+    $g=queueImage();$before=count($calls);
+    vp3_ai_service_own_key_update_v1($pdo,$u,'image_generation','openai',$personal['model'],false);
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($v['status']==='failed'&&!$v['provider_started']&&count($calls)===$before,
+        'revoking personal image consent before dispatch stops the approved job without switching funding');
     echo 'IMAGE_GENERATION_V1=PASS ('.$checks.' cases; '.$pdo->getAttribute(PDO::ATTR_DRIVER_NAME).")\n";
 }finally{
     if(is_dir(STONEFELLOW_ROOT)){foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(STONEFELLOW_ROOT,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST) as $p){if($p->isDir())rmdir($p->getPathname());else unlink($p->getPathname());}rmdir(STONEFELLOW_ROOT);}

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const root = new URL('../', import.meta.url);
 const api = [fs.readFileSync(new URL('api/chat-v236.php', root), 'utf8'),fs.readFileSync(new URL('includes/agent-chat-runtime-v2160.php', root), 'utf8')].join('\n');
+const stream = fs.readFileSync(new URL('api/chat-stream-v121.php', root), 'utf8');
 const home = fs.readFileSync(new URL('includes/homeserver-agent-v018.php', root), 'utf8');
 const delegation = fs.readFileSync(new URL('includes/homeserver-agent-v025.php', root), 'utf8');
 const execution = fs.readFileSync(new URL('includes/chat-execution-v019.php', root), 'utf8');
@@ -40,7 +41,9 @@ assert.match(api, /'execution'=>\$execution/);
 assert.match(api, /chat_execution_v019_source\(\$execution\)/);
 assert.match(api, /homeserver_agent_v025_chat/);
 assert.match(delegation, /homeserver_agent_v018_chat/);
-assert.match(api, /chat_execution_v019_fallback/);
+assert.match(api, /chat_execution_v019_provider_outcome\(\$user,chat_ai_response_outcome\(\),\$homeAttempted,/);
+assert.match(stream, /chat_execution_v019_provider_outcome\(\$user,\$streamResult,\$homeAttempted,/);
+assert.match(execution, /\[\$home,\$reason,\$failureClass,\$latency\]=\$homeAttempted\s+\?chat_execution_v019_home_attempt\(\$homePaired,true\)/);
 assert.match(chat, /function sourceHtml\(source\)/);
 const messageRenderer=chat.slice(chat.indexOf('function messageElement('),chat.indexOf('function addMessage('));
 assert.doesNotMatch(messageRenderer, /message-sources|sources\.map\(sourceHtml\)/);
