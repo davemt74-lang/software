@@ -60,6 +60,7 @@ function agent_work_dependency_lock_runs_v174(PDO $pdo,int $uid,int $runId,int $
 }
 function agent_work_dependency_assert_mutable_v174(array $row): void
 {
+    agent_workflow_assert_generic_v1400($row);
     $status=(string)($row['status']??'');if($status==='executing')throw new RuntimeException('Pause the workflow before changing its dependencies or delegation.');if(in_array($status,['completed','cancelled'],true))throw new RuntimeException('Closed workflows cannot have their execution graph changed.');
 }
 function agent_work_dependency_add_v174(PDO $pdo,array $user,int $runId,int $dependsOnRunId,string $actor='user'): array

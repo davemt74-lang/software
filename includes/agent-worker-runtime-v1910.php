@@ -231,9 +231,10 @@ function agent_worker_runtime_authorize_claim_v1910(PDO $pdo,array $user,array $
 {
     $uid=(int)($user['id']??0);$runId=(int)($claim['run_id']??0);$actionId=(int)($claim['action']['id']??0);$workerId=(string)($worker['worker_id']??'');
     if($uid<1||$runId<1||$actionId<1||$workerId===''||empty($worker['ready']))return ['authorized'=>false,'reason'=>'worker_unavailable'];
-    $stmt=$pdo->prepare('SELECT r.owner_user_id,r.status run_status,r.approval_status,r.requires_approval run_requires_approval,r.lease_owner,r.lease_token,r.lease_expires_at,a.status action_status,a.requires_approval action_requires_approval,a.execution_target,a.capability_key FROM agent_workflow_runs r INNER JOIN agent_workflow_actions a ON a.id=r.current_action_id AND a.run_id=r.id AND a.owner_user_id=r.owner_user_id WHERE r.id=? AND r.owner_user_id=? AND a.id=? LIMIT 1');
+    $stmt=$pdo->prepare('SELECT r.owner_user_id,r.source_kind,r.status run_status,r.approval_status,r.requires_approval run_requires_approval,r.lease_owner,r.lease_token,r.lease_expires_at,a.status action_status,a.requires_approval action_requires_approval,a.execution_target,a.capability_key FROM agent_workflow_runs r INNER JOIN agent_workflow_actions a ON a.id=r.current_action_id AND a.run_id=r.id AND a.owner_user_id=r.owner_user_id WHERE r.id=? AND r.owner_user_id=? AND a.id=? LIMIT 1');
     $stmt->execute([$runId,$uid,$actionId]);$row=$stmt->fetch();
     if(!$row)return ['authorized'=>false,'reason'=>'claim_not_owned'];
+    if(agent_workflow_owner_chat_action_v1400($row))return ['authorized'=>false,'reason'=>'owner_chat_action'];
     if((string)$row['run_status']!=='executing'||(string)$row['action_status']!=='executing')return ['authorized'=>false,'reason'=>'claim_not_executing'];
     if(!hash_equals((string)$row['lease_owner'],$workerId)||!hash_equals((string)$row['lease_token'],(string)($claim['lease_token']??'')))return ['authorized'=>false,'reason'=>'lease_identity_mismatch'];
     if((strtotime((string)$row['lease_expires_at'])?:0)<time())return ['authorized'=>false,'reason'=>'lease_expired'];

@@ -34,6 +34,7 @@ try{
 
     if ($runId > 0 && $action !== 'create_from_brain') {
         $row = agent_workflow_row_v1400($pdo, (int)$user['id'], $runId);
+        if($row)agent_workflow_assert_generic_v1400($row);
         if (($row['source_kind'] ?? '') === 'coding_canvas') {
             throw new RuntimeException('Manage this Coding Agent run from Chat.');
         }

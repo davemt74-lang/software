@@ -44,7 +44,8 @@ jobs:
           coding_controls = r'^(?:includes/main-sidebar\.php|(?:api|includes|tests)/initiative-canvas-[^/]*\.(?:php|mjs)|tests/coding-sidebar-[^/]*\.mjs)$'
           working_ui = r'^tests/(?:agent-work-status-http|agent-working-browser|chat-sidebar-footer-browser|chat-clean-layout-browser)\.mjs$'
           gmail_first_review = r'^(?:api/gmail-inbox-initial-v1\.php|gmail-inbox-initial-v1\.js|tests/gmail-inbox-initial-(?:api|ui-browser)\.mjs|tests/fixtures/gmail-inbox-initial-page-v1\.php)$'
-          changed = diff.returncode != 0 or any(re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(gmail_first_review, p) or re.match(development, p) for p in diff.stdout.splitlines())
+          meeting_actions = r'^(?:(?:includes|tests)/agent-meeting-[a-z0-9-]+\.php|tests/meeting-chat-(?:actions-api|action-review-browser)\.mjs|tests/fixtures/meeting-prep-calendar-fixture\.php|includes/(?:agent-calendar-prep-v1|agent-task-lists-v1|agent-reminders-v1|agent-initiative-office-actions-v1|agent-initiative-schedule-actions-v1|video-meetings(?:-[a-z0-9-]+)?)\.php)$'
+          changed = diff.returncode != 0 or any(re.match(meeting_actions, p) or re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(gmail_first_review, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
               connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions|homeserver-https-transient-inference(?:-mysql)?)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
@@ -231,6 +232,10 @@ jobs:
           php tests/agent-initiative-tools-v1.php
           php tests/agent-initiative-tools-pipeline-v1.php
           php tests/agent-initiative-meeting-prep-pipeline-v1.php
+          php tests/agent-meeting-command-v1.php
+          php tests/agent-meeting-action-sources-v1.php
+          node tests/meeting-chat-actions-api.mjs
+          node tests/meeting-chat-action-review-browser.mjs
           php tests/agent-initiative-task-research-pipeline-v1.php
           php tests/agent-initiative-canvas-v1.php
           php tests/agent-initiative-canvas-feedback-v1.php
@@ -434,6 +439,9 @@ jobs:
           php tests/agent-initiative-followthrough-mysql.php
           php tests/agent-initiative-actions-mysql.php
           php tests/agent-initiative-schedule-actions-mysql.php
+          php tests/agent-meeting-action-sources-mysql.php
+          php tests/agent-meeting-management-mysql.php
+          php tests/agent-meeting-workflow-boundary-mysql.php
           php tests/agent-initiative-followups-mysql.php
           php tests/agent-initiative-followup-conditions-mysql.php
           php tests/agent-initiative-capabilities-mysql.php

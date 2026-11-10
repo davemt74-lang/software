@@ -124,6 +124,15 @@ scope_check(str_contains($projection['answer']??'','Confirm the revised delivery
     &&in_array('/artist-listening.php?session='.$fixture['transcript_id'],array_column($projection['sources'],'url'),true)
     &&!str_contains(json_encode($projection,JSON_THROW_ON_ERROR),'TRANSCRIPT_PREP_PRIVATE_SENTINEL'),
     'authorized Chat reload projects the exact current commitment and transcript link from the source records');
+require_once dirname(__DIR__).'/includes/agent-meeting-action-sources-v1.php';
+$meetingSource=vp3_meeting_action_source_v1(db(),$user,17,170);
+scope_check($meetingSource['status']==='selected'&&$meetingSource['source']['origin_kind']==='initiative_meeting_prep'
+    &&$meetingSource['source']['origin_message_id']===$messageId&&$meetingSource['source']['meeting_id']===$fixture['meeting_id'],
+    'meeting actions inherit the exact delivered proactive source through its completed canonical receipt');
+$priorChatSource=vp3_meeting_action_source_v1(db(),$user,17,171);
+scope_check($priorChatSource['status']==='selected'&&$priorChatSource['source']['origin_conversation_id']===170
+    &&$priorChatSource['source']['conversation_id']===171&&$priorChatSource['source']['origin_message_id']===$messageId,
+    'an exact proactive meeting source can follow the same owner and Agent into another private Chat');
 scope_check(vp3_initiative_meeting_prep_projection_v1(db(),$user,17,171,$messageId)===null
     &&vp3_initiative_meeting_prep_projection_v1(db(),$user,18,180,$messageId)===null,
     'another Chat or Agent cannot hydrate a copied meeting report marker');
@@ -131,9 +140,14 @@ $feed=vp3_top_of_mind_v1(db(),$user,17,170);
 scope_check(count(array_filter($feed['items'],static fn(array $item):bool=>
     $item['run_id']===$valid&&$item['state']==='completed'))===1,
     'the same completed preparation appears in the existing Brain projection');
+scope_command($user,17,170,'off');
+scope_check(vp3_meeting_action_source_current_v1(db(),$user,17,170,$meetingSource['source'])['source']===$meetingSource['source'],
+    'turning Initiative off does not revoke the owner direct-action handoff from a completed report');
 db()->prepare("INSERT INTO user_agent_data_rules VALUES(17,'recording',?,'deny')")->execute([(string)$fixture['transcript_id']]);
 scope_check(vp3_initiative_meeting_prep_projection_v1(db(),$user,17,170,$messageId)===null,
     'revoking a linked transcript after delivery withdraws its content and links on Chat reload');
+scope_check(vp3_meeting_action_source_v1(db(),$user,17,170)['status']==='unavailable',
+    'a revoked proactive source cannot authorize a later meeting finding mutation');
 db()->exec("DELETE FROM user_agent_data_rules WHERE agent_id=17");
 db()->prepare("UPDATE video_meetings SET status='live' WHERE id=?")->execute([$fixture['meeting_id']]);
 scope_check(vp3_initiative_meeting_prep_projection_v1(db(),$user,17,170,$messageId)===null,
