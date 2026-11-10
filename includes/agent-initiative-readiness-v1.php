@@ -38,13 +38,22 @@ function vp3_initiative_readiness_account_v1(PDO $pdo,array $user,array $princip
     if(($principal['kind']??'')==='user_agent'&&(!function_exists('user_data_policy_can_use_v236')
         ||!user_data_policy_can_use_v236($pdo,$principal,$owner,'profile','*')))return ['forbidden',[]];
     $preferences=onboarding_intelligence_preferences($pdo,$owner);
-    if(!empty($preferences['onboarding_dismissed']))return ['ready',[]];
     $profile=profile_for_user($pdo,$owner,false)??[];
     $q=$pdo->prepare('SELECT id FROM user_agents WHERE owner_user_id=? AND is_active=1 ORDER BY id LIMIT 1');
     $q->execute([$owner]);
     $setup=['agent_named'=>$q->fetchColumn()!==false,'profile_username'=>trim((string)($profile['username']??''))!==''];
     $skill=vp3_agent_onboarding_skill_state_v100(['user'=>['id'=>$owner],'setup'=>$setup]);
-    if(!empty($skill['task']['required_complete']))return ['ready',[]];
+    if(!empty($skill['task']['required_complete'])){
+        $state=['owner_user_id'=>$owner,'profile_username'=>vp3_initiative_readiness_text_v1($profile['username'],80),
+            'display_name'=>vp3_initiative_readiness_text_v1($profile['display_name']??'',100),
+            'bio'=>vp3_initiative_readiness_text_v1($profile['bio']??'',500),
+            'profile_is_public'=>!empty($profile['is_public']),'requires_owner_input'=>false,'auto_provision'=>false];
+        $row=vp3_initiative_readiness_row_v1($ref,'account_readiness','Your saved profile',
+            'Required identity setup is complete. Use the saved profile only as private discussion context. If the owner has not indicated a goal, one focused question may help establish what they want to do.',
+            '/account.php',$state);
+        return ['ready',[$ref=>$row]];
+    }
+    if(!empty($preferences['onboarding_dismissed']))return ['ready',[]];
     $missing=[];
     foreach($skill['required'] as $item)if(empty($item['verified']))$missing[]=$item['key'];
     $state=['owner_user_id'=>$owner,'missing_fields'=>$missing,'next_step'=>$skill['task']['next']['key']??null,
@@ -55,7 +64,7 @@ function vp3_initiative_readiness_account_v1(PDO $pdo,array $user,array $princip
     return ['ready',[$ref=>$row]];
 }
 
-/** Booking readiness is relevant only when the owner selected that workflow; an empty calendar is not a setup failure. */
+/** Reuse the same scoped active schedule and appointment types as Agent Chat. */
 function vp3_initiative_readiness_scheduling_v1(PDO $pdo,array $user,array $principal,DateTimeImmutable $now,?array $selected): array
 {
     $owner=(int)$user['id'];$agent=max(0,(int)($principal['agent_id']??0));$ref='scheduling-readiness:'.$owner.':'.$agent;
@@ -63,20 +72,40 @@ function vp3_initiative_readiness_scheduling_v1(PDO $pdo,array $user,array $prin
     if(!onboarding_intelligence_schema_ready($pdo))return ['unavailable',[]];
     $preferences=onboarding_intelligence_preferences($pdo,$owner);
     $interests=$preferences['feature_interests']??[];
-    if(empty($interests['workflow.booking'])||!empty($interests['activation.dismiss.workflow.booking']))return ['ready',[]];
+    if(!empty($interests['activation.dismiss.workflow.booking']))return ['ready',[]];
     $until=$interests['activation.defer.workflow.booking']??null;
     if(is_string($until)&&($at=strtotime($until))!==false&&$at>$now->getTimestamp())return ['ready',[]];
     if(!function_exists('agent_scheduling_tools_ready_v460')||!agent_scheduling_tools_ready_v460($pdo))return ['unavailable',[]];
     $schedule=agent_scheduling_tools_schedule_v460($pdo,$user,$agent);
     $events=$schedule?agent_scheduling_tools_events_v460($pdo,$user,$schedule):[];
     if($events)return ['ready',[]];
-    $state=['owner_user_id'=>$owner,'agent_id'=>$agent,'workflow_selected'=>true,
+    $selectedBooking=!empty($interests['workflow.booking']);
+    $state=['owner_user_id'=>$owner,'agent_id'=>$agent,'workflow_selected'=>$selectedBooking,
         'schedule_id'=>(int)($schedule['id']??0),'schedule_revision'=>$schedule?hash('sha256',json_encode($schedule,JSON_THROW_ON_ERROR)):null,'active_event_types'=>false,
-        'missing_fields'=>$schedule?['meeting_type']:['schedule','meeting_type'],
-        'requires_owner_input'=>true,'auto_provision'=>false];
+        'missing_fields'=>$selectedBooking?($schedule?['meeting_type']:['schedule','meeting_type']):[],
+        'requires_owner_input'=>$selectedBooking,'auto_provision'=>false];
     $row=vp3_initiative_readiness_row_v1($ref,'scheduling_readiness','Appointment setup',
-        'The owner selected booking, but the canonical active schedule has no active appointment type. Obtain the owner’s offer and availability choices before creating anything.',
+        $selectedBooking
+            ?'The owner selected booking, but no active appointment type is recorded on the schedule available in this Chat. Obtain the owner’s offer and availability choices before creating anything.'
+            :'No active appointment type is recorded on the schedule available in this Chat. Booking has not been selected. Consider this only if it relates to the owner’s goals.',
         '/scheduling.php',$state);
+    return ['ready',[$ref=>$row]];
+}
+
+/** Observe the canonical Cloud calendar only, including its pending and confirmed bookings. */
+function vp3_initiative_readiness_calendar_v1(PDO $pdo,array $user,DateTimeImmutable $now,?array $selected): array
+{
+    $owner=(int)$user['id'];$ref='calendar-readiness:'.$owner;
+    if($selected!==null&&!in_array($ref,$selected,true))return ['ready',[]];
+    if(!function_exists('user_calendar_events_v1300')||!user_calendar_schema_ready_v1300($pdo)
+        ||!agent_scheduling_schema_ready_v430($pdo))return ['unavailable',[]];
+    $from=$now->setTimezone(new DateTimeZone('UTC'));
+    $events=user_calendar_events_v1300($pdo,$user,$from->format('Y-m-d H:i:s'),$from->modify('+7 days')->format('Y-m-d H:i:s'),false);
+    if($events)return ['ready',[]];
+    $state=['owner_user_id'=>$owner,'scope'=>'cloud_calendar','horizon_days'=>7,'upcoming_events'=>0];
+    $row=vp3_initiative_readiness_row_v1($ref,'calendar_readiness','Cloud Calendar',
+        'No active events or pending or confirmed bookings are recorded in the Cloud Calendar for the next seven days. HomeServer and external calendars were not checked. This is planning context and does not establish booking availability.',
+        '/calendar.php',$state);
     return ['ready',[$ref=>$row]];
 }
 
@@ -86,12 +115,15 @@ function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $princi
     if(($principal['kind']??'')!=='system')return ['forbidden',[]];
     if(!function_exists('agent_commerce_schema_ready_v800')||!agent_commerce_schema_ready_v800($pdo)
         ||!function_exists('agent_commerce_products_for_owner_v800')||!function_exists('profile_commerce_owner_product_v900'))return ['unavailable',[]];
-    $owner=(int)$user['id'];$rows=[];
-    if($selected===null){
+    $owner=(int)$user['id'];$rows=[];$emptyRef='product-readiness:owner:'.$owner;
+    $limited=false;$empty=false;
+    if($selected===null||in_array($emptyRef,$selected,true)){
         $found=agent_commerce_products_for_owner_v800($pdo,$owner,26);$limited=count($found)>=26;
-        foreach($found as $row)if((int)($row['owner_user_id']??0)===$owner)$rows[(int)$row['id']]=$row;
-    }else{
-        $limited=false;
+        $owned=array_filter($found,static fn(array $row):bool=>(int)($row['owner_user_id']??0)===$owner);
+        $empty=!$owned&&!$limited;
+        if($selected===null)foreach($owned as $row)$rows[(int)$row['id']]=$row;
+    }
+    if($selected!==null){
         foreach($selected as $ref){
             if(!preg_match('/\Aproduct-readiness:([1-9][0-9]*)\z/',$ref,$match))continue;
             $row=profile_commerce_owner_product_v900($pdo,$owner,(int)$match[1]);
@@ -99,6 +131,11 @@ function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $princi
         }
     }
     $evidence=[];
+    if($empty){
+        $evidence[$emptyRef]=vp3_initiative_readiness_row_v1($emptyRef,'product_readiness','Product catalog',
+            'No product records are owned by this account in VP3. If selling is relevant, a first listing could be discussed. Nothing is required or authorized for publication.',
+            '/profile-commerce-products.php',['owner_user_id'=>$owner,'owned_products'=>0,'requires_owner_review'=>true]);
+    }
     foreach($rows as $id=>$row){
         $meta=profile_commerce_metadata_v900($row);$draft=profile_commerce_private_listing_draft_v900($row);
         if(empty($row['is_active'])&&!$draft)continue;
@@ -204,6 +241,7 @@ function vp3_initiative_readiness_evidence_v1(PDO $pdo,array $user,array $princi
     $sources=[
         'account_readiness'=>['account-readiness',fn($refs)=>vp3_initiative_readiness_account_v1($pdo,$live,$principal,$refs)],
         'scheduling_readiness'=>['scheduling-readiness',fn($refs)=>vp3_initiative_readiness_scheduling_v1($pdo,$live,$principal,$now,$refs)],
+        'calendar_readiness'=>['calendar-readiness',fn($refs)=>vp3_initiative_readiness_calendar_v1($pdo,$live,$now,$refs)],
         'product_readiness'=>['product-readiness',fn($refs)=>vp3_initiative_readiness_products_v1($pdo,$live,$principal,$refs)],
         'business_readiness'=>['business-readiness',fn($refs)=>vp3_initiative_readiness_business_v1($pdo,$live,$principal,$now,$refs)],
     ];

@@ -48,6 +48,7 @@ require_once dirname(__DIR__).'/includes/user-agent-system-v236.php';
 require_once dirname(__DIR__).'/includes/profile-agent.php';
 require_once dirname(__DIR__).'/includes/agent-commerce-v800-part2.php';
 require_once dirname(__DIR__).'/includes/campaigns-rewards-v100.php';
+require_once dirname(__DIR__).'/includes/user-calendar-v1300.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-readiness-v1.php';
 readiness_production_function('agent-capability-chat-v1.php','vp3_capability_live_user_v1');
 foreach(['agent_scheduling_tools_ready_v460','agent_scheduling_tools_schedule_v460','agent_scheduling_tools_events_v460'] as $name){
@@ -59,8 +60,8 @@ $pdo->exec("CREATE TABLE users(id INTEGER PRIMARY KEY,email TEXT,display_name TE
     INSERT INTO users VALUES(1,'owner@example.test','Owner','member',1,''),(2,'other@example.test','Other owner','member',1,'');
     CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,agent_key TEXT,display_name TEXT,agent_role TEXT,engine_key TEXT,instructions TEXT,is_default INTEGER,is_profile_agent INTEGER,is_active INTEGER,voice_enabled INTEGER,created_at TEXT,updated_at TEXT);
     INSERT INTO user_agents VALUES(11,1,'a','First Agent','personal','stonefellow','',1,0,1,0,'2026-01-01','2026-01-01'),(12,1,'b','Second Agent','personal','stonefellow','',0,0,1,0,'2026-01-01','2026-01-01'),(21,2,'c','Other Agent','personal','stonefellow','',1,0,1,0,'2026-01-01','2026-01-01');
-    CREATE TABLE user_profiles(user_id INTEGER PRIMARY KEY,username TEXT);
-    INSERT INTO user_profiles VALUES(1,''),(2,'other');
+    CREATE TABLE user_profiles(user_id INTEGER PRIMARY KEY,username TEXT,bio TEXT,is_public INTEGER,profile_agent_instructions TEXT);
+    INSERT INTO user_profiles VALUES(1,'','Collects local history',0,'PRIVATE_PROFILE_AGENT_INSTRUCTIONS'),(2,'other','Other profile',0,'');
     CREATE TABLE user_agent_preferences(user_id INTEGER PRIMARY KEY,onboarding_dismissed INTEGER,voice_preference TEXT,onboarding_step TEXT,onboarding_draft_json TEXT,feature_interest_json TEXT,last_trial_notice_threshold INTEGER,last_trial_notice_at TEXT);
     INSERT INTO user_agent_preferences VALUES(1,0,NULL,'profile',NULL,'{\"workflow.booking\":true}',NULL,NULL),(2,0,NULL,'complete',NULL,'{}',NULL,NULL);
     CREATE TABLE user_data_policies(owner_user_id INTEGER,resource_type TEXT,resource_id TEXT,audience_scope TEXT,owner_agents_allowed INTEGER,profile_agent_allowed INTEGER,stonefellow_shared INTEGER);
@@ -77,7 +78,11 @@ $pdo->exec("CREATE TABLE users(id INTEGER PRIMARY KEY,email TEXT,display_name TE
     CREATE TABLE campaigns(id INTEGER PRIMARY KEY,merchant_id INTEGER,name TEXT,status TEXT,environment TEXT,starts_at TEXT,ends_at TEXT,updated_at TEXT);
     CREATE TABLE agent_scheduling_schedules(id INTEGER PRIMARY KEY,owner_user_id INTEGER,agent_id INTEGER,is_active INTEGER,is_default INTEGER);
     CREATE TABLE agent_scheduling_event_types(id INTEGER PRIMARY KEY,schedule_id INTEGER,is_active INTEGER,sort_order INTEGER,title TEXT);
-    CREATE TABLE agent_scheduling_bookings(id INTEGER PRIMARY KEY);");
+    CREATE TABLE agent_scheduling_bookings(id INTEGER PRIMARY KEY,owner_user_id INTEGER,status TEXT,start_at_utc TEXT,end_at_utc TEXT,
+        event_title TEXT,location_value TEXT,organizer_timezone TEXT,source TEXT,schedule_id INTEGER);
+    CREATE TABLE user_calendar_events(id INTEGER PRIMARY KEY,owner_user_id INTEGER,title TEXT,description TEXT,location TEXT,start_at_utc TEXT,
+        end_at_utc TEXT,timezone TEXT,source TEXT,source_reference TEXT,status TEXT,recurrence TEXT,agent_notifications INTEGER);
+    INSERT INTO user_calendar_events VALUES(801,2,'Other owner event','','','2026-11-06 12:00:00','2026-11-06 13:00:00','UTC','manual','','active','none',0);");
 
 $checks=0;
 function readiness_check(bool $ok,string $label): void{if(!$ok)throw new RuntimeException($label);$GLOBALS['checks']++;echo 'PASS '.$label.PHP_EOL;}
@@ -95,7 +100,20 @@ readiness_check(isset($all['product-readiness:101'],$all['product-readiness:102'
 readiness_check($all['product-readiness:101']['readiness']['source_asset_id']===301&&in_array('price',$all['product-readiness:101']['readiness']['missing_fields'],true),'private photo listing retains only owned canonical media and unfinished terms');
 readiness_check($all['product-readiness:102']['readiness']['product_media_link']==='not_assessed'&&$all['product-readiness:102']['readiness']['promotion_state']==='not_assessed','no recorded media link is not falsely reported as no image or no external promotion');
 readiness_check(isset($all['business-readiness:401'])&&!isset($all['business-readiness:402'])&&$all['business-readiness:401']['readiness']['promotion_state']==='no_active_campaign_recorded','owned merchant readiness distinguishes known VP3 campaign state from other accounts');
+readiness_check($all['calendar-readiness:1']['readiness']['upcoming_events']===0&&$coverage['calendar_readiness']==='ready',
+    'the shared calendar reader verifies an empty Cloud calendar without including another account’s events');
 readiness_check((int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,'evidence collection does not create profiles, preferences, products, campaigns or task records');
+[$calendarExact]=readiness_read($owner,$system,['calendar-readiness:1']);
+readiness_check($calendarExact===['calendar-readiness:1'=>$all['calendar-readiness:1']],
+    'the empty calendar ref rebuilds from the same scoped reader');
+$pdo->exec("INSERT INTO agent_scheduling_bookings VALUES(901,1,'pending','2026-11-07 12:00:00','2026-11-07 13:00:00','Test booking','','UTC','manual',0)");
+[$calendarNow]=readiness_read($owner,$system,['calendar-readiness:1']);
+readiness_check(!$calendarNow,'a new pending booking invalidates the absence observation');
+$pdo->exec('DELETE FROM agent_scheduling_bookings WHERE id=901');
+$pdo->exec("INSERT INTO user_calendar_events VALUES(802,1,'Recurring event','','','2026-10-23 12:00:00','2026-10-23 13:00:00','UTC','manual','','active','weekly',0)");
+[$calendarNow]=readiness_read($owner,$system,['calendar-readiness:1']);
+readiness_check(!$calendarNow,'a weekly occurrence in the checked window invalidates the absence observation');
+$pdo->exec('DELETE FROM user_calendar_events WHERE id=802');
 [$again]=readiness_read($owner,$system);
 readiness_check(array_column($again,'revision','ref')===array_column($all,'revision','ref'),'source revisions remain stable across unchanged reads');
 [$one,$singleCoverage]=readiness_read($owner,$system,['product-readiness:101']);
@@ -122,9 +140,25 @@ readiness_check($namedRows===[]&&$namedCoverage['account_readiness']==='forbidde
 $pdo->exec('UPDATE user_agent_preferences SET onboarding_dismissed=1 WHERE user_id=1');
 [$one,$singleCoverage]=readiness_read($owner,$system,['account-readiness:1']);
 readiness_check($one===[]&&$singleCoverage['account_readiness']==='ready','dismissed onboarding stays quiet instead of reopening owner choices');
+$pdo->exec("UPDATE user_profiles SET username='owner' WHERE user_id=1; UPDATE user_agent_preferences SET onboarding_step='complete' WHERE user_id=1");
+[$profileReady]=readiness_read($owner,$system,['account-readiness:1']);
+$profileEvidence=$profileReady['account-readiness:1'];
+readiness_check($profileEvidence['readiness']['bio']==='Collects local history'&&!$profileEvidence['readiness']['requires_owner_input']
+    &&!str_contains(json_encode($profileEvidence,JSON_THROW_ON_ERROR),'PRIVATE_PROFILE_AGENT_INSTRUCTIONS'),
+    'completed onboarding can contribute bounded profile conversation context without reopening setup');
+[$namedRows,$namedCoverage]=readiness_read($owner,$named,['account-readiness:1']);
+readiness_check(!$namedRows&&$namedCoverage['account_readiness']==='forbidden','profile revocation also prevents a completed profile context from being rebuilt');
+$pdo->exec("UPDATE user_profiles SET bio='Archives neighborhood photographs' WHERE user_id=1");
+[$profileChanged]=readiness_read($owner,$system,['account-readiness:1']);
+readiness_check($profileChanged['account-readiness:1']['revision']!==$profileEvidence['revision'],'a saved profile change invalidates a previously selected profile observation');
 $pdo->exec("UPDATE user_agent_preferences SET feature_interest_json='{}' WHERE user_id=1");
 [$one,$singleCoverage]=readiness_read($owner,$system,['scheduling-readiness:1:0']);
-readiness_check($one===[]&&$singleCoverage['scheduling_readiness']==='ready','unselected booking workflow does not generate a missing-schedule demand');
+readiness_check(!$one['scheduling-readiness:1:0']['readiness']['workflow_selected']
+    &&!$one['scheduling-readiness:1:0']['readiness']['requires_owner_input']&&$singleCoverage['scheduling_readiness']==='ready',
+    'verified absence of appointment types is optional context when booking was not selected');
+$pdo->exec("UPDATE user_agent_preferences SET feature_interest_json='{\"activation.dismiss.workflow.booking\":true}' WHERE user_id=1");
+[$one]=readiness_read($owner,$system,['scheduling-readiness:1:0']);
+readiness_check(!$one,'explicitly dismissed booking does not become an optional prompt');
 $pdo->exec("UPDATE user_agent_preferences SET feature_interest_json='{\"workflow.booking\":true,\"activation.defer.workflow.booking\":\"2027-01-01T00:00:00Z\"}' WHERE user_id=1");
 [$one,$singleCoverage]=readiness_read($owner,$system,['scheduling-readiness:1:0']);
 readiness_check($one===[]&&$singleCoverage['scheduling_readiness']==='ready','owner’s saved booking deferral stays quiet at the observation time');
@@ -146,6 +180,18 @@ $pdo->exec('DELETE FROM agent_commerce_products_v800 WHERE id=102');
 readiness_check($one===[]&&$singleCoverage['product_readiness']==='ready','deleted exact product source becomes stale without widening the read');
 [$one]=readiness_read(['id'=>2,'is_active'=>1],vp3_agent_chat_principal_v380(['id'=>2],null),['product-readiness:101']);
 readiness_check($one===[],'another owner cannot reconstruct a product ref from the first owner');
+$pdo->exec('DELETE FROM agent_commerce_products_v800 WHERE owner_user_id=1');
+[$one,$singleCoverage]=readiness_read($owner,$system,['product-readiness:owner:1']);
+readiness_check($one['product-readiness:owner:1']['readiness']['owned_products']===0&&$singleCoverage['product_readiness']==='ready',
+    'the shared catalog verifies zero owned products without counting a different workspace owner’s product');
+[$one,$singleCoverage]=readiness_read($owner,$named,['product-readiness:owner:1']);
+readiness_check(!$one&&$singleCoverage['product_readiness']==='forbidden','the absent product projection preserves the System-only commerce permission');
+$insert->execute([1100,'first-product']);
+[$one]=readiness_read($owner,$system,['product-readiness:owner:1']);
+readiness_check(!$one,'the first owned product invalidates empty-catalog advice without disclosing unrelated product records');
+$pdo->exec('DROP TABLE agent_scheduling_bookings');
+[$one,$singleCoverage]=readiness_read($owner,$system,['calendar-readiness:1']);
+readiness_check(!$one&&$singleCoverage['calendar_readiness']==='unavailable','missing Cloud booking storage cannot masquerade as an empty calendar');
 $pdo->exec('DROP TABLE user_agent_preferences');
 [$one,$singleCoverage]=readiness_read($owner,$system,['account-readiness:1']);
 readiness_check($one===[]&&$singleCoverage['account_readiness']==='unavailable','missing canonical onboarding storage is unavailable instead of a fabricated setup gap');

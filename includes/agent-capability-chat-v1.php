@@ -258,7 +258,15 @@ function vp3_capability_control_principal_v1(PDO $pdo,array $user,int $conversat
 
 function vp3_initiative_command_v1(string $query): ?string
 {
-    return preg_match('/\A\/initiative (on|off|status|screen on|screen off)\z/i',trim($query),$matches)?strtolower($matches[1]):null;
+    $query = trim($query);
+    if (preg_match('/\A\/initiative (on|off|status|screen on|screen off)\z/i',$query,$matches)) return strtolower($matches[1]);
+    $query = mb_strtolower(rtrim(preg_replace('/\s+/u',' ',$query) ?? '', '?.! '));
+    return in_array($query, [
+        'what have you been working on',
+        'what did you find in the background',
+        'what have you found in the background',
+        'show me your background findings',
+    ], true) ? 'findings' : null;
 }
 
 /** An existing-photo promotion goes through the private Workbench review. */

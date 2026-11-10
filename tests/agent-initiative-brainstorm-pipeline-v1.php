@@ -152,4 +152,77 @@ $GLOBALS['pipelineModel']=brainstorm_pipeline_model(static function()use($pdo,$o
 canvas_pipeline_check(!vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($paused))['ok'],'pausing Initiative during inference prevents its old binding from committing');
 $q=$pdo->prepare('SELECT result_json FROM agent_workflow_receipts WHERE run_id=?');$q->execute([$paused]);
 canvas_pipeline_check(!str_contains((string)$q->fetchColumn(),'initiative_brainstorm'),'a paused stale policy cannot save an assessment opportunity');
+
+require_once dirname(__DIR__).'/includes/agent-initiative-lifecycle-v1.php';
+require_once dirname(__DIR__).'/includes/agent-scheduling-tools-v460.php';
+require_once dirname(__DIR__).'/includes/profile-agent.php';
+$pdo->exec("ALTER TABLE users ADD COLUMN display_name VARCHAR(100); ALTER TABLE users ADD COLUMN role VARCHAR(20);
+    ALTER TABLE users ADD COLUMN avatar_path VARCHAR(100); UPDATE users SET display_name='Fixture owner' WHERE id=1;
+    CREATE TABLE user_profiles(user_id INTEGER PRIMARY KEY,username VARCHAR(80),bio TEXT,is_public INTEGER);
+    INSERT INTO user_profiles VALUES(1,'fixture','Collects neighborhood photographs',0);
+    CREATE TABLE user_agent_preferences(user_id INTEGER PRIMARY KEY,onboarding_dismissed INTEGER,voice_preference VARCHAR(20),
+        onboarding_step VARCHAR(40),onboarding_draft_json TEXT,feature_interest_json TEXT,last_trial_notice_threshold INTEGER,last_trial_notice_at DATETIME);
+    INSERT INTO user_agent_preferences VALUES(1,1,NULL,'complete',NULL,'{}',NULL,NULL);
+    CREATE TABLE agent_scheduling_schedules(id INTEGER PRIMARY KEY,owner_user_id INTEGER,agent_id INTEGER,is_active INTEGER,is_default INTEGER);
+    CREATE TABLE agent_scheduling_event_types(id INTEGER PRIMARY KEY,schedule_id INTEGER,is_active INTEGER,sort_order INTEGER,title VARCHAR(100),minimum_notice_minutes INTEGER);
+    CREATE TABLE agent_scheduling_availability(id INTEGER PRIMARY KEY); CREATE TABLE agent_scheduling_overrides(id INTEGER PRIMARY KEY);
+    CREATE TABLE agent_scheduling_bookings(id INTEGER PRIMARY KEY,start_at_utc DATETIME,public_token VARCHAR(32),buffer_before_minutes INTEGER,buffer_after_minutes INTEGER)");
+$quiet=['surface'=>'chat','conversation_id'=>12,'visible'=>true,'focused'=>true,'chat_focused'=>true,'chat_busy'=>false,
+    'activity_tab'=>str_repeat('b',32),'activity_observed_at'=>(int)floor(microtime(true)*1000),'activity_sequence'=>1];
+$pdo->prepare("UPDATE agent_activity_state SET context_key='chat:12',last_heartbeat_at=CURRENT_TIMESTAMP,details_json=? WHERE user_id=1")
+    ->execute([json_encode($quiet,JSON_THROW_ON_ERROR)]);
+$adopted=vp3_initiative_adopt_activity_v1($pdo,$owner,$quiet);
+canvas_pipeline_check(!empty($adopted['accepted'])&&$adopted['agent_id']===8&&canvas_pipeline_count('chat_messages','conversation_id=12')===0,
+    'normal activity opens Initiative for a fresh quiet private Chat without a forced greeting');
+vp3_initiative_schedule_v1($pdo,$owner,8);
+$quietPlans=canvas_pipeline_runs('initiative.plan');$quietPlan=end($quietPlans);
+$quietGoal=json_decode($quietPlan['goal'],true,32,JSON_THROW_ON_ERROR);
+canvas_pipeline_check((int)$quietPlan['agent_id']===8&&isset($quietGoal['sources']['account-readiness:1'],$quietGoal['sources']['scheduling-readiness:1:8']),
+    'the existing scheduler admits one assessment with the authorized completed profile and verified empty appointment setup');
+$GLOBALS['pipelineModel']=static function(string $prompt,string $protocol): string{
+    $evidence=array_column(json_decode($prompt,true,32,JSON_THROW_ON_ERROR)['evidence'],null,'ref');
+    canvas_pipeline_check($evidence['account-readiness:1']['readiness']['bio']==='Collects neighborhood photographs'
+        &&$evidence['scheduling-readiness:1:8']['readiness']['active_event_types']===false,
+        'the canonical evidence is reloaded into the same planner and check-in at execution');
+    return $protocol==='vp3.initiative-plan.v1'
+        ?json_encode(['jobs'=>[['tool'=>'chat.check_in','primary'=>'account-readiness:1','refs'=>['account-readiness:1','scheduling-readiness:1:8'],
+            'focus'=>'Ask how the owner wants to use their photo collection','report'=>true]]],JSON_THROW_ON_ERROR)
+        :json_encode(['draft'=>'Would you like help organizing or sharing your neighborhood photographs?','delivery'=>'text'],JSON_THROW_ON_ERROR);
+};
+canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim((int)$quietPlan['id']))['ok'],
+    'the existing planner selects a source-backed conversation check-in');
+$nextSlot=array_replace($quietGoal,['reassessment_slot'=>$quietGoal['reassessment_slot']+1]);
+$changedSource=$nextSlot;
+$changedSource['sources']['account-readiness:1']=str_repeat('a',64);
+canvas_pipeline_check(vp3_initiative_brainstorm_pending_v1($pdo,$owner,$nextSlot,true)
+    &&!vp3_initiative_brainstorm_pending_v1($pdo,$owner,$nextSlot)
+    &&!vp3_initiative_brainstorm_pending_v1($pdo,$owner,$changedSource,true),
+    'unchanged completed setup avoids another paid assessment while changed evidence and time-sensitive work can be reconsidered');
+$quietChecks=canvas_pipeline_runs('initiative.prepare');$quietCheck=end($quietChecks);
+$setChatBusy=static function(bool $busy)use($pdo,$quiet):void{
+    $pdo->prepare('UPDATE agent_activity_state SET details_json=?,last_heartbeat_at=CURRENT_TIMESTAMP WHERE user_id=1')
+        ->execute([json_encode(array_replace($quiet,['chat_busy'=>$busy]),JSON_THROW_ON_ERROR)]);
+};
+$setChatBusy(true);
+canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim((int)$quietCheck['id']))['ok']
+    &&canvas_pipeline_result((int)$quietCheck['id'])['initiative_delivery']==='pending'
+    &&canvas_pipeline_count('chat_messages','conversation_id=12')===0,
+    'the existing check-in can complete without interrupting the owner');
+$quietPrincipal=vp3_agent_chat_principal_v380($owner,vp3_agent_chat_resolve_agent_v380($pdo,$owner,8));
+$beforeRead=count($GLOBALS['pipelineInference']);
+$findingsQuery='What did you find in the background?';
+$statusReadContext=json_encode(['initiative_status_read_v1'=>true,'skip_brain_archive'=>true],JSON_THROW_ON_ERROR);
+$pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (12,1,'user',?,?)")
+    ->execute([$findingsQuery,$statusReadContext]);
+$answer=vp3_capability_chat_v1($pdo,$owner,$quietPrincipal,$findingsQuery,['conversation_id'=>12,'user_agent_id'=>8]);
+canvas_pipeline_check(!empty($answer['handled'])&&str_contains($answer['answer'],'Would you like help organizing or sharing your neighborhood photographs?')
+    &&count($GLOBALS['pipelineInference'])===$beforeRead&&canvas_pipeline_count('chat_messages','conversation_id=12')===1,
+    'ordinary Chat can read the same verified pending background result without starting another inference or delivery');
+$pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (12,NULL,'assistant',?,?)")
+    ->execute(['Verified background findings were shown for this turn.',$statusReadContext]);
+$setChatBusy(false);
+canvas_pipeline_check(vp3_initiative_deliver_pending_v1($pdo,$owner,8)
+    &&canvas_pipeline_result((int)$quietCheck['id'])['initiative_delivery']==='delivered'
+    &&canvas_pipeline_count('chat_messages',"conversation_id=12 AND role='assistant' AND JSON_EXTRACT(context_json,'$.initiative_run_id') IS NOT NULL")===1,
+    'the canonical check-in delivers one useful message to the exact saved Chat');
 echo 'INITIATIVE_BRAINSTORM_PIPELINE=PASS ('.($checks-$brainstormStart).' assertions, '.($mysql?'mysql':'sqlite').')'.PHP_EOL;

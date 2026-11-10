@@ -27,9 +27,10 @@ function vp3_initiative_checkin_snapshot_v1(PDO $pdo,array $scope): array
     while(($row=$q->fetch(PDO::FETCH_ASSOC))!==false){
         $scanned++;
         $context=json_decode((string)($row['context_json']??''),true);
-        // Only the server's canonical Initiative source is excluded. Other
-        // assistant completions and edited/deleted ordinary turns fence delivery.
+        // Canonical Initiative posts and status reads are bookkeeping. Ordinary
+        // conversation turns, including edits and deletions, fence delivery.
         if(($row['role']??'')==='assistant'&&is_array($context)&&($context['source']??null)==='agent_initiative')continue;
+        if(is_array($context)&&($context['initiative_status_read_v1']??false)===true)continue;
         $tail[]=[(int)$row['id'],$row['user_id']===null?null:(int)$row['user_id'],(string)$row['role'],
             (string)$row['message'],(string)($row['context_json']??''),(string)($row['created_at']??'')];
         if(count($tail)===24)break;

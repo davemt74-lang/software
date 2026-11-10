@@ -46,9 +46,13 @@ $initiativeReply=vp3_agent_chat_initiative_reply_v2160($input);
 if($initiativeReply!==null&&$conversationId<1)throw new RuntimeException('A saved owner Chat is required for this reply.',422);
 $input['input_mode']='voice';$participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);if($initiativeReply!==null&&($participantActor!==null||vp3_participant_scope_v1()!==null))throw new RuntimeException('Use the private owner Chat for this reply.',403);
 $initiativeRequest=null;
-$emailRequest=$initiativeReply===null&&$participantActor===null&&vp3_participant_scope_v1()===null
+$initiativeStatusRead=$initiativeReply===null&&empty($input['ephemeral_protocol'])
+    &&in_array(vp3_initiative_command_v1($query),['status','findings'],true);
+$emailPlan=$initiativeReply===null&&$participantActor===null&&vp3_participant_scope_v1()===null
     &&empty($input['ephemeral_protocol'])&&knowledge_retrieval_v162_owner_session($user,$principal)
-    &&agent_connection_email_chat_plan_v1($query)!==null;
+    ?agent_connection_email_chat_plan_v1($query,true):null;
+$emailRequest=$emailPlan!==null;
+$emailReviewRequest=($emailPlan['operation']??null)==='review_status';
 $youtubeHistoryRequest=$initiativeReply===null&&empty($input['ephemeral_protocol'])&&agent_connection_youtube_history_request_v1($query);
 if($youtubeHistoryRequest&&$participantActor!==null)throw new RuntimeException('Use your private Agent Chat to review your YouTube playback in VP3.',403);
 $youtubeFollowup=$initiativeReply===null&&empty($input['ephemeral_protocol'])?agent_connection_youtube_followup_plan_v1($query):null;
@@ -56,7 +60,7 @@ $youtubeRequest=$initiativeReply===null&&!$emailRequest&&$participantActor===nul
     &&empty($input['ephemeral_protocol'])&&($youtubeHistoryRequest||$youtubeFollowup!==null||agent_connection_youtube_chat_plan_v1($query)!==null);
 $publicResearchRequest=$initiativeReply===null&&!$emailRequest&&$participantActor===null
     &&empty($input['ephemeral_protocol'])&&vp3_public_research_plan_v1($query)!==null;
-if(!$emailRequest&&!$youtubeRequest&&!$publicResearchRequest&&$participantActor===null&&vp3_participant_scope_v1()===null
+if(!$emailRequest&&!$youtubeRequest&&!$publicResearchRequest&&!$initiativeStatusRead&&$participantActor===null&&vp3_participant_scope_v1()===null
     &&empty($input['ephemeral_protocol'])&&$conversationId>0
     &&($initiativeReply!==null||vp3_initiative_followthrough_possible_v1($pdo,$userId,$agentScopeId,$conversationId,$query))){
     try{$initiativeRequest=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$conversationId,$query,
@@ -177,7 +181,7 @@ if($participantActor!==null){
     chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],'assistant_message_id'=>$done['assistant_message_id'],'agent_id'=>$agentScopeId]);
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
-if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$publicResearchRequest){
+if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$publicResearchRequest||$initiativeStatusRead||$emailReviewRequest){
     // Use the same owner-scoped executor for these voice and typed turns.
     $input['conversation_id']=$conversationId;
     $done=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);
@@ -188,6 +192,14 @@ if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$yout
         if($youtubeRequest){
             unset($replay['youtube_results']);
             $replay['youtube_query_hash']=hash('sha256',$query);
+        }
+        if($initiativeStatusRead){
+            $replay['answer']='I checked for saved background findings.';
+            $replay['sources']=[];
+        }
+        if(!empty($done['private_email_read'])){
+            [$replay['answer'],$privateContext]=agent_connection_email_chat_view_v1(['email_private_read_v1'=>true],$done['answer'],[]);
+            $replay['sources']=$privateContext['sources'];
         }
         agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$replay);
     }

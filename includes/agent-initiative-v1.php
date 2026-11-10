@@ -338,7 +338,9 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
                     'reassessment_slot'=>vp3_initiative_brainstorm_slot_v1()];
                 if($engagementRevision!=='')$payload['engagement_revision']=$engagementRevision;
                 $hash=hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR));
-                if(!vp3_initiative_brainstorm_pending_v1($pdo,$live,$payload)){
+                $setupOnly=!array_diff(array_column($evidence,'kind'),['account_readiness','scheduling_readiness',
+                    'calendar_readiness','product_readiness','business_readiness']);
+                if(!vp3_initiative_brainstorm_pending_v1($pdo,$live,$payload,$setupOnly)){
                     vp3_initiative_enqueue_v1($pdo,$live,'initiative.plan',$payload,$hash);
                 }
             }
@@ -480,12 +482,12 @@ function vp3_initiative_chat_scoped_v1(PDO $pdo,array $user,array $principal,arr
         if(!agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo)){
             return $result+['answer'=>'Initiative needs the current Agent Brain and job database upgrades.'];
         }
-        if($command==='status'){
+        if(in_array($command,['status','findings'],true)){
             $policy=vp3_initiative_policy_v1($live);
             if($policy===[])return $result+['answer'=>'Your Agent’s working context starts when this saved Chat is active.'];
             if(empty($policy['enabled']))return $result+['answer'=>'Initiative is paused. Use /initiative on to resume.'];
             if($policy['conversation_id']!==$cid)return $result+['answer'=>'Initiative is linked to another private conversation.'];
-            return vp3_initiative_status_v1($pdo,$live,$policy,$result);
+            return vp3_initiative_status_v1($pdo,$live,$policy,$result,$command==='findings');
         }
         $pdo->beginTransaction();
         vp3_initiative_owner_lock_v1($pdo,$live);
@@ -609,13 +611,13 @@ function vp3_initiative_foreground_status_scoped_v1(PDO $pdo,array $user,int $ag
     }
 }
 
-function vp3_initiative_status_v1(PDO $pdo,array $user,array $policy,array $result): array
+function vp3_initiative_status_v1(PDO $pdo,array $user,array $policy,array $result,bool $findingsOnly=false): array
 {
     return vp3_initiative_in_scope_v1($user,vp3_initiative_binding_agent_v1($policy),
-        static fn()=>vp3_initiative_status_scoped_v1($pdo,$user,$policy,$result));
+        static fn()=>vp3_initiative_status_scoped_v1($pdo,$user,$policy,$result,$findingsOnly));
 }
 
-function vp3_initiative_status_scoped_v1(PDO $pdo,array $user,array $policy,array $result): array
+function vp3_initiative_status_scoped_v1(PDO $pdo,array $user,array $policy,array $result,bool $findingsOnly=false): array
 {
     $user=vp3_initiative_access_v1($pdo,$user,$policy);
     $agentId=vp3_initiative_binding_agent_v1($policy);
@@ -627,13 +629,20 @@ function vp3_initiative_status_scoped_v1(PDO $pdo,array $user,array $policy,arra
         ORDER BY r.id DESC LIMIT 15");
     $stmt->execute(array_merge([(int)$user['id']],$agentParams));
     $includeScreen=!empty($policy['screen_enabled']);
-    $lines=['Initiative is on. Screen-share follow-ups are '.($includeScreen?'on.':'off.')];$sources=[];
+    $lines=$findingsOnly?[]:['Initiative is on. Screen-share follow-ups are '.($includeScreen?'on.':'off.')];$sources=[];
+    $waiting=false;$failed=false;
     foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){
         $goal=json_decode((string)$row['goal'],true);
         if(($goal['binding']??null)!==$policy)continue;
         if($row['status']!=='completed'){
-            if(in_array($row['status'],['approved','executing'],true))$lines[]='A private review is in progress.';
-            if($row['status']==='failed')$lines[]='A previous review could not be verified.';
+            if(in_array($row['status'],['approved','executing'],true)){
+                $waiting=true;
+                if(!$findingsOnly)$lines[]='A private review is in progress.';
+            }
+            if($row['status']==='failed'){
+                $failed=true;
+                if(!$findingsOnly)$lines[]='A previous review could not be verified.';
+            }
             continue;
         }
         $out=json_decode((string)$row['result_json'],true);
@@ -645,12 +654,22 @@ function vp3_initiative_status_scoped_v1(PDO $pdo,array $user,array $policy,arra
         }
         catch(RuntimeException $e){
             if(!in_array($e->getCode(),[403,409,503],true))throw $e;
-            if($e->getCode()===503)$lines[]='A previous preparation could not be verified right now.';
+            if($e->getCode()===503){
+                $failed=true;
+                if(!$findingsOnly)$lines[]='A previous preparation could not be verified right now.';
+            }
             continue;
         }
         $lines[]=(string)$out['initiative_draft'];
         foreach($matching as $ref=>$item)$sources[$ref]=['source'=>$ref,'title'=>$item['title'],'url'=>$item['url']];
-        if(count($lines)>=4)break;
+        if(count($lines)>=($findingsOnly?3:4))break;
+    }
+    if($findingsOnly&&!$lines){
+        $lines[]=match(true){
+            $waiting=>'I’m still reviewing your workspace. I’ll have a result once the review finishes.',
+            $failed=>'I couldn’t verify a saved background finding right now.',
+            default=>'I don’t have a verified background finding ready right now.',
+        };
     }
     $result['sources']=array_values($sources);
     return $result+['answer'=>implode("\n\n",array_values(array_unique($lines)))];
@@ -667,7 +686,7 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         'campaign-journey'=>'campaigns',
         'reward'=>'rewards','transcript'=>'transcripts','screen-followup'=>'screen_followup',
         'account-readiness'=>'account_readiness','business-readiness'=>'business_readiness',
-        'product-readiness'=>'product_readiness','scheduling-readiness'=>'scheduling_readiness',
+        'product-readiness'=>'product_readiness','scheduling-readiness'=>'scheduling_readiness','calendar-readiness'=>'calendar_readiness',
         'workbench-product'=>'workbench_product','workbench-marketing'=>'workbench_marketing','workbench-screen'=>'workbench_screen','workbench-mission'=>'workbench_mission',
         'open-task'=>'open_tasks','activity-situation'=>'activity_situations',
         'chat-history'=>'chat_history','canvas-work'=>'canvas_work','song-history'=>'song_history',
