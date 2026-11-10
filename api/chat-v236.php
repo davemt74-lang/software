@@ -62,8 +62,8 @@ if($action==='load'){
     $stmt->execute([$conversationId]);
     $agentId=(int)$principal['agent_id'];
     $rows=vp3_agent_chat_include_source_v380($pdo,$user,$activeAgent,$conversationId,array_reverse($stmt->fetchAll()),$input['source_message_id']??null);
-    $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,$rows);
-    echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>agent_connection_gmail_inbox_chat_history_v1($pdo,$user,$agentId,$conversationId,vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages)),'agent_name'=>(string)$principal['display_name']]);
+    $messages=vp3_agent_chat_history_content_v2160($pdo,$user,$agentId,$conversationId,$rows);
+    echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>$messages,'agent_name'=>(string)$principal['display_name']]);
     exit;
 }
 if($action==='messages_after'){
@@ -83,8 +83,8 @@ if($action==='messages_after'){
         WHERE conversation_id=? AND (id>?'.$retry.') ORDER BY id ASC LIMIT '.(80+count($pending)));
     $stmt->execute([$conversationId,$afterId,...$pending]);
     $agentId=(int)$principal['agent_id'];
-    $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,$stmt->fetchAll());
-    echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>agent_connection_gmail_inbox_chat_history_v1($pdo,$user,$agentId,$conversationId,vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages))],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    $messages=vp3_agent_chat_history_content_v2160($pdo,$user,$agentId,$conversationId,$stmt->fetchAll());
+    echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$messages],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     exit;
 }
 if($action==='delete'){$conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');homeserver_agent_v018_forget($userId,$conversationId);$pdo->prepare('DELETE FROM chat_conversations WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);echo json_encode(['ok'=>true]);exit;}

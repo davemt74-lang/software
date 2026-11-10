@@ -170,10 +170,8 @@ try {
     inbox_check($sweep() === ['processed'=>1,'reviewed'=>1] && array_slice($metadataIds,10) === ['tail','deleted']
         && $review()['total'] === 1 && $reviewRow()['pending_event_id'] === $first,
         'changed provider event membership or ordering restarts the slice without duplicate reads or lost tail mail');
-    $stale = false;
-    try { agent_connection_gmail_inbox_item_v1($pdo,$owner,$itemRef); }
-    catch (DomainException $error) { $stale = $error->getCode() === 404; }
-    inbox_check($stale,'replacing the latest batch invalidates its previous exact selectors');
+    inbox_check(agent_connection_gmail_inbox_item_v1($pdo,$owner,$itemRef)['message_id'] === 'new_mail',
+        'replacing the latest view preserves previous exact selectors in the same mailbox grant');
     inbox_check($sweep() === ['processed'=>1,'reviewed'=>1] && array_slice($metadataIds,12) === ['next','epoch']
         && $review()['items'][0]['from'] === 'muted2@example.test' && $reviewRow()['history_id'] === $second
         && $review()['total'] === 1 && $reviewRow()['pending_event_id'] === '' && $receipts() === 14,

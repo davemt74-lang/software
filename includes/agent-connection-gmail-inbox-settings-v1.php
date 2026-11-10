@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-connections-v1.php';
 require_once __DIR__.'/agent-commerce-recovery-pa2.php';
+require_once __DIR__.'/agent-connection-gmail-inbox-batches-v1.php';
 
 function agent_connection_gmail_inbox_install_v1(PDO $pdo): void
 {
@@ -32,6 +33,7 @@ function agent_connection_gmail_inbox_install_v1(PDO $pdo): void
         INDEX idx_gmail_inbox_review_due_v1 (enabled,next_check_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin"));
     if ($sqlite) $pdo->exec('CREATE INDEX IF NOT EXISTS idx_gmail_inbox_review_due_v1 ON agent_connection_gmail_inbox_v1 (enabled,next_check_at)');
+    agent_connection_gmail_inbox_batches_install_v1($pdo);
 }
 
 function agent_connection_gmail_inbox_ready_v1(PDO $pdo): bool
@@ -49,7 +51,10 @@ function agent_connection_gmail_inbox_ready_v1(PDO $pdo): bool
 function agent_connection_gmail_inbox_storage_ready_v1(PDO $pdo): bool
 {
     require_once __DIR__.'/agent-connection-gmail-inbox-v1.php';
-    return agent_connection_gmail_inbox_ready_v1($pdo) && agent_connection_gmail_inbox_receipts_ready_v1($pdo);
+    require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+    return agent_connection_gmail_inbox_ready_v1($pdo) && agent_connection_gmail_inbox_receipts_ready_v1($pdo)
+        && agent_connection_gmail_inbox_batches_ready_v1($pdo)
+        && agent_connection_gmail_inbox_initial_capacity_ready_v1($pdo);
 }
 
 function agent_connection_gmail_inbox_policy_v1(PDO $pdo, int $ownerId, bool $lock = false): ?array
@@ -197,6 +202,7 @@ function agent_connection_gmail_inbox_clear_output_v1(PDO $pdo, int $ownerId): v
     require_once __DIR__.'/agent-connection-gmail-inbox-notice-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
     agent_connection_gmail_inbox_receipts_clear_v1($pdo,$ownerId);
+    agent_connection_gmail_inbox_batches_clear_v1($pdo,$ownerId);
     agent_connection_gmail_inbox_notice_purge_v1($pdo,$ownerId);
     agent_connection_gmail_inbox_initial_purge_v1($pdo,$ownerId);
 }

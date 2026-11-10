@@ -87,75 +87,67 @@ function vp3_top_of_mind_state_v1(array $run,array $action,?array $receipt,array
     return 'completed';
 }
 
-/** A current owner-only playback observation for this Chat. */
-function vp3_top_of_mind_music_v1(PDO $pdo,array $user,int $agentId,int $conversationId,int $now): ?array
+function vp3_top_of_mind_media_href_v1(int $agentId,int $conversationId,int $messageId): string
 {
-    require_once __DIR__.'/agent-connection-youtube-playback-v1.php';
-    $owner=(int)$user['id'];
-    if(!vp3_youtube_playback_ready_v1($pdo)||!agent_connection_youtube_enabled_v1()
-        ||!agent_connection_youtube_consent_v1($pdo,$owner))return null;
-    $captureKey=vp3_youtube_capture_key_v1($pdo,$owner);
-    if($captureKey==='')return null;
-    foreach(vp3_youtube_history_recent_v1($pdo,$owner,$agentId,$conversationId) as $video){
-        $playedAt=$video['played_at'];
-        if($playedAt<$now-86400||$playedAt>$now)continue;
-        $title=vp3_top_of_mind_text_v1($video['title']??'',180);
-        if($title==='')continue;
-        if(!hash_equals($captureKey,vp3_youtube_capture_key_v1($pdo,$owner))
-            ||!agent_connection_youtube_consent_v1($pdo,$owner)||!agent_connection_youtube_enabled_v1())return null;
-        return ['title'=>$title,'channel_title'=>vp3_top_of_mind_text_v1($video['channel_title']??'',140),
-            'music_suggestion'=>$video['music_suggestion'],
-            'played_at'=>gmdate(DATE_ATOM,$playedAt),'chat_url'=>url('/chat.php?agent='.($agentId?:'system').'&conversation_id='.$conversationId)];
-    }
-    return null;
+    return url('/chat.php?agent='.($agentId?:'system').'&conversation_id='.$conversationId.'&message_id='.$messageId);
 }
 
-/** Read-only context for the exact Chat, independent of whether Initiative can run. */
+/** Calendar stays in this Chat. Media context follows the authenticated Agent across Chats. */
 function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $conversationId,int $now): array
 {
     require_once __DIR__.'/agent-calendar-prep-v1.php';
     require_once __DIR__.'/agent-connection-youtube-chat-v1.php';
-    $context=['calendar'=>[],'youtube_search'=>null,'artist_research'=>null,'topic_research'=>null];
-    $chatUrl=url('/chat.php?agent='.($agentId?:'system').'&conversation_id='.$conversationId);
+    $context=['calendar'=>[],'music'=>null,'youtube_search'=>null,'artist_research'=>null,'topic_research'=>null];
     try{
-        $context['calendar']=array_slice(vp3_calendar_prep_today_v1($pdo,$user,$agentId,$conversationId,new DateTimeImmutable('@'.$now)),0,1);
+        if($conversationId>0)$context['calendar']=array_slice(vp3_calendar_prep_today_v1($pdo,$user,$agentId,$conversationId,new DateTimeImmutable('@'.$now)),0,1);
     }catch(PDOException $error){}catch(RuntimeException $error){
         if($error->getCode()!==503)throw $error;
     }
     try{
-        $records=agent_connection_youtube_result_records_v1($pdo,(int)$user['id'],$agentId,$conversationId);
-        foreach($records as $record){
-            $searchedAt=$record['created_at_epoch'];
+        $records=agent_connection_youtube_activity_records_v1($pdo,(int)$user['id'],$agentId,$now);
+        foreach($records['searches'] as $record){
             $results=$record['results'];
             $query=vp3_top_of_mind_text_v1($results['query']??'',180);
-            if(!$searchedAt||$searchedAt<$now-86400||$searchedAt>$now||$query==='')continue;
+            if($query==='')continue;
             $context['youtube_search']=[
-                'message_id'=>$record['message_id'],'query'=>$query,
+                'message_id'=>$record['message_id'],'conversation_id'=>$record['conversation_id'],'query'=>$query,
                 'kind'=>($results['suggestion_kind']??null)==='playlist'?'playlist':'search',
                 'result_count'=>count(array_slice($results['videos'],0,6)),
-                'searched_at'=>gmdate(DATE_ATOM,$searchedAt),'chat_url'=>$chatUrl,
+                'searched_at'=>gmdate(DATE_ATOM,$record['created_at_epoch']),
+                'chat_url'=>vp3_top_of_mind_media_href_v1($agentId,$record['conversation_id'],$record['message_id']),
             ];
+            break;
+        }
+        foreach($records['plays'] as $video){
+            $title=vp3_top_of_mind_text_v1($video['title']??'',180);
+            $cid=(int)$video['conversation_id'];$mid=(int)$video['message_id'];
+            if($title===''||$cid<1||$mid<1)continue;
+            $context['music']=['title'=>$title,'channel_title'=>vp3_top_of_mind_text_v1($video['channel_title']??'',140),
+                'music_suggestion'=>$video['music_suggestion'],'message_id'=>$mid,'conversation_id'=>$cid,
+                'played_at'=>gmdate(DATE_ATOM,$video['played_at']),'chat_url'=>vp3_top_of_mind_media_href_v1($agentId,$cid,$mid)];
             break;
         }
     }catch(PDOException $error){}
     foreach(['artist','topic'] as $kind){
         $key=$kind.'_research';
         try{
-            $context[$key]=vp3_top_of_mind_research_result_v1($pdo,(int)$user['id'],$conversationId,$now,$chatUrl,$kind);
+            $context[$key]=vp3_top_of_mind_research_result_v1($pdo,(int)$user['id'],$agentId,$now,$kind);
         }catch(PDOException $error){}
     }
     return $context;
 }
 
-/** Reuse the latest verified public research response in this owner Chat. */
-function vp3_top_of_mind_research_result_v1(PDO $pdo,int $ownerId,int $conversationId,int $now,string $chatUrl,string $kind): ?array
+/** Reuse the latest verified public research response for the exact private Agent. */
+function vp3_top_of_mind_research_result_v1(PDO $pdo,int $ownerId,int $agentId,int $now,string $kind): ?array
 {
     $key=$kind.'_research_v1';
-    $stmt=$pdo->prepare("SELECT m.id,m.context_json FROM chat_messages m
+    $scope=$agentId>0?'c.user_agent_id=?':'c.user_agent_id IS NULL';
+    $params=$agentId>0?[$ownerId,$agentId]:[$ownerId];
+    $stmt=$pdo->prepare("SELECT m.id,m.conversation_id,m.context_json FROM chat_messages m
         JOIN chat_conversations c ON c.id=m.conversation_id
-        WHERE c.id=? AND c.user_id=? AND m.role='assistant' AND m.created_at BETWEEN ? AND ?
-            AND m.context_json LIKE ? ORDER BY m.id DESC LIMIT 12");
-    $stmt->execute([$conversationId,$ownerId,gmdate('Y-m-d H:i:s',$now-86400),gmdate('Y-m-d H:i:s',$now),'%"'.$key.'"%']);
+        WHERE c.user_id=? AND {$scope} AND m.role='assistant' AND m.created_at BETWEEN ? AND ?
+            AND m.context_json LIKE ? ORDER BY m.created_at DESC,m.id DESC LIMIT 12");
+    $stmt->execute([...$params,gmdate('Y-m-d H:i:s',$now-86400),gmdate('Y-m-d H:i:s',$now),'%"'.$key.'"%']);
     while($row=$stmt->fetch(PDO::FETCH_ASSOC)){
         $context=json_decode((string)$row['context_json'],true);
         $research=$context[$key]??null;
@@ -170,7 +162,11 @@ function vp3_top_of_mind_research_result_v1(PDO $pdo,int $ownerId,int $conversat
             'blocked','failed'=>'unavailable',
             default=>null,
         };
-        if($status!==null)return [$kind=>$subject,'status'=>$status,'message_id'=>(int)$row['id'],'chat_url'=>$chatUrl];
+        if($status!==null){
+            $cid=(int)$row['conversation_id'];$mid=(int)$row['id'];
+            return [$kind=>$subject,'status'=>$status,'message_id'=>$mid,'conversation_id'=>$cid,
+                'chat_url'=>vp3_top_of_mind_media_href_v1($agentId,$cid,$mid)];
+        }
     }
     return null;
 }
@@ -206,7 +202,7 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
         $out=['contract'=>'vp3.top-of-mind.v1','owner_user_id'=>(int)$live['id'],'agent_id'=>$agentId,
             'conversation_id'=>$cid,'observed_at'=>gmdate(DATE_ATOM,$now),'state'=>'no_chat','items'=>[],
             'coverage'=>['initiative'=>'ready','foreground'=>'client_runtime_only']];
-        if($cid<1)return $out;
+        if($cid<1)return $out+vp3_top_of_mind_chat_context_v1($pdo,$live,$agentId,0,$now);
         if(!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent))throw new RuntimeException('Conversation access changed.',403);
         $out['state']=match(true){
             !agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo)=>'unavailable',
@@ -333,8 +329,6 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
             $out['items'][]=$item;
         }
         if(count($out['items'])!==$before)$out['coverage']['initiative']='limited';
-        try{$out['music']=vp3_top_of_mind_music_v1($pdo,$fresh['user'],$agentId,$cid,$now);}
-        catch(PDOException $error){$out['music']=null;}
         return $out+vp3_top_of_mind_chat_context_v1($pdo,$fresh['user'],$agentId,$cid,$now);
     });
 }

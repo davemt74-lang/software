@@ -32,7 +32,32 @@ try {
         vp3_youtube_playback_reply_v1(403, ['ok'=>false]);
     }
     $field = static fn(string $name): string => is_string($_POST[$name] ?? null) ? $_POST[$name] : '';
-    switch ($field('action')) {
+    $action = $field('action');
+    $playlist = $field('playlist_id');
+    if ($playlist !== '' && (!preg_match('/\A[a-f0-9]{32}\z/',$playlist) || !vp3_youtube_playlists_ready_v1($pdo))) {
+        vp3_youtube_playback_reply_v1(422, ['ok'=>false]);
+    }
+    switch ($action) {
+        case 'playlists':
+        case 'playlist_save':
+        case 'playlist_open':
+        case 'playlist_remove':
+            if (!vp3_youtube_playlists_ready_v1($pdo)) vp3_youtube_playback_reply_v1(503, ['ok'=>false]);
+            if ($action === 'playlists') {
+                vp3_youtube_playback_reply_v1(200, ['ok'=>true,'playlists'=>vp3_youtube_playlists_list_v1($pdo,$owner)]);
+            }
+            if ($action === 'playlist_save') {
+                $messageId = filter_var($field('message_id'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+                $saved = $messageId ? vp3_youtube_playlist_save_v1($pdo,$owner,$messageId) : null;
+                vp3_youtube_playback_reply_v1($saved?200:404,['ok'=>(bool)$saved,'playlist_id'=>$saved]);
+            }
+            if ($playlist === '') vp3_youtube_playback_reply_v1(422, ['ok'=>false]);
+            if ($action === 'playlist_remove') {
+                vp3_youtube_playlist_remove_v1($pdo,$owner,$playlist);
+                vp3_youtube_playback_reply_v1(200, ['ok'=>true]);
+            }
+            $results = vp3_youtube_playlist_open_v1($pdo,$owner,$playlist);
+            vp3_youtube_playback_reply_v1($results?200:404,['ok'=>(bool)$results,'results'=>$results]);
         case 'offer':
         case 'save_taste':
             if (!vp3_youtube_picks_ready_v1($pdo)) vp3_youtube_playback_reply_v1(503, ['ok'=>false]);
@@ -57,15 +82,34 @@ try {
             vp3_youtube_playback_reply_v1(200, ['ok'=>true]);
         case 'record':
             $messageId = filter_var($field('message_id'), FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
-            $recorded = $messageId && vp3_youtube_history_record_v1($pdo, $owner, $messageId, $field('video_id'), $field('play_id'), $field('capture_key'));
+            $recorded = $playlist !== ''
+                ? vp3_youtube_playlist_play_v1($pdo,$owner,$playlist,$field('video_id'),$field('play_id'),$field('capture_key'),$action)
+                : ($messageId && vp3_youtube_history_record_v1($pdo, $owner, $messageId, $field('video_id'), $field('play_id'), $field('capture_key')));
             vp3_youtube_playback_reply_v1(200, ['ok'=>true, 'recorded'=>(bool)$recorded]);
         case 'watch':
             if (!vp3_youtube_watch_ready_v1($pdo)) vp3_youtube_playback_reply_v1(503, ['ok'=>false]);
             $messageId = filter_var($field('message_id'), FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
             $seconds = filter_var($field('watch_seconds'), FILTER_VALIDATE_INT, ['options'=>['min_range'=>1,'max_range'=>VP3_YOUTUBE_MAX_WATCH_SECONDS_V1]]);
-            if ($messageId === false || $seconds === false) vp3_youtube_playback_reply_v1(422, ['ok'=>false]);
-            $recorded = vp3_youtube_watch_record_v1($pdo, $owner, $messageId, $field('video_id'), $field('play_id'), $field('capture_key'), $seconds);
+            if (($playlist === '' && $messageId === false) || $seconds === false) vp3_youtube_playback_reply_v1(422, ['ok'=>false]);
+            $recorded = $playlist !== ''
+                ? vp3_youtube_playlist_play_v1($pdo,$owner,$playlist,$field('video_id'),$field('play_id'),$field('capture_key'),$action,$seconds)
+                : vp3_youtube_watch_record_v1($pdo, $owner, $messageId, $field('video_id'), $field('play_id'), $field('capture_key'), $seconds);
             vp3_youtube_playback_reply_v1(200, ['ok'=>true, 'recorded'=>$recorded]);
+        case 'position':
+            if (!vp3_youtube_playhead_ready_v1($pdo)) vp3_youtube_playback_reply_v1(503,['ok'=>false]);
+            vp3_youtube_playback_reply_v1(200,['ok'=>true,'resume_ms'=>vp3_youtube_position_read_v1($pdo,$owner,$field('video_id'),$field('capture_key'))]);
+        case 'position_save':
+            if (!vp3_youtube_playhead_ready_v1($pdo)) vp3_youtube_playback_reply_v1(503,['ok'=>false]);
+            $messageId = filter_var($field('message_id'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+            $position = filter_var($field('position_ms'),FILTER_VALIDATE_INT,['options'=>['min_range'=>0,'max_range'=>VP3_YOUTUBE_MAX_POSITION_MS_V1]]);
+            $sequence = filter_var($field('position_seq'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>1000000]]);
+            if (($playlist === '' && $messageId === false) || $position === false || $sequence === false) {
+                vp3_youtube_playback_reply_v1(422,['ok'=>false]);
+            }
+            $saved = $playlist !== ''
+                ? vp3_youtube_playlist_play_v1($pdo,$owner,$playlist,$field('video_id'),$field('play_id'),$field('capture_key'),$action,$position,$sequence)
+                : vp3_youtube_position_record_v1($pdo,$owner,$messageId,$field('video_id'),$field('play_id'),$field('capture_key'),$position,$sequence);
+            vp3_youtube_playback_reply_v1(200,['ok'=>true,'recorded'=>$saved]);
         case 'remove':
             $id = $field('play_id');
             if (!preg_match('/\A[a-f0-9-]{36}\z/', $id)) vp3_youtube_playback_reply_v1(422, ['ok'=>false]);
@@ -78,6 +122,9 @@ try {
         default:
             vp3_youtube_playback_reply_v1(422, ['ok'=>false]);
     }
+} catch (AgentConnectionYoutubeExceptionV1 $error) {
+    $status = $error->getCode();
+    vp3_youtube_playback_reply_v1(in_array($status,[403,409,429,502,503],true)?$status:503,['ok'=>false]);
 } catch (Throwable) {
     vp3_youtube_playback_reply_v1(503, ['ok'=>false]);
 }

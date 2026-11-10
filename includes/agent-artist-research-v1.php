@@ -168,6 +168,7 @@ function vp3_initiative_research_tool_result_v1(array $value): ?array
         ||!is_string($output['source_revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$output['source_revision']))return null;
     $task=str_starts_with($output['source_ref'],'task-research:');
     if($task&&(!is_string($output['public_topic']??null)||!vp3_topic_research_subject_valid_v1($output['public_topic'])))return null;
+    if(isset($output['playlist_run_id'])&&($task||!is_int($output['playlist_run_id'])||$output['playlist_run_id']<1))return null;
     $receipt=vp3_tool_receipt_normalize_v1($value['tool_receipt']??null);
     $sources=$value['sources']??null;
     $draft=$value['draft']??null;
@@ -183,7 +184,7 @@ function vp3_initiative_research_tool_result_v1(array $value): ?array
             'source','title','url','coverage','checked_at','evidence_hash',
         ])),$sources),
         'tool_receipt'=>$receipt,
-        'output'=>array_intersect_key($output,array_flip(['type','status','reason','checked_at','source_ref','source_revision']))
+        'output'=>array_intersect_key($output,array_flip(['type','status','reason','checked_at','source_ref','source_revision','playlist_run_id']))
             +($task?['public_topic'=>$output['public_topic']]:[]),
     ];
 }

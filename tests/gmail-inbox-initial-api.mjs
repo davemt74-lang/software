@@ -36,8 +36,9 @@ function fixture_record(string $action, array $user, mixed $input): void {
     header('X-Fixture-Dispatch: '.$action);
     $calls[] = [$action, $user['id'], $input];
 }
-function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport = false, ?string $expectedRevision = null, bool $includeChatResult = false): array {
+function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport = false, ?string $expectedRevision = null, bool $includeChatResult = false, bool $includeLegacyMatches = false): array {
     global $calls;
+    if (!$includeLegacyMatches) throw new RuntimeException('Private match actions are unavailable.');
     fixture_record('status', $user, $includeReport);
     return ['calls'=>$calls] + ($includeReport ? ['start_token'=>str_repeat('b', 64)] : [])
         + ($includeChatResult ? ['chat_result'=>['summary'=>'Fixture saved summary.']] : []);
@@ -53,6 +54,19 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
 function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string $ref): array {
     fixture_record('open_item', $user, $ref);
     if ($ref !== str_repeat('c',64)) throw new DomainException('Private source detail.',404);
+    return ['subject'=>'Fixture subject','from'=>'sender@example.test','body'=>'Exact fixture body.','auto_reply'=>false];
+}
+function agent_connection_gmail_inbox_find_matches_v1(PDO $pdo, array $user, string $ref): array {
+    fixture_record('find_matches', $user, $ref);
+    if ($ref !== str_repeat('e',64)) throw new DomainException('Private source detail.',404);
+    return ['matches'=>[['message_id'=>'fixture-mail','match_token'=>str_repeat('f',64)]],
+        'unique_match'=>!isset($_SERVER['HTTP_X_FIXTURE_PARTIAL_MATCHES'])];
+}
+function agent_connection_gmail_inbox_open_match_v1(PDO $pdo, array $user, string $ref, string $id, string $token): array {
+    fixture_record('open_match', $user, [$ref,$id,$token]);
+    if ($ref !== str_repeat('e',64) || $id !== 'fixture-mail' || $token !== str_repeat('f',64)) {
+        throw new DomainException('Private source detail.',404);
+    }
     return ['subject'=>'Fixture subject','from'=>'sender@example.test','body'=>'Exact fixture body.','auto_reply'=>false];
 }
 `);
@@ -110,6 +124,21 @@ function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string
   assert.equal(staleItem.status,404);
   assert.doesNotMatch(staleItem.data.error,/Private source detail/);
 
+  const legacyRef = 'e'.repeat(64);
+  const matchToken = 'f'.repeat(64);
+  const find = await request({body:{action:'find_matches',legacy_ref:legacyRef}});
+  assert.equal(find.headers.get('x-fixture-dispatch'),'find_matches');
+  assert.deepEqual(find.data,{ok:true,matches:[{message_id:'fixture-mail',match_token:matchToken}],unique_match:true});
+  const partialFind = await request({headers:{'X-Fixture-Partial-Matches':'1'},body:{action:'find_matches',legacy_ref:legacyRef}});
+  assert.deepEqual(partialFind.data,{...find.data,unique_match:false},'One visible result can still require selection.');
+  const openMatchBody = {action:'open_match',legacy_ref:legacyRef,message_id:'fixture-mail',match_token:matchToken};
+  const match = await request({body:openMatchBody});
+  assert.equal(match.headers.get('x-fixture-dispatch'),'open_match');
+  assert.deepEqual(match.data,open.data);
+  const wrongMatch = await request({body:{...openMatchBody,message_id:'another-mail'}});
+  assert.equal(wrongMatch.status,404);
+  assert.doesNotMatch(wrongMatch.data.error,/Private source detail/);
+
   for (const [code, options] of [
     [405, {method:'GET'}],
     [401, {headers:{'X-Fixture-Anonymous':'1'}}],
@@ -118,6 +147,11 @@ function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string
     [403, {headers:{'X-Fixture-Participant':'1'},body:{action:'open_item',item_ref:itemRef}}],
     [422, {body:{action:'open_item',item_ref:'raw-provider-id'}}],
     [422, {body:{action:'open_item',item_ref:itemRef,include_chat_result:true}}],
+    [403, {headers:{'X-Fixture-Participant':'1'},body:{action:'find_matches',legacy_ref:legacyRef}}],
+    [422, {body:{action:'find_matches',legacy_ref:'raw-provider-id'}}],
+    [422, {body:{action:'find_matches',legacy_ref:legacyRef,query:'arbitrary query'}}],
+    [422, {body:{...openMatchBody,match_token:'wrong'}}],
+    [422, {body:{...openMatchBody,message_id:'invalid/path'}}],
     [403, {headers:{'X-Fixture-Deny':'account.access'}}],
     [403, {headers:{'X-Fixture-Deny':'chat.access'}}],
     [409, {headers:{'X-Fixture-Owner':'2'}}],

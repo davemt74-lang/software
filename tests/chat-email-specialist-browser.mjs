@@ -21,6 +21,11 @@ const replyDraft = {id:'d'.repeat(32), status:'prepared', is_reply:true, from:'o
 const newDraft = {id:'e'.repeat(32), status:'prepared', is_reply:false, from:'owner@example.test', to:sender,
   subject:'Fixture new subject', body:'Fixture saved body.', review_token:'fixture-new-token'};
 const replyCalls = [];
+const searchRef = 'a1'.repeat(64);
+const followupId = 800;
+const readActions = [];
+let writingGate = null;
+let writingFails = true;
 const workflowFolder = 'Member workflow reviews';
 let workflowState = {
   available:true, enabled:false, can_disable:false, status:'disabled',
@@ -41,12 +46,34 @@ await page.route('**/api/**', async route => {
   const path = new URL(route.request().url()).pathname;
   const ok = result => route.fulfill({json:{ok:true,...result}});
   if (path === '/api/chat-email-v1.php') {
+    if (['open_followup','open_search'].includes(payload.action)) {
+      assert.deepEqual(payload,{agent_id:7,conversation_id:42,action:payload.action,owner_key:'1',csrf_token:'fixture',
+        ...(payload.action === 'open_followup' ? {message_id:followupId} : {item_ref:searchRef})});
+      readActions.push(payload.action);
+      return ok({message:{subject:'Exact received email',from:sender,body:'This is the exact private body.',can_reply:true}});
+    }
     if (payload.action !== 'specialist_status') {
       const draft = [replyDraft,newDraft].find(value => value.id === payload.draft_id);
       assert.ok(draft);
       assert.equal(payload.conversation_id,42);
       replyCalls.push(payload);
-      if (payload.action === 'revise') {
+      if (payload.action === 'revise_ai') {
+        assert.equal(draft,newDraft);
+        assert.equal(payload.instruction,'Make it friendlier.');
+        assert.equal(payload.review_token,'fixture-new-token');
+        Object.assign(newDraft,{status:'write_queued',write_kind:'revise',review_token:null});
+      } else if (payload.action === 'retry_write') {
+        assert.equal(draft,newDraft);
+        assert.equal(payload.review_token,'fixture-retry-token');
+        Object.assign(newDraft,{status:'write_queued',review_token:null});
+      } else if (payload.action === 'advance_write') {
+        assert.equal(draft,newDraft);
+        assert.equal(draft.status,'write_queued');
+        Object.assign(newDraft,{status:'writing'});
+        await writingGate;
+        if (writingFails) Object.assign(newDraft,{status:'write_failed',review_token:'fixture-retry-token'});
+        else Object.assign(newDraft,{status:'prepared',body:'Thanks for reaching out. I appreciate it.',review_token:'fixture-ai-token'});
+      } else if (payload.action === 'revise') {
         assert.equal(draft,replyDraft);
         assert.equal(payload.subject,'');
         assert.equal(payload.body,'This is my reply.');
@@ -64,10 +91,12 @@ await page.route('**/api/**', async route => {
       agent_id:7, conversation_id:payload.conversation_id, action:'specialist_status', owner_key:'1', csrf_token:'fixture',
     });
     checks.push(payload.conversation_id);
-    const result = payload.conversation_id === 42 && status !== 'idle'
+    const result = payload.conversation_id === 42 && newDraft.status === 'writing'
+      ? {state:'working',work:newDraft.write_kind,working_until:new Date(Date.now()+30000).toISOString()}
+      : payload.conversation_id === 42 && status !== 'idle'
       ? {state:status,origin_message_id:messages.find(row => row.message === watchPrompt).id}
       : {state:'idle',origin_message_id:null};
-    if (result.state === 'working') result.working_until = workingUntil;
+    if (result.state === 'working' && !result.work) result.working_until = workingUntil;
     if (delayStatus && payload.conversation_id === 42) {
       const gate = delayStatus;
       delayStatus = null;
@@ -92,7 +121,9 @@ await page.route('**/api/**', async route => {
     const user_message_id = nextId++;
     const assistant_message_id = nextId++;
     messages.push({id:user_message_id,role:'user',message:payload.message},{id:assistant_message_id,role:'assistant',message:answer});
-    return ok({conversation_id:42,user_message_id,assistant_message_id,answer,tool_receipt});
+    const actions = payload.message === `Show emails from ${sender}`
+      ? [{type:'gmail_message',item_ref:searchRef,conversation_id:42,label:'Open result 1'}] : [];
+    return ok({conversation_id:42,user_message_id,assistant_message_id,answer,tool_receipt,actions});
   }
   return ok({conversations:[],items:[],updates:[]});
 });
@@ -148,6 +179,19 @@ try {
   await page.waitForFunction(() => window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady());
   await send(`Show emails from ${sender}`);
   await page.getByText('Email search completed.',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Open result 1'}).click();
+  const messageReview = page.getByRole('dialog',{name:'Gmail message'});
+  await messageReview.getByText('This is the exact private body.',{exact:true}).waitFor();
+  assert.equal(await messageReview.getByRole('button',{name:'Reply',exact:true}).isVisible(),true);
+  await messageReview.getByRole('button',{name:'Close'}).click();
+  messages.push({id:followupId,role:'assistant',message:'Gmail watch found a reply.',context_json:JSON.stringify({actions:[{
+    type:'gmail_followup',message_id:followupId,conversation_id:42,can_reply:true,
+  }]})});
+  await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  await page.getByRole('button',{name:'Open message',exact:true}).click();
+  await messageReview.getByText('This is the exact private body.',{exact:true}).waitFor();
+  await messageReview.getByRole('button',{name:'Close'}).click();
+  assert.deepEqual(readActions,['open_search','open_followup']);
   assert.equal(await specialist.count(),0);
   assert.equal(await inline.isVisible(),false);
 
@@ -245,7 +289,7 @@ try {
   await replyReview.getByText('Write your reply, then review it before sending.').waitFor();
   const approveReply = replyReview.getByRole('button',{name:'Approve and send'});
   const edit = replyReview.getByRole('button',{name:'Edit manually'});
-  const revise = replyReview.getByRole('button',{name:'Revise draft'});
+  const revise = replyReview.getByRole('button',{name:'Save edits'});
   const cancel = replyReview.getByRole('button',{name:'Cancel edits'});
   const subject = replyReview.getByLabel('Subject');
   const body = replyReview.getByLabel('Message');
@@ -291,6 +335,57 @@ try {
   await replyReview.waitFor({state:'hidden'});
   assert.deepEqual(replyCalls.map(call => call.action),['review','revise','confirm','review']);
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+
+  await openDraft(newDraft.id,'Review AI revision fixture');
+  await replyReview.getByRole('button',{name:'Revise with AI (uses tokens)'}).click();
+  const instructions = replyReview.getByLabel('Revision instructions');
+  await instructions.fill('Make it friendlier.');
+  let finishWriting;
+  writingGate = new Promise(resolve => { finishWriting = resolve; });
+  await replyReview.getByRole('button',{name:'Generate revision'}).click();
+  await replyReview.getByText('The Email Specialist is queued to write this draft.',{exact:true}).waitFor();
+  await replyReview.getByRole('button',{name:'Close'}).click();
+  await specialist.waitFor();
+  await specialist.click();
+  await panel.getByText('Revising Gmail draft',{exact:true}).waitFor();
+  await panel.getByRole('button',{name:'Close',exact:true}).click();
+  await send('I can use Chat while the Email Specialist works.');
+  await page.getByText('I can use Chat while the Email Specialist works.',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Review AI revision fixture'}).click();
+  await replyReview.getByText('The Email Specialist is revising the saved draft.',{exact:true}).waitFor();
+  finishWriting();
+  await replyReview.getByText('AI could not finish this draft. Retry with AI or use the manual editor.',{exact:true}).waitFor();
+  assert.equal(await body.inputValue(),'Fixture saved body.');
+  assert.equal(await approveReply.isVisible(),false);
+  writingFails = false;
+  await replyReview.getByRole('button',{name:'Retry AI (uses tokens)'}).click();
+  await approveReply.waitFor();
+  assert.equal(await body.inputValue(),'Thanks for reaching out. I appreciate it.');
+  assert.equal(await subject.inputValue(),'Fixture new subject');
+  assert.equal(replyCalls.filter(call=>call.action==='advance_write').length,2);
+  assert.equal(replyCalls.filter(call=>call.action==='confirm').length,1,'AI writing never submits an email.');
+  await replyReview.getByRole('button',{name:'Close'}).click();
+  await specialist.waitFor({state:'detached'});
+
+  Object.assign(newDraft,{status:'write_queued',write_kind:'compose',body:'',review_token:null});
+  writingGate = new Promise(resolve => { finishWriting = resolve; });
+  messages.push({id:nextId++,role:'assistant',message:'Drafting a reply in the exact Gmail thread.',
+    context_json:JSON.stringify({actions:[{type:'email_review',id:newDraft.id,conversation_id:42,is_reply:true,writing:true}]})});
+  await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  await page.getByRole('button',{name:'Review reply',exact:true}).waitFor();
+  await specialist.waitFor();
+  assert.equal(await replyReview.isVisible(),false,'The queued writer starts with the review closed.');
+  await specialist.click();
+  await panel.getByText('Writing Gmail draft',{exact:true}).waitFor();
+  await panel.getByRole('button',{name:'Close',exact:true}).click();
+  await page.getByRole('button',{name:'Review reply',exact:true}).click();
+  await replyReview.getByText('The Email Specialist is writing the reply.',{exact:true}).waitFor();
+  finishWriting();
+  await approveReply.waitFor();
+  assert.equal(replyCalls.filter(call=>call.action==='advance_write').length,3,'Opening a working draft reuses its active writer.');
+  assert.equal(replyCalls.filter(call=>call.action==='confirm').length,1);
+  await replyReview.getByRole('button',{name:'Close'}).click();
+  await specialist.waitFor({state:'detached'});
 
   await page.setViewportSize({width:390,height:844});
   const tools = page.getByRole('dialog',{name:'Chat tools'});

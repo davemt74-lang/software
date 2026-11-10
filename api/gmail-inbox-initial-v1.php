@@ -33,13 +33,16 @@ try {
 
     $action = $body['action'] ?? null;
     $fields = ['action', 'owner_key', 'csrf_token'];
-    if (!in_array($action,['open_item','deliver'],true)) $fields[] = 'include_report';
+    if (in_array($action,['status','start','advance'],true)) $fields[] = 'include_report';
     if ($action === 'start') $fields = [...$fields, 'days', 'start_token'];
     if ($action === 'advance') $fields[] = 'run_id';
     if ($action === 'deliver') $fields = [...$fields, 'run_id', 'agent_id', 'conversation_id', 'working_attention_binding'];
+    if ($action === 'deliver_updates') $fields = [...$fields, 'agent_id', 'conversation_id', 'working_attention_binding'];
     if (in_array($action, ['status', 'advance'], true)) $fields[] = 'include_chat_result';
     if ($action === 'open_item') $fields[] = 'item_ref';
-    if (!in_array($action, ['status', 'start', 'advance', 'open_item', 'deliver'], true) || array_diff(array_keys($body), $fields)
+    if (in_array($action,['find_matches','open_match'],true)) $fields[] = 'legacy_ref';
+    if ($action === 'open_match') $fields = [...$fields,'message_id','match_token'];
+    if (!in_array($action, ['status', 'start', 'advance', 'open_item', 'deliver', 'deliver_updates', 'find_matches', 'open_match'], true) || array_diff(array_keys($body), $fields)
         || (array_key_exists('include_report', $body) && !is_bool($body['include_report']))
         || (array_key_exists('include_chat_result', $body) && !is_bool($body['include_chat_result']))
         || (!empty($body['include_report']) && !empty($body['include_chat_result']))) {
@@ -62,7 +65,7 @@ try {
     if (in_array($action,['advance','deliver'],true) && (!is_string($runId) || !preg_match('/\A[a-f0-9]{32}\z/D', $runId))) {
         throw new RuntimeException('Invalid review ID.', 422);
     }
-    if ($action === 'deliver') {
+    if (in_array($action,['deliver','deliver_updates'],true)) {
         $agentId = $body['agent_id'] ?? null;
         $conversationId = $body['conversation_id'] ?? null;
         $binding = $body['working_attention_binding'] ?? null;
@@ -78,6 +81,16 @@ try {
     if ($action === 'open_item' && (!is_string($itemRef) || !preg_match('/\A[a-f0-9]{64}\z/D', $itemRef))) {
         throw new RuntimeException('Invalid review item.', 422);
     }
+    $legacyRef = $body['legacy_ref'] ?? null;
+    $messageId = $body['message_id'] ?? null;
+    $matchToken = $body['match_token'] ?? null;
+    if (in_array($action,['find_matches','open_match'],true) && (!is_string($legacyRef) || !preg_match('/\A[a-f0-9]{64}\z/D',$legacyRef))) {
+        throw new RuntimeException('Invalid older review item.',422);
+    }
+    if ($action === 'open_match' && (!is_string($messageId) || !preg_match('/\A[A-Za-z0-9_-]{1,190}\z/D',$messageId)
+        || !is_string($matchToken) || !preg_match('/\A[a-f0-9]{64}\z/D',$matchToken))) {
+        throw new RuntimeException('Invalid Gmail match.',422);
+    }
 
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Review storage unavailable.', 503);
@@ -88,16 +101,31 @@ try {
             JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
         return;
     }
+    if ($action === 'deliver_updates') {
+        echo json_encode(['ok'=>true]+agent_connection_gmail_inbox_update_deliver_v1($pdo,$user,$agentId,$conversationId),
+            JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+        return;
+    }
 
     if ($action === 'open_item') {
         echo json_encode(['ok'=>true,'item'=>agent_connection_gmail_inbox_open_item_v1($pdo,$user,$itemRef)],
             JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
         return;
     }
+    if ($action === 'find_matches') {
+        echo json_encode(['ok'=>true]+agent_connection_gmail_inbox_find_matches_v1($pdo,$user,$legacyRef),
+            JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+        return;
+    }
+    if ($action === 'open_match') {
+        echo json_encode(['ok'=>true,'item'=>agent_connection_gmail_inbox_open_match_v1($pdo,$user,$legacyRef,$messageId,$matchToken)],
+            JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+        return;
+    }
     if ($action === 'start') agent_connection_gmail_inbox_initial_start_v1($pdo, $user, $days, $startToken);
     if ($action === 'advance') agent_connection_gmail_inbox_initial_advance_v1($pdo, $user, $runId);
     $review = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, $body['include_report'] ?? false,
-        includeChatResult: $body['include_chat_result'] ?? false);
+        includeChatResult: $body['include_chat_result'] ?? false, includeLegacyMatches: true);
     echo json_encode(['ok'=>true, 'review'=>$review], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
 } catch (Throwable $error) {
     $status = (int)$error->getCode();

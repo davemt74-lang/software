@@ -282,7 +282,8 @@ try {
   await page.locator('#chatInput').fill('');
   await page.evaluate(()=>{window.hangRecognizer=true;});
   await page.getByRole('button',{name:'Start voice conversation'}).click();
-  await page.waitForFunction(()=>document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false');
+  // Allow all native startup watchdog attempts and microphone release delays.
+  await page.waitForFunction(()=>document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false',null,{timeout:15000});
   assert.match(await page.locator('#chatVoiceStatus').innerText(),/did not start.*retry/);
   assert.equal(await page.locator('#chatVoiceButton').getAttribute('data-agent-state'),'error');
   assert.equal(await page.evaluate(()=>window.STONEFELLOW_VOICE_LEASE_V122.owner),false);

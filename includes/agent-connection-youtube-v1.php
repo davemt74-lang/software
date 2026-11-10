@@ -194,25 +194,37 @@ function agent_connection_youtube_search_v1(string $query, int $limit = 6, ?call
             || preg_match('/\A[A-Za-z0-9_-]{11}\z/', $id) !== 1 || isset($results[$id])) {
             continue;
         }
-        $title = agent_connection_youtube_text_v1($item['snippet']['title'] ?? null, 200);
-        if ($title === '') continue;
-        $thumbnail = '';
-        foreach (['medium', 'default'] as $size) {
-            $candidate = $item['snippet']['thumbnails'][$size]['url'] ?? null;
-            if (is_string($candidate) && preg_match('~\Ahttps://(?:i\.ytimg\.com|img\.youtube\.com)/(?:vi|vi_webp)/'
-                . $id . '/[A-Za-z0-9_]{1,32}\.(?:jpg|webp)\z~', $candidate) === 1) {
-                $thumbnail = $candidate;
-                break;
-            }
-        }
-        $results[$id] = [
-            'video_id' => $id,
-            'title' => $title,
-            'channel_title' => agent_connection_youtube_text_v1($item['snippet']['channelTitle'] ?? null, 120),
-            'thumbnail_url' => $thumbnail,
-        ];
+        $video = agent_connection_youtube_video_display_v1($id, $item['snippet'] ?? []);
+        if ($video !== null) $results[$id] = $video;
     }
     return array_values($results);
+}
+
+function agent_connection_youtube_video_display_v1(string $id, mixed $snippet): ?array
+{
+    if (!is_array($snippet)) return null;
+    $title = agent_connection_youtube_text_v1($snippet['title'] ?? null, 200);
+    if ($title === '') return null;
+    $thumbnail = '';
+    foreach (['medium', 'default'] as $size) {
+        $candidate = $snippet['thumbnails'][$size]['url'] ?? null;
+        if (is_string($candidate) && preg_match('~\Ahttps://(?:i\.ytimg\.com|img\.youtube\.com)/(?:vi|vi_webp)/'
+            . $id . '/[A-Za-z0-9_]{1,32}\.(?:jpg|webp)\z~', $candidate) === 1) {
+            $thumbnail = $candidate;
+            break;
+        }
+    }
+    return ['video_id'=>$id,'title'=>$title,
+        'channel_title'=>agent_connection_youtube_text_v1($snippet['channelTitle'] ?? null, 120),
+        'thumbnail_url'=>$thumbnail];
+}
+
+function agent_connection_youtube_video_details_v1(array $ids, ?callable $http): array
+{
+    return agent_connection_youtube_request_v1(VP3_YOUTUBE_STATUS_ENDPOINT_V1, [
+        'part'=>'snippet,status','id'=>implode(',', $ids),
+        'fields'=>'kind,items(id,snippet(title,channelTitle,categoryId,thumbnails(medium(url),default(url))),status(embeddable,madeForKids,privacyStatus))',
+    ], 'youtube#videoListResponse', $http);
 }
 
 /** Check each public result before it can be embedded or recorded in VP3 history. */
@@ -220,20 +232,38 @@ function agent_connection_youtube_video_status_v1(array $videos, ?callable $http
 {
     if (!$videos) return [];
     try {
-        $items = agent_connection_youtube_request_v1(VP3_YOUTUBE_STATUS_ENDPOINT_V1, [
-            'part'=>'status', 'id'=>implode(',', array_column($videos, 'video_id')),
-            'fields'=>'kind,items(id,status(embeddable,madeForKids))',
-        ], 'youtube#videoListResponse', $http);
+        $items = agent_connection_youtube_video_details_v1(array_column($videos, 'video_id'), $http);
     } catch (AgentConnectionYoutubeExceptionV1) {
         return $videos; // Search results can still be opened on YouTube.
     }
-    $statuses = array_column($items, 'status', 'id');
+    $details = array_column($items, null, 'id');
     foreach ($videos as &$video) {
-        $status = $statuses[$video['video_id']] ?? [];
+        $detail = $details[$video['video_id']] ?? [];
+        $status = $detail['status'] ?? [];
         if (($status['embeddable'] ?? null) === true && is_bool($status['madeForKids'] ?? null)) {
             $video['made_for_kids'] = $status['madeForKids'];
+            if (($detail['snippet']['categoryId'] ?? null) === '10') $video['music_category'] = true;
         }
     }
     unset($video);
+    return $videos;
+}
+
+/** Resolve exact public research links into playable items in source order. */
+function agent_connection_youtube_playable_videos_v1(array $ids, ?callable $http=null): array
+{
+    $ids = array_slice(array_values(array_unique(array_filter($ids,
+        static fn($id): bool => is_string($id) && preg_match('/\A[A-Za-z0-9_-]{11}\z/D', $id)))), 0, VP3_YOUTUBE_MAX_RESULTS_V1);
+    if (!$ids) return [];
+    $details = array_column(agent_connection_youtube_video_details_v1($ids, $http), null, 'id');
+    $videos = [];
+    foreach ($ids as $id) {
+        $detail = $details[$id] ?? [];
+        $status = $detail['status'] ?? [];
+        if (($status['privacyStatus'] ?? null) !== 'public' || ($status['embeddable'] ?? null) !== true
+            || !is_bool($status['madeForKids'] ?? null)) continue;
+        $video = agent_connection_youtube_video_display_v1($id, $detail['snippet'] ?? []);
+        if ($video !== null) $videos[] = $video + ['made_for_kids'=>$status['madeForKids']];
+    }
     return $videos;
 }

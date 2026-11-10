@@ -84,6 +84,8 @@
 .vp3-youtube-play-label { color: #17408a; font-size: .78rem; font-weight: 700; }
 .vp3-youtube-watch { justify-self: start; padding: 3px 4px; }
 .vp3-youtube-player { display: grid; gap: 8px; }
+.vp3-youtube-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.vp3-youtube-selected { border-color: #17408a; }
 .vp3-youtube-frame {
   display: block;
   width: 100%;

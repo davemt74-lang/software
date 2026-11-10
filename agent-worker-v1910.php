@@ -180,6 +180,8 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
                 require_once __DIR__.'/includes/agent-connection-youtube-quota-v1.php';
                 $counts['youtube_expired_usage']=agent_connection_youtube_quota_cleanup_v1($pdo);
             }
+            require_once __DIR__.'/includes/agent-connection-youtube-playback-v1.php';
+            $counts['youtube_saved_playlist_maintenance']=vp3_youtube_playlists_maintain_v1($pdo);
         }
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.youtube.retention_failed',['error_class'=>get_class($e)]);}
     }

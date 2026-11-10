@@ -74,6 +74,7 @@ require_once __DIR__ . '/includes/agent-connection-email-followup-v1.php';
 require_once __DIR__ . '/includes/agent-connection-health-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-playback-v1.php';
+require_once __DIR__ . '/includes/agent-initiative-youtube-playlist-v1.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
@@ -306,9 +307,12 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && agent_connection_youtube_consent_ready_v1($schemaConnection)
         && vp3_youtube_playback_ready_v1($schemaConnection)
         && vp3_youtube_watch_ready_v1($schemaConnection)
+        && vp3_youtube_playhead_ready_v1($schemaConnection)
+        && vp3_youtube_playlists_ready_v1($schemaConnection)
         && vp3_youtube_picks_ready_v1($schemaConnection)
         && agent_connection_youtube_quota_ready_v1($schemaConnection)
         && agent_connection_youtube_results_ready_v1($schemaConnection)
+        && vp3_initiative_youtube_playlist_ready_v1($schemaConnection)
         && vp3_profile_call_activity_schema_ready_pa3c($schemaConnection)
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)

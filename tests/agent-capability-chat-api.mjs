@@ -107,8 +107,13 @@ $pdo->prepare('INSERT INTO chat_messages (conversation_id,role,message,context_j
         'youtube_search_results_v1'=>true,'tool_receipt'=>vp3_tool_receipt_v1('youtube.search','search','read_complete','',0,1),
     ])]);
 $messageId=(int)$pdo->lastInsertId();
+$videos=[['video_id'=>'abcdefghijk','title'=>$title,'made_for_kids'=>false]];
+if(isset($_GET['series'])){
+    $videos[]=['video_id'=>'abcdefghijl','title'=>'Episode two','made_for_kids'=>false];
+    $videos[]=['video_id'=>'abcdefghijm','title'=>'Episode three','made_for_kids'=>false];
+}
 agent_connection_youtube_results_save_v1($pdo,1,$conversationId,$messageId,['query'=>$title,'suggestion_kind'=>'playlist',
-    'expires_at'=>time()+600,'videos'=>[['video_id'=>'abcdefghijk','title'=>$title,'made_for_kids'=>false]]]);
+    'expires_at'=>time()+600,'videos'=>$videos]);
 echo json_encode(['message_id'=>$messageId]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{
@@ -829,6 +834,25 @@ try{
  check(expiredRetry.data?.replayed===true&&expiredRetry.data.tool_receipt?.status==='no_matches'
   &&expiredRetry.data.youtube_results==null&&!expiredRetry.body.includes('Original cross-Chat playlist'),
   'voice retry drops an expired original without serving stale data or switching sources');
+ const series=await (await fetch(youtubeFixture+'?'+new URLSearchParams({conversation:sourceChat,title:'Workshop tutorials',series:'1'}))).json();
+ const second=await post(youtubeEndpoint,'Play the second YouTube video from the earlier playlist',{conversation_id:recallChat});
+ check(second.data?.youtube_results?.source_message_id===series.message_id
+  &&second.data.youtube_results.selected_video_id==='abcdefghijl'&&second.data.youtube_results.play_selected===true,
+  'typed Chat selects the exact ordinal in the cross-Chat playlist: '+second.body);
+ const nextOptions={conversation_id:recallChat,idempotency_key:'youtube-contextual-next-replay'};
+ const third=await post('chat-stream-v121.php','Play the next one',nextOptions);
+ check(third.data?.youtube_results?.source_message_id===series.message_id&&third.data.youtube_source_video_id==='abcdefghijm'
+  &&third.data.youtube_results.play_selected===true,'voice resolves next from the previous exact Chat card: '+third.body);
+ const restoredSeries=await post(youtubeEndpoint,'',{action:'load',conversation_id:recallChat});
+ const thirdRow=restoredSeries.data?.messages?.find(message=>Number(message.id)===third.data?.assistant_message_id);
+ const restoredVideo=JSON.parse(thirdRow?.context_json??'{}').youtube_results;
+ check(restoredVideo?.source_message_id===series.message_id&&restoredVideo.selected_video_id==='abcdefghijm'
+  &&restoredVideo.play_selected!==true,'reload restores the exact selection and leaves playback for the owner');
+ await post(youtubeEndpoint,'Can you create reminders?',{conversation_id:recallChat});
+ const thirdRetry=await post('chat-stream-v121.php','Play the next one',nextOptions);
+ check(thirdRetry.data?.replayed===true&&thirdRetry.data.assistant_message_id===third.data.assistant_message_id
+  &&thirdRetry.data.youtube_results?.selected_video_id==='abcdefghijm'&&thirdRetry.data.youtube_results.play_selected!==true,
+  'contextual voice retry restores the original selection after the active context changes: '+thirdRetry.body);
  const artistRequest='Research artist https://example.org';
  const artistTyped=await post(youtubeEndpoint,artistRequest,{conversation_id:recallChat});
  check(artistTyped.data?.tool_receipt?.capability==='artist.research'

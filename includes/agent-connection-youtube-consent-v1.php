@@ -102,6 +102,10 @@ function agent_connection_youtube_set_consent_v1(PDO $pdo, int $ownerId, bool $e
             $pdo->prepare('DELETE FROM agent_connection_youtube_consent_v1 WHERE owner_user_id=?')->execute([$ownerId]);
             $pdo->prepare('DELETE FROM settings WHERE setting_key IN (?,?,?)')
                 ->execute(['youtube_artist_research_owner_'.$ownerId,'youtube_topic_research_owner_'.$ownerId,'youtube_watch_research_owner_'.$ownerId]);
+            require_once __DIR__.'/agent-initiative-youtube-playlist-v1.php';
+            if(vp3_initiative_youtube_playlist_ready_v1($pdo)){
+                $pdo->prepare('DELETE FROM vp3_initiative_youtube_playlist_v1 WHERE owner_user_id=?')->execute([$ownerId]);
+            }
             return;
         }
         if (agent_connection_youtube_consent_v1($pdo, $ownerId)) return;

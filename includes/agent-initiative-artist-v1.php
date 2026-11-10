@@ -7,6 +7,7 @@ require_once __DIR__.'/agent-public-research-plan-v1.php';
 /** Correlate saved owner queries without using result titles or channel names as public search terms. */
 function vp3_initiative_youtube_subject_v1(array $result): string
 {
+    if (($result['initiative_suggestion']??false)===true) return '';
     $suggestion=$result['suggestion_kind']??'';
     if($suggestion==='')return vp3_topic_research_youtube_subject_v1($result);
     if(!in_array($suggestion,['similar','playlist','music','artists'],true))return '';
@@ -16,6 +17,31 @@ function vp3_initiative_youtube_subject_v1(array $result): string
         $subject=$result['taste_topic']??null;
     }
     return is_string($subject)&&vp3_topic_research_subject_valid_v1($subject)?$subject:'';
+}
+
+/** Only the owner's words can name an artist. Public Music results corroborate the name. */
+function vp3_initiative_youtube_artist_subject_v1(string $subject,array $videos): ?string
+{
+    $artist=preg_replace('/\A(?:songs|albums|music|music videos|live performances) (?:by|from) /iu','',$subject)??$subject;
+    $artist=preg_replace('/\s+(?:live(?:\s+.*)?|concert(?:s|\s+.*)?|tour(?:\s+.*)?|songs|albums|discography|(?:official )?music videos)\z/iu','',$artist)??$artist;
+    $artist=trim($artist," \t\"“”");
+    if(mb_strlen($artist)>80||!vp3_topic_research_subject_valid_v1($artist))return null;
+    $name=mb_strtolower($artist);
+    $titles=[];
+    foreach(array_slice($videos,0,6) as $video){
+        if(($video['music_category']??false)!==true||!is_bool($video['made_for_kids']??null))continue;
+        $channel=$video['channel_title']??null;
+        if(is_string($channel)){
+            $channel=preg_replace('/\s+(?:-\s+Topic|Official|VEVO)\z/iu','',trim($channel))??$channel;
+            if(mb_strtolower($channel)===$name)return $artist;
+        }
+        $title=$video['title']??null;
+        if(is_string($title)&&preg_match('/\A(.+?)\s+[-–—]\s+/u',$title,$match)&&mb_strtolower($match[1])===$name){
+            $id=$video['video_id']??null;
+            if(is_string($id)&&preg_match('/\A[A-Za-z0-9_-]{11}\z/D',$id))$titles[$id]=true;
+        }
+    }
+    return count($titles)>=2?$artist:null;
 }
 
 function vp3_initiative_youtube_terms_v1(string $phrase): array
@@ -120,9 +146,14 @@ function vp3_initiative_research_evidence_v1(PDO $pdo, array $scope, DateTimeImm
         foreach($records as $record){
             $payload=$record['results'];$kind=($payload['suggestion_kind']??null)==='similar'?'artist':'topic';
             $recorded=$record['created_at_epoch'];
-            if(!isset($kinds[$kind])||$recorded>$at||$recorded<=$at-7*86400)continue;
+            if($recorded>$at||$recorded<=$at-7*86400)continue;
             $subject=vp3_initiative_youtube_subject_v1($payload);
             if($subject==='')continue;
+            if($kind==='topic'&&empty($payload['suggestion_kind'])){
+                $artist=vp3_initiative_youtube_artist_subject_v1($subject,$payload['videos']);
+                if($artist!==null){$kind='artist';$subject=$artist;}
+            }
+            if(!isset($kinds[$kind]))continue;
             $phrase=implode(' ',preg_split('/[^\p{L}\p{N}]+/u',mb_strtolower($subject),-1,PREG_SPLIT_NO_EMPTY)?:[]);
             if($phrase==='')continue;
             $searches[]=['message_id'=>$record['message_id'],'conversation_id'=>$record['conversation_id'],'created_at_epoch'=>$recorded,

@@ -6,6 +6,7 @@ import {chromium} from 'playwright';
 
 const origin = 'https://gmail-review.test';
 const endpoint = '/api/gmail-inbox-initial-v1.php';
+const emailEndpoint = '/api/chat-email-v1.php';
 const runId = 'a'.repeat(32);
 const startToken = 'b'.repeat(64);
 const privateSubject = 'Private budget <img src=x onerror=alert(1)>';
@@ -14,14 +15,31 @@ const privateBody = 'Exact saved message body <img src=x onerror=alert(1)>.';
 const firstRef = 'c'.repeat(64);
 const latestRef = 'd'.repeat(64);
 const reportRef = 'e'.repeat(64);
+const legacyRef = 'f'.repeat(64);
 const savedMessageId = 50;
 const firstItem = {subject:privateSubject,from:'private@example.test',category:'reply',item_ref:firstRef};
-const legacyItem = {subject:'Older header only',from:'older@example.test',category:'new'};
+const legacyItem = {subject:'Older header only',from:'older@example.test',category:'new',legacy_ref:legacyRef};
 const latestItem = {subject:'Latest item',from:'later@example.test',category:'important',item_ref:latestRef};
+const repeatedSender = {subject:'New message from an existing sender',from:'PRIVATE@example.test',category:'new',item_ref:'1'.repeat(64)};
+const legacyMatches = [
+  {message_id:'gmail_candidate_first',match_token:'2'.repeat(64),from:legacyItem.from,subject:legacyItem.subject,
+    received_at:'2026-11-07T09:00:00Z',snippet:'First message <img src=x onerror=alert(1)>.'},
+  {message_id:'gmail_candidate_second',match_token:'3'.repeat(64),from:legacyItem.from,subject:legacyItem.subject,
+    received_at:'2026-11-08T09:00:00Z',snippet:'Second message on the same subject.'},
+];
+const matchedCommand = (action,index) => {
+  const {message_id,match_token} = legacyMatches[index];
+  return `${action} to Gmail matched item ${legacyRef} ${message_id} ${match_token}`;
+};
+const watchKey = '4'.repeat(64);
+const watchedSenders = new Set([firstItem.from]);
+const composedDraft = {id:'5'.repeat(32),status:'prepared',is_reply:true,subject:'Re: '+legacyItem.subject,
+  from:'owner@example.test',to:legacyItem.from,body:'Generated reply for owner review.',review_token:'fixture-review'};
+const manualDraft = {...composedDraft,id:'6'.repeat(32),body:''};
 const connectionsUrl = '/connections.php?app=gmail#gmail-inbox-review';
 const script = 'gmail-inbox-initial-v1.js';
 const chatScripts = ['chat.js','team-chat-admin-v109.js','chat-specialist-rail-v1.js','agent-eyes-core.js',
-  'agent-activity-hub-v1.js','agent-orb-adapter.js','agent-orb.js','agent-orb-particles.js'];
+  'agent-activity-hub-v1.js','agent-orb-adapter.js','agent-orb.js','agent-orb-particles.js','chat-email-v1.js'];
 const assets = new Set(['chat.css','connections-v1.css','chat-specialist-rail-v1.css','chat-email-v1.css',
   'agent-activity-hub-v1.css','agent-orb.css','agent-orb-particles.css','team-chat-v109.css','team-chat-v109.js',script,...chatScripts]);
 const phpFixture = fileURLToPath(new URL('fixtures/gmail-inbox-initial-page-v1.php', import.meta.url));
@@ -49,7 +67,7 @@ const completed = () => ({...inProgress('ready'),stage:'summary',scanned:50,trun
     summary_status:'ready',summary:'The sampled subjects suggest billing.',tokens_charged:114,
     items:[firstItem,legacyItem]},
   chat_result:{summary:privateSummary,items:[firstItem,legacyItem],
-    latest:{total:2,important:1,replies:1,at:'2026-11-10T13:00:00Z',items:[latestItem]}}});
+    latest:{total:2,important:1,replies:1,at:'2026-11-10T13:00:00Z',items:[latestItem,repeatedSender]}}});
 let review = needsStart();
 let initialViewToken = startToken;
 let apiViewToken = startToken;
@@ -57,7 +75,12 @@ let advanceGate = null;
 let statusGate = null;
 let workerStartsReview = false;
 let delivered = null;
+let pendingUpdate = null;
+const batchPosts = [];
+const batchScope = '9'.repeat(64);
+const inboxUpdates = () => ({scope_ref:batchScope,pending:Boolean(pendingUpdate),latest:batchPosts.at(-1) || null});
 let newConversations = 0;
+let matchResult = {matches:legacyMatches,unique_match:false};
 const requests = [];
 const turns = [];
 const count = (action,surface) => requests.filter(row => row.action === action && (!surface || row.surface === surface)).length;
@@ -66,6 +89,7 @@ const project = (includeReport,token = apiViewToken,includeChatResult = false) =
   if (!includeReport) delete view.report;
   else if (token !== null) view.start_token = token;
   if (!includeChatResult) delete view.chat_result;
+  else if (view.state === 'ready' && (pendingUpdate || batchPosts.length)) view.inbox_updates = inboxUpdates();
   return view;
 };
 async function screenshot(page,name,view) {
@@ -88,6 +112,7 @@ const chatMarkup = `<!doctype html>
 <script>
 window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:'review-fixture',initialView:'chat',
   initialConversationId:42,endpoint:'/api/chat.php',csrf:'fixture'};
+window.VP3_CHAT_EMAIL_V1={endpoint:'${emailEndpoint}',csrf:'fixture',ownerKey:'1',agentId:7};
 window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:'review-fixture',activityEndpoint:'/api/hub',chatUrl:'/chat.php'};
 window.STONEFELLOW_NOTIFICATION_CENTER={};
 window.StonefellowPremiumVoiceV122={};
@@ -126,8 +151,11 @@ try {
       const body = request.postDataJSON() || {};
       if (body.action === 'send') {
         turns.push(body.message);
+        const draft = body.message === matchedCommand('Draft reply',1) ? composedDraft
+          : body.message === matchedCommand('Reply',1) ? manualDraft : null;
+        const actions = draft ? [{type:'email_review',id:draft.id,conversation_id:42,is_reply:true}] : [];
         return route.fulfill({json:{ok:true,conversation_id:42,user_message_id:2*turns.length,assistant_message_id:2*turns.length+1,
-          answer:`Fixture Chat result ${turns.length}.`}});
+          answer:`Fixture Chat result ${turns.length}.`,actions}});
       }
       if (body.action === 'new') newConversations++;
       const conversation = body.conversation_id || 42;
@@ -139,10 +167,43 @@ try {
           ? {source:'agent_connection_gmail_first_review',gmail_inbox_review_v1:{...delivered,review:project(false,undefined,true)}} : {};
         messages.push({id:savedMessageId,role:'assistant',message:'Your first Gmail inbox review is ready.',context_json:JSON.stringify(reviewContext)});
       }
-      return route.fulfill({json:{ok:true,conversation_id:conversation,conversations:[],latest_message_id:delivered?.message_id || 1,
+      for (const batch of batchPosts) {
+        if (batch.conversation_id !== conversation || !['load','messages_after'].includes(body.action)
+            || (body.action === 'messages_after' && (body.after_id || 0) >= batch.message_id)) continue;
+        const context = review.state === 'ready'
+          ? {source:'agent_connection_gmail_inbox_update',gmail_inbox_review_v1:batch} : {};
+        messages.push({id:batch.message_id,role:'assistant',message:'Your Gmail inbox update is ready.',context_json:JSON.stringify(context)});
+      }
+      return route.fulfill({json:{ok:true,conversation_id:conversation,conversations:[],latest_message_id:batchPosts.at(-1)?.message_id || delivered?.message_id || 1,
         messages,updates:[]}});
     }
     if (url.pathname === '/api/team-chat-v109.php') return route.fulfill({json:{ok:true,users:[],messages:[]}});
+    if (url.pathname === emailEndpoint) {
+      assert.equal(request.method(),'POST');
+      assert.equal(new URL(request.frame().url()).pathname,'/chat.php');
+      const body = request.postDataJSON();
+      if (body.action === 'specialist_status') return route.fulfill({json:{ok:true,specialist:{state:'idle'}}});
+      if (body.action === 'review') {
+        const draft = [composedDraft,manualDraft].find(item => item.id === body.draft_id);
+        assert.ok(draft,'The editor opens the exact draft returned by the Chat action.');
+        assert.deepEqual(body,{action:'review',owner_key:'1',csrf_token:'fixture',agent_id:7,conversation_id:42,draft_id:draft.id});
+        return route.fulfill({json:{ok:true,draft}});
+      }
+      assert.deepEqual(body,{action:body.action,owner_key:'1',csrf_token:'fixture',agent_id:7,
+        conversation_id:body.conversation_id,
+        ...(body.action === 'sender_watch' ? {sender:body.sender,enabled:body.enabled,watchlist_key:watchKey} : {})});
+      assert.ok([42,43].includes(body.conversation_id));
+      if (body.action === 'sender_watch') {
+        assert.equal(body.conversation_id,42);
+        assert.ok([firstItem.from,legacyItem.from,latestItem.from].includes(body.sender));
+        assert.equal(typeof body.enabled,'boolean');
+        if (body.enabled) watchedSenders.add(body.sender);
+        else watchedSenders.delete(body.sender);
+      } else assert.equal(body.action,'sender_watchlist');
+      requests.push({...body,surface:'/chat.php'});
+      return route.fulfill({json:{ok:true,watchlist:{available:true,key:watchKey,
+        senders:body.conversation_id === 42 ? [...watchedSenders] : []}}});
+    }
     if (url.pathname === '/api/hub') {
       const ready = review.state === 'ready';
       const detail = ready ? 'Ready to read in Chat'
@@ -165,11 +226,25 @@ try {
     const surface = new URL(request.frame().url()).pathname;
     if (body.action === 'open_item') {
       assert.deepEqual(body,{action:'open_item',owner_key:'1',csrf_token:'fixture',item_ref:body.item_ref});
-      assert.ok([firstRef,latestRef].includes(body.item_ref));
+      const item = [firstItem,latestItem,...review.report?.items || [],...batchPosts.flatMap(batch => batch.review.items)]
+        .find(candidate => candidate.item_ref === body.item_ref);
+      assert.ok(item);
       requests.push({...body,surface});
-      const item = body.item_ref === firstRef ? firstItem : latestItem;
       return route.fulfill({json:{ok:true,item:{subject:item.subject,from:item.from,body:privateBody,
         auto_reply:body.item_ref===firstRef,...(body.item_ref===firstRef?{auto_reply_to:'approved@example.test'}:{})}}});
+    }
+    if (body.action === 'find_matches') {
+      assert.deepEqual(body,{action:'find_matches',owner_key:'1',csrf_token:'fixture',legacy_ref:legacyRef});
+      requests.push({...body,surface});
+      return route.fulfill({json:{ok:true,...matchResult}});
+    }
+    if (body.action === 'open_match') {
+      const match = legacyMatches.find(item => item.message_id === body.message_id);
+      assert.ok(match,'Opening a candidate uses its exact Gmail message ID.');
+      assert.deepEqual(body,{action:'open_match',owner_key:'1',csrf_token:'fixture',legacy_ref:legacyRef,
+        message_id:match.message_id,match_token:match.match_token});
+      requests.push({...body,surface});
+      return route.fulfill({json:{ok:true,item:{subject:match.subject,from:match.from,body:privateBody,auto_reply:false}}});
     }
     if (body.action === 'deliver') {
       assert.equal(surface,'/chat.php');
@@ -184,6 +259,16 @@ try {
       const state = delivered ? 'existing' : 'posted';
       delivered = {run_id:runId,report_ref:reportRef,agent_id:7,conversation_id:body.conversation_id,message_id:savedMessageId};
       return route.fulfill({json:{ok:true,delivery:{state,...delivered},review:project(false,undefined,true)}});
+    }
+    if (body.action === 'deliver_updates') {
+      assert.equal(surface,'/chat.php');
+      assert.deepEqual(body,{action:'deliver_updates',owner_key:'1',csrf_token:'fixture',
+        agent_id:7,conversation_id:42,working_attention_binding:'review-fixture'});
+      requests.push({...body,surface});
+      assert.ok(pendingUpdate,'A verified batch can be delivered only once.');
+      batchPosts.push(pendingUpdate);
+      pendingUpdate = null;
+      return route.fulfill({json:{ok:true,inbox_updates:inboxUpdates()}});
     }
     const includeReport = surface === '/connections.php';
     const expected = {action:body.action,owner_key:'1',csrf_token:'fixture',
@@ -251,6 +336,7 @@ try {
   await report.getByRole('listitem').filter({hasText:privateSubject}).getByRole('button',{name:'Open',exact:true}).click();
   await report.getByText(privateBody,{exact:true}).waitFor();
   assert.equal(await report.getByRole('button',{name:/Auto reply/}).count(),0);
+  assert.equal(await report.getByRole('checkbox').count(),0,'Watching a sender belongs to its notification Chat.');
   assert.equal(count('open_item','/connections.php'),1);
   await page.reload();
   await report.getByText(privateSubject,{exact:true}).waitFor();
@@ -281,12 +367,13 @@ try {
   assert.equal(count('open_item','/chat.php'),0);
   assert.equal(turns.length,0);
   await completion.getByText('Messages in first review (2)',{exact:true}).click();
-  const firstRow = completion.getByRole('listitem').filter({hasText:privateSubject});
+  const reviewRows = completion.locator('.gmail-review-items > li');
+  const firstRow = reviewRows.filter({hasText:privateSubject});
   await firstRow.getByRole('button',{name:'Open',exact:true}).click();
   await firstRow.getByText(privateBody,{exact:true}).waitFor();
   assert.equal(await firstRow.locator('img').count(),0);
   assert.equal(await firstRow.getByRole('button',{name:'Auto reply and send (uses tokens)'}).isVisible(),true);
-  await firstRow.getByRole('button',{name:'Draft reply (uses tokens)'}).click();
+  await firstRow.getByRole('button',{name:'Auto Compose (uses tokens)',exact:true}).click();
   await page.getByText('Fixture Chat result 1.',{exact:true}).waitFor();
   assert.equal(await page.locator('#chatInput').inputValue(),'');
   assert.equal(await page.locator('#chatThread').getByText(new RegExp(firstRef)).count(),0,'The reference is never shown as a Chat turn.');
@@ -294,22 +381,119 @@ try {
   await firstRow.getByRole('button',{name:'Auto reply and send (uses tokens)'}).click();
   await page.getByText('Fixture Chat result 2.',{exact:true}).waitFor();
   assert.deepEqual(turns,[`Draft reply to Gmail review item ${firstRef}`,`Auto reply to Gmail review item ${firstRef}`]);
-  const legacyRow = completion.getByRole('listitem').filter({hasText:legacyItem.subject});
-  assert.equal(await legacyRow.getByRole('button',{name:'Open',exact:true}).count(),0);
-  await legacyRow.getByRole('button',{name:'Find matches in Chat'}).click();
-  assert.equal(await page.locator('#chatInput').inputValue(),'Search Gmail for from:older@example.test subject:"Older header only"');
-  assert.equal(turns.length,2,'An older header never silently picks or opens a match.');
+  const legacyRow = reviewRows.filter({hasText:legacyItem.subject});
+  const legacyActions = legacyRow.locator(':scope > .gmail-review-item-actions');
+  assert.deepEqual(await legacyActions.getByRole('button').allTextContents(),['Open','Reply','Auto Compose (uses tokens)']);
+  assert.equal(await completion.getByRole('button',{name:'Find matches in Chat'}).count(),0);
+  assert.equal(count('find_matches'),0,'A saved header is resolved only when the owner requests it.');
+  const candidates = legacyRow.locator('[data-gmail-review-match]');
+  const chooseCandidate = (index, name) => candidates.filter({hasText:legacyMatches[index].snippet})
+    .getByRole('button',{name,exact:true}).click();
+  const openCandidates = async name => {
+    await legacyActions.getByRole('button',{name,exact:true}).click();
+    await candidates.last().waitFor();
+    assert.equal(await candidates.count(),2,'Two same-subject messages need an exact owner selection.');
+  };
+  await page.locator('#chatInput').fill('Keep this draft while looking up old mail');
+  await openCandidates('Open');
+  assert.equal(await page.locator('#chatInput').inputValue(),'Keep this draft while looking up old mail');
+  assert.equal(turns.length,2,'Resolving an older header never silently picks or replies to a match.');
+  assert.equal(count('open_match'),0);
+  assert.equal(await candidates.locator('img,script').count(),0,'Candidate excerpts render as text.');
+  await chooseCandidate(1,'Open');
+  await legacyRow.getByText(privateBody,{exact:true}).waitFor();
+  assert.equal(requests.filter(row => row.action === 'open_match').at(-1).message_id,legacyMatches[1].message_id);
+  assert.equal(await legacyRow.getByRole('button',{name:/Auto reply and send/}).count(),0,'A resolved legacy header can only draft for review.');
   await page.locator('#chatInput').fill('');
-  await completion.getByText('Messages in latest update (1)',{exact:true}).click();
-  const latestRow = completion.getByRole('listitem').filter({hasText:latestItem.subject});
+  await openCandidates('Reply');
+  assert.equal(turns.length,2);
+  await chooseCandidate(0,'Reply');
+  await page.getByText('Fixture Chat result 3.',{exact:true}).waitFor();
+  await openCandidates('Auto Compose (uses tokens)');
+  assert.equal(turns.length,3);
+  await chooseCandidate(1,'Auto Compose (uses tokens)');
+  await page.getByText('Fixture Chat result 4.',{exact:true}).waitFor();
+  const draftDialog = page.getByRole('dialog',{name:'Review Gmail draft'});
+  await draftDialog.getByRole('button',{name:'Edit manually'}).waitFor();
+  assert.equal(await draftDialog.getByRole('textbox',{name:'Message'}).inputValue(),composedDraft.body);
+  assert.equal(await draftDialog.getByText(legacyItem.from,{exact:true}).isVisible(),true);
+  assert.equal(await draftDialog.getByRole('button',{name:'Approve and send'}).isVisible(),true);
+  await draftDialog.getByRole('button',{name:'Close',exact:true}).click();
+  assert.equal(await page.locator('#chatInput').inputValue(),'');
+  for (const match of legacyMatches) {
+    assert.equal(await page.locator('#chatThread').getByText(new RegExp(`${match.message_id}|${match.match_token}`)).count(),0,
+      'Gmail IDs and match tokens are never shown in Chat.');
+  }
+  assert.equal(count('find_matches'),3);
+  assert.equal(count('advance','/chat.php'),0,'Resolving old headers does not repeat the paid review.');
+  await completion.getByText('Messages in latest update (2)',{exact:true}).click();
+  const latestRow = reviewRows.filter({hasText:latestItem.subject});
   await latestRow.getByRole('button',{name:'Open',exact:true}).click();
   await latestRow.getByText(privateBody,{exact:true}).waitFor();
   assert.equal(await completion.getByRole('button',{name:/Auto reply/}).count(),0,'An ineligible exact recipient has no Auto reply button.');
   assert.equal(requests.filter(row=>row.action==='open_item' && row.surface==='/chat.php').map(row=>row.item_ref).join(','),firstRef+','+latestRef);
   await latestRow.getByRole('button',{name:'Reply',exact:true}).click();
-  await page.getByText('Fixture Chat result 3.',{exact:true}).waitFor();
+  await page.getByText('Fixture Chat result 5.',{exact:true}).waitFor();
   assert.deepEqual(turns,[`Draft reply to Gmail review item ${firstRef}`,`Auto reply to Gmail review item ${firstRef}`,
+    matchedCommand('Reply',0),matchedCommand('Draft reply',1),
     `Reply to Gmail review item ${latestRef}`]);
+
+  const watch = legacyRow.getByRole('checkbox');
+  await watch.waitFor();
+  assert.equal(await firstRow.getByRole('checkbox').isChecked(),true,'Existing watches are reflected in the saved review.');
+  assert.equal(await watch.isChecked(),false);
+  assert.equal(await latestRow.getByRole('checkbox').isChecked(),false);
+  assert.equal(await reviewRows.filter({hasText:repeatedSender.subject}).getByRole('checkbox').count(),0,
+    'The same address gets one checkbox across both groups, even when its case differs.');
+  assert.equal(await completion.getByRole('checkbox').count(),3);
+  for (const enabled of [true,false,true]) {
+    const savedWatch = page.waitForResponse(response => response.url().endsWith(emailEndpoint)
+      && response.request().postDataJSON()?.action === 'sender_watch');
+    await watch.click();
+    assert.equal((await savedWatch).ok(),true);
+    await page.waitForFunction(checked => {
+      const box = [...document.querySelectorAll('.gmail-review-items > li')]
+        .find(row => row.textContent.includes('Older header only'))?.querySelector('input[type="checkbox"]');
+      return box && !box.disabled && box.checked === checked;
+    },enabled);
+  }
+  assert.deepEqual(requests.filter(row => row.action === 'sender_watch').map(row => [row.sender,row.enabled]),
+    [[legacyItem.from,true],[legacyItem.from,false],[legacyItem.from,true]],'Only the selected sender’s exact watch is changed.');
+  assert.equal(turns.length,5,'Watching a sender never starts a Chat turn or sends email.');
+
+  const sourceAction = name => legacyActions.getByRole('button',{name,exact:true});
+  matchResult = {matches:[legacyMatches[1]],unique_match:false};
+  await sourceAction('Reply').click();
+  await candidates.first().waitFor();
+  assert.equal(await candidates.count(),1,'An incomplete lookup still needs confirmation of its only candidate.');
+  assert.equal(turns.length,5);
+
+  matchResult = {...matchResult,unique_match:true};
+  await page.locator('#chatInput').fill('Keep this draft while opening an exact match');
+  await sourceAction('Open').click();
+  await legacyRow.getByText(privateBody,{exact:true}).waitFor();
+  assert.equal(await page.locator('#chatInput').inputValue(),'Keep this draft while opening an exact match');
+  assert.equal(await candidates.count(),0,'A verified single match opens directly.');
+  assert.equal(requests.filter(row => row.action === 'open_match').at(-1).message_id,legacyMatches[1].message_id);
+  await page.locator('#chatInput').fill('');
+  await sourceAction('Reply').click();
+  await draftDialog.getByText('Write your reply, then review it before sending.',{exact:true}).waitFor();
+  const replyBody = draftDialog.getByRole('textbox',{name:'Message'});
+  assert.equal(await replyBody.isEditable(),true);
+  assert.equal(await replyBody.inputValue(),'');
+  assert.equal(turns.at(-1),matchedCommand('Reply',1));
+  assert.equal(await candidates.count(),0,'Reply opens the editor without a chooser for a verified match.');
+  await draftDialog.getByRole('button',{name:'Close',exact:true}).click();
+  await sourceAction('Auto Compose (uses tokens)').click();
+  await draftDialog.getByRole('button',{name:'Edit manually'}).waitFor();
+  assert.equal(await replyBody.inputValue(),composedDraft.body);
+  assert.equal(await draftDialog.getByRole('button',{name:'Approve and send'}).isVisible(),true);
+  assert.deepEqual(turns.slice(5),[matchedCommand('Reply',1),matchedCommand('Draft reply',1)]);
+  assert.equal(await candidates.count(),0,'Auto Compose opens the composed draft directly for review.');
+  assert.equal(count('advance','/chat.php'),0,'A direct legacy match still reuses the saved review.');
+  await draftDialog.getByRole('button',{name:'Close',exact:true}).click();
+  matchResult = {matches:legacyMatches,unique_match:false};
+
   const reloadStatus = statusGate = {started:deferred(),release:deferred()};
   await page.reload();
   await waitForGate(reloadStatus.started,'held status after loading the durable turn');
@@ -317,6 +501,9 @@ try {
   reloadStatus.release.resolve();
   assert.equal(await completion.count(),1,'The durable receipt hydrates once on reload.');
   assert.equal(count('deliver'),1,'A loaded review turn bypasses another delivery request.');
+  await completion.getByText('Messages in first review (2)',{exact:true}).click();
+  await watch.waitFor();
+  assert.equal(await watch.isChecked(),true,'The watch checkbox survives Chat reload.');
   const otherDelivery = page.waitForResponse(response => response.url().endsWith(endpoint)
     && response.request().postDataJSON()?.action === 'deliver');
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.openConversation(43));
@@ -330,7 +517,7 @@ try {
   await page.locator('[data-activity-specialist="gmail-inbox-review"]').getByRole('button',{name:'View in Chat'}).click();
   await savedTurn.getByText(privateSummary,{exact:true}).waitFor();
   assert.equal(await completion.count(),1,'Top of Mind opens the same saved assistant turn.');
-  console.log('PASS exact Gmail message actions and one durable, conversation-bound review after reload');
+  console.log('PASS exact and legacy Gmail message actions, scoped sender watches, and one durable review after reload');
 
   delivered = null;
   review = needsStart();
@@ -582,6 +769,51 @@ try {
   await completion.waitFor({state:'detached'});
   await savedTurn.getByText('Your first Gmail inbox review is ready.',{exact:true}).waitFor();
   console.log('PASS a legacy Chat projection shows one verified delivery and removes it when Inbox Review is disabled');
+
+  const fullItems = Array.from({length:10},(_,index) => ({subject:`Saved email ${index+1}`,from:'same@example.test',
+    category:'new',item_ref:(1000+index).toString(16).padStart(64,'0')}));
+  review = completed();
+  review.total = review.report.total = 10;
+  review.report.items = review.chat_result.items = fullItems;
+  delete review.chat_result.latest;
+  const batchPost = (id,subject,item_ref) => {
+    const run_id = id.toString(16).padStart(32,'0');
+    return {kind:'batch',scope_ref:batchScope,run_id,report_ref:id.toString(16).padStart(64,'0'),agent_id:7,
+      conversation_id:42,message_id:id,review:{state:'ready',run_id,total:1,important:0,replies:0,
+        at:'2026-11-10T15:00:00Z',items:[{subject,from:'same@example.test',category:'new',item_ref}]}};
+  };
+  pendingUpdate = batchPost(100,'First saved batch','7'.repeat(64));
+  const beforeUpdates = {deliver:count('deliver_updates'),advance:count('advance')};
+  await page.goto(origin+'/chat.php');
+  const firstList = completion.getByText('Messages in first review (10)',{exact:true});
+  await firstList.click();
+  assert.equal(await completion.locator('.gmail-review-items > li').count(),8);
+  await completion.getByRole('button',{name:'Show next 2 messages'}).click();
+  assert.equal(await completion.locator('.gmail-review-items > li').count(),10);
+  await completion.getByRole('listitem').filter({hasText:'Saved email 10'}).getByRole('button',{name:'Open',exact:true}).click();
+  await completion.getByText(privateBody,{exact:true}).waitFor();
+  assert.equal(requests.filter(row => row.action === 'open_item').at(-1).item_ref,fullItems[9].item_ref);
+  const cards = page.locator('[data-gmail-inbox-update]');
+  await cards.first().getByText('Messages in inbox update (1)',{exact:true}).click();
+  await cards.first().getByText('First saved batch',{exact:true}).waitFor();
+  batchPosts.push(batchPost(101,'Second saved batch','8'.repeat(64)));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await cards.nth(1).getByText('Messages in inbox update (1)',{exact:true}).click();
+  await cards.nth(1).getByText('Second saved batch',{exact:true}).waitFor();
+  assert.equal(await cards.first().getByText('First saved batch',{exact:true}).count(),1);
+  await page.reload();
+  await cards.nth(1).waitFor();
+  await cards.first().getByText('Messages in inbox update (1)',{exact:true}).click();
+  await cards.first().getByRole('button',{name:'Open',exact:true}).click();
+  await cards.first().getByText(privateBody,{exact:true}).waitFor();
+  assert.equal(requests.filter(row => row.action === 'open_item').at(-1).item_ref,'7'.repeat(64));
+  assert.deepEqual({deliver:count('deliver_updates'),advance:count('advance')},
+    {deliver:beforeUpdates.deliver+1,advance:beforeUpdates.advance});
+  review = {state:'disabled',limit:50};
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await cards.first().waitFor({state:'detached'});
+  assert.equal(await page.getByText('Your Gmail inbox update is ready.',{exact:true}).count(),2);
+  console.log('PASS all first-review rows are pageable and separate inbox updates remain actionable after reload');
 
   assert.deepEqual(errors,[]);
   console.log('GMAIL_INBOX_INITIAL_UI_BROWSER=PASS (actual Connections, private report, progress and stale settings)');

@@ -4,6 +4,7 @@ import vm from 'node:vm';
 const source=fs.readFileSync('chat-voice.js','utf8');
 const chat=fs.readFileSync('chat.php','utf8');
 const voiceApi=fs.readFileSync('api/agent-voice-v117.php','utf8');
+const chatStream=fs.readFileSync('api/chat-stream-v121.php','utf8');
 const premiumSource=fs.readFileSync('premium-voice-v117.js','utf8');
 const assert=(ok,label)=>{console.log(`${ok?'PASS':'FAIL'} ${label}`);if(!ok)throw new Error(`Failed: ${label}`);};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -55,6 +56,13 @@ const nativeFetch=async(inputArg,init={})=>{
   let payload={};try{payload=JSON.parse(String(init.body||'{}'));}catch(error){}
   fetchCalls.push({url,payload});
   if(url.includes('chat-stream-v121.php')){
+    if(payload.message==='search Gmail for project notes'){
+      const rows=[{type:'start',conversation_id:42,user_message_id:73,assistant_message_id:74},
+        {type:'done',data:{ok:true,conversation_id:42,user_message_id:73,assistant_message_id:74,
+          input_mode:'voice',private_email_read:true,answer:'Private project notes',actions:[{type:'gmail_message',label:'Open email'}]}}];
+      return new Response(rows.map(row=>JSON.stringify(row)).join('\n')+'\n',
+        {status:200,headers:{'Content-Type':'application/x-ndjson'}});
+    }
     streamDoneEmitted=false;
     const body=new ReadableStream({start(controller){
       controller.enqueue(encoder.encode(JSON.stringify({type:'start',conversation_id:42,user_message_id:71,assistant_message_id:72})+'\n'));
@@ -77,7 +85,8 @@ const navigator={userActivation:{isActive:true}};
 const location={href:'https://stonefellow.com/chat.php',origin:'https://stonefellow.com',pathname:'/chat.php',search:''};
 const sandbox={window,document,navigator,localStorage,location,CustomEvent,Event,URL,URLSearchParams,Response,AbortController,ReadableStream,TextEncoder,TextDecoder,console,setTimeout,clearTimeout,setInterval,clearInterval,queueMicrotask};
 Object.assign(window,{window,document,navigator,localStorage,location,CustomEvent,Event,URL,URLSearchParams,Response,AbortController,ReadableStream,TextEncoder,TextDecoder});
-elements.chatForm.requestSubmit=()=>{void window.fetch('/api/chat.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send',conversation_id:0,message:elements.chatInput.value,input_mode:'text',csrf_token:'csrf'})});};
+let lastResponse;
+elements.chatForm.requestSubmit=()=>{lastResponse=window.fetch('/api/chat.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send',conversation_id:0,message:elements.chatInput.value,input_mode:'text',csrf_token:'csrf'})});};
 
 vm.runInNewContext(source,sandbox,{filename:'chat-voice.js'});
 
@@ -110,6 +119,18 @@ assert(window.STONEFELLOW_CHAT_VOICE.fastStreamTurns===1,'runtime records the fa
 assert(window.STONEFELLOW_CHAT_VOICE.fastStreamDeltas===2,'runtime records both streamed text deltas');
 assert(window.STONEFELLOW_CHAT_VOICE.premiumReady===true,'runtime records ElevenLabs as configured/ready');
 assert(window.STONEFELLOW_CHAT_VOICE.premiumAudibleStarts===1,'runtime separately records proof of first audible ElevenLabs playback');
+
+await sleep(500);
+const audioBeforeGmail=premiumPushes.length;
+recognizers.at(-1).onresult({resultIndex:0,results:[{0:{transcript:'search Gmail for project notes'},isFinal:true}]});
+await sleep(1900);
+const privateResult=await (await lastResponse).json();
+assert(privateResult.answer==='Private project notes'&&privateResult.actions[0].type==='gmail_message',
+  'voice Gmail delivers the private text and its action to Chat');
+assert(premiumPushes.slice(audioBeforeGmail).join('')==='I put the private Gmail result in Chat.',
+  'voice fallback reads the confirmation without sending the private result to speech');
+assert(chatStream.includes("'delta'=>vp3_agent_chat_voice_text_v2160($done)")&&chatStream.includes('vp3_agent_chat_voice_text_v2160($replay)'),
+  'the stream and its replay separate private Gmail display from speech');
 
 premiumCallbacks?.onError?.(new Error('simulated late ElevenLabs playback failure'));
 await sleep(5);

@@ -105,7 +105,7 @@ define('STONEFELLOW_ROOT', $fixtureRoot);
 mkdir($fixtureRoot, 0700);
 $gmail_connection_checks = 0;
 putenv('VP3_GMAIL_CLIENT_ID=vp3-fixture.apps.googleusercontent.com');
-putenv('VP3_GMAIL_CLIENT_SECRET=fixture-not-a-secret');
+putenv('VP3_GMAIL_CLIENT_SECRET=fixture-'.bin2hex(random_bytes(16)));
 putenv('VP3_GMAIL_REDIRECT_URI=https://fixture.example.test/connection-oauth.php');
 
 try {
@@ -275,17 +275,18 @@ try {
         && agent_connection_health_gmail_counts_v1($pdo) === ['healthy'=>1,'needs_attention'=>1,'unchecked'=>0,'available'=>true],
         'health counts reflect current checked grants without exposing a provider error body');
 
-    putenv('VP3_YOUTUBE_API_KEY=AIza_fixture_key_0123456789abcdef');
-    $youtubeProbe = static function (string $url, array $headers): array {
-        gmail_connection_check_v1(str_starts_with($url,VP3_YOUTUBE_HEALTH_ENDPOINT_V1.'?') && !str_contains($url,'AIza_fixture_key')
-            && in_array('X-Goog-Api-Key: AIza_fixture_key_0123456789abcdef',$headers,true),
+    $youtubeFixtureKey = 'fixture-'.bin2hex(random_bytes(16));
+    putenv('VP3_YOUTUBE_API_KEY='.$youtubeFixtureKey);
+    $youtubeProbe = static function (string $url, array $headers) use ($youtubeFixtureKey): array {
+        gmail_connection_check_v1(str_starts_with($url,VP3_YOUTUBE_HEALTH_ENDPOINT_V1.'?') && !str_contains($url,$youtubeFixtureKey)
+            && in_array('X-Goog-Api-Key: '.$youtubeFixtureKey,$headers,true),
             'YouTube health uses a non-search endpoint and puts the credential in a server header');
         return ['status'=>200,'json'=>['items'=>[['snippet'=>['gl'=>'US']]]]];
     };
     $youtubeCheck = agent_connection_health_test_platform_v1($pdo,'youtube',$youtubeProbe);
     gmail_connection_check_v1($youtubeCheck['status'] === 'healthy' && agent_connection_health_platform_v1($pdo,'youtube') === $youtubeCheck,
         'YouTube records successful key verification without consuming search quota');
-    putenv('VP3_YOUTUBE_API_KEY=AIza_fixture_key_rotated_0123456789');
+    putenv('VP3_YOUTUBE_API_KEY=fixture-'.bin2hex(random_bytes(16)));
     gmail_connection_check_v1(agent_connection_health_platform_v1($pdo,'youtube')['status'] === 'unchecked',
         'a changed provider credential cannot inherit a previous key health result');
     putenv('VP3_YOUTUBE_API_KEY');
@@ -514,7 +515,10 @@ try {
     gmail_connection_check_v1(array_column($awayItems,'title') === ['New Gmail message','Gmail reply received']
         && array_column($awayItems,'type') === ['agent_email_followup','agent_email_followup']
         && array_column($awayItems,'source_id') === [(int)$senderWatch['reply_chat_message_id'],(int)$reply['reply_chat_message_id']]
-        && array_column($awayItems,'target_url') === array_fill(0,2,'/chat.php?agent=7&conversation_id=11')
+        && array_column($awayItems,'target_url') === [
+            '/chat.php?agent=7&conversation_id=11&message_id='.(int)$senderWatch['reply_chat_message_id'],
+            '/chat.php?agent=7&conversation_id=11&message_id='.(int)$reply['reply_chat_message_id'],
+        ]
         && !str_contains($awayJson,$sender) && !str_contains($awayJson,$buyer) && !str_contains($awayJson,'Fixture private')
         && !vp3_cognitive_presentation_voice_allowed_type_v510($bell)
         && vp3_cognitive_presentation_digest_v510($pdo,$other,'agent:9',$otherDigestState) === null

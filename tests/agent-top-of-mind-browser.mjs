@@ -50,8 +50,9 @@ writeFileSync(join(temp,'router.php'),[
   'agent_connection_youtube_results_save_v1(db(),1,11,$artistMessage,["query"=>"Artists similar to Fixture Artist","taste_topic"=>"Fixture Artist","suggestion_kind"=>"similar","expires_at"=>time()+3600,"videos"=>[["video_id"=>"song0000002","title"=>"Provider artist title"]]]);',
   '$artistResult=["artist_research_v1"=>["artist"=>"Fixture Artist","mode"=>"read","status"=>"read_complete"],"tool_receipt"=>vp3_tool_receipt_v1("artist.research","search","read_complete")];db()->prepare("INSERT INTO chat_messages(conversation_id,role,message,context_json) VALUES(11,\'assistant\',\'Verified artist report\',?)")->execute([json_encode($artistResult)]);$artistReport=(int)db()->lastInsertId();',
   'foreach(["Acoustic guitar bridge repair","Acoustic guitar bridge replacement"] as $index=>$query){db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube interest results\')");agent_connection_youtube_results_save_v1(db(),1,11,(int)db()->lastInsertId(),["query"=>$query,"expires_at"=>time()+3600,"videos"=>[["video_id"=>"repair0000".$index,"title"=>"Provider repair clip"]]]);}',
-  'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(11,\'assistant\',\'YouTube topic results\')");$topicMessage=(int)db()->lastInsertId();',
-  'agent_connection_youtube_results_save_v1(db(),1,11,$topicMessage,["query"=>"Wood-fired oven heat management","expires_at"=>time()+3600,"videos"=>[["video_id"=>"oven0000001","title"=>"Oven tutorial provider title"]]]);',
+  'db()->exec("INSERT INTO chat_conversations(id,user_id,user_agent_id) VALUES(14,1,7)");',
+  'db()->exec("INSERT INTO chat_messages(conversation_id,role,message) VALUES(14,\'assistant\',\'YouTube topic results\')");$topicMessage=(int)db()->lastInsertId();',
+  'agent_connection_youtube_results_save_v1(db(),1,14,$topicMessage,["query"=>"Wood-fired oven heat management","expires_at"=>time()+3600,"videos"=>[["video_id"=>"oven0000001","title"=>"Oven tutorial provider title"]]]);',
   'vp3_youtube_research_save_v1(db(),1,"topic",true);$interests=vp3_initiative_evidence_v1(db(),$u,new DateTimeImmutable("now",new DateTimeZone("UTC")),false,[],$coverage,null,7);',
   '$interest=array_values(array_filter($interests,static fn(array $row):bool=>$row["kind"]==="topic_interest"))[0];$ref=$interest["ref"];',
   '$interestGoal=["binding"=>$policy,"sources"=>[$ref=>$interest["revision"]],"canonical_sources"=>[$ref=>$interest["revision"]],"tool"=>"topic.research","primary"=>$ref,"focus"=>"Find verified bridge repair methods","report"=>true];',
@@ -66,7 +67,7 @@ writeFileSync(join(temp,'router.php'),[
   'if(!$outside)echo \'<div class="chat-topbar-actions"><div id="chatNotificationMenu"><button id="chatNotificationButton">Activity Center</button></div><div id="chatProfileMenu">Account</div></div>\';',
   '$orb=["ownerKey"=>"1","agentId"=>7,"chatUrl"=>"/chat.php","workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php","notificationsEndpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","voiceScript"=>"/deliberately-unavailable-voice.js","drawerScript"=>"/chat-notifications-drawer-v240.js"];',
   'echo "<script>window.VP3_ORB_CONFIG=".json_encode($orb).";</script>";',
-  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.fixturePicks=0;window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11,requestYoutubePicks:()=>{window.fixturePicks++;return true}};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
+  'if(!$outside)echo "<script>window.STONEFELLOW_CHAT={userId:1,agentId:7,initialConversationId:11,workingAttentionBinding:".json_encode($binding)."};window.fixturePicks=0;window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant};window.STONEFELLOW_CHAT_CONTINUITY_V87={conversationId:()=>11,requestYoutubePicks:()=>{window.fixturePicks++;return true},openConversation:async (id,options)=>{window.fixtureSource={id,options};return true}};window.STONEFELLOW_NOTIFICATION_DRAWER=".json_encode(["endpoint"=>"/api/chat-notifications-brain-v240.php","csrf"=>"fixture","userId"=>1,"agentId"=>7,"workingAttentionBinding"=>$binding,"topOfMindEndpoint"=>"/api/agent-top-of-mind-v1.php"]).";</script><script src=/chat-notifications-drawer-v240.js></script>";',
   'echo \'<script src="/agent-eyes-core.js"></script><script src="/agent-top-of-mind-v1.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script>\';'
 ].join('\n'));
 assert.match(execFileSync(process.env.VP3_PHP_BINARY||'php',['-l',join(temp,'router.php')],{encoding:'utf8'}),/No syntax errors detected/);
@@ -86,10 +87,11 @@ try{
     const r=await fetch(endpoint,{headers});assert.equal(r.status,200,await r.clone().text());assert.match(r.headers.get('cache-control'),/no-store/);
     const data=await r.json();assert.equal(data.state.owner_user_id,1);assert.equal(data.state.agent_id,7);assert.equal(data.state.conversation_id,11);assert.equal(data.state.working_attention_binding,binding);
     assert.equal(data.state.items.find(x=>x.run_id===runId).state,'working');assert.equal(data.state.items.find(x=>x.run_id===runId).progress,42);
-    assert.equal(data.state.music.title,'Confirmed fixture playback');assert.match(data.state.music.chat_url,/agent=7&conversation_id=11$/);
+    assert.equal(data.state.music.title,'Confirmed fixture playback');assert.match(data.state.music.chat_url,/agent=7&conversation_id=11&message_id=\d+$/);
     assert.equal(data.state.artist_research.artist,'Fixture Artist');assert.equal(data.state.artist_research.status,'ready');
     assert.equal(data.state.artist_research.message_id,artistReportId);
     assert.equal(data.state.topic_research,null);assert.equal(data.state.youtube_search.message_id,topicMessageId);
+    assert.equal(data.state.youtube_search.conversation_id,14);
     assert.deepEqual(data.state.items.find(x=>x.run_id===interestRunId).youtube_interest,{search_count:2,related_search_count:2});
     assert.equal(data.state.calendar[0].title,'Fixture planning session');assert.equal(data.state.calendar[0].agenda_status,'unknown');
     assert.equal(data.state.calendar[0].meeting_url,'https://example.com/meeting');
@@ -125,10 +127,11 @@ try{
     await music.getByText('Confirmed fixture playback',{exact:true}).waitFor();
     const artist=feed.getByRole('region',{name:'Artist research'});
     await artist.getByText('Fixture Artist',{exact:true}).waitFor();
-    assert.match(await artist.getByRole('link',{name:'Review in Chat'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+    assert.match(await artist.getByRole('link',{name:'Review in Chat'}).getAttribute('href'),new RegExp(`agent=7&conversation_id=11&message_id=${artistReportId}$`));
     const search=feed.getByRole('region',{name:'Recent YouTube results'});
     await search.getByText('Wood-fired oven heat management',{exact:true}).waitFor();
-    assert.match(await search.getByRole('link',{name:'Review these results'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+    const reviewSearch=search.getByRole('link',{name:'Review these results'});
+    assert.match(await reviewSearch.getAttribute('href'),new RegExp(`agent=7&conversation_id=14&message_id=${topicMessageId}$`));
     assert.equal(await feed.getByRole('region',{name:'Topic research'}).count(),0,'a single search remains observed activity');
     assert.equal(await search.getByRole('button').count(),0);assert.equal(await artist.getByRole('button').count(),0);
     await feed.locator(`[data-top-of-mind-run="${interestRunId}"]`).getByText('Why this came up · 2 related YouTube searches',{exact:true}).waitFor();
@@ -138,8 +141,12 @@ try{
     await calendar.getByText('Agenda and preparation',{exact:true}).click();
     await calendar.getByText('Saved agenda details are unavailable.',{exact:true}).waitFor();
     if(outside){
-      assert.match(await music.getByRole('link',{name:'Open this Chat'}).getAttribute('href'),/agent=7&conversation_id=11$/);
+      assert.match(await music.getByRole('link',{name:'Review in Chat'}).getAttribute('href'),/agent=7&conversation_id=11&message_id=\d+$/);
     }else{
+      await reviewSearch.click();
+      assert.deepEqual(await page.evaluate(()=>window.fixtureSource),{id:14,options:{messageId:topicMessageId}});
+      await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
+      await music.waitFor();
       assert.equal(await page.evaluate(()=>window.fixturePicks),0);
       await page.evaluate(()=>{window.fixtureParticipant={id:2};window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
       await music.waitFor({state:'hidden'});
@@ -161,7 +168,7 @@ try{
     assert.ok(box.x+box.width<=width+1,'the settled drawer must fit inside the right viewport edge');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     if(process.env.VP3_TOP_OF_MIND_SCREENSHOT_DIR){mkdirSync(process.env.VP3_TOP_OF_MIND_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:join(process.env.VP3_TOP_OF_MIND_SCREENSHOT_DIR,outside?'top-of-mind-mobile.png':'top-of-mind-desktop.png')});}
-    const count=reads.length;await page.waitForTimeout(2800);assert.ok(reads.length>count,'active work must refresh without reopening Brain');
+    await page.waitForRequest(request=>isBrainRead(request.url()),{timeout:8000});
     if(outside)assert.equal(await calendar.getByText('Saved agenda details are unavailable.',{exact:true}).isVisible(),true,'an expanded agenda survives polling');
     await page.evaluate(()=>{document.body.dataset.stonefellowAgentState='processing';});
     if(!outside)await feed.getByText('The main Agent is preparing a response.',{exact:true}).waitFor();

@@ -297,8 +297,11 @@ $similar = agent_connection_youtube_chat_v1($pdo,$owner,$principal,'Stonefellow'
 youtube_chat_check($seenQuery === 'music artists similar to Stonefellow' && ($similar['youtube_results']['suggestion_kind'] ?? '') === 'similar'
     && !empty($similar['youtube_results']['videos']), 'Similar artist discovery returns real search cards from the public YouTube tool');
 $playlist = agent_connection_youtube_chat_v1($pdo,$owner,$principal,'quiet jazz',11,null,$musicHttp,'playlist');
-youtube_chat_check(($playlist['youtube_results']['suggestion_kind'] ?? '') === 'playlist' && !empty($playlist['youtube_results']['videos'])
+youtube_chat_check($seenQuery === 'quiet jazz' && ($playlist['youtube_results']['suggestion_kind'] ?? '') === 'playlist' && !empty($playlist['youtube_results']['videos'])
     && str_contains($playlist['answer'],'playlist draft'), 'A playlist request creates a playable private Chat draft through read-only search');
+$topicPlaylist = agent_connection_youtube_chat_v1($pdo,$owner,$principal,'Fix a bike chain',11,null,$musicHttp,'playlist');
+youtube_chat_check($seenQuery === 'Fix a bike chain' && ($topicPlaylist['youtube_results']['music_suggestion'] ?? null) === false
+    && !isset($topicPlaylist['youtube_results']['taste_topic']), 'A non-music playlist preserves its topic and never creates a music taste suggestion');
 
 $fixtureClock = new DateTimeImmutable('now',new DateTimeZone('UTC'));
 $originalSearchAt = $fixtureClock->modify('-2 days')->setTime(2,30);
@@ -311,7 +314,11 @@ foreach ([401=>[11,0,$originalSearchAt],402=>[11,0,$newerSearchAt],403=>[12,0,$n
     $insertFixture->execute([$id,$chatId,'assistant',json_encode($context,JSON_THROW_ON_ERROR),$at->format('Y-m-d H:i:s')]);
 }
 $originalPlaylist = $playlist['youtube_results'];
-$otherPlaylist = array_replace($originalPlaylist,['query'=>'Other music','taste_topic'=>'Other music']);
+$otherPlaylist = array_replace($originalPlaylist,['query'=>'Other music','taste_topic'=>'Other music','videos'=>[
+    ...$originalPlaylist['videos'],
+    ['video_id'=>'abcdefghijl','title'=>'Second exact video','made_for_kids'=>false],
+    ['video_id'=>'abcdefghijm','title'=>'Third exact video','made_for_kids'=>false],
+]]);
 agent_connection_youtube_results_save_v1($pdo,1,11,401,$originalPlaylist);
 agent_connection_youtube_results_save_v1($pdo,1,11,402,$payload);
 agent_connection_youtube_results_save_v1($pdo,1,12,403,$otherPlaylist);
@@ -388,6 +395,38 @@ youtube_chat_check($restored[0] === $references[0]
     && json_decode($restored[2]['context_json'],true)['youtube_results'] === $scoped['youtube_results']
     && $restored[3] === $references[3],
     'Reload restores same-Agent cross-Chat references and rejects another owner or Agent');
+
+$ordinalPlan=agent_connection_youtube_followup_plan_v1('What was the third video from that playlist?');
+$ordinalResult=agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$ordinalPlan,11);
+youtube_chat_check(($ordinalResult['youtube_source_message_id']??null)===403
+    &&($ordinalResult['youtube_source_video_id']??null)==='abcdefghijm'
+    &&($ordinalResult['youtube_results']['play_selected']??null)===false
+    &&$ordinalResult['youtube_results']['videos']===$otherPlaylist['videos'],
+    'An ordinary ordinal identifies the exact video in the latest eligible playlist without starting playback');
+$insertFixture->execute([410,11,'assistant',json_encode(['youtube_results_ref_v1'=>403,'youtube_result_video_v1'=>'abcdefghijl']),$fixtureClock->format('Y-m-d H:i:s')]);
+$insertFixture->execute([411,12,'assistant','{}',$fixtureClock->format('Y-m-d H:i:s')]);
+$nextPlan=agent_connection_youtube_scoped_followup_plan_v1($pdo,1,0,11,'Play the next one');
+$nextResult=agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$nextPlan,11);
+youtube_chat_check(($nextResult['youtube_source_message_id']??null)===403
+    &&($nextResult['youtube_source_video_id']??null)==='abcdefghijm'
+    &&($nextResult['youtube_results']['play_selected']??null)===true
+    &&agent_connection_youtube_scoped_followup_plan_v1($pdo,1,0,12,'Play the next one')===null
+    &&agent_connection_youtube_scoped_followup_plan_v1($pdo,2,0,11,'Play the next one')===null,
+    'A bare next request requires an exact local card and advances its selected video in order');
+$playThat=agent_connection_youtube_scoped_followup_plan_v1($pdo,1,0,11,'Play that');
+$playThatResult=agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$playThat,11);
+youtube_chat_check(($playThatResult['youtube_source_video_id']??null)==='abcdefghijl'
+    &&($playThatResult['youtube_results']['play_selected']??null)===true,
+    'A pronoun request plays the previously highlighted exact video');
+$exactReplay=agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$nextPlan,11,null,403,'abcdefghijm');
+$wrongReplay=agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$nextPlan,11,null,403,'abcdefghijz');
+$selectionRow=$pdo->query('SELECT id,role,context_json FROM chat_messages WHERE id=410')->fetch(PDO::FETCH_ASSOC);
+$selectionHistory=json_decode(agent_connection_youtube_history_v1($pdo,1,0,11,[$selectionRow])[0]['context_json'],true);
+youtube_chat_check(($exactReplay['youtube_source_video_id']??null)==='abcdefghijm'
+    &&($exactReplay['youtube_results']['play_selected']??null)===false&&$wrongReplay['youtube_results']===null
+    &&$selectionHistory['youtube_results']['selected_video_id']==='abcdefghijl'
+    &&!isset($selectionHistory['youtube_results']['play_selected']),
+    'Reload and voice replay restore the exact selected video without replaying the play action');
 
 $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1'] = ['participant_id'=>8];
 $blockedFollowup = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$playlistPlan,11);

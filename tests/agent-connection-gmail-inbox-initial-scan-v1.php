@@ -79,6 +79,16 @@ initial_scan_check($queries===[$expectedQuery] && $first['status']==='checked' &
 initial_scan_check(array_filter($first['messages'])===[$key('first_bound')=>[
     'message_id'=>'first_bound','from'=>'sender@example.test','cc'=>'review@example.test','subject'=>'first_bound','important'=>false,'reply'=>false]],
     'exact inclusive lower bound includes an already-read arrival; older, start-bound, archived, and invalid sender are excluded');
+$scannedMessage = $first['messages'][$key('first_bound')];
+foreach ([null,'bad/id'] as $invalidId) {
+    $item = $scannedMessage;
+    if ($invalidId === null) unset($item['message_id']);
+    else $item['message_id'] = $invalidId;
+    $rejected = false;
+    try { agent_connection_gmail_inbox_saved_item_v1($item); }
+    catch (UnexpectedValueException) { $rejected = true; }
+    initial_scan_check($rejected,'a '.($invalidId === null ? 'missing' : 'malformed').' provider ID cannot become a saved review item');
+}
 $second=$scan(7,$first['page'],$first['scanned'],$first['pages'],null,static fn(string $id): bool=>array_key_exists($id,$first['messages']));
 initial_scan_check($queries[1]===$expectedQuery+['pageToken'=>$opaque] && !$second['more'] && !$second['truncated']
     && $second['scanned']===10 && $second['pages']===2 && $second['page']==='' && count($reads)===9,
@@ -148,3 +158,19 @@ foreach ([
 $caught=false;
 try { $scan(2); } catch (InvalidArgumentException) { $caught=true; }
 initial_scan_check($caught,'unsupported lookback fails before provider access');
+
+$privateRoot = sys_get_temp_dir().'/vp3-gmail-scan-'.bin2hex(random_bytes(8));
+define('STONEFELLOW_ROOT',$privateRoot);
+mkdir($privateRoot.'/private',0700,true);
+$invalidKey = $privateRoot.'/private/ai-key.php';
+file_put_contents($invalidKey,'<?php return null;');
+try {
+    $rejected = false;
+    try { agent_connection_gmail_inbox_saved_item_v1($scannedMessage); }
+    catch (RuntimeException $error) { $rejected = str_contains($error->getMessage(),'encryption key'); }
+    initial_scan_check($rejected,'an encryption failure cannot save an otherwise valid Gmail message as headers only');
+} finally {
+    unlink($invalidKey);
+    rmdir($privateRoot.'/private');
+    rmdir($privateRoot);
+}
