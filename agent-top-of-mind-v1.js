@@ -33,8 +33,10 @@
   function sourceLink(current,record,label){
     const url=safeUrl(record.chat_url);
     if(!url)return '';
+    const cid=record.conversation_id??current.cid;
     const source=current.hasChat&&Number.isSafeInteger(record.message_id)&&record.message_id>0
-      ?` data-top-of-mind-source="${record.message_id}"`:'';
+      &&Number.isSafeInteger(cid)&&cid>0
+      ?` data-top-of-mind-source="${record.message_id}" data-top-of-mind-conversation="${cid}"`:'';
     return `<a${source} href="${esc(url)}">${esc(label)}</a>`;
   }
   function renderCalendar(entry,openAgenda){
@@ -61,7 +63,7 @@
     if(search&&typeof search.query==='string'){
       const kind=search.kind==='playlist'?'YouTube playlist draft':'YouTube search';
       markup+=`<section class="agent-top-of-mind-context" aria-label="Recent YouTube results">
-        <strong>${kind}</strong><p>${esc(search.query)}</p><small>Returned in this Chat · ${esc(search.result_count)} results</small>
+        <strong>${kind}</strong><p>${esc(search.query)}</p><small>${search.conversation_id===current.cid?'This Chat':'Agent History'} · ${esc(search.result_count)} results</small>
         ${sourceLink(current,search,'Review these results')}</section>`;
     }
     for(const [kind,research] of [['artist',artist],['topic',topic]]){
@@ -105,7 +107,7 @@
     if(localWorking)markup+='<div class="agent-top-of-mind-foreground"><strong>This Chat</strong><span>'+esc(runtime==='speaking'?'The main Agent is speaking.':'The main Agent is preparing a response.')+'</span></div>';
     if(error)markup+='<p class="agent-top-of-mind-error" role="status">'+esc(error)+(checked?' Last verified at '+esc(checked)+'.':'')+(closed?'':' <button type="button" data-top-of-mind-retry>Retry</button>')+'</p>';
     if(current.hasChat&&current.cid<1)markup+='<p>Work can attach after your first message saves this Chat.</p>';
-    else if(!snapshot&&!error)markup+='<p role="status">Checking actual work status…</p>';
+    if(!snapshot&&!error)markup+='<p role="status">Checking actual work status…</p>';
     else if(snapshot){
       const state=snapshot.state;
       if(state!=='ready')markup+='<p>'+esc({no_chat:'No saved work is attached to this Agent yet.',starting:'This Chat is connecting to the Agent loop.',paused:'Agent background work is paused.',linked_elsewhere:'The Agent is following another saved Chat.'}[state]||'Work status could not be verified.')+'</p>';
@@ -115,15 +117,15 @@
         markup+=renderCalendar(snapshot.calendar?.[0],openAgenda);
         markup+=renderYoutube(current,snapshot.youtube_search,snapshot.artist_research,snapshot.topic_research);
       }
-      const music=state==='ready'&&currentContext?snapshot.music:null;
+      const music=currentContext?snapshot.music:null;
       if(music&&typeof music.title==='string'){
-        const chatUrl=safeUrl(music.chat_url);
-        const source='Played in this VP3 Chat'+(music.channel_title?' · '+music.channel_title:'');
+        const source='Played in VP3'+(music.channel_title?' · '+music.channel_title:'');
         markup+=`<section class="agent-top-of-mind-music" aria-label="YouTube playback">
-          <strong>YouTube playback</strong><p>${esc(music.title)}</p><small>${esc(source)}</small>`;
+          <strong>YouTube playback</strong><p>${esc(music.title)}</p><small>${esc(source)}</small>
+          ${sourceLink(current,music,'Review in Chat')}`;
         if(music.music_suggestion&&current.hasChat&&typeof window.STONEFELLOW_CHAT_CONTINUITY_V87?.requestYoutubePicks==='function'){
           markup+='<button type="button" data-top-of-mind-picks>Ask for YouTube music picks</button><small data-top-of-mind-music-status role="status"></small>';
-        }else if(chatUrl&&!current.hasChat)markup+='<a href="'+esc(chatUrl)+'">Open this Chat</a>';
+        }
         markup+='</section>';
       }
       if(state==='ready'&&!snapshot.items.length)markup+='<p>No active or recently verified work in this Chat’s current sources.</p>';
@@ -150,7 +152,7 @@
     if(!visible()||controller||participantSelected())return;
     const sent=scope();
     if(!sent){stop();snapshot=null;render();return;}
-    if(!sent.endpoint||sent.hasChat&&sent.cid<1){snapshot=null;render();return;}
+    if(!sent.endpoint){snapshot=null;render();return;}
     const sentKey=key(sent),mine=++generation,request=new AbortController();controller=request;
     let timeout=0;
     try{
@@ -197,18 +199,26 @@
     if(!host?.contains(event.target))return;
     if(event.target.closest('[data-top-of-mind-retry]')){error='';stop();render();void refresh();return;}
     const observedAt=Date.parse(snapshot?.observed_at||'');
-    if(!snapshot||!visible()||participantSelected()||scope()?.cid!==snapshot.conversation_id||error
+    const current=scope();
+    if(!snapshot||!visible()||participantSelected()||!current||(current.cid>0&&current.cid!==snapshot.conversation_id)||error
       ||!Number.isFinite(observedAt)||Date.now()-observedAt>10000)return;
     const chat=window.STONEFELLOW_CHAT_CONTINUITY_V87;
     const source=event.target.closest('[data-top-of-mind-source]');
     if(source&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey){
       const id=Number(source.dataset.topOfMindSource);
-      const row=Number.isSafeInteger(id)&&id>0?document.getElementById('chatThread')?.querySelector(`[data-chat-message-id="${id}"][data-chat-conversation-id="${snapshot.conversation_id}"]`):null;
+      const cid=Number(source.dataset.topOfMindConversation);
+      if(!Number.isSafeInteger(id)||id<1||!Number.isSafeInteger(cid)||cid<1)return;
+      const row=cid===current.cid?document.getElementById('chatThread')?.querySelector(`[data-chat-message-id="${id}"][data-chat-conversation-id="${cid}"]`):null;
       if(row){
         event.preventDefault();
         chat?.showChatView?.();
         window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();
         row.scrollIntoView({block:'center'});
+      }else if(typeof chat?.openConversation==='function'&&!chat.isBusy?.()){
+        event.preventDefault();
+        void chat.openConversation(cid,{messageId:id}).then(opened=>{
+          if(opened)window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();
+        }).catch(()=>{});
       }
       return;
     }

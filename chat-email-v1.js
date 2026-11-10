@@ -38,6 +38,10 @@
   let specialistTimer = 0;
   let specialistExpiryTimer = 0;
   let specialistWatching = false;
+  let writeReviewTimer = 0;
+  const activeWrites = new Set();
+  const seenWritingDrafts = new Set();
+  const writingCard = '[data-chat-email-writing="1"][data-chat-email-review]';
   const thread = document.getElementById('chatThread');
   const compactStatus = button('Email Specialist · Checking Gmail', () => window.VP3ChatSpecialists?.open?.('email', compactStatus));
   compactStatus.className = 'vp3-chat-email-specialist-status';
@@ -58,10 +62,14 @@
     return { agent_id: agent, conversation_id: conversation };
   }
 
-  function valid(selection) {
+  function scopeMatches(selection) {
     const scope = currentScope();
-    return dialog.open && selected === selection && scope?.conversation_id === selection.conversation_id
+    return Boolean(selection) && scope?.conversation_id === selection.conversation_id
       && scope.agent_id === selection.agent_id;
+  }
+
+  function valid(selection) {
+    return dialog.open && selected === selection && scopeMatches(selection);
   }
 
   function specialistScope() {
@@ -78,9 +86,12 @@
       return;
     }
     compactStatus.hidden = false;
+    const work = status.work === 'compose' ? ['Writing Gmail draft','Preparing the exact reply for your approval.']
+      : status.work === 'revise' ? ['Revising Gmail draft','Applying your instructions to the saved draft.']
+        : ['Checking Gmail','Looking for new mail matching a watch from this Chat.'];
+    compactStatus.textContent = `Email Specialist · ${work[0]}`;
     window.VP3ChatSpecialists?.update('email', {
-      label:'Email Specialist', title:'Checking Gmail', status:'Working',
-      detail:'Looking for new mail matching a watch from this Chat.', expiresAt,
+      label:'Email Specialist', title:work[0], status:'Working', detail:work[1], expiresAt,
     });
     specialistExpiryTimer = setTimeout(() => showSpecialist(null), Math.min(remaining,180000));
   }
@@ -126,7 +137,8 @@
         showSpecialist(data.specialist);
         const state = data.specialist?.state;
         specialistWatching = state === 'watching' || state === 'paused' || state === 'working';
-        if (specialistWatching) retry = state === 'working' ? 5000 : 15000;
+        if (activeWrites.size) retry = 1000;
+        else if (specialistWatching) retry = state === 'working' ? 5000 : 15000;
       } else {
         showSpecialist(null);
         if (specialistWatching && response.status >= 500) retry = 30000;
@@ -150,6 +162,61 @@
     return label;
   }
 
+  function watchWriting(selection, draft) {
+    clearTimeout(writeReviewTimer);
+    if (!valid(selection) || draft.connection_changed) return;
+    if (draft.status === 'write_queued' && !activeWrites.has(selection.draft_id)) {
+      void advanceWriting(selection);
+    } else if (draft.status === 'write_queued' || draft.status === 'writing') {
+      refreshSpecialistSoon();
+      writeReviewTimer = setTimeout(() => { if (valid(selection)) void request('review'); },1500);
+    }
+  }
+
+  async function advanceWriting(selection) {
+    if (!scopeMatches(selection) || activeWrites.has(selection.draft_id)) return;
+    activeWrites.add(selection.draft_id);
+    const openDraft = () => !pending && selected?.draft_id === selection.draft_id && valid(selected) ? selected : null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(),125000);
+    refreshSpecialistSoon(150);
+    try {
+      const response = await fetch(cfg.endpoint,{
+        method:'POST',credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({...selection,action:'advance_write',owner_key:cfg.ownerKey,csrf_token:cfg.csrf}),
+      });
+      const data = await response.json().catch(() => null);
+      const review = openDraft();
+      if (!review) return;
+      if (!response.ok || !data?.ok || data.draft?.id !== selection.draft_id) {
+        throw new Error(data?.error || 'The Gmail writing status could not be verified.');
+      }
+      render(data.draft);
+      watchWriting(review,data.draft);
+    } catch (error) {
+      if (!openDraft()) return;
+      status.textContent = error.name === 'AbortError' ? 'Refresh the review to check the writing status.'
+        : error.message || 'The Gmail writing status could not be verified.';
+      actions.replaceChildren(button('Refresh review',() => request('review')));
+    } finally {
+      clearTimeout(timeout);
+      activeWrites.delete(selection.draft_id);
+      refreshSpecialistSoon();
+    }
+  }
+
+  function advanceQueuedCards(cards = thread?.querySelectorAll(writingCard) ?? []) {
+    const scope = currentScope();
+    if (!scope || thread?.dataset.view !== 'chat') return;
+    for (const card of cards) {
+      const draft_id = card.dataset.chatEmailReview;
+      if (seenWritingDrafts.has(draft_id) || Number(card.dataset.chatEmailConversation) !== scope.conversation_id
+          || !/^[a-f0-9]{32}$/.test(draft_id)) continue;
+      seenWritingDrafts.add(draft_id);
+      void advanceWriting({...scope,draft_id});
+    }
+  }
+
   async function request(action, extra = {}) {
     const selection = selected;
     if (!selection || !valid(selection) || pending) return;
@@ -157,7 +224,8 @@
     pending = controller;
     const progress = {
       review: 'Loading the exact draft…', confirm: 'Checking the reviewed send…',
-      revise: 'Saving a new review version…', discard: 'Discarding the draft…'
+      revise: 'Saving your edits…', revise_ai: 'Queuing your revision…', retry_write:'Queuing another writing attempt…',
+      discard: 'Discarding the draft…'
     };
     status.textContent = progress[action];
     const fields = [...dialog.querySelectorAll('button,input,textarea')].filter(field => field !== close);
@@ -175,12 +243,13 @@
         throw new Error(data?.error || 'The email review could not be verified.');
       }
       render(data.draft);
+      watchWriting(selection,data.draft);
       if (action === 'confirm' && data.draft.watch_registered) refreshSpecialistSoon();
       if (action === 'revise') status.textContent = 'Changes saved. Review the updated email before sending.';
     } catch (error) {
       if (!valid(selection) || error.name === 'AbortError') return;
       status.textContent = error.message || 'The email review is unavailable.';
-      if (action === 'confirm' || action === 'review' || action === 'revise') {
+      if (['confirm','review','revise','revise_ai','retry_write'].includes(action)) {
         actions.replaceChildren(button('Refresh review', () => request('review')));
       }
     } finally {
@@ -198,6 +267,9 @@
       prepared: draft.is_reply && !draft.body.trim()
         ? 'Write your reply, then review it before sending.'
         : 'Review the exact email before approving the send.',
+      write_queued: 'The Email Specialist is queued to write this draft.',
+      writing: draft.write_kind === 'revise' ? 'The Email Specialist is revising the saved draft.' : 'The Email Specialist is writing the reply.',
+      write_failed: 'AI could not finish this draft. Retry with AI or use the manual editor.',
       sending: 'Gmail’s send outcome is pending. Check the status of this reviewed email.',
       sent: draft.watch_registered
         ? 'Gmail confirmed the send. A reply watch was registered for up to 30 days.'
@@ -228,8 +300,9 @@
     body.maxLength = 6000;
     body.rows = 7;
     body.value = draft.body;
-    const editable = draft.status === 'prepared' && Boolean(draft.review_token);
-    let editing = editable && draft.is_reply === true && !draft.body.trim();
+    const writeFailed = draft.status === 'write_failed';
+    const editable = (draft.status === 'prepared' || writeFailed) && Boolean(draft.review_token);
+    let editing = editable && !writeFailed && draft.is_reply === true && !draft.body.trim();
     subject.readOnly = !editing || draft.is_reply === true;
     body.readOnly = !editing;
     details.append(addresses, labelField('Subject', subject), labelField('Message', body));
@@ -244,11 +317,12 @@
       label.append(watch, element('span', 'Watch for the first reply for 30 days'));
       details.append(label);
     }
-    if (draft.status === 'prepared') actions.append(button('Discard draft', () => request('discard')));
+    if (['prepared','write_failed','write_queued'].includes(draft.status) && !draft.connection_changed) actions.append(button('Discard draft', () => request('discard')));
     if (!draft.review_token && !draft.watch_review_token) return;
+    const writeBody = body.value.trim();
     const complete = () => (draft.is_reply === true || Boolean(subject.value.trim())) && Boolean(body.value.trim());
     const confirm = button(draft.status === 'sending' ? 'Check send status' : 'Approve and send', () => {
-      if (editing || !complete() || subject.value !== draft.subject || body.value !== draft.body) return;
+      if (writeFailed || editing || !complete() || subject.value !== draft.subject || body.value !== draft.body) return;
       const token = watch.checked ? draft.watch_review_token : draft.review_token;
       if (token) void request('confirm', { confirmed:true, review_token:token, watch_replies:watch.checked });
     });
@@ -258,7 +332,7 @@
       const changed = () => subject.value !== draft.subject || body.value !== draft.body;
       const edit = button('Edit manually', () => {
         editing = true;
-        status.textContent = 'Make your changes, then select Revise draft.';
+        status.textContent = 'Make your changes, then select Save edits.';
         sync();
         body.focus();
       });
@@ -270,36 +344,134 @@
         sync();
         edit.focus();
       });
-      const revise = button('Revise draft', () => {
-        if (!editing || !changed() || !complete()) return;
+      const revise = button('Save edits', () => {
+        if (!editing || (!changed() && !writeFailed) || !complete()) return;
         void request('revise', { review_token:draft.review_token, subject:subject.value, body:body.value });
       });
+      const aiInstruction = element('textarea');
+      aiInstruction.rows = 3;
+      aiInstruction.maxLength = 600;
+      const aiField = labelField('Revision instructions',aiInstruction);
+      aiField.hidden = true;
+      details.append(aiField);
+      let revising = false;
+      const ai = button('Revise with AI (uses tokens)', () => {
+        revising = true;
+        status.textContent = 'Describe what you want the Email Specialist to change.';
+        sync();
+        aiInstruction.focus();
+      });
+      const cancelAi = button('Cancel revision', () => {
+        revising = false;
+        status.textContent = states[draft.status];
+        sync();
+        ai.focus();
+      });
+      const generate = button('Generate revision', () => {
+        const instruction = aiInstruction.value.trim();
+        if (revising && instruction) void request('revise_ai', {review_token:draft.review_token,instruction});
+      });
+      const retry = button('Retry AI (uses tokens)', () => request('retry_write',{review_token:draft.review_token}));
       const sync = () => {
         subject.readOnly = !editing || draft.is_reply === true;
         body.readOnly = !editing;
-        watch.disabled = editing;
-        edit.hidden = editing;
+        watch.disabled = editing || revising || writeFailed;
+        edit.hidden = editing || revising;
         cancel.hidden = !editing;
         revise.hidden = !editing;
-        revise.disabled = !changed() || !complete();
-        confirm.hidden = editing;
-        confirm.disabled = editing || !complete() || changed();
+        revise.disabled = (!changed() && !writeFailed) || !complete();
+        confirm.hidden = editing || revising || writeFailed;
+        confirm.disabled = editing || revising || writeFailed || !complete() || changed();
+        ai.hidden = !writeBody || editing || revising;
+        aiField.hidden = !revising;
+        generate.hidden = !revising;
+        generate.disabled = !aiInstruction.value.trim();
+        cancelAi.hidden = !revising;
+        retry.hidden = !writeFailed || editing || revising;
       };
       subject.addEventListener('input', sync);
       body.addEventListener('input', sync);
+      aiInstruction.addEventListener('input',sync);
       sync();
-      actions.append(edit,revise,cancel);
+      actions.append(edit,revise,cancel,ai,generate,cancelAi,retry);
     }
     actions.append(confirm);
     if (editing) body.focus();
   }
 
+  function replyToResult(mode, target) {
+    const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+    const verb = mode === 'compose' ? 'Draft reply' : 'Reply';
+    const opened = chat?.requestGmailReviewAction?.(`${verb} to Gmail ${target}`) === true;
+    if (opened && dialog.open) dialog.close();
+    if (!opened && dialog.open) status.textContent = 'Finish the current Chat message before opening the reply editor.';
+  }
+
+  async function openMessage(scope, reference, type) {
+    pending?.abort();
+    const controller = pending = new AbortController();
+    const selection = selected = {...scope};
+    const followup = type === 'follow-up';
+    const target = followup ? `follow-up ${reference}` : `search item ${reference}`;
+    const timeout = setTimeout(() => controller.abort(),15000);
+    title.textContent = 'Gmail message';
+    details.replaceChildren();
+    actions.replaceChildren();
+    status.textContent = 'Opening the exact Gmail message…';
+    if (!dialog.open) dialog.showModal();
+    try {
+      const response = await fetch(cfg.endpoint,{
+        method:'POST',credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({...scope,action:followup?'open_followup':'open_search',owner_key:cfg.ownerKey,csrf_token:cfg.csrf,
+          ...(followup?{message_id:reference}:{item_ref:reference})}),
+      });
+      const data = await response.json().catch(() => null);
+      if (!valid(selection) || pending !== controller) return;
+      if (!response.ok || !data?.ok || !['subject','from','body'].every(field => typeof data.message?.[field] === 'string')) {
+        throw new Error(data?.error || 'This Gmail message is unavailable.');
+      }
+      const message = data.message;
+      const headers = element('dl');
+      headers.append(element('dt','From'),element('dd',message.from),element('dt','Subject'),element('dd',message.subject || '(No subject)'));
+      const body = element('p',message.body || 'This message has no readable text.');
+      body.className = 'vp3-chat-email-message-body';
+      details.append(headers,body);
+      if (message.can_reply) actions.append(button('Reply',() => replyToResult('reply',target)),
+        button('Auto Compose (uses tokens)',() => replyToResult('compose',target)));
+      status.textContent = '';
+    } catch (error) {
+      if (valid(selection) && pending === controller) status.textContent = error.name === 'AbortError'
+        ? 'Opening this Gmail message timed out. Close it and try again.' : error.message;
+    } finally {
+      clearTimeout(timeout);
+      if (pending === controller) pending = null;
+    }
+  }
+
   document.addEventListener('click', event => {
-    const target = event.target.closest?.('[data-chat-email-review]');
+    const target = event.target.closest?.('[data-chat-email-review],[data-chat-email-followup],[data-chat-email-search]');
     if (!target || !document.getElementById('chatThread')?.contains(target)) return;
     const scope = currentScope();
+    if (!scope || Number(target.dataset.chatEmailConversation) !== scope.conversation_id) return;
+    if (target.hasAttribute('data-chat-email-followup')) {
+      if (!event.isTrusted) return;
+      const id = Number(target.dataset.chatEmailFollowup);
+      const action = target.dataset.chatEmailFollowupAction;
+      if (!Number.isSafeInteger(id) || id < 1 || !['open','reply','compose'].includes(action)) return;
+      if (action === 'open') void openMessage(scope,id,'follow-up');
+      else replyToResult(action,`follow-up ${id}`);
+      return;
+    }
+    if (target.hasAttribute('data-chat-email-search')) {
+      const ref = target.dataset.chatEmailSearch;
+      if (event.isTrusted && /^[a-f0-9]{2,1500}$/.test(ref) && ref.length % 2 === 0) void openMessage(scope,ref,'search');
+      return;
+    }
     const draft = target.dataset.chatEmailReview;
-    if (!scope || Number(target.dataset.chatEmailConversation) !== scope.conversation_id || !/^[a-f0-9]{32}$/.test(draft)) return;
+    if (!/^[a-f0-9]{32}$/.test(draft)) return;
+    pending?.abort();
+    pending = null;
+    title.textContent = 'Review Gmail draft';
     selected = { ...scope, draft_id:draft };
     details.replaceChildren();
     actions.replaceChildren();
@@ -309,6 +481,7 @@
 
   dialog.addEventListener('close', () => {
     pending?.abort();
+    clearTimeout(writeReviewTimer);
     pending = null;
     selected = null;
     details.replaceChildren();
@@ -327,14 +500,29 @@
     clearSpecialist();
     refreshSpecialistSoon();
   });
-  window.addEventListener('vp3:chat-context-ready', () => refreshSpecialistSoon());
-  window.addEventListener('vp3:chat-canvas-view-changed', () => refreshSpecialistSoon());
+  window.addEventListener('vp3:chat-context-ready', () => {
+    refreshSpecialistSoon();
+    advanceQueuedCards();
+  });
+  window.addEventListener('vp3:chat-canvas-view-changed', () => {
+    refreshSpecialistSoon();
+    advanceQueuedCards();
+  });
   window.addEventListener('focus', () => refreshSpecialistSoon());
   document.addEventListener('visibilitychange', () => refreshSpecialistSoon());
   window.addEventListener('pagehide', clearSpecialist);
   window.addEventListener('pageshow', () => refreshSpecialistSoon());
   window.addEventListener('vp3:chat-email-watch-changed', () => refreshSpecialistSoon());
+  if (thread) new MutationObserver(records => {
+    const cards = [];
+    for (const record of records) for (const node of record.addedNodes) {
+      if (node.matches?.(writingCard)) cards.push(node);
+      else if (node.querySelectorAll) cards.push(...node.querySelectorAll(writingCard));
+    }
+    if (cards.length) advanceQueuedCards(cards);
+  }).observe(thread,{childList:true,subtree:true});
   refreshSpecialistSoon();
+  advanceQueuedCards();
 
   function installGithubWorkflowReview(gmail) {
     if (!cfg.githubWorkflow?.endpoint) return;

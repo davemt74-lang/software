@@ -164,6 +164,25 @@ try {
     youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$topicRef],$coverage)===[]
         &&vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$ref],$coverage)===$artistEvidence,
         'Turning off topic research revokes its evidence and preserves the artist preference');
+    foreach([122=>[12,'Fixture Band live',1200],123=>[13,'Fixture Band songs',120],
+        124=>[12,'Fixture Band music videos',60]] as $id=>[$cid,$query,$age]){
+        $source->execute([$id,$cid,gmdate('Y-m-d H:i:s',$now-$age)]);
+        agent_connection_youtube_results_save_v1($pdo,1,$cid,$id,[
+            'query'=>$query,'expires_at'=>$now+3600,
+            'videos'=>[['title'=>'Fixture Band live performance','channel_title'=>'Fixture Band - Topic','video_id'=>$videoId,
+                'made_for_kids'=>false,'music_category'=>true]],
+        ]);
+    }
+    $ordinaryArtistRef='artist-interest:'.hash('sha256','fixture band');
+    $ordinary=vp3_initiative_research_evidence_v1($pdo,$scope,$at,[$ordinaryArtistRef],$coverage);
+    youtube_activity_check(array_keys($ordinary)===[$ordinaryArtistRef]&&$ordinary[$ordinaryArtistRef]['title']==='Fixture Band'
+        &&$ordinary[$ordinaryArtistRef]['interest']['search_count']===3,
+        'ordinary YouTube searches with corroborated music metadata share the owner-entered artist interest');
+    youtube_activity_check(vp3_initiative_youtube_artist_subject_v1('Fixture Band songs',
+        [['title'=>'A different band','channel_title'=>'Unrelated channel','video_id'=>$videoId,'made_for_kids'=>false,'music_category'=>true]])===null
+        &&vp3_initiative_youtube_artist_subject_v1('Fixture Band songs',
+        [['title'=>'Fixture Band','channel_title'=>'Fixture Band','video_id'=>$videoId,'made_for_kids'=>false]])===null,
+        'unrelated or unverified provider metadata does not turn a general topic into an artist');
     $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>3];
     youtube_activity_check(vp3_initiative_research_evidence_v1($pdo,$scope,$at,null,$coverage)===[],
         'Participant scope cannot turn private artist history into background research');

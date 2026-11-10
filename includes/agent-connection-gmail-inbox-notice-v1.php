@@ -36,11 +36,11 @@ function agent_connection_gmail_inbox_notice_current_v1(PDO $pdo, array $user): 
 }
 
 /** The verified inbox cursor transaction also owns this notification write. */
-function agent_connection_gmail_inbox_notify_v1(PDO $pdo, int $owner, array $review, ?array $policy = null): void
+function agent_connection_gmail_inbox_notify_v1(PDO $pdo, int $owner, array $review, ?array $policy = null): ?int
 {
     $total = (int)($review['total'] ?? 0);
     $first = ($review['kind']??'')==='initial';
-    if ($owner < 1 || (!$first && $total < 1) || !table_exists('notifications')) return;
+    if ($owner < 1 || (!$first && $total < 1) || !table_exists('notifications')) return null;
     if (!$pdo->inTransaction()) throw new LogicException('Inbox review notices require the cursor transaction.');
     if ($policy === null) {
         require_once __DIR__.'/agent-connection-gmail-inbox-settings-v1.php';
@@ -62,6 +62,7 @@ function agent_connection_gmail_inbox_notify_v1(PDO $pdo, int $owner, array $rev
         (user_id,type,title,body,target_url,source_type,source_id,created_at) VALUES (?,?,?,?,?,?,?,?)');
     $insert->execute([$owner,'agent_email_inbox_review',$first?'First Gmail review ready':'Gmail inbox review',$body,
         url('/connections.php?app=gmail#gmail-inbox-review'),'agent_connection_gmail_inbox',$generation,$at]);
+    return (int)$pdo->lastInsertId() ?: null;
 }
 
 function agent_connection_gmail_inbox_notice_purge_v1(PDO $pdo, int $owner): void

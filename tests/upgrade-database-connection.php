@@ -10,7 +10,9 @@ $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_ac
     'profile_visitor_voices_pa4a','profile_speech_items_pa4a','profile_speech_attempts_pa4a',
     'profile_attention_operations_pa4b','profile_attention_deliveries_pa4b','profile_event_projections_pa4b',
     'profile_conversation_checkouts_pa5','agent_product_launches_v1',
-    'agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1','vp3_youtube_watch_v1'];
+    'agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1',
+    'vp3_youtube_watch_v1','vp3_youtube_playhead_v1','vp3_youtube_saved_playlists_v1','vp3_youtube_playlist_plays_v1',
+    'vp3_initiative_youtube_playlist_v1'];
 $partialSpeech=[
     'partial-auto-greet'=>['team_user_presence','auto_greet_enabled'],
     'partial-conversation-checkout-review'=>['profile_conversation_checkouts_pa5','product_snapshot_hash'],
@@ -57,6 +59,7 @@ require_once dirname(__DIR__).'/includes/agent-commerce-recovery-pa2.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
 require_once dirname(__DIR__).'/includes/profile-promotion-attribution-v1.php';
 require_once dirname(__DIR__).'/includes/agent-connection-youtube-playback-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-youtube-playlist-v1.php';
 $fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER); CREATE TABLE chat_messages(id INTEGER PRIMARY KEY)');
 $fixture->exec('CREATE TABLE team_user_presence(user_id INTEGER PRIMARY KEY, presence_mode TEXT, social_chat_enabled INTEGER, sound_enabled INTEGER, agent_voice_enabled INTEGER, agent_assisted_phone_chat_enabled INTEGER)');
 $fixture->exec('INSERT INTO team_user_presence (user_id) VALUES (1)');
@@ -96,7 +99,8 @@ $checkoutEnd=strpos($checkoutDdl,'function '.'vp3_profile_checkout_require_pa5('
 eval(substr($checkoutDdl,$checkoutStart,$checkoutEnd-$checkoutStart));
 if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
-$missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$mode==='missing-vp3_youtube_watch_v1';
+$missingYouTube=str_starts_with($mode,'missing-vp3_youtube_')||$mode==='missing-vp3_initiative_youtube_playlist_v1';
+$missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$missingYouTube;
 $modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],true)||$missingTable||isset($partialSpeech[$mode]);
 $fixture->exec('CREATE TABLE ai_execution_ledger(id INTEGER PRIMARY KEY)');
 if($modern&&$mode!=='missing-ai-service-usage')$fixture->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
@@ -184,6 +188,8 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     check(chat_settings_get_v237($fixture,1)['auto_greet_enabled'] === ($mode !== 'post'), 'Upgrade did not preserve the default or saved Auto Greet preference');
     check(vp3_youtube_playback_ready_v1($fixture), 'Upgrade skipped the YouTube playback history schema');
     check(vp3_youtube_watch_ready_v1($fixture), 'Upgrade skipped the YouTube watch time schema');
+    check(vp3_youtube_playhead_ready_v1($fixture) && vp3_youtube_playlists_ready_v1($fixture), 'Upgrade skipped the YouTube resume or playlist schema');
+    check(vp3_initiative_youtube_playlist_ready_v1($fixture), 'Upgrade skipped the pending YouTube report cache');
     check(vp3_ai_service_usage_ready_v1($fixture) && in_array('ai_usage_accounting_v032_ensure_schema',$calls,true), 'Upgrade skipped AI service usage storage');
     check(vp3_coding_canvas_ready_v1($fixture), 'Upgrade skipped private Coding Canvas storage');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
@@ -199,7 +205,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
 } elseif ($mode === 'csrf') {
     check($error === 'Session expired. Please try again.' && $dbCalls === 0 && $calls === [], 'CSRF rejection allowed upgrade work');
 } else {
-    $needsConnection = isset($partialSpeech[$mode]) || in_array($mode,['missing-vp3_youtube_watch_v1','missing-ai-service-usage','missing-coding-canvas'],true);
+    $needsConnection = isset($partialSpeech[$mode]) || $missingYouTube || in_array($mode,['missing-ai-service-usage','missing-coding-canvas'],true);
     check(!$complete && $dbCalls === ($needsConnection?1:0) && $calls === [], 'Missing required storage was marked ready or GET performed migrations');
     check(str_contains($html, 'Run Upgrade'), 'Missing required storage must expose the upgrade control');
 }

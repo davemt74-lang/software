@@ -370,6 +370,100 @@ try {
         && [$profileCalls, $listCalls, $metadataCalls, count($summaries)] === $callsBefore,
         'an old grant token cannot authorize a review after the same owner re-enables the replacement grant');
 
+    // Exercise the real upgrade against a legacy TEXT table and an existing saved report.
+    $pdo->exec('ALTER TABLE agent_connection_gmail_inbox_initial_v1 MODIFY checkpoint_json TEXT NULL, MODIFY report_json TEXT NULL');
+    first_review_check(!agent_connection_gmail_inbox_storage_ready_v1($pdo) && $view(2,true) === $otherReport,
+        'an upgrade check finds insufficient legacy capacity while preserving the existing report');
+    agent_connections_install_v1($pdo);
+    first_review_check(agent_connection_gmail_inbox_storage_ready_v1($pdo) && $view(2,true) === $otherReport,
+        'the same database upgrade widens report storage without rescanning existing reviews');
+
+    $pdo->exec("UPDATE agent_connection_gmail_inbox_v1 SET next_check_at='2099-01-01 00:00:00' WHERE owner_user_id<>1");
+    $updateCalls = 0;
+    $updates = static function(string $id,string $cursor) use ($pdo,&$updateCalls): array {
+        $policy = agent_connection_gmail_inbox_policy_v1($pdo,1);
+        $pdo->exec("UPDATE agent_connection_gmail_inbox_v1 SET next_check_at='2000-01-01 00:00:00' WHERE owner_user_id=1");
+        $provider = static function(string $method,string $url,array $headers) use ($id,$cursor,$policy,&$updateCalls,$pdo): array {
+            if ($method !== 'GET' || $pdo->inTransaction() || !in_array('Authorization: Bearer fixture-inbox-access-1',$headers,true)) {
+                throw new LogicException('Unexpected inbox-update provider call.');
+            }
+            $updateCalls++;
+            $path = (string)parse_url($url,PHP_URL_PATH);
+            if (str_ends_with($path,'/history')) {
+                return ['status'=>200,'json'=>['historyId'=>$cursor,
+                    'history'=>[['id'=>$cursor,'messagesAdded'=>[['message'=>['id'=>$id]]]]]]];
+            }
+            if (!str_ends_with($path,'/messages/'.$id)) throw new LogicException('Unexpected inbox-update metadata call.');
+            return ['status'=>200,'json'=>first_review_message($id,(int)$policy['enabled_at_ms']+2000,'update@example.test','Private '.$id)];
+        };
+        return agent_connection_gmail_inbox_sweep_v1($pdo,1,$provider);
+    };
+    first_review_check($updates('update_one','18446744073709551601') === ['processed'=>1,'reviewed'=>1]
+        && $updates('update_two','18446744073709551602') === ['processed'=>1,'reviewed'=>1]
+        && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE message_id IS NULL')->fetchColumn() === 2
+        && count($noticeRows(1)) === 2,
+        'two inbox updates received while away each retain their own report and private bell event');
+
+    $onMetadata = null;
+    $start(1,7);
+    $fullRun = $view(1)['run_id'];
+    $fullStartedAt = (int)$row(1)['started_at_ms'];
+    $fullIds = array_map(static fn(int $n): string => 'full_'.$n, range(1,50));
+    $wideSubject = str_repeat('🌍',240);
+    $pages[1] = [];
+    foreach (array_chunk($fullIds,5) as $index=>$ids) {
+        $pages[1][] = $page($ids,$index < 9 ? 'full-page-'.($index+1) : '');
+    }
+    foreach ($fullIds as $id) {
+        $messages[1][$id] = first_review_message($id,$fullStartedAt-500,'customer@example.test',$wideSubject);
+    }
+    for ($index=0;$index<10;$index++) {
+        if (!$advance(1,$fullRun)) throw new RuntimeException('Full first review could not advance.');
+    }
+    first_review_check(count(json_decode($row(1)['checkpoint_json'],true,12,JSON_THROW_ON_ERROR)['items']) === 50
+        && strlen($row(1)['checkpoint_json']) > 65535 && $advance(1,$fullRun),
+        'every accepted message survives a full paginated checkpoint, including wide Unicode subjects');
+    $fullView = $view(1,true)['report'];
+    $lastSelector = $fullView['items'][49]['item_ref'];
+    first_review_check($fullView['total'] === 50 && count($fullView['items']) === 50
+        && agent_connection_gmail_inbox_item_v1($pdo,$users[1],$lastSelector)['message_id'] === 'full_50',
+        'the fiftieth saved row exposes an exact selector and remains actionable without another Gmail search');
+    $fullDelivery = agent_connection_gmail_inbox_chat_deliver_v1($pdo,$users[1],17,170,$fullRun);
+    $backlog = agent_connection_gmail_inbox_update_deliver_v1($contender,$users[1],18,180);
+    $replayedBacklog = agent_connection_gmail_inbox_update_deliver_v1($pdo,$users[1],17,170);
+    first_review_check($backlog === $replayedBacklog && $backlog['inbox_updates']['pending'] === false
+        && $backlog['inbox_updates']['latest']['conversation_id'] === 170 && $updateCalls === 4
+        && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE conversation_id=170')->fetchColumn() === 2,
+        'opening an unrelated Chat cannot move the backlog, and a second delivery does not duplicate it or contact Gmail');
+    first_review_check($updates('update_three','18446744073709551603') === ['processed'=>1,'reviewed'=>1]
+        && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE conversation_id=170')->fetchColumn() === 3,
+        'the worker delivers new inbox updates to the established Chat without a browser request');
+    $updatePosts = $pdo->query("SELECT id,role,message,context_json FROM chat_messages WHERE conversation_id=170
+        AND context_json LIKE '%gmail_inbox_update_v1%' ORDER BY id")->fetchAll();
+    $rehydrated = agent_connection_gmail_inbox_chat_history_v1($contender,$users[1],17,170,$updatePosts);
+    $updateRefs = [];
+    foreach ($rehydrated as $message) {
+        $update = json_decode($message['context_json'],true,24,JSON_THROW_ON_ERROR)['gmail_inbox_review_v1'];
+        $updateRefs[] = agent_connection_gmail_inbox_item_v1($pdo,$users[1],$update['review']['items'][0]['item_ref'])['message_id'];
+    }
+    $updateNotices = array_values(array_filter($noticeRows(1),static fn(array $notice): bool => $notice['title'] === 'Gmail inbox review'));
+    first_review_check($updateRefs === ['update_one','update_two','update_three'] && $updateCalls === 6
+        && !str_contains(json_encode($updatePosts,JSON_THROW_ON_ERROR),'Private update')
+        && str_ends_with($updateNotices[0]['target_url'],'&message_id='.$updatePosts[0]['id'])
+        && str_ends_with($updateNotices[1]['target_url'],'&message_id='.$updatePosts[1]['id'])
+        && str_ends_with($updateNotices[2]['target_url'],'&message_id='.$updatePosts[2]['id'])
+        && !isset($fullDelivery['review']['chat_result']['latest']),
+        'every update has its own exact private actions and notice after reload, while the first review retains its independent report');
+    first_review_check(agent_connection_gmail_inbox_chat_history_v1($pdo,$users[1],18,180,$rehydrated) === $updatePosts
+        && agent_connection_gmail_inbox_chat_history_v1($pdo,$users[2],0,190,$rehydrated) === $updatePosts,
+        'a replay in another Agent or owner strips mailbox projections from persisted update markers');
+    $disable = $form(1,$changedRules);
+    unset($disable['enabled']);
+    agent_connection_gmail_inbox_save_v1($pdo,$users[1],$disable,$http);
+    first_review_check(agent_connection_gmail_inbox_chat_history_v1($pdo,$users[1],17,170,$rehydrated) === $updatePosts
+        && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE owner_user_id=1')->fetchColumn() === 0,
+        'revoking Inbox Review removes private batch data while leaving only the generic Chat markers');
+
     echo 'AGENT_CONNECTION_GMAIL_INBOX_INITIAL=PASS ('.$checks.' checks; native MySQL)'.PHP_EOL;
 } finally {
     $server->exec('DROP DATABASE IF EXISTS `'.$database.'`');

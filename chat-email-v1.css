@@ -33,6 +33,7 @@
 #vp3ChatEmailReview button:disabled { opacity: .56; cursor: default; }
 #vp3ChatEmailReview .vp3-chat-email-primary { background: #172a50; color: #fff; }
 #vp3ChatEmailReview [hidden] { display: none; }
+#vp3ChatEmailReview .vp3-chat-email-message-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .vp3-chat-email-specialist-status {
   width: fit-content;
@@ -94,9 +95,12 @@
 }
 .gmail-review-item-actions + small { grid-column: 1 / -1; }
 .gmail-review-item-actions + small:empty { display: none; }
+.gmail-review-watch:not([hidden]) { display: inline-flex; align-items: center; gap: .3rem; padding: 0 .3rem; }
 .gmail-review-open-message { grid-column: 1 / -1; margin-top: .45rem; overflow-wrap: anywhere; }
 .gmail-review-open-message > small { display: block; }
 .gmail-review-open-message > p { white-space: pre-wrap; }
+.gmail-review-match-list { list-style: none; padding: 0; }
+.gmail-review-match-list > li { margin-top: .5rem; padding: .5rem 0; border-top: 1px solid #c8cfdb; }
 @media (min-width: 761px) {
   body:has(#sfOnlineRailV109:not([hidden]) [data-chat-specialist="gmail-inbox-review"])
     .vp3-chat-gmail-review:not([data-gmail-review-complete]) { display: none; }

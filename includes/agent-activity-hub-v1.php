@@ -332,6 +332,18 @@ function vp3_agent_activity_gmail_review_v1(PDO $pdo, array $scope): array
     };
     if ($detail === '') return [];
     if ($view['state'] === 'ready') {
+        if (agent_connection_gmail_inbox_batches_ready_v1($pdo)) {
+            $inboxScope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$scope['user']);
+            $latest = $inboxScope['state'] === 'ready' ? agent_connection_gmail_inbox_update_latest_v1($pdo,$inboxScope) : null;
+            if ($latest && $latest['agent_id'] === $scope['agent_id']) {
+                return [vp3_agent_activity_card_v1('gmail:inbox-update:'.$latest['message_id'], 'gmail_inbox_review',
+                    'Latest Gmail inbox update', 'Ready to read in Chat', [[
+                        'kind'=>'chat','label'=>'View in Chat','conversation_id'=>$latest['conversation_id'],
+                        'message_id'=>$latest['message_id'],
+                        'href'=>vp3_agent_activity_chat_href_v1($latest['agent_id'],$latest['conversation_id']).'&message_id='.$latest['message_id'],
+                    ]])];
+            }
+        }
         $delivery = agent_connection_gmail_inbox_chat_delivery_current_v1($pdo, $scope['user']);
         $cid = $delivery['conversation_id'] ?? $scope['conversation_id'];
         $href = vp3_agent_activity_chat_href_v1($delivery['agent_id'] ?? $scope['agent_id'], $cid);
@@ -348,33 +360,84 @@ function vp3_agent_activity_gmail_review_v1(PDO $pdo, array $scope): array
     return [vp3_agent_activity_card_v1('gmail:first-review', 'gmail_inbox_review', 'Gmail Inbox Review', $detail, [$action])];
 }
 
-/** The same confirmed outcome that was saved to Chat and indexed by Brain. */
+/** Live watches span the selected Agent's private Chats and the current Gmail grant. */
+function vp3_agent_activity_gmail_watches_v1(PDO $pdo, array $scope, DateTimeImmutable $now): array
+{
+    if (!table_exists('agent_connection_email_followups_v1') || !table_exists('agent_connections_v1')) return [];
+    require_once __DIR__.'/agent-connection-email-followup-v1.php';
+    $owner = (int)$scope['user']['id'];
+    $connection = agent_connection_email_followup_live_connection_v1($pdo,$owner);
+    if (!$connection) return [];
+    [$where, $params] = vp3_agent_chat_scope_sql_v380($scope['agent'], 'c');
+    $query = $pdo->prepare("SELECT f.operation_key,f.conversation_id,f.origin_user_message_id,f.recipient_email,f.sent_message_id,f.expires_at
+        FROM agent_connection_email_followups_v1 f JOIN chat_conversations c ON c.id=f.conversation_id
+        WHERE c.user_id=f.owner_user_id AND $where AND f.owner_user_id=? AND f.agent_id=? AND f.connection_id=?
+        AND f.authorization_key=? AND f.account_email=? AND f.status='waiting' AND f.next_check_at IS NOT NULL AND f.expires_at>?
+        AND (f.origin_user_message_id IS NULL OR EXISTS (SELECT 1 FROM chat_messages m WHERE m.id=f.origin_user_message_id
+            AND m.conversation_id=f.conversation_id AND m.user_id=f.owner_user_id AND m.role='user'))
+        ORDER BY f.expires_at ASC,f.operation_key ASC LIMIT 3");
+    $query->execute([...$params,$owner,$scope['agent_id'],(int)$connection['id'],$connection['authorization_key'],
+        agent_connection_gmail_address_v1($connection['account_email']),$now->format('Y-m-d H:i:s')]);
+    $items = [];
+    foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $conversation = (int)$row['conversation_id'];
+        $origin = (int)$row['origin_user_message_id'];
+        $sender = agent_connection_gmail_address_v1($row['recipient_email']);
+        $items[] = vp3_agent_activity_card_v1('gmail:watch:'.hash('sha256',$row['operation_key']),'gmail_watch',
+            $row['sent_message_id'] === '' ? 'Watching for new Gmail' : 'Waiting for a Gmail reply',
+            ($sender === '' ? '' : $sender.' · ').'Until '.substr($row['expires_at'],0,10).' UTC',[
+                ['kind'=>'chat','label'=>'Open watched Chat','conversation_id'=>$conversation,
+                    'href'=>vp3_agent_activity_chat_href_v1($scope['agent_id'],$conversation)] + ($origin > 0 ? ['message_id'=>$origin] : []),
+            ]);
+    }
+    return $items;
+}
+
+/** Show live watches alongside the same verified manual and automatic send receipts kept in Chat. */
 function vp3_agent_activity_gmail_outcomes_v1(PDO $pdo, array $scope, DateTimeImmutable $now): array
 {
-    if (!table_exists('agent_connection_email_drafts_v1')) return [];
+    $watches = vp3_agent_activity_gmail_watches_v1($pdo,$scope,$now);
+    if (!table_exists('agent_connection_email_drafts_v1')) return $watches;
     [$where, $params] = vp3_agent_chat_scope_sql_v380($scope['agent'], 'c');
     $context = "CASE WHEN JSON_VALID(m.context_json) THEN m.context_json ELSE '{}' END";
     $source = "JSON_EXTRACT($context,'$.source')";
     $mode = "JSON_EXTRACT($context,'$.email_outcome.mode')";
+    $draft = "JSON_EXTRACT($context,'$.email_outcome.draft_id')";
+    $providerId = "JSON_EXTRACT($context,'$.email_outcome.message_id')";
     if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
         $source = "JSON_UNQUOTE($source)";
         $mode = "JSON_UNQUOTE($mode)";
+        $draft = "JSON_UNQUOTE($draft)";
+        $providerId = "JSON_UNQUOTE($providerId)";
     }
     $query = $pdo->prepare("SELECT m.id,m.conversation_id FROM chat_messages m
         JOIN chat_conversations c ON c.id=m.conversation_id
+        JOIN agent_connection_email_drafts_v1 d ON d.id=$draft AND d.owner_user_id=c.user_id
+            AND d.agent_id=? AND d.conversation_id=c.id AND d.status='sent' AND d.sent_message_id=$providerId
         WHERE c.user_id=? AND $where AND m.role='assistant' AND m.created_at>=?
-        AND $source='agent_connection_email' AND $mode='auto_reply'
-        ORDER BY m.id DESC LIMIT 1");
-    $query->execute([(int)$scope['user']['id'], ...$params, $now->modify('-7 days')->format('Y-m-d H:i:s')]);
-    $row = $query->fetch(PDO::FETCH_ASSOC);
-    if (!$row) return [];
-    $id = (int)$row['id'];
-    $conversation = (int)$row['conversation_id'];
-    return [vp3_agent_activity_card_v1('gmail:sent:'.$id, 'gmail_outcome', 'Gmail reply sent',
-        'Gmail confirmed the automatic reply.', [
-            ['kind'=>'chat','label'=>'View in Chat','conversation_id'=>$conversation,'message_id'=>$id,
-                'href'=>vp3_agent_activity_chat_href_v1($scope['agent_id'],$conversation)],
-        ])];
+        AND $source='agent_connection_email' AND COALESCE($mode,'manual')=?
+        ORDER BY m.id DESC LIMIT 3");
+    $latest = [];
+    $other = [];
+    foreach (['manual','auto_reply'] as $kind) {
+        $query->execute([$scope['agent_id'],(int)$scope['user']['id'],...$params,$now->modify('-7 days')->format('Y-m-d H:i:s'),$kind]);
+        foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $index=>$row) {
+            $id = (int)$row['id'];
+            $conversation = (int)$row['conversation_id'];
+            $card = vp3_agent_activity_card_v1('gmail:sent:'.$id,'gmail_outcome',
+                $kind === 'auto_reply' ? 'Gmail reply sent' : 'Gmail email sent',
+                $kind === 'auto_reply' ? 'Gmail confirmed the automatic reply.' : 'Gmail confirmed the reviewed send.', [
+                    ['kind'=>'chat','label'=>'View in Chat','conversation_id'=>$conversation,'message_id'=>$id,
+                        'href'=>vp3_agent_activity_chat_href_v1($scope['agent_id'],$conversation)],
+                ]);
+            if ($index === 0) $latest[$id] = $card;
+            else $other[$id] = $card;
+        }
+    }
+    krsort($latest,SORT_NUMERIC);
+    krsort($other,SORT_NUMERIC);
+    // Keep the compact feed useful when both watch activity and sends are present.
+    return array_slice(array_merge(array_slice($watches,0,1),array_values($latest),array_slice($watches,1),array_values($other)),0,3);
 }
 
 /** Bounded owner projections only. Reading this feed never starts or advances work. */

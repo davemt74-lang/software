@@ -40,6 +40,11 @@ function agent_connection_gmail_inbox_chat_binding_v1(array $scope,array $row,ar
 
 function agent_connection_gmail_inbox_chat_marker_matches_v1(array $context,array $binding): bool
 {
+    if (($binding['kind'] ?? null) === 'batch') {
+        return ($context['source'] ?? null) === 'agent_connection_gmail_inbox_update'
+            && ($context['gmail_inbox_update_v1']['run_id'] ?? null) === $binding['run_id']
+            && ($context['gmail_inbox_update_v1']['report_ref'] ?? null) === $binding['report_ref'];
+    }
     return ($context['source'] ?? null) === 'agent_connection_gmail_first_review'
         && ($context['gmail_first_review_v1']['run_id'] ?? null) === $binding['run_id']
         && ($context['gmail_first_review_v1']['report_ref'] ?? null) === $binding['report_ref'];
@@ -104,7 +109,7 @@ function agent_connection_gmail_inbox_chat_deliver_v1(PDO $pdo,array $user,int $
             }
             $state = 'posted';
         }
-        $view = agent_connection_gmail_inbox_initial_view_v1($pdo,$scope['user'],includeChatResult:true);
+        $view = agent_connection_gmail_inbox_initial_view_v1($pdo,$scope['user'],includeChatResult:true,includeLegacyMatches:true);
         if (($view['run_id'] ?? null) !== $runId || !is_array($view['chat_result'] ?? null)) throw new RuntimeException('Gmail review changed.',409);
         return ['delivery'=>['state'=>$state]+$binding,'review'=>$view];
     });
@@ -123,35 +128,175 @@ function agent_connection_gmail_inbox_chat_delivery_current_v1(PDO $pdo,array $u
     return $binding;
 }
 
+function agent_connection_gmail_inbox_update_binding_v1(array $scope,array $row): array
+{
+    $id = $row['batch_id'];
+    return ['kind'=>'batch','run_id'=>$id,
+        'report_ref'=>agent_connection_gmail_inbox_key_v1($scope['policy'],'update-chat-v1:'.$scope['generation'].':'.$id),
+        'agent_id'=>(int)$row['agent_id'],'conversation_id'=>(int)$row['conversation_id'],'message_id'=>(int)$row['message_id']];
+}
+
+function agent_connection_gmail_inbox_update_scope_ref_v1(array $scope): string
+{
+    return agent_connection_gmail_inbox_key_v1($scope['policy'],'review-updates-scope-v1:'.$scope['generation']);
+}
+
+function agent_connection_gmail_inbox_update_latest_v1(PDO $pdo,array $scope): ?array
+{
+    $query = $pdo->prepare('SELECT batch_id,agent_id,conversation_id,message_id FROM agent_connection_gmail_inbox_batches_v1
+        WHERE owner_user_id=? AND connection_id=? AND generation_id=? AND message_id IS NOT NULL
+        ORDER BY message_id DESC LIMIT 1');
+    $query->execute([$scope['owner'],$scope['policy']['connection_id'],$scope['generation']]);
+    $row = $query->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($row)) return null;
+    $binding = agent_connection_gmail_inbox_update_binding_v1($scope,$row);
+    return agent_connection_gmail_inbox_chat_target_v1($pdo,$scope,$binding['agent_id'],$binding['conversation_id'])
+        && agent_connection_gmail_inbox_chat_marker_exists_v1($pdo,$binding) ? $binding : null;
+}
+
+function agent_connection_gmail_inbox_update_pending_v1(PDO $pdo,array $scope): array
+{
+    $query = $pdo->prepare('SELECT * FROM agent_connection_gmail_inbox_batches_v1
+        WHERE owner_user_id=? AND connection_id=? AND generation_id=? AND message_id IS NULL ORDER BY id LIMIT 10');
+    $query->execute([$scope['owner'],$scope['policy']['connection_id'],$scope['generation']]);
+    return $query->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function agent_connection_gmail_inbox_update_state_v1(PDO $pdo,array $scope): array
+{
+    if (!agent_connection_gmail_inbox_batches_ready_v1($pdo)) return [];
+    $latest = agent_connection_gmail_inbox_update_latest_v1($pdo,$scope);
+    $raw = (string)($scope['policy']['last_review_json'] ?? '');
+    $unarchived = agent_connection_gmail_inbox_batch_report_v1($raw) !== null
+        && agent_connection_gmail_inbox_batch_v1($pdo,$scope,agent_connection_gmail_inbox_batch_id_v1($scope['policy'],$raw)) === null;
+    $query = $pdo->prepare('SELECT 1 FROM agent_connection_gmail_inbox_batches_v1
+        WHERE owner_user_id=? AND connection_id=? AND generation_id=? AND message_id IS NULL LIMIT 1');
+    $query->execute([$scope['owner'],$scope['policy']['connection_id'],$scope['generation']]);
+    $pending = $unarchived || $query->fetchColumn() !== false;
+    return ['inbox_updates'=>['scope_ref'=>agent_connection_gmail_inbox_update_scope_ref_v1($scope),
+        'pending'=>$pending,'latest'=>$latest]];
+}
+
+/** Run inside the same private Inbox transaction that owns these unposted batches. */
+function agent_connection_gmail_inbox_update_post_v1(PDO $pdo,array $scope,int $agentId,int $conversationId): int
+{
+    if (!agent_connection_gmail_inbox_chat_target_v1($pdo,$scope,$agentId,$conversationId,true)) return 0;
+    $posted = 0;
+    $now = agent_commerce_time_pa2();
+    $insert = $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at)
+        VALUES (?,NULL,'assistant','Your Gmail inbox update is ready.',?,?)");
+    $attach = $pdo->prepare('UPDATE agent_connection_gmail_inbox_batches_v1 SET agent_id=?,conversation_id=?,message_id=?
+        WHERE id=? AND owner_user_id=? AND message_id IS NULL');
+    foreach (agent_connection_gmail_inbox_update_pending_v1($pdo,$scope) as $row) {
+        $binding = agent_connection_gmail_inbox_update_binding_v1($scope,$row);
+        $context = ['source'=>'agent_connection_gmail_inbox_update','skip_brain_archive'=>true,
+            'tool_receipt'=>vp3_tool_receipt_v1('email.read','review_status','read_complete'),
+            'gmail_inbox_update_v1'=>array_intersect_key($binding,array_flip(['run_id','report_ref']))];
+        $insert->execute([$conversationId,json_encode($context,JSON_THROW_ON_ERROR),$now]);
+        $message = (int)$pdo->lastInsertId();
+        if ($message < 1) throw new RuntimeException('Gmail update post could not be verified.',503);
+        $attach->execute([$agentId,$conversationId,$message,$row['id'],$scope['owner']]);
+        if ($attach->rowCount() !== 1) throw new RuntimeException('Gmail update changed.',409);
+        if (!empty($row['notification_id']) && table_exists('notifications')) {
+            $target = url('/chat.php?agent='.($agentId ?: 'system').'&conversation_id='.$conversationId.'&message_id='.$message);
+            $pdo->prepare("UPDATE notifications SET target_url=? WHERE id=? AND user_id=? AND type='agent_email_inbox_review'
+                AND source_type='agent_connection_gmail_inbox' AND source_id=?")
+                ->execute([$target,$row['notification_id'],$scope['owner'],$scope['generation']]);
+        }
+        $posted++;
+    }
+    if ($posted) $pdo->prepare('UPDATE chat_conversations SET updated_at=? WHERE id=? AND user_id=?')
+        ->execute([$now,$conversationId,$scope['owner']]);
+    return $posted;
+}
+
+/** Once selected, an existing inbox destination wins over unrelated open Chats. */
+function agent_connection_gmail_inbox_update_destination_v1(PDO $pdo,array $scope): ?array
+{
+    return agent_connection_gmail_inbox_chat_delivery_current_v1($pdo,$scope['user'])
+        ?? agent_connection_gmail_inbox_update_latest_v1($pdo,$scope);
+}
+
+function agent_connection_gmail_inbox_update_deliver_v1(PDO $pdo,array $user,int $agentId,int $conversationId): array
+{
+    return agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$user,$agentId,$conversationId): array {
+        $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user,true);
+        if ($scope['state'] !== 'ready' || !agent_connection_gmail_inbox_batches_ready_v1($pdo)
+            || !agent_connection_gmail_inbox_chat_target_v1($pdo,$scope,$agentId,$conversationId)) {
+            throw new RuntimeException('A private owner Chat is required.',403);
+        }
+        // Upgrade a saved latest batch in place without Gmail or AI calls.
+        agent_connection_gmail_inbox_batch_save_v1($pdo,$scope['policy'],(string)($scope['policy']['last_review_json'] ?? ''));
+        $destination = agent_connection_gmail_inbox_update_destination_v1($pdo,$scope);
+        $targetAgent = $destination['agent_id'] ?? $agentId;
+        $targetChat = $destination['conversation_id'] ?? $conversationId;
+        agent_connection_gmail_inbox_update_post_v1($pdo,$scope,$targetAgent,$targetChat);
+        return agent_connection_gmail_inbox_update_state_v1($pdo,$scope);
+    });
+}
+
+function agent_connection_gmail_inbox_update_history_v1(PDO $pdo,array $scope,int $agentId,int $conversationId,array $context,int $messageId): ?array
+{
+    $id = $context['gmail_inbox_update_v1']['run_id'] ?? null;
+    if (!is_string($id)) return null;
+    $row = agent_connection_gmail_inbox_batch_v1($pdo,$scope,$id);
+    if ($row === null) return null;
+    $binding = agent_connection_gmail_inbox_update_binding_v1($scope,$row);
+    if ($binding['agent_id'] !== $agentId || $binding['conversation_id'] !== $conversationId
+        || $binding['message_id'] !== $messageId || !agent_connection_gmail_inbox_chat_marker_matches_v1($context,$binding)) return null;
+    $report = agent_connection_gmail_inbox_batch_report_v1($row['report_json']);
+    if ($report === null) return null;
+    $legacy = agent_connection_gmail_inbox_legacy_window_v1($scope,$report) !== null;
+    return $binding + ['scope_ref'=>agent_connection_gmail_inbox_update_scope_ref_v1($scope),
+        'review'=>['state'=>'ready','run_id'=>$id,'total'=>(int)$report['total'],
+        'at'=>str_replace(' ','T',$report['at']).'Z','important'=>(int)($report['important'] ?? 0),'replies'=>(int)($report['replies'] ?? 0),
+        'items'=>agent_connection_gmail_inbox_review_items_v1($report,$scope,'batch:'.$id,$legacy)]];
+}
+
 /** Add live report detail only to the exact durable marker returned to the private owner. */
 function agent_connection_gmail_inbox_chat_history_v1(PDO $pdo,array $user,int $agentId,int $conversationId,array $messages): array
 {
     $candidates = [];
     foreach ($messages as $index=>$message) {
         $raw = $message['context_json'] ?? null;
-        if (!is_string($raw) || (!str_contains($raw,'gmail_first_review_v1') && !str_contains($raw,'gmail_inbox_review_v1'))) continue;
+        if (!is_string($raw) || (!str_contains($raw,'gmail_first_review_v1') && !str_contains($raw,'gmail_inbox_update_v1')
+            && !str_contains($raw,'gmail_inbox_review_v1'))) continue;
         $context = json_decode($raw,true,24);
         if (!is_array($context)) continue;
         if (array_key_exists('gmail_inbox_review_v1',$context)) {
             unset($context['gmail_inbox_review_v1']);
             $messages[$index]['context_json'] = json_encode($context,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
         }
-        if (($message['role'] ?? null) === 'assistant' && isset($context['gmail_first_review_v1'])) $candidates[$index] = $context;
+        if (($message['role'] ?? null) === 'assistant'
+            && (isset($context['gmail_first_review_v1']) || isset($context['gmail_inbox_update_v1']))) $candidates[$index] = $context;
     }
     if (!$candidates || $agentId < 0 || $conversationId < 1) return $messages;
+    $markers = $messages;
     try {
+        $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
+        if ($scope['state'] !== 'ready' || !agent_connection_gmail_inbox_chat_target_v1($pdo,$scope,$agentId,$conversationId)) return $messages;
         $binding = agent_connection_gmail_inbox_chat_delivery_current_v1($pdo,$user);
-        if ($binding === null || $binding['agent_id'] !== $agentId || $binding['conversation_id'] !== $conversationId) return $messages;
         foreach ($candidates as $index=>$context) {
-            if ((int)($messages[$index]['id'] ?? 0) !== $binding['message_id'] || !agent_connection_gmail_inbox_chat_marker_matches_v1($context,$binding)) continue;
-            $view = agent_connection_gmail_inbox_initial_view_v1($pdo,$user,includeChatResult:true);
-            if (($view['run_id'] ?? null) !== $binding['run_id'] || !is_array($view['chat_result'] ?? null)) break;
-            $context['gmail_inbox_review_v1'] = $binding + ['review'=>$view];
+            $messageId = (int)($messages[$index]['id'] ?? 0);
+            if (isset($context['gmail_inbox_update_v1'])) {
+                $view = agent_connection_gmail_inbox_update_history_v1($pdo,$scope,$agentId,$conversationId,$context,$messageId);
+                if ($view === null) continue;
+                $context['gmail_inbox_review_v1'] = $view;
+            } else {
+                if ($binding === null || $binding['agent_id'] !== $agentId || $binding['conversation_id'] !== $conversationId
+                    || $messageId !== $binding['message_id'] || !agent_connection_gmail_inbox_chat_marker_matches_v1($context,$binding)) continue;
+                $view = agent_connection_gmail_inbox_initial_view_v1($pdo,$user,includeChatResult:true,includeLegacyMatches:true);
+                if (($view['run_id'] ?? null) !== $binding['run_id'] || !is_array($view['chat_result'] ?? null)) continue;
+                $context['gmail_inbox_review_v1'] = $binding + ['review'=>$view];
+            }
             $messages[$index]['context_json'] = json_encode($context,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-            break;
         }
+        $live = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
+        if ($live['state'] !== 'ready' || $live['generation'] !== $scope['generation']
+            || $live['policy']['revision'] !== $scope['policy']['revision']) return $markers;
     } catch (Throwable $error) {
         if (function_exists('agent_runtime_v125_trace')) agent_runtime_v125_trace('gmail_first_review.chat_unavailable',['error_class'=>get_class($error)]);
+        return $markers;
     }
     return $messages;
 }

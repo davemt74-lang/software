@@ -319,4 +319,114 @@ pipeline_check($latest[$researchRef]['title']===$topic&&$latest[$researchRef]['i
     &&$latest[$researchRef]['revision']!==$researchGoal['sources'][$researchRef]
     &&$latest[$weakRef]['revision']===$draft['payload']['sources'][$weakRef],
     'a fresh independent post-decline pattern can reopen research with the original topic and a new revision');
+
+pipeline_reset($user);
+pipeline_check(vp3_initiative_youtube_playlist_ready_v1($pdo),'the normal YouTube result schema installs the pending playlist cache');
+vp3_youtube_playback_install_v1($pdo);
+vp3_youtube_research_save_v1($pdo,1,'artist',true);
+vp3_youtube_history_change_v1($pdo,1,'enable_history');
+vp3_youtube_research_save_v1($pdo,1,'watch',true);
+putenv('VP3_YOUTUBE_API_KEY='.str_repeat('f',20));
+$artist='Fixture Band';
+$artistRef='artist-interest:'.hash('sha256',strtolower($artist));
+$videoIds=['video_00001','video_00002','video_00003'];
+$youtubeRequests=0;
+$youtube=static function(string $url)use($videoIds,$artist,&$youtubeRequests):array{
+    ++$youtubeRequests;
+    pipeline_check(str_starts_with($url,VP3_YOUTUBE_STATUS_ENDPOINT_V1.'?'),'playlist verification reads the exact YouTube video endpoint');
+    parse_str((string)parse_url($url,PHP_URL_QUERY),$query);
+    $items=[];
+    foreach(explode(',',(string)($query['id']??'')) as $id){
+        if(!in_array($id,$videoIds,true))throw new LogicException('Unexpected video identity.');
+        $items[]=['id'=>$id,'snippet'=>['title'=>$artist.' – '.$id,'channelTitle'=>$artist.' - Topic','categoryId'=>'10'],
+            'status'=>['privacyStatus'=>'public','embeddable'=>$id!==$videoIds[2],'madeForKids'=>false]];
+    }
+    return ['status'=>200,'json'=>['kind'=>'youtube#videoListResponse','items'=>$items]];
+};
+foreach([170=>['Fixture Band live',1200],171=>['Fixture Band songs',200]] as $cid=>[$query,$age]){
+    $when=time()-$age;
+    $turn->execute([$cid,null,'assistant','YouTube results',gmdate('Y-m-d H:i:s',$when)]);
+    $searchId=(int)$pdo->lastInsertId();
+    $verified=agent_connection_youtube_video_status_v1([['video_id'=>$videoIds[0],'title'=>$artist.' – performance',
+        'channel_title'=>$artist.' - Topic']],$youtube);
+    agent_connection_youtube_results_save_v1($pdo,1,$cid,$searchId,['query'=>$query,'expires_at'=>time()+3600,'videos'=>$verified]);
+    $playId=sprintf('10000000-0000-4000-8000-%012d',$cid);
+    $capture=vp3_youtube_capture_key_v1($pdo,1);
+    pipeline_check(vp3_youtube_history_record_v1($pdo,1,$searchId,$videoIds[0],$playId,$capture),
+        'a verified video from an ordinary search records in that exact Chat');
+    $pdo->prepare('UPDATE vp3_youtube_playback_v1 SET played_at=? WHERE play_id=?')->execute([$when,$playId]);
+    pipeline_check(vp3_youtube_watch_record_v1($pdo,1,$searchId,$videoIds[0],$playId,$capture,65),
+        'meaningful viewing updates the exact recorded play');
+    $pdo->prepare('UPDATE vp3_youtube_watch_v1 SET last_watched_at=? WHERE play_id=?')->execute([$when+65,$playId]);
+}
+$GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use($artistRef,$artist):string{
+    $input=json_decode($prompt,true,24,JSON_THROW_ON_ERROR);
+    $evidence=array_column($input['evidence'],'title','ref');
+    pipeline_check($protocol==='vp3.initiative-plan.v1'&&in_array($artistRef,$input['tools']['artist.research']['source_refs']??[],true)
+        &&($evidence[$artistRef]??null)===$artist,'ordinary artist searches and separated plays expose one exact named artist to the planner');
+    return json_encode(['jobs'=>[['tool'=>'artist.research','primary'=>$artistRef,'refs'=>[$artistRef],'focus'=>'overview','report'=>true]]],JSON_THROW_ON_ERROR);
+};
+$planId=scope_make_plan($user,17,'Research the artist from regular viewing');
+pipeline_check(vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$planId))['ok'],
+    'the governed planner schedules the scoped artist research job');
+$artistRuns=scope_runs(1,17,'initiative.prepare');$artistRun=(int)end($artistRuns)['id'];
+$topics=[];
+$beforePlaylistChecks=$youtubeRequests;
+$pdo->exec("UPDATE agent_activity_state SET details_json='{\"visible\":false,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
+$artistWork=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$artistRun),
+    static function(string $prompt,string $protocol):string{
+        if($protocol!=='vp3.artist-research.v1')throw new LogicException('Unexpected research protocol.');
+        return '{"findings":[]}';
+    },[
+        'search'=>static function(string $query)use(&$topics,$artist,$videoIds):array{
+            pipeline_check(str_starts_with($query,'"'.$artist.'"'),'each background search uses the exact owner-entered artist');
+            $focus=substr($query,strlen($artist)+3);$topics[]=$focus;
+            $hits=$focus==='official live performances music videos'
+                ?array_map(static fn(string $id):array=>['url'=>'https://www.youtube.com/watch?v='.$id,'title'=>'Verified candidate '.$id],$videoIds)
+                :[['url'=>'https://research.example/'.str_replace(' ','-',$focus),'title'=>'Artist source '.$focus]];
+            return ['ok'=>true,'results'=>$hits];
+        },
+        'request'=>static fn():array=>['status'=>503,'content_type'=>'text/plain','body'=>'Temporarily unavailable'],
+        'youtube_http'=>$youtube,
+    ]);
+pipeline_check(($artistWork['ok']??false)&&$topics===['latest music release news interview','upcoming concerts tour dates',
+    'official merchandise vinyl store','official live performances music videos']&&$youtubeRequests===$beforePlaylistChecks+1,
+    'the leased artist job checks releases, tours, merch and videos and verifies the playlist with one provider request');
+$q->execute([$artistRun]);$artistReceipt=(string)$q->fetchColumn();$artistResult=json_decode($artistReceipt,true,24,JSON_THROW_ON_ERROR);
+pipeline_check($artistResult['initiative_delivery']==='pending'
+    &&$artistResult['initiative_tool_result']['output']['playlist_run_id']===$artistRun
+    &&!str_contains($artistReceipt,'channel_title')
+    &&vp3_initiative_youtube_playlist_load_v1($pdo,1,$artistRun)!==null
+    &&vp3_initiative_youtube_playlist_load_v1($pdo,2,$artistRun)===null,
+    'while the owner is away, verified provider metadata stays in the expiring owner cache and the receipt retains only its reference');
+$pdo->exec("UPDATE agent_activity_state SET details_json='{\"visible\":true,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
+pipeline_check(vp3_initiative_deliver_pending_v1($pdo,$user,17),'the owner can receive the playlist and research together on return');
+$q->execute([$artistRun]);$artistResult=json_decode((string)$q->fetchColumn(),true,24,JSON_THROW_ON_ERROR);
+$artistMessage=(int)($artistResult['initiative_message_id']??0);
+$messageQuery->execute([$artistMessage]);
+$projected=agent_connection_youtube_history_v1($pdo,1,17,170,[$messageQuery->fetch()]);
+$playlist=json_decode($projected[0]['context_json'],true,24,JSON_THROW_ON_ERROR)['youtube_results']??[];
+pipeline_check($artistResult['initiative_delivery']==='delivered'&&($playlist['suggestion_kind']??null)==='playlist'
+    &&array_column($playlist['videos'],'video_id')===array_slice($videoIds,0,2)
+    &&vp3_initiative_youtube_subject_v1($playlist)===''
+    &&vp3_initiative_youtube_playlist_load_v1($pdo,1,$artistRun)===null,
+    'Chat reload restores the playable playlist without feeding the agent-generated suggestion back as an owner search');
+pipeline_check(agent_connection_youtube_result_records_v1($pdo,2,17,null,1,[$artistMessage])===[]
+    &&agent_connection_youtube_result_records_v1($pdo,1,18,null,1,[$artistMessage])===[]
+    &&!vp3_initiative_deliver_pending_v1($pdo,$user,17),
+    'the saved playlist is private to the exact owner and Agent and does not post twice');
+agent_connection_youtube_quota_schema_v1($pdo);
+$topicPlaylist=vp3_initiative_youtube_playlist_prepare_v1($pdo,1,$topic,'topic','playlist',[],static function():void{},
+    static function(string $url)use($topic,$videoIds,$youtube):array{
+        if(str_starts_with($url,VP3_YOUTUBE_STATUS_ENDPOINT_V1.'?'))return $youtube($url);
+        parse_str((string)parse_url($url,PHP_URL_QUERY),$query);
+        pipeline_check(($query['q']??null)===$topic,'a non-music playlist searches its exact owner-entered subject');
+        $items=[];
+        foreach($videoIds as $id)$items[]=['id'=>['kind'=>'youtube#video','videoId'=>$id],
+            'snippet'=>['title'=>'Oven tutorial '.$id,'channelTitle'=>'Cooking']];
+        return ['status'=>200,'json'=>['kind'=>'youtube#searchListResponse','items'=>$items]];
+    });
+pipeline_check(($topicPlaylist['music_suggestion']??null)===false&&array_column($topicPlaylist['videos'],'video_id')===array_slice($videoIds,0,2),
+    'a deliberate non-music playlist stays on topic and excludes an unplayable result');
+putenv('VP3_YOUTUBE_API_KEY');
 echo "AGENT_INITIATIVE_TOOLS_PIPELINE_V1=PASS\n";

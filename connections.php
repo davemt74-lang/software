@@ -343,7 +343,7 @@ header('Cache-Control: private, no-store');
                                         <ul class="connections-inbox-messages" role="list">
                                           <?php foreach ($inboxReview['items'] as $item): ?>
                                             <?php if (!is_array($item)) continue; ?>
-                                            <li data-gmail-review-latest-item data-item-ref="<?= e($item['item_ref'] ?? '') ?>" data-subject="<?= e($item['subject'] ?? '') ?>">
+                                            <li data-gmail-review-latest-item data-item-ref="<?= e($item['item_ref'] ?? '') ?>" data-legacy-ref="<?= e($item['legacy_ref'] ?? '') ?>">
                                               <strong><?= e(($item['subject'] ?? '') ?: '(No subject)') ?></strong>
                                               <span class="connections-muted" data-gmail-review-sender><?= e($item['from'] ?? '') ?></span>
                                               <span class="connections-badge"><?= e($inboxCategories[$item['category'] ?? ''] ?? 'New') ?></span>
@@ -488,7 +488,7 @@ header('Cache-Control: private, no-store');
                             <?php endif; ?>
                             <?php if ($youtubeHistoryReady && $canChat): ?>
                               <p><strong>Played in VP3</strong></p>
-                              <p class="connections-muted">Keep a private record of eligible videos that start playing in VP3. Entries expire with the cached result within seven days. Pausing keeps existing entries until they expire. Clearing affects VP3 only.</p>
+                              <p class="connections-muted">Keep a private record of eligible videos that start playing in VP3 and where you left off. Entries expire with the cached result within seven days. Pausing keeps existing entries until they expire. Clearing affects VP3 only.</p>
                               <div class="connections-actions">
                                 <form method="post" action="<?= e(url('/youtube-connection-v1.php')) ?>">
                                   <?= csrf_field() ?>

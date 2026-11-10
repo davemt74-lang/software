@@ -150,23 +150,23 @@ $mediaSeed=static function(int $conversation,string $title,string $video,string 
 $localMedia=$mediaSeed(42,'Recent eligible YouTube playback','local000001','Quiet session music',['suggestion_kind'=>'playlist']);
 $otherMedia=$mediaSeed(46,'Other private conversation playback','other000001','Other private search');
 $beforePlay=vp3_top_of_mind_v1($pdo,$user,0,42);
-feed_check($beforePlay['music']===null&&($beforePlay['youtube_search']['message_id']??0)===$localMedia
-    &&$beforePlay['youtube_search']['kind']==='playlist'&&$beforePlay['youtube_search']['result_count']===1
-    &&!str_contains(json_encode($beforePlay['youtube_search']),'local000001'),
-    'the current Chat’s returned playlist is available separately from verified playback, without video identifiers');
+feed_check($beforePlay['music']===null&&($beforePlay['youtube_search']['message_id']??0)===$otherMedia
+    &&$beforePlay['youtube_search']['conversation_id']===46&&$beforePlay['youtube_search']['result_count']===1
+    &&!str_contains(json_encode($beforePlay['youtube_search']),'other000001'),
+    'the same Agent’s latest returned result is available across Chats, separately from verified playback');
 $otherChat=vp3_top_of_mind_v1($pdo,$user,0,46);
 feed_check($otherChat['state']==='linked_elsewhere'&&$otherChat['items']===[]&&($otherChat['youtube_search']['message_id']??0)===$otherMedia,
-    'a manually opened Chat sees its own search context without inheriting another Chat’s work or search');
+    'a manually opened Chat sees the shared search context without inheriting another Chat’s work');
 $localPlay='10000000-0000-4000-8000-000000000001';$otherPlay='10000000-0000-4000-8000-000000000002';
 feed_check(vp3_youtube_history_record_v1($pdo,1,$localMedia,'local000001',$localPlay,$capture)
     &&vp3_youtube_history_record_v1($pdo,1,$otherMedia,'other000001',$otherPlay,$capture),
     'the real capture path creates one approved play in each exact saved Chat');
 $before=(int)$pdo->query('SELECT total_changes()')->fetchColumn();$pdo->exec('PRAGMA query_only=ON');
 $music=vp3_top_of_mind_v1($pdo,$user,0,42)['music'];
-feed_check($music['title']==='Recent eligible YouTube playback'&&$music['channel_title']==='Test channel'
-    &&str_contains($music['chat_url'],'agent=system&conversation_id=42')&&!str_contains(json_encode($music),$capture)
-    &&!str_contains(json_encode($music),$localPlay)&&(int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,
-    'the read-only Music card reports verified playback only from its exact Chat and releases no capture or playback identifiers');
+feed_check($music['title']==='Other private conversation playback'&&$music['channel_title']==='Test channel'
+    &&str_contains($music['chat_url'],'agent=system&conversation_id=46&message_id='.$otherMedia)&&!str_contains(json_encode($music),$capture)
+    &&!str_contains(json_encode($music),$otherPlay)&&(int)$pdo->query('SELECT total_changes()')->fetchColumn()===$before,
+    'the read-only playback card links the exact source Chat and releases no capture or playback identifiers');
 $pdo->exec('PRAGMA query_only=OFF');
 $coverage=[];
 $context=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),false,[],$coverage,null,0);
@@ -174,15 +174,16 @@ feed_check(!str_contains(json_encode($context),'Recent eligible YouTube playback
     'this playback card does not expose YouTube titles to planning or configured AI');
 vp3_youtube_history_change_v1($pdo,1,'pause_history');
 $capturePaused=vp3_top_of_mind_v1($pdo,$user,0,42);
-feed_check($capturePaused['music']===null&&$capturePaused['youtube_search']['message_id']===$localMedia,
-    'pausing playback capture immediately removes its observation while preserving returned search context');
+feed_check($capturePaused['music']['message_id']===$otherMedia&&$capturePaused['youtube_search']['message_id']===$otherMedia,
+    'pausing playback capture preserves existing history in both media projections');
 vp3_youtube_history_change_v1($pdo,1,'enable_history');
-$pdo->prepare('UPDATE agent_connection_youtube_results_v1 SET expires_at=? WHERE message_id=?')->execute([time()-1,$localMedia]);
+$pdo->prepare('UPDATE agent_connection_youtube_results_v1 SET expires_at=? WHERE message_id IN (?,?)')->execute([time()-1,$localMedia,$otherMedia]);
 $expired=vp3_top_of_mind_v1($pdo,$user,0,42);
 feed_check($expired['music']===null&&$expired['youtube_search']===null,'expired media data is omitted even when a playback record survives cleanup');
 $olderSearch=$mediaSeed(42,'Older provider title','older000001','Yesterday’s unrelated query');
 $pdo->prepare('UPDATE chat_messages SET created_at=? WHERE id=?')->execute([gmdate('Y-m-d H:i:s',time()-86401),$olderSearch]);
-feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['youtube_search']===null,'Top of Mind leaves older cached results in History');
+feed_check(vp3_top_of_mind_v1($pdo,$user,0,42)['youtube_search']['message_id']===$olderSearch,
+    'Top of Mind can recall the same Agent’s result beyond 24 hours while its cache is still valid');
 $mediaSeed(42,'Provider repair clip','repair00001','Acoustic guitar bridge repair');
 $mediaSeed(46,'Provider replacement clip','repair00002','Acoustic guitar bridge replacement');
 $topicSource=$mediaSeed(42,'Provider oven tutorial title','topic000001','Wood-fired oven heat management');

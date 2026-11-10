@@ -68,10 +68,6 @@ function column_exists(string $table, string $column): bool
     }
     return in_array($column, array_column(db()->query('PRAGMA table_info('.$table.')')->fetchAll(PDO::FETCH_ASSOC), 'name'), true);
 }
-function personal_knowledge_available(?array $user = null): bool
-{
-    return $user !== null && personal_capability_has_v242('personal_knowledge.access', $user) && table_exists('knowledge_items');
-}
 function agent_brain_schema_ready(): bool { return table_exists('agent_memory_items'); }
 function homeserver_task_calendar_v243_homeserver_calendar_items(...$args): array
 {
@@ -80,6 +76,7 @@ function homeserver_task_calendar_v243_homeserver_calendar_items(...$args): arra
 
 require_once dirname(__DIR__).'/includes/user-agent-system-v236.php';
 require_once dirname(__DIR__).'/includes/agent-activity-hub-v1.php';
+require_once dirname(__DIR__).'/includes/agent-connection-email-followup-v1.php';
 
 function activity_check(bool $ok, string $message): void
 {
@@ -213,13 +210,42 @@ $insertCanvas->execute([$canvasId,1,11,11,1,'Saved draft',2]);
 $insertCanvas->execute(['9a000000-0000-4000-8000-000000000002',1,12,12,2,'Secret other Agent Canvas',3]);
 $pdo->prepare('INSERT INTO vp3_coding_canvas_versions_v1(canvas_id,revision,code_item_id,artifact_hash) VALUES(?,1,1,?)')
     ->execute([$canvasId,str_repeat('0',64)]);
-$pdo->exec('CREATE TABLE agent_connection_email_drafts_v1(id CHAR(32) PRIMARY KEY);
+$pdo->exec('CREATE TABLE agent_connection_email_drafts_v1(id CHAR(32) PRIMARY KEY,owner_user_id INTEGER,agent_id INTEGER,
+        conversation_id INTEGER,status VARCHAR(16),sent_message_id VARCHAR(190));
+    CREATE TABLE settings(setting_key VARCHAR(190) PRIMARY KEY,setting_value TEXT);
+    CREATE TABLE agent_connections_v1(id INTEGER PRIMARY KEY,owner_user_id INTEGER,provider VARCHAR(32),status VARCHAR(16),
+        authorization_key CHAR(64),client_fingerprint CHAR(64),account_email VARCHAR(254),read_enabled INTEGER,
+        send_enabled INTEGER,followups_enabled INTEGER);
+    CREATE TABLE agent_connection_email_followups_v1(owner_user_id INTEGER,agent_id INTEGER,conversation_id INTEGER,
+        connection_id INTEGER,authorization_key CHAR(64),account_email VARCHAR(254),status VARCHAR(20),next_check_at DATETIME,
+        expires_at DATETIME,operation_key VARCHAR(190),origin_user_message_id INTEGER,recipient_email VARCHAR(254),
+        sent_message_id VARCHAR(190),claim_key CHAR(32),reply_chat_message_id INTEGER);
+    ALTER TABLE chat_messages ADD COLUMN user_id INTEGER;
+    UPDATE chat_messages SET user_id=(SELECT user_id FROM chat_conversations c WHERE c.id=chat_messages.conversation_id) WHERE role=\'user\';
     ALTER TABLE chat_messages ADD COLUMN context_json TEXT;
     ALTER TABLE chat_messages ADD COLUMN created_at DATETIME');
+$config['connections']['gmail'] = ['client_id'=>'activity-fixture','client_secret'=>str_repeat('x',12)];
+$gmailGrant = str_repeat('a',64);
+$pdo->prepare("INSERT INTO agent_connections_v1 VALUES (1,1,'gmail','connected',?,?,?,1,1,1)")
+    ->execute([$gmailGrant,agent_connections_client_fingerprint_v1(),'owner@example.test']);
+$watch = $pdo->prepare('INSERT INTO agent_connection_email_followups_v1 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)');
+foreach ([[1,11,11,$gmailGrant,'new_sender',null,'sender@example.test',''],[1,11,13,$gmailGrant,'thread',30,'thread@example.test','sent_43'],
+    [1,12,12,$gmailGrant,'wrong_agent',12,'hidden@example.test',''],[1,11,13,str_repeat('b',64),'old_grant',null,'stale@example.test',''],
+    [1,11,13,$gmailGrant,'missing_origin',999,'missing@example.test',''],[2,21,20,$gmailGrant,'other_owner',null,'other@example.test','']] as
+    [$owner,$agent,$conversation,$grant,$key,$origin,$sender,$sent]) {
+    $watch->execute([$owner,$agent,$conversation,1,$grant,'owner@example.test','waiting',$now->format('Y-m-d H:i:s'),
+        $now->modify('+1 day')->format('Y-m-d H:i:s'),$key,$origin,$sender,$sent]);
+}
 $gmailOutcome=$pdo->prepare("INSERT INTO chat_messages (id,conversation_id,role,message,context_json,created_at)
     VALUES (?,?,'assistant','PRIVATE SENTINEL',?,?)");
-foreach ([[40,13,'auto_reply'],[41,12,'auto_reply'],[42,20,'auto_reply'],[43,13,'manual']] as [$id,$cid,$mode]) {
-    $gmailOutcome->execute([$id,$cid,json_encode(['source'=>'agent_connection_email','email_outcome'=>['mode'=>$mode]],JSON_THROW_ON_ERROR),
+$gmailDraft=$pdo->prepare('INSERT INTO agent_connection_email_drafts_v1 VALUES (?,?,?,?,?,?)');
+foreach ([[40,1,11,13,'auto_reply','sent'],[41,1,12,12,'auto_reply','sent'],[42,2,21,20,'auto_reply','sent'],
+    [43,1,11,13,null,'sent'],[44,1,11,13,'auto_reply','prepared'],[45,1,11,13,'manual','sent']] as [$id,$owner,$agent,$cid,$mode,$status]) {
+    $draftId = str_pad((string)$id,32,'0',STR_PAD_LEFT);
+    $providerId = 'sent_'.$id;
+    $gmailDraft->execute([$draftId,$owner,$agent,$cid,$status,$id===45?'different_id':$providerId]);
+    $gmailOutcome->execute([$id,$cid,json_encode(['source'=>'agent_connection_email','email_outcome'=>[
+        'draft_id'=>$draftId,'message_id'=>$providerId]+($mode===null?[]:['mode'=>$mode])],JSON_THROW_ON_ERROR),
         gmdate('Y-m-d H:i:s')]);
 }
 
@@ -234,10 +260,15 @@ $sections = activity_sections($state);
 activity_check($state['agent_name']==='Longfellow' && $state['current_chat']===['id'=>13,'title'=>'Latest project'], 'Agent and current Chat metadata reflect the exact owned scope');
 activity_check(array_column($sections['history']['items'],'title')===['Latest project','First project'], 'History spans only the selected Agent Chats and is newest first');
 $gmail = $sections['gmail_outcomes']['items'];
-activity_check(count($gmail)===1 && $gmail[0]['id']==='gmail:sent:40'
-    && $gmail[0]['actions'][0]['conversation_id']===13 && $gmail[0]['actions'][0]['message_id']===40
-    && !str_contains(json_encode($gmail,JSON_THROW_ON_ERROR),'PRIVATE SENTINEL'),
-    'Top of Mind reuses the exact confirmed auto reply in this Agent and omits other scopes and private text');
+activity_check(array_column($gmail,'kind')===['gmail_watch','gmail_outcome','gmail_outcome']
+    && array_column(array_slice($gmail,1),'id')===['gmail:sent:43','gmail:sent:40']
+    && $gmail[1]['actions'][0]['conversation_id']===13 && $gmail[1]['actions'][0]['message_id']===43
+    && !preg_match('/PRIVATE SENTINEL|sent_(?:40|43)/',json_encode($gmail,JSON_THROW_ON_ERROR)),
+    'Top of Mind shows a live watch and the exact verified manual and auto sends without mailbox identifiers or foreign results');
+$watches = vp3_agent_activity_gmail_watches_v1($pdo,vp3_agent_activity_scope_v1($pdo,$user,11,13),$now);
+activity_check(array_column($watches,'title')===['Watching for new Gmail','Waiting for a Gmail reply']
+    && $watches[0]['actions'][0]['conversation_id']===11 && $watches[1]['actions'][0]['message_id']===30,
+    'Top of Mind keeps both sender and thread watches in their exact Chats, omitting stale grants and missing origins');
 activity_check(array_column($sections['tasks']['items'],'title')===['Named task'], 'Tasks exclude other owners, other Agents, denied data and completed work');
 activity_check($sections['tasks']['items'][0]['actions'][0]['list_id']===2, 'A task can open its actual existing parent list');
 activity_check(array_column($sections['lists']['items'],'title')===['Named list'] && $sections['lists']['items'][0]['detail']==='1 open task', 'List count includes only permitted canonical members');

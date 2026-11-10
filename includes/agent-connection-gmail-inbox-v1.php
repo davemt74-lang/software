@@ -126,14 +126,11 @@ function agent_connection_gmail_inbox_metadata_v1(string $access, string $id, in
 
 function agent_connection_gmail_inbox_saved_item_v1(array $message): array
 {
-    $item = ['from'=>$message['from'],'subject'=>mb_substr($message['subject'],0,240,'UTF-8'),
-        'category'=>$message['reply']?'reply':($message['important']?'important':'new')];
     $id = agent_connection_gmail_id_v1($message['message_id']??null);
-    if ($id !== '') {
-        // Losing a reference must not drop the corresponding review or its counts.
-        try { $item['message_id_enc'] = ai_encrypt_secret($id); } catch (Throwable) {}
-    }
-    return $item;
+    if ($id === '') throw new UnexpectedValueException('Gmail review message ID is missing or invalid.');
+    return ['from'=>$message['from'],'subject'=>mb_substr($message['subject'],0,240,'UTF-8'),
+        'category'=>$message['reply']?'reply':($message['important']?'important':'new'),
+        'message_id_enc'=>ai_encrypt_secret($id)];
 }
 
 function agent_connection_gmail_inbox_key_v1(array $policy, string $value): string
@@ -290,6 +287,11 @@ function agent_connection_gmail_inbox_finish_v1(PDO $pdo, array $policy, string 
         }
         $review = agent_connection_gmail_inbox_review_v1($pdo,$live,$scan['messages']??[],$now);
         $reviewed = $review['total']>0 || $review['filtered']>0;
+        $reviewJson = $reviewed ? json_encode($review,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE) : null;
+        if ($reviewed) {
+            // Preserve a pre-upgrade latest review before the cursor replaces it.
+            agent_connection_gmail_inbox_batch_save_v1($pdo,$live,(string)($live['last_review_json'] ?? ''));
+        }
         $next = match ($status) {
             'restart_required'=>null,
             'retrying'=>gmdate('Y-m-d H:i:s',time()+900),
@@ -301,8 +303,17 @@ function agent_connection_gmail_inbox_finish_v1(PDO $pdo, array $policy, string 
             ->execute([$scan['cursor']??$live['history_id'],($scan['page']??$live['history_page_token'])?:null,
                 $scan['pending']??$live['pending_event_id'],$scan['fingerprint']??$live['pending_fingerprint'],
                 $scan['offset']??$live['pending_offset'],$next,$now,$status,
-                $reviewed?json_encode($review,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE):null,$owner]);
-        if ($review['total']>0) agent_connection_gmail_inbox_notify_v1($pdo,$owner,$review,$live);
+                $reviewJson,$owner]);
+        if ($review['total']>0) {
+            $notice = agent_connection_gmail_inbox_notify_v1($pdo,$owner,$review,$live);
+            agent_connection_gmail_inbox_batch_save_v1($pdo,$live,$reviewJson,$notice);
+            require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+            $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
+            if ($scope['state'] === 'ready') {
+                $target = agent_connection_gmail_inbox_update_destination_v1($pdo,$scope);
+                if ($target) agent_connection_gmail_inbox_update_post_v1($pdo,$scope,$target['agent_id'],$target['conversation_id']);
+            }
+        }
         return $reviewed;
     });
 }
@@ -312,7 +323,8 @@ function agent_connection_gmail_inbox_sweep_v1(PDO $pdo, int $limit=5, ?callable
 {
     $counts = ['processed'=>0,'reviewed'=>0];
     if ($limit<1 || $pdo->inTransaction() || !agent_connection_gmail_inbox_ready_v1($pdo)
-        || !agent_connection_gmail_inbox_receipts_ready_v1($pdo)) return $counts;
+        || !agent_connection_gmail_inbox_receipts_ready_v1($pdo)
+        || !agent_connection_gmail_inbox_batches_ready_v1($pdo)) return $counts;
     $due = $pdo->prepare('SELECT * FROM agent_connection_gmail_inbox_v1 WHERE enabled=1 AND next_check_at<=?
         ORDER BY next_check_at,owner_user_id LIMIT '.min($limit,5));
     $due->execute([agent_commerce_time_pa2()]);

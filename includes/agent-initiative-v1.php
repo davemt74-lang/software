@@ -806,9 +806,22 @@ function vp3_initiative_report_v1(PDO $pdo,array $user,int $cid,string $draft,ar
         'conversation_id'=>$cid,'run_id'=>$runId,'review_actions'=>$reviews];
     if(is_array($toolResult['tool_receipt']??null))$context['tool_receipt']=$toolResult['tool_receipt'];
     if(is_array($toolResult['output']??null))$context['initiative_output']=$toolResult['output'];
+    $playlist=null;
+    if(($toolResult['output']['playlist_run_id']??null)===$runId){
+        require_once __DIR__.'/agent-initiative-youtube-playlist-v1.php';
+        require_once __DIR__.'/agent-connection-youtube-chat-v1.php';
+        if(agent_connection_youtube_results_ready_v1($pdo)){
+            $playlist=vp3_initiative_youtube_playlist_load_v1($pdo,(int)$user['id'],$runId);
+            if($playlist!==null)$context['youtube_search_results_v1']=true;
+        }
+    }
     $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json,created_at)
         VALUES (?,NULL,'assistant',?,?,NOW())")->execute([$cid,$draft,json_encode($context,JSON_THROW_ON_ERROR)]);
     $messageId=(int)$pdo->lastInsertId();
+    if($playlist!==null){
+        agent_connection_youtube_results_save_v1($pdo,(int)$user['id'],$cid,$messageId,$playlist);
+        vp3_initiative_youtube_playlist_remove_v1($pdo,(int)$user['id'],$runId);
+    }
     require_once __DIR__.'/agent-initiative-followthrough-v1.php';
     vp3_initiative_followthrough_attach_v1($pdo,$user,$agentId,$cid,$runId,$messageId,$draft,$context);
     $q=$pdo->prepare('SELECT goal FROM agent_workflow_runs WHERE id=? AND owner_user_id=?');$q->execute([$runId,(int)$user['id']]);$reportGoal=json_decode((string)$q->fetchColumn(),true,32,JSON_THROW_ON_ERROR);
@@ -989,7 +1002,7 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
 
 function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?callable $model,array $run,array $payload,?array $researchTransport=null): array
 {
-    $toolResult=[];$draft='';$jobs=[];$opportunities=[];
+    $toolResult=[];$draft='';$jobs=[];$opportunities=[];$youtubePlaylist=null;
     $planning=$run['action_capability_key']==='initiative.plan';
     try{
         $binding=$payload['binding'];$sources=$payload['sources'];
@@ -1076,6 +1089,8 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                         :'The original readonly adapter and current sources only; private preparation, no domain action or approval.'];
                 $toolResult=vp3_initiative_tool_execute_v1($pdo,$live,$binding,$job,$evidence,(string)$run['dedupe_key'],$infer,$checkLease,$researchTransport,
                     ['run_id'=>(int)$run['id'],'dedupe'=>(string)$run['dedupe_key']]);
+                $youtubePlaylist=$toolResult['youtube_playlist']??null;
+                unset($toolResult['youtube_playlist']);
             }
             $draft=is_string($toolResult['draft']??null)?trim($toolResult['draft']):'';
             if($draft===''||mb_strlen($draft)>$limits['max_draft_chars']||preg_match('/https?:\/\/|\bwww\.|[<>]|[\x00-\x08\x0b-\x1f\x7f]/i',$draft)){
@@ -1090,7 +1105,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             // The transaction repeats exact source checks without provider/network work.
             vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
         }
-        $commit=static function()use($pdo,$live,$binding,$sources,$includeScreen,$canonicalSources,$planning,$jobs,$opportunities,$claim,$payload,$toolResult,$draft,$run,$agentId):array{
+        $commit=static function()use($pdo,$live,$binding,$sources,$includeScreen,$canonicalSources,$planning,$jobs,$opportunities,$claim,$payload,$toolResult,$draft,$run,$agentId,$youtubePlaylist):array{
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$binding);
         $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
@@ -1123,6 +1138,11 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             }
             vp3_initiative_result_current_v1($pdo,$live,$binding,$payload,$toolResult);
             if(!vp3_agent_chat_conversation_v380($pdo,$cid,$uid,$agentId>0?['id'=>$agentId]:null,true))throw new RuntimeException('Initiative conversation changed.',403);
+            if($youtubePlaylist!==null){
+                $runId=(int)$run['id'];
+                vp3_initiative_youtube_playlist_store_v1($pdo,$uid,$runId,$youtubePlaylist);
+                $toolResult['output']['playlist_run_id']=$runId;
+            }
             $delivery=empty($payload['report'])?'private':'pending';$messageId=0;
             if($delivery==='pending'&&vp3_initiative_owner_present_v1($pdo,$live,$cid)&&vp3_initiative_can_report_v1($pdo,$live,$cid)){
                 $messageId=vp3_initiative_report_v1($pdo,$live,$cid,$draft,$evidence,(int)$run['id'],$toolResult);

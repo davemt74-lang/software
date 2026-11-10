@@ -18,8 +18,8 @@ function agent_connection_gmail_inbox_initial_install_v1(PDO $pdo): void
         days TINYINT UNSIGNED NOT NULL,
         started_at_ms BIGINT UNSIGNED NOT NULL,
         phase VARCHAR(16) NOT NULL,
-        checkpoint_json TEXT NULL,
-        report_json TEXT NULL,
+        checkpoint_json MEDIUMTEXT NULL,
+        report_json MEDIUMTEXT NULL,
         claim_key CHAR(32) NULL,
         lease_until DATETIME NULL,
         next_run_at DATETIME NULL,
@@ -30,6 +30,18 @@ function agent_connection_gmail_inbox_initial_install_v1(PDO $pdo): void
         INDEX idx_gmail_first_review_due_v1 (next_run_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin"));
     if ($sqlite) $pdo->exec('CREATE INDEX IF NOT EXISTS idx_gmail_first_review_due_v1 ON agent_connection_gmail_inbox_initial_v1 (next_run_at)');
+    elseif (!agent_connection_gmail_inbox_initial_capacity_ready_v1($pdo)) {
+        $pdo->exec('ALTER TABLE agent_connection_gmail_inbox_initial_v1 MODIFY checkpoint_json MEDIUMTEXT NULL, MODIFY report_json MEDIUMTEXT NULL');
+    }
+}
+
+function agent_connection_gmail_inbox_initial_capacity_ready_v1(PDO $pdo): bool
+{
+    if (agent_commerce_sqlite_pa2($pdo)) return true;
+    $types = $pdo->query("SELECT DATA_TYPE FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_connection_gmail_inbox_initial_v1'
+        AND COLUMN_NAME IN ('checkpoint_json','report_json')")->fetchAll(PDO::FETCH_COLUMN);
+    return count($types) === 2 && !array_diff($types,['mediumtext','longtext']);
 }
 
 function agent_connection_gmail_inbox_initial_ready_v1(PDO $pdo): bool
@@ -101,22 +113,40 @@ function agent_connection_gmail_inbox_item_reference_v1(array $scope, string $ve
 {
     $encrypted = $item['message_id_enc'] ?? null;
     if (!is_string($encrypted) || $encrypted === '' || strlen($encrypted) > 512) return null;
-    return agent_connection_gmail_inbox_key_v1($scope['policy'],implode(':',[
-        'review-item-v1',$scope['owner'],$scope['policy']['connection_id'],$scope['policy']['revision'],
+    $batch = str_starts_with($version,'batch:');
+    $proof = agent_connection_gmail_inbox_key_v1($scope['policy'],implode(':',[
+        'review-item-v1',$scope['owner'],$scope['policy']['connection_id'],$batch ? $scope['generation'] : $scope['policy']['revision'],
         $version,$index,hash('sha256',$encrypted),
     ]));
+    return $batch ? substr($version,6).substr($proof,0,32) : $proof;
+}
+
+function agent_connection_gmail_inbox_legacy_reference_v1(array $scope, string $version, int $index, array $item): ?string
+{
+    if (!is_string($item['from'] ?? null) || agent_connection_gmail_sender_v1($item['from']) === ''
+        || !is_string($item['subject'] ?? null) || agent_connection_gmail_inbox_item_reference_v1($scope,$version,$index,$item) !== null) return null;
+    $batch = str_starts_with($version,'batch:');
+    $proof = agent_connection_gmail_inbox_key_v1($scope['policy'],implode(':',[
+        'review-legacy-v1',$scope['owner'],$scope['policy']['connection_id'],$batch ? $scope['generation'] : $scope['policy']['revision'],
+        $version,$index,hash('sha256',json_encode([$item['from'],$item['subject']],JSON_THROW_ON_ERROR)),
+    ]));
+    return $batch ? substr($version,6).substr($proof,0,32) : $proof;
 }
 
 /** The authenticated projection exposes only display fields and opaque selectors. */
-function agent_connection_gmail_inbox_review_items_v1(array $report, array $scope, string $version): array
+function agent_connection_gmail_inbox_review_items_v1(array $report, array $scope, string $version, bool $includeLegacyMatches=false): array
 {
     $items = [];
-    foreach (array_slice((array)($report['items'] ?? []),0,8) as $index=>$item) {
+    foreach (array_slice((array)($report['items'] ?? []),0,50) as $index=>$item) {
         if (!is_array($item) || !is_string($item['from'] ?? null) || !is_string($item['subject'] ?? null)) continue;
         $view = ['from'=>$item['from'],'subject'=>$item['subject'],
             'category'=>in_array($item['category']??null,['reply','important'],true)?$item['category']:'new'];
         $ref = agent_connection_gmail_inbox_item_reference_v1($scope,$version,$index,$item);
         if ($ref !== null) $view['item_ref'] = $ref;
+        elseif ($includeLegacyMatches) {
+            $legacy = agent_connection_gmail_inbox_legacy_reference_v1($scope,$version,$index,$item);
+            if ($legacy !== null) $view['legacy_ref'] = $legacy;
+        }
         $items[] = $view;
     }
     return $items;
@@ -129,8 +159,30 @@ function agent_connection_gmail_inbox_latest_view_v1(PDO $pdo, array $user, stri
     $raw = (string)($scope['policy']['last_review_json'] ?? '');
     $latest = json_decode($raw,true,12);
     if (!is_array($latest)) return null;
-    $latest['items'] = agent_connection_gmail_inbox_review_items_v1($latest,$scope,'latest:'.hash('sha256',$raw));
+    $id = agent_connection_gmail_inbox_batch_id_v1($scope['policy'],$raw);
+    $version = agent_connection_gmail_inbox_batch_v1($pdo,$scope,$id) !== null ? 'batch:'.$id : 'latest:'.hash('sha256',$raw);
+    $latest['items'] = agent_connection_gmail_inbox_review_items_v1($latest,$scope,$version,
+        agent_connection_gmail_inbox_legacy_window_v1($scope,$latest) !== null);
     return $latest;
+}
+
+function agent_connection_gmail_inbox_saved_reports_v1(PDO $pdo, array $scope, string $reference): array
+{
+    $row = agent_connection_gmail_inbox_initial_row_v1($pdo,$scope);
+    $raw = (string)($scope['policy']['last_review_json'] ?? '');
+    $reports = [];
+    $batch = agent_connection_gmail_inbox_batch_v1($pdo,$scope,substr($reference,0,32));
+    if ($batch !== null) {
+        $report = json_decode($batch['report_json'],true,12);
+        if (is_array($report)) $reports['batch:'.$batch['batch_id']] = ['report'=>$report,'first'=>null];
+    }
+    $latest = json_decode($raw,true,12);
+    if (is_array($latest)) $reports['latest:'.hash('sha256',$raw)] = ['report'=>$latest,'first'=>null];
+    if (($row['phase'] ?? '') === 'ready') {
+        $report = json_decode((string)$row['report_json'],true,12);
+        if (is_array($report)) $reports['first:'.$row['run_id']] = ['report'=>$report,'first'=>$row];
+    }
+    return $reports;
 }
 
 function agent_connection_gmail_inbox_item_v1(PDO $pdo, array $user, string $ref): array
@@ -138,12 +190,8 @@ function agent_connection_gmail_inbox_item_v1(PDO $pdo, array $user, string $ref
     if (!preg_match('/\A[a-f0-9]{64}\z/D',$ref)) throw new DomainException('Choose a saved Gmail review item.',422);
     $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
     if ($scope['state'] !== 'ready') throw new DomainException('Gmail Inbox Review access changed.',403);
-    $row = agent_connection_gmail_inbox_initial_row_v1($pdo,$scope);
-    $latest = (string)($scope['policy']['last_review_json'] ?? '');
-    $reports = ['latest:'.hash('sha256',$latest)=>json_decode($latest,true,12)];
-    if (($row['phase'] ?? '') === 'ready') $reports['first:'.$row['run_id']] = json_decode((string)$row['report_json'],true,12);
-    foreach ($reports as $version=>$report) {
-        foreach (array_slice((array)($report['items'] ?? []),0,8) as $index=>$item) {
+    foreach (agent_connection_gmail_inbox_saved_reports_v1($pdo,$scope,$ref) as $version=>['report'=>$report]) {
+        foreach (array_slice((array)($report['items'] ?? []),0,50) as $index=>$item) {
             if (!is_array($item)) continue;
             $candidate = agent_connection_gmail_inbox_item_reference_v1($scope,$version,$index,$item);
             if ($candidate === null || !hash_equals($candidate,$ref)) continue;
@@ -153,6 +201,128 @@ function agent_connection_gmail_inbox_item_v1(PDO $pdo, array $user, string $ref
         }
     }
     throw new DomainException('That Gmail review item is no longer available.',404);
+}
+
+/** Older reports saved display headers only. Limit recovery to the original review window. */
+function agent_connection_gmail_inbox_legacy_window_v1(array $scope, array $report, ?array $row=null): ?array
+{
+    if ($row !== null) {
+        $days = (int)$row['days'];
+        if (!in_array($days,[1,3,7,14,30],true)) return null;
+        $until = (int)$row['started_at_ms'];
+        $from = $until-$days*86400000;
+    } else {
+        $at = $report['at'] ?? null;
+        if (!is_string($at) || !preg_match('/\A\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\z/D',$at)) return null;
+        $end = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$at,new DateTimeZone('UTC'));
+        if (!$end || $end->format('Y-m-d H:i:s') !== $at) return null;
+        $until = ($end->getTimestamp()+1)*1000;
+        $from = (int)$scope['policy']['enabled_at_ms']+1;
+    }
+    return $from > 1 && $until > $from ? ['from_ms'=>$from,'until_ms'=>$until] : null;
+}
+
+function agent_connection_gmail_inbox_legacy_item_v1(PDO $pdo, array $user, string $ref): array
+{
+    if (!preg_match('/\A[a-f0-9]{64}\z/D',$ref)) throw new DomainException('Choose a saved Gmail review item.',422);
+    $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
+    if ($scope['state'] !== 'ready') throw new DomainException('Gmail Inbox Review access changed.',403);
+    foreach (agent_connection_gmail_inbox_saved_reports_v1($pdo,$scope,$ref) as $version=>['report'=>$report,'first'=>$row]) {
+        $window = agent_connection_gmail_inbox_legacy_window_v1($scope,$report,$row);
+        if ($window === null) continue;
+        foreach (array_slice((array)($report['items'] ?? []),0,50) as $index=>$item) {
+            if (!is_array($item)) continue;
+            $candidate = agent_connection_gmail_inbox_legacy_reference_v1($scope,$version,$index,$item);
+            if ($candidate === null || !hash_equals($candidate,$ref)) continue;
+            return ['owner'=>$scope['owner'],'policy'=>$scope['policy'],'from'=>agent_connection_gmail_sender_v1($item['from']),
+                'subject'=>$item['subject']]+$window;
+        }
+    }
+    throw new DomainException('That Gmail review item is no longer available.',404);
+}
+
+function agent_connection_gmail_inbox_legacy_match_v1(array $item, array $message): bool
+{
+    return $message['received_at_ms'] >= $item['from_ms'] && $message['received_at_ms'] < $item['until_ms']
+        && !array_intersect(['SENT','DRAFT','TRASH','SPAM'],$message['labels'])
+        && agent_connection_gmail_inbox_mailboxes_v1($message['from']) === [$item['from']]
+        && mb_substr($message['subject'],0,240,'UTF-8') === $item['subject'];
+}
+
+function agent_connection_gmail_inbox_find_matches_v1(PDO $pdo, array $user, string $ref, ?callable $http=null): array
+{
+    $item = agent_connection_gmail_inbox_legacy_item_v1($pdo,$user,$ref);
+    $policy = $item['policy'];
+    $access = agent_connections_access_v1($item['owner'],(int)$policy['connection_id'],'read',$http,$policy['authorization_key']);
+    $current = static function () use ($pdo,$user,$ref,$policy): void {
+        $fresh = agent_connection_gmail_inbox_legacy_item_v1($pdo,$user,$ref)['policy'];
+        if (!hash_equals($policy['revision'],$fresh['revision'])) throw new DomainException('Gmail review changed.',409);
+    };
+    $query = 'from:"'.$item['from'].'" after:'.(intdiv($item['from_ms'],1000)-1)
+        .' before:'.(intdiv($item['until_ms'],1000)+1).' -in:sent -in:drafts -in:spam -in:trash';
+    $hint = $item['subject'];
+    if (mb_strlen($hint,'UTF-8') >= 240) $hint = preg_match('/\A(.+)\s+\S*\z/u',$hint,$parts) ? rtrim($parts[1]) : '';
+    if (strpbrk($hint,'"\\') === false && preg_match('/[\p{L}\p{N}]/u',$hint)) $query .= ' subject:"'.$hint.'"';
+    $current();
+    $listed = agent_connection_gmail_api_v1($access['access_token'],'/messages?'.http_build_query([
+        'q'=>$query,'maxResults'=>10,'fields'=>'messages(id),nextPageToken',
+    ],'','&',PHP_QUERY_RFC3986),null,$http);
+    $records = $listed['messages'] ?? [];
+    if (!is_array($records) || !array_is_list($records) || count($records)>10) {
+        throw new AgentConnectionGmailExceptionV1('Gmail returned invalid review matches.',502);
+    }
+    // An older report can only resolve automatically after checking the full result set.
+    $fullyChecked = !array_key_exists('nextPageToken',$listed) || $listed['nextPageToken'] === '';
+    $seen = [];
+    $matches = [];
+    foreach ($records as $record) {
+        $id = agent_connection_gmail_id_v1($record['id'] ?? null);
+        if ($id === '' || isset($seen[$id])) {
+            $fullyChecked = false;
+            continue;
+        }
+        $seen[$id] = true;
+        $current();
+        try {
+            $message = agent_connection_gmail_message_v1(agent_connection_gmail_get_v1($access['access_token'],$id,false,$http));
+        } catch (AgentConnectionGmailExceptionV1 $error) {
+            if ($error->getCode() !== 404) throw $error;
+            $fullyChecked = false;
+            continue;
+        }
+        if ($message['received_at_ms'] < 1 || $message['from'] === '') $fullyChecked = false;
+        if (!agent_connection_gmail_inbox_legacy_match_v1($item,$message)) continue;
+        $matches[$id] = ['message_id'=>$id,'from'=>$message['from'],'subject'=>$message['subject'],'snippet'=>$message['snippet'],
+            'received_at'=>gmdate('Y-m-d\TH:i:s\Z',intdiv($message['received_at_ms'],1000)),
+            'match_token'=>agent_connection_gmail_inbox_key_v1($policy,'review-legacy-match-v1:'.$ref.':'.$id)];
+    }
+    $current();
+    return ['matches'=>array_values($matches),
+        'unique_match'=>$fullyChecked && count($matches) === 1 && mb_strlen($item['subject'],'UTF-8') < 240];
+}
+
+function agent_connection_gmail_inbox_match_item_v1(PDO $pdo, array $user, string $ref, string $id, string $token): array
+{
+    $item = agent_connection_gmail_inbox_legacy_item_v1($pdo,$user,$ref);
+    $policy = $item['policy'];
+    if ($id === '' || agent_connection_gmail_id_v1($id) !== $id
+        || !hash_equals(agent_connection_gmail_inbox_key_v1($policy,'review-legacy-match-v1:'.$ref.':'.$id),$token)) {
+        throw new DomainException('Choose an exact Gmail match first.',404);
+    }
+    return $item;
+}
+
+function agent_connection_gmail_inbox_open_match_v1(PDO $pdo, array $user, string $ref, string $id, string $token, ?callable $http=null): array
+{
+    $item = agent_connection_gmail_inbox_match_item_v1($pdo,$user,$ref,$id,$token);
+    $policy = $item['policy'];
+    $access = agent_connections_access_v1($item['owner'],(int)$policy['connection_id'],'read',$http,$policy['authorization_key']);
+    agent_connection_gmail_inbox_legacy_item_v1($pdo,$user,$ref);
+    $raw = agent_connection_gmail_get_v1($access['access_token'],$id,true,$http);
+    $message = agent_connection_gmail_read_message_v1($raw);
+    agent_connection_gmail_inbox_legacy_item_v1($pdo,$user,$ref);
+    if (!agent_connection_gmail_inbox_legacy_match_v1($item,$message)) throw new DomainException('This Gmail match changed.',409);
+    return ['subject'=>$message['subject'],'from'=>$message['from'],'body'=>mb_substr($message['body'],0,6000),'auto_reply'=>false];
 }
 
 function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string $ref, ?callable $http=null): array
@@ -176,15 +346,19 @@ function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string
 }
 
 /** Only explicit, current owner Chat reads receive reviewed item labels. */
-function agent_connection_gmail_inbox_initial_chat_result_v1(array $report, array $scope, string $runId): array
+function agent_connection_gmail_inbox_initial_chat_result_v1(PDO $pdo,array $report,array $scope,array $row,bool $includeLegacyMatches): array
 {
     $summaryStatus = $report['summary_status'] ?? 'unverified';
     $result = ['summary'=>($report['summary_status'] ?? '') === 'ready' && is_string($report['summary'] ?? null)
         ? mb_substr($report['summary'], 0, 1000) : '',
         'summary_status'=>in_array($summaryStatus,['ready','unavailable','unverified','no_messages'],true)?$summaryStatus:'unverified',
         'important'=>(int)($report['important'] ?? 0),'replies'=>(int)($report['replies'] ?? 0),
-        'items'=>agent_connection_gmail_inbox_review_items_v1($report,$scope,'first:'.$runId)];
+        'items'=>agent_connection_gmail_inbox_review_items_v1($report,$scope,'first:'.$row['run_id'],
+            $includeLegacyMatches && agent_connection_gmail_inbox_legacy_window_v1($scope,$report,$row) !== null)];
     $latestJson = (string)($scope['policy']['last_review_json'] ?? '');
+    if (agent_connection_gmail_inbox_batch_v1($pdo,$scope,agent_connection_gmail_inbox_batch_id_v1($scope['policy'],$latestJson)) !== null) {
+        return $result;
+    }
     $latest = json_decode($latestJson,true,12);
     if (!is_array($latest) || !is_string($latest['at'] ?? null)
         || !preg_match('/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\z/', $latest['at'])) return $result;
@@ -195,18 +369,28 @@ function agent_connection_gmail_inbox_initial_chat_result_v1(array $report, arra
     }
     if ($counts['important'] > $counts['total'] || $counts['replies'] > $counts['total']) return $result;
     return $result + ['latest'=>$counts + ['at'=>str_replace(' ', 'T', $latest['at']).'Z',
-        'items'=>agent_connection_gmail_inbox_review_items_v1($latest,$scope,'latest:'.hash('sha256',$latestJson))]];
+        'items'=>agent_connection_gmail_inbox_review_items_v1($latest,$scope,'latest:'.hash('sha256',$latestJson),
+            $includeLegacyMatches && agent_connection_gmail_inbox_legacy_window_v1($scope,$latest) !== null)]];
 }
 
 /** Read only. The default status view omits all mailbox details. */
-function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport=false, ?string $expectedRevision=null, bool $includeChatResult=false): array
+function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport=false, ?string $expectedRevision=null,
+    bool $includeChatResult=false, bool $includeLegacyMatches=false): array
 {
     $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
     if ($scope['state']!=='ready') return ['state'=>$scope['state'],'limit'=>50];
     if ($expectedRevision!==null && !hash_equals($scope['policy']['revision'],$expectedRevision)) return ['state'=>'unavailable','limit'=>50];
     $start = $includeReport ? ['start_token'=>agent_connection_gmail_inbox_initial_start_token_v1($scope)] : [];
     $row = agent_connection_gmail_inbox_initial_row_v1($pdo,$scope);
-    if (!$row) return ['state'=>'needs_start','limit'=>50]+$start;
+    $updates = [];
+    if ($includeChatResult) {
+        $updates = agent_connection_gmail_inbox_update_state_v1($pdo,$scope);
+        $policy = $scope['policy'];
+        if (!empty($policy['claim_key']) && (string)$policy['next_check_at'] > agent_commerce_time_pa2()) {
+            $updates['inbox_working_until'] = str_replace(' ', 'T', $policy['next_check_at']).'Z';
+        }
+    }
+    if (!$row) return ['state'=>'needs_start','limit'=>50]+$start+$updates;
     $phase = $row['phase'];
     $report = $phase==='ready' ? json_decode((string)$row['report_json'],true,12,JSON_THROW_ON_ERROR) : null;
     $progress = $report ?? agent_connection_gmail_inbox_initial_checkpoint_v1($row);
@@ -227,26 +411,26 @@ function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, boo
         }
         if ($includeReport) {
             unset($report['chat_delivery']);
-            $report['items'] = agent_connection_gmail_inbox_review_items_v1($report,$live,'first:'.$row['run_id']);
+            $report['items'] = agent_connection_gmail_inbox_review_items_v1($report,$live,'first:'.$row['run_id'],
+                agent_connection_gmail_inbox_legacy_window_v1($live,$report,$row) !== null);
             $view['report'] = $report;
         }
         if ($includeChatResult) {
-            $policy = $live['policy'];
-            $view['chat_result'] = agent_connection_gmail_inbox_initial_chat_result_v1($report,$live,$row['run_id']);
-            if (!empty($policy['claim_key']) && (string)$policy['next_check_at'] > agent_commerce_time_pa2()) {
-                $view['inbox_working_until'] = str_replace(' ', 'T', $policy['next_check_at']).'Z';
-            }
+            $view['chat_result'] = agent_connection_gmail_inbox_initial_chat_result_v1($pdo,$report,$live,$row,$includeLegacyMatches);
         }
     }
     $next = $row['lease_until'] ?? $row['next_run_at'];
     if ($next!==null) $view['next_attempt_at'] = str_replace(' ','T',$next).'Z';
-    return $view+$start;
+    return $view+$start+$updates;
 }
 
 /** Only an explicit start can authorize a new first review and its metered summary. */
 function agent_connection_gmail_inbox_initial_start_v1(PDO $pdo, array $user, int $days, string $startToken): void
 {
     if (!in_array($days,[1,3,7,14,30],true)) throw new AgentConnectionExceptionV1('Choose a supported review window.',422);
+    if (!agent_connection_gmail_inbox_initial_capacity_ready_v1($pdo)) {
+        throw new AgentConnectionExceptionV1('Run Database Upgrade to review all inbox messages.',503);
+    }
     agent_commerce_atomic_pa2($pdo,static function() use($pdo,$user,$days,$startToken):void {
         $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user,true);
         if ($scope['state']!=='ready') throw new AgentConnectionExceptionV1('Enable Inbox Review and verify Gmail read access first.',409);
@@ -287,7 +471,8 @@ function agent_connection_gmail_inbox_initial_complete_v1(PDO $pdo, array $scope
 /** Claim and run one bounded slice; both worker and owner browser share this lease. */
 function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, string $runId, ?callable $http=null, ?callable $summarize=null): bool
 {
-    if ($pdo->inTransaction() || !preg_match('/\A[a-f0-9]{32}\z/D',$runId)) return false;
+    if ($pdo->inTransaction() || !preg_match('/\A[a-f0-9]{32}\z/D',$runId)
+        || !agent_connection_gmail_inbox_initial_capacity_ready_v1($pdo)) return false;
     $reserved = agent_commerce_atomic_pa2($pdo,static function() use($pdo,$user,$runId):?array {
         $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user,true);
         $row = agent_connection_gmail_inbox_initial_row_v1($pdo,$scope,true);
@@ -328,6 +513,19 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
             $scan = agent_connection_gmail_inbox_initial_scan_v1($policy,$access['access_token'],(int)$row['started_at_ms'],(int)$row['days'],
                 $progress['page'],$progress['scanned'],$progress['pages'],$http,static fn():bool=>$current()!==null,
                 static fn(string $key):bool=>isset($progress['seen'][$key]));
+            if ($scan['status'] === 'checked') {
+                foreach ($scan['messages'] as $key=>$message) {
+                    if (isset($progress['seen'][$key])) continue;
+                    $progress['seen'][$key] = true;
+                    if ($message===null) continue;
+                    if (agent_connection_gmail_inbox_ignored_v1($message,$policy['rules'])) { $progress['filtered']++; continue; }
+                    $progress['total']++;
+                    $progress['important'] += (int)$message['important'];
+                    $progress['replies'] += (int)$message['reply'];
+                    $progress['items'][] = agent_connection_gmail_inbox_saved_item_v1($message);
+                }
+                foreach (['page','pages','scanned','truncated'] as $field) $progress[$field] = $scan[$field];
+            }
         } else {
             require_once __DIR__.'/agent-connection-gmail-inbox-initial-summary-v1.php';
             $before = static function() use($current):void {
@@ -339,6 +537,7 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
                 agent_connection_gmail_inbox_initial_report_v1($row,$progress),$before);
         }
     } catch (Throwable $error) {
+        $scan = null;
         if (function_exists('agent_runtime_v125_trace')) agent_runtime_v125_trace('worker.gmail_first_review.failed',['error_class'=>get_class($error)]);
     }
     return agent_commerce_atomic_pa2($pdo,static function() use($pdo,$current,$row,$progress,$scan,$summary):bool {
@@ -357,17 +556,6 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
                     $failures>=3?null:$row['checkpoint_json'],$now,$fresh['owner']]);
             return true;
         }
-        foreach ($scan['messages'] as $key=>$message) {
-            if (isset($progress['seen'][$key])) continue;
-            $progress['seen'][$key] = true;
-            if ($message===null) continue;
-            if (agent_connection_gmail_inbox_ignored_v1($message,$fresh['policy']['rules'])) { $progress['filtered']++; continue; }
-            $progress['total']++;
-            $progress['important'] += (int)$message['important'];
-            $progress['replies'] += (int)$message['reply'];
-            if (count($progress['items'])<8) $progress['items'][] = agent_connection_gmail_inbox_saved_item_v1($message);
-        }
-        foreach (['page','pages','scanned','truncated'] as $field) $progress[$field] = $scan[$field];
         if (!$scan['more'] && $progress['total']===0) {
             agent_connection_gmail_inbox_initial_complete_v1($pdo,$fresh,$row,$progress,['status'=>'no_messages','tokens_charged'=>0]);
             return true;

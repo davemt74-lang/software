@@ -242,7 +242,18 @@ function vp3_agent_tool_internal_action_v400(array $action,array $user,string $q
             'label'=>$sent?'View sent reply':($reply?'Review reply':'Review email'),
             'auto'=>false,'policy'=>['version'=>'v4.00','domain'=>'connections_email','risk'=>$sent?'low':'high',
                 'requires_approval'=>!$sent,'authorized'=>true]]
-            +($reply?['is_reply'=>true]:[])+($sent?['sent'=>true]:[]);
+            +($reply?['is_reply'=>true]:[])+($sent?['sent'=>true]:[])
+            +(($approved['writing']??false)===true?['writing'=>true]:[]);
+    }
+    if($type==='gmail_message'){
+        $approved=$GLOBALS['vp3_gmail_message_refs_v1']??[];
+        $ref=$action['item_ref']??null;
+        if(($approved['owner']??0)!==(int)$user['id']||!has_permission('chat.access',$user)
+            ||!is_string($ref)||!preg_match('/\A[a-f0-9]{2,1500}\z/D',$ref)
+            ||!is_string($approved['refs'][$ref]??null)||($approved['conversation']??0)<1)return null;
+        return ['type'=>'gmail_message','item_ref'=>$ref,'conversation_id'=>$approved['conversation'],
+            'label'=>$approved['refs'][$ref],'auto'=>false,'policy'=>['version'=>'v4.00','domain'=>'connections_email',
+                'risk'=>'low','requires_approval'=>false,'authorized'=>true]];
     }
     if($type==='participant_setup'){
         $token=$action['token']??'';$approved=is_string($token)?($GLOBALS['VP3_PARTICIPANT_CARDS_V2'][$token]??null):null;

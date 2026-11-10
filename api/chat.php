@@ -163,8 +163,8 @@ try {
         $stmt->execute([$conversationId]);
         $agentId=(int)($conversation['user_agent_id']??0);
         $rows=vp3_agent_chat_include_source_v380($pdo,$user,$agentId>0?['id'=>$agentId]:null,$conversationId,array_reverse($stmt->fetchAll()),$input['source_message_id']??null);
-        $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,$rows);
-        echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>agent_connection_gmail_inbox_chat_history_v1($pdo,$user,$agentId,$conversationId,vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages))]);
+        $messages=vp3_agent_chat_history_content_v2160($pdo,$user,$agentId,$conversationId,$rows);
+        echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>$messages]);
         exit;
     }
 
@@ -175,8 +175,8 @@ try {
         $afterId=max(0,(int)($input['after_id']??0));
         $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');
         $stmt->execute([$conversationId,$afterId]);
-        $messages=agent_connection_youtube_history_v1($pdo,$userId,$scope['agent_id'],$conversationId,$stmt->fetchAll());
-        echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>agent_connection_gmail_inbox_chat_history_v1($pdo,$user,$scope['agent_id'],$conversationId,vp3_initiative_research_canvas_history_v1($pdo,$userId,$scope['agent_id'],$conversationId,$messages))],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+        $messages=vp3_agent_chat_history_content_v2160($pdo,$user,$scope['agent_id'],$conversationId,$stmt->fetchAll());
+        echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$messages],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         exit;
     }
 

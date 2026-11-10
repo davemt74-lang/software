@@ -1468,7 +1468,7 @@
       profile_attention:raw.profile_attention && typeof raw.profile_attention==='object' ? raw.profile_attention : null,
       initiative_work:raw.initiative_work && typeof raw.initiative_work==='object' ? raw.initiative_work : null,
       research_canvas_v1:raw.source==='agent_initiative' ? raw.research_canvas_v1 : null,
-      gmail_inbox_review_v1:raw.source==='agent_connection_gmail_first_review' ? raw.gmail_inbox_review_v1 : null,
+      gmail_inbox_review_v1:['agent_connection_gmail_first_review','agent_connection_gmail_inbox_update'].includes(raw.source) ? raw.gmail_inbox_review_v1 : null,
       initiative_followthrough:raw.initiative_followthrough && typeof raw.initiative_followthrough==='object' ? raw.initiative_followthrough : null,
       initiative_action:raw.initiative_action && typeof raw.initiative_action==='object' ? raw.initiative_action : null,
       product_launch:raw.source===(raw.product_launch?.stage==='promotion_outcomes' ? 'agent_promotion_outcome' : 'agent_product_launch')
@@ -1595,7 +1595,18 @@
     if (!action) return '';
     if (action.type === 'email_review' && /^[a-f0-9]{32}$/.test(String(action.id || '')) && Number.isSafeInteger(action.conversation_id) && action.conversation_id > 0) {
       const label = action.sent === true ? 'View sent reply' : (action.is_reply === true ? 'Review reply' : 'Review email');
-      return '<button class="chat-agent-action-button" type="button" data-chat-email-review="'+escapeHtml(action.id)+'" data-chat-email-conversation="'+action.conversation_id+'">'+label+'</button>';
+      const queued = action.writing === true ? ' data-chat-email-writing="1"' : '';
+      return '<button class="chat-agent-action-button" type="button" data-chat-email-review="'+escapeHtml(action.id)+'" data-chat-email-conversation="'+action.conversation_id+'"'+queued+'>'+label+'</button>';
+    }
+    if (action.type === 'gmail_followup' && Number.isSafeInteger(action.message_id) && action.message_id > 0
+        && Number.isSafeInteger(action.conversation_id) && action.conversation_id > 0) {
+      const buttons = [['open','Open message']];
+      if (action.can_reply === true) buttons.push(['reply','Reply'],['compose','Auto Compose (uses tokens)']);
+      return buttons.map(([kind,label]) => `<button class="chat-agent-action-button" type="button" data-chat-email-followup="${action.message_id}" data-chat-email-conversation="${action.conversation_id}" data-chat-email-followup-action="${kind}">${label}</button>`).join('');
+    }
+    if (action.type === 'gmail_message' && typeof action.item_ref === 'string' && /^[a-f0-9]{2,1500}$/.test(action.item_ref)
+        && Number.isSafeInteger(action.conversation_id) && action.conversation_id > 0) {
+      return `<button class="chat-agent-action-button" type="button" data-chat-email-search="${action.item_ref}" data-chat-email-conversation="${action.conversation_id}">${escapeHtml(action.label || 'Open email')}</button>`;
     }
     if(action.type==='participant_setup'&&/^[a-f0-9]{32}$/.test(String(action.token||''))&&Number.isInteger(action.conversation_id)&&action.conversation_id>0)return '<button class="chat-agent-action-button" type="button" data-participant-setup-token="'+escapeHtml(action.token)+'" data-participant-setup-conversation="'+action.conversation_id+'">Review participant setup</button>';
     if (action.type === 'voice_enrollment') return '<button class="chat-agent-action-button" type="button" data-voice-enrollment-open>Learn my voice</button>';
@@ -3856,11 +3867,11 @@
   });
 
   function gmailReviewActionLabel(message) {
-    const match = /^(Reply|Draft reply|Auto reply) to Gmail review item [a-f0-9]{64}$/.exec(message);
-    return match ? match[1] + ' to selected Gmail message' : '';
+    const match = /^(?:(Reply|Draft reply|Auto reply) to Gmail review item [a-f0-9]{64}|(Reply|Draft reply) to Gmail (?:matched item [a-f0-9]{64} [a-zA-Z0-9_-]{1,190} [a-f0-9]{64}|follow-up [1-9][0-9]{0,15}|search item [a-f0-9]{2,1500}))$/.exec(message);
+    return match ? (match[1] || match[2]) + ' to selected Gmail message' : '';
   }
 
-  async function sendMessage(message, inputMode = 'text') {
+  async function sendMessage(message, inputMode = 'text', openGmailDraft = false) {
     if (busy || !contextReady || initialRestorePending || restoringConversation || !message.trim()) return;
     if(initiativePosts.size&&!initiativeIdentityMatchesV1()){
       clearInitiativeReplyV1(true);recoveryStatus('The account or session changed. Refresh Chat before replying to an Agent update.');return;
@@ -3917,6 +3928,7 @@
     autoSize();
 
     const typing = addTyping(); request.typing=typing;
+    let gmailDraft = null;
 
     try {
       const browserContextRuntime=window.VP3_BROWSER_CONTEXT_V2130_RUNTIME;
@@ -4017,6 +4029,9 @@
         data.youtube_results || null
       );
       if(!existingReply)bindStoredMessagePa3(reply,data.assistant_message_id);
+      if (openGmailDraft && gmailAction && !gmailAction.startsWith('Auto reply ')) {
+        gmailDraft = reply.querySelector('[data-chat-email-review]');
+      }
       if (data.tool_receipt?.capability === 'email.followups' && data.tool_receipt.status === 'completed'
         && ['watch_sender','stop_sender_watch'].includes(data.tool_receipt.operation)) {
         window.dispatchEvent(new Event('vp3:chat-email-watch-changed'));
@@ -4074,7 +4089,8 @@
       pendingSend=null;showStop();
       busy = false;
       send.disabled = false; input.disabled=false;
-      input.focus();
+      if (gmailDraft?.isConnected) gmailDraft.click();
+      else input.focus();
       if (inputMode === 'voice' && voiceMode && !voiceSpeaking) {
         window.setTimeout(startVoiceRecognition, 220);
       }
@@ -4293,7 +4309,7 @@
     requestGmailReviewAction: command => {
       if (!gmailReviewActionLabel(command) || !contextReady || busy || initialRestorePending
           || restoringConversation > 0 || input.value.trim()) return false;
-      void sendMessage(command);
+      void sendMessage(command,'text',true);
       return true;
     },
     openConversation:async (id, options = {}) => {

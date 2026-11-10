@@ -201,8 +201,8 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
         $catalog[$id]=['id'=>$id,'capability'=>$id,'mode'=>'read',
             'ready'=>true,'reason'=>'ready','source_refs'=>$refs,
             'description'=>$kind==='artist'
-                ?'Use the exact named artist from this verified interest pattern to prepare a private, sourced result. Choose only when research would add value. Set focus to overview, news, shows, merch, or videos.'
-                :'Use the exact public topic from a verified interest pattern or an owner-approved open task. Choose only when a reliable explanation, practical next step, or new development would help. For task_research, report the sourced result back to private Chat. Treat activity as tentative evidence of interest.'];
+                ?'Use the exact named artist from this verified interest pattern to prepare a private, sourced result. Choose only when research would add value. Set focus to overview, news, shows, merch, videos, or playlist. For playlist or videos set report to true so any verified playable picks can reach private Chat.'
+                :'Use the exact public topic from a verified interest pattern or an owner-approved open task. Choose only when a reliable explanation, practical next step, or new development would help. For a YouTube interest, choose playlist as the focus and report to true when a playable collection would help. For task_research, report the sourced result back to private Chat. Treat activity as tentative evidence of interest.'];
     }
     foreach(['product','screen','mission','marketing'] as $tool){
         $refs=[];
@@ -451,7 +451,7 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
             if($task&&($job['report']??null)!==true)throw new InvalidArgumentException('Task research must report to its saved Chat.');
             $plan=['mode'=>'direct',$kind=>$source['title']];
             if($kind==='artist')$plan+=['location'=>'',
-                'focus'=>in_array($focus,['news','shows','merch','videos'],true)?$focus:'overview'];
+                'focus'=>$focus==='playlist'?'videos':(in_array($focus,['news','shows','merch','videos'],true)?$focus:'overview')];
             $authorize=static function()use($pdo,$user,$binding,$evidence,$checkLease):void{
                 if($checkLease!==null)$checkLease();
                 vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
@@ -465,11 +465,18 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
             if(!in_array($research['status']??null,['read_complete','no_matches'],true)||!vp3_public_research_result_valid_v1($research,$kind)){
                 throw new RuntimeException('Public research could not be verified.',503);
             }
-            return ['draft'=>$research['answer'],'sources'=>$research['sources'],
+            $result=['draft'=>$research['answer'],'sources'=>$research['sources'],
                 'tool_receipt'=>vp3_tool_receipt_v1($tool,'search',$research['status'],'',0,count($research['sources'])),
                 'output'=>['type'=>'initiative_'.$kind.'_research','status'=>$research['status'],'reason'=>$research['reason'],
                     'checked_at'=>$research['checked_at'],'source_ref'=>$primary,'source_revision'=>$source['revision']]
                     +($task?['public_topic'=>$source['title']]:[])];
+            if(!$task&&($job['report']??null)===true&&$research['status']==='read_complete'){
+                require_once __DIR__.'/agent-initiative-youtube-playlist-v1.php';
+                $playlist=vp3_initiative_youtube_playlist_prepare_v1($pdo,(int)$scope['user']['id'],$source['title'],$kind,
+                    $focus,$research['sources'],$authorize,$researchTransport['youtube_http']??null);
+                if($playlist!==null)$result['youtube_playlist']=$playlist;
+            }
+            return $result;
         }
         if(in_array($tool,['brain.read','knowledge.search'],true)){
             $records=vp3_initiative_tools_records_v1($pdo,$scope,$binding,$tool,$job['focus']);

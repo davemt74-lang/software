@@ -41,10 +41,10 @@ function vp3_agent_activity_media_v1(PDO $pdo,array $user,int $agentId): array
             $playItems=[];
             $searchItems=[];
             $seenVideos=[];
-            $plays=vp3_youtube_playback_ready_v1($pdo)?vp3_youtube_history_recent_v1($pdo,$owner,$agentId,null,12):[];
-            foreach($plays as $video){
+            $records=agent_connection_youtube_activity_records_v1($pdo,$owner,$agentId,time());
+            foreach($records['plays'] as $video){
                 $videoId=(string)($video['video_id']??'');
-                if(isset($seenVideos[$videoId]))continue;
+                if(isset($seenVideos[$videoId])||(int)$video['conversation_id']<1||(int)$video['message_id']<1)continue;
                 $title=vp3_agent_activity_media_text_v1($video['title']??'');
                 if($title==='')continue;
                 $seenVideos[$videoId]=true;
@@ -61,13 +61,14 @@ function vp3_agent_activity_media_v1(PDO $pdo,array $user,int $agentId): array
                     ],
                 ]];
             }
-            foreach(agent_connection_youtube_result_records_v1($pdo,$owner,$agentId,null,12) as $record){
+            foreach($records['searches'] as $record){
                 $mid=(int)$record['message_id'];
                 $title=vp3_agent_activity_media_text_v1($record['results']['query']??'');
                 if($title==='')continue;
                 $cid=(int)$record['conversation_id'];
                 $searchItems[]=['time'=>(int)$record['created_at_epoch'],'item'=>[
-                    'id'=>'youtube-search:'.$mid,'kind'=>'youtube_search','title'=>$title,'detail'=>'Search results',
+                    'id'=>'youtube-search:'.$mid,'kind'=>'youtube_search','title'=>$title,
+                    'detail'=>($record['results']['suggestion_kind']??null)==='playlist'?'Playlist draft':'Search results',
                     'actions'=>[['kind'=>'chat','label'=>'Review results',
                         'href'=>url('/chat.php?agent='.($agentId?:'system').'&conversation_id='.$cid),
                         'conversation_id'=>$cid,'message_id'=>$mid]],
