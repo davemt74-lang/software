@@ -675,7 +675,7 @@ try {
   await page.getByRole('button',{name:'Close chat tools'}).click();
   await page.locator('#chatInput').fill('Preserve this popup draft');
   const popupSends=sends().length;
-  await page.locator('[data-orb-chat]').click();
+  await page.locator('.vp3-orb-ball').click();
   await page.locator('#vp3AgentChatPopup').waitFor({state:'visible'});
   assert.equal(await page.evaluate(()=>popupThread===document.getElementById('chatThread')&&popupInput===document.getElementById('chatInput')&&popupConversation===STONEFELLOW_CHAT_CONTINUITY.conversationId()),true);
   assert.equal(await page.locator('iframe').count(),0);

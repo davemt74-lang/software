@@ -111,7 +111,10 @@ try{
   browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
   for(const [outside,width] of [[false,1280],[true,390]]){
     const context=await browser.newContext({viewport:{width,height:844}}),page=await context.newPage();page.setDefaultTimeout(8000);const errors=[],reads=[];
-    page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{if(request.url().includes('/api/agent-top-of-mind-v1.php'))reads.push(request);});
+    // The global orb's lightweight work view remains active outside Chat;
+    // these counters measure the full Brain feed controlled by this drawer.
+    const isBrainRead=url=>url.includes('/api/agent-top-of-mind-v1.php')&&new URL(url).searchParams.get('view')!=='work';
+    page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{if(isBrainRead(request.url()))reads.push(request);});
     await page.goto(base+(outside?'/outside':'/'),{waitUntil:'domcontentloaded'});
     await page.locator('.vp3-orb-root').hover();
     await page.locator('[data-orb-brain]').click();
@@ -171,7 +174,10 @@ try{
     await page.unroute('**/api/agent-top-of-mind-v1.php**',outage);await feed.getByRole('button',{name:'Retry',exact:true}).click();await feed.getByText('Working',{exact:true}).waitFor();
     await page.evaluate(()=>{window.fixtureHidden=true;Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.fixtureHidden});document.dispatchEvent(new Event('visibilitychange'));});
     const hiddenCount=reads.length;await page.waitForTimeout(2800);assert.equal(reads.length,hiddenCount,'a hidden page must not poll');
-    await page.evaluate(()=>{window.fixtureHidden=false;document.dispatchEvent(new Event('visibilitychange'));});await page.waitForFunction(n=>window.performance.getEntriesByType('resource').filter(x=>x.name.includes('/api/agent-top-of-mind-v1.php')).length>n,0);
+    // Drain the refresh started by becoming visible before measuring closed
+    // polling. Historical resource entries cannot prove that this GET ran.
+    const visibleRefresh=page.waitForResponse(response=>isBrainRead(response.url())&&response.ok());
+    await page.evaluate(()=>{window.fixtureHidden=false;document.dispatchEvent(new Event('visibilitychange'));});await visibleRefresh;
     await page.locator('[data-notification-drawer-close]').click();const closedCount=reads.length;await page.waitForTimeout(2800);assert.equal(reads.length,closedCount,'a closed Brain must not poll');
     assert.deepEqual(errors,[]);
     console.log('PASS '+(outside?'mobile floating Agent away from Chat':'desktop main Chat')+': same Brain feed, optional Brain-off/failed voice independence, live progress, stale network recovery, hidden/closed polling stop and responsive layout');

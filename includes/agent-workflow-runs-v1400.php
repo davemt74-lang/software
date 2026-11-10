@@ -138,6 +138,10 @@ function agent_workflow_public_json_v1400(string $json,bool $storeInitiativeDraf
 function agent_workflow_initiative_result_v1400(array $value): array
 {
     $output=$value['output']??null;
+    if(($output['type']??null)==='initiative_brainstorm'){
+        require_once __DIR__.'/agent-initiative-brainstorm-v1.php';
+        return vp3_initiative_brainstorm_tool_result_v1($value)??[];
+    }
     if(($output['type']??null)==='initiative_canvas'){
         require_once __DIR__.'/agent-initiative-canvas-v1.php';
         return vp3_initiative_canvas_tool_result_v1($value)??[];

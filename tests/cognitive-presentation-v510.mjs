@@ -47,10 +47,13 @@ assert.match(css,/chat-agent-status-dot\.active/);
 assert.match(css,/vp3-return-digest/);
 assert.match(css,/\.chat-agent-intelligence\{display:none!important\}/);
 
-assert.match(chat,/chatAgentBriefButton/);
-assert.match(chat,/chatAgentBriefPopover/);
+assert.doesNotMatch(chat,/chatAgentBriefButton/,'The orb owns Top of Mind entry without a duplicate composer launcher');
+assert.match(chat,/chatAgentBriefPopover/,'The shared orb pane retains the detailed Brief');
 assert.match(chat,/VP3_COGNITIVE_PRESENTATION_V510/);
 assert.match(chat,/chat-cognitive-presentation-v510\.js/);
+assert.doesNotMatch(js,/if\s*\(!button\s*\|\|\s*!popup/,'Removing the optional launcher must not stop cognitive polling or Initiative work');
+assert.match(js,/window\.VP3_COGNITIVE_PRESENTATION\s*=/,'The canonical presentation runtime remains available');
+assert.match(js,/openDetails:openPopup/,'Orb details retain access to the shared Brief pane');
 assert.doesNotMatch(chat,/\$agentIntelligenceHtml \. '<div class="message assistant" id="chatWelcome" hidden>'/);
 
 assert.match(loop,/VP3_COGNITIVE_PRESENTATION_V510/);

@@ -296,6 +296,24 @@ function vp3_agent_activity_suggestions_v1(PDO $pdo, array $scope): array
         $items[] = $card + ['state'=>$state, 'owner_state'=>$ownerState];
         if (count($items) === 3) break;
     }
+    if(count($items)<3){
+        require_once __DIR__.'/agent-initiative-opportunity-view-v1.php';
+        try{$opportunities=vp3_initiative_opportunities_v1($pdo,$scope['user'],$scope['agent_id']);}
+        catch(Throwable $error){$opportunities=[];$coverage='limited';}
+        foreach($opportunities as $opportunity){
+            $status=match($opportunity['state']){
+                'queued'=>'This assessment queued a private next step.',
+                'existing'=>'This assessment matched an existing private assignment.',
+                default=>'An idea from the latest assessment.',
+            };
+            $items[]=vp3_agent_activity_card_v1('opportunity:'.$opportunity['id'],'suggestion',
+                $opportunity['objective'],$status.' '.$opportunity['rationale'],[
+                    ['kind'=>'chat','label'=>'Open Chat','conversation_id'=>$opportunity['conversation_id'],
+                        'href'=>vp3_agent_activity_chat_href_v1($scope['agent_id'],$opportunity['conversation_id'])],
+                ])+['state'=>$opportunity['state'],'owner_state'=>''];
+            if(count($items)===3)break;
+        }
+    }
     return ['items'=>$items, 'coverage'=>$coverage];
 }
 

@@ -1,10 +1,11 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
+require_once __DIR__.'/includes/ai-usage-report-v1.php';
 require_login();
 $user=current_user();$pdo=db();
 if(!$user||!$pdo||!ai_usage_accounting_v032_schema_ready($pdo)){http_response_code(503);exit('AI usage accounting is unavailable.');}
-$rows=ai_usage_accounting_v032_export($pdo,(int)$user['id']);
+$rows=vp3_ai_usage_report_export_v1($pdo,(int)$user['id']);
 header('Content-Type: text/csv; charset=UTF-8');
 header('Content-Disposition: attachment; filename="vp3-ai-usage-'.date('Y-m-d').'.csv"');
 header('Cache-Control: no-store');

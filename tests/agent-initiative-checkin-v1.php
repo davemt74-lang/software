@@ -156,9 +156,13 @@ $reviewAge=db()->prepare("UPDATE agent_memory_items SET last_seen_at=? WHERE use
 $reviewAge->execute([gmdate('Y-m-d H:i:s',time()-31)]);
 vp3_initiative_schedule_v1(db(),$user,17);vp3_initiative_schedule_v1(db(),$user,17);
 $plans=scope_runs(1,17,'initiative.plan');$nextPlan=end($plans);$goal=json_decode((string)$nextPlan['goal'],true,24,JSON_THROW_ON_ERROR);
-checkin_check(count($plans)===count($priorPlans)+1&&$goal['sources']===$priorGoal['sources']
+checkin_check(count($plans)===count($priorPlans)+1
+    &&array_diff_key($goal['sources'],['chat-history:170'=>true])===array_diff_key($priorGoal['sources'],['chat-history:170'=>true])
     &&($goal['engagement_revision']??'')===vp3_initiative_engagement_revision_v1(db(),$user,$binding),
-    'one genuine owner decision wakes one reassessment even when the original sources are unchanged');
+    'one genuine owner decision wakes one reassessment with exact feedback and unchanged original non-Chat sources');
+checkin_check(isset($goal['sources']['chat-history:170'],$priorGoal['sources']['chat-history:170'])
+    &&$goal['sources']['chat-history:170']!==$priorGoal['sources']['chat-history:170'],
+    'the same saved owner reply legitimately revises its canonical recent-Chat evidence');
 
 checkin_reset();$current=checkin_execute();$currentPost=(int)$current['result']['initiative_message_id'];
 $unrelated='Give me a weather forecast for tomorrow.';

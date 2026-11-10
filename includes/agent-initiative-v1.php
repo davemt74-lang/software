@@ -8,9 +8,30 @@ require_once __DIR__.'/agent-catch-up-v1.php';
 require_once __DIR__.'/agent-initiative-scope-v1.php';
 require_once __DIR__.'/agent-initiative-errors-v1.php';
 require_once __DIR__.'/agent-initiative-capabilities-v1.php';
+require_once __DIR__.'/agent-initiative-brainstorm-v1.php';
+
+/** Compatibility: callers that only dispatch work retain the original jobs array. */
+function vp3_initiative_plan_v1(string $answer,array $evidence,array $allowedTools=['work.prepare_private']): array
+{
+    return vp3_initiative_assessment_v1($answer,$evidence,$allowedTools)['jobs'];
+}
+
+/** Normalize the bounded assessment without granting execution to its ideas. */
+function vp3_initiative_assessment_v1(string $answer,array $evidence,array $allowedTools=['work.prepare_private'],array $tools=[]): array
+{
+    $limits=vp3_initiative_limits_v1();
+    if(strlen($answer)>$limits['max_plan_bytes'])throw new InvalidArgumentException('Initiative plan too large.');
+    $plan=json_decode($answer,false,16,JSON_THROW_ON_ERROR);
+    if(!$plan instanceof stdClass||!property_exists($plan,'jobs')
+        ||array_diff(array_keys((array)$plan),['jobs','opportunities']))throw new InvalidArgumentException('Invalid initiative plan.');
+    $jobs=vp3_initiative_jobs_v1(json_encode(['jobs'=>$plan->jobs],JSON_THROW_ON_ERROR),$evidence,$allowedTools);
+    foreach($jobs as $job)vp3_initiative_brainstorm_tool_scope_v1($job,$tools);
+    $opportunities=vp3_initiative_brainstorm_opportunities_v1(property_exists($plan,'opportunities')?$plan->opportunities:[],$evidence,$allowedTools,$tools);
+    return ['jobs'=>$jobs,'opportunities'=>$opportunities];
+}
 
 /** Accept only private preparation assignments grounded in the supplied snapshot. */
-function vp3_initiative_plan_v1(string $answer,array $evidence,array $allowedTools=['work.prepare_private']): array
+function vp3_initiative_jobs_v1(string $answer,array $evidence,array $allowedTools=['work.prepare_private']): array
 {
     $limits=vp3_initiative_limits_v1();
     if(strlen($answer)>$limits['max_plan_bytes'])throw new InvalidArgumentException('Initiative plan too large.');
@@ -118,6 +139,11 @@ function vp3_initiative_evidence_scoped_v1(PDO $pdo,array $user,DateTimeImmutabl
         require_once $context;
         $evidence+=vp3_initiative_context_evidence_v1($pdo,$user,$principal,$now,$coverage,$selectedRefs);
     }
+    $opportunities=__DIR__.'/agent-initiative-opportunity-sources-v1.php';
+    if(is_file($opportunities)){
+        require_once $opportunities;
+        $evidence+=vp3_initiative_opportunity_sources_v1($pdo,$user,$principal,$now,$selectedRefs,$coverage);
+    }
     $tools=__DIR__.'/agent-initiative-tools-v1.php';
     if(is_file($tools)){
         require_once $tools;
@@ -190,7 +216,7 @@ function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array
     $existing=$pdo->prepare('SELECT id FROM agent_workflow_runs WHERE owner_user_id=? AND dedupe_key=?');
     $existing->execute([$uid,$dedupe]);
     if($existing->fetchColumn())return false;
-    $label=$capability==='initiative.plan'?'Assess useful next steps':(isset($payload['followup'])?'Reassess a scheduled follow-up':'Prepare a private next step');
+    $label=$capability==='initiative.plan'?'Brainstorm opportunities':(isset($payload['followup'])?'Reassess a scheduled follow-up':'Prepare a private next step');
     $pdo->prepare("INSERT INTO agent_workflow_runs
         (owner_user_id,agent_id,workflow_type,origin,source_kind,source_key,source_hash,dedupe_key,title,goal,status,risk_level,requires_approval,approval_status,execution_target,capability_key,max_attempts,retry_backoff_seconds,next_attempt_at)
         VALUES (?,?,'initiative','brain','agent_initiative',?,?,?,?,?,'approved','low',0,'not_required','cloud',?,3,60,UTC_TIMESTAMP())")
@@ -304,10 +330,13 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
                 $canonical=array_map(static fn(array $row):string=>$row['canonical_source_revision']??$row['revision'],$evidence);
                 $payload=['binding'=>$policy,'sources'=>array_column($evidence,'revision','ref'),'canonical_sources'=>$canonical,
                     'capability_sources'=>vp3_initiative_capability_source_map_v1($evidence,array_keys($evidence)),
-                    'owner_availability'=>$availability,'attention_revision'=>$attentionRevision];
+                    'owner_availability'=>$availability,'attention_revision'=>$attentionRevision,
+                    'reassessment_slot'=>vp3_initiative_brainstorm_slot_v1()];
                 if($engagementRevision!=='')$payload['engagement_revision']=$engagementRevision;
                 $hash=hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR));
-                vp3_initiative_enqueue_v1($pdo,$live,'initiative.plan',$payload,$hash);
+                if(!vp3_initiative_brainstorm_pending_v1($pdo,$live,$payload)){
+                    vp3_initiative_enqueue_v1($pdo,$live,'initiative.plan',$payload,$hash);
+                }
             }
             $review=[
                 'conversation_id'=>$policy['conversation_id'],
@@ -637,6 +666,7 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         'product-readiness'=>'product_readiness','scheduling-readiness'=>'scheduling_readiness',
         'workbench-product'=>'workbench_product','workbench-marketing'=>'workbench_marketing','workbench-screen'=>'workbench_screen','workbench-mission'=>'workbench_mission',
         'open-task'=>'open_tasks','activity-situation'=>'activity_situations',
+        'chat-history'=>'chat_history','canvas-work'=>'canvas_work','song-history'=>'song_history',
         'mission-evidence'=>'mission_evidence','product-context'=>'product_context',
         'task-list'=>'task_lists','live-context'=>'live_context','artist-interest'=>'artist_research','topic-interest'=>'topic_research'];
     foreach($sources as $ref=>$revision){
@@ -919,7 +949,7 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
 
 function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?callable $model,array $run,array $payload,?array $researchTransport=null): array
 {
-    $toolResult=[];$draft='';$jobs=[];
+    $toolResult=[];$draft='';$jobs=[];$opportunities=[];
     $planning=$run['action_capability_key']==='initiative.plan';
     try{
         $binding=$payload['binding'];$sources=$payload['sources'];
@@ -948,14 +978,14 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             if(!agent_worker_cloud_active_row_v1910($pdo,$live,$claim))throw new RuntimeException('Initiative lease changed.',409);
         };
         $modelCalls=0;
-        $infer=static function(string $prompt,string $protocol)use($pdo,&$live,$binding,$payload,$run,$claim,$provider,$checkLease,&$modelCalls):string{
+        $infer=static function(string $prompt,string $protocol)use($pdo,&$live,$binding,$payload,$run,$claim,$provider,$checkLease,&$modelCalls,$planning):string{
             if($pdo->inTransaction())throw new RuntimeException('Initiative inference cannot hold a database transaction.');
             $live=vp3_initiative_access_v1($pdo,$live,$binding);
             if(isset($payload['followthrough']))vp3_initiative_followthrough_job_current_v1($pdo,$live,$payload,(int)$run['id']);
             if(isset($payload['followup']))vp3_initiative_followup_job_current_v1($pdo,$live,$payload,(int)$run['id']);
             $checkLease();
             if(!agent_job_heartbeat_v1900($pdo,$live,(int)$claim['run_id'],(int)$claim['action']['id'],
-                    (string)$claim['lease_token'],min(90,++$modelCalls*10),'Preparing a verified private next step.',240)){
+                    (string)$claim['lease_token'],min(90,++$modelCalls*10),$planning?'Brainstorming useful opportunities.':'Preparing a verified private next step.',240)){
                 throw new RuntimeException('Initiative lease changed.',409);
             }
             return $provider($prompt,$protocol);
@@ -970,18 +1000,14 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
         }
         if($planning){
             require_once __DIR__.'/agent-initiative-engagement-feedback-v1.php';
-            $answer=$infer(json_encode(['evidence'=>$modelEvidence,'tools'=>$tools,'budget'=>$limits,
+            $answer=$infer(json_encode(['evidence'=>$modelEvidence,'tools'=>$tools,'budget'=>$limits+['max_opportunities'=>8],
                 'canvas_feedback'=>vp3_initiative_canvas_feedback_v1($pdo,$live,$agentId,$evidence),
                 'owner_context'=>vp3_initiative_owner_context_v1($pdo,$live,$binding)],JSON_THROW_ON_ERROR),'vp3.initiative-plan.v1');
             $allowed=['work.prepare_private'];
             foreach($tools as $id=>$entry)if(!empty($entry['ready']))$allowed[]=$id;
             try{
-                $jobs=vp3_initiative_plan_v1($answer,$evidence,array_values(array_unique($allowed)));
-                foreach($jobs as $job){
-                    if(isset($tools[$job['tool']]['source_refs'])&&!in_array($job['primary'],$tools[$job['tool']]['source_refs'],true)){
-                        throw new InvalidArgumentException('The selected tool does not accept this situation source.');
-                    }
-                }
+                $assessment=vp3_initiative_assessment_v1($answer,$evidence,array_values(array_unique($allowed)),$tools);
+                $jobs=$assessment['jobs'];$opportunities=$assessment['opportunities'];
             }catch(InvalidArgumentException|JsonException $error){
                 throw new Vp3InitiativeInvalidAssessmentV1($error);
             }
@@ -1024,22 +1050,25 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             // The transaction repeats exact source checks without provider/network work.
             vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
         }
-        $commit=static function()use($pdo,$live,$binding,$sources,$includeScreen,$canonicalSources,$planning,$jobs,$claim,$payload,$toolResult,$draft,$run,$agentId):array{
+        $commit=static function()use($pdo,$live,$binding,$sources,$includeScreen,$canonicalSources,$planning,$jobs,$opportunities,$claim,$payload,$toolResult,$draft,$run,$agentId):array{
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$binding);
         $evidence=vp3_initiative_current_sources_v1($pdo,$live,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
         if($planning){
-            $admitted=0;
+            $admitted=0;$admissions=[];
             foreach($jobs as $job){
                 $selected=array_intersect_key($sources,array_flip($job['refs']));
                 $work=['binding'=>$binding,'sources'=>$selected,'canonical_sources'=>array_intersect_key($canonicalSources,$selected),
                     'capability_sources'=>vp3_initiative_capability_source_map_v1($evidence,$job['refs']),
                     'tool'=>$job['tool'],'primary'=>$job['primary'],'focus'=>$job['focus'],'report'=>$job['report']];
                 $hash=hash('sha256',json_encode([$binding,$job['tool'],$job['primary'],$selected],JSON_THROW_ON_ERROR));
-                if(vp3_initiative_enqueue_v1($pdo,$live,'initiative.prepare',$work,$hash))$admitted++;
+                $queued=vp3_initiative_enqueue_v1($pdo,$live,'initiative.prepare',$work,$hash);
+                if($queued)$admitted++;
+                $admissions[vp3_initiative_brainstorm_identity_v1($job['tool'],$job['primary'],$selected)]=$queued?'queued':'existing';
             }
-            $receipt=agent_worker_cloud_result_v1910($pdo,$live,$claim,true,'Initiative assessment recorded.',
-                ['effect_state'=>$admitted?'assignments_queued':($jobs?'existing_assignments':'idle'),'jobs'=>$admitted]);
+            $receipt=agent_worker_cloud_result_v1910($pdo,$live,$claim,true,'Brainstorm assessment recorded.',
+                ['effect_state'=>$admitted?'assignments_queued':($jobs?'existing_assignments':'idle'),'jobs'=>$admitted,
+                    'initiative_tool_result'=>vp3_initiative_brainstorm_result_v1($opportunities,$evidence,$admissions)]);
         }else{
             $cid=(int)$binding['conversation_id'];$uid=(int)$live['id'];
             if(($payload['tool']??'')==='canvas.prepare'){

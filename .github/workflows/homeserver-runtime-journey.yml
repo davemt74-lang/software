@@ -37,12 +37,13 @@ jobs:
           live = r'^(?:(?:agent-live-context-v1|chat-initiative-voice-v1)\.js|agent-worker-v1910\.php|includes/(?:agent-live-context-v1|homeserver-transient-schema-v1|agent-record-tools-v1|agent-capability-chat-v1)\.php|(?:api|includes)/agent-screen-audio-v1\.php|tests/(?:agent-live-[^/]+|agent-screen-audio-events-v1|homeserver-https-transient-inference(?:-mysql)?)\.(?:php|mjs)|tests/initiative-live-context-browser\.mjs|tests/fixtures/initiative-live-context-chat\.php|upgrade-homeserver-transient-inference-v1\.sql)$'
           connections = r'^(?:api/chat-youtube-playback-v1\.php|(?:admin/)?connections\.php|(?:connection-oauth|connection-test|connection-gmail-popup|connection-gmail-inbox|connection-gmail-github|youtube-connection-v1)\.php|connections-v1\.css|(?:api/)?chat-email-v1\.(?:php|js|css)|(?:chat-youtube-v1|gmail-popup-v1)\.(?:css|js)|assets/youtube-logo-v1\.png|(?:api|includes|tests)/agent-connections?[^/]*\.(?:php|mjs))$'
           development = r'^(?:(?:admin|api|includes|tests|workers)/agent-development[^/]*\.(?:php|mjs|py)|(?:tests/)?chat-agent-development[^/]*\.(?:mjs|js|css))$'
-          ai_service = r'^(?:includes/(?:ai-service-[^/]+|ai-usage-accounting-v032|subscription-quota)|tests/ai-service-[^/]+)\.php$'
+          ai_service = r'^(?:(?:includes|tests)/(?:ai-service-[^/]+|ai-usage-[^/]+|ai-direct-[^/]+|ai-legacy-[^/]+|ai-settings|subscription-quota)\.php|ai-usage(?:-export-v032)?\.php|ai-usage-v1\.css|tests/ai-usage-report-browser-v1\.mjs|tests/fixtures/ai-usage-page-v1\.php)$'
           research = r'^(?:chat-(?:research-specialist-v1|specialist-rail-v1)\.(?:js|css)|api/initiative-research-status-v1\.php|tests/chat-research-(?:canvas|specialist)-browser\.mjs)$'
           coding = r'^(?:chat-coding-canvas-v1\.(?:js|css)|coding-canvas-sidebar-v1\.(?:js|css)|(?:api|includes|tests)/(?:chat-)?coding-canvas[^/]*\.(?:php|mjs))$'
           activity_hub = r'^(?:agent-activity-hub-v1\.(?:js|css)|(?:api|includes|tests)/agent-activity-(?:hub|media)[^/]*\.(?:php|mjs))$'
           coding_controls = r'^(?:includes/main-sidebar\.php|(?:api|includes|tests)/initiative-canvas-[^/]*\.(?:php|mjs)|tests/coding-sidebar-[^/]*\.mjs)$'
-          changed = diff.returncode != 0 or any(re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
+          working_ui = r'^tests/(?:agent-work-status-http|agent-working-browser|chat-sidebar-footer-browser)\.mjs$'
+          changed = diff.returncode != 0 or any(re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
               connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions|homeserver-https-transient-inference(?:-mysql)?)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
@@ -194,6 +195,13 @@ jobs:
           node tests/agent-voice-menu-browser.mjs
       - name: Connected Initiative in normal Agent Chat
         run: |
+          php tests/agent-initiative-brainstorm-v1.php
+          php tests/agent-initiative-brainstorm-pipeline-v1.php
+          php tests/agent-initiative-opportunity-sources-v1.php
+          php tests/agent-initiative-opportunity-view-v1.php
+          node tests/agent-working-browser.mjs
+          node tests/agent-work-status-http.mjs
+          node tests/chat-sidebar-footer-browser.mjs
           php tests/agent-initiative-bootstrap-v1.php
           php tests/agent-worker-health-v1.php
           php tests/agent-inference-budget-v1.php
@@ -279,6 +287,13 @@ jobs:
           php tests/agent-top-of-mind-v1.php
           node tests/agent-top-of-mind-browser.mjs
           node tests/agent-top-of-mind-session-http.mjs
+      - name: Complete provider usage and owner accounting report
+        run: |
+          php tests/ai-usage-accounting-v032.php
+          php tests/ai-usage-report-v1.php
+          php tests/ai-direct-execution-capture-v1.php
+          php tests/ai-legacy-execution-capture-v1.php
+          node tests/ai-usage-report-browser-v1.mjs
       - name: Cloud scheduled specialist controls
         run: node tests/agent-missions-cloud-a5c6-browser.mjs
       - name: Cloud automatic lead routing browser acceptance
@@ -436,6 +451,12 @@ jobs:
           php tests/coding-canvas-jobs-v1.php
           php tests/agent-initiative-canvas-v1.php
           php tests/agent-initiative-canvas-pipeline-v1.php
+          php tests/agent-initiative-brainstorm-pipeline-v1.php
+          php tests/agent-initiative-opportunity-view-v1.php
+          php tests/agent-initiative-opportunity-sources-v1.php
+          php tests/ai-usage-report-v1.php mysql
+          php tests/ai-direct-execution-capture-v1.php mysql
+          php tests/ai-legacy-execution-capture-v1.php mysql
           php tests/initiative-canvas-settings-mysql.php
           php tests/agent-activity-hub-v1.php
           php tests/agent-chat-source-v380.php

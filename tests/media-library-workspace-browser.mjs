@@ -23,7 +23,12 @@ const checks = [];
 
 try {
   fs.mkdirSync(path.join(temp, 'includes'));
-  for (const file of ['media-library.php', 'includes/main-sidebar.php', 'includes/member-header.php']) {
+  // The real shared shell hashes these assets while rendering its cache keys.
+  // Keep its physical fixture complete even though unrelated browser APIs are mocked.
+  for (const file of ['media-library.php', 'includes/main-sidebar.php', 'includes/member-header.php',
+    'coding-canvas-sidebar-v1.css', 'coding-canvas-sidebar-v1.js',
+    'member-agent-voice-menu.css', 'member-agent-voice-menu.js',
+    'chat-notifications-drawer-v240.css', 'chat-notifications-drawer-v240.js']) {
     fs.copyFileSync(file, path.join(temp, file));
   }
   fs.writeFileSync(path.join(temp, 'includes/bootstrap.php'), `<?php

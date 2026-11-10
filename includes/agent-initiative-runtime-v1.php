@@ -96,9 +96,14 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
                 }
                 if($run['status']==='executing'&&!empty($run['lease_expires_at'])){
                     $expiresAt=strtotime($run['lease_expires_at'].' UTC');
-                    if($expiresAt>time()){
+                    $action=$pdo->prepare("SELECT id FROM agent_workflow_actions WHERE id=? AND run_id=? AND owner_user_id=? AND status='executing' LIMIT 1");
+                    $action->execute([(int)($run['current_action_id']??0),(int)$run['id'],(int)$live['id']]);
+                    if($expiresAt>time()&&$action->fetchColumn()){
                         $health['state']='running';$health['reason']='reviewing';
-                        $health['active_jobs'][]=['id'=>'workflow:'.$run['id'],'expiresAt'=>$expiresAt*1000];
+                        $assessment=($run['capability_key']??'')==='initiative.plan';
+                        $health['active_jobs'][]=['id'=>'workflow:'.$run['id'],'expiresAt'=>$expiresAt*1000,
+                            'kind'=>$assessment?'assessment':'preparation',
+                            'step'=>$assessment?'Brainstorming useful opportunities':'Preparing a private next step'];
                     }
                 }
                 if($latest&&$run['status']==='failed'){

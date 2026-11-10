@@ -16,7 +16,8 @@
   const form = document.getElementById('chatForm');
   const input = document.getElementById('chatInput');
   const liveHost = cfg.liveContext === true ? document.getElementById('chatLiveContext') : null;
-  if (!button || !popup || !content || !thread || !form) return;
+  // The orb opens Top of Mind; the optional legacy launcher must not gate its runtime.
+  if (!popup || !content || !thread || !form) return;
 
   let state = null;
   let briefEpoch = 0;
@@ -343,7 +344,9 @@
     const jobs = health?.enabled === true && Array.isArray(health.active_jobs) ? health.active_jobs.slice(0,25)
       .filter(job => typeof job?.id === 'string' && /^workflow:[1-9]\d{0,19}$/.test(job.id)
         && Number.isSafeInteger(job.expiresAt) && job.expiresAt > now)
-      .map(({id,expiresAt}) => ({id,expiresAt})) : [];
+      .map(({id,expiresAt,kind,step}) => ({id,expiresAt,
+        ...(['assessment','preparation'].includes(kind) ? {kind} : {}),
+        ...(typeof step === 'string' ? {step:step.slice(0,120)} : {})})) : [];
     orb.setJobs('initiative', jobs);
   }
 
@@ -604,14 +607,14 @@
   function closePopup() {
     if (!popup.hidden) clearWorkingAttention();
     popup.hidden = true;
-    button.setAttribute('aria-expanded','false');
+    button?.setAttribute('aria-expanded','false');
   }
 
   function openPopup() {
     if (participantContext() || !requireCurrentConfiguration()) return false;
     if (popup.hidden) workingAttentionView += 1;
     popup.hidden = false;
-    button.setAttribute('aria-expanded','true');
+    button?.setAttribute('aria-expanded','true');
     void refresh(true);
     return true;
   }
@@ -667,7 +670,7 @@
   }
 
   function updateHubLauncher() {
-    if (typeof window.VP3AgentActivityHub?.open !== 'function') return;
+    if (!button || typeof window.VP3AgentActivityHub?.open !== 'function') return;
     button.setAttribute('aria-label','Top of Mind');
     if (badge) { badge.hidden = true; badge.textContent = ''; }
   }
@@ -675,12 +678,14 @@
   function renderStatus(brief) {
     const active = brief && brief.active !== false;
     if (statusDot) statusDot.classList.toggle('active', active);
-    button.dataset.active = active ? '1' : '0';
-    button.dataset.runtimeState = runtimeState();
-    button.setAttribute('aria-label',
-      String((brief && brief.agent_name) || 'Agent') + ' · ' +
-      String((brief && brief.status_label) || (active ? 'Active' : 'Inactive'))
-    );
+    if (button) {
+      button.dataset.active = active ? '1' : '0';
+      button.dataset.runtimeState = runtimeState();
+      button.setAttribute('aria-label',
+        String((brief && brief.agent_name) || 'Agent') + ' · ' +
+        String((brief && brief.status_label) || (active ? 'Active' : 'Inactive'))
+      );
+    }
     const count = Math.max(0, Number((brief && brief.attention_count) || 0));
     if (badge) {
       badge.hidden = count < 1;
@@ -1071,8 +1076,10 @@
 
   function renderBriefError(error, retry = true) {
     if (statusDot) statusDot.classList.remove('active');
-    button.dataset.active='0';
-    button.setAttribute('aria-label','Agent · status unavailable');
+    if (button) {
+      button.dataset.active='0';
+      button.setAttribute('aria-label','Agent · status unavailable');
+    }
     updateHubLauncher();
     if (badge) {
       badge.hidden = true;
@@ -1393,7 +1400,7 @@
     if (cfg.initiativeRuntime === true) initiativeTimer = window.setInterval(advanceInitiative,15000);
   }
 
-  button.addEventListener('click', event => {
+  button?.addEventListener('click', event => {
     event.preventDefault();
     if (window.VP3AgentActivityHub?.open) { openBrief(); return; }
     if (popup.hidden) openPopup(); else closePopup();
@@ -1428,7 +1435,7 @@
   });
 
   document.addEventListener('click', event => {
-    if (popup.hidden || popup.contains(event.target) || button.contains(event.target)) return;
+    if (popup.hidden || popup.contains(event.target) || button?.contains(event.target)) return;
     closePopup();
   });
   document.addEventListener('keydown', event => {
@@ -1529,7 +1536,7 @@
   const observer = new MutationObserver(records => {
     if (records.some(record => record.target === thread)) renderDigest(state?.digest);
     if (records.some(record => record.target === document.body)) {
-      button.dataset.runtimeState = runtimeState();
+      if (button) button.dataset.runtimeState = runtimeState();
       if (state && state.brief) renderStatus(state.brief);
     }
   });

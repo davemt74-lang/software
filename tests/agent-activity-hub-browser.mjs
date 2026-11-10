@@ -191,7 +191,7 @@ try {
   assert.equal(await hub.isVisible(),false);
 
   await page.goto('https://activity.test/standalone');
-  await page.locator('[data-orb-chat]').click();
+  await page.locator('.vp3-orb-ball').click();
   const child=await page.locator('iframe').elementHandle().then(element=>element.contentFrame());
   await child.waitForFunction(()=>Boolean(window.VP3AgentOrb?.openActivity));
   await child.evaluate(()=>window.VP3AgentActivityHub.open({specialist:'coding'}));

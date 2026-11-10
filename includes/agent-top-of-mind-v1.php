@@ -3,6 +3,46 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-initiative-runtime-v1.php';
 
+/** A small owner/Agent work read for the global orb. Never opens the feed,
+ * schedules work, claims a job or invokes a model. */
+function vp3_top_of_mind_work_v1(PDO $pdo,array $user,int $agentId,int $conversationId=0): array
+{
+    if($agentId<0||$conversationId<0||(int)($user['id']??0)<1||vp3_participant_scope_v1()!==null){
+        throw new RuntimeException('Agent work is unavailable for this context.',403);
+    }
+    return vp3_initiative_in_scope_v1($user,$agentId,static function()use($pdo,$user,$agentId,$conversationId):array{
+        try{$agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);}
+        catch(PDOException $error){throw $error;}
+        catch(RuntimeException $error){throw new RuntimeException('Agent access changed.',403,$error);}
+        $principal=vp3_agent_chat_principal_v380($user,$agent);
+        $live=vp3_capability_live_user_v1($pdo,$user,$principal,[],null);
+        if(!has_permission('account.access',$live)||!has_permission('chat.access',$live)){
+            throw new RuntimeException('Agent access changed.',403);
+        }
+        $policy=vp3_initiative_policy_v1($live,$agentId);
+        $cid=is_int($policy['conversation_id']??null)?max(0,$policy['conversation_id']):0;
+        if($conversationId>0&&$conversationId!==$cid)throw new RuntimeException('Agent work context changed.',403);
+        if($cid>0&&!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent)){
+            throw new RuntimeException('Conversation access changed.',403);
+        }
+        $health=$cid>0?vp3_initiative_worker_health_v1($pdo,$live,$agentId,$cid)
+            :['state'=>'idle','enabled'=>false,'active_jobs'=>[]];
+        $jobs=[];$now=time()*1000;
+        foreach(($health['enabled']??false)===true?array_slice($health['active_jobs']??[],0,25):[] as $job){
+            if(!is_array($job)||!is_string($job['id']??null)||!preg_match('/\Aworkflow:[1-9][0-9]{0,19}\z/D',$job['id'])
+                ||!is_int($job['expiresAt']??null)||$job['expiresAt']<=$now)continue;
+            $active=['id'=>$job['id'],'expiresAt'=>$job['expiresAt']];
+            if(in_array($job['kind']??null,['assessment','preparation'],true))$active['kind']=$job['kind'];
+            if(isset($active['kind'])&&is_string($job['step']??null))$active['step']=vp3_top_of_mind_text_v1($job['step'],240);
+            $jobs[]=$active;
+        }
+        return ['contract'=>'vp3.agent.work.v1','owner_user_id'=>(int)$live['id'],'agent_id'=>$agentId,
+            'conversation_id'=>$cid,'observed_at'=>gmdate(DATE_ATOM),
+            'health'=>['state'=>vp3_top_of_mind_text_v1($health['state']??'unavailable',40),
+                'enabled'=>($health['enabled']??false)===true,'active_jobs'=>$jobs]];
+    });
+}
+
 /** Canonical job leases are stored as UTC SQL timestamps, independent of the
  * PHP host timezone or the owner's display timezone. */
 function vp3_top_of_mind_lease_time_v1(mixed $value): int
@@ -224,7 +264,7 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
                 // A delivered check-in legitimately precedes later owner turns.
                 // Its source authority remains current; its old delivery-tail
                 // guard is not a permanent read permission.
-                if(($goal['tool']??'')!=='chat.check_in'){
+                if(!$assessment&&($goal['tool']??'')!=='chat.check_in'){
                     vp3_initiative_result_current_v1($pdo,$live,$policy,$goal,$result['initiative_tool_result']??[]);
                 }
                 $receipt=null;

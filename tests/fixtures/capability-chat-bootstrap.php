@@ -2,6 +2,8 @@
 declare(strict_types=1);
 // Infrastructure/model fixtures only. Endpoints, Chat runtime, discovery and reminder executors are production files.
 if(isset($_SERVER['HTTP_X_FIXTURE_PROFILE_READY'])&&session_status()!==PHP_SESSION_ACTIVE)session_start();
+require_once __DIR__.'/ai-usage-accounting-v032.php';
+require_once __DIR__.'/player-v76.php';
 require_once __DIR__.'/cognitive-runtime-v500.php';
 require_once __DIR__.'/agent-chat-runtime-v2160.php';
 require_once __DIR__.'/agent-surface-context-v131.php';
@@ -25,11 +27,26 @@ require_once __DIR__.'/app-agent-remote-v1.php';
 require_once __DIR__.'/system-app-agent-schema-v1.php';
 require_once __DIR__.'/app-operation-schema-v1.php';
 class TranscriptFixturePDO extends PDO {public int $updatedId=0;public function lastInsertId(?string $name=null):string|false{return $this->updatedId?(string)$this->updatedId:parent::lastInsertId($name);}public function prepare(string $sql,array $options=[]):PDOStatement|false{if(str_starts_with(ltrim($sql),'INSERT'))$this->updatedId=0;$sql=str_replace(' FOR UPDATE','',$sql);$sql=preg_replace('/DATE_ADD\(UTC_TIMESTAMP\(\),INTERVAL (\d+) MINUTE\)/i',"datetime('now','+$1 minutes')",$sql);$sql=str_replace('IF(','IIF(',$sql);$sql=str_replace('COALESCE(property_id,0)=?','COALESCE(property_id,0)=CAST(? AS INTEGER)',$sql);if(str_contains($sql,'information_schema.statistics'))$sql="SELECT 1 FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=?";$sql=preg_replace('/ON DUPLICATE KEY UPDATE/i','ON CONFLICT DO UPDATE SET',$sql);$sql=preg_replace('/VALUES\((\w+)\)/i','excluded.$1',$sql);return parent::prepare($sql,$options);}}
-function db(){static $pdo;if(!$pdo){$pdo=new TranscriptFixturePDO('sqlite:'.__DIR__.'/../state.sqlite');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('LAST_INSERT_ID',function($id)use($pdo){$pdo->updatedId=(int)$id;return$id;});$pdo->sqliteCreateFunction('NOW',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));$pdo->exec('CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo->exec('INSERT OR IGNORE INTO users(id,is_active) VALUES(1,1),(2,1)');$pdo->exec("CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,artist_workspace_id INTEGER,title TEXT,updated_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");reminder_schema_v1($pdo);capability_fixture_agents($pdo);vp3_task_lists_schema_v1($pdo);}return $pdo;}
+function db(){static $pdo;if(!$pdo){$pdo=new TranscriptFixturePDO('sqlite:'.__DIR__.'/../state.sqlite');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('LAST_INSERT_ID',function($id)use($pdo){$pdo->updatedId=(int)$id;return$id;});$pdo->sqliteCreateFunction('NOW',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));$pdo->exec('CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER)');$pdo->exec('INSERT OR IGNORE INTO users(id,is_active) VALUES(1,1),(2,1)');$pdo->exec("CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,artist_workspace_id INTEGER,title TEXT,updated_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");capability_fixture_usage_schema($pdo);reminder_schema_v1($pdo);capability_fixture_agents($pdo);vp3_task_lists_schema_v1($pdo);}return $pdo;}
+// Keep canonical accounting in the fixture dependency graph. The model remains
+// mocked, while real local/tool results are recorded under their owner and Agent.
+function capability_fixture_usage_schema(PDO $pdo):void
+{
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ai_execution_ledger(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,agent_id INTEGER,conversation_id INTEGER,
+        cloud_ledger_id INTEGER UNIQUE,trace_id TEXT NOT NULL DEFAULT '',source TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,total_tokens INTEGER NOT NULL DEFAULT 0,
+        cloud_tokens_charged INTEGER NOT NULL DEFAULT 0,estimated_cost_micros INTEGER,cost_currency TEXT DEFAULT 'USD',
+        cost_rate_source TEXT DEFAULT 'unconfigured',homeserver_state TEXT DEFAULT 'not_used',fallback_used INTEGER DEFAULT 0,
+        failure_class TEXT DEFAULT 'none',latency_ms INTEGER DEFAULT 0,run_id INTEGER,runtime_version TEXT DEFAULT '',
+        requested_route TEXT DEFAULT '',attempted_route TEXT DEFAULT '',actual_route TEXT DEFAULT '',route_reason TEXT DEFAULT '',
+        fallback_reason TEXT DEFAULT '',created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+    vp3_ai_service_usage_ensure_schema_v1($pdo);
+}
 function table_exists($table){if($table==='user_calendar_events'&&isset($_SERVER['HTTP_X_FIXTURE_CALENDAR_MISSING']))return false;$q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return(bool)$q->fetchColumn();}
 function column_exists($table,$column){foreach(db()->query('PRAGMA table_info('.$table.')') as $r)if($r['name']===$column)return true;return false;}
 function current_user(){if(isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS']))return null;$id=(int)($_SERVER['HTTP_X_FIXTURE_USER']??1);return ['id'=>$id,'is_active'=>1];}
-function player_process_show_reminders(array $user): void {}
 function csrf_token(){return 'fixture';}
 function has_permission($key,$user){return !isset($_SERVER['HTTP_X_FIXTURE_DENIED']);}
 function personal_capability_has_v242($key,...$args){return ($key==='agent_brain.access'&&isset($_SERVER['HTTP_X_FIXTURE_BRAIN_READY']))||($key==='personal_knowledge.access'&&isset($_SERVER['HTTP_X_FIXTURE_RECORD_READY']))||($key==='profile_agent.access'&&!isset($_SERVER['HTTP_X_FIXTURE_OBSERVATION_DENIED'])&&(isset($_SERVER['HTTP_X_FIXTURE_RADAR_READY'])||isset($_SERVER['HTTP_X_FIXTURE_ANALYTICS_READY'])||isset($_SERVER['HTTP_X_FIXTURE_PROFILE_READY'])));}
@@ -44,7 +61,6 @@ function vp3_agent_runtime_tool_plan_v420(...$args){return ['route'=>'vp3_tool']
 function vp3_agent_runtime_capability_route_v420($plan,$execution,...$args){return ['supported'=>true,'ready'=>true,'actual_source'=>$execution['source']??'vp3_cloud'];}
 function vp3_agent_runtime_finalize_v420($plan,$execution,...$args){return $execution;}
 function vp3_agent_runtime_public_plan_v420($plan){return $plan;}
-function ai_usage_accounting_v032_record(...$args){}
 function agent_runtime_v125_trace(...$args){}
 function agent_runtime_v125_trace_id(){return 'fixture-trace';}
 function agent_runtime_v125_span($label,$fn,...$args){return $fn();}
@@ -89,7 +105,17 @@ function agent_background_v125_enqueue(...$args){}
 function agent_brain_archive_and_parse(...$args){}
 function chat_context_is_internal_source($s){return str_starts_with($s,'runtime:');}
 function ai_v100_safe_exception($e,$fallback='Failed'){return $fallback;}
-function ai_v100_with_service_context(array $context,callable $call): mixed{return $call();}
+// Infrastructure state mirrors the production context boundary; the mocked
+// model below does not dispatch provider requests or settle quota.
+function ai_v100_service_context(?array $context=null):array
+{
+    static $current=[];if($context!==null)$current=$context;return $current;
+}
+function ai_v100_with_service_context(array $context,callable $call):mixed
+{
+    $previous=ai_v100_service_context();ai_v100_service_context($context);
+    try{return $call();}finally{ai_v100_service_context($previous);}
+}
 function chat_ai_response_outcome(?array $result=null): array{return ['ok'=>true,'provider'=>'openai','model'=>'fixture-conversation'];}
 function chat_remote_answer(string $query,array $history,array $context,array $user,?array $control=null):?string
 {
