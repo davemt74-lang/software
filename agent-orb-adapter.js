@@ -39,7 +39,7 @@
       tx.oncomplete=()=>resolve(profile);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('Trained voice enrollment stopped.'));});}finally{db.close();}
   }
   const recording=()=>Boolean(document.querySelector('[data-recording="true"],.is-recording,.chat-media-studio button.recording,[data-agent-state="recording"]'));
-  const state=()=>{const current=window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState;return {state:audible||current==='speaking'?'speaking':preparing?'thinking':current||($('sendChatButton')?.disabled?'thinking':'idle'),recording:recording()};};
+  const state=()=>{const current=window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState;const pending=(!current||current==='idle')&&$('sendChatButton')?.disabled;return {state:audible||current==='speaking'?'speaking':preparing||pending?'thinking':current||'idle',recording:recording()};};
   // Recognition is local. Only a ready, focused owner Chat can export coarse
   // sensor observations to its existing proactive loop.
   function liveSensoryContext(){

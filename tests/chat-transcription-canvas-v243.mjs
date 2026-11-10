@@ -28,8 +28,8 @@ assert.ok(chat.includes("$transcriptionCanvasBuild = 'transcription-intelligence
 assert.ok(chat.includes("url('/api/artist-listening.php')"),'Chat must provide the canonical transcription-session endpoint');
 assert.ok(chat.includes("url('/api/artist-listening-intelligence-v300.php')"),'Chat must provide the stable intelligence endpoint');
 assert.ok(chat.includes("$profileActivityBuild = 'profile-activity-safety-pa1-20261103'"),'Chat must load the current Profile Activity conversation-safety runtime');
-assert.ok(chat.includes("$chatProfileMenuExcluded = ['account'=>true, 'profile_agent'=>true]"),'Chat account dropdown must retain the canonical View Profile item');
-assert.ok(!chat.includes("$chatProfileMenuExcluded = ['profile'=>true"),'Chat must not suppress View Profile');
+assert.ok(read('chat-legacy-v108.php').includes("require __DIR__ . '/includes/member-user-menu.php'"),'Chat must render the complete canonical account menu');
+assert.ok(read('includes/member-navigation.php').includes("'profile','View Profile',$profileUrl"),'Canonical account navigation must retain View Profile');
 assert.ok(chat.includes('data-chat-transcription-canvas'),'Chat must load the one canonical transcription canvas runtime');
 assert.ok(chat.includes('/chat-transcription-canvas.js?v='),'Chat must load the canvas JS under Artist Listening access');
 assert.ok(chat.includes('/chat-transcription-canvas.css?v='),'Chat must load the canvas stylesheet');
