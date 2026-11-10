@@ -225,7 +225,8 @@ try {
   assert.equal(await page.locator('#chatInput').isVisible(),true);
   await loadChat(42);
   await launch.click();
-  await panel.getByLabel('Saved canvases').selectOption(canvas.id);
+  assert.equal(await page.evaluate(id=>window.VP3CodingCanvasV1.open(id,1),canvas.id),true,'Activity opens the exact saved Canvas revision');
+
   await preview.getByText('Isolated',{exact:true}).waitFor();
   assert.equal(await preview.getByRole('checkbox',{name:'Ready'}).isChecked(),true);
   let began, release;

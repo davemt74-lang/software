@@ -102,9 +102,21 @@
     };
     document.addEventListener('submit',userTurn,true);window.addEventListener('pagehide',()=>document.removeEventListener('submit',userTurn,true),{once:true});
     if(embed){
+      let activityEpoch=0,activityActor=0;
+      for(const name of ['stonefellow:chat-context-changing','vp3:participant-selection-changed'])window.addEventListener(name,()=>activityEpoch++);
+      window.addEventListener('vp3:participant-task-context',event=>{activityActor=Number(event.detail?.participant_id)||0;activityEpoch++;});
       let queuedEnrollment='',queuedIntroduction='',queuedResponse=false,initiativeAction=null;window.addEventListener('vp3:voice-guard-ready',()=>{if(queuedEnrollment){void window.VP3VoiceGuard.beginEnrollment(queuedEnrollment);queuedEnrollment='';}window.VP3VoiceGuard.inviteIntroduction(queuedIntroduction);introductionMode=queuedIntroduction;});
       document.documentElement.dataset.vp3OrbEmbed='1';
-      const announce=()=>{if(!disposed)parent.postMessage({channel:'vp3-orb',kind:'state',state:state(),conversation:adapter.conversationRef?.()},origin);};
+      const activityContext=()=>{
+        const chat=window.STONEFELLOW_CHAT,live=window.STONEFELLOW_CHAT_CONTINUITY;
+        const ref=adapter.conversationRef?.();
+        return {ownerKey:String(adapter.ownerKey),agent_id:Number(chat?.agentId||0),
+          conversation_id:Number(ref?.id||0),working_attention_binding:String(chat?.workingAttentionBinding||''),
+          ready:live?.isReady?.()===true&&live?.isRestoring?.()===false&&!!ref,
+          participant:activityActor>0||Boolean(window.VP3ParticipantContinuity?.selectedContext?.()),epoch:activityEpoch};
+      };
+      const announce=()=>{if(!disposed)parent.postMessage({channel:'vp3-orb',kind:'state',state:state(),conversation:adapter.conversationRef?.(),activity_context:activityContext()},origin);};
+      window.addEventListener('vp3:chat-context-ready',announce);
       const commands=async event=>{
         if(event.origin!==origin||event.source!==parent||event.data?.channel!=='vp3-orb')return;
         if(event.data.kind==='compose'){
@@ -119,6 +131,19 @@
         if(event.data.kind==='participant-reject')window.VP3ParticipantContinuity?.rejectCurrent(true,String(event.data.value?.participant_id||''));
         if(event.data.kind==='participant-photo-state'){const d=event.data.value||{};if(['waiting','capturing','saving','saved','failed','deferred'].includes(d.state)&&typeof d.message==='string')window.dispatchEvent(new CustomEvent('vp3:participant-photo-state',{detail:{state:d.state,message:d.message.slice(0,500)}}));}
         if(event.data.kind==='participant-invalidate')window.VP3ParticipantContinuity?.invalidate();
+        if(event.data.kind==='activity-details')window.VP3_COGNITIVE_PRESENTATION?.openDetails?.();
+        if(event.data.kind==='activity-specialist'&&typeof event.data.key==='string')window.VP3ChatSpecialists?.view?.(event.data.key);
+        if(event.data.kind==='activity-action'){
+          const current=adapter.conversationRef?.(),mine=activityEpoch;
+          const owner=String(adapter.ownerKey),binding=String(window.STONEFELLOW_CHAT?.workingAttentionBinding||'');
+          let accepted=false;
+          if(String(event.data.ownerKey)===owner&&event.data.agent_id===Number(current?.agent)&&event.data.conversation_id===Number(current?.id)&&binding&&event.data.working_attention_binding===binding){
+            try{accepted=await runActivityAction(event.data.action);}catch(_){}
+          }
+          if(activityActor>0||window.VP3ParticipantContinuity?.selectedContext?.()||owner!==String(window.VP3_ORB_CONFIG?.ownerKey)||binding!==String(window.STONEFELLOW_CHAT?.workingAttentionBinding||''))accepted=false;
+          if(mine!==activityEpoch&&!['chat','youtube','canvas','mission'].includes(event.data.action?.kind))accepted=false;
+          parent.postMessage({channel:'vp3-orb',kind:'activity-action-result',request_id:event.data.request_id,accepted},origin);
+        }
         if(event.data.kind==='initiative-refresh')window.dispatchEvent(new Event('vp3:agent-orb-ready'));
         if(event.data.kind==='initiative-action'&&['on','off','retry'].includes(event.data.action))initiativeAction?.(event.data.action);
         if(event.data.kind==='stop')adapter.stop();
@@ -136,7 +161,29 @@
         if(shape==='orbit'||shape==='particle_face')parent.postMessage({channel:'vp3-orb',kind:'agent-orb-shape',ownerKey:adapter.ownerKey,shape},origin);
       });
       window.addEventListener('vp3:voice-filter-status',event=>parent.postMessage({channel:'vp3-orb',kind:'voice-filter-status',message:String(event.detail?.message||'').slice(0,300)},origin));
+      async function runActivityAction(action){
+        if(activityActor>0||window.VP3ParticipantContinuity?.selectedContext?.()||!action||typeof action.kind!=='string')return false;
+        const chat=window.STONEFELLOW_CHAT_CONTINUITY;
+        if(action.kind==='song'&&Number.isSafeInteger(action.track_id)&&action.track_id>0)return await chat?.playActivityTrack?.(action.track_id)===true;
+        if(action.kind==='canvas'&&typeof action.canvas_id==='string')return await window.VP3CodingCanvasV1?.open?.(action.canvas_id,action.revision)===true;
+        if(action.kind==='mission'&&typeof action.mission_id==='string')return await window.VP3AgentMissionsV1?.open?.(action.mission_id)===true;
+        if(action.kind==='task_notes'&&window.VP3TaskNotes?.open){
+          if(Number.isSafeInteger(action.list_id)&&action.list_id>0)window.VP3TaskNotes.open({kind:'task_list',id:action.list_id});
+          else window.VP3TaskNotes.open({kind:'reminders',view:['open','today','overdue','all'].includes(action.view)?action.view:'open'});
+          return true;
+        }
+        if(['chat','youtube'].includes(action.kind)&&Number.isSafeInteger(action.conversation_id)&&action.conversation_id>0&&chat?.openConversation){
+          const exact=Number.isSafeInteger(action.message_id)&&action.message_id>0;
+          if(await chat.openConversation(action.conversation_id,exact?{messageId:action.message_id}:{})!==true||window.VP3ParticipantContinuity?.selectedContext?.())return false;
+          if(exact){const row=document.querySelector('#chatThread [data-chat-message-id="'+action.message_id+'"][data-chat-conversation-id="'+action.conversation_id+'"]');if(!row)return false;row.scrollIntoView({block:'center'});}
+          return true;
+        }
+        return false;
+      }
+      const announceSpecialists=()=>parent.postMessage({channel:'vp3-orb',kind:'activity-specialists',ownerKey:adapter.ownerKey,conversation:adapter.conversationRef?.(),items:window.VP3ChatSpecialists?.snapshot?.()||[]},origin);
+      window.addEventListener('vp3:chat-specialists-changed',announceSpecialists);
       window.VP3AgentOrb={
+        openActivity:options=>{parent.postMessage({channel:'vp3-orb',kind:'activity-open',ownerKey:adapter.ownerKey,specialist:options?.specialist,focus:options?.focus},origin);return true;},
         openEyesGallery:()=>parent.postMessage({channel:'vp3-orb',kind:'open-eyes-gallery'},origin),
         participantSignal:(kind,value)=>{if(['speaker','task-heard','attribution-start','reject','selection'].includes(kind))parent.postMessage({channel:'vp3-orb',kind:'participant-'+kind,value},origin);},
         setJobs(source,jobs){
@@ -148,7 +195,8 @@
           parent.postMessage({channel:'vp3-orb',kind:'initiative-status',ownerKey:adapter.ownerKey,view},origin);
         }
       };
-      parent.postMessage({channel:'vp3-orb',kind:'ready'},origin);
+      parent.postMessage({channel:'vp3-orb',kind:'ready',conversation:adapter.conversationRef?.(),activity_context:activityContext()},origin);
+      announceSpecialists();
       window.dispatchEvent(new Event('vp3:agent-orb-ready'));
       window.addEventListener('pagehide',()=>{disposed=true;clearInterval(timer);window.removeEventListener('message',commands);},{once:true});
       return;
@@ -156,10 +204,11 @@
     const root=document.createElement('aside');root.className='vp3-orb-root';root.dataset.state='idle';
     root.innerHTML='<div class="vp3-orb-bubble" role="status" hidden></div>'
       +'<button type="button" class="vp3-orb-ball" aria-label="Open Agent Chat" aria-controls="vp3AgentChatPopup" aria-expanded="false"><span class="vp3-public-orb" data-vp3-public-orb data-vp3-orb-personal data-vp3-orb-work aria-hidden="true"></span></button>'
-      +'<span class="vp3-orb-state"><span data-orb-voice-state>Ready</span><span id="vp3OrbJobsStatus" role="status"></span></span><div class="vp3-orb-controls"><button type="button" data-orb-stop>Stop</button><button type="button" data-orb-eyes>Eyes</button><button type="button" data-orb-brain>Brain</button><button type="button" data-orb-size aria-label="Minimize agent">−</button></div>'
+      +'<span class="vp3-orb-state"><span data-orb-voice-state>Ready</span><span id="vp3OrbJobsStatus" role="status"></span></span><div class="vp3-orb-controls"><button type="button" data-orb-stop>Stop</button><button type="button" data-orb-eyes>Eyes</button><button type="button" data-orb-brain>Brain</button><button type="button" data-orb-activity aria-expanded="false" aria-controls="vp3AgentActivityHub">Top of Mind</button><button type="button" data-orb-size aria-label="Minimize agent">−</button></div>'
       +'<section class="vp3-orb-initiative" data-agent-initiative-status aria-label="Agent background work" hidden>'
-      +'<div id="vp3OrbInitiativeDetails"><strong></strong><small hidden></small></div>'
-      +'<div class="vp3-orb-initiative-actions"><button type="button" hidden></button><button type="button" data-agent-initiative-retry hidden>Retry</button></div></section>';
+      +'<button type="button" data-agent-activity-preview>Open Top of Mind</button><section id="vp3AgentActivityHub" data-agent-activity-host hidden></section>'
+      +'<details data-agent-worker-details><summary>Worker details</summary><div id="vp3OrbInitiativeDetails"><strong></strong><small hidden></small></div>'
+      +'<div class="vp3-orb-initiative-actions"><button type="button" hidden></button><button type="button" data-agent-initiative-retry hidden>Retry</button></div></details></section>';
     const orbVisual=root.querySelector('[data-vp3-orb-work]');
     orbVisual.dataset.orbShape=window.VP3_ORB_CONFIG?.shape==='particle_face'?'particle_face':'orbit';
     document.body.append(root);
@@ -168,7 +217,77 @@
     const appearanceDialog=installOrbAppearance(root,orbVisual,adapter);
     const host=panel.querySelector('.vp3-orb-chat-host'),ball=root.querySelector('.vp3-orb-ball'),label=root.querySelector('[data-orb-voice-state]');
     const initiative=root.querySelector('.vp3-orb-initiative'),initiativeLabel=initiative.querySelector('strong'),initiativeDetail=initiative.querySelector('small');
-    const [initiativeSetting,initiativeRetry]=initiative.querySelectorAll('button');
+    const initiativeSetting=initiative.querySelector('.vp3-orb-initiative-actions button'),initiativeRetry=initiative.querySelector('[data-agent-initiative-retry]');
+    const activityHost=initiative.querySelector('[data-agent-activity-host]');
+    let frameSpecialists=[];
+    const activityRequests=new Map();
+    let pendingActivity=null,frameActivityContext=null,activityParticipant=0;
+    const activityOwner=String(adapter.ownerKey);
+    const activityBinding=String(window.VP3_ORB_CONFIG?.workingAttentionBinding||'');
+    function activityAllowed(){
+      return !disposed&&activityParticipant<=0&&!window.VP3ParticipantContinuity?.selectedContext?.()
+        &&String(adapter.ownerKey)===activityOwner&&String(window.VP3_ORB_CONFIG?.ownerKey)===activityOwner
+        &&String(window.VP3_ORB_CONFIG?.workingAttentionBinding||'')===activityBinding;
+    }
+    function finishActivity(intent,accepted,reason=''){
+      if(!intent)return;
+      clearTimeout(intent.timer);
+      if(intent.requestId)activityRequests.delete(intent.requestId);
+      if(pendingActivity===intent)pendingActivity=null;
+      intent.resolve(accepted);
+      if(!accepted&&reason&&activityAllowed())bubble(reason);
+    }
+    function cancelActivity(){finishActivity(pendingActivity,false);}
+    function dispatchActivity(){
+      const intent=pendingActivity,context=frameActivityContext;
+      if(!intent||intent.dispatched)return;
+      if(!activityAllowed()){cancelActivity();return;}
+      if(!context)return;
+      if(context.ownerKey!==activityOwner||context.agent_id!==intent.agent||context.working_attention_binding!==activityBinding||context.participant){
+        finishActivity(intent,false,'Your Agent context changed. Choose the item again.');return;
+      }
+      if(intent.epoch!==null&&intent.epoch!==context.epoch){cancelActivity();return;}
+      intent.epoch=context.epoch;
+      if(!ready||!context.ready)return;
+      intent.dispatched=true;
+      intent.requestId=crypto.randomUUID();
+      activityRequests.set(intent.requestId,accepted=>finishActivity(intent,accepted,accepted?'':intent.action.kind==='song'
+        ?'Playback did not start. Use Resume in Agent Chat.'
+        :'This item could not be opened. Try again in Agent Chat.'));
+      if(intent.action.kind==='song')document.querySelectorAll('audio#audio,audio.chat-audio-player').forEach(audio=>{if(!audio.paused)audio.pause();});
+      frame.contentWindow?.postMessage({channel:'vp3-orb',kind:'activity-action',ownerKey:activityOwner,
+        agent_id:context.agent_id,conversation_id:context.conversation_id,working_attention_binding:activityBinding,
+        request_id:intent.requestId,action:intent.action},origin);
+    }
+    function receiveActivityContext(context){
+      if(!context||typeof context.ownerKey!=='string'||!Number.isSafeInteger(context.agent_id)||context.agent_id<0
+        ||!Number.isSafeInteger(context.conversation_id)||context.conversation_id<0||typeof context.working_attention_binding!=='string'
+        ||typeof context.ready!=='boolean'||typeof context.participant!=='boolean'||!Number.isSafeInteger(context.epoch))return;
+      frameActivityContext=context;
+      dispatchActivity();
+    }
+    function relayActivityAction(action){
+      if(!activityAllowed()||!['canvas','mission','chat','youtube','song','task_notes'].includes(action?.kind))return Promise.resolve(false);
+      if(action.kind==='song'&&(!Number.isSafeInteger(action.track_id)||action.track_id<1))return Promise.resolve(false);
+      if(['chat','youtube'].includes(action.kind)&&(!Number.isSafeInteger(action.conversation_id)||action.conversation_id<1))return Promise.resolve(false);
+      if(action.kind==='canvas'&&(typeof action.canvas_id!=='string'||action.canvas_id.length>128))return Promise.resolve(false);
+      if(action.kind==='mission'&&(typeof action.mission_id!=='string'||action.mission_id.length>128))return Promise.resolve(false);
+      cancelActivity();
+      const agent=Number(conversationRef?.agent??window.VP3_ORB_CONFIG?.agentId??0);
+      if(!Number.isSafeInteger(agent)||agent<0)return Promise.resolve(false);
+      return new Promise(resolve=>{
+        const intent={action,agent,resolve,epoch:frameActivityContext?.epoch??null,dispatched:false,requestId:'',timer:0};
+        pendingActivity=intent;
+        intent.timer=setTimeout(()=>finishActivity(intent,false,'Agent Chat is still connecting. Try the item again when Chat is ready.'),10000);
+        open();
+        dispatchActivity();
+      });
+    }
+    window.addEventListener('vp3:participant-selection-changed',cancelActivity);
+    window.addEventListener('vp3:participant-task-context',event=>{activityParticipant=Number(event.detail?.participant_id)||0;cancelActivity();});
+    window.addEventListener('stonefellow:chat-context-changing',cancelActivity);
+    root.querySelector('[data-orb-activity]').addEventListener('click',()=>window.VP3AgentActivityHub?.open());
+    initiative.querySelector('[data-agent-activity-preview]').addEventListener('click',()=>window.VP3AgentActivityHub?.open());
     const jobStatus=root.querySelector('#vp3OrbJobsStatus'),jobSnapshots=new Map();
     let jobExpiryTimer=0;
     let initiativeAction=null;
@@ -211,7 +330,7 @@
     }
     function positionInitiative(){
       if(initiative.hidden)return;
-      const bounds=root.getBoundingClientRect(),width=Math.min(308,Math.max(1,innerWidth-24));
+      const bounds=root.getBoundingClientRect(),width=Math.min(root.dataset.activityOpen==='true'?420:308,Math.max(1,innerWidth-24));
       const left=Math.max(12,Math.min(bounds.left+(bounds.width-width)/2,innerWidth-width-12));
       const above=Math.max(0,bounds.top-10),below=Math.max(0,innerHeight-bounds.bottom-10);
       root.dataset.initiativeAbove=String(above>below);
@@ -220,8 +339,9 @@
     }
     function setInitiativeStatus(view,onAction){
       const text=typeof view?.label==='string'?view.label.trim().slice(0,300):'';
+      initiative.querySelector('[data-agent-worker-details]').hidden=!text&&!initiative.querySelector('[data-agent-activity-verified]')?.textContent;
       if(!text){
-        initiativeAction=null;initiative.hidden=true;delete root.dataset.initiativeDismissed;
+        initiativeAction=null;initiative.hidden=root.dataset.activityOpen!=='true';delete root.dataset.initiativeDismissed;
         initiativeLabel.textContent='';initiativeDetail.textContent='';
         initiativeSetting.hidden=true;delete initiativeSetting.dataset.agentInitiativeSetting;
         initiativeRetry.hidden=true;
@@ -250,7 +370,7 @@
     const key=`vp3:orb:${adapter.ownerKey}`,draftKey=`${key}:draft:${location.pathname}`;
     try{const p=JSON.parse(localStorage.getItem(key)||'null');if(p){root.style.left=`${Math.max(0,Math.min(innerWidth-100,Number(p.x)||0))}px`;root.style.top=`${Math.max(0,Math.min(innerHeight-150,Number(p.y)||0))}px`;root.style.right='auto';root.style.bottom='auto';root.dataset.small=p.small?'true':'false';}}catch(_){}
     let bar=null,conversationRef=null;const fullLink=panel.querySelector('a'),handoffKey=`${key}:conversation`;
-    function rememberRef(ref){if(!adapter.conversationUrl||!ref||typeof ref!=='object')return;const url=adapter.conversationUrl(ref);if(!url)return;if(conversationRef&&(String(conversationRef.id)!==String(ref.id)||String(conversationRef.agent)!==String(ref.agent)))window.VP3ParticipantContinuity?.clearSelection();conversationRef={id:ref.id,agent:ref.agent};fullLink.href=url;try{sessionStorage.setItem(handoffKey,JSON.stringify({ref:conversationRef,at:Date.now()}));}catch(_){}}
+    function rememberRef(ref){if(!adapter.conversationUrl||!ref||typeof ref!=='object')return;const url=adapter.conversationUrl(ref);if(!url)return;if(conversationRef&&(String(conversationRef.id)!==String(ref.id)||String(conversationRef.agent)!==String(ref.agent)))window.VP3ParticipantContinuity?.clearSelection();const changed=conversationRef&&(String(conversationRef.id)!==String(ref.id)||String(conversationRef.agent)!==String(ref.agent));conversationRef={id:ref.id,agent:ref.agent};if(changed){frameSpecialists=[];window.dispatchEvent(new Event('vp3:orb-conversation-changed'));}fullLink.href=url;try{sessionStorage.setItem(handoffKey,JSON.stringify({ref:conversationRef,at:Date.now()}));}catch(_){}}
     try{const saved=JSON.parse(sessionStorage.getItem(handoffKey)||'null');if(saved&&Number.isFinite(saved.at)&&saved.at<=Date.now()&&Date.now()-saved.at<1800000)rememberRef(saved.ref);}catch(_){}
     fullLink.addEventListener('click',event=>{if(adapter.attachChat){event.preventDefault();close();adapter.focusChat?.();}});
     function command(kind){if(frame?.contentWindow)frame.contentWindow.postMessage({channel:'vp3-orb',kind},origin);else adapter[kind]?.();}
@@ -260,7 +380,7 @@
       if(adapter.isMainChat?.()&&!adapter.attachChat){adapter.focusChat?.();return;}
       if(adapter.attachChat)restorePanel=restorePanel||adapter.attachChat(host);
       else if(!frame){
-        frame=document.createElement('iframe');frame.title='VP3 Agent Chat';frame.allow='microphone; camera';const url=new URL(adapter.conversationUrl&&conversationRef?adapter.conversationUrl(conversationRef):adapter.chatUrl,location.href);url.searchParams.set('orb_embed','1');frame.src=url.href;host.append(frame);
+        frame=document.createElement('iframe');frame.title='VP3 Agent Chat';frame.allow='microphone; camera';const url=new URL(adapter.conversationUrl&&conversationRef?adapter.conversationUrl(conversationRef):adapter.chatUrl,location.href);url.searchParams.set('orb_embed','1');if(pendingActivity)url.searchParams.set('agent',pendingActivity.agent>0?String(pendingActivity.agent):'system');frame.src=url.href;host.append(frame);
       }
       panel.hidden=false;root.dataset.popupOpen='true';ball.setAttribute('aria-expanded','true');document.querySelectorAll('[data-orb-chat]').forEach(b=>b.setAttribute('aria-expanded','true'));
       reservePopupFooter();
@@ -303,7 +423,7 @@
     }):null;
     function message(event){
       if(event.origin!==origin||event.source!==frame?.contentWindow||event.data?.channel!=='vp3-orb')return;
-      const data=event.data;if(data.kind==='ready'){ready=true;if(pendingListen){pendingListen=false;command('listen');}if(pendingReplyWindow){pendingReplyWindow=false;command('response-window');}if(pendingText)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'compose',text:pendingText},origin);if(pendingVoiceEnrollment){frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id:pendingVoiceEnrollment},origin);pendingVoiceEnrollment='';}}
+      const data=event.data;if(data.activity_context)receiveActivityContext(data.activity_context);if(data.kind==='ready'&&data.conversation)rememberRef(data.conversation);if(data.kind==='ready'){ready=true;if(pendingListen){pendingListen=false;command('listen');}if(pendingReplyWindow){pendingReplyWindow=false;command('response-window');}if(pendingText)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'compose',text:pendingText},origin);if(pendingVoiceEnrollment){frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id:pendingVoiceEnrollment},origin);pendingVoiceEnrollment='';}}
       if(data.kind==='agent-orb-shape'&&String(data.ownerKey)===String(adapter.ownerKey)
         &&(data.shape==='orbit'||data.shape==='particle_face'))window.dispatchEvent(new CustomEvent('vp3:agent-orb-shape',{detail:{shape:data.shape}}));
       if(data.kind==='jobs'&&String(data.ownerKey)===String(adapter.ownerKey))setJobs(data.source,data.jobs);
@@ -317,10 +437,14 @@
       if(data.kind==='participant-speaker')window.VP3ParticipantContinuity?.receiveSpeaker(data.value);
       if(data.kind==='participant-reject')window.VP3ParticipantContinuity?.rejectCurrent(false,String(data.value?.participant_id||''));
       if(data.kind==='state'&&data.conversation)rememberRef(data.conversation);
+      if(data.kind==='activity-open'&&String(data.ownerKey)===String(adapter.ownerKey))window.VP3AgentActivityHub?.open({specialist:data.specialist,focus:data.focus});
+      if(data.kind==='activity-specialists'&&String(data.ownerKey)===String(adapter.ownerKey)&&Array.isArray(data.items)&&data.items.length<=12){if(data.conversation)rememberRef(data.conversation);frameSpecialists=data.items;window.dispatchEvent(new Event('vp3:chat-specialists-changed'));}
       if(data.kind==='state')render(data.state);
-      if(data.kind==='initiative-status'&&!panel.hidden&&String(data.ownerKey)===String(adapter.ownerKey)){
+      if(data.kind==='ready')dispatchActivity();
+      if(data.kind==='activity-action-result'&&activityRequests.has(data.request_id)){const finish=activityRequests.get(data.request_id);activityRequests.delete(data.request_id);finish(data.accepted===true);}
+      if(data.kind==='initiative-status'&&(!panel.hidden||root.dataset.activityOpen==='true')&&String(data.ownerKey)===String(adapter.ownerKey)){
         setInitiativeStatus(data.view,action=>{
-          if(!panel.hidden)frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'initiative-action',action},origin);
+          if(!panel.hidden||root.dataset.activityOpen==='true')frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'initiative-action',action},origin);
         });
       }
       if(data.kind==='draft-accepted'){const input=bar?.querySelector('input');if(input&&input.value===pendingText){input.value='';try{sessionStorage.removeItem(draftKey);}catch(_){}}pendingText='';}
@@ -370,7 +494,7 @@
     document.addEventListener('pointerdown',touchControls,{passive:true});
     const resize=()=>{reservePopupFooter();const r=root.getBoundingClientRect();if(panel.hidden&&(r.left>innerWidth-80||r.top>innerHeight-140)){root.style.left='auto';root.style.top='auto';root.style.right='12px';root.style.bottom='94px';}positionInitiative();};
     const escape=event=>{
-      if(event.key!=='Escape'||appearanceDialog?.open)return;
+      if(event.key!=='Escape'||appearanceDialog?.open||root.dataset.activityOpen==='true')return;
       if(!initiative.hidden&&root.dataset.initiativeDismissed!=='true'&&(root.matches(':hover,:focus-within')||root.dataset.controlsOpen==='true')){
         if(initiative.contains(document.activeElement))ball.focus();
         root.dataset.initiativeDismissed='true';
@@ -381,9 +505,16 @@
     window.addEventListener('message',message);window.addEventListener('resize',resize);document.addEventListener('keydown',escape);
     timer=setInterval(()=>{if(!frame){const ref=adapter.conversationRef?.();if(ref)rememberRef(ref);const next=state(),json=JSON.stringify(next);if(json!==lastState){render(next);lastState=json;}}},200);
     window.addEventListener('vp3:participant-photo-state',event=>{const d=event.detail||{};if(['waiting','capturing','saving','saved','failed','deferred'].includes(d.state)&&typeof d.message==='string')frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'participant-photo-state',value:{state:d.state,message:d.message.slice(0,500)}},origin);});
-    window.VP3AgentOrb={open,close,toggle,bubble,state,follow,setInitiativeStatus,setJobs,listenForResponse:()=>{const voice=window.VP3ConversationControls||(document.getElementById('chatForm')&&window.HomeServerConversationVoice);if(voice)return voice.responseWindow?.();open();if(ready)command('response-window');else pendingReplyWindow=true;return true;},cancelResponseWindow:()=>{pendingReplyWindow=false;if(frame)command('response-window-cancel');else window.VP3ConversationControls?.cancelResponseWindow?.();},participantSignal:(kind,value)=>{if(['presence','reject','invalidate','selection'].includes(kind))frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'participant-'+kind,value},origin);},setIntroductionMode:mode=>{introductionMode=mode;window.VP3VoiceGuard?.inviteIntroduction(mode);frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'introduction-window',mode},origin);},startVoiceEnrollment:id=>{if(adapter.attachChat||adapter.isMainChat?.())return false;open();if(ready)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id},origin);else pendingVoiceEnrollment=id;return true;},cancelVoiceEnrollment:()=>{pendingVoiceEnrollment='';frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'voice-enroll-cancel'},origin);},stop:()=>command('stop')};
+    window.VP3AgentOrb={open,close,toggle,bubble,state,follow,setInitiativeStatus,setJobs,
+      activityHost:()=>activityHost,positionActivity:positionInitiative,prepareActivity:()=>{if(!panel.hidden)close();},
+      activityAction:relayActivityAction,
+      activityContext:()=>conversationRef||(adapter.isMainChat?.()?adapter.conversationRef?.():{id:0,agent:Number(window.VP3_ORB_CONFIG?.agentId||0)}),
+      activitySpecialists:()=>frame?frameSpecialists:window.VP3ChatSpecialists?.snapshot?.()||[],
+      viewActivitySpecialist:key=>{if(frame){if(!frameSpecialists.some(item=>item.key===key&&item.canView===true))return false;open();frame.contentWindow?.postMessage({channel:'vp3-orb',kind:'activity-specialist',key},origin);return true;}return window.VP3ChatSpecialists?.view?.(key)??false;},
+      showActivityDetails:()=>{if(!frame)return false;open();frame.contentWindow?.postMessage({channel:'vp3-orb',kind:'activity-details'},origin);return true;},
+      listenForResponse:()=>{const voice=window.VP3ConversationControls||(document.getElementById('chatForm')&&window.HomeServerConversationVoice);if(voice)return voice.responseWindow?.();open();if(ready)command('response-window');else pendingReplyWindow=true;return true;},cancelResponseWindow:()=>{pendingReplyWindow=false;if(frame)command('response-window-cancel');else window.VP3ConversationControls?.cancelResponseWindow?.();},participantSignal:(kind,value)=>{if(['presence','reject','invalidate','selection'].includes(kind))frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'participant-'+kind,value},origin);},setIntroductionMode:mode=>{introductionMode=mode;window.VP3VoiceGuard?.inviteIntroduction(mode);frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'introduction-window',mode},origin);},startVoiceEnrollment:id=>{if(adapter.attachChat||adapter.isMainChat?.())return false;open();if(ready)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id},origin);else pendingVoiceEnrollment=id;return true;},cancelVoiceEnrollment:()=>{pendingVoiceEnrollment='';frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'voice-enroll-cancel'},origin);},stop:()=>command('stop')};
     window.dispatchEvent(new Event('vp3:agent-orb-ready'));
-    window.addEventListener('pagehide',()=>{disposed=true;jobSnapshots.clear();refreshJobs();clearInterval(timer);clearTimeout(bubbleTimer);cancelAnimationFrame(motionFrame);footerObserver?.disconnect();document.removeEventListener('pointerdown',touchControls);window.removeEventListener('message',message);window.removeEventListener('resize',resize);document.removeEventListener('keydown',escape);adapter.stop?.();},{once:true});
+    window.addEventListener('pagehide',()=>{cancelActivity();disposed=true;jobSnapshots.clear();refreshJobs();clearInterval(timer);clearTimeout(bubbleTimer);cancelAnimationFrame(motionFrame);footerObserver?.disconnect();document.removeEventListener('pointerdown',touchControls);window.removeEventListener('message',message);window.removeEventListener('resize',resize);document.removeEventListener('keydown',escape);adapter.stop?.();},{once:true});
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

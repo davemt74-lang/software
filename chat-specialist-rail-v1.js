@@ -12,7 +12,11 @@
     generic:'M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M5.6 18.4l2.1-2.1 M16.3 7.7l2.1-2.1'
   };
   let opened = null;
+  let pendingAutoOpen = null;
   let suspended = false;
+  let participantActor = 0;
+  const privateContext = () => participantActor > 0 || Boolean(window.VP3ParticipantContinuity?.selectedContext?.());
+  const changed = () => window.dispatchEvent(new Event('vp3:chat-specialists-changed'));
 
   function node(tag, text = '') {
     const element = document.createElement(tag);
@@ -122,7 +126,7 @@
   }
 
   function update(key, options = {}) {
-    if (suspended || typeof key !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(key) || !document.body) return;
+    if (suspended || privateContext() || typeof key !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(key) || !document.body) return;
     let entry = entries.get(key);
     if (!entry) {
       const button = makeButton();
@@ -133,7 +137,11 @@
       button.append(makeIcon(key));
       entry = {key,button,panelId};
       button.addEventListener('click', () => {
-        if (opened?.entry === entry) closePanel(true);
+        if (privateContext()) return;
+        if (window.VP3AgentActivityHub?.open) {
+          closePanel(false);
+          window.VP3AgentActivityHub.open({specialist:key});
+        } else if (opened?.entry === entry) closePanel(true);
         else openPanel(entry, true);
       });
       if (!entries.size) observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
@@ -148,9 +156,14 @@
     entry.onView = typeof options.onView === 'function' ? options.onView : null;
     entry.button.setAttribute('aria-label',entry.label);
     entry.button.title = entry.label;
+    changed();
     if (!dock()) return;
     if (opened?.entry === entry) renderPanel();
-    else if (options.autoOpen === true && !opened) openPanel(entry, false);
+    else if (options.autoOpen === true && !opened) {
+      if (window.VP3AgentActivityHub?.open) window.VP3AgentActivityHub.open({specialist:key,focus:false});
+      else if (window.VP3_ORB_CONFIG?.activityEndpoint) pendingAutoOpen ??= key;
+      else openPanel(entry, false);
+    }
   }
 
   function remove(key) {
@@ -164,6 +177,8 @@
     entry.detail = '';
     entry.onView = null;
     entries.delete(key);
+    if (pendingAutoOpen === key) pendingAutoOpen = null;
+    changed();
     if (!entries.size) {
       observer.disconnect();
       host.remove();
@@ -171,6 +186,11 @@
     if (hadFocus) (host.querySelector('button') || document.getElementById('chatInput'))?.focus();
   }
 
+  window.addEventListener('vp3:agent-activity-ready',() => {
+    if (!pendingAutoOpen || suspended || privateContext()) return;
+    const key = pendingAutoOpen;
+    if (!entries.has(key) || window.VP3AgentActivityHub?.open({specialist:key,focus:false}) === true) pendingAutoOpen = null;
+  });
   compact.addEventListener('change',dock);
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || event.defaultPrevented || !opened) return;
@@ -184,5 +204,31 @@
   });
   window.addEventListener('pageshow', () => { suspended = false; });
 
-  window.VP3ChatSpecialists = Object.freeze({update,remove});
+  function snapshot() {
+    if (suspended || privateContext()) return [];
+    return [...entries.values()].map(entry => ({
+      key:entry.key,label:entry.label,status:entry.status,title:entry.title,
+      detail:entry.detail,viewLabel:entry.viewLabel,canView:Boolean(entry.onView)
+    }));
+  }
+
+  function view(key) {
+    if (suspended || privateContext()) return false;
+    const entry = entries.get(key);
+    if (!entry?.onView) return false;
+    closePanel(false);
+    entry.onView();
+    return true;
+  }
+
+  function participantChanged() {
+    if (!privateContext()) return;
+    for (const key of entries.keys()) remove(key);
+  }
+  window.addEventListener('vp3:participant-selection-changed',participantChanged);
+  window.addEventListener('vp3:participant-task-context',event => {
+    participantActor = Number(event.detail?.participant_id) || 0;
+    participantChanged();
+  });
+  window.VP3ChatSpecialists = Object.freeze({update,remove,snapshot,view});
 })();

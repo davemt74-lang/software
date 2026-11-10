@@ -580,17 +580,22 @@
     const selection = ++load;
     if (!id) {
       renderCanvas(null);
-      return;
+      return false;
     }
     const fields = {canvas_id:id};
     if (revision) fields.revision = revision;
     try {
       const data = await api('open',fields);
-      if (version !== epoch || selection !== load || !shown() || !matches()) return;
+      if (version !== epoch || selection !== load || !shown() || !matches()) return false;
+      if (data.canvas?.id !== id || revision !== undefined && data.revision?.id !== revision) {
+        throw new Error('This saved Canvas version could not be verified.');
+      }
       renderCanvas(data);
       if (announce) report('');
+      return true;
     } catch (error) {
       if (version === epoch && selection === load && shown()) report(error.message);
+      return false;
     }
   }
 
@@ -865,7 +870,33 @@
     updateParticipantScope();
   });
   window.addEventListener('vp3:chat-context-ready',() => void resume());
+  window.VP3CodingCanvasV1 = Object.freeze({
+    async open(id, revision) {
+      if (!matches() || !chat()?.isReady() || chat()?.isRestoring()
+        || typeof id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id)
+        || (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1))) return false;
+      const version = epoch;
+      await openPanel();
+      if (version !== epoch || !shown() || !matches()) return false;
+      const opened = await openSaved(id, revision);
+      return opened && version === epoch && shown() && matches();
+    }
+  });
+  const activityParams = new URLSearchParams(location.search);
+  const activityCanvas = activityParams.get('canvas_id');
+  const activityRevisionRaw = activityParams.get('canvas_revision');
+  const activityRevision = activityRevisionRaw === null ? undefined : Number(activityRevisionRaw);
+  let activityCanvasOpened = false;
+  function openActivityCanvas() {
+    if (activityCanvasOpened || !activityCanvas || !matches() || !chat()?.isReady() || chat()?.isRestoring()) return;
+    activityCanvasOpened = true;
+    void window.VP3CodingCanvasV1.open(activityCanvas, activityRevision).then(opened => {
+      if (!opened) activityCanvasOpened = false;
+    });
+  }
+  window.addEventListener('vp3:chat-context-ready', openActivityCanvas);
   dock.hidden = participantContext();
   void resume();
   updateControls();
+  openActivityCanvas();
 })();

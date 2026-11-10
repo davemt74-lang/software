@@ -37,6 +37,7 @@ await page.route('**/api/**',async route=>{
   assert.equal(body.confirmed,true);assert.equal(body.schedule_id,schedules[0].id);assert.equal(body.expected_revision,schedules[0].revision);
   schedules[0]={...schedules[0],revision:schedules[0].revision+1,status:{'schedule.pause':'paused','schedule.resume':'active','schedule.cancel':'cancelled'}[body.action]};return ok({schedules});
  }
+ if(body.action==='catch_up.get'){assert.equal(body.agent_id,7);assert.equal(body.mission_id,mid);return ok({mission:{...mission,execution_target:'cloud'},tools:contract});}
  if(body.action==='tools.get')return ok({tools:contract});
  if(body.action==='tools.configure'){assert.deepEqual(body.assignments,draft);assert.equal(body.confirmed,true);assert.equal(body.expected_revision,0);contract={...contract,revision:1,configured:true,active:true,assignments:draft};mission={...mission,tools_configured:true};return ok({tools:contract});}
  if(body.action==='tools.start'){assert.equal(body.expected_revision,1);assert.equal(body.confirmed,true);mission={...mission,status:'completed',tools_enabled:true,tasks:[{...mission.tasks[0],status:'completed'}],action_summaries:[change],completion_report:{state:'awaiting_review',summary:'0 of 1 changes verified',execution_verified:false}};return ok({mission});}
@@ -97,5 +98,15 @@ try{
  await page.waitForFunction(()=>document.querySelector('.vp3-specialist-schedules [data-scheduler-state="healthy"]'));
  schedulerHealth=null;await page.clock.fastForward(16000);
  await page.waitForFunction(()=>document.querySelector('.vp3-specialist-schedules [data-scheduler-state="unavailable"]'));
+ await boot();
+ await page.evaluate(()=>{window.STONEFELLOW_CHAT.userId=1;window.STONEFELLOW_CHAT.agentId=7;});
+ const startedBeforeOpen=calls.filter(c=>['tools.start','start','actions.review'].includes(c.action)).length;
+ assert.equal(await page.evaluate(mid=>window.VP3AgentMissionsV1.open(mid),mid),true,'Activity opens the currently authorized mission');
+ assert.match(await page.locator('.vp3-teams-status').textContent(),/Mission loaded/);
+ assert.equal(calls.filter(c=>['tools.start','start','actions.review'].includes(c.action)).length,startedBeforeOpen,'Opening a mission preserves its execution and review state');
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:14}})));
+ const requestCount=calls.length;
+ assert.equal(await page.evaluate(mid=>window.VP3AgentMissionsV1.open(mid),mid),false,'Participant activity cannot open an owner mission');
+ assert.equal(calls.length,requestCount,'The denied activity request stays local');
  assert.deepEqual(errors,[]);console.log('A5C6 browser PASS: '+(native?'HomeServer':'Cloud')+' reviewed schedules, durable retry, heartbeat, interruption review, slow workers, privacy-safe text and disconnect/reconnect');
 }finally{await browser.close();}

@@ -753,6 +753,27 @@ function renderBrain(body){
     .catch(()=>{});
  }
 }
+let activityMissionParticipant=0;
+window.addEventListener('vp3:participant-task-context',event=>{activityMissionParticipant=Number(event.detail?.participant_id)||0;});
+async function openActivityMission(id){
+ const owner=Number(window.STONEFELLOW_CHAT?.userId),context=JSON.stringify(taskContext()),agentId=taskContext().agent_id;
+ let generation=viewGeneration;
+ const allowed=()=>Number(window.STONEFELLOW_CHAT?.userId)===owner&&JSON.stringify(taskContext())===context
+  &&generation===viewGeneration&&activityMissionParticipant<=0&&!window.VP3ParticipantContinuity?.selectedContext?.();
+ if(busy||!owner||!allowed()||typeof id!=='string'||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id))return false;
+ setBusy(true);generation=viewGeneration;root.open=true;say('Opening Mission…');
+ try{
+  const {mission,tools}=await api('catch_up.get',{mission_id:id,agent_id:agentId});
+  if(!allowed()||mission?.id!==id||mission.execution_target!=='cloud'||mission.authority_current!==true)return false;
+  progressReceived=Date.now();progressConnected=true;toolsByMission.set(id,tools);
+  const index=items.findIndex(item=>item.id===id);
+  if(index>=0)items[index]=mission;else items.unshift(mission);
+  showList();showMission(mission);root.scrollIntoView({block:'nearest'});say('Mission loaded.');
+  return true;
+ }catch(error){if(allowed())say(error.message||'Mission could not be opened.');return false;}
+ finally{setBusy(false);}
+}
+window.VP3AgentMissionsV1=Object.freeze({open:openActivityMission});
 window.VP3_AGENT_TEAMS_A3_BRAIN=renderBrain;
 window.VP3_SCREEN_OPEN_MISSION=async id=>{const response=await api('get',{mission_id:id});return window.VP3_SCREEN_PREPARED_MISSION(response);};
 window.VP3_SCREEN_PREPARED_MISSION=async response=>{const m=response?.mission;if(!m?.id||!m.chat_task?.draft)throw Error('Mission preparation was not confirmed.');if(busy)throw Error('Agent Teams is busy; reopen this prepared mission from its history.');const contract=await api('tools.get',{mission_id:m.id});selected=m.id;toolsByMission.set(m.id,contract.tools);if(!contract.tools.configured)toolDrafts.set(m.id,m.chat_task.draft);const index=items.findIndex(x=>x.id===m.id);if(index>=0)items[index]=m;else items.unshift(m);root.open=true;showList();showMission(m);say('Sharing evidence attached. Review assignments before starting specialists.');};

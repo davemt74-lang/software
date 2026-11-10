@@ -1,0 +1,93 @@
+.vp3-orb-root[data-activity-open=true] .vp3-orb-initiative {
+  width:min(420px,calc(100vw - 24px));
+  max-height:min(var(--vp3-initiative-room,70dvh),78dvh);
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+}
+.vp3-orb-root[data-activity-open=true] [data-agent-activity-preview],
+[data-agent-activity-host][hidden],
+[data-agent-worker-details][hidden] {
+  display:none!important;
+}
+.vp3-agent-activity-header {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+}
+.vp3-agent-activity-header h2 {
+  flex:1;
+  margin:0;
+  font-size:16px;
+}
+[data-agent-activity-host] {
+  display:grid;
+  gap:10px;
+}
+.vp3-agent-activity-status {
+  margin:0;
+  color:#bed5e9;
+  font-size:12px;
+}
+.vp3-agent-activity-refresh { justify-self:start; }
+.vp3-agent-activity-group h3,
+.vp3-agent-activity-specialists h3 {
+  margin:10px 0 7px;
+  font-size:14px;
+}
+.vp3-agent-activity-source h4 {
+  margin:9px 0 3px;
+  color:#bed5e9;
+  font-size:12px;
+}
+.vp3-agent-activity-item {
+  display:grid;
+  gap:5px;
+  padding:9px 0;
+  border-top:1px solid #bed5e940;
+}
+.vp3-agent-activity-item.selected {
+  border-left:2px solid #8ad4ff;
+  padding-left:8px;
+}
+.vp3-agent-activity-item p { margin:0; }
+.vp3-agent-activity-item small { margin:0; }
+.vp3-agent-activity-actions { display:flex;flex-wrap:wrap;gap:6px; }
+.vp3-orb-initiative [data-agent-worker-details] {
+  padding-top:8px;
+  border-top:1px solid #bed5e940;
+  color:#bed5e9;
+  font-size:11px;
+}
+.vp3-orb-initiative [data-agent-worker-details] summary {
+  cursor:pointer;
+  padding:5px 0;
+}
+.vp3-orb-initiative [data-agent-worker-details] strong { font-size:12px; }
+.vp3-orb-initiative [data-agent-worker-details] small { font-size:11px; }
+.vp3-agent-activity-listening:empty { display:none; }
+.vp3-agent-activity-listening .chat-listening-continuation {
+  box-sizing:border-box;
+  flex-wrap:wrap;
+  width:100%;
+  margin:0;
+}
+@media(pointer:coarse) {
+  [data-agent-activity-host] button,
+  .vp3-orb-initiative [data-agent-activity-preview] { min-height:44px; }
+}
+
+.vp3-agent-activity-context {
+  margin:0;
+  color:#bed5e9;
+  font-size:12px;
+}
+.vp3-agent-activity-context:empty,
+.vp3-agent-activity-status:empty { display:none; }
+.vp3-agent-activity-group > summary {
+  margin:8px 0;
+  padding:4px 0;
+  font-weight:650;
+  cursor:pointer;
+}

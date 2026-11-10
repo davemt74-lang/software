@@ -176,7 +176,7 @@ function agent_connection_youtube_result_records_v1(PDO $pdo, int $ownerId, int 
     }
     // History caps display at eight. Recall can search the full seven-day cache,
     // whose per-member daily quota fits in this bound. Loads bind exact IDs.
-    $limit = max(1,min($messageIds ? 300 : 120,$limit));
+    $limit = max(1,min($messageIds ? 301 : 120,$limit));
     $createdAtEpoch = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
         ? 'UNIX_TIMESTAMP(m.created_at)' : "strftime('%s',m.created_at)";
     $stmt = $pdo->prepare("SELECT c.id AS conversation_id,c.title AS conversation_title,m.id AS message_id,m.created_at,

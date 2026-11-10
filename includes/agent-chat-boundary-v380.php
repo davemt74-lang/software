@@ -50,6 +50,25 @@ function vp3_agent_chat_conversation_v380(PDO $pdo,int $conversationId,int $user
     return $row?:null;
 }
 
+function vp3_agent_chat_include_source_v380(PDO $pdo, array $user, ?array $agent, int $cid, array $messages, mixed $sourceId): array
+{
+    if ($sourceId === null) return $messages;
+    if ((!is_int($sourceId) && !is_string($sourceId)) || !preg_match('/^[1-9][0-9]{0,15}$/D', (string)$sourceId) || (int)$sourceId > 9007199254740991) {
+        throw new RuntimeException('Choose an exact saved message.', 422);
+    }
+    $id = (int)$sourceId;
+    if (!vp3_agent_chat_conversation_v380($pdo, $cid, (int)$user['id'], $agent)) {
+        throw new RuntimeException('Conversation access changed.', 403);
+    }
+    foreach ($messages as $message) if ((int)$message['id'] === $id) return $messages;
+    $query = $pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE id=? AND conversation_id=? LIMIT 1');
+    $query->execute([$id, $cid]);
+    $message = $query->fetch(PDO::FETCH_ASSOC);
+    if (!$message) throw new RuntimeException('This saved source is unavailable.', 404);
+    array_unshift($messages, $message);
+    return $messages;
+}
+
 function vp3_agent_chat_create_conversation_v380(PDO $pdo,array $user,?array $agent,string $title,int $workspaceId=0): array
 {
     $userId=(int)($user['id']??0);
