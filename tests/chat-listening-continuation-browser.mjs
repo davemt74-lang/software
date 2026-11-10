@@ -69,7 +69,9 @@ async function fixture(options) {
       else if (body.action === 'start') recent = [{...savedTrack(),last_position_seconds:Number(body.position) || 0}];
       return route.fulfill({json:{ok:true,session_token:'session',session_id:7}});
     }
-    if (body.action === 'load') return route.fulfill({json:{ok:true,messages:[{id:1,role:'assistant',message:'Earlier conversation'}]}});
+    if (body.action === 'load') return route.fulfill({json:{ok:true,messages:body.source_message_id
+      ? [{id:body.source_message_id,role:'assistant',message:'Selected saved source'},{id:1000,role:'assistant',message:'Latest conversation'}]
+      : [{id:1,role:'assistant',message:'Earlier conversation'}]}});
     if (body.action === 'send') return route.fulfill({json:{ok:true,conversation_id:42,answer:'Conversation continues.',assistant_message_id:2}});
     return route.fulfill({json:{ok:true,conversations:[],updates:[],items:[]}});
   });
@@ -145,6 +147,16 @@ try {
   assert.equal(await mobile.locator('#playerSong audio').evaluate(element => element.paused), true, 'Resume started the hidden Player audio');
   assert.equal(await mobile.locator('#chatNowPlayingNext').isDisabled(), true);
   await mobile.evaluate(() => { window.keptListeningAudio = document.querySelector('#chatListeningContinuation audio'); });
+  await mobile.evaluate(() => {
+    const slot = document.createElement('aside');
+    slot.dataset.agentActivityListening = '';
+    document.body.append(slot);
+    window.dispatchEvent(new Event('vp3:agent-activity-listening-slot'));
+  });
+  await mobile.waitForFunction(() => document.querySelector('[data-agent-activity-listening] #chatListeningContinuation audio') === keptListeningAudio);
+  assert.equal(await audio.evaluate(element => element.paused), false, 'Moving the existing player paused live playback');
+  assert.equal(await mobile.locator('#chatListeningContinuation').count(), 1, 'The orb slot duplicated the listening player');
+  assert.equal(startCount(), starts + 1, 'Mounting the orb slot created a new playback session');
   recent = [{...savedTrack(),id:19,title:'Track from another session'}, savedTrack()];
   const historyRefresh = mobile.waitForResponse(response => response.url().includes('player-library'));
   await refresh(mobile);
@@ -161,8 +173,16 @@ try {
     input.dispatchEvent(new Event('input'));
   });
   await mobile.waitForFunction(() => document.querySelector('#chatListeningContinuation [data-listening-position]').textContent === '0:42');
-  await resume.click();
+  await mobile.evaluate(() => {
+    const button = document.createElement('button');
+    button.id = 'activityResumeFixture';
+    button.textContent = 'Resume activity track';
+    button.addEventListener('click', async () => { window.activityPlayResult = await STONEFELLOW_CHAT_CONTINUITY.playActivityTrack(9); });
+    document.body.append(button);
+  });
+  await mobile.locator('#activityResumeFixture').click();
   await pause.waitFor();
+  assert.equal(await mobile.evaluate(() => window.activityPlayResult), true, 'The activity bridge did not delegate to the canonical player');
   assert.ok(await audio.evaluate(element => element.currentTime >= 42), 'Resume reset the current position');
   await pause.click();
   await resume.waitFor();
@@ -177,7 +197,8 @@ try {
   await mobile.locator('#chatForm').evaluate(form => form.requestSubmit());
   await mobile.getByText('Conversation continues.', {exact:true}).waitFor();
   assert.equal(await row.isVisible(), true);
-  assert.equal(await mobile.evaluate(() => document.querySelector('#chatThread').lastElementChild.id), 'chatListeningContinuation');
+  assert.equal(await mobile.evaluate(() => document.querySelector('[data-agent-activity-listening]').firstElementChild.id), 'chatListeningContinuation');
+  assert.equal(await mobile.locator('#chatThread #chatListeningContinuation').count(), 0, 'The resumed player returned to the transcript');
 
   historyStatus = 503;
   const failedHistory = mobile.waitForResponse(response => response.url().includes('player-library') && response.status() === 503);
@@ -220,8 +241,50 @@ try {
   await desktopControls.row.waitFor({state:'hidden'});
   assert.equal(await desktopControls.nowPlaying.isVisible(), false);
   assert.equal(await desktopControls.audio.count(), 0);
+  historyStatus = 200;
+  await refresh(desktop);
+  await desktopControls.resume.waitFor();
+  await desktop.evaluate(() => {
+    window.VP3ParticipantContinuity = {selectedContext:() => ({id:44})};
+    window.dispatchEvent(new Event('vp3:participant-selection-changed'));
+  });
+  await desktopControls.row.waitFor({state:'hidden'});
+  assert.equal(await desktop.evaluate(() => STONEFELLOW_CHAT_CONTINUITY.playActivityTrack(9)), false, 'Participant scope could resume owner media');
+  assert.equal(await desktopControls.audio.count(), 0, 'Participant scope retained the private listening player');
+  await desktop.evaluate(() => {
+    window.VP3ParticipantContinuity = {selectedContext:() => null};
+    window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:-1}}));
+    window.dispatchEvent(new Event('vp3:participant-selection-changed'));
+  });
+  await desktopControls.resume.waitFor();
+  assert.equal(await desktopControls.audio.evaluate(element => element.paused), true, 'Restoring the owner scope autoplayed a song');
+  assert.equal(await desktop.evaluate(() => STONEFELLOW_CHAT_CONTINUITY.openConversation(42,{messageId:500})), true, 'Activity can load an exact older source alongside the recent Chat tail');
+  assert.equal(calls.at(-1).action === 'load' ? calls.at(-1).source_message_id : calls.findLast(call=>call.action === 'load').source_message_id,500);
+  assert.equal(await desktop.locator('[data-chat-message-id="500"]').count(),1);
+  assert.equal(await desktop.locator('[data-chat-message-id="1000"]').count(),1);
+  let sourceStarted, releaseSource;
+  const sourceWaiting = new Promise(resolve => { sourceStarted = resolve; });
+  const sourceRelease = new Promise(resolve => { releaseSource = resolve; });
+  await desktop.route('**/api/chat.php', async route => {
+    const body = route.request().postDataJSON();
+    if (body.action !== 'load' || body.source_message_id !== 501) return route.fallback();
+    sourceStarted();
+    await sourceRelease;
+    await route.fulfill({json:{ok:true,messages:[{id:501,role:'assistant',message:'Delayed private owner source'}]}});
+  });
+  const sourceLoad = desktop.evaluate(() => STONEFELLOW_CHAT_CONTINUITY.openConversation(42,{messageId:501}));
+  await sourceWaiting;
+  await desktop.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:14}})));
+  releaseSource();
+  assert.equal(await sourceLoad,false,'Participant context changes discard the in-flight owner history load');
+  assert.equal(await desktop.locator('[data-chat-message-id="501"]').count(),0,'A delayed private source cannot mount after participant selection');
+  await desktop.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:-1}})));
+  await desktop.evaluate(() => { STONEFELLOW_CHAT.userId = 22; });
+  assert.equal(await desktop.evaluate(() => STONEFELLOW_CHAT_CONTINUITY.playActivityTrack(9)), false, 'An owner-mismatched bridge could resume a song');
+  await refresh(desktop);
+  await desktopControls.row.waitFor({state:'hidden'});
   assert.deepEqual(errors, []);
-  console.log('CHAT_LISTENING_CONTINUATION_BROWSER=PASS compact mobile and desktop resume row, saved position and shared transport, draft preservation, quiet recovery, and account/access isolation');
+  console.log('CHAT_LISTENING_CONTINUATION_BROWSER=PASS compact resume row, preserved orb audio, canonical bridge, saved position, shared transport, draft preservation, quiet recovery, and owner/participant isolation');
 } finally {
   await browser.close();
 }

@@ -76,6 +76,13 @@
   } catch (error) {}
 
   let conversationId = 0;
+  let historyAuthority = 0, historyParticipant = 0;
+  window.addEventListener('vp3:participant-selection-changed',() => { historyAuthority++; });
+  window.addEventListener('vp3:participant-task-context',event => {
+    const participant = Math.max(0, Number(event.detail?.participant_id) || 0);
+    if (participant !== historyParticipant) historyAuthority++;
+    historyParticipant = participant;
+  });
   let lastLoadedMessageId = 0;
   const pendingAssistantMessages = new Map();
   let busy = false;
@@ -3612,7 +3619,21 @@
     } catch (error) {}
   }
 
-  async function loadConversation(id) {
+  async function loadConversation(id, sourceMessageId = 0) {
+    const historyAtRequest = historyAuthority, ownerAtRequest = Number(cfg.userId), agentAtRequest = Number(cfg.agentId || 0);
+    const historyIsCurrent = () => historyAtRequest === historyAuthority && historyParticipant <= 0
+      && Number(window.STONEFELLOW_CHAT?.userId) === ownerAtRequest
+      && Number(window.STONEFELLOW_CHAT?.agentId || 0) === agentAtRequest
+      && !window.VP3ParticipantContinuity?.selectedContext?.();
+
+    if (!sourceMessageId) {
+      const sourceParams = new URLSearchParams(location.search);
+      const sourceQuery = sourceParams.get('message_id');
+      if (Number(sourceParams.get('conversation_id')) === Number(id) && /^[1-9][0-9]{0,15}$/.test(sourceQuery || '')) {
+        const sourceCandidate = Number(sourceQuery);
+        if (Number.isSafeInteger(sourceCandidate)) sourceMessageId = sourceCandidate;
+      }
+    }
     leaveChat(); const revision = chatRevision;
     restoringConversation++;
     const controller = new AbortController();
@@ -3626,10 +3647,11 @@
     });
     const data = await Promise.race([api({
       action:'load',
-      conversation_id:Number(id)
+      conversation_id:Number(id),
+      ...(sourceMessageId ? {source_message_id:sourceMessageId} : {})
     }, controller.signal), deadline]);
 
-    if(revision!==chatRevision)return;
+    if(revision!==chatRevision || !historyIsCurrent())return false;
     conversationId = Number(id); contextReady=true; rememberConversation(); restoreDraft();
     lastLoadedMessageId = 0;
     document.dispatchEvent(new CustomEvent('stonefellow:task-start',{detail:{title:'Agent Chat · active conversation',key:`chat:${conversationId}`}}));
@@ -3691,6 +3713,8 @@
     });
 
     closeNav();
+    if (sourceMessageId) thread.querySelector('[data-chat-message-id="'+sourceMessageId+'"]')?.scrollIntoView({block:'center'});
+    return true;
     } finally { window.clearTimeout(restoreTimer); restoringConversation--; if(revision===chatRevision&&!restoringConversation)restoreInitiativeReplyV1(); window.dispatchEvent(new Event('vp3:chat-context-ready')); }
   }
 
@@ -4244,11 +4268,13 @@
     isRestoring:() => initialRestorePending || restoringConversation > 0,
     isReady:() => contextReady,
     isBusy:() => busy || initialRestorePending || restoringConversation > 0,
-    openConversation:async id => {
-      const target = Math.max(0, Number(id || 0));
-      if (target < 1) return false;
-      await loadConversation(target);
-      return Number(conversationId || 0) === target;
+    openConversation:async (id, options = {}) => {
+      const target = Number(id);
+      const sourceMessageId = options.messageId === undefined ? 0 : options.messageId;
+      if (!Number.isSafeInteger(target) || target < 1 || !Number.isSafeInteger(sourceMessageId) || sourceMessageId < 0) return false;
+      const loaded = await loadConversation(target, sourceMessageId);
+      return loaded === true && Number(conversationId || 0) === target && (!sourceMessageId ||
+        Boolean(thread.querySelector('[data-chat-message-id="'+sourceMessageId+'"][data-chat-conversation-id="'+target+'"]')));
     },
     syncConversation:async id => {
       const target = Math.max(0, Number(id || conversationId || 0));
@@ -4537,6 +4563,15 @@
   }
 
   let recentHistoryBusy=false,recentHistoryQueued=false,recentHistoryRevision=0,recentHistoryTimer=0,recentHistoryController=null;
+  const activityPlayerOwner=Number(cfg.userId),activityPlayerAgent=Number(cfg.agentId||0);
+  let activityPlayerParticipant=0,activityPlayerHistory=[];
+  function activityPlayerAllowed(){
+    const live=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
+    return activityPlayerOwner>0&&Number(window.STONEFELLOW_CHAT?.userId)===activityPlayerOwner
+      &&Number(window.STONEFELLOW_CHAT?.agentId||0)===activityPlayerAgent
+      &&Number(live?.agentId?.())===activityPlayerAgent
+      &&activityPlayerParticipant<=0&&!window.VP3ParticipantContinuity?.selectedContext?.();
+  }
   const recentHistoryPlaying=grid=>!!grid&&[...grid.querySelectorAll('audio')].some(audio=>!audio.paused&&!audio.ended);
   function listeningHost(){
     const thread = document.getElementById('chatThread');
@@ -4549,10 +4584,15 @@
       host.hidden = true;
       host.setAttribute('aria-label', 'Continue listening');
       host.setAttribute('data-player-queue', '');
-      thread.append(host);
+    }
+    const destination=document.querySelector('[data-agent-activity-listening]')||thread;
+    if(host.parentElement!==destination){
+      if(destination.moveBefore&&host.isConnected)destination.moveBefore(host,null);
+      else if(!recentHistoryPlaying(host))destination.append(host);
     }
     return host;
   }
+  window.addEventListener('vp3:agent-activity-listening-slot',listeningHost);
 
   function syncListeningRow(host, audio) {
     const playing = !audio.paused && !audio.ended;
@@ -4566,12 +4606,12 @@
 
   function renderListeningContinuation(host,track){
     if (!host) return;
-    const thread = host.parentElement;
+    const thread = host.parentElement?.id==='chatThread'?host.parentElement:null;
     let audio = host.querySelector('audio');
     const id = Number(track?.id);
     const source = String(track?.audio || '');
     const playable = Number.isSafeInteger(id) && id > 0 && source;
-    const atEnd = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 96;
+    const atEnd = thread&&thread.scrollHeight - thread.scrollTop - thread.clientHeight < 96;
     if (audio && (!playable || Number(audio.dataset.trackId) !== id)) {
       window.dispatchEvent(new CustomEvent('vp3:audio-player-removed', {detail:audio}));
       audio = null;
@@ -4629,15 +4669,22 @@
     if (atEnd && (!thread.dataset.view || thread.dataset.view === 'chat')) thread.scrollTop = thread.scrollHeight;
   }
   async function refreshRecentPlayerHistory(){
+    if(!activityPlayerAllowed()){
+      activityPlayerHistory=[];
+      const privateHost=document.getElementById('chatListeningContinuation');
+      if(privateHost)renderListeningContinuation(privateHost,null);
+      return;
+    }
     const section=document.getElementById('playerRecent'),grid=section?.querySelector('.chat-player-recent-grid'),host=listeningHost();
     if((!grid&&!host)||!cfg.libraryEndpoint||document.hidden)return;
     if(recentHistoryBusy){recentHistoryQueued=true;return;}
     recentHistoryBusy=true;const revision=recentHistoryRevision,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);recentHistoryController=controller;
     try{
       const data=await libraryApi('recent_history',{},controller.signal);
-      if(revision!==recentHistoryRevision)return;
+      if(revision!==recentHistoryRevision||!activityPlayerAllowed())return;
       const sameOwner = Number(data.user_id) === Number(cfg.userId);
       const rows = sameOwner && Array.isArray(data.tracks) ? data.tracks : [];
+      activityPlayerHistory=rows;
       rows.forEach(track=>{const id=Number(track.id)||0;if(id>0)tracks[id]={...tracks[id],...track};});
       const playing = host?.querySelector('audio');
       const currentTrack = playing && !playing.paused && !playing.ended
@@ -4660,6 +4707,7 @@
       window.dispatchEvent(new CustomEvent('vp3:audio-players-added',{detail:grid}));
     }catch(error){
       const accessLost = [401, 403, 419].includes(error.status);
+      if(accessLost)activityPlayerHistory=[];
       if(revision===recentHistoryRevision&&grid?.isConnected&&(accessLost||!recentHistoryPlaying(grid))){
         if (accessLost) grid.querySelectorAll('audio').forEach(audio => window.dispatchEvent(new CustomEvent('vp3:audio-player-removed', {detail:audio})));
         grid.textContent='Playback history could not be loaded. It will retry automatically.';
@@ -4670,6 +4718,21 @@
   }
   function scheduleRecentPlayerHistory(){clearTimeout(recentHistoryTimer);recentHistoryTimer=setTimeout(()=>void refreshRecentPlayerHistory(),350);}
   window.addEventListener('vp3:playback-history-changed',scheduleRecentPlayerHistory);
+  function resetActivityPlayer(){
+    recentHistoryRevision++;
+    activityPlayerHistory=[];
+    recentHistoryQueued=false;
+    recentHistoryController?.abort();
+    const host=document.getElementById('chatListeningContinuation');
+    if(host&&!activityPlayerAllowed())renderListeningContinuation(host,null);
+    if(activityPlayerAllowed())scheduleRecentPlayerHistory();
+  }
+  window.addEventListener('vp3:participant-selection-changed',resetActivityPlayer);
+  window.addEventListener('vp3:participant-task-context',event=>{
+    activityPlayerParticipant=Number(event.detail?.participant_id)||0;
+    resetActivityPlayer();
+  });
+  window.addEventListener('vp3:chat-context-ready',resetActivityPlayer);
   window.addEventListener('vp3:chat-canvas-view-changed',scheduleRecentPlayerHistory);
   window.addEventListener('focus',scheduleRecentPlayerHistory);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleRecentPlayerHistory();});
@@ -4678,6 +4741,7 @@
   window.addEventListener('pageshow',()=>{if(!recentHistoryPoll)recentHistoryPoll=setInterval(()=>void refreshRecentPlayerHistory(),30000);scheduleRecentPlayerHistory();});
   window.addEventListener('pagehide',()=>{
     recentHistoryRevision++;
+    activityPlayerHistory=[];
     recentHistoryQueued=false;
     recentHistoryController?.abort();
     clearInterval(recentHistoryPoll);
@@ -4874,10 +4938,30 @@
         );
     }
 
-    audio.play().catch(
-      () => {}
-    );
+    return audio.play().then(() => true,() => false);
   }
+
+  Object.assign(window.STONEFELLOW_CHAT_CONTINUITY||{}, {
+    playActivityTrack(trackId){
+      const id=Number(trackId);
+      if(!activityPlayerAllowed()||!Number.isSafeInteger(id)||id<1)return false;
+      const track=activityPlayerHistory.find(row=>Number(row.id)===id);
+      if(!track)return false;
+      const host=listeningHost();
+      renderListeningContinuation(host,track);
+      const audio=host?.querySelector('audio');
+      if(!audio)return false;
+      const position=audio.currentTime>0?null:Number(track.last_position_seconds)||0;
+      return playTrack(id,position,false,audio);
+    },
+    reviewActivityTrack(trackId){
+      const id=Number(trackId);
+      if(!activityPlayerAllowed()||!Number.isSafeInteger(id)||id<1||!playerDrawer
+        ||!activityPlayerHistory.some(row=>Number(row.id)===id))return false;
+      openTrackInfo(id);
+      return true;
+    }
+  });
 
   function setQueue(
     ids,

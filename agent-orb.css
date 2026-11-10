@@ -214,3 +214,13 @@ html[data-vp3-orb-embed] .sidebar,html[data-vp3-orb-embed] .topbar,html[data-vp3
 #vp3OrbJobsStatus:not(:empty)::before { content:' · '; }
 @media(pointer:coarse) { .vp3-orb-initiative-actions button { min-height:44px; } }
 @media(prefers-reduced-motion:reduce) { .vp3-orb-initiative { transition:none; } }
+
+@media(max-width:740px) {
+  .vp3-orb-root[data-popup-open=true] > .vp3-orb-controls {
+    flex-wrap:nowrap;
+    max-width:calc(100vw - 110px);
+  }
+  .vp3-orb-root[data-popup-open=true] > .vp3-orb-controls button {
+    white-space:nowrap;
+  }
+}

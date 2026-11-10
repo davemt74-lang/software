@@ -253,6 +253,7 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
                         &&($marker['owner_user_id']??null)===(int)$live['id']&&($marker['agent_id']??null)===$agentId
                         &&($marker['conversation_id']??null)===$cid&&($marker['run_id']??null)===(int)$run['id']){
                         $item['result_url']=url('/chat.php?agent='.$agentId.'&conversation_id='.$cid);
+                        $item['message_id']=(int)$message['id'];
                         $ownerState=$context['initiative_followthrough_state']['state']??'';
                         if(($context['initiative_followthrough_state']['version']??null)===1
                             &&in_array($ownerState,['open','discussed','queued','deferred','declined','owner_resolved','completed','stale'],true)

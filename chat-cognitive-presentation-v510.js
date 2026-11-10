@@ -19,6 +19,9 @@
   if (!button || !popup || !content || !thread || !form) return;
 
   let state = null;
+  let briefEpoch = 0;
+  let participantActor = 0;
+  const participantContext = () => participantActor > 0 || Boolean(window.VP3ParticipantContinuity?.selectedContext?.());
   let pageController = new AbortController();
   let readController = null;
   let accountError = null;
@@ -158,7 +161,7 @@
 
 
   function liveConversation() {
-    if (!liveHost || document.hidden || thread.dataset.view !== 'chat' || !requireCurrentConfiguration()) return null;
+    if (participantContext() || !liveHost || document.hidden || thread.dataset.view !== 'chat' || !requireCurrentConfiguration()) return null;
     const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
     if (!chat?.isReady?.() || chat.isRestoring?.()) return null;
     const agent = Number(chat.agentId?.() ?? cfg.agentId ?? 0);
@@ -167,7 +170,7 @@
   }
 
   function initiativeNewChat() {
-    if (cfg.initiativeRuntime !== true || !liveHost || document.hidden || thread.dataset.view !== 'chat'
+    if (participantContext() || cfg.initiativeRuntime !== true || !liveHost || document.hidden || thread.dataset.view !== 'chat'
       || !requireCurrentConfiguration()) return false;
     const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
     return chat?.isReady?.() === true && !chat.isRestoring?.() && Number(chat.conversationId?.()) === 0
@@ -605,10 +608,17 @@
   }
 
   function openPopup() {
+    if (participantContext() || !requireCurrentConfiguration()) return false;
     if (popup.hidden) workingAttentionView += 1;
     popup.hidden = false;
     button.setAttribute('aria-expanded','true');
     void refresh(true);
+    return true;
+  }
+
+  function openBrief() {
+    if (window.VP3AgentActivityHub?.open) { closePopup(); return window.VP3AgentActivityHub.open(); }
+    return openPopup();
   }
 
   function openBrain() {
@@ -656,6 +666,12 @@
     return String(document.body.dataset.stonefellowAgentState || 'idle');
   }
 
+  function updateHubLauncher() {
+    if (typeof window.VP3AgentActivityHub?.open !== 'function') return;
+    button.setAttribute('aria-label','Top of Mind');
+    if (badge) { badge.hidden = true; badge.textContent = ''; }
+  }
+
   function renderStatus(brief) {
     const active = brief && brief.active !== false;
     if (statusDot) statusDot.classList.toggle('active', active);
@@ -670,6 +686,7 @@
       badge.hidden = count < 1;
       badge.textContent = count > 99 ? '99+' : String(count);
     }
+    updateHubLauncher();
   }
 
   function actionButton(label, attrs, primary) {
@@ -1056,6 +1073,7 @@
     if (statusDot) statusDot.classList.remove('active');
     button.dataset.active='0';
     button.setAttribute('aria-label','Agent · status unavailable');
+    updateHubLauncher();
     if (badge) {
       badge.hidden = true;
       badge.textContent = '';
@@ -1302,9 +1320,10 @@
 
   async function refresh(force = false) {
     const signal = pageController.signal;
-    if (signal.aborted || !requireCurrentConfiguration() || busy || (document.hidden && !force)) return;
+    if (participantContext() || signal.aborted || !requireCurrentConfiguration() || busy || (document.hidden && !force)) return;
     busy = true;
     const includeWorkingAttention = !popup.hidden && !document.hidden;
+    const requestedBriefEpoch = briefEpoch;
     const requestedView = workingAttentionView;
     const requestedLiveView = liveView;
     const conversationId = liveConversation();
@@ -1313,7 +1332,7 @@
     content.setAttribute('aria-busy','true');
     try {
       const next = await getState(includeWorkingAttention, conversationId);
-      if (signal.aborted || document.hidden) return;
+      if (signal.aborted || document.hidden || participantContext() || requestedBriefEpoch !== briefEpoch) return;
       state = next;
       if (state.brief && (!includeWorkingAttention || requestedView !== workingAttentionView)) {
         delete state.brief.working_attention;
@@ -1341,7 +1360,7 @@
       if (liveRequestIsCurrent()) void maybeSpeakGitHub(state.github_voice,conversationId);
       advanceInitiativeVoice();
     } catch (error) {
-      if (!signal.aborted) {
+      if (!signal.aborted && !participantContext() && requestedBriefEpoch === briefEpoch) {
         renderBriefError(error);
         if (liveRequestIsCurrent()) {
           const health = initiativeHealth();
@@ -1376,6 +1395,7 @@
 
   button.addEventListener('click', event => {
     event.preventDefault();
+    if (window.VP3AgentActivityHub?.open) { openBrief(); return; }
     if (popup.hidden) openPopup(); else closePopup();
   });
   const close = popup.querySelector('[data-agent-brief-close]');
@@ -1538,7 +1558,7 @@
   }
 
   window.VP3_COGNITIVE_PRESENTATION = {
-    refresh:refresh,openBrief:openPopup,closeBrief:closePopup,
+    refresh:refresh,openBrief,openDetails:openPopup,closeBrief:closePopup,
     allowsMusicOffer:() => initiativeMayAdvance() && initiativeHealth()?.enabled === true,
     followUpReference(conversationId) {
       const key = String(liveState?.attention?.key || '');
@@ -1549,5 +1569,16 @@
       return explicitlySelectedReference === key || liveHost.contains(latestMessage) ? key : null;
     }
   };
+  function participantChanged() {
+    briefEpoch++;
+    closePopup();
+    readController?.abort();
+    if (participantContext()) clearPrivatePresentation();
+    else void refresh();
+  }
+  window.addEventListener('vp3:participant-selection-changed',participantChanged);
+  window.addEventListener('vp3:participant-task-context',event => { participantActor = Number(event.detail?.participant_id) || 0; participantChanged(); });
+  window.addEventListener('vp3:agent-activity-ready',updateHubLauncher);
+  updateHubLauncher();
   startUpdates();
 })();

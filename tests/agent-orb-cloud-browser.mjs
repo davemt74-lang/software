@@ -77,6 +77,7 @@ try{
     assert.equal(await status.evaluate(node=>node.hidden),true);
     await frame.evaluate(()=>window.VP3AgentOrb.setInitiativeStatus({label:'Checking from the embedded Chat.',setting:'off'},action=>window.lastInitiativeAction=action));
     await page.locator('.vp3-orb-ball').hover();
+    await status.locator('[data-agent-worker-details] > summary').click();
     await status.getByText('Checking from the embedded Chat.').waitFor();
     await status.getByRole('button',{name:'Pause'}).click();
     await frame.waitForFunction(()=>window.lastInitiativeAction==='off');
@@ -247,6 +248,7 @@ try{
       assert.equal(await status.isVisible(),false);
       assert.equal(await orb.locator('[data-orb-ring="pulse"]').evaluate(node=>getComputedStyle(node).animationName),'vp3-public-orb-pulse');
       await orb.hover();
+      await status.locator('[data-agent-worker-details] > summary').click();
       await status.getByText(/No background worker has been observed/).waitFor();
       assert.match(await status.locator('small').innerText(),/Uses no personal Knowledge.*Sources last checked/);
       const box=await status.boundingBox();

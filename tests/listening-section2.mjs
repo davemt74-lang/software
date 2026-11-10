@@ -207,10 +207,10 @@ if(cloud){
  });
  await test('Conversation history timeout releases restoration and rejects late history',async()=>{
   const b=browser(),timer=clock(b),waiting=deferred();let signal,commits=0;b.document.dispatchEvent=()=>true;
-  Object.assign(b.context,{chatRevision:0,restoringConversation:0,conversationId:1,contextReady:false,lastLoadedMessageId:0,
+  Object.assign(b.context,{chatRevision:0,restoringConversation:0,conversationId:1,contextReady:false,lastLoadedMessageId:0,historyAuthority:0,historyParticipant:0,
    leaveChat(){b.context.chatRevision++;},api:(_payload,ownedSignal)=>{signal=ownedSignal;return waiting.promise;},
    rememberConversation(){commits++;},restoreDraft(){},thread:b.element('chatThread'),welcome:null,closeNav(){},setChatCanvasView(){}});
-  const ui=source('chat.js'),from=ui.indexOf('  async function loadConversation(id)'),to=ui.indexOf('  async function syncConversationMessagesV101',from);
+  const ui=source('chat.js'),from=ui.indexOf('  async function loadConversation('),to=ui.indexOf('  async function syncConversationMessagesV101',from);
   const bindingFrom=ui.indexOf('  const cfg = window.STONEFELLOW_CHAT;'),bindingTo=ui.indexOf('  const thread =',bindingFrom);
   const stateFrom=ui.indexOf('  let initiativeReplyTarget ='),stateTo=ui.indexOf('  const recoveryKey =',stateFrom);
   const helperFrom=ui.indexOf('  function initiativeIdentityMatchesV1()'),helperTo=ui.indexOf('  function bindInitiativeWorkV1(',helperFrom);

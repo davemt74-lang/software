@@ -60,7 +60,8 @@ if($action==='load'){
     $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 300');
     $stmt->execute([$conversationId]);
     $agentId=(int)$principal['agent_id'];
-    $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,array_reverse($stmt->fetchAll()));
+    $rows=vp3_agent_chat_include_source_v380($pdo,$user,$activeAgent,$conversationId,array_reverse($stmt->fetchAll()),$input['source_message_id']??null);
+    $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,$rows);
     echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages),'agent_name'=>(string)$principal['display_name']]);
     exit;
 }

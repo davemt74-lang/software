@@ -97,7 +97,7 @@ assert.match(htaccess, /RewriteRule \^chat-legacy-v108\\\.php\$ \/chat\.php \[R=
 // compatibility, but it must never be independently addressable or authoritative.
 assert.doesNotMatch(template, /id="chatLiveUpdates"/, 'Canonical template source must not contain the parallel Agent Updates panel');
 assert.doesNotMatch(chat, /renderActivityUpdates|chatLiveUpdateList|chatLiveStatus/, 'Canonical chat runtime must not render parallel activity cards');
-assert.match(chat, /openConversation:async id =>/, 'Canonical chat continuity API must expose conversation opening');
+assert.match(chat, /openConversation:async \(/, 'Canonical chat continuity API must expose conversation opening');
 assert.match(chat, /syncConversation:async id =>/, 'Canonical chat continuity API must expose message synchronization');
 assert.doesNotMatch(notifications, /ensureHistoryButton|Attention required<\/span>/, 'Attention flow must not fabricate chat-history UI');
 assert.match(notifications, /return window\.STONEFELLOW_CHAT_CONTINUITY_V87 \|\| \{\}/, 'Background attention must preserve canonical Chat identity independently of the voice facade');

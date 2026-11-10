@@ -64,7 +64,9 @@ async function fixture({enabled=true,autoGreet=true,permission='granted',blockPl
     return route.fulfill({json:{ok:true,agent_voice_enabled:enabled,ready:true,verified:true}});
   });
   await page.goto(`${origin}/chat.php`);
-  await page.waitForFunction(() => window.VP3AgentWelcome && window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady());
+  await page.waitForFunction(participant => window.VP3AgentWelcome
+    && window.STONEFELLOW_CHAT_CONTINUITY_V87?.isRestoring?.() === false
+    && (participant || window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady?.() === true), selectedParticipant);
   return {context,page,setPermission:state=>{permission=state;}};
 }
 
@@ -120,6 +122,7 @@ try {
     await page.clock.install();
     await page.clock.runFor(300);
     assert.equal(await page.locator(greeting).count(),0);
+    assert.equal(await page.evaluate(() => STONEFELLOW_CHAT_CONTINUITY_V87.isReady()),false);
     assert.equal(await page.evaluate(() => permissionReads+autoListenClicks+nativeAttempts+utterances.length),0);
     await context.close();
     console.log('PASS a selected participant cannot trigger the owner’s automatic greeting or Listen');
