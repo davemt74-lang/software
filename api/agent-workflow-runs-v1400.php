@@ -32,6 +32,13 @@ try{
     $csrf=(string)($input['csrf_token']??'');if($csrf===''||!hash_equals(csrf_token(),$csrf)){http_response_code(419);echo json_encode(['ok'=>false,'error'=>'Session expired. Refresh the page and try again.']);exit;}
     $action=trim((string)($input['action']??''));$run=null;$durable=agent_job_engine_schema_ready_v1900($pdo);$control=$durable&&agent_work_control_schema_ready_v173($pdo);$dependencies=$control&&agent_work_dependencies_schema_ready_v174($pdo);$runId=(int)($input['run_id']??0);
 
+    if ($runId > 0 && $action !== 'create_from_brain') {
+        $row = agent_workflow_row_v1400($pdo, (int)$user['id'], $runId);
+        if (($row['source_kind'] ?? '') === 'coding_canvas') {
+            throw new RuntimeException('Manage this Coding Agent run from Chat.');
+        }
+    }
+
     if($action==='create_from_brain'){
         $key=trim((string)($input['priority_key']??''));$hash=trim((string)($input['suggestion_hash']??''));
         $priority=agent_workflow_find_brain_priority_v1400($user,$key,$hash);

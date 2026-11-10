@@ -50,7 +50,8 @@ function shared_knowledge_index_tags_v236(string $text,int $limit=36): string
 function shared_knowledge_index_item_v236(PDO $pdo,int $knowledgeId): ?array
 {
     $scopeColumn=column_exists('knowledge_items','knowledge_scope')?',knowledge_scope':'';
-    $stmt=$pdo->prepare('SELECT id,title,description,content_text,visibility,is_published,created_by_user_id,updated_at'.$scopeColumn.' FROM knowledge_items WHERE id=? LIMIT 1');
+    $sourceFilter=column_exists('knowledge_items','file_type')?" AND file_type<>'coding_canvas'":'';
+    $stmt=$pdo->prepare('SELECT id,title,description,content_text,visibility,is_published,created_by_user_id,updated_at'.$scopeColumn.' FROM knowledge_items WHERE id=?'.$sourceFilter.' LIMIT 1');
     $stmt->execute([$knowledgeId]);$item=$stmt->fetch();if(!$item)return null;
     if(!isset($item['knowledge_scope']))$item['knowledge_scope']='system';
     $chunks=[];

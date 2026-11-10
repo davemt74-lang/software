@@ -138,7 +138,8 @@ function chat_policy_personal_knowledge_v242(PDO $pdo,array $principal,array $us
     if(!$ownerUser||!personal_capability_has_v242('personal_knowledge.access',$ownerUser))return [];
 
     $context=[];$seen=[];
-    $stmt=$pdo->prepare("SELECT id FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal' ORDER BY updated_at DESC,id DESC LIMIT 160");
+    $sourceFilter=column_exists('knowledge_items','file_type')?" AND file_type<>'coding_canvas'":'';
+    $stmt=$pdo->prepare("SELECT id FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal'{$sourceFilter} ORDER BY updated_at DESC,id DESC LIMIT 160");
     $stmt->execute([$owner]);
     foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $knowledgeId){
         $item=shared_knowledge_index_item_v236($pdo,(int)$knowledgeId);

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/shared-folders-v161.php';
 
 if (!function_exists('public_platform_v159_user_has_type')) {
     function public_platform_v159_user_has_type(int $userId, string $role): bool
@@ -633,6 +634,7 @@ function artist_listening_v174_delete_folder(PDO $pdo, array $user, int $folderI
     }
     $pdo->beginTransaction();
     try {
+        shared_folders_v161_assert_deletable($pdo, (int)$user['id'], $folderId);
         $sessions = $pdo->prepare(
             'SELECT id,metadata_json FROM artist_transcript_sessions_v172
              WHERE created_by_user_id=? FOR UPDATE'

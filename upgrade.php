@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/ai-service-usage-v1.php';
+require_once __DIR__ . '/includes/coding-canvas-store-v1.php';
 require_once __DIR__.'/includes/social-feed-v1.php';
 require_once __DIR__ . '/includes/cognitive-memory-v570.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
@@ -288,6 +289,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && table_exists('user_agent_voice_preferences')
         && ($schemaConnection ??= db()) instanceof PDO
         && vp3_ai_service_usage_ready_v1($schemaConnection)
+        && vp3_coding_canvas_ready_v1($schemaConnection)
         && chat_settings_schema_ready_v237($schemaConnection)
         && chat_settings_agent_orb_shape_schema_ready_v237($schemaConnection)
         && chat_settings_agent_auto_greet_schema_ready_v237($schemaConnection)
@@ -382,6 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_search_ensure_schema_v2090();
             midi_v217_ensure_schema();
             artist_listening_v172_ensure_schema();
+            vp3_coding_canvas_schema_v1($pdo);
             artist_listening_v237_ensure_schema();
             studio_participants_ensure_schema();
             studio_voice_profile_ensure_schema();

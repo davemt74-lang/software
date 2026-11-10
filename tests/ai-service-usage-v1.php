@@ -186,6 +186,34 @@ try{
         fclose($pipes[2]);
         proc_close($worker);
     }
+    $codingDefault=['provider'=>'openai','model'=>'coding-default'];
+    $codingChoice=['provider'=>'anthropic','model'=>'member-coding'];
+    foreach([$codingDefault,$codingChoice] as $target){
+        vp3_ai_service_save_model_v1($pdo,$target['provider'],$target['model'],'Coding model',VP3_AI_CODING_SERVICES_V1);
+    }
+    vp3_ai_service_save_model_v1($pdo,'openai','build-only','Build only',['code_build']);
+    vp3_ai_service_save_route_v1($pdo,'code_build',$codingDefault,null);
+    vp3_ai_service_save_route_v1($pdo,'code_repair',$codingDefault,null);
+    $coding=static fn(array $actor,string $service,string $funding,array $target)=>vp3_ai_service_usage_begin_v1(
+        $pdo,$actor,$service,$target['provider'],$target['model'],$funding,20,100,['required'=>true,'run_id'=>83]
+    );
+    $cloudActor=['id'=>3];
+    usage_rejects(403,fn()=>$coding($cloudActor,'code_build','system',['provider'=>'openai','model'=>'build-only']));
+    $build=$coding($cloudActor,'code_build','system',$codingChoice);
+    $repair=$coding($cloudActor,'code_repair','system',$codingChoice);
+    usage_check(vp3_ai_service_usage_finish_v1($pdo,$build,$actual)['cloud_tokens_charged']===40
+        &&vp3_ai_service_usage_finish_v1($pdo,$repair,$actual)['cloud_tokens_charged']===40,
+        'An allowed coding choice can differ from the Admin route default and debits each provider stage once.');
+    $codingRows=ai_usage_accounting_v032_export($pdo,3);
+    usage_check(array_column($codingRows,'service_key')===['code_repair','code_build']
+        &&array_column($codingRows,'model')===['member-coding','member-coding'], 'Usage retains the exact coding model and stage.');
+    $ownCoding=$coding($other,'code_build','own_key',$codingChoice);
+    usage_check(vp3_ai_service_usage_finish_v1($pdo,$ownCoding,$actual)['cloud_tokens_charged']===0,
+        'Personal coding usage is recorded without a Cloud debit.');
+    vp3_ai_service_save_rule_v1($pdo,'site',0,'code_repair',['allowed_models'=>['openai:coding-default']]);
+    usage_rejects(403,fn()=>$coding($cloudActor,'code_build','system',$codingChoice));
+    usage_rejects(403,fn()=>$coding($cloudActor,'code_repair','system',$codingChoice));
+
     echo "AI service usage, budget reservations and canonical package billing passed.\n";
 }finally{
     $pdo->exec('DROP DATABASE '.$database);

@@ -44,7 +44,7 @@ function knowledge_r8_packet(PDO $pdo,array $user,string $key,string $ns,array $
     foreach(knowledge_r8_refs($refs) as $ref){
         if($ref['kind']==='knowledge'){
             $q=$pdo->prepare("SELECT * FROM knowledge_items WHERE id=? AND created_by_user_id=? AND knowledge_scope='personal'".($pdo->inTransaction()?' FOR UPDATE':''));$q->execute([$ref['id'],$user['id']]);$k=$q->fetch(PDO::FETCH_ASSOC);
-            if(!$k||((int)($k['folder_id']??0)>0&&!personal_knowledge_folder($pdo,$user,(int)$k['folder_id'])))throw new RuntimeException('Knowledge source is unavailable.',403);
+            if(!$k||($k['file_type']??'')==='coding_canvas'||((int)($k['folder_id']??0)>0&&!personal_knowledge_folder($pdo,$user,(int)$k['folder_id'])))throw new RuntimeException('Knowledge source is unavailable.',403);
             if($state['scope']['mode']==='folder'&&(int)$k['folder_id']!==$state['scope']['folder_id'])throw new RuntimeException('Knowledge source is outside this folder.',403);
             if($state['scope']['mode']==='project'){
                 $q=$pdo->prepare('SELECT 1 FROM chat_knowledge_refresh_r7 WHERE knowledge_id=? AND owner_user_id=? AND project_id=?');$q->execute([$k['id'],$user['id'],$state['scope']['project_id']]);
@@ -77,6 +77,7 @@ function knowledge_r8_target(PDO $pdo,array $user,string $operation,string $key)
     [$actual,$row]=workspace_native_owned_row_v1($pdo,(int)$user['id'],$dataset,$key);workspace_native_authorize_v1($pdo,(int)$user['id'],$actual,$row);
     // Only text-based personal documents are offered; source captures keep their original history.
     if($table==='knowledge_items'){
+        if(($row['file_type']??'')==='coding_canvas')throw new RuntimeException('Choose a Knowledge document managed outside Coding Canvas.',422);
         $q=$pdo->prepare('SELECT 1 FROM browser_capture_deliveries_r4 WHERE owner_user_id=? AND knowledge_id=?');$q->execute([$user['id'],$row['id']]);
         $r=$pdo->prepare('SELECT 1 FROM chat_knowledge_refresh_r7 WHERE owner_user_id=? AND knowledge_id=?');$r->execute([$user['id'],$row['id']]);
         if($q->fetchColumn()||$r->fetchColumn())throw new RuntimeException('Original captures and refresh notes retain their source history. Choose a separate document.',422);
@@ -186,7 +187,8 @@ function knowledge_r8_options(PDO $pdo,array $user,string $key,string $ns): arra
     if($state['scope']['mode']!=='off'){
         foreach(capture_r5_list($pdo,$user,[])['items'] as $i){if(knowledge_r6_matches($i,$state['scope'])&&!$i['knowledge_conflict'])$sources[]=knowledge_r6_annotation($i);}
         $sources=array_merge($sources,knowledge_r6_reports($pdo,$user,$ns,$state['scope']));
-        $q=$pdo->prepare("SELECT * FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal' ORDER BY id DESC LIMIT 50");$q->execute([$user['id']]);
+        $sourceFilter=column_exists('knowledge_items','file_type')?" AND file_type<>'coding_canvas'":'';
+        $q=$pdo->prepare("SELECT * FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal'{$sourceFilter} ORDER BY id DESC LIMIT 50");$q->execute([$user['id']]);
         foreach($q->fetchAll(PDO::FETCH_ASSOC) as $k){$ref=['kind'=>'knowledge','id'=>(string)$k['id'],'revision'=>capture_r5_record_hash($k)];try{$s=knowledge_r8_packet($pdo,$user,$key,$ns,[$ref],$state['revision'])['sources'][0];$sources[]=$s;}catch(RuntimeException $e){}}
     }
     foreach(['contacts.update'=>['crm_contacts','owner_user_id','name'],'knowledge.update'=>['knowledge_items','created_by_user_id','title']] as $op=>[$table,$owner,$title]){

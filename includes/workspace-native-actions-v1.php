@@ -108,6 +108,10 @@ function workspace_native_contact_update_v1(PDO $pdo,int $uid,int $id,array $fie
 
 function workspace_native_knowledge_update_v1(PDO $pdo,array $user,array $row,array $fields): array
 {
+    if (($row['file_type']??'') === 'coding_canvas') {
+        require_once __DIR__.'/coding-canvas-store-v1.php';
+        vp3_coding_canvas_assert_knowledge_editable_v1($pdo, (int)$user['id'], [(int)$row['id']]);
+    }
     $title=trim((string)($fields['title']??$row['title']));$description=trim((string)($fields['description']??$row['description']));$content=(string)($fields['content_text']??$row['content_text']);
     if($title===''||mb_strlen($title)>190||trim($content)==='')throw new InvalidArgumentException('Knowledge requires a title and text.');
     $pdo->prepare("UPDATE knowledge_items SET title=?,description=?,content_text=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND created_by_user_id=? AND knowledge_scope='personal'")->execute([$title,$description,$content,$row['id'],$user['id']]);

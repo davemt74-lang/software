@@ -64,6 +64,7 @@ function knowledge_retrieval_v162_search(PDO $pdo,int $userId,string $query,arra
     $limit=max(1,min(8,$limit));$query=mb_substr(trim($query),0,1000);$terms=knowledge_retrieval_v162_terms($query);if($query===''||$terms===[])return [];
     $folderId=0;if(($scope['mode']??'')==='folder'){$folderId=max(0,(int)($scope['folder_id']??0));if($folderId<1||knowledge_retrieval_v162_folder($pdo,$userId,$folderId)===null)return [];}
     $sql='SELECT kc.id AS chunk_id,kc.knowledge_id,kc.chunk_index,kc.chunk_text,ki.title,ki.folder_id,ki.updated_at,f.folder_name FROM knowledge_chunks kc INNER JOIN knowledge_items ki ON ki.id=kc.knowledge_id LEFT JOIN artist_transcript_folders_v177 f ON f.id=ki.folder_id AND f.created_by_user_id=ki.created_by_user_id WHERE ki.created_by_user_id=:owner_id AND ki.knowledge_scope=\'personal\' ';
+    if(column_exists('knowledge_items','file_type'))$sql.="AND ki.file_type<>'coding_canvas' ";
     $params=[':owner_id'=>$userId];if($folderId>0){$sql.='AND ki.folder_id=:folder_id ';$params[':folder_id']=$folderId;}$likes=[];
     foreach(array_slice($terms,0,8) as $index=>$term){$key=':term_'.$index;$likes[]='(LOWER(kc.chunk_text) LIKE '.$key.' OR LOWER(ki.title) LIKE '.$key.')';$params[$key]='%'.$term.'%';}
     if($likes)$sql.='AND ('.implode(' OR ',$likes).') ';$sql.='ORDER BY ki.updated_at DESC,kc.id DESC LIMIT 160';

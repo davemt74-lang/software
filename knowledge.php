@@ -4,6 +4,7 @@ require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/shared-folders-v161.php';
 require_once __DIR__ . '/includes/section12-data.php';
 require_once __DIR__ . '/includes/workspace-native-actions-v1.php';
+require_once __DIR__ . '/includes/coding-canvas-store-v1.php';
 
 if (!is_logged_in()) redirect(url('/login.php'));
 $user = current_user();
@@ -48,6 +49,7 @@ function personal_knowledge_item_for_owner(PDO $pdo, int $id, int $owner): ?arra
 
 function personal_knowledge_artist_listening_source(array $item): array
 {
+    if (($item['file_type'] ?? '') === 'coding_canvas') return ['is_source'=>false,'url'=>''];
     $content = (string)($item['content_text'] ?? '');
     $description = (string)($item['description'] ?? '');
     if (!str_contains($content, 'Source: Artist Listening') && !str_contains($description, 'Source: Artist Listening') && !str_contains($description, 'transcription intelligence')) {
@@ -68,6 +70,7 @@ function personal_knowledge_kind(array $item): string
     if ($artist['is_source']) return 'Transcription';
     if ((int)($item['track_id'] ?? 0) > 0) return 'Music';
     $type = strtolower((string)($item['file_type'] ?? ''));
+    if ($type === 'coding_canvas') return 'Coding Canvas';
     if (in_array($type, ['mp3','m4a','wav','ogg'], true)) return 'Audio';
     if (in_array($type, ['txt','md','csv','json','html','htm','xml','doc','docx','pdf'], true)) return 'Document';
     return 'Note';
@@ -125,6 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ids = array_values(array_unique(array_filter(array_map(static fn($id): int => max(0, (int)$id), $rawIds))));
             if (!$ids) throw new RuntimeException('Select at least one Knowledge item to move.');
             if (count($ids) > 200) throw new RuntimeException('Move up to 200 Knowledge items at a time.');
+            vp3_coding_canvas_assert_knowledge_editable_v1($pdo, $uid, $ids);
             $requestedFolderId = max(0, (int)($_POST['folder_id'] ?? 0));
             $resolvedFolderId = personal_knowledge_resolve_folder_id($pdo, $user, $requestedFolderId);
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
@@ -144,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = max(0, (int)($_POST['id'] ?? 0));
             $item = personal_knowledge_item_for_owner($pdo, $id, $uid);
             if (!$item) throw new RuntimeException('Personal knowledge item not found.');
+            vp3_coding_canvas_assert_knowledge_editable_v1($pdo, $uid, [$id]);
             if (!empty($item['file_path'])) delete_local_upload((string)$item['file_path']);
             $pdo->prepare("DELETE FROM knowledge_items WHERE id=? AND created_by_user_id=? AND knowledge_scope='personal'")->execute([$id, $uid]);
             flash('knowledge_notice', 'Personal knowledge deleted.');
@@ -153,6 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = max(0, (int)($_POST['id'] ?? 0));
         $before = $id > 0 ? personal_knowledge_item_for_owner($pdo, $id, $uid) : null;
         if ($id > 0 && !$before) throw new RuntimeException('Personal knowledge item not found.');
+        if ($id > 0) vp3_coding_canvas_assert_knowledge_editable_v1($pdo, $uid, [$id]);
         $title = trim((string)($_POST['title'] ?? ''));
         $description = trim((string)($_POST['description'] ?? ''));
         $content = trim((string)($_POST['content_text'] ?? ''));
@@ -242,7 +248,7 @@ elseif (ctype_digit($folderFilter)) {
 }
 
 if ($typeFilter === 'documents') {
-    $where .= " AND i.file_type IN ('txt','md','csv','json','html','htm','xml','doc','docx','pdf')";
+    $where .= " AND i.file_type IN ('txt','md','csv','json','html','htm','xml','doc','docx','pdf','coding_canvas')";
 } elseif ($typeFilter === 'audio') {
     $where .= " AND i.file_type IN ('mp3','m4a','wav','ogg')";
 } elseif ($typeFilter === 'transcription') {
@@ -331,7 +337,7 @@ require __DIR__.'/includes/member-header.php';
 
     <section class="personal-knowledge-folder-grid" aria-label="Knowledge folders">
         <article class="personal-knowledge-folder-card <?= $folderFilter==='all'?'active':'' ?>">
-            <a href="<?= e(url('/knowledge.php'.($typeFilter!=='all'?'?type='.urlencode($typeFilter):''))) ?>"><span class="folder-mark">⌂</span><strong>All Knowledge</strong><small><?= $total ?> items</small><em>Everything your Agent can use here</em></a>
+            <a href="<?= e(url('/knowledge.php'.($typeFilter!=='all'?'?type='.urlencode($typeFilter):''))) ?>"><span class="folder-mark">⌂</span><strong>All Knowledge</strong><small><?= $total ?> items</small><em>All items in your library</em></a>
         </article>
         <article class="personal-knowledge-folder-card <?= $folderFilter==='unfiled'?'active':'' ?>" data-knowledge-folder-drop="0">
             <a href="<?= e(url(personal_knowledge_redirect_target('unfiled',$typeFilter))) ?>"><span class="folder-mark">▱</span><strong>Unfiled</strong><small><?= (int)($folderStats[0]['count']??0) ?> items</small><em>Drop items here to remove their folder</em></a>

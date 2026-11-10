@@ -49,7 +49,7 @@ function agent_worker_cloud_active_row_v1910(PDO $pdo,array $user,array $claim,b
     if((string)$row['action_execution_target']!=='cloud')return null;
     if(!hash_equals((string)$row['lease_owner'],agent_worker_cloud_worker_id_v1910($uid)))return null;
     if(!hash_equals((string)$row['lease_token'],(string)($claim['lease_token']??'')))return null;
-    if((strtotime((string)($row['lease_expires_at']??''))?:0)<time())return null;
+    if(agent_job_utc_timestamp_v1900($row['lease_expires_at']??null)<time())return null;
     if((!empty($row['requires_approval'])||!empty($row['action_requires_approval']))&&!in_array((string)$row['approval_status'],['approved','not_required'],true))return null;
     return $row;
 }
@@ -105,6 +105,12 @@ function agent_worker_cloud_execute_once_v1910(PDO $pdo,array $user,int $limit=2
     if(($run['action_capability_key']??'')==='profile.visitor.reply'&&($run['source_kind']??'')==='profile_visitor_turn'){require_once __DIR__.'/profile-agent-handoff-pa3.php';return vp3_profile_handoff_execute_claim_pa3($pdo,$user,$claim);}
 
     if(($run['action_capability_key']??'')==='images.generate'&&($run['source_kind']??'')==='image_generation'){require_once __DIR__.'/agent-image-generation-v1.php';return vp3_image_execute_v1($pdo,$user,$claim);}
+
+    if (($run['source_kind'] ?? '') === 'coding_canvas'
+        && in_array($run['action_capability_key'] ?? '', ['coding.build', 'coding.repair'], true)) {
+        require_once __DIR__.'/coding-canvas-jobs-v1.php';
+        return vp3_coding_canvas_execute_v1($pdo, $user, $claim);
+    }
 
     if(($run['action_capability_key']??'')==='missions.analyze'){require_once __DIR__.'/cloud-missions-v1.php';return cloud_mission_execute_claim_v1($pdo,$user,$claim);}
 

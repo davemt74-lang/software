@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 const VP3_AI_SERVICE_CONFIG_KEY_V1 = 'vp3_ai_service_configuration_v1';
 const VP3_AI_SERVICE_TOKEN_LIMITS_V1 = ['job_tokens', 'daily_tokens', 'monthly_tokens', 'background_daily_tokens', 'background_monthly_tokens'];
+const VP3_AI_CODING_SERVICES_V1 = ['code_build', 'code_repair'];
 
 function vp3_ai_service_catalog_v1(): array
 {
@@ -12,8 +13,8 @@ function vp3_ai_service_catalog_v1(): array
         'initiative' => ['label' => 'Initiative', 'providers' => $textProviders, 'wired' => true],
         'chat_canvas' => ['label' => 'Chat Canvas', 'providers' => $textProviders, 'wired' => false],
         'image_generation' => ['label' => 'Image Generation', 'providers' => ['openai'], 'wired' => true],
-        'code_build' => ['label' => 'Code Build', 'providers' => $textProviders, 'wired' => false],
-        'code_repair' => ['label' => 'Code Repair', 'providers' => $textProviders, 'wired' => false],
+        'code_build' => ['label' => 'Code Build', 'providers' => $textProviders, 'wired' => true],
+        'code_repair' => ['label' => 'Code Repair', 'providers' => $textProviders, 'wired' => true],
         'eyes_vision' => ['label' => 'Agent Eyes Vision', 'providers' => $textProviders, 'wired' => false],
     ];
 }
@@ -92,6 +93,8 @@ function vp3_ai_service_models_from_config_v1(array $config, string $service): a
     if ($definition === null) return [];
     if ($service === 'image_generation') {
         $models = ['openai' => function_exists('vp3_image_models_v1') ? vp3_image_models_v1() : []];
+    } elseif (in_array($service, VP3_AI_CODING_SERVICES_V1, true)) {
+        $models = [];
     } else {
         $legacy = function_exists('ai_model_catalog') ? ai_model_catalog() : [];
         $models = array_intersect_key($legacy, array_fill_keys($definition['providers'], true));
@@ -141,9 +144,10 @@ function vp3_ai_service_save_model_v1(PDO $pdo, string $provider, string $model,
         }
         $config['models'][$key] = compact('provider', 'model', 'label', 'services');
         foreach ($config['routes'] as $service => $route) {
+            $required = in_array($service, VP3_AI_CODING_SERVICES_V1, true) ? VP3_AI_CODING_SERVICES_V1 : [$service];
             foreach (['primary', 'fallback'] as $slot) {
                 if (($route[$slot]['provider'] ?? null) === $provider && ($route[$slot]['model'] ?? null) === $model
-                    && !in_array($service, $services, true)) throw new InvalidArgumentException('A service route still uses this model.');
+                    && array_diff($required, $services)) throw new InvalidArgumentException('A service route still uses this model.');
             }
         }
         return $config;
@@ -216,10 +220,13 @@ function vp3_ai_service_save_route_v1(PDO $pdo, string $service, ?array $primary
             unset($config['routes'][$service]);
             return $config;
         }
-        $models = vp3_ai_service_models_from_config_v1($config, $service);
+        $coding = in_array($service, VP3_AI_CODING_SERVICES_V1, true);
+        $models = $coding ? vp3_ai_service_coding_models_v1($config) : vp3_ai_service_models_from_config_v1($config, $service);
         foreach ([$primary, $fallback] as $target) {
             if ($target !== null && !isset($models[$target['provider']][$target['model']])) {
-                throw new InvalidArgumentException('Register the selected model for this service first.');
+                throw new InvalidArgumentException($coding
+                    ? 'Register the selected model for both Code Build and Code Repair.'
+                    : 'Register the selected model for this service first.');
             }
         }
         $config['routes'][$service] = compact('primary', 'fallback');
@@ -300,6 +307,26 @@ function vp3_ai_service_target_allowed_v1(array $policy, array $target): bool
     return $models === null || in_array($target['provider'] . ':' . $target['model'], $models, true);
 }
 
+/** A coding run can only use a model approved for each model-backed stage. */
+function vp3_ai_service_coding_models_v1(array $config): array
+{
+    $build = vp3_ai_service_models_from_config_v1($config, 'code_build');
+    $repair = vp3_ai_service_models_from_config_v1($config, 'code_repair');
+    $models = [];
+    foreach ($build as $provider => $byModel) {
+        $models[$provider] = array_intersect_key($byModel, $repair[$provider] ?? []);
+    }
+    return $models;
+}
+
+function vp3_ai_service_coding_target_allowed_v1(array $models, array $policies, array $target): bool
+{
+    foreach (VP3_AI_CODING_SERVICES_V1 as $service) {
+        if (!vp3_ai_service_target_allowed_v1($policies[$service] ?? [], $target)) return false;
+    }
+    return isset($models[$target['provider']][$target['model']]);
+}
+
 /** Site and package restrictions remain upper bounds for account overrides. */
 function vp3_ai_service_policy_v1(PDO $pdo, ?array $user, string $service, bool $background = false): array
 {
@@ -356,7 +383,8 @@ function vp3_ai_service_policy_v1(PDO $pdo, ?array $user, string $service, bool 
                     $policy[$slot] = $target;
                 }
             }
-            if ($policy['primary'] === null && $policy['fallback'] === null) {
+            if ($policy['primary'] === null && $policy['fallback'] === null
+                && !in_array($service, VP3_AI_CODING_SERVICES_V1, true)) {
                 return array_replace($policy, ['enabled' => false, 'reason' => 'service_model_forbidden']);
             }
         }
