@@ -188,9 +188,48 @@ function vp3_agent_activity_missions_v1(PDO $pdo, array $scope, DateTimeImmutabl
     return ['items'=>$items, 'coverage'=>$coverage];
 }
 
+function vp3_agent_activity_coding_jobs_v1(PDO $pdo, array $scope): array
+{
+    require_once __DIR__.'/coding-canvas-jobs-v1.php';
+    $agentWhere = $scope['agent_id'] > 0 ? 'agent_id=?' : '(agent_id IS NULL OR agent_id=0)';
+    $query = $pdo->prepare("SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND $agentWhere
+        AND source_kind='coding_canvas' AND execution_target='cloud' AND capability_key IN ('coding.build','coding.repair')
+        AND status IN ('queued','approved','executing','paused') ORDER BY id DESC LIMIT 12");
+    $query->execute($scope['agent_id'] > 0 ? [(int)$scope['user']['id'], $scope['agent_id']] : [(int)$scope['user']['id']]);
+    $items = [];
+    foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        try {
+            $goal = json_decode((string)$row['goal'], true, 16, JSON_THROW_ON_ERROR);
+            if (!is_array($goal) || !is_int($goal['conversation_id'] ?? null) || $goal['conversation_id'] < 1
+                || !is_string($goal['canvas_id'] ?? null) || !preg_match('/\A[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\z/D', $goal['canvas_id'])
+                || !is_array($goal['model'] ?? null)) continue;
+            $view = vp3_coding_canvas_job_view_v1($pdo, $row);
+            $cid = $view['conversation_id'];
+            if ($cid < 1 || !vp3_agent_chat_conversation_v380($pdo, $cid, (int)$scope['user']['id'], $scope['agent'])) continue;
+            $detail = match ($row['status']) {
+                'executing'=>'Building a private draft.',
+                'paused'=>'Build is paused.',
+                default=>'A private draft is queued.',
+            };
+            $model = vp3_agent_activity_text_v1($view['model']['model'] ?? '', 100);
+            if ($model !== '') $detail .= ' · '.$model;
+            $items[] = vp3_agent_activity_card_v1('coding:'.$view['run_id'], 'coding_job', 'Coding Agent', $detail, [
+                ['kind'=>'chat', 'label'=>'Open build Chat', 'conversation_id'=>$cid,
+                    'href'=>vp3_agent_activity_chat_href_v1($scope['agent_id'], $cid)],
+            ]);
+            if (count($items) === 3) break;
+        } catch (JsonException | InvalidArgumentException) {
+            // A malformed saved run is not a usable Chat or Canvas action.
+        }
+    }
+    vp3_coding_canvas_authority_v1($pdo, $scope['user'], $scope['agent_id']);
+    return $items;
+}
+
 function vp3_agent_activity_canvases_v1(PDO $pdo, array $scope): array
 {
     vp3_coding_canvas_authority_v1($pdo, $scope['user'], $scope['agent_id']);
+    $items = vp3_agent_activity_coding_jobs_v1($pdo, $scope);
     $query = $pdo->prepare("SELECT c.id,c.title,c.conversation_id,c.draft_revision FROM vp3_coding_canvases_v1 c
         JOIN artist_transcript_folders_v177 f ON f.id=c.folder_id AND f.created_by_user_id=c.owner_user_id
         JOIN vp3_coding_canvas_versions_v1 v ON v.canvas_id=c.id AND v.revision=c.draft_revision
@@ -199,8 +238,8 @@ function vp3_agent_activity_canvases_v1(PDO $pdo, array $scope): array
         WHERE c.owner_user_id=? AND c.agent_id=? AND c.draft_revision IS NOT NULL
         ORDER BY c.updated_at DESC,c.id ASC LIMIT 3");
     $query->execute([(int)$scope['user']['id'], $scope['agent_id']]);
-    $items = [];
     foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (count($items) === 3) break;
         $cid = (int)$row['conversation_id'];
         if (!vp3_agent_chat_conversation_v380($pdo, $cid, (int)$scope['user']['id'], $scope['agent'])) {
             $cid = $scope['conversation_id'];
@@ -212,6 +251,7 @@ function vp3_agent_activity_canvases_v1(PDO $pdo, array $scope): array
                         .'&canvas_id='.rawurlencode($row['id']).'&canvas_revision='.(int)$row['draft_revision']],
             ]);
     }
+    vp3_coding_canvas_authority_v1($pdo, $scope['user'], $scope['agent_id']);
     return $items;
 }
 
@@ -271,7 +311,7 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         'history'=>['Recent Chats', static fn() => vp3_agent_activity_history_v1($pdo, $scope)],
         'calendar'=>['Upcoming events', static fn() => vp3_agent_activity_calendar_v1($pdo, $scope, $now)],
         'missions'=>['Missions', static fn() => vp3_agent_activity_missions_v1($pdo, $scope, $now)],
-        'canvases'=>['Canvas drafts', static fn() => vp3_agent_activity_canvases_v1($pdo, $scope)],
+        'canvases'=>['Canvas work', static fn() => vp3_agent_activity_canvases_v1($pdo, $scope)],
         'suggestions'=>['Agent suggestions', static fn() => vp3_agent_activity_suggestions_v1($pdo, $scope)],
     ];
     $sections = [];

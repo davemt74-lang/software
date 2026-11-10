@@ -41,7 +41,8 @@ jobs:
           research = r'^(?:chat-(?:research-specialist-v1|specialist-rail-v1)\.(?:js|css)|api/initiative-research-status-v1\.php|tests/chat-research-(?:canvas|specialist)-browser\.mjs)$'
           coding = r'^(?:chat-coding-canvas-v1\.(?:js|css)|coding-canvas-sidebar-v1\.(?:js|css)|(?:api|includes|tests)/(?:chat-)?coding-canvas[^/]*\.(?:php|mjs))$'
           activity_hub = r'^(?:agent-activity-hub-v1\.(?:js|css)|(?:api|includes|tests)/agent-activity-(?:hub|media)[^/]*\.(?:php|mjs))$'
-          changed = diff.returncode != 0 or any(re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(activity_hub, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
+          coding_controls = r'^(?:includes/main-sidebar\.php|(?:api|includes|tests)/initiative-canvas-[^/]*\.(?:php|mjs)|tests/coding-sidebar-[^/]*\.mjs)$'
+          changed = diff.returncode != 0 or any(re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
               connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions|homeserver-https-transient-inference(?:-mysql)?)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
@@ -210,6 +211,13 @@ jobs:
           php tests/agent-artist-research-v1.php
           php tests/agent-initiative-tools-v1.php
           php tests/agent-initiative-tools-pipeline-v1.php
+          php tests/agent-initiative-canvas-v1.php
+          php tests/agent-initiative-canvas-feedback-v1.php
+          php tests/agent-initiative-canvas-pipeline-v1.php
+          php tests/agent-initiative-canvas-transport-v1.php
+          php tests/initiative-canvas-settings-v1.php
+          node tests/initiative-canvas-settings-api.mjs
+          node tests/coding-sidebar-auto-browser.mjs
           php tests/agent-working-context-replay-v1.php
           node tests/cognitive-presentation-account-binding.mjs
           node tests/initiative-chat-loop-browser.mjs
@@ -426,6 +434,9 @@ jobs:
         run: |
           php tests/coding-canvas-store-v1.php
           php tests/coding-canvas-jobs-v1.php
+          php tests/agent-initiative-canvas-v1.php
+          php tests/agent-initiative-canvas-pipeline-v1.php
+          php tests/initiative-canvas-settings-mysql.php
           php tests/agent-activity-hub-v1.php
           php tests/agent-chat-source-v380.php
   connection-mysql:

@@ -5,11 +5,11 @@ require_once __DIR__.'/ai-service-policy-v1.php';
 require_once __DIR__.'/ai-service-usage-v1.php';
 require_once __DIR__.'/user-llm-v1.php';
 
-function vp3_coding_canvas_model_policies_v1(PDO $pdo, array $user): array
+function vp3_coding_canvas_model_policies_v1(PDO $pdo, array $user, bool $background = false): array
 {
     $policies = [];
     foreach (VP3_AI_CODING_SERVICES_V1 as $service) {
-        $policies[$service] = vp3_ai_service_policy_v1($pdo, $user, $service);
+        $policies[$service] = vp3_ai_service_policy_v1($pdo, $user, $service, $background);
     }
     return $policies;
 }
@@ -115,7 +115,7 @@ function vp3_coding_canvas_model_resolve_v1(PDO $pdo, array $user): array
 }
 
 /** Recheck a pinned model against current account funding and both Admin service policies. */
-function vp3_coding_canvas_model_authorized_v1(PDO $pdo, array $user, array $pin, string $service): array
+function vp3_coding_canvas_model_authorized_v1(PDO $pdo, array $user, array $pin, string $service, bool $background = false): array
 {
     $owner = (int)($user['id'] ?? 0);
     if ($owner < 1 || !in_array($service, VP3_AI_CODING_SERVICES_V1, true)) {
@@ -126,7 +126,7 @@ function vp3_coding_canvas_model_authorized_v1(PDO $pdo, array $user, array $pin
     if ($funding['route'] !== ($pin['funding'] ?? null)) {
         throw new RuntimeException('Your account funding has changed. Start a new coding run.', 409);
     }
-    $policies = vp3_coding_canvas_model_policies_v1($pdo, $user);
+    $policies = vp3_coding_canvas_model_policies_v1($pdo, $user, $background);
     foreach ($policies as $policy) {
         if ($policy['enabled']) continue;
         throw match ($policy['reason']) {

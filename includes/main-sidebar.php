@@ -216,11 +216,16 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
         <div class="agent-runtime-line"><small>This month</small><a id="vp3AgentRuntimeUsage" href="<?= e(url('/ai-usage.php')) ?>">AI Usage</a></div>
       </div>
       <?php if ($mainSidebarCanChat): ?>
-        <section class="coding-sidebar-control" aria-label="Coding Agent and token balance" data-coding-sidebar="<?= e(url('/api/coding-canvas-settings-v1.php')) ?>">
+        <section class="coding-sidebar-control" aria-label="Coding Agent and token balance" data-coding-sidebar="<?= e(url('/api/coding-canvas-settings-v1.php')) ?>" data-coding-owner="<?= (int)$mainSidebarUser['id'] ?>" data-coding-auto-endpoint="<?= e(url('/api/initiative-canvas-settings-v1.php')) ?>">
           <label for="vp3CodingAgentModel">Coding Agent model</label>
           <select id="vp3CodingAgentModel" aria-describedby="vp3CodingSidebarStatus" title="Applies to new coding runs" disabled>
             <option>Checking…</option>
           </select>
+          <?php if ($mainSidebarIsChat): ?>
+            <label class="coding-sidebar-auto"><input type="checkbox" data-coding-auto-drafts aria-describedby="vp3CodingAutoHelp vp3CodingAutoStatus" disabled><span>Auto Build drafts</span></label>
+            <small id="vp3CodingAutoHelp" class="coding-sidebar-auto-help">Uses your coding model and tokens. Saves drafts for review.</small>
+            <p id="vp3CodingAutoStatus" data-coding-auto-status role="status" class="coding-sidebar-status" hidden></p>
+          <?php endif; ?>
           <div class="coding-sidebar-line"><span>Funding</span><strong data-coding-funding>—</strong></div>
           <div class="coding-sidebar-line"><span data-coding-balance-label>Token balance</span><strong data-coding-balance>—</strong></div>
           <meter data-coding-token-meter min="0" max="1" value="0" aria-label="Plan token allowance remaining" hidden></meter>

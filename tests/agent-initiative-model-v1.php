@@ -143,3 +143,16 @@ rejects_model(fn()=>vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-p
     'a newly strict healthy HomeServer-only policy blocks an earlier Cloud selection');
 check_model($GLOBALS['homeCalls']===[]&&$GLOBALS['cloudCalls']===[],
     'transport policy is fresh after source preflight and no unselected provider is substituted');
+
+$GLOBALS['plan']=$cloud;
+$canvasAnswer='{"title":"Prep board","prompt":"A private preparation checklist","draft":"Would a prep board help?"}';
+$GLOBALS['cloudResult']=['ok'=>true,'answer'=>$canvasAnswer];
+$canvasPrompt='{"focus":"Prepare launch tasks","evidence":[{"ref":"task:1","title":"Launch prep"}]}';
+check_model(vp3_initiative_infer_v1($pdo,$user,17,$canvasPrompt,'vp3.initiative-canvas.v1',false,null,
+    ['background'=>true,'run_id'=>44,'conversation_id'=>73])===$canvasAnswer,
+    'the Canvas proposal protocol reaches the actual governed Initiative inference wrapper');
+$canvasCall=end($GLOBALS['cloudCalls']);
+check_model($canvasCall[0]===$canvasPrompt&&$canvasCall[1]===[]&&$canvasCall[2]===[]
+    &&$canvasCall[3]===$user&&$canvasCall[4]==='main_ai'
+    &&$canvasCall[5]===['surface'=>'tool_json','protocol'=>'vp3.initiative-canvas.v1'],
+    'Canvas inference supplies only its exact source envelope and retains canonical owner, scope and protocol');

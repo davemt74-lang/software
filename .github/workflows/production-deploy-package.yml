@@ -367,6 +367,9 @@ jobs:
           test -f _deploy/includes/coding-canvas-store-v1.php
           test -f _deploy/includes/coding-canvas-model-v1.php
           test -f _deploy/includes/coding-canvas-provider-v1.php
+          test -f _deploy/includes/agent-initiative-canvas-v1.php
+          test -f _deploy/includes/agent-initiative-canvas-policy-v1.php
+          test -f _deploy/api/initiative-canvas-settings-v1.php
           test -f _deploy/agent-activity-hub-v1.js
           test -f _deploy/agent-activity-hub-v1.css
           test -f _deploy/includes/agent-activity-hub-v1.php

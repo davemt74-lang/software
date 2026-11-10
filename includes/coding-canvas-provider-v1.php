@@ -109,7 +109,8 @@ function vp3_coding_canvas_generate_v1(PDO $pdo,array $user,array $pin,string $j
     $message=json_encode($input,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
     $instructions=vp3_coding_canvas_provider_instructions_v1($repair);
     $messages=[['role'=>'user','content'=>$message]];
-    $grant=vp3_coding_canvas_model_authorized_v1($pdo,$user,$pin,$service);
+    $background=($attribution['background']??false)===true;
+    $grant=vp3_coding_canvas_model_authorized_v1($pdo,$user,$pin,$service,$background);
     // The selected target is pinned even if the service has no administrator default.
     // A pinned meter always reserves usage and checks the exact provider's personal key.
     $meter=new AiV100ServiceMeter($pdo,$user,[
@@ -117,6 +118,7 @@ function vp3_coding_canvas_generate_v1(PDO $pdo,array $user,array $pin,string $j
         'attempt_key'=>json_encode([$jobId,$requestId],JSON_THROW_ON_ERROR),
         'run_id'=>filter_var($jobId,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]])?:0,
         'agent_id'=>(int)($attribution['agent_id']??0),'conversation_id'=>(int)($attribution['conversation_id']??0),
+        'background'=>$background,
     ],array_replace($grant['policy'],['configured'=>true]),$service);
     $key=$grant['key'];
     $personalKey=$pin['funding']==='own_key'?$key:null;
