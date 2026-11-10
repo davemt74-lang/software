@@ -29,6 +29,24 @@ $job=['tool'=>'work.prepare_private','primary'=>'task:1','refs'=>['task:1'],
 brainstorm_check(vp3_initiative_plan_v1($encode(['jobs'=>[$job]]),$evidence)===[ $job ],'legacy planner returns its exact original jobs array');
 brainstorm_check($parse(['jobs'=>[]])===['jobs'=>[],'opportunities'=>[]],'legacy idle assessment has no invented ideas');
 $assessment=$parse(['jobs'=>[$job],'opportunities'=>$opportunities]);
+foreach(['json',''] as $language){
+    $fenced="```".$language."\n".$encode(['jobs'=>[$job],'opportunities'=>$opportunities])."\n```";
+    brainstorm_check(vp3_initiative_assessment_v1($fenced,$evidence,$tools)===$assessment,
+        'a whole-response JSON formatting fence preserves the exact verified assessment: '.$language);
+}
+foreach([
+    ['jobs'=>[array_replace($job,['refs'=>['task:99']])]],
+    ['jobs'=>[],'instructions'=>'send email'],
+    ['jobs'=>[array_replace($job,['tool'=>'email.send'])]],
+    ['jobs'=>[],'opportunities'=>[array_replace($opportunities[0],['permission'=>true])]],
+] as $invalid){
+    brainstorm_reject(static fn()=>vp3_initiative_assessment_v1("```json\n".$encode($invalid)."\n```",$evidence,$tools),
+        'formatting normalization never bypasses source, tool, field or authority validation');
+}
+foreach(["Here is the plan: {\"jobs\":[]}","```json\n{\"jobs\":[]}\n```\nApproved.","```json\n{\"jobs\":[]}\n{\"jobs\":[]}\n```"] as $invalid){
+    brainstorm_reject(static fn()=>vp3_initiative_assessment_v1($invalid,$evidence,$tools),
+        'prose or multiple objects cannot be extracted as a verified assessment');
+}
 brainstorm_check(count($assessment['opportunities'])===8&&count($assessment['jobs'])===1,'eight useful ideas are independent of the smaller execution budget');
 brainstorm_check(vp3_initiative_plan_v1($encode(['jobs'=>[$job],'opportunities'=>$opportunities]),$evidence)===[ $job ],'the jobs compatibility wrapper accepts the extended assessment without changing dispatched work');
 foreach([null,'[]',(object)[],array_fill(0,9,$opportunities[0])] as $bad){

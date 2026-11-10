@@ -94,15 +94,10 @@ assert.match(css,/@media\(max-width:820px\)/);
 assert.match(css,/@media\(max-width:520px\)/);
 assert.match(css,/prefers-reduced-motion:reduce/);
 
-assert.match(chat,/\$cognitiveFeedBuild = 'cognitive-feed-v530-20260918'/);
-assert.match(chat,/\$cognitiveFeedAssetBuild = \$cognitiveFeedBuild \. '-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350'/,'the retained feed asset build chain must remain stable');
-assert.match(chat,/\$onboardingActivationAssetBuild = 'activation-v243'/,'activation must use a feature-specific asset suffix');
-assert.match(chat,/chat-cognitive-feed-v530\.js\?v=' \. \$cognitiveFeedAssetBuild \. '-' \. \$onboardingActivationAssetBuild/,'activation must cache-bust the feed asset URL without changing the retained build chain');
-assert.match(chat,/api\/cognitive-feed-v530\.php/);
-assert.match(chat,/chat-cognitive-feed-v530\.css/);
-assert.match(chat,/chat-cognitive-feed-v530\.js/);
-assert.match(chat,/\$cognitiveCardsRuntime[\s\S]*\$cognitiveFeedRuntime[\s\S]*\$cognitivePresentationPost/,'Universal Cards must load before feed, and presentation polling after it');
-assert.match(chat,/data-cognitive-feed-build/);
+assert.doesNotMatch(chat,/cognitiveFeedRuntime|VP3_COGNITIVE_FEED_V530|chat-cognitive-feed-v530\.(?:js|css)/,
+  'The legacy Now dashboard must not be mounted or polled by Agent Chat');
+assert.match(chat,/\$cognitiveCardsRuntime[\s\S]*\$cognitivePresentationPost/,
+  'Conversation cards and cognitive polling stay available without the legacy dashboard');
 
 assert.match(bootstrap,/cognitive-cards-v520\.php[\s\S]*cognitive-feed-v530\.php[\s\S]*cognitive-presentation-v510\.php/);
 assert.match(upgrade,/vp3_cognitive_feed_schema_ready_v530\(\)/);

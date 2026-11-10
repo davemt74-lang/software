@@ -44,7 +44,10 @@ assert.match(js,/cancelSpeech/,'presentation runtime must stop the active proact
 assert.match(js,/TRANSCRIPT_SUBMIT/);
 assert.match(js,/setInterval\(refresh/);
 assert.match(css,/chat-agent-status-dot\.active/);
-assert.match(css,/vp3-return-digest/);
+assert.doesNotMatch(css,/vp3-return-digest/,'Retired timeline digest styling must be removed');
+assert.doesNotMatch(js,/renderDigest|data-vp3-return-digest|data-digest-action/,'Chat must not mount a second return brief');
+assert.match(js,/set\('include_return_digest','0'\)/,'Chat must not generate unused legacy return digests');
+assert.match(core,/\$digest=\$includeReturnDigest\?vp3_cognitive_presentation_digest_v510/,'Suppressed return digests must bypass the legacy writer');
 assert.match(css,/\.chat-agent-intelligence\{display:none!important\}/);
 
 assert.doesNotMatch(chat,/chatAgentBriefButton/,'The orb owns Top of Mind entry without a duplicate composer launcher');

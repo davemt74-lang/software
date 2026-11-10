@@ -1,90 +1,21 @@
-.coding-sidebar-control {
-  display: grid;
-  gap: 6px;
-  margin: 4px 0 0;
-  padding: 9px 7px 4px;
-  border-top: 1px solid #e5e7eb;
-  color: #475467;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.coding-sidebar-control > label {
-  color: #1f2937;
-  font-weight: 700;
-}
-
-.coding-sidebar-auto {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 3px;
-  min-width: 0;
-}
-.coding-sidebar-auto input { flex: 0 0 auto; margin: 0; }
-.coding-sidebar-auto-help { color: #667085; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
-
-.coding-sidebar-control > select {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  margin: 0 0 2px;
-  padding: 6px 7px;
-  border: 1px solid #c9d0da;
-  border-radius: 7px;
-  background: #fff;
-  color: #111827;
-  font: inherit;
-  text-overflow: ellipsis;
-}
-
-.coding-sidebar-control > select:focus-visible {
-  outline: 2px solid #285cb8;
-  outline-offset: 1px;
-}
-
-.coding-sidebar-line {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  align-items: baseline;
-  line-height: 1.35;
-}
-
-.coding-sidebar-line > strong,
-.coding-sidebar-line > time {
-  color: #1f2937;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
-.coding-sidebar-balance > strong { font-size: 15px; line-height: 1.2; }
-.coding-sidebar-usage { display: flex; justify-content: space-between; align-items: center; color: #475467; font-size: 11px; text-decoration: none; }
-.coding-sidebar-usage:hover { color: #111827; text-decoration: underline; }
-.coding-sidebar-usage:focus-visible { outline: 2px solid #285cb8; outline-offset: 2px; border-radius: 2px; }
-.coding-sidebar-runtime { margin: 4px 7px 0; color: #667085; font: 11px/1.35 system-ui,sans-serif; }
-.coding-sidebar-runtime > summary { cursor: pointer; padding: 3px 0; }
-.agent-sidebar-footer .coding-sidebar-runtime .agent-sidebar-runtime { padding: 5px 0 2px; gap: 5px; }
-.agent-sidebar-footer .coding-sidebar-runtime .agent-runtime-line,
-.agent-sidebar-footer .coding-sidebar-runtime .agent-runtime-line small,
-.agent-sidebar-footer .coding-sidebar-runtime .agent-runtime-line strong,
-.agent-sidebar-footer .coding-sidebar-runtime .agent-runtime-line a { font-size: 10px; }
-.workspace-main-sidebar .agent-sidebar-user-copy strong { font-size: 12px; }
-.workspace-main-sidebar .agent-sidebar-user-copy small { font-size: 10px; }
-
-.coding-sidebar-control > meter {
-  display: block;
-  width: 100%;
-  height: 8px;
-}
-
-.coding-sidebar-status {
-  margin: 1px 0 0;
-  line-height: 1.25;
-}
-
-.coding-sidebar-status[data-error="true"] { color: #991b1b; }
-.coding-sidebar-control[hidden],
-.coding-sidebar-control > [hidden] { display: none; }
+.coding-sidebar-control{display:grid;gap:3px;margin:0;padding:0 7px;color:#667085;font:11px/1.3 system-ui,sans-serif}
+.coding-sidebar-model{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center;gap:8px;min-height:28px}
+.coding-sidebar-model label{font-weight:500}
+.coding-sidebar-model select{box-sizing:border-box;width:100%;min-width:0;height:26px;padding:2px 18px 2px 6px;border:1px solid #e5e7eb;border-radius:5px;background:#fff;color:#111827;font:inherit;text-overflow:ellipsis}
+.coding-sidebar-model select:focus-visible{outline:2px solid #285cb8;outline-offset:1px}
+.coding-sidebar-model select[aria-invalid=true]{border-color:#b42318}
+.coding-sidebar-balance{display:flex;align-items:center;gap:8px;min-height:25px;color:inherit;text-decoration:none}
+.coding-sidebar-balance>span{margin-right:auto}
+.coding-sidebar-balance strong{color:#111827;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.coding-sidebar-balance meter{width:48px;height:7px;flex:0 0 48px}
+.coding-sidebar-balance:hover>span{text-decoration:underline}
+.coding-sidebar-balance:focus-visible{outline:2px solid #285cb8;outline-offset:2px;border-radius:3px}
+.workspace-main-sidebar .agent-sidebar-user-copy{display:flex;align-items:baseline;gap:7px}
+.workspace-main-sidebar .agent-sidebar-user-copy strong{font-size:12px}
+.workspace-main-sidebar .agent-sidebar-user-copy small{font-size:10px}
+.coding-sidebar-auto{display:flex;align-items:center;gap:7px;padding:8px 9px;color:#111827;font:600 11px/1.3 system-ui,sans-serif;cursor:pointer}
+.coding-sidebar-auto input{flex:0 0 auto;margin:0}
+.coding-sidebar-status{margin:0;padding:0 9px 8px;color:#667085;font:11px/1.3 system-ui,sans-serif}
+.coding-sidebar-status[data-error=true]{color:#991b1b}
+.coding-sidebar-announcement{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.coding-sidebar-control[hidden],.coding-sidebar-control [hidden],[data-coding-auto-controls][hidden],.coding-sidebar-status[hidden]{display:none}

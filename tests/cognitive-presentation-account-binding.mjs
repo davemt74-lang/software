@@ -48,9 +48,10 @@ function user_agent_get_v236($pdo,$owner,$agent){return $owner===1&&in_array($ag
 function user_agent_principal_v236($user,$agent){return ['kind'=>$agent?'user_agent':'system','owner_user_id'=>$user['id'],'agent_id'=>(int)($agent['id']??0)];}
 function vp3_cognitive_presentation_schema_ready_v510($pdo){return true;}
 function vp3_cognitive_agent_namespace_v500($pdo,$user,$agent){return $agent?'agent:'.$agent:'system';}
-function vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agent,$working,$preview,$liveConversation=null){
+function vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agent,$working,$preview,$liveConversation=null,$includeReturnDigest=true){
     global $trace;$trace[]='state';
     $state=['owner'=>$user['id'],'namespace'=>$namespace,'working'=>$working,'preview'=>$preview];
+    if(!$includeReturnDigest)$state['return_digest']=false;
     return $liveConversation===null?$state:$state+['live_conversation'=>$liveConversation];
 }
 function vp3_cognitive_presentation_touch_v510($pdo,$user,$namespace){global $trace;$trace[]='interaction';}
@@ -103,6 +104,10 @@ function vp3_initiative_pump_v1($pdo,$user,$agent,$cid,$revision){
   assert.deepEqual(request({owner:2,session:'owner-b',binding:ownerB}).response.state,
     {owner:2,namespace:'system',working:true,preview:false});
   assert.equal(request({query:{include_working_attention:['1']}}).status,422);
+  assert.equal(request({query:{include_return_digest:['0']}}).status,422);
+  assert.equal(request({query:{include_return_digest:'invalid'}}).status,422);
+  assert.deepEqual(request({query:{include_working_attention:'0',include_return_digest:'0'}}).response.state,
+    {owner:1,namespace:'system',working:false,preview:false,return_digest:false});
 
   const live = {include_working_attention:'0',include_live_context:'1',conversation_id:'42'};
   assertRejected(request({binding:null,query:live}));

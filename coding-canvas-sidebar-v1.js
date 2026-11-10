@@ -7,19 +7,14 @@
 
   const select = panel.querySelector('select');
   const status = panel.querySelector('#vp3CodingSidebarStatus') || panel.querySelector('[role="status"]');
-  const autoToggle = panel.querySelector('[data-coding-auto-drafts]');
-  const autoStatus = panel.querySelector('[data-coding-auto-status]');
+  const autoToggle = sidebar.querySelector('[data-coding-auto-drafts]');
+  const autoStatus = sidebar.querySelector('[data-coding-auto-status]');
+  const autoControls = sidebar.querySelector('[data-coding-auto-controls]');
   const initialOwner = Number(panel.dataset.codingOwner || window.STONEFELLOW_CHAT?.userId);
-  const funding = panel.querySelector('[data-coding-funding]');
   const balanceLabel = panel.querySelector('[data-coding-balance-label]');
   const balanceValue = panel.querySelector('[data-coding-balance]');
   const meter = panel.querySelector('[data-coding-token-meter]');
-  const credits = panel.querySelector('[data-coding-credits]');
-  const reserved = panel.querySelector('[data-coding-reserved]');
-  const periodLabel = panel.querySelector('[data-coding-period-label]');
-  const period = panel.querySelector('[data-coding-period]');
   const numbers = new Intl.NumberFormat();
-  const dates = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   const providerLabel = { openai: 'OpenAI', anthropic: 'Anthropic' };
   const modelKey = target => target ? `${target.provider}:${target.model}` : '';
   let state = null;
@@ -174,6 +169,8 @@
     if (status.textContent !== message) status.textContent = message;
     status.hidden = message === '';
     status.dataset.error = String(error);
+    select.title = message || 'Coding Agent model';
+    select.setAttribute('aria-invalid', String(error));
   }
 
   function showModels() {
@@ -201,36 +198,27 @@
 
   function showBalance(balance) {
     const personal = state?.funding === 'own_key';
-    funding.textContent = state ? (personal ? 'My API keys' : 'VP3 Cloud') : '—';
-    balanceLabel.textContent = personal ? 'Tracked this month' : 'Plan tokens left';
+    balanceLabel.textContent = 'Tokens';
     balanceValue.textContent = 'Unavailable';
-    meter.hidden = credits.parentElement.hidden = reserved.parentElement.hidden = period.parentElement.hidden = true;
+    balanceValue.removeAttribute('title');
+    meter.hidden = true;
     if (!balance) return;
     if (personal) {
-      balanceValue.textContent = `${numbers.format(balance.tracked_month_tokens)} tokens`;
+      balanceValue.textContent = numbers.format(balance.tracked_month_tokens);
+      balanceValue.title = 'This month using your API keys';
       return;
     }
     if (balance.unlimited) {
       balanceValue.textContent = 'Unlimited';
       return;
     }
-    balanceValue.textContent = numbers.format(balance.package_remaining);
+    const remaining = Math.max(0, balance.package_remaining + balance.credits_remaining - balance.reserved);
+    balanceValue.textContent = numbers.format(remaining);
+    balanceValue.title = 'Available plan tokens and credits';
     if (balance.package_allowance > 0) {
       meter.max = balance.package_allowance;
       meter.value = balance.package_remaining;
       meter.hidden = false;
-    }
-    credits.textContent = numbers.format(balance.credits_remaining);
-    credits.parentElement.hidden = false;
-    if (balance.reserved > 0) {
-      reserved.textContent = numbers.format(balance.reserved);
-      reserved.parentElement.hidden = false;
-    }
-    if (balance.period_end) {
-      periodLabel.textContent = balance.renews ? 'Plan resets' : 'Period ends';
-      period.dateTime = balance.period_end;
-      period.textContent = dates.format(new Date(`${balance.period_end}T00:00:00Z`));
-      period.parentElement.hidden = false;
     }
   }
 
@@ -238,7 +226,7 @@
     state = data.state;
     showModels();
     showBalance(data.balance);
-    showStatus(state.unavailable);
+    showStatus(state.unavailable, Boolean(state.unavailable));
   }
 
   async function refresh() {
@@ -303,6 +291,7 @@
 
   function updateParticipantScope() {
     panel.hidden = inParticipantContext();
+    if (autoControls) autoControls.hidden = panel.hidden;
     revision++;
     updateAutoScope();
     if (panel.hidden) {
@@ -310,8 +299,6 @@
       showModels();
       showBalance(null);
       showStatus('');
-      credits.textContent = reserved.textContent = period.textContent = '';
-      period.removeAttribute('datetime');
       meter.removeAttribute('value');
       meter.removeAttribute('max');
     } else {

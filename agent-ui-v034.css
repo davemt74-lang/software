@@ -51,9 +51,13 @@
 @media (hover:none){.chat-history-rename,.chat-history-delete{opacity:1;}}
 @media (max-width:720px){.agent-sidebar-user-menu{bottom:100%;}.agent-nav-group-label{padding-left:12px}.member-header-title .member-header-context{font-size:7px;}}
 
-/* Member Shell: the user identity and runtime telemetry share one compact footer. */
+/* Keep the account footer below navigation and history. */
 .workspace-main-sidebar .chat-sidebar-sections{order:1;}
 .workspace-main-sidebar .agent-sidebar-footer{order:2;margin-top:auto;}
+@media(max-width:820px){
+  body.chat-nav-open .workspace-main-sidebar{z-index:20200!important;}
+  body.chat-nav-open .chat-sidebar-backdrop{z-index:20199!important;}
+}
 
 /* Agent Chat composer: settings is a real rail control, and voice/send share one compact size. */
 body:has(.chat-composer) .chat-composer{

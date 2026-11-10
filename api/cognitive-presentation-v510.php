@@ -50,6 +50,8 @@ try{
             vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_initiative_runtime']);
         }
         $includeInitiativeRuntime=$runtime==='1';
+        $includeReturnDigest=$input['include_return_digest']??'1';
+        if(!in_array($includeReturnDigest,['0','1'],true))vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'invalid_return_digest']);
         if($includeLiveContext==='1'){
             $conversation=$input['conversation_id']??null;
             $rawAgent=$input['agent_id']??'0';
@@ -74,7 +76,7 @@ try{
         // heartbeat. Do not hold the account's PHP session lock behind it.
         if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
         $greetingPreview=$includeWorkingAttention==='1'&&($input['greeting_preview']??'')==='1';
-        $state=vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$includeWorkingAttention==='1',$greetingPreview,$liveConversationId);
+        $state=vp3_cognitive_presentation_state_v510($pdo,$user,$namespace,$agentId,$includeWorkingAttention==='1',$greetingPreview,$liveConversationId,$includeReturnDigest==='1');
         if($includeInitiativeRuntime){
             // Observability is a read. Scheduling, model calls and tool execution
             // are exclusively performed by the explicitly bound POST below.

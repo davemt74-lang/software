@@ -66,7 +66,12 @@ const footerStart = mainSidebar.indexOf('<footer class="agent-sidebar-footer"');
 const footerEnd = footerStart < 0 ? -1 : mainSidebar.indexOf('</footer>', footerStart);
 assert.ok(footerStart >= 0 && footerEnd > footerStart, 'Canonical sidebar must expose the combined bottom footer');
 const footer = mainSidebar.slice(footerStart, footerEnd);
-assert.match(footer, /id="vp3AgentRuntimeStrip"/, 'Canonical sidebar must integrate live Agent runtime state into the bottom footer');
+assert.match(footer, /id="vp3AgentUserMenuButton"/, 'Canonical footer retains the account menu');
+assert.match(footer, /<label for="vp3CodingAgentModel">Model<\/label>/, 'Canonical footer retains one compact coding-model row');
+assert.match(footer, /data-coding-balance-label>Tokens<\/span>/, 'Canonical footer retains one compact token row');
+assert.match(footer, /data-coding-token-meter/, 'Canonical footer retains the monthly token gauge');
+assert.doesNotMatch(footer, /vp3AgentRuntime|data-coding-funding|data-coding-credits|data-coding-reserved|data-coding-period|coding-sidebar-auto-help/, 'Canonical footer must not expand into runtime or billing details');
+assert.match(footer, /id="vp3AgentUserMenu"[\s\S]*data-coding-auto-controls/, 'Auto Build remains inside the account dropdown');
 assert.doesNotMatch(footer, /agent-sidebar-avatar/, 'Canonical bottom footer must not render the removed user avatar');
 assert.doesNotMatch(mainSidebar, /'player'=>'Player'|'saved'=>'Saved Songs'|'playlists'=>'My Playlists'/, 'Canonical Agent navigation must not contain retired music navigation');
 

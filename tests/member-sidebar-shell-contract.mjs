@@ -58,11 +58,12 @@ const footerStart = mainSidebar.indexOf('<footer class="agent-sidebar-footer"');
 const footerEnd = footerStart < 0 ? -1 : mainSidebar.indexOf('</footer>', footerStart);
 assert.ok(footerStart >= 0 && footerEnd > footerStart, 'canonical sidebar must expose the compact user footer');
 const footer = mainSidebar.slice(footerStart, footerEnd);
-assert.match(footer, /id="vp3AgentRuntimeStrip"/, 'runtime stats must be integrated into the bottom user footer');
-assert.match(footer, /id="vp3AgentRuntimeSource"/, 'combined footer must retain runtime source status');
-assert.match(footer, /id="vp3AgentRuntimeModel"/, 'combined footer must retain Brain/model status');
-assert.match(footer, /id="vp3AgentRuntimeUsage"/, 'combined footer must retain monthly usage status');
-assert.match(agentUiCss, /\.agent-sidebar-footer \.agent-sidebar-runtime\{[^}]*background:transparent;[^}]*box-shadow:none;/, 'integrated runtime stats must visually belong to the footer instead of a second card');
+assert.match(footer, /id="vp3AgentUserMenuButton"/, 'compact footer must retain its account menu');
+assert.match(footer, /<label for="vp3CodingAgentModel">Model<\/label>/, 'compact footer must retain its coding-model row');
+assert.match(footer, /class="coding-sidebar-balance"[^>]*href="<\?= e\(url\('\/ai-usage\.php'\)\)/, 'compact Tokens row must open the existing usage page');
+assert.match(footer, /data-coding-token-meter/, 'compact footer must retain the token gauge');
+assert.doesNotMatch(footer, /vp3AgentRuntime|data-coding-funding|data-coding-credits|data-coding-reserved|data-coding-period|coding-sidebar-auto-help/, 'compact footer must exclude runtime, billing and help rows');
+assert.match(footer, /id="vp3AgentUserMenu"[\s\S]*data-coding-auto-controls/, 'Auto Build belongs in the existing account menu');
 assert.match(agentUiCss, /\.agent-sidebar-user-button\{[^}]*grid-template-columns:minmax\(0,1fr\) auto;/, 'footer identity layout must no longer reserve an avatar column');
 assert.match(mainSidebar, /data-rename-conversation/, 'chat history must expose rename alongside delete');
 

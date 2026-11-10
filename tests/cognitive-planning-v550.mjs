@@ -66,7 +66,7 @@ assert.match(cardsPhp,/cognitive_plans_v550.*status IN \('proposed','accepted'\)
 
 assert.match(bootstrap,/cognitive-planning-v550\.php/);
 assert.match(chat,/cognitive-planning-v550-20260918/);
-assert.match(chat,/planningEndpoint.*cognitive-planning-v550\.php/s);
+assert.doesNotMatch(chat,/planningEndpoint/,'Chat must not mount a second feed/planning UI');
 assert.match(upgrade,/vp3_cognitive_planning_schema_ready_v550/);
 assert.match(upgrade,/vp3_cognitive_planning_ensure_schema_v550/);
 

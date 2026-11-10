@@ -6,27 +6,40 @@ import {chromium} from 'playwright';
 // Provider responses and the enclosing member page are disposable fixtures.
 const read = name => fs.readFile(new URL('../'+name,import.meta.url),'utf8');
 const sidebarSource = await read('includes/main-sidebar.php');
-const footer = sidebarSource.slice(sidebarSource.indexOf('<footer class="agent-sidebar-footer"'),sidebarSource.indexOf('<nav class="agent-sidebar-user-menu"'))
+const footerStart = sidebarSource.indexOf('<footer class="agent-sidebar-footer"');
+const footerEnd = sidebarSource.indexOf('</footer>',footerStart)+'</footer>'.length;
+const footer = sidebarSource.slice(footerStart,footerEnd)
+  // Keep the actual controls inside the shipped dropdown. Only the dynamic
+  // account-navigation collection is replaced by a disposable member link.
+  .replace(/<\?php \$lastGroup=''; foreach[\s\S]*?<\?php \$lastGroup=\$group; endforeach; \?>/,
+    '<a href="/account.php">Account settings</a>')
   .replace(/<\?=[\s\S]*?\?>/g,expression=>expression.includes('/ai-usage.php')?'/ai-usage.php':'Fixture')
   .replace(/<\?php[\s\S]*?\?>/g,'')
   .replace('data-coding-sidebar="Fixture"','data-coding-sidebar="/api/models"')
   .replace('data-coding-owner="Fixture"','data-coding-owner="1"')
-  .replace('data-coding-auto-endpoint="Fixture"','data-coding-auto-endpoint="/api/auto"')
-  + '<nav class="agent-sidebar-user-menu" id="vp3AgentUserMenu" hidden><a href="/account.php">Account settings</a></nav></footer>';
+  .replace('data-coding-auto-endpoint="Fixture"','data-coding-auto-endpoint="/api/auto"');
 const assets = Object.fromEntries(await Promise.all(['agent-ui-v034.css','coding-canvas-sidebar-v1.css','agent-orb.css',
   'agent-ui-v034.js','coding-canvas-sidebar-v1.js','agent-eyes-core.js','agent-orb.js'].map(async name=>[name,await read(name)])));
 const origin = 'https://sidebar-footer.test';
 const browser = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});
-const errors = [],writes = [];
-let enabled=false;
+const errors = [],writes = [],modelWrites=[];
+let enabled=false,selected=null;
 try {
   const context = await browser.newContext();
   await context.route(origin+'/**',async route=>{
     const pathname=new URL(route.request().url()).pathname;
     if(assets[pathname.slice(1)])return route.fulfill({contentType:pathname.endsWith('.css')?'text/css':'text/javascript',body:assets[pathname.slice(1)]});
-    if(pathname==='/api/models')return route.fulfill({json:{ok:true,state:{funding:'system',selected:null,
-      default:{provider:'openai',model:'fixture',label:'System coder'},options:[{provider:'openai',model:'fixture',label:'System coder'}],unavailable:''},
-      balance:{unlimited:false,package_allowance:1000000,package_remaining:650000,credits_remaining:50000,reserved:0,period_end:null}}});
+    if(pathname==='/api/models'){
+      if(route.request().method()==='POST'){
+        const body=route.request().postDataJSON();modelWrites.push(body);selected=body.model;
+        assert.equal(body.csrf_token,'fixture');
+      }
+      return route.fulfill({json:{ok:true,state:{funding:'system',selected,
+        default:{provider:'openai',model:'fixture',label:'System coder'},options:[
+          {provider:'openai',model:'fixture',label:'System coder'},
+          {provider:'anthropic',model:'fixture-alt',label:'Other coder'}],unavailable:''},
+        balance:{unlimited:false,package_allowance:1000000,package_remaining:650000,credits_remaining:50000,reserved:0,period_end:null}}});
+    }
     if(pathname==='/api/auto'){
       if(route.request().method()==='POST'){writes.push(route.request().postDataJSON());enabled=writes.at(-1).enabled;}
       return route.fulfill({json:{ok:true,state:{owner_user_id:1,agent_id:7,enabled,initiative_on:true,available:true,can_enable:true,revision:'a'.repeat(32),reason:''}}});
@@ -52,8 +65,15 @@ try {
     assert.ok(box.width<viewport.width,'The composer is a bounded bar, without a full-width staging strip.');
     assert.equal(await bar.evaluate(node=>getComputedStyle(node).backgroundColor),'rgb(255, 255, 255)');
     assert.equal(await page.locator('[data-orb-chat],#chatAgentBriefButton').count(),0);
-    assert.equal(await page.locator('[data-coding-balance]').textContent(),'650,000');
-    assert.equal(await page.getByRole('link',{name:'View AI usage'}).getAttribute('href'),'/ai-usage.php');
+    const model=page.locator('#vp3CodingAgentModel');
+    const target=(await model.inputValue())===''?'anthropic:fixture-alt':'';
+    await model.selectOption(target);
+    await page.waitForFunction(()=>!document.getElementById('vp3CodingAgentModel').disabled);
+    assert.equal(await model.inputValue(),target,'The compact dropdown keeps its saved coding model selection.');
+    assert.deepEqual(modelWrites.at(-1).model,target?{provider:'anthropic',model:'fixture-alt'}:null);
+    assert.equal(await page.locator('[data-coding-balance]').textContent(),'700,000');
+    assert.equal(await page.locator('[data-coding-balance]').evaluate(node=>node.closest('a')?.getAttribute('href')),'/ai-usage.php',
+      'The single token figure opens usage instead of adding another permanent link.');
     if(viewport.width>820){
       const sidebar=await page.locator('#chatSidebar').boundingBox();
       assert.ok(box.x>sidebar.x+sidebar.width,'The footer does not cover the sidebar controls.');
@@ -64,22 +84,40 @@ try {
     }
     const accountFooter=page.locator('.agent-sidebar-footer');
     assert.equal(await accountFooter.evaluate(node=>node.scrollHeight<=node.clientHeight),true,'The account footer has no nested scroller.');
-    assert.equal(await page.locator('.coding-sidebar-runtime').evaluate(node=>node.open),false);
+    const permanentText=await accountFooter.evaluate(node=>{
+      const copy=node.cloneNode(true);
+      copy.querySelectorAll('#vp3AgentUserMenu,.coding-sidebar-announcement,[hidden]').forEach(item=>item.remove());
+      return copy.textContent;
+    });
+    assert.doesNotMatch(permanentText,/Funding|Extra credits|Reserved|Period ends|Plan resets|Runtime details|View AI usage|Uses this model|Auto Build|Saved for new runs/,
+      'The permanent footer has no settings, help paragraphs or billing-detail rows.');
+    assert.equal(await accountFooter.locator('label[for="vp3CodingAgentModel"]').textContent(),'Model');
+    assert.equal(await accountFooter.locator('[data-coding-balance-label]').textContent(),'Tokens');
+    assert.equal(await accountFooter.locator('.coding-sidebar-runtime,#vp3AgentRuntimeStrip,[data-coding-funding],[data-coding-credits],[data-coding-reserved],[data-coding-period]').count(),0);
+    assert.equal(await accountFooter.locator('[data-coding-token-meter]').evaluate(node=>node.value),650000,
+      'The package gauge remains accurate alongside the combined spendable balance.');
+    assert.equal(await accountFooter.locator('.coding-sidebar-announcement').evaluate(node=>{
+      const rect=node.getBoundingClientRect();return rect.width<=1&&rect.height<=1&&getComputedStyle(node).position==='absolute';
+    }),true,'Saved/error announcements remain accessible without adding another visible footer row.');
+    const foot=await accountFooter.boundingBox();
+    assert.ok(foot.height<=120,'The permanent account, Model and Tokens footer fits within 120px.');
+    assert.ok(foot.y>=0&&foot.y+foot.height<=viewport.height,'Account controls remain accessible above the viewport bottom.');
+    assert.equal(await page.getByRole('checkbox',{name:'Auto Build drafts'}).isVisible(),false,
+      'Auto Build is available inside the account dropdown, not the permanent footer.');
+    if(process.env.VP3_FOOTER_SCREENSHOTS)await page.screenshot({path:'/workspace/scratch/48e2f20316b2/compact-footer-'+viewport.width+'.png'});
     await page.getByRole('button',{name:/Fixture/}).click();
     assert.equal(await page.getByRole('link',{name:'Account settings'}).isVisible(),true);
-    await page.keyboard.press('Escape');
-    assert.equal(await page.getByRole('link',{name:'Account settings'}).isVisible(),false);
-    await page.getByText('Runtime details',{exact:true}).click();
-    assert.equal(await page.locator('#vp3AgentRuntimeStrip').isVisible(),true);
-    await page.getByText('Runtime details',{exact:true}).click();
+    assert.equal(await page.getByRole('checkbox',{name:'Auto Build drafts'}).isVisible(),true);
+    assert.equal(await page.locator('#vp3AgentUserMenu [data-coding-auto-drafts]').count(),1);
     await page.getByRole('checkbox',{name:'Auto Build drafts'}).setChecked(!enabled);
     await page.locator('[data-coding-auto-status]').getByText('Saved.',{exact:true}).waitFor();
     assert.equal(writes.at(-1).agent_id,7);
     assert.equal(await page.locator('#vp3CodingAgentModel').isEnabled(),true);
-    const foot=await accountFooter.boundingBox();assert.ok(foot.y>=0&&foot.y+foot.height<=viewport.height,'Account controls remain accessible above the viewport bottom.');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('link',{name:'Account settings'}).isVisible(),false);
+    assert.equal(await page.getByRole('checkbox',{name:'Auto Build drafts'}).isVisible(),false);
     await page.evaluate(()=>document.body.classList.remove('chat-nav-open'));
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'The workspace has no horizontal overflow.');
-    if(process.env.VP3_FOOTER_SCREENSHOTS)await page.screenshot({path:'/workspace/scratch/48e2f20316b2/footer-'+viewport.width+'.png'});
   }
   await page.locator('.vp3-orb-bar input').fill('Review my latest research');
   await page.locator('.vp3-orb-bar button[type=submit]').click();
