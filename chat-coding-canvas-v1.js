@@ -367,10 +367,19 @@
   const launch = button('Code / App Canvas',() => void openPanel());
   launch.setAttribute('aria-controls',panel.id);
   launch.setAttribute('aria-expanded','false');
+  const worker = button('Coding Agent · Working on the canvas',() => window.VP3ChatSpecialists?.open('coding',worker));
+  worker.className = 'vp3-coding-canvas-worker';
+  worker.setAttribute('aria-controls','vp3-chat-specialist-panel-coding');
+  worker.setAttribute('aria-expanded','false');
+  worker.setAttribute('aria-haspopup','dialog');
+  worker.hidden = true;
   const dockStatus = node('span');
   dockStatus.setAttribute('aria-live','polite');
-  dock.append(launch,dockStatus);
+  dock.append(launch,worker,dockStatus);
   shell.append(dock);
+  window.addEventListener('vp3:chat-specialists-changed',() => {
+    worker.hidden = !window.VP3ChatSpecialists?.snapshot().some(entry => entry.key === 'coding');
+  });
 
   let epoch = 0;
   let load = 0;
@@ -627,27 +636,23 @@
   }
 
   function renderJob(next) {
-    if (job?.state === next?.state && job?.run_id === next?.run_id) return;
+    const changed = job?.state !== next?.state || job?.run_id !== next?.run_id;
     job = next;
     const status = jobLabels[next?.state] || '';
-    dockStatus.textContent = status;
-    if (next) {
-      const model = next.model?.model;
-      report(status + (model ? ' · ' + model : '') + (next.reason && next.state === 'failed' ? '. ' + next.reason : ''));
-      window.VP3ChatSpecialists?.update('coding',{label:'Coding Agent',status,title:model,viewLabel:'Open Code / App Canvas',onView:viewJob});
+    const model = next?.model?.model;
+    if (next?.state === 'running') {
+      window.VP3ChatSpecialists?.update('coding',{
+        label:'Coding Agent',status,title:model,detail:'Building a private app draft for this Chat.',
+        expiresAt:Date.now()+12000,viewLabel:'Open Code / App Canvas',
+        onView:() => { if (job?.state === 'running' && job.run_id === next.run_id) void openPanel(); },
+      });
     } else window.VP3ChatSpecialists?.remove('coding');
-    updateControls();
-  }
-
-  async function viewJob() {
-    const selected = job;
-    const version = epoch;
-    await openPanel();
-    if (version === epoch && shown() && matches() && selected?.state === 'ready' && job?.run_id === selected.run_id) {
-      if (current?.canvas.id !== selected.canvas_id || current?.revision.id !== selected.revision) {
-        await openSaved(selected.canvas_id,selected.revision,false);
-      }
+    if (!changed) return;
+    dockStatus.textContent = next?.state === 'running' ? '' : status;
+    if (next) {
+      report(status + (model ? ' · ' + model : '') + (next.reason && next.state === 'failed' ? '. ' + next.reason : ''));
     }
+    updateControls();
   }
 
   async function advance(next,version,conversation) {
@@ -687,6 +692,7 @@
       await advance(data.job,version,conversation);
     } catch (error) {
       if (suspended || version !== epoch || job?.run_id !== runId || !activeJob(job)) return;
+      window.VP3ChatSpecialists?.remove('coding');
       if (!pollingError) report(error.message + ' Checking again…');
       pollingError = true;
       poll = setTimeout(() => void pollJob(runId,version,conversation),2600);

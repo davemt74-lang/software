@@ -96,8 +96,9 @@ try{
       assert.equal(await main.locator('[data-orb-work-tracks="1"]').count(),1);
     }
   });
-  await check('A real assessment appears in the shared specialist rail without opening a panel',async()=>{
+  await check('A real assessment opens current work in the shared rail and closes when it stops',async()=>{
     const specialist=main.locator('[data-chat-specialist="brainstorm"]');
+    const panel=main.getByRole('dialog',{name:'Opportunity Agent'});
     await specialist.waitFor();
     assert.deepEqual(await main.evaluate(()=>VP3ChatSpecialists.snapshot().map(item=>[item.key,item.label,item.status,item.detail,item.canView])),[
       ['brainstorm','Opportunity Agent','Working','Brainstorming useful opportunities',false]
@@ -105,16 +106,28 @@ try{
     assert.equal(await main.locator('.vp3-chat-specialist-panel').count(),0);
     assert.equal(await main.evaluate(()=>hubOpened.length),0);
     await specialist.click();
-    assert.deepEqual(await main.evaluate(()=>hubOpened),[{specialist:'brainstorm'}]);
-    assert.equal(await main.locator('.vp3-chat-specialist-panel').count(),0);
+    await panel.waitFor();
+    assert.equal(await specialist.getAttribute('aria-expanded'),'true');
+    assert.match(await panel.textContent(),/Top of Mind brainstorm/);
+    assert.match(await panel.textContent(),/Brainstorming useful opportunities/);
+    assert.deepEqual(await main.evaluate(()=>hubOpened),[]);
+    await main.evaluate(job=>VP3AgentOrb.setJobs('initiative',[job]),{
+      ...activeJob(),step:'Reviewing the current plan'
+    });
+    await panel.getByText('Reviewing the current plan',{exact:true}).waitFor();
+    assert.equal(await panel.getByText('Brainstorming useful opportunities',{exact:true}).count(),0);
     await main.evaluate(()=>{
       VP3AgentOrb.setJobs('mission',[{id:'mission:live',expiresAt:Date.now()+10000}]);
       VP3AgentOrb.setJobs('initiative',[]);
     });
     await specialist.waitFor({state:'detached'});
+    await panel.waitFor({state:'detached'});
     assert.equal(await main.evaluate(()=>VP3AgentOrb.isWorking()),true);
     await main.evaluate(()=>VP3AgentOrb.setJobs('mission',[]));
     assert.equal(await main.evaluate(()=>VP3AgentOrb.isWorking()),false);
+    await main.locator('.vp3-orb-ball').hover();
+    await main.locator('[data-orb-activity]').click();
+    assert.deepEqual(await main.evaluate(()=>hubOpened),[undefined]);
   });
   await check('Terminal, expired, invalid and paused work cannot leave a Working dot behind',async()=>{
     await main.evaluate(()=>{
@@ -145,6 +158,9 @@ try{
       try{
         await page.evaluate(job=>VP3AgentOrb.setJobs('initiative',[job]),activeJob());
         await page.locator('[data-working="true"]').waitFor();
+        await page.locator('[data-chat-specialist="brainstorm"]').click();
+        const panel=page.getByRole('dialog',{name:'Opportunity Agent'});
+        await panel.waitFor();
         await page.evaluate(kind=>{
           if(kind==='participant'){window.selected={participant_id:8};dispatchEvent(new Event('vp3:participant-selection-changed'));}
           if(kind==='binding')STONEFELLOW_CHAT.workingAttentionBinding='new-session';
@@ -152,6 +168,7 @@ try{
           if(kind==='owner')VP3_ORB_CONFIG.ownerKey='2';
         },change);
         await page.waitForFunction(()=>!VP3AgentOrb.isWorking());
+        await panel.waitFor({state:'detached'});
         await page.evaluate(job=>VP3AgentOrb.setJobs('initiative',[job]),activeJob());
         assert.equal(await page.evaluate(()=>VP3AgentOrb.isWorking()),false);
         assert.equal(await page.locator('[data-chat-specialist="brainstorm"]').count(),0);

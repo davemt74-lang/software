@@ -9,12 +9,12 @@
     'email':'M3 6h18v12H3z M3 7l9 6 9-6',
     'gmail-inbox-review':'M3 6h18v12H3z M3 7l9 6 9-6',
     'development':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',
+    'coding':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',
     'research':'M10 3a7 7 0 1 0 0 14 7 7 0 1 0 0-14 M15 15l5 5',
     'brainstorm':'M9 18h6 M10 21h4 M8 14a6 6 0 1 1 8 0l-1 2H9z',
     generic:'M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M5.6 18.4l2.1-2.1 M16.3 7.7l2.1-2.1'
   };
   let opened = null;
-  let pendingAutoOpen = null;
   let suspended = false;
   let participantActor = 0;
   const privateContext = () => participantActor > 0 || Boolean(window.VP3ParticipantContinuity?.selectedContext?.());
@@ -53,8 +53,9 @@
     if (!entries.size || !document.body) return false;
     const rail = compact.matches ? null : document.getElementById('sfOnlineRailV109');
     if (!rail || rail.hidden) {
-      const focused = host.contains(document.activeElement) || opened?.panel.contains(document.activeElement);
-      closePanel(false);
+      const keepPanel = opened && (compact.matches || !host.contains(opened.trigger));
+      const focused = host.contains(document.activeElement) || (!keepPanel && opened?.panel.contains(document.activeElement));
+      if (!keepPanel) closePanel(false);
       host.remove();
       if (focused) document.getElementById('chatInput')?.focus();
       return false;
@@ -72,12 +73,13 @@
 
   function closePanel(restoreFocus) {
     if (!opened) return;
-    const {entry,panel} = opened;
+    const {entry,panel,trigger} = opened;
     opened = null;
     entry.button.setAttribute('aria-expanded','false');
+    trigger?.setAttribute('aria-expanded','false');
     panel.replaceChildren();
     panel.remove();
-    if (restoreFocus && entry.button.isConnected) entry.button.focus();
+    if (restoreFocus) (trigger?.isConnected ? trigger : document.getElementById('chatInput'))?.focus();
   }
 
   function renderPanel() {
@@ -92,11 +94,12 @@
     view.hidden = !entry.onView;
   }
 
-  function openPanel(entry, focus) {
+  function openPanel(entry, trigger) {
     closePanel(false);
     const panel = node('section');
     panel.className = 'vp3-chat-specialist-panel';
     panel.dataset.chatSpecialistPanel = entry.key;
+    panel.setAttribute('role','dialog');
     panel.id = entry.panelId;
     panel.setAttribute('aria-labelledby', entry.panelId + '-heading');
 
@@ -120,32 +123,45 @@
       if (onView) onView();
     });
     panel.append(header,title,status,detail,view);
-    opened = {entry,panel,heading,title,status,detail,view};
+    opened = {entry,panel,heading,title,status,detail,view,trigger};
     renderPanel();
     document.body.append(panel);
     entry.button.setAttribute('aria-expanded','true');
-    if (focus) heading.focus();
+    trigger?.setAttribute('aria-expanded','true');
+    heading.focus();
   }
 
+  function open(key, trigger) {
+    if (suspended || privateContext()) return false;
+    const entry = entries.get(key);
+    if (!entry) return false;
+    if (entry.expiresAt && entry.expiresAt <= Date.now()) {
+      remove(key);
+      return false;
+    }
+    if (opened?.entry === entry) closePanel(true);
+    else openPanel(entry,trigger || entry.button);
+    return true;
+  }
+
+  // Producers publish only verified active work and remove it on completion or scope changes.
+  // A supplied lease or freshness deadline also retires the indicator and panel automatically.
   function update(key, options = {}) {
     if (suspended || privateContext() || typeof key !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(key) || !document.body) return;
+    const expiresAt = Number.isSafeInteger(options.expiresAt) ? options.expiresAt : 0;
+    if (expiresAt && expiresAt <= Date.now()) { remove(key); return; }
     let entry = entries.get(key);
     if (!entry) {
       const button = makeButton();
       const panelId = 'vp3-chat-specialist-panel-' + key;
       button.dataset.chatSpecialist = key;
+      button.className = 'vp3-chat-worker-indicator';
       button.setAttribute('aria-controls',panelId);
       button.setAttribute('aria-expanded','false');
+      button.setAttribute('aria-haspopup','dialog');
       button.append(makeIcon(key));
       entry = {key,button,panelId};
-      button.addEventListener('click', () => {
-        if (privateContext()) return;
-        if (window.VP3AgentActivityHub?.open) {
-          closePanel(false);
-          window.VP3AgentActivityHub.open({specialist:key});
-        } else if (opened?.entry === entry) closePanel(true);
-        else openPanel(entry, true);
-      });
+      button.addEventListener('click', () => open(key,button));
       if (!entries.size) observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
       entries.set(key,entry);
       host.append(button);
@@ -157,20 +173,21 @@
     entry.viewLabel = String(options.viewLabel || 'View in Chat');
     entry.onView = typeof options.onView === 'function' ? options.onView : null;
     entry.button.setAttribute('aria-label',entry.label);
-    entry.button.title = entry.label;
-    changed();
-    if (!dock()) return;
-    if (opened?.entry === entry) renderPanel();
-    else if (options.autoOpen === true && !opened) {
-      if (window.VP3AgentActivityHub?.open) window.VP3AgentActivityHub.open({specialist:key,focus:false});
-      else if (window.VP3_ORB_CONFIG?.activityEndpoint) pendingAutoOpen ??= key;
-      else openPanel(entry, false);
+    entry.button.title = entry.label + ' · ' + entry.status;
+    if (entry.expiresAt !== expiresAt) {
+      clearTimeout(entry.expiryTimer);
+      entry.expiresAt = expiresAt;
+      if (expiresAt) entry.expiryTimer = setTimeout(() => remove(key), Math.max(0,expiresAt-Date.now()));
     }
+    changed();
+    dock();
+    if (opened?.entry === entry) renderPanel();
   }
 
   function remove(key) {
     const entry = entries.get(key);
     if (!entry) return;
+    clearTimeout(entry.expiryTimer);
     const hadFocus = document.activeElement === entry.button ||
       (opened?.entry === entry && opened.panel.contains(document.activeElement));
     if (opened?.entry === entry) closePanel(false);
@@ -179,20 +196,14 @@
     entry.detail = '';
     entry.onView = null;
     entries.delete(key);
-    if (pendingAutoOpen === key) pendingAutoOpen = null;
     changed();
     if (!entries.size) {
       observer.disconnect();
       host.remove();
     }
-    if (hadFocus) (host.querySelector('button') || document.getElementById('chatInput'))?.focus();
+    if (hadFocus) ((host.isConnected && host.querySelector('button')) || document.getElementById('chatInput'))?.focus();
   }
 
-  window.addEventListener('vp3:agent-activity-ready',() => {
-    if (!pendingAutoOpen || suspended || privateContext()) return;
-    const key = pendingAutoOpen;
-    if (!entries.has(key) || window.VP3AgentActivityHub?.open({specialist:key,focus:false}) === true) pendingAutoOpen = null;
-  });
   compact.addEventListener('change',dock);
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || event.defaultPrevented || !opened) return;
@@ -232,5 +243,5 @@
     participantActor = Number(event.detail?.participant_id) || 0;
     participantChanged();
   });
-  window.VP3ChatSpecialists = Object.freeze({update,remove,snapshot,view});
+  window.VP3ChatSpecialists = Object.freeze({update,remove,snapshot,view,open});
 })();

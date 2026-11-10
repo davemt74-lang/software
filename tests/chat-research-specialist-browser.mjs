@@ -56,7 +56,9 @@ await page.route('**/api/**', async route => {
 const button = page.getByRole('button',{name:'Research Specialist',exact:true});
 const panel = page.locator('[data-chat-specialist-panel="research"]');
 const inline = page.locator('.vp3-chat-research-specialist-status');
+const progress = page.getByRole('button',{name:'View research progress'});
 const refresh = () => page.evaluate(() => window.dispatchEvent(new Event('vp3:chat-history-updated')));
+const running = (expiresAt = Date.now()+60000) => ({...job,state:'running',lease_expires_at:new Date(expiresAt).toISOString()});
 
 try {
   await page.goto('https://research.test/');
@@ -72,32 +74,44 @@ try {
     await page.addScriptTag({content:await source(file)});
   }
 
+  await inline.getByText(/Waiting for the research worker/).waitFor();
+  assert.equal(await button.count(),0,'Queued work has no active indicator');
+  assert.equal(await progress.isVisible(),false);
+  specialist = running();
+  await refresh();
   await button.waitFor();
-  assert.equal(await panel.count(),0,'Proactive progress should not open the panel by itself');
+  assert.equal(await panel.count(),0,'Proactive work opens only when clicked');
   assert.equal(await inline.isVisible(),false);
   await button.click();
-  await panel.getByText('Waiting for the research worker',{exact:true}).waitFor();
+  await panel.getByText('Researching public sources',{exact:true}).waitFor();
+  assert.equal(await panel.getAttribute('role'),'dialog');
   assert.equal(await panel.locator('img').count(),0);
   assert.equal(await panel.locator('.vp3-chat-specialist-title').textContent(),subject);
+  await panel.getByText('Topic research',{exact:true}).waitFor();
 
-  specialist = {...job,state:'running',lease_expires_at:new Date(Date.now()+60000).toISOString()};
-  await refresh();
-  await panel.getByText('Researching public sources',{exact:true}).waitFor();
   await page.setViewportSize({width:390,height:780});
   await inline.waitFor();
   assert.match(await inline.textContent(),/Research Specialist · Researching public sources/);
-  assert.equal(await button.count(),0);
+  await button.waitFor({state:'detached'});
+  if (await panel.isVisible()) await panel.getByRole('button',{name:'Close',exact:true}).click();
   await panel.waitFor({state:'detached'});
+  await progress.click();
+  await panel.getByText('Researching public sources',{exact:true}).waitFor();
   assert.equal(await page.locator('#chatThread .message').count(),0,'Progress stays outside saved message history');
 
   specialist = null;
   await refresh();
   await inline.waitFor({state:'hidden'});
+  await panel.waitFor({state:'detached'});
   specialist = {...job,state:'failed'};
   await page.clock.fastForward(12500);
   await inline.waitFor();
   assert.match(await inline.textContent(),/Research did not finish/);
+  assert.equal(await progress.isVisible(),false);
   await page.setViewportSize({width:1280,height:900});
+  assert.equal(await button.count(),0,'Failed work has no active indicator');
+  specialist = running();
+  await refresh();
   await button.waitFor();
   denied = true;
   await refresh();
@@ -105,7 +119,7 @@ try {
   assert.equal(await inline.isVisible(),false);
   denied = false;
 
-  specialist = job;
+  specialist = running();
   wrongBinding = true;
   const mismatched = page.waitForResponse(response => response.url().includes('initiative-research-status-v1'));
   await refresh();
@@ -130,13 +144,27 @@ try {
 
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
   await button.waitFor();
+  const browserNow = await page.evaluate(() => Date.now());
+  specialist = running(browserNow+2000);
+  const updated = page.waitForResponse(response => response.url().includes('initiative-research-status-v1'));
+  await refresh();
+  await updated;
+  await button.click();
+  await panel.waitFor();
+  await page.clock.fastForward(2100);
+  await button.waitFor({state:'detached'});
+  await panel.waitFor({state:'detached'});
+  assert.equal(await inline.isVisible(),false,'Expired work clears its active UI without another server reply');
+  specialist = running();
+  await refresh();
+  await button.waitFor();
   await page.evaluate(() => {
     window.VP3ParticipantContinuity = {selectedContext:() => ({participant_id:5})};
     window.dispatchEvent(new Event('vp3:participant-selection-changed'));
   });
   await button.waitFor({state:'detached'});
   assert.deepEqual(errors,[]);
-  console.log('Research specialist rail, mobile status, session/Chat isolation, completion and failure verified.');
+  console.log('Research specialist active rail and mobile dialog, lease expiry, completion, failure, and session/Chat isolation verified.');
 } finally {
   await browser.close();
 }

@@ -129,7 +129,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260910-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
-<link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=compact-sidebar-20261110')) ?>">
+<link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=' . substr(hash_file('sha256', __DIR__.'/../agent-ui-v034.css'), 0, 12))) ?>">
 <link rel="stylesheet" href="<?= e(url('/coding-canvas-sidebar-v1.css?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-sidebar-v1.css'), 0, 12))) ?>">
 <?php if ($mainSidebarCodingCanvas): ?>
 <link rel="stylesheet" href="<?= e(url('/chat-coding-canvas-v1.css?v='.substr(hash_file('sha256', __DIR__.'/../chat-coding-canvas-v1.css'), 0, 12))) ?>">
@@ -279,7 +279,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
   </section>
 </div>
 <script src="<?= e(url('/homeserver-vp3.js?v=homeserver-v1305-final-20260924')) ?>" defer></script>
-<script src="<?= e(url('/agent-ui-v034.js?v=compact-sidebar-20261110')) ?>" defer></script>
+<script src="<?= e(url('/agent-ui-v034.js?v=' . substr(hash_file('sha256', __DIR__.'/../agent-ui-v034.js'), 0, 12))) ?>" defer></script>
 <?php if ($mainSidebarCanChat): ?><script src="<?= e(url('/coding-canvas-sidebar-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-sidebar-v1.js'), 0, 12))) ?>" defer></script><?php endif; ?>
 <?php if ($mainSidebarCodingCanvas): ?>
 <script>window.VP3_CODING_CANVAS_V1=<?= json_encode([

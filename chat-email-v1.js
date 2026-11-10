@@ -36,11 +36,14 @@
   let pending = null;
   let specialistRequest = null;
   let specialistTimer = 0;
-  let specialistActive = false;
+  let specialistExpiryTimer = 0;
+  let specialistWatching = false;
   const thread = document.getElementById('chatThread');
-  const compactStatus = element('p');
+  const compactStatus = button('Email Specialist · Checking Gmail', () => window.VP3ChatSpecialists?.open?.('email', compactStatus));
   compactStatus.className = 'vp3-chat-email-specialist-status';
-  compactStatus.setAttribute('role', 'status');
+  compactStatus.setAttribute('aria-haspopup', 'dialog');
+  compactStatus.setAttribute('aria-controls', 'vp3-chat-specialist-panel-email');
+  compactStatus.setAttribute('aria-expanded', 'false');
   compactStatus.hidden = true;
   document.getElementById('chatComposerShell')?.prepend(compactStatus);
 
@@ -65,41 +68,28 @@
     return !document.hidden && thread?.dataset.view === 'chat' ? currentScope() : null;
   }
 
-  function showSpecialist(status, scope) {
-    specialistActive = status?.state === 'watching' || status?.state === 'paused';
-    if (!specialistActive) {
+  function showSpecialist(status) {
+    clearTimeout(specialistExpiryTimer);
+    const expiresAt = status?.state === 'working' ? Date.parse(status.working_until) : 0;
+    const remaining = expiresAt - Date.now();
+    if (!(remaining > 0)) {
       compactStatus.hidden = true;
-      compactStatus.textContent = '';
       window.VP3ChatSpecialists?.remove('email');
       return;
     }
-    const state = status.state === 'watching' ? 'Watching Gmail for new mail' : 'Gmail watch paused';
-    const caption = 'Email Specialist · ' + state;
-    if (compactStatus.textContent !== caption) compactStatus.textContent = caption;
     compactStatus.hidden = false;
-
-    const id = status.origin_message_id;
-    const target = Number.isSafeInteger(id) && id > 0 && thread.querySelector(
-      `[data-chat-message-id="${id}"][data-chat-conversation-id="${scope.conversation_id}"][data-chat-message-role="user"]`
-    );
     window.VP3ChatSpecialists?.update('email', {
-      label:'Email Specialist', title:'Gmail follow-up', status:state,
-      detail:status.state === 'watching'
-        ? 'VP3 checks Gmail in the background and posts the first match in this Chat.'
-        : 'This watch is waiting for Gmail to become available again.',
-      onView:target ? () => {
-        if (specialistScope()?.conversation_id !== scope.conversation_id || !target.isConnected) return;
-        target.tabIndex = -1;
-        target.scrollIntoView({block:'center'});
-        target.focus({preventScroll:true});
-      } : null,
+      label:'Email Specialist', title:'Checking Gmail', status:'Working',
+      detail:'Looking for new mail matching a watch from this Chat.', expiresAt,
     });
+    specialistExpiryTimer = setTimeout(() => showSpecialist(null), Math.min(remaining,180000));
   }
 
   function clearSpecialist() {
     clearTimeout(specialistTimer);
     specialistRequest?.abort();
     specialistRequest = null;
+    specialistWatching = false;
     showSpecialist(null);
   }
 
@@ -122,7 +112,6 @@
     const controller = new AbortController();
     specialistRequest = controller;
     const timeout = setTimeout(() => controller.abort(), 10000);
-    const wasActive = specialistActive;
     let retry = 0;
     const current = () => specialistRequest === controller && specialistScope()?.conversation_id === scope.conversation_id;
     try {
@@ -134,16 +123,18 @@
       const data = await response.json();
       if (!current()) return;
       if (response.ok && data.ok === true) {
-        showSpecialist(data.specialist, scope);
-        if (specialistActive) retry = 15000;
+        showSpecialist(data.specialist);
+        const state = data.specialist?.state;
+        specialistWatching = state === 'watching' || state === 'paused' || state === 'working';
+        if (specialistWatching) retry = state === 'working' ? 5000 : 15000;
       } else {
         showSpecialist(null);
-        if (wasActive && response.status >= 500) retry = 30000;
+        if (specialistWatching && response.status >= 500) retry = 30000;
       }
     } catch (_error) {
       if (!current()) return;
       showSpecialist(null);
-      if (wasActive) retry = 30000;
+      if (specialistWatching) retry = 30000;
     } finally {
       clearTimeout(timeout);
       if (specialistRequest === controller) {

@@ -149,14 +149,17 @@ function agent_connection_email_followup_specialist_v1(PDO $pdo, int $owner, int
     $connection = agent_connections_find_v1($pdo,$owner,'gmail');
     if (!$connection || $connection['status'] !== 'connected' || !agent_connections_permissions_v1($connection)['followups']) return $idle;
 
-    $stmt = $pdo->prepare("SELECT f.origin_user_message_id FROM agent_connection_email_followups_v1 f
+    $now = agent_commerce_time_pa2();
+    $stmt = $pdo->prepare("SELECT f.origin_user_message_id,f.claim_key,f.next_check_at,f.expires_at
+        FROM agent_connection_email_followups_v1 f
         WHERE f.owner_user_id=? AND f.agent_id=? AND f.conversation_id=? AND f.connection_id=? AND f.authorization_key=?
             AND f.account_email=? AND f.status='waiting' AND f.expires_at>? AND f.next_check_at IS NOT NULL
             AND (f.origin_user_message_id IS NULL OR EXISTS (SELECT 1 FROM chat_messages m
                 WHERE m.id=f.origin_user_message_id AND m.conversation_id=f.conversation_id AND m.user_id=f.owner_user_id AND m.role='user'))
-        ORDER BY f.origin_user_message_id DESC, f.operation_key LIMIT 1");
+        ORDER BY CASE WHEN f.claim_key IS NOT NULL AND f.next_check_at>? THEN 0 ELSE 1 END,
+            f.origin_user_message_id DESC,f.operation_key LIMIT 1");
     $stmt->execute([$owner,$agent,$conversation,(int)$connection['id'],$connection['authorization_key'],
-        agent_connection_gmail_address_v1($connection['account_email']),agent_commerce_time_pa2()]);
+        agent_connection_gmail_address_v1($connection['account_email']),$now,$now]);
     $watch = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$watch) return $idle;
 
@@ -169,8 +172,13 @@ function agent_connection_email_followup_specialist_v1(PDO $pdo, int $owner, int
             $ready = false;
         }
     }
-    return ['state'=>$ready?'watching':'paused',
+    $status = ['state'=>$ready?'watching':'paused',
         'origin_message_id'=>$watch['origin_user_message_id'] === null ? null : (int)$watch['origin_user_message_id']];
+    if ($ready && $watch['claim_key'] !== null && $watch['next_check_at'] > $now) {
+        $status['state'] = 'working';
+        $status['working_until'] = str_replace(' ','T',min($watch['next_check_at'],$watch['expires_at'])).'Z';
+    }
+    return $status;
 }
 
 /** The caller supplies the durable verified result from an explicitly reviewed send. */

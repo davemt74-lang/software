@@ -63,7 +63,7 @@ window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentChat};
 window.VP3CodingCanvasV1={open:async(...args)=>{window.calls.push(['canvas',...args]);return true;}};
 window.VP3AgentMissionsV1={open:async id=>{window.calls.push(['mission',id]);return true;}};
 window.VP3_ORB_ADAPTER={ownerKey:'1',state:()=>({state:'idle'}),conversationRef:()=>window.childReady?{id:window.currentChat,agent:7}:null,stop:()=>{}};
-</script>${outerScripts}<script>window.VP3ChatSpecialists.update('coding',{label:'Coding Agent',status:'Draft ready',viewLabel:'Open code canvas',onView:()=>window.views++});</script>`}));
+</script>${outerScripts}<script>window.VP3ChatSpecialists.update('coding',{label:'Coding Agent',status:'Building draft',viewLabel:'Open code canvas',onView:()=>window.views++});</script>`}));
 
 try {
   await page.goto('https://activity.test/');
@@ -101,22 +101,27 @@ try {
   assert.equal(await launcher.getAttribute('aria-label'),'Top of Mind');
   assert.equal(await badge.isVisible(),false);
   await page.locator('#chatInput').focus();
-  await page.evaluate(() => window.VP3ChatSpecialists.update('research',{label:'Research Agent',status:'Working',autoOpen:true}));
-  assert.equal(await page.evaluate(()=>document.activeElement.id),'chatInput','Automatic specialist updates preserve composer focus');
-  await page.evaluate(()=>{window.VP3AgentActivityHub.close(false);window.VP3ChatSpecialists.remove('research');});
-  await page.evaluate(() => window.VP3ChatSpecialists.update('coding',{label:'Coding Agent',title:'Checklist',status:'Draft ready',viewLabel:'Open code canvas',onView:()=>window.views++}));
-  await page.getByRole('button',{name:'Coding Agent',exact:true}).click();
   const hub=page.locator('#vp3AgentActivityHub');
+  const liveWork=page.getByRole('dialog',{name:'Coding Agent'});
+  await page.evaluate(() => window.VP3ChatSpecialists.update('coding',{label:'Coding Agent',title:'Checklist',status:'Building draft',viewLabel:'Open code canvas',onView:()=>window.views++}));
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'chatInput','Worker updates preserve composer focus');
+  assert.equal(await liveWork.count(),0,'Work appears only when selected');
+  await page.getByRole('button',{name:'Coding Agent',exact:true}).click();
+  await liveWork.getByText('Building draft',{exact:true}).waitFor();
+  assert.equal(await hub.isVisible(),false,'The rail opens current work in place');
+  await liveWork.getByRole('button',{name:'Open code canvas',exact:true}).click();
+  assert.equal(await page.evaluate(() => window.views),1);
+  await page.locator('#chatAgentBriefButton').click();
   const worker=page.locator('[data-agent-initiative-status]');
   await hub.getByText('Prepare workshop',{exact:true}).waitFor();
   assert.equal(await hub.getByRole('heading',{name:'Top of Mind',exact:true}).isVisible(),true);
-  assert.equal(await page.locator('[data-chat-specialist-panel]').count(),0,'Rail and orb use one shared pane');
+  assert.equal(await liveWork.count(),0);
   assert.equal(await hub.locator('img').count(),0);
   assert.equal(await hub.getByText('Longfellow · Workshop research',{exact:true}).isVisible(),true);
   assert.equal(await hub.locator('[data-activity-group="Continue"]').evaluate(element=>element.open),false,'Only the first nonempty group starts expanded');
   if (process.env.VP3_HUB_SCREENSHOTS) await page.screenshot({path:'/workspace/scratch/48e2f20316b2/agent-activity-hub-desktop.png'});
   await hub.getByRole('button',{name:'Open code canvas',exact:true}).click();
-  assert.equal(await page.evaluate(() => window.views),1);
+  assert.equal(await page.evaluate(() => window.views),2);
   assert.equal(await hub.isVisible(),false);
 
   const expand=async()=>{await hub.getByText('Prepare workshop',{exact:true}).waitFor();for(const details of await hub.locator('details[data-activity-group]').all())if(!await details.evaluate(element=>element.open))await details.locator('summary').click();};
@@ -160,7 +165,7 @@ try {
     await page.screenshot({path:'/workspace/scratch/48e2f20316b2/agent-activity-hub-mobile.png'});
   }
   await hub.getByRole('button',{name:'Open code canvas',exact:true}).click();
-  assert.equal(await page.evaluate(() => window.views),2,'Specialist remains available on mobile');
+  assert.equal(await page.evaluate(() => window.views),3,'Specialist remains available on mobile');
   await open();
   await hub.getByRole('button',{name:'Resume Chat',exact:true}).click();
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)),['chat',43]);

@@ -165,6 +165,9 @@ const panel = page.locator('#chatCodingCanvasV1');
 const status = panel.getByRole('status');
 const preview = panel.frameLocator('iframe');
 const launch = page.getByRole('button',{name:'Code / App Canvas',exact:true});
+const codingWorker = page.locator('[data-chat-specialist="coding"]');
+const mobileWorker = page.locator('.vp3-coding-canvas-worker');
+const workerPanel = page.getByRole('dialog',{name:'Coding Agent',exact:true});
 const codePrompt = panel.getByRole('textbox');
 const records = action => requests.filter(request => request.action === action);
 const codeEvent = await fs.readFile(new URL('../chat-coding-canvas-v1.js',import.meta.url),'utf8');
@@ -202,14 +205,25 @@ try {
   await input.focus();
   job = {run_id:++jobNumber,conversation_id:42,canvas_id:canvas.id,state:'running',revision:null,model:{model:'fixture-coder'}};
   await page.evaluate(() => window.dispatchEvent(new Event('vp3:chat-history-updated')));
-  await page.getByRole('button',{name:'Coding Agent',exact:true}).waitFor();
+  await codingWorker.waitFor();
   assert.equal(await panel.isHidden(),true,'A background Coding job does not open Canvas');
   assert.equal(await page.evaluate(() => document.activeElement.id),'chatInput','Background progress does not steal focus');
   assert.equal(await input.inputValue(),'Keep my conversational draft');
   assert.equal(records('build').length + records('repair').length + records('tick').length,0,'Discovering a running job does not queue or start another generation');
+  await codingWorker.click();
+  await workerPanel.getByText('Working on the canvas',{exact:true}).waitFor();
+  await workerPanel.getByText('Building a private app draft for this Chat.',{exact:true}).waitFor();
+  await workerPanel.getByRole('button',{name:'Close',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});
+  await codingWorker.waitFor({state:'detached'});
+  await mobileWorker.click();
+  await workerPanel.getByRole('button',{name:'Open Code / App Canvas'}).waitFor();
   job = {...job,state:'ready',revision:1};
-  await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding' && item.status === 'Draft ready to test'));
+  await workerPanel.waitFor({state:'detached'});
+  await mobileWorker.waitFor({state:'hidden'});
+  await page.locator('.vp3-coding-canvas-dock').getByText('Draft ready to test',{exact:true}).waitFor();
   assert.equal(await panel.isHidden(),true,'Background completion keeps the conversation visible');
+  await page.setViewportSize({width:1280,height:900});
 
   let beganResume,releaseResume;
   const resumeStarted = new Promise(resolve => { beganResume = resolve; });
@@ -274,7 +288,8 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event('vp3:chat-history-updated')));
   await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding' && item.title === 'background-coder'));
   job = {...job,state:'ready',revision:1};
-  await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding' && item.title === 'background-coder' && item.status === 'Draft ready to test'));
+  await codingWorker.waitFor({state:'detached'});
+  await status.getByText('Draft ready to test · background-coder',{exact:true}).waitFor();
   assert.equal(records('open').length,openBeforeBackground,'A background result cannot replace the Canvas being used');
   assert.equal(await existingPreview.evaluate(frame => frame === document.querySelector('#chatCodingCanvasV1 iframe')),true);
 
@@ -386,6 +401,7 @@ try {
   assert.ok(records('resume').some(request => request.conversation_id === bound));
   await panel.getByRole('button',{name:'Stop',exact:true}).click();
   await status.getByText('Build stopped · fixture-coder',{exact:true}).waitFor();
+  await codingWorker.waitFor({state:'detached'});
   assert.equal(records('stop').at(-1).conversation_id,bound);
   releaseTick();
   assert.deepEqual(external,[]);

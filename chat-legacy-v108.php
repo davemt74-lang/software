@@ -1,5 +1,13 @@
 <?php
 declare(strict_types=1);
+
+// Only the canonical Chat route can render this template.
+if (isset($_SERVER['SCRIPT_FILENAME']) && realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
+    $query = (string)($_SERVER['QUERY_STRING'] ?? '');
+    header('Location: chat.php' . ($query !== '' ? '?' . $query : ''), true, 302);
+    exit;
+}
+
 require __DIR__ . '/includes/bootstrap.php';
 require_permission('chat.access');
 
