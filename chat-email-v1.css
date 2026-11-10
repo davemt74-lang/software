@@ -59,6 +59,13 @@
   font-size: .88rem;
   overflow-wrap: anywhere;
 }
+.message-body > .vp3-chat-gmail-review {
+  margin: .55rem 0 0;
+  padding: .55rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--line, #c8cfdb);
+  border-radius: 0;
+}
 .vp3-chat-gmail-review-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; }
 .vp3-chat-gmail-review a { color: inherit; font-weight: 700; text-decoration: underline; }
 .vp3-chat-gmail-review p { margin: .45rem 0 0; white-space: pre-wrap; }

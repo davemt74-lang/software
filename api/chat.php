@@ -4,6 +4,7 @@ require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-research-canvas-v1.php';
+require_once dirname(__DIR__).'/includes/agent-connection-gmail-inbox-initial-v1.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -163,7 +164,7 @@ try {
         $agentId=(int)($conversation['user_agent_id']??0);
         $rows=vp3_agent_chat_include_source_v380($pdo,$user,$agentId>0?['id'=>$agentId]:null,$conversationId,array_reverse($stmt->fetchAll()),$input['source_message_id']??null);
         $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,$rows);
-        echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages)]);
+        echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>agent_connection_gmail_inbox_chat_history_v1($pdo,$user,$agentId,$conversationId,vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages))]);
         exit;
     }
 
@@ -175,7 +176,7 @@ try {
         $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');
         $stmt->execute([$conversationId,$afterId]);
         $messages=agent_connection_youtube_history_v1($pdo,$userId,$scope['agent_id'],$conversationId,$stmt->fetchAll());
-        echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>vp3_initiative_research_canvas_history_v1($pdo,$userId,$scope['agent_id'],$conversationId,$messages)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>agent_connection_gmail_inbox_chat_history_v1($pdo,$user,$scope['agent_id'],$conversationId,vp3_initiative_research_canvas_history_v1($pdo,$userId,$scope['agent_id'],$conversationId,$messages))],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         exit;
     }
 

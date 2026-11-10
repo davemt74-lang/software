@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__).'/includes/agent-connection-gmail-inbox-initial-v1.php';
+require_once dirname(__DIR__).'/includes/user-agent-system-v236.php';
 
 function db(): PDO { return $GLOBALS['pdo']; }
 function setting(string $key, mixed $fallback=''): mixed { return $fallback; }
@@ -52,7 +53,13 @@ try {
     $pdo->exec('CREATE TABLE settings (setting_key VARCHAR(190) PRIMARY KEY, setting_value TEXT NOT NULL)');
     $pdo->exec('CREATE TABLE users (id INT UNSIGNED PRIMARY KEY, is_active TINYINT NOT NULL)');
     $pdo->exec('INSERT INTO users VALUES (1,1),(2,1),(3,1)');
-    $pdo->exec('CREATE TABLE chat_conversations (id BIGINT UNSIGNED PRIMARY KEY, user_id INT UNSIGNED NOT NULL, user_agent_id BIGINT UNSIGNED NULL)');
+    $pdo->exec("CREATE TABLE user_agents (id BIGINT UNSIGNED PRIMARY KEY, owner_user_id INT UNSIGNED NOT NULL, is_active TINYINT NOT NULL);
+        INSERT INTO user_agents VALUES (17,1,1),(18,1,1);
+        CREATE TABLE chat_conversations (id BIGINT UNSIGNED PRIMARY KEY, user_id INT UNSIGNED NOT NULL, user_agent_id BIGINT UNSIGNED NULL,
+            artist_workspace_id BIGINT UNSIGNED NULL, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        INSERT INTO chat_conversations (id,user_id,user_agent_id,artist_workspace_id) VALUES (170,1,17,5),(180,1,18,NULL),(190,2,NULL,NULL),(171,1,17,NULL);
+        CREATE TABLE chat_messages (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, conversation_id BIGINT UNSIGNED NOT NULL,
+            user_id INT UNSIGNED NULL, role VARCHAR(20) NOT NULL, message TEXT NOT NULL, context_json TEXT, created_at DATETIME NOT NULL)");
     $pdo->exec("CREATE TABLE notifications (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, user_id INT UNSIGNED NOT NULL,
         type VARCHAR(50) NOT NULL, title VARCHAR(190) NOT NULL, body VARCHAR(500) NOT NULL, target_url VARCHAR(500) NOT NULL,
         source_type VARCHAR(80) NOT NULL, source_id BIGINT UNSIGNED NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
@@ -231,6 +238,44 @@ try {
         && $chatView['chat_result']['items'][0]['item_ref'] === $ref
         && !isset($chatView['chat_result']['items'][0]['message_id'],$chatView['chat_result']['items'][0]['message_id_enc']),
         'the saved ID is encrypted and explicit private views expose only an opaque exact item selector');
+
+    $beforeDeliveryCalls = [$profileCalls,$listCalls,$metadataCalls,count($summaries)];
+    $deliveryRejected = static function(int $agent,int $cid,string $runId,int $status) use ($pdo,$users): bool {
+        try { agent_connection_gmail_inbox_chat_deliver_v1($pdo,$users[1],$agent,$cid,$runId); }
+        catch (RuntimeException $error) { return $error->getCode() === $status; }
+        return false;
+    };
+    first_review_check($deliveryRejected(18,170,$run,403) && $deliveryRejected(0,190,$run,403)
+        && $deliveryRejected(17,170,str_repeat('c',32),409)
+        && agent_connection_gmail_inbox_chat_delivery_current_v1($pdo,$users[1]) === null,
+        'only an exact current ready review and an owned main Chat can claim its existing report');
+    $delivery = agent_connection_gmail_inbox_chat_deliver_v1($pdo,$users[1],17,170,$run);
+    $anchor = $delivery['delivery'];
+    $post = $pdo->query('SELECT id,role,message,context_json FROM chat_messages WHERE conversation_id=170')->fetch();
+    first_review_check($anchor['state'] === 'posted' && $anchor['run_id'] === $run && $anchor['message_id'] === (int)$post['id']
+        && $delivery['review']['chat_result']['summary'] === 'Fixture subject theme.'
+        && $delivery['review']['chat_result']['summary_status'] === 'ready'
+        && $delivery['review']['chat_result']['items'][0]['item_ref'] === $ref
+        && !str_contains(json_encode($post,JSON_THROW_ON_ERROR),'Fixture subject theme.')
+        && !str_contains(json_encode($post,JSON_THROW_ON_ERROR),'PRIVATE_SUBJECT_SENTINEL')
+        && !isset($view(1,true)['report']['chat_delivery'])
+        && str_contains($noticeRows(1)[0]['target_url'],'agent=17&conversation_id=170&message_id='.$anchor['message_id']),
+        'an existing report backfills one content-free durable post in an owner workspace Chat and links its exact message');
+    $contender = new PDO($fixtureDsn,$login,$password,$options);
+    $replay = agent_connection_gmail_inbox_chat_deliver_v1($contender,$users[1],17,170,$run);
+    first_review_check($replay['delivery'] === array_replace($anchor,['state'=>'existing'])
+        && agent_connection_gmail_inbox_chat_deliver_v1($contender,$users[1],18,180,$run) === ['delivery'=>['state'=>'bound_elsewhere']]
+        && agent_connection_gmail_inbox_chat_deliver_v1($contender,$users[1],17,171,$run) === ['delivery'=>['state'=>'bound_elsewhere']]
+        && (int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn() === 1
+        && [$profileCalls,$listCalls,$metadataCalls,count($summaries)] === $beforeDeliveryCalls,
+        'independent retries return the same post without a duplicate or any Gmail or model calls');
+    $history = agent_connection_gmail_inbox_chat_history_v1($pdo,$users[1],17,170,[$post]);
+    $hydrated = json_decode($history[0]['context_json'],true,24,JSON_THROW_ON_ERROR)['gmail_inbox_review_v1'] ?? [];
+    first_review_check(($hydrated['message_id'] ?? 0) === $anchor['message_id'] && ($hydrated['report_ref'] ?? null) === $anchor['report_ref']
+        && $hydrated['review']['chat_result']['summary'] === $delivery['review']['chat_result']['summary']
+        && agent_connection_gmail_inbox_chat_history_v1($pdo,$users[1],18,180,[$post]) === [$post]
+        && agent_connection_gmail_inbox_chat_history_v1($pdo,$users[2],17,170,[$post]) === [$post],
+        'history rehydrates the saved report only on its exact existing private Chat post');
     $reads = 0;
     $openHttp = static function(string $method, string $url, array $headers) use (&$reads): array {
         if ($method !== 'GET' || !str_ends_with($url,'/messages/good?format=full')
@@ -285,6 +330,10 @@ try {
     });
     $changedRules = ['ignore_senders'=>'changed@example.test'];
     agent_connection_gmail_inbox_save_v1($pdo, $users[1], $form(1, $changedRules), $http);
+    first_review_check($deliveryRejected(17,170,$run,409)
+        && agent_connection_gmail_inbox_chat_history_v1($pdo,$users[1],17,170,$history) === [$post]
+        && agent_connection_gmail_inbox_chat_delivery_current_v1($pdo,$users[1]) === null,
+        'changing the live Gmail grant removes previously hydrated details while preserving the safe Chat marker');
     try { agent_connection_gmail_inbox_open_item_v1($pdo,$users[1],$ref,$openHttp); }
     catch (DomainException $error) { if (!in_array($error->getCode(),[403,404],true)) throw $error; }
     first_review_check($reads === 1,'a replaced review grant or policy invalidates old item references before Gmail access');

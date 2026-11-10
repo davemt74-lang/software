@@ -7,8 +7,8 @@ import {createHmac} from 'node:crypto';
 import {spawn} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-capability-chat-'));
 fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(path.join(tmp,'api'));
-for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php','chat-canvas-media-v1.php','agent-catch-up-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
-for(const name of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
+for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php','chat-canvas-media-v1.php','agent-catch-up-v1.php','gmail-inbox-initial-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
+for(const name of ['agent-runtime-routing-v420.php','ai-settings.php','agent-scheduling-v430.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
 const gelatoConnector=path.join(tmp,'includes/connected-gelato-v1.php');
 const gelatoSource=fs.readFileSync(gelatoConnector,'utf8');
@@ -23,6 +23,16 @@ $pdo=db();
 vp3_gelato_schema_v1($pdo);
 vp3_gelato_connect_v1($pdo,1,'https://kitchen.example.com','fmlink_'.str_repeat('d',43));
 `);
+const gmailConnector=path.join(tmp,'includes/agent-connection-gmail-v1.php');
+const gmailSource=fs.readFileSync(gmailConnector,'utf8');
+const fixtureGmail=gmailSource.replace(/function agent_connection_gmail_http_v1\([\s\S]*?(?=\nfunction agent_connection_gmail_request_v1)/,`function agent_connection_gmail_http_v1(): array {
+    file_put_contents(dirname(__DIR__).'/gmail-provider-called','unexpected request');
+    throw new RuntimeException('A saved Gmail review must not call its provider.');
+}
+`);
+assert.notEqual(fixtureGmail,gmailSource,'Intercept Gmail wire calls before starting the HTTP server');
+fs.writeFileSync(gmailConnector,fixtureGmail);
+fs.copyFileSync('tests/fixtures/gmail-durable-chat.php',path.join(tmp,'gmail-durable-chat.php'));
 // Provider transport is controlled; production Chat endpoints, context building,
 // reference checks, tool routing and message persistence still execute.
 fs.writeFileSync(path.join(tmp,'includes/ai-stream-v121.php'),`<?php
@@ -101,7 +111,9 @@ agent_connection_youtube_results_save_v1($pdo,1,$conversationId,$messageId,['que
     'expires_at'=>time()+600,'videos'=>[['video_id'=>'abcdefghijk','title'=>$title,'made_for_kids'=>false]]]);
 echo json_encode(['message_id'=>$messageId]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
-const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);
+const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{
+ stdio:['ignore','ignore','pipe'],env:{...process.env,VP3_GMAIL_CLIENT_ID:'fixture-gmail-id',VP3_GMAIL_CLIENT_SECRET:'fixture-gmail-secret'},
+});let logs='';child.stderr.on('data',x=>logs+=x);
 const base=`http://127.0.0.1:${port}`;let checks=0;
 async function post(endpoint,message,extra={},headers={}){
  const r=await fetch(base+'/api/'+endpoint,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify({action:'send',message,csrf_token:'fixture',knowledge_scope:'off',...extra})});
@@ -887,5 +899,110 @@ try{
  const gelatoBare=await post('chat-v236.php?agent=7','/ask gelato',named,gelatoHeaders);
  check(gelatoUnpaired.data?.answer.includes('not paired with this VP3 account')&&gelatoBare.data?.answer.includes('What would you like to ask Gelato?')
   &&gelatoReads().length===4,'unpaired owners, prompts and retries never trigger a Gelato read');
+ const gmailFixture=async (action,params={})=>{
+  const response=await fetch(base+'/gmail-durable-chat.php?'+new URLSearchParams({action,...params}));
+  const body=await response.text();
+  assert.ok(response.ok,body+'\n'+logs.slice(-1500));
+  return JSON.parse(body);
+ };
+ const gmailSummary='The saved subjects suggest reviewing the spring schedule.';
+ const gmailSubject='Private spring schedule header';
+ const gmailRun=(await gmailFixture('seed')).run_id;
+ const gmailChat=(await post('chat-v236.php?agent=7','',{action:'new'})).data.conversation_id;
+ const otherGmailChat=(await post('chat-v236.php?agent=7','',{action:'new'})).data.conversation_id;
+ await gmailFixture('workspace',{conversation:gmailChat});
+ const gmailBinding=owner=>createHmac('sha256','fixture').update(`working-attention|${owner}|`).digest('hex');
+ const requestGmail=async (fields,headers={})=>{
+  const response=await fetch(base+'/api/gmail-inbox-initial-v1.php',{method:'POST',headers:{'Content-Type':'application/json',...headers},
+   body:JSON.stringify({owner_key:'1',csrf_token:'fixture',...fields})});
+  const body=await response.text();
+  return {status:response.status,data:JSON.parse(body),body};
+ };
+ const gmailDelivery={action:'deliver',run_id:gmailRun,agent_id:7,conversation_id:gmailChat,
+  working_attention_binding:gmailBinding(1)};
+ const beforeGmail=await state();
+ const plainGmail=await requestGmail({action:'status'});
+ check(plainGmail.data?.review?.state==='ready'&&!plainGmail.body.includes(gmailSummary)
+  &&(await state()).messages===beforeGmail.messages,'an older ready Gmail report still has no Chat post after a status read');
+ const deliveredGmail=await requestGmail(gmailDelivery);
+ const gmailMarker=deliveredGmail.data?.delivery;
+ const savedGmailProjection=deliveredGmail.data?.review?.chat_result;
+ check(deliveredGmail.status===200&&gmailMarker?.state==='posted'&&gmailMarker.agent_id===7
+  &&gmailMarker.conversation_id===gmailChat&&Number.isSafeInteger(gmailMarker.message_id)
+  &&savedGmailProjection?.summary===gmailSummary&&savedGmailProjection.items?.[0]?.subject===gmailSubject
+  &&/^[a-f0-9]{64}$/.test(savedGmailProjection.items[0].item_ref)
+  &&!deliveredGmail.body.includes('fixture-encrypted-provider-id'),'the existing ready Gmail report reaches the active private Agent Chat in its artist workspace once: '+deliveredGmail.body);
+ const savedGmail=await gmailFixture('stored',{conversation:gmailChat});
+ const gmailSavedContext=JSON.parse(savedGmail[0]?.context_json||'{}');
+ check(savedGmail.length===1&&Number(savedGmail[0].id)===gmailMarker.message_id
+  &&gmailSavedContext.source==='agent_connection_gmail_first_review'&&gmailSavedContext.gmail_first_review_v1.run_id===gmailRun
+  &&gmailSavedContext.gmail_first_review_v1.report_ref===gmailMarker.report_ref
+  &&!JSON.stringify(savedGmail).includes(gmailSummary)&&!JSON.stringify(savedGmail).includes(gmailSubject),
+  'the saved Chat row retains an exact content-free marker');
+ const gmailLinks=await gmailFixture('links',{conversation:gmailChat});
+ const gmailLinkPointsToPost=href=>{
+  const link=new URL(href,base);
+  return link.pathname==='/chat.php'&&link.searchParams.get('agent')==='7'
+   &&link.searchParams.get('conversation_id')===String(gmailChat)
+   &&link.searchParams.get('message_id')===String(gmailMarker.message_id);
+ };
+ check(gmailLinkPointsToPost(gmailLinks.notification)&&gmailLinks.activity?.[0]?.actions?.some(action=>gmailLinkPointsToPost(action.href)),
+  'the existing bell event and Top of Mind link to the exact saved Gmail Chat message');
+ const gmailConnections=await requestGmail({action:'status',include_report:true});
+ check(gmailConnections.data?.review?.report?.summary===gmailSummary
+  &&gmailConnections.data.review.report.tokens_charged===247
+  &&!Object.hasOwn(gmailConnections.data.review.report,'chat_delivery'),
+  'Connections keeps the same saved result and original token charge without exposing its delivery binding');
+ const gmailReload=await post('chat-v236.php?agent=7','',{action:'load',conversation_id:gmailChat});
+ const gmailSync=await post('chat-v236.php?agent=7','',{action:'messages_after',conversation_id:gmailChat,after_id:0});
+ const legacyGmailReload=await post('chat.php','',{action:'load',conversation_id:gmailChat});
+ for(const [label,view] of [['reload',gmailReload],['incremental sync',gmailSync],['legacy reload',legacyGmailReload]]){
+  const row=view.data?.messages?.find(message=>Number(message.id)===gmailMarker.message_id);
+  const projected=JSON.parse(row?.context_json||'{}').gmail_inbox_review_v1;
+  check(projected?.message_id===gmailMarker.message_id&&projected?.conversation_id===gmailChat
+   &&projected?.agent_id===7&&projected?.review?.chat_result?.summary===gmailSummary
+   &&projected?.review?.chat_result?.items?.[0]?.subject===gmailSubject
+   &&!view.body.includes('fixture-encrypted-provider-id'),'the actual private Chat '+label+' hydrates the exact saved result: '+view.body);
+ }
+ const gmailReplay=await requestGmail(gmailDelivery);
+ const wrongBinding=await requestGmail({...gmailDelivery,working_attention_binding:gmailBinding(2)});
+ const foreignGmail=await requestGmail({...gmailDelivery,owner_key:'2',agent_id:9,working_attention_binding:gmailBinding(2)},
+  {'X-Fixture-User':'2'});
+ check(gmailReplay.data?.delivery?.state==='existing'&&gmailReplay.data.delivery.message_id===gmailMarker.message_id
+  &&(await state()).messages===beforeGmail.messages+1
+  &&wrongBinding.status>=400&&!wrongBinding.body.includes(gmailSubject)
+  &&foreignGmail.status>=400&&!foreignGmail.body.includes(gmailSubject),
+  'a retry returns the same row while a changed session or foreign Chat cannot hydrate it');
+ const gmailElsewhere=await requestGmail({...gmailDelivery,conversation_id:otherGmailChat});
+ await gmailFixture('copy',{message:gmailMarker.message_id,conversation:otherGmailChat});
+ const gmailCopied=await post('chat-v236.php?agent=7','',{action:'load',conversation_id:otherGmailChat});
+ const sameChatCopy=await gmailFixture('copy',{message:gmailMarker.message_id,conversation:gmailChat});
+ const gmailWithCopy=await post('chat-v236.php?agent=7','',{action:'load',conversation_id:gmailChat});
+ const hydratedIds=gmailWithCopy.data?.messages?.filter(message=>JSON.parse(message.context_json||'{}').gmail_inbox_review_v1)
+  .map(message=>Number(message.id));
+ check(gmailElsewhere.data?.delivery?.state==='bound_elsewhere'&&!gmailElsewhere.body.includes(gmailSubject)
+  &&!gmailCopied.body.includes(gmailSummary)&&!gmailCopied.body.includes(gmailSubject)
+  &&hydratedIds?.length===1&&hydratedIds[0]===gmailMarker.message_id&&!hydratedIds.includes(sameChatCopy.copied_id),
+  'a copied marker cannot hydrate Gmail report contents in either Chat');
+ const gmailReviewInquiry='i just ran the first email reveiw and there is absolutely nothng in the agent chat.';
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php']){
+  await (await fetch(youtubeFixture+'?'+new URLSearchParams({conversation:gmailChat,title:'Unrelated preceding YouTube playlist'}))).json();
+  const answer=await post(endpoint,gmailReviewInquiry,{...named,conversation_id:gmailChat},
+   {'X-Fixture-Model-Fail':'1','X-Fixture-Owner-Trap':'1'});
+  check(answer.data?.tool_receipt?.capability==='email.read'&&answer.data.tool_receipt.operation==='review_status'
+   &&answer.data.answer.includes(gmailSummary)&&!answer.data.answer.includes('youtube.search')
+   &&answer.data.actions?.some(action=>gmailLinkPointsToPost(action.url)),
+   'the reported typo reads the saved Gmail review even after a YouTube receipt through '+endpoint+': '+answer.body);
+ }
+ const gmailNatural=await post('chat.php','Show my latest inbox review report',{...named,conversation_id:otherGmailChat});
+ check(gmailNatural.data?.tool_receipt?.operation==='review_status'&&gmailNatural.data.answer.includes(gmailSummary)
+  &&gmailNatural.data.actions?.some(action=>gmailLinkPointsToPost(action.url)),
+  'a natural request in another private Chat finds the saved review and links to the original post');
+ await gmailFixture('disable');
+ const revokedGmail=await requestGmail(gmailDelivery);
+ const revokedGmailReload=await post('chat-v236.php?agent=7','',{action:'load',conversation_id:gmailChat});
+ check(revokedGmail.status>=400&&!revokedGmail.body.includes(gmailSummary)
+  &&!revokedGmailReload.body.includes(gmailSummary)&&!revokedGmailReload.body.includes(gmailSubject)
+  &&!fs.existsSync(path.join(tmp,'gmail-provider-called')),'Gmail revocation removes display data without rereading or recharging the report');
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

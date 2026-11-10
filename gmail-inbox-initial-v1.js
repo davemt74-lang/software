@@ -50,16 +50,19 @@
   let publishedWork = false;
   let completion = null;
   let completionSignature = '';
+  let delivery = null;
+  const projectedRows = new WeakSet();
   let reportSignature = '';
   let reviewSignal = null;
   let openedMessage = null;
+  const continuity = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
 
   function inScope() {
     if (stopped || denied || document.hidden || window.VP3_GMAIL_INBOX_INITIAL_V1 !== cfg || cfg.ownerKey !== owner
         || participant > 0 || window.VP3ParticipantContinuity?.selectedContext?.()) return false;
     if (host) return host.isConnected && (!app || app.open);
     const chat = window.STONEFELLOW_CHAT;
-    const live = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+    const live = continuity();
     return String(chat?.userId) === owner && Number(chat?.agentId || 0) === agent
       && chat?.workingAttentionBinding === binding && live?.agentId?.() === agent
       && live?.isReady?.() === true && !live?.isRestoring?.();
@@ -90,7 +93,7 @@
       return true;
     }
     const input = document.getElementById('chatInput');
-    const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+    const chat = continuity();
     if (!input || input.value.trim() || chat?.isBusy?.()) return false;
     if (replyCommand(command)) return chat?.requestGmailReviewAction?.(command) === true;
     chat?.showChatView?.();
@@ -211,7 +214,6 @@
       return `${value.scanned} of up to 50 headers checked.`;
     }
     if (value?.state === 'working') return 'Checking recent Gmail headers.';
-    if (value?.state === 'ready') return 'View the saved review in Connections.';
     if (value?.state === 'failed') return 'The first review could not finish.';
     return '';
   }
@@ -237,22 +239,65 @@
     });
   }
 
+  function chatTarget() {
+    if (!thread || !inScope() || thread.dataset.view !== 'chat') return null;
+    const id = continuity()?.conversationId?.();
+    return Number.isSafeInteger(id) && id >= 0 ? id : null;
+  }
+
+  function savedReviewRow(conversationId, runId = null) {
+    if (!conversationId) return null;
+    const rows = thread.querySelectorAll(`[data-chat-conversation-id="${conversationId}"][data-chat-message-role="assistant"]`);
+    for (const row of rows) {
+      const marker = row._vp3GmailInboxReviewV1;
+      if (!marker || (runId !== null && marker.run_id !== runId)
+          || marker.agent_id !== agent || marker.conversation_id !== conversationId
+          || !Number.isSafeInteger(marker.message_id) || marker.message_id < 1
+          || String(marker.message_id) !== row.dataset.chatMessageId || !itemRef(marker.report_ref)) continue;
+      if (!valid(marker.review) || marker.review.state !== 'ready' || marker.review.run_id !== marker.run_id) continue;
+      if (delivery?.run_id === marker.run_id && delivery.conversation_id === conversationId
+          && (marker.message_id !== delivery.message_id || marker.report_ref !== delivery.report_ref)) continue;
+      return row;
+    }
+    return null;
+  }
+
+  function needsDelivery(conversationId) {
+    return conversationId !== null && typeof binding === 'string' && binding !== '' && review?.state === 'ready'
+      && review.has_report === true && !continuity()?.isBusy?.()
+      && !(delivery?.run_id === review.run_id && delivery.conversation_id === conversationId)
+      && !savedReviewRow(conversationId,review.run_id);
+  }
+
   function renderCompletion() {
     if (!thread) return;
-    const visible = inScope() && thread.dataset.view === 'chat' && !pageError;
+    const target = chatTarget();
+    // An ordinary Chat load already checked the current grant. Reuse that
+    // projection once, then require a fresh read after leaving its context.
+    if (review === null) {
+      const loaded = savedReviewRow(target);
+      if (loaded && !projectedRows.has(loaded)) {
+        const marker = loaded._vp3GmailInboxReviewV1;
+        accept(marker.review,marker.run_id);
+      }
+    }
+    const visible = target !== null && !pageError;
     const ready = visible && review?.state === 'ready' && review.has_report === true
       && Number.isSafeInteger(review.total) && review.total >= 0 && review.total <= 50;
     const progress = visible && (active(review) || review?.state === 'failed');
-    if (!ready && !progress) {
+    const row = ready ? savedReviewRow(target,review.run_id) : null;
+    if (row) projectedRows.add(row);
+    const parent = progress ? thread : row?.querySelector('.message-body');
+    if (!parent || (completion && completion.parentElement !== parent)) {
       if (openedMessage && completion?.contains(openedMessage.panel)) closeMessage();
       completion?.remove();
       completion = null;
       completionSignature = '';
-      return;
+      if (!parent) return;
     }
 
     const reviewed = review.total === 1 ? '1 inbox message' : `${review.total} inbox messages`;
-    const headline = ready ? `First Gmail review complete. Reviewed ${reviewed}.`
+    const headline = ready ? `Reviewed ${reviewed}.`
       : [`Gmail Inbox Review · ${labels[review.state]}`,detail(review)].filter(Boolean).join('. ');
     const saved = ready ? review.chat_result : null;
     const summary = typeof saved?.summary === 'string' ? saved.summary.slice(0,8000).trim() : '';
@@ -266,14 +311,17 @@
     if (completion?.isConnected && completionSignature === signature) return;
     closeMessage();
     const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 100;
-    if (!completion?.isConnected) {
+    const mounted = !completion?.isConnected;
+    if (mounted) {
       completion = node('div','','vp3-chat-gmail-review');
-      thread.append(completion);
+      parent.append(completion);
     }
     completionSignature = signature;
     completion.dataset.gmailReviewState = review.state;
-    if (ready) completion.dataset.gmailReviewComplete = review.run_id;
-    else delete completion.dataset.gmailReviewComplete;
+    if (ready) {
+      completion.id = 'gmail-inbox-review';
+      completion.dataset.gmailReviewComplete = review.run_id;
+    } else delete completion.dataset.gmailReviewComplete;
     const status = node('span',headline);
     status.setAttribute('role','status');
     const link = node('a',ready ? 'Open review' : 'Open Inbox Review');
@@ -286,7 +334,8 @@
     appendItems(completion,'Messages in first review',saved?.items);
     if (batch) completion.append(node('small',batch));
     if (batch) appendItems(completion,'Messages in latest update',latest?.items);
-    if (nearBottom) thread.scrollTop = thread.scrollHeight;
+    if (ready && mounted && location.hash === '#gmail-inbox-review') completion.scrollIntoView({block:'center'});
+    else if (nearBottom) thread.scrollTop = thread.scrollHeight;
   }
 
   function publishWork() {
@@ -354,6 +403,10 @@
   }
   function nextCheck() {
     if (!active(review)) {
+      if (needsDelivery(chatTarget())) {
+        schedule('deliver',0);
+        return;
+      }
       // A review can start in Connections and finish in a separate worker.
       if (thread && ['needs_start','ready','failed'].includes(review?.state)) {
         schedule('status',inboxWorking(review) ? 2000 : 15000);
@@ -369,7 +422,7 @@
   function send(payload,signal) {
     return fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,
       headers:{'Content-Type':'application/json'},body:JSON.stringify({owner_key:owner,csrf_token:cfg.csrf,
-        ...(payload.action === 'open_item' ? {} : host ? {include_report:true} : thread ? {include_chat_result:true} : {}),...payload})});
+        ...(['open_item','deliver'].includes(payload.action) ? {} : host ? {include_report:true} : thread ? {include_chat_result:true} : {}),...payload})});
   }
   function accept(value, expectedRunId = null) {
     if (host && (value.start_token ?? null) !== startToken) {
@@ -416,6 +469,8 @@
   async function request(action, days) {
     if (pending || !inScope()) return;
     const payload = {action};
+    const target = action === 'deliver' ? chatTarget() : null;
+    if (action === 'deliver' && !needsDelivery(target)) return;
     if (action === 'start') {
       if (!host || !startToken || !canStart(review) || !daysAllowed.includes(days)) return;
       payload.days = days;
@@ -428,18 +483,50 @@
     const current = epoch;
     pending = {action,controller};
     if (start) start.disabled = true;
-    const timeout = setTimeout(() => controller.abort(),{status:8000,start:15000,advance:120000}[action]);
+    const timeout = setTimeout(() => controller.abort(),{status:8000,start:15000,advance:120000,deliver:18000}[action]);
     let failed = false;
     try {
+      if (action === 'deliver') {
+        const runId = review.run_id;
+        const conversation = target || await continuity()?.ensureConversation?.();
+        if (current !== epoch || !inScope()) return;
+        if (!conversation || conversation !== chatTarget() || review?.run_id !== runId) {
+          failed = true;
+          return;
+        }
+        Object.assign(payload,{run_id:runId,agent_id:agent,conversation_id:conversation,working_attention_binding:binding});
+      }
       if (action === 'advance') watchProgress(controller,current,payload.run_id,350);
       const response = await send(payload,controller.signal);
       const data = await response.json();
       if (current !== epoch || !inScope()) return;
+      if (action === 'deliver' && response.status === 409) {
+        failed = true;
+        return;
+      }
       if ([401,403,409,419].includes(response.status)) {
         closeMessage();
         denied = true;
         review = null;
         pageError = 'Reload to check Inbox review for your current account.';
+        return;
+      }
+      if (action === 'deliver' && response.ok && data?.ok === true) {
+        const anchor = data.delivery;
+        if (payload.conversation_id !== chatTarget() || payload.run_id !== review?.run_id) return;
+        if (['bound_elsewhere','removed'].includes(anchor?.state)) {
+          delivery = {run_id:payload.run_id,conversation_id:payload.conversation_id};
+          return;
+        }
+        if (!['posted','existing'].includes(anchor?.state) || anchor.run_id !== payload.run_id
+            || anchor.agent_id !== agent || anchor.conversation_id !== payload.conversation_id
+            || !Number.isSafeInteger(anchor.message_id) || anchor.message_id < 1 || !itemRef(anchor.report_ref)
+            || !valid(data.review) || data.review.state !== 'ready' || data.review.run_id !== payload.run_id) {
+          throw Error('Saved Gmail review anchor unavailable');
+        }
+        delivery = anchor;
+        accept(data.review,payload.run_id);
+        if (!savedReviewRow(payload.conversation_id,payload.run_id)) await continuity()?.syncConversation?.(payload.conversation_id);
         return;
       }
       if (!response.ok || data?.ok !== true || !valid(data.review)) throw Error('Review status unavailable');
@@ -448,7 +535,9 @@
     } catch (_) {
       if (current !== epoch || !inScope()) return;
       failed = true;
-      pageError = 'Inbox review could not be checked. Try again shortly.';
+      if (action !== 'status' || review?.state !== 'ready' || !savedReviewRow(chatTarget(),review.run_id)) {
+        pageError = 'Inbox review could not be checked. Try again shortly.';
+      }
     } finally {
       clearTimeout(timeout);
       pending = null;
@@ -469,6 +558,7 @@
   function refresh() {
     clearTimeout(timer);
     if (!inScope()) { closeMessage(); publishWork(); renderRailUnavailable(); renderCompletion(); return; }
+    renderCompletion();
     restoreCompose();
     if (pending) refreshPending = true;
     else schedule('status',0);
@@ -478,8 +568,9 @@
     closeMessage();
     clearTimeout(timer);
     stopProgress();
-    if (pending?.action === 'status') pending.controller.abort();
+    if (['status','deliver'].includes(pending?.action)) pending.controller.abort();
     review = null;
+    delivery = null;
     if (!denied) pageError = '';
     refreshPending = false;
     render();
@@ -504,7 +595,10 @@
   window.addEventListener('focus',refresh);
   document.addEventListener('visibilitychange',() => { if (document.hidden) invalidate(); else refresh(); });
   window.addEventListener('vp3:chat-context-ready',refresh);
-  window.addEventListener('vp3:chat-canvas-view-changed',renderCompletion);
+  window.addEventListener('vp3:chat-canvas-view-changed',() => { renderCompletion(); if (thread?.dataset.view === 'chat') refresh(); });
+  window.addEventListener('vp3:chat-message-persisted',event => {
+    if (event.detail?.element?._vp3GmailInboxReviewV1) renderCompletion();
+  });
   window.addEventListener('vp3:agent-orb-ready',publishWork);
   window.addEventListener('stonefellow:chat-context-changing',invalidate);
   window.addEventListener('vp3:participant-selection-changed',() => { invalidate(); refresh(); });

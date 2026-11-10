@@ -461,6 +461,8 @@ try {
         && $readSender['tool_receipt']['count'] === 1 && $readSender['email_private_read_v1'] && str_contains($readSender['answer'],'ID: existing')
         && $voiceRead['tool_receipt']['reason'] === 'scope_restricted' && $searchCalls === 1
         && agent_connection_email_chat_plan_v1('Gmail search: first email review')['operation'] === 'search'
+        && agent_connection_email_chat_plan_v1('/gmail review')['operation'] === 'review_status'
+        && agent_connection_email_chat_plan_v1('Where is my latest Gmail inbox review?')['operation'] === 'review_status'
         && agent_connection_email_chat_plan_v1('Draft an email to buyer@example.test about the first Gmail review')['operation'] === 'draft'
         && agent_connection_email_chat_plan_v1('Find messages from Alex') === null
         && agent_connection_email_chat_plan_v1('Notify me when I get a message from Alex') === null
@@ -605,6 +607,7 @@ try {
     $itemLabels = [['from'=>'private-inbox@example.test','subject'=>'PRIVATE_INBOX_SUBJECT','category'=>'new']];
     gmail_connection_check_v1(!isset($plainStatus['chat_result']) && !isset($plainStatus['inbox_working_until'])
         && $chatStatus['chat_result'] === ['summary'=>'The sampled subjects suggest scheduling.',
+            'summary_status'=>'ready','important'=>2,'replies'=>1,
             'items'=>$itemLabels,'latest'=>['total'=>4,'important'=>2,'replies'=>1,
                 'at'=>str_replace(' ','T',$latestReview['at']).'Z','items'=>$itemLabels]]
         && isset($chatStatus['inbox_working_until']) && !isset($afterLease['inbox_working_until'])

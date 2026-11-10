@@ -326,14 +326,26 @@ function vp3_agent_activity_gmail_review_v1(PDO $pdo, array $scope): array
         'needs_start'=>'Choose a first review window in Connections.',
         'queued'=>'Queued',
         'working'=>($view['stage'] ?? '') === 'summary' ? 'Working · Preparing the AI summary' : 'Working · Checking Gmail headers',
-        'ready'=>'Ready · Review saved in Connections',
+        'ready'=>'Ready to read in Chat',
         'failed'=>'Failed · Open Connections to retry',
         default=>'',
     };
     if ($detail === '') return [];
-    return [vp3_agent_activity_card_v1('gmail:first-review', 'gmail_inbox_review', 'Gmail Inbox Review', $detail, [
-        ['kind'=>'url', 'label'=>'Open Connections', 'href'=>url('/connections.php?app=gmail#gmail-inbox-review')],
-    ])];
+    if ($view['state'] === 'ready') {
+        $delivery = agent_connection_gmail_inbox_chat_delivery_current_v1($pdo, $scope['user']);
+        $cid = $delivery['conversation_id'] ?? $scope['conversation_id'];
+        $href = vp3_agent_activity_chat_href_v1($delivery['agent_id'] ?? $scope['agent_id'], $cid);
+        $action = ['kind'=>'url', 'label'=>'View in Chat', 'href'=>$href];
+        if ($delivery) $action['href'] .= '&message_id='.$delivery['message_id'];
+        if ($cid > 0 && ($delivery['agent_id'] ?? $scope['agent_id']) === $scope['agent_id']) {
+            $action['kind'] = 'chat';
+            $action['conversation_id'] = $cid;
+            if ($delivery) $action['message_id'] = $delivery['message_id'];
+        }
+    } else {
+        $action = ['kind'=>'url', 'label'=>'Open Connections', 'href'=>url('/connections.php?app=gmail#gmail-inbox-review')];
+    }
+    return [vp3_agent_activity_card_v1('gmail:first-review', 'gmail_inbox_review', 'Gmail Inbox Review', $detail, [$action])];
 }
 
 /** The same confirmed outcome that was saved to Chat and indexed by Brain. */

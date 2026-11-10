@@ -15,6 +15,7 @@ require_once dirname(__DIR__) . '/includes/video-meetings-commitment-command-v18
 require_once dirname(__DIR__) . '/includes/agent-chat-runtime-v2160.php';
 require_once dirname(__DIR__) . '/includes/initiative-product-launch-v1.php';
 require_once dirname(__DIR__) . '/includes/agent-initiative-research-canvas-v1.php';
+require_once dirname(__DIR__) . '/includes/agent-connection-gmail-inbox-initial-v1.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 $user=current_user();if(!$user||!has_permission('chat.access',$user)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'Chat access is not available for this account.']);exit;}
 if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!hash_equals(vp3_catch_up_page_binding_v1($user),(string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])){
@@ -62,7 +63,7 @@ if($action==='load'){
     $agentId=(int)$principal['agent_id'];
     $rows=vp3_agent_chat_include_source_v380($pdo,$user,$activeAgent,$conversationId,array_reverse($stmt->fetchAll()),$input['source_message_id']??null);
     $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,$rows);
-    echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages),'agent_name'=>(string)$principal['display_name']]);
+    echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>agent_connection_gmail_inbox_chat_history_v1($pdo,$user,$agentId,$conversationId,vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages)),'agent_name'=>(string)$principal['display_name']]);
     exit;
 }
 if($action==='messages_after'){
@@ -83,7 +84,7 @@ if($action==='messages_after'){
     $stmt->execute([$conversationId,$afterId,...$pending]);
     $agentId=(int)$principal['agent_id'];
     $messages=agent_connection_youtube_history_v1($pdo,$userId,$agentId,$conversationId,$stmt->fetchAll());
-    echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>agent_connection_gmail_inbox_chat_history_v1($pdo,$user,$agentId,$conversationId,vp3_initiative_research_canvas_history_v1($pdo,$userId,$agentId,$conversationId,$messages))],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     exit;
 }
 if($action==='delete'){$conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');homeserver_agent_v018_forget($userId,$conversationId);$pdo->prepare('DELETE FROM chat_conversations WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);echo json_encode(['ok'=>true]);exit;}

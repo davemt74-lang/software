@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-connection-gmail-inbox-v1.php';
+require_once __DIR__.'/agent-connection-gmail-inbox-chat-delivery-v1.php';
 
 function agent_connection_gmail_inbox_initial_install_v1(PDO $pdo): void
 {
@@ -177,8 +178,11 @@ function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string
 /** Only explicit, current owner Chat reads receive reviewed item labels. */
 function agent_connection_gmail_inbox_initial_chat_result_v1(array $report, array $scope, string $runId): array
 {
+    $summaryStatus = $report['summary_status'] ?? 'unverified';
     $result = ['summary'=>($report['summary_status'] ?? '') === 'ready' && is_string($report['summary'] ?? null)
         ? mb_substr($report['summary'], 0, 1000) : '',
+        'summary_status'=>in_array($summaryStatus,['ready','unavailable','unverified','no_messages'],true)?$summaryStatus:'unverified',
+        'important'=>(int)($report['important'] ?? 0),'replies'=>(int)($report['replies'] ?? 0),
         'items'=>agent_connection_gmail_inbox_review_items_v1($report,$scope,'first:'.$runId)];
     $latestJson = (string)($scope['policy']['last_review_json'] ?? '');
     $latest = json_decode($latestJson,true,12);
@@ -222,6 +226,7 @@ function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, boo
             return ['state'=>'unavailable','limit'=>50];
         }
         if ($includeReport) {
+            unset($report['chat_delivery']);
             $report['items'] = agent_connection_gmail_inbox_review_items_v1($report,$live,'first:'.$row['run_id']);
             $view['report'] = $report;
         }

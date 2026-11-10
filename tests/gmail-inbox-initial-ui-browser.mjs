@@ -13,6 +13,8 @@ const privateSummary = 'The sampled subjects suggest billing <b>follow-up</b>.';
 const privateBody = 'Exact saved message body <img src=x onerror=alert(1)>.';
 const firstRef = 'c'.repeat(64);
 const latestRef = 'd'.repeat(64);
+const reportRef = 'e'.repeat(64);
+const savedMessageId = 50;
 const firstItem = {subject:privateSubject,from:'private@example.test',category:'reply',item_ref:firstRef};
 const legacyItem = {subject:'Older header only',from:'older@example.test',category:'new'};
 const latestItem = {subject:'Latest item',from:'later@example.test',category:'important',item_ref:latestRef};
@@ -54,6 +56,8 @@ let apiViewToken = startToken;
 let advanceGate = null;
 let statusGate = null;
 let workerStartsReview = false;
+let delivered = null;
+let newConversations = 0;
 const requests = [];
 const turns = [];
 const count = (action,surface) => requests.filter(row => row.action === action && (!surface || row.surface === surface)).length;
@@ -87,7 +91,8 @@ window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:'review-fixt
 window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:'review-fixture',activityEndpoint:'/api/hub',chatUrl:'/chat.php'};
 window.STONEFELLOW_NOTIFICATION_CENTER={};
 window.StonefellowPremiumVoiceV122={};
-window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant?{participant_id:2}:null};
+window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant?{participant_id:2}:null,
+  clearSelection:()=>{window.fixtureParticipant=false;}};
 </script>
 ${chatScripts.map(name => `<script src="/${name}" defer></script>`).join('')}${chatRuntime}`;
 
@@ -112,8 +117,9 @@ try {
         body:execFileSync('php',[phpFixture,url.search.slice(1),JSON.stringify(project(true,initialViewToken,true))],{encoding:'utf8'})});
     }
     if (url.pathname === '/chat.php') {
-      const body = url.searchParams.has('without_review')
+      let body = url.searchParams.has('without_review')
         ? chatMarkup.replace(chatRuntime,'') : chatMarkup;
+      if (url.searchParams.has('empty_chat')) body = body.replace('initialConversationId:42','initialConversationId:0');
       return route.fulfill({contentType:'text/html; charset=utf-8',body});
     }
     if (url.pathname === '/api/chat.php') {
@@ -123,16 +129,30 @@ try {
         return route.fulfill({json:{ok:true,conversation_id:42,user_message_id:2*turns.length,assistant_message_id:2*turns.length+1,
           answer:`Fixture Chat result ${turns.length}.`}});
       }
-      return route.fulfill({json:{ok:true,conversation_id:42,conversations:[],latest_message_id:1,
-        messages:body.action==='load'?[{id:1,role:'assistant',message:'Existing conversation'}]:[],updates:[]}});
+      if (body.action === 'new') newConversations++;
+      const conversation = body.conversation_id || 42;
+      const messages = body.action === 'load' ? [{id:1,role:'assistant',message:'Existing conversation'}] : [];
+      if (delivered?.conversation_id === conversation && ['load','messages_after'].includes(body.action)
+          && (body.action === 'load' || (body.after_id || 0) < savedMessageId)) {
+        const reviewContext = review.state === 'ready'
+          ? {source:'agent_connection_gmail_first_review',gmail_inbox_review_v1:{...delivered,review:project(false,undefined,true)}} : {};
+        messages.push({id:savedMessageId,role:'assistant',message:'Your first Gmail inbox review is ready.',context_json:JSON.stringify(reviewContext)});
+      }
+      return route.fulfill({json:{ok:true,conversation_id:conversation,conversations:[],latest_message_id:delivered?.message_id || 1,
+        messages,updates:[]}});
     }
     if (url.pathname === '/api/team-chat-v109.php') return route.fulfill({json:{ok:true,users:[],messages:[]}});
     if (url.pathname === '/api/hub') {
-      const detail = review.state === 'ready' ? 'Ready · View the saved review in Connections'
+      const ready = review.state === 'ready';
+      const detail = ready ? 'Ready to read in Chat'
         : review.stage === 'summary' ? 'Working · Preparing the AI summary' : 'Working · Checking Gmail headers';
+      const actions = ready && delivered
+        ? [{kind:'chat',label:'View in Chat',conversation_id:delivered.conversation_id,message_id:delivered.message_id,
+          href:`/chat.php?agent=7&conversation_id=${delivered.conversation_id}&message_id=${delivered.message_id}`}]
+        : [{kind:'url',label:ready?'View in Chat':'Open Connections',href:ready?'/chat.php?agent=7':connectionsUrl}];
       const sections = review.state === 'needs_start' ? [] : [{id:'gmail_inbox',label:'Gmail Inbox Review',items:[{
         id:'gmail:first-review',kind:'gmail_inbox_review',title:'Gmail Inbox Review',detail,
-        actions:[{kind:'url',label:'Open Connections',href:connectionsUrl}],
+        actions,
       }]}];
       return route.fulfill({json:{ok:true,state:{contract:'vp3.agent.activity.v1',owner_user_id:1,agent_id:7,
         conversation_id:42,working_attention_binding:'review-fixture',agent_name:'Longfellow',
@@ -149,6 +169,20 @@ try {
       const item = body.item_ref === firstRef ? firstItem : latestItem;
       return route.fulfill({json:{ok:true,item:{subject:item.subject,from:item.from,body:privateBody,
         auto_reply:body.item_ref===firstRef,...(body.item_ref===firstRef?{auto_reply_to:'approved@example.test'}:{})}}});
+    }
+    if (body.action === 'deliver') {
+      assert.equal(surface,'/chat.php');
+      assert.equal(review.state,'ready');
+      assert.deepEqual(body,{action:'deliver',owner_key:'1',csrf_token:'fixture',run_id:runId,
+        agent_id:7,conversation_id:body.conversation_id,working_attention_binding:'review-fixture'});
+      assert.ok([42,43].includes(body.conversation_id));
+      requests.push({...body,surface});
+      if (delivered && delivered.conversation_id !== body.conversation_id) {
+        return route.fulfill({json:{ok:true,delivery:{state:'bound_elsewhere'}}});
+      }
+      const state = delivered ? 'existing' : 'posted';
+      delivered = {run_id:runId,report_ref:reportRef,agent_id:7,conversation_id:body.conversation_id,message_id:savedMessageId};
+      return route.fulfill({json:{ok:true,delivery:{state,...delivered},review:project(false,undefined,true)}});
     }
     const includeReport = surface === '/connections.php';
     const expected = {action:body.action,owner_key:'1',csrf_token:'fixture',
@@ -231,12 +265,16 @@ try {
   // A review completed before this Chat loaded still appears in the thread.
   await page.goto(origin+'/chat.php');
   const completion = page.locator('#chatThread [data-gmail-review-complete]');
-  await completion.getByRole('status').getByText('First Gmail review complete. Reviewed 3 inbox messages.').waitFor();
+  const savedTurn = page.locator(`#chatThread [data-chat-message-id="${savedMessageId}"][data-chat-message-role="assistant"]`);
+  await completion.getByRole('status').getByText('Reviewed 3 inbox messages.',{exact:true}).waitFor();
   assert.equal(await completion.getByRole('link',{name:'Open review'}).getAttribute('href'),origin+connectionsUrl);
   await completion.getByText(privateSummary,{exact:true}).waitFor();
   await completion.getByText(/Latest inbox update.*2 new.*1 important.*1 reply/).waitFor();
   assert.equal(await completion.locator('b,img,script').count(),0,'Saved AI text is never interpreted as markup.');
-  assert.equal(await page.locator('#chatThread .message').count(),1,'The saved review projection does not add a stored turn.');
+  assert.equal(await page.locator('#chatThread .message').count(),2,'A previously completed review creates one real assistant turn.');
+  assert.equal(await completion.locator('xpath=ancestor::article').getAttribute('data-chat-message-id'),String(savedMessageId));
+  await savedTurn.getByText('Your first Gmail inbox review is ready.',{exact:true}).waitFor();
+  assert.equal(count('deliver'),1,'Opening the current Chat backfills the saved report once.');
   assert.equal(await page.getByText(privateSubject,{exact:true}).isVisible(),false);
   assert.equal(count('advance','/chat.php'),0,'Showing the saved result does not restart the review.');
   assert.equal(count('open_item','/chat.php'),0);
@@ -271,8 +309,29 @@ try {
   await page.getByText('Fixture Chat result 3.',{exact:true}).waitFor();
   assert.deepEqual(turns,[`Draft reply to Gmail review item ${firstRef}`,`Auto reply to Gmail review item ${firstRef}`,
     `Reply to Gmail review item ${latestRef}`]);
-  console.log('PASS exact first/latest message actions, legacy search, and per-message Auto reply visibility');
+  const reloadStatus = statusGate = {started:deferred(),release:deferred()};
+  await page.reload();
+  await waitForGate(reloadStatus.started,'held status after loading the durable turn');
+  await completion.getByText(privateSummary,{exact:true}).waitFor();
+  reloadStatus.release.resolve();
+  assert.equal(await completion.count(),1,'The durable receipt hydrates once on reload.');
+  assert.equal(count('deliver'),1,'A loaded review turn bypasses another delivery request.');
+  const otherDelivery = page.waitForResponse(response => response.url().endsWith(endpoint)
+    && response.request().postDataJSON()?.action === 'deliver');
+  await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.openConversation(43));
+  await otherDelivery;
+  assert.equal(await completion.count(),0,'Another Chat cannot display the report bound to the original thread.');
+  await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.openConversation(42));
+  await completion.getByText(privateSummary,{exact:true}).waitFor();
+  assert.equal(await completion.count(),1);
+  await page.locator('.vp3-orb-ball').hover();
+  await page.locator('[data-orb-activity]').click();
+  await page.locator('[data-activity-specialist="gmail-inbox-review"]').getByRole('button',{name:'View in Chat'}).click();
+  await savedTurn.getByText(privateSummary,{exact:true}).waitFor();
+  assert.equal(await completion.count(),1,'Top of Mind opens the same saved assistant turn.');
+  console.log('PASS exact Gmail message actions and one durable, conversation-bound review after reload');
 
+  delivered = null;
   review = needsStart();
   const initialStatus = page.waitForResponse(response => response.url().endsWith(endpoint) && response.request().postDataJSON()?.action === 'status');
   await page.goto(origin+'/chat.php');
@@ -377,6 +436,8 @@ try {
   review = {state:'unavailable',limit:50};
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await completion.waitFor({state:'detached'});
+  await savedTurn.getByText('Your first Gmail inbox review is ready.',{exact:true}).waitFor();
+  assert.equal(await savedTurn.getByText(privateSummary,{exact:true}).count(),0,'Revocation removes private details from the saved turn.');
   review = completed();
   console.log('PASS specialist progress, on-screen Chat completion, private report and revocation');
 
@@ -398,12 +459,14 @@ try {
   await page.goto(origin+'/chat.php?without_review=1');
   await page.locator('.vp3-orb-ball').hover();
   await page.locator('[data-orb-activity]').click();
-  await job.getByText(/Ready · View the saved review/).waitFor();
+  await job.getByText('Ready to read in Chat',{exact:true}).waitFor();
   assert.equal(await job.count(),1);
   assert.equal(await page.getByText(privateSubject,{exact:true}).count(),0);
   assert.equal(requests.length,beforeFallback,'Top of Mind can use its metadata projection alone.');
-  await job.getByRole('button',{name:'Open Connections'}).click();
-  await page.waitForURL(origin+connectionsUrl);
+  await job.getByRole('button',{name:'View in Chat'}).click();
+  await savedTurn.getByText('Your first Gmail inbox review is ready.',{exact:true}).waitFor();
+  assert.equal(await page.getByText(privateSubject,{exact:true}).count(),0,'The saved turn is content-free without its owner review projection.');
+  await page.goto(origin+connectionsUrl);
   await report.getByText(privateSubject,{exact:true}).waitFor();
 
   const startsBeforeStaleView = count('start');
@@ -435,6 +498,7 @@ try {
   assert.equal(count('start'),startsBeforeStaleView,'Only a page loaded with the matching settings token can start a review.');
 
   // The owner can leave Chat open in another window while starting in Connections.
+  delivered = null;
   review = needsStart();
   initialViewToken = startToken;
   workerStartsReview = true;
@@ -457,6 +521,16 @@ try {
   await gmailWork.waitFor({state:'detached'});
   assert.equal(await orb.getAttribute('data-working'),'false','The completed review has no synthetic Working state.');
   console.log('PASS real Chat boot observes a separately started review and restores live state after reload');
+
+  delivered = null;
+  const beforeWelcome = {new:newConversations,deliver:count('deliver'),advance:count('advance')};
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(origin+'/chat.php?empty_chat=1');
+  await savedTurn.getByText(privateSummary,{exact:true}).waitFor();
+  assert.deepEqual({new:newConversations,deliver:count('deliver'),advance:count('advance')},
+    {new:beforeWelcome.new+1,deliver:beforeWelcome.deliver+1,advance:beforeWelcome.advance},
+    'A ready review uses the normal welcome Chat creation and never rescans the mailbox.');
+  assert.equal(await completion.count(),1);
 
   assert.deepEqual(errors,[]);
   console.log('GMAIL_INBOX_INITIAL_UI_BROWSER=PASS (actual Connections, private report, progress and stale settings)');

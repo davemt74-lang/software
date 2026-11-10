@@ -1468,6 +1468,7 @@
       profile_attention:raw.profile_attention && typeof raw.profile_attention==='object' ? raw.profile_attention : null,
       initiative_work:raw.initiative_work && typeof raw.initiative_work==='object' ? raw.initiative_work : null,
       research_canvas_v1:raw.source==='agent_initiative' ? raw.research_canvas_v1 : null,
+      gmail_inbox_review_v1:raw.source==='agent_connection_gmail_first_review' ? raw.gmail_inbox_review_v1 : null,
       initiative_followthrough:raw.initiative_followthrough && typeof raw.initiative_followthrough==='object' ? raw.initiative_followthrough : null,
       initiative_action:raw.initiative_action && typeof raw.initiative_action==='object' ? raw.initiative_action : null,
       product_launch:raw.source===(raw.product_launch?.stage==='promotion_outcomes' ? 'agent_promotion_outcome' : 'agent_product_launch')
@@ -3695,7 +3696,10 @@
         context.canvas_media || null,
         context.youtube_results || null
       );
-      if(message.role==='assistant')bindResearchCanvasV1(renderedMessage,context.research_canvas_v1);
+      if(message.role==='assistant'){
+        bindResearchCanvasV1(renderedMessage,context.research_canvas_v1);
+        if(context.gmail_inbox_review_v1)renderedMessage._vp3GmailInboxReviewV1=context.gmail_inbox_review_v1;
+      }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
@@ -3740,7 +3744,10 @@
         return;
       }
       const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null,context.youtube_results||null);
-      if(message.role==='assistant')bindResearchCanvasV1(renderedMessage,context.research_canvas_v1);
+      if(message.role==='assistant'){
+        bindResearchCanvasV1(renderedMessage,context.research_canvas_v1);
+        if(context.gmail_inbox_review_v1)renderedMessage._vp3GmailInboxReviewV1=context.gmail_inbox_review_v1;
+      }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       const next=Array.from(thread.querySelectorAll('[data-chat-message-id]')).find(element=>element!==renderedMessage
         &&Number(element.dataset.chatConversationId)===targetId&&Number(element.dataset.chatMessageId)>Number(message.id));
