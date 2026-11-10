@@ -227,6 +227,7 @@ jobs:
           php tests/agent-initiative-context-v1.php
           php tests/agent-initiative-checkin-v1.php
           php tests/agent-artist-research-v1.php
+          php tests/agent-initiative-native-music-v1.php
           php tests/agent-initiative-tools-v1.php
           php tests/agent-initiative-tools-pipeline-v1.php
           php tests/agent-initiative-meeting-prep-pipeline-v1.php

@@ -352,6 +352,12 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
                 if(!$current||$current['revision']!==($goal['sources'][$primary]??null)||$current['title']!==($output['public_topic']??null)){
                     throw new RuntimeException('The open task or its public research choice changed.',409);
                 }
+            }elseif(str_starts_with($primary,'native-artist-interest:')){
+                $coverage=[];
+                $current=vp3_initiative_native_music_evidence_v1($pdo,$scope,new DateTimeImmutable('now',new DateTimeZone('UTC')),[$primary],$coverage)[$primary]??null;
+                if(($coverage['native_artist_research']??null)==='unavailable')throw new RuntimeException('Native listening history could not be checked.',503);
+                if(($coverage['native_artist_research']??null)==='forbidden')throw new RuntimeException('Background artist research from VP3 Music was turned off.',403);
+                if(!$current||$current['revision']!==($goal['sources'][$primary]??null))throw new RuntimeException('The VP3 Music listening source changed.',409);
             }elseif(!agent_connection_youtube_enabled_v1()||!agent_connection_youtube_consent_v1($pdo,$owner)
                 ||!vp3_youtube_research_enabled_v1($pdo,$owner,$kind)){
                 throw new RuntimeException('Background '.$kind.' research was turned off.',403);

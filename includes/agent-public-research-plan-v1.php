@@ -108,6 +108,7 @@ function vp3_public_research_plan_valid_v1(array $plan): bool
 function vp3_public_research_source_ref_valid_v1(string $kind,string $ref): bool
 {
     return (in_array($kind,['artist','topic'],true)&&preg_match('/\A'.$kind.'-interest:[a-f0-9]{64}\z/D',$ref))
+        ||($kind==='artist'&&preg_match('/\Anative-artist-interest:[a-f0-9]{64}\z/D',$ref))
         ||($kind==='topic'&&preg_match('/\Atask-research:[1-9][0-9]{0,17}\z/D',$ref));
 }
 

@@ -8,6 +8,7 @@ require_once __DIR__ . '/includes/agent-connection-youtube-playback-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-settings-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
+require_once __DIR__ . '/includes/agent-initiative-native-music-v1.php';
 require_permission('account.access');
 
 $user = current_user();
@@ -31,6 +32,21 @@ $youtubeArtistResearch = $youtubeEnabled && vp3_youtube_artist_research_enabled_
 $youtubeTopicResearch = $youtubeEnabled && vp3_youtube_research_enabled_v1($pdo, (int)$user['id'], 'topic');
 $youtubeWatchResearch = $youtubeEnabled && vp3_youtube_watch_research_enabled_v1($pdo, (int)$user['id']);
 $canChat = has_permission('chat.access', $user);
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'save_native_music_research') {
+    $saved = false;
+    if ($pdo && $canChat && verify_csrf()) {
+        try {
+            vp3_native_music_research_save_v1($pdo, (int)$user['id'], ($_POST['native_music_research'] ?? '') === '1');
+            $saved = true;
+        } catch (PDOException | DomainException) {}
+    }
+    redirect(url('/connections.php?music_research=' . ($saved ? 'saved' : 'failed') . '#music-research'));
+}
+$nativeMusicResearch = false;
+if ($pdo && $canChat) {
+    try { $nativeMusicResearch = vp3_native_music_research_grant_v1($pdo, (int)$user['id']) !== ''; }
+    catch (PDOException) {}
+}
 $autosend = $connected && $pdo ? agent_connection_gmail_autosend_settings_v1($pdo, $user, (int)$connection['id']) : null;
 $permissions = $gmailLinked
     ? $connection['permissions']
@@ -547,6 +563,26 @@ header('Cache-Control: private, no-store');
             <?php endif; ?>
           </section>
         <?php endforeach; ?>
+        <?php if ($pdo && $canChat): ?>
+          <section class="connections-section" id="music-research" aria-labelledby="music-research-title">
+            <h2 id="music-research-title">VP3 Music</h2>
+            <?php if (($_GET['music_research'] ?? '') === 'saved'): ?>
+              <p class="connections-notice connections-success" role="status">Artist research preference saved.</p>
+            <?php elseif (($_GET['music_research'] ?? '') === 'failed'): ?>
+              <p class="connections-notice connections-error" role="alert">Artist research preference could not be saved.</p>
+            <?php endif; ?>
+            <form method="post" action="<?= e(url('/connections.php')) ?>">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="save_native_music_research">
+              <label class="connections-permission">
+                <input type="checkbox" name="native_music_research" value="1" <?= $nativeMusicResearch ? 'checked' : '' ?>>
+                <span>Use recent VP3 Music listening for artist research</span>
+              </label>
+              <p class="connections-muted">With Initiative enabled, separate Music Player listening sessions in the past seven days can prompt research about artists with a public profile. Sessions need a 15-minute break between them. Plays started from Chat suggestions stay outside this setting. Public searches use the artist name. Research can use tokens and reports can appear in your private Agent Chat.</p>
+              <button class="connections-button" type="submit">Save preference</button>
+            </form>
+          </section>
+        <?php endif; ?>
       </div>
     </div>
   </main>
