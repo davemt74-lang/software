@@ -76,7 +76,9 @@ function agent_connection_email_chat_plan_v1(string $query, bool $spoken=false):
         return ['operation'=>'read','message_id'=>$match[1]];
     }
     if (!preg_match('/\A(?:(?:draft|write|compose|prepare|send)\s+(?:me\s+)?(?:(?:an?|the)\s+)?(?:gmail\s+)?e-?mail\b|e-?mail(?=\s+[^\s]+@))(?=\s|\z)(.*)\z/isu', $query, $match)) {
-        if (preg_match('/\b(?:first|initial)\s+(?:gmail(?:\s+inbox)?|inbox|e-?mail)\s+(?:review|reveiw|scan)\b/iu',$command)) {
+        if (strcasecmp($command, '/gmail review') === 0
+            || preg_match('/\b(?:first|initial)\s+(?:gmail(?:\s+inbox)?|inbox|e-?mail)\s+(?:review|reveiw|scan)\b/iu',$command)
+            || preg_match('/\A(?:(?:show|open|read|find)(?: me)? |where (?:is|are) )?(?:my |the )?(?:latest |last )?(?:gmail(?: inbox)?|inbox|e-?mail) (?:review|scan)(?: results?| report)?\z/iu',$command)) {
             return ['operation'=>'review_status'];
         }
         return null;
@@ -194,11 +196,15 @@ function agent_connection_email_first_review_chat_v1(PDO $pdo, array $user): arr
         'disabled' => ['blocked','setup_required'],
         default => ['failed','check_failed'],
     };
+    $delivery = $private ? agent_connection_gmail_inbox_chat_delivery_current_v1($pdo,$user) : null;
+    $action = $delivery ? ['type'=>'open_url','label'=>'View Gmail review in Chat',
+        'url'=>url('/chat.php?agent='.($delivery['agent_id'] ?: 'system').'&conversation_id='.$delivery['conversation_id'].'&message_id='.$delivery['message_id'])]
+        : ['type'=>'open_url','url'=>url('/connections.php?app=gmail#gmail-inbox-review'),
+            'label'=>$private ? 'Open saved Gmail report' : 'Open Inbox Review'];
     return [
         'handled'=>true,
         'answer'=>$answer,
-        'actions'=>[['type'=>'open_url','url'=>url('/connections.php?app=gmail#gmail-inbox-review'),
-            'label'=>$state === 'ready' ? 'Open saved Gmail report' : 'Open Inbox Review']],
+        'actions'=>[$action],
         'sources'=>[],
         'email_private_read_v1'=>$private,
         'tool_receipt'=>vp3_tool_receipt_v1('email.read','review_status',$status,$reason),

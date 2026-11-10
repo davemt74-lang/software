@@ -33,12 +33,13 @@ try {
 
     $action = $body['action'] ?? null;
     $fields = ['action', 'owner_key', 'csrf_token'];
-    if ($action !== 'open_item') $fields[] = 'include_report';
+    if (!in_array($action,['open_item','deliver'],true)) $fields[] = 'include_report';
     if ($action === 'start') $fields = [...$fields, 'days', 'start_token'];
     if ($action === 'advance') $fields[] = 'run_id';
+    if ($action === 'deliver') $fields = [...$fields, 'run_id', 'agent_id', 'conversation_id', 'working_attention_binding'];
     if (in_array($action, ['status', 'advance'], true)) $fields[] = 'include_chat_result';
     if ($action === 'open_item') $fields[] = 'item_ref';
-    if (!in_array($action, ['status', 'start', 'advance', 'open_item'], true) || array_diff(array_keys($body), $fields)
+    if (!in_array($action, ['status', 'start', 'advance', 'open_item', 'deliver'], true) || array_diff(array_keys($body), $fields)
         || (array_key_exists('include_report', $body) && !is_bool($body['include_report']))
         || (array_key_exists('include_chat_result', $body) && !is_bool($body['include_chat_result']))
         || (!empty($body['include_report']) && !empty($body['include_chat_result']))) {
@@ -58,8 +59,20 @@ try {
         throw new RuntimeException('Invalid review window or start token.', 422);
     }
     $runId = $body['run_id'] ?? null;
-    if ($action === 'advance' && (!is_string($runId) || !preg_match('/\A[a-f0-9]{32}\z/D', $runId))) {
+    if (in_array($action,['advance','deliver'],true) && (!is_string($runId) || !preg_match('/\A[a-f0-9]{32}\z/D', $runId))) {
         throw new RuntimeException('Invalid review ID.', 422);
+    }
+    if ($action === 'deliver') {
+        $agentId = $body['agent_id'] ?? null;
+        $conversationId = $body['conversation_id'] ?? null;
+        $binding = $body['working_attention_binding'] ?? null;
+        if (!is_int($agentId) || $agentId < 0 || $agentId > 9007199254740991
+            || !is_int($conversationId) || $conversationId < 1 || $conversationId > 9007199254740991
+            || !is_string($binding) || !preg_match('/\A[a-f0-9]{64}\z/D',$binding)) {
+            throw new RuntimeException('Choose an exact private Agent Chat.',422);
+        }
+        if (!function_exists('vp3_catch_up_page_binding_v1')) require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
+        if (!hash_equals(vp3_catch_up_page_binding_v1($user),$binding)) throw new RuntimeException('Chat session changed.',403);
     }
     $itemRef = $body['item_ref'] ?? null;
     if ($action === 'open_item' && (!is_string($itemRef) || !preg_match('/\A[a-f0-9]{64}\z/D', $itemRef))) {
@@ -69,6 +82,12 @@ try {
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Review storage unavailable.', 503);
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+
+    if ($action === 'deliver') {
+        echo json_encode(['ok'=>true]+agent_connection_gmail_inbox_chat_deliver_v1($pdo,$user,$agentId,$conversationId,$runId),
+            JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+        return;
+    }
 
     if ($action === 'open_item') {
         echo json_encode(['ok'=>true,'item'=>agent_connection_gmail_inbox_open_item_v1($pdo,$user,$itemRef)],
