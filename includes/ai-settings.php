@@ -554,7 +554,7 @@ function ai_history_messages(array $history): array
     return $messages;
 }
 
-function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null,?string $personalKey=null,bool $singleAttempt=false,?callable $observe=null): array
+function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null,?string $personalKey=null,bool $singleAttempt=false,?callable $observe=null,?callable $beforeDispatch=null): array
 {
     if(!function_exists('curl_init'))return ['ok'=>false,'error'=>'AI transport is unavailable.'];
     $parts=parse_url($endpoint);$host=strtolower((string)($parts['host']??''));
@@ -604,6 +604,26 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
         }
         curl_setopt_array($curl,$options);
         if(defined('CURLOPT_PROTOCOLS')&&defined('CURLPROTO_HTTPS'))curl_setopt($curl,CURLOPT_PROTOCOLS,CURLPROTO_HTTPS);
+        if($beforeDispatch!==null){
+            // Reserving usage can block on the owner lock. Check the claim again
+            // after that wait, before any of the owner's data leaves VP3.
+            try{$allowed=$beforeDispatch()===true;}catch(Throwable $error){$allowed=false;}
+            $remaining=function_exists('vp3_ai_budget_remaining_v1')?vp3_ai_budget_remaining_v1():null;
+            if(!$allowed||($remaining!==null&&$remaining<=0.005)){
+                curl_close($curl);
+                try{$meter?->finish($ticket,[],'aborted');}
+                catch(Throwable $error){return ai_v100_service_budget_failure($error);}
+                return !$allowed
+                    ?ai_v100_service_failure('Gmail summary access changed.','gmail_summary_access_changed')
+                    :ai_v100_service_failure('The inference time budget was exhausted.','inference_budget_exhausted');
+            }
+            if($remaining!==null){
+                $milliseconds=min((int)floor($remaining*1000),$options[CURLOPT_TIMEOUT_MS]??$options[CURLOPT_TIMEOUT]*1000);
+                $connect=min($milliseconds,$options[CURLOPT_CONNECTTIMEOUT_MS]??$options[CURLOPT_CONNECTTIMEOUT]*1000);
+                curl_setopt($curl,CURLOPT_TIMEOUT_MS,$milliseconds);
+                curl_setopt($curl,CURLOPT_CONNECTTIMEOUT_MS,$connect);
+            }
+        }
         $started=microtime(true);$response=curl_exec($curl);$status=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);$error=curl_error($curl);curl_close($curl);
         $decoded=is_string($response)&&strlen($response)<=2*1024*1024?json_decode($response,true):null;
         $success=$status>=200&&$status<300&&is_array($decoded);
@@ -675,6 +695,10 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
     $messages=ai_history_messages($history);
     $messages[]=['role'=>'user','content'=>$content];
     $budget=$complexity==='deep'?3200:($complexity==='complex'?2200:1400);
+    $gmailSummary=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.gmail-inbox-initial-summary.v1';
+    $beforeDispatch=$gmailSummary?($turnControl['before_gmail_summary_dispatch']??null):null;
+    if($gmailSummary)$budget=384;
     if(($turnControl['surface']??'')==='profile_agent'&&isset($turnControl['profile_max_output_tokens'])){
         $budget=min($budget,max(64,(int)$turnControl['profile_max_output_tokens']));
     }
@@ -701,12 +725,12 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             $result=ai_curl_json('https://api.openai.com/v1/responses',
                 ['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],
                 ['model'=>$model,'instructions'=>$prompt,'input'=>$messages,'max_output_tokens'=>$budget],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,false,$observer);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary,$observer,$beforeDispatch);
         }else{
             $result=ai_curl_json('https://api.anthropic.com/v1/messages',
                 ['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],
                 ['model'=>$model,'max_tokens'=>$budget,'system'=>$prompt,'messages'=>$messages],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,false,$observer);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary,$observer,$beforeDispatch);
         }
         $usage=[];$answer='';
         if(!empty($result['ok'])){
@@ -794,9 +818,12 @@ function ai_generate_chat_response(
     }
     $initiative=in_array($turnControl['protocol']??'',['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1'],true);
     $developmentOutline=($turnControl['surface']??'')==='tool_json'&&($turnControl['protocol']??'')==='vp3.agent-development-outline.v1';
+    $gmailSummary=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.gmail-inbox-initial-summary.v1';
     // Phone callers have no owner-session authority. Never run private Chat
     // context enrichment for this surface, including on a retry.
     if (($turnControl['surface']??'')==='phone_voice') $context=[];
+    elseif($gmailSummary) $history=$context=$visionImages=[];
     elseif($developmentOutline) $context=[];
     elseif(($turnControl['surface']??'')!=='cloud_mission'&&!$initiative
         && !$visionImages&&function_exists('chat_response_context'))$context=chat_response_context($query,$context);
@@ -810,6 +837,10 @@ function ai_generate_chat_response(
     }
     if($policy!==null&&empty($policy['enabled'])){
         return ai_v100_service_failure('This AI service is unavailable under your current account policy.','service_disabled');
+    }
+    if($gmailSummary&&(!$meter?->active||($serviceContext['service']??null)!=='initiative'
+        ||($serviceContext['background']??null)!==true)){
+        return ai_v100_service_failure('Gmail summary usage accounting is unavailable.','service_usage_unavailable');
     }
     $explicit=!empty($policy['configured']);
     $connection=$user&&function_exists('db')?db():null;
@@ -870,13 +901,20 @@ function ai_generate_chat_response(
                 }
                 $candidateOwn=$credential['own'];
             }
+            if($gmailSummary){
+                $before=$turnControl['before_gmail_summary']??null;
+                $dispatch=$turnControl['before_gmail_summary_dispatch']??null;
+                if(!($before instanceof Closure)||!($dispatch instanceof Closure)||$before()!==true){
+                    return ai_v100_service_failure('Gmail summary access changed.','gmail_summary_access_changed');
+                }
+            }
             $result=ai_hosted_chat_response($candidateProvider,$query,$history,$context,$user,$turnControl,$candidateOwn,$visionImages,$meter,$target,$scope);
             $result['provider']=$candidateProvider;
             if($candidateOwn!==null){
                 $result['compute_source']='user_provider';
                 $result['system_tokens_charged']=false;
             }
-            if(!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
+            if($gmailSummary||!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
         }
 
         if(!$meter?->active&&!$isOwn&&!empty($result['ok'])&&function_exists('subscription_ai_commit_usage')){

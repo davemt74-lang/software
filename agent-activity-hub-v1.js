@@ -160,10 +160,15 @@
         item[key] === undefined || typeof item[key] === 'string' && item[key].length <= 1200)) : [];
   }
   function renderSpecialists() {
-    if (!specialistsHost || !opened || !scope()) return;
+    const current = scope();
+    if (!specialistsHost || !opened || !current) return;
     const entries = specialistSnapshot();
+    // The live rail supplies the same Gmail review in Chat. Elsewhere the
+    // owner-scoped activity read provides a link, with no Gmail headers.
+    const inbox = !entries.some(item => item.key === 'gmail-inbox-review')
+      && snapshot?.sections.find(section => section.id === 'gmail_inbox')?.items[0];
     specialistsHost.replaceChildren();
-    if (!entries.length) return;
+    if (!entries.length && !inbox) return;
     specialistsHost.append(node('h3','Specialists'));
     for (const item of entries) {
       const article = node('article','','vp3-agent-activity-item');
@@ -178,6 +183,15 @@
         const viewed = window.VP3AgentOrb?.viewActivitySpecialist?.(item.key) ?? window.VP3ChatSpecialists?.view?.(item.key);
         if (viewed !== false) close(false);
       }));
+      article.append(actions);
+      specialistsHost.append(article);
+    }
+    if (inbox) {
+      const article = node('article','','vp3-agent-activity-item');
+      article.dataset.activitySpecialist = 'gmail-inbox-review';
+      article.append(itemCopy(inbox.title,inbox.detail,inbox.id));
+      const actions = node('div','','vp3-agent-activity-actions');
+      for (const action of inbox.actions) actions.append(button(action.label,event => void act(action,current,event)));
       article.append(actions);
       specialistsHost.append(article);
     }
@@ -271,7 +285,7 @@
       }
       if (found.length) nodes.push(section);
     }
-    if (!nodes.length) nodes.push(node('p','No current items to show.'));
+    if (!nodes.length && !specialistSnapshot().length && !listening?.childElementCount) nodes.push(node('p','No current items to show.'));
     sections.replaceChildren(...nodes);
     contextLabel.textContent = [snapshot.agent_name,snapshot.current_chat?.title].filter(value => typeof value === 'string' && value.trim()).join(' · ');
     const checked = new Date(snapshot.observed_at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
@@ -307,6 +321,7 @@
       if (visible() && mine === generation && signature(current) === signature(scope())) {
         snapshot = null;
         sections.replaceChildren();
+        renderSpecialists();
         verified.textContent = '';
         status.textContent = 'The latest items are unavailable. Use Refresh to try again.';
       }

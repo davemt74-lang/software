@@ -488,6 +488,14 @@ $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-emai
         'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
     ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
     . '<script src="'.e(url('/chat-email-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-email-v1.js'),0,12))).'" defer></script>';
+if (has_permission('account.access',$user)) {
+    $initiativeWorkbenchRuntime .= '<script>window.VP3_GMAIL_INBOX_INITIAL_V1='.json_encode([
+        'endpoint'=>url('/api/gmail-inbox-initial-v1.php'),'csrf'=>csrf_token(),
+        'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
+        'connectionsUrl'=>url('/connections.php?app=gmail#gmail-inbox-review'),
+    ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<script src="'.e(url('/gmail-inbox-initial-v1.js?v='.substr(hash_file('sha256',__DIR__.'/gmail-inbox-initial-v1.js'),0,12))).'" defer></script>';
+}
 if (user_has_role('admin',$user)) {
     $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-agent-development-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-agent-development-v1.css'),0,12))).'">'
         . '<script>window.VP3_CHAT_DEVELOPMENT_V1='.json_encode([

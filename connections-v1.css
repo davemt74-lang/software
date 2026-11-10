@@ -186,6 +186,13 @@
   border-radius: .55rem;
   background: #f8fafd;
 }
+[data-gmail-review-status]:empty { display: none; }
+.connections-inbox-review-start:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.connections-inbox-review-start p { flex: 0 0 100%; margin: 0; }
+.connections-inbox-review-start label { display: inline-flex; align-items: center; gap: .4rem; font-size: .875rem; }
+.connections-inbox-review-start select { padding: .35rem .45rem; border: 1px solid #cbd5e1; border-radius: .35rem; color: inherit; background: #fff; }
+.connections-inbox-review-summary { white-space: pre-wrap; overflow-wrap: anywhere; }
+[data-gmail-review-report] h5 { margin: .75rem 0 .3rem; font-size: .95rem; }
 .connections-inbox-counts { display: flex; flex-wrap: wrap; gap: .55rem 1.15rem; margin: .65rem 0 0; }
 .connections-inbox-counts div { display: flex; gap: .35rem; align-items: baseline; font-size: .875rem; }
 .connections-inbox-counts dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }

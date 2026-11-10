@@ -7,6 +7,7 @@
   const icons = {
     'image-generator':'M4 4h16v16H4z M4 16l5-5 4 4 2-2 5 5 M15 8h.01',
     'email':'M3 6h18v12H3z M3 7l9 6 9-6',
+    'gmail-inbox-review':'M3 6h18v12H3z M3 7l9 6 9-6',
     'development':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',
     'research':'M10 3a7 7 0 1 0 0 14 7 7 0 1 0 0-14 M15 15l5 5',
     'brainstorm':'M9 18h6 M10 21h4 M8 14a6 6 0 1 1 8 0l-1 2H9z',
