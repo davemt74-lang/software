@@ -898,16 +898,18 @@ if(!$ephemeralProtocol&&!empty($toolResult['email_outcome_chat_message_id'])){
     }
     $assistantMessageId=(int)$verifiedEmailReceipt['id'];
 }
-if(!$ephemeralProtocol&&$assistantMessageId===0){
-    $stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');
-    $stmt->execute([$conversationId,'assistant',$storedAnswer,$contextJson]);
-    $assistantMessageId=(int)$pdo->lastInsertId();
-    if($youtubeSearchResults!==null){
-        try{agent_connection_youtube_results_save_v1($pdo,$userId,$conversationId,$assistantMessageId,$youtubeSearchResults);}
-        catch(PDOException $error){error_log('VP3 YouTube result history could not be saved.');}
+if($assistantMessageId===0){
+    if(!$ephemeralProtocol){
+        $stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');
+        $stmt->execute([$conversationId,'assistant',$storedAnswer,$contextJson]);
+        $assistantMessageId=(int)$pdo->lastInsertId();
+        if($youtubeSearchResults!==null){
+            try{agent_connection_youtube_results_save_v1($pdo,$userId,$conversationId,$assistantMessageId,$youtubeSearchResults);}
+            catch(PDOException $error){error_log('VP3 YouTube result history could not be saved.');}
+        }
+        if($brainAllowed&&empty($toolResult['transcript_context'])&&!isset($toolResult['connected_site_context_v1'])&&empty($toolResult['email_private_read_v1'])&&!$publicResearchTool&&!$initiativeStatusRead)agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,$inputMode);
+        $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);
     }
-    if($brainAllowed&&empty($toolResult['transcript_context'])&&!isset($toolResult['connected_site_context_v1'])&&empty($toolResult['email_private_read_v1'])&&!$publicResearchTool&&!$initiativeStatusRead)agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,$inputMode);
-    $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);
 }elseif($verifiedEmailReceipt&&$brainAllowed&&function_exists('agent_brain_archive_message')){
     // History and Brain index the same generic Chat receipt, without any draft/body.
     try{
