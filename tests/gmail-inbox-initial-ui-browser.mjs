@@ -9,13 +9,15 @@ const endpoint = '/api/gmail-inbox-initial-v1.php';
 const runId = 'a'.repeat(32);
 const startToken = 'b'.repeat(64);
 const privateSubject = 'Private budget <img src=x onerror=alert(1)>';
+const privateSummary = 'The sampled subjects suggest billing <b>follow-up</b>.';
 const connectionsUrl = '/connections.php?app=gmail#gmail-inbox-review';
 const script = 'gmail-inbox-initial-v1.js';
-const assets = new Set(['chat.css','connections-v1.css','chat-specialist-rail-v1.css',
-  'agent-activity-hub-v1.css','agent-orb.css','agent-orb-particles.css','chat-specialist-rail-v1.js','agent-activity-hub-v1.js',
-  'agent-eyes-core.js','agent-orb.js','agent-orb-particles.js',script]);
-const chatScripts = ['agent-eyes-core.js','chat-specialist-rail-v1.js','agent-activity-hub-v1.js','agent-orb.js','agent-orb-particles.js',script];
+const chatScripts = ['chat.js','team-chat-admin-v109.js','chat-specialist-rail-v1.js','agent-eyes-core.js',
+  'agent-activity-hub-v1.js','agent-orb-adapter.js','agent-orb.js','agent-orb-particles.js'];
+const assets = new Set(['chat.css','connections-v1.css','chat-specialist-rail-v1.css','chat-email-v1.css',
+  'agent-activity-hub-v1.css','agent-orb.css','agent-orb-particles.css','team-chat-v109.css','team-chat-v109.js',script,...chatScripts]);
 const phpFixture = fileURLToPath(new URL('fixtures/gmail-inbox-initial-page-v1.php', import.meta.url));
+const chatRuntime = execFileSync('php',[phpFixture,'--chat-review-runtime','{}'],{encoding:'utf8'});
 const deferred = () => {
   let resolve;
   const promise = new Promise(done => { resolve = done; });
@@ -37,18 +39,21 @@ const summarizing = () => ({...inProgress('working'),stage:'summary',scanned:50,
 const completed = () => ({...inProgress('ready'),stage:'summary',scanned:50,truncated:true,has_report:true,total:3,
   report:{at:'2026-11-10 12:00:00',days:14,scanned:50,limit:50,truncated:true,total:3,important:1,replies:1,filtered:2,
     summary_status:'ready',summary:'The sampled subjects suggest billing.',tokens_charged:114,
-    items:[{subject:privateSubject,from:'Sender <private@example.test>',category:'reply'}]}});
+    items:[{subject:privateSubject,from:'Sender <private@example.test>',category:'reply'}]},
+  chat_result:{summary:privateSummary,latest:{total:2,important:1,replies:1,at:'2026-11-10T13:00:00Z'}}});
 let review = needsStart();
 let initialViewToken = startToken;
 let apiViewToken = startToken;
 let advanceGate = null;
 let statusGate = null;
+let workerStartsReview = false;
 const requests = [];
 const count = (action,surface) => requests.filter(row => row.action === action && (!surface || row.surface === surface)).length;
-const project = (includeReport,token = apiViewToken) => {
+const project = (includeReport,token = apiViewToken,includeChatResult = false) => {
   const view = structuredClone(review);
   if (!includeReport) delete view.report;
   else if (token !== null) view.start_token = token;
+  if (!includeChatResult) delete view.chat_result;
   return view;
 };
 async function screenshot(page,name,view) {
@@ -62,32 +67,31 @@ const chatMarkup = `<!doctype html>
 <link rel="stylesheet" href="/agent-orb.css"><link rel="stylesheet" href="/agent-activity-hub-v1.css">
 <link rel="stylesheet" href="/agent-orb-particles.css">
 <link rel="stylesheet" href="/chat-specialist-rail-v1.css">
-<style>#sfOnlineRailV109{position:fixed;right:4px;top:20px}</style>
-<main><section id="chatThread" data-view="chat"><article>Existing conversation</article></section>
-<form id="chatForm"><textarea id="chatInput" aria-label="Message"></textarea><button id="sendChatButton">Send</button></form></main>
-<aside id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside>
+<link rel="stylesheet" href="/chat-email-v1.css">
+<link rel="stylesheet" href="/chat.css">
+<div class="chat-app"><aside class="chat-sidebar"><button id="newChatButton">New Chat</button><div id="chatHistory"></div></aside>
+<main class="chat-main"><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section>
+<div id="chatComposerShell" class="chat-composer-shell"><form id="chatForm" class="chat-composer">
+<textarea id="chatInput" aria-label="Message"></textarea><button id="sendChatButton">Send</button></form></div></main></div>
 <script>
-window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:'review-fixture'};
-window.STONEFELLOW_CHAT_CONTINUITY=window.STONEFELLOW_CHAT_CONTINUITY_V87={
-  agentId:()=>7,conversationId:()=>42,isReady:()=>true,isRestoring:()=>false
-};
-window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:'review-fixture',activityEndpoint:'/api/hub'};
-window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',isMainChat:()=>true,state:()=>({state:'idle'}),
-  conversationRef:()=>({id:42,agent:7}),focusChat:()=>document.getElementById('chatInput').focus()};
+window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:'review-fixture',initialView:'chat',
+  initialConversationId:42,endpoint:'/api/chat.php',csrf:'fixture'};
+window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:'review-fixture',activityEndpoint:'/api/hub',chatUrl:'/chat.php'};
+window.STONEFELLOW_NOTIFICATION_CENTER={};
+window.StonefellowPremiumVoiceV122={};
 window.VP3ParticipantContinuity={selectedContext:()=>window.fixtureParticipant?{participant_id:2}:null};
-window.VP3_GMAIL_INBOX_INITIAL_V1={endpoint:${JSON.stringify(endpoint)},csrf:'fixture',ownerKey:'1',agentId:7,
-  connectionsUrl:${JSON.stringify(connectionsUrl)}};
 </script>
-${chatScripts.map(name => `<script src="/${name}" defer></script>`).join('')}`;
+${chatScripts.map(name => `<script src="/${name}" defer></script>`).join('')}${chatRuntime}`;
 
 const browser = await chromium.launch({headless:true,args:['--no-sandbox'],
   executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined});
 try {
-  const page = await browser.newPage({viewport:{width:1280,height:900}});
+  const context = await browser.newContext({viewport:{width:1280,height:900}});
+  const page = await context.newPage();
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on('pageerror', error => { errors.push(error.message); if (process.env.VP3_TEST_DEBUG) console.error(error.message); });
-  await page.route(origin+'/**',async route => {
+  await context.route(origin+'/**',async route => {
     const request = route.request();
     const url = new URL(request.url());
     const file = url.pathname.slice(1);
@@ -101,9 +105,15 @@ try {
     }
     if (url.pathname === '/chat.php') {
       const body = url.searchParams.has('without_review')
-        ? chatMarkup.replace(`<script src="/${script}" defer></script>`,'') : chatMarkup;
+        ? chatMarkup.replace(chatRuntime,'') : chatMarkup;
       return route.fulfill({contentType:'text/html; charset=utf-8',body});
     }
+    if (url.pathname === '/api/chat.php') {
+      const body = request.postDataJSON() || {};
+      return route.fulfill({json:{ok:true,conversation_id:42,conversations:[],latest_message_id:1,
+        messages:body.action==='load'?[{id:1,role:'assistant',message:'Existing conversation'}]:[],updates:[]}});
+    }
+    if (url.pathname === '/api/team-chat-v109.php') return route.fulfill({json:{ok:true,users:[],messages:[]}});
     if (url.pathname === '/api/hub') {
       const detail = review.state === 'ready' ? 'Ready · View the saved review in Connections'
         : review.stage === 'summary' ? 'Working · Preparing the AI summary' : 'Working · Checking Gmail headers';
@@ -120,7 +130,8 @@ try {
     const body = request.postDataJSON();
     const surface = new URL(request.frame().url()).pathname;
     const includeReport = surface === '/connections.php';
-    const expected = {action:body.action,owner_key:'1',csrf_token:'fixture',...(includeReport ? {include_report:true} : {})};
+    const expected = {action:body.action,owner_key:'1',csrf_token:'fixture',
+      ...(includeReport ? {include_report:true} : {include_chat_result:true})};
     if (body.action === 'start') Object.assign(expected,{days:14,start_token:startToken});
     if (body.action === 'advance') Object.assign(expected,{run_id:runId});
     assert.deepEqual(body,expected,`${surface} sends only its allowed review fields.`);
@@ -129,12 +140,12 @@ try {
     if (body.action === 'status' && statusGate) {
       const gate = statusGate;
       statusGate = null;
-      view = project(includeReport);
+      view = project(includeReport,apiViewToken,!includeReport);
       gate.started.resolve();
       await gate.release.promise;
     } else if (body.action === 'start') {
       assert.equal(review.state,'needs_start','A run is created only once.');
-      review = inProgress('queued');
+      review = inProgress(workerStartsReview ? 'working' : 'queued');
     } else if (body.action === 'advance') {
       const gate = advanceGate;
       assert.ok(gate,'A bounded advance may run once for this fixture step.');
@@ -143,7 +154,7 @@ try {
       await gate.release.promise;
       review = completed();
     } else assert.equal(body.action,'status');
-    try { await route.fulfill({json:{ok:true,review:view ?? project(includeReport)}}); }
+    try { await route.fulfill({json:{ok:true,review:view ?? project(includeReport,apiViewToken,!includeReport)}}); }
     catch (error) { if (!view) throw error; /* Scope changes can abort a held status. */ }
   });
 
@@ -184,6 +195,18 @@ try {
   assert.equal(count('advance','/connections.php'),1,'Refreshing a completed report does not scan again.');
   console.log('PASS actual Connections window selection, explicit start, bounded progress and escaped retained report');
 
+  // A review completed before this Chat loaded still appears in the thread.
+  await page.goto(origin+'/chat.php');
+  const completion = page.locator('#chatThread [data-gmail-review-complete]');
+  await completion.getByRole('status').getByText('First Gmail review complete. Reviewed 3 inbox messages.').waitFor();
+  assert.equal(await completion.getByRole('link',{name:'Open review'}).getAttribute('href'),origin+connectionsUrl);
+  await completion.getByText(privateSummary,{exact:true}).waitFor();
+  await completion.getByText(/Latest inbox update.*2 new.*1 important.*1 reply/).waitFor();
+  assert.equal(await completion.locator('b,img,script').count(),0,'Saved AI text is never interpreted as markup.');
+  assert.equal(await page.locator('#chatThread .message').count(),1,'The saved review projection does not add a stored turn.');
+  assert.equal(await page.getByText(privateSubject,{exact:true}).count(),0);
+  assert.equal(count('advance','/chat.php'),0,'Showing the saved result does not restart the review.');
+
   review = needsStart();
   const initialStatus = page.waitForResponse(response => response.url().endsWith(endpoint) && response.request().postDataJSON()?.action === 'status');
   await page.goto(origin+'/chat.php');
@@ -205,7 +228,8 @@ try {
   assert.equal(await orb.getAttribute('data-state'),'idle','Gmail work stays independent of the conversation state.');
   assert.equal(await hub.isVisible(),false,'Progress does not open Top of Mind automatically.');
   assert.equal(await page.locator('#vp3AgentChatPopup').isVisible(),false);
-  assert.equal(await page.locator('#chatThread').innerText(),'Existing conversation');
+  assert.equal(await page.getByText('Existing conversation',{exact:true}).isVisible(),true);
+  assert.equal(await page.locator('[data-gmail-review-state="working"]').isVisible(),false,'The desktop rail owns live progress.');
   assert.equal(await page.locator('#chatInput').inputValue(),'Keep this draft');
   await tile.click();
   await job.getByText('Working',{exact:true}).waitFor();
@@ -217,6 +241,7 @@ try {
   await hub.getByRole('button',{name:'Close',exact:true}).click();
   await page.setViewportSize({width:390,height:844});
   await tile.waitFor({state:'detached'});
+  await page.locator('#chatThread [data-gmail-review-state="working"]').waitFor();
   await page.locator('.vp3-orb-ball').hover();
   await page.locator('[data-orb-activity]').click();
   await job.getByText('Working',{exact:true}).waitFor();
@@ -249,14 +274,45 @@ try {
   assert.equal(count('advance','/chat.php'),1,'The mobile status probe leaves the active slice alone.');
   await screenshot(page,'mobile');
   chatAdvance.release.resolve();
-  await job.getByText('Ready',{exact:true}).waitFor();
+  await completion.waitFor();
   await gmailWork.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot()
+    .some(item => item.key === 'gmail-inbox-review')),false,'A completed review does not keep a duplicate rail entry.');
   assert.equal(await orb.getAttribute('data-working'),'false');
   assert.equal(await page.getByText(privateSubject,{exact:true}).count(),0,'Chat never renders private report metadata.');
   assert.equal(count('advance','/chat.php'),1);
   assert.equal(count('start','/chat.php'),0);
   assert.equal(await page.locator('#chatInput').inputValue(),'Keep this draft');
-  console.log('PASS desktop specialist, mobile Top of Mind, no unsolicited Chat content and participant privacy');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  assert.equal(await completion.count(),1,'A refresh leaves one completion in the active thread.');
+  review = {...completed(),inbox_working_until:new Date(Date.now()+60000).toISOString()};
+  await page.evaluate(() => {
+    document.body.dataset.stonefellowAgentState = 'listening';
+    window.dispatchEvent(new Event('focus'));
+  });
+  await gmailWork.waitFor();
+  await page.waitForFunction(() => document.querySelector('.vp3-orb-root').dataset.state === 'listening');
+  assert.equal(await orb.getAttribute('data-working'),'true','A verified new-mail lease is visible while the Agent listens.');
+  assert.equal(await completion.count(),1);
+  review = completed();
+  await gmailWork.waitFor({state:'detached'});
+  assert.equal(await orb.getAttribute('data-state'),'listening','Ending Gmail work preserves the foreground listening state.');
+  await page.evaluate(() => { delete document.body.dataset.stonefellowAgentState; });
+  await page.evaluate(() => {
+    window.fixtureParticipant = true;
+    window.dispatchEvent(new Event('vp3:participant-selection-changed'));
+  });
+  await completion.waitFor({state:'detached'});
+  await page.evaluate(() => {
+    window.fixtureParticipant = false;
+    window.dispatchEvent(new Event('vp3:participant-selection-changed'));
+  });
+  await completion.waitFor();
+  review = {state:'unavailable',limit:50};
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await completion.waitFor({state:'detached'});
+  review = completed();
+  console.log('PASS specialist progress, on-screen Chat completion, private report and revocation');
 
   await page.setViewportSize({width:1280,height:900});
   const late = statusGate = {started:deferred(),release:deferred()};
@@ -269,6 +325,7 @@ try {
   late.release.resolve();
   await page.waitForTimeout(200);
   assert.equal(await tile.count(),0,'A delayed response cannot restore the previous account’s specialist.');
+  assert.equal(await completion.count(),0,'A delayed response cannot restore the previous account’s completion.');
   assert.equal(await hub.isVisible(),false);
 
   const beforeFallback = requests.length;
@@ -310,6 +367,31 @@ try {
   await startForm.evaluate(form => form.requestSubmit());
   await page.waitForTimeout(100);
   assert.equal(count('start'),startsBeforeStaleView,'Only a page loaded with the matching settings token can start a review.');
+
+  // The owner can leave Chat open in another window while starting in Connections.
+  review = needsStart();
+  initialViewToken = startToken;
+  workerStartsReview = true;
+  const beforeNewWindow = page.waitForResponse(response => response.url().endsWith(endpoint));
+  await page.goto(origin+'/chat.php');
+  await beforeNewWindow;
+  const reviewWindow = await context.newPage();
+  await reviewWindow.goto(origin+connectionsUrl);
+  await reviewWindow.locator('[data-gmail-review-start] select').selectOption('14');
+  await reviewWindow.locator('[data-gmail-review-start] button').click();
+  await tile.waitFor({timeout:5000});
+  await gmailWork.waitFor({timeout:5000});
+  assert.equal(await orb.getAttribute('data-working'),'true');
+  await reviewWindow.close();
+  await page.reload();
+  await tile.waitFor();
+  await gmailWork.waitFor();
+  review = completed();
+  await completion.getByText(privateSummary,{exact:true}).waitFor();
+  await gmailWork.waitFor({state:'detached'});
+  assert.equal(await orb.getAttribute('data-working'),'false','The completed review has no synthetic Working state.');
+  console.log('PASS real Chat boot observes a separately started review and restores live state after reload');
+
   assert.deepEqual(errors,[]);
   console.log('GMAIL_INBOX_INITIAL_UI_BROWSER=PASS (actual Connections, private report, progress and stale settings)');
 } finally { await browser.close(); }

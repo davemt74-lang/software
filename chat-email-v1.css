@@ -50,6 +50,24 @@
   body:has(#sfOnlineRailV109:not([hidden])) .vp3-chat-email-specialist-status { display: none; }
 }
 
+.vp3-chat-gmail-review {
+  max-width: 790px;
+  margin: 0 auto 1rem;
+  padding: .65rem .8rem;
+  border: 1px solid var(--line, #c8cfdb);
+  border-radius: .55rem;
+  font-size: .88rem;
+  overflow-wrap: anywhere;
+}
+.vp3-chat-gmail-review-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; }
+.vp3-chat-gmail-review a { color: inherit; font-weight: 700; text-decoration: underline; }
+.vp3-chat-gmail-review p { margin: .45rem 0 0; white-space: pre-wrap; }
+.vp3-chat-gmail-review small { display: block; margin-top: .4rem; }
+@media (min-width: 761px) {
+  body:has(#sfOnlineRailV109:not([hidden]) [data-chat-specialist="gmail-inbox-review"])
+    .vp3-chat-gmail-review:not([data-gmail-review-complete]) { display: none; }
+}
+
 .vp3-chat-github-workflow {
   margin: .75rem 0;
   padding: .7rem .75rem;

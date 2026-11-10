@@ -51,6 +51,19 @@ $GLOBALS['fixtureDb'] = new PDO('sqlite::memory:');
 $GLOBALS['fixtureReview'] = json_decode($argv[2], true, 16, JSON_THROW_ON_ERROR);
 parse_str($argv[1] ?? '', $_GET);
 $root = dirname(__DIR__,2);
+if (($argv[1]??'') === '--chat-review-runtime') {
+    // Keep the PHP-rendered Chat configuration in the browser test too.
+    $chat = file_get_contents($root.'/chat.php');
+    $start = strpos($chat, '$initiativeWorkbenchRuntime .= \'<script>window.VP3_GMAIL_INBOX_INITIAL_V1=');
+    $end = $start === false ? false : strpos($chat, "\n}",$start);
+    if ($start === false || $end === false) throw new RuntimeException('The Gmail Chat runtime is missing.');
+    $initiativeWorkbenchRuntime = '';
+    $user = current_user();
+    $activeUserAgent = ['id'=>7];
+    eval(str_replace('__DIR__',var_export($root,true),substr($chat,$start,$end-$start)));
+    echo $initiativeWorkbenchRuntime;
+    return;
+}
 $source = file_get_contents($root.'/connections.php');
 $source = preg_replace('/^declare\(strict_types=1\);\R|^require(?:_once)? __DIR__ \. \'\/includes\/[^\']+\';\R/m', '', $source);
 $source = str_replace(

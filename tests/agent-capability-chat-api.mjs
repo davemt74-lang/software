@@ -80,7 +80,9 @@ agent_connection_youtube_consent_schema_v1($pdo);
 agent_connection_youtube_results_schema_v1($pdo);
 $pdo->prepare('INSERT OR IGNORE INTO agent_connection_youtube_consent_v1 VALUES (1,?,?)')->execute([VP3_YOUTUBE_CONSENT_POLICY_V1,time()]);
 $pdo->prepare('INSERT INTO chat_messages (conversation_id,role,message,context_json) VALUES (?,?,?,?)')
-    ->execute([$conversationId,'assistant','YouTube search results were shown in this Chat.',json_encode(['youtube_search_results_v1'=>true])]);
+    ->execute([$conversationId,'assistant','YouTube search results were shown in this Chat.',json_encode([
+        'youtube_search_results_v1'=>true,'tool_receipt'=>vp3_tool_receipt_v1('youtube.search','search','read_complete','',0,1),
+    ])]);
 $messageId=(int)$pdo->lastInsertId();
 agent_connection_youtube_results_save_v1($pdo,1,$conversationId,$messageId,['query'=>$title,'suggestion_kind'=>'playlist',
     'expires_at'=>time()+600,'videos'=>[['video_id'=>'abcdefghijk','title'=>$title,'made_for_kids'=>false]]]);
@@ -743,6 +745,23 @@ try{
  const sourceChat=(await post(youtubeEndpoint,'',{action:'new'})).data.conversation_id;
  const recallChat=(await post(youtubeEndpoint,'',{action:'new'})).data.conversation_id;
  const youtubeFixture=base+'/youtube-recall-fixture.php';
+ for(const endpoint of [youtubeEndpoint,'chat-stream-v121.php','chat.php']){
+  const cases=[
+   ['i just ran the first email reveiw and there is absolutely nothng in the agent chat.',[],false],
+   ['Did that finish? Where is the report from my upload?', ['youtube.search'],false],
+   ['Did that work?', ['email.read'],false],
+   ['Did that finish', ['youtube.search'],true],
+  ];
+  for(const [message,ids,expectedReceipt] of cases){
+   const conversation_id=(await post(youtubeEndpoint,'',{action:'new'})).data.conversation_id;
+   await (await fetch(youtubeFixture+'?'+new URLSearchParams({conversation:conversation_id,title:'Previous YouTube search'}))).json();
+   const result=await post(endpoint,message,{conversation_id,agent_context:{user_agent_id:7},input_mode:endpoint.includes('stream')?'voice':'text'},
+    {'X-Fixture-Participant-Owner-Plan':JSON.stringify({operation:'diagnose',ids})});
+   const youtubeReceipt=result.data?.tool_receipt?.capability==='youtube.search';
+   check(result.data?.ok===true&&youtubeReceipt===expectedReceipt&&result.data.answer.includes('youtube.search / search')===expectedReceipt,
+    endpoint+' only diagnoses the previous receipt for a standalone matching follow-up ('+message+'): '+result.body);
+  }
+ }
  const seedPlaylist=async title=>(await (await fetch(youtubeFixture+'?'+new URLSearchParams({conversation:sourceChat,title}))).json()).message_id;
  const sourceMessage=await seedPlaylist('Original cross-Chat playlist');
  const recall='It was a song in the YouTube playlist you returned in search results';

@@ -7,6 +7,7 @@
   if (endpoint.origin !== location.origin || destination.origin !== location.origin) return;
 
   const host = document.querySelector('[data-gmail-initial-review]');
+  const thread = host ? null : document.getElementById('chatThread');
   const app = host?.closest('details.connections-app');
   const form = host?.querySelector('[data-gmail-review-start]');
   const status = host?.querySelector('[data-gmail-review-status]');
@@ -27,9 +28,10 @@
   const timestamp = value => typeof value === 'string'
     ? Date.parse(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(value) ? value.replace(' ','T') + 'Z' : value) : NaN;
   const active = value => value?.state === 'queued' || value?.state === 'working';
+  const inboxWorking = value => value?.state === 'ready' && timestamp(value.inbox_working_until) > Date.now();
   const canStart = value => value?.state === 'needs_start' || value?.state === 'failed';
   const valid = value => value && states.has(value.state)
-    && (!active(value) || typeof value.run_id === 'string' && /^[a-f0-9]{32}$/.test(value.run_id));
+    && (!(active(value) || value.state === 'ready') || typeof value.run_id === 'string' && /^[a-f0-9]{32}$/.test(value.run_id));
   let review = host && valid(cfg.initialReview) ? cfg.initialReview : null;
   let pending = null;
   let timer = 0;
@@ -43,6 +45,9 @@
   let pageError = '';
   let railSignature = '';
   let publishedWork = false;
+  let completion = null;
+  let completionSignature = '';
+  let reviewSignal = null;
 
   function inScope() {
     if (stopped || denied || document.hidden || window.VP3_GMAIL_INBOX_INITIAL_V1 !== cfg || cfg.ownerKey !== owner
@@ -79,22 +84,74 @@
     top.location.assign(destination.href);
   }
   function renderRail() {
-    const next = inScope() && !pageError && ['queued','working','ready','failed'].includes(review?.state)
-      ? JSON.stringify([review.state,detail(review)]) : '';
+    const checkingInbox = inboxWorking(review);
+    const state = checkingInbox ? 'working' : review?.state;
+    const description = checkingInbox ? 'Checking new Gmail messages.' : detail(review);
+    const next = inScope() && !pageError && ['queued','working','failed'].includes(state)
+      ? JSON.stringify([state,description]) : '';
     if (next === railSignature) return;
     railSignature = next;
     if (!next) window.VP3ChatSpecialists?.remove(key);
     else window.VP3ChatSpecialists?.update(key, {
-      label:'Gmail Inbox Review',status:labels[review.state],detail:detail(review),
+      label:'Gmail Inbox Review',status:labels[state],detail:description,
       viewLabel:'Open Connections',onView:openReview,
     });
+  }
+
+  function renderCompletion() {
+    if (!thread) return;
+    const visible = inScope() && thread.dataset.view === 'chat' && !pageError;
+    const ready = visible && review?.state === 'ready' && review.has_report === true
+      && Number.isSafeInteger(review.total) && review.total >= 0 && review.total <= 50;
+    const progress = visible && (active(review) || review?.state === 'failed');
+    if (!ready && !progress) {
+      completion?.remove();
+      completion = null;
+      completionSignature = '';
+      return;
+    }
+
+    const reviewed = review.total === 1 ? '1 inbox message' : `${review.total} inbox messages`;
+    const headline = ready ? `First Gmail review complete. Reviewed ${reviewed}.`
+      : [`Gmail Inbox Review · ${labels[review.state]}`,detail(review)].filter(Boolean).join('. ');
+    const saved = ready ? review.chat_result : null;
+    const summary = typeof saved?.summary === 'string' ? saved.summary.slice(0,8000).trim() : '';
+    const latest = saved?.latest;
+    const batchAt = timestamp(latest?.at);
+    const batch = Number.isFinite(batchAt) && Number.isSafeInteger(latest.total) && latest.total > 0
+      && [latest.important,latest.replies].every(count => Number.isSafeInteger(count) && count >= 0 && count <= latest.total)
+      ? `Latest inbox update · ${new Date(batchAt).toLocaleString()} · ${latest.total} new · ${latest.important} important · ${latest.replies} ${latest.replies === 1 ? 'reply' : 'replies'}`
+      : '';
+    const signature = JSON.stringify([review.run_id,headline,summary,batch]);
+    if (completion?.isConnected && completionSignature === signature) return;
+    const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 100;
+    if (!completion?.isConnected) {
+      completion = node('div','','vp3-chat-gmail-review');
+      thread.append(completion);
+    }
+    completionSignature = signature;
+    completion.dataset.gmailReviewState = review.state;
+    if (ready) completion.dataset.gmailReviewComplete = review.run_id;
+    else delete completion.dataset.gmailReviewComplete;
+    const status = node('span',headline);
+    status.setAttribute('role','status');
+    const link = node('a',ready ? 'Open review' : 'Open Inbox Review');
+    link.href = destination.href;
+    if (new URLSearchParams(location.search).get('orb_embed') === '1' && window.parent !== window) link.target = '_top';
+    const header = node('div','','vp3-chat-gmail-review-heading');
+    header.append(status,link);
+    completion.replaceChildren(header);
+    if (summary) completion.append(node('p',summary));
+    if (batch) completion.append(node('small',batch));
+    if (nearBottom) thread.scrollTop = thread.scrollHeight;
   }
 
   function publishWork() {
     const orb = window.VP3AgentOrb;
     if (!orb?.setJobs) return;
-    const expiresAt = timestamp(review?.next_attempt_at);
-    const working = inScope() && !pageError && review?.state === 'working' && valid(review) && expiresAt > Date.now();
+    const expiresAt = timestamp(review?.state === 'working' ? review.next_attempt_at : review?.inbox_working_until);
+    const working = inScope() && !pageError && valid(review) && expiresAt > Date.now()
+      && (review.state === 'working' || inboxWorking(review));
     if (working || publishedWork) orb.setJobs('gmail',working ? [{id:'gmail:'+review.run_id,expiresAt}] : []);
     publishedWork = working;
   }
@@ -139,7 +196,7 @@
 
   function render() {
     publishWork();
-    if (!host) { renderRail(); return; }
+    if (!host) { renderRail(); renderCompletion(); return; }
     const line = review?.state === 'ready' ? 'First review complete.'
       : review ? [labels[review.state],detail(review)].filter(Boolean).join(' · ') : '';
     if (status) status.textContent = pageError || (!startToken && canStart(review) ? reloadMessage : line);
@@ -158,16 +215,23 @@
     timer = setTimeout(() => void request(action), delay);
   }
   function nextCheck() {
-    if (!active(review)) return;
+    if (!active(review)) {
+      // A review can start in Connections and finish in a separate worker.
+      if (thread && ['needs_start','ready','failed'].includes(review?.state)) {
+        schedule('status',inboxWorking(review) ? 2000 : 15000);
+      }
+      return;
+    }
     const nextAt = timestamp(review.next_attempt_at);
     if (review.state === 'queued' && (!Number.isFinite(nextAt) || nextAt <= Date.now())) schedule('advance',600);
-    else schedule('status',Number.isFinite(nextAt) && nextAt > Date.now() ? Math.min(15000,Math.max(1500,nextAt-Date.now())) : 2500);
+    else schedule('status',review.state === 'working' ? 2000
+      : Number.isFinite(nextAt) && nextAt > Date.now() ? Math.min(15000,Math.max(1500,nextAt-Date.now())) : 2500);
   }
 
   function send(payload,signal) {
     return fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,
       headers:{'Content-Type':'application/json'},body:JSON.stringify({owner_key:owner,csrf_token:cfg.csrf,
-        ...(host ? {include_report:true} : {}),...payload})});
+        ...(host ? {include_report:true} : thread ? {include_chat_result:true} : {}),...payload})});
   }
   function accept(value, expectedRunId = null) {
     if (host && (value.start_token ?? null) !== startToken) {
@@ -177,8 +241,8 @@
       return;
     }
     if (expectedRunId !== null && value.run_id !== expectedRunId) return;
-    const {state,run_id,stage,scanned,next_attempt_at} = value;
-    review = host ? value : {state,run_id,stage,scanned,next_attempt_at};
+    const {state,run_id,stage,scanned,next_attempt_at,has_report,total,chat_result,inbox_working_until} = value;
+    review = host ? value : {state,run_id,stage,scanned,next_attempt_at,has_report,total,chat_result,inbox_working_until};
     pageError = '';
   }
   function stopProgress() {
@@ -186,7 +250,7 @@
     progressRead?.abort();
     progressRead = null;
   }
-  function watchProgress(controller,current,runId) {
+  function watchProgress(controller,current,runId,delay=2000) {
     const applicable = () => pending?.controller === controller && current === epoch && inScope();
     if (!applicable()) return;
     progressTimer = setTimeout(async () => {
@@ -207,7 +271,7 @@
         if (progressRead === read) progressRead = null;
         watchProgress(controller,current,runId);
       }
-    },2000);
+    },delay);
   }
 
   async function request(action, days) {
@@ -228,7 +292,7 @@
     const timeout = setTimeout(() => controller.abort(),{status:8000,start:15000,advance:120000}[action]);
     let failed = false;
     try {
-      if (action === 'advance') watchProgress(controller,current,payload.run_id);
+      if (action === 'advance') watchProgress(controller,current,payload.run_id,350);
       const response = await send(payload,controller.signal);
       const data = await response.json();
       if (current !== epoch || !inScope()) return;
@@ -240,6 +304,7 @@
       }
       if (!response.ok || data?.ok !== true || !valid(data.review)) throw Error('Review status unavailable');
       accept(data.review);
+      if (!denied && action !== 'status') reviewSignal?.postMessage('review-changed');
     } catch (_) {
       if (current !== epoch || !inScope()) return;
       failed = true;
@@ -253,7 +318,7 @@
       if (!inScope()) return;
       if (refreshPending) { refreshPending = false; schedule('status',0); }
       else if (failed && (action !== 'status' || active(review))) schedule('status',5000);
-      else if (!failed) nextCheck();
+      else nextCheck();
     }
   }
 
@@ -263,7 +328,7 @@
   }
   function refresh() {
     clearTimeout(timer);
-    if (!inScope()) { publishWork(); renderRailUnavailable(); return; }
+    if (!inScope()) { publishWork(); renderRailUnavailable(); renderCompletion(); return; }
     if (pending) refreshPending = true;
     else schedule('status',0);
   }
@@ -278,6 +343,17 @@
     render();
   }
 
+  function listenForReviewChanges() {
+    if (reviewSignal || typeof BroadcastChannel !== 'function') return;
+    try {
+      // This signal only wakes the existing authenticated status read. It carries no Gmail data.
+      reviewSignal = new BroadcastChannel(`vp3:gmail-inbox-review:${owner}`);
+      if (thread) reviewSignal.addEventListener('message',event => {
+        if (event.data === 'review-changed') refresh();
+      });
+    } catch (_) { /* The normal status checks also see saved changes. */ }
+  }
+
   form?.addEventListener('submit',event => {
     event.preventDefault();
     if (event.isTrusted) void request('start',Number(new FormData(form).get('days')));
@@ -286,12 +362,14 @@
   window.addEventListener('focus',refresh);
   document.addEventListener('visibilitychange',() => { if (document.hidden) invalidate(); else refresh(); });
   window.addEventListener('vp3:chat-context-ready',refresh);
+  window.addEventListener('vp3:chat-canvas-view-changed',renderCompletion);
   window.addEventListener('vp3:agent-orb-ready',publishWork);
   window.addEventListener('stonefellow:chat-context-changing',invalidate);
   window.addEventListener('vp3:participant-selection-changed',() => { invalidate(); refresh(); });
   window.addEventListener('vp3:participant-task-context',event => { participant = Number(event.detail?.participant_id) || 0; invalidate(); refresh(); });
-  window.addEventListener('pagehide',() => { stopped = true; invalidate(); });
-  window.addEventListener('pageshow',() => { stopped = false; refresh(); });
+  window.addEventListener('pagehide',() => { stopped = true; reviewSignal?.close(); reviewSignal = null; invalidate(); });
+  window.addEventListener('pageshow',() => { stopped = false; listenForReviewChanges(); refresh(); });
+  listenForReviewChanges();
   render();
   refresh();
 })();

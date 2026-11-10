@@ -65,7 +65,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'team_scheduling.manage'=>['prepare','create','cancel'],
         'phone.numbers.read'=>['list'],
         'phone.sms.read'=>['list','read'],
-        'email.read'=>['search','read'],
+        'email.read'=>['search','read','review_status'],
         'email.send'=>['prepare','send'],
         'email.followups'=>['watch_sender','stop_sender_watch'],
         'youtube.search'=>['search'],
