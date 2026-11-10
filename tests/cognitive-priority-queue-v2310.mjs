@@ -32,7 +32,7 @@ const checks=[
   ['chat renders one queue projection', /vp3-cognitive-priority-queue-v2310/.test(chatJs)],
   ['queue rows focus existing cards', /scrollIntoView/.test(chatJs) && /data-feed-item-key/.test(chatJs)],
   ['chat queue styling present', /vp3-cognitive-priority-queue-v2310/.test(chatCss)],
-  ['asset cache bumped', /priority-v2310/.test(chat)],
+  ['retired queue feed is absent from Chat', !/cognitiveFeedAssetBuild|chat-cognitive-feed-v530\.(?:js|css)/.test(chat)],
   ['browser api carries same queue', /'priority_queue'=>is_array\(\$feed\['priority_queue'\]/.test(browserApi)],
   ['bootstrap order', bootstrap.indexOf('cognitive-operations-v2300.php')<bootstrap.indexOf('cognitive-priority-queue-v2310.php') && bootstrap.indexOf('cognitive-priority-queue-v2310.php')<bootstrap.indexOf('cognitive-feed-v530.php')],
   ['v23.00 remains intact', /VP3_COGNITIVE_OPERATIONS_V2300/.test(operations)],
