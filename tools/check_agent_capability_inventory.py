@@ -18,6 +18,16 @@ assert rows, 'No assessed capability inventory'
 assert len({row[0] for row in rows}) == len(rows), 'Duplicate capability identifiers'
 missing = [executor for _, _, executor in rows if executor not in definitions]
 assert not missing, 'Advertised executor definitions missing: ' + ', '.join(missing)
+matrix = root / 'docs/agent-capability-integration-matrix.md'
+matrix_rows = [
+    [cell.strip() for cell in line.strip('|').split('|')]
+    for line in matrix.read_text().splitlines()
+    if re.match(r'^\|\s+`[a-z0-9_.]+`\s+\|', line)
+]
+assert all(len(row) == 6 and all(row) for row in matrix_rows), 'Capability tracking row is incomplete'
+tracked = [(row[0].strip('`'), row[1]) for row in matrix_rows]
+assert len({capability for capability, _ in tracked}) == len(tracked), 'Capability tracking matrix duplicates an ID'
+assert set(tracked) == {(capability, mode) for capability, mode, _ in rows}, 'Capability tracking matrix drifted from the executable ID or mode'
 dispatch = (root / 'includes/agent-tool-authorization-v400.php').read_text()
 wrappers = {'vp3_agent_chat_tool_query_v1', 'vp3_agent_tool_execute_query_v400'}
 explicit = {'agent_work_control_chat_v173', 'homeserver_agent_read_v230_query',
@@ -37,7 +47,7 @@ if plan.exists():
     assert len(listed) == len(set(listed)), 'Managed work list duplicates a handler'
     assert set(listed) == dispatched, 'Managed work list drifted from the actual dispatcher'
 assessed = {executor for _, _, executor in rows}
-report = {'assessed_capabilities': len(rows), 'executor_bindings_verified': True,
+report = {'assessed_capabilities': len(rows), 'tracked_capabilities': len(tracked), 'executor_bindings_verified': True,
           'legacy_dispatchers_found': len(dispatched),
           'assessed_dispatchers': sorted(dispatched & assessed),
           'unassessed_dispatchers': sorted(dispatched - assessed),

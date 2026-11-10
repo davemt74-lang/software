@@ -812,7 +812,9 @@
     });
   }
   function voiceAnswer(data,fallback=''){
-    return data?.private_email_read ? 'I put the private Gmail result in Chat.' : String(data?.answer||fallback);
+    if(data?.private_email_read)return 'I put the private Gmail result in Chat.';
+    if(data?.private_meeting_prep)return 'I put the private meeting prep in Chat.';
+    return String(data?.answer||fallback);
   }
   function interruptedVoiceResponse(){return new Response(JSON.stringify({ok:false,error:'Voice response interrupted.'}),{status:499,headers:{'Content-Type':'application/json'}});}
   async function handleVoiceApiFetch(inputArg,init,payload){

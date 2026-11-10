@@ -209,7 +209,8 @@ function vp3_initiative_capability_execute_v1(PDO $pdo,array $scope,array $bindi
     if(empty($catalog[$tool]['ready']))throw new RuntimeException('Capability permission or readiness changed.',403);
     $read=vp3_initiative_capability_snapshot_v1($pdo,$scope,$binding,$tool,$job,$evidence);
     $fingerprint=vp3_initiative_capability_fingerprint_v1($read);
-    $draft=vp3_initiative_tools_report_v1($pdo,$scope['user'],$job,$evidence,[
+    $meetingPrep=$tool==='calendar.read'&&isset($evidence[$job['primary']]['meeting_prep'])&&empty($job['owner_continuation']);
+    $draft=$meetingPrep?VP3_INITIATIVE_MEETING_PREP_MARKER_V1:vp3_initiative_tools_report_v1($pdo,$scope['user'],$job,$evidence,[
         'tool'=>$tool,'status'=>$read['records']?'read_complete':'no_matches','records'=>$read['records'],'coverage'=>$read['coverage'],
         'effect'=>'Authorized saved records were read. Prepare useful private analysis, a draft, or one focused question. Saved AI analysis is interpretation, never a transcript quotation or independently verified fact. An absent association does not prove missing promotion. No research, new transcript analysis, image generation, publication, communication, task/calendar change or purchase was performed.',
     ],$model);
@@ -221,7 +222,7 @@ function vp3_initiative_capability_execute_v1(PDO $pdo,array $scope,array $bindi
         'missions.evidence.read'=>'inspect','tasks.lists.read'=>'show',default=>'list'};
     $state=$read['records']?'read_complete':'no_matches';
     $revisions=[];foreach($job['refs'] as $ref)$revisions[$ref]=$evidence[$ref]['revision'];ksort($revisions);
-    $result=['draft'=>$draft,'sources'=>$read['sources'],
+    $result=['draft'=>$draft,'sources'=>$meetingPrep?[]:$read['sources'],
         'tool_receipt'=>vp3_tool_receipt_v1($definition['foreground_capability'],$operation,$state,'',0,count($read['records'])),
         'output'=>['type'=>'initiative_capability_read','version'=>1,'tool'=>$tool,'status'=>$state,
             'owner_user_id'=>(int)$scope['user']['id'],'agent_id'=>$scope['agent_id'],'conversation_id'=>$scope['conversation_id'],
@@ -237,7 +238,7 @@ function vp3_initiative_capability_execute_v1(PDO $pdo,array $scope,array $bindi
 }
 
 /** Used at commit, delayed delivery and exact saved-post replies; never model inference or another write. */
-function vp3_initiative_capability_result_current_v1(PDO $pdo,array $scope,array $binding,array $goal,array $toolResult): void
+function vp3_initiative_capability_result_current_v1(PDO $pdo,array $scope,array $binding,array $goal,array $toolResult): array
 {
     $scope=vp3_initiative_capability_scope_v1($pdo,$scope,$binding);$tool=$goal['tool']??'';$out=$toolResult['output']??null;
     $refs=array_keys($goal['sources']??[]);$primary=$goal['primary']??null;
@@ -266,6 +267,7 @@ function vp3_initiative_capability_result_current_v1(PDO $pdo,array $scope,array
         ||($out['coverage_state']??null)!==(in_array($read['coverage']['state']??'', ['ready','limited'],true)?$read['coverage']['state']:'bounded')){
         throw new RuntimeException('Saved capability records changed.',409);
     }
+    return $read;
 }
 
 /** Declared sources require a short serializable final transaction, including ordinary preparation. */

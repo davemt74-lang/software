@@ -303,7 +303,7 @@ function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $qu
         return vp3_initiative_chat_v1($pdo,$user,$principal,$context,$initiative,$authority);
     }
     if(vp3_calendar_prep_chat_intent_v1($query)){
-        return vp3_calendar_prep_chat_v1($pdo,$user,$context['user_agent_id'],(int)($context['conversation_id']??0),$authority);
+        return vp3_calendar_prep_chat_v1($pdo,$user,$context['user_agent_id'],(int)($context['conversation_id']??0),$authority,$query);
     }
     if(($briefRequest=vp3_catch_up_chat_request_v1($query))!==null){
         try{

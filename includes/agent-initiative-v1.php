@@ -60,6 +60,9 @@ function vp3_initiative_jobs_v1(string $answer,array $evidence,array $allowedToo
         }
         $primary=$job['primary'];$assignment=$job['tool'].'|'.$primary;$refs=[];
         $primaryKind=$evidence[$primary]['kind']??null;
+        if(isset($evidence[$primary]['meeting_prep'])&&($job['tool']!=='calendar.read'||count($job['refs'])!==1)){
+            throw new InvalidArgumentException('Meeting prep requires the exact calendar source.');
+        }
         if($job['tool']==='chat.check_in'&&in_array($primaryKind,['artist_interest','topic_interest'],true)){
             throw new InvalidArgumentException('YouTube check-ins require their dedicated conversation source.');
         }
@@ -166,7 +169,16 @@ function vp3_initiative_evidence_scoped_v1(PDO $pdo,array $user,DateTimeImmutabl
         }
     }
     if($selectedRefs===null){
+        $meetingUrls=[];
+        foreach($evidence as $ref=>$row){
+            if(!isset($row['meeting_prep']))continue;
+            $meetingUrls[$row['url']]=true;
+            if(!vp3_initiative_meeting_prep_eligible_v1($pdo,(int)$user['id'],$agentId,$row['meeting_prep'],$now))unset($evidence[$ref]);
+        }
         foreach(array_keys($evidence) as $ref){
+            if($evidence[$ref]['kind']==='meeting_prep'&&isset($meetingUrls[$evidence[$ref]['url']])){
+                unset($evidence[$ref]);continue;
+            }
             if(preg_match('/\Aopen-task:([1-9][0-9]*)\z/D',$ref,$match)
                 &&($evidence['task:'.$match[1]]['capability_tool']??null)==='tasks.read')unset($evidence[$ref]);
         }
@@ -772,9 +784,9 @@ function vp3_initiative_delivery_result_v1(PDO $pdo,int $owner,array $row,array 
         ->execute([$json,(int)$row['action_id'],(int)$row['run_id'],$owner]);
 }
 
-function vp3_initiative_report_v1(PDO $pdo,array $user,int $cid,string $draft,array $evidence,int $runId,array $toolResult=[]): int
+function vp3_initiative_report_v1(PDO $pdo,array $user,int $cid,string $draft,array $evidence,int $runId,array $toolResult=[],?array $meetingPrep=null): int
 {
-    $links=array_map(static fn(array $row):array=>['source'=>$row['ref'],'title'=>$row['title'],'url'=>$row['url']],array_values($evidence));
+    $links=$meetingPrep===null?array_map(static fn(array $row):array=>['source'=>$row['ref'],'title'=>$row['title'],'url'=>$row['url']],array_values($evidence)):[];
     foreach(is_array($toolResult['sources']??null)?array_slice($toolResult['sources'],0,16):[] as $source){
         if(!is_array($source)||!is_string($source['source']??null)||!is_string($source['title']??null))continue;
         $link=['source'=>mb_substr($source['source'],0,190),'title'=>mb_substr($source['title'],0,190)];
@@ -790,6 +802,7 @@ function vp3_initiative_report_v1(PDO $pdo,array $user,int $cid,string $draft,ar
         $links[]=$link;
     }
     $context=['source'=>'agent_initiative','skip_brain_archive'=>true,'sources'=>$links,'initiative_run_id'=>$runId];
+    if($meetingPrep!==null)$context['initiative_meeting_prep']=$meetingPrep['key'];
     $agentId=vp3_agent_memory_scope_current_v410($user);
     if(!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$user['id'],$agentId>0?['id'=>$agentId]:null,true)){
         throw new RuntimeException('Initiative conversation changed.',403);
@@ -918,8 +931,12 @@ function vp3_initiative_deliver_pending_scoped_v1(PDO $pdo,array $user): bool
                 try{
                     $evidence=vp3_initiative_current_sources_v1($pdo,$live,$goal['sources'],!empty($policy['screen_enabled']),$goal['canonical_sources']??[],$agentId,$goal['capability_sources']??[]);
                     vp3_initiative_result_current_v1($pdo,$live,$policy,$goal,$result['initiative_tool_result']??[]);
-                    if($present&&!$delivered){
-                        $result['initiative_message_id']=vp3_initiative_report_v1($pdo,$live,$cid,$draft,$evidence,(int)$row['run_id'],$result['initiative_tool_result']??[]);
+                    $meetingPrep=empty($goal['followthrough'])&&($goal['tool']??null)==='calendar.read'
+                        ?($evidence[$goal['primary']]['meeting_prep']??null):null;
+                    if($meetingPrep!==null&&!vp3_initiative_meeting_prep_eligible_v1($pdo,$owner,$agentId,$meetingPrep)){
+                        $result['initiative_delivery']='withheld';
+                    }elseif($present&&!$delivered){
+                        $result['initiative_message_id']=vp3_initiative_report_v1($pdo,$live,$cid,$draft,$evidence,(int)$row['run_id'],$result['initiative_tool_result']??[],$meetingPrep);
                         $result['initiative_delivery']='delivered';
                         $delivered=true;
                         agent_workflow_event_v1400($pdo,$owner,(int)$row['run_id'],'initiative_reported','completed','completed','system',
@@ -1112,6 +1129,8 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
         if($planning){
             $admitted=0;$admissions=[];
             foreach($jobs as $job){
+                $meetingPrep=$evidence[$job['primary']]['meeting_prep']??null;
+                if($meetingPrep!==null&&!vp3_initiative_meeting_prep_eligible_v1($pdo,(int)$live['id'],$agentId,$meetingPrep))continue;
                 $selected=array_intersect_key($sources,array_flip($job['refs']));
                 $work=['binding'=>$binding,'sources'=>$selected,'canonical_sources'=>array_intersect_key($canonicalSources,$selected),
                     'capability_sources'=>vp3_initiative_capability_source_map_v1($evidence,$job['refs']),
@@ -1144,8 +1163,11 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 $toolResult['output']['playlist_run_id']=$runId;
             }
             $delivery=empty($payload['report'])?'private':'pending';$messageId=0;
+            $meetingPrep=empty($payload['followthrough'])&&($payload['tool']??null)==='calendar.read'
+                ?($evidence[$payload['primary']]['meeting_prep']??null):null;
+            if($meetingPrep!==null&&!vp3_initiative_meeting_prep_eligible_v1($pdo,$uid,$agentId,$meetingPrep))$delivery='withheld';
             if($delivery==='pending'&&vp3_initiative_owner_present_v1($pdo,$live,$cid)&&vp3_initiative_can_report_v1($pdo,$live,$cid)){
-                $messageId=vp3_initiative_report_v1($pdo,$live,$cid,$draft,$evidence,(int)$run['id'],$toolResult);
+                $messageId=vp3_initiative_report_v1($pdo,$live,$cid,$draft,$evidence,(int)$run['id'],$toolResult,$meetingPrep);
                 $delivery='delivered';
             }
             $receipt=agent_worker_cloud_result_v1910($pdo,$live,$claim,true,'Private preparation completed.',
