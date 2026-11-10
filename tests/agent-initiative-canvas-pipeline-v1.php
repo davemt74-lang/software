@@ -350,4 +350,158 @@ canvas_pipeline_check(canvas_pipeline_count('ai_execution_ledger',"service_key='
     && count($GLOBALS['imageUsage'])===count($GLOBALS['pipelineCodingCalls']),
     'late source or opt-in revocation preserves exact usage for completed physical provider attempts without charging a retry');
 
+// Ordinary Chat has no explicit proposal chip/reference. A typed, freshly
+// displayed Canvas proposal can bind the adjacent turn, while the normal
+// governed intent classifier still decides whether the owner asked to build.
+vp3_ai_service_save_rule_v1($pdo,'user',1,'code_build',[]);
+$setting=vp3_initiative_canvas_setting_v1($pdo,$owner,7);
+vp3_initiative_canvas_setting_v1($pdo,$owner,7,false,$setting['revision']);
+$pdo->exec("INSERT INTO chat_messages(conversation_id,role,message,created_at)
+    VALUES(11,'assistant','What would you like to work on next?',CURRENT_TIMESTAMP)");
+$naturalRun=canvas_pipeline_prepare(7001);$naturalProposal=canvas_pipeline_result($naturalRun);
+$naturalMessage=(int)$naturalProposal['initiative_message_id'];$naturalText='Build it.';
+canvas_pipeline_check($naturalMessage>0 && $naturalProposal['initiative_tool_result']['output']['status']==='proposal_ready'
+    && !vp3_initiative_canvas_setting_v1($pdo,$owner,7)['enabled'], 'a fresh ordinary Chat Canvas proposal remains suggestion-only with Auto Build off');
+$beforeNaturalCoding=canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'");
+$beforeNaturalPrepare=count(canvas_pipeline_runs('initiative.prepare'));$beforeNaturalInference=count($GLOBALS['pipelineInference']);
+$naturalProbe='Create a simple tracker I can actually use.';
+canvas_pipeline_check(!vp3_initiative_followthrough_referential_v1($naturalProbe)
+    && vp3_initiative_followthrough_possible_v1($pdo,1,7,11,$naturalProbe),
+    'a nonreferential owner request reaches typed Canvas adjacency without relying on a build keyword hint');
+$probeCandidate=vp3_initiative_followthrough_candidate_v1($pdo,$owner,$principal,11,0,$naturalProbe);
+canvas_pipeline_check(($probeCandidate['initiative_reply']['message_id']??null)===$naturalMessage
+    && (vp3_initiative_followthrough_request_v1($pdo,$owner,$principal,11,$naturalProbe,null,null)['initiative_reply']['message_id']??null)===$naturalMessage,
+    'the general nonreferential preflight resolves only the exact fresh Canvas proposal');
+canvas_pipeline_check(vp3_initiative_followthrough_possible_v1($pdo,1,7,11,$naturalText), 'bare Build it. reaches the existing cheap follow-through preflight for an adjacent Canvas proposal');
+$naturalRequest=vp3_initiative_followthrough_request_v1($pdo,$owner,$principal,11,$naturalText,null,null);
+canvas_pipeline_check(($naturalRequest['initiative_reply']['message_id']??null)===$naturalMessage
+    && ($naturalRequest['explicit']??null)===false && ($naturalRequest['user_message_id']??null)===0
+    && count($GLOBALS['pipelineInference'])===$beforeNaturalInference
+    && canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'")===$beforeNaturalCoding,
+    'ordinary Build it. preflight resolves the exact saved source without inference or build authority');
+$pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,created_at)
+    VALUES(11,1,'user',?,CURRENT_TIMESTAMP)")->execute([$naturalText]);
+$naturalReply=(int)$pdo->lastInsertId();
+$GLOBALS['pipelineModel']=static function(string $prompt,string $protocol) use ($naturalText,$naturalMessage): string {
+    $input=json_decode($prompt,true,32,JSON_THROW_ON_ERROR);
+    canvas_pipeline_check($protocol==='vp3.initiative-reply.v1' && isset($input['canvas_proposal'])
+        && ($input['owner_message']['text']??null)===$naturalText
+        && ($input['proposal']['message_id']??null)===$naturalMessage,
+        'the actual natural-reply classifier receives Build it. and the verified adjacent Canvas proposal');
+    return json_encode(['intent'=>'advance','focus'=>'Build the exact private prep board just proposed'],JSON_THROW_ON_ERROR);
+};
+$naturalDecision=vp3_initiative_followthrough_reply_v1($pdo,$owner,$principal,11,$naturalReply,null,$naturalText);
+canvas_pipeline_check(($naturalDecision['initiative_followthrough']['state']??null)==='queued'
+    && ($naturalDecision['initiative_followthrough']['message_id']??null)===$naturalMessage
+    && count(canvas_pipeline_runs('initiative.prepare'))===$beforeNaturalPrepare+1
+    && canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'")===$beforeNaturalCoding,
+    'the ordinary owner decision queues exactly one private continuation before canonical coding admission');
+$naturalContinuations=canvas_pipeline_runs('initiative.prepare');$naturalContinuation=(int)end($naturalContinuations)['id'];
+$GLOBALS['pipelineModel']=static fn()=>throw new RuntimeException('Natural build approval must reuse its saved Canvas proposal.');
+canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($naturalContinuation))['ok'],
+    'the natural Build it. continuation uses the original Canvas adapter');
+$naturalReady=canvas_pipeline_result($naturalContinuation);$naturalCoding=(int)$naturalReady['initiative_tool_result']['output']['coding_run_id'];
+$naturalGoal=json_decode(vp3_coding_canvas_job_row_v1($pdo,$owner,$naturalCoding)['goal'],true,32,JSON_THROW_ON_ERROR);
+canvas_pipeline_check(canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'")===$beforeNaturalCoding+1
+    && $naturalGoal['initiative_origin']['authorization']==='owner_followthrough'
+    && !vp3_initiative_canvas_setting_v1($pdo,$owner,7)['enabled'],
+    'bare Build it. admits one canonical coding job without switching on Auto Build');
+canvas_pipeline_check(vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($naturalCoding))['ok'],
+    'the natural owner-approved coding job produces its private draft through the real provider and store');
+
+// Eligibility is not approval: an unrelated first reply can be classified as
+// ordinary conversation and must leave the exact Canvas proposal untouched.
+$pdo->exec("INSERT INTO chat_messages(conversation_id,role,message,created_at)
+    VALUES(11,'assistant','What else would you like to discuss?',CURRENT_TIMESTAMP)");
+$unrelatedRun=canvas_pipeline_prepare(8001);$unrelatedProposal=canvas_pipeline_result($unrelatedRun);
+$unrelatedMessage=(int)$unrelatedProposal['initiative_message_id'];$unrelatedText='How long do peach trees usually keep flowering?';
+$beforeUnrelatedCoding=canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'");
+$beforeUnrelatedPrepare=count(canvas_pipeline_runs('initiative.prepare'));$unrelatedClassified=false;
+canvas_pipeline_check($unrelatedMessage>0 && vp3_initiative_followthrough_possible_v1($pdo,1,7,11,$unrelatedText),
+    'the typed adjacent proposal permits classification without interpreting unrelated text as approval');
+$pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,created_at)
+    VALUES(11,1,'user',?,CURRENT_TIMESTAMP)")->execute([$unrelatedText]);
+$unrelatedReply=(int)$pdo->lastInsertId();
+$GLOBALS['pipelineModel']=static function(string $prompt,string $protocol) use ($unrelatedText,$unrelatedMessage,&$unrelatedClassified): string {
+    $input=json_decode($prompt,true,32,JSON_THROW_ON_ERROR);$unrelatedClassified=true;
+    canvas_pipeline_check($protocol==='vp3.initiative-reply.v1'
+        && ($input['owner_message']['text']??null)===$unrelatedText
+        && ($input['proposal']['message_id']??null)===$unrelatedMessage,
+        'the real classifier sees the unrelated first reply against its exact adjacent proposal');
+    return json_encode(['intent'=>'none','focus'=>'An unrelated ordinary conversation'],JSON_THROW_ON_ERROR);
+};
+$unrelatedDecision=vp3_initiative_followthrough_reply_v1($pdo,$owner,$principal,11,$unrelatedReply,null,$unrelatedText);
+$q=$pdo->prepare('SELECT context_json FROM chat_messages WHERE id=?');$q->execute([$unrelatedMessage]);
+$unrelatedState=json_decode($q->fetchColumn(),true,32,JSON_THROW_ON_ERROR)['initiative_followthrough_state'];
+canvas_pipeline_check($unrelatedClassified && ($unrelatedDecision['handled']??null)===false
+    && $unrelatedState['state']==='open' && $unrelatedState['last_reply_message_id']===0
+    && count(canvas_pipeline_runs('initiative.prepare'))===$beforeUnrelatedPrepare
+    && canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'")===$beforeUnrelatedCoding,
+    'an unrelated first reply remains ordinary conversation and cannot start a continuation or build');
+
+// Two real, source-current adjacent proposals cannot be reduced to one build
+// request by a bare pronoun. Keep both exact sources current and both posts fresh.
+$pdo->exec("INSERT INTO chat_messages(conversation_id,role,message,created_at)
+    VALUES(11,'assistant','We can discuss a different project.',CURRENT_TIMESTAMP)");
+$firstAmbiguousRun=canvas_pipeline_prepare(9001);$firstAmbiguous=canvas_pipeline_result($firstAmbiguousRun);
+$secondAmbiguousRun=canvas_pipeline_prepare(10001);$secondAmbiguous=canvas_pipeline_result($secondAmbiguousRun);
+$firstAmbiguousMessage=(int)$firstAmbiguous['initiative_message_id'];$secondAmbiguousMessage=(int)$secondAmbiguous['initiative_message_id'];
+$pdo->exec('UPDATE agent_memory_items SET is_active=1 WHERE id=9001');
+$pdo->prepare('UPDATE chat_messages SET created_at=CURRENT_TIMESTAMP WHERE id IN (?,?)')
+    ->execute([$firstAmbiguousMessage,$secondAmbiguousMessage]);
+canvas_pipeline_check($firstAmbiguousMessage>0 && $secondAmbiguousMessage>$firstAmbiguousMessage
+    && vp3_initiative_followthrough_load_v1($pdo,$owner,$principal,11,$firstAmbiguousMessage)['state']['state']==='open'
+    && vp3_initiative_followthrough_load_v1($pdo,$owner,$principal,11,$secondAmbiguousMessage)['state']['state']==='open',
+    'the ambiguity fixture contains two genuine adjacent fresh Canvas proposals with current source proofs');
+$beforeAmbiguousCoding=canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'");
+$beforeAmbiguousPrepare=count(canvas_pipeline_runs('initiative.prepare'));$ambiguousClassifications=0;
+canvas_pipeline_check(vp3_initiative_followthrough_request_v1($pdo,$owner,$principal,11,'Build it.',null,null)===null,
+    'ambiguous bare Build it. preflight cannot select a proposal or create trusted request authority');
+$pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message,created_at)
+    VALUES(11,1,'user','Build it.',CURRENT_TIMESTAMP)");
+$ambiguousReply=(int)$pdo->lastInsertId();
+$GLOBALS['pipelineModel']=static function() use (&$ambiguousClassifications): string {
+    ++$ambiguousClassifications;
+    return json_encode(['intent'=>'advance','focus'=>'Do not guess which proposal'],JSON_THROW_ON_ERROR);
+};
+$ambiguousDecision=vp3_initiative_followthrough_reply_v1($pdo,$owner,$principal,11,$ambiguousReply,null,'Build it.');
+canvas_pipeline_check(($ambiguousDecision['clarification_required']??false)===true && ($ambiguousDecision['handled']??null)===true,
+    'two adjacent Canvas proposals request clarification before bare Build it. can choose a build');
+canvas_pipeline_check($ambiguousClassifications===0 && count(canvas_pipeline_runs('initiative.prepare'))===$beforeAmbiguousPrepare
+    && canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'")===$beforeAmbiguousCoding,
+    'ambiguity cannot let a model guess a Canvas or start a private build');
+
+// A separate real pair keeps the negative ordinary-conversation case genuinely
+// adjacent too; a preceding owner turn must not mask an over-eager resolver.
+$pdo->exec("INSERT INTO chat_messages(conversation_id,role,message,created_at)
+    VALUES(11,'assistant','Let us consider other possibilities.',CURRENT_TIMESTAMP)");
+$weatherFirstRun=canvas_pipeline_prepare(11001);$weatherFirst=canvas_pipeline_result($weatherFirstRun);
+$weatherSecondRun=canvas_pipeline_prepare(12001);$weatherSecond=canvas_pipeline_result($weatherSecondRun);
+$weatherFirstMessage=(int)$weatherFirst['initiative_message_id'];$weatherSecondMessage=(int)$weatherSecond['initiative_message_id'];
+$pdo->exec('UPDATE agent_memory_items SET is_active=1 WHERE id=11001');
+$pdo->prepare('UPDATE chat_messages SET created_at=CURRENT_TIMESTAMP WHERE id IN (?,?)')
+    ->execute([$weatherFirstMessage,$weatherSecondMessage]);
+canvas_pipeline_check($weatherFirstMessage>0 && $weatherSecondMessage>$weatherFirstMessage
+    && vp3_initiative_followthrough_load_v1($pdo,$owner,$principal,11,$weatherFirstMessage)['state']['state']==='open'
+    && vp3_initiative_followthrough_load_v1($pdo,$owner,$principal,11,$weatherSecondMessage)['state']['state']==='open',
+    'the unrelated-query fixture has two genuinely adjacent fresh and source-current Canvas proposals');
+$weatherText='What is the weather like tomorrow in Phoenix?';
+$beforeWeatherCoding=canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'");
+$beforeWeatherPrepare=count(canvas_pipeline_runs('initiative.prepare'));$weatherClassifications=0;
+canvas_pipeline_check(vp3_initiative_followthrough_candidate_v1($pdo,$owner,$principal,11,0,$weatherText)===null
+    && vp3_initiative_followthrough_request_v1($pdo,$owner,$principal,11,$weatherText,null,null)===null,
+    'an unrelated long question after two Canvas proposals gets no proposal association or forced clarification');
+$pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,created_at)
+    VALUES(11,1,'user',?,CURRENT_TIMESTAMP)")->execute([$weatherText]);
+$weatherReply=(int)$pdo->lastInsertId();
+$GLOBALS['pipelineModel']=static function() use (&$weatherClassifications): string {
+    ++$weatherClassifications;
+    return json_encode(['intent'=>'none','focus'=>'An unrelated weather question'],JSON_THROW_ON_ERROR);
+};
+$weatherDecision=vp3_initiative_followthrough_reply_v1($pdo,$owner,$principal,11,$weatherReply,null,$weatherText);
+canvas_pipeline_check(($weatherDecision['handled']??null)===false && empty($weatherDecision['clarification_required'])
+    && $weatherClassifications===0 && count(canvas_pipeline_runs('initiative.prepare'))===$beforeWeatherPrepare
+    && canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'")===$beforeWeatherCoding,
+    'two adjacent Canvas proposals cannot hijack ordinary conversation, ask which Canvas, or start a build');
+
 echo 'INITIATIVE_CANVAS_PIPELINE=PASS ('.$checks.' assertions, '.($mysql ? 'mysql' : 'sqlite').")\n";

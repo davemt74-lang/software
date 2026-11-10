@@ -462,7 +462,7 @@ function vp3_initiative_followthrough_replay_v1(PDO $pdo,array $user,array $prin
 
 function vp3_initiative_followthrough_short_v1(string $query): bool
 {
-    return preg_match('/\A\s*(?:actually[,\s]+)?(?:yes|yeah|yep|sure|ok(?:ay)?|please|do it|go ahead|continue|retry|later|not now|no(?: thanks)?|done|already done|tell me more)[.!?\s]*\z/iu',$query)===1;
+    return preg_match('/\A\s*(?:actually[,\s]+)?(?:yes|yeah|yep|sure|ok(?:ay)?|please|do it|build it|go ahead|continue|retry|later|not now|no(?: thanks)?|done|already done|tell me more)[.!?\s]*\z/iu',$query)===1;
 }
 
 function vp3_initiative_followthrough_referential_v1(string $query): bool
@@ -475,6 +475,16 @@ function vp3_initiative_followthrough_checkin_marker_v1(?array $context): bool
 {
     return ($context['source']??null)==='agent_initiative'
         &&($context['initiative_output']['type']??null)==='initiative_chat_check_in'
+        &&is_array($context['initiative_work']['followthrough']??null);
+}
+
+/** A current typed Canvas proposal can receive an ordinary conversational reply.
+ * This is association only; the governed interpreter still decides the intent. */
+function vp3_initiative_followthrough_canvas_marker_v1(?array $context): bool
+{
+    return ($context['source']??null)==='agent_initiative'
+        &&($context['initiative_output']['type']??null)==='initiative_canvas'
+        &&($context['initiative_output']['status']??null)==='proposal_ready'
         &&is_array($context['initiative_work']['followthrough']??null);
 }
 
@@ -495,27 +505,28 @@ function vp3_initiative_followthrough_possible_v1(PDO $pdo,int $owner,int $agent
     $secondContext=json_decode((string)($second['context_json']??''),true);
     $firstContext=is_array($firstContext)?$firstContext:null;$secondContext=is_array($secondContext)?$secondContext:null;
     if(($first['role']??'')==='assistant'){
-        if(vp3_initiative_followthrough_checkin_marker_v1($firstContext))return true;
+        if(vp3_initiative_followthrough_checkin_marker_v1($firstContext)||vp3_initiative_followthrough_canvas_marker_v1($firstContext))return true;
         return is_array($firstContext['initiative_followthrough']??null)&&($second['role']??'')==='user'
             &&($second['message']??null)===$query&&is_array($secondContext['initiative_reply_anchor_v1']??null);
     }
     return ($first['role']??'')==='user'&&($first['message']??null)===$query
         &&(is_array($firstContext['initiative_reply_anchor_v1']??null)||(($second['role']??'')==='assistant'
-            &&vp3_initiative_followthrough_checkin_marker_v1($secondContext)));
+            &&(vp3_initiative_followthrough_checkin_marker_v1($secondContext)||vp3_initiative_followthrough_canvas_marker_v1($secondContext))));
 }
 
 /** Resolve only canonical adjacency, without interpreting source prose. This
  * is shared by request idempotency preflight and the saved-turn resolver. */
 function vp3_initiative_followthrough_candidate_v1(PDO $pdo,array $user,array $principal,int $cid,int $beforeId,string $query): ?array
 {
-    $naturalCheckIn=false;
+    $naturalCheckIn=false;$naturalCanvas=false;
     if(!vp3_initiative_followthrough_referential_v1($query)){
         $q=$pdo->prepare('SELECT role,context_json FROM chat_messages WHERE conversation_id=?'.($beforeId>0?' AND id<?':'').' ORDER BY id DESC LIMIT 1');$q->execute($beforeId>0?[$cid,$beforeId]:[$cid]);$last=$q->fetch(PDO::FETCH_ASSOC);
         $context=$last?json_decode((string)$last['context_json'],true):null;
         if(($last['role']??null)!=='assistant')return null;
         if(($context['initiative_followup_clarification']??null)!==true){
-            if(!vp3_initiative_followthrough_checkin_marker_v1(is_array($context)?$context:null))return null;
-            $naturalCheckIn=true;
+            $naturalCheckIn=vp3_initiative_followthrough_checkin_marker_v1(is_array($context)?$context:null);
+            $naturalCanvas=vp3_initiative_followthrough_canvas_marker_v1(is_array($context)?$context:null);
+            if(!$naturalCheckIn&&!$naturalCanvas)return null;
         }
     }
     $sql='SELECT id,role,context_json,created_at FROM chat_messages WHERE conversation_id=?'.($beforeId>0?' AND id<?':'').' ORDER BY id DESC LIMIT 20';
@@ -543,14 +554,15 @@ function vp3_initiative_followthrough_candidate_v1(PDO $pdo,array $user,array $p
     if($ref===null)$ref=['message_id'=>(int)$first['id'],'reply_ref'=>$marker['reply_ref']??'','revision'=>$marker['revision']??0];
     $checkIn=vp3_initiative_followthrough_checkin_marker_v1(is_array($ctx)?$ctx:null);
     if($naturalCheckIn&&!$checkIn)return null;
-    if($checkIn){
+    if($checkIn||$naturalCanvas){
         $posted=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',(string)($first['created_at']??''),new DateTimeZone('UTC'));
         if(!$posted||$posted->format('Y-m-d H:i:s')!==$first['created_at'])return null;
         $age=time()-$posted->getTimestamp();
         if($age<0||$age>86400)return null;
         try{$loaded=vp3_initiative_followthrough_selected_v1($pdo,$user,$principal,$cid,$ref,null);}
         catch(Throwable $error){return null;}
-        if(($loaded['goal']['tool']??null)!=='chat.check_in'||($naturalCheckIn&&($loaded['state']['state']??null)!=='open'))return null;
+        $expectedTool=$naturalCanvas?'canvas.prepare':'chat.check_in';
+        if(($loaded['goal']['tool']??null)!==$expectedTool||(($naturalCheckIn||$naturalCanvas)&&($loaded['state']['state']??null)!=='open'))return null;
     }
     if($acknowledgment===null&&($adjacent>1||$ambiguous))return vp3_initiative_followthrough_short_v1($query)?['clarification_required'=>true]:null;
     return ['initiative_reply'=>$ref,'acknowledgment'=>$acknowledgment];
