@@ -4053,7 +4053,7 @@
       if(autoMediaAction){window.setTimeout(()=>{window.StonefellowMediaStudio?.open(autoMediaAction.mode||'camera',Number(autoMediaAction.camera_index||0));},260);}
 
       void refreshHistory().catch(() => {});
-      if (inputMode === 'voice' && voiceMode && !existingReply && !data.private_email_read) {
+      if (inputMode === 'voice' && voiceMode && !existingReply && !data.private_email_read && !data.private_meeting_prep) {
         await speakAgentResponse(data.answer);
       }
     } catch (error) {

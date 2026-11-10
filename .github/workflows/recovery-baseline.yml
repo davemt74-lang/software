@@ -60,6 +60,7 @@ jobs:
           php tests/agent-capability-chat-v1.php
           php tests/agent-catch-up-v1.php
           php tests/agent-catch-up-meeting-prep-v1.php
+          php tests/agent-calendar-meeting-prep-v1.php
           php tests/agent-catch-up-profile-calls-v1.php
           node tests/cognitive-presentation-account-binding.mjs
           php tests/agent-initiative-v1.php

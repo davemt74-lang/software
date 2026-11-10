@@ -50,6 +50,9 @@ $connectedSitePlan=$initiativeReply===null&&$participantActor===null&&empty($inp
     ?vp3_connected_sites_chat_request_v1($pdo,$user,$principal,$query):null;
 $initiativeStatusRead=$initiativeReply===null&&empty($input['ephemeral_protocol'])
     &&in_array(vp3_initiative_command_v1($query),['status','findings'],true);
+$meetingPrepRequest=$initiativeReply===null&&$connectedSitePlan===null&&$participantActor===null
+    &&vp3_participant_scope_v1()===null&&empty($input['ephemeral_protocol'])
+    &&vp3_calendar_prep_chat_intent_v1($query);
 $emailPlan=$connectedSitePlan===null&&$initiativeReply===null&&$participantActor===null&&vp3_participant_scope_v1()===null
     &&empty($input['ephemeral_protocol'])&&knowledge_retrieval_v162_owner_session($user,$principal)
     ?agent_connection_email_chat_plan_v1($query,true):null;
@@ -63,7 +66,7 @@ $youtubeFollowup=$youtubeAllowed&&!$youtubeHistoryRequest
 $youtubeRequest=$youtubeAllowed&&($youtubeHistoryRequest||$youtubeFollowup!==null||agent_connection_youtube_chat_plan_v1($query)!==null);
 $publicResearchRequest=$connectedSitePlan===null&&$initiativeReply===null&&!$emailRequest&&$participantActor===null
     &&empty($input['ephemeral_protocol'])&&vp3_public_research_plan_v1($query)!==null;
-if($connectedSitePlan===null&&!$emailRequest&&!$youtubeRequest&&!$publicResearchRequest&&!$initiativeStatusRead&&$participantActor===null&&vp3_participant_scope_v1()===null
+if($connectedSitePlan===null&&!$emailRequest&&!$youtubeRequest&&!$publicResearchRequest&&!$initiativeStatusRead&&!$meetingPrepRequest&&$participantActor===null&&vp3_participant_scope_v1()===null
     &&empty($input['ephemeral_protocol'])&&$conversationId>0
     &&($initiativeReply!==null||vp3_initiative_followthrough_possible_v1($pdo,$userId,$agentScopeId,$conversationId,$query))){
     try{$initiativeRequest=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$conversationId,$query,
@@ -155,6 +158,24 @@ if($idempotencyKey!==''){
                     throw new RuntimeException('Conversation access changed.',403);
                 unset($replay['connected_site_query_hash']);
             }
+            if($meetingPrepRequest||isset($replay['meeting_prep_query_hash'])){
+                $replayConversationId=(int)($replay['conversation_id']??0);
+                if(!$meetingPrepRequest||($conversationId>0&&$conversationId!==$replayConversationId)
+                    ||!hash_equals((string)($replay['meeting_prep_query_hash']??''),hash('sha256',$query))
+                    ||!chat_v121_owned($pdo,$replayConversationId,$userId,$activeAgent)){
+                    throw new RuntimeException('The meeting prep voice request changed.',409);
+                }
+                if(!empty($replay['private_meeting_prep'])){
+                    $read=$pdo->prepare("SELECT context_json FROM chat_messages WHERE conversation_id=? AND id=? AND role='assistant'");
+                    $read->execute([$replayConversationId,(int)$replay['assistant_message_id']]);
+                    $context=json_decode((string)$read->fetchColumn(),true);
+                    $prep=vp3_agent_chat_meeting_prep_projection_v2160($pdo,$user,$agentScopeId,$replayConversationId,
+                        is_array($context['meeting_prep_v1']??null)?$context['meeting_prep_v1']:[]);
+                    $replay=array_replace($replay,$prep);
+                    $replay['private_meeting_prep']=($prep['tool_receipt']['status']??null)==='read_complete';
+                }
+                unset($replay['meeting_prep_query_hash']);
+            }
             if(empty($replay['ok'])){chat_v121_emit(['type'=>'error','error'=>(string)($replay['error']??'The prior voice turn failed.'),'replayed'=>true]);exit;}
             $researchHash=$replay['public_research_query_hash']??$replay['artist_research_query_hash']??null;
             if($publicResearchRequest||$researchHash!==null){
@@ -226,7 +247,7 @@ if($participantActor!==null){
     chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],'assistant_message_id'=>$done['assistant_message_id'],'agent_id'=>$agentScopeId]);
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
-if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$publicResearchRequest||$initiativeStatusRead||$emailRequest){
+if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$publicResearchRequest||$initiativeStatusRead||$emailRequest||$meetingPrepRequest){
     // Use the same owner-scoped executor for these voice and typed turns.
     $input['conversation_id']=$conversationId;
     $done=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);
@@ -235,6 +256,13 @@ if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$yout
         $replay=$done;
         if($publicResearchRequest)$replay['public_research_query_hash']=hash('sha256',$query);
         if($emailRequest)$replay['gmail_query_hash']=hash('sha256',$query);
+        if($meetingPrepRequest){
+            $replay['meeting_prep_query_hash']=hash('sha256',$query);
+            if(!empty($done['private_meeting_prep'])){
+                $replay['answer']=vp3_agent_chat_voice_text_v2160($done);
+                $replay['sources']=$replay['actions']=[];
+            }
+        }
         if($youtubeRequest){
             unset($replay['youtube_results']);
             $replay['youtube_query_hash']=hash('sha256',$query);
@@ -386,6 +414,7 @@ chat_v121_emit(['type'=>'done','data'=>$done]);
     $failedVoice=['ok'=>false,'error'=>$publicError,'conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'trace_id'=>agent_runtime_v125_trace_id()];
     if(!empty($emailReviewRequest))$failedVoice['gmail_query_hash']=hash('sha256',$query);
     if(!empty($connectedSitePlan))$failedVoice['connected_site_query_hash']=hash('sha256',$query);
+    if(!empty($meetingPrepRequest))$failedVoice['meeting_prep_query_hash']=hash('sha256',$query);
     if(is_array($initiativeReply??null)||is_array($initiativeRequest??null)){
         $failedVoice['initiative_reply_failure']=['initiative_reply'=>$initiativeReply,'explicit'=>$initiativeReply!==null,
             'query_hash'=>hash('sha256',$query),'conversation_id'=>$conversationId,'agent_id'=>$agentScopeId];

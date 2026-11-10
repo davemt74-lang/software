@@ -33,6 +33,23 @@ const fixtureGmail=gmailSource.replace(/function agent_connection_gmail_http_v1\
 assert.notEqual(fixtureGmail,gmailSource,'Intercept Gmail wire calls before starting the HTTP server');
 fs.writeFileSync(gmailConnector,fixtureGmail);
 fs.copyFileSync('tests/fixtures/gmail-durable-chat.php',path.join(tmp,'gmail-durable-chat.php'));
+fs.copyFileSync('tests/fixtures/meeting-prep-calendar-fixture.php',path.join(tmp,'meeting-prep-calendar-fixture.php'));
+fs.writeFileSync(path.join(tmp,'meeting-prep-state.php'),`<?php
+require __DIR__.'/includes/bootstrap.php';
+require __DIR__.'/meeting-prep-calendar-fixture.php';
+$pdo=db();
+header('Content-Type: application/json');
+if(isset($_GET['message'])){
+    $q=$pdo->prepare("SELECT message,context_json FROM chat_messages WHERE id=? AND role='assistant'");
+    $q->execute([(int)$_GET['message']]);
+    echo json_encode($q->fetch());
+}elseif(isset($_GET['revoke'])){
+    $pdo->exec("UPDATE video_meeting_participants SET invitation_status='revoked' WHERE meeting_id=7911");
+    echo '{}';
+}else{
+    echo json_encode(vp3_test_meeting_prep_seed_v1($pdo,new DateTimeImmutable('now',new DateTimeZone('UTC')),7));
+}
+`);
 // Provider transport is controlled; production Chat endpoints, context building,
 // reference checks, tool routing and message persistence still execute.
 fs.writeFileSync(path.join(tmp,'includes/ai-stream-v121.php'),`<?php
@@ -1028,5 +1045,46 @@ try{
  check(revokedGmail.status>=400&&!revokedGmail.body.includes(gmailSummary)
   &&!revokedGmailReload.body.includes(gmailSummary)&&!revokedGmailReload.body.includes(gmailSubject)
   &&!fs.existsSync(path.join(tmp,'gmail-provider-called')),'Gmail revocation removes display data without rereading or recharging the report');
+ const meetingEndpoint=base+'/meeting-prep-state.php';
+ const meetingSeed=await fetch(meetingEndpoint);
+ check(meetingSeed.ok,'seed the exact upcoming meeting, linked agenda and prior transcript: '+await meetingSeed.text());
+ const meetingChat=(await post('chat-v236.php?agent=7','',{action:'new'})).data.conversation_id;
+ const meetingPrompt='Help me prep for my next meeting';
+ const meetingArgs={...named,conversation_id:meetingChat};
+ const meetingHeaders={'X-Fixture-Model-Fail':'1','X-Fixture-Owner-Trap':'1'};
+ const priorPassage='The revised delivery plan needs an owner by Friday.';
+ const typedPrep=await post('chat-v236.php?agent=7',meetingPrompt,meetingArgs,meetingHeaders);
+ const voiceArgs={...meetingArgs,idempotency_key:'exact-next-meeting-prep'};
+ const spokenPrep=await post('chat-stream-v121.php',meetingPrompt,voiceArgs,meetingHeaders);
+ const legacyPrep=await post('chat.php',meetingPrompt,meetingArgs,meetingHeaders);
+ for(const [mode,prep] of [['typed',typedPrep],['spoken',spokenPrep],['legacy',legacyPrep]]){
+  check(prep.data?.tool_receipt?.capability==='calendar.read'&&prep.data.tool_receipt.status==='read_complete'
+   &&prep.data.answer.includes('Delivery review')&&prep.data.answer.includes(priorPassage)
+   &&prep.data.answer.includes('Assign an owner for the revised delivery plan')&&prep.data.answer.includes('Review the revised dates')
+   &&prep.data.answer===typedPrep.data.answer&&prep.data.private_meeting_prep===true,
+   mode+' Chat finds the same exact upcoming meeting and authorized prior passage without inference: '+prep.body);
+ }
+ const spokenDeltas=spokenPrep.body.trim().split('\n').map(line=>JSON.parse(line)).filter(event=>event.type==='delta');
+ check(spokenDeltas.map(event=>event.delta).join('')==='I put the private meeting prep in Chat.',
+  'streamed speech confirms delivery without passing private transcript text to voice');
+ const savedPrep=await (await fetch(meetingEndpoint+'?message='+spokenPrep.data.assistant_message_id)).text();
+ check(savedPrep.includes('meeting_prep_v1')&&!savedPrep.includes(priorPassage)&&!savedPrep.includes('Delivery review'),
+  'the durable meeting Chat message retains an exact marker without copying private agenda or transcript contents');
+ const prepRetry=await post('chat-stream-v121.php',meetingPrompt,voiceArgs,meetingHeaders);
+ check(prepRetry.data?.replayed===true&&prepRetry.data.assistant_message_id===spokenPrep.data.assistant_message_id
+  &&prepRetry.data.answer===typedPrep.data.answer,'a voice retry verifies and projects the same exact saved meeting');
+ const wrongPrepRetry=await post('chat-stream-v121.php','What is on my calendar?',voiceArgs,meetingHeaders);
+ check(wrongPrepRetry.data?.type==='error'&&!wrongPrepRetry.body.includes(priorPassage),'a reused voice key cannot disclose meeting prep to another request');
+ const meetingReload=await post('chat-v236.php?agent=7','',{...meetingArgs,action:'load'});
+ const prepRow=meetingReload.data?.messages?.find(message=>Number(message.id)===spokenPrep.data.assistant_message_id);
+ check(prepRow?.message===typedPrep.data.answer,'normal Chat reload authorizes and projects the original private prep');
+ await fetch(meetingEndpoint+'?revoke=1');
+ const [revokedPrep,revokedPrepLoad]=await Promise.all([
+  post('chat-stream-v121.php',meetingPrompt,voiceArgs,meetingHeaders),
+  post('chat-v236.php?agent=7','',{...meetingArgs,action:'load'}),
+ ]);
+ check(revokedPrep.data?.replayed===true&&revokedPrep.data.tool_receipt?.status!=='read_complete'
+  &&!revokedPrep.body.includes(priorPassage)&&!revokedPrepLoad.body.includes(priorPassage),
+  'prior meeting access revocation withdraws the old evidence from replay and Chat history');
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}
