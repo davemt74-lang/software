@@ -140,7 +140,9 @@ function vp3_initiative_tools_evidence_v1(PDO $pdo,array $user,array $binding,?a
     $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));
     $current=vp3_initiative_capabilities_evidence_v1($pdo,$scope,$binding,$now,$selectedRefs,$coverage);
     require_once __DIR__.'/agent-initiative-artist-v1.php';
-    return array_replace($evidence,$current,vp3_initiative_research_evidence_v1($pdo,$scope,$now,$selectedRefs,$coverage));
+    require_once __DIR__.'/agent-initiative-task-research-v1.php';
+    return array_replace($evidence,$current,vp3_initiative_research_evidence_v1($pdo,$scope,$now,$selectedRefs,$coverage),
+        vp3_initiative_task_research_evidence_v1($pdo,$scope,$selectedRefs,$coverage));
 }
 
 /** Tool IDs and readiness come from the same authenticated capability inventory used by Chat. */
@@ -152,7 +154,7 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
     $checkinReady=table_exists('chat_messages');
     $catalog['chat.check_in']=['id'=>'chat.check_in','capability'=>'initiative.prepare','mode'=>'private',
         'ready'=>$checkinReady,'reason'=>$checkinReady?'ready':'upgrade_required',
-        'description'=>'Optionally prepare one brief natural, source-grounded check-in, suggestion or focused question for this exact saved Chat, using the selected Agent identity and recent owner messages. Choose only when worthwhile, never a forced hello or page-load greeting. At most one per plan; report must be true. Maximum 1200 plain characters.'];
+        'description'=>'Optionally prepare one brief natural, source-grounded check-in, suggestion or focused question for this exact saved Chat, using the selected Agent identity and recent owner messages. If public research could advance an open task but no public topic is approved, a focused check-in can suggest a public topic and ask the owner to approve it using /research task #ID: public topic. Choose only when worthwhile, never a forced hello or page-load greeting. At most one per plan; report must be true. Maximum 1200 plain characters.'];
     if(function_exists('vp3_capability_snapshot_v1')){
         try{$snapshot=vp3_capability_snapshot_v1($pdo,$scope['user'],$scope['principal'],['conversation_id'=>$scope['conversation_id']],
             vp3_initiative_tools_knowledge_scope_v1($binding));}
@@ -192,14 +194,15 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
         'ready'=>$ready,'reason'=>$ready?'ready':$missionReason,
         'description'=>'Save an exact source-grounded specialist/research Mission for owner assignment review. Creates a real pending-review Mission; does not start research, grant tools or claim completed work.'];
     foreach(['artist','topic'] as $kind){
-        $refs=array_keys(array_filter($evidence,static fn(array $row):bool=>($row['kind']??'')===$kind.'_interest'));
+        $refs=array_keys(array_filter($evidence,static fn(array $row):bool=>($row['kind']??'')===$kind.'_interest'
+            ||($kind==='topic'&&($row['kind']??'')==='task_research')));
         if(!$refs)continue;
         $id=$kind.'.research';
         $catalog[$id]=['id'=>$id,'capability'=>$id,'mode'=>'read',
             'ready'=>true,'reason'=>'ready','source_refs'=>$refs,
             'description'=>$kind==='artist'
                 ?'Use the exact named artist from this verified interest pattern to prepare a private, sourced result. Choose only when research would add value. Set focus to overview, news, shows, merch, or videos.'
-                :'Use the exact owner-entered topic from this verified interest pattern to prepare a private, sourced result. Choose only when a reliable explanation, practical next step, or new development would help. Treat activity as tentative evidence of interest.'];
+                :'Use the exact public topic from a verified interest pattern or an owner-approved open task. Choose only when a reliable explanation, practical next step, or new development would help. For task_research, report the sourced result back to private Chat. Treat activity as tentative evidence of interest.'];
     }
     foreach(['product','screen','mission','marketing'] as $tool){
         $refs=[];
@@ -337,11 +340,22 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
             require_once __DIR__.'/agent-artist-research-v1.php';
             $kind=$tool==='artist.research'?'artist':'topic';
             $owner=(int)$scope['user']['id'];
-            if(!agent_connection_youtube_enabled_v1()||!agent_connection_youtube_consent_v1($pdo,$owner)
+            $primary=$goal['primary']??'';
+            if(!is_string($primary)||!vp3_public_research_source_ref_valid_v1($kind,$primary)){
+                throw new RuntimeException('Public research source changed.',409);
+            }
+            if(str_starts_with($primary,'task-research:')){
+                require_once __DIR__.'/agent-initiative-task-research-v1.php';
+                $coverage=[];
+                $current=vp3_initiative_task_research_evidence_v1($pdo,$scope,[$primary],$coverage)[$primary]??null;
+                if(($coverage['task_research']??null)==='unavailable')throw new RuntimeException('Task research verification is unavailable.',503);
+                if(!$current||$current['revision']!==($goal['sources'][$primary]??null)||$current['title']!==($output['public_topic']??null)){
+                    throw new RuntimeException('The open task or its public research choice changed.',409);
+                }
+            }elseif(!agent_connection_youtube_enabled_v1()||!agent_connection_youtube_consent_v1($pdo,$owner)
                 ||!vp3_youtube_research_enabled_v1($pdo,$owner,$kind)){
                 throw new RuntimeException('Background '.$kind.' research was turned off.',403);
             }
-            $primary=$goal['primary']??'';
             $now=time();
             $checkedAt=strtotime((string)($output['checked_at']??''));
             if(($output['type']??null)!=='initiative_'.$kind.'_research'||($output['source_ref']??null)!==$primary
@@ -433,6 +447,8 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
             require_once __DIR__.'/agent-artist-research-v1.php';
             $kind=$tool==='artist.research'?'artist':'topic';
             $primary=$job['primary'];$source=$evidence[$primary];$focus=trim($job['focus']);
+            $task=($source['kind']??null)==='task_research';
+            if($task&&($job['report']??null)!==true)throw new InvalidArgumentException('Task research must report to its saved Chat.');
             $plan=['mode'=>'direct',$kind=>$source['title']];
             if($kind==='artist')$plan+=['location'=>'',
                 'focus'=>in_array($focus,['news','shows','merch','videos'],true)?$focus:'overview'];
@@ -452,7 +468,8 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
             return ['draft'=>$research['answer'],'sources'=>$research['sources'],
                 'tool_receipt'=>vp3_tool_receipt_v1($tool,'search',$research['status'],'',0,count($research['sources'])),
                 'output'=>['type'=>'initiative_'.$kind.'_research','status'=>$research['status'],'reason'=>$research['reason'],
-                    'checked_at'=>$research['checked_at'],'source_ref'=>$primary,'source_revision'=>$source['revision']]];
+                    'checked_at'=>$research['checked_at'],'source_ref'=>$primary,'source_revision'=>$source['revision']]
+                    +($task?['public_topic'=>$source['title']]:[])];
         }
         if(in_array($tool,['brain.read','knowledge.search'],true)){
             $records=vp3_initiative_tools_records_v1($pdo,$scope,$binding,$tool,$job['focus']);

@@ -636,7 +636,7 @@ $runtime = $headerUiRuntime
              'csrf'=>csrf_token(),
              'knowledgeUrl'=>url('/knowledge.php'),
          ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) . ';</script>'
-         . '<script src="' . e(url('/chat-connected-sites-v1.js?v=2')) . '"></script>'
+         . '<script src="' . e(url('/chat-connected-sites-v1.js?v=3')) . '"></script>'
          . $recordingLibraryRuntime
          . $chatSettingsRuntime
          . '<script data-agent-updates-autodismiss-v173 data-agent-overlay-build="' . e($agentOverlayBuild) . '" src="' . e(url('/chat-agent-updates-autodismiss-v173.js?v=' . $agentOverlayBuild)) . '"></script>'

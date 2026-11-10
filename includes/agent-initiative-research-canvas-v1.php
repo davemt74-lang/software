@@ -96,8 +96,10 @@ function vp3_initiative_research_canvas_card_v1(array $goal, array $result, arra
     foreach (is_array($context['sources'] ?? null) ? $context['sources'] : [] as $source) {
         if (!is_array($source)) continue;
         $title = $source['title'] ?? null;
-        if (($source['source'] ?? null) !== $primary || !is_string($title) || !vp3_topic_research_subject_valid_v1($title)
-            || $primary !== $kind.'-interest:'.hash('sha256', mb_strtolower($title))) continue;
+        if (($source['source'] ?? null) !== $primary || !is_string($title) || !vp3_topic_research_subject_valid_v1($title)) continue;
+        $titleMatches = str_starts_with($primary, 'task-research:') ? $title === ($output['public_topic'] ?? null)
+            : $primary === $kind.'-interest:'.hash('sha256', mb_strtolower($title));
+        if (!$titleMatches) continue;
         return [
             'kind'=>$kind, 'title'=>$title, 'status'=>$output['status'], 'checked_at'=>$output['checked_at'],
             'sources'=>array_map(static fn(array $row): array=>array_intersect_key($row, [

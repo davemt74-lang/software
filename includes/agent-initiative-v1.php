@@ -65,7 +65,7 @@ function vp3_initiative_jobs_v1(string $answer,array $evidence,array $allowedToo
         }
         $interestRef=$evidence[$primary]['interest_ref']??null;
         if(is_string($interestRef)&&preg_match('/\A(?:artist|topic)-interest:[a-f0-9]{64}\z/D',$interestRef))$assignment='youtube-interest|'.$interestRef;
-        if(preg_match('/\A(?:open-task|task):([1-9][0-9]*)\z/D',$primary,$taskMatch)){
+        if(preg_match('/\A(?:open-task|task|task-research):([1-9][0-9]*)\z/D',$primary,$taskMatch)){
             // Historical aliases may still verify old reports, but cannot
             // become competing new assignments for one canonical task.
             $id=$taskMatch[1];
@@ -83,7 +83,10 @@ function vp3_initiative_jobs_v1(string $answer,array $evidence,array $allowedToo
         if(!isset($refs[$primary])||isset($primaries[$assignment])||$job['focus']===''||mb_strlen($job['focus'])>300){
             throw new InvalidArgumentException('Invalid initiative assignment scope.');
         }
-        if(in_array($job['tool'],['artist.research','topic.research'],true))$job['refs']=[$primary];
+        if(in_array($job['tool'],['artist.research','topic.research'],true)){
+            $job['refs']=[$primary];
+            if($primaryKind==='task_research')$job['report']=true;
+        }
         $primaries[$assignment]=true;
     }
     unset($job);
@@ -284,7 +287,7 @@ function vp3_initiative_live_revision_v1(PDO $pdo,array $user,array $policy): st
     return $snapshot['revision']??'';
 }
 
-function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
+function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user,?array $selectedRefs=null): void
 {
     if($pdo->inTransaction())return;
     require_once __DIR__.'/agent-live-context-v1.php';
@@ -302,10 +305,10 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
     $liveRevision=vp3_initiative_live_revision_v1($pdo,$live,$policy);
     $engagementRevision=vp3_initiative_engagement_revision_v1($pdo,$live,$policy);
     $last=agent_brain_v122_memory($live,'initiative_sweep','last-review');$previous=$last['metadata']??[];
-    if(vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision,$engagementRevision))return;
+    if($selectedRefs===null&&vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision,$engagementRevision))return;
     // A due assessment primes bounded transcript privacy proofs before owner
     // locks. The locked assessment repeats the actual source/identity reads.
-    if(table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172')){
+    if($selectedRefs===null&&table_exists('artist_transcript_sessions_v172')&&table_exists('artist_transcript_segments_v172')){
         require_once __DIR__.'/agent-initiative-tools-v1.php';
         vp3_initiative_capability_load_v1('transcript');$coverage=[];
         try{
@@ -321,7 +324,7 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
         $previous=$last['metadata']??[];
         $liveRevision=vp3_initiative_live_revision_v1($pdo,$live,$policy);
         $engagementRevision=vp3_initiative_engagement_revision_v1($pdo,$live,$policy);
-        if(!vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision,$engagementRevision)){
+        if($selectedRefs!==null||!vp3_initiative_review_recent_v1($pdo,$last,$policy,$liveRevision,$engagementRevision)){
             $availability=vp3_initiative_availability_v1(vp3_initiative_owner_context_v1($pdo,$live,$policy,false));
             $attentionRevision=$previous['attention_revision']??null;
             if(($previous['conversation_id']??null)!==($policy['conversation_id']??null)
@@ -329,7 +332,13 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
                 ||!is_string($attentionRevision)||!preg_match('/\A[a-f0-9]{32}\z/D',$attentionRevision)){
                 $attentionRevision=bin2hex(random_bytes(16));
             }
-            $evidence=vp3_initiative_evidence_v1($pdo,$live,new DateTimeImmutable('now',new DateTimeZone('UTC')),!empty($policy['screen_enabled']));
+            $coverage=[];
+            $evidence=vp3_initiative_evidence_v1($pdo,$live,new DateTimeImmutable('now',new DateTimeZone('UTC')),
+                $selectedRefs===null&&!empty($policy['screen_enabled']),[],$coverage,$selectedRefs);
+            if($selectedRefs!==null&&array_diff($selectedRefs,array_keys($evidence))){
+                $pdo->commit();
+                return;
+            }
             if($evidence){
                 $canonical=array_map(static fn(array $row):string=>$row['canonical_source_revision']??$row['revision'],$evidence);
                 $payload=['binding'=>$policy,'sources'=>array_column($evidence,'revision','ref'),'canonical_sources'=>$canonical,
@@ -352,7 +361,7 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user): void
                 'engagement_revision'=>$engagementRevision,
                 'checked_at'=>gmdate(DATE_ATOM),
             ];
-            if(agent_brain_v122_upsert_system_memory($live,'initiative_sweep','last-review','Initiative source review checked.',$review)<1){
+            if($selectedRefs===null&&agent_brain_v122_upsert_system_memory($live,'initiative_sweep','last-review','Initiative source review checked.',$review)<1){
                 throw new RuntimeException('Initiative review could not be recorded.');
             }
         }
@@ -662,6 +671,13 @@ function vp3_initiative_status_scoped_v1(PDO $pdo,array $user,array $policy,arra
         }
         $lines[]=(string)$out['initiative_draft'];
         foreach($matching as $ref=>$item)$sources[$ref]=['source'=>$ref,'title'=>$item['title'],'url'=>$item['url']];
+        if(in_array($goal['tool']??null,['artist.research','topic.research'],true)
+            &&is_array($out['initiative_tool_result']['output']??null)){
+            $research=vp3_initiative_research_tool_result_v1($out['initiative_tool_result']);
+            foreach($research['sources']??[] as $source){
+                $sources[$source['source']]=array_intersect_key($source,['source'=>true,'title'=>true,'url'=>true,'coverage'=>true]);
+            }
+        }
         if(count($lines)>=($findingsOnly?3:4))break;
     }
     if($findingsOnly&&!$lines){
@@ -691,7 +707,8 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         'open-task'=>'open_tasks','activity-situation'=>'activity_situations',
         'chat-history'=>'chat_history','canvas-work'=>'canvas_work','song-history'=>'song_history',
         'mission-evidence'=>'mission_evidence','product-context'=>'product_context',
-        'task-list'=>'task_lists','live-context'=>'live_context','artist-interest'=>'artist_research','topic-interest'=>'topic_research'];
+        'task-list'=>'task_lists','live-context'=>'live_context','artist-interest'=>'artist_research','topic-interest'=>'topic_research',
+        'task-research'=>'task_research'];
     foreach($sources as $ref=>$revision){
         if(($current[$ref]['revision']??null)===$revision)continue;
         $family=$families[explode(':',$ref,2)[0]]??'';

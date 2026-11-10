@@ -27,6 +27,41 @@ function vp3_connected_sites_chat_name_match_v1(string $query, string $name, boo
     return preg_match($pattern,$query,$match)?ltrim(substr($query,strlen($match[0]))):null;
 }
 
+function vp3_connected_sites_chat_address_v1(string $query): ?string
+{
+    $query=trim($query);
+    return preg_match('/^(?:\/ask|(?:(?:please|(?:can|could|would) you)\s+)?ask)\s+/iu',$query,$prefix)
+        ? substr($query,strlen($prefix[0]))
+        : null;
+}
+
+function vp3_connected_sites_chat_allowed_v1(array $user, array $principal): bool
+{
+    return knowledge_retrieval_v162_owner_session($user,$principal)
+        && vp3_participant_scope_v1()===null
+        && has_permission('account.access',$user)
+        && has_permission('chat.access',$user);
+}
+
+/** Resolve an explicit command before general Chat tools can interpret it. */
+function vp3_connected_sites_chat_request_v1(PDO $pdo, array $user, array $principal, string $query): ?array
+{
+    $address=vp3_connected_sites_chat_address_v1($query);
+    if($address===null)return null;
+    $gelato=vp3_connected_sites_chat_name_match_v1($address,'Gelato')!==null;
+    if(!vp3_connected_sites_chat_allowed_v1($user,$principal)){
+        return $gelato?['answer'=>'Use your private Agent Chat with account access to ask Gelato.']:null;
+    }
+    try{
+        return vp3_connected_sites_chat_plan_v1($query,vp3_gelato_connections_v1($pdo,(int)$user['id'],true));
+    }catch(Throwable $error){
+        if(!$gelato)return null;
+        return ['answer'=>(int)$error->getCode()===503
+            ? 'Gelato connections need the VP3 Database Upgrade before they can be used in Chat.'
+            : 'The Gelato connection could not be checked. Try again or open Chat Tools → Connected Sites.'];
+    }
+}
+
 function vp3_connected_sites_chat_actions_v1(string $question): array
 {
     $actions=[];
@@ -62,16 +97,18 @@ function vp3_connected_sites_chat_plan_v1(string $query, array $connections, arr
     $query=trim($query);
     $connection=null;
     $question=$query;
-    $explicit=preg_match('/^(?:(?:please|(?:can|could|would) you)\s+)?ask\s+/iu',$query,$prefix);
+    $request=vp3_connected_sites_chat_address_v1($query);
+    $explicit=$request!==null;
     if($explicit){
-        $request=substr($query,strlen($prefix[0]));
+        $alias=vp3_connected_sites_chat_name_match_v1($request,'Gelato');
         $candidates=[];
         foreach($connections as $row){
             $rest=vp3_connected_sites_chat_name_match_v1($request,(string)($row['agentName']??''));
+            if($alias!==null&&($rest===null||strlen($alias)<strlen($rest)))$rest=$alias;
             if($rest!==null)$candidates[]=['connection'=>$row,'question'=>$rest];
         }
-        if(!$candidates)return null;
-        // If two agent names overlap, the longest exact prefix wins. Duplicate names require a label.
+        if(!$candidates)return $alias===null?null:['answer'=>'Gelato is not paired with this VP3 account. Open Chat Tools → Connected Sites and use a pairing code from your Gelato installation.'];
+        // Gelato aliases every verified Gelato installation. Longer installed names still win.
         $remaining=min(array_map(static fn(array $row): int=>strlen($row['question']),$candidates));
         $candidates=array_values(array_filter($candidates,static fn(array $row): bool=>strlen($row['question'])===$remaining));
         $hosts=array_values(array_unique(array_filter(array_map(
@@ -89,10 +126,13 @@ function vp3_connected_sites_chat_plan_v1(string $query, array $connections, arr
             }
             $candidates=$named;
         }
-        if(count($candidates)!==1)return ['answer'=>'Choose one connected installation by saying “Ask [agent name] via [hostname] …”.'
+        if(count($candidates)!==1)return ['answer'=>'Choose one connected installation by saying “Ask Gelato via [hostname] …” or using its installed agent name.'
             .($hosts?' Connected hosts are '.implode(', ',$hosts).'.':'')];
         $connection=$candidates[0]['connection'];
         $question=$candidates[0]['question'];
+        if(trim($question," \t.,?!:;")===''){
+            return ['answer'=>'What would you like to ask Gelato? Try “Ask Gelato how we did today and what’s still open” or “/ask gelato search menu for pizza”.'];
+        }
         if(preg_match('/^(?:search|find|look up)\s+(?:(?:the|a)\s+)?(menu|recipes?)\s+(?:(?:for|about)\s+)?(.+?)\s*[?.!]*$/iu',$question,$search)){
             return ['connection'=>$connection,'search'=>[
                 'type'=>strtolower($search[1])==='menu'?'menu':'recipe',
@@ -243,25 +283,35 @@ function vp3_connected_sites_chat_render_v1(string $action, array $data, bool $o
     return $lines;
 }
 
-function vp3_connected_sites_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, int $messageId): ?array
+function vp3_connected_sites_chat_error_v1(string $label, string $name, Throwable $error): string
 {
-    if($conversationId<1||$messageId<1||!knowledge_retrieval_v162_owner_session($user,$principal)
-        ||!has_permission('account.access',$user)||!has_permission('chat.access',$user))return null;
-    $userId=(int)$user['id'];
-    try{
-        $connections=vp3_gelato_connections_v1($pdo,$userId);
-        if(!$connections)return null;
-        if(!preg_match('/^(?:(?:please|(?:can|could|would) you)\s+)?ask\s+/iu',$query)){
+    return (int)$error->getCode()===403
+        ? $name.' declined authorization for '.mb_strtolower($label).'. Check the paired permissions in Gelato.'
+        : $label.' could not be read from '.$name.' right now.';
+}
+
+function vp3_connected_sites_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, int $messageId, ?array $explicitPlan=null): ?array
+{
+    if($conversationId<1||$messageId<1)return null;
+    if(vp3_connected_sites_chat_address_v1($query)!==null){
+        $plan=$explicitPlan??vp3_connected_sites_chat_request_v1($pdo,$user,$principal,$query);
+    }else{
+        if(!vp3_connected_sites_chat_allowed_v1($user,$principal))return null;
+        try{
             $previous=vp3_connected_sites_chat_previous_v1($pdo,$conversationId,$messageId);
             if(!$previous)return null;
-        }
-    }catch(Throwable $e){return null;}
-    $plan=vp3_connected_sites_chat_plan_v1($query,$connections,$previous??[]);
+            $plan=vp3_connected_sites_chat_plan_v1($query,vp3_gelato_connections_v1($pdo,(int)$user['id']),$previous);
+        }catch(Throwable $error){return null;}
+    }
     if($plan===null)return null;
     $result=['handled'=>true,'answer'=>$plan['answer']??'','sources'=>[],'connected_site_context_v1'=>$plan['context']??[]];
     if(isset($plan['answer']))return $result;
+    if(!vp3_connected_sites_chat_allowed_v1($user,$principal))return null;
+    $userId=(int)$user['id'];
     $connection=$plan['connection'];
     $name=vp3_connected_sites_chat_text_v1($connection['agentName']??'')?:'Connected agent';
+    $disconnected=['handled'=>true,'answer'=>'That Gelato connection is no longer available. Open Chat Tools → Connected Sites to reconnect it.',
+        'sources'=>[],'connected_site_context_v1'=>[]];
     if(isset($plan['search'])){
         $type=$plan['search']['type'];
         if(!in_array($type,(array)$connection['scopes'],true)){
@@ -270,8 +320,9 @@ function vp3_connected_sites_chat_v1(PDO $pdo, array $user, array $principal, st
         }
         try{
             $search=vp3_gelato_search_v1($pdo,$userId,$connection['id'],$plan['search']['query'],$type,5);
-        }catch(Throwable $e){
-            $result['answer']=ucfirst($type).' results could not be read from '.$name.' right now.';
+        }catch(Throwable $error){
+            if((int)$error->getCode()===404)return $disconnected;
+            $result['answer']=vp3_connected_sites_chat_error_v1(ucfirst($type).' results',$name,$error);
             return $result;
         }
         $titles=[];
@@ -309,8 +360,9 @@ function vp3_connected_sites_chat_v1(PDO $pdo, array $user, array $principal, st
             $read=vp3_gelato_operation_v1($pdo,$userId,$connection['id'],$action,(int)$location['id'],$day);
             if(!vp3_connected_sites_chat_data_v1($action,$read['data']??null,$day))
                 throw new RuntimeException('Unexpected connected-site result.');
-        }catch(Throwable $e){
-            $sections[$action]=$labels[$action].' could not be read from '.$name.' right now.';
+        }catch(Throwable $error){
+            if((int)$error->getCode()===404)return $disconnected;
+            $sections[$action]=vp3_connected_sites_chat_error_v1($labels[$action],$name,$error);
             continue;
         }
         $sections[$action]=$read['data'];

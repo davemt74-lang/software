@@ -70,7 +70,7 @@ try {
   await page.getByRole('button', { name: 'Chat tools' }).click();
   await page.getByText('Connected Sites', { exact: true }).click();
   await page.getByText('Connected Sites requires the VP3 Cloud database upgrade.').waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Connect Food Monster' }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Connect Gelato' }).isDisabled(), true);
   available = true;
   const refreshButton = page.getByRole('button', { name: 'Refresh connections' });
   const refresh = async () => {
@@ -79,9 +79,9 @@ try {
   };
   await refresh();
   const connect = async () => {
-    await page.getByLabel('Food Monster site HTTPS address').fill(origin);
+    await page.getByLabel('Gelato site HTTPS address').fill(origin);
     await page.getByLabel('One-time pairing code').fill('fixture-pairing-code');
-    await page.getByRole('button', { name: 'Connect Food Monster' }).click();
+    await page.getByRole('button', { name: 'Connect Gelato' }).click();
     await page.getByText('Site connected.', { exact: true }).waitFor();
   };
   await connect();
@@ -89,16 +89,17 @@ try {
   assert.equal(await page.getByLabel('One-time pairing code').inputValue(), '');
   assert.equal(await page.getByText('Owner display label', { exact: true }).count(), 0);
   assert.match(await page.locator('[data-site-row]').innerText(), /<Main Kitchen>/);
+  assert.equal(await page.getByText('In Agent Chat, say “Ask Gelato” or type “/ask gelato” followed by your question.').count(), 1);
   const primaryFolderLink = page.getByRole('link', { name: 'Open Knowledge folder for ' + name, exact: true });
   assert.equal(await primaryFolderLink.getAttribute('href'), knowledgeUrl + '?folder=21');
   assert.equal(await page.getByRole('button', { name: 'Create Knowledge folder' }).count(), 0);
   const input = page.locator('#chatInput');
   await input.fill('Keep this existing draft');
-  await page.getByRole('button', { name: 'Ask ' + name }).click();
+  await page.getByRole('button', { name: 'Ask Gelato', exact: true }).click();
   assert.equal(await input.inputValue(), 'Keep this existing draft');
   await input.clear();
-  await page.getByRole('button', { name: 'Ask ' + name }).click();
-  assert.equal(await input.inputValue(), 'Ask Kitchen Fox how we did today and what’s still open');
+  await page.getByRole('button', { name: 'Ask Gelato', exact: true }).click();
+  assert.equal(await input.inputValue(), 'Ask Gelato how we did today and what’s still open');
   assert.equal(await page.getByRole('button', { name: 'Chat tools' }).getAttribute('aria-expanded'), 'false');
   await page.getByRole('button', { name: 'Chat tools' }).click();
   page.once('dialog', dialog => dialog.dismiss());
@@ -123,8 +124,8 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Create Knowledge folder' }).count(), 0);
   await input.clear();
   const secondSite = page.locator('[data-site-row]').filter({ hasText: 'https://other.example' });
-  await secondSite.getByRole('button', { name: 'Ask ' + name }).click();
-  assert.equal(await input.inputValue(), 'Ask Kitchen Fox via other.example how we did today and what’s still open');
+  await secondSite.getByRole('button', { name: 'Ask Gelato', exact: true }).click();
+  assert.equal(await input.inputValue(), 'Ask Gelato via other.example how we did today and what’s still open');
   await page.getByRole('button', { name: 'Chat tools' }).click();
   canCreateKnowledgeFolder = true;
   await refresh();

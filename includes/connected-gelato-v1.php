@@ -204,9 +204,13 @@ function vp3_gelato_public_v1(array $row): array
     ];
 }
 
-function vp3_gelato_connections_v1(PDO $pdo, int $userId): array
+function vp3_gelato_connections_v1(PDO $pdo, int $userId, bool $requireSchema = false): array
 {
-    if ($userId < 1 || !vp3_gelato_schema_ready_v1($pdo)) return [];
+    if ($userId < 1) return [];
+    if (!vp3_gelato_schema_ready_v1($pdo)) {
+        if ($requireSchema) throw new RuntimeException('Gelato connections are not ready. Run the database upgrade.', 503);
+        return [];
+    }
     $query = $pdo->prepare('SELECT id,label,agent_name,origin,instance_id,scopes_json,locations_json,created_at
         FROM vp3_gelato_connections_v1 WHERE owner_user_id=? ORDER BY agent_name,id');
     $query->execute([$userId]);

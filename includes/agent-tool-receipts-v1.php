@@ -55,7 +55,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'navigation.open'=>['open','prepare'],
         'tasks.read'=>['list'],
         'tasks.lists'=>['show','show_lists','prepare','add','create_list','create_task','confirm','cancel'],
-        'tasks.manage'=>['set_status'],
+        'tasks.manage'=>['set_status','set_public_research'],
         'homeserver.read'=>['files','file_read','knowledge','tools','devices'],
         'workflows.read'=>['inspect'],
         'workflows.manage'=>['approve','pause','pause_request','resume','cancel','retry','reschedule','priority'],

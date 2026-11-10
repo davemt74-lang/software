@@ -10,6 +10,19 @@ fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(pa
 for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php','chat-canvas-media-v1.php','agent-catch-up-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
 for(const name of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
+const gelatoConnector=path.join(tmp,'includes/connected-gelato-v1.php');
+const gelatoSource=fs.readFileSync(gelatoConnector,'utf8');
+const fixtureGelato=gelatoSource.replace(/function vp3_gelato_transport_v1\([\s\S]*?(?=\nfunction vp3_gelato_discover_v1)/,
+ "require_once __DIR__.'/gelato-chat-transport-v1.php';\n");
+assert.notEqual(fixtureGelato,gelatoSource,'Install the Gelato wire fixture before starting the HTTP server');
+fs.writeFileSync(gelatoConnector,fixtureGelato);
+fs.copyFileSync('tests/fixtures/gelato-chat-transport-v1.php',path.join(tmp,'includes/gelato-chat-transport-v1.php'));
+fs.writeFileSync(path.join(tmp,'gelato-chat-fixture.php'),`<?php
+require __DIR__.'/includes/bootstrap.php';
+$pdo=db();
+vp3_gelato_schema_v1($pdo);
+vp3_gelato_connect_v1($pdo,1,'https://kitchen.example.com','fmlink_'.str_repeat('d',43));
+`);
 // Provider transport is controlled; production Chat endpoints, context building,
 // reference checks, tool routing and message persistence still execute.
 fs.writeFileSync(path.join(tmp,'includes/ai-stream-v121.php'),`<?php
@@ -833,5 +846,46 @@ try{
   &&topicRetry.data?.replayed===true&&topicRetry.data.assistant_message_id===topicVoice.data.assistant_message_id
   &&changedTopicRetry.data?.type==='error'&&changedTopicRetry.data?.tool_receipt==null,
   'production streaming Chat validates general research and binds retries to the exact request');
+ check((await fetch(base+'/gelato-chat-fixture.php')).ok,'pair the fixture Gelato installation with the owner');
+ const gelatoHeaders={'X-Fixture-Model-Fail':'1','X-Fixture-Owner-Trap':'1'};
+ const gelatoReads=()=>{
+  const file=path.join(tmp,'gelato-chat-reads.jsonl');
+  return fs.existsSync(file)?fs.readFileSync(file,'utf8').trim().split('\n').map(JSON.parse):[];
+ };
+ const gelatoQuestion="how we did today and what's still open";
+ const gelatoExpectedReads=[{action:'sales.daily.read',locationId:71},{action:'tickets.open.read',locationId:71}];
+ const gelatoPrivateResult=result=>{
+  const sites=result.data?.sources?.filter(source=>source.source.startsWith('connected-site:'));
+  return result.data?.ok===true&&result.data.answer.includes('Fixture Kitchen Agent · Fixture Phoenix')
+   &&result.data.answer.includes('987.65 USD')&&result.data.answer.includes('#F-17')
+   &&result.data.answer.includes('outside this connection’s approved scopes')
+   &&result.data.execution?.source==='vp3_tool'&&result.data.execution.cloud_tokens_debited===0
+   &&!result.body.includes('PRIVATE_GELATO_CUSTOMER')
+   &&sites?.length===2&&sites.every(source=>source.url.startsWith('https://kitchen.example.com/'));
+ };
+ const gelatoTyped=await post('chat-v236.php?agent=7','Ask Gelato '+gelatoQuestion,named,gelatoHeaders);
+ check(gelatoPrivateResult(gelatoTyped),'named Agent Chat uses the approved Gelato wire results for the natural command: '+gelatoTyped.body);
+ assert.deepEqual(gelatoReads(),gelatoExpectedReads,'only the two approved reads reach the paired installation');
+ const gelatoConversation=gelatoTyped.data.conversation_id;
+ const gelatoVoiceOptions={...named,conversation_id:gelatoConversation,idempotency_key:'gelato-voice-private-result'};
+ const gelatoVoice=await post('chat-stream-v121.php','/ask gelato '+gelatoQuestion,gelatoVoiceOptions,gelatoHeaders);
+ check(gelatoPrivateResult(gelatoVoice)&&gelatoVoice.data.input_mode==='voice',
+  'production voice stream reaches the same scoped data through the slash command: '+gelatoVoice.body);
+ assert.deepEqual(gelatoReads(),[...gelatoExpectedReads,...gelatoExpectedReads],'streaming Gelato adds one read per approved action');
+ const gelatoRetry=await post('chat-stream-v121.php','/ask gelato '+gelatoQuestion,gelatoVoiceOptions,gelatoHeaders);
+ const changedGelatoRetry=await post('chat-stream-v121.php','/ask gelato show open tickets',gelatoVoiceOptions,gelatoHeaders);
+ check(gelatoRetry.data?.replayed===true&&gelatoRetry.data.assistant_message_id===gelatoVoice.data.assistant_message_id
+  &&gelatoRetry.data.sources?.length===0&&!gelatoRetry.body.includes('987.65')&&!gelatoRetry.body.includes('#F-17')
+  &&changedGelatoRetry.data?.type==='error'&&!changedGelatoRetry.body.includes('987.65'),
+  'Gelato voice retries bind the exact question and retain only the private-result receipt');
+ const gelatoHistory=await post('chat-v236.php?agent=7','',{...named,action:'load',conversation_id:gelatoConversation});
+ const gelatoStored=gelatoHistory.data?.messages?.filter(message=>message.role==='assistant');
+ check(gelatoStored?.length===2&&gelatoStored.every(message=>message.message==='A private connected-site result was displayed for this turn.')
+  &&!gelatoHistory.body.includes('987.65')&&!gelatoHistory.body.includes('#F-17'),
+  'private Gelato data is displayed live and kept out of persisted Chat history');
+ const gelatoUnpaired=await post('chat.php','/ask gelato '+gelatoQuestion,{}, {...gelatoHeaders,'X-Fixture-User':'2'});
+ const gelatoBare=await post('chat-v236.php?agent=7','/ask gelato',named,gelatoHeaders);
+ check(gelatoUnpaired.data?.answer.includes('not paired with this VP3 account')&&gelatoBare.data?.answer.includes('What would you like to ask Gelato?')
+  &&gelatoReads().length===4,'unpaired owners, prompts and retries never trigger a Gelato read');
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

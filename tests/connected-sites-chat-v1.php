@@ -19,6 +19,11 @@ function has_permission(string $permission, array $user): bool
     return in_array($permission,$user['permissions'],true);
 }
 
+function vp3_participant_scope_v1(): ?array
+{
+    return $GLOBALS['fixtureParticipantScope']??null;
+}
+
 function vp3_gelato_connections_v1(PDO $pdo, int $userId): array
 {
     return $GLOBALS['fixtureConnections'][$userId]??[];
@@ -27,7 +32,7 @@ function vp3_gelato_connections_v1(PDO $pdo, int $userId): array
 function vp3_gelato_operation_v1(PDO $pdo, int $userId, string $connectionId, string $action, int $locationId, ?string $businessDate=null): array
 {
     $GLOBALS['fixtureRequests'][]=[$userId,$connectionId,$action,$locationId,$businessDate];
-    if($action===($GLOBALS['fixtureFail']??null))throw new RuntimeException('PRIVATE_PROVIDER_DEBUG');
+    if($action===($GLOBALS['fixtureFail']??null))throw new RuntimeException('PRIVATE_PROVIDER_DEBUG',$GLOBALS['fixtureErrorCode']??0);
     return [
         'asOf'=>'2026-11-03T23:24:00Z',
         'source'=>['path'=>'/pos.php'],
@@ -78,7 +83,13 @@ $connection=[
 $question='Ask Luna’s Kitchen how we did today and what’s still open?';
 $plan=vp3_connected_sites_chat_plan_v1($question,[$connection]);
 connected_site_chat_expect($plan['context']['actions']===['sales.daily.read','orders.read','tickets.open.read'],'The installed name resolves the exact combined question.');
-connected_site_chat_expect(vp3_connected_sites_chat_plan_v1('Ask Gelato about sales',[$connection])===null,'A hardcoded Gelato alias must not select an unrelated installed name.');
+foreach(['Ask Gelato about sales','/ask gelato about sales','Can you ask Gelato about sales?','/ask Luna’s Kitchen about sales'] as $alias){
+    $aliasPlan=vp3_connected_sites_chat_plan_v1($alias,[$connection]);
+    connected_site_chat_expect($aliasPlan['connection']['id']==='food-21'&&$aliasPlan['context']['actions']===['sales.daily.read'],'Each supported name and command form selects the verified Gelato installation.');
+}
+connected_site_chat_expect(str_contains(vp3_connected_sites_chat_plan_v1('Ask Gelato.',[$connection])['answer'],'What would you like to ask Gelato?'),'Bare spoken command offers examples.');
+connected_site_chat_expect(str_contains(vp3_connected_sites_chat_plan_v1('/ask gelato',[])['answer'],'not paired'),'Unpaired Gelato requests give setup guidance.');
+connected_site_chat_expect(vp3_connected_sites_chat_plan_v1('Ask Gelatology about sales',[$connection])===null,'Alias matching preserves a name boundary.');
 connected_site_chat_expect(vp3_connected_sites_chat_plan_v1('Ask Luna’s Kitchenette about sales',[$connection])===null,'A longer unconnected name must not match.');
 connected_site_chat_expect(isset(vp3_connected_sites_chat_plan_v1('Ask Luna’s Kitchen for sales last week',[$connection])['answer']),'Unsupported sales dates must be explained.');
 connected_site_chat_expect(vp3_connected_sites_chat_plan_v1('Ask Luna’s Kitchen for sales on 2026-11-03',[$connection])['context']['date']==='2026-11-03','Exact requested date must be preserved.');
@@ -90,6 +101,14 @@ connected_site_chat_expect(str_contains($ambiguous['answer'],'other.example.test
 $via=vp3_connected_sites_chat_plan_v1('Ask Luna’s Kitchen via other.example.test what’s open?',[$connection,$other]);
 connected_site_chat_expect($via['connection']['id']==='food-27','Exact stored hostname disambiguates a named connector.');
 connected_site_chat_expect(isset(vp3_connected_sites_chat_plan_v1('Ask Luna’s Kitchen via other.example.test.evil what’s open?',[$connection,$other])['answer']),'Lookalike hostnames must never select a connection.');
+$namedGelato=array_replace($other,['agentName'=>'Gelato']);
+$generic=vp3_connected_sites_chat_plan_v1('/ask gelato about sales',[$connection,$namedGelato]);
+connected_site_chat_expect(str_contains($generic['answer'],'other.example.test')&&str_contains($generic['answer'],'pizza.example.test'),'The Gelato alias requires a choice across installations even when one installed name is Gelato.');
+$viaAlias=vp3_connected_sites_chat_plan_v1('/ask gelato via other.example.test what’s open?',[$connection,$other]);
+connected_site_chat_expect($viaAlias['connection']['id']==='food-27','A slash alias can disambiguate by exact hostname.');
+$longerName=array_replace($other,['agentName'=>'Gelato HQ']);
+$exactName=vp3_connected_sites_chat_plan_v1('Ask Gelato HQ about sales',[$connection,$longerName]);
+connected_site_chat_expect($exactName['connection']['id']==='food-27','A longer exact installed name takes priority over the alias.');
 
 $multi=array_replace($connection,['locations'=>[$location,$west]]);
 $pending=vp3_connected_sites_chat_plan_v1($question,[$multi]);
@@ -130,12 +149,30 @@ connected_site_chat_expect(vp3_connected_sites_chat_v1($pdo,$user,$principal,'Wh
 connected_site_chat_expect(vp3_connected_sites_chat_v1($pdo,$user,['kind'=>'profile_agent','owner_user_id'=>9,'viewer_user_id'=>9],$question,80,32)===null,'A public profile agent cannot access connected records.');
 connected_site_chat_expect(vp3_connected_sites_chat_v1($pdo,['id'=>9,'permissions'=>['chat.access']],$principal,$question,80,32)===null,'Cloud connection access is rechecked for each chat turn.');
 connected_site_chat_expect(vp3_connected_sites_chat_v1($pdo,['id'=>10,'permissions'=>['chat.access','account.access']],['kind'=>'user_agent','owner_user_id'=>10,'viewer_user_id'=>10],$question,80,32)===null,'A different owner cannot invoke this connection by name.');
+$GLOBALS['fixtureRequests']=[];
+$slash=vp3_connected_sites_chat_v1($pdo,$user,$principal,'/ask gelato how we did today and what’s still open?',80,32);
+connected_site_chat_expect(count($GLOBALS['fixtureRequests'])===3&&$slash['answer']===$result['answer'],'Slash command executes the same verified reads and returns the same answer as the installed name.');
+$GLOBALS['fixtureRequests']=[];
+$bare=vp3_connected_sites_chat_v1($pdo,$user,$principal,'/ask gelato',80,32);
+connected_site_chat_expect(str_contains($bare['answer'],'What would you like to ask Gelato?')&&!$GLOBALS['fixtureRequests'],'A bare command explains available reads without contacting Gelato.');
+$GLOBALS['fixtureParticipantScope']=['participant_id'=>17];
+$restricted=vp3_connected_sites_chat_v1($pdo,$user,$principal,'/ask gelato about sales',80,32);
+connected_site_chat_expect(str_contains($restricted['answer'],'private Agent Chat')&&!$GLOBALS['fixtureRequests'],'A participant cannot use owner Gelato permissions.');
+unset($GLOBALS['fixtureParticipantScope']);
 
 $GLOBALS['fixtureOperations']['orders.read']=['truncated'=>false];
 $GLOBALS['fixtureFail']='sales.daily.read';
 $partial=vp3_connected_sites_chat_v1($pdo,$user,$principal,$question,80,32);
 connected_site_chat_expect(str_contains($partial['answer'],'Active pickup orders could not be read')&&str_contains($partial['answer'],'Open POS tickets · 2'),'Malformed and unavailable sources are distinct from empty records.');
 connected_site_chat_expect(!str_contains($partial['answer'],'PRIVATE_PROVIDER_DEBUG'),'Provider diagnostics are never rendered.');
+$GLOBALS['fixtureErrorCode']=403;
+$denied=vp3_connected_sites_chat_v1($pdo,$user,$principal,'Ask Gelato for daily sales',80,32);
+connected_site_chat_expect(str_contains($denied['answer'],'declined authorization')&&!str_contains($denied['answer'],'PRIVATE_PROVIDER_DEBUG'),'A live authorization denial gives distinct guidance without exposing provider diagnostics.');
+$GLOBALS['fixtureFail']='tickets.open.read';
+$GLOBALS['fixtureErrorCode']=404;
+$revoked=vp3_connected_sites_chat_v1($pdo,$user,$principal,$question,80,32);
+connected_site_chat_expect(str_contains($revoked['answer'],'no longer available')&&!str_contains($revoked['answer'],'270.00')&&$revoked['sources']===[],'A connection removed mid-read suppresses earlier data from the combined response.');
+unset($GLOBALS['fixtureFail'],$GLOBALS['fixtureErrorCode']);
 
 $menu=vp3_connected_sites_chat_v1($pdo,$user,$principal,'Ask Luna’s Kitchen search menu for pizza.',80,32);
 connected_site_chat_expect(str_contains($menu['answer'],'Pepperoni Pizza')&&!str_contains($menu['answer'],'UNEXPECTED_UNTRUSTED_BODY')&&!str_contains($menu['answer'],'outside allowed scope'),'Menu search renders only bounded approved titles.');
