@@ -366,8 +366,10 @@ try{
     denied.unavailable(true);
     await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
     await status.getByText('The Agent could not confirm access to this saved Chat.',{exact:true}).waitFor();
-    denied.unavailable(false);
+    const retryRead=denied.holdRead(),retryActivity=denied.holdActivity();
     await status.getByRole('button',{name:'Retry',exact:true}).click();
+    await retryRead.arrived;await retryActivity.arrived;
+    denied.unavailable(false);retryRead.release();retryActivity.release();
     await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
     await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
     denied.presentationFails(true);

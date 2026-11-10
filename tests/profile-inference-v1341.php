@@ -71,6 +71,9 @@ function subscription_ai_commit_usage(int $reservation,array $user,string $scope
 function subscription_ai_release_reservation(int $id):void{$GLOBALS['released'][]=$id;}
 foreach(['ai-settings.php','ai-runtime-v100.php','ai-stream-v121.php','recommendations.php','agent-brain-context-v99.php','chat-engine.php'] as $file){
     $source=file_get_contents(dirname(__DIR__).'/includes/'.$file);
+    // eval inherits this test file's __DIR__. Keep lazy production module
+    // dependencies rooted in includes, rather than executing a namesake test.
+    $source=str_replace('__DIR__',var_export(dirname(__DIR__).'/includes',true),$source);
     eval('namespace '.__NAMESPACE__.'; use \\Throwable; use \\RuntimeException; use \\PDO;'.substr($source,strpos($source,'declare(strict_types=1);')+strlen('declare(strict_types=1);')));
 }
 try{
@@ -104,6 +107,9 @@ try{
         check(in_array(($provider==='openai'?'Authorization: Bearer ':'x-api-key: ').'fixture-owner-byok',end($requests)['headers'],true),'Profile BYOK cannot silently use the visitor or installation key');
         $own=['route'=>'system'];
     }
+    $accounting=new \ReflectionFunction('ai_usage_accounting_v032_observe_provider');
+    check(realpath($accounting->getFileName())===realpath(dirname(__DIR__).'/includes/ai-usage-accounting-v032.php'),
+        'The actual provider observer resolves its canonical accounting dependency');
     echo 'PROFILE_INFERENCE_V1341='.$checks." assertions PASS (provider HTTP mocked)\n";
 }finally{
     $paths=is_dir($root)?new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root,\FilesystemIterator::SKIP_DOTS),\RecursiveIteratorIterator::CHILD_FIRST):[];

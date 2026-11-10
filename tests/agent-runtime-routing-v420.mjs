@@ -77,7 +77,21 @@ assert.match(accounting, /function ai_usage_accounting_v032_route_schema_ready/)
 assert.match(accounting, /foreach\(\['runtime_version','requested_route','attempted_route','actual_route','route_reason','fallback_reason'\] as \$column\)/);
 assert.match(accounting, /if\(!column_exists\('ai_execution_ledger',\$column\)\)return false/);
 assert.match(accounting, /if\(ai_usage_accounting_v032_route_schema_ready\(\$pdo\)\)/);
-assert.match(accounting, /INSERT INTO ai_execution_ledger[\s\S]*runtime_version[\s\S]*actual_route/);
+// Route columns and their values are appended together before the dynamic
+// INSERT. Check their binding rather than assuming a literal SQL column order.
+const routeAppend = accounting.match(/if\(ai_usage_accounting_v032_route_schema_ready\(\$pdo\)\)\{\s*foreach\(\[([^\]]+)\] as \$key=>\$length\)\{([\s\S]*?)\n\s*\}/);
+assert.ok(routeAppend, 'installed route columns must be appended conditionally');
+assert.deepEqual(Object.fromEntries([...routeAppend[1].matchAll(/'([^']+)'=>([0-9]+)/g)].map(([,column,length])=>[column,Number(length)])), {
+  runtime_version:16,requested_route:32,attempted_route:48,actual_route:48,route_reason:80,fallback_reason:80
+});
+assert.match(routeAppend[2], /\$columns\[\]=\$key;\$base\[\]=mb_strimwidth\(\(string\)\(\$execution\[\$key\]\?\?''\),0,\$length,''\)/,
+  'each route column must bind the matching bounded execution value');
+assert.ok(accounting.includes("'INSERT INTO ai_execution_ledger ('.implode(',',$columns)"),
+  'the INSERT must use the constructed column list');
+assert.ok(accounting.includes("implode(',',array_fill(0,count($columns),'?'))"),
+  'the placeholder count must match the constructed column list');
+assert.match(accounting, /\$stmt->execute\(\$base\)/,
+  'the INSERT must execute the paired values');
 
 assert.match(status, /runtime_version/);
 assert.match(status, /requested_route/);
