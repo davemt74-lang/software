@@ -121,6 +121,16 @@ if($idempotencyKey!==''){
             if(isset($input['working_context_ref'])||isset($replay['working_context_ref'])){
                 require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';vp3_working_context_replay_v1($pdo,$user,$principal,$input,$replay);
             }
+            if($emailReviewRequest||isset($replay['gmail_query_hash'])){
+                $replayConversationId=(int)($replay['conversation_id']??0);
+                if(!$emailReviewRequest||($conversationId>0&&$conversationId!==$replayConversationId)
+                    ||!hash_equals((string)($replay['gmail_query_hash']??''),hash('sha256',$query))){
+                    throw new RuntimeException('That Gmail request changed.',409);
+                }
+                agent_connection_email_chat_authority_v1($pdo,$user,$principal,$replayConversationId,
+                    static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input));
+                unset($replay['gmail_query_hash']);
+            }
             if(empty($replay['ok'])){chat_v121_emit(['type'=>'error','error'=>(string)($replay['error']??'The prior voice turn failed.'),'replayed'=>true]);exit;}
             $researchHash=$replay['public_research_query_hash']??$replay['artist_research_query_hash']??null;
             if($publicResearchRequest||$researchHash!==null){
@@ -190,6 +200,7 @@ if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$yout
     if($idempotencyClaimed&&$idempotencyKey!==''){
         $replay=$done;
         if($publicResearchRequest)$replay['public_research_query_hash']=hash('sha256',$query);
+        if($emailReviewRequest)$replay['gmail_query_hash']=hash('sha256',$query);
         if($youtubeRequest){
             unset($replay['youtube_results']);
             $replay['youtube_query_hash']=hash('sha256',$query);
@@ -331,6 +342,7 @@ $done=['ok'=>true,'canvas_media'=>$messageContext['canvas_media'],'sticky_notes'
 chat_v121_emit(['type'=>'done','data'=>$done]);
 }catch(Throwable $e){if($assistantMessageId>0&&$pdo instanceof PDO){try{$pdo->prepare("DELETE FROM chat_messages WHERE id=? AND conversation_id=? AND message='' ")->execute([$assistantMessageId,$conversationId]);}catch(Throwable $cleanup){}}$publicError=ai_v100_safe_exception($e,'The voice conversation request could not be completed.');if($idempotencyClaimed&&$idempotencyScope!==''&&$idempotencyKey!==''){
     $failedVoice=['ok'=>false,'error'=>$publicError,'conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'trace_id'=>agent_runtime_v125_trace_id()];
+    if(!empty($emailReviewRequest))$failedVoice['gmail_query_hash']=hash('sha256',$query);
     if(is_array($initiativeReply??null)||is_array($initiativeRequest??null)){
         $failedVoice['initiative_reply_failure']=['initiative_reply'=>$initiativeReply,'explicit'=>$initiativeReply!==null,
             'query_hash'=>hash('sha256',$query),'conversation_id'=>$conversationId,'agent_id'=>$agentScopeId];
