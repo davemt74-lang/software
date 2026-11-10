@@ -378,7 +378,8 @@ function vp3_agent_chat_send_v2160(PDO $pdo,array $user,?array $activeAgent,arra
                 ||agent_connection_youtube_followup_plan_v1($input['message'])!==null
                 ||agent_connection_youtube_chat_plan_v1($input['message'])!==null))
             ||vp3_participant_chat_actor_v1($pdo,$user,$input)!==null||vp3_participant_scope_v1()!==null
-            ||!vp3_initiative_followthrough_possible_v1($pdo,(int)$user['id'],vp3_agent_chat_agent_id_v380($activeAgent),$cid,trim($input['message']))){
+            ||!vp3_initiative_followthrough_possible_v1($pdo,(int)$user['id'],vp3_agent_chat_agent_id_v380($activeAgent),$cid,trim($input['message']))
+            ||($allowConnectedSites&&vp3_connected_sites_chat_request_v1($pdo,$user,$principal,$input['message'])!==null)){
             return vp3_agent_chat_send_inner_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,$currentAuthority,$allowConnectedSites);
         }
         try{$request=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$cid,trim($input['message']),$currentAuthority);}
@@ -624,7 +625,9 @@ if($rawBrowserContext){
         $browserContext=null;$browserContextRelations=[];
     }
 }
-$emailRequest=$allowConnectedSites&&!$ephemeralProtocol&&vp3_participant_scope_v1()===null
+$connectedSitePlan=$allowConnectedSites&&!$ephemeralProtocol
+    ?vp3_connected_sites_chat_request_v1($pdo,$user,$principal,$query):null;
+$emailRequest=$connectedSitePlan===null&&$allowConnectedSites&&!$ephemeralProtocol&&vp3_participant_scope_v1()===null
     &&knowledge_retrieval_v162_owner_session($user,$principal)&&agent_connection_email_chat_plan_v1($query)!==null;
 $historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');
 $historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$historyStmt->closeCursor();$userMessageId=0;
@@ -651,7 +654,7 @@ $youtubeFollowup=$allowConnectedSites&&!$ephemeralProtocol&&$initiativeReply===n
     ?agent_connection_youtube_followup_plan_v1($query):null;
 $youtubeQuery=$allowConnectedSites&&!$ephemeralProtocol&&!$youtubeHistoryRequest&&$youtubeFollowup===null
     ?agent_connection_youtube_chat_plan_v1($query):null;
-if(!$ephemeralProtocol&&!$initiativeStatusRead&&!$emailRequest&&!$youtubeHistoryRequest&&$youtubeFollowup===null&&$youtubeQuery===null&&$publicResearchPlan===null){
+if(!$ephemeralProtocol&&!$initiativeStatusRead&&!$emailRequest&&!$youtubeHistoryRequest&&$youtubeFollowup===null&&$youtubeQuery===null&&$publicResearchPlan===null&&$connectedSitePlan===null){
     $priorAuthority=$currentAuthority;
     $followthroughAuthority=static function()use($pdo,$user,$input,$priorAuthority):void{
         if($priorAuthority)$priorAuthority();
@@ -673,8 +676,13 @@ $connectionAuthority=static function()use($pdo,$user,$input,$currentAuthority):v
     if($currentAuthority)$currentAuthority();
     vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
 };
-$capabilityTool=$emailRequest
-    ?agent_connection_email_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId,$connectionAuthority,$inputMode==='voice'):null;
+$capabilityTool=null;
+if($connectedSitePlan!==null){
+    if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+    $capabilityTool=vp3_connected_sites_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId,$connectedSitePlan);
+}
+if($capabilityTool===null&&$emailRequest)
+    $capabilityTool=agent_connection_email_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId,$connectionAuthority,$inputMode==='voice');
 if($capabilityTool===null&&$publicResearchPlan!==null){
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     $capabilityTool=vp3_public_research_chat_v1($pdo,$user,$principal,$publicResearchPlan,$conversationId,$userMessageId,$connectionAuthority);
@@ -833,7 +841,7 @@ foreach($context as $item){$source=(string)($item['source']??'');if(function_exi
 $toolCapability=$toolResult['tool_receipt']['capability']??null;
 $youtubeTool=in_array($toolCapability,['youtube.search','youtube.history','youtube.results'],true);
 $publicResearchTool=in_array($toolCapability,['artist.research','topic.research'],true);
-$allowLibraryMedia=empty($toolResult['email_private_read_v1'])&&!$youtubeTool&&!$publicResearchTool;
+$allowLibraryMedia=empty($toolResult['email_private_read_v1'])&&!isset($toolResult['connected_site_context_v1'])&&!$youtubeTool&&!$publicResearchTool;
 $mediaLimit=track_is_playlist_request($query)?7:(track_is_next_request($query)?1:4);$answerMedia=$allowLibraryMedia?track_media_from_answer($answer,$user,$mediaLimit):[];$queryMedia=$allowLibraryMedia?track_media_suggestions($query,$user,$mediaLimit):[];$media=vp3_agent_chat_runtime_authorized_media_v2160(array_slice(track_merge_media_suggestions($answerMedia,$queryMedia),0,$mediaLimit),$context);$playlistTitle=$media?track_playlist_title($query):'';$toolSources=!empty($toolResult['sources'])&&is_array($toolResult['sources'])?$toolResult['sources']:[];$meetingSources=array_merge(video_meeting_memory_chat_sources_v18120($meetingMemory),video_meeting_commitment_command_chat_sources_v18230($meetingMemory));$publicSources=array_merge($publicSources,$toolSources,$meetingSources,[chat_execution_v019_source($execution)]);$publicSources=array_values(array_filter($publicSources,static function($item):bool{if(!is_array($item))return false;$source=(string)($item['source']??'');return !function_exists('chat_context_is_internal_source')||!chat_context_is_internal_source($source);}));$cardNamespace=vp3_cognitive_agent_namespace_v500($pdo,$user,$activeAgentId);$cardRequests=function_exists('vp3_cognitive_cards_chat_requests_v520')?vp3_cognitive_cards_chat_requests_v520($pdo,$user,$cardNamespace,$query,8):[];$toolActions=!empty($toolResult['actions'])&&is_array($toolResult['actions'])?$toolResult['actions']:[];$allActions=array_values(array_merge($toolActions,$responseActions));
 if(!$knowledgeDraft&&!$turnPrepared&&!isset($toolResult['connected_site_context_v1'])&&empty($toolResult['email_private_read_v1'])&&!$youtubeTool&&!$publicResearchTool&&
     ($toolResult['tool_receipt']['capability']??'')!=='brief.attention.read'&&function_exists('vp3_cognitive_turn_prepare_v2430')){

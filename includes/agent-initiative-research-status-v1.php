@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-top-of-mind-v1.php';
 require_once __DIR__.'/agent-initiative-artist-v1.php';
+require_once __DIR__.'/agent-initiative-tools-v1.php';
+require_once __DIR__.'/agent-initiative-task-research-v1.php';
 
 /** Read only the reportable research lane of the exact saved policy. */
 function vp3_initiative_research_status_candidates_v1(PDO $pdo,int $owner,int $agentId,array $policy,int $now): array
@@ -59,7 +61,7 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
             $kind=match($goal['tool']??null){'topic.research'=>'topic','artist.research'=>'artist',default=>''};
             $primary=$goal['primary']??null;$sources=$goal['sources']??null;
             if($kind===''||($goal['binding']??null)!==$policy||($goal['report']??null)!==true||!is_string($primary)
-                ||!preg_match('/\A'.$kind.'-interest:[a-f0-9]{64}\z/D',$primary)
+                ||!vp3_public_research_source_ref_valid_v1($kind,$primary)
                 ||!is_array($sources)||array_keys($sources)!==[$primary]
                 ||!is_string($sources[$primary])||!preg_match('/\A[a-f0-9]{64}\z/D',$sources[$primary]))continue;
             $item=['run_id'=>(int)$row['run_id'],'kind'=>$kind,'state'=>'queued'];
@@ -78,16 +80,18 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
         }
         if(!$candidates)return $status;
         $coverage=[];
-        $sources=vp3_initiative_research_evidence_v1($pdo,['user'=>$live,'agent_id'=>$agentId],
-            new DateTimeImmutable('now',new DateTimeZone('UTC')),array_keys($refs),$coverage);
+        $scope=vp3_initiative_tools_scope_v1($pdo,$live,$policy);
+        $sources=vp3_initiative_research_evidence_v1($pdo,$scope,new DateTimeImmutable('now',new DateTimeZone('UTC')),array_keys($refs),$coverage)
+            +vp3_initiative_task_research_evidence_v1($pdo,$scope,array_keys($refs),$coverage);
         vp3_initiative_access_v1($pdo,$live,$policy);
-        if(!agent_connection_youtube_enabled_v1()||!agent_connection_youtube_consent_v1($pdo,$owner))return $status;
         foreach($candidates as $candidate){
             $source=$sources[$candidate['primary']]??null;
             $item=$candidate['item'];
-            if(($source['revision']??null)!==$candidate['revision']||($source['kind']??null)!==$item['kind'].'_interest'
-                ||($candidate['expires']!==null&&$candidate['expires']<=time())
-                ||!vp3_youtube_research_enabled_v1($pdo,$owner,$item['kind']))continue;
+            if(($source['revision']??null)!==$candidate['revision']||($candidate['expires']!==null&&$candidate['expires']<=time()))continue;
+            if(str_starts_with($candidate['primary'],'task-research:')){
+                if(($source['kind']??null)!=='task_research')continue;
+            }elseif(($source['kind']??null)!==$item['kind'].'_interest'||!agent_connection_youtube_enabled_v1()
+                ||!agent_connection_youtube_consent_v1($pdo,$owner)||!vp3_youtube_research_enabled_v1($pdo,$owner,$item['kind']))continue;
             $subject=vp3_top_of_mind_text_v1($source['title']??null,120);
             if($subject==='')continue;
             $status['specialist']=$item+['subject'=>$subject];

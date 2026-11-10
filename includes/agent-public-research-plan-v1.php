@@ -55,6 +55,20 @@ function vp3_public_research_plan_v1(string $message): ?array
     if(strlen($message)>640)return null;
     $message=trim(preg_replace('/\s+/u',' ',$message)??'');
     $message=preg_replace('/\A(?:please[, ]+|(?:can|could|would) you )+/iu','',$message)??$message;
+    if(preg_match('/\A(\/research task|research task|stop public research for task)(?:\s+(.*))?\z/iu',$message,$task)){
+        $mode='task';$task_id=0;$task_title='';$topic=null;
+        if(preg_match('/\A(?:#?([1-9][0-9]{0,17})|"([^"]+)"|“([^”]+)”)(?=\s|:|[.!?]?\z)(.*)\z/u',$task[2]??'',$parts)){
+            $task_id=(int)$parts[1];$task_title=trim($parts[2]!==''?$parts[2]:$parts[3]);$rest=trim($parts[4]);
+            $stop=strcasecmp($task[1],'stop public research for task')===0;
+            if(($stop&&preg_match('/\A[.!?]?\z/D',$rest))
+                ||preg_match('/\Aoff[.!?]?\z/iu',$rest))$topic='';
+            elseif(!$stop&&preg_match('/\A(?::\s*|on\s+)(.+)\z/iu',$rest,$subject)){
+                $candidate=trim(rtrim($subject[1],'?')," \t\"“”");
+                if($candidate!=='')$topic=$candidate;
+            }
+        }
+        return compact('mode','task_id','task_title','topic');
+    }
     if(preg_match('/\A(?:have|ask) (?:a|the) specialist (?:to )?research (?:the )?topic (.+)\z/iu',$message,$match)){
         $mode='delegate';
     }elseif(preg_match('/\A(?:\/research|research (?:the )?topic) (.+)\z/iu',$message,$match)){
@@ -81,8 +95,20 @@ function vp3_topic_research_youtube_subject_v1(array $results): string
 function vp3_public_research_plan_valid_v1(array $plan): bool
 {
     if(!array_key_exists('topic',$plan))return vp3_artist_research_plan_valid_v1($plan);
+    if(($plan['mode']??null)==='task'){
+        $id=$plan['task_id']??null;$title=$plan['task_title']??null;
+        return is_int($id)&&$id>=0&&is_string($title)&&($id>0)!==($title!=='')
+            &&vp3_artist_research_text_v1($title,190)===$title&&is_string($plan['topic'])
+            &&($plan['topic']===''||vp3_topic_research_subject_valid_v1($plan['topic']));
+    }
     return in_array($plan['mode']??null,['direct','delegate'],true)
         &&is_string($plan['topic'])&&vp3_topic_research_subject_valid_v1($plan['topic']);
+}
+
+function vp3_public_research_source_ref_valid_v1(string $kind,string $ref): bool
+{
+    return (in_array($kind,['artist','topic'],true)&&preg_match('/\A'.$kind.'-interest:[a-f0-9]{64}\z/D',$ref))
+        ||($kind==='topic'&&preg_match('/\Atask-research:[1-9][0-9]{0,17}\z/D',$ref));
 }
 
 function vp3_artist_research_plan_valid_v1(array $plan): bool

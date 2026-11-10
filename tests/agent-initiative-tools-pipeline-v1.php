@@ -274,6 +274,12 @@ pipeline_check($deliveredResearch['initiative_delivery']==='delivered'&&str_cont
     &&$researchContext['initiative_run_id']===$researchRunId
     &&array_column(array_filter($researchContext['sources'],static fn(array $source):bool=>isset($source['coverage'])),'coverage')===['page_excerpt','search_match'],
     'the report retains the exact research run, verified quotation and honest source coverage');
+$recall=vp3_initiative_status_v1($pdo,$user,$researchGoal['binding'],[],true);
+$citations=array_values(array_filter($recall['sources'],static fn(array $source):bool=>isset($source['coverage'])));
+pipeline_check(str_contains($recall['answer'],$quote)&&$citations===[
+    ['source'=>'topic-web:'.hash('sha256',$publicUrl),'title'=>'Oven heat recovery','url'=>$publicUrl,'coverage'=>'page_excerpt'],
+    ['source'=>'topic-web:'.hash('sha256',$leadUrl),'title'=>'Oven temperature guide','url'=>$leadUrl,'coverage'=>'search_match'],
+], 'Chat recall reads the saved findings and verified public citations without running another search');
 $projected=vp3_initiative_research_canvas_history_v1($pdo,1,17,170,[$researchMessage]);
 $canvas=json_decode($projected[0]['context_json'],true,24,JSON_THROW_ON_ERROR)['research_canvas_v1']??[];
 pipeline_check(($canvas['kind']??null)==='topic'&&($canvas['title']??null)===$topic&&($canvas['run_id']??null)===$researchRunId

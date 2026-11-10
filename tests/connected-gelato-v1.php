@@ -72,6 +72,7 @@ $pdo->exec("CREATE TABLE knowledge_items (
     FOREIGN KEY (folder_id) REFERENCES artist_transcript_folders_v177(id) ON DELETE SET NULL
 )");
 gelato_cloud_check(vp3_gelato_connections_v1($pdo, 11) === [], 'Missing schema should leave Chat available.');
+gelato_cloud_reject(fn()=>vp3_gelato_connections_v1($pdo, 11, true), 503, 'An explicit connector read should distinguish missing schema from an empty account');
 vp3_gelato_schema_v1($pdo);
 vp3_gelato_schema_v1($pdo);
 gelato_cloud_check(vp3_gelato_schema_ready_v1($pdo), 'Upgrade schema must be ready and idempotent.');

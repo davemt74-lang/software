@@ -164,8 +164,10 @@ function vp3_initiative_research_tool_result_v1(array $value): ?array
         default=>null,
     };
     if($kind===null||!in_array($output['status']??null,['read_complete','no_matches'],true)
-        ||!is_string($output['source_ref']??null)||!preg_match('/\A'.$kind.'-interest:[a-f0-9]{64}\z/D',$output['source_ref'])
+        ||!is_string($output['source_ref']??null)||!vp3_public_research_source_ref_valid_v1($kind,$output['source_ref'])
         ||!is_string($output['source_revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$output['source_revision']))return null;
+    $task=str_starts_with($output['source_ref'],'task-research:');
+    if($task&&(!is_string($output['public_topic']??null)||!vp3_topic_research_subject_valid_v1($output['public_topic'])))return null;
     $receipt=vp3_tool_receipt_normalize_v1($value['tool_receipt']??null);
     $sources=$value['sources']??null;
     $draft=$value['draft']??null;
@@ -181,7 +183,8 @@ function vp3_initiative_research_tool_result_v1(array $value): ?array
             'source','title','url','coverage','checked_at','evidence_hash',
         ])),$sources),
         'tool_receipt'=>$receipt,
-        'output'=>array_intersect_key($output,array_flip(['type','status','reason','checked_at','source_ref','source_revision'])),
+        'output'=>array_intersect_key($output,array_flip(['type','status','reason','checked_at','source_ref','source_revision']))
+            +($task?['public_topic'=>$output['public_topic']]:[]),
     ];
 }
 
@@ -205,6 +208,13 @@ function vp3_public_research_chat_v1(PDO $pdo,array $user,array $principal,array
         return $live;
     };
     $live=$check();
+    if(($plan['mode']??null)==='task'){
+        if(!vp3_public_research_plan_valid_v1($plan))return ['handled'=>true,
+            'answer'=>'Use /research task "Task title": public topic, or /research task #42: public topic. To revoke it, use /research task #42 off.',
+            'actions'=>[],'sources'=>[],'tool_receipt'=>vp3_tool_receipt_v1('tasks.manage','set_public_research','clarification_required','invalid_plan')];
+        require_once __DIR__.'/agent-initiative-task-research-v1.php';
+        return vp3_initiative_task_research_chat_v1($pdo,$live,$principal,$plan,$conversationId,$userMessageId,$check);
+    }
     $operation=($plan['mode']??null)==='delegate'?'prepare':'search';
     if(!vp3_public_research_plan_valid_v1($plan))return ['handled'=>true,
         'answer'=>$general?'Which public topic should I research?':'Which public artist should I research? You can add a city for upcoming shows.',

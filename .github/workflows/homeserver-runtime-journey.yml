@@ -227,6 +227,7 @@ jobs:
           php tests/agent-artist-research-v1.php
           php tests/agent-initiative-tools-v1.php
           php tests/agent-initiative-tools-pipeline-v1.php
+          php tests/agent-initiative-task-research-pipeline-v1.php
           php tests/agent-initiative-canvas-v1.php
           php tests/agent-initiative-canvas-feedback-v1.php
           php tests/agent-initiative-canvas-pipeline-v1.php

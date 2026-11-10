@@ -27,15 +27,15 @@
     form.append(label);
     return input;
   }
-  const origin = field('Food Monster site HTTPS address', 'url', 'origin');
+  const origin = field('Gelato site HTTPS address', 'url', 'origin');
   const code = field('One-time pairing code', 'password', 'code');
-  const submit = element('button', 'Connect Food Monster');
+  const submit = element('button', 'Connect Gelato');
   submit.type = 'submit';
   form.append(submit);
   const refresh = element('button', 'Refresh connections');
   refresh.type = 'button';
   panel.append(element('summary', 'Connected Sites'),
-    element('p', 'Create a one-time pairing code in your Food Monster installation under VP3 Connections.'),
+    element('p', 'Create a one-time pairing code in your Gelato installation under VP3 Connections.'),
     sites, form, refresh, status);
   host.append(panel);
 
@@ -104,15 +104,14 @@
   function render(connections, canCreateKnowledgeFolder) {
     sites.replaceChildren();
     if (!connections.length) sites.append(element('p', 'No sites connected yet.'));
+    else sites.append(element('p', 'In Agent Chat, say “Ask Gelato” or type “/ask gelato” followed by your question.'));
     for (const site of connections) {
       const row = element('div');
       row.dataset.siteRow = '';
       const permissions = site.scopes.map(scope => labels.get(scope)).filter(Boolean);
       const locations = site.locations.map(location => location.name);
-      const ambiguous = connections.some(other => other.id !== site.id &&
-        other.agentName.toLowerCase() === site.agentName.toLowerCase());
-      const target = ambiguous ? site.agentName + ' via ' + new URL(site.origin).hostname : site.agentName;
-      const ask = element('button', 'Ask ' + site.agentName);
+      const target = connections.length > 1 ? 'Gelato via ' + new URL(site.origin).hostname : 'Gelato';
+      const ask = element('button', 'Ask Gelato');
       ask.type = 'button';
       ask.addEventListener('click', () => {
         const input = document.getElementById('chatInput');
