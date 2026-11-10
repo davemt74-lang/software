@@ -487,10 +487,10 @@ function vp3_cognitive_presentation_live_context_v510(array $user,int $agentId,i
         'attention'=>$attention,'opening'=>$opening,'initiative'=>$initiative];
 }
 
-function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $namespace,int $agentId=0,bool $includeWorkingAttention=false,bool $includeGreetingPreview=false,?int $liveConversationId=null): array
+function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $namespace,int $agentId=0,bool $includeWorkingAttention=false,bool $includeGreetingPreview=false,?int $liveConversationId=null,bool $includeReturnDigest=true): array
 {
     $row=vp3_cognitive_presentation_state_row_v510($pdo,$user,$namespace);
-    $digest=vp3_cognitive_presentation_digest_v510($pdo,$user,$namespace,$row);
+    $digest=$includeReturnDigest?vp3_cognitive_presentation_digest_v510($pdo,$user,$namespace,$row):null;
     $voice=vp3_cognitive_presentation_voice_candidate_v510($pdo,$user,$row,$digest);
     $homeServerPresence=vp3_cognitive_presentation_homeserver_presence_v220($pdo,$user);
     if(is_array($voice)&&isset($voice['skip_through_id'])){

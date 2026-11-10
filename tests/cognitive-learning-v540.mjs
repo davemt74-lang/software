@@ -50,7 +50,7 @@ assert.match(feedJs,/learningApi\('explain'/);
 
 assert.match(bootstrap,/cognitive-learning-v540\.php/);
 assert.match(chat,/cognitive-learning-v540-20260918/);
-assert.match(chat,/learningEndpoint.*cognitive-learning-v540\.php/s);
+assert.doesNotMatch(chat,/learningEndpoint.*cognitive-learning-v540\.php/s,'Chat must not mount the retired feed learning UI');
 assert.match(upgrade,/vp3_cognitive_learning_schema_ready_v540/);
 assert.match(upgrade,/vp3_cognitive_learning_ensure_schema_v540/);
 

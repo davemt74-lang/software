@@ -63,7 +63,7 @@ try {
   const autoStatus = page.locator('[data-coding-auto-status]');
   await page.waitForFunction(() => !document.querySelector('[data-coding-auto-drafts]').disabled);
   assert.equal(await toggle.isChecked(),false,'Auto Build starts off.');
-  assert.equal(await page.locator('[data-coding-balance]').textContent(),'7,000');
+  assert.equal(await page.locator('[data-coding-balance]').textContent(),'7,500','The one token figure includes both plan tokens and extra credits.');
   await toggle.check();
   await autoStatus.getByText('Saved.',{exact:true}).waitFor();
   assert.equal(await toggle.isChecked(),true);

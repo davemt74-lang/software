@@ -211,6 +211,7 @@
     }
   }
 
+  if (!runtimeSource && !runtimeModel && !runtimeUsage) return;
   refreshRuntime();
   runtimeTimer = window.setInterval(refreshRuntime, 15000);
   document.addEventListener('visibilitychange', () => {

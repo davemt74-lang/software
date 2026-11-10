@@ -42,7 +42,7 @@ jobs:
           coding = r'^(?:chat-coding-canvas-v1\.(?:js|css)|coding-canvas-sidebar-v1\.(?:js|css)|(?:api|includes|tests)/(?:chat-)?coding-canvas[^/]*\.(?:php|mjs))$'
           activity_hub = r'^(?:agent-activity-hub-v1\.(?:js|css)|(?:api|includes|tests)/agent-activity-(?:hub|media)[^/]*\.(?:php|mjs))$'
           coding_controls = r'^(?:includes/main-sidebar\.php|(?:api|includes|tests)/initiative-canvas-[^/]*\.(?:php|mjs)|tests/coding-sidebar-[^/]*\.mjs)$'
-          working_ui = r'^tests/(?:agent-work-status-http|agent-working-browser|chat-sidebar-footer-browser)\.mjs$'
+          working_ui = r'^tests/(?:agent-work-status-http|agent-working-browser|chat-sidebar-footer-browser|chat-clean-layout-browser)\.mjs$'
           changed = diff.returncode != 0 or any(re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
@@ -202,6 +202,7 @@ jobs:
           node tests/agent-working-browser.mjs
           node tests/agent-work-status-http.mjs
           node tests/chat-sidebar-footer-browser.mjs
+          node tests/chat-clean-layout-browser.mjs
           php tests/agent-initiative-bootstrap-v1.php
           php tests/agent-worker-health-v1.php
           php tests/agent-inference-budget-v1.php

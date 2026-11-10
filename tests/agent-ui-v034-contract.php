@@ -17,7 +17,7 @@ $check = static function(bool $ok, string $message) use (&$failures): void {
 
 // The consolidated authenticated shell renders primary navigation from canonical
 // keyed member-navigation entries rather than hard-coded anchors in this template.
-$primaryOrder = "['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team']";
+$primaryOrder = "['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team']";
 $check(str_contains($sidebar, '$mainSidebarPrimaryOrder = ' . $primaryOrder), 'Canonical primary Agent navigation order is missing.');
 foreach ([
     'home' => 'Home',
@@ -54,10 +54,16 @@ $check(!str_contains($sidebar, 'class="agent-sidebar-avatar"'), 'Bottom user men
 $footerStart = strpos($sidebar, '<footer class="agent-sidebar-footer"');
 $footerEnd = $footerStart === false ? false : strpos($sidebar, '</footer>', $footerStart);
 $footer = ($footerStart !== false && $footerEnd !== false) ? substr($sidebar, $footerStart, $footerEnd - $footerStart) : '';
-$check(str_contains($footer, 'vp3AgentRuntimeStrip'), 'Runtime stats must be integrated into the bottom user footer.');
-$check(str_contains($footer, 'vp3AgentRuntimeSource'), 'Execution-source indicator is missing from the combined footer.');
-$check(str_contains($footer, 'vp3AgentRuntimeModel'), 'Brain/model indicator is missing from the combined footer.');
-$check(str_contains($footer, 'vp3AgentRuntimeUsage'), 'Usage indicator is missing from the combined footer.');
+$check(str_contains($footer, 'vp3AgentUserMenuButton'), 'Compact footer must retain the account menu.');
+$check(str_contains($footer, '<label for="vp3CodingAgentModel">Model</label>'), 'Compact footer must retain one Model row.');
+$check(str_contains($footer, 'data-coding-balance-label>Tokens</span>'), 'Compact footer must retain one Tokens row.');
+$check(str_contains($footer, 'data-coding-token-meter'), 'Compact footer must retain the monthly token gauge.');
+foreach (['vp3AgentRuntime','data-coding-funding','data-coding-credits','data-coding-reserved','data-coding-period','coding-sidebar-auto-help'] as $clutter) {
+    $check(!str_contains($footer, $clutter), 'Compact footer must not retain '.$clutter.'.');
+}
+$menuStart = strpos($footer, 'id="vp3AgentUserMenu"');
+$autoStart = strpos($footer, 'data-coding-auto-controls');
+$check($menuStart !== false && $autoStart !== false && $autoStart > $menuStart, 'Auto Build must remain inside the account dropdown.');
 $check(str_contains($sidebar, 'data-rename-conversation'), 'Server-rendered chat rename control is missing.');
 $check(str_contains($sidebar, 'id="chatHistory"'), 'Canonical chat history container is missing.');
 
@@ -82,7 +88,8 @@ $check(str_contains($js, 'MutationObserver(decorateHistory)'), 'Dynamic history 
 $check(str_contains($js, 'data-rename-conversation') || str_contains($js, 'dataset.renameConversation'), 'Dynamic rename control wiring is missing.');
 $check(str_contains($js, 'setInterval(refreshRuntime, 15000)'), 'Runtime status is not refreshed during long Agent sessions.');
 $check(str_contains($css, '.agent-sidebar-footer'), 'Bottom user-menu layout is missing.');
-$check(str_contains($css, '.agent-sidebar-footer .agent-sidebar-runtime'), 'Combined footer runtime layout is missing.');
+$compactCss = (string)file_get_contents($root . '/coding-canvas-sidebar-v1.css');
+$check(str_contains($compactCss, '.coding-sidebar-model') && str_contains($compactCss, '.coding-sidebar-balance'), 'Compact model/token row styling is missing.');
 $check(str_contains($css, '.chat-history-new'), 'Chats heading New Chat plus is not styled.');
 $check(str_contains($css, '.chat-history-rename-input'), 'Inline rename editing is not styled.');
 

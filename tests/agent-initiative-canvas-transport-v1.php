@@ -49,7 +49,7 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
     if($meter!==null&&$target!==null){
         $meter->finish($ticket,$usage,'completed',['provider_request_id'=>'fixture-canvas-proposal']);
     }
-    $answer='{"title":"Prep board","prompt":"Track launch preparation tasks privately","draft":"Would a prep board help?"}';
+    $answer=$GLOBALS['fixtureInitiativeAnswer']??'{"title":"Prep board","prompt":"Track launch preparation tasks privately","draft":"Would a prep board help?"}';
     return ['ok'=>true,'data'=>['output_text'=>$answer,'content'=>[['type'=>'text','text'=>$answer]],'usage'=>$usage],
         'attempts'=>1,'duration_ms'=>1];
 }
@@ -142,4 +142,28 @@ $ordinary=ai_generate_chat_response('Ordinary conversation',[],[],$owner,'main_a
 canvas_transport_check(!empty($ordinary['ok'])&&($GLOBALS['canvasEnrichmentCalls']??0)===1
     &&str_contains(json_encode(end($GLOBALS['canvasTransportCalls']),JSON_THROW_ON_ERROR),'SECRET_UNDECLARED_HISTORY'),
     'ordinary conversation retains its existing enrichment while the Canvas protocol is isolated');
+// A real provider may format an otherwise valid structured answer with one
+// enclosing code fence. It must not become an unverified failed workflow, nor
+// may formatting normalization grant unadvertised tools or sources.
+require_once dirname(__DIR__).'/includes/agent-initiative-v1.php';
+$job=['tool'=>'work.prepare_private','primary'=>'task:1','refs'=>['task:1'],'focus'=>'Review the saved preparation task.','report'=>false];
+$evidence=['task:1'=>['ref'=>'task:1','kind'=>'task','title'=>'Saved preparation task','revision'=>hash('sha256','transport-source')]];
+$GLOBALS['fixtureInitiativeAnswer']="```json\n".json_encode(['jobs'=>[$job],'opportunities'=>[]],JSON_THROW_ON_ERROR)."\n```";
+$before=count($GLOBALS['canvasTransportCalls']);
+$answer=vp3_initiative_infer_v1($pdo,$owner,7,json_encode(['evidence'=>array_values($evidence),
+    'tools'=>['work.prepare_private'=>['ready'=>true]],'budget'=>vp3_initiative_limits_v1()],JSON_THROW_ON_ERROR),
+    'vp3.initiative-plan.v1',false,null,['background'=>true,'run_id'=>47,'conversation_id'=>11]);
+$plan=vp3_initiative_assessment_v1($answer,$evidence);
+$call=end($GLOBALS['canvasTransportCalls']);
+canvas_transport_check($plan===['jobs'=>[$job],'opportunities'=>[]]
+    &&count($GLOBALS['canvasTransportCalls'])===$before+1,
+    'one actual metered planner dispatch accepts only the verified object inside a whole-response formatting fence without another paid attempt');
+canvas_transport_check(str_contains($call['payload']['instructions']??'','Return exactly one JSON object, without Markdown')
+    &&($call['service']['stage']??'')==='vp3.initiative-plan.v1',
+    'the real planner provider receives JSON-only interpreter instructions and exact Initiative service attribution');
+$row=$pdo->query('SELECT * FROM ai_execution_ledger ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+canvas_transport_check($row['service_stage']==='vp3.initiative-plan.v1'&&(int)$row['total_tokens']===180
+    &&(int)$row['run_id']===47&&$row['service_status']==='completed',
+    'the formatting-compatible planner attempt keeps actual token accounting and canonical run identity');
+unset($GLOBALS['fixtureInitiativeAnswer']);
 echo 'AGENT_INITIATIVE_CANVAS_TRANSPORT_V1=PASS ('.$checks.' cases; fixture HTTP, actual broker, policy and meter)'.PHP_EOL;

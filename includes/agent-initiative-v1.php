@@ -21,6 +21,10 @@ function vp3_initiative_assessment_v1(string $answer,array $evidence,array $allo
 {
     $limits=vp3_initiative_limits_v1();
     if(strlen($answer)>$limits['max_plan_bytes'])throw new InvalidArgumentException('Initiative plan too large.');
+    $answer=trim($answer);
+    // Match the canonical tool JSON reader: a whole-response formatting fence
+    // is not schema content. Prose outside the object remains invalid.
+    if(preg_match('/\A```(?:json)?\s*(\{.*\})\s*```\z/isD',$answer,$match))$answer=trim($match[1]);
     $plan=json_decode($answer,false,16,JSON_THROW_ON_ERROR);
     if(!$plan instanceof stdClass||!property_exists($plan,'jobs')
         ||array_diff(array_keys((array)$plan),['jobs','opportunities']))throw new InvalidArgumentException('Invalid initiative plan.');

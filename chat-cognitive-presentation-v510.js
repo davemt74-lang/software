@@ -47,8 +47,6 @@
   let githubVoiceEpoch = 0;
   let githubVoiceEnabled = window.STONEFELLOW_CHAT?.agentVoiceEnabled !== false;
   let suppressedVoiceThrough = 0;
-  let currentDigestId = '';
-  let handledDigestId = '';
   let initiativeController = null;
   let initiativeTimer = 0;
   let initiativeBusy = false;
@@ -110,6 +108,8 @@
     const timeout = window.setTimeout(() => controller.abort(), 10000);
     const url = endpoint('state');
     url.searchParams.set('include_working_attention', includeWorkingAttention ? '1' : '0');
+    // Top of Mind owns briefs; conversation reads do not create legacy away cards.
+    url.searchParams.set('include_return_digest','0');
     if (includeWorkingAttention && cfg.greetingPreview === true) url.searchParams.set('greeting_preview','1');
     if (conversationId !== null) {
       url.searchParams.set('include_live_context','1');
@@ -1107,10 +1107,9 @@
   function clearPrivatePresentation() {
     state = null;
     clearLiveContext();
-    currentDigestId = '';
     activeVoiceThrough = 0;
     content.replaceChildren();
-    thread.querySelectorAll('[data-vp3-return-digest],[data-homeserver-presence-id]').forEach(node => node.remove());
+    thread.querySelectorAll('[data-homeserver-presence-id]').forEach(node => node.remove());
     renderStatus({active:false});
     try { window.STONEFELLOW_NOTIFICATION_CENTER?.cancelSpeech?.(); } catch (_error) {}
   }
@@ -1123,31 +1122,6 @@
     popup.querySelector('footer')?.setAttribute('inert','');
     window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
     renderBriefError(error, false);
-  }
-
-  function digestMarkup(digest) {
-    const items = Array.isArray(digest && digest.items) ? digest.items : [];
-    let list = '';
-    items.forEach(item => {
-      const isLink = Boolean(item.target_url);
-      const tag = isLink ? 'a' : 'div';
-      const href = isLink ? ' href="' + esc(item.target_url) + '"' : '';
-      let flag = '';
-      if (Number(item.count || 1) > 1) flag = '<em>' + Number(item.count) + ' updates</em>';
-      else if (item.attention) flag = '<em>Attention</em>';
-      list += '<' + tag + ' class="vp3-return-digest-item' + (item.attention ? ' attention' : '') + '"' + href +
-        (item.card_request ? ' data-has-card="1"' : '') + '>' +
-        '<div><strong>' + esc(item.title || 'Update') + '</strong>' +
-        (item.body ? '<span>' + esc(item.body) + '</span>' : '') +
-        '</div>' + flag + '</' + tag + '>';
-    });
-    return '<section class="vp3-return-digest" aria-label="While you were away" data-vp3-return-digest="' + esc(digest.id || '') + '">' +
-      '<div class="vp3-return-digest-head"><div><small>While you were away</small><strong>' +
-      esc(digest.summary || 'There are updates to review.') +
-      '</strong></div><div class="vp3-return-digest-actions">' +
-      '<button type="button" data-digest-action="acknowledged">Acknowledge</button>' +
-      '<button type="button" data-digest-action="dismissed">Dismiss</button></div></div>' +
-      '<div class="vp3-return-digest-list">' + list + '</div></section>';
   }
 
   function renderHomeServerPresence(candidate) {
@@ -1175,84 +1149,6 @@
     else thread.appendChild(node);
     try { sessionStorage.setItem(key,String(id)); } catch (_error) {}
     thread.scrollTop = thread.scrollHeight;
-  }
-
-  function digestTime(value) {
-    if (typeof value !== 'string') return NaN;
-    return Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
-      ? value.replace(' ','T') + 'Z' : value);
-  }
-
-  function positionDigest(node, digest) {
-    const createdAt = digestTime(digest.created_at);
-    let next = null, previous = null;
-    if (Number.isFinite(createdAt)) {
-      for (const row of thread.querySelectorAll(':scope > [data-chat-created-at]')) {
-        const rowTime = digestTime(row.dataset.chatCreatedAt);
-        if (!Number.isFinite(rowTime)) continue;
-        if (rowTime > createdAt) { next = row; break; }
-        previous = row;
-      }
-    }
-    if (node.parentNode === thread) {
-      const focused = node.contains(document.activeElement) ? document.activeElement : null;
-      if (next && (next.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) thread.insertBefore(node,next);
-      else if (previous && (node.compareDocumentPosition(previous) & Node.DOCUMENT_POSITION_FOLLOWING)) previous.after(node);
-      if (focused && document.activeElement !== focused) focused.focus({preventScroll:true});
-      return;
-    }
-    const followTail = !next && thread.scrollHeight - thread.scrollTop - thread.clientHeight < 64;
-    thread.insertBefore(node,next || thread.querySelector(':scope > .chat-listening-continuation'));
-    if (followTail) thread.scrollTop = thread.scrollHeight;
-  }
-
-  function renderDigest(digest) {
-    const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
-    const id = String(digest?.id || '');
-    const inChat = (!thread.dataset.view || thread.dataset.view === 'chat')
-      && !pageController.signal.aborted && configurationMatches();
-    currentDigestId = inChat && !chat?.isRestoring?.() && chat?.isReady?.() !== false && id !== handledDigestId ? id : '';
-    thread.querySelectorAll('[data-vp3-return-digest]').forEach(node => {
-      if (node.dataset.vp3ReturnDigest !== currentDigestId) node.remove();
-    });
-    if (!currentDigestId) return;
-    const selector = '[data-vp3-return-digest="' + CSS.escape(currentDigestId) + '"]';
-    const existing = thread.querySelector(selector);
-    const contentKey = JSON.stringify([digest.summary,digest.items]);
-    if (existing?._vp3DigestContent === contentKey) { positionDigest(existing,digest); return; }
-    const holder = document.createElement('div');
-    holder.innerHTML = digestMarkup(digest);
-    const node = holder.firstElementChild;
-    if (!node) return;
-    node._vp3DigestContent = contentKey;
-    if (existing) {
-      const active = existing.contains(document.activeElement) ? document.activeElement : null;
-      existing.replaceWith(node);
-      if (active) {
-        const controls = Array.from(node.querySelectorAll('[data-digest-action],a[href]'));
-        const replacement = controls.find(control => active.dataset.digestAction
-          ? control.dataset.digestAction === active.dataset.digestAction
-          : control.getAttribute('href') === active.getAttribute('href'));
-        (replacement || controls[0])?.focus({preventScroll:true});
-      }
-    }
-    positionDigest(node,digest);
-    const requests = (Array.isArray(digest.items) ? digest.items : [])
-      .map(item => item && item.card_request ? item.card_request : null)
-      .filter(Boolean);
-    if (requests.length && window.VP3_COGNITIVE_CARDS_V520_RUNTIME) {
-      const host = document.createElement('div');
-      host.className = 'vp3-return-digest-card-host vp3-cognitive-card-host';
-      node.appendChild(host);
-      const fallbackItems = Array.from(node.querySelectorAll('.vp3-return-digest-item[data-has-card="1"]'));
-      void window.VP3_COGNITIVE_CARDS_V520_RUNTIME.renderRequests(requests,host,{showError:false}).then(result => {
-        const available = result && Array.isArray(result.availableIndices) ? result.availableIndices : [];
-        available.forEach(index => {
-          const fallback = fallbackItems[Number(index || 0)];
-          if (fallback) fallback.hidden = true;
-        });
-      });
-    }
   }
 
   async function maybeSpeak(candidate) {
@@ -1360,7 +1256,6 @@
         if (initiativeNewChat()) renderLiveContext({state:'new_chat'},state.brief?.agent_name);
       }
       renderBrief(state.brief || {});
-      renderDigest(state.digest || null);
       renderHomeServerPresence(state.homeserver_presence || null);
       refreshProfileAttention();
       void maybeSpeak(state.voice_candidate || null);
@@ -1442,23 +1337,6 @@
     if (event.key === 'Escape') closePopup();
   });
 
-  thread.addEventListener('click', async event => {
-    const signal = pageController.signal;
-    const action = event.target.closest('[data-digest-action]');
-    const digestId = action?.closest('[data-vp3-return-digest]')?.dataset.vp3ReturnDigest;
-    if (signal.aborted || !digestId || digestId !== currentDigestId) return;
-    action.disabled = true;
-    try {
-      await post('digest_ack',{digest_id:digestId,status:String(action.dataset.digestAction || 'acknowledged')});
-      if (signal.aborted) return;
-      handledDigestId = digestId;
-      if (state?.digest?.id === digestId) state.digest = null;
-      if (digestId === currentDigestId) renderDigest(null);
-    } catch (_error) {
-      action.disabled = false;
-    }
-  });
-
   form.addEventListener('submit', () => {
     window.setTimeout(() => post('interaction').catch(() => {}),0);
   }, true);
@@ -1521,20 +1399,15 @@
   }
   window.addEventListener('stonefellow:chat-context-changing', () => {
     githubVoiceEpoch++;
-    renderDigest(null);
   });
   window.addEventListener('stonefellow:agent-voice', event => {
     githubVoiceEnabled = event.detail?.enabled !== false;
     if (!githubVoiceEnabled) githubVoiceEpoch++;
     else void refresh();
   });
-  for (const event of ['vp3:chat-context-ready','vp3:chat-history-updated']) {
-    window.addEventListener(event, () => renderDigest(state?.digest));
-  }
   window.addEventListener('focus', () => void refresh());
 
   const observer = new MutationObserver(records => {
-    if (records.some(record => record.target === thread)) renderDigest(state?.digest);
     if (records.some(record => record.target === document.body)) {
       if (button) button.dataset.runtimeState = runtimeState();
       if (state && state.brief) renderStatus(state.brief);
@@ -1558,7 +1431,6 @@
       return;
     }
     observer.observe(document.body,{attributes:true,attributeFilter:['data-stonefellow-agent-state']});
-    observer.observe(thread,{attributes:true,attributeFilter:['data-view']});
     showAwaitingInitiativeHealth();
     const signal = pageController.signal;
     void refresh().finally(() => { if (!signal.aborted) schedule(); });
