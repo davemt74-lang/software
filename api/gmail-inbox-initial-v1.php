@@ -35,8 +35,11 @@ try {
     $fields = ['action', 'owner_key', 'csrf_token', 'include_report'];
     if ($action === 'start') $fields = [...$fields, 'days', 'start_token'];
     if ($action === 'advance') $fields[] = 'run_id';
+    if ($action !== 'start') $fields[] = 'include_chat_result';
     if (!in_array($action, ['status', 'start', 'advance'], true) || array_diff(array_keys($body), $fields)
-        || (array_key_exists('include_report', $body) && !is_bool($body['include_report']))) {
+        || (array_key_exists('include_report', $body) && !is_bool($body['include_report']))
+        || (array_key_exists('include_chat_result', $body) && !is_bool($body['include_chat_result']))
+        || (!empty($body['include_report']) && !empty($body['include_chat_result']))) {
         throw new RuntimeException('Invalid review request.', 422);
     }
     if (!is_string($body['owner_key'] ?? null)) throw new RuntimeException('Owner key required.', 422);
@@ -63,7 +66,8 @@ try {
 
     if ($action === 'start') agent_connection_gmail_inbox_initial_start_v1($pdo, $user, $days, $startToken);
     if ($action === 'advance') agent_connection_gmail_inbox_initial_advance_v1($pdo, $user, $runId);
-    $review = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, $body['include_report'] ?? false);
+    $review = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, $body['include_report'] ?? false,
+        includeChatResult: $body['include_chat_result'] ?? false);
     echo json_encode(['ok'=>true, 'review'=>$review], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
 } catch (Throwable $error) {
     $status = (int)$error->getCode();

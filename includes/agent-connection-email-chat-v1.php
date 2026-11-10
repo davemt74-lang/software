@@ -67,6 +67,9 @@ function agent_connection_email_chat_plan_v1(string $query, bool $spoken=false):
         return ['operation'=>'read','message_id'=>$match[1]];
     }
     if (!preg_match('/\A(?:(?:draft|write|compose|prepare|send)\s+(?:me\s+)?(?:(?:an?|the)\s+)?(?:gmail\s+)?e-?mail\b|e-?mail(?=\s+[^\s]+@))(?=\s|\z)(.*)\z/isu', $query, $match)) {
+        if (preg_match('/\b(?:first|initial)\s+(?:gmail(?:\s+inbox)?|inbox|e-?mail)\s+(?:review|reveiw|scan)\b/iu',$command)) {
+            return ['operation'=>'review_status'];
+        }
         return null;
     }
     $request = trim($match[1]);
@@ -148,6 +151,51 @@ function agent_connection_email_chat_view_v1(array $result, string $answer, arra
     return ['A private Gmail result was displayed for this turn.', $context];
 }
 
+function agent_connection_email_first_review_chat_v1(PDO $pdo, array $user, bool $voice): array
+{
+    require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+    $view = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, includeChatResult: !$voice);
+    $state = $view['state'];
+    $answer = match ($state) {
+        'ready' => 'Your '.$view['days'].'-day first Gmail review is ready.',
+        'queued' => 'Your first Gmail review is queued.',
+        'working' => 'Your first Gmail review is running.',
+        'failed' => 'Your first Gmail review did not complete. Open Inbox Review to retry.',
+        'needs_start' => 'There is no saved first Gmail review. Choose a date range and select Start first review in Connections.',
+        'disabled' => 'Inbox Review is off or Gmail access is unavailable. Check your Gmail settings in Connections.',
+        default => 'I couldn’t verify your first Gmail review. Check the Gmail connection in Connections.',
+    };
+    $private = $state === 'ready' && !$voice;
+    if ($private) {
+        $count = $view['total'];
+        $answer .= $count === 0 ? ' No inbox messages matched your settings.'
+            : ' It found '.$count.' matching inbox '.($count === 1 ? 'message.' : 'messages.');
+        if ($view['truncated']) $answer .= ' The review reached its scan limit.';
+        $result = $view['chat_result'];
+        if ($result['summary'] !== '') $answer .= "\n\n".$result['summary'];
+        if (isset($result['latest'])) {
+            $latest = $result['latest'];
+            $answer .= "\n\n".'Your latest saved inbox update reviewed '.$latest['total'].' messages, with '
+                .$latest['important'].' marked important and '.$latest['replies'].' replies.';
+        }
+    }
+    [$status, $reason] = match ($state) {
+        'ready', 'queued', 'working' => ['read_complete',''],
+        'needs_start' => ['no_matches',''],
+        'disabled' => ['blocked','setup_required'],
+        default => ['failed','check_failed'],
+    };
+    return [
+        'handled'=>true,
+        'answer'=>$answer,
+        'actions'=>[['type'=>'open_url','url'=>url('/connections.php?app=gmail#gmail-inbox-review'),
+            'label'=>$state === 'ready' ? 'Open saved Gmail report' : 'Open Inbox Review']],
+        'sources'=>[],
+        'email_private_read_v1'=>$private,
+        'tool_receipt'=>vp3_tool_receipt_v1('email.read','review_status',$status,$reason),
+    ];
+}
+
 function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, int $userMessageId, ?callable $authority=null, bool $voice=false, ?callable $http=null): ?array
 {
     $plan = agent_connection_email_chat_plan_v1($query,$voice);
@@ -161,6 +209,9 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
         vp3_tool_receipt_v1($capability, $receiptOperation, $status, $reason, 0, $count);
     try {
         $live = agent_connection_email_chat_authority_v1($pdo, $user, $principal, $conversationId, $authority);
+        if ($operation === 'review_status') {
+            return agent_connection_email_first_review_chat_v1($pdo, $live, $voice);
+        }
         $owner = (int)$live['id'];
         $agent = (int)($principal['agent_id']??0);
         if ($voice && $capability === 'email.read') {

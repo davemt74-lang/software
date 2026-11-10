@@ -96,8 +96,25 @@ function agent_connection_gmail_inbox_initial_start_token_v1(array $scope): stri
     return hash('sha256',implode(':',[$scope['owner'],$scope['generation'],$scope['rules_hash'],$scope['policy']['revision']]));
 }
 
-/** Read only; the rail never receives mailbox headers or model output. */
-function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport=false, ?string $expectedRevision=null): array
+/** The private Chat projection omits message headers and all provider identifiers. */
+function agent_connection_gmail_inbox_initial_chat_result_v1(array $report, array $policy): array
+{
+    $result = ['summary'=>($report['summary_status'] ?? '') === 'ready' && is_string($report['summary'] ?? null)
+        ? mb_substr($report['summary'], 0, 1000) : ''];
+    $latest = json_decode((string)($policy['last_review_json'] ?? ''), true, 12);
+    if (!is_array($latest) || !is_string($latest['at'] ?? null)
+        || !preg_match('/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\z/', $latest['at'])) return $result;
+    $counts = [];
+    foreach (['total','important','replies'] as $key) {
+        if (!is_int($latest[$key] ?? null) || $latest[$key] < 0 || $latest[$key] > 100) return $result;
+        $counts[$key] = $latest[$key];
+    }
+    if ($counts['important'] > $counts['total'] || $counts['replies'] > $counts['total']) return $result;
+    return $result + ['latest'=>$counts + ['at'=>str_replace(' ', 'T', $latest['at']).'Z']];
+}
+
+/** Read only. The default status view omits all mailbox details. */
+function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport=false, ?string $expectedRevision=null, bool $includeChatResult=false): array
 {
     $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
     if ($scope['state']!=='ready') return ['state'=>$scope['state'],'limit'=>50];
@@ -117,6 +134,19 @@ function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, boo
         'has_report'=>$report!==null,'updated_at'=>str_replace(' ','T',$row['updated_at']).'Z'];
     if ($report!==null) $view['total'] = (int)$report['total'];
     if ($includeReport && $report!==null) $view['report'] = $report;
+    if ($includeChatResult && $report!==null) {
+        $live = agent_connection_gmail_inbox_initial_scope_v1($pdo, $user);
+        if ($live['state'] !== 'ready' || $live['generation'] !== $scope['generation']
+            || $live['policy']['revision'] !== $scope['policy']['revision']
+            || (agent_connection_gmail_inbox_initial_row_v1($pdo, $live)['run_id'] ?? '') !== $row['run_id']) {
+            return ['state'=>'unavailable','limit'=>50];
+        }
+        $policy = $live['policy'];
+        $view['chat_result'] = agent_connection_gmail_inbox_initial_chat_result_v1($report, $policy);
+        if (!empty($policy['claim_key']) && (string)$policy['next_check_at'] > agent_commerce_time_pa2()) {
+            $view['inbox_working_until'] = str_replace(' ', 'T', $policy['next_check_at']).'Z';
+        }
+    }
     $next = $row['lease_until'] ?? $row['next_run_at'];
     if ($next!==null) $view['next_attempt_at'] = str_replace(' ','T',$next).'Z';
     return $view+$start;

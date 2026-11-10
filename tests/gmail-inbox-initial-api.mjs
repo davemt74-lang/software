@@ -36,10 +36,11 @@ function fixture_record(string $action, array $user, mixed $input): void {
     header('X-Fixture-Dispatch: '.$action);
     $calls[] = [$action, $user['id'], $input];
 }
-function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport = false): array {
+function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport = false, ?string $expectedRevision = null, bool $includeChatResult = false): array {
     global $calls;
     fixture_record('status', $user, $includeReport);
-    return ['calls'=>$calls] + ($includeReport ? ['start_token'=>str_repeat('b', 64)] : []);
+    return ['calls'=>$calls] + ($includeReport ? ['start_token'=>str_repeat('b', 64)] : [])
+        + ($includeChatResult ? ['chat_result'=>['summary'=>'Fixture saved summary.']] : []);
 }
 function agent_connection_gmail_inbox_initial_start_v1(PDO $pdo, array $user, int $days, string $startToken): void {
     fixture_record('start', $user, [$days, $startToken]);
@@ -84,6 +85,8 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
   assert.equal(status.status, 200);
   assert.equal(status.headers.get('cache-control'), 'private, no-store');
   assert.deepEqual(status.data, {ok:true, review:{calls:[['status', 1, false]]}});
+  const chatStatus = await request({body:{include_chat_result:true}});
+  assert.deepEqual(chatStatus.data, {ok:true, review:{calls:[['status', 1, false]],chat_result:{summary:'Fixture saved summary.'}}});
   const privateStatus = await request({body:{include_report:true}});
   const startToken = privateStatus.data.review.start_token;
   assert.match(startToken, /^[a-f0-9]{64}$/);
@@ -98,6 +101,7 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
     [405, {method:'GET'}],
     [401, {headers:{'X-Fixture-Anonymous':'1'}}],
     [403, {headers:{'X-Fixture-Participant':'1'}}],
+    [403, {headers:{'X-Fixture-Participant':'1'},body:{include_chat_result:true}}],
     [403, {headers:{'X-Fixture-Deny':'account.access'}}],
     [403, {headers:{'X-Fixture-Deny':'chat.access'}}],
     [409, {headers:{'X-Fixture-Owner':'2'}}],
@@ -109,6 +113,8 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
     [422, {raw:'[]'}],
     [422, {body:{owner_key:1}}],
     [422, {body:{include_report:null}}],
+    [422, {body:{include_chat_result:1}}],
+    [422, {body:{include_report:true,include_chat_result:true}}],
     [422, {body:{action:'start', days:'7', start_token:startToken}}],
     [422, {body:{action:'start', days:2, start_token:startToken}}],
     [422, {body:{action:'start', days:7}}],

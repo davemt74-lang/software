@@ -460,6 +460,8 @@ try {
     gmail_connection_check_v1($readInbox['tool_receipt']['status'] === 'no_matches' && $readInbox['email_private_read_v1']
         && $readSender['tool_receipt']['count'] === 1 && $readSender['email_private_read_v1'] && str_contains($readSender['answer'],'ID: existing')
         && $voiceRead['tool_receipt']['reason'] === 'scope_restricted' && $searchCalls === 1
+        && agent_connection_email_chat_plan_v1('Gmail search: first email review')['operation'] === 'search'
+        && agent_connection_email_chat_plan_v1('Draft an email to buyer@example.test about the first Gmail review')['operation'] === 'draft'
         && agent_connection_email_chat_plan_v1('Find messages from Alex') === null
         && agent_connection_email_chat_plan_v1('Notify me when I get a message from Alex') === null
         && $ambiguousWatch['tool_receipt']['status'] === 'clarification_required',
@@ -578,6 +580,49 @@ try {
     } finally {
         putenv('VP3_GMAIL_CLIENT_ID=vp3-fixture.apps.googleusercontent.com');
     }
+    $reviewPrompt = 'i just ran the first email reveiw and there is absolutely nothng in the agent chat.';
+    $noReviewProviderCalls = static fn() => throw new LogicException('A Chat status read contacted Gmail.');
+    $readFirstReview = static fn(bool $voice=false) => agent_connection_email_chat_v1(
+        $pdo,$owner,$principal,$reviewPrompt,11,0,null,$voice,$noReviewProviderCalls);
+    gmail_connection_check_v1($readFirstReview()['tool_receipt']['status'] === 'no_matches',
+        'the reported misspelled Gmail question resolves to first review status before a run exists');
+    $firstScope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$owner);
+    agent_connection_gmail_inbox_initial_start_v1($pdo,$owner,7,agent_connection_gmail_inbox_initial_start_token_v1($firstScope));
+    gmail_connection_check_v1($readFirstReview()['answer'] === 'Your first Gmail review is queued.',
+        'an explicit Chat question reports the actual queued state');
+    $firstRow = agent_connection_gmail_inbox_initial_row_v1($pdo,$firstScope);
+    $pdo->beginTransaction();
+    agent_connection_gmail_inbox_initial_complete_v1($pdo,$firstScope,$firstRow,$inboxReview+['scanned'=>12,'truncated'=>false],
+        ['status'=>'ready','summary'=>'The sampled subjects suggest scheduling.','tokens_charged'=>247]);
+    $pdo->commit();
+    $latestReview = array_replace($inboxReview,['at'=>gmdate('Y-m-d H:i:s'),'total'=>4]);
+    $pdo->prepare('UPDATE agent_connection_gmail_inbox_v1 SET last_review_json=?,claim_key=?,next_check_at=? WHERE owner_user_id=1')
+        ->execute([json_encode($latestReview,JSON_THROW_ON_ERROR),str_repeat('a',32),gmdate('Y-m-d H:i:s',time()+90)]);
+    $plainStatus = agent_connection_gmail_inbox_initial_view_v1($pdo,$owner);
+    $chatStatus = agent_connection_gmail_inbox_initial_view_v1($pdo,$owner,includeChatResult:true);
+    $pdo->exec("UPDATE agent_connection_gmail_inbox_v1 SET next_check_at='2000-01-01 00:00:00' WHERE owner_user_id=1");
+    $afterLease = agent_connection_gmail_inbox_initial_view_v1($pdo,$owner,includeChatResult:true);
+    gmail_connection_check_v1(!isset($plainStatus['chat_result']) && !isset($plainStatus['inbox_working_until'])
+        && $chatStatus['chat_result'] === ['summary'=>'The sampled subjects suggest scheduling.',
+            'latest'=>['total'=>4,'important'=>2,'replies'=>1,'at'=>str_replace(' ','T',$latestReview['at']).'Z']]
+        && isset($chatStatus['inbox_working_until']) && !isset($afterLease['inbox_working_until'])
+        && !str_contains(json_encode($chatStatus,JSON_THROW_ON_ERROR),'PRIVATE_INBOX'),
+        'private Chat projects the saved summary and latest batch while only a live incremental lease shows as working');
+    $firstTyped = $readFirstReview();
+    $firstVoice = $readFirstReview(true);
+    [$storedReview,$storedReviewContext] = agent_connection_email_chat_view_v1($firstTyped,$firstTyped['answer'],[]);
+    $foreignReview = agent_connection_email_chat_v1($pdo,$other,$otherPrincipal,$reviewPrompt,11,0,null,false,$noReviewProviderCalls);
+    gmail_connection_check_v1(str_starts_with($firstTyped['answer'],'Your 7-day first Gmail review is ready. It found 3 matching inbox messages.')
+        && str_contains($firstTyped['answer'],'The sampled subjects suggest scheduling.')
+        && str_contains($firstTyped['answer'],'latest saved inbox update reviewed 4 messages')
+        && $firstTyped['tool_receipt']['operation'] === 'review_status' && $firstTyped['tool_receipt']['status'] === 'read_complete'
+        && $firstVoice['answer'] === 'Your 7-day first Gmail review is ready.' && $firstVoice['actions'] === $firstTyped['actions']
+        && $firstTyped['actions'][0]['url'] === '/connections.php?app=gmail#gmail-inbox-review'
+        && $storedReview === 'A private Gmail result was displayed for this turn.' && !empty($storedReviewContext['skip_brain_archive'])
+        && !str_contains(json_encode([$firstTyped,$firstVoice,$foreignReview],JSON_THROW_ON_ERROR),'PRIVATE_INBOX')
+        && $foreignReview['tool_receipt']['status'] === 'blocked',
+        'typed and spoken Chat read the saved first review without provider calls or private mail disclosure');
+
     $pdo->beginTransaction();
     agent_connection_gmail_inbox_revoke_v1($pdo,1,$connectionId,$inboxGrant);
     $pdo->commit();
@@ -587,6 +632,9 @@ try {
         && (int)$pdo->query("SELECT COUNT(*) FROM notifications WHERE user_id=1 AND type='agent_email_inbox_review'")->fetchColumn() === 0
         && [$threadCalls,$searchCalls] === $gmailCallsBeforeDigest,
         'revocation purges Inbox Review while preserving watched mail, other digest items and read-only provider boundaries');
+    gmail_connection_check_v1($readFirstReview()['tool_receipt']['status'] === 'blocked'
+        && agent_connection_gmail_inbox_initial_row_v1($pdo,$firstScope) === null,
+        'Chat cannot recall the first review after inbox access is revoked');
     $pdo->exec('DELETE FROM agent_connection_gmail_inbox_v1 WHERE owner_user_id=1');
 
     $pdo->exec('CREATE TABLE artist_transcript_folders_v177 (id BIGINT PRIMARY KEY,created_by_user_id INT NOT NULL,folder_name VARCHAR(80) NOT NULL)');
