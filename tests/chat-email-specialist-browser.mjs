@@ -15,6 +15,11 @@ let status = 'idle';
 let delayStatus = null;
 let nextId = 1;
 const workflowCalls = [];
+const replyDraft = {id:'d'.repeat(32), status:'prepared', is_reply:true, from:'owner@example.test', to:sender,
+  subject:'', body:'', review_token:'fixture-manual-token'};
+const newDraft = {id:'e'.repeat(32), status:'prepared', is_reply:false, from:'owner@example.test', to:sender,
+  subject:'Fixture new subject', body:'Fixture saved body.', review_token:'fixture-new-token'};
+const replyCalls = [];
 const workflowFolder = 'Member workflow reviews';
 let workflowState = {
   available:true, enabled:false, can_disable:false, status:'disabled',
@@ -35,6 +40,25 @@ await page.route('**/api/**', async route => {
   const path = new URL(route.request().url()).pathname;
   const ok = result => route.fulfill({json:{ok:true,...result}});
   if (path === '/api/chat-email-v1.php') {
+    if (payload.action !== 'specialist_status') {
+      const draft = [replyDraft,newDraft].find(value => value.id === payload.draft_id);
+      assert.ok(draft);
+      assert.equal(payload.conversation_id,42);
+      replyCalls.push(payload);
+      if (payload.action === 'revise') {
+        assert.equal(draft,replyDraft);
+        assert.equal(payload.subject,'');
+        assert.equal(payload.body,'This is my reply.');
+        assert.equal(payload.review_token,'fixture-manual-token');
+        Object.assign(replyDraft,{body:payload.body,review_token:'fixture-revised-token'});
+      } else if (payload.action === 'confirm') {
+        assert.equal(draft,replyDraft);
+        assert.equal(payload.review_token,'fixture-revised-token');
+        assert.equal(payload.confirmed,true);
+        Object.assign(replyDraft,{status:'sent',review_token:null});
+      } else assert.equal(payload.action,'review');
+      return ok({draft});
+    }
     assert.deepEqual(payload, {
       agent_id:7, conversation_id:payload.conversation_id, action:'specialist_status', owner_key:'1', csrf_token:'fixture',
     });
@@ -169,6 +193,68 @@ try {
   await specialist.waitFor({state:'detached'});
   assert.equal(await inline.isVisible(),false);
   assert.ok(checks.includes(12) && checks.includes(42));
+
+  const openDraft = async (id, label) => {
+    await page.locator('#chatThread').evaluate((thread,{id,label}) => {
+      const button = document.createElement('button');
+      button.dataset.chatEmailReview = id;
+      button.dataset.chatEmailConversation = '42';
+      button.textContent = label;
+      thread.append(button);
+    },{id,label});
+    await page.getByRole('button',{name:label}).click();
+  };
+  await openDraft(replyDraft.id,'Review fixture reply');
+  const replyReview = page.getByRole('dialog',{name:'Review Gmail draft'});
+  await replyReview.getByText('Write your reply, then review it before sending.').waitFor();
+  const approveReply = replyReview.getByRole('button',{name:'Approve and send'});
+  const edit = replyReview.getByRole('button',{name:'Edit manually'});
+  const revise = replyReview.getByRole('button',{name:'Revise draft'});
+  const cancel = replyReview.getByRole('button',{name:'Cancel edits'});
+  const subject = replyReview.getByLabel('Subject');
+  const body = replyReview.getByLabel('Message');
+  assert.equal(await approveReply.isVisible(),false);
+  assert.equal(await revise.isDisabled(),true);
+  assert.equal(await subject.isEditable(),false);
+  assert.equal(await subject.inputValue(),'');
+  assert.equal(await body.isEditable(),true);
+  await body.fill('This is my reply.');
+  assert.equal(await approveReply.isVisible(),false);
+  await revise.click();
+  await replyReview.getByText('Changes saved. Review the updated email before sending.').waitFor();
+  assert.equal(await approveReply.isEnabled(),true);
+  assert.equal(await body.isEditable(),false);
+  assert.deepEqual(replyCalls.map(call => call.action),['review','revise']);
+  await edit.click();
+  assert.equal(await subject.isEditable(),false,'The original blank subject remains locked.');
+  await body.fill('Unsaved edit.');
+  assert.equal(await approveReply.isVisible(),false);
+  await cancel.click();
+  assert.equal(await body.inputValue(),'This is my reply.');
+  assert.equal(await body.isEditable(),false);
+  assert.equal(await replyCalls.length,2,'Cancel edits never saves or sends.');
+  await approveReply.click();
+  await replyReview.getByText('Gmail confirmed the send.',{exact:true}).waitFor();
+  await replyReview.getByRole('button',{name:'Close'}).click();
+
+  await openDraft(newDraft.id,'Review fixture new email');
+  await edit.waitFor();
+  assert.equal(await subject.isEditable(),false);
+  assert.equal(await body.isEditable(),false);
+  await edit.click();
+  await subject.fill('New unsaved subject');
+  await body.fill('');
+  assert.equal(await revise.isDisabled(),true);
+  assert.equal(await approveReply.isVisible(),false);
+  await cancel.click();
+  assert.equal(await subject.inputValue(),newDraft.subject);
+  assert.equal(await body.inputValue(),newDraft.body);
+  await edit.click();
+  await body.fill('Abandon this edit on Chat switch.');
+  await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(12));
+  await replyReview.waitFor({state:'hidden'});
+  assert.deepEqual(replyCalls.map(call => call.action),['review','revise','confirm','review']);
+  await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
 
   await page.setViewportSize({width:390,height:844});
   const tools = page.getByRole('dialog',{name:'Chat tools'});

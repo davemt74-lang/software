@@ -215,4 +215,43 @@ $reply['payload']['parts'] = [
 ];
 $read = agent_connection_gmail_read_v1('fixture-access', 'msg-2', static fn() => ['status' => 200, 'json' => $reply]);
 check($read['body'] === 'One & two.', 'Body text included active HTML or an attachment.');
+$reply['payload']['headers'] = [
+    $header('From','Sender <sender@example.test>'), $header('Reply-To','"Team, Replies" <replies@example.test>'),
+    $header('Subject',mb_encode_mimeheader('Café delivery','UTF-8','B')),
+    $header('Message-ID','<selected@example.test>'), $header('References',"<root@example.test>\r\n <parent@example.test>"),
+];
+$source = agent_connection_gmail_reply_source_v1('fixture-access','msg-2','owner@example.test',false,
+    static function ($method,$url) use ($reply): array {
+        check($method === 'GET' && str_starts_with($url,VP3_GMAIL_API_V1.'/messages/msg-2?format=metadata')
+            && str_contains($url,'metadataHeaders=Reply-To'),'A manual reply must request only exact message metadata.');
+        return ['status'=>200,'json'=>$reply];
+    });
+check($source['to'] === 'replies@example.test' && $source['subject'] === 'Café delivery'
+    && $source['reply'] === ['message_id'=>'msg-2','thread_id'=>'thread-1','in_reply_to'=>'<selected@example.test>',
+        'references'=>['<root@example.test>','<parent@example.test>','<selected@example.test>']]
+    && !isset($source['body']), 'The exact reply address, subject, parent and full reference chain are verified.');
+$sourceBody = agent_connection_gmail_reply_from_message_v1($reply,'owner@example.test',true);
+check($sourceBody['body'] === 'One & two.', 'The isolated reply draft can use only the cleaned source body.');
+$sendReply = static fn(callable $http, ?array $binding=null) => agent_connection_gmail_send_v1('fixture-access','owner@example.test',
+    $source['to'],$source['subject'],'This is the reviewed reply.',$operation,$http,$binding ?? $source['reply']);
+$sentReply = $sendReply(static function ($method,$url,$headers,$body): array {
+    $mime = base64_decode(strtr($body['raw'], '-_', '+/'), true);
+    check($method === 'POST' && $url === VP3_GMAIL_API_V1.'/messages/send' && $body['threadId'] === 'thread-1'
+        && is_string($mime) && str_contains(mb_decode_mimeheader($mime), 'Subject: Café delivery')
+        && str_contains($mime,"\r\nTo: replies@example.test\r\n")
+        && str_contains($mime,"\r\nIn-Reply-To: <selected@example.test>\r\n")
+        && str_contains($mime,"\r\nReferences: <root@example.test>\r\n <parent@example.test>\r\n <selected@example.test>\r\n"),
+        'The Gmail reply must keep the matching subject and comply with RFC thread headers.');
+    return ['status'=>200,'json'=>['id'=>'msg-3','threadId'=>'thread-1']];
+});
+check($sentReply['thread_id'] === 'thread-1', 'The provider verified the original thread.');
+provider_error(static fn()=>$sendReply(static fn()=>['status'=>200,'json'=>['id'=>'msg-3','threadId'=>'other-thread']]),0,true);
+provider_error(static fn()=>$sendReply(static fn()=>throw new RuntimeException('Invalid reply contacted Gmail.'),
+    array_replace($source['reply'],['in_reply_to'=>"<selected@example.test>\r\nBcc: extra@example.test"])),409);
+$multiple = $reply;
+$multiple['payload']['headers'][1]['value'] = 'one@example.test, Second <two@example.test>';
+provider_error(static fn()=>agent_connection_gmail_reply_from_message_v1($multiple,'owner@example.test'),409);
+$blank = $reply;
+$blank['payload']['headers'][2]['value'] = '';
+check(agent_connection_gmail_reply_from_message_v1($blank,'owner@example.test')['subject'] === '', 'An empty original subject stays empty.');
 echo "AGENT_CONNECTION_GMAIL_V1=PASS\n";

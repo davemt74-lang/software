@@ -45,6 +45,7 @@
   document.getElementById('chatComposerShell')?.prepend(compactStatus);
 
   function currentScope() {
+    if (window.VP3ParticipantContinuity?.selectedContext?.()) return null;
     const config = window.STONEFELLOW_CHAT;
     const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
     const agent = Number(chat?.agentId?.() ?? cfg.agentId);
@@ -203,7 +204,9 @@
     details.replaceChildren();
     actions.replaceChildren();
     const states = {
-      prepared: 'Review the exact email before approving the send.',
+      prepared: draft.is_reply && !draft.body.trim()
+        ? 'Write your reply, then review it before sending.'
+        : 'Review the exact email before approving the send.',
       sending: 'Gmail’s send outcome is pending. Check the status of this reviewed email.',
       sent: draft.watch_registered
         ? 'Gmail confirmed the send. A reply watch was registered for up to 30 days.'
@@ -235,7 +238,9 @@
     body.rows = 7;
     body.value = draft.body;
     const editable = draft.status === 'prepared' && Boolean(draft.review_token);
-    subject.readOnly = body.readOnly = !editable;
+    let editing = editable && draft.is_reply === true && !draft.body.trim();
+    subject.readOnly = !editing || draft.is_reply === true;
+    body.readOnly = !editing;
     details.append(addresses, labelField('Subject', subject), labelField('Message', body));
 
     const watch = element('input');
@@ -250,28 +255,52 @@
     }
     if (draft.status === 'prepared') actions.append(button('Discard draft', () => request('discard')));
     if (!draft.review_token && !draft.watch_review_token) return;
+    const complete = () => (draft.is_reply === true || Boolean(subject.value.trim())) && Boolean(body.value.trim());
     const confirm = button(draft.status === 'sending' ? 'Check send status' : 'Approve and send', () => {
-      if (subject.value !== draft.subject || body.value !== draft.body) return;
+      if (editing || !complete() || subject.value !== draft.subject || body.value !== draft.body) return;
       const token = watch.checked ? draft.watch_review_token : draft.review_token;
       if (token) void request('confirm', { confirmed:true, review_token:token, watch_replies:watch.checked });
     });
     confirm.className = 'vp3-chat-email-primary';
+    confirm.disabled = !complete();
     if (editable) {
-      const revise = button('Review edited draft', () => request('revise', {
-        review_token:draft.review_token, subject:subject.value, body:body.value,
-      }));
+      const changed = () => subject.value !== draft.subject || body.value !== draft.body;
+      const edit = button('Edit manually', () => {
+        editing = true;
+        status.textContent = 'Make your changes, then select Revise draft.';
+        sync();
+        body.focus();
+      });
+      const cancel = button('Cancel edits', () => {
+        subject.value = draft.subject;
+        body.value = draft.body;
+        editing = false;
+        status.textContent = states.prepared;
+        sync();
+        edit.focus();
+      });
+      const revise = button('Revise draft', () => {
+        if (!editing || !changed() || !complete()) return;
+        void request('revise', { review_token:draft.review_token, subject:subject.value, body:body.value });
+      });
       const sync = () => {
-        const changed = subject.value !== draft.subject || body.value !== draft.body;
-        revise.hidden = !changed;
-        revise.disabled = !subject.value.trim() || !body.value.trim();
-        confirm.hidden = changed;
+        subject.readOnly = !editing || draft.is_reply === true;
+        body.readOnly = !editing;
+        watch.disabled = editing;
+        edit.hidden = editing;
+        cancel.hidden = !editing;
+        revise.hidden = !editing;
+        revise.disabled = !changed() || !complete();
+        confirm.hidden = editing;
+        confirm.disabled = editing || !complete() || changed();
       };
       subject.addEventListener('input', sync);
       body.addEventListener('input', sync);
       sync();
-      actions.append(revise);
+      actions.append(edit,revise,cancel);
     }
     actions.append(confirm);
+    if (editing) body.focus();
   }
 
   document.addEventListener('click', event => {
@@ -301,6 +330,11 @@
   });
   window.addEventListener('vp3:chat-conversation-changed', () => {
     if (selected && !valid(selected)) dialog.close();
+  });
+  window.addEventListener('vp3:participant-selection-changed', () => {
+    if (dialog.open && !valid(selected)) dialog.close();
+    clearSpecialist();
+    refreshSpecialistSoon();
   });
   window.addEventListener('vp3:chat-context-ready', () => refreshSpecialistSoon());
   window.addEventListener('vp3:chat-canvas-view-changed', () => refreshSpecialistSoon());

@@ -602,11 +602,14 @@ try {
     $chatStatus = agent_connection_gmail_inbox_initial_view_v1($pdo,$owner,includeChatResult:true);
     $pdo->exec("UPDATE agent_connection_gmail_inbox_v1 SET next_check_at='2000-01-01 00:00:00' WHERE owner_user_id=1");
     $afterLease = agent_connection_gmail_inbox_initial_view_v1($pdo,$owner,includeChatResult:true);
+    $itemLabels = [['from'=>'private-inbox@example.test','subject'=>'PRIVATE_INBOX_SUBJECT','category'=>'new']];
     gmail_connection_check_v1(!isset($plainStatus['chat_result']) && !isset($plainStatus['inbox_working_until'])
         && $chatStatus['chat_result'] === ['summary'=>'The sampled subjects suggest scheduling.',
-            'latest'=>['total'=>4,'important'=>2,'replies'=>1,'at'=>str_replace(' ','T',$latestReview['at']).'Z']]
+            'items'=>$itemLabels,'latest'=>['total'=>4,'important'=>2,'replies'=>1,
+                'at'=>str_replace(' ','T',$latestReview['at']).'Z','items'=>$itemLabels]]
         && isset($chatStatus['inbox_working_until']) && !isset($afterLease['inbox_working_until'])
-        && !str_contains(json_encode($chatStatus,JSON_THROW_ON_ERROR),'PRIVATE_INBOX'),
+        && !str_contains(json_encode($plainStatus,JSON_THROW_ON_ERROR),'PRIVATE_INBOX')
+        && !str_contains(json_encode($chatStatus,JSON_THROW_ON_ERROR),'PRIVATE_INBOX_BODY'),
         'private Chat projects the saved summary and latest batch while only a live incremental lease shows as working');
     $firstTyped = $readFirstReview();
     $firstVoice = $readFirstReview(true);
@@ -774,6 +777,164 @@ try {
         && $recovered['watch_registered'] && $ambiguousPosts === 1 && $lookupCalls === 2,
         'retry reconciles the exact Gmail Sent receipt and never sends a second POST');
 
+    // Reuse the exact reviewed-send ledger and a controlled Gmail wire for thread replies.
+    $newReplyTurn = static function(string $command, int $conversation=11) use ($pdo): int {
+        $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,1,'user',?,'{}')")
+            ->execute([$conversation,$command]);
+        return (int)$pdo->lastInsertId();
+    };
+    $replySends = $replyMetadata = $replyFull = $replyReconciles = 0;
+    $replyChanged = false;
+    $lastThreadReply = [];
+    $replyTransport = static function($method,$url,$headers,$body) use (&$replySends,&$replyMetadata,&$replyFull,&$replyReconciles,
+        &$lastThreadReply,&$replyChanged,$buyer,$mailbox): array {
+        if ($method === 'GET' && preg_match('~/messages/((?:manual|ai|auto|pending|revoked)_source)\?format=(metadata|full)~',$url,$match)) {
+            $id = $match[1];
+            $full = $match[2] === 'full';
+            if ($full) $replyFull++; else $replyMetadata++;
+            $mail = gmail_connection_fixture_message_v1($id,time()*1000,$buyer,$mailbox,'<'.$id.'@example.test>');
+            $mail['threadId'] = $replyChanged ? 'unexpected_thread' : 'source_thread';
+            if ($full) {
+                $mail['payload']['mimeType'] = 'text/plain';
+                $mail['payload']['body']['data'] = rtrim(strtr(base64_encode('PRIVATE_SOURCE '.str_repeat('context ',700)),'+/','-_'),'=');
+            }
+            return ['status'=>200,'json'=>$mail];
+        }
+        if ($method === 'GET' && str_starts_with($url,VP3_GMAIL_API_V1.'/messages?labelIds=SENT&')) {
+            $replyReconciles++;
+            return ['status'=>200,'json'=>['messages'=>[['id'=>'reply_recovered']]]];
+        }
+        if ($method === 'GET' && str_starts_with($url,VP3_GMAIL_API_V1.'/messages/reply_recovered?')) {
+            $replyReconciles++;
+            return ['status'=>200,'json'=>$lastThreadReply];
+        }
+        if ($method !== 'POST' || $url !== VP3_GMAIL_API_V1.'/messages/send' || ($body['threadId'] ?? '') !== 'source_thread') {
+            throw new LogicException('Reply transport selected the wrong Gmail action.');
+        }
+        $mime = base64_decode(strtr($body['raw'],'-_','+/'),true);
+        if (!is_string($mime) || !str_contains($mime,"\r\nTo: $buyer\r\n") || !str_contains($mime,"\r\nSubject: Fixture private reply subject\r\n")
+            || !preg_match('/\r\nIn-Reply-To: <((?:manual|ai|auto|pending)_source)@example\.test>\r\n/',$mime,$parent)
+            || !str_contains($mime,"\r\nReferences: <".$parent[1]."@example.test>\r\n")
+            || !preg_match('/\r\nMessage-ID: (<[^>]+>)\r\n/',$mime,$rfc)) {
+            throw new LogicException('Gmail did not receive the exact approved recipient and original thread headers.');
+        }
+        $replySends++;
+        if (in_array($parent[1],['auto_source','pending_source'],true)) {
+            $lastThreadReply = gmail_connection_fixture_message_v1('reply_recovered',time()*1000,$mailbox,$buyer,$rfc[1],'',['SENT']);
+            $lastThreadReply['threadId'] = 'source_thread';
+            return ['status'=>503,'json'=>[]];
+        }
+        return ['status'=>200,'json'=>['id'=>'manual_reply_sent','threadId'=>'source_thread']];
+    };
+    $replyModel = static function(string $data,array $service,array $control): array {
+        $input = json_decode($data,true,8,JSON_THROW_ON_ERROR);
+        if ($service['service'] !== 'conversation' || $service['stage'] !== 'vp3.gmail-reply-draft.v1'
+            || $control['protocol'] !== 'vp3.gmail-reply-draft.v1' || strlen($input['original_message']['excerpt']) > 4000
+            || !str_starts_with($input['original_message']['excerpt'],'PRIVATE_SOURCE')) {
+            throw new LogicException('Gmail reply input was not isolated, attributed and bounded.');
+        }
+        if (($control['before_gmail_reply_dispatch'])() !== true) return ['ok'=>false];
+        $GLOBALS['fixtureReplyModelCalls'] = ($GLOBALS['fixtureReplyModelCalls'] ?? 0)+1;
+        if (isset($GLOBALS['fixtureReplyAfterModel'])) ($GLOBALS['fixtureReplyAfterModel'])();
+        return ['ok'=>true,'answer'=>json_encode(['body'=>'Thanks for the update.'],JSON_THROW_ON_ERROR)];
+    };
+    $chatReply = static function(string $command, int $conversation=11, ?int $turn=null, bool $voice=false)
+        use ($pdo,$owner,$principal,$newReplyTurn,$replyTransport,$replyModel): array {
+        return agent_connection_email_chat_v1($pdo,$owner,$principal,$command,$conversation,$turn ?? $newReplyTurn($command,$conversation),
+            null,$voice,$replyTransport,$replyModel);
+    };
+    $manualCommand = 'Reply to Gmail message manual_source';
+    $manualReply = $chatReply($manualCommand);
+    $manualId = $manualReply['actions'][0]['id'] ?? '';
+    $manualEditor = agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,['action'=>'review','draft_id'=>$manualId],$key,$replyTransport);
+    gmail_connection_check_v1($manualReply['tool_receipt']['status'] === 'clarification_required' && $manualEditor['is_reply'] === true
+        && $manualEditor['to'] === $buyer && $manualEditor['subject'] === 'Fixture private reply subject' && $manualEditor['body'] === ''
+        && !isset($manualEditor['reply']) && !isset($manualEditor['thread_id']) && $replySends === 0 && $replyMetadata === 1 && $replyFull === 0,
+        'manual reply opens a scoped empty editor with exact recipient and original subject, using no model or send');
+    $manualConfirm = ['action'=>'confirm','draft_id'=>$manualId,'review_token'=>$manualEditor['review_token'],'confirmed'=>true,'watch_replies'=>false];
+    gmail_connection_reject_v1(static fn()=>agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,$manualConfirm,$key,$replyTransport),422,
+        'empty manual replies cannot be sent');
+    $manualEdit = ['action'=>'revise','draft_id'=>$manualId,'review_token'=>$manualEditor['review_token'],'subject'=>'Wrong subject','body'=>'Exact reviewed text.'];
+    gmail_connection_reject_v1(static fn()=>agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,$manualEdit,$key,$replyTransport),422,
+        'a user cannot accidentally break thread grouping by changing the subject');
+    $manualEditor = agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,
+        array_replace($manualEdit,['subject'=>$manualEditor['subject']]),$key,$replyTransport);
+    $manualConfirm['review_token'] = $manualEditor['review_token'];
+    $replyChanged = true;
+    gmail_connection_reject_v1(static fn()=>agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,$manualConfirm,$key,$replyTransport),409,
+        'the provider parent is reread and a changed thread blocks dispatch');
+    $replyChanged = false;
+    $manualSent = agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,$manualConfirm,$key,$replyTransport);
+    gmail_connection_check_v1($manualSent['status'] === 'sent' && !$manualSent['watch_registered'] && $replySends === 1,
+        'manual review sends only after approval and only to the original thread');
+
+    $draftCommand = 'Draft reply to Gmail message ai_source: thank the sender';
+    $draftTurn = $newReplyTurn($draftCommand);
+    $draftReply = $chatReply($draftCommand,11,$draftTurn,true);
+    $draftRetry = $chatReply($draftCommand,11,$draftTurn);
+    $aiEditor = agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,['action'=>'review','draft_id'=>$draftReply['actions'][0]['id']],$key,$replyTransport);
+    gmail_connection_check_v1($draftReply['actions'] === $draftRetry['actions'] && $GLOBALS['fixtureReplyModelCalls'] === 1 && $replyFull === 1
+        && $aiEditor['body'] === 'Thanks for the update.' && $replySends === 1 && !str_contains(json_encode($draftReply),'Thanks for the update.'),
+        'voice and typed retries reuse one metered private draft without sending or copying reply text into Chat');
+
+    $autoGrant = agent_connections_record_v1(1,$connectionId)['authorization_key'];
+    $autoItems = ['items'=>array_map(static fn(string $id): array => [
+        'from'=>$buyer,'subject'=>'Fixture private reply subject','category'=>'new','message_id_enc'=>ai_encrypt_secret($id),
+    ],['auto_source','revoked_source','pending_source'])];
+    $seedReplyReport = $pdo->prepare("INSERT INTO agent_connection_gmail_inbox_v1
+        (owner_user_id,connection_id,authorization_key,enabled,rules_json,revision,history_id,enabled_at_ms,last_review_json)
+        VALUES (1,?,?,1,'{}',?,'998',?,?) ON DUPLICATE KEY UPDATE enabled=1,connection_id=VALUES(connection_id),
+        authorization_key=VALUES(authorization_key),revision=VALUES(revision),history_id='998',enabled_at_ms=VALUES(enabled_at_ms),
+        last_review_json=VALUES(last_review_json)");
+    $seedReplyReport->execute([$connectionId,$autoGrant,bin2hex(random_bytes(16)),time()*1000,json_encode($autoItems,JSON_THROW_ON_ERROR)]);
+    $autoScope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$owner);
+    $autoRefs = agent_connection_gmail_inbox_latest_view_v1($pdo,$owner,$autoScope['policy']['revision'])['items'];
+    $autoCommand = 'Auto reply to Gmail review item '.$autoRefs[0]['item_ref'];
+    $blockedAuto = $chatReply($autoCommand);
+    gmail_connection_check_v1($blockedAuto['tool_receipt']['status'] === 'blocked' && $replySends === 1 && $GLOBALS['fixtureReplyModelCalls'] === 1,
+        'Auto Send disabled refuses before drafting or sending');
+    agent_connection_gmail_autosend_save_v1($pdo,$owner,['connection_id'=>(string)$connectionId,'connection_revision'=>hash('sha256',$autoGrant),
+        'autosend_revision'=>'','enabled'=>'1','addresses'=>$buyer]);
+    $unknown = $chatReply($autoCommand);
+    $sameAutoAcrossChats = $chatReply($autoCommand,12);
+    $originalAuto = $chatReply($autoCommand);
+    $autoNoticeId = $originalAuto['email_outcome_chat_message_id'] ?? 0;
+    $autoNotice = $pdo->query('SELECT * FROM chat_messages WHERE id='.(int)$autoNoticeId)->fetch(PDO::FETCH_ASSOC);
+    $autoContext = json_decode($autoNotice['context_json'] ?? '{}',true);
+    $autoView = agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,
+        ['action'=>'review','draft_id'=>$originalAuto['actions'][0]['id']],$key,$replyTransport);
+    gmail_connection_check_v1($unknown['tool_receipt']['reason'] === 'outcome_unverified' && !isset($unknown['email_outcome_chat_message_id'])
+        && $sameAutoAcrossChats['tool_receipt']['status'] === 'read_complete' && !isset($sameAutoAcrossChats['email_outcome_chat_message_id'])
+        && $sameAutoAcrossChats['actions'] === [] && $replySends === 2 && $replyReconciles === 2 && $GLOBALS['fixtureReplyModelCalls'] === 2
+        && (int)($autoNotice['conversation_id'] ?? 0) === 11 && ($autoContext['email_outcome']['mode'] ?? '') === 'auto_reply'
+        && ($autoContext['email_outcome']['watch_registered'] ?? false) === true && ($autoContext['skip_brain_archive'] ?? null) === false
+        && $autoContext['actions'][0]['label'] === 'View sent reply' && $autoView['body'] === 'Thanks for the update.' && !isset($autoView['review_token'])
+        && !str_contains($autoNotice['message'].$autoNotice['context_json'],'Thanks for the update.')
+        && (int)$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE context_json LIKE '%\"mode\":\"auto_reply\"%'")->fetchColumn() === 1,
+        'lost automatic acknowledgement reconciles once across Chats, then exposes the exact sent reply only in the original Chat');
+
+    $revokedCommand = 'Auto reply to Gmail review item '.$autoRefs[1]['item_ref'];
+    $GLOBALS['fixtureReplyAfterModel'] = static function() use ($pdo,$owner,$connectionId,$autoGrant,$buyer): void {
+        $policy = agent_connection_gmail_autosend_settings_v1($pdo,$owner,$connectionId);
+        agent_connection_gmail_autosend_save_v1($pdo,$owner,['connection_id'=>(string)$connectionId,'connection_revision'=>hash('sha256',$autoGrant),
+            'autosend_revision'=>$policy['revision'],'addresses'=>$buyer]);
+    };
+    $revoked = $chatReply($revokedCommand);
+    unset($GLOBALS['fixtureReplyAfterModel']);
+    $revokedReplay = $chatReply($revokedCommand,12);
+    gmail_connection_check_v1($revoked['tool_receipt']['status'] === 'blocked' && $revokedReplay['tool_receipt']['status'] === 'failed'
+        && $replySends === 2 && $GLOBALS['fixtureReplyModelCalls'] === 3,
+        'revoking Auto Send during the metered draft prevents the send and a replay does not draft again');
+    $pdo->prepare("UPDATE agent_connection_email_followups_v1 SET status='stopped',next_check_at=NULL WHERE draft_id=?")
+        ->execute([$autoContext['email_outcome']['draft_id']]);
+    $autoPolicy = agent_connection_gmail_autosend_settings_v1($pdo,$owner,$connectionId);
+    agent_connection_gmail_autosend_save_v1($pdo,$owner,['connection_id'=>(string)$connectionId,'connection_revision'=>hash('sha256',$autoGrant),
+        'autosend_revision'=>$autoPolicy['revision'],'enabled'=>'1','addresses'=>$buyer]);
+    $pendingReply = $chatReply('Auto reply to Gmail review item '.$autoRefs[2]['item_ref']);
+    gmail_connection_check_v1($pendingReply['tool_receipt']['reason'] === 'outcome_unverified' && $replySends === 3
+        && $GLOBALS['fixtureReplyModelCalls'] === 4,'the second automatic reply stays pending when Gmail acknowledgement is lost');
+    $pdo->exec('DELETE FROM agent_connection_gmail_inbox_v1 WHERE owner_user_id=1');
+
     $seedInboxReview = $pdo->prepare("INSERT INTO agent_connection_gmail_inbox_v1
         (owner_user_id,connection_id,authorization_key,enabled,rules_json,revision,history_id,enabled_at_ms,claim_key,next_check_at,last_status,last_review_json)
         VALUES (?,?,?,1,?,?,'991',?,? ,UTC_TIMESTAMP(),'ready',?)
@@ -813,6 +974,22 @@ try {
     gmail_connection_check_v1(agent_connection_email_followup_specialist_v1($pdo,1,7,11) === $idleSpecialist,
         'a replacement Gmail grant never inherits the previous watch or its rail presence');
     gmail_connection_check_v1($reviewCleared(1),'OAuth replacement retires both background readers’ cursors and claims');
+    $seedReplyReport->execute([$connectionId,$newGrant['authorization_key'],bin2hex(random_bytes(16)),time()*1000,
+        json_encode($autoItems,JSON_THROW_ON_ERROR)]);
+    $replacementScope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$owner);
+    $replacementRefs = agent_connection_gmail_inbox_latest_view_v1($pdo,$owner,$replacementScope['policy']['revision'])['items'];
+    $beforeReplacement = [$replySends,$replyMetadata,$replyFull,$replyReconciles,$GLOBALS['fixtureReplyModelCalls']];
+    $previousSent = $chatReply('Auto reply to Gmail review item '.$replacementRefs[0]['item_ref']);
+    $previousPending = $chatReply('Auto reply to Gmail review item '.$replacementRefs[2]['item_ref']);
+    $oldSentView = agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,
+        ['action'=>'review','draft_id'=>$originalAuto['actions'][0]['id']],$key,$replyTransport);
+    gmail_connection_check_v1($oldSentView['connection_changed'] === true && $oldSentView['body'] === ''
+        && $oldSentView['subject'] === '' && $oldSentView['message_id'] === null,
+        'a replaced grant leaves the historical send receipt but hides the previous private reply body');
+    gmail_connection_check_v1($previousSent['tool_receipt']['status'] === 'read_complete' && $previousSent['actions'] === []
+        && !isset($previousSent['email_outcome_chat_message_id']) && $previousPending['tool_receipt']['reason'] === 'outcome_unverified'
+        && [$replySends,$replyMetadata,$replyFull,$replyReconciles,$GLOBALS['fixtureReplyModelCalls']] === $beforeReplacement,
+        'reconnecting the same Gmail mailbox does not redraft, resend or expose an older-grant auto reply');
     gmail_connection_reject_v1(static fn()=>agent_connections_access_v1(1,$connectionId,'read',
         static fn()=>throw new LogicException('A stale grant must not refresh a replacement mailbox.'),$saved['authorization_key']),409,
         'an exact grant read rejects a replaced authorization before provider access');

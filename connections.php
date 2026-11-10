@@ -31,6 +31,7 @@ $youtubeArtistResearch = $youtubeEnabled && vp3_youtube_artist_research_enabled_
 $youtubeTopicResearch = $youtubeEnabled && vp3_youtube_research_enabled_v1($pdo, (int)$user['id'], 'topic');
 $youtubeWatchResearch = $youtubeEnabled && vp3_youtube_watch_research_enabled_v1($pdo, (int)$user['id']);
 $canChat = has_permission('chat.access', $user);
+$autosend = $connected && $pdo ? agent_connection_gmail_autosend_settings_v1($pdo, $user, (int)$connection['id']) : null;
 $permissions = $gmailLinked
     ? $connection['permissions']
     : ['read' => true, 'send' => true, 'followups' => false];
@@ -47,18 +48,19 @@ $inboxEnabled = !empty($inboxPolicy['enabled']);
 $inboxActive = $inboxCanEnable && $inboxEnabled;
 $inboxStatus = $inboxActive ? ($inboxPolicy['last_status'] ?? '') : '';
 $inboxCheckedAt = $inboxActive ? ($inboxPolicy['last_checked_at'] ?? '') : '';
-$inboxReview = $inboxActive ? json_decode((string)($inboxPolicy['last_review_json'] ?? ''), true) : null;
+$inboxReview = $inboxActive && !empty($inboxPolicy['last_review_json'])
+    ? agent_connection_gmail_inbox_latest_view_v1($pdo, $user, $inboxPolicy['revision']) : null;
 $inboxInitialReview = $inboxActive ? agent_connection_gmail_inbox_initial_view_v1($pdo, $user, true, $inboxPolicy['revision']) : null;
 $inboxRuleFields = [
     'senders' => ['Sender addresses', 'person@example.com'],
     'domains' => ['Sender domains', 'example.com'],
     'subjects' => ['Subject phrases', 'Build completed'],
 ];
-$inboxCategories = ['reply' => 'May need a reply', 'important' => 'Important', 'new' => 'New'];
+$inboxCategories = ['reply' => 'Incoming reply', 'important' => 'Important', 'new' => 'New'];
 $action = $connected ? 'update_policy' : 'start';
 $labels = [
     'read' => ['Search and read Gmail', 'In typed Agent Chat, try “Find emails from sender@example.com” to search your inbox.'],
-    'send' => ['Send after my approval', 'Review each message in Agent Chat before the Agent sends it from this account.'],
+    'send' => ['Allow Gmail sends', 'Review drafts before sending, or enable Auto Send for specific addresses below.'],
     'followups' => ['Watch for senders and replies in the background', 'Requires Gmail read access and a specific request. Try “Notify me when I get an email from sender@example.com.” Watches can run while your browser is closed.'],
 ];
 $notices = [
@@ -85,6 +87,10 @@ $notices = [
     'inbox_unavailable' => ['error', 'Inbox review is currently unavailable.'],
     'inbox_failed' => ['error', 'Inbox review settings could not be saved. Try again in a moment.'],
     'inbox_reconnect' => ['error', 'Reconnect Gmail before enabling Inbox review.'],
+    'autosend_saved' => ['success', 'Auto Send settings saved.'],
+    'autosend_invalid' => ['error', 'Enter up to 20 exact email addresses, one per line. Auto Send needs at least one approved address.'],
+    'autosend_conflict' => ['error', 'Gmail or Auto Send settings changed. Review the current settings and try again.'],
+    'autosend_unavailable' => ['error', 'Auto Send needs a working Gmail connection and permission to read and send.'],
     'youtube_enabled' => ['success', 'YouTube is enabled for your VP3 account.'],
     'youtube_disabled' => ['success', 'YouTube is disabled for your VP3 account.'],
     'youtube_artist_research_saved' => ['success', 'Background artist research preference saved.'],
@@ -97,6 +103,7 @@ $notices = [
 $result = $_GET['result'] ?? '';
 $notice = is_string($result) ? ($notices[$result] ?? null) : null;
 $inboxNotice = $connected && is_string($result) && str_starts_with($result, 'inbox_') ? $notice : null;
+$autosendNotice = $connected && is_string($result) && str_starts_with($result, 'autosend_') ? $notice : null;
 $noticeProvider = is_string($result) && str_starts_with($result, 'youtube_') ? 'youtube' : 'gmail';
 $selectedApp = $_GET['app'] ?? '';
 $openApp = $notice && !in_array($result, ['disconnected', 'youtube_disabled'], true)
@@ -163,6 +170,7 @@ header('Cache-Control: private, no-store');
   <title>Connections | <?= e(system_agent_name()) ?></title>
   <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
   <link rel="stylesheet" href="<?= e(url('/connections-v1.css?v=' . substr(hash_file('sha256', __DIR__ . '/connections-v1.css'), 0, 12))) ?>">
+  <?php if ($inboxInitialReview !== null): ?><link rel="stylesheet" href="<?= e(url('/chat-email-v1.css?v=' . substr(hash_file('sha256', __DIR__ . '/chat-email-v1.css'), 0, 12))) ?>"><?php endif; ?>
 </head>
 <body>
 <div class="chat-app">
@@ -180,7 +188,7 @@ header('Cache-Control: private, no-store');
         <h1>Connections</h1>
         <p class="connections-muted">Manage your connected apps and see what your Agent can use.</p>
 
-        <?php if ($notice && !$inboxNotice): ?>
+        <?php if ($notice && !$inboxNotice && !$autosendNotice): ?>
           <p class="connections-notice connections-<?= e($notice[0]) ?>" role="<?= $notice[0] === 'error' ? 'alert' : 'status' ?>"><?= e($notice[1]) ?></p>
         <?php endif; ?>
 
@@ -320,7 +328,7 @@ header('Cache-Control: private, no-store');
                                     </section>
                                   <?php endif; ?>
                                   <?php if (is_array($inboxReview)): ?>
-                                    <section class="connections-inbox-latest" aria-labelledby="gmail-inbox-latest-title">
+                                    <section class="connections-inbox-latest" data-gmail-review-latest-section aria-labelledby="gmail-inbox-latest-title">
                                       <h4 id="gmail-inbox-latest-title">Latest new-arrivals review</h4>
                                       <?php if (!empty($inboxReview['at'])): ?>
                                         <time class="connections-muted connections-inbox-time" datetime="<?= e(str_replace(' ', 'T', $inboxReview['at']) . 'Z') ?>"><?= e($inboxReview['at']) ?> UTC</time>
@@ -328,16 +336,16 @@ header('Cache-Control: private, no-store');
                                       <dl class="connections-inbox-counts">
                                         <div><dt>New messages</dt><dd><?= (int)($inboxReview['total'] ?? 0) ?></dd></div>
                                         <div><dt>Important</dt><dd><?= (int)($inboxReview['important'] ?? 0) ?></dd></div>
-                                        <div><dt>May need a reply</dt><dd><?= (int)($inboxReview['replies'] ?? 0) ?></dd></div>
+                                        <div><dt>Incoming replies</dt><dd><?= (int)($inboxReview['replies'] ?? 0) ?></dd></div>
                                         <div><dt>Ignored</dt><dd><?= (int)($inboxReview['filtered'] ?? 0) ?></dd></div>
                                       </dl>
                                       <?php if (!empty($inboxReview['items'])): ?>
                                         <ul class="connections-inbox-messages" role="list">
                                           <?php foreach ($inboxReview['items'] as $item): ?>
                                             <?php if (!is_array($item)) continue; ?>
-                                            <li>
+                                            <li data-gmail-review-latest-item data-item-ref="<?= e($item['item_ref'] ?? '') ?>" data-subject="<?= e($item['subject'] ?? '') ?>">
                                               <strong><?= e(($item['subject'] ?? '') ?: '(No subject)') ?></strong>
-                                              <span class="connections-muted"><?= e($item['from'] ?? '') ?></span>
+                                              <span class="connections-muted" data-gmail-review-sender><?= e($item['from'] ?? '') ?></span>
                                               <span class="connections-badge"><?= e($inboxCategories[$item['category'] ?? ''] ?? 'New') ?></span>
                                             </li>
                                           <?php endforeach; ?>
@@ -371,6 +379,41 @@ header('Cache-Control: private, no-store');
                                       </label>
                                     </fieldset>
                                     <button class="connections-button" type="submit" name="action" value="save">Save Inbox review</button>
+                                  </form>
+                                <?php endif; ?>
+                              </section>
+                            <?php endif; ?>
+
+                            <?php if ($autosend !== null): ?>
+                              <section class="connections-inbox" id="gmail-autosend" aria-labelledby="gmail-autosend-title">
+                                <h3 id="gmail-autosend-title">Auto Send</h3>
+                                <?php if ($autosendNotice): ?>
+                                  <p class="connections-notice connections-<?= e($autosendNotice[0]) ?>" role="<?= $autosendNotice[0] === 'error' ? 'alert' : 'status' ?>"><?= e($autosendNotice[1]) ?></p>
+                                <?php endif; ?>
+                                <?php if (!$autosend['ready']): ?>
+                                  <p class="connections-muted">Auto Send is available after Database Upgrade.</p>
+                                <?php elseif (!$autosend['available'] && $autosend['revision'] === ''): ?>
+                                  <p class="connections-muted">Enable Gmail reading and sending to configure Auto Send.</p>
+                                <?php else: ?>
+                                  <form class="connections-inbox-form" method="post" action="<?= e(url('/connection-gmail-autosend.php')) ?>">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="connection_id" value="<?= (int)$connection['id'] ?>">
+                                    <input type="hidden" name="connection_revision" value="<?= e($connection['revision']) ?>">
+                                    <input type="hidden" name="autosend_revision" value="<?= e($autosend['revision']) ?>">
+                                    <label class="connections-permission">
+                                      <input type="checkbox" name="enabled" value="1"<?= $autosend['enabled'] ? ' checked' : '' ?>>
+                                      <span><strong>Enable Auto Send</strong><small>Clicking Auto Reply can draft and send to an approved address. The draft uses AI tokens. Confirmed sends appear in Chat and history.</small></span>
+                                    </label>
+                                    <div class="connections-inbox-fields">
+                                      <label><span>Approved email addresses</span>
+                                        <textarea name="addresses" rows="4" maxlength="6000" placeholder="person@example.com" aria-describedby="gmail-autosend-help"><?= e(implode("\n", $autosend['addresses'])) ?></textarea>
+                                      </label>
+                                    </div>
+                                    <p class="connections-muted" id="gmail-autosend-help">Enter one exact email address per line, up to 20.</p>
+                                    <?php if (!$autosend['available']): ?>
+                                      <p class="connections-muted">Auto Send is paused until Gmail reading and sending are available.</p>
+                                    <?php endif; ?>
+                                    <button class="connections-button" type="submit">Save Auto Send</button>
                                   </form>
                                 <?php endif; ?>
                               </section>
@@ -511,7 +554,7 @@ header('Cache-Control: private, no-store');
 <?php if ($inboxInitialReview !== null): ?>
 <script>window.VP3_GMAIL_INBOX_INITIAL_V1=<?= json_encode([
     'endpoint'=>url('/api/gmail-inbox-initial-v1.php'),'csrf'=>csrf_token(),
-    'ownerKey'=>(string)$user['id'],'connectionsUrl'=>url('/connections.php?app=gmail#gmail-inbox-review'),
+    'ownerKey'=>(string)$user['id'],'connectionsUrl'=>url('/connections.php?app=gmail#gmail-inbox-review'),'chatUrl'=>url('/chat.php'),
     'initialReview'=>$inboxInitialReview,
 ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE) ?>;</script>
 <script src="<?= e(url('/gmail-inbox-initial-v1.js?v='.substr(hash_file('sha256', __DIR__.'/gmail-inbox-initial-v1.js'),0,12))) ?>" defer></script>

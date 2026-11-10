@@ -52,7 +52,8 @@ $emailPlan=$initiativeReply===null&&$participantActor===null&&vp3_participant_sc
     &&empty($input['ephemeral_protocol'])&&knowledge_retrieval_v162_owner_session($user,$principal)
     ?agent_connection_email_chat_plan_v1($query,true):null;
 $emailRequest=$emailPlan!==null;
-$emailReviewRequest=($emailPlan['operation']??null)==='review_status';
+$emailReviewRequest=($emailPlan['operation']??null)==='review_status'
+    ||(($emailPlan['operation']??null)==='reply'&&($emailPlan['mode']??null)==='auto');
 $youtubeHistoryRequest=$initiativeReply===null&&empty($input['ephemeral_protocol'])&&agent_connection_youtube_history_request_v1($query);
 if($youtubeHistoryRequest&&$participantActor!==null)throw new RuntimeException('Use your private Agent Chat to review your YouTube playback in VP3.',403);
 $youtubeFollowup=$initiativeReply===null&&empty($input['ephemeral_protocol'])?agent_connection_youtube_followup_plan_v1($query):null;
@@ -173,7 +174,7 @@ if($idempotencyKey!==''){
     }
 }
 agent_runtime_v125_trace('chat.turn.accepted',['user_id'=>$userId,'conversation_id'=>$conversationId,'agent_id'=>$agentScopeId,'idempotent'=>$idempotencyKey!=='']);
-if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,$query,$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!chat_v121_owned($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
+if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,vp3_agent_chat_public_prompt_v2160($query),$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!chat_v121_owned($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
 if($participantActor!==null&&array_key_exists('initiative_reply',$input))throw new RuntimeException('Use the private owner Chat for this reply.',403);
 if($participantActor!==null){
     $done=vp3_participant_chat_send_v1($pdo,$user,$principal,$input,$participantActor,$conversationId);

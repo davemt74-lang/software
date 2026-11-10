@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-connection-gmail-v1.php';
 require_once __DIR__.'/agent-connection-gmail-inbox-settings-v1.php';
 require_once __DIR__.'/agent-connection-gmail-github-settings-v1.php';
+require_once __DIR__.'/agent-connection-gmail-autosend-v1.php';
 require_once __DIR__.'/agent-connection-notice-v1.php';
 require_once __DIR__.'/ai-settings.php';
 
@@ -61,13 +62,15 @@ function agent_connections_install_v1(PDO $pdo): void
     agent_connection_gmail_github_install_v1($pdo);
     agent_connection_gmail_github_receipts_install_v1($pdo);
     agent_connection_gmail_github_actions_voice_install_v1($pdo);
+    agent_connection_gmail_autosend_install_v1($pdo);
 }
 
-/** These two independently enabled readers share the same Gmail read grant. */
+/** Revoke the Gmail features that require read permission. */
 function agent_connections_revoke_mail_intake_v1(PDO $pdo, int $owner, int $connection, string $grant): void
 {
     agent_connection_gmail_inbox_revoke_v1($pdo,$owner,$connection,$grant);
     agent_connection_gmail_github_revoke_v1($pdo,$owner,$connection,$grant);
+    agent_connection_gmail_autosend_revoke_v1($pdo,$owner,$connection,$grant);
 }
 
 function agent_connections_schema_ready_v1(PDO $pdo): bool
@@ -238,6 +241,7 @@ function agent_connections_update_policy_v1(int $ownerId, int $connectionId, arr
         $pdo->prepare('UPDATE agent_connections_v1 SET read_enabled=?,send_enabled=?,followups_enabled=? WHERE owner_user_id=? AND id=?')
             ->execute([(int)$policy['read'],(int)$policy['send'],(int)$allowFollowups,$ownerId,$connectionId]);
         if (!$policy['read']) agent_connections_revoke_mail_intake_v1($pdo,$ownerId,$connectionId,$expectedKey);
+        elseif (!$policy['send']) agent_connection_gmail_autosend_revoke_v1($pdo,$ownerId,$connectionId,$expectedKey);
         // An explicit revocation stops pending work immediately, even if the owner re-enables the permission before the next worker run.
         if (!$allowFollowups && agent_connection_email_followup_ready_v1($pdo)) {
             $pdo->prepare("UPDATE agent_connection_email_followups_v1 SET status='stopped',claim_key=NULL,next_check_at=NULL
@@ -272,9 +276,9 @@ function agent_connections_require_grant_v1(PDO $pdo, int $ownerId, int $connect
         throw new AgentConnectionExceptionV1('The approved connection has changed.', 409);
     }
     if ($row['status'] !== 'connected') throw new AgentConnectionExceptionV1('Connect Gmail to continue.', 401);
-    if (!(agent_connections_permissions_v1($row)[$capability] ?? false)) {
-        throw new AgentConnectionExceptionV1('This action is disabled for the Gmail connection.', 403);
-    }
+    $permissions = agent_connections_permissions_v1($row);
+    $allowed = $capability === 'reply' ? $permissions['read'] && $permissions['send'] : ($permissions[$capability] ?? false);
+    if (!$allowed) throw new AgentConnectionExceptionV1('This action is disabled for the Gmail connection.', 403);
     if (!hash_equals($row['client_fingerprint'], agent_connections_client_fingerprint_v1())) {
         throw new AgentConnectionExceptionV1('Reconnect Gmail to the current OAuth app.', 401);
     }
@@ -330,32 +334,42 @@ function agent_connections_access_v1(int $ownerId, int $connectionId, string $ca
     }
 }
 
-function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, string $subject, string $body, string $operationKey, ?string $expectedAuthorizationKey = null, ?callable $onVerified = null, ?callable $http = null, ?callable $beforeDispatch = null): array
+function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, string $subject, string $body, string $operationKey, ?string $expectedAuthorizationKey = null, ?callable $onVerified = null, ?callable $http = null, ?callable $beforeDispatch = null, ?array $reply = null, bool $reconcileOnly = false): array
 {
     if (!preg_match('/\A[a-f0-9]{64}\z/D', $operationKey)) {
         throw new AgentConnectionExceptionV1('A reviewed send key is required.', 400);
     }
     $pdo = db();
     if (!$pdo || !agent_connections_schema_ready_v1($pdo)) throw new AgentConnectionExceptionV1('Connections are unavailable.', 503);
-    $digest = hash('sha256', json_encode([$to,$subject,$body], JSON_THROW_ON_ERROR));
-    $access = agent_connections_access_v1($ownerId,$connectionId,'send',$http);
+    $payload = [$to,$subject,$body];
+    if ($reply !== null) {
+        $reply = agent_connection_gmail_reply_binding_v1($reply);
+        $payload[] = $reply;
+    }
+    $digest = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
+    $permission = $reply === null ? 'send' : 'reply';
+    $access = agent_connections_access_v1($ownerId,$connectionId,$permission,$http,$expectedAuthorizationKey);
     $grant = $access['authorization_key'];
     if ($expectedAuthorizationKey !== null && !hash_equals($grant, $expectedAuthorizationKey)) {
         throw new AgentConnectionExceptionV1('The approved connection has changed.', 409);
     }
     // Persist the one-time send claim before any provider side effect. A crash
     // after this point can only reconcile the same RFC Message-ID.
-    $claim = $pdo->prepare("INSERT INTO agent_connection_sends_v1 (owner_user_id,connection_id,authorization_key,operation_key,payload_digest) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE id=id");
-    $claim->execute([$ownerId,$connectionId,$grant,$operationKey,$digest]);
-    $created = $claim->rowCount() === 1;
+    $created = false;
+    if (!$reconcileOnly) {
+        $claim = $pdo->prepare("INSERT INTO agent_connection_sends_v1 (owner_user_id,connection_id,authorization_key,operation_key,payload_digest) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE id=id");
+        $claim->execute([$ownerId,$connectionId,$grant,$operationKey,$digest]);
+        $created = $claim->rowCount() === 1;
+    }
     $dispatched = false;
 
     try {
         $pdo->beginTransaction();
-        $row = agent_connections_require_grant_v1($pdo, $ownerId, $connectionId, 'send', $grant);
+        $row = agent_connections_require_grant_v1($pdo, $ownerId, $connectionId, $permission, $grant);
         $lookup = $pdo->prepare('SELECT * FROM agent_connection_sends_v1 WHERE owner_user_id=? AND connection_id=? AND operation_key=? FOR UPDATE');
         $lookup->execute([$ownerId,$connectionId,$operationKey]);
         $send = $lookup->fetch(PDO::FETCH_ASSOC);
+        if (!$send && $reconcileOnly) throw new AgentConnectionExceptionV1('There is no Gmail send receipt yet for this reply.', 502);
         if (!$send || !hash_equals($send['authorization_key'],$grant) || !hash_equals($send['payload_digest'],$digest)) {
             throw new AgentConnectionExceptionV1('The approved message has changed.', 409);
         }
@@ -366,10 +380,20 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
             $token = ai_decrypt_secret($row['access_token_enc']);
             if ($token === '') throw new AgentConnectionExceptionV1('Reconnect Gmail to send.', 401);
             if ($created && $beforeDispatch !== null) $beforeDispatch($pdo,agent_connections_view_v1($row));
+            if ($created && $reply !== null) {
+                try {
+                    $current = agent_connection_gmail_reply_source_v1($token,$reply['message_id'],$row['account_email'],false,$http);
+                } catch (AgentConnectionGmailExceptionV1 $e) {
+                    throw new AgentConnectionExceptionV1('The original Gmail message could not be verified before sending.', 409, $e);
+                }
+                if ($current['reply'] !== $reply || $current['to'] !== $to || $current['subject'] !== $subject) {
+                    throw new AgentConnectionExceptionV1('The original Gmail message or reply address changed. Open it again before sending.', 409);
+                }
+            }
             try {
                 $dispatched = $created;
                 $verified = $created
-                    ? agent_connection_gmail_send_v1($token,$row['account_email'],$to,$subject,$body,$operationKey,$http)
+                    ? agent_connection_gmail_send_v1($token,$row['account_email'],$to,$subject,$body,$operationKey,$http,$reply)
                     : agent_connection_gmail_find_sent_v1($token,$operationKey,$http);
             } catch (AgentConnectionGmailSendUnknownV1 $e) {
                 throw new AgentConnectionExceptionV1('Gmail delivery is unconfirmed. Check this review again to reconcile it.', 502, $e);
@@ -384,12 +408,17 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
                 $pdo->commit();
                 throw new AgentConnectionExceptionV1('Gmail rejected this send. Review a new draft to try again.', 422, $e);
             }
-            if (!$verified) throw new AgentConnectionExceptionV1('Gmail delivery is still unconfirmed.', 502);
+            if (!$verified || ($reply !== null && $verified['thread_id'] !== $reply['thread_id'])) {
+                throw new AgentConnectionExceptionV1('Gmail delivery is still unconfirmed.', 502);
+            }
             $send['provider_message_id'] = $verified['message_id'];
             $send['provider_thread_id'] = $verified['thread_id'];
             $send['sent_at'] = (int)($verified['sent_at'] ?? time());
             $update = $pdo->prepare("UPDATE agent_connection_sends_v1 SET status='sent',provider_message_id=?,provider_thread_id=?,sent_at=? WHERE id=?");
             $update->execute([$send['provider_message_id'],$send['provider_thread_id'],$send['sent_at'],(int)$send['id']]);
+        }
+        if ($reply !== null && $send['provider_thread_id'] !== $reply['thread_id']) {
+            throw new AgentConnectionExceptionV1('Gmail delivery could not be verified in the original thread.', 502);
         }
         $receipt = [
             'message_id'=>$send['provider_message_id'],'thread_id'=>$send['provider_thread_id'],

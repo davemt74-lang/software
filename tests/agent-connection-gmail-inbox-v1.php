@@ -161,9 +161,19 @@ try {
         && !str_contains(json_encode($notices(),JSON_THROW_ON_ERROR),'customer@example.test')
         && !str_contains(json_encode($notices(),JSON_THROW_ON_ERROR),'Customer update') && $receipts() === 10,
         'only private reviewed headers and hash receipts persist while the Bell keeps generic counts');
+    $itemView = agent_connection_gmail_inbox_latest_view_v1($pdo,$owner,$reviewRow()['revision']);
+    $itemRef = $itemView['items'][0]['item_ref'];
+    inbox_check(ai_decrypt_secret($initialReview['items'][0]['message_id_enc']) === 'new_mail'
+        && !isset($itemView['items'][0]['message_id_enc'])
+        && agent_connection_gmail_inbox_item_v1($pdo,$owner,$itemRef)['message_id'] === 'new_mail',
+        'the latest batch exposes a protected selector for its exact saved message');
     inbox_check($sweep() === ['processed'=>1,'reviewed'=>1] && array_slice($metadataIds,10) === ['tail','deleted']
         && $review()['total'] === 1 && $reviewRow()['pending_event_id'] === $first,
         'changed provider event membership or ordering restarts the slice without duplicate reads or lost tail mail');
+    $stale = false;
+    try { agent_connection_gmail_inbox_item_v1($pdo,$owner,$itemRef); }
+    catch (DomainException $error) { $stale = $error->getCode() === 404; }
+    inbox_check($stale,'replacing the latest batch invalidates its previous exact selectors');
     inbox_check($sweep() === ['processed'=>1,'reviewed'=>1] && array_slice($metadataIds,12) === ['next','epoch']
         && $review()['items'][0]['from'] === 'muted2@example.test' && $reviewRow()['history_id'] === $second
         && $review()['total'] === 1 && $reviewRow()['pending_event_id'] === '' && $receipts() === 14,

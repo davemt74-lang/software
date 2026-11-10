@@ -46,6 +46,15 @@ function agent_connection_email_chat_plan_v1(string $query, bool $spoken=false):
     $query = trim($query);
     $query = preg_replace('/\A(?:please\s+|(?:can|could|would) you\s+)+/iu', '', $query) ?? $query;
     $command = rtrim($query,'.?!');
+    if (preg_match('/\A(?:(draft|auto) )?reply to gmail (message|review item) ([a-z0-9_-]{1,190})(?:(?:\s*:\s*| saying )([^\r\n]{1,600}))?\z/iu', $command, $match)) {
+        $mode = strtolower($match[1]);
+        $reviewItem = strcasecmp($match[2], 'review item') === 0;
+        $instruction = trim($match[4] ?? '');
+        if (($reviewItem && !preg_match('/\A[a-f0-9]{64}\z/D', $match[3]))
+            || ($mode === 'auto' && !$reviewItem) || ($mode !== 'draft' && $instruction !== '')) return null;
+        return ['operation'=>'reply', 'mode'=>$mode === '' ? 'manual' : $mode, 'instruction'=>$instruction,
+            $reviewItem ? 'item_ref' : 'message_id'=>$match[3]];
+    }
     if (preg_match('/\A(?:stop (?:watching|tracking)(?: (?:my )?gmail)?(?: for)?|cancel (?:my )?gmail (?:sender )?watch(?: for)?) (?:e-?mails? )?from\s+(.+)\z/iu',$command,$match)) {
         return ['operation'=>'stop_sender_watch','sender'=>agent_connection_email_chat_sender_v1($match[1],$spoken)];
     }
@@ -196,15 +205,17 @@ function agent_connection_email_first_review_chat_v1(PDO $pdo, array $user): arr
     ];
 }
 
-function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, int $userMessageId, ?callable $authority=null, bool $voice=false, ?callable $http=null): ?array
+function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, int $userMessageId, ?callable $authority=null, bool $voice=false, ?callable $http=null, ?callable $replyModel=null): ?array
 {
     $plan = agent_connection_email_chat_plan_v1($query,$voice);
     if ($plan === null || !knowledge_retrieval_v162_owner_session($user, $principal) || vp3_participant_scope_v1() !== null) return null;
     $result = ['handled'=>true,'actions'=>[],'sources'=>[]];
     $operation = $plan['operation'];
     $senderWatch = in_array($operation,['watch_sender','stop_sender_watch'],true);
-    $capability = $senderWatch ? 'email.followups' : ($operation === 'draft' ? 'email.send' : 'email.read');
-    $receiptOperation = $operation === 'draft' ? 'prepare' : $operation;
+    $preparing = in_array($operation, ['draft','reply'], true);
+    $auto = $operation === 'reply' && $plan['mode'] === 'auto';
+    $capability = $senderWatch ? 'email.followups' : ($preparing ? 'email.send' : 'email.read');
+    $receiptOperation = $auto ? 'send' : ($preparing ? 'prepare' : $operation);
     $receipt = static fn(string $status, string $reason='', int $count=0): array =>
         vp3_tool_receipt_v1($capability, $receiptOperation, $status, $reason, 0, $count);
     try {
@@ -236,7 +247,7 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
             return $result + ['answer'=>'Gmail is unavailable on this site. Check Connections for its current status.','tool_receipt'=>$receipt('blocked','provider_unavailable')];
         }
         $connection = $summary['connection']??null;
-        $permission = $senderWatch ? 'followups' : ($operation === 'draft' ? 'send' : 'read');
+        $permission = $senderWatch ? 'followups' : ($preparing ? 'send' : 'read');
         if (!$connection || empty($connection['permissions'][$permission]) || ($connection['status']??'') !== 'connected') {
             $needed = match ($permission) {'send'=>'reviewed send','followups'=>'mail reading and background watches',default=>'mail reading'};
             return array_replace($result, [
@@ -259,7 +270,7 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
             return $result + ['answer'=>$answer,
                 'tool_receipt'=>$receipt($active ? 'completed' : 'no_matches','',$active ? 1 : 0)];
         }
-        if ($operation !== 'draft') {
+        if (!$preparing) {
             $access = agent_connections_access_v1($owner, $connectionId, 'read', $http);
             if ($operation === 'search') {
                 $messages = isset($plan['sender'])
@@ -285,6 +296,9 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
         }
         if (!table_exists('agent_connection_email_drafts_v1')) {
             return $result + ['answer'=>'Run Database Upgrade to prepare Gmail drafts in Chat.','tool_receipt'=>$receipt('blocked','upgrade_required')];
+        }
+        if ($operation === 'reply') {
+            return agent_connection_email_chat_reply_v1($pdo,$live,$principal,$conversationId,$userMessageId,$plan,$connection,$authority,$http,$replyModel);
         }
         if ($plan['to'] === '' || (!isset($plan['subject']) && $plan['instruction'] === '')) {
             return $result + [
@@ -317,6 +331,203 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
     }
 }
 
+function agent_connection_email_chat_reply_v1(PDO $pdo, array $user, array $principal, int $conversation,
+    int $userMessage, array $plan, array $connection, ?callable $authority, ?callable $http, ?callable $replyModel): array
+{
+    if ($userMessage < 1) throw new DomainException('Use a saved Agent Chat to prepare a Gmail reply.', 422);
+    $owner = (int)$user['id'];
+    $agent = (int)($principal['agent_id'] ?? 0);
+    $connectionId = (int)$connection['id'];
+    $grant = $connection['authorization_key'];
+    $auto = $plan['mode'] === 'auto';
+    $compose = $plan['mode'] !== 'manual';
+    if (isset($plan['item_ref'])) {
+        require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+        $item = agent_connection_gmail_inbox_item_v1($pdo,$user,$plan['item_ref']);
+        if ($item['connection_id'] !== $connectionId || !hash_equals($grant,$item['authorization_key'])) {
+            throw new DomainException('That saved review item belongs to a different Gmail connection.', 409);
+        }
+        $message = $item['message_id'];
+    } else {
+        $message = $plan['message_id'];
+    }
+    $mailbox = agent_connections_require_grant_v1($pdo,$owner,$connectionId,'reply',$grant);
+    if ($mailbox['external_account_id'] === '') throw new DomainException('Gmail mailbox identity could not be verified.',409);
+    // An OAuth reconnect to the same mailbox must not duplicate a possibly
+    // dispatched reply. Drafts for manual review stay tied to the saved turn.
+    $identity = $auto ? ['auto',$owner,$mailbox['external_account_id'],$message] : ['review',$owner,$userMessage];
+    $id = substr(hash('sha256', 'vp3-gmail-reply-v1:'.json_encode($identity,JSON_THROW_ON_ERROR)),0,32);
+    $lookup = $pdo->prepare('SELECT * FROM agent_connection_email_drafts_v1 WHERE id=? AND owner_user_id=?');
+    $readDraft = static function () use ($lookup,$id,$owner): ?array {
+        $lookup->execute([$id,$owner]);
+        return $lookup->fetch(PDO::FETCH_ASSOC) ?: null;
+    };
+    $existing = $readDraft();
+    if ($existing !== null) {
+        return agent_connection_email_chat_reply_result_v1($pdo,$existing,$conversation,$auto,$grant,$http);
+    }
+    $access = agent_connections_access_v1($owner,$connectionId,'read',$http,$grant);
+    $source = agent_connection_gmail_reply_source_v1($access['access_token'],$message,$connection['account_email'],false,$http);
+    $live = agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation,$authority);
+    agent_connections_require_grant_v1($pdo,$owner,$connectionId,'reply',$grant);
+    $payload = ['subject'=>$source['subject'],'body'=>'','reply'=>$source['reply']];
+    if ($auto) {
+        require_once __DIR__.'/agent-connection-gmail-autosend-v1.php';
+        $payload['auto_revision'] = agent_connection_gmail_autosend_authorize_v1($pdo,$live,$connectionId,$grant,$source['to']);
+    }
+    $encoded = ai_encrypt_secret(json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
+    $insert = $pdo->prepare('INSERT INTO agent_connection_email_drafts_v1
+        (id,owner_user_id,agent_id,conversation_id,user_message_id,connection_id,authorization_key,account_email,recipient,message_enc,status,expires_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+    try {
+        $insert->execute([$id,$owner,$agent,$conversation,$userMessage,$connectionId,$grant,$connection['account_email'],
+            $source['to'],$encoded,$compose ? 'drafting' : 'prepared',time()+86400]);
+    } catch (PDOException $e) {
+        if ($e->getCode() !== '23000' || ($existing = $readDraft()) === null) throw $e;
+        return agent_connection_email_chat_reply_result_v1($pdo,$existing,$conversation,$auto,$grant,$http);
+    }
+    if (!$compose) return agent_connection_email_chat_reply_result_v1($pdo,$readDraft(),$conversation,false,$grant,$http);
+
+    $current = static function () use ($pdo,$user,$principal,$conversation,$authority,$owner,$connectionId,$grant,$source,$payload,$readDraft): bool {
+        $draft = $readDraft();
+        if (($draft['status'] ?? '') !== 'drafting' || (int)$draft['expires_at'] <= time()) return false;
+        $live = agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation,$authority);
+        agent_connections_require_grant_v1($pdo,$owner,$connectionId,'reply',$grant);
+        if (isset($payload['auto_revision'])) {
+            agent_connection_gmail_autosend_authorize_v1($pdo,$live,$connectionId,$grant,$source['to'],$payload['auto_revision']);
+        }
+        return true;
+    };
+    try {
+        if (!$current()) throw new DomainException('The Gmail reply request is no longer current.',409);
+        $full = agent_connection_gmail_reply_source_v1($access['access_token'],$message,$connection['account_email'],true,$http);
+        if (array_diff_key($full,['body'=>true]) !== $source) {
+            throw new DomainException('The original Gmail reply address or thread changed. Open the message again.',409);
+        }
+        if (!$current()) throw new DomainException('The Gmail reply request is no longer current.',409);
+        $payload['body'] = agent_connection_email_chat_reply_body_v1($pdo,$live,$agent,$conversation,$id,$plan,$full,$current,$replyModel);
+        if (!$current()) throw new DomainException('The Gmail reply request is no longer current.',409);
+        $status = $auto ? ($payload['body'] === '' ? 'failed' : 'sending') : 'prepared';
+        $watch = $auto && $status === 'sending' && agent_connection_email_chat_watch_allowed_v1(
+            agent_connection_email_chat_record_v1($owner,$connectionId,'send',$grant));
+        $finish = $pdo->prepare("UPDATE agent_connection_email_drafts_v1 SET message_enc=?,status=?,watch_replies=?
+            WHERE id=? AND owner_user_id=? AND status='drafting' AND message_enc=?");
+        $finish->execute([ai_encrypt_secret(json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)),
+            $status,(int)$watch,$id,$owner,$encoded]);
+        if ($finish->rowCount() !== 1) throw new DomainException('The Gmail reply draft changed.',409);
+    } catch (Throwable $e) {
+        $pdo->prepare("UPDATE agent_connection_email_drafts_v1 SET status='failed' WHERE id=? AND owner_user_id=? AND status='drafting'")
+            ->execute([$id,$owner]);
+        throw $e;
+    }
+    return agent_connection_email_chat_reply_result_v1($pdo,$readDraft(),$conversation,$auto,$grant,$http,false);
+}
+
+/** One isolated, metered draft. Neither the source text nor the result enters Chat history. */
+function agent_connection_email_chat_reply_body_v1(PDO $pdo, array $user, int $agent, int $conversation, string $id,
+    array $plan, array $source, Closure $current, ?callable $model): string
+{
+    try {
+        if ($model === null) {
+            $route = vp3_agent_runtime_plan_v420($pdo,$user,$agent,'chat');
+            if (($route['route'] ?? '') !== 'vp3_cloud' || empty($route['cloud']['ready'])) return '';
+            $model = static fn(string $data,array $service,array $control): array => ai_v100_with_service_context($service,
+                static fn() => ai_generate_chat_response($data,[],[],$user,'main_ai',$control));
+        }
+        $protocol = 'vp3.gmail-reply-draft.v1';
+        $data = json_encode([
+            'owner_instruction'=>$plan['instruction'], 'mode'=>$plan['mode'],
+            'original_message'=>['subject'=>$source['subject'],'excerpt'=>$source['body']],
+        ], JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+        $result = $model($data,[
+            'service'=>'conversation','stage'=>$protocol,'agent_id'=>$agent,'conversation_id'=>$conversation,'job_key'=>'gmail-reply:'.$id,
+        ],[
+            'surface'=>'tool_json','protocol'=>$protocol,'before_gmail_reply_dispatch'=>$current,
+        ]);
+        if (empty($result['ok'])) return '';
+        $draft = vp3_tool_json_object_v1((string)($result['answer'] ?? ''),['body'],25000);
+        $auto = $plan['mode'] === 'auto';
+        $body = agent_connection_email_chat_text_v1($draft['body'] ?? null,$auto ? 1200 : 6000,true);
+        // An automatic reply is a plain acknowledgment or clarification.
+        if ($auto && preg_match('~(?:https?://|www\.|\b[^\s@]+@[^\s@]+\.[a-z]{2,})~iu',$body)) return '';
+        return $body;
+    } catch (Throwable $error) {
+        return '';
+    }
+}
+
+function agent_connection_email_chat_reply_result_v1(PDO $pdo, ?array $draft, int $conversation, bool $auto,
+    string $grant, ?callable $http, bool $reconcileOnly = true): array
+{
+    if ($draft === null) throw new DomainException('The Gmail reply draft is unavailable.',503);
+    $payload = agent_connection_email_chat_payload_v1($draft);
+    if ($auto !== isset($payload['auto_revision'])) throw new DomainException('The Gmail reply draft is unavailable.',409);
+    $result = ['handled'=>true,'actions'=>[],'sources'=>[]];
+    $sameGrant = hash_equals($draft['authorization_key'],$grant);
+    if (!$sameGrant && !$auto) throw new DomainException('Gmail access changed. Open the message again.',409);
+    if ($draft['status'] === 'drafting' && $sameGrant && (int)$draft['expires_at'] > time()) {
+        return $result + ['answer'=>'I’m already preparing this Gmail reply.'];
+    }
+    if (!$auto) {
+        if ($draft['status'] !== 'prepared' || (int)$draft['expires_at'] <= time() || (int)$draft['conversation_id'] !== $conversation) {
+            throw new DomainException('This Gmail reply draft is no longer available for review.',409);
+        }
+        $GLOBALS['vp3_chat_email_review_v1'] = ['owner'=>(int)$draft['owner_user_id'],'id'=>$draft['id'],'conversation_id'=>$conversation,'is_reply'=>true];
+        return array_replace($result,[
+            'answer'=>$payload['body'] === '' ? 'Open the reply editor to write and review your Gmail reply.' : 'I drafted a reply in the original Gmail thread. Review it before sending.',
+            'actions'=>[['type'=>'email_review','id'=>$draft['id']]],
+            'tool_receipt'=>vp3_tool_receipt_v1('email.send','prepare','clarification_required','confirmation_required'),
+        ]);
+    }
+    if ($draft['status'] === 'sending' && !$sameGrant) {
+        return $result + ['answer'=>'Gmail access changed after this automatic reply was attempted. Check Sent in Gmail before replying again.',
+            'tool_receipt'=>vp3_tool_receipt_v1('email.send','send','failed','outcome_unverified')];
+    }
+    if ($draft['status'] === 'sending') {
+        try {
+            $draft = agent_connection_email_chat_send_saved_v1($pdo,$draft,$http,$reconcileOnly);
+        } catch (AgentConnectionExceptionV1 $error) {
+            if ($error->getCode() !== 502) throw $error;
+            return $result + ['answer'=>'Gmail hasn’t verified the automatic reply yet. Check its status again before sending another reply.',
+                'tool_receipt'=>vp3_tool_receipt_v1('email.send','send','failed','outcome_unverified')];
+        }
+    }
+    if ($draft['status'] !== 'sent') {
+        return $result + ['answer'=>'The automatic reply did not complete. Use Reply to write and review it yourself.',
+            'tool_receipt'=>vp3_tool_receipt_v1('email.send','send','failed','check_failed')];
+    }
+    $messageId = (int)($draft['outcome_chat_message_id'] ?? 0);
+    if (!$sameGrant || (int)$draft['conversation_id'] !== $conversation) $messageId = 0;
+    elseif ($messageId < 1) $messageId = agent_connection_email_chat_auto_notice_v1($pdo,$draft);
+    if ($messageId > 0) {
+        $GLOBALS['vp3_chat_email_review_v1'] = ['owner'=>(int)$draft['owner_user_id'],'id'=>$draft['id'],
+            'conversation_id'=>$conversation,'is_reply'=>true,'sent'=>true];
+        $result['actions'][] = agent_connection_email_chat_auto_review_action_v1($draft);
+        $result['email_outcome_chat_message_id'] = $messageId;
+    }
+    return $result + ['answer'=>'Gmail confirmed the automatic reply was sent.'
+        .(!empty($draft['watch_registered']) ? ' A 30-day reply watch was registered.' : ''),
+        'tool_receipt'=>vp3_tool_receipt_v1('email.send','send',$messageId > 0 ? 'completed' : 'read_complete','',0,1)];
+}
+
+function agent_connection_email_chat_auto_review_action_v1(array $draft): array
+{
+    return ['type'=>'email_review','id'=>$draft['id'],'conversation_id'=>(int)$draft['conversation_id'],
+        'label'=>'View sent reply','is_reply'=>true,'sent'=>true,'auto'=>false,
+        'policy'=>['version'=>'v4.00','domain'=>'connections_email','risk'=>'low','requires_approval'=>false,'authorized'=>true]];
+}
+
+/** Resolve the single durable send notice only within its original Chat. */
+function agent_connection_email_chat_auto_notice_v1(PDO $pdo, array $draft): int
+{
+    $query = $pdo->prepare("SELECT id FROM chat_messages WHERE conversation_id=? AND role='assistant' AND id>?
+        AND JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(context_json),context_json,'{}'),'$.email_outcome.draft_id'))=?
+        AND JSON_UNQUOTE(JSON_EXTRACT(IF(JSON_VALID(context_json),context_json,'{}'),'$.email_outcome.mode'))='auto_reply'
+        ORDER BY id DESC LIMIT 1");
+    $query->execute([(int)$draft['conversation_id'],(int)$draft['user_message_id'],$draft['id']]);
+    return (int)$query->fetchColumn();
+}
+
 function agent_connection_email_chat_draft_v1(PDO $pdo, int $owner, int $agent, int $conversation, string $id, bool $lock=false): array
 {
     if (!preg_match('/\A[a-f0-9]{32}\z/D', $id)) throw new DomainException('Choose a saved email draft.', 422);
@@ -346,6 +557,14 @@ function agent_connection_email_chat_payload_v1(array $draft): array
     if (!is_array($decoded) || !is_string($decoded['subject']??null) || !is_string($decoded['body']??null)) {
         throw new DomainException('The saved email text is unavailable. Prepare a new draft.',503);
     }
+    if (array_key_exists('reply', $decoded)) {
+        if (!is_array($decoded['reply'])) throw new DomainException('The saved Gmail thread is unavailable.', 503);
+        $decoded['reply'] = agent_connection_gmail_reply_binding_v1($decoded['reply']);
+    }
+    if (array_key_exists('auto_revision', $decoded) && (!isset($decoded['reply'])
+        || !is_string($decoded['auto_revision']) || !preg_match('/\A[a-f0-9]{32,64}\z/D', $decoded['auto_revision']))) {
+        throw new DomainException('The saved Gmail Auto Send approval is unavailable.', 503);
+    }
     return $decoded;
 }
 
@@ -358,14 +577,29 @@ function agent_connection_email_chat_public_draft_v1(array $draft, string $key, 
 {
     $status = (string)$draft['status'];
     if ($status === 'prepared' && (int)$draft['expires_at'] <= $now) $status = 'expired';
+    $payload = agent_connection_email_chat_payload_v1($draft);
+    if (isset($payload['auto_revision']) && $status !== 'sent') throw new DomainException('This email draft is unavailable for manual review.', 404);
+    $isReply = isset($payload['reply']);
     $public = [
         'id'=>$draft['id'],'status'=>$status,'from'=>$draft['account_email'],'to'=>$draft['recipient'],
-        'message_id'=>$draft['sent_message_id'],
+        'message_id'=>$draft['sent_message_id'], 'is_reply'=>$isReply,
         'watch_requested'=>(bool)$draft['watch_replies'],'watch_registered'=>(bool)$draft['watch_registered'],
-    ] + agent_connection_email_chat_payload_v1($draft);
-    if (!in_array($status, ['prepared','sending'], true)) return $public;
+        'subject'=>$payload['subject'], 'body'=>$payload['body'],
+    ];
+    if (!$isReply && !in_array($status, ['prepared','sending'], true)) return $public;
 
     $connection = agent_connections_record_v1((int)$draft['owner_user_id'], (int)$draft['connection_id']);
+    if ($isReply) {
+        try {
+            $live = agent_connections_require_grant_v1(db(),(int)$draft['owner_user_id'],(int)$draft['connection_id'],'read',$draft['authorization_key']);
+            if ($live['account_email'] !== $draft['account_email'] || !agent_connection_gmail_ready_v1()) {
+                throw new DomainException('Gmail access changed.',409);
+            }
+        } catch (Throwable $e) {
+            return array_replace($public, ['from'=>'','to'=>'','subject'=>'','body'=>'','message_id'=>null,'connection_changed'=>true]);
+        }
+    }
+    if (!in_array($status, ['prepared','sending'], true)) return $public;
     $sameGrant = $connection && ($connection['status']??'') === 'connected'
         && !empty($connection['permissions']['send']) && ($connection['account_email']??null) === $draft['account_email']
         && ($connection['authorization_key']??null) === $draft['authorization_key']
@@ -425,6 +659,12 @@ function agent_connection_email_chat_dispatch_v1(PDO $pdo, array $draft, array $
             agent_connection_email_chat_review_hash_v1($current,(bool)$current['watch_replies']))) {
         throw new DomainException('The approved email changed. Review the draft again.',409);
     }
+    $payload = agent_connection_email_chat_payload_v1($current);
+    if (isset($payload['auto_revision'])) {
+        require_once __DIR__.'/agent-connection-gmail-autosend-v1.php';
+        agent_connection_gmail_autosend_authorize_v1($pdo,$user,(int)$current['connection_id'],$current['authorization_key'],
+            $current['recipient'],$payload['auto_revision']);
+    }
 }
 
 function agent_connection_email_chat_finish_v1(PDO $pdo, array $draft, array $receipt): array
@@ -433,7 +673,10 @@ function agent_connection_email_chat_finish_v1(PDO $pdo, array $draft, array $re
     $agent = (int)$draft['agent_id'];
     $conversation = (int)$draft['conversation_id'];
     $id = (string)$draft['id'];
-    if (($receipt['operation_key']??null) !== agent_connection_email_chat_operation_key_v1($id)
+    $payload = agent_connection_email_chat_payload_v1($draft);
+    $auto = isset($payload['auto_revision']);
+    if ((isset($payload['reply']) && ($receipt['thread_id'] ?? null) !== $payload['reply']['thread_id'])
+        || ($receipt['operation_key']??null) !== agent_connection_email_chat_operation_key_v1($id)
         || ($receipt['authorization_key']??null) !== $draft['authorization_key']
         || (int)($receipt['connection_id']??0) !== (int)$draft['connection_id']
         || ($receipt['from']??null) !== $draft['account_email'] || ($receipt['to']??null) !== $draft['recipient']
@@ -457,22 +700,26 @@ function agent_connection_email_chat_finish_v1(PDO $pdo, array $draft, array $re
         $pdo, $owner, $agent, $conversation, $receipt, ['draft_id'=>$id,'user_message_id'=>(int)$row['user_message_id']]
     );
     $context = json_encode([
-        'source'=>'agent_connection_email','skip_brain_archive'=>true,
+        'source'=>'agent_connection_email','skip_brain_archive'=>!$auto,
         'tool_receipt'=>vp3_tool_receipt_v1('email.send','send','completed','',0,1),
-        'email_outcome'=>['draft_id'=>$id,'message_id'=>$receipt['message_id'],'watch_registered'=>$watch],
+        'email_outcome'=>['draft_id'=>$id,'message_id'=>$receipt['message_id'],'watch_registered'=>$watch]
+            + ($auto ? ['mode'=>'auto_reply'] : []),
+        'actions'=>$auto ? [agent_connection_email_chat_auto_review_action_v1($row)] : [],
     ], JSON_THROW_ON_ERROR);
-    $message = 'Gmail confirmed the email was sent.';
+    $message = $auto ? 'Gmail confirmed the automatic reply was sent.' : 'Gmail confirmed the email was sent.';
     if ($watch) $message .= ' I’ll watch this thread for the first reply for 30 days.';
     elseif ($row['watch_replies']) $message .= ' Reply watching is unavailable for this send.';
     $now = gmdate('Y-m-d H:i:s');
     $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at)
         VALUES (?,NULL,'assistant',?,?,?)")->execute([$conversation,$message,$context,$now]);
+    $messageId = (int)$pdo->lastInsertId();
     $pdo->prepare('UPDATE chat_conversations SET updated_at=? WHERE id=? AND user_id=?')->execute([$now,$conversation,$owner]);
     $pdo->prepare("UPDATE agent_connection_email_drafts_v1 SET status='sent',sent_message_id=?,watch_registered=? WHERE id=?")
         ->execute([$receipt['message_id'], (int)$watch, $id]);
     $row['status'] = 'sent';
     $row['sent_message_id'] = $receipt['message_id'];
     $row['watch_registered'] = (int)$watch;
+    $row['outcome_chat_message_id'] = $messageId;
     return $row;
 }
 
@@ -488,6 +735,10 @@ function agent_connection_email_chat_action_v1(PDO $pdo, array $user, array $pri
         throw new DomainException('Choose a saved email draft action.', 422);
     }
     $draft = agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversationId,$id);
+    $payload = agent_connection_email_chat_payload_v1($draft);
+    if (isset($payload['auto_revision']) && ($action !== 'review' || $draft['status'] !== 'sent')) {
+        throw new DomainException('This email draft is unavailable for manual review.', 404);
+    }
     $now = time();
     if ($action === 'review') return agent_connection_email_chat_public_draft_v1($draft,$key,$now);
     if ($action === 'discard') {
@@ -502,10 +753,16 @@ function agent_connection_email_chat_action_v1(PDO $pdo, array $user, array $pri
             throw new DomainException('This email draft can no longer be edited.',409);
         }
         agent_connection_email_chat_record_v1($owner, (int)$draft['connection_id'], 'send', $draft['authorization_key']);
-        $message = ai_encrypt_secret(json_encode([
-            'subject'=>agent_connection_email_chat_text_v1($input['subject']??null,200),
-            'body'=>agent_connection_email_chat_text_v1($input['body']??null,6000,true),
-        ], JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
+        if (isset($payload['reply'])) {
+            agent_connections_require_grant_v1($pdo,$owner,(int)$draft['connection_id'],'reply',$draft['authorization_key']);
+            if (($input['subject'] ?? null) !== $payload['subject']) {
+                throw new DomainException('The subject must match the original Gmail thread.', 422);
+            }
+        } else {
+            $payload['subject'] = agent_connection_email_chat_text_v1($input['subject']??null,200);
+        }
+        $payload['body'] = agent_connection_email_chat_text_v1($input['body']??null,6000,true);
+        $message = ai_encrypt_secret(json_encode($payload, JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
         $revise = $pdo->prepare("UPDATE agent_connection_email_drafts_v1 SET message_enc=?
             WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=? AND status='prepared' AND message_enc=? AND expires_at>?");
         $revise->execute([$message,$id,$owner,$agent,$conversationId,$draft['message_enc'],$now]);
@@ -516,6 +773,9 @@ function agent_connection_email_chat_action_v1(PDO $pdo, array $user, array $pri
     if (!is_bool($watch)) throw new DomainException('Choose whether to watch for the first reply.', 422);
     if ($draft['status'] === 'sent') return agent_connection_email_chat_public_draft_v1($draft,$key,$now);
     initiative_workbench_confirm_v1($input, $key, agent_connection_email_chat_review_hash_v1($draft,$watch), $now);
+    if (isset($payload['reply']) && trim($payload['body']) === '') {
+        throw new DomainException('Write and review a reply before sending.', 422);
+    }
     if ($draft['status'] === 'prepared') {
         if ((int)$draft['expires_at'] <= $now) throw new DomainException('This email review expired. Prepare a new draft.', 409);
         $connection = agent_connection_email_chat_record_v1($owner, (int)$draft['connection_id'], 'send', $draft['authorization_key']);
@@ -536,14 +796,22 @@ function agent_connection_email_chat_action_v1(PDO $pdo, array $user, array $pri
         throw new DomainException('The email review changed. Reopen it before confirming.', 409);
     }
     agent_connection_email_chat_authority_v1($pdo, $user, $principal, $conversationId);
+    return agent_connection_email_chat_public_draft_v1(agent_connection_email_chat_send_saved_v1($pdo,$draft,$http),$key,$now);
+}
+
+function agent_connection_email_chat_send_saved_v1(PDO $pdo, array $draft, ?callable $http, bool $reconcileOnly = false): array
+{
     $payload = agent_connection_email_chat_payload_v1($draft);
+    $owner = (int)$draft['owner_user_id'];
+    $id = $draft['id'];
     $row = null;
     try {
         agent_connections_send_v1($owner,(int)$draft['connection_id'],$draft['recipient'],$payload['subject'],$payload['body'],
             agent_connection_email_chat_operation_key_v1($id),$draft['authorization_key'],
             static function(PDO $db,array $receipt) use ($draft,&$row): void {
                 $row = agent_connection_email_chat_finish_v1($db,$draft,$receipt);
-            }, $http, static fn(PDO $db,array $connection) => agent_connection_email_chat_dispatch_v1($db,$draft,$connection));
+            }, $http, static fn(PDO $db,array $connection) => agent_connection_email_chat_dispatch_v1($db,$draft,$connection),
+            $payload['reply'] ?? null, $reconcileOnly);
     } catch (AgentConnectionExceptionV1 $error) {
         if ((int)$error->getCode() === 422) {
             $pdo->prepare("UPDATE agent_connection_email_drafts_v1 SET status='failed' WHERE id=? AND status='sending'")->execute([$id]);
@@ -551,5 +819,5 @@ function agent_connection_email_chat_action_v1(PDO $pdo, array $user, array $pri
         throw $error;
     }
     if ($row === null) throw new DomainException('The Gmail send outcome could not be verified. Check Sent in Gmail.', 503);
-    return agent_connection_email_chat_public_draft_v1($row,$key,$now);
+    return $row;
 }
