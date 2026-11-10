@@ -158,6 +158,8 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         try{
             require_once __DIR__.'/includes/agent-connection-gmail-inbox-v1.php';
             $counts['gmail_inbox_review']=agent_connection_gmail_inbox_sweep_v1($pdo,$ownerLimit);
+            require_once __DIR__.'/includes/agent-connection-gmail-inbox-initial-v1.php';
+            $counts['gmail_first_review']=agent_connection_gmail_inbox_initial_sweep_v1($pdo);
         }
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.gmail_inbox.sweep_failed',['error_class'=>get_class($e)]);}
     }

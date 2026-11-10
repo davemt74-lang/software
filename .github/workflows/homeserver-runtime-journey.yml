@@ -43,7 +43,8 @@ jobs:
           activity_hub = r'^(?:agent-activity-hub-v1\.(?:js|css)|(?:api|includes|tests)/agent-activity-(?:hub|media)[^/]*\.(?:php|mjs))$'
           coding_controls = r'^(?:includes/main-sidebar\.php|(?:api|includes|tests)/initiative-canvas-[^/]*\.(?:php|mjs)|tests/coding-sidebar-[^/]*\.mjs)$'
           working_ui = r'^tests/(?:agent-work-status-http|agent-working-browser|chat-sidebar-footer-browser|chat-clean-layout-browser)\.mjs$'
-          changed = diff.returncode != 0 or any(re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(development, p) for p in diff.stdout.splitlines())
+          gmail_first_review = r'^(?:api/gmail-inbox-initial-v1\.php|gmail-inbox-initial-v1\.js|tests/gmail-inbox-initial-(?:api|ui-browser)\.mjs|tests/fixtures/gmail-inbox-initial-page-v1\.php)$'
+          changed = diff.returncode != 0 or any(re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(gmail_first_review, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
               connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions|homeserver-https-transient-inference(?:-mysql)?)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
@@ -76,6 +77,9 @@ jobs:
           php tests/agent-connection-gmail-popup-v1.php
           php tests/agent-connection-notice-v1.php
           php tests/agent-connection-gmail-inbox-settings-v1.php
+          php tests/agent-connection-gmail-inbox-initial-scan-v1.php
+          php tests/agent-connection-gmail-inbox-initial-summary-v1.php
+          node tests/gmail-inbox-initial-api.mjs
           php tests/agent-connection-gmail-github-settings-v1.php
           php tests/agent-connection-gmail-github-knowledge-v1.php
       - name: YouTube provider, owner Chat routing and shared quota
@@ -133,6 +137,7 @@ jobs:
           node tests/agent-orb-cloud-browser.mjs
           node tests/agent-activity-hub-browser.mjs
           node tests/agent-activity-hub-compact-browser.mjs
+          node tests/gmail-inbox-initial-ui-browser.mjs
           node tests/agent-eyes-portraits-browser.mjs
           node tests/chat-voice-enrollment-browser.mjs
           node tests/activity-center-layout-browser.mjs
@@ -360,6 +365,7 @@ jobs:
         run: |
           php tests/agent-connections-gmail-v1.php
           php tests/agent-connection-gmail-inbox-v1.php
+          php tests/agent-connection-gmail-inbox-initial-v1.php
           php tests/agent-connection-gmail-github-v1.php
       - name: YouTube atomic quota and usage analytics on MySQL
         env:

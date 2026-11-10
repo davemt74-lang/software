@@ -7,6 +7,7 @@ require_once __DIR__ . '/includes/agent-connection-health-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-playback-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-settings-v1.php';
+require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
 require_permission('account.access');
 
 $user = current_user();
@@ -47,6 +48,7 @@ $inboxActive = $inboxCanEnable && $inboxEnabled;
 $inboxStatus = $inboxActive ? ($inboxPolicy['last_status'] ?? '') : '';
 $inboxCheckedAt = $inboxActive ? ($inboxPolicy['last_checked_at'] ?? '') : '';
 $inboxReview = $inboxActive ? json_decode((string)($inboxPolicy['last_review_json'] ?? ''), true) : null;
+$inboxInitialReview = $inboxActive ? agent_connection_gmail_inbox_initial_view_v1($pdo, $user, true) : null;
 $inboxRuleFields = [
     'senders' => ['Sender addresses', 'person@example.com'],
     'domains' => ['Sender domains', 'example.com'],
@@ -273,7 +275,7 @@ header('Cache-Control: private, no-store');
                             <?php if ($connected): ?>
                               <section class="connections-inbox" id="gmail-inbox-review" aria-labelledby="gmail-inbox-review-title">
                                 <h3 id="gmail-inbox-review-title">Inbox review</h3>
-                                <p class="connections-muted">When enabled, your Agent reviews new arrivals in the background using the sender, subject and Gmail labels. This page shows the latest batch, and While you were away can include a summary. Sender and reply watches run separately.</p>
+                                <p class="connections-muted">Review recent Gmail headers once, then let your Agent check new arrivals in the background. Sender and reply watches run separately.</p>
                                 <?php if ($inboxNotice): ?>
                                   <p class="connections-notice connections-<?= e($inboxNotice[0]) ?>" role="<?= $inboxNotice[0] === 'error' ? 'alert' : 'status' ?>"><?= e($inboxNotice[1]) ?></p>
                                 <?php endif; ?>
@@ -295,17 +297,31 @@ header('Cache-Control: private, no-store');
                                     </form>
                                   <?php elseif ($inboxStatus === 'retrying'): ?>
                                     <p class="connections-notice">The last background check could not finish. Inbox review will try again.</p>
-                                  <?php elseif ($inboxActive && !$inboxCheckedAt): ?>
-                                    <p class="connections-notice">Waiting for the first background check.</p>
                                   <?php elseif ($inboxStatus === 'checked' && !is_array($inboxReview)): ?>
                                     <p class="connections-muted">No new inbox messages found yet.</p>
                                   <?php endif; ?>
                                   <?php if ($inboxCheckedAt): ?>
                                     <p class="connections-muted connections-inbox-time">Last checked <time datetime="<?= e(str_replace(' ', 'T', $inboxCheckedAt) . 'Z') ?>"><?= e($inboxCheckedAt) ?> UTC</time></p>
                                   <?php endif; ?>
+                                  <?php if ($inboxInitialReview !== null): ?>
+                                    <section class="connections-inbox-latest" data-gmail-initial-review aria-labelledby="gmail-initial-review-title">
+                                      <h4 id="gmail-initial-review-title">First inbox review</h4>
+                                      <p class="connections-muted" data-gmail-review-status role="status"></p>
+                                      <form class="connections-inbox-review-start" data-gmail-review-start hidden>
+                                        <p class="connections-muted" id="gmail-initial-review-help">Checks up to 50 inbox headers. The AI summary sends up to 8 sender/subject pairs to your configured Cloud AI and uses tokens. Message bodies are excluded.</p>
+                                        <label>Look back <select name="days" aria-describedby="gmail-initial-review-help">
+                                          <?php foreach ([1, 3, 7, 14, 30] as $days): ?>
+                                            <option value="<?= $days ?>"<?= $days === 7 ? ' selected' : '' ?>><?= $days ?> <?= $days === 1 ? 'day' : 'days' ?></option>
+                                          <?php endforeach; ?>
+                                        </select></label>
+                                        <button class="connections-button" type="submit">Start first review</button>
+                                      </form>
+                                      <div data-gmail-review-report></div>
+                                    </section>
+                                  <?php endif; ?>
                                   <?php if (is_array($inboxReview)): ?>
                                     <section class="connections-inbox-latest" aria-labelledby="gmail-inbox-latest-title">
-                                      <h4 id="gmail-inbox-latest-title">Latest completed review</h4>
+                                      <h4 id="gmail-inbox-latest-title">Latest new-arrivals review</h4>
                                       <?php if (!empty($inboxReview['at'])): ?>
                                         <time class="connections-muted connections-inbox-time" datetime="<?= e(str_replace(' ', 'T', $inboxReview['at']) . 'Z') ?>"><?= e($inboxReview['at']) ?> UTC</time>
                                       <?php endif; ?>
@@ -336,7 +352,7 @@ header('Cache-Control: private, no-store');
                                     <input type="hidden" name="inbox_revision" value="<?= e($inboxPolicy['revision'] ?? '') ?>">
                                     <label class="connections-permission">
                                       <input type="checkbox" name="enabled" value="1"<?= $inboxEnabled ? ' checked' : '' ?><?= !$inboxCanEnable && !$inboxEnabled ? ' disabled' : '' ?>>
-                                      <span><strong>Review new Gmail messages</strong><small>Review starts with messages that arrive after you enable it.</small></span>
+                                      <span><strong>Review new Gmail messages</strong><small>Enable background checks and choose when to start a first review of recent inbox mail.</small></span>
                                     </label>
                                     <fieldset class="connections-permissions" aria-describedby="gmail-inbox-ignore-note">
                                       <legend>Ignore list</legend>
@@ -492,5 +508,13 @@ header('Cache-Control: private, no-store');
     </div>
   </main>
 </div>
+<?php if ($inboxInitialReview !== null): ?>
+<script>window.VP3_GMAIL_INBOX_INITIAL_V1=<?= json_encode([
+    'endpoint'=>url('/api/gmail-inbox-initial-v1.php'),'csrf'=>csrf_token(),
+    'ownerKey'=>(string)$user['id'],'connectionsUrl'=>url('/connections.php?app=gmail#gmail-inbox-review'),
+    'initialReview'=>$inboxInitialReview,
+], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE) ?>;</script>
+<script src="<?= e(url('/gmail-inbox-initial-v1.js?v='.substr(hash_file('sha256', __DIR__.'/gmail-inbox-initial-v1.js'),0,12))) ?>" defer></script>
+<?php endif; ?>
 </body>
 </html>

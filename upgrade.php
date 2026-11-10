@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/ai-service-usage-v1.php';
+require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-store-v1.php';
 require_once __DIR__.'/includes/social-feed-v1.php';
 require_once __DIR__ . '/includes/cognitive-memory-v570.php';
@@ -299,6 +300,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_dev_schema_ready_v1($schemaConnection)
         && agent_connection_email_sender_watch_ready_v1($schemaConnection)
         && agent_connection_gmail_inbox_storage_ready_v1($schemaConnection)
+        && agent_connection_gmail_inbox_initial_ready_v1($schemaConnection)
         && agent_connection_gmail_github_storage_ready_v1($schemaConnection)
         && agent_connection_health_schema_ready_v1($schemaConnection)
         && agent_connection_youtube_consent_ready_v1($schemaConnection)

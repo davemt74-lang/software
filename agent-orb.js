@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const jobPrefixes={initiative:'workflow:',initiative_work:'workflow:',image:'image:',development:'development:',mission:'mission:'};
+  const jobPrefixes={initiative:'workflow:',initiative_work:'workflow:',image:'image:',development:'development:',mission:'mission:',gmail:'gmail:'};
   function normalizeJobs(source,jobs){
     if(typeof source!=='string'||!Object.hasOwn(jobPrefixes,source)||!Array.isArray(jobs))return null;
     const now=Date.now(),prefix=jobPrefixes[source];

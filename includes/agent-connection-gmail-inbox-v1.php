@@ -77,7 +77,11 @@ function agent_connection_gmail_inbox_history_v1(string $access, string $cursor,
 function agent_connection_gmail_inbox_message_v1(string $access, string $id, int $enabledAt, ?callable $http): ?array
 {
     $metadata = agent_connection_gmail_inbox_metadata_v1($access,$id,$enabledAt,['From','Cc','Subject','In-Reply-To'],$http);
-    if ($metadata === null) return null;
+    return $metadata === null ? null : agent_connection_gmail_inbox_review_message_v1($metadata);
+}
+
+function agent_connection_gmail_inbox_review_message_v1(array $metadata): ?array
+{
     $headers = [];
     foreach ($metadata['headers'] as $header) {
         if (!is_array($header) || !is_string($header['name']??null) || !is_string($header['value']??null)) continue;
@@ -96,7 +100,7 @@ function agent_connection_gmail_inbox_message_v1(string $access, string $id, int
     ];
 }
 
-function agent_connection_gmail_inbox_metadata_v1(string $access, string $id, int $enabledAt, array $names, ?callable $http): ?array
+function agent_connection_gmail_inbox_metadata_v1(string $access, string $id, int $enabledAt, array $names, ?callable $http, ?int $upperMs = null): ?array
 {
     $path = '/messages/'.$id.'?format=metadata&metadataHeaders='.implode('&metadataHeaders=',array_map('rawurlencode',$names))
         .'&fields=id%2CinternalDate%2ClabelIds%2Cpayload%28headers%29';
@@ -114,6 +118,7 @@ function agent_connection_gmail_inbox_metadata_v1(string $access, string $id, in
         throw new AgentConnectionGmailExceptionV1('Gmail returned invalid inbox message metadata.');
     }
     if (str_starts_with($receivedAt,'-') || agent_connection_gmail_inbox_compare_cursor_v1($receivedAt,(string)$enabledAt)<=0
+        || ($upperMs !== null && agent_connection_gmail_inbox_compare_cursor_v1($receivedAt,(string)$upperMs)>=0)
         || !in_array('INBOX',$labels,true) || array_intersect(['SENT','DRAFT','TRASH','SPAM'],$labels)) return null;
     return ['received_at_ms'=>$receivedAt,'labels'=>$labels,'headers'=>(array)($message['payload']['headers']??[])];
 }

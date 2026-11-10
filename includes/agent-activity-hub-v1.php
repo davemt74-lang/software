@@ -317,6 +317,25 @@ function vp3_agent_activity_suggestions_v1(PDO $pdo, array $scope): array
     return ['items'=>$items, 'coverage'=>$coverage];
 }
 
+function vp3_agent_activity_gmail_review_v1(PDO $pdo, array $scope): array
+{
+    if (!table_exists('agent_connection_gmail_inbox_initial_v1')) return [];
+    require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+    $view = agent_connection_gmail_inbox_initial_view_v1($pdo, $scope['user']);
+    $detail = match ($view['state'] ?? '') {
+        'needs_start'=>'Choose a first review window in Connections.',
+        'queued'=>'Queued',
+        'working'=>($view['stage'] ?? '') === 'summary' ? 'Working · Preparing the AI summary' : 'Working · Checking Gmail headers',
+        'ready'=>'Ready · Review saved in Connections',
+        'failed'=>'Failed · Open Connections to retry',
+        default=>'',
+    };
+    if ($detail === '') return [];
+    return [vp3_agent_activity_card_v1('gmail:first-review', 'gmail_inbox_review', 'Gmail Inbox Review', $detail, [
+        ['kind'=>'url', 'label'=>'Open Connections', 'href'=>url('/connections.php?app=gmail#gmail-inbox-review')],
+    ])];
+}
+
 /** Bounded owner projections only. Reading this feed never starts or advances work. */
 function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $conversationId = 0): array
 {
@@ -331,6 +350,7 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         'missions'=>['Missions', static fn() => vp3_agent_activity_missions_v1($pdo, $scope, $now)],
         'canvases'=>['Canvas work', static fn() => vp3_agent_activity_canvases_v1($pdo, $scope)],
         'suggestions'=>['Agent suggestions', static fn() => vp3_agent_activity_suggestions_v1($pdo, $scope)],
+        'gmail_inbox'=>['Gmail Inbox Review', static fn() => vp3_agent_activity_gmail_review_v1($pdo, $scope)],
     ];
     $sections = [];
     $coverage = [];

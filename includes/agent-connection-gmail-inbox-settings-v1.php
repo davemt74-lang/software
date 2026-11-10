@@ -195,8 +195,10 @@ function agent_connection_gmail_inbox_clear_output_v1(PDO $pdo, int $ownerId): v
 {
     require_once __DIR__.'/agent-connection-gmail-inbox-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-notice-v1.php';
+    require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
     agent_connection_gmail_inbox_receipts_clear_v1($pdo,$ownerId);
     agent_connection_gmail_inbox_notice_purge_v1($pdo,$ownerId);
+    agent_connection_gmail_inbox_initial_purge_v1($pdo,$ownerId);
 }
 
 /** Verify the submitted grant and policy snapshots both before and after any provider request. */
@@ -262,6 +264,10 @@ function agent_connection_gmail_inbox_save_v1(PDO $pdo, array $user, array $inpu
         $newRevision = bin2hex(random_bytes(16));
         $now = agent_commerce_time_pa2();
         if ($enabled && $historyId === '') {
+            if (!hash_equals((string)$policy['rules_json'],$rulesJson)) {
+                require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+                agent_connection_gmail_inbox_initial_purge_v1($pdo,$ownerId);
+            }
             $nextCheck = $policy['claim_key'] !== null && $policy['next_check_at'] !== null ? $now : $policy['next_check_at'];
             $pdo->prepare('UPDATE agent_connection_gmail_inbox_v1 SET rules_json=?,revision=?,claim_key=NULL,next_check_at=? WHERE owner_user_id=?')
                 ->execute([$rulesJson,$newRevision,$nextCheck,$ownerId]);
