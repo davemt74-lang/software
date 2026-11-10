@@ -12,7 +12,7 @@ assert.ok(fs.existsSync(sessionFile),'Agent Eyes session endpoint must exist: '+
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-screen-sessions-'));for(const name of ['includes','api','sessions','budgets'])fs.mkdirSync(path.join(tmp,name));
 for(const file of ['includes/knowledge.php','includes/shared-folders-v161.php','includes/agent-screen-share-v1.php','includes/agent-screen-sessions-v1.php','includes/agent-screen-audio-v1.php',sessionFile,'api/agent-screen-audio-v1.php','includes/agent-screen-insights-v1.php','includes/agent-screen-handoffs-v1.php','api/agent-screen-insights-v1.php'])fs.copyFileSync(file,path.join(tmp,file));
 for(const name of [
- 'agent-initiative-v1','agent-initiative-scope-v1','agent-initiative-errors-v1','agent-initiative-capabilities-v1','agent-capability-contract-v1',
+ 'agent-initiative-v1','agent-initiative-brainstorm-v1','agent-initiative-scope-v1','agent-initiative-errors-v1','agent-initiative-capabilities-v1','agent-capability-contract-v1',
  'agent-tool-json-v1','agent-chat-boundary-v380',
  'participant-updates-v1','studio-participants','agent-task-lists-v1','agent-reminders-v1','agent-tool-receipts-v1','agent-conversation-intent-v1',
  'agent-catch-up-v1','agent-catch-up-missions-v1','agent-catch-up-profile-calls-v1','agent-catch-up-meeting-prep-v1',
