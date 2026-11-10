@@ -125,8 +125,18 @@ function vp3_ai_service_usage_begin_v1(PDO $pdo,array $user,string $service,stri
                 throw new RuntimeException('This AI service is unavailable for the account.',$code);
             }
             $target=['provider'=>$provider,'model'=>$model];
-            if(!vp3_ai_service_target_allowed_v1($policy,$target)
-                ||(!empty($policy['configured'])&&!in_array($target,[$policy['primary'],$policy['fallback']],true))){
+            if(in_array($service,VP3_AI_CODING_SERVICES_V1,true)){
+                $policies=[$service=>$policy];
+                foreach(array_diff(VP3_AI_CODING_SERVICES_V1,[$service]) as $other){
+                    $policies[$other]=vp3_ai_service_policy_v1($pdo,$user,$other,$background);
+                }
+                $codingModels=vp3_ai_service_coding_models_v1(vp3_ai_service_config_v1($pdo));
+                $targetAllowed=vp3_ai_service_coding_target_allowed_v1($codingModels,$policies,$target);
+            }else{
+                $targetAllowed=vp3_ai_service_target_allowed_v1($policy,$target)
+                    &&(empty($policy['configured'])||in_array($target,[$policy['primary'],$policy['fallback']],true));
+            }
+            if(!$targetAllowed){
                 throw new RuntimeException('This provider and model are unavailable for the AI service.',403);
             }
             foreach($limitKeys as $key){

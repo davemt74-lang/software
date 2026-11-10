@@ -112,10 +112,9 @@ function shared_folders_v161_unfile_transcripts(PDO $pdo, array $user, int $fold
     $userId = shared_folders_v161_user_id($user);
     if ($userId < 1 || $folderId < 1 || !table_exists('artist_transcript_sessions_v172')) return;
 
-    $sessions = $pdo->prepare(
-        'SELECT id,metadata_json FROM artist_transcript_sessions_v172
-         WHERE created_by_user_id=? FOR UPDATE'
-    );
+    $sql = 'SELECT id,metadata_json FROM artist_transcript_sessions_v172 WHERE created_by_user_id=? FOR UPDATE';
+    if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') $sql = substr($sql, 0, -strlen(' FOR UPDATE'));
+    $sessions = $pdo->prepare($sql);
     $sessions->execute([$userId]);
     $update = $pdo->prepare(
         'UPDATE artist_transcript_sessions_v172 SET metadata_json=?,last_activity_at=NOW() WHERE id=? AND created_by_user_id=?'
@@ -130,14 +129,26 @@ function shared_folders_v161_unfile_transcripts(PDO $pdo, array $user, int $fold
     }
 }
 
+function shared_folders_v161_assert_deletable(PDO $pdo, int $userId, int $folderId): void
+{
+    if (!table_exists('vp3_coding_canvases_v1')) return;
+    $bound = $pdo->prepare('SELECT 1 FROM vp3_coding_canvases_v1 WHERE folder_id=? AND owner_user_id=?');
+    $bound->execute([$folderId, $userId]);
+    if ($bound->fetchColumn()) {
+        throw new RuntimeException('Delete the saved Canvas in Agent Chat to choose what happens to this folder.', 409);
+    }
+}
+
 function shared_folders_v161_delete(PDO $pdo, array $user, int $folderId): array
 {
     $folder = shared_folders_v161_get($pdo, $user, $folderId);
     if (!$folder) throw new RuntimeException('Folder not found.');
     $userId = shared_folders_v161_user_id($user);
 
-    $pdo->beginTransaction();
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) $pdo->beginTransaction();
     try {
+        shared_folders_v161_assert_deletable($pdo, $userId, $folderId);
         // Knowledge uses a real nullable FK on current installs, but update
         // explicitly as well so pre-FK upgraded databases preserve Unfiled.
         if (table_exists('knowledge_items') && column_exists('knowledge_items', 'folder_id')) {
@@ -158,7 +169,7 @@ function shared_folders_v161_delete(PDO $pdo, array $user, int $folderId): array
         $stmt->execute([$folderId, $userId]);
         if ($stmt->rowCount() < 1) throw new RuntimeException('Folder could not be deleted.');
 
-        $pdo->commit();
+        if ($ownsTransaction) $pdo->commit();
         return [
             'id'=>$folderId,
             'name'=>(string)$folder['folder_name'],
@@ -167,7 +178,7 @@ function shared_folders_v161_delete(PDO $pdo, array $user, int $folderId): array
             'transcriptions_moved_to_unfiled'=>true,
         ];
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
 }

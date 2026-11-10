@@ -9,6 +9,7 @@ namespace ProviderRegression;
 $root=sys_get_temp_dir().'/vp3-provider-'.bin2hex(random_bytes(6));
 \define('STONEFELLOW_ROOT',$root);
 $settings=[];$requests=[];$replyStatus=200;$checks=0;$wrongTestReply=false;$streamReplyStatus=null;$providerStatuses=[];$preflightCalls=0;$onProviderRequest=null;
+$codingReply=null;$packageDebits=[];
 function db(): \PDO {
     static $pdo;
     if($pdo instanceof \PDO)return $pdo;
@@ -33,7 +34,7 @@ function subscription_ai_preflight(?array $user,string $scope,int $input,int $ou
     $GLOBALS['preflightCalls']++;
     return ['reservation_id'=>0,'max_output_tokens'=>$output,'unlimited'=>true];
 }
-function subscription_ai_commit_usage(...$args): void {}
+function subscription_ai_commit_usage(...$args): void {$GLOBALS['packageDebits'][]=$args;}
 function homeserver_agent_v018_last_attempt(): array {return ['failure_class'=>'timeout','latency_ms'=>125];}
 // The HTTP double also runs in local/CI PHP builds without the cURL extension.
 foreach(['CURLOPT_POST','CURLOPT_RETURNTRANSFER','CURLOPT_CONNECTTIMEOUT','CURLOPT_TIMEOUT','CURLOPT_HTTPHEADER','CURLOPT_POSTFIELDS','CURLOPT_FOLLOWLOCATION','CURLOPT_SSL_VERIFYPEER','CURLOPT_SSL_VERIFYHOST','CURLOPT_BUFFERSIZE','CURLOPT_WRITEFUNCTION','CURLINFO_HTTP_CODE'] as $index=>$name){
@@ -65,6 +66,7 @@ function curl_exec(object $handle): string|bool {
     $provider=str_contains($handle->endpoint,'openai.com')?'openai':'anthropic';
     $handle->status=$GLOBALS['providerStatuses'][$provider]??(!empty($payload['stream'])&&$GLOBALS['streamReplyStatus']!==null?$GLOBALS['streamReplyStatus']:$GLOBALS['replyStatus']);
     if($handle->status!==200)return json_encode(['error'=>['message'=>'authentication failed']]);
+    if($GLOBALS['codingReply']!==null)return json_encode(($GLOBALS['codingReply'])($provider));
     $reply='Hello from the configured provider.';
     if(!$GLOBALS['wrongTestReply']&&preg_match('/VP3 connection test [a-f0-9]{16}/',json_encode($payload),$match))$reply=$match[0];
     $openai=$provider==='openai';
@@ -78,7 +80,8 @@ function curl_exec(object $handle): string|bool {
     return true;
 }
 foreach(['ai-settings.php','ai-runtime-v100.php','ai-stream-v121.php','recommendations.php','agent-brain-context-v99.php','chat-engine.php','chat-execution-v019.php','cognitive-turn-v2430.php',
-    'ai-service-policy-v1.php','ai-service-usage-v1.php','ai-usage-accounting-v032.php','user-llm-v1.php','agent-runtime-routing-v420.php'] as $file){
+    'ai-service-policy-v1.php','ai-service-usage-v1.php','ai-usage-accounting-v032.php','user-llm-v1.php','agent-runtime-routing-v420.php',
+    'agent-tool-json-v1.php','coding-canvas-model-v1.php','coding-canvas-provider-v1.php'] as $file){
     $source=file_get_contents(dirname(__DIR__).'/includes/'.$file);
     $source=preg_replace('/^require_once __DIR__[^\n]*\n/m','',$source);
     $source=str_replace('__DIR__',var_export(dirname(__DIR__).'/includes',true),$source);
@@ -353,6 +356,99 @@ try {
     check(!empty($initiative()['ok'])&&count($requests)===1
         &&in_array('Authorization: Bearer fixture-routed-openai',$requests[0]['headers'],true),
         'Changing the account to VP3 funding gives Initiative the configured site provider');
+
+    $buildModel=['provider'=>'openai','model'=>$customModel];
+    $nextModel=['provider'=>'anthropic','model'=>'claude-haiku-5-5'];
+    foreach([$buildModel,$nextModel] as $model){
+        vp3_ai_service_save_model_v1($pdo,$model['provider'],$model['model'],'Fixture coding model',VP3_AI_CODING_SERVICES_V1);
+    }
+    foreach(VP3_AI_CODING_SERVICES_V1 as $service)vp3_ai_service_save_route_v1($pdo,$service,$nextModel,null);
+    vp3_coding_canvas_model_save_v1($pdo,$user,$buildModel);
+    $buildPin=vp3_coding_canvas_model_resolve_v1($pdo,$user);
+    $source=['html'=>'<button id="increase">Count</button><output id="total">0</output>',
+        'css'=>'button { color: navy; }','js'=>"CanvasUI.on('#increase', 'click', () => CanvasUI.text('#total', '1')); "];
+    $canvas=['title'=>'  Click counter  ']+$source;
+    $codingReply=static function(string $provider)use($canvas):array{
+        $content=json_encode($canvas,JSON_THROW_ON_ERROR);
+        $usage=['input_tokens'=>210,'output_tokens'=>75];
+        return $provider==='openai'
+            ?['output'=>[['content'=>[['type'=>'output_text','text'=>$content]]]],'usage'=>$usage,'status'=>'completed','id'=>'openai-canvas-1']
+            :['content'=>[['type'=>'text','text'=>"```json\n".$content."\n```"]],'usage'=>$usage,'stop_reason'=>'end_turn','id'=>'anthropic-canvas-1'];
+    };
+    $requests=[];$packageDebits=[];$previousPreflights=$preflightCalls;
+    $attribution=['agent_id'=>11,'conversation_id'=>18];
+    $build=vp3_coding_canvas_generate_v1($pdo,$user,$buildPin,'1201','build','Build a counter.',null,null,$attribution);
+    check($build['title']==='Click counter'&&$build['artifact']===$source&&$build['usage']['total_tokens']===285
+        &&count($requests)===1&&$requests[0]['payload']['model']===$customModel&&!$requests[0]['payload']['store']
+        &&in_array('Authorization: Bearer fixture-routed-openai',$requests[0]['headers'],true)
+        &&$preflightCalls===$previousPreflights+1&&count($packageDebits)===1&&$packageDebits[0][2]==='code_build',
+        'Canvas build dispatches the selected model, validates its source, and settles one package debit');
+    check(str_contains($requests[0]['payload']['instructions'],'isolated worker')
+        &&str_contains($requests[0]['payload']['instructions'],'CanvasData.save')
+        &&!array_key_exists('tools',$requests[0]['payload'])&&count($requests[0]['payload']['input'])===1,
+        'Canvas build receives only its request and the private preview contract');
+
+    vp3_coding_canvas_model_save_v1($pdo,$user,$nextModel);
+    $repair=vp3_coding_canvas_generate_v1($pdo,$user,$buildPin,'1201','repair','Repair the counter.',$source,'Click did not update the total.',$attribution);
+    $repairInput=json_decode($requests[1]['payload']['input'][0]['content'],true,8,JSON_THROW_ON_ERROR);
+    $rows=$pdo->query('SELECT id,agent_id,conversation_id,run_id,service_key,service_job_key FROM ai_execution_ledger ORDER BY id DESC LIMIT 2')->fetchAll(\PDO::FETCH_ASSOC);
+    check(count($requests)===2&&$requests[1]['payload']['model']===$customModel&&$packageDebits[1][2]==='code_repair'
+        &&$repairInput===['request'=>'Repair the counter.','previous_source'=>$source,'diagnostic'=>'Click did not update the total.']
+        &&$rows[0]['service_job_key']===$rows[1]['service_job_key']&&array_column($rows,'service_key')===['code_repair','code_build']
+        &&array_column($rows,'run_id')===[1201,1201]&&array_column($rows,'agent_id')===[11,11]&&array_column($rows,'conversation_id')===[18,18]
+        &&[$repair['service_attempt_ids'][0],$build['service_attempt_ids'][0]]===array_column($rows,'id'),
+        'Repair keeps the saved pin after the user selects another model and shares the build job identifier');
+
+    $newPin=vp3_coding_canvas_model_resolve_v1($pdo,$user);
+    $claude=vp3_coding_canvas_generate_v1($pdo,$user,$newPin,'fixture-canvas-2','build','Build another counter.');
+    check($claude['artifact']===$source&&$requests[2]['payload']['model']===$nextModel['model']
+        &&$requests[2]['payload']['thinking']['type']==='disabled'&&in_array('x-api-key: fixture-routed-claude',$requests[2]['headers'],true),
+        'The next Canvas run uses the newly selected Anthropic model through the same provider adapter');
+
+    $providerStatuses=['anthropic'=>429];$requests=[];$debits=count($packageDebits);
+    try{
+        vp3_coding_canvas_generate_v1($pdo,$user,$newPin,'fixture-canvas-3','build','Build a rate-limited Canvas.');
+        throw new \LogicException('Accepted a rejected provider response.');
+    }catch(\RuntimeException $error){
+        check($error->getCode()===502&&str_contains($error->getMessage(),'rate-limited')&&count($requests)===1&&count($packageDebits)===$debits,
+            'A Canvas provider rejection does not retry or debit the account');
+    }
+    $providerStatuses=[];
+    $codingReply=static fn():array=>['content'=>[['type'=>'text','text'=>json_encode(array_replace($canvas,['html'=>'<iframe src="https://example.com"></iframe>']))]],
+        'usage'=>['input_tokens'=>210,'output_tokens'=>75],'stop_reason'=>'end_turn'];
+    try{
+        vp3_coding_canvas_generate_v1($pdo,$user,$newPin,'fixture-canvas-4','build','Build a Canvas with invalid output.');
+        throw new \LogicException('Accepted invalid Canvas markup.');
+    }catch(\RuntimeException $error){
+        check($error->getCode()===502&&str_contains($error->getMessage(),'invalid Canvas')&&count($packageDebits)===$debits+1,
+            'A billed provider response with unsafe markup is rejected before a Canvas can be saved');
+    }
+    $codingReply=static fn():array=>['content'=>[['type'=>'text','text'=>json_encode($canvas)]]];
+    try{
+        vp3_coding_canvas_generate_v1($pdo,$user,$newPin,'fixture-canvas-5','build','Build without reporting usage.');
+        throw new \LogicException('Accepted a Canvas with unknown usage.');
+    }catch(\RuntimeException $error){
+        check($error->getCode()===502&&str_contains($error->getMessage(),'confirm usage')
+            &&$pdo->query('SELECT service_status FROM ai_execution_ledger ORDER BY id DESC LIMIT 1')->fetchColumn()==='unknown'
+            &&count($packageDebits)===$debits+1,'Unknown provider usage remains in the ledger without a fabricated debit or successful Canvas');
+    }
+    fixture_funding('own_key','anthropic');
+    fixture_key('anthropic','claude-haiku-4-5','fixture-personal-coding');
+    $requests=[];
+    try{
+        vp3_coding_canvas_generate_v1($pdo,$user,$newPin,'fixture-canvas-6','build','Build after changing funding.');
+        throw new \LogicException('Accepted an obsolete Canvas funding pin.');
+    }catch(\RuntimeException $error){
+        check($error->getCode()===409&&$requests===[],'Changing account funding invalidates a saved run before provider dispatch');
+    }
+    $personalPin=vp3_coding_canvas_model_resolve_v1($pdo,$user);
+    $codingReply=static fn():array=>['content'=>[['type'=>'text','text'=>json_encode($canvas)]],'usage'=>['input_tokens'=>210,'output_tokens'=>75]];
+    $previousPreflights=$preflightCalls;
+    $personalCanvas=vp3_coding_canvas_generate_v1($pdo,$user,$personalPin,'fixture-canvas-7','build','Build with my account provider.');
+    check($personalCanvas['artifact']===$source&&count($requests)===1&&$requests[0]['payload']['model']===$nextModel['model']
+        &&in_array('x-api-key: fixture-personal-coding',$requests[0]['headers'],true)
+        &&$preflightCalls===$previousPreflights&&count($packageDebits)===$debits+1,
+        'A personal-funded Canvas uses the account provider credential with the selected model and skips package preflight and debit');
     echo 'CLOUD_PROVIDER_PRESERVATION=PASS ('.$checks." assertions; HTTP mocked)\n";
 } finally {
     $paths=is_dir($root)?new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root,\FilesystemIterator::SKIP_DOTS),\RecursiveIteratorIterator::CHILD_FIRST):[];

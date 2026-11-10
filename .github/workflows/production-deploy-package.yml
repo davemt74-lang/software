@@ -357,6 +357,16 @@ jobs:
           test -f _deploy/api/initiative-research-status-v1.php
           test -f _deploy/chat-research-specialist-v1.js
           test -f _deploy/chat-research-specialist-v1.css
+          test -f _deploy/chat-coding-canvas-v1.js
+          test -f _deploy/chat-coding-canvas-v1.css
+          test -f _deploy/coding-canvas-sidebar-v1.js
+          test -f _deploy/coding-canvas-sidebar-v1.css
+          test -f _deploy/api/coding-canvas-v1.php
+          test -f _deploy/api/coding-canvas-settings-v1.php
+          test -f _deploy/includes/coding-canvas-jobs-v1.php
+          test -f _deploy/includes/coding-canvas-store-v1.php
+          test -f _deploy/includes/coding-canvas-model-v1.php
+          test -f _deploy/includes/coding-canvas-provider-v1.php
           test -f _deploy/includes/ai-service-model-test-v1.php
           test -f _deploy/admin/ai-service-rules.php
           test -f _deploy/admin/_ai-service-controls-v1.php

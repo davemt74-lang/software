@@ -1,0 +1,133 @@
+#chatThread[data-view="coding"] > :not(#chatCodingCanvasV1) {
+  display:none !important;
+}
+.vp3-coding-canvas-dock {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:.35rem .65rem;
+  max-width:790px;
+  margin:0 auto;
+  padding:.3rem .35rem 0;
+  font-size:.76rem;
+}
+.vp3-coding-canvas,
+.vp3-coding-canvas-dock {
+  color:inherit;
+}
+.vp3-coding-canvas {
+  width:min(100%,68rem);
+  margin:0 auto;
+  padding:clamp(.7rem,2vw,1.5rem);
+  display:grid;
+  gap:.7rem;
+  align-content:start;
+  box-sizing:border-box;
+}
+.vp3-coding-canvas-dock[hidden],
+.vp3-coding-canvas [hidden],
+.vp3-coding-canvas[hidden] {
+  display:none !important;
+}
+.vp3-coding-canvas-header,
+.vp3-coding-canvas-controls {
+  display:flex;
+  gap:.45rem .7rem;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.vp3-coding-canvas-header {
+  justify-content:space-between;
+}
+.vp3-coding-canvas h2,
+.vp3-coding-canvas h3,
+.vp3-coding-canvas p {
+  margin:0;
+}
+.vp3-coding-canvas h2 {
+  font-size:clamp(1.05rem,3vw,1.55rem);
+}
+.vp3-coding-canvas label {
+  display:block;
+  min-width:0;
+  font-size:.82rem;
+}
+.vp3-coding-canvas textarea,
+.vp3-coding-canvas select {
+  display:block;
+  width:100%;
+  box-sizing:border-box;
+  margin-top:.25rem;
+}
+.vp3-coding-canvas textarea,
+.vp3-coding-canvas select,
+.vp3-coding-canvas button,
+.vp3-coding-canvas-dock button {
+  color:inherit;
+  background:transparent;
+  border:1px solid currentColor;
+  border-radius:.48rem;
+  padding:.38rem .6rem;
+  font:inherit;
+}
+.vp3-coding-canvas button,
+.vp3-coding-canvas-dock button {
+  font-size:.8rem;
+  min-height:2.1rem;
+  cursor:pointer;
+}
+.vp3-coding-canvas-dock button {
+  pointer-events:auto;
+  color:#182025;
+  background:#fff;
+}
+.vp3-coding-canvas button:disabled {
+  opacity:.48;
+  cursor:default;
+}
+.vp3-coding-canvas textarea {
+  resize:vertical;
+}
+.vp3-coding-canvas select option {
+  color:CanvasText;
+  background:Canvas;
+}
+.vp3-coding-canvas-pickers label {
+  flex:1 1 12rem;
+}
+.vp3-coding-canvas-status:empty {
+  display:none;
+}
+.vp3-coding-canvas-status,
+.vp3-coding-canvas-description {
+  font-size:.8rem;
+  overflow-wrap:anywhere;
+}
+.vp3-coding-canvas-workspace {
+  min-width:0;
+  display:grid;
+  gap:.65rem;
+}
+.vp3-coding-canvas-preview {
+  border-radius:.6rem;
+  overflow:hidden;
+}
+.vp3-coding-canvas-preview iframe {
+  display:block;
+  width:100%;
+  height:clamp(18rem,50vh,35rem);
+  background:#fff;
+  border:0;
+}
+.vp3-coding-canvas-source {
+  padding:.35rem 0;
+}
+.vp3-coding-canvas-source pre {
+  overflow:auto;
+  max-height:28rem;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+@media (max-width:760px) {
+  .vp3-coding-canvas-preview iframe { height:clamp(15rem,45dvh,27rem); }
+}

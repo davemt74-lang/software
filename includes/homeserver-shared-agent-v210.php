@@ -155,8 +155,9 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
     }
 
     if(table_exists('knowledge_items')&&column_exists('knowledge_items','created_by_user_id')){
+        $canvasFilter = column_exists('knowledge_items', 'file_type') ? " AND (file_type IS NULL OR file_type<>'coding_canvas')" : '';
         $s=$pdo->prepare("SELECT id,title,description,content_text,updated_at
-          FROM knowledge_items WHERE created_by_user_id=? ORDER BY updated_at DESC,id DESC LIMIT 80");
+          FROM knowledge_items WHERE created_by_user_id=?{$canvasFilter} ORDER BY updated_at DESC,id DESC LIMIT 80");
         $s->execute([$userId]);
         foreach($s->fetchAll()?:[] as $row){
             $content=trim((string)($row['description']??'').' '.(string)($row['content_text']??''));

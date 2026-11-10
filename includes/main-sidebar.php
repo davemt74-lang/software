@@ -12,6 +12,7 @@ $mainSidebarMenuLinks = $mainSidebarUser ? member_navigation_menu_links($mainSid
 $mainSidebarScript = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
 $mainSidebarIsChat = $mainSidebarActive === 'chat' || $mainSidebarScript === 'chat.php';
 $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSidebarUser);
+$mainSidebarCodingCanvas = $mainSidebarIsChat && $mainSidebarCanChat && personal_knowledge_available($mainSidebarUser);
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
 
 $mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
@@ -129,6 +130,10 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260910-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=authenticated-shell-phase2-20260914')) ?>">
+<?php if ($mainSidebarCanChat): ?><link rel="stylesheet" href="<?= e(url('/coding-canvas-sidebar-v1.css?v=1')) ?>"><?php endif; ?>
+<?php if ($mainSidebarCodingCanvas): ?>
+<link rel="stylesheet" href="<?= e(url('/chat-coding-canvas-v1.css?v='.substr(hash_file('sha256', __DIR__.'/../chat-coding-canvas-v1.css'), 0, 12))) ?>">
+<?php endif; ?>
 <?php if ($mainSidebarIsChat): ?><link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>"><?php endif; ?>
 <link rel="stylesheet" href="<?= e(url('/profile-commerce-products-shell-v1310.css?v=1310')) ?>">
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=' . $mainSidebarAgentVoiceMenuBuild)) ?>"><?php endif; ?>
@@ -210,6 +215,21 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
         <div class="agent-runtime-line"><small>Brain / model</small><strong id="vp3AgentRuntimeModel">Agent</strong></div>
         <div class="agent-runtime-line"><small>This month</small><a id="vp3AgentRuntimeUsage" href="<?= e(url('/ai-usage.php')) ?>">AI Usage</a></div>
       </div>
+      <?php if ($mainSidebarCanChat): ?>
+        <section class="coding-sidebar-control" aria-label="Coding Agent and token balance" data-coding-sidebar="<?= e(url('/api/coding-canvas-settings-v1.php')) ?>">
+          <label for="vp3CodingAgentModel">Coding Agent model</label>
+          <select id="vp3CodingAgentModel" aria-describedby="vp3CodingSidebarStatus" title="Applies to new coding runs" disabled>
+            <option>Checking…</option>
+          </select>
+          <div class="coding-sidebar-line"><span>Funding</span><strong data-coding-funding>—</strong></div>
+          <div class="coding-sidebar-line"><span data-coding-balance-label>Token balance</span><strong data-coding-balance>—</strong></div>
+          <meter data-coding-token-meter min="0" max="1" value="0" aria-label="Plan token allowance remaining" hidden></meter>
+          <div class="coding-sidebar-line" data-coding-credits-row hidden><span>Extra credits</span><strong data-coding-credits>—</strong></div>
+          <div class="coding-sidebar-line" data-coding-reserved-row hidden><span>Reserved</span><strong data-coding-reserved>—</strong></div>
+          <div class="coding-sidebar-line" data-coding-period-row hidden><span data-coding-period-label>Period ends</span><time data-coding-period></time></div>
+          <p id="vp3CodingSidebarStatus" role="status" class="coding-sidebar-status" hidden></p>
+        </section>
+      <?php endif; ?>
       <nav class="agent-sidebar-user-menu" id="vp3AgentUserMenu" aria-label="User menu" hidden>
         <?php $lastGroup=''; foreach ($mainSidebarFooterLinks as $link): $group=(string)($link['group'] ?? '');$footerKey=(string)($link['key']??'');$footerActive=$mainSidebarActive===$footerKey; ?>
           <?php if ($group !== $lastGroup): ?>
@@ -258,6 +278,13 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
 </div>
 <script src="<?= e(url('/homeserver-vp3.js?v=homeserver-v1305-final-20260924')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260913-sidebar-footer')) ?>" defer></script>
+<?php if ($mainSidebarCanChat): ?><script src="<?= e(url('/coding-canvas-sidebar-v1.js?v=1')) ?>" defer></script><?php endif; ?>
+<?php if ($mainSidebarCodingCanvas): ?>
+<script>window.VP3_CODING_CANVAS_V1=<?= json_encode([
+    'endpoint' => url('/api/coding-canvas-v1.php'), 'csrf' => csrf_token(),
+], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES) ?>;</script>
+<script src="<?= e(url('/chat-coding-canvas-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../chat-coding-canvas-v1.js'), 0, 12))) ?>" defer></script>
+<?php endif; ?>
 <?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1-visitor-settings')) ?>" defer></script><?php endif; ?>
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=' . $mainSidebarAgentVoiceMenuBuild)) ?>" defer></script><?php endif; ?>
 

@@ -554,7 +554,7 @@ function ai_history_messages(array $history): array
     return $messages;
 }
 
-function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null,?string $personalKey=null): array
+function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null,?string $personalKey=null,bool $singleAttempt=false): array
 {
     if(!function_exists('curl_init'))return ['ok'=>false,'error'=>'AI transport is unavailable.'];
     $parts=parse_url($endpoint);$host=strtolower((string)($parts['host']??''));
@@ -570,7 +570,8 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
     if($isPhone&&$phoneRemaining<2)return ['ok'=>false,'error'=>'The phone assistant is temporarily unavailable.'];
     $transient=[408,409,425,429,500,502,503,504];$last=['ok'=>false,'error'=>'The AI provider is temporarily unavailable.'];
     $budgetError=static fn(int $attempts):array=>['ok'=>false,'error'=>'The inference time budget was exhausted.','error_code'=>'inference_budget_exhausted','attempts'=>$attempts];
-    for($attempt=1;$attempt<=($isPhone?1:3);$attempt++){
+    $maxAttempts=$isPhone||$singleAttempt?1:3;
+    for($attempt=1;$attempt<=$maxAttempts;$attempt++){
         $remaining=function_exists('vp3_ai_budget_remaining_v1')?vp3_ai_budget_remaining_v1():null;
         if($remaining!==null&&$remaining<=0.005)return $budgetError($attempt-1);
         $ticket=[];
@@ -621,12 +622,12 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
                     + ['status'=>$status,'attempts'=>$attempt];
             }
         }
-        if(!is_string($response)){$last=['ok'=>false,'error'=>'The AI provider connection failed.','status'=>$status,'attempts'=>$attempt];error_log('Stonefellow AI transport '.$host.' status='.$status.' error='.mb_strimwidth($error,0,240,'…'));if($attempt<3){$pause=200000*(2**($attempt-1))+random_int(0,120000);if(function_exists('vp3_ai_budget_pause_v1')){if(!vp3_ai_budget_pause_v1($pause))return $budgetError($attempt);}else usleep($pause);continue;}return $last;}
+        if(!is_string($response)){$last=['ok'=>false,'error'=>'The AI provider connection failed.','status'=>$status,'attempts'=>$attempt];error_log('Stonefellow AI transport '.$host.' status='.$status.' error='.mb_strimwidth($error,0,240,'…'));if($attempt<$maxAttempts){$pause=200000*(2**($attempt-1))+random_int(0,120000);if(function_exists('vp3_ai_budget_pause_v1')){if(!vp3_ai_budget_pause_v1($pause))return $budgetError($attempt);}else usleep($pause);continue;}return $last;}
         if(strlen($response)>2*1024*1024)return ['ok'=>false,'error'=>'The AI provider returned an oversized response.','status'=>$status,'attempts'=>$attempt];
         if($success)return ['ok'=>true,'data'=>$decoded,'status'=>$status,'attempts'=>$attempt,'duration_ms'=>(int)round((microtime(true)-$started)*1000)];
-        $providerError=is_array($decoded)?($decoded['error']['message']??$decoded['error']['type']??$decoded['message']??''):'';error_log('Stonefellow AI provider '.$host.' status='.$status.' detail='.mb_strimwidth((string)$providerError,0,300,'…'));
+        $providerError=is_array($decoded)?($decoded['error']['message']??$decoded['error']['type']??$decoded['message']??''):'';error_log('Stonefellow AI provider '.$host.' status='.$status.($singleAttempt?'':' detail='.mb_strimwidth((string)$providerError,0,300,'…')));
         $public=in_array($status,[401,403],true)?'AI provider authentication failed. Check the saved credentials.':($status===429?'The AI provider is temporarily rate-limited.':($status>=500?'The AI provider is temporarily unavailable.':'The AI provider rejected the request.'));
-        $last=['ok'=>false,'error'=>$public,'status'=>$status,'attempts'=>$attempt];if(in_array($status,$transient,true)&&$attempt<3){$pause=200000*(2**($attempt-1))+random_int(0,120000);if(function_exists('vp3_ai_budget_pause_v1')){if(!vp3_ai_budget_pause_v1($pause))return $budgetError($attempt);}else usleep($pause);continue;}return $last;
+        $last=['ok'=>false,'error'=>$public,'status'=>$status,'attempts'=>$attempt];if(in_array($status,$transient,true)&&$attempt<$maxAttempts){$pause=200000*(2**($attempt-1))+random_int(0,120000);if(function_exists('vp3_ai_budget_pause_v1')){if(!vp3_ai_budget_pause_v1($pause))return $budgetError($attempt);}else usleep($pause);continue;}return $last;
     }
     return $last;
 }

@@ -150,7 +150,7 @@ try{
  [$status,$html]=request('/admin/ai.php?models=anthropic');
  check($status===200&&str_contains($html,'Fixture &lt;Model&gt;')&&str_contains($html,'fixture-model:2026')&&!str_contains($html,'Fixture <Model>'),'Custom model ID and escaped label appear in Admin');
  check(str_contains($html,'form="ai-model-save-anthropic"')&&str_contains($html,'form="ai-model-command-anthropic"'),'Registry controls have their own form owners');
- check(!str_contains($html,'name="service" value="code_build"')&&str_contains($html,'Planned services'),'Planned services appear without active route controls');
+ check(str_contains($html,'name="service" value="code_build"')&&str_contains($html,'name="service" value="code_repair"'),'Admin can configure both active Coding Agent stages');
  check(array_values(array_filter(rows(),static fn(array $row):bool=>$row['setting_key']!=='vp3_ai_service_configuration_v1'))===$baseline,'Model registration leaves the saved key and defaults intact');
 
  $route=['action'=>'save_service_route','csrf_token'=>$csrf,'service'=>'conversation','primary_model'=>'anthropic:fixture-model:2026','primary_funding'=>'own_key'];

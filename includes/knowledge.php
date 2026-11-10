@@ -316,6 +316,7 @@ function search_knowledge(string $query, ?array $user = null, int $limit = 8, ar
             if($canPersonal){$clauses[]="(i.knowledge_scope='personal' AND i.created_by_user_id=?)";$params[]=$userId;}
             if($canSystem){$clauses[]="(i.knowledge_scope='system' AND i.is_published=1)";}
             $where=$clauses?'('.implode(' OR ',$clauses).')':'0=1';
+            $where.=" AND i.file_type<>'coding_canvas'";
             foreach(array_slice($excludedDescriptionPrefixes,0,4) as $prefix){
                 if(!is_string($prefix)||$prefix==='')continue;
                 $where.=" AND (i.description IS NULL OR i.description NOT LIKE ? ESCAPE '!')";

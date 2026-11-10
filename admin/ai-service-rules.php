@@ -57,7 +57,9 @@ if ($service === 'initiative') {
     $limitFields += ['background_daily_tokens' => 'Background tokens per day', 'background_monthly_tokens' => 'Background tokens per month'];
 }
 $rule = vp3_ai_service_read_rule_v1($pdo, $scope, $scopeId, $service);
-$models = vp3_ai_service_models_v1($pdo, $service);
+$models = in_array($service, VP3_AI_CODING_SERVICES_V1, true)
+    ? vp3_ai_service_coding_models_v1(vp3_ai_service_config_v1($pdo))
+    : vp3_ai_service_models_v1($pdo, $service);
 // Retain rules for previously registered models until an admin changes the selection.
 foreach ($rule['allowed_models'] ?? [] as $value) {
     [$provider, $model] = explode(':', $value, 2);

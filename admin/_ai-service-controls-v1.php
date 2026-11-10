@@ -68,6 +68,7 @@ function vp3_admin_ai_service_provider_registry_v1(PDO $pdo, string $provider): 
         </div>
       </fieldset>
       <p class="muted">Enter an existing ID to update its display name and service eligibility.</p>
+      <p class="muted">Register a model for both Code Build and Code Repair to offer it in the Coding Agent picker.</p>
       <button class="btn" type="submit" form="<?= e($saveForm) ?>">Save model</button>
     </details>
     <?php
@@ -96,10 +97,12 @@ function vp3_admin_ai_service_routes_v1(PDO $pdo): void
       <h2 id="ai-service-routes-title">AI service routes</h2>
       <p class="muted">Choose the primary and fallback models for each available service. A route can inherit the existing setup.</p>
       <p class="muted">Primary and fallback models use the same account funding source. VP3 Cloud is the default. Members who choose My API keys in AI Providers need a saved key for each provider their routes use.</p>
+      <p class="muted">Code Build and Code Repair routes help choose the automatic coding model. Members can select any model eligible for both services. A coding run keeps its chosen model through build and repair.</p>
       <?php foreach ($catalog as $id => $service):
           if (!$service['wired']) continue;
           $route = vp3_ai_service_read_route_v1($pdo, $id);
-          $models = vp3_ai_service_models_v1($pdo, $id);
+          $coding = in_array($id, VP3_AI_CODING_SERVICES_V1, true);
+          $models = $coding ? vp3_ai_service_coding_models_v1(vp3_ai_service_config_v1($pdo)) : vp3_ai_service_models_v1($pdo, $id);
           ?>
         <details id="ai-service-route-<?= e($id) ?>" class="ai-provider-card" <?= ($_GET['route'] ?? 'conversation') === $id ? 'open' : '' ?>>
           <summary><strong><?= e($service['label']) ?></strong></summary>
@@ -113,7 +116,7 @@ function vp3_admin_ai_service_routes_v1(PDO $pdo): void
                 ?>
               <label class="field"><?= e($label) ?> model
                 <select name="<?= e($key.'_model') ?>">
-                  <option value=""><?= $key === 'primary' ? 'Use existing setup' : 'No fallback' ?></option>
+                  <option value=""><?= $key === 'primary' ? ($coding ? 'Use eligible coding models' : 'Use existing setup') : 'No fallback' ?></option>
                   <?php vp3_admin_ai_service_model_options_v1($models, $selected); ?>
                 </select>
               </label>
