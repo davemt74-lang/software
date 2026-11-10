@@ -120,6 +120,18 @@ function privateProcessingRecord(messageId){
 try{
  for(let attempt=0;attempt<80;attempt++){try{await control();break;}catch(error){if(attempt===79)throw error;await new Promise(resolve=>setTimeout(resolve,50));}}
  for(const endpoint of endpoints){
+  const before=await control('seed'),finding=root(before);
+  const response=await post(endpoint,'What did you find in the background?');
+  const after=await control();
+  const request=after.messages.find(message=>message.id===response.data?.user_message_id);
+  const saved=after.messages.find(message=>message.id===response.data?.assistant_message_id);
+  check(response.data?.ok===true&&response.data.answer.includes(finding.message)
+   &&after.calls.length===before.calls.length&&after.runs.length===before.runs.length
+   &&context(request).initiative_status_read_v1===true&&context(saved).initiative_status_read_v1===true
+   &&saved.message==='I checked for saved background findings.'&&context(saved).sources.length===0,
+   endpoint+' reads the exact verified background draft without another model call, job, or persisted copy',response.body);
+ }
+ for(const endpoint of endpoints){
   const before=await control('seed'),source=root(before),ref=association(source);
   const response=await post(endpoint,'Help me think through that',{initiative_reply:ref});
   check(response.data?.ok===true&&response.data.answer.includes('verified launch task'),endpoint+' sends associated discussion through the normal main model',response.body);

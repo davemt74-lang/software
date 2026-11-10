@@ -616,7 +616,8 @@ try {
         && str_contains($firstTyped['answer'],'The sampled subjects suggest scheduling.')
         && str_contains($firstTyped['answer'],'latest saved inbox update reviewed 4 messages')
         && $firstTyped['tool_receipt']['operation'] === 'review_status' && $firstTyped['tool_receipt']['status'] === 'read_complete'
-        && $firstVoice['answer'] === 'Your 7-day first Gmail review is ready.' && $firstVoice['actions'] === $firstTyped['actions']
+        && $firstVoice['answer'] === $firstTyped['answer'] && $firstVoice['actions'] === $firstTyped['actions']
+        && !empty($firstVoice['email_private_read_v1'])
         && $firstTyped['actions'][0]['url'] === '/connections.php?app=gmail#gmail-inbox-review'
         && $storedReview === 'A private Gmail result was displayed for this turn.' && !empty($storedReviewContext['skip_brain_archive'])
         && !str_contains(json_encode([$firstTyped,$firstVoice,$foreignReview],JSON_THROW_ON_ERROR),'PRIVATE_INBOX')

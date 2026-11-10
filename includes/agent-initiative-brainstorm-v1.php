@@ -20,18 +20,19 @@ function vp3_initiative_brainstorm_semantic_v1(array $payload): string
     return hash('sha256',json_encode($sort($payload),JSON_THROW_ON_ERROR));
 }
 
-/** A missing worker must not accumulate identical paid assessments every slot. */
-function vp3_initiative_brainstorm_pending_v1(PDO $pdo,array $user,array $payload): bool
+/** Deduplicate in-flight work, and completed assessments of unchanged setup only. */
+function vp3_initiative_brainstorm_pending_v1(PDO $pdo,array $user,array $payload,bool $setupOnly=false): bool
 {
     $binding=$payload['binding'];$sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
     $value=static function(string $path)use($sqlite):string{
         $sql="JSON_EXTRACT(CASE WHEN JSON_VALID(r.goal) THEN r.goal ELSE '{}' END,'$path')";
         return $sqlite?$sql:"JSON_UNQUOTE($sql)";
     };
+    $statuses=$setupOnly?"'approved','queued','executing','completed'":"'approved','queued','executing'";
     $q=$pdo->prepare("SELECT r.goal FROM agent_workflow_runs r WHERE r.owner_user_id=?
         AND CAST(COALESCE(r.agent_id,0) AS CHAR)=? AND r.source_kind='agent_initiative'
         AND r.execution_target='cloud' AND r.capability_key='initiative.plan'
-        AND r.status IN ('approved','queued','executing')
+        AND r.status IN ($statuses)
         AND CAST(".$value('$.binding.conversation_id')." AS CHAR)=? AND ".$value('$.binding.revision')."=?
         ORDER BY r.id DESC LIMIT 25");
     $q->execute([(int)$user['id'],(string)vp3_initiative_binding_agent_v1($binding),

@@ -151,10 +151,10 @@ function agent_connection_email_chat_view_v1(array $result, string $answer, arra
     return ['A private Gmail result was displayed for this turn.', $context];
 }
 
-function agent_connection_email_first_review_chat_v1(PDO $pdo, array $user, bool $voice): array
+function agent_connection_email_first_review_chat_v1(PDO $pdo, array $user): array
 {
     require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
-    $view = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, includeChatResult: !$voice);
+    $view = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, includeChatResult: true);
     $state = $view['state'];
     $answer = match ($state) {
         'ready' => 'Your '.$view['days'].'-day first Gmail review is ready.',
@@ -165,7 +165,7 @@ function agent_connection_email_first_review_chat_v1(PDO $pdo, array $user, bool
         'disabled' => 'Inbox Review is off or Gmail access is unavailable. Check your Gmail settings in Connections.',
         default => 'I couldn’t verify your first Gmail review. Check the Gmail connection in Connections.',
     };
-    $private = $state === 'ready' && !$voice;
+    $private = $state === 'ready';
     if ($private) {
         $count = $view['total'];
         $answer .= $count === 0 ? ' No inbox messages matched your settings.'
@@ -210,7 +210,7 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
     try {
         $live = agent_connection_email_chat_authority_v1($pdo, $user, $principal, $conversationId, $authority);
         if ($operation === 'review_status') {
-            return agent_connection_email_first_review_chat_v1($pdo, $live, $voice);
+            return agent_connection_email_first_review_chat_v1($pdo, $live);
         }
         $owner = (int)$live['id'];
         $agent = (int)($principal['agent_id']??0);
