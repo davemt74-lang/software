@@ -1078,13 +1078,21 @@ try{
  const meetingReload=await post('chat-v236.php?agent=7','',{...meetingArgs,action:'load'});
  const prepRow=meetingReload.data?.messages?.find(message=>Number(message.id)===spokenPrep.data.assistant_message_id);
  check(prepRow?.message===typedPrep.data.answer,'normal Chat reload authorizes and projects the original private prep');
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const continuation=await post(endpoint,'Read the selected transcript',meetingArgs);
+  check(continuation.data?.tool_receipt?.capability==='transcripts.read'
+   &&continuation.data.tool_receipt.record_id===7921&&continuation.data.answer.includes(priorPassage),
+   'meeting prep hands the exact prior recording to ordinary follow-up through '+endpoint+': '+continuation.body);
+ }
  await fetch(meetingEndpoint+'?revoke=1');
  const [revokedPrep,revokedPrepLoad]=await Promise.all([
   post('chat-stream-v121.php',meetingPrompt,voiceArgs,meetingHeaders),
   post('chat-v236.php?agent=7','',{...meetingArgs,action:'load'}),
  ]);
+ const prepMessageIds=new Set([typedPrep,spokenPrep,legacyPrep].map(prep=>Number(prep.data.assistant_message_id)));
+ const revokedPrepRows=revokedPrepLoad.data?.messages?.filter(message=>prepMessageIds.has(Number(message.id)));
  check(revokedPrep.data?.replayed===true&&revokedPrep.data.tool_receipt?.status!=='read_complete'
-  &&!revokedPrep.body.includes(priorPassage)&&!revokedPrepLoad.body.includes(priorPassage),
-  'prior meeting access revocation withdraws the old evidence from replay and Chat history');
+  &&!revokedPrep.body.includes(priorPassage)&&revokedPrepRows?.length===3&&!JSON.stringify(revokedPrepRows).includes(priorPassage),
+  'prior meeting access revocation withdraws the old prep evidence from replay and Chat history');
  console.log(`CAPABILITY_CHAT_API=PASS (${checks} cases; production typed/voice/stream/legacy endpoints, fixture model)`);
 }catch(error){console.error(error);console.error(logs.slice(-4000));throw error;}finally{const exited=child.exitCode!==null||child.signalCode!==null?Promise.resolve():new Promise(r=>child.once('exit',r));child.kill();await exited;fs.rmSync(tmp,{recursive:true,force:true});}

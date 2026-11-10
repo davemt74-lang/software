@@ -55,6 +55,9 @@ meeting_prep_check_v1(str_contains($answer['answer'],$quote)&&str_contains($answ
     &&$answer['sources'][1]['url']==='/vp3/artist-listening.php?session=7921'
     &&array_keys($answer['meeting_prep'])===['id','kind','occurrence_id','revision']
     &&!str_contains(json_encode($answer['meeting_prep'],JSON_THROW_ON_ERROR),$quote),'prep response supplies exact source links and a content-free replay pointer');
+meeting_prep_check_v1($answer['transcript_context']===vp3_transcript_attachment_v1($ids['transcript_id'])
+    &&!str_contains(json_encode($answer['transcript_context'],JSON_THROW_ON_ERROR),$quote),
+    'ordinary transcript follow-up uses an exact server attachment without retaining speech');
 $replay=static fn():array=>vp3_calendar_prep_replay_v1($pdo,$user,7,11,$answer['meeting_prep'],null,$now);
 meeting_prep_check_v1($replay()===$answer,'unchanged exact replay returns the same current authorized result');
 $pdo->exec('PRAGMA query_only=OFF');
@@ -82,6 +85,9 @@ $pdo->exec("UPDATE artist_transcript_segments_v172 SET transcript_text='The revi
 $pdo->exec("INSERT INTO user_agent_data_rules VALUES(7,'recording','7921','deny')");
 meeting_prep_check_v1($replay()['sources']===[]&&$read()['prior_transcript']===['status'=>'restricted'],
     'revoked recording access redacts excerpts and invalidates old replay');
+meeting_prep_check_v1(!isset(vp3_calendar_prep_next_result_v1($read())['transcript_context'])
+    &&!isset($replay()['transcript_context']),
+    'revoked recording access cannot publish or restore a transcript attachment');
 $pdo->exec('DELETE FROM user_agent_data_rules');
 $pdo->exec("UPDATE video_meeting_participants SET invitation_status='revoked' WHERE meeting_id=7911");
 meeting_prep_check_v1($read()['prior_transcript']===['status'=>'not_linked']&&$read()['actionable_items']===[]
