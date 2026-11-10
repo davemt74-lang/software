@@ -303,6 +303,10 @@ try {
   const autoSend = page.getByRole('checkbox',{name:/Enable Auto Send/});
   assert.equal(await autoSend.isChecked(),false,'Auto Send is off by default.');
   assert.equal(await page.getByRole('textbox',{name:'Approved email addresses'}).inputValue(),'');
+  const musicResearch = page.locator('#music-research');
+  assert.equal(await musicResearch.getByRole('checkbox',{name:/Use recent VP3 Music listening/}).isChecked(),false,
+    'Native Music research is off by default on the shipped Connections page.');
+  assert.equal(await musicResearch.locator('input[name="csrf_token"]').inputValue(),'fixture');
   const startForm = page.locator('[data-gmail-review-start]');
   const windowSelect = startForm.locator('select[name="days"]');
   const report = page.locator('[data-gmail-review-report]');
