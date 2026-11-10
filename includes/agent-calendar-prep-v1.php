@@ -392,6 +392,7 @@ function vp3_calendar_prep_next_result_v1(?array $event): array
         }
         $result['sources'][]=['source'=>'transcript:'.$transcript['session_id'],'title'=>'Prior transcript · '.$transcript['title'],'url'=>$transcript['url']];
         $result['actions'][]=['type'=>'open_url','label'=>'Open prior transcript','url'=>$transcript['url']];
+        $result['transcript_context']=vp3_transcript_attachment_v1((int)$transcript['session_id']);
     } else {
         $lines[]=match($transcript['status']){
             'not_linked'=>'I found no verified prior meeting linked by a saved follow-up.',
