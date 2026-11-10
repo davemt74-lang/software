@@ -143,7 +143,9 @@ try {
   };
   item = {title:'Owner A working context'};
   const closedTab = await openChat({agentId:0});
-  await closedTab.getByText('Owner A digest',{exact:true}).waitFor();
+  await closedTab.waitForFunction(() => document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+  assert.equal(await closedTab.locator('[data-vp3-return-digest]').count(),0,'Legacy return data must not mount another Chat brief.');
+  assert.equal(await closedTab.getByText('Owner A digest',{exact:true}).count(),0);
   assert.equal(await closedTab.locator('[data-agent-brief-working-attention]').count(),0);
   await closedTab.waitForFunction(() => window.pendingSpeech?.canSpeak());
   assert.equal(await closedTab.getByText('Owner A HomeServer',{exact:true}).count(),1);
@@ -170,7 +172,7 @@ try {
   assert.equal(await closedTab.getByText(/Owner B/).count(),0);
   assert.deepEqual(await closedTab.evaluate(() => ({speech:window.pendingSpeech?.text,canSpeak:window.pendingSpeech?.canSpeak(),cancels:window.cancelSpeechCount})),
     {speech:'Owner A announcement',canSpeak:false,cancels:1});
-  console.log('PASS cross-account closed System Agent poll clears digest, HomeServer, badge, and queued speech');
+  console.log('PASS cross-account closed System Agent poll keeps legacy digest absent and clears HomeServer, badge, and queued speech');
 
   sessionBinding = 'owner-a-session';
   presentation = {
@@ -185,8 +187,10 @@ try {
   const late = delayReply();
   const pending = openTab.evaluate(() => VP3_COGNITIVE_PRESENTATION.refresh());
   await late.arrived;
+  const interactionsBeforeRotation = writes.filter(action=>action==='interaction').length;
+  const requestsBeforeRotation = requests.length;
   sessionBinding = 'owner-a-rotated-session';
-  await openTab.getByRole('button',{name:'Dismiss'}).click();
+  await openTab.locator('#chatForm').dispatchEvent('submit');
   await openTab.getByRole('button',{name:/Agent.*status unavailable/}).waitFor();
   if (await openTab.locator('#chatAgentBriefPopover').isHidden()) {
     await openTab.getByRole('button',{name:/Agent.*status unavailable/}).click();
@@ -200,8 +204,9 @@ try {
   assert.equal(await openTab.getByRole('button',{name:'Retry'}).count(),0);
   await openTab.locator('[data-agent-brief-brain]').dispatchEvent('click');
   assert.equal(await openTab.evaluate(() => window.brainOpenCount),0);
-  assert.ok(requests.some(record => record.binding==='owner-a-session' && record.action==='digest_ack'));
-  assert.ok(!writes.includes('digest_ack'));
+  assert.ok(requests.slice(requestsBeforeRotation).some(record => record.binding==='owner-a-session' && record.action==='interaction'));
+  assert.equal(writes.filter(action=>action==='interaction').length,interactionsBeforeRotation,'A stale session cannot record a Chat interaction.');
+  assert.ok(!requests.some(record=>record.action==='digest_ack'),'Removing a return pane must never acknowledge its unread updates.');
   console.log('PASS a rotated session rejects stale writes, aborts in-flight data, and disables stale Brief actions');
 
   sessionBinding = 'owner-a-session';

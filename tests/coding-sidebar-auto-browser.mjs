@@ -72,7 +72,7 @@ try {
   assert.equal(await page.locator('[data-coding-token-meter]').evaluate(node => node.value),7000,'Toggling leaves model and token controls intact.');
 
   failedSave = true;
-  await toggle.uncheck();
+  await toggle.click();
   await autoStatus.getByText('Please try again.',{exact:true}).waitFor();
   assert.equal(await toggle.isChecked(),true,'A failed save restores the persisted preference.');
   failedSave = false;
