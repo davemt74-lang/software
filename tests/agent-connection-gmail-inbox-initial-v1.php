@@ -108,7 +108,7 @@ try {
     };
     $form = static function(int $owner, array $rules=[]) use ($pdo): array {
         $connection = agent_connections_find_v1($pdo, $owner, 'gmail');
-        $policy = agent_connection_gmail_inbox_policy_v1($pdo, $owner);
+        $policy = agent_connection_gmail_inbox_bound_policy_v1(agent_connection_gmail_inbox_policy_v1($pdo, $owner), $connection);
         return ['connection_id'=>(string)$connection['id'], 'connection_revision'=>hash('sha256', $connection['authorization_key']),
             'inbox_revision'=>$policy['revision']??'', 'action'=>'save', 'enabled'=>'1']+$rules;
     };
@@ -117,7 +117,16 @@ try {
         if ($next !== '') $data['nextPageToken'] = $next;
         return $data;
     };
-    $view = static fn(int $owner, bool $report=false): array => agent_connection_gmail_inbox_initial_view_v1($pdo, $users[$owner], $report);
+    $view = static fn(int $owner, bool $report=false, ?string $expectedRevision=null): array =>
+        agent_connection_gmail_inbox_initial_view_v1($pdo, $users[$owner], $report, $expectedRevision);
+    $start = static function(int $owner, int $days, ?string $token=null) use ($pdo, $users, $view): void {
+        agent_connection_gmail_inbox_initial_start_v1($pdo, $users[$owner], $days, $token ?? $view($owner, true)['start_token']);
+    };
+    $startRejected = static function(int $owner, string $token) use ($start): bool {
+        try { $start($owner, 7, $token); }
+        catch (AgentConnectionExceptionV1 $error) { return $error->getCode() === 409; }
+        return false;
+    };
     $row = static fn(int $owner): ?array => agent_connection_gmail_inbox_initial_row_v1($pdo, agent_connection_gmail_inbox_initial_scope_v1($pdo, $users[$owner]));
     $noticeRows = static function(int $owner) use ($pdo): array {
         $q = $pdo->prepare('SELECT title,body,target_url FROM notifications WHERE user_id=? ORDER BY id');
@@ -147,12 +156,7 @@ try {
 
     first_review_check($view(1) === ['state'=>'disabled', 'limit'=>50] && agent_connection_gmail_inbox_initial_sweep_v1($pdo) === 0,
         'a connected mailbox alone leaves the first review disabled');
-    try {
-        agent_connection_gmail_inbox_initial_start_v1($pdo, $users[1], 7);
-        throw new RuntimeException('A read grant alone started Inbox Review.');
-    } catch (AgentConnectionExceptionV1 $error) {
-        first_review_check($error->getCode() === 409, 'first review requires explicit Inbox Review consent');
-    }
+    first_review_check($startRejected(1, str_repeat('a', 64)), 'first review requires explicit Inbox Review consent');
     $rules = ['ignore_senders'=>'muted@example.test', 'ignore_github_actions'=>'1'];
     agent_connection_gmail_inbox_save_v1($pdo, $users[1], $form(1, $rules), $http);
     agent_connection_gmail_inbox_save_v1($pdo, $users[2], $form(2), $http);
@@ -162,12 +166,14 @@ try {
         && $view(1)['state'] === 'needs_start' && agent_connection_gmail_inbox_initial_sweep_v1($pdo) === 0
         && $listCalls === [] && $summaries === [], 'enabling Inbox Review only verifies the mailbox cursor and waits for explicit first review');
 
-    agent_connection_gmail_inbox_initial_start_v1($pdo, $users[1], 14);
+    $initialToken = $view(1, true)['start_token'];
+    $start(1, 14, $initialToken);
     $queued = $view(1);
     $run = $queued['run_id'];
-    agent_connection_gmail_inbox_initial_start_v1($pdo, $users[1], 7);
+    $start(1, 7, $initialToken);
     first_review_check($queued['state'] === 'queued' && $queued['days'] === 14 && $queued['scanned'] === 0
-        && preg_match('/\A[a-f0-9]{32}\z/', $run) === 1 && $view(1) === $queued && $listCalls === [],
+        && preg_match('/\A[a-f0-9]{32}\z/', $run) === 1 && $view(1) === $queued && $listCalls === []
+        && preg_match('/\A[a-f0-9]{64}\z/', $initialToken) === 1 && !isset($queued['start_token']),
         'start saves the selected window and a repeated start preserves the queued run');
     first_review_check(!$advance(2, $run) && $view(2, true)['state'] === 'needs_start' && $listCalls === [],
         'another owner cannot advance or read the first owner’s review');
@@ -217,14 +223,14 @@ try {
         && count($summaries) === 1 && $noticeRows(1) === $notices,
         'first review leaves the incremental cursor untouched and completed work cannot replay');
 
-    agent_connection_gmail_inbox_initial_start_v1($pdo, $users[2], 1);
+    $start(2, 1);
     $pages[2] = [$page([])];
     first_review_check($advance(2, $view(2)['run_id']) && $view(2, true)['report']['total'] === 0
         && $view(2, true)['report']['summary_status'] === 'no_messages' && $view(2, true)['report']['tokens_charged'] === 0
         && count($summaries) === 1, 'an empty first review completes with zero tokens and no AI call');
     $otherReport = $view(2, true);
 
-    agent_connection_gmail_inbox_initial_start_v1($pdo, $users[3], 7);
+    $start(3, 7);
     $paidRun = $view(3)['run_id'];
     $pages[3] = [$page(['lease-mail'])];
     $messages[3]['lease-mail'] = first_review_message('lease-mail', (int)$row(3)['started_at_ms']-500, 'customer@example.test', 'Lease fixture');
@@ -248,12 +254,20 @@ try {
     agent_commerce_atomic_pa2($pdo, static function() use ($pdo, $cursorBefore): void {
         agent_connection_gmail_inbox_notify_v1($pdo, 1, ['total'=>1], $cursorBefore);
     });
-    agent_connection_gmail_inbox_save_v1($pdo, $users[1], $form(1, ['ignore_senders'=>'changed@example.test']), $http);
+    $changedRules = ['ignore_senders'=>'changed@example.test'];
+    agent_connection_gmail_inbox_save_v1($pdo, $users[1], $form(1, $changedRules), $http);
     first_review_check($view(1, true)['state'] === 'needs_start' && $row(1) === null && !$advance(1, $run)
         && array_column($noticeRows(1), 'title') === ['Gmail inbox review']
         && $view(2, true) === $otherReport && $profileCalls === [1, 2, 3],
         'changing filters purges the first review and its notice while preserving new-mail notices and other owners');
-    agent_connection_gmail_inbox_initial_start_v1($pdo, $users[1], 3);
+    $beforeGrantReplacement = $view(1, true)['start_token'];
+    $stalePage = $view(1, true, $cursorBefore['revision']);
+    $callsBefore = [$profileCalls, $listCalls, $metadataCalls, count($summaries)];
+    first_review_check($beforeGrantReplacement !== $initialToken && $startRejected(1, $initialToken)
+        && $stalePage['state'] === 'unavailable' && !isset($stalePage['start_token'])
+        && $row(1) === null && [$profileCalls, $listCalls, $metadataCalls, count($summaries)] === $callsBefore,
+        'a valid token rendered before a same-owner settings change cannot queue a review or start paid work');
+    $start(1, 3, $beforeGrantReplacement);
     $replacedRun = $view(1)['run_id'];
     $pages[1] = [$page(['good', 'reply'])];
     $onMetadata = static function(int $owner, string $id) use ($pdo, $tokens, $grantPolicy, $fingerprint): void {
@@ -266,6 +280,14 @@ try {
         && $view(1, true)['state'] === 'disabled' && $noticeRows(1) === [] && $view(2, true) === $otherReport
         && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_initial_v1 WHERE owner_user_id=1')->fetchColumn() === 0,
         'a replaced Gmail grant revokes a running scan, purges its report and notices, and leaves other owners alone');
+
+    agent_connection_gmail_inbox_save_v1($pdo, $users[1], $form(1, $changedRules), $http);
+    $callsBefore = [$profileCalls, $listCalls, $metadataCalls, count($summaries)];
+    $newGrant = $view(1, true);
+    first_review_check($newGrant['state'] === 'needs_start' && $newGrant['start_token'] !== $beforeGrantReplacement
+        && $startRejected(1, $beforeGrantReplacement) && $row(1) === null
+        && [$profileCalls, $listCalls, $metadataCalls, count($summaries)] === $callsBefore,
+        'an old grant token cannot authorize a review after the same owner re-enables the replacement grant');
 
     echo 'AGENT_CONNECTION_GMAIL_INBOX_INITIAL=PASS ('.$checks.' checks; native MySQL)'.PHP_EOL;
 } finally {

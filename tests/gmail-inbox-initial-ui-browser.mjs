@@ -7,6 +7,7 @@ import {chromium} from 'playwright';
 const origin = 'https://gmail-review.test';
 const endpoint = '/api/gmail-inbox-initial-v1.php';
 const runId = 'a'.repeat(32);
+const startToken = 'b'.repeat(64);
 const privateSubject = 'Private budget <img src=x onerror=alert(1)>';
 const connectionsUrl = '/connections.php?app=gmail#gmail-inbox-review';
 const script = 'gmail-inbox-initial-v1.js';
@@ -38,13 +39,16 @@ const completed = () => ({...inProgress('ready'),stage:'summary',scanned:50,trun
     summary_status:'ready',summary:'The sampled subjects suggest billing.',tokens_charged:114,
     items:[{subject:privateSubject,from:'Sender <private@example.test>',category:'reply'}]}});
 let review = needsStart();
+let initialViewToken = startToken;
+let apiViewToken = startToken;
 let advanceGate = null;
 let statusGate = null;
 const requests = [];
 const count = (action,surface) => requests.filter(row => row.action === action && (!surface || row.surface === surface)).length;
-const project = includeReport => {
+const project = (includeReport,token = apiViewToken) => {
   const view = structuredClone(review);
   if (!includeReport) delete view.report;
+  else if (token !== null) view.start_token = token;
   return view;
 };
 async function screenshot(page,name,view) {
@@ -93,7 +97,7 @@ try {
     }
     if (url.pathname === '/connections.php') {
       return route.fulfill({contentType:'text/html; charset=utf-8',
-        body:execFileSync('php',[phpFixture,url.search.slice(1),JSON.stringify(review)],{encoding:'utf8'})});
+        body:execFileSync('php',[phpFixture,url.search.slice(1),JSON.stringify(project(true,initialViewToken))],{encoding:'utf8'})});
     }
     if (url.pathname === '/chat.php') {
       const body = url.searchParams.has('without_review')
@@ -117,7 +121,7 @@ try {
     const surface = new URL(request.frame().url()).pathname;
     const includeReport = surface === '/connections.php';
     const expected = {action:body.action,owner_key:'1',csrf_token:'fixture',...(includeReport ? {include_report:true} : {})};
-    if (body.action === 'start') Object.assign(expected,{days:14});
+    if (body.action === 'start') Object.assign(expected,{days:14,start_token:startToken});
     if (body.action === 'advance') Object.assign(expected,{run_id:runId});
     assert.deepEqual(body,expected,`${surface} sends only its allowed review fields.`);
     requests.push({...body,surface});
@@ -278,6 +282,34 @@ try {
   await job.getByRole('button',{name:'Open Connections'}).click();
   await page.waitForURL(origin+connectionsUrl);
   await report.getByText(privateSubject,{exact:true}).waitFor();
+
+  const startsBeforeStaleView = count('start');
+  const reloadMessage = page.locator('[data-gmail-review-status]').filter({
+    hasText:'Gmail or Inbox review settings changed. Reload to continue.',
+  });
+  apiViewToken = null;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await reloadMessage.waitFor();
+  assert.equal(await report.textContent(),'','A missing refreshed token clears the previously rendered report.');
+
+  review = needsStart();
+  apiViewToken = startToken;
+  await page.reload();
+  await windowSelect.waitFor();
+  apiViewToken = 'c'.repeat(64);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await reloadMessage.waitFor();
+  await startForm.waitFor({state:'hidden'});
+  await startForm.evaluate(form => form.requestSubmit());
+
+  initialViewToken = null;
+  apiViewToken = startToken;
+  await page.reload();
+  await reloadMessage.waitFor();
+  await startForm.waitFor({state:'hidden'});
+  await startForm.evaluate(form => form.requestSubmit());
+  await page.waitForTimeout(100);
+  assert.equal(count('start'),startsBeforeStaleView,'Only a page loaded with the matching settings token can start a review.');
   assert.deepEqual(errors,[]);
-  console.log('GMAIL_INBOX_INITIAL_UI_BROWSER=PASS (actual Connections, summary progress, deduplicated Hub and private report)');
+  console.log('GMAIL_INBOX_INITIAL_UI_BROWSER=PASS (actual Connections, private report, progress and stale settings)');
 } finally { await browser.close(); }

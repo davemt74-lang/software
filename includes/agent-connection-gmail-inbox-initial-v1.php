@@ -90,13 +90,21 @@ function agent_connection_gmail_inbox_initial_checkpoint_v1(array $row): array
     return json_decode($row['checkpoint_json'],true,12,JSON_THROW_ON_ERROR);
 }
 
+/** A start must describe the Gmail settings rendered when the owner reviewed the token notice. */
+function agent_connection_gmail_inbox_initial_start_token_v1(array $scope): string
+{
+    return hash('sha256',implode(':',[$scope['owner'],$scope['generation'],$scope['rules_hash'],$scope['policy']['revision']]));
+}
+
 /** Read only; the rail never receives mailbox headers or model output. */
-function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport=false): array
+function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport=false, ?string $expectedRevision=null): array
 {
     $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
     if ($scope['state']!=='ready') return ['state'=>$scope['state'],'limit'=>50];
+    if ($expectedRevision!==null && !hash_equals($scope['policy']['revision'],$expectedRevision)) return ['state'=>'unavailable','limit'=>50];
+    $start = $includeReport ? ['start_token'=>agent_connection_gmail_inbox_initial_start_token_v1($scope)] : [];
     $row = agent_connection_gmail_inbox_initial_row_v1($pdo,$scope);
-    if (!$row) return ['state'=>'needs_start','limit'=>50];
+    if (!$row) return ['state'=>'needs_start','limit'=>50]+$start;
     $phase = $row['phase'];
     $report = $phase==='ready' ? json_decode((string)$row['report_json'],true,12,JSON_THROW_ON_ERROR) : null;
     $progress = $report ?? agent_connection_gmail_inbox_initial_checkpoint_v1($row);
@@ -111,16 +119,19 @@ function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, boo
     if ($includeReport && $report!==null) $view['report'] = $report;
     $next = $row['lease_until'] ?? $row['next_run_at'];
     if ($next!==null) $view['next_attempt_at'] = str_replace(' ','T',$next).'Z';
-    return $view;
+    return $view+$start;
 }
 
 /** Only an explicit start can authorize a new first review and its metered summary. */
-function agent_connection_gmail_inbox_initial_start_v1(PDO $pdo, array $user, int $days): void
+function agent_connection_gmail_inbox_initial_start_v1(PDO $pdo, array $user, int $days, string $startToken): void
 {
     if (!in_array($days,[1,3,7,14,30],true)) throw new AgentConnectionExceptionV1('Choose a supported review window.',422);
-    agent_commerce_atomic_pa2($pdo,static function() use($pdo,$user,$days):void {
+    agent_commerce_atomic_pa2($pdo,static function() use($pdo,$user,$days,$startToken):void {
         $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user,true);
         if ($scope['state']!=='ready') throw new AgentConnectionExceptionV1('Enable Inbox Review and verify Gmail read access first.',409);
+        if (!hash_equals(agent_connection_gmail_inbox_initial_start_token_v1($scope),$startToken)) {
+            throw new AgentConnectionExceptionV1('Gmail settings changed. Reload before starting this review.',409);
+        }
         $current = agent_connection_gmail_inbox_initial_row_v1($pdo,$scope,true);
         if ($current && $current['phase']!=='failed') return;
         agent_connection_gmail_inbox_initial_purge_v1($pdo,$scope['owner']);

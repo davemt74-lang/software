@@ -37,6 +37,7 @@ function chat_response_context(string $query,array $context): array
 }
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface,array $context): array
 {
+    if (isset($GLOBALS['gmailSummaryOnRoute'])) ($GLOBALS['gmailSummaryOnRoute'])();
     return empty($GLOBALS['gmailSummaryHomeOnly'])
         ? ['blocked'=>false,'route'=>'vp3_cloud','cloud'=>['ready'=>true]]
         : ['blocked'=>true,'effective_preference'=>'homeserver_only'];
@@ -128,6 +129,13 @@ check_gmail_summary(agent_connection_gmail_inbox_initial_summary_v1($pdo,$owner,
     && !$GLOBALS['gmailSummaryDispatch'],'an empty scan needs no model call');
 check_gmail_summary($run(static fn()=>false)['status']==='unavailable' && !$GLOBALS['gmailSummaryDispatch'],
     'an invalidated review claim prevents the paid dispatch');
+$claimCurrent = true;
+$GLOBALS['gmailSummaryOnRoute'] = static function () use (&$claimCurrent): void { $claimCurrent = false; };
+$result = $run(static function () use (&$claimCurrent): bool { return $claimCurrent; });
+unset($GLOBALS['gmailSummaryOnRoute']);
+check_gmail_summary(!$claimCurrent && $result===['status'=>'unavailable','summary'=>'','tokens_charged'=>0]
+    && !$GLOBALS['gmailSummaryDispatch'] && (int)$pdo->query('SELECT COUNT(*) FROM ai_execution_ledger')->fetchColumn()===0,
+    'revocation during route discovery prevents dispatch and usage reservation');
 $GLOBALS['gmailSummaryHomeOnly'] = true;
 check_gmail_summary($run()['status']==='unavailable' && !$GLOBALS['gmailSummaryDispatch'],
     'HomeServer-only policy prevents Cloud summary dispatch');

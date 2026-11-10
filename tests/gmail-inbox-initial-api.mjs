@@ -39,10 +39,10 @@ function fixture_record(string $action, array $user, mixed $input): void {
 function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport = false): array {
     global $calls;
     fixture_record('status', $user, $includeReport);
-    return ['calls'=>$calls];
+    return ['calls'=>$calls] + ($includeReport ? ['start_token'=>str_repeat('b', 64)] : []);
 }
-function agent_connection_gmail_inbox_initial_start_v1(PDO $pdo, array $user, int $days): void {
-    fixture_record('start', $user, $days);
+function agent_connection_gmail_inbox_initial_start_v1(PDO $pdo, array $user, int $days, string $startToken): void {
+    fixture_record('start', $user, [$days, $startToken]);
 }
 function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, string $runId): bool {
     fixture_record('advance', $user, $runId);
@@ -84,9 +84,12 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
   assert.equal(status.status, 200);
   assert.equal(status.headers.get('cache-control'), 'private, no-store');
   assert.deepEqual(status.data, {ok:true, review:{calls:[['status', 1, false]]}});
-  const start = await request({body:{action:'start', days:7, include_report:true}});
+  const privateStatus = await request({body:{include_report:true}});
+  const startToken = privateStatus.data.review.start_token;
+  assert.match(startToken, /^[a-f0-9]{64}$/);
+  const start = await request({body:{action:'start', days:7, start_token:startToken, include_report:true}});
   assert.equal(start.status, 200);
-  assert.deepEqual(start.data.review.calls, [['start', 1, 7], ['status', 1, true]]);
+  assert.deepEqual(start.data.review.calls, [['start', 1, [7, startToken]], ['status', 1, true]]);
   const advance = await request({body:{action:'advance', run_id:runId}});
   assert.equal(advance.status, 200);
   assert.deepEqual(advance.data.review.calls, [['advance', 1, runId], ['status', 1, false]]);
@@ -106,11 +109,17 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
     [422, {raw:'[]'}],
     [422, {body:{owner_key:1}}],
     [422, {body:{include_report:null}}],
-    [422, {body:{action:'start', days:'7'}}],
-    [422, {body:{action:'start', days:2}}],
-    [422, {body:{action:'start', days:7, run_id:runId}}],
+    [422, {body:{action:'start', days:'7', start_token:startToken}}],
+    [422, {body:{action:'start', days:2, start_token:startToken}}],
+    [422, {body:{action:'start', days:7}}],
+    [422, {body:{action:'start', days:7, start_token:'b'.repeat(63)}}],
+    [422, {body:{action:'start', days:7, start_token:'B'.repeat(64)}}],
+    [422, {body:{action:'start', days:7, start_token:[startToken]}}],
+    [422, {body:{action:'start', days:7, start_token:startToken, run_id:runId}}],
     [422, {body:{action:'advance', run_id:'wrong'}}],
+    [422, {body:{action:'advance', run_id:runId, start_token:startToken}}],
     [422, {body:{action:'status', run_id:runId}}],
+    [422, {body:{action:'status', start_token:startToken}}],
     [422, {body:{action:'send'}}],
   ]) {
     const denied = await request(options);

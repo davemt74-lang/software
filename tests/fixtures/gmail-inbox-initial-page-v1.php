@@ -30,10 +30,13 @@ function agent_connection_gmail_inbox_policy_v1(PDO $pdo, int $owner): array
         'enabled'=>true,'rules'=>[],'last_status'=>'waiting'];
 }
 
-function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport = false): array
+function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport = false, ?string $expectedRevision = null): array
 {
+    if ($includeReport && $expectedRevision !== str_repeat('b',32)) {
+        throw new RuntimeException('Connections must bind the report view to the rendered Inbox review settings.');
+    }
     $review = $GLOBALS['fixtureReview'];
-    if (!$includeReport) unset($review['report']);
+    if (!$includeReport) unset($review['report'], $review['start_token']);
     return $review;
 }
 

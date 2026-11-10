@@ -44,7 +44,9 @@ function agent_connection_gmail_inbox_initial_summary_v1(
         try {
             if ($beforeInference !== null && $beforeInference() === false) return false;
             $health = vp3_initiative_inference_health_v1($pdo,$user,0,true);
-            return !empty($health['ready']) && ($health['route'] ?? null) === 'vp3_cloud';
+            if (empty($health['ready']) || ($health['route'] ?? null) !== 'vp3_cloud') return false;
+            // Scope discovery can block while the review claim is revoked.
+            return $beforeInference === null || $beforeInference() !== false;
         } catch (Throwable $error) {
             return false;
         }

@@ -33,7 +33,7 @@ try {
 
     $action = $body['action'] ?? null;
     $fields = ['action', 'owner_key', 'csrf_token', 'include_report'];
-    if ($action === 'start') $fields[] = 'days';
+    if ($action === 'start') $fields = [...$fields, 'days', 'start_token'];
     if ($action === 'advance') $fields[] = 'run_id';
     if (!in_array($action, ['status', 'start', 'advance'], true) || array_diff(array_keys($body), $fields)
         || (array_key_exists('include_report', $body) && !is_bool($body['include_report']))) {
@@ -47,8 +47,10 @@ try {
     }
 
     $days = $body['days'] ?? null;
-    if ($action === 'start' && !in_array($days, [1, 3, 7, 14, 30], true)) {
-        throw new RuntimeException('Invalid review window.', 422);
+    $startToken = $body['start_token'] ?? null;
+    if ($action === 'start' && (!in_array($days, [1, 3, 7, 14, 30], true)
+        || !is_string($startToken) || !preg_match('/\A[a-f0-9]{64}\z/', $startToken))) {
+        throw new RuntimeException('Invalid review window or start token.', 422);
     }
     $runId = $body['run_id'] ?? null;
     if ($action === 'advance' && (!is_string($runId) || !preg_match('/\A[a-f0-9]{32}\z/D', $runId))) {
@@ -59,7 +61,7 @@ try {
     if (!$pdo) throw new RuntimeException('Review storage unavailable.', 503);
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
-    if ($action === 'start') agent_connection_gmail_inbox_initial_start_v1($pdo, $user, $days);
+    if ($action === 'start') agent_connection_gmail_inbox_initial_start_v1($pdo, $user, $days, $startToken);
     if ($action === 'advance') agent_connection_gmail_inbox_initial_advance_v1($pdo, $user, $runId);
     $review = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, $body['include_report'] ?? false);
     echo json_encode(['ok'=>true, 'review'=>$review], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);

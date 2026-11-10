@@ -12,6 +12,10 @@
   const status = host?.querySelector('[data-gmail-review-status]');
   const result = host?.querySelector('[data-gmail-review-report]');
   const start = form?.querySelector('button[type="submit"]');
+  // A paid start belongs to the mailbox and settings rendered with this page.
+  const renderedToken = cfg.initialReview?.start_token;
+  const startToken = host && typeof renderedToken === 'string' && /^[a-f0-9]{64}$/.test(renderedToken) ? renderedToken : null;
+  const reloadMessage = 'Gmail or Inbox review settings changed. Reload to continue.';
   const owner = cfg.ownerKey;
   const agent = cfg.agentId;
   const binding = window.STONEFELLOW_CHAT?.workingAttentionBinding;
@@ -138,14 +142,14 @@
     if (!host) { renderRail(); return; }
     const line = review?.state === 'ready' ? 'First review complete.'
       : review ? [labels[review.state],detail(review)].filter(Boolean).join(' · ') : '';
-    if (status) status.textContent = pageError || line;
+    if (status) status.textContent = pageError || (!startToken && canStart(review) ? reloadMessage : line);
     host.dataset.reviewState = review?.state || '';
-    if (form) form.hidden = denied || !canStart(review);
+    if (form) form.hidden = denied || !startToken || !canStart(review);
     if (start) {
       start.disabled = Boolean(pending);
       start.textContent = review?.state === 'failed' ? 'Retry first review' : 'Start first review';
     }
-    renderReport(review?.has_report === true ? review.report : null);
+    renderReport(startToken && review?.has_report === true ? review.report : null);
   }
 
   function schedule(action, delay) {
@@ -165,7 +169,14 @@
       headers:{'Content-Type':'application/json'},body:JSON.stringify({owner_key:owner,csrf_token:cfg.csrf,
         ...(host ? {include_report:true} : {}),...payload})});
   }
-  function accept(value) {
+  function accept(value, expectedRunId = null) {
+    if (host && (value.start_token ?? null) !== startToken) {
+      denied = true;
+      review = null;
+      pageError = reloadMessage;
+      return;
+    }
+    if (expectedRunId !== null && value.run_id !== expectedRunId) return;
     const {state,run_id,stage,scanned,next_attempt_at} = value;
     review = host ? value : {state,run_id,stage,scanned,next_attempt_at};
     pageError = '';
@@ -186,9 +197,8 @@
       try {
         const response = await send({action:'status'},read.signal);
         const data = await response.json();
-        if (applicable() && progressRead === read && response.ok && data?.ok === true
-            && valid(data.review) && data.review.run_id === runId) {
-          accept(data.review);
+        if (applicable() && progressRead === read && response.ok && data?.ok === true && valid(data.review)) {
+          accept(data.review,runId);
           render();
         }
       } catch (_) { /* The active slice owns retries and errors. */ }
@@ -204,8 +214,9 @@
     if (pending || !inScope()) return;
     const payload = {action};
     if (action === 'start') {
-      if (!host || !canStart(review) || !daysAllowed.includes(days)) return;
+      if (!host || !startToken || !canStart(review) || !daysAllowed.includes(days)) return;
       payload.days = days;
+      payload.start_token = startToken;
     } else if (action === 'advance') {
       if (review?.state !== 'queued' || !valid(review)) return;
       payload.run_id = review.run_id;
@@ -262,7 +273,7 @@
     stopProgress();
     if (pending?.action === 'status') pending.controller.abort();
     review = null;
-    pageError = '';
+    if (!denied) pageError = '';
     refreshPending = false;
     render();
   }
