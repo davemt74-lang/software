@@ -229,8 +229,12 @@ function vp3_initiative_model_v1(PDO $pdo,array $user,string $prompt,string $pro
 function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array $payload,string $hash): bool
 {
     if(!is_array($payload['binding']??null))throw new RuntimeException('Initiative binding is invalid.',403);
-    vp3_initiative_access_v1($pdo,$user,$payload['binding']);
+    $live=vp3_initiative_access_v1($pdo,$user,$payload['binding']);
     $uid=(int)$user['id'];
+    if($capability==='initiative.prepare'&&($payload['tool']??null)==='artist.research'&&is_string($payload['primary']??null)){
+        require_once __DIR__.'/agent-initiative-artist-v1.php';
+        if(vp3_initiative_artist_duplicate_v1($pdo,$live,$payload['binding'],$payload['primary']))return false;
+    }
     $dedupe=hash('sha256',$capability.'|'.$hash);
     $existing=$pdo->prepare('SELECT id FROM agent_workflow_runs WHERE owner_user_id=? AND dedupe_key=?');
     $existing->execute([$uid,$dedupe]);
@@ -720,7 +724,7 @@ function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,b
         'chat-history'=>'chat_history','canvas-work'=>'canvas_work','song-history'=>'song_history',
         'mission-evidence'=>'mission_evidence','product-context'=>'product_context',
         'task-list'=>'task_lists','live-context'=>'live_context','artist-interest'=>'artist_research','topic-interest'=>'topic_research',
-        'task-research'=>'task_research'];
+        'native-artist-interest'=>'native_artist_research','task-research'=>'task_research'];
     foreach($sources as $ref=>$revision){
         if(($current[$ref]['revision']??null)===$revision)continue;
         $family=$families[explode(':',$ref,2)[0]]??'';

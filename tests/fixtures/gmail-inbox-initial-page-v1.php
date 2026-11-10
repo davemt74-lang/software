@@ -62,6 +62,7 @@ function agent_connection_health_member_v1(PDO $pdo, int $owner, int $connection
 function agent_connection_health_platform_v1(PDO $pdo, string $provider): ?array { return null; }
 
 $GLOBALS['fixtureDb'] = new PDO('sqlite::memory:');
+$GLOBALS['fixtureDb']->exec('CREATE TABLE settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL)');
 $GLOBALS['fixtureReview'] = json_decode($argv[2], true, 16, JSON_THROW_ON_ERROR);
 parse_str($argv[1] ?? '', $_GET);
 $root = dirname(__DIR__,2);
@@ -78,6 +79,7 @@ if (($argv[1]??'') === '--chat-review-runtime') {
     echo $initiativeWorkbenchRuntime;
     return;
 }
+require_once $root.'/includes/agent-initiative-native-music-v1.php';
 $source = file_get_contents($root.'/connections.php');
 $source = preg_replace('/^declare\(strict_types=1\);\R|^require(?:_once)? __DIR__ \. \'\/includes\/[^\']+\';\R/m', '', $source);
 $source = str_replace(

@@ -65,7 +65,7 @@ The [foreground inventory] is the source for the 69 capability IDs and their dec
 | `tv.preferences.read` | read | Separate confirmed viewing preferences from observed content. | [Chat], [TV] service | Foreground stored read. | Pending |
 | `tv.capture.manage` | write | Start or stop capture in the Eyes surface with browser approval. | [TV browser] capture fixture | Native capture surface. | Pending |
 | `media.library.read` | read | Read authorized HomeServer Media Server status and search results. | [Chat], [Media reads] service | Foreground only. Playback is separate. | Pending |
-| `music.library.read` | read | Read authorized HomeServer Music Server status and search results. | [Chat], [Media reads] service | Native VP3 song history is a separate [opportunity source], with playback and resume in the existing player. | Pending |
+| `music.library.read` | read | Read authorized HomeServer Music Server status and search results. | [Chat], [Media reads] service | Native VP3 song history is separate. With owner opt-in, [qualified VP3 listening] can trigger public artist research through the shared specialist. | Pending |
 | `media.assets.read` | read | Return scoped private Cloud asset metadata and references. | [Chat], [Images] service | Product and Workbench evidence use explicit media references. Image contents need their own permission. | Pending |
 | `images.generate` | write | Start an authorized, metered job and verify the saved private canvas output. | [Chat] job and canvas contract, [Images] controlled provider | Reviewed Workbench can prepare image work. Provider calls retain existing approval and quota. | Pending |
 | `photos.library.read` | read | Read authorized HomeServer photo and album metadata. | [Chat], [Media reads] service | Foreground read. | Pending |
@@ -147,6 +147,7 @@ Run `python3 tools/check_agent_capability_inventory.py` to check that every fore
 [Workflow]: ../tests/workflow-receipts-v1.php
 [Knowledge]: ../tests/knowledge-agent-context-v162-contract.php
 [Initiative pipeline]: ../tests/agent-initiative-tools-pipeline-v1.php
+[qualified VP3 listening]: ../tests/agent-initiative-native-music-v1.php
 [Transcript]: ../tests/transcript-agent-v1.php
 [Transcript Initiative]: ../tests/agent-initiative-transcripts-v1.php
 [Transcript actions]: ../tests/transcript-brain-v1.php

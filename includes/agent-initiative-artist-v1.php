@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-connection-youtube-playback-v1.php';
 require_once __DIR__.'/agent-public-research-plan-v1.php';
+require_once __DIR__.'/agent-initiative-native-music-v1.php';
 
 /** Correlate saved owner queries without using result titles or channel names as public search terms. */
 function vp3_initiative_youtube_subject_v1(array $result): string
@@ -113,7 +114,7 @@ function vp3_initiative_youtube_pattern_stats_v1(array $searches,array $watches,
 }
 
 /** Recent YouTube activity is evidence for Initiative. Its planner decides whether research would help. */
-function vp3_initiative_research_evidence_v1(PDO $pdo, array $scope, DateTimeImmutable $now, ?array $selectedRefs, array &$coverage): array
+function vp3_initiative_youtube_research_evidence_v1(PDO $pdo, array $scope, DateTimeImmutable $now, ?array $selectedRefs, array &$coverage): array
 {
     $kinds=[];
     foreach(['artist','topic'] as $kind){
@@ -259,6 +260,96 @@ function vp3_initiative_research_evidence_v1(PDO $pdo, array $scope, DateTimeImm
         foreach($kinds as $kind=>$_)$coverage[$kind.'_research']='unavailable';
         return [];
     }
+}
+
+function vp3_initiative_artist_recent_runs_v1(PDO $pdo,array $scope,array $refs,DateTimeImmutable $now,?array $binding=null): array
+{
+    $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
+    $field=static function(string $name)use($mysql):string{
+        $value="JSON_EXTRACT(CASE WHEN JSON_VALID(goal) THEN goal ELSE '{}' END,'$.$name')";
+        return $mysql?"JSON_UNQUOTE($value)":$value;
+    };
+    $primary=$field('primary');$tool=$field('tool');
+    $list=implode(',',array_fill(0,count($refs),'?'));
+    $q=$pdo->prepare("SELECT $primary AS source_ref,status,goal FROM agent_workflow_runs
+        WHERE owner_user_id=? AND CAST(COALESCE(agent_id,0) AS CHAR)=?
+            AND source_kind='agent_initiative' AND capability_key='initiative.prepare' AND $tool='artist.research'
+            AND status IN ('queued','approved','executing','completed') AND created_at>=? AND $primary IN ($list)");
+    $q->execute([(int)$scope['user']['id'],(string)$scope['agent_id'],gmdate('Y-m-d H:i:s',$now->getTimestamp()-7*86400),...$refs]);
+    $completed=[];$unfinished=[];
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){
+        $ref=$row['source_ref'];
+        if($row['status']==='completed'){$completed[$ref]=true;continue;}
+        $goal=json_decode($row['goal'],true);
+        $binding??=function_exists('vp3_initiative_policy_v1')?vp3_initiative_policy_v1($scope['user'],$scope['agent_id']):[];
+        if(($binding['enabled']??false)!==true||($goal['binding']??null)!==$binding)continue;
+        $revision=$goal['canonical_sources'][$ref]??$goal['sources'][$ref]??null;
+        if(is_string($revision))$unfinished[$ref][$revision]=true;
+    }
+    $pending=array_keys(array_diff_key($unfinished,$completed));
+    if(!$pending)return array_keys($completed);
+
+    // Stale or revoked work must not mute independent consent in the other source.
+    $coverage=[];
+    $current=vp3_initiative_native_music_evidence_v1($pdo,$scope,$now,$pending,$coverage)
+        +vp3_initiative_youtube_research_evidence_v1($pdo,$scope,$now,$pending,$coverage);
+    foreach($current as $ref=>$source){
+        if(isset($unfinished[$ref][$source['revision']]))$completed[$ref]=true;
+    }
+    return array_keys($completed);
+}
+
+/** Admission repeats the cooldown under the canonical owner lock. */
+function vp3_initiative_artist_duplicate_v1(PDO $pdo,array $user,array $binding,string $primary): bool
+{
+    if(!preg_match('/\A(native-artist-interest|artist-interest):([a-f0-9]{64})\z/D',$primary,$match))return false;
+    $refs=['native-artist-interest:'.$match[2]];
+    if($match[1]==='native-artist-interest')$refs[]='artist-interest:'.$match[2];
+    $agent=vp3_initiative_binding_agent_v1($binding);
+    $scope=['user'=>$user,'agent_id'=>$agent,'principal'=>vp3_initiative_principal_v1($pdo,$user,$agent)];
+    return vp3_initiative_artist_recent_runs_v1($pdo,$scope,$refs,new DateTimeImmutable('now',new DateTimeZone('UTC')),$binding)!==[];
+}
+
+function vp3_initiative_research_evidence_v1(PDO $pdo,array $scope,DateTimeImmutable $now,?array $selectedRefs,array &$coverage): array
+{
+    $youtube=vp3_initiative_youtube_research_evidence_v1($pdo,$scope,$now,$selectedRefs,$coverage);
+    $native=vp3_initiative_native_music_evidence_v1($pdo,$scope,$now,$selectedRefs,$coverage);
+    if($selectedRefs!==null)return $youtube+$native;
+
+    // A single artist can have independent evidence in two systems. Present one research choice.
+    $refs=[];
+    foreach($youtube+$native as $ref=>$source){
+        if(preg_match('/\A(native-artist-interest|artist-interest|youtube-interest-checkin:artist):([a-f0-9]{64})\z/D',$ref,$match)){
+            $refs[$match[2]][$match[1]]=$ref;
+        }
+    }
+    if(!$refs)return $youtube+$native;
+    foreach($refs as $group){
+        if(isset($group['native-artist-interest'])){
+            unset($youtube[$group['youtube-interest-checkin:artist']??'']);
+            if(isset($group['artist-interest']))unset($native[$group['native-artist-interest']]);
+        }
+    }
+    $primaries=[];
+    foreach(array_keys($refs) as $subject){
+        $primaries[]='native-artist-interest:'.$subject;
+        $primaries[]='artist-interest:'.$subject;
+    }
+    try{
+        foreach(vp3_initiative_artist_recent_runs_v1($pdo,$scope,$primaries,$now) as $primary){
+            $group=$refs[substr($primary,-64)];
+            unset($native[$group['native-artist-interest']??'']);
+            // Preserve the existing YouTube behavior except when native listening already started the same research.
+            if(str_starts_with($primary,'native-artist-interest:')){
+                unset($youtube[$group['artist-interest']??''],$youtube[$group['youtube-interest-checkin:artist']??'']);
+            }
+        }
+    }catch(PDOException){
+        // The native lane needs durable duplicate prevention before it can launch.
+        if($native)$coverage['native_artist_research']='unavailable';
+        return $youtube;
+    }
+    return $youtube+$native;
 }
 
 function vp3_initiative_research_result_v1(array $toolResult): array

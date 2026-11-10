@@ -77,8 +77,15 @@ try {
   assert.equal(await toggle.isChecked(),true,'A failed save restores the persisted preference.');
   failedSave = false;
   canEnable = false;
+  const unavailableRefresh = page.waitForResponse(response =>
+    response.url() === 'https://coding.test/api/auto?agent_id=17' && response.request().method() === 'GET');
   await page.evaluate(() => dispatchEvent(new Event('vp3-coding-usage-change')));
-  await page.waitForTimeout(450);
+  await unavailableRefresh;
+  // Refresh debounces for 350ms and disables the control until its response is applied.
+  await page.waitForFunction(() => {
+    const toggle = document.querySelector('[data-coding-auto-drafts]');
+    return !toggle.disabled && toggle.checked;
+  });
   assert.equal(await toggle.isEnabled(),true,'An existing opt-in remains switchable off when AI access is unavailable.');
   await toggle.uncheck();
   await page.waitForFunction(() => document.querySelector('[data-coding-auto-drafts]').disabled);

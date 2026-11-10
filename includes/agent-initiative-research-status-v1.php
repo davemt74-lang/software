@@ -90,6 +90,8 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
             if(($source['revision']??null)!==$candidate['revision']||($candidate['expires']!==null&&$candidate['expires']<=time()))continue;
             if(str_starts_with($candidate['primary'],'task-research:')){
                 if(($source['kind']??null)!=='task_research')continue;
+            }elseif(str_starts_with($candidate['primary'],'native-artist-interest:')){
+                if($item['kind']!=='artist'||($source['interest']['basis']??null)!=='native_music_listening')continue;
             }elseif(($source['kind']??null)!==$item['kind'].'_interest'||!agent_connection_youtube_enabled_v1()
                 ||!agent_connection_youtube_consent_v1($pdo,$owner)||!vp3_youtube_research_enabled_v1($pdo,$owner,$item['kind']))continue;
             $subject=vp3_top_of_mind_text_v1($source['title']??null,120);
