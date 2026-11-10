@@ -776,51 +776,7 @@ foreach ($chatPosts as $post) {
         </div>
         <?php endif; ?>
 
-        <div class="chat-top-menu" id="chatProfileMenu">
-          <button
-            type="button"
-            class="chat-top-avatar"
-            id="chatProfileButton"
-            aria-label="User menu"
-            aria-expanded="false"
-            aria-controls="chatProfileDropdown"
-          >
-            <?php if (user_avatar_url($user) !== ''): ?>
-              <img src="<?= e(user_avatar_url($user)) ?>" alt="">
-            <?php else: ?>
-              <?= e(user_initials($user)) ?>
-            <?php endif; ?>
-          </button>
-
-          <div
-            class="chat-top-dropdown chat-profile-dropdown"
-            id="chatProfileDropdown"
-            hidden
-          >
-            <div class="chat-profile-summary">
-              <span class="chat-avatar">
-                <?php if (user_avatar_url($user) !== ''): ?>
-                  <img src="<?= e(user_avatar_url($user)) ?>" alt="">
-                <?php else: ?>
-                  <span><?= e(user_initials($user)) ?></span>
-                <?php endif; ?>
-              </span>
-              <div>
-                <strong><?= e((string)$user['display_name']) ?></strong>
-                <small><?= e(role_label((string)$user['role'])) ?></small>
-              </div>
-            </div>
-
-            <nav class="chat-profile-links">
-              <?php if ($chatCanAccessAccount): ?><a href="<?= e(url('/account.php')) ?>"><span>My Account</span><span>↗</span></a><?php endif; ?>
-              <?php if ($chatArtistProfileUrl !== ''): ?><a href="<?= e($chatArtistProfileUrl) ?>"><span>View Artist Profile</span><span>↗</span></a><?php endif; ?>
-              <?php if (has_permission('admin.access')): ?>
-                <a href="<?= e(url('/admin/index.php')) ?>"><span>Admin Dashboard</span><span>↗</span></a>
-              <?php endif; ?>
-              <a class="logout" href="<?= e(url('/logout.php')) ?>"><span>Log Out</span><span>↗</span></a>
-            </nav>
-          </div>
-        </div>
+        <?php $memberMenuUser = $user; require __DIR__ . '/includes/member-user-menu.php'; ?>
       </div>
     </header>
 

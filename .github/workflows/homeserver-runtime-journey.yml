@@ -132,6 +132,7 @@ jobs:
           node tests/agent-orb-browser.mjs
           node tests/agent-orb-cloud-browser.mjs
           node tests/agent-activity-hub-browser.mjs
+          node tests/agent-activity-hub-compact-browser.mjs
           node tests/agent-eyes-portraits-browser.mjs
           node tests/chat-voice-enrollment-browser.mjs
           node tests/activity-center-layout-browser.mjs
@@ -193,6 +194,7 @@ jobs:
           php tests/agent-voice-preferences.php
           php tests/chat-auto-greet-settings-v1.php
           node tests/agent-voice-menu-browser.mjs
+          node tests/agent-presence-browser.mjs
       - name: Connected Initiative in normal Agent Chat
         run: |
           php tests/agent-initiative-brainstorm-v1.php

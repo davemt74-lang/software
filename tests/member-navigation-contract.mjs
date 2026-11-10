@@ -80,7 +80,9 @@ assert.ok(mainFeedIndex>=0 && profileResolveIndex>=0 && mainFeedIndex<profileRes
 for (const [name, source] of [['account', account], ['admin', admin], ['site header', header]]) {
   assert.ok(source.includes('member_navigation_menu_links'), `${name} should use canonical member navigation`);
 }
-assert.ok(chat.includes('member_navigation_menu_links($user)'), 'Chat should replace its legacy dropdown from the canonical map');
+assert.ok(chatTemplate.includes("require __DIR__ . '/includes/member-user-menu.php'"), 'Chat must render the complete shared account menu, including Auto Greet');
+assert.ok(!chatTemplate.includes('id="chatProfileDropdown"'), 'Chat must not retain a parallel hardcoded account dropdown');
+assert.ok(!chat.includes('$chatProfileLinks'), 'Chat must not patch only the links of a legacy account dropdown');
 assert.ok(!chat.includes('<span>Agent Settings</span>'), 'Chat must not inject Agent Settings into the dropdown');
 assert.ok(!chat.includes('<span>Profile Agent</span>'), 'Chat must not maintain a second hardcoded Profile Agent menu item');
 assert.ok(!chat.includes('$recordingsNavLink'), 'Chat wrapper must not inject My Transcriptions into the sidebar');

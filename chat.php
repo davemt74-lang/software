@@ -237,28 +237,6 @@ if(is_array($profileWebmcpReturn)){
     $html=str_replace('<form class="chat-composer" id="chatForm">',$profileWebmcpReturnMarkup.'<form class="chat-composer" id="chatForm">',$html);
 }
 
-// Canonical account dropdown. Replace the legacy menu as one unit so Chat does
-// not inject parallel account.php hash links that drift from the other surfaces.
-$chatProfileLinks = '';
-$chatProfileMenuExcluded = ['account'=>true, 'profile_agent'=>true];
-foreach (member_navigation_menu_links($user) as $menuLink) {
-    $menuKey = (string)($menuLink['key'] ?? '');
-    if (isset($chatProfileMenuExcluded[$menuKey])) {
-        continue;
-    }
-    $class = !empty($menuLink['danger']) ? ' class="logout"' : '';
-    $chatProfileLinks .= '<a' . $class
-        . ' data-chat-profile-link="' . e($menuKey) . '"'
-        . ' href="' . e((string)$menuLink['url']) . '">'
-        . '<span>' . e((string)$menuLink['label']) . '</span><span>↗</span></a>';
-}
-$html = preg_replace(
-    '~<nav class="chat-profile-links">.*?</nav>~s',
-    '<nav class="chat-profile-links">' . $chatProfileLinks . '</nav>',
-    $html,
-    1
-) ?? $html;
-
 $chatApiEndpoint = $agentFeatureReady
     ? url('/api/chat-v236.php') . ($activeUserAgent ? '?agent=' . (int)$activeUserAgent['id'] : '')
     : url('/api/chat.php');

@@ -19,6 +19,7 @@
   let verified = null;
   let contextLabel = null;
   const groupOpen = new Map();
+  const detailOpen = new Map();
   let sections = null;
   let specialistsHost = null;
   let listening = null;
@@ -65,6 +66,25 @@
     element.addEventListener('click',handler);
     return element;
   };
+  function itemDetail(detail,key,title) {
+    if (detail.length <= 80 && !detail.includes('\n')) return node('small',detail);
+    const more = node('details','','vp3-agent-activity-detail');
+    const summary = node('summary',detail.slice(0,64).trimEnd() + '…');
+    summary.title = 'Show full details';
+    summary.setAttribute('aria-label','Details for ' + title);
+    more.open = detailOpen.get(key) === true;
+    more.addEventListener('toggle',() => detailOpen.set(key,more.open));
+    more.append(summary,node('p',detail));
+    return more;
+  }
+  function itemCopy(title,detail,key) {
+    const copy = node('div','','vp3-agent-activity-copy');
+    const label = node('strong',title);
+    label.title = title;
+    copy.append(label);
+    if (detail) copy.append(itemDetail(detail,key,title));
+    return copy;
+  }
   function stop() {
     generation++;
     clearTimeout(timer);
@@ -75,6 +95,7 @@
   function clear() {
     stop();
     snapshot = null;
+    detailOpen.clear();
     sections?.replaceChildren();
     specialistsHost?.replaceChildren();
     if (status) status.textContent = '';
@@ -111,12 +132,12 @@
       if (window.VP3_COGNITIVE_PRESENTATION?.openDetails) window.VP3_COGNITIVE_PRESENTATION.openDetails();
       else if (!window.VP3AgentOrb?.showActivityDetails?.()) window.STONEFELLOW_NOTIFICATION_CENTER?.openBrain?.();
     });
-    header.append(heading,details,button('Close',() => close()));
     contextLabel = node('p','','vp3-agent-activity-context');
     status = node('p','','vp3-agent-activity-status');
     status.setAttribute('role','status');
     const refresh = button('Refresh',() => { stop(); void read(); });
     refresh.className = 'vp3-agent-activity-refresh';
+    header.append(heading,refresh,details,button('Close',() => close()));
     specialistsHost = node('section','','vp3-agent-activity-specialists');
     sections = node('div','','vp3-agent-activity-sections');
     listening = node('section','','vp3-agent-activity-listening');
@@ -126,7 +147,7 @@
     verified.dataset.agentActivityVerified = '';
     panel.querySelector('[data-agent-worker-details]')?.append(verified);
     host.setAttribute('aria-labelledby',heading.id);
-    host.replaceChildren(header,contextLabel,status,refresh,listening,specialistsHost,sections);
+    host.replaceChildren(header,contextLabel,status,listening,specialistsHost,sections);
     host.hidden = true;
     window.dispatchEvent(new CustomEvent('vp3:agent-activity-listening-slot',{detail:{host:listening}}));
     window.dispatchEvent(new Event('vp3:agent-activity-ready'));
@@ -148,15 +169,16 @@
       const article = node('article','','vp3-agent-activity-item');
       article.dataset.activitySpecialist = item.key;
       article.classList.toggle('selected',item.key === selectedSpecialist);
-      article.append(node('strong',item.label || 'Specialist'));
-      if (item.title) article.append(node('p',item.title));
-      if (item.status) article.append(node('small',item.status));
-      if (item.detail) article.append(node('small',item.detail));
-      if (item.canView === true) article.append(button(item.viewLabel || 'View in Chat',event => {
+      const copy = itemCopy([item.label || 'Specialist',item.title].filter(Boolean).join(' · '),item.status || '', 'specialist:' + item.key + ':status');
+      if (item.detail) copy.append(itemDetail(item.detail,'specialist:' + item.key + ':detail',item.label || 'Specialist'));
+      article.append(copy);
+      const actions = node('div','','vp3-agent-activity-actions');
+      if (item.canView === true) actions.append(button(item.viewLabel || 'View in Chat',event => {
         if (!event.isTrusted || !scope()) return;
         const viewed = window.VP3AgentOrb?.viewActivitySpecialist?.(item.key) ?? window.VP3ChatSpecialists?.view?.(item.key);
         if (viewed !== false) close(false);
       }));
+      article.append(actions);
       specialistsHost.append(article);
     }
   }
@@ -239,8 +261,7 @@
         subsection.append(node('h4',source.label));
         for (const item of source.items) {
           const article = node('article','','vp3-agent-activity-item');
-          article.append(node('strong',item.title));
-          if (item.detail) article.append(node('p',item.detail));
+          article.append(itemCopy(item.title,item.detail,source.id + ':' + item.id));
           const actions = node('div','','vp3-agent-activity-actions');
           for (const action of item.actions) actions.append(button(action.label,event => void act(action,current,event)));
           article.append(actions);

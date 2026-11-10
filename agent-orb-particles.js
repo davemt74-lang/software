@@ -50,15 +50,16 @@
     });
   }
 
-  function drawSphere(context, size, points, time, state) {
+  function drawSphere(context, size, points, time, state, ink) {
     const center = size * .5;
     const radius = size * .427;
     context.clearRect(0, 0, size, size);
     const glow = context.createRadialGradient(center, center, radius * .12, center, center, radius * 1.19);
-    glow.addColorStop(0, 'rgba(40,40,40,.38)');
-    glow.addColorStop(.64, 'rgba(33,33,33,.30)');
-    glow.addColorStop(.84, 'rgba(23,23,23,.22)');
-    glow.addColorStop(1, 'rgba(23,23,23,0)');
+    const colored = ['listening','thinking','speaking','error'].includes(state);
+    glow.addColorStop(0, colored ? 'rgba(' + ink + ',.38)' : 'rgba(40,40,40,.38)');
+    glow.addColorStop(.64, colored ? 'rgba(' + ink + ',.30)' : 'rgba(33,33,33,.30)');
+    glow.addColorStop(.84, colored ? 'rgba(' + ink + ',.22)' : 'rgba(23,23,23,.22)');
+    glow.addColorStop(1, colored ? 'rgba(' + ink + ',0)' : 'rgba(23,23,23,0)');
     context.fillStyle = glow;
     context.fillRect(0, 0, size, size);
 
@@ -81,14 +82,14 @@
       const alpha = Math.min(.99, .12 + front * .68 + shimmer * .18 + emphasis);
       const dot = (.45 + front * .93 + (shimmer > .98 ? .7 : 0)) * dotScale;
       const distance = radius * perspective * breath;
-      context.fillStyle = 'rgba(' + silver + ',' + alpha.toFixed(3) + ')';
+      context.fillStyle = 'rgba(' + ink + ',' + alpha.toFixed(3) + ')';
       context.fillRect(center + x * distance - dot / 2, center + y * distance - dot / 2, dot, dot);
     }
 
     context.lineWidth = Math.max(.55, size / 320);
     for (let i = 0; i < 3; i++) {
       const wobble = time * (.11 + i * .065);
-      context.strokeStyle = 'rgba(' + silver + ',' + (.12 + i * .042) + ')';
+      context.strokeStyle = 'rgba(' + ink + ',' + (.12 + i * .042) + ')';
       context.beginPath();
       context.ellipse(center, center, radius * (1.13 + i * .04), radius * (.33 + i * .055), wobble + i * .86, 0, tau);
       context.stroke();
@@ -140,7 +141,7 @@
     }
   }
 
-  function drawCloud(context, size, time, state) {
+  function drawCloud(context, size, time, state, ink) {
     const field = size * 2.1;
     const center = field / 2;
     const count = Math.min(110, Math.round(26 + size * .4));
@@ -153,7 +154,7 @@
       const x = center + Math.cos(angle) * distance;
       const y = center + Math.sin(angle) * distance * .72;
       const alpha = .43 + .24 * Math.sin(time * 1.7 + phase);
-      context.fillStyle = 'rgba(' + silver + ',' + alpha.toFixed(3) + ')';
+      context.fillStyle = 'rgba(' + ink + ',' + alpha.toFixed(3) + ')';
       context.beginPath();
       context.arc(x, y, Math.max(.55, size / 108) * (i % 4 === 0 ? 1.2 : .85), 0, tau);
       context.fill();
@@ -264,8 +265,9 @@
         }
         drawFace(sphereContext, size, time, state, gaze);
       } else {
-        drawCloud(fieldContext, size, time, state);
-        drawSphere(sphereContext, size, samples, time, state);
+        const ink = getComputedStyle(host).getPropertyValue('--vp3-orbit-silver').trim() || silver;
+        drawCloud(fieldContext, size, time, state, ink);
+        drawSphere(sphereContext, size, samples, time, state, ink);
       }
       if (phases.length && workContext) {
         const fieldSize = size * workFieldScale;

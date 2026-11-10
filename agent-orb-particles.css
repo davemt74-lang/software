@@ -10,6 +10,10 @@
   border-radius: 50%;
   pointer-events: none;
 }
+.vp3-orb-root[data-state="listening"] [data-orb-shape="orbit"] { --vp3-orbit-silver: 53,153,255; }
+.vp3-orb-root[data-state="thinking"] [data-orb-shape="orbit"] { --vp3-orbit-silver: 72,221,137; }
+.vp3-orb-root[data-state="speaking"] [data-orb-shape="orbit"] { --vp3-orbit-silver: 123,200,255; }
+.vp3-orb-root[data-state="error"] [data-orb-shape="orbit"] { --vp3-orbit-silver: 244,180,89; }
 .vp3-public-orb:not(.vp3-public-orb-rendered)::before {
   content: "";
   position: absolute;
@@ -78,6 +82,11 @@
   transform: rotate(53deg) scaleY(.64);
   animation: vp3-public-orb-reverse 17s linear infinite;
 }
+.vp3-orb-root:is([data-state="listening"], [data-state="thinking"]) [data-orb-shape="orbit"] [data-orb-ring="pulse"] {
+  box-shadow: 0 0 14px rgba(var(--vp3-orbit-silver), .5);
+}
+.vp3-orb-root[data-state="listening"] [data-orb-shape="orbit"] [data-orb-ring="pulse"] { animation-duration: 1.4s; }
+.vp3-orb-root[data-state="thinking"] [data-orb-shape="orbit"] [data-orb-ring="pulse"] { animation-duration: 1.6s; }
 .vp3-public-orb-work-tracks {
   inset: -34%;
   width: 168%;

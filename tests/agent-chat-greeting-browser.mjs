@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 
 const {chromium} = createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE || 'playwright');
 const asset = name => readFile(new URL('../' + name,import.meta.url),'utf8');
-const menu = execFileSync(process.env.VP3_PHP_BINARY || 'php',['tests/member-agent-voice-fixture.php'],{encoding:'utf8'});
+const menu = execFileSync(process.env.VP3_PHP_BINARY || 'php',['tests/member-agent-voice-fixture.php','main-chat'],{encoding:'utf8'});
 const scripts = ['chat.js','voice-lease-v122.js','chat-voice.js','chat-notifications-drawer-v240.js','member-agent-voice-menu.js','agent-response-window.js','agent-welcome.js'];
 const sources = new Map(await Promise.all(scripts.map(async name => [name,await asset(name)])));
 const origin = 'http://localhost';
@@ -20,7 +20,7 @@ async function fixture({enabled=true,autoGreet=true,permission='granted',blockPl
   await page.route(`${origin}/**`,async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     if (path === '/chat.php') return route.fulfill({contentType:'text/html',body:`<!doctype html><meta charset="utf-8"><main class="chat-main">
-      <header class="chat-topbar-actions"><div id="chatNotificationMenu"><button id="chatNotificationButton">Activity Center</button></div>${menu}</header>
+      ${menu}
       <button id="newChatButton">New Chat</button><div id="chatHistory"></div>
       <section id="chatThread"><div id="chatWelcome" hidden></div></section>
       <form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button><button type="button" id="chatVoiceButton">Listen</button></form><div id="chatVoiceStatus"></div>

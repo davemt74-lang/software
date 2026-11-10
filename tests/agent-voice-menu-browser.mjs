@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {chromium} from 'playwright';
 const read=name=>fs.readFileSync(name,'utf8');
 const markup=execFileSync(process.env.VP3_PHP_BINARY||'php',['tests/member-agent-voice-fixture.php'],{encoding:'utf8'});
+const chatMarkup=execFileSync(process.env.VP3_PHP_BINARY||'php',['tests/member-agent-voice-fixture.php','main-chat'],{encoding:'utf8'});
 let agents=[{id:7,display_name:'Longfellow',is_default:1,is_active:1,voice_enabled:0}],enabled=true,autoGreet=false,autoGreetReady=true,savedVoice={voice_id:'',voice_name:''},writes=[];
 const server=http.createServer(async(req,res)=>{
  const url=new URL(req.url,'http://test');
@@ -28,7 +29,8 @@ const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));return;
  }
  if(url.pathname.endsWith('.js')||url.pathname.endsWith('.css')){res.setHeader('Content-Type',url.pathname.endsWith('.css')?'text/css':'text/javascript');res.end(read(url.pathname.slice(1)));return;}
- const pageMarkup=url.searchParams.has('legacy')?markup.replaceAll('data-vp3-global-agent-voice',''):markup;
+ const actualMarkup=url.pathname==='/chat'?chatMarkup:markup;
+ const pageMarkup=url.searchParams.has('legacy')?actualMarkup.replaceAll('data-vp3-global-agent-voice',''):actualMarkup;
  const menuScript='<script src="/member-agent-voice-menu.js"></script>',settingsScript=url.pathname==='/chat'?'<script src="/chat-settings-v237.js"></script>':'';
  const runtimeScripts=url.searchParams.has('reverse')?settingsScript+menuScript:menuScript+settingsScript;
  res.setHeader('Content-Type','text/html');res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/chat-header-ui.css"><link rel="stylesheet" href="/member-agent-voice-menu.css"><link rel="stylesheet" href="/agent-orb.css"><style>body{margin:0;font:14px system-ui}.chat-top-dropdown{position:fixed;right:10px;top:50px}</style><main><h1>${url.pathname==='/chat'?'Agent Chat':'Account'}</h1>${pageMarkup}</main><script>
@@ -57,6 +59,7 @@ try{
   assert.ok(voiceBox.x+voiceBox.width<greetBox.x);
   assert.ok(await voice.isChecked());
   assert.equal(await greet.isChecked(),false);
+  if(process.env.VP3_AGENT_MENU_SCREENSHOTS)await page.screenshot({path:process.env.VP3_AGENT_MENU_SCREENSHOTS+'/agent-menu-desktop.png'});
   await page.evaluate(()=>{window.lastAutoGreet=null;window.addEventListener('vp3:agent-auto-greet',event=>{window.lastAutoGreet=event.detail.enabled;});});
   await greet.focus();await page.keyboard.press('Space');
   await page.waitForFunction(()=>window.lastAutoGreet===true);
@@ -87,6 +90,7 @@ try{
    assert.ok(await voice.isEnabled());
    assert.ok(await greet.isDisabled());
    assert.match(await small.locator('label').filter({has:greet}).getAttribute('title'),/Database Upgrade/);
+   if(process.env.VP3_AGENT_MENU_SCREENSHOTS)await small.screenshot({path:process.env.VP3_AGENT_MENU_SCREENSHOTS+'/agent-menu-mobile.png'});
   } finally {autoGreetReady=true;await narrow.close();}
  });
  await check('a cross-tab Auto Greet opt-out is delivered while settings are still loading',async()=>{
