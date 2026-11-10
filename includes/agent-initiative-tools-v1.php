@@ -167,6 +167,20 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
                     :'Read this exact Agent’s currently authorized Brain memory and prepare a source-backed follow-up. No memory or task changes.'];
         }
     }
+    require_once __DIR__.'/agent-initiative-canvas-v1.php';
+    require_once __DIR__.'/agent-initiative-engagement-feedback-v1.php';
+    $canvasState=vp3_initiative_canvas_readiness_v1($pdo,$scope['user'],$binding);
+    $canvasFeedback=vp3_initiative_canvas_feedback_v1($pdo,$scope['user'],$scope['agent_id'],$evidence);
+    $canvasRefs=[];
+    foreach($evidence as $ref=>$source){
+        if(($source['kind']??'')==='youtube_interest_checkin'||($canvasFeedback[$ref]['disposition']??'')==='suppress')continue;
+        $canvasRefs[]=$ref;
+    }
+    $catalog['canvas.prepare']=['id'=>'canvas.prepare','capability'=>'coding.build','mode'=>'prepare',
+        'auto_drafts_enabled'=>($binding['allow_auto_drafts']??false)===true,
+        'ready'=>$canvasState['ready']&&$canvasRefs!==[],
+        'reason'=>$canvasRefs===[]?'no_current_canvas_opportunity':$canvasState['reason'],'source_refs'=>$canvasRefs,
+        'description'=>'Prepare a useful private interactive Canvas/app suggestion from current verified sources. Choose conversation first when the purpose or value is unclear. The same adapter queues a saved draft only after the owner advances that exact suggestion or has enabled Auto Build drafts. Coding uses the selected Coding Agent model and token budget. A queued draft is not a finished or active app; testing and activation remain separate.'];
     $ready=false;$missionReason='upgrade_required';
     try{
         if(table_exists('agent_cloud_missions_v1')&&table_exists('agent_workflow_runs')&&table_exists('agent_workflow_actions')){
@@ -303,6 +317,11 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
     vp3_agent_memory_scope_set_current_v410((int)$user['id'],(int)($binding['agent_id']??0));
     try{
         $scope=vp3_initiative_tools_scope_v1($pdo,$user,$binding);$output=$toolResult['output']??null;
+        if($tool==='canvas.prepare'){
+            require_once __DIR__.'/agent-initiative-canvas-v1.php';
+            vp3_initiative_canvas_result_current_v1($pdo,$scope['user'],$binding,$goal,$toolResult);
+            return;
+        }
         require_once __DIR__.'/agent-initiative-capabilities-v1.php';
         if(vp3_initiative_capability_definition_v1((string)$tool)){
             vp3_initiative_capability_result_current_v1($pdo,$scope,$binding,$goal,$toolResult);
@@ -383,7 +402,7 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
 
 /** The outer canonical workflow owns completion and Chat delivery; tools return verifiable effects only. */
 function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,array $job,array $evidence,string $dedupe,
-    ?callable $model=null,?callable $checkLease=null,?array $researchTransport=null): array
+    ?callable $model=null,?callable $checkLease=null,?array $researchTransport=null,array $workflow=[]): array
 {
     if(!preg_match('/\A[a-f0-9]{64}\z/D',$dedupe)||!is_string($job['tool']??null)||!is_string($job['focus']??null)
         ||trim($job['focus'])===''||mb_strlen($job['focus'])>1000||!is_string($job['primary']??null)||!isset($evidence[$job['primary']])){
@@ -396,6 +415,11 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
         $catalog=vp3_initiative_tools_catalog_v1($pdo,$scope['user'],$binding,$evidence);$tool=$job['tool'];$entry=$catalog[$tool]??null;
         if(!$entry||empty($entry['ready'])||$tool==='work.prepare_private')throw new RuntimeException('This Initiative tool is not currently available.',403);
         if(isset($entry['source_refs'])&&!in_array($job['primary'],$entry['source_refs'],true))throw new RuntimeException('This tool does not accept the selected source.',409);
+        if($tool==='canvas.prepare'){
+            require_once __DIR__.'/agent-initiative-canvas-v1.php';
+            if($checkLease)$checkLease();
+            return vp3_initiative_canvas_prepare_v1($pdo,$scope['user'],$binding,$job,$evidence,$model,$workflow);
+        }
         require_once __DIR__.'/agent-initiative-capabilities-v1.php';
         if(vp3_initiative_capability_definition_v1($tool))return vp3_initiative_capability_execute_v1($pdo,$scope,$binding,$job,$evidence,$model);
         if($tool==='chat.check_in'){

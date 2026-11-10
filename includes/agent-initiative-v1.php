@@ -154,7 +154,7 @@ function vp3_initiative_policy_v1(array $user,?int $agentId=null): array
 /** Internal control metadata is not an authorization to read Brain contents. */
 function vp3_initiative_policy_metadata_v1(array $metadata): array
 {
-    return array_intersect_key($metadata,array_flip(['enabled','conversation_id','revision','screen_enabled','owner_user_id','agent_id','knowledge_scope']));
+    return array_intersect_key($metadata,array_flip(['enabled','conversation_id','revision','screen_enabled','owner_user_id','agent_id','knowledge_scope','allow_auto_drafts']));
 }
 
 function vp3_initiative_access_v1(PDO $pdo,array $user,array $binding): array
@@ -473,10 +473,12 @@ function vp3_initiative_chat_scoped_v1(PDO $pdo,array $user,array $principal,arr
         if($policy===[]||$enable!==!empty($policy['enabled'])||($enable&&(($policy['conversation_id']??null)!==$cid
             ||(array_key_exists('knowledge_scope',$context)&&($policy['knowledge_scope']??null)!==$knowledge)))){
             $screenEnabled=($policy['screen_enabled']??false)===true;
+            $autoDrafts=($policy['allow_auto_drafts']??false)===true;
             $policy=['enabled'=>$enable,'conversation_id'=>$cid,'revision'=>bin2hex(random_bytes(16))];
             if(($agentId=vp3_agent_memory_scope_current_v410($live))>0)$policy+=['owner_user_id'=>(int)$live['id'],'agent_id'=>$agentId];
             $policy['knowledge_scope']=$knowledge;
             $policy['screen_enabled']=$screenEnabled;
+            if($autoDrafts)$policy['allow_auto_drafts']=true;
             if(agent_brain_v122_upsert_system_memory($live,'initiative_policy','owner-opt-in','Owner initiative preference.',$policy)<1){
                 throw new RuntimeException('Initiative setting could not be saved.');
             }
@@ -967,7 +969,9 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             $tools+=vp3_initiative_tools_catalog_v1($pdo,$live,$binding,$evidence);
         }
         if($planning){
+            require_once __DIR__.'/agent-initiative-engagement-feedback-v1.php';
             $answer=$infer(json_encode(['evidence'=>$modelEvidence,'tools'=>$tools,'budget'=>$limits,
+                'canvas_feedback'=>vp3_initiative_canvas_feedback_v1($pdo,$live,$agentId,$evidence),
                 'owner_context'=>vp3_initiative_owner_context_v1($pdo,$live,$binding)],JSON_THROW_ON_ERROR),'vp3.initiative-plan.v1');
             $allowed=['work.prepare_private'];
             foreach($tools as $id=>$entry)if(!empty($entry['ready']))$allowed[]=$id;
@@ -1001,8 +1005,11 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 if($continuation!==null)$job['owner_continuation']=['kind'=>'owner_requested_private_continuation',
                     'proposal_text'=>mb_substr((string)$continuation['message']['message'],0,2400),
                     'owner_reply'=>mb_substr((string)$continuation['continuation_owner_reply'],0,4000),
-                    'permission'=>'The original readonly adapter and current sources only; private preparation, no domain action or approval.'];
-                $toolResult=vp3_initiative_tool_execute_v1($pdo,$live,$binding,$job,$evidence,(string)$run['dedupe_key'],$infer,$checkLease,$researchTransport);
+                    'permission'=>$tool==='canvas.prepare'
+                        ?'Build only the exact owner-requested private Canvas draft with the selected coding model and tokens. No activation, publication, external purchase, or permission grant.'
+                        :'The original readonly adapter and current sources only; private preparation, no domain action or approval.'];
+                $toolResult=vp3_initiative_tool_execute_v1($pdo,$live,$binding,$job,$evidence,(string)$run['dedupe_key'],$infer,$checkLease,$researchTransport,
+                    ['run_id'=>(int)$run['id'],'dedupe'=>(string)$run['dedupe_key']]);
             }
             $draft=is_string($toolResult['draft']??null)?trim($toolResult['draft']):'';
             if($draft===''||mb_strlen($draft)>$limits['max_draft_chars']||preg_match('/https?:\/\/|\bwww\.|[<>]|[\x00-\x08\x0b-\x1f\x7f]/i',$draft)){
@@ -1035,6 +1042,16 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 ['effect_state'=>$admitted?'assignments_queued':($jobs?'existing_assignments':'idle'),'jobs'=>$admitted]);
         }else{
             $cid=(int)$binding['conversation_id'];$uid=(int)$live['id'];
+            if(($payload['tool']??'')==='canvas.prepare'){
+                require_once __DIR__.'/agent-initiative-canvas-v1.php';
+                $toolResult=vp3_initiative_canvas_commit_v1($pdo,$live,$binding,$payload,$toolResult,
+                    ['run_id'=>(int)$run['id'],'dedupe'=>(string)$run['dedupe_key']]);
+                $draft=$toolResult['draft'];
+                if(!is_string($draft)||$draft===''||mb_strlen($draft)>vp3_initiative_limits_v1()['max_draft_chars']
+                    ||preg_match('/https?:\/\/|\bwww\.|[<>]|[\x00-\x08\x0b-\x1f\x7f]/i',$draft)){
+                    throw new InvalidArgumentException('Invalid private Canvas report.');
+                }
+            }
             vp3_initiative_result_current_v1($pdo,$live,$binding,$payload,$toolResult);
             if(!vp3_agent_chat_conversation_v380($pdo,$cid,$uid,$agentId>0?['id'=>$agentId]:null,true))throw new RuntimeException('Initiative conversation changed.',403);
             $delivery=empty($payload['report'])?'private':'pending';$messageId=0;

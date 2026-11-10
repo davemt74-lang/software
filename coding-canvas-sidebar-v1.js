@@ -6,7 +6,10 @@
   if (!panel) return;
 
   const select = panel.querySelector('select');
-  const status = panel.querySelector('[role="status"]');
+  const status = panel.querySelector('#vp3CodingSidebarStatus') || panel.querySelector('[role="status"]');
+  const autoToggle = panel.querySelector('[data-coding-auto-drafts]');
+  const autoStatus = panel.querySelector('[data-coding-auto-status]');
+  const initialOwner = Number(panel.dataset.codingOwner || window.STONEFELLOW_CHAT?.userId);
   const funding = panel.querySelector('[data-coding-funding]');
   const balanceLabel = panel.querySelector('[data-coding-balance-label]');
   const balanceValue = panel.querySelector('[data-coding-balance]');
@@ -27,6 +30,132 @@
   let refreshTimer = null;
   let participantActor = 0;
   const inParticipantContext = () => participantActor > 0 || Boolean(window.VP3ParticipantContinuity?.selectedContext?.());
+  let autoState = null;
+  let autoRevision = 0;
+  let autoReading = false;
+  let autoSaving = false;
+  let autoQueued = false;
+  let autoTimer = 0;
+  let autoController = null;
+  let lastAutoScope = '';
+  function autoScope() {
+    const owner = Number(window.STONEFELLOW_CHAT?.userId);
+    const agent = Number(window.STONEFELLOW_CHAT?.agentId);
+    if (!autoToggle || !panel.dataset.codingAutoEndpoint || inParticipantContext() || !initialOwner || owner !== initialOwner
+      || !Number.isSafeInteger(agent) || agent < 0) return null;
+    return {owner, agent};
+  }
+  const scopeKey = scope => scope ? `${scope.owner}:${scope.agent}` : '';
+  const autoStateMatches = scope => scope && autoState?.owner_user_id === scope.owner && autoState?.agent_id === scope.agent;
+  function showAutoStatus(message = '', error = false) {
+    if (!autoStatus) return;
+    autoStatus.textContent = message;
+    autoStatus.hidden = message === '';
+    autoStatus.dataset.error = String(error);
+  }
+  function renderAuto() {
+    if (!autoToggle) return;
+    const valid = autoStateMatches(autoScope());
+    autoToggle.checked = valid && autoState?.enabled === true;
+    autoToggle.disabled = autoReading || autoSaving || !valid || autoState?.available !== true
+      || !autoState.enabled && autoState.can_enable !== true;
+    showAutoStatus(valid ? autoState?.reason || '' : '');
+  }
+  async function autoRequest(scope, post) {
+    const endpoint = new URL(panel.dataset.codingAutoEndpoint, location.href);
+    const controller = new AbortController();
+    autoController = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    const options = {credentials:'same-origin', cache:'no-store', signal:controller.signal};
+    if (post) {
+      options.method = 'POST';
+      options.headers = {'Content-Type':'application/json'};
+      options.body = JSON.stringify({agent_id:scope.agent, csrf_token:sidebar.dataset.csrf, ...post});
+    } else endpoint.searchParams.set('agent_id', String(scope.agent));
+    try {
+      const response = await fetch(endpoint, options);
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error(data?.error || 'Auto Build settings are unavailable.');
+      const next = data.state;
+      if (next?.owner_user_id !== scope.owner || next.agent_id !== scope.agent
+        || !['enabled','initiative_on','available','can_enable'].every(key => typeof next[key] === 'boolean')
+        || typeof next.revision !== 'string' || next.available && !/^[a-f0-9]{32}$/.test(next.revision)
+        || typeof next.reason !== 'string') throw new Error('Auto Build settings could not be verified.');
+      return next;
+    } finally {
+      window.clearTimeout(timeout);
+      if (autoController === controller) autoController = null;
+    }
+  }
+  async function refreshAuto() {
+    const scope = autoScope();
+    if (!scope || document.hidden) return;
+    if (autoReading || autoSaving) { autoQueued = true; return; }
+    autoReading = true;
+    const snapshot = autoRevision;
+    renderAuto();
+    try {
+      const next = await autoRequest(scope);
+      if (snapshot === autoRevision && scopeKey(scope) === scopeKey(autoScope())) autoState = next;
+    } catch (error) {
+      if (snapshot === autoRevision && scopeKey(scope) === scopeKey(autoScope())) {
+        autoState = null;
+        showAutoStatus(error.message, true);
+      }
+    } finally {
+      autoReading = false;
+      if (snapshot === autoRevision && scopeKey(scope) === scopeKey(autoScope())) {
+        const failed = autoState === null;
+        if (!failed) renderAuto();
+        else if (autoToggle) { autoToggle.checked = false; autoToggle.disabled = true; }
+      }
+      if (autoQueued) { autoQueued = false; scheduleAutoRefresh(); }
+    }
+  }
+  function scheduleAutoRefresh() {
+    window.clearTimeout(autoTimer);
+    autoTimer = window.setTimeout(refreshAuto, 350);
+  }
+  autoToggle?.addEventListener('change', async () => {
+    const scope = autoScope();
+    if (scope && autoState && !autoStateMatches(scope)) { updateAutoScope(); return; }
+    if (!scope || autoReading || autoSaving || !autoState || autoState.available !== true
+      || autoToggle.checked && autoState.can_enable !== true) { renderAuto(); return; }
+    const enabled = autoToggle.checked;
+    const savedRevision = autoState.revision;
+    autoSaving = true;
+    const snapshot = ++autoRevision;
+    autoToggle.disabled = true;
+    showAutoStatus('Saving…');
+    try {
+      const next = await autoRequest(scope, {enabled, revision:savedRevision});
+      if (snapshot === autoRevision && scopeKey(scope) === scopeKey(autoScope())) {
+        autoState = next;
+        autoSaving = false;
+        renderAuto();
+        if (!next.reason) showAutoStatus('Saved.');
+        window.dispatchEvent(new CustomEvent('vp3:initiative-canvas-setting-changed', {detail:{agent_id:scope.agent}}));
+      }
+    } catch (error) {
+      if (snapshot === autoRevision && scopeKey(scope) === scopeKey(autoScope())) {
+        autoSaving = false;
+        renderAuto();
+        showAutoStatus(error.message, true);
+        scheduleAutoRefresh();
+      }
+    } finally {
+      autoSaving = false;
+      if (autoQueued) { autoQueued = false; scheduleAutoRefresh(); }
+    }
+  });
+  function updateAutoScope() {
+    autoRevision++;
+    autoController?.abort();
+    autoState = null;
+    lastAutoScope = scopeKey(autoScope());
+    renderAuto();
+    scheduleAutoRefresh();
+  }
 
   async function request(post) {
     const options = { credentials: 'same-origin', cache: 'no-store' };
@@ -144,6 +273,7 @@
   function scheduleRefresh() {
     window.clearTimeout(refreshTimer);
     refreshTimer = window.setTimeout(refresh, 350);
+    scheduleAutoRefresh();
   }
 
   select.addEventListener('change', async () => {
@@ -174,6 +304,7 @@
   function updateParticipantScope() {
     panel.hidden = inParticipantContext();
     revision++;
+    updateAutoScope();
     if (panel.hidden) {
       state = null;
       showModels();
@@ -194,6 +325,11 @@
     updateParticipantScope();
   });
   window.addEventListener('vp3-coding-usage-change', scheduleRefresh);
+  window.addEventListener('vp3:chat-context-ready', () => {
+    if (lastAutoScope !== scopeKey(autoScope())) updateAutoScope();
+    else scheduleAutoRefresh();
+  });
+  window.addEventListener('vp3:initiative-canvas-setting-changed', scheduleAutoRefresh);
   window.addEventListener('vp3:chat-message-persisted', scheduleRefresh);
   document.addEventListener('visibilitychange', scheduleRefresh);
   window.addEventListener('pageshow', event => { if (event.persisted) scheduleRefresh(); });

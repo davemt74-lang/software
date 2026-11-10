@@ -18,7 +18,8 @@
   const scope = () => Number(chat()?.conversationId()) || 0;
   let participantActor = 0;
   const participantContext = () => participantActor > 0 || Boolean(window.VP3ParticipantContinuity?.selectedContext?.());
-  const matches = () => Number(chat()?.agentId()) === agent && Number(window.STONEFELLOW_CHAT?.userId) === owner && !participantContext();
+  const matches = () => Number(chat()?.agentId()) === agent && Number(window.STONEFELLOW_CHAT?.agentId || 0) === agent
+    && Number(window.STONEFELLOW_CHAT?.userId) === owner && !participantContext();
   const shown = () => thread.dataset.view === 'coding';
   const token = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), byte => byte.toString(16).padStart(2,'0')).join('');
   const scriptData = value => JSON.stringify(value).replaceAll('<','\\u003c');
@@ -376,7 +377,13 @@
   let current = null;
   let frame = null;
   let job = null;
+  let observedJob = null;
   let poll = 0;
+  let resumePoll = 0;
+  let resumeTimer = 0;
+  let resuming = false;
+  let resumeAgain = false;
+  let suspended = false;
   let locked = false;
   let pollingError = false;
   let browserTest = null;
@@ -627,13 +634,24 @@
     if (next) {
       const model = next.model?.model;
       report(status + (model ? ' · ' + model : '') + (next.reason && next.state === 'failed' ? '. ' + next.reason : ''));
-      window.VP3ChatSpecialists?.update('coding',{label:'Coding Agent',status,title:model,viewLabel:'Open Code / App Canvas',onView:openPanel});
+      window.VP3ChatSpecialists?.update('coding',{label:'Coding Agent',status,title:model,viewLabel:'Open Code / App Canvas',onView:viewJob});
     } else window.VP3ChatSpecialists?.remove('coding');
     updateControls();
   }
 
+  async function viewJob() {
+    const selected = job;
+    const version = epoch;
+    await openPanel();
+    if (version === epoch && shown() && matches() && selected?.state === 'ready' && job?.run_id === selected.run_id) {
+      if (current?.canvas.id !== selected.canvas_id || current?.revision.id !== selected.revision) {
+        await openSaved(selected.canvas_id,selected.revision,false);
+      }
+    }
+  }
+
   async function advance(next,version,conversation) {
-    if (version !== epoch || conversation !== scope() || !matches()) return;
+    if (suspended || version !== epoch || conversation !== scope() || !matches()) return;
     if (job?.run_id === next.run_id && !activeJob(job) && activeJob(next)) return;
     const newlyTerminal = !activeJob(next) && (job?.run_id !== next.run_id || activeJob(job));
     renderJob(next);
@@ -648,7 +666,7 @@
       poll = setTimeout(() => void pollJob(next.run_id,version,conversation),900);
     } else if (newlyTerminal) {
       window.dispatchEvent(new Event('vp3-coding-usage-change'));
-      if (next.state === 'ready' && shown()) {
+      if (next.state === 'ready' && shown() && observedJob !== next.run_id) {
         try {
           await refreshList(version);
           if (version === epoch && shown()) await openSaved(next.canvas_id,next.revision,false);
@@ -660,7 +678,7 @@
   }
 
   async function pollJob(runId,version,conversation) {
-    if (version !== epoch || conversation !== scope() || !matches() || job?.run_id !== runId || !activeJob(job)) return;
+    if (suspended || version !== epoch || conversation !== scope() || !matches() || job?.run_id !== runId || !activeJob(job)) return;
     try {
       const data = await api('job',{run_id:runId},conversation);
       if (job?.run_id !== runId) return;
@@ -668,7 +686,7 @@
       pollingError = false;
       await advance(data.job,version,conversation);
     } catch (error) {
-      if (version !== epoch || job?.run_id !== runId || !activeJob(job)) return;
+      if (suspended || version !== epoch || job?.run_id !== runId || !activeJob(job)) return;
       if (!pollingError) report(error.message + ' Checking again…');
       pollingError = true;
       poll = setTimeout(() => void pollJob(runId,version,conversation),2600);
@@ -816,11 +834,29 @@
   async function resume() {
     const version = epoch;
     const conversation = scope();
-    if (!conversation || !matches() || !chat()?.isReady() || chat()?.isRestoring() || locked || job) return;
+    if (suspended || document.hidden || !conversation || !matches() || !chat()?.isReady() || chat()?.isRestoring() || locked || activeJob(job)) return;
+    if (resuming) { resumeAgain = true; return; }
+    resuming = true;
     try {
       const data = await api('resume',{},conversation);
-      if (version === epoch && conversation === scope() && !locked && !job && data.job) await advance(data.job,version,conversation);
+      if (!suspended && !document.hidden && version === epoch && conversation === scope() && matches() && !locked && !activeJob(job)
+        && data.job?.conversation_id === conversation) {
+        observedJob = data.job.run_id;
+        await advance(data.job,version,conversation);
+      }
     } catch (_error) { /* Saved canvases and explicit builds remain available. */ }
+    finally {
+      resuming = false;
+      if (resumeAgain) { resumeAgain = false; scheduleResume(); }
+    }
+  }
+
+  function scheduleResume() {
+    clearTimeout(resumeTimer);
+    if (!suspended && !document.hidden) resumeTimer = setTimeout(() => void resume(),250);
+  }
+  function watchResume() {
+    if (!resumePoll) resumePoll = setInterval(() => void resume(),15000);
   }
 
   picker.addEventListener('change',() => void openSaved(picker.value));
@@ -845,11 +881,13 @@
   function resetContext() {
     epoch++;
     clearTimeout(poll);
+    clearTimeout(resumeTimer);
     locked = false;
     pollingError = false;
     lastIntent = null;
     failedPreview = null;
     ticked = null;
+    observedJob = null;
     browserTest = null;
     prompt.value = '';
     renderCanvas(null);
@@ -870,6 +908,22 @@
     updateParticipantScope();
   });
   window.addEventListener('vp3:chat-context-ready',() => void resume());
+  window.addEventListener('vp3:chat-history-updated',scheduleResume);
+  window.addEventListener('focus',scheduleResume);
+  document.addEventListener('visibilitychange',() => { if (!document.hidden) scheduleResume(); });
+  window.addEventListener('pagehide',() => {
+    suspended = true;
+    clearTimeout(resumeTimer);
+    clearInterval(resumePoll);
+    clearTimeout(poll);
+    resumePoll = 0;
+  });
+  window.addEventListener('pageshow',() => {
+    suspended = false;
+    watchResume();
+    if (activeJob(job)) void pollJob(job.run_id,epoch,scope());
+    else scheduleResume();
+  });
   window.VP3CodingCanvasV1 = Object.freeze({
     async open(id, revision) {
       if (!matches() || !chat()?.isReady() || chat()?.isRestoring()
@@ -896,6 +950,7 @@
   }
   window.addEventListener('vp3:chat-context-ready', openActivityCanvas);
   dock.hidden = participantContext();
+  watchResume();
   void resume();
   updateControls();
   openActivityCanvas();

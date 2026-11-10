@@ -43,6 +43,8 @@ let conversation = 42;
 let expectedAgent = 7;
 let activeTick;
 let listGate;
+let resumeGate;
+let nextResume;
 const releaseTick = () => {
   activeTick?.();
   activeTick = undefined;
@@ -78,7 +80,15 @@ await page.route('https://canvas.test/api/**',async route => {
     return {canvas,revision:{...selected,test_passed:testState === `${id}:${state.revision}`},state,revisions};
   };
   switch (body.action) {
-    case 'resume': return result({job:['queued','running'].includes(job?.state) ? job : null});
+    case 'resume': {
+      const current = ['queued','running'].includes(job?.state) ? {...job} : null;
+      nextResume?.(); nextResume = undefined;
+      if (resumeGate) {
+        const held = resumeGate; resumeGate = undefined;
+        held.started(); await held.released;
+      }
+      return result({job:current});
+    }
     case 'list': {
       if (listGate) {
         const {started,released} = listGate;
@@ -104,7 +114,7 @@ await page.route('https://canvas.test/api/**',async route => {
         }
         revisions.push({id:revision,artifact:source,status:'draft',test_passed:false,can_rollback:false});
       }
-      job = {run_id:++jobNumber,canvas_id:canvas.id,state:'queued',revision:null,model:{model:'fixture-coder'}};
+      job = {run_id:++jobNumber,conversation_id:body.conversation_id,canvas_id:canvas.id,state:'queued',revision:null,model:{model:'fixture-coder'}};
       return result({job});
     }
     case 'tick': {
@@ -186,6 +196,55 @@ async function nextDraft() {
 
 try {
   await loadChat(42);
+  assert.ok(records('resume').length > 0,'The initial empty resume was checked');
+  const input = page.locator('#chatInput');
+  await input.fill('Keep my conversational draft');
+  await input.focus();
+  job = {run_id:++jobNumber,conversation_id:42,canvas_id:canvas.id,state:'running',revision:null,model:{model:'fixture-coder'}};
+  await page.evaluate(() => window.dispatchEvent(new Event('vp3:chat-history-updated')));
+  await page.getByRole('button',{name:'Coding Agent',exact:true}).waitFor();
+  assert.equal(await panel.isHidden(),true,'A background Coding job does not open Canvas');
+  assert.equal(await page.evaluate(() => document.activeElement.id),'chatInput','Background progress does not steal focus');
+  assert.equal(await input.inputValue(),'Keep my conversational draft');
+  assert.equal(records('build').length + records('repair').length + records('tick').length,0,'Discovering a running job does not queue or start another generation');
+  job = {...job,state:'ready',revision:1};
+  await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding' && item.status === 'Draft ready to test'));
+  assert.equal(await panel.isHidden(),true,'Background completion keeps the conversation visible');
+
+  let beganResume,releaseResume;
+  const resumeStarted = new Promise(resolve => { beganResume = resolve; });
+  const released = new Promise(resolve => { releaseResume = resolve; });
+  resumeGate = {started:beganResume,released};
+  job = {run_id:++jobNumber,conversation_id:42,canvas_id:canvas.id,state:'running',revision:null,model:{model:'fixture-coder'}};
+  await page.evaluate(() => window.dispatchEvent(new Event('vp3:chat-history-updated')));
+  await resumeStarted;
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:14}})));
+  job = null;
+  const resumedAfterClear = new Promise(resolve => { nextResume = resolve; });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:-1}})));
+  releaseResume();
+  await resumedAfterClear;
+  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding')),false,'A delayed resume cannot restore owner progress across a participant change');
+  assert.equal(await input.inputValue(),'Keep my conversational draft');
+
+  let beganAgentResume,releaseAgentResume;
+  const agentResumeStarted = new Promise(resolve => { beganAgentResume = resolve; });
+  const agentResumeReleased = new Promise(resolve => { releaseAgentResume = resolve; });
+  resumeGate = {started:beganAgentResume,released:agentResumeReleased};
+  job = {run_id:++jobNumber,conversation_id:42,canvas_id:canvas.id,state:'running',revision:null,model:{model:'old-agent-coder'}};
+  await page.evaluate(() => window.dispatchEvent(new Event('vp3:chat-history-updated')));
+  await agentResumeStarted;
+  await page.evaluate(() => { window.STONEFELLOW_CHAT = {...window.STONEFELLOW_CHAT,agentId:8}; });
+  assert.equal(await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.agentId()),7,'The pending response retains its old canonical Agent closure');
+  const staleAgentResponse = page.waitForResponse(response => response.url().endsWith('/coding') && response.request().postDataJSON()?.action === 'resume');
+  releaseAgentResume();
+  await (await staleAgentResponse).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding')),false,'A delayed resume cannot paint the old Agent after the selected Agent changes');
+  assert.equal(await panel.isHidden(),true);
+  assert.equal(await input.inputValue(),'Keep my conversational draft');
+  job = null;
+  await page.evaluate(() => { window.STONEFELLOW_CHAT = {...window.STONEFELLOW_CHAT,agentId:7}; });
   await page.locator('#chatInput').fill('/build Build a checklist');
   await page.locator('#sendChatButton').click();
   await nextDraft();
@@ -208,6 +267,16 @@ try {
   await status.getByText('This version is active.',{exact:false}).waitFor();
   await preview.getByText('Isolated',{exact:true}).waitFor();
   assert.equal(await preview.getByRole('checkbox',{name:'Ready'}).isChecked(),false,'Draft state is discarded when activating');
+
+  const openBeforeBackground = records('open').length;
+  const existingPreview = await panel.locator('iframe').elementHandle();
+  job = {run_id:++jobNumber,conversation_id:42,canvas_id:'01234567-89ab-4cde-8f01-0123456789ac',state:'running',revision:null,model:{model:'background-coder'}};
+  await page.evaluate(() => window.dispatchEvent(new Event('vp3:chat-history-updated')));
+  await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding' && item.title === 'background-coder'));
+  job = {...job,state:'ready',revision:1};
+  await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding' && item.title === 'background-coder' && item.status === 'Draft ready to test'));
+  assert.equal(records('open').length,openBeforeBackground,'A background result cannot replace the Canvas being used');
+  assert.equal(await existingPreview.evaluate(frame => frame === document.querySelector('#chatCodingCanvasV1 iframe')),true);
 
   const saveCount = records('save_state').length;
   const nonce = await panel.locator('iframe').evaluate(frame => frame.srcdoc.match(/script nonce="([^"]+)/)[1]);

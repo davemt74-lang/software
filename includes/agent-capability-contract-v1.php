@@ -295,7 +295,7 @@ function vp3_capability_contract_initiative_metadata_v1(string $id): ?array
     if($adapter!==null)return $adapter;
     $parents=['work.prepare_private'=>'agent.initiative','chat.check_in'=>'agent.initiative',
         'knowledge.search'=>'knowledge.personal','brain.read'=>'knowledge.brain',
-        'missions.prepare'=>'missions.workflows','workbench.product.review'=>'commerce.products','workbench.marketing.review'=>'commerce.products',
+        'missions.prepare'=>'missions.workflows','canvas.prepare'=>'apps.user','workbench.product.review'=>'commerce.products','workbench.marketing.review'=>'commerce.products',
         'workbench.screen.review'=>'media.images','workbench.mission.review'=>'missions.workflows'];
     $parent=$parents[$id]??null;
     if($parent===null)return null;

@@ -2,9 +2,9 @@
 declare(strict_types=1);
 
 /** Read only canonical owner decision events for this exact Agent. */
-function vp3_initiative_engagement_events_v1(PDO $pdo,int $owner,int $agentId,?int $cid,int $limit,?string $since=null,array $checkInPrimaries=[]): array
+function vp3_initiative_engagement_events_v1(PDO $pdo,int $owner,int $agentId,?int $cid,int $limit,?string $since=null,array $checkInPrimaries=[],string $sourceTool='chat.check_in'): array
 {
-    if($owner<1||$agentId<0||($cid!==null&&$cid<1))return [];
+    if($owner<1||$agentId<0||($cid!==null&&$cid<1)||!in_array($sourceTool,['chat.check_in','canvas.prepare'],true))return [];
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
     $jsonGoal="CASE WHEN JSON_VALID(r.goal) THEN r.goal ELSE '{}' END";
     $jsonEvent="CASE WHEN JSON_VALID(e.metadata_json) THEN e.metadata_json ELSE '{}' END";
@@ -21,8 +21,8 @@ function vp3_initiative_engagement_events_v1(PDO $pdo,int $owner,int $agentId,?i
     if($checkInPrimaries){
         $tool="JSON_EXTRACT($jsonGoal,'$.tool')";$primary="JSON_EXTRACT($jsonGoal,'$.primary')";
         if(!$sqlite){$tool="JSON_UNQUOTE($tool)";$primary="JSON_UNQUOTE($primary)";}
-        $scope.=" AND $tool='chat.check_in' AND $primary IN (".implode(',',array_fill(0,count($checkInPrimaries),'?')).')';
-        $params=array_merge($params,$checkInPrimaries);
+        $scope.=" AND $tool=? AND $primary IN (".implode(',',array_fill(0,count($checkInPrimaries),'?')).')';
+        $params=array_merge($params,[$sourceTool],$checkInPrimaries);
     }
     try{
         $q=$pdo->prepare("SELECT e.id,e.run_id,e.metadata_json,r.goal FROM agent_workflow_events e
@@ -103,6 +103,68 @@ function vp3_initiative_youtube_interest_feedback_v1(PDO $pdo,array $user,int $a
         if($decisions!==null&&isset($feedback[$interestRef])&&$savedAt>0&&$savedAt<=$at){
             $decisions[$interestRef]=['intent'=>$intent,'at'=>$savedAt];
         }
+    }
+    return $feedback;
+}
+
+/**
+ * Exact-source Canvas decisions survive switching the linked Chat. The caller
+ * supplies its currently authorized evidence; this projection neither fetches
+ * source content nor grants permission to build. Reconsideration needs a new
+ * primary source revision or a separately verified explicit owner request.
+ */
+function vp3_initiative_canvas_feedback_v1(PDO $pdo,array $user,int $agentId,array $evidence,?DateTimeImmutable $now=null): array
+{
+    $owner=(int)($user['id']??0);
+    if($owner<1||$agentId<0||!$evidence
+        ||(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null))return [];
+    $wanted=[];
+    foreach(array_slice($evidence,0,48,true) as $ref=>$source){
+        $revision=is_array($source)?($source['revision']??null):null;
+        if(is_string($ref)&&$ref!==''&&strlen($ref)<=256&&!preg_match('/[\x00-\x1f\x7f]/',$ref)
+            &&is_string($revision)&&preg_match('/\A[a-f0-9]{64}\z/D',$revision))$wanted[$ref]=$revision;
+    }
+    if(!$wanted)return [];
+    $events=vp3_initiative_engagement_events_v1($pdo,$owner,$agentId,null,32,null,array_keys($wanted),'canvas.prepare');
+    if(!$events)return [];
+    require_once __DIR__.'/agent-initiative-followthrough-v1.php';
+    try{$principal=vp3_initiative_principal_v1($pdo,$user,$agentId);}
+    catch(Throwable){return [];}
+    $at=($now??new DateTimeImmutable())->getTimestamp();$seen=[];$feedback=[];
+    $replyEpoch=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?'UNIX_TIMESTAMP(created_at)':"strftime('%s',created_at)";
+    foreach($events as $event){
+        $goal=json_decode((string)$event['goal'],true);
+        $source=$goal['primary']??null;
+        if(($goal['tool']??null)!=='canvas.prepare'||!is_string($source)||!isset($wanted[$source])||isset($seen[$source]))continue;
+        $metadata=json_decode((string)$event['metadata_json'],true);
+        $cid=$goal['binding']['conversation_id']??null;$messageId=$metadata['message_id']??null;
+        $replyId=$metadata['reply_message_id']??null;$intent=$metadata['intent']??null;
+        if(!is_int($cid)||$cid<1||!is_int($messageId)||$messageId<1||!is_int($replyId)||$replyId<=$messageId
+            ||!in_array($intent,['discuss','advance','defer','decline','resolve'],true))continue;
+        try{
+            // Origin validation proves the immutable completed run, receipt and
+            // displayed proposal without reopening that historical Chat's data.
+            $post=vp3_initiative_followthrough_origin_load_v1($pdo,$user,$principal,$cid,$messageId);
+            $state=$post['state'];$output=$post['context']['initiative_output']??null;
+            if((int)$post['run']['id']!==(int)$event['run_id']||($post['goal']['tool']??null)!=='canvas.prepare'
+                ||($post['goal']['primary']??null)!==$source||($state['last_reply_message_id']??null)!==$replyId
+                ||($state['last_intent']??null)!==$intent||!is_array($output)
+                ||($output['type']??null)!=='initiative_canvas'
+                ||!in_array($output['status']??null,['proposal_ready','draft_queued'],true)
+                ||($output['parent_run_id']??null)!==(int)$event['run_id']
+                ||($output['source_ref']??null)!==$source||($output['source_revision']??null)!==$wanted[$source]
+                ||($post['goal']['sources'][$source]??null)!==$wanted[$source])continue;
+            $query=$pdo->prepare("SELECT message,$replyEpoch AS created_at_epoch FROM chat_messages
+                WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");
+            $query->execute([$replyId,$cid,$owner]);$reply=$query->fetch(PDO::FETCH_ASSOC);
+            $savedAt=(int)($reply['created_at_epoch']??0);
+            if(!is_string($reply['message']??null)||!hash_equals((string)$state['last_reply_hash'],hash('sha256',$reply['message']))
+                ||$savedAt<1||$savedAt>$at)continue;
+        }catch(Throwable){continue;}
+        $seen[$source]=true;
+        $feedback[$source]=['intent'=>$intent,
+            'disposition'=>in_array($intent,['defer','decline','resolve'],true)?'suppress':'positive',
+            'at'=>$savedAt,'source_revision'=>$wanted[$source],'build_permission'=>false];
     }
     return $feedback;
 }

@@ -129,10 +129,28 @@ function vp3_initiative_followthrough_sources_v1(PDO $pdo,array $user,array $pri
     }
     $tool=$goal['tool']??'work.prepare_private';$saved=$result['initiative_tool_result']??[];
     $output=$saved['output']??null;
-    if(!vp3_initiative_capability_definition_v1((string)$tool)&&!in_array($tool,['work.prepare_private','chat.check_in','brain.read','knowledge.search','missions.prepare',
+    if(!vp3_initiative_capability_definition_v1((string)$tool)&&!in_array($tool,['work.prepare_private','chat.check_in','brain.read','knowledge.search','missions.prepare','canvas.prepare',
         'workbench.product.review','workbench.marketing.review','workbench.screen.review','workbench.mission.review'],true))throw new RuntimeException('Proposal tool evidence is unavailable.',503);
     if(vp3_initiative_capability_definition_v1((string)$tool)){
         vp3_initiative_capability_result_current_v1($pdo,[...$scope,'verification_only'=>true],$old,$goal,$saved);
+    }elseif($tool==='canvas.prepare'){
+        // Discussing or declining a saved proposal grants no build authority.
+        // Current source grants were checked above; do not call the execution
+        // validator here, which also reads this decision history.
+        require_once __DIR__.'/agent-initiative-canvas-v1.php';
+        $normalized=vp3_initiative_canvas_tool_result_v1($saved);
+        if($normalized===null||($normalized['output']??null)!==$output
+            ||($output['source_ref']??null)!==($goal['primary']??null)
+            ||($output['source_revision']??null)!==($goal['sources'][$goal['primary']]??null)){
+            throw new RuntimeException('Canvas proposal evidence changed.',409);
+        }
+        $q=$pdo->prepare("SELECT goal,agent_id FROM agent_workflow_runs WHERE id=? AND owner_user_id=?
+            AND source_kind='agent_initiative' AND capability_key='initiative.prepare' AND status='completed'");
+        $q->execute([$output['parent_run_id'],(int)$user['id']]);$parent=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$parent||(int)($parent['agent_id']??0)!==$agent
+            ||json_decode((string)$parent['goal'],true,32,JSON_THROW_ON_ERROR)!==$goal){
+            throw new RuntimeException('Canvas proposal origin changed.',409);
+        }
     }elseif(in_array($tool,['brain.read','knowledge.search'],true)){
         if(!is_array($output)||($output['type']??'')!=='initiative_record_read'||($output['tool']??'')!==$tool
             ||!is_array($output['source_revisions']??null))throw new RuntimeException('Proposal read evidence changed.',409);
@@ -444,7 +462,7 @@ function vp3_initiative_followthrough_replay_v1(PDO $pdo,array $user,array $prin
 
 function vp3_initiative_followthrough_short_v1(string $query): bool
 {
-    return preg_match('/\A\s*(?:actually[,\s]+)?(?:yes|yeah|yep|sure|ok(?:ay)?|please|do it|go ahead|continue|retry|later|not now|no(?: thanks)?|done|already done|tell me more)[.!?\s]*\z/iu',$query)===1;
+    return preg_match('/\A\s*(?:actually[,\s]+)?(?:yes|yeah|yep|sure|ok(?:ay)?|please|do it|build it|go ahead|continue|retry|later|not now|no(?: thanks)?|done|already done|tell me more)[.!?\s]*\z/iu',$query)===1;
 }
 
 function vp3_initiative_followthrough_referential_v1(string $query): bool
@@ -457,6 +475,16 @@ function vp3_initiative_followthrough_checkin_marker_v1(?array $context): bool
 {
     return ($context['source']??null)==='agent_initiative'
         &&($context['initiative_output']['type']??null)==='initiative_chat_check_in'
+        &&is_array($context['initiative_work']['followthrough']??null);
+}
+
+/** A current typed Canvas proposal can receive an ordinary conversational reply.
+ * This is association only; the governed interpreter still decides the intent. */
+function vp3_initiative_followthrough_canvas_marker_v1(?array $context): bool
+{
+    return ($context['source']??null)==='agent_initiative'
+        &&($context['initiative_output']['type']??null)==='initiative_canvas'
+        &&($context['initiative_output']['status']??null)==='proposal_ready'
         &&is_array($context['initiative_work']['followthrough']??null);
 }
 
@@ -477,27 +505,28 @@ function vp3_initiative_followthrough_possible_v1(PDO $pdo,int $owner,int $agent
     $secondContext=json_decode((string)($second['context_json']??''),true);
     $firstContext=is_array($firstContext)?$firstContext:null;$secondContext=is_array($secondContext)?$secondContext:null;
     if(($first['role']??'')==='assistant'){
-        if(vp3_initiative_followthrough_checkin_marker_v1($firstContext))return true;
+        if(vp3_initiative_followthrough_checkin_marker_v1($firstContext)||vp3_initiative_followthrough_canvas_marker_v1($firstContext))return true;
         return is_array($firstContext['initiative_followthrough']??null)&&($second['role']??'')==='user'
             &&($second['message']??null)===$query&&is_array($secondContext['initiative_reply_anchor_v1']??null);
     }
     return ($first['role']??'')==='user'&&($first['message']??null)===$query
         &&(is_array($firstContext['initiative_reply_anchor_v1']??null)||(($second['role']??'')==='assistant'
-            &&vp3_initiative_followthrough_checkin_marker_v1($secondContext)));
+            &&(vp3_initiative_followthrough_checkin_marker_v1($secondContext)||vp3_initiative_followthrough_canvas_marker_v1($secondContext))));
 }
 
 /** Resolve only canonical adjacency, without interpreting source prose. This
  * is shared by request idempotency preflight and the saved-turn resolver. */
 function vp3_initiative_followthrough_candidate_v1(PDO $pdo,array $user,array $principal,int $cid,int $beforeId,string $query): ?array
 {
-    $naturalCheckIn=false;
+    $naturalCheckIn=false;$naturalCanvas=false;
     if(!vp3_initiative_followthrough_referential_v1($query)){
         $q=$pdo->prepare('SELECT role,context_json FROM chat_messages WHERE conversation_id=?'.($beforeId>0?' AND id<?':'').' ORDER BY id DESC LIMIT 1');$q->execute($beforeId>0?[$cid,$beforeId]:[$cid]);$last=$q->fetch(PDO::FETCH_ASSOC);
         $context=$last?json_decode((string)$last['context_json'],true):null;
         if(($last['role']??null)!=='assistant')return null;
         if(($context['initiative_followup_clarification']??null)!==true){
-            if(!vp3_initiative_followthrough_checkin_marker_v1(is_array($context)?$context:null))return null;
-            $naturalCheckIn=true;
+            $naturalCheckIn=vp3_initiative_followthrough_checkin_marker_v1(is_array($context)?$context:null);
+            $naturalCanvas=vp3_initiative_followthrough_canvas_marker_v1(is_array($context)?$context:null);
+            if(!$naturalCheckIn&&!$naturalCanvas)return null;
         }
     }
     $sql='SELECT id,role,context_json,created_at FROM chat_messages WHERE conversation_id=?'.($beforeId>0?' AND id<?':'').' ORDER BY id DESC LIMIT 20';
@@ -525,14 +554,15 @@ function vp3_initiative_followthrough_candidate_v1(PDO $pdo,array $user,array $p
     if($ref===null)$ref=['message_id'=>(int)$first['id'],'reply_ref'=>$marker['reply_ref']??'','revision'=>$marker['revision']??0];
     $checkIn=vp3_initiative_followthrough_checkin_marker_v1(is_array($ctx)?$ctx:null);
     if($naturalCheckIn&&!$checkIn)return null;
-    if($checkIn){
+    if($checkIn||$naturalCanvas){
         $posted=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',(string)($first['created_at']??''),new DateTimeZone('UTC'));
         if(!$posted||$posted->format('Y-m-d H:i:s')!==$first['created_at'])return null;
         $age=time()-$posted->getTimestamp();
         if($age<0||$age>86400)return null;
         try{$loaded=vp3_initiative_followthrough_selected_v1($pdo,$user,$principal,$cid,$ref,null);}
         catch(Throwable $error){return null;}
-        if(($loaded['goal']['tool']??null)!=='chat.check_in'||($naturalCheckIn&&($loaded['state']['state']??null)!=='open'))return null;
+        $expectedTool=$naturalCanvas?'canvas.prepare':'chat.check_in';
+        if(($loaded['goal']['tool']??null)!==$expectedTool||(($naturalCheckIn||$naturalCanvas)&&($loaded['state']['state']??null)!=='open'))return null;
     }
     if($acknowledgment===null&&($adjacent>1||$ambiguous))return vp3_initiative_followthrough_short_v1($query)?['clarification_required'=>true]:null;
     return ['initiative_reply'=>$ref,'acknowledgment'=>$acknowledgment];
@@ -758,12 +788,12 @@ function vp3_initiative_followthrough_anchor_store_v1(PDO $pdo,array $loaded,arr
 
 /** Resolve a real saved owner turn. A decision grants only private discussion or
  * the existing bounded preparation capability, never domain confirmation. */
-/** A private continuation may repeat only its original declared readonly adapter. */
+/** A continuation retains its exact adapter; Canvas admission separately proves the owner's build request. */
 function vp3_initiative_followthrough_continuation_tool_v1(array $goal): string
 {
     require_once __DIR__.'/agent-initiative-capabilities-v1.php';
     $tool=$goal['tool']??'work.prepare_private';
-    return is_string($tool)&&vp3_initiative_capability_definition_v1($tool)?$tool:'work.prepare_private';
+    return is_string($tool)&&($tool==='canvas.prepare'||vp3_initiative_capability_definition_v1($tool))?$tool:'work.prepare_private';
 }
 
 function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $principal,int $cid,int $userMessageId,mixed $initiativeReply,string $query,?callable $authority=null,?callable $model=null): array
@@ -818,6 +848,11 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
             'source_summaries'=>array_map(static fn(array $row):array=>['ref'=>$row['ref'],'title'=>$row['title']],array_values($loaded['evidence']))],
         'allowed_intents'=>['none','discuss','advance','defer','decline','resolve']];
     if($interestRef!==null)$prompt['interest_check_in']=['source_ref'=>$interestRef,'title'=>$loaded['evidence'][$primary]['title']];
+    if(($loaded['goal']['tool']??'')==='canvas.prepare'
+        &&($loaded['context']['initiative_output']['type']??'')==='initiative_canvas'){
+        $prompt['canvas_proposal']=['status'=>$loaded['context']['initiative_output']['status']??'',
+            'permission'=>'Advance only when the owner wants this exact private Canvas draft built. Discussion, passing interest and silence are not build requests. This uses the configured Coding Agent and tokens; it saves a draft, never activates or publishes.'];
+    }
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     $answer=$model?$model(json_encode($prompt,JSON_THROW_ON_ERROR),'vp3.initiative-reply.v1'):
         vp3_initiative_model_v1($pdo,$loaded['user'],json_encode($prompt,JSON_THROW_ON_ERROR),'vp3.initiative-reply.v1',$loaded['agent_id']);

@@ -187,6 +187,9 @@ $pdo->exec("INSERT INTO agent_workflow_runs VALUES(103,1,12,'agent_initiative_ac
     INSERT INTO agent_workflow_actions VALUES(103,103,1,'{}');");
 $pdo->exec('ALTER TABLE agent_workflow_actions ADD COLUMN capability_key TEXT');
 $pdo->exec('ALTER TABLE agent_workflow_actions ADD COLUMN sequence_no INTEGER DEFAULT 1');
+$pdo->exec('ALTER TABLE agent_workflow_runs ADD COLUMN goal TEXT');
+$pdo->exec('ALTER TABLE agent_workflow_runs ADD COLUMN capability_key TEXT');
+$pdo->exec('ALTER TABLE agent_workflow_runs ADD COLUMN last_error_class TEXT');
 $pdo->exec("UPDATE agent_workflow_actions SET capability_key='initiative.action' WHERE id=103;
     INSERT INTO artist_transcript_folders_v177 VALUES(1,1),(2,1),(3,2);
     INSERT INTO knowledge_items VALUES(1,1,1,'personal','private',0,'SECRET SOURCE CODE'),
@@ -194,6 +197,16 @@ $pdo->exec("UPDATE agent_workflow_actions SET capability_key='initiative.action'
       (3,2,1,'personal','private',0,'OTHER AGENT CODE'),
       (4,3,2,'personal','private',0,'OTHER OWNER CODE');");
 $canvasId = '9a000000-0000-4000-8000-000000000001';
+$codingRun = $pdo->prepare("INSERT INTO agent_workflow_runs
+    (id,owner_user_id,agent_id,source_kind,source_key,execution_target,title,status,updated_at,goal,capability_key)
+    VALUES(?,?,?,'coding_canvas','','cloud',?,?,'2026-01-01',?,'coding.build')");
+foreach ([[201,1,11,11,'Queued draft','approved'],[202,1,12,12,'Secret other Agent build','executing'],
+    [203,2,21,20,'Secret foreign build','approved'],[204,1,11,12,'Secret wrong Agent Chat','approved'],
+    [205,1,11,20,'Secret wrong owner Chat','approved'],[206,1,11,999,'Deleted build Chat','approved'],
+    [207,1,11,11,'Finished build','completed'],[208,1,0,10,'System queued draft','approved']] as [$id,$owner,$agent,$cid,$title,$status]) {
+    $codingRun->execute([$id,$owner,$agent,$title,$status,json_encode(['conversation_id'=>$cid,'canvas_id'=>$canvasId,
+        'prompt'=>'SECRET BUILD PROMPT', 'model'=>['provider'=>'openai','model'=>'fixture-coder','funding'=>'system']],JSON_THROW_ON_ERROR)]);
+}
 $insertCanvas = $pdo->prepare('INSERT INTO vp3_coding_canvases_v1
     (id,owner_user_id,agent_id,conversation_id,folder_id,title,state_item_id,draft_revision) VALUES(?,?,?,?,?,?,?,1)');
 $insertCanvas->execute([$canvasId,1,11,11,1,'Saved draft',2]);
@@ -217,8 +230,10 @@ activity_check(array_column($sections['lists']['items'],'title')===['Named list'
 activity_check(array_column($sections['reminders']['items'],'title')===['Owner reminder'], 'Account reminders respect other-owner and Initiative Agent boundaries');
 activity_check(array_column($sections['calendar']['items'],'title')===['Today event','Future event'], 'Seven-day Calendar includes future events and excludes foreign or cancelled events');
 activity_check(count($sections['missions']['items'])===1 && $sections['missions']['items'][0]['actions'][0]['mission_id']===$missionId, 'An active Mission retains its canonical exact source ID');
-activity_check(array_column($sections['canvases']['items'],'title')===['Saved draft'], 'Saved draft metadata is read without app data or source code');
-activity_check($sections['canvases']['items'][0]['actions'][0]['revision']===1, 'Canvas action selects the exact saved draft');
+activity_check(array_column($sections['canvases']['items'],'title')===['Coding Agent','Saved draft'], 'Canvas work combines an active Coding Agent and saved draft metadata');
+activity_check($sections['canvases']['items'][0]['actions'][0]['conversation_id']===11
+    && $sections['canvases']['items'][0]['detail']==='A private draft is queued. · fixture-coder', 'Active coding work spans owned Chats with exact source navigation and actual status');
+activity_check($sections['canvases']['items'][1]['actions'][0]['revision']===1, 'Canvas action selects the exact saved draft');
 $serialized = json_encode($state,JSON_THROW_ON_ERROR);
 activity_check(!str_contains($serialized,'SECRET') && !str_contains($serialized,'Secret') && !str_contains($serialized,'Private task body'), 'Response excludes raw data, private detail and foreign records');
 foreach ($state['sections'] as $section) {
@@ -231,6 +246,7 @@ activity_check(array_sum(array_map(static fn(array $section):int=>count($section
 $system = activity_sections(vp3_agent_activity_hub_v1($pdo,$user,0,0));
 activity_check(array_column($system['tasks']['items'],'title')===['System task'], 'CID zero works and system tasks cannot claim named-Agent tasks');
 activity_check(array_column($system['lists']['items'],'title')===['System list'], 'System lists keep their separate namespace');
+activity_check(array_column($system['canvases']['items'],'id')===['coding:208'], 'System Coding jobs keep their separate Agent namespace');
 activity_rejects(405,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'POST','11','13',$binding));
 activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13','stale'));
 activity_rejects(422,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','-1',$binding));
