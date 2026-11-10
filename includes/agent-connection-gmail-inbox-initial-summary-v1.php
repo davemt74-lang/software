@@ -40,13 +40,14 @@ function agent_connection_gmail_inbox_initial_summary_v1(
 
     $protocol = 'vp3.gmail-inbox-initial-summary.v1';
     $service = ['service'=>'initiative','background'=>true,'stage'=>$protocol];
-    $before = static function () use ($pdo,$user,$beforeInference): bool {
+    $claimCurrent = static fn(): bool => $beforeInference === null || $beforeInference() !== false;
+    $before = static function () use ($pdo,$user,$claimCurrent): bool {
         try {
-            if ($beforeInference !== null && $beforeInference() === false) return false;
+            if (!$claimCurrent()) return false;
             $health = vp3_initiative_inference_health_v1($pdo,$user,0,true);
             if (empty($health['ready']) || ($health['route'] ?? null) !== 'vp3_cloud') return false;
             // Scope discovery can block while the review claim is revoked.
-            return $beforeInference === null || $beforeInference() !== false;
+            return $claimCurrent();
         } catch (Throwable $error) {
             return false;
         }
@@ -57,7 +58,11 @@ function agent_connection_gmail_inbox_initial_summary_v1(
         $result = vp3_ai_with_budget_v1(18, static fn() => ai_v100_with_service_context($service,
             static fn() => ai_generate_chat_response($prompt,[],[],$user,'main_ai',[
                 'surface'=>'tool_json','protocol'=>$protocol,'before_gmail_summary'=>$before,
+                'before_gmail_summary_dispatch'=>$claimCurrent,
             ])));
+        if (in_array($result['failure_code'] ?? null,['gmail_summary_access_changed','inference_budget_exhausted'],true)) {
+            return $unavailable;
+        }
         $attempts = $result['service_attempt_ids'] ?? [];
         if (!$attempts) return empty($result['ok']) ? $unavailable : $unverified;
         if (count($attempts) !== 1) return $unverified;

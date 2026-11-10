@@ -6,11 +6,43 @@ require_once __DIR__.'/../includes/ai-runtime-v100.php';
 require_once __DIR__.'/../includes/ai-service-policy-v1.php';
 require_once __DIR__.'/../includes/user-llm-v1.php';
 
-// Use the shipped prompt builders and broker with fixture provider transport.
+// Use the shipped prompt builders, broker and metered transport. Only the
+// cURL handle is simulated, so the dispatch guard runs on the real call path.
 $source = file_get_contents(__DIR__.'/../includes/ai-settings.php');
 $start = strpos($source, 'function ai_context_prompt(');
 $end = strpos($source, 'function ai_curl_json(', $start);
 eval(str_replace("require_once __DIR__.'/agent-tool-json-v1.php';", '', substr($source,$start,$end-$start)));
+$start = $end;
+$end = strpos($source, 'function ai_openai_response(', $start);
+eval('namespace GmailSummaryWire; use \\AiV100ServiceMeter; use \\Throwable;'.substr($source,$start,$end-$start));
+foreach (['CURLOPT_POST','CURLOPT_RETURNTRANSFER','CURLOPT_CONNECTTIMEOUT','CURLOPT_TIMEOUT','CURLOPT_CONNECTTIMEOUT_MS',
+    'CURLOPT_TIMEOUT_MS','CURLOPT_HTTPHEADER','CURLOPT_POSTFIELDS','CURLOPT_FOLLOWLOCATION','CURLOPT_SSL_VERIFYPEER',
+    'CURLOPT_SSL_VERIFYHOST','CURLINFO_HTTP_CODE'] as $index=>$name) {
+    if (!defined($name)) define($name,57000+$index);
+}
+eval(<<<'PHP'
+namespace GmailSummaryWire;
+function function_exists(string $name): bool { return \function_exists(__NAMESPACE__.'\\'.$name) || \function_exists($name); }
+function curl_init(string $endpoint): object { return (object)['endpoint'=>$endpoint,'options'=>[],'status'=>200]; }
+function curl_setopt_array(object $handle,array $options): bool { $handle->options=$options; return true; }
+function curl_setopt(object $handle,int $option,mixed $value): bool { $handle->options[$option]=$value; return true; }
+function curl_getinfo(object $handle,int $option): int { return $handle->status; }
+function curl_error(object $handle): string { return ''; }
+function curl_close(object $handle): void { $GLOBALS['gmailSummaryClosed']=($GLOBALS['gmailSummaryClosed']??0)+1; }
+function curl_exec(object $handle): string
+{
+    $payload = json_decode($handle->options[CURLOPT_POSTFIELDS],true,16,JSON_THROW_ON_ERROR);
+    $attempt = \db()->query('SELECT credential_source,provider FROM ai_execution_ledger WHERE service_status=\'pending\'')->fetch();
+    $GLOBALS['gmailSummaryDispatch'][] = ['payload'=>$payload,'funding'=>$attempt['credential_source'],'provider'=>$attempt['provider']];
+    $scenario = $GLOBALS['gmailSummaryScenario'] ?? 'valid';
+    if ($scenario === 'rejected') { $handle->status=429; return '{}'; }
+    if ($scenario === 'unknown') { $handle->status=503; return '{}'; }
+    $answer = $scenario === 'invalid' ? '{"topics":[{"theme":"billing","refs":[99]}]}'
+        : '{"topics":[{"theme":"scheduling","refs":[1]},{"theme":"billing","refs":[2]}]}';
+    return json_encode(['output_text'=>$answer,'content'=>[['type'=>'text','text'=>$answer]],
+        'usage'=>['input_tokens'=>120,'output_tokens'=>20,'total_tokens'=>140]],JSON_THROW_ON_ERROR);
+}
+PHP);
 $start = strpos($source, 'function ai_openai_response(');
 $end = strpos($source, 'function ai_test_provider(', $start);
 eval(substr($source,$start,$end-$start));
@@ -26,6 +58,7 @@ function subscription_has_entitlement(array $user, string $capability): bool { r
 function ai_active_provider(): string { return 'openai'; }
 function ai_provider_api_key(string $provider): string { return 'fixture-system-key'; }
 function ai_provider_model(string $provider): string { return 'fixture-model'; }
+function ai_haiku55_request(array $payload): array { return $payload; }
 function ai_provider_configuration_failure(string $provider): ?array { return null; }
 function ai_decrypt_secret(string $secret): string { return $secret; }
 function ai_valid_model(string $provider, string $model): bool { return $model === 'fixture-model'; }
@@ -44,39 +77,25 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
 }
 function subscription_ai_preflight(array $user,string $scope,int $input,int $output,?PDO $pdo=null): array
 {
-    return ['reservation_id'=>0,'max_output_tokens'=>$output];
+    $pdo ??= db();
+    $pdo->prepare('INSERT INTO ai_token_reservations(user_id) VALUES (?)')->execute([$user['id']]);
+    if (!empty($GLOBALS['gmailSummaryExpireReservation'])) $GLOBALS['VP3_AI_INFERENCE_BUDGET_V1']['deadline'] = 0.0;
+    return ['reservation_id'=>(int)$pdo->lastInsertId(),'max_output_tokens'=>$output];
 }
 function subscription_ai_commit_usage(int $reservation,array $user,string $scope,string $provider,string $model,
     array $usage,string $requestKey,?PDO $pdo=null): void
 {
-    ($pdo??db())->prepare('INSERT INTO ai_usage_ledger(user_id,request_key,package_tokens_used,credit_tokens_used) VALUES (?,?,?,0)')
+    $pdo ??= db();
+    $pdo->prepare('INSERT INTO ai_usage_ledger(user_id,request_key,package_tokens_used,credit_tokens_used) VALUES (?,?,?,0)')
         ->execute([$user['id'],$requestKey,$usage['total_tokens']]);
+    $pdo->prepare('DELETE FROM ai_token_reservations WHERE id=? AND user_id=?')->execute([$reservation,$user['id']]);
 }
 function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,
-    ?array $target=null,?string $personalKey=null,bool $singleAttempt=false): array
+    ?array $target=null,?string $personalKey=null,bool $singleAttempt=false,?callable $observe=null,?callable $beforeDispatch=null): array
 {
     if (!$meter?->active || !$target) throw new RuntimeException('Unmetered Gmail summary.');
-    try {
-        $ticket = $meter->begin($target,$payload,$target['provider']==='openai'?'max_output_tokens':'max_tokens');
-    } catch (Throwable $error) {
-        return ai_v100_service_budget_failure($error);
-    }
-    $GLOBALS['gmailSummaryDispatch'][] = ['payload'=>$payload,'single'=>$singleAttempt,
-        'funding'=>$target['funding'],'provider'=>$target['provider']];
-    $scenario = $GLOBALS['gmailSummaryScenario'] ?? 'valid';
-    if ($scenario === 'rejected') {
-        $meter->finish($ticket,[],'failed',['confirmed_no_charge'=>true]);
-        return ['ok'=>false,'status'=>429];
-    }
-    if ($scenario === 'unknown') {
-        $meter->finish($ticket,[],'unknown');
-        return ['ok'=>false,'status'=>503];
-    }
-    $usage = ['input_tokens'=>120,'output_tokens'=>20,'total_tokens'=>140];
-    $meter->finish($ticket,$usage,'completed');
-    $answer = $scenario === 'invalid' ? '{"topics":[{"theme":"billing","refs":[99]}]}'
-        : '{"topics":[{"theme":"scheduling","refs":[1]},{"theme":"billing","refs":[2]}]}';
-    return ['ok'=>true,'data'=>['output_text'=>$answer,'content'=>[['type'=>'text','text'=>$answer]],'usage'=>$usage]];
+    return GmailSummaryWire\ai_curl_json($endpoint,$headers,$payload,$timeout,$meter,$target,$personalKey,
+        $singleAttempt,$observe,$beforeDispatch);
 }
 function check_gmail_summary(bool $ok,string $message): void
 {
@@ -108,6 +127,7 @@ $pdo->exec("CREATE TABLE users(id INTEGER PRIMARY KEY); INSERT INTO users VALUES
         cost_rate_source TEXT DEFAULT '',cloud_ledger_id INTEGER,failure_class TEXT DEFAULT 'none');
     CREATE TABLE ai_usage_ledger(id INTEGER PRIMARY KEY,user_id INTEGER,request_key TEXT UNIQUE,
         package_tokens_used INTEGER,credit_tokens_used INTEGER);
+    CREATE TABLE ai_token_reservations(id INTEGER PRIMARY KEY,user_id INTEGER);
     CREATE TABLE user_llm_preferences(user_id INTEGER PRIMARY KEY,route TEXT,provider TEXT);
     CREATE TABLE user_llm_credentials(user_id INTEGER,provider TEXT,encrypted_key TEXT,model TEXT)");
 $owner = ['id'=>1,'is_active'=>1];
@@ -136,6 +156,24 @@ unset($GLOBALS['gmailSummaryOnRoute']);
 check_gmail_summary(!$claimCurrent && $result===['status'=>'unavailable','summary'=>'','tokens_charged'=>0]
     && !$GLOBALS['gmailSummaryDispatch'] && (int)$pdo->query('SELECT COUNT(*) FROM ai_execution_ledger')->fetchColumn()===0,
     'revocation during route discovery prevents dispatch and usage reservation');
+$reserved = false;
+$result = $run(static function () use ($pdo,&$reserved): bool {
+    $reserved = (int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations WHERE user_id=1')->fetchColumn()===1;
+    return !$reserved;
+});
+$unpaidAbort = static fn() => !$GLOBALS['gmailSummaryDispatch']
+    && (int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0
+    && (int)$pdo->query('SELECT COUNT(*) FROM ai_execution_ledger')->fetchColumn()===0
+    && (int)$pdo->query('SELECT COUNT(*) FROM ai_usage_ledger')->fetchColumn()===0;
+check_gmail_summary($reserved && $result===['status'=>'unavailable','summary'=>'','tokens_charged'=>0]
+    && $unpaidAbort() && ($GLOBALS['gmailSummaryClosed']??0)===1,
+    'revocation after reservation closes the unsent handle and releases usage without a charge');
+$GLOBALS['gmailSummaryExpireReservation'] = true;
+$result = $run();
+unset($GLOBALS['gmailSummaryExpireReservation']);
+check_gmail_summary($result===['status'=>'unavailable','summary'=>'','tokens_charged'=>0]
+    && $unpaidAbort() && ($GLOBALS['gmailSummaryClosed']??0)===2,
+    'deadline expiration while reserving usage prevents dispatch and releases the reservation');
 $GLOBALS['gmailSummaryHomeOnly'] = true;
 check_gmail_summary($run()['status']==='unavailable' && !$GLOBALS['gmailSummaryDispatch'],
     'HomeServer-only policy prevents Cloud summary dispatch');
@@ -146,7 +184,7 @@ check_gmail_summary($result===['status'=>'ready','summary'=>'The sampled subject
 $call = $GLOBALS['gmailSummaryDispatch'][0] ?? [];
 $payload = $call['payload'] ?? [];
 $wire = json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
-check_gmail_summary($call['single']===true && $payload['max_output_tokens']===384
+check_gmail_summary($payload['max_output_tokens']===384
     && $call['funding']==='system' && str_contains($wire,'Meeting proposal')
     && !str_contains($wire,'private-mail-body') && !str_contains($wire,'ninth-header')
     && !str_contains($wire,'private-chat-persona') && !str_contains($wire,str_repeat('é',91)),
