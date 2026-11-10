@@ -8,7 +8,7 @@ const source=fs.readFileSync('chat.js','utf8');
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert(a>=0&&b>a);return source.slice(a,b);}
 const presenter=section('  function recoveryStatus(', '  function leaveChat(');
 const bindStoredMessage=section('  function bindStoredMessagePa3(', '  function pendingAssistantMessageIds()');
-const sendOwner=section('  async function sendMessage(', "  thread.addEventListener('click'");
+const sendOwner=section('  function gmailReviewActionLabel(', "  thread.addEventListener('click'");
 const initiativeIdentity=section('  const initiativePage =', '  const thread =');
 const initiativeState=section('  let initiativeReplyTarget =', '  const recoveryKey =');
 function fixture(){
@@ -64,6 +64,20 @@ for(const kind of ['server','network','timeout']){
  assert.equal(savedReply.dataset.chatMessageId,'22');assert.equal(savedReply.dataset.chatMessageRole,'assistant');
  assert.equal(savedUser.dataset.chatConversationId,'42');assert.equal(savedReply.dataset.chatConversationId,'42');checks+=6;
  assert.equal(f.ctx.lastLoadedMessageId,0,'A direct reply cannot skip unseen posts by advancing the history sync cursor');checks++;
+}
+{
+ const f=fixture();
+ const command='Auto reply to Gmail review item '+'a'.repeat(64);
+ f.reply(async payload=>{
+  assert.equal(payload.message,command,'The API receives the exact scoped Gmail action');
+  throw new TypeError('Failed to fetch');
+ });
+ await f.ctx.submit(command);
+ assert.deepEqual(f.messages,[{role:'user',text:'Auto reply to selected Gmail message'}]);
+ assert.equal(f.ctx.input.value,'');
+ assert.equal(f.drafts.has(42),false);
+ assert.equal(f.calls,1,'A failed action does not silently retry an automatic send');
+ checks+=5;
 }
 // A late reply must not modify another conversation, clear its draft, or
 // replace the error/status of a newer request.
