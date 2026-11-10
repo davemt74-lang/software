@@ -7,6 +7,7 @@ $controlBuild .= '-vrss-outcome-cards-s8b-20261103';
 $controlBuild .= '-profile-doorbell-pa3-20261103';
 $controlBuild .= '-profile-direct-calls-pa3c-20261104';
 $controlBuild .= '-profile-attention-pa4b-' . substr(hash_file('sha256',__DIR__.'/chat.js'),0,12);
+$controlBuild .= '-style-' . substr(hash_file('sha256', __DIR__ . '/chat.css'), 0, 12);
 $controlBuild .= '-canvas-image-generation-v1-listening-continuation-v1-live-player-history-v1-audio-debug-v1-recognition-reliability-v1-participant-conversation-v2-20261102-participant-updates-20261102-navigation-routing-20261101-task-notes-20261101-screen-v1353-reminders-v1354-longfellow-r3-transcripts-s3';
 $controlBuild .= '-eyes-cross-tab-v1';
 $controlBuild .= '-connected-sites-v1-initiative-workbench-v1';

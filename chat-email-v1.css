@@ -44,6 +44,7 @@
   color: #24334a;
   background: #fff;
   font-size: .8rem;
+  cursor: pointer;
 }
 .vp3-chat-email-specialist-status[hidden] { display: none; }
 @media (min-width: 761px) {

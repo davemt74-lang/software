@@ -96,12 +96,14 @@ async function startNewImage(generationId, {desktop=true} = {}) {
  await page.locator('#sendChatButton').click();
  const card = cardFor(generationId);
  if (desktop) {
-  await panel.waitFor();
-  await panel.getByText(/queued/i).waitFor();
+  await card.getByRole('status').filter({hasText:/queued/i}).waitFor();
+  assert.equal(await specialist.count(),0);
+  assert.equal(await panel.count(),0);
  } else await assertInlineOnly(card,/queued/i);
  await expectOrbJobs();
  status='generating';
  await card.getByText('Generating image…',{exact:true}).waitFor();
+ if (desktop) await specialist.waitFor();
  return card;
 }
 try{
@@ -163,22 +165,22 @@ try{
  id='55555555-5555-4555-8555-555555555555';
  status='paused';
  await boot();
- await check('desktop paused history offers the specialist without opening its panel or starting a worker', async () => {
-  await specialist.waitFor();
-  assert.equal(await panel.isVisible(),false);
-  await specialist.click();
-  await panel.getByText(/paused/i).waitFor();
+ await check('desktop paused history keeps its Chat card without an active specialist or worker', async () => {
+  await cardFor(id).getByRole('status').filter({hasText:'Paused'}).waitFor();
+  assert.equal(await specialist.count(),0);
+  assert.equal(await panel.count(),0);
   assert.equal(tickCount(id),0);
-  await panel.getByRole('button',{name:'Close',exact:true}).click();
-  await panel.waitFor({state:'hidden'});
-  assert.equal(await specialist.isVisible(),true);
  });
  const desktopCard = await startNewImage('33333333-3333-4333-8333-333333333333');
- await check('a new image turn opens the Image Generator panel while Chat stays usable', async () => {
+ await check('the active Image Generator opens its current work only on click while Chat stays usable', async () => {
   assert.equal(await specialist.isVisible(),true);
-  assert.equal(await panel.isVisible(),true);
+  assert.equal(await panel.isVisible(),false);
   assert.equal(await page.locator('#sfOnlineRailV109').getByRole('button',{name:'Image Generator',exact:true}).count(),1);
+  await specialist.click();
+  await panel.waitFor();
+  assert.equal(await panel.getAttribute('role'),'dialog');
   assert.match(await panel.innerText(),/generating/i);
+  assert.match(await panel.innerText(),/gpt-image-2.5-flare · 1024x1024 · medium/);
   assert.equal(await page.locator('#chatInput').isEnabled(),true);
   assert.equal(await page.locator('.vp3-canvas-media img').count(),0);
   assert.equal(tickCount(id),1);
@@ -186,16 +188,20 @@ try{
   await panel.waitFor({state:'hidden'});
   await page.waitForFunction(() => document.activeElement?.matches('.vp3-canvas-media-card[data-state="generating"]'));
  });
- await check('shrinking an open desktop panel moves progress to inline-only without restarting the job', async () => {
+ await check('shrinking to mobile keeps the original progress card without restarting the job', async () => {
   await specialist.click();
   await panel.waitFor();
   await page.setViewportSize({width:390,height:844});
+  await specialist.waitFor({state:'detached'});
+  if (await panel.isVisible()) await panel.getByRole('button',{name:'Close',exact:true}).click();
   await assertInlineOnly(desktopCard,'Generating image…');
   await page.setViewportSize({width:1280,height:900});
   await specialist.waitFor();
   assert.equal(await panel.isVisible(),false);
   assert.equal(tickCount(id),1);
  });
+ await specialist.click();
+ await panel.waitFor();
  status='completed';
  tickRelease();
  await readyMessage.waitFor();
@@ -216,6 +222,8 @@ try{
  });
  await startNewImage('44444444-4444-4444-8444-444444444444');
  await check('switching conversations clears the specialist and a late result cannot enter the new Chat', async () => {
+  await specialist.click();
+  await panel.waitFor();
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(55));
   await page.waitForFunction(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===55);
   await specialist.waitFor({state:'hidden'});

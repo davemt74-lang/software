@@ -51,14 +51,15 @@ function clearSpecialist(s=specialistJob){
  specialistJob=null;
  window.VP3ChatSpecialists?.remove(specialistKey);
 }
-function showSpecialist(s,card,g){
- if(!active(s)||!chatVisible()||!Object.hasOwn(inProgress,g.status)){clearSpecialist(s);return;}
- if(specialistJob&&specialistJob!==s&&active(specialistJob)&&!s.launch)return;
+function showSpecialist(s,card,g,expiresAt){
+ if(!active(s)||!chatVisible()||!expiresAt){clearSpecialist(s);return;}
+ if(specialistJob&&specialistJob!==s&&active(specialistJob)&&specialistJob.expiresAt>Date.now()&&!s.launch)return;
  const rail=window.VP3ChatSpecialists;if(!rail)return;
  specialistJob=s;
- rail.update(specialistKey,{label:'Image Generator',title:g.title||'Requested image',status:inProgress[g.status],
+ s.expiresAt=expiresAt;
+ rail.update(specialistKey,{label:'Image Generator',title:g.title||'Requested image',status:inProgress.generating,expiresAt,
   detail:[g.model,g.size,g.quality,g.background==='transparent'?'Transparent background':''].filter(Boolean).join(' · '),
-  autoOpen:s.launch,onView:()=>{if(active(s)){card.scrollIntoView({block:'center'});card.focus({preventScroll:true});}}});
+  onView:()=>{if(active(s)){card.scrollIntoView({block:'center'});card.focus({preventScroll:true});}}});
  s.launch=false;
 }
 function failure(s,card,error){
@@ -78,14 +79,17 @@ function renderJob(s,card,g){
  if(!active(s))return;
  if(g?.id!==card.dataset.generationId||typeof g.status!=='string')throw new Error('Image status could not be verified.');
  const {active_lease_expires_at:lease,...cardData}=g;
+ const now=Date.now();
+ const expiresAt=g.status==='generating'&&Number.isSafeInteger(lease)&&lease>now?lease:0;
  if(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(g.id)){
-  const id='image:'+g.id,now=Date.now();
-  if(g.status==='generating'&&Number.isSafeInteger(lease)&&lease>now){
-   orbJobs.set(id,{state:s,expiresAt:Math.min(lease,now+7500)});syncOrbJobs(true);
+  const id='image:'+g.id;
+  if(expiresAt){
+   orbJobs.set(id,{state:s,expiresAt:Math.min(expiresAt,now+7500)});syncOrbJobs(true);
   }
   else if(orbJobs.delete(id))syncOrbJobs(true);
  }
- if(Object.hasOwn(inProgress,g.status))showSpecialist(s,card,g);else{stop(s);clearSpecialist(s);s.launch=false;}
+ showSpecialist(s,card,g,expiresAt);
+ if(!Object.hasOwn(inProgress,g.status)){stop(s);s.launch=false;}
  // Keep focused controls and expanded details in place on unchanged polls.
  const signature=JSON.stringify(cardData);
  if(s.generation&&signature===s.generation.signature)return;

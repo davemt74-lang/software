@@ -12,6 +12,7 @@ const sender = 'private@example.test';
 const watchPrompt = `Notify me when I get an email from ${sender}.`;
 const stopPrompt = `Stop watching for emails from ${sender}.`;
 let status = 'idle';
+let workingUntil = '';
 let delayStatus = null;
 let nextId = 1;
 const workflowCalls = [];
@@ -66,6 +67,7 @@ await page.route('**/api/**', async route => {
     const result = payload.conversation_id === 42 && status !== 'idle'
       ? {state:status,origin_message_id:messages.find(row => row.message === watchPrompt).id}
       : {state:'idle',origin_message_id:null};
+    if (result.state === 'working') result.working_until = workingUntil;
     if (delayStatus && payload.conversation_id === 42) {
       const gate = delayStatus;
       delayStatus = null;
@@ -118,9 +120,14 @@ await page.route('https://email.test/connection-gmail-github.php', async route =
 });
 
 const source = file => fs.readFile(new URL('../' + file, import.meta.url), 'utf8');
-const specialist = page.getByRole('button',{name:'Email Specialist',exact:true});
+const specialist = page.locator('[data-chat-specialist="email"]');
 const panel = page.locator('[data-chat-specialist-panel="email"]');
 const inline = page.locator('.vp3-chat-email-specialist-status');
+const refreshStatus = () => page.evaluate(() => window.dispatchEvent(new Event('focus')));
+const setWorking = ms => {
+  status = 'working';
+  workingUntil = new Date(Date.now() + ms).toISOString();
+};
 const send = async message => {
   await page.locator('#chatInput').fill(message);
   await page.locator('#sendChatButton').click();
@@ -145,39 +152,69 @@ try {
   assert.equal(await inline.isVisible(),false);
 
   await send(watchPrompt);
+  await page.getByText('Gmail watch is active.',{exact:true}).waitFor();
+  assert.equal(await specialist.count(),0,'An armed watch is not an active worker.');
+  await page.evaluate(() => {
+    window.openedActivityHub = 0;
+    window.VP3AgentActivityHub = {open:() => { window.openedActivityHub++; }};
+  });
+
+  setWorking(2500);
+  await refreshStatus();
   await specialist.waitFor();
   assert.equal(await inline.isVisible(),false);
-  await specialist.click();
-  await panel.getByText('Watching Gmail for new mail',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Email Specialist',exact:true}).click();
+  await panel.getByText('Checking Gmail',{exact:true}).waitFor();
+  await panel.getByText('Looking for new mail matching a watch from this Chat.',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(() => window.openedActivityHub),0);
+  assert.equal(await panel.getByRole('link').count(),0);
   assert.doesNotMatch(await panel.innerText(),/private@example/);
-  await panel.getByRole('button',{name:'View in Chat'}).click();
-  assert.equal(await page.locator(':focus').getAttribute('data-chat-message-id'),String(messages[2].id));
+  await specialist.waitFor({state:'detached',timeout:4500});
+  await panel.waitFor({state:'detached'});
+
+  setWorking(30000);
+  await refreshStatus();
+  await specialist.waitFor();
+  await specialist.click();
+  await panel.getByRole('button',{name:'Close',exact:true}).click();
+  await panel.waitFor({state:'detached'});
 
   await page.setViewportSize({width:390,height:844});
   await specialist.waitFor({state:'detached'});
   await inline.waitFor();
-  assert.match(await inline.textContent(),/Watching Gmail/);
+  assert.match(await inline.textContent(),/Checking Gmail/);
   assert.doesNotMatch(await inline.textContent(),/private@example/);
+  await inline.click();
+  await panel.getByText('Checking Gmail',{exact:true}).waitFor();
+  await panel.getByRole('button',{name:'Close',exact:true}).click();
+  assert.equal(await inline.evaluate(node => node === document.activeElement),true);
   await page.setViewportSize({width:1280,height:900});
   await specialist.waitFor();
   await inline.waitFor({state:'hidden'});
   await page.locator('#sfOnlineRailV109').evaluate(rail => { rail.hidden = true; });
   await inline.waitFor();
+  await inline.click();
+  await panel.getByText('Checking Gmail',{exact:true}).waitFor();
+  await panel.getByRole('button',{name:'Close',exact:true}).click();
   await page.locator('#sfOnlineRailV109').evaluate(rail => { rail.hidden = false; });
   await specialist.waitFor();
   await inline.waitFor({state:'hidden'});
 
   status = 'paused';
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await specialist.click();
-  await panel.getByText('Gmail watch paused',{exact:true}).waitFor();
+  await refreshStatus();
+  await specialist.waitFor({state:'detached'});
+  assert.equal(await inline.isVisible(),false);
+
+  setWorking(30000);
+  await refreshStatus();
+  await specialist.waitFor();
 
   let release;
   const result = new Promise(resolve => { release = resolve; });
   let started;
   const inFlight = new Promise(resolve => { started = resolve; });
   delayStatus = {started,release:result};
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await refreshStatus();
   await inFlight;
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(12));
   await specialist.waitFor({state:'detached'});
@@ -185,7 +222,6 @@ try {
   release();
   assert.equal(await inline.isVisible(),false);
 
-  status = 'watching';
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
   await specialist.waitFor();
   await send(stopPrompt);

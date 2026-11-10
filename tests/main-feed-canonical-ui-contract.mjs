@@ -96,7 +96,8 @@ assert.doesNotMatch(settingsUi, /sidebar\.appendChild\(host\)|const sidebar = do
 assert.match(settingsCss, /position:fixed;[\s\S]*right:10px;[\s\S]*bottom:12px;/, 'Chat Settings must occupy the bottom-right rail position on Agent Chat');
 assert.match(mainSidebar, /\$mainSidebarIsChat/, 'Shared sidebar must scope Chat rail controls to Agent Chat');
 assert.match(mainSidebar, /if \(\$mainSidebarIsChat\): \?><script data-chat-rail-controls-v132/, 'Chat rail controls must not load on non-Chat workspaces');
-assert.match(htaccess, /RewriteRule \^chat-legacy-v108\\\.php\$ \/chat\.php \[R=302,L,NE\]/, 'legacy Chat template must redirect to the one canonical public Chat path');
+assert.doesNotMatch(htaccess, /RewriteRule[^\n]+chat-legacy-v108/, 'the direct-entry redirect must have one owner');
+assert.match(template, /realpath\(\$_SERVER\['SCRIPT_FILENAME'\]\) === __FILE__[\s\S]*?header\('Location: chat\.php'/, 'legacy Chat template must redirect within the installed directory');
 
 // The retained source template may still contain legacy media canvas markup for
 // compatibility, but it must never be independently addressable or authoritative.

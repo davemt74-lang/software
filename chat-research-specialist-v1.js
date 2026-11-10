@@ -20,14 +20,25 @@
     running: 'Researching public sources',
     failed: 'Research did not finish'
   };
-  const inline = document.createElement('p');
+  const inline = document.createElement('div');
   inline.className = 'vp3-chat-research-specialist-status';
-  inline.setAttribute('role', 'status');
   inline.hidden = true;
+  const inlineStatus = document.createElement('span');
+  inlineStatus.setAttribute('role', 'status');
+  const progress = document.createElement('button');
+  progress.type = 'button';
+  progress.textContent = 'View progress';
+  progress.setAttribute('aria-label', 'View research progress');
+  progress.setAttribute('aria-haspopup', 'dialog');
+  progress.setAttribute('aria-expanded', 'false');
+  progress.hidden = true;
+  progress.addEventListener('click', () => window.VP3ChatSpecialists?.open(specialistKey, progress));
+  inline.append(inlineStatus, ' ', progress);
   composer.prepend(inline);
 
   let request = null;
   let timer = 0;
+  let leaseTimer = 0;
   let suspended = false;
   let shown = '';
 
@@ -44,22 +55,31 @@
   }
 
   function show(status) {
+    const running = status?.state === 'running';
+    const expiresAt = running ? Date.parse(status.lease_expires_at) : 0;
     const valid = Number.isSafeInteger(status?.run_id) && status.run_id > 0 &&
       (status.kind === 'topic' || status.kind === 'artist') && Object.hasOwn(statuses, status.state) &&
-      typeof status.subject === 'string' && status.subject.trim() && Array.from(status.subject).length <= 120;
-    const signature = valid ? JSON.stringify([status.run_id, status.state, status.subject]) : '';
+      typeof status.subject === 'string' && status.subject.trim() && Array.from(status.subject).length <= 120 &&
+      (!running || expiresAt > Date.now());
+    const signature = valid ? JSON.stringify([status.run_id, status.state, status.kind, status.subject, expiresAt]) : '';
     if (signature === shown) return;
     shown = signature;
+    clearTimeout(leaseTimer);
+    progress.hidden = !signature || !running;
+    if (!signature || !running) window.VP3ChatSpecialists?.remove(specialistKey);
     if (!signature) {
-      window.VP3ChatSpecialists?.remove(specialistKey);
       inline.hidden = true;
-      inline.textContent = '';
+      inlineStatus.textContent = '';
       return;
     }
     const caption = statuses[status.state];
-    inline.textContent = `${label} · ${caption} · ${status.subject}`;
+    const description = `${label} · ${caption} · ${status.subject}`;
+    if (inlineStatus.textContent !== description) inlineStatus.textContent = description;
     inline.hidden = false;
-    window.VP3ChatSpecialists?.update(specialistKey, {label, title: status.subject, status: caption});
+    if (!running) return;
+    window.VP3ChatSpecialists?.update(specialistKey, {label, title: status.subject, status: caption, expiresAt,
+      detail: status.kind === 'artist' ? 'Artist research' : 'Topic research'});
+    leaseTimer = setTimeout(() => show(null), Math.max(0, expiresAt - Date.now()));
   }
 
   function clear() {

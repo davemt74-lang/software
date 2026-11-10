@@ -27,12 +27,18 @@
   const hint = node('div','vp3-chat-development-hint');
   const hintLink = node('a');
   hintLink.href = revisionsUrl.href;
-  const compact = node('div','vp3-chat-development-compact');
-  const compactText = node('span');
-  const compactLink = node('a');
-  compactLink.textContent = 'Open revision';
-  compactText.setAttribute('role','status');
-  compact.append(compactText,compactLink);
+  const compact = node('button','vp3-chat-development-compact');
+  compact.type = 'button';
+  compact.setAttribute('aria-controls','vp3-chat-specialist-panel-' + key);
+  compact.setAttribute('aria-expanded','false');
+  compact.setAttribute('aria-haspopup','dialog');
+  compact.hidden = true;
+  compact.addEventListener('click',() => window.VP3ChatSpecialists?.open(key,compact));
+  window.addEventListener('vp3:chat-specialists-changed',() => {
+    const worker = window.VP3ChatSpecialists?.snapshot().find(entry => entry.key === key);
+    compact.hidden = !worker;
+    compact.textContent = worker ? `${worker.label} · ${worker.status}` : '';
+  });
   const notice = node('div','vp3-chat-development-notice');
   notice.setAttribute('role','status');
   const draftReview = node('section','vp3-chat-development-draft-review');
@@ -393,20 +399,16 @@
   });
 
   function showSpecialist(row, current = null, version = generation) {
-    compact.hidden = !row;
-    if (!row) {
-      compactText.textContent = '';
-      compactLink.removeAttribute('href');
+    if (!orbActive.has(row?.status)) {
       window.VP3ChatSpecialists?.remove(key);
       return;
     }
     const url = revisionUrl(row.id);
-    const name = row.mode === 'outline' ? 'Repair Planner' : 'Coding Specialist';
-    const text = `${name} · ${label(row)}`;
-    if (compactText.textContent !== text) compactText.textContent = text;
-    compactLink.href = url;
+    const outline = row.mode === 'outline';
     window.VP3ChatSpecialists?.update(key,{
-      label:name, title:modeLabels[row.mode], status:label(row), viewLabel:'Open revision',
+      label:outline ? 'Repair Planner' : 'Coding Specialist',title:modeLabels[row.mode],status:label(row),
+      detail:outline ? 'Preparing a repair plan for this Chat.' : 'Building a staged revision for this Chat.',
+      expiresAt:Date.now()+12000,viewLabel:'Open revision',
       onView:() => { if (current && validScope(current,version)) location.assign(url); },
     });
   }
@@ -470,6 +472,7 @@
     const current = scope();
     if (!current) {
       if (orbJobs.size) clearOrbJobs();
+      showSpecialist(null);
       return;
     }
     const version = generation;
@@ -558,7 +561,7 @@
       if (!orbActive.has(data.revision.status) && orbJobs.delete(`development:${data.revision.id}`)) syncOrbJobs();
       shownId = data.revision.id;
       showReceipt(data.revision);
-      if (active.has(data.revision.status) && control?.mode === data.revision.mode) showSpecialist(data.revision,current,version);
+      showSpecialist(control?.mode === data.revision.mode ? data.revision : null,current,version);
       if (input.value === original) {
         input.value = '';
         input.dispatchEvent(new Event('input',{bubbles:true}));

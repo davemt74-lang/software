@@ -2,10 +2,6 @@
 RewriteEngine On
 RewriteRule ^private(?:/|$) - [F,L,NC]
 
-# Chat has one public render path. The retained legacy implementation is an
-# internal source file only and must never be served as a second UI surface.
-RewriteRule ^chat-legacy-v108\.php$ /chat.php [R=302,L,NE]
-
 # Public machine-readable VP3 Agent Manifest for a native /username profile.
 RewriteRule ^\.well-known/vp3-agent/([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/?$ api/agent-manifest.php?username=$1 [L,QSA,NC]
 
@@ -49,6 +45,9 @@ Header always set X-Frame-Options "SAMEORIGIN"
 Header always set Referrer-Policy "same-origin"
 Header always set Cross-Origin-Resource-Policy "same-origin"
 Header always set Permissions-Policy "microphone=(self), camera=(self)"
+<Files "VP3_RELEASE.json">
+Header always set Cache-Control "no-cache, must-revalidate"
+</Files>
 <FilesMatch "^(?:premium-voice-v117|chat-voice-v117|editor-voice-barge-v117|voice-lease-v122|conversation-voice-v120|conversation-voice-v121|conversation-voice-v122|chat-conversation-v121|editor-agent-v114|stem-agent-v114|video-header-v92|agent-activity-v94|chat-notifications-drawer-v240|chat-agent-identity-v236|profile-agent)\.js$">
 Header always set Cache-Control "no-cache, must-revalidate"
 </FilesMatch>

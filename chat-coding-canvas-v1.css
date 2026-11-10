@@ -81,6 +81,9 @@
   color:#182025;
   background:#fff;
 }
+@media (min-width:761px) {
+  body:has(#sfOnlineRailV109:not([hidden])) .vp3-coding-canvas-worker { display:none; }
+}
 .vp3-coding-canvas button:disabled {
   opacity:.48;
   cursor:default;

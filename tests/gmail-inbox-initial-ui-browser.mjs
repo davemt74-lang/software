@@ -134,7 +134,8 @@ try {
       const messages = body.action === 'load' ? [{id:1,role:'assistant',message:'Existing conversation'}] : [];
       if (delivered?.conversation_id === conversation && ['load','messages_after'].includes(body.action)
           && (body.action === 'load' || (body.after_id || 0) < savedMessageId)) {
-        const reviewContext = review.state === 'ready'
+        const legacyChat = new URL(request.frame().url()).searchParams.has('legacy_chat');
+        const reviewContext = review.state === 'ready' && !legacyChat
           ? {source:'agent_connection_gmail_first_review',gmail_inbox_review_v1:{...delivered,review:project(false,undefined,true)}} : {};
         messages.push({id:savedMessageId,role:'assistant',message:'Your first Gmail inbox review is ready.',context_json:JSON.stringify(reviewContext)});
       }
@@ -337,6 +338,7 @@ try {
   await page.goto(origin+'/chat.php');
   await initialStatus;
   const tile = page.locator('[data-chat-specialist="gmail-inbox-review"]');
+  const workerPanel = page.locator('[data-chat-specialist-panel="gmail-inbox-review"]');
   const hub = page.locator('#vp3AgentActivityHub');
   const job = hub.locator('[data-activity-specialist="gmail-inbox-review"]');
   const orb = page.locator('.vp3-orb-root');
@@ -348,6 +350,9 @@ try {
   await page.reload();
   await page.locator('#chatInput').fill('Keep this draft');
   await tile.waitFor();
+  assert.equal(await tile.evaluate(element => element.matches('button')),true);
+  assert.equal(await tile.getAttribute('aria-expanded'),'false');
+  assert.equal(await workerPanel.count(),0,'The worker detail opens only when requested.');
   await gmailWork.locator('[data-orb-work-tracks="1"]').waitFor();
   assert.equal(await orb.getAttribute('data-working'),'true');
   assert.equal(await orb.getAttribute('data-state'),'idle','Gmail work stays independent of the conversation state.');
@@ -357,16 +362,40 @@ try {
   assert.equal(await page.locator('[data-gmail-review-state="working"]').isVisible(),false,'The desktop rail owns live progress.');
   assert.equal(await page.locator('#chatInput').inputValue(),'Keep this draft');
   await tile.click();
-  await job.getByText('Working',{exact:true}).waitFor();
-  await hub.getByText('Longfellow',{exact:true}).waitFor();
-  assert.equal(await job.count(),1,'The Hub projection and live specialist share one row.');
-  assert.equal(await hub.getByText('Gmail Inbox Review',{exact:true}).count(),1);
+  await workerPanel.getByText('Working',{exact:true}).waitFor();
+  await workerPanel.getByText('5 of up to 50 headers checked.',{exact:true}).waitFor();
+  assert.equal(await tile.getAttribute('aria-expanded'),'true');
+  assert.equal(await hub.isVisible(),false);
+  assert.equal(await workerPanel.getByRole('button').count(),1,'Only Close appears in the live work detail.');
   await screenshot(page,'rail');
-  assert.equal(await page.locator('[data-chat-specialist-panel]').count(),0,'The rail uses the existing Top of Mind pane.');
-  await hub.getByRole('button',{name:'Close',exact:true}).click();
+  review = {...inProgress('working'),next_attempt_at:new Date(Date.now()+1200).toISOString()};
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await tile.waitFor({state:'detached',timeout:4500});
+  await workerPanel.waitFor({state:'detached'});
+  await gmailWork.waitFor({state:'detached'});
+  review = inProgress('working');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await tile.click();
+  await workerPanel.waitFor();
+  review = {state:'disabled',limit:50};
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await tile.waitFor({state:'detached'});
+  await workerPanel.waitFor({state:'detached'});
+  await gmailWork.waitFor({state:'detached'});
+  review = inProgress('working');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await tile.waitFor();
   await page.setViewportSize({width:390,height:844});
   await tile.waitFor({state:'detached'});
-  await page.locator('#chatThread [data-gmail-review-state="working"]').waitFor();
+  const compactWork = page.locator('#chatThread [data-gmail-review-state="working"]').getByRole('button',{name:'View work'});
+  await compactWork.click();
+  await workerPanel.getByText('5 of up to 50 headers checked.',{exact:true}).waitFor();
+  review = {...inProgress('working'),scanned:6};
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await workerPanel.getByText('6 of up to 50 headers checked.',{exact:true}).waitFor();
+  await workerPanel.getByRole('button',{name:'Close',exact:true}).click();
+  await workerPanel.waitFor({state:'detached'});
+  assert.equal(await compactWork.evaluate(button => button === document.activeElement),true);
   await page.locator('.vp3-orb-ball').hover();
   await page.locator('[data-orb-activity]').click();
   await job.getByText('Working',{exact:true}).waitFor();
@@ -389,7 +418,9 @@ try {
   review = inProgress('queued');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await waitForGate(chatAdvance.started,'Chat advance');
-  await job.getByText('Queued',{exact:true}).waitFor();
+  await page.locator('#chatThread [data-gmail-review-state="queued"]').waitFor();
+  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot()
+    .some(item => item.key === 'gmail-inbox-review')),false,'Queued Gmail work has no rail indicator.');
   await gmailWork.waitFor({state:'detached'});
   assert.equal(await orb.getAttribute('data-working'),'false');
   review = summarizing();
@@ -531,6 +562,26 @@ try {
     {new:beforeWelcome.new+1,deliver:beforeWelcome.deliver+1,advance:beforeWelcome.advance},
     'A ready review uses the normal welcome Chat creation and never rescans the mailbox.');
   assert.equal(await completion.count(),1);
+
+  // Older Chat assets preserve the stored message identity but omit the Gmail projection.
+  delivered = null;
+  const beforeLegacyChat = {deliver:count('deliver'),advance:count('advance')};
+  await page.goto(origin+'/chat.php?legacy_chat=1');
+  await savedTurn.getByText(privateSummary,{exact:true}).waitFor();
+  assert.equal(await savedTurn.evaluate(row => row._vp3GmailInboxReviewV1),undefined);
+  assert.equal(await completion.count(),1);
+  assert.equal(count('deliver'),beforeLegacyChat.deliver+1);
+  await page.reload();
+  await savedTurn.getByText(privateSummary,{exact:true}).waitFor();
+  assert.equal(await page.locator('#chatThread .message').count(),2);
+  assert.equal(await completion.count(),1);
+  assert.equal(count('deliver'),beforeLegacyChat.deliver+2,'The old asset reads the existing delivery anchor on reload.');
+  assert.equal(count('advance'),beforeLegacyChat.advance,'Recovering the anchor never rescans Gmail.');
+  review = {state:'disabled',limit:50};
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await completion.waitFor({state:'detached'});
+  await savedTurn.getByText('Your first Gmail inbox review is ready.',{exact:true}).waitFor();
+  console.log('PASS a legacy Chat projection shows one verified delivery and removes it when Inbox Review is disabled');
 
   assert.deepEqual(errors,[]);
   console.log('GMAIL_INBOX_INITIAL_UI_BROWSER=PASS (actual Connections, private report, progress and stale settings)');
