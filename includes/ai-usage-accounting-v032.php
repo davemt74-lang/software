@@ -90,7 +90,7 @@ function ai_usage_accounting_v032_rate(string $provider,string $model): ?array
         $row=$catalog[$key]??null;
         if(!is_array($row))continue;
         $input=$row['input_per_million_usd']??null;$output=$row['output_per_million_usd']??null;
-        if(!is_numeric($input)||!is_numeric($output)||(float)$input<0||(float)$output<0)continue;
+        if(!is_numeric($input)||!is_numeric($output)||!is_finite((float)$input)||!is_finite((float)$output)||(float)$input<0||(float)$output<0)continue;
         return ['input_per_million_usd'=>(float)$input,'output_per_million_usd'=>(float)$output,'key'=>$key];
     }
     return null;
@@ -100,19 +100,29 @@ function ai_usage_accounting_v032_cost(array $execution): array
 {
     $source=(string)($execution['source']??'');
     if(in_array($source,['homeserver_local','vp3_retrieval','vp3_tool'],true))return ['micros'=>0,'rate_source'=>'local_zero'];
+    if(($execution['service_status']??'')==='rejected')return ['micros'=>0,'rate_source'=>'provider_rejected'];
     $usage=is_array($execution['usage']??null)?$execution['usage']:[];
-    $input=max(0,(int)($usage['prompt_tokens']??$usage['input_tokens']??0));
-    $output=max(0,(int)($usage['completion_tokens']??$usage['output_tokens']??0));
+    $tokens=vp3_ai_service_usage_tokens_v1($usage);
+    if((array_key_exists('usage_known',$execution)&&!$execution['usage_known'])
+        ||(array_key_exists('usage_split_known',$execution)&&!$execution['usage_split_known'])
+        ||$tokens===null||empty($tokens['split_known']))return ['micros'=>null,'rate_source'=>'unknown_usage'];
+    $input=$tokens['input_tokens'];$output=$tokens['output_tokens'];
     $rate=ai_usage_accounting_v032_rate((string)($execution['provider']??''),(string)($execution['model']??''));
     if(!$rate)return ['micros'=>null,'rate_source'=>'unconfigured'];
     $usd=(($input/1000000)*$rate['input_per_million_usd'])+(($output/1000000)*$rate['output_per_million_usd']);
     return ['micros'=>max(0,(int)round($usd*1000000)),'rate_source'=>'config:'.$rate['key']];
 }
 
-function ai_usage_accounting_v032_cloud_ledger(PDO $pdo,int $userId,string $traceId): ?array
+function ai_usage_accounting_v032_cloud_ledger(PDO $pdo,int $userId,string $traceId,?string $requestKey=null): ?array
 {
-    if($userId<1||$traceId===''||!table_exists('ai_usage_ledger'))return null;
+    if($userId<1||($traceId===''&&$requestKey===null)||!table_exists('ai_usage_ledger'))return null;
     try{
+        // Direct transports supply their server-generated request key: never guess
+        // another debit from a shared trace when that exact debit does not exist.
+        if($requestKey!==null){
+            $stmt=$pdo->prepare('SELECT id,credit_tokens_used,package_tokens_used,total_tokens FROM ai_usage_ledger WHERE user_id=? AND request_key=? LIMIT 1');
+            $stmt->execute([$userId,$requestKey]);return $stmt->fetch()?:null;
+        }
         $legacy=vp3_ai_service_usage_ready_v1($pdo)?" AND (request_key IS NULL OR request_key NOT LIKE 'service:%')":'';
         $stmt=$pdo->prepare('SELECT id,credit_tokens_used,package_tokens_used,total_tokens FROM ai_usage_ledger WHERE user_id=? AND trace_id=?'.$legacy.' ORDER BY id DESC LIMIT 1');$stmt->execute([$userId,$traceId]);return $stmt->fetch()?:null;
     }catch(Throwable $e){return null;}
@@ -125,24 +135,48 @@ function ai_usage_accounting_v032_record(PDO $pdo,array $user,int $agentId,int $
         if(!ai_usage_accounting_v032_schema_ready($pdo))return;
         if(vp3_ai_service_usage_attach_v1($pdo,$userId,$agentId,$conversationId,$execution))return;
         $source=(string)($execution['source']??'vp3_retrieval');$allowed=['homeserver_local','user_provider','vp3_cloud','vp3_retrieval','vp3_tool'];if(!in_array($source,$allowed,true))$source='vp3_retrieval';
-        $usage=is_array($execution['usage']??null)?$execution['usage']:[];$input=max(0,(int)($usage['prompt_tokens']??$usage['input_tokens']??0));$output=max(0,(int)($usage['completion_tokens']??$usage['output_tokens']??0));$total=max(0,(int)($usage['total_tokens']??($input+$output)));
-        $trace=function_exists('agent_runtime_v125_trace_id')?trim((string)agent_runtime_v125_trace_id()):'';$cloud=ai_usage_accounting_v032_cloud_ledger($pdo,$userId,$trace);$cloudLedgerId=$cloud?(int)$cloud['id']:null;
-        $cloudCharged=max(0,(int)($execution['cloud_tokens_debited']??0));if($source==='vp3_cloud'&&$cloud&&$cloudCharged<1)$cloudCharged=max(0,(int)$cloud['total_tokens']);
+        $usage=is_array($execution['usage']??null)?$execution['usage']:[];
+        $tokens=vp3_ai_service_usage_tokens_v1($usage);
+        $local=in_array($source,['homeserver_local','vp3_retrieval','vp3_tool'],true);
+        $input=$tokens['input_tokens']??0;$output=$tokens['output_tokens']??0;$total=$tokens['total_tokens']??0;
+        $trace=function_exists('agent_runtime_v125_trace_id')?trim((string)agent_runtime_v125_trace_id()):'';
+        $requestKey=array_key_exists('cloud_request_key',$execution)?(string)$execution['cloud_request_key']:null;
+        $cloud=$source==='vp3_cloud'?ai_usage_accounting_v032_cloud_ledger($pdo,$userId,$trace,$requestKey):null;
+        $cloudLedgerId=$cloud?(int)$cloud['id']:null;
+        $cloudCharged=$source==='vp3_cloud'?max(0,(int)($execution['cloud_tokens_debited']??0)):0;
+        if($cloud)$cloudCharged=max(0,(int)$cloud['credit_tokens_used']+(int)$cloud['package_tokens_used']);
         $cost=ai_usage_accounting_v032_cost($execution);
         $base=[$userId,$agentId>0?$agentId:null,$conversationId>0?$conversationId:null,$cloudLedgerId,mb_strimwidth($trace,0,120,''),$source,mb_strimwidth(trim((string)($execution['provider']??'')),0,80,''),mb_strimwidth(trim((string)($execution['model']??'')),0,160,''),$input,$output,$total,$cloudCharged,$cost['micros'],'USD',mb_strimwidth((string)$cost['rate_source'],0,40,''),mb_strimwidth((string)($execution['homeserver']??'not_used'),0,30,''),!empty($execution['fallback_used'])?1:0,mb_strimwidth((string)($execution['failure_class']??'none'),0,40,''),max(0,(int)($execution['latency_ms']??0)),(int)($execution['run_id']??0)>0?(int)$execution['run_id']:null];
+        $columns=['user_id','agent_id','conversation_id','cloud_ledger_id','trace_id','source','provider','model','input_tokens','output_tokens','total_tokens','cloud_tokens_charged','estimated_cost_micros','cost_currency','cost_rate_source','homeserver_state','fallback_used','failure_class','latency_ms','run_id'];
         if(ai_usage_accounting_v032_route_schema_ready($pdo)){
-            $stmt=$pdo->prepare('INSERT INTO ai_execution_ledger (user_id,agent_id,conversation_id,cloud_ledger_id,trace_id,source,provider,model,input_tokens,output_tokens,total_tokens,cloud_tokens_charged,estimated_cost_micros,cost_currency,cost_rate_source,homeserver_state,fallback_used,failure_class,latency_ms,run_id,runtime_version,requested_route,attempted_route,actual_route,route_reason,fallback_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-            $stmt->execute(array_merge($base,[mb_strimwidth((string)($execution['runtime_version']??''),0,16,''),mb_strimwidth((string)($execution['requested_route']??''),0,32,''),mb_strimwidth((string)($execution['attempted_route']??''),0,48,''),mb_strimwidth((string)($execution['actual_route']??''),0,48,''),mb_strimwidth((string)($execution['route_reason']??''),0,80,''),mb_strimwidth((string)($execution['fallback_reason']??''),0,80,'')]));
-        }else{
-            $stmt=$pdo->prepare('INSERT INTO ai_execution_ledger (user_id,agent_id,conversation_id,cloud_ledger_id,trace_id,source,provider,model,input_tokens,output_tokens,total_tokens,cloud_tokens_charged,estimated_cost_micros,cost_currency,cost_rate_source,homeserver_state,fallback_used,failure_class,latency_ms,run_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-            $stmt->execute($base);
+            foreach(['runtime_version'=>16,'requested_route'=>32,'attempted_route'=>48,'actual_route'=>48,'route_reason'=>80,'fallback_reason'=>80] as $key=>$length){
+                $columns[]=$key;$base[]=mb_strimwidth((string)($execution[$key]??''),0,$length,'');
+            }
         }
+        if(vp3_ai_service_usage_ready_v1($pdo)){
+            $known=$local||($tokens!==null&&(!array_key_exists('usage_known',$execution)||!empty($execution['usage_known'])));
+            $split=$local||($known&&!empty($tokens['split_known'])&&(!array_key_exists('usage_split_known',$execution)||!empty($execution['usage_split_known'])));
+            $metadata=[
+                'usage_known'=>$known?1:0,'usage_split_known'=>$split?1:0,
+                'service_key'=>mb_strimwidth((string)($execution['service_key']??''),0,40,''),
+                'service_stage'=>mb_strimwidth((string)($execution['service_stage']??''),0,80,''),
+                'service_status'=>mb_strimwidth((string)($execution['service_status']??($local?'completed':($known?'completed':'unknown'))),0,16,''),
+                'credential_source'=>mb_strimwidth((string)($execution['credential_source']??($source==='user_provider'?'own_key':($source==='vp3_cloud'?'system':''))),0,20,''),
+                'provider_request_id'=>mb_strimwidth((string)($execution['provider_request_id']??''),0,160,''),
+                'is_background'=>!empty($execution['is_background'])?1:0,
+            ];
+            $attempt=(string)($execution['service_attempt_key']??'');
+            if(preg_match('/\A[a-f0-9]{64}\z/D',$attempt))$metadata['service_attempt_key']=$attempt;
+            foreach($metadata as $key=>$value){$columns[]=$key;$base[]=$value;}
+        }
+        $stmt=$pdo->prepare('INSERT INTO ai_execution_ledger ('.implode(',',$columns).') VALUES ('.implode(',',array_fill(0,count($columns),'?')).')');
+        $stmt->execute($base);
     }catch(PDOException $e){if((string)$e->getCode()==='23000')return;error_log('VP3 AI execution accounting failed: '.$e->getMessage());}catch(Throwable $e){error_log('VP3 AI execution accounting failed: '.$e->getMessage());}
 }
 
 function ai_usage_accounting_v032_format_cost(?int $micros): string
 {
-    if($micros===null)return '—';if($micros===0)return '$0.00';$usd=$micros/1000000;return $usd<0.01?'$'.number_format($usd,4):'$'.number_format($usd,2);
+    if($micros===null)return '—';if($micros===0)return '$0.00';$usd=$micros/1000000;return $usd<0.0001?'$'.number_format($usd,6):($usd<0.01?'$'.number_format($usd,4):'$'.number_format($usd,2));
 }
 
 function ai_usage_accounting_v032_format_aggregate_cost(int $micros,int $unknown): string
@@ -221,4 +255,38 @@ function ai_usage_accounting_v032_admin_state(PDO $pdo,int $limit=200): array
 function ai_usage_accounting_v032_export(PDO $pdo,?int $userId=null,int $limit=10000): array
 {
     if(!ai_usage_accounting_v032_schema_ready($pdo))return [];$limit=max(1,min(50000,$limit));if($userId!==null){$stmt=$pdo->prepare('SELECT * FROM ai_execution_ledger WHERE user_id=? ORDER BY id DESC LIMIT '.$limit);$stmt->execute([$userId]);return $stmt->fetchAll()?:[];}return $pdo->query('SELECT * FROM ai_execution_ledger ORDER BY id DESC LIMIT '.$limit)->fetchAll()?:[];
+}
+
+/** Observe legacy transports without changing their funding, policy or retries. */
+function ai_usage_accounting_v032_observe_provider(PDO $pdo,array $user,string $provider,string $model,string $source,string $scope,array $response): string
+{
+    if((int)($user['id']??0)<1||!vp3_ai_service_usage_ready_v1($pdo))return '';
+    $key=bin2hex(random_bytes(32));
+    $usage=is_array($response['data']['usage']??null)?$response['data']['usage']:[];
+    $tokens=vp3_ai_service_usage_tokens_v1($usage);
+    $rejected=$tokens===null&&empty($response['ok'])&&in_array((int)($response['status']??0),[400,401,403,404,422,429],true);
+    $status=$rejected?'rejected':($tokens===null?'unknown':(!empty($response['ok'])?'completed':'failed'));
+    if($rejected)$usage=['input_tokens'=>0,'output_tokens'=>0,'total_tokens'=>0];
+    ai_usage_accounting_v032_record($pdo,$user,0,0,[
+        'source'=>$source,'provider'=>$provider,'model'=>$model,'usage'=>$usage,
+        'cloud_request_key'=>'','service_key'=>'legacy','service_stage'=>$scope,
+        'service_status'=>$status,'service_attempt_key'=>$key,
+        'provider_request_id'=>is_string($response['data']['id']??null)?$response['data']['id']:'',
+        'latency_ms'=>max(0,(int)($response['duration_ms']??0)),
+        'failure_class'=>$status==='completed'?'none':'provider_'.$status,
+    ]);
+    return $key;
+}
+
+/** Attach the existing debit after legacy inference settles; never debit here. */
+function ai_usage_accounting_v032_link_observation(PDO $pdo,array $user,string $key,string $requestKey): void
+{
+    $owner=(int)($user['id']??0);
+    if($owner<1||$requestKey===''||!preg_match('/\A[a-f0-9]{64}\z/D',$key))return;
+    try{
+        $cloud=ai_usage_accounting_v032_cloud_ledger($pdo,$owner,'',$requestKey);
+        if(!$cloud)return;
+        $q=$pdo->prepare("UPDATE ai_execution_ledger SET cloud_ledger_id=?,cloud_tokens_charged=? WHERE user_id=? AND service_attempt_key=? AND source='vp3_cloud' AND service_key IN ('legacy','direct') AND cloud_ledger_id IS NULL");
+        $q->execute([(int)$cloud['id'],max(0,(int)$cloud['credit_tokens_used']+(int)$cloud['package_tokens_used']),$owner,$key]);
+    }catch(Throwable $error){error_log('VP3 legacy AI debit observation failed: '.$error->getMessage());}
 }

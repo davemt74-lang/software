@@ -67,9 +67,9 @@ try{
   await check('full Chat links preserve conversation and selected agent within the subdirectory',async()=>{const link=await page.evaluate(()=>VP3_ORB_ADAPTER.conversationUrl({id:73,agent:5}));assert.match(link,/\/sub\/chat.php\?conversation_id=73&agent=5$/);});
   await check('trained profiles remain separate, account scoped and absent from server payloads',async()=>{await page.evaluate(async()=>{const v=Array.from({length:512},(_,i)=>i===0?1:0);for(let i=0;i<3;i++)await VP3_ORB_ADAPTER.saveTrainedVoiceSample({id:'7',embedding:v,isCurrent:()=>true});});const p=(await page.evaluate(()=>VP3_ORB_ADAPTER.loadVoiceProfiles()))[0];assert.equal(p.voiceTrainedProfile.embeddings.length,3);assert.equal(p.voiceTrainedProfile.rawAudioStored,false);assert.equal(p.voiceEmbeddings.length,0);assert.equal((await page.evaluate(()=>VP3_ORB_ADAPTER.loadEyesProfiles()))[0].embeddings.length,3);assert.equal(writes.some(w=>JSON.stringify(w).includes('embeddings')),false);const other=await context.newPage();await other.goto(url+'?owner=2');assert.equal((await other.evaluate(()=>VP3_ORB_ADAPTER.loadVoiceProfiles()))[0].voiceTrainedProfile,null);await other.close();await page.evaluate(()=>VP3_ORB_ADAPTER.forgetVoice('7'));assert.equal((await page.evaluate(()=>VP3_ORB_ADAPTER.loadVoiceProfiles()))[0].voiceTrainedProfile,null);});
   await check('TV overlay styling applies with ordinary and reduced motion',async()=>{await page.evaluate(()=>{const node=document.createElement('div');node.id='motionProbe';node.className='vp3-eyes-box vp3-tv-box';document.body.append(node);});for(const reducedMotion of ['no-preference','reduce']){await page.emulateMedia({reducedMotion});assert.equal(await page.locator('#motionProbe').evaluate(node=>getComputedStyle(node).borderTopColor),'rgb(240, 191, 97)');if(reducedMotion==='reduce')assert.equal(await page.locator('#motionProbe').evaluate(node=>getComputedStyle(node).transitionDuration),'0s');}await page.emulateMedia({reducedMotion:'no-preference'});await page.locator('#motionProbe').evaluate(node=>node.remove());});
-  await check('footer Chat opens and toggles the off-page popup using one embedded runtime',async()=>{await page.locator('[data-orb-chat]').click();await page.locator('#vp3AgentChatPopup').waitFor({state:'visible'});assert.equal(await page.locator('iframe').count(),1);assert.match(await page.locator('iframe').getAttribute('src'),/\/sub\/chat\.php\?orb_embed=1$/);await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();assert.equal(await page.locator('[data-orb-chat]').getAttribute('aria-expanded'),'false');await page.locator('[data-orb-chat]').click();assert.equal(await page.locator('iframe').count(),1);await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();});
+  await check('orb opens and toggles the off-page popup using one embedded runtime',async()=>{await page.locator('.vp3-orb-ball').click();await page.locator('#vp3AgentChatPopup').waitFor({state:'visible'});assert.equal(await page.locator('iframe').count(),1);assert.match(await page.locator('iframe').getAttribute('src'),/\/sub\/chat\.php\?orb_embed=1$/);await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();assert.equal(await page.locator('.vp3-orb-ball').getAttribute('aria-expanded'),'false');await page.locator('.vp3-orb-ball').click();assert.equal(await page.locator('iframe').count(),1);await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();});
   await check('embedded status uses the existing parent orb and clears when the popup closes',async()=>{
-    await page.locator('[data-orb-chat]').click();
+    await page.locator('.vp3-orb-ball').click();
     const frame=await page.locator('iframe').elementHandle().then(node=>node.contentFrame());
     await frame.waitForFunction(()=>typeof window.VP3AgentOrb?.setInitiativeStatus==='function');
     const status=page.locator('.vp3-orb-initiative');
@@ -85,7 +85,7 @@ try{
     assert.equal(await status.evaluate(node=>node.hidden),true);
   });
   await check('embedded Chat can change the host orb appearance for the same account',async()=>{
-    await page.locator('[data-orb-chat]').click();
+    await page.locator('.vp3-orb-ball').click();
     const frame=await page.locator('iframe').elementHandle().then(node=>node.contentFrame());
     const orb=page.locator('.vp3-orb-ball .vp3-public-orb');
     await frame.waitForFunction(()=>document.documentElement.dataset.vp3OrbEmbed==='1');
@@ -185,7 +185,7 @@ try{
     assert.equal(await status.textContent(),'');
   });
   await check('same-account embedded job updates persist while the popup is closed and expire when stale',async()=>{
-    await page.locator('[data-orb-chat]').click();
+    await page.locator('.vp3-orb-ball').click();
     const frame=await page.locator('iframe').elementHandle().then(node=>node.contentFrame());
     await frame.waitForFunction(()=>document.documentElement.dataset.vp3OrbEmbed==='1');
     const work=page.locator('.vp3-public-orb-work-tracks');
@@ -215,7 +215,7 @@ try{
     await check(`Cloud Chat opens a centered live canvas with the orb outside at ${viewport.width}px`,async()=>{
       await main.locator('#chatInput').fill('Keep this draft');
       await main.evaluate(() => VP3AgentOrb.setJobs('mission', [{id:'mission:layout', expiresAt:Date.now() + 10000}]));
-      await main.locator('[data-orb-chat]').click();
+      await main.locator('.vp3-orb-ball').click();
       await main.locator('#vp3AgentChatPopup').waitFor({state:'visible'});
       await checkPopupLayout(main, viewport);
       assert.equal(await main.locator('#vp3AgentChatPopup #chatThread .message').innerText(),'Existing conversation');
@@ -235,7 +235,7 @@ try{
       await main.locator('#chatComposerShell').evaluate(node => { node.style.minHeight = ''; });
       await main.evaluate(() => VP3AgentOrb.setJobs('mission', []));
     });
-    await check(`live reply and Escape preserve current conversation and workspace at ${viewport.width}px`,async()=>{await main.evaluate(()=>document.getElementById('chatForm').requestSubmit());assert.equal(await main.locator('#vp3AgentChatPopup .message').last().innerText(),'New reply 1');await main.keyboard.press('Escape');assert.equal(await main.locator('#vp3AgentChatPopup').isVisible(),false);assert.equal(await main.locator('.chat-main > #chatThread').count(),1);assert.equal(await main.locator('#chatThread').getAttribute('data-view'),'player');assert.equal(await main.locator('[data-chat-view="player"]').isVisible(),true);assert.equal(await main.locator('#chatInput').inputValue(),'Keep this draft');await main.locator('[data-orb-chat]').click();assert.equal(await main.locator('#vp3AgentChatPopup .message').count(),2);await main.getByRole('button',{name:'Close Agent Chat',exact:true}).click();assert.equal(await main.evaluate(()=>sent),1);assert.equal(await main.locator('[data-orb-chat]').getAttribute('aria-expanded'),'false');});
+    await check(`live reply and Escape preserve current conversation and workspace at ${viewport.width}px`,async()=>{await main.evaluate(()=>document.getElementById('chatForm').requestSubmit());assert.equal(await main.locator('#vp3AgentChatPopup .message').last().innerText(),'New reply 1');await main.keyboard.press('Escape');assert.equal(await main.locator('#vp3AgentChatPopup').isVisible(),false);assert.equal(await main.locator('.chat-main > #chatThread').count(),1);assert.equal(await main.locator('#chatThread').getAttribute('data-view'),'player');assert.equal(await main.locator('[data-chat-view="player"]').isVisible(),true);assert.equal(await main.locator('#chatInput').inputValue(),'Keep this draft');await main.locator('.vp3-orb-ball').click();assert.equal(await main.locator('#vp3AgentChatPopup .message').count(),2);await main.getByRole('button',{name:'Close Agent Chat',exact:true}).click();assert.equal(await main.evaluate(()=>sent),1);assert.equal(await main.locator('.vp3-orb-ball').getAttribute('aria-expanded'),'false');});
     await check(`background status stays in the animated orb at ${viewport.width}px and supports hover, focus and Escape`,async()=>{
       const orb=main.locator('.vp3-orb-ball'),status=main.locator('.vp3-orb-initiative');
       await main.mouse.move(2,2);await main.evaluate(()=>document.activeElement.blur());

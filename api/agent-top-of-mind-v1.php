@@ -13,8 +13,10 @@ try{
     $agent=filter_var($_GET['agent_id']??'0',FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
     $cid=filter_var($_GET['conversation_id']??'0',FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
     if($agent===false||$cid===false)throw new RuntimeException('Choose an exact Agent and conversation.',422);
+    $view=$_GET['view']??'';
+    if(!is_string($view)||!in_array($view,['','work'],true))throw new RuntimeException('Choose an exact status view.',422);
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
-    $state=vp3_top_of_mind_v1(db(),$user,$agent,$cid);
+    $state=$view==='work'?vp3_top_of_mind_work_v1(db(),$user,$agent,$cid):vp3_top_of_mind_v1(db(),$user,$agent,$cid);
     $state['working_attention_binding']=$binding;
     echo json_encode(['ok'=>true,'state'=>$state],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $error){

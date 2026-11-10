@@ -628,6 +628,13 @@ if(!$ephemeralProtocol){
     }
     $initiativeProgress=['user_message_id'=>$userMessageId];
 }
+// Every provider request made while interpreting this private turn belongs to
+// its conversation, even when the turn ultimately returns a local tool result.
+// Restore the caller's context on early returns and exceptions as well.
+$serviceContext=['service'=>'conversation','agent_id'=>$activeAgentId,'conversation_id'=>$conversationId,'job_key'=>'chat:'.$userMessageId];
+$previousServiceContext=ai_v100_service_context();
+ai_v100_service_context($serviceContext);
+try{
 $publicResearchPlan=$allowConnectedSites&&!$ephemeralProtocol&&$initiativeReply===null?vp3_public_research_plan_v1($query):null;
 $youtubeFollowup=$allowConnectedSites&&!$ephemeralProtocol&&$initiativeReply===null&&!$youtubeHistoryRequest
     ?agent_connection_youtube_followup_plan_v1($query):null;
@@ -744,7 +751,6 @@ $homeAttempted=false;$homeResult=null;$responseActions=[];$turnPrepared=null;$tu
 if(!empty($toolResult['handled'])){
     $runtimePlan=vp3_agent_runtime_tool_plan_v420($userId,$activeAgentId,'chat');$answer=(string)$toolResult['answer'];$context=[];$execution=vp3_agent_runtime_finalize_v420($runtimePlan,chat_execution_v019_tool(),'vp3_tool');$capabilityRoute=['version'=>'v4.20','capability'=>'tools','planned_source'=>'vp3_tool','actual_source'=>'vp3_tool','supported'=>true,'ready'=>true,'fallback_used'=>false,'reason'=>'vp3_tool_handled'];
 }else{
-    $serviceContext=['service'=>'conversation','agent_id'=>$activeAgentId,'conversation_id'=>$conversationId,'job_key'=>'chat:'.$userMessageId];
     $runtimePlan=vp3_agent_runtime_plan_v420($pdo,$user,$activeAgentId,'chat',$serviceContext);
     if(!empty($runtimePlan['try_homeserver'])&&!empty($runtimePlan['home']['supported'])){
         $homeAttempted=true;
@@ -887,4 +893,5 @@ if(function_exists('vp3_live_session_note_action_v2370')){
 return ($youtubeResults!==null?['youtube_results'=>$youtubeResults]:[])
     +($youtubeSourceMessageId>0?['youtube_source_message_id'=>$youtubeSourceMessageId]:[])
     +($workingSelection!==null?['working_context_ref'=>$workingSelection['working_context']['reference']]:[])+['ok'=>true,'private_email_read'=>!empty($toolResult['email_private_read_v1']),'canvas_media'=>$messageContext['canvas_media'],'sticky_notes'=>$messageContext['sticky_notes'],'tool_receipt'=>$toolReceipt,'knowledge_actions_r9'=>$knowledgeDraft,'project_knowledge_r6'=>$r6Packet,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'profile_webmcp_plan'=>$messageContext['profile_webmcp_plan'],'profile_webmcp_return'=>$messageContext['profile_webmcp_return'],'system_app_plan'=>$messageContext['system_app_plan'],'system_app_action_card'=>$messageContext['system_app_action_card'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
+}finally{ai_v100_service_context($previousServiceContext);}
 }

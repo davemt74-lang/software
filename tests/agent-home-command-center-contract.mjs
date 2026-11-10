@@ -18,7 +18,7 @@ assert.match(home, /has_permission\('account\.access', \$user\).*account\.php/s,
 assert.doesNotMatch(home, /agent-home-canvas|agent-home-grid|agent-home-hero/, 'Home must no longer render a parallel command-center dashboard');
 
 assert.match(chat, /VP3_COGNITIVE_PRESENTATION_V510/, 'Agent Chat must own the Cognitive Presentation shell');
-assert.match(chat, /chatAgentBriefButton/, 'Agent Chat must expose the Agent Brief from the composer');
+assert.doesNotMatch(chat, /chatAgentBriefButton/, 'Agent Chat must use the orb instead of a duplicate Brief composer button');
 assert.match(chat, /chatAgentBriefPopover/, 'Agent Chat must expose the Agent Brief popup');
 assert.doesNotMatch(chat, /vp3_agent_chat_intelligence_render_v171\(/, 'old command-center Brief must not be rendered in the conversation');
 assert.match(presentation, /vp3_agent_chat_intelligence_model_v171\(/, 'Cognitive Presentation must reuse canonical VP3 intelligence state');

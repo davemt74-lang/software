@@ -1,11 +1,12 @@
 .coding-sidebar-control {
   display: grid;
-  gap: 4px;
-  margin: 6px 0 0;
-  padding: 6px 7px 1px;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 9px 7px 4px;
   border-top: 1px solid #e5e7eb;
   color: #475467;
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .coding-sidebar-control > label {
@@ -21,19 +22,20 @@
   min-width: 0;
 }
 .coding-sidebar-auto input { flex: 0 0 auto; margin: 0; }
-.coding-sidebar-auto-help { font-size: inherit; line-height: 1.3; overflow-wrap: anywhere; }
+.coding-sidebar-auto-help { color: #667085; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
 
 .coding-sidebar-control > select {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   margin: 0 0 2px;
-  padding: 3px 5px;
+  padding: 6px 7px;
   border: 1px solid #c9d0da;
-  border-radius: 5px;
+  border-radius: 7px;
   background: #fff;
   color: #111827;
   font: inherit;
+  text-overflow: ellipsis;
 }
 
 .coding-sidebar-control > select:focus-visible {
@@ -44,8 +46,10 @@
 .coding-sidebar-line {
   display: flex;
   justify-content: space-between;
-  gap: 6px;
-  line-height: 1.2;
+  gap: 8px;
+  min-width: 0;
+  align-items: baseline;
+  line-height: 1.35;
 }
 
 .coding-sidebar-line > strong,
@@ -53,7 +57,22 @@
   color: #1f2937;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
+
+.coding-sidebar-balance > strong { font-size: 15px; line-height: 1.2; }
+.coding-sidebar-usage { display: flex; justify-content: space-between; align-items: center; color: #475467; font-size: 11px; text-decoration: none; }
+.coding-sidebar-usage:hover { color: #111827; text-decoration: underline; }
+.coding-sidebar-usage:focus-visible { outline: 2px solid #285cb8; outline-offset: 2px; border-radius: 2px; }
+.coding-sidebar-runtime { margin: 4px 7px 0; color: #667085; font: 11px/1.35 system-ui,sans-serif; }
+.coding-sidebar-runtime > summary { cursor: pointer; padding: 3px 0; }
+.agent-sidebar-footer .coding-sidebar-runtime .agent-sidebar-runtime { padding: 5px 0 2px; gap: 5px; }
+.agent-sidebar-footer .coding-sidebar-runtime .agent-runtime-line,
+.agent-sidebar-footer .coding-sidebar-runtime .agent-runtime-line small,
+.agent-sidebar-footer .coding-sidebar-runtime .agent-runtime-line strong,
+.agent-sidebar-footer .coding-sidebar-runtime .agent-runtime-line a { font-size: 10px; }
+.workspace-main-sidebar .agent-sidebar-user-copy strong { font-size: 12px; }
+.workspace-main-sidebar .agent-sidebar-user-copy small { font-size: 10px; }
 
 .coding-sidebar-control > meter {
   display: block;

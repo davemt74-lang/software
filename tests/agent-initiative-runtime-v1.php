@@ -83,7 +83,10 @@ $model=static function(string $prompt,string $protocol)use(&$calls,&$duplicate,$
     $expiresAt=strtotime($lease['lease_expires_at'].' UTC');
     if($expiresAt<time()+235)throw new RuntimeException('Inference requires the canonical refreshed lease.');
     runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['active_jobs']===
-        [['id'=>'workflow:'.$lease['id'],'expiresAt'=>$expiresAt*1000]],'read-only status projects the exact active workflow lease');
+        [['id'=>'workflow:'.$lease['id'],'expiresAt'=>$expiresAt*1000,
+            'kind'=>$protocol==='vp3.initiative-plan.v1'?'assessment':'preparation',
+            'step'=>$protocol==='vp3.initiative-plan.v1'?'Brainstorming useful opportunities':'Preparing a private next step']],
+        'read-only status projects the exact active workflow lease and safe actual work kind');
     $calls++;
     if($protocol==='vp3.initiative-plan.v1'){
         $duplicate=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static function(){throw new RuntimeException('Duplicate model call');});

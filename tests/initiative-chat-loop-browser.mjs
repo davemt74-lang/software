@@ -14,7 +14,7 @@ function gate(){
   return {arrived:new Promise(resolve=>{arrive=resolve;}),released:new Promise(resolve=>{release=resolve;}),arrive:()=>arrive(),release:()=>release()};
 }
 
-async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,failedTickReason='',activeJobs=[],returnDigest=null}={}){
+async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,failedTickReason='',activeJobs=[],returnDigest=null,noBriefButton=false}={}){
   const context=await browser.newContext();
   const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[],digestActions=[],githubClaims=[];
   let githubVoice=null;
@@ -55,7 +55,7 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
       return route.fulfill({contentType:'text/html',body:[
         '<!doctype html><meta charset="utf-8"><style>[hidden]{display:none!important}#chatThread{height:500px;overflow:auto}.message{min-height:40px}</style>',
         '<button id="newChatButton">New Chat</button><div id="chatHistory"></div>',
-        '<button id="chatAgentBriefButton">Agent Brief</button><aside id="chatAgentBriefPopover" hidden><div data-agent-brief-content></div><footer></footer></aside>',
+        (noBriefButton?'':'<button id="chatAgentBriefButton">Agent Brief</button>')+'<aside id="chatAgentBriefPopover" hidden><div data-agent-brief-content></div><footer></footer></aside>',
         '<section id="chatThread" data-view="chat"><div id="chatWelcome" hidden></div><section id="chatLiveContext" hidden></section></section>',
         '<form id="chatForm"><textarea id="chatInput">'+(initialDraft?'My unfinished thought':'')+'</textarea><button id="sendChatButton">Send</button><button id="chatVoiceButton" type="button">Voice</button></form><div id="chatVoiceStatus"></div>',
         '<script>window.STONEFELLOW_CHAT='+JSON.stringify(chat)+';window.VP3_COGNITIVE_PRESENTATION_V510='+JSON.stringify(config)+';',
@@ -312,17 +312,24 @@ try{
   console.log('PASS an authenticated HTTP 200 failed assessment renders its actual verified status');
 
   const expiresAt=Date.now()+240000;
-  const running=await fixture(17,{enabled:true,activeJobs:[
-    {id:'workflow:71',expiresAt,private_detail:'Never send this to the orb'},
+  const running=await fixture(17,{enabled:true,noBriefButton:true,activeJobs:[
+    {id:'workflow:71',expiresAt,kind:'assessment',step:'Considering current opportunities',private_detail:'Never send this to the orb'},
     {id:'workflow:72',expiresAt}, {id:'workflow:73',expiresAt:1}, {id:'bad:74',expiresAt}
   ]});
   try{
     const page=await running.open();
     const status=page.locator('[data-agent-initiative-status]');
+    assert.equal(await page.locator('#chatAgentBriefButton,[data-orb-chat]').count(),0,'Chat has one orb entry point and no duplicate composer buttons.');
     await page.waitForFunction(()=>window.initiativeOrbJobs?.length===2);
     assert.deepEqual(await page.evaluate(()=>window.initiativeOrbJobs),[
-      {id:'workflow:71',expiresAt},{id:'workflow:72',expiresAt}
+      {id:'workflow:71',expiresAt,kind:'assessment',step:'Considering current opportunities'},{id:'workflow:72',expiresAt}
     ]);
+    assert.ok(running.reads.some(read=>read.id===42&&read.runtime==='1'),'Removing the Brief button keeps live source/context reads active.');
+    await page.waitForFunction(()=>Boolean(window.initiativeOrbJobs?.length));
+    assert.ok(running.ticks.length>0,'Removing the Brief button keeps permitted Initiative work advancing.');
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.openDetails());
+    await page.locator('#chatAgentBriefPopover').waitFor({state:'visible'});
+    await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.closeBrief());
     await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
     running.presentationFails(true);
     await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
@@ -339,7 +346,7 @@ try{
       window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
       return window.initiativeOrbJobs;
     }),[]);
-    console.log('PASS only live, scoped Initiative leases reach the orb; failed reads, pauses and Chat changes clear them');
+    console.log('PASS the button-free composer keeps live context, Initiative ticks and orb details; only live scoped leases reach the orb and stale leases clear');
   }finally{await running.context.close();}
 
   const denied=await fixture(17,{runtimeUnavailable:true});

@@ -320,8 +320,8 @@ $welcomeAnchor = '<div id="chatWelcome" hidden></div>';
 $liveContextHost = '<section id="chatLiveContext" aria-label="Agent check-in" hidden></section>';
 $html = str_replace($welcomeAnchor, $debugMarker . $welcomeAnchor . $liveContextHost, $html);
 
-// Phase 11B.2: Agent Brief moved out of the Chat timeline and into the footer control.
-// The canonical model is reused by Cognitive Presentation v5.10 on demand.
+// The orb opens Top of Mind. Keep the detailed Brief available to that shared pane
+// without adding a second launcher to the composer or gating the cognitive runtime.
 
 $cognitiveBriefMarkup = <<<'HTML'
 <section class="chat-agent-brief-popover" id="chatAgentBriefPopover" hidden aria-label="Agent Brief">
@@ -340,11 +340,9 @@ $cognitiveBriefMarkup = <<<'HTML'
   </footer>
 </section>
 HTML;
-$cognitiveBriefButton = '<button class="chat-agent-brief-button" id="chatAgentBriefButton" type="button" aria-label="Agent status" aria-expanded="false" aria-controls="chatAgentBriefPopover">'
-    . '<span aria-hidden="true">✦</span><i class="chat-agent-status-dot" data-agent-status-dot></i><em class="chat-agent-attention-badge" data-agent-attention-badge hidden>0</em></button>';
 $html = str_replace(
     '<form class="chat-composer" id="chatForm">',
-    $cognitiveBriefMarkup . '<form class="chat-composer" id="chatForm">' . $cognitiveBriefButton,
+    $cognitiveBriefMarkup . '<form class="chat-composer" id="chatForm">',
     $html
 );
 

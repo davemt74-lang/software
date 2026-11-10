@@ -25,6 +25,12 @@ if($wildcard['micros']!==4000000)fail_v032('Provider wildcard cost estimate is i
 $unknown=ai_usage_accounting_v032_cost(['source'=>'vp3_cloud','provider'=>'missing','model'=>'unknown','usage'=>['prompt_tokens'=>100,'completion_tokens'=>100]]);
 if($unknown['micros']!==null||$unknown['rate_source']!=='unconfigured')fail_v032('Unknown provider pricing must remain explicitly unknown.');
 
+foreach([[],['total_tokens'=>50],['input_tokens'=>-1,'output_tokens'=>25]] as $missing){
+    $cost=ai_usage_accounting_v032_cost(['source'=>'vp3_cloud','provider'=>'openai','model'=>'model-a','usage'=>$missing]);
+    if($cost['micros']!==null||$cost['rate_source']!=='unknown_usage')fail_v032('Unreported or unsplit usage cannot be estimated as zero.');
+}
+if(ai_usage_accounting_v032_format_cost(1)!=='$0.000001')fail_v032('A nonzero cost must not round to zero.');
+
 if(ai_usage_accounting_v032_format_cost(0)!=='$0.00')fail_v032('Zero cost formatting is incorrect.');
 if(ai_usage_accounting_v032_format_cost(null)!=='—')fail_v032('Unknown cost formatting is incorrect.');
 

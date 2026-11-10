@@ -554,7 +554,7 @@ function ai_history_messages(array $history): array
     return $messages;
 }
 
-function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null,?string $personalKey=null,bool $singleAttempt=false): array
+function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null,?string $personalKey=null,bool $singleAttempt=false,?callable $observe=null): array
 {
     if(!function_exists('curl_init'))return ['ok'=>false,'error'=>'AI transport is unavailable.'];
     $parts=parse_url($endpoint);$host=strtolower((string)($parts['host']??''));
@@ -607,6 +607,13 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
         $started=microtime(true);$response=curl_exec($curl);$status=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);$error=curl_error($curl);curl_close($curl);
         $decoded=is_string($response)&&strlen($response)<=2*1024*1024?json_decode($response,true):null;
         $success=$status>=200&&$status<300&&is_array($decoded);
+        // The modern meter owns its attempts. Legacy callers can observe raw
+        // responses without altering retries, routing or subscription quota.
+        if(!$meter?->active&&$observe!==null){
+            try{$observe(['ok'=>$success,'status'=>$status,'data'=>is_array($decoded)?$decoded:[],
+                'duration_ms'=>(int)round((microtime(true)-$started)*1000)]);}
+            catch(Throwable $observationError){error_log('VP3 legacy AI execution observation failed: '.$observationError->getMessage());}
+        }
         if($meter?->active){
             $reported=is_array($decoded['usage']??null)?$decoded['usage']:[];
             $known=vp3_ai_service_usage_tokens_v1($reported)!==null;
@@ -651,7 +658,7 @@ function ai_anthropic_response(string $query,array $history,array $context,?arra
     return ai_hosted_chat_response('anthropic',$query,$history,$context,$user,$turnControl,$own,$visionImages,$meter,$target);
 }
 
-function ai_hosted_chat_response(string $provider,string $query,array $history,array $context,?array $user,?array $turnControl,?array $own,array $visionImages,?AiV100ServiceMeter $meter,?array $target): array
+function ai_hosted_chat_response(string $provider,string $query,array $history,array $context,?array $user,?array $turnControl,?array $own,array $visionImages,?AiV100ServiceMeter $meter,?array $target,string $usageScope='provider_request',?array $usageOwner=null): array
 {
     $apiKey=$own!==null?(string)($own['api_key']??''):ai_provider_api_key($provider);
     $openai=$provider==='openai';
@@ -679,17 +686,27 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
         if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null&&$remaining<=0.005){
             return ['ok'=>false,'error'=>'The inference time budget was exhausted.','error_code'=>'inference_budget_exhausted','stop_service_fallback'=>true];
         }
-        $started=microtime(true);
+        $started=microtime(true);$observedKey='';$observer=null;
+        $observedUser=$usageOwner??$user;
+        if(!$meter?->active&&$observedUser&&(int)($observedUser['id']??0)>0&&function_exists('db')){
+            $observationDb=db();
+            if($observationDb instanceof PDO){
+                if(!function_exists('ai_usage_accounting_v032_observe_provider'))require_once __DIR__.'/ai-usage-accounting-v032.php';
+                $observer=static function(array $response)use($observationDb,$observedUser,$provider,$model,$own,$usageScope,&$observedKey):void{
+                    $observedKey=ai_usage_accounting_v032_observe_provider($observationDb,$observedUser,$provider,$model,$own!==null?'user_provider':'vp3_cloud',$usageScope,$response);
+                };
+            }
+        }
         if($openai){
             $result=ai_curl_json('https://api.openai.com/v1/responses',
                 ['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],
                 ['model'=>$model,'instructions'=>$prompt,'input'=>$messages,'max_output_tokens'=>$budget],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,false,$observer);
         }else{
             $result=ai_curl_json('https://api.anthropic.com/v1/messages',
                 ['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],
                 ['model'=>$model,'max_tokens'=>$budget,'system'=>$prompt,'messages'=>$messages],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,false,$observer);
         }
         $usage=[];$answer='';
         if(!empty($result['ok'])){
@@ -722,10 +739,11 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
         ]+$usage);
         if($answer!==''){
             return ['ok'=>true,'answer'=>$answer,'model'=>$model,'complexity'=>$complexity,'usage'=>$usage,
-                'duration_ms'=>(int)($result['duration_ms']??0)];
+                'duration_ms'=>(int)($result['duration_ms']??0),'_legacy_usage_key'=>$observedKey];
         }
         $last=empty($result['ok'])?$result:['ok'=>false,'error'=>$name.' returned an empty response.','usage'=>$usage,
             'stop_service_fallback'=>$meter?->active??false];
+        $last['_legacy_usage_key']=$observedKey;
         if(!empty($last['stop_service_fallback']))return $last;
     }
     return $last;
@@ -852,7 +870,7 @@ function ai_generate_chat_response(
                 }
                 $candidateOwn=$credential['own'];
             }
-            $result=ai_hosted_chat_response($candidateProvider,$query,$history,$context,$user,$turnControl,$candidateOwn,$visionImages,$meter,$target);
+            $result=ai_hosted_chat_response($candidateProvider,$query,$history,$context,$user,$turnControl,$candidateOwn,$visionImages,$meter,$target,$scope);
             $result['provider']=$candidateProvider;
             if($candidateOwn!==null){
                 $result['compute_source']='user_provider';
@@ -866,9 +884,14 @@ function ai_generate_chat_response(
             $requestKey=$trace!==''?'nonstream:'.$scope.':'.$trace:'';
             // The long-lived worker shares a trace across independent provider calls.
             if($initiative)$requestKey=$reservationId>0?'initiative:reservation:'.$reservationId:'';
+            if($requestKey==='')$requestKey='legacy:'.bin2hex(random_bytes(16));
             subscription_ai_commit_usage($reservationId,$user,$scope,$provider,(string)($result['model']??ai_provider_model($provider)),is_array($result['usage']??null)?$result['usage']:[],$requestKey);
             $reservationId=0;
+            if($pdo&&is_string($result['_legacy_usage_key']??null)&&function_exists('ai_usage_accounting_v032_link_observation')){
+                ai_usage_accounting_v032_link_observation($pdo,$user,$result['_legacy_usage_key'],$requestKey);
+            }
         }
+        unset($result['_legacy_usage_key']);
         return $meter?->attach($result)??$result;
     }finally{
         if($reservationId>0&&function_exists('subscription_ai_release_reservation'))subscription_ai_release_reservation($reservationId);
@@ -891,10 +914,12 @@ function ai_test_provider(string $provider): array
         'text' => 'Stonefellow AI connection test.',
     ]];
 
-    $result = $provider === 'openai'
-        ? ai_openai_response('Reply with exactly: Stonefellow AI connected.', [], $context)
-        : ai_anthropic_response('Reply with exactly: Stonefellow AI connected.', [], $context);
-
+    // Attribute the Admin test without adding account/Chat context to its prompt
+    // or changing its installation-key route and quota exemption.
+    $owner=function_exists('current_user')?current_user():null;
+    $result=ai_hosted_chat_response($provider,'Reply with exactly: Stonefellow AI connected.',[],$context,
+        null,null,null,[],null,null,'connection_test',$owner);
+    unset($result['_legacy_usage_key']);
     return $result;
 }
 

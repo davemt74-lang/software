@@ -8,9 +8,9 @@ const presentation = fs.readFileSync('includes/cognitive-presentation-v510.php',
 const presentationJs = fs.readFileSync('chat-cognitive-presentation-v510.js', 'utf8');
 const presentationCss = fs.readFileSync('chat-cognitive-presentation-v510.css', 'utf8');
 
-assert.match(chat, /\$cognitivePresentationBuild = 'cognitive-presentation-v510-20260918'/, 'Chat must expose the Cognitive Presentation build');
+assert.match(chat, /\$cognitivePresentationBuild = 'cognitive-presentation-footer-v2451-20260922'/, 'Chat must expose the Cognitive Presentation build');
 assert.match(chat, /X-VP3-Agent-Intelligence/, 'Chat must retain the Agent intelligence runtime header');
-assert.match(chat, /chatAgentBriefButton/, 'Agent Brief must move to the composer control');
+assert.doesNotMatch(chat, /chatAgentBriefButton/, 'Agent Brief must use the orb instead of a duplicate composer control');
 assert.match(chat, /chatAgentBriefPopover/, 'Agent Brief must render in the footer popover');
 assert.match(chat, /VP3_COGNITIVE_PRESENTATION_V510/, 'Chat must configure the Cognitive Presentation owner');
 assert.match(chat, /chat-cognitive-presentation-v510\.css/, 'Chat must load the new presentation layer');

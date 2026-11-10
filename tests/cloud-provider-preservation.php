@@ -34,7 +34,10 @@ function subscription_ai_preflight(?array $user,string $scope,int $input,int $ou
     $GLOBALS['preflightCalls']++;
     return ['reservation_id'=>0,'max_output_tokens'=>$output,'unlimited'=>true];
 }
-function subscription_ai_commit_usage(...$args): void {$GLOBALS['packageDebits'][]=$args;}
+function subscription_ai_commit_usage(...$args): void {if(empty($args[1]['is_admin']))$GLOBALS['packageDebits'][]=$args;}
+function table_exists(string $table): bool {
+    $q=db()->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return (bool)$q->fetchColumn();
+}
 function homeserver_agent_v018_last_attempt(): array {return ['failure_class'=>'timeout','latency_ms'=>125];}
 // The HTTP double also runs in local/CI PHP builds without the cURL extension.
 foreach(['CURLOPT_POST','CURLOPT_RETURNTRANSFER','CURLOPT_CONNECTTIMEOUT','CURLOPT_TIMEOUT','CURLOPT_HTTPHEADER','CURLOPT_POSTFIELDS','CURLOPT_FOLLOWLOCATION','CURLOPT_SSL_VERIFYPEER','CURLOPT_SSL_VERIFYHOST','CURLOPT_BUFFERSIZE','CURLOPT_WRITEFUNCTION','CURLINFO_HTTP_CODE'] as $index=>$name){
@@ -216,6 +219,38 @@ try {
         &&array_column($rows,'agent_id')===[11,11]&&array_column($rows,'conversation_id')===[18,18]
         &&[$typedResult['service_attempt_ids'][0],$voiceResult['service_attempt_ids'][0]]===array_column($rows,'id'),
         'Each adapter meters the actual provider attempt once and returns the exact ledger row');
+
+    // A handled tool still uses a provider for interpretation. Its provider
+    // attempt and its zero-token tool result are distinct execution records.
+    foreach(['cost_currency TEXT','homeserver_state TEXT','fallback_used INT'] as $column)$pdo->exec('ALTER TABLE ai_execution_ledger ADD COLUMN '.$column);
+    $plannerContext=['service'=>'conversation','agent_id'=>11,'conversation_id'=>18,'job_key'=>'chat:reminder-fixture'];
+    $codingReply=static fn():array=>['output_text'=>'{"operation":"list","view":"today"}',
+        'usage'=>['input_tokens'=>100,'output_tokens'=>25,'total_tokens'=>125]];
+    $admin=$user+['is_admin'=>true];$priorDebits=count($packageDebits);$priorRows=(int)$pdo->query('SELECT COUNT(*) FROM ai_execution_ledger')->fetchColumn();
+    $planner=ai_v100_with_service_context($plannerContext,static fn()=>ai_generate_chat_response(
+        'Interpret the reminder command.',[],[],$admin,'main_ai',['surface'=>'tool_json','protocol'=>'vp3.reminder-plan.v1']));
+    check(!empty($planner['ok'])&&json_decode($planner['answer'],true)['operation']==='list'
+        &&count($packageDebits)===$priorDebits,'The actual hosted reminder interpreter returns its plan without an admin package debit');
+    ai_usage_accounting_v032_record($pdo,$admin,11,18,chat_execution_v019_tool());
+    $plannerRows=$pdo->query('SELECT source,service_key,service_status,user_id,agent_id,conversation_id,total_tokens,cloud_tokens_charged FROM ai_execution_ledger ORDER BY id DESC LIMIT 2')->fetchAll(\PDO::FETCH_ASSOC);
+    check((int)$pdo->query('SELECT COUNT(*) FROM ai_execution_ledger')->fetchColumn()===$priorRows+2
+        &&$plannerRows[0]['source']==='vp3_tool'&&(int)$plannerRows[0]['total_tokens']===0
+        &&$plannerRows[1]['source']==='vp3_cloud'&&$plannerRows[1]['service_key']==='conversation'
+        &&$plannerRows[1]['service_status']==='completed'&&(int)$plannerRows[1]['total_tokens']===125
+        &&(int)$plannerRows[1]['cloud_tokens_charged']===0
+        &&array_column($plannerRows,'user_id')===[7,7]&&array_column($plannerRows,'agent_id')===[11,11]
+        &&array_column($plannerRows,'conversation_id')===[18,18],
+        'An admin tool turn records 125 provider tokens and a separate zero-token tool result with the exact owner, Agent and Chat');
+    $codingReply=null;
+    $previousContext=ai_v100_service_context();
+    ai_v100_with_service_context(['service'=>'initiative','job_key'=>'outer-fixture'],static function()use($plannerContext):void{
+        check(ai_v100_with_service_context($plannerContext,static fn():string=>'early return')==='early return'
+            &&ai_v100_service_context()['job_key']==='outer-fixture','An early return restores the caller service context');
+        try{ai_v100_with_service_context($plannerContext,static function():void{throw new \RuntimeException('fixture exception');});}
+        catch(\RuntimeException $error){check($error->getMessage()==='fixture exception'
+            &&ai_v100_service_context()['job_key']==='outer-fixture','An exception restores the caller service context');}
+    });
+    check(ai_v100_service_context()===$previousContext,'The outer service context is restored after nested planner work');
 
     $requests=[];$providerStatuses=['openai'=>401];
     $fallbackResult=$typed();
