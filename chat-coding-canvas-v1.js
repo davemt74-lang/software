@@ -14,7 +14,7 @@
   const maxText = 32768;
   const jobLabels = {queued:'Waiting to build',running:'Working on the canvas',ready:'Draft ready to test',failed:'Coding Agent could not complete this run',stopped:'Build stopped'};
   const activeJob = job => ['queued','running'].includes(job?.state);
-  const chat = () => window.STONEFELLOW_CHAT_CONTINUITY;
+  const chat = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   const scope = () => Number(chat()?.conversationId()) || 0;
   let participantActor = 0;
   const participantContext = () => participantActor > 0 || Boolean(window.VP3ParticipantContinuity?.selectedContext?.());

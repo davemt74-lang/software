@@ -99,6 +99,7 @@ try{
     &&response.request().postDataJSON().action==='initiative_tick');
   await page.goto(base+'/?busy=1',{waitUntil:'domcontentloaded'});
   const status=page.locator('[data-agent-initiative-status]');
+  await status.locator('[data-agent-worker-details]').evaluate(details=>{details.open=true;});
   assert.equal(await page.locator('#chatThread [data-agent-initiative-status]').count(),0);
   assert.equal(await page.locator('.vp3-orb-root [data-agent-initiative-status]').count(),1);
   assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);

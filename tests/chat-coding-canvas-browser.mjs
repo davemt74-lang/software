@@ -225,7 +225,15 @@ try {
   assert.equal(await page.locator('#chatInput').isVisible(),true);
   await loadChat(42);
   await launch.click();
-  assert.equal(await page.evaluate(id=>window.VP3CodingCanvasV1.open(id,1),canvas.id),true,'Activity opens the exact saved Canvas revision');
+  assert.equal(await page.evaluate(async id=>{
+    const facade=window.STONEFELLOW_CHAT_CONTINUITY;
+    window.STONEFELLOW_CHAT_CONTINUITY={...facade};
+    delete window.STONEFELLOW_CHAT_CONTINUITY.agentId;
+    delete window.STONEFELLOW_CHAT_CONTINUITY.isReady;
+    delete window.STONEFELLOW_CHAT_CONTINUITY.isRestoring;
+    try{return await window.VP3CodingCanvasV1.open(id,1);}
+    finally{window.STONEFELLOW_CHAT_CONTINUITY=facade;}
+  },canvas.id),true,'Activity opens the exact saved Canvas revision with an older voice facade');
 
   await preview.getByText('Isolated',{exact:true}).waitFor();
   assert.equal(await preview.getByRole('checkbox',{name:'Ready'}).isChecked(),true);

@@ -108,7 +108,7 @@
       let queuedEnrollment='',queuedIntroduction='',queuedResponse=false,initiativeAction=null;window.addEventListener('vp3:voice-guard-ready',()=>{if(queuedEnrollment){void window.VP3VoiceGuard.beginEnrollment(queuedEnrollment);queuedEnrollment='';}window.VP3VoiceGuard.inviteIntroduction(queuedIntroduction);introductionMode=queuedIntroduction;});
       document.documentElement.dataset.vp3OrbEmbed='1';
       const activityContext=()=>{
-        const chat=window.STONEFELLOW_CHAT,live=window.STONEFELLOW_CHAT_CONTINUITY;
+        const chat=window.STONEFELLOW_CHAT,live=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
         const ref=adapter.conversationRef?.();
         return {ownerKey:String(adapter.ownerKey),agent_id:Number(chat?.agentId||0),
           conversation_id:Number(ref?.id||0),working_attention_binding:String(chat?.workingAttentionBinding||''),
@@ -163,7 +163,7 @@
       window.addEventListener('vp3:voice-filter-status',event=>parent.postMessage({channel:'vp3-orb',kind:'voice-filter-status',message:String(event.detail?.message||'').slice(0,300)},origin));
       async function runActivityAction(action){
         if(activityActor>0||window.VP3ParticipantContinuity?.selectedContext?.()||!action||typeof action.kind!=='string')return false;
-        const chat=window.STONEFELLOW_CHAT_CONTINUITY;
+        const chat=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
         if(action.kind==='song'&&Number.isSafeInteger(action.track_id)&&action.track_id>0)return await chat?.playActivityTrack?.(action.track_id)===true;
         if(action.kind==='canvas'&&typeof action.canvas_id==='string')return await window.VP3CodingCanvasV1?.open?.(action.canvas_id,action.revision)===true;
         if(action.kind==='mission'&&typeof action.mission_id==='string')return await window.VP3AgentMissionsV1?.open?.(action.mission_id)===true;

@@ -57,6 +57,9 @@ window.childReady=${!['wait','timeout'].includes(new URL(route.request().url()).
 window.releaseReady=()=>{window.childReady=true;window.dispatchEvent(new Event('vp3:chat-context-ready'));};
 window.currentChat=42;window.views=0;window.calls=[];window.keptAudio=document.getElementById('childAudio');
 window.STONEFELLOW_CHAT_CONTINUITY={agentId:()=>7,conversationId:()=>window.currentChat,isReady:()=>window.childReady,isRestoring:()=>!window.childReady,openConversation:async(id,options)=>{window.dispatchEvent(new Event('stonefellow:chat-context-changing'));window.currentChat=id;if(options?.messageId){const row=document.createElement('article');row.dataset.chatMessageId=String(options.messageId);row.dataset.chatConversationId=String(id);document.getElementById('chatThread').append(row);}window.dispatchEvent(new Event('vp3:chat-context-ready'));await new Promise(resolve=>setTimeout(resolve,20));window.calls.push(['chat',id,options]);return true;},playActivityTrack:async id=>{await Promise.resolve();window.calls.push(['song',id]);return window.mode!=='denied';}};
+// Embedded actions also work with an older cached voice facade.
+window.STONEFELLOW_CHAT_CONTINUITY_V87=window.STONEFELLOW_CHAT_CONTINUITY;
+window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentChat};
 window.VP3CodingCanvasV1={open:async(...args)=>{window.calls.push(['canvas',...args]);return true;}};
 window.VP3AgentMissionsV1={open:async id=>{window.calls.push(['mission',id]);return true;}};
 window.VP3_ORB_ADAPTER={ownerKey:'1',state:()=>({state:'idle'}),conversationRef:()=>window.childReady?{id:window.currentChat,agent:7}:null,stop:()=>{}};

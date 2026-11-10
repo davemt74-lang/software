@@ -37,6 +37,7 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     window.StonefellowKnowledgeScopeV162={value:()=>({mode:'folder',folder_id:12})};
     window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',isMainChat:()=>true,state:()=>({state:document.body.dataset.stonefellowAgentState||'idle'})};
     window.addEventListener('vp3:agent-orb-ready',()=>{
+      document.querySelector('[data-agent-worker-details]').open=true;
       const orb=window.VP3AgentOrb;
       const setJobs=orb.setJobs;
       orb.setJobs=(source,jobs)=>{
@@ -406,7 +407,7 @@ try{
       assert.equal(f.settings.length,0);
       assert.equal(f.activities.at(-1).context.conversation_id,42);
       assert.deepEqual(f.health().knowledge_scope,{mode:'off',folder_id:0});
-      await page.waitForFunction(()=>!document.querySelector('[data-agent-initiative-status] button')?.disabled);
+      await page.waitForFunction(()=>!document.querySelector('[data-agent-worker-details] .vp3-orb-initiative-actions button')?.disabled);
       assert.equal(f.ticks.length,1);
       await page.clock.fastForward(15001);
       await page.getByText('I reviewed the transcript follow-ups and prepared the next steps.',{exact:true}).waitFor();
@@ -463,7 +464,7 @@ try{
       await status.getByRole('button',{name:'Resume',exact:true}).click();
       await status.getByRole('button',{name:'Pause',exact:true}).waitFor();
       assert.equal(Object.hasOwn(f.settings.at(-1),'knowledge_scope'),false,'Resume does not grant the foreground Knowledge selection');
-      await page.waitForFunction(()=>!document.querySelector('[data-agent-initiative-status] button')?.disabled);
+      await page.waitForFunction(()=>!document.querySelector('[data-agent-worker-details] .vp3-orb-initiative-actions button')?.disabled);
 
       // A late old-Chat response cannot change the newly selected Chat.
       const held=f.hold();
@@ -524,7 +525,7 @@ try{
   const newAfterSaved=await fixture(17,{enabled:true});
   try{
     const page=await newAfterSaved.open();
-    await page.waitForFunction(()=>!document.querySelector('[data-agent-initiative-status] button')?.disabled);
+    await page.waitForFunction(()=>!document.querySelector('[data-agent-worker-details] .vp3-orb-initiative-actions button')?.disabled);
     const before=newAfterSaved.ticks.length;
     await page.getByRole('button',{name:'New Chat',exact:true}).click();
     await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===0);
@@ -540,7 +541,7 @@ try{
     const held=f.hold(),first=await f.open();
     await held.arrived;
     const second=await f.open();
-    await second.waitForFunction(()=>!document.querySelector('[data-agent-initiative-status] button')?.disabled);
+    await second.waitForFunction(()=>!document.querySelector('[data-agent-worker-details] .vp3-orb-initiative-actions button')?.disabled);
     assert.equal(f.ticks.length,2);
     held.release();
     await first.getByText('I reviewed the transcript follow-ups and prepared the next steps.',{exact:true}).waitFor();

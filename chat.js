@@ -4566,9 +4566,10 @@
   const activityPlayerOwner=Number(cfg.userId),activityPlayerAgent=Number(cfg.agentId||0);
   let activityPlayerParticipant=0,activityPlayerHistory=[];
   function activityPlayerAllowed(){
+    const live=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
     return activityPlayerOwner>0&&Number(window.STONEFELLOW_CHAT?.userId)===activityPlayerOwner
       &&Number(window.STONEFELLOW_CHAT?.agentId||0)===activityPlayerAgent
-      &&Number(window.STONEFELLOW_CHAT_CONTINUITY?.agentId())===activityPlayerAgent
+      &&Number(live?.agentId?.())===activityPlayerAgent
       &&activityPlayerParticipant<=0&&!window.VP3ParticipantContinuity?.selectedContext?.();
   }
   const recentHistoryPlaying=grid=>!!grid&&[...grid.querySelectorAll('audio')].some(audio=>!audio.paused&&!audio.ended);
